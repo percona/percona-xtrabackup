@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
  
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 #define MY_CONFIG_H
 
 /*
- * From configure.cmake, in order of appearance 
+ * From configure.cmake, in order of appearance
  */
 #cmakedefine HAVE_LLVM_LIBCPP 1
 
@@ -89,7 +89,7 @@
 #cmakedefine HAVE_FCHMOD 1
 #cmakedefine HAVE_FCNTL 1
 #cmakedefine HAVE_FDATASYNC 1
-#cmakedefine HAVE_DECL_FDATASYNC 1 
+#cmakedefine HAVE_DECL_FDATASYNC 1
 #cmakedefine HAVE_FEDISABLEEXCEPT 1
 #cmakedefine HAVE_FSEEKO 1
 #cmakedefine HAVE_FSYNC 1
@@ -119,6 +119,7 @@
 #cmakedefine HAVE_POSIX_MEMALIGN 1
 #cmakedefine HAVE_PREAD 1
 #cmakedefine HAVE_PTHREAD_CONDATTR_SETCLOCK 1
+#cmakedefine HAVE_PTHREAD_GETAFFINITY_NP 1
 #cmakedefine HAVE_PTHREAD_SIGMASK 1
 #cmakedefine HAVE_SETFD 1
 #cmakedefine HAVE_SIGACTION 1
@@ -161,11 +162,12 @@
 #cmakedefine HAVE_ISINF 1
 
 #cmakedefine HAVE_KQUEUE 1
+#cmakedefine HAVE_SETNS 1
 #cmakedefine HAVE_KQUEUE_TIMERS 1
 #cmakedefine HAVE_POSIX_TIMERS 1
 
 /* Endianess */
-#cmakedefine WORDS_BIGENDIAN 1 
+#cmakedefine WORDS_BIGENDIAN 1
 
 /* Type sizes */
 #cmakedefine SIZEOF_VOIDP     @SIZEOF_VOIDP@
@@ -231,6 +233,7 @@
 #cmakedefine ENABLE_MEMCACHED_SASL_PWDB 1
 #cmakedefine ENABLED_PROFILING 1
 #cmakedefine HAVE_ASAN
+#cmakedefine HAVE_LSAN
 #cmakedefine HAVE_UBSAN
 #cmakedefine HAVE_TSAN
 #cmakedefine ENABLED_LOCAL_INFILE 1
@@ -247,7 +250,7 @@
  * Readline
  */
 #cmakedefine HAVE_MBSTATE_T
-#cmakedefine HAVE_LANGINFO_CODESET 
+#cmakedefine HAVE_LANGINFO_CODESET
 #cmakedefine HAVE_WCSDUP
 #cmakedefine HAVE_WCHAR_T 1
 #cmakedefine HAVE_WINT_T 1
@@ -332,7 +335,6 @@
 #define HAVE_STDARG_H 1
 #define HAVE_STDINT_H 1
 #define HAVE_STDLIB_H 1
-#define HAVE_STRDUP 1
 #define HAVE_STRTOK_R 1
 #define HAVE_STRTOLL 1
 #define HAVE_SYS_STAT_H 1
@@ -350,6 +352,9 @@
 
 /* For default value of --early_plugin_load */
 #cmakedefine DEFAULT_EARLY_PLUGIN_LOAD @DEFAULT_EARLY_PLUGIN_LOAD@
+
+/* For default value of --partial_revokes */
+#define DEFAULT_PARTIAL_REVOKES @DEFAULT_PARTIAL_REVOKES@
 
 #define SO_EXT "@CMAKE_SHARED_MODULE_SUFFIX@"
 

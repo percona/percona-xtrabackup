@@ -1,7 +1,7 @@
 #ifndef ITEM_CMPFUNC_INCLUDED
 #define ITEM_CMPFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,8 +28,8 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "binary_log_types.h"
-#include "extra/regex/my_regex.h"  // my_regex_t
+//#include "extra/regex/my_regex.h"  // my_regex_t
+
 #include "m_ctype.h"
 #include "my_alloc.h"
 #include "my_compiler.h"
@@ -84,7 +84,7 @@ class Arg_comparator {
                                const Item *warn_item, bool *is_null);
   bool try_year_cmp_func(Item_result type);
   static bool get_date_from_const(Item *date_arg, Item *str_arg,
-                                  ulonglong *value);
+                                  ulonglong *const_value);
   /**
     Only used by compare_json() in the case where a JSON value is
     compared to an SQL value. This member points to pre-allocated
@@ -154,7 +154,7 @@ class Arg_comparator {
   int compare_json();
   bool compare_null_values();
 
-  static bool can_compare_as_dates(Item *a, Item *b, ulonglong *const_val_arg);
+  static bool can_compare_as_dates(Item *a, Item *b);
 
   Item **cache_converted_constant(THD *thd, Item **value, Item **cache,
                                   Item_result type);
@@ -217,7 +217,8 @@ class Item_func_truth : public Item_bool_func {
   bool val_bool() override;
   longlong val_int() override;
   bool resolve_type(THD *) override;
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
 
  protected:
   Item_func_truth(const POS &pos, Item *a, bool a_value, bool a_affirmative)
@@ -460,18 +461,19 @@ class Item_bool_func2 : public Item_bool_func { /* Bool with 2 string args */
     return cmp.set_cmp_func(this, tmp_arg, tmp_arg + 1, true);
   }
   /**
-     When comparing strings, compare at most max_length bytes.
-     @param max_length how much to compare
+     When comparing strings, compare at most max_str_length bytes.
+     @param max_str_length how much to compare
   */
-  void set_max_str_length(size_t max_length) {
-    return cmp.set_max_str_length(max_length);
+  void set_max_str_length(size_t max_str_length) {
+    return cmp.set_max_str_length(max_str_length);
   }
   optimize_type select_optimize() const override { return OPTIMIZE_OP; }
   virtual enum Functype rev_functype() const { return UNKNOWN_FUNC; }
   bool have_rev_func() const override { return rev_functype() != UNKNOWN_FUNC; }
 
-  void print(String *str, enum_query_type query_type) override {
-    Item_func::print_op(str, query_type);
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override {
+    Item_func::print_op(thd, str, query_type);
   }
 
   bool is_null() override { return args[0]->is_null() || args[1]->is_null(); }
@@ -479,11 +481,11 @@ class Item_bool_func2 : public Item_bool_func { /* Bool with 2 string args */
     return cmp.cmp_collation.collation;
   }
   void top_level_item() override { abort_on_null = true; }
+  bool is_top_level_item() const { return abort_on_null; }
   void cleanup() override {
     Item_bool_func::cleanup();
     cmp.cleanup();
   }
-
   friend class Arg_comparator;
 };
 
@@ -540,7 +542,8 @@ class Item_func_not : public Item_bool_func {
   enum Functype functype() const override { return NOT_FUNC; }
   const char *func_name() const override { return "not"; }
   Item *neg_transformer(THD *) override;
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
 
   float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
@@ -641,7 +644,7 @@ class Item_func_trig_cond final : public Item_bool_func {
   /// '@<if@>', to distinguish from the if() SQL function
   const char *func_name() const override { return "<if>"; }
   /// Get range of inner tables spanned by associated outer join operation
-  void get_table_range(TABLE_LIST **first_table, TABLE_LIST **last_table);
+  void get_table_range(TABLE_LIST **first_table, TABLE_LIST **last_table) const;
   /// Get table_map of inner tables spanned by associated outer join operation
   table_map get_inner_tables() const;
   bool fix_fields(THD *thd, Item **ref) override {
@@ -664,7 +667,10 @@ class Item_func_trig_cond final : public Item_bool_func {
   }
   enum enum_trig_type get_trig_type() const { return trig_type; }
   bool *get_trig_var() { return trig_var; }
-  void print(String *str, enum_query_type query_type) override;
+  enum_trig_type get_trig_type() { return trig_type; }
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
+  plan_idx idx() const { return m_idx; }
 };
 
 class Item_func_not_all : public Item_func_not {
@@ -690,7 +696,8 @@ class Item_func_not_all : public Item_func_not {
   longlong val_int() override;
   enum Functype functype() const override { return NOT_ALL_FUNC; }
   const char *func_name() const override { return "<not>"; }
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   void set_sum_test(Item_sum_hybrid *item) { test_sum_item = item; }
   void set_sub_test(Item_maxmin_subselect *item) { test_sub_item = item; }
   void set_subselect(Item_subselect *item) { subselect = item; }
@@ -946,7 +953,8 @@ class Item_func_between final : public Item_func_opt_neg {
   void fix_after_pullout(SELECT_LEX *parent_select,
                          SELECT_LEX *removed_select) override;
   bool resolve_type(THD *) override;
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   bool is_bool_func() const override { return true; }
   const CHARSET_INFO *compare_collation() const override {
     return cmp_collation.collation;
@@ -968,8 +976,9 @@ class Item_func_strcmp final : public Item_bool_func2 {
   optimize_type select_optimize() const override { return OPTIMIZE_NONE; }
   const char *func_name() const override { return "strcmp"; }
 
-  void print(String *str, enum_query_type query_type) override {
-    Item_func::print(str, query_type);
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override {
+    Item_func::print(thd, str, query_type);
   }
   bool resolve_type(THD *thd) override {
     if (Item_bool_func2::resolve_type(thd)) return true;
@@ -1005,7 +1014,8 @@ class Item_func_interval final : public Item_int_func {
   bool resolve_type(THD *) override;
   const char *func_name() const override { return "interval"; }
   uint decimal_precision() const override { return 2; }
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
 
  private:
   // Runs in CTOR init list, cannot access *this as Item_func_interval
@@ -1105,6 +1115,7 @@ class Item_func_if final : public Item_func {
                          SELECT_LEX *removed_select) override;
   uint decimal_precision() const override;
   const char *func_name() const override { return "if"; }
+  enum Functype functype() const override { return IF_FUNC; }
 };
 
 class Item_func_nullif final : public Item_bool_func2 {
@@ -1127,8 +1138,9 @@ class Item_func_nullif final : public Item_bool_func2 {
   }
   const char *func_name() const override { return "nullif"; }
 
-  void print(String *str, enum_query_type query_type) override {
-    Item_func::print(str, query_type);
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override {
+    Item_func::print(thd, str, query_type);
   }
 
   bool is_null() override;
@@ -1571,6 +1583,8 @@ class Item_func_case final : public Item_func {
     set_arguments(list, true);
     memset(&cmp_items, 0, sizeof(cmp_items));
   }
+  int get_first_expr_num() const { return first_expr_num; }
+  int get_else_expr_num() const { return else_expr_num; }
   double val_real() override;
   longlong val_int() override;
   String *val_str(String *) override;
@@ -1583,12 +1597,14 @@ class Item_func_case final : public Item_func {
   uint decimal_precision() const override;
   enum Item_result result_type() const override { return cached_result_type; }
   const char *func_name() const override { return "case"; }
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   Item *find_item(String *str);
   const CHARSET_INFO *compare_collation() const override {
     return cmp_collation.collation;
   }
   void cleanup() override;
+  enum Functype functype() const override { return CASE_FUNC; }
 };
 
 /**
@@ -1661,7 +1677,8 @@ class Item_func_in final : public Item_func_opt_neg {
     DBUG_VOID_RETURN;
   }
   optimize_type select_optimize() const override { return OPTIMIZE_KEY; }
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   enum Functype functype() const override { return IN_FUNC; }
   const char *func_name() const override { return " IN "; }
   bool is_bool_func() const override { return true; }
@@ -1793,6 +1810,7 @@ class Item_func_isnull : public Item_bool_func {
   const CHARSET_INFO *compare_collation() const override {
     return args[0]->collation.collation;
   }
+  bool fix_fields(THD *thd, Item **ref) override;
 };
 
 /* Functions used by HAVING for rewriting IN subquery */
@@ -1843,7 +1861,8 @@ class Item_func_isnotnull final : public Item_bool_func {
     return abort_on_null ? not_null_tables_cache : 0;
   }
   Item *neg_transformer(THD *thd) override;
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   const CHARSET_INFO *compare_collation() const override {
     return args[0]->collation.collation;
   }
@@ -1967,7 +1986,8 @@ class Item_cond : public Item_bool_func {
   bool eq(const Item *item, bool binary_cmp) const override;
   table_map used_tables() const override { return used_tables_cache; }
   void update_used_tables() override;
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   void split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       List<Item> &fields) override;
   void top_level_item() override { abort_on_null = true; }
@@ -2075,6 +2095,7 @@ class Item_equal final : public Item_bool_func {
   ~Item_equal() override { destroy(eval_item); }
 
   inline Item *get_const() { return const_item; }
+  void set_const(Item *c) { const_item = c; }
   bool compare_const(THD *thd, Item *c);
   bool add(THD *thd, Item *c, Item_field *f);
   bool add(THD *thd, Item *c);
@@ -2119,7 +2140,8 @@ class Item_equal final : public Item_bool_func {
   void update_used_tables() override;
   bool walk(Item_processor processor, enum_walk walk, uchar *arg) override;
   Item *transform(Item_transformer transformer, uchar *arg) override;
-  void print(String *str, enum_query_type query_type) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   const CHARSET_INFO *compare_collation() const override {
     return fields.head()->collation.collation;
   }
@@ -2132,7 +2154,7 @@ class Item_equal final : public Item_bool_func {
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
-
+  Item *m_const_folding[2];  ///< temporary area used for constant folding
  private:
   void check_covering_prefix_keys();
 };
@@ -2230,7 +2252,12 @@ inline Item *and_conds(Item *a, Item *b) {
 longlong get_datetime_value(THD *thd, Item ***item_arg, Item **cache_arg,
                             const Item *warn_item, bool *is_null);
 
-bool get_mysql_time_from_str(THD *thd, String *str, timestamp_type warn_type,
+// TODO: the next two functions should be moved to sql_time.{h,cc}
+bool get_mysql_time_from_str_no_warn(THD *thd, String *str, MYSQL_TIME *l_time,
+                                     MYSQL_TIME_STATUS *status);
+
+bool get_mysql_time_from_str(THD *thd, String *str,
+                             enum_mysql_timestamp_type warn_type,
                              const char *warn_name, MYSQL_TIME *l_time);
 /*
   These need definitions from this file but the variables are defined

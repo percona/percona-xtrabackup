@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,6 @@
 #include <string>
 #include <vector>
 
-#include "binary_log_types.h"
 #include "binlog_event.h"
 #include "keycache.h"
 #include "m_ctype.h"
@@ -1351,6 +1350,7 @@ int ha_prepare(THD *thd) {
 
     while (ha_info) {
       handlerton *ht = ha_info->ht();
+      DBUG_ASSERT(!thd->status_var_aggregated);
       thd->status_var.ha_prepare_count++;
       if (ht->prepare) {
         DBUG_EXECUTE_IF("simulate_xa_failure_prepare", {
@@ -1580,10 +1580,18 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
   */
   if (is_real_trans && is_atomic_ddl_commit_on_slave(thd)) {
     /*
-      Failed atomic DDL statements should've been marked as
-      executed/committed during statement rollback.
+      Failed atomic DDL statements should've been marked as executed/committed
+      during statement rollback.
+      When applying a DDL statement on a slave and the statement is filtered
+      out by a table filter, we report an error "ER_SLAVE_IGNORED_TABLE" to
+      warn slave applier thread. We need to save the DDL statement's gtid
+      into mysql.gtid_executed system table if the binary log is disabled
+      on the slave and gtids are enabled. It is not necessary to assert that
+      there is no error when committing the DDL statement's gtid into table.
     */
-    DBUG_ASSERT(!thd->is_error());
+    DBUG_ASSERT(!thd->is_error() ||
+                (thd->is_operating_gtid_table_implicitly &&
+                 thd->get_stmt_da()->mysql_errno() == ER_SLAVE_IGNORED_TABLE));
 
     run_slave_post_commit = true;
     error = error || thd->rli_slave->pre_commit();
@@ -1814,6 +1822,7 @@ int ha_commit_low(THD *thd, bool all, bool run_after_commit) {
                  my_strerror(errbuf, MYSQL_ERRMSG_SIZE, err));
         error = 1;
       }
+      DBUG_ASSERT(!thd->status_var_aggregated);
       thd->status_var.ha_commit_count++;
       ha_info_next = ha_info->next();
       if (restore_backup_ha_data) reattach_engine_ha_data_to_thd(thd, ht);
@@ -1874,6 +1883,7 @@ int ha_rollback_low(THD *thd, bool all) {
                  my_strerror(errbuf, MYSQL_ERRMSG_SIZE, err));
         error = 1;
       }
+      DBUG_ASSERT(!thd->status_var_aggregated);
       thd->status_var.ha_rollback_count++;
       ha_info_next = ha_info->next();
       if (restore_backup_ha_data) reattach_engine_ha_data_to_thd(thd, ht);
@@ -2043,6 +2053,7 @@ int ha_commit_attachable(THD *thd) {
         DBUG_ASSERT(false);
         error = 1;
       }
+      DBUG_ASSERT(!thd->status_var_aggregated);
       thd->status_var.ha_commit_count++;
       ha_info_next = ha_info->next();
 
@@ -2131,6 +2142,7 @@ int ha_rollback_to_savepoint(THD *thd, SAVEPOINT *sv) {
                my_strerror(errbuf, MYSQL_ERRMSG_SIZE, err));
       error = 1;
     }
+    DBUG_ASSERT(!thd->status_var_aggregated);
     thd->status_var.ha_savepoint_rollback_count++;
     if (ht->prepare == 0) trn_ctx->set_no_2pc(trx_scope, true);
   }
@@ -2149,6 +2161,7 @@ int ha_rollback_to_savepoint(THD *thd, SAVEPOINT *sv) {
                my_strerror(errbuf, MYSQL_ERRMSG_SIZE, err));
       error = 1;
     }
+    DBUG_ASSERT(!thd->status_var_aggregated);
     thd->status_var.ha_rollback_count++;
     ha_info_next = ha_info->next();
     ha_info->reset(); /* keep it conveniently zero-filled */
@@ -2187,6 +2200,7 @@ int ha_prepare_low(THD *thd, bool all) {
                  my_strerror(errbuf, MYSQL_ERRMSG_SIZE, err));
         error = 1;
       }
+      DBUG_ASSERT(!thd->status_var_aggregated);
       thd->status_var.ha_prepare_count++;
     }
     DBUG_EXECUTE_IF("crash_commit_after_prepare", DBUG_SUICIDE(););
@@ -2227,6 +2241,7 @@ int ha_savepoint(THD *thd, SAVEPOINT *sv) {
                my_strerror(errbuf, MYSQL_ERRMSG_SIZE, err));
       error = 1;
     }
+    DBUG_ASSERT(!thd->status_var_aggregated);
     thd->status_var.ha_savepoint_count++;
   }
   /*
@@ -2495,16 +2510,7 @@ void HA_CREATE_INFO::init_create_options_from_share(const TABLE_SHARE *share,
     compress = share->compress;
   }
 
-  /*
-     encrypt_type on the table is only meaningful for implicit
-     tablespaces, since the encryption is really a tablespace
-     attribute. So whenever a table is moved to a different tablespace
-     the encrypt_type must not be propagated. When moving
-     the table to a (new) implicit tablespace the encrypt_type will
-     only be set if explicitly requested with HA_CREATE_USED_ENCRYPT (by the
-     parser).
-  */
-  if (!(used_fields & (HA_CREATE_USED_ENCRYPT | HA_CREATE_USED_TABLESPACE))) {
+  if (!(used_fields & (HA_CREATE_USED_ENCRYPT))) {
     // Assert to check that used_fields flag and encrypt_type are in sync
     DBUG_ASSERT(!encrypt_type.str);
     encrypt_type = share->encrypt_type;
@@ -4323,7 +4329,7 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt) {
 }
 
 // Function identifies any old data type present in table.
-int check_table_for_old_types(const TABLE *table) {
+int check_table_for_old_types(const TABLE *table, bool check_temporal_upgrade) {
   Field **field;
 
   for (field = table->field; (*field); field++) {
@@ -4351,11 +4357,6 @@ int check_table_for_old_types(const TABLE *table) {
 
     if ((*field)->type() == MYSQL_TYPE_YEAR && (*field)->field_length == 2)
       return HA_ADMIN_NEEDS_ALTER;  // obsolete YEAR(2) type
-
-    // Check for old temporal format if avoid_temporal_upgrade is disabled.
-    mysql_mutex_lock(&LOCK_global_system_variables);
-    bool check_temporal_upgrade = !avoid_temporal_upgrade;
-    mysql_mutex_unlock(&LOCK_global_system_variables);
 
     if (check_temporal_upgrade) {
       if (((*field)->real_type() == MYSQL_TYPE_TIME) ||
@@ -4480,7 +4481,13 @@ int handler::ha_check(THD *thd, HA_CHECK_OPT *check_opt) {
     return 0;
 
   if (table->s->mysql_version < MYSQL_VERSION_ID) {
-    if ((error = check_table_for_old_types(table))) return error;
+    // Check for old temporal format if avoid_temporal_upgrade is disabled.
+    mysql_mutex_lock(&LOCK_global_system_variables);
+    const bool check_temporal_upgrade = !avoid_temporal_upgrade;
+    mysql_mutex_unlock(&LOCK_global_system_variables);
+
+    if ((error = check_table_for_old_types(table, check_temporal_upgrade)))
+      return error;
     error = ha_check_for_upgrade(check_opt);
     if (error && (error != HA_ADMIN_NEEDS_CHECK)) return error;
     if (!error && (check_opt->sql_flags & TT_FOR_UPGRADE)) return 0;
@@ -4836,7 +4843,22 @@ int handler::ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info,
 }
 
 /**
+ * Prepares the secondary engine for table load.
+ *
+ * @param table The table to load into the secondary engine. Its read_set tells
+ * which columns to load.
+ *
+ * @sa handler::prepare_load_table()
+ */
+int handler::ha_prepare_load_table(const TABLE &table) {
+  return prepare_load_table(table);
+}
+
+/**
  * Loads a table into its defined secondary storage engine: public interface.
+ *
+ * @param table The table to load into the secondary engine. Its read_set tells
+ * which columns to load.
  *
  * @sa handler::load_table()
  */
@@ -5467,7 +5489,10 @@ static int ha_discover(THD *thd, const char *db, const char *name,
                      &args))
     error = 0;
 
-  if (!error) thd->status_var.ha_discover_count++;
+  if (!error) {
+    DBUG_ASSERT(!thd->status_var_aggregated);
+    thd->status_var.ha_discover_count++;
+  }
   DBUG_RETURN(error);
 }
 
@@ -6301,7 +6326,10 @@ int DsMrr_impl::dsmrr_init(RANGE_SEQ_IF *seq_funcs, void *seq_init_param,
 
   is_mrr_assoc = !(mode & HA_MRR_NO_ASSOCIATION);
 
-  if (is_mrr_assoc) table->in_use->status_var.ha_multi_range_read_init_count++;
+  if (is_mrr_assoc) {
+    DBUG_ASSERT(!thd->status_var_aggregated);
+    table->in_use->status_var.ha_multi_range_read_init_count++;
+  }
 
   rowids_buf_end = buf->buffer_end;
   elem_size = h->ref_length + (int)is_mrr_assoc * sizeof(void *);
@@ -8634,7 +8662,7 @@ void ha_post_recover(void) {
 
 void handler::ha_set_primary_handler(handler *primary_handler) {
   DBUG_ASSERT((ht->flags & HTON_IS_SECONDARY_ENGINE) != 0);
-  DBUG_ASSERT(primary_handler->table->s->has_secondary());
+  DBUG_ASSERT(primary_handler->table->s->has_secondary_engine());
   m_primary_handler = primary_handler;
 }
 

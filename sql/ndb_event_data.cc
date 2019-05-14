@@ -170,7 +170,7 @@ TABLE* Ndb_event_data::open_shadow_table(THD* thd, const char* db,
   if ((error = open_table_def(thd, shadow_table_share, *table_def)) ||
       (error = open_table_from_share(
            thd, shadow_table_share, "", 0,
-           (uint)(OPEN_FRM_FILE_ONLY | DELAYED_OPEN | READ_ALL), 0,
+           (uint)(SKIP_NEW_HANDLER | DELAYED_OPEN | READ_ALL), 0,
            shadow_table, false, table_def))) {
     DBUG_PRINT("error", ("failed to open shadow table, error: %d", error));
     free_table_share(shadow_table_share);
@@ -251,7 +251,7 @@ Ndb_event_data* Ndb_event_data::create_event_data(
 
 void Ndb_event_data::destroy(const Ndb_event_data* event_data)
 {
-  DBUG_ENTER("delete_event_data");
+  DBUG_ENTER("Ndb_event_data::destroy");
 
   delete event_data;
 

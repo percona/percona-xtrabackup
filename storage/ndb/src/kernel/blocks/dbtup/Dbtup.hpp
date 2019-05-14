@@ -560,12 +560,7 @@ typedef Ptr<Fragoperrec> FragoperrecPtr;
   STATIC_CONST( EXTENT_SEARCH_MATRIX_ROWS = 5 ); // Total size
   STATIC_CONST( EXTENT_SEARCH_MATRIX_SIZE = 20 );
   
-  struct Extent_list_t
-  {
-    Uint32 nextList;
-  };
-
-  struct Extent_info : public Extent_list_t
+  struct Extent_info
   {
     Uint32 m_magic;
     Uint32 m_first_page_no;
@@ -580,6 +575,7 @@ typedef Ptr<Fragoperrec> FragoperrecPtr;
     };
     Uint32 prevList;
     Uint32 nextHash, prevHash;
+    Uint32 nextFragment;
 
     Uint32 hashValue() const {
       return (m_key.m_file_no << 16) ^ m_key.m_page_idx;
@@ -596,8 +592,8 @@ typedef Ptr<Fragoperrec> FragoperrecPtr;
   typedef DLList<Extent_info_pool> Extent_info_list;
   typedef LocalDLList<Extent_info_pool> Local_extent_info_list;
   typedef DLHashTable<Extent_info_pool> Extent_info_hash;
-  typedef SLList<Extent_info_pool, Extent_list_t> Fragment_extent_list;
-  typedef LocalSLList<Extent_info_pool, Extent_list_t> Local_fragment_extent_list;
+  typedef SLList<Extent_info_pool, IA_Fragment> Fragment_extent_list;
+  typedef LocalSLList<Extent_info_pool, IA_Fragment> Local_fragment_extent_list;
   struct Tablerec;
   struct Disk_alloc_info 
   {
@@ -1214,7 +1210,8 @@ TupTriggerData_pool c_triggerPool;
     State tableStatus;
     Local_key m_default_value_location;
   };  
-  Uint32 m_read_ctl_file_data[BackupFormat::NDB_LCP_CTL_FILE_SIZE_BIG / 4];
+  Uint32
+    m_read_ctl_file_data[BackupFormat::LCP_CTL_FILE_BUFFER_SIZE_IN_WORDS];
   /*
     It is more space efficient to store dynamic fixed-size attributes
     of more than about 16 words as variable-sized internally.
@@ -1502,6 +1499,15 @@ typedef Ptr<HostBuffer> HostBufferPtr;
      data. In the case of abort, the varpart must then be shrunk. For a
      MM_GROWN tuple, the original size is stored in the last word of the
      varpart until commit.
+
+     DELETE_WAIT: When a tuple has been marked to be deleted, the tuple header
+     has the DELETE_WAIT bit set. Note that DELETE_WAIT means that the tuple
+     hasn't actually been deleted. When a tuple has been deleted, it is marked
+     with the FREE flag and DELETE_WAIT is reset.
+     The need for DELETE_WAIT arises due to the real-time break between the
+     marking of the tuple and the actual deletion of the tuple for disk data
+     rows. This information would be useful for reads since they'd know the
+     proper state of the row. (Related Bug #27584165)
     */
     STATIC_CONST( TUP_VERSION_MASK = 0xFFFF );
     STATIC_CONST( COPY_TUPLE  = 0x00010000 ); // Is this a copy tuple
@@ -1516,6 +1522,7 @@ typedef Ptr<HostBuffer> HostBufferPtr;
     STATIC_CONST( VAR_PART    = 0x04000000 ); // Is there a varpart
     STATIC_CONST( REORG_MOVE  = 0x08000000 ); // Tuple will be moved in reorg
     STATIC_CONST( LCP_DELETE  = 0x10000000 ); // Tuple deleted at LCP start
+    STATIC_CONST( DELETE_WAIT = 0x20000000 ); // Waiting for delete tuple page
 
     Tuple_header() {}
     Uint32 get_tuple_version() const { 

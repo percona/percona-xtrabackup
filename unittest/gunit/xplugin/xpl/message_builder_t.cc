@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@
 #include "plugin/x/ngs/include/ngs/protocol/metadata_builder.h"
 #include "plugin/x/ngs/include/ngs/protocol/notice_builder.h"
 #include "plugin/x/ngs/include/ngs/protocol/page_output_stream.h"
-#include "plugin/x/ngs/include/ngs_common/protocol_protobuf.h"
+#include "plugin/x/ngs/include/ngs/protocol/protocol_protobuf.h"
 #include "unittest/gunit/xplugin/xpl/protobuf_message.h"
 
 namespace xpl {
@@ -69,12 +69,12 @@ TYPED_TEST_CASE(Message_builder_encode_resultset, Resultset_types);
 
 TYPED_TEST(Message_builder_encode_resultset, encode_resultset) {
   Message_builder mb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Page_output_stream> obuffer(
+  std::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  std::unique_ptr<Page_output_stream> obuffer(
       new Page_output_stream(*page_pool));
 
   mb.encode_empty_message(obuffer.get(), TypeParam::message_id);
-  ngs::unique_ptr<typename TypeParam::ResultsetType> msg(
+  std::unique_ptr<typename TypeParam::ResultsetType> msg(
       message_from_buffer<typename TypeParam::ResultsetType>(obuffer.get()));
 
   ASSERT_TRUE(nullptr != msg);
@@ -83,12 +83,12 @@ TYPED_TEST(Message_builder_encode_resultset, encode_resultset) {
 
 TEST(message_builder, encode_stmt_execute_ok) {
   Message_builder mb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Page_output_stream> obuffer(
+  std::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  std::unique_ptr<Page_output_stream> obuffer(
       new Page_output_stream(*page_pool));
 
   mb.encode_empty_message(obuffer.get(), Mysqlx::ServerMessages::OK);
-  ngs::unique_ptr<Mysqlx::Sql::StmtExecuteOk> msg(
+  std::unique_ptr<Mysqlx::Sql::StmtExecuteOk> msg(
       message_from_buffer<Mysqlx::Sql::StmtExecuteOk>(obuffer.get()));
 
   ASSERT_TRUE(NULL != msg);
@@ -97,8 +97,8 @@ TEST(message_builder, encode_stmt_execute_ok) {
 
 TEST(message_builder, encode_compact_metadata) {
   Metadata_builder mb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Page_output_stream> obuffer(
+  std::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  std::unique_ptr<Page_output_stream> obuffer(
       new Page_output_stream(*page_pool));
 
   const uint64 COLLATION = 1u;
@@ -118,7 +118,7 @@ TEST(message_builder, encode_compact_metadata) {
   column_info.set_content_type(CONTENT_TYPE);
   mb.encode_metadata(&column_info.get());
 
-  ngs::unique_ptr<Mysqlx::Resultset::ColumnMetaData> msg(
+  std::unique_ptr<Mysqlx::Resultset::ColumnMetaData> msg(
       message_from_buffer<Mysqlx::Resultset::ColumnMetaData>(
           mb.stop_metadata_encoding()));
 
@@ -147,8 +147,8 @@ TEST(message_builder, encode_compact_metadata) {
 
 TEST(message_builder, encode_full_metadata) {
   Metadata_builder mb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Page_output_stream> obuffer(
+  std::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  std::unique_ptr<Page_output_stream> obuffer(
       new Page_output_stream(*page_pool));
 
   const uint64 COLLATION = 2u;
@@ -178,7 +178,7 @@ TEST(message_builder, encode_full_metadata) {
 
   mb.encode_metadata(&column_info.get());
 
-  ngs::unique_ptr<Mysqlx::Resultset::ColumnMetaData> msg(
+  std::unique_ptr<Mysqlx::Resultset::ColumnMetaData> msg(
       message_from_buffer<Mysqlx::Resultset::ColumnMetaData>(
           mb.stop_metadata_encoding()));
 
@@ -212,24 +212,25 @@ TEST(message_builder, encode_full_metadata) {
 
 TEST(message_builder, encode_notice_frame) {
   Notice_builder mb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Page_output_stream> obuffer(
+  std::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  std::unique_ptr<Page_output_stream> obuffer(
       new Page_output_stream(*page_pool));
 
   const uint32 TYPE = 2;
   const int SCOPE = Mysqlx::Notice::Frame_Scope_GLOBAL;
   const std::string DATA = "\0\0\1\12\12aaa\0";
 
-  mb.encode_frame(obuffer.get(), TYPE, DATA, SCOPE);
+  const bool is_local = false;
+  mb.encode_frame(obuffer.get(), TYPE, is_local, DATA);
 
-  ngs::unique_ptr<Mysqlx::Notice::Frame> msg(
+  std::unique_ptr<Mysqlx::Notice::Frame> msg(
       message_from_buffer<Mysqlx::Notice::Frame>(obuffer.get()));
 
   ASSERT_TRUE(NULL != msg);
 
   ASSERT_TRUE(msg->has_type());
   ASSERT_EQ(TYPE, msg->type());
-  ASSERT_TRUE(msg->has_scope());
+  ASSERT_FALSE(msg->has_scope());
   ASSERT_EQ(SCOPE, msg->scope());
   ASSERT_TRUE(msg->has_payload());
   ASSERT_EQ(DATA, msg->payload());
@@ -237,15 +238,15 @@ TEST(message_builder, encode_notice_frame) {
 
 TEST(message_builder, encode_notice_rows_affected) {
   Notice_builder mb;
-  ngs::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
-  ngs::unique_ptr<Page_output_stream> obuffer(
+  std::unique_ptr<Page_pool> page_pool(new Page_pool(default_pool_config));
+  std::unique_ptr<Page_output_stream> obuffer(
       new Page_output_stream(*page_pool));
 
   const uint64 ROWS_AFFECTED = 10001u;
 
   mb.encode_rows_affected(obuffer.get(), ROWS_AFFECTED);
 
-  ngs::unique_ptr<Mysqlx::Notice::Frame> msg(
+  std::unique_ptr<Mysqlx::Notice::Frame> msg(
       message_from_buffer<Mysqlx::Notice::Frame>(obuffer.get()));
 
   ASSERT_TRUE(NULL != msg);

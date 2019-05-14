@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,6 @@
 #include <sys/types.h>
 #include <string>
 
-#include "binary_log_types.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "map_helpers.h"
@@ -38,7 +37,6 @@
 #include "sql/item.h"     // Item::Type
 #include "sql/sp_head.h"  // Stored_program_creation_ctx
 #include "sql/sql_lex.h"
-#include "sql/thr_malloc.h"
 
 class Object_creation_ctx;
 class Query_arena;
@@ -159,7 +157,7 @@ class Stored_routine_creation_ctx : public Stored_program_creation_ctx {
  protected:
   virtual Object_creation_ctx *create_backup_ctx(THD *thd) const {
     DBUG_ENTER("Stored_routine_creation_ctx::create_backup_ctx");
-    DBUG_RETURN(new (*THR_MALLOC) Stored_routine_creation_ctx(thd));
+    DBUG_RETURN(new (thd->mem_root) Stored_routine_creation_ctx(thd));
   }
 
   virtual void delete_backup_ctx() { destroy(this); }

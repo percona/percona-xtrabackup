@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,7 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "template_utils.h"
 
 #define is_mb_1(c) ((uchar)(c) <= 0x7F)
 #define is_mb_odd(c) (0x81 <= (uchar)(c) && (uchar)(c) <= 0xFE)
@@ -19962,8 +19963,10 @@ static int my_strnncoll_gb18030_internal(const CHARSET_INFO *cs,
   DBUG_ASSERT(cs != NULL);
 
   while (s < se && t < te) {
-    uint mblen_s = my_ismbchar_gb18030(cs, (char *)s, (char *)se);
-    uint mblen_t = my_ismbchar_gb18030(cs, (char *)t, (char *)te);
+    uint mblen_s = my_ismbchar_gb18030(cs, pointer_cast<const char *>(s),
+                                       pointer_cast<const char *>(se));
+    uint mblen_t = my_ismbchar_gb18030(cs, pointer_cast<const char *>(t),
+                                       pointer_cast<const char *>(te));
 
     if (mblen_s > 0 && mblen_t > 0) {
       uint code_s = get_weight_for_mbchar(cs, s, mblen_s);
@@ -20302,9 +20305,9 @@ static int my_wildcmp_gb18030(const CHARSET_INFO *cs, const char *str,
   @param[in,out] n2   n2
 */
 static void my_hash_sort_gb18030(const CHARSET_INFO *cs, const uchar *s,
-                                 size_t slen, ulong *n1, ulong *n2) {
+                                 size_t slen, uint64 *n1, uint64 *n2) {
   const uchar *e = s + slen;
-  ulong tmp1, tmp2;
+  uint64 tmp1, tmp2;
   size_t len;
   size_t s_gb;
   uint ch;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,6 +53,10 @@ class mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
                bool(uint32_t group_id, xcom_event_horizon &event_horizon));
   MOCK_METHOD2(xcom_client_set_event_horizon,
                bool(uint32_t group_id, xcom_event_horizon event_horizon));
+  MOCK_METHOD4(xcom_client_get_synode_app_data,
+               bool(connection_descriptor *con, uint32_t group_id_hash,
+                    synode_no_array &synodes, synode_app_data_array &reply));
+  MOCK_METHOD1(xcom_client_set_cache_size, bool(uint64_t size));
   MOCK_METHOD2(xcom_client_boot, bool(node_list *nl, uint32_t group_id));
   MOCK_METHOD2(xcom_client_open_connection,
                connection_descriptor *(std::string, xcom_port port));
@@ -122,7 +126,6 @@ class XcomGroupManagementTest : public GcsBaseTest {
   }
 
   Gcs_group_identifier *group_id;
-  Gcs_xcom_state_exchange *state_exchange;
 
   mock_gcs_xcom_proxy proxy;
   Gcs_xcom_group_management *xcom_group_mgmt_if;

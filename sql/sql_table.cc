@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,8 +38,8 @@
 #include <string>
 #include <type_traits>
 
-#include "binary_log_types.h"
 #include "binlog_event.h"
+#include "field_types.h"  // enum_field_types
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"  // my_stpncpy
@@ -83,6 +83,7 @@
 #include "sql/dd/properties.h"  // dd::Properties
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/abstract_table.h"
+#include "sql/dd/types/check_constraint.h"  // dd::Check_constraint
 #include "sql/dd/types/column.h"
 #include "sql/dd/types/foreign_key.h"          // dd::Foreign_key
 #include "sql/dd/types/foreign_key_element.h"  // dd::Foreign_key_element
@@ -127,7 +128,8 @@
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
 #include "sql/sql_base.h"         // lock_table_names
 #include "sql/sql_bitmap.h"
-#include "sql/sql_class.h"  // THD
+#include "sql/sql_check_constraint.h"  // Sql_check_constraint_spec*
+#include "sql/sql_class.h"             // THD
 #include "sql/sql_const.h"
 #include "sql/sql_db.h"  // get_default_db_collation
 #include "sql/sql_error.h"
@@ -150,7 +152,6 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thd_raii.h"
-#include "sql/thr_malloc.h"
 #include "sql/transaction.h"  // trans_commit_stmt
 #include "sql/transaction_info.h"
 #include "sql/trigger.h"
@@ -199,6 +200,29 @@ static bool prepare_enum_field(THD *thd, Create_field *sql_field);
 
 static uint blob_length_by_type(enum_field_types type);
 static const Create_field *get_field_by_index(Alter_info *alter_info, uint idx);
+
+static bool generate_check_constraint_name(THD *thd, const char *table_name,
+                                           uint ordinal_number,
+                                           LEX_STRING &name,
+                                           bool skip_validation);
+static bool push_check_constraint_mdl_request_to_list(
+    THD *thd, const char *db, const char *cc_name,
+    MDL_request_list &cc_mdl_request_list);
+static bool prepare_check_constraints_for_create(THD *thd, const char *db_name,
+                                                 const char *table_name,
+                                                 Alter_info *alter_info);
+static bool prepare_check_constraints_for_create_like_table(
+    THD *thd, TABLE_LIST *src_table, TABLE_LIST *table, Alter_info *alter_info);
+static bool prepare_check_constraints_for_alter(THD *thd, const TABLE *table,
+                                                Alter_info *alter_info,
+                                                Alter_table_ctx *alter_tbl_ctx);
+static void set_check_constraints_alter_mode(dd::Table *table,
+                                             Alter_info *alter_info);
+static void reset_check_constraints_alter_mode(dd::Table *table);
+static bool adjust_check_constraint_names_for_old_table_version(
+    THD *thd, const char *old_table_db, dd::Table *old_table);
+static bool is_any_check_constraints_evaluation_required(
+    const Alter_info *alter_info);
 
 /**
   RAII class to control the atomic DDL commit on slave.
@@ -772,24 +796,25 @@ size_t build_tmptable_filename(THD *thd, char *buff, size_t bufflen) {
   The temporary table is also created in the storage engine, depending
   on the 'no_ha_table' argument.
 
-  @param thd           Thread handler
-  @param path          Name of file (including database)
-  @param sch_obj       Schema.
-  @param db            Schema name.
-                       Cannot use dd::Schema::name() directly due to LCTN.
-  @param table_name    Table name
-  @param create_info   create info parameters
-  @param create_fields Fields to create
-  @param keys          number of keys to create
-  @param key_info      Keys to create
-  @param keys_onoff    Enable or disable keys.
-  @param file          Handler to use
-  @param no_ha_table   Indicates that only definitions needs to be created
-                       and not a table in the storage engine.
+  @param thd                 Thread handler
+  @param path                Name of file (including database)
+  @param sch_obj             Schema.
+  @param db                  Schema name.
+                             Cannot use dd::Schema::name() directly due to LCTN.
+  @param table_name          Table name
+  @param create_info         create info parameters
+  @param create_fields       Fields to create
+  @param keys                number of keys to create
+  @param key_info            Keys to create
+  @param keys_onoff          Enable or disable keys.
+  @param check_cons_spec     List of check constraint specification.
+  @param file                Handler to use
+  @param no_ha_table         Indicates that only definitions needs to be created
+                             and not a table in the storage engine.
   @param[out] binlog_to_trx_cache
-                       Which binlog cache should be used?
-                       If true => trx cache
-                       If false => stmt cache
+                             Which binlog cache should be used?
+                             If true => trx cache
+                             If false => stmt cache
   @param[out] tmp_table_def  Data-dictionary object for temporary table
                              which was created. Is not set if no_ha_table
                              was false.
@@ -802,14 +827,15 @@ static bool rea_create_tmp_table(
     THD *thd, const char *path, const dd::Schema &sch_obj, const char *db,
     const char *table_name, HA_CREATE_INFO *create_info,
     List<Create_field> &create_fields, uint keys, KEY *key_info,
-    Alter_info::enum_enable_or_disable keys_onoff, handler *file,
+    Alter_info::enum_enable_or_disable keys_onoff,
+    const Sql_check_constraint_spec_list *check_cons_spec, handler *file,
     bool no_ha_table, bool *binlog_to_trx_cache,
     std::unique_ptr<dd::Table> *tmp_table_def) {
   DBUG_ENTER("rea_create_tmp_table");
 
   std::unique_ptr<dd::Table> tmp_table_ptr =
       dd::create_tmp_table(thd, sch_obj, table_name, create_info, create_fields,
-                           key_info, keys, keys_onoff, file);
+                           key_info, keys, keys_onoff, check_cons_spec, file);
   if (!tmp_table_ptr) DBUG_RETURN(true);
 
   if (no_ha_table) {
@@ -850,30 +876,32 @@ static bool rea_create_tmp_table(
   Create table definition in the Data Dictionary. The table is also
   created in the storage engine, depending on the 'no_ha_table' argument.
 
-  @param thd           Thread handler
-  @param path          Name of file (including database)
-  @param sch_obj       Schema.
-  @param db            Schema name.
-                       Cannot use dd::Schema::name() directly due to LCTN.
-  @param table_name    Table name
-  @param create_info   create info parameters
-  @param create_fields Fields to create
-  @param keys          number of keys to create
-  @param key_info      Keys to create
-  @param keys_onoff    Enable or disable keys.
-  @param fk_keys       Number of foreign keys to create
-  @param fk_key_info   Foreign keys to create
-  @param file          Handler to use
-  @param no_ha_table   Indicates that only definitions needs to be created
-                       and not a table in the storage engine.
-  @param do_not_store_in_dd   Indicates that we should postpone storing table
-                              object in the data-dictionary. Requires SE
-                              supporting atomic DDL and no_ha_table flag set.
-  @param part_info     Reference to partitioning data structure.
+  @param thd             Thread handler
+  @param path            Name of file (including database)
+  @param sch_obj         Schema.
+  @param db              Schema name.
+                         Cannot use dd::Schema::name() directly due to
+                         LCTN.
+  @param table_name      Table name
+  @param create_info     create info parameters
+  @param create_fields   Fields to create
+  @param keys            number of keys to create
+  @param key_info        Keys to create
+  @param keys_onoff      Enable or disable keys.
+  @param fk_keys         Number of foreign keys to create
+  @param fk_key_info     Foreign keys to create
+  @param check_cons_spec List of check constraint specifications.
+  @param file            Handler to use
+  @param no_ha_table     Indicates that only definitions needs to be
+                         created and not a table in the storage engine.
+  @param do_not_store_in_dd    Indicates that we should postpone storing table
+                               object in the data-dictionary. Requires SE
+                               supporting atomic DDL and no_ha_table flag set.
+  @param part_info             Reference to partitioning data structure.
   @param[out] binlog_to_trx_cache
-                       Which binlog cache should be used?
-                       If true => trx cache
-                       If false => stmt cache
+                         Which binlog cache should be used?
+                         If true => trx cache
+                         If false => stmt cache
   @param[out] table_def_ptr  dd::Table object describing the table
                              created if do_not_store_in_dd option was
                              used. Not set otherwise.
@@ -894,15 +922,16 @@ static bool rea_create_base_table(
     const char *table_name, HA_CREATE_INFO *create_info,
     List<Create_field> &create_fields, uint keys, KEY *key_info,
     Alter_info::enum_enable_or_disable keys_onoff, uint fk_keys,
-    FOREIGN_KEY *fk_key_info, handler *file, bool no_ha_table,
-    bool do_not_store_in_dd, partition_info *part_info,
+    FOREIGN_KEY *fk_key_info,
+    const Sql_check_constraint_spec_list *check_cons_spec, handler *file,
+    bool no_ha_table, bool do_not_store_in_dd, partition_info *part_info,
     bool *binlog_to_trx_cache, std::unique_ptr<dd::Table> *table_def_ptr,
     handlerton **post_ddl_ht) {
   DBUG_ENTER("rea_create_base_table");
 
-  std::unique_ptr<dd::Table> table_def_res =
-      dd::create_table(thd, sch_obj, table_name, create_info, create_fields,
-                       key_info, keys, keys_onoff, fk_key_info, fk_keys, file);
+  std::unique_ptr<dd::Table> table_def_res = dd::create_table(
+      thd, sch_obj, table_name, create_info, create_fields, key_info, keys,
+      keys_onoff, fk_key_info, fk_keys, check_cons_spec, file);
 
   if (!table_def_res) DBUG_RETURN(true);
 
@@ -1449,6 +1478,8 @@ bool mysql_rm_table(THD *thd, TABLE_LIST *tables, bool if_exists,
 
     if (rm_table_do_discovery_and_lock_fk_tables(thd, tables))
       DBUG_RETURN(true);
+
+    if (lock_check_constraint_names(thd, tables)) DBUG_RETURN(true);
   }
 
   std::vector<MDL_ticket *> safe_to_release_mdl;
@@ -1650,8 +1681,8 @@ class Drop_tables_ctx {
   quoting and schema part if necessary.
 */
 
-static void append_table_ident(THD *thd, String *to, const TABLE_LIST *table,
-                               bool force_db) {
+static void append_table_ident(const THD *thd, String *to,
+                               const TABLE_LIST *table, bool force_db) {
   //  Don't write the database name if it is the current one.
   if (thd->db().str == NULL || strcmp(table->db, thd->db().str) != 0 ||
       force_db) {
@@ -2404,7 +2435,7 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
                                              const HA_CREATE_INFO &create_info,
                                              const TABLE &table) {
   // Validation necessary only for tables with a secondary engine defined.
-  if (!table.s->has_secondary()) return false;
+  if (!table.s->has_secondary_engine()) return false;
 
   // Changing table option is the only valid ALTER TABLE operation.
   constexpr uint64_t supported_alter_operations = Alter_info::ALTER_OPTIONS;
@@ -2431,20 +2462,26 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
 /**
  * Loads a table from its primary engine into its secondary engine.
  *
- * @note An MDL_SHARED_NO_WRITE or stronger lock on the table must have been
- * acquired prior to calling this function to prevent writes into the table
- * while it's being loaded.
+ * @note An MDL_EXCLUSIVE lock on the table must have been acquired prior to
+ * calling this function to ensure that all currently running DML statements
+ * commit before load begins.
  *
- * @param thd        Thread handler.
- * @param table      Table in primary storage engine.
+ * @param thd              Thread handler.
+ * @param table            Table in primary storage engine.
  *
  * @return True if error, false otherwise.
  */
 static bool secondary_engine_load_table(THD *thd, const TABLE &table) {
   DBUG_ASSERT(thd->mdl_context.owns_equal_or_stronger_lock(
-      MDL_key::TABLE, table.s->db.str, table.s->table_name.str,
-      MDL_SHARED_NO_WRITE));
-  DBUG_ASSERT(table.s->has_secondary());
+      MDL_key::TABLE, table.s->db.str, table.s->table_name.str, MDL_EXCLUSIVE));
+  DBUG_ASSERT(table.s->has_secondary_engine());
+
+  // At least one column must be loaded into the secondary engine.
+  if (bitmap_bits_set(table.read_set) == 0) {
+    my_error(ER_SECONDARY_ENGINE, MYF(0),
+             "All columns marked as NOT SECONDARY");
+    return true;
+  }
 
   // The defined secondary engine must be the name of a valid storage engine.
   plugin_ref plugin =
@@ -2466,6 +2503,11 @@ static bool secondary_engine_load_table(THD *thd, const TABLE &table) {
   const bool is_partitioned = table.s->m_part_info != nullptr;
   unique_ptr_destroy_only<handler> handler(
       get_new_handler(table.s, is_partitioned, thd->mem_root, hton));
+
+  // Prepare the secondary engine for table load. The secondary engine can in
+  // this phase perform any necessary setup that is only possible while the
+  // server holds an MDL_EXCLUSIVE lock on the table.
+  if (handler->ha_prepare_load_table(table)) return true;
 
   // Load table from primary into secondary engine.
   return handler->ha_load_table(table);
@@ -4251,6 +4293,10 @@ bool prepare_create_field(THD *thd, HA_CREATE_INFO *create_info,
     DBUG_RETURN(true);
   }
 
+  LEX_CSTRING comment_cstr = {sql_field->comment.str,
+                              sql_field->comment.length};
+  if (is_invalid_string(comment_cstr, system_charset_info)) DBUG_RETURN(true);
+
   if (validate_comment_length(thd, sql_field->comment.str,
                               &sql_field->comment.length, COLUMN_COMMENT_MAXLEN,
                               ER_TOO_LONG_FIELD_COMMENT, sql_field->field_name))
@@ -4795,7 +4841,7 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
       auto flags =
           enum_query_type(QT_NO_DB | QT_NO_TABLE | QT_FORCE_INTRODUCERS);
       String out;
-      expression->print(&out, flags);
+      expression->print(thd, &out, flags);
 
       // Append a NULL-terminator, since Item::print does not necessarily add
       // one.
@@ -6081,6 +6127,27 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
       DBUG_RETURN(true);
     }
 
+    /*
+      Check constraints evaluation is done before writing row to the storage
+      engine but foreign key referential actions SET NULL, UPDATE CASCADE and
+      SET DEFAULT are executed by the engine. Check constraints can not be
+      evaluated for the these foreign key referential actions, so prohibit
+      them.
+    */
+    if (fk_info->delete_opt == FK_OPTION_SET_NULL ||
+        fk_info->delete_opt == FK_OPTION_DEFAULT ||
+        fk_info->update_opt == FK_OPTION_SET_NULL ||
+        fk_info->update_opt == FK_OPTION_DEFAULT ||
+        fk_info->update_opt == FK_OPTION_CASCADE) {
+      for (auto &cc_spec : alter_info->check_constraint_spec_list) {
+        if (cc_spec->expr_refers_column(find->field_name)) {
+          my_error(ER_CHECK_CONSTRAINT_CLAUSE_USING_FK_REFER_ACTION_COLUMN,
+                   MYF(0), find->field_name, cc_spec->name.str, fk_info->name);
+          DBUG_RETURN(true);
+        }
+      }
+    }
+
     referencing_fields.push_back(find);
 
     /*
@@ -6311,9 +6378,10 @@ static bool prepare_foreign_key(THD *thd, HA_CREATE_INFO *create_info,
   @param          table_name          Table name.
   @param          key_info            Array of indexes.
   @param          key_count           Number of indexes.
-  @param          existing_fks_table  dd::Table object for table version from
-                                      which pre-existing foreign keys come
-                                      from. Needed for error reporting.
+  @param          existing_fks_table  dd::Table object for table version
+                                      from which pre-existing foreign keys
+                                      come from. Needed for error
+                                      reporting.
   @param[in,out]  fk                  FOREIGN_KEY object describing
                                       pre-existing foreign key.
 
@@ -6352,6 +6420,27 @@ static bool prepare_preexisting_foreign_key(
         (sql_field->flags & NOT_NULL_FLAG)) {
       my_error(ER_FK_COLUMN_NOT_NULL, MYF(0), fk->key_part[j].str, fk->name);
       return true;
+    }
+
+    /*
+      Check constraints evaluation is done before writing row to the storage
+      engine but foreign key referential actions SET NULL, UPDATE CASCADE and
+      SET DEFAULT are executed by the engine. Check constraints can not be
+      evaluated for the these foreign key referential actions, so we prohibit
+      them.
+    */
+    if (fk->delete_opt == FK_OPTION_SET_NULL ||
+        fk->delete_opt == FK_OPTION_DEFAULT ||
+        fk->update_opt == FK_OPTION_SET_NULL ||
+        fk->update_opt == FK_OPTION_DEFAULT ||
+        fk->update_opt == FK_OPTION_CASCADE) {
+      for (auto &cc_spec : alter_info->check_constraint_spec_list) {
+        if (cc_spec->expr_refers_column(sql_field->field_name)) {
+          my_error(ER_CHECK_CONSTRAINT_CLAUSE_USING_FK_REFER_ACTION_COLUMN,
+                   MYF(0), sql_field->field_name, cc_spec->name.str, fk->name);
+          return true;
+        }
+      }
     }
   }
 
@@ -7065,14 +7154,14 @@ static bool add_functional_index_to_create_list(THD *thd, Key_spec *key_spec,
       return true;
     }
 
-    if (pre_validate_value_generator_expr(kp->get_expression(),
-                                          key_spec->name.str, true)) {
+    if (pre_validate_value_generator_expr(
+            kp->get_expression(), key_spec->name.str, VGS_GENERATED_COLUMN)) {
       return true;
     }
 
     Replace_field_processor_arg replace_field_argument(
         thd, &alter_info->create_list, create_info, key_spec->name.str);
-    if (expr->walk(&Item::replace_field_processor, Item::WALK_PREFIX,
+    if (expr->walk(&Item::replace_field_processor, enum_walk::PREFIX,
                    reinterpret_cast<uchar *>(&replace_field_argument))) {
       return true;
     }
@@ -7714,6 +7803,107 @@ static bool prepare_blob_field(THD *thd, Create_field *sql_field,
 }
 
 /**
+   Struct for representing the result of checking if a table exists
+   before trying to create it. The result has two different
+   dimensions; if the table actually exists, and if an error
+   occurd. If the table exists m_error will still be false if this is
+   CREATE IF NOT EXISTS.
+*/
+struct Table_exists_result {
+  /** true if the table already exists */
+  bool m_table_exists;
+
+  /** true if my_error() has been called and an error must be propagated. */
+  bool m_error;
+};
+
+/**
+   Check if table already exists.
+
+   @param thd                     thread handle
+   @param schema_name             schema name.
+   @param table_name              table name.
+   @param alias                   alt representation of table_name.
+   @param ha_lex_create_tmp_table true if creating a tmp table.
+   @param ha_create_if_not_exists true if this is CREATE IF NOT EXISTS.
+   @param internal_tmp_table      true if this is an internal tmp table.
+
+   @return false if successful, true otherwise.
+*/
+static Table_exists_result check_if_table_exists(
+    THD *thd, const char *schema_name, const char *table_name,
+    const char *alias, bool ha_lex_create_tmp_table,
+    bool ha_create_if_not_exists, bool internal_tmp_table) {
+  if (ha_lex_create_tmp_table &&
+      find_temporary_table(thd, schema_name, table_name)) {
+    if (ha_create_if_not_exists) {
+      push_warning_printf(thd, Sql_condition::SL_NOTE, ER_TABLE_EXISTS_ERROR,
+                          ER_THD(thd, ER_TABLE_EXISTS_ERROR), alias);
+      return {true, false};
+    }
+    my_error(ER_TABLE_EXISTS_ERROR, MYF(0), alias);
+    return {true, true};
+  }
+
+  if (!internal_tmp_table && !ha_lex_create_tmp_table &&
+      !dd::get_dictionary()->is_dd_table_name(schema_name, table_name)) {
+    const dd::Abstract_table *at = nullptr;
+    if (thd->dd_client()->acquire(schema_name, table_name, &at)) {
+      return {false, true};
+    }
+
+    if (at != nullptr) {
+      if (ha_create_if_not_exists) {
+        push_warning_printf(thd, Sql_condition::SL_NOTE, ER_TABLE_EXISTS_ERROR,
+                            ER_THD(thd, ER_TABLE_EXISTS_ERROR), alias);
+        return {true, false};
+      }
+      my_error(ER_TABLE_EXISTS_ERROR, MYF(0), table_name);
+      return {true, true};
+    }
+  }
+
+  /*
+    Check that table with given name does not already
+    exist in any storage engine. In such a case it should
+    be discovered and the error ER_TABLE_EXISTS_ERROR be returned
+    unless user specified CREATE TABLE IF EXISTS
+    An exclusive metadata lock ensures that no
+    one else is attempting to discover the table. Since
+    it's not on disk as a frm file, no one could be using it!
+  */
+  if (!ha_lex_create_tmp_table &&
+      !dd::get_dictionary()->is_dd_table_name(schema_name, table_name)) {
+    int retcode = ha_table_exists_in_engine(thd, schema_name, table_name);
+    DBUG_PRINT("info", ("exists_in_engine: %u", retcode));
+    switch (retcode) {
+      case HA_ERR_NO_SUCH_TABLE:
+        /* Normal case, no table exists. we can go and create it */
+        break;
+
+      case HA_ERR_TABLE_EXIST:
+        DBUG_PRINT("info", ("Table existed in handler"));
+
+        if (ha_create_if_not_exists) {
+          push_warning_printf(thd, Sql_condition::SL_NOTE,
+                              ER_TABLE_EXISTS_ERROR,
+                              ER_THD(thd, ER_TABLE_EXISTS_ERROR), alias);
+          return {true, false};
+        }
+        my_error(ER_TABLE_EXISTS_ERROR, MYF(0), table_name);
+        return {true, true};
+        break;
+
+      default:
+        DBUG_PRINT("info", ("error: %u from storage engine", retcode));
+        my_error(retcode, MYF(0), table_name);
+        return {true, true};
+    }
+  }
+  return {false, false};
+}
+
+/**
   Create a table
 
   @param thd                 Thread object
@@ -7883,7 +8073,7 @@ static bool create_table_impl(
       all tables as partitioned. The handler will set up the partition info
       object with the default settings.
     */
-    thd->work_part_info = part_info = new (*THR_MALLOC) partition_info();
+    thd->work_part_info = part_info = new (thd->mem_root) partition_info();
     if (!part_info) {
       mem_alloc_error(sizeof(partition_info));
       DBUG_RETURN(true);
@@ -7976,6 +8166,17 @@ static bool create_table_impl(
     }
   }
 
+  Table_exists_result ter = check_if_table_exists(
+      thd, db, table_name, alias,
+      (create_info->options & HA_LEX_CREATE_TMP_TABLE),
+      (create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS), internal_tmp_table);
+  if (ter.m_error) {
+    DBUG_RETURN(true);
+  }
+  if (ter.m_table_exists) {
+    DBUG_RETURN(false);
+  }
+
   /* Suppress key length errors if this is a white listed table. */
   Key_length_error_handler error_handler;
   bool is_whitelisted_table =
@@ -7992,73 +8193,6 @@ static bool create_table_impl(
   if (is_whitelisted_table) thd->pop_internal_handler();
 
   if (prepare_error) DBUG_RETURN(true);
-
-  /* Check if table already exists */
-  if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) &&
-      find_temporary_table(thd, db, table_name)) {
-    if (create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS) {
-      push_warning_printf(thd, Sql_condition::SL_NOTE, ER_TABLE_EXISTS_ERROR,
-                          ER_THD(thd, ER_TABLE_EXISTS_ERROR), alias);
-      DBUG_RETURN(false);
-    }
-    my_error(ER_TABLE_EXISTS_ERROR, MYF(0), alias);
-    DBUG_RETURN(true);
-  }
-
-  if (!internal_tmp_table &&
-      !(create_info->options & HA_LEX_CREATE_TMP_TABLE) &&
-      !dd::get_dictionary()->is_dd_table_name(db, table_name)) {
-    const dd::Abstract_table *at = nullptr;
-    if (thd->dd_client()->acquire(db, table_name, &at)) DBUG_RETURN(true);
-
-    if (at != nullptr) {
-      if (create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS) {
-        push_warning_printf(thd, Sql_condition::SL_NOTE, ER_TABLE_EXISTS_ERROR,
-                            ER_THD(thd, ER_TABLE_EXISTS_ERROR), alias);
-        DBUG_RETURN(false);
-      }
-      my_error(ER_TABLE_EXISTS_ERROR, MYF(0), table_name);
-      DBUG_RETURN(true);
-    }
-  }
-
-  /*
-    Check that table with given name does not already
-    exist in any storage engine. In such a case it should
-    be discovered and the error ER_TABLE_EXISTS_ERROR be returned
-    unless user specified CREATE TABLE IF EXISTS
-    An exclusive metadata lock ensures that no
-    one else is attempting to discover the table. Since
-    it's not on disk as a frm file, no one could be using it!
-  */
-  if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE) &&
-      !dd::get_dictionary()->is_dd_table_name(db, table_name)) {
-    bool create_if_not_exists =
-        create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS;
-    int retcode = ha_table_exists_in_engine(thd, db, table_name);
-    DBUG_PRINT("info", ("exists_in_engine: %u", retcode));
-    switch (retcode) {
-      case HA_ERR_NO_SUCH_TABLE:
-        /* Normal case, no table exists. we can go and create it */
-        break;
-      case HA_ERR_TABLE_EXIST:
-        DBUG_PRINT("info", ("Table existed in handler"));
-
-        if (create_if_not_exists) {
-          push_warning_printf(thd, Sql_condition::SL_NOTE,
-                              ER_TABLE_EXISTS_ERROR,
-                              ER_THD(thd, ER_TABLE_EXISTS_ERROR), alias);
-          DBUG_RETURN(false);
-        }
-        my_error(ER_TABLE_EXISTS_ERROR, MYF(0), table_name);
-        DBUG_RETURN(true);
-        break;
-      default:
-        DBUG_PRINT("info", ("error: %u from storage engine", retcode));
-        my_error(retcode, MYF(0), table_name);
-        DBUG_RETURN(true);
-    }
-  }
 
   THD_STAGE_INFO(thd, stage_creating_table);
 
@@ -8119,13 +8253,15 @@ static bool create_table_impl(
   if (create_info->options & HA_LEX_CREATE_TMP_TABLE) {
     if (rea_create_tmp_table(thd, path, schema, db, table_name, create_info,
                              alter_info->create_list, *key_count, *key_info,
-                             keys_onoff, file.get(), no_ha_table, is_trans,
-                             table_def))
+                             keys_onoff,
+                             &alter_info->check_constraint_spec_list,
+                             file.get(), no_ha_table, is_trans, table_def))
       DBUG_RETURN(true);
   } else {
     if (rea_create_base_table(thd, path, schema, db, table_name, create_info,
                               alter_info->create_list, *key_count, *key_info,
                               keys_onoff, *fk_key_count, *fk_key_info,
+                              &alter_info->check_constraint_spec_list,
                               file.get(), no_ha_table, do_not_store_in_dd,
                               part_info, is_trans, table_def, post_ddl_ht))
       DBUG_RETURN(true);
@@ -8143,6 +8279,56 @@ static bool create_table_impl(
     thd->server_status |= SERVER_STATUS_IN_TRANS;
   }
   DBUG_RETURN(false);
+}
+
+/*
+  This function disallows requests to use general tablespace for the table
+  with ENCRYPTION clause different from the general tablespace's encryption
+  type.
+
+  @param thd          Thread
+  @param create_info  Metadata of the table.
+
+  @returns true on failure, false on success.
+*/
+static bool validate_table_encryption(THD *thd, HA_CREATE_INFO *create_info) {
+  // Study if this table uses general tablespaces and if any one is encrypted.
+  bool uses_general_tablespace = false;
+  bool uses_encrypted_tablespace = false;
+  dd::Encrypt_result result =
+      dd::is_tablespace_encrypted(thd, create_info, &uses_general_tablespace);
+  if (result.error) return true;
+
+  if (uses_general_tablespace) {
+    uses_encrypted_tablespace = result.value;
+  } else if (!create_info->tablespace &&
+             create_info->db_type->get_tablespace_type_by_name) {
+    /*
+      No tablespace is explicitly specified. InnoDB can either use
+      file-per-table or general tablespace based on 'innodb_file_per_table'
+      setting, so ask SE about it.
+     */
+    Tablespace_type tt;
+    if (create_info->db_type->get_tablespace_type_by_name(
+            create_info->tablespace, &tt)) {
+      return true;
+    }
+    uses_general_tablespace = (tt != Tablespace_type::SPACE_TYPE_IMPLICIT);
+  }
+
+  /*
+    Stop if table's uses general tablespace and the requested encryption
+    type does not match the general tablespace encryption type.
+  */
+  bool requested_type = dd::is_encrypted(create_info->encrypt_type);
+  if (uses_general_tablespace && requested_type != uses_encrypted_tablespace) {
+    my_error(ER_INVALID_ENCRYPTION_REQUEST, MYF(0),
+             requested_type ? "'encrypted'" : "'unencrypted'",
+             uses_encrypted_tablespace ? "'encrypted'" : "'unencrypted'");
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -8197,6 +8383,49 @@ bool mysql_create_table_no_lock(THD *thd, const char *db,
   if (schema == nullptr) {
     my_error(ER_BAD_DB_ERROR, MYF(0), db);
     return true;
+  }
+
+  // Do not accept ENCRYPTION clause for temporary table.
+  if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) &&
+      create_info->encrypt_type.length) {
+    my_error(ER_CANNOT_USE_ENCRYPTION_CLAUSE, MYF(0), "temporary");
+    return true;
+  }
+
+  // Determine table encryption type, and check if user is allowed to create.
+  if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE)) {
+    /*
+      Assume table as encrypted, if user did not explicitly state it and
+      we have a schema with default encryption enabled.
+     */
+    if (!create_info->encrypt_type.length && schema->default_encryption()) {
+      create_info->encrypt_type = {strmake_root(thd->mem_root, "Y", 1), 1};
+    }
+
+    // Stop if it is invalid encryption clause, when using general tablespace.
+    if (validate_table_encryption(thd, create_info)) return true;
+
+    // Check table encryption privilege
+    if (create_info->encrypt_type.str || create_info->tablespace) {
+      /*
+        Check privilege only if request encryption type differ from schema
+        default encryption type.
+       */
+      bool request_type = dd::is_encrypted(create_info->encrypt_type);
+      if (schema->default_encryption() != request_type) {
+        if (opt_table_encryption_privilege_check) {
+          if (check_table_encryption_admin_access(thd)) {
+            my_error(ER_CANNOT_SET_TABLE_ENCRYPTION, MYF(0));
+            return true;
+          }
+        } else if (schema->default_encryption() && !request_type) {
+          push_warning_printf(
+              thd, Sql_condition::SL_WARNING,
+              WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB,
+              ER_THD(thd, WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB), "");
+        }
+      }
+    }
   }
 
   if (thd->is_plugin_fake_ddl()) no_ha_table = true;
@@ -9019,6 +9248,13 @@ bool mysql_create_table(THD *thd, TABLE_LIST *create_table,
     }
   }
 
+  // Prepare check constraints.
+  if (prepare_check_constraints_for_create(
+          thd, create_table->db, create_table->table_name, alter_info)) {
+    result = true;
+    goto end;
+  }
+
   /*
     Promote first timestamp column, when explicit_defaults_for_timestamp
     is not set
@@ -9355,6 +9591,8 @@ static bool alter_table_drop_histograms(THD *thd, TABLE_LIST *table,
                                   data-dictionary.
                    NO_FK_RENAME   Don't change generated foreign key names
                                   during rename.
+                   NO_CC_RENAME   Don't change generated check constraint
+                                  names during rename.
 
   @note Use of NO_DD_COMMIT flag only allowed for SEs supporting atomic DDL.
 
@@ -9447,6 +9685,10 @@ bool mysql_rename_table(THD *thd, handlerton *base, const char *old_db,
   */
   if (!(flags & NO_FK_RENAME) &&
       dd::rename_foreign_keys(thd, old_db, old_fk_name, new_db, to_table_def))
+    DBUG_RETURN(true);
+
+  if (!(flags & NO_CC_RENAME) &&
+      dd::rename_check_constraints(old_name, to_table_def))
     DBUG_RETURN(true);
 
   // Get the handler for the table, and issue an error if we cannot load it.
@@ -9641,6 +9883,10 @@ bool mysql_create_like_table(THD *thd, TABLE_LIST *table, TABLE_LIST *src_table,
                                 &local_alter_ctx))
     DBUG_RETURN(true);
 
+  if (prepare_check_constraints_for_create_like_table(thd, src_table, table,
+                                                      &local_alter_info))
+    DBUG_RETURN(true);
+
   /*
     During open_tables(), the target tablespace name(s) for a table being
     created or altered should be locked. However, for 'CREATE TABLE ... LIKE',
@@ -9716,6 +9962,15 @@ bool mysql_create_like_table(THD *thd, TABLE_LIST *table, TABLE_LIST *src_table,
   */
   if (src_table_obj && !src_table_obj->is_explicit_tablespace()) {
     local_create_info.tablespace = nullptr;
+  }
+
+  /*
+    Do not keep ENCRYPTION clause for unencrypted table.
+    We raise error if we are creating encrypted temporary table later.
+  */
+  if (local_create_info.encrypt_type.str &&
+      !dd::is_encrypted(local_create_info.encrypt_type)) {
+    local_create_info.encrypt_type = {nullptr, 0};
   }
 
   /*
@@ -9860,7 +10115,7 @@ bool mysql_create_like_table(THD *thd, TABLE_LIST *table, TABLE_LIST *src_table,
           */
           create_info->used_fields |= HA_CREATE_USED_ENGINE;
 
-          int result MY_ATTRIBUTE((unused)) = store_create_info(
+          bool result MY_ATTRIBUTE((unused)) = store_create_info(
               thd, table, &query, create_info, true /* show_database */);
 
           DBUG_ASSERT(result == 0);  // store_create_info() always return 0
@@ -10152,28 +10407,41 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
   DBUG_ASSERT(m_alter_info->requested_algorithm ==
               Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT);
 
-  // Load if SECONDARY_LOAD, unload if SECONDARY_UNLOAD
-  const bool is_load = m_alter_info->flags & Alter_info::ALTER_SECONDARY_LOAD;
+  table_list->mdl_request.set_type(MDL_EXCLUSIVE);
 
-  // If load, open table with MDL_SHARED_NO_WRITE lock to allow concurrent reads
-  // but no concurrent writes while table is being loaded into the secondary
-  // engine. If unload, open with EXCLUSIVE lock to ensure that queries already
-  // offloaded to the secondary engine finish execution before unloading the
-  // table.
-  const enum_mdl_type mdl_lock_type =
-      is_load ? MDL_SHARED_NO_WRITE : MDL_EXCLUSIVE;
-  table_list->mdl_request.set_type(mdl_lock_type);
+  // Always use isolation level READ_COMMITTED to ensure consistent view of
+  // table data during entire load operation. Higher isolation levels provide no
+  // benefits for this operation and could impact performance, so it's fine to
+  // downgrade from both REPEATABLE_READ and SERIALIZABLE.
+  const enum_tx_isolation orig_tx_isolation = thd->tx_isolation;
+  auto tx_isolation_guard = create_scope_guard(
+      [thd, orig_tx_isolation] { thd->tx_isolation = orig_tx_isolation; });
+  thd->tx_isolation = ISO_READ_COMMITTED;
 
   // Open base table.
   table_list->required_type = dd::enum_table_type::BASE_TABLE;
   if (open_and_lock_tables(thd, table_list, 0, &alter_prelocking_strategy))
     return true;
 
-  // Allow the secondary engine to load all columns.
-  table_list->table->use_all_columns();
+  // Omit hidden generated columns and columns marked as NOT SECONDARY from
+  // read_set. It is the responsibility of the secondary engine handler to load
+  // only the columns included in the read_set.
+  bitmap_clear_all(table_list->table->read_set);
+  for (Field **field = table_list->table->field; *field != nullptr; ++field) {
+    // Skip hidden generated columns.
+    if (bitmap_is_set(&table_list->table->fields_for_functional_indexes,
+                      (*field)->field_index))
+      continue;
+
+    // Skip columns marked as NOT SECONDARY.
+    if ((*field)->flags & NOT_SECONDARY_FLAG) continue;
+
+    // Mark column as eligible for loading.
+    table_list->table->mark_column_used(*field, MARK_COLUMNS_READ);
+  }
 
   // SECONDARY_LOAD/SECONDARY_UNLOAD requires a secondary engine.
-  if (!table_list->table->s->has_secondary()) {
+  if (!table_list->table->s->has_secondary_engine()) {
     my_error(ER_SECONDARY_ENGINE, MYF(0), "No secondary engine defined");
     return true;
   }
@@ -10195,16 +10463,14 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
 
   MDL_ticket *mdl_ticket = table_list->table->mdl_ticket;
 
-  // Under LOCK TABLES, upgrade to MDL_EXCLUSIVE, and downgrade back to
-  // MDL_SHARED_NO_READ_WRITE after all operations have completed.
-  const bool upgrade_lock =
-      thd->locked_tables_mode == LTM_LOCK_TABLES ||
-      thd->locked_tables_mode == LTM_PRELOCKED_UNDER_LOCK_TABLES;
-  auto downgrade_guard = create_scope_guard([mdl_ticket, upgrade_lock] {
-    if (upgrade_lock) mdl_ticket->downgrade_lock(MDL_SHARED_NO_READ_WRITE);
+  auto downgrade_guard = create_scope_guard([mdl_ticket, thd] {
+    // Under LOCK TABLES, downgrade to MDL_SHARED_NO_READ_WRITE after all
+    // operations have completed.
+    if (secondary_engine_lock_tables_mode(*thd)) {
+      mdl_ticket->downgrade_lock(MDL_SHARED_NO_READ_WRITE);
+    }
   });
-  if (upgrade_lock &&
-      thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
+  if (thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
                                            thd->variables.lock_wait_timeout))
     return true;
 
@@ -10223,6 +10489,9 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
     cleanup();
   });
 
+  // Load if SECONDARY_LOAD, unload if SECONDARY_UNLOAD
+  const bool is_load = m_alter_info->flags & Alter_info::ALTER_SECONDARY_LOAD;
+
   // Initiate loading into or unloading from secondary engine.
   const bool error =
       is_load ? secondary_engine_load_table(thd, *table_list->table)
@@ -10230,16 +10499,9 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
                     thd, table_list->db, table_list->table_name, *table_def);
   if (error) return true;
 
-  // Close base table. This requires an exclusive lock on the table.
-  if (thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
-                                           thd->variables.lock_wait_timeout))
-    return true;
+  // Close primary table.
   close_all_tables_for_name(thd, table_list->table->s, false, nullptr);
   table_list->table = nullptr;
-
-  // Write SECONDARY_LOAD/SECONDARY_UNLOAD statement to binlog.
-  if (write_bin_log(thd, false, thd->query().str, thd->query().length, true))
-    return true;
 
   // Commit transaction if no errors.
   if (trans_commit_stmt(thd) || trans_commit_implicit(thd)) return true;
@@ -10556,6 +10818,13 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
     ha_alter_info->handler_flags |= Alter_inplace_info::RECREATE_TABLE;
   if (alter_info->with_validation == Alter_info::ALTER_WITH_VALIDATION)
     ha_alter_info->handler_flags |= Alter_inplace_info::VALIDATE_VIRTUAL_COLUMN;
+  if (alter_info->flags & Alter_info::ADD_CHECK_CONSTRAINT)
+    ha_alter_info->handler_flags |= Alter_inplace_info::ADD_CHECK_CONSTRAINT;
+  if (alter_info->flags & Alter_info::DROP_CHECK_CONSTRAINT)
+    ha_alter_info->handler_flags |= Alter_inplace_info::DROP_CHECK_CONSTRAINT;
+  if (alter_info->flags & Alter_info::SUSPEND_CHECK_CONSTRAINT)
+    ha_alter_info->handler_flags |=
+        Alter_inplace_info::SUSPEND_CHECK_CONSTRAINT;
 
   /*
     Go through fields in old version of table and detect changes to them.
@@ -10774,7 +11043,7 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
   for (Field *vfield : gcols_with_unchanged_expr) {
     for (const char *col_name : cols_with_default_change) {
       if (vfield->gcol_info->expr_item->walk(
-              &Item::check_gcol_depend_default_processor, Item::WALK_POSTFIX,
+              &Item::check_gcol_depend_default_processor, enum_walk::POSTFIX,
               reinterpret_cast<uchar *>(const_cast<char *>(col_name)))) {
         if (vfield->is_virtual_gcol())
           ha_alter_info->handler_flags |=
@@ -11307,6 +11576,13 @@ static bool is_inplace_alter_impossible(TABLE *table,
     DBUG_RETURN(true);
 
   /*
+    Check constraints are evaluated in the server, if any check constraint
+    (re-)evalutation is required then it can't be added/enforced inplace.
+  */
+  if (is_any_check_constraints_evaluation_required(alter_info))
+    DBUG_RETURN(true);
+
+  /*
     If the table engine is changed explicitly (using ENGINE clause)
     or implicitly (e.g. when non-partitioned table becomes
     partitioned) a regular alter table (copy) needs to be
@@ -11738,21 +12014,19 @@ static bool table_is_empty(TABLE *table, bool *is_empty) {
 }
 
 /**
- * Removes secondary engine definition of a table if SECONDARY_ENGINE = NULL.
- *
- * Will also attempt to unload the table from its existing secondary engine.
+ * Unloads table from secondary engine if SECONDARY_ENGINE = NULL.
  *
  * @param thd               Thread handler.
  * @param table             Table opened in primary storage engine.
  * @param create_info       Information from the parsing phase about new
  *                          table properties.
- * @param altered_table_def Table definition of the table.
+ * @param old_table_def     Definition of table before the alter statement.
  *
  * @return True if error, false otherwise.
  */
 static bool remove_secondary_engine(THD *thd, const TABLE_LIST &table,
                                     const HA_CREATE_INFO &create_info,
-                                    dd::Table *altered_table_def) {
+                                    const dd::Table *old_table_def) {
   // Nothing to do if no secondary engine defined for the table.
   if (table.table->s->secondary_engine.str == nullptr) return false;
 
@@ -11768,12 +12042,8 @@ static bool remove_secondary_engine(THD *thd, const TABLE_LIST &table,
                                            thd->variables.lock_wait_timeout))
     return true;
 
-  if (secondary_engine_unload_table(thd, table.db, table.table_name,
-                                    *altered_table_def))
-    return true;
-
-  altered_table_def->options().remove("secondary_engine");
-  return false;
+  return secondary_engine_unload_table(thd, table.db, table.table_name,
+                                       *old_table_def);
 }
 
 /**
@@ -12141,6 +12411,9 @@ static bool mysql_inplace_alter_table(
     table_def = nullptr;
 
     DEBUG_SYNC_C("alter_table_after_dd_client_drop");
+
+    // Reset check constraint's mode.
+    reset_check_constraints_alter_mode(altered_table_def);
 
     if ((db_type->flags & HTON_SUPPORTS_ATOMIC_DDL)) {
       /*
@@ -12807,7 +13080,8 @@ static bool alter_column_name_or_default(
 
       if (alter->m_default_val_expr != nullptr &&
           pre_validate_value_generator_expr(
-              alter->m_default_val_expr->expr_item, alter->name, false))
+              alter->m_default_val_expr->expr_item, alter->name,
+              VGS_DEFAULT_EXPRESSION))
         DBUG_RETURN(true);
 
       // Default value is not permitted for generated columns
@@ -12882,7 +13156,7 @@ static bool is_field_used_by_functional_index(TABLE *table, uint field_index) {
       DBUG_ASSERT(tmp_vfield->gcol_info && tmp_vfield->gcol_info->expr_item);
       Mark_field mark_fld(MARK_COLUMNS_TEMP);
       tmp_vfield->gcol_info->expr_item->walk(
-          &Item::mark_field_in_map, Item::WALK_PREFIX, (uchar *)&mark_fld);
+          &Item::mark_field_in_map, enum_walk::PREFIX, (uchar *)&mark_fld);
       if (bitmap_is_set(table->read_set, field_index)) {
         table->read_set = save_old_read_set;
         return true;
@@ -13056,7 +13330,7 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
         This field was not dropped and the definition is not changed, add
         it to the list for the new table.
       */
-      def = new (*THR_MALLOC) Create_field(field, field);
+      def = new (thd->mem_root) Create_field(field, field);
 
       // Mark if collation was specified explicitly by user for the column.
       const dd::Table *obj =
@@ -13280,10 +13554,10 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
                                     ? ORDER_NOT_RELEVANT
                                     : ORDER_ASC);
       if (key_part->field->is_field_for_functional_index()) {
-        key_parts.push_back(new (*THR_MALLOC) Key_part_spec(
+        key_parts.push_back(new (thd->mem_root) Key_part_spec(
             cfield->field_name, key_part->field->gcol_info->expr_item, order));
       } else {
-        key_parts.push_back(new (*THR_MALLOC) Key_part_spec(
+        key_parts.push_back(new (thd->mem_root) Key_part_spec(
             to_lex_cstring(cfield->field_name), key_part_length, order));
       }
     }
@@ -13381,7 +13655,7 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
         If we have dropped a column associated with an index,
         this warrants a check for duplicate indexes
       */
-      new_key_list.push_back(new (*THR_MALLOC) Key_spec(
+      new_key_list.push_back(new (thd->mem_root) Key_spec(
           thd->mem_root, key_type, to_lex_cstring(key_name), &key_create_info,
           (key_info->flags & HA_GENERATED_KEY), index_column_dropped,
           key_parts));
@@ -13394,7 +13668,7 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
   }
 
   if (alter_info->drop_list.size() > 0) {
-    // Now this contains only DROP for foreign keys and not-found objects
+    // Now this contains only DROP for foreign keys and not-found objects.
     for (const Alter_drop *drop : alter_info->drop_list) {
       switch (drop->type) {
         case Alter_drop::KEY:
@@ -13402,6 +13676,13 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
           my_error(ER_CANT_DROP_FIELD_OR_KEY, MYF(0),
                    alter_info->drop_list[0]->name);
           DBUG_RETURN(true);
+        case Alter_drop::CHECK_CONSTRAINT:
+          /*
+            Check constraints to be dropped are already handled by the
+            prepare_check_constraints_for_alter().
+          */
+          DBUG_ASSERT(false);
+          break;
         case Alter_drop::FOREIGN_KEY:
           break;
         default:
@@ -13409,7 +13690,7 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
           break;
       }
     }
-    // new_drop_list has DROP for virtual generated columns; add foreign keys:
+    // new_drop_list has DROP for virtual generated columns; add foreign keys.
     new_drop_list.reserve(new_drop_list.size() + alter_info->drop_list.size());
     for (const Alter_drop *drop : alter_info->drop_list)
       new_drop_list.push_back(drop);
@@ -13965,21 +14246,61 @@ static bool simple_rename_or_index_change(
     if (wait_while_table_is_used(thd, table, HA_EXTRA_FORCE_REOPEN))
       DBUG_RETURN(true);
 
-    if (old_db_type->flags & HTON_SUPPORTS_FOREIGN_KEYS) {
-      const dd::Table *table_def = nullptr;
+    const dd::Table *table_def = nullptr;
+    if (thd->dd_client()->acquire(table_list->db, table_list->table_name,
+                                  &table_def))
+      DBUG_RETURN(true);
+    DBUG_ASSERT(table_def != nullptr);
 
-      if (thd->dd_client()->acquire(table_list->db, table_list->table_name,
-                                    &table_def))
+    /*
+      Check table encryption privilege, if rename changes database.
+    */
+    if (alter_ctx->is_database_changed()) {
+      bool is_general_tablespace{false};
+      bool is_table_encrypted{false};
+      dd::Encrypt_result result =
+          dd::is_tablespace_encrypted(thd, *table_def, &is_general_tablespace);
+      if (result.error) {
         DBUG_RETURN(true);
+      }
+      is_table_encrypted = result.value;
+      // If implicit tablespace, read the encryption clause value.
+      if (!is_general_tablespace &&
+          table_def->options().exists("encrypt_type")) {
+        dd::String_type et;
+        (void)table_def->options().get("encrypt_type", &et);
+        DBUG_ASSERT(et.empty() == false);
+        is_table_encrypted = is_encrypted(et);
+      }
 
-      DBUG_ASSERT(table_def != nullptr);
-
-      if (collect_and_lock_fk_tables_for_rename_table(
-              thd, table_list->db, table_list->table_name, table_def,
-              alter_ctx->new_db, alter_ctx->new_alias, old_db_type,
-              &fk_invalidator))
-        DBUG_RETURN(true);
+      // If table encryption differ from schema encryption, check privilege.
+      if (new_schema.default_encryption() != is_table_encrypted) {
+        if (opt_table_encryption_privilege_check) {
+          if (check_table_encryption_admin_access(thd)) {
+            my_error(ER_CANNOT_SET_TABLE_ENCRYPTION, MYF(0));
+            DBUG_RETURN(true);
+          }
+        } else if (new_schema.default_encryption() && !is_table_encrypted) {
+          push_warning_printf(
+              thd, Sql_condition::SL_WARNING,
+              WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB,
+              ER_THD(thd, WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB), "");
+        }
+      }
     }
+
+    if ((old_db_type->flags & HTON_SUPPORTS_FOREIGN_KEYS) &&
+        collect_and_lock_fk_tables_for_rename_table(
+            thd, table_list->db, table_list->table_name, table_def,
+            alter_ctx->new_db, alter_ctx->new_alias, old_db_type,
+            &fk_invalidator)) {
+      DBUG_RETURN(true);
+    }
+
+    if (lock_check_constraint_names_for_rename(
+            thd, table_list->db, table_list->table_name, table_def,
+            alter_ctx->new_db, alter_ctx->new_alias))
+      DBUG_RETURN(true);
 
     close_all_tables_for_name(thd, table->s, false, NULL);
 
@@ -14418,6 +14739,32 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
         (Alter_info::ALTER_ADD_COLUMN | Alter_info::ALTER_CHANGE_COLUMN))) {
     my_error(ER_WRONG_USAGE, MYF(0), "ALTER", "WITH VALIDATION");
     DBUG_RETURN(true);
+  }
+
+  if ((alter_info->flags & Alter_info::ALTER_ADD_COLUMN) ==
+      Alter_info::ALTER_ADD_COLUMN) {
+    for (auto create_field : alter_info->create_list) {
+      if (create_field.m_default_val_expr) {
+        // ALTER TABLE .. DEFAULT (NDF function) should be rejected for mixed or
+        // row binlog_format. For statement binlog_format it should be allowed
+        // to continue and warning should be logged and/or pushed to the client
+        if ((thd->variables.option_bits & OPTION_BIN_LOG) &&
+            thd->lex->is_stmt_unsafe(
+                Query_tables_list::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION)) {
+          if (thd->variables.binlog_format == BINLOG_FORMAT_STMT) {
+            LogErr(WARNING_LEVEL, ER_SERVER_BINLOG_UNSAFE_SYSTEM_FUNCTION,
+                   "ALTER TABLE .. DEFAULT (NDF function)");
+            push_warning(thd, Sql_condition::SL_WARNING,
+                         ER_BINLOG_UNSAFE_SYSTEM_FUNCTION,
+                         ER_THD(thd, ER_BINLOG_UNSAFE_SYSTEM_FUNCTION));
+            break;
+          } else {
+            my_error(ER_BINLOG_UNSAFE_SYSTEM_FUNCTION, MYF(0));
+            DBUG_RETURN(true);
+          }
+        }
+      }
+    }
   }
 
   // LOCK clause doesn't make any sense for ALGORITHM=INSTANT.
@@ -14979,6 +15326,10 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     if (create_field->change != nullptr) columns.emplace(create_field->change);
   }
 
+  // Prepare check constraints for alter table operation.
+  if (prepare_check_constraints_for_alter(thd, table, alter_info, &alter_ctx))
+    DBUG_RETURN(true);
+
   if (mysql_prepare_alter_table(thd, old_table_def, table, create_info,
                                 alter_info, &alter_ctx)) {
     DBUG_RETURN(true);
@@ -15158,6 +15509,10 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       DBUG_RETURN(true);
   }
 
+  // Stop if we have invalid encryption clause.
+  if (!is_tmp_table && validate_table_encryption(thd, create_info))
+    DBUG_RETURN(true);
+
   /*
     For temporary tables or tables in SEs supporting atomic DDL dd::Table
     object describing new version of table. This object will be created in
@@ -15221,6 +15576,9 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   */
   bool invalidate_fk_parents_on_error = false;
 
+  dd::Encrypt_result old_er{false, false};
+  dd::Encrypt_result new_er{false, false};
+
   /*
     If we are ALTERing non-temporary table in SE not supporting atomic DDL
     we don't have dd::Table object describing new version of table yet.
@@ -15232,32 +15590,95 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
             alter_ctx.new_db, alter_ctx.tmp_name, &table_def))
       goto err_new_table_cleanup;
 
+    set_check_constraints_alter_mode(table_def, alter_info);
+
     DBUG_ASSERT(table_def);
   }
 
-  if (remove_secondary_engine(thd, *table_list, *create_info, table_def))
+  if (remove_secondary_engine(thd, *table_list, *create_info, old_table_def))
     goto err_new_table_cleanup;
 
-  if (  // Tablespace specified in ALTER
-      (create_info->used_fields & HA_CREATE_USED_TABLESPACE) &&
-      // Have valid table object for old version of table
-      old_table_def != nullptr) {
-    dd::Encrypt_result er = dd::is_tablespace_encrypted(thd, *table_def);
-    if (er.error) {
+  // If we are changing the tablespace or the table encryption type.
+  if (old_table_def && (create_info->used_fields & HA_CREATE_USED_TABLESPACE ||
+                        create_info->used_fields & HA_CREATE_USED_ENCRYPT ||
+                        alter_ctx.is_database_changed())) {
+    bool source_is_general_tablespace{false};
+    bool source_encrytion_type{false};
+    bool destination_is_general_tablespace{false};
+    bool destination_encrytion_type{false};
+
+    // Determine source tablespace type and encryption type.
+    old_er = dd::is_tablespace_encrypted(thd, *old_table_def,
+                                         &source_is_general_tablespace);
+    if (old_er.error) {
       goto err_new_table_cleanup;
     }
-    if (!er.value) {
-      // Destination tablespace is not encrypted, need to check that
-      // the src is not either (to avoid unintended decryption)
-      dd::Encrypt_result old_er =
-          dd::is_tablespace_encrypted(thd, *old_table_def);
-      if (old_er.error) {
-        goto err_new_table_cleanup;
-      }
-      if (old_er.value) {
-        // Cannot transfer encrypted table to non-encrypted tablespace
-        my_error(ER_TARGET_TS_UNENCRYPTED, MYF(0));
-        goto err_new_table_cleanup;
+    source_encrytion_type = old_er.value;
+    if (!source_is_general_tablespace &&
+        old_table_def->options().exists("encrypt_type")) {
+      dd::String_type et;
+      (void)old_table_def->options().get("encrypt_type", &et);
+      DBUG_ASSERT(et.empty() == false);
+      source_encrytion_type = is_encrypted(et);
+    }
+
+    // Determine destination tablespace type and encryption type.
+    new_er = dd::is_tablespace_encrypted(thd, *table_def,
+                                         &destination_is_general_tablespace);
+    if (new_er.error) {
+      goto err_new_table_cleanup;
+    }
+    destination_encrytion_type = new_er.value;
+    if (!destination_is_general_tablespace &&
+        table_def->options().exists("encrypt_type")) {
+      dd::String_type et;
+      (void)table_def->options().get("encrypt_type", &et);
+      DBUG_ASSERT(et.empty() == false);
+      destination_encrytion_type = is_encrypted(et);
+    }
+
+    /*
+      Disallow converting a general tablespace to a file-per-table
+      tablespace without a explicit ENCRYPTION clause.
+    */
+    if (source_is_general_tablespace && source_encrytion_type == true &&
+        !destination_is_general_tablespace &&
+        !(create_info->used_fields & HA_CREATE_USED_ENCRYPT)) {
+      my_error(ER_TARGET_TABLESPACE_UNENCRYPTED, MYF(0));
+      goto err_new_table_cleanup;
+    }
+
+    /*
+      Disallow moving encrypted table (using general or file-per-table
+      tablespace) to a unencrypted general tablespace.
+    */
+    if (source_encrytion_type == true && destination_is_general_tablespace &&
+        destination_encrytion_type == false) {
+      my_error(ER_TARGET_TABLESPACE_UNENCRYPTED, MYF(0));
+      goto err_new_table_cleanup;
+    }
+
+    /*
+      Check table encryption privilege, if table encryption type differ
+      from schema encryption type.
+    */
+    if (new_schema->default_encryption() != destination_encrytion_type) {
+      // Ingore privilege check and show warning if database is same and
+      // table encryption type is not changed.
+      bool show_warning = !alter_ctx.is_database_changed() &&
+                          source_encrytion_type == destination_encrytion_type;
+
+      if (!show_warning && opt_table_encryption_privilege_check) {
+        if (check_table_encryption_admin_access(thd)) {
+          my_error(ER_CANNOT_SET_TABLE_ENCRYPTION, MYF(0));
+          DBUG_RETURN(true);
+        }
+      } else if (new_schema->default_encryption() &&
+                 !destination_encrytion_type) {
+        push_warning_printf(thd, Sql_condition::SL_WARNING,
+                            WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB,
+                            ER_THD(thd, WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB),
+                            "");
       }
     }
   }
@@ -15382,6 +15803,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
                                      *table_def);
         (void)trans_intermediate_ddl_commit(thd, result);
       }
+
       is_noop = true;
       goto end_inplace_noop;
     }
@@ -15874,10 +16296,11 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     }
   }
 
-  if (mysql_rename_table(
-          thd, old_db_type, alter_ctx.db, alter_ctx.table_name, alter_ctx.db,
-          alter_ctx.table_name, *schema, alter_ctx.db, backup_name,
-          FN_TO_IS_TMP | (atomic_replace ? NO_DD_COMMIT : 0) | NO_FK_RENAME)) {
+  if (mysql_rename_table(thd, old_db_type, alter_ctx.db, alter_ctx.table_name,
+                         alter_ctx.db, alter_ctx.table_name, *schema,
+                         alter_ctx.db, backup_name,
+                         FN_TO_IS_TMP | (atomic_replace ? NO_DD_COMMIT : 0) |
+                             NO_FK_RENAME | NO_CC_RENAME)) {
     // Rename to temporary name failed, delete the new table, abort ALTER.
     if (!atomic_replace) {
       /*
@@ -15938,7 +16361,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
           (FN_FROM_IS_TMP |
            ((new_db_type->flags & HTON_SUPPORTS_ATOMIC_DDL) ? NO_DD_COMMIT
                                                             : 0) |
-           (alter_ctx.is_table_renamed() ? 0 : NO_FK_RENAME))) ||
+           (alter_ctx.is_table_renamed() ? 0 : NO_FK_RENAME | NO_CC_RENAME))) ||
       ((new_db_type->flags & HTON_SUPPORTS_FOREIGN_KEYS) &&
        adjust_fks_for_complex_alter_table(thd, table_list, &alter_ctx,
                                           alter_info, new_db_type,
@@ -15977,10 +16400,10 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       // gap locks on DD tables (which might cause deadlocks).
       uint retries = 20;
       while (retries-- &&
-             mysql_rename_table(thd, old_db_type, alter_ctx.db, backup_name,
-                                alter_ctx.db, backup_name, *schema,
-                                alter_ctx.db, alter_ctx.alias,
-                                FN_FROM_IS_TMP | NO_FK_CHECKS | NO_FK_RENAME))
+             mysql_rename_table(
+                 thd, old_db_type, alter_ctx.db, backup_name, alter_ctx.db,
+                 backup_name, *schema, alter_ctx.db, alter_ctx.alias,
+                 FN_FROM_IS_TMP | NO_FK_CHECKS | NO_FK_RENAME | NO_CC_RENAME))
         ;
     }
     goto err_with_mdl;
@@ -15993,11 +16416,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   */
   if (!atomic_replace) invalidate_fk_parents_on_error = true;
 
-  /*
-    Since trigger names have to be unique per schema, we cannot
-    create them while both the old and the tmp version of the
-    table exist.
-  */
+  // Handle trigger name, check constraint names and histograms statistics.
   {
     dd::Table *backup_table = nullptr;
     dd::Table *new_table = nullptr;
@@ -16020,7 +16439,27 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
                                     columns, backup_table, new_table))
       goto err_with_mdl; /* purecov: deadcode */
 
-    bool update = false;
+    bool update = (new_table->check_constraints()->size() > 0);
+    // Set mode for new_table's check constraints.
+    set_check_constraints_alter_mode(new_table, alter_info);
+
+    /*
+      Check constraint names are unique per schema, we cannot create them while
+      both table version exists. Adjust check constraint names in old table
+      version.
+    */
+    if (adjust_check_constraint_names_for_old_table_version(thd, alter_ctx.db,
+                                                            backup_table))
+      goto err_with_mdl;
+
+    // Reset check constraint's mode.
+    reset_check_constraints_alter_mode(new_table);
+
+    /*
+      Since trigger names have to be unique per schema, we cannot
+      create them while both the old and the tmp version of the
+      table exist.
+    */
     if (backup_table->has_trigger()) {
       new_table->copy_triggers(backup_table);
       backup_table->drop_all_triggers();
@@ -16380,7 +16819,7 @@ static int copy_data_between_tables(
       mysql_trans_prepare_alter_copy_data(thd))
     DBUG_RETURN(-1);
 
-  if (!(copy = new (*THR_MALLOC) Copy_field[to->s->fields]))
+  if (!(copy = new (thd->mem_root) Copy_field[to->s->fields]))
     DBUG_RETURN(-1); /* purecov: inspected */
 
   if (to->file->ha_external_lock(thd, F_WRLCK)) {
@@ -16558,6 +16997,9 @@ static int copy_data_between_tables(
         break;
       }
     }
+
+    error = invoke_table_check_constraints(thd, to);
+    if (error) break;
 
     error = to->file->ha_write_row(to->record[0]);
     to->auto_increment_field_not_null = false;
@@ -16874,6 +17316,880 @@ static bool check_engine(THD *thd, const char *db_name, const char *table_name,
     my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "SECONDARY_ENGINE");
     DBUG_RETURN(true);
   }
+
+  // The storage engine must support encryption.
+  if (create_info->encrypt_type.str) {
+    bool encryption_request_type = false;
+    dd::String_type encrypt_type;
+    encrypt_type.assign(create_info->encrypt_type.str,
+                        create_info->encrypt_type.length);
+    encryption_request_type = is_encrypted(encrypt_type);
+    if (encryption_request_type &&
+        !((*new_engine)->flags & HTON_SUPPORTS_TABLE_ENCRYPTION)) {
+      my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "ENCRYPTION");
+      DBUG_RETURN(true);
+    }
+  }
+
+  DBUG_RETURN(false);
+}
+
+/**
+  Helper method to generate check constraint name.
+
+  @param       thd                      Thread handle.
+  @param       table_name               Table name.
+  @param       ordinal_number           Ordinal number of the generated name.
+  @param[out]  name                     LEX_STRING instance to hold the
+                                        generated check constraint name.
+  @param       skip_validation          Skip generated name validation.
+*/
+static bool generate_check_constraint_name(THD *thd, const char *table_name,
+                                           uint ordinal_number,
+                                           LEX_STRING &name,
+                                           bool skip_validation) {
+  // Allocate memory for name.
+  size_t generated_name_len =
+      strlen(table_name) + sizeof(dd::CHECK_CONSTRAINT_NAME_SUBSTR) + 11 + 1;
+  name.str = (char *)alloc_root(thd->mem_root, generated_name_len);
+  if (name.str == nullptr) return true;  // OOM
+
+  // Prepare name for check constraint.
+  sprintf(name.str, "%s%s%u", table_name, dd::CHECK_CONSTRAINT_NAME_SUBSTR,
+          ordinal_number);
+  name.length = strlen(name.str);
+
+  // Validate check constraint name.
+  if (!skip_validation &&
+      check_string_char_length(to_lex_cstring(name), "", NAME_CHAR_LEN,
+                               system_charset_info, 1)) {
+    my_error(ER_TOO_LONG_IDENT, MYF(0), name.str);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+  Helper method to create MDL_request for check constraint names. Check
+  constraint names are case insensitive. Hence names are lowercased
+  in MDL_request and pushed to MDL_request_list.
+
+  @param            thd                      Thread handle.
+  @param            db                       Database name.
+  @param            cc_name                  Check constraint name.
+  @param[out]       cc_mdl_request_list      MDL request list.
+
+  @retval           false                    Success.
+  @retval           true                     Failure.
+*/
+static bool push_check_constraint_mdl_request_to_list(
+    THD *thd, const char *db, const char *cc_name,
+    MDL_request_list &cc_mdl_request_list) {
+  DBUG_ASSERT(thd != nullptr && db != nullptr && cc_name != nullptr);
+
+  /*
+    Check constraint names are case insensitive. Hence lowercasing names for
+    MDL locking.
+  */
+  char lc_cc_name[NAME_LEN + 1];
+  strmake(lc_cc_name, cc_name, NAME_LEN);
+  my_casedn_str(system_charset_info, lc_cc_name);
+
+  MDL_request *mdl_request = new (thd->mem_root) MDL_request;
+  if (mdl_request == nullptr) return true;  // OOM
+  MDL_REQUEST_INIT(mdl_request, MDL_key::CHECK_CONSTRAINT, db, lc_cc_name,
+                   MDL_EXCLUSIVE, MDL_STATEMENT);
+  cc_mdl_request_list.push_front(mdl_request);
+
+  return false;
+}
+
+/**
+  Method to prepare check constraints for the CREATE operation. If name of the
+  check constraint is not specified then name is generated, check constraint
+  is pre-validated and MDL on check constraint is acquired here.
+
+  @param            thd                      Thread handle.
+  @param            db_name                  Database name.
+  @param            table_name               Table name.
+  @param            alter_info               Alter_info object with list of
+                                             check constraints to be created.
+
+  @retval           false                    Success.
+  @retval           true                     Failure.
+*/
+static bool prepare_check_constraints_for_create(THD *thd, const char *db_name,
+                                                 const char *table_name,
+                                                 Alter_info *alter_info) {
+  DBUG_ENTER("prepare_check_constraints_for_create");
+  MDL_request_list cc_mdl_request_list;
+  uint cc_max_generated_number = 0;
+
+  /*
+    Do not process check constraint specification list if master is on version
+    not supporting check constraints feature.
+  */
+  if (is_slave_with_master_without_check_constraints_support(thd)) {
+    alter_info->check_constraint_spec_list.clear();
+    DBUG_RETURN(false);
+  }
+
+  for (auto &cc_spec : alter_info->check_constraint_spec_list) {
+    // If check constraint name is omitted then generate name.
+    if (cc_spec->name.length == 0) {
+      if (generate_check_constraint_name(
+              thd, table_name, ++cc_max_generated_number, cc_spec->name, false))
+        DBUG_RETURN(true);
+    }
+
+    // Pre-validate check constraint.
+    if (cc_spec->pre_validate()) DBUG_RETURN(true);
+
+    // Create MDL request for the check constraint.
+    if (push_check_constraint_mdl_request_to_list(
+            thd, db_name, cc_spec->name.str, cc_mdl_request_list))
+      DBUG_RETURN(true);
+  }
+
+  // Make sure fields used by the check constraint exists in the create list.
+  List<Item_field> fields;
+  for (auto &cc_spec : alter_info->check_constraint_spec_list) {
+    cc_spec->check_expr->walk(&Item::collect_item_field_processor,
+                              enum_walk::POSTFIX, (uchar *)&fields);
+
+    Item_field *cur_item_fld;
+    List_iterator<Item_field> fields_it(fields);
+    Create_field *cur_fld;
+    List_iterator<Create_field> create_fields_it(alter_info->create_list);
+    while ((cur_item_fld = fields_it++)) {
+      if (cur_item_fld->type() != Item::FIELD_ITEM) continue;
+
+      while ((cur_fld = create_fields_it++)) {
+        if (!my_strcasecmp(system_charset_info, cur_item_fld->field_name,
+                           cur_fld->field_name))
+          break;
+      }
+      create_fields_it.rewind();
+
+      if (cur_fld == nullptr) {
+        my_error(ER_CHECK_CONSTRAINT_REFERS_UNKNOWN_COLUMN, MYF(0),
+                 cc_spec->name.str, cur_item_fld->field_name);
+        DBUG_RETURN(true);
+      }
+    }
+    fields.empty();
+  }
+
+  DEBUG_SYNC(thd, "before_acquiring_lock_on_check_constraints");
+  if (thd->mdl_context.acquire_locks(&cc_mdl_request_list,
+                                     thd->variables.lock_wait_timeout))
+    DBUG_RETURN(true);
+  DEBUG_SYNC(thd, "after_acquiring_lock_on_check_constraints");
+
+  DBUG_RETURN(false);
+}
+
+/**
+  Method to prepare check constraints for the CREATE TABLE LIKE operation.
+  If check constraints are defined on the source table then check constraints
+  specifications are prepared for the table being created from it. To
+  avoid name conflicts, names are generated for all the check constraints
+  prepared for the table being created.
+
+
+  @param            thd                   Thread handle.
+  @param            src_table             TABLE_LIST instance for source table.
+  @param            target_table          TABLE_LIST instance for target table.
+  @param            alter_info            Alter_info instance to prepare
+                                          list of check constraint spec
+                                          for table being created.
+
+  @retval           false                 Success.
+  @retval           true                  Failure.
+*/
+static bool prepare_check_constraints_for_create_like_table(
+    THD *thd, TABLE_LIST *src_table, TABLE_LIST *target_table,
+    Alter_info *alter_info) {
+  DBUG_ENTER("prepare_check_constraints_for_create_like_table");
+  MDL_request_list cc_mdl_request_list;
+  uint number = 0;
+
+  if (src_table->table->table_check_constraint_list != nullptr) {
+    for (auto &table_cc : *src_table->table->table_check_constraint_list) {
+      Sql_check_constraint_spec *cc_spec =
+          new (thd->mem_root) Sql_check_constraint_spec;
+      if (cc_spec == nullptr) DBUG_RETURN(true);  // OOM
+
+      // For create like table, all the check constraint names are generated to
+      // avoid name conflicts.
+      if (generate_check_constraint_name(thd, target_table->table_name,
+                                         ++number, cc_spec->name, true))
+        DBUG_RETURN(true);
+
+      //  check constraint expression.
+      cc_spec->check_expr = table_cc->value_generator()->expr_item;
+
+      // Copy check constraint status.
+      cc_spec->is_enforced = table_cc->is_enforced();
+
+      alter_info->check_constraint_spec_list.push_back(cc_spec);
+
+      /*
+        Create MDL request for check constraint in source table and the
+        generated check constraint name for target table.
+      */
+      if (push_check_constraint_mdl_request_to_list(
+              thd, src_table->db, table_cc->name().str, cc_mdl_request_list) ||
+          push_check_constraint_mdl_request_to_list(
+              thd, target_table->db, cc_spec->name.str, cc_mdl_request_list))
+        DBUG_RETURN(true);
+    }
+  }
+
+  DEBUG_SYNC(thd, "before_acquiring_lock_on_check_constraints");
+  if (thd->mdl_context.acquire_locks(&cc_mdl_request_list,
+                                     thd->variables.lock_wait_timeout))
+    DBUG_RETURN(true);
+  DEBUG_SYNC(thd, "after_acquiring_lock_on_check_constraints");
+
+  DBUG_RETURN(false);
+}
+
+/**
+  Method to prepare check constraints for the ALTER TABLE operation.
+  Method prepares check constraints specifications from the existing
+  list of check constraints on the table, appends new check constraints
+  to list, updates state (enforced/not enforced) and drop any existing
+  check constraint from the list.
+
+  @param            thd                      Thread handle.
+  @param            table                    TABLE instance of source table.
+  @param            alter_info               Alter_info object to prepare
+                                             list of check constraint spec
+                                             for table being altered.
+  @param            alter_tbl_ctx            Runtime context for
+                                             ALTER TABLE.
+
+  @retval           false                    Success.
+  @retval           true                     Failure.
+*/
+static bool prepare_check_constraints_for_alter(
+    THD *thd, const TABLE *table, Alter_info *alter_info,
+    Alter_table_ctx *alter_tbl_ctx) {
+  DBUG_ENTER("prepare_check_constraints_for_alter");
+  MDL_request_list cc_mdl_request_list;
+  Sql_check_constraint_spec_list new_check_cons_list(thd->mem_root);
+  Mem_root_array<const Alter_drop *> new_drop_list(thd->mem_root);
+  Mem_root_array<const Alter_state *> new_state_list(thd->mem_root);
+  uint cc_max_generated_number = 0;
+  uint table_name_len = strlen(alter_tbl_ctx->table_name);
+
+  /*
+    Do not process check constraint specification list if master is on version
+    not supporting check constraints feature.
+  */
+  if (is_slave_with_master_without_check_constraints_support(thd)) {
+    alter_info->check_constraint_spec_list.clear();
+    DBUG_RETURN(false);
+  }
+
+  /*
+    List of check constraint names. Used after acquiring MDL locks on final list
+    of check constraints to verify if check constraint names conflict with
+    existing check constraint names.
+  */
+  std::vector<const char *> new_cc_names;
+  auto erase_cc_name = [](std::vector<const char *> &names, const char *s) {
+    auto name = find_if(names.begin(), names.end(), [s](const char *cc_name) {
+      return !my_strcasecmp(system_charset_info, s, cc_name);
+    });
+    if (name != names.end()) names.erase(name);
+  };
+
+  /*
+    Prepare check constraint specification for the existing check constraints on
+    the table.
+
+    * Get max sequence number for generated names. This is required when
+      handling new check constraints added to the table.
+
+    * If table is renamed, adjust generated check constraint names to use new
+      table name.
+
+    * Create MDL request on all check constraints.
+      - Also on adjusted check constraint names if table is renamed.
+      - If database changed then on all check constraints with the new database.
+  */
+  if (table->table_check_constraint_list != nullptr) {
+    for (auto &table_cc : *table->table_check_constraint_list) {
+      Sql_check_constraint_spec *cc_spec =
+          new (thd->mem_root) Sql_check_constraint_spec;
+      if (cc_spec == nullptr) DBUG_RETURN(true);  // OOM
+
+      bool is_generated_name = dd::is_generated_check_constraint_name(
+          alter_tbl_ctx->table_name, table_name_len, table_cc->name().str,
+          table_cc->name().length);
+      /*
+        Get number from generated name and update max generated number if
+        needed.
+      */
+      if (is_generated_name) {
+        char *end;
+        uint number =
+            my_strtoull(table_cc->name().str + table_name_len +
+                            sizeof(dd::CHECK_CONSTRAINT_NAME_SUBSTR) - 1,
+                        &end, 10);
+        if (number > cc_max_generated_number) cc_max_generated_number = number;
+      }
+
+      // If generated name and table is renamed then update generated name.
+      if (is_generated_name && alter_tbl_ctx->is_table_name_changed()) {
+        char *end;
+        uint number =
+            my_strtoull(table_cc->name().str + table_name_len +
+                            sizeof(dd::CHECK_CONSTRAINT_NAME_SUBSTR) - 1,
+                        &end, 10);
+        if (number > cc_max_generated_number) cc_max_generated_number = number;
+
+        // Generate new check constraint name.
+        if (generate_check_constraint_name(thd, alter_tbl_ctx->new_name, number,
+                                           cc_spec->name, true))
+          DBUG_RETURN(true);
+      } else {
+        lex_string_strmake(thd->mem_root, &cc_spec->name, table_cc->name().str,
+                           table_cc->name().length);
+        if (cc_spec->name.str == nullptr) DBUG_RETURN(true);  // OOM
+      }
+
+      //  check constraint expression.
+      cc_spec->check_expr = table_cc->value_generator()->expr_item;
+
+      // Copy check constraint status.
+      cc_spec->is_enforced = table_cc->is_enforced();
+
+      // Push check constraint to new list.
+      new_check_cons_list.push_back(cc_spec);
+
+      // Push MDL_request for the existing check constraint name.
+      if (push_check_constraint_mdl_request_to_list(thd, alter_tbl_ctx->db,
+                                                    table_cc->name().str,
+                                                    cc_mdl_request_list))
+        DBUG_RETURN(true);
+
+      /*
+        If db is changed then push MDL_request on check constraint with new db
+        name or if table name is changed then push MDL_request on generated
+        check constraint name.
+      */
+      if ((alter_tbl_ctx->is_database_changed() ||
+           (alter_tbl_ctx->is_table_name_changed() && is_generated_name))) {
+        if (push_check_constraint_mdl_request_to_list(
+                thd, alter_tbl_ctx->new_db, cc_spec->name.str,
+                cc_mdl_request_list))
+          DBUG_RETURN(true);
+
+        new_cc_names.push_back(cc_spec->name.str);
+      }
+    }
+  }
+
+  /*
+    Handle new check constraints added to the table.
+
+    * Generate name if name is not specified.
+      If table already has check constraints with generated name then use
+      sequence number generated when handling existing check constraint names.
+
+    * pre-validate check constraint.
+
+    * Prepare MDL request for new check constraints.
+  */
+  for (auto &cc_spec : alter_info->check_constraint_spec_list) {
+    // If check constraint name is omitted then generate name.
+    if (cc_spec->name.length == 0) {
+      if (generate_check_constraint_name(thd, alter_tbl_ctx->new_name,
+                                         ++cc_max_generated_number,
+                                         cc_spec->name, false))
+        DBUG_RETURN(true);
+    }
+
+    if (cc_spec->pre_validate()) DBUG_RETURN(true);
+
+    // Push check constraint to new list.
+    new_check_cons_list.push_back(cc_spec);
+
+    // Create MDL request for the check constraint.
+    if (push_check_constraint_mdl_request_to_list(
+            thd, alter_tbl_ctx->new_db, cc_spec->name.str, cc_mdl_request_list))
+      DBUG_RETURN(true);
+
+    new_cc_names.push_back(cc_spec->name.str);
+  }
+
+  // Remove specifications of check constraints marked for drop.
+  for (auto *cc_drop : alter_info->drop_list) {
+    if (cc_drop->type != Alter_drop::CHECK_CONSTRAINT) {
+      new_drop_list.push_back(cc_drop);
+      continue;
+    }
+
+    bool cc_found = false;
+    size_t cc_pos = 0;
+    for (auto &cc_spec : new_check_cons_list) {
+      if (!my_strcasecmp(system_charset_info, cc_spec->name.str,
+                         cc_drop->name)) {
+        cc_found = true;
+        // Remove check constraint from the check constraints list.
+        new_check_cons_list.erase(cc_pos);
+        // Remove check constraint names from new_cc_names.
+        erase_cc_name(new_cc_names, cc_spec->name.str);
+        break;
+      }
+      cc_pos++;
+    }
+    if (!cc_found) {
+      my_error(ER_CHECK_CONSTRAINT_NOT_FOUND, MYF(0), cc_drop->name);
+      DBUG_RETURN(true);
+    }
+  }
+
+  /*
+    If check constraint refers to only one column and that column is marked for
+    drop then drop check constraint too.
+  */
+  for (auto *cc_drop : alter_info->drop_list) {
+    if (cc_drop->type == Alter_drop::COLUMN) {
+      for (auto it = new_check_cons_list.begin();
+           it < new_check_cons_list.end();) {
+        if ((*it)->expr_refers_to_only_column(cc_drop->name)) {
+          // Remove check constraint from the check constraints list.
+          new_check_cons_list.erase(it);
+          // Remove check constraint names from new_cc_names.
+          erase_cc_name(new_cc_names, (*it)->name.str);
+        } else
+          it++;
+      }
+    }
+  }
+
+  // Update check constraint state (i.e. enforced or not enforced).
+  for (auto *cc_state : alter_info->alter_state_list) {
+    if (cc_state->type != Alter_state::Type::CHECK_CONSTRAINT) {
+      new_state_list.push_back(cc_state);
+      continue;
+    }
+
+    bool cc_found = false;
+    for (auto &cc_spec : new_check_cons_list) {
+      if (!my_strcasecmp(system_charset_info, cc_spec->name.str,
+                         cc_state->name)) {
+        cc_found = true;
+        // Update status.
+        cc_spec->is_enforced = cc_state->state;
+        break;
+      }
+    }
+    if (!cc_found) {
+      my_error(ER_CHECK_CONSTRAINT_NOT_FOUND, MYF(0), cc_state->name);
+      DBUG_RETURN(true);
+    }
+  }
+
+  /*
+    Adjust Alter_info::flags.
+
+    * Check if final list has any check constraint whose state is changed from
+      NOT ENFORCED to ENFORCED.
+
+    * Check if list has any new check constraints added with ENFORCED state.
+
+    * Update Alter_info::flags accordingly.
+  */
+  bool final_enforced_state = false;
+  for (auto &cc : new_check_cons_list) {
+    // Check if any of existing constraint is enforced.
+    if (table->table_check_constraint_list != nullptr) {
+      for (auto &table_cc : *table->table_check_constraint_list) {
+        if (!my_strcasecmp(system_charset_info, cc->name.str,
+                           table_cc->name().str) &&
+            !table_cc->is_enforced() && cc->is_enforced) {
+          final_enforced_state = true;
+          break;
+        }
+      }
+    }
+    if (final_enforced_state) break;
+
+    // Check if new constraint is added in enforced state.
+    for (auto &new_cc : alter_info->check_constraint_spec_list) {
+      if (!my_strcasecmp(system_charset_info, cc->name.str, new_cc->name.str) &&
+          cc->is_enforced) {
+        final_enforced_state = true;
+        break;
+      }
+    }
+    if (final_enforced_state) break;
+  }
+  if (final_enforced_state)
+    alter_info->flags |= Alter_info::ENFORCE_CHECK_CONSTRAINT;
+  else
+    alter_info->flags &= ~Alter_info::ENFORCE_CHECK_CONSTRAINT;
+
+  /*
+    Set alter mode for each check constraint specification instance.
+
+    For non-temporary table prepare temporary check constraint names. During
+    ALTER TABLE operation, two versions of table exists and to avoid check
+    constraint name conflicts temporary(adjusted) names stored for newer
+    version and alter mode is set. Check constraint names are restored
+    later in ALTER TABLE operation. MDL request to temporary name is also
+    created to avoid creation of table with same name by concurrent operation.
+
+    * Prepare temporary(adjusted) name for each check constraint specification.
+
+    * Set alter mode for each check constraint specification.
+
+    * Prepare MDL request for each temporary name.
+  */
+  if (table->s->tmp_table == NO_TMP_TABLE) {
+    ulong id = 1;
+    for (Sql_check_constraint_spec *cc : new_check_cons_list) {
+      const int prefix_len = 3;  // #cc
+      const int process_id_len = 20;
+      const int thread_id_len = 10;
+      const int id_len = 20;
+      const int separator_len = 1;
+      char temp_name_buf[prefix_len + process_id_len + thread_id_len + id_len +
+                         (separator_len * 3) + 1];
+      snprintf(temp_name_buf, sizeof(temp_name_buf), "#cc_%lu_%u_%lu",
+               current_pid, thd->thread_id(), id++);
+
+      // Create MDL request for the temp check constraint name.
+      if (push_check_constraint_mdl_request_to_list(
+              thd, alter_tbl_ctx->new_db, temp_name_buf, cc_mdl_request_list))
+        DBUG_RETURN(true);
+
+      cc->is_alter_mode = true;
+      cc->alias_name.length = strlen(temp_name_buf);
+      cc->alias_name.str =
+          strmake_root(thd->mem_root, temp_name_buf, cc->alias_name.length);
+    }
+  }
+
+  // Acquire MDL lock on all the MDL_request prepared in this method.
+  DEBUG_SYNC(thd, "before_acquiring_lock_on_check_constraints");
+  if (thd->mdl_context.acquire_locks(&cc_mdl_request_list,
+                                     thd->variables.lock_wait_timeout))
+    DBUG_RETURN(true);
+  DEBUG_SYNC(thd, "after_acquiring_lock_on_check_constraints");
+
+  /*
+    Make sure new check constraint names do not conflict with any existing check
+    constraint names before starting expensive ALTER operation.
+  */
+  dd::Schema_MDL_locker mdl_locker(thd);
+  const dd::Schema *new_schema = nullptr;
+  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  if (mdl_locker.ensure_locked(alter_tbl_ctx->new_db) ||
+      thd->dd_client()->acquire(alter_tbl_ctx->new_db, &new_schema))
+    DBUG_RETURN(true);
+  bool exists = false;
+  for (auto cc_name : new_cc_names) {
+    if (thd->dd_client()->check_constraint_exists(*new_schema, cc_name,
+                                                  &exists))
+      DBUG_RETURN(true);
+    if (exists) {
+      my_error(ER_CHECK_CONSTRAINT_DUP_NAME, MYF(0), cc_name);
+      DBUG_RETURN(true);
+    }
+  }
+
+  alter_info->drop_list.clear();
+  alter_info->drop_list.resize(new_drop_list.size());
+  std::move(new_drop_list.begin(), new_drop_list.end(),
+            alter_info->drop_list.begin());
+
+  alter_info->alter_state_list.clear();
+  alter_info->alter_state_list.resize(new_state_list.size());
+  std::move(new_state_list.begin(), new_state_list.end(),
+            alter_info->alter_state_list.begin());
+
+  alter_info->check_constraint_spec_list.clear();
+  alter_info->check_constraint_spec_list.resize(new_check_cons_list.size());
+  std::move(new_check_cons_list.begin(), new_check_cons_list.end(),
+            alter_info->check_constraint_spec_list.begin());
+
+  DBUG_RETURN(false);
+}
+
+/**
+  During alter table operation, check constraints of a new table are marked as
+  in alter mode. If a table object is stored to the data-dictionary in this
+  mode then alias name is stored to avoid name conflicts due to two versions
+  of table objects. dd::Table object of a new table read from the
+  data-dictionary contains only alias name. So dd::Table object of a new table
+  is patched up here with the real name and alter mode to reflect the fact the
+  check constraint is in alter_mode as this information is not stored
+  parsistently.
+
+  @param    new_table               New table definition.
+  @param    alter_info              Alter_info object containing list of list of
+                                    check constraint spec for table being
+                                    altered.
+*/
+static void set_check_constraints_alter_mode(dd::Table *new_table,
+                                             Alter_info *alter_info) {
+  for (dd::Check_constraint *cc : *new_table->check_constraints()) {
+    if (cc->is_alter_mode()) continue;
+    for (Sql_check_constraint_spec *cc_spec :
+         alter_info->check_constraint_spec_list) {
+      if (!my_strcasecmp(system_charset_info, cc->name().c_str(),
+                         cc_spec->alias_name.str)) {
+        cc->set_name(cc_spec->name.str);
+        cc->set_alias_name(cc_spec->alias_name.str);
+        cc->set_alter_mode(true);
+      }
+    }
+  }
+}
+
+/**
+  Reset alter mode of check constraints.
+
+  Method updates only dd::Table object. It is not stored or updated to
+  data-dictionary in this method.
+
+  @param  new_table               New table definition.
+*/
+static void reset_check_constraints_alter_mode(dd::Table *new_table) {
+  for (dd::Check_constraint *cc : *new_table->check_constraints()) {
+    DBUG_ASSERT(cc->is_alter_mode());
+    cc->set_alter_mode(false);
+  }
+}
+
+/**
+  Make old table definition's check constraint use temporary names. This is
+  needed to avoid  problems with duplicate check constraint names while we
+  have two definitions of the same table.
+  Method updates only dd::Table object. It is not stored or updated to
+  data-dictionary in this method.
+
+  @param  thd                     Thread context.
+  @param  old_table_db            Database of old table.
+  @param  old_table               Old table definition.
+
+  @returns false - Success, true - Failure.
+*/
+static bool adjust_check_constraint_names_for_old_table_version(
+    THD *thd, const char *old_table_db, dd::Table *old_table) {
+  MDL_request_list mdl_requests;
+  for (dd::Check_constraint *cc : *old_table->check_constraints()) {
+    const int prefix_len = 4;  // #cc_
+    const int id_len = 20;
+    char temp_cc_name[prefix_len + id_len + 1];
+    snprintf(temp_cc_name, sizeof(temp_cc_name), "#cc_%llu",
+             (ulonglong)cc->id());
+
+    /*
+      Acquire lock on temporary names before updating data-dictionary just in
+      case somebody tries to create check constraints with same name.
+    */
+    if (push_check_constraint_mdl_request_to_list(thd, old_table_db,
+                                                  temp_cc_name, mdl_requests))
+      return true;
+
+    // Set adjusted name.
+    cc->set_name(temp_cc_name);
+  }
+
+  if (thd->mdl_context.acquire_locks(&mdl_requests,
+                                     thd->variables.lock_wait_timeout))
+    return true;
+
+  return false;
+}
+
+/**
+  Helper method to check if any check constraints (re-)evaluation is required.
+  If any check constraint re-evaluation is required then in-place alter is not
+  possible as it is done in the SQL-layer. This method is called by
+  is_inplace_alter_impossible() to check inplace alter is possible.
+
+  Check constraint (re-)evaluation is required when
+    1) New check constraint is added in ENFORCED state.
+    2) Any existing check constraint is ENFORCED.
+    3) Type of column used by any enforced check constraint is changed.
+    4) check constraints expression depends on DEFAULT function on a column and
+       default is changed as part of alter operation.
+
+  @param     alter_info   Data related to detected changes.
+
+  @retval    true         Check constraint (re-)evaluation required.
+  @retval    false        Otherwise.
+*/
+static bool is_any_check_constraints_evaluation_required(
+    const Alter_info *alter_info) {
+  /*
+    Check if any check constraint is added in enforced state or state of any
+    check is is changed to ENFORCED.
+  */
+  if (alter_info->flags & Alter_info::ENFORCE_CHECK_CONSTRAINT) return true;
+
+  for (auto &cc_spec : alter_info->check_constraint_spec_list) {
+    if (!cc_spec->is_enforced) continue;
+
+    /*
+      if column is modified then check if type is changed or if default value is
+      changed. Check constraint re-evaluation is required in this case.
+    */
+    if (alter_info->flags & Alter_info::ALTER_CHANGE_COLUMN) {
+      for (auto &fld : const_cast<Alter_info *>(alter_info)->create_list) {
+        // Get fields used by check constraint.
+        List<Item_field> fields;
+        cc_spec->check_expr->walk(&Item::collect_item_field_processor,
+                                  enum_walk::POSTFIX, (uchar *)&fields);
+        for (auto &itm_fld : fields) {
+          if (itm_fld.type() != Item::FIELD_ITEM || itm_fld.field == nullptr)
+            continue;
+
+          // Check if data type is changed.
+          if (!my_strcasecmp(system_charset_info, itm_fld.field_name,
+                             fld.field_name) &&
+              (itm_fld.data_type() != fld.sql_type))
+            return true;
+        }
+
+        /*
+          If column is modified then default might have changed. Check if
+          check constraint uses default function.
+        */
+        if (fld.change &&
+            cc_spec->check_expr->walk(
+                &Item::check_gcol_depend_default_processor, enum_walk::POSTFIX,
+                reinterpret_cast<uchar *>(const_cast<char *>(fld.change))))
+          return true;
+      }
+    }
+
+    /*
+      If column is altered to drop or set default then check any check
+      constraint using the default function. Re-evaluation of check constraint
+      is required in this case.
+    */
+    if (alter_info->flags & Alter_info::ALTER_CHANGE_COLUMN_DEFAULT) {
+      for (auto *alter : alter_info->alter_list) {
+        if (alter->change_type() == Alter_column::Type::SET_DEFAULT ||
+            alter->change_type() == Alter_column::Type::DROP_DEFAULT) {
+          if (cc_spec->check_expr->walk(
+                  &Item::check_gcol_depend_default_processor,
+                  enum_walk::POSTFIX,
+                  reinterpret_cast<uchar *>(const_cast<char *>(alter->name))))
+            return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+bool lock_check_constraint_names_for_rename(THD *thd, const char *db,
+                                            const char *table_name,
+                                            const dd::Table *table_def,
+                                            const char *target_db,
+                                            const char *target_table_name) {
+  DBUG_ENTER("lock_check_constraint_names_for_rename");
+  MDL_request_list mdl_requests;
+  size_t table_name_len = strlen(table_name);
+
+  // Push lock requests for the check constraints defined on db.table_name.
+  for (auto &cc : table_def->check_constraints()) {
+    if (push_check_constraint_mdl_request_to_list(thd, db, cc->name().c_str(),
+                                                  mdl_requests))
+      DBUG_RETURN(true);
+  }
+
+  // Push lock request for the check constraints in target table.
+  for (auto &cc : table_def->check_constraints()) {
+    const char *cc_name = cc->name().c_str();
+    /*
+      If check constraint name is a generated name in the source table then
+      generate name with the target table to create mdl_request with it.
+    */
+    bool is_generated_name = dd::is_generated_check_constraint_name(
+        table_name, table_name_len, cc->name().c_str(), cc->name().length());
+    if (is_generated_name) {
+      char *end;
+      uint number =
+          my_strtoull(cc->name().c_str() + table_name_len +
+                          sizeof(dd::CHECK_CONSTRAINT_NAME_SUBSTR) - 1,
+                      &end, 10);
+      LEX_STRING name;
+      if (generate_check_constraint_name(thd, target_table_name, number, name,
+                                         true))
+        DBUG_RETURN(true);
+      cc_name = name.str;
+    }
+
+    /*
+      If check constraint name is generated or table moved different database
+      then create mdl_request with target_db.cc_name.
+    */
+    if ((is_generated_name ||
+         my_strcasecmp(table_alias_charset, db, target_db)) &&
+        push_check_constraint_mdl_request_to_list(thd, target_db, cc_name,
+                                                  mdl_requests))
+      DBUG_RETURN(true);
+  }
+
+  // Acquire locks on all the collected check constraint names.
+  if (!mdl_requests.is_empty() &&
+      thd->mdl_context.acquire_locks(&mdl_requests,
+                                     thd->variables.lock_wait_timeout))
+    DBUG_RETURN(true);
+
+  DEBUG_SYNC(thd, "after_acquiring_lock_on_check_constraints_for_rename");
+
+  DBUG_RETURN(false);
+}
+
+bool lock_check_constraint_names(THD *thd, TABLE_LIST *tables) {
+  DBUG_ENTER("lock_check_constraint_names");
+  MDL_request_list mdl_requests;
+
+  for (TABLE_LIST *table = tables; table != nullptr;
+       table = table->next_local) {
+    if (table->open_type != OT_BASE_ONLY && is_temporary_table(table)) continue;
+
+    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+
+    const dd::Abstract_table *abstract_table_def = nullptr;
+    if (thd->dd_client()->acquire(table->db, table->table_name,
+                                  &abstract_table_def))
+      DBUG_RETURN(true);
+
+    if (abstract_table_def == nullptr ||
+        abstract_table_def->type() != dd::enum_table_type::BASE_TABLE)
+      continue;
+
+    const dd::Table *table_def =
+        dynamic_cast<const dd::Table *>(abstract_table_def);
+    DBUG_ASSERT(table_def != nullptr);
+
+    for (auto &cc : table_def->check_constraints()) {
+      if (push_check_constraint_mdl_request_to_list(
+              thd, table->db, cc->name().c_str(), mdl_requests))
+        DBUG_RETURN(false);
+    }
+  }
+
+  // Acquire MDL lock on all the check constraint names.
+  if (!mdl_requests.is_empty() &&
+      thd->mdl_context.acquire_locks(&mdl_requests,
+                                     thd->variables.lock_wait_timeout))
+    DBUG_RETURN(true);
 
   DBUG_RETURN(false);
 }

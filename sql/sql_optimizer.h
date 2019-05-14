@@ -1,7 +1,7 @@
 #ifndef SQL_OPTIMIZER_INCLUDED
 #define SQL_OPTIMIZER_INCLUDED
 
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,17 +38,20 @@
 
 #include <string.h>
 #include <sys/types.h>
+#include <algorithm>
+#include <memory>
 
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
 #include "my_table_map.h"
 #include "sql/field.h"
 #include "sql/item.h"
 #include "sql/item_subselect.h"
 #include "sql/mem_root_array.h"
 #include "sql/opt_explain_format.h"  // Explain_sort_clause
+#include "sql/row_iterator.h"
 #include "sql/sql_array.h"
 #include "sql/sql_class.h"
 #include "sql/sql_const.h"
@@ -56,14 +59,14 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_opt_exec_shared.h"
-#include "sql/sql_select.h"     // Key_use
-#include "sql/sql_tmp_table.h"  // enum_tmpfile_windowing_action
+#include "sql/sql_select.h"  // Key_use
 #include "sql/table.h"
 #include "sql/temp_table_param.h"
 #include "template_utils.h"
 
 class COND_EQUAL;
 class Item_sum;
+class Opt_trace_context;
 class Window;
 struct MYSQL_LOCK;
 
@@ -592,8 +595,8 @@ class JOIN {
   Item *having_for_explain;  ///< Saved optimized HAVING for EXPLAIN
   /**
     Pointer set to select_lex->get_table_list() at the start of
-    optimization. May be changed (to NULL) only if opt_sum_query() optimizes
-    tables away.
+    optimization. May be changed (to NULL) only if optimize_aggregated_query()
+    optimizes tables away.
   */
   TABLE_LIST *tables_list;
   COND_EQUAL *cond_equal;
@@ -829,8 +832,8 @@ class JOIN {
                             bool force_stable_sort = false);
   bool decide_subquery_strategy();
   void refine_best_rowcount();
-  /// Updates deps_of_remaining_lateral_derived_tables
-  void recalculate_deps_of_remaining_lateral_derived_tables(uint idx);
+  void recalculate_deps_of_remaining_lateral_derived_tables(
+      table_map plan_tables, uint idx);
   bool clear_corr_derived_tmp_tables();
 
   void mark_const_table(JOIN_TAB *table, Key_use *key);
@@ -889,6 +892,19 @@ class JOIN {
     }
   }
 
+  /**
+    Handle offloading of query parts to the underlying engines, when
+    such is supported by their implementation.
+
+    @returns 0 if success, 1 if error
+  */
+  int push_to_engines();
+
+  RowIterator *root_iterator() const { return m_root_iterator.get(); }
+  unique_ptr_destroy_only<RowIterator> release_root_iterator() {
+    return move(m_root_iterator);
+  }
+
  private:
   bool optimized;  ///< flag to avoid double optimization in EXPLAIN
   bool executed;   ///< Set by exec(), reset by reset()
@@ -898,10 +914,11 @@ class JOIN {
 
  public:
   /*
-    When join->select_count is set, tables will not be optimized away. The call
-    to records() will be delayed until the execution phase and the counting
-    will be done on an index of Optimizer's choice. This flag will be set in
-    opt_sum_query. The index will be decided in find_shortest_key().
+    When join->select_count is set, tables will not be optimized away.
+    The call to records() will be delayed until the execution phase and
+    the counting will be done on an index of Optimizer's choice.
+    The index will be decided in find_shortest_key(), called from
+    optimize_aggregated_query().
   */
   bool select_count;
 
@@ -1075,6 +1092,21 @@ class JOIN {
   void test_skip_sort();
 
   bool alloc_indirection_slices();
+
+  /**
+    If possible, convert the executor structures to a set of row iterators,
+    storing the result in m_root_iterator. If not, m_root_iterator will remain
+    nullptr.
+   */
+  void create_iterators();
+
+  /**
+    An iterator you can read from to get all records for this query.
+
+    May be nullptr even after create_iterators() if the current query
+    is not supported by the iterator executor.
+   */
+  unique_ptr_destroy_only<RowIterator> m_root_iterator;
 };
 
 /**
@@ -1114,7 +1146,8 @@ bool remove_eq_conds(THD *thd, Item *cond, Item **retcond,
                      Item::cond_result *cond_value);
 bool optimize_cond(THD *thd, Item **conds, COND_EQUAL **cond_equal,
                    List<TABLE_LIST> *join_list, Item::cond_result *cond_value);
-Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
+Item *substitute_for_best_equal_field(THD *thd, Item *cond,
+                                      COND_EQUAL *cond_equal,
                                       JOIN_TAB **table_join_idx);
 bool build_equal_items(THD *thd, Item *cond, Item **retcond,
                        COND_EQUAL *inherited, bool do_inherit,
@@ -1148,10 +1181,20 @@ bool substitute_gc(THD *thd, SELECT_LEX *select_lex, Item *where_cond,
 class Deps_of_remaining_lateral_derived_tables {
   JOIN *join;
   table_map saved;
+  /// All lateral tables not part of this map should be ignored
+  table_map plan_tables;
 
  public:
-  Deps_of_remaining_lateral_derived_tables(JOIN *j)
-      : join(j), saved(join->deps_of_remaining_lateral_derived_tables) {}
+  /**
+     Constructor.
+     @param j                the JOIN
+     @param plan_tables_arg  @see
+                             JOIN::deps_of_remaining_lateral_derived_tables
+  */
+  Deps_of_remaining_lateral_derived_tables(JOIN *j, table_map plan_tables_arg)
+      : join(j),
+        saved(join->deps_of_remaining_lateral_derived_tables),
+        plan_tables(plan_tables_arg) {}
   ~Deps_of_remaining_lateral_derived_tables() { restore(); }
   void restore() { join->deps_of_remaining_lateral_derived_tables = saved; }
   void assert_unchanged() {
@@ -1164,7 +1207,8 @@ class Deps_of_remaining_lateral_derived_tables {
         may be backward or forward compared to where we were before:
         recalculate.
       */
-      join->recalculate_deps_of_remaining_lateral_derived_tables(next_idx);
+      join->recalculate_deps_of_remaining_lateral_derived_tables(plan_tables,
+                                                                 next_idx);
   }
 
   void recalculate(JOIN_TAB *cur_tab, uint next_idx) {
@@ -1182,9 +1226,40 @@ class Deps_of_remaining_lateral_derived_tables {
       recalculate(join->const_tables);
       // Forget stale value:
       saved = join->deps_of_remaining_lateral_derived_tables;
-      DBUG_ASSERT(saved != 0);
     }
   }
+};
+
+/**
+  Estimates how many times a subquery will be executed as part of a
+  query execution. If it is a cacheable subquery, the estimate tells
+  how many times the subquery will be executed if it is not cached.
+
+  @param[in]     subquery  the Item that represents the subquery
+  @param[in,out] trace     optimizer trace context
+
+  @return the number of times the subquery is expected to be executed
+*/
+double calculate_subquery_executions(const Item_subselect *subquery,
+                                     Opt_trace_context *trace);
+
+/**
+  Class which presents a view of the current candidate table order for a JOIN.
+*/
+class Candidate_table_order {
+ public:
+  Candidate_table_order(const JOIN *join) : m_join(join) {}
+
+  /// Returns the number of tables in the candidate plan.
+  size_t size() const { return m_join->tables; }
+
+  /// Returns the table reference at the given position in the candidate plan.
+  const TABLE_LIST *table_ref(size_t position) const {
+    return m_join->positions[position].table->table_ref;
+  }
+
+ private:
+  const JOIN *const m_join;
 };
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

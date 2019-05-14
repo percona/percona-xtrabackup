@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -4975,7 +4975,7 @@ ER_SLAVE_IGNORED_SSL_PARAMS
         jpn "このMySQLスレーブはSSLサポートを含めてコンパイルされていないので、CHANGE MASTER のSSLパラメータは無視されました。今後SSLサポートを持つMySQLスレーブを起動する際に利用されます。"
         por "SSL parâmetros em CHANGE MASTER são ignorados porque este escravo MySQL foi compilado sem o SSL suporte. Os mesmos podem ser usados mais tarde quando o escravo MySQL com SSL seja iniciado."
         spa "Parametros SSL en CHANGE MASTER son ignorados porque este slave MySQL fue compilado sin soporte SSL; pueden ser usados despues cuando el slave MySQL con SSL sea inicializado"
-ER_SERVER_IS_IN_SECURE_AUTH_MODE  
+OBSOLETE_ER_SERVER_IS_IN_SECURE_AUTH_MODE
         eng "Server is running in --secure-auth mode, but '%s'@'%s' has a password in the old format; please change the password to the new format"
         ger "Server läuft im Modus --secure-auth, aber '%s'@'%s' hat ein Passwort im alten Format. Bitte Passwort ins neue Format ändern"
         jpn "サーバーは --secure-auth モードで稼働しています。しかし '%s'@'%s' は古い形式のパスワードを使用しています。新しい形式のパスワードに変更してください。"
@@ -6006,8 +6006,8 @@ ER_FOREIGN_DUPLICATE_KEY_OLD_UNUSED 23000 S1009
         eng "Upholding foreign key constraints for table '%.192s', entry '%-.192s', key %d would lead to a duplicate entry"
 # OBSOLETE, USE ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2
 ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE
-        eng "Column count of mysql.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please use mysql_upgrade to fix this error."
-        ger "Spaltenanzahl von mysql.%s falsch. %d erwartet, aber %d erhalten. Erzeugt mit MySQL %d, jetzt unter %d. Bitte benutzen Sie mysql_upgrade, um den Fehler zu beheben"
+        eng "The column count of mysql.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please perform the MySQL upgrade procedure."
+        ger "Spaltenanzahl von mysql.%s falsch. %d erwartet, aber %d erhalten. Erzeugt mit MySQL %d, jetzt unter %d. Bitte verwenden Sie die MySQL-Upgrade-Prozedur, um den Fehler zu beheben."
 OBSOLETE_ER_TEMP_TABLE_PREVENTS_SWITCH_OUT_OF_RBR
         eng "Cannot switch out of the row-based binary log format when the session has open temporary tables"
         ger "Kann nicht aus dem zeilenbasierten Binärlog-Format herauswechseln, wenn die Sitzung offene temporäre Tabellen hat"
@@ -6884,7 +6884,7 @@ ER_FK_DUP_NAME
 	eng "Duplicate foreign key constraint name '%s'"
 
 ER_PASSWORD_FORMAT
-  eng "The password hash doesn't have the expected format. Check if the correct password algorithm is being used with the PASSWORD() function."
+  eng "The password hash doesn't have the expected format."
 
 ER_FK_COLUMN_CANNOT_DROP
         eng "Cannot drop column '%-.192s': needed in a foreign key constraint '%-.192s'"
@@ -7134,8 +7134,8 @@ ER_FK_DEPTH_EXCEEDED
   eng "Foreign key cascade delete/update exceeds max depth of %d."
 
 ER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2
-        eng "Column count of %s.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please use mysql_upgrade to fix this error."
-        ger "Spaltenanzahl von %s.%s falsch. %d erwartet, aber %d erhalten. Erzeugt mit MySQL %d, jetzt unter %d. Bitte benutzen Sie mysql_upgrade, um den Fehler zu beheben"
+        eng "The column count of %s.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please perform the MySQL upgrade procedure."
+        ger "Spaltenanzahl von %s.%s falsch. %d erwartet, aber %d erhalten. Erzeugt mit MySQL %d, jetzt unter %d. Bitte verwenden Sie die MySQL-Upgrade-Prozedur, um den Fehler zu beheben."
 
 ER_WARN_TRIGGER_DOESNT_HAVE_CREATED
   eng "Trigger %s.%s.%s does not have CREATED attribute."
@@ -7689,7 +7689,7 @@ ER_KEYRING_UDF_KEYRING_SERVICE_ERROR
   eng "Function '%s' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using."
 
 ER_USER_COLUMN_OLD_LENGTH
-  eng "It seems that your db schema is old. The %s column is 77 characters long and should be 93 characters long. Please run mysql_upgrade."
+  eng "It seems that your db schema is old. The %s column is 77 characters long and should be 93 characters long. Please perform the MySQL upgrade procedure."
 
 ER_CANT_RESET_MASTER
   eng "RESET MASTER is not allowed because %-.384s."
@@ -8024,7 +8024,7 @@ ER_NO_ACCESS_TO_NATIVE_FCT
   eng "Access to native function '%.64s' is rejected."
 
 ER_RESET_MASTER_TO_VALUE_OUT_OF_RANGE
-  eng "The requested value '%lu' for the next binary log index is out of range. Please use a value between '1' and '%lu'."
+  eng "The requested value '%llu' for the next binary log index is out of range. Please use a value between '1' and '%lu'."
 
 ER_UNRESOLVED_TABLE_LOCK
   eng "Unresolved table name %s in locking clause."
@@ -8739,6 +8739,111 @@ ER_FUNCTIONAL_INDEX_ROW_VALUE_IS_NOT_ALLOWED
 ER_RPL_ENCRYPTION_FAILED_TO_ENCRYPT
   eng "Failed to encrypt content to write into binlog file: %s."
 
+ER_PAGE_TRACKING_NOT_STARTED
+  eng "Page Tracking is not started yet."
+
+ER_PAGE_TRACKING_RANGE_NOT_TRACKED
+  eng "Tracking was not enabled for the LSN range specified"
+
+ER_PAGE_TRACKING_CANNOT_PURGE
+  eng "Cannot purge data when concurrent clone is in progress. Try later."
+
+ER_RPL_ENCRYPTION_CANNOT_ROTATE_BINLOG_MASTER_KEY
+  eng "Cannot rotate binary log master key when 'binlog-encryption' is off."
+
+ER_BINLOG_MASTER_KEY_RECOVERY_OUT_OF_COMBINATION
+  eng "Unable to recover binary log master key, the combination of new_master_key_seqno=%u, master_key_seqno=%u and old_master_key_seqno=%u are wrong."
+
+ER_BINLOG_MASTER_KEY_ROTATION_FAIL_TO_OPERATE_KEY
+  eng "Failed to operate binary log master key on keyring, please check if keyring plugin is loaded. The statement had no effect: the old binary log master key is still in use, the keyring, binary and relay log files are unchanged, and the server could not start using a new binary log master key for encrypting new binary and relay log files."
+
+ER_BINLOG_MASTER_KEY_ROTATION_FAIL_TO_ROTATE_LOGS
+  eng "Failed to rotate one or more binary or relay log files. A new binary log master key was generated and will be used to encrypt new binary and relay log files. There may still exist binary or relay log files using the previous binary log master key."
+
+ER_BINLOG_MASTER_KEY_ROTATION_FAIL_TO_REENCRYPT_LOG
+  eng "%s. A new binary log master key was generated and will be used to encrypt new binary and relay log files. There may still exist binary or relay log files using the previous binary log master key."
+
+ER_BINLOG_MASTER_KEY_ROTATION_FAIL_TO_CLEANUP_UNUSED_KEYS
+  eng "Failed to remove unused binary log encryption keys from the keyring, please check if keyring plugin is loaded. The unused binary log encryption keys may still exist in the keyring, and they will be removed upon server restart or next 'ALTER INSTANCE ROTATE BINLOG MASTER KEY' execution."
+
+ER_BINLOG_MASTER_KEY_ROTATION_FAIL_TO_CLEANUP_AUX_KEY
+  eng "Failed to remove auxiliary binary log encryption key from keyring, please check if keyring plugin is loaded. The cleanup of the binary log master key rotation process did not finish as expected and the cleanup will take place upon server restart or next 'ALTER INSTANCE ROTATE BINLOG MASTER KEY' execution."
+
+ER_NON_BOOLEAN_EXPR_FOR_CHECK_CONSTRAINT
+  eng "An expression of non-boolean type specified to a check constraint '%-.192s'."
+
+ER_COLUMN_CHECK_CONSTRAINT_REFERENCES_OTHER_COLUMN
+  eng "Column check constraint '%-.192s' references other column."
+
+ER_CHECK_CONSTRAINT_NAMED_FUNCTION_IS_NOT_ALLOWED
+  eng "An expression of a check constraint '%-.192s' contains disallowed function: %s."
+
+ER_CHECK_CONSTRAINT_FUNCTION_IS_NOT_ALLOWED
+  eng "An expression of a check constraint '%-.192s' contains disallowed function."
+
+ER_CHECK_CONSTRAINT_VARIABLES
+  eng "An expression of a check constraint '%-.192s' cannot refer to a user or system variable."
+
+ER_CHECK_CONSTRAINT_ROW_VALUE
+  eng "Check constraint '%-.192s' cannot refer to a row value."
+
+ER_CHECK_CONSTRAINT_REFERS_AUTO_INCREMENT_COLUMN
+  eng "Check constraint '%-.192s' cannot refer to an auto-increment column."
+
+ER_CHECK_CONSTRAINT_VIOLATED
+  eng "Check constraint '%-.192s' is violated."
+
+ER_CHECK_CONSTRAINT_REFERS_UNKNOWN_COLUMN
+  eng "Check constraint '%-.192s' refers to non-existing column '%-.192s'."
+
+ER_CHECK_CONSTRAINT_NOT_FOUND
+  eng "Check constraint '%-.192s' is not found in the table."
+
+ER_CHECK_CONSTRAINT_DUP_NAME
+  eng "Duplicate check constraint name '%-.192s'."
+
+ER_CHECK_CONSTRAINT_CLAUSE_USING_FK_REFER_ACTION_COLUMN
+  eng "Column '%-.192s' cannot be used in a check constraint '%-.192s': needed in a foreign key constraint '%-.192s' referential action."
+
+WARN_UNENCRYPTED_TABLE_IN_ENCRYPTED_DB
+  eng "Creating an unencrypted table in a database with default encryption enabled."
+
+ER_INVALID_ENCRYPTION_REQUEST
+  eng "Request to create %s table while using an %s tablespace."
+
+ER_CANNOT_SET_TABLE_ENCRYPTION
+  eng "Table encryption differ from its database default encryption, and user doesn't have enough privilege."
+
+ER_CANNOT_SET_DATABASE_ENCRYPTION
+  eng "Database default encryption differ from 'default_table_encryption' setting, and user doesn't have enough privilege."
+
+ER_CANNOT_SET_TABLESPACE_ENCRYPTION
+  eng "Tablespace encryption differ from 'default_table_encryption' setting, and user doesn't have enough privilege."
+
+ER_TABLESPACE_CANNOT_BE_ENCRYPTED
+  eng "This tablespace can't be encrypted, because one of table's schema has default encryption OFF and user doesn't have enough privilege."
+
+ER_TABLESPACE_CANNOT_BE_DECRYPTED
+  eng "This tablespace can't be decrypted, because one of table's schema has default encryption ON and user doesn't have enough privilege."
+
+ER_TABLESPACE_TYPE_UNKNOWN
+  eng "Cannot determine the type of the tablespace named '%s'."
+
+ER_TARGET_TABLESPACE_UNENCRYPTED
+  eng "Source tablespace is encrypted but target tablespace is not."
+
+ER_CANNOT_USE_ENCRYPTION_CLAUSE
+  eng "ENCRYPTION clause is not valid for %s tablespace."
+
+ER_INVALID_MULTIPLE_CLAUSES
+  eng "Multiple %s clauses"
+
+ER_UNSUPPORTED_USE_OF_GRANT_AS
+  eng "GRANT ... AS is currently supported only for global privileges."
+
+ER_UKNOWN_AUTH_ID_OR_ACCESS_DENIED_FOR_GRANT_AS
+  eng "Either some of the authorization IDs in the AS clause are invalid or the current user lacks privileges to execute the statement."
+
 #
 #  End of 8.0 error messages.
 #
@@ -9008,7 +9113,7 @@ ER_INNODB_MANDATORY
 OBSOLETE_ER_INNODB_CANNOT_BE_IGNORED
   eng "ignore-builtin-innodb is ignored and will be removed in future releases."
 
-ER_OLD_PASSWORDS_NO_MIDDLE_GROUND
+OBSOLETE_ER_OLD_PASSWORDS_NO_MIDDLE_GROUND
   eng "Invalid old_passwords mode: 1. Valid values are 2 and 0"
 
 ER_VERBOSE_REQUIRES_HELP
@@ -9435,7 +9540,7 @@ ER_UDF_INVALID_ROW_IN_FUNCTION_TABLE
   eng "Invalid row in mysql.func table for function '%.64s'"
 
 ER_UDF_CANT_OPEN_FUNCTION_TABLE
-  eng "Can't open the mysql.func table. Please run mysql_upgrade to create it."
+  eng "Could not open the mysql.func table. Please perform the MySQL upgrade procedure."
 
 ER_XA_RECOVER_FOUND_TRX_IN_SE
   eng "Found %d prepared transaction(s) in %s"
@@ -9708,13 +9813,13 @@ ER_AUTHCACHE_PLUGIN_CONFIG
   eng "The plugin '%s' is used to authenticate user '%s'@'%.*s', %s configured. Nobody can currently login using this account."
 
 OBSOLETE_ER_AUTHCACHE_ROLE_TABLES_DODGY
-  eng "Could not load mysql.role_edges and mysql.default_roles tables. ACL DDLs will not work unless mysql_upgrade is executed."
+  eng "Could not load mysql.role_edges and mysql.default_roles tables. ACL DDLs will not work unless the MySQL upgrade procedure is performed."
 
 ER_AUTHCACHE_USER_SKIPPED_NEEDS_RESOLVE
   eng "'user' entry '%s@%s' ignored in --skip-name-resolve mode."
 
 ER_AUTHCACHE_USER_TABLE_DODGY
-  eng "Fatal error: mysql.user table is damaged. Please run mysql_upgrade."
+  eng "Fatal error: Could not read the column 'authentication_string' from table 'mysql.user'. Please perform the MySQL upgrade procedure."
 
 ER_AUTHCACHE_USER_IGNORED_DEPRECATED_PASSWORD
   eng "User entry '%s'@'%s' has a deprecated pre-4.1 password. The user will be ignored and no one can login with this user anymore."
@@ -9729,7 +9834,7 @@ ER_AUTHCACHE_EXPIRED_PASSWORD_UNSUPPORTED
   eng "'user' entry '%s@%s' has the password ignore flag raised, but its authentication plugin doesn't support password expiration. The user id will be ignored."
 
 ER_NO_SUPER_WITHOUT_USER_PLUGIN
-  eng "Some of the user accounts with SUPER privileges were disabled because of empty mysql.user.plugin value. If you are upgrading from MySQL 5.6 to MySQL 5.7 it means we were not able to substitute for empty plugin column. Probably because of pre 4.1 password hash. If your account is disabled you will need to: 1. Stop the server and restart it with --skip-grant-tables. 2. Run mysql_upgrade. 3. Restart the server with the parameters you normally use. For complete instructions on how to upgrade MySQL to a new version please see the 'Upgrading MySQL' section from the MySQL manual"
+  eng "Some of the user accounts with SUPER privileges were disabled because of empty mysql.user.plugin value. If you are upgrading from MySQL 5.6 to MySQL 5.7 it means that substitution for the empty plugin column was not possible. Probably because of pre 4.1 password hash. If your account is disabled you will need to perform the MySQL upgrade procedure. For complete instructions on how to upgrade MySQL to a new version please see the 'Upgrading MySQL' section from the MySQL manual."
 
 ER_AUTHCACHE_DB_IGNORED_EMPTY_NAME
   eng "Found an entry in the 'db' table with empty database name; Skipped"
@@ -9741,7 +9846,7 @@ ER_AUTHCACHE_DB_ENTRY_LOWERCASED_REVOKE_WILL_FAIL
   eng "'db' entry '%s %s@%s' had database in mixed case that has been forced to lowercase because lower_case_table_names is set. It will not be possible to remove this privilege using REVOKE."
 
 ER_AUTHCACHE_TABLE_PROXIES_PRIV_MISSING
-  eng "Missing system table mysql.proxies_priv; please run mysql_upgrade to create it"
+  eng "The system table mysql.proxies_priv is missing. Please perform the MySQL upgrade procedure."
 
 ER_AUTHCACHE_CANT_OPEN_AND_LOCK_PRIVILEGE_TABLES
   eng "Fatal error: Can't open and lock privilege tables: %s"
@@ -10971,7 +11076,7 @@ ER_PLUGIN_REGISTRATION_FAILED
   eng "Plugin '%s' registration as a %s failed."
 
 ER_PLUGIN_CANT_OPEN_PLUGIN_TABLE
-  eng "Can't open the mysql.plugin table. Please run mysql_upgrade to create it."
+  eng "Could not open the mysql.plugin table. Please perform the MySQL upgrade procedure."
 
 ER_PLUGIN_CANT_LOAD
   eng "Couldn't load plugin named '%s' with soname '%s'."
@@ -11459,7 +11564,7 @@ OBSOLETE_ER_NDB_DISTRIBUTING_ERR
 ER_RPL_SLAVE_INSECURE_CHANGE_MASTER
   eng "Storing MySQL user name or password information in the master info repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START SLAVE; see the 'START SLAVE Syntax' in the MySQL Manual for more information."
 
-ER_RPL_SLAVE_FLUSH_RELAY_LOGS_NOT_ALLOWED
+OBSOLETE_ER_RPL_SLAVE_FLUSH_RELAY_LOGS_NOT_ALLOWED
   eng "FLUSH RELAY LOGS cannot be performed on channel '%-.192s'."
 
 ER_RPL_SLAVE_INCORRECT_CHANNEL
@@ -11622,7 +11727,7 @@ ER_RPL_FILTER_ADD_WILD_IGNORE_TABLE_FAILED
   eng "Could not add wild ignore table rule '%s'!"
 
 ER_PRIVILEGE_SYSTEM_INIT_FAILED
-  eng "The privilege system failed to initialize correctly. If you have upgraded your server, make sure you're executing mysql_upgrade to correct the issue."
+  eng "The privilege system failed to initialize correctly. For complete instructions on how to upgrade MySQL to a new version please see the 'Upgrading MySQL' section from the MySQL manual."
 
 ER_CANNOT_SET_LOG_ERROR_SERVICES
   eng "Cannot set services \"%s\" requested in --log-error-services, using defaults."
@@ -11661,7 +11766,7 @@ ER_RPL_SLAVE_RESET_FILTER_OPTIONS
   eng "There are per-channel replication filter(s) configured for channel '%.192s' which does not exist. The filter(s) have been discarded."
 
 ER_MISSING_GRANT_SYSTEM_TABLE
-  eng "Missing system table mysql.global_grants; please run mysql_upgrade to create it."
+  eng "The system table mysql.global_grants is missing. Please perform the MySQL upgrade procedure."
 
 ER_MISSING_ACL_SYSTEM_TABLE
   eng "ACL table mysql.%.*s missing. Some operations may fail."
@@ -11802,7 +11907,7 @@ ER_DD_UPGRADE_FAILED_FIND_VALID_DATA_DIR
   eng "Failed to find valid data directory."
 
 ER_DD_UPGRADE_START
-  eng "Starting upgrade on data directory."
+  eng "Starting upgrade of data directory."
 
 ER_DD_UPGRADE_FAILED_INIT_DD_SE
   eng "Failed to initialize DD Storage Engine."
@@ -13848,7 +13953,7 @@ ER_GRP_RPL_FORCE_MEMBERS_SET_UPDATE_NOT_ALLOWED
   eng "group_replication_force_members can only be updated when Group Replication is running and a majority of the members are unreachable"
 
 ER_GRP_RPL_GRP_COMMUNICATION_INIT_WITH_CONF
-  eng "Initialized group communication with configuration: group_replication_group_name: '%s'; group_replication_local_address: '%s'; group_replication_group_seeds: '%s'; group_replication_bootstrap_group: '%s'; group_replication_poll_spin_loops: %lu; group_replication_compression_threshold: %lu; group_replication_ip_whitelist: '%s'; group_replication_communication_debug_options: '%s'; group_replication_member_expel_timeout: '%lu'"
+  eng "Initialized group communication with configuration: group_replication_group_name: '%s'; group_replication_local_address: '%s'; group_replication_group_seeds: '%s'; group_replication_bootstrap_group: '%s'; group_replication_poll_spin_loops: %lu; group_replication_compression_threshold: %lu; group_replication_ip_whitelist: '%s'; group_replication_communication_debug_options: '%s'; group_replication_member_expel_timeout: '%lu'; group_replication_communication_max_message_size: %lu; group_replication_message_cache_size: '%luu'"
 
 ER_GRP_RPL_UNKNOWN_GRP_RPL_APPLIER_PIPELINE_REQUESTED
   eng "Unknown group replication applier pipeline requested"
@@ -13890,7 +13995,7 @@ ER_GRP_RPL_SQL_SERVICE_FAILED_TO_FETCH_SECURITY_CTX
   eng "Error when trying to fetch security context when contacting the server for internal plugin requests."
 
 ER_GRP_RPL_SQL_SERVICE_SERVER_ACCESS_DENIED_FOR_USER
-  eng "There was an error when trying to access the server with user: %s. Make sure the user is present in the server and that mysql_upgrade was run after a server update."
+  eng "There was an error when trying to access the server with user: %s. Make sure the user is present in the server and that the MySQL upgrade procedure was run correctly."
 
 ER_GRP_RPL_SQL_SERVICE_MAX_CONN_ERROR_FROM_SERVER
   eng "Failed to establish an internal server connection to execute plugin operations since the server does not have available connections, please increase @@GLOBAL.MAX_CONNECTIONS. Server error: %i."
@@ -16199,7 +16304,7 @@ ER_IB_MSG_651
 ER_IB_MSG_652
   eng "%s"
 
-ER_IB_MSG_653
+ER_IB_MSG_DDL_LOG_DELETE_BY_ID_OK
   eng "%s"
 
 ER_IB_MSG_654
@@ -17390,7 +17495,7 @@ ER_IB_MSG_1048
 ER_IB_MSG_1049
   eng "Waiting for change buffer merge to complete number of bytes of change buffer just merged: %llu"
 
-ER_IB_MSG_1050
+OBSOLETE_ER_IB_MSG_1050
   eng "Can't set undo tablespace(s) to be encrypted since --innodb_undo_tablespaces=0."
 
 ER_IB_MSG_1051
@@ -17967,16 +18072,16 @@ ER_IB_MSG_1241
   eng "%s"
 
 ER_IB_MSG_1242
-  eng "%s"
+  eng "Can't set redo log tablespace to be encrypted in read-only mode."
 
 ER_IB_MSG_1243
-  eng "%s"
+  eng "Can't set redo log tablespace to be encrypted."
 
 ER_IB_MSG_1244
-  eng "%s"
+  eng "Can't set redo log tablespace to be encrypted."
 
 ER_IB_MSG_1245
-  eng "%s"
+  eng "Redo log encryption is enabled."
 
 ER_IB_MSG_1246
   eng "%s"
@@ -18192,7 +18297,7 @@ ER_SERVER_TABLE_CHECK_FAILED
   eng "Incorrect definition of table %s.%s: expected column '%s' at position %d, found '%s'."
 
 ER_SERVER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2
-  eng "Column count of %s.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please use mysql_upgrade to fix this error."
+  eng "The column count of %s.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please perform the MySQL upgrade procedure."
 
 ER_SERVER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2
   eng "Column count of %s.%s is wrong. Expected %d, found %d. The table is probably corrupted"
@@ -18301,7 +18406,7 @@ ER_UPDATE_GTID_PURGED_WITH_GR
   eng "Cannot update GTID_PURGED with the Group Replication plugin running"
 
 ER_AUDIT_LOG_TABLE_DEFINITION_NOT_UPDATED
-  eng "'%s.%s' table definition has not been upgraded; to upgrade it, run mysql_upgrade command."
+  eng "'%s.%s' table definition has not been upgraded; Please perform the MySQL upgrade procedure."
 
 ER_DD_INITIALIZE_SQL_ERROR
   eng "Execution of server-side SQL statement '%s' failed with error code = %d, error message = '%s'."
@@ -18345,7 +18450,8 @@ ER_IB_MSG_1274
 ER_IB_MSG_1275
   eng "%s"
 
-ER_TARGET_TS_UNENCRYPTED
+# Unused since MySQL 8.0.15
+OBSOLETE_ER_TARGET_TS_UNENCRYPTED
   eng "Source tablespace is encrypted but target tablespace is not."
 
 ER_IB_MSG_WAIT_FOR_ENCRYPT_THREAD
@@ -18847,6 +18953,281 @@ ER_LDAP_MAPPING_NON_DESIRED_STATE
 
 ER_INVALID_NAMED_PIPE_FULL_ACCESS_GROUP
   eng "Invalid value for named_pipe_full_access_group."
+
+# This error is not supposed to be reported to the users. It is only
+# meant for internal use to signal that a statement should be
+# reprepared for a secondary storage engine. The error should be
+# caught and handled by the server.
+ER_PREPARE_FOR_SECONDARY_ENGINE
+  eng "Retry the statement using a secondary storage engine."
+
+ER_SERVER_WARN_DEPRECATED
+  eng "'%s' is deprecated and will be removed in a future release. Please use %s instead"
+ER_AUTH_ID_WITH_SYSTEM_USER_PRIV_IN_MANDATORY_ROLES
+  eng "Cannot set mandatory_roles: AuthId `%.64s`@`%.64s` has '%s' privilege."
+
+ER_SERVER_BINLOG_MASTER_KEY_RECOVERY_OUT_OF_COMBINATION
+  eng "Unable to recover binary log master key, the combination of new_master_key_seqno=%u, master_key_seqno=%u and old_master_key_seqno=%u are wrong."
+
+ER_SERVER_BINLOG_MASTER_KEY_ROTATION_FAIL_TO_CLEANUP_AUX_KEY
+  eng "Failed to remove auxiliary binary log encryption key from keyring, please check if keyring plugin is loaded. The cleanup of the binary log master key rotation process did not finish as expected and the cleanup will take place upon server restart or next 'ALTER INSTANCE ROTATE BINLOG MASTER KEY' execution."
+
+ER_CANNOT_GRANT_SYSTEM_PRIV_TO_MANDATORY_ROLE
+  eng "AuthId `%.64s`@`%.64s` is set as mandatory_roles. Cannot grant the '%s' privilege."
+
+ER_PARTIAL_REVOKE_AND_DB_GRANT_BOTH_EXISTS
+  eng "'%s' privilege for database '%s' exists both as partial revoke and mysql.db simultaneously. It could mean 'mysql' schema is corrupted."
+
+ER_DB_ACCESS_DENIED
+  eng "Access denied for AuthId `%.64s`@`%.64s` to database '%-.192s'."
+
+ER_PARTIAL_REVOKES_EXIST
+  eng "At least one partial revoke exists on a database. The system variable '@@partial_revokes' must be set to ON."
+
+ER_TURNING_ON_PARTIAL_REVOKES
+  eng "At least one partial revoke exists on a database. Turning ON the system variable '@@partial_revokes'."
+
+ER_WARN_PARTIAL_REVOKE_AND_DB_GRANT
+  eng "For user '%s'@'%s', one or more privileges granted through mysql.db for database '%s', conflict with partial revoke. It could mean 'mysql' schema is corrupted."
+
+ER_WARN_INCORRECT_PRIVILEGE_FOR_DB_RESTRICTIONS
+  eng "For user %s, ignored restrictions for privilege(s) '%s' for database '%s' as these are not valid database privileges."
+
+ER_WARN_INVALID_DB_RESTRICTIONS
+  eng "For user %s, ignored restrictions for privilege(s) '%s' for database '%s' as corresponding global privilege(s) are not granted."
+
+ER_GRP_RPL_INVALID_COMMUNICATION_PROTOCOL
+  eng "'%s' is an invalid value for group_replication_communication_protocol_join, please use a MySQL version between 5.7.14 and this server's version"
+
+ER_GRP_RPL_STARTED_AUTO_REJOIN
+  eng "Started auto-rejoin procedure attempt %d of %d"
+
+ER_GRP_RPL_TIMEOUT_RECEIVED_VC_ON_REJOIN
+  eng "Timeout while waiting for a view change event during the auto-rejoin procedure"
+
+ER_GRP_RPL_FINISHED_AUTO_REJOIN
+  eng "Auto-rejoin procedure attempt %d of %d finished. Member was%s able to join the group."
+
+ER_GRP_RPL_DEFAULT_TABLE_ENCRYPTION_DIFF_FROM_GRP
+  eng "The member is configured with a default_table_encryption option value '%d' different from the group '%d'. The member will now exit the group."
+
+ER_SERVER_UPGRADE_OFF
+  eng "Server shutting down because upgrade is required, yet prohibited by the command line option '--upgrade=NONE'."
+
+ER_SERVER_UPGRADE_SKIP
+  eng "Server upgrade is required, but skipped by command line option '--upgrade=MINIMAL'."
+
+ER_SERVER_UPGRADE_PENDING
+  eng "Server upgrade started with version %d, but server upgrade of version %d is still pending."
+
+ER_SERVER_UPGRADE_FAILED
+  eng "Failed to upgrade server."
+
+ER_SERVER_UPGRADE_STATUS
+  eng "Server upgrade from '%d' to '%d' %s."
+
+ER_SERVER_UPGRADE_REPAIR_REQUIRED
+  eng "Table '%s' requires repair."
+
+ER_SERVER_UPGRADE_REPAIR_STATUS
+  eng "Table '%s' repair %s."
+
+ER_SERVER_UPGRADE_INFO_FILE
+  eng "Could not create server upgrade info file at '%s'."
+
+ER_SERVER_UPGRADE_SYS_SCHEMA
+  eng "Upgrading the sys schema."
+
+ER_SERVER_UPGRADE_MYSQL_TABLES
+  eng "Running queries to upgrade MySQL server."
+
+ER_SERVER_UPGRADE_SYSTEM_TABLES
+  eng "Upgrading system table data."
+
+ER_SERVER_UPGRADE_EMPTY_SYS
+  eng "Found empty sys database. Installing the sys schema."
+
+ER_SERVER_UPGRADE_NO_SYS_VERSION
+  eng "A sys schema exists with no sys.version view. If you have a user created sys schema, this must be renamed for the upgrade to succeed."
+
+ER_SERVER_UPGRADE_SYS_VERSION_EMPTY
+  eng "A sys schema exists with a sys.version view, but it returns no results."
+
+ER_SERVER_UPGRADE_SYS_SCHEMA_OUTDATED
+  eng "Found outdated sys schema version %s."
+
+ER_SERVER_UPGRADE_SYS_SCHEMA_UP_TO_DATE
+  eng "The sys schema is already up to date (version %s)."
+
+ER_SERVER_UPGRADE_SYS_SCHEMA_OBJECT_COUNT
+  eng "Found %d sys %s, but expected %d. Re-installing the sys schema."
+
+ER_SERVER_UPGRADE_CHECKING_DB
+  eng "Checking '%s' schema."
+
+ER_IB_MSG_DDL_LOG_DELETE_BY_ID_TMCT
+  eng "Too many concurrent transactions while clearing the DDL Log. Please increase the number of Rollback Segments."
+
+ER_IB_MSG_POST_RECOVER_DDL_LOG_RECOVER
+  eng "Error in DDL Log recovery during Post-Recovery processing."
+
+ER_IB_MSG_POST_RECOVER_POST_TS_ENCRYPT
+  eng "Error in Post-Tablespace-Encryption during Post-Recovery processing."
+
+ER_IB_MSG_DDL_LOG_FAIL_POST_DDL
+  eng "Error in DLL Log cleanup during Post-DDL processing."
+
+ER_SERVER_BINLOG_UNSAFE_SYSTEM_FUNCTION
+  eng "'%s' statement is unsafe because it uses a system function that may return a different value on the slave."
+
+ER_SERVER_UPGRADE_HELP_TABLE_STATUS
+  eng "Upgrade of help tables %s."
+
+ER_GRP_RPL_SRV_GTID_WAIT_ERROR
+  eng "Error when waiting for the server to execute local transactions in order assure the group change proper logging"
+
+ER_GRP_DELAYED_VCLE_LOGGING
+  eng "Unable to log the group change View log event in its exaction position in the log. This will not however affect the group replication recovery process or the overall plugin process."
+
+ER_CANNOT_GRANT_ROLES_TO_ANONYMOUS_USER
+  eng "Cannot grant roles to an anonymous user."
+
+ER_BINLOG_UNABLE_TO_ROTATE_GTID_TABLE_READONLY
+  eng "Unable to create a new binlog file: Table `mysql.gtid_executed` couldn't be opened. %s"
+
+ER_NETWORK_NAMESPACES_NOT_SUPPORTED
+  eng "Network Namespaces is not supported on this platform"
+
+ER_UNKNOWN_NETWORK_NAMESPACE
+  eng "Unknown network namespace '%s'"
+
+ER_NETWORK_NAMESPACE_NOT_ALLOWED_FOR_WILDCARD_ADDRESS
+  eng "Network namespace not allowed for wildcard interface address"
+
+ER_SETNS_FAILED
+  eng "setns() failed with error '%s'"
+
+ER_WILDCARD_NOT_ALLOWED_FOR_MULTIADDRESS_BIND
+  eng "Wildcard address value not allowed for multivalued bind address"
+
+ER_NETWORK_NAMESPACE_FILE_PATH_TOO_LONG
+  eng "The path to a special network namespace file is too long. (got %u > max %u)"
+
+ER_IB_MSG_TOO_LONG_PATH
+  eng "Cannot create tablespace '%s'. The filepath is too long for this OS."
+
+ER_IB_RECV_FIRST_REC_GROUP_INVALID
+  eng "The last block of redo had corrupted first_rec_group and became fixed (%u -> %u)."
+
+ER_DD_UPGRADE_COMPLETED
+  eng "Data dictionary upgrade from version '%u' to '%u' completed."
+
+ER_SSL_SERVER_CERT_VERIFY_FAILED
+  eng "Server SSL certificate doesn't verify: %s"
+
+ER_PERSIST_OPTION_USER_TRUNCATED
+  eng "Truncated a user name for %s that was too long while reading the persisted variables file"
+
+ER_PERSIST_OPTION_HOST_TRUNCATED
+  eng "Truncated a host name for %s that was too long while reading the persisted variables file"
+
+ER_NET_WAIT_ERROR
+  eng "The wait_timeout period was exceeded, the idle time since last command was too long."
+
+ER_IB_MSG_1285
+  eng "'%s' found not encrypted while '%s' is ON. Trying to encrypt it now."
+
+ER_IB_MSG_CLOCK_MONOTONIC_UNSUPPORTED
+  eng "CLOCK_MONOTONIC is unsupported, so do not change the system time when MySQL is running !"
+
+ER_IB_MSG_CLOCK_GETTIME_FAILED
+  eng "clock_gettime() failed: %s"
+
+ER_PLUGIN_NOT_EARLY_DUP
+  eng "Plugin '%s' is not to be used as an "early" plugin. Don't add it to --early-plugin-load, keyring migration etc."
+  bgn "Приставката '%s' не може да се използва като ранна приставка. Не я добавайте в --early-plugin-load и т.н."
+
+ER_PLUGIN_NO_INSTALL_DUP
+  eng "Plugin '%s' is marked as not dynamically installable. You have to stop the server to install it."
+
+# When using this error message, use the ER_WARN_DEPRECATED_SYNTAX error
+# code.
+ER_WARN_DEPRECATED_SQL_CALC_FOUND_ROWS
+  eng "SQL_CALC_FOUND_ROWS is deprecated and will be removed in a future release. Consider using two separate queries instead."
+
+# When using this error message, use the ER_WARN_DEPRECATED_SYNTAX error
+# code.
+ER_WARN_DEPRECATED_FOUND_ROWS
+  eng "FOUND_ROWS() is deprecated and will be removed in a future release. Consider using COUNT(*) instead."
+
+ER_BINLOG_UNSAFE_DEFAULT_EXPRESSION_IN_SUBSTATEMENT
+  eng "The statement is unsafe because it invokes a trigger or a stored function that modifies a table that has a column with a DEFAULT expression that may return a different value on the slave."
+
+ER_GRP_RPL_MEMBER_VER_READ_COMPATIBLE
+  eng "Member version is read compatible with the group."
+
+ER_LOCK_ORDER_INIT_FAILED
+  eng "Lock order disabled (reason: init failed)."
+
+ER_AUDIT_LOG_KEYRING_ID_TIMESTAMP_VALUE_IS_INVALID
+  eng "Keyring ID timestamp value is invalid: '%s'"
+
+ER_AUDIT_LOG_FILE_NAME_TIMESTAMP_VALUE_IS_MISSING_OR_INVALID
+  eng "Cannot process audit log file. File name timestamp value is missing or invalid: '%s'"
+
+ER_AUDIT_LOG_FILE_NAME_DOES_NOT_HAVE_REQUIRED_FORMAT
+  eng "Cannot process audit log file. File name does not have required format: '%s'"
+
+ER_AUDIT_LOG_FILE_NAME_KEYRING_ID_VALUE_IS_MISSING
+  eng "Cannot process audit log file. File name keyring ID value is missing: '%s'"
+
+ER_AUDIT_LOG_FILE_HAS_BEEN_SUCCESSFULLY_PROCESSED
+  eng "Audit log file has been successfully processed: '%s'"
+
+ER_AUDIT_LOG_COULD_NOT_OPEN_FILE_FOR_READING
+  eng "Could not open audit log file for reading: '%s'"
+
+ER_AUDIT_LOG_INVALID_FILE_CONTENT
+  eng "Invalid audit log file content: '%s'"
+
+ER_AUDIT_LOG_CANNOT_READ_PASSWORD
+  eng "Cannot read password: '%.32s'"
+
+ER_AUDIT_LOG_CANNOT_STORE_PASSWORD
+  eng "Cannot store password: '%.32s'"
+
+ER_AUDIT_LOG_CANNOT_REMOVE_PASSWORD
+  eng "Cannot remove password: '%.32s'"
+
+ER_AUDIT_LOG_PASSWORD_HAS_BEEN_COPIED
+  eng "'audit_log' password has been copied into '%.32s' and will be removed with first purged password."
+
+ER_AUDIT_LOG_INSUFFICIENT_PRIVILEGE
+  eng "Request ignored for '%.64s'@'%.64s'. Role needed to perform operation: '%.32s'"
+
+ER_WRONG_MVI_VALUE
+  eng "Can't store an array or an object in a scalar key part of the index '%.192s'"
+
+ER_WARN_FUNC_INDEX_NOT_APPLICABLE
+  eng "Cannot use functional index '%-.64s' due to type or collation conversion"
+
+ER_EXCEEDED_MV_KEYS_NUM
+  eng "Exceeded max number of values per record for multi-valued index '%-.64s' by %u value(s)"
+
+ER_EXCEEDED_MV_KEYS_SPACE
+  eng "Exceeded max total length of values per record for multi-valued index '%-.64s' by %u bytes"
+
+ER_FUNCTIONAL_INDEX_DATA_IS_TOO_LONG 22001
+  eng "Data too long for functional index '%-.64s'"
+
+ER_INVALID_JSON_VALUE_FOR_FUNC_INDEX 22018
+  eng "Invalid JSON value for CAST for functional index '%-.64s'"
+
+ER_JSON_VALUE_OUT_OF_RANGE_FOR_FUNC_INDEX 22003
+  eng "Out of range JSON value for CAST for functional index '%-.64s'"
+
+ER_LDAP_EMPTY_USERDN_PASSWORD
+  eng "Empty user dn or password is not allowed, not attempting LDAP bind."
 
 #
 # End of 8.0 error messages intended to be logged to the server error log.

@@ -17,7 +17,16 @@ The following options may be given as the first argument:
  --admin-address=name 
  IP address to bind to for service connection. Address can
  be an IPv4 address, IPv6 address, or host name. Wildcard
- values *, ::, 0.0.0.0 are not allowed.
+ values *, ::, 0.0.0.0 are not allowed. Address value can
+ have following optional network namespace separated by
+ the delimiter / from the address value. E.g., the
+ following value 192.168.1.1/red specifies IP addresses to
+ listen for incoming TCP connections that have to be
+ placed into the namespace 'red'. Using of network
+ namespace requires its support from underlying Operating
+ System. Attempt to specify a network namespace for a
+ platform that doesn't support it results in error during
+ socket creation.
  --admin-port=#      Port number to use for service connection, built-in
  default (33062)
  --allow-suspicious-udfs 
@@ -55,6 +64,19 @@ The following options may be given as the first argument:
  name or one of the wildcard values *, ::, 0.0.0.0. In
  case more than one address is specified in a
  comma-separated list, wildcard values are not allowed.
+ Every address can have optional network namespace
+ separated by the delimiter / from the address value.
+ E.g., the following value
+ 192.168.1.1/red,172.16.1.1/green,193.168.1.1 specifies
+ three IP addresses to listen for incoming TCP connections
+ two of that have to be placed in corresponding
+ namespaces: the address 192.168.1.1 must be placed into
+ the namespace red and the address 172.16.1.1 must be
+ placed into the namespace green. Using of network
+ namespace requires its support from underlying Operating
+ System. Attempt to specify a network namespace for a
+ platform that doesn't support it results in error during
+ socket creation.
  --binlog-cache-size=# 
  The size of the transactional cache for updates to
  transactional engines for the binary log. If you often
@@ -238,6 +260,10 @@ The following options may be given as the first argument:
  The number of days after which the password will expire.
  --default-storage-engine=name 
  The default storage engine for new tables
+ --default-table-encryption 
+ Database and tablespace created with this default
+ encryption propertyunless, the user specify a explicit
+ encryption property.
  --default-time-zone=name 
  Set the default time zone.
  --default-tmp-storage-engine=name 
@@ -393,9 +419,6 @@ The following options may be given as the first argument:
  --interactive-timeout=# 
  The number of seconds the server waits for activity on an
  interactive connection before closing it
- --internal-tmp-disk-storage-engine[=name] 
- The default storage engine for on-disk internal temporary
- tables.
  --internal-tmp-mem-storage-engine=name 
  The default storage engine for in-memory internal
  temporary tables.
@@ -672,7 +695,8 @@ The following options may be given as the first argument:
  connection before aborting the write
  -n, --new           Use very new possible "unsafe" functions
  --no-dd-upgrade     Abort restart if automatic upgrade or downgrade of the
- data dictionary is needed.
+ data dictionary is needed. Deprecated option. Use
+ --upgrade=NONE instead.
  --no-monitor        Disable monitor process.
  --offline-mode      Make the server into offline mode
  --old               Use compatible behavior
@@ -732,6 +756,8 @@ The following options may be given as the first argument:
  Offset of first optimizer trace to show; see manual
  --parser-max-mem-size=# 
  Maximum amount of memory available to the parser
+ --partial-revokes   Access of database objects can be restricted, even if
+ user has global privileges granted.
  --password-history=# 
  The number of old passwords to check in the history. Set
  to 0 (the default) to turn the checks off
@@ -1091,6 +1117,11 @@ The following options may be given as the first argument:
  write privileges to the mysql.user table.
  --schema-definition-cache=# 
  The number of cached schema definitions
+ --secondary-engine-cost-threshold[=#] 
+ Controls which statements to consider for execution in a
+ secondary storage engine. Only statements that have a
+ cost estimate higher than this value will be attempted
+ executed in a secondary storage engine.
  --secure-file-priv=name 
  Limit LOAD DATA, SELECT ... OUTFILE, and LOAD_FILE() to
  files within specified directory
@@ -1282,6 +1313,12 @@ The following options may be given as the first argument:
  the same statement.
  --table-definition-cache=# 
  The number of cached table definitions
+ --table-encryption-privilege-check 
+ Indicates if server enables privilege check when user
+ tries to use non-default value for CREATE DATABASE or
+ CREATE TABLESPACE or when user tries to do CREATE TABLE
+ with ENCRYPTION option which deviates from per-database
+ default.
  --table-open-cache=# 
  The number of cached open tables (total for all table
  cache instances)
@@ -1296,13 +1333,18 @@ The following options may be given as the first argument:
  Maximum amount of memory (in bytes) the TempTable storage
  engine is allowed to allocate from the main memory (RAM)
  before starting to store data on disk.
+ --temptable-use-mmap 
+ Use mmap files for temptables
+ (Defaults to on; use --skip-temptable-use-mmap to disable.)
  --thread-cache-size=# 
  How many threads we should keep in a cache for reuse
  --thread-handling=name 
  Define threads usage for handling queries, one of
  one-thread-per-connection, no-threads, loaded-dynamically
  --thread-stack=#    The stack size for each thread
- --tls-version=name  TLS version, permitted values are TLSv1, TLSv1.1, TLSv1.2
+ --tls-ciphersuites=name 
+ --tls-version=name  TLS version, permitted values are TLSv1, TLSv1.1,
+ TLSv1.2, TLSv1.3
  --tmp-table-size=#  If an internal in-memory temporary table in the MEMORY
  storage engine exceeds this size, MySQL will
  automatically convert it to an on-disk table
@@ -1331,7 +1373,13 @@ The following options may be given as the first argument:
  Prohibit update of a VIEW, which does not contain a key
  of the underlying table and the query uses a LIMIT clause
  (usually get from GUI tools)
+ --upgrade=name      Set server upgrade mode. NONE to abort server if
+ automatic upgrade of the server is needed; MINIMAL to
+ start the server, but skip upgrade steps that are not
+ absolutely necessary; AUTO (default) to upgrade the
+ server if required; FORCE to force upgrade server.
  -u, --user=name     Run mysqld daemon as user.
+ --validate-config   Validate the server configuration specified by the user.
  --validate-user-plugins 
  Turns on additional validation of authentication plugins
  assigned to user accounts. 
@@ -1401,6 +1449,7 @@ cte-max-recursion-depth 1000
 default-authentication-plugin caching_sha2_password
 default-password-lifetime 0
 default-storage-engine InnoDB
+default-table-encryption FALSE
 default-time-zone (No default value)
 default-tmp-storage-engine InnoDB
 default-week-format 0
@@ -1442,7 +1491,6 @@ init-slave
 initialize TRUE
 initialize-insecure TRUE
 interactive-timeout 28800
-internal-tmp-disk-storage-engine InnoDB
 internal-tmp-mem-storage-engine TempTable
 join-buffer-size 262144
 keep-files-on-create FALSE
@@ -1545,6 +1593,7 @@ optimizer-trace-limit 1
 optimizer-trace-max-mem-size 1048576
 optimizer-trace-offset -1
 parser-max-mem-size 18446744073709551615
+partial-revokes ####
 password-history 0
 password-require-current FALSE
 password-reuse-interval 0
@@ -1640,6 +1689,7 @@ rpl-read-size 8192
 rpl-stop-slave-timeout 31536000
 safe-user-create FALSE
 schema-definition-cache 256
+secondary-engine-cost-threshold 100000
 server-id 1
 server-id-bits 32
 session-track-gtids OFF
@@ -1690,13 +1740,16 @@ sync-master-info 10000
 sync-relay-log 10000
 sync-relay-log-info 10000
 sysdate-is-now FALSE
+table-encryption-privilege-check FALSE
 table-open-cache-instances 16
 tablespace-definition-cache 256
 tc-heuristic-recover OFF
 temptable-max-ram 1073741824
+temptable-use-mmap TRUE
 thread-cache-size 9
 thread-handling one-thread-per-connection
 thread-stack 262144
+tls-ciphersuites (No default value)
 tmp-table-size 16777216
 transaction-alloc-block-size 8192
 transaction-isolation REPEATABLE-READ
@@ -1704,6 +1757,8 @@ transaction-prealloc-size 4096
 transaction-read-only FALSE
 transaction-write-set-extraction XXHASH64
 updatable-views-with-limit YES
+upgrade AUTO
+validate-config FALSE
 validate-user-plugins TRUE
 verbose TRUE
 wait-timeout 28800

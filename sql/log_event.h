@@ -1,5 +1,4 @@
-
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,6 +57,7 @@
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"  // SERVER_VERSION_LENGTH
+#include "partition_info.h"
 #include "rows_event.h"
 #include "sql/query_options.h"  // OPTION_AUTO_IS_NULL
 #include "sql/rpl_gtid.h"       // enum_gtid_type
@@ -358,6 +358,19 @@ int ignored_error_code(int err_code);
 */
 const int64 SEQ_MAX_TIMESTAMP = LLONG_MAX;
 
+/**
+  This method is used to extract the partition_id
+  from a partitioned table.
+
+  @param part_info  an object of class partition_info it will be used
+                    to call the methods responsible for returning the
+                    value of partition_id
+
+  @retval           The return value is the partition_id.
+
+*/
+int get_rpl_part_id(partition_info *part_info);
+
 #ifdef MYSQL_SERVER
 class Item;
 class Protocol;
@@ -414,6 +427,7 @@ struct PRINT_EVENT_INFO {
   uint8_t sql_require_primary_key;
   my_thread_id thread_id;
   bool thread_id_printed;
+  uint8_t default_table_encryption;
 
   PRINT_EVENT_INFO();
 
@@ -1400,7 +1414,7 @@ class Query_log_event : public virtual binary_log::Query_event,
   }
   static size_t get_query(const char *buf, size_t length,
                           const Format_description_event *fd_event,
-                          char **query);
+                          const char **query_arg);
 
   bool is_query_prefix_match(const char *pattern, uint p_len) {
     return !strncmp(query, pattern, p_len);
@@ -1410,6 +1424,10 @@ class Query_log_event : public virtual binary_log::Query_event,
   /** Whether or not the statement represented by this event requires
       `Q_SQL_REQUIRE_PRIMARY_KEY` to be logged along aside. */
   bool need_sql_require_primary_key{false};
+
+  /** Whether or not the statement represented by this event requires
+      `Q_DEFAULT_TABLE_ENCRYPTION` to be logged along aside. */
+  bool needs_default_table_encryption{false};
 };
 
 /**
@@ -2615,8 +2633,6 @@ class Rows_log_event : public virtual binary_log::Rows_event, public Log_event {
 
   uint m_row_count; /* The number of rows added to the event */
 
-  const uchar *get_extra_row_data() const { return m_extra_row_data; }
-
  protected:
   /*
      The constructors are protected since you're supposed to inherit
@@ -2625,7 +2641,8 @@ class Rows_log_event : public virtual binary_log::Rows_event, public Log_event {
 #ifdef MYSQL_SERVER
   Rows_log_event(THD *, TABLE *, const Table_id &table_id,
                  MY_BITMAP const *cols, bool is_transactional,
-                 Log_event_type event_type, const uchar *extra_row_info);
+                 Log_event_type event_type,
+                 const unsigned char *extra_row_ndb_info);
 #endif
   Rows_log_event(const char *row_data,
                  const Format_description_event *description_event);
@@ -3020,7 +3037,8 @@ class Write_rows_log_event : public Rows_log_event,
 
 #if defined(MYSQL_SERVER)
   Write_rows_log_event(THD *, TABLE *, const Table_id &table_id,
-                       bool is_transactional, const uchar *extra_row_info);
+                       bool is_transactional,
+                       const unsigned char *extra_row_ndb_info);
 #endif
   Write_rows_log_event(const char *buf,
                        const Format_description_event *description_event);
@@ -3106,10 +3124,12 @@ class Update_rows_log_event : public Rows_log_event,
 #ifdef MYSQL_SERVER
   Update_rows_log_event(THD *, TABLE *, const Table_id &table_id,
                         MY_BITMAP const *cols_bi, MY_BITMAP const *cols_ai,
-                        bool is_transactional, const uchar *extra_row_info);
+                        bool is_transactional,
+                        const unsigned char *extra_row_ndb_info);
 
   Update_rows_log_event(THD *, TABLE *, const Table_id &table_id,
-                        bool is_transactional, const uchar *extra_row_info);
+                        bool is_transactional,
+                        const unsigned char *extra_row_ndb_info);
 
   void init(MY_BITMAP const *cols, const MY_BITMAP &cols_to_subtract);
 #endif
@@ -3221,7 +3241,7 @@ class Delete_rows_log_event : public Rows_log_event,
 
 #ifdef MYSQL_SERVER
   Delete_rows_log_event(THD *, TABLE *, const Table_id &, bool is_transactional,
-                        const uchar *extra_row_info);
+                        const unsigned char *extra_row_ndb_info);
 #endif
   Delete_rows_log_event(const char *buf,
                         const Format_description_event *description_event);
@@ -3284,35 +3304,32 @@ class Delete_rows_log_event : public Rows_log_event,
 class Incident_log_event : public binary_log::Incident_event, public Log_event {
  public:
 #ifdef MYSQL_SERVER
-  Incident_log_event(THD *thd_arg, enum_incident incident)
-      : binary_log::Incident_event(incident),
+  Incident_log_event(THD *thd_arg, enum_incident incident_arg)
+      : binary_log::Incident_event(incident_arg),
         Log_event(thd_arg, LOG_EVENT_NO_FILTER_F, Log_event::EVENT_NO_CACHE,
                   Log_event::EVENT_IMMEDIATE_LOGGING, header(), footer()) {
     DBUG_ENTER("Incident_log_event::Incident_log_event");
-    DBUG_PRINT("enter", ("incident: %d", incident));
-    common_header->set_is_valid(incident > INCIDENT_NONE &&
-                                incident < INCIDENT_COUNT);
+    DBUG_PRINT("enter", ("incident: %d", incident_arg));
+    common_header->set_is_valid(incident_arg > INCIDENT_NONE &&
+                                incident_arg < INCIDENT_COUNT);
     DBUG_ASSERT(message == NULL && message_length == 0);
     DBUG_VOID_RETURN;
   }
 
-  Incident_log_event(THD *thd_arg, enum_incident incident, LEX_STRING const msg)
-      : binary_log::Incident_event(incident),
+  Incident_log_event(THD *thd_arg, enum_incident incident_arg,
+                     LEX_STRING const msg)
+      : binary_log::Incident_event(incident_arg),
         Log_event(thd_arg, LOG_EVENT_NO_FILTER_F, Log_event::EVENT_NO_CACHE,
                   Log_event::EVENT_IMMEDIATE_LOGGING, header(), footer()) {
     DBUG_ENTER("Incident_log_event::Incident_log_event");
-    DBUG_PRINT("enter", ("incident: %d", incident));
-    common_header->set_is_valid(incident > INCIDENT_NONE &&
-                                incident < INCIDENT_COUNT);
+    DBUG_PRINT("enter", ("incident: %d", incident_arg));
+    common_header->set_is_valid(incident_arg > INCIDENT_NONE &&
+                                incident_arg < INCIDENT_COUNT);
     DBUG_ASSERT(message == NULL && message_length == 0);
     if (!(message = (char *)my_malloc(key_memory_Incident_log_event_message,
                                       msg.length + 1, MYF(MY_WME)))) {
-      /*
-        If the incident is not recognized, this binlog event is
-        invalid.  If we set incident_number to INCIDENT_NONE, the
-        invalidity will be detected by is_valid in both the ctors.
-      */
-      incident = INCIDENT_NONE;
+      // The allocation failed. Mark this binlog event as invalid.
+      common_header->set_is_valid(false);
       DBUG_VOID_RETURN;
     }
     strmake(message, msg.str, msg.length);
@@ -3514,7 +3531,7 @@ class Heartbeat_log_event : public binary_log::Heartbeat_event,
 bool slave_execute_deferred_events(THD *thd);
 #endif
 
-int append_query_string(THD *thd, const CHARSET_INFO *csinfo,
+int append_query_string(const THD *thd, const CHARSET_INFO *csinfo,
                         String const *from, String *to);
 extern TYPELIB binlog_checksum_typelib;
 

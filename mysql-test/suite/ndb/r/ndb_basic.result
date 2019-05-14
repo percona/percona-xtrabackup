@@ -97,6 +97,7 @@ Ndb_index_stat_cache_query	#
 Ndb_index_stat_status	#
 Ndb_last_commit_epoch_server	#
 Ndb_last_commit_epoch_session	#
+Ndb_metadata_detected_count	#
 Ndb_number_of_data_nodes	#
 Ndb_number_of_ready_data_nodes	#
 Ndb_pruned_scan_count	#
@@ -144,6 +145,8 @@ ndb_log_transaction_id	#
 ndb_log_update_as_write	#
 ndb_log_update_minimal	#
 ndb_log_updated_only	#
+ndb_metadata_check	#
+ndb_metadata_check_interval	#
 ndb_mgmd_host	#
 ndb_nodeid	#
 ndb_optimization_delay	#
@@ -154,6 +157,7 @@ ndb_recv_thread_cpu_mask	#
 ndb_report_thresh_binlog_epoch_slip	#
 ndb_report_thresh_binlog_mem_usage	#
 ndb_row_checksum	#
+ndb_schema_dist_upgrade_allowed	#
 ndb_show_foreign_key_mock_tables	#
 ndb_slave_conflict_role	#
 ndb_table_no_logging	#
@@ -1088,12 +1092,3 @@ ENGINE=ndb;
 show warnings;
 Level	Code	Message
 drop table t1;
-create table
-abcdefghijklmnopqrstuvwxyz1234567890bcdefghijklmnopqrstuvwxyz123(id int
-primary key) engine=ndb;
-ERROR 42000: Identifier name 'abcdefghijklmnopqrstuvwxyz1234567890bcdefghijklmnopqrstuvwxyz123' is too long
-show warnings;
-Level	Code	Message
-Warning	1059	Ndb has an internal limit of 63 bytes on the size of schema identifiers
-Error	1059	Identifier name 'abcdefghijklmnopqrstuvwxyz1234567890bcdefghijklmnopqrstuvwxyz123' is too long
-Error	1031	Table storage engine for 'abcdefghijklmnopqrstuvwxyz1234567890bcdefghijklmnopqrstuvwxyz123' doesn't have this option

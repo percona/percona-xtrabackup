@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -953,6 +953,7 @@ Dblqh::define_backup(Signal* signal)
   req->clientRef = 0;
   req->clientData = 0;
   req->senderRef = reference();
+  req->masterRef = reference();
   req->backupPtr = 0;
   req->backupKey[0] = 0;
   req->backupKey[1] = 0;
@@ -3654,9 +3655,9 @@ void Dblqh::earlyKeyReqAbort(Signal* signal,
     remove_commit_marker(tcConnectptr.p);
     
     /* Could have long key/attr sections linked */
-    ndbrequire(tcConnectptr.p->m_dealloc == 0);
-    releaseOprec(signal, tcConnectptr.p);
-    
+    ndbrequire(tcConnectptr.p->m_dealloc_state == TcConnectionrec::DA_IDLE);
+    ndbrequire(tcConnectptr.p->m_dealloc_data.m_unused == RNIL);
+    releaseOprec(signal, tcConnectptr);
     
     /* 
      * Free the TcConnectRecord, ensuring that the
@@ -5124,6 +5125,8 @@ void Dblqh::seizeTcrec(TcConnectionrecPtr& tcConnectptr)
   locTcConnectptr.p->tableref = RNIL;
   locTcConnectptr.p->hashIndex = RNIL;
   locTcConnectptr.p->m_committed_log_space = 0;
+  locTcConnectptr.p->m_dealloc_state = TcConnectionrec::DA_IDLE;
+  locTcConnectptr.p->m_dealloc_data.m_unused = RNIL;
 
   ctcNumFree = numFree - 1;
   cfirstfreeTcConrec = nextTc;
@@ -5576,7 +5579,8 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
   regTcPtr->opSimple      = LqhKeyReq::getSimpleFlag(Treqinfo);
   regTcPtr->seqNoReplica  = LqhKeyReq::getSeqNoReplica(Treqinfo);
   regTcPtr->m_use_rowid   = LqhKeyReq::getRowidFlag(Treqinfo);
-  regTcPtr->m_dealloc     = 0;
+  regTcPtr->m_dealloc_state     = TcConnectionrec::DA_IDLE;
+  regTcPtr->m_dealloc_data.m_dealloc_ref_count = RNIL;
   if (unlikely(senderVersion < NDBD_ROWID_VERSION))
   {
     regTcPtr->operation = op;
@@ -6799,7 +6803,8 @@ Dblqh::nr_copy_delete_row(Signal* signal,
   /**
    * We found row (and have it locked in ACC)
    */
-  ndbrequire(regTcPtr.p->m_dealloc == 0);
+  ndbrequire(regTcPtr.p->m_dealloc_state == TcConnectionrec::DA_IDLE);
+  ndbrequire(regTcPtr.p->m_dealloc_data.m_dealloc_ref_count == RNIL);
   Local_key save = regTcPtr.p->m_row_id;
 
   c_acc->execACCKEY_ORD(signal, accPtr);
@@ -6807,7 +6812,8 @@ Dblqh::nr_copy_delete_row(Signal* signal,
   EXECUTE_DIRECT(ref, GSN_ACC_COMMITREQ, signal, 1);
   jamEntry();
   
-  ndbrequire(regTcPtr.p->m_dealloc == 1);  
+  ndbrequire(regTcPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_COUNT);
+  ndbrequire(regTcPtr.p->m_dealloc_data.m_dealloc_ref_count == 1);
   int ret = c_tup->nr_delete(signal, regTcPtr.i, 
 			     fragPtr.p->tupFragptr, &regTcPtr.p->m_row_id, 
 			     regTcPtr.p->gci_hi);
@@ -6828,7 +6834,8 @@ Dblqh::nr_copy_delete_row(Signal* signal,
   
   TRACENR("DELETED: " << regTcPtr.p->m_row_id << endl);
   
-  regTcPtr.p->m_dealloc = 0;
+  regTcPtr.p->m_dealloc_state = TcConnectionrec::DA_IDLE;
+  regTcPtr.p->m_dealloc_data.m_dealloc_ref_count = RNIL;
   regTcPtr.p->m_row_id = save;
   fragptr = fragPtr;
 }
@@ -7140,12 +7147,249 @@ void Dblqh::handleUserUnlockRequest(Signal* signal,
   return;
 }
 
+/**
+ * TUPle deallocation
+ *
+ * ACC informs LQH via TUP_DEALLOCREQ when a TUPle (ROWID)
+ * is no longer needed by active ACC operations (Key ops,
+ * scans with locks etc)
+ * LQH then informs TUP via TUP_DEALLOCREQ when TUP should
+ * release the storage, making it available for some other
+ * insert to the fragment.
+ *
+ * It is important that ROWIDs are released on Backup
+ * replicas before the Primary replica.
+ *
+ * To ensure this:
+ *   ACC :
+ *   - Informs LQH of each of the operations involved in releasing
+ *     a ROWID at commit time
+ *   - Informs LQH when the last operation involved in releasing
+ *     a ROWID has committed
+ *
+ *   LQH :
+ *   - Tracks these details as a reference count on one of the
+ *     operations involved in releasing the ROWID (the dealloc op).
+ *   - Marks the other operations to point to the dealloc op
+ *   - Decrements the reference count when :
+ *       - ACC informs LQH that the last involved operation
+ *         has committed
+ *       - Referring operations complete locally
+ *       - The dealloc op completes locally
+ *   - When the reference count hits zero, TUP is told to release
+ *     the row storage
+ *
+ * Using a reference count avoids problems with premature release when
+ * the order of completion of the involved operations varies.
+ *
+ * Since the dealloc operation can complete before the ref count hits
+ * zero, it supports a 'zombie' state where it is not yet deallocated
+ * as it is hosting a count
+ */
+
+/**
+ * incrDeallocRefCount
+ *
+ * Called when ACC notifies LQH of operations involved in TUPle
+ * deallocation
+ */
+void Dblqh::incrDeallocRefCount(Signal* signal,
+                                Uint32 opPtrI,
+                                Uint32 countOpPtrI)
+{
+  jam();
+  ndbrequire(opPtrI != RNIL);
+  ndbrequire(countOpPtrI != RNIL);
+
+  TcConnectionrecPtr opPtr;
+  opPtr.i = opPtrI;
+  ptrCheckGuard(opPtr, ctcConnectrecFileSize, tcConnectionrec);
+
+  TcConnectionrecPtr countOpPtr;
+  countOpPtr.i = countOpPtrI;
+  ptrCheckGuard(countOpPtr, ctcConnectrecFileSize, tcConnectionrec);
+
+  const bool referring_op = (opPtrI != countOpPtrI);
+
+  if (referring_op)
+  {
+    jam();
+    ndbrequire(opPtr.p->m_dealloc_state == TcConnectionrec::DA_IDLE);
+    ndbrequire(opPtr.p->m_dealloc_data.m_dealloc_ref_count == RNIL);
+    opPtr.p->m_dealloc_state = TcConnectionrec::DA_DEALLOC_REFERENCE;
+    opPtr.p->m_dealloc_data.m_dealloc_op_id = countOpPtr.i;
+  }
+
+  if (countOpPtr.p->m_dealloc_state == TcConnectionrec::DA_IDLE)
+  {
+    jam();
+    ndbrequire(countOpPtr.p->m_dealloc_data.m_dealloc_op_id == RNIL);
+
+    // init count to 1 so that final refcount = op count + 1
+    // this ensures that dealloc cannot happen until ACC sends
+    // additional signal to decrement refcount to 0.
+    countOpPtr.p->m_dealloc_state = TcConnectionrec::DA_DEALLOC_COUNT;
+    countOpPtr.p->m_dealloc_data.m_dealloc_ref_count = 1;
+  }
+
+  /* Increment count */
+  ndbrequire(countOpPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_COUNT ||
+             countOpPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_COUNT_ZOMBIE);
+  ndbrequire(countOpPtr.p->m_dealloc_data.m_dealloc_ref_count != RNIL);
+
+  countOpPtr.p->m_dealloc_data.m_dealloc_ref_count++;
+}
+
+/**
+ * decrDeallocRefCount
+ *
+ * Called when ACC triggers deallocation, and when involved
+ * operations complete.
+ *
+ * Returns the new count of references on the rowID
+ */
+Uint32 Dblqh::decrDeallocRefCount(Signal* signal,
+                                  Uint32 opPtrI)
+{
+  jam();
+  ndbrequire(opPtrI != RNIL);
+
+  TcConnectionrecPtr opPtr;
+  opPtr.i = opPtrI;
+  ptrCheckGuard(opPtr, ctcConnectrecFileSize, tcConnectionrec);
+
+  TcConnectionrecPtr countOpPtr = opPtr;
+
+  if (opPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_REFERENCE)
+  {
+    jam();
+    ndbrequire(opPtr.p->m_dealloc_data.m_dealloc_op_id != RNIL);
+    countOpPtr.i = opPtr.p->m_dealloc_data.m_dealloc_op_id;
+    ptrCheckGuard(countOpPtr, ctcConnectrecFileSize, tcConnectionrec);
+  }
+
+  ndbrequire(countOpPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_COUNT ||
+             countOpPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_COUNT_ZOMBIE);
+  ndbrequire(countOpPtr.p->m_dealloc_data.m_dealloc_ref_count != RNIL);
+  ndbrequire(countOpPtr.p->m_dealloc_data.m_dealloc_ref_count > 0);
+
+  const Uint32 newCount = --countOpPtr.p->m_dealloc_data.m_dealloc_ref_count;
+
+  if (newCount == 0)
+  {
+    jam();
+    /* Dealloc TUPle now */
+    signal->theData[0] = countOpPtr.p->fragmentid;
+    signal->theData[1] = countOpPtr.p->tableref;
+    signal->theData[2] = countOpPtr.p->m_row_id.m_page_no;
+    signal->theData[3] = countOpPtr.p->m_row_id.m_page_idx;
+    signal->theData[4] = RNIL;
+
+    EXECUTE_DIRECT(DBTUP, GSN_TUP_DEALLOCREQ, signal, 5);
+
+    bool countOpIsZombie =
+      (countOpPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_COUNT_ZOMBIE);
+
+    countOpPtr.p->m_dealloc_state = TcConnectionrec::DA_IDLE;
+    countOpPtr.p->m_dealloc_data.m_dealloc_ref_count = RNIL;
+
+    if (countOpIsZombie)
+    {
+      jam();
+      /**
+       * Op was not released during COMPLETE because it is a zombie dealloc op
+       * Release it now.
+       */
+      releaseTcrec(signal, countOpPtr);
+    }
+  }
+
+  return newCount;
+}
+
+/**
+ * handleDeallocOp
+ *
+ * Called when LQH is releasing an operation record which has
+ * a non idle m_dealloc_state state
+ *
+ * The relevant counting operation is found, the deallocation
+ * ref count is decremented, the tuple is freed if the count
+ * hits zero, and the counting op is freed if it is a zombie.
+ *
+ * If the counting op is released before the count is zero
+ * it becomes a zombie.
+ */
+void Dblqh::handleDeallocOp(Signal* signal,
+                            TcConnectionrecPtr regTcPtr)
+{
+  jam();
+
+  ndbrequire(regTcPtr.p->m_dealloc_state != TcConnectionrec::DA_IDLE);
+  const bool referringOpReleased =
+    (regTcPtr.p->m_dealloc_state == TcConnectionrec::DA_DEALLOC_REFERENCE);
+
+  const Uint32 newCount = decrDeallocRefCount(signal,
+                                              regTcPtr.i);
+
+  if (referringOpReleased)
+  {
+    jam();
+    regTcPtr.p->m_dealloc_state = TcConnectionrec::DA_IDLE;
+    regTcPtr.p->m_dealloc_data.m_dealloc_op_id = RNIL;
+  }
+  else
+  {
+    jam();
+    // The dealloc op hosts the refcount, so it cannot be released until
+    // the refcount reaches zero. Mark the dealloc op as a zombie op to
+    // prevent its release.
+    if (newCount != 0)
+    {
+      jam();
+      regTcPtr.p->m_dealloc_state = TcConnectionrec::DA_DEALLOC_COUNT_ZOMBIE;
+    }
+  }
+}
+
+/**
+ * execTUP_DEALLOCREQ
+ *
+ * Receive notification from ACC that a TUPle is no longer needed
+ * ACC informs LQH of each operation involved in deallocation
+ * so that LQH can determine when it is safe to ask TUP to release
+ * the storage.
+ *
+ * 2 cases :
+ *   i)  theData[5] != RNIL : Notification(s) of pending deallocation
+ *   ii) theData[5] == RNIL : Deallocation triggered
+ *
+ * For commit, there can be 1 or more invocations of i) followed
+ * by one invocation of ii)
+ *
+ * For abort, there will be 1 invocation of ii)
+ *
+ * From LQH's point of view :
+ * 1) ACC informs LQH of a set of operations involved in deallocating a tuple
+ *   - LQH should not release the tuple before *all* of those operations are
+ *     complete
+ *   - For each tuple + set of operations involved in deallocating it, ACC
+ *     informs LQH of a single designated 'counting op' which is a member of
+ *     the set and which might help LQH track the state of the set + the tuple
+ * 2) ACC requires that LQH does not deallocate the tuple before
+ *    ACC gives permission to do so.
+ * 3) Special case (aborts) : Just a single trigger notification - LQH should
+ *    deallocate on operation completion
+ *
+ * LQH : dealloc_iff (All notified ops complete && Trigger from ACC received)
+ */
 void Dblqh::execTUP_DEALLOCREQ(Signal* signal)
 {
   TcConnectionrecPtr regTcPtr;  
   
   jamEntry();
   regTcPtr.i = signal->theData[4];
+  ptrCheckGuard(regTcPtr, ctcConnectrecFileSize, tcConnectionrec);
   
   if (TRACENR_FLAG)
   {
@@ -7153,36 +7397,52 @@ void Dblqh::execTUP_DEALLOCREQ(Signal* signal)
     tmp.m_page_no = signal->theData[2];
     tmp.m_page_idx = signal->theData[3];
     TRACENR("TUP_DEALLOC: " << tmp << 
-      (signal->theData[5] ? " DIRECT " : " DELAYED") << endl);
+      (signal->theData[5] == RNIL ? " TRIGGER" : " NOTIFICATION") << endl);
   }
+
+  regTcPtr.p->m_row_id.m_page_no = signal->theData[2];
+  regTcPtr.p->m_row_id.m_page_idx = signal->theData[3];
   
-  if (signal->theData[5])
+  if (signal->theData[5] != RNIL)
   {
     jam();
-    Local_key tmp;
-
-    tmp.m_page_no = signal->theData[2];
-    tmp.m_page_idx = signal->theData[3];
-
-    if (ERROR_INSERTED(5712))
-    {
-      ndbout << "TUP_DEALLOC: " << tmp << endl;
-    }
-
-    EXECUTE_DIRECT(DBTUP, GSN_TUP_DEALLOCREQ, signal, signal->getLength());
-    return;
+    /**
+     * Notification of Op involved in deallocation
+     */
+    incrDeallocRefCount(signal,
+                        signal->theData[4],
+                        signal->theData[5]);
   }
   else
   {
     jam();
-    ptrCheckGuard(regTcPtr, ctcConnectrecFileSize, tcConnectionrec);
-    regTcPtr.p->m_row_id.m_page_no = signal->theData[2];
-    regTcPtr.p->m_row_id.m_page_idx = signal->theData[3];
-
-    TRACE_OP(regTcPtr.p, "SET DEALLOC");
-    
-    ndbrequire(regTcPtr.p->m_dealloc == 0);
-    regTcPtr.p->m_dealloc = 1;
+    /**
+     * Deallocation triggered by ACC
+     * Now LQH decides what to do next.
+     */
+    if (regTcPtr.p->m_dealloc_state == TcConnectionrec::DA_IDLE)
+    {
+      jam();
+      /**
+       * ABORT case
+       * Set count to 1 for quick dealloc on complete of this op
+       */
+      ndbrequire(regTcPtr.p->m_dealloc_data.m_dealloc_ref_count == RNIL);
+      regTcPtr.p->m_dealloc_state = TcConnectionrec::DA_DEALLOC_COUNT;
+      /* Init count to 1 as we are processing report_dealloc*/
+      regTcPtr.p->m_dealloc_data.m_dealloc_ref_count = 1;
+    }
+    else
+    {
+      jam();
+      /**
+       * [Multi-op] COMMIT case
+       * Decrement count to indicate 'permission to dealloc'
+       * from ACC
+       */
+      decrDeallocRefCount(signal,
+                          signal->theData[4]);
+    }
   }
 }//Dblqh::execTUP_DEALLOCREQ()
 
@@ -7192,6 +7452,32 @@ void Dblqh::execTUP_DEALLOCREQ(Signal* signal)
 void Dblqh::execACCKEYCONF(Signal* signal) 
 {
   jamEntry();
+  if (ERROR_INSERTED(5095))
+  {
+    jam();
+    g_eventLogger->info("LQH %u : ERRINS 5095 Delaying ACCKEYCONF",
+                        instance());
+    sendSignalWithDelay(reference(), GSN_ACCKEYCONF, signal, 10, 5);
+    return;
+  }
+
+  if (ERROR_INSERTED(5094))
+  {
+    jam();
+    g_eventLogger->info("LQH %u : ERRINS 5094 Passing ACCKEYCONF 1 and setting ERRINS 5095",
+                        instance());
+    SET_ERROR_INSERT_VALUE(5095);
+  }
+
+  if (ERROR_INSERTED(5096))
+  {
+    jam();
+    g_eventLogger->info("LQH %u : ERRINS 5096 set when processing ACCKEYCONF, clearing",
+                        instance());
+    CLEAR_ERROR_INSERT_VALUE;
+    //SET_ERROR_INSERT_VALUE(5097); // Kill on scan
+  }
+
   Uint32 tcIndex = signal->theData[0];
 
   setup_key_pointers(tcIndex);
@@ -7205,6 +7491,12 @@ void Dblqh::execACCKEYCONF(Signal* signal)
     LQHKEY_abort(signal, 3, m_tc_connect_ptr);
     return;
   }//if
+  if (unlikely(c_acc->checkOpPendingAbort(regTcPtr->accConnectrec)))
+  {
+    jam();
+    /* Wait for Abort */
+    return;
+  }
   c_tup->prepareTUPKEYREQ(localKey1, localKey2, fragptr.p->tupFragptr);
   continueACCKEYCONF(signal, localKey1, localKey2, m_tc_connect_ptr);
 }
@@ -7426,7 +7718,16 @@ Dblqh::acckeyconf_load_diskpage(Signal* signal, TcConnectionrecPtr regTcPtr,
     regTcPtr.p->transactionState = TcConnectionrec::WAIT_TUP;
     TupKeyRef * ref = (TupKeyRef *)signal->getDataPtr();
     ref->userRef= regTcPtr.i;
-    ref->errorCode= ~0;
+    if (res == -1)
+    {
+      jam();
+      ref->errorCode= ~0;
+    }
+    else
+    {
+      jam();
+      ref->errorCode = -res;
+    }
     execTUPKEYREF(signal);
     return;
   }
@@ -7980,7 +8281,7 @@ void Dblqh::packLqhkeyreqLab(Signal* signal,
     {
       jamDebug();
       regTcPtr->transactionState = TcConnectionrec::PREPARED;
-      releaseOprec(signal, tcConnectptr.p);
+      releaseOprec(signal, tcConnectptr);
     } else {
       jamDebug();
 
@@ -8351,7 +8652,7 @@ void Dblqh::packLqhkeyreqLab(Signal* signal,
    *   RESOURCES WE DEALLOCATE THE ATTRINFO RECORD AND KEY RECORDS 
    *   AS SOON AS POSSIBLE.
    * ------------------------------------------------------------------------ */
-  releaseOprec(signal, tcConnectptr.p);
+  releaseOprec(signal, tcConnectptr);
 }//Dblqh::packLqhkeyreqLab()
 
 /* ========================================================================= */
@@ -8545,7 +8846,7 @@ void Dblqh::sendTupkey(Signal* signal, const TcConnectionrec* regTcPtr)
 
 void Dblqh::cleanUp(Signal* signal, TcConnectionrecPtr tcConnectptr)
 {
-  releaseOprec(signal, tcConnectptr.p);
+  releaseOprec(signal, tcConnectptr);
   deleteTransidHash(signal, tcConnectptr);
   releaseTcrec(signal, tcConnectptr);
 }//Dblqh::cleanUp()
@@ -8554,36 +8855,18 @@ void Dblqh::cleanUp(Signal* signal, TcConnectionrecPtr tcConnectptr)
  * ---- RELEASE ALL RECORDS CONNECTED TO THE OPERATION RECORD AND THE    ---- 
  *      OPERATION RECORD ITSELF
  * ------------------------------------------------------------------------- */
-void Dblqh::releaseOprec(Signal* signal, TcConnectionrec* regTcPtr)
+void Dblqh::releaseOprec(Signal* signal, TcConnectionrecPtr regTcPtr)
 {
-  /* Release long sections if present */
-  releaseSection(regTcPtr->keyInfoIVal);
-  regTcPtr->keyInfoIVal = RNIL;
-  releaseSection(regTcPtr->attrInfoIVal);
-  regTcPtr->attrInfoIVal = RNIL;
-
-  if (regTcPtr->m_dealloc)
+  if (regTcPtr.p->m_dealloc_state != TcConnectionrec::DA_IDLE)
   {
-    jam();
-    regTcPtr->m_dealloc = 0;
-
-    if (TRACENR_FLAG)
-      TRACENR("DELETED: " << regTcPtr->m_row_id << endl);
-
-    TRACE_OP(regTcPtr, "DO DEALLOC");
-    
-    const Uint32 sig0 = regTcPtr->fragmentid;
-    const Uint32 sig1 = regTcPtr->tableref;
-    const Uint32 sig2 = regTcPtr->m_row_id.m_page_no;
-    const Uint32 sig3 = regTcPtr->m_row_id.m_page_idx;
-
-    signal->theData[0] = sig0;
-    signal->theData[1] = sig1;
-    signal->theData[2] = sig2;
-    signal->theData[3] = sig3;
-    signal->theData[4] = RNIL;
-    EXECUTE_DIRECT(DBTUP, GSN_TUP_DEALLOCREQ, signal, 5);
+    handleDeallocOp(signal, regTcPtr);
   }
+
+  /* Release long sections if present */
+  releaseSection(regTcPtr.p->keyInfoIVal);
+  regTcPtr.p->keyInfoIVal = RNIL;
+  releaseSection(regTcPtr.p->attrInfoIVal);
+  regTcPtr.p->attrInfoIVal = RNIL;
 }//Dblqh::releaseOprec()
 
 /* ------------------------------------------------------------------------- */
@@ -9007,7 +9290,18 @@ void Dblqh::execCOMMIT(Signal* signal)
     {
       SET_ERROR_INSERT_VALUE(5048);
     }
-    
+    if (ERROR_INSERTED(5093))
+    {
+      if (tcConnectptr.p->operation == ZREAD)
+      {
+        jam();
+        CLEAR_ERROR_INSERT_VALUE;
+        g_eventLogger->info("Delaying COMMIT for READ");
+        sendSignalWithDelay(cownref, GSN_COMMIT, signal, 3000, 5);
+        return;
+      }
+    }
+
     commitReqLab(signal, gci_hi, gci_lo, tcConnectptr);
     return;
   }//if
@@ -9158,6 +9452,18 @@ void Dblqh::execCOMPLETE(Signal* signal)
       (tcConnectptr.p->transid[1] == transid2)) {
 
     TcConnectionrec * const regTcPtr = tcConnectptr.p;
+    if (ERROR_INSERTED(5093))
+    {
+      if ((tcConnectptr.p->seqNoReplica != 0) &&
+          (tcConnectptr.p->operation == ZDELETE))
+      {
+        jam();
+        CLEAR_ERROR_INSERT_VALUE;
+        g_eventLogger->info("Delaying COMPLETE for DELETE at Backup replica");
+        sendSignalWithDelay(cownref, GSN_COMPLETE, signal, 1000, 3);
+        return;
+      }
+    }
     TRACE_OP(regTcPtr, "COMPLETE");
 
     if (tcConnectptr.p->seqNoReplica != 0 && 
@@ -9810,6 +10116,17 @@ void Dblqh::completeUnusualLab(Signal* signal,
 void Dblqh::releaseTcrec(Signal* signal, TcConnectionrecPtr locTcConnectptr) 
 {
   jamDebug();
+  if (unlikely(locTcConnectptr.p->m_dealloc_state ==
+               TcConnectionrec::DA_DEALLOC_COUNT_ZOMBIE))
+  {
+    jam();
+    /**
+     * Need to keep this Tcrec around a little extra time to track
+     * the ref count on TUP storage deallocation
+     */
+    return;
+  }
+
   ndbassert(locTcConnectptr.p->hashIndex==RNIL);
   const Uint32 op = locTcConnectptr.p->operation;
   const Uint32 firstFree = cfirstfreeTcConrec;
@@ -9945,6 +10262,22 @@ Dblqh::remove_commit_marker(TcConnectionrec * const regTcPtr)
 void Dblqh::execABORT(Signal* signal) 
 {
   jamEntry();
+  if (ERROR_INSERTED(5096))
+  {
+    jam();
+    g_eventLogger->info("LQH %u : ERRINS 5096 Stalling ABORT",
+                        instance());
+    sendSignalWithDelay(reference(), GSN_ABORT, signal, 10, 4);
+    return;
+  }
+  if (ERROR_INSERTED(5095))
+  {
+    jam();
+    g_eventLogger->info("LQH %u : ERRINS 5095 Passing abort and setting ERRINS 5096",
+                        instance());
+    SET_ERROR_INSERT_VALUE(5096);
+  }
+
   Uint32 tcOprec = signal->theData[0];
   BlockReference tcBlockref = signal->theData[1];
   Uint32 transid1 = signal->theData[2];
@@ -12546,6 +12879,11 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
     return;
   }
 
+  if (ERROR_INSERTED(5097))
+  {
+    ndbrequire(false);
+  }
+
   ScanFragReq * const scanFragReq = (ScanFragReq *)&signal->theData[0];
   ScanFragRef * ref;
   Uint32 errorCode= 0;
@@ -12814,7 +13152,7 @@ error_handler2:
 error_handler:
   regTcPtr->abortState = TcConnectionrec::ABORT_ACTIVE;
   regTcPtr->tcScanRec = RNIL;
-  releaseOprec(signal, tcConnectptr.p);
+  releaseOprec(signal, tcConnectptr);
   releaseTcrec(signal, tcConnectptr);
 
 error_handler_early:
@@ -13685,7 +14023,16 @@ Dblqh::next_scanconf_load_diskpage(Signal* signal,
     jam();
     TupKeyRef * ref = (TupKeyRef *)signal->getDataPtr();
     ref->userRef= regTcPtr.i;
-    ref->errorCode= ~0;
+    if (res == -1)
+    {
+      jam();
+      ref->errorCode= ~0;
+    }
+    else
+    {
+      jam();
+      ref->errorCode= -res;
+    }
     execTUPKEYREF(signal);
     return;
   }
@@ -14136,7 +14483,7 @@ void Dblqh::handle_finish_scan(Signal* signal,
   }
   tcConnectptr.p->tcScanRec = RNIL;
   deleteTransidHash(signal, tcConnectptr);
-  releaseOprec(signal, tcConnectptr.p);
+  releaseOprec(signal, tcConnectptr);
   releaseTcrec(signal, tcConnectptr);
   if (restart_flag)
   {
@@ -14275,7 +14622,8 @@ Uint32 Dblqh::initScanrec(const ScanFragReq* scanFragReq,
 
   const Uint32 scanPrio = ScanFragReq::getScanPrio(reqinfo);
 
-  if (max_rows == 0 || (max_bytes > 0 && max_rows > max_bytes)){
+  if (unlikely(max_rows == 0 || (max_bytes > 0 && max_rows > max_bytes)))
+  {
     jam();
     return ScanFragRef::ZWRONG_BATCH_SIZE;
   }
@@ -14290,7 +14638,8 @@ Uint32 Dblqh::initScanrec(const ScanFragReq* scanFragReq,
   {
     DEBUG_RES_OWNER_GUARD(refToBlock(reference()) << 16 | 999);
 
-    if (!seize_acc_ptr_list(scanPtr, 0, max_rows)){
+    if (unlikely(!seize_acc_ptr_list(scanPtr, 0, max_rows)))
+    {
       jam();
       return ScanFragRef::ZTOO_MANY_ACTIVE_SCAN_ERROR;
     }
@@ -14482,7 +14831,8 @@ void Dblqh::initScanTc(const ScanFragReq* req,
   regTcPtr->currTupAiLen = 0;
   regTcPtr->reclenAiLqhkey = 0;
   regTcPtr->m_scan_curr_range_no = 0;
-  regTcPtr->m_dealloc = 0;
+  regTcPtr->m_dealloc_state = TcConnectionrec::DA_IDLE;
+  regTcPtr->m_dealloc_data.m_dealloc_ref_count = RNIL;
   regTcPtr->operation = ZREAD;
   regTcPtr->opExec = 1;
   regTcPtr->abortState = TcConnectionrec::ABORT_IDLE;
@@ -18287,6 +18637,7 @@ void Dblqh::perform_fragment_checkpoint(Signal *signal)
   req->backupPtr = m_backup_ptr;
   req->backupId = lcpPtr.p->currentRunFragment.lcpFragOrd.lcpId;
   req->count = 0;
+  req->senderRef = reference();
    
 #ifdef NDB_DEBUG_FULL
   if(ERROR_INSERTED(5904))
@@ -26964,6 +27315,8 @@ void Dblqh::initReqinfoExecSr(Signal* signal,
   regTcPtr->dirtyOp = ZFALSE;
   regTcPtr->tcBlockref = cownref;
   regTcPtr->m_reorg = ScanFragReq::REORG_ALL;
+  regTcPtr->m_dealloc_state = TcConnectionrec::DA_IDLE;
+  regTcPtr->m_dealloc_data.m_unused = RNIL;
 }//Dblqh::initReqinfoExecSr()
 
 /* -------------------------------------------------------------------------- 
@@ -30069,8 +30422,9 @@ void Dblqh::execDBINFO_SCANREQ(Signal *signal)
         m_commitAckMarkerPool.getSize(),
         m_commitAckMarkerPool.getEntrySize(),
         m_commitAckMarkerPool.getUsedHi(),
-        { CFG_DB_NO_LOCAL_OPS, CFG_DB_NO_OPS,0,0 }},
-      { NULL, 0,0,0,0,{0,0,0,0} }
+        { CFG_DB_NO_LOCAL_OPS, CFG_DB_NO_OPS,0,0 },
+        RT_DBLQH_COMMIT_ACK_MARKER},
+      { NULL, 0,0,0,0,{0,0,0,0},0 }
     };
 
     const size_t num_config_params =
@@ -30092,6 +30446,8 @@ void Dblqh::execDBINFO_SCANREQ(Signal *signal)
       row.write_uint64(pools[pool].entry_size);
       for (size_t i = 0; i < num_config_params; i++)
         row.write_uint32(pools[pool].config_params[i]);
+      row.write_uint32(GET_RG(pools[pool].record_type));
+      row.write_uint32(GET_TID(pools[pool].record_type));
       ndbinfo_send_row(signal, req, row, rl);
       pool++;
       if (rl.need_break(req))
@@ -30496,6 +30852,16 @@ Dblqh::checkLcpFragWatchdog(Signal* signal)
         /* LQH : */
         ds->args[0] = DumpStateOrd::LqhDumpLcpState;
         sendSignal(cownref, GSN_DUMP_STATE_ORD, signal, 1, JBA);
+
+        /* NDBFS : */
+        ds->args[0] = DumpStateOrd::NdbfsDumpFileStat;
+        sendSignal(NDBFS_REF, GSN_DUMP_STATE_ORD, signal, 1, JBA);
+
+        ds->args[0] = DumpStateOrd::NdbfsDumpOpenFiles;
+        sendSignal(NDBFS_REF, GSN_DUMP_STATE_ORD, signal, 1, JBA);
+
+        ds->args[0] = DumpStateOrd::NdbfsDumpRequests;
+        sendSignal(NDBFS_REF, GSN_DUMP_STATE_ORD, signal, 1, JBA);
         
         const Uint32 ShutdownDelayMillis = 5 * 1000;
         /* Delay self-execution to give time for dump output */
@@ -30547,7 +30913,7 @@ Dblqh::stopLcpFragWatchdog()
   DEB_LCP(("(%u)stopLcpFragWatchdog", instance()));
   ndbrequire(c_lcpFragWatchdog.scan_running);
   c_lcpFragWatchdog.reset();
-};
+}
     
 /* **************************************************************** */
 /* ---------------------------------------------------------------- */

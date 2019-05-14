@@ -28,11 +28,14 @@
 
 ////////////////////////////////////////
 // Package include files
+#include "builtin_plugins.h"
 #include "designator.h"
+#include "dim.h"
 #include "exception.h"
 #include "harness_assert.h"
 #include "mysql/harness/filesystem.h"
 #include "mysql/harness/logging/logging.h"
+#include "mysql/harness/logging/registry.h"
 #include "mysql/harness/plugin.h"
 #include "utilities.h"
 IMPORT_LOG_FUNCTIONS()
@@ -105,15 +108,36 @@ using std::ostringstream;
 std::mutex we_might_shutdown_cond_mutex;
 std::condition_variable we_might_shutdown_cond;
 
-// when Router receives a signal to shut down, this flag is set
-static std::atomic<int> g_shutdown_pending{0};
+enum ShutdownReason { SHUTDOWN_NONE, SHUTDOWN_REQUESTED, SHUTDOWN_FATAL_ERROR };
 
-// called from sig_handler() on Unix,
-//        from NTService class and Ctrl+C handler on Windows
-void request_application_shutdown() {
-  g_shutdown_pending = 1;
+// set when the Router receives a signal to shut down or some fatal error
+// condition occured
+static std::atomic<ShutdownReason> g_shutdown_pending{SHUTDOWN_NONE};
 
+// the thread that is setting the g_shutdown_pending to SHUTDOWN_FATAL_ERROR is
+// supposed to set this error message so that it bubbles up and ends up on the
+// console
+static std::string shutdown_fatal_error_message;
+
+std::mutex log_reopen_cond_mutex;
+std::condition_variable log_reopen_cond;
+static std::atomic<bool> g_log_reopen_requested{false};
+
+static void request_application_shutdown(const ShutdownReason reason) {
+  g_shutdown_pending = reason;
   we_might_shutdown_cond.notify_one();
+
+  // let's wake the log_reopen_thread too
+  log_reopen_cond.notify_one();
+}
+
+void request_application_shutdown() {
+  request_application_shutdown(SHUTDOWN_REQUESTED);
+}
+
+static void request_log_reopen() {
+  g_log_reopen_requested = true;
+  log_reopen_cond.notify_one();
 }
 
 static void block_all_signals() {
@@ -136,15 +160,25 @@ static void start_and_detach_signal_handler_thread() {
     sigemptyset(&ss);
     sigaddset(&ss, SIGINT);
     sigaddset(&ss, SIGTERM);
+    sigaddset(&ss, SIGHUP);
 
     signal_handler_thread_setup_done.set_value();
     int sig = 0;
-    if (0 == sigwait(&ss, &sig)) {
-      request_application_shutdown();
-    } else {
-      // man sigwait() says, it should only fail if we provided invalid signals,
-      // but SIGTERM and SIGINT should be totally fine.
-      harness_assert_this_should_not_execute();
+
+    while (true) {
+      if (0 == sigwait(&ss, &sig)) {
+        if (sig == SIGHUP) {
+          request_log_reopen();
+        } else {
+          harness_assert(sig == SIGINT || sig == SIGTERM);
+          request_application_shutdown();
+          return;
+        }
+      } else {
+        // man sigwait() says, it should only fail if we provided invalid
+        // signals.
+        harness_assert_this_should_not_execute();
+      }
     }
   });
 
@@ -154,6 +188,27 @@ static void start_and_detach_signal_handler_thread() {
   // let the signal handler thread be independent of the rest of the app
   signal_thread.detach();
 #endif
+}
+
+static void log_reopen_thread_function() {
+  auto &logging_registry = mysql_harness::DIM::instance().get_LoggingRegistry();
+  std::unique_lock<std::mutex> lk(log_reopen_cond_mutex);
+  log_reopen_cond.wait(lk, [&] {
+    if (g_shutdown_pending) {
+      return true;
+    }
+    if (g_log_reopen_requested) {
+      g_log_reopen_requested = false;
+      try {
+        logging_registry.flush_all_loggers();
+      } catch (const std::exception &e) {
+        shutdown_fatal_error_message = e.what();
+        request_application_shutdown(SHUTDOWN_FATAL_ERROR);
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 #ifdef _WIN32
@@ -412,9 +467,17 @@ Plugin *Loader::load_from(const std::string &plugin_name,
 Plugin *Loader::load(const std::string &plugin_name, const std::string &key) {
   log_info("  plugin '%s:%s' loading", plugin_name.c_str(), key.c_str());
 
-  ConfigSection &plugin = config_.get(plugin_name, key);  // throws bad_section
-  const std::string &library_name = plugin.get("library");
-  return load_from(plugin_name, library_name);  // throws bad_plugin
+  if (BuiltinPlugins::instance().has(plugin_name)) {
+    Plugin *plugin = BuiltinPlugins::instance().get_plugin(plugin_name);
+    PluginInfo info(nullptr, plugin);
+    plugins_.emplace(plugin_name, std::move(info));
+    return plugin;
+  } else {
+    ConfigSection &plugin =
+        config_.get(plugin_name, key);  // throws bad_section
+    const std::string &library_name = plugin.get("library");
+    return load_from(plugin_name, library_name);  // throws bad_plugin
+  }
 }
 
 Plugin *Loader::load(const std::string &plugin_name) {
@@ -443,6 +506,15 @@ void Loader::start() {
   // unload plugins on exit
   std::shared_ptr<void> exit_guard(nullptr, [this](void *) { unload_all(); });
 
+  // check if there is anything to load; if not we currently treat is as an
+  // error, not letting the user to run "idle" router that would close right
+  // away
+  if (external_plugins_to_load_count() == 0) {
+    throw std::runtime_error(
+        "Error: MySQL Router not configured to load or start any plugin. "
+        "Exiting.");
+  }
+
   // load plugins
   load_all();  // throws bad_plugin on load error, causing an early return
 
@@ -451,6 +523,17 @@ void Loader::start() {
   if (first_eptr) {
     std::rethrow_exception(first_eptr);
   }
+}
+
+size_t Loader::external_plugins_to_load_count() {
+  size_t result = 0;
+  for (std::pair<const std::string &, std::string> name : available()) {
+    if (!BuiltinPlugins::instance().has(name.first)) {
+      result++;
+    }
+  }
+
+  return result;
 }
 
 void Loader::load_all() {
@@ -472,6 +555,8 @@ void Loader::unload_all() {
   // this stage has no implementation so far; however, we want to flag that we
   // reached this stage
   log_info("Unloading all plugins.");
+  // If that ever gets implemented make sure to not attempt unloading
+  // built-in plugins
 }
 
 std::exception_ptr Loader::run() {
@@ -590,8 +675,15 @@ std::exception_ptr Loader::init_all() {
   log_info("Initializing all plugins.");
 
   if (!topsort()) throw std::logic_error("Circular dependencies in plugins");
+  order_.reverse();  // we need reverse-topo order for non-built-in plugins
 
-  order_.reverse();  // we need reverse-topo order
+  // we put the built-in plugins at the beginning
+  for (const std::pair<const std::string, PluginInfo> &plugin : plugins_) {
+    if (BuiltinPlugins::instance().has(plugin.first)) {
+      order_.push_front(plugin.first);
+    }
+  }
+
   for (auto it = order_.begin(); it != order_.end(); ++it) {
     const std::string &plugin_name = *it;
     PluginInfo &info = plugins_.at(plugin_name);
@@ -703,6 +795,9 @@ void Loader::start_all() {
 std::exception_ptr Loader::main_loop() {
   log_info("Running.");
 
+  // let's spawn the log reopen thread
+  std::thread log_reopen_thread(log_reopen_thread_function);
+
   std::exception_ptr first_eptr;
 
   size_t plugins_running = plugin_threads_.size();
@@ -713,9 +808,23 @@ std::exception_ptr Loader::main_loop() {
 
     we_might_shutdown_cond.wait(lk, [&first_eptr, &plugins_running, this] {
       // external shutdown
-      if (g_shutdown_pending == 1) return true;
+      if (g_shutdown_pending == SHUTDOWN_REQUESTED) return true;
 
-      // wait for the first non-fatal exit
+      // shutdown due to a fatal error originating from Loader and its callees
+      // (but NOT from plugins)
+      if (g_shutdown_pending == SHUTDOWN_FATAL_ERROR) {
+        // there is a request to shut down due to a fatal error; generate an
+        // exception with requested message so that it bubbles up and ends up on
+        // the console as an error message
+        try {
+          throw std::runtime_error(shutdown_fatal_error_message);
+        } catch (const std::exception &) {
+          first_eptr = std::current_exception();  // capture
+        }
+        return true;
+      }
+
+      // wait for the first non-fatal exit from plugin
       for (std::exception_ptr tmp; plugin_stopped_events_.try_pop(tmp);) {
         plugins_running--;
 
@@ -753,6 +862,12 @@ std::exception_ptr Loader::main_loop() {
   for (auto &thr : plugin_threads_) {
     thr.join();
   }
+
+  // before trying to join the log_reopen_thread we need to make sure to trigger
+  // its exit
+  request_application_shutdown();
+  // join the log_reopen_thread
+  log_reopen_thread.join();
 
   // we will no longer need the env objects for start(), might as well
   // clean them up now for good measure
@@ -832,10 +947,16 @@ std::exception_ptr Loader::deinit_all() {
 bool Loader::topsort() {
   std::map<std::string, Loader::Status> status;
   std::list<std::string> order;
+
+  // for the non-builtin plugins do the sorting that takes their dependencies
+  // into account
   for (std::pair<const std::string, PluginInfo> &plugin : plugins_) {
-    bool succeeded = visit(plugin.first, &status, &order);
-    if (!succeeded) return false;
+    if (!BuiltinPlugins::instance().has(plugin.first)) {
+      bool succeeded = visit(plugin.first, &status, &order);
+      if (!succeeded) return false;
+    }
   }
+
   order_.swap(order);
   return true;
 }
@@ -878,6 +999,6 @@ bool Loader::visit(const std::string &designator,
 namespace unittest_backdoor {
 HARNESS_EXPORT
 void set_shutdown_pending(bool shutdown_pending) {
-  g_shutdown_pending = shutdown_pending;
+  g_shutdown_pending = shutdown_pending ? SHUTDOWN_REQUESTED : SHUTDOWN_NONE;
 }
 }  // namespace unittest_backdoor

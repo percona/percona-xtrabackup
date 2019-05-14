@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,9 @@
 
 #include <errno.h>
 #include <sys/types.h>
+#include "my_dbug.h"
 #include "my_io.h"
+#include "my_systime.h"  // my_sleep
 
 #include "plugin/x/ngs/include/ngs/interface/vio_interface.h"
 #include "plugin/x/ngs/include/ngs/log.h"
@@ -33,7 +35,9 @@
 
 #include "plugin/x/ngs/include/ngs/protocol/page_buffer.h"
 #include "plugin/x/ngs/include/ngs/protocol/page_output_stream.h"
-#include "plugin/x/ngs/include/ngs_common/protocol_protobuf.h"
+#include "plugin/x/ngs/include/ngs/protocol/protocol_protobuf.h"
+
+#include "plugin/x/src/xpl_server.h"
 
 #undef ERROR  // Needed to avoid conflict with ERROR in mysqlx.pb.h
 
@@ -44,7 +48,7 @@ namespace ngs {
 const Pool_config Protocol_encoder::m_default_pool_config = {0, 5,
                                                              BUFFER_PAGE_SIZE};
 
-Protocol_encoder::Protocol_encoder(const ngs::shared_ptr<Vio_interface> &socket,
+Protocol_encoder::Protocol_encoder(const std::shared_ptr<Vio_interface> &socket,
                                    Error_handler ehandler,
                                    Protocol_monitor_interface *pmon)
     : m_pool(m_default_pool_config),
@@ -70,7 +74,7 @@ bool Protocol_encoder::send_result(const Error_code &result) {
     if (!result.message.empty()) ok.set_msg(result.message);
     return send_message(Mysqlx::ServerMessages::OK, ok);
   } else {
-    if (result.severity == ngs::Error_code::FATAL)
+    if (result.severity == Error_code::FATAL)
       get_protocol_monitor().on_fatal_error_send();
     else
       get_protocol_monitor().on_error_send();
@@ -126,6 +130,16 @@ void Protocol_encoder::send_auth_continue(const std::string &data) {
   Mysqlx::Session::AuthenticateContinue msg;
 
   msg.set_auth_data(data);
+
+  DBUG_EXECUTE_IF("authentication_timeout", {
+    int i = 0;
+    int max_iterations = 1000;
+    while ((*xpl::Server::get_instance())->server().is_running() &&
+           i < max_iterations) {
+      my_sleep(10000);
+      ++i;
+    }
+  });
 
   send_message(Mysqlx::ServerMessages::SESS_AUTHENTICATE_CONTINUE, msg);
 }
@@ -274,9 +288,11 @@ bool Protocol_encoder::send_notice(const Frame_type type,
                                    const Frame_scope scope,
                                    const std::string &data,
                                    const bool force_flush) {
+  const bool is_global = Frame_scope::k_global == scope;
+
   if (Frame_type::k_warning == type)
     get_protocol_monitor().on_notice_warning_send();
-  else if (Frame_scope::k_global == scope)
+  else if (is_global)
     get_protocol_monitor().on_notice_global_send();
   else
     get_protocol_monitor().on_notice_other_send();
@@ -284,7 +300,7 @@ bool Protocol_encoder::send_notice(const Frame_type type,
   log_raw_message_send(Mysqlx::ServerMessages::NOTICE);
 
   m_notice_builder.encode_frame(&m_page_output_stream, static_cast<int>(type),
-                                data, static_cast<int>(scope));
+                                !is_global, data);
 
   if (force_flush) m_flusher.mark_flush();
 

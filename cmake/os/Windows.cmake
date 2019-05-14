@@ -48,9 +48,10 @@ INCLUDE(${CMAKE_BINARY_DIR}/win/configure.data OPTIONAL)
 GET_FILENAME_COMPONENT(_SCRIPT_DIR ${CMAKE_CURRENT_LIST_FILE} PATH)
 INCLUDE(${_SCRIPT_DIR}/WindowsCache.cmake)
 
-# We require at least Visual Studio 2015 (aka 14.0) which has version nr 1900.
-IF(NOT FORCE_UNSUPPORTED_COMPILER AND MSVC_VERSION LESS 1900)
-  MESSAGE(FATAL_ERROR "Visual Studio 2015 or newer is required!")
+# We require at least Visual Studio 2017 (aka 15.8) which has version nr 1910.
+IF(NOT FORCE_UNSUPPORTED_COMPILER AND MSVC_VERSION LESS 1915)
+  MESSAGE(FATAL_ERROR
+    "Visual Studio 2017 update 15.8 or newer is required!")
 ENDIF()
 
 # OS display name (version_compile_os etc).
@@ -144,6 +145,15 @@ IF(MSVC)
     ENDIF()
     SET("${flag}" "${${flag}} /EHsc")
   ENDFOREACH()
+
+  # Turn on c++14 mode explicitly so that using c++17 features is disabled.
+  FOREACH(flag
+          CMAKE_CXX_FLAGS_MINSIZEREL
+          CMAKE_CXX_FLAGS_RELEASE  CMAKE_CXX_FLAGS_RELWITHDEBINFO
+          CMAKE_CXX_FLAGS_DEBUG    CMAKE_CXX_FLAGS_DEBUG_INIT)
+    SET("${flag}" "${${flag}} /std:c++14")
+  ENDFOREACH()
+
   FOREACH(type EXE SHARED MODULE)
     FOREACH(config DEBUG RELWITHDEBINFO RELEASE MINSIZEREL)
       SET(flag "CMAKE_${type}_LINKER_FLAGS_${config}")
@@ -172,7 +182,7 @@ IF(MSVC)
   STRING_APPEND(CMAKE_CXX_FLAGS " /wd4244")
 
   # Enable stricter standards conformance when using Visual Studio
-  IF(MSVC_VERSION GREATER 1900 AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+  IF(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /permissive-")
   ENDIF()
 ENDIF()

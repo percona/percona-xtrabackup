@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1424,7 +1424,7 @@ void RecLock::lock_add(lock_t *lock, bool add_to_hash) {
 #ifdef HAVE_PSI_DATA_LOCK_INTERFACE
   /* The performance schema THREAD_ID and EVENT_ID are used only
   when DATA_LOCKS are exposed.  */
-  PSI_THREAD_CALL(get_thread_event_id)
+  PSI_THREAD_CALL(get_current_thread_event_id)
   (&lock->m_psi_internal_thread_id, &lock->m_psi_event_id);
 #endif /* HAVE_PSI_DATA_LOCK_INTERFACE */
 #endif /* HAVE_PSI_THREAD_INTERFACE */
@@ -2434,7 +2434,7 @@ static void lock_grant_cats(hash_table_t *hash, lock_t *in_lock,
   }
 
   /* Reorder the record lock wait queue on the CATS priority. */
-  std::sort(waiting.begin(), waiting.end(), CATS_Lock_priority());
+  std::stable_sort(waiting.begin(), waiting.end(), CATS_Lock_priority());
 
   int32_t sub_age = 0;
   int32_t add_age = 0;
@@ -3660,7 +3660,7 @@ lock_t *lock_table_create(dict_table_t *table, /*!< in/out: database table
 #ifdef HAVE_PSI_DATA_LOCK_INTERFACE
   /* The performance schema THREAD_ID and EVENT_ID
   are used only when DATA_LOCKS are exposed.  */
-  PSI_THREAD_CALL(get_thread_event_id)
+  PSI_THREAD_CALL(get_current_thread_event_id)
   (&lock->m_psi_internal_thread_id, &lock->m_psi_event_id);
 #endif /* HAVE_PSI_DATA_LOCK_INTERFACE */
 #endif /* HAVE_PSI_THREAD_INTERFACE */
@@ -5263,7 +5263,7 @@ static bool lock_rec_queue_validate(
   ut_a(block->frame == page_align(rec));
   ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
-  ut_ad(lock_mutex_own() == locked_lock_trx_sys);
+  ut_ad(lock_mutex_own() == !!locked_lock_trx_sys);
   ut_ad(!index || index->is_clustered() || !dict_index_is_online_ddl(index));
 
   ulint heap_no = page_rec_get_heap_no(rec);
@@ -5816,6 +5816,15 @@ static void lock_rec_convert_impl_to_expl(const buf_block_t *block,
     lock_rec_convert_impl_to_expl_for_trx(block, rec, index, offsets, trx,
                                           heap_no);
   }
+}
+
+void lock_rec_convert_active_impl_to_expl(const buf_block_t *block,
+                                          const rec_t *rec, dict_index_t *index,
+                                          const ulint *offsets, trx_t *trx,
+                                          ulint heap_no) {
+  trx_reference(trx, true);
+  lock_rec_convert_impl_to_expl_for_trx(block, rec, index, offsets, trx,
+                                        heap_no);
 }
 
 /** Checks if locks of other transactions prevent an immediate modify (update,

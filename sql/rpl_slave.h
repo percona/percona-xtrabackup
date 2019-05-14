@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -383,8 +383,14 @@ int change_master(THD *thd, Master_info *mi, LEX_MASTER_INFO *lex_mi,
 bool reset_slave_cmd(THD *thd);
 bool show_slave_status_cmd(THD *thd);
 bool flush_relay_logs_cmd(THD *thd);
+/**
+  Re-encrypt previous relay logs with current master key for all slave channels.
 
-bool flush_relay_logs(Master_info *mi);
+  @retval false Success.
+  @retval true Error.
+*/
+bool reencrypt_relay_logs();
+int flush_relay_logs(Master_info *mi, THD *thd);
 int reset_slave(THD *thd, Master_info *mi, bool reset_all);
 int reset_slave(THD *thd);
 int init_slave();

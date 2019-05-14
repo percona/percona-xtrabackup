@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -985,7 +985,7 @@ void Dbacc::initOpRec(const AccKeyReq* signal, Uint32 siglen) const
 
   operationRecPtr.p->hashValue = LHBits32(signal->hashValue);
   operationRecPtr.p->tupkeylen = signal->keyLen;
-  operationRecPtr.p->xfrmtupkeylen = signal->keyLen;
+  operationRecPtr.p->m_scanOpDeleteCountOpRef = RNIL;
   operationRecPtr.p->transId1 = signal->transId1;
   operationRecPtr.p->transId2 = signal->transId2;
 
@@ -1343,6 +1343,39 @@ Dbacc::startNext(Signal* signal, OperationrecPtr lastOp)
        */
       return;
     }
+
+    if (!same && (opbits & Operationrec::OP_ELEMENT_DISAPPEARED))
+    {
+      jam();
+      /* This is the case described in Bug#19031389 with
+       * T1: READ1, T1: READ2, T1:DELETE
+       * T2: READ3
+       * where out-of-order commits have left us with
+       * T1: READ1, T1: READ2
+       * T2: READ3
+       * and then a commit of T1: READ1 or T1: READ2
+       * causes us to consider whether to allow T2: READ3 to run
+       *
+       * The check above (!same_trans && (prev is EX || next is EX))
+       * does not catch this case as the LOCK_MODE and ACC_LOCK_MODE
+       * of the READ ops is not set as they were prepared *before* the
+       * DELETE
+       *
+       * In general it might be nice if a transaction having a
+       * mix of SH and EX locks were treated as all EX until it
+       * fully commits
+       *
+       * However in the case of INS/UPD we are not (yet) aware of problems
+       *
+       * For DELETE, the problem is that allowing T2: READ3 to start (and
+       * then immediately fail), messes up the reference counting for the
+       * delete
+       * So instead of that, lets not let it start until after the deleting
+       * transaction is fully committed @ ACC
+       *
+       */
+      return;
+    }
     
     /**
      * same trans and X-lock already held -> Ok
@@ -1447,17 +1480,7 @@ checkop:
   nextbits &= nextbits & ~(Uint32)Operationrec::OP_STATE_MASK;
   nextbits |= Operationrec::OP_STATE_RUNNING;
 
-  /*
-   * bug#19031389
-   * Consider transactions such as read-0,read-1,read-2,delete-3.
-   * Read-N commits come from TC while delete-3 commit comes from
-   * backup replica.  In MT kernel delete-3 commit can come first.
-   * Then at read-0 commit there is no ZDELETE left.  But all
-   * ops in parallel queue have been marked OP_ELEMENT_DISAPPEARED.
-   * So also check for that bit.
-   */
-  if (lastop == ZDELETE ||
-      (lastOp.p->m_op_bits & Operationrec::OP_ELEMENT_DISAPPEARED))
+  if (lastop == ZDELETE)
   {
     jam();
     if (nextop != ZINSERT && nextop != ZWRITE)
@@ -1801,6 +1824,7 @@ Dbacc::validate_lock_queue(OperationrecPtr opPtr)const
   {
     bool many = false;
     bool orlockmode = loPtr.p->m_op_bits & Operationrec::OP_LOCK_MODE;
+    bool aborting = false;
     OperationrecPtr lastP = loPtr;
     
     while (lastP.p->nextParallelQue != RNIL)
@@ -1814,6 +1838,7 @@ Dbacc::validate_lock_queue(OperationrecPtr opPtr)const
       const Uint32 opbits = lastP.p->m_op_bits;
       many |= loPtr.p->is_same_trans(lastP.p) ? 0 : 1;
       orlockmode |= ((opbits & Operationrec::OP_LOCK_MODE) != 0);
+      aborting |= ((opbits & Operationrec::OP_PENDING_ABORT) != 0);
       
       vlqrequire(opbits & Operationrec::OP_RUN_QUEUE);
       vlqrequire((opbits & Operationrec::OP_LOCK_OWNER) == 0);
@@ -1857,6 +1882,12 @@ Dbacc::validate_lock_queue(OperationrecPtr opPtr)const
       if (many)
       {
 	vlqrequire(orlockmode == 0);
+      }
+
+      if (aborting)
+      {
+        vlqrequire(many == 0);
+        vlqrequire(lastP.p->m_op_bits & Operationrec::OP_PENDING_ABORT);
       }
     }
     
@@ -1956,23 +1987,28 @@ operator<<(NdbOut & out, Dbacc::OperationrecPtr ptr)
   }
   
 /*
-    OP_MASK                 = 0x000F // 4 bits for operation type
-    ,OP_LOCK_MODE           = 0x0010 // 0 - shared lock, 1 = exclusive lock
-    ,OP_ACC_LOCK_MODE       = 0x0020 // Or:de lock mode of all operation
-                                     // before me
-    ,OP_LOCK_OWNER          = 0x0040
-    ,OP_DIRTY_READ          = 0x0080
-    ,OP_LOCK_REQ            = 0x0100 // isAccLockReq
-    ,OP_COMMIT_DELETE_CHECK = 0x0200
-    ,OP_INSERT_IS_DONE      = 0x0400
-    ,OP_ELEMENT_DISAPPEARED = 0x0800
+    OP_MASK                 = 0x0000F // 4 bits for operation type
+    ,OP_LOCK_MODE           = 0x00010 // 0 - shared lock, 1 = exclusive lock
+    ,OP_ACC_LOCK_MODE       = 0x00020 // Or:de lock mode of all operation
+                                      // before me
+    ,OP_LOCK_OWNER          = 0x00040
+    ,OP_RUN_QUEUE           = 0x00080 // In parallell queue of lock owner
+    ,OP_DIRTY_READ          = 0x00100
+    ,OP_LOCK_REQ            = 0x00200 // isAccLockReq
+    ,OP_COMMIT_DELETE_CHECK = 0x00400
+    ,OP_INSERT_IS_DONE      = 0x00800
+    ,OP_ELEMENT_DISAPPEARED = 0x01000
+    ,OP_PENDING_ABORT       = 0x02000
+
     
-    ,OP_STATE_MASK          = 0xF000
-    ,OP_STATE_IDLE          = 0xF000
-    ,OP_STATE_WAITING       = 0x0000
-    ,OP_STATE_RUNNING       = 0x1000
-    ,OP_STATE_EXECUTED      = 0x3000
-  };
+    ,OP_STATE_MASK          = 0xF0000
+    ,OP_STATE_IDLE          = 0xF0000
+    ,OP_STATE_WAITING       = 0x00000
+    ,OP_STATE_RUNNING       = 0x10000
+    ,OP_STATE_EXECUTED      = 0x30000
+    
+    ,OP_EXECUTED_DIRTY_READ = 0x3050F
+    ,OP_INITIAL             = ~(Uint32)0
 */
   if (opbits & Dbacc::Operationrec::OP_LOCK_OWNER)
     out << "LO ";
@@ -1991,6 +2027,9 @@ operator<<(NdbOut & out, Dbacc::OperationrecPtr ptr)
   
   if (opbits & Dbacc::Operationrec::OP_ELEMENT_DISAPPEARED)
     out << "ELEMENT_DISAPPEARED ";
+
+  if (opbits & Dbacc::Operationrec::OP_PENDING_ABORT)
+    out << "PENDING_ABORT ";
   
   if (opbits & Dbacc::Operationrec::OP_LOCK_OWNER)
   {
@@ -3772,53 +3811,101 @@ Dbacc::getElement(const AccKeyReq* signal,
   return ZFALSE;
 }//Dbacc::getElement()
 
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/*                                                                           */
-/*       END OF GET_ELEMENT MODULE                                           */
-/*                                                                           */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/*                                                                           */
-/*       MODULE:         DELETE                                              */
-/*                                                                           */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/* ------------------------------------------------------------------------- */
-/* COMMITDELETE                                                              */
-/*         INPUT: OPERATION_REC_PTR, PTR TO AN OPERATION RECORD.             */
-/*                FRAGRECPTR, PTR TO A FRAGMENT RECORD                       */
-/*                                                                           */
-/*         OUTPUT:                                                           */
-/*                NONE                                                       */
-/*         DESCRIPTION: DELETE OPERATIONS WILL BE COMPLETED AT THE 
- *         COMMIT OF TRANSACTION. THIS SUBROUTINE SEARCHS FOR ELEMENT AND 
- *         DELETES IT. IT DOES SO BY REPLACING IT WITH THE LAST 
- *         ELEMENT IN THE BUCKET. IF THE DELETED ELEMENT IS ALSO THE LAST 
- *         ELEMENT THEN IT IS ONLY NECESSARY TO REMOVE THE ELEMENT
- * ------------------------------------------------------------------------- */
+/**
+ * report_pending_dealloc
+ *
+ * ACC indicates to LQH that it expects LQH to deallocate
+ * the TUPle at some point after all the reported operations
+ * have completed and the deallocation is allowed.
+ *
+ * opPtrP       Ptr to operation involved in dealloc
+ * countOpPtrP  Ptr to operation tracking delete reference count
+ *               (can be same as opPtrP)
+ */
 void
-Dbacc::report_dealloc(Signal* signal, const Operationrec* opPtrP)
+Dbacc::report_pending_dealloc(Signal* signal,
+                              Operationrec* opPtrP,
+                              const Operationrec* countOpPtrP)
 {
   Local_key localKey = opPtrP->localdata;
   Uint32 opbits = opPtrP->m_op_bits;
   Uint32 userptr= opPtrP->userptr;
-  Uint32 scanInd = 
-    ((opbits & Operationrec::OP_MASK) == ZSCAN_OP) || 
-    (opbits & Operationrec::OP_LOCK_REQ);
-  
+  const bool scanInd = (((opbits & Operationrec::OP_MASK) == ZSCAN_OP) ||
+                        (opbits & Operationrec::OP_LOCK_REQ));
+
   if (! localKey.isInvalid())
   {
+    if (scanInd)
+    {
+      jam();
+      /**
+       * Scan operation holding a lock on a key whose tuple
+       * is being deallocated.
+       * If this is the last operation to commit on the key
+       * then it will notify LQH when the dealloc is
+       * triggered.
+       * To make that possible, we store the deleting
+       * operation's userptr in the scan op record.
+       */
+      ndbrequire(opPtrP->m_scanOpDeleteCountOpRef == RNIL);
+      opPtrP->m_scanOpDeleteCountOpRef = countOpPtrP->userptr;
+      return;
+    }
+    ndbrequire(countOpPtrP->userptr != RNIL);
+
+    /**
+     * Inform LQH of operation involved in transaction
+     * which is deallocating a tuple.
+     * Also pass the LQH reference of the refcount operation
+     */
     signal->theData[0] = fragrecptr.p->myfid;
     signal->theData[1] = fragrecptr.p->myTableId;
     signal->theData[2] = localKey.m_page_no;
     signal->theData[3] = localKey.m_page_idx;
     signal->theData[4] = userptr;
-    signal->theData[5] = scanInd;
+    signal->theData[5] = countOpPtrP->userptr;
+    EXECUTE_DIRECT(DBLQH, GSN_TUP_DEALLOCREQ, signal, 6);
+    jamEntry();
+  }
+}
+
+/**
+ * trigger_dealloc
+ *
+ * ACC is now done with the TUPle storage, so inform LQH
+ * that it can go ahead with deallocation when it is able
+ */
+void
+Dbacc::trigger_dealloc(Signal* signal, const Operationrec* opPtrP)
+{
+  Local_key localKey = opPtrP->localdata;
+  Uint32 opbits = opPtrP->m_op_bits;
+  Uint32 userptr= opPtrP->userptr;
+  const bool scanInd =
+    ((opbits & Operationrec::OP_MASK) == ZSCAN_OP) || 
+    (opbits & Operationrec::OP_LOCK_REQ);
+  
+  if (! localKey.isInvalid())
+  {
+    if (scanInd)
+    {
+      jam();
+      /**
+       * Operation triggering deallocation is a scan operation
+       * We must use a reference to the LQH deallocation operation
+       * stored on the scan operation in report_pending_dealloc()
+       * to inform LQH that the deallocation is triggered.
+       */
+      ndbrequire(opPtrP->m_scanOpDeleteCountOpRef != RNIL);
+      userptr = opPtrP->m_scanOpDeleteCountOpRef;
+    }
+    /* Inform LQH that deallocation can go ahead */
+    signal->theData[0] = fragrecptr.p->myfid;
+    signal->theData[1] = fragrecptr.p->myTableId;
+    signal->theData[2] = localKey.m_page_no;
+    signal->theData[3] = localKey.m_page_idx;
+    signal->theData[4] = userptr;
+    signal->theData[5] = RNIL;
     EXECUTE_DIRECT(DBLQH, GSN_TUP_DEALLOCREQ, signal, 6);
     jamEntry();
   }
@@ -3837,7 +3924,7 @@ void Dbacc::commitdelete(Signal* signal)
   Uint32 lastBucketConidx;
 
   jam();
-  report_dealloc(signal, operationRecPtr.p);
+  trigger_dealloc(signal, operationRecPtr.p);
   
   getdirindex(lastBucketPageptr, lastBucketConidx);
   lastPageptr = lastBucketPageptr;
@@ -4389,6 +4476,106 @@ void Dbacc::checkoverfreelist(Page8Ptr colPageptr)
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
+
+
+/**
+ * mark_pending_abort
+ *
+ * Called when aborting an operation, to mark any dependent operations
+ * as pendingAbort.
+ * This is useful for handling ABORT and PREPARE concurrency when there
+ * are multiple operations on the same row.
+ *
+ * Dependencies
+ *   Within a transaction : 
+ *     Later modify operations depend on earlier
+ *       modify operations.
+ *     Later READ operations may or may not depend
+ *       on earlier modify operations
+ *       - READs have no state at TUP
+ *       - READs may READ older (unaborted) row states
+ *       Since we do not know, we abort.
+ *     Later operations do not depend on earlier
+ *       READ operations
+ *   Between transactions : 
+ *     There are no abort dependencies
+ */
+void
+Dbacc::mark_pending_abort(OperationrecPtr abortingOp, Uint32 nextParallelOp)
+{
+  jam();
+  const Uint32 abortingOpBits = abortingOp.p->m_op_bits;
+  const Uint32 opType = abortingOpBits & Operationrec::OP_MASK;
+
+  /* Only relevant when aborting modifying operations */
+  if (opType == ZREAD ||
+      opType == ZSCAN_OP)
+  {
+    jam();
+    return;
+  }
+
+  if ((abortingOpBits & Operationrec::OP_PENDING_ABORT) != 0)
+  {
+    jam();
+    /**
+     * Aborting Op already PENDING_ABORT therefore followers also
+     * already PENDING_ABORT
+     */
+    return;
+  }
+
+  ndbassert(abortingOpBits & Operationrec::OP_LOCK_MODE);
+  ndbassert(opType == ZINSERT ||
+            opType == ZUPDATE ||
+            opType == ZDELETE); /* Don't expect WRITE */
+
+  OperationrecPtr follower;
+  follower.i = nextParallelOp;
+  while (follower.i != RNIL)
+  {
+    ptrCheckGuard(follower, coprecsize, operationrec);
+    if (likely(follower.p->is_same_trans(abortingOp.p)))
+    {
+      jam();
+      if ((follower.p->m_op_bits & Operationrec::OP_PENDING_ABORT) != 0)
+      {
+        jam();
+        /* Found a later op in PENDING_ABORT state - done */
+        break;
+      }
+
+      follower.p->m_op_bits |= Operationrec::OP_PENDING_ABORT;
+    }
+    else
+    {
+      /* Follower is not same trans - unexpected as we hold EX lock */
+      dump_lock_queue(follower);
+      ndbrequire(false);
+    }
+    follower.i = follower.p->nextParallelQue;
+  }
+}
+
+
+/**
+ * checkOpPendingAbort
+ *
+ * Method called by LQH to check that an op has not 
+ * been marked as pending abort by the abort of
+ * some other operation
+ */
+bool
+Dbacc::checkOpPendingAbort(Uint32 accConnectPtr) const
+{
+  OperationrecPtr opPtr;
+  opPtr.i = accConnectPtr;
+  ptrCheckGuard(opPtr, coprecsize, operationrec);
+  
+  return ((opPtr.p->m_op_bits & 
+           Operationrec::OP_PENDING_ABORT) != 0);
+}
+
 /* ------------------------------------------------------------------------- */
 /* ABORT_OPERATION                                                           */
 /*DESCRIPTION: AN OPERATION RECORD CAN BE IN A LOCK QUEUE OF AN ELEMENT OR   */
@@ -4462,6 +4649,12 @@ Dbacc::abortParallelQueueOperation(Signal* signal, OperationrecPtr opPtr)
     return;
   }
 
+  /**
+   * This op is not at the end of the parallel queue, so 
+   * mark pending aborts there as necessary
+   */
+  mark_pending_abort(opPtr, nextP.i);
+         
   /**
    * Abort P1/P2
    */
@@ -4723,6 +4916,7 @@ void Dbacc::abortOperation(Signal* signal)
     if (queue)
     {
       jam();
+      mark_pending_abort(operationRecPtr, operationRecPtr.p->nextParallelQue);
       release_lockowner(signal, operationRecPtr, false);
     } 
     else 
@@ -4768,7 +4962,7 @@ void Dbacc::abortOperation(Signal* signal)
 }
 
 void
-Dbacc::commitDeleteCheck()const
+Dbacc::commitDeleteCheck(Signal* signal)
 {
   OperationrecPtr opPtr;
   OperationrecPtr lastOpPtr;
@@ -4837,8 +5031,10 @@ Dbacc::commitDeleteCheck()const
     opPtr.p->m_op_bits |= Operationrec::OP_COMMIT_DELETE_CHECK;
     if (elementDeleted) {
       jam();
+      /* All pending dealloc operations are marked and reported to LQH */
       opPtr.p->m_op_bits |= elementDeleted;
       opPtr.p->hashValue = hashValue;
+      report_pending_dealloc(signal, opPtr.p, deleteOpPtr.p);
     }//if
     opPtr.i = opPtr.p->prevParallelQue;
     if (opPtr.p->m_op_bits & Operationrec::OP_LOCK_OWNER) {
@@ -4862,6 +5058,7 @@ void Dbacc::commitOperation(Signal* signal)
   Uint32 opbits = operationRecPtr.p->m_op_bits;
   Uint32 op = opbits & Operationrec::OP_MASK;
   ndbrequire((opbits & Operationrec::OP_STATE_MASK) == Operationrec::OP_STATE_EXECUTED);
+  ndbassert((opbits & Operationrec::OP_PENDING_ABORT) == 0);
   if ((opbits & Operationrec::OP_COMMIT_DELETE_CHECK) == 0 && 
       (op != ZREAD && op != ZSCAN_OP))
   {
@@ -4875,7 +5072,7 @@ void Dbacc::commitOperation(Signal* signal)
         a scan operation only means that the scan is continuing and the scan
         lock is released.
     */
-    commitDeleteCheck();
+    commitDeleteCheck(signal);
     opbits = operationRecPtr.p->m_op_bits;
   }//if
 
@@ -5120,7 +5317,7 @@ Dbacc::release_lockowner(Signal* signal, OperationrecPtr opPtr, bool commit)
 	if (opbits & Operationrec::OP_ELEMENT_DISAPPEARED)
 	{
 	  jam();
-	  report_dealloc(signal, opPtr.p);
+          trigger_dealloc(signal, opPtr.p);
 	  newOwner.p->localdata.setInvalid();
 	}
 	else
@@ -5167,7 +5364,7 @@ Dbacc::release_lockowner(Signal* signal, OperationrecPtr opPtr, bool commit)
     
     if (opbits & Operationrec::OP_ELEMENT_DISAPPEARED)
     {
-      report_dealloc(signal, opPtr.p);
+      trigger_dealloc(signal, opPtr.p);
       newOwner.p->localdata.setInvalid();
     }
     else
@@ -7856,7 +8053,7 @@ void Dbacc::initScanOpRec(Page8Ptr pageptr,
   ndbrequire(localkeylen == 1)
   operationRecPtr.p->hashValue.clear();
   operationRecPtr.p->tupkeylen = fragrecptr.p->keyLength;
-  operationRecPtr.p->xfrmtupkeylen = 0; // not used for a scanOp
+  operationRecPtr.p->m_scanOpDeleteCountOpRef = RNIL;
   NdbTick_Invalidate(&operationRecPtr.p->m_lockTime);
 }//Dbacc::initScanOpRec()
 
@@ -8795,7 +8992,8 @@ void Dbacc::execDBINFO_SCANREQ(Signal *signal)
         cpageCount,
         sizeof(Page8),
         cnoOfAllocatedPagesMax,
-        { CFG_DB_INDEX_MEM,0,0,0 }},
+        { CFG_DB_INDEX_MEM,0,0,0 },
+        RG_DATAMEM},
       { "L2PMap pages",
         pmpInfo.pg_count,
         0,                  /* No real limit */
@@ -8805,7 +9003,8 @@ void Dbacc::execDBINFO_SCANREQ(Signal *signal)
           and therefore of limited interest.
         */
         0,
-        { 0, 0, 0}},
+        { 0, 0, 0},
+        RG_DATAMEM},
       { "L2PMap nodes",
         pmpInfo.inuse_nodes,
         pmpInfo.pg_count * pmpInfo.nodes_per_page, // Max within current pages.
@@ -8815,8 +9014,9 @@ void Dbacc::execDBINFO_SCANREQ(Signal *signal)
           and therefore of limited interest.
         */
         0,
-        { 0, 0, 0 }},
-      { NULL, 0,0,0,0,{ 0,0,0,0 }}
+        { 0, 0, 0 },
+        RT_DBACC_DIRECTORY},
+      { NULL, 0,0,0,0,{ 0,0,0,0 }, 0}
     };
 
     static const size_t num_config_params =
@@ -8838,6 +9038,8 @@ void Dbacc::execDBINFO_SCANREQ(Signal *signal)
       row.write_uint64(pools[pool].entry_size);
       for (size_t i = 0; i < num_config_params; i++)
         row.write_uint32(pools[pool].config_params[i]);
+      row.write_uint32(GET_RG(pools[pool].record_type));
+      row.write_uint32(GET_TID(pools[pool].record_type));
       ndbinfo_send_row(signal, req, row, rl);
       pool++;
       if (rl.need_break(req))

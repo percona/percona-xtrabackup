@@ -72,8 +72,7 @@ have_ndb_error_insert.inc
 have_ndbapi_examples.inc
 have_ndb_debug.inc
 have_ndb_rqg.inc
-# Generated in var/tmp/ by run_ndbapitest.inc and then sourced
-run_ndbapitest_result.inc
+run_ndbapitest.inc
 
 # Java related var/tmp generated include files
 have_clusterj_result.inc
@@ -107,6 +106,9 @@ have_ssl.inc
 have_ssl_crypto_functs.inc
 not_openssl.inc
 check_openssl_version.inc
+have_tlsv13.inc
+not_have_tlsv13.inc
+not_min_protocol_tlsv12.inc
 
 # 4.5 Reason for inclusion: Tests should run only with supported innodb page
 # sizes and skip on others. However, this can be handled using a custom
@@ -215,6 +217,8 @@ have_transaction_write_set_extraction.inc
 
 # 16.0 Thread stack overrun on debug/sparc when built with Developer Studio
 not_sparc_debug.inc
+# 16.1 Some MEB tests can't run on MacOS debug
+not_mac_os_debug.inc
 # This also fails with non-debug
 statement_digest_long_query.test
 

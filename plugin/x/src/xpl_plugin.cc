@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,7 @@ int session_status_variable(THD *thd, SHOW_VAR *var, char *buff) {
   auto server(xpl::Server::get_instance());
   if (server) {
     MUTEX_LOCK(lock, (*server)->server().get_client_exit_mutex());
-    auto client = ngs::dynamic_pointer_cast<xpl::Client>(
+    auto client = std::dynamic_pointer_cast<xpl::Client>(
         (*server)->server().get_client(thd));
 
     if (client) ((*client).*method)(var);
@@ -90,12 +90,12 @@ int session_status_variable(THD *thd, SHOW_VAR *var, char *buff) {
   auto server(xpl::Server::get_instance());
   if (server) {
     MUTEX_LOCK(lock, (*server)->server().get_client_exit_mutex());
-    auto client = ngs::dynamic_pointer_cast<xpl::Client>(
+    auto client = std::dynamic_pointer_cast<xpl::Client>(
         (*server)->server().get_client(thd));
 
     if (client) {
       ReturnType result =
-          (ngs::Ssl_session_options(&client->connection()).*method)();
+          (xpl::Ssl_session_options(&client->connection()).*method)();
       mysqld::xpl_show_var(var).assign(result);
     }
   }
@@ -152,7 +152,7 @@ int common_status_variable(THD *thd, SHOW_VAR *var, char *buff) {
   auto server(xpl::Server::get_instance());
   if (server) {
     MUTEX_LOCK(lock, (*server)->server().get_client_exit_mutex());
-    auto client = ngs::dynamic_pointer_cast<xpl::Client>(
+    auto client = std::dynamic_pointer_cast<xpl::Client>(
         (*server)->server().get_client(thd));
 
     if (client) {
@@ -208,7 +208,7 @@ void thd_variable(THD *thd, SYS_VAR *sys_var, void *tgt, const void *save) {
   if (server) {
     MUTEX_LOCK(lock, (*server)->server().get_client_exit_mutex());
 
-    xpl::Client_ptr client = ngs::dynamic_pointer_cast<xpl::Client>(
+    xpl::Client_ptr client = std::dynamic_pointer_cast<xpl::Client>(
         (*server)->server().get_client(thd));
     if (client) ((*client).*method)(*static_cast<Copy_type *>(tgt));
 
@@ -346,12 +346,14 @@ static MYSQL_SYSVAR_STR(socket, xpl::Plugin_system_variables::socket,
                         "X Plugin's unix socket for local connection.", NULL,
                         NULL, NULL);
 
-static MYSQL_SYSVAR_STR(bind_address,
-                        xpl::Plugin_system_variables::bind_address,
-                        PLUGIN_VAR_READONLY | PLUGIN_VAR_OPCMDARG |
-                            PLUGIN_VAR_MEMALLOC,
-                        "Address to which X Plugin should bind the TCP socket.",
-                        NULL, NULL, "*");
+static MYSQL_SYSVAR_STR(
+    bind_address, xpl::Plugin_system_variables::bind_address,
+    PLUGIN_VAR_READONLY | PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_MEMALLOC,
+    "Address to which X Plugin should bind the TCP socket optionally "
+    "followed by a network namespace delimited with /. "
+    "E.g., the string value 127.0.0.1/red specifies to listen on "
+    "IP address 127.0.0.1 from the network namespace 'red'.",
+    NULL, NULL, "*");
 
 static MYSQL_SYSVAR_UINT(
     port_open_timeout, xpl::Plugin_system_variables::port_open_timeout,
@@ -401,6 +403,13 @@ static MYSQL_SYSVAR_UINT(
     NULL, &xpl::Plugin_system_variables::update_func<uint32_t>, 0, 0,
     std::numeric_limits<uint16_t>::max(), 0);
 
+static MYSQL_SYSVAR_BOOL(
+    enable_hello_notice, xpl::Plugin_system_variables::m_enable_hello_notice,
+    PLUGIN_VAR_OPCMDARG,
+    "Hello notice is a X Protocol message send by the server after connection "
+    "establishment, using this variable it can be disabled",
+    NULL, &xpl::Plugin_system_variables::update_func<bool>, true);
+
 static struct SYS_VAR *xpl_plugin_system_variables[] = {
     MYSQL_SYSVAR(port),
     MYSQL_SYSVAR(max_connections),
@@ -423,6 +432,7 @@ static struct SYS_VAR *xpl_plugin_system_variables[] = {
     MYSQL_SYSVAR(read_timeout),
     MYSQL_SYSVAR(write_timeout),
     MYSQL_SYSVAR(document_id_unique_prefix),
+    MYSQL_SYSVAR(enable_hello_notice),
     NULL};
 
 #define SESSION_STATUS_VARIABLE_ENTRY_LONGLONG(NAME, METHOD)                 \

@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,6 @@
 IF(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   ADD_DEFINITIONS(-D_CRT_SECURE_NO_WARNINGS)  # bypass Warning C4996 (getenv)
 ENDIF()
-
-INCLUDE(${CMAKE_SOURCE_DIR}/cmake/compile_flags.cmake)
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../include/mysqlrouter)
 INCLUDE_DIRECTORIES(SYSTEM ${SSL_INCLUDE_DIRS})
@@ -62,6 +60,12 @@ IF(WIN32)
 ENDIF()
 
 SET(source_files main.cc)
+
+IF(WIN32)
+  LIST(APPEND source_files
+    ../../harness/src/logging/eventlog_rc/message.rc
+    ../../harness/src/logging/eventlog_rc/MSG00001.bin)
+ENDIF()
 
 IF(NOT WIN32)
   ADD_LIBRARY(router_lib SHARED ${lib_source_files} ${common_files})

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include "psi_memory_key.h"  // key_memory_JSON
 #include "sql/create_field.h"
 #include "sql/enum_query_type.h"
+
 #include "sql/mem_root_array.h"
 #include "sql_list.h"  // List
 #include "table.h"     // TABLE
@@ -157,6 +158,8 @@ class Table_function {
       thread handler
   */
   inline THD *get_thd() { return thd; }
+
+  virtual bool walk(Item_processor processor, enum_walk walk, uchar *arg) = 0;
 
  private:
   /**
@@ -368,6 +371,8 @@ class Table_function_json final : public Table_function {
   */
   bool print(String *str, enum_query_type query_type) override;
 
+  bool walk(Item_processor processor, enum_walk walk, uchar *arg) override;
+
  private:
   /**
     Fill the result table
@@ -381,7 +386,6 @@ class Table_function_json final : public Table_function {
   /**
     Prepare lists used to create tmp table and function execution
 
-    @param thd       thread handler
     @param nest_idx  index of parent's element in the nesting data array
     @param parent    Parent of the NESTED PATH clause being initialized
 
@@ -389,8 +393,7 @@ class Table_function_json final : public Table_function {
       true  on error
       false on success
   */
-  bool init_json_table_col_lists(THD *thd, uint *nest_idx,
-                                 Json_table_column *parent);
+  bool init_json_table_col_lists(uint *nest_idx, Json_table_column *parent);
   /**
     Set all underlying columns of a NESTED PATH to nullptr
 

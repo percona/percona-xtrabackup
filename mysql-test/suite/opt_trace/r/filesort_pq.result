@@ -1695,18 +1695,24 @@ SELECT * from t1 ORDER BY rand(2) LIMIT 2	{
         "select#": 1,
         "steps": [
           {
-            "creating_tmp_table": {
-              "tmp_table_info": {
-                "table": "intermediate_tmp_table",
-                "in_plan_at_position": 1,
-                "columns": 4,
-                "row_length": 219,
-                "key_length": 0,
-                "unique_constraint": false,
-                "makes_grouped_rows": false,
-                "cannot_insert_duplicates": false,
-                "location": "TempTable"
-              }
+            "materialize": {
+              "select#": 1,
+              "steps": [
+                {
+                  "creating_tmp_table": {
+                    "tmp_table_info": {
+                      "in_plan_at_position": 1,
+                      "columns": 4,
+                      "row_length": 219,
+                      "key_length": 0,
+                      "unique_constraint": false,
+                      "makes_grouped_rows": false,
+                      "cannot_insert_duplicates": false,
+                      "location": "TempTable"
+                    }
+                  }
+                }
+              ]
             }
           },
           {
@@ -1714,7 +1720,6 @@ SELECT * from t1 ORDER BY rand(2) LIMIT 2	{
             "filesort_information": [
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "tmp_field_0"
               }
             ],
@@ -3042,23 +3047,22 @@ ORDER BY f1, f0 LIMIT 30	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 30,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 32768,
               "key_size": 9,
-              "row_size": 219,
-              "max_rows_per_buffer": 31,
+              "row_size": 221,
+              "max_rows_per_buffer": 110,
               "num_rows_estimate": 110,
               "num_rows_found": 100,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -3214,23 +3218,22 @@ ORDER BY f1, f0 LIMIT 0	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 0,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 32768,
               "key_size": 9,
-              "row_size": 219,
-              "max_rows_per_buffer": 1,
+              "row_size": 221,
+              "max_rows_per_buffer": 110,
               "num_rows_estimate": 110,
               "num_rows_found": 100,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
-              "sort_algorithm": "none",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_algorithm": "std::sort",
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -3435,23 +3438,22 @@ ORDER BY f2, f0 LIMIT 20	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 20,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 32768,
               "key_size": 205,
-              "row_size": 415,
-              "max_rows_per_buffer": 21,
+              "row_size": 417,
+              "max_rows_per_buffer": 77,
               "num_rows_estimate": 110,
               "num_rows_found": 89,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -3636,23 +3638,22 @@ ORDER BY f2, f0 LIMIT 0	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 0,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 32768,
               "key_size": 205,
-              "row_size": 415,
-              "max_rows_per_buffer": 1,
+              "row_size": 417,
+              "max_rows_per_buffer": 77,
               "num_rows_estimate": 110,
               "num_rows_found": 89,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
-              "sort_algorithm": "none",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_algorithm": "std::sort",
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -3847,23 +3848,22 @@ ORDER BY f2, f0 LIMIT 10 OFFSET 10	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 20,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 32768,
               "key_size": 205,
-              "row_size": 415,
-              "max_rows_per_buffer": 21,
+              "row_size": 417,
+              "max_rows_per_buffer": 77,
               "num_rows_estimate": 110,
               "num_rows_found": 89,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -4048,23 +4048,22 @@ ORDER BY f2, f0 LIMIT 0 OFFSET 10	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 10,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 32768,
               "key_size": 205,
-              "row_size": 415,
-              "max_rows_per_buffer": 11,
+              "row_size": 417,
+              "max_rows_per_buffer": 77,
               "num_rows_estimate": 110,
               "num_rows_found": 89,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -5042,8 +5041,8 @@ ORDER BY tmp.f1, f0 LIMIT 30 OFFSET 30	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 60,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
@@ -5051,13 +5050,13 @@ ORDER BY tmp.f1, f0 LIMIT 30 OFFSET 30	{
               "memory_available": 327680,
               "key_size": 17,
               "row_size": 17,
-              "max_rows_per_buffer": 61,
+              "max_rows_per_buffer": 1510,
               "num_rows_estimate": 1510,
               "num_rows_found": 1500,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
-              "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
+              "sort_algorithm": "std::stable_sort",
+              "unpacked_addon_fields": "using_heap_table",
               "sort_mode": "<fixed_sort_key, rowid>"
             }
           }
@@ -5434,8 +5433,8 @@ ORDER BY tmp.f1, f0 LIMIT 30 OFFSET 30	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 60,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
@@ -5443,13 +5442,13 @@ ORDER BY tmp.f1, f0 LIMIT 30 OFFSET 30	{
               "memory_available": 327680,
               "key_size": 17,
               "row_size": 17,
-              "max_rows_per_buffer": 61,
+              "max_rows_per_buffer": 1195,
               "num_rows_estimate": 1195,
               "num_rows_found": 1185,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
-              "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
+              "sort_algorithm": "std::stable_sort",
+              "unpacked_addon_fields": "using_heap_table",
               "sort_mode": "<fixed_sort_key, rowid>"
             }
           }
@@ -5758,7 +5757,7 @@ SELECT * FROM v1	{
             }
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
                 {
@@ -6101,7 +6100,7 @@ SELECT * FROM v1 ORDER BY f2, f0 LIMIT 30	{
             }
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
                 {
@@ -6180,6 +6179,16 @@ SELECT * FROM v1 ORDER BY f2, f0 LIMIT 30	{
     }
   ]
 }	0	0
+EXPLAIN FORMAT=tree SELECT * FROM v1 ORDER BY f2, f0 LIMIT 30;
+EXPLAIN
+-> Limit: 30 row(s)
+    -> Sort: v1.f2, v1.f0, limit input to 30 row(s) per chunk
+        -> Table scan on v1
+            -> Materialize
+                -> Limit: 100 row(s)
+                    -> Sort: t1.f1, t1.f0, limit input to 100 row(s) per chunk
+                        -> Table scan on t1
+
 CREATE VIEW v2 as SELECT * FROM t1 ORDER BY f2, f0 LIMIT 100;
 SELECT * FROM v1 JOIN v2 on v1.f1=v2.f1 ORDER BY v1.f2,v1.f0,v2.f0
 LIMIT 30;
@@ -6843,100 +6852,106 @@ LIMIT 30	{
             }
           },
           {
-            "join_execution": {
-              "select#": 2,
+            "materialize": {
+              "select#": 1,
               "steps": [
                 {
-                  "sorting_table_in_plan_at_position": 0,
-                  "filesort_information": [
-                    {
-                      "direction": "asc",
-                      "table": "`t1`",
-                      "field": "f1"
-                    },
-                    {
-                      "direction": "asc",
-                      "table": "`t1`",
-                      "field": "f0"
+                  "materialize": {
+                    "select#": 2,
+                    "steps": [
+                      {
+                        "sorting_table_in_plan_at_position": 0,
+                        "filesort_information": [
+                          {
+                            "direction": "asc",
+                            "table": "`t1`",
+                            "field": "f1"
+                          },
+                          {
+                            "direction": "asc",
+                            "table": "`t1`",
+                            "field": "f0"
+                          }
+                        ],
+                        "filesort_priority_queue_optimization": {
+                          "limit": 100,
+                          "chosen": true
+                        },
+                        "filesort_execution": [
+                        ],
+                        "filesort_summary": {
+                          "memory_available": 327680,
+                          "key_size": 9,
+                          "row_size": 219,
+                          "max_rows_per_buffer": 101,
+                          "num_rows_estimate": 510,
+                          "num_rows_found": 500,
+                          "num_initial_chunks_spilled_to_disk": 0,
+                          "peak_memory_used": "NNN",
+                          "sort_algorithm": "std::stable_sort",
+                          "unpacked_addon_fields": "using_priority_queue",
+                          "sort_mode": "<fixed_sort_key, additional_fields>"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "creating_tmp_table": {
+                    "tmp_table_info": {
+                      "in_plan_at_position": 2,
+                      "columns": 6,
+                      "row_length": 419,
+                      "key_length": 0,
+                      "unique_constraint": false,
+                      "makes_grouped_rows": false,
+                      "cannot_insert_duplicates": false,
+                      "location": "TempTable"
                     }
-                  ],
-                  "filesort_priority_queue_optimization": {
-                    "limit": 100,
-                    "chosen": true
-                  },
-                  "filesort_execution": [
-                  ],
-                  "filesort_summary": {
-                    "memory_available": 327680,
-                    "key_size": 9,
-                    "row_size": 219,
-                    "max_rows_per_buffer": 101,
-                    "num_rows_estimate": 510,
-                    "num_rows_found": 500,
-                    "num_initial_chunks_spilled_to_disk": 0,
-                    "peak_memory_used": "NNN",
-                    "sort_algorithm": "std::stable_sort",
-                    "unpacked_addon_fields": "using_priority_queue",
-                    "sort_mode": "<fixed_sort_key, additional_fields>"
+                  }
+                },
+                {
+                  "materialize": {
+                    "select#": 3,
+                    "steps": [
+                      {
+                        "sorting_table_in_plan_at_position": 0,
+                        "filesort_information": [
+                          {
+                            "direction": "asc",
+                            "table": "`t1`",
+                            "field": "f2"
+                          },
+                          {
+                            "direction": "asc",
+                            "table": "`t1`",
+                            "field": "f0"
+                          }
+                        ],
+                        "filesort_priority_queue_optimization": {
+                          "limit": 100,
+                          "chosen": true
+                        },
+                        "filesort_execution": [
+                        ],
+                        "filesort_summary": {
+                          "memory_available": 327680,
+                          "key_size": 205,
+                          "row_size": 415,
+                          "max_rows_per_buffer": 101,
+                          "num_rows_estimate": 510,
+                          "num_rows_found": 500,
+                          "num_initial_chunks_spilled_to_disk": 0,
+                          "peak_memory_used": "NNN",
+                          "sort_algorithm": "std::stable_sort",
+                          "unpacked_addon_fields": "using_priority_queue",
+                          "sort_mode": "<fixed_sort_key, additional_fields>"
+                        }
+                      }
+                    ]
                   }
                 }
               ]
-            }
-          },
-          {
-            "join_execution": {
-              "select#": 3,
-              "steps": [
-                {
-                  "sorting_table_in_plan_at_position": 0,
-                  "filesort_information": [
-                    {
-                      "direction": "asc",
-                      "table": "`t1`",
-                      "field": "f2"
-                    },
-                    {
-                      "direction": "asc",
-                      "table": "`t1`",
-                      "field": "f0"
-                    }
-                  ],
-                  "filesort_priority_queue_optimization": {
-                    "limit": 100,
-                    "chosen": true
-                  },
-                  "filesort_execution": [
-                  ],
-                  "filesort_summary": {
-                    "memory_available": 327680,
-                    "key_size": 205,
-                    "row_size": 415,
-                    "max_rows_per_buffer": 101,
-                    "num_rows_estimate": 510,
-                    "num_rows_found": 500,
-                    "num_initial_chunks_spilled_to_disk": 0,
-                    "peak_memory_used": "NNN",
-                    "sort_algorithm": "std::stable_sort",
-                    "unpacked_addon_fields": "using_priority_queue",
-                    "sort_mode": "<fixed_sort_key, additional_fields>"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "creating_tmp_table": {
-              "tmp_table_info": {
-                "table": "intermediate_tmp_table",
-                "in_plan_at_position": 2,
-                "columns": 6,
-                "row_length": 419,
-                "key_length": 0,
-                "unique_constraint": false,
-                "makes_grouped_rows": false,
-                "cannot_insert_duplicates": false,
-                "location": "TempTable"
-              }
             }
           },
           {
@@ -6944,17 +6959,14 @@ LIMIT 30	{
             "filesort_information": [
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "f2"
               },
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "f0"
               },
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "f0"
               }
             ],
@@ -7133,18 +7145,24 @@ GROUP BY 1 ORDER BY 2,1 LIMIT 5	{
         "select#": 1,
         "steps": [
           {
-            "creating_tmp_table": {
-              "tmp_table_info": {
-                "table": "intermediate_tmp_table",
-                "in_plan_at_position": 1,
-                "columns": 2,
-                "row_length": 18,
-                "key_length": 9,
-                "unique_constraint": false,
-                "makes_grouped_rows": true,
-                "cannot_insert_duplicates": false,
-                "location": "TempTable"
-              }
+            "temp_table_aggregate": {
+              "select#": 1,
+              "steps": [
+                {
+                  "creating_tmp_table": {
+                    "tmp_table_info": {
+                      "in_plan_at_position": 1,
+                      "columns": 2,
+                      "row_length": 18,
+                      "key_length": 9,
+                      "unique_constraint": false,
+                      "makes_grouped_rows": true,
+                      "cannot_insert_duplicates": false,
+                      "location": "TempTable"
+                    }
+                  }
+                }
+              ]
             }
           },
           {
@@ -7152,12 +7170,10 @@ GROUP BY 1 ORDER BY 2,1 LIMIT 5	{
             "filesort_information": [
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "count(f2)"
               },
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "f3"
               }
             ],
@@ -7856,23 +7872,22 @@ ORDER BY f2, f0 LIMIT 15 OFFSET 15	{
               }
             ],
             "filesort_priority_queue_optimization": {
-              "limit": 30,
-              "chosen": true
+              "usable": false,
+              "cause": "not applicable (no LIMIT)"
             },
             "filesort_execution": [
             ],
             "filesort_summary": {
               "memory_available": 327680,
               "key_size": 205,
-              "row_size": 415,
-              "max_rows_per_buffer": 31,
+              "row_size": 417,
+              "max_rows_per_buffer": 510,
               "num_rows_estimate": 510,
               "num_rows_found": 445,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
-              "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_priority_queue",
-              "sort_mode": "<fixed_sort_key, additional_fields>"
+              "sort_algorithm": "std::stable_sort",
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]
@@ -8176,7 +8191,7 @@ SELECT * FROM v1 ORDER BY f2, f0 LIMIT 30	{
             }
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
                 {
@@ -8661,54 +8676,60 @@ ORDER BY d1.f2 DESC LIMIT 30	{
             }
           },
           {
-            "join_execution": {
-              "select#": 2,
+            "materialize": {
+              "select#": 1,
               "steps": [
                 {
-                  "sorting_table_in_plan_at_position": 0,
-                  "filesort_information": [
-                    {
-                      "direction": "asc",
-                      "table": "`t1`",
-                      "field": "f1"
+                  "creating_tmp_table": {
+                    "tmp_table_info": {
+                      "in_plan_at_position": 2,
+                      "columns": 2,
+                      "row_length": 206,
+                      "key_length": 0,
+                      "unique_constraint": false,
+                      "makes_grouped_rows": false,
+                      "cannot_insert_duplicates": false,
+                      "location": "TempTable"
                     }
-                  ],
-                  "filesort_priority_queue_optimization": {
-                    "limit": 30,
-                    "chosen": true
-                  },
-                  "filesort_execution": [
-                  ],
-                  "filesort_summary": {
-                    "memory_available": 327680,
-                    "key_size": 5,
-                    "row_size": 215,
-                    "max_rows_per_buffer": 31,
-                    "num_rows_estimate": 510,
-                    "num_rows_found": 500,
-                    "num_initial_chunks_spilled_to_disk": 0,
-                    "peak_memory_used": "NNN",
-                    "sort_algorithm": "std::sort",
-                    "unpacked_addon_fields": "using_priority_queue",
-                    "sort_mode": "<fixed_sort_key, additional_fields>"
+                  }
+                },
+                {
+                  "materialize": {
+                    "select#": 2,
+                    "steps": [
+                      {
+                        "sorting_table_in_plan_at_position": 0,
+                        "filesort_information": [
+                          {
+                            "direction": "asc",
+                            "table": "`t1`",
+                            "field": "f1"
+                          }
+                        ],
+                        "filesort_priority_queue_optimization": {
+                          "limit": 30,
+                          "chosen": true
+                        },
+                        "filesort_execution": [
+                        ],
+                        "filesort_summary": {
+                          "memory_available": 327680,
+                          "key_size": 5,
+                          "row_size": 215,
+                          "max_rows_per_buffer": 31,
+                          "num_rows_estimate": 510,
+                          "num_rows_found": 500,
+                          "num_initial_chunks_spilled_to_disk": 0,
+                          "peak_memory_used": "NNN",
+                          "sort_algorithm": "std::sort",
+                          "unpacked_addon_fields": "using_priority_queue",
+                          "sort_mode": "<fixed_sort_key, additional_fields>"
+                        }
+                      }
+                    ]
                   }
                 }
               ]
-            }
-          },
-          {
-            "creating_tmp_table": {
-              "tmp_table_info": {
-                "table": "intermediate_tmp_table",
-                "in_plan_at_position": 2,
-                "columns": 2,
-                "row_length": 206,
-                "key_length": 0,
-                "unique_constraint": false,
-                "makes_grouped_rows": false,
-                "cannot_insert_duplicates": false,
-                "location": "TempTable"
-              }
             }
           },
           {
@@ -8716,7 +8737,6 @@ ORDER BY d1.f2 DESC LIMIT 30	{
             "filesort_information": [
               {
                 "direction": "desc",
-                "table": "intermediate_tmp_table",
                 "field": "f2"
               }
             ],

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include "binary_log_types.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h" /* C_STRING_WITH_LEN */
@@ -656,6 +655,7 @@ static bool acl_end_trans_and_close_tables(THD *thd, bool rollback_transaction,
                                 Requried for query rewriting
   @param transactional_table    Nature of ACL tables
   @param extra_users            Users which were not processed
+  @param rewrite_params         Information required for query rewrite
   @param extra error            Used in cases where error handler
                                 is suppressed.
   @param write_to_binlog        Skip writing to binlog.
@@ -670,6 +670,7 @@ static bool acl_end_trans_and_close_tables(THD *thd, bool rollback_transaction,
 
 bool log_and_commit_acl_ddl(THD *thd, bool transactional_tables,
                             std::set<LEX_USER *> *extra_users, /* = NULL */
+                            Rewrite_params *rewrite_params,    /* = NULL */
                             bool extra_error,                  /* = true */
                             bool write_to_binlog,              /* = true */
                             bool notify_htons) {
@@ -679,8 +680,7 @@ bool log_and_commit_acl_ddl(THD *thd, bool transactional_tables,
   result = thd->is_error() || extra_error || thd->transaction_rollback_request;
   /* Write to binlog and textlogs only if there is no error */
   if (!result) {
-    User_params user_params(extra_users);
-    mysql_rewrite_acl_query(thd, Consumer_type::BINLOG, &user_params);
+    mysql_rewrite_acl_query(thd, Consumer_type::BINLOG, rewrite_params);
     if (write_to_binlog) {
       LEX_CSTRING query;
       enum_sql_command command;
@@ -739,7 +739,7 @@ bool log_and_commit_acl_ddl(THD *thd, bool transactional_tables,
       Rewrite query in the thd again for the consistent logging for all consumer
       type TEXTLOG later on. For instance: Audit logs.
     */
-    mysql_rewrite_acl_query(thd, Consumer_type::TEXTLOG, &user_params);
+    mysql_rewrite_acl_query(thd, Consumer_type::TEXTLOG, rewrite_params);
   }
 
   if (acl_end_trans_and_close_tables(thd, result, notify_htons)) result = 1;
@@ -1225,7 +1225,8 @@ int replace_column_table(THD *thd, GRANT_TABLE *g_t, TABLE *table,
         result = -1;
         goto end;
       }
-      grant_column = new (*THR_MALLOC) GRANT_COLUMN(column->column, privileges);
+      grant_column =
+          new (thd->mem_root) GRANT_COLUMN(column->column, privileges);
       g_t->hash_columns.emplace(
           grant_column->column,
           unique_ptr_destroy_only<GRANT_COLUMN>(grant_column));

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -418,26 +418,48 @@ class ha_innobase : public handler {
                                   dd::Table *new_dd_tab) override;
   /** @} */
 
-  /** Get number of threads that would be spawned for parallel read.
-  @param[in, out]   num_threads     number of threads to be spawned
-  @return error code
-  @retval 0 on success */
-  int pread_adapter_scan_get_num_threads(size_t &num_threads) override;
+  /** Initializes a parallel scan. It creates a parallel_scan_ctx that has to
+  be used across all parallel_scan methods. Also, gets the number of threads
+  that would be spawned for parallel scan.
+  @param[in, out]   parallel_scan_ctx a scan context created by this method
+                                      that has to be used in
+                                      pread_adapter_scan_parallel_load
+  @param[in, out]   num_threads       number of threads to be spawned
 
-  /** Start parallel read of InnoDB records.
-  @param[in]      thread_contexts context for each of the spawned threads
-  @param[in]      load_init_fn    callback called by each parallel load
-  thread at the beginning of the parallel load.
-  @param[in]      load_rows_fn    callback called by each parallel load
-  thread when processing of rows is required.
-  @param[in]      load_end_fn     callback called by each parallel load
-  thread when processing of rows has ended.
   @return error code
-  @retval 0 on success */
-  int pread_adapter_scan_parallel_load(
-      void **thread_contexts, pread_adapter_pload_init_cbk load_init_fn,
+  @retval 0 on success
+  */
+  int pread_adapter_parallel_scan_start(void *&parallel_scan_ctx,
+                                        size_t &num_threads) override;
+
+  /** Run the parallel read of data.
+  @param[in]      parallel_scan_ctx a scan context created by
+                                    pread_adapter_scan_get_num_threads
+  @param[in]      thread_contexts   context for each of the spawned threads
+  @param[in]      load_init_fn      callback called by each parallel load
+                                    thread at the beginning of the parallel
+                                    load.
+  @param[in]      load_rows_fn      callback called by each parallel load
+                                    thread when processing of rows is
+                                    required.
+  @param[in]      load_end_fn       callback called by each parallel load
+                                    thread when processing of rows has ended.
+  @return error code
+  @retval 0 on success
+  */
+  int pread_adapter_parallel_scan_run(
+      void *parallel_scan_ctx, void **thread_contexts,
+      pread_adapter_pload_init_cbk load_init_fn,
       pread_adapter_pload_row_cbk load_rows_fn,
       pread_adapter_pload_end_cbk load_end_fn) override;
+
+  /** Run the parallel read of data.
+  @param[in]      parallel_scan_ctx a scan context created by
+                                    pread_adapter_scan_get_num_threads
+  @return error code
+  @retval 0 on success
+  */
+  int pread_adapter_parallel_scan_end(void *parallel_scan_ctx) override;
 
   bool check_if_incompatible_data(HA_CREATE_INFO *info,
                                   uint table_changes) override;
@@ -651,7 +673,7 @@ class ha_innobase : public handler {
 
   /*!< match mode of the latest search: ROW_SEL_EXACT,
   ROW_SEL_EXACT_PREFIX, or undefined */
-  uint m_last_match_mode;
+  uint m_last_match_mode{0};
 
   /** this field is used to remember the original select_lock_type that
   was decided in ha_innodb.cc,":: store_lock()", "::external_lock()",
@@ -660,9 +682,6 @@ class ha_innobase : public handler {
 
   /** If mysql has locked with external_lock() */
   bool m_mysql_has_locked;
-
-  /** Do a parallel scan of an index. */
-  Parallel_reader_adapter *m_parallel_reader{nullptr};
 };
 
 struct trx_t;
@@ -784,8 +803,8 @@ class create_table_info_t {
   - all but name/path is used, when validating options and using flags. */
   create_table_info_t(THD *thd, TABLE *form, HA_CREATE_INFO *create_info,
                       char *table_name, char *remote_path, char *tablespace,
-                      bool file_per_table, bool skip_strict, ulint old_flags,
-                      ulint old_flags2)
+                      bool file_per_table, bool skip_strict, uint32_t old_flags,
+                      uint32_t old_flags2)
       : m_thd(thd),
         m_trx(thd_to_trx(thd)),
         m_form(form),
@@ -849,10 +868,10 @@ class create_table_info_t {
   void set_remote_path_flags();
 
   /** Get table flags. */
-  ulint flags() const { return (m_flags); }
+  uint32_t flags() const { return (m_flags); }
 
   /** Get table flags2. */
-  ulint flags2() const { return (m_flags2); }
+  uint32_t flags2() const { return (m_flags2); }
 
   /** Reset table flags. */
   void flags_reset() { m_flags = 0; }
@@ -953,10 +972,10 @@ class create_table_info_t {
   bool m_use_shared_space;
 
   /** Table flags */
-  ulint m_flags;
+  uint32_t m_flags;
 
   /** Table flags2 */
-  ulint m_flags2;
+  uint32_t m_flags2;
 
   /** Skip strict check */
   bool m_skip_strict;
@@ -1194,11 +1213,11 @@ inline bool trx_is_registered_for_2pc(const trx_t *trx) {
 /** Converts an InnoDB error code to a MySQL error code.
 Also tells to MySQL about a possible transaction rollback inside InnoDB caused
 by a lock wait timeout or a deadlock.
-@param[in]	error	InnoDB error code.
-@param[in]	flags	InnoDB table flags or 0.
-@param[in]	thd	MySQL thread or NULL.
+@param[in]  error   InnoDB error code.
+@param[in]  flags   InnoDB table flags or 0.
+@param[in]  thd     MySQL thread or NULL.
 @return MySQL error code */
-int convert_error_code_to_mysql(dberr_t error, ulint flags, THD *thd);
+int convert_error_code_to_mysql(dberr_t error, uint32_t flags, THD *thd);
 
 /** Converts a search mode flag understood by MySQL to a flag understood
 by InnoDB.

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,6 @@
 #include <atomic>
 #include <memory>
 
-#include "binary_log_types.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_byteorder.h"
@@ -744,10 +743,8 @@ int JOIN_CACHE_BKA::init() {
       for (uint i = 0; i < ref->key_parts; i++) {
         Item *ref_item = ref->items[i];
         if (!(tab->table_ref->map() & ref_item->used_tables())) continue;
-        ref_item->walk(
-            &Item::add_field_to_set_processor,
-            Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
-            (uchar *)tab->table());
+        ref_item->walk(&Item::add_field_to_set_processor,
+                       enum_walk::SUBQUERY_POSTFIX, (uchar *)tab->table());
       }
       if ((key_args = bitmap_bits_set(&tab->table()->tmp_set))) {
         if (cache == this)

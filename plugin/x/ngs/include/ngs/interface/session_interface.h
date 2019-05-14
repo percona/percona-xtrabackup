@@ -43,15 +43,15 @@ class Client_interface;
 
 class Session_interface {
  public:
-  typedef int32_t Session_id;
+  using Session_id = std::int32_t;
 
   enum State {
-    // start as Authenticating
-    Authenticating,
+    // start as authenticating
+    k_authenticating,
     // once authenticated, we can handle work
-    Ready,
+    k_ready,
     // connection is closing, but wait for data to flush out first
-    Closing
+    k_closing
   };
 
   class Options {
@@ -74,6 +74,7 @@ class Session_interface {
       const Authentication_interface::Response &response) = 0;
   virtual void on_auth_failure(
       const Authentication_interface::Response &response) = 0;
+  virtual void on_reset() = 0;
 
   // handle a single message, returns true if message was handled false if not
   virtual bool handle_message(Message_request &command) = 0;

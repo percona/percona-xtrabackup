@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -343,6 +343,8 @@ bool srv_log_checksums;
 #ifdef UNIV_DEBUG
 
 bool srv_checkpoint_disabled = false;
+
+bool srv_inject_too_many_concurrent_trxs = false;
 
 #endif /* UNIV_DEBUG */
 
@@ -2366,121 +2368,10 @@ func_exit:
   return (n_bytes_merged || n_tables_to_drop);
 }
 
-void srv_enable_undo_encryption_if_set() {
+void undo_rotate_default_master_key() {
   fil_space_t *space;
 
   if (srv_shutdown_state != SRV_SHUTDOWN_NONE) {
-    return;
-  }
-
-  /* Check if encryption for undo log is enabled or not. If it's
-  enabled, we will store the encryption metadata to the space header
-  and start to encrypt the undo log block from now on. */
-  if (srv_undo_log_encrypt) {
-    if (undo::spaces->empty()) {
-      srv_undo_log_encrypt = false;
-      ib::error(ER_IB_MSG_1050);
-      return;
-    }
-
-    if (srv_read_only_mode) {
-      srv_undo_log_encrypt = false;
-      ib::error(ER_IB_MSG_1051);
-      return;
-    }
-
-    undo::spaces->s_lock();
-    for (auto undo_space : undo::spaces->m_spaces) {
-      /* Skip system tablespace, since it's also shared
-      tablespace. */
-      if (undo_space->id() == TRX_SYS_SPACE) {
-        continue;
-      }
-
-      /* Only encrypt active undo tablespaces. */
-      if (!undo_space->is_active()) {
-        continue;
-      }
-
-      undo_space->rsegs()->s_lock();
-
-      space = fil_space_get(undo_space->id());
-      ut_ad(fsp_is_undo_tablespace(undo_space->id()));
-
-      ulint new_flags = space->flags | FSP_FLAGS_MASK_ENCRYPTION;
-
-      /* We need the server_uuid initialized, otherwise,
-      the keyname will not contains server uuid. */
-      if (FSP_FLAGS_GET_ENCRYPTION(space->flags) || strlen(server_uuid) == 0) {
-        undo_space->rsegs()->s_unlock();
-        continue;
-      }
-
-      dberr_t err;
-      mtr_t mtr;
-      byte encrypt_info[ENCRYPTION_INFO_SIZE];
-      byte key[ENCRYPTION_KEY_LEN];
-      byte iv[ENCRYPTION_KEY_LEN];
-
-      Encryption::random_value(key);
-      Encryption::random_value(iv);
-
-      /* Make sure that there is enough reusable
-      space in the redo log files. */
-      log_free_check();
-
-      mtr_start(&mtr);
-
-      mtr_x_lock_space(space, &mtr);
-
-      memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
-
-      if (!Encryption::fill_encryption_info(key, iv, encrypt_info, false)) {
-        srv_undo_log_encrypt = false;
-
-        ib::error(ER_IB_MSG_1052, undo_space->space_name());
-
-        mtr_commit(&mtr);
-        undo_space->rsegs()->s_unlock();
-        undo::spaces->s_unlock();
-        return;
-      } else {
-        if (!fsp_header_write_encryption(space->id, new_flags, encrypt_info,
-                                         true, false, &mtr)) {
-          srv_undo_log_encrypt = false;
-
-          ib::error(ER_IB_MSG_1053, undo_space->space_name());
-
-          mtr_commit(&mtr);
-          undo_space->rsegs()->s_unlock();
-          undo::spaces->s_unlock();
-          return;
-        }
-        FSP_FLAGS_SET_ENCRYPTION(space->flags);
-        err = fil_set_encryption(space->id, Encryption::AES, key, iv);
-        if (err != DB_SUCCESS) {
-          srv_undo_log_encrypt = false;
-
-          ib::error(ER_IB_MSG_1054, undo_space->space_name(), int{err},
-                    ut_strerr(err));
-
-          mtr_commit(&mtr);
-          undo_space->rsegs()->s_unlock();
-          undo::spaces->s_unlock();
-          return;
-        } else {
-          ib::info(ER_IB_MSG_1055, undo_space->space_name());
-#ifdef UNIV_ENCRYPT_DEBUG
-          ut_print_buf(stderr, key, 32);
-          ut_print_buf(stderr, iv, 32);
-#endif /* UNIV_ENCRYPT_DEBUG */
-        }
-      }
-      mtr_commit(&mtr);
-      undo_space->rsegs()->s_unlock();
-    }
-    undo::spaces->s_unlock();
-
     return;
   }
 
@@ -2525,6 +2416,127 @@ void srv_enable_undo_encryption_if_set() {
     mtr_commit(&mtr);
   }
   undo::spaces->s_unlock();
+}
+
+/* Enable REDO tablespace encryption */
+bool srv_enable_redo_encryption(bool is_boot) {
+  /* Start to encrypt the redo log block from now on. */
+  fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+
+  /* While enabling encryption, make sure not to overwrite the tablespace
+  key. */
+  if (FSP_FLAGS_GET_ENCRYPTION(space->flags)) {
+    return false;
+  }
+
+  dberr_t err;
+  byte key[ENCRYPTION_KEY_LEN];
+  byte iv[ENCRYPTION_KEY_LEN];
+
+  Encryption::random_value(key);
+  Encryption::random_value(iv);
+
+  if (!log_write_encryption(key, iv, is_boot)) {
+    ib::error(ER_IB_MSG_1243);
+    return true;
+  }
+
+  fsp_flags_set_encryption(space->flags);
+  err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+  if (err != DB_SUCCESS) {
+    ib::warn(ER_IB_MSG_1244);
+    return true;
+  }
+
+  /* Announce encryption is successfully enabled for the redo log. */
+  ib::info(ER_IB_MSG_1245);
+  return false;
+}
+
+/* Enable UNDO tablespace encryption */
+bool srv_enable_undo_encryption(bool is_boot) {
+  /* Traverse over all UNDO tablespaces and mark them encrypted. */
+  undo::spaces->s_lock();
+  for (auto undo_space : undo::spaces->m_spaces) {
+    /* Skip system tablespace. */
+    if (undo_space->id() == TRX_SYS_SPACE) {
+      continue;
+    }
+
+    fil_space_t *space = fil_space_get(undo_space->id());
+    ut_ad(fsp_is_undo_tablespace(undo_space->id()));
+
+    /* While enabling encryption, make sure not to overwrite the tablespace key.
+    Otherwise, pages encrypted with the old tablespace key can't be read. */
+    if (FSP_FLAGS_GET_ENCRYPTION(space->flags)) {
+      continue;
+    }
+
+    undo_space->rsegs()->s_lock();
+
+    ulint new_flags = space->flags | FSP_FLAGS_MASK_ENCRYPTION;
+
+    /* Make sure that there is enough reusable space in the redo log files. */
+    log_free_check();
+
+    dberr_t err;
+    mtr_t mtr;
+    byte encrypt_info[ENCRYPTION_INFO_SIZE];
+    byte key[ENCRYPTION_KEY_LEN];
+    byte iv[ENCRYPTION_KEY_LEN];
+
+    Encryption::random_value(key);
+    Encryption::random_value(iv);
+
+    mtr_start(&mtr);
+    mtr_x_lock_space(space, &mtr);
+
+    /* 0 fill encryption info */
+    memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
+
+    /* Fill up encryption info to be set */
+    if (!Encryption::fill_encryption_info(key, iv, encrypt_info, is_boot)) {
+      ib::error(ER_IB_MSG_1052, undo_space->space_name());
+
+      mtr_commit(&mtr);
+      undo_space->rsegs()->s_unlock();
+      undo::spaces->s_unlock();
+      return true;
+    }
+
+    /* Write encryption info on tablespace header page */
+    if (!fsp_header_write_encryption(space->id, new_flags, encrypt_info, true,
+                                     false, &mtr)) {
+      ib::error(ER_IB_MSG_1053, undo_space->space_name());
+
+      mtr_commit(&mtr);
+      undo_space->rsegs()->s_unlock();
+      undo::spaces->s_unlock();
+      return true;
+    }
+
+    /* Update In-Mem encryption information for UNDO tablespace */
+    fsp_flags_set_encryption(space->flags);
+    err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+    if (err != DB_SUCCESS) {
+      ib::error(ER_IB_MSG_1054, undo_space->space_name(), int{err},
+                ut_strerr(err));
+
+      mtr_commit(&mtr);
+      undo_space->rsegs()->s_unlock();
+      undo::spaces->s_unlock();
+      return true;
+    }
+
+    mtr_commit(&mtr);
+    undo_space->rsegs()->s_unlock();
+
+    /* Announce encryption is successfully enabled for the undo tablesapce. */
+    ib::info(ER_IB_MSG_1055, undo_space->space_name());
+  }
+  undo::spaces->s_unlock();
+
+  return false;
 }
 
 /** Puts master thread to sleep. At this point we are using polling to
@@ -2580,11 +2592,38 @@ loop:
       srv_master_do_idle_tasks();
     }
 
-    /* Enable redo log encryption if it is set */
-    log_enable_encryption_if_set();
+    /* Make sure that early encryption processing of UNDO/REDO log is done. */
+    if (is_early_redo_undo_encryption_done()) {
+      /* Rotate default master key for redo log encryption if it is set */
+      if (srv_redo_log_encrypt) {
+        fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+        ut_a(space);
+        ut_ad(FSP_FLAGS_GET_ENCRYPTION(space->flags));
 
-    /* Enable undo log encryption if it is set */
-    srv_enable_undo_encryption_if_set();
+        if (!FSP_FLAGS_GET_ENCRYPTION(space->flags)) {
+          ib::warn(ER_IB_MSG_1285, space->name, "srv_redo_log_encrypt");
+          srv_enable_redo_encryption(false);
+        }
+        redo_rotate_default_master_key();
+      }
+
+      /* Rotate default master key for undo log encryption if it is set */
+      if (srv_undo_log_encrypt) {
+        ut_ad(!undo::spaces->empty());
+        for (auto &undo_ts : undo::spaces->m_spaces) {
+          fil_space_t *space = fil_space_get(undo_ts->id());
+          if (space) {
+            ut_ad(FSP_FLAGS_GET_ENCRYPTION(space->flags));
+
+            if (!FSP_FLAGS_GET_ENCRYPTION(space->flags)) {
+              ib::warn(ER_IB_MSG_1285, space->name, "srv_undo_log_encrypt");
+              srv_enable_undo_encryption(false);
+            }
+          }
+        }
+        undo_rotate_default_master_key();
+      }
+    }
   }
 
   while (srv_shutdown_state != SRV_SHUTDOWN_EXIT_THREADS &&

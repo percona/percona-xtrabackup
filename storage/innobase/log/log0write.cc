@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2009, Google Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -776,7 +776,8 @@ static inline uint64_t log_max_spins_when_waiting_in_user_thread(
     might be used. */
     const double r = 1.0 * (hwm / 2 - cpu) / (hwm / 2);
 
-    max_spins = min_non_zero_value + r * min_non_zero_value * 9;
+    max_spins =
+        static_cast<uint64_t>(min_non_zero_value + r * min_non_zero_value * 9);
   }
 
   return (max_spins);
@@ -910,7 +911,7 @@ Wait_stats log_write_up_to(log_t &log, lsn_t end_lsn, bool flush_to_disk) {
   ut_a(end_lsn % OS_FILE_LOG_BLOCK_SIZE <=
        OS_FILE_LOG_BLOCK_SIZE - LOG_BLOCK_TRL_SIZE);
 
-  ut_a(end_lsn <= log_get_lsn(log));
+  ut_ad(end_lsn <= log_get_lsn(log));
 
   if (flush_to_disk) {
     if (log.flushed_to_disk_lsn.load() >= end_lsn) {
@@ -1003,7 +1004,8 @@ struct Log_thread_waiting {
       is no real gain from spinning in log threads then. */
 
       spin_delay = 0;
-      min_timeout = req_interval < 1000 ? req_interval : 1000;
+      min_timeout =
+          static_cast<uint32_t>(req_interval < 1000 ? req_interval : 1000);
     }
 
     const auto wait_stats =
@@ -1461,6 +1463,10 @@ static inline size_t compute_write_event_slot(const log_t &log, lsn_t lsn) {
 static inline void notify_about_advanced_write_lsn(log_t &log,
                                                    lsn_t old_write_lsn,
                                                    lsn_t new_write_lsn) {
+  if (srv_flush_log_at_trx_commit == 1) {
+    os_event_set(log.flusher_event);
+  }
+
   const auto first_slot = compute_write_event_slot(log, old_write_lsn);
 
   const auto last_slot = compute_write_event_slot(log, new_write_lsn);
@@ -1471,6 +1477,10 @@ static inline void notify_about_advanced_write_lsn(log_t &log,
   } else {
     LOG_SYNC_POINT("log_write_before_notifier_notify");
     os_event_set(log.write_notifier_event);
+  }
+
+  if (arch_log_sys && arch_log_sys->is_active()) {
+    os_event_set(log_archiver_thread_event);
   }
 }
 
@@ -1796,7 +1806,7 @@ static void log_writer_wait_on_archiver(log_t &log, lsn_t last_write_lsn,
       break;
     }
 
-    os_event_set(archiver_thread_event);
+    os_event_set(log_archiver_thread_event);
 
     log_writer_mutex_exit(log);
 
@@ -1901,14 +1911,6 @@ static void log_writer_write_buffer(log_t &log, lsn_t next_write_lsn) {
   log_update_limits(log);
 
   LOG_SYNC_POINT("log_writer_write_end");
-
-  if (srv_flush_log_at_trx_commit == 1) {
-    os_event_set(log.flusher_event);
-  }
-
-  if (arch_log_sys && arch_log_sys->is_active()) {
-    os_event_set(archiver_thread_event);
-  }
 }
 
 void log_writer(log_t *log_ptr) {
@@ -2635,7 +2637,7 @@ bool log_read_encryption() {
       space flag. Otherwise, we just fill the encryption
       information to space object for decrypting old
       redo log blocks. */
-      FSP_FLAGS_SET_ENCRYPTION(space->flags);
+      fsp_flags_set_encryption(space->flags);
       err = fil_set_encryption(space->id, Encryption::AES, key, iv);
 
       if (err == DB_SUCCESS) {
@@ -2722,50 +2724,11 @@ bool log_rotate_encryption() {
   return (log_write_encryption(nullptr, nullptr, false));
 }
 
-void log_enable_encryption_if_set() {
+void redo_rotate_default_master_key() {
   fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
 
   if (srv_shutdown_state != SRV_SHUTDOWN_NONE) {
     return;
-  }
-
-  /* Check encryption for redo log is enabled or not. If it's
-  enabled, we will start to encrypt the redo log block from now on.
-  Note: We need the server_uuid initialized, otherwise, the keyname will
-  not contains server uuid. */
-  if (srv_redo_log_encrypt && !FSP_FLAGS_GET_ENCRYPTION(space->flags) &&
-      strlen(server_uuid) > 0) {
-    dberr_t err;
-    byte key[ENCRYPTION_KEY_LEN];
-    byte iv[ENCRYPTION_KEY_LEN];
-
-    if (srv_read_only_mode) {
-      srv_redo_log_encrypt = false;
-      ib::error(ER_IB_MSG_1242) << "Can't set redo log tablespace to be"
-                                << " encrypted in read-only mode.";
-      return;
-    }
-
-    Encryption::random_value(key);
-    Encryption::random_value(iv);
-    if (!log_write_encryption(key, iv, false)) {
-      srv_redo_log_encrypt = false;
-      ib::error(ER_IB_MSG_1243) << "Can't set redo log"
-                                << " tablespace to be"
-                                << " encrypted.";
-    } else {
-      FSP_FLAGS_SET_ENCRYPTION(space->flags);
-      err = fil_set_encryption(space->id, Encryption::AES, key, iv);
-      if (err != DB_SUCCESS) {
-        srv_redo_log_encrypt = false;
-        ib::warn(ER_IB_MSG_1244) << "Can't set redo log"
-                                 << " tablespace to be"
-                                 << " encrypted.";
-      } else {
-        ib::info(ER_IB_MSG_1245) << "Redo log encryption is"
-                                 << " enabled.";
-      }
-    }
   }
 
   /* If the redo log space is using default key, rotate it.

@@ -353,6 +353,14 @@ struct System_variables {
   /** Used for controlling preparation of queries against secondary engine. */
   ulong use_secondary_engine;
 
+  /**
+    Used for controlling which statements to execute in a secondary
+    storage engine. Only queries with an estimated cost higher than
+    this value will be attempted executed in a secondary storage
+    engine.
+  */
+  double secondary_engine_cost_threshold;
+
   /** Used for controlling Group Replication consistency guarantees */
   ulong group_replication_consistency;
 
@@ -369,6 +377,12 @@ struct System_variables {
     in the replication topology.
   */
   uint32_t immediate_server_version;
+
+  /**
+    Used to determine if the database or tablespace should be encrypted by
+    default.
+  */
+  bool default_table_encryption;
 };
 
 /**
@@ -477,7 +491,8 @@ const int COUNT_GLOBAL_STATUS_VARS =
 void add_diff_to_status(System_status_var *to_var, System_status_var *from_var,
                         System_status_var *dec_var);
 
-void add_to_status(System_status_var *to_var, System_status_var *from_var,
-                   bool reset_from_var);
+void add_to_status(System_status_var *to_var, System_status_var *from_var);
+
+void reset_system_status_vars(System_status_var *status_vars);
 
 #endif  // SYSTEM_VARIABLES_INCLUDED

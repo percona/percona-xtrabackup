@@ -1136,7 +1136,7 @@ class Sys_var_double : public sys_var {
     option.var_type = GET_DOUBLE;
     option.min_value = (longlong)getopt_double2ulonglong(min_val);
     option.max_value = (longlong)getopt_double2ulonglong(max_val);
-    global_var(double) = (double)option.def_value;
+    global_var(double) = getopt_ulonglong2double(option.def_value);
     DBUG_ASSERT(min_val <= max_val);
     DBUG_ASSERT(min_val <= def_val);
     DBUG_ASSERT(max_val >= def_val);
@@ -1284,7 +1284,7 @@ class Sys_var_flagset : public Sys_var_typelib {
       if (!(res = var->value->val_str(&str)))
         return true;
       else {
-        char *error;
+        const char *error;
         uint error_len;
 
         var->save_result.ulonglong_value = find_set_from_flags(
@@ -1835,6 +1835,40 @@ class Sys_var_have : public sys_var {
   bool check_update_type(Item_result) { return false; }
 };
 
+/**
+   A subclass of @ref Sys_var_have to return dynamic values
+
+   All the usual restrictions for @ref Sys_var_have apply.
+   But instead of reading a global variable it calls a function
+   to return the value.
+ */
+class Sys_var_have_func : public Sys_var_have {
+ public:
+  /**
+    Construct a new variable.
+
+    @param name_arg The name of the variable
+    @param comment  Explanation of what the variable does
+    @param func     The function to call when in need to read the global value
+  */
+  Sys_var_have_func(const char *name_arg, const char *comment,
+                    enum SHOW_COMP_OPTION (*func)(THD *))
+      /*
+        Note: it doesn't really matter what variable we use, as long as we are
+        using one. So we use a local static dummy
+      */
+      : Sys_var_have(name_arg, comment,
+                     READ_ONLY NON_PERSIST GLOBAL_VAR(dummy_), NO_CMD_LINE),
+        func_(func) {}
+
+  uchar *global_value_ptr(THD *thd, LEX_STRING *) {
+    return (uchar *)show_comp_option_name[func_(thd)];
+  }
+
+ protected:
+  enum SHOW_COMP_OPTION (*func_)(THD *);
+  static enum SHOW_COMP_OPTION dummy_;
+};
 /**
   Generic class for variables for storing entities that are internally
   represented as structures, have names, and possibly can be referred to by

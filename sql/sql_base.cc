@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -138,7 +138,6 @@
 #include "sql/table_cache.h"               // table_cache_manager
 #include "sql/table_trigger_dispatcher.h"  // Table_trigger_dispatcher
 #include "sql/thd_raii.h"
-#include "sql/thr_malloc.h"
 #include "sql/transaction.h"  // trans_rollback_stmt
 #include "sql/transaction_info.h"
 #include "sql/xa.h"
@@ -858,7 +857,7 @@ static TABLE_SHARE *get_table_share_with_discover(
 {
   TABLE_SHARE *share;
   bool exists;
-  DBUG_ENTER("get_table_share_with_create");
+  DBUG_ENTER("get_table_share_with_discover");
 
   share = get_table_share(thd, table_list->db, table_list->table_name, key,
                           key_length, true, open_secondary);
@@ -3201,9 +3200,6 @@ retry_share : {
     */
     else if (check_and_update_table_version(thd, table_list, share))
       ;
-    else if (table_list->i_s_requested_object & OPEN_TABLE_ONLY)
-      my_error(ER_NO_SUCH_TABLE, MYF(0), table_list->db,
-               table_list->table_name);
     else if (table_list->open_strategy == TABLE_LIST::OPEN_FOR_CREATE) {
       /*
         Skip reading the view definition if the open is for a table to be
@@ -3228,6 +3224,10 @@ retry_share : {
         */
         table_list->set_view_query((LEX *)new (thd->mem_root) st_lex_local);
         if (!table_list->is_view()) DBUG_RETURN(true);
+
+        // Create empty list of view_tables.
+        table_list->view_tables = new (thd->mem_root) List<TABLE_LIST>;
+        if (table_list->view_tables == nullptr) DBUG_RETURN(true);
 
         table_list->view_db.str = table_list->db;
         table_list->view_db.length = table_list->db_length;
@@ -4177,8 +4177,9 @@ bool Open_table_context::recover_from_failed_open() {
 
       tdc_remove_table(m_thd, TDC_RT_REMOVE_ALL, m_failed_table->db,
                        m_failed_table->table_name, false);
-      ha_create_table_from_engine(m_thd, m_failed_table->db,
-                                  m_failed_table->table_name);
+      if (ha_create_table_from_engine(m_thd, m_failed_table->db,
+                                      m_failed_table->table_name))
+        break;
 
       m_thd->get_stmt_da()->reset_condition_info(m_thd);
       m_thd->clear_error();  // Clear error message
@@ -6399,97 +6400,86 @@ err:
   counterparts.
 
   @param thd       thread handler
-  @param tables    the tables used by the query
   @param flags     bitmap of flags to pass to open_table
   @return true if an error is raised, false otherwise
 */
-static bool open_secondary_engine_tables(THD *thd, TABLE_LIST *tables,
-                                         uint flags) {
-  if (thd->variables.use_secondary_engine == SECONDARY_ENGINE_OFF) return false;
-
+static bool open_secondary_engine_tables(THD *thd, uint flags) {
   LEX *const lex = thd->lex;
   Sql_cmd *const sql_cmd = lex->m_sql_cmd;
 
-  // Only attempt to use a secondary engine if all of these conditions
-  // are satisfied:
-  //
-  // 1) It is a SELECT statement
-  // 2) Use of secondary engine has not been disabled for this statement
-  // 3) LOCK TABLES mode is not active
-  // 4) Multi-statement transaction mode is not active
-  // 5) It is a not sub-statement inside a stored procedure
-  // 6) It does not call stored routines
-  if (sql_cmd == nullptr || lex->sql_command != SQLCOM_SELECT ||  // 1
-      sql_cmd->secondary_storage_engine_disabled() ||             // 2
-      thd->locked_tables_mode != LTM_NONE ||                      // 3
-      thd->in_multi_stmt_transaction_mode() ||                    // 4
-      thd->sp_runtime_ctx != nullptr ||                           // 5
-      lex->uses_stored_routines())                                // 6
+  // The previous execution context should have been destroyed.
+  DBUG_ASSERT(lex->secondary_engine_execution_context() == nullptr);
+
+  // If use of secondary engines has been disabled for the statement,
+  // there is nothing to do.
+  if (sql_cmd == nullptr || sql_cmd->secondary_storage_engine_disabled())
     return false;
 
-  // Now check if the opened tables are available in a secondary
-  // storage engine. Only use the secondary tables if all the tables
-  // have a secondary tables, and they are all in the same secondary
-  // storage engine.
-  const LEX_STRING *secondary_engine = nullptr;
-  for (const TABLE_LIST *tl = tables; tl != nullptr; tl = tl->next_global) {
-    // We're only interested in base tables.
-    if (tl->is_placeholder()) continue;
+  // Don't open the secondary engine tables for a PREPARE command. Use
+  // of secondary engines is not decided until the optimization phase
+  // of the execution, so only open them when a statement is executed.
+  if (thd->stmt_arena->is_stmt_prepare()) return false;
 
-    DBUG_ASSERT(!tl->table->s->is_secondary());
-
-    if (!tl->table->s->has_secondary()) {
-      // Not in a secondary engine.
-      secondary_engine = nullptr;
-      break;
-    }
-
-    // Compare two engine names.
-    auto equal = [](const LEX_STRING &s1, const LEX_STRING &s2) {
-      return system_charset_info->coll->strnncollsp(
-                 system_charset_info, pointer_cast<unsigned char *>(s1.str),
-                 s1.length, pointer_cast<unsigned char *>(s2.str),
-                 s2.length) == 0;
-    };
-
-    if (secondary_engine != nullptr &&
-        !equal(*secondary_engine, tl->table->s->secondary_engine)) {
-      // In a different secondary engine than one of the other tables.
-      secondary_engine = nullptr;
-      break;
-    }
-
-    secondary_engine = &tl->table->s->secondary_engine;
+  // If the user has requested the use of a secondary storage engine
+  // for this statement, skip past the initial optimization for the
+  // primary storage engine and go straight to the secondary engine.
+  if (thd->secondary_engine_optimization() ==
+          Secondary_engine_optimization::PRIMARY_TENTATIVELY &&
+      thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED) {
+    thd->set_secondary_engine_optimization(
+        Secondary_engine_optimization::SECONDARY);
   }
 
-  if (secondary_engine == nullptr ||
-      ha_resolve_by_name(thd, secondary_engine, false) == nullptr) {
+  // Only open secondary engine tables if use of a secondary engine
+  // has been requested.
+  if (thd->secondary_engine_optimization() !=
+      Secondary_engine_optimization::SECONDARY)
+    return false;
+
+  // If the statement cannot be executed in a secondary engine because
+  // of a property of the statement, do not attempt to open the
+  // secondary tables. Also disable use of secondary engines for
+  // future executions of the statement, since these properties will
+  // not change between executions.
+  const LEX_STRING *secondary_engine =
+      sql_cmd->eligible_secondary_storage_engine();
+  const plugin_ref secondary_engine_plugin =
+      secondary_engine == nullptr
+          ? nullptr
+          : ha_resolve_by_name(thd, secondary_engine, false);
+
+  if (secondary_engine_plugin == nullptr) {
     // Didn't find a secondary storage engine to use for the query.
     sql_cmd->disable_secondary_storage_engine();
     return false;
   }
 
-  lex->m_sql_cmd->use_secondary_storage_engine();
+  // If the statement cannot be executed in a secondary engine because
+  // of a property of the environment, do not attempt to open the
+  // secondary tables. However, do not disable use of secondary
+  // storage engines for future executions of the statement, since the
+  // environment may change before the next execution.
+  if (!thd->secondary_storage_engine_eligible()) return false;
+
+  auto hton = plugin_data<const handlerton *>(secondary_engine_plugin);
+  sql_cmd->use_secondary_storage_engine(hton);
   lex->add_statement_options(OPTION_NO_CONST_TABLES);
 
   // Replace the TABLE objects in the TABLE_LIST with secondary tables.
   Open_table_context ot_ctx(thd, flags | MYSQL_OPEN_SECONDARY_ENGINE);
-  for (TABLE_LIST *tl = tables; tl != nullptr; tl = tl->next_global) {
+  for (TABLE_LIST *tl = lex->query_tables; tl != nullptr;
+       tl = tl->next_global) {
     if (tl->is_placeholder()) continue;
     TABLE *primary_table = tl->table;
     tl->table = nullptr;
     if (open_table(thd, tl, &ot_ctx)) return true;
-    DBUG_ASSERT(tl->table->s->is_secondary());
+    DBUG_ASSERT(tl->table->s->is_secondary_engine());
     tl->table->file->ha_set_primary_handler(primary_table->file);
   }
 
-  // Debug code that injects an error when opening secondary tables.
-  DBUG_EXECUTE_IF("open_secondary_engine_tables_error", {
-    my_error(ER_NO_SUCH_TABLE, MYF(0), "db", "table");
-    return true;
-  });
-
-  return false;
+  // Prepare the secondary engine for executing the statement.
+  return hton->prepare_secondary_engine != nullptr &&
+         hton->prepare_secondary_engine(thd, lex);
 }
 
 /**
@@ -6523,7 +6513,7 @@ bool open_tables_for_query(THD *thd, TABLE_LIST *tables, uint flags) {
                   &prelocking_strategy))
     goto end;
 
-  if (open_secondary_engine_tables(thd, tables, flags)) goto end;
+  if (open_secondary_engine_tables(thd, flags)) goto end;
 
   DBUG_RETURN(0);
 end:
@@ -7509,7 +7499,7 @@ Field *find_field_in_table_ref(THD *thd, TABLE_LIST *table_list,
                     (down_cast<Item_ident *>(*ref))->cached_table);
 
         Column_privilege_tracker tracker(thd, want_privilege);
-        if ((*ref)->walk(&Item::check_column_privileges, Item::WALK_PREFIX,
+        if ((*ref)->walk(&Item::check_column_privileges, enum_walk::PREFIX,
                          (uchar *)thd))
           DBUG_RETURN(WRONG_GRANT);
       }
@@ -7521,11 +7511,10 @@ Field *find_field_in_table_ref(THD *thd, TABLE_LIST *table_list,
     */
     if (fld == view_ref_found) {
       Mark_field mf(thd->mark_used_columns);
-      (*ref)->walk(&Item::mark_field_in_map,
-                   Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
+      (*ref)->walk(&Item::mark_field_in_map, enum_walk::SUBQUERY_POSTFIX,
                    (uchar *)&mf);
     } else  // surely fld != NULL (see outer if())
-      fld->table->mark_column_used(thd, fld, thd->mark_used_columns);
+      fld->table->mark_column_used(fld, thd->mark_used_columns);
   }
   DBUG_RETURN(fld);
 }
@@ -7648,7 +7637,7 @@ Field *find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *first_table,
                                           want_privilege))
         found = WRONG_GRANT;
       if (found && found != WRONG_GRANT)
-        table_ref->table->mark_column_used(thd, found, thd->mark_used_columns);
+        table_ref->table->mark_column_used(found, thd->mark_used_columns);
     } else
       found = find_field_in_table_ref(
           thd, table_ref, name, length, item->item_name.ptr(), NULL, NULL, ref,
@@ -8235,22 +8224,20 @@ static bool mark_common_columns(THD *thd, TABLE_LIST *table_ref_1,
 
       // Mark fields in the read set
       if (field_1) {
-        nj_col_1->table_ref->table->mark_column_used(thd, field_1,
+        nj_col_1->table_ref->table->mark_column_used(field_1,
                                                      MARK_COLUMNS_READ);
       } else {
         Mark_field mf(MARK_COLUMNS_READ);
-        item_1->walk(&Item::mark_field_in_map,
-                     Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
+        item_1->walk(&Item::mark_field_in_map, enum_walk::SUBQUERY_POSTFIX,
                      (uchar *)&mf);
       }
 
       if (field_2) {
-        nj_col_2->table_ref->table->mark_column_used(thd, field_2,
+        nj_col_2->table_ref->table->mark_column_used(field_2,
                                                      MARK_COLUMNS_READ);
       } else {
         Mark_field mf(MARK_COLUMNS_READ);
-        item_2->walk(&Item::mark_field_in_map,
-                     Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
+        item_2->walk(&Item::mark_field_in_map, enum_walk::SUBQUERY_POSTFIX,
                      (uchar *)&mf);
       }
 
@@ -8320,9 +8307,9 @@ static bool store_natural_using_join_columns(THD *thd,
 
   Prepared_stmt_arena_holder ps_arena_holder(thd);
 
-  if (!(non_join_columns = new (*THR_MALLOC) List<Natural_join_column>) ||
+  if (!(non_join_columns = new (thd->mem_root) List<Natural_join_column>) ||
       !(natural_using_join->join_columns =
-            new (*THR_MALLOC) List<Natural_join_column>))
+            new (thd->mem_root) List<Natural_join_column>))
     DBUG_RETURN(true);
 
   /* Append the columns of the first join operand. */
@@ -8778,12 +8765,12 @@ bool setup_fields(THD *thd, Ref_item_array ref_item_array, List<Item> &fields,
       }
       if (want_privilege & (INSERT_ACL | UPDATE_ACL)) {
         Column_privilege_tracker column_privilege(thd, want_privilege);
-        if (item->walk(&Item::check_column_privileges, Item::WALK_PREFIX,
+        if (item->walk(&Item::check_column_privileges, enum_walk::PREFIX,
                        pointer_cast<uchar *>(thd)))
           DBUG_RETURN(true);
       }
       Mark_field mf(MARK_COLUMNS_WRITE);
-      item->walk(&Item::mark_field_in_map, Item::WALK_POSTFIX,
+      item->walk(&Item::mark_field_in_map, enum_walk::POSTFIX,
                  pointer_cast<uchar *>(&mf));
     }
 
@@ -8807,7 +8794,6 @@ bool setup_fields(THD *thd, Ref_item_array ref_item_array, List<Item> &fields,
     }
 
     select->select_list_tables |= item->used_tables();
-    thd->lex->used_tables |= item->used_tables() & ~PSEUDO_TABLE_BITS;
   }
   select->is_item_list_lookup = save_is_item_list_lookup;
   thd->lex->allow_sum_func = save_allow_sum_func;
@@ -8900,7 +8886,6 @@ bool insert_fields(THD *thd, Name_resolution_context *context,
       views and natural joins this update is performed inside the loop below.
     */
     if (table) {
-      thd->lex->used_tables |= tables->map();
       thd->lex->current_select()->select_list_tables |= tables->map();
     }
 
@@ -8962,24 +8947,22 @@ bool insert_fields(THD *thd, Name_resolution_context *context,
         }
       }
 
-      thd->lex->used_tables |= item->used_tables();
       thd->lex->current_select()->select_list_tables |= item->used_tables();
 
       Field *const field = field_iterator.field();
       if (field) {
         // Register underlying fields in read map if wanted.
-        field->table->mark_column_used(thd, field, thd->mark_used_columns);
+        field->table->mark_column_used(field, thd->mark_used_columns);
       } else {
         if (thd->want_privilege && tables->is_view_or_derived()) {
-          if (item->walk(&Item::check_column_privileges, Item::WALK_PREFIX,
+          if (item->walk(&Item::check_column_privileges, enum_walk::PREFIX,
                          (uchar *)thd))
             DBUG_RETURN(true);
         }
 
         // Register underlying fields in read map if wanted.
         Mark_field mf(thd->mark_used_columns);
-        item->walk(&Item::mark_field_in_map,
-                   Item::enum_walk(Item::WALK_POSTFIX | Item::WALK_SUBQUERY),
+        item->walk(&Item::mark_field_in_map, enum_walk::SUBQUERY_POSTFIX,
                    (uchar *)&mf);
       }
     }
@@ -9149,6 +9132,62 @@ static bool check_inserting_record(THD *thd, Field **ptr) {
   }
 
   return thd->is_error();
+}
+
+/**
+  Invoke check constraints defined on the table.
+
+  @param  thd                   Thread handle.
+  @param  table                 Instance of TABLE.
+
+  @retval  false  If all enforced check constraints are satisfied.
+  @retval  true   Otherwise. THD::is_error() may be "true" in this case.
+*/
+
+bool invoke_table_check_constraints(THD *thd, const TABLE *table) {
+  if (table->table_check_constraint_list != nullptr) {
+    for (auto &table_cc : *table->table_check_constraint_list) {
+      if (table_cc->is_enforced()) {
+        /*
+          Invoke check constraints only if column(s) used by check constraint is
+          updated.
+        */
+        if ((thd->lex->sql_command == SQLCOM_UPDATE ||
+             thd->lex->sql_command == SQLCOM_UPDATE_MULTI) &&
+            !bitmap_is_subset(&table_cc->value_generator()->base_columns_map,
+                              const_cast<TABLE *>(table)->write_set)) {
+          DEBUG_SYNC(thd, "skip_check_constraints_on_unaffected_columns");
+          continue;
+        }
+
+        /*
+          Set the columns used by the enforced check constraint expression in
+          the TABLE read_set.
+        */
+        bitmap_union(const_cast<TABLE *>(table)->read_set,
+                     &table_cc->value_generator()->base_columns_map);
+
+        // Validate check constraint.
+        bool is_constraint_violated =
+            (!table_cc->value_generator()->expr_item->val_bool() &&
+             !table_cc->value_generator()->expr_item->null_value);
+
+        /*
+          If check constraint is violated then report an error. If expression
+          operand types are incompatible and reported error in conversion even
+          then report a more user friendly error. Sql_conditions of DA still has
+          a conversion(actual reported) error in the error stack.
+         */
+        if (is_constraint_violated || thd->is_error()) {
+          if (thd->is_error()) thd->clear_error();
+          my_error(ER_CHECK_CONSTRAINT_VIOLATED, MYF(0), table_cc->name().str);
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -9611,7 +9650,7 @@ void tdc_remove_table(THD *thd, enum_tdc_remove_table_type remove_type,
   // if we don't know if the table has a shadow copy, we must also
   // attempt to evict the secondary table from the cache.
   const bool remove_secondary =
-      it == table_def_cache->end() || it->second->has_secondary();
+      it == table_def_cache->end() || it->second->has_secondary_engine();
 
   // Helper function that evicts the TABLE_SHARE pointed to by an iterator.
   auto remove_table = [&](Table_definition_cache::iterator it) {
@@ -9648,7 +9687,7 @@ void tdc_remove_table(THD *thd, enum_tdc_remove_table_type remove_type,
       // TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE, there should always be a
       // TABLE object associated with the primary TABLE_SHARE.)
       DBUG_ASSERT(remove_type != TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE ||
-                  share->is_secondary());
+                  share->is_secondary_engine());
       table_def_cache->erase(to_string(share->table_cache_key));
     }
   };

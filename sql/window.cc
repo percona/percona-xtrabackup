@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,6 @@
 #include <limits>
 #include <unordered_set>
 
-#include "binary_log_types.h"
 #include "m_ctype.h"
 #include "my_base.h"
 #include "my_dbug.h"
@@ -1267,6 +1266,10 @@ bool Window::setup_windows(THD *thd, SELECT_LEX *select,
     /* Do this last, after any re-ordering */
     windows[windows.elements - 1]->m_last = true;
   }
+
+  if (select->olap == ROLLUP_TYPE && select->resolve_rollup_wfs(thd))
+    return true; /* purecov: inspected */
+
   return false;
 }
 
@@ -1384,7 +1387,7 @@ void Window::reset_execution_state(Reset_level level) {
   m_row_has_fields_in_out_table = 0;
 }
 
-void Window::print_border(String *str, PT_border *border,
+void Window::print_border(const THD *thd, String *str, PT_border *border,
                           enum_query_type qt) const {
   const PT_border &b = *border;
   switch (b.m_border_type) {
@@ -1396,12 +1399,12 @@ void Window::print_border(String *str, PT_border *border,
 
       if (b.m_date_time) {
         str->append("INTERVAL ");
-        b.m_value->print(str, qt);
+        b.m_value->print(thd, str, qt);
         str->append(' ');
         str->append(interval_names[b.m_int_type]);
         str->append(' ');
       } else
-        b.m_value->print(str, qt);
+        b.m_value->print(thd, str, qt);
 
       str->append(b.m_border_type == WBT_VALUE_PRECEDING ? " PRECEDING"
                                                          : " FOLLOWING");
@@ -1415,19 +1418,20 @@ void Window::print_border(String *str, PT_border *border,
   }
 }
 
-void Window::print_frame(String *str, enum_query_type qt) const {
+void Window::print_frame(const THD *thd, String *str,
+                         enum_query_type qt) const {
   const PT_frame &f = *m_frame;
   str->append(f.m_unit == WFU_ROWS
                   ? "ROWS "
                   : (f.m_unit == WFU_RANGE ? "RANGE " : "GROUPS "));
 
   str->append("BETWEEN ");
-  print_border(str, f.m_from, qt);
+  print_border(thd, str, f.m_from, qt);
   str->append(" AND ");
-  print_border(str, f.m_to, qt);
+  print_border(thd, str, f.m_to, qt);
 }
 
-void Window::print(THD *thd, String *str, enum_query_type qt,
+void Window::print(const THD *thd, String *str, enum_query_type qt,
                    bool expand_definition) const {
   if (m_name != nullptr && !expand_definition) {
     append_identifier(thd, str, m_name->item_name.ptr(),
@@ -1443,18 +1447,18 @@ void Window::print(THD *thd, String *str, enum_query_type qt,
 
     if (m_partition_by != nullptr) {
       str->append("PARTITION BY ");
-      SELECT_LEX::print_order(str, m_partition_by->value.first, qt);
+      SELECT_LEX::print_order(thd, str, m_partition_by->value.first, qt);
       str->append(' ');
     }
 
     if (m_order_by != nullptr) {
       str->append("ORDER BY ");
-      SELECT_LEX::print_order(str, m_order_by->value.first, qt);
+      SELECT_LEX::print_order(thd, str, m_order_by->value.first, qt);
       str->append(' ');
     }
 
     if (!m_frame->m_originally_absent) {
-      print_frame(str, qt);
+      print_frame(thd, str, qt);
     }
 
     str->append(") ");
@@ -1466,8 +1470,7 @@ void Window::reset_all_wf_state() {
   Item_sum *sum;
   while ((sum = ls++)) {
     for (auto f : {false, true}) {
-      (void)sum->walk(&Item::reset_wf_state,
-                      Item::enum_walk(Item::WALK_POSTFIX), (uchar *)&f);
+      (void)sum->walk(&Item::reset_wf_state, enum_walk::POSTFIX, (uchar *)&f);
     }
   }
 }

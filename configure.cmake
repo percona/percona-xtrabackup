@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -153,7 +153,7 @@ IF(UNIX)
     SET(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -fsanitize=address")
   ENDIF()
 
-  IF(WITH_ASAN OR WITH_TSAN)
+  IF(WITH_ASAN OR WITH_LSAN OR WITH_TSAN)
     IF(CMAKE_USE_PTHREADS_INIT AND NOT CMAKE_THREAD_LIBS_INIT)
       MESSAGE(STATUS "No CMAKE_THREAD_LIBS_INIT ??")
       SET(CMAKE_THREAD_LIBS_INIT "-lpthread")
@@ -302,6 +302,7 @@ CHECK_FUNCTION_EXISTS (posix_fallocate HAVE_POSIX_FALLOCATE)
 CHECK_FUNCTION_EXISTS (posix_memalign HAVE_POSIX_MEMALIGN)
 CHECK_FUNCTION_EXISTS (pread HAVE_PREAD) # Used by NDB
 CHECK_FUNCTION_EXISTS (pthread_condattr_setclock HAVE_PTHREAD_CONDATTR_SETCLOCK)
+CHECK_FUNCTION_EXISTS (pthread_getaffinity_np HAVE_PTHREAD_GETAFFINITY_NP)
 CHECK_FUNCTION_EXISTS (pthread_sigmask HAVE_PTHREAD_SIGMASK)
 CHECK_FUNCTION_EXISTS (setfd HAVE_SETFD) # Used by libevent (never true)
 CHECK_FUNCTION_EXISTS (sigaction HAVE_SIGACTION)
@@ -375,6 +376,19 @@ ENDIF()
 CHECK_FUNCTION_EXISTS (timer_create HAVE_TIMER_CREATE)
 CHECK_FUNCTION_EXISTS (timer_settime HAVE_TIMER_SETTIME)
 CHECK_FUNCTION_EXISTS (kqueue HAVE_KQUEUE)
+
+# Check whether the setns() API function supported by a target platform
+CHECK_C_SOURCE_RUNS("
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <sched.h>
+int main()
+{
+  (void)setns(0, 0);
+  return 0;
+}" HAVE_SETNS)
+
 CHECK_SYMBOL_EXISTS(EVFILT_TIMER "sys/types.h;sys/event.h;sys/time.h" HAVE_EVFILT_TIMER)
 IF(HAVE_KQUEUE AND HAVE_EVFILT_TIMER)
   SET(HAVE_KQUEUE_TIMERS 1 CACHE INTERNAL "Have kqueue timer-related filter")

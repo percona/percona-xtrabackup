@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,11 +39,12 @@
 #include "sql/dd/sdi_fwd.h"
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/abstract_table.h"
-#include "sql/dd/types/foreign_key.h"  // dd::Foreign_key
-#include "sql/dd/types/index.h"        // dd::Index
-#include "sql/dd/types/partition.h"    // dd::Partition
-#include "sql/dd/types/table.h"        // dd:Table
-#include "sql/dd/types/trigger.h"      // dd::Trigger
+#include "sql/dd/types/check_constraint.h"  // dd::Check_constraint
+#include "sql/dd/types/foreign_key.h"       // dd::Foreign_key
+#include "sql/dd/types/index.h"             // dd::Index
+#include "sql/dd/types/partition.h"         // dd::Partition
+#include "sql/dd/types/table.h"             // dd:Table
+#include "sql/dd/types/trigger.h"           // dd::Trigger
 
 namespace dd {
 
@@ -447,10 +448,10 @@ class Table_impl : public Abstract_table_impl, virtual public Table {
   Column *get_column(Object_id column_id) {
     return Abstract_table_impl::get_column(column_id);
   }
-  const Column *get_column(const String_type name) const {
+  const Column *get_column(const String_type &name) const {
     return Abstract_table_impl::get_column(name);
   }
-  Column *get_column(const String_type name) {
+  Column *get_column(const String_type &name) {
     return Abstract_table_impl::get_column(name);
   }
   virtual bool update_aux_key(Aux_key *key) const {
@@ -501,6 +502,21 @@ class Table_impl : public Abstract_table_impl, virtual public Table {
 
   Trigger_impl *create_trigger();
 
+ public:
+  /////////////////////////////////////////////////////////////////////////
+  // Check constraints.
+  /////////////////////////////////////////////////////////////////////////
+
+  virtual Check_constraint *add_check_constraint();
+
+  virtual const Check_constraint_collection &check_constraints() const {
+    return m_check_constraints;
+  }
+
+  virtual Check_constraint_collection *check_constraints() {
+    return &m_check_constraints;
+  }
+
  private:
   // Fields.
 
@@ -538,6 +554,7 @@ class Table_impl : public Abstract_table_impl, virtual public Table {
   Partition_collection m_partitions;
   Partition_leaf_vector m_leaf_partitions;
   Trigger_collection m_triggers;
+  Check_constraint_collection m_check_constraints;
 
   // References to other objects.
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -128,7 +128,7 @@
    60 /* type, user_len, user, host_len, host */ + 1U +                       \
    1 /* type, explicit_def..ts*/ + 1U + 8 /* type, xid of DDL */ + 1U +       \
    2 /* type, default_collation_for_utf8mb4_number */ +                       \
-   1 /* sql_require_primary_key */)
+   1 /* sql_require_primary_key */ + 1 /* type, default_table_encryption */)
 
 /**
    Uninitialized timestamp value (for either last committed or sequence number).

@@ -40,10 +40,6 @@ insert into t1 values
 --sorted_result
 select * from t1;
 
-SELECT PARTITION_NAME, TABLE_ROWS > 0
-FROM INFORMATION_SCHEMA.PARTITIONS
-WHERE TABLE_NAME = 't1';
-
 #
 # Check single row lookups, these should always be local reads
 #

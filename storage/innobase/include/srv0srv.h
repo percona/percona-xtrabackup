@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2008, 2009, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -427,6 +427,9 @@ extern bool srv_log_checksums;
 /** If true then disable checkpointing. */
 extern bool srv_checkpoint_disabled;
 
+/* Used to inject a failure to find a free rollback segment. */
+extern bool srv_inject_too_many_concurrent_trxs;
+
 #endif /* UNIV_DEBUG */
 
 extern ulong srv_flush_log_at_trx_commit;
@@ -622,7 +625,8 @@ extern srv_stats_t srv_stats;
 /* Keys to register InnoDB threads with performance schema */
 
 #ifdef UNIV_PFS_THREAD
-extern mysql_pfs_key_t archiver_thread_key;
+extern mysql_pfs_key_t log_archiver_thread_key;
+extern mysql_pfs_key_t page_archiver_thread_key;
 extern mysql_pfs_key_t buf_dump_thread_key;
 extern mysql_pfs_key_t buf_resize_thread_key;
 extern mysql_pfs_key_t dict_stats_thread_key;
@@ -876,10 +880,22 @@ void srv_purge_coordinator_thread();
 /** Worker thread that reads tasks from the work queue and executes them. */
 void srv_worker_thread();
 
-/** Enable the undo log encryption if needed.  If innodb_undo_log_encrypt
-is ON, this will try to enable the undo log encryption and write the metadata
-to the undo log file header. */
-void srv_enable_undo_encryption_if_set();
+/** Rotate default master key for UNDO tablespace. */
+void undo_rotate_default_master_key();
+
+/** Enable UNDO tablespace encryption.
+@param[in] is_boot	true if it is called during server start up. In this
+                        case, default master key will be used which will be
+                        rotated later with actual master key from kyering.
+@return false for success, true otherwise. */
+bool srv_enable_undo_encryption(bool is_boot);
+
+/** Enable REDO tablespace encryption.
+@param[in] is_boot	true if it is called during server start up. In this
+                        case, default master key will be used which will be
+                        rotated later with actual master key from kyering.
+@return false for success, true otherwise. */
+bool srv_enable_redo_encryption(bool is_boot);
 
 /** Get count of tasks in the queue.
  @return number of tasks in queue */

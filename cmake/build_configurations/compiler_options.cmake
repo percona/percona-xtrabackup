@@ -57,7 +57,7 @@ IF(UNIX)
     ENDIF()
   ENDIF()
   IF(CMAKE_COMPILER_IS_GNUCXX)
-    SET(COMMON_CXX_FLAGS               "-std=c++11 -fno-omit-frame-pointer")
+    SET(COMMON_CXX_FLAGS               "-std=c++14 -fno-omit-frame-pointer")
     # Disable inline optimizations for valgrind testing to avoid false positives
     IF(WITH_VALGRIND)
       STRING_PREPEND(COMMON_CXX_FLAGS  "-fno-inline ")
@@ -79,7 +79,7 @@ IF(UNIX)
     ENDIF()
   ENDIF()
   IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    SET(COMMON_CXX_FLAGS               "-std=c++11 -fno-omit-frame-pointer")
+    SET(COMMON_CXX_FLAGS               "-std=c++14 -fno-omit-frame-pointer")
     IF(NOT DISABLE_SHARED)
       STRING_PREPEND(COMMON_CXX_FLAGS  "-fPIC ")
     ENDIF()
@@ -143,7 +143,7 @@ IF(UNIX)
       STRING_APPEND(COMMON_C_FLAGS " ${SUNPRO_C_WARNING_SUPPRESSION_FLAGS}")
 
 
-      SET(COMMON_CXX_FLAGS          "-std=c++11 ${SUNPRO_FLAGS}")
+      SET(COMMON_CXX_FLAGS          "-std=c++14 ${SUNPRO_FLAGS}")
 
       # Build list of C++ warning tags to suppress. Comment in/out as needed.
 
@@ -242,8 +242,11 @@ IF(UNIX)
       # Reduce size of debug binaries, by omitting function declarations.
       # Note that we cannot set "-xdebuginfo=no%decl" during feature tests.
       # We still may get linking errors for merge_large_tests-t with Studio 12.6
-      STRING_APPEND(CMAKE_C_FLAGS_DEBUG            " -xdebuginfo=no%decl")
-      STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG          " -xdebuginfo=no%decl")
+      # -g0 is the same as -g, except that inlining is enabled.
+      # When building -DWITH_NDBCLUSTER=1 even more of the merge_xxx_tests
+      # fail to link, so we keep -g0 for Studio 12.6
+      STRING_APPEND(CMAKE_C_FLAGS_DEBUG            " -g0 -xdebuginfo=no%decl")
+      STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG          " -g0 -xdebuginfo=no%decl")
       STRING_APPEND(CMAKE_C_FLAGS_RELWITHDEBINFO   " -xdebuginfo=no%decl")
       STRING_APPEND(CMAKE_CXX_FLAGS_RELWITHDEBINFO " -xdebuginfo=no%decl")
 

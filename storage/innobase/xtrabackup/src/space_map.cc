@@ -22,6 +22,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <my_systime.h>
+
 #include <fil0fil.h>
 #include <srv0srv.h>
 

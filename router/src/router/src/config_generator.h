@@ -52,8 +52,7 @@ DECLARE_TEST(ConfigGeneratorTest, fetch_bootstrap_servers_one);
 DECLARE_TEST(ConfigGeneratorTest, fetch_bootstrap_servers_three);
 DECLARE_TEST(ConfigGeneratorTest, fetch_bootstrap_servers_multiple_replicasets);
 DECLARE_TEST(ConfigGeneratorTest, fetch_bootstrap_servers_invalid);
-DECLARE_TEST(ConfigGeneratorTest, create_config_single_master);
-DECLARE_TEST(ConfigGeneratorTest, create_config_multi_master);
+DECLARE_TEST(ConfigGeneratorTest, create_config);
 DECLARE_TEST(ConfigGeneratorTest, delete_account_for_all_hosts);
 DECLARE_TEST(ConfigGeneratorTest, create_acount);
 DECLARE_TEST(ConfigGeneratorTest, create_router_accounts);
@@ -83,7 +82,9 @@ class SysUserOperations;
 class ConfigGenerator {
  public:
   ConfigGenerator(
+      std::ostream &out_stream = std::cout, std::ostream &err_stream = std::cerr
 #ifndef _WIN32
+      ,
       SysUserOperationsBase *sys_user_operations = SysUserOperations::instance()
 #endif
   );
@@ -218,8 +219,19 @@ class ConfigGenerator {
                      const std::string &metadata_cluster,
                      const std::string &metadata_replicaset,
                      const std::string &username, const Options &options,
-                     bool print_configs = false,
                      const std::string &state_file_name = "");
+
+  void create_report(const std::string &config_file_name,
+                     const std::string &router_name,
+                     const std::string &metadata_cluster,
+                     const std::string &hostname, bool is_system_deployment,
+                     const Options &options);
+
+  static std::string gen_metadata_cache_routing_section(
+      bool is_classic, bool is_writable, const Options::Endpoint endpoint,
+      const Options &options, const std::string &metadata_key,
+      const std::string &metadata_replicaset,
+      const std::string &fast_router_key);
 
   /** @brief Deletes (old) Router accounts
    *
@@ -316,8 +328,8 @@ class ConfigGenerator {
 
   void update_router_info(uint32_t router_id, const Options &options);
 
-  std::string endpoint_option(const Options &options,
-                              const Options::Endpoint &ep);
+  static std::string endpoint_option(const Options &options,
+                                     const Options::Endpoint &ep);
 
   bool backup_config_file_if_different(
       const mysql_harness::Path &config_path, const std::string &new_file_path,
@@ -359,6 +371,9 @@ class ConfigGenerator {
 
   KeyringInfo keyring_info_;
 
+  std::ostream &out_stream_;
+  std::ostream &err_stream_;
+
 #ifndef _WIN32
   SysUserOperationsBase *sys_user_operations_;
 #endif
@@ -369,8 +384,7 @@ class ConfigGenerator {
   FRIEND_TEST(::ConfigGeneratorTest,
               fetch_bootstrap_servers_multiple_replicasets);
   FRIEND_TEST(::ConfigGeneratorTest, fetch_bootstrap_servers_invalid);
-  FRIEND_TEST(::ConfigGeneratorTest, create_config_single_master);
-  FRIEND_TEST(::ConfigGeneratorTest, create_config_multi_master);
+  FRIEND_TEST(::ConfigGeneratorTest, create_config);
   FRIEND_TEST(::ConfigGeneratorTest, delete_account_for_all_hosts);
   FRIEND_TEST(::ConfigGeneratorTest, create_acount);
   FRIEND_TEST(::ConfigGeneratorTest, create_router_accounts);

@@ -400,10 +400,6 @@ bool opt_remove_original = FALSE;
 bool opt_tables_compatibility_check = TRUE;
 static bool opt_check_privileges = FALSE;
 
-static const char *binlog_info_values[] = {"off", "lockless", "on", "auto",
-                                           NullS};
-static TYPELIB binlog_info_typelib = {array_elements(binlog_info_values) - 1,
-                                      "", binlog_info_values, NULL};
 char *opt_incremental_history_name = NULL;
 char *opt_incremental_history_uuid = NULL;
 
@@ -682,6 +678,7 @@ enum options_xtrabackup {
   OPT_TLS_VERSION,
   OPT_SSL_MODE,
   OPT_SSL_FIPS_MODE,
+  OPT_TLS_CIPHERSUITES,
   OPT_SERVER_PUBLIC_KEY,
 
   OPT_XTRA_TABLES_EXCLUDE,
@@ -4099,6 +4096,7 @@ static void cleanup_mysql_environment() {
   table_def_free();
   mdl_destroy();
   Srv_session::module_deinit();
+  shutdown_dynamic_loader();
   mysql_services_shutdown();
 
   mysql_mutex_destroy(&LOCK_status);
@@ -7482,7 +7480,7 @@ void handle_options(int argc, char **argv, int *argc_client,
   int ho_error;
   char conf_file[FN_REFLEN];
 
-  char *target_dir = NULL;
+  const char *target_dir = NULL;
   bool prepare = false;
 
   *argc_client = argc;
@@ -7492,7 +7490,7 @@ void handle_options(int argc, char **argv, int *argc_client,
 
   /* scan options for group and config file to load defaults from */
   for (i = 1; i < argc; i++) {
-    char *optend = strcend(argv[i], '=');
+    const char *optend = strcend(argv[i], '=');
 
     if (strncmp(argv[i], "--defaults-group", optend - argv[i]) == 0) {
       defaults_group = optend + 1;
@@ -7549,7 +7547,7 @@ void handle_options(int argc, char **argv, int *argc_client,
   /* Throw a descriptive error if --defaults-file or --defaults-extra-file
   is not the first command line argument */
   for (int i = 2; i < argc; i++) {
-    char *optend = strcend((argv)[i], '=');
+    const char *optend = strcend((argv)[i], '=');
 
     if (optend - argv[i] == 15 &&
         !strncmp(argv[i], "--defaults-file", optend - argv[i])) {

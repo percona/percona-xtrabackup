@@ -2,7 +2,7 @@
 #define HANDLER_INCLUDED
 
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,10 +35,12 @@
 #include <algorithm>
 #include <bitset>
 #include <functional>
+#include <map>
 #include <random>  // std::mt19937
 #include <set>
 #include <string>
 
+#include <mysql/components/services/page_track_service.h>
 #include "ft_global.h"  // ft_hints
 #include "lex_string.h"
 #include "m_ctype.h"
@@ -66,9 +68,11 @@
 #include "typelib.h"
 
 class Alter_info;
+class Candidate_table_order;
 class Create_field;
 class Field;
 class Item;
+class JOIN;
 class Json_dom;
 class Partition_handler;
 class Plugin_table;
@@ -86,6 +90,7 @@ class Properties;
 }  // namespace dd
 struct FOREIGN_KEY_INFO;
 struct KEY_CACHE;
+struct LEX;
 struct MY_BITMAP;
 struct SAVEPOINT;
 struct TABLE;
@@ -484,6 +489,12 @@ enum enum_alter_inplace_result {
 */
 #define HA_DELETE_NOT_SUPPORTED (1LL << 53)
 
+/**
+  The storage engine does not support using indexes for access. Indexes can only
+  be used for estimating cost.
+*/
+#define HA_NO_INDEX_ACCESS (1LL << 54)
+
 /*
   Bits in index_flags(index_number) for what you can do with index.
   If you do not implement indexes, just return zero here.
@@ -736,6 +747,12 @@ given at all. */
 /** SECONDARY_ENGINE used during table create. */
 #define HA_CREATE_USED_SECONDARY_ENGINE (1L << 29)
 
+/**
+  CREATE|ALTER SCHEMA|DATABASE has an explicit ENCRYPTION clause.
+
+  Implies HA_CREATE_USED_DEFAULT_ENCRYPTION.
+*/
+#define HA_CREATE_USED_DEFAULT_ENCRYPTION (1L << 30)
 /*
   End of bits used in used_fields
 */
@@ -844,7 +861,7 @@ class st_alter_tablespace {
 /*
   Make sure that the order of schema_tables and enum_schema_tables are the same.
 */
-enum enum_schema_tables {
+enum enum_schema_tables : int {
   SCH_FIRST = 0,
   SCH_COLUMN_PRIVILEGES = SCH_FIRST,
   SCH_ENGINES,
@@ -1388,11 +1405,22 @@ enum class Tablespace_type {
   @param[out] space_type     type of space
 
   @return Operation status.
-  @retval == 0  Success.
-  @retval != 0  Error (unknown space type, no error code returned)
+  @retval false on success and true for failure.
 */
 typedef bool (*get_tablespace_type_t)(const dd::Tablespace &space,
                                       Tablespace_type *space_type);
+
+/**
+  Get the tablespace type given the name, from the SE.
+
+  @param[in]  tablespace_name tablespace name
+  @param[out] space_type      type of space
+
+  @return Operation status.
+  @retval false on success and true for failure.
+*/
+typedef bool (*get_tablespace_type_by_name_t)(const char *tablespace_name,
+                                              Tablespace_type *space_type);
 
 typedef int (*fill_is_table_t)(handlerton *hton, THD *thd, TABLE_LIST *tables,
                                class Item *cond, enum enum_schema_tables);
@@ -2013,6 +2041,171 @@ typedef bool (*check_fk_column_compat_t)(
 typedef bool (*is_reserved_db_name_t)(handlerton *hton, const char *name);
 
 /**
+  Prepare the secondary engine for executing a statement. This function is
+  called right after the secondary engine TABLE objects have been opened by
+  open_secondary_engine_tables(), before the statement is optimized and
+  executed. Secondary engines will typically create a context object in this
+  function, which they can use to store state that is needed during the
+  optimization and execution phases.
+
+  @param thd  thread context
+  @param lex  the statement to execute
+  @return true on error, false on success
+*/
+using prepare_secondary_engine_t = bool (*)(THD *thd, LEX *lex);
+
+/**
+  Optimize a statement for execution on a secondary storage engine. This
+  function is called when the optimization of a statement has completed, just
+  before the statement is executed. Secondary engines can use this function to
+  apply engine-specific optimizations to the execution plan. They can also
+  reject executing the query by raising an error, in which case the query will
+  be reprepared and executed by the primary storage engine.
+
+  @param thd  thread context
+  @param lex  the statement being optimized
+  @return true on error, false on success
+*/
+using optimize_secondary_engine_t = bool (*)(THD *thd, LEX *lex);
+
+/**
+  Compares the cost of two join plans in the secondary storage engine. The cost
+  of the current candidate is compared with the cost of the best plan seen so
+  far.
+
+  @param thd thread context
+  @param join the JOIN to evaluate
+  @param table_order the ordering of the tables in the candidate plan
+  @param optimizer_cost the cost estimate calculated by the optimizer
+  @param[out] cheaper true if the candidate is the best plan seen so far for
+                      this JOIN (must be true if it is the first plan seen),
+                      false otherwise
+  @param[out] secondary_engine_cost the cost estimated by the secondary engine
+
+  @return false on success, or true if an error has been raised
+*/
+using compare_secondary_engine_cost_t = bool (*)(
+    THD *thd, const JOIN &join, const Candidate_table_order &table_order,
+    double optimizer_cost, bool *cheaper, double *secondary_engine_cost);
+
+// FIXME: Temporary workaround to enable storage engine plugins to use the
+// before_commit hook. Remove after WL#11320 has been completed.
+typedef void (*se_before_commit_t)(void *arg);
+
+// FIXME: Temporary workaround to enable storage engine plugins to use the
+// after_commit hook. Remove after WL#11320 has been completed.
+typedef void (*se_after_commit_t)(void *arg);
+
+// FIXME: Temporary workaround to enable storage engine plugins to use the
+// before_rollback hook. Remove after WL#11320 has been completed.
+typedef void (*se_before_rollback_t)(void *arg);
+
+/*
+  Page Tracking : interfaces to handlerton functions which starts/stops page
+  tracking, and purges/fetches page tracking information.
+*/
+
+/**
+  Start page tracking.
+
+  @param[out]    start_id      SE specific sequence number [LSN for InnoDB]
+  indicating when the tracking was started
+
+  @return Operation status.
+    @retval 0 Success
+    @retval other ER_* mysql error. Get error details from THD.
+*/
+using page_track_start_t = int (*)(uint64_t *start_id);
+
+/**
+  Stop page tracking.
+
+  @param[out]    stop_id      SE specific sequence number [LSN for InnoDB]
+  indicating when the tracking was stopped
+
+  @return Operation status.
+    @retval 0 Success
+    @retval other ER_* mysql error. Get error details from THD.
+*/
+using page_track_stop_t = int (*)(uint64_t *stop_id);
+
+/**
+  Purge page tracking data.
+
+  @param[in,out] purge_id     SE specific sequence number [LSN for InnoDB]
+  initially indicating till where the data needs to be purged and finally
+  updated to until where it was actually purged
+
+  @return Operation status.
+    @retval 0 Success
+    @retval other ER_* mysql error. Get error details from THD.
+*/
+using page_track_purge_t = int (*)(uint64_t *purge_id);
+
+/**
+  Fetch tracked pages.
+
+  @param[in]     cbk_func     callback function return page IDs
+  @param[in]     cbk_ctx      caller's context for callback
+  @param[in,out] start_id     SE specific sequence number [LSN for InnoDB] from
+  where the pages tracked would be returned.
+  @note The range might get expanded and the actual start_id used for the
+  querying will be updated.
+  @param[in,out] stop_id      SE specific sequence number [LSN for InnoDB]
+  until where the pages tracked would be returned.
+  @note The range might get expanded and the actual stop_id used for the
+  querying will be updated.
+  @param[out]    buffer       allocated buffer to copy page IDs
+  @param[in]     buffer_len   length of buffer in bytes
+
+  @return Operation status.
+    @retval 0 Success
+    @retval other ER_* mysql error. Get error details from THD.
+*/
+using page_track_get_page_ids_t = int (*)(Page_Track_Callback cbk_func,
+                                          void *cbk_ctx, uint64_t *start_id,
+                                          uint64_t *stop_id,
+                                          unsigned char *buffer,
+                                          size_t buffer_len);
+
+/**
+  Fetch approximate number of tracked pages in the given range.
+
+  @param[in,out] start_id     SE specific sequence number [LSN for InnoDB] from
+  where the pages tracked would be returned.
+  @note the range might get expanded and the actual start_id used for the
+  querying will be updated.
+  @param[in,out] stop_id      SE specific sequence number [LSN for InnoDB]
+  until where the pages tracked would be returned.
+  @note the range might get expanded and the actual stop_id used for the
+  querying will be updated.
+  @param[out]	 num_pages    number of pages tracked
+
+  @return Operation status.
+    @retval 0 Success
+    @retval other ER_* mysql error. Get error details from THD.
+*/
+using page_track_get_num_page_ids_t = int (*)(uint64_t *start_id,
+                                              uint64_t *stop_id,
+                                              uint64_t *num_pages);
+
+/** Fetch the status of the page tracking system.
+@param[out]	status	vector of a pair of (ID, bool) where ID is the
+start/stop point and bool is true if the ID is a start point else false */
+using page_track_get_status_t =
+    void (*)(std::vector<std::pair<uint64_t, bool>> &status);
+
+/** Page track interface */
+struct Page_track_t {
+  page_track_start_t start;
+  page_track_stop_t stop;
+  page_track_purge_t purge;
+  page_track_get_page_ids_t get_page_ids;
+  page_track_get_num_page_ids_t get_num_page_ids;
+  page_track_get_status_t get_status;
+};
+
+/**
   handlerton is a singleton structure - one instance per storage engine -
   to provide access to storage engine functionality that works on the
   "global" level (unlike handler class that works on a per-table basis).
@@ -2084,6 +2277,7 @@ struct handlerton {
   upgrade_tablespace_t upgrade_tablespace;
   upgrade_space_version_t upgrade_space_version;
   get_tablespace_type_t get_tablespace_type;
+  get_tablespace_type_by_name_t get_tablespace_type_by_name;
   upgrade_logs_t upgrade_logs;
   finish_upgrade_t finish_upgrade;
   fill_is_table_t fill_is_table;
@@ -2181,6 +2375,38 @@ struct handlerton {
   uint32 foreign_keys_flags;
 
   check_fk_column_compat_t check_fk_column_compat;
+
+  /**
+    Pointer to a function that prepares a secondary engine for executing a
+    statement.
+
+    @see prepare_secondary_engine_t for function signature.
+  */
+  prepare_secondary_engine_t prepare_secondary_engine;
+
+  /**
+    Pointer to a function that optimizes the current statement for
+    execution on the secondary storage engine represented by this
+    handlerton.
+
+    @see optimize_secondary_engine_t for function signature.
+  */
+  optimize_secondary_engine_t optimize_secondary_engine;
+
+  /**
+    Pointer to a function that estimates the cost of executing a join in a
+    secondary storage engine.
+
+    @see compare_secondary_engine_cost_t for function signature.
+  */
+  compare_secondary_engine_cost_t compare_secondary_engine_cost;
+
+  se_before_commit_t se_before_commit;
+  se_after_commit_t se_after_commit;
+  se_before_rollback_t se_before_rollback;
+
+  /** Page tracking interface */
+  Page_track_t page_track;
 };
 
 /* Possible flags of a handlerton (there can be 32 of them) */
@@ -2244,6 +2470,9 @@ struct handlerton {
 
 /** Engine supports secondary storage engines. */
 #define HTON_SUPPORTS_SECONDARY_ENGINE (1 << 15)
+
+/** Engine supports table or tablespace encryption . */
+#define HTON_SUPPORTS_TABLE_ENCRYPTION (1 << 16)
 
 inline bool ddl_is_atomic(const handlerton *hton) {
   return (hton->flags & HTON_SUPPORTS_ATOMIC_DDL) != 0;
@@ -2310,11 +2539,12 @@ enum enum_stats_auto_recalc : int {
 
 /* struct to hold information about the table that should be created */
 struct HA_CREATE_INFO {
-  HA_CREATE_INFO() { memset(this, 0, sizeof(*this)); }
-  const CHARSET_INFO *table_charset, *default_table_charset;
-  LEX_STRING connect_string;
-  const char *password, *tablespace;
-  LEX_STRING comment;
+  const CHARSET_INFO *table_charset{nullptr};
+  const CHARSET_INFO *default_table_charset{nullptr};
+  LEX_STRING connect_string{nullptr, 0};
+  const char *password{nullptr};
+  const char *tablespace{nullptr};
+  LEX_STRING comment{nullptr, 0};
 
   /**
   Algorithm (and possible options) to be used for InnoDB's transparent
@@ -2323,7 +2553,7 @@ struct HA_CREATE_INFO {
   where possible. Note: this value is interpreted by the storage engine only.
   and ignored by the Server layer. */
 
-  LEX_STRING compress;
+  LEX_STRING compress{nullptr, 0};
 
   /**
   This attibute is used for InnoDB's transparent page encryption.
@@ -2331,7 +2561,7 @@ struct HA_CREATE_INFO {
   the data. Note: this value is interpreted by the storage engine only.
   and ignored by the Server layer. */
 
-  LEX_STRING encrypt_type;
+  LEX_STRING encrypt_type{nullptr, 0};
 
   /**
    * Secondary engine of the table.
@@ -2339,19 +2569,21 @@ struct HA_CREATE_INFO {
    */
   LEX_STRING secondary_engine{nullptr, 0};
 
-  const char *data_file_name, *index_file_name;
-  const char *alias;
-  ulonglong max_rows, min_rows;
-  ulonglong auto_increment_value;
-  ulong table_options;
-  ulong avg_row_length;
-  ulong used_fields;
-  ulong key_block_size;
-  uint stats_sample_pages; /* number of pages to sample during
+  const char *data_file_name{nullptr};
+  const char *index_file_name{nullptr};
+  const char *alias{nullptr};
+  ulonglong max_rows{0};
+  ulonglong min_rows{0};
+  ulonglong auto_increment_value{0};
+  ulong table_options{0};
+  ulong avg_row_length{0};
+  ulong used_fields{0};
+  ulong key_block_size{0};
+  uint stats_sample_pages{0}; /* number of pages to sample during
                            stats estimation, if used, otherwise 0. */
-  enum_stats_auto_recalc stats_auto_recalc;
+  enum_stats_auto_recalc stats_auto_recalc{HA_STATS_AUTO_RECALC_DEFAULT};
   SQL_I_List<TABLE_LIST> merge_list;
-  handlerton *db_type;
+  handlerton *db_type{nullptr};
   /**
     Row type of the table definition.
 
@@ -2361,18 +2593,18 @@ struct HA_CREATE_INFO {
     Can be changed either explicitly by the parser.
     If nothing specified inherits the value of the original table (if present).
   */
-  enum row_type row_type;
-  uint null_bits; /* NULL bits at start of record */
-  uint options;   /* OR of HA_CREATE_ options */
-  uint merge_insert_method;
-  enum ha_storage_media storage_media; /* DEFAULT, DISK or MEMORY */
+  enum row_type row_type = ROW_TYPE_DEFAULT;
+  uint null_bits{0}; /* NULL bits at start of record */
+  uint options{0};   /* OR of HA_CREATE_ options */
+  uint merge_insert_method{0};
+  ha_storage_media storage_media{HA_SM_DEFAULT}; /* DEFAULT, DISK or MEMORY */
 
   /*
     A flag to indicate if this table should be marked as a hidden table in
     the data dictionary. One use case is to mark the temporary tables
     created by ALTER to be marked as hidden.
   */
-  bool m_hidden;
+  bool m_hidden{false};
 
   /**
     Fill HA_CREATE_INFO to be used by ALTER as well as upgrade code.
@@ -2426,6 +2658,8 @@ class inplace_alter_handler_ctx {
  public:
   inplace_alter_handler_ctx() {}
 
+  virtual void set_shared_data(
+      const inplace_alter_handler_ctx *ctx MY_ATTRIBUTE((unused))) {}
   virtual ~inplace_alter_handler_ctx() {}
 };
 
@@ -2619,6 +2853,15 @@ class Alter_inplace_info {
     so its values require re-evaluation.
   */
   static const HA_ALTER_FLAGS STORED_GCOL_REEVAL = 1ULL << 45;
+
+  // Add check constraint.
+  static const HA_ALTER_FLAGS ADD_CHECK_CONSTRAINT = 1ULL << 46;
+
+  // Drop check constraint.
+  static const HA_ALTER_FLAGS DROP_CHECK_CONSTRAINT = 1ULL << 47;
+
+  // Suspend check constraint.
+  static const HA_ALTER_FLAGS SUSPEND_CHECK_CONSTRAINT = 1ULL << 48;
 
   /**
     Create options (like MAX_ROWS) for the new version of table.
@@ -4044,17 +4287,22 @@ class handler {
   int ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info,
                 dd::Table *table_def);
 
+  int ha_prepare_load_table(const TABLE &table);
+
   int ha_load_table(const TABLE &table);
 
   int ha_unload_table(const char *db_name, const char *table_name);
 
   /**
-    Get number of threads that would be spawned for parallel read.
-    @return error code
-    @retval 0 on success
-   */
-  virtual int pread_adapter_scan_get_num_threads(size_t & /* num_threads */) {
-    return 0;
+        Initializes a parallel scan. It creates a parallel_scan_ctx that has to
+        be used across all parallel_scan methods. Also, gets the number of
+     threads that would be spawned for parallel scan.
+        @return error code
+        @retval 0 on success
+  */
+  virtual int pread_adapter_parallel_scan_start(void *& /* parallel_scan_ctx */,
+                                                size_t & /* num_threads */) {
+    return (0);
   }
 
   /**
@@ -4075,8 +4323,8 @@ class handler {
                        represents the bitmask required to get the null bit. The
                        memory of this array belongs to the caller and will be
                      free-ed after the pload_end_cbk call.
-   */
-  using pread_adapter_pload_init_cbk = std::function<void(
+  */
+  using pread_adapter_pload_init_cbk = std::function<bool(
       void *cookie, ulong ncols, ulong row_len, ulong *col_offsets,
       ulong *null_byte_offsets, ulong *null_bitmasks)>;
 
@@ -4089,7 +4337,8 @@ class handler {
                          buffer for nrows records. The length of each record
                          is fixed and communicated via
                          pread_adapter_pload_init_cbk.
-   */
+    @returns true if there is an error, false otherwise.
+  */
   using pread_adapter_pload_row_cbk =
       std::function<bool(void *cookie, uint nrows, void *rowdata)>;
 
@@ -4097,19 +4346,28 @@ class handler {
     This callback is called by each parallel load thread when processing
     of rows has ended for the adapter scan.
     @param[in] cookie    The cookie for this thread
-   */
+  */
   using pread_adapter_pload_end_cbk = std::function<void(void *cookie)>;
 
   /**
-    Start parallel read of data.
+    Run the parallel read of data.
     @return error code
     @retval 0 on success
-   */
-  virtual int pread_adapter_scan_parallel_load(
-      void ** /* thread_contexts */,
+  */
+  virtual int pread_adapter_parallel_scan_run(
+      void * /* parallel_scan_ctx */, void ** /* thread_contexts */,
       pread_adapter_pload_init_cbk /* load_init_fn */,
       pread_adapter_pload_row_cbk /* load_rows_fn */,
       pread_adapter_pload_end_cbk /* load_end_fn */) {
+    return (0);
+  }
+
+  /**
+    Run the parallel read of data.
+    @return error code
+    @retval 0 on success
+  */
+  virtual int pread_adapter_parallel_scan_end(void * /* parallel_scan_ctx */) {
     return (0);
   }
 
@@ -4391,7 +4649,7 @@ class handler {
 
   /**
     Number of rows in table counted using the secondary index chosen by
-    optimizer. See comments in opt_sum_query(...) .
+    optimizer. See comments in optimize_aggregated_query() .
 
       @param num_rows [out]  Number of rows in table.
       @param index           Index chosen by optimizer for counting.
@@ -5039,8 +5297,10 @@ class handler {
   /**
     Push condition down to the table handler.
 
-    @param  cond   Condition to be pushed. The condition tree must not be
-                   modified by the by the caller.
+    @param  cond          Condition to be pushed. The condition tree
+                          must not be modified by the caller.
+    @param  other_tbls_ok Are other tables than than 'this' allowed to
+                          be referred by the condition terms being pushed.
 
     @return
       The 'remainder' condition that caller must use to filter out records.
@@ -5048,23 +5308,15 @@ class handler {
       passed condition.
 
     @note
-    The pushed conditions form a stack (from which one can remove the
-    last pushed condition using cond_pop).
-    The table handler filters out rows using (pushed_cond1 AND pushed_cond2
-    AND ... AND pushed_condN)
-    or less restrictive condition, depending on handler's capabilities.
-
-    handler->ha_reset() call empties the condition stack.
+    handler->ha_reset() call discard any pushed conditions.
     Calls to rnd_init/rnd_end, index_init/index_end etc do not affect the
-    condition stack.
+    pushed conditions.
   */
-  virtual const Item *cond_push(const Item *cond) { return cond; }
-  /**
-    Pop the top condition from the condition stack of the handler instance.
-
-    Pops the top if condition stack, if stack is not empty.
-  */
-  virtual void cond_pop() { return; }
+  virtual const Item *cond_push(const Item *cond,
+                                bool other_tbls_ok MY_ATTRIBUTE((unused))) {
+    DBUG_ASSERT(pushed_cond == NULL);
+    return cond;
+  }
 
   /**
     Push down an index condition to the handler.
@@ -5113,7 +5365,7 @@ class handler {
     If this handler instance is part of a pushed join sequence
     returned TABLE instance being root of the pushed query?
   */
-  virtual const TABLE *root_of_pushed_join() const { return NULL; }
+  virtual const TABLE *member_of_pushed_join() const { return NULL; }
 
   /**
     If this handler instance is a child in a pushed join sequence
@@ -5743,9 +5995,23 @@ class handler {
   virtual int sample_end();
 
   /**
+   * Prepares secondary engine for loading a table.
+   *
+   * @param table Table opened in primary storage engine. Its read_set tells
+   * which columns to load.
+   *
+   * @return 0 if success, error code otherwise.
+   */
+  virtual int prepare_load_table(const TABLE &table MY_ATTRIBUTE((unused))) {
+    DBUG_ASSERT(false);
+    return HA_ERR_WRONG_COMMAND;
+  }
+
+  /**
    * Loads a table into its defined secondary storage engine.
    *
-   * @param table Table opened in primary storage engine.
+   * @param table Table opened in primary storage engine. Its read_set tells
+   * which columns to load.
    *
    * @return 0 if success, error code otherwise.
    */
@@ -6079,12 +6345,13 @@ class handler {
   auxiliary standalone function.
 
   @param[in]  table    TABLE object
+  @param[in]  check_temporal_upgrade  Check if temporal upgrade is needed
 
   @retval 0            ON SUCCESS
   @retval error code   ON FAILURE
 */
 
-int check_table_for_old_types(const TABLE *table);
+int check_table_for_old_types(const TABLE *table, bool check_temporal_upgrade);
 
 /*
   A Disk-Sweep MRR interface implementation
@@ -6370,7 +6637,6 @@ bool ha_notify_alter_table(THD *thd, const MDL_key *mdl_key,
 
 int commit_owned_gtids(THD *thd, bool all, bool *need_clear_ptr);
 int commit_owned_gtid_by_partial_command(THD *thd);
-int check_table_for_old_types(const TABLE *table);
 bool set_tx_isolation(THD *thd, enum_tx_isolation tx_isolation, bool one_shot);
 
 /** Generate a string representation of an `ha_rkey_function` enum value.
@@ -6446,8 +6712,8 @@ class ha_tablespace_statistics {
 
   ulonglong m_id;
   dd::String_type m_type;
-  dd::String_type m_logfile_group_name;  // Cluster
-  ulonglong m_logfile_group_number;      // Cluster
+  dd::String_type m_logfile_group_name;  // NDB only
+  ulonglong m_logfile_group_number;      // NDB only
   ulonglong m_free_extents;
   ulonglong m_total_extents;
   ulonglong m_extent_size;
@@ -6458,6 +6724,7 @@ class ha_tablespace_statistics {
   dd::String_type m_row_format;  // NDB only
   ulonglong m_data_free;         // InnoDB
   dd::String_type m_status;
+  dd::String_type m_extra;  // NDB only
 };
 
 #endif /* HANDLER_INCLUDED */

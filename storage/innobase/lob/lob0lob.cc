@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2015, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2015, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -506,7 +506,17 @@ dberr_t btr_store_big_rec_extern_fields(trx_t *trx, btr_pcur_t *pcur,
       }
 
       if (do_insert) {
-        error = lob::z_insert(&ctx, trx, blobref, &big_rec_vec->fields[i], i);
+        const ulint lob_len = big_rec_vec->fields[i].len;
+        if (ref_t::use_single_z_stream(lob_len)) {
+          zInserter zblob_writer(&ctx);
+          error = zblob_writer.prepare();
+          if (error == DB_SUCCESS) {
+            zblob_writer.write_one_blob(i);
+            error = zblob_writer.finish();
+          }
+        } else {
+          error = lob::z_insert(&ctx, trx, blobref, &big_rec_vec->fields[i], i);
+        }
 
         if (op == lob::OPCODE_UPDATE && upd != nullptr) {
           /* Get the corresponding upd_field_t
@@ -696,7 +706,7 @@ static void btr_check_blob_fil_page_type(space_id_t space_id, page_no_t page_no,
   ut_a(page_no == page_get_page_no(page));
 
   switch (type) {
-    ulint flags;
+    uint32_t flags;
     case FIL_PAGE_TYPE_BLOB:
     case FIL_PAGE_SDI_BLOB:
       break;
@@ -948,7 +958,12 @@ byte *btr_copy_externally_stored_field_func(
     return (buf);
   }
 
-  ut_ad(extern_len > 0);
+  if (extern_len == 0) {
+    /* The lob has already been purged. */
+    ut_ad(ref_t::page_no(field_ref) == FIL_NULL);
+    *len = 0;
+    return (buf);
+  }
 
   if (page_size.is_compressed()) {
     ut_ad(local_len == 0);
@@ -1281,6 +1296,11 @@ bool ref_t::is_lob_partially_updatable(const dict_index_t *index) const {
   }
 
   const page_size_t page_size = dict_table_page_size(index->table);
+
+  if (page_size.is_compressed() && use_single_z_stream()) {
+    return (false);
+  }
+
   bool can_do_partial_update = false;
   ulint page_type = get_lob_page_info(index, page_size, can_do_partial_update);
 

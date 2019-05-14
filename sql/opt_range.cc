@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -129,7 +129,7 @@
 #include <queue>
 #include <set>
 
-#include "binary_log_types.h"
+#include "field_types.h"  // enum_field_types
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "map_helpers.h"
@@ -3464,8 +3464,13 @@ int test_quick_select(THD *thd, Key_map keys_to_use, table_map prev_tables,
 
     thd->mem_root = param.old_root;
 
-    /* If we got a read plan, create a quick select from it. */
-    if (best_trp) {
+    /*
+      If we got a read plan, create a quick select from it.
+
+      Only create a quick select if the storage engine supports using indexes
+      for access.
+    */
+    if (best_trp && (head->file->ha_table_flags() & HA_NO_INDEX_ACCESS) == 0) {
       QUICK_SELECT_I *qck;
       records = best_trp->records;
       if (!(qck = best_trp->make_quick(&param, true)) || qck->init())
@@ -11912,7 +11917,7 @@ static TRP_GROUP_MIN_MAX *get_best_group_min_max(
 
         /* Check if cur_part is referenced in the WHERE clause. */
         if (join->where_cond->walk(&Item::find_item_in_field_list_processor,
-                                   Item::WALK_SUBQUERY_POSTFIX,
+                                   enum_walk::SUBQUERY_POSTFIX,
                                    (uchar *)key_part_range)) {
           cause = "keypart_reference_from_where_clause";
           goto next_index;

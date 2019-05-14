@@ -72,8 +72,6 @@ namespace dd {
 
 class Properties {
  public:
-  Properties &operator=(const Properties &) = delete;
-
   /**
     Convert a string to a value of an integral type. Verify correct
     sign, check for overflow and conversion errors.
@@ -302,6 +300,12 @@ class Properties {
   bool set(const String_type &key, Value_type value) {
     return set(key, to_str(value));
   }
+
+  Properties() = default;
+
+  Properties(const Properties &) = default;
+
+  Properties &operator=(const Properties &) = delete;
 
   virtual ~Properties() {}
 };

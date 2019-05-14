@@ -1,24 +1,24 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License, version 2.0,
-   as published by the Free Software Foundation.
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
-   but not limited to OpenSSL) that is licensed under separate terms,
-   as designated in a particular file or component or in included license
-   documentation.  The authors of MySQL hereby grant you an additional
-   permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License, version 2.0, for more details.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License, version 2.0, for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
   @file
@@ -33,21 +33,20 @@
 
 #include "sql/sql_optimizer.h"
 
-#include "my_config.h"
-
 #include <limits.h>
 #include <algorithm>
 #include <atomic>
 #include <new>
 #include <utility>
 
-#include "binary_log_types.h"
+#include "field_types.h"  // enum_field_types
 #include "ft_global.h"
 #include "m_ctype.h"
 #include "memory_debugging.h"
 #include "my_bit.h"  // my_count_bits
 #include "my_bitmap.h"
 #include "my_dbug.h"
+#include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
@@ -80,15 +79,15 @@
 #include "sql/sql_base.h"  // init_ftfuncs
 #include "sql/sql_bitmap.h"
 #include "sql/sql_const.h"
+#include "sql/sql_const_folding.h"
 #include "sql/sql_error.h"
 #include "sql/sql_join_buffer.h"  // JOIN_CACHE
 #include "sql/sql_planner.h"      // calculate_condition_filter
 #include "sql/sql_resolver.h"     // subquery_allows_materialization
 #include "sql/sql_test.h"         // print_where
-#include "sql/sql_tmp_table.h"    // get_max_key_and_part_length
+#include "sql/sql_tmp_table.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
-#include "sql/thr_malloc.h"
 #include "sql/window.h"
 #include "sql_string.h"
 
@@ -134,6 +133,8 @@ static uint32 get_key_length_tmp_table(Item *item);
 static bool can_switch_from_ref_to_range(THD *thd, JOIN_TAB *tab,
                                          enum_order ordering,
                                          bool recheck_range);
+
+static bool has_not_null_predicate(Item *cond, Item_field *not_null_item);
 
 bool JOIN::alloc_indirection_slices() {
   const uint card = REF_SLICE_WIN_1 + m_windows.elements * 2;
@@ -333,62 +334,58 @@ int JOIN::optimize() {
   */
   if (tables_list && implicit_grouping &&
       !(select_lex->active_options() & OPTION_NO_CONST_TABLES)) {
-    int res;
-    /*
-      opt_sum_query() returns HA_ERR_KEY_NOT_FOUND if no rows match
-      the WHERE condition,
-      or 1 if all items were resolved (optimized away),
-      or 0, or an error number HA_ERR_...
-
-      If all items were resolved by opt_sum_query, there is no need to
-      open any tables.
-    */
-    if ((res = opt_sum_query(thd, select_lex->leaf_tables, all_fields,
-                             where_cond, &select_count))) {
-      best_rowcount = 0;
-      if (res == HA_ERR_KEY_NOT_FOUND) {
+    aggregate_evaluated outcome;
+    if (optimize_aggregated_query(thd, select_lex, all_fields, where_cond,
+                                  &outcome)) {
+      error = 1;
+      DBUG_PRINT("error", ("Error from optimize_aggregated_query"));
+      DBUG_RETURN(1);
+    }
+    switch (outcome) {
+      case AGGR_REGULAR:
+        // Query was not (fully) evaluated. Revert to regular optimization.
+        break;
+      case AGGR_DELAYED:
+        // Query was not (fully) evaluated. Revert to regular optimization,
+        // but indicate that storage engine supports HA_COUNT_ROWS_INSTANT.
+        select_count = true;
+        break;
+      case AGGR_COMPLETE:
+        // All SELECT expressions are fully evaluated
+        DBUG_PRINT("info", ("Select tables optimized away"));
+        zero_result_cause = "Select tables optimized away";
+        tables_list = nullptr;  // All tables resolved
+        best_rowcount = 1;
+        const_tables = tables = primary_tables = select_lex->leaf_table_count;
+        /*
+          Extract all table-independent conditions and replace the WHERE
+          clause with them. All other conditions were computed by
+          optimize_aggregated_query() and the MIN/MAX/COUNT function(s) have
+          been replaced by constants, so there is no need to compute the whole
+          WHERE clause again.
+          Notice that make_cond_for_table() will always succeed to remove all
+          computed conditions, because optimize_aggregated_query() is applicable
+          only to conjunctions.
+          Preserve conditions for EXPLAIN.
+        */
+        if (where_cond && !thd->lex->is_explain()) {
+          Item *table_independent_conds = make_cond_for_table(
+              thd, where_cond, PSEUDO_TABLE_BITS, table_map(0), false);
+          DBUG_EXECUTE("where",
+                       print_where(table_independent_conds,
+                                   "where after optimize_aggregated_query()",
+                                   QT_ORDINARY););
+          where_cond = table_independent_conds;
+        }
+        goto setup_subq_exit;
+      case AGGR_EMPTY:
+        // It was detected that the result tables are empty
         DBUG_PRINT("info", ("No matching min/max row"));
         zero_result_cause = "No matching min/max row";
-
         goto setup_subq_exit;
-      }
-      if (res > 1) {
-        error = res;
-        DBUG_PRINT("error", ("Error from opt_sum_query"));
-        DBUG_RETURN(1);
-      }
-      if (res < 0) {
-        DBUG_PRINT("info", ("No matching min/max row"));
-        zero_result_cause = "No matching min/max row";
-        goto setup_subq_exit;
-      }
-      DBUG_PRINT("info", ("Select tables optimized away"));
-      zero_result_cause = "Select tables optimized away";
-      tables_list = 0;  // All tables resolved
-      best_rowcount = 1;
-      const_tables = tables = primary_tables = select_lex->leaf_table_count;
-      /*
-        Extract all table-independent conditions and replace the WHERE
-        clause with them. All other conditions were computed by opt_sum_query
-        and the MIN/MAX/COUNT function(s) have been replaced by constants,
-        so there is no need to compute the whole WHERE clause again.
-        Notice that make_cond_for_table() will always succeed to remove all
-        computed conditions, because opt_sum_query() is applicable only to
-        conjunctions.
-        Preserve conditions for EXPLAIN.
-      */
-      if (where_cond && !thd->lex->is_explain()) {
-        Item *table_independent_conds = make_cond_for_table(
-            thd, where_cond, PSEUDO_TABLE_BITS, table_map(0), false);
-        DBUG_EXECUTE("where",
-                     print_where(table_independent_conds,
-                                 "where after opt_sum_query()", QT_ORDINARY););
-        where_cond = table_independent_conds;
-      }
-      goto setup_subq_exit;
     }
   }
-  if (!tables_list) {
+  if (tables_list == nullptr) {
     DBUG_PRINT("info", ("No tables"));
     best_rowcount = 1;
     error = 0;
@@ -396,6 +393,7 @@ int JOIN::optimize() {
     count_field_types(select_lex, &tmp_table_param, all_fields, false, false);
     // Make plan visible for EXPLAIN
     set_plan_state(NO_TABLES);
+    create_iterators();
     DBUG_RETURN(0);
   }
   error = -1;  // Error is sent to client
@@ -459,7 +457,7 @@ int JOIN::optimize() {
   */
   if (where_cond) {
     where_cond =
-        substitute_for_best_equal_field(where_cond, cond_equal, map2table);
+        substitute_for_best_equal_field(thd, where_cond, cond_equal, map2table);
     if (thd->is_error()) {
       error = 1;
       DBUG_PRINT("error", ("Error from substitute_for_best_equal"));
@@ -477,7 +475,7 @@ int JOIN::optimize() {
     JOIN_TAB *const tab = best_ref[i];
     if (tab->position() && tab->join_cond()) {
       tab->set_join_cond(substitute_for_best_equal_field(
-          tab->join_cond(), tab->cond_equal, map2table));
+          thd, tab->join_cond(), tab->cond_equal, map2table));
       if (thd->is_error()) {
         error = 1;
         DBUG_PRINT("error", ("Error from substitute_for_best_equal"));
@@ -599,7 +597,7 @@ int JOIN::optimize() {
     }
 
     bool simple_sort = true;
-    Deps_of_remaining_lateral_derived_tables deps_lateral(this);
+    Deps_of_remaining_lateral_derived_tables deps_lateral(this, all_table_map);
     // Check whether join cache could be used
     for (uint i = const_tables; i < tables; i++) {
       JOIN_TAB *const tab = best_ref[i];
@@ -714,42 +712,22 @@ int JOIN::optimize() {
 
   // At this stage, we have fully set QEP_TABs; JOIN_TABs are unaccessible,
   // pushed joins(see below) are still allowed to change the QEP_TABs
+  if (push_to_engines()) DBUG_RETURN(1);
 
   /*
-    Push joins to handlerton(s)
-
-    The handlerton(s) will inspect the QEP through the
-    AQP (Abstract Query Plan) and extract from it whatever
-    it might implement of pushed execution.
-
-    It is the responsibility of the handler:
-     - to store any information it need for later
-       execution of pushed queries.
-     - to call appropriate AQP functions which modifies the
-       QEP to use the special 'linked' read functions
-       for those parts of the join which have been pushed.
-
-    Currently pushed joins are only implemented by NDB.
-
-    It only make sense to try pushing if > 1 non-const tables.
-  */
-  if (!plan_is_single_table() && !plan_is_const()) {
-    const AQP::Join_plan plan(this);
-    if (ha_make_pushed_joins(thd, &plan)) DBUG_RETURN(1);
-  }
-
-  /*
-    If we decided to not sort after all, update m_current_query_cost.
+    If we decided to not sort after all, update the cost of the JOIN.
     Windowing sorts are handled elsewhere
   */
   if (sort_cost > 0.0 &&
       !explain_flags.any(ESP_USING_FILESORT, ESC_WINDOWING)) {
     best_read -= sort_cost;
     sort_cost = 0.0;
-    if (thd->lex->is_single_level_stmt()) thd->m_current_query_cost = best_read;
   }
 
   count_field_types(select_lex, &tmp_table_param, all_fields, false, false);
+
+  create_iterators();
+
   // Make plan visible for EXPLAIN
   set_plan_state(PLAN_READY);
 
@@ -786,6 +764,80 @@ setup_subq_exit:
   }
 
   set_plan_state(ZERO_RESULT);
+  DBUG_RETURN(0);
+}
+
+/**
+  Push (parts of) the query execution down to the storage engines if they
+  can provide faster execution of the query, or part of it.
+
+  @return 1 in case of error, 0 otherwise.
+*/
+int JOIN::push_to_engines() {
+  DBUG_ENTER("JOIN::push_to_engines");
+  /*
+    Push joins to handlerton(s)
+
+    The handlerton(s) will inspect the QEP through the
+    AQP (Abstract Query Plan) and extract from it whatever
+    it might implement of pushed execution.
+
+    It is the responsibility of the handler:
+     - to store any information it need for later
+       execution of pushed queries.
+     - to call appropriate AQP functions which modifies the
+       QEP to use the special 'linked' read functions
+       for those parts of the join which have been pushed.
+
+    Currently pushed joins are only implemented by NDB.
+
+    It only make sense to try pushing if > 1 non-const tables.
+  */
+  if (!plan_is_single_table() && !plan_is_const()) {
+    const AQP::Join_plan plan(this);
+    if (ha_make_pushed_joins(thd, &plan)) DBUG_RETURN(1);
+  }
+
+  /*
+    If enabled by optimizer settings, and implemented by handler,
+    (parts of) the table condition may be pushed down to the
+    SE-engine for evaluation.
+  */
+  if (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN)) {
+    for (uint i = const_tables; i < tables; i++) {
+      if (!qep_tab[i].is_inner_table_of_outer_join()) {
+        const join_type jt = qep_tab[i].type();
+        if ((jt == JT_EQ_REF || jt == JT_CONST || jt == JT_SYSTEM) &&
+            !qep_tab[i].table()->file->member_of_pushed_join()) {
+          /*
+            It is of limited value to push a condition to a single row
+            access method, so we skip cond_push() for these.
+            The exception is if we are member of a pushed join, where
+            execution of entire join branches may be eliminated.
+          */
+          continue;
+        }
+        const Item *cond = qep_tab[i].condition();
+        if (cond != nullptr) {
+          const bool using_join_cache =
+              (qep_tab[i].op != nullptr &&
+               qep_tab[i].op->type() == QEP_operation::OT_CACHE);
+          /*
+            If a join cache is referred by this table, there is not a single
+            specific row from the 'other tables' to compare rows from this table
+            against. Thus, other tables can not be referred in this case.
+          */
+          const bool other_tbls_ok =
+              !using_join_cache &&
+              thd->lex->sql_command != SQLCOM_UPDATE_MULTI &&
+              thd->lex->sql_command != SQLCOM_DELETE_MULTI;
+          const Item *remainder =
+              qep_tab[i].table()->file->cond_push(cond, other_tbls_ok);
+          qep_tab[i].set_condition(const_cast<Item *>(remainder));
+        }
+      }
+    }
+  }
   DBUG_RETURN(0);
 }
 
@@ -884,7 +936,7 @@ bool substitute_gc(THD *thd, SELECT_LEX *select_lex, Item *where_cond,
   if (changed && trace->is_started()) {
     String str;
     SELECT_LEX::print_order(
-        &str, list,
+        thd, &str, list,
         enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER |
                         QT_NO_DEFAULT_DB));
     subst_gc.add_utf8(group_list ? "resulting_GROUP_BY" : "resulting_ORDER_BY",
@@ -1058,7 +1110,7 @@ int JOIN::replace_index_subquery() {
     first_qep_tab->table()->set_keyread(true);
   }
 
-  engine = new (*THR_MALLOC) subselect_indexsubquery_engine(
+  engine = new (thd->mem_root) subselect_indexsubquery_engine(
       first_qep_tab, unit->item, first_qep_tab->condition(), having_cond);
 
   if (!unit->item->change_engine(engine))
@@ -2289,7 +2341,7 @@ fix_ICP:
 
   if (changed_key >= 0) {
     // switching to another index
-    // Should be no pushed conditions at this point
+    // Should be no pushed index conditions at this point
     DBUG_ASSERT(!table->file->pushed_idx_cond);
     if (unlikely(trace->is_started())) {
       trace_change_index.add_utf8("index", table->key_info[changed_key].name);
@@ -2776,12 +2828,22 @@ bool JOIN::get_best_combination() {
   DBUG_RETURN(false);
 }
 
-void JOIN::recalculate_deps_of_remaining_lateral_derived_tables(uint idx) {
+/**
+   Updates JOIN::deps_of_remaining_lateral_derived_tables
+
+   @param plan_tables  map of all tables that the planner is processing
+                       (tables already in plan and tables to be added to plan)
+   @param idx          index of the table which the planner is currently
+                       considering
+*/
+void JOIN::recalculate_deps_of_remaining_lateral_derived_tables(
+    table_map plan_tables, uint idx) {
   DBUG_ASSERT(has_lateral);
   deps_of_remaining_lateral_derived_tables = 0;
   auto last = best_ref + tables;
   for (auto **pos = best_ref + idx; pos < last; pos++) {
-    if ((*pos)->table_ref && (*pos)->table_ref->is_derived())
+    if ((*pos)->table_ref && (*pos)->table_ref->is_derived() &&
+        ((*pos)->table_ref->map() & plan_tables))
       deps_of_remaining_lateral_derived_tables |=
           (*pos)->table_ref->derived_unit()->m_lateral_deps;
   }
@@ -3063,8 +3125,7 @@ static bool setup_join_buffering(JOIN_TAB *tab, JOIN *join,
         goto no_join_cache;
       }
 
-      if (join->select_count == false)
-        tab->set_use_join_cache(JOIN_CACHE::ALG_BNL);
+      if (!join->select_count) tab->set_use_join_cache(JOIN_CACHE::ALG_BNL);
       return false;
     case JT_SYSTEM:
     case JT_CONST:
@@ -3417,7 +3478,7 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
       more complex and may introduce cycles in the Item tree.
     */
     if (const_item != nullptr &&
-        const_item->walk(&Item::find_field_processor, Item::WALK_POSTFIX,
+        const_item->walk(&Item::find_field_processor, enum_walk::POSTFIX,
                          pointer_cast<uchar *>(field_item->field)))
       return false;
 
@@ -3904,7 +3965,7 @@ bool build_equal_items(THD *thd, Item *cond, Item **retcond,
     else if (cond_type == Item::FUNC_ITEM &&
              down_cast<Item_func *>(cond)->functype() ==
                  Item_func::MULT_EQUAL_FUNC) {
-      cond_equal = new (*THR_MALLOC) COND_EQUAL;
+      cond_equal = new (thd->mem_root) COND_EQUAL;
       if (cond_equal == NULL) return true;
       cond_equal->current_level.push_back(down_cast<Item_equal *>(cond));
     }
@@ -3995,6 +4056,7 @@ static int compare_fields_by_table_order(Item_field *field1, Item_field *field2,
       f=item_equal->get_first().
     All generated equality are added to the cond conjunction.
 
+  @param thd             the session context
   @param cond            condition to add the generated equality to
   @param upper_levels    structure to access multiple equality of upper levels
   @param item_equal      multiple equality to generate simple equality from
@@ -4025,10 +4087,11 @@ static int compare_fields_by_table_order(Item_field *field1, Item_field *field2,
     - 0, otherwise.
 */
 
-static Item *eliminate_item_equal(Item *cond, COND_EQUAL *upper_levels,
+static Item *eliminate_item_equal(THD *thd, Item *cond,
+                                  COND_EQUAL *upper_levels,
                                   Item_equal *item_equal) {
   List<Item> eq_list;
-  Item_func_eq *eq_item = NULL;
+  Item *eq_item = NULL;
   if (((Item *)item_equal)->const_item() && !item_equal->val_int())
     return new Item_int((longlong)0, 1);
   Item *const item_const = item_equal->get_const();
@@ -4115,8 +4178,22 @@ static Item *eliminate_item_equal(Item *cond, COND_EQUAL *upper_levels,
     if (eq_item) eq_list.push_back(eq_item);
 
     eq_item = new Item_func_eq(item_field, head);
-    if (!eq_item || eq_item->set_cmp_func()) return NULL;
+    if (!eq_item || down_cast<Item_func_eq *>(eq_item)->set_cmp_func())
+      return nullptr;
     eq_item->quick_fix_field();
+    if (item_const != nullptr) {
+      eq_item->top_level_item();
+      Item::cond_result res;
+      if (fold_condition(thd, eq_item, &eq_item, &res)) return nullptr;
+      if (res == Item::COND_FALSE) {
+        eq_item = new (thd->mem_root) Item_int(0, 1);
+        if (eq_item == nullptr) return nullptr;
+        return eq_item;  // entire AND is false
+      } else if (res == Item::COND_TRUE) {
+        eq_item = new (thd->mem_root) Item_int(1, 1);
+        if (eq_item == nullptr) return nullptr;
+      }
+    }
   }  // ... while ((item_field= it++))
 
   if (!cond && !eq_list.head()) {
@@ -4145,20 +4222,21 @@ static Item *eliminate_item_equal(Item *cond, COND_EQUAL *upper_levels,
     The function retrieves the cond condition and for each encountered
     multiple equality predicate it sorts the field references in it
     according to the order of tables specified by the table_join_idx
-    parameter. Then it eliminates the multiple equality predicate it
-    replacing it by the conjunction of simple equality predicates
+    parameter. Then it eliminates the multiple equality predicate by
+    replacing it with the conjunction of simple equality predicates
     equating every field from the multiple equality to the first
     field in it, or to the constant, if there is any.
-    After this the function retrieves all other conjuncted
-    predicates substitute every field reference by the field reference
+    After this, the function retrieves all other conjuncted
+    predicates and substitutes every field reference by the field reference
     to the first equal field or equal constant if there are any.
 
+  @param thd             the session context
   @param cond            condition to process
   @param cond_equal      multiple equalities to take into consideration
   @param table_join_idx  index to tables determining field preference
 
   @note
-    At the first glance full sort of fields in multiple equality
+    At the first glance, a full sort of fields in multiple equality
     seems to be an overkill. Yet it's not the case due to possible
     new fields in multiple equality item of lower levels. We want
     the order in them to comply with the order of upper levels.
@@ -4167,7 +4245,8 @@ static Item *eliminate_item_equal(Item *cond, COND_EQUAL *upper_levels,
     The transformed condition, or NULL in case of error
 */
 
-Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
+Item *substitute_for_best_equal_field(THD *thd, Item *cond,
+                                      COND_EQUAL *cond_equal,
                                       JOIN_TAB **table_join_idx) {
   Item_equal *item_equal;
 
@@ -4192,8 +4271,8 @@ Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
     List_iterator<Item> li(*cond_list);
     Item *item;
     while ((item = li++)) {
-      Item *new_item =
-          substitute_for_best_equal_field(item, cond_equal, table_join_idx);
+      Item *new_item = substitute_for_best_equal_field(thd, item, cond_equal,
+                                                       table_join_idx);
       if (new_item == NULL) return NULL;
       /*
         This works OK with PS/SP re-execution as changes are made to
@@ -4205,7 +4284,8 @@ Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
     if (and_level) {
       List_iterator_fast<Item_equal> it(cond_equal->current_level);
       while ((item_equal = it++)) {
-        cond = eliminate_item_equal(cond, cond_equal->upper_levels, item_equal);
+        cond = eliminate_item_equal(thd, cond, cond_equal->upper_levels,
+                                    item_equal);
         if (cond == NULL) return NULL;
         // This occurs when eliminate_item_equal() founds that cond is
         // always false and substitutes it with Item_int 0.
@@ -4226,7 +4306,7 @@ Item *substitute_for_best_equal_field(Item *cond, COND_EQUAL *cond_equal,
     });
     if (cond_equal && cond_equal->current_level.head() == item_equal)
       cond_equal = cond_equal->upper_levels;
-    return eliminate_item_equal(0, cond_equal, item_equal);
+    return eliminate_item_equal(thd, 0, cond_equal, item_equal);
   } else
     cond->transform(&Item::replace_equal_field, 0);
   return cond;
@@ -4792,14 +4872,6 @@ bool JOIN::make_join_plan() {
   }
 
   positions = NULL;  // But keep best_positions for get_best_combination
-
-  /*
-    Store the cost of this query into a user variable
-    Don't update m_current_query_cost for statements that are not "flat joins" :
-    i.e. they have subqueries, unions or call stored procedures.
-    TODO: calculate a correct cost for a query with subqueries and UNIONs.
-  */
-  if (thd->lex->is_single_level_stmt()) thd->m_current_query_cost = best_read;
 
   // Generate an execution plan from the found optimal join order.
   if (get_best_combination()) DBUG_RETURN(true);
@@ -5772,6 +5844,9 @@ static void add_not_null_conds(JOIN *join) {
             not_null_item is the t1.f1, but it's referred_tab is 0.
           */
           if (!referred_tab || referred_tab->join() != join) continue;
+          /* Skip if we already have a 'not null' predicate for 'item' */
+          if (has_not_null_predicate(referred_tab->condition(), not_null_item))
+            continue;
           if (!(notnull = new Item_func_isnotnull(not_null_item)))
             DBUG_VOID_RETURN;
           /*
@@ -5790,6 +5865,39 @@ static void add_not_null_conds(JOIN *join) {
     }
   }
   DBUG_VOID_RETURN;
+}
+
+/**
+  Check all existing AND'ed predicates in 'cond' for an existing
+  'is not null 'not_null_item''-predicate.
+
+  A condition consisting of multiple AND'ed terms is recursively
+  decomposed in the search for the specified not null predicate.
+
+  @param  cond           Condition to be checked.
+  @param  not_null_item  The item in: 'is not null 'item'' to search for
+
+  @return true if 'is not null 'not_null_item'' is a predicate
+          in the specified 'cond'.
+*/
+static bool has_not_null_predicate(Item *cond, Item_field *not_null_item) {
+  if (cond == nullptr) return false;
+  if (cond->type() == Item::FUNC_ITEM) {
+    Item_func *item_func = down_cast<Item_func *>(cond);
+    const Item_func::Functype func_type = item_func->functype();
+    return (func_type == Item_func::ISNOTNULL_FUNC &&
+            item_func->key_item() == not_null_item);
+  } else if (cond->type() == Item::COND_ITEM) {
+    Item_cond *item_cond = down_cast<Item_cond *>(cond);
+    if (item_cond->functype() == Item_func::COND_AND_FUNC) {
+      List_iterator<Item> li(*item_cond->argument_list());
+      Item *item;
+      while ((item = li++)) {
+        if (has_not_null_predicate(item, not_null_item)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -7480,7 +7588,7 @@ static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
       !is_indexed_agg_distinct(join, &indexed_fields) &&
       !join->select_distinct) {
     join->where_cond->walk(&Item::collect_item_field_processor,
-                           Item::WALK_POSTFIX, (uchar *)&indexed_fields);
+                           enum_walk::POSTFIX, (uchar *)&indexed_fields);
     Key_map possible_keys;
     possible_keys.set_all();
     join_tab->skip_scan_keys.clear_all();
@@ -7493,20 +7601,20 @@ static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
     return;
   }
 
-  if (join->group_list) { /* Collect all query fields referenced in the GROUP
-                             clause. */
+  if (join->group_list) {
+    /* Collect all query fields referenced in the GROUP clause. */
     for (cur_group = join->group_list; cur_group; cur_group = cur_group->next)
       (*cur_group->item)
-          ->walk(&Item::collect_item_field_processor, Item::WALK_POSTFIX,
+          ->walk(&Item::collect_item_field_processor, enum_walk::POSTFIX,
                  (uchar *)&indexed_fields);
     cause = "group_by";
-  } else if (join->select_distinct) { /* Collect all query fields referenced in
-                                         the SELECT clause. */
+  } else if (join->select_distinct) {
+    /* Collect all query fields referenced in the SELECT clause. */
     List<Item> &select_items = join->fields_list;
     List_iterator<Item> select_items_it(select_items);
     Item *item;
     while ((item = select_items_it++))
-      item->walk(&Item::collect_item_field_processor, Item::WALK_POSTFIX,
+      item->walk(&Item::collect_item_field_processor, enum_walk::POSTFIX,
                  (uchar *)&indexed_fields);
     cause = "distinct";
   } else if (join->tmp_table_param.sum_func_count &&
@@ -8244,19 +8352,13 @@ static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
         - for the execution phase, all possible execution methods must test
         ref->null_rejecting.
       */
-      if (func->used_tables() & null_extended) {
-        /*
-          Refering null-extended tables voids the test_if_ref() logic,
-          keep predicate.
-        */
-        DBUG_RETURN(cond);
-      }
-
       Item *left_item = func->arguments()[0]->real_item();
       Item *right_item = func->arguments()[1]->real_item();
       if ((left_item->type() == Item::FIELD_ITEM &&
+           !(left_item->used_tables() & null_extended) &&
            test_if_ref(down_cast<Item_field *>(left_item), right_item)) ||
           (right_item->type() == Item::FIELD_ITEM &&
+           !(right_item->used_tables() & null_extended) &&
            test_if_ref(down_cast<Item_field *>(right_item), left_item))) {
         DBUG_RETURN(nullptr);
       }
@@ -8305,7 +8407,16 @@ bool JOIN::finalize_table_conditions() {
     Opt_trace_object trace_cond(trace);
     trace_cond.add_utf8_table(best_ref[i]->table_ref);
     trace_cond.add("original_table_condition", condition);
-    condition = reduce_cond_for_table(condition, table_map(0));
+
+    /*
+      Calculate the set of possibly NULL extended tables when 'condition'
+      is evaluated. As it is evaluated on a found row from table, that
+      table is subtracted from the nullable tables. Note that a FOUND_MATCH
+      trigger is a special case, handled in reduce_cond_for_table().
+    */
+    const table_map null_extended =
+        select_lex->outer_join & ~best_ref[i]->table_ref->map();
+    condition = reduce_cond_for_table(condition, null_extended);
     if (condition != nullptr) condition->update_used_tables();
 
     /*
@@ -8831,6 +8942,10 @@ static bool make_join_select(JOIN *join, Item *cond) {
                    !join->calc_found_rows)                // 2d
             recheck_reason = LOW_LIMIT;
 
+          // Don't recheck if the storage engine does not support index access.
+          if ((tab->table()->file->ha_table_flags() & HA_NO_INDEX_ACCESS) != 0)
+            recheck_reason = DONT_RECHECK;
+
           if (tab->position()->sj_strategy == SJ_OPT_LOOSE_SCAN) {
             /*
               Semijoin loose scan has settled for a certain index-based access
@@ -9050,7 +9165,7 @@ static bool make_join_select(JOIN *join, Item *cond) {
           correct calculation of the number of its executions.
         */
         std::pair<SELECT_LEX *, int> pair_object(join->select_lex, i);
-        cond->walk(&Item::inform_item_in_cond_of_tab, Item::WALK_POSTFIX,
+        cond->walk(&Item::inform_item_in_cond_of_tab, enum_walk::POSTFIX,
                    pointer_cast<uchar *>(&pair_object));
       }
     }
@@ -9218,7 +9333,7 @@ ORDER *JOIN::remove_const(ORDER *first_order, Item *cond, bool change_list,
   if (trace->is_started()) {
     String str;
     SELECT_LEX::print_order(
-        &str, first_order,
+        thd, &str, first_order,
         enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER |
                         QT_NO_DEFAULT_DB));
     trace_simpl.add_utf8("original_clause", str.ptr(), str.length());
@@ -9322,7 +9437,7 @@ ORDER *JOIN::remove_const(ORDER *first_order, Item *cond, bool change_list,
   if (trace->is_started() && change_list) {
     String str;
     SELECT_LEX::print_order(
-        &str, first_order,
+        thd, &str, first_order,
         enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER |
                         QT_NO_DEFAULT_DB));
     trace_simpl.add_utf8("resulting_clause", str.ptr(), str.length());
@@ -9341,15 +9456,16 @@ ORDER *JOIN::remove_const(ORDER *first_order, Item *cond, bool change_list,
         also applies to MEPs, so the MEP in a) will become 42=x=y=z.
      c) remove conditions that are always false or always true
 
-  @param thd              Thread handler
-  @param[in,out] cond     WHERE or HAVING condition to optimize
-  @param[out] cond_equal  The built multiple equalities
-  @param join_list        list of join operations with join conditions
-                          = NULL: Called for HAVING condition
-  @param[out] cond_value  Not changed if cond was empty
-                            COND_TRUE if cond is always true
-                            COND_FALSE if cond is impossible
-                            COND_OK otherwise
+  @param thd                Thread handler
+  @param[in,out] cond       WHERE or HAVING condition to optimize
+  @param[out] cond_equal    The built multiple equalities
+  @param join_list          list of join operations with join conditions
+                            = NULL: Called for HAVING condition
+  @param[out] cond_value    Not changed if cond was empty
+                              COND_TRUE if cond is always true
+                              COND_FALSE if cond is impossible
+                              COND_OK otherwise
+
 
   @returns false if success, true if error
 */
@@ -9424,39 +9540,49 @@ bool optimize_cond(THD *thd, Item **cond, COND_EQUAL **cond_equal,
     }
     step_wrapper.add("resulting_condition", *cond);
   }
-  DBUG_ASSERT(!thd->is_error());
   if (thd->is_error()) DBUG_RETURN(true);
   DBUG_RETURN(false);
 }
 
 /**
-  Handle the recursive job for remove_eq_conds()
+  Calls fold_condition. If that made the condition constant for execution,
+  simplify and fold again. @see fold_condition() for arguments.
+*/
+static bool fold_condition_exec(THD *thd, Item *cond, Item **retcond,
+                                Item::cond_result *cond_value) {
+  if (fold_condition(thd, cond, retcond, cond_value)) return true;
+  if (*retcond != nullptr && (*retcond)->const_for_execution() &&
+      !(*retcond)->is_expensive())  // simplify further maybe
+    return remove_eq_conds(thd, *retcond, retcond, cond_value);
+  return false;
+}
 
-  @param thd             Thread handler
-  @param cond            the condition to handle.
-  @param[out] retcond    Modified condition after removal
-  @param[out] cond_value the resulting value of the condition
+/**
+  Removes const and eq items. Returns the new item, or nullptr if no condition.
 
-  @see remove_eq_conds() for more details on argument
+  @param      thd        thread handler
+  @param      cond       the condition to handle
+  @param[out] retcond    condition after const removal
+  @param[out] cond_value resulting value of the condition
+              =COND_OK    condition must be evaluated (e.g. field = constant)
+              =COND_TRUE  always true                 (e.g. 1 = 1)
+              =COND_FALSE always false                (e.g. 1 = 2)
 
   @returns false if success, true if error
 */
-
-static bool internal_remove_eq_conds(THD *thd, Item *cond, Item **retcond,
-                                     Item::cond_result *cond_value) {
+bool remove_eq_conds(THD *thd, Item *cond, Item **retcond,
+                     Item::cond_result *cond_value) {
   if (cond->type() == Item::COND_ITEM) {
     Item_cond *const item_cond = down_cast<Item_cond *>(cond);
     const bool and_level = item_cond->functype() == Item_func::COND_AND_FUNC;
     List_iterator<Item> li(*item_cond->argument_list());
     bool should_fix_fields = false;
-
     *cond_value = Item::COND_UNDEF;
     Item *item;
     while ((item = li++)) {
       Item *new_item;
       Item::cond_result tmp_cond_value;
-      if (internal_remove_eq_conds(thd, item, &new_item, &tmp_cond_value))
-        return true;
+      if (remove_eq_conds(thd, item, &new_item, &tmp_cond_value)) return true;
 
       if (new_item == NULL)
         li.remove();
@@ -9576,6 +9702,8 @@ static bool internal_remove_eq_conds(THD *thd, Item *cond, Item **retcond,
       *retcond = NULL;
       return false;
     }
+
+    return fold_condition_exec(thd, cond, retcond, cond_value);
   } else if (cond->const_for_execution() && !cond->is_expensive()) {
     bool value;
     if (eval_const_cond(thd, cond, &value)) return true;
@@ -9585,8 +9713,7 @@ static bool internal_remove_eq_conds(THD *thd, Item *cond, Item **retcond,
   } else {  // boolan compare function
     *cond_value = cond->eq_cmp_result();
     if (*cond_value == Item::COND_OK) {
-      *retcond = cond;
-      return false;
+      return fold_condition_exec(thd, cond, retcond, cond_value);
     }
     Item *left_item = down_cast<Item_func *>(cond)->arguments()[0];
     Item *right_item = down_cast<Item_func *>(cond)->arguments()[1];
@@ -9598,72 +9725,7 @@ static bool internal_remove_eq_conds(THD *thd, Item *cond, Item **retcond,
       }
     }
   }
-  *cond_value = Item::COND_OK;
-  *retcond = cond;  // Point at next and level
-  return false;
-}
-
-/**
-  Remove const and eq items. Return new item, or NULL if no condition
-
-  @param      thd        thread handler
-  @param      cond       the condition to handle
-  @param[out] retcond    condition after const removal
-  @param[out] cond_value resulting value of the condition
-              =COND_OK    condition must be evaluated (e.g field = constant)
-              =COND_TRUE  always true                 (e.g 1 = 1)
-              =COND_FALSE always false                (e.g 1 = 2)
-
-  @note calls internal_remove_eq_conds() to check the complete tree.
-
-  @returns false if success, true if error
-*/
-
-bool remove_eq_conds(THD *thd, Item *cond, Item **retcond,
-                     Item::cond_result *cond_value) {
-  if (cond->type() == Item::FUNC_ITEM &&
-      down_cast<Item_func *>(cond)->functype() == Item_func::ISNULL_FUNC) {
-    /*
-      Handles this special case for some ODBC applications:
-      The are requesting the row that was just updated with a auto_increment
-      value with this construct:
-
-      SELECT * from table_name where auto_increment_column IS NULL
-      This will be changed to:
-      SELECT * from table_name where auto_increment_column = LAST_INSERT_ID
-    */
-
-    Item_func_isnull *const func = down_cast<Item_func_isnull *>(cond);
-    Item **args = func->arguments();
-    if (args[0]->type() == Item::FIELD_ITEM) {
-      Field *const field = down_cast<Item_field *>(args[0])->field;
-      if ((field->flags & AUTO_INCREMENT_FLAG) &&
-          !field->table->is_nullable() &&
-          (thd->variables.option_bits & OPTION_AUTO_IS_NULL) &&
-          (thd->first_successful_insert_id_in_prev_stmt > 0 &&
-           thd->substitute_null_with_insert_id)) {
-        cond = new Item_func_eq(
-            args[0],
-            new Item_int(NAME_STRING("last_insert_id()"),
-                         thd->read_first_successful_insert_id_in_prev_stmt(),
-                         MY_INT64_NUM_DECIMAL_DIGITS));
-        if (cond == NULL) return true;
-
-        if (cond->fix_fields(thd, &cond)) return true;
-
-        /*
-          IS NULL should be mapped to LAST_INSERT_ID only for first row, so
-          clear for next row
-        */
-        thd->substitute_null_with_insert_id = false;
-
-        *cond_value = Item::COND_OK;
-        *retcond = cond;
-        return false;
-      }
-    }
-  }
-  return internal_remove_eq_conds(thd, cond, retcond, cond_value);
+  return fold_condition_exec(thd, cond, retcond, cond_value);
 }
 
 /**
@@ -10171,9 +10233,9 @@ bool JOIN::decide_subquery_strategy() {
                  " comparison operator and with contained window functions");
         return true;
       }
-      return in_pred->finalize_exists_transform(select_lex);
+      return in_pred->finalize_exists_transform(thd, select_lex);
     case Item_exists_subselect::EXEC_MATERIALIZATION:
-      return in_pred->finalize_materialization_transform(this);
+      return in_pred->finalize_materialization_transform(thd, this);
     default:
       DBUG_ASSERT(false);
       return true;
@@ -10205,6 +10267,16 @@ bool JOIN::compare_costs_of_subquery_strategies(
 
   Item_exists_subselect::enum_exec_method allowed_strategies =
       select_lex->subquery_strategy(thd);
+
+  /*
+    A non-deterministic subquery should not use materialization, unless forced.
+    For a detailed explanation, see SELECT_LEX::decorrelate_where_cond().
+    Here, the same logic is applied also for subqueries that are not converted
+    to semi-join.
+  */
+  if (allowed_strategies == Item_exists_subselect::EXEC_EXISTS_OR_MAT &&
+      (unit->uncacheable & UNCACHEABLE_RAND))
+    allowed_strategies = Item_exists_subselect::EXEC_EXISTS;
 
   if (allowed_strategies == Item_exists_subselect::EXEC_EXISTS) return false;
 
@@ -10270,12 +10342,57 @@ bool JOIN::compare_costs_of_subquery_strategies(
     compute it.
   */
   Opt_trace_object trace_subq_mat_decision(trace, "subq_mat_decision");
+  const double subq_executions = calculate_subquery_executions(in_pred, trace);
+  const double cost_exists = subq_executions * saved_best_read;
+  const double cost_mat_table = sjm.materialization_cost.total_cost();
+  const double cost_mat =
+      cost_mat_table + subq_executions * sjm.lookup_cost.total_cost();
+  const bool mat_chosen =
+      (allowed_strategies == Item_exists_subselect::EXEC_EXISTS_OR_MAT)
+          ? (cost_mat < cost_exists)
+          : true;
+  trace_subq_mat_decision
+      .add("cost_to_create_and_fill_materialized_table", cost_mat_table)
+      .add("cost_of_one_EXISTS", saved_best_read)
+      .add("number_of_subquery_evaluations", subq_executions)
+      .add("cost_of_materialization", cost_mat)
+      .add("cost_of_EXISTS", cost_exists)
+      .add("chosen", mat_chosen);
+  if (mat_chosen) {
+    *method = Item_exists_subselect::EXEC_MATERIALIZATION;
+  } else {
+    best_read = saved_best_read;
+    best_rowcount = saved_best_rowcount;
+    best_positions = saved_best_pos;
+    /*
+      Don't restore JOIN::positions or best_ref, they're not used
+      afterwards. best_positions is (like: by get_sj_strategy()).
+    */
+  }
+  return false;
+}
+
+double calculate_subquery_executions(const Item_subselect *subquery,
+                                     Opt_trace_context *trace) {
   Opt_trace_array trace_parents(trace, "parent_fanouts");
-  const Item_subselect *subs = in_pred;
-  double subq_executions = 1.0;
+  double subquery_executions = 1.0;
   for (;;) {
+    const SELECT_LEX *const parent_select = subquery->unit->outer_select();
+    const JOIN *const parent_join = parent_select->join;
+    if (parent_join == nullptr) {
+      /*
+        May be single-table UPDATE/DELETE, has no join.
+        @todo  we should find how many rows it plans to UPDATE/DELETE, taking
+        inspiration in Explain_table::explain_rows_and_filtered().
+        This is not a priority as it applies only to
+        UPDATE - child(non-mat-subq) - grandchild(may-be-mat-subq).
+        And it will autosolve the day UPDATE gets a JOIN.
+      */
+      break;
+    }
+
     Opt_trace_object trace_parent(trace);
-    trace_parent.add_select_number(parent_join->select_lex->select_number);
+    trace_parent.add_select_number(parent_select->select_number);
     double parent_fanout;
     if (  // safety, not sure needed
         parent_join->plan_is_const() ||
@@ -10284,7 +10401,7 @@ bool JOIN::compare_costs_of_subquery_strategies(
       parent_fanout = 1.0;
       trace_parent.add("subq_attached_to_const_table", true);
     } else {
-      if (subs->in_cond_of_tab != NO_PLAN_IDX) {
+      if (subquery->in_cond_of_tab != NO_PLAN_IDX) {
         /*
           Subquery is attached to a certain 'pos', pos[-1].prefix_rowcount
           is the number of times we'll start a loop accessing 'pos'; each such
@@ -10308,7 +10425,7 @@ bool JOIN::compare_costs_of_subquery_strategies(
           - subq is attached to it1, and is evaluated for each row read from
             t1, potentially way more than 1.
          */
-        const uint idx = subs->in_cond_of_tab;
+        const uint idx = subquery->in_cond_of_tab;
         DBUG_ASSERT((int)idx >= 0 && idx < parent_join->tables);
         trace_parent.add("subq_attached_to_table", true);
         QEP_TAB *const parent_tab = &parent_join->qep_tab[idx];
@@ -10339,9 +10456,9 @@ bool JOIN::compare_costs_of_subquery_strategies(
         parent_fanout = static_cast<double>(parent_join->best_rowcount);
       }
     }
-    subq_executions *= parent_fanout;
+    subquery_executions *= parent_fanout;
     trace_parent.add("fanout", parent_fanout);
-    const bool cacheable = parent_join->select_lex->is_cacheable();
+    const bool cacheable = parent_select->is_cacheable();
     trace_parent.add("cacheable", cacheable);
     if (cacheable) {
       // Parent executed only once
@@ -10352,52 +10469,13 @@ bool JOIN::compare_costs_of_subquery_strategies(
       outer rows. Example:
       SELECT ... IN(subq-with-in2exists WHERE ... IN (subq-with-mat))
     */
-    if (!(subs = parent_join->unit->item)) {
+    subquery = parent_join->unit->item;
+    if (subquery == nullptr) {
       // derived table, materialized only once
       break;
     }
-    parent_join = parent_join->unit->outer_select()->join;
-    if (!parent_join) {
-      /*
-        May be single-table UPDATE/DELETE, has no join.
-        @todo  we should find how many rows it plans to UPDATE/DELETE, taking
-        inspiration in Explain_table::explain_rows_and_filtered().
-        This is not a priority as it applies only to
-        UPDATE - child(non-mat-subq) - grandchild(may-be-mat-subq).
-        And it will autosolve the day UPDATE gets a JOIN.
-      */
-      break;
-    }
   }  // for(;;)
-  trace_parents.end();
-
-  const double cost_exists = subq_executions * saved_best_read;
-  const double cost_mat_table = sjm.materialization_cost.total_cost();
-  const double cost_mat =
-      cost_mat_table + subq_executions * sjm.lookup_cost.total_cost();
-  const bool mat_chosen =
-      (allowed_strategies == Item_exists_subselect::EXEC_EXISTS_OR_MAT)
-          ? (cost_mat < cost_exists)
-          : true;
-  trace_subq_mat_decision
-      .add("cost_to_create_and_fill_materialized_table", cost_mat_table)
-      .add("cost_of_one_EXISTS", saved_best_read)
-      .add("number_of_subquery_evaluations", subq_executions)
-      .add("cost_of_materialization", cost_mat)
-      .add("cost_of_EXISTS", cost_exists)
-      .add("chosen", mat_chosen);
-  if (mat_chosen)
-    *method = Item_exists_subselect::EXEC_MATERIALIZATION;
-  else {
-    best_read = saved_best_read;
-    best_rowcount = saved_best_rowcount;
-    best_positions = saved_best_pos;
-    /*
-      Don't restore JOIN::positions or best_ref, they're not used
-      afterwards. best_positions is (like: by get_sj_strategy()).
-    */
-  }
-  return false;
+  return subquery_executions;
 }
 
 /**

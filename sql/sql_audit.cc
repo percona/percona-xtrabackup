@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1024,15 +1024,23 @@ static bool acquire_plugins(THD *thd, plugin_ref plugin, void *arg) {
     return false;
   }
 
+  /* Prevent from adding the same plugin more than one time. */
+  if (!thd->audit_class_plugins.exists(plugin)) {
+    /* lock the plugin and add it to the list */
+    plugin = my_plugin_lock(NULL, &plugin);
+
+    /* The plugin could not be acquired. */
+    if (plugin == NULL) {
+      /* Add this plugin mask to non subscribed mask. */
+      add_audit_mask(evt->not_subscribed_mask, data->class_mask);
+      return false;
+    }
+
+    thd->audit_class_plugins.push_back(plugin);
+  }
+
   /* Copy subscription mask from the plugin into the array. */
   add_audit_mask(evt->subscribed_mask, data->class_mask);
-
-  /* Prevent from adding the same plugin more than one time. */
-  if (thd->audit_class_plugins.exists(plugin)) return false;
-
-  /* lock the plugin and add it to the list */
-  plugin = my_plugin_lock(NULL, &plugin);
-  thd->audit_class_plugins.push_back(plugin);
 
   return false;
 }
@@ -1400,4 +1408,18 @@ bool is_global_audit_mask_set() {
     if (mysql_global_audit_mask[i] != 0) return true;
   }
   return false;
+}
+
+size_t make_user_name(Security_context *sctx, char *buf) {
+  LEX_CSTRING sctx_user = sctx->user();
+  LEX_CSTRING sctx_host = sctx->host();
+  LEX_CSTRING sctx_ip = sctx->ip();
+  LEX_CSTRING sctx_priv_user = sctx->priv_user();
+  return static_cast<size_t>(
+      strxnmov(buf, MAX_USER_HOST_SIZE,
+               sctx_priv_user.str[0] ? sctx_priv_user.str : "", "[",
+               sctx_user.length ? sctx_user.str : "", "] @ ",
+               sctx_host.length ? sctx_host.str : "", " [",
+               sctx_ip.length ? sctx_ip.str : "", "]", NullS) -
+      buf);
 }

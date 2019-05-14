@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2009, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -602,8 +602,8 @@ void log_start(log_t &log, checkpoint_no_t checkpoint_no, lsn_t checkpoint_lsn,
 
   log_files_update_offsets(log, start_lsn);
 
-  log.write_ahead_end_offset =
-      ut_uint64_align_up(log.current_file_end_offset, srv_log_write_ahead_size);
+  log.write_ahead_end_offset = ut_uint64_align_up(log.current_file_real_offset,
+                                                  srv_log_write_ahead_size);
 
   lsn_t block_lsn;
   byte *block;

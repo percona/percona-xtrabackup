@@ -115,7 +115,6 @@ TARGET_LINK_LIBRARIES(xtrabackup
   binlog
   mysqlclient
   master
-  regex
   ${GCRYPT_LIBS}
   ${ICU_LIBRARIES}
   crc

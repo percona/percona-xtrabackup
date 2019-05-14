@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2009, Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
@@ -2358,10 +2358,24 @@ void LinuxAIOHandler::collect() {
       will be done in the calling function. */
       m_array->acquire();
 
-      slot->ret = events[i].res2;
+      /* events[i].res2 should always be ZERO */
+      ut_ad(events[i].res2 == 0);
       slot->io_already_done = true;
-      slot->n_bytes = events[i].res;
 
+      /*Even though events[i].res is an unsigned number in libaio, it is
+      used to return a negative value (negated errno value) to indicate
+      error and a positive value to indicate number of bytes read or
+      written. */
+
+      if (events[i].res > slot->len) {
+        /* failure */
+        slot->n_bytes = 0;
+        slot->ret = events[i].res;
+      } else {
+        /* success */
+        slot->n_bytes = events[i].res;
+        slot->ret = 0;
+      }
       m_array->release();
     }
 
@@ -2805,9 +2819,18 @@ the global variable errno is set to indicate the error.
 @return 0 if success, -1 otherwise */
 static int os_file_fsync_posix(os_file_t file) {
   ulint failures = 0;
+#ifdef UNIV_HOTBACKUP
+  static meb::Mutex meb_mutex;
+#endif /* UNIV_HOTBACKUP */
 
   for (;;) {
+#ifdef UNIV_HOTBACKUP
+    meb_mutex.lock();
+#endif /* UNIV_HOTBACKUP */
     ++os_n_fsyncs;
+#ifdef UNIV_HOTBACKUP
+    meb_mutex.unlock();
+#endif /* UNIV_HOTBACKUP */
 
     int ret = fsync(file);
 
@@ -4974,9 +4997,19 @@ static MY_ATTRIBUTE((warn_unused_result)) ssize_t
 static MY_ATTRIBUTE((warn_unused_result)) ssize_t
     os_file_pwrite(IORequest &type, os_file_t file, const byte *buf, ulint n,
                    os_offset_t offset, dberr_t *err) {
+#ifdef UNIV_HOTBACKUP
+  static meb::Mutex meb_mutex;
+#endif /* UNIV_HOTBACKUP */
+
   ut_ad(type.validate());
 
+#ifdef UNIV_HOTBACKUP
+  meb_mutex.lock();
+#endif /* UNIV_HOTBACKUP */
   ++os_n_file_writes;
+#ifdef UNIV_HOTBACKUP
+  meb_mutex.unlock();
+#endif /* UNIV_HOTBACKUP */
 
   (void)os_atomic_increment_ulint(&os_n_pending_writes, 1);
   MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_WRITES);
@@ -5047,7 +5080,15 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
 static MY_ATTRIBUTE((warn_unused_result)) ssize_t
     os_file_pread(IORequest &type, os_file_t file, void *buf, ulint n,
                   os_offset_t offset, dberr_t *err) {
+#ifdef UNIV_HOTBACKUP
+  static meb::Mutex meb_mutex;
+
+  meb_mutex.lock();
+#endif /* UNIV_HOTBACKUP */
   ++os_n_file_reads;
+#ifdef UNIV_HOTBACKUP
+  meb_mutex.unlock();
+#endif /* UNIV_HOTBACKUP */
 
   (void)os_atomic_increment_ulint(&os_n_pending_reads, 1);
   MONITOR_ATOMIC_INC(MONITOR_OS_PENDING_READS);
@@ -5075,7 +5116,15 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
                       os_offset_t offset, ulint n, ulint *o, bool exit_on_err) {
   dberr_t err;
 
+#ifdef UNIV_HOTBACKUP
+  static meb::Mutex meb_mutex;
+
+  meb_mutex.lock();
+#endif /* UNIV_HOTBACKUP */
   os_bytes_read_since_printout += n;
+#ifdef UNIV_HOTBACKUP
+  meb_mutex.unlock();
+#endif /* UNIV_HOTBACKUP */
 
   ut_ad(type.validate());
   ut_ad(n > 0);
@@ -5510,7 +5559,7 @@ dberr_t os_file_read_first_page_func(IORequest &type, os_file_t file, void *buf,
       os_file_read_page(type, file, buf, 0, UNIV_ZIP_SIZE_MIN, NULL, true);
 
   if (err == DB_SUCCESS) {
-    ulint flags = fsp_header_get_flags(static_cast<byte *>(buf));
+    uint32_t flags = fsp_header_get_flags(static_cast<byte *>(buf));
     const page_size_t page_size(flags);
     ut_ad(page_size.physical() <= n);
     err =
@@ -7963,6 +8012,7 @@ void Encryption::get_master_key(ulint *master_key_id, byte **master_key) {
   memset(key_name, 0x0, sizeof(key_name));
 
   if (s_master_key_id == 0) {
+    ut_ad(strlen(server_uuid) > 0);
     memset(s_uuid, 0x0, sizeof(s_uuid));
 
     /* If m_master_key is 0, means there's no encrypted
@@ -8059,10 +8109,15 @@ bool Encryption::fill_encryption_info(byte *key, byte *iv, byte *encrypt_info,
                                       bool is_boot) {
   byte *master_key = nullptr;
   ulint master_key_id;
+  bool is_default_master_key = false;
 
   /* Get master key from key ring. For bootstrap, we use a default
   master key which master_key_id is 0. */
-  if (is_boot) {
+  if (is_boot
+#ifndef UNIV_HOTBACKUP
+      || (strlen(server_uuid) == 0)
+#endif
+  ) {
     master_key_id = 0;
 
     master_key = static_cast<byte *>(ut_zalloc_nokey(ENCRYPTION_KEY_LEN));
@@ -8070,6 +8125,7 @@ bool Encryption::fill_encryption_info(byte *key, byte *iv, byte *encrypt_info,
     ut_ad(ENCRYPTION_KEY_LEN >= sizeof(ENCRYPTION_DEFAULT_MASTER_KEY));
 
     strcpy(reinterpret_cast<char *>(master_key), ENCRYPTION_DEFAULT_MASTER_KEY);
+    is_default_master_key = true;
   } else {
     get_master_key(&master_key_id, &master_key);
 
@@ -8121,7 +8177,7 @@ bool Encryption::fill_encryption_info(byte *key, byte *iv, byte *encrypt_info,
 
   mach_write_to_4(ptr, crc);
 
-  if (is_boot) {
+  if (is_default_master_key) {
     ut_free(master_key);
   } else {
     my_free(master_key);

@@ -542,6 +542,14 @@ WHERE NOT EXISTS
               "steps": [
                 {
                   "expanded_query": "/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))"
+                },
+                {
+                  "transformation": {
+                    "select#": 2,
+                    "from": "EXISTS (SELECT)",
+                    "to": "semijoin",
+                    "chosen": false
+                  } /* transformation */
                 }
               ] /* steps */
             } /* join_preparation */
@@ -599,44 +607,14 @@ WHERE NOT EXISTS
                                       },
                                       {
                                         "transformation": "trivial_condition_removal",
-                                        "resulting_condition": "((`t2`.`a` = 50) and (`t2`.`b` = 3))"
+                                        "resulting_condition": null
                                       }
                                     ] /* steps */
                                   } /* condition_processing */
-                                },
-                                {
-                                  "substitute_generated_columns": {
-                                  } /* substitute_generated_columns */
-                                },
-                                {
-                                  "table_dependencies": [
-                                    {
-                                      "table": "`t2`",
-                                      "row_may_be_null": false,
-                                      "map_bit": 0,
-                                      "depends_on_map_bits": [
-                                      ] /* depends_on_map_bits */
-                                    }
-                                  ] /* table_dependencies */
-                                },
-                                {
-                                  "ref_optimizer_key_uses": [
-                                  ] /* ref_optimizer_key_uses */
-                                },
-                                {
-                                  "rows_estimation": [
-                                    {
-                                      "table": "`t2`",
-                                      "rows": 1,
-                                      "cost": 1,
-                                      "table_type": "system",
-                                      "empty": true
-                                    }
-                                  ] /* rows_estimation */
                                 }
                               ] /* steps */,
                               "empty_result": {
-                                "cause": "no matching row in const table"
+                                "cause": "Impossible WHERE"
                               } /* empty_result */
                             } /* join_optimization */
                           },
@@ -694,6 +672,14 @@ SELECT 1 FROM DUAL WHERE NOT EXISTS (SELECT DISTINCT(a) FROM t2 GROUP BY a ORDER
                 },
                 {
                   "expanded_query": "/* select#2 */ select `t2`.`a` from `t2`"
+                },
+                {
+                  "transformation": {
+                    "select#": 2,
+                    "from": "EXISTS (SELECT)",
+                    "to": "semijoin",
+                    "chosen": false
+                  } /* transformation */
                 }
               ] /* steps */
             } /* join_preparation */
@@ -964,6 +950,14 @@ field4,field5,field6	{
                       },
                       {
                         "expanded_query": "/* select#3 */ select `c_sq1_alias2`.`col_int_nokey` AS `c_sq1_field1` from (`t4` `c_sq1_alias2` left join `t3` `c_sq1_alias1` on((`c_sq1_alias2`.`col_int_nokey` = `c_sq1_alias1`.`pk`))) where (`c_sq1_alias2`.`col_varchar_key` = `sq1_alias2`.`col_varchar_nokey`)"
+                      },
+                      {
+                        "transformation": {
+                          "select#": 3,
+                          "from": "EXISTS (SELECT)",
+                          "to": "semijoin",
+                          "chosen": false
+                        } /* transformation */
                       }
                     ] /* steps */
                   } /* join_preparation */

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -368,7 +368,7 @@ void trx_purge_add_update_undo_to_history(
   }
 }
 
-/** Remove undo log header from the history list.
+/** Remove an rseg header from the history list.
 @param[in,out]	rseg_hdr	rollback segment header
 @param[in]	log_hdr		undo log segment header
 @param[in,out]	mtr		mini transaction. */
@@ -380,8 +380,8 @@ static void trx_purge_remove_log_hdr(trx_rsegf_t *rseg_hdr,
   os_atomic_decrement_ulint(&trx_sys->rseg_history_len, 1);
 }
 
-/** Frees an undo log segment which is in the history list. Removes the
-undo log hdr from the history list.
+/** Frees a rollback segment which is in the history list.
+Removes the rseg hdr from the history list.
 @param[in,out]	rseg		rollback segment
 @param[in]	hdr_addr	file address of log_hdr
 @param[in]	noredo		skip redo logging. */
@@ -519,7 +519,7 @@ loop:
 
   if (undo_trx_no >= limit->trx_no) {
     /* limit space_id should match the rollback segment
-    space id to avoid freeing of the page belongs to
+    space id to avoid freeing if the page belongs to a
     different rollback segment for the same trx_no. */
     if (undo_trx_no == limit->trx_no &&
         rseg->space_id == limit->undo_rseg_space) {
@@ -1279,6 +1279,7 @@ static bool trx_purge_truncate_marked_undo_low(space_id_t space_num,
                       << "ib_undo_trunc_before_ddl_log_start";
                   DBUG_SUICIDE(););
 
+  MONITOR_INC_VALUE(MONITOR_UNDO_TRUNCATE_START_LOGGING_COUNT, 1);
   dberr_t err = undo::start_logging(marked_space);
   if (err != DB_SUCCESS) {
     ib::error(ER_IB_MSG_1171, space_name.c_str());
@@ -1327,10 +1328,14 @@ static bool trx_purge_truncate_marked_undo_low(space_id_t space_num,
   space_id_t new_space_id = marked_space->id();
 
   /* Flush all the buffer pages for this new undo tablespace to disk. */
+  uintmax_t counter_time_flush = ut_time_us(NULL);
   FlushObserver *new_space_flush_observer =
       UT_NEW_NOKEY(FlushObserver(new_space_id, nullptr, nullptr));
   new_space_flush_observer->flush();
   UT_DELETE(new_space_flush_observer);
+  MONITOR_INC_VALUE(MONITOR_UNDO_TRUNCATE_FLUSH_COUNT, 1);
+  MONITOR_INC_TIME_IN_MICRO_SECS(MONITOR_UNDO_TRUNCATE_FLUSH_MICROSECOND,
+                                 counter_time_flush);
 
   /* Determine the next state. */
   dd_space_states next_state;
@@ -1385,6 +1390,9 @@ static bool trx_purge_truncate_marked_undo() {
     return (false);
   }
 
+  MONITOR_INC_VALUE(MONITOR_UNDO_TRUNCATE_COUNT, 1);
+  uintmax_t counter_time_truncate = ut_time_us(NULL);
+
   /* Initialize variables */
   undo::Truncate *undo_trunc = &purge_sys->undo_trunc;
   ut_ad(undo_trunc->is_marked());
@@ -1405,11 +1413,15 @@ static bool trx_purge_truncate_marked_undo() {
                   ib::info(ER_IB_MSG_1168)
                       << "ib_undo_trunc_before_buf_remove_all";
                   DBUG_SUICIDE(););
+  uintmax_t counter_time_sweep = ut_time_us(NULL);
   FlushObserver *old_space_flush_observer =
       UT_NEW_NOKEY(FlushObserver(old_space_id, nullptr, nullptr));
   old_space_flush_observer->interrupted();
   old_space_flush_observer->flush();
   UT_DELETE(old_space_flush_observer);
+  MONITOR_INC_VALUE(MONITOR_UNDO_TRUNCATE_SWEEP_COUNT, 1);
+  MONITOR_INC_TIME_IN_MICRO_SECS(MONITOR_UNDO_TRUNCATE_SWEEP_MICROSECOND,
+                                 counter_time_sweep);
 
   /* Get the MDL lock to prevent an ALTER or DROP command from interferring
   with this undo tablespace while it is being truncated. */
@@ -1426,6 +1438,8 @@ static bool trx_purge_truncate_marked_undo() {
 #endif /* UNIV_DEBUG */
   if (dd_result != DD_SUCCESS) {
     clone_mark_active();
+    MONITOR_INC_TIME_IN_MICRO_SECS(MONITOR_UNDO_TRUNCATE_MICROSECOND,
+                                   counter_time_truncate);
     return (false);
   }
   ut_ad(mdl_ticket != nullptr);
@@ -1437,6 +1451,8 @@ static bool trx_purge_truncate_marked_undo() {
     mutex_exit(&(undo::ddl_mutex));
     dd_release_mdl(mdl_ticket);
     clone_mark_active();
+    MONITOR_INC_TIME_IN_MICRO_SECS(MONITOR_UNDO_TRUNCATE_MICROSECOND,
+                                   counter_time_truncate);
     return (false);
   }
 
@@ -1449,6 +1465,7 @@ static bool trx_purge_truncate_marked_undo() {
   undo::spaces->x_lock();
   undo::done_logging(space_num);
   undo::spaces->x_unlock();
+  MONITOR_INC_VALUE(MONITOR_UNDO_TRUNCATE_DONE_LOGGING_COUNT, 1);
 
   /* Truncate is complete. Now it is safe to re-use the tablespace. */
   ib::info(ER_IB_MSG_1175) << "Completed truncate of undo tablespace '"
@@ -1462,6 +1479,9 @@ static bool trx_purge_truncate_marked_undo() {
 
   clone_mark_active();
 
+  MONITOR_INC_TIME_IN_MICRO_SECS(MONITOR_UNDO_TRUNCATE_MICROSECOND,
+                                 counter_time_truncate);
+
   return (true);
 }
 
@@ -1473,6 +1493,9 @@ static void trx_purge_truncate_history(
     const ReadView *view) /*!< in: purge view */
 {
   ulint i;
+
+  MONITOR_INC_VALUE(MONITOR_PURGE_TRUNCATE_HISTORY_COUNT, 1);
+  uintmax_t counter_time_truncate_history = ut_time_us(NULL);
 
   /* We play safe and set the truncate limit at most to the purge view
   low_limit number, though this is not necessary */
@@ -1518,6 +1541,9 @@ static void trx_purge_truncate_history(
     trx_purge_truncate_rseg_history(rseg, limit);
   }
   trx_sys->tmp_rsegs.s_unlock();
+
+  MONITOR_INC_TIME_IN_MICRO_SECS(MONITOR_PURGE_TRUNCATE_HISTORY_MICROSECOND,
+                                 counter_time_truncate_history);
 
   /* UNDO tablespace truncate. We will try to truncate as much as we
   can (greedy approach). This will ensure when the server is idle we

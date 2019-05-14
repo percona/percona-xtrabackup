@@ -76,6 +76,7 @@ usr/lib/mysql/plugin/debug/component_log_filter_dragnet.so
 usr/lib/mysql/plugin/debug/component_log_sink_json.so
 usr/lib/mysql/plugin/debug/component_log_sink_syseventlog.so
 usr/lib/mysql/plugin/debug/component_validate_password.so
+usr/lib/mysql/plugin/debug/ddl_rewriter.so
 usr/lib/mysql/plugin/debug/group_replication.so
 usr/lib/mysql/plugin/debug/connection_control.so
 usr/lib/mysql/plugin/debug/innodb_engine.so
@@ -109,6 +110,7 @@ usr/lib/mysql/plugin/debug/component_test_pfs_notification.so
 usr/lib/mysql/plugin/debug/component_test_pfs_resource_group.so
 usr/lib/mysql/plugin/debug/component_test_udf_registration.so
 usr/lib/mysql/plugin/debug/component_test_host_application_signal.so
+usr/lib/mysql/plugin/debug/component_test_mysql_runtime_error.so
 usr/lib/mysql/plugin/debug/component_udf_reg_3_func.so
 usr/lib/mysql/plugin/debug/component_udf_reg_avg_func.so
 usr/lib/mysql/plugin/debug/component_udf_reg_int_func.so
@@ -143,6 +145,7 @@ usr/lib/mysql/plugin/debug/libtest_sql_stmt.so
 usr/lib/mysql/plugin/debug/libtest_sql_sqlmode.so
 usr/lib/mysql/plugin/debug/libtest_sql_stored_procedures_functions.so
 usr/lib/mysql/plugin/debug/libtest_sql_views_triggers.so
+usr/lib/mysql/plugin/debug/libtest_sql_reset_connection.so
 usr/lib/mysql/plugin/debug/libtest_x_sessions_deinit.so
 usr/lib/mysql/plugin/debug/libtest_x_sessions_init.so
 usr/lib/mysql/plugin/debug/qa_auth_client.so

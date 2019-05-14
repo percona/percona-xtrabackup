@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -453,20 +453,21 @@ void Item_sum::mark_as_sum_func(SELECT_LEX *cur_select) {
   set_aggregation();
 }
 
-void Item_sum::print(String *str, enum_query_type query_type) {
+void Item_sum::print(const THD *thd, String *str,
+                     enum_query_type query_type) const {
   str->append(func_name());
   str->append('(');
   if (has_with_distinct()) str->append("distinct ");
 
   for (uint i = 0; i < arg_count; i++) {
     if (i) str->append(',');
-    args[i]->print(str, query_type);
+    args[i]->print(thd, str, query_type);
   }
   str->append(')');
 
   if (m_window) {
     str->append(" OVER ");
-    m_window->print(current_thd, str, query_type, false);
+    m_window->print(thd, str, query_type, false);
   }
 }
 
@@ -490,14 +491,14 @@ bool Item_sum::resolve_type(THD *) {
 }
 
 bool Item_sum::walk(Item_processor processor, enum_walk walk, uchar *argument) {
-  if ((walk & WALK_PREFIX) && (this->*processor)(argument)) return true;
+  if ((walk & enum_walk::PREFIX) && (this->*processor)(argument)) return true;
 
   Item **arg, **arg_end;
   for (arg = args, arg_end = args + arg_count; arg != arg_end; arg++) {
     if ((*arg)->walk(processor, walk, argument)) return true;
   }
 
-  return (walk & WALK_POSTFIX) && (this->*processor)(argument);
+  return (walk & enum_walk::POSTFIX) && (this->*processor)(argument);
 }
 
 /**
@@ -516,8 +517,14 @@ bool Item_sum::walk(Item_processor processor, enum_walk walk, uchar *argument) {
 
   @see Item_sum::check_sum_func()
   @see remove_redundant_subquery_clauses()
+
+  If this is a window function, remove the reference from the window.
+  This is needed when constant predicates are being removed.
+
+  @see Item_cond::fix_fields()
+  @see Item_cond::remove_const_cond()
  */
-bool Item_sum::clean_up_after_removal(uchar *) {
+bool Item_sum::clean_up_after_removal(uchar *arg) {
   /*
     Don't do anything if
     1) this is an unresolved item (This may happen if an
@@ -525,25 +532,45 @@ bool Item_sum::clean_up_after_removal(uchar *) {
        whole item tree for the second occurence is replaced by the
        item tree for the first occurence, without calling fix_fields()
        on the second tree. Therefore there's nothing to clean up.), or
+    If it is a grouped aggregate,
     2) there is no inner_sum_func_list, or
     3) the item is not an element in the inner_sum_func_list.
   */
-  if (!fixed ||                                                           // 1
-      aggr_select == NULL || aggr_select->inner_sum_func_list == NULL ||  // 2
-      next_sum == NULL)                                                   // 3
+  if (!fixed ||  // 1
+      (m_window == nullptr &&
+       (aggr_select == NULL || aggr_select->inner_sum_func_list == NULL  // 2
+        || next_sum == NULL)))                                           // 3
     return false;
 
-  if (next_sum == this)
-    aggr_select->inner_sum_func_list = NULL;
-  else {
-    Item_sum *prev;
-    for (prev = this; prev->next_sum != this; prev = prev->next_sum)
-      ;
-    prev->next_sum = next_sum;
-    next_sum = NULL;
+  if (m_window) {
+    /*
+      Cleanup the reference for this window function from m_functions when
+      constant predicates are being removed.
+    */
+    auto *ctx = pointer_cast<Cleanup_after_removal_context *>(arg);
+    if (ctx != nullptr && ctx->m_removing_const_preds) {
+      List_iterator<Item_sum> li(m_window->functions());
+      Item *item = nullptr;
+      while ((item = li++)) {
+        if (item == this) {
+          li.remove();
+          break;
+        }
+      }
+    }
+  } else {
+    if (next_sum == this)
+      aggr_select->inner_sum_func_list = NULL;
+    else {
+      Item_sum *prev;
+      for (prev = this; prev->next_sum != this; prev = prev->next_sum)
+        ;
+      prev->next_sum = next_sum;
+      next_sum = NULL;
 
-    if (aggr_select->inner_sum_func_list == this)
-      aggr_select->inner_sum_func_list = prev;
+      if (aggr_select->inner_sum_func_list == this)
+        aggr_select->inner_sum_func_list = prev;
+    }
   }
 
   return false;
@@ -659,8 +686,9 @@ Field *Item_sum::create_tmp_field(bool, TABLE *table) {
 void Item_sum::update_used_tables() {
   if (!forced_const) {
     used_tables_cache = 0;
-    // Re-accumulate all properties except two
-    m_accum_properties &= (PROP_AGGREGATION | PROP_WINDOW_FUNCTION);
+    // Re-accumulate all properties except three
+    m_accum_properties &=
+        (PROP_AGGREGATION | PROP_WINDOW_FUNCTION | PROP_ROLLUP_EXPR);
 
     for (uint i = 0; i < arg_count; i++) {
       args[i]->update_used_tables();
@@ -915,9 +943,11 @@ bool Aggregator_distinct::setup(THD *thd) {
     DBUG_ASSERT(num_args);
     for (uint i = 0; i < num_args; i++) {
       Item *item = item_sum->get_arg(i);
-      if (list.push_back(item)) return true;  // End of memory
+      if (list.push_back(item)) return true;  // out of memory
       if (item->const_item()) {
-        if (item->is_null()) {
+        const bool is_null = item->is_null();
+        if (thd->is_error()) return true;  // is_null can fail
+        if (is_null) {
           const_distinct = CONST_NULL;
           return false;
         } else
@@ -1007,8 +1037,8 @@ bool Aggregator_distinct::setup(THD *thd) {
         }
       }
       DBUG_ASSERT(tree == 0);
-      tree = new (*THR_MALLOC) Unique(compare_key, cmp_arg, tree_key_length,
-                                      item_sum->ram_limitation(thd));
+      tree = new (thd->mem_root) Unique(compare_key, cmp_arg, tree_key_length,
+                                        item_sum->ram_limitation(thd));
       /*
         The only time tree_key_length could be 0 is if someone does
         count(distinct) on a char(0) field - stupid thing to do,
@@ -1069,7 +1099,7 @@ bool Aggregator_distinct::setup(THD *thd) {
       simple_raw_key_cmp because the table contains numbers only; decimals
       are converted to binary representation as well.
     */
-    tree = new (*THR_MALLOC)
+    tree = new (thd->mem_root)
         Unique(simple_raw_key_cmp, &tree_key_length, tree_key_length,
                item_sum->ram_limitation(thd));
 
@@ -1495,6 +1525,7 @@ bool Item_sum_bit::add_bits(const String *s1, ulonglong b1) {
   for (size_t i = 0; i < buff_length; i++) {
     std::bitset<8> s1_bits(s1_c_p[i]);
     for (uint bit = 0; bit < 8; bit++) {
+      DBUG_ASSERT((i * 8) + bit < m_digit_cnt_card);
       m_digit_cnt[(i * 8) + bit] += s1_bits[bit] ^ is_and();
     }
   }
@@ -1812,19 +1843,17 @@ bool Item_sum_sum::add() {
 }
 
 longlong Item_sum_sum::val_int() {
-  DBUG_ENTER("Item_sum_sum::val_int");
   DBUG_ASSERT(fixed == 1);
   if (m_window != nullptr) {
     if (hybrid_type == REAL_RESULT) {
-      longlong result = llrint(val_real());
-      DBUG_RETURN(result);
+      return llrint_with_overflow_check(val_real());
     }
     longlong result = 0;
     my_decimal tmp;
     my_decimal *r = Item_sum_sum::val_decimal(&tmp);
     if (r != nullptr && !null_value)
       my_decimal2int(E_DEC_FATAL_ERROR, r, unsigned_flag, &result);
-    DBUG_RETURN(result);
+    return result;
   }
 
   if (aggr) aggr->endup();
@@ -1832,10 +1861,9 @@ longlong Item_sum_sum::val_int() {
     longlong result;
     my_decimal2int(E_DEC_FATAL_ERROR, dec_buffs + curr_dec_buff, unsigned_flag,
                    &result);
-    DBUG_RETURN(result);
+    return result;
   }
-  longlong result = (longlong)rint(val_real());
-  DBUG_RETURN(result);
+  return llrint_with_overflow_check(val_real());
 }
 
 double Item_sum_sum::val_real() {
@@ -1890,6 +1918,8 @@ String *Item_sum_sum::val_str(String *str) {
 
 my_decimal *Item_sum_sum::val_decimal(my_decimal *val) {
   if (m_is_window_function) {
+    if (hybrid_type != DECIMAL_RESULT) return val_decimal_from_real(val);
+
     if (wf_common_init()) {
       my_decimal_set_zero(val);
       return null_value ? nullptr : val;
@@ -2163,6 +2193,11 @@ my_decimal *Item_sum_avg::val_decimal(my_decimal *val) {
   DBUG_ASSERT(fixed == 1);
 
   if (m_is_window_function) {
+    if (hybrid_type != DECIMAL_RESULT) {
+      my_decimal *result = val_decimal_from_real(val);
+      DBUG_RETURN(result);
+    }
+
     if (wf_common_init()) {
       my_decimal_set_zero(val);
       DBUG_RETURN(null_value ? nullptr : val);
@@ -2994,9 +3029,9 @@ double Item_sum_bit::val_real() {
   if (!(res = val_str(&str_value))) return 0.0;
 
   int ovf_error;
-  char *from = const_cast<char *>(res->ptr());
+  const char *from = res->ptr();
   size_t len = res->length();
-  char *end = from + len;
+  const char *end = from + len;
   return my_strtod(from, &end, &ovf_error);
 }
 /* bit_or and bit_and */
@@ -3018,9 +3053,9 @@ longlong Item_sum_bit::val_int() {
   if (!(res = val_str(&str_value))) return 0;
 
   int ovf_error;
-  char *from = const_cast<char *>(res->ptr());
+  const char *from = res->ptr();
   size_t len = res->length();
-  char *end = from + len;
+  const char *end = from + len;
   return my_strtoll10(from, &end, &ovf_error);
 }
 
@@ -3517,9 +3552,9 @@ longlong Item_sum_bit_field::val_int() {
     if (!(res = val_str(&str_value))) return 0;
 
     int ovf_error;
-    char *from = const_cast<char *>(res->ptr());
+    const char *from = res->ptr();
     size_t len = res->length();
-    char *end = from + len;
+    const char *end = from + len;
     return my_strtoll10(from, &end, &ovf_error);
   }
 }
@@ -3533,9 +3568,9 @@ double Item_sum_bit_field::val_real() {
     if (!(res = val_str(&str_value))) return 0.0;
 
     int ovf_error;
-    char *from = const_cast<char *>(res->ptr());
+    const char *from = res->ptr();
     size_t len = res->length();
-    char *end = from + len;
+    const char *end = from + len;
 
     return my_strtod(from, &end, &ovf_error);
   }
@@ -3672,12 +3707,13 @@ void Item_udf_sum::cleanup() {
   Item_sum::cleanup();
 }
 
-void Item_udf_sum::print(String *str, enum_query_type query_type) {
+void Item_udf_sum::print(const THD *thd, String *str,
+                         enum_query_type query_type) const {
   str->append(func_name());
   str->append('(');
   for (uint i = 0; i < arg_count; i++) {
     if (i) str->append(',');
-    args[i]->print(str, query_type);
+    args[i]->print(thd, str, query_type);
   }
   str->append(')');
 }
@@ -4334,7 +4370,7 @@ bool Item_func_group_concat::setup(THD *thd) {
     with ORDER BY | DISTINCT and BLOB field count > 0.
   */
   if (order_or_distinct && table->s->blob_fields)
-    table->blob_storage = new (*THR_MALLOC) Blob_mem_storage();
+    table->blob_storage = new (thd->mem_root) Blob_mem_storage();
 
   /*
      Need sorting or uniqueness: init tree and choose a function to sort.
@@ -4358,7 +4394,7 @@ bool Item_func_group_concat::setup(THD *thd) {
   }
 
   if (distinct)
-    unique_filter = new (*THR_MALLOC)
+    unique_filter = new (thd->mem_root)
         Unique(group_concat_key_cmp_with_distinct, (void *)this,
                tree_key_length, ram_limitation(thd));
 
@@ -4400,18 +4436,19 @@ String *Item_func_group_concat::val_str(String *) {
   return &result;
 }
 
-void Item_func_group_concat::print(String *str, enum_query_type query_type) {
+void Item_func_group_concat::print(const THD *thd, String *str,
+                                   enum_query_type query_type) const {
   str->append(STRING_WITH_LEN("group_concat("));
   if (distinct) str->append(STRING_WITH_LEN("distinct "));
   for (uint i = 0; i < arg_count_field; i++) {
     if (i) str->append(',');
-    args[i]->print(str, query_type);
+    args[i]->print(thd, str, query_type);
   }
   if (arg_count_order) {
     str->append(STRING_WITH_LEN(" order by "));
     for (uint i = 0; i < arg_count_order; i++) {
       if (i) str->append(',');
-      args[i + arg_count_field]->print(str, query_type);
+      args[i + arg_count_field]->print(thd, str, query_type);
       if (order_array[i].direction == ORDER_ASC)
         str->append(STRING_WITH_LEN(" ASC"));
       else
@@ -5818,28 +5855,6 @@ bool Item_func_grouping::fix_fields(THD *thd, Item **ref) {
     return true;
   }
 
-  /*
-    If GROUPING() is present in HAVING clause, check if all the
-    arguments are present in GROUP BY.
-  */
-  if (select->resolve_place == SELECT_LEX::RESOLVE_HAVING) {
-    for (uint i = 0; i < arg_count; i++) {
-      Item *const real_item = args[i]->real_item();
-      bool found_in_group = false;
-
-      for (ORDER *group = select->group_list.first; group;
-           group = group->next) {
-        if (real_item->eq((*group->item)->real_item(), 0)) {
-          found_in_group = true;
-          break;
-        }
-      }
-      if (!found_in_group) {
-        my_error(ER_FIELD_IN_GROUPING_NOT_GROUP_BY, MYF(0), (i + 1));
-        return true;
-      }
-    }
-  }
   return false;
 }
 
@@ -5902,6 +5917,8 @@ bool Item_func_grouping::aggregate_check_group(uchar *arg) {
 
 void Item_func_grouping::update_used_tables() {
   Item_int_func::update_used_tables();
+  set_grouping_func();
+  set_rollup_expr();
   /*
     GROUPING function can never be a constant item. It's
     result always depends on ROLLUP result.

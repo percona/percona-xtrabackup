@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -137,6 +137,12 @@ class Ha_innopart_share : public Partition_share {
     ut_ad(part_id < m_tot_parts);
     m_table_parts[part_id] = table;
   }
+  /** Get table reference for given partition.
+  @param[in]    part_id Partition number
+  @return	InnoDB table reference. */
+  inline dict_table_t **get_table_part_ref(uint part_id) {
+    return (&m_table_parts[part_id]);
+  }
 
   /** Return innodb table for given partition.
   @param[in]	part_id	Partition number.
@@ -187,12 +193,8 @@ class Ha_innopart_share : public Partition_share {
                                    dict_table_t **table_parts);
 
   /** Close the table partitions.
-  If all instances are closed, also release the resources.
-  @param[in]	only_free	true if the tables have already been
-                                  closed, which happens during inplace
-                                  DDL, and we just need to release the
-                                  resources */
-  void close_table_parts(bool only_free);
+  If all instances are closed, also release the resources.*/
+  void close_table_parts();
 
   /** Close InnoDB tables for partitions.
   @param[in]	table_parts	Array of InnoDB tables for partitions.
@@ -636,28 +638,49 @@ class ha_innopart : public ha_innobase,
   handler *get_handler() override { return (static_cast<handler *>(this)); }
   /** @} */
 
-  /** Get number of threads that would be spawned for parallel read.
-  @param[in, out]   num_threads     number of threads to be spawned
-  @return error code
-  @return 0 on success */
-  int pread_adapter_scan_get_num_threads(size_t &num_threads) override;
-
   /**
-    Start parallel read of data.
-    @param[in] thread_contexts   context for each of the spawned threads
-    @param[in] load_init_fn      callback called by each parallel load
-                                 thread at the beginning of the parallel load.
-    @param[in] load_rows_fn      callback called by each parallel load
-                                 thread when processing of rows is required.
-    @param[in] load_end_fn       callback called by each parallel load
-                                 thread when processing of rows has ended.
-    @return error code
-    @return 0 on success
-   */
-  int pread_adapter_scan_parallel_load(
-      void **thread_contexts, pread_adapter_pload_init_cbk load_init_fn,
+  Initializes a parallel scan. It creates a parallel_scan_ctx that has to
+  be used across all parallel_scan methods. Also, gets the number of threads
+  that would be spawned for parallel scan.
+  @param[in, out]   parallel_scan_ctx a scan context created by this method
+                                      that has to be used in
+                                      pread_adapter_scan_parallel_load
+  @param[in, out]   num_threads       number of threads to be spawned
+
+  @return error code
+  @retval 0 on success
+ */
+  virtual int pread_adapter_parallel_scan_start(void *&parallel_scan_ctx,
+                                                size_t &num_threads) override;
+
+  /** Run the parallel read of data.
+  @param[in]      parallel_scan_ctx a scan context created by
+                                    pread_adapter_scan_get_num_threads
+  @param[in]      thread_contexts   context for each of the spawned threads
+  @param[in]      load_init_fn      callback called by each parallel load
+                                    thread at the beginning of the parallel
+                                    load.
+  @param[in]      load_rows_fn      callback called by each parallel load
+                                    thread when processing of rows is
+                                    required.
+  @param[in]      load_end_fn       callback called by each parallel load
+                                    thread when processing of rows has ended.
+  @return error code
+  @retval 0 on success
+  */
+  int pread_adapter_parallel_scan_run(
+      void *parallel_scan_ctx, void **thread_contexts,
+      pread_adapter_pload_init_cbk load_init_fn,
       pread_adapter_pload_row_cbk load_rows_fn,
       pread_adapter_pload_end_cbk load_end_fn) override;
+
+  /** Run the parallel read of data.
+  @param[in]      parallel_scan_ctx a scan context created by
+                                    pread_adapter_scan_get_num_threads
+  @return error code
+  @retval 0 on success
+  */
+  int pread_adapter_parallel_scan_end(void *parallel_scan_ctx) override;
 
  private:
   /** Pointer to Ha_innopart_share on the TABLE_SHARE. */
@@ -891,13 +914,11 @@ class ha_innopart : public ha_innobase,
   if NULL use table->record[0] as return buffer.
   @param[in]	start_key	Start key to match.
   @param[in]	end_key	End key to match.
-  @param[in]	eq_range	Is equal range, start_key == end_key.
   @param[in]	sorted	Return rows in sorted order.
   @return error number or 0. */
   int read_range_first_in_part(uint part, uchar *record,
                                const key_range *start_key,
-                               const key_range *end_key, bool eq_range,
-                               bool sorted) override;
+                               const key_range *end_key, bool sorted) override;
 
   /** Return next record in index range scan from a partition.
   @param[in]	part	Partition to read from.

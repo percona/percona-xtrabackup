@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@
 #include <string>
 #include <utility>
 
-#include "binary_log_types.h"
+#include "field_types.h"  // enum_field_types
 #include "m_string.h"
 #include "my_compare.h"
 #include "my_dbug.h"
@@ -533,9 +533,8 @@ static bool contains_wr(const THD *thd, const Json_wrapper &doc_wrapper,
       return false;
     }
 
-    for (Json_wrapper_object_iterator c_oi(containee_wr); !c_oi.empty();
-         c_oi.next()) {
-      Json_wrapper d_wr = doc_wrapper.lookup(c_oi.key());
+    for (const auto &c_oi : Json_object_wrapper(containee_wr)) {
+      Json_wrapper d_wr = doc_wrapper.lookup(c_oi.first);
 
       if (d_wr.type() == enum_json_type::J_ERROR) {
         // No match for this key. Give up.
@@ -544,7 +543,7 @@ static bool contains_wr(const THD *thd, const Json_wrapper &doc_wrapper,
       }
 
       // key is the same, now compare values
-      if (contains_wr(thd, d_wr, c_oi.value(), result))
+      if (contains_wr(thd, d_wr, c_oi.second, result))
         return true; /* purecov: inspected */
 
       if (!*result) {
@@ -903,15 +902,12 @@ static constexpr uint32 strlen_const(const char *str) {
   return *str == '\0' ? 0 : 1 + strlen_const(str + 1);
 }
 
-/// std::max isn't constexpr until C++14, so we roll our own for now.
-static constexpr uint32 max_const(uint32 a, uint32 b) { return a > b ? a : b; }
-
 /// Find the length of the longest string in a range.
 static constexpr uint32 longest_string(const char *const *begin,
                                        const char *const *end) {
   return begin == end
              ? 0
-             : max_const(strlen_const(*begin), longest_string(begin + 1, end));
+             : std::max(strlen_const(*begin), longest_string(begin + 1, end));
 }
 
 /**
@@ -1479,9 +1475,10 @@ bool Item_json_typecast::val_json(Json_wrapper *wr) {
   return false;
 }
 
-void Item_json_typecast::print(String *str, enum_query_type query_type) {
+void Item_json_typecast::print(const THD *thd, String *str,
+                               enum_query_type query_type) const {
   str->append(STRING_WITH_LEN("cast("));
-  args[0]->print(str, query_type);
+  args[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" as "));
   str->append(cast_type());
   str->append(')');
@@ -1605,8 +1602,8 @@ bool Item_func_json_keys::val_json(Json_wrapper *wr) {
     // and return them as a JSON array.
     Json_array_ptr res(new (std::nothrow) Json_array());
     if (res == nullptr) return error_json(); /* purecov: inspected */
-    for (Json_wrapper_object_iterator i(wrapper); !i.empty(); i.next()) {
-      const MYSQL_LEX_CSTRING key = i.key();
+    for (const auto &i : Json_object_wrapper(wrapper)) {
+      const MYSQL_LEX_CSTRING &key = i.first;
       if (res->append_alias(new (std::nothrow)
                                 Json_string(key.str, key.length)))
         return error_json(); /* purecov: inspected */
@@ -2560,12 +2557,11 @@ static bool find_matches(const Json_wrapper &wrapper, String *path,
 
     case enum_json_type::J_OBJECT: {
       const size_t path_length = path->length();
-      for (Json_wrapper_object_iterator jwot(wrapper); !jwot.empty();
-           jwot.next()) {
+      for (const auto &jwot : Json_object_wrapper(wrapper)) {
         // recurse with the member added to the path
-        const MYSQL_LEX_CSTRING key = jwot.key();
+        const MYSQL_LEX_CSTRING &key = jwot.first;
         if (Json_path_leg(key.str, key.length).to_string(path) ||
-            find_matches(jwot.value(), path, matches, duplicates, one_match,
+            find_matches(jwot.second, path, matches, duplicates, one_match,
                          like_node, source_string))
           return true;              /* purecov: inspected */
         path->length(path_length);  // restore the path
