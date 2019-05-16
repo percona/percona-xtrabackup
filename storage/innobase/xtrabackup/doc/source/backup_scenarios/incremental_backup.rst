@@ -156,7 +156,7 @@ usual, but prevent the rollback phase:
 
   $ xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base
 
-The output should end with some text such as the following:
+The output should end with text similar to the following:
 
 .. code-block:: text
 
@@ -187,7 +187,7 @@ This applies the delta files to the files in :file:`/data/backups/base`, which
 rolls them forward in time to the time of the incremental backup. It then
 applies the redo log as usual to the result. The final data is in
 :file:`/data/backups/base`, not in the incremental directory. You should see
-the output similar to:
+an output similar to:
 
 .. code-block:: bash
 
@@ -206,6 +206,13 @@ first incremental backup. If you restore the files from
 :file:`/data/backups/base`, you should see the state of the database as of the
 first incremental backup.
 
+.. warning::
+
+   |PXB| does not support using the same incremental backup directory to
+   prepare two copies of backup. Do not run :option:`xtrabackup
+   --prepare` with the same incremental backup directory (the value of
+   `--incremental-dir`) more than once.
+
 Preparing the second incremental backup is a similar process: apply the deltas
 to the (modified) base backup, and you will roll its data forward in time to
 the point of the second incremental backup:
@@ -223,6 +230,6 @@ the point of the second incremental backup:
  :option:`xtrabackup --apply-log-only` was used on the last step, backup would
  still be consistent but in that case server would perform the rollback phase.
 
-Once prepared incremental backups are the same as the :ref:`full backups
-<full_backup>` and they can be :ref:`restored <restoring_a_backup>` the same
+Once prepared, incremental backups are the same as the :ref:`full backups
+<full_backup>` and they can be :ref:`restored <restoring_a_backup>` in the same
 way.
