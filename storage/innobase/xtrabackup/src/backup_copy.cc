@@ -759,30 +759,39 @@ Fix InnoDB page checksum after modifying it. */
 static void page_checksum_fix(byte *page, const page_size_t &page_size) {
   ib_uint32_t checksum = BUF_NO_CHECKSUM_MAGIC;
 
-  switch ((srv_checksum_algorithm_t)srv_checksum_algorithm) {
-    case SRV_CHECKSUM_ALGORITHM_CRC32:
-    case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
-      checksum = buf_calc_page_crc32(page);
-      mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
-      break;
-    case SRV_CHECKSUM_ALGORITHM_INNODB:
-    case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
-      checksum = (ib_uint32_t)buf_calc_page_new_checksum(page);
-      mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
-      checksum = (ib_uint32_t)buf_calc_page_old_checksum(page);
-      break;
-    case SRV_CHECKSUM_ALGORITHM_NONE:
-    case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
-      mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
-      break;
-      /* no default so the compiler will emit a warning if
-      new enum is added and not handled here */
+  BlockReporter reporter = BlockReporter(false, page, page_size, false);
+
+  if (page_size.is_compressed()) {
+    const uint32_t checksum = reporter.calc_zip_checksum(
+        page, page_size.physical(),
+        static_cast<srv_checksum_algorithm_t>(srv_checksum_algorithm));
+
+    mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
+  } else {
+    switch ((srv_checksum_algorithm_t)srv_checksum_algorithm) {
+      case SRV_CHECKSUM_ALGORITHM_CRC32:
+      case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
+        checksum = buf_calc_page_crc32(page);
+        mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
+        break;
+      case SRV_CHECKSUM_ALGORITHM_INNODB:
+      case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
+        checksum = (ib_uint32_t)buf_calc_page_new_checksum(page);
+        mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
+        checksum = (ib_uint32_t)buf_calc_page_old_checksum(page);
+        break;
+      case SRV_CHECKSUM_ALGORITHM_NONE:
+      case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
+        mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
+        break;
+        /* no default so the compiler will emit a warning if
+        new enum is added and not handled here */
+    }
+
+    mach_write_to_4(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM,
+                    checksum);
   }
 
-  mach_write_to_4(page + UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM,
-                  checksum);
-
-  BlockReporter reporter = BlockReporter(false, page, page_size, false);
   ut_a(!reporter.is_corrupted());
 }
 
