@@ -842,9 +842,40 @@ trx_resurrect_insert(
 
 			if (srv_force_recovery == 0) {
 
-				/* XtraBackup should rollback prepared XA
-				transactions */
-				trx->state = TRX_STATE_ACTIVE;
+				/* XtraBackup should rollback internal or wsrep
+				prepared XA transactions, but leave external
+				prepared XA transactions untouched. */
+				if (trx->xid->get_my_xid()) {
+					/* internal XA transaction */
+					trx->state = TRX_STATE_ACTIVE;
+
+					ib::info() << "Transaction "
+						   << trx_get_id_for_print(trx)
+						   << " was an internal "
+						"prepared XA transaction, and "
+						"will be rolled back.";
+				} else if (wsrep_is_wsrep_xid(trx->xid)) {
+					/* wsrep XA transaction */
+					trx->state = TRX_STATE_ACTIVE;
+
+					ib::info() << "Transaction "
+						   << trx_get_id_for_print(trx)
+						   << " was a wsrep "
+						"prepared XA transaction, and "
+						"will be rolled back.";
+				} else {
+					/* external XA transaction */
+					trx->state = TRX_STATE_PREPARED;
+					++trx_sys->n_prepared_trx;
+					++trx_sys->n_prepared_recovered_trx;
+
+					ib::info() << "Transaction "
+						   << trx_get_id_for_print(trx)
+						   << " was an external "
+						"prepared XA transaction, and "
+						"will be kept in prepared "
+						"state.";
+				}
 			} else {
 
 				ib::info() << "Since innodb_force_recovery"
@@ -916,9 +947,40 @@ trx_resurrect_update_in_prepared_state(
 				ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
 			}
 
-			/* XtraBackup should rollback prepared XA
-			transactions */
-			trx->state = TRX_STATE_ACTIVE;
+			/* XtraBackup should rollback internal or wsrep
+			prepared XA transactions, but leave external
+			prepared XA transactions untouched. */
+			if (trx->xid->get_my_xid()) {
+				/* internal XA transaction */
+				trx->state = TRX_STATE_ACTIVE;
+
+				ib::info() << "Transaction "
+					   << trx_get_id_for_print(trx)
+					   << " was an internal prepared XA "
+					"transaction, and will be rolled back.";
+			} else if (wsrep_is_wsrep_xid(trx->xid)) {
+				/* wsrep XA transaction */
+				trx->state = TRX_STATE_ACTIVE;
+
+				ib::info() << "Transaction "
+					   << trx_get_id_for_print(trx)
+					   << " was a wsrep prepared XA "
+					"transaction, and will be rolled back.";
+			} else {
+				/* external XA transaction */
+				if (trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
+					++trx_sys->n_prepared_trx;
+					++trx_sys->n_prepared_recovered_trx;
+				}
+
+				trx->state = TRX_STATE_PREPARED;
+
+				ib::info() << "Transaction "
+					   << trx_get_id_for_print(trx)
+					   << " was an external prepared XA "
+					"transaction, and will be kept in "
+					"prepared state.";
+			}
 		} else {
 			ib::info() << "Since innodb_force_recovery > 0, we"
 				" will rollback it anyway.";

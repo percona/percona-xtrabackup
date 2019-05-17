@@ -59,6 +59,14 @@ xb_compact_rebuild_indexes(void);
 void
 xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
 
+/***********************************************************************//**
+Check if a given WSREP XID is valid.
+
+@return true if valid.
+*/
+bool
+wsrep_is_wsrep_xid(const void* xid_ptr);
+
 #ifdef __cplusplus
 }
 #endif

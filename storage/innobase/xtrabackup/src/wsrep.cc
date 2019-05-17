@@ -47,6 +47,7 @@ permission notice:
 #include <trx0sys.h>
 
 #include "common.h"
+#include "xb0xb.h"
 
 #define WSREP_XID_PREFIX "WSREPXid"
 #define WSREP_XID_PREFIX_LEN 8
@@ -76,7 +77,6 @@ Check if a given WSREP XID is valid.
 
 @return true if valid.
 */
-static
 bool
 wsrep_is_wsrep_xid(
 /*===============*/
