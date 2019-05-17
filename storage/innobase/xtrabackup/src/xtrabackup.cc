@@ -5794,8 +5794,13 @@ retry:
 		goto error;
 	}
 
-	if ( ut_memcmp(log_buf + LOG_HEADER_CREATOR,
-			(byte*)"xtrabkup", (sizeof "xtrabkup") - 1) != 0 ) {
+	if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
+		      (sizeof "xtrabkup") - 1) != 0) {
+		if (xtrabackup_incremental_dir) {
+			msg("xtrabackup: error: xtrabackup_logfile was already used "
+			    "to '--prepare'.\n");
+			goto error;
+		}
 		msg("xtrabackup: notice: xtrabackup_logfile was already used "
 		    "to '--prepare'.\n");
 		goto skip_modify;
