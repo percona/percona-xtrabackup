@@ -515,18 +515,56 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
   bool is_redundant = false;
   bool blob_prefix = false;
+  rec_format_t rec_format;
+  ulint zip_ssize = 0;
 
   switch (dd_table->row_format()) {
     case dd::Table::RF_REDUNDANT:
       is_redundant = true;
       blob_prefix = true;
+      rec_format = REC_FORMAT_REDUNDANT;
       break;
     case dd::Table::RF_COMPACT:
       blob_prefix = true;
+      rec_format = REC_FORMAT_COMPACT;
       break;
+    case dd::Table::RF_COMPRESSED: {
+      uint32 key_block_size = 0;
+      const ulint zip_ssize_max =
+          std::min((ulint)UNIV_PAGE_SSIZE_MAX, (ulint)PAGE_ZIP_SSIZE_MAX);
+      rec_format = REC_FORMAT_COMPRESSED;
+      if (dd_table->table().options().exists("key_block_size")) {
+        dd_table->table().options().get("key_block_size", &key_block_size);
+        if (key_block_size != 0) {
+          for (unsigned kbsize = 1, zssize = 1; zssize <= zip_ssize_max;
+               zssize++, kbsize <<= 1) {
+            if (kbsize == key_block_size) {
+              zip_ssize = zssize;
+              break;
+            }
+          }
+        } else {
+          zip_ssize = zip_ssize_max - 1;
+        }
+      }
+    } break;
+    case dd::Table::RF_DYNAMIC:
+      rec_format = REC_FORMAT_DYNAMIC;
+      break;
+    case dd::Table::RF_FIXED:
+      /* fall through */
+    case dd::Table::RF_PAGED:
+      /* fall through */
     default:
+      ut_error;
       break;
   }
+
+  uint32_t table_flags = 0;
+  dict_tf_set(&table_flags, rec_format, zip_ssize, false /*use_data_dir*/,
+              false /*shared_space*/);
+
+  table->flags |= table_flags;
 
   if (!is_redundant) {
     table->flags |= DICT_TF_COMPACT;
