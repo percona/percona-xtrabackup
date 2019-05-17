@@ -4,8 +4,6 @@
 The xbcloud Binary
 ================================================================================
 
-:Availability: This feature implementation is considered **ALPHA** quality
-
 The purpose of |xbcloud| is to download and upload full or part of |xbstream|
 archive from/to cloud. |xbcloud| will not overwrite the backup with the same
 name. |xbcloud| accepts input via a pipe from |xbstream| so that it can be
@@ -26,7 +24,6 @@ Version specific information
 ================================================================================
 
 - 2.4.14 - Added the support of Amazon S3, MinIO and |gcs| storage types.
-- 2.3.0-alpha1 - Initial implementation
 - 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
   :file:`.cnf` file
 - 2.3.1-beta1 - Implemented support different :ref:`authentication options
@@ -34,6 +31,7 @@ Version specific information
 - 2.3.1-beta1 - Implemented support for partial download of the cloud backups
 - 2.3.1-beta1 - :option:`xbcloud --swift-url` option has been renamed to
   :option:`xbcloud --swift-auth-url`
+- 2.3.0-alpha1 - Initial implementation
 
 Supported Cloud Storage Types
 ================================================================================
