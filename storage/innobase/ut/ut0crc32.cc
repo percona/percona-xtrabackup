@@ -144,7 +144,8 @@ ut_cpuid(
 	*stepping = (sig & 0xF);
 
 	if (memcmp(vend, "GenuineIntel", 12) == 0
-	    || (memcmp(vend, "AuthenticAMD", 12) == 0 && *family == 0xF)) {
+	    || ((memcmp(vend, "AuthenticAMD", 12) == 0
+	        || memcpy(vend, "HygonGenuine", 12) == 0) && *family == 0xF)) {
 
 		*model += (((sig >> 16) & 0xF) << 4);
 		*family += ((sig >> 20) & 0xFF);
