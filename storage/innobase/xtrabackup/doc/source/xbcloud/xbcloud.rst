@@ -23,7 +23,7 @@ S3 API.
 Version specific information
 ================================================================================
 
-- 2.4.14 - Added the support of Amazon S3, MinIO and |gcs| storage types.
+- 2.4.14 - Added the support of |s3|, |minio| and |gcs| storage types.
 - 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
   :file:`.cnf` file
 - 2.3.1-beta1 - Implemented support different :ref:`authentication options
@@ -37,8 +37,8 @@ Supported Cloud Storage Types
 ================================================================================
 
 In addition to Swift, which has been the only option for storing backups in a
-cloud storage until |Percona XtraBackup| 2.4.14, |xbcloud| supports *Amazon S3*,
-*MinIO*, and *Google Cloud Storage*. Other Amazon S3 compatible storages, such
+cloud storage until |Percona XtraBackup| 2.4.14, |xbcloud| supports |s3|,
+|minio|, and |gcs|. Other |s3| compatible storages, such
 as Wasabi or Digital Ocean Spaces, are also supported.
 
 .. seealso::
@@ -47,9 +47,9 @@ as Wasabi or Digital Ocean Spaces, are also supported.
       https://wiki.openstack.org/wiki/Swift
    Amazon Simple Storage Service
       https://aws.amazon.com/s3/
-   MinIO
+   |minio|
       https://min.io/
-   Google Cloud Storage
+   |gcs|
       https://cloud.google.com/storage/
    Wasabi
       https://wasabi.com/
@@ -64,12 +64,10 @@ Usage
    $ xtrabackup --backup --stream=xbstream --target-dir=/tmp | xbcloud \
    put [options] <name>
 
-Creating a full backup
+Creating a full backup with Swift
 --------------------------------------------------------------------------------
 
-.. rubric:: Swift
-
-The following example shows how to make a full backup and upload it to Swift
+The following example shows how to make a full backup and upload it to Swift.
 
 .. code-block:: bash
 
@@ -82,7 +80,8 @@ The following example shows how to make a full backup and upload it to Swift
    --parallel=10 \
    full_backup
 
-.. rubric:: Amazon S3
+Creating a full backup with |s3|
+--------------------------------------------------------------------------------
 
 .. code-block:: bash
 
@@ -93,9 +92,9 @@ The following example shows how to make a full backup and upload it to Swift
    --s3-secret-key='YOUR-SECRETACCESSKEY' \
    --s3-bucket='mysql_backups'
    --parallel=10 \
-   ${date}-full_backup
+   ${date -I}-full_backup
 
-The following options are available when using Amazon S3:
+The following options are available when using |s3|:
 
 .. list-table::
    :header-rows: 1
@@ -116,8 +115,9 @@ The following options are available when using Amazon S3:
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
        style requests. The default value is AUTO. In this case, |xbcloud| will probe.
 
-.. rubric:: MinIO
-	    
+Creating a full backup with |minio|
+--------------------------------------------------------------------------------	    
+
 .. code-block:: bash
 
    $ xtrabackup --backup --stream=xbstream --extra-lsndir=/tmp --target-dir=/tmp | \
@@ -127,13 +127,14 @@ The following options are available when using Amazon S3:
    --s3-secret-key='YOUR-SECRETACCESSKEY' \
    --s3-bucket='mysql_backups'
    --parallel=10 \
-   ${date}-full_backup
+   ${date -I}-full_backup
 
-.. rubric:: |gcs|
+Creating a full backup with |gcs|
+--------------------------------------------------------------------------------
 
 The support for |gcs| is implemented using the interoperability
 mode. This mode was especially designed to interact with cloud services
-compatible with Amazon S3.
+compatible with |s3|.
 
 .. seealso::
 
@@ -149,7 +150,7 @@ compatible with Amazon S3.
    --google-secret-key='YOUR-SECRETACCESSKEY' \
    --google-bucket='mysql_backups'
    --parallel=10 \
-   ${date}-full_backup
+   ${date -I}-full_backup
 
 The following options are available when using |gcs|:
 
@@ -193,16 +194,13 @@ template of configuration options under the [xbcloud] group:
 The following environment variables are recognized. |xbcloud| maps them
 automatically to corresponding parameters applicable to the selected storage.
 
-.. hlist::
-   :columns: 2
+- AWS_ACCESS_KEY_ID (or ACCESS_KEY_ID)
+- AWS_SECRET_ACCESS_KEY (or SECRET_ACCESS_KEY)
+- AWS_DEFAULT_REGION (or DEFAULT_REGION)
+- AWS_ENDPOINT (or ENDPOINT)
+- AWS_CA_BUNDLE
 
-   - AWS_ACCESS_KEY_ID (or ACCESS_KEY_ID)
-   - AWS_SECRET_ACCESS_KEY (or SECRET_ACCESS_KEY)
-   - AWS_DEFAULT_REGION (or DEFAULT_REGION)
-   - AWS_ENDPOINT (or ENDPOINT)
-   - AWS_CA_BUNDLE
-
-.. node::
+.. note::
 
    If you explicitly use a parameter on the command line, in a configuration
    file, and the corresponding environment variable contains a value, |xbcloud|
@@ -228,7 +226,7 @@ corresponding **swift** parameters (``--storage=swift``).
    - OS_CACERT
 
 .. rubric:: Shortcuts
-
+n
 For all operations (put, get, and delete), you can use a shortcut to specify the
 storage type, bucket name, and backup name as one parameter instead of using
 three distinct parameters (--storage, --s3-bucket, and backup name per se).
@@ -285,8 +283,6 @@ permissions: ``--header="x-amz-acl: bucket-owner-full-control``
 Restoring with Swift
 --------------------------------------------------------------------------------
 
-.. rubric:: Swift
-
 .. code-block:: bash
 
    $ xbcloud get [options] <name> [<list-of-files>] | xbstream -x
@@ -305,7 +301,8 @@ The following example shows how to fetch and restore the backup from Swift:
    $ xtrabackup --prepare --target-dir=/tmp/downloaded_full
    $ xtrabackup --copy-back --target-dir=/tmp/downloaded_full
 
-.. rubric:: Amazon S3
+Restoring with |s3|
+--------------------------------------------------------------------------------
 
 .. code-block:: bash
 
@@ -315,8 +312,6 @@ The following example shows how to fetch and restore the backup from Swift:
 
 Incremental backups
 ================================================================================
-
-.. rubric:: Taking incremental backups
 
 First you need to make the full backup on which the incremental one is going to
 be based:
@@ -507,3 +502,5 @@ For v3 additional options are:
    Swift domain ID.
 
 .. |gcs| replace:: Google Cloud Storage
+.. |s3| replace:: Amazon S3
+.. |minio| replace:: MinIO
