@@ -305,6 +305,13 @@ Options
    performing the backup of |Percona XtraDB Cluster|. It has no effect when
    backup locks are used to create the backup.
 
+.. option:: --history=name
+
+   This option enables the tracking of the backup history in the
+   ``PERCONA_SCHEMA.xtrabackup_history`` table. An optional history series name
+   may be specified that will be placed with the history record for the backup
+   being taken.
+
 .. option:: --incremental-basedir=DIRECTORY
 
    When creating an incremental backup, this is the directory containing the
@@ -321,6 +328,30 @@ Options
    When creating an incremental backup, force a full scan of the data pages in
    the instance being backuped even if the complete changed page bitmap data is
    available.
+
+.. option:: --incremental-history-name=name
+
+   This option specifies the name of the backup series stored in the
+   :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` history record
+   to base an incremental backup on. |xtrabackup| searches the history
+   table for the most recent (highest innodb_to_lsn), successful backup
+   in the series and take the to_lsn value to use as the starting lsn for the
+   incremental backup. This will be mutually exclusive with :option:`xtrabackup
+   --incremental-history-uuid`, :option:`xtrabackup --incremental-basedir` and
+   :option:`xtrabackup --incremental-lsn`. If no valid :term:`LSN` can be found
+   (no series by that name, no successful backups by that name) |xtrabackup|
+   returns an error. It is used with the :option:`xtrabackup --incremental`
+   option.
+
+.. option:: --incremental-history-uuid=UUID
+
+   This option specifies the :term:`UUID` of the specific history record stored
+   in the :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` to base
+   an incremental backup on. :option:`xtrabackup --incremental-history-name`,
+   :option:`xtrabackup --incremental-basedir` and :option:`xtrabackup
+   --incremental-lsn`. If no valid :term:`LSN` is found (no success record with
+   that :term:`UUID`) |xtrabackup| returns an error. This option is used with
+   the :option:`xtrabackup --incremental` option.
 
 .. option:: --incremental-lsn=LSN
 
