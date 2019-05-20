@@ -4,6 +4,50 @@
 
 .. glossary::
 
+   UUID
+     Universally Unique IDentifier which uniquely identifies the state and the
+     sequence of changes node undergoes. 128-bit UUID is a classic DCE UUID
+     Version 1 (based on current time and MAC address). Although in theory this
+     UUID could be generated based on the real MAC-address, in the Galera it is
+     always (without exception) based on the generated pseudo-random addresses
+     ("locally administered" bit in the node address (in the UUID structure) is
+     always equal to unity).
+
+     Complete structure of the 128-bit UUID field and explanation for its
+     generation are as follows:
+
+     ===== ====  ======= =====================================================
+     From  To    Length  Content
+     ===== ====  ======= =====================================================
+      0     31    32     Bits 0-31 of Coordinated Universal Time (UTC) as a
+                         count of 100-nanosecond intervals since 00:00:00.00,
+                         15 October 1582, encoded as big-endian 32-bit number.
+     32     47    16     Bits 32-47 of UTC as a count of 100-nanosecond
+                         intervals since 00:00:00.00, 15 October 1582, encoded
+                         as big-endian 16-bit number.
+     48     59    12     Bits 48-59 of UTC as a count of 100-nanosecond
+                         intervals since 00:00:00.00, 15 October 1582, encoded
+                         as big-endian 16-bit number.
+     60     63     4     UUID version number: always equal to 1 (DCE UUID).
+     64     69     6     most-significants bits of random number, which
+                         generated from the server process PID and Coordinated
+                         Universal Time (UTC) as a count of 100-nanosecond
+                         intervals since 00:00:00.00, 15 October 1582.
+     70     71     2     UID variant: always equal to binary 10 (DCE variant).
+     72     79     8     8 least-significant bits of  random number, which
+                         generated from the server process PID and Coordinated
+                         Universal Time (UTC) as a count of 100-nanosecond
+                         intervals since 00:00:00.00, 15 October 1582.
+     80     80     1     Random bit ("unique node identifier").
+     81     81     1     Always equal to the one ("locally administered MAC
+                         address").
+     82    127    46     Random bits ("unique node identifier"): readed from
+                         the :file:`/dev/urandom` or (if :file:`/dev/urandom`
+                         is unavailable) generated based on the server process
+                         PID, current time and bits of the default "zero node
+                         identifier" (entropy data).
+     ===== ====  ======= =====================================================
+
    LSN
      Each InnoDB page (usually 16kb in size) contains a log sequence number, or
      LSN. The LSN is the system version number for the entire database. Each
