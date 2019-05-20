@@ -12,7 +12,7 @@ xml=1
 
 echo "$my_cnf" >$topdir/my-arg.cnf
 
-run_cmd_expect_failure $XB_BIN --defaults-file=$topdir/my-arg.cnf --innodb_doublewrite=0 --backup --password=foo --some-arg --target-dir=$topdir/backup 2>&1 | tee $topdir/xb.output
+run_cmd_expect_failure $XB_BIN --defaults-file=$topdir/my-arg.cnf --backup --password=foo --some-arg --target-dir=$topdir/backup 2>&1 | tee $topdir/xb.output
 
 grep 'recognized client arguments' $topdir/xb.output > $topdir/client.args
 grep 'recognized server arguments' $topdir/xb.output > $topdir/server.args
@@ -51,9 +51,3 @@ if ! grep "innodb_undo_tablespaces=8" $topdir/server.args ; then
   echo "Can't find the correct innodb_undo_tablespaces in the server arguments"
   exit 1
 fi
-
-if ! grep "innodb_doublewrite=0" $topdir/server.args ; then
-  echo "Can't find the correct innodb_doublewrite in the server arguments"
-  exit 1
-fi
-

@@ -710,10 +710,8 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
   }
 
   if (ds_write(stream, transition_key_name, sizeof(transition_key_name))) {
-    msg_ts(
-        "Error writing %s: failed to write "
-        "transition key name.\n",
-        XTRABACKUP_KEYS_FILE);
+    msg_ts("Error writing %s: failed to write transition key name.\n",
+           XTRABACKUP_KEYS_FILE);
     goto error;
   }
 

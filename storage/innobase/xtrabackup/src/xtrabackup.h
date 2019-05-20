@@ -100,7 +100,6 @@ extern bool xtrabackup_move_back;
 extern bool xtrabackup_decrypt_decompress;
 
 extern char *innobase_data_file_path;
-extern char *innobase_doublewrite_file;
 extern char *xtrabackup_encrypt_key;
 extern char *xtrabackup_encrypt_key_file;
 extern longlong innobase_log_file_size;
