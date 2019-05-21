@@ -232,3 +232,5 @@ the point of the second incremental backup:
 Once prepared incremental backups are the same as the :ref:`full backups
 <full_backup>` and they can be :ref:`restored <restoring_a_backup>` in the same
 way.
+
+.. |PXB| replace:: PXB
