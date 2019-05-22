@@ -53,10 +53,8 @@ Usage
    $ xtrabackup --backup --stream=xbstream --target-dir=/tmp | xbcloud \
    put [options] <name>
 
-Creating a full backup
---------------------------------------------------------------------------------
-
-.. rubric:: Swift
+Creating a full backup with Swift
+================================================================================
 
 The following example shows how to make a full backup and upload it to Swift
 
@@ -71,7 +69,8 @@ The following example shows how to make a full backup and upload it to Swift
    --parallel=10 \
    full_backup
 
-.. rubric:: Amazon S3
+Creating a full backup with |s3|
+================================================================================
 
 .. code-block:: bash
 
@@ -84,7 +83,7 @@ The following example shows how to make a full backup and upload it to Swift
    --parallel=10 \
    ${date -I}-full_backup
 
-The following options are available when using Amazon S3:
+The following options are available when using |s3|:
 
 .. list-table::
    :header-rows: 1
@@ -105,7 +104,7 @@ The following options are available when using Amazon S3:
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
        style requests. The default value is AUTO. In this case, |xbcloud| will probe.
 
-.. rubric:: MinIO
+Creating a full backup with |minio|
 	    
 .. code-block:: bash
 
@@ -118,11 +117,11 @@ The following options are available when using Amazon S3:
    --parallel=10 \
    ${date -I}-full_backup
 
-.. rubric:: |gcs|
+Creating a full backup with |gcs|
 
 The support for |gcs| is implemented using the interoperability
 mode. This mode was especially designed to interact with cloud services
-compatible with Amazon S3.
+compatible with |s3|.
 
 .. seealso::
 
@@ -142,20 +141,18 @@ compatible with Amazon S3.
 
 The following options are available when using |gcs|:
 
-.. hlist::
-   :columns: 2
-
-   - --google-access-key = <ACCESS KEY ID>
-   - --google-secret-key = <SECRET ACCESS KEY>
-   - --google-bucket = <BUCKET NAME>
+- --google-access-key = <ACCESS KEY ID>
+- --google-secret-key = <SECRET ACCESS KEY>
+- --google-bucket = <BUCKET NAME>
 
 Supplying parameters
---------------------------------------------------------------------------------
+================================================================================
 
 Each storage type has mandatory parameters that you can supply on the command
 line, in a configuration file, and via environment variables.
 
-.. rubric:: Configuration files
+Configuration files
+--------------------------------------------------------------------------------
 
 The parameters the values of which do not change frequently can be stored in
 :file:`my.cnf` or in a custom configuration file. The following example is a
@@ -177,19 +174,17 @@ template of configuration options under the [xbcloud] group:
    If you explicitly use a parameter on the command line and in a configuration
    file, |xbcloud| uses the the value provided on the command line.
 
-.. rubric:: Environment variables
+Environment variables
+--------------------------------------------------------------------------------
 
 The following environment variables are recognized. |xbcloud| maps them
 automatically to corresponding parameters applicable to the selected storage.
 
-.. hlist::
-   :columns: 2
-
-   - AWS_ACCESS_KEY_ID (or ACCESS_KEY_ID)
-   - AWS_SECRET_ACCESS_KEY (or SECRET_ACCESS_KEY)
-   - AWS_DEFAULT_REGION (or DEFAULT_REGION)
-   - AWS_ENDPOINT (or ENDPOINT)
-   - AWS_CA_BUNDLE
+- AWS_ACCESS_KEY_ID (or ACCESS_KEY_ID)
+- AWS_SECRET_ACCESS_KEY (or SECRET_ACCESS_KEY)
+- AWS_DEFAULT_REGION (or DEFAULT_REGION)
+- AWS_ENDPOINT (or ENDPOINT)
+- AWS_CA_BUNDLE
 
 .. note::
 
@@ -216,7 +211,8 @@ corresponding **swift** parameters (``--storage=swift``).
    - OS_STORAGE_URL
    - OS_CACERT
 
-.. rubric:: Shortcuts
+Shortcuts
+--------------------------------------------------------------------------------
 
 For all operations (put, get, and delete), you can use a shortcut to specify the
 storage type, bucket name, and backup name as one parameter instead of using
@@ -241,7 +237,8 @@ three distinct parameters (--storage, --s3-bucket, and backup name per se).
 You can supply the mandatory parameters not only on the command line. You may use
 configuration files and environment variables.
 
-.. rubric:: Additional parameters
+Additional parameters
+--------------------------------------------------------------------------------
 
 |xbcloud| accepts additional parameters that you can use with any storage
 type. The ``--md5`` parameter computes the MD5 hash value of the backup
@@ -272,9 +269,7 @@ The ``--header`` parameter is also useful to set the access control list (ACL)
 permissions: ``--header="x-amz-acl: bucket-owner-full-control``
 
 Restoring with Swift
---------------------------------------------------------------------------------
-
-.. rubric:: Swift
+================================================================================
 
 .. code-block:: bash
 
@@ -296,7 +291,8 @@ The following example shows how to fetch and restore the backup from Swift:
    --swift-auth-url=http://openstack.ci.percona.com:5000/ \
    --swift-container=mybackup1 --swift-domain=Default
 
-.. rubric:: Amazon S3
+Restoring with |s3|
+================================================================================
 
 .. code-block:: bash
 
@@ -307,20 +303,18 @@ The following example shows how to fetch and restore the backup from Swift:
 Incremental backups
 ================================================================================
 
-.. rubric:: Taking incremental backups
-
-First you need to make the full backup on which the incremental one is going to
+First, you need to make the full backup on which the incremental one is going to
 be based:
 
 .. code-block:: bash
 
-  xtrabackup --backup --stream=xbstream --extra-lsndir=/storage/backups/ \
-  --target-dir=/storage/backups/ | xbcloud put \
-  --storage=swift --swift-container=test_backup \
-  --swift-auth-version=2.0 --swift-user=admin \
-  --swift-tenant=admin --swift-password=xoxoxoxo \
-  --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
-  full_backup
+   xtrabackup --backup --stream=xbstream --extra-lsndir=/storage/backups/ \
+   --target-dir=/storage/backups/ | xbcloud put \
+   --storage=swift --swift-container=test_backup \
+   --swift-auth-version=2.0 --swift-user=admin \
+   --swift-tenant=admin --swift-password=xoxoxoxo \
+   --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
+   full_backup
 
 Then you can make the incremental backup:
 
@@ -334,7 +328,8 @@ Then you can make the incremental backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    inc_backup
 
-.. rubric:: Preparing incremental backups
+Preparing incremental backups
+--------------------------------------------------------------------------------
 
 To prepare a backup you first need to download the full backup:
 
@@ -374,10 +369,10 @@ Once the incremental backup has been downloaded you can prepare it by running:
    $ xtrabackup --prepare --target-dir=/storage/downloaded_full
 
 Partial download of the cloud backup
-================================================================================
+--------------------------------------------------------------------------------
 
 If you do not want to download the entire backup to restore the specific
-database you can specify only tables you want to restore:
+database you can specify only the tables you want to restore:
 
 .. code-block:: bash
 
@@ -493,3 +488,5 @@ For v3 additional options are:
    Swift domain ID.
 
 .. |gcs| replace:: Google Cloud Storage
+.. |s3| replace:: Amazon S3
+.. |minio| replace:: MinIO
