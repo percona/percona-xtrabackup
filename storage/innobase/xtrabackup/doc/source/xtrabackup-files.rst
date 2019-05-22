@@ -74,13 +74,6 @@ Index of files created by Percona XtraBackup
         zip_size = 0
         space_id = 0
 
-    * :file:`<table_name>.ibd.pmap`
-       This file contains ranges of skipped secondary index pages. These files
-       are created only when doing the compact backup. The file format is a
-       series of 2-value tuples, with each value being a 4-byte page offset
-       corresponding to the first and the last endpoints of skipped ranges,
-       respectively.
-
 * Information related to the replication environment (if using the
   :option:`xtrabackup --slave-info` option):
 
