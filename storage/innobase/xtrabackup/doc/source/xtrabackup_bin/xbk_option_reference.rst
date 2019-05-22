@@ -52,10 +52,6 @@ Options
    no longer accessed. |Percona XtraBackup| can produce inconsistent backups
    with this option enabled. Use at your own risk.
 
-.. option::  --compact
-
-   Create a compact backup by skipping secondary index pages.
-
 .. option:: --compress
 
    This option tells |xtrabackup| to compress all output data, including the
