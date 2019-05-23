@@ -736,6 +736,17 @@ Options
 
    Specify the directory that will be used to store temporary files during the backup
 
+.. option:: --transition-key=name
+
+   This option is used to enable processing the backup without accessing the
+   keyring vault server. In this case, :program:`xtrabackup` derives the AES
+   encryption key from the specified passphrase and uses it to encrypt
+   tablespace keys of tablespaces being backed up.
+
+   If :option:`--transition-key` does not have any
+   value, :program:`xtrabackup` will ask for it. The same passphrase should be
+   specified for the :option:`xtrabackup --prepare` command.
+
 .. option:: --use-memory
 
    This option affects how much memory is allocated for preparing a backup with
