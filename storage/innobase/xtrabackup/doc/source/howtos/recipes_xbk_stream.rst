@@ -9,7 +9,7 @@ copying it to the directory named by the first argument. You can pipe the output
 to a local file, or, across the network, to another server.
 
 To extract the resulting ``xbstream`` file, you **must** use the ``xbstream``
-utility.
+utility: ``xbstream -x <  backup.xbstream``.
 
 .. rubric:: Examples of Using ``xbstream``
 
