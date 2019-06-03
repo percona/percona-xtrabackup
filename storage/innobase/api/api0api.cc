@@ -3071,7 +3071,7 @@ dberr_t ib_sdi_get(uint32_t tablespace_id, const ib_sdi_key_t *ib_sdi_key,
 
       /* If the passed memory is not sufficient, we
       return failure and the actual length of SDI. */
-      if (buf_len < *uncomp_sdi_len) {
+      if (buf_len < *comp_sdi_len) {
         ib_tuple_delete(tuple);
         ib_tuple_delete(key_tpl);
         ib_cursor_close(ib_crsr);
