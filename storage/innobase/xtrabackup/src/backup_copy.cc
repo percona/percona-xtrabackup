@@ -2304,6 +2304,18 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
     needs_action = true;
   }
 
+  if (opt_decompress &&
+      (ends_with(filepath, ".lz4") ||
+       (ends_with(filepath, ".lz4.xbcrypt") && opt_decrypt))) {
+    cmd << " | lz4 -d ";
+    dest_filepath[strlen(dest_filepath) - 4] = 0;
+    if (needs_action) {
+      message << " and ";
+    }
+    message << "decompressing";
+    needs_action = true;
+  }
+
   cmd << " > " << dest_filepath;
   message << " " << filepath;
 
@@ -2337,7 +2349,8 @@ static void decrypt_decompress_thread_func(datadir_thread_ctxt_t *ctxt) {
     }
 
     if (!ends_with(entry.path.c_str(), ".qp") &&
-        !ends_with(entry.path.c_str(), ".xbcrypt")) {
+        !ends_with(entry.path.c_str(), ".xbcrypt") &&
+        !ends_with(entry.path.c_str(), ".lz4")) {
       continue;
     }
 

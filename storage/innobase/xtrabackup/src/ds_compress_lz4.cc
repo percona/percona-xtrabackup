@@ -1,7 +1,7 @@
 /******************************************************
-Copyright (c) 2011-2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019 Percona LLC and/or its affiliates.
 
-Compressing datasink implementation using quicklz for XtraBackup.
+Compressing datasink implementation using LZ4 for XtraBackup.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,19 +18,21 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
+#include <lz4.h>
 #include <my_base.h>
 #include <my_byteorder.h>
 #include <my_io.h>
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
-#include <quicklz.h>
-#include <zlib.h>
+#include "../extra/lz4/my_xxhash.h"
 #include "common.h"
 #include "datasink.h"
 #include "thread_pool.h"
 
 #define COMPRESS_CHUNK_SIZE ((size_t)(xtrabackup_compress_chunk_size))
-#define MY_QLZ_COMPRESS_OVERHEAD 400
+
+#define LZ4F_MAGICNUMBER 0x184d2204U
+#define LZ4F_UNCOMPRESSED_BIT (1U << 31)
 
 typedef struct {
   const char *from;
@@ -38,8 +40,6 @@ typedef struct {
   char *to;
   size_t to_len;
   size_t to_size;
-  uint32_t adler;
-  qlz_state_compress state;
 } comp_thread_ctxt_t;
 
 typedef struct {
@@ -68,11 +68,11 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len);
 static int compress_close(ds_file_t *file);
 static void compress_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_compress = {&compress_init, &compress_open, &compress_write,
-                                &compress_close, &compress_deinit};
+datasink_t datasink_compress_lz4 = {&compress_init, &compress_open,
+                                    &compress_write, &compress_close,
+                                    &compress_deinit};
 
 static inline int write_uint32_le(ds_file_t *file, uint32_t n);
-static inline int write_uint64_le(ds_file_t *file, ulonglong n);
 
 static ds_ctxt_t *compress_init(const char *root) {
   ds_compress_ctxt_t *compress_ctxt = new ds_compress_ctxt_t;
@@ -87,14 +87,15 @@ static ds_ctxt_t *compress_init(const char *root) {
 
 static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
                                 MY_STAT *mystat) {
+  char new_name[FN_REFLEN];
+
   xb_ad(ctxt->pipe_ctxt != nullptr);
   ds_ctxt_t *dest_ctxt = ctxt->pipe_ctxt;
 
   ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
 
-  /* Append the .qp extension to the filename */
-  char new_name[FN_REFLEN];
-  fn_format(new_name, path, "", ".qp", MYF(MY_APPEND_EXT));
+  /* Append the .lz4 extension to the filename */
+  fn_format(new_name, path, "", ".lz4", MYF(MY_APPEND_EXT));
 
   ds_file_t *dest_file = ds_open(dest_ctxt, new_name, mystat);
   if (dest_file == nullptr) {
@@ -107,27 +108,6 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
   comp_file->bytes_processed = 0;
   comp_file->comp_buf = nullptr;
   comp_file->comp_buf_size = 0;
-
-  /* Write the qpress archive header */
-  if (ds_write(dest_file, "qpress10", 8) ||
-      write_uint64_le(dest_file, COMPRESS_CHUNK_SIZE)) {
-    ds_close(dest_file);
-    return nullptr;
-  }
-
-  /* We are going to create a one-file "flat" (i.e. with no
-  subdirectories) archive. So strip the directory part from the path and
-  remove the '.qp' suffix. */
-  fn_format(new_name, path, "", "", MYF(MY_REPLACE_DIR));
-
-  /* Write the qpress file header */
-  size_t name_len = strlen(new_name);
-  if (ds_write(dest_file, "F", 1) || write_uint32_le(dest_file, name_len) ||
-      /* we want to write the terminating \0 as well */
-      ds_write(dest_file, new_name, name_len + 1)) {
-    ds_close(dest_file);
-    return nullptr;
-  }
 
   ds_file_t *file = new ds_file_t;
   file->ptr = comp_file;
@@ -142,7 +122,7 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len) {
   ds_file_t *dest_file = comp_file->dest_file;
 
   /* make sure we have enough memory for compression */
-  const size_t comp_size = COMPRESS_CHUNK_SIZE + MY_QLZ_COMPRESS_OVERHEAD;
+  const size_t comp_size = LZ4_compressBound(COMPRESS_CHUNK_SIZE);
   const size_t n_chunks =
       (len / COMPRESS_CHUNK_SIZE * COMPRESS_CHUNK_SIZE == len)
           ? (len / COMPRESS_CHUNK_SIZE)
@@ -173,23 +153,64 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len) {
 
     comp_file->tasks[i] =
         comp_ctxt->thread_pool->add_task([&thd](size_t thread_id) {
-
-          thd.to_len = qlz_compress(thd.from, thd.to, thd.from_len, &thd.state);
-
-          /* qpress uses 0x00010000 as the initial value, but its own
-          Adler-32 implementation treats the value differently:
-            1. higher order bits are the sum of all bytes in the sequence
-            2. lower order bits are the sum of resulting values at every
-               step.
-          So it's the other way around as compared to zlib's adler32().
-          That's why  0x00000001 is being passed here to be compatible
-          with qpress implementation. */
-
-          thd.adler = adler32(0x00000001, (uchar *)thd.to, thd.to_len);
+          thd.to_len =
+              LZ4_compress_default(thd.from, thd.to, thd.from_len, thd.to_size);
         });
   }
 
+  /* while compression is in progress, calculate content checksum */
+  const uint32_t checksum = MY_XXH32(buf, len, 0);
+
+  /* write LZ4 frame */
+
+  /* Frame header (4 bytes magic, 1 byte FLG, 1 byte BD,
+     8 bytes uncompressed content size, 1 byte HC) */
+  uint8_t header[15];
+
+  /* Magic Number */
+  int4store(header, LZ4F_MAGICNUMBER);
+
+  /* FLG Byte */
+  const uint8_t flg =
+      (1 << 6) | /* version = 01 */
+      (1 << 5) | /* block independence (1 means blocks are independent) */
+      (0 << 4) | /* block checksum (0 means no block checksum, we rely on
+                    xbstream checksums) */
+      (1 << 3) | /* content size (include uncompressed content size) */
+      (1 << 2) | /* content checksum (include checksum of uncompressed data) */
+      (0 << 1) | /* reserved */
+      (0 << 0) /* dict id */;
+  header[4] = flg;
+
+  /* BD Byte (set maximum uncompressed block size to 4M) */
+  uint8_t max_block_size_code = 0;
+  if (COMPRESS_CHUNK_SIZE <= 64 * 1024) {
+    max_block_size_code = 4;
+  } else if (COMPRESS_CHUNK_SIZE <= 256 * 1024) {
+    max_block_size_code = 5;
+  } else if (COMPRESS_CHUNK_SIZE <= 1 * 1204 * 1024) {
+    max_block_size_code = 6;
+  } else if (COMPRESS_CHUNK_SIZE <= 4 * 1024 * 1024) {
+    max_block_size_code = 7;
+  } else {
+    msg("compress: compress chunk size is too large for LZ4 compressor.\n");
+    return 1;
+  }
+  const uint8_t bd = (max_block_size_code << 4);
+  header[5] = bd;
+
+  /* uncompressed content size */
+  int8store(header + 6, len);
+
+  /* HC Byte */
+  header[14] = (MY_XXH32(header + 4, 10, 0) >> 8) & 0xff;
+
   bool error = false;
+
+  /* write frame header */
+  if (ds_write(dest_file, header, sizeof(header))) {
+    error = true;
+  }
 
   /* write compressed blocks */
   for (size_t i = 0; i < n_chunks; i++) {
@@ -201,22 +222,45 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len) {
     if (error) continue;
 
     if (thd.to_len > 0) {
-      if (ds_write(dest_file, "NEWBNEWB", 8) ||
-          write_uint64_le(dest_file, comp_file->bytes_processed)) {
+      /* compressed block length */
+      if (write_uint32_le(dest_file, thd.to_len)) {
         error = true;
-        goto err;
+        continue;
       }
 
-      comp_file->bytes_processed += thd.from_len;
-
-      if (write_uint32_le(dest_file, thd.adler) ||
-          ds_write(dest_file, thd.to, thd.to_len)) {
+      /* block contents */
+      if (ds_write(dest_file, thd.to, thd.to_len)) {
         error = true;
-        goto err;
+      }
+    } else {
+      /* uncompressed block length */
+      if (write_uint32_le(dest_file, thd.from_len | LZ4F_UNCOMPRESSED_BIT)) {
+        error = true;
+        continue;
+      }
+
+      /* block contents */
+      if (ds_write(dest_file, thd.from, thd.from_len)) {
+        error = true;
+        continue;
       }
     }
 
     comp_file->bytes_processed += thd.from_len;
+  }
+
+  if (error) goto err;
+
+  /* LZ4 frame trailer */
+
+  /* empty mark is zero-sized block */
+  if (write_uint32_le(dest_file, 0)) {
+    goto err;
+  }
+
+  /* content checksum */
+  if (write_uint32_le(dest_file, checksum)) {
+    goto err;
   }
 
   return 0;
@@ -229,15 +273,6 @@ err:
 static int compress_close(ds_file_t *file) {
   ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
   ds_file_t *dest_file = comp_file->dest_file;
-
-  /* Write the qpress file trailer */
-  ds_write(dest_file, "ENDSENDS", 8);
-
-  /* Supposedly the number of written bytes should be written as a
-  "recovery information" in the file trailer, but in reality qpress
-  always writes 8 zeros here. Let's do the same */
-
-  write_uint64_le(dest_file, 0);
 
   int rc = ds_close(dest_file);
 
@@ -263,12 +298,5 @@ static void compress_deinit(ds_ctxt_t *ctxt) {
 static inline int write_uint32_le(ds_file_t *file, uint32_t n) {
   uchar tmp[4];
   int4store(tmp, n);
-  return ds_write(file, tmp, sizeof(tmp));
-}
-
-static inline int write_uint64_le(ds_file_t *file, ulonglong n) {
-  uchar tmp[8];
-
-  int8store(tmp, n);
   return ds_write(file, tmp, sizeof(tmp));
 }

@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "crc_glue.h"
 #include "datasink.h"
 #include "ds_decompress.h"
+#include "ds_decompress_lz4.h"
 #include "ds_decrypt.h"
 #include "xbcrypt_common.h"
 #include "xbstream.h"
@@ -53,6 +54,7 @@ TYPELIB xbstream_encrypt_algo_typelib = {
 datasink_t datasink_archive;
 datasink_t datasink_xbstream;
 datasink_t datasink_compress;
+datasink_t datasink_compress_lz4;
 datasink_t datasink_tmpfile;
 datasink_t datasink_encrypt;
 
@@ -123,8 +125,10 @@ typedef struct {
   std::unordered_map<std::string, file_entry_t *> filehash;
   xb_rstream_t *stream;
   ds_ctxt_t *ds_ctxt;
-  ds_ctxt_t *ds_decompress_ctxt;
-  ds_ctxt_t *ds_decrypt_ctxt;
+  ds_ctxt_t *ds_decompress_quicklz_ctxt;
+  ds_ctxt_t *ds_decompress_lz4_ctxt;
+  ds_ctxt_t *ds_decrypt_quicklz_ctxt;
+  ds_ctxt_t *ds_decrypt_lz4_ctxt;
   ds_ctxt_t *ds_decrypt_uncompressed_ctxt;
   pthread_mutex_t *mutex;
 } extract_ctxt_t;
@@ -366,13 +370,17 @@ static file_entry_t *file_entry_new(extract_ctxt_t *ctxt, const char *path,
   }
   entry->pathlen = pathlen;
 
-  if (ctxt->ds_decrypt_ctxt && ends_with(path, ".qp.xbcrypt")) {
-    file = ds_open(ctxt->ds_decrypt_ctxt, path, NULL);
+  if (ctxt->ds_decrypt_quicklz_ctxt && ends_with(path, ".qp.xbcrypt")) {
+    file = ds_open(ctxt->ds_decrypt_quicklz_ctxt, path, NULL);
+  } else if (ctxt->ds_decrypt_lz4_ctxt && ends_with(path, ".lz4.xbcrypt")) {
+    file = ds_open(ctxt->ds_decrypt_lz4_ctxt, path, NULL);
   } else if (ctxt->ds_decrypt_uncompressed_ctxt &&
              ends_with(path, ".xbcrypt")) {
     file = ds_open(ctxt->ds_decrypt_uncompressed_ctxt, path, NULL);
-  } else if (ctxt->ds_decompress_ctxt && ends_with(path, ".qp")) {
-    file = ds_open(ctxt->ds_decompress_ctxt, path, NULL);
+  } else if (ctxt->ds_decompress_quicklz_ctxt && ends_with(path, ".qp")) {
+    file = ds_open(ctxt->ds_decompress_quicklz_ctxt, path, NULL);
+  } else if (ctxt->ds_decompress_lz4_ctxt && ends_with(path, ".lz4")) {
+    file = ds_open(ctxt->ds_decompress_lz4_ctxt, path, NULL);
   } else {
     file = ds_open(ctxt->ds_ctxt, path, NULL);
   }
@@ -502,9 +510,11 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
                         char **argv __attribute__((unused))) {
   xb_rstream_t *stream = NULL;
   ds_ctxt_t *ds_ctxt = NULL;
-  ds_ctxt_t *ds_decrypt_ctxt = NULL;
+  ds_ctxt_t *ds_decrypt_lz4_ctxt = NULL;
+  ds_ctxt_t *ds_decrypt_quicklz_ctxt = NULL;
   ds_ctxt_t *ds_decrypt_uncompressed_ctxt = NULL;
-  ds_ctxt_t *ds_decompress_ctxt = NULL;
+  ds_ctxt_t *ds_decompress_quicklz_ctxt = NULL;
+  ds_ctxt_t *ds_decompress_lz4_ctxt = NULL;
   extract_ctxt_t ctxt;
   int i;
   pthread_t *tids = NULL;
@@ -525,13 +535,21 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
   }
 
   if (opt_decompress) {
-    ds_compress_decompress_threads = opt_decompress_threads;
-    ds_decompress_ctxt = ds_create(".", DS_TYPE_DECOMPRESS);
-    if (ds_decompress_ctxt == NULL) {
+    ds_decompress_quicklz_threads = opt_decompress_threads;
+    ds_decompress_quicklz_ctxt = ds_create(".", DS_TYPE_DECOMPRESS_QUICKLZ);
+    if (ds_decompress_quicklz_ctxt == NULL) {
       ret = 1;
       goto exit;
     }
-    ds_set_pipe(ds_decompress_ctxt, ds_ctxt);
+    ds_set_pipe(ds_decompress_quicklz_ctxt, ds_ctxt);
+
+    ds_decompress_lz4_threads = opt_decompress_threads;
+    ds_decompress_lz4_ctxt = ds_create(".", DS_TYPE_DECOMPRESS_LZ4);
+    if (ds_decompress_lz4_ctxt == NULL) {
+      ret = 1;
+      goto exit;
+    }
+    ds_set_pipe(ds_decompress_lz4_ctxt, ds_ctxt);
   }
 
   if (opt_encrypt_algo) {
@@ -539,18 +557,18 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
     ds_encrypt_key = opt_encrypt_key;
     ds_encrypt_key_file = opt_encrypt_key_file;
     ds_decrypt_encrypt_threads = opt_encrypt_threads;
-    ds_decrypt_ctxt = ds_create(".", DS_TYPE_DECRYPT);
-    if (ds_decrypt_ctxt == NULL) {
+    ds_decrypt_uncompressed_ctxt = ds_create(".", DS_TYPE_DECRYPT);
+    ds_set_pipe(ds_decrypt_uncompressed_ctxt, ds_ctxt);
+    if (ds_decrypt_uncompressed_ctxt == NULL) {
       ret = 1;
       goto exit;
     }
-    if (ds_decompress_ctxt) {
-      ds_set_pipe(ds_decrypt_ctxt, ds_decompress_ctxt);
-      ds_decrypt_uncompressed_ctxt = ds_create(".", DS_TYPE_DECRYPT);
-      ds_set_pipe(ds_decrypt_uncompressed_ctxt, ds_ctxt);
+    if (ds_decompress_quicklz_ctxt) {
+      ds_decrypt_quicklz_ctxt = ds_create(".", DS_TYPE_DECRYPT);
+      ds_set_pipe(ds_decrypt_quicklz_ctxt, ds_decompress_quicklz_ctxt);
     } else {
-      ds_set_pipe(ds_decrypt_ctxt, ds_ctxt);
-      ds_decrypt_uncompressed_ctxt = ds_decrypt_ctxt;
+      ds_decrypt_lz4_ctxt = ds_create(".", DS_TYPE_DECRYPT);
+      ds_set_pipe(ds_decrypt_lz4_ctxt, ds_decompress_lz4_ctxt);
     }
   }
 
@@ -564,9 +582,11 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
 
   ctxt.stream = stream;
   ctxt.ds_ctxt = ds_ctxt;
-  ctxt.ds_decrypt_ctxt = ds_decrypt_ctxt;
+  ctxt.ds_decompress_quicklz_ctxt = ds_decompress_quicklz_ctxt;
+  ctxt.ds_decompress_lz4_ctxt = ds_decompress_lz4_ctxt;
   ctxt.ds_decrypt_uncompressed_ctxt = ds_decrypt_uncompressed_ctxt;
-  ctxt.ds_decompress_ctxt = ds_decompress_ctxt;
+  ctxt.ds_decrypt_quicklz_ctxt = ds_decrypt_quicklz_ctxt;
+  ctxt.ds_decrypt_lz4_ctxt = ds_decrypt_lz4_ctxt;
   ctxt.mutex = &mutex;
 
   tids = new pthread_t[n_threads];
@@ -593,15 +613,20 @@ exit:
   if (ds_ctxt != NULL) {
     ds_destroy(ds_ctxt);
   }
-  if (ds_decrypt_ctxt != NULL) {
-    ds_destroy(ds_decrypt_ctxt);
-  }
-  if (ds_decompress_ctxt != NULL) {
-    ds_destroy(ds_decompress_ctxt);
-  }
-  if (ds_decrypt_uncompressed_ctxt != NULL &&
-      ds_decrypt_uncompressed_ctxt != ds_decrypt_ctxt) {
+  if (ds_decrypt_uncompressed_ctxt != NULL) {
     ds_destroy(ds_decrypt_uncompressed_ctxt);
+  }
+  if (ds_decrypt_lz4_ctxt != NULL) {
+    ds_destroy(ds_decrypt_lz4_ctxt);
+  }
+  if (ds_decrypt_quicklz_ctxt != NULL) {
+    ds_destroy(ds_decrypt_quicklz_ctxt);
+  }
+  if (ds_decompress_lz4_ctxt != NULL) {
+    ds_destroy(ds_decompress_lz4_ctxt);
+  }
+  if (ds_decompress_quicklz_ctxt != NULL) {
+    ds_destroy(ds_decompress_quicklz_ctxt);
   }
   xb_stream_read_done(stream);
 
