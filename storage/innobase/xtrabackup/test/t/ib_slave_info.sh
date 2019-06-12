@@ -74,9 +74,7 @@ run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --slave-info --no-lock \
   --target-dir=$topdir/backup
 
 vlog "Full backup of the slave server"
-xtrabackup --backup --target-dir=$topdir/backup \
-    --no-timestamp --slave-info \
-    2>&1 | tee $topdir/pxb.log
+xtrabackup --backup --target-dir=$topdir/backup --slave-info 2>&1 | tee $topdir/pxb.log
 
 grep_general_log > $topdir/log1
 
@@ -110,7 +108,7 @@ mysql -e "TRUNCATE TABLE mysql.general_log;"
 mkdir $topdir/xbstream_backup
 
 vlog "Full backup of the slave server to a xbstream stream"
-xtrabackup --backup --no-timestamp --slave-info --stream=xbstream \
+xtrabackup --backup --slave-info --stream=xbstream \
     | xbstream -xv -C $topdir/xbstream_backup
 
 cat $topdir/xbstream_backup/xtrabackup_slave_info
@@ -151,7 +149,7 @@ setup_slave GTID $slave2_id $master_id
 mysql -e "SET GLOBAL general_log=1; SET GLOBAL log_output='TABLE';"
 
 vlog "Full backup of the GTID with AUTO_POSITION slave server"
-xtrabackup --backup --no-timestamp --slave-info --target-dir=$topdir/backup
+xtrabackup --backup --slave-info --target-dir=$topdir/backup
 
 grep_general_log > $topdir/log3
 
@@ -182,7 +180,7 @@ start_server_with_id $slave3_id
 setup_slave $slave3_id $master_id
 
 vlog "Full backup of the GTID slave server"
-xtrabackup --backup --no-timestamp --slave-info --target-dir=$topdir/backup
+xtrabackup --backup --slave-info --target-dir=$topdir/backup
 
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info

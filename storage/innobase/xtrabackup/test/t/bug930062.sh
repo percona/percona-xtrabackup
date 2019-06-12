@@ -41,7 +41,7 @@ load_dbase_data sakila
 
 checksum_1=`checksum_table sakila actor`
 
-xtrabackup --backup --include='actor' --target-dir=$backup_dir
+xtrabackup --backup --tables='actor' --target-dir=$backup_dir
 
 stop_server
 

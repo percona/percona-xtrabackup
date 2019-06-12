@@ -242,7 +242,9 @@ bool MY_LOCALE_ERRMSGS::read_texts() {
              key_file_ERRMSG,
              fn_format(name, ERRMSG_FILE, lc_messages_dir, "", 4), O_RDONLY,
              MYF(0))) < 0) {
+#ifndef XTRABACKUP
       LogErr(ERROR_LEVEL, ER_ERRMSG_CANT_FIND_FILE, name);
+#endif
       goto open_err;
     }
 
