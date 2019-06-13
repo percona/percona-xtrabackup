@@ -7228,6 +7228,14 @@ static void fil_report_invalid_page_access_low(page_no_t block_offset,
 @param[in]	space		table space */
 void fil_io_set_encryption(IORequest &req_type, const page_id_t &page_id,
                            fil_space_t *space) {
+  /* Don't encrypt pages of system tablespace upto TRX_SYS_PAGE(including). The
+  doublewrite buffer header is on TRX_SYS_PAGE */
+  if (fsp_is_system_tablespace(space->id) &&
+      page_id.page_no() <= FSP_TRX_SYS_PAGE_NO) {
+    req_type.clear_encrypted();
+    return;
+  }
+
   /* Don't encrypt page 0 of all tablespaces except redo log
   tablespace, all pages from the system tablespace. */
   if (space->encryption_type == Encryption::NONE ||
@@ -8747,12 +8755,6 @@ Compression::Type fil_get_compression(space_id_t space_id) {
 @return DB_SUCCESS or error code */
 dberr_t fil_set_encryption(space_id_t space_id, Encryption::Type algorithm,
                            byte *key, byte *iv) {
-  ut_ad(space_id != TRX_SYS_SPACE);
-
-  if (fsp_is_system_or_temp_tablespace(space_id)) {
-    return (DB_IO_NO_ENCRYPT_TABLESPACE);
-  }
-
   auto shard = fil_system->shard_by_id(space_id);
 
   shard->mutex_acquire();

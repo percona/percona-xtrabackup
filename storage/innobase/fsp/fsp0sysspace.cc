@@ -52,6 +52,7 @@ direct reference to server header and global variable */
 #include "srv0start.h"
 #include "trx0sys.h"
 #include "ut0new.h"
+#include "xb0xb.h"
 
 /** The control info of the system tablespace. */
 SysTablespace srv_sys_space;
@@ -917,6 +918,22 @@ dberr_t SysTablespace::open_or_create(bool is_temp, bool create_new_db,
                          max_size)) {
       err = DB_ERROR;
       break;
+    }
+  }
+
+  if (FSP_FLAGS_GET_ENCRYPTION(space->flags)) {
+    if (srv_backup_mode || !use_dumped_tablespace_keys) {
+      if (begin->m_encryption_key != nullptr) {
+        err =
+            fil_set_encryption(space->id, Encryption::AES,
+                               begin->m_encryption_key, begin->m_encryption_iv);
+      }
+    } else {
+      err = xb_set_encryption(space);
+    }
+
+    if (err != DB_SUCCESS) {
+      ib::error(ER_IB_MSG_312, space->name);
     }
   }
 

@@ -288,7 +288,6 @@ long innobase_open_files = 300L;
 
 longlong innobase_page_size = (1LL << 14); /* 16KB */
 static ulong innobase_log_block_size = 512;
-char *innobase_doublewrite_file = NULL;
 char *innobase_buffer_pool_filename = NULL;
 char *innobase_directories = NULL;
 
@@ -309,7 +308,6 @@ char *innobase_temp_data_file_path = NULL;
 values */
 
 ulong innobase_fast_shutdown = 1;
-bool innobase_use_doublewrite = TRUE;
 bool innobase_use_checksums = TRUE;
 bool innobase_use_large_pages = FALSE;
 bool innobase_file_per_table = FALSE;
@@ -571,7 +569,6 @@ enum options_xtrabackup {
   OPT_INNODB_DATA_FILE_PATH,
   OPT_INNODB_DATA_HOME_DIR,
   OPT_INNODB_ADAPTIVE_HASH_INDEX,
-  OPT_INNODB_DOUBLEWRITE,
   OPT_INNODB_FAST_SHUTDOWN,
   OPT_INNODB_FILE_PER_TABLE,
   OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT,
@@ -596,7 +593,6 @@ enum options_xtrabackup {
   OPT_INNODB_PAGE_SIZE,
   OPT_INNODB_LOG_BLOCK_SIZE,
   OPT_INNODB_EXTRA_UNDOSLOTS,
-  OPT_INNODB_DOUBLEWRITE_FILE,
   OPT_INNODB_BUFFER_POOL_FILENAME,
   OPT_INNODB_FORCE_RECOVERY,
   OPT_INNODB_LOCK_WAIT_TIMEOUT,
@@ -1280,11 +1276,6 @@ Disable with --skip-innodb-checksums.",
     {"innodb_data_home_dir", OPT_INNODB_DATA_HOME_DIR,
      "The common part for InnoDB table spaces.", &innobase_data_home_dir,
      &innobase_data_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-    {"innodb_doublewrite", OPT_INNODB_DOUBLEWRITE,
-     "Enable InnoDB doublewrite buffer (enabled by default). \
-Disable with --skip-innodb-doublewrite.",
-     (G_PTR *)&innobase_use_doublewrite, (G_PTR *)&innobase_use_doublewrite, 0,
-     GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
     {"innodb_io_capacity", OPT_INNODB_IO_CAPACITY,
      "Number of IOPs the server can do. Tunes the background IO rate",
      (G_PTR *)&srv_io_capacity, (G_PTR *)&srv_io_capacity, 0, GET_ULONG,
@@ -1366,11 +1357,6 @@ Disable with --skip-innodb-doublewrite.",
      (G_PTR *)&innobase_log_block_size, (G_PTR *)&innobase_log_block_size, 0,
      GET_ULONG, REQUIRED_ARG, 512, 512, 1 << UNIV_PAGE_SIZE_SHIFT_MAX, 0, 1L,
      0},
-    {"innodb_doublewrite_file", OPT_INNODB_DOUBLEWRITE_FILE,
-     "Path to special datafile for doublewrite buffer. (default is "
-     ": not used)",
-     (G_PTR *)&innobase_doublewrite_file, (G_PTR *)&innobase_doublewrite_file,
-     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"innodb_buffer_pool_filename", OPT_INNODB_BUFFER_POOL_FILENAME,
      "Filename to/from which to dump/load the InnoDB buffer pool",
      (G_PTR *)&innobase_buffer_pool_filename,
@@ -1628,11 +1614,6 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
     case OPT_INNODB_LOG_BLOCK_SIZE:
 
       ADD_PRINT_PARAM_OPT(innobase_log_block_size);
-      break;
-
-    case OPT_INNODB_DOUBLEWRITE_FILE:
-
-      ADD_PRINT_PARAM_OPT(innobase_doublewrite_file);
       break;
 
     case OPT_INNODB_UNDO_DIRECTORY:
@@ -1985,7 +1966,7 @@ static bool innodb_init_param(void) {
 
   srv_force_recovery = (ulint)innobase_force_recovery;
 
-  srv_use_doublewrite_buf = (ibool)innobase_use_doublewrite;
+  srv_use_doublewrite_buf = false;
 
   if (!innobase_use_checksums) {
     srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_NONE;

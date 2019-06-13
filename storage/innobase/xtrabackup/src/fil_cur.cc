@@ -125,9 +125,8 @@ xb_fil_cur_result_t xb_fil_cur_open(
       /* The following call prints an error message */
       os_file_get_last_error(TRUE);
 
-      msg("[%02u] xtrabackup: error: cannot open "
-          "tablespace %s\n",
-          thread_n, cursor->abs_path);
+      msg("[%02u] xtrabackup: error: cannot open tablespace %s\n", thread_n,
+          cursor->abs_path);
 
       return (XB_FIL_CUR_ERROR);
     }

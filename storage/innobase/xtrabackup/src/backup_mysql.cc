@@ -2037,10 +2037,6 @@ bool write_backup_config_file() {
     << "innodb_undo_log_encrypt=" << (srv_undo_log_encrypt ? "ON" : "OFF")
     << "\n";
 
-  if (innobase_doublewrite_file) {
-    s << "innodb_doublewrite_file=" << innobase_doublewrite_file << "\n";
-  }
-
   if (innobase_buffer_pool_filename) {
     s << "innodb_buffer_pool_filename=" << innobase_buffer_pool_filename
       << "\n";
