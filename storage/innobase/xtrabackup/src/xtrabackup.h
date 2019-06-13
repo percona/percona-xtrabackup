@@ -52,6 +52,12 @@ typedef struct {
   ib_mutex_t mutex;
 } datafiles_iter_t;
 
+enum xtrabackup_compress_t {
+  XTRABACKUP_COMPRESS_NONE,
+  XTRABACKUP_COMPRESS_QUICKLZ,
+  XTRABACKUP_COMPRESS_LZ4
+};
+
 /* value of the --incremental option */
 extern lsn_t incremental_lsn;
 
@@ -89,7 +95,7 @@ extern char *xtrabackup_databases_file;
 extern char *xtrabackup_tables_exclude;
 extern char *xtrabackup_databases_exclude;
 
-extern bool xtrabackup_compress;
+extern xtrabackup_compress_t xtrabackup_compress;
 extern bool xtrabackup_encrypt;
 
 extern bool xtrabackup_backup;

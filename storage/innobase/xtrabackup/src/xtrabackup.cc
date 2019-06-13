@@ -219,7 +219,7 @@ xb_stream_fmt_t xtrabackup_stream_fmt = XB_STREAM_FMT_NONE;
 bool xtrabackup_stream = false;
 
 const char *xtrabackup_compress_alg = NULL;
-bool xtrabackup_compress = false;
+xtrabackup_compress_t xtrabackup_compress = XTRABACKUP_COMPRESS_NONE;
 uint xtrabackup_compress_threads;
 ulonglong xtrabackup_compress_chunk_size = 0;
 
@@ -806,10 +806,9 @@ struct my_option xb_client_options[] = {
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"compress", OPT_XTRA_COMPRESS,
-     "Compress individual backup files using the "
-     "specified compression algorithm. Currently the only supported algorithm "
-     "is 'quicklz'. It is also the default algorithm, i.e. the one used when "
-     "--compress is used without an argument.",
+     "Compress individual backup files using the specified compression "
+     "algorithm. Supported algorithms are 'quicklz' and 'lz4'. The default "
+     "algorithm is 'quicklz'.",
      (G_PTR *)&xtrabackup_compress_alg, (G_PTR *)&xtrabackup_compress_alg, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -1375,7 +1374,7 @@ Disable with --skip-innodb-checksums.",
      "INNODB, STRICT_INNODB, NONE, STRICT_NONE]",
      &srv_checksum_algorithm, &srv_checksum_algorithm,
      &innodb_checksum_algorithm_typelib, GET_ENUM, REQUIRED_ARG,
-     SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
+     SRV_CHECKSUM_ALGORITHM_CRC32, 0, 0, 0, 0, 0},
     {"innodb_log_checksums", OPT_INNODB_LOG_CHECKSUMS,
      "Whether to compute and require checksums for InnoDB redo log blocks",
      &srv_log_checksums, &srv_log_checksums, &innodb_checksum_algorithm_typelib,
@@ -1437,7 +1436,9 @@ uint xb_server_options_count = array_elements(xb_server_options);
 
 /* Following definitions are to avoid linking with unused datasinks
    and their link dependencies */
+datasink_t datasink_decrypt;
 datasink_t datasink_decompress;
+datasink_t datasink_decompress_lz4;
 
 #ifndef __WIN__
 static int debug_sync_resumed;
@@ -1661,13 +1662,16 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       xtrabackup_stream = TRUE;
       break;
     case OPT_XTRA_COMPRESS:
-      if (argument == NULL)
-        xtrabackup_compress_alg = "quicklz";
-      else if (strcasecmp(argument, "quicklz")) {
+      if (argument == NULL) {
+        xtrabackup_compress = XTRABACKUP_COMPRESS_QUICKLZ;
+      } else if (strcasecmp(argument, "quicklz") == 0) {
+        xtrabackup_compress = XTRABACKUP_COMPRESS_QUICKLZ;
+      } else if (strcasecmp(argument, "lz4") == 0) {
+        xtrabackup_compress = XTRABACKUP_COMPRESS_LZ4;
+      } else {
         msg("Invalid --compress argument: %s\n", argument);
         return 1;
       }
-      xtrabackup_compress = TRUE;
       break;
     case OPT_XTRA_ENCRYPT:
       if (argument == NULL) {
@@ -2768,7 +2772,7 @@ const char *xb_get_copy_action(const char *dflt) {
   const char *action;
 
   if (xtrabackup_stream) {
-    if (xtrabackup_compress) {
+    if (xtrabackup_compress != XTRABACKUP_COMPRESS_NONE) {
       if (xtrabackup_encrypt) {
         action = "Compressing, encrypting and streaming";
       } else {
@@ -2780,7 +2784,7 @@ const char *xb_get_copy_action(const char *dflt) {
       action = "Streaming";
     }
   } else {
-    if (xtrabackup_compress) {
+    if (xtrabackup_compress != XTRABACKUP_COMPRESS_NONE) {
       if (xtrabackup_encrypt) {
         action = "Compressing and encrypting";
       } else {
@@ -3358,18 +3362,18 @@ static void xtrabackup_init_datasinks(void) {
   ds_uncompressed_data = ds_data;
 
   /* Compression for ds_data and ds_redo */
-  if (xtrabackup_compress) {
+  if (xtrabackup_compress != XTRABACKUP_COMPRESS_NONE) {
     ds_ctxt_t *ds;
 
     /* Use a 1 MB buffer for compressed output stream */
     ds = ds_create(xtrabackup_target_dir, DS_TYPE_BUFFER);
-    ds_buffer_set_size(ds, 1024 * 1024);
+    ds_buffer_set_size(ds, 10 * 1024 * 1024);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
     if (ds_data != ds_redo) {
       ds_data = ds;
       ds = ds_create(xtrabackup_target_dir, DS_TYPE_BUFFER);
-      ds_buffer_set_size(ds, 1024 * 1024);
+      ds_buffer_set_size(ds, 10 * 1024 * 1024);
       xtrabackup_add_datasink(ds);
       ds_set_pipe(ds, ds_redo);
       ds_redo = ds;
@@ -3377,12 +3381,18 @@ static void xtrabackup_init_datasinks(void) {
       ds_redo = ds_data = ds;
     }
 
-    ds = ds_create(xtrabackup_target_dir, DS_TYPE_COMPRESS);
+    ds = ds_create(xtrabackup_target_dir,
+                   xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
+                       ? DS_TYPE_COMPRESS_LZ4
+                       : DS_TYPE_COMPRESS_QUICKLZ);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
     if (ds_data != ds_redo) {
       ds_data = ds;
-      ds = ds_create(xtrabackup_target_dir, DS_TYPE_COMPRESS);
+      ds = ds_create(xtrabackup_target_dir,
+                     xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
+                         ? DS_TYPE_COMPRESS_LZ4
+                         : DS_TYPE_COMPRESS_QUICKLZ);
       xtrabackup_add_datasink(ds);
       ds_set_pipe(ds, ds_redo);
       ds_redo = ds;

@@ -2,10 +2,12 @@
 # Bug #1247586: xtrabackup_56 defaults to innodb_checksum_algorithm=crc32
 ##########################################################################
 
-require_server_version_higher_than 5.6.0
+require_server_version_higher_than 8.0.0
+
+# test case changed for 8.0 since default checksum algorithm is not crc32
 
 if ! xtrabackup --help 2>&1 |
-       egrep '^innodb-checksum-algorithm[[:space:]]+innodb$'
+       egrep '^innodb-checksum-algorithm[[:space:]]+crc32$'
 then
     die "XtraBackup is using an incorrect default value for \
 --innodb-checksum-algorithm"

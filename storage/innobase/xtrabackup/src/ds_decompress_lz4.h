@@ -1,7 +1,7 @@
 /******************************************************
-Copyright (c) 2019 Aiven, Helsinki, Finland. https://aiven.io/
+Copyright (c) 2019 Percona LLC and/or its affiliates.
 
-Decompression interface for XtraBackup.
+LZ4 decompression interface for XtraBackup.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,13 +18,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#ifndef DS_DECOMPRESS_H
-#define DS_DECOMPRESS_H
+#ifndef DS_DECOMPRESS_LZ4_H
+#define DS_DECOMPRESS_LZ4_H
 
 #include "datasink.h"
 
-extern uint ds_decompress_quicklz_threads;
+extern uint ds_decompress_lz4_threads;
 
-extern datasink_t datasink_decompress;
+extern datasink_t datasink_decompress_lz4;
 
 #endif

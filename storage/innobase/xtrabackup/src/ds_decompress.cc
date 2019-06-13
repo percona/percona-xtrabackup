@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <zlib.h>
 #include "common.h"
 #include "datasink.h"
+#include "thread_pool.h"
 
 /* Possible states of input data parsing. There are quite a few different
 states since we want to be able to do multithreaded processing while avoiding
@@ -47,15 +48,6 @@ typedef enum {
 } decompress_state_t;
 
 typedef struct {
-  pthread_t id;
-  uint num;
-  pthread_mutex_t ctrl_mutex;
-  pthread_cond_t ctrl_cond;
-  pthread_mutex_t data_mutex;
-  pthread_cond_t data_cond;
-  bool started;
-  bool data_avail;
-  bool cancelled;
   const char *from;
   char *from_to_free;
   char *to;
@@ -64,9 +56,8 @@ typedef struct {
 } decomp_thread_ctxt_t;
 
 typedef struct {
-  decomp_thread_ctxt_t *threads;
-  uint nthreads;
   ulonglong chunk_size;
+  Thread_pool *thread_pool;
 } ds_decompress_ctxt_t;
 
 typedef struct {
@@ -77,10 +68,13 @@ typedef struct {
   size_t nbytes_read;
   char header[20];
   char *buffer;
+  decomp_thread_ctxt_t *threads;
+  std::vector<std::future<void>> tasks;
+  uint nthreads;
 } ds_decompress_file_t;
 
 /* User-configurable decompression options */
-uint ds_compress_decompress_threads;
+uint ds_decompress_quicklz_threads;
 
 static ds_ctxt_t *decompress_init(const char *root);
 static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
@@ -95,32 +89,17 @@ datasink_t datasink_decompress = {&decompress_init, &decompress_open,
 
 static int decompress_process_metadata(ds_decompress_file_t *file,
                                        const char **ptr, size_t *len);
-static decomp_thread_ctxt_t *create_worker_threads(uint n);
 static void initialize_worker_thread_buffers(decomp_thread_ctxt_t *threads,
                                              uint n, ulonglong chunk_size);
-static void destroy_worker_threads(decomp_thread_ctxt_t *threads, uint n);
-static void *decompress_worker_thread_func(void *arg);
+static void destroy_worker_thread_buffers(decomp_thread_ctxt_t *threads,
+                                          uint n);
 
 static ds_ctxt_t *decompress_init(const char *root) {
-  ds_ctxt_t *ctxt;
-  ds_decompress_ctxt_t *decompress_ctxt;
-  decomp_thread_ctxt_t *threads;
-
-  threads = create_worker_threads(ds_compress_decompress_threads);
-  if (threads == NULL) {
-    msg("decompress: failed to create worker threads.\n");
-    return NULL;
-  }
-
-  ctxt = (ds_ctxt_t *)my_malloc(
-      PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t) + sizeof(ds_decompress_ctxt_t),
-      MYF(MY_FAE));
-
-  decompress_ctxt = (ds_decompress_ctxt_t *)(ctxt + 1);
-  decompress_ctxt->threads = threads;
-  decompress_ctxt->nthreads = ds_compress_decompress_threads;
+  ds_decompress_ctxt_t *decompress_ctxt = new ds_decompress_ctxt_t;
+  decompress_ctxt->thread_pool = new Thread_pool(ds_decompress_quicklz_threads);
   decompress_ctxt->chunk_size = 0;
 
+  ds_ctxt_t *ctxt = new ds_ctxt_t;
   ctxt->ptr = decompress_ctxt;
   ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
@@ -129,18 +108,23 @@ static ds_ctxt_t *decompress_init(const char *root) {
 
 static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
                                   MY_STAT *mystat) {
-  ds_decompress_ctxt_t *decomp_ctxt;
-  ds_ctxt_t *dest_ctxt;
-  ds_file_t *dest_file;
   char new_name[FN_REFLEN];
-  ds_file_t *file;
-  ds_decompress_file_t *decomp_file;
   const char *qp_ext_pos;
+  decomp_thread_ctxt_t *threads;
 
   xb_ad(ctxt->pipe_ctxt != NULL);
-  dest_ctxt = ctxt->pipe_ctxt;
+  ds_ctxt_t *dest_ctxt = ctxt->pipe_ctxt;
 
-  decomp_ctxt = (ds_decompress_ctxt_t *)ctxt->ptr;
+  ds_decompress_ctxt_t *decomp_ctxt = (ds_decompress_ctxt_t *)ctxt->ptr;
+
+  threads = (decomp_thread_ctxt_t *)my_malloc(
+      PSI_NOT_INSTRUMENTED,
+      sizeof(decomp_thread_ctxt_t) * ds_decompress_quicklz_threads,
+      MYF(MY_FAE));
+  if (threads == NULL) {
+    msg("decompress: failed to create worker threads.\n");
+    return NULL;
+  }
 
   /* Remove the .qp extension from the filename */
   if ((qp_ext_pos = strrchr(path, '.')) && !strcmp(qp_ext_pos, ".qp")) {
@@ -155,22 +139,24 @@ static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
     return NULL;
   }
 
-  dest_file = ds_open(dest_ctxt, new_name, mystat);
+  ds_file_t *dest_file = ds_open(dest_ctxt, new_name, mystat);
   if (dest_file == NULL) {
     return NULL;
   }
 
-  file = (ds_file_t *)my_malloc(
-      PSI_NOT_INSTRUMENTED, sizeof(ds_file_t) + sizeof(ds_decompress_file_t),
-      MYF(MY_FAE));
-  decomp_file = (ds_decompress_file_t *)(file + 1);
+  ds_decompress_file_t *decomp_file = new ds_decompress_file_t;
+
   decomp_file->dest_file = dest_file;
   decomp_file->decomp_ctxt = decomp_ctxt;
   decomp_file->state = STATE_READ_ARCHIVE_HEADER;
   decomp_file->nbytes_expected = 16;
   decomp_file->nbytes_read = 0;
   decomp_file->buffer = NULL;
+  decomp_file->threads = threads;
+  decomp_file->nthreads = ds_decompress_quicklz_threads;
+  decomp_file->tasks.resize(ds_decompress_quicklz_threads);
 
+  ds_file_t *file = new ds_file_t;
   file->ptr = decomp_file;
   file->path = dest_file->path;
 
@@ -192,8 +178,8 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
   decomp_ctxt = decomp_file->decomp_ctxt;
   dest_file = decomp_file->dest_file;
 
-  threads = decomp_ctxt->threads;
-  nthreads = decomp_ctxt->nthreads;
+  threads = decomp_file->threads;
+  nthreads = decomp_file->nthreads;
 
   res = 0;
   ptr = (const char *)buf;
@@ -215,8 +201,6 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
 
       thd = threads + max_thread;
 
-      pthread_mutex_lock(&thd->ctrl_mutex);
-
       if (decomp_file->state == STATE_PROCESS_BUFFERED_BLOCK_DATA) {
         thd->from = decomp_file->buffer;
         thd->from_to_free = decomp_file->buffer;
@@ -232,20 +216,17 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
       decomp_file->nbytes_read = 0;
       decomp_file->nbytes_expected = 1;
 
-      pthread_mutex_lock(&thd->data_mutex);
-      thd->data_avail = true;
-      pthread_cond_signal(&thd->data_cond);
-      pthread_mutex_unlock(&thd->data_mutex);
+      decomp_file->tasks[max_thread] =
+          decomp_ctxt->thread_pool->add_task([thd](uint32_t n) {
+            thd->to_len = qlz_decompress(thd->from, thd->to, &thd->state);
+          });
     }
 
     /* Reap and stream the decompressed data */
     for (i = 0; i < max_thread; i++) {
       thd = threads + i;
 
-      pthread_mutex_lock(&thd->data_mutex);
-      while (thd->data_avail == true) {
-        pthread_cond_wait(&thd->data_cond, &thd->data_mutex);
-      }
+      decomp_file->tasks[i].wait();
 
       if (thd->from_to_free) {
         my_free(thd->from_to_free);
@@ -260,9 +241,6 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
         also need to loop threads to free buffers */
         res = ds_write(dest_file, threads[i].to, threads[i].to_len);
       }
-
-      pthread_mutex_unlock(&threads[i].data_mutex);
-      pthread_mutex_unlock(&threads[i].ctrl_mutex);
     }
 
     if (res) {
@@ -325,15 +303,14 @@ static int decompress_process_metadata(ds_decompress_file_t *decomp_file,
         chunk_size = uint8korr(header + 8);
         if (decomp_file->decomp_ctxt->chunk_size == 0) {
           decomp_file->decomp_ctxt->chunk_size = chunk_size;
-          initialize_worker_thread_buffers(decomp_file->decomp_ctxt->threads,
-                                           decomp_file->decomp_ctxt->nthreads,
-                                           chunk_size);
         } else if (chunk_size != decomp_file->decomp_ctxt->chunk_size) {
           /* all files in single archive should be using the same chunk size */
           msg("decompress: multiple chunk sizes found: %lld != %lld.\n",
               chunk_size, decomp_file->decomp_ctxt->chunk_size);
           return 1;
         }
+        initialize_worker_thread_buffers(decomp_file->threads,
+                                         decomp_file->nthreads, chunk_size);
         decomp_file->state = STATE_READ_FILE_HEADER;
         decomp_file->nbytes_expected = 5;
       } else if (decomp_file->state == STATE_READ_FILE_HEADER) {
@@ -440,7 +417,10 @@ static int decompress_close(ds_file_t *file) {
 
   my_free(decomp_file->buffer);
   decomp_file->buffer = NULL;
-  my_free(file);
+  destroy_worker_thread_buffers(decomp_file->threads, decomp_file->nthreads);
+  my_free(decomp_file->threads);
+  delete decomp_file;
+  delete file;
 
   if (last_state != STATE_REACHED_EOF) {
     msg("decompress: file closed before reaching end of compressed data.\n");
@@ -451,76 +431,14 @@ static int decompress_close(ds_file_t *file) {
 }
 
 static void decompress_deinit(ds_ctxt_t *ctxt) {
-  ds_decompress_ctxt_t *decomp_ctxt;
-
   xb_ad(ctxt->pipe_ctxt != NULL);
 
-  decomp_ctxt = (ds_decompress_ctxt_t *)ctxt->ptr;
-
-  destroy_worker_threads(decomp_ctxt->threads, decomp_ctxt->nthreads);
+  ds_decompress_ctxt_t *decomp_ctxt = (ds_decompress_ctxt_t *)ctxt->ptr;
+  delete decomp_ctxt->thread_pool;
+  delete decomp_ctxt;
 
   my_free(ctxt->root);
-  my_free(ctxt);
-}
-
-static decomp_thread_ctxt_t *create_worker_threads(uint n) {
-  decomp_thread_ctxt_t *threads;
-  uint i;
-
-  threads = (decomp_thread_ctxt_t *)my_malloc(
-      PSI_NOT_INSTRUMENTED, sizeof(decomp_thread_ctxt_t) * n, MYF(MY_FAE));
-
-  for (i = 0; i < n; i++) {
-    decomp_thread_ctxt_t *thd = threads + i;
-    thd->to = NULL;
-    thd->from_to_free = NULL;
-  }
-
-  for (i = 0; i < n; i++) {
-    decomp_thread_ctxt_t *thd = threads + i;
-
-    thd->num = i + 1;
-    thd->started = false;
-    thd->cancelled = false;
-    thd->data_avail = false;
-
-    /* Don't initialize to yet. Need to get chunk_size
-    from a compressed file before that can be done */
-
-    /* Initialize the control mutex and condition var */
-    if (pthread_mutex_init(&thd->ctrl_mutex, NULL) ||
-        pthread_cond_init(&thd->ctrl_cond, NULL)) {
-      goto err;
-    }
-
-    /* Initialize and data mutex and condition var */
-    if (pthread_mutex_init(&thd->data_mutex, NULL) ||
-        pthread_cond_init(&thd->data_cond, NULL)) {
-      goto err;
-    }
-
-    pthread_mutex_lock(&thd->ctrl_mutex);
-
-    if (pthread_create(&thd->id, NULL, decompress_worker_thread_func, thd)) {
-      msg("decompress: pthread_create() failed: errno = %d\n", errno);
-      goto err;
-    }
-  }
-
-  /* Wait for the threads to start */
-  for (i = 0; i < n; i++) {
-    decomp_thread_ctxt_t *thd = threads + i;
-
-    while (thd->started == false)
-      pthread_cond_wait(&thd->ctrl_cond, &thd->ctrl_mutex);
-    pthread_mutex_unlock(&thd->ctrl_mutex);
-  }
-
-  return threads;
-
-err:
-  destroy_worker_threads(threads, n);
-  return NULL;
+  delete ctxt;
 }
 
 static void initialize_worker_thread_buffers(decomp_thread_ctxt_t *threads,
@@ -533,56 +451,12 @@ static void initialize_worker_thread_buffers(decomp_thread_ctxt_t *threads,
   }
 }
 
-static void destroy_worker_threads(decomp_thread_ctxt_t *threads, uint n) {
+static void destroy_worker_thread_buffers(decomp_thread_ctxt_t *threads,
+                                          uint n) {
   uint i;
 
   for (i = 0; i < n; i++) {
     decomp_thread_ctxt_t *thd = threads + i;
-
-    pthread_mutex_lock(&thd->data_mutex);
-    threads[i].cancelled = true;
-    pthread_cond_signal(&thd->data_cond);
-    pthread_mutex_unlock(&thd->data_mutex);
-
-    pthread_join(thd->id, NULL);
-
-    pthread_cond_destroy(&thd->data_cond);
-    pthread_mutex_destroy(&thd->data_mutex);
-    pthread_cond_destroy(&thd->ctrl_cond);
-    pthread_mutex_destroy(&thd->ctrl_mutex);
-
     my_free(thd->to);
   }
-
-  my_free(threads);
-}
-
-static void *decompress_worker_thread_func(void *arg) {
-  decomp_thread_ctxt_t *thd = (decomp_thread_ctxt_t *)arg;
-
-  pthread_mutex_lock(&thd->ctrl_mutex);
-
-  pthread_mutex_lock(&thd->data_mutex);
-
-  thd->started = true;
-  pthread_cond_signal(&thd->ctrl_cond);
-
-  pthread_mutex_unlock(&thd->ctrl_mutex);
-
-  while (1) {
-    thd->data_avail = false;
-    pthread_cond_signal(&thd->data_cond);
-
-    while (!thd->data_avail && !thd->cancelled) {
-      pthread_cond_wait(&thd->data_cond, &thd->data_mutex);
-    }
-
-    if (thd->cancelled) break;
-
-    thd->to_len = qlz_decompress(thd->from, thd->to, &thd->state);
-  }
-
-  pthread_mutex_unlock(&thd->data_mutex);
-
-  return NULL;
 }

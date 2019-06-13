@@ -108,7 +108,9 @@ static struct my_option my_long_options[] = {
 datasink_t datasink_archive;
 datasink_t datasink_xbstream;
 datasink_t datasink_compress;
+datasink_t datasink_compress_lz4;
 datasink_t datasink_decompress;
+datasink_t datasink_decompress_lz4;
 datasink_t datasink_tmpfile;
 datasink_t datasink_buffer;
 

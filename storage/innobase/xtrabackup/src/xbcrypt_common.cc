@@ -95,8 +95,7 @@ gcry_error_t xb_libgcrypt_init() {
   /* Disable the gcry secure memory, not dealing with this for now */
   gcry_error = gcry_control(GCRYCTL_DISABLE_SECMEM, 0);
   if (gcry_error) {
-    msg("encryption: unable to disable libgcrypt secmem - "
-        "%s : %s\n",
+    msg("encryption: unable to disable libgcrypt secmem - %s : %s\n",
         gcry_strsource(gcry_error), gcry_strerror(gcry_error));
     return gcry_error;
   }
@@ -104,8 +103,7 @@ gcry_error_t xb_libgcrypt_init() {
   /* Finalize gcry initialization. */
   gcry_error = gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
   if (gcry_error) {
-    msg("encryption: unable to finish libgcrypt initialization - "
-        "%s : %s\n",
+    msg("encryption: unable to finish libgcrypt initialization - %s : %s\n",
         gcry_strsource(gcry_error), gcry_strerror(gcry_error));
     return gcry_error;
   }
@@ -119,8 +117,7 @@ gcry_error_t xb_crypt_init(uint *iv_len) {
   /* Finalize gcry initialization. */
   gcry_error = gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
   if (gcry_error) {
-    msg("encryption: unable to finish libgcrypt initialization - "
-        "%s : %s\n",
+    msg("encryption: unable to finish libgcrypt initialization - %s : %s\n",
         gcry_strsource(gcry_error), gcry_strerror(gcry_error));
     return gcry_error;
   }
@@ -145,8 +142,7 @@ gcry_error_t xb_crypt_init(uint *iv_len) {
   } else if (ds_encrypt_key_file) {
     if (!xb_crypt_read_key_file(ds_encrypt_key_file, (void **)&ds_encrypt_key,
                                 &encrypt_key_len)) {
-      msg("encryption: unable to read encryption key file"
-          " \"%s\".\n",
+      msg("encryption: unable to read encryption key file \"%s\".\n",
           ds_encrypt_key_file);
       return gcry_error;
     }
@@ -166,8 +162,7 @@ gcry_error_t xb_crypt_cipher_open(gcry_cipher_hd_t *cipher_handle) {
 
     gcry_error = gcry_cipher_open(cipher_handle, encrypt_algo, encrypt_mode, 0);
     if (gcry_error) {
-      msg("encryption: unable to open libgcrypt"
-          " cipher - %s : %s\n",
+      msg("encryption: unable to open libgcrypt cipher - %s : %s\n",
           gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       gcry_cipher_close(*cipher_handle);
       return gcry_error;
@@ -176,8 +171,7 @@ gcry_error_t xb_crypt_cipher_open(gcry_cipher_hd_t *cipher_handle) {
     gcry_error =
         gcry_cipher_setkey(*cipher_handle, ds_encrypt_key, encrypt_key_len);
     if (gcry_error) {
-      msg("encryption: unable to set libgcrypt"
-          " cipher key - %s : %s\n",
+      msg("encryption: unable to set libgcrypt cipher key - %s : %s\n",
           gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       gcry_cipher_close(*cipher_handle);
       return gcry_error;
@@ -202,8 +196,7 @@ gcry_error_t xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
 
     gcry_error = gcry_cipher_reset(cipher_handle);
     if (gcry_error) {
-      msg("%s:encryption: unable to reset libgcrypt"
-          " cipher - %s : %s\n",
+      msg("%s:encryption: unable to reset libgcrypt cipher - %s : %s\n",
           my_progname, gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       return gcry_error;
     }
@@ -212,9 +205,8 @@ gcry_error_t xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
       gcry_error = gcry_cipher_setctr(cipher_handle, iv, iv_len);
     }
     if (gcry_error) {
-      msg("%s:encryption: unable to set cipher iv - "
-          "%s : %s\n",
-          my_progname, gcry_strsource(gcry_error), gcry_strerror(gcry_error));
+      msg("%s:encryption: unable to set cipher iv - %s : %s\n", my_progname,
+          gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       return gcry_error;
     }
 
@@ -222,9 +214,8 @@ gcry_error_t xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
     gcry_error =
         gcry_cipher_decrypt(cipher_handle, to, *to_len, from, from_len);
     if (gcry_error) {
-      msg("%s:encryption: unable to decrypt chunk - "
-          "%s : %s\n",
-          my_progname, gcry_strsource(gcry_error), gcry_strerror(gcry_error));
+      msg("%s:encryption: unable to decrypt chunk - %s : %s\n", my_progname,
+          gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       gcry_cipher_close(cipher_handle);
       return gcry_error;
     }
@@ -239,8 +230,7 @@ gcry_error_t xb_crypt_decrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
       xb_ad(gcry_md_get_algo_dlen(XB_CRYPT_HASH) == XB_CRYPT_HASH_LEN);
       gcry_md_hash_buffer(XB_CRYPT_HASH, hash, to, *to_len);
       if (memcmp(hash, (char *)to + *to_len, XB_CRYPT_HASH_LEN) != 0) {
-        msg("%s:%s invalid plaintext hash. "
-            "Wrong encrytion key specified?\n",
+        msg("%s:%s invalid plaintext hash. Wrong encrytion key specified?\n",
             my_progname, __FUNCTION__);
         return 1;
       }
@@ -273,8 +263,7 @@ gcry_error_t xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
   if (encrypt_algo != GCRY_CIPHER_NONE) {
     gcry_error = gcry_cipher_reset(cipher_handle);
     if (gcry_error) {
-      msg("encrypt: unable to reset cipher - "
-          "%s : %s\n",
+      msg("encrypt: unable to reset cipher - %s : %s\n",
           gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       return gcry_error;
     }
@@ -282,8 +271,7 @@ gcry_error_t xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
     xb_crypt_create_iv(iv, encrypt_iv_len);
     gcry_error = gcry_cipher_setctr(cipher_handle, iv, encrypt_iv_len);
     if (gcry_error) {
-      msg("encrypt: unable to set cipher ctr - "
-          "%s : %s\n",
+      msg("encrypt: unable to set cipher ctr - %s : %s\n",
           gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       return gcry_error;
     }
@@ -292,13 +280,10 @@ gcry_error_t xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
         gcry_cipher_encrypt(cipher_handle, to, *to_len + XB_CRYPT_HASH_LEN, to,
                             from_len + XB_CRYPT_HASH_LEN);
     if (gcry_error) {
-      msg("encrypt: unable to encrypt buffer - "
-          "%s : %s\n",
+      msg("encrypt: unable to encrypt buffer - %s : %s\n",
           gcry_strsource(gcry_error), gcry_strerror(gcry_error));
       return gcry_error;
     }
-  } else {
-    memcpy(to, from, from_len + XB_CRYPT_HASH_LEN);
   }
 
   *to_len += XB_CRYPT_HASH_LEN;

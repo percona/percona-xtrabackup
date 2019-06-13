@@ -23,7 +23,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "ds_buffer.h"
 #include "ds_compress.h"
+#include "ds_compress_lz4.h"
 #include "ds_decompress.h"
+#include "ds_decompress_lz4.h"
 #include "ds_decrypt.h"
 #include "ds_encrypt.h"
 #include "ds_local.h"
@@ -47,11 +49,17 @@ ds_ctxt_t *ds_create(const char *root, ds_type_t type) {
     case DS_TYPE_XBSTREAM:
       ds = &datasink_xbstream;
       break;
-    case DS_TYPE_COMPRESS:
+    case DS_TYPE_COMPRESS_QUICKLZ:
       ds = &datasink_compress;
       break;
-    case DS_TYPE_DECOMPRESS:
+    case DS_TYPE_COMPRESS_LZ4:
+      ds = &datasink_compress_lz4;
+      break;
+    case DS_TYPE_DECOMPRESS_QUICKLZ:
       ds = &datasink_decompress;
+      break;
+    case DS_TYPE_DECOMPRESS_LZ4:
+      ds = &datasink_decompress_lz4;
       break;
     case DS_TYPE_ENCRYPT:
       ds = &datasink_encrypt;
