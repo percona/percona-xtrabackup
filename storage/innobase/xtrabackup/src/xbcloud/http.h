@@ -158,6 +158,7 @@ class Http_request {
   void add_header(const std::string &name, const std::string &value) {
     headers_[name] = value;
   }
+  void remove_header(const std::string &name) { headers_.erase(name); }
   void add_param(const std::string &name, const std::string &value);
   void add_param(const std::string &name) { params_.push_back(name); }
   template <typename T>

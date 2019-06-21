@@ -64,7 +64,8 @@ bool S3_response::parse_http_response(Http_response &http_response) {
   zero-terminated string */
   std::string s(http_response.body().begin(), http_response.body().end());
 
-  if (s[0] != '<') {
+  if (http_response.headers().count("content-type") == 0 ||
+      http_response.headers().at("content-type") != "application/xml") {
     error_ = true;
     error_message_ = s;
     return true;
@@ -177,6 +178,8 @@ void S3_signerV4::sign_request(const std::string &hostname,
   auto date = date_time.substr(0, 8);
   req.add_header("Host", hostname);
   req.add_header(AWS_DATE_HEADER, date_time);
+  /* in case we updating already signed request */
+  req.remove_header("Authorization");
 
   std::string signed_headers;
   auto string_to_sign = build_string_to_sign(req, signed_headers);
@@ -278,6 +281,8 @@ void S3_signerV2::sign_request(const std::string &hostname,
                                time_t t) {
   auto date_time = aws_date_format(t);
   req.add_header("Date", date_time);
+  /* in case we updating already signed request */
+  req.remove_header("Authorization");
 
   std::string signed_headers;
   auto string_to_sign =
@@ -522,23 +527,15 @@ bool S3_client::upload_object(const std::string &bucket,
   return false;
 }
 
-static void upload_callback(std::string bucket, std::string name,
-                            Http_request *req, Http_response *resp,
-                            const Http_client *http_client, Event_handler *h,
-                            S3_client::async_upload_callback_t callback,
-                            CURLcode rc, const Http_connection *conn,
-                            int count) {
+void S3_client::upload_callback(
+    S3_client *client, std::string bucket, std::string name, Http_request *req,
+    Http_response *resp, const Http_client *http_client, Event_handler *h,
+    S3_client::async_upload_callback_t callback, CURLcode rc,
+    const Http_connection *conn, int count) {
+  bool retry_error = false;
   if (retriable_curl_error(rc) ||
       retriable_http_error(conn->response().http_code())) {
-    msg_ts("%s: Retrying %s [%d]\n", my_progname, name.c_str(), count);
-    resp->reset_body();
-    http_client->make_async_request(
-        *req, *resp, h,
-        std::bind(upload_callback, bucket, name, req, resp, http_client, h,
-                  callback, std::placeholders::_1, std::placeholders::_2,
-                  count + 1),
-        true);
-    return;
+    retry_error = true;
   }
 
   if (rc == CURLE_OK && !resp->ok()) {
@@ -553,19 +550,23 @@ static void upload_callback(std::string bucket, std::string name,
              my_progname, bucket.c_str(), name.c_str(),
              s3_resp.error_message().c_str());
       if (s3_resp.error_code() == "RequestTimeout") {
-        if (count < 3) {
-          msg_ts("%s: Retrying %s [%d]\n", my_progname, name.c_str(), count);
-          resp->reset_body();
-          http_client->make_async_request(
-              *req, *resp, h,
-              std::bind(upload_callback, bucket, name, req, resp, http_client,
-                        h, callback, std::placeholders::_1,
-                        std::placeholders::_2, count + 1),
-              true);
-          return;
-        }
+        retry_error = true;
       }
     }
+  }
+
+  if (retry_error && count <= 3) {
+    msg_ts("%s: Retrying %s [%d]\n", my_progname, name.c_str(), count);
+    resp->reset_body();
+    client->signer->sign_request(client->hostname(bucket), bucket, *req,
+                                 time(0));
+    http_client->make_async_request(
+        *req, *resp, h,
+        std::bind(S3_client::upload_callback, client, bucket, name, req, resp,
+                  http_client, h, callback, std::placeholders::_1,
+                  std::placeholders::_2, count + 1),
+        true);
+    return;
   }
   if (callback) {
     callback(rc == CURLE_OK && resp->ok());
@@ -604,8 +605,9 @@ bool S3_client::async_upload_object(
 
   http_client->make_async_request(
       *req, *resp, h,
-      std::bind(upload_callback, bucket, name, req, resp, http_client, h,
-                callback, std::placeholders::_1, std::placeholders::_2, 1));
+      std::bind(S3_client::upload_callback, this, bucket, name, req, resp,
+                http_client, h, callback, std::placeholders::_1,
+                std::placeholders::_2, 1));
 
   return true;
 }
