@@ -429,7 +429,7 @@ bool retriable_curl_error(CURLcode rc) {
 }
 
 bool retriable_http_error(long code) {
-  if (code == 503 || code == 500 || code == 504) {
+  if (code == 503 || code == 500 || code == 504 || code == 408) {
     return true;
   }
   return false;
