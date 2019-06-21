@@ -147,6 +147,14 @@ class S3_client {
     }
   }
 
+  static void upload_callback(S3_client *client, std::string bucket,
+                              std::string name, Http_request *req,
+                              Http_response *resp,
+                              const Http_client *http_client, Event_handler *h,
+                              S3_client::async_upload_callback_t callback,
+                              CURLcode rc, const Http_connection *conn,
+                              int count);
+
  public:
   S3_client(const Http_client *client, const std::string &region,
             const std::string &access_key, const std::string &secret_key)

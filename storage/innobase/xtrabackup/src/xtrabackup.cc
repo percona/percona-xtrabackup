@@ -3367,13 +3367,13 @@ static void xtrabackup_init_datasinks(void) {
 
     /* Use a 1 MB buffer for compressed output stream */
     ds = ds_create(xtrabackup_target_dir, DS_TYPE_BUFFER);
-    ds_buffer_set_size(ds, 10 * 1024 * 1024);
+    ds_buffer_set_size(ds, opt_read_buffer_size);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
     if (ds_data != ds_redo) {
       ds_data = ds;
       ds = ds_create(xtrabackup_target_dir, DS_TYPE_BUFFER);
-      ds_buffer_set_size(ds, 10 * 1024 * 1024);
+      ds_buffer_set_size(ds, opt_read_buffer_size);
       xtrabackup_add_datasink(ds);
       ds_set_pipe(ds, ds_redo);
       ds_redo = ds;
