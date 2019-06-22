@@ -32,6 +32,8 @@ echo ${XBCLOUD_CREDENTIALS} | sed 's/ *--/\'$'\n/g' >> $topdir/xbcloud.cnf
 load_dbase_schema sakila
 load_dbase_data sakila
 
+mysql -e "ALTER TABLE payment COMPRESSION='lz4'" sakila
+
 now=$(date +%s)
 pwdpart=($(pwd | md5sum))
 

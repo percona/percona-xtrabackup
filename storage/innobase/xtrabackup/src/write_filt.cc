@@ -24,6 +24,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "write_filt.h"
 #include <my_base.h>
+#include <vector>
+#include "backup_copy.h"
 #include "common.h"
 #include "fil_cur.h"
 #include "xtrabackup.h"
@@ -78,8 +80,7 @@ static bool wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
   info.zip_size = cursor->zip_size;
   info.space_id = cursor->space_id;
   if (!xb_write_delta_metadata(meta_name, &info)) {
-    msg("[%02u] xtrabackup: Error: "
-        "failed to write meta info for %s\n",
+    msg("[%02u] xtrabackup: Error: failed to write meta info for %s\n",
         cursor->thread_n, cursor->rel_path);
     return (FALSE);
   }
@@ -179,7 +180,7 @@ static bool wf_wt_init(xb_write_filt_ctxt_t *ctxt,
                        xb_fil_cur_t *cursor) {
   ctxt->cursor = cursor;
 
-  return (TRUE);
+  return (true);
 }
 
 /************************************************************************
@@ -187,11 +188,9 @@ Write the next batch of pages to the destination datasink.
 
 @return TRUE on success, FALSE on error. */
 static bool wf_wt_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile) {
-  xb_fil_cur_t *cursor = ctxt->cursor;
+  const auto cursor = ctxt->cursor;
 
-  if (ds_write(dstfile, cursor->buf, cursor->buf_read)) {
-    return (FALSE);
-  }
-
-  return (TRUE);
+  return write_ibd_buffer(dstfile, cursor->buf,
+                          cursor->buf_npages * cursor->page_size,
+                          cursor->page_size, cursor->block_size);
 }

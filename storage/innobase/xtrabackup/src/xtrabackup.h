@@ -217,11 +217,6 @@ ulint xb_data_files_init(void);
 Destroy the tablespace memory cache. */
 void xb_data_files_close(void);
 
-/***********************************************************************
-Reads the space flags from a given data file and returns the compressed
-page size, or 0 if the space is not compressed. */
-const page_size_t xb_get_zip_size(pfs_os_file_t file, bool *success);
-
 /************************************************************************
 Checks if a database specified by path should be skipped from backup based on
 the --databases, --databases_file or --databases_exclude options.

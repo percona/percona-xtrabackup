@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <zlib.h>
 #include "common.h"
 #include "crc_glue.h"
+#include "datasink.h"
 #include "xbstream.h"
 
 /* Group writes smaller than this into a single chunk */
@@ -42,6 +43,8 @@ struct xb_wstream_file_struct {
   char chunk[XB_STREAM_MIN_CHUNK_SIZE];
   char *chunk_ptr;
   size_t chunk_free;
+  char *sparse_map_buf;
+  size_t sparse_map_buf_size;
   my_off_t offset;
   void *userdata;
   xb_stream_write_callback *write;
@@ -49,7 +52,8 @@ struct xb_wstream_file_struct {
 
 static int xb_stream_flush(xb_wstream_file_t *file);
 static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
-                                 size_t len);
+                                 size_t len, size_t sparse_map_size,
+                                 const ds_sparse_chunk_t *sparse_map);
 static int xb_stream_write_eof(xb_wstream_file_t *file);
 
 static ssize_t xb_stream_default_write_callback(xb_wstream_file_t *file
@@ -67,11 +71,10 @@ xb_wstream_t *xb_stream_write_new(void) {
   xb_wstream_t *stream;
 
   stream = (xb_wstream_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(xb_wstream_t),
-                                     MYF(MY_FAE));
+                                     MYF(MY_FAE | MY_ZEROFILL));
   pthread_mutex_init(&stream->mutex, NULL);
 
   return stream;
-  ;
 }
 
 xb_wstream_file_t *xb_stream_write_open(xb_wstream_t *stream, const char *path,
@@ -90,7 +93,7 @@ xb_wstream_file_t *xb_stream_write_open(xb_wstream_t *stream, const char *path,
 
   file = (xb_wstream_file_t *)my_malloc(
       PSI_NOT_INSTRUMENTED, sizeof(xb_wstream_file_t) + path_len + 1,
-      MYF(MY_FAE));
+      MYF(MY_FAE | MY_ZEROFILL));
 
   file->path = (char *)(file + 1);
   memcpy(file->path, path, path_len + 1);
@@ -125,18 +128,27 @@ int xb_stream_write_data(xb_wstream_file_t *file, const void *buf, size_t len) {
 
   if (xb_stream_flush(file)) return 1;
 
-  return xb_stream_write_chunk(file, buf, len);
+  return xb_stream_write_chunk(file, buf, len, 0, nullptr);
+}
+
+int xb_stream_write_sparse_data(xb_wstream_file_t *file, const void *buf,
+                                size_t len, size_t sparse_map_size,
+                                const ds_sparse_chunk_t *sparse_map) {
+  if (xb_stream_flush(file)) return 1;
+
+  return xb_stream_write_chunk(file, buf, len, sparse_map_size, sparse_map);
 }
 
 int xb_stream_write_close(xb_wstream_file_t *file) {
+  int rc = 0;
   if (xb_stream_flush(file) || xb_stream_write_eof(file)) {
-    my_free(file);
-    return 1;
+    rc = 1;
   }
 
+  my_free(file->sparse_map_buf);
   my_free(file);
 
-  return 0;
+  return rc;
 }
 
 int xb_stream_write_done(xb_wstream_t *stream) {
@@ -152,7 +164,8 @@ static int xb_stream_flush(xb_wstream_file_t *file) {
     return 0;
   }
 
-  if (xb_stream_write_chunk(file, file->chunk, file->chunk_ptr - file->chunk)) {
+  if (xb_stream_write_chunk(file, file->chunk, file->chunk_ptr - file->chunk, 0,
+                            nullptr)) {
     return 1;
   }
 
@@ -163,11 +176,12 @@ static int xb_stream_flush(xb_wstream_file_t *file) {
 }
 
 static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
-                                 size_t len) {
+                                 size_t len, size_t sparse_map_size,
+                                 const ds_sparse_chunk_t *sparse_map) {
   /* Chunk magic + flags + chunk type + path_len + path + len + offset +
-  checksum */
-  uchar tmpbuf[sizeof(XB_STREAM_CHUNK_MAGIC) - 1 + 1 + 1 + 4 + FN_REFLEN + 8 +
-               8 + 4];
+  checksum + sparse_map_size + */
+  uchar tmpbuf[sizeof(XB_STREAM_CHUNK_MAGIC) - 1 + 1 + 1 + 4 + FN_REFLEN + 4 +
+               8 + 8 + 4];
   uchar *ptr;
   xb_wstream_t *stream = file->stream;
   ulong checksum;
@@ -181,7 +195,9 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
 
   *ptr++ = 0; /* Chunk flags */
 
-  *ptr++ = (uchar)XB_CHUNK_TYPE_PAYLOAD; /* Chunk type */
+  /* Chunk type */
+  *ptr++ = (uchar)(sparse_map_size > 0 ? XB_CHUNK_TYPE_SPARSE
+                                       : XB_CHUNK_TYPE_PAYLOAD);
 
   int4store(ptr, file->path_len); /* Path length */
   ptr += 4;
@@ -189,11 +205,35 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
   memcpy(ptr, file->path, file->path_len); /* Path */
   ptr += file->path_len;
 
+  if (sparse_map_size > 0) {
+    /* Sparse map size */
+    int4store(ptr, sparse_map_size);
+    ptr += 4;
+  }
+
   int8store(ptr, len); /* Payload length */
   ptr += 8;
 
+  /* sparse map */
+  if (file->sparse_map_buf_size < 4 * 2 * sparse_map_size) {
+    file->sparse_map_buf = static_cast<char *>(
+        my_realloc(PSI_NOT_INSTRUMENTED, file->sparse_map_buf,
+                   4 * 2 * sparse_map_size, MYF(MY_FAE | MY_ALLOW_ZERO_PTR)));
+  }
+
+  char *sparse_ptr = file->sparse_map_buf;
+  for (size_t i = 0; i < sparse_map_size; ++i) {
+    int4store(sparse_ptr, sparse_map[i].skip);
+    sparse_ptr += 4;
+    int4store(sparse_ptr, sparse_map[i].len);
+    sparse_ptr += 4;
+  }
+
   /* checksum */
-  checksum = crc32_iso3309(0, static_cast<const uchar *>(buf), len);
+  checksum =
+      crc32_iso3309(0, reinterpret_cast<const uchar *>(file->sparse_map_buf),
+                    4 * 2 * sparse_map_size);
+  checksum = crc32_iso3309(checksum, static_cast<const uchar *>(buf), len);
 
   pthread_mutex_lock(&stream->mutex);
 
@@ -207,9 +247,15 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
 
   if (file->write(file, file->userdata, tmpbuf, ptr - tmpbuf) == -1) goto err;
 
+  if (file->write(file, file->userdata, file->sparse_map_buf,
+                  4 * 2 * sparse_map_size) == -1)
+    goto err;
+
   if (file->write(file, file->userdata, buf, len) == -1) /* Payload */
     goto err;
 
+  for (size_t i = 0; i < sparse_map_size; ++i)
+    file->offset += sparse_map[i].skip;
   file->offset += len;
 
   pthread_mutex_unlock(&stream->mutex);

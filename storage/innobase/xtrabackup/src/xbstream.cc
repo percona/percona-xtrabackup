@@ -459,7 +459,8 @@ static void *extract_worker_thread_func(void *arg) {
 
     pthread_mutex_unlock(ctxt->mutex);
 
-    if (chunk.type == XB_CHUNK_TYPE_PAYLOAD) {
+    if (chunk.type == XB_CHUNK_TYPE_PAYLOAD ||
+        chunk.type == XB_CHUNK_TYPE_SPARSE) {
       res = xb_stream_validate_checksum(&chunk);
     }
 
@@ -487,19 +488,34 @@ static void *extract_worker_thread_func(void *arg) {
       break;
     }
 
-    if (ds_write(entry->file, chunk.data, chunk.length)) {
-      msg("%s: my_write() failed.\n", my_progname);
-      pthread_mutex_unlock(&entry->mutex);
-      res = XB_STREAM_READ_ERROR;
-      break;
-    }
+    if (chunk.type == XB_CHUNK_TYPE_PAYLOAD) {
+      if (ds_write(entry->file, chunk.data, chunk.length)) {
+        msg("%s: my_write() failed.\n", my_progname);
+        pthread_mutex_unlock(&entry->mutex);
+        res = XB_STREAM_READ_ERROR;
+        break;
+      }
 
-    entry->offset += chunk.length;
+      entry->offset += chunk.length;
+    } else if (chunk.type == XB_CHUNK_TYPE_SPARSE) {
+      if (ds_write_sparse(entry->file, chunk.data, chunk.length,
+                          chunk.sparse_map_size, chunk.sparse_map)) {
+        msg("%s: my_write() failed.\n", my_progname);
+        pthread_mutex_unlock(&entry->mutex);
+        res = XB_STREAM_READ_ERROR;
+        break;
+      }
+
+      for (size_t i = 0; i < chunk.sparse_map_size; ++i)
+        entry->offset += chunk.sparse_map[i].skip;
+      entry->offset += chunk.length;
+    }
 
     pthread_mutex_unlock(&entry->mutex);
   }
 
-  if (chunk.raw_data) my_free(chunk.raw_data);
+  my_free(chunk.raw_data);
+  my_free(chunk.sparse_map);
 
   my_thread_end();
 

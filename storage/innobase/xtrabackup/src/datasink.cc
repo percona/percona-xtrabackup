@@ -111,6 +111,29 @@ int ds_write(ds_file_t *file, const void *buf, size_t len) {
 }
 
 /************************************************************************
+Check if sparse files are supported.
+@return 1 if yes. */
+int ds_is_sparse_write_supported(ds_file_t *file) {
+  if (file->datasink->write_sparse != nullptr) {
+    return 1;
+  }
+  return 0;
+}
+
+/************************************************************************
+Write sparse chunk if supported.
+@return 0 on success, 1 on error. */
+int ds_write_sparse(ds_file_t *file, const void *buf, size_t len,
+                    size_t sparse_map_size,
+                    const ds_sparse_chunk_t *sparse_map) {
+  if (file->datasink->write_sparse != nullptr) {
+    return file->datasink->write_sparse(file, buf, len, sparse_map_size,
+                                        sparse_map);
+  }
+  return 1;
+}
+
+/************************************************************************
 Close a datasink file.
 @return 0 on success, 1, on error. */
 int ds_close(ds_file_t *file) { return file->datasink->close(file); }

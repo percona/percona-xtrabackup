@@ -3,55 +3,111 @@
 #
 
 . inc/common.sh
+. inc/keyring_file.sh
 
-require_server_version_higher_than 5.7.9
+require_server_version_higher_than 5.7.10
 
-start_server --innodb_file_per_table
-
-run_cmd $MYSQL $MYSQL_ARGS test <<EOF
-
-CREATE TABLE t1 (c1 BLOB) COMPRESSION="zlib";
-
-INSERT INTO t1 VALUES (REPEAT('x', 5000));
-
-INSERT INTO t1 SELECT * FROM t1;
-INSERT INTO t1 SELECT * FROM t1;
-INSERT INTO t1 SELECT * FROM t1;
-INSERT INTO t1 SELECT * FROM t1;
-
-EOF
-
-# wait for InnoDB to flush all dirty pages
-innodb_wait_for_flush_all
-
-xtrabackup --backup --target-dir=$topdir/backup
-
-run_cmd $MYSQL $MYSQL_ARGS test <<EOF
-
-INSERT INTO t1 SELECT * FROM t1;
-INSERT INTO t1 SELECT * FROM t1;
-INSERT INTO t1 SELECT * FROM t1;
-INSERT INTO t1 SELECT * FROM t1;
-
-EOF
-
-# wait for InnoDB to flush all dirty pages
-innodb_wait_for_flush_all
-
-xtrabackup --backup --target-dir=$topdir/backup1 --incremental-basedir=$topdir/backup
-
-record_db_state test
-
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-
-xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/backup1
-
-stop_server
-
-rm -rf $mysql_datadir
-
-xtrabackup --copy-back --target-dir=$topdir/backup
+function is_sparse_file() {
+    let n=$(stat --printf "%b*%B/%s" $1)
+    [ "$n" = "0" ]
+}
 
 start_server
 
-verify_db_state test
+run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+
+CREATE TABLE t1 (c1 BLOB) COMPRESSION='zlib';
+CREATE TABLE t2 (c1 BLOB) COMPRESSION='lz4';
+CREATE TABLE t3 (c1 BLOB) COMPRESSION='zlib' ENCRYPTION='y';
+CREATE TABLE t4 (c1 BLOB) COMPRESSION='lz4' ENCRYPTION='y';
+CREATE TABLE t5 (c1 BLOB);
+EOF
+
+for i in {1..5} ; do
+    run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+INSERT INTO t$i VALUES (REPEAT('x', 5000));
+
+INSERT INTO t$i SELECT * FROM t$i;
+INSERT INTO t$i SELECT * FROM t$i;
+INSERT INTO t$i SELECT * FROM t$i;
+INSERT INTO t$i SELECT * FROM t$i;
+
+EOF
+done
+
+# wait for InnoDB to flush all dirty pages
+innodb_wait_for_flush_all
+
+xtrabackup --backup --target-dir=$topdir/backup --transition-key=123
+
+mkdir $topdir/backuplsn
+xtrabackup --backup --target-dir=$topdir/tmp --transition-key=123 \
+           --extra-lsndir=$topdir/backuplsn \
+           --stream=xbstream --compress=lz4 --compress-threads=2 > $topdir/backup.xbs
+
+for i in {1..4} ; do
+    is_sparse_file $topdir/backup/test/t1.ibd || die "Backed up t$i.ibd is not sparse"
+done
+
+for i in {1..5} ; do
+    run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+INSERT INTO t$i SELECT * FROM t$i;
+INSERT INTO t$i SELECT * FROM t$i;
+INSERT INTO t$i SELECT * FROM t$i;
+INSERT INTO t$i SELECT * FROM t$i;
+EOF
+done
+
+# wait for InnoDB to flush all dirty pages
+innodb_wait_for_flush_all
+
+xtrabackup --backup --target-dir=$topdir/backup1 \
+           --incremental-basedir=$topdir/backup --transition-key=123
+
+xtrabackup --backup --target-dir=$topdir/tmp \
+           --incremental-basedir=$topdir/backuplsn --transition-key=123 \
+           --stream=xbstream --compress=lz4 --compress-threads=2 > $topdir/backup1.xbs
+
+record_db_state test
+
+function restore_and_verify() {
+    xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
+               --transition-key=123
+
+    for i in {1..4} ; do
+        is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared t$i.ibd is not sparse"
+    done
+
+    xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/backup1 \
+               --transition-key=123
+
+    for i in {1..4} ; do
+        is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared (incremental) t$i.ibd is not sparse"
+    done
+
+    stop_server
+
+    rm -rf $mysql_datadir
+
+    xtrabackup --copy-back --target-dir=$topdir/backup --transition-key=123 \
+               --generate-new-master-key \
+               --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
+    for i in {1..4} ; do
+        is_sparse_file $topdir/backup/test/t$i.ibd || die "Restored t$i.ibd is not sparse"
+    done
+
+    start_server
+
+    verify_db_state test
+}
+
+restore_and_verify
+
+rm -rf $topdir/backup && mkdir $topdir/backup
+xbstream -x -v -C $topdir/backup --decompress --decompress-threads=2 < $topdir/backup.xbs
+
+rm -rf $topdir/backup1 && mkdir $topdir/backup1
+xbstream -x -v -C $topdir/backup1 --decompress --decompress-threads=2 < $topdir/backup1.xbs
+
+restore_and_verify

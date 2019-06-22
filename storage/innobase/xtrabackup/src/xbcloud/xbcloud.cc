@@ -592,6 +592,7 @@ bool xbcloud_put(Object_store *store, const std::string &container,
     res = xb_stream_read_chunk(stream, &chunk);
     if (res != XB_STREAM_READ_CHUNK) {
       my_free(chunk.raw_data);
+      my_free(chunk.sparse_map);
       break;
     }
     if (chunk.type == XB_CHUNK_TYPE_UNKNOWN &&

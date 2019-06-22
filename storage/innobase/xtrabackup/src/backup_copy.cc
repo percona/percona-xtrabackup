@@ -97,15 +97,6 @@ static std::mutex rsync_mutex;
 /* skip these files on copy-back */
 static std::set<std::string> skip_copy_back_list;
 
-/* the purpose of file copied */
-enum file_purpose_t {
-  FILE_PURPOSE_DATAFILE,
-  FILE_PURPOSE_REDO_LOG,
-  FILE_PURPOSE_UNDO_LOG,
-  FILE_PURPOSE_BINLOG,
-  FILE_PURPOSE_OTHER
-};
-
 class datadir_queue {
   std::queue<datadir_entry_t> queue;
   mysql_mutex_t mutex;
@@ -209,9 +200,7 @@ static bool datafile_open(const char *file, datafile_cur_t *cursor,
     /* The following call prints an error message */
     os_file_get_last_error(TRUE);
 
-    msg("[%02u] error: cannot open "
-        "file %s\n",
-        thread_n, cursor->abs_path);
+    msg("[%02u] error: cannot open file %s\n", thread_n, cursor->abs_path);
 
     return (false);
   }
@@ -460,7 +449,7 @@ static bool datafile_copy_backup(const char *filepath, uint thread_n) {
   }
 
   if (filename_matches(filepath, ext_list)) {
-    return copy_file(ds_data, filepath, filepath, thread_n);
+    return copy_file(ds_data, filepath, filepath, thread_n, FILE_PURPOSE_OTHER);
   }
 
   return (true);
@@ -631,15 +620,69 @@ static bool run_data_threads(const char *dir, F func, uint n,
 }
 
 /************************************************************************
+Write buffer into .ibd file and preserve it's sparsiness. */
+bool write_ibd_buffer(ds_file_t *file, unsigned char *buf, size_t buf_len,
+                      size_t page_size, size_t block_size) {
+  ut_a(buf_len % page_size == 0);
+
+  if (ds_is_sparse_write_supported(file) && page_size > block_size) {
+    std::vector<ds_sparse_chunk_t> sparse_map;
+    size_t skip = 0, len = 0;
+    for (ulint i = 0, page_offs = 0; i < buf_len / page_size;
+         ++i, page_offs += page_size) {
+      const auto page = buf + page_offs;
+
+      if (Compression::is_compressed_page(page) ||
+          fil_page_get_type(page) == FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
+        ut_ad(page_size % block_size == 0);
+        size_t compressed_len =
+            mach_read_from_2(page + FIL_PAGE_COMPRESS_SIZE_V1) + FIL_PAGE_DATA;
+        if (fil_page_get_type(page) == FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
+          compressed_len = ut_calc_align(compressed_len, block_size);
+        }
+        sparse_map.push_back(ds_sparse_chunk_t{skip, len + compressed_len});
+        skip = page_size - compressed_len;
+        len = 0;
+      } else {
+        len += page_size;
+      }
+    }
+    sparse_map.push_back(ds_sparse_chunk_t{skip, len});
+
+    if (sparse_map.size() > 1) {
+      size_t src_pos = 0, dst_pos = 0;
+      for (size_t i = 0; i < sparse_map.size(); ++i) {
+        src_pos += sparse_map[i].skip;
+        memmove(buf + dst_pos, buf + src_pos, sparse_map[i].len);
+        src_pos += sparse_map[i].len;
+        dst_pos += sparse_map[i].len;
+      }
+      if (ds_write_sparse(file, buf, dst_pos, sparse_map.size(),
+                          &sparse_map[0])) {
+        return (false);
+      }
+      return (true);
+    }
+  }
+
+  if (ds_write(file, buf, buf_len)) {
+    return (false);
+  }
+  return (true);
+}
+
+/************************************************************************
 Copy file for backup/restore.
 @return true in case of success. */
 bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
-               const char *dst_file_path, uint thread_n, ssize_t pos) {
+               const char *dst_file_path, uint thread_n,
+               file_purpose_t file_purpose, ssize_t pos) {
   char dst_name[FN_REFLEN];
   ds_file_t *dstfile = NULL;
   datafile_cur_t cursor;
   xb_fil_cur_result_t res;
   const char *action;
+  page_size_t page_size{0, 0, false};
 
   if (!datafile_open(src_file_path, &cursor, thread_n)) {
     goto error;
@@ -674,8 +717,14 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
 
   /* The main copy loop */
   while ((res = datafile_read(&cursor)) == XB_FIL_CUR_SUCCESS) {
-    if (ds_write(dstfile, cursor.buf, cursor.buf_read)) {
-      goto error;
+    if (file_purpose == FILE_PURPOSE_DATAFILE) {
+      if (cursor.buf_offset == cursor.buf_read)
+        page_size.copy_from(fsp_header_get_page_size(cursor.buf));
+      if (!write_ibd_buffer(dstfile, cursor.buf, cursor.buf_read,
+                            page_size.physical(), cursor.statinfo.st_blksize))
+        goto error;
+    } else {
+      if (ds_write(dstfile, cursor.buf, cursor.buf_read)) goto error;
     }
   }
 
@@ -708,7 +757,7 @@ different devices fall back to copy and unlink.
 @return true in case of success. */
 static bool move_file(ds_ctxt_t *datasink, const char *src_file_path,
                       const char *dst_file_path, const char *dst_dir,
-                      uint thread_n) {
+                      uint thread_n, file_purpose_t file_purpose) {
   char errbuf[MYSYS_STRERROR_SIZE];
   char dst_file_path_abs[FN_REFLEN];
   char dst_dir_abs[FN_REFLEN];
@@ -736,7 +785,8 @@ static bool move_file(ds_ctxt_t *datasink, const char *src_file_path,
   if (my_rename(src_file_path, dst_file_path_abs, MYF(0)) != 0) {
     if (my_errno() == EXDEV) {
       bool ret;
-      ret = copy_file(datasink, src_file_path, dst_file_path, thread_n);
+      ret = copy_file(datasink, src_file_path, dst_file_path, thread_n,
+                      file_purpose);
       msg_ts("[%02u] Removing %s\n", thread_n, src_file_path);
       if (unlink(src_file_path) != 0) {
         msg("Error: unlink %s failed: %s\n", src_file_path,
@@ -874,7 +924,6 @@ static bool copy_or_move_file(const char *src_file_path,
   char external_dir[FN_REFLEN];
 
   if (Fil_path::type_of_path(dst_file_path) == Fil_path::absolute) {
-
     /* Make sure that destination directory exists */
     size_t dirname_length;
 
@@ -890,10 +939,11 @@ static bool copy_or_move_file(const char *src_file_path,
     dst_dir = external_dir;
   }
 
-  ret = (xtrabackup_copy_back
-             ? copy_file(datasink, src_file_path, dst_file_path, thread_n)
-             : move_file(datasink, src_file_path, dst_file_path, dst_dir,
-                         thread_n));
+  ret =
+      (xtrabackup_copy_back ? copy_file(datasink, src_file_path, dst_file_path,
+                                        thread_n, file_purpose)
+                            : move_file(datasink, src_file_path, dst_file_path,
+                                        dst_dir, thread_n, file_purpose));
 
   if (opt_generate_new_master_key && (file_purpose == FILE_PURPOSE_DATAFILE ||
                                       file_purpose == FILE_PURPOSE_UNDO_LOG)) {
@@ -1214,7 +1264,7 @@ static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
       continue;
     }
     if (!copy_file(ds, it->path.c_str(), it->rel_path.c_str(), thread_n,
-                   it->file_size)) {
+                   FILE_PURPOSE_OTHER, it->file_size)) {
       *result = false;
     }
     if (!*result) {
@@ -1228,7 +1278,7 @@ static void backup_rocksdb_files(const Myrocks_datadir::const_iterator &start,
                                  size_t thread_n, bool *result) {
   for (auto it = start; it != end; it++) {
     if (!copy_file(ds_uncompressed_data, it->path.c_str(), it->rel_path.c_str(),
-                   thread_n, it->file_size)) {
+                   thread_n, FILE_PURPOSE_OTHER, it->file_size)) {
       *result = false;
     }
     if (!*result) {
@@ -1381,10 +1431,10 @@ bool backup_finish(Backup_context &context) {
       const char *dst_name;
 
       dst_name = trim_dotslash(buffer_pool_filename);
-      copy_file(ds_data, buffer_pool_filename, dst_name, 0);
+      copy_file(ds_data, buffer_pool_filename, dst_name, 0, FILE_PURPOSE_OTHER);
     }
     if (file_exists("ib_lru_dump")) {
-      copy_file(ds_data, "ib_lru_dump", "ib_lru_dump", 0);
+      copy_file(ds_data, "ib_lru_dump", "ib_lru_dump", 0, FILE_PURPOSE_OTHER);
     }
   }
 
@@ -1423,7 +1473,8 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
     unlink(entry.rel_path.c_str());
   }
 
-  if (!copy_file(ds_data, entry.path.c_str(), entry.rel_path.c_str(), 1)) {
+  if (!copy_file(ds_data, entry.path.c_str(), entry.rel_path.c_str(), 1,
+                 FILE_PURPOSE_OTHER)) {
     msg("Failed to copy file %s\n", entry.path.c_str());
     return false;
   }
@@ -1605,7 +1656,8 @@ bool copy_incremental_over_full() {
                src_name);
 
       if (file_exists(path)) {
-        ret = copy_file(ds_data, path, innobase_buffer_pool_filename, 0);
+        ret = copy_file(ds_data, path, innobase_buffer_pool_filename, 0,
+                        FILE_PURPOSE_OTHER);
       }
     }
 
@@ -1623,7 +1675,7 @@ bool copy_incremental_over_full() {
         if (file_exists(sup_files[i])) {
           unlink(sup_files[i]);
         }
-        ret = copy_file(ds_data, path, sup_files[i], 0);
+        ret = copy_file(ds_data, path, sup_files[i], 0, FILE_PURPOSE_OTHER);
         if (!ret) {
           goto cleanup;
         }
@@ -1652,7 +1704,8 @@ bool copy_incremental_over_full() {
       for (auto file : binlog.files()) {
         fn_format(fullpath, file.c_str(), xtrabackup_incremental_dir, "",
                   MYF(MY_RELATIVE_PATH));
-        ret = copy_file(ds_data, fullpath, file.c_str(), 0);
+        ret =
+            copy_file(ds_data, fullpath, file.c_str(), 0, FILE_PURPOSE_BINLOG);
         if (!ret) {
           goto cleanup;
         }
@@ -1710,8 +1763,8 @@ cleanup:
   return (ret);
 }
 
-/* Removes empty directories and files in database subdirectories if those files
-match given list of file extensions.
+/* Removes empty directories and files in database subdirectories if those
+files match given list of file extensions.
 @param[in]	ext_list	list of extensions to match against
 @param[in]	entry		datadir entry
 @param[in]	arg		unused
@@ -1856,16 +1909,18 @@ static void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
     }
 
     file_purpose_t file_purpose;
-    if (Fil_path::has_suffix(IBD, entry.path) ||
-        Fil_path::has_suffix(IBU, entry.path)) {
+    if (Fil_path::has_suffix(IBD, entry.path)) {
       file_purpose = FILE_PURPOSE_DATAFILE;
+    } else if (Fil_path::has_suffix(IBU, entry.path)) {
+      file_purpose = FILE_PURPOSE_UNDO_LOG;
     } else {
       file_purpose = FILE_PURPOSE_OTHER;
     }
 
     std::string dst_path = entry.rel_path;
 
-    if (file_purpose == FILE_PURPOSE_DATAFILE) {
+    if (file_purpose == FILE_PURPOSE_DATAFILE ||
+        file_purpose == FILE_PURPOSE_UNDO_LOG) {
       std::string tablespace_name = entry.path;
       /* Remove starting ./ and trailing .ibd/.ibu from tablespace name */
       tablespace_name = tablespace_name.substr(2, tablespace_name.length() - 6);
@@ -2132,7 +2187,8 @@ bool copy_back(int argc, char **argv) {
       }
       ret = xb_binlog_password_reencrypt(target.path.c_str());
       if (!ret) {
-        msg("xtrabackup: Error: failed to reencrypt binary log file header.\n");
+        msg("xtrabackup: Error: failed to reencrypt binary log file "
+            "header.\n");
       }
       /* make sure we don't copy binary log and .index files twice */
       skip_copy_back_list.insert(binlog.name.c_str());

@@ -37,9 +37,10 @@ struct encrypt_thread_ctxt_t {
   size_t to_size{0};
   size_t to_len{0};
   gcry_cipher_hd_t cipher_handle{nullptr};
+  bool error{false};
   encrypt_thread_ctxt_t() {
     if (xb_crypt_cipher_open(&cipher_handle)) {
-      xb_a(0);
+      error = true;
     }
   }
   encrypt_thread_ctxt_t(const encrypt_thread_ctxt_t &thd) = delete;
@@ -52,6 +53,7 @@ struct encrypt_thread_ctxt_t {
     to_size = thd.to_size;
     iv = thd.iv;
     cipher_handle = thd.cipher_handle;
+    error = thd.error;
     thd.cipher_handle = nullptr;
     return *this;
   }
@@ -91,8 +93,8 @@ static int encrypt_write(ds_file_t *file, const void *buf, size_t len);
 static int encrypt_close(ds_file_t *file);
 static void encrypt_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_encrypt = {&encrypt_init, &encrypt_open, &encrypt_write,
-                               &encrypt_close, &encrypt_deinit};
+datasink_t datasink_encrypt = {&encrypt_init, &encrypt_open,  &encrypt_write,
+                               nullptr,       &encrypt_close, &encrypt_deinit};
 
 static uint encrypt_iv_len = 0;
 
@@ -221,6 +223,9 @@ static int encrypt_write(ds_file_t *file, const void *buf, size_t len) {
     crypt_file->contexts.reserve(n_chunks);
     for (size_t i = n; i < n_chunks; i++) {
       crypt_file->contexts.emplace_back();
+      if (crypt_file->contexts[i].error) {
+        return 1;
+      }
     }
   }
 
@@ -238,7 +243,7 @@ static int encrypt_write(ds_file_t *file, const void *buf, size_t len) {
         crypt_ctxt->thread_pool->add_task([&thd](size_t thread_id) {
           if (xb_crypt_encrypt(thd.cipher_handle, thd.from, thd.from_len,
                                thd.to, &thd.to_len, thd.iv)) {
-            thd.to_len = 0;
+            thd.error = true;
           }
         });
   }
@@ -253,7 +258,7 @@ static int encrypt_write(ds_file_t *file, const void *buf, size_t len) {
 
     if (error) continue;
 
-    if (thd.to_len == 0) {
+    if (thd.error) {
       msg("encrypt: encryption failed.\n");
       error = true;
       continue;
