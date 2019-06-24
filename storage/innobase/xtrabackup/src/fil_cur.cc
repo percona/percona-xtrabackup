@@ -200,6 +200,7 @@ xb_fil_cur_open(
 
 	cursor->node = node;
 	cursor->file = node->handle;
+	cursor->block_size = node->block_size;
 
 	if (my_fstat(cursor->file.m_file, &cursor->statinfo, MYF(MY_WME))) {
 		msg("[%02u] xtrabackup: error: cannot stat %s\n",
@@ -260,7 +261,7 @@ xb_fil_cur_open(
 				  node->space->id);
 
 	cursor->scratch = static_cast<byte *>
-		(ut_malloc_nokey(cursor->page_size));
+		(ut_malloc_nokey(cursor->page_size * 2));
 	cursor->decrypt = static_cast<byte *>
 		(ut_malloc_nokey(cursor->page_size));
 
@@ -285,7 +286,7 @@ xb_fil_cur_read(
 	xb_fil_cur_t*	cursor)	/*!< in/out: source file cursor */
 {
 	dberr_t			err;
-	byte*			page;
+	byte*			page, *page_to_check;
 	ulint			i;
 	ulint			npages;
 	ulint			retry_count;
@@ -297,12 +298,14 @@ xb_fil_cur_read(
 					  cursor->zip_size : cursor->page_size,
 					  cursor->page_size,
 					  cursor->zip_size != 0);
-	IORequest		read_request(IORequest::READ);
+	IORequest		read_request(IORequest::READ |
+					     IORequest::NO_COMPRESSION);
 
 	read_request.encryption_algorithm(Encryption::AES);
 	read_request.encryption_key(cursor->encryption_key,
 				    cursor->encryption_klen,
 				    cursor->encryption_iv);
+	read_request.block_size(cursor->block_size);
 
 	cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt,
 					    &offset, &to_read);
@@ -376,12 +379,14 @@ read_retry:
 	partially written pages */
 	for (page = cursor->buf, i = 0; i < npages;
 	     page += cursor->page_size, i++) {
+		page_to_check = page;
 
 		if (Encryption::is_encrypted_page(page)) {
 			dberr_t		ret;
 			Encryption	encryption(
 				read_request.encryption_algorithm());
 
+			page_to_check = cursor->decrypt;
 			memcpy(cursor->decrypt, page, cursor->page_size);
 			ret = encryption.decrypt(read_request, cursor->decrypt,
 						 cursor->page_size,
@@ -398,25 +403,21 @@ read_retry:
 					goto corruption;
 				}
 			}
-
-			if (buf_page_is_corrupted(TRUE, cursor->decrypt,
-						  page_size, false)) {
-				goto corruption;
-			}
-
 		}
 
 		if (Compression::is_compressed_page(page)) {
 
-			if (os_file_decompress_page(false, page,
+			page_to_check = cursor->decrypt;
+			memcpy(cursor->decrypt, page, cursor->page_size);
+			if (os_file_decompress_page(false, cursor->decrypt,
 			    cursor->scratch, cursor->page_size) != DB_SUCCESS) {
 				goto corruption;
 			}
 
 		}
 
-		if (!Encryption::is_encrypted_page(page) &&
-		    buf_page_is_corrupted(TRUE, page, page_size, false)) {
+		if (buf_page_is_corrupted(TRUE, page_to_check, page_size,
+					  false)) {
 
 corruption:
 
