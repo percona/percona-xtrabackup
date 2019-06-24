@@ -196,7 +196,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->read_filter = read_filter;
   cursor->read_filter->init(&cursor->read_filter_ctxt, cursor, node->space->id);
 
-  cursor->scratch = static_cast<byte *>(ut_malloc_nokey(cursor->page_size));
+  cursor->scratch = static_cast<byte *>(ut_malloc_nokey(cursor->page_size * 2));
   cursor->decrypt = static_cast<byte *>(ut_malloc_nokey(cursor->page_size));
 
   memcpy(cursor->encryption_key, node->space->encryption_key,
@@ -204,6 +204,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   memcpy(cursor->encryption_iv, node->space->encryption_iv,
          sizeof(cursor->encryption_iv));
   cursor->encryption_klen = node->space->encryption_klen;
+  cursor->block_size = node->block_size;
 
   return (XB_FIL_CUR_SUCCESS);
 }
@@ -227,7 +228,7 @@ xb_fil_cur_result_t xb_fil_cur_read(
     xb_fil_cur_t *cursor) /*!< in/out: source file cursor */
 {
   dberr_t err;
-  byte *page;
+  byte *page, *page_to_check;
   ulint i;
   ulint npages;
   ulint retry_count;
@@ -238,7 +239,7 @@ xb_fil_cur_result_t xb_fil_cur_read(
   page_size_t page_size(
       cursor->zip_size != 0 ? cursor->zip_size : cursor->page_size,
       cursor->page_size, cursor->zip_size != 0);
-  IORequest read_request(IORequest::READ);
+  IORequest read_request(IORequest::READ | IORequest::NO_COMPRESSION);
 
   cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt, &offset,
                                       &to_read);
@@ -306,16 +307,19 @@ read_retry:
   read_request.encryption_algorithm(Encryption::AES);
   read_request.encryption_key(cursor->encryption_key, cursor->encryption_klen,
                               cursor->encryption_iv);
+  read_request.block_size(cursor->block_size);
 
   npages = n_read >> cursor->page_size_shift;
 
   /* check pages for corruption and re-read if necessary. i.e. in case of
   partially written pages */
   for (page = cursor->buf, i = 0; i < npages; page += cursor->page_size, i++) {
+    page_to_check = page;
     if (Encryption::is_encrypted_page(page)) {
       dberr_t ret;
       Encryption encryption(read_request.encryption_algorithm());
 
+      page_to_check = cursor->decrypt;
       memcpy(cursor->decrypt, page, cursor->page_size);
       ret = encryption.decrypt(read_request, cursor->decrypt, cursor->page_size,
                                cursor->scratch, cursor->page_size);
@@ -329,21 +333,18 @@ read_retry:
           goto corruption;
         }
       }
-
-      if (is_page_corrupted(true, cursor->decrypt, page_size, false)) {
-        goto corruption;
-      }
     }
 
     if (Compression::is_compressed_page(page)) {
-      if (os_file_decompress_page(false, page, cursor->scratch,
+      page_to_check = cursor->decrypt;
+      memcpy(cursor->decrypt, page, cursor->page_size);
+      if (os_file_decompress_page(false, cursor->decrypt, cursor->scratch,
                                   cursor->page_size) != DB_SUCCESS) {
         goto corruption;
       }
     }
 
-    if (!Encryption::is_encrypted_page(page) &&
-        is_page_corrupted(true, page, page_size, false)) {
+    if (is_page_corrupted(true, page_to_check, page_size, false)) {
     corruption:
 
       ulint page_no = cursor->buf_page_no + i;
