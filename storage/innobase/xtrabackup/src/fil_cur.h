@@ -65,6 +65,7 @@ struct xb_fil_cur_t {
 	uint		thread_n;	/*!< thread number for diagnostics */
 	ulint		space_id;	/*!< ID of tablespace */
 	ulint		space_size;	/*!< space size in pages */
+	ulint		block_size;	/*!< FS block size */
 
 	unsigned char	encryption_key[32];
 					/*!< encryption key */
