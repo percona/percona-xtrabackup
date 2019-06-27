@@ -2,6 +2,8 @@
 # Bug 1590351: xtrabackup --backup crashes with empty keyring file
 #
 
+. inc/keyring_file.sh
+
 start_server
 
 touch $mysql_datadir/keyring

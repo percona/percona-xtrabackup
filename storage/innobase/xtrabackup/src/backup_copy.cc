@@ -870,9 +870,10 @@ static bool copy_or_move_file(const char *src_file_path,
   ds_ctxt_t *datasink = ds_data; /* copy to datadir by default */
   bool ret;
 
+  /* File is located outsude of the datadir */
+  char external_dir[FN_REFLEN];
+
   if (Fil_path::type_of_path(dst_file_path) == Fil_path::absolute) {
-    /* File is located outsude of the datadir */
-    char external_dir[FN_REFLEN];
 
     /* Make sure that destination directory exists */
     size_t dirname_length;

@@ -29,7 +29,7 @@ while ! mysql -e 'SHOW PROCESSLIST' | grep 'SELECT SLEEP' ; do
     sleep 1;
 done
 
-xtrabackup --backup --include="sakila.actor" --target-dir=$topdir/backup
+xtrabackup --backup --tables="sakila.actor" --target-dir=$topdir/backup
 
 kill -SIGKILL $job_master
 stop_server

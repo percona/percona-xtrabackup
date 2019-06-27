@@ -149,7 +149,7 @@ extern "C" int handle_options(int *argc, char ***argv,
 extern int my_handle_options(int *argc, char ***argv,
                              const struct my_option *longopts,
                              my_get_one_option, const char **command_list,
-                             bool ignore_unknown_option);
+                             bool ignore_unknown_option, bool validate_only);
 extern void print_cmdline_password_warning();
 extern void my_cleanup_options(const struct my_option *options);
 extern void my_print_help(const struct my_option *options);

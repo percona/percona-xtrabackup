@@ -2,7 +2,7 @@
 # Bug #711166: Partitioned tables are not correctly handled by the
 #              --databases and --tables-file options of innobackupex,
 #              and by the --tables option of xtrabackup.
-#              Testcase covers using --include option with InnoDB
+#              Testcase covers using --tables option with InnoDB
 #              database and --stream mode
 ########################################################################
 
@@ -21,7 +21,7 @@ checksum_a=`checksum_table test test`
 
 # Take a backup
 mkdir -p $topdir/backup
-xtrabackup --backup --stream=xbstream --include='^(mysql.*|performance_schema.*|test.test)$' --target-dir=$topdir/backup > $topdir/backup/backup.xbs
+xtrabackup --backup --stream=xbstream --tables='^(mysql.*|performance_schema.*|test.test)$' --target-dir=$topdir/backup > $topdir/backup/backup.xbs
 xbstream -xv < $topdir/backup/backup.xbs -C $topdir/backup
 
 xtrabackup --prepare --target-dir=$topdir/backup

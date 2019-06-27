@@ -123,6 +123,9 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 
+/* we cannot include sql/log.h because it conflicts with innodb headers */
+bool init_error_log();
+void destroy_error_log();
 int sys_var_init();
 
 bool innodb_inited = 0;
@@ -213,6 +216,7 @@ bool io_watching_thread_running = false;
 bool xtrabackup_logfile_is_renamed = false;
 
 int xtrabackup_parallel;
+bool opt_strict = false;
 
 char *xtrabackup_stream_str = NULL;
 xb_stream_fmt_t xtrabackup_stream_fmt = XB_STREAM_FMT_NONE;
@@ -319,6 +323,7 @@ static char *internal_innobase_data_file_path = NULL;
 
 char *opt_transition_key = NULL;
 char *opt_xtra_plugin_dir = NULL;
+char *opt_xtra_plugin_load = NULL;
 
 bool opt_generate_new_master_key = FALSE;
 bool opt_generate_transition_key = FALSE;
@@ -463,6 +468,7 @@ extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 
 static void check_all_privileges();
+static bool validate_options(const char *file, int argc, char **argv);
 
 #define CLIENT_WARN_DEPRECATED(opt, new_opt)                     \
   msg("WARNING: " opt                                            \
@@ -553,6 +559,7 @@ enum options_xtrabackup {
   OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_XTRA_PARALLEL,
   OPT_XTRA_STREAM,
+  OPT_XTRA_STRICT,
   OPT_XTRA_COMPRESS,
   OPT_XTRA_COMPRESS_THREADS,
   OPT_XTRA_COMPRESS_CHUNK_SIZE,
@@ -661,6 +668,7 @@ enum options_xtrabackup {
   OPT_TRANSITION_KEY,
   OPT_GENERATE_TRANSITION_KEY,
   OPT_XTRA_PLUGIN_DIR,
+  OPT_XTRA_PLUGIN_LOAD,
   OPT_GENERATE_NEW_MASTER_KEY,
 
   OPT_SSL_SSL,
@@ -1197,6 +1205,10 @@ struct my_option xb_client_options[] = {
      "Directory for xtrabackup plugins.", &opt_xtra_plugin_dir,
      &opt_xtra_plugin_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
+    {"plugin-load", OPT_XTRA_PLUGIN_LOAD, "List of plugins to load.",
+     &opt_xtra_plugin_load, &opt_xtra_plugin_load, 0, GET_STR, REQUIRED_ARG, 0,
+     0, 0, 0, 0, 0},
+
     {"generate-new-master-key", OPT_GENERATE_NEW_MASTER_KEY,
      "Generate new master key when doing copy-back.",
      &opt_generate_new_master_key, &opt_generate_new_master_key, 0, GET_BOOL,
@@ -1212,6 +1224,11 @@ struct my_option xb_client_options[] = {
      "The default value is 1.",
      (G_PTR *)&xtrabackup_parallel, (G_PTR *)&xtrabackup_parallel, 0, GET_INT,
      REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
+
+    {"strict", OPT_XTRA_STRICT,
+     "Fail with error when invalid arguments were passed to the xtrabackup.",
+     (uchar *)&opt_strict, (uchar *)&opt_strict, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+     0, 0, 0},
 
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
@@ -1508,7 +1525,7 @@ static void usage(void) {
   puts(
       "Open source backup tool for InnoDB and XtraDB\n\
 \n\
-Copyright (C) 2009-2018 Percona LLC and/or its affiliates.\n\
+Copyright (C) 2009-2019 Percona LLC and/or its affiliates.\n\
 Portions Copyright (C) 2000, 2011, MySQL AB & Innobase Oy. All Rights Reserved.\n\
 \n\
 This program is free software; you can redistribute it and/or\n\
@@ -4107,11 +4124,11 @@ void xtrabackup_backup_func(void) {
   recv_is_making_a_backup = true;
   bool data_copying_error = false;
 
+  init_mysql_environment();
+
   if (opt_dump_innodb_buffer_pool) {
     dump_innodb_buffer_pool(mysql_connection);
   }
-
-  init_mysql_environment();
 
 #ifdef USE_POSIX_FADVISE
   msg("xtrabackup: uses posix_fadvise().\n");
@@ -4193,6 +4210,10 @@ void xtrabackup_backup_func(void) {
 
   if (!xb_keyring_init_for_backup(mysql_connection)) {
     msg("xtrabackup: Error: failed to init keyring plugin\n");
+    exit(EXIT_FAILURE);
+  }
+
+  if (!validate_options("my", orig_argc, orig_argv)) {
     exit(EXIT_FAILURE);
   }
 
@@ -4904,6 +4925,10 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   if (!xb_keyring_init_for_stats(argc, argv)) {
     msg("xtrabackup: error: failed to init keyring plugin.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  if (!validate_options("my", orig_argc, orig_argv)) {
     exit(EXIT_FAILURE);
   }
 
@@ -6813,18 +6838,22 @@ skip_check:
     }
   } else {
     if (!xb_keyring_init_for_prepare(argc, argv)) {
-      msg("xtrabackup: Error: failed to init keyring "
-          "plugin\n");
+      msg("xtrabackup: Error: failed to init keyring plugin\n");
       goto error_cleanup;
     }
     if (xb_tablespace_keys_exist()) {
       use_dumped_tablespace_keys = true;
       if (!xb_tablespace_keys_load(xtrabackup_incremental, NULL, 0)) {
-        msg("xtrabackup: Error: failed to load "
-            "tablespace keys\n");
+        msg("xtrabackup: Error: failed to load tablespace keys\n");
         goto error_cleanup;
       }
     }
+  }
+
+  if (!validate_options(
+          (std::string(xtrabackup_target_dir) + "backup-my.cnf").c_str(),
+          orig_argc, orig_argv)) {
+    exit(EXIT_FAILURE);
   }
 
   xb_normalize_init_values();
@@ -7469,9 +7498,111 @@ static void check_all_privileges() {
   }
 }
 
-void handle_options(int argc, char **argv, int *argc_client,
-                    char ***argv_client, int *argc_server,
-                    char ***argv_server) {
+/** Validate xtrabackup options. Only validates command line arguments and
+options specified in [xtrabackup] section of my.cnf.
+@param[in]  file        config file basename for load_defaults
+@param[in]  argc        program's argc
+@param[in]  argv        program's argv
+@return true if no errors found */
+static bool validate_options(const char *file, int argc, char **argv) {
+  int my_argc = argc;
+  auto my_argv_buf = std::unique_ptr<char *[]>(new char *[my_argc]);
+  char **my_argv = my_argv_buf.get();
+
+  for (int i = 0; i < my_argc; ++i) {
+    my_argv[i] = argv[i];
+  }
+
+  const char *groups[] = {"xtrabackup", 0};
+  MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
+
+  if (load_defaults(file, groups, &my_argc, &my_argv, &argv_alloc)) {
+    return (false);
+  }
+
+  /* options consumed by plugins */
+  std::vector<my_option> plugin_options;
+  add_plugin_options(&plugin_options, &argv_alloc);
+
+  my_option last_option = {0,      0, 0, 0, 0, 0, GET_NO_ARG,
+                           NO_ARG, 0, 0, 0, 0, 0, 0};
+  plugin_options.push_back(last_option);
+
+  /* these options are not members of global my_option, but are recognised by
+  xtrabackup */
+  my_option my_extra_options[] = {
+      {"no-defaults", 0, nullptr, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0,
+       0},
+      {"login-path", 0, nullptr, nullptr, nullptr, 0, GET_STR, REQUIRED_ARG, 0,
+       0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  };
+
+  const auto tmp_getopt_skip_unknown = my_getopt_skip_unknown;
+  my_getopt_skip_unknown = true;
+
+  if (my_argc > 0) {
+    if (my_handle_options(&my_argc, &my_argv, xb_client_options, nullptr,
+                          nullptr, false, true)) {
+      return (false);
+    }
+  }
+
+  const auto restore_argv0 = [argv](int *c, char **v) {
+    for (int i = 0; i < *c; ++i) {
+      v[i + 1] = v[i];
+    }
+    v[0] = argv[0];
+    ++(*c);
+  };
+
+  if (my_argc > 0) {
+    restore_argv0(&my_argc, my_argv);
+
+    if (my_handle_options(&my_argc, &my_argv, xb_server_options, nullptr,
+                          nullptr, false, true)) {
+      return (false);
+    }
+  }
+
+  if (plugin_options.size() == 0) {
+    my_getopt_skip_unknown = false;
+  }
+
+  if (my_argc > 0) {
+    restore_argv0(&my_argc, my_argv);
+    if (my_handle_options(&my_argc, &my_argv, my_extra_options, nullptr,
+                          nullptr, false, true)) {
+      return (false);
+    }
+  }
+
+  my_getopt_skip_unknown = !opt_strict;
+
+  if (my_argc > 0 && plugin_options.size() > 0) {
+    restore_argv0(&my_argc, my_argv);
+    if (my_handle_options(&my_argc, &my_argv, &plugin_options[0], nullptr,
+                          nullptr, false, true)) {
+      return (false);
+    }
+  }
+
+  if (!opt_strict && my_argc > 0) {
+    for (int i = 0; i < my_argc; ++i) {
+      if (strncmp(my_argv[i], "--", 2) == 0) {
+        msg("WARNING: unknown option %s\n", my_argv[i]);
+      }
+    }
+  }
+
+  my_getopt_skip_unknown = tmp_getopt_skip_unknown;
+
+  return (true);
+}
+
+static void handle_options(int argc, char **argv, int *argc_client,
+                           char ***argv_client, int *argc_server,
+                           char ***argv_server) {
   int i;
   int ho_error;
   char conf_file[FN_REFLEN];
@@ -7521,6 +7652,7 @@ void handle_options(int argc, char **argv, int *argc_client,
   if (prepare && target_dir) {
     snprintf(conf_file, sizeof(conf_file), "%s/backup-my.cnf", target_dir);
   }
+
   if (load_defaults(conf_file, xb_server_default_groups, argc_server,
                     argv_server, &argv_alloc)) {
     exit(EXIT_FAILURE);
@@ -7630,6 +7762,9 @@ int main(int argc, char **argv) {
   char **client_defaults, **server_defaults;
   int client_argc, server_argc;
   char cwd[FN_REFLEN];
+
+  orig_argc = argc;
+  orig_argv = argv;
 
   setup_signals();
 
@@ -7821,6 +7956,9 @@ int main(int argc, char **argv) {
 
   sys_var_init();
   setup_error_messages();
+
+  init_error_log();
+  atexit(destroy_error_log);
 
   /* --backup */
   if (xtrabackup_backup) {

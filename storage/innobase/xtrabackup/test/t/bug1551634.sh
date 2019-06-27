@@ -70,7 +70,6 @@ function run_test()
     switch_server $slave_id
 
     xtrabackup --backup \
-        --no-timestamp \
         --slave-info \
         --safe-slave-backup \
         --target_dir $topdir/backup

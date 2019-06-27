@@ -93,7 +93,7 @@ vlog "Testing incremental based on history name"
 
 multi_row_insert incremental_sample.test \({101..200},100\)
 
-xtrabackup --backup --history=test1 --incremental \
+xtrabackup --backup --history=test1 \
 --incremental-history-name=test1 --target-dir=$backup_dir/`date +%s` > /dev/null
 
 # saving for later
