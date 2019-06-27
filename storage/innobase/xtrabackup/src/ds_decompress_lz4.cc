@@ -260,23 +260,23 @@ typedef struct {
   size_t to_len;
   size_t to_size;
   bool uncompressed;
-} comp_thread_ctxt_t;
+} decomp_lz4_thread_ctxt_t;
 
 typedef struct {
   Thread_pool *thread_pool;
-} ds_decompress_ctxt_t;
+} ds_decompress_lz4_ctxt_t;
 
 typedef struct {
   ds_file_t *dest_file;
-  ds_decompress_ctxt_t *decomp_ctxt;
+  ds_decompress_lz4_ctxt_t *decomp_ctxt;
   size_t bytes_processed;
   char *decomp_buf;
   size_t decomp_buf_size;
   std::vector<std::future<void>> tasks;
-  std::vector<comp_thread_ctxt_t> contexts;
+  std::vector<decomp_lz4_thread_ctxt_t> contexts;
   LZ4_stream stream;
   XXH32_state_t xxh;
-} ds_decompress_file_t;
+} ds_decompress_lz4_file_t;
 
 /* User-configurable decompression options */
 uint ds_decompress_lz4_threads;
@@ -293,7 +293,7 @@ datasink_t datasink_decompress_lz4 = {&decompress_init, &decompress_open,
                                       &decompress_deinit};
 
 static ds_ctxt_t *decompress_init(const char *root) {
-  ds_decompress_ctxt_t *decompress_ctxt = new ds_decompress_ctxt_t;
+  ds_decompress_lz4_ctxt_t *decompress_ctxt = new ds_decompress_lz4_ctxt_t;
   decompress_ctxt->thread_pool = new Thread_pool(ds_decompress_lz4_threads);
 
   ds_ctxt_t *ctxt = new ds_ctxt_t;
@@ -311,7 +311,7 @@ static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
   xb_ad(ctxt->pipe_ctxt != NULL);
   ds_ctxt_t *dest_ctxt = ctxt->pipe_ctxt;
 
-  ds_decompress_ctxt_t *decomp_ctxt = (ds_decompress_ctxt_t *)ctxt->ptr;
+  ds_decompress_lz4_ctxt_t *decomp_ctxt = (ds_decompress_lz4_ctxt_t *)ctxt->ptr;
 
   /* Remove the .lz4 extension from the filename */
   if ((lz4_ext_pos = strrchr(path, '.')) && !strcmp(lz4_ext_pos, ".lz4")) {
@@ -332,7 +332,7 @@ static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
   }
 
   ds_file_t *file = new ds_file_t;
-  ds_decompress_file_t *decomp_file = new ds_decompress_file_t;
+  ds_decompress_lz4_file_t *decomp_file = new ds_decompress_lz4_file_t;
   decomp_file->dest_file = dest_file;
   decomp_file->decomp_ctxt = decomp_ctxt;
   decomp_file->decomp_buf_size = 4 * 1024 * 1024 * ds_decompress_lz4_threads;
@@ -351,7 +351,7 @@ static ds_file_t *decompress_open(ds_ctxt_t *ctxt, const char *path,
   return file;
 }
 
-static int reap_and_write(ds_decompress_file_t *file, size_t n_blocks,
+static int reap_and_write(ds_decompress_lz4_file_t *file, size_t n_blocks,
                           bool error) {
   for (size_t i = 0; i < n_blocks; ++i) {
     const auto &thd = file->contexts[i];
@@ -374,8 +374,8 @@ static int reap_and_write(ds_decompress_file_t *file, size_t n_blocks,
 }
 
 static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
-  ds_decompress_file_t *decomp_file = (ds_decompress_file_t *)file->ptr;
-  ds_decompress_ctxt_t *decomp_ctxt = decomp_file->decomp_ctxt;
+  ds_decompress_lz4_file_t *decomp_file = (ds_decompress_lz4_file_t *)file->ptr;
+  ds_decompress_lz4_ctxt_t *decomp_ctxt = decomp_file->decomp_ctxt;
 
   decomp_file->stream.set_buffer(static_cast<const char *>(buf), len);
 
@@ -455,7 +455,7 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
 }
 
 static int decompress_close(ds_file_t *file) {
-  ds_decompress_file_t *comp_file = (ds_decompress_file_t *)file->ptr;
+  ds_decompress_lz4_file_t *comp_file = (ds_decompress_lz4_file_t *)file->ptr;
   ds_file_t *dest_file = comp_file->dest_file;
 
   if (!comp_file->stream.empty()) {
@@ -476,7 +476,7 @@ static int decompress_close(ds_file_t *file) {
 static void decompress_deinit(ds_ctxt_t *ctxt) {
   xb_ad(ctxt->pipe_ctxt != nullptr);
 
-  ds_decompress_ctxt_t *comp_ctxt = (ds_decompress_ctxt_t *)ctxt->ptr;
+  ds_decompress_lz4_ctxt_t *comp_ctxt = (ds_decompress_lz4_ctxt_t *)ctxt->ptr;
 
   delete comp_ctxt->thread_pool;
   delete comp_ctxt;
