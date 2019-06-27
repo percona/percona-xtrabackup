@@ -566,7 +566,8 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
     if (ds_decompress_quicklz_ctxt) {
       ds_decrypt_quicklz_ctxt = ds_create(".", DS_TYPE_DECRYPT);
       ds_set_pipe(ds_decrypt_quicklz_ctxt, ds_decompress_quicklz_ctxt);
-    } else {
+    }
+    if (ds_decompress_lz4_ctxt) {
       ds_decrypt_lz4_ctxt = ds_create(".", DS_TYPE_DECRYPT);
       ds_set_pipe(ds_decrypt_lz4_ctxt, ds_decompress_lz4_ctxt);
     }
