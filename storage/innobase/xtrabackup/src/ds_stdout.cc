@@ -35,8 +35,8 @@ static int stdout_write(ds_file_t *file, const void *buf, size_t len);
 static int stdout_close(ds_file_t *file);
 static void stdout_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_stdout = {&stdout_init, &stdout_open, &stdout_write,
-                              &stdout_close, &stdout_deinit};
+datasink_t datasink_stdout = {&stdout_init, &stdout_open,  &stdout_write,
+                              nullptr,      &stdout_close, &stdout_deinit};
 
 static ds_ctxt_t *stdout_init(const char *root) {
   ds_ctxt_t *ctxt;

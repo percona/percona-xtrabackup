@@ -50,8 +50,8 @@ static int buffer_write(ds_file_t *file, const void *buf, size_t len);
 static int buffer_close(ds_file_t *file);
 static void buffer_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_buffer = {&buffer_init, &buffer_open, &buffer_write,
-                              &buffer_close, &buffer_deinit};
+datasink_t datasink_buffer = {&buffer_init, &buffer_open,  &buffer_write,
+                              nullptr,      &buffer_close, &buffer_deinit};
 
 /* Change the default buffer size */
 void ds_buffer_set_size(ds_ctxt_t *ctxt, size_t size) {

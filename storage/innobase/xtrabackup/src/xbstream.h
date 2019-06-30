@@ -23,6 +23,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <my_base.h>
 #include <my_dir.h>
+#include <my_io.h>
+#include "datasink.h"
 
 /* Magic value in a chunk header */
 #define XB_STREAM_CHUNK_MAGIC "XBSTCK01"
@@ -58,6 +60,10 @@ xb_wstream_file_t *xb_stream_write_open(xb_wstream_t *stream, const char *path,
 
 int xb_stream_write_data(xb_wstream_file_t *file, const void *buf, size_t len);
 
+int xb_stream_write_sparse_data(xb_wstream_file_t *file, const void *buf,
+                                size_t len, size_t sparse_map_size,
+                                const ds_sparse_chunk_t *sparse_map);
+
 int xb_stream_write_close(xb_wstream_file_t *file);
 
 int xb_stream_write_done(xb_wstream_t *stream);
@@ -74,6 +80,7 @@ typedef enum {
 typedef enum {
   XB_CHUNK_TYPE_UNKNOWN = '\0',
   XB_CHUNK_TYPE_PAYLOAD = 'P',
+  XB_CHUNK_TYPE_SPARSE = 'S',
   XB_CHUNK_TYPE_EOF = 'E'
 } xb_chunk_type_t;
 
@@ -91,7 +98,11 @@ typedef struct {
   void *data;
   void *raw_data;
   ulong checksum;
+  ulong checksum_part;
   size_t buflen;
+  size_t sparse_map_alloc_size;
+  size_t sparse_map_size;
+  ds_sparse_chunk_t *sparse_map;
 } xb_rstream_chunk_t;
 
 xb_rstream_t *xb_stream_read_new(void);

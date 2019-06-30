@@ -83,9 +83,9 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len);
 static int decompress_close(ds_file_t *file);
 static void decompress_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_decompress = {&decompress_init, &decompress_open,
-                                  &decompress_write, &decompress_close,
-                                  &decompress_deinit};
+datasink_t datasink_decompress = {&decompress_init,  &decompress_open,
+                                  &decompress_write, nullptr,
+                                  &decompress_close, &decompress_deinit};
 
 static int decompress_process_metadata(ds_decompress_file_t *file,
                                        const char **ptr, size_t *len);

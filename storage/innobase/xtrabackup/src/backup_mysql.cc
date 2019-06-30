@@ -1511,9 +1511,9 @@ bool write_current_binlog_file(MYSQL *connection) {
 
   snprintf(filepath, sizeof(filepath), "%s%c%s", log_bin_dir, FN_LIBCHAR,
            log_status.filename.c_str());
-  result =
-      copy_file(ds_data, filepath, log_status.filename.c_str(), 0,
-                log_status.position + binlog_encryption_header_size(filepath));
+  result = copy_file(
+      ds_data, filepath, log_status.filename.c_str(), 0, FILE_PURPOSE_BINLOG,
+      log_status.position + binlog_encryption_header_size(filepath));
   if (!result) {
     goto cleanup;
   }

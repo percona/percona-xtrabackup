@@ -22,11 +22,26 @@ bool backup_file_printf(const char *filename, const char *fmt, ...)
 Return true if first and second arguments are the same path. */
 bool equal_paths(const char *first, const char *second);
 
+/* the purpose of file copied */
+enum file_purpose_t {
+  FILE_PURPOSE_DATAFILE,
+  FILE_PURPOSE_REDO_LOG,
+  FILE_PURPOSE_UNDO_LOG,
+  FILE_PURPOSE_BINLOG,
+  FILE_PURPOSE_OTHER
+};
+
+/************************************************************************
+Write buffer into .ibd file and preserve it's sparsiness. */
+bool write_ibd_buffer(ds_file_t *file, unsigned char *buf, size_t buf_len,
+                      size_t page_size, size_t block_size);
+
 /************************************************************************
 Copy file for backup/restore.
 @return true in case of success. */
 bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
-               const char *dst_file_path, uint thread_n, ssize_t pos = -1);
+               const char *dst_file_path, uint thread_n,
+               file_purpose_t file_purpose, ssize_t pos = -1);
 
 /* Backup non-InnoDB data.
 @return true if success. */

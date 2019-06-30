@@ -59,6 +59,7 @@ xb_rstream_t *xb_stream_read_new(void) {
 static inline xb_chunk_type_t validate_chunk_type(uchar code) {
   switch ((xb_chunk_type_t)code) {
     case XB_CHUNK_TYPE_PAYLOAD:
+    case XB_CHUNK_TYPE_SPARSE:
     case XB_CHUNK_TYPE_EOF:
       return (xb_chunk_type_t)code;
     default:
@@ -70,7 +71,8 @@ xb_rstream_result_t xb_stream_validate_checksum(xb_rstream_chunk_t *chunk) {
   ulong checksum;
 
   checksum =
-      crc32_iso3309(0, static_cast<const uchar *>(chunk->data), chunk->length);
+      crc32_iso3309(chunk->checksum_part,
+                    static_cast<const uchar *>(chunk->data), chunk->length);
   if (checksum != chunk->checksum) {
     msg("xb_stream_read_chunk(): invalid checksum at offset "
         "0x%llx: expected 0x%lx, read 0x%lx.\n",
@@ -98,7 +100,7 @@ xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
   uchar *ptr;
 
   const uint chunk_length_min =
-      CHUNK_HEADER_CONSTANT_LEN + FN_REFLEN + 8 + 8 + 4;
+      CHUNK_HEADER_CONSTANT_LEN + FN_REFLEN + 4 + 8 + 8 + 4;
 
   /* Reallocate the buffer if needed */
   if (chunk_length_min > chunk->buflen) {
@@ -182,12 +184,23 @@ xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
     return XB_STREAM_READ_CHUNK;
   }
 
+  if (chunk->type == XB_CHUNK_TYPE_SPARSE) {
+    /* Sparse map size */
+    F_READ(ptr, 4);
+    ullval = uint4korr(ptr);
+    chunk->sparse_map_size = (size_t)ullval;
+    stream->offset += 4;
+    ptr += 4;
+  } else {
+    chunk->sparse_map_size = 0;
+  }
+
   /* Payload length */
   F_READ(ptr, 16);
   ullval = uint8korr(ptr);
   if (ullval > (ulonglong)SIZE_T_MAX) {
-    msg("xb_stream_read_chunk(): chunk length is too large at "
-        "offset 0x%llx: 0x%llx.\n",
+    msg("xb_stream_read_chunk(): chunk length is too large at offset 0x%llx: "
+        "0x%llx.\n",
         (ulonglong)stream->offset, ullval);
     goto err;
   }
@@ -198,8 +211,8 @@ xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
   /* Payload offset */
   ullval = uint8korr(ptr);
   if (ullval > (ulonglong)MY_OFF_T_MAX) {
-    msg("xb_stream_read_chunk(): chunk offset is too large at "
-        "offset 0x%llx: 0x%llx.\n",
+    msg("xb_stream_read_chunk(): chunk offset is too large at offset 0x%llx: "
+        "0x%llx.\n",
         (ulonglong)stream->offset, ullval);
     goto err;
   }
@@ -214,7 +227,8 @@ xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
   stream->offset += 4;
   ptr += 4;
 
-  chunk->raw_length = chunk->length + (ptr - (uchar *)(chunk->raw_data));
+  chunk->raw_length = chunk->length + (ptr - (uchar *)(chunk->raw_data)) +
+                      chunk->sparse_map_size * 4 * 2;
 
   /* Reallocate the buffer if needed */
   if (chunk->raw_length > chunk->buflen) {
@@ -223,13 +237,34 @@ xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
         my_realloc(PSI_NOT_INSTRUMENTED, chunk->raw_data, chunk->raw_length,
                    MYF(MY_WME | MY_ALLOW_ZERO_PTR));
     if (chunk->raw_data == NULL) {
-      msg("xb_stream_read_chunk(): failed to increase "
-          "buffer to %lu bytes.\n",
+      msg("xb_stream_read_chunk(): failed to increase buffer to %lu bytes.\n",
           (ulong)chunk->raw_length);
       goto err;
     }
     chunk->buflen = chunk->raw_length;
     ptr = (uchar *)(chunk->raw_data) + ptr_offs;
+  }
+
+  /* Sparse map */
+  chunk->checksum_part = 0;
+  if (chunk->sparse_map_size > 0) {
+    if (chunk->sparse_map_alloc_size < chunk->sparse_map_size) {
+      chunk->sparse_map = static_cast<ds_sparse_chunk_t *>(
+          my_realloc(PSI_NOT_INSTRUMENTED, chunk->sparse_map,
+                     chunk->sparse_map_size * sizeof(ds_sparse_chunk_t),
+                     MYF(MY_WME | MY_ALLOW_ZERO_PTR)));
+      chunk->sparse_map_alloc_size = chunk->sparse_map_size;
+    }
+    for (size_t i = 0; i < chunk->sparse_map_size; ++i) {
+      F_READ(ptr, 8);
+      chunk->checksum_part = crc32_iso3309(chunk->checksum_part, ptr, 8);
+      chunk->sparse_map[i].skip = uint4korr(ptr);
+      stream->offset += 4;
+      ptr += 4;
+      chunk->sparse_map[i].len = uint4korr(ptr);
+      stream->offset += 4;
+      ptr += 4;
+    }
   }
 
   /* Payload */

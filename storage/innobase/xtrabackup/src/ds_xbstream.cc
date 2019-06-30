@@ -44,10 +44,14 @@ static ds_ctxt_t *xbstream_init(const char *root);
 static ds_file_t *xbstream_open(ds_ctxt_t *ctxt, const char *path,
                                 MY_STAT *mystat);
 static int xbstream_write(ds_file_t *file, const void *buf, size_t len);
+static int xbstream_write_sparse(ds_file_t *file, const void *buf, size_t len,
+                                 size_t sparse_map_size,
+                                 const ds_sparse_chunk_t *sparse_map);
 static int xbstream_close(ds_file_t *file);
 static void xbstream_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_xbstream = {&xbstream_init, &xbstream_open, &xbstream_write,
+datasink_t datasink_xbstream = {&xbstream_init,  &xbstream_open,
+                                &xbstream_write, &xbstream_write_sparse,
                                 &xbstream_close, &xbstream_deinit};
 
 static ssize_t my_xbstream_write_callback(xb_wstream_file_t *f
@@ -164,6 +168,25 @@ static int xbstream_write(ds_file_t *file, const void *buf, size_t len) {
 
   if (xb_stream_write_data(xbstream_file, buf, len)) {
     msg("xb_stream_write_data() failed.\n");
+    return 1;
+  }
+
+  return 0;
+}
+
+static int xbstream_write_sparse(ds_file_t *file, const void *buf, size_t len,
+                                 size_t sparse_map_size,
+                                 const ds_sparse_chunk_t *sparse_map) {
+  ds_stream_file_t *stream_file;
+  xb_wstream_file_t *xbstream_file;
+
+  stream_file = (ds_stream_file_t *)file->ptr;
+
+  xbstream_file = stream_file->xbstream_file;
+
+  if (xb_stream_write_sparse_data(xbstream_file, buf, len, sparse_map_size,
+                                  sparse_map)) {
+    msg("xb_stream_write_sparse_data() failed.\n");
     return 1;
   }
 

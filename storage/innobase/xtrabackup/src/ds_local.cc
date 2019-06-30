@@ -36,11 +36,14 @@ static ds_ctxt_t *local_init(const char *root);
 static ds_file_t *local_open(ds_ctxt_t *ctxt, const char *path,
                              MY_STAT *mystat);
 static int local_write(ds_file_t *file, const void *buf, size_t len);
+static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
+                              size_t sparse_map_size,
+                              const ds_sparse_chunk_t *sparse_map);
 static int local_close(ds_file_t *file);
 static void local_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_local = {&local_init, &local_open, &local_write,
-                             &local_close, &local_deinit};
+datasink_t datasink_local = {&local_init,         &local_open,  &local_write,
+                             &local_write_sparse, &local_close, &local_deinit};
 
 static ds_ctxt_t *local_init(const char *root) {
   ds_ctxt_t *ctxt;
@@ -114,6 +117,32 @@ static int local_write(ds_file_t *file, const void *buf, size_t len) {
   }
 
   return 1;
+}
+
+static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
+                              size_t sparse_map_size,
+                              const ds_sparse_chunk_t *sparse_map) {
+  File fd = ((ds_local_file_t *)file->ptr)->fd;
+
+  const uchar *ptr = static_cast<const uchar *>(buf);
+
+  for (size_t i = 0; i < sparse_map_size; ++i) {
+    size_t rc;
+
+    rc = my_seek(fd, sparse_map[i].skip, MY_SEEK_CUR, MYF(MY_WME));
+    if (rc == MY_FILEPOS_ERROR) {
+      return 1;
+    }
+
+    rc = my_write(fd, ptr, sparse_map[i].len, MYF(MY_WME | MY_NABP));
+    if (rc != 0) {
+      return 1;
+    }
+
+    ptr += sparse_map[i].len;
+  }
+
+  return 0;
 }
 
 static int local_close(ds_file_t *file) {

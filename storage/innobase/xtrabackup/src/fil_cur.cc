@@ -35,8 +35,43 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "read_filt.h"
 #include "xtrabackup.h"
 
-/* Size of read buffer in pages (640 pages = 10M for 16K sized pages) */
-#define XB_FIL_CUR_PAGES 640
+/***********************************************************************
+Reads the space flags from a given data file and returns the
+page size and whether the file is compressable. */
+static bool xb_get_zip_size(pfs_os_file_t file, byte *buf,
+                            page_size_t &page_size, bool &is_compressable) {
+  IORequest read_request(IORequest::READ | IORequest::NO_COMPRESSION);
+  const auto ret = os_file_read(read_request, file, buf, 0, UNIV_PAGE_SIZE_MIN);
+  if (!ret) {
+    return (false);
+  }
+
+  space_id_t space = mach_read_from_4(buf + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
+  const auto flags = fsp_header_get_flags(buf);
+
+  if (space == 0) {
+    page_size.copy_from(univ_page_size);
+  } else {
+    page_size.copy_from(page_size_t(flags));
+  }
+
+  if (page_size.is_compressed() || FSP_FLAGS_GET_ENCRYPTION(flags)) {
+    is_compressable = false;
+  } else {
+    const auto ret =
+        os_file_read(read_request, file, buf, 0, page_size.physical() * 2);
+    if (!ret) {
+      return (false);
+    }
+    if (Compression::is_compressed_page(buf + page_size.physical())) {
+      is_compressable = false;
+    } else {
+      is_compressable = true;
+    }
+  }
+
+  return (true);
+}
 
 /***********************************************************************
 Extracts the relative path ("database/table.ibd") of a tablespace from a
@@ -155,9 +190,16 @@ xb_fil_cur_result_t xb_fil_cur_open(
 
   posix_fadvise(cursor->file.m_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 
+  /* Allocate read buffer */
+  ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
+  cursor->buf_size = opt_read_buffer_size;
+  cursor->orig_buf =
+      static_cast<byte *>(ut_malloc_nokey(cursor->buf_size + UNIV_PAGE_SIZE));
+  cursor->buf = static_cast<byte *>(ut_align(cursor->orig_buf, UNIV_PAGE_SIZE));
+
   /* Determine the page size */
-  page_size.copy_from(xb_get_zip_size(cursor->file, &success));
-  if (!success) {
+  if (!xb_get_zip_size(cursor->file, cursor->buf, page_size,
+                       cursor->is_compressable)) {
     xb_fil_cur_close(cursor);
     return (XB_FIL_CUR_SKIP);
   } else if (page_size.is_compressed()) {
@@ -178,13 +220,6 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->page_size_shift = page_size_shift;
   cursor->zip_size = page_size.is_compressed() ? page_size.physical() : 0;
 
-  ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
-  /* Allocate read buffer */
-  cursor->buf_size = opt_read_buffer_size;
-  cursor->orig_buf =
-      static_cast<byte *>(ut_malloc_nokey(cursor->buf_size + UNIV_PAGE_SIZE));
-  cursor->buf = static_cast<byte *>(ut_align(cursor->orig_buf, UNIV_PAGE_SIZE));
-
   cursor->buf_read = 0;
   cursor->buf_npages = 0;
   cursor->buf_offset = 0;
@@ -192,6 +227,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->thread_n = thread_n;
 
   cursor->space_size = cursor->statinfo.st_size / page_size.physical();
+  cursor->block_size = node->block_size;
 
   cursor->read_filter = read_filter;
   cursor->read_filter->init(&cursor->read_filter_ctxt, cursor, node->space->id);
@@ -257,11 +293,9 @@ xb_fil_cur_result_t xb_fil_cur_read(
   if (to_read % cursor->page_size != 0 &&
       offset + to_read == (ib_uint64_t)cursor->statinfo.st_size) {
     if (to_read < (ib_uint64_t)cursor->page_size) {
-      msg("[%02u] xtrabackup: Warning: junk at the end of "
-          "%s:\n",
+      msg("[%02u] xtrabackup: Warning: junk at the end of %s:\n",
           cursor->thread_n, cursor->abs_path);
-      msg("[%02u] xtrabackup: Warning: offset = %llu, "
-          "to_read = %llu\n",
+      msg("[%02u] xtrabackup: Warning: offset = %llu, to_read = %llu\n",
           cursor->thread_n, (unsigned long long)offset,
           (unsigned long long)to_read);
 
@@ -316,13 +350,14 @@ read_retry:
   for (page = cursor->buf, i = 0; i < npages; page += cursor->page_size, i++) {
     page_to_check = page;
     if (Encryption::is_encrypted_page(page)) {
-      dberr_t ret;
       Encryption encryption(read_request.encryption_algorithm());
 
       page_to_check = cursor->decrypt;
       memcpy(cursor->decrypt, page, cursor->page_size);
-      ret = encryption.decrypt(read_request, cursor->decrypt, cursor->page_size,
-                               cursor->scratch, cursor->page_size);
+
+      const auto ret =
+          encryption.decrypt(read_request, cursor->decrypt, cursor->page_size,
+                             cursor->scratch, cursor->page_size);
       if (ret != DB_SUCCESS) {
         goto corruption;
       }
@@ -353,24 +388,20 @@ read_retry:
           page_no < FSP_EXTENT_SIZE * 3) {
         /* skip doublewrite buffer pages */
         xb_a(cursor->page_size == UNIV_PAGE_SIZE);
-        msg("[%02u] xtrabackup: "
-            "Page %lu is a doublewrite buffer page, "
+        msg("[%02u] xtrabackup: Page %lu is a doublewrite buffer page, "
             "skipping.\n",
             cursor->thread_n, page_no);
       } else {
         retry_count--;
         if (retry_count == 0) {
-          msg("[%02u] xtrabackup: "
-              "Error: failed to read page after "
-              "10 retries. File %s seems to be "
-              "corrupted.\n",
+          msg("[%02u] xtrabackup: Error: failed to read page after 10 retries. "
+              "File %s seems to be corrupted.\n",
               cursor->thread_n, cursor->abs_path);
           ret = XB_FIL_CUR_ERROR;
           break;
         }
-        msg("[%02u] xtrabackup: "
-            "Database page corruption detected at page "
-            "%lu, retrying...\n",
+        msg("[%02u] xtrabackup: Database page corruption detected at page %lu, "
+            "retrying...\n",
             cursor->thread_n, page_no);
 
         os_thread_sleep(100000);
@@ -398,15 +429,9 @@ void xb_fil_cur_close(
 {
   cursor->read_filter->deinit(&cursor->read_filter_ctxt);
 
-  if (cursor->scratch != NULL) {
-    ut_free(cursor->scratch);
-  }
-  if (cursor->decrypt != NULL) {
-    ut_free(cursor->decrypt);
-  }
-  if (cursor->orig_buf != NULL) {
-    ut_free(cursor->orig_buf);
-  }
+  ut_free(cursor->scratch);
+  ut_free(cursor->decrypt);
+  ut_free(cursor->orig_buf);
   if (cursor->node != NULL) {
     fil_node_close_file(cursor->node);
     cursor->file = XB_FILE_UNDEFINED;
