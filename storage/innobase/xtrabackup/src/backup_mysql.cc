@@ -885,9 +885,12 @@ have_queries_to_wait_for(MYSQL *connection, uint threshold)
 		    	|| is_update_query(info))) {
 			msg_ts("Waiting for query %s (duration %d sec): %s",
 			       id, duration, info);
+			mysql_free_result(result);
 			return(true);
 		}
 	}
+
+	mysql_free_result(result);
 
 	return(false);
 }
@@ -920,6 +923,8 @@ kill_long_queries(MYSQL *connection, uint timeout)
 			xb_mysql_query(connection, kill_stmt, false, false);
 		}
 	}
+
+	mysql_free_result(result);
 }
 
 static
@@ -954,6 +959,8 @@ kill_query_thread(
 	MYSQL	*mysql;
 	time_t	start_time;
 
+	my_thread_init();
+
 	start_time = time(NULL);
 
 	os_event_set(kill_query_thread_started);
@@ -986,6 +993,8 @@ kill_query_thread(
 
 stop_thread:
 	msg_ts("Kill query thread stopped\n");
+
+	my_thread_end();
 
 	os_event_set(kill_query_thread_stopped);
 
