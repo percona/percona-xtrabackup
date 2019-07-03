@@ -1299,8 +1299,11 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    "Path to InnoDB log files.", &srv_log_group_home_dir,
    &srv_log_group_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_max_dirty_pages_pct", OPT_INNODB_MAX_DIRTY_PAGES_PCT,
-   "Percentage of dirty pages allowed in bufferpool.", (G_PTR*) &srv_max_buf_pool_modified_pct,
-   (G_PTR*) &srv_max_buf_pool_modified_pct, 0, GET_ULONG, REQUIRED_ARG, 90, 0, 100, 0, 0, 0},
+   "Percentage of dirty pages allowed in bufferpool.",
+   (G_PTR*) &srv_max_buf_pool_modified_pct,
+   (G_PTR*) &srv_max_buf_pool_modified_pct, 0, GET_DOUBLE, REQUIRED_ARG,
+   (longlong)getopt_double2ulonglong(75), (longlong)getopt_double2ulonglong(0),
+   getopt_double2ulonglong(100), 0, 0, 0},
   {"innodb_open_files", OPT_INNODB_OPEN_FILES,
    "How many files at the maximum InnoDB keeps open at the same time.",
    (G_PTR*) &innobase_open_files, (G_PTR*) &innobase_open_files, 0,
@@ -8660,8 +8663,9 @@ handle_options(int argc, char **argv, int *argc_client, char ***argv_client,
 					xb_server_options, xb_get_one_option)))
 		exit(ho_error);
 
-	msg("xtrabackup: recognized server arguments: %s\n", param_str.str().c_str());
-	param_str.clear();
+	msg("xtrabackup: recognized server arguments: %s\n",
+	    param_str.str().c_str());
+	param_str.str("");
 
 	if (load_defaults(conf_file, xb_client_default_groups,
 			  argc_client, argv_client)) {
@@ -8682,7 +8686,8 @@ handle_options(int argc, char **argv, int *argc_client, char ***argv_client,
 					xb_client_options, xb_get_one_option)))
 		exit(ho_error);
 
-	msg("xtrabackup: recognized client arguments: %s\n", param_str.str().c_str());
+	msg("xtrabackup: recognized client arguments: %s\n",
+	    param_str.str().c_str());
 	param_str.clear();
 
 	/* Reject command line arguments that don't look like options, i.e. are
