@@ -8,11 +8,6 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 secure-file-priv=$TEST_VAR_ROOT
 "
 
-if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
-then
-    skip_test "Incompatible with AddressSanitizer"
-fi
-
 function bg_run()
 {
     local varname=$1
