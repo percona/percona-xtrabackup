@@ -409,6 +409,11 @@ check_server_version(unsigned long version_number,
 		    "supported in this release. You can either use "
 		    "Percona XtraBackup 2.0, or upgrade to InnoDB "
 		    "plugin.\n");
+	} else if (version_number > 80000 && version_number < 90000) {
+		msg("Error: MySQL 8.0 and Percona Server 8.0 are not "
+		    "supported by Percona Xtrabackup 2.4.x series. "
+		    "Please use Percona Xtrabackup 8.0.x for backups "
+		    "and restores.\n");
 	} else if (!version_supported) {
 		msg("Error: Unsupported server version: '%s'. Please "
 		    "report a bug at "
