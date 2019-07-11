@@ -1,0 +1,39 @@
+================================================================================
+|Percona XtraBackup| |release|
+================================================================================
+
+Percona is glad to announce the release of |Percona XtraBackup| |release| on
+|date|. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.15/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories. 
+
+All Percona software is open-source and free.
+
+Bugs Fixed
+================================================================================
+
+- When the *encrypted tablespaces* feature was enabled, encrypted and compressed
+  tables were not usable on the joiner node (Percona XtraDB Cluster) via SST
+  (State Snapshot Transfer) with the ``xtrabackup-v2`` method. Bug fixed
+  :jirabug:`PXB-1867`.
+- ``xbcloud`` did not update date related fields of the HTTP
+  header when retrying a request. Bug fixed :jirabug:`PXB-1874`.
+- ``xbcloud`` did not retry to send the request after receiving the HTTP 408
+  error (request timeout). Bug fixed :jirabug:`PXB-1875`.
+- If the user tried to merge an already prepared incremental backup, a
+  misleading error was produced without informing that incremental backups may
+  not be used twice. Bug fixed :jirabug:`PXB-1862`.
+- ``xbcloud`` could crash with the `Swift` storage when project options were
+  not included. Bug fixed :jirabug:`PXB-1844`.
+- ``xtrabackup`` did not accept decimal fractions as values of the
+  ``innodb_max_dirty_pages_pct`` option. Bug fixed :jirabug:`PXB-1807`.
+
+**Other bugs fixed**:
+:jirabug:`PXB-1850`,
+:jirabug:`PXB-1879`,
+:jirabug:`PXB-1887`,
+:jirabug:`PXB-1888`,
+:jirabug:`PXB-1890`.
+
+.. |release| replace:: 2.4.15
+.. |date| replace:: July 10, 2019

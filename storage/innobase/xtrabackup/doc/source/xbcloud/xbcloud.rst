@@ -26,8 +26,8 @@ Supported Cloud Storage Types
 ================================================================================
 
 In addition to Swift, which has been the only option for storing backups in a
-cloud storage until |Percona XtraBackup| 2.4.14, |xbcloud| supports *Amazon S3*,
-*MinIO*, and *Google Cloud Storage*. Other Amazon S3 compatible storages, such
+cloud storage until |Percona XtraBackup| 2.4.14, |xbcloud| supports |s3|,
+|minio|, and |gcs|. Other |s3| compatible storages, such
 as Wasabi or Digital Ocean Spaces, are also supported.
 
 .. seealso::
@@ -36,9 +36,9 @@ as Wasabi or Digital Ocean Spaces, are also supported.
       https://wiki.openstack.org/wiki/Swift
    Amazon Simple Storage Service
       https://aws.amazon.com/s3/
-   MinIO
+   |minio|
       https://min.io/
-   Google Cloud Storage
+   |gcs|
       https://cloud.google.com/storage/
    Wasabi
       https://wasabi.com/
@@ -56,7 +56,7 @@ Usage
 Creating a full backup with Swift
 ================================================================================
 
-The following example shows how to make a full backup and upload it to Swift
+The following example shows how to make a full backup and upload it to Swift.
 
 .. code-block:: bash
 
@@ -118,6 +118,7 @@ Creating a full backup with |minio|
    ${date -I}-full_backup
 
 Creating a full backup with |gcs|
+================================================================================
 
 The support for |gcs| is implemented using the interoperability
 mode. This mode was especially designed to interact with cloud services
@@ -156,7 +157,7 @@ Configuration files
 
 The parameters the values of which do not change frequently can be stored in
 :file:`my.cnf` or in a custom configuration file. The following example is a
-template of configuration options under the [xbcloud] group:
+template of configuration options under the ``[xbcloud]`` group:
 
 .. code-block:: text
 
@@ -392,6 +393,8 @@ Command-line options
 ================================================================================
 
 |xbcloud| has the following command line options:
+
+.. program:: xbcloud
 
 .. option:: --storage=[swift|s3|google]
 

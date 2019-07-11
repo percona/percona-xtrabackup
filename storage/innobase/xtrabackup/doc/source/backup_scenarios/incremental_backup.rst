@@ -155,7 +155,7 @@ usual, but prevent the rollback phase:
 
    $ xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base
 
-The output should end with some text such as the following:
+The output should end with text similar to the following:
 
 .. code-block:: text
 
