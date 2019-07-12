@@ -10661,10 +10661,11 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
     if (srv_backup_mode || !use_dumped_tablespace_keys) {
       byte *key = file.m_encryption_key;
       byte *iv = file.m_encryption_iv;
-      ut_ad(key && iv);
 
       fsp_flags_set_encryption(space->flags);
-      err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+      if (key && iv) {
+        err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+      }
     } else {
       err = xb_set_encryption(space);
     }
