@@ -658,13 +658,36 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 				<< " datafile: " << m_filepath
 				<< " can't be decrypted.";
 
-			m_is_valid = false;
-			free_first_page();
-			ut_free(m_encryption_key);
-			ut_free(m_encryption_iv);
-			m_encryption_key = NULL;
-			m_encryption_iv = NULL;
-			return(DB_PAGE_IS_BLANK);
+			bool found = false;
+
+                        if (srv_backup_mode) {
+				mutex_enter(&recv_sys->mutex);
+				encryption_list_t::iterator	it;
+				for (it = recv_sys->encryption_list->begin();
+				     it != recv_sys->encryption_list->end();
+				     it++) {
+					if (it->space_id == m_space_id) {
+						memcpy(m_encryption_key,
+						       it->key,
+						       ENCRYPTION_KEY_LEN);
+						memcpy(m_encryption_iv, it->iv,
+						       ENCRYPTION_KEY_LEN);
+						found = true;
+					}
+				}
+				mutex_exit(&recv_sys->mutex);
+                        }
+
+			if (!found) {
+				m_is_valid = false;
+				free_first_page();
+				ut_free(m_encryption_key);
+				ut_free(m_encryption_iv);
+				m_encryption_key = NULL;
+				m_encryption_iv = NULL;
+				return(DB_CORRUPTION);
+                        }
+
 		}
 
 		if (recv_recovery_is_on()

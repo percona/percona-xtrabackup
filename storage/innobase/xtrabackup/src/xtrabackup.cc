@@ -3651,10 +3651,12 @@ xb_load_single_table_tablespace(
 			if (srv_backup_mode || !use_dumped_tablespace_keys) {
 				byte*	key = file->m_encryption_key;
 				byte*	iv = file->m_encryption_iv;
-				ut_ad(key && iv);
 
-				err = fil_set_encryption(space->id,
-					Encryption::AES, key, iv);
+				if (key && iv) {
+					err = fil_set_encryption(
+						space->id,
+						Encryption::AES, key, iv);
+				}
 			} else {
 				byte key[ENCRYPTION_KEY_LEN];
 				byte iv[ENCRYPTION_KEY_LEN];
