@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20943,6 +20943,179 @@ static void test_bug19894382()
   mysql_stmt_close(stmt1);
 }
 
+static void test_bug25701141()
+{
+  MYSQL_STMT *stmt;
+  int rc;
+  MYSQL_BIND my_bind[2];
+  char query[MAX_TEST_QUERY_LENGTH];
+  const char* input1= "abcdefgh";
+  const char* input2=  "mnopqrst";
+  const ulong type = CURSOR_TYPE_READ_ONLY;
+
+  myheader("test_bug25701141");
+
+  rc= mysql_query(mysql, "DROP TABLE IF EXISTS t1");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "CREATE TABLE t1( "
+      "id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+      "serial CHAR(10) NOT NULL,"
+      "pretty CHAR(20) DEFAULT NULL,"
+      "CONSTRAINT UNIQUE KEY unique_serial (serial) USING HASH,"
+      "INDEX pretty_index USING HASH (pretty)"
+      ") ENGINE = InnoDB CHARSET = utf8 COLLATE = utf8_bin");
+  myquery(rc);
+
+  my_stpcpy(query, "INSERT IGNORE INTO t1 SET `serial`=?, `pretty`=?");
+  stmt= mysql_simple_prepare(mysql, query);
+  check_stmt(stmt);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type = MYSQL_TYPE_STRING;
+  my_bind[0].buffer = (char*)input1;
+  my_bind[0].buffer_length = (ulong)strlen(input1);
+
+  my_bind[1].buffer_type = MYSQL_TYPE_STRING;
+  my_bind[1].buffer = (char*)input2;
+  my_bind[1].buffer_length = (ulong)strlen(input2);
+
+  rc= mysql_stmt_bind_param(stmt, my_bind);
+  check_execute(stmt, rc);
+  mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, &type);
+
+  /* Execute */
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+  mysql_stmt_close(stmt);
+
+  myquery(mysql_query(mysql, "DROP TABLE t1"));
+}
+
+static void test_bug27443252()
+{
+  MYSQL_STMT *stmt;
+  MYSQL_BIND my_bind[1];
+  int rc;
+  int32 a;
+  int row_count=0;
+  int column_count=0;
+  MYSQL_RES *metadata = NULL;
+
+  myheader("test_bug27443252");
+
+  rc= mysql_query(mysql, "drop procedure if exists p1");
+  myquery(rc);
+  rc= mysql_query(mysql, "drop table if exists p1");
+  myquery(rc);
+  rc= mysql_query(mysql, "create table t1 (id int)");
+  myquery(rc);
+  rc= mysql_query(mysql, "create procedure p1() begin select * from t1; end");
+  myquery(rc);
+
+  /* Case 1 - Procedure call with empty result set */
+  stmt= open_cursor("call p1");
+  /* This should not result in hang */
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  metadata = mysql_stmt_result_metadata(stmt);
+  if (metadata)
+  {
+    column_count = mysql_num_fields(metadata);
+    DIE_UNLESS(column_count == 1);
+  }
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type= MYSQL_TYPE_LONG;
+  my_bind[0].buffer= (void*)&a;
+  my_bind[0].buffer_length= (ulong)sizeof(a);
+  rc= mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt))
+    row_count++;
+  DIE_UNLESS(row_count == 0);
+
+  rc = mysql_stmt_next_result(stmt);
+  check_execute(stmt, rc);
+  rc= mysql_stmt_free_result(stmt);
+  check_execute(stmt, rc);
+  mysql_free_result(metadata);
+  mysql_stmt_close(stmt);
+
+  /* Case 2 - SELECT with empty result set */
+  row_count= 0;
+  stmt= open_cursor("select * from t1");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type= MYSQL_TYPE_LONG;
+  my_bind[0].buffer= (void*)&a;
+  my_bind[0].buffer_length= (ulong)sizeof(a);
+
+  rc= mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt))
+    row_count++;
+  DIE_UNLESS(row_count == 0);
+  mysql_stmt_close(stmt);
+
+  /* Case 3 - Procedure call with non-empty result set */
+  rc= mysql_query(mysql, "insert into t1 (id) values "
+                          " (1), (2), (3)");
+  myquery(rc);
+  row_count= 0;
+  stmt= open_cursor("call p1");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type= MYSQL_TYPE_LONG;
+  my_bind[0].buffer= (void*)&a;
+  my_bind[0].buffer_length= (ulong)sizeof(a);
+  rc= mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt))
+    row_count++;
+  DIE_UNLESS(row_count == 3);
+
+  rc = mysql_stmt_next_result(stmt);
+  check_execute(stmt, rc);
+  rc= mysql_stmt_free_result(stmt);
+  check_execute(stmt, rc);
+  mysql_stmt_close(stmt);
+
+  /* Case 4 - SELECT with Non-empty result set */
+  row_count= 0;
+  stmt= open_cursor("select * from t1");
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  memset(my_bind, 0, sizeof(my_bind));
+  my_bind[0].buffer_type= MYSQL_TYPE_LONG;
+  my_bind[0].buffer= (void*)&a;
+  my_bind[0].buffer_length= (ulong)sizeof(a);
+  rc= mysql_stmt_bind_result(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  while (!mysql_stmt_fetch(stmt))
+    row_count++;
+  DIE_UNLESS(row_count == 3);
+
+  rc= mysql_stmt_free_result(stmt);
+  check_execute(stmt, rc);
+  mysql_stmt_close(stmt);
+
+  /* Cleanup */
+  rc= mysql_query(mysql, "drop table t1");
+  myquery(rc);
+  rc= mysql_query(mysql, "drop procedure p1");
+  myquery(rc);
+}
 
 static struct my_tests_st my_tests[]= {
   { "disable_query_logs", disable_query_logs },
@@ -21235,6 +21408,8 @@ static struct my_tests_st my_tests[]= {
   { "test_bug22559575", test_bug22559575 },
   { "test_bug19894382", test_bug19894382 },
   { "test_bug22028117", test_bug22028117 },
+  { "test_bug25701141", test_bug25701141 },
+  { "test_bug27443252", test_bug27443252 },
   { 0, 0 }
 };
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +19,8 @@
 #include "my_global.h"
 #include "my_thread_local.h"          // my_thread_id
 #include "mysql/psi/mysql_thread.h"   // mysql_mutex_t
-#include "handler.h"                  // enum_tx_isolation
+#include "handler.h"  // enum_tx_isolation
+#include "rpl_context.h"  // enum_rpl_channel_type
 
 typedef struct st_mysql MYSQL;
 typedef struct st_io_cache IO_CACHE;
@@ -100,6 +101,7 @@ typedef struct Trans_context_info {
   ulong parallel_applier_workers;
   bool parallel_applier_preserve_commit_order;
   enum_tx_isolation tx_isolation;  // enum values in enum_tx_isolation
+  uint lower_case_table_names;
 } Trans_context_info;
 
 /**
@@ -154,6 +156,8 @@ typedef struct Trans_param {
    */
   Trans_context_info trans_ctx_info;
 
+  /** Replication channel info associated to this transaction/THD */
+  enum_rpl_channel_type rpl_channel_type;
 } Trans_param;
 
 /**

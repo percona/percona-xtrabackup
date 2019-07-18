@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -295,14 +295,6 @@ ENDIF()
 SET(CLIENT_LIBS "")
 SET(LIBS "")
 
-# Avoid compatibility warning about lists with empty elements
-IF(POLICY CMP0011)
-  CMAKE_POLICY(SET CMP0011 NEW)
-ENDIF()
-IF(POLICY CMP0007)
-  CMAKE_POLICY(SET CMP0007 OLD)
-ENDIF()
-
 # Extract dependencies using CMake's internal ${target}_LIB_DEPENDS variable
 # returned string in ${var} is can be passed to linker's command line
 MACRO(EXTRACT_LINK_LIBRARIES target var)
@@ -439,15 +431,6 @@ ELSE()
       COMPONENT ${${file}_COMPONENT}
      )
   ENDFOREACH()
-  IF(COPY_MYSQL_CONFIG)
-    CONFIGURE_FILE(${CMAKE_CURRENT_BINARY_DIR}/mysql_config
-       ${CMAKE_CURRENT_BINARY_DIR}/mysql_server_config COPYONLY)
-    INSTALL_SCRIPT(
-      ${CMAKE_CURRENT_BINARY_DIR}/mysql_server_config
-      DESTINATION ${INSTALL_BINDIR}
-      COMPONENT ${mysql_server_config_COMPONENT}
-    )
-  ENDIF()
 
   # Systemd files
   IF(WITH_SYSTEMD)

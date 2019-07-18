@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2018, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -3094,7 +3094,7 @@ row_sel_store_mysql_field_func(
 
 	const byte*	data;
 	ulint		len;
-	ulint		clust_field_no;
+	ulint		clust_field_no = 0;
 	bool		clust_templ_for_sec = (sec_field_no != ULINT_UNDEFINED);
 
 	ut_ad(prebuilt->default_rec);
@@ -3145,17 +3145,24 @@ row_sel_store_mysql_field_func(
 			field_no, &len, heap);
 
 		if (UNIV_UNLIKELY(!data)) {
-			/* The externally stored field was not written
-			yet. This record should only be seen by
-			recv_recovery_rollback_active() or any
-			TRX_ISO_READ_UNCOMMITTED transactions. */
 
+			/* The externally stored field was not written
+			yet. This can happen after optimization which
+			was done after for Bug#23481444 where we read
+			last record in the page to find the end range
+			scan. If we encounter this we just return false
+			In any other case this row should be only seen
+			by recv_recovery_rollback_active() or any
+			TRX_ISO_READ_UNCOMMITTED transactions. */
 			if (heap != prebuilt->blob_heap) {
 				mem_heap_free(heap);
 			}
 
-			ut_a(prebuilt->trx->isolation_level
-			     == TRX_ISO_READ_UNCOMMITTED);
+			ut_a((!prebuilt->idx_cond &&
+			     prebuilt->m_mysql_handler->end_range != NULL)
+			     || (prebuilt->trx->isolation_level
+			     == TRX_ISO_READ_UNCOMMITTED));
+
 			DBUG_RETURN(FALSE);
 		}
 
@@ -3271,8 +3278,8 @@ row_sel_store_mysql_rec(
 	const ulint*	offsets,
 	bool		clust_templ_for_sec)
 {
-	ulint			i;
-	std::vector<ulint>	template_col;
+	ulint				i;
+	std::vector<const dict_col_t*>	template_col;
 	DBUG_ENTER("row_sel_store_mysql_rec");
 
 	ut_ad(rec_clust || index == prebuilt->index);
@@ -3283,13 +3290,24 @@ row_sel_store_mysql_rec(
 	}
 
 	if (clust_templ_for_sec) {
-		/* Store all clustered index field of
+		/* Store all clustered index column of
 		secondary index record. */
-		for (i = 0; i < dict_index_get_n_fields(
-				prebuilt->index); i++) {
+
+		ut_ad(dict_index_is_clust(index));
+
+		for (i = 0; i < dict_index_get_n_fields(prebuilt->index); i++) {
 			ulint   sec_field = dict_index_get_nth_field_pos(
 				index, prebuilt->index, i);
-			template_col.push_back(sec_field);
+
+			if (sec_field == ULINT_UNDEFINED) {
+				template_col.push_back(NULL);
+				continue;
+			}
+
+			const dict_field_t*	field = dict_index_get_nth_field(
+						index, sec_field);
+			const dict_col_t*	col = dict_field_get_col(field);
+			template_col.push_back(col);
 		}
 	}
 
@@ -3370,10 +3388,13 @@ row_sel_store_mysql_rec(
 		      == 0);
 
 		if (clust_templ_for_sec) {
-			std::vector<ulint>::iterator    it;
+			std::vector<const dict_col_t*>::iterator    it;
+			const dict_field_t*	field = dict_index_get_nth_field(
+							index, field_no);
+			const dict_col_t*	col = dict_field_get_col(field);
 
 			it = std::find(template_col.begin(),
-				       template_col.end(), field_no);
+				       template_col.end(), col);
 
 			if (it == template_col.end()) {
 				continue;
@@ -5169,11 +5190,15 @@ rec_loop:
 
 	if (page_rec_is_supremum(rec)) {
 
+		DBUG_EXECUTE_IF("compare_end_range",
+				if (end_loop < 100) {
+					end_loop = 100;
+				});
 		/** Compare the last record of the page with end range
 		passed to InnoDB when there is no ICP and number of
 		loops in row_search_mvcc for rows found but not
 		reporting due to search views etc. */
-		if (prev_rec != NULL
+		if (prev_rec != NULL && !prebuilt->innodb_api
 		    && prebuilt->m_mysql_handler->end_range != NULL
 		    && prebuilt->idx_cond == NULL && end_loop >= 100) {
 
@@ -5208,7 +5233,7 @@ rec_loop:
 
 					/** In case of prebuilt->fetch,
 					set the error in prebuilt->end_range. */
-					if (prebuilt->n_fetch_cached > 0) {
+					if (next_buf != NULL) {
 						prebuilt->m_end_range = true;
 					}
 
@@ -5216,6 +5241,8 @@ rec_loop:
 					goto normal_return;
 				}
 			}
+
+			DEBUG_SYNC_C("allow_insert");
 		}
 
 		if (set_also_gap_locks
@@ -5507,6 +5534,7 @@ no_gap_lock:
 				prebuilt->new_rec_locks = 1;
 			}
 			err = DB_SUCCESS;
+ 			// Fall through
 		case DB_SUCCESS:
 			break;
 		case DB_LOCK_WAIT:

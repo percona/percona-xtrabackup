@@ -1089,8 +1089,8 @@ static int maxmin_in_range(bool max_fl, Item_field *item_field, Item *cond)
     return cond->val_int() == 0;                // Return 1 if WHERE is false
   case Item_func::LT_FUNC:
   case Item_func::LE_FUNC:
-    less_fl= true;
-    // Fall through
+    less_fl= 1;
+    // Fall through.
   case Item_func::GT_FUNC:
   case Item_func::GE_FUNC:
   {

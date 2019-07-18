@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -50,8 +50,11 @@ IF (WIN32)
 ENDIF()
 
 IF (NOT WIN32)
+  MYSQL_CHECK_RPC()
+
   SET (CMAKE_REQUIRED_FLAGS_BACKUP ${CMAKE_REQUIRED_FLAGS})
   SET (CMAKE_REQUIRED_FLAGS "-Wno-error")
+  SET (CMAKE_REQUIRED_INCLUDES ${RPC_INCLUDE_DIRS})
 ENDIF()
 
 #

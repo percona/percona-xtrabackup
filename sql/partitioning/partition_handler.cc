@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -430,7 +430,14 @@ bool Partition_helper::open_partitioning(Partition_share *part_share)
   m_curr_key_info[2]= NULL;
   m_top_entry= NO_CURRENT_PART_ID;
   m_ref_usage= REF_NOT_USED;
-  m_rec_length= m_table->s->reclength;
+  legacy_db_type db_type = ha_legacy_type(m_part_info->default_engine_type);
+  if(db_type == DB_TYPE_HEAP)
+  {
+    m_rec_length= m_table->s->rec_buff_length;
+  } else {
+    m_rec_length= m_table->s->reclength;
+  }
+  DBUG_ASSERT(db_type !=  DB_TYPE_UNKNOWN);
   return false;
 }
 
@@ -2132,41 +2139,6 @@ int Partition_helper::ph_rnd_pos(uchar *buf, uchar *pos)
   DBUG_RETURN(rnd_pos_in_part(part_id, buf, (pos + PARTITION_BYTES_IN_POS)));
 }
 
-
-/**
-  Read row using position using given record to find.
-
-  This works as position()+rnd_pos() functions, but does some extra work,
-  calculating m_last_part - the partition to where the 'record' should go.
-
-  Only useful when position is based on primary key
-  (HA_PRIMARY_KEY_REQUIRED_FOR_POSITION).
-
-  @param record  Current record in MySQL Row Format.
-
-  @return Operation status.
-    @retval    0  Success
-    @retval != 0  Error code
-*/
-
-int Partition_helper::ph_rnd_pos_by_record(uchar *record)
-{
-  DBUG_ENTER("Partition_helper::ph_rnd_pos_by_record");
-
-  DBUG_ASSERT(m_handler->ha_table_flags() &
-              HA_PRIMARY_KEY_REQUIRED_FOR_POSITION);
-  /* TODO: Support HA_READ_BEFORE_WRITE_REMOVAL */
-  /* Set m_last_part correctly. */
-  if (unlikely(get_part_for_delete(record,
-                                   m_table->record[0],
-                                   m_part_info,
-                                   &m_last_part)))
-    DBUG_RETURN(HA_ERR_INTERNAL_ERROR);
-
-  DBUG_RETURN(rnd_pos_by_record_in_last_part(record));
-}
-
-
 /****************************************************************************
                 MODULE index scan
 ****************************************************************************/
@@ -2641,6 +2613,13 @@ int Partition_helper::ph_index_last(uchar *buf)
 {
   DBUG_ENTER("Partition_helper::ph_index_last");
 
+  int error = HA_ERR_END_OF_FILE;
+  uint part_id = m_part_info->get_first_used_partition();
+  if (part_id == MY_BIT_NONE)
+  {
+     /* No partition to scan. */
+      DBUG_RETURN(error);
+  }
   m_index_scan_type= PARTITION_INDEX_LAST;
   m_reverse_order= true;
   DBUG_RETURN(common_first_last(buf));
@@ -3065,17 +3044,17 @@ int Partition_helper::handle_unordered_next(uchar *buf, bool is_next_same)
     partition_read_range is_next_same are always local constants
   */
 
-  if (m_index_scan_type == PARTITION_READ_RANGE)
+  if(is_next_same)
+  {
+    error= index_next_same_in_part(m_part_spec.start_part,
+				   buf,
+                                   m_start_key.key,
+                                   m_start_key.length);
+  }
+  else if (m_index_scan_type == PARTITION_READ_RANGE)
   {
     DBUG_ASSERT(buf == m_table->record[0]);
     error= read_range_next_in_part(m_part_spec.start_part, NULL);
-  }
-  else if (is_next_same)
-  {
-    error= index_next_same_in_part(m_part_spec.start_part,
-                                   buf,
-                                   m_start_key.key,
-                                   m_start_key.length);
   }
   else
   {
@@ -3551,20 +3530,20 @@ int Partition_helper::handle_ordered_next(uchar *buf, bool is_next_same)
   else
     read_buf= rec_buf;
 
-
-  if (m_index_scan_type == PARTITION_READ_RANGE)
-  {
-    error= read_range_next_in_part(part_id,
-                                   read_buf == m_table->record[0]
-                                     ? NULL : read_buf);
-  }
-  else if (!is_next_same)
-    error= index_next_in_part(part_id, read_buf);
-  else
-    error= index_next_same_in_part(part_id,
+  if (is_next_same) {
+    error = index_next_same_in_part(part_id,
                                    read_buf,
                                    m_start_key.key,
                                    m_start_key.length);
+  } else if (m_index_scan_type == PARTITION_READ_RANGE) {
+    error = read_range_next_in_part(part_id,
+                                   read_buf == m_table->record[0]
+                                     ? NULL : read_buf);
+  }
+  else {
+    error = index_next_in_part(part_id, read_buf);
+  }
+
   if (error)
   {
     if (error == HA_ERR_END_OF_FILE)

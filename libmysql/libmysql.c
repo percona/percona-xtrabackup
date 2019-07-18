@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2155,8 +2155,18 @@ static my_bool execute(MYSQL_STMT *stmt, char *packet, ulong length)
   {
     if (mysql->server_status & SERVER_STATUS_CURSOR_EXISTS)
       mysql->server_status&= ~SERVER_STATUS_CURSOR_EXISTS;
-
-    if (!res && (stmt->flags & CURSOR_TYPE_READ_ONLY))
+    /*
+      After having read the query result, we need to make sure that the client
+      does not end up into a hang waiting for the server to send a packet.
+      If the CURSOR_TYPE_READ_ONLY flag is set, we would want to perform the
+      additional packet read mainly for prepared statements involving SELECT
+      queries. For SELECT queries, the result format would either be
+      <Metadata><OK> or <Metadata><rows><OK>. We would have read the metadata
+      by now and have the field_count populated. The check for field_count will
+      help determine if we can expect an additional packet from the server.
+    */
+    if (!res && (stmt->flags & CURSOR_TYPE_READ_ONLY) &&
+        mysql->field_count != 0)
     {
       /*
         server can now respond with a cursor - then the respond will be
@@ -2179,7 +2189,23 @@ static my_bool execute(MYSQL_STMT *stmt, char *packet, ulong length)
           DBUG_RETURN(1);
       }
       else
+      {
         read_ok_ex(mysql, pkt_len);
+        /*
+          If the result set was empty and the server did not open a cursor,
+          then the response from the server would have been <metadata><OK>.
+          This means the OK packet read above was the last OK packet of the
+          sequence. Hence, we set the status to indicate that the client is
+          now ready for next command. The stmt->read_row_func is set so as
+          to ensure that the next call to C API mysql_stmt_fetch() will not
+          read on the network. Instead, it will return NO_MORE_DATA.
+        */
+        if (!(mysql->server_status & SERVER_STATUS_CURSOR_EXISTS))
+        {
+          mysql->status= MYSQL_STATUS_READY;
+          stmt->read_row_func= stmt_read_row_no_data;
+        }
+      }
     }
   }
 
@@ -2588,8 +2614,13 @@ static void prepare_to_fetch_result(MYSQL_STMT *stmt)
       cursors framework in the server and writes rows directly to the
       network or b) is more efficient if all (few) result set rows are
       precached on client and server's resources are freed.
+      The below check for mysql->status is required because we could
+      have already read the last packet sent by the server in execute()
+      and set the status to MYSQL_STATUS_READY. In such cases, we need
+      not call mysql_stmt_store_result().
     */
-    mysql_stmt_store_result(stmt);
+    if (stmt->mysql->status != MYSQL_STATUS_READY)
+      mysql_stmt_store_result(stmt);
   }
   else
   {

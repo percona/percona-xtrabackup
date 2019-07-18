@@ -1,4 +1,4 @@
-# Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,13 +34,14 @@
 %{!?compilation_comment_debug:   %global compilation_comment_debug MySQL Community Server - Debug (GPL)}
 %{!?src_base:                    %global src_base mysql}
 
+%if 0%{?fedora} < 27
 %global compatver             5.6.37
 %global compatlib             18
 %global compatsrc             https://cdn.mysql.com/Downloads/MySQL-5.6/mysql-%{compatver}.tar.gz
+%endif
 
 %global src_dir               %{src_base}-%{version}
-
-# No debuginfo for now, ships /usr/sbin/mysqld-debug and libmysqlcliet-debug.a
+# No debuginfo for now
 %if 0%{?nodebuginfo}
 %global _enable_debug_package 0
 %global debug_package         %{nil}
@@ -48,7 +49,7 @@
 %endif
 
 %if 0%{?commercial}
-%global license_files_server  %{src_dir}/LICENSE.mysql
+%global license_files_server  %{src_dir}/LICENSE.mysql %{src_dir}/README
 %global license_type          Commercial
 %else
 %global license_files_server  %{src_dir}/COPYING %{src_dir}/README
@@ -64,16 +65,47 @@ Version:        @MYSQL_NO_DASH_VERSION@
 Release:        1%{?dist}
 License:        Copyright (c) 2000, @MYSQL_COPYRIGHT_YEAR@, %{mysql_vendor}. All rights reserved. Under %{?license_type} license as shown in the Description field.
 Source0:        https://cdn.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/%{src_dir}.tar.gz
-Source1:        http://downloads.sourceforge.net/boost/@BOOST_PACKAGE_NAME@.tar.bz2
+Source1:        https://downloads.sourceforge.net/boost/@BOOST_PACKAGE_NAME@.tar.bz2
+%if 0%{?compatlib}
 Source2:        %{compatsrc}
+%endif
 URL:            http://www.mysql.com/
 Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
 Vendor:         %{mysql_vendor}
 BuildRequires:  cmake
 BuildRequires:  perl
+BuildRequires:  perl(Carp)
+BuildRequires:  perl(Config)
+BuildRequires:  perl(Cwd)
+BuildRequires:  perl(Data::Dumper)
+BuildRequires:  perl(English)
+BuildRequires:  perl(Errno)
+BuildRequires:  perl(Exporter)
+BuildRequires:  perl(Fcntl)
+BuildRequires:  perl(File::Basename)
+BuildRequires:  perl(File::Copy)
+BuildRequires:  perl(File::Find)
+BuildRequires:  perl(File::Path)
+BuildRequires:  perl(File::Spec)
+BuildRequires:  perl(File::Spec::Functions)
+BuildRequires:  perl(File::Temp)
+BuildRequires:  perl(Getopt::Long)
+BuildRequires:  perl(IO::File)
+BuildRequires:  perl(IO::Handle)
+BuildRequires:  perl(IO::Pipe)
+BuildRequires:  perl(IO::Select)
+BuildRequires:  perl(IO::Socket)
+BuildRequires:  perl(IO::Socket::INET)
+BuildRequires:  perl(JSON)
+BuildRequires:  perl(Memoize)
+BuildRequires:  perl(POSIX)
+BuildRequires:  perl(Sys::Hostname)
+BuildRequires:  perl(Time::HiRes)
+BuildRequires:  perl(Time::localtime)
 %if 0%{?fedora} > 24
 BuildRequires:  perl-generators
 %endif
+BuildRequires:  openssl-devel
 BuildRequires:  time
 BuildRequires:  cyrus-sasl-devel
 BuildRequires:  libaio-devel
@@ -81,7 +113,7 @@ BuildRequires:  mecab-devel
 BuildRequires:  multilib-rpm-config
 BuildRequires:  ncurses-devel
 BuildRequires:  numactl-devel
-BuildRequires:  openssl-devel
+BuildRequires:  openldap-devel
 BuildRequires:  zlib-devel
 BuildRequires:  systemd
 BuildRequires:  pkgconfig(systemd)
@@ -129,13 +161,25 @@ Requires:       mysql-community-common%{?_isa} = %{version}-%{release}
 Obsoletes:      mysql-community-bench < 5.7.8
 Obsoletes:      community-mysql-bench
 Obsoletes:      mysql-bench
+Obsoletes:      mariadb-backup
 Obsoletes:      mariadb-bench
+Obsoletes:      mariadb-connector-c-config
+Obsoletes:      mariadb-cracklib-password-check
+Obsoletes:      mariadb-gssapi-server
+Obsoletes:      mariadb-rocksdb-engine
+Obsoletes:      mariadb-sphinx-engine
+Obsoletes:      mariadb-tokudb-engine
 Obsoletes:      mariadb-server
 Obsoletes:      mariadb-server-utils
 Obsoletes:      mariadb-galera-server
 Obsoletes:      mariadb-server-galera
 Obsoletes:      community-mysql-server < %{version}-%{release}
 Obsoletes:      mysql-server < %{version}-%{release}
+%if 0%{?compatlib}
+%else
+Obsoletes:      mysql-community-embedded-compat < 5.7.20
+Obsoletes:      mysql-community-libs-compat < 5.7.21
+%endif
 Provides:       mysql-server = %{version}-%{release}
 Provides:       mysql-server%{?_isa} = %{version}-%{release}
 Provides:       mysql-compat-server = %{version}-%{release}
@@ -190,9 +234,11 @@ Group:          Applications/Databases
 %if 0%{?commercial}
 Obsoletes:      mysql-community-common < %{version}-%{release}
 %endif
+%if 0%{?compatlib}
 Obsoletes:      mariadb-common
-Obsoletes:      mariadb-config
 Obsoletes:      mariadb-errmsg
+%endif # compatlib
+Obsoletes:      mariadb-config
 Obsoletes:      community-mysql-common < %{version}-%{release}
 Obsoletes:      community-mysql-errmsg < %{version}-%{release}
 Obsoletes:      mysql-common < %{version}-%{release}
@@ -207,6 +253,34 @@ MySQL database server, and MySQL embedded server.
 %package        test
 Summary:        Test suite for the MySQL database server
 Group:          Applications/Databases
+Requires:       perl(Carp)
+Requires:       perl(Config)
+Requires:       perl(Cwd)
+Requires:       perl(Data::Dumper)
+Requires:       perl(English)
+Requires:       perl(Errno)
+Requires:       perl(Exporter)
+Requires:       perl(Fcntl)
+Requires:       perl(File::Basename)
+Requires:       perl(File::Copy)
+Requires:       perl(File::Find)
+Requires:       perl(File::Path)
+Requires:       perl(File::Spec)
+Requires:       perl(File::Spec::Functions)
+Requires:       perl(File::Temp)
+Requires:       perl(Getopt::Long)
+Requires:       perl(IO::File)
+Requires:       perl(IO::Handle)
+Requires:       perl(IO::Pipe)
+Requires:       perl(IO::Select)
+Requires:       perl(IO::Socket)
+Requires:       perl(IO::Socket::INET)
+Requires:       perl(JSON)
+Requires:       perl(Memoize)
+Requires:       perl(POSIX)
+Requires:       perl(Sys::Hostname)
+Requires:       perl(Time::HiRes)
+Requires:       perl(Time::localtime)
 %if 0%{?commercial}
 Requires:       mysql-commercial-server%{?_isa} >= %{min}
 Obsoletes:      mysql-community-test < %{version}-%{release}
@@ -233,6 +307,7 @@ Requires:       mysql-commercial-libs%{?_isa} >= %{min}
 Requires:       mysql-community-libs%{?_isa} >= %{min}
 %endif
 Obsoletes:      mariadb-devel
+Obsoletes:      mariadb-connector-c-devel
 Obsoletes:      community-mysql-devel < %{version}-%{release}
 Obsoletes:      mysql-devel < %{version}-%{release}
 Provides:       mysql-devel = %{version}-%{release}
@@ -251,7 +326,9 @@ Requires:       mysql-commercial-common%{?_isa} >= %{min}
 %else
 Requires:       mysql-community-common%{?_isa} >= %{min}
 %endif
+%if 0%{?compatlib}
 Obsoletes:      mariadb-libs
+%endif # compatlib
 Obsoletes:      community-mysql-libs < %{version}-%{release}
 Obsoletes:      mysql-libs < %{version}-%{release}
 Provides:       mysql-libs = %{version}-%{release}
@@ -261,6 +338,7 @@ Provides:       mysql-libs%{?_isa} = %{version}-%{release}
 This package contains the shared libraries for MySQL client
 applications.
 
+%if 0%{?compatlib}
 %package        libs-compat
 Summary:        Shared compat libraries for MySQL %{compatver} database client applications
 Group:          Applications/Databases
@@ -278,6 +356,7 @@ Requires:       mysql-community-libs%{?_isa} >= %{min}
 %description    libs-compat
 This package contains the shared compat libraries for MySQL %{compatver} client
 applications.
+%endif # compatlib
 
 %package        embedded
 Summary:        MySQL embedded library
@@ -288,7 +367,9 @@ Requires:       mysql-commercial-common%{?_isa} = %{version}-%{release}
 %else
 Requires:       mysql-community-common%{?_isa} = %{version}-%{release}
 %endif
+%if 0%{?compatlib}
 Obsoletes:      mariadb-embedded
+%endif
 Obsoletes:      community-mysql-embedded < %{version}-%{release}
 Obsoletes:      mysql-embedded < %{version}-%{release}
 Provides:       mysql-embedded = %{version}-%{release}
@@ -306,6 +387,7 @@ client/server version.
 
 For a description of MySQL see the base MySQL RPM or http://www.mysql.com/
 
+%if 0%{?compatlib}
 %package        embedded-compat
 Summary:        MySQL embedded compat library
 Group:          Applications/Databases
@@ -319,6 +401,7 @@ Requires:       mysql-community-common%{?_isa} >= %{min}
 %description    embedded-compat
 This package contains the MySQL server as an embedded library with
 compatibility for applications using version %{compatlib} of the library.
+%endif # compatlib
 
 %package        embedded-devel
 Summary:        Development header files and libraries for MySQL as an embeddable library
@@ -342,7 +425,11 @@ This package contains files needed for developing applications using
 the embedded version of the MySQL server.
 
 %prep
+%if 0%{?compatlib}
 %setup -q -T -a 0 -a 1 -a 2 -c -n %{src_dir}
+%else
+%setup -q -T -a 0 -a 1 -c -n %{src_dir}
+%endif # 0%{?compatlib}
 
 %build
 # Fail quickly and obviously if user tries to build as root
@@ -356,6 +443,7 @@ fi
 %endif
 
 # Build compat libs
+%if 0%{?compatlib}
 (
   pushd mysql-%{compatver}
   mkdir build && pushd build
@@ -380,6 +468,7 @@ fi
   echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
+%endif # compatlib
 
 # Build debug versions of mysqld and libmysqld.a
 mkdir debug
@@ -400,7 +489,7 @@ mkdir debug
            -DWITH_SYSTEMD=1 \
            -DWITH_INNODB_MEMCACHED=1 \
            -DINSTALL_LIBDIR="%{_lib}/mysql" \
-           -DINSTALL_PLUGINDIR="%{_lib}/mysql/plugin" \
+           -DINSTALL_PLUGINDIR="%{_lib}/mysql/plugin/debug" \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DFEATURE_SET="%{feature_set}" \
@@ -446,11 +535,13 @@ mkdir release
 
 %install
 # Install compat libs
+%if 0%{?compatlib}
 for dir in libmysql libmysqld ; do
     pushd mysql-%{compatver}/build/$dir
     make DESTDIR=%{buildroot} install
     popd
 done
+%endif # compatlib
 rm -f %{buildroot}%{_libdir}/mysql/libmysqlclient{,_r}.{a,la,so}
 rm -f %{buildroot}%{_libdir}/mysql/libmysqld.{a,la,so}
 
@@ -734,6 +825,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(644, root, root) %{_sysconfdir}/ld.so.conf.d/mysql-%{_arch}.conf
 %{_libdir}/mysql/libmysqlclient.so.20*
 
+%if 0%{?compatlib}
 %files libs-compat
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
@@ -743,6 +835,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %{_libdir}/mysql/libmysqlclient.so.%{compatlib}.*.0
 %{_libdir}/mysql/libmysqlclient_r.so.%{compatlib}
 %{_libdir}/mysql/libmysqlclient_r.so.%{compatlib}.*.0
+%endif # compatlib
 
 %files test
 %defattr(-, root, root, -)
@@ -759,6 +852,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(644, root, root) %{_libdir}/mysql/plugin/daemon_example.ini
 %attr(755, root, root) %{_libdir}/mysql/plugin/libdaemon_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/test_udf_services.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/udf_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/replication_observers_example_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/libtest_framework.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/libtest_services.so
@@ -789,6 +883,7 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_test_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/libdaemon_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_udf_services.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/udf_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/replication_observers_example_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/libtest_framework.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/libtest_services.so
@@ -816,13 +911,6 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/qa_auth_server.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_security_context.so
 
-%attr(644, root, root) %{_mandir}/man1/mysql_client_test.1*
-%attr(644, root, root) %{_mandir}/man1/mysql-stress-test.pl.1*
-%attr(644, root, root) %{_mandir}/man1/mysql-test-run.pl.1*
-%attr(644, root, root) %{_mandir}/man1/mysql_client_test_embedded.1*
-%attr(644, root, root) %{_mandir}/man1/mysqltest.1*
-%attr(644, root, root) %{_mandir}/man1/mysqltest_embedded.1*
-
 %files embedded
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
@@ -830,12 +918,14 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(644, root, root) %{_sysconfdir}/ld.so.conf.d/mysql-%{_arch}.conf
 %attr(755, root, root) %{_libdir}/mysql/libmysqld.so.20*
 
+%if 0%{?compatlib}
 %files embedded-compat
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
 %dir %attr(755, root, root) %{_libdir}/mysql
 %attr(644, root, root) %{_sysconfdir}/ld.so.conf.d/mysql-%{_arch}.conf
 %attr(755, root, root) %{_libdir}/mysql/libmysqld.so.18*
+%endif # compatlib
 
 %files embedded-devel
 %defattr(-, root, root, -)
@@ -845,6 +935,15 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/libmysqld.so
 
 %changelog
+* Wed Jan 24 2018 Balasubramanian Kandasamy <balasubramanian.kandasamy@oracle.com> - 5.7.23-1
+- Add perl modules for test subpackage
+
+* Wed Jan 10 2018 Bjorn Munch <bjorn.munch@oracle.com> - 5.7.22-1
+- No longer need to remove obsoleted mysqltest man pages
+
+* Tue Oct 31 2017 Bjorn Munch <bjorn.munch@oracle.com> - 5.7.21-1
+- Remove obsoleted mysqltest man pages
+
 * Tue Sep 13 2016 Balasubramanian Kandasamy <balasubramanian.kandasamy@oracle.com> - 5.7.16-1
 - Add connection_control.so to server subpackage
 

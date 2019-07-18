@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -50,6 +50,8 @@
 
 #include <memory>
 #include "mysql/thread_type.h"
+
+#include "violite.h"                       /* SSL_handle */
 
 class Reprepare_observer;
 class sp_cache;
@@ -491,6 +493,7 @@ typedef struct system_variables
   ulong completion_type;
   ulong query_cache_type;
   ulong tx_isolation;
+  ulong transaction_isolation;
   ulong updatable_views_with_limit;
   uint max_user_connections;
   ulong my_aes_mode;
@@ -504,6 +507,7 @@ typedef struct system_variables
     Default transaction access mode. READ ONLY (true) or READ WRITE (false).
   */
   my_bool tx_read_only;
+  my_bool transaction_read_only;
   my_bool low_priority_updates;
   my_bool new_mode;
   my_bool query_cache_wlock_invalidate;
@@ -558,6 +562,11 @@ typedef struct system_variables
   my_bool session_track_schema;
   my_bool session_track_state_change;
   ulong   session_track_transaction_info;
+  /**
+    Used for the verbosity of SHOW CREATE TABLE. Currently used for displaying
+    the row format in the output even if the table uses default row format.
+  */
+  my_bool show_create_table_verbosity;
   /**
     Compatibility option to mark the pre MySQL-5.6.4 temporals columns using
     the old format using comments for SHOW CREATE TABLE and in I_S.COLUMNS
@@ -1183,6 +1192,14 @@ public:
   }
 };
 
+class Key_length_error_handler : public Internal_error_handler {
+ public:
+  virtual bool handle_condition(THD *, uint sql_errno, const char *,
+                                Sql_condition::enum_severity_level *,
+                                const char *) {
+    return (sql_errno == ER_TOO_LONG_KEY);
+  }
+};
 
 /**
   This class is an internal error handler implementation for
@@ -1550,6 +1567,12 @@ public:
   void rpl_detach_engine_ha_data();
 
   /**
+    When the thread is a binlog or slave applier it reattaches the engine
+    ha_data associated with it and memorizes the fact of that.
+  */
+  void rpl_reattach_engine_ha_data();
+
+  /**
     @return true   when the current binlog (rli_fake) or slave (rli_slave)
                    applier thread has detached the engine ha_data,
                    see @c rpl_detach_engine_ha_data.
@@ -1637,6 +1660,7 @@ public:
   */
   void save_current_query_costs()
   {
+    DBUG_ASSERT(!status_var_aggregated);
     status_var.last_query_cost= m_current_query_cost;
     status_var.last_query_partial_plans= m_current_query_partial_plans;
   }
@@ -1743,6 +1767,22 @@ public:
     return m_protocol;
   }
 
+  SSL_handle get_ssl() const
+  {
+#ifndef DBUG_OFF
+    if (current_thd != this)
+    {
+      /*
+        When inspecting this thread from monitoring,
+        the monitoring thread MUST lock LOCK_thd_data,
+        to be allowed to safely inspect SSL status variables.
+      */
+      mysql_mutex_assert_owner(&LOCK_thd_data);
+    }
+#endif
+    return m_SSL;
+  }
+
   /**
     Asserts that the protocol is of type text or binary and then
     returns the m_protocol casted to Protocol_classic. This method
@@ -1763,6 +1803,17 @@ public:
 
 private:
   Protocol *m_protocol;           // Current protocol
+  /**
+    SSL data attached to this connection.
+    This is an opaque pointer,
+    When building with SSL, this pointer is non NULL
+    only if the connection is using SSL.
+    When building without SSL, this pointer is always NULL.
+    The SSL data can be inspected to read per thread
+    status variables,
+    and this can be inspected while the thread is running.
+  */
+  SSL_handle m_SSL;
 
 public:
   /**
@@ -2075,6 +2126,11 @@ public:
   struct st_thd_timer_info *timer_cache;
 
 private:
+  /*
+    Indicates that the command which is under execution should ignore the
+    'read_only' and 'super_read_only' options.
+  */
+  bool skip_readonly_check;
   /**
     Indicate if the current statement should be discarded
     instead of written to the binlog.
@@ -2137,6 +2193,22 @@ private:
   NET     net;                          // client connection descriptor
   String  packet;                       // dynamic buffer for network I/O
 public:
+  void set_skip_readonly_check()
+  {
+    skip_readonly_check= true;
+  }
+
+  bool is_cmd_skip_readonly()
+  {
+    return skip_readonly_check;
+  }
+
+  void reset_skip_readonly_check()
+  {
+    if (skip_readonly_check)
+      skip_readonly_check= false;
+  }
+
   void issue_unsafe_warnings();
 
   uint get_binlog_table_maps() const {
@@ -3012,10 +3084,22 @@ public:
     mysql_mutex_unlock(&LOCK_thd_data);
   }
 
+  inline void set_ssl(Vio* vio)
+  {
+#ifdef HAVE_OPENSSL
+    mysql_mutex_lock(&LOCK_thd_data);
+    m_SSL = (SSL*) vio->ssl_arg;
+    mysql_mutex_unlock(&LOCK_thd_data);
+#else
+    m_SSL = NULL;
+#endif
+  }
+
   inline void clear_active_vio()
   {
     mysql_mutex_lock(&LOCK_thd_data);
     active_vio = 0;
+    m_SSL = NULL;
     mysql_mutex_unlock(&LOCK_thd_data);
   }
 
@@ -5047,8 +5131,11 @@ public:
 
   Temp_table_param()
     :copy_field(NULL), copy_field_end(NULL),
+     group_buff(NULL),
+     items_to_copy(NULL),
      recinfo(NULL), start_recinfo(NULL),
      keyinfo(NULL),
+     end_write_records(0),
      field_count(0), func_count(0), sum_func_count(0), hidden_field_count(0),
      group_parts(0), group_length(0), group_null_parts(0),
      quick_group(1),
@@ -5549,6 +5636,20 @@ inline void reattach_engine_ha_data_to_thd(THD *thd, const struct handlerton *ht
       replace_native_transaction_in_thd(thd, *trx_backup, NULL);
     *trx_backup= NULL;
   }
+}
+
+/**
+  Check if engine substitution is allowed in the current thread context.
+
+  @param thd         thread context
+  @return
+  @retval            true if engine substitution is allowed
+  @retval            false otherwise
+*/
+
+static inline bool is_engine_substitution_allowed(THD* thd)
+{
+  return !(thd->variables.sql_mode & MODE_NO_ENGINE_SUBSTITUTION);
 }
 
 /*************************************************************************/

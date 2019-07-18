@@ -1441,7 +1441,7 @@ backup_files(const char *from, bool prep_mode)
 
 		if (!prep_mode && !opt_no_lock) {
 			char path[FN_REFLEN];
-			char dst_path[FN_REFLEN];
+			char dst_path[FN_REFLEN * 2 + 2];
 			char *newline;
 
 			/* Remove files that have been removed between first and

@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -3554,6 +3554,32 @@ void MDL_lock::object_lock_notify_conflicting_locks(MDL_context *ctx, MDL_lock *
 bool
 MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
 {
+  if (lock_wait_timeout == 0)
+  {
+    /*
+      Resort to try_acquire_lock() in case of zero timeout.
+
+      This allows to avoid unnecessary deadlock detection attempt and "fake"
+      deadlocks which might result from it.
+      In case of failure to acquire lock, try_acquire_lock() preserves
+      invariants by updating MDL_lock::fast_path_state and obtrusive locks
+      count. It also performs SE notification if needed.
+    */
+    if (try_acquire_lock(mdl_request))
+      return true;
+
+    if (!mdl_request->ticket)
+    {
+      /* We have failed to acquire lock instantly. */
+      DEBUG_SYNC(get_thd(), "mdl_acquire_lock_wait");
+      my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
+      return true;
+    }
+    return false;
+  }
+
+  /* Normal, non-zero timeout case. */
+
   MDL_lock *lock;
   MDL_ticket *ticket;
   struct timespec abs_timeout;

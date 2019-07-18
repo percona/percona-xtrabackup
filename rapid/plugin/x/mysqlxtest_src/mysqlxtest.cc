@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -23,6 +23,7 @@
 #include <rapidjson/writer.h>
 #include <string.h>
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <ios>
 #include <iostream>
@@ -46,6 +47,7 @@
 #include "ngs_common/protocol_protobuf.h"
 #include "ngs_common/to_string.h"
 #include "utils_mysql_parsing.h"
+#include "message_formatter.h"
 #include "violite.h"
 
 #ifdef HAVE_SYS_UN_H
@@ -55,7 +57,6 @@
 const char * const CMD_ARG_BE_QUIET = "be-quiet";
 const char * const MYSQLXTEST_VERSION = "1.0";
 const char CMD_ARG_SEPARATOR = '\t';
-const unsigned short MYSQLX_PORT = 33060;
 
 #include <mysql/service_my_snprintf.h>
 #include <mysql.h>
@@ -189,8 +190,6 @@ static void print_columndata(const std::vector<mysqlx::ColumnMetadata> &meta);
 static void print_result_set(mysqlx::Result &result);
 static void print_result_set(mysqlx::Result &result, const std::vector<std::string> &columns,
                              Value_callback value_callback = Value_callback(), bool quiet = false);
-
-static std::string message_to_text(const mysqlx::Message &message);
 
 //---------------------------------------------------------------------------------------------------------
 
@@ -443,7 +442,7 @@ public:
           active_connection->set_closed();
           int msgid;
           Message_ptr msg(active_connection->recv_raw(msgid));
-          std::cout << message_to_text(*msg);
+          std::cout << formatter::message_to_text(*msg);
           if (Mysqlx::ServerMessages::OK != msgid)
             throw mysqlx::Error(CR_COMMANDS_OUT_OF_SYNC,
                                 "Disconnect was expecting Mysqlx.Ok(bye!), but got the one above (one or more calls to -->recv are probably missing)");
@@ -459,7 +458,7 @@ public:
             {
               Message_ptr msg(active_connection->recv_raw(msgid));
 
-              std::cout << message_to_text(*msg);
+              std::cout << formatter::message_to_text(*msg);
 
               throw mysqlx::Error(CR_COMMANDS_OUT_OF_SYNC,
                   "Was expecting closure but got the one above message");
@@ -596,56 +595,6 @@ static std::string bindump_to_data(const std::string &bindump)
       res.push_back(bindump[i]);
   }
   return res;
-}
-
-static std::string message_to_text(const mysqlx::Message &message)
-{
-  std::string output;
-  std::string name;
-
-  google::protobuf::TextFormat::Printer printer;
-
-  // special handling for nested messages (at least for Notices)
-  if (message.GetDescriptor()->full_name() == "Mysqlx.Notice.Frame")
-  {
-    Mysqlx::Notice::Frame frame = *static_cast<const Mysqlx::Notice::Frame*>(&message);
-    switch (frame.type())
-    {
-    case 1: // warning
-    {
-      Mysqlx::Notice::Warning subm;
-      subm.ParseFromString(frame.payload());
-      printer.PrintToString(subm, &output);
-      frame.set_payload(subm.GetDescriptor()->full_name() + " { " + output + " }");
-      break;
-    }
-    case 2: // session variable
-    {
-      Mysqlx::Notice::SessionVariableChanged subm;
-      subm.ParseFromString(frame.payload());
-      printer.PrintToString(subm, &output);
-      frame.set_payload(subm.GetDescriptor()->full_name() + " { " + output + " }");
-      break;
-    }
-    case 3: // session state
-    {
-      Mysqlx::Notice::SessionStateChanged subm;
-      subm.ParseFromString(frame.payload());
-      printer.PrintToString(subm, &output);
-      frame.set_payload(subm.GetDescriptor()->full_name() + " { " + output + " }");
-      break;
-    }
-    }
-    printer.SetInitialIndentLevel(1);
-    printer.PrintToString(frame, &output);
-  }
-  else
-  {
-    printer.SetInitialIndentLevel(1);
-    printer.PrintToString(message, &output);
-  }
-
-  return message.GetDescriptor()->full_name() + " {\n" + output + "}\n";
 }
 
 static std::string message_to_bindump(const mysqlx::Message &message)
@@ -1025,7 +974,7 @@ private:
 
     try
     {
-      const std::string message_in_text = unreplace_variables(message_to_text(*msg), true);
+      const std::string message_in_text = unreplace_variables(formatter::message_to_text(*msg), true);
 
       if (msg->GetDescriptor()->full_name() != vargs[0])
       {
@@ -1071,7 +1020,7 @@ private:
           std::cout << "Got expected error:\n";
         }
 
-        std::cout << message_to_text(*msg) << "\n";
+        std::cout << formatter::message_to_text(*msg) << "\n";
         if (failed && OPT_fatal_errors)
           return Stop_with_success;
       }
@@ -1236,7 +1185,7 @@ private:
         try
         {
           if (show)
-            std::cout << message_to_text(*msg) << "\n";
+            std::cout << formatter::message_to_text(*msg) << "\n";
         }
         catch (std::exception &e)
         {
@@ -1606,7 +1555,7 @@ private:
       if (msg.get())
       {
         std::cerr << "ERROR: Received unexpected message.\n";
-        std::cerr << message_to_text(*msg) << "\n";
+        std::cerr << formatter::message_to_text(*msg) << "\n";
       }
       else
       {
@@ -1649,12 +1598,9 @@ private:
     std::string args_copy(args);
 
     aux::trim(args_copy);
-    if (args_copy == "quiet")
+    if (args_copy == "quiet") {
       quiet = true;
-    else if (!args_copy.empty())
-    {
-      std::cerr << "ERROR: Unknown command argument: " << args_copy << "\n";
-      return Stop_with_failure;
+      args_copy = "";
     }
 
     try
@@ -1664,7 +1610,7 @@ private:
       std::ostream &out = get_stream_for_results(quiet);
 
       if (msg.get())
-        out << unreplace_variables(message_to_text(*msg), true) << "\n";
+        out << unreplace_variables(formatter::message_to_text(*msg, args_copy), true) << "\n";
       if (!OPT_expect_error->check_ok())
         return Stop_with_failure;
     }
@@ -2295,7 +2241,7 @@ ngs::chrono::time_point Command::m_start_measure;
 static int process_client_message(mysqlx::XProtocol *connection, int8_t msg_id, const mysqlx::Message &msg)
 {
   if (!OPT_quiet)
-    std::cout << "send " << message_to_text(msg) << "\n";
+    std::cout << "send " << formatter::message_to_text(msg) << "\n";
 
   if (OPT_bindump)
     std::cout << message_to_bindump(msg) << "\n";
@@ -3032,11 +2978,12 @@ public:
 
   void print_help()
   {
-    std::cout << "mysqlxtest <options>\n";
+    std::cout << "mysqlxtest <options> [SCHEMA]\n";
     std::cout << "Options:\n";
     std::cout << "-f, --file=<file>     Reads input from file\n";
     std::cout << "-I, --import=<dir>    Reads macro files from dir; required by -->import\n";
     std::cout << "--sql=<SQL>           Use SQL as input and execute it like in -->sql block\n";
+    std::cout << "-e=<SQL>, --execute=<SQL> Aliases for \"--sql\" option\n";
     std::cout << "-n, --no-auth         Skip authentication which is required by -->sql block (run mode)\n";
     std::cout << "--plain-auth          Use PLAIN text authentication mechanism\n";
     std::cout << "-u, --user=<user>     Connection user\n";
@@ -3044,13 +2991,13 @@ public:
     std::cout << "-h, --host=<host>     Connection host\n";
     std::cout << "-P, --port=<port>     Connection port (default:" << MYSQLX_TCP_PORT << ")\n";
     std::cout << "--ipv=<mode>          Force internet protocol (default:4):\n";
-    std::cout << "                      0 - allow system to resolve IPv6 and IPv4, for example";
-    std::cout << "                          resolving of 'localhost' can return both '::1' and '127.0.0.1'";
+    std::cout << "                      0 - allow system to resolve IPv6 and IPv4, for example\n";
+    std::cout << "                          resolving of 'localhost' can return both '::1' and '127.0.0.1'\n";
     std::cout << "                      4 - allow system to resolve only IPv4, for example\n";
-    std::cout << "                          resolving of 'localhost' is going to return '127.0.0.1'";
+    std::cout << "                          resolving of 'localhost' is going to return '127.0.0.1'\n";
     std::cout << "                      6 - allow system to resolve only IPv6, for example\n";
-    std::cout << "                          resolving of 'localhost' is going to return '::1'";
-    std::cout << "-t, --timeout=<ms>    Connection timeout\n";
+    std::cout << "                          resolving of 'localhost' is going to return '::1'\n";
+    std::cout << "-t, --timeout=<ms>    I/O timeouts in milliseconds\n";
     std::cout << "--close-no-sync       Do not wait for connection to be closed by server(disconnect first)\n";
     std::cout << "--schema=<schema>     Default schema to connect to\n";
     std::cout << "--uri=<uri>           Connection URI\n";
@@ -3069,7 +3016,8 @@ public:
     std::cout << "--quiet               Don't print out messages sent\n";
     std::cout << "-vVARIABLE_NAME=VALUE Set variable VARIABLE_NAME from command line\n";
     std::cout << "--fatal-errors=<0|1>  Mysqlxtest is started with ignoring or stopping on fatal error (default: 1)\n";
-    std::cout << "-B, --bindump         Dump binary representation of messages sent, in format suitable for the \"-->binsend\" command\n";
+    std::cout << "-B, --bindump         Dump binary representation of messages sent, in format suitable for\n";
+    std::cout << "                      the \"-->binsend\" command\n";
     std::cout << "--verbose             Enable extra verbose messages\n";
     std::cout << "--daemon              Work as a daemon (unix only)\n";
     std::cout << "--help                Show command line help\n";
@@ -3102,8 +3050,12 @@ public:
     std::cout << "  Enables ssl on current connection\n";
     std::cout << "<protomsg>\n";
     std::cout << "  Encodes the text format protobuf message and sends it to the server (allows variables).\n";
-    std::cout << "-->recv [quiet]\n";
-    std::cout << "  Read and print (if not quiet) one message from the server\n";
+    std::cout << "-->recv [quiet|<FIELD PATH>]\n";
+    std::cout << "  quiet        - received message isn't printed\n";
+    std::cout << "  <FIELD PATH> - print only selected part of the message using \"field-path\" filter:\n";
+    std::cout << "                 field_name1\n";
+    std::cout << "                 field_name1.field_name2\n";
+    std::cout << "                 repeated_field_name1[1].field_name1.field_name2\n";
     std::cout << "-->recvresult [print-columnsinfo] [" << CMD_ARG_BE_QUIET << "]\n";
     std::cout << "  Read and print one resultset from the server; if print-columnsinfo is present also print short columns status\n";
     std::cout << "-->recvtovar <varname> [COLUMN_NAME]\n";
@@ -3123,7 +3075,7 @@ public:
     std::cout << "-->stmtsql <CMD>\n";
     std::cout << "  Send StmtExecute with sql command\n";
     std::cout << "-->stmtadmin <CMD> [json_string]\n";
-    std::cout << "  Send StmtExecute with admin command with given aguments (formated as json object) \n";
+    std::cout << "  Send StmtExecute with admin command with given aguments (formated as json object)\n";
     std::cout << "-->system <CMD>\n";
     std::cout << "  Execute application or script (dev only)\n";
     std::cout << "-->exit\n";
@@ -3131,7 +3083,7 @@ public:
     std::cout << "-->abort\n";
     std::cout << "  Exit immediately, without performing cleanup\n";
     std::cout << "-->nowarnings/-->yeswarnings\n";
-    std::cout << "   Whether to print warnings generated by the statement (default no)\n";
+    std::cout << "  Whether to print warnings generated by the statement (default no)\n";
     std::cout << "-->peerdisc <MILLISECONDS> [TOLERANCE]\n";
     std::cout << "  Expect that xplugin disconnects after given number of milliseconds and tolerance\n";
     std::cout << "-->sleep <SECONDS>\n";
@@ -3154,35 +3106,35 @@ public:
     std::cout << "-->closesession [abort]\n";
     std::cout << "  Close the active session (unless its the default session)\n";
     std::cout << "-->wait_for <VALUE_EXPECTED>\t<SQL QUERY>\n";
-    std::cout << "   Wait until SQL query returns value matches expected value (time limit 30 second)\n";
+    std::cout << "  Wait until SQL query returns value matches expected value (time limit 30 second)\n";
     std::cout << "-->assert_eq <VALUE_EXPECTED>\t<VALUE_TESTED>\n";
-    std::cout << "   Ensure that 'TESTED' value equals 'EXPECTED' by comparing strings lexicographically\n";
+    std::cout << "  Ensure that 'TESTED' value equals 'EXPECTED' by comparing strings lexicographically\n";
     std::cout << "-->assert_gt <VALUE_EXPECTED>\t<VALUE_TESTED>\n";
-    std::cout << "   Ensure that 'TESTED' value is greater than 'EXPECTED' (only when the both are numeric values)\n";
+    std::cout << "  Ensure that 'TESTED' value is greater than 'EXPECTED' (only when the both are numeric values)\n";
     std::cout << "-->assert_ge <VALUE_EXPECTED>\t<VALUE_TESTED>\n";
-    std::cout << "   Ensure that 'TESTED' value is greater  or equal to 'EXPECTED' (only when the both are numeric values)\n";
+    std::cout << "  Ensure that 'TESTED' value is greater  or equal to 'EXPECTED' (only when the both are numeric values)\n";
     std::cout << "-->varfile <varname> <datafile>\n";
-    std::cout << "   Assigns the contents of the file to the named variable\n";
+    std::cout << "  Assigns the contents of the file to the named variable\n";
     std::cout << "-->varlet <varname> <value>\n";
-    std::cout << "   Assign the value (can be another variable) to the variable\n";
+    std::cout << "  Assign the value (can be another variable) to the variable\n";
     std::cout << "-->varinc <varname> <n>\n";
-    std::cout << "   Increment the value of varname by n (assuming both convert to integral)\n";
+    std::cout << "  Increment the value of varname by n (assuming both convert to integral)\n";
     std::cout << "-->varsub <varname>\n";
-    std::cout << "   Add a variable to the list of variables to replace for the next recv or sql command (value is replaced by the name)\n";
+    std::cout << "  Add a variable to the list of variables to replace for the next recv or sql command (value is replaced by the name)\n";
     std::cout << "-->binsend <bindump>[<bindump>...]\n";
-    std::cout << "   Sends one or more binary message dumps to the server (generate those with --bindump)\n";
+    std::cout << "  Sends one or more binary message dumps to the server (generate those with --bindump)\n";
     std::cout << "-->binsendoffset <srcvar> [offset-begin[percent]> [offset-end[percent]]]\n";
-    std::cout << "   Same as binsend with begin and end offset of data to be send\n";
+    std::cout << "  Same as binsend with begin and end offset of data to be send\n";
     std::cout << "-->binparse MESSAGE.NAME {\n";
     std::cout << "    MESSAGE.DATA\n";
     std::cout << "}\n";
-    std::cout << "   Dump given message to variable %MESSAGE_DUMP%\n";
+    std::cout << "  Dump given message to variable %MESSAGE_DUMP%\n";
     std::cout << "-->quiet/noquiet\n";
-    std::cout << "   Toggle verbose messages\n";
+    std::cout << "  Toggle verbose messages\n";
     std::cout << "-->query_result/noquery_result\n";
-    std::cout << "   Toggle visibility for query results\n";
+    std::cout << "  Toggle visibility for query results\n";
     std::cout << "-->received <msgtype>\t<varname>\n";
-    std::cout << "   Assigns number of received messages of indicated type (in active session) to a variable\n";
+    std::cout << "  Assigns number of received messages of indicated type (in active session) to a variable\n";
     std::cout << "# comment\n";
   }
 
@@ -3231,6 +3183,10 @@ public:
         use_plain_auth = true;
       }
       else if (check_arg_with_value(argv, i, "--sql", NULL, value))
+      {
+        sql = value;
+      }
+      else if (check_arg_with_value(argv, i, "--execute", "-e", value))
       {
         sql = value;
       }
@@ -3313,6 +3269,12 @@ public:
       }
       else if (exit_code == 0)
       {
+        if (argc -1 == i && std::isalnum(argv[i][0]))
+        {
+          connection.schema = argv[i];
+          break;
+        }
+
         std::cerr << argv[0] << ": unknown option " << argv[i] << "\n";
         exit_code = 1;
         break;

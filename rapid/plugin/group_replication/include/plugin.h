@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -46,6 +46,20 @@ struct st_mysql_sys_var
 };
 typedef st_mysql_sys_var SYS_VAR;
 
+/**
+  An enum that represents the possible values of the
+  group_replication_exit_state_action sysvar.
+*/
+enum enum_exit_state_action {
+  /**
+    When configured to READ_ONLY, the server will go into super_read_only mode
+    and enter the ERROR GR state.
+  */
+  EXIT_STATE_ACTION_READ_ONLY = 0,
+  /** When configured to ABORT_SERVER, the server will abort(). */
+  EXIT_STATE_ACTION_ABORT_SERVER
+};
+
 //Plugin variables
 extern const char *group_replication_plugin_name;
 extern char *group_name_var;
@@ -57,6 +71,7 @@ extern const char *available_bindings_names[];
 extern bool known_server_reset;
 //Certification latch
 extern Wait_ticket<my_thread_id> *certification_latch;
+extern ulong exit_state_action_var;
 
 //The modules
 extern Gcs_operations *gcs_module;
@@ -69,7 +84,6 @@ extern Asynchronous_channels_state_observer
 //Lock for the applier and recovery module to prevent the race between STOP
 //Group replication and ongoing transactions.
 extern Shared_writelock *shared_plugin_stop_lock;
-extern Read_mode_handler *read_mode_handler;
 extern Delayed_initialization_thread *delayed_initialization_thread;
 
 //Auxiliary Functionality
@@ -83,26 +97,14 @@ extern Blocked_transaction_handler* blocked_transaction_handler;
 //Plugin global methods
 bool server_engine_initialized();
 void *get_plugin_pointer();
-int configure_and_start_applier_module();
-int configure_group_member_manager(char *hostname, char *uuid,
-                                   uint port, unsigned int server_version);
-int configure_compatibility_manager();
-int terminate_applier_module();
-int initialize_recovery_module();
-void initialize_group_partition_handler();
-int terminate_recovery_module();
-int configure_group_communication(st_server_ssl_variables *ssl_variables);
-int start_group_communication();
-void declare_plugin_running();
+mysql_mutex_t* get_plugin_running_lock();
+int initialize_plugin_and_join(enum_plugin_con_isolation sql_api_isolation,
+                               Delayed_initialization_thread *delayed_init_thd);
 void register_server_reset_master();
-int leave_group();
-int terminate_plugin_modules(bool read_mode_set);
 bool get_allow_local_lower_version_join();
 bool get_allow_local_disjoint_gtids_join();
 ulong get_transaction_size_limit();
-void initialize_asynchronous_channels_observer();
-void terminate_asynchronous_channels_observer();
-bool check_async_channel_running_on_secondary();
+bool is_plugin_waiting_to_set_server_read_mode();
 
 //Plugin public methods
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info);

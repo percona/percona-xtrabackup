@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,6 +16,8 @@
 IF(NOT GMOCK_FOUND)
   RETURN()
 ENDIF()
+
+INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 IF(SSL_DEFINES)
   ADD_DEFINITIONS(${SSL_DEFINES})
@@ -60,14 +62,19 @@ IF(HAVE_NO_IGNORED_QUALIFIERS)
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ignored-qualifiers")
 ENDIF()
 
-
-ADD_DEFINITIONS(${GMOCK_CFLAGS} -DBOOST_ALL_NO_LIB -DBOOST_NO_AUTO_PTR -DUSE_MYSQLX_FULL_PROTO -DXPLUGIN_UNIT_TESTS)
+ADD_DEFINITIONS(
+  ${GMOCK_CFLAGS}
+  -DBOOST_ALL_NO_LIB
+  -DBOOST_NO_AUTO_PTR
+  -DUSE_MYSQLX_FULL_PROTO
+  -DXPLUGIN_UNIT_TESTS
+)
 
 INCLUDE_DIRECTORIES(SYSTEM
     ${BOOST_INCLUDE_DIR}
     ${PROTOBUF_INCLUDE_DIRS}
     ${SSL_INCLUDE_DIRS}
-    ${LIBEVENT_INCLUDE_DIR}
+    ${LIBEVENT_INCLUDE_DIRS}
     ${GMOCK_INCLUDE_DIRS}
     ${GTEST_INCLUDE_DIR}
     ${CMAKE_BINARY_DIR}/rapid/plugin/x/generated/protobuf
@@ -100,6 +107,11 @@ FILE(
   "${CMAKE_CURRENT_SOURCE_DIR}/mysqlx_pb_wrapper.cc"
   "${PROJECT_SOURCE_DIR}/rapid/plugin/x/src/mysql_function_names.cc"
   "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysqlx_row.cc"
+  "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysqlx_protocol.cc"
+  "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysqlx_connection.cc"
+  "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysqlx_resultset.cc"
+  "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/password_hasher.cc"
+  "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysql41_hash.cc"
 )
 
 # boost::shared_ptr depends on scoped_lock
@@ -140,7 +152,7 @@ TARGET_LINK_LIBRARIES(
   gmock
   mysqlservices
   mysqlclient
-  ${LIBEVENT_LIBRARY} ${LIBEVENT_LIBRARIES}
+  ${LIBEVENT_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${PROTOBUF_LIBRARY}
   ${GCOV_LDFLAGS}

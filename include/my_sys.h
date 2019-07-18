@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -149,6 +149,8 @@ C_MODE_START
 #define GETDATE_HHMMSSTIME	4
 #define GETDATE_GMT		8
 #define GETDATE_FIXEDLENGTH	16
+#define GETDATE_T_DELIMITER 32
+#define GETDATE_SHORT_DATE_FULL_YEAR 64
 
 	/* defines when allocating data */
 extern void *my_multi_malloc(PSI_memory_key key, myf flags, ...);
@@ -172,9 +174,10 @@ extern PSI_memory_key key_memory_max_alloca;
   trashes value of B.
 */
 #define TRASH(A,B) do {                                                 \
+    void *p = (A);                                                      \
     const size_t l= (B);                                                \
     MEM_CHECK_ADDRESSABLE(A, l);                                        \
-    memset(A, 0x8F, l);                                                 \
+    memset(p, 0x8F, l);                                                 \
     MEM_UNDEFINED(A, l);                                                \
   } while (0)
 #else
@@ -774,12 +777,10 @@ File create_temp_file(char *to, const char *dir, const char *pfx,
 		      int mode, myf MyFlags);
 
 // Use Prealloced_array or std::vector or something similar in C++
-#if defined(__cplusplus)
 
-#define init_dynamic_array please_use_an_appropriately_typed_container
-#define my_init_dynamic_array please_use_an_appropriately_typed_container
-
-#else
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
 extern my_bool my_init_dynamic_array(DYNAMIC_ARRAY *array,
                                      PSI_memory_key key,
@@ -793,7 +794,9 @@ extern my_bool init_dynamic_array(DYNAMIC_ARRAY *array, uint element_size,
 #define dynamic_element(array,array_index,type) \
   ((type)((array)->buffer) +(array_index))
 
-#endif  /* __cplusplus */
+#ifdef __cplusplus
+}
+#endif
 
 /* Some functions are still in use in C++, because HASH uses DYNAMIC_ARRAY */
 extern my_bool insert_dynamic(DYNAMIC_ARRAY *array, const void *element);

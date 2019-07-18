@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -122,8 +122,9 @@ public:
     @param [in] timeout        The timeout after which the method should break
 
     @return the error value returned
-      @retval 0      OK
-      @retval !=0    Error when executed or timeout.
+      @retval 0    OK
+      @retval -1   Timeout on the GTID wait
+      @retval 1    Error when executed
   */
   long internal_wait_for_server_gtid_executed(Sql_service_interface *sql_interface,
                                               std::string& gtid_executed,
@@ -210,6 +211,8 @@ private:
   long m_method_execution_return_value;
   /** Session thread running flag */
   bool m_session_thread_running;
+  /** Session thread starting flag */
+  bool m_session_thread_starting;
   /** Session termination flag */
   bool m_session_thread_terminate;
   /** Session tread error flag */
@@ -269,11 +272,7 @@ public:
   long kill_session(uint32_t session_id, MYSQL_SESSION session);
 
   /**
-    Method to set the super_read_only variable "ON" on the server at two
-    possible places :
-
-    1. During server compatibility check in the versioning module.
-    2. During server recovery handling in the recovery module.
+    Method to set the super_read_only variable "ON".
 
     @return error code during execution of the sql query.
        @retval 0  - success
@@ -328,9 +327,11 @@ public:
     @param [in] gtid_executed  The GTID string to check
     @param [in] timeout        The timeout after which the method should break
 
+
     @return the error value returned
-      @retval 0      OK
-      @retval !=0    Error when executed or timeout.
+      @retval 0    OK
+      @retval -1   Timeout on the GTID wait
+      @retval 1    Error when executed
   */
   long wait_for_server_gtid_executed(std::string& gtid_executed, int timeout= 0);
 

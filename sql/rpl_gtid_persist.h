@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -60,8 +60,12 @@ public:
     @param table       Table to be closed
     @param error       If there was an error while updating the table
     @param need_commit Need to commit current transaction if it is true
+
+    @return
+      @retval true  failed
+      @retval false success
   */
-  void deinit(THD *thd, TABLE *table, bool error, bool need_commit);
+  bool deinit(THD *thd, TABLE *table, bool error, bool need_commit);
   /**
     Prepares before opening table.
     - set flags
@@ -78,6 +82,7 @@ public:
       @retval THD* Pointer to thread structure
   */
   THD *create_thd();
+  void drop_thd(THD* thd);
 private:
   /* Pointer to new created THD. */
   THD *m_drop_thd_object;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,7 +17,6 @@
 #include "plugin_psi.h"
 #include "plugin.h"
 #include <mysql/group_replication_priv.h>
-
 
 using std::string;
 
@@ -147,7 +146,12 @@ void Group_partition_handling::kill_transactions_and_leave()
     shared_stop_write_lock->release_write_lock();
 
   if (set_read_mode)
-    set_server_read_mode(PSESSION_INIT_THREAD);
+    enable_server_read_mode(PSESSION_INIT_THREAD);
+
+  if (exit_state_action_var == EXIT_STATE_ACTION_ABORT_SERVER)
+  {
+    abort_plugin_process("Fatal error during execution of Group Replication");
+  }
 
   DBUG_VOID_RETURN;
 }
@@ -189,7 +193,7 @@ int Group_partition_handling::launch_partition_handler_thread()
     DBUG_RETURN(0);                /* purecov: inspected */
   }
 
-  if (mysql_thread_create(0,
+  if (mysql_thread_create(key_GR_THD_group_partition_handler,
                           &partition_trx_handler_pthd,
                           get_connection_attrib(),
                           launch_handler_thread,

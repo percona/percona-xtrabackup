@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -13768,7 +13768,8 @@ uint ha_ndbcluster::max_supported_key_length() const
 {
   return NDB_MAX_KEY_SIZE;
 }
-uint ha_ndbcluster::max_supported_key_part_length() const
+uint ha_ndbcluster::max_supported_key_part_length(HA_CREATE_INFO
+                                 *create_info MY_ATTRIBUTE((unused))) const
 {
   return NDB_MAX_KEY_SIZE;
 }
@@ -18722,6 +18723,21 @@ SHOW_VAR ndb_status_variables_export[]= {
   {NullS, NullS, SHOW_LONG, SHOW_SCOPE_GLOBAL}
 };
 
+
+static void cache_check_time_update(MYSQL_THD thd,
+                                    struct st_mysql_sys_var *var,
+                                    void *var_ptr,
+                                    const void *save)
+{
+  push_warning_printf(thd, Sql_condition::SL_WARNING,
+                      ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                      ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
+                      "@@ndb_cache_check_time");
+
+  opt_ndb_cache_check_time= *static_cast<const ulong*>(save);
+}
+
+
 static MYSQL_SYSVAR_ULONG(
   cache_check_time,                  /* name */
   opt_ndb_cache_check_time,              /* var */
@@ -18729,9 +18745,10 @@ static MYSQL_SYSVAR_ULONG(
   "A dedicated thread is created to, at the given "
   "millisecond interval, invalidate the query cache "
   "if another MySQL server in the cluster has changed "
-  "the data in the database.",
+  "the data in the database. "
+  "This variable is deprecated and will be removed in a future release.",
   NULL,                              /* check func. */
-  NULL,                              /* update func. */
+  &cache_check_time_update,          /* update func. */
   0,                                 /* default */
   0,                                 /* min */
   ONE_YEAR_IN_SECONDS,               /* max */

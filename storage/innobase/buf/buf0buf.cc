@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -2099,7 +2099,7 @@ buf_page_realloc(
 		mutex_enter(&new_block->mutex);
 
 		memcpy(new_block->frame, block->frame, UNIV_PAGE_SIZE);
-		memcpy(&new_block->page, &block->page, sizeof block->page);
+		new (&new_block->page) buf_page_t(block->page);
 
 		/* relocate LRU list */
 		ut_ad(block->page.in_LRU_list);
@@ -2878,6 +2878,9 @@ withdraw_retry:
 					= buf_pool->n_chunks;
 				warning = true;
 				buf_pool->chunks_old = NULL;
+				for (ulint j = 0; j < buf_pool->n_chunks_new; j++) {
+					buf_pool_register_chunk(&(buf_pool->chunks[j]));
+				}
 				goto calc_buf_pool_size;
 			}
 
@@ -3206,7 +3209,7 @@ buf_relocate(
 	}
 #endif /* UNIV_DEBUG */
 
-	memcpy(dpage, bpage, sizeof *dpage);
+	new (dpage) buf_page_t(*bpage);
 
 	/* Important that we adjust the hazard pointer before
 	removing bpage from LRU list. */

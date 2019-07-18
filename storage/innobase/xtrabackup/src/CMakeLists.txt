@@ -106,6 +106,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   kdf.cc
   ${CMAKE_SOURCE_DIR}/sql-common/client_authentication.cc
   ${CMAKE_SOURCE_DIR}/sql/des_key_file.cc
+  ${CMAKE_SOURCE_DIR}/sql/auth/sha2_password_common.cc
   )
 
 SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)

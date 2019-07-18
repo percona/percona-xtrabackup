@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1604,7 +1604,7 @@ QUICK_INDEX_MERGE_SELECT::QUICK_INDEX_MERGE_SELECT(THD *thd_param,
   DBUG_ENTER("QUICK_INDEX_MERGE_SELECT::QUICK_INDEX_MERGE_SELECT");
   index= MAX_KEY;
   head= table;
-  memset(&read_record, 0, sizeof(read_record));
+
   init_sql_alloc(key_memory_quick_index_merge_root,
                  &alloc, thd->variables.range_alloc_block_size, 0);
   DBUG_VOID_RETURN;
@@ -1985,7 +1985,18 @@ int QUICK_ROR_UNION_SELECT::reset()
     List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
     while ((quick= it++))
     {
-      if (quick->init_ror_merged_scan(FALSE))
+      /*
+        Use mem_root of this "QUICK" as using the statement mem_root
+        might result in too many allocations when combined with
+        dynamic range access where range optimizer is invoked many times
+        for a single statement.
+      */
+      THD *thd= quick->head->in_use;
+      MEM_ROOT *saved_root= thd->mem_root;
+      thd->mem_root= &alloc;
+      error= quick->init_ror_merged_scan(false);
+      thd->mem_root= saved_root;
+      if (error)
         DBUG_RETURN(1);
     }
     scans_inited= TRUE;
@@ -2725,6 +2736,8 @@ static int fill_used_fields_bitmap(PARAM *param)
                         to provide. Three-value logic: asc/desc/don't care
       needed_reg        this info is used in make_join_select() even if there is no quick!
       quick[out]        Calculated QUICK, or NULL
+      ignore_table_scan Disregard table scan while looking for range.
+
   NOTES
     Updates the following:
       needed_reg - Bits for keys with may be used if all prev regs are read
@@ -2785,9 +2798,8 @@ int test_quick_select(THD *thd, key_map keys_to_use,
                       ha_rows limit, bool force_quick_range,
                       const ORDER::enum_order interesting_order,
                       const QEP_shared_owner *tab,
-                      Item *cond,
-                      key_map *needed_reg,
-                      QUICK_SELECT_I **quick)
+                      Item *cond, key_map *needed_reg, QUICK_SELECT_I **quick,
+                      bool ignore_table_scan)
 {
   DBUG_ENTER("test_quick_select");
 
@@ -2823,7 +2835,7 @@ int test_quick_select(THD *thd, key_map keys_to_use,
   Cost_estimate cost_est= head->file->table_scan_cost();
   cost_est.add_io(1.1);
   cost_est.add_cpu(scan_time);
-  if (head->force_index)
+  if (ignore_table_scan)
   {
     scan_time= DBL_MAX;
     cost_est.set_max_cost();
@@ -6022,21 +6034,21 @@ QUICK_SELECT_I *TRP_ROR_UNION::make_quick(PARAM *param,
 
 
 /**
-   If EXPLAIN, add a warning that the index cannot be
-   used for range access due to either type conversion or different
-   collations on the field used for comparison
+   If EXPLAIN or if the --safe-updates option is enabled, add a warning that
+   the index cannot be used for range access due to either type conversion or
+   different collations on the field used for comparison
 
    @param param              PARAM from test_quick_select
    @param key_num            Key number
    @param field              Field in the predicate
- */
-static void 
-if_explain_warn_index_not_applicable(const RANGE_OPT_PARAM *param,
-                                              const uint key_num,
-                                              const Field *field)
+*/
+static void warn_index_not_applicable(const RANGE_OPT_PARAM *param,
+                                      const uint key_num, const Field *field)
 {
+  THD *thd= param->thd;
   if (param->using_real_indexes &&
-      param->thd->lex->describe)
+      (param->thd->lex->describe ||
+       thd->variables.option_bits & OPTION_SAFE_UPDATES))
     push_warning_printf(
             param->thd,
             Sql_condition::SL_WARNING,
@@ -7069,7 +7081,7 @@ get_mm_parts(RANGE_OPT_PARAM *param, Item_func *cond_func, Field *field,
                                  key_part->image_type,
                                  type, value))
         {
-          if_explain_warn_index_not_applicable(param, key_part->key, field);
+          warn_index_not_applicable(param, key_part->key, field);
           DBUG_RETURN(NULL);
         }
 
@@ -7380,7 +7392,7 @@ get_mm_leaf(RANGE_OPT_PARAM *param, Item *conf_func, Field *field,
   if (!comparable_in_index(conf_func, field, key_part->image_type,
                            type, value))
   {
-    if_explain_warn_index_not_applicable(param, key_part->key, field);
+    warn_index_not_applicable(param, key_part->key, field);
     goto end;
   }
 
@@ -10554,8 +10566,7 @@ QUICK_RANGE_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table,
     goto err;
   quick->records= records;
 
-  if ((cp_buffer_from_ref(thd, table, ref) && thd->is_fatal_error) ||
-      !(range= new (alloc) QUICK_RANGE()))
+  if (!(range= new (alloc) QUICK_RANGE()))
     goto err;                                   // out of memory
 
   range->min_key= range->max_key= ref->key_buff;
@@ -11855,6 +11866,11 @@ static bool
 check_group_min_max_predicates(Item *cond, Item_field *min_max_arg_item,
                                Field::imagetype image_type);
 
+static bool
+min_max_inspect_cond_for_fields(Item *cond, Item_field *min_max_arg_item,
+                                bool *min_max_arg_present,
+                                bool *non_min_max_arg_present);
+
 static void
 cost_group_min_max(TABLE* table, uint key, uint used_key_parts,
                    uint group_key_parts, SEL_TREE *range_tree,
@@ -12110,6 +12126,43 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, const Cost_estimate *cost_e
     }
   }
 
+  /**
+    Test (Part of WA2): Skip loose index scan on disjunctive WHERE clause which
+    results in null tree or merge tree.
+  */
+  if (tree && !tree->merges.is_empty())
+  {
+    /**
+      The tree structure contains multiple disjoint trees. This happens when
+      the WHERE clause can't be represented in a single range tree due to the
+      disjunctive nature of it but there exists indexes to perform index
+      merge scan.
+    */
+    trace_group.add("chosen", false).
+      add_alnum("cause", "disjuntive_predicate_present");
+    DBUG_RETURN(NULL);
+  }
+  else if (!tree && join->where_cond && min_max_arg_item)
+  {
+    /**
+      Skip loose index scan if min_max attribute is present along with
+      at least one other attribute in the WHERE cluse when the tree is null.
+      There is no range tree if WHERE condition can't be represented in a
+      single range tree and index merge is not possible.
+    */
+    bool min_max_arg_present= false;
+    bool non_min_max_arg_present= false;
+    if (min_max_inspect_cond_for_fields(join->where_cond,
+                                        min_max_arg_item,
+                                        &min_max_arg_present,
+                                        &non_min_max_arg_present))
+    {
+      trace_group.add("chosen", false).
+        add_alnum("cause", "minmax_keypart_in_disjunctive_query");
+      DBUG_RETURN(NULL);
+    }
+  }
+
   /* Check (SA7). */
   if (is_agg_distinct && (have_max || have_min))
   {
@@ -12203,7 +12256,7 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, const Cost_estimate *cost_e
           part of 'cur_index'
         */
         if (bitmap_is_set(table->read_set, cur_field->field_index) &&
-            !cur_field->is_part_of_actual_key(thd, cur_index))
+            !cur_field->is_part_of_actual_key(thd, cur_index, cur_index_info))
         {
           cause= "not_covering";
           goto next_index;                  // Field was not part of key
@@ -12430,7 +12483,7 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree, const Cost_estimate *cost_e
     }
 
     /**
-      Test WA2:If there are conditions on a column C participating in
+      Test Part of WA2:If there are conditions on a column C participating in
       MIN/MAX, those conditions must be conjunctions to all earlier
       keyparts. Otherwise, Loose Index Scan cannot be used.
     */
@@ -12622,6 +12675,8 @@ check_group_min_max_predicates(Item *cond, Item_field *min_max_arg_item,
     be done, is that here we should analyze whether the subselect references
     the MIN/MAX argument field, and disallow the optimization only if this is
     so.
+    Need to handle subselect in min_max_inspect_cond_for_fields() once this
+    is fixed.
   */
   if (cond_type == Item::SUBSELECT_ITEM)
     DBUG_RETURN(FALSE);
@@ -12753,6 +12808,147 @@ check_group_min_max_predicates(Item *cond, Item_field *min_max_arg_item,
   DBUG_RETURN(TRUE);
 }
 
+/**
+  Utility function used by min_max_inspect_cond_for_fields() for comparing
+  FILED item with given MIN/MAX item and setting appropriate out paramater.
+
+@param         item_field         Item field for comparison.
+@param         min_max_arg_item   The field referenced by the MIN/MAX
+                                  function(s).
+@param [out]   min_max_arg_present    This out parameter is set to true if
+                                      MIN/MAX argument is present in cond.
+@param [out]   non_min_max_arg_present This out parameter is set to true if
+                                       any field item other than MIN/MAX
+                                       argument is present in cond.
+*/
+static inline void util_min_max_inspect_item(Item *item_field,
+                                             Item_field *min_max_arg_item,
+                                             bool *min_max_arg_present,
+                                             bool *non_min_max_arg_present)
+{
+  if (item_field->type() == Item::FIELD_ITEM)
+  {
+    if(min_max_arg_item->eq(item_field, 1))
+      *min_max_arg_present= true;
+    else
+      *non_min_max_arg_present= true;
+  }
+}
+
+/**
+  This function detects the presents of MIN/MAX field along with at least
+  one non MIN/MAX field participation in the given condition. Subqueries
+  inspection is skipped as of now.
+
+  @param         cond   tree (or subtree) describing all or part of the WHERE
+                        clause being analyzed.
+  @param         min_max_arg_item   The field referenced by the MIN/MAX
+                                    function(s).
+  @param [out]   min_max_arg_present    This out parameter is set to true if
+                                        MIN/MAX argument is present in cond.
+  @param [out]   non_min_max_arg_present This out parameter is set to true if
+                                         any field item other than MIN/MAX
+                                         argument is present in cond.
+
+  @return  TRUE if both MIN/MAX field and non MIN/MAX field is present in cond.
+           FALSE o/w.
+
+  @todo: When the hack present in check_group_min_max_predicate() is removed,
+         subqueries needs to be inspected.
+*/
+
+static bool
+min_max_inspect_cond_for_fields(Item *cond, Item_field *min_max_arg_item,
+                                bool *min_max_arg_present,
+                                bool *non_min_max_arg_present)
+{
+  DBUG_ENTER("inspect_cond_for_fields");
+  DBUG_ASSERT(cond && min_max_arg_item);
+
+  cond= cond->real_item();
+  Item::Type cond_type= cond->type();
+
+  switch (cond_type)  {
+    case Item::COND_ITEM:  {
+      DBUG_PRINT("info", ("Analyzing: %s", ((Item_func*) cond)->func_name()));
+      List_iterator_fast<Item> li(*((Item_cond*) cond)->argument_list());
+      Item *and_or_arg;
+      while ((and_or_arg= li++))
+      {
+        min_max_inspect_cond_for_fields(and_or_arg, min_max_arg_item,
+                                            min_max_arg_present,
+                                            non_min_max_arg_present);
+        if (*min_max_arg_present && *non_min_max_arg_present)
+          DBUG_RETURN(true);
+      }
+
+      DBUG_RETURN(false);
+    }
+    case Item::FUNC_ITEM:  {
+      /* Test if cond references both group-by and non-group fields. */
+      Item_func *pred= (Item_func*) cond;
+      Item *cur_arg;
+      DBUG_PRINT("info", ("Analyzing: %s", pred->func_name()));
+      for (uint arg_idx= 0; arg_idx < pred->argument_count(); arg_idx++)
+      {
+        Item **arguments= pred->arguments();
+        cur_arg= arguments[arg_idx]->real_item();
+        DBUG_PRINT("info", ("cur_arg: %s", cur_arg->full_name()));
+
+        if (cur_arg->type() == Item::FUNC_ITEM)
+        {
+          min_max_inspect_cond_for_fields(cur_arg, min_max_arg_item,
+                                              min_max_arg_present,
+                                              non_min_max_arg_present);
+        }
+        else
+        {
+          util_min_max_inspect_item(cur_arg,
+                                    min_max_arg_item,
+                                    min_max_arg_present,
+                                    non_min_max_arg_present);
+        }
+
+        if (*min_max_arg_present && *non_min_max_arg_present)
+          DBUG_RETURN(true);
+      }
+
+      if (pred->functype() == Item_func::MULT_EQUAL_FUNC)
+      {
+        /*
+          Analyze participating fields in a multiequal condition.
+        */
+        Item_equal_iterator it(*(Item_equal*)cond);
+
+        Item *item_field;
+        while ((item_field= it++))
+        {
+          util_min_max_inspect_item(item_field,
+                                    min_max_arg_item,
+                                    min_max_arg_present,
+                                    non_min_max_arg_present);
+
+          if (*min_max_arg_present && *non_min_max_arg_present)
+            DBUG_RETURN(true);
+        }
+      }
+
+      break;
+    }
+    case Item::FIELD_ITEM:  {
+      util_min_max_inspect_item(cond,
+                                min_max_arg_item,
+                                min_max_arg_present,
+                                non_min_max_arg_present);
+      DBUG_PRINT("info", ("Analyzing: %s", cond->full_name()));
+      DBUG_RETURN(false);
+    }
+    default:
+      break;
+  }
+
+  DBUG_RETURN(false);
+}
 
 /*
   Get the SEL_ARG tree 'tree' for the keypart covering 'field', if

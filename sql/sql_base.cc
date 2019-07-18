@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -246,6 +246,28 @@ bool Strict_error_handler::handle_condition(THD *thd,
   return false;
 }
 
+/**
+  Implementation of Partition_in_shared_ts error handler.
+  This internal handler is to make sure that deprecation warning is not
+  displayed again if already displayed once.
+*/
+bool Partition_in_shared_ts_error_handler::handle_condition(
+                                   THD *thd,
+                                   uint sql_errno,
+                                   const char *sqlstate,
+                                   Sql_condition::enum_severity_level *level,
+                                   const char *msg)
+{
+  if (sql_errno == ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT &&
+      strstr(msg, "InnoDB : A table partition in a shared tablespace") != NULL) {
+    if (m_is_already_reported == false) {
+      m_is_already_reported= true;
+      thd->get_stmt_da()->push_warning(thd, sql_errno, sqlstate, *level, msg);
+    }
+    return true;
+  }
+  return false;
+}
 
 /**
   This internal handler is used to trap ER_NO_SUCH_TABLE and
@@ -1042,7 +1064,6 @@ OPEN_TABLE_LIST *list_open_tables(THD *thd, const char *db, const char *wild)
   TABLE_LIST table_list;
   DBUG_ENTER("list_open_tables");
 
-  memset(&table_list, 0, sizeof(table_list));
   start_list= &open_list;
   open_list=0;
 
@@ -1924,7 +1945,7 @@ bool close_temporary_tables(THD *thd)
   /* scan sorted tmps to generate sequence of DROP */
   for (table= thd->temporary_tables; table; table= next)
   {
-    if (is_user_table(table))
+    if (is_user_table(table) && table->should_binlog_drop_if_temp())
     {
       bool save_thread_specific_used= thd->thread_specific_used;
       my_thread_id save_pseudo_thread_id= thd->variables.pseudo_thread_id;
@@ -1945,27 +1966,28 @@ bool close_temporary_tables(THD *thd)
            table= next)
       {
         /* Separate transactional from non-transactional temp tables */
-        if (table->s->tmp_table == TRANSACTIONAL_TMP_TABLE)
-        {
-          found_trans_table= true;
-          /*
-            We are going to add ` around the table names and possible more
-            due to special characters
-          */
-          append_identifier(thd, &s_query_trans, table->s->table_name.str,
-                            strlen(table->s->table_name.str));
-          s_query_trans.append(',');
-        }
-        else if (table->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE)
-        {
-          found_non_trans_table= true;
-          /*
-            We are going to add ` around the table names and possible more
-            due to special characters
-          */
-          append_identifier(thd, &s_query_non_trans, table->s->table_name.str,
-                            strlen(table->s->table_name.str));
-          s_query_non_trans.append(',');
+        if (table->should_binlog_drop_if_temp()) {
+          if (table->s->tmp_table == TRANSACTIONAL_TMP_TABLE) {
+            found_trans_table= true;
+            /*
+              We are going to add ` around the table names and possible more
+              due to special characters
+            */
+            append_identifier(thd, &s_query_trans, table->s->table_name.str,
+                              strlen(table->s->table_name.str));
+            s_query_trans.append(',');
+          }
+          else if (table->s->tmp_table == NON_TRANSACTIONAL_TMP_TABLE)
+          {
+            found_non_trans_table= true;
+            /*
+              We are going to add ` around the table names and possible more
+              due to special characters
+            */
+            append_identifier(thd, &s_query_non_trans, table->s->table_name.str,
+                              strlen(table->s->table_name.str));
+            s_query_non_trans.append(',');
+          }
         }
 
         next= table->next;
@@ -2048,6 +2070,7 @@ bool close_temporary_tables(THD *thd)
     else
     {
       next= table->next;
+      mysql_lock_remove(thd, thd->lock, table);
       close_temporary(table, 1, 1);
       slave_closed_temp_tables++;
     }
@@ -3409,18 +3432,59 @@ retry_share:
       goto err_unlock;
     }
 
-    /* Open view */
-    bool view_open_result= open_and_read_view(thd, share, table_list);
+    /*
+      Read definition of the existing view, unless the open is for a table
+      to be created. This scenario will happen only when there exists a view and
+      the current CREATE TABLE request is with the same name.
+    */
+    if (table_list->open_strategy != TABLE_LIST::OPEN_FOR_CREATE)
+    {
+      bool view_open_result= open_and_read_view(thd, share, table_list);
 
-    /* TODO: Don't free this */
-    release_table_share(share);
-    mysql_mutex_unlock(&LOCK_open);
+      /* TODO: Don't free this */
+      release_table_share(share);
+      mysql_mutex_unlock(&LOCK_open);
 
-    if (view_open_result)
-      DBUG_RETURN(true);
+      if (view_open_result)
+        DBUG_RETURN(true);
 
-    if (parse_view_definition(thd, table_list))
-      DBUG_RETURN(true);
+      if (parse_view_definition(thd, table_list))
+        DBUG_RETURN(true);
+    }
+    else
+    {
+      release_table_share(share);
+      mysql_mutex_unlock(&LOCK_open);
+
+      /*
+        For SP and PS, LEX objects are created at the time of statement prepare.
+        And open_table() is called for every execute after that. Skip creation
+        of LEX objects if it is already present.
+      */
+      if (!table_list->is_view())
+      {
+        Prepared_stmt_arena_holder ps_arena_holder(thd);
+
+        /*
+          Since we are skipping parse_view_definition(), which creates view LEX
+          object used by the executor and other parts of the code to detect the
+          presence of a view, a dummy LEX object needs to be created.
+        */
+        table_list->set_view_query((LEX *) new(thd->mem_root) st_lex_local);
+        if (!table_list->is_view())
+          DBUG_RETURN(true);
+
+        // Create empty list of view_tables.
+        table_list->view_tables = new (thd->mem_root) List<TABLE_LIST>;
+        if (table_list->view_tables == NULL)
+          DBUG_RETURN(true);
+
+        table_list->view_db.str= table_list->db;
+        table_list->view_db.length= table_list->db_length;
+        table_list->view_name.str= table_list->table_name;
+        table_list->view_name.length= table_list->table_name_length;
+      }
+    }
 
     DBUG_ASSERT(table_list->is_view());
 
@@ -6913,6 +6977,8 @@ TABLE *open_table_uncached(THD *thd, const char *path, const char *db,
 
   if (add_to_temporary_tables_list)
   {
+    tmp_table->set_binlog_drop_if_temp(!thd->is_current_stmt_binlog_disabled()
+                                 && !thd->is_current_stmt_binlog_format_row());
     /* growing temp list at the head */
     tmp_table->next= thd->temporary_tables;
     if (tmp_table->next)

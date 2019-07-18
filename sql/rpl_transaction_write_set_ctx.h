@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include <vector>
 #include <map>
 #include <list>
+#include <set>
 #include <string>
 
 /**
@@ -43,15 +44,40 @@ public:
   void add_write_set(uint64 hash);
 
   /*
-    Function to get the pointer of the write set vector in the
+    Function to get the pointer of the write set in the
     transaction_ctx object.
   */
-  std::vector<uint64> *get_write_set();
+  std::set<uint64> *get_write_set();
 
   /*
     Cleanup function of the vector which stores the PKE.
   */
   void clear_write_set();
+
+  /*
+    mark transactions that include tables with no pk
+  */
+  void set_has_missing_keys();
+
+  /*
+    check if the transaction was marked as having missing keys.
+
+    @retval true  The transaction accesses tables with no PK.
+    @retval false All tables referenced in transaction have PK.
+   */
+  bool get_has_missing_keys();
+
+  /*
+    mark transactions that include tables referenced by foreign keys
+  */
+  void set_has_related_foreign_keys();
+
+  /*
+    function to check if the transaction was marked as having missing keys.
+
+    @retval true  If the transaction was marked as being referenced by a foreign key
+  */
+  bool get_has_related_foreign_keys();
 
   /**
     Function to add a new SAVEPOINT identifier in the savepoint map in the
@@ -91,6 +117,10 @@ public:
 
 private:
   std::vector<uint64> write_set;
+  std::set<uint64> write_set_unique;
+
+  bool m_has_missing_keys;
+  bool m_has_related_foreign_keys;
 
   /**
     Contains information related to SAVEPOINTs. The key on map is the

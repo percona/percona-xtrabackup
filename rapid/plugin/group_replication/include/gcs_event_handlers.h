@@ -32,6 +32,11 @@
 #include "read_mode_handler.h"
 
 
+/*
+ The server version in which member weight was introduced.
+ */
+#define PRIMARY_ELECTION_MEMBER_WEIGHT_VERSION 0x050720
+
 /**
   Group_member_info_pointer_comparator to guarantee uniqueness
  */
@@ -63,7 +68,7 @@ public:
                             Recovery_module* recovery_module,
                             Plugin_gcs_view_modification_notifier* vc_notifier,
                             Compatibility_module* compatibility_manager,
-                            Read_mode_handler* read_mode_handler);
+                            ulong components_stop_timeout);
   virtual ~Plugin_gcs_events_handler();
 
   /*
@@ -76,6 +81,14 @@ public:
   void on_suspicions(const std::vector<Gcs_member_identifier>& members,
                      const std::vector<Gcs_member_identifier>& unreachable) const;
 
+  /**
+    Sets the component stop timeout.
+
+    @param[in]  timeout      the timeout
+  */
+  void set_stop_wait_timeout (ulong timeout){
+    stop_wait_timeout= timeout;
+  }
 
 private:
   /*
@@ -91,8 +104,9 @@ private:
   /*
    Methods to act upon members after a on_view_change(...) is called
    */
-  void update_group_info_manager(const Gcs_view& new_view,
+  int update_group_info_manager(const Gcs_view& new_view,
                                  const Exchanged_data &exchanged_data,
+                                 bool is_joining,
                                  bool is_leaving)
                                  const;
   void handle_joining_members(const Gcs_view& new_view,
@@ -133,7 +147,8 @@ private:
   void handle_leader_election_if_needed() const;
 
   /**
-    Sort lower version members based on uuid
+    Sort lower version members based on member weight if member version
+    is greater than equal to PRIMARY_ELECTION_MEMBER_WEIGHT_VERSION or uuid.
 
     @param all_members_info    the vector with members info
     @param lowest_version_end  first iterator position where members version
@@ -159,7 +174,9 @@ private:
     std::vector<Group_member_info*>* all_members_info) const;
 
   int
-  process_local_exchanged_data(const Exchanged_data &exchanged_data) const;
+  process_local_exchanged_data(const Exchanged_data &exchanged_data,
+                               bool is_joining)
+                               const;
 
   /**
     Verifies if a certain Vector of Member Ids contains a given member id.
@@ -253,6 +270,32 @@ private:
   */
   bool was_member_expelled_from_group(const Gcs_view& view) const;
 
+  /**
+    Logs member joining message to error logs from view.
+
+    @param[in]  new_view        the view delivered by the GCS
+  */
+  void log_members_joining_message(const Gcs_view& new_view) const;
+
+  /**
+    Logs member leaving message to error logs from view.
+
+    @param[in]  new_view        the view delivered by the GCS
+  */
+  void log_members_leaving_message(const Gcs_view& new_view) const;
+
+  /**
+    This function return all members present in vector of Gcs_member_identifier
+    in HOST:PORT format separated by comma.
+    Function also return PRIMARY member if any in HOST:PORT format.
+
+    @param[in]    members      joining or leaving members for this view
+    @param[out]   all_hosts    host and port of all members from view
+    @param[out]   primary_host primary member hosts and port of all members from view
+  */
+  void get_hosts_from_view(const std::vector<Gcs_member_identifier> &members,
+                           std::string& all_hosts, std::string& primary_host) const;
+
   Applier_module_interface* applier_module;
   Recovery_module* recovery_module;
 
@@ -267,10 +310,11 @@ private:
 
   Compatibility_module* compatibility_manager;
 
-  Read_mode_handler* read_mode_handler;
-
   /**The status of this member when it joins*/
   st_compatibility_types* joiner_compatibility_status;
+
+  /* Component stop timeout on shutdown */
+  ulong stop_wait_timeout;
 
 #ifndef DBUG_OFF
   bool set_number_of_members_on_view_changed_to_10;

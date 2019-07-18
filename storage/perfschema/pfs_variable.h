@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -137,10 +137,12 @@ class System_variable
 {
 public:
   System_variable();
-  System_variable(THD *target_thd, const SHOW_VAR *show_var, enum_var_type query_scope);
+  System_variable(THD *target_thd, const SHOW_VAR *show_var,
+                  enum_var_type query_scope, bool ignore);
   ~System_variable() {}
 
-  bool is_null() const {return !m_initialized;};
+  bool is_null() const { return !m_initialized; }
+  bool is_ignored() const { return m_ignore; }
 
 public:
   const char *m_name;
@@ -149,6 +151,7 @@ public:
   size_t m_value_length;
   enum_mysql_show_type m_type;
   int m_scope;
+  bool m_ignore;
   const CHARSET_INFO *m_charset;
 
 private:
@@ -452,7 +455,16 @@ PFS_variable_cache<Var_type>::~PFS_variable_cache()
 template <class Var_type>
 THD *PFS_variable_cache<Var_type>::get_THD(THD *unsafe_thd)
 {
-  DBUG_ASSERT(unsafe_thd != NULL);
+  if (unsafe_thd == NULL)
+  {
+    /*
+      May happen, precisely because the pointer is unsafe
+      (THD just disconnected for example).
+      No need to walk Global_THD_manager for that.
+    */
+    return NULL;
+  }
+
   m_thd_finder.set_unsafe_thd(unsafe_thd);
   THD* safe_thd= Global_THD_manager::get_instance()->find_thd(&m_thd_finder);
   return safe_thd;

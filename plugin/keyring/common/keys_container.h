@@ -28,6 +28,8 @@
 
 #include <vector>
 
+#include <vector>
+
 namespace keyring {
 
 extern "C" MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;

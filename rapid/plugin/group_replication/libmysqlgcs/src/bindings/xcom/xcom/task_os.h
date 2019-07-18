@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,11 +34,12 @@ extern "C" {
 #define SOCK_EAGAIN WSAEINPROGRESS
 #define SOCK_EWOULDBLOCK WSAEWOULDBLOCK
 #define SOCK_EINPROGRESS WSAEINPROGRESS
+#define SOCK_EALREADY WSAEALREADY
+#define SOCK_ECONNREFUSED WSAECONNREFUSED
 #define SOCK_ERRNO task_errno
 #define SOCK_OPT_REUSEADDR SO_EXCLUSIVEADDRUSE
 #define GET_OS_ERR  WSAGetLastError()
 #define SET_OS_ERR(x) WSASetLastError(x)
-#define SOCK_ECONNREFUSED WSAECONNREFUSED
 #define CLOSESOCKET(x) closesocket(x)
 
   static inline int hard_connect_err(int err)
@@ -51,6 +52,22 @@ extern "C" {
 	  return err != 0 && from_errno(err) != WSAEINTR;
   }
 
+
+
+#if(_WIN32_WINNT < 0x0600)
+#error "Need _WIN32_WINNT >= 0x0600"
+#endif
+
+typedef ULONG nfds_t;
+typedef struct pollfd pollfd;
+static inline int poll(pollfd * fds, nfds_t nfds, int timeout) {
+  return WSAPoll(fds, nfds, timeout);
+}
+
+static inline int is_socket_error(int x)
+{
+ return x == SOCKET_ERROR || x < 0;
+}
 
 #else
 #include <unistd.h>
@@ -70,11 +87,12 @@ extern "C" {
 #define SOCK_EAGAIN EAGAIN
 #define SOCK_EWOULDBLOCK EWOULDBLOCK
 #define SOCK_EINPROGRESS EINPROGRESS
+#define SOCK_EALREADY EALREADY
+#define SOCK_ECONNREFUSED ECONNREFUSED
 #define SOCK_ERRNO task_errno
 #define SOCK_OPT_REUSEADDR SO_REUSEADDR
 #define GET_OS_ERR errno
 #define SET_OS_ERR(x) errno = (x)
-#define SOCK_ECONNREFUSED ECONNREFUSED
 #define CLOSESOCKET(x) close(x)
 
   static inline int hard_connect_err(int err)
@@ -86,6 +104,13 @@ extern "C" {
   {
 	  return from_errno(err) != 0 && from_errno(err) != EINTR;
   }
+
+typedef struct pollfd pollfd;
+
+static inline int is_socket_error(int x)
+{
+ return x < 0;
+}
 
 #endif
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #include "xcom_detector.h"
 #include "site_struct.h"
 #include "node_connection.h"
+#include "node_list.h"
 #include "xcom_transport.h"
 #include "xcom_statistics.h"
 #include "xcom_base.h"
@@ -53,7 +54,7 @@
 #include "xcom_ssl_transport.h"
 #endif
 
-#define MY_XCOM_PROTO x_1_1
+#define MY_XCOM_PROTO x_1_2
 
 xcom_proto const my_min_xcom_version = x_1_0; /* The minimum protocol version I am able to understand */
 xcom_proto const my_xcom_version = MY_XCOM_PROTO; /* The maximun protocol version I am able to understand */
@@ -417,7 +418,11 @@ x_putbytes (XDR *xdrs, const char *bp MY_ATTRIBUTE((unused)), u_int len)
 
 
 static u_int
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(HAVE_TIRPC)
+x_getpostn(XDR *xdrs)
+#else
 x_getpostn (const XDR *xdrs)
+#endif
 {
 #ifdef OLD_XDR
   return (u_int)(xdrs->x_handy);
@@ -657,7 +662,7 @@ int serialize_msg(pax_msg *p, xcom_proto x_proto, uint32_t *buflen, char **buf)
 	*buf = 0;
 
 	return old_proto_knows(x_proto, p->op) &&
-		serialize((void * )p, x_proto, buflen, (xdrproc_t)xdr_pax_msg, buf);
+						serialize((void *)p, x_proto, buflen, (xdrproc_t)xdr_pax_msg, buf);
 }
 
 int deserialize_msg(pax_msg *p, xcom_proto x_proto,  char *buf, uint32_t buflen)
@@ -724,6 +729,7 @@ mksrv(char *srv, xcom_port port)
 		abort();
 	}
 	s->garbage = 0;
+	s->invalid = 0;
 	s->refcnt = 0;
 	s->srv = srv;
 	s->port = port;
@@ -741,6 +747,12 @@ mksrv(char *srv, xcom_port port)
 		s->reply_handler = task_new(reply_handler_task, void_arg(s), "reply_handler_task", XCOM_THREAD_DEBUG);
 	}
 	reset_srv_buf(&s->out_buf);
+	/*
+	 Keep the server from being freed if the acceptor_learner_task calls
+	 srv_unref on the server before the {local_,}server_task and
+	 reply_handler_task begin.
+	*/
+	srv_ref(s);
 	return s;
 }
 
@@ -866,6 +878,9 @@ static void shut_srv(server *s)
 		task_terminate(s->sender);
 	if (s->reply_handler)
 		task_terminate(s->reply_handler);
+
+	// Allow the server to be freed. This unref pairs with the ref from mksrv.
+	srv_unref(s);
 }
 
 
@@ -892,41 +907,44 @@ int	srv_unref(server *s)
 /* }}} */
 
 /* Listen for connections on socket and create a handler task */
-int	tcp_server(task_arg arg)
-{
-	DECL_ENV
-	    int	fd;
-	int	cfd;
-	int refused;
-	END_ENV;
-	TASK_BEGIN
-	    ep->fd = get_int_arg(arg);
-	ep->refused= 0;
-	unblock_fd(ep->fd);
-	DBGOUT(FN; NDBG(ep->fd, d); );
-        G_MESSAGE("Ready to accept incoming connections on %s:%d "
-                  "(socket=%d)!",
-                  "0.0.0.0",
-                  xcom_listen_port, ep->fd);
-	do {
-		TASK_CALL(accept_tcp(ep->fd, &ep->cfd));
-                /* Callback to check that the file descriptor is accepted. */
-                if (xcom_socket_accept_callback && !xcom_socket_accept_callback(ep->cfd))
-                {
-                  shut_close_socket(&ep->cfd);
-                  ep->cfd= -1;
-                  ep->refused= 1;
-                  TASK_YIELD;
-                  continue;
-                }
-                ep->refused= 0;
-		DBGOUT(FN; NDBG(ep->cfd, d); );
-		task_new(acceptor_learner_task, int_arg(ep->cfd), "acceptor_learner_task", XCOM_THREAD_DEBUG);
-	} while (!xcom_shutdown && (ep->cfd >= 0 || ep->refused));
-	FINALLY
-	assert(ep->fd >= 0);
-	shut_close_socket(&ep->fd);
-	TASK_END;
+int tcp_server(task_arg arg) {
+  DECL_ENV
+  int fd;
+  int cfd;
+  int refused;
+  END_ENV;
+  TASK_BEGIN
+  ep->fd = get_int_arg(arg);
+  ep->refused = 0;
+  unblock_fd(ep->fd);
+  DBGOUT(FN; NDBG(ep->fd, d););
+  G_MESSAGE("XCom protocol version: %d", my_xcom_version);
+  G_MESSAGE(
+      "XCom initialized and ready to accept incoming connections on port %d",
+      xcom_listen_port);
+  do {
+    TASK_CALL(accept_tcp(ep->fd, &ep->cfd));
+    /* Callback to check that the file descriptor is accepted. */
+    if (xcom_socket_accept_callback &&
+        !xcom_socket_accept_callback(ep->cfd, get_site_def())) {
+      shut_close_socket(&ep->cfd);
+      ep->cfd = -1;
+    }
+    if(ep->cfd == -1){
+      G_DEBUG("accept failed");
+      ep->refused = 1;
+      TASK_DELAY(0.1);
+    } else {
+      ep->refused = 0;
+      DBGOUT(FN; NDBG(ep->cfd, d););
+      task_new(acceptor_learner_task, int_arg(ep->cfd), "acceptor_learner_task",
+               XCOM_THREAD_DEBUG);
+    }
+  } while (!xcom_shutdown && (ep->cfd >= 0 || ep->refused));
+  FINALLY
+  assert(ep->fd >= 0);
+  shut_close_socket(&ep->fd);
+  TASK_END;
 }
 
 #ifdef XCOM_HAVE_OPENSSL
@@ -1026,7 +1044,8 @@ int	send_msg(server *s, node_no from, node_no to, uint32_t group_id, pax_msg *p)
 		p->to = to;
 		p->group_id = group_id;
 		p->max_synode = get_max_synode();
- 		MAY_DBG(FN; PTREXP(p); STREXP(s->srv); NDBG(p->from, d); NDBG(p->to, d); NDBG(p->group_id, u));
+		p->delivered_msg = get_delivered_msg();
+		MAY_DBG(FN; PTREXP(p); STREXP(s->srv); NDBG(p->from, d); NDBG(p->to, d); NDBG(p->group_id, u));
 		channel_put(&s->outgoing, &link->l);
 	}
 	return 0;
@@ -1037,7 +1056,7 @@ static inline int	_send_server_msg(site_def const *s, node_no to, pax_msg *p)
 {
 	assert(s);
 	assert(s->servers[to]);
-	if (s->servers[to] && p) {
+	if (s->servers[to] && s->servers[to]->invalid == 0 && p) {
 		send_msg(s->servers[to], s->nodeno, to, get_group_id(s), p);
 	}
 	return 0;
@@ -1610,20 +1629,11 @@ int	sender_task(task_arg arg)
 
 				/* If ep->link->p is 0, it is a protocol (re)negotiation request */
 				if(ep->link->p){
-					if(ep->s->con.x_proto != get_latest_common_proto()){ /* See if we need renegotiation */
-					ADD_EVENTS(
-						add_event(string_arg("renegotiate get_latest_common_proto()"));
-						add_event(string_arg( xcom_proto_to_str(get_latest_common_proto())));
-						add_event(string_arg( xcom_proto_to_str(ep->s->con.x_proto)));
-					);
-						channel_put_front(&ep->s->outgoing, &ep->link->l); /* Push message back in queue, will be handled after negotiation */
-						start_protocol_negotiation(&ep->s->outgoing);
-					}else{
 						ADD_EVENTS(
 							add_event(string_arg("sending ep->link->p->synode"));
 							add_synode_event(ep->link->p->synode);
 							add_event(string_arg("to"));
-							add_event(int_arg(ep->link->p->to));
+							add_event(uint_arg(ep->link->p->to));
 							add_event(string_arg(pax_op_to_str(ep->link->p->op)));
 						);
 						TASK_CALL(_send_msg(ep->s, ep->link->p, ep->link->to, &ret));
@@ -1634,10 +1644,9 @@ int	sender_task(task_arg arg)
 							add_event(string_arg("sent ep->link->p->synode"));
 							add_synode_event(ep->link->p->synode);
 							add_event(string_arg("to"));
-							add_event(int_arg(ep->link->p->to));
+							add_event(uint_arg(ep->link->p->to));
 							add_event(string_arg(pax_op_to_str(ep->link->p->op)));
 						);
-					}
 				} else {
 					set_connected(&ep->s->con, CON_FD);
 					/* Send protocol negotiation request */
@@ -1786,7 +1795,7 @@ static xcom_port get_port(char *a)
 
 xcom_port xcom_get_port(char *a)
 {
-	return get_port(a);
+	return a ? get_port(a): 0;
 }
 
 
@@ -1802,7 +1811,7 @@ static server *find_server(server *table[], int n, char *name, xcom_port port)
 }
 
 
-void update_servers(site_def *s)
+void update_servers(site_def *s, cargo_type operation)
 {
 	u_int	n;
 
@@ -1822,6 +1831,8 @@ void update_servers(site_def *s)
 				DBGOUT(FN; STRLIT("re-using server "); NDBG(i, d); STREXP(name));
 				free(name);
 				s->servers[i] = sp;
+				if(sp->invalid)
+					sp->invalid= 0;
 			} else { /* No server? Create one */
 				DBGOUT(FN; STRLIT("creating new server "); NDBG(i, d); STREXP(name));
 				if (port > 0)
@@ -1833,6 +1844,40 @@ void update_servers(site_def *s)
 		/* Zero the rest */
 		for (i = n; i < NSERVERS; i++) {
 			s->servers[i] = 0;
+		}
+		/*
+		If we have a force config, mark the servers that do not belong to this
+		configuration as invalid
+		*/
+
+		if(operation == force_config_type) {
+			const site_def* old_site_def= get_prev_site_def();
+			invalidate_servers(old_site_def, s);
+		}
+
+	}
+}
+
+
+/*
+ Make a diff between 2 site_defs and mark as invalid servers
+ that do not belong to the new site_def.
+ This is only to be used if we are forcing a configuration.
+*/
+void invalidate_servers(const site_def* old_site_def,
+			const site_def* new_site_def) {
+	u_int node= 0;
+	for(; node < get_maxnodes(old_site_def); node++){
+		node_address* node_addr_from_old_site_def= &old_site_def->nodes.node_list_val[node];
+		if(!node_exists(node_addr_from_old_site_def, &new_site_def->nodes))
+		{
+			char *addr = node_addr_from_old_site_def->address;
+			char *name = get_name(addr);
+			xcom_port port = get_port(addr);
+			server *sp = find_server(all_servers, maxservers, name, port);
+			if (sp) {
+				sp->invalid= 1;
+			}
 		}
 	}
 }
@@ -2116,6 +2161,7 @@ bool_t xdr_node_list_1_1(XDR *xdrs, node_list_1_1 *objp)
 		return xdr_array (xdrs, (char **)&objp->node_list_val, (u_int *) &objp->node_list_len, NSERVERS,
 		sizeof (node_address), (xdrproc_t) xdr_node_address_with_1_0);
 	case x_1_1:
+	case x_1_2:
 		return xdr_array (xdrs, (char **)&objp->node_list_val, (u_int *) &objp->node_list_len, NSERVERS,
 		sizeof (node_address), (xdrproc_t) xdr_node_address);
 	default:
@@ -2134,3 +2180,24 @@ bool_t xdr_checked_data(XDR *xdrs, checked_data *objp)
 		return FALSE;
 	return xdr_bytes(xdrs, (char **)&objp->data_val, (u_int *) &objp->data_len, 0xffffffff);
 }
+
+bool_t xdr_pax_msg(XDR *xdrs, pax_msg *objp)
+{
+	xcom_proto vx = *((xcom_proto * )xdrs->x_public);
+	/* Select protocol encode/decode based on the x_public field of the xdr struct */
+	switch (vx) {
+	case x_1_0:
+	case x_1_1:
+		if (!xdr_pax_msg_1_1(xdrs, (pax_msg_1_1*)objp))
+			return FALSE;
+		if (xdrs->x_op == XDR_DECODE)
+			objp->delivered_msg = get_delivered_msg(); /* Use our own minimum */
+		return TRUE;
+	case x_1_2:
+		return xdr_pax_msg_1_2(xdrs, objp);
+	default:
+		return FALSE;
+	}
+}
+
+

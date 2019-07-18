@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -563,6 +563,16 @@ void
 lock_trx_release_locks(
 /*===================*/
 	trx_t*	trx);	/*!< in/out: transaction */
+
+/** Release read locks of a transacion. It is called during XA
+prepare to release locks early.
+@param[in,out]	trx		transaction
+@param[in]	only_gap	release only GAP locks */
+void
+lock_trx_release_read_locks(
+	trx_t*	trx,
+	bool	only_gap);
+
 /*********************************************************************//**
 Removes locks on a table to be dropped or truncated.
 If remove_also_table_sx_locks is TRUE then table-level S and X locks are
@@ -1029,6 +1039,20 @@ struct lock_sys_t{
 	bool		timeout_thread_active;	/*!< True if the timeout thread
 						is running */
 };
+
+/*********************************************************************//**
+This function is kind of wrapper to lock_rec_convert_impl_to_expl_for_trx()
+function with functionailty added to facilitate lock conversion from implicit
+to explicit for partial rollback cases */
+void
+lock_rec_convert_active_impl_to_expl(
+/*==================================*/
+        const buf_block_t*      block,  /*!< in: buffer block of rec */
+        const rec_t*            rec,    /*!< in: user record on page */
+        dict_index_t*           index,  /*!< in: index of record */
+        const ulint*            offsets,/*!< in: rec_get_offsets(rec, index) */
+        trx_t*                  trx,    /*!< in/out: active transaction */
+        ulint                   heap_no);/*!< in: rec heap number to lock */
 
 /*************************************************************//**
 Removes a record lock request, waiting or granted, from the queue. */

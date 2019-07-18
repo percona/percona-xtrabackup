@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -116,6 +116,7 @@
 #include <mysql/psi/mysql_memory.h>
 #include <mysql/psi/mysql_statement.h>
 
+#include "migrate_keyring.h"            // Migrate_keyring
 #include "mysql_com_server.h"
 #include "keycaches.h"
 #include "../storage/myisam/ha_myisam.h"
@@ -255,6 +256,7 @@ static PSI_thread_key key_thread_handle_con_sockets;
 static PSI_mutex_key key_LOCK_handler_count;
 static PSI_cond_key key_COND_handler_count;
 static PSI_thread_key key_thread_handle_shutdown;
+static PSI_rwlock_key key_rwlock_LOCK_named_pipe_full_access_group;
 #else
 static PSI_mutex_key key_LOCK_socket_listener_active;
 static PSI_cond_key key_COND_socket_listener_active;
@@ -314,10 +316,20 @@ bool opt_endinfo, using_udf_functions;
 my_bool locked_in_memory;
 bool opt_using_transactions;
 bool volatile abort_loop;
+ulong opt_tc_log_size;
+
 static enum_server_operational_state server_operational_state= SERVER_BOOTING;
 ulong log_warnings;
 bool  opt_log_syslog_enable;
 char *opt_log_syslog_tag= NULL;
+char *opt_keyring_migration_user= NULL;
+char *opt_keyring_migration_host= NULL;
+char *opt_keyring_migration_password= NULL;
+char *opt_keyring_migration_socket= NULL;
+char *opt_keyring_migration_source= NULL;
+char *opt_keyring_migration_destination= NULL;
+ulong opt_keyring_migration_port= 0;
+bool migrate_connect_options= 0;
 #ifndef _WIN32
 bool  opt_log_syslog_include_pid;
 char *opt_log_syslog_facility;
@@ -348,7 +360,7 @@ ulong slow_start_timeout;
 
 my_bool opt_bootstrap= 0;
 my_bool opt_initialize= 0;
-my_bool opt_disable_partition_check= FALSE;
+my_bool opt_disable_partition_check= TRUE;
 my_bool opt_skip_slave_start = 0; ///< If set, slave is not autostarted
 my_bool opt_reckless_slave = 0;
 my_bool opt_enable_named_pipe= 0;
@@ -462,7 +474,7 @@ ulonglong  max_binlog_cache_size=0;
 ulong slave_max_allowed_packet= 0;
 ulong binlog_stmt_cache_size=0;
 int32 opt_binlog_max_flush_queue_time= 0;
-ulong opt_binlog_group_commit_sync_delay= 0;
+long opt_binlog_group_commit_sync_delay= 0;
 ulong opt_binlog_group_commit_sync_no_delay_count= 0;
 ulonglong  max_binlog_stmt_cache_size=0;
 ulong query_cache_size=0;
@@ -482,6 +494,7 @@ bool thread_cache_size_specified= false;
 bool host_cache_size_specified= false;
 bool table_definition_cache_specified= false;
 ulong locked_account_connection_count= 0;
+bool opt_keyring_operations= TRUE;
 
 /**
   Limit of the total number of prepared statements in the server.
@@ -660,6 +673,7 @@ mysql_mutex_t LOCK_prepared_stmt_count;
 */
 mysql_mutex_t LOCK_sql_slave_skip_counter;
 mysql_mutex_t LOCK_slave_net_timeout;
+mysql_mutex_t LOCK_slave_trans_dep_tracker;
 mysql_mutex_t LOCK_log_throttle_qni;
 mysql_mutex_t LOCK_offline_mode;
 #ifdef HAVE_OPENSSL
@@ -674,7 +688,6 @@ mysql_cond_t COND_server_started;
 mysql_mutex_t LOCK_reset_gtid_table;
 mysql_mutex_t LOCK_compress_gtid_table;
 mysql_cond_t COND_compress_gtid_table;
-mysql_mutex_t LOCK_group_replication_handler;
 #if !defined (EMBEDDED_LIBRARY) && !defined(_WIN32)
 mysql_mutex_t LOCK_socket_listener_active;
 mysql_cond_t COND_socket_listener_active;
@@ -683,6 +696,12 @@ mysql_cond_t COND_start_signal_handler;
 #endif
 
 bool mysqld_server_started= false;
+
+/*
+  The below lock protects access to global server variable
+  keyring_operations.
+*/
+mysql_mutex_t LOCK_keyring_operations;
 
 File_parser_dummy_hook file_parser_dummy_hook;
 
@@ -733,8 +752,11 @@ int show_rsa_public_key(THD *thd, SHOW_VAR *var, char *buff);
 
 Connection_acceptor<Mysqld_socket_listener> *mysqld_socket_acceptor= NULL;
 #ifdef _WIN32
+static Named_pipe_listener *named_pipe_listener= NULL;
 Connection_acceptor<Named_pipe_listener> *named_pipe_acceptor= NULL;
 Connection_acceptor<Shared_mem_listener> *shared_mem_acceptor= NULL;
+mysql_rwlock_t LOCK_named_pipe_full_access_group;
+char *named_pipe_full_access_group;
 #endif
 
 Checkable_rwlock *global_sid_lock= NULL;
@@ -1416,6 +1438,7 @@ static void clean_up_mutexes()
   mysql_mutex_destroy(&LOCK_prepared_stmt_count);
   mysql_mutex_destroy(&LOCK_sql_slave_skip_counter);
   mysql_mutex_destroy(&LOCK_slave_net_timeout);
+  mysql_mutex_destroy(&LOCK_slave_trans_dep_tracker);
   mysql_mutex_destroy(&LOCK_error_messages);
   mysql_mutex_destroy(&LOCK_offline_mode);
   mysql_mutex_destroy(&LOCK_default_password_lifetime);
@@ -1423,6 +1446,7 @@ static void clean_up_mutexes()
 #ifdef _WIN32
   mysql_cond_destroy(&COND_handler_count);
   mysql_mutex_destroy(&LOCK_handler_count);
+  mysql_rwlock_destroy(&LOCK_named_pipe_full_access_group);
 #endif
 #ifndef _WIN32
   mysql_cond_destroy(&COND_socket_listener_active);
@@ -1430,6 +1454,7 @@ static void clean_up_mutexes()
   mysql_cond_destroy(&COND_start_signal_handler);
   mysql_mutex_destroy(&LOCK_start_signal_handler);
 #endif
+  mysql_mutex_destroy(&LOCK_keyring_operations);
 }
 
 
@@ -1644,8 +1669,7 @@ static bool network_init(void)
   {
     std::string pipe_name= mysqld_unix_port ? mysqld_unix_port : "";
 
-    Named_pipe_listener *named_pipe_listener=
-      new (std::nothrow) Named_pipe_listener(&pipe_name);
+    named_pipe_listener= new (std::nothrow) Named_pipe_listener(&pipe_name);
     if (named_pipe_listener == NULL)
       return true;
 
@@ -2716,7 +2740,7 @@ int init_common_variables()
   /* TODO: remove this when my_time_t is 64 bit compatible */
   if (!IS_TIME_T_VALID_FOR_TIMESTAMP(server_start_time))
   {
-    sql_print_error("This MySQL server doesn't support dates later then 2038");
+    sql_print_error("This MySQL server doesn't support dates later than 2038");
     return 1;
   }
 
@@ -2935,6 +2959,7 @@ int init_common_variables()
   if (init_errmessage())  /* Read error messages from file */
     return 1;
   init_client_errs();
+
   mysql_client_plugin_init();
   if (item_create_init())
     return 1;
@@ -3060,6 +3085,16 @@ int init_common_variables()
     return 1;
   }
 
+  if (global_system_variables.transaction_write_set_extraction == HASH_ALGORITHM_OFF
+      && mysql_bin_log.m_dependency_tracker.m_opt_tracking_mode != DEPENDENCY_TRACKING_COMMIT_ORDER)
+  {
+    sql_print_error("The transaction_write_set_extraction must be set to XXHASH64 or MURMUR32"
+                    " when binlog_transaction_dependency_tracking is WRITESET or WRITESET_SESSION.");
+    return 1;
+  }
+  else
+    mysql_bin_log.m_dependency_tracker.tracking_mode_changed();
+
 #define FIX_LOG_VAR(VAR, ALT)                                   \
   if (!VAR || !*VAR)                                            \
     VAR= ALT;
@@ -3177,6 +3212,8 @@ static int init_thread_environment()
                    &LOCK_sql_slave_skip_counter, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_slave_net_timeout,
                    &LOCK_slave_net_timeout, MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_LOCK_slave_trans_dep_tracker,
+                   &LOCK_slave_trans_dep_tracker, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_error_messages,
                    &LOCK_error_messages, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_uuid_generator,
@@ -3198,6 +3235,8 @@ static int init_thread_environment()
   mysql_cond_init(key_COND_manager, &COND_manager);
   mysql_mutex_init(key_LOCK_server_started,
                    &LOCK_server_started, MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_LOCK_keyring_operations,
+                   &LOCK_keyring_operations, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_server_started, &COND_server_started);
   mysql_mutex_init(key_LOCK_reset_gtid_table,
                    &LOCK_reset_gtid_table, MY_MUTEX_INIT_FAST);
@@ -3205,14 +3244,14 @@ static int init_thread_environment()
                    &LOCK_compress_gtid_table, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_compress_gtid_table,
                   &COND_compress_gtid_table);
-  mysql_mutex_init(key_LOCK_group_replication_handler,
-                   &LOCK_group_replication_handler, MY_MUTEX_INIT_FAST);
 #ifndef EMBEDDED_LIBRARY
   Events::init_mutexes();
 #if defined(_WIN32)
   mysql_mutex_init(key_LOCK_handler_count,
                    &LOCK_handler_count, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_handler_count, &COND_handler_count);
+  mysql_rwlock_init(key_rwlock_LOCK_named_pipe_full_access_group,
+                    &LOCK_named_pipe_full_access_group);
 #else
   mysql_mutex_init(key_LOCK_socket_listener_active,
                    &LOCK_socket_listener_active, MY_MUTEX_INIT_FAST);
@@ -3376,11 +3415,11 @@ static int init_ssl()
 {
 #ifdef HAVE_OPENSSL
 #ifndef HAVE_YASSL
-#if OPENSSL_VERSION_NUMBER >= 0x10100005L
-  OPENSSL_malloc_init();
-#else
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   CRYPTO_malloc_init();
-#endif
+#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+  OPENSSL_malloc_init();
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 #endif
   ssl_start();
 #if !defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP)
@@ -3406,7 +3445,9 @@ static int init_ssl()
 					  opt_ssl_cipher, &error,
                                           opt_ssl_crl, opt_ssl_crlpath, ssl_ctx_flags);
     DBUG_PRINT("info",("ssl_acceptor_fd: 0x%lx", (long) ssl_acceptor_fd));
-    ERR_remove_state(0);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    ERR_remove_thread_state(0);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
     if (!ssl_acceptor_fd)
     {
       /*
@@ -3537,7 +3578,8 @@ static int generate_server_uuid()
 
   strncpy(server_uuid, uuid.c_ptr(), UUID_LENGTH);
   DBUG_EXECUTE_IF("server_uuid_deterministic",
-                  strncpy(server_uuid, "00000000-1111-0000-1111-000000000000", UUID_LENGTH););
+                  memcpy(server_uuid, "00000000-1111-0000-1111-000000000000",
+                         UUID_LENGTH););
   server_uuid[UUID_LENGTH]= '\0';
   return 0;
 }
@@ -3817,8 +3859,9 @@ static int init_server_components()
     */
     log_error_dest= errorlog_filename_buff;
 
-    if (open_error_log(errorlog_filename_buff))
+    if (open_error_log(errorlog_filename_buff, false))
       unireg_abort(MYSQLD_ABORT_EXIT);
+
 #ifdef _WIN32
     FreeConsole();        // Remove window
 #endif
@@ -4027,6 +4070,21 @@ a file name for --log-bin-index option", opt_binlog_index_name);
   */
   tc_log= &tc_log_dummy;
 
+  /*Load early plugins */
+  if (plugin_register_early_plugins(&remaining_argc, remaining_argv,
+                                    opt_help ?
+                                      PLUGIN_INIT_SKIP_INITIALIZATION : 0))
+  {
+    sql_print_error("Failed to initialize early plugins.");
+    unireg_abort(MYSQLD_ABORT_EXIT);
+  }
+  /* Load builtin plugins, initialize MyISAM, CSV and InnoDB */
+  if (plugin_register_builtin_and_init_core_se(&remaining_argc,
+                                               remaining_argv))
+  {
+    sql_print_error("Failed to initialize builtin plugins.");
+    unireg_abort(MYSQLD_ABORT_EXIT);
+  }
   /*
     Skip reading the plugin table when starting with --help in order
     to also skip initializing InnoDB. This provides a simpler and more
@@ -4034,12 +4092,12 @@ a file name for --log-bin-index option", opt_binlog_index_name);
     directory does not exist, exists but is empty, exists with InnoDB
     system tablespaces present etc.
   */
-  if (plugin_init(&remaining_argc, remaining_argv,
+  if (plugin_register_dynamic_and_init_all(&remaining_argc, remaining_argv,
                   (opt_noacl ? PLUGIN_INIT_SKIP_PLUGIN_TABLE : 0) |
                   (opt_help ? (PLUGIN_INIT_SKIP_INITIALIZATION |
                                PLUGIN_INIT_SKIP_PLUGIN_TABLE) : 0)))
   {
-    sql_print_error("Failed to initialize plugins.");
+    sql_print_error("Failed to initialize dynamic plugins.");
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
   plugins_are_initialized= TRUE;  /* Don't separate from init function */
@@ -4604,15 +4662,6 @@ int mysqld_main(int argc, char **argv)
   srand(static_cast<uint>(time(NULL)));
 #endif
 
-  /*
-    We have enough space for fiddling with the argv, continue
-  */
-  if (my_setwd(mysql_real_data_home,MYF(MY_WME)) && !opt_help)
-  {
-    sql_print_error("failed to set datadir to %s", mysql_real_data_home);
-    unireg_abort(MYSQLD_ABORT_EXIT);        /* purecov: inspected */
-  }
-
 #ifndef _WIN32
   if ((user_info= check_user(mysqld_user)))
   {
@@ -4656,6 +4705,56 @@ int mysqld_main(int argc, char **argv)
       set_user(mysqld_user, user_info);
   }
 #endif // !_WIN32
+
+  /*
+   initiate key migration if any one of the migration specific
+   options are provided.
+  */
+  if (opt_keyring_migration_source ||
+      opt_keyring_migration_destination ||
+      migrate_connect_options)
+  {
+    Migrate_keyring mk;
+    if (mk.init(remaining_argc, remaining_argv,
+                opt_keyring_migration_source,
+                opt_keyring_migration_destination,
+                opt_keyring_migration_user,
+                opt_keyring_migration_host,
+                opt_keyring_migration_password,
+                opt_keyring_migration_socket,
+                opt_keyring_migration_port))
+    {
+      sql_print_error(ER_DEFAULT(ER_KEYRING_MIGRATION_STATUS),
+                      "failed");
+      log_error_dest= "stderr";
+      flush_error_log_messages();
+      unireg_abort(MYSQLD_ABORT_EXIT);
+    }
+
+    if (mk.execute())
+    {
+      sql_print_error(ER_DEFAULT(ER_KEYRING_MIGRATION_STATUS),
+                      "failed");
+      log_error_dest= "stderr";
+      flush_error_log_messages();
+      unireg_abort(MYSQLD_ABORT_EXIT);
+    }
+
+    sql_print_information(ER_DEFAULT(ER_KEYRING_MIGRATION_STATUS),
+                          "successful");
+    log_error_dest= "stderr";
+    flush_error_log_messages();
+    unireg_abort(MYSQLD_SUCCESS_EXIT);
+  }
+
+  /*
+   We have enough space for fiddling with the argv, continue
+  */
+  if (my_setwd(mysql_real_data_home,MYF(MY_WME)) && !opt_help)
+  {
+    sql_print_error("failed to set datadir to %s", mysql_real_data_home);
+    unireg_abort(MYSQLD_ABORT_EXIT);        /* purecov: inspected */
+  }
 
   //If the binlog is enabled, one needs to provide a server-id
   if (opt_bin_log && !(server_id_supplied) )
@@ -4878,6 +4977,8 @@ int mysqld_main(int argc, char **argv)
       grant_init(opt_noacl))
   {
     abort_loop= true;
+    sql_print_error("Fatal error: Failed to initialize ACL/grant/time zones "
+                    "structures or failed to remove temporary table files.");
 
     delete_pid_file(MYF(MY_WME));
 
@@ -5010,8 +5111,7 @@ int mysqld_main(int argc, char **argv)
       sql_print_information(
               "Executing 'SELECT * FROM INFORMATION_SCHEMA.TABLES;' "
               "to get a list of tables using the deprecated partition "
-              "engine. You may use the startup option "
-              "'--disable-partition-engine-check' to skip this check. ");
+              "engine.");
 
       sql_print_information("Beginning of list of non-natively partitioned tables");
       (void) bootstrap_single_query(
@@ -5568,8 +5668,39 @@ struct my_option my_long_early_options[]=
   {"disable-partition-engine-check", 0,
    "Skip the check for non-natively partitioned tables during bootstrap. "
    "This option is deprecated along with the partition engine.",
-   &opt_disable_partition_check, &opt_disable_partition_check, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
-   0, 0},
+   &opt_disable_partition_check, &opt_disable_partition_check, 0, GET_BOOL,
+   NO_ARG, TRUE, 0, 0, 0, 0, 0},
+  {"keyring-migration-source", OPT_KEYRING_MIGRATION_SOURCE,
+   "Keyring plugin from where the keys needs to "
+   "be migrated to. This option must be specified along with "
+   "--keyring-migration-destination.",
+   &opt_keyring_migration_source, &opt_keyring_migration_source,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"keyring-migration-destination", OPT_KEYRING_MIGRATION_DESTINATION,
+   "Keyring plugin to which the keys are "
+   "migrated to. This option must be specified along with "
+   "--keyring-migration-source.",
+   &opt_keyring_migration_destination, &opt_keyring_migration_destination,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"keyring-migration-user", OPT_KEYRING_MIGRATION_USER,
+   "User to login to server.",
+   &opt_keyring_migration_user, &opt_keyring_migration_user,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"keyring-migration-host", OPT_KEYRING_MIGRATION_HOST, "Connect to host.",
+   &opt_keyring_migration_host, &opt_keyring_migration_host,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"keyring-migration-password", OPT_KEYRING_MIGRATION_PASSWORD,
+   "Password to use when connecting to server during keyring migration. "
+   "If password value is not specified then it will be asked from the tty.",
+   0, 0, 0, GET_PASSWORD, OPT_ARG, 0, 0, 0, 0, 0, 0},
+  {"keyring-migration-socket", OPT_KEYRING_MIGRATION_SOCKET,
+   "The socket file to use for connection.",
+   &opt_keyring_migration_socket, &opt_keyring_migration_socket,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"keyring-migration-port", OPT_KEYRING_MIGRATION_PORT,
+   "Port number to use for connection.",
+   &opt_keyring_migration_port, &opt_keyring_migration_port,
+   0, GET_ULONG, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0 }
 };
 
@@ -5740,8 +5871,9 @@ struct my_option my_long_options[]=
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"log-tc-size", 0, "Size of transaction coordinator log.",
    &opt_tc_log_size, &opt_tc_log_size, 0, GET_ULONG,
-   REQUIRED_ARG, TC_LOG_MIN_SIZE, TC_LOG_MIN_SIZE, ULONG_MAX, 0,
-   TC_LOG_PAGE_SIZE, 0},
+   REQUIRED_ARG, TC_LOG_MIN_PAGES * my_getpagesize(),
+   TC_LOG_MIN_PAGES * my_getpagesize(), ULONG_MAX, 0,
+   my_getpagesize(), 0},
   {"master-info-file", 0,
    "The location and name of the file that remembers the master and where "
    "the I/O replication thread is in the master's binlogs.",
@@ -5898,12 +6030,12 @@ struct my_option my_long_options[]=
 #endif
    &use_temp_pool, &use_temp_pool, 0, GET_BOOL, NO_ARG, 1,
    0, 0, 0, 0, 0},
-  {"transaction-isolation", 0,
+  {"transaction-isolation", OPT_TRANSACTION_ISOLATION,
    "Default transaction isolation level.",
    &global_system_variables.tx_isolation,
    &global_system_variables.tx_isolation, &tx_isolation_typelib,
    GET_ENUM, REQUIRED_ARG, ISO_REPEATABLE_READ, 0, 0, 0, 0, 0},
-  {"transaction-read-only", 0,
+  {"transaction-read-only", OPT_TRANSACTION_READ_ONLY,
    "Default transaction access mode. "
    "True if transactions are read-only.",
    &global_system_variables.tx_read_only,
@@ -6450,10 +6582,11 @@ static int show_ssl_ctx_get_session_cache_mode(THD *thd, SHOW_VAR *var, char *bu
  */
 static int show_ssl_get_version(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_CHAR;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
     var->value=
-      const_cast<char*>(SSL_get_version(thd->get_protocol()->get_ssl()));
+      const_cast<char*>(SSL_get_version(ssl));
   else
     var->value= (char *)"";
   return 0;
@@ -6461,11 +6594,12 @@ static int show_ssl_get_version(THD *thd, SHOW_VAR *var, char *buff)
 
 static int show_ssl_session_reused(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_LONG;
   var->value= buff;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
     *((long *)buff)=
-        (long)SSL_session_reused(thd->get_protocol()->get_ssl());
+        (long)SSL_session_reused(ssl);
   else
     *((long *)buff)= 0;
   return 0;
@@ -6473,11 +6607,12 @@ static int show_ssl_session_reused(THD *thd, SHOW_VAR *var, char *buff)
 
 static int show_ssl_get_default_timeout(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_LONG;
   var->value= buff;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
     *((long *)buff)=
-      (long)SSL_get_default_timeout(thd->get_protocol()->get_ssl());
+      (long)SSL_get_default_timeout(ssl);
   else
     *((long *)buff)= 0;
   return 0;
@@ -6485,11 +6620,12 @@ static int show_ssl_get_default_timeout(THD *thd, SHOW_VAR *var, char *buff)
 
 static int show_ssl_get_verify_mode(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_LONG;
   var->value= buff;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
     *((long *)buff)=
-      (long)SSL_get_verify_mode(thd->get_protocol()->get_ssl());
+      (long)SSL_get_verify_mode(ssl);
   else
     *((long *)buff)= 0;
   return 0;
@@ -6497,11 +6633,12 @@ static int show_ssl_get_verify_mode(THD *thd, SHOW_VAR *var, char *buff)
 
 static int show_ssl_get_verify_depth(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_LONG;
   var->value= buff;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
     *((long *)buff)=
-        (long)SSL_get_verify_depth(thd->get_protocol()->get_ssl());
+        (long)SSL_get_verify_depth(ssl);
   else
     *((long *)buff)= 0;
   return 0;
@@ -6509,10 +6646,11 @@ static int show_ssl_get_verify_depth(THD *thd, SHOW_VAR *var, char *buff)
 
 static int show_ssl_get_cipher(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_CHAR;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
     var->value=
-      const_cast<char*>(SSL_get_cipher(thd->get_protocol()->get_ssl()));
+      const_cast<char*>(SSL_get_cipher(ssl));
   else
     var->value= (char *)"";
   return 0;
@@ -6520,14 +6658,15 @@ static int show_ssl_get_cipher(THD *thd, SHOW_VAR *var, char *buff)
 
 static int show_ssl_get_cipher_list(THD *thd, SHOW_VAR *var, char *buff)
 {
+  SSL_handle ssl = thd->get_ssl();
   var->type= SHOW_CHAR;
   var->value= buff;
-  if (thd->get_protocol()->get_ssl())
+  if (ssl)
   {
     int i;
     const char *p;
     char *end= buff + SHOW_VAR_FUNC_BUFF_SIZE;
-    for (i=0; (p= SSL_get_cipher_list(thd->get_protocol()->get_ssl(),i)) &&
+    for (i=0; (p= SSL_get_cipher_list(ssl,i)) &&
                buff < end; i++)
     {
       buff= my_stpnmov(buff, p, end-buff-1);
@@ -7158,7 +7297,8 @@ mysqld_get_one_option(int optid,
     break;
   case 'a':
     global_system_variables.sql_mode= MODE_ANSI;
-    global_system_variables.tx_isolation= ISO_SERIALIZABLE;
+    global_system_variables.tx_isolation=
+           global_system_variables.transaction_isolation= ISO_SERIALIZABLE;
     break;
   case 'b':
     strmake(mysql_home,argument,sizeof(mysql_home)-1);
@@ -7558,6 +7698,26 @@ pfs_error:
   case OPT_SHOW_OLD_TEMPORALS:
     push_deprecated_warn_no_replacement(NULL, "show_old_temporals");
     break;
+  case OPT_KEYRING_MIGRATION_PASSWORD:
+    if (argument)
+    {
+      char *start= argument;
+      opt_keyring_migration_password= my_strdup(PSI_NOT_INSTRUMENTED,
+        argument, MYF(MY_FAE));
+      while (*argument) *argument++= 'x';
+      if (*start)
+       start[1]= 0;
+    }
+    else
+      opt_keyring_migration_password= get_tty_password(NullS);
+    migrate_connect_options= 1;
+    break;
+  case OPT_KEYRING_MIGRATION_USER:
+  case OPT_KEYRING_MIGRATION_HOST:
+  case OPT_KEYRING_MIGRATION_SOCKET:
+  case OPT_KEYRING_MIGRATION_PORT:
+    migrate_connect_options= 1;
+    break;
   case OPT_ENFORCE_GTID_CONSISTENCY:
   {
     const char *wrong_value=
@@ -7566,7 +7726,25 @@ pfs_error:
       sql_print_warning("option 'enforce-gtid-consistency': value '%s' "
                         "was not recognized. Setting enforce-gtid-consistency "
                         "to OFF.", wrong_value);
+    break;
   }
+  case OPT_TRANSACTION_READ_ONLY:
+    global_system_variables.transaction_read_only=
+                            global_system_variables.tx_read_only;
+    break;
+  case OPT_TRANSACTION_ISOLATION:
+    global_system_variables.transaction_isolation=
+                            global_system_variables.tx_isolation;
+    break;
+  case OPT_NAMED_PIPE_FULL_ACCESS_GROUP:
+#if defined(_WIN32)  && !defined(EMBEDDED_LIBRARY)
+    if (!is_valid_named_pipe_full_access_group(argument))
+    {
+      sql_print_error("Invalid value for named_pipe_full_access_group.");
+      return 1;
+    }
+#endif /* _WIN32 && !EMBEDDED_LIBRARY */
+    break;
   }
   return 0;
 }
@@ -8313,6 +8491,41 @@ static int test_if_case_insensitive(const char *dir_name)
 static void create_pid_file()
 {
   File file;
+  bool check_parent_path= 1, is_path_accessible= 1;
+  char pid_filepath[FN_REFLEN], *pos= NULL;
+  /* Copy pid file name to get pid file path */
+  strcpy(pid_filepath, pidfile_name);
+
+  /* Iterate through the entire path to check if even one of the sub-dirs
+     is world-writable */
+  while (check_parent_path && (pos= strrchr(pid_filepath, FN_LIBCHAR))
+         && (pos != pid_filepath)) /* shouldn't check root */
+  {
+    *pos= '\0';  /* Trim the inner-most dir */
+    switch (is_file_or_dir_world_writable(pid_filepath))
+    {
+      case -2:
+        is_path_accessible= 0;
+        break;
+      case -1:
+        sql_print_error("Can't start server: can't check PID filepath: %s",
+                        strerror(errno));
+        exit(MYSQLD_ABORT_EXIT);
+      case 1:
+        sql_print_warning("Insecure configuration for --pid-file: Location "
+                          "'%s' in the path is accessible to all OS users. "
+                          "Consider choosing a different directory.",
+                          pid_filepath);
+        check_parent_path= 0;
+        break;
+      case 0:
+        continue; /* Keep checking the parent dir */
+    }
+  }
+  if (!is_path_accessible)
+  {
+    sql_print_warning("Few location(s) are inaccessible while checking PID filepath.");
+  }
   if ((file= mysql_file_create(key_file_pid, pidfile_name, 0664,
                                O_WRONLY | O_TRUNC, MYF(MY_WME))) >= 0)
   {
@@ -8481,6 +8694,7 @@ PSI_mutex_key
   key_LOCK_server_started, key_LOCK_status,
   key_LOCK_sql_slave_skip_counter,
   key_LOCK_slave_net_timeout,
+  key_LOCK_slave_trans_dep_tracker,
   key_LOCK_system_variables_hash, key_LOCK_table_share, key_LOCK_thd_data,
   key_LOCK_thd_sysvar,
   key_LOCK_user_conn, key_LOCK_uuid_generator, key_LOG_LOCK_log,
@@ -8495,7 +8709,8 @@ PSI_mutex_key
   key_structure_guard_mutex, key_TABLE_SHARE_LOCK_ha_data,
   key_LOCK_error_messages,
   key_LOCK_log_throttle_qni, key_LOCK_query_plan, key_LOCK_thd_query,
-  key_LOCK_cost_const, key_LOCK_current_cond;
+  key_LOCK_cost_const, key_LOCK_current_cond,
+  key_LOCK_keyring_operations;
 PSI_mutex_key key_RELAYLOG_LOCK_commit;
 PSI_mutex_key key_RELAYLOG_LOCK_commit_queue;
 PSI_mutex_key key_RELAYLOG_LOCK_done;
@@ -8514,7 +8729,6 @@ PSI_mutex_key key_mts_gaq_LOCK;
 PSI_mutex_key key_thd_timer_mutex;
 PSI_mutex_key key_LOCK_offline_mode;
 PSI_mutex_key key_LOCK_default_password_lifetime;
-PSI_mutex_key key_LOCK_group_replication_handler;
 
 #ifdef HAVE_REPLICATION
 PSI_mutex_key key_commit_order_manager_mutex;
@@ -8561,7 +8775,9 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_prepared_stmt_count, "LOCK_prepared_stmt_count", PSI_FLAG_GLOBAL},
   { &key_LOCK_sql_slave_skip_counter, "LOCK_sql_slave_skip_counter", PSI_FLAG_GLOBAL},
   { &key_LOCK_slave_net_timeout, "LOCK_slave_net_timeout", PSI_FLAG_GLOBAL},
+  { &key_LOCK_slave_trans_dep_tracker, "LOCK_slave_trans_dep_tracker", PSI_FLAG_GLOBAL},
   { &key_LOCK_server_started, "LOCK_server_started", PSI_FLAG_GLOBAL},
+  { &key_LOCK_keyring_operations, "LOCK_keyring_operations", PSI_FLAG_GLOBAL},
 #if !defined(EMBEDDED_LIBRARY) && !defined(_WIN32)
   { &key_LOCK_socket_listener_active, "LOCK_socket_listener_active", PSI_FLAG_GLOBAL},
   { &key_LOCK_start_signal_handler, "LOCK_start_signal_handler", PSI_FLAG_GLOBAL},
@@ -8597,7 +8813,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_gtid_ensure_index_mutex, "Gtid_state", PSI_FLAG_GLOBAL},
   { &key_LOCK_query_plan, "THD::LOCK_query_plan", PSI_FLAG_VOLATILITY_SESSION},
   { &key_LOCK_cost_const, "Cost_constant_cache::LOCK_cost_const",
-    PSI_FLAG_GLOBAL},  
+    PSI_FLAG_GLOBAL},
   { &key_LOCK_current_cond, "THD::LOCK_current_cond", PSI_FLAG_VOLATILITY_SESSION},
   { &key_mts_temp_table_LOCK, "key_mts_temp_table_LOCK", 0},
   { &key_LOCK_reset_gtid_table, "LOCK_reset_gtid_table", PSI_FLAG_GLOBAL},
@@ -8609,8 +8825,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_mutex_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0},
 #endif
   { &key_LOCK_offline_mode, "LOCK_offline_mode", PSI_FLAG_GLOBAL},
-  { &key_LOCK_default_password_lifetime, "LOCK_default_password_lifetime", PSI_FLAG_GLOBAL},
-  { &key_LOCK_group_replication_handler, "LOCK_group_replication_handler", PSI_FLAG_GLOBAL}
+  { &key_LOCK_default_password_lifetime, "LOCK_default_password_lifetime", PSI_FLAG_GLOBAL}
 };
 
 PSI_rwlock_key key_rwlock_LOCK_grant, key_rwlock_LOCK_logger,
@@ -8645,7 +8860,10 @@ static PSI_rwlock_info all_server_rwlocks[]=
   { &key_rwlock_channel_lock, "channel_lock", 0},
   { &key_rwlock_Trans_delegate_lock, "Trans_delegate::lock", PSI_FLAG_GLOBAL},
   { &key_rwlock_Server_state_delegate_lock, "Server_state_delegate::lock", PSI_FLAG_GLOBAL},
-  { &key_rwlock_Binlog_storage_delegate_lock, "Binlog_storage_delegate::lock", PSI_FLAG_GLOBAL}
+  { &key_rwlock_Binlog_storage_delegate_lock, "Binlog_storage_delegate::lock", PSI_FLAG_GLOBAL},
+#if defined(_WIN32) && !defined(EMBEDDED_LIBRARY)
+  { &key_rwlock_LOCK_named_pipe_full_access_group, "LOCK_named_pipe_full_access_group", PSI_FLAG_GLOBAL},
+#endif /* _WIN32 && !EMBEDDED_LIBRARY */
 };
 
 PSI_cond_key key_PAGE_cond, key_COND_active, key_COND_pool;
@@ -9395,4 +9613,18 @@ void init_server_psi_keys(void)
 }
 
 #endif /* HAVE_PSI_INTERFACE */
+
+#if defined(_WIN32) && !defined(EMBEDDED_LIBRARY)
+// update_named_pipe_full_access_group returns false on success, true on failure
+bool update_named_pipe_full_access_group(const char *new_group_name)
+{
+  if (named_pipe_acceptor) {
+    return named_pipe_listener->update_named_pipe_full_access_group(
+      new_group_name);
+  }
+  return true;
+}
+
+#endif  /* _WIN32 && !EMBEDDED_LIBRARY */
+
 

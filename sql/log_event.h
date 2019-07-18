@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2071,7 +2071,9 @@ public:
     : binary_log::XA_prepare_event(buf, description_event),
       Xid_apply_log_event(buf, description_event, header(), footer())
   {
-    is_valid_param= true;
+    is_valid_param= !(my_xid.formatID == -1 &&
+                      my_xid.gtrid_length == 0 &&
+                      my_xid.bqual_length == 0);
     xid= NULL;
   }
   Log_event_type get_type_code() { return binary_log::XA_PREPARE_LOG_EVENT; }
@@ -4438,11 +4440,17 @@ public:
   char* get_view_id() { return view_id; }
 
   /**
-    Sets the certification info
+     Sets the certification info in the event
 
-    @param db the database
-  */
-  void set_certification_info(std::map<std::string, std::string> *info);
+     @note size is calculated on this method as the size of the data
+     might render the log even invalid. Also due to its size doing it
+     here avoid looping over the data multiple times.
+
+     @param[in] info    certification info to be written
+     @param[out] event_size  the event size after this operation
+   */
+  void set_certification_info(std::map<std::string, std::string> *info,
+                              size_t *event_size);
 
   /**
     Returns the certification info

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -70,6 +70,7 @@ static my_bool ex_status_printed = 0; /* First output is not relative. */
 static uint ex_var_count, max_var_length, max_val_length;
 
 #include <sslopt-vars.h>
+#include <caching_sha2_passwordopt-vars.h>
 
 static void print_version(void);
 static void usage(void);
@@ -210,6 +211,7 @@ static struct my_option my_long_options[] =
    &interval, &interval, 0, GET_INT, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
 #include <sslopt-longopts.h>
+#include <caching_sha2_passwordopt-longopts.h>
   {"user", 'u', "User for login if not current user.", &user,
    &user, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"verbose", 'v', "Write more information.", &opt_verbose,
@@ -415,6 +417,9 @@ int main(int argc,char *argv[])
     TRUE : FALSE;
   mysql_options(&mysql, MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS,
                 &can_handle_passwords);
+
+  set_server_public_key(&mysql);
+  set_get_server_public_key_option(&mysql);
 
   if (sql_connect(&mysql, option_wait))
   {
@@ -1092,12 +1097,14 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
 
       /* Warn about password being set in non ssl connection */
 #if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
-      uint ssl_mode;
-      if (!mysql_get_option(mysql, MYSQL_OPT_SSL_MODE, &ssl_mode) &&
-          ssl_mode <= SSL_MODE_PREFERRED)
       {
-        fprintf(stderr, "Warning: Since password will be sent to server in "
-                "plain text, use ssl connection to ensure password safety.\n");
+        uint ssl_mode= 0;
+        if (!mysql_get_option(mysql, MYSQL_OPT_SSL_MODE, &ssl_mode) &&
+            ssl_mode <= SSL_MODE_PREFERRED)
+        {
+          fprintf(stderr, "Warning: Since password will be sent to server in "
+                  "plain text, use ssl connection to ensure password safety.\n");
+        }
       }
 #endif
       memset(buff, 0, sizeof(buff));
@@ -1552,7 +1559,7 @@ static my_bool get_pidfile(MYSQL *mysql, char *pidfile)
 {
   MYSQL_RES* result;
 
-  if (mysql_query(mysql, "SHOW VARIABLES LIKE 'pid_file'"))
+  if (mysql_query(mysql, "SELECT @@datadir, @@pid_file"))
   {
     my_printf_error(mysql_errno(mysql),
                     "The query to get the server's pid file failed,"
@@ -1563,8 +1570,13 @@ static my_bool get_pidfile(MYSQL *mysql, char *pidfile)
   if (result)
   {
     MYSQL_ROW row=mysql_fetch_row(result);
-    if (row)
-      my_stpcpy(pidfile, row[1]);
+    if (row) {
+      char datadir[FN_REFLEN];
+      char pidfile_option[FN_REFLEN];
+      my_stpcpy(datadir, row[0]);
+      my_stpcpy(pidfile_option, row[1]);
+      (void) my_load_path(pidfile, pidfile_option, datadir);
+    }
     mysql_free_result(result);
     return row == 0;				/* Error if row = 0 */
   }
