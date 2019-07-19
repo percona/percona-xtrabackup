@@ -180,7 +180,7 @@ archive_write_ar_header(struct archive_write *a, struct archive_entry *entry)
 	}
 
 	memset(buff, ' ', 60);
-	strncpy(&buff[AR_fmag_offset], "`\n", 2);
+	memcpy(&buff[AR_fmag_offset], "`\n", 2);
 
 	if (strcmp(pathname, "/") == 0 ) {
 		/* Entry is archive symbol table in GNU format */
@@ -189,7 +189,7 @@ archive_write_ar_header(struct archive_write *a, struct archive_entry *entry)
 	}
 	if (strcmp(pathname, "__.SYMDEF") == 0) {
 		/* Entry is archive symbol table in BSD format */
-		strncpy(buff + AR_name_offset, "__.SYMDEF", 9);
+		memcpy(buff + AR_name_offset, "__.SYMDEF", 9);
 		goto stat;
 	}
 	if (strcmp(pathname, "//") == 0) {
@@ -289,7 +289,7 @@ archive_write_ar_header(struct archive_write *a, struct archive_entry *entry)
 			buff[AR_name_offset + strlen(filename)] = ' ';
 		}
 		else {
-			strncpy(buff + AR_name_offset, "#1/", 3);
+			memcpy(buff + AR_name_offset, "#1/", 3);
 			if (format_decimal(strlen(filename),
 			    buff + AR_name_offset + 3,
 			    AR_name_size - 3)) {

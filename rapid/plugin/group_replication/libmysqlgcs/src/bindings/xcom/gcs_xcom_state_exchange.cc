@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -609,10 +609,16 @@ process_member_state(Xcom_member_state *ms_info,
         << m_configuration_id.node << ")."
       )
     );
+    /*
+     * ms_info will leak if we don't delete it here.
+     * If this branch is not taken, m_member_states takes ownership of the
+     * pointer below.
+     */
+    delete ms_info;
     return false;
   }
 
-  m_member_states[p_id]= ms_info;
+  save_member_state(ms_info, p_id);
 
   /*
     The rule of updating the awaited_vector at receiving is simply to
@@ -639,6 +645,17 @@ fill_member_set(std::vector<Gcs_member_identifier *> &in,
                 std::set<Gcs_member_identifier *>&pset)
 {
   std::copy(in.begin(), in.end(), std::inserter(pset, pset.begin()));
+}
+
+void Gcs_xcom_state_exchange::save_member_state(
+    Xcom_member_state *ms_info, const Gcs_member_identifier &p_id) {
+  /* m_member_states[p_id] may already exist. In that case we delete the
+   * existing pointer, otherwise it leaks. */
+  std::map<Gcs_member_identifier, Xcom_member_state *>::iterator
+      member_state_it = m_member_states.find(p_id);
+  bool const state_already_exists = (member_state_it != m_member_states.end());
+  if (state_already_exists) delete member_state_it->second;
+  m_member_states[p_id] = ms_info;
 }
 
 

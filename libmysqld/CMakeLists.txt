@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -27,7 +27,6 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_BINARY_DIR}/libmysqld
   ${CMAKE_BINARY_DIR}/sql
   ${CMAKE_SOURCE_DIR}/regex
-  ${ZLIB_INCLUDE_DIR}
   ${SSL_INCLUDE_DIRS}
   ${SSL_INTERNAL_INCLUDE_DIRS}
   ${CMAKE_SOURCE_DIR}/sql/backup
@@ -111,20 +110,10 @@ SET(SQL_EMBEDDED_SOURCES
 )
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
-ADD_COMPILE_FLAGS(
-  ../sql/debug_sync.cc
-  ../sql/handler.cc
-  ../sql/geometry_rtree.cc
-  ../sql/item_geofunc.cc
-  ../sql/item_geofunc_buffer.cc
-  ../sql/item_geofunc_internal.cc
-  ../sql/item_geofunc_relchecks.cc
-  ../sql/item_geofunc_relchecks_bgwrap.cc
-  ../sql/item_geofunc_setops.cc
-  ../sql/item_json_func.cc
-  ../sql/spatial.cc
-  COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
-)
+INCLUDE_DIRECTORIES(SYSTEM
+  ${BOOST_PATCHES_DIR}
+  ${BOOST_INCLUDE_DIR}
+  )
 
 ADD_COMPILE_FLAGS(
   ../extra/lz4/xxhash.c
@@ -167,6 +156,14 @@ IF(HAVE_NO_UNUSED_TYPEDEFS)
   )
 ENDIF()
 
+# Segfault in boost::geometry code at high optimization levels
+IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
+  STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
+  IF(CMAKEBT MATCHES "^REL")
+    ADD_COMPILE_FLAGS(../sql/item_geofunc_buffer.cc COMPILE_FLAGS "-xO2")
+  ENDIF()
+ENDIF()
+
 # Boost source has misleading indentation
 MY_CHECK_CXX_COMPILER_FLAG("-Wmisleading-indentation"
                            HAVE_MISLEADING_INDENTATION)
@@ -180,6 +177,16 @@ IF(HAVE_MISLEADING_INDENTATION)
     ../sql/item_geofunc_relchecks_bgwrap.cc
     ../sql/item_geofunc_setops.cc    
     COMPILE_FLAGS "-Wno-misleading-indentation")
+ENDIF()
+
+# gcc 7.2.0 complains:
+# boost/geometry/algorithms/detail/expand/indexed.hpp:81
+# *((void*)& box +24) may be used uninitialized
+MY_CHECK_CXX_COMPILER_FLAG("-Wmaybe-uninitialized" HAVE_MAYBE_UNINITIALIZED)
+IF(HAVE_MAYBE_UNINITIALIZED)
+  ADD_COMPILE_FLAGS(
+    ../sql/geometry_rtree.cc
+    COMPILE_FLAGS "-Wno-maybe-uninitialized")
 ENDIF()
 
 # Handle out-of-source build from source package with possibly broken 
@@ -263,27 +270,29 @@ SET(LIBS
 # (with corresponding target ${engine}_embedded)
 SET(EMBEDDED_LIBS)
 FOREACH(LIB ${LIBS})
-  GET_TARGET_PROPERTY(EMBEDDED_LOCATION ${LIB}_embedded LOCATION)
-  IF(EMBEDDED_LOCATION)
+  LIST(FIND KNOWN_CONVENIENCE_LIBRARIES ${LIB}_embedded FOUNDIT)
+  IF(FOUNDIT GREATER -1)
     LIST(APPEND EMBEDDED_LIBS ${LIB}_embedded)
   ELSE()
     LIST(APPEND EMBEDDED_LIBS ${LIB})
   ENDIF()
 ENDFOREACH()
 
-MERGE_LIBRARIES(mysqlserver STATIC ${EMBEDDED_LIBS} 
-  OUTPUT_NAME ${MYSQLSERVER_OUTPUT_NAME} COMPONENT Embedded NOINSTALL 1)
+LIST(REMOVE_DUPLICATES EMBEDDED_LIBS)
+
+MERGE_CONVENIENCE_LIBRARIES(mysqlserver ${EMBEDDED_LIBS} 
+  OUTPUT_NAME ${MYSQLSERVER_OUTPUT_NAME} COMPONENT Embedded SKIP_INSTALL)
 
 IF(MSVC AND NOT DISABLE_SHARED)
-  MERGE_LIBRARIES(libmysqld SHARED ${LIBS} EXPORTS ${CLIENT_API_FUNCTIONS}
-  COMPONENT Embedded NOINSTALL 1)
+  MERGE_LIBRARIES_SHARED(libmysqld ${LIBS} EXPORTS ${CLIENT_API_FUNCTIONS}
+  COMPONENT Embedded SKIP_INSTALL)
 ENDIF()
 
 OPTION(WITH_EMBEDDED_SHARED_LIBRARY
   "Generate shared version of embedded library (in addition to the static one)"
   OFF)
 IF(WITH_EMBEDDED_SHARED_LIBRARY)
-  MERGE_LIBRARIES(libmysqld SHARED
+  MERGE_LIBRARIES_SHARED(libmysqld
     mysqlserver
     EXPORTS ${CLIENT_API_FUNCTIONS}
     OUTPUT_NAME "mysqld"
@@ -294,7 +303,7 @@ IF(WITH_EMBEDDED_SHARED_LIBRARY)
     )
 
   GET_TARGET_PROPERTY(libmysqld_link_flags libmysqld LINK_FLAGS)
-  IF(NOT libmysqld_link_flag)
+  IF(NOT libmysqld_link_flags)
     SET(libmysqld_link_flags)
   ENDIF()
   SET(libmysqld_link_flags

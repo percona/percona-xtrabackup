@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -37,12 +37,9 @@
 
 
 /**
-  Server side initializations and cleanup.
+  Server side initializations.
 */
-int group_replication_init(const char* plugin_name);
-int group_replication_cleanup();
-int group_replication_start();
-int group_replication_stop();
+int group_replication_init();
 
 
 /**
@@ -190,6 +187,13 @@ void global_thd_manager_remove_thd(THD *thd);
   @return the algorithm name
 */
 const char* get_write_set_algorithm_string(unsigned int algorithm);
+
+/**
+  Returns the value of slave_max_allowed_packet.
+
+  @return slave_max_allowed_packet
+*/
+unsigned long get_slave_max_allowed_packet();
 
 #endif	/* GROUP_REPLICATION_PRIV_INCLUDE */
 

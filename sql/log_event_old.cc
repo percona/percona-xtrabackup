@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -104,21 +104,18 @@ Old_rows_log_event::do_apply_event(Old_rows_log_event *ev, const Relay_log_info 
 
     if (open_and_lock_tables(ev_thd, rli->tables_to_lock, 0))
     {
-      uint actual_error= ev_thd->get_stmt_da()->mysql_errno();
-      if (ev_thd->is_slave_error || ev_thd->is_fatal_error)
+      if (ev_thd->is_error())
       {
         /*
           Error reporting borrowed from Query_log_event with many excessive
           simplifications (we don't honour --slave-skip-errors)
         */
-        rli->report(ERROR_LEVEL, actual_error,
+        rli->report(ERROR_LEVEL, ev_thd->get_stmt_da()->mysql_errno(),
                     "Error '%s' on opening tables",
-                    (actual_error ? ev_thd->get_stmt_da()->message_text() :
-                     "unexpected success or fatal error"));
+                    ev_thd->get_stmt_da()->message_text());
         ev_thd->is_slave_error= 1;
       }
-      const_cast<Relay_log_info*>(rli)->slave_close_thread_tables(thd);
-      DBUG_RETURN(actual_error);
+      DBUG_RETURN(1);
     }
 
     /*
@@ -1377,6 +1374,13 @@ Old_rows_log_event(const char *buf, uint event_len, Log_event_type event_type,
   DBUG_PRINT("debug", ("Reading from %p", ptr_after_width));
   m_width = net_field_length(&ptr_after_width);
   DBUG_PRINT("debug", ("m_width=%lu", m_width));
+  /* Avoid reading out of buffer */
+  if (m_width + (ptr_after_width - (const uchar *)buf) > event_len)
+  {
+    m_cols.bitmap= NULL;
+    DBUG_VOID_RETURN;
+  }
+
   /* if bitmap_init fails, catched in is_valid() */
   if (likely(!bitmap_init(&m_cols,
                           m_width <= sizeof(m_bitbuf)*8 ? m_bitbuf : NULL,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -268,9 +268,8 @@ int group_replication_trans_before_commit(Trans_param *param)
     lock below.
   */
   Replication_thread_api channel_interface;
-  if (channel_interface.is_own_event_applier(param->thread_id,
-                                             "group_replication_applier"))
-  {
+  if (GR_APPLIER_CHANNEL == param->rpl_channel_type) {
+
     // If plugin is stopping, there is no point in update the statistics.
     bool fail_to_lock= shared_plugin_stop_lock->try_grab_read_lock();
     if (!fail_to_lock)
@@ -287,13 +286,19 @@ int group_replication_trans_before_commit(Trans_param *param)
 
     DBUG_RETURN(0);
   }
-  if (channel_interface.is_own_event_applier(param->thread_id,
-                                             "group_replication_recovery"))
-  {
+  if (GR_RECOVERY_CHANNEL == param->rpl_channel_type) {
     DBUG_RETURN(0);
   }
 
   shared_plugin_stop_lock->grab_read_lock();
+
+  if (is_plugin_waiting_to_set_server_read_mode())
+  {
+    log_message(MY_ERROR_LEVEL,
+                "Transaction cannot be executed while Group Replication is stopping.");
+    shared_plugin_stop_lock->release_read_lock();
+    DBUG_RETURN(1);
+  }
 
   /* If the plugin is not running, before commit should return success. */
   if (!plugin_is_group_replication_running())

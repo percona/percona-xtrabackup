@@ -6405,8 +6405,8 @@ xtrabackup_apply_delta(
 {
 	pfs_os_file_t	src_file = XB_FILE_UNDEFINED;
 	pfs_os_file_t	dst_file = XB_FILE_UNDEFINED;
-	char	src_path[FN_REFLEN];
-	char	dst_path[FN_REFLEN];
+	char	src_path[FN_REFLEN * 2 + 2];
+	char	dst_path[FN_REFLEN * 2 + 2];
 	char	meta_path[FN_REFLEN];
 	char	space_name[FN_REFLEN];
 	bool	success;
@@ -9036,9 +9036,12 @@ int main(int argc, char **argv)
 			msg("Error: datadir must be specified.\n");
 			exit(EXIT_FAILURE);
 		}
+		mysql_mutex_init(key_LOCK_keyring_operations,
+				 &LOCK_keyring_operations, MY_MUTEX_INIT_FAST);
 		if (!copy_back(server_argc, server_defaults)) {
 			exit(EXIT_FAILURE);
 		}
+		mysql_mutex_destroy(&LOCK_keyring_operations);
 	}
 
 	if (xtrabackup_decrypt_decompress && !decrypt_decompress()) {

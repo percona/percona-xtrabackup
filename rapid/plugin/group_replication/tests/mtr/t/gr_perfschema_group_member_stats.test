@@ -115,10 +115,20 @@ INSERT INTO t1 VALUES (3);
 INSERT INTO t1 values (4);
 
 #Stop the applier on server 1 so that recovery blocks on server 2
+# View_change_log_event will be written to the binary log after the
+# transactions aaa:1-2, since local transactions can still be
+# logged. Which means that server2 will receive both transactions
+# through recovery, and then through GCS on which will be rollback
+# (discarded after certification),thence the below suppressions.
 STOP SLAVE SQL_THREAD FOR CHANNEL "group_replication_applier";
 
 --connection server2
 --echo server2
+
+SET SESSION sql_log_bin= 0;
+call mtr.add_suppression("The requested GTID 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:1' was already used, the transaction will rollback");
+call mtr.add_suppression("The requested GTID 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:2' was already used, the transaction will rollback");
+SET SESSION sql_log_bin= 1;
 
 --let $group_replication_start_member_state= RECOVERING
 --source include/start_group_replication.inc
@@ -172,8 +182,8 @@ START SLAVE SQL_THREAD FOR CHANNEL "group_replication_applier";
 --source include/assert.inc
 
 --let $certification_db_size= query_get_value(SELECT Count_Transactions_rows_validating from performance_schema.replication_group_member_stats, Count_Transactions_rows_validating, 1)
---let $assert_text= The value of Count_Transactions_rows_validating should be 2 after starting group replication
---let $assert_cond= "$certification_db_size" = 2
+--let $assert_text= The value of Count_Transactions_rows_validating should be 6 after starting group replication
+--let $assert_cond= "$certification_db_size" = 6
 --source include/assert.inc
 
 --let $stable_set= query_get_value(SELECT Transactions_committed_all_members from performance_schema.replication_group_member_stats, Transactions_committed_all_members, 1)
@@ -208,6 +218,8 @@ SET SESSION sql_log_bin= 0;
 SET SESSION sql_log_bin= 1;
 
 --connection server1
+--let $diff_tables=server1:t1, server2:t1
+--source include/diff_tables.inc
 DROP TABLE t1;
 
 --echo ####################################

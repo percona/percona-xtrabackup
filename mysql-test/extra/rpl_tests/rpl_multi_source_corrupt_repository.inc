@@ -126,6 +126,7 @@ if ($rpl_corrupt_channel_name)
 
 --echo ===== STOP SLAVE without 'FOR CHANNEL' clause.
 --let $rpl_channel_name=
+--let $slave_sql_errno= convert_error(ER_SLAVE_RLI_INIT_REPOSITORY)
 --source include/stop_slave.inc
 
 --echo === Assert that all channels IO and SQL threads are in OFF state ===
@@ -293,15 +294,35 @@ while ($i <= $number_of_channels)
 
   --echo ===== Executing SHOW RELAYLOG EVENTS FOR CHANNEL on channel '$channel_name'.
   --let $rpl_channel_name=$channel_name
-  --source include/show_relaylog_events.inc
+  # It doesn't care the result, just make sure the query can be executed successfully
+  --disable_result_log
+  eval SHOW RELAYLOG EVENTS FOR CHANNEL '$channel_name';
+  --enable_result_log
 
   #############################################################################
   # Step 4.4: SHOW SLAVE STATUS FOR CHANNEL 'channel_name'
   #############################################################################
 
   --echo ===== Executing SHOW SLAVE FOR CHANNEL on channel '$channel_name'.
+
   --let $status_items=Slave_IO_State,Slave_SQL_Running_State,Last_IO_Errno,Last_IO_Error,Last_SQL_Errno,Last_SQL_Error,Channel_Name
   --let $rpl_channel_name=$channel_name
+
+  if ($channel_name != $rpl_corrupt_channel_name)
+  {
+  --let $slave_timeout= 60
+
+  --let $slave_param= Slave_IO_State
+  --let $slave_param_value= Waiting for master to send event
+  --source include/wait_for_slave_param.inc
+
+  --let $slave_param= Slave_SQL_Running_State
+  --let $slave_param_value= Slave has read all relay log; waiting for more updates
+  --source include/wait_for_slave_param.inc
+
+  --let $status_items=Last_IO_Errno,Last_IO_Error,Last_SQL_Errno,Last_SQL_Error,Channel_Name
+  }
+
   --source include/show_slave_status.inc
 
   #############################################################################

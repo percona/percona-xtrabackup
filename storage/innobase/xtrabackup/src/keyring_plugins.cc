@@ -65,7 +65,10 @@ init_plugins(int argc, char **argv)
 		strcpy(opt_plugin_dir, PLUGINDIR);
 	}
 
-	plugin_init(&t_argc, t_argv, PLUGIN_INIT_SKIP_PLUGIN_TABLE);
+	plugin_register_early_plugins(&t_argc, t_argv, 0);
+	plugin_register_builtin_and_init_core_se(&t_argc, t_argv);
+	plugin_register_dynamic_and_init_all(&t_argc, t_argv,
+					     PLUGIN_INIT_SKIP_PLUGIN_TABLE);
 
 	delete [] t_argv;
 }

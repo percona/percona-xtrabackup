@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2005, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -3730,21 +3730,27 @@ int
 row_merge_file_create_low(
 	const char*	path)
 {
-	int	fd;
+    int fd;
+    if (path == NULL) {
+      path = innobase_mysql_tmpdir();
+    }
 #ifdef UNIV_PFS_IO
 	/* This temp file open does not go through normal
 	file APIs, add instrumentation to register with
 	performance schema */
 	struct PSI_file_locker*	locker = NULL;
-	PSI_file_locker_state	state;
-	locker = PSI_FILE_CALL(get_thread_file_name_locker)(
-				&state, innodb_temp_file_key.m_value, PSI_FILE_OPEN,
-				"Innodb Merge Temp File", &locker);
-	if (locker != NULL) {
+	Datafile df;
+	df.make_filepath(path, "Innodb Merge Temp File", NO_EXT);
+
+        PSI_file_locker_state	state;
+        locker = PSI_FILE_CALL(get_thread_file_name_locker)(
+            &state, innodb_temp_file_key.m_value, PSI_FILE_OPEN, df.filepath(),
+            &locker);
+        if (locker != NULL) {
 		PSI_FILE_CALL(start_file_open_wait)(locker,
 						__FILE__,
 						__LINE__);
-	}
+        }
 #endif
 	fd = innobase_mysql_tmpfile(path);
 #ifdef UNIV_PFS_IO

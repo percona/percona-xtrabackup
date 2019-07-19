@@ -1148,12 +1148,12 @@ do {									\
 		state, locker, key, op, name,				\
 		src_file, static_cast<uint>(src_line))			\
 
-# define register_pfs_file_rename_end(locker, result)			\
+# define register_pfs_file_rename_end(locker, from, to, result)		\
 do {									\
 	if (locker != NULL) {						\
 		 PSI_FILE_CALL(						\
-			end_file_open_wait)(				\
-			locker, result);				\
+			end_file_rename_wait)(				\
+			locker, from, to, result);			\
 	}								\
 }while(0)
 
@@ -2053,6 +2053,11 @@ os_file_get_status(
 	bool		read_only);
 
 #if !defined(UNIV_HOTBACKUP)
+/** return one of the tmpdir path
+@return tmporary dir*/
+char *innobase_mysql_tmpdir(void);
+
+
 /** Creates a temporary file in the location specified by the parameter
 path. If the path is NULL then it will be created on --tmpdir location.
 This function is defined in ha_innodb.cc.

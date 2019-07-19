@@ -916,7 +916,11 @@ partitions 3
 (partition x1 tablespace ts1,
 partition x2 tablespace ts2,
 partition x3 tablespace ts3);
+Warnings:
+Warning	1681	'InnoDB : A table partition in a shared tablespace' is deprecated and will be removed in a future release.
 CREATE TABLE t2 LIKE t1;
+Warnings:
+Warning	1681	'InnoDB : A table partition in a shared tablespace' is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -953,6 +957,8 @@ partitions 3
 (partition x1 values in (1,2,9,4) tablespace ts1,
 partition x2 values in (3, 11, 5, 7) tablespace ts2,
 partition x3 values in (16, 8, 5+19, 70-43) tablespace ts3);
+Warnings:
+Warning	1681	'InnoDB : A table partition in a shared tablespace' is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -976,6 +982,8 @@ partitions 3
 (partition x1 values in (1,2,9,4) tablespace ts1,
 partition x2 values in (3, 11, 5, 7) tablespace ts2,
 partition x3 values in (16, 8, 5+19, 70-43) tablespace ts3);
+Warnings:
+Warning	1681	'InnoDB : A table partition in a shared tablespace' is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -998,6 +1006,8 @@ partition by list (b*a)
 (partition x1 values in (1) tablespace ts1,
 partition x2 values in (3, 11, 5, 7) tablespace ts2,
 partition x3 values in (16, 8, 5+19, 70-43) tablespace ts3);
+Warnings:
+Warning	1681	'InnoDB : A table partition in a shared tablespace' is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -2132,6 +2142,7 @@ Warning	1287	The partition engine, used by table 'test.t1', is deprecated and wi
 set session sql_mode='no_table_options';
 Warnings:
 Warning	3090	Changing sql mode 'NO_AUTO_CREATE_USER' is deprecated. It will be removed in a future release.
+Warning	3090	Changing sql mode 'NO_TABLE_OPTIONS' is deprecated. It will be removed in a future release.
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -3168,3 +3179,27 @@ Warning	1287	The partition engine, used by table 'test.t1', is deprecated and wi
 SELECT 1 FROM t1 WHERE EXP(10000);
 ERROR 22003: DOUBLE value is out of range in 'exp(10000)'
 DROP TABLE t1;
+#
+# Bug#28573894 ALTER PARTITIONED TABLE ADD AUTO_INCREMENT DIFF RESULT
+#
+CREATE TABLE t (a VARCHAR(10) NOT NULL,b INT,PRIMARY KEY (b)) ENGINE=INNODB
+PARTITION BY RANGE (b)
+(PARTITION pa VALUES LESS THAN (2),
+PARTITION pb VALUES LESS THAN (20),
+PARTITION pc VALUES LESS THAN (30),
+PARTITION pd VALUES LESS THAN (40));
+INSERT INTO t
+VALUES('A',0),('B',1),('C',2),('D',3),('E',4),('F',5),('G',25),('H',35);
+ALTER TABLE t ADD COLUMN r INT UNSIGNED NOT NULL AUTO_INCREMENT, ADD UNIQUE
+KEY (r,b), ALGORITHM=INPLACE, LOCK=SHARED;
+SELECT * FROM t;
+a	b	r
+A	0	1
+B	1	2
+C	2	3
+D	3	4
+E	4	5
+F	5	6
+G	25	7
+H	35	8
+DROP TABLE t;

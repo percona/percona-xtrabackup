@@ -1,7 +1,7 @@
 #ifndef ITEM_INCLUDED
 #define ITEM_INCLUDED
 
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -4311,6 +4311,38 @@ public:
   }
 
   bool fix_fields(THD *, Item **);
+
+  /**
+    Takes into account whether an Item in a derived table / view is part of an
+    inner table of an outer join.
+
+    1) If the field is an outer reference, return OUTER_TABLE_REF_BIT.
+    2) Else
+       2a) If the field is const_for_execution and the field is used in the
+           inner part of an outer join, return the inner tables of the outer
+           join. (A 'const' field that depends on the inner table of an outer
+           join shouldn't be interpreted as const.)
+       2b) Else return the used_tables info of the underlying field.
+
+    @note The call to const_for_execution has been replaced by
+          "!(inner_map & ~INNER_TABLE_BIT)" to avoid multiple and recursive
+          calls to used_tables. This can create a problem when Views are
+          created using other views
+ */
+  table_map used_tables() const
+  {
+    if (depended_from != NULL)
+      return OUTER_REF_TABLE_BIT;
+
+    table_map inner_map= (*ref)->used_tables();
+    return
+      inner_map == 0 && first_inner_table != NULL ?
+        (*ref)->real_item()->type() == FIELD_ITEM ?
+          down_cast<Item_field *>((*ref)->real_item())->table_ref->map() :
+          first_inner_table->map() :
+        inner_map;
+  }
+
   bool eq(const Item *item, bool binary_cmp) const;
   Item *get_tmp_table_item(THD *thd)
   {
@@ -4474,6 +4506,8 @@ public:
 
 class Item_int_with_ref :public Item_int
 {
+private:
+  enum_field_types cached_field_type;
 protected:
   Item *ref;
   type_conversion_status save_in_field_inner(Field *field, bool no_conversions)
@@ -4481,13 +4515,16 @@ protected:
     return ref->save_in_field(field, no_conversions);
   }
 public:
-  Item_int_with_ref(longlong i, Item *ref_arg, my_bool unsigned_arg) :
-    Item_int(i), ref(ref_arg)
+  Item_int_with_ref(enum_field_types field_type_arg,
+                    longlong i, Item *ref_arg, my_bool unsigned_arg) :
+    Item_int(i), cached_field_type(field_type_arg), ref(ref_arg)
+
   {
     unsigned_flag= unsigned_arg;
   }
   Item *clone_item();
   virtual Item *real_item() { return ref; }
+  enum_field_types field_type() const { return cached_field_type; }
 };
 
 
@@ -4496,18 +4533,14 @@ public:
 */
 class Item_temporal_with_ref :public Item_int_with_ref
 {
-private:
-  enum_field_types cached_field_type;
 public:
   Item_temporal_with_ref(enum_field_types field_type_arg,
                          uint8 decimals_arg, longlong i, Item *ref_arg,
                          bool unsigned_flag):
-    Item_int_with_ref(i, ref_arg, unsigned_flag),
-    cached_field_type(field_type_arg)
+    Item_int_with_ref(field_type_arg, i, ref_arg, unsigned_flag)
   {
     decimals= decimals_arg;
   }
-  enum_field_types field_type() const { return cached_field_type; }
   void print(String *str, enum_query_type query_type);
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate)
   {
@@ -5009,6 +5042,7 @@ public:
     return super::itemize(pc, res) || arg->itemize(pc, &arg);
   }
 
+  enum Type type() const { return INSERT_VALUE_ITEM; }
   bool eq(const Item *item, bool binary_cmp) const;
   bool fix_fields(THD *, Item **);
   virtual void print(String *str, enum_query_type query_type);
@@ -5560,7 +5594,7 @@ public:
     return true;
   }
   bool join_types(THD *thd, Item *);
-  Field *make_field_by_type(TABLE *table);
+  Field *make_field_by_type(TABLE *table, bool strict);
   static uint32 display_length(Item *item);
   static enum_field_types get_real_type(Item *);
   Field::geometry_type get_geometry_type() const { return geometry_type; };

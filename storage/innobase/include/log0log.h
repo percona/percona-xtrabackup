@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1995, 2018, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2009, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -66,6 +66,8 @@ typedef ulint (*log_checksum_func_t)(const byte* log_block);
 /** Pointer to the log checksum calculation function. Protected with
 log_sys->mutex. */
 extern log_checksum_func_t log_checksum_algorithm_ptr;
+
+static const char ib_logfile_basename[] = "ib_logfile";
 
 #define IB_ARCHIVED_LOGS_PREFIX		"ib_log_archive_"
 #define IB_ARCHIVED_LOGS_PREFIX_LEN	(sizeof(IB_ARCHIVED_LOGS_PREFIX) - 1)

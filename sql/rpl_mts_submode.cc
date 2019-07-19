@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -656,6 +656,14 @@ Mts_submode_logical_clock::schedule_next_event(Relay_log_info* rli,
       */
       if (wait_for_last_committed_trx(rli, last_committed, lwm_estimate))
       {
+        /*
+          MTS was waiting for a dependent transaction to finish but either it
+          has failed or the applier was requested to stop. In any case, this
+          transaction wasn't started yet and should not warn about the
+          coordinator stopping in a middle of a transaction to avoid polluting
+          the server error log.
+        */
+        rli->reported_unsafe_warning= true;
         DBUG_RETURN(-1);
       }
       /*
@@ -971,6 +979,17 @@ Mts_submode_logical_clock::
     if (mts_checkpoint_routine(rli, 0, true, true /*need_data_lock=true*/))
       DBUG_RETURN(-1);
   }
+
+  // Check if there is a failure on a not-ignored Worker
+  for (Slave_worker **it= rli->workers.begin(); it != rli->workers.end();
+      ++it)
+  {
+    Slave_worker *w_i= *it;
+    if (w_i->running_status != Slave_worker::RUNNING)
+      DBUG_RETURN(-1);
+
+  }
+
   DBUG_EXECUTE_IF("wait_for_workers_to_finish_after_wait",
                   {
                     const char act[]= "now WAIT_FOR coordinator_continue";

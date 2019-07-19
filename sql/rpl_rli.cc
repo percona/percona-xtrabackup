@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #include "my_dir.h"                // MY_STAT
 #include "log.h"                   // sql_print_error
 #include "log_event.h"             // Log_event
+#include "m_string.h"
 #include "rpl_group_replication.h" // set_group_replication_retrieved_certifi...
 #include "rpl_info_factory.h"      // Rpl_info_factory
 #include "rpl_mi.h"                // Master_info
@@ -29,6 +30,7 @@
 #include "debug_sync.h"
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
+#include "mutex_lock.h"            // Mutex_lock
 
 #include <algorithm>
 using std::min;
@@ -270,15 +272,18 @@ void Relay_log_info::reset_notified_relay_log_change()
 
     New seconds_behind_master timestamp is installed.
 
-   @param shift          number of bits to shift by Worker due to the
-                         current checkpoint change.
-   @param new_ts         new seconds_behind_master timestamp value
-                         unless zero. Zero could be due to FD event
-                         or fake rotate event.
-   @param need_data_lock False if caller has locked @c data_lock
+   @param shift            number of bits to shift by Worker due to the
+                           current checkpoint change.
+   @param new_ts           new seconds_behind_master timestamp value
+                           unless zero. Zero could be due to FD event
+                           or fake rotate event.
+   @param need_data_lock   False if caller has locked @c data_lock
+   @param update_timestamp if true, this function will update the
+                           rli->last_master_timestamp.
 */
 void Relay_log_info::reset_notified_checkpoint(ulong shift, time_t new_ts,
-                                               bool need_data_lock)
+                                               bool need_data_lock,
+                                               bool update_timestamp)
 {
   /*
     If this is not a parallel execution we return immediately.
@@ -324,7 +329,7 @@ void Relay_log_info::reset_notified_checkpoint(ulong shift, time_t new_ts,
   DBUG_PRINT("mts", ("reset_notified_checkpoint shift --> %lu, "
              "checkpoint_seqno --> %u.", shift, checkpoint_seqno));
 
-  if (new_ts)
+  if (update_timestamp)
   {
     if (need_data_lock)
       mysql_mutex_lock(&data_lock);
@@ -395,6 +400,7 @@ static inline int add_relay_log(Relay_log_info* rli,LOG_INFO* linfo)
 {
   MY_STAT s;
   DBUG_ENTER("add_relay_log");
+  mysql_mutex_assert_owner(&rli->log_space_lock);
   if (!mysql_file_stat(key_file_relaylog,
                        linfo->log_file_name, &s, MYF(0)))
   {
@@ -414,6 +420,7 @@ int Relay_log_info::count_relay_log_space()
 {
   LOG_INFO flinfo;
   DBUG_ENTER("Relay_log_info::count_relay_log_space");
+  Mutex_lock lock(&log_space_lock);
   log_space_total= 0;
   if (relay_log.find_log_pos(&flinfo, NullS, 1))
   {
@@ -688,7 +695,8 @@ void Relay_log_info::fill_coord_err_buf(loglevel level, int err_code,
   if(level == ERROR_LEVEL)
   {
     m_last_error.number = err_code;
-    strncpy(m_last_error.message, buff_coord, MAX_SLAVE_ERRMSG);
+    my_snprintf(m_last_error.message, sizeof(m_last_error.message), "%.*s",
+                MAX_SLAVE_ERRMSG - 1, buff_coord);
     m_last_error.update_timestamp();
   }
 
@@ -735,7 +743,7 @@ int Relay_log_info::wait_for_pos(THD* thd, String* log_name,
 
   DEBUG_SYNC(thd, "begin_master_pos_wait");
 
-  set_timespec_nsec(&abstime, (ulonglong)timeout * 1000000000ULL);
+  set_timespec_nsec(&abstime, static_cast<ulonglong>(timeout * 1000000000ULL));
   mysql_mutex_lock(&data_lock);
   thd->ENTER_COND(&data_cond, &data_lock,
                   &stage_waiting_for_the_slave_thread_to_advance_position,
@@ -956,7 +964,7 @@ int Relay_log_info::wait_for_gtid_set(THD* thd, const Gtid_set* wait_gtid_set,
 
   DEBUG_SYNC(thd, "begin_wait_for_gtid_set");
 
-  set_timespec_nsec(&abstime, (ulonglong) timeout * 1000000000ULL);
+  set_timespec_nsec(&abstime, static_cast<ulonglong>(timeout * 1000000000ULL));
 
   mysql_mutex_lock(&data_lock);
   thd->ENTER_COND(&data_cond, &data_lock,
@@ -1244,7 +1252,15 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
   if (!inited)
   {
     DBUG_PRINT("info", ("inited == 0"));
-    if (error_on_rli_init_info)
+    if (error_on_rli_init_info ||
+        /*
+          mi->reset means that the channel was reset but still exists. Channel
+          shall have the index and the first relay log file.
+
+          Those files shall be remove in a following RESET SLAVE ALL (even when
+          channel was not inited again).
+        */
+        (mi->reset && delete_only))
     {
       ln_without_channel_name= relay_log.generate_name(opt_relay_logname,
                                                        "-relay-bin", buffer);
@@ -1316,13 +1332,6 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
     cur_log_fd= -1;
   }
 
-  if (relay_log.reset_logs(thd, delete_only))
-  {
-    *errmsg = "Failed during log reset";
-    error=1;
-    goto err;
-  }
-
   /**
     Clear the retrieved gtid set for this channel.
     global_sid_lock->wrlock() is needed.
@@ -1330,6 +1339,13 @@ int Relay_log_info::purge_relay_logs(THD *thd, bool just_reset,
   global_sid_lock->wrlock();
   (const_cast<Gtid_set *>(get_gtid_set()))->clear();
   global_sid_lock->unlock();
+
+  if (relay_log.reset_logs(thd, delete_only))
+  {
+    *errmsg = "Failed during log reset";
+    error=1;
+    goto err;
+  }
 
   /* Save name of used relay log file */
   set_group_relay_log_name(relay_log.get_log_fname());
@@ -1785,9 +1801,19 @@ void Relay_log_info::cleanup_context(THD *thd, bool error)
   }
   if (rows_query_ev)
   {
+    /*
+      In order to avoid invalid memory access, THD::reset_query() should be
+      called before deleting the rows_query event.
+    */
+    info_thd->reset_query();
     delete rows_query_ev;
     rows_query_ev= NULL;
-    info_thd->reset_query();
+    DBUG_EXECUTE_IF("after_deleting_the_rows_query_ev",
+                    {
+                      const char action[]="now SIGNAL deleted_rows_query_ev WAIT_FOR go_ahead";
+                      DBUG_ASSERT(!debug_sync_set_action(info_thd,
+                                                       STRING_WITH_LEN(action)));
+                    };);
   }
   m_table_map.clear_tables();
   slave_close_thread_tables(thd);
@@ -1802,11 +1828,14 @@ void Relay_log_info::cleanup_context(THD *thd, bool error)
     if (!xid_state->has_state(XID_STATE::XA_NOTR))
     {
       DBUG_ASSERT(DBUG_EVALUATE_IF("simulate_commit_failure",1,
-                                   xid_state->has_state(XID_STATE::XA_ACTIVE)));
+                                   xid_state->has_state(XID_STATE::XA_ACTIVE) ||
+                                   xid_state->has_state(XID_STATE::XA_IDLE)
+                                   ));
 
       xa_trans_force_rollback(thd);
       xid_state->reset();
       cleanup_trans_state(thd);
+      thd->rpl_unflag_detached_engine_ha_data();
     }
     thd->mdl_context.release_transactional_locks();
   }
@@ -2400,7 +2429,7 @@ void Relay_log_info::end_info()
   relay_log.close(LOG_CLOSE_INDEX | LOG_CLOSE_STOP_EVENT,
                   true/*need_lock_log=true*/,
                   true/*need_lock_index=true*/);
-  relay_log.harvest_bytes_written(&log_space_total);
+  relay_log.harvest_bytes_written(this, true/*need_log_space_lock=true*/);
   /*
     Delete the slave's temporary tables from memory.
     In the future there will be other actions than this, to ensure persistance
@@ -3011,4 +3040,15 @@ void Relay_log_info::detach_engine_ha_data(THD *thd)
     */
   plugin_foreach(thd, detach_native_trx,
                  MYSQL_STORAGE_ENGINE_PLUGIN, NULL);
+}
+
+void Relay_log_info::reattach_engine_ha_data(THD *thd)
+{
+  is_engine_ha_data_detached = false;
+  /*
+    In case of slave thread applier or processing binlog by client,
+    reattach the engine ha_data ("native" engine transaction)
+    in favor of dynamically created.
+  */
+  plugin_foreach(thd, reattach_native_trx, MYSQL_STORAGE_ENGINE_PLUGIN, NULL);
 }

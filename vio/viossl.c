@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -310,7 +310,9 @@ void vio_ssl_delete(Vio *vio)
   }
 
 #ifndef HAVE_YASSL
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   ERR_remove_thread_state(0);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 #endif
 
   vio_delete(vio);
@@ -374,7 +376,8 @@ static int ssl_handshake_loop(Vio *vio, SSL *ssl,
 }
 
 
-static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
+static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio,
+                  long timeout MY_ATTRIBUTE((unused)),
                   ssl_handshake_func_t func,
                   unsigned long *ssl_errno_holder)
 {
@@ -399,7 +402,6 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
   }
   DBUG_PRINT("info", ("ssl: 0x%lx timeout: %ld", (long) ssl, timeout));
   SSL_clear(ssl);
-  SSL_SESSION_set_timeout(SSL_get_session(ssl), timeout);
   SSL_set_fd(ssl, sd);
 #if !defined(HAVE_YASSL) && defined(SSL_OP_NO_COMPRESSION)
   SSL_set_options(ssl, SSL_OP_NO_COMPRESSION); /* OpenSSL >= 1.0 only */
@@ -419,7 +421,11 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
       for (j = 0; j < n; j++)
       {
         SSL_COMP *c = sk_SSL_COMP_value(ssl_comp_methods, j);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
         DBUG_PRINT("info", ("  %d: %s\n", c->id, c->name));
+#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+        DBUG_PRINT("info", ("  %d: %s\n", SSL_COMP_get_id(c), SSL_COMP_get0_name(c)));
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
       }
   }
 #endif

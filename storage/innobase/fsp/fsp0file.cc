@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -656,7 +656,9 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 			ib::info()
 				<< "Encryption information in"
 				<< " datafile: " << m_filepath
-				<< " can't be decrypted.";
+				<< " can't be decrypted,"
+				<< " please check if a keyring plugin"
+				<< " is loaded and initialized successfully.";
 
 			bool found = false;
 

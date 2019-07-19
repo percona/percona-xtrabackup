@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -493,8 +493,6 @@ void Item_func_sp::fix_after_pullout(SELECT_LEX *parent_select,
             doesn't reference any tables.
   */
   used_tables_cache|= PARAM_TABLE_BIT;
-
-  const_item_cache= used_tables_cache == 0;
 }
 
 
@@ -8369,16 +8367,11 @@ bool Item_func_sp::itemize(Parse_context *pc, Item **res)
   context= lex->current_context();
   lex->safe_to_cache_query= false;
 
-  if (m_name->m_db.str == NULL) // use the default database name
+  if (m_name->m_db.str == NULL)
   {
     /* Cannot match the function since no database is selected */
-    if (thd->db().str == NULL)
-    {
-      my_error(ER_NO_DB_ERROR, MYF(0));
-      return true;
-    }
-    m_name->m_db= thd->db();
-    m_name->m_db.str= thd->strmake(m_name->m_db.str, m_name->m_db.length);
+    my_error(ER_NO_DB_ERROR, MYF(0));
+    return true;
   }
 
   m_name->init_qname(thd);
@@ -8839,8 +8832,6 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
 
   /* These is reset/set by Item_func::fix_fields. */
   with_stored_program= true;
-  if (!m_sp->m_chistics->detistic || !tables_locked_cache)
-    const_item_cache= false;
 
   if (res)
     DBUG_RETURN(res);
@@ -8877,9 +8868,6 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
 void Item_func_sp::update_used_tables()
 {
   Item_func::update_used_tables();
-
-  if (!m_sp->m_chistics->detistic)
-    const_item_cache= false;
 
   /* This is reset by Item_func::update_used_tables(). */
   with_stored_program= true;

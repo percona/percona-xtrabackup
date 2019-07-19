@@ -23,6 +23,9 @@ INCLUDE(libev)
 
 SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 
+# workaround for built-in rapidjson
+MY_ADD_CXX_WARNING_FLAG("Wno-error=deprecated-copy")
+
 FIND_GCRYPT()
 MYSQL_CHECK_CURL()
 FIND_EV()

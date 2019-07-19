@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -624,12 +624,18 @@ end_sj_materialize(JOIN *join, QEP_TAB *qep_tab, bool end_of_records)
     if ((error= table->file->ha_write_row(table->record[0])))
     {
       /* create_ondisk_from_heap will generate error if needed */
-      if (!table->file->is_ignorable_error(error) &&
-          create_ondisk_from_heap(thd, table,
+      if (!table->file->is_ignorable_error(error))
+      {
+        if (create_ondisk_from_heap(thd, table,
                                   sjm->table_param.start_recinfo, 
                                   &sjm->table_param.recinfo, error,
                                   TRUE, NULL))
-        DBUG_RETURN(NESTED_LOOP_ERROR); /* purecov: inspected */
+          DBUG_RETURN(NESTED_LOOP_ERROR); /* purecov: inspected */
+        /* Initialize the index, since create_ondisk_from_heap does
+           not replicate the earlier index initialization */
+        if (table->hash_field)
+          table->file->ha_index_init(0, false);
+      }
     }
   }
   DBUG_RETURN(NESTED_LOOP_OK);
@@ -2130,6 +2136,18 @@ join_read_key_unlock_row(QEP_TAB *tab)
 }
 
 /**
+  Rows from const tables are read once but potentially used
+  multiple times during execution of a query.
+  Ensure such rows are never unlocked during query execution.
+*/
+
+void
+join_const_unlock_row(QEP_TAB *tab)
+{
+  DBUG_ASSERT(tab->type() == JT_CONST);
+}
+
+/**
   Read a table *assumed* to be included in execution of a pushed join.
   This is the counterpart of join_read_key() / join_read_always_key()
   for child tables in a pushed join.
@@ -2401,7 +2419,8 @@ join_init_quick_read_record(QEP_TAB *tab)
                                   HA_POS_ERROR,
                                   false,      // don't force quick range
                                   ORDER::ORDER_NOT_RELEVANT, tab,
-                                  tab->condition(), &needed_reg_dummy, &qck);
+                                  tab->condition(), &needed_reg_dummy, &qck,
+                                  tab->table()->force_index);
   DBUG_ASSERT(old_qck == NULL || old_qck != qck) ;
   tab->set_quick(qck);
 
@@ -2796,6 +2815,7 @@ void QEP_TAB::pick_table_access_method(const JOIN_TAB *join_tab)
   case JT_CONST:
     read_first_record= join_read_const;
     read_record.read_record= join_no_more_records;
+    read_record.unlock_row= join_const_unlock_row;
     break;
 
   case JT_EQ_REF:

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,18 @@
 extern "C" {
 #endif
 
+/*
+We require that the number of elements in the cache is big enough enough that
+it is always possible to find instances that are not busy.
+Under normal circumstances the number of busy instances will be
+less than event_horizon, since the proposers only considers
+instances which belong to the local node.
+A node may start proposing no_ops for instances belonging
+to other nodes, meaning that event_horizon * NSERVERS instances may be
+involved. However, for the time being, proposing a no_op for an instance
+will not mark it as busy. This may change in the future, so a safe upper
+limit on the number of nodes marked as busy is event_horizon * NSERVERS.
+*/
 #define CACHED 50000
 
 #define is_cached(x) (hash_get(x) != NULL)
@@ -63,6 +75,7 @@ struct pax_machine {
 
 int	is_busy_machine(pax_machine *p);
 int	lock_pax_machine(pax_machine *p);
+pax_machine *get_cache_no_touch(synode_no synode);
 pax_machine *get_cache(synode_no synode);
 pax_machine *hash_get(synode_no synode);
 char *dbg_machine_nodeset(pax_machine *p, u_int nodes);
@@ -71,8 +84,15 @@ void init_cache();
 void deinit_cache();
 void unlock_pax_machine(pax_machine *p);
 void xcom_cache_var_init();
+void shrink_cache();
+size_t pax_machine_size(pax_machine const *p);
 
-
+void init_cache_size();
+size_t add_cache_size(size_t x);
+size_t sub_cache_size(size_t x);
+int above_cache_limit();
+size_t set_max_cache_size(size_t x);
+int	was_removed_from_cache(synode_no x);
 
 #ifdef __cplusplus
 }

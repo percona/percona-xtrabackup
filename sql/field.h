@@ -1,7 +1,7 @@
 #ifndef FIELD_INCLUDED
 #define FIELD_INCLUDED
 
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1579,16 +1579,18 @@ public:
 
   /**
     Check whether field is part of the index taking the index extensions flag
-    into account.
+    into account. Index extensions are also not applicable to UNIQUE indexes
+    for loose index scans.
 
     @param[in]     thd             THD object
     @param[in]     cur_index       Index of the key
+    @param[in]     cur_index_info  key_info object
 
     @retval true  Field is part of the key
     @retval false otherwise
 
   */
-  bool is_part_of_actual_key(THD *thd, uint cur_index);
+  bool is_part_of_actual_key(THD *thd, uint cur_index, KEY *cur_index_info);
 
   friend int cre_myisam(char * name, TABLE *form, uint options,
 			ulonglong auto_increment_value);
@@ -3795,8 +3797,8 @@ public:
   }
   void reset_fields()
   { 
-    memset(&value, 0, sizeof(value)); 
-    memset(&old_value, 0, sizeof(old_value));
+    value= String();
+    old_value= String();
   }
   size_t get_field_buffer_size() { return value.alloced_length(); }
 #ifndef WORDS_BIGENDIAN
@@ -3878,7 +3880,7 @@ public:
     value.mem_free();
     old_value.mem_free();
   }
-  inline void clear_temporary() { memset(&value, 0, sizeof(value)); }
+  inline void clear_temporary() { value= String(); }
   friend type_conversion_status field_conv(Field *to,Field *from);
   bool has_charset(void) const
   { return charset() == &my_charset_bin ? FALSE : TRUE; }

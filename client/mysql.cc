@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -168,9 +168,6 @@ static STATUS status;
 static ulong select_limit,max_join_size,opt_connect_timeout=0;
 static char mysql_charsets_dir[FN_REFLEN+1];
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
-#if !defined(HAVE_YASSL)
-static char *opt_server_public_key= 0;
-#endif
 static const char *xmlmeta[] = {
   "&", "&amp;",
   "<", "&lt;",
@@ -198,6 +195,7 @@ static char *shared_memory_base_name=0;
 static uint opt_protocol=0;
 static const CHARSET_INFO *charset_info= &my_charset_latin1;
 
+#include "caching_sha2_passwordopt-vars.h"
 #include "sslopt-vars.h"
 
 const char *default_dbug_option="d:t:o,/tmp/mysql.trace";
@@ -1435,7 +1433,8 @@ int main(int argc,char *argv[])
     "statement.\n");
   put_info(buff,INFO_INFO);
 
-  uint protocol, ssl_mode;
+  uint protocol= MYSQL_PROTOCOL_DEFAULT;
+  uint ssl_mode= 0;
   if (!mysql_get_option(&mysql, MYSQL_OPT_PROTOCOL, &protocol) &&
       !mysql_get_option(&mysql, MYSQL_OPT_SSL_MODE, &ssl_mode))
   {
@@ -1661,7 +1660,7 @@ static struct my_option my_long_options[] =
   {"bind-address", 0, "IP address to bind to.",
    (uchar**) &opt_bind_addr, (uchar**) &opt_bind_addr, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"binary-as-hex", 'b', "Print binary data as hex", &opt_binhex, &opt_binhex,
+  {"binary-as-hex", 0, "Print binary data as hex", &opt_binhex, &opt_binhex,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"character-sets-dir", OPT_CHARSETS_DIR,
    "Directory for character set files.", &charsets_dir,
@@ -1812,6 +1811,7 @@ static struct my_option my_long_options[] =
    &opt_mysql_unix_port, &opt_mysql_unix_port, 0, GET_STR_ALLOC,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #include "sslopt-longopts.h"
+#include "caching_sha2_passwordopt-longopts.h"
   {"table", 't', "Output in table format.", &output_tables,
    &output_tables, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"tee", OPT_TEE,
@@ -1879,12 +1879,6 @@ static struct my_option my_long_options[] =
    "piped to mysql or loaded using the 'source' command). This is necessary "
    "when processing output from mysqlbinlog that may contain blobs.",
    &opt_binary_mode, &opt_binary_mode, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-#if !defined(HAVE_YASSL)
-  {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
-   "File path to the server public RSA key in PEM format.",
-   &opt_server_public_key, &opt_server_public_key, 0,
-   GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"connect-expired-password", 0,
    "Notify the server that this client is prepared to handle expired "
    "password sandbox mode.",
@@ -2581,7 +2575,10 @@ static bool add_line(String &buffer, char *line, size_t line_length,
       if (*in_string || inchar == 'N')	// \N is short for NULL
       {					// Don't allow commands in string
 	*out++='\\';
-	*out++= (char) inchar;
+        if ((inchar == '`') && (*in_string == inchar))
+          pos--;
+        else
+	  *out++= (char) inchar;
 	continue;
       }
       if ((com= find_command((char) inchar)))
@@ -5156,10 +5153,8 @@ init_connection_options(MYSQL *mysql)
   if (opt_default_auth && *opt_default_auth)
     mysql_options(mysql, MYSQL_DEFAULT_AUTH, opt_default_auth);
 
-#if !defined(HAVE_YASSL)
-  if (opt_server_public_key && *opt_server_public_key)
-    mysql_options(mysql, MYSQL_SERVER_PUBLIC_KEY, opt_server_public_key);
-#endif
+  set_server_public_key(mysql);
+  set_get_server_public_key_option(mysql);
 
   if (using_opt_enable_cleartext_plugin)
     mysql_options(mysql, MYSQL_ENABLE_CLEARTEXT_PLUGIN,

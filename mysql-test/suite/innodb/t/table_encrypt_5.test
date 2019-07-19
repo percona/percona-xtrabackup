@@ -18,9 +18,9 @@
 --source include/not_embedded.inc
 
 # Suppress warnings
+--disable_query_log
 call mtr.add_suppression("\\[ERROR\\] InnoDB: Encryption can't find master key, please check the keyring plugin is loaded.");
-call mtr.add_suppression("ibd can't be decrypted , please confirm the keyfile is match and keyring plugin is loaded");
-call mtr.add_suppression("Can't generate new master key for tablespace encryption, please check the keyring plugin is loaded.");
+call mtr.add_suppression("ibd can't be decrypted");
 call mtr.add_suppression("InnoDB: Operating system error number");
 call mtr.add_suppression("The error means the system cannot find the path specified");
 call mtr.add_suppression("InnoDB: If you are installing InnoDB, remember that you must create directories yourself, InnoDB does not create them");
@@ -34,6 +34,7 @@ call mtr.add_suppression("Error while loading keyring content. The keyring might
 call mtr.add_suppression("\\[ERROR\\] Plugin keyring_file reported: 'Could not create keyring directory");
 call mtr.add_suppression("\\[ERROR\\] Plugin keyring_file reported: 'keyring_file initialization failure.");
 call mtr.add_suppression("\\[ERROR\\] Plugin keyring_file reported: 'File .*keyring' not found .*");
+--enable_query_log
 
 let $innodb_file_per_table = `SELECT @@innodb_file_per_table`;
 
@@ -424,9 +425,10 @@ SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS FROM INFORMATION_SCHEMA.PLUGINS 
 SELECT @@global.keyring_file_data;
 --echo # init tables
 call tde_db.init_setup();
---echo # restart without --early-plugin-load and keyring_file_data
---echo # AND explicitly install plugin to access old table
-let $restart_parameters = restart: ;
+--echo # restart without --early-plugin-load (still need to provide with
+--echo # keyring_file_data otherwise it would point to default location which might be
+--echo # non-writable to mtr). Instead explicitly install plugin to access old table
+let $restart_parameters = restart: --loose-keyring_file_data=$MYSQL_TMP_DIR/mydummy_keyring;
 --replace_result $MYSQL_TMP_DIR MYSQL_TMP_DIR $KEYRING_PLUGIN_OPT --plugin-dir=KEYRING_PLUGIN_PATH $KEYRING_PLUGIN keyring_file.so
 --source include/restart_mysqld.inc
 

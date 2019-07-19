@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -13,14 +13,16 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include "gcs_xcom_group_member_information.h"
 #include "gcs_xcom_networking.h"
 #include "gcs_xcom_utils.h"
 #include "gcs_group_identifier.h"
 #include "gcs_logging.h"
-#include <algorithm>
 #include "sock_probe.h"
-#include<bitset>
-#include<set>
+#include <algorithm>
+#include <bitset>
+#include <set>
+#include <errno.h>
 
 #ifdef WIN32
 #include "sock_probe_win32.c"
@@ -89,6 +91,24 @@ static std::string get_if_name(sock_probe *s, int count, int *error)
   return res;
 }
 #endif
+
+/**
+ Determines if a given address is an IP localhost address
+
+ @param[in] address a reference to a string containing the address to test
+
+ @return true if localhost, false otherwise.
+ */
+static bool is_address_localhost(const std::string &address)
+{
+  std::string lower_address(address);
+
+  std::transform(lower_address.begin(), lower_address.end(),
+                 lower_address.begin(), ::tolower);
+
+  return (strcmp(lower_address.c_str(), "127.0.0.1/32") == 0) ||
+         (strcmp(lower_address.c_str(), "localhost/32") == 0);
+}
 
 bool
 get_ipv4_local_addresses(std::map<std::string, int>& addr_to_cidr_bits,
@@ -214,39 +234,67 @@ get_ipv4_local_private_addresses(std::map<std::string, int>& out,
 }
 
 bool
-get_ipv4_addr_from_hostname(const std::string& host, std::string& ip)
+resolve_ip_addr_from_hostname(std::string name, std::string& ip)
 {
+  int res= true;
   char cip[INET6_ADDRSTRLEN];
-  struct addrinfo *addrinf= NULL;
+  socklen_t cip_len= static_cast<socklen_t>(sizeof(cip));
+  struct addrinfo *addrinf= NULL, hints;
+  struct sockaddr *sa= NULL;
+  void *in_addr= NULL;
 
-  checked_getaddrinfo(host.c_str(), 0, NULL, &addrinf);
-  if (!inet_ntop(AF_INET,  &((struct sockaddr_in *)addrinf->ai_addr)->sin_addr,
-                 cip, sizeof(cip)))
+  memset(&hints, 0, sizeof(hints));
+  //For now, we will only support IPv4
+  hints.ai_family = AF_INET;
+
+  checked_getaddrinfo(name.c_str(), 0, &hints, &addrinf);
+  if (!addrinf)
+    goto end;
+
+  sa= (struct sockaddr*) addrinf->ai_addr;
+
+  switch(sa->sa_family)
   {
-    if (addrinf)
-      freeaddrinfo(addrinf);
-    return true;
+    case AF_INET:
+      in_addr= &((struct sockaddr_in *)sa)->sin_addr;
+      break;
+    // For now, we only support IPv4
+    case AF_INET6:
+      /*in_addr= &((struct sockaddr_in6 *)sa)->sin6_addr; break;*/
+    default:
+      goto end;
   }
 
+  if (!inet_ntop(sa->sa_family, in_addr, cip, cip_len))
+    goto end;
+
   ip.assign(cip);
+  res= false;
+
+  end:
   if (addrinf)
     freeaddrinfo(addrinf);
 
-  return false;
+  return res;
 }
-
 
 /**
   Given the address as a string, gets the IP encoded as
   an integer.
  */
-static
-bool string_to_sockaddr(const std::string& addr, struct sockaddr_storage *sa)
+bool
+string_to_sockaddr(const std::string& addr, struct sockaddr_storage *sa)
 {
+  /**
+    Try IPv4 first.
+   */
   sa->ss_family= AF_INET;
-  if (inet_pton(AF_INET, addr.c_str(), &(((struct sockaddr_in *)sa)->sin_addr) ) == 1)
+  if (inet_pton(AF_INET, addr.c_str(), &(((struct sockaddr_in *)sa)->sin_addr)) == 1)
     return false;
 
+  /**
+    Try IPv6.
+   */
   sa->ss_family= AF_INET6;
   if (inet_pton(AF_INET6, addr.c_str(), &(((struct sockaddr_in6 *)sa)->sin6_addr)) == 1)
     return false;
@@ -267,15 +315,43 @@ sock_descriptor_to_sockaddr(int fd, struct sockaddr_storage *sa)
   {
     if (sa->ss_family != AF_INET && sa->ss_family != AF_INET6)
     {
-      MYSQL_GCS_LOG_WARN("Connection is not from an IPv4 nor IPv6 address. "
+      MYSQL_GCS_LOG_DEBUG("Connection is not from an IPv4 nor IPv6 address. "
                          "This is not supported. Refusing the connection!");
       res= 1;
     }
   }
   else
   {
-    MYSQL_GCS_LOG_WARN("Unable to handle socket descriptor, therefore "
-                       "refusing connection.");
+    int err = errno;
+    switch (err) {
+    case EBADF:
+      MYSQL_GCS_LOG_DEBUG("The file descriptor fd=" << fd << " is not valid");
+      break;
+    case EFAULT:
+      MYSQL_GCS_LOG_DEBUG("The sockaddr_storage pointer sa="
+                          << sa << " points to memory not in a valid part of "
+                                   "the process address space");
+      break;
+    case EINVAL:
+      MYSQL_GCS_LOG_DEBUG("The value of addr_size=" << addr_size
+                                                    << " is invalid");
+      break;
+    case ENOBUFS:
+      MYSQL_GCS_LOG_DEBUG("Insufficient resources were available in the "
+                          "system to perform the getpeername operation");
+      break;
+    case ENOTCONN:
+      MYSQL_GCS_LOG_DEBUG("The socket fd=" << fd << " is not connected");
+      break;
+    case ENOTSOCK:
+      MYSQL_GCS_LOG_DEBUG(
+          "The file descriptor fd=" << fd << " does not refer to a socket");
+      break;
+    default:
+      MYSQL_GCS_LOG_DEBUG(
+          "Unable to perform getpeername, therefore refusing connection.");
+      break;
+    }
   }
   return res ? true: false;
 }
@@ -316,53 +392,153 @@ sock_descriptor_to_string(int fd, std::string &out)
 const std::string Gcs_ip_whitelist::DEFAULT_WHITELIST=
   "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
 
+
+Gcs_ip_whitelist_entry::Gcs_ip_whitelist_entry(std::string addr,
+                                               std::string mask) :
+  m_addr(addr), m_mask(mask)
+{
+}
+
+Gcs_ip_whitelist_entry_ip::
+Gcs_ip_whitelist_entry_ip(std::string addr, std::string mask):
+                                              Gcs_ip_whitelist_entry(addr, mask)
+{
+}
+
+bool
+Gcs_ip_whitelist_entry_ip::init_value()
+{
+  bool error = get_address_for_whitelist(get_addr(), get_mask(), m_value);
+
+  return error;
+}
+
+std::pair<std::vector<unsigned char>, std::vector<unsigned char> >*
+Gcs_ip_whitelist_entry_ip::get_value()
+{
+  return &m_value;
+}
+
+Gcs_ip_whitelist_entry_hostname::
+Gcs_ip_whitelist_entry_hostname(std::string addr, std::string mask):
+  Gcs_ip_whitelist_entry(addr, mask)
+{
+}
+
+bool
+Gcs_ip_whitelist_entry_hostname::init_value()
+{
+  return false;
+}
+
+std::pair<std::vector<unsigned char>, std::vector<unsigned char> >*
+Gcs_ip_whitelist_entry_hostname::get_value()
+{
+  std::string ip;
+  bool error = false;
+  std::pair<std::vector<unsigned char>, std::vector<unsigned char> > value;
+
+  if(resolve_ip_addr_from_hostname(get_addr(), ip))
+  {
+    MYSQL_GCS_LOG_WARN("Hostname " << get_addr().c_str() << " in Whitelist" <<
+                       " configuration was not resolvable. Please check your" <<
+                       " Whitelist configuration.");
+    return NULL;
+  }
+
+  error = get_address_for_whitelist(ip, get_mask(), value);
+
+  return error? NULL: new std::pair< std::vector<unsigned char>,
+                                     std::vector<unsigned char> >
+                                                    (value.first, value.second);
+}
+
 /* purecov: begin deadcode */
 std::string
 Gcs_ip_whitelist::to_string() const
 {
-  std::map< std::vector<unsigned char>, std::vector<unsigned char> >::const_iterator wl_it;
+  std::set< Gcs_ip_whitelist_entry* >::const_iterator wl_it;
   std::stringstream ss;
 
   for (wl_it= m_ip_whitelist.begin();
        wl_it != m_ip_whitelist.end();
        wl_it++)
   {
-    char saddr[INET6_ADDRSTRLEN];
-    unsigned long netbits= 0;
-    std::vector<unsigned char> vmask= wl_it->second;
-    std::vector<unsigned char> vip= wl_it->first;
-    const unsigned char *ip= &vip[0];
-    const unsigned char *mask= &vmask[0];
-    const char *ret;
-    saddr[0]= '\0';
-
-    // try IPv6 first
-    if (vip.size() > 4)
-      ret= inet_ntop(AF_INET6, (struct in6_addr *) ip, saddr, sizeof(saddr));
-    else
-      ret= inet_ntop(AF_INET, (struct in_addr *) ip, saddr, sizeof(saddr));
-
-    if (!ret)
-      continue;
-
-    for(unsigned int i=0 ; i < vmask.size(); i++)
-    {
-      unsigned long int tmp= 0;
-      memcpy(&tmp, mask, 1); // count per octet
-      std::bitset<8> netmask(tmp);
-      netbits+= netmask.count();
-      mask++;
-    }
-
-    ss << saddr  << "/" << netbits << ",";
+    ss << (*wl_it)->get_addr()  << "/" << (*wl_it)->get_mask() << ",";
   }
 
   std::string res= ss.str();
   res.erase(res.end() - 1);
   return res;
+}
 
+/**
+ Wrapper helper method for getnameinfo.
+
+ Taken from VIO. If VIO ever becomes a server independent library, or we start
+ using MySQL protocol, this should be removed.
+ */
+int gcs_getnameinfo(const struct sockaddr *sa,
+                    char *hostname, size_t hostname_size,
+                    char *port, size_t port_size,
+                    int flags)
+{
+  int sa_length= 0;
+
+  switch (sa->sa_family)
+  {
+  case AF_INET:
+    sa_length= sizeof (struct sockaddr_in);
+#ifdef HAVE_SOCKADDR_IN_SIN_LEN
+    ((struct sockaddr_in *) sa)->sin_len= sa_length;
+#endif /* HAVE_SOCKADDR_IN_SIN_LEN */
+    break;
+
+  case AF_INET6:
+    sa_length= sizeof (struct sockaddr_in6);
+# ifdef HAVE_SOCKADDR_IN6_SIN6_LEN
+    ((struct sockaddr_in6 *) sa)->sin6_len= sa_length;
+# endif /* HAVE_SOCKADDR_IN6_SIN6_LEN */
+    break;
+  }
+
+  return getnameinfo(sa, sa_length,
+                     hostname, hostname_size,
+                     port, port_size,
+                     flags);
 }
 /* purecov: end */
+
+/**
+ Check if it contains an attempt of having an IP v4 address.
+ It does not check for its validity, but only if it contains all authorized
+ characters: numbers and dots.
+
+ @return true if it exclusively contains all authorized characters.
+ */
+bool is_ipv4_address(const std::string& possible_ip)
+{
+  std::string::const_iterator it = possible_ip.begin();
+  while (it != possible_ip.end() &&
+         (isdigit(static_cast<unsigned char>(*it)) ||
+          (*it) == '.'))
+  {
+    ++it;
+  }
+  return !possible_ip.empty() && it == possible_ip.end();
+}
+
+/**
+ Check if it contains an attempt of having an IP v6 address.
+ It does not check for its validity, but it checks if it contains : character
+
+ @return true if it contains the : character.
+ */
+bool is_ipv6_address(const std::string& possible_ip)
+{
+  return !possible_ip.empty() &&
+          possible_ip.find_first_of(':') != std::string::npos;
+}
 
 bool
 Gcs_ip_whitelist::is_valid(const std::string& the_list) const
@@ -390,8 +566,15 @@ Gcs_ip_whitelist::is_valid(const std::string& the_list) const
     std::getline(entry_ss, ip, '/');
     std::getline(entry_ss, mask, '/');
 
-    // verify that this is a valid IPv4 or IPv6 address
-    is_valid_ip= !string_to_sockaddr(ip, &sa);
+    //Verify that this is a valid IPv4 or IPv6 address
+    if(is_ipv4_address(ip) || is_ipv6_address(ip))
+    {
+      is_valid_ip= !string_to_sockaddr(ip, &sa);
+    }
+    else
+    { //We won't check for hostname validity here.
+      continue;
+    }
 
     // convert the netbits from the mask to integer
     imask= (unsigned int) atoi(mask.c_str());
@@ -430,10 +613,20 @@ Gcs_ip_whitelist::configure(const std::string& the_list)
   std::string list_entry;
 
   // parse commas
+  bool found_localhost_entry= false;
   while(std::getline(list_ss, list_entry, ','))
   {
     std::stringstream entry_ss(list_entry);
     std::string ip, mask;
+
+    /**
+      Check if the address is a localhost ipv4 address.
+      Add it after if necessary.
+    */
+    if(!found_localhost_entry)
+    {
+      found_localhost_entry = is_address_localhost(entry_ss.str());
+    }
 
     std::getline(entry_ss, ip, '/');
     std::getline(entry_ss, mask, '/');
@@ -445,25 +638,35 @@ Gcs_ip_whitelist::configure(const std::string& the_list)
   // so that we are able to connect to our embedded xcom
 
   // add IPv4 localhost addresses if needed
-  if (!add_address("127.0.0.1", "32"))
+  if (!found_localhost_entry)
   {
-    MYSQL_GCS_LOG_WARN("Automatically adding IPv4 localhost address to the "
-                       "whitelist. It is mandatory that it is added.");
+    if(!add_address("127.0.0.1", "32"))
+    {
+      MYSQL_GCS_LOG_WARN("Automatically adding IPv4 localhost address to the "
+                         "whitelist. It is mandatory that it is added.");
+    }
+    else
+    {
+      MYSQL_GCS_LOG_ERROR("Error adding IPv4 localhost address automatically"
+                          " to the whitelist");
+    }
   }
 
   return false;
 }
 
 bool
-Gcs_ip_whitelist::add_address(std::string addr, std::string mask)
+get_address_for_whitelist(std::string addr, std::string mask,
+                          std::pair<std::vector<unsigned char>,
+                                    std::vector<unsigned char> > &out_pair)
 {
   struct sockaddr_storage sa;
   unsigned char *sock;
-  int netmask_len= 0;
+  size_t netmask_len= 0;
   int netbits= 0;
   std::vector<unsigned char> ssock;
   std::vector<unsigned char> smask;
-
+  
   // zero the memory area
   memset(&sa, 0, sizeof(struct sockaddr_storage));
   smask.insert(smask.begin(), smask.size(), 0);
@@ -494,32 +697,179 @@ Gcs_ip_whitelist::add_address(std::string addr, std::string mask)
       return true;
   }
 
-  if (m_ip_whitelist.find(ssock) == m_ip_whitelist.end())
+  // Set the first netbits/8 BYTEs to 255.
+  smask.resize(static_cast<size_t>(netbits/8), 0xff);
+
+  if (smask.size() < netmask_len)
   {
+    // Set the following netbits%8 BITs to 1.
+    smask.push_back(static_cast<unsigned char>(0xff << (8-netbits%8)));
+    // Set non-net part to 0
     smask.resize(netmask_len, 0);
-    for(int octet= 0, bits= netbits; octet < netmask_len && bits > 0; octet++, bits -= 8)
-    {
-      if (bits > 0)
-        smask[octet]= static_cast<char>(0xff << (bits > 8 ? 0 : (8-bits)));
-      else
-        smask[octet]= 0x00;
-    }
-
-    m_ip_whitelist.insert(std::make_pair (ssock, smask));
-
-    return false;
   }
 
-  return true;
+  out_pair= std::make_pair (ssock, smask);
+
+  return false;
+}
+
+Gcs_ip_whitelist::~Gcs_ip_whitelist()
+{
+  std::set< Gcs_ip_whitelist_entry* >::const_iterator wl_it=
+                                                         m_ip_whitelist.begin();
+  while(wl_it != m_ip_whitelist.end())
+  {
+    delete (*wl_it);
+    m_ip_whitelist.erase(wl_it++);
+  }
 }
 
 bool
-Gcs_ip_whitelist::do_check_block(struct sockaddr_storage *sa) const
+Gcs_ip_whitelist::add_address(std::string addr, std::string mask)
+{
+  Gcs_ip_whitelist_entry *addr_for_wl;
+  struct sockaddr_storage sa;
+  if(!string_to_sockaddr(addr, &sa))
+  {
+    addr_for_wl = new Gcs_ip_whitelist_entry_ip(addr, mask);
+  }
+  else
+  {
+    addr_for_wl = new Gcs_ip_whitelist_entry_hostname(addr, mask);
+  }
+  bool error = addr_for_wl->init_value();
+
+  if(!error)
+  {
+    std::pair<std::set< Gcs_ip_whitelist_entry*,
+            Gcs_ip_whitelist_entry_pointer_comparator>::iterator,
+            bool> result;
+    result= m_ip_whitelist.insert(addr_for_wl);
+
+    error= !result.second;
+  }
+
+  return error;
+}
+
+bool
+Gcs_ip_whitelist::do_check_block_whitelist(
+  std::vector<unsigned char> const& incoming_octets) const
+{
+  /*
+    Check if the incoming IP matches any IP-mask combination in the whitelist.
+    The check compares both IPs' bytes (octets) in network byte order.
+  */
+  bool block= true;
+  std::set< Gcs_ip_whitelist_entry* >::const_iterator wl_it;
+  for (wl_it= m_ip_whitelist.begin();
+       wl_it != m_ip_whitelist.end() && block;
+       wl_it++)
+  {
+    std::pair< std::vector<unsigned char>, std::vector<unsigned char> > *wl_value= NULL;
+
+    wl_value= (*wl_it)->get_value();
+    if (wl_value == NULL)
+      continue;
+
+    std::vector<unsigned char> const& wl_range_octets= (*wl_value).first;
+    std::vector<unsigned char> const& wl_netmask_octets= (*wl_value).second;
+
+    // no point in comparing different families, e.g. IPv4 with IPv6
+    if (incoming_octets.size() != wl_range_octets.size())
+      goto cleanup_and_continue;
+
+    for (size_t octet= 0; octet < wl_range_octets.size(); octet++)
+    {
+      unsigned char const& oct_in_ip= incoming_octets[octet];
+      unsigned char const& oct_range_ip= wl_range_octets[octet];
+      unsigned char const& oct_mask_ip= wl_netmask_octets[octet];
+      // bail out on the first octet mismatch -- try next IP
+      if ((block= (oct_in_ip & oct_mask_ip) != (oct_range_ip & oct_mask_ip)))
+        break;
+    }
+
+    cleanup_and_continue:
+    // we own wl_value if the XCom member is a hostname
+    bool is_hostname=
+      dynamic_cast<Gcs_ip_whitelist_entry_hostname *>(*wl_it) != NULL;
+    if (is_hostname)
+      delete wl_value;
+  }
+  return block;
+}
+
+bool
+Gcs_ip_whitelist::do_check_block_xcom(
+  std::vector<unsigned char> const& incoming_octets,
+  site_def const *xcom_config) const
+{
+  /*
+    Check if the incoming IP matches the IP of any XCom member.
+    The check compares both IPs' bytes (octets) in network byte order.
+  */
+  bool block= true;
+  for (u_int i= 0; i < xcom_config->nodes.node_list_len && block; i++)
+  {
+    Gcs_xcom_group_member_information xcom_addr(
+      std::string(xcom_config->nodes.node_list_val[i].address));
+    struct sockaddr_storage xcom_sa;
+    Gcs_ip_whitelist_entry *xcom_addr_wl= NULL;
+    std::pair< std::vector<unsigned char>, std::vector<unsigned char> > *wl_value= NULL;
+    std::vector<unsigned char> const *xcom_octets= NULL;
+
+    /*
+      Treat the XCom member as if it is in the whitelist.
+      The XCom member can be an IP or hostname.
+      The magic-number "32" for the netmask is tied to IPv4.
+    */
+    bool is_hostname= string_to_sockaddr(xcom_addr.get_member_ip(), &xcom_sa);
+    if (is_hostname)
+      xcom_addr_wl= new Gcs_ip_whitelist_entry_hostname(
+        xcom_addr.get_member_ip(), "32");
+    else
+      xcom_addr_wl= new Gcs_ip_whitelist_entry_ip(
+        xcom_addr.get_member_ip(), "32");
+
+    bool error= xcom_addr_wl->init_value();
+    if (error)
+      goto cleanup_and_continue;
+    wl_value= xcom_addr_wl->get_value();
+    if (wl_value == NULL)
+      goto cleanup_and_continue;
+
+    xcom_octets= &wl_value->first;
+
+    // no point in comparing different families, e.g. IPv4 with IPv6
+    if (incoming_octets.size() != xcom_octets->size())
+      goto cleanup_and_continue;
+
+    for (size_t octet= 0; octet < xcom_octets->size(); octet++)
+    {
+      unsigned char const& oct_incoming= incoming_octets[octet];
+      unsigned char const& oct_xcom= (*xcom_octets)[octet];
+      // bail out on the first octet mismatch -- try next IP
+      if ((block= (oct_incoming != oct_xcom)))
+        break;
+    }
+
+    cleanup_and_continue:
+    // we own wl_value if the XCom member is a hostname
+    if (is_hostname)
+      delete wl_value;
+    delete xcom_addr_wl;
+  }
+  return block;
+}
+
+bool
+Gcs_ip_whitelist::do_check_block(struct sockaddr_storage *sa,
+                                 site_def const *xcom_config) const
 {
   bool block= true;
   unsigned char *buf;
-  std::map< std::vector<unsigned char>, std::vector<unsigned char> >::const_iterator wl_it;
   std::vector<unsigned char> ip;
+
 /* purecov: begin deadcode */
   if (sa->ss_family == AF_INET6)
   {
@@ -536,43 +886,21 @@ Gcs_ip_whitelist::do_check_block(struct sockaddr_storage *sa) const
     goto end;
 
   /*
-   This check works like this:
-   1. Check if the whitelist is empty.
-      - if empty, return false
-   2. If whitelist is not empty
-      - for every ip and mask
-        - check if bytes (octets) match in network byte order
-   */
-
-  if (m_ip_whitelist.empty())
-    goto end;
-
-  for (wl_it= m_ip_whitelist.begin();
-       wl_it != m_ip_whitelist.end() && block;
-       wl_it++)
-  {
-    unsigned int octet;
-    const std::vector<unsigned char> range= (*wl_it).first;
-    const std::vector<unsigned char> netmask= (*wl_it).second;
-
-    for (octet= 0; octet < range.size(); octet++)
-    {
-      unsigned char oct_in_ip= ip[octet];
-      unsigned char oct_range_ip= range[octet];
-      unsigned char oct_mask_ip= netmask[octet];
-
-      // bail out on the first octet mismatch -- try next IP
-      if ((block= (oct_in_ip & oct_mask_ip) != (oct_range_ip & oct_mask_ip)))
-        break;
-    }
-  }
+    Allow the incoming IP if it is whitelisted *or* is an XCom member.
+    XCom members are authorized by default so that XCom can create its
+    all-to-all bidirectional network.
+  */
+  if (!m_ip_whitelist.empty())
+    block= do_check_block_whitelist(ip);
+  if (block && xcom_config != NULL)
+    block= do_check_block_xcom(ip, xcom_config);
 
 end:
   return block;
 }
 
 bool
-Gcs_ip_whitelist::shall_block(int fd) const
+Gcs_ip_whitelist::shall_block(int fd, site_def const *xcom_config) const
 {
   bool ret= true;
   if (fd > 0)
@@ -585,7 +913,7 @@ Gcs_ip_whitelist::shall_block(int fd) const
       ret= true;
     }
     else
-      ret= do_check_block(&sa);
+      ret= do_check_block(&sa, xcom_config);
   }
 
   if (ret)
@@ -600,7 +928,8 @@ Gcs_ip_whitelist::shall_block(int fd) const
 }
 
 bool
-Gcs_ip_whitelist::shall_block(const std::string& ip_addr) const
+Gcs_ip_whitelist::shall_block(const std::string& ip_addr,
+                              site_def const *xcom_config) const
 {
   bool ret= true;
   if (!ip_addr.empty())
@@ -613,7 +942,7 @@ Gcs_ip_whitelist::shall_block(const std::string& ip_addr) const
       ret= true;
     }
     else
-      ret= do_check_block(&sa);
+      ret= do_check_block(&sa, xcom_config);
   }
 
   if (ret)

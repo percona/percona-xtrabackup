@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -304,6 +304,22 @@ bool Sql_cmd_xa_commit::trans_xa_commit(THD *thd)
     */
     res= xs->xa_trans_rolled_back();
 
+#ifdef HAVE_PSI_TRANSACTION_INTERFACE
+    /*
+      If the original transaction is not rolled back then initiate a new PSI
+      transaction to update performance schema related information.
+     */
+    if (!res)
+    {
+      thd->m_transaction_psi= MYSQL_START_TRANSACTION(&thd->m_transaction_state,
+                                                      NULL, NULL, thd->tx_isolation,
+                                                      thd->tx_read_only, false);
+      gtid_set_performance_schema_values(thd);
+      MYSQL_SET_TRANSACTION_XID(thd->m_transaction_psi,
+                                (const void *)xs->get_xid(),
+                                (int)xs->get_state());
+    }
+#endif
     /*
       xs' is_binlogged() is passed through xid_state's member to low-level
       logging routines for deciding how to log.  The same applies to
@@ -347,6 +363,21 @@ bool Sql_cmd_xa_commit::trans_xa_commit(THD *thd)
     // todo xa framework: return an error
     ha_commit_or_rollback_by_xid(thd, m_xid, !res);
     xid_state->unset_binlogged();
+
+#ifdef HAVE_PSI_TRANSACTION_INTERFACE
+    if (!res)
+    {
+      if (thd->m_transaction_psi)
+      {
+        /*
+          Set the COMMITTED state in PSI context at the end of committing the
+          XA transaction.
+        */
+        MYSQL_COMMIT_TRANSACTION(thd->m_transaction_psi);
+        thd->m_transaction_psi= NULL;
+      }
+    }
+#endif
 
     transaction_cache_delete(transaction);
     gtid_state_commit_or_rollback(thd, need_clear_owned_gtid, !gtid_error);
@@ -767,8 +798,13 @@ bool Sql_cmd_xa_prepare::trans_xa_prepare(THD *thd)
     my_error(ER_XAER_RMFAIL, MYF(0), xid_state->state_name());
   else if (!xid_state->has_same_xid(m_xid))
     my_error(ER_XAER_NOTA, MYF(0));
-  else
-  {
+  else if (thd->slave_thread &&
+           is_transaction_empty(
+               thd)) // No changes in none of the storage engine
+                     // means, filtered statements in the slave
+    my_error(ER_XA_REPLICATION_FILTERS,
+             MYF(0)); // Empty XA transactions not allowed
+  else {
     /*
       Acquire metadata lock which will ensure that XA PREPARE is blocked
       by active FLUSH TABLES WITH READ LOCK (and vice versa PREPARE in
@@ -1264,6 +1300,15 @@ static void attach_native_trx(THD *thd)
       ha_info->reset();
     }
   }
+  else
+  {
+    /*
+      Although the current `Ha_trx_info` object is null, we need to make sure
+      that the data engine plugins have the oportunity to attach their internal
+      transactions and clean up the session.
+     */
+    thd->rpl_reattach_engine_ha_data();
+  }
 }
 
 
@@ -1302,7 +1347,6 @@ bool applier_reset_xa_trans(THD *thd)
   trn_ctx->set_no_2pc(Transaction_ctx::SESSION, false);
   trn_ctx->cleanup();
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
-  MYSQL_COMMIT_TRANSACTION(thd->m_transaction_psi);
   thd->m_transaction_psi= NULL;
 #endif
   thd->mdl_context.release_transactional_locks();
@@ -1352,4 +1396,20 @@ my_bool detach_native_trx(THD *thd, plugin_ref plugin, void *unused)
   }
 
   return FALSE;
+}
+
+my_bool reattach_native_trx(THD *thd, plugin_ref plugin, void *)
+{
+  DBUG_ENTER("reattach_native_trx");
+  handlerton *hton = plugin_data<handlerton *>(plugin);
+
+  if (hton->replace_native_transaction_in_thd)
+  {
+    /* restore the saved original engine transaction's link with thd */
+    void **trx_backup = &thd->ha_data[hton->slot].ha_ptr_backup;
+
+    hton->replace_native_transaction_in_thd(thd, *trx_backup, NULL);
+    *trx_backup = NULL;
+  }
+  DBUG_RETURN(FALSE);
 }

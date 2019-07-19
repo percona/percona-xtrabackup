@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017 Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1218,6 +1218,7 @@ static bool execute_ddl_log_action(THD *thd, DDL_LOG_ENTRY *ddl_log_entry)
         action in the log entry by stepping up the phase.
       */
     }
+    // Fall through
     case DDL_LOG_RENAME_ACTION:
     {
       error= TRUE;
@@ -4330,10 +4331,11 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
           size_t max_field_size= blob_length_by_type(sql_field->sql_type);
 	  if (key_part_length > max_field_size ||
               key_part_length > max_key_length ||
-	      key_part_length > file->max_key_part_length())
+	      key_part_length > file->max_key_part_length(create_info))
 	  {
             // Given prefix length is too large, adjust it.
-	    key_part_length= min(max_key_length, file->max_key_part_length());
+	    key_part_length= min(max_key_length,
+                                 file->max_key_part_length(create_info));
 	    if (max_field_size)
               key_part_length= min(key_part_length, max_field_size);
 	    if (key->type == KEYTYPE_MULTIPLE)
@@ -4384,10 +4386,10 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
 	my_error(ER_WRONG_KEY_COLUMN, MYF(0), column->field_name.str);
 	  DBUG_RETURN(TRUE);
       }
-      if (key_part_length > file->max_key_part_length() &&
+      if (key_part_length > file->max_key_part_length(create_info) &&
           key->type != KEYTYPE_FULLTEXT)
       {
-        key_part_length= file->max_key_part_length();
+        key_part_length= file->max_key_part_length(create_info);
 	if (key->type == KEYTYPE_MULTIPLE)
 	{
 	  /* not a critical problem */
@@ -4411,7 +4413,8 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
       }
       key_part_info->length= (uint16) key_part_length;
       /* Use packed keys for long strings on the first column */
-      if (!((*db_options) & HA_OPTION_NO_PACK_KEYS) &&
+      if ((create_info->db_type->flags & HTON_SUPPORTS_PACKED_KEYS) &&
+          !((*db_options) & HA_OPTION_NO_PACK_KEYS) &&
           !((create_info->table_options & HA_OPTION_NO_PACK_KEYS)) &&
 	  (key_part_length >= KEY_DEFAULT_PACK_LENGTH &&
 	   (sql_field->sql_type == MYSQL_TYPE_STRING ||
@@ -4480,7 +4483,8 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
     if (key_length > max_key_length && key->type != KEYTYPE_FULLTEXT)
     {
       my_error(ER_TOO_LONG_KEY,MYF(0),max_key_length);
-      DBUG_RETURN(TRUE);
+      if (thd->is_error())  // May be silenced - see Bug#20629014
+        DBUG_RETURN(true);
     }
     if (validate_comment_length(thd, key->key_create_info.comment.str,
                                 &key->key_create_info.comment.length,
@@ -4845,6 +4849,10 @@ bool create_table_impl(THD *thd,
   uint		db_options;
   handler	*file;
   bool		error= TRUE;
+  bool		is_whitelisted_table;
+  bool		prepare_error;
+  Key_length_error_handler error_handler;
+
   DBUG_ENTER("create_table_impl");
   DBUG_PRINT("enter", ("db: '%s'  table: '%s'  tmp: %d",
                        db, table_name, internal_tmp_table));
@@ -4858,17 +4866,52 @@ bool create_table_impl(THD *thd,
     DBUG_RETURN(TRUE);
   }
 
+  if (check_engine(thd, db, table_name, create_info))
+    DBUG_RETURN(TRUE);
+
   // Check if new table creation is disallowed by the storage engine.
   if (!internal_tmp_table &&
       ha_is_storage_engine_disabled(create_info->db_type))
   {
-    my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
-              ha_resolve_storage_engine_name(create_info->db_type));
-    DBUG_RETURN(true);
-  }
+    /*
+      If table creation is disabled for the engine then substitute the engine
+      for the table with the default engine only if sql mode
+      NO_ENGINE_SUBSTITUTION is disabled.
+    */
+    handlerton *new_engine= NULL;
+    if (is_engine_substitution_allowed(thd))
+      new_engine= ha_default_handlerton(thd);
 
-  if (check_engine(thd, db, table_name, create_info))
-    DBUG_RETURN(TRUE);
+    /*
+      Proceed with the engine substitution only if,
+      1. The disabled engine and the default engine are not the same.
+      2. The default engine is not in the disabled engines list.
+      else report an error.
+    */
+    if (new_engine && create_info->db_type &&
+        new_engine != create_info->db_type &&
+        !ha_is_storage_engine_disabled(new_engine))
+    {
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_DISABLED_STORAGE_ENGINE,
+                          ER(ER_DISABLED_STORAGE_ENGINE),
+                          ha_resolve_storage_engine_name(create_info->db_type));
+
+      create_info->db_type= new_engine;
+
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_WARN_USING_OTHER_HANDLER,
+                          ER(ER_WARN_USING_OTHER_HANDLER),
+                          ha_resolve_storage_engine_name(create_info->db_type),
+                          table_name);
+    }
+    else
+    {
+      my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
+               ha_resolve_storage_engine_name(create_info->db_type));
+      DBUG_RETURN(true);
+    }
+  }
 
   set_table_default_charset(thd, create_info, (char*) db);
 
@@ -5127,13 +5170,28 @@ bool create_table_impl(THD *thd,
     }
   }
 
-  if (mysql_prepare_create_table(thd, db, error_table_name,
-                                 create_info, alter_info,
-                                 internal_tmp_table,
-                                 &db_options, file,
-                                 key_info, key_count,
-                                 select_field_count))
-    goto err;
+  /*
+    System tables residing in mysql database and created
+    by innodb engine could be created with any supported
+    innodb page size ( 4k,8k,16K).  We have a index size
+    limit depending upon the page size, but for system
+    tables which are whitelisted we can skip this check,
+    since the innodb engine ensures that the index size
+    will be supported.
+  */
+  is_whitelisted_table = (file->ht->db_type == DB_TYPE_INNODB) ?
+    ha_is_supported_system_table(file->ht, db, error_table_name) : false;
+  if (is_whitelisted_table) thd->push_internal_handler(&error_handler);
+
+  prepare_error= mysql_prepare_create_table(thd, db, error_table_name,
+					    create_info, alter_info,
+					    internal_tmp_table,
+					    &db_options, file,
+					    key_info, key_count,
+					    select_field_count);
+
+  if (is_whitelisted_table) thd->pop_internal_handler();
+  if (prepare_error) goto err;
 
   if (create_info->options & HA_LEX_CREATE_TMP_TABLE)
     create_info->table_options|=HA_CREATE_DELAY_KEY_WRITE;
@@ -5751,7 +5809,6 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
   }
 
   /* Fill HA_CREATE_INFO and Alter_info with description of source table. */
-  memset(&local_create_info, 0, sizeof(local_create_info));
   local_create_info.db_type= src_table->table->s->db_type();
   local_create_info.row_type= src_table->table->s->row_type;
   if (mysql_prepare_alter_table(thd, src_table->table, &local_create_info,
@@ -6242,17 +6299,29 @@ static bool has_index_def_changed(Alter_inplace_info *ha_alter_info,
        key_part < end;
        key_part++, new_part++)
   {
-    /*
-      Key definition has changed if we are using a different field or
-      if the used key part length is different. It makes sense to
-      check lengths first as in case when fields differ it is likely
-      that lengths differ too and checking fields is more expensive
-      in general case.
-    */
-    if (key_part->length != new_part->length)
-      return true;
 
     new_field= get_field_by_index(alter_info, new_part->fieldnr);
+
+    /*
+      If there is a change in index length due to column expansion
+      like varchar(X) changed to varchar(X + N) and has a compatible
+      packed data representation, we mark it for fast/INPLACE change
+      in index definition. Some engines like InnoDB supports INPLACE
+      alter for such cases.
+
+      In other cases, key definition has changed if we are using a
+      different field or if the used key part length is different, or
+      key part direction has changed.
+    */
+    if (key_part->length != new_part->length &&
+        ha_alter_info->alter_info->flags == Alter_info::ALTER_CHANGE_COLUMN &&
+        (key_part->field->is_equal((Create_field *)new_field) == IS_EQUAL_PACK_LENGTH))
+    {
+      ha_alter_info->handler_flags|=
+          Alter_inplace_info::ALTER_COLUMN_INDEX_LENGTH;
+    }
+    else if (key_part->length != new_part->length)
+      return true;
 
     /*
       For prefix keys KEY_PART_INFO::field points to cloned Field
@@ -9088,15 +9157,33 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   if (error)
     DBUG_RETURN(true);
 
-  // Check if ALTER TABLE ... ENGINE is disallowed by the storage engine.
+  /*
+    Check if ALTER TABLE ... ENGINE is disallowed by the desired storage
+    engine.
+  */
   if (table_list->table->s->db_type() != create_info->db_type &&
       (alter_info->flags & Alter_info::ALTER_OPTIONS) &&
       (create_info->used_fields & HA_CREATE_USED_ENGINE) &&
        ha_is_storage_engine_disabled(create_info->db_type))
   {
-    my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
-              ha_resolve_storage_engine_name(create_info->db_type));
-    DBUG_RETURN(true);
+    /*
+      If NO_ENGINE_SUBSTITUTION is disabled, then report a warning and do not
+      alter the table.
+    */
+    if (is_engine_substitution_allowed(thd))
+    {
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_UNKNOWN_STORAGE_ENGINE,
+                          ER(ER_UNKNOWN_STORAGE_ENGINE),
+                          ha_resolve_storage_engine_name(create_info->db_type));
+      create_info->db_type= table_list->table->s->db_type();
+    }
+    else
+    {
+      my_error(ER_DISABLED_STORAGE_ENGINE, MYF(0),
+               ha_resolve_storage_engine_name(create_info->db_type));
+      DBUG_RETURN(true);
+    }
   }
 
   TABLE *table= table_list->table;
@@ -10265,7 +10352,6 @@ copy_data_between_tables(PSI_stage_progress *psi,
       from->sort.io_cache=(IO_CACHE*) my_malloc(key_memory_TABLE_sort_io_cache,
                                                 sizeof(IO_CACHE),
                                                 MYF(MY_FAE | MY_ZEROFILL));
-      memset(&tables, 0, sizeof(tables));
       tables.table= from;
       tables.alias= tables.table_name= from->s->table_name.str;
       tables.db= from->s->db.str;
@@ -10432,7 +10518,6 @@ bool mysql_recreate_table(THD *thd, TABLE_LIST *table_list, bool table_copy)
   /* Same applies to MDL request. */
   table_list->mdl_request.set_type(MDL_SHARED_NO_WRITE);
 
-  memset(&create_info, 0, sizeof(create_info));
   create_info.row_type=ROW_TYPE_NOT_USED;
   create_info.default_table_charset=default_charset_info;
   /* Force alter table to recreate table */
@@ -10649,7 +10734,7 @@ static bool check_engine(THD *thd, const char *db_name,
   handlerton **new_engine= &create_info->db_type;
   handlerton *req_engine= *new_engine;
   bool no_substitution=
-        MY_TEST(thd->variables.sql_mode & MODE_NO_ENGINE_SUBSTITUTION);
+        MY_TEST(!is_engine_substitution_allowed(thd));
   if (!(*new_engine= ha_checktype(thd, ha_legacy_type(req_engine),
                                   no_substitution, 1)))
     DBUG_RETURN(true);
@@ -10676,11 +10761,11 @@ static bool check_engine(THD *thd, const char *db_name,
   }
 
   /*
-    Check, if the given table name is system table, and if the storage engine 
+    Check, if the given table name is system table, and if the storage engine
     does supports it.
   */
   if ((create_info->used_fields & HA_CREATE_USED_ENGINE) &&
-      !ha_check_if_supported_system_table(*new_engine, db_name, table_name))
+      !ha_is_valid_system_or_user_table(*new_engine, db_name, table_name))
   {
     my_error(ER_UNSUPPORTED_ENGINE, MYF(0),
              ha_resolve_storage_engine_name(*new_engine), db_name, table_name);

@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -197,6 +197,12 @@ ELSEIF(WITH_GCS_LOG_DEBUG)
                                              "-DWITH_LOG_DEBUG")
 ENDIF()
 
+MY_CHECK_C_COMPILER_FLAG("-Wcast-function-type" HAVE_CAST_FUNCTION_TYPE)
+IF(HAVE_CAST_FUNCTION_TYPE)
+  ADD_COMPILE_FLAGS(libmysqlgcs/src/bindings/xcom/xcom/xcom_transport.c
+                    COMPILE_FLAGS "-Wno-cast-function-type")
+ENDIF()
+
 ### Configuration ###
 
 # disabling warnings for generated code
@@ -218,6 +224,7 @@ MYSQL_ADD_PLUGIN(group_replication
                  LINK_LIBRARIES
                  ${LZ4_LIBRARY}
                  ${SSL_LIBRARIES}
+                 ${TIRPC_LIBRARIES}
                  MODULE_ONLY MODULE_OUTPUT_NAME "group_replication")
 
 ### INSTALLATION ###

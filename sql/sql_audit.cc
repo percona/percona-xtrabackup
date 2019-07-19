@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -454,14 +454,19 @@ int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
   event.general_command.str= msg;
   event.general_command.length= msg_len;
 
-  if (subclass == MYSQL_AUDIT_GENERAL_ERROR)
+  if (subclass == MYSQL_AUDIT_GENERAL_ERROR ||
+      subclass == MYSQL_AUDIT_GENERAL_STATUS ||
+      subclass == MYSQL_AUDIT_GENERAL_RESULT)
   {
     Ignore_event_error_handler handler(thd, subclass_name);
 
-    return event_class_dispatch(thd, MYSQL_AUDIT_GENERAL_CLASS, &event);
+    return handler.get_result(event_class_dispatch(thd,
+                                                   MYSQL_AUDIT_GENERAL_CLASS,
+                                                   &event));
   }
 
-  return event_class_dispatch(thd, MYSQL_AUDIT_GENERAL_CLASS, &event);
+  return event_class_dispatch_error(thd, MYSQL_AUDIT_GENERAL_CLASS,
+                                    subclass_name, &event);
 }
 
 int mysql_audit_notify(THD *thd, mysql_event_connection_subclass_t subclass,
@@ -1054,16 +1059,25 @@ static my_bool acquire_plugins(THD *thd, plugin_ref plugin, void *arg)
     return FALSE;
   }
 
+  /* Prevent from adding the same plugin more than one time. */
+  if (!thd->audit_class_plugins.exists(plugin))
+  {
+    /* lock the plugin and add it to the list */
+    plugin= my_plugin_lock(NULL, &plugin);
+
+    /* The plugin could not be acquired. */
+    if (plugin == NULL)
+    {
+      /* Add this plugin mask to non subscribed mask. */
+      add_audit_mask(evt->not_subscribed_mask, data->class_mask);
+      return FALSE;
+    }
+
+    thd->audit_class_plugins.push_back(plugin);
+  }
+
   /* Copy subscription mask from the plugin into the array. */
   add_audit_mask(evt->subscribed_mask, data->class_mask);
-
-  /* Prevent from adding the same plugin more than one time. */
-  if (thd->audit_class_plugins.exists(plugin))
-    return FALSE;
-
-  /* lock the plugin and add it to the list */
-  plugin= my_plugin_lock(NULL, &plugin);
-  thd->audit_class_plugins.push_back(plugin);
 
   return FALSE;
 }
@@ -1459,4 +1473,20 @@ bool is_audit_plugin_class_active(THD *thd MY_ATTRIBUTE((unused)),
                                   unsigned long event_class)
 {
   return mysql_global_audit_mask[event_class] != 0;
+}
+
+/**
+  @brief Checks presence of active audit plugin
+
+  @retval      TRUE             At least one audit plugin is present
+  @retval      FALSE            No audit plugin is present
+*/
+bool is_global_audit_mask_set()
+{
+  for (int i= MYSQL_AUDIT_GENERAL_CLASS; i < MYSQL_AUDIT_CLASS_MASK_SIZE; i++)
+  {
+    if (mysql_global_audit_mask[i] != 0)
+      return true;
+  }
+  return false;
 }
