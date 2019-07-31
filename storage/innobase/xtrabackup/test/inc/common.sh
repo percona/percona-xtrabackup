@@ -862,6 +862,16 @@ function require_qpress()
     fi
 }
 
+########################################################################
+# Skip the test if qpress binary is not available
+########################################################################
+function require_lz4()
+{
+    if ! which lz4 > /dev/null 2>&1 ; then
+        skip_test "Requires lz4 to be installed"
+    fi
+}
+
 function require_tokudb()
 {
     if ! [ -a $(dirname ${MYSQLD})/../lib/mysql/plugin/ha_tokudb.so ]; then
