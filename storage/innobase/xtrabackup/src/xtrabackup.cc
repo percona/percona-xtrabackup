@@ -1385,8 +1385,7 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    0, 0, 0},
 
   {"transition-key", OPT_TRANSITION_KEY, "Transition key to encrypt "
-   "tablespace keys with.", &opt_transition_key, &opt_transition_key,
-   0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+   "tablespace keys with.", 0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
   {"xtrabackup-plugin-dir", OPT_XTRA_PLUGIN_DIR,
    "Directory for xtrabackup plugins.",
@@ -1718,7 +1717,7 @@ xb_get_one_option(int optid,
     if (argument)
     {
       char *start = argument;
-      my_free(opt_password);
+      my_free(opt_transition_key);
       opt_transition_key = my_strdup(PSI_NOT_INSTRUMENTED,
                                      argument,MYF(MY_FAE));
       while (*argument) *argument++= 'x';         /* Destroy argument */
