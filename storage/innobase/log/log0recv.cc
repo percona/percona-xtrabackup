@@ -1692,10 +1692,7 @@ fil_write_encryption_parse(
 		if (!fsp_header_decode_encryption_info(key,
 						       iv,
 						       ptr)) {
-			recv_sys->found_corrupt_log = TRUE;
-			ib::warn() << "Encryption information"
-				<< " in the redo log of space "
-				<< space_id << " is invalid";
+			return(ptr + len);
 		}
 	} else {
 		ulint master_key_id = mach_read_from_4(
