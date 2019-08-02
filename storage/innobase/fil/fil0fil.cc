@@ -10171,13 +10171,7 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
 
   if (srv_backup_mode || !use_dumped_tablespace_keys) {
     if (!Encryption::decode_encryption_info(key, iv, ptr)) {
-      recv_sys->found_corrupt_log = true;
-
-      ib::warn(ER_IB_MSG_364)
-          << "Encryption information"
-          << " in the redo log of space " << space_id << " is invalid";
-
-      return (nullptr);
+      return (ptr + len);
     }
   } else {
     ulint master_key_id = mach_read_from_4(ptr + ENCRYPTION_MAGIC_SIZE);
