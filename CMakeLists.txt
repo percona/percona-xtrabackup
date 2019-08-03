@@ -1161,7 +1161,6 @@ ADD_SUBDIRECTORY(scripts)
 
 IF(NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(mysql-test)
-  ADD_SUBDIRECTORY(mysql-test/lib/My/SafeProcess)
   IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
     ADD_SUBDIRECTORY(internal)
   ENDIF()
