@@ -4,7 +4,7 @@
 Encrypted InnoDB tablespace backups
 ===================================
 
-Starting with |MySQL| 5.7, InnoDB supports data `encryption for InnoDB tables
+Starting from |MySQL| 5.7, InnoDB supports `data encryption for InnoDB tables
 <http://dev.mysql.com/doc/refman/8.0/en/innodb-tablespace-encryption.html>`_
 stored in file-per-table tablespaces. This feature provides at-rest encryption
 for physical tablespace data files.
@@ -24,25 +24,25 @@ Making a backup
 Using ``keyring_file`` plugin
 -----------------------------
 
-In order to backup and prepare database containing encrypted InnoDB tablespaces,
-specify the path to keyring file as the value of the
+In order to backup and prepare a database containing encrypted InnoDB
+tablespaces, specify the path to a keyring file as the value of the
 ``--keyring-file-data`` option.
 
 .. code-block:: bash
 
-   xtrabackup --backup --target-dir=/data/backup/ --user=root \
+   $ xtrabackup --backup --target-dir=/data/backup/ --user=root \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-.. note:: for use with |MySQL| prior to 5.7.13 :option:`--server-id` option is
-   added to the backup creation command, making previous example to look like
+.. note:: for use with |MySQL| prior to 5.7.13, the :option:`--server-id` option
+   is added to the backup creation command, making the previous example look like
    the following:
 
    .. code-block:: bash
 
-      xtrabackup --backup --target-dir=/data/backup/ --user=root \
+      $ xtrabackup --backup --target-dir=/data/backup/ --user=root \
       --keyring-file-data=/var/lib/mysql-keyring/keyring --server-id=1
 
-After |xtrabackup| is finished taking the backup you should see the following
+After |xtrabackup| is finished taking the backup, you should see the following
 message:
 
 .. code-block:: bash
@@ -52,36 +52,36 @@ message:
 
 .. warning:: 
 
-   |xtrabackup| will not copy keyring file into the backup directory. In order to
-   be prepare the backup, you must make a copy of keyring file yourself.
+   |xtrabackup| will not copy the keyring file into the backup directory. In
+   order to prepare the backup, you must make a copy of the keyring file yourself.
 
 .. rubric:: Preparing the Backup
 
-In order to prepare the backup you'll need to specify the keyring-file-data
-(server-id is stored in :file:`backup-my.cnf` file, so it can be omitted when
+In order to prepare the backup you need to specify the keyring-file-data
+(server-id is stored in the :file:`backup-my.cnf` file, so it can be omitted when
 preparing the backup, regardless of the |MySQL| version used).
 
 .. code-block:: bash
 
-   xtrabackup --prepare --target-dir=/data/backup \
+   $ xtrabackup --prepare --target-dir=/data/backup \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-After |xtrabackup| is finished preparing the backup you should see the following
-message:
+After |xtrabackup| is finished preparing the backup, you should see the
+following message:
 
 .. code-block:: bash
 
    InnoDB: Shutdown completed; log sequence number 5697064
    160401 10:34:28 completed OK!
 
-Backup is now prepared and can be restored with :option:`--copy-back` option. In
-case the keyring has been rotated you'll need to restore the keyring which was
-used to take and prepare the backup.
+The backup is now prepared and can be restored with the :option:`--copy-back`
+option. In case the keyring has been rotated, you need to restore the keyring
+which was used to take and prepare the backup.
 
 Using ``keyring_vault`` plugin
 ------------------------------
 
-Support for encrypted InnoDB tablespace backups with ``keyring_vault`` has been
+The support for encrypted InnoDB tablespace backups with ``keyring_vault`` has been
 implemented in |Percona XtraBackup| 2.4.11.  Keyring vault plugin settings are
 described `here
 <https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html>`_.
@@ -92,14 +92,14 @@ Command like
 
 .. code-block:: bash
 
-   xtrabackup --backup --target-dir=/data/backup --user=root 
+   $ xtrabackup --backup --target-dir=/data/backup --user=root 
 
 will create a backup in the ``/data/backup`` directory. 
 
 After |xtrabackup| is finished taking the backup you should see the following
 message:
 
-.. code-block:: bash
+.. code-block:: text
 
    xtrabackup: Transaction log of lsn (5696709) to (5696718) was copied.
    160401 10:25:51 completed OK!
@@ -113,28 +113,28 @@ keyring settings via the command line:
 
 .. code-block:: bash
 
-   xtrabackup --prepare --target-dir=/data/backup \
+   $ xtrabackup --prepare --target-dir=/data/backup \
    --keyring-vault-config=/etc/vault.cnf
 
 .. note::
 
    Please look `here
    <https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html>`_
-   for description of keyring vault plugin settings.
+   for a description of keyring vault plugin settings.
 
-After |xtrabackup| is finished preparing the backup you should see the following
+After |xtrabackup| is finished preparing the backup, you should see the following
 message:
 
-.. code-block:: bash
+.. code-block:: text
 
    InnoDB: Shutdown completed; log sequence number 5697064
    160401 10:34:28 completed OK!
 
-Backup is now prepared and can be restored with :option:`--copy-back` option:
+The backup is now prepared and can be restored with the :option:`--copy-back` option:
 
 .. code-block:: bash
 
-   xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql
+   $ xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql
 
 Incremental Encrypted InnoDB tablespace backups with ``keyring_file``
 ---------------------------------------------------------------------
@@ -157,13 +157,13 @@ backup with the following command:
 
 .. warning:: 
 
-   |xtrabackup| will not copy keyring file into the backup directory. In order to
-   be prepare the backup, you must make a copy of keyring file yourself. If you
+   |xtrabackup| will not copy the keyring file into the backup directory. In order to
+   prepare the backup, you must make a copy of the keyring file yourself. If you
    try to restore the backup after the keyring has been changed you'll see errors
    like ``ERROR 3185 (HY000): Can't find master key from keyring, please check
    keyring plugin is loaded.`` when trying to access encrypted table.
 
-If you look at the :file:`xtrabackup_checkpoints` file, you should see some
+If you look at the :file:`xtrabackup_checkpoints` file, you should see
 contents similar to the following:
 
 .. code-block:: none
@@ -179,14 +179,14 @@ Now that you have a full backup, you can make an incremental backup based on it.
 
 .. code-block:: bash
 
-   xtrabackup --backup --target-dir=/data/backups/inc1 \
+   $ xtrabackup --backup --target-dir=/data/backups/inc1 \
    --incremental-basedir=/data/backups/base \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
 .. warning:: 
 
-   |xtrabackup| will not copy keyring file into the backup directory. In order to
-   be prepare the backup, you must make a copy of keyring file yourself. If the
+   |xtrabackup| will not copy the keyring file into the backup directory. In order to
+   prepare the backup, you must make a copy of the keyring file yourself. If the
    keyring hasn't been rotated you can use the same as the one you've backed-up
    with the base backup. If the keyring has been rotated you'll need to back it
    up otherwise you won't be able to prepare the backup.
@@ -211,11 +211,11 @@ the base for yet another incremental backup:
 
 .. code-block:: bash
 
-   xtrabackup --backup --target-dir=/data/backups/inc2 \
+   $ xtrabackup --backup --target-dir=/data/backups/inc2 \
    --incremental-basedir=/data/backups/inc1 \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-.. rubric:: Preparing the Incremental Backups
+.. rubric:: Preparing Incremental Backups
 
 The :option:`--prepare` step for incremental backups is not the same as for
 normal backups. In normal backups, two types of operations are performed to make
@@ -234,7 +234,7 @@ rollback phase.
    transactions have been rolled back, further incremental backups cannot be
    applied.
 
-Beginning with the full backup you created, you can prepare it, and then apply
+Beginning with the full backup you created, you can prepare it and then apply
 the incremental differences to it. Recall that you have the following backups:
 
 .. code-block:: bash
@@ -248,7 +248,7 @@ prevent the rollback phase:
 
 .. code-block:: bash
 
-   xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
+   $ xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
 The output should end with some text such as the following: 
@@ -264,13 +264,13 @@ following command:
 
 .. code-block:: bash
 
-   xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
+   $ xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
    --incremental-dir=/data/backups/inc1 \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
 .. warning::
 
-   Backup should be prepared with the keyring that was used when backup was being
+   The backup should be prepared with the keyring that was used when backup was being
    taken. This means that if the keyring has been rotated between the base and
    incremental backup that you'll need to use the keyring that was in use when
    the first incremental backup has been taken.
@@ -281,7 +281,7 @@ point of the second incremental backup:
 
 .. code-block:: bash
 
-   xtrabackup --prepare --target-dir=/data/backups/base \
+   $ xtrabackup --prepare --target-dir=/data/backups/base \
    --incremental-dir=/data/backups/inc2 \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
@@ -293,34 +293,35 @@ point of the second incremental backup:
    was used on the last step, backup would still be consistent but in that case
    server would perform the rollback phase.
 
-Backup is now prepared and can be restored with :option:`--copy-back` option. In
+The backup is now prepared and can be restored with :option:`--copy-back` option. In
 case the keyring has been rotated you'll need to restore the keyring which was
 used to take and prepare the backup.
 
-Restoring backup when keyring is not available
-==============================================
+Restoring a Backup When Keyring Is not Available
+================================================================================
 
-While described restore method works, it requires an access to the same keyring
-which server is using. It may not be possible if backup is prepared on different
-server or at the much later time, when keys in the keyring have been purged, or
-in case of malfunction when keyring vault server is not available at all.
+While the described restore method works, it requires an access to the same
+keyring that the server is using. It may not be possible if the backup is prepared
+on a different server or at a much later time, when keys in the keyring are
+purged, or, in the case of a malfunction, when the keyring vault server is not
+available at all.
 
-A ``--transition-key=<passphrase>`` option should be used to make it possible
+The ``--transition-key=<passphrase>`` option should be used to make it possible
 for |xtrabackup| to process the backup without access to the keyring vault
-server. In this case |xtrabackup| will derive AES encryption key from specified
-passphrase and will use it to encrypt tablespace keys of tablespaces being
-backed up.
+server. In this case, |xtrabackup| derives the AES encryption key from the
+specified passphrase and will use it to encrypt tablespace keys of tablespaces
+that are being backed up.
 
-.. rubric:: Creating the Backup with a Passphrase
+.. rubric:: Creating a Backup with a Passphrase
 
-Following example illustrates how the backup can be created in this case:
+The following example illustrates how the backup can be created in this case:
 
 .. code-block:: bash
 
-   xtrabackup --backup --user=root -p --target-dir=/data/backup \
+   $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
    --transition-key=MySecetKey
 
-If ``--transition-key`` is specified without a value, xtrabackup will ask for
+If ``--transition-key`` is specified without a value, |xtrabackup| will ask for
 it.
 
 .. note::
@@ -330,52 +331,65 @@ it.
 
 .. rubric:: Preparing the Backup with a Passphrase
 
-The same passphrase should be specified for the prepare command:
+The same passphrase should be specified for the `prepare` command:
 
 .. code-block:: bash
 
-   xtrabackup --prepare --target-dir=/data/backup
+   $ xtrabackup --prepare --target-dir=/data/backup
 
 There is no ``--keyring-vault...`` or ``--keyring-file...`` options here,
-because |xtrabackup| does not talk to keyring in this case.
+because |xtrabackup| does not talk to the keyring in this case.
 
-.. rubric:: Restoring the Backup with a generated key
+.. rubric:: Restoring the Backup with a Generated Key
 
-When restoring a backup you will need to generate new master key. Here is the
+When restoring a backup you will need to generate a new master key. Here is the
 example for ``keyring_file``:
 
 .. code-block:: bash
 
-   xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
+   $ xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
    --transition-key=MySecetKey --generate-new-master-key \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-In case of ``keyring_vault`` it will look like this:
+In case of ``keyring_vault``, it will look like this:
 
 .. code-block:: bash
 
-   xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
+   $ xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
    --transition-key=MySecetKey --generate-new-master-key \
    --keyring-vault-config=/etc/vault.cnf
 
-|xtrabackup| will generate new master key, store it into target keyring vault
-server and re-encrypt tablespace keys using this key.
+|xtrabackup| will generate a new master key, store it in the target keyring
+vault server and re-encrypt the tablespace keys using this key.
 
-.. rubric:: Making the Backup with a stored transition key
+.. rubric:: Making the Backup with a Stored Transition Key
 
-Finally, there is an option to store transition key in the keyring. In this case
-|xtrabackup| will need an access to the same keyring file or vault server during
-prepare and copy-back, but does not depend on whether the server keys have been
+Finally, there is an option to store a transition key in the keyring. In this case,
+|xtrabackup| will need to access the same keyring file or vault server during
+prepare and copy-back but does not depend on whether the server keys have been
 purged.
 
-In this scenario three stages of the backup process are looking as following.
+In this scenario, the three stages of the backup process look as follows. 
+
+.. doc-attribute warning is version specific; problem may be solved in a later release
+   (review
+   after v8.0.7
+   jira-issue pxb-1904)
 
 - Backup
 
   .. code-block:: bash
 
-     xtrabackup --backup --user=root -p --target-dir=/data/backup \
+     $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
      --generate-transition-key
+
+     .. warning::
+
+	This usage of the :option:`--generate-transition-key` option is only
+	applicable if |Percona XtraBackup| is used with |Percona Server| version
+	lower than 8.0.15-6. For |Percona Server| versions higher than 8.0.15-6,
+	:option:`--generate-transition-key` should not be used for making full
+	backups with the `keyring_file` plugin.
 
 - Prepare
 
@@ -383,14 +397,14 @@ In this scenario three stages of the backup process are looking as following.
 
     .. code-block:: bash
 
-       xtrabackup --prepare --target-dir=/data/backup \
+       $ xtrabackup --prepare --target-dir=/data/backup \
        --keyring-file-data=/var/lib/mysql-keyring/keyring
 
   - ``keyring_vault`` variant:
 
     .. code-block:: bash
 
-       xtrabackup --prepare --target-dir=/data/backup \
+       $ xtrabackup --prepare --target-dir=/data/backup \
        --keyring-vault-config=/etc/vault.cnf
 
 - Copy-back
@@ -399,12 +413,12 @@ In this scenario three stages of the backup process are looking as following.
 
     .. code-block:: bash
 
-       xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
+       $ xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
        --generate-new-master-key --keyring-file-data=/var/lib/mysql-keyring/keyring
 
   - ``keyring_vault`` variant:
 
     .. code-block:: bash
 
-       xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
+       $ xtrabackup --copy-back --target-dir=/data/backup --datadir=/data/mysql \
        --generate-new-master-key --keyring-vault-config=/etc/vault.cnf

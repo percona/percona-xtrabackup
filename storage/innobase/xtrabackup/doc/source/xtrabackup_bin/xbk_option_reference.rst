@@ -301,9 +301,19 @@ Options
    This option specifies which types of queries are allowed to complete before
    xtrabackup will issue the global lock. Default is ``all``.
 
+.. option:: --generate-transition-key
+
+   |xtrabackup| needs to access the same keyring file or vault server
+   during `prepare` and `copy-back` but it should not depend on whether the
+   server keys have been purged.
+
+   :option:`--generate-transition-key` creates and adds to the keyring
+   a transition key for |xtrabackup| to use if the master key used for
+   encryption is not found because it has been rotated and purged.
+
 .. option:: --galera-info
 
-   This options creates the :file:`xtrabackup_galera_info` file which contains
+   This option creates the :file:`xtrabackup_galera_info` file which contains
    the local node state at the time of the backup. Option should be used when
    performing the backup of |Percona XtraDB Cluster|. It has no effect when
    backup locks are used to create the backup.
