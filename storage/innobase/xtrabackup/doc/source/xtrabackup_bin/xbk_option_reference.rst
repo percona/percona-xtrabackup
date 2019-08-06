@@ -55,12 +55,23 @@ Options
 .. option:: --compress
 
    This option tells |xtrabackup| to compress all output data, including the
-   transaction log file and meta data files, using the specified compression
-   algorithm. The only currently supported algorithm is ``quicklz``. The
-   resulting files have the qpress archive format, i.e. every ``*.qp`` file
-   produced by xtrabackup is essentially a one-file qpress archive and can be
-   extracted and uncompressed by the `qpress <http://www.quicklz.com/>`_  file
-   archiver.
+   transaction log file and meta data files, using either the ``quicklz`` or
+   ``lz4`` compression algorithm. ``quicklz`` is chosen by default.
+
+   When using ``--compress=quicklz`` or ``--compress``, the resulting files have
+   the qpress archive format, i.e. every ``*.qp`` file produced by |xtrabackup| is
+   essentially a one-file qpress archive and can be extracted and uncompressed
+   by the `qpress <http://www.quicklz.com/>`_ file archiver.
+
+   ``--compress=lz4`` produces ``*.lz4`` files. You can extract the contents of
+   these files by using a program such as ``lz4``.
+
+   .. seealso::
+
+      QuickLZ
+         http://www.quicklz.com
+      LZ4
+         https://lz4.github.io/lz4/
 
 .. option:: --compress-chunk-size=#
 
@@ -124,6 +135,10 @@ Options
 
    The :option:`--decompress` option may be used with |xbstream| to
    decompress individual qpress files.
+
+   If you used the ``lz4`` compression algoritm to compress the files
+   (``--compress=lz4``), change the :option:`--decompress` parameter
+   accordingly: ``--decompress=lz4``.
 
 .. option:: --decompress-threads=#
 
