@@ -50,7 +50,7 @@ You can use the following one-liner to uncompress all the files:
 
    $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
 
-If you used the ``lz4`` compression algoritm change this script to search for ``*.lz4`` files:
+If you used the ``lz4`` compression algorithm change this script to search for ``*.lz4`` files:
 
 .. code-block:: bash
 
