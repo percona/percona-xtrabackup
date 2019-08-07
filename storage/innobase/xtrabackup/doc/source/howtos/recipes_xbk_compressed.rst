@@ -5,15 +5,22 @@ Making a Compressed Backup
 ================================================================================
 
 In order to make a compressed backup, use the :option:`--compress` option along
-with the :option:`--backup` and :option:`--target-dir` options:
+with the :option:`--backup` and :option:`--target-dir` options. By default
+:option:`--compress` uses the ``quicklz`` compression algorithm. 
 
 .. code-block:: bash
 
    $ xtrabackup --backup --compress --target-dir=/data/backup
 
+You can also use the ``lz4`` compression algorithm by setting :option:``--compress`` to ``lz4``.
+
+.. code-block:: bash
+
+   $ xtrabackup --backup --compress=lz4 --target-dir=/data/backup
+
 If you want to speed up the compression you can use the parallel
 compression, which can be enabled with :option:`--compress-threads`
-option. The following example uses four threads for compression:
+option. The following example uses four threads for compression.
 
 .. code-block:: bash
 
@@ -43,7 +50,13 @@ You can use the following one-liner to uncompress all the files:
 
    $ for bf in `find . -iname "*\.qp"`; do qpress -d $bf $(dirname $bf) && rm $bf; done
 
-You can decompress the backup by using the ``--decompress`` option:
+If you used the ``lz4`` compression algoritm change this script to search for ``*.lz4`` files:
+
+.. code-block:: bash
+
+   $ for bf in `find . -iname "*\.lz4"`; do lz4 -d $bf $(dirname $bf) && rm $bf; done
+
+You can decompress the backup by using the :option:`--decompress` option:
 
 .. code-block:: bash
 
