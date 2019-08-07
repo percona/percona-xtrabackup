@@ -136,7 +136,7 @@ Options
    The :option:`--decompress` option may be used with |xbstream| to
    decompress individual qpress files.
 
-   If you used the ``lz4`` compression algoritm to compress the files
+   If you used the ``lz4`` compression algorithm to compress the files
    (``--compress=lz4``), change the :option:`--decompress` parameter
    accordingly: ``--decompress=lz4``.
 
