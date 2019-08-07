@@ -123,7 +123,7 @@ rst_prolog = '''
 
 .. |Percona XtraDB Cluster|  replace:: *Percona XtraDB Cluster*
 
-.. |Percona Server|  replace:: *Percona Server*
+.. |Percona Server|  replace:: *Percona Server for MySQL*
 
 .. |Percona|  replace:: *Percona*
 
