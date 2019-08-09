@@ -46,6 +46,7 @@
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"  // Prealloced_array
+#include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_grant, check_access
 #include "sql/basic_row_iterators.h"
@@ -338,6 +339,12 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
     DBUG_RETURN(true); /* purecov: inspected */
 
   /*
+    Reset the field list to remove any hidden fields added by substitute_gc() in
+    the previous execution.
+  */
+  select_lex->all_fields = select_lex->fields_list;
+
+  /*
     See if we can substitute expressions with equivalent generated
     columns in the WHERE and ORDER BY clauses of the UPDATE statement.
     It is unclear if this is best to do before or after the other
@@ -573,8 +580,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
       DBUG_RETURN(err);
     }
 
-    if (thd->lex->is_ignore()) table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-    table->file->try_semi_consistent_read(1);
+    if (thd->lex->is_ignore()) table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
 
     if (used_key_is_modified || order) {
       /*
@@ -601,10 +607,10 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         }
 
         // Force filesort to sort by position.
-        qep_tab.keep_current_rowid = true;
         fsort.reset(new (thd->mem_root) Filesort(&qep_tab, order, limit));
         unique_ptr_destroy_only<RowIterator> sort(new (
             &info.sort_holder) SortingIterator(thd, fsort.get(), move(iterator),
+                                               /*force_sort_position=*/true,
                                                /*examined_rows=*/nullptr));
         if (sort->Init()) DBUG_RETURN(true);
         info.iterator = move(sort);
@@ -640,7 +646,9 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           table->file->print_error(error, error_flags);
           DBUG_RETURN(true);
         }
-        table->file->try_semi_consistent_read(1);
+        table->file->try_semi_consistent_read(true);
+        auto end_semi_consistent_read = create_scope_guard(
+            [table] { table->file->try_semi_consistent_read(false); });
 
         /*
           When we get here, we have one of the following options:
@@ -713,7 +721,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         if (thd->killed && !error)  // Aborted
           error = 1;                /* purecov: inspected */
         limit = tmp_limit;
-        table->file->try_semi_consistent_read(0);
+        end_semi_consistent_read.rollback();
         if (used_index < MAX_KEY && covering_keys_for_cond.is_set(used_index))
           table->set_keyread(false);
         table->file->ha_index_or_rnd_end();
@@ -747,6 +755,10 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         DBUG_RETURN(true); /* purecov: inspected */
     }
 
+    table->file->try_semi_consistent_read(true);
+    auto end_semi_consistent_read = create_scope_guard(
+        [table] { table->file->try_semi_consistent_read(false); });
+
     /*
       Generate an error (in TRADITIONAL mode) or warning
       when trying to set a NOT NULL field to NULL.
@@ -765,7 +777,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         table and therefore might need update to be done immediately.
         So we turn-off the batching.
       */
-      (void)table->file->extra(HA_EXTRA_UPDATE_CANNOT_BATCH);
+      (void)table->file->ha_extra(HA_EXTRA_UPDATE_CANNOT_BATCH);
       will_batch = false;
     } else {
       // No after update triggers, attempt to start bulk update
@@ -944,6 +956,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         break;
       }
     }
+    end_semi_consistent_read.rollback();
 
     table->auto_increment_field_not_null = false;
     dup_key_found = 0;
@@ -983,7 +996,6 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
     } else
       updated_rows -= dup_key_found;
     if (will_batch) table->file->end_bulk_update();
-    table->file->try_semi_consistent_read(0);
 
     if (read_removal) {
       /* Only handler knows how many records really was written */
@@ -1661,7 +1673,7 @@ bool Query_result_update::prepare(THD *thd, List<Item> &, SELECT_LEX_UNIT *u) {
            table and therefore might need update to be done immediately.
            So we turn-off the batching.
         */
-        (void)table->file->extra(HA_EXTRA_UPDATE_CANNOT_BATCH);
+        (void)table->file->ha_extra(HA_EXTRA_UPDATE_CANNOT_BATCH);
       }
     }
   }
@@ -1859,7 +1871,7 @@ bool Query_result_update::optimize() {
     ORDER group;
     Temp_table_param *tmp_param;
 
-    if (thd->lex->is_ignore()) table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+    if (thd->lex->is_ignore()) table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
     if (table == main_table)  // First table in join
     {
       /*
@@ -2008,7 +2020,7 @@ bool Query_result_update::optimize() {
     group.direction = ORDER_ASC;
     group.item = temp_fields.head_ref();
 
-    tmp_param->quick_group = 1;
+    tmp_param->allow_group_via_temp_table = true;
     tmp_param->field_count = temp_fields.elements;
     tmp_param->group_parts = 1;
     tmp_param->group_length = table->file->ref_length;
@@ -2113,7 +2125,7 @@ bool Query_result_update::send_data(THD *thd, List<Item> &) {
             while we may be scanning it.  This will flush the read cache
             if it's used.
           */
-          main_table->file->extra(HA_EXTRA_PREPARE_FOR_UPDATE);
+          main_table->file->ha_extra(HA_EXTRA_PREPARE_FOR_UPDATE);
         }
         if ((error = table->file->ha_update_row(table->record[1],
                                                 table->record[0])) &&
@@ -2282,6 +2294,15 @@ bool Query_result_update::do_updates(THD *thd) {
     }
     DBUG_RETURN(false);
   }
+
+  // If we're updating based on an outer join, the executor may have left some
+  // rows in NULL row state. Reset them before we start looking at rows,
+  // so that generated fields don't inadvertedly get NULL inputs.
+  for (cur_table = update_tables; cur_table;
+       cur_table = cur_table->next_local) {
+    cur_table->table->reset_null_row();
+  }
+
   for (cur_table = update_tables; cur_table;
        cur_table = cur_table->next_local) {
     uint offset = cur_table->shared;
@@ -2523,7 +2544,7 @@ bool Query_result_update::send_eof(THD *thd) {
   if (local_error > 0)  // if the above log write did not fail ...
   {
     /* Safety: If we haven't got an error before (can happen in do_updates) */
-    my_message(ER_UNKNOWN_ERROR, "An error occured in multi-table update",
+    my_message(ER_UNKNOWN_ERROR, "An error occurred in multi-table update",
                MYF(0));
     DBUG_RETURN(true);
   }

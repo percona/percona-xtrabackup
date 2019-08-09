@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,6 +45,7 @@
 #include "sql/sql_table.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
+#include "template_utils.h"
 
 /*
   First, if you want to understand storage engines you should look at
@@ -71,7 +72,7 @@
   meta file is first opened it is marked as dirty. It is opened when the table
   itself is opened for writing. When the table is closed the new count for rows
   is written to the meta file and the file is marked as clean. If the meta file
-  is opened and it is marked as dirty, it is assumed that a crash occured. At
+  is opened and it is marked as dirty, it is assumed that a crash occurred. At
   this point an error occurs and the user is told to rebuild the file.
   A rebuild scans the rows and rewrites the meta file. If corruption is found
   in the data file then the meta file is not repaired.
@@ -353,11 +354,10 @@ unsigned int ha_archive::pack_row_v1(uchar *record) {
   pos = record_buffer->buffer + table->s->reclength;
   for (blob = table->s->blob_field, end = blob + table->s->blob_fields;
        blob != end; blob++) {
-    uint32 length = ((Field_blob *)table->field[*blob])->get_length();
+    Field_blob *field = down_cast<Field_blob *>(table->field[*blob]);
+    const uint32 length = field->get_length();
     if (length) {
-      uchar *data_ptr;
-      ((Field_blob *)table->field[*blob])->get_ptr(&data_ptr);
-      memcpy(pos, data_ptr, length);
+      memcpy(pos, field->get_ptr(), length);
       pos += length;
     }
   }
@@ -624,9 +624,9 @@ int ha_archive::create(const char *name, TABLE *table_arg,
     }
   }
 
-    /*
-      We reuse name_buff since it is available.
-    */
+  /*
+    We reuse name_buff since it is available.
+  */
 #ifndef _WIN32
   if (my_enable_symlinks && create_info->data_file_name &&
       create_info->data_file_name[0] != '#') {
@@ -1040,7 +1040,7 @@ int ha_archive::get_row_version2(azio_stream *file_to_read, uchar *buf) {
   size_t read;
   int error;
   uint *ptr, *end;
-  char *last;
+  const char *last;
   size_t total_blob_length = 0;
   MY_BITMAP *read_set = table->read_set;
   DBUG_ENTER("ha_archive::get_row_version2");
@@ -1073,7 +1073,7 @@ int ha_archive::get_row_version2(azio_stream *file_to_read, uchar *buf) {
 
   /* Adjust our row buffer if we need be */
   buffer.alloc(total_blob_length);
-  last = (char *)buffer.ptr();
+  last = buffer.ptr();
 
   /* Loop through our blobs and read them */
   for (ptr = table->s->blob_field, end = ptr + table->s->blob_fields;
@@ -1082,12 +1082,13 @@ int ha_archive::get_row_version2(azio_stream *file_to_read, uchar *buf) {
     if (size) {
       if (bitmap_is_set(read_set,
                         ((Field_blob *)table->field[*ptr])->field_index)) {
-        read = azread(file_to_read, last, size, &error);
+        read = azread(file_to_read, const_cast<char *>(last), size, &error);
 
         if (error) DBUG_RETURN(HA_ERR_CRASHED_ON_USAGE);
 
         if ((size_t)read != size) DBUG_RETURN(HA_ERR_END_OF_FILE);
-        ((Field_blob *)table->field[*ptr])->set_ptr(size, (uchar *)last);
+        ((Field_blob *)table->field[*ptr])
+            ->set_ptr(size, pointer_cast<const uchar *>(last));
         last += size;
       } else {
         (void)azseek(file_to_read, size, SEEK_CUR);
@@ -1179,6 +1180,7 @@ int ha_archive::optimize(THD *, HA_CHECK_OPT *check_opt) {
   ha_rows count;
   my_bitmap_map *org_bitmap;
   char writer_filename[FN_REFLEN];
+  bool saved_copy_blobs = table->copy_blobs;
   DBUG_ENTER("ha_archive::optimize");
 
   mysql_mutex_lock(&share->mutex);
@@ -1227,6 +1229,9 @@ int ha_archive::optimize(THD *, HA_CHECK_OPT *check_opt) {
 
   stats.auto_increment_value = 1;
   org_bitmap = tmp_use_all_columns(table, table->read_set);
+
+  table->copy_blobs = true;
+
   /* read rows upto the remembered rows */
   for (ha_rows cur_count = count; cur_count; cur_count--) {
     if ((rc = get_row(&archive, table->record[0]))) break;
@@ -1247,6 +1252,7 @@ int ha_archive::optimize(THD *, HA_CHECK_OPT *check_opt) {
         save_auto_increment(table, &stats.auto_increment_value);
     }
   }
+  table->copy_blobs = saved_copy_blobs;
 
   tmp_restore_column_map(table->read_set, org_bitmap);
   share->rows_recorded = (ha_rows)writer.rows;

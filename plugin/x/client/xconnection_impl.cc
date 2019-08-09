@@ -33,7 +33,10 @@
 #include <errno.h>
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
-#endif
+#endif  // HAVE_NETINET_IN_H
+#ifdef HAVE_OPENSSL
+#include <openssl/x509v3.h>
+#endif  // HAVE_OPENSSL
 #include <cassert>
 #include <chrono>
 #include <future>
@@ -48,6 +51,7 @@
 #include "plugin/x/client/xconnection_config.h"
 #include "plugin/x/client/xssl_config.h"
 #include "plugin/x/generated/mysqlx_error.h"
+#include "plugin/x/src/config/config.h"
 #include "sql/net_ns.h"
 
 #ifndef WIN32
@@ -124,6 +128,13 @@ class Connection_state : public XConnection::State {
     return m_connection_type;
   }
 
+  bool has_data() const override {
+    bool res = m_vio->has_data(m_vio);
+    if (res) return true;
+
+    return vio_io_wait(m_vio, VIO_IO_EVENT_READ, 0) != 0;
+  }
+
   Vio *m_vio;
   bool m_is_ssl_configured;
   bool m_is_ssl_active;
@@ -167,6 +178,28 @@ XError ssl_verify_server_cert(Vio *vio, const std::string &server_hostname) {
     return XError{CR_SSL_CONNECTION_ERROR,
                   "Failed to verify the server certificate"};
   }
+
+  /*
+    Use OpenSSL certificate matching functions instead of our own if we
+    have OpenSSL. The X509_check_* functions return 1 on success.
+  */
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L || defined(HAVE_WOLFSSL)
+  const int check_result_for_ip = IS_WOLFSSL_OR_OPENSSL(
+      0, X509_check_ip_asc(server_cert, server_hostname.c_str(), 0));
+  const int check_result_for_host = X509_check_host(
+      server_cert, server_hostname.c_str(), server_hostname.length(), 0, 0);
+  if ((check_result_for_host != 1) && (check_result_for_ip != 1)) {
+    return XError{
+        CR_SSL_CONNECTION_ERROR,
+        "Failed to verify the server certificate via X509 certificate "
+        "matching functions"};
+  }
+#else /* OPENSSL_VERSION_NUMBER < 0x10002000L */
+  /*
+     OpenSSL prior to 1.0.2 do not support X509_check_host() function.
+     Use deprecated X509_get_subject_name() instead.
+  */
+
   X509_NAME *subject = X509_get_subject_name(server_cert);
   int cn_loc = X509_NAME_get_index_by_NID(subject, NID_commonName, -1);
 
@@ -206,6 +239,7 @@ XError ssl_verify_server_cert(Vio *vio, const std::string &server_hostname) {
     return XError{CR_SSL_CONNECTION_ERROR,
                   "SSL certificate validation failure"};
   }
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
 
   return {};
 }

@@ -105,7 +105,7 @@ int Recovery_module::start_recovery(const string &group_name,
   DBUG_RETURN(0);
 }
 
-int Recovery_module::stop_recovery() {
+int Recovery_module::stop_recovery(bool wait_for_termination) {
   DBUG_ENTER("Recovery_module::stop_recovery");
 
   mysql_mutex_lock(&run_lock);
@@ -117,7 +117,7 @@ int Recovery_module::stop_recovery() {
 
   recovery_aborted = true;
 
-  while (recovery_thd_state.is_thread_alive()) {
+  while (recovery_thd_state.is_thread_alive() && wait_for_termination) {
     DBUG_PRINT("loop", ("killing group replication recovery thread"));
 
     if (recovery_thd_state.is_initialized()) {
@@ -155,7 +155,8 @@ int Recovery_module::stop_recovery() {
     DBUG_ASSERT(error == ETIMEDOUT || error == 0);
   }
 
-  DBUG_ASSERT(!recovery_thd_state.is_running());
+  DBUG_ASSERT((wait_for_termination && !recovery_thd_state.is_running()) ||
+              !wait_for_termination);
 
   mysql_mutex_unlock(&run_lock);
 
@@ -224,7 +225,7 @@ void Recovery_module::leave_group_on_recovery_failure() {
   }
   gcs_module->remove_view_notifer(&view_change_notifier);
 
-  if (exit_state_action_var == EXIT_STATE_ACTION_ABORT_SERVER) {
+  if (get_exit_state_action_var() == EXIT_STATE_ACTION_ABORT_SERVER) {
     abort_plugin_process("Fatal error during execution of Group Replication");
   }
 }
@@ -433,7 +434,8 @@ int Recovery_module::update_recovery_process(bool did_members_left,
       by recovery in the process.
     */
     if (is_leaving && !recovery_aborted) {
-      stop_recovery();
+      stop_recovery(!is_leaving); /* Do not wait for recovery thread
+                                     termination if member is leaving */
     } else if (!recovery_aborted) {
       recovery_state_transfer.update_recovery_process(did_members_left);
     }

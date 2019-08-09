@@ -708,6 +708,14 @@ class JOIN {
   */
   bool with_json_agg;
 
+  /**
+    If set, "fields" has been replaced with a set of Item_refs for rollup
+    processing; see the AggregateIterator constructor for more details.
+    This is used when constructing iterators only; it is not used during
+    execution.
+   */
+  bool replaced_items_for_rollup = false;
+
   /// True if plan is const, ie it will return zero or one rows.
   bool plan_is_const() const { return const_tables == primary_tables; }
 
@@ -717,7 +725,7 @@ class JOIN {
   */
   bool plan_is_single_table() { return primary_tables - const_tables == 1; }
 
-  int optimize();
+  bool optimize();
   void reset();
   void exec();
   bool prepare_result();
@@ -827,6 +835,12 @@ class JOIN {
   void finalize_derived_keys();
   bool get_best_combination();
   bool attach_join_conditions(plan_idx last_tab);
+
+ private:
+  bool attach_join_condition_to_nest(plan_idx first_inner, plan_idx last_tab,
+                                     Item *join_cond, bool is_sj_mat_cond);
+
+ public:
   bool update_equalities_for_sjm();
   bool add_sorting_to_table(uint idx, ORDER_with_src *order,
                             bool force_stable_sort = false);
@@ -1045,7 +1059,7 @@ class JOIN {
   bool alloc_qep(uint n);
   void unplug_join_tabs();
   bool setup_semijoin_materialized_table(JOIN_TAB *tab, uint tableno,
-                                         const POSITION *inner_pos,
+                                         POSITION *inner_pos,
                                          POSITION *sjm_pos);
 
   bool add_having_as_tmp_table_cond(uint curr_tmp_table);
@@ -1070,7 +1084,7 @@ class JOIN {
     Optimize DISTINCT, GROUP BY, ORDER BY clauses
 
     @retval false ok
-    @retval true  an error occured
+    @retval true  an error occurred
   */
   bool optimize_distinct_group_order();
 
@@ -1162,6 +1176,19 @@ Item *make_cond_for_table(THD *thd, Item *cond, table_map tables,
                           table_map used_table, bool exclude_expensive_cond);
 uint build_bitmap_for_nested_joins(List<TABLE_LIST> *join_list,
                                    uint first_unused);
+
+/**
+  Create an order list that consists of all non-const fields and items.
+  This is usable for e.g. converting DISTINCT into GROUP or ORDER BY.
+
+  Try to put the items in "order_list" first, to allow one to optimize away
+  a later ORDER BY.
+ */
+ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
+                                  ORDER *order_list, List<Item> &fields,
+                                  bool skip_aggregates,
+                                  bool convert_bit_fields_to_long,
+                                  bool *all_order_by_fields_used);
 
 /**
    Returns true if arguments are a temporal Field having no date,
@@ -1261,5 +1288,7 @@ class Candidate_table_order {
  private:
   const JOIN *const m_join;
 };
+
+extern const char *antijoin_null_cond;
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

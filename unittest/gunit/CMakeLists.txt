@@ -223,6 +223,8 @@ SET(DISABLE_PSI_DEFINITIONS
   "DISABLE_PSI_STAGE"
   )
 
+# Set these in the cache to make them available globally
+SET(DISABLE_PSI_DEFINITIONS ${DISABLE_PSI_DEFINITIONS} CACHE INTERNAL "")
 
 MY_INCLUDE_SYSTEM_DIRECTORIES(ICU)
 INCLUDE_DIRECTORIES(
@@ -263,9 +265,9 @@ ADD_LIBRARY(gunit_large STATIC
 ADD_DEPENDENCIES(gunit_small GenError)
 ADD_DEPENDENCIES(gunit_large GenError)
 TARGET_LINK_LIBRARIES(gunit_small
-  mysys mysys_ssl mytap dbug strings myisam_sys ${GTEST_LIBRARIES} libmysql_errmsg)
+  mysys dbug strings  ${GTEST_LIBRARIES} libmysql_errmsg)
 TARGET_LINK_LIBRARIES(gunit_large
-  mysys mysys_ssl mytap dbug strings ${GTEST_LIBRARIES})
+  mysys dbug strings ${GTEST_LIBRARIES})
 MESSAGE(STATUS "GTEST_LIBRARIES:${GTEST_LIBRARIES}")
 
 IF(WIN32)
@@ -284,6 +286,7 @@ SET(TESTS
   alignment
   bounds_checked_array
   bitmap
+  charset_bug28956360
   byteorder
   calloc
   cost_estimate
@@ -307,6 +310,7 @@ SET(TESTS
   mysys_lf
   mysys_my_b_vprintf
   mysys_my_getopt
+  mysys_my_getpw
   mysys_my_loadpath
   mysys_my_malloc
   mysys_my_pwrite
@@ -323,7 +327,7 @@ SET(TESTS
   prealloced_array
   priority_queue
   record_buffer
-  rpl_cipher
+  stream_cipher
   sql_class_header
   sql_list
   sql_plist
@@ -345,10 +349,6 @@ SET(TESTS
   collation_loader
   my_rcu_lock
   )
-
-IF(WIN32)
-  LIST(APPEND TESTS win_tests)
-ENDIF()
 
 SET(ALL_SMALL_TESTS)
 FOREACH(test ${TESTS})
@@ -407,6 +407,7 @@ SET(SERVER_TESTS
   make_sortkey
   mdl_sync
   my_decimal
+  mysqld_funcs
   opt_costconstants
   opt_costmodel
   opt_guessrecperkey
@@ -431,7 +432,18 @@ SET(SERVER_TESTS
   value_map
   wild_case_compare
   sha2_password
+  decoy_user
 )
+
+IF(WIN32)
+  LIST(APPEND SERVER_TESTS win_tests)
+ENDIF()
+
+# Suppress -Wformat-overflow= for my_safe_snprintf(" %s ", nullptr)
+MY_CHECK_CXX_COMPILER_WARNING("format-overflow" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(segfault-t.cc COMPILE_FLAGS ${HAS_WARN_FLAG})
+ENDIF()
 
 SET(ALL_LARGE_TESTS)
 FOREACH(test ${SERVER_TESTS})
@@ -441,17 +453,14 @@ ENDFOREACH()
 SET(SQL_GUNIT_LIB_SOURCE 
   ${CMAKE_SOURCE_DIR}/sql/filesort_utils.cc 
   ${CMAKE_SOURCE_DIR}/sql/mdl.cc
-  ${CMAKE_SOURCE_DIR}/sql/rpl_cipher.cc
+  ${CMAKE_SOURCE_DIR}/sql/stream_cipher.cc
   ${CMAKE_SOURCE_DIR}/sql/sql_list.cc
   ${CMAKE_SOURCE_DIR}/sql/stateless_allocator.cc
   ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc
   ${CMAKE_SOURCE_DIR}/sql/thr_malloc.cc
   )
 
-IF(WIN32)
-  LIST(APPEND SQL_GUNIT_LIB_SOURCE ${CMAKE_SOURCE_DIR}/sql/named_pipe.cc)
-ENDIF()
-ADD_CONVENIENCE_LIBRARY(sqlgunitlib ${SQL_GUNIT_LIB_SOURCE})
+ADD_LIBRARY(sqlgunitlib STATIC ${SQL_GUNIT_LIB_SOURCE})
 ADD_DEPENDENCIES(sqlgunitlib GenError)
 SET_TARGET_PROPERTIES(sqlgunitlib
   PROPERTIES COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}"
@@ -463,8 +472,9 @@ OPTION(MERGE_UNITTESTS "Merge tests into one executable" ON)
 IF (MERGE_UNITTESTS)
   MYSQL_ADD_EXECUTABLE(merge_small_tests-t ${ALL_SMALL_TESTS}
     ADD_TEST merge_small_tests)
+  SET_TARGET_PROPERTIES(merge_small_tests-t PROPERTIES ENABLE_EXPORTS TRUE)
   TARGET_LINK_LIBRARIES(merge_small_tests-t
-    mysys mysys_ssl sqlgunitlib gunit_small)
+    mysys sqlgunitlib gunit_small)
   
   IF(WIN32)
     LIST(APPEND ALL_LARGE_TESTS ../../sql/nt_servc.cc)
@@ -472,12 +482,11 @@ IF (MERGE_UNITTESTS)
   LIST(APPEND ALL_LARGE_TESTS ../../storage/example/ha_example.cc)
 
   MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS} SKIP_INSTALL)
+  SET_TARGET_PROPERTIES(merge_large_tests-t PROPERTIES ENABLE_EXPORTS TRUE)
   TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main binlog rpl master slave)
-  TARGET_LINK_LIBRARIES(merge_large_tests-t sql_main sql_gis sql_dd)
+  TARGET_LINK_LIBRARIES(merge_large_tests-t sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(merge_large_tests-t
     gunit_large strings dbug mysys ${ICU_LIBRARIES})
-  TARGET_LINK_LIBRARIES(merge_large_tests-t
-    sql_main binlog rpl master slave sql_gis sql_main sql_dd)
 
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
     TARGET_LINK_LIBRARIES(merge_large_tests-t perfschema)
@@ -505,6 +514,7 @@ ENDIF()
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc SKIP_INSTALL ${EXCLUDE_FROM_ALL})
+  SET_TARGET_PROPERTIES(${test}-t PROPERTIES ENABLE_EXPORTS TRUE)
   ADD_COMPILE_DEFINITIONS(${test}-t.cc
     COMPILE_DEFINITIONS ${DISABLE_PSI_DEFINITIONS})
   TARGET_LINK_LIBRARIES(${test}-t gunit_small sqlgunitlib strings dbug)
@@ -531,11 +541,10 @@ FOREACH(test ${SERVER_TESTS})
     LIST(APPEND SRC_FILES ../../storage/example/ha_example.cc)
   ENDIF()
   MYSQL_ADD_EXECUTABLE(${test}-t ${SRC_FILES} SKIP_INSTALL ${EXCLUDE_FROM_ALL})
-  TARGET_LINK_LIBRARIES(${test}-t sql_main binlog rpl master slave sql_main)
-  TARGET_LINK_LIBRARIES(${test}-t sql_main sql_gis sql_dd)
+  SET_TARGET_PROPERTIES(${test}-t PROPERTIES ENABLE_EXPORTS TRUE)
+  TARGET_LINK_LIBRARIES(${test}-t sql_main binlog rpl master slave)
+  TARGET_LINK_LIBRARIES(${test}-t sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(${test}-t gunit_large strings dbug mysys)
-  TARGET_LINK_LIBRARIES(${test}-t
-    sql_main binlog rpl master slave sql_gis sql_main sql_dd sql_gis)
   TARGET_LINK_LIBRARIES(${test}-t ${ICU_LIBRARIES})
 
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)

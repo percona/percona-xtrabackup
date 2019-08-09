@@ -88,6 +88,8 @@ static const char *kKeyringAttributePassword = "password";
 
 static const std::chrono::milliseconds kDefaultMetadataTTL =
     std::chrono::milliseconds(500);
+static const std::chrono::milliseconds kDefaultMetadataTTLGRNotificationsON =
+    std::chrono::milliseconds(60 * 1000);
 static constexpr uint32_t kMaxRouterId =
     999999;  // max router id is 6 digits due to username size constraints
 static constexpr unsigned kNumRandomChars = 12;
@@ -97,11 +99,11 @@ static constexpr unsigned kDefaultPasswordRetries =
 static constexpr unsigned kMaxPasswordRetries = 10000;
 
 using mysql_harness::DIM;
+using mysql_harness::get_strerror;
 using mysql_harness::Path;
 using mysql_harness::TCPAddress;
-using mysql_harness::UniquePtr;
-using mysql_harness::get_strerror;
 using mysql_harness::truncate_string;
+using mysql_harness::UniquePtr;
 using namespace mysqlrouter;
 
 namespace {
@@ -640,12 +642,12 @@ void ConfigGenerator::bootstrap_directory_deployment(
   }
 
   if (!path.exists()) {
-    if (mysql_harness::mkdir(directory.c_str(), kStrictDirectoryPerm) < 0) {
+    int err = mysql_harness::mkdir(directory, kStrictDirectoryPerm);
+    if (err != 0) {
       log_error("Cannot create directory '%s': %s",
-                truncate_string(directory).c_str(),
-                get_strerror(errno).c_str());
+                truncate_string(directory).c_str(), get_strerror(err).c_str());
 #ifndef _WIN32
-      if (errno == EACCES || errno == EPERM) log_error(kAppArmorMsg);
+      if (err == EACCES || err == EPERM) log_error(kAppArmorMsg);
 #endif
       throw std::runtime_error("Could not create deployment directory");
     }
@@ -707,8 +709,8 @@ void ConfigGenerator::bootstrap_directory_deployment(
       }
     }
     if (do_mkdir) {
-      int res = mysql_harness::mkdir(options[option_name].c_str(),
-                                     kStrictDirectoryPerm);
+      int res =
+          mysql_harness::mkdir(options[option_name], kStrictDirectoryPerm);
       if (res != 0) {
         if (res != EEXIST) {
           log_error("Cannot create directory '%s': %s",
@@ -904,6 +906,9 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
   options.ssl_options.capath = get_opt(user_options, "ssl_capath", "");
   options.ssl_options.crl = get_opt(user_options, "ssl_crl", "");
   options.ssl_options.crlpath = get_opt(user_options, "ssl_crlpath", "");
+
+  options.use_gr_notifications =
+      user_options.find("use-gr-notifications") != user_options.end();
 
   return options;
 }
@@ -1725,12 +1730,15 @@ void ConfigGenerator::create_config(
               << "\n";
 
   const auto &metadata_key = metadata_cluster;
+  auto ttl = options.use_gr_notifications ? kDefaultMetadataTTLGRNotificationsON
+                                          : kDefaultMetadataTTL;
   config_file << "[metadata_cache:" << metadata_key << "]\n"
               << "router_id=" << router_id << "\n"
               << "user=" << username << "\n"
               << "metadata_cluster=" << metadata_cluster << "\n"
-              << "ttl="
-              << mysqlrouter::ms_to_seconds_string(kDefaultMetadataTTL) << "\n";
+              << "ttl=" << mysqlrouter::ms_to_seconds_string(ttl) << "\n"
+              << "use_gr_notifications="
+              << (options.use_gr_notifications ? "1" : "0") << "\n";
 
   // SSL options
   config_file << option_line("ssl_mode", options.ssl_options.mode);

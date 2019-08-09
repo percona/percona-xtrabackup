@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -54,16 +54,10 @@
 
 using mysql_harness::SocketOperations;
 
-Path g_origin_path;
 using mysqlrouter::MySQLSession;
 
-class RouterRoutingTest : public RouterComponentTest, public ::testing::Test {
+class RouterRoutingTest : public RouterComponentTest {
  protected:
-  virtual void SetUp() {
-    set_origin(g_origin_path);
-    RouterComponentTest::init();
-  }
-
   TcpPortPool port_pool_;
 };
 
@@ -75,10 +69,10 @@ TEST_F(RouterRoutingTest, RoutingOk) {
   // packet size to +10MB to verify routing of the big packets
   const std::string json_stmts =
       get_data_dir().join("bootstrap_big_data.js").str();
-  const std::string bootstrap_dir = get_tmp_dir();
+  TempDirectory bootstrap_dir;
 
   // launch the server mock for bootstrapping
-  auto server_mock = launch_mysql_server_mock(
+  auto &server_mock = launch_mysql_server_mock(
       json_stmts, server_port,
       false /*expecting huge data, can't print on the console*/);
 
@@ -91,43 +85,43 @@ TEST_F(RouterRoutingTest, RoutingOk) {
       "destinations = 127.0.0.1:" +
       std::to_string(server_port) + "\n";
 
-  const std::string conf_dir = get_tmp_dir("conf");
-  std::shared_ptr<void> exit_guard1(nullptr,
-                                    [&](void *) { purge_dir(conf_dir); });
-  std::string conf_file = create_config_file(conf_dir, routing_section);
+  TempDirectory conf_dir("conf");
+  std::string conf_file = create_config_file(conf_dir.name(), routing_section);
 
   // launch the router with simple static routing configuration
-  auto router_static = launch_router("-c " + conf_file);
+  auto &router_static = launch_router({"-c", conf_file});
 
   // wait for both to begin accepting the connections
-  ASSERT_TRUE(wait_for_port_ready(server_port, 5000))
+  ASSERT_TRUE(wait_for_port_ready(server_port))
       << server_mock.get_full_output();
 
-  ASSERT_TRUE(wait_for_port_ready(router_port, 5000))
-      << get_router_log_output();
+  ASSERT_TRUE(wait_for_port_ready(router_port))
+      << router_static.get_full_logfile();
 
   // launch another router to do the bootstrap connecting to the mock server
   // via first router instance
-  std::shared_ptr<void> exit_guard2(nullptr,
-                                    [&](void *) { purge_dir(bootstrap_dir); });
-  auto router_bootstrapping =
-      launch_router("--bootstrap=localhost:" + std::to_string(router_port) +
-                    " --report-host dont.query.dns" + " -d " + bootstrap_dir);
+  auto &router_bootstrapping = launch_router({
+      "--bootstrap=localhost:" + std::to_string(router_port),
+      "--report-host",
+      "dont.query.dns",
+      "-d",
+      bootstrap_dir.name(),
+  });
 
   router_bootstrapping.register_response(
       "Please enter MySQL password for root: ", "fake-pass\n");
 
-  ASSERT_EQ(router_bootstrapping.wait_for_exit(), 0)
+  ASSERT_EQ(router_bootstrapping.wait_for_exit(), EXIT_SUCCESS)
       << "bootstrap output: " << router_bootstrapping.get_full_output()
       << std::endl
-      << "routing log: " << get_router_log_output() << std::endl
+      << "routing log: " << router_bootstrapping.get_full_logfile() << std::endl
       << "server output: " << server_mock.get_full_output() << std::endl;
 
   ASSERT_TRUE(router_bootstrapping.expect_output(
       "MySQL Router configured for the InnoDB cluster 'test'"))
       << "bootstrap output: " << router_bootstrapping.get_full_output()
       << std::endl
-      << "routing log: " << get_router_log_output() << std::endl
+      << "routing log: " << router_bootstrapping.get_full_logfile() << std::endl
       << "server output: " << server_mock.get_full_output() << std::endl;
 }
 
@@ -141,7 +135,7 @@ TEST_F(RouterRoutingTest, RoutingTooManyConnections) {
       get_data_dir().join("bootstrap_big_data.js").str();
 
   // launch the server mock
-  auto server_mock = launch_mysql_server_mock(json_stmts, server_port, false);
+  auto &server_mock = launch_mysql_server_mock(json_stmts, server_port, false);
 
   // create a config with routing that has max_connections == 2
   const std::string routing_section =
@@ -154,19 +148,16 @@ TEST_F(RouterRoutingTest, RoutingTooManyConnections) {
       "destinations = 127.0.0.1:" +
       std::to_string(server_port) + "\n";
 
-  const std::string conf_dir = get_tmp_dir("conf");
-  std::shared_ptr<void> exit_guard(nullptr,
-                                   [&](void *) { purge_dir(conf_dir); });
-  std::string conf_file = create_config_file(conf_dir, routing_section);
+  TempDirectory conf_dir("conf");
+  std::string conf_file = create_config_file(conf_dir.name(), routing_section);
 
   // launch the router with the created configuration
-  auto router_static = launch_router("-c " + conf_file);
+  auto &router = launch_router({"-c", conf_file});
 
   // wait for server and router to begin accepting the connections
-  ASSERT_TRUE(wait_for_port_ready(server_port, 5000))
+  ASSERT_TRUE(wait_for_port_ready(server_port))
       << server_mock.get_full_output();
-  ASSERT_TRUE(wait_for_port_ready(router_port, 5000))
-      << get_router_log_output();
+  ASSERT_TRUE(wait_for_port_ready(router_port)) << router.get_full_logfile();
 
   // try to create 3 connections, the third should fail
   // because of the max_connections limit being exceeded
@@ -192,7 +183,7 @@ TEST_F(RouterRoutingTest, RoutingPluginCantSpawnMoreThreads) {
       get_data_dir().join("bootstrap_big_data.js").str();
 
   // launch the server mock
-  auto server_mock = launch_mysql_server_mock(json_stmts, server_port, false);
+  auto &server_mock = launch_mysql_server_mock(json_stmts, server_port, false);
 
   // create a basic config
   const std::string routing_section =
@@ -204,24 +195,24 @@ TEST_F(RouterRoutingTest, RoutingPluginCantSpawnMoreThreads) {
       "destinations = 127.0.0.1:" +
       std::to_string(server_port) + "\n";
 
-  const std::string conf_dir = get_tmp_dir("conf");
-  std::shared_ptr<void> exit_guard(nullptr,
-                                   [&](void *) { purge_dir(conf_dir); });
-  std::string conf_file = create_config_file(conf_dir, routing_section);
+  TempDirectory conf_dir("conf");
+  ;
+  std::string conf_file = create_config_file(conf_dir.name(), routing_section);
 
   // launch the router with the created configuration
-  auto router_static = launch_router("-c " + conf_file);
+  auto &router_static = launch_router({"-c", conf_file});
 
   // wait for server and router to begin accepting the connections
-  ASSERT_TRUE(wait_for_port_ready(server_port, 5000))
+  ASSERT_TRUE(wait_for_port_ready(server_port))
       << server_mock.get_full_output();
-  ASSERT_TRUE(wait_for_port_ready(router_port, 5000))
-      << get_router_log_output();
+  ASSERT_TRUE(wait_for_port_ready(router_port))
+      << router_static.get_full_logfile();
 
   // don't allow router to create any more (client) threads
+  pid_t pid = router_static.get_pid();
+  struct rlimit old_limit;
+  EXPECT_EQ(0, getrlimit(RLIMIT_NPROC, &old_limit));
   {
-    pid_t pid = router_static.get_pid();
-
     // how many threads Router process is allowed to have. If this number is
     // lower than current count, nothing will happen, but new ones will not be
     // allowed to be created until count comes down below this limit. Thus 0 is
@@ -229,7 +220,7 @@ TEST_F(RouterRoutingTest, RoutingPluginCantSpawnMoreThreads) {
     rlim_t max_threads = 0;
 
     struct rlimit new_limit {
-      .rlim_cur = max_threads, .rlim_max = max_threads
+      .rlim_cur = max_threads, .rlim_max = old_limit.rlim_max
     };
     EXPECT_EQ(0, prlimit(pid, RLIMIT_NPROC, &new_limit, nullptr));
   }
@@ -242,8 +233,12 @@ TEST_F(RouterRoutingTest, RoutingPluginCantSpawnMoreThreads) {
       std::runtime_error,
       "Router couldn't spawn a new thread to service new client connection "
       "(1040)");
+
+  // we need to restore the old limit, otherwise ASAN can't spawn the thread
+  // that it needs on shutdown and crashes
+  EXPECT_EQ(0, prlimit(pid, RLIMIT_NPROC, &old_limit, nullptr));
 }
-#endif  // #ifndef _WIN32
+#endif  // #ifndef HAVE_PRLIMIT
 
 #ifndef _WIN32  // named sockets are not supported on Windows;
                 // on Unix, they're implemented using Unix sockets
@@ -256,12 +251,10 @@ TEST_F(RouterRoutingTest, named_socket_has_right_permissions) {
    */
 
   // get config dir (we will also stuff our unix socket file there)
-  const std::string bootstrap_dir = get_tmp_dir();
-  std::shared_ptr<void> exit_guard1(nullptr,
-                                    [&](void *) { purge_dir(bootstrap_dir); });
+  TempDirectory bootstrap_dir;
 
   // launch Router with unix socket
-  const std::string socket_file = bootstrap_dir + "/sockfile";
+  const std::string socket_file = bootstrap_dir.name() + "/sockfile";
   const std::string routing_section =
       "[routing:basic]\n"
       "socket = " +
@@ -269,11 +262,10 @@ TEST_F(RouterRoutingTest, named_socket_has_right_permissions) {
       "\n"
       "mode = read-write\n"
       "destinations = 127.0.0.1:1234\n";  // port can be bogus
-  const std::string conf_dir = get_tmp_dir("conf");
-  std::shared_ptr<void> exit_guard2(nullptr,
-                                    [&](void *) { purge_dir(conf_dir); });
-  const std::string conf_file = create_config_file(conf_dir, routing_section);
-  auto router_static = launch_router("-c " + conf_file);
+  TempDirectory conf_dir("conf");
+  const std::string conf_file =
+      create_config_file(conf_dir.name(), routing_section);
+  launch_router({"-c", conf_file});
 
   // loop until socket file appears and has correct permissions
   auto wait_for_correct_perms = [&socket_file](int timeout_ms) {
@@ -307,10 +299,10 @@ TEST_F(RouterRoutingTest, RoutingMaxConnectErrors) {
   // json file does not actually matter in this test as we are not going to
   const std::string json_stmts =
       get_data_dir().join("bootstrap_big_data.js").str();
-  const std::string bootstrap_dir = get_tmp_dir();
+  TempDirectory bootstrap_dir;
 
   // launch the server mock for bootstrapping
-  auto server_mock = launch_mysql_server_mock(
+  auto &server_mock = launch_mysql_server_mock(
       json_stmts, server_port,
       false /*expecting huge data, can't print on the console*/);
 
@@ -325,24 +317,21 @@ TEST_F(RouterRoutingTest, RoutingMaxConnectErrors) {
       "\n"
       "max_connect_errors = 1\n";
 
-  const std::string conf_dir = get_tmp_dir("conf");
-  std::shared_ptr<void> exit_guard(nullptr,
-                                   [&](void *) { purge_dir(conf_dir); });
-  std::string conf_file = create_config_file(conf_dir, routing_section);
+  TempDirectory conf_dir("conf");
+  std::string conf_file = create_config_file(conf_dir.name(), routing_section);
 
   // launch the router
-  auto router_static = launch_router("-c " + conf_file);
+  auto &router = launch_router({"-c", conf_file});
 
   // wait for mock server to begin accepting the connections
-  ASSERT_TRUE(wait_for_port_ready(server_port, 5000))
+  ASSERT_TRUE(wait_for_port_ready(server_port))
       << server_mock.get_full_output();
 
   // wait for router to begin accepting the connections
   // NOTE: this should cause connection/disconnection which
   //       should be treated as connection error and increment
   //       connection errors counter.  This test relies on that.
-  ASSERT_TRUE(wait_for_port_ready(router_port, 5000))
-      << get_router_log_output();
+  ASSERT_TRUE(wait_for_port_ready(router_port)) << router.get_full_logfile();
 
   // wait until blocking client host info appears in the log
   bool res =
@@ -438,7 +427,7 @@ TEST_F(RouterRoutingTest, test1) {
       get_data_dir().join("bootstrap_big_data.js").str();
 
   // launch the server mock
-  auto server_mock = launch_mysql_server_mock(json_stmts, server_port, false);
+  auto &server_mock = launch_mysql_server_mock(json_stmts, server_port, false);
 
   // create a config with max_connect_errors == 3
   const std::string routing_section =
@@ -450,19 +439,16 @@ TEST_F(RouterRoutingTest, test1) {
       "max_connect_errors = 3\n"
       "destinations = 127.0.0.1:" +
       std::to_string(server_port) + "\n";
-  const std::string conf_dir = get_tmp_dir("conf");
-  std::shared_ptr<void> exit_guard(nullptr,
-                                   [&](void *) { purge_dir(conf_dir); });
-  std::string conf_file = create_config_file(conf_dir, routing_section);
+  TempDirectory conf_dir("conf");
+  std::string conf_file = create_config_file(conf_dir.name(), routing_section);
 
   // launch the router with the created configuration
-  auto router_static = launch_router("-c " + conf_file);
+  auto &router = launch_router({"-c", conf_file});
 
   // wait for server and router to begin accepting the connections
-  ASSERT_TRUE(wait_for_port_ready(server_port, 5000))
+  ASSERT_TRUE(wait_for_port_ready(server_port))
       << server_mock.get_full_output();
-  ASSERT_TRUE(wait_for_port_ready(router_port, 5000))
-      << get_router_log_output();
+  ASSERT_TRUE(wait_for_port_ready(router_port)) << router.get_full_logfile();
 
   // we loop just for good measure, to additionally test that this behaviour is
   // repeatable
@@ -493,7 +479,7 @@ TEST_F(RouterRoutingTest, test1) {
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();
-  g_origin_path = Path(argv[0]).dirname();
+  ProcessManager::set_origin(Path(argv[0]).dirname());
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

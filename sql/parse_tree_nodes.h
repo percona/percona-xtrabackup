@@ -45,6 +45,7 @@
 #include "sql/enum_query_type.h"
 #include "sql/handler.h"
 #include "sql/item.h"
+#include "sql/item_cmpfunc.h"  // make_condition
 #include "sql/item_func.h"
 #include "sql/key_spec.h"
 #include "sql/mdl.h"
@@ -725,6 +726,10 @@ class PT_joined_table_on : public PT_joined_table {
     sel->parsing_place = CTX_ON;
 
     if (super::contextualize(pc) || on->itemize(pc, &on)) return true;
+    if (!on->is_bool_func()) {
+      on = make_condition(pc, on);
+      if (on == nullptr) return true;
+    }
     DBUG_ASSERT(sel == pc->select);
 
     add_join_on(this->tr2, on);
@@ -974,7 +979,7 @@ class PT_internal_variable_name_default : public PT_internal_variable_name {
       return true;
     }
     value.var = tmp;
-    value.base_name.str = (char *)"default";
+    value.base_name.str = const_cast<char *>("default");
     value.base_name.length = 7;
     return false;
   }
@@ -3119,13 +3124,13 @@ typedef PT_bool_create_table_option<HA_CREATE_USED_DELAY_KEY_WRITE,  // flag
 class PT_create_table_engine_option : public PT_create_table_option {
   typedef PT_create_table_option super;
 
-  const LEX_STRING engine;
+  const LEX_CSTRING engine;
 
  public:
   /**
     @param engine       Storage engine name.
   */
-  explicit PT_create_table_engine_option(const LEX_STRING &engine)
+  explicit PT_create_table_engine_option(const LEX_CSTRING &engine)
       : engine(engine) {}
 
   bool contextualize(Table_ddl_parse_context *pc) override;
@@ -3143,13 +3148,13 @@ class PT_create_table_secondary_engine_option : public PT_create_table_option {
  public:
   explicit PT_create_table_secondary_engine_option() {}
   explicit PT_create_table_secondary_engine_option(
-      const LEX_STRING &secondary_engine)
+      const LEX_CSTRING &secondary_engine)
       : m_secondary_engine(secondary_engine) {}
 
   bool contextualize(Table_ddl_parse_context *pc) override;
 
  private:
-  const LEX_STRING m_secondary_engine{nullptr, 0};
+  const LEX_CSTRING m_secondary_engine{nullptr, 0};
 };
 
 /**
@@ -4732,7 +4737,7 @@ class PT_cache_index_stmt final : public PT_table_ddl_stmt_base {
  public:
   PT_cache_index_stmt(MEM_ROOT *mem_root,
                       Mem_root_array<PT_assign_to_keycache *> *tbl_index_lists,
-                      const LEX_STRING &key_cache_name)
+                      const LEX_CSTRING &key_cache_name)
       : PT_table_ddl_stmt_base(mem_root),
         m_tbl_index_lists(tbl_index_lists),
         m_key_cache_name(key_cache_name) {}
@@ -4741,7 +4746,7 @@ class PT_cache_index_stmt final : public PT_table_ddl_stmt_base {
 
  private:
   Mem_root_array<PT_assign_to_keycache *> *m_tbl_index_lists;
-  const LEX_STRING m_key_cache_name;
+  const LEX_CSTRING m_key_cache_name;
 };
 
 class PT_cache_index_partitions_stmt : public PT_table_ddl_stmt_base {
@@ -4749,7 +4754,7 @@ class PT_cache_index_partitions_stmt : public PT_table_ddl_stmt_base {
   PT_cache_index_partitions_stmt(MEM_ROOT *mem_root, Table_ident *table,
                                  PT_adm_partition *partitions,
                                  List<Index_hint> *opt_key_usage_list,
-                                 const LEX_STRING &key_cache_name)
+                                 const LEX_CSTRING &key_cache_name)
       : PT_table_ddl_stmt_base(mem_root),
         m_table(table),
         m_partitions(partitions),
@@ -4762,7 +4767,7 @@ class PT_cache_index_partitions_stmt : public PT_table_ddl_stmt_base {
   Table_ident *m_table;
   PT_adm_partition *m_partitions;
   List<Index_hint> *m_opt_key_usage_list;
-  const LEX_STRING m_key_cache_name;
+  const LEX_CSTRING m_key_cache_name;
 };
 
 class PT_preload_keys final : public Table_ddl_node {

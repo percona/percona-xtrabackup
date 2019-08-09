@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,27 +22,24 @@
 
 # Disable specific types of warnings for current directory
 # if the compiler supports the flag
-IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  INCLUDE(CheckCXXCompilerFlag)
-  FOREACH(warning
-          "unused-but-set-variable"
-          "strict-aliasing"
-          "unused-parameter"
-          # Downgrade -Werror to warning for "may be used uninitialized"
-          # and "is used uninitialized in this function"
-          "error=maybe-uninitialized"
-          # Downgrade -Werror=deprecated-copy to warning for gcc 9
-          "error=deprecated-copy"
-          )
-    STRING(REPLACE "-" "_" warning_ ${warning})
-    STRING(TOUPPER ${warning_} WARNING)
-    CHECK_CXX_COMPILER_FLAG("-W${warning}" HAVE_${WARNING})
-    IF(HAVE_${WARNING})
-      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-${warning}")
-      SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-${warning}")
-    ENDIF()
-  ENDFOREACH()
-ENDIF()
+FOREACH(warning
+    "unused-but-set-variable"
+    "strict-aliasing"
+    "unused-parameter"
+    # Downgrade -Werror to warning for "may be used uninitialized"
+    # and "is used uninitialized in this function"
+    "error=maybe-uninitialized"
+    # Downgrade -Werror=deprecated-copy to warning for gcc 9
+    "error=deprecated-copy"
+    # Downgrade -Werror=stringop-truncation to warning for gcc 8/9
+    "error=stringop-truncation"
+    )
+  MY_CHECK_CXX_COMPILER_WARNING("${warning}" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+    STRING_APPEND(CMAKE_C_FLAGS " ${HAS_WARN_FLAG}")
+  ENDIF()
+ENDFOREACH()
 
 INCLUDE(${CMAKE_SOURCE_DIR}/storage/ndb/config/type_ndbapitools.cmake)
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/bison.cmake)
@@ -52,7 +49,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/ndb/include/util
   ${CMAKE_BINARY_DIR}/storage/ndb/tools)
 
-ADD_CONVENIENCE_LIBRARY(ndbtools
+ADD_LIBRARY(ndbtools STATIC
   NdbImport.cpp
   NdbImportImpl.cpp
   NdbImportCsv.cpp
@@ -134,7 +131,7 @@ MYSQL_ADD_EXECUTABLE(ndb_restore
   restore/Restore.cpp
   ndb_lib_move_data.cpp
   COMPONENT ClusterTools)
-TARGET_LINK_LIBRARIES(ndb_restore ndbclient_static ndbNDBT)
+TARGET_LINK_LIBRARIES(ndb_restore ndbclient_static)
 
 MYSQL_ADD_EXECUTABLE(ndb_import
   ndb_import.cpp
@@ -185,8 +182,7 @@ MYSQL_ADD_EXECUTABLE(ndb_move_data
   COMPONENT ClusterTools)
 TARGET_LINK_LIBRARIES(ndb_move_data ndbclient_static ndbNDBT)
 
-IF(NOT WIN32)
-IF(NOT CMAKE_SYSTEM_NAME MATCHES "SunOS")
+IF(NOT WIN32 AND NOT SOLARIS)
   IF (HAVE_NCURSESW_1 OR HAVE_NCURSESW_2 OR HAVE_NCURSESW_3 OR HAVE_NCURSESW_4 OR HAVE_NCURSESW_5)
     MESSAGE(STATUS "-- Adding ndb_top executable")
     FIND_LIBRARY(NCURSESW_LIB
@@ -216,7 +212,6 @@ IF(NOT CMAKE_SYSTEM_NAME MATCHES "SunOS")
   ELSE()
     MESSAGE(FATAL_ERROR "ndb_top executable could not be built, install ncursesw library")
   ENDIF()
-ENDIF()
 ENDIF()
 
 if(NOT WIN32)

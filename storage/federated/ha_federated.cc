@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -634,7 +634,7 @@ static int get_connection(MEM_ROOT *mem_root, FEDERATED_SHARE *share) {
   share->hostname = server->host;
   if (!(share->socket = server->socket) &&
       !strcmp(share->hostname, my_localhost))
-    share->socket = (char *)MYSQL_UNIX_ADDR;
+    share->socket = MYSQL_UNIX_ADDR;
   share->scheme = server->scheme;
 
   DBUG_PRINT("info", ("share->username %s", share->username));
@@ -857,7 +857,7 @@ static int parse_url(MEM_ROOT *mem_root, FEDERATED_SHARE *share, TABLE *table,
 
   if (!share->port) {
     if (!share->hostname || strcmp(share->hostname, my_localhost) == 0)
-      share->socket = (char *)MYSQL_UNIX_ADDR;
+      share->socket = MYSQL_UNIX_ADDR;
     else
       share->port = MYSQL_PORT;
   }
@@ -924,8 +924,8 @@ uint ha_federated::convert_row_to_internal_format(uchar *record, MYSQL_ROW row,
       index variable to move us through the row at the
       same iterative step as the field
     */
-    my_ptrdiff_t old_ptr;
-    old_ptr = (my_ptrdiff_t)(record - table->record[0]);
+    ptrdiff_t old_ptr;
+    old_ptr = (ptrdiff_t)(record - table->record[0]);
     (*field)->move_field_offset(old_ptr);
     if (!*row) {
       (*field)->set_null();
@@ -950,11 +950,9 @@ uint ha_federated::convert_row_to_internal_format(uchar *record, MYSQL_ROW row,
           // area so that it is not overwritten by subsequent calls to
           // Field::store() after moving the offset.
           if (length > 0) {
-            unsigned char *old_blob;
-            blob_field->get_ptr(&old_blob);
             unsigned char *new_blob = new (&m_blob_root) unsigned char[length];
             if (new_blob == nullptr) DBUG_RETURN(HA_ERR_OUT_OF_MEM);
-            memcpy(new_blob, old_blob, length);
+            memcpy(new_blob, blob_field->get_ptr(), length);
             blob_field->set_ptr(length, new_blob);
           }
         }
@@ -975,8 +973,8 @@ static bool emit_key_part_name(String *to, KEY_PART_INFO *part) {
 }
 
 static bool emit_key_part_element(String *to, KEY_PART_INFO *part,
-                                  bool needs_quotes, bool is_like,
-                                  const uchar *ptr, uint len) {
+                                  bool needs_quotes, bool is_like, uchar *ptr,
+                                  uint len) {
   Field *field = part->field;
   DBUG_ENTER("emit_key_part_element");
 
@@ -1264,7 +1262,7 @@ bool ha_federated::create_where_from_key(String *to, KEY *key_info,
                                          bool from_records_in_range,
                                          bool eq_range_arg) {
   bool both_not_null = (start_key != NULL && end_key != NULL) ? true : false;
-  const uchar *ptr;
+  uchar *ptr;
   uint remainder, length;
   char tmpbuff[FEDERATED_QUERY_BUFFER_SIZE];
   String tmp(tmpbuff, sizeof(tmpbuff), system_charset_info);
@@ -1290,7 +1288,7 @@ bool ha_federated::create_where_from_key(String *to, KEY *key_info,
 
     for (key_part = key_info->key_part,
         remainder = key_info->user_defined_key_parts,
-        length = ranges[i]->length, ptr = ranges[i]->key;
+        length = ranges[i]->length, ptr = const_cast<uchar *>(ranges[i]->key);
          ; remainder--, key_part++) {
       Field *field = key_part->field;
       uint store_length = key_part->store_length;
@@ -1881,7 +1879,7 @@ void ha_federated::start_bulk_insert(ha_rows rows) {
 
   @return Operation status
   @retval       0       No error
-  @retval       != 0    Error occured at remote server. Also sets my_errno.
+  @retval       != 0    Error occurred at remote server. Also sets my_errno.
 */
 
 int ha_federated::end_bulk_insert() {
@@ -2073,7 +2071,9 @@ int ha_federated::update_row(const uchar *old_data, uchar *) {
           where_string.append("CAST(");
         }
 
-        (*field)->val_str(&field_value, (old_data + (*field)->offset(record)));
+        (*field)->val_str(
+            &field_value,
+            const_cast<uchar *>(old_data + (*field)->offset(record)));
         if (needs_quote) where_string.append(value_quote_char);
         field_value.print(&where_string);
         if (needs_quote) where_string.append(value_quote_char);

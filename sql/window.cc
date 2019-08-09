@@ -309,8 +309,8 @@ bool Window::setup_range_expressions(THD *thd) {
           exactly one oe-1 LT (for the one ORDER BY expession allowed for such
           queries).
         */
-        cmp = reinterpret_cast<Item_func *>(new Item_int(0, 1));
-        inv_cmp = reinterpret_cast<Item_func *>(new Item_int(0, 1));
+        cmp = new Item_func_false();
+        inv_cmp = new Item_func_false();
 
         // Build OR tree from bottom up, so left most expression ends up on top
         for (int i = o->value.elements - 1; i >= 0; i--) {
@@ -690,9 +690,8 @@ bool Window::setup_ordering_cached_items(THD *thd, SELECT_LEX *select,
 
   for (ORDER *order = o->value.first; order; order = order->next) {
     if (partition_order) {
-      Item_ref *ir =
-          new Item_ref(&select->context, order->item, (char *)"<no matter>",
-                       (char *)"<window partition by>");
+      Item_ref *ir = new Item_ref(&select->context, order->item, "<no matter>",
+                                  "<window partition by>");
       if (ir == nullptr) return true;
 
       Cached_item *ci = new_Cached_item(thd, ir);
@@ -700,9 +699,8 @@ bool Window::setup_ordering_cached_items(THD *thd, SELECT_LEX *select,
 
       m_partition_items.push_back(ci);
     } else {
-      Item_ref *ir =
-          new Item_ref(&select->context, order->item, (char *)"<no matter>",
-                       (char *)"<window order by>");
+      Item_ref *ir = new Item_ref(&select->context, order->item, "<no matter>",
+                                  "<window order by>");
       if (ir == nullptr) return true;
 
       Cached_item *ci = new_Cached_item(thd, ir);
@@ -1214,6 +1212,18 @@ bool Window::setup_windows(THD *thd, SELECT_LEX *select,
   while ((w = w_it++)) {
     const PT_frame *f = w->frame();
     const PT_order_list *o = w->effective_order_by();
+
+    if (w->m_order_by == nullptr && o != nullptr &&
+        w->m_frame->m_originally_absent) {
+      /*
+        Since we had an empty frame specification, but inherit an ORDER BY (we
+        cannot inherit a frame specification), we need to adjust the a priori
+        border type now that we know what we inherit (not known before binding
+        above).
+      */
+      DBUG_ASSERT(w->m_frame->m_unit == WFU_RANGE);
+      w->m_frame->m_to->m_border_type = WBT_CURRENT_ROW;
+    }
 
     if (first_exec && w->check_unique_name(windows)) return true;
 

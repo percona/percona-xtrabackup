@@ -202,7 +202,7 @@ void Applier_module::set_applier_thread_context() {
 
   thd->init_query_mem_roots();
   set_slave_thread_options(thd);
-  thd->set_query(C_STRING_WITH_LEN("Group replication applier module"));
+  thd->set_query(STRING_WITH_LEN("Group replication applier module"));
 
   DBUG_EXECUTE_IF("group_replication_applier_thread_init_wait", {
     const char act[] = "now wait_for signal.gr_applier_init_signal";
@@ -285,7 +285,7 @@ int Applier_module::apply_view_change_packet(
   }
 
   View_change_log_event *view_change_event =
-      new View_change_log_event((char *)view_change_packet->view_id.c_str());
+      new View_change_log_event(view_change_packet->view_id.c_str());
 
   Pipeline_event *pevent = new Pipeline_event(view_change_event, fde_evt);
   pevent->mark_event(SINGLE_VIEW_EVENT);
@@ -810,7 +810,7 @@ void Applier_module::kill_pending_transactions(
   */
   bool should_continue_autorejoin = is_autorejoin_enabled() && !applier_error;
   if (set_read_mode &&
-      exit_state_action_var == EXIT_STATE_ACTION_ABORT_SERVER &&
+      get_exit_state_action_var() == EXIT_STATE_ACTION_ABORT_SERVER &&
       !should_continue_autorejoin) {
     abort_plugin_process("Fatal error during execution of Group Replication");
   }

@@ -1,4 +1,4 @@
-# Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,6 @@
 
 INCLUDE(CheckCCompilerFlag)
 INCLUDE(CheckCXXCompilerFlag)
-INCLUDE(cmake/compiler_bugs.cmake)
 INCLUDE(cmake/floating_point.cmake)
 
 IF(SIZEOF_VOIDP EQUAL 4)
@@ -86,7 +85,7 @@ IF(UNIX)
   ENDIF()
 
   # Solaris flags
-  IF(CMAKE_SYSTEM_NAME MATCHES "SunOS")
+  IF(SOLARIS)
     # Link mysqld with mtmalloc on Solaris 10 and later
     SET(WITH_MYSQLD_LDFLAGS "-lmtmalloc" CACHE STRING "")
 
@@ -271,6 +270,3 @@ IF(UNIX)
   STRING_PREPEND(CMAKE_CXX_FLAGS_MINSIZEREL     "${SECTIONS_FLAG} ")
 
 ENDIF()
-
-STRING_APPEND(CMAKE_C_FLAGS   " ${COMMON_C_WORKAROUND_FLAGS}")
-STRING_APPEND(CMAKE_CXX_FLAGS " ${COMMON_CXX_WORKAROUND_FLAGS}")

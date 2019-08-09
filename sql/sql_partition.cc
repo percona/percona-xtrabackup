@@ -108,14 +108,14 @@ using std::min;
 /*
   Partition related functions declarations and some static constants;
 */
-const LEX_STRING partition_keywords[] = {{C_STRING_WITH_LEN("HASH")},
-                                         {C_STRING_WITH_LEN("RANGE")},
-                                         {C_STRING_WITH_LEN("LIST")},
-                                         {C_STRING_WITH_LEN("KEY")},
-                                         {C_STRING_WITH_LEN("MAXVALUE")},
-                                         {C_STRING_WITH_LEN("LINEAR ")},
-                                         {C_STRING_WITH_LEN(" COLUMNS")},
-                                         {C_STRING_WITH_LEN("ALGORITHM")}
+const LEX_CSTRING partition_keywords[] = {{STRING_WITH_LEN("HASH")},
+                                          {STRING_WITH_LEN("RANGE")},
+                                          {STRING_WITH_LEN("LIST")},
+                                          {STRING_WITH_LEN("KEY")},
+                                          {STRING_WITH_LEN("MAXVALUE")},
+                                          {STRING_WITH_LEN("LINEAR ")},
+                                          {STRING_WITH_LEN(" COLUMNS")},
+                                          {STRING_WITH_LEN("ALGORITHM")}
 
 };
 static const char *part_str = "PARTITION";
@@ -440,11 +440,11 @@ static bool set_up_field_array(TABLE *table, bool is_sub_part) {
     if (field->flags & GET_FIXED_FIELDS_FLAG) num_fields++;
   }
   if (num_fields > MAX_REF_PARTS) {
-    char *err_str;
+    const char *err_str;
     if (is_sub_part)
-      err_str = (char *)"subpartition function";
+      err_str = "subpartition function";
     else
-      err_str = (char *)"partition function";
+      err_str = "partition function";
     my_error(ER_TOO_MANY_PARTITION_FUNC_FIELDS_ERROR, MYF(0), err_str);
     DBUG_RETURN(true);
   }
@@ -842,9 +842,8 @@ static bool init_lex_with_single_table(THD *thd, TABLE *table, LEX *lex) {
     we're working with to the Name_resolution_context.
   */
   thd->lex = lex;
-  auto table_ident = new (thd->mem_root)
-      Table_ident(thd->get_protocol(), to_lex_cstring(table->s->db),
-                  to_lex_cstring(table->s->table_name), true);
+  auto table_ident = new (thd->mem_root) Table_ident(
+      thd->get_protocol(), table->s->db, table->s->table_name, true);
   if (table_ident == nullptr) return true;
 
   TABLE_LIST *table_list =
@@ -2252,7 +2251,7 @@ static char *get_file_content(File fptr, uint *buf_length, bool use_sql_alloc) {
     return NULL;
   *buf_length = (uint)buffer_length;
   if (use_sql_alloc)
-    buf = (char *)sql_alloc(*buf_length + 1);
+    buf = (char *)(*THR_MALLOC)->Alloc(*buf_length + 1);
   else
     buf = (char *)my_malloc(key_memory_partition_syntax_buffer, *buf_length + 1,
                             MYF(MY_WME));
@@ -3447,7 +3446,7 @@ static int get_sub_part_id_from_key(const TABLE *table, uchar *buf,
   int res;
   DBUG_ENTER("get_sub_part_id_from_key");
 
-  key_restore(buf, (uchar *)key_spec->key, key_info, key_spec->length);
+  key_restore(buf, key_spec->key, key_info, key_spec->length);
   if (likely(rec0 == buf)) {
     res = part_info->get_subpartition_id(part_info, part_id);
   } else {
@@ -3488,7 +3487,7 @@ static bool get_part_id_from_key(const TABLE *table, uchar *buf, KEY *key_info,
   longlong func_value;
   DBUG_ENTER("get_part_id_from_key");
 
-  key_restore(buf, (uchar *)key_spec->key, key_info, key_spec->length);
+  key_restore(buf, key_spec->key, key_info, key_spec->length);
   if (likely(rec0 == buf)) {
     result = part_info->get_part_partition_id(part_info, part_id, &func_value);
   } else {
@@ -3530,7 +3529,7 @@ void get_full_part_id_from_key(const TABLE *table, uchar *buf, KEY *key_info,
   longlong func_value;
   DBUG_ENTER("get_full_part_id_from_key");
 
-  key_restore(buf, (uchar *)key_spec->key, key_info, key_spec->length);
+  key_restore(buf, key_spec->key, key_info, key_spec->length);
   if (likely(rec0 == buf)) {
     result = part_info->get_partition_id(part_info, &part_spec->start_part,
                                          &func_value);
@@ -5222,7 +5221,7 @@ err:
 
 static void set_field_ptr(Field **ptr, const uchar *new_buf,
                           const uchar *old_buf) {
-  my_ptrdiff_t diff = (new_buf - old_buf);
+  ptrdiff_t diff = (new_buf - old_buf);
   DBUG_ENTER("set_field_ptr");
 
   do {

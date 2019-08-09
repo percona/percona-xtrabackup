@@ -38,7 +38,7 @@ SET(common_libraries)
 SET(math_libraries)
 IF(WIN32)
   LIST(APPEND common_libraries ws2_32)
-ELSEIF(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
+ELSEIF(SOLARIS)
   LIST(APPEND common_libraries -lnsl -lsocket -lpthread)
   LIST(APPEND math_libraries -lm)
 ELSE()
@@ -57,39 +57,39 @@ SET(DUKTAPE_SRCS
 SET(MOCK_SERVER_HTTP_CLIENT_SRCS
     mock_server_rest_client.cc)
 
-CHECK_CXX_COMPILER_FLAG("-Werror" HAVE_ERROR)
-IF(HAVE_ERROR)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-error")
+MY_CHECK_CXX_COMPILER_WARNING("-Werror" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-CHECK_CXX_COMPILER_FLAG("-Wmissing-noreturn" HAVE_MISSING_NORETURN)
-IF(HAVE_MISSING_NORETURN)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-missing-noreturn")
+MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-noreturn" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-CHECK_CXX_COMPILER_FLAG("-Wconditional-uninitialized" HAVE_COND_UNINITIALIZED)
-IF(HAVE_COND_UNINITIALIZED)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-conditional-uninitialized")
+MY_CHECK_CXX_COMPILER_WARNING("-Wconditional-uninitialized" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-CHECK_CXX_COMPILER_FLAG("-Wsuggest-attribute=format" HAVE_SUGGEST_ATTRIBUTE)
-IF(HAVE_SUGGEST_ATTRIBUTE)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-suggest-attribute=format")
+MY_CHECK_CXX_COMPILER_WARNING("-Wsuggest-attribute=format" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-CHECK_CXX_COMPILER_FLAG("-Wimplicit-fallthrough" HAVE_IMPLICIT_FALLTHROUGH)
-IF(HAVE_IMPLICIT_FALLTHROUGH)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-implicit-fallthrough")
+MY_CHECK_CXX_COMPILER_WARNING("-Wimplicit-fallthrough" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-CHECK_CXX_COMPILER_FLAG("-Wformat-truncation" HAVE_FORMAT_TRUNCATION)
-IF(HAVE_FORMAT_TRUNCATION)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-format-truncation")
+MY_CHECK_CXX_COMPILER_WARNING("-Wformat-truncation" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-CHECK_CXX_COMPILER_FLAG("-Wformat-overflow" HAVE_FORMAT_OVERFLOW)
-IF(HAVE_FORMAT_OVERFLOW)
-  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "-Wno-format-overflow")
+MY_CHECK_CXX_COMPILER_WARNING("-Wformat-overflow" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
 ADD_LIBRARY(duktape SHARED ${DUKTAPE_SRCS})
@@ -122,20 +122,28 @@ add_harness_plugin(mock_server
   duktape_statement_reader.cc
   mysql_protocol_decoder.cc
   mysql_protocol_encoder.cc
+  x_protocol_decoder.cc
+  x_protocol_encoder.cc
   mysql_protocol_utils.cc
   mysql_server_mock.cc
+  mock_session.cc
+  classic_mock_session.cc
+  x_mock_session.cc
   mysql_server_mock_schema.cc
   duk_module_shim.c
   duk_node_fs.c
   mock_server_plugin.cc
   mock_server_component.cc
-  REQUIRES mysql_protocol;duktape)
+  REQUIRES mysql_protocol;duktape;${PROTOBUF_LIBRARY};mysqlxmessages)
 
 TARGET_INCLUDE_DIRECTORIES(mock_server SYSTEM PUBLIC
   ${DUKTAPE_SOURCE_DIR}/src/
   ${DUKTAPE_SOURCE_DIR}/extras/logging/
   ${DUKTAPE_SOURCE_DIR}/extras/module-node/
   ${DUKTAPE_SOURCE_DIR}/extras/module-duktape/
+  ${PROTOBUF_INCLUDE_DIR}
+  ${MYSQLX_GENERATE_DIR}
+  ${CMAKE_SOURCE_DIR}/plugin/x/client
   )
 
 TARGET_INCLUDE_DIRECTORIES(mock_server PUBLIC
@@ -168,9 +176,12 @@ ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET}
         mysql_server_mock mock_server_rest_client)
 
 
-TARGET_LINK_LIBRARIES(mysql_server_mock ${common_libraries} harness-library)
+TARGET_LINK_LIBRARIES(mysql_server_mock ${common_libraries} harness-library
+    mysqlxmessages ${PROTOBUF_LIBRARY})
 SET_TARGET_PROPERTIES(mysql_server_mock PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory)
 TARGET_COMPILE_DEFINITIONS(mysql_server_mock
                            PRIVATE -Dmysql_protocol_DEFINE_STATIC=1)
 SET_PATH_TO_SSL(mysql_server_mock ${CMAKE_BINARY_DIR}/runtime_output_directory)
+
+ADD_DEFINITIONS(-DUSE_MYSQLX_FULL_PROTO)

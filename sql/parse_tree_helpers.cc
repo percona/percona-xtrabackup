@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -75,7 +75,7 @@ Item_splocal *create_item_for_sp_var(THD *thd, LEX_STRING name,
   sp_pcontext *pctx = lex->get_sp_current_parsing_ctx();
 
   /* If necessary, look for the variable. */
-  if (pctx && !spv) spv = pctx->find_variable(name, false);
+  if (pctx && !spv) spv = pctx->find_variable(name.str, name.length, false);
 
   if (!spv) {
     my_error(ER_SP_UNDECLARED_VAR, MYF(0), name.str);
@@ -330,9 +330,8 @@ bool sp_create_assignment_instr(THD *thd, const char *expr_end_ptr) {
 
     const char *expr_start_ptr = sp->m_parser_data.get_option_start_ptr();
 
-    LEX_STRING expr;
-    expr.str = (char *)expr_start_ptr;
-    expr.length = expr_end_ptr - expr_start_ptr;
+    LEX_CSTRING expr{expr_start_ptr,
+                     static_cast<size_t>(expr_end_ptr - expr_start_ptr)};
 
     /* Construct SET-statement query. */
 
@@ -382,7 +381,7 @@ bool sp_create_assignment_instr(THD *thd, const char *expr_end_ptr) {
   @note **) If @c strict if false and engine is unknown, the function outputs
             a warning, sets @c ret to NULL and returns false (success).
 */
-bool resolve_engine(THD *thd, const LEX_STRING &name, bool is_temp_table,
+bool resolve_engine(THD *thd, const LEX_CSTRING &name, bool is_temp_table,
                     bool strict, handlerton **ret) {
   plugin_ref plugin = ha_resolve_by_name(thd, &name, is_temp_table);
   if (plugin) {

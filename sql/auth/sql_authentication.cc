@@ -73,9 +73,9 @@
 #include "sql/conn_handler/connection_handler_manager.h"  // Connection_handler_manager
 #include "sql/current_thd.h"                              // current_thd
 #include "sql/derror.h"                                   // ER_THD
-#include "sql/hostname.h"  // Host_errors, inc_host_errors
-#include "sql/log.h"       // query_logger
-#include "sql/mysqld.h"    // global_system_variables
+#include "sql/hostname_cache.h"  // Host_errors, inc_host_errors
+#include "sql/log.h"             // query_logger
+#include "sql/mysqld.h"          // global_system_variables
 #include "sql/protocol.h"
 #include "sql/protocol_classic.h"
 #include "sql/psi_memory_key.h"  // key_memory_MPVIO_EXT_auth_info
@@ -564,7 +564,7 @@ struct MEM_ROOT;
 
   @startuml
   Client -> Server: COM_CHANGE_USER
-  Server -> Client: Auth Switch Requset Packet
+  Server -> Client: Auth Switch Request Packet
   == packets exchanged depending on the authentication method ==
   Server -> Client: ERR packet or OK packet
   @enduml
@@ -622,6 +622,7 @@ struct MEM_ROOT;
   @enduml
 
   @sa group_cs_capabilities_flags
+  @sa unknown_accounts
   @subpage page_protocol_connection_phase_packets
   @subpage page_protocol_connection_phase_authentication_methods
 */
@@ -663,7 +664,7 @@ struct MEM_ROOT;
 
 
 /**
-   @page page_protocol_connection_phase_authentication_methods Authenticatrion Methods
+   @page page_protocol_connection_phase_authentication_methods Authentication Methods
 
    To authenticate a user against the server the client server protocol employs one of
    several authentication methods.
@@ -782,15 +783,38 @@ struct MEM_ROOT;
 */
 /* clang-format on */
 
+const uint MAX_UNKNOWN_ACCOUNTS = 1000;
+/**
+  Hash to map unknown accounts to an authentication plugin.
+
+  If unknown accounts always map to default authentication plugin,
+  server's reply to switch authentication plugin would indicate that
+  user in question is indeed a valid user.
+
+  To counter this, one of the built-in authentication plugins is chosen
+  at random. Thus, a request to switch authentication plugin is not and
+  indicator of a valid user account.
+
+  For same unknown account, if different plugin is chosen everytime,
+  that again is an indicator. To resolve this, a hashmap is  used to
+  store information about unknown account => authentication plugin.
+  This way, if same unknown account appears again, same authentication
+  plugin is chosen again.
+
+  However, size of such a hash has to be kept under control. Hence,
+  once MAX_UNKNOWN_ACCOUNTS lim
+*/
+Map_with_rw_lock<Auth_id, uint> *unknown_accounts = nullptr;
+
 LEX_CSTRING validate_password_plugin_name = {
-    C_STRING_WITH_LEN("validate_password")};
+    STRING_WITH_LEN("validate_password")};
 
 LEX_CSTRING default_auth_plugin_name;
 
 const LEX_CSTRING Cached_authentication_plugins::cached_plugins_names[(
-    uint)PLUGIN_LAST] = {{C_STRING_WITH_LEN("caching_sha2_password")},
-                         {C_STRING_WITH_LEN("mysql_native_password")},
-                         {C_STRING_WITH_LEN("sha256_password")}};
+    uint)PLUGIN_LAST] = {{STRING_WITH_LEN("caching_sha2_password")},
+                         {STRING_WITH_LEN("mysql_native_password")},
+                         {STRING_WITH_LEN("sha256_password")}};
 
 /**
   Use known pointers for cached plugins to improve comparison time
@@ -1146,7 +1170,7 @@ std::string get_default_autnetication_plugin_name() {
 }
 
 bool auth_plugin_is_built_in(const char *plugin_name) {
-  LEX_CSTRING plugin = {C_STRING_WITH_LEN(plugin_name)};
+  LEX_CSTRING plugin = {STRING_WITH_LEN(plugin_name)};
   return g_cached_authentication_plugins->auth_plugin_is_built_in(&plugin);
 }
 
@@ -1608,10 +1632,11 @@ static bool send_plugin_request_packet(MPVIO_EXT *mpvio, const uchar *data,
 
   DBUG_PRINT("info",
              ("requesting client to use the %s plugin", client_auth_plugin));
-  DBUG_RETURN(net_write_command(
-      mpvio->protocol->get_net(), switch_plugin_request_buf[0],
-      (uchar *)client_auth_plugin, strlen(client_auth_plugin) + 1,
-      (uchar *)data, data_len));
+  DBUG_RETURN(net_write_command(mpvio->protocol->get_net(),
+                                switch_plugin_request_buf[0],
+                                pointer_cast<const uchar *>(client_auth_plugin),
+                                strlen(client_auth_plugin) + 1,
+                                pointer_cast<const uchar *>(data), data_len));
 }
 
 /* Return true if there is no users that can match the given host */
@@ -1649,15 +1674,18 @@ bool acl_check_host(THD *thd, const char *host, const char *ip) {
   This is done to decrease the cost of enumerating user accounts based on
   authentication protocol.
 
-  @param [in] username  A dummy user to be created.
-  @param [in] hostname  Host of the dummy user.
-  @param [in] mem       Memory in which the dummy ACL user will be created.
+  @param [in] username       A dummy user to be created.
+  @param [in] hostname       Host of the dummy user.
+  @param [in] mem            Memory in which the dummy ACL user will be created.
+  @param [in] rand           Seed value to generate random data
+  @param [in] is_initialized State of ACL caches
 
   @retval A dummy ACL USER
 */
-static ACL_USER *decoy_user(const LEX_STRING &username,
-                            const LEX_STRING &hostname, MEM_ROOT *mem) {
-  ACL_USER *user = (ACL_USER *)alloc_root(mem, sizeof(ACL_USER));
+ACL_USER *decoy_user(const LEX_STRING &username, const LEX_CSTRING &hostname,
+                     MEM_ROOT *mem, struct rand_struct *rand,
+                     bool is_initialized) {
+  ACL_USER *user = (ACL_USER *)mem->Alloc(sizeof(ACL_USER));
   user->can_authenticate = !initialized;
   user->user = strdup_root(mem, username.str);
   user->user[username.length] = '\0';
@@ -1675,12 +1703,39 @@ static ACL_USER *decoy_user(const LEX_STRING &username,
   user->password_history_length = 0;
   user->password_require_current = Lex_acl_attrib_udyn::DEFAULT;
 
-  /*
-    For now the common default account is used. Improvements might involve
-    mapping a consistent hash of a username to a range of plugins.
-  */
-  user->plugin = default_auth_plugin_name;
+  if (is_initialized) {
+    Auth_id key(user);
+
+    uint value;
+    if (unknown_accounts->find(key, value)) {
+      user->plugin = Cached_authentication_plugins::cached_plugins_names[value];
+    } else {
+      const int DECIMAL_SHIFT = 1000;
+      const int random_number = static_cast<int>(my_rnd(rand) * DECIMAL_SHIFT);
+      uint plugin_num = (uint)(random_number % ((uint)PLUGIN_LAST));
+      user->plugin =
+          Cached_authentication_plugins::cached_plugins_names[plugin_num];
+      unknown_accounts->clear_if_greater(MAX_UNKNOWN_ACCOUNTS);
+
+      /*
+        If we fail to insert, someone already did it.
+        So try to retrive it. If we fail (e.g. map was cleared),
+        just use the default and move on.
+      */
+      if (!unknown_accounts->insert(key, plugin_num)) {
+        if (!unknown_accounts->find(key, plugin_num))
+          user->plugin = default_auth_plugin_name;
+        else
+          user->plugin =
+              Cached_authentication_plugins::cached_plugins_names[plugin_num];
+      }
+    }
+  } else
+    user->plugin = default_auth_plugin_name;
+
   for (int i = 0; i < NUM_CREDENTIALS; ++i) {
+    memset(user->credentials[i].m_salt, 0, SCRAMBLE_LENGTH + 1);
+    user->credentials[i].m_salt_len = 0;
     user->credentials[i].m_auth_string = empty_lex_str;
   }
   return user;
@@ -1744,9 +1799,10 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
     */
     LEX_STRING usr = {mpvio->auth_info.user_name,
                       mpvio->auth_info.user_name_length};
-    LEX_STRING hst = {mpvio->host ? mpvio->host : mpvio->ip,
-                      mpvio->host ? strlen(mpvio->host) : strlen(mpvio->ip)};
-    mpvio->acl_user = decoy_user(usr, hst, mpvio->mem_root);
+    LEX_CSTRING hst = {mpvio->host ? mpvio->host : mpvio->ip,
+                       mpvio->host ? strlen(mpvio->host) : strlen(mpvio->ip)};
+    mpvio->acl_user =
+        decoy_user(usr, hst, mpvio->mem_root, mpvio->rand, initialized);
     mpvio->acl_user_plugin = mpvio->acl_user->plugin;
   }
 
@@ -2545,13 +2601,6 @@ skip_to_ssl:
     if (db == NULL) return packet_error;
   }
 
-  /*
-    Set the default for the password supplied flag for non-existing users
-    as the default plugin (native passsword authentication) would do it
-    for compatibility reasons.
-  */
-  if (passwd_len) mpvio->auth_info.password_used = PASSWORD_USED_YES;
-
   size_t client_plugin_len = 0;
   const char *client_plugin =
       get_string(&end, &bytes_remaining_in_packet, &client_plugin_len);
@@ -2677,7 +2726,8 @@ skip_to_ssl:
 static inline int wrap_plguin_data_into_proper_command(NET *net,
                                                        const uchar *packet,
                                                        int packet_len) {
-  return net_write_command(net, 1, (uchar *)"", 0, packet, packet_len);
+  return net_write_command(net, 1, pointer_cast<const uchar *>(""), 0, packet,
+                           packet_len);
 }
 
 /*
@@ -2717,7 +2767,8 @@ static int server_mpvio_write_packet(MYSQL_PLUGIN_VIO *param,
     mpvio->cached_client_reply.pkt = 0;
   /* for the 1st packet we wrap plugin data into the handshake packet */
   if (mpvio->packets_written == 0)
-    res = send_server_handshake_packet(mpvio, (char *)packet, packet_len);
+    res = send_server_handshake_packet(
+        mpvio, pointer_cast<const char *>(packet), packet_len);
   else if (mpvio->status == MPVIO_EXT::RESTART)
     res = send_plugin_request_packet(mpvio, packet, packet_len);
   else
@@ -2774,7 +2825,8 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
         my_strcasecmp(system_charset_info, mpvio->cached_client_reply.plugin,
                       client_auth_plugin) == 0) {
       mpvio->status = MPVIO_EXT::FAILURE;
-      *buf = (uchar *)mpvio->cached_client_reply.pkt;
+      *buf = const_cast<uchar *>(
+          pointer_cast<const uchar *>(mpvio->cached_client_reply.pkt));
       mpvio->cached_client_reply.pkt = 0;
       mpvio->packets_read++;
       DBUG_RETURN((int)mpvio->cached_client_reply.pkt_len);
@@ -2895,6 +2947,7 @@ static void server_mpvio_initialize(THD *thd, MPVIO_EXT *mpvio,
   mpvio->auth_info.user_name_length = 0;
   mpvio->auth_info.host_or_ip = sctx_host_or_ip.str;
   mpvio->auth_info.host_or_ip_length = sctx_host_or_ip.length;
+  mpvio->auth_info.password_used = PASSWORD_USED_NO;
 
 #if defined(HAVE_OPENSSL)
   Vio *vio = thd->get_protocol_classic()->get_vio();
@@ -2910,8 +2963,8 @@ static void server_mpvio_initialize(THD *thd, MPVIO_EXT *mpvio,
   mpvio->thread_id = thd->thread_id();
   mpvio->server_status = &thd->server_status;
   mpvio->protocol = thd->get_protocol_classic();
-  mpvio->ip = (char *)thd->security_context()->ip().str;
-  mpvio->host = (char *)thd->security_context()->host().str;
+  mpvio->ip = thd->security_context()->ip().str;
+  mpvio->host = thd->security_context()->host().str;
   mpvio->charset_adapter = charset_adapter;
   mpvio->restrictions = new (mpvio->mem_root) Restrictions(mpvio->mem_root);
 }
@@ -2928,7 +2981,7 @@ static void server_mpvio_update_thd(THD *thd, MPVIO_EXT *mpvio) {
   }
   if (mpvio->auth_info.user_name) my_free(mpvio->auth_info.user_name);
   LEX_CSTRING sctx_user = thd->security_context()->user();
-  mpvio->auth_info.user_name = (char *)sctx_user.str;
+  mpvio->auth_info.user_name = const_cast<char *>(sctx_user.str);
   mpvio->auth_info.user_name_length = sctx_user.length;
   if (thd->get_protocol()->has_client_capability(CLIENT_IGNORE_SPACE))
     thd->variables.sql_mode |= MODE_IGNORE_SPACE;
@@ -3009,11 +3062,11 @@ void acl_log_connect(const char *user, const char *host, const char *auth_as,
 
   if (strcmp(auth_as, user) && (PROXY_FLAG != *auth_as)) {
     query_logger.general_log_print(thd, command, "%s@%s as %s on %s using %s",
-                                   user, host, auth_as, db ? db : (char *)"",
+                                   user, host, auth_as, db ? db : "",
                                    vio_name_str);
   } else {
     query_logger.general_log_print(thd, command, "%s@%s on %s using %s", user,
-                                   host, db ? db : (char *)"", vio_name_str);
+                                   host, db ? db : "", vio_name_str);
   }
 }
 
@@ -3259,7 +3312,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
 
       if (is_proxy_user) {
         ACL_USER *acl_proxy_user;
-        char proxy_user_buf[USERNAME_LENGTH + MAX_HOSTNAME + 5];
+        char proxy_user_buf[USERNAME_LENGTH + HOSTNAME_LENGTH + 6];
 
         /* we need to find the proxy user, but there was none */
         if (!proxy_user) {
@@ -3776,12 +3829,13 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
     DBUG_PRINT("info", ("mysql_native_authentication_proxy_users is enabled, "
                         "setting authenticated_as to NULL"));
   }
-  if (pkt_len == 0) /* no password */
+  if (pkt_len == 0) {
+    info->password_used = PASSWORD_USED_NO;
     DBUG_RETURN(mpvio->acl_user->credentials[PRIMARY_CRED].m_salt_len != 0
                     ? CR_AUTH_USER_CREDENTIALS
                     : CR_OK);
-
-  info->password_used = PASSWORD_USED_YES;
+  } else
+    info->password_used = PASSWORD_USED_YES;
   bool second = false;
   if (pkt_len == SCRAMBLE_LENGTH) {
     if (!mpvio->acl_user->credentials[PRIMARY_CRED].m_salt_len ||
@@ -3947,8 +4001,8 @@ static int compare_sha256_password_with_hash(const char *hash,
                                              unsigned long cleartext_length,
                                              int *is_error) {
   char stage2[CRYPT_MAX_PASSWORD_SIZE + 1];
-  char *user_salt_begin;
-  char *user_salt_end;
+  const char *user_salt_begin;
+  const char *user_salt_end;
 
   DBUG_ENTER("compare_sha256_password_with_hash");
   DBUG_ASSERT(cleartext_length <= SHA256_PASSWORD_MAX_PASSWORD_LENGTH);
@@ -3958,8 +4012,8 @@ static int compare_sha256_password_with_hash(const char *hash,
   /*
     Fetch user authentication_string and extract the password salt
   */
-  user_salt_begin = (char *)hash;
-  user_salt_end = (char *)(hash + hash_length);
+  user_salt_begin = hash;
+  user_salt_end = hash + hash_length;
   if (extract_user_salt(&user_salt_begin, &user_salt_end) !=
       CRYPT_SALT_LENGTH) {
     *is_error = 1;
@@ -4102,9 +4156,10 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     if (pkt_len == 1 && *pkt == 1) {
       uint pem_length =
           static_cast<uint>(strlen(g_sha256_rsa_keys->get_public_key_as_pem()));
-      if (vio->write_packet(
-              vio, (unsigned char *)g_sha256_rsa_keys->get_public_key_as_pem(),
-              pem_length))
+      if (vio->write_packet(vio,
+                            pointer_cast<const uchar *>(
+                                g_sha256_rsa_keys->get_public_key_as_pem()),
+                            pem_length))
         DBUG_RETURN(CR_ERROR);
       /* Get the encrypted response from the client */
       if ((pkt_len = vio->read_packet(vio, &pkt)) == -1) DBUG_RETURN(CR_ERROR);
@@ -4202,7 +4257,7 @@ static MYSQL_SYSVAR_STR(
 static MYSQL_SYSVAR_BOOL(
     auto_generate_rsa_keys, auth_rsa_auto_generate_rsa_keys,
     PLUGIN_VAR_READONLY | PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_NOPERSIST,
-    "Auto generate RSA keys at server startup if correpsonding "
+    "Auto generate RSA keys at server startup if corresponding "
     "system variables are not specified and key files are not present "
     "at the default location.",
     NULL, NULL, true);
@@ -4573,9 +4628,10 @@ class X509_gen {
     X509V3_set_ctx(&v3ctx, self_sign ? x509 : ca_x509, x509, NULL, NULL, 0);
 
     /** Add CA:TRUE / CA:FALSE inforamation */
-    if (!(ext = X509V3_EXT_conf_nid(NULL, &v3ctx, NID_basic_constraints,
-                                    self_sign ? (char *)"critical,CA:TRUE"
-                                              : (char *)"critical,CA:FALSE")))
+    if (!(ext = X509V3_EXT_conf_nid(
+              NULL, &v3ctx, NID_basic_constraints,
+              self_sign ? const_cast<char *>("critical,CA:TRUE")
+                        : const_cast<char *>("critical,CA:FALSE"))))
       goto err;
     X509_add_ext(x509, ext, -1);
     X509_EXTENSION_free(ext);
@@ -4960,7 +5016,8 @@ end:
     @retval false Generation failed.
 */
 bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status,
-                             char **ssl_ca, char **ssl_key, char **ssl_cert) {
+                             const char **ssl_ca, const char **ssl_key,
+                             const char **ssl_cert) {
   if (opt_auto_generate_certs == true) {
     /*
       Do not generate SSL certificates/RSA keys,
@@ -5022,9 +5079,9 @@ bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status,
                DEFAULT_SSL_CA_CERT) == false)) {
         return false;
       }
-      *ssl_ca = (char *)DEFAULT_SSL_CA_CERT;
-      *ssl_cert = (char *)DEFAULT_SSL_SERVER_CERT;
-      *ssl_key = (char *)DEFAULT_SSL_SERVER_KEY;
+      *ssl_ca = DEFAULT_SSL_CA_CERT;
+      *ssl_cert = DEFAULT_SSL_SERVER_CERT;
+      *ssl_key = DEFAULT_SSL_SERVER_KEY;
       LogErr(INFORMATION_LEVEL, ER_AUTH_CERTS_SAVED_TO_DATADIR);
     }
     return true;

@@ -14,6 +14,12 @@ function is_sparse_file() {
 
 start_server
 
+cat $MYSQLD_ERRFILE
+
+if grep -q 'PUNCH HOLE support not available' $MYSQLD_ERRFILE ; then
+    skip 'punch hole support is not available'
+fi
+
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
 CREATE TABLE t1 (c1 BLOB) COMPRESSION='zlib';
@@ -38,6 +44,12 @@ done
 # wait for InnoDB to flush all dirty pages
 innodb_wait_for_flush_all
 
+if ! is_sparse_file $mysql_datadir/test t1.ibd ; then
+    working_compression="yes"
+else
+    working_compression="no"
+fi
+
 xtrabackup --backup --target-dir=$topdir/backup --transition-key=123
 
 mkdir $topdir/backuplsn
@@ -45,9 +57,11 @@ xtrabackup --backup --target-dir=$topdir/tmp --transition-key=123 \
            --extra-lsndir=$topdir/backuplsn \
            --stream=xbstream --compress=lz4 --compress-threads=2 > $topdir/backup.xbs
 
-for i in {1..4} ; do
-    is_sparse_file $topdir/backup/test/t1.ibd || die "Backed up t$i.ibd is not sparse"
-done
+if [ working_compression = "yes" ] ; then
+    for i in {1..4} ; do
+        is_sparse_file $topdir/backup/test/t1.ibd || die "Backed up t$i.ibd is not sparse"
+    done
+fi
 
 for i in {1..5} ; do
     run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -74,16 +88,20 @@ function restore_and_verify() {
     xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
                --transition-key=123
 
-    for i in {1..4} ; do
-        is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared t$i.ibd is not sparse"
-    done
+    if [ working_compression = "yes" ] ; then
+        for i in {1..4} ; do
+            is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared t$i.ibd is not sparse"
+        done
+    fi
 
     xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/backup1 \
                --transition-key=123
 
-    for i in {1..4} ; do
-        is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared (incremental) t$i.ibd is not sparse"
-    done
+    if [ working_compression = "yes" ] ; then
+        for i in {1..4} ; do
+            is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared (incremental) t$i.ibd is not sparse"
+        done
+    fi
 
     stop_server
 
@@ -93,9 +111,11 @@ function restore_and_verify() {
                --generate-new-master-key \
                --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
-    for i in {1..4} ; do
-        is_sparse_file $topdir/backup/test/t$i.ibd || die "Restored t$i.ibd is not sparse"
-    done
+    if [ working_compression = "yes" ] ; then
+        for i in {1..4} ; do
+            is_sparse_file $topdir/backup/test/t$i.ibd || die "Restored t$i.ibd is not sparse"
+        done
+    fi
 
     start_server
 

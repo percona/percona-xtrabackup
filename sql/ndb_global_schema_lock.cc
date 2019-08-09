@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,11 @@
 
 #include <mutex>
 
+#include "debug_sync.h"
 #include "my_dbug.h"
 #include "mysql/plugin.h"
-#include "sql/mdl.h"
+#include "sql/ndb_global_schema_lock.h"
+#include "sql/ndb_schema_dist.h"
 #include "sql/ndb_sleep.h"
 #include "sql/ndb_table_guard.h"
 #include "sql/sql_class.h"
@@ -83,6 +85,62 @@ static bool ndb_is_gsl_participant_active()
 {
   return (thd_gsl_participant != nullptr);
 }
+
+
+/**
+ * Another potential scenario for a deadlock between MDL and GSL locks is as
+ * follows:
+ *
+ * A disk data table DDL will try and acquire the following -
+ *  - Global read lock of type INTENTION EXCLUSIVE (IX)
+ *  - IX lock on the schema
+ *  - Shared lock on the table
+ *  - Backup lock of type IX
+ *  - IX lock on the tablespace
+ *  - Upgrade the previously acquired shared lock on the table to an EXCLUSIVE
+ *    (X) lock
+ *  - The X lock is granted only after the GSL has been acquired
+ *
+ * A tablespace DDL will try and acquire the following -
+ *  - Global read lock of type IX
+ *  - X lock on the 'ts1' tablespace
+ *  - The X lock is granted only after the GSL has been acquired
+ *  - Backup lock of type IX
+ *
+ * Assume that the table DDL has acquired an IX lock on the tablespace and is
+ * waiting for the GSL in order to acquire an X lock on the table. At the same
+ * time the tablespace DDL has acquired the GSL and is waiting to acquire an X
+ * lock on the tablespace - Deadlock!
+ *
+ * We detect such a deadlock by tracking when the GSL is acquired (and released)
+ * during an attempt to obtain an X lock on a tablespace. When this condition
+ * holds true (along with the other 2 conditions specified in gsl_lock_ext()
+ * below), we assume that a deadlock has occurred
+ */
+
+static class Ndb_tablespace_gsl_guard {
+  std::mutex m_tablespace_gsl_acquired_mutex; // for m_tablespace_gsl_acquired
+  bool m_tablespace_gsl_acquired{false};
+
+public:
+  void tablespace_gsl_acquired() {
+    std::lock_guard<std::mutex>
+      lock_gsl_acquired(m_tablespace_gsl_acquired_mutex);
+    m_tablespace_gsl_acquired = true;
+  }
+
+  void tablespace_gsl_released() {
+    std::lock_guard<std::mutex>
+      lock_gsl_acquired(m_tablespace_gsl_acquired_mutex);
+    m_tablespace_gsl_acquired = false;
+  }
+
+  bool is_tablespace_gsl_acquired() {
+    std::lock_guard<std::mutex>
+      lock_gsl_acquired(m_tablespace_gsl_acquired_mutex);
+    return m_tablespace_gsl_acquired;
+  }
+} tablespace_gsl_guard;
 
 
 /*
@@ -143,19 +201,23 @@ gsl_lock_ext(THD *thd, Ndb *ndb, NdbError &ndb_error)
 
     /**
      * Check for MDL / GSL deadlock. A deadlock is assumed if:
-     *  1) ::execute failed with a timeout error.
-     *  2) There already is another THD being an participant
-     *     in a schema distr. operation (which implies that
-     *     the coordinator already held the GSL.
-     *  3) This THD holds a lock being waited for by another THD
+     *  1)  ::execute failed with a timeout error.
+     *  2a) There already is another THD being an participant in a schema distr.
+     *      operation (which implies that the coordinator already held the GSL
+     *                              OR
+     *  2b) The GSL has already been acquired for a pending exclusive MDL on a
+     *      tablespace. It's highly likely that there are two DDL statements
+     *      competing for a lock on the same tablespace
+     *  3)  This THD holds a lock being waited for by another THD
      *
      * Note: If we incorrectly assume a deadlock above, the caller
      * will still either retry indefinitely as today, (notify_alter),
      * or now be able to release locks gotten so far and retry later.
      */
-    if (trans->getNdbError().code == 266 &&     // 1)
-        ndb_is_gsl_participant_active()  &&     // 2)
-        thd->mdl_context.has_locks_waited_for())// 3)
+    if (trans->getNdbError().code == 266 &&                     // 1)
+        (ndb_is_gsl_participant_active() ||                     // 2a)
+         tablespace_gsl_guard.is_tablespace_gsl_acquired()) &&  // 2b)
+        thd->mdl_context.has_locks_waited_for())                // 3)
       goto error_handler;
 
   retry:
@@ -230,6 +292,7 @@ static
 int
 ndbcluster_global_schema_lock(THD *thd,
                               bool report_cluster_disconnected,
+                              bool is_tablespace,
                               bool *victimized)
 {
   Ndb *ndb= check_ndb_in_thd(thd);
@@ -246,6 +309,9 @@ ndbcluster_global_schema_lock(THD *thd,
 
   if (thd_ndb->global_schema_lock_count)
   {
+    // Remember that GSL was locked for tablespace
+    if (is_tablespace) tablespace_gsl_guard.tablespace_gsl_acquired();
+
     if (thd_ndb->global_schema_lock_trans)
       thd_ndb->global_schema_lock_trans->refresh();
     else
@@ -283,6 +349,12 @@ ndbcluster_global_schema_lock(THD *thd,
     DBUG_PRINT("info", ("schema_locks_count: %d",
                         thd_ndb->schema_locks_count));
 
+    // Remember that GSL was locked for tablespace
+    if (is_tablespace) tablespace_gsl_guard.tablespace_gsl_acquired();
+
+    // Sync point used when testing global schema lock concurrency
+    DEBUG_SYNC(thd, "ndb_global_schema_lock_acquired");
+
     DBUG_RETURN(0);
   }
   // Else, didn't get GSL: Deadlock or failure from NDB
@@ -294,7 +366,8 @@ ndbcluster_global_schema_lock(THD *thd,
   if (ndb_error.code != 4009)  //No cluster connection
   {
     DBUG_ASSERT(thd_ndb->global_schema_lock_count == 1);
-    thd_ndb->global_schema_lock_count= 0;
+    // This reset triggers the special case in ndbcluster_global_schema_unlock()
+    thd_ndb->global_schema_lock_count = 0;
   }
 
   if (ndb_error.code == 266)  //Deadlock resolution
@@ -318,7 +391,7 @@ ndbcluster_global_schema_lock(THD *thd,
 
 static
 int
-ndbcluster_global_schema_unlock(THD *thd)
+ndbcluster_global_schema_unlock(THD *thd, bool is_tablespace)
 {
   Thd_ndb *thd_ndb= get_thd_ndb(thd);
   if (unlikely(thd_ndb == NULL))
@@ -332,9 +405,26 @@ ndbcluster_global_schema_unlock(THD *thd)
     return 0;
   }
 
+  if (thd_ndb->global_schema_lock_error != 4009 &&
+      thd_ndb->global_schema_lock_count == 0)
+  {
+    // Special case to handle unlock after failure to acquire GSL due to
+    // any error other than 4009.
+    // - when error 4009 occurs the lock is granted anyway and the lock count is
+    // not reset, thus unlock() should be called.
+    // - for other errors the lock is not granted, lock count is reset and
+    // the exact same error code is returned. Thus it's impossible to know
+    // that there is actually no need to call unlock. Fix by allowing unlock
+    // without doing anything since the trans is already closed.
+    DBUG_ASSERT(thd_ndb->global_schema_lock_trans == NULL);
+    thd_ndb->global_schema_lock_count++;
+  }
+
   Ndb *ndb= thd_ndb->ndb;
   DBUG_ENTER("ndbcluster_global_schema_unlock");
   NdbTransaction *trans= thd_ndb->global_schema_lock_trans;
+  // Don't allow decrementing from zero
+  DBUG_ASSERT(thd_ndb->global_schema_lock_count > 0);
   thd_ndb->global_schema_lock_count--;
   DBUG_PRINT("exit", ("global_schema_lock_count: %d",
                       thd_ndb->global_schema_lock_count));
@@ -353,6 +443,10 @@ ndbcluster_global_schema_unlock(THD *thd)
   if (trans)
   {
     thd_ndb->global_schema_lock_trans= NULL;
+
+    // Remember GSL for tablespace released
+    if (is_tablespace) tablespace_gsl_guard.tablespace_gsl_released();
+
     NdbError ndb_error;
     if (!gsl_unlock_ext(ndb, trans, ndb_error))
     {
@@ -369,188 +463,38 @@ ndbcluster_global_schema_unlock(THD *thd)
 }
 
 
-static
 bool
-notify_mdl_lock(THD *thd, bool lock, bool *victimized)
+ndb_gsl_lock(THD *thd, bool lock, bool is_tablespace, bool *victimized)
 {
-  DBUG_ENTER("notify_mdl_lock");
+  DBUG_ENTER("ndb_gsl_lock");
 
   if (lock)
   {
-    if (ndbcluster_global_schema_lock(thd, true, victimized) != 0)
-    {
+    if (ndbcluster_global_schema_lock(thd, true, is_tablespace, victimized) !=
+        0) {
       DBUG_PRINT("error", ("Failed to lock global schema lock"));
-      /*
-        If not 'victimized' in order to avoid deadlocks:
- 
-        Ignore error to lock GSL and let execution continue
-        until one of ha_ndbcluster's DDL functions use
-        Thd_ndb::has_required_global_schema_lock() to verify
-        if the GSL is taken or not.
-        This allows users to work with non NDB objects although
-        failure to lock GSL occurs(for example because connection
-        to NDB is not available).
-
-        Victimized failures are handled immediately by MDL
-        releasing, and later retrying the locks.
-      */
-      DBUG_RETURN(*victimized == true); // Ignore error if not 'victimized'
+      DBUG_RETURN(true); // Error
     }
+
     DBUG_RETURN(false); // OK
   }
 
   *victimized= false;
-  if (ndbcluster_global_schema_unlock(thd) != 0)
+  if (ndbcluster_global_schema_unlock(thd, is_tablespace) != 0)
   {
     DBUG_PRINT("error", ("Failed to unlock global schema lock"));
     DBUG_RETURN(true); // Error
   }
+
   DBUG_RETURN(false); // OK
 }
-
-
-#ifndef DBUG_OFF
-static
-const char*
-mdl_namespace_name(const MDL_key* mdl_key)
-{
-  switch(mdl_key->mdl_namespace())
-  {
-  case MDL_key::GLOBAL:
-    return "GLOBAL";
-  case MDL_key::SCHEMA:
-    return "SCHEMA";
-  case MDL_key::TABLESPACE:
-    return "TABLESPACE";
-  case MDL_key::TABLE:
-    return "TABLE";
-  case MDL_key::FUNCTION:
-    return "FUNCTION";
-  case MDL_key::PROCEDURE:
-    return "PROCEDURE";
-  case MDL_key::TRIGGER:
-    return "TRIGGER";
-  case MDL_key::EVENT:
-    return "EVENT";
-  default:
-    return "<unknown>";
-  }
-}
-#endif
-
-
-/**
-  Callback handling the notification of ALTER TABLE start and end
-  on the given key. The function locks or unlocks the GSL thus
-  preventing concurrent modification to any other object in
-  the cluster.
-
-  @param thd                Thread context.
-  @param mdl_key            MDL key identifying table which is going to be
-                            or was ALTERed.
-  @param notification_type  Indicates whether this is pre-ALTER TABLE or
-                            post-ALTER TABLE notification.
-
-  @note This is an additional notification that spans the duration
-        of the whole ALTER TABLE thus avoiding the need for an expensive
-        abort of the ALTER late in the process when upgrade to X
-        metadata lock happens.
-
-  @note This callback is called in addition to notify_exclusive_mdl()
-        which means that during an ALTER TABLE we will get two different
-        calls to take and release GSL.
-
-  @see notify_alter_table() in handler.h
-*/
-
-static
-bool
-ndbcluster_notify_alter_table(THD *thd,
-                              const MDL_key *mdl_key MY_ATTRIBUTE((unused)),
-                              ha_notification_type notification)
-{
-  DBUG_ENTER("ndbcluster_notify_alter_table");
-  DBUG_PRINT("enter", ("namespace: '%s', db: '%s', name: '%s'",
-                       mdl_namespace_name(mdl_key),
-                       mdl_key->db_name(), mdl_key->name()));
-
-  DBUG_ASSERT(notification == HA_NOTIFY_PRE_EVENT ||
-              notification == HA_NOTIFY_POST_EVENT);
-
-  bool victimized= false;
-  bool result;
-  do
-  {
-    result =
-      notify_mdl_lock(thd,
-                      notification == HA_NOTIFY_PRE_EVENT, &victimized);
-  }
-  while (victimized);
-  DBUG_RETURN(result);
-}
-
-
-/**
-  Callback handling the notification about acquisition or after
-  release of exclusive metadata lock on object represented by
-  key. The function locks or unlocks the GSL thus preventing
-  concurrent modification to any other object in the cluster
-
-  @param thd                Thread context.
-  @param mdl_key            MDL key identifying object on which exclusive
-                            lock is to be acquired/was released.
-  @param notification_type  Indicates whether this is pre-acquire or
-                            post-release notification.
-  @param victimized        'true' if locking failed as we were choosen
-                            as a victim in order to avoid possible deadlocks.
-
-  @see notify_exclusive_mdl() in handler.h
-*/
-
-static
-bool
-ndbcluster_notify_exclusive_mdl(THD *thd,
-                                const MDL_key *mdl_key MY_ATTRIBUTE((unused)),
-                                ha_notification_type notification,
-                                bool *victimized)
-{
-  DBUG_ENTER("ndbcluster_notify_exclusive_mdl");
-  DBUG_PRINT("enter", ("namespace: '%s', db: '%s', name: '%s'",
-                       mdl_namespace_name(mdl_key),
-                       mdl_key->db_name(), mdl_key->name()));
-
-  DBUG_ASSERT(notification == HA_NOTIFY_PRE_EVENT ||
-              notification == HA_NOTIFY_POST_EVENT);
-
-  const bool result =
-      notify_mdl_lock(thd,
-                      notification == HA_NOTIFY_PRE_EVENT, victimized);
-  DBUG_RETURN(result);
-}
-
-
-#include "sql/ndb_global_schema_lock.h"
-
-void ndbcluster_global_schema_lock_init(handlerton *hton)
-{
-  hton->notify_alter_table = ndbcluster_notify_alter_table;
-  hton->notify_exclusive_mdl = ndbcluster_notify_exclusive_mdl;
-}
-
-
-void ndbcluster_global_schema_lock_deinit(handlerton* hton)
-{
-  hton->notify_alter_table = NULL;
-  hton->notify_exclusive_mdl = NULL;
-}
-
 
 bool
 Thd_ndb::has_required_global_schema_lock(const char* func) const
 {
   if (global_schema_lock_error)
   {
-    // An error occured while locking, either because
+    // An error occurred while locking, either because
     // no connection to cluster or another user has locked
     // the lock -> ok, but caller should not allow to continue
     return false;
@@ -584,7 +528,7 @@ Ndb_global_schema_lock_guard::Ndb_global_schema_lock_guard(THD *thd)
 Ndb_global_schema_lock_guard::~Ndb_global_schema_lock_guard()
 {
   if (m_locked)
-    ndbcluster_global_schema_unlock(m_thd);
+    ndbcluster_global_schema_unlock(m_thd, false /* is_tablespace */);
 }
 
 /**
@@ -608,7 +552,12 @@ int Ndb_global_schema_lock_guard::lock(void)
   bool ret;
   do
   {
-    ret= ndbcluster_global_schema_lock(m_thd, false, &victimized);
+    ret = ndbcluster_global_schema_lock(m_thd, false, false /* is_tablespace */,
+                                        &victimized);
+    if (ret && thd_killed(m_thd)) {
+      // Failed to acuire GSL and THD is killed -> give up!
+      break; // Terminate loop
+    }
   }
   while (victimized);
 

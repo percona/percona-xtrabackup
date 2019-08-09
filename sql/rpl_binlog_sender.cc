@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -91,8 +91,8 @@ class Binlog_sender::Event_allocator {
     if (m_sender->grow_packet(size)) return nullptr;
 
     m_sender->m_packet.length(event_offset + size);
-    return reinterpret_cast<unsigned char *>(
-        const_cast<char *>(m_sender->m_packet.ptr() + event_offset));
+    return pointer_cast<unsigned char *>(m_sender->m_packet.ptr() +
+                                         event_offset);
   }
 
   void deallocate(unsigned char *ptr MY_ATTRIBUTE((unused))) {}
@@ -109,13 +109,13 @@ Binlog_sender::Binlog_sender(THD *thd, const char *start_file,
       m_start_file(start_file),
       m_start_pos(start_pos),
       m_exclude_gtid(exclude_gtids),
-      m_using_gtid_protocol(exclude_gtids != NULL),
-      m_check_previous_gtid_event(exclude_gtids != NULL),
-      m_gtid_clear_fd_created_flag(exclude_gtids == NULL),
+      m_using_gtid_protocol(exclude_gtids != nullptr),
+      m_check_previous_gtid_event(exclude_gtids != nullptr),
+      m_gtid_clear_fd_created_flag(exclude_gtids == nullptr),
       m_diag_area(false),
-      m_errmsg(NULL),
+      m_errmsg(nullptr),
       m_errno(0),
-      m_last_file(NULL),
+      m_last_file(nullptr),
       m_last_pos(0),
       m_half_buffer_size_req_counter(0),
       m_new_shrink_size(PACKET_MIN_SIZE),
@@ -236,7 +236,7 @@ void Binlog_sender::cleanup() {
     (void)RUN_HOOK(binlog_transmit, transmit_stop, (thd, m_flag));
 
   mysql_mutex_lock(&thd->LOCK_thd_data);
-  thd->current_linfo = NULL;
+  thd->current_linfo = nullptr;
   mysql_mutex_unlock(&thd->LOCK_thd_data);
 
   thd->variables.max_allowed_packet =
@@ -681,12 +681,12 @@ inline int Binlog_sender::wait_with_heartbeat(my_off_t log_pos) {
 }
 
 inline int Binlog_sender::wait_without_heartbeat() {
-  return mysql_bin_log.wait_for_update(NULL);
+  return mysql_bin_log.wait_for_update(nullptr);
 }
 
 void Binlog_sender::init_heartbeat_period() {
   bool null_value;
-  LEX_STRING name = {C_STRING_WITH_LEN("master_heartbeat_period")};
+  LEX_CSTRING name = {STRING_WITH_LEN("master_heartbeat_period")};
 
   /* Protects m_thd->user_vars. */
   mysql_mutex_lock(&m_thd->LOCK_thd_data);
@@ -702,7 +702,7 @@ void Binlog_sender::init_heartbeat_period() {
 
 int Binlog_sender::check_start_file() {
   char index_entry_name[FN_REFLEN];
-  char *name_ptr = NULL;
+  char *name_ptr = nullptr;
   const char *errmsg;
 
   if (m_start_file[0] != '\0') {
@@ -779,8 +779,8 @@ int Binlog_sender::check_start_file() {
 
       String tmp_uuid;
       get_slave_uuid(m_thd, &tmp_uuid);
-      char *missing_gtids = NULL;
-      gtid_missing.to_string(&missing_gtids, false, NULL);
+      char *missing_gtids = nullptr;
+      gtid_missing.to_string(&missing_gtids, false, nullptr);
       LogErr(WARNING_LEVEL, ER_FOUND_MISSING_GTIDS, tmp_uuid.ptr(),
              missing_gtids);
       my_free(missing_gtids);
@@ -863,7 +863,7 @@ void Binlog_sender::init_checksum_alg() {
   const auto it = m_thd->user_vars.find("master_binlog_checksum");
   if (it != m_thd->user_vars.end()) {
     m_slave_checksum_alg = static_cast<enum_binlog_checksum_alg>(
-        find_type((char *)it->second->ptr(), &binlog_checksum_typelib, 1) - 1);
+        find_type(it->second->ptr(), &binlog_checksum_typelib, 1) - 1);
     DBUG_ASSERT(m_slave_checksum_alg <
                 binary_log::BINLOG_CHECKSUM_ALG_ENUM_END);
   }
@@ -894,7 +894,7 @@ int Binlog_sender::fake_rotate_event(const char *next_log_file,
 
   size_t event_offset = m_packet.length();
   m_packet.length(event_len + event_offset);
-  uchar *header = (uchar *)m_packet.ptr() + event_offset;
+  uchar *header = pointer_cast<uchar *>(m_packet.ptr()) + event_offset;
   uchar *rotate_header = header + LOG_EVENT_HEADER_LEN;
   /*
     'when' (the timestamp) is set to 0 so that slave could distinguish between
@@ -917,7 +917,7 @@ int Binlog_sender::fake_rotate_event(const char *next_log_file,
 
 inline void Binlog_sender::calc_event_checksum(uchar *event_ptr,
                                                size_t event_len) {
-  ha_checksum crc = checksum_crc32(0L, NULL, 0);
+  ha_checksum crc = checksum_crc32(0L, nullptr, 0);
   crc = checksum_crc32(crc, event_ptr, event_len - BINLOG_CHECKSUM_LEN);
   int4store(event_ptr + event_len - BINLOG_CHECKSUM_LEN, crc);
 }
@@ -1129,7 +1129,7 @@ int Binlog_sender::send_heartbeat_event(my_off_t log_pos) {
 
   size_t event_offset = m_packet.length();
   m_packet.length(event_len + event_offset);
-  uchar *header = (uchar *)m_packet.ptr() + event_offset;
+  uchar *header = pointer_cast<uchar *>(m_packet.ptr()) + event_offset;
 
   /* Timestamp field */
   int4store(header, 0);
@@ -1162,10 +1162,10 @@ inline int Binlog_sender::send_packet() {
                   (Log_event_type)m_packet.ptr()[1 + EVENT_TYPE_OFFSET])));
   // We should always use the same buffer to guarantee that the reallocation
   // logic is not broken.
-  if (DBUG_EVALUATE_IF(
-          "simulate_send_error", true,
-          my_net_write(m_thd->get_protocol_classic()->get_net(),
-                       (uchar *)m_packet.ptr(), m_packet.length()))) {
+  if (DBUG_EVALUATE_IF("simulate_send_error", true,
+                       my_net_write(m_thd->get_protocol_classic()->get_net(),
+                                    pointer_cast<const uchar *>(m_packet.ptr()),
+                                    m_packet.length()))) {
     set_unknown_error("Failed on my_net_write()");
     DBUG_RETURN(1);
   }

@@ -659,12 +659,18 @@ CREATE TABLE t1 (
 `f2` int(11) NOT NULL default '0',
 PRIMARY KEY  (`f1`)
 );
+Warnings:
+Warning	1681	Integer display width is deprecated and will be removed in a future release.
+Warning	1681	Integer display width is deprecated and will be removed in a future release.
 INSERT INTO t1 VALUES (4433,5424);
 CREATE TABLE t2 (
 `f3` int(10) unsigned NOT NULL default '0',
 `f4` int(10) unsigned NOT NULL default '0' CHECK (f4 <= 500),
 PRIMARY KEY  (`f3`,`f4`)
 );
+Warnings:
+Warning	1681	Integer display width is deprecated and will be removed in a future release.
+Warning	1681	Integer display width is deprecated and will be removed in a future release.
 INSERT INTO t2 VALUES (495,500);
 INSERT INTO t2 VALUES (496,500);
 UPDATE t2,t1 set t2.f4 = t2.f4 + 1;
@@ -1343,7 +1349,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `f1` int(11) DEFAULT NULL,
-  CONSTRAINT `t1_chk_1` CHECK (isnull(`f1`))
+  CONSTRAINT `t1_chk_1` CHECK ((`f1` is null))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 INSERT INTO t1 VALUES(NULL);
 INSERT INTO t1 VALUES(10);
@@ -1534,6 +1540,9 @@ c7 BIGINT CHECK(c7 > 10),
 c8 DECIMAL(6,2) CHECK(c8 > 10.1),
 c9 FLOAT(6,2) CHECK(c9 > 10.1),
 c10 DOUBLE(6,2) CHECK(c10 > 10.1));
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -1747,7 +1756,7 @@ t1	CREATE TABLE `t1` (
   `mlnstr` multilinestring DEFAULT NULL,
   `poly` polygon DEFAULT NULL,
   `mpoly` multipolygon DEFAULT NULL,
-  CONSTRAINT `t1_chk_1` CHECK ((st_equals(`pt`,st_geomfromtext(_utf8mb4'POINT(10 20)')) = TRUE)),
+  CONSTRAINT `t1_chk_1` CHECK ((st_equals(`pt`,st_geomfromtext(_utf8mb4'POINT(10 20)')) = true)),
   CONSTRAINT `t1_chk_2` CHECK (st_equals(`lnstr`,st_geomfromtext(_utf8mb4'LINESTRING(0 0,5 5,6 6)'))),
   CONSTRAINT `t1_chk_3` CHECK (st_equals(`mlnstr`,st_geomfromtext(_utf8mb4'MULTILINESTRING((0 0,2 3,4 5),\n                                                                  (6 6,8 8,9 9,10 10))'))),
   CONSTRAINT `t1_chk_4` CHECK (st_equals(`poly`,st_geomfromtext(_utf8mb4'POLYGON((0 0,6 7,8 8,3 9,0 0),\n                                                     (3 6,4 6,4 7,3 6))'))),
@@ -1839,7 +1848,7 @@ DROP TABLE t1;
 # and Operators
 #-----------------------------------------------------------------------
 CREATE TABLE t1(c1 INT, CHECK ( c1 IN ( SELECT COALESCE(NULL, 1, 1))));
-ERROR HY000: An expression of non-boolean type specified to a check constraint 't1_chk_1'.
+ERROR HY000: An expression of a check constraint 't1_chk_1' contains disallowed function.
 CREATE TABLE t1(c1 INT, CHECK ( c1 < ( SELECT COALESCE(NULL, 1, 1))));
 ERROR HY000: An expression of a check constraint 't1_chk_1' contains disallowed function.
 CREATE TABLE t1(c1 INT , CHECK ( c1 <=> NULL ));
@@ -1952,11 +1961,15 @@ ALTER TABLE t1 ADD CONSTRAINT CHECK( (c1 > 10) AND (c2 < 20) );
 INSERT INTO t1 VALUES(1,10);
 ERROR HY000: Check constraint 't1_chk_1' is violated.
 ALTER TABLE t1 ADD CONSTRAINT CHECK( (c1 > 10) && (c2 < 20) );
+Warnings:
+Warning	1287	'&&' is deprecated and will be removed in a future release. Please use AND instead
 INSERT INTO t1 VALUES(15,25);
 ERROR HY000: Check constraint 't1_chk_1' is violated.
 ALTER TABLE t1 DROP CHECK `t1_chk_1`;
 ALTER TABLE t1 DROP CHECK `t1_chk_2`;
 ALTER TABLE t1 ADD CONSTRAINT CHECK( (c1 > 10) || (c2 < 20) );
+Warnings:
+Warning	1287	'|| as a synonym for OR' is deprecated and will be removed in a future release. Please use OR instead
 ALTER TABLE t1 ADD CONSTRAINT CHECK( (c1 > 10) OR (c2 < 20) );
 INSERT INTO t1 VALUES(15,25);
 INSERT INTO t1 VALUES(5,10);
@@ -2301,6 +2314,9 @@ c8 DECIMAL(6,2) CHECK(c8 > 10.1),
 c9 FLOAT(6,2) CHECK(c9 > 10.1),
 c10 DOUBLE(6,2) CHECK(c10 > 10.1),
 c11 CHAR(6) CHECK (c11 IS NULL));
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -2317,7 +2333,7 @@ t1	CREATE TABLE `t1` (
   `c11` char(6) DEFAULT NULL,
   CONSTRAINT `t1_chk_1` CHECK ((`c1` < 0x7c)) /*!80016 NOT ENFORCED */,
   CONSTRAINT `t1_chk_10` CHECK ((`c10` > 10.1)),
-  CONSTRAINT `t1_chk_11` CHECK (isnull(`c11`)),
+  CONSTRAINT `t1_chk_11` CHECK ((`c11` is null)),
   CONSTRAINT `t1_chk_2` CHECK ((`c2` > 0)) /*!80016 NOT ENFORCED */,
   CONSTRAINT `t1_chk_3` CHECK ((`c3` > 10)) /*!80016 NOT ENFORCED */,
   CONSTRAINT `t1_chk_4` CHECK ((`c4` > 10)) /*!80016 NOT ENFORCED */,
@@ -2345,7 +2361,7 @@ t1	CREATE TABLE `t1` (
   `c11` char(6) DEFAULT NULL,
   CONSTRAINT `t1_chk_1` CHECK ((`c1` < 0x7c)) /*!80016 NOT ENFORCED */,
   CONSTRAINT `t1_chk_10` CHECK ((`c10` > 10.1)),
-  CONSTRAINT `t1_chk_11` CHECK (isnull(`c11`)),
+  CONSTRAINT `t1_chk_11` CHECK ((`c11` is null)),
   CONSTRAINT `t1_chk_2` CHECK ((`c2` > 0)) /*!80016 NOT ENFORCED */,
   CONSTRAINT `t1_chk_3` CHECK ((`c3` > 10)) /*!80016 NOT ENFORCED */,
   CONSTRAINT `t1_chk_4` CHECK ((`c4` > 10)) /*!80016 NOT ENFORCED */,
@@ -2381,6 +2397,9 @@ c7 BIGINT CHECK(c7 > 10) NOT ENFORCED,
 c8 DECIMAL(6,2) CHECK(c8 > 10.1) NOT ENFORCED,
 c9 FLOAT(6,2) CHECK(c9 > 10.1) NOT ENFORCED,
 c10 DOUBLE(6,2) CHECK(c10 > 10.1) NOT ENFORCED);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
@@ -2590,34 +2609,6 @@ id	name
 60	aaa
 DROP TABLE t1;
 #-----------------------------------------------------------------------
-# Test case to verify alter operations on non-transactional SE table
-# with check constraints.
-#-----------------------------------------------------------------------
-CREATE TABLE t1(f1 INT CHECK (f1 < 10)) ENGINE = myisam;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `f1` int(11) DEFAULT NULL,
-  CONSTRAINT `t1_chk_1` CHECK ((`f1` < 10))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-ALTER TABLE t1 ADD f2 INT, ALGORITHM=copy;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `f1` int(11) DEFAULT NULL,
-  `f2` int(11) DEFAULT NULL,
-  CONSTRAINT `t1_chk_1` CHECK ((`f1` < 10))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-ALTER TABLE t1 ALTER f1 SET DEFAULT 10, ALGORITHM=INPLACE;
-SHOW CREATE TABLE t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `f1` int(11) DEFAULT '10',
-  `f2` int(11) DEFAULT NULL,
-  CONSTRAINT `t1_chk_1` CHECK ((`f1` < 10))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-DROP TABLE t1;
-#-----------------------------------------------------------------------
 # Test case to verify check constraint with Updatable view
 #-----------------------------------------------------------------------
 CREATE TABLE t1(c1 INT, c2 INT CHECK (c2 < 10));
@@ -2713,3 +2704,31 @@ ERROR HY000: Column check constraint 't8_chk_1' references other column.
 CREATE TABLE t7(a INTEGER, b INTEGER CHECK (b > 0) UNIQUE CHECK ( a - b < 1000));
 ERROR HY000: Column check constraint 't7_chk_2' references other column.
 DROP TABLE t1,t2,t3,t4,t5,t6,t7;
+#-----------------------------------------------------------------------
+# Bug#29706621 - CHECK CONSTRAINT COMPARING COLUMNS IS NOT ALWAYS
+#                ENFORCED WITH UPDATE QUERIES.
+#-----------------------------------------------------------------------
+SET @binlog_format_saved = @@binlog_format;
+# In default case, when ROW format and full row image are used the bug
+# is hidden, as all columns are marked as modified by UPDATE.
+SET binlog_format = 'STATEMENT';
+CREATE TABLE tst (
+id INT,
+start_date DATE,
+end_date DATE,
+PRIMARY KEY (id),
+CONSTRAINT chk_dat CHECK (end_date > start_date)
+);
+INSERT INTO tst (id, start_date, end_date) VALUES (1, '2019-04-25', '2019-04-30');
+# Without fix, check constraint is not evaluated and following statement succeeds.
+# With fix, error is reported.
+UPDATE tst SET end_date = '2019-04-20' WHERE id = 1;
+ERROR HY000: Check constraint 'chk_dat' is violated.
+UPDATE tst SET start_date = '2019-05-01' WHERE id = 1;
+ERROR HY000: Check constraint 'chk_dat' is violated.
+UPDATE tst SET id = 5 WHERE start_date = '2019-04-25';
+UPDATE tst SET id = 6, start_date = '2019-05-02', end_date = '2019-04-23' WHERE id = 5;
+ERROR HY000: Check constraint 'chk_dat' is violated.
+UPDATE tst SET id = 6, start_date = '2019-05-02', end_date = '2049-04-23' WHERE id = 5;
+DROP TABLE tst;
+SET binlog_format=@binlog_format_saved;

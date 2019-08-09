@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -68,7 +68,7 @@
 
   RETURN VALUE
     0  All OK
-    1  An error occured
+    1  An error occurred
 */
 int my_b_copy_to_file(IO_CACHE *cache, FILE *file) {
   size_t bytes_in_cache;
@@ -153,7 +153,7 @@ size_t my_b_fill(IO_CACHE *info) {
   size_t diff_length, length, max_length;
 
   if (info->seek_not_done) { /* File touched, do seek */
-    if (mysql_file_seek(info->file, pos_in_file, MY_SEEK_SET, MYF(0)) ==
+    if (mysql_encryption_file_seek(info, pos_in_file, MY_SEEK_SET, MYF(0)) ==
         MY_FILEPOS_ERROR) {
       info->error = 0;
       return 0;
@@ -171,8 +171,8 @@ size_t my_b_fill(IO_CACHE *info) {
   }
   DBUG_EXECUTE_IF("simulate_my_b_fill_error",
                   { DBUG_SET("+d,simulate_file_read_error"); });
-  if ((length = mysql_file_read(info->file, info->buffer, max_length,
-                                info->myflags)) == (size_t)-1) {
+  if ((length = mysql_encryption_file_read(info, info->buffer, max_length,
+                                           info->myflags)) == (size_t)-1) {
     info->error = -1;
     return 0;
   }

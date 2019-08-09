@@ -1,4 +1,4 @@
-# Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,11 +42,12 @@ IF (MERGE_UNITTESTS)
     LIST(APPEND ALL_TEMPTABLE_TESTS ../../../sql/nt_servc.cc)
   ENDIF()
   MYSQL_ADD_EXECUTABLE(merge_temptable_tests-t ${ALL_TEMPTABLE_TESTS}
-    ADD_TEST merge_temptable_tests)
+    SKIP_INSTALL)
+  SET_TARGET_PROPERTIES(merge_temptable_tests-t PROPERTIES ENABLE_EXPORTS TRUE)
 
-  TARGET_LINK_LIBRARIES(merge_temptable_tests-t sql_main binlog rpl master slave sql_main sql_gis sql_dd)
+  TARGET_LINK_LIBRARIES(merge_temptable_tests-t
+    sql_main binlog rpl master slave sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(merge_temptable_tests-t gunit_large strings dbug mysys)
-  TARGET_LINK_LIBRARIES(merge_temptable_tests-t sql_main binlog rpl master slave sql_main sql_gis sql_dd sql_main sql_dd sql_gis)
   TARGET_LINK_LIBRARIES(merge_temptable_tests-t ${ICU_LIBRARIES})
 
   # Download TBB from https://www.threadingbuildingblocks.org
@@ -61,6 +62,16 @@ IF (MERGE_UNITTESTS)
 
   ADD_DEPENDENCIES(merge_temptable_tests-t GenError)
 
+  # See ../CMakeLists.txt
+  IF(ADD_MERGE_LARGE_TESTS)
+    ADD_TEST(merge_temptable_tests-t
+      ${CMAKE_BINARY_DIR}/runtime_output_directory/merge_temptable_tests-t)
+  ELSE()
+    MESSAGE(WARNING
+      "Likely link failure for this compiler, skipping merge_temptable_tests-t")
+    SET_PROPERTY(TARGET merge_temptable_tests-t PROPERTY EXCLUDE_FROM_ALL TRUE)
+  ENDIF()
+
 ENDIF(MERGE_UNITTESTS)
 
 FOREACH(test ${TESTS})
@@ -70,12 +81,11 @@ FOREACH(test ${TESTS})
   ENDIF()
 
   MYSQL_ADD_EXECUTABLE(${test}-t ${SRC_FILES} SKIP_INSTALL ${EXCLUDE_FROM_ALL})
+  SET_TARGET_PROPERTIES(${test}-t PROPERTIES ENABLE_EXPORTS TRUE)
 
   TARGET_LINK_LIBRARIES(${test}-t
-    sql_main binlog rpl master slave sql_main sql_gis sql_dd)
+    sql_main binlog rpl master slave sql_gis sql_dd)
   TARGET_LINK_LIBRARIES(${test}-t gunit_large strings dbug mysys)
-  TARGET_LINK_LIBRARIES(${test}-t
-    sql_main binlog rpl master slave sql_main sql_gis sql_dd sql_main sql_gis)
   TARGET_LINK_LIBRARIES(${test}-t ${ICU_LIBRARIES})
 
   IF(WITH_PERFSCHEMA_STORAGE_ENGINE)

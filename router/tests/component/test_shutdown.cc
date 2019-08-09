@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,10 +27,11 @@
  * @brief Component Tests to test Router shutdown
  */
 
-#include <gmock/gmock.h>
-#include <signal.h>
 #include <chrono>
+#include <csignal>
 #include <thread>
+
+#include <gmock/gmock.h>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 // if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
@@ -40,19 +41,16 @@
 #include <rapidjson/document.h>
 
 #include "mysqlrouter/rest_client.h"
+#include "rest_api_testutils.h"
 #include "router_component_test.h"
 #include "tcp_port_pool.h"
 
-Path g_origin_path;
 using ::testing::Eq;
 
-class ShutdownTest : public RouterComponentTest, public ::testing::Test {
+class ShutdownTest : public RouterComponentTest {
  protected:
-  using CommandHandle = RouterComponentTest::CommandHandle;
-
   void SetUp() override {
-    set_origin(g_origin_path);
-    RouterComponentTest::init();
+    RouterComponentTest::SetUp();
 
     // Valgrind needs way more time
     if (getenv("WITH_VALGRIND")) {
@@ -61,32 +59,28 @@ class ShutdownTest : public RouterComponentTest, public ::testing::Test {
     }
   }
 
-  RouterComponentTest::CommandHandle launch_router(
-      unsigned router_port, const std::string &temp_test_dir,
-      const std::string &other_sections) {
+  auto &launch_router(unsigned router_port, const std::string &temp_test_dir,
+                      const std::string &other_sections) {
     auto default_section = get_DEFAULT_defaults();
     init_keyring(default_section, temp_test_dir);
 
     // create tmp conf dir (note that it will be RAII-deleted before router
     // shuts down, but that's ok)
-    const std::string conf_dir = get_tmp_dir("conf");
-    std::shared_ptr<void> exit_guard(nullptr,
-                                     [&](void *) { purge_dir(conf_dir); });
+    TempDirectory conf_dir("conf");
     const std::string conf_file =
-        create_config_file(conf_dir, other_sections, &default_section);
+        create_config_file(conf_dir.name(), other_sections, &default_section);
 
     // launch the router
-    CommandHandle router =
-        RouterComponentTest::launch_router("-c " + conf_file);
-    bool ready = wait_for_port_ready(router_port, 1000);
-    EXPECT_TRUE(ready) << router.get_full_output() << get_router_log_output();
+    auto &router = ProcessManager::launch_router({"-c", conf_file});
+    bool ready = wait_for_port_ready(router_port);
+    EXPECT_TRUE(ready) << router.get_full_output() << router.get_full_logfile();
 
     return router;
   }
 
   std::string create_JSON_tracefile(
       const std::string &temp_test_dir,
-      const std::vector<unsigned> cluster_node_ports) {
+      const std::vector<uint16_t> cluster_node_ports) {
     std::map<std::string, std::string> primary_json_env_vars = {
         {"PRIMARY_HOST", "127.0.0.1:" + std::to_string(cluster_node_ports[0])},
         {"SECONDARY_1_HOST",
@@ -112,52 +106,19 @@ class ShutdownTest : public RouterComponentTest, public ::testing::Test {
     return json_primary_node;
   }
 
-  const std::chrono::milliseconds kMockServerMaxRestEndpointWaitTime{1000};
-  const std::chrono::milliseconds kMockServerMaxRestEndpointStepTime{50};
-  /**
-   * wait until a REST endpoint returns !404.
-   *
-   * at mock startup the socket starts to listen before the REST endpoint gets
-   * registered. As long as it returns 404 Not Found we should wait and retry.
-   *
-   * @param rest_client initialized rest-client
-   * @param uri REST endpoint URI to check
-   * @param max_wait_time max time to wait for endpoint being ready
-   * @returns true once endpoint doesn't return 404 anymore, fails otherwise
-   */
-  bool wait_for_rest_endpoint_ready(
-      RestClient &rest_client, const std::string &uri,
-      std::chrono::milliseconds max_wait_time) const noexcept {
-    while (max_wait_time.count() > 0) {
-      auto req = rest_client.request_sync(HttpMethod::Get, uri);
-
-      if (req && req.get_response_code() != 0 && req.get_response_code() != 404)
-        return true;
-
-      auto wait_time =
-          std::min(kMockServerMaxRestEndpointStepTime, max_wait_time);
-      std::this_thread::sleep_for(wait_time);
-
-      max_wait_time -= wait_time;
-    }
-
-    return false;
-  }
-
   void delay_sending_handshake(
-      const std::vector<unsigned> cluster_node_http_ports) {
+      const std::vector<uint16_t> cluster_node_http_ports) {
     const std::string kRestGlobalsUri = "/api/v1/mock_server/globals/";
     const std::string kHostname = "127.0.0.1";
     const std::string kHandshakeSendDelayKey = "connect_exec_time";
     const std::string kHandshakeSendDelayMs = "10000";
 
     // tell all the server mocks to delay sending handshake by 10 seconds
-    for (unsigned http_port : cluster_node_http_ports) {
+    for (auto http_port : cluster_node_http_ports) {
       IOContext io_ctx;
       RestClient rest_client(io_ctx, kHostname, http_port);
 
-      ASSERT_TRUE(wait_for_rest_endpoint_ready(
-          rest_client, kRestGlobalsUri, kMockServerMaxRestEndpointWaitTime))
+      ASSERT_TRUE(wait_for_rest_endpoint_ready(kRestGlobalsUri, http_port))
           << "wait_for_rest_endpoint_ready() timed out";
 
       HttpRequest req =
@@ -178,20 +139,18 @@ class ShutdownTest : public RouterComponentTest, public ::testing::Test {
     }
   }
 
-  int get_delayed_handshakes_count(unsigned http_port) {
+  int get_delayed_handshakes_count(const uint16_t http_port) {
     const std::string kRestGlobalsUri = "/api/v1/mock_server/globals/";
     const std::string kHostname = "127.0.0.1";
     constexpr char kDelayedHandshakes[] = "delayed_handshakes";
 
     // GET request
 
-    IOContext io_ctx;
-    RestClient rest_client(io_ctx, kHostname, http_port);
-
-    EXPECT_TRUE(wait_for_rest_endpoint_ready(
-        rest_client, kRestGlobalsUri, kMockServerMaxRestEndpointWaitTime))
+    EXPECT_TRUE(wait_for_rest_endpoint_ready(kRestGlobalsUri, http_port))
         << "wait_for_rest_endpoint_ready() timed out";
 
+    IOContext io_ctx;
+    RestClient rest_client(io_ctx, kHostname, http_port);
     HttpRequest req =
         rest_client.request_sync(HttpMethod::Get, kRestGlobalsUri);
 
@@ -267,43 +226,41 @@ TEST_F(ShutdownTest, flaky_connection_to_cluster) {
   constexpr int kAcceptableShutdownWait =
       kConnectTimeout * 1.5;  // should be between 1 and 2 * kConnectTimeout
 
-  const std::string temp_test_dir = get_tmp_dir();
-  std::shared_ptr<void> exit_guard(nullptr,
-                                   [&](void *) { purge_dir(temp_test_dir); });
+  TempDirectory temp_test_dir;
 
-  const std::vector<unsigned> cluster_node_ports{
+  const std::vector<uint16_t> cluster_node_ports{
       port_pool_.get_next_available(),
       port_pool_.get_next_available(),
       port_pool_.get_next_available(),
       port_pool_.get_next_available(),
   };
-  const std::vector<unsigned> cluster_node_http_ports{
+  const std::vector<uint16_t> cluster_node_http_ports{
       port_pool_.get_next_available(),
       port_pool_.get_next_available(),
       port_pool_.get_next_available(),
       port_pool_.get_next_available(),
   };
-  const unsigned router_port = port_pool_.get_next_available();
+  const uint16_t router_port = port_pool_.get_next_available();
 
   const std::string json_primary_node =
-      create_JSON_tracefile(temp_test_dir, cluster_node_ports);
+      create_JSON_tracefile(temp_test_dir.name(), cluster_node_ports);
 
   // launch cluster
   // NOTE: We reuse the primary's JSON file for all the secondaries just for
   //       convenience. Only the primary is expected to receive queries,
   //       therefore any arbitrary JSON will do for the secondaries.
-  std::vector<CommandHandle> cluster_nodes;
+  std::vector<ProcessWrapper *> cluster_nodes;
   for (size_t i = 0; i < cluster_node_ports.size(); i++) {
-    CommandHandle node = launch_mysql_server_mock(
-        json_primary_node, cluster_node_ports[i], false /*debug_mode*/,
-        cluster_node_http_ports[i]);
-    cluster_nodes.emplace_back(std::move(node));
+    auto &node = launch_mysql_server_mock(
+        json_primary_node, cluster_node_ports[i], EXIT_SUCCESS,
+        false /*debug_mode*/, cluster_node_http_ports[i]);
+    cluster_nodes.emplace_back(&node);
   }
 
   // wait for the whole cluster to be up
   for (size_t i = 0; i < cluster_nodes.size(); i++)
-    EXPECT_THAT(wait_for_port_ready(cluster_node_ports[i], 1000), Eq(true))
-        << cluster_nodes[i].get_full_output();
+    EXPECT_THAT(wait_for_port_ready(cluster_node_ports[i]), Eq(true))
+        << cluster_nodes[i]->get_full_output();
 
   // write Router config
   std::string servers;
@@ -337,7 +294,7 @@ TEST_F(ShutdownTest, flaky_connection_to_cluster) {
       "\n";
 
   // launch the Router
-  CommandHandle router = launch_router(router_port, temp_test_dir, config);
+  auto &router = launch_router(router_port, temp_test_dir.name(), config);
 
   // give the Router a chance to initialise metadata-cache module
   // there is currently no easy way to check that
@@ -363,12 +320,12 @@ TEST_F(ShutdownTest, flaky_connection_to_cluster) {
   EXPECT_NO_THROW(router.wait_for_exit(kAcceptableShutdownWait * 1000))
       << "full output:\n"
       << router.get_full_output() << "\nrouter log:\n"
-      << get_router_log_output() << std::endl;
+      << router.get_full_logfile() << std::endl;
 }
 
 int main(int argc, char *argv[]) {
-  g_origin_path = Path(argv[0]).dirname();
   init_windows_sockets();
+  ProcessManager::set_origin(Path(argv[0]).dirname());
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

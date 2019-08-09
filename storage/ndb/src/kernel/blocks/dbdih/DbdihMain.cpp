@@ -11478,6 +11478,7 @@ Dbdih::checkEmptyLcpComplete(Signal *signal)
     }
     
     c_lcpMasterTakeOverState.set(LMTOS_INITIAL, __LINE__);
+    m_master_lcp_req_lcp_already_completed = false;
     MasterLCPReq * const req = (MasterLCPReq *)&signal->theData[0];
     req->masterRef = reference();
     req->failedNodeId = c_lcpMasterTakeOverState.failedNodeId;
@@ -11955,6 +11956,7 @@ void Dbdih::execMASTER_LCPCONF(Signal* signal)
   switch(lcpState){
   case MasterLCPConf::LCP_STATUS_IDLE:
     ok = true;
+    m_master_lcp_req_lcp_already_completed = true;
     break;
   case MasterLCPConf::LCP_STATUS_ACTIVE:
   case MasterLCPConf::LCP_TAB_COMPLETED:
@@ -11995,8 +11997,10 @@ void Dbdih::execMASTER_LCPREF(Signal* signal)
   MASTER_LCPhandling(signal, failedNodeId);
 }//Dbdih::execMASTER_LCPREF()
 
-void Dbdih::MASTER_LCPhandling(Signal* signal, Uint32 failedNodeId) 
+void Dbdih::MASTER_LCPhandling(Signal* signal, Uint32 failedNodeId)
 {
+  bool lcp_already_completed = m_master_lcp_req_lcp_already_completed;
+  m_master_lcp_req_lcp_already_completed = false;
   /*-------------------------------------------------------------------------
    *
    * WE ARE NOW READY TO CONCLUDE THE TAKE OVER AS MASTER. 
@@ -12105,7 +12109,21 @@ void Dbdih::MASTER_LCPhandling(Signal* signal, Uint32 failedNodeId)
       // change state due to table write completion during state 
       // collection phase.
       /* ------------------------------------------------------------------- */
-      ndbrequire(c_lcpState.lcpStatus != LCP_STATUS_IDLE);
+
+      /**
+       * During master takeover, some participant nodes could have
+       * been in IDLE state since they have already completed the
+       * lcpId under the old master before it failed.
+
+       * When I, the new master, take over and send MASTER_LCP_REQ and
+       * execute MASTER_LCPCONF from participants, excempt the
+       * already-completed participants from the requirement to be
+       * "not in IDLE state". Those who sent MASTER_LCPREF had not
+       * completed the current LCP under the old master and thus
+       * cannot be in IDLE state.
+       */
+      ndbrequire(c_lcpState.lcpStatus != LCP_STATUS_IDLE ||
+                 lcp_already_completed);
 
       c_lcp_runs_with_pause_support = check_if_pause_lcp_possible();
       if (!c_lcp_runs_with_pause_support)
@@ -19188,7 +19206,7 @@ Dbdih::copyTabReq_complete(Signal* signal, TabRecordPtr tabPtr){
 void Dbdih::readPagesIntoTableLab(Signal* signal, Uint32 tableId) 
 {
   /**
-   * No need to protect these changes, they are only occuring during
+   * No need to protect these changes, they are only occurring during
    * recovery when DBTC hasn't accessibility to the table yet.
    */
   RWFragment rf;
@@ -27454,9 +27472,16 @@ Dbdih::sendREDO_STATE_REP_to_all(Signal *signal,
     ptrCheckGuard(nodePtr, MAX_NDB_NODES, nodeRecord);
     if (nodePtr.p->copyCompleted || send_to_all)
     {
-      jamLine(nodePtr.i);
       BlockReference ref = numberToRef(block, nodePtr.i);
-      sendSignal(ref, GSN_REDO_STATE_REP, signal, 2, JBB);
+      if (ndbd_enable_redo_control(getNodeInfo(nodePtr.i).m_version))
+      {
+        jamLine(nodePtr.i);
+        sendSignal(ref, GSN_REDO_STATE_REP, signal, 2, JBB);
+      }
+      else
+      {
+        jamLine(nodePtr.i);
+      }
     }
     nodePtr.i = nodePtr.p->nextNode;
   } while (nodePtr.i != RNIL);

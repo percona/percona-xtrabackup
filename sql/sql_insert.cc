@@ -327,7 +327,7 @@ void prepare_triggers_for_insert_stmt(THD *thd, TABLE *table) {
         subject table and therefore might need delete to be done
         immediately. So we turn-off the batching.
       */
-      (void)table->file->extra(HA_EXTRA_DELETE_CANNOT_BATCH);
+      (void)table->file->ha_extra(HA_EXTRA_DELETE_CANNOT_BATCH);
     }
     if (table->triggers->has_triggers(TRG_EVENT_UPDATE, TRG_ACTION_AFTER)) {
       /*
@@ -335,7 +335,7 @@ void prepare_triggers_for_insert_stmt(THD *thd, TABLE *table) {
         table and therefore might need update to be done immediately.
         So we turn-off the batching.
       */
-      (void)table->file->extra(HA_EXTRA_UPDATE_CANNOT_BATCH);
+      (void)table->file->ha_extra(HA_EXTRA_UPDATE_CANNOT_BATCH);
     }
   }
   table->mark_columns_needed_for_insert(thd);
@@ -508,9 +508,9 @@ bool Sql_cmd_insert_values::execute_inner(THD *thd) {
     if (duplicates == DUP_REPLACE &&
         (!insert_table->triggers ||
          !insert_table->triggers->has_delete_triggers()))
-      insert_table->file->extra(HA_EXTRA_WRITE_CAN_REPLACE);
+      insert_table->file->ha_extra(HA_EXTRA_WRITE_CAN_REPLACE);
     if (duplicates == DUP_UPDATE)
-      insert_table->file->extra(HA_EXTRA_INSERT_WITH_UPDATE);
+      insert_table->file->ha_extra(HA_EXTRA_INSERT_WITH_UPDATE);
     /*
       let's *try* to start bulk inserts. It won't necessary
       start them as insert_many_values.elements should be greater than
@@ -524,7 +524,7 @@ bool Sql_cmd_insert_values::execute_inner(THD *thd) {
       the code to make the call of end_bulk_insert() below safe.
     */
     if (duplicates != DUP_ERROR || lex->is_ignore())
-      insert_table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+      insert_table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
     /*
        This is a simple check for the case when the table has a trigger
        that reads from it, or when the statement invokes a stored function
@@ -1684,6 +1684,15 @@ bool write_record(THD *thd, TABLE *table, COPY_INFO *info, COPY_INFO *update) {
             goto err;
           }
         }
+        /*
+          If we convert INSERT operation internally to an UPDATE.
+          An INSERT operation may update table->vfield for BLOB fields,
+          So here we recalculate data for generated columns.
+        */
+        if (table->vfield) {
+          update_generated_write_fields(table->write_set, table);
+        }
+
         key_copy((uchar *)key, table->record[0], table->key_info + key_nr, 0);
         if ((error = (table->file->ha_index_read_idx_map(
                  table->record[1], key_nr, (uchar *)key, HA_WHOLE_KEY,
@@ -2036,12 +2045,12 @@ bool Query_result_insert::prepare(THD *thd, List<Item> &, SELECT_LEX_UNIT *u) {
 
   thd->num_truncated_fields = 0;
   if (thd->lex->is_ignore() || duplicate_handling != DUP_ERROR)
-    table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+    table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
   if (duplicate_handling == DUP_REPLACE &&
       (!table->triggers || !table->triggers->has_delete_triggers()))
-    table->file->extra(HA_EXTRA_WRITE_CAN_REPLACE);
+    table->file->ha_extra(HA_EXTRA_WRITE_CAN_REPLACE);
   if (duplicate_handling == DUP_UPDATE)
-    table->file->extra(HA_EXTRA_INSERT_WITH_UPDATE);
+    table->file->ha_extra(HA_EXTRA_INSERT_WITH_UPDATE);
 
   for (Field **next_field = table->field; *next_field; ++next_field) {
     (*next_field)->reset_warnings();
@@ -2095,6 +2104,13 @@ bool Query_result_insert::send_data(THD *thd, List<Item> &values) {
     DBUG_RETURN(true);
   }
 
+  /*
+   TODO: This method is supposed to be called only once per-statement. But
+         currently it is called for each row inserted by INSERT SELECT. Which
+         looks like unnessary and results in resource wastage.
+  */
+  prepare_triggers_for_insert_stmt(thd, table);
+
   if (invoke_table_check_constraints(thd, table)) {
     // return false when IGNORE clause is used.
     DBUG_RETURN(thd->is_error());
@@ -2110,7 +2126,6 @@ bool Query_result_insert::send_data(THD *thd, List<Item> &values) {
     }
   }
 
-  prepare_triggers_for_insert_stmt(thd, table);
   error = write_record(thd, table, &info, &update);
   table->auto_increment_field_not_null = false;
 
@@ -2624,12 +2639,12 @@ bool Query_result_create::start_execution(THD *thd) {
   const enum_duplicates duplicate_handling = info.get_duplicate_handling();
 
   if (thd->lex->is_ignore() || duplicate_handling != DUP_ERROR)
-    table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+    table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
   if (duplicate_handling == DUP_REPLACE &&
       (!table->triggers || !table->triggers->has_delete_triggers()))
-    table->file->extra(HA_EXTRA_WRITE_CAN_REPLACE);
+    table->file->ha_extra(HA_EXTRA_WRITE_CAN_REPLACE);
   if (duplicate_handling == DUP_UPDATE)
-    table->file->extra(HA_EXTRA_INSERT_WITH_UPDATE);
+    table->file->ha_extra(HA_EXTRA_INSERT_WITH_UPDATE);
   if (thd->locked_tables_mode <= LTM_LOCK_TABLES) {
     table->file->ha_start_bulk_insert((ha_rows)0);
     bulk_insert_started = true;
@@ -2932,7 +2947,7 @@ void Query_result_create::drop_open_table(THD *thd) {
 
     handlerton *table_type = table->s->db_type();
 
-    table->file->extra(HA_EXTRA_PREPARE_FOR_DROP);
+    table->file->ha_extra(HA_EXTRA_PREPARE_FOR_DROP);
     close_thread_table(thd, &thd->open_tables);
     /*
       Remove TABLE and TABLE_SHARE objects for the table we have failed

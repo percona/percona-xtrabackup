@@ -4702,6 +4702,10 @@ Backup::sendCreateTrig(Signal* signal,
   /*
    * First, setup the structures
    */
+  OperationRecord* operation = &ptr.p->files.getPtr(ptr.p->logFilePtr)->operation;
+  operation->noOfBytes = 0;
+  operation->noOfRecords = 0;
+
   for(Uint32 j=0; j<3; j++) {
     jam();
 
@@ -4727,11 +4731,7 @@ Backup::sendCreateTrig(Signal* signal,
     trigPtr.p->tab_ptr_i = tabPtr.i;
     trigPtr.p->logEntry = 0;
     trigPtr.p->event = j;
-    trigPtr.p->maxRecordSize = 4096;
-    trigPtr.p->operation =
-      &ptr.p->files.getPtr(ptr.p->logFilePtr)->operation;
-    trigPtr.p->operation->noOfBytes = 0;
-    trigPtr.p->operation->noOfRecords = 0;
+    trigPtr.p->operation = operation;
     trigPtr.p->errorCode = 0;
   } // for
 
@@ -5046,7 +5046,14 @@ Backup::startBackupReply(Signal* signal, BackupRecordPtr ptr, Uint32 nodeId)
   sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 3+NdbNodeBitmask::Size, JBB);
 
   /**
-   * Wait for GCP
+   * Wait for startGCP to a establish a consistent point at backup start.
+   * This point is consistent since backup logging has started but scans
+   * have not yet started, so it needs to be identified by a GCP. Wait till
+   * the existing GCP has completed and capture the GCI as the startGCP of
+   * this backup.
+   * This is needed for SNAPSHOTSTART backups, which are restored to a
+   * consistent point at backup start by replaying the backup undo logs up
+   * till the end of startGCP.
    */
   ptr.p->masterData.gsn = GSN_WAIT_GCP_REQ;
   ptr.p->masterData.waitGCP.startBackup = true;
@@ -5217,6 +5224,16 @@ Backup::nextFragment(Signal* signal, BackupRecordPtr ptr)
    * Finished with all tables
    */
   {
+    /**
+     * Wait for stopGCP to a establish a consistent point at backup stop.
+     * This point is consistent since backup logging has stopped and scans
+     * have completed, so it needs to be identified by a GCP. Wait till
+     * the existing GCP has completed and capture the GCI as the stopGCP of
+     * this backup.
+     * This is needed for SNAPSHOTEND backups, which are restored to a
+     * consistent point at backup stop by replaying the backup redo logs up
+     * till the end of stopGCP.
+     */
     ptr.p->masterData.gsn = GSN_WAIT_GCP_REQ;
     ptr.p->masterData.waitGCP.startBackup = false;
     
@@ -6098,11 +6115,14 @@ Backup::execDEFINE_BACKUP_REQ(Signal* signal)
     2,   // 32k
     0    // 3M
   };
-  const Uint32 maxInsert[] = {
-    MAX_WORDS_META_FILE,
-    4096,    // 16k
-    BACKUP_MIN_BUFF_WORDS
+
+  constexpr Uint32 maxInsert[] =
+  {
+    MAX_WORDS_META_FILE,                       // control files
+    BackupFormat::LogFile::LogEntry::MAX_SIZE, // redo/undo log files
+    BACKUP_MIN_BUFF_WORDS                      // data files
   };
+
   Uint32 minWrite[] = {
     8192,
     8192,
@@ -7333,8 +7353,22 @@ Backup::execSTART_BACKUP_REQ(Signal* signal)
     }//if
   }//for
 
-  /**
-   * Tell DBTUP to create triggers
+  /* A backup needs to be restored to a consistent point, for
+   * which it uses a fuzzy scan and a log.
+   *
+   * The fuzzy scan is restored, and then the log is replayed
+   * idempotently up to some consistent point which is after
+   * (SNAPSHOTEND) or before (SNAPSHOTSTART) any of the states
+   * captured in the scan.
+   *
+   * This requires that the backup is captured in order :
+   * 1) Start recording logs of all committed transactions
+   * 2) Choose SNAPSHOTSTART consistent point
+   * 3) Perform data scan
+   * 4) Choose SNAPSHOTEND consistent point
+   * 5) Stop recording logs
+   *
+   * Tell DBTUP to create triggers to start recording logs
    */
   TablePtr tabPtr;
   ndbrequire(ptr.p->tables.first(tabPtr));
@@ -9174,12 +9208,21 @@ Backup::OperationRecord::closeScan()
   opNoDone = opNoConf = opLen = 0;
 }
 
-void 
-Backup::OperationRecord::scanConfExtra()
+Uint32
+Backup::OperationRecord::publishBufferData()
 {
   const Uint32 len = Uint32(scanStop - scanStart);
   ndbrequire(len < dataBuffer.getMaxWrite());
   dataBuffer.updateWritePtr(len);
+
+  /**
+   * In case a second SCAN_FRAGCONF is received with scanCompleted set to 2
+   * follow, without any call to newScan() or newFragment() is called to reset
+   * scanStart and scanStop in between, set scanStart to scanStop to indicate
+   * that all buffered data already been published.
+   */
+  scanStart = scanStop;
+  return len;
 }
 
 void 
@@ -9191,9 +9234,7 @@ Backup::OperationRecord::scanConf(Uint32 noOfOps, Uint32 total_len)
   ndbrequire(opLen == total_len);
   opNoConf = opNoDone;
   
-  const Uint32 len = Uint32(scanStop - scanStart);
-  ndbrequire(len < dataBuffer.getMaxWrite());
-  dataBuffer.updateWritePtr(len);
+  const Uint32 len = publishBufferData();
   noOfBytes += (len << 2);
   m_bytes_total += (len << 2);
   m_records_total += noOfOps;
@@ -9328,7 +9369,8 @@ Backup::execSCAN_FRAGCONF(Signal* signal)
     {
       c_backupFilePool.getPtr(loopFilePtr, ptr.p->dataFilePtr[i]);
       OperationRecord & loop_op = loopFilePtr.p->operation;
-      loop_op.scanConfExtra();
+      // The extra lcp files only use operation for the data buffer.
+      loop_op.publishBufferData();
     }
   }
 
@@ -10304,8 +10346,10 @@ Backup::execTRIG_ATTRINFO(Signal* signal) {
   if(logEntry == 0) 
   {
     jam();
-    Uint32 sz = trigPtr.p->maxRecordSize;
-    logEntry = trigPtr.p->logEntry = get_log_buffer(signal, trigPtr, sz);
+    logEntry = get_log_buffer(signal,
+                              trigPtr,
+                              BackupFormat::LogFile::LogEntry::MAX_SIZE);
+    trigPtr.p->logEntry = logEntry;
     if (unlikely(logEntry == 0))
     {
       jam();
@@ -10382,12 +10426,23 @@ Backup::execFIRE_TRIG_ORD(Signal* signal)
      * dataPtr[2] : After values
      */
 
-    /* Backup is doing UNDO logging and need before values
-     * Add 2 extra words to get_log_buffer for potential gci and logEntry length info stored at end.
-     */
-    if(ptr.p->flags & BackupReq::USE_UNDO_LOG) {
+    // Add one word to get_log_buffer for potential gci info stored at end.
+    const Uint32 log_entry_words =
+        1 /* length word */ +
+        BackupFormat::LogFile::LogEntry::HEADER_LENGTH_WORDS +
+        1 /* gci_word */;
+
+    // Backup is doing UNDO logging and need before values
+    if(ptr.p->flags & BackupReq::USE_UNDO_LOG)
+    {
+      jam();
+      // Add one word to get_log_buffer for logEntry length info stored at end.
       trigPtr.p->logEntry = get_log_buffer(signal,
-                                           trigPtr, dataPtr[0].sz + dataPtr[1].sz + 2);
+                                           trigPtr,
+                                           log_entry_words +
+                                             dataPtr[0].sz +
+                                             dataPtr[1].sz +
+                                             1);
       if (unlikely(trigPtr.p->logEntry == 0))
       {
         jam();
@@ -10399,9 +10454,14 @@ Backup::execFIRE_TRIG_ORD(Signal* signal)
       trigPtr.p->logEntry->Length = dataPtr[0].sz + dataPtr[1].sz;
     }
     //  Backup is doing REDO logging and need after values
-    else {
+    else
+    {
+      jam();
       trigPtr.p->logEntry = get_log_buffer(signal,
-                                           trigPtr, dataPtr[0].sz + dataPtr[2].sz + 1);
+                                           trigPtr,
+                                           log_entry_words +
+                                             dataPtr[0].sz +
+                                             dataPtr[2].sz);
       if (unlikely(trigPtr.p->logEntry == 0))
       {
         jam();
@@ -10420,7 +10480,16 @@ Backup::execFIRE_TRIG_ORD(Signal* signal)
   Uint32 len = trigPtr.p->logEntry->Length;
   trigPtr.p->logEntry->FragId = htonl(fragId);
 
-  if(gci != ptr.p->currGCP)
+  /* Redo logs are always read from file start to file end, so
+   * GCI content can be optimised out. If a set of N consecutive
+   * log entries have the same GCI, the GCI is written only in the
+   * first log entry of the set, while the remaining entries do
+   * not contain a GCP. So an entry is written with a GCP only
+   * when its GCP differs from the previous entry.
+   * This cannot be done for undo logs since undo logs are read in
+   * reverse, from file end to file start.
+   */
+  if ((ptr.p->flags & BackupReq::USE_UNDO_LOG) || (gci != ptr.p->currGCP))
   {
     jam();
     trigPtr.p->logEntry->TriggerEvent|= htonl(0x10000);
@@ -10430,20 +10499,24 @@ Backup::execFIRE_TRIG_ORD(Signal* signal)
   }
 
   Uint32 datalen = len;
-  len += (sizeof(BackupFormat::LogFile::LogEntry) >> 2) - 2;
+  len += BackupFormat::LogFile::LogEntry::HEADER_LENGTH_WORDS;
   trigPtr.p->logEntry->Length = htonl(len);
 
   if(ptr.p->flags & BackupReq::USE_UNDO_LOG)
   {
+    jam();
     /* keep the length at both the end of logEntry and ->logEntry variable
        The total length of logEntry is len + 2
     */
     trigPtr.p->logEntry->Data[datalen] = htonl(len);
   }
 
-  Uint32 entryLength = len +1;
-  if(ptr.p->flags & BackupReq::USE_UNDO_LOG)
-    entryLength ++;
+  Uint32 entryLength = len + 1;
+  if (ptr.p->flags & BackupReq::USE_UNDO_LOG)
+  {
+    jam();
+    entryLength++;
+  }
 
   ndbrequire(entryLength <= trigPtr.p->operation->dataBuffer.getMaxWrite());
   trigPtr.p->operation->dataBuffer.updateWritePtr(entryLength);

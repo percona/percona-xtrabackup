@@ -293,7 +293,6 @@ long innobase_open_files = 300L;
 longlong innobase_page_size = (1LL << 14); /* 16KB */
 static ulong innobase_log_block_size = 512;
 char *innobase_buffer_pool_filename = NULL;
-char *innobase_directories = NULL;
 
 longlong innobase_buffer_pool_size = 8 * 1024 * 1024L;
 longlong innobase_log_file_size = 48 * 1024 * 1024L;
@@ -2093,7 +2092,7 @@ error:
 
 dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
                                        ib_trx_t trx) {
-  dd::sdi_vector sdi_vector;
+  sdi_vector_t sdi_vector;
   ib_sdi_vector_t ib_vector;
   ib_vector.sdi_vector = &sdi_vector;
 
@@ -2113,7 +2112,7 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
     goto error;
   }
 
-  for (dd::sdi_container::iterator it = ib_vector.sdi_vector->m_vec.begin();
+  for (sdi_container::iterator it = ib_vector.sdi_vector->m_vec.begin();
        it != ib_vector.sdi_vector->m_vec.end(); it++) {
     ib_sdi_key_t ib_key;
     ib_key.sdi_key = &(*it);
@@ -2293,8 +2292,8 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
 
   srv_start_threads(false);
 
-  while (trx_rollback_or_clean_is_active) {
-    os_thread_sleep(1000);
+  if (srv_thread_is_active(srv_threads.m_trx_recovery_rollback)) {
+    srv_threads.m_trx_recovery_rollback.wait();
   }
 
   innodb_inited = 1;
@@ -3436,7 +3435,7 @@ static ulint xb_load_tablespaces(void)
   lsn_t flush_lsn;
 
   for (ulint i = 0; i < srv_n_file_io_threads; i++) {
-    os_thread_create(PFS_NOT_INSTRUMENTED, io_handler_thread, i);
+    os_thread_create(PFS_NOT_INSTRUMENTED, io_handler_thread, i).start();
   }
 
   os_thread_sleep(200000); /*0.2 sec*/
@@ -3514,7 +3513,7 @@ void xb_data_files_close(void)
   to the signaled state. Then the threads will exit themselves after
   os_event_wait(). */
   for (i = 0; i < 1000; i++) {
-    if (!buf_page_cleaner_is_active && os_aio_all_slots_free()) {
+    if (!buf_flush_page_cleaner_is_active() && os_aio_all_slots_free()) {
       os_aio_wake_all_threads_at_shutdown();
     }
 
@@ -4381,7 +4380,7 @@ void xtrabackup_backup_func(void) {
       io_ticket = xtrabackup_throttle;
       wait_throttle = os_event_create("wait_throttle");
 
-      os_thread_create(PFS_NOT_INSTRUMENTED, io_watching_thread);
+      os_thread_create(PFS_NOT_INSTRUMENTED, io_watching_thread).start();
     }
 
     /* copy log file by current position */
@@ -4389,7 +4388,7 @@ void xtrabackup_backup_func(void) {
       exit(EXIT_FAILURE);
 
     log_copying_stop = os_event_create("log_copying_stop");
-    os_thread_create(PFS_NOT_INSTRUMENTED, log_copying_thread);
+    os_thread_create(PFS_NOT_INSTRUMENTED, log_copying_thread).start();
 
     Tablespace_map::instance().scan(mysql_connection);
 
@@ -4451,7 +4450,7 @@ void xtrabackup_backup_func(void) {
       data_threads[i].count_mutex = &count_mutex;
       data_threads[i].error = &data_copying_error;
       os_thread_create(PFS_NOT_INSTRUMENTED, data_copy_thread_func,
-                       data_threads + i);
+                       data_threads + i).start();
     }
 
     /* Wait for threads to exit */
@@ -6673,17 +6672,24 @@ static void innodb_free_param() {
 }
 
 /**************************************************************************
-Store the current binary log coordinates in a specified file.
+Store the current binary log coordinates in a specified file and print them
+out to the stderr.
+@param[in]  filename   output file name
 @return 'false' on error. */
-static bool store_binlog_info(
-    /*==============*/
-    const char *filename) /*!< in: output file name */
-{
+static bool store_binlog_info(const char *filename) {
   FILE *fp;
+  char binlog_file[TRX_SYS_MYSQL_LOG_NAME_LEN + 1];
+  uint64_t binlog_offset;
 
-  if (trx_sys_mysql_bin_log_name[0] == '\0') {
+  trx_sys_read_binlog_position(&binlog_file[0], binlog_offset);
+
+  if (binlog_file[0] == '\0') {
     return (true);
   }
+
+  msg("xtrabackup: Last MySQL binlog file position " UINT64PF
+      ", file name %s\n",
+      binlog_offset, binlog_file);
 
   fp = fopen(filename, "w");
 
@@ -6692,8 +6698,7 @@ static bool store_binlog_info(
     return (false);
   }
 
-  fprintf(fp, "%s\t" UINT64PF "\n", trx_sys_mysql_bin_log_name,
-          trx_sys_mysql_bin_log_pos);
+  fprintf(fp, "%s\t" UINT64PF "\n", binlog_file, binlog_offset);
   fclose(fp);
 
   return (true);
@@ -7008,10 +7013,6 @@ skip_check:
     destroy_thd(thd);
     my_thread_end();
   }
-
-  /* print the binary log position  */
-  trx_sys_print_mysql_binlog_offset();
-  msg("\n");
 
   /* output to xtrabackup_binlog_pos_innodb and (if
   backup_safe_binlog_info was available on the server) to

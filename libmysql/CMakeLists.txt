@@ -140,13 +140,6 @@ mysql_session_track_get_first
 mysql_session_track_get_next
 mysql_reset_server_public_key
 mysql_result_metadata
-mysql_real_connect_nonblocking
-mysql_send_query_nonblocking
-mysql_real_query_nonblocking
-mysql_store_result_nonblocking
-mysql_next_result_nonblocking
-mysql_fetch_row_nonblocking
-mysql_free_result_nonblocking
 
 CACHE INTERNAL "Functions exported by client API"
 
@@ -167,6 +160,19 @@ my_make_scrambled_password
 
 CACHE INTERNAL "Undocumented functions exported by client API"
 
+)
+
+# Below list will have all nonblocking C APIs
+SET (CLIENT_API_NONBLOCKING_FUNCTIONS
+mysql_real_connect_nonblocking
+mysql_send_query_nonblocking
+mysql_real_query_nonblocking
+mysql_store_result_nonblocking
+mysql_next_result_nonblocking
+mysql_fetch_row_nonblocking
+mysql_free_result_nonblocking
+
+CACHE INTERNAL "Nonblocking functions exported by client API"
 )
 
 SET(CLIENT_SOURCES
@@ -205,11 +211,10 @@ IF (WITH_CLIENT_PROTOCOL_TRACING)
 
 ENDIF (WITH_CLIENT_PROTOCOL_TRACING)
 
-ADD_CONVENIENCE_LIBRARY(clientlib ${CLIENT_SOURCES})
-ADD_DEPENDENCIES(clientlib GenError)
+ADD_CONVENIENCE_LIBRARY(clientlib ${CLIENT_SOURCES} DEPENDENCIES GenError)
 
 SET(LIBS_TO_MERGE
-  clientlib dbug mytime strings vio mysys mysys_ssl
+  clientlib dbug mytime strings vio mysys
   )
 SET(LIBS_TO_LINK ${LIBDL})
 
@@ -222,12 +227,7 @@ ENDIF()
 IF(WITH_SSL STREQUAL "wolfssl")
   LIST(APPEND LIBS_TO_MERGE wolfssl wolfcrypt)
 ELSE()
-  IF(WIN32)
-    # SSL_LIBRARIES are IMPORTED, and must be merged.
-    LIST(APPEND LIBS_TO_MERGE ${SSL_LIBRARIES})
-  ELSE()
-    LIST(APPEND LIBS_TO_LINK ${SSL_LIBRARIES})
-  ENDIF()
+  LIST(APPEND LIBS_TO_LINK ${SSL_LIBRARIES})
 ENDIF()
 
 #
@@ -251,7 +251,6 @@ IF(MSVC)
   INSTALL_DEBUG_TARGET(auth_win_client DESTINATION ${INSTALL_LIBDIR}/debug)
   INSTALL_DEBUG_TARGET(clientlib DESTINATION ${INSTALL_LIBDIR}/debug)
   INSTALL_DEBUG_TARGET(mysys DESTINATION ${INSTALL_LIBDIR}/debug)
-  INSTALL_DEBUG_TARGET(mysys_ssl DESTINATION ${INSTALL_LIBDIR}/debug)
   INSTALL_DEBUG_TARGET(strings DESTINATION ${INSTALL_LIBDIR}/debug)
   INSTALL_DEBUG_TARGET(vio DESTINATION ${INSTALL_LIBDIR}/debug)
   IF(WITH_SSL STREQUAL "wolfssl")
@@ -281,7 +280,7 @@ IF(NOT DISABLE_SHARED)
   # Merge several convenience libraries into one big mysqlclient
   # and link them together into shared library.
   MERGE_LIBRARIES_SHARED(libmysql ${LIBS_TO_MERGE}
-    EXPORTS ${CLIENT_API_FUNCTIONS} ${CLIENT_API_FUNCTIONS_UNDOCUMENTED}
+    EXPORTS ${CLIENT_API_FUNCTIONS} ${CLIENT_API_FUNCTIONS_UNDOCUMENTED} ${CLIENT_API_NONBLOCKING_FUNCTIONS}
     COMPONENT SharedLibraries SKIP_INSTALL)
   TARGET_LINK_LIBRARIES(libmysql PRIVATE ${LIBS_TO_LINK})
 
@@ -295,7 +294,7 @@ IF(NOT DISABLE_SHARED)
   ENDIF()
   IF(UNIX)
     # libtool compatability
-    IF(CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR APPLE)
+    IF(FREEBSD OR APPLE)
       SET(OS_SHARED_LIB_VERSION "${SHARED_LIB_MAJOR_VERSION}")
     ELSE()
       SET(OS_SHARED_LIB_VERSION
@@ -341,6 +340,9 @@ ENDIF()
 #
 SET(CLIENT_API_FUNCTION_LIST "")
 FOREACH(api ${CLIENT_API_FUNCTIONS})
+  SET(CLIENT_API_FUNCTION_LIST "${CLIENT_API_FUNCTION_LIST} ${api},")
+ENDFOREACH()
+FOREACH(api ${CLIENT_API_NONBLOCKING_FUNCTIONS})
   SET(CLIENT_API_FUNCTION_LIST "${CLIENT_API_FUNCTION_LIST} ${api},")
 ENDFOREACH()
 

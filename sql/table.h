@@ -550,9 +550,9 @@ typedef enum enum_table_category TABLE_CATEGORY;
 extern ulong refresh_version;
 
 struct TABLE_FIELD_TYPE {
-  LEX_STRING name;
-  LEX_STRING type;
-  LEX_STRING cset;
+  LEX_CSTRING name;
+  LEX_CSTRING type;
+  LEX_CSTRING cset;
 };
 
 struct TABLE_FIELD_DEF {
@@ -704,7 +704,7 @@ struct TABLE_SHARE {
   LEX_STRING encrypt_type{nullptr, 0}; /* encryption algorithm */
 
   /** Secondary storage engine. */
-  LEX_STRING secondary_engine{nullptr, 0};
+  LEX_CSTRING secondary_engine{nullptr, 0};
 
   const CHARSET_INFO *table_charset{
       nullptr}; /* Default charset of string fields */
@@ -720,9 +720,9 @@ struct TABLE_SHARE {
     should correspond to each other.
     To ensure this one can use set_table_cache() methods.
   */
-  LEX_STRING table_cache_key{nullptr, 0};
-  LEX_STRING db{nullptr, 0};              /* Pointer to db */
-  LEX_STRING table_name{nullptr, 0};      /* Table name (for open) */
+  LEX_CSTRING table_cache_key{nullptr, 0};
+  LEX_CSTRING db{nullptr, 0};             /* Pointer to db */
+  LEX_CSTRING table_name{nullptr, 0};     /* Table name (for open) */
   LEX_STRING path{nullptr, 0};            /* Path to .frm file (from datadir) */
   LEX_STRING normalized_path{nullptr, 0}; /* unpack_filename(path) */
   LEX_STRING connect_string{nullptr, 0};
@@ -1193,7 +1193,7 @@ class Blob_mem_storage {
      @param length         string length
 
      @retval Pointer to the copied string.
-     @retval 0 if an error occured.
+     @retval 0 if an error occurred.
   */
   char *store(const char *from, size_t length) {
     return (char *)memdup_root(&storage, from, length);
@@ -1337,7 +1337,10 @@ struct TABLE {
     needed by the query without reading the row.
   */
   Key_map covering_keys;
-  Key_map quick_keys, merge_keys;
+  Key_map quick_keys;
+
+  /* Merge keys are all keys that had a column reffered to in the query */
+  Key_map merge_keys;
 
   /*
     possible_quick_keys is a superset of quick_keys to use with EXPLAIN of
@@ -1635,8 +1638,8 @@ struct TABLE {
   void mark_columns_needed_for_insert(THD *thd);
   void mark_columns_per_binlog_row_image(THD *thd);
   void mark_generated_columns(bool is_update);
-  bool is_field_used_by_generated_columns(uint field_index, int *error_no);
   void mark_gcol_in_maps(Field *field);
+  void mark_check_constraint_columns(bool is_update);
   void column_bitmaps_set(MY_BITMAP *read_set_arg, MY_BITMAP *write_set_arg);
   inline void column_bitmaps_set_no_signal(MY_BITMAP *read_set_arg,
                                            MY_BITMAP *write_set_arg) {
@@ -1680,8 +1683,8 @@ struct TABLE {
 
   bool check_read_removal(uint index);
 
-  my_ptrdiff_t default_values_offset() const {
-    return (my_ptrdiff_t)(s->default_values - record[0]);
+  ptrdiff_t default_values_offset() const {
+    return (ptrdiff_t)(s->default_values - record[0]);
   }
 
   /// Return true if table is instantiated, and false otherwise.
@@ -2553,13 +2556,16 @@ struct TABLE_LIST {
   }
   Item **join_cond_optim_ref() { return &m_join_cond_optim; }
 
-  /// Get the semi-join condition for a semi-join nest, NULL otherwise
-  Item *sj_cond() const { return m_sj_cond; }
-
-  /// Set the semi-join condition for a semi-join nest
-  void set_sj_cond(Item *cond) {
-    DBUG_ASSERT(m_sj_cond == NULL);
-    m_sj_cond = cond;
+  /// @returns true if semi-join nest
+  bool is_sj_nest() const { return m_is_sj_or_aj_nest && !m_join_cond; }
+  /// @returns true if anti-join nest
+  bool is_aj_nest() const { return m_is_sj_or_aj_nest && m_join_cond; }
+  /// @returns true if anti/semi-join nest
+  bool is_sj_or_aj_nest() const { return m_is_sj_or_aj_nest; }
+  /// Makes the next a semi/antijoin nest
+  void set_sj_or_aj_nest() {
+    DBUG_ASSERT(!m_is_sj_or_aj_nest);
+    m_is_sj_or_aj_nest = true;
   }
 
   /// Merge tables from a query block into a nested join structure
@@ -2785,7 +2791,7 @@ struct TABLE_LIST {
     DBUG_ASSERT((is_view_or_derived()) && uses_materialization());
     table_name = table->s->table_name.str;
     table_name_length = table->s->table_name.length;
-    db = (char *)"";
+    db = "";
     db_length = 0;
   }
 
@@ -2897,7 +2903,7 @@ struct TABLE_LIST {
     return view != NULL ? view_name.str : table_name;
   }
   int fetch_number_of_rows();
-  bool update_derived_keys(Field *, Item **, uint);
+  bool update_derived_keys(THD *, Field *, Item **, uint, bool *);
   bool generate_keys();
 
   /// Setup a derived table to use materialization
@@ -2929,7 +2935,7 @@ struct TABLE_LIST {
 
   TABLE_LIST *outer_join_nest() const {
     if (!embedding) return NULL;
-    if (embedding->sj_cond()) return embedding->embedding;
+    if (embedding->is_sj_nest()) return embedding->embedding;
     return embedding;
   }
   /**
@@ -2955,14 +2961,19 @@ struct TABLE_LIST {
     In DELETE and UPDATE, a view used as a target table must be mergeable,
     updatable and defined over a single table.
   */
-  TABLE_LIST *updatable_base_table() {
-    TABLE_LIST *tbl = this;
+  const TABLE_LIST *updatable_base_table() const {
+    const TABLE_LIST *tbl = this;
     DBUG_ASSERT(tbl->is_updatable() && !tbl->is_multiple_tables());
     while (tbl->is_view_or_derived()) {
       tbl = tbl->merge_underlying_list;
       DBUG_ASSERT(tbl->is_updatable() && !tbl->is_multiple_tables());
     }
     return tbl;
+  }
+
+  TABLE_LIST *updatable_base_table() {
+    return const_cast<TABLE_LIST *>(
+        static_cast<const TABLE_LIST *>(this)->updatable_base_table());
   }
 
   /**
@@ -3050,7 +3061,8 @@ struct TABLE_LIST {
      once for all executions of a prepared statement).
   */
   Item *m_join_cond{nullptr};
-  Item *m_sj_cond{nullptr};  ///< Synthesized semijoin condition
+  bool m_is_sj_or_aj_nest{false};
+
  public:
   /*
     (Valid only for semi-join nests) Bitmap of tables that are within the
@@ -3248,14 +3260,31 @@ struct TABLE_LIST {
     especially important for multi-table UPDATE and DELETE.
   */
   bool updating{false};
-  bool force_index{false};              /* prefer index over table scan */
-  bool ignore_leaves{false};            /* preload only non-leaf nodes */
-  table_map dep_tables{0};              /* tables the table depends on      */
-  table_map on_expr_dep_tables{0};      /* tables on expression depends on  */
-  NESTED_JOIN *nested_join{nullptr};    /* if the element is a nested join  */
-  TABLE_LIST *embedding{nullptr};       /* nested join containing the table */
-  List<TABLE_LIST> *join_list{nullptr}; /* join list the table belongs to   */
-  bool cacheable_table{false};          /* stop PS caching */
+  /// True if using an index is preferred over a table scan.
+  bool force_index{false};
+  /// preload only non-leaf nodes (IS THIS USED???)
+  bool ignore_leaves{false};
+  /**
+    The set of tables in the query block that this table depends on.
+    Can be set due to outer join, join order hints or NOT EXISTS relationship.
+  */
+  table_map dep_tables{0};
+  /// The outer tables that an outer join's join condition depends on
+  table_map join_cond_dep_tables{0};
+  /**
+    Is non-NULL if this table reference is a nested join, ie it represents
+    the inner tables of an outer join, the tables contained in the
+    parentheses of an inner join (eliminated during resolving), the tables
+    referenced in a derived table or view, in a semi-join nest, the tables
+    from the subquery.
+  */
+  NESTED_JOIN *nested_join{nullptr};
+  /// The nested join containing this table reference.
+  TABLE_LIST *embedding{nullptr};
+  /// The join list immediately containing this table reference
+  List<TABLE_LIST> *join_list{nullptr};
+  /// stop PS caching
+  bool cacheable_table{false};
   /**
      Specifies which kind of table should be open for this element
      of table list.
@@ -3744,7 +3773,8 @@ void free_blob_buffers_and_reset(TABLE *table, uint32 size);
 int set_zone(int nr, int min_zone, int max_zone);
 void append_unescaped(String *res, const char *pos, size_t length);
 char *fn_rext(char *name);
-TABLE_CATEGORY get_table_category(const LEX_STRING &db, const LEX_STRING &name);
+TABLE_CATEGORY get_table_category(const LEX_CSTRING &db,
+                                  const LEX_CSTRING &name);
 
 /* performance schema */
 extern LEX_STRING PERFORMANCE_SCHEMA_DB_NAME;
@@ -3753,7 +3783,7 @@ extern LEX_STRING GENERAL_LOG_NAME;
 extern LEX_STRING SLOW_LOG_NAME;
 
 /* information schema */
-extern LEX_STRING INFORMATION_SCHEMA_NAME;
+extern LEX_CSTRING INFORMATION_SCHEMA_NAME;
 
 /* mysql schema name and DD ID */
 extern LEX_STRING MYSQL_SCHEMA_NAME;

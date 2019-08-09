@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,7 @@ Ndb_local_connection::execute_query(MYSQL_LEX_STRING sql_text,
   Ed_connection con(m_thd);
   if (con.execute_direct(sql_text))
   {
-    /* Error occured while executing the query */
+    /* Error occurred while executing the query */
     const uint last_errno = con.get_last_errno();
     assert(last_errno); // last_errno must have been set
     const char* last_errmsg = con.get_last_error();
@@ -197,26 +197,6 @@ Ndb_local_connection::truncate_table(const char* db, const char* table,
                                 NULL));
 }
 
-
-bool
-Ndb_local_connection::flush_table(const char* db, size_t db_length,
-                                  const char* table, size_t table_length)
-{
-  DBUG_ENTER("Ndb_local_connection::flush_table");
-  DBUG_PRINT("enter", ("db: '%s', table: '%s'", db, table));
-
-  // Create the SQL string
-  String sql_text((uint32)(db_length + table_length + 100));
-  sql_text.append(STRING_WITH_LEN("FLUSH TABLES "));
-  sql_text.append(db, (uint32)db_length);
-  sql_text.append(STRING_WITH_LEN("."));
-  sql_text.append(table, (uint32)table_length);
-
-  DBUG_RETURN(execute_query_iso(sql_text.lex_string(),
-                                NULL,
-                                NULL));
-}
-
 bool Ndb_local_connection::delete_rows(const std::string &db,
                                        const std::string &table,
                                        int ignore_no_such_table,
@@ -247,6 +227,42 @@ bool Ndb_local_connection::create_util_table(const std::string &table_def_sql) {
   uint ignore_mysql_errors[1] = {0};
   MYSQL_LEX_STRING sql_text = {const_cast<char *>(table_def_sql.c_str()),
                                table_def_sql.length()};
+
+  DBUG_RETURN(execute_query_iso(sql_text, ignore_mysql_errors, nullptr));
+}
+
+
+bool Ndb_local_connection::create_database(const std::string& database_name) {
+  DBUG_ENTER("Ndb_local_connection::create_database");
+  // Don't ignore any errors
+  uint ignore_mysql_errors[1] = {0};
+  const std::string create_database_sql = "CREATE DATABASE " + database_name;
+  MYSQL_LEX_STRING sql_text = {const_cast<char *>(create_database_sql.c_str()),
+                               create_database_sql.length()};
+
+  DBUG_RETURN(execute_query_iso(sql_text, ignore_mysql_errors, nullptr));
+}
+
+
+bool Ndb_local_connection::drop_database(const std::string& database_name) {
+  DBUG_ENTER("Ndb_local_connection::drop_database");
+  // Don't ignore any errors
+  uint ignore_mysql_errors[1] = {0};
+  std::string drop_database_sql = "DROP DATABASE ";
+  drop_database_sql += database_name;
+  MYSQL_LEX_STRING sql_text = {const_cast<char *>(drop_database_sql.c_str()),
+                               drop_database_sql.length()};
+
+  DBUG_RETURN(execute_query_iso(sql_text, ignore_mysql_errors, nullptr));
+}
+
+
+bool Ndb_local_connection::execute_database_ddl(const std::string& ddl_query) {
+  DBUG_ENTER("Ndb_local_connection::execute_database_ddl");
+  // Don't ignore any errors
+  uint ignore_mysql_errors[1] = {0};
+  MYSQL_LEX_STRING sql_text = {const_cast<char *>(ddl_query.c_str()),
+                               ddl_query.length()};
 
   DBUG_RETURN(execute_query_iso(sql_text, ignore_mysql_errors, nullptr));
 }

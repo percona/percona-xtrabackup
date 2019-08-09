@@ -34,6 +34,7 @@ Data dictionary interface */
 #include <sql_backup_lock.h>
 #include <sql_class.h>
 #include <sql_thd_internal_api.h>
+#include "item.h"
 #else /* !UNIV_HOTBACKUP */
 #include <my_base.h>
 #endif /* !UNIV_HOTBACKUP */
@@ -236,13 +237,17 @@ void dd_mdl_release(THD *thd, MDL_ticket **mdl) {
   *mdl = nullptr;
 }
 
+THD *dd_thd_for_undo(const trx_t *trx) {
+  return trx->mysql_thd == nullptr ? current_thd : trx->mysql_thd;
+}
+
 /** Check if current undo needs a MDL or not
 @param[in]	trx	transaction
 @return true if MDL is necessary, otherwise false */
 bool dd_mdl_for_undo(const trx_t *trx) {
   /* Try best to find a valid THD for checking, in case in background
   rollback thread, trx doens't hold a mysql_thd */
-  THD *thd = trx->mysql_thd == nullptr ? current_thd : trx->mysql_thd;
+  THD *thd = dd_thd_for_undo(trx);
 
   /* There are four cases for the undo to check here:
   1. In recovery phase, binlog recover, there is no concurrent
@@ -427,12 +432,18 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   n_cols += add_doc_id;
 
   ulint n_v_cols = 0;
+  ulint n_m_v_cols = 0;
   for (auto dd_col : dd_table->columns()) {
-    if (dd_col->is_virtual()) n_v_cols++;
+    if (dd_col->is_virtual()) {
+      n_v_cols++;
+      if (dd_col->is_array()) {
+         n_m_v_cols++;
+      }
+    }
   }
 
   dict_table_t *table =
-      dict_mem_table_create(table_name, 0, n_cols, n_v_cols, 0, 0);
+    dict_mem_table_create(table_name, 0, n_cols, n_v_cols, n_m_v_cols, 0, 0);
 
   if (dd_part) {
     table->id = dd_part->se_private_id();
@@ -1278,6 +1289,14 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
     thd = current_thd;
   }
 
+  /* During server startup, while recovering XA transaction we don't have THD.
+  The table should have been already in innodb cache if present in DD while
+  resurrecting transaction. We assume the table is not in DD and return. We
+  cannot continue anyway here with NULL THD. */
+  if (thd == nullptr) {
+    return (nullptr);
+  }
+
   const dd::Table *dd_table;
   const dd::Partition *dd_part = nullptr;
   dd::cache::Dictionary_client *dc = dd::get_dd_client(thd);
@@ -1875,12 +1894,12 @@ void dd_table_close(dict_table_t *table, THD *thd, MDL_ticket **mdl,
 @param[in]	new_space_name	New tablespace name
 @param[in]	new_path	New data file path
 @retval DB_SUCCESS on success. */
-dberr_t dd_rename_tablespace(dd::Object_id dd_space_id,
+dberr_t dd_tablespace_rename(dd::Object_id dd_space_id,
                              const char *new_space_name, const char *new_path) {
   THD *thd = current_thd;
   std::string tablespace_name;
 
-  DBUG_ENTER("dd_rename_tablespace");
+  DBUG_ENTER("dd_tablespace_rename");
 #ifdef UNIV_DEBUG
   btrsea_sync_check check(false);
   ut_ad(!sync_check_iterate(check));
@@ -3042,6 +3061,13 @@ static MY_ATTRIBUTE((warn_unused_result)) int dd_fill_one_dict_index(
 
     if (field->is_virtual_gcol()) {
       index->type |= DICT_VIRTUAL;
+
+      /* Whether it is a multi-value index */
+      if ((field->gcol_info->expr_item &&
+           field->gcol_info->expr_item->returns_array()) ||
+          field->is_array()) {
+        index->type |= DICT_MULTI_VALUE;
+      }
     }
 
     bool is_asc = true;
@@ -3603,13 +3629,20 @@ static inline dict_table_t *dd_fill_dict_table(const Table *dd_tab,
   }
 
   ulint n_v_cols = 0;
+  ulint n_m_v_cols = 0;
 
   /* Find out the number of virtual columns */
   for (ulint i = 0; i < m_form->s->fields; i++) {
     Field *field = m_form->field[i];
 
+    ut_ad(!(!innobase_is_v_fld(field) && innobase_is_multi_value_fld(field)));
+
     if (innobase_is_v_fld(field)) {
       n_v_cols++;
+
+      if (innobase_is_multi_value_fld(field)) {
+        n_m_v_cols++;
+      }
     }
   }
 
@@ -3617,7 +3650,7 @@ static inline dict_table_t *dd_fill_dict_table(const Table *dd_tab,
 
   /* Create the dict_table_t */
   dict_table_t *m_table =
-      dict_mem_table_create(norm_name, 0, n_cols, n_v_cols, 0, 0);
+      dict_mem_table_create(norm_name, 0, n_cols, n_v_cols, n_m_v_cols, 0, 0);
 
   /* Set up the field in the newly allocated dict_table_t */
   m_table->id = dd_tab->se_private_id();
@@ -3760,16 +3793,23 @@ static inline dict_table_t *dd_fill_dict_table(const Table *dd_tab,
 
     long_true_varchar = 0;
     if (field->type() == MYSQL_TYPE_VARCHAR) {
-      col_len -= ((Field_varstring *)field)->length_bytes;
+      col_len -= field->get_length_bytes();
 
-      if (((Field_varstring *)field)->length_bytes == 2) {
+      if (field->get_length_bytes() == 2) {
         long_true_varchar = DATA_LONG_TRUE_VARCHAR;
       }
     }
 
     ulint is_virtual = (innobase_is_v_fld(field)) ? DATA_VIRTUAL : 0;
 
+    ulint is_multi_val =
+        innobase_is_multi_value_fld(field) ? DATA_MULTI_VALUE : 0;
+
     bool is_stored = innobase_is_s_fld(field);
+
+    if (is_multi_val) {
+      col_len = field->key_length();
+    }
 
     if (!is_virtual) {
       prtype =
@@ -3779,10 +3819,10 @@ static inline dict_table_t *dd_fill_dict_table(const Table *dd_tab,
       dict_mem_table_add_col(m_table, heap, field->field_name, mtype, prtype,
                              col_len);
     } else {
-      prtype = dtype_form_prtype((ulint)field->type() | nulls_allowed |
-                                     unsigned_type | binary_type |
-                                     long_true_varchar | is_virtual,
-                                 charset_no);
+      prtype = dtype_form_prtype(
+          (ulint)field->type() | nulls_allowed | unsigned_type | binary_type |
+              long_true_varchar | is_virtual | is_multi_val,
+          charset_no);
       dict_mem_table_add_v_col(m_table, heap, field->field_name, mtype, prtype,
                                col_len, i,
                                field->gcol_info->non_virtual_base_columns());
@@ -3835,11 +3875,11 @@ static inline dict_table_t *dd_fill_dict_table(const Table *dd_tab,
   return (m_table);
 }
 
-/** Parse the tablespace name from filename charset to table name charset
-@param[in]      space_name      tablespace name
+/** Parse the tablespace file name from filename charset to table name charset
+@param[in]      file_name      tablespace file name
 @param[in,out]	tablespace_name	tablespace name which is in table name
                                 charset. */
-void dd_filename_to_spacename(const char *space_name,
+void dd_filename_to_spacename(const char *file_name,
                               std::string *tablespace_name) {
   char db_buf[NAME_LEN + 1];
   char tbl_buf[NAME_LEN + 1];
@@ -3850,10 +3890,10 @@ void dd_filename_to_spacename(const char *space_name,
 
   db_buf[0] = tbl_buf[0] = part_buf[0] = sub_buf[0] = '\0';
 
-  dd_parse_tbl_name(space_name, db_buf, tbl_buf, part_buf, sub_buf, &is_tmp);
+  dd_parse_tbl_name(file_name, db_buf, tbl_buf, part_buf, sub_buf, &is_tmp);
 
   if (db_buf[0] == '\0') {
-    filename_to_tablename((char *)space_name, orig_tablespace, (NAME_LEN + 1));
+    filename_to_tablename((char *)file_name, orig_tablespace, (NAME_LEN + 1));
     tablespace_name->append(orig_tablespace);
 
     return;
@@ -4623,7 +4663,7 @@ void dd_load_tablespace(const Table *dd_table, dict_table_t *table,
     is in the DD even if the datafile was moved. So let's use
     that path to open this tablespace. */
     mutex_exit(&dict_sys->mutex);
-    char *filepath = dd_get_first_path(heap, table, dd_table);
+    filepath = dd_get_first_path(heap, table, dd_table);
     mutex_enter(&dict_sys->mutex);
 
     if (filepath == nullptr) {
@@ -5960,8 +6000,13 @@ bool dd_process_dd_tablespaces_rec(mem_heap_t *heap, const rec_t *rec,
   /* Get tablespace state. */
   dd_tablespace_get_state(p, state, *space_id);
 
-  /* Get Encryption. */
-  if (FSP_FLAGS_GET_ENCRYPTION(*flags)) {
+  /* For UNDO tablespaces, encryption is governed by srv_undo_log_encrypt
+  variable and DD flags are not updated for encryption changes. Following
+  is a workaround until UNDO tablespace encryption change is done by a DDL. */
+  if (fsp_is_undo_tablespace(*space_id)) {
+    *is_encrypted = srv_undo_log_encrypt;
+  } else if (FSP_FLAGS_GET_ENCRYPTION(*flags)) {
+    /* Get Encryption. */
     *is_encrypted = true;
   }
 
@@ -6484,7 +6529,7 @@ bool dd_rename_fts_table(const dict_table_t *table, const char *old_name) {
   if (dict_table_is_file_per_table(table)) {
     char *new_path = fil_space_get_first_path(table->space);
 
-    if (dd_rename_tablespace(table->dd_space_id, table->name.m_name,
+    if (dd_tablespace_rename(table->dd_space_id, table->name.m_name,
                              new_path) != DB_SUCCESS) {
       ut_a(false);
     }
@@ -6661,26 +6706,33 @@ bool dd_tablespace_is_discarded(const dd::Tablespace *dd_space) {
   return (false);
 }
 
-/** Get the MDL for the named tablespace.  The mdl_ticket pointer can
-be provided if it is needed by the caller.  If for_trx is set to false,
-then the caller must explicitly release that ticket with dd_release_mdl()
-Otherwise, it will ne released with the transaction.
-@param[in]  space_name  tablespace name
-@param[in]  mdl_ticket  tablespace MDL ticket, default to nullptr
-@param[in]  for_trx     How long will the DML be held. defaults to true for
-                        MDL_TRANSACTION, false for MDL_EXPLICIT
-@return DB_SUCCESS or DD_FAILURE. */
 bool dd_tablespace_get_mdl(const char *space_name, MDL_ticket **mdl_ticket,
-                           bool for_trx) {
+                           bool foreground) {
   THD *thd = current_thd;
+  /* Safeguard in release mode if background thread doesn't have THD. */
+  if (thd == nullptr) {
+    ut_ad(false);
+    return (true);
+  }
+  /* Explicit duration for background threads. */
+  bool trx_duration = foreground;
 
-  /* We can get both of these together because if the backup lock fails,
-  it will be released with the thd by the server. */
-  bool result =
-      acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout) ||
-      dd::acquire_exclusive_tablespace_mdl(thd, space_name, false, mdl_ticket,
-                                           for_trx);
+  /* Background thread should not block on MDL lock. */
+  ulong timeout = foreground ? thd->variables.lock_wait_timeout : 0;
+  bool result = acquire_shared_backup_lock(thd, timeout, trx_duration);
 
+  if (!result) {
+    result = dd::acquire_exclusive_tablespace_mdl(thd, space_name, false,
+                                                  mdl_ticket, trx_duration);
+    if (result) {
+      release_backup_lock(thd);
+    }
+  }
+
+  /* For background thread, clear timeout error. */
+  if (result && !foreground && thd->is_error()) {
+    thd->clear_error();
+  }
   return (result);
 }
 

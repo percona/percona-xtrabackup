@@ -9,6 +9,7 @@ var defaults = {
   // - hostname
   // - port
   // - state
+  // - xport (if available and needed)
   group_replication_membership: [],
   port: mysqld.session.port,
   innodb_cluster_name: "test",
@@ -141,7 +142,12 @@ exports.get = function get(stmt_key, options) {
           }
         ],
         rows: options["group_replication_membership"].map(function(currentValue) {
-          return currentValue.concat([ options["group_replication_single_primary_mode"] ]);
+          var result = currentValue.slice();
+          // if group_replication_membership contains x port we need to remove it
+          // as this query does not want it
+          if (result.length === 5)
+              result.splice(-1,1);
+          return result.concat([ options["group_replication_single_primary_mode"] ]);
         }),
       }
     },
@@ -169,7 +175,7 @@ exports.get = function get(stmt_key, options) {
     router_select_metadata: {
       stmt: "SELECT R.replicaset_name, I.mysql_server_uuid, I.role, I.weight, I.version_token, H.location, I.addresses->>'$.mysqlClassic', I.addresses->>'$.mysqlX' FROM mysql_innodb_cluster_metadata.clusters AS F JOIN mysql_innodb_cluster_metadata.replicasets AS R ON F.cluster_id = R.cluster_id JOIN mysql_innodb_cluster_metadata.instances AS I ON R.replicaset_id = I.replicaset_id JOIN mysql_innodb_cluster_metadata.hosts AS H ON I.host_id = H.host_id WHERE F.cluster_name = '"
             + options.innodb_cluster_name + "'"
-            + (options.gr_id === undefined ? "" : (" AND R.attributes->>'$.group_replication_group_name' = '" + options.gr_id + "'"))
+            + (options.gr_id === undefined || options.gr_id === "" ? "" : (" AND R.attributes->>'$.group_replication_group_name' = '" + options.gr_id + "'"))
             + ";",
       result : {
         columns : [
@@ -215,8 +221,7 @@ exports.get = function get(stmt_key, options) {
             null,
             "",
             currentValue[1] + ":" + currentValue[2],
-            // we don't actually know the xplugin port yet, but on the other side it is also currently unused.
-            currentValue[1] + ":" + (parseInt(currentValue[2]) + 10)
+            currentValue[1] + ":" +  currentValue[4]
           ]
         }),
       }

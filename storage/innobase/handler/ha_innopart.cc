@@ -107,10 +107,6 @@ Ha_innopart_share::~Ha_innopart_share() {
 void Ha_innopart_share::partition_name_casedn_str(char *s) {
 #ifdef _WIN32
   innobase_casedn_str(s);
-#else
-  if (innobase_get_lower_case_table_names() == 1) {
-    innobase_casedn_str(s);
-  }
 #endif
 }
 
@@ -2913,6 +2909,44 @@ int ha_innopart::extra(enum ha_extra_function operation) {
   return (ha_innobase::extra(operation));
 }
 
+/* Get partition row type
+@param[in] partition_table partition table
+@param[in] part_id Id of partition for which row type to be retrieved
+@return Partition row type. */
+enum row_type ha_innopart::get_partition_row_type(
+    const dd::Table *partition_table, uint part_id) {
+  dd::Table::enum_row_format format;
+  row_type real_type = ROW_TYPE_NOT_USED;
+
+  auto dd_table = partition_table->leaf_partitions().at(part_id);
+  const dd::Properties &part_p = dd_table->se_private_data();
+  if (part_p.exists(dd_partition_key_strings[DD_PARTITION_ROW_FORMAT])) {
+    part_p.get(dd_partition_key_strings[DD_PARTITION_ROW_FORMAT],
+               reinterpret_cast<uint32 *>(&format));
+    switch (format) {
+      case dd::Table::RF_REDUNDANT:
+        real_type = ROW_TYPE_REDUNDANT;
+        break;
+      case dd::Table::RF_COMPACT:
+        real_type = ROW_TYPE_COMPACT;
+        break;
+      case dd::Table::RF_COMPRESSED:
+        real_type = ROW_TYPE_COMPRESSED;
+        break;
+      case dd::Table::RF_DYNAMIC:
+        real_type = ROW_TYPE_DYNAMIC;
+        break;
+      default:
+        ut_a(0);
+    }
+  }
+  if (real_type == ROW_TYPE_NOT_USED) {
+    return table_share->real_row_type;
+  } else {
+    return real_type;
+  }
+}
+
 int ha_innopart::truncate_impl(const char *name, TABLE *form,
                                dd::Table *table_def) {
   DBUG_ENTER("ha_innopart::truncate_impl");
@@ -3090,26 +3124,78 @@ handler object.
 @param[out]	num_rows	Number of rows.
 @return	0 or error number. */
 int ha_innopart::records(ha_rows *num_rows) {
-  ha_rows n_rows;
-  int err;
   DBUG_ENTER("ha_innopart::records()");
 
   *num_rows = 0;
 
-  /* The index scan is probably so expensive, so the overhead
-  of the rest of the function is neglectable for each partition.
-  So no current reason for optimizing this further. */
+  auto trx = thd_to_trx(ha_thd());
+  size_t n_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
 
-  for (uint i = m_part_info->get_first_used_partition(); i < m_tot_parts;
-       i = m_part_info->get_next_used_partition(i)) {
-    set_partition(i);
-    err = ha_innobase::records(&n_rows);
-    update_partition(i);
-    if (err != 0) {
-      *num_rows = HA_POS_ERROR;
-      DBUG_RETURN(err);
+  n_threads = Parallel_reader::available_threads(n_threads);
+
+  if (n_threads > 0 && trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
+      m_prebuilt->select_lock_type == LOCK_NONE &&
+      trx->mysql_n_tables_locked == 0 && !m_prebuilt->ins_sel_stmt &&
+      n_threads > 1) {
+    trx_start_if_not_started_xa(trx, false);
+    trx_assign_read_view(trx);
+
+    const auto first_used_partition = m_part_info->get_first_used_partition();
+
+    std::vector<dict_index_t *> indexes{};
+
+    for (auto i = first_used_partition; i < m_tot_parts;
+         i = m_part_info->get_next_used_partition(i)) {
+      set_partition(i);
+
+      if (dict_table_is_discarded(m_prebuilt->table)) {
+        ib_senderrf(ha_thd(), IB_LOG_LEVEL_ERROR, ER_TABLESPACE_DISCARDED,
+                    m_prebuilt->table->name.m_name);
+        DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
+      }
+
+      build_template(true);
+
+      indexes.push_back(m_prebuilt->table->first_index());
     }
-    *num_rows += n_rows;
+
+    ulint n_rows{};
+
+    auto err =
+        row_mysql_parallel_select_count_star(trx, indexes, n_threads, &n_rows);
+
+    if (thd_killed(m_user_thd) || err == DB_INTERRUPTED) {
+      *num_rows = HA_POS_ERROR;
+      DBUG_RETURN(HA_ERR_QUERY_INTERRUPTED);
+    }
+
+    if (err == DB_SUCCESS) {
+      *num_rows = n_rows;
+    } else {
+      *num_rows = HA_POS_ERROR;
+      DBUG_RETURN(convert_error_code_to_mysql(err, 0, m_user_thd));
+    }
+  } else {
+    /* The index scan is probably so expensive, so the overhead
+    of the rest of the function is neglectable for each partition.
+    So no current reason for optimizing this further. */
+
+    for (uint i = m_part_info->get_first_used_partition(); i < m_tot_parts;
+         i = m_part_info->get_next_used_partition(i)) {
+      set_partition(i);
+
+      ha_rows n_rows{};
+
+      auto error = ha_innobase::records(&n_rows);
+
+      update_partition(i);
+
+      if (error != 0) {
+        *num_rows = HA_POS_ERROR;
+        DBUG_RETURN(error);
+      }
+      *num_rows += n_rows;
+    }
   }
   DBUG_RETURN(0);
 }
@@ -3589,14 +3675,9 @@ int ha_innopart::info_low(uint flag, bool is_analyze) {
       dict_index_t *index = innopart_get_index(biggest_partition, i);
 
       if (index == NULL) {
-        ib::error(ER_IB_MSG_596) << "Table " << ib_table->name
-                                 << " contains fewer"
-                                    " indexes inside InnoDB than"
-                                    " are defined in the MySQL"
-                                    " .frm file. Have you mixed up"
-                                    " .frm files from different"
-                                    " installations? "
-                                 << TROUBLESHOOTING_MSG;
+        ib::error(ER_IB_MSG_596)
+            << "Table " << ib_table->name
+            << " contains fewer indexes than expected." << TROUBLESHOOTING_MSG;
         break;
       }
 
@@ -3610,17 +3691,13 @@ int ha_innopart::info_low(uint flag, bool is_analyze) {
         }
 
         if ((j + 1) > index->n_uniq) {
-          ib::error(ER_IB_MSG_597) << "Index " << index->name << " of "
-                                   << ib_table->name << " has " << index->n_uniq
-                                   << " columns unique inside"
-                                      " InnoDB, but MySQL is"
-                                      " asking statistics for "
-                                   << j + 1
-                                   << " columns. Have"
-                                      " you mixed up .frm files"
-                                      " from different"
-                                      " installations? "
-                                   << TROUBLESHOOTING_MSG;
+          ib::error(ER_IB_MSG_597)
+              << "Index " << index->name << " of " << ib_table->name << " has "
+              << index->n_uniq
+              << " columns unique inside"
+                 " InnoDB, but MySQL is"
+                 " asking statistics for "
+              << j + 1 << " columns." << TROUBLESHOOTING_MSG;
           break;
         }
 

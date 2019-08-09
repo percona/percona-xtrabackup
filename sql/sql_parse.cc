@@ -72,6 +72,7 @@
 #include "sql/auth/auth_common.h"  // acl_authenticate
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/binlog.h"  // purge_master_logs
+#include "sql/clone_handler.h"
 #include "sql/current_thd.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client::Auto_releaser
 #include "sql/dd/dd.h"                       // dd::get_dictionary
@@ -103,6 +104,7 @@
 #include "sql/parse_location.h"
 #include "sql/parse_tree_node_base.h"
 #include "sql/parse_tree_nodes.h"
+#include "sql/parser_yystype.h"
 #include "sql/persisted_variable.h"
 #include "sql/protocol.h"
 #include "sql/protocol_classic.h"
@@ -164,6 +166,10 @@
 #include "sql_string.h"
 #include "thr_lock.h"
 #include "violite.h"
+
+#ifdef WITH_LOCK_ORDER
+#include "sql/debug_lock_order.h"
+#endif /* WITH_LOCK_ORDER */
 
 namespace dd {
 class Spatial_reference_system;
@@ -1116,7 +1122,7 @@ void execute_init_command(THD *thd, LEX_STRING *init_command,
 #endif
 }
 
-/* This works because items are allocated with sql_alloc() */
+/* This works because items are allocated with (*THR_MALLOC)->Alloc() */
 
 void free_items(Item *item) {
   Item *next;
@@ -1129,7 +1135,7 @@ void free_items(Item *item) {
 }
 
 /**
-   This works because items are allocated with sql_alloc().
+   This works because items are allocated with (*THR_MALLOC)->Alloc().
    @note The function also handles null pointers (empty list).
 */
 void cleanup_items(Item *item) {
@@ -1308,8 +1314,11 @@ static bool deny_updates_if_read_only_option(THD *thd, TABLE_LIST *all_tables) {
   const bool drop_temp_tables =
       (lex->sql_command == SQLCOM_DROP_TABLE) && lex->drop_temporary;
 
+  /* RENAME TABLES ignores shadowing temporary tables. */
+  const bool rename_tables = (lex->sql_command == SQLCOM_RENAME_TABLE);
+
   const bool update_real_tables =
-      ((create_real_tables ||
+      ((create_real_tables || rename_tables ||
         some_non_temp_table_to_be_updated(thd, all_tables)) &&
        !(create_temp_tables || drop_temp_tables));
 
@@ -1462,7 +1471,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
     query_start_status = thd->status_var;
   }
 
-    /* SHOW PROFILE instrumentation, begin */
+  /* SHOW PROFILE instrumentation, begin */
 #if defined(ENABLED_PROFILING)
   thd->profiling->start_new_query();
 #endif
@@ -2100,6 +2109,9 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
       mysql_print_status();
       query_logger.general_log_print(thd, command, NullS);
       my_eof(thd);
+#ifdef WITH_LOCK_ORDER
+      LO_dump();
+#endif /* WITH_LOCK_ORDER */
       break;
     case COM_SLEEP:
     case COM_CONNECT:         // Impossible here
@@ -3170,6 +3182,14 @@ int mysql_execute_command(THD *thd, bool first_level) {
         goto error;
       }
 
+      if (Clone_handler::is_provisioning()) {
+        my_error(ER_GROUP_REPLICATION_COMMAND_FAILURE, MYF(0),
+                 "START GROUP_REPLICATION",
+                 "This server is being provisioned by CLONE INSTANCE, "
+                 "please wait until it is complete.");
+        goto error;
+      }
+
       char *error_message = NULL;
       res = group_replication_start(&error_message);
 
@@ -3371,8 +3391,8 @@ int mysql_execute_command(THD *thd, bool first_level) {
           */
           DBUG_PRINT("debug", ("first_table->grant.privilege: %lx",
                                first_table->grant.privilege));
-          if (check_some_access(thd, SHOW_CREATE_TABLE_ACLS, first_table) ||
-              (first_table->grant.privilege & SHOW_CREATE_TABLE_ACLS) == 0) {
+          if (check_some_access(thd, TABLE_OP_ACLS, first_table) ||
+              (first_table->grant.privilege & TABLE_OP_ACLS) == 0) {
             my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0), "SHOW",
                      thd->security_context()->priv_user().str,
                      thd->security_context()->host_or_ip().str,
@@ -3808,9 +3828,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
       if (first_table) {
         if (lex->type == TYPE_ENUM_PROCEDURE ||
             lex->type == TYPE_ENUM_FUNCTION) {
-          uint grants = lex->all_privileges ? (PROC_ACLS & ~GRANT_ACL) |
-                                                  (lex->grant & GRANT_ACL)
-                                            : lex->grant;
+          uint grants = lex->all_privileges
+                            ? (PROC_OP_ACLS) | (lex->grant & GRANT_ACL)
+                            : lex->grant;
           if (check_grant_routine(thd, grants | GRANT_ACL, all_tables,
                                   lex->type == TYPE_ENUM_PROCEDURE, 0))
             goto error;
@@ -4428,7 +4448,14 @@ int mysql_execute_command(THD *thd, bool first_level) {
         /* copy password expire attributes to individual lex user */
         user->alter_status = thd->lex->alter_password;
 
+        /*
+          Only self password change is non-privileged operation. To detect the
+          same, we find :
+          (1) If it is only password change operation
+          (2) If this operation is on self
+        */
         if (user->uses_identified_by_clause &&
+            !user->uses_identified_with_clause &&
             !thd->lex->mqh.specified_limits &&
             !user->alter_status.update_account_locked_column &&
             !user->alter_status.update_password_expired_column &&
@@ -4683,7 +4710,7 @@ finish:
 
    @retval false  No error, if lock was obtained TABLE_LIST::mdl_request::ticket
                   is set to non-NULL value.
-   @retval true   Some error occured (probably thread was killed).
+   @retval true   Some error occurred (probably thread was killed).
 */
 
 static bool try_acquire_high_prio_shared_mdl_lock(THD *thd, TABLE_LIST *table,
@@ -4784,7 +4811,7 @@ bool show_precheck(THD *thd, LEX *lex, bool lock) {
       TABLE_LIST *dst_table = tables->schema_select_lex->table_list.first;
       if (try_acquire_high_prio_shared_mdl_lock(thd, dst_table, can_deadlock)) {
         /*
-          Some error occured (most probably we have been killed while
+          Some error occurred (most probably we have been killed while
           waiting for conflicting locks to go away), let the caller to
           handle the situation.
         */
@@ -5312,6 +5339,7 @@ bool mysql_test_parse_for_slave(THD *thd) {
                                    this is a geometry column).
   @param col_check_const_spec_list List of column check constraints.
   @param hidden                    Whether or not this field shoud be hidden.
+  @param is_array                  Whether it's a typed array field
 
   @return
     Return 0 if ok
@@ -5319,15 +5347,16 @@ bool mysql_test_parse_for_slave(THD *thd) {
 bool Alter_info::add_field(
     THD *thd, const LEX_STRING *field_name, enum_field_types type,
     const char *length, const char *decimals, uint type_modifier,
-    Item *default_value, Item *on_update_value, LEX_STRING *comment,
+    Item *default_value, Item *on_update_value, LEX_CSTRING *comment,
     const char *change, List<String> *interval_list, const CHARSET_INFO *cs,
     bool has_explicit_collation, uint uint_geom_type,
     Value_generator *gcol_info, Value_generator *default_val_expr,
     const char *opt_after, Nullable<gis::srid_t> srid,
     Sql_check_constraint_spec_list *col_check_const_spec_list,
-    dd::Column::enum_hidden_type hidden) {
+    dd::Column::enum_hidden_type hidden, bool is_array) {
   uint8 datetime_precision = decimals ? atoi(decimals) : 0;
   DBUG_ENTER("add_field_to_list");
+  DBUG_ASSERT(!is_array || hidden != dd::Column::enum_hidden_type::HT_VISIBLE);
 
   LEX_CSTRING field_name_cstr = {field_name->str, field_name->length};
 
@@ -5366,15 +5395,21 @@ bool Alter_info::add_field(
       no need fix_fields()
 
       We allow only CURRENT_TIMESTAMP as function default for the TIMESTAMP or
-      DATETIME types.
+      DATETIME types. In addition, TRUE and FALSE are allowed for bool types.
     */
-    if (default_value->type() == Item::FUNC_ITEM &&
-        (static_cast<Item_func *>(default_value)->functype() !=
-             Item_func::NOW_FUNC ||
-         (!real_type_with_now_as_default(type)) ||
-         default_value->decimals != datetime_precision)) {
-      my_error(ER_INVALID_DEFAULT, MYF(0), field_name->str);
-      DBUG_RETURN(1);
+    if (default_value->type() == Item::FUNC_ITEM) {
+      Item_func *func = down_cast<Item_func *>(default_value);
+      if (func->basic_const_item()) {
+        DBUG_ASSERT(dynamic_cast<Item_func_true *>(func) ||
+                    dynamic_cast<Item_func_false *>(func));
+        default_value = new Item_int(func->val_int());
+        if (default_value == nullptr) DBUG_RETURN(true);
+      } else if (func->functype() != Item_func::NOW_FUNC ||
+                 !real_type_with_now_as_default(type) ||
+                 default_value->decimals != datetime_precision) {
+        my_error(ER_INVALID_DEFAULT, MYF(0), field_name->str);
+        DBUG_RETURN(true);
+      }
     } else if (default_value->type() == Item::NULL_ITEM) {
       default_value = 0;
       if ((type_modifier & (NOT_NULL_FLAG | AUTO_INCREMENT_FLAG)) ==
@@ -5411,8 +5446,8 @@ bool Alter_info::add_field(
       new_field->init(thd, field_name->str, type, length, decimals,
                       type_modifier, default_value, on_update_value, comment,
                       change, interval_list, cs, has_explicit_collation,
-                      uint_geom_type, gcol_info, default_val_expr, srid,
-                      hidden))
+                      uint_geom_type, gcol_info, default_val_expr, srid, hidden,
+                      is_array))
     DBUG_RETURN(1);
 
   create_list.push_back(new_field);
@@ -6244,7 +6279,7 @@ bool SELECT_LEX_UNIT::add_fake_select_lex(THD *thd) {
   @retval
     false  if all is OK
   @retval
-    true   if a memory allocation error occured
+    true   if a memory allocation error occurred
 */
 
 bool push_new_name_resolution_context(Parse_context *pc, TABLE_LIST *left_op,
@@ -6286,7 +6321,7 @@ void add_join_on(TABLE_LIST *b, Item *expr) {
       */
       b->set_join_cond(new Item_cond_and(b->join_cond(), expr));
     }
-    b->join_cond()->top_level_item();
+    b->join_cond()->apply_is_true();
   }
 }
 
@@ -6494,23 +6529,30 @@ err:
 
 int append_file_to_dir(THD *thd, const char **filename_ptr,
                        const char *table_name) {
-  char buff[FN_REFLEN], *ptr, *end;
+  char tbbuff[FN_REFLEN];
+  char buff[FN_REFLEN];
+  char *ptr;
+  char *end;
+
   if (!*filename_ptr) return 0;  // nothing to do
 
+  /* Convert tablename to filename charset so that "/" gets converted
+  appropriately */
+  size_t tab_len = tablename_to_filename(table_name, tbbuff, sizeof(tbbuff));
+
   /* Check that the filename is not too long and it's a hard path */
-  if (strlen(*filename_ptr) + strlen(table_name) >= FN_REFLEN - 1)
-    return ER_PATH_LENGTH;
+  if (strlen(*filename_ptr) + tab_len >= FN_REFLEN - 1) return ER_PATH_LENGTH;
 
   if (!test_if_hard_path(*filename_ptr)) return ER_WRONG_VALUE;
 
   /* Fix is using unix filename format on dos */
   my_stpcpy(buff, *filename_ptr);
   end = convert_dirname(buff, *filename_ptr, NullS);
-  if (!(ptr =
-            (char *)thd->alloc((size_t)(end - buff) + strlen(table_name) + 1)))
-    return ER_OUTOFMEMORY;  // End of memory
+
+  ptr = (char *)thd->alloc((size_t)(end - buff) + tab_len + 1);
+  if (ptr == nullptr) return ER_OUTOFMEMORY;  // End of memory
   *filename_ptr = ptr;
-  strxmov(ptr, buff, table_name, NullS);
+  strxmov(ptr, buff, tbbuff, NullS);
   return 0;
 }
 
@@ -6559,10 +6601,14 @@ Item *all_any_subquery_creator(Item *left_expr,
                                SELECT_LEX *select_lex) {
   if ((cmp == &comp_eq_creator) && !all)  //  = ANY <=> IN
     return new Item_in_subselect(left_expr, select_lex);
-
   if ((cmp == &comp_ne_creator) && all)  // <> ALL <=> NOT IN
-    return new Item_func_not(new Item_in_subselect(left_expr, select_lex));
-
+  {
+    Item *i = new Item_in_subselect(left_expr, select_lex);
+    if (i == nullptr) return nullptr;
+    Item *neg_i = i->truth_transformer(nullptr, Item::BOOL_NEGATED);
+    if (neg_i != nullptr) return neg_i;
+    return new Item_func_not(i);
+  }
   Item_allany_subselect *it =
       new Item_allany_subselect(left_expr, cmp, select_lex, all);
   if (all) return it->upper_item = new Item_func_not_all(it); /* ALL */
@@ -6593,36 +6639,6 @@ void create_table_set_open_action_and_adjust_tables(LEX *lex) {
     */
     create_table->set_lock({TL_READ, THR_DEFAULT});
   }
-}
-
-/**
-  negate given expression.
-
-  @param pc   current parse context
-  @param expr expression for negation
-
-  @return
-    negated expression
-*/
-
-Item *negate_expression(Parse_context *pc, Item *expr) {
-  Item *negated;
-  if (expr->type() == Item::FUNC_ITEM &&
-      ((Item_func *)expr)->functype() == Item_func::NOT_FUNC) {
-    /* it is NOT(NOT( ... )) */
-    Item *arg = ((Item_func *)expr)->arguments()[0];
-    enum_parsing_context place = pc->select->parsing_place;
-    if (arg->is_bool_func() || place == CTX_WHERE || place == CTX_HAVING)
-      return arg;
-    /*
-      if it is not boolean function then we have to emulate value of
-      not(not(a)), it will be a != 0
-    */
-    return new Item_func_ne(arg, new Item_int_0());
-  }
-
-  if ((negated = expr->neg_transformer(pc->thd)) != 0) return negated;
-  return new Item_func_not(expr);
 }
 
 /**
@@ -6984,8 +7000,8 @@ bool parse_sql(THD *thd, Parser_state *parser_state,
   Parser_oom_handler poomh;
   // Note that we may be called recursively here, on INFORMATION_SCHEMA queries.
 
-  set_memroot_max_capacity(thd->mem_root, thd->variables.parser_max_mem_size);
-  set_memroot_error_reporting(thd->mem_root, true);
+  thd->mem_root->set_max_capacity(thd->variables.parser_max_mem_size);
+  thd->mem_root->set_error_for_capacity_exceeded(true);
   thd->push_internal_handler(&poomh);
 
   thd->push_diagnostics_area(parser_da, false);
@@ -6993,8 +7009,8 @@ bool parse_sql(THD *thd, Parser_state *parser_state,
   bool mysql_parse_status = thd->sql_parser();
 
   thd->pop_internal_handler();
-  set_memroot_max_capacity(thd->mem_root, 0);
-  set_memroot_error_reporting(thd->mem_root, false);
+  thd->mem_root->set_max_capacity(0);
+  thd->mem_root->set_error_for_capacity_exceeded(false);
   /*
     Unwind diagnostics area.
 

@@ -222,7 +222,7 @@ while ($i)
 
          let $query=
          SELECT * FROM t1 WHERE (11) IN 
-           (SELECT t3.i FROM t2 LEFT JOIN t3 ON t2.i=t3.i WHERE t1.i);
+           (SELECT t3.i FROM t2 LEFT JOIN t3 ON t2.i=t3.i WHERE t1.i <> 0);
          eval EXPLAIN $query;
          --sorted_result
          eval $query;
@@ -445,7 +445,12 @@ select * from t3 where a in (select kp1 from t1 where kp1<20) and a<20;
 create table t4 (pk int primary key);
 insert into t4 select a from t3;
 
-explain select * from t3 where a in 
+explain select * from t3 where a in
+          (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
+
+# In subquery_sj_loosescan_bka_nixbnl (ie., with loose scan), demonstrates
+# how NestedLoopSemiJoinWithDuplicateRemovalIterator is used.
+explain format=tree select * from t3 where a in
           (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
 select * from t3 where a in 
   (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
@@ -1395,6 +1400,16 @@ SELECT *
 FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a+0 AND
                          (ot1.a, ot2.a) IN (SELECT it1.a+0, it2.a+0
                                             FROM it1 JOIN it2 ON it1.a=it2.a);
+
+# In subquery_sj_dupsweed (ie., duplicate weedout active), demonstrates
+# how weedouts that intersect with outer joins are being dropped and then
+# reintroduced again at the very top of the join tree.
+#
+# In subquery_sj_{all,firstmatch}_*, demonstrates how partially overlapping
+# outer joins and first matches are rewritten into weedout at the top.
+EXPLAIN FORMAT=tree SELECT *
+FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a AND ot1.a IN (SELECT a FROM it3)
+         LEFT JOIN ot3 ON ot2.a=ot3.a AND ot3.a IN (SELECT a FROM it3);
 
 --sorted_result
 SELECT *
@@ -6934,6 +6949,11 @@ ORDER BY col_int_key
 
 eval explain $query;
 
+# In subquery_sj_loosescan_bka_nixbnl (ie., with loose scan), shows a case
+# where we can't use NestedLoopSemiJoinWithDuplicateRemovalIterator since we
+# have a table that is both firstmatch (semijoin) _and_ outer join.
+eval explain format=tree $query;
+
 eval $query;
 
 DROP TABLE t1, t2, t3, t4;
@@ -7183,3 +7203,15 @@ SELECT c FROM t WHERE 1 IN
 (SELECT t.c = page_size FROM information_schema.innodb_cmpmem);
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug #29132639: WL#12470: SIG 6 IN CONNECTJOINS|SQL/SQL_EXECUTOR.C
+--echo #
+
+CREATE TABLE t1 ( f1 TIME, f2 VARCHAR(1) );
+INSERT INTO t1 VALUES ('08:35:24', 'X'), ('14:51:13', 'S'), ('11:22:33', 'Q');
+CREATE TABLE t2 ( pk INTEGER );
+INSERT INTO t2 VALUES (1), (2);
+EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE EXISTS ( SELECT alias1.f2 FROM t2 LEFT JOIN t1 ON 1 LEFT JOIN t1 AS alias1 ON 1 );
+SELECT * FROM t1 WHERE EXISTS ( SELECT alias1.f2 FROM t2 LEFT JOIN t1 ON 1 LEFT JOIN t1 AS alias1 ON 1 );
+DROP TABLE t1, t2;

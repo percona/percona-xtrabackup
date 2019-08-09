@@ -66,13 +66,16 @@
 */
 
 size_t column_pack_length(const dd::Column &col_obj) {
+  // Arrays always use JSON as storage
+  dd::enum_column_types col_type =
+      col_obj.is_array() ? dd::enum_column_types::JSON : col_obj.type();
   bool treat_bit_as_char = false;
 
   if (col_obj.type() == dd::enum_column_types::BIT) {
     if (col_obj.options().get("treat_bit_as_char", &treat_bit_as_char))
       DBUG_ASSERT(false); /* purecov: deadcode */
   }
-  return calc_pack_length(col_obj.type(), col_obj.char_length(),
+  return calc_pack_length(col_type, col_obj.char_length(),
                           col_obj.elements_count(), treat_bit_as_char,
                           col_obj.numeric_scale(), col_obj.is_unsigned());
 }
@@ -282,7 +285,7 @@ bool prepare_default_value_buffer_and_table_share(THD *thd,
   share->rec_buff_length = ALIGN_SIZE(share->reclength + 1 + extra_length);
   if (share->reclength) {
     share->default_values = reinterpret_cast<uchar *>(
-        alloc_root(&share->mem_root, share->rec_buff_length));
+        share->mem_root.Alloc(share->rec_buff_length));
     if (!share->default_values) return true;
 
     // Initialize the default value buffer. The default values for the

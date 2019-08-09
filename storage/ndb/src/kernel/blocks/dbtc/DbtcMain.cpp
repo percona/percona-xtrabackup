@@ -9976,7 +9976,7 @@ void Dbtc::execSCAN_HBREP(Signal* signal)
 }//execSCAN_HBREP()
 
 /*--------------------------------------------------------------------------*/
-/*      Timeout has occured on a fragment which means a scan has timed out. */
+/*      Timeout has occurred on a fragment which means a scan has timed out. */
 /*      If this is true we have an error in LQH/ACC.                        */
 /*--------------------------------------------------------------------------*/
 void Dbtc::timeOutFoundFragLab(Signal* signal, UintR TscanConPtr)
@@ -11297,6 +11297,16 @@ void Dbtc::execLQH_TRANSCONF(Signal* signal)
   }
   else
   {
+    if (tcNodeFailptr.p->takeOverFailed)
+    {
+      jam();
+      /**
+       * After we failed to allocate a transaction record we won't
+       * try to allocate any new ones since it might mean that we
+       * miss operations of a transaction.
+       */
+      return;
+    }
     if (unlikely(!seizeApiConnectFail(signal, apiConnectptr)))
     {
       jam();
@@ -11317,16 +11327,6 @@ void Dbtc::execLQH_TRANSCONF(Signal* signal)
                           "this node has MaxNoOfConcurrentTransactions = %u",
                           capiConnectFailCount);
       tcNodeFailptr.p->takeOverFailed = true;
-      return;
-    }
-    else if (tcNodeFailptr.p->takeOverFailed)
-    {
-      jam();
-      /**
-       * After we failed to allocate a transaction record we won't
-       * try to allocate any new ones since it might mean that we
-       * miss operations of a transaction.
-       */
       return;
     }
     /**
@@ -13168,7 +13168,10 @@ void Dbtc::execSCAN_TABREQ(Signal* signal)
   
   if (unlikely(getNodeState().startLevel == NodeState::SL_SINGLEUSER &&
                getNodeState().getSingleUserApi() !=
-               refToNode(apiConnectptr.p->ndbapiBlockref)))
+               refToNode(apiConnectptr.p->ndbapiBlockref) &&
+               /* Don't refuse scan to start on table marked as
+                  NDB_SUM_READONLY or NDB_SUM_READWRITE */
+               tabptr.p->singleUserMode == NDB_SUM_LOCKED))
   {
     errCode = ZCLUSTER_IN_SINGLEUSER_MODE;
     goto SCAN_TAB_error;
@@ -18392,7 +18395,6 @@ void Dbtc::execTRIG_ATTRINFO(Signal* signal)
   key.nodeId = refToNode(signal->getSendersBlockRef());
   if(!c_firedTriggerHash.find(firedTrigPtr, key)){
     jam();
-    /* TODO : Node failure handling (use sig-train assembly) */
     if(!c_theFiredTriggerPool.seize(firedTrigPtr))
     {
       jam();
@@ -18690,6 +18692,14 @@ void Dbtc::execTCINDXREQ(Signal* signal)
 
     indexOp->pendingKeyInfo = indexLength;
     indexOp->pendingAttrInfo = attrLength;
+
+    /**
+     * Clear lengths from requestInfo to avoid confusion processing
+     * long TcKeyReqs with bits from short TcKeyReqs set in their
+     * requestInfo
+     */
+    TcKeyReq::setAIInTcKeyReq(indexOp->tcIndxReq.requestInfo, 0);
+    TcKeyReq::setKeyLength(indexOp->tcIndxReq.requestInfo, 0);
 
     const Uint32 includedIndexLength = MIN(indexLength, TcKeyReq::MaxKeyInfo);
     const Uint32 includedAttrLength = MIN(attrLength, TcKeyReq::MaxAttrInfo);
@@ -19645,8 +19655,6 @@ void Dbtc::executeIndexOperation(Signal* signal,
   }
 
 
-  TcKeyReq::setKeyLength(tcKeyRequestInfo, keyInfoFromTransIdAI.sz);
-  TcKeyReq::setAIInTcKeyReq(tcKeyRequestInfo, 0);
   TcKeyReq::setCommitFlag(tcKeyRequestInfo, 0);
   TcKeyReq::setExecuteFlag(tcKeyRequestInfo, 0);
   tcKeyReq->requestInfo = tcKeyRequestInfo;

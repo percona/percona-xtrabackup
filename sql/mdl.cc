@@ -68,9 +68,10 @@ static PSI_rwlock_key key_MDL_lock_rwlock;
 static PSI_rwlock_key key_MDL_context_LOCK_waiting_for;
 
 static PSI_rwlock_info all_mdl_rwlocks[] = {
-    {&key_MDL_lock_rwlock, "MDL_lock::rwlock", 0, 0, PSI_DOCUMENT_ME},
-    {&key_MDL_context_LOCK_waiting_for, "MDL_context::LOCK_waiting_for", 0, 0,
-     PSI_DOCUMENT_ME}};
+    {&key_MDL_lock_rwlock, "MDL_lock::rwlock", PSI_FLAG_RWLOCK_PR, 0,
+     PSI_DOCUMENT_ME},
+    {&key_MDL_context_LOCK_waiting_for, "MDL_context::LOCK_waiting_for",
+     PSI_FLAG_RWLOCK_PR, 0, PSI_DOCUMENT_ME}};
 
 static PSI_cond_key key_MDL_wait_COND_wait_status;
 
@@ -404,10 +405,10 @@ void Deadlock_detection_visitor::opt_change_victim_to(MDL_context *new_victim) {
   }
 }
 
-  /**
-    Get a bit corresponding to enum_mdl_type value in a granted/waiting bitmaps
-    and compatibility matrices.
-  */
+/**
+  Get a bit corresponding to enum_mdl_type value in a granted/waiting bitmaps
+  and compatibility matrices.
+*/
 
 #define MDL_BIT(A) static_cast<MDL_lock::bitmap_t>(1U << A)
 
@@ -912,12 +913,12 @@ class MDL_lock {
   */
   bool fast_path_state_cas(fast_path_state_t *old_state,
                            fast_path_state_t new_state) {
-  /*
-    IS_DESTROYED, HAS_OBTRUSIVE and HAS_SLOW_PATH flags can be set or
-    cleared only while holding MDL_lock::m_rwlock lock.
-    If HAS_SLOW_PATH flag is set all changes to m_fast_path_state
-    should happen under protection of MDL_lock::m_rwlock ([INV1]).
-  */
+    /*
+      IS_DESTROYED, HAS_OBTRUSIVE and HAS_SLOW_PATH flags can be set or
+      cleared only while holding MDL_lock::m_rwlock lock.
+      If HAS_SLOW_PATH flag is set all changes to m_fast_path_state
+      should happen under protection of MDL_lock::m_rwlock ([INV1]).
+    */
 #if !defined(DBUG_OFF)
     if (((*old_state & (IS_DESTROYED | HAS_OBTRUSIVE | HAS_SLOW_PATH)) !=
          (new_state & (IS_DESTROYED | HAS_OBTRUSIVE | HAS_SLOW_PATH))) ||
@@ -1043,7 +1044,7 @@ class MDL_lock {
 static MDL_map mdl_locks;
 
 static const uchar *mdl_locks_key(const uchar *record, size_t *length) {
-  MDL_lock *lock = (MDL_lock *)record;
+  const MDL_lock *lock = pointer_cast<const MDL_lock *>(record);
   *length = lock->key.length();
   return lock->key.ptr();
 }
@@ -4789,15 +4790,15 @@ void MDL_ticket_store::move_explicit_to_transaction_duration() {
     m_durations[MDL_EXPLICIT].m_ticket_list.remove(ticket);
     m_durations[MDL_TRANSACTION].m_ticket_list.push_front(ticket);
   }
-    /*
-      Note that we do not update
-      m_durations[MDL_TRANSACTION].m_mat_front here. That is ok, since
-      it is only to be used as an optimization for
-      MDL_context::materialize_fast_path_locks(). So if the tickets
-      being added are already materialized it does not break an
-      invariant, and m_mat_front will be updated the next time
-      MDL_context::materialize_fast_path_locks() runs.
-    */
+  /*
+    Note that we do not update
+    m_durations[MDL_TRANSACTION].m_mat_front here. That is ok, since
+    it is only to be used as an optimization for
+    MDL_context::materialize_fast_path_locks(). So if the tickets
+    being added are already materialized it does not break an
+    invariant, and m_mat_front will be updated the next time
+    MDL_context::materialize_fast_path_locks() runs.
+  */
 
 #ifndef DBUG_OFF
   List_iterator trans_it(m_durations[MDL_TRANSACTION].m_ticket_list);

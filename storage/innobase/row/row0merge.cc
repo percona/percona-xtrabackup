@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2005, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -103,6 +103,14 @@ class index_tuple_info_t {
     m_dtuple_vec->push_back(dtuple);
   }
 
+  /** Copy the fields pointing to the clustered index record.  This call
+  will make the tuple independent of the clustered index record. */
+  void cache_tuples();
+
+  /** Initialize an iterator to traverse the vector of tuples. This iterator
+  is used by the insert() member function to process the vector of tuples. */
+  void iter_init();
+
   /** Insert spatial index rows cached in vector into spatial index
   @param[in]	trx_id		transaction id
   @param[in,out]	row_heap	memory heap
@@ -131,35 +139,17 @@ class index_tuple_info_t {
     DBUG_EXECUTE_IF("row_merge_instrument_log_check_flush",
                     force_log_free_check = true;);
 
-    for (idx_tuple_vec::iterator it = m_dtuple_vec->begin();
-         it != m_dtuple_vec->end(); ++it) {
-      dtuple = *it;
+    while (m_iter != m_dtuple_vec->end()) {
+      dtuple = *m_iter;
       ut_ad(dtuple);
 
       if (log_needs_free_check() || force_log_free_check) {
         if (!(*mtr_committed)) {
-          /* Since the data of the tuple pk fields
-          are pointers of cluster rows. After mtr
-          committed, these pointer could be point
-          to invalid data. Then, we need to copy
-          all these data from cluster rows. */
-          idx_tuple_vec::iterator cp_it;
-          dtuple_t *cp_tuple;
-          for (cp_it = it; cp_it != m_dtuple_vec->end(); ++cp_it) {
-            cp_tuple = *cp_it;
-
-            for (ulint i = 1; i < dtuple_get_n_fields(cp_tuple); i++) {
-              dfield_dup(&cp_tuple->fields[i], m_heap);
-            }
-          }
-          btr_pcur_move_to_prev_on_page(pcur);
-          btr_pcur_store_position(pcur, scan_mtr);
-          mtr_commit(scan_mtr);
-          *mtr_committed = true;
+          /* Request the caller to cache the records */
+          return (DB_CACHE_RECORDS);
         }
 
         log_free_check();
-
         force_log_free_check = false;
       }
 
@@ -229,6 +219,7 @@ class index_tuple_info_t {
 
       rtr_clean_rtr_info(&rtr_info, true);
       count++;
+      ++m_iter;
     }
 
     m_dtuple_vec->clear();
@@ -241,6 +232,9 @@ class index_tuple_info_t {
   for rows on single cluster index page */
   typedef std::vector<dtuple_t *, ut_allocator<dtuple_t *>> idx_tuple_vec;
 
+  /** Iterator to process m_dtuple_vec */
+  idx_tuple_vec::iterator m_iter;
+
   /** vector used to cache index rows made from cluster index scan */
   idx_tuple_vec *m_dtuple_vec;
 
@@ -250,6 +244,26 @@ class index_tuple_info_t {
   /** memory heap for creating index tuples */
   mem_heap_t *m_heap;
 };
+
+void index_tuple_info_t::iter_init() { m_iter = m_dtuple_vec->begin(); }
+
+void index_tuple_info_t::cache_tuples() {
+  /* Since the data of the tuple pk fields are pointers of cluster rows.
+     After mtr committed, these pointer could be point to invalid data. Then, we
+     need to copy all these data from cluster rows.
+  */
+  dtuple_t *cp_tuple;
+  for (idx_tuple_vec::iterator cp_it = m_iter; cp_it != m_dtuple_vec->end();
+       ++cp_it) {
+    cp_tuple = *cp_it;
+
+    /* The first field is the spatial MBR field, which is the key for spatial
+    indexes.  So skip it. */
+    for (ulint i = 1; i < dtuple_get_n_fields(cp_tuple); i++) {
+      dfield_dup(&cp_tuple->fields[i], m_heap);
+    }
+  }
+}
 
 /* Maximum pending doc memory limit in bytes for a fts tokenization thread */
 #define FTS_PENDING_DOC_MEMORY_LIMIT 1000000
@@ -467,15 +481,26 @@ static void row_merge_buf_redundant_convert_func(
 @param[in,out]	v_heap		heap memory to process data for virtual column
 @param[in,out]	my_table	mysql table object
 @param[in]	trx		transaction object
-@return number of rows added, 0 if out of space */
+@param[in,out]	multi_val_added	non-zero indicates this number of multi-value
+                                data has been put to the buffer, and it should
+                                just continue from this point, otherwise,
+                                this is a new row to be added to buffer.
+                                For the output, non-zero means the new number
+                                of multi-value data which have been handled,
+                                while zero means this is a normal row or all
+                                data of the multi-value data in this row have
+                                been parsed
+@return number of rows added, 0 if out of space, or UNIV_NO_INDEX_VALUE
+if this is a multi-value index and current row has nothing valid to be
+indexed */
 static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
                                const dict_table_t *old_table,
                                const dict_table_t *new_table,
                                fts_psort_t *psort_info, const dtuple_t *row,
                                const row_ext_t *ext, doc_id_t *doc_id,
                                mem_heap_t *conv_heap, dberr_t *err,
-                               mem_heap_t **v_heap, TABLE *my_table,
-                               trx_t *trx) {
+                               mem_heap_t **v_heap, TABLE *my_table, trx_t *trx,
+                               ulint *multi_val_added) {
   ulint i;
   const dict_index_t *index;
   mtuple_t *entry;
@@ -487,6 +512,8 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
   ulint bucket = 0;
   doc_id_t write_doc_id;
   ulint n_row_added = 0;
+  ulint n_row_to_add = 0;
+  multi_value_data *multi_v = nullptr;
   DBUG_ENTER("row_merge_buf_add");
 
   if (buf->n_tuples >= buf->max_tuples) {
@@ -506,7 +533,15 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
   /* create spatial index should not come here */
   ut_ad(!dict_index_is_spatial(index));
 
+add_next:
   n_fields = dict_index_get_n_fields(index);
+
+  if (buf->n_tuples >= buf->max_tuples) {
+    DBUG_RETURN(n_row_added);
+  }
+
+  DBUG_EXECUTE_IF("row_merge_add_multi_value",
+                  if (n_row_added == 5) DBUG_RETURN(n_row_added););
 
   entry = &buf->tuples[buf->n_tuples];
   field = entry->fields = static_cast<dfield_t *>(
@@ -523,7 +558,7 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
     const dict_v_col_t *v_col = NULL;
     ulint col_no;
     ulint fixed_len;
-    const dfield_t *row_field;
+    dfield_t *row_field;
 
     col = ifield->col;
     if (col->is_virtual()) {
@@ -553,14 +588,55 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
       /* Use callback to get the virtual column value */
       if (col->is_virtual()) {
         const dict_index_t *clust_index = new_table->first_index();
+        if (col->is_multi_value()) {
+          ut_ad(index->is_multi_value());
+          row_field = dtuple_get_nth_v_field(row, v_col->v_pos);
 
-        row_field = innobase_get_computed_value(
-            row, v_col, clust_index, v_heap, NULL, ifield, trx->mysql_thd,
-            my_table, old_table, NULL, NULL);
+          if (n_row_to_add == 0) {
+            row_field = innobase_get_computed_value(
+                row, v_col, clust_index, v_heap, buf->heap, ifield,
+                trx->mysql_thd, my_table, old_table, nullptr, nullptr);
 
-        if (row_field == NULL) {
-          *err = DB_COMPUTE_VALUE_FAILED;
-          DBUG_RETURN(0);
+            if (row_field == nullptr) {
+              *err = DB_COMPUTE_VALUE_FAILED;
+              DBUG_RETURN(0);
+            }
+
+            if (dfield_is_null(row_field)) {
+              n_row_to_add = 1;
+            } else if (row_field->len != UNIV_NO_INDEX_VALUE) {
+              multi_v = static_cast<multi_value_data *>(row_field->data);
+
+              if (*multi_val_added == 0) {
+                n_row_to_add = multi_v->num_v;
+                row_field->data = const_cast<void *>(multi_v->datap[0]);
+                row_field->len = multi_v->data_len[0];
+              } else {
+                n_row_to_add = multi_v->num_v - *multi_val_added;
+                row_field->data =
+                    const_cast<void *>(multi_v->datap[*multi_val_added]);
+                row_field->len = multi_v->data_len[*multi_val_added];
+              }
+            } else {
+              /* Nothing to be indexed */
+              DBUG_RETURN(UNIV_NO_INDEX_VALUE);
+            }
+
+            ut_ad(n_row_to_add > 0);
+          } else {
+            row_field->data =
+                const_cast<void *>(multi_v->datap[*multi_val_added]);
+            row_field->len = multi_v->data_len[*multi_val_added];
+          }
+        } else {
+          row_field = innobase_get_computed_value(
+              row, v_col, clust_index, v_heap, nullptr, ifield, trx->mysql_thd,
+              my_table, old_table, nullptr, nullptr);
+
+          if (row_field == NULL) {
+            *err = DB_COMPUTE_VALUE_FAILED;
+            DBUG_RETURN(0);
+          }
         }
         dfield_copy(field, row_field);
       } else {
@@ -763,7 +839,7 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
 
   /* Reserve one byte for the end marker of row_merge_block_t. */
   if (buf->total_size + data_size >= srv_sort_buf_size - 1) {
-    DBUG_RETURN(0);
+    DBUG_RETURN(index->is_multi_value() ? n_row_added : 0);
   }
 
   buf->total_size += data_size;
@@ -780,6 +856,20 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
 
   if (conv_heap != NULL) {
     mem_heap_empty(conv_heap);
+  }
+
+  if (n_row_added < n_row_to_add) {
+    ut_ad(index->is_multi_value());
+    *multi_val_added += 1;
+
+    DBUG_EXECUTE_IF("row_merge_add_multi_value",
+                    if (*multi_val_added == 7) DBUG_RETURN(n_row_added););
+
+    goto add_next;
+  }
+
+  if (index->is_multi_value()) {
+    *multi_val_added = 0;
   }
 
   DBUG_RETURN(n_row_added);
@@ -1419,9 +1509,31 @@ static dberr_t row_merge_spatial_rows(trx_id_t trx_id,
   ut_ad(sp_heap != NULL);
 
   for (ulint j = 0; j < num_spatial; j++) {
+    sp_tuples[j]->iter_init();
+  }
+
+  for (ulint j = 0; j < num_spatial; j++) {
     err = sp_tuples[j]->insert(trx_id, row_heap, pcur, mtr, mtr_committed);
 
+    if (err == DB_CACHE_RECORDS) {
+      ut_ad(*mtr_committed == false);
+
+      /* Since the data of the tuple pk fields are pointers of cluster rows,
+         after mtr committed, these pointers could point to invalid data.
+         Hence, copy all these data from cluster rows.  */
+      for (ulint x = j; x < num_spatial; x++) {
+        sp_tuples[x]->cache_tuples();
+      }
+
+      btr_pcur_move_to_prev_on_page(pcur);
+      btr_pcur_store_position(pcur, mtr);
+      mtr_commit(mtr); /* committing the scan mtr */
+      *mtr_committed = true;
+      err = sp_tuples[j]->insert(trx_id, row_heap, pcur, mtr, mtr_committed);
+    }
+
     if (err != DB_SUCCESS) {
+      ut_ad(err != DB_CACHE_RECORDS);
       return (err);
     }
   }
@@ -1934,6 +2046,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
       row_merge_buf_t *buf = merge_buf[i];
       merge_file_t *file = &files[i];
       ulint rows_added = 0;
+      ulint multi_val_added = 0;
 
       if (dict_index_is_spatial(buf->index)) {
         if (!row) {
@@ -1955,17 +2068,25 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
         continue;
       }
 
-      if (UNIV_LIKELY(row && (rows_added = row_merge_buf_add(
-                                  buf, fts_index, old_table, new_table,
-                                  psort_info, row, ext, &doc_id, conv_heap,
-                                  &err, &v_heap, eval_table, trx)))) {
+      if (UNIV_LIKELY(row &&
+                      (rows_added = row_merge_buf_add(
+                           buf, fts_index, old_table, new_table, psort_info,
+                           row, ext, &doc_id, conv_heap, &err, &v_heap,
+                           eval_table, trx, &multi_val_added)) &&
+                      multi_val_added == 0)) {
+        if (rows_added == UNIV_NO_INDEX_VALUE) {
+          /* Nothing to be indexed from current row, skip this index */
+          ut_ad(buf->index->is_multi_value());
+          continue;
+        }
+
         /* If we are creating FTS index,
         a single row can generate more
         records for tokenized word */
         file->n_rec += rows_added;
 
         if (err != DB_SUCCESS) {
-          ut_ad(err == DB_TOO_BIG_RECORD);
+          ut_ad(err == DB_TOO_BIG_RECORD || err == DB_COMPUTE_VALUE_FAILED);
           break;
         }
 
@@ -2037,7 +2158,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
 
       /* We have enough data tuples to form a block.
       Sort them (if !skip_sort) and write to disk. */
-
+    write_buffer_and_retry:
       if (buf->n_tuples) {
         if (skip_sort) {
           /* Temporary File is not used.
@@ -2231,10 +2352,10 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
         that the buffer has been written out
         and emptied. */
 
-        if (UNIV_UNLIKELY(
-                !(rows_added = row_merge_buf_add(
-                      buf, fts_index, old_table, new_table, psort_info, row,
-                      ext, &doc_id, conv_heap, &err, &v_heap, table, trx)))) {
+        if (UNIV_UNLIKELY(!(rows_added = row_merge_buf_add(
+                                buf, fts_index, old_table, new_table,
+                                psort_info, row, ext, &doc_id, conv_heap, &err,
+                                &v_heap, table, trx, &multi_val_added)))) {
           /* An empty buffer should have enough
           room for at least one record. */
           ut_error;
@@ -2244,7 +2365,15 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
           break;
         }
 
+        ut_ad(rows_added != UNIV_NO_INDEX_VALUE);
+
         file->n_rec += rows_added;
+
+        /* It's possible that there're some multi-value data left.
+        So write current buffer to disk and try with an empty buffer again. */
+        if (multi_val_added != 0) {
+          goto write_buffer_and_retry;
+        }
       }
     }
 
@@ -3144,6 +3273,16 @@ void row_merge_drop_indexes(
           dict_index_set_online_status(index, ONLINE_INDEX_ABORTED_DROPPED);
           rw_lock_x_unlock(dict_index_get_lock(index));
           table->drop_aborted = TRUE;
+          if (dict_index_has_virtual(index)) {
+            /* If multi-value index, a virtual column would be created too.
+            This is same for a virtual column along with an index on it case.
+            In this rollback case, the metadata for this index would be
+            inconsistent with metadata of table, because table metadata
+            doesn't have the virtual column for this index yet. So set
+            this index to be corrupted and any further use of this index
+            would be prevented. One example is row_build_index_entry_low(). */
+            index->type |= DICT_CORRUPT;
+          }
           continue;
       }
       ut_error;
@@ -3613,6 +3752,10 @@ dberr_t row_merge_build_indexes(
       add_autoinc, sequence, block, skip_pk_sort, &tmpfd, stage, eval_table);
 
   stage->end_phase_read_pk();
+
+  DBUG_EXECUTE_IF("force_virtual_col_build_fail",
+                  error = DB_COMPUTE_VALUE_FAILED;
+                  goto func_exit;);
 
   if (error != DB_SUCCESS) {
     goto func_exit;

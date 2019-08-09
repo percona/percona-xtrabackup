@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,7 +49,7 @@
 #include "my_io.h"
 #include "my_rnd.h"
 #include "mysql/service_mysql_alloc.h"
-#include "mysys_ssl/my_default_priv.h"
+#include "mysys/my_default_priv.h"
 #include "print_version.h"
 #include "welcome_copyright_notice.h"
 
@@ -385,7 +385,7 @@ static int do_handle_options(int argc, char *argv[]) {
 
   /* Prepare a list of supported commands to be used by my_handle_options(). */
   for (i = 0; (command_data[i].name != NULL) && (i < MAX_COMMAND_LIMIT); i++)
-    command_list[i] = (char *)command_data[i].name;
+    command_list[i] = command_data[i].name;
   command_list[i] = NULL;
 
   if ((rc = my_handle_options(&argc, &argv, my_program_long_options,
@@ -665,11 +665,11 @@ static bool check_and_create_login_file(void) {
     goto error;
   }
 
-    /*
-      NOTE : MYSQL_TEST_LOGIN_FILE env must be a full path,
-      where the directory structure must exist. However the
-      login file will be created if it does not exist.
-    */
+  /*
+    NOTE : MYSQL_TEST_LOGIN_FILE env must be a full path,
+    where the directory structure must exist. However the
+    login file will be created if it does not exist.
+  */
 #ifdef _WIN32
   if (!(getenv("MYSQL_TEST_LOGIN_FILE"))) {
     /* Check if 'MySQL' directory is in place. */

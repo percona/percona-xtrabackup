@@ -123,41 +123,31 @@ enum enum_slow_query_log_table_field {
 };
 
 static const TABLE_FIELD_TYPE slow_query_log_table_fields[SQLT_FIELD_COUNT] = {
-    {{C_STRING_WITH_LEN("start_time")},
-     {C_STRING_WITH_LEN("timestamp(6)")},
+    {{STRING_WITH_LEN("start_time")},
+     {STRING_WITH_LEN("timestamp(6)")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("user_host")},
-     {C_STRING_WITH_LEN("mediumtext")},
-     {C_STRING_WITH_LEN("utf8")}},
-    {{C_STRING_WITH_LEN("query_time")},
-     {C_STRING_WITH_LEN("time(6)")},
+    {{STRING_WITH_LEN("user_host")},
+     {STRING_WITH_LEN("mediumtext")},
+     {STRING_WITH_LEN("utf8")}},
+    {{STRING_WITH_LEN("query_time")}, {STRING_WITH_LEN("time(6)")}, {NULL, 0}},
+    {{STRING_WITH_LEN("lock_time")}, {STRING_WITH_LEN("time(6)")}, {NULL, 0}},
+    {{STRING_WITH_LEN("rows_sent")}, {STRING_WITH_LEN("int(11)")}, {NULL, 0}},
+    {{STRING_WITH_LEN("rows_examined")},
+     {STRING_WITH_LEN("int(11)")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("lock_time")},
-     {C_STRING_WITH_LEN("time(6)")},
+    {{STRING_WITH_LEN("db")},
+     {STRING_WITH_LEN("varchar(512)")},
+     {STRING_WITH_LEN("utf8")}},
+    {{STRING_WITH_LEN("last_insert_id")},
+     {STRING_WITH_LEN("int(11)")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("rows_sent")},
-     {C_STRING_WITH_LEN("int(11)")},
+    {{STRING_WITH_LEN("insert_id")}, {STRING_WITH_LEN("int(11)")}, {NULL, 0}},
+    {{STRING_WITH_LEN("server_id")},
+     {STRING_WITH_LEN("int(10) unsigned")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("rows_examined")},
-     {C_STRING_WITH_LEN("int(11)")},
-     {NULL, 0}},
-    {{C_STRING_WITH_LEN("db")},
-     {C_STRING_WITH_LEN("varchar(512)")},
-     {C_STRING_WITH_LEN("utf8")}},
-    {{C_STRING_WITH_LEN("last_insert_id")},
-     {C_STRING_WITH_LEN("int(11)")},
-     {NULL, 0}},
-    {{C_STRING_WITH_LEN("insert_id")},
-     {C_STRING_WITH_LEN("int(11)")},
-     {NULL, 0}},
-    {{C_STRING_WITH_LEN("server_id")},
-     {C_STRING_WITH_LEN("int(10) unsigned")},
-     {NULL, 0}},
-    {{C_STRING_WITH_LEN("sql_text")},
-     {C_STRING_WITH_LEN("mediumblob")},
-     {NULL, 0}},
-    {{C_STRING_WITH_LEN("thread_id")},
-     {C_STRING_WITH_LEN("bigint(21) unsigned")},
+    {{STRING_WITH_LEN("sql_text")}, {STRING_WITH_LEN("mediumblob")}, {NULL, 0}},
+    {{STRING_WITH_LEN("thread_id")},
+     {STRING_WITH_LEN("bigint(21) unsigned")},
      {NULL, 0}}};
 
 static const TABLE_FIELD_DEF slow_query_log_table_def = {
@@ -174,23 +164,23 @@ enum enum_general_log_table_field {
 };
 
 static const TABLE_FIELD_TYPE general_log_table_fields[GLT_FIELD_COUNT] = {
-    {{C_STRING_WITH_LEN("event_time")},
-     {C_STRING_WITH_LEN("timestamp(6)")},
+    {{STRING_WITH_LEN("event_time")},
+     {STRING_WITH_LEN("timestamp(6)")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("user_host")},
-     {C_STRING_WITH_LEN("mediumtext")},
-     {C_STRING_WITH_LEN("utf8")}},
-    {{C_STRING_WITH_LEN("thread_id")},
-     {C_STRING_WITH_LEN("bigint(21) unsigned")},
+    {{STRING_WITH_LEN("user_host")},
+     {STRING_WITH_LEN("mediumtext")},
+     {STRING_WITH_LEN("utf8")}},
+    {{STRING_WITH_LEN("thread_id")},
+     {STRING_WITH_LEN("bigint(21) unsigned")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("server_id")},
-     {C_STRING_WITH_LEN("int(10) unsigned")},
+    {{STRING_WITH_LEN("server_id")},
+     {STRING_WITH_LEN("int(10) unsigned")},
      {NULL, 0}},
-    {{C_STRING_WITH_LEN("command_type")},
-     {C_STRING_WITH_LEN("varchar(64)")},
-     {C_STRING_WITH_LEN("utf8")}},
-    {{C_STRING_WITH_LEN("argument")},
-     {C_STRING_WITH_LEN("mediumblob")},
+    {{STRING_WITH_LEN("command_type")},
+     {STRING_WITH_LEN("varchar(64)")},
+     {STRING_WITH_LEN("utf8")}},
+    {{STRING_WITH_LEN("argument")},
+     {STRING_WITH_LEN("mediumblob")},
      {NULL, 0}}};
 
 static const TABLE_FIELD_DEF general_log_table_def = {GLT_FIELD_COUNT,
@@ -649,22 +639,29 @@ bool File_query_log::write_general(ulonglong event_utime,
   int time_buff_len =
       make_iso8601_timestamp(local_time_buff, event_utime, opt_log_timestamps);
 
-  if (my_b_write(&log_file, (uchar *)local_time_buff, time_buff_len)) goto err;
+  if (my_b_write(&log_file, pointer_cast<uchar *>(local_time_buff),
+                 time_buff_len))
+    goto err;
 
-  if (my_b_write(&log_file, (uchar *)"\t", 1)) goto err;
+  if (my_b_write(&log_file, pointer_cast<const uchar *>("\t"), 1)) goto err;
 
   length = snprintf(buff, 32, "%5u ", thread_id);
 
-  if (my_b_write(&log_file, (uchar *)buff, length)) goto err;
+  if (my_b_write(&log_file, pointer_cast<uchar *>(buff), length)) goto err;
 
-  if (my_b_write(&log_file, (uchar *)command_type, command_type_len)) goto err;
+  if (my_b_write(&log_file, pointer_cast<const uchar *>(command_type),
+                 command_type_len))
+    goto err;
 
-  if (my_b_write(&log_file, (uchar *)"\t", 1)) goto err;
+  if (my_b_write(&log_file, pointer_cast<const uchar *>("\t"), 1)) goto err;
 
   /* sql_text */
-  if (my_b_write(&log_file, (uchar *)sql_text, sql_text_len)) goto err;
+  if (my_b_write(&log_file, pointer_cast<const uchar *>(sql_text),
+                 sql_text_len))
+    goto err;
 
-  if (my_b_write(&log_file, (uchar *)"\n", 1) || flush_io_cache(&log_file))
+  if (my_b_write(&log_file, pointer_cast<const uchar *>("\n"), 1) ||
+      flush_io_cache(&log_file))
     goto err;
 
   mysql_mutex_unlock(&LOCK_log);
@@ -825,7 +822,7 @@ bool File_query_log::write_slow(THD *thd, ulonglong current_utime,
   if (end != buff) {
     *end++ = ';';
     *end = '\n';
-    if (my_b_write(&log_file, (uchar *)"SET ", 4) ||
+    if (my_b_write(&log_file, pointer_cast<const uchar *>("SET "), 4) ||
         my_b_write(&log_file, (uchar *)buff + 1, (uint)(end - buff)))
       goto err;
   }
@@ -836,8 +833,10 @@ bool File_query_log::write_slow(THD *thd, ulonglong current_utime,
                     { DBUG_SET("+d,simulate_file_write_error"); });
     if (my_b_write(&log_file, (uchar *)buff, buff_len)) goto err;
   }
-  if (my_b_write(&log_file, (uchar *)sql_text, sql_text_len) ||
-      my_b_write(&log_file, (uchar *)";\n", 2) || flush_io_cache(&log_file))
+  if (my_b_write(&log_file, pointer_cast<const uchar *>(sql_text),
+                 sql_text_len) ||
+      my_b_write(&log_file, pointer_cast<const uchar *>(";\n"), 2) ||
+      flush_io_cache(&log_file))
     goto err;
 
   mysql_mutex_unlock(&LOCK_log);
@@ -897,7 +896,7 @@ bool Log_to_csv_event_handler::log_general(
   if (log_table_intact.check(thd, table_list.table, &general_log_table_def))
     goto err;
 
-  if (table->file->extra(HA_EXTRA_MARK_AS_LOG_TABLE) ||
+  if (table->file->ha_extra(HA_EXTRA_MARK_AS_LOG_TABLE) ||
       table->file->ha_rnd_init(0))
     goto err;
 
@@ -987,6 +986,7 @@ bool Log_to_csv_event_handler::log_slow(
   bool need_rnd_end = false;
   const CHARSET_INFO *client_cs = thd->variables.character_set_client;
   struct timeval tv;
+  const char *reason = "";
 
   DBUG_ENTER("Log_to_csv_event_handler::log_slow");
 
@@ -1004,17 +1004,24 @@ bool Log_to_csv_event_handler::log_slow(
   thd->push_internal_handler(&error_handler);
 
   Open_tables_backup open_tables_backup;
-  if (!(table = open_log_table(thd, &table_list, &open_tables_backup)))
+  if (!(table = open_log_table(thd, &table_list, &open_tables_backup))) {
+    reason = "cannot open table for slow log";
     goto err;
+  }
 
   need_close = true;
 
-  if (log_table_intact.check(thd, table_list.table, &slow_query_log_table_def))
+  if (log_table_intact.check(thd, table_list.table,
+                             &slow_query_log_table_def)) {
+    reason = "slow table intact check failed";
     goto err;
+  }
 
-  if (table->file->extra(HA_EXTRA_MARK_AS_LOG_TABLE) ||
-      table->file->ha_rnd_init(0))
+  if (table->file->ha_extra(HA_EXTRA_MARK_AS_LOG_TABLE) ||
+      table->file->ha_rnd_init(0)) {
+    reason = "mark log or init failed";
     goto err;
+  }
 
   need_rnd_end = true;
 
@@ -1029,11 +1036,12 @@ bool Log_to_csv_event_handler::log_slow(
   ull2timeval(current_utime, &tv);
   table->field[SQLT_FIELD_START_TIME]->store_timestamp(&tv);
 
-  if (table->field[SQLT_FIELD_USER_HOST]->store(user_host, user_host_len,
-                                                client_cs))
-    goto err;
+  table->field[SQLT_FIELD_USER_HOST]->store(user_host, user_host_len,
+                                            client_cs);
 
   if (query_start_arg) {
+    ha_rows rows_examined;
+
     /*
       A TIME field can not hold the full longlong range; query_time or
       lock_time may be truncated without warning here, if greater than
@@ -1047,21 +1055,22 @@ bool Log_to_csv_event_handler::log_slow(
                        static_cast<long>(min((longlong)(query_utime / 1000000),
                                              (longlong)TIME_MAX_VALUE_SECONDS)),
                        query_utime % 1000000);
-    if (table->field[SQLT_FIELD_QUERY_TIME]->store_time(&t)) goto err;
+    table->field[SQLT_FIELD_QUERY_TIME]->store_time(&t);
     /* lock_time */
     calc_time_from_sec(&t,
                        static_cast<long>(min((longlong)(lock_utime / 1000000),
                                              (longlong)TIME_MAX_VALUE_SECONDS)),
                        lock_utime % 1000000);
-    if (table->field[SQLT_FIELD_LOCK_TIME]->store_time(&t)) goto err;
+    table->field[SQLT_FIELD_LOCK_TIME]->store_time(&t);
     /* rows_sent */
-    if (table->field[SQLT_FIELD_ROWS_SENT]->store(
-            (longlong)thd->get_sent_row_count(), true))
-      goto err;
+    table->field[SQLT_FIELD_ROWS_SENT]->store(
+        (longlong)thd->get_sent_row_count(), true);
     /* rows_examined */
-    if (table->field[SQLT_FIELD_ROWS_EXAMINED]->store(
-            (longlong)thd->get_examined_row_count(), true))
-      goto err;
+    rows_examined = thd->get_examined_row_count();
+    DBUG_EXECUTE_IF("slow_log_table_max_rows_examined",
+                    { rows_examined = 4294967294LL; });  // overflow 4-byte int
+    table->field[SQLT_FIELD_ROWS_EXAMINED]->store((longlong)rows_examined,
+                                                  true);
   } else {
     table->field[SQLT_FIELD_QUERY_TIME]->set_null();
     table->field[SQLT_FIELD_LOCK_TIME]->set_null();
@@ -1070,18 +1079,16 @@ bool Log_to_csv_event_handler::log_slow(
   }
   /* fill database field */
   if (thd->db().str) {
-    if (table->field[SQLT_FIELD_DATABASE]->store(thd->db().str,
-                                                 thd->db().length, client_cs))
-      goto err;
-    table->field[SQLT_FIELD_DATABASE]->set_notnull();
+    if (!table->field[SQLT_FIELD_DATABASE]->store(thd->db().str,
+                                                  thd->db().length, client_cs))
+      table->field[SQLT_FIELD_DATABASE]->set_notnull();
   }
 
   if (thd->stmt_depends_on_first_successful_insert_id_in_prev_stmt) {
-    if (table->field[SQLT_FIELD_LAST_INSERT_ID]->store(
+    if (!table->field[SQLT_FIELD_LAST_INSERT_ID]->store(
             (longlong)thd->first_successful_insert_id_in_prev_stmt_for_binlog,
             true))
-      goto err;
-    table->field[SQLT_FIELD_LAST_INSERT_ID]->set_notnull();
+      table->field[SQLT_FIELD_LAST_INSERT_ID]->set_notnull();
   }
 
   /*
@@ -1091,32 +1098,29 @@ bool Log_to_csv_event_handler::log_slow(
     the next ones used may not be contiguous to it.
   */
   if (thd->auto_inc_intervals_in_cur_stmt_for_binlog.nb_elements() > 0) {
-    if (table->field[SQLT_FIELD_INSERT_ID]->store(
+    if (!table->field[SQLT_FIELD_INSERT_ID]->store(
             (longlong)thd->auto_inc_intervals_in_cur_stmt_for_binlog.minimum(),
             true))
-      goto err;
-    table->field[SQLT_FIELD_INSERT_ID]->set_notnull();
+      table->field[SQLT_FIELD_INSERT_ID]->set_notnull();
   }
 
-  if (table->field[SQLT_FIELD_SERVER_ID]->store((longlong)server_id, true))
-    goto err;
-  table->field[SQLT_FIELD_SERVER_ID]->set_notnull();
+  if (!table->field[SQLT_FIELD_SERVER_ID]->store((longlong)server_id, true))
+    table->field[SQLT_FIELD_SERVER_ID]->set_notnull();
 
   /*
     Column sql_text.
     A positive return value in store() means truncation.
     Still logging a message in the log in this case.
   */
-  if (table->field[SQLT_FIELD_SQL_TEXT]->store(sql_text, sql_text_len,
-                                               client_cs) < 0)
-    goto err;
+  table->field[SQLT_FIELD_SQL_TEXT]->store(sql_text, sql_text_len, client_cs);
 
-  if (table->field[SQLT_FIELD_THREAD_ID]->store((longlong)thd->thread_id(),
-                                                true))
-    goto err;
+  table->field[SQLT_FIELD_THREAD_ID]->store((longlong)thd->thread_id(), true);
 
   /* log table entries are not replicated */
-  if (table->file->ha_write_row(table->record[0])) goto err;
+  if (table->file->ha_write_row(table->record[0])) {
+    reason = "write slow table failed";
+    goto err;
+  }
 
   result = false;
 
@@ -1124,8 +1128,8 @@ err:
   thd->pop_internal_handler();
 
   if (result && !thd->killed) {
-    LogErr(ERROR_LEVEL, ER_LOG_CANNOT_WRITE, "mysql.slow_log",
-           error_handler.message());
+    LogErr(ERROR_LEVEL, ER_LOG_CANNOT_WRITE_EXTENDED, "mysql.slow_log",
+           error_handler.message(), reason);
   }
 
   if (need_rnd_end) {
@@ -1884,7 +1888,7 @@ bool init_error_log() {
 
   if (log_builtins_init() < 0) {
     log_write_errstream(
-        C_STRING_WITH_LEN("failed to initialized basic error logging"));
+        STRING_WITH_LEN("failed to initialized basic error logging"));
     return true;
   } else
     return false;
@@ -2036,7 +2040,7 @@ my_thread_id log_get_thread_id(THD *thd) { return thd->thread_id(); }
   message will be looked up and inserted --, followed by any arguments
   required by the error message:
 
-  LOG_ITEM_LOG_LOOKUP, ER_CANT_CREATE_FILE, filename, errno, strerror(errno)
+  LOG_ITEM_LOG_LOOKUP, ER_CANT_SET_DATA_DIR, filename, errno, strerror(errno)
 
   If no message is to be included (this should never be the case for the
   erorr log), LOG_ITEM_END may be used instead to terminate the list.

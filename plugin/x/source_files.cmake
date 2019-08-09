@@ -90,9 +90,11 @@ SET(xplugin_HDRS
   "${MYSQLX_PROJECT_DIR}/src/delete_statement_builder.h"
   "${MYSQLX_PROJECT_DIR}/src/view_statement_builder.h"
   "${MYSQLX_PROJECT_DIR}/src/notices.h"
+  "${MYSQLX_PROJECT_DIR}/src/cap_handles_expired_passwords.h"
   "${MYSQLX_PROJECT_DIR}/src/mysql_function_names.h"
   "${MYSQLX_PROJECT_DIR}/src/services/service_registrator.h"
   "${MYSQLX_PROJECT_DIR}/src/prepared_statement_builder.h"
+  "${MYSQLX_PROJECT_DIR}/src/prepare_param_handler.h"
   "${MYSQLX_PROJECT_DIR}/src/prepare_command_handler.h"
   "${MYSQLX_PROJECT_DIR}/src/services/mysqlx_group_membership_listener.h"
   "${MYSQLX_PROJECT_DIR}/src/stmt_command_handler.h"
@@ -116,6 +118,8 @@ SET(xplugin_HDRS
   "${MYSQLX_PROJECT_DIR}/src/capabilities/handler_auth_mech.h"
   "${MYSQLX_PROJECT_DIR}/src/capabilities/handler_connection_attributes.h"
   "${MYSQLX_PROJECT_DIR}/src/capabilities/handler_readonly_value.h"
+  "${MYSQLX_PROJECT_DIR}/src/index_field.h"
+  "${MYSQLX_PROJECT_DIR}/src/index_array_field.h"
   ${ngs_HDRS}
 )
 
@@ -184,6 +188,7 @@ SET(xplugin_SRC
   "${MYSQLX_PROJECT_DIR}/src/notices.cc"
   "${MYSQLX_PROJECT_DIR}/src/prepared_statement_builder.cc"
   "${MYSQLX_PROJECT_DIR}/src/prepare_command_handler.cc"
+  "${MYSQLX_PROJECT_DIR}/src/prepare_param_handler.cc"
   "${MYSQLX_PROJECT_DIR}/src/stmt_command_handler.cc"
   "${MYSQLX_PROJECT_DIR}/src/udf/registry.cc"
   "${MYSQLX_PROJECT_DIR}/src/udf/mysqlx_generate_document_id.cc"
@@ -201,6 +206,8 @@ SET(xplugin_SRC
   "${MYSQLX_PROJECT_DIR}/src/capabilities/handler_client_interactive.cc"
   "${MYSQLX_PROJECT_DIR}/src/capabilities/handler_connection_attributes.cc"
   "${MYSQLX_PROJECT_DIR}/src/capabilities/handler_tls.cc"
+  "${MYSQLX_PROJECT_DIR}/src/index_field.cc"
+  "${MYSQLX_PROJECT_DIR}/src/index_array_field.cc"
   ${ngs_SRC}
 )
 

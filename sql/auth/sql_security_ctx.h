@@ -30,7 +30,8 @@
 #include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
-#include "mysql_com.h"
+#include "my_hostname.h"  // HOSTNAME_LENGTH
+#include "mysql_com.h"    // USERNAME_LENGTH
 #include "sql/auth/auth_common.h"
 #include "sql/auth/partial_revokes.h"
 #include "sql/sql_const.h"
@@ -329,13 +330,13 @@ class Security_context {
   char m_priv_user[USERNAME_LENGTH];
   size_t m_priv_user_length;
 
-  char m_proxy_user[USERNAME_LENGTH + MAX_HOSTNAME + 5];
+  char m_proxy_user[USERNAME_LENGTH + HOSTNAME_LENGTH + 6];
   size_t m_proxy_user_length;
 
   /**
     The host privilege we are using
   */
-  char m_priv_host[MAX_HOSTNAME];
+  char m_priv_host[HOSTNAME_LENGTH + 1];
   size_t m_priv_host_length;
 
   /**
@@ -450,7 +451,7 @@ inline void Security_context::set_master_access(
 }
 
 inline const char *Security_context::priv_host_name() const {
-  return (*m_priv_host ? m_priv_host : (char *)"%");
+  return (*m_priv_host ? m_priv_host : "%");
 }
 
 inline bool Security_context::has_account_assigned() const {

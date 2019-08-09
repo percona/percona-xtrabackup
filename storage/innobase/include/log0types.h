@@ -131,13 +131,13 @@ struct Log_handle {
 /** Redo log - single data structure with state of the redo log system.
 In future, one could consider splitting this to multiple data structures. */
 struct alignas(INNOBASE_CACHE_LINE_SIZE) log_t {
-/**************************************************/ /**
+  /**************************************************/ /**
 
- @name Users writing to log buffer
+   @name Users writing to log buffer
 
- *******************************************************/
+   *******************************************************/
 
-/** @{ */
+  /** @{ */
 
 #ifndef UNIV_HOTBACKUP
   /** Sharded rw-lock which can be used to freeze redo log lsn.
@@ -471,24 +471,6 @@ struct alignas(INNOBASE_CACHE_LINE_SIZE) log_t {
       /** Used for stopping the log background threads. */
       std::atomic_bool should_stop_threads;
 
-  /** True iff the log closer thread is alive. */
-  std::atomic_bool closer_thread_alive;
-
-  /** True iff the log checkpointer thread is alive. */
-  std::atomic_bool checkpointer_thread_alive;
-
-  /** True iff the log writer thread is alive. */
-  std::atomic_bool writer_thread_alive;
-
-  /** True iff the log flusher thread is alive. */
-  std::atomic_bool flusher_thread_alive;
-
-  /** True iff the log write notifier thread is alive. */
-  std::atomic_bool write_notifier_thread_alive;
-
-  /** True iff the log flush notifier thread is alive. */
-  std::atomic_bool flush_notifier_thread_alive;
-
   /** Size of the log buffer expressed in number of data bytes,
   that is excluding bytes for headers and footers of log blocks. */
   atomic_sn_t buf_size_sn;
@@ -502,6 +484,7 @@ struct alignas(INNOBASE_CACHE_LINE_SIZE) log_t {
 
   /** Lsn from which recovery has been started. */
   lsn_t recovered_lsn;
+
 #endif /* !UNIV_HOTBACKUP */
 
   /** Number of log files. */
@@ -527,11 +510,19 @@ struct alignas(INNOBASE_CACHE_LINE_SIZE) log_t {
   /** Wall time when we printed the statistics last time. */
   mutable time_t last_printout_time;
 
-  //#ifdef UNIV_DEBUG
+#ifdef UNIV_DEBUG
+
   /** When this is set, writing to the redo log should be disabled.
   We check for this in functions that write to the redo log. */
   bool disable_redo_writes;
-  //#endif /* UNIV_DEBUG */
+
+  /** DEBUG only - if we copied or initialized the first block in buffer,
+  this is set to lsn for which we did that. We later ensure that we start
+  the redo log at the same lsn. Else it is zero and we would crash when
+  trying to start redo then. */
+  lsn_t first_block_is_correct_for_lsn;
+
+#endif /* UNIV_DEBUG */
 
   /** Padding before memory used for checkpoints logic. */
   alignas(INNOBASE_CACHE_LINE_SIZE)

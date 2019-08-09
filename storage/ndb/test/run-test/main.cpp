@@ -29,6 +29,7 @@
 #include <NdbAutoPtr.hpp>
 #include <NdbOut.hpp>
 #include "atrt.hpp"
+#include "test_execution_resources.hpp"
 
 #include <util/File.hpp>
 #include <FileLogHandler.hpp>
@@ -36,10 +37,13 @@
 
 #include <NdbSleep.h>
 #include "my_alloc.h"  // MEM_ROOT
+#include <ndb_version.h>
 #include <vector>
+#include <ndb_version.h>
 
 #define PATH_SEPARATOR DIR_SEPARATOR
 #define TESTCASE_RETRIES_THRESHOLD_WARNING 5
+#define ATRT_VERSION_NUMBER 1
 
 /** Global variables */
 static const char progname[] = "ndb_atrt";
@@ -92,34 +96,12 @@ const char *g_dummy;
 char *g_env_path = 0;
 const char *g_mysqld_host = 0;
 
-const char *g_ndb_mgmd_bin_path = 0;
-const char *g_ndbd_bin_path = 0;
-const char *g_ndbmtd_bin_path = 0;
-const char *g_mysqld_bin_path = 0;
-const char *g_mysql_install_db_bin_path = 0;
-const char *g_libmysqlclient_so_path = 0;
-
-static struct {
-  bool is_required;
-  const char *exe;
-  const char **var;
-} g_binaries[] = {{true, "ndb_mgmd", &g_ndb_mgmd_bin_path},
-                  {true, "ndbd", &g_ndbd_bin_path},
-                  {false, "ndbmtd", &g_ndbmtd_bin_path},
-                  {true, "mysqld", &g_mysqld_bin_path},
-                  {false, "mysql_install_db", &g_mysql_install_db_bin_path},
-#if defined(__MACH__)
-                  {true, "libmysqlclient.dylib", &g_libmysqlclient_so_path},
-#else
-                  {true, "libmysqlclient.so", &g_libmysqlclient_so_path},
-#endif
-                  {true, 0, 0}};
+TestExecutionResources g_resources;
 
 static BaseString get_atrt_path(const char *arg);
 
 const char *g_search_path[] = {"bin", "libexec",   "sbin", "scripts",
                                "lib", "lib/mysql", 0};
-static bool find_binaries();
 static bool find_scripts(const char *path);
 static bool find_config_ini_files();
 
@@ -127,7 +109,7 @@ static struct my_option g_options[] = {
     {"help", '?', "Display this help and exit.", (uchar **)&g_help,
      (uchar **)&g_help, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"version", 'V', "Output version information and exit.", 0, 0, 0,
-     GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"site", 256, "Site", (uchar **)&g_site, (uchar **)&g_site, 0, GET_STR,
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"clusters", 256, "Cluster", (uchar **)&g_clusters, (uchar **)&g_clusters,
@@ -228,12 +210,28 @@ int main(int argc, char **argv) {
     goto end;
   }
 
-  g_logger.info("Starting...");
+  g_logger.info("Starting ATRT version : %s", getAtrtVersion().c_str());
 
-  if (!find_binaries()) {
-    g_logger.critical("Failed to find required binaries for execution");
-    return_code = ATRT_FAILURE;
-    goto end;
+  if (g_mt != 0) {
+    g_resources.setRequired(g_resources.NDBMTD);
+  }
+
+  {
+    std::vector<std::string> error;
+    std::vector<std::string> info;
+    if (!g_resources.loadPaths(g_prefix0, g_prefix1, &error, &info)) {
+      g_logger.critical("Failed to find required binaries for execution");
+
+      for (auto msg : error) {
+        g_logger.critical("%s", msg.c_str());
+        return_code = ATRT_FAILURE;
+        goto end;
+      }
+    }
+
+    for (auto msg : info) {
+      g_logger.info("%s", msg.c_str());
+    }
   }
 
   {
@@ -400,8 +398,8 @@ int main(int argc, char **argv) {
     do {
       testruns++;
       /**
-      * Do we need to restart ndb
-      */
+       * Do we need to restart ndb
+       */
       if (restart || test_case.m_force_cluster_restart) {
         if (test_case.m_force_cluster_restart) {
           g_logger.info(
@@ -659,6 +657,13 @@ extern "C" bool get_one_option(int arg, const struct my_option *opt,
 bool parse_args(int argc, char **argv, MEM_ROOT *alloc) {
   bool fail_after_help = false;
   char buf[2048];
+
+  if (argc >= 2 &&
+      (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)) {
+    ndbout << getAtrtVersion().c_str() << endl;
+    exit(0);
+  }
+
   if (getcwd(buf, sizeof(buf)) == 0) {
     g_logger.error("Unable to get current working directory");
     return false;
@@ -896,6 +901,15 @@ bool parse_args(int argc, char **argv, MEM_ROOT *alloc) {
   }
 
   return true;
+}
+
+std::string getAtrtVersion() {
+  int mysql_version = ndbGetOwnVersion();
+  std::string version = std::to_string(ndbGetMajor(mysql_version)) + "." +
+                        std::to_string(ndbGetMinor(mysql_version)) + "." +
+                        std::to_string(ndbGetBuild(mysql_version)) + "." +
+                        std::to_string(ATRT_VERSION_NUMBER);
+  return version;
 }
 
 bool connect_hosts(atrt_config &config) {
@@ -1784,25 +1798,6 @@ bool reset_config(atrt_config &config) {
   return changed;
 }
 
-static bool find_binaries() {
-  g_logger.info("Locating binaries...");
-  bool ok = true;
-  for (int i = 0; g_binaries[i].exe != 0; i++) {
-    const char *p = find_bin_path(g_binaries[i].exe);
-    if (p == 0) {
-      if (g_binaries[i].is_required) {
-        g_logger.critical("Failed to locate '%s'", g_binaries[i].exe);
-        ok = false;
-      } else {
-        g_logger.info("Failed to locate '%s'...ok", g_binaries[i].exe);
-      }
-    } else {
-      *g_binaries[i].var = p;
-    }
-  }
-  return ok;
-}
-
 bool find_scripts(const char *atrt_path) {
   g_logger.info("Locating scripts...");
 
@@ -1934,6 +1929,10 @@ void print_testcase_file_syntax() {
       "mysqld   - Arguments that atrt will use when starting mysqld.\n"
       "cmd-type - If 'mysql' change test process type from ndbapi to client.\n"
       "name     - Change name of test.  Default is given by cmd and args.\n"
+      "force-cluster-restart - If 'yes' force restart the cluster before\n"
+      "                        running test.\n"
+      "max-retries - Maximum number of retries after test failed.\n"
+      ""
       "\n"
       "Example:\n"
       "# BASIC FUNCTIONALITY\n"

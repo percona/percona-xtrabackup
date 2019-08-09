@@ -92,7 +92,7 @@ static ds_file_t *tmpfile_open(ds_ctxt_t *ctxt, const char *path,
                             O_SHORT_LIVED |
 #endif /* __WIN__ */
                             O_CREAT | O_EXCL | O_RDWR,
-                        MYF(MY_WME));
+                        UNLINK_FILE, MYF(MY_WME));
 
 #ifndef __WIN__
   if (fd >= 0) {

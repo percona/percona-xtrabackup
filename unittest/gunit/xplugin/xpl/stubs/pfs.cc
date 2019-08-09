@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -20,11 +20,15 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include "include/config.h"
+
 #include "include/pfs_cond_provider.h"
 #include "include/pfs_mutex_provider.h"
 #include "include/pfs_rwlock_provider.h"
 #include "include/pfs_socket_provider.h"
 #include "include/pfs_thread_provider.h"
+
+#ifndef WITH_LOCK_ORDER
 
 #ifdef HAVE_PSI_COND_INTERFACE
 void pfs_broadcast_cond_v1(PSI_cond *) {}
@@ -54,24 +58,24 @@ void pfs_unlock_mutex_v1(PSI_mutex *) {}
 #endif
 
 #ifdef HAVE_PSI_RWLOCK_INTERFACE
-void pfs_destroy_rwlock_v1(PSI_rwlock *) {}
-void pfs_end_rwlock_rdwait_v1(PSI_rwlock_locker *, int) {}
-void pfs_end_rwlock_wrwait_v1(PSI_rwlock_locker *, int) {}
-PSI_rwlock *pfs_init_rwlock_v1(PSI_rwlock_key, const void *) { return nullptr; }
-void pfs_register_rwlock_v1(char const *, PSI_rwlock_info_v1 *, int) {}
-PSI_rwlock_locker *pfs_start_rwlock_rdwait_v1(PSI_rwlock_locker_state_v1 *,
+void pfs_destroy_rwlock_v2(PSI_rwlock *) {}
+void pfs_end_rwlock_rdwait_v2(PSI_rwlock_locker *, int) {}
+void pfs_end_rwlock_wrwait_v2(PSI_rwlock_locker *, int) {}
+PSI_rwlock *pfs_init_rwlock_v2(PSI_rwlock_key, const void *) { return nullptr; }
+void pfs_register_rwlock_v2(char const *, PSI_rwlock_info_v1 *, int) {}
+PSI_rwlock_locker *pfs_start_rwlock_rdwait_v2(PSI_rwlock_locker_state_v1 *,
                                               PSI_rwlock *,
                                               PSI_rwlock_operation,
                                               char const *, uint) {
   return nullptr;
 }
-PSI_rwlock_locker *pfs_start_rwlock_wrwait_v1(PSI_rwlock_locker_state_v1 *,
+PSI_rwlock_locker *pfs_start_rwlock_wrwait_v2(PSI_rwlock_locker_state_v1 *,
                                               PSI_rwlock *,
                                               PSI_rwlock_operation,
                                               char const *, uint) {
   return nullptr;
 }
-void pfs_unlock_rwlock_v1(PSI_rwlock *) {}
+void pfs_unlock_rwlock_v2(PSI_rwlock *, PSI_rwlock_operation) {}
 #endif
 
 #ifdef HAVE_PSI_SOCKET_INTERFACE
@@ -94,22 +98,21 @@ PSI_socket_locker *pfs_start_socket_wait_v1(PSI_socket_locker_state_v1 *,
 #endif
 
 #ifdef HAVE_PSI_THREAD_INTERFACE
-void pfs_delete_current_thread_v2() {}
-PSI_thread *pfs_new_thread_v2(PSI_thread_key, const void *, ulonglong) {
+void pfs_delete_current_thread_vc() {}
+PSI_thread *pfs_new_thread_vc(PSI_thread_key, const void *, ulonglong) {
   return nullptr;
 }
-void pfs_register_thread_v2(char const *, PSI_thread_info_v1 *, int) {}
-void pfs_set_thread_account_v2(char const *, int, char const *, int) {}
-void pfs_set_thread_os_id_v2(PSI_thread *) {}
-void pfs_set_thread_v2(PSI_thread *) {}
-int pfs_spawn_thread_v2(PSI_thread_key, my_thread_handle *,
+void pfs_register_thread_vc(char const *, PSI_thread_info_v1 *, int) {}
+void pfs_set_thread_account_vc(char const *, int, char const *, int) {}
+void pfs_set_thread_os_id_vc(PSI_thread *) {}
+void pfs_set_thread_vc(PSI_thread *) {}
+int pfs_spawn_thread_vc(PSI_thread_key, my_thread_handle *,
                         const my_thread_attr_t *, void *(*)(void *), void *) {
   return 0;
 }
-int pfs_set_thread_connect_attrs_v1(char const *, unsigned int, void const *) {
-  return 0;
-}
-int pfs_set_thread_connect_attrs_v2(char const *, unsigned int, void const *) {
+int pfs_set_thread_connect_attrs_vc(char const *, unsigned int, void const *) {
   return 0;
 }
 #endif
+
+#endif /* WITH_LOCK_ORDER */

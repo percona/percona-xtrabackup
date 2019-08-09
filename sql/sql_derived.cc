@@ -177,8 +177,7 @@ TABLE *Common_table_expr::clone_tmp_table(THD *thd, TABLE_LIST *tl) {
 #endif
   TABLE *first = tmp_tables[0]->table;
   // Allocate clone on the memory root of the TABLE_SHARE.
-  TABLE *t =
-      static_cast<TABLE *>(alloc_root(&first->s->mem_root, sizeof(TABLE)));
+  TABLE *t = static_cast<TABLE *>(first->s->mem_root.Alloc(sizeof(TABLE)));
   if (!t) return nullptr; /* purecov: inspected */
   /*
     Share's of derived tables has key descriptions that can't be properly
@@ -631,9 +630,9 @@ bool TABLE_LIST::setup_table_function(THD *thd) {
   Opt_trace_context *const trace = &thd->opt_trace;
   Opt_trace_object trace_wrapper(trace);
   Opt_trace_object trace_derived(trace, "table_function");
-  char *func_name;
+  const char *func_name;
   uint func_name_len;
-  func_name = (char *)table_function->func_name();
+  func_name = table_function->func_name();
   func_name_len = strlen(func_name);
 
   set_uses_materialization();
@@ -752,10 +751,10 @@ bool TABLE_LIST::create_materialized_table(THD *thd) {
       (select_lex->join != NULL &&                    // 2
        (select_lex->join->const_table_map & map())))  // 2
   {
-  /*
-    At this point, JT_CONST derived tables should be null rows. Otherwise
-    they would have been materialized already.
-  */
+    /*
+      At this point, JT_CONST derived tables should be null rows. Otherwise
+      they would have been materialized already.
+    */
 #ifndef DBUG_OFF
     if (table != NULL) {
       QEP_TAB *tab = table->reginfo.qep_tab;
@@ -769,7 +768,7 @@ bool TABLE_LIST::create_materialized_table(THD *thd) {
   if (instantiate_tmp_table(thd, table))
     DBUG_RETURN(true); /* purecov: inspected */
 
-  table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+  table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
 
   DBUG_RETURN(false);
 }

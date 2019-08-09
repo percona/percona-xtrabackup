@@ -37,6 +37,7 @@
 #include <climits>
 #include <cmath>  // std::log2
 #include <iosfwd>
+#include <limits>  // std::numeric_limits
 #include <memory>
 #include <new>
 #include <string>
@@ -85,7 +86,9 @@
 #include "sql/debug_sync.h"      // DEBUG_SYNC
 #include "sql/derror.h"          // ER_THD
 #include "sql/error_handler.h"   // Internal_error_handler
+#include "sql/item.h"            // Item_json
 #include "sql/item_cmpfunc.h"    // get_datetime_value
+#include "sql/item_json_func.h"  // get_json_wrapper
 #include "sql/item_strfunc.h"    // Item_func_concat_ws
 #include "sql/json_dom.h"        // Json_wrapper
 #include "sql/key.h"
@@ -119,7 +122,7 @@
 #include "sql/strfunc.h"        // find_type
 #include "sql/system_variables.h"
 #include "sql/val_int_compare.h"  // Integer_value
-#include "template_utils.h"
+#include "template_utils.h"       // pointer_cast
 #include "thr_mutex.h"
 
 class Protocol;
@@ -167,7 +170,7 @@ void Item_func::set_arguments(List<Item> &list, bool context_free) {
   arg_count = list.elements;
   args = tmp_arg;  // If 2 arguments
   if (arg_count <= 2 ||
-      (args = (Item **)sql_alloc(sizeof(Item *) * arg_count))) {
+      (args = (Item **)(*THR_MALLOC)->Alloc(sizeof(Item *) * arg_count))) {
     List_iterator_fast<Item> li(list);
     Item *item;
     Item **save_args = args;
@@ -495,9 +498,9 @@ void Item_func::print_op(const THD *thd, String *str,
 /// @note Please keep in sync with Item_sum::eq().
 bool Item_func::eq(const Item *item, bool binary_cmp) const {
   /* Assume we don't have rtti */
-  if (this == item) return 1;
-  if (item->type() != FUNC_ITEM) return 0;
-  Item_func *item_func = (Item_func *)item;
+  if (this == item) return true;
+  if (item->type() != FUNC_ITEM) return false;
+  const Item_func *item_func = down_cast<const Item_func *>(item);
   Item_func::Functype func_type;
   if ((func_type = functype()) != item_func->functype() ||
       arg_count != item_func->arg_count ||
@@ -505,10 +508,10 @@ bool Item_func::eq(const Item *item, bool binary_cmp) const {
        strcmp(func_name(), item_func->func_name()) != 0) ||
       (func_type == Item_func::FUNC_SP &&
        my_strcasecmp(system_charset_info, func_name(), item_func->func_name())))
-    return 0;
+    return false;
   for (uint i = 0; i < arg_count; i++)
-    if (!args[i]->eq(item_func->args[i], binary_cmp)) return 0;
-  return 1;
+    if (!args[i]->eq(item_func->args[i], binary_cmp)) return false;
+  return true;
 }
 
 Field *Item_func::tmp_table_field(TABLE *table) {
@@ -524,8 +527,15 @@ Field *Item_func::tmp_table_field(TABLE *table) {
             Field_long(max_length, maybe_null, item_name.ptr(), unsigned_flag);
       break;
     case REAL_RESULT:
-      field = new (*THR_MALLOC) Field_double(max_char_length(), maybe_null,
-                                             item_name.ptr(), decimals);
+      if (this->data_type() == MYSQL_TYPE_FLOAT) {
+        field = new (*THR_MALLOC)
+            Field_float(max_char_length(), maybe_null, item_name.ptr(),
+                        decimals, unsigned_flag);
+      } else {
+        field = new (*THR_MALLOC)
+            Field_double(max_char_length(), maybe_null, item_name.ptr(),
+                         decimals, unsigned_flag);
+      }
       break;
     case STRING_RESULT:
       return make_string_field(table);
@@ -550,23 +560,6 @@ my_decimal *Item_func::val_decimal(my_decimal *decimal_value) {
   if (null_value) return 0; /* purecov: inspected */
   int2my_decimal(E_DEC_FATAL_ERROR, nr, unsigned_flag, decimal_value);
   return decimal_value;
-}
-
-type_conversion_status Item_func::save_possibly_as_json(Field *field,
-                                                        bool no_conversions) {
-  if (data_type() == MYSQL_TYPE_JSON && field->type() == MYSQL_TYPE_JSON) {
-    // Store the value in the JSON binary format.
-    Field_json *f = down_cast<Field_json *>(field);
-    Json_wrapper wr;
-    if (val_json(&wr)) return TYPE_ERR_BAD_VALUE;
-
-    if (null_value) return set_field_to_null(field);
-
-    field->set_notnull();
-    return f->store_json(&wr);
-  }
-
-  return Item_func::save_in_field_inner(field, no_conversions);
 }
 
 String *Item_real_func::val_str(String *str) {
@@ -743,13 +736,15 @@ const Item_field *Item_func::contributes_to_filter(
   @param func           Expression to be replaced
   @param fld            GCs field
   @param type           Result type to match with Field
+  @param[out] found     If given, just return found field, without Item_field
 
   @returns
     item new Item_field for matched GC
     NULL otherwise
 */
 
-Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type) {
+Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type,
+                            Field **found) {
   Item_func *expr = down_cast<Item_func *>(fld->gcol_info->expr_item);
 
   /*
@@ -799,14 +794,24 @@ Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type) {
     if (!expr->arguments()[0]->can_be_substituted_for_gc()) return NULL;
     expr = down_cast<Item_func *>(expr->arguments()[0]);
   }
+
   DBUG_ASSERT(expr->can_be_substituted_for_gc());
 
-  if (type == fld->result_type() && (*func)->eq(expr, false)) {
-    Item_field *field = new Item_field(fld);
+  // JSON implementation always uses binary collation
+  bool bin_cmp = (expr->data_type() == MYSQL_TYPE_JSON);
+  if (type == fld->result_type() && (*func)->eq(expr, bin_cmp)) {
+    if (found) {
+      // Temporary mark the field in order to check correct value conversion
+      fld->table->mark_column_used(fld, MARK_COLUMNS_TEMP);
+      *found = fld;
+      return NULL;
+    }
     // Mark field for read
     fld->table->mark_column_used(fld, MARK_COLUMNS_READ);
+    Item_field *field = new Item_field(fld);
     return field;
   }
+  if (found) *found = NULL;
   return NULL;
 }
 
@@ -815,6 +820,9 @@ Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type) {
   column in a predicate.
 
   @param expr      the expression that should be substituted
+  @param value     if given, value will be coerced to GC field's type and
+                   the result will substitute the original value. Used by
+                   multi-valued index.
   @param gc_fields list of indexed generated columns to check for
                    equivalence with the expression
   @param type      the acceptable type of the generated column that
@@ -823,8 +831,9 @@ Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type) {
 
   @return true on error, false on success
 */
-static bool substitute_gc_expression(Item_func **expr, List<Field> *gc_fields,
-                                     Item_result type, Item_func *predicate) {
+static bool substitute_gc_expression(Item_func **expr, Item **value,
+                                     List<Field> *gc_fields, Item_result type,
+                                     Item_func *predicate) {
   List_iterator<Field> li(*gc_fields);
   Item_field *item_field = nullptr;
   while (Field *field = li++) {
@@ -832,19 +841,25 @@ static bool substitute_gc_expression(Item_func **expr, List<Field> *gc_fields,
     Key_map tkm = field->part_of_key;
     tkm.merge(field->part_of_prefixkey);  // Include prefix keys.
     tkm.intersect(field->table->keys_in_use_for_query);
+    /*
+      Don't substitute if:
+      1) Key is disabled
+      2) It's a multi-valued index's field and predicate isn't MEMBER OF
+    */
+    if (tkm.is_clear_all() ||                           // (1)
+        (field->is_array() && predicate->functype() !=  // (2)
+                                  Item_func::MEMBER_OF_FUNC))
+      continue;
     // If the field is a hidden field used by a functional index, we require
     // that the collation of the field must match the collation of the
     // expression. If not, we might end up with the wrong result when using
     // the index (see bug#27337092). Ideally, this should be done for normal
     // generated columns as well, but that is delayed to a later fix since the
     // impact might be quite large.
-    const bool incompatible_collations =
-        field->is_field_for_functional_index() &&
-        field->result_type() == STRING_RESULT &&
-        (*expr)->result_type() == STRING_RESULT &&
-        (*expr)->collation.collation != field->charset();
-
-    if (!tkm.is_clear_all() && !incompatible_collations) {
+    if (!(field->is_field_for_functional_index() &&
+          field->type() == MYSQL_TYPE_VARCHAR &&
+          (*expr)->data_type() == MYSQL_TYPE_VARCHAR &&
+          (*expr)->collation.collation != field->charset())) {
       item_field = get_gc_for_expr(expr, field, type);
       if (item_field != nullptr) break;
     }
@@ -855,12 +870,104 @@ static bool substitute_gc_expression(Item_func **expr, List<Field> *gc_fields,
   // A matching expression is found. Substitute the expression with
   // the matching generated column.
   THD *thd = item_field->field->table->in_use;
+  if (item_field->returns_array() && value) {
+    Json_wrapper wr, to_wr;
+    String str_val, buf;
+    Field_typed_array *afld = down_cast<Field_typed_array *>(item_field->field);
+
+    Functional_index_error_handler functional_index_error_handler(afld, thd);
+
+    // Don't substitute if value can't be coerced to field's type
+    if (get_json_atom_wrapper(value, 0, "MEMBER OF", &str_val, &buf, &wr,
+                              nullptr, true) ||
+        afld->coerce_json_value(&wr, true, &to_wr))
+      return false;
+    Item_json *jsn =
+        new (thd->mem_root) Item_json(std::move(to_wr), predicate->item_name);
+    if (!jsn || jsn->fix_fields(thd, nullptr)) return false;
+    thd->change_item_tree(value, jsn);
+  }
   thd->change_item_tree(pointer_cast<Item **>(expr), item_field);
 
   // Adjust the predicate.
   if (predicate->functype() == Item_func::IN_FUNC)
     down_cast<Item_func_in *>(predicate)->cleanup_arrays();
   return predicate->resolve_type(thd);
+}
+
+/**
+  A helper function for Item_func::gc_subst_transformer, that tries to
+  substitute the given JSON_CONTAINS or JSON_OVERLAPS function for one of GCs
+  from the provided list. The function checks whether there's an index with
+  matching expression and whether all scalars for lookup can be coerced to
+  index's GC field without errors. If so, index's GC field substitutes the
+  given function, args are replaced for array of coerced values in order to
+  match GC's type. substitute_gc_expression() can't be used to these functions
+  as it's tailored to handle regular single-valued indexes and doesn't ensure
+  correct coercion of all values to lookup in multi-valued index.
+
+  @param func     Function to replace
+  @param vals     Args to replace
+  @param vals_wr  Json_wrapper containing array of values for index lookup
+  @param gc_fields List of generated fields to look the function's substitute in
+*/
+
+static void gc_subst_overlaps_contains(Item_func **func, Item **vals,
+                                       Json_wrapper &vals_wr,
+                                       List<Field> *gc_fields) {
+  // Field to substitute function for. NULL when no matching index was found.
+  Field *found = nullptr;
+  DBUG_ASSERT(vals_wr.type() != enum_json_type::J_OBJECT &&
+              vals_wr.type() != enum_json_type::J_ERROR);
+  THD *thd = current_thd;
+  // Vector of coerced keys
+  Json_array_ptr coerced_keys = create_dom_ptr<Json_array>();
+
+  // Find a field that matches the expression
+  for (Field &fld : *gc_fields) {
+    bool can_use_index = true;
+    // Check whether field has usable keys
+    Key_map tkm = fld.part_of_key;
+    tkm.intersect(fld.table->keys_in_use_for_query);
+
+    if (tkm.is_clear_all() || !fld.is_array()) continue;
+    Functional_index_error_handler func_idx_err_hndl(
+        const_cast<const Field *>(&fld), thd);
+    found = nullptr;
+
+    get_gc_for_expr(func, &fld, fld.result_type(), &found);
+    if (!found || !found->is_array()) continue;
+    Field_typed_array *afld = down_cast<Field_typed_array *>(found);
+    // Check that array's values can be coerced to found field's type
+    uint len;
+    if (vals_wr.type() == enum_json_type::J_ARRAY)
+      len = vals_wr.length();
+    else
+      len = 1;
+    coerced_keys->clear();
+    for (uint i = 0; i < len; i++) {
+      Json_wrapper elt = vals_wr[i];
+      Json_wrapper res;
+      if (afld->coerce_json_value(&elt, true, &res)) {
+        can_use_index = false;
+        found = nullptr;
+        break;
+      }
+      coerced_keys->append_clone(res.to_dom(thd));
+    }
+    if (can_use_index) break;
+  }
+  if (!found) return;
+  TABLE *table = found->table;
+  Item_field *subs_item = new Item_field(found);
+  if (!subs_item) return;
+  Json_wrapper res(coerced_keys.release());
+  Item_json *array_arg =
+      new (thd->mem_root) Item_json(std::move(res), (*func)->item_name);
+  if (!array_arg || array_arg->fix_fields(thd, nullptr)) return;
+  table->mark_column_used(found, MARK_COLUMNS_READ);
+  table->in_use->change_item_tree(pointer_cast<Item **>(func), subs_item);
+  table->in_use->change_item_tree(vals, array_arg);
 }
 
 /**
@@ -911,7 +1018,8 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
         break;
       }
 
-      if (substitute_gc_expression(func, gc_fields, val->result_type(), this))
+      if (substitute_gc_expression(func, nullptr, gc_fields, val->result_type(),
+                                   this))
         return nullptr; /* purecov: inspected */
       break;
     }
@@ -927,10 +1035,83 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
           })) {
         break;
       }
+      Item **to_subst = args;
+      if (substitute_gc_expression(pointer_cast<Item_func **>(to_subst),
+                                   nullptr, gc_fields, type, this))
+        return nullptr;
+      break;
+    }
+    case MEMBER_OF_FUNC: {
+      Item_result type = args[0]->result_type();
+      /*
+        Check whether MEMBER OF is applicable for optimization:
+        1) 1st arg is a constant
+        2) .. and it isn't NULL, as MEMBER OF can't be used to lookup NULLs
+        3) 2nd arg can be substituted for a GC
+        4) .. and it's of JSON type
+      */
+      if (args[0]->const_item() &&                    // 1
+          !args[0]->is_null() &&                      // 2
+          args[1]->can_be_substituted_for_gc() &&     // 3
+          args[1]->data_type() == MYSQL_TYPE_JSON) {  // 4
+        Item **to_subst = args + 1;
+        if (substitute_gc_expression(pointer_cast<Item_func **>(to_subst), args,
+                                     gc_fields, type, this))
+          return nullptr;
+      }
+      break;
+    }
+    case JSON_CONTAINS: {
+      Json_wrapper vals_wr;
+      String str;
+      /*
+        Check whether JSON_CONTAINS is applicable for optimization:
+        1) 1st arg is a local field
+        2) 1st arg's type is JSON
+        3) value to lookup is a constant
+        4) value to lookup is a proper JSON doc
+        5) value to lookup is an array or scalar
+      */
+      if (args[0]->type() != Item::FUNC_ITEM ||       // 1
+          args[0]->data_type() != MYSQL_TYPE_JSON ||  // 2
+          !args[1]->real_item()->const_item())        // 3
+        break;
+      if (get_json_wrapper(args, 1, &str, func_name(), &vals_wr) ||  // 4
+          args[1]->null_value ||
+          vals_wr.type() == enum_json_type::J_OBJECT)  // 5
+        break;
+      gc_subst_overlaps_contains(pointer_cast<Item_func **>(args), args + 1,
+                                 vals_wr, gc_fields);
+      break;
+    }
+    case JSON_OVERLAPS: {
+      Item **func = nullptr;
+      int vals = -1;
+      Json_wrapper vals_wr;
+      String str;
 
-      if (substitute_gc_expression(pointer_cast<Item_func **>(args), gc_fields,
-                                   type, this))
-        return nullptr; /* purecov: inspected */
+      /*
+        Check whether JSON_OVERLAPS is applicable for optimization:
+        1) One arg is a function and another is a const expr
+        2) value to lookup is a proper JSON doc
+        3) value to lookup is an array or scalar
+      */
+
+      if (args[0]->type() == Item::FUNC_ITEM && args[1]->const_item()) {  // 1
+        func = args;
+        vals = 1;
+      } else if (args[1]->type() == Item::FUNC_ITEM &&
+                 args[0]->const_item()) {  // 1
+        func = args + 1;
+        vals = 0;
+      }
+      if (!func) break;
+      if (get_json_wrapper(args, vals, &str, func_name(), &vals_wr) ||  // 2
+          args[vals]->null_value ||
+          vals_wr.type() == enum_json_type::J_OBJECT)  // 3
+        break;
+      gc_subst_overlaps_contains(pointer_cast<Item_func **>(func), args + vals,
+                                 vals_wr, gc_fields);
       break;
     }
     default:
@@ -1194,8 +1375,8 @@ double Item_func_numhybrid::val_real() {
       const char *end_not_used;
       int err_not_used;
       String *res = str_op(&str_value);
-      return (res ? my_strntod(res->charset(), (char *)res->ptr(),
-                               res->length(), &end_not_used, &err_not_used)
+      return (res ? my_strntod(res->charset(), res->ptr(), res->length(),
+                               &end_not_used, &err_not_used)
                   : 0.0);
     }
     default:
@@ -1276,7 +1457,7 @@ my_decimal *Item_func_numhybrid::val_decimal(my_decimal *decimal_value) {
       String *res;
       if (!(res = str_op(&str_value))) return NULL;
 
-      str2my_decimal(E_DEC_FATAL_ERROR, (char *)res->ptr(), res->length(),
+      str2my_decimal(E_DEC_FATAL_ERROR, res->ptr(), res->length(),
                      res->charset(), decimal_value);
       break;
     }
@@ -1317,20 +1498,20 @@ bool Item_func_numhybrid::get_time(MYSQL_TIME *ltime) {
   }
 }
 
-void Item_func_signed::print(const THD *thd, String *str,
-                             enum_query_type query_type) const {
+void Item_typecast_signed::print(const THD *thd, String *str,
+                                 enum_query_type query_type) const {
   str->append(STRING_WITH_LEN("cast("));
   args[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" as signed)"));
 }
 
-bool Item_func_signed::resolve_type(THD *) {
+bool Item_typecast_signed::resolve_type(THD *) {
   fix_char_length(std::min<uint32>(args[0]->max_char_length(),
                                    MY_INT64_NUM_DECIMAL_DIGITS));
   return reject_geometry_args(arg_count, args, this);
 }
 
-longlong Item_func_signed::val_int_from_str(int *error) {
+longlong Item_typecast_signed::val_int_from_str(int *error) {
   char buff[MAX_FIELD_WIDTH], *start;
   size_t length;
   String tmp(buff, sizeof(buff), &my_charset_bin), *res;
@@ -1348,7 +1529,7 @@ longlong Item_func_signed::val_int_from_str(int *error) {
     return 0;
   }
   null_value = 0;
-  start = (char *)res->ptr();
+  start = res->ptr();
   length = res->length();
   cs = res->charset();
 
@@ -1363,7 +1544,7 @@ longlong Item_func_signed::val_int_from_str(int *error) {
   return value;
 }
 
-longlong Item_func_signed::val_int() {
+longlong Item_typecast_signed::val_int() {
   longlong value;
   int error;
 
@@ -1382,14 +1563,14 @@ longlong Item_func_signed::val_int() {
   return value;
 }
 
-void Item_func_unsigned::print(const THD *thd, String *str,
-                               enum_query_type query_type) const {
+void Item_typecast_unsigned::print(const THD *thd, String *str,
+                                   enum_query_type query_type) const {
   str->append(STRING_WITH_LEN("cast("));
   args[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" as unsigned)"));
 }
 
-longlong Item_func_unsigned::val_int() {
+longlong Item_typecast_unsigned::val_int() {
   longlong value;
   int error;
 
@@ -1415,14 +1596,14 @@ longlong Item_func_unsigned::val_int() {
   return value;
 }
 
-String *Item_decimal_typecast::val_str(String *str) {
+String *Item_typecast_decimal::val_str(String *str) {
   my_decimal tmp_buf, *tmp = val_decimal(&tmp_buf);
   if (null_value) return NULL;
   my_decimal2string(E_DEC_FATAL_ERROR, tmp, 0, 0, 0, str);
   return str;
 }
 
-double Item_decimal_typecast::val_real() {
+double Item_typecast_decimal::val_real() {
   my_decimal tmp_buf, *tmp = val_decimal(&tmp_buf);
   double res;
   if (null_value) return 0.0;
@@ -1430,7 +1611,7 @@ double Item_decimal_typecast::val_real() {
   return res;
 }
 
-longlong Item_decimal_typecast::val_int() {
+longlong Item_typecast_decimal::val_int() {
   my_decimal tmp_buf, *tmp = val_decimal(&tmp_buf);
   longlong res;
   if (null_value) return 0;
@@ -1438,7 +1619,7 @@ longlong Item_decimal_typecast::val_int() {
   return res;
 }
 
-my_decimal *Item_decimal_typecast::val_decimal(my_decimal *dec) {
+my_decimal *Item_typecast_decimal::val_decimal(my_decimal *dec) {
   my_decimal tmp_buf, *tmp = args[0]->val_decimal(&tmp_buf);
   bool sign;
   uint precision;
@@ -1468,7 +1649,7 @@ err:
   return dec;
 }
 
-void Item_decimal_typecast::print(const THD *thd, String *str,
+void Item_typecast_decimal::print(const THD *thd, String *str,
                                   enum_query_type query_type) const {
   char len_buf[20 * 3 + 1];
   char *end;
@@ -1489,6 +1670,66 @@ void Item_decimal_typecast::print(const THD *thd, String *str,
 
   str->append(')');
   str->append(')');
+}
+
+String *Item_typecast_real::val_str(String *str) {
+  double res = val_real();
+  if (null_value) return nullptr;
+
+  str->set_real(res, decimals, collation.collation);
+  return str;
+}
+
+double Item_typecast_real::val_real() {
+  double res = args[0]->val_real();
+  null_value = args[0]->null_value;
+  if (null_value) return 0.0;
+  if (data_type() == MYSQL_TYPE_FLOAT &&
+      res > std::numeric_limits<float>::max())
+    return raise_float_overflow();
+  return check_float_overflow(res);
+}
+
+longlong Item_typecast_real::val_int() {
+  double res = val_real();
+  if (null_value) return 0;
+
+  if (unsigned_flag) {
+    if (res < 0 || res >= (double)ULLONG_MAX) {
+      return raise_integer_overflow();
+    } else
+      return (longlong)double2ulonglong(res);
+  } else {
+    if (res <= (double)LLONG_MIN || res > (double)LLONG_MAX) {
+      return raise_integer_overflow();
+    } else
+      return (longlong)res;
+  }
+}
+
+bool Item_typecast_real::get_date(MYSQL_TIME *ltime,
+                                  my_time_flags_t fuzzydate) {
+  return my_double_to_datetime_with_warn(val_real(), ltime, fuzzydate);
+}
+
+bool Item_typecast_real::get_time(MYSQL_TIME *ltime) {
+  return my_double_to_time_with_warn(val_real(), ltime);
+}
+
+my_decimal *Item_typecast_real::val_decimal(my_decimal *decimal_value) {
+  double result = val_real();
+  if (null_value) return nullptr;
+  double2my_decimal(E_DEC_FATAL_ERROR, result, decimal_value);
+
+  return decimal_value;
+}
+
+void Item_typecast_real::print(const THD *thd, String *str,
+                               enum_query_type query_type) const {
+  str->append(STRING_WITH_LEN("cast("));
+  args[0]->print(thd, str, query_type);
+  str->append(STRING_WITH_LEN(" as "));
+  str->append((data_type() == MYSQL_TYPE_FLOAT) ? "float)" : "double)");
 }
 
 double Item_func_plus::real_op() {
@@ -2546,7 +2787,7 @@ String *Item_func_bit_two_param::eval_str_op(String *, Char_func char_func,
 
   const uchar *s1_c_p = pointer_cast<const uchar *>(s1->ptr());
   const uchar *s2_c_p = pointer_cast<const uchar *>(s2->ptr());
-  char *res = const_cast<char *>(tmp_value.ptr());
+  char *res = tmp_value.ptr();
   size_t i = 0;
   while (i + sizeof(longlong) <= arg_length) {
     int8store(&res[i], int_func(uint8korr(&s1_c_p[i]), uint8korr(&s2_c_p[i])));
@@ -3216,7 +3457,10 @@ longlong Item_func_min_max::int_op() {
   for (uint i = 0; i < arg_count; i++) {
     const longlong val = args[i]->val_int();
     if ((null_value = args[i]->null_value)) return 0;
-    DBUG_ASSERT(!unsigned_flag || (unsigned_flag && args[i]->unsigned_flag));
+#ifndef DBUG_OFF
+    Integer_value arg_val(val, args[i]->unsigned_flag);
+    DBUG_ASSERT(!unsigned_flag || !arg_val.is_negative());
+#endif
     const bool val_is_smaller = unsigned_flag ? static_cast<ulonglong>(val) <
                                                     static_cast<ulonglong>(res)
                                               : val < res;
@@ -3543,8 +3787,9 @@ longlong Item_func_find_in_set::val_int() {
     int position = 0;
     while (1) {
       int symbol_len;
-      if ((symbol_len = cs->cset->mb_wc(cs, &wc, (uchar *)str_end,
-                                        (uchar *)real_end)) > 0) {
+      if ((symbol_len =
+               cs->cset->mb_wc(cs, &wc, pointer_cast<const uchar *>(str_end),
+                               pointer_cast<const uchar *>(real_end))) > 0) {
         const char *substr_end = str_end + symbol_len;
         bool is_last_item = (substr_end == real_end);
         bool is_separator = (wc == (my_wc_t)separator);
@@ -3575,7 +3820,7 @@ longlong Item_func_bit_count::val_int() {
     String *s = args[0]->val_str(&str_value);
     if (args[0]->null_value || !s) return error_int();
 
-    char *val = const_cast<char *>(s->ptr());
+    const char *val = s->ptr();
 
     longlong len = 0;
     size_t i = 0;
@@ -3644,7 +3889,8 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
 
   if ((f_args.arg_count = arg_count)) {
     if (!(f_args.arg_type =
-              (Item_result *)sql_alloc(f_args.arg_count * sizeof(Item_result))))
+              (Item_result *)(*THR_MALLOC)
+                  ->Alloc(f_args.arg_count * sizeof(Item_result))))
 
     {
       free_udf(u_d);
@@ -3684,14 +3930,18 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
     }
     // TODO: why all following memory is not allocated with 1 call of sql_alloc?
     if (!(buffers = new String[arg_count]) ||
-        !(f_args.args = (char **)sql_alloc(arg_count * sizeof(char *))) ||
-        !(f_args.lengths = (ulong *)sql_alloc(arg_count * sizeof(long))) ||
-        !(f_args.maybe_null = (char *)sql_alloc(arg_count * sizeof(char))) ||
-        !(num_buffer =
-              (char *)sql_alloc(arg_count * ALIGN_SIZE(sizeof(double)))) ||
-        !(f_args.attributes = (char **)sql_alloc(arg_count * sizeof(char *))) ||
+        !(f_args.args =
+              (char **)(*THR_MALLOC)->Alloc(arg_count * sizeof(char *))) ||
+        !(f_args.lengths =
+              (ulong *)(*THR_MALLOC)->Alloc(arg_count * sizeof(long))) ||
+        !(f_args.maybe_null =
+              (char *)(*THR_MALLOC)->Alloc(arg_count * sizeof(char))) ||
+        !(num_buffer = (char *)(*THR_MALLOC)
+                           ->Alloc(arg_count * ALIGN_SIZE(sizeof(double)))) ||
+        !(f_args.attributes =
+              (char **)(*THR_MALLOC)->Alloc(arg_count * sizeof(char *))) ||
         !(f_args.attribute_lengths =
-              (ulong *)sql_alloc(arg_count * sizeof(long)))) {
+              (ulong *)(*THR_MALLOC)->Alloc(arg_count * sizeof(long)))) {
       free_udf(u_d);
       DBUG_RETURN(true);
     }
@@ -3719,7 +3969,7 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
 
       f_args.lengths[i] = arguments[i]->max_length;
       f_args.maybe_null[i] = arguments[i]->maybe_null;
-      f_args.attributes[i] = (char *)arguments[i]->item_name.ptr();
+      f_args.attributes[i] = const_cast<char *>(arguments[i]->item_name.ptr());
       f_args.attribute_lengths[i] = arguments[i]->item_name.length();
 
       if (arguments[i]->may_evaluate_const(thd)) {
@@ -3836,8 +4086,8 @@ String *udf_handler::val_str(String *str, String *save_str) {
       DBUG_RETURN(0);
     }
   }
-  char *res = func(&initid, &f_args, (char *)str->ptr(), &res_length,
-                   &is_null_tmp, &error);
+  char *res =
+      func(&initid, &f_args, str->ptr(), &res_length, &is_null_tmp, &error);
   DBUG_PRINT("info", ("udf func returned, res_length: %lu", res_length));
   if (is_null_tmp || !res || error)  // The !res is for safety
   {
@@ -5717,6 +5967,22 @@ String *Item_func_get_user_var::val_str(String *str) {
   DBUG_ENTER("Item_func_get_user_var::val_str");
   if (!var_entry) DBUG_RETURN((String *)0);  // No such variable
   String *res = var_entry->val_str(&null_value, str, decimals);
+  if (res && !my_charset_same(res->charset(), collation.collation)) {
+    String tmpstr;
+    uint error;
+    if (tmpstr.copy(res->c_ptr(), res->length(), res->charset(),
+                    collation.collation, &error) ||
+        error > 0) {
+      char tmp[32];
+      convert_to_printable(tmp, sizeof(tmp), res->c_ptr(), res->length(),
+                           res->charset(), 6);
+      my_error(ER_INVALID_CHARACTER_STRING, MYF(0), collation.collation->csname,
+               tmp);
+      DBUG_RETURN(nullptr);
+    }
+    if (str->copy(tmpstr)) DBUG_RETURN(nullptr);
+    DBUG_RETURN(str);
+  }
   DBUG_RETURN(res);
 }
 
@@ -5841,8 +6107,8 @@ static int get_var_with_binlog(THD *thd, enum_sql_command sql_command,
     destroyed.
   */
   size = ALIGN_SIZE(sizeof(Binlog_user_var_event)) + var_entry->length();
-  if (!(user_var_event = (Binlog_user_var_event *)alloc_root(
-            thd->user_var_events_alloc, size)))
+  if (!(user_var_event =
+            (Binlog_user_var_event *)thd->user_var_events_alloc->Alloc(size)))
     goto err;
 
   user_var_event->value =
@@ -5952,12 +6218,13 @@ void Item_func_get_user_var::print(const THD *thd, String *str,
 
 bool Item_func_get_user_var::eq(const Item *item, bool) const {
   /* Assume we don't have rtti */
-  if (this == item) return 1;  // Same item is same.
+  if (this == item) return true;  // Same item is same.
   /* Check if other type is also a get_user_var() object */
   if (item->type() != FUNC_ITEM ||
-      ((Item_func *)item)->functype() != functype())
-    return 0;
-  Item_func_get_user_var *other = (Item_func_get_user_var *)item;
+      down_cast<const Item_func *>(item)->functype() != functype())
+    return false;
+  const Item_func_get_user_var *other =
+      down_cast<const Item_func_get_user_var *>(item);
   return name.eq_bin(other->name);
 }
 
@@ -6060,7 +6327,7 @@ bool Item_func_get_system_var::is_written_to_binlog() {
 }
 
 bool Item_func_get_system_var::resolve_type(THD *thd) {
-  char *cptr;
+  const char *cptr;
   maybe_null = true;
 
   if (!var->check_scope(var_type)) {
@@ -6095,11 +6362,11 @@ bool Item_func_get_system_var::resolve_type(THD *thd) {
     case SHOW_CHAR_PTR:
       set_data_type(MYSQL_TYPE_VARCHAR);
       mysql_mutex_lock(&LOCK_global_system_variables);
-      cptr =
-          var->show_type() == SHOW_CHAR
-              ? pointer_cast<char *>(var->value_ptr(thd, var_type, &component))
-              : *pointer_cast<char **>(
-                    var->value_ptr(thd, var_type, &component));
+      cptr = var->show_type() == SHOW_CHAR
+                 ? pointer_cast<const char *>(
+                       var->value_ptr(thd, var_type, &component))
+                 : *pointer_cast<const char *const *>(
+                       var->value_ptr(thd, var_type, &component));
       if (cptr)
         max_length = system_charset_info->cset->numchars(
             system_charset_info, cptr, cptr + strlen(cptr));
@@ -6111,8 +6378,8 @@ bool Item_func_get_system_var::resolve_type(THD *thd) {
     case SHOW_LEX_STRING: {
       set_data_type(MYSQL_TYPE_VARCHAR);
       mysql_mutex_lock(&LOCK_global_system_variables);
-      LEX_STRING *ls =
-          pointer_cast<LEX_STRING *>(var->value_ptr(thd, var_type, &component));
+      const LEX_STRING *ls = pointer_cast<const LEX_STRING *>(
+          var->value_ptr(thd, var_type, &component));
       max_length = system_charset_info->cset->numchars(
           system_charset_info, ls->str, ls->str + ls->length);
       mysql_mutex_unlock(&LOCK_global_system_variables);
@@ -6222,7 +6489,7 @@ longlong Item_func_get_system_var::get_sys_var_safe(THD *thd) {
   T value;
   {
     MUTEX_LOCK(lock, &LOCK_global_system_variables);
-    value = *pointer_cast<T *>(var->value_ptr(thd, var_type, &component));
+    value = *pointer_cast<const T *>(var->value_ptr(thd, var_type, &component));
   }
   cache_present |= GET_SYS_VAR_CACHE_LONG;
   used_query_id = thd->query_id;
@@ -6341,15 +6608,17 @@ String *Item_func_get_system_var::val_str(String *str) {
     case SHOW_CHAR_PTR:
     case SHOW_LEX_STRING: {
       mysql_mutex_lock(&LOCK_global_system_variables);
-      char *cptr = var->show_type() == SHOW_CHAR
-                       ? (char *)var->value_ptr(thd, var_type, &component)
-                       : *(char **)var->value_ptr(thd, var_type, &component);
+      const char *cptr = var->show_type() == SHOW_CHAR
+                             ? pointer_cast<const char *>(
+                                   var->value_ptr(thd, var_type, &component))
+                             : *pointer_cast<const char *const *>(
+                                   var->value_ptr(thd, var_type, &component));
       if (cptr) {
-        size_t len =
-            var->show_type() == SHOW_LEX_STRING
-                ? ((LEX_STRING *)(var->value_ptr(thd, var_type, &component)))
-                      ->length
-                : strlen(cptr);
+        size_t len = var->show_type() == SHOW_LEX_STRING
+                         ? (pointer_cast<const LEX_STRING *>(
+                                var->value_ptr(thd, var_type, &component)))
+                               ->length
+                         : strlen(cptr);
         if (str->copy(cptr, len, collation.collation)) {
           null_value = true;
           str = NULL;
@@ -6423,7 +6692,8 @@ double Item_func_get_system_var::val_real() {
   switch (var->show_type()) {
     case SHOW_DOUBLE:
       mysql_mutex_lock(&LOCK_global_system_variables);
-      cached_dval = *(double *)var->value_ptr(thd, var_type, &component);
+      cached_dval = *pointer_cast<const double *>(
+          var->value_ptr(thd, var_type, &component));
       mysql_mutex_unlock(&LOCK_global_system_variables);
       used_query_id = thd->query_id;
       cached_null_value = null_value;
@@ -6434,9 +6704,11 @@ double Item_func_get_system_var::val_real() {
     case SHOW_LEX_STRING:
     case SHOW_CHAR_PTR: {
       mysql_mutex_lock(&LOCK_global_system_variables);
-      char *cptr = var->show_type() == SHOW_CHAR
-                       ? (char *)var->value_ptr(thd, var_type, &component)
-                       : *(char **)var->value_ptr(thd, var_type, &component);
+      const char *cptr = var->show_type() == SHOW_CHAR
+                             ? pointer_cast<const char *>(
+                                   var->value_ptr(thd, var_type, &component))
+                             : *pointer_cast<const char *const *>(
+                                   var->value_ptr(thd, var_type, &component));
       // Treat empty strings as NULL, like val_int() does.
       if (cptr && *cptr)
         cached_dval = double_from_string_with_check(system_charset_info, cptr,
@@ -6473,12 +6745,13 @@ double Item_func_get_system_var::val_real() {
 
 bool Item_func_get_system_var::eq(const Item *item, bool) const {
   /* Assume we don't have rtti */
-  if (this == item) return 1;  // Same item is same.
+  if (this == item) return true;  // Same item is same.
   /* Check if other type is also a get_user_var() object */
   if (item->type() != FUNC_ITEM ||
-      ((Item_func *)item)->functype() != functype())
-    return 0;
-  Item_func_get_system_var *other = (Item_func_get_system_var *)item;
+      down_cast<const Item_func *>(item)->functype() != functype())
+    return false;
+  const Item_func_get_system_var *other =
+      down_cast<const Item_func_get_system_var *>(item);
   return (var == other->var && var_type == other->var_type);
 }
 
@@ -6529,6 +6802,13 @@ bool Item_func_match::init_search(THD *thd) {
   TABLE *const table = table_ref->table;
   /* Check if init_search() has been called before */
   if (ft_handler && !master) {
+    /*
+      We should reset ft_handler as it is cleaned up
+      at the end of SortingIterator::DoSort().
+      (necessary in case of re-execution of subquery).
+      TODO: SortingIterator::DoSort() should not clean up ft_handler.
+    */
+    if (join_key) table->file->ft_handler = ft_handler;
     DBUG_RETURN(false);
   }
 
@@ -6814,17 +7094,21 @@ err:
 bool Item_func_match::eq(const Item *item, bool binary_cmp) const {
   /* We ignore FT_SORTED flag when checking for equality since result is
      equvialent regardless of sorting */
-  if (item->type() != FUNC_ITEM || ((Item_func *)item)->functype() != FT_FUNC ||
-      (flags | FT_SORTED) != (((Item_func_match *)item)->flags | FT_SORTED))
-    return 0;
+  DBUG_ASSERT(item->type() != FUNC_ITEM ||
+              down_cast<const Item_func *>(item)->functype() != MATCH_FUNC);
+  if (item->type() != FUNC_ITEM ||
+      down_cast<const Item_func *>(item)->functype() != FT_FUNC ||
+      (flags | FT_SORTED) !=
+          (down_cast<const Item_func_match *>(item)->flags | FT_SORTED))
+    return false;
 
-  Item_func_match *ifm = (Item_func_match *)item;
+  const Item_func_match *ifm = down_cast<const Item_func_match *>(item);
 
   if (key == ifm->key && table_ref == ifm->table_ref &&
       key_item()->eq(ifm->key_item(), binary_cmp))
-    return 1;
+    return true;
 
-  return 0;
+  return false;
 }
 
 double Item_func_match::val_real() {
@@ -7041,8 +7325,7 @@ const char *Item_func_sp::func_name() const {
        (m_name->m_explicit_name ? 3 : 0) +  // '`', '`' and '.' for the db
        1 +                                  // end of string
        ALIGN_SIZE(1));                      // to avoid String reallocation
-  String qname((char *)alloc_root(thd->mem_root, len), len,
-               system_charset_info);
+  String qname((char *)thd->mem_root->Alloc(len), len, system_charset_info);
 
   qname.length(0);
   if (m_name->m_explicit_name) {
@@ -7090,7 +7373,7 @@ static void my_missing_function_error(const LEX_STRING &token,
 */
 
 bool Item_func_sp::init_result_field(THD *thd) {
-  LEX_STRING empty_name = {C_STRING_WITH_LEN("")};
+  LEX_CSTRING empty_name = {STRING_WITH_LEN("")};
   TABLE_SHARE *share;
   DBUG_ENTER("Item_func_sp::init_result_field");
 
@@ -7126,7 +7409,8 @@ bool Item_func_sp::init_result_field(THD *thd) {
 
   if (sp_result_field->pack_length() > sizeof(result_buf)) {
     void *tmp;
-    if (!(tmp = sql_alloc(sp_result_field->pack_length()))) DBUG_RETURN(true);
+    if (!(tmp = (*THR_MALLOC)->Alloc(sp_result_field->pack_length())))
+      DBUG_RETURN(true);
     sp_result_field->move_field((uchar *)tmp);
   } else
     sp_result_field->move_field(result_buf);
@@ -7170,11 +7454,6 @@ bool Item_func_sp::val_json(Json_wrapper *result) {
   my_error(ER_INVALID_CAST_TO_JSON, MYF(0));
   return error_json();
   /* purecov: end */
-}
-
-type_conversion_status Item_func_sp::save_in_field_inner(Field *field,
-                                                         bool no_conversions) {
-  return save_possibly_as_json(field, no_conversions);
 }
 
 /**
@@ -7301,6 +7580,9 @@ bool Item_func_found_rows::itemize(Parse_context *pc, Item **res) {
   if (super::itemize(pc, res)) return true;
   pc->thd->lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
   pc->thd->lex->safe_to_cache_query = false;
+  push_warning(current_thd, Sql_condition::SL_WARNING,
+               ER_WARN_DEPRECATED_SYNTAX,
+               ER_THD(current_thd, ER_WARN_DEPRECATED_FOUND_ROWS));
   return false;
 }
 
@@ -7401,10 +7683,10 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
     /*
       Try to set and restore the security context to see whether it's valid
     */
-    Security_context *save_secutiry_ctx;
-    res = m_sp->set_security_ctx(thd, &save_secutiry_ctx);
+    Security_context *save_security_ctx;
+    res = m_sp->set_security_ctx(thd, &save_security_ctx);
     if (!res)
-      m_sp->m_security_ctx.restore_security_context(thd, save_secutiry_ctx);
+      m_sp->m_security_ctx.restore_security_context(thd, save_security_ctx);
   }
 
   DBUG_RETURN(res);
@@ -7548,7 +7830,8 @@ longlong Item_func_can_access_database::val_int() {
 
   // Check access
   Security_context *sctx = thd->security_context();
-  if (!(sctx->master_access(schema_name_ptr->ptr()) & (DB_ACLS | SHOW_DB_ACL) ||
+  if (!(sctx->master_access(schema_name_ptr->ptr()) &
+            (DB_OP_ACLS | SHOW_DB_ACL) ||
         acl_get(thd, sctx->host().str, sctx->ip().str, sctx->priv_user().str,
                 schema_name_ptr->ptr(), 0) ||
         !check_grant_db(thd, schema_name_ptr->ptr()))) {
@@ -7598,10 +7881,10 @@ static bool check_table_and_trigger_access(Item **args, bool check_trigger_acl,
   table_list.grant.privilege = db_access;
 
   if (check_trigger_acl == false) {
-    if (db_access & TABLE_ACLS) DBUG_RETURN(true);
+    if (db_access & TABLE_OP_ACLS) DBUG_RETURN(true);
 
     // Check table access
-    if (check_grant(thd, TABLE_ACLS, &table_list, true, 1, true))
+    if (check_grant(thd, TABLE_OP_ACLS, &table_list, true, 1, true))
       DBUG_RETURN(false);
   } else  // Trigger check.
   {

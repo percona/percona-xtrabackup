@@ -47,6 +47,7 @@
 #include "sql/sql_class.h"    // THD
 #include "sql/sql_cmd_dml.h"  // Sql_cmd_dml
 #include "sql/sql_const.h"
+#include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_opt_exec_shared.h"  // join_type
 #include "sql/system_variables.h"
@@ -79,7 +80,7 @@ class Sql_cmd_select : public Sql_cmd_dml {
     return thd->lex->unit->accept(visitor);
   }
 
-  const MYSQL_LEX_STRING *eligible_secondary_storage_engine() const override;
+  const MYSQL_LEX_CSTRING *eligible_secondary_storage_engine() const override;
 
  protected:
   virtual bool precheck(THD *thd) override;
@@ -714,6 +715,7 @@ class JOIN_TAB : public QEP_shared_owner {
   /* SemiJoinDuplicateElimination variables: */
   /*
     Embedding SJ-nest (may be not the direct parent), or NULL if none.
+    It is the closest semijoin or antijoin nest.
     This variable holds the result of table pullout.
   */
   TABLE_LIST *emb_sj_nest;
@@ -958,14 +960,17 @@ class store_key {
 };
 
 static store_key::store_key_result type_conversion_status_to_store_key(
-    type_conversion_status ts) {
+    THD *thd, type_conversion_status ts) {
   switch (ts) {
     case TYPE_OK:
       return store_key::STORE_KEY_OK;
     case TYPE_NOTE_TRUNCATED:
     case TYPE_WARN_TRUNCATED:
     case TYPE_NOTE_TIME_TRUNCATED:
-      return store_key::STORE_KEY_CONV;
+      if (thd->check_for_truncated_fields)
+        return store_key::STORE_KEY_CONV;
+      else
+        return store_key::STORE_KEY_OK;
     case TYPE_WARN_OUT_OF_RANGE:
     case TYPE_WARN_INVALID_STRING:
     case TYPE_ERR_NULL_CONSTRAINT_VIOLATION:
@@ -1036,7 +1041,7 @@ class store_key_item : public store_key {
     if (save_res != TYPE_OK && table->in_use->is_error())
       res = STORE_KEY_FATAL;
     else
-      res = type_conversion_status_to_store_key(save_res);
+      res = type_conversion_status_to_store_key(table->in_use, save_res);
     dbug_tmp_restore_column_map(table->write_set, old_map);
     null_key = to_field->is_null() || item->null_value;
     return (err != 0) ? STORE_KEY_FATAL : res;
@@ -1063,6 +1068,30 @@ class store_key_hash_item : public store_key_item {
 
  protected:
   enum store_key_result copy_inner();
+};
+
+/*
+  Class used for indexes over JSON expressions. The value to lookup is
+  obtained from val_json() method and then converted according to field's
+  result type and saved. This allows proper handling of temporal values.
+*/
+class store_key_json_item final : public store_key_item {
+  /// Whether the key is constant.
+  const bool m_const_key{false};
+  /// Whether the key was already copied.
+  bool m_inited{false};
+
+ public:
+  store_key_json_item(THD *thd, Field *to_field_arg, uchar *ptr,
+                      uchar *null_ptr_arg, uint length, Item *item_arg,
+                      bool const_key_arg)
+      : store_key_item(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg),
+        m_const_key(const_key_arg) {}
+
+  const char *name() const override { return m_const_key ? "const" : "func"; }
+
+ protected:
+  enum store_key_result copy_inner() override;
 };
 
 class store_key_const_item : public store_key_item {
@@ -1174,5 +1203,19 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
                               table_map used_tables, Key_use **chosen_keyuses,
                               uint *length_out, uint *keyparts_out,
                               table_map *dep_map, bool *maybe_null);
+
+/**
+  Set up the support structures (NULL bits, row offsets, etc.) for a semijoin
+  duplicate weedout table. The object is allocated on the given THD's MEM_ROOT.
+
+  @param thd the THD to allocate the object on
+  @param join the JOIN that will own the temporary table (ie., has the
+    responsibility to destroy it after use)
+  @param first_tab first table in row key (inclusive)
+  @param last_tab last table in row key (exclusive)
+ */
+SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
+                                  SJ_TMP_TABLE::TAB *first_tab,
+                                  SJ_TMP_TABLE::TAB *last_tab);
 
 #endif /* SQL_SELECT_INCLUDED */

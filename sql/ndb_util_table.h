@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,8 @@
 #include "my_compiler.h"
 #include "sql/ndb_table_guard.h"
 #include "storage/ndb/include/ndbapi/NdbDictionary.hpp"
+
+class NdbRecAttr;
 
 // Base class used for working with tables created in NDB by the
 // ndbcluster plugin
@@ -64,6 +66,8 @@ class Ndb_util_table {
   bool check_column_bigunsigned(const char* name) const;
   bool check_column_blob(const char* name) const;
 
+  bool check_column_nullable(const char* name, bool nullable) const;
+
   bool check_column_minlength(const char* name, int min_length) const;
 
   bool check_primary_key(const std::vector<const char*> columns) const;
@@ -82,8 +86,20 @@ class Ndb_util_table {
   bool define_table_add_column(NdbDictionary::Table &new_table,
                                const NdbDictionary::Column &new_column) const;
 
-  bool create_table_in_NDB(NdbDictionary::Table &new_table) const;
+  bool create_table_in_NDB(const NdbDictionary::Table &new_table) const;
   bool drop_table_in_NDB(const NdbDictionary::Table &old_table) const;
+
+  /**
+     @brief Drop the events related to this table from NDB
+     @return true if events was dropped successfully
+  */
+  virtual bool drop_events_in_NDB() const = 0;
+
+  /**
+    @brief Drop one event from NDB
+    @return true if events was dropped successfully
+    */
+  bool drop_event_in_NDB(const char* event_name) const;
 
  public:
   /**
@@ -156,6 +172,11 @@ class Ndb_util_table {
    */
   virtual std::string define_table_dd() const = 0;
 
+  /**
+     @brief Unpack the varbinary column value
+     @return the value stored in the varbinary column
+   */
+  static std::string unpack_varbinary(NdbRecAttr* ndbRecAttr);
 };
 
 #endif

@@ -42,6 +42,7 @@
 #include <sys/types.h>
 #include <algorithm>
 
+#include <mysql/components/services/log_builtins.h>
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -1231,6 +1232,12 @@ static bool net_read_raw_loop(NET *net, size_t count) {
 
 #ifdef MYSQL_SERVER
     my_error(net->last_errno, MYF(0));
+    /* First packet always wait for net_wait_timeout */
+    if (net->pkt_nr == 0 && vio_was_timeout(net->vio)) {
+      net->last_errno = ER_NET_WAIT_ERROR;
+      /* Socket should be closed after trying to write/send error. */
+      LogErr(INFORMATION_LEVEL, net->last_errno);
+    }
 #endif
   }
 
@@ -1291,7 +1298,7 @@ static bool net_read_packet_header(NET *net) {
     The local packet counter must be truncated since its not reset.
   */
   if (pkt_nr != (uchar)net->pkt_nr) {
-  /* Not a NET error on the client. XXX: why? */
+    /* Not a NET error on the client. XXX: why? */
 #if defined(MYSQL_SERVER)
     my_error(ER_NET_PACKETS_OUT_OF_ORDER, MYF(0));
 #elif defined(EXTRA_DEBUG)
@@ -1441,7 +1448,7 @@ static net_async_status net_read_packet_header_nonblocking(NET *net,
     The local packet counter must be truncated since its not reset.
   */
   if (pkt_nr != (uchar)net->pkt_nr) {
-  /* Not a NET error on the client. XXX: why? */
+    /* Not a NET error on the client. XXX: why? */
 #if defined(MYSQL_SERVER)
     my_error(ER_NET_PACKETS_OUT_OF_ORDER, MYF(0));
 #elif defined(EXTRA_DEBUG)

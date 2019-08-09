@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,14 +29,6 @@
 #include <vector>
 
 #include "my_inttypes.h"
-
-/**
-  Check if schema distribution has been initialized and is
-  ready. Will return true when the component is properly setup
-  to receive schema operation events from the cluster.
-*/
-bool ndb_schema_dist_is_ready(void);
-
 
 /**
   The numbers below must not change as they are passed
@@ -73,6 +65,32 @@ enum SCHEMA_OP_TYPE
   SOT_ALTER_LOGFILE_GROUP= 24,
   SOT_DROP_LOGFILE_GROUP= 25
 };
+
+namespace Ndb_schema_dist {
+
+// Schema operation result codes
+enum Schema_op_result_code {
+  NODE_UNSUBSCRIBE = 9001,  // Node unsubscribe during
+  NODE_FAILURE = 9002,      // Node failed during
+  NODE_TIMEOUT = 9003,      // Node timeout during
+  COORD_ABORT = 9004,       // Coordinator aborted
+  CLIENT_ABORT = 9005,      // Client aborted
+  CLIENT_KILLED = 9007      // Client killed
+};
+
+/**
+  Check if schema distribution has been initialized and is
+  ready to communicate with the other MySQL Server(s) in the cluster.
+
+  @param requestor Pointer value identifying caller
+
+  @return true schema distribution is ready
+*/
+bool is_ready(void* requestor);
+
+}  // namespace Ndb_schema_dist
+
+class Ndb;
 
 /**
   @brief Ndb_schema_dist_client, class represents a Client
@@ -116,8 +134,58 @@ class Ndb_schema_dist_client {
     bool check_key(const char* db, const char* tabname) const;
   } m_prepared_keys;
 
-  // Max number of participants supported
-  int m_max_participants{0};
+  // List of schema operation results, populated when schema operation has
+  // completed sucessfully.
+  struct Schema_op_result {
+    uint32 nodeid;
+    uint32 result;
+    std::string message;
+  };
+  std::vector<Schema_op_result> m_schema_op_results;
+
+  int log_schema_op_impl(Ndb* ndb, const char *query, int query_length,
+                         const char *db, const char *table_name,
+                         uint32 ndb_table_id, uint32 ndb_table_version,
+                         SCHEMA_OP_TYPE type,
+                         uint32 anyvalue);
+
+  /**
+     @brief Write row to ndb_schema to initiate the schema operation
+     @return true on sucess and false on failure
+   */
+  bool write_schema_op_to_NDB(Ndb *ndb, const char *query, int query_length,
+                              const char *db, const char *name, uint32 id,
+                              uint32 version, uint32 nodeid, uint32 type,
+                              uint32 schema_op_id, uint32 anyvalue);
+  /**
+    @brief Distribute the schema operation to the other MySQL Server(s)
+    @note For now, just call the old log_schema_op_impl(), over time
+          the functionality of that function will gradually be moved over
+          to this new Ndb_schema_dist_client class
+    @return false if schema distribution fails
+   */
+  bool log_schema_op(const char *query, size_t query_length, const char *db,
+                     const char *table_name, uint32 id, uint32 version,
+                     SCHEMA_OP_TYPE type,
+                     bool log_query_on_participant = true);
+
+  /**
+     @brief Calculate the anyvalue to use for this schema change. The anyvalue
+     is used to transport additional settings from client to the participants.
+
+     @param force_nologging Force setting anyvalue to not log schema change on
+     participant
+
+     @return The anyvalue to use for schema change
+   */
+  uint32 calculate_anyvalue(bool force_nologging) const;
+
+ public:
+  Ndb_schema_dist_client() = delete;
+  Ndb_schema_dist_client(const Ndb_schema_dist_client &) = delete;
+  Ndb_schema_dist_client(class THD *thd);
+
+  ~Ndb_schema_dist_client();
 
   /*
     @brief Generate unique id for distribution of objects which doesn't have
@@ -132,38 +200,6 @@ class Ndb_schema_dist_client {
     @return unique version
   */
   uint32 unique_version() const;
-
-  int log_schema_op_impl(class Ndb* ndb, const char *query, int query_length,
-                         const char *db, const char *table_name,
-                         uint32 ndb_table_id, uint32 ndb_table_version,
-                         SCHEMA_OP_TYPE type,
-                         bool log_query_on_participant);
-
-  /**
-    @brief Distribute the schema operation to the other MySQL Server(s)
-    @note For now, just call the old log_schema_op_impl(), over time
-          the functionality of that function will gradually be moved over
-          to this new Ndb_schema_dist_client class
-    @return false if schema distribution fails
-   */
-  bool log_schema_op(const char *query, size_t query_length, const char *db,
-                     const char *table_name, uint32 id, uint32 version,
-                     SCHEMA_OP_TYPE type,
-                     bool log_query_on_participant = true);
-
-  /**
-   * @brief Convert SCHEMA_OP_TYPE to human readable string representation
-   * @param type
-   * @return string describing the type
-   */
-  const char* type_str(SCHEMA_OP_TYPE type) const;
-
- public:
-  Ndb_schema_dist_client() = delete;
-  Ndb_schema_dist_client(const Ndb_schema_dist_client &) = delete;
-  Ndb_schema_dist_client(class THD *thd);
-
-  ~Ndb_schema_dist_client();
 
   /**
     @brief Prepare client for schema operation, check that
@@ -207,13 +243,23 @@ class Ndb_schema_dist_client {
   bool check_identifier_limits(std::string& invalid_identifier);
 
   /**
-   * @brief Check if given name is the schema distribtution table, special
+   * @brief Check if given name is the schema distribution table, special
             handling for that table is required in a few places.
      @param db database name
      @param table_name table name
      @return true if table is the schema distribution table
    */
   static bool is_schema_dist_table(const char* db, const char* table_name);
+
+  /**
+   * @brief Check if given name is the schema distribution result table, special
+            handling for that table is required in a few places.
+     @param db database name
+     @param table_name table name
+     @return true if table is the schema distribution result table
+   */
+  static bool is_schema_dist_result_table(const char *db,
+                                          const char *table_name);
 
   /**
    * @brief Convert SCHEMA_OP_TYPE to string
@@ -238,8 +284,10 @@ class Ndb_schema_dist_client {
                     bool log_on_participant);
   bool drop_table(const char *db, const char *table_name, int id, int version);
 
-  bool create_db(const char *query, uint query_length, const char *db);
-  bool alter_db(const char *query, uint query_length, const char *db);
+  bool create_db(const char *query, uint query_length, const char *db,
+                 unsigned int id, unsigned int version);
+  bool alter_db(const char *query, uint query_length, const char *db,
+                unsigned int id, unsigned int version);
   bool drop_db(const char *db);
 
   bool acl_notify(const char *query, uint query_length, const char *db);

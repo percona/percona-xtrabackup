@@ -990,7 +990,7 @@ static void start_query_killer() {
   kill_query_thread_started = os_event_create("kill_query_thread_started");
   kill_query_thread_stopped = os_event_create("kill_query_thread_stopped");
 
-  os_thread_create(PSI_NOT_INSTRUMENTED, kill_query_thread);
+  os_thread_create(PSI_NOT_INSTRUMENTED, kill_query_thread).start();
 
   os_event_wait(kill_query_thread_started);
 }

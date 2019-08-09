@@ -28,10 +28,8 @@ ndb_ddl.alter_open_trans: WL#10164 Schema dist prepare phase
 
 # ndb_rpl suite tests
 ndb_rpl.ndb_rpl_binlog_format_errors       : BUG#26078612 PB2 TEST FAILURE
-ndb_rpl.ndb_rpl_conflict_load_epoch_trans  : BUG#29110710 Not designed for determinism
 ndb_rpl.ndb_rpl_ctype_ucs2_def             : BUG#34661 rpl_ndb_ctype_ucs2_def fails in 6.2
 ndb_rpl.ndb_rpl_mix_innodb                 : BUG#16321437 NDB_APPLY_STATUS START_POS ALWAYS EQUALS END_POS
-ndb_rpl.ndb_rpl_row_implicit_commit_binlog : BUG#29110717 SEAGULL ndb-force-binlog-format-statement
 ndb_rpl.ndb_rpl_slave_lsu                  : BUG#29110717 SEAGULL ndb-force-binlog-format-statement
 ndb_rpl.ndb_rpl_slave_lsu_anyval           : BUG#29110717 SEAGULL ndb-force-binlog-format-statement
 ndb_rpl.ndb_rpl_stm_innodb                 : BUG#16321437 NDB_APPLY_STATUS START_POS ALWAYS EQUALS END_POS
@@ -46,6 +44,7 @@ ndb_rpl.ndb_rpl_dd_advance : WL#11914 Synchronize metadata changes detected in N
 ndb.ndb_insert            : BUG#16021097 INSERT .. SELECT WITH KEY VIOLATION DOES NOT FAIL
 ndb.ndb_row_count         : BUG#16021097 INSERT .. SELECT WITH KEY VIOLATION DOES NOT FAIL
 ndb.ndb_parallel_undo_log : BUG#28794807 FIX NDB.NDB_PARALLEL_UNDO_LOG TESTCASE FAILURE
+ndb.ndb_restore_gcp       : Bug#29692418 NDB_RESTORE_GCP.TEST FAIL TO CLEANUP BACKUP DIRECTORY
 
 # Problem with distribution of CREATE TABLE
 ndb.ndb_dd_restore_check_tablespace_mdl : BUG#28876892 SCHEMA DISTRIBUTION OF CREATE TABLE WITH DISK DATA AND RANGE PARTITIONING FAILS
@@ -66,9 +65,6 @@ ndb.ndb_ddl_dml : WL#9185 MySQL Cluster support for new DD.
 ndb.ndb_dd_alter : WL#9185 MySQL Cluster support for new DD
 ndb.ndb_fk_db    : WL#9185 MySQL Cluster support for new DD
 ndb.ndb_fk_no_fk : WL#9185 MySQL Cluster support for new DD
-
-# Need to remove stale .ndb files for DROP DATABASE
-ndb.drop_database_stale : WL#9185 MySQL Cluster support for new DD
 
 # Problem with alter table while MDL lock is held on other mysqld
 ndb.ndb_ddl_open_trans : WL#9185 MySQL Cluster support for new DD

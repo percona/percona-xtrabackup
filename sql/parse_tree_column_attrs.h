@@ -35,6 +35,7 @@
 #include "sql/sql_alter.h"
 #include "sql/sql_check_constraint.h"  // Sql_check_constraint_spec
 #include "sql/sql_class.h"
+#include "sql/sql_error.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_parse.h"
 
@@ -68,7 +69,7 @@ class PT_column_attr_base : public Parse_tree_node_tmpl<Column_parse_context> {
 
   virtual void apply_type_flags(ulong *) const {}
   virtual void apply_alter_info_flags(ulonglong *) const {}
-  virtual void apply_comment(LEX_STRING *) const {}
+  virtual void apply_comment(LEX_CSTRING *) const {}
   virtual void apply_default_value(Item **) const {}
   virtual void apply_gen_default_value(Value_generator **) {}
   virtual void apply_on_update_value(Item **) const {}
@@ -243,13 +244,13 @@ class PT_constraint_enforcement_attr : public PT_column_attr_base {
   @ingroup ptn_column_attrs
 */
 class PT_comment_column_attr : public PT_column_attr_base {
-  const LEX_STRING comment;
+  const LEX_CSTRING comment;
 
  public:
-  explicit PT_comment_column_attr(const LEX_STRING &comment)
+  explicit PT_comment_column_attr(const LEX_CSTRING &comment)
       : comment(comment) {}
 
-  virtual void apply_comment(LEX_STRING *to) const { *to = comment; }
+  virtual void apply_comment(LEX_CSTRING *to) const { *to = comment; }
 };
 
 /**
@@ -516,24 +517,48 @@ class PT_type : public Parse_tree_node {
 class PT_numeric_type : public PT_type {
   const char *length;
   const char *dec;
-  Field_option options;
+  ulong options;
 
   using Parent_type = std::remove_const<decltype(PT_type::type)>::type;
 
  public:
-  PT_numeric_type(Numeric_type type_arg, const char *length, const char *dec,
-                  Field_option options)
+  PT_numeric_type(THD *thd, Numeric_type type_arg, const char *length,
+                  const char *dec, ulong options)
       : PT_type(static_cast<Parent_type>(type_arg)),
         length(length),
         dec(dec),
-        options(options) {}
-  PT_numeric_type(Int_type type_arg, const char *length, Field_option options)
+        options(options) {
+    DBUG_ASSERT((options & ~(UNSIGNED_FLAG | ZEROFILL_FLAG)) == 0);
+
+    if (type_arg != Numeric_type::DECIMAL && dec != nullptr) {
+      push_warning(thd, Sql_condition::SL_WARNING,
+                   ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                   ER_THD(thd, ER_WARN_DEPRECATED_FLOAT_DIGITS));
+    }
+    if (options & UNSIGNED_FLAG) {
+      push_warning(thd, Sql_condition::SL_WARNING,
+                   ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                   ER_THD(thd, ER_WARN_DEPRECATED_FLOAT_UNSIGNED));
+    }
+  }
+  PT_numeric_type(THD *thd, Int_type type_arg, const char *length,
+                  ulong options)
       : PT_type(static_cast<enum_field_types>(type_arg)),
         length(length),
         dec(0),
-        options(options) {}
+        options(options) {
+    DBUG_ASSERT((options & ~(UNSIGNED_FLAG | ZEROFILL_FLAG)) == 0);
 
-  virtual ulong get_type_flags() const { return static_cast<ulong>(options); }
+    if (length != nullptr) {
+      push_warning(thd, Sql_condition::SL_WARNING,
+                   ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                   ER_THD(thd, ER_WARN_DEPRECATED_INTEGER_DISPLAY_WIDTH));
+    }
+  }
+
+  virtual ulong get_type_flags() const {
+    return (options & ZEROFILL_FLAG) ? (options | UNSIGNED_FLAG) : options;
+  }
   virtual const char *get_length() const { return length; }
   virtual const char *get_dec() const { return dec; }
 };
@@ -820,7 +845,7 @@ class PT_field_def_base : public Parse_tree_node {
   uint uint_geom_type;
   List<String> *interval_list;
   alter_info_flags_t alter_info_flags;
-  LEX_STRING comment;
+  LEX_CSTRING comment;
   Item *default_value;
   Item *on_update_value;
   Value_generator *gcol_info;
@@ -836,7 +861,7 @@ class PT_field_def_base : public Parse_tree_node {
   explicit PT_field_def_base(PT_type *type_node)
       : has_explicit_collation(false),
         alter_info_flags(0),
-        comment(EMPTY_STR),
+        comment(EMPTY_CSTR),
         default_value(NULL),
         on_update_value(NULL),
         gcol_info(NULL),

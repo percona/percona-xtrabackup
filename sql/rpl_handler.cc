@@ -375,13 +375,13 @@ void prepare_table_info(THD *thd, Trans_table_info *&table_info_list,
   TABLE *open_tables = thd->open_tables;
 
   // Fail if tables are not open
-  if (open_tables == NULL) {
+  if (open_tables == nullptr) {
     DBUG_VOID_RETURN;
   }
 
   // Gather table information
   std::vector<Trans_table_info> table_info_holder;
-  for (; open_tables != NULL; open_tables = open_tables->next) {
+  for (; open_tables != nullptr; open_tables = open_tables->next) {
     Trans_table_info table_info = {0, 0, 0, 0};
 
     if (open_tables->no_replicate) {
@@ -391,7 +391,7 @@ void prepare_table_info(THD *thd, Trans_table_info *&table_info_list,
     table_info.table_name = open_tables->s->table_name.str;
 
     uint primary_keys = 0;
-    if (open_tables->key_info != NULL &&
+    if (open_tables->key_info != nullptr &&
         (open_tables->s->primary_key < MAX_KEY)) {
       primary_keys = open_tables->s->primary_key;
 
@@ -782,9 +782,10 @@ int Binlog_transmit_delegate::before_send_event(THD *thd, ushort flags,
   DBUG_EXECUTE_IF("crash_binlog_transmit_hook", DBUG_SUICIDE(););
 
   int ret = 0;
-  FOREACH_OBSERVER(ret, before_send_event,
-                   (&param, (uchar *)packet->ptr(), packet->length(),
-                    log_file + dirname_length(log_file), log_pos));
+  FOREACH_OBSERVER(
+      ret, before_send_event,
+      (&param, pointer_cast<uchar *>(packet->ptr()), packet->length(),
+       log_file + dirname_length(log_file), log_pos));
   return ret;
 }
 
@@ -1044,7 +1045,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
 
     // if select is an udf function
     SELECT_LEX *select_lex_elem = lex->unit->first_select();
-    while (select_lex_elem != NULL) {
+    while (select_lex_elem != nullptr) {
       Item *item;
       List_iterator_fast<Item> it(select_lex_elem->fields_list);
       while ((item = it++)) {

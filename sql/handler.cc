@@ -77,6 +77,7 @@
 #include "sql/auth/auth_common.h"  // check_readonly() and SUPER_ACL
 #include "sql/binlog.h"            // mysql_bin_log
 #include "sql/check_stack.h"
+#include "sql/clone_handler.h"
 #include "sql/current_thd.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
 #include "sql/dd/dd.h"                       // dd::get_dictionary
@@ -124,7 +125,9 @@
 #include "sql/transaction_info.h"
 #include "sql/xa.h"
 #include "sql_string.h"
+#include "sql_tmp_table.h"  // free_tmp_table
 #include "template_utils.h"
+#include "uniques.h"  // Unique_on_insert
 #include "varlen_sort.h"
 
 /**
@@ -255,16 +258,15 @@ ulong total_ha_2pc = 0;
 /* size of savepoint storage area (see ha_init) */
 ulong savepoint_alloc_size = 0;
 
-static const LEX_STRING sys_table_aliases[] = {
-    {C_STRING_WITH_LEN("INNOBASE")},
-    {C_STRING_WITH_LEN("INNODB")},
-    {C_STRING_WITH_LEN("NDB")},
-    {C_STRING_WITH_LEN("NDBCLUSTER")},
-    {C_STRING_WITH_LEN("HEAP")},
-    {C_STRING_WITH_LEN("MEMORY")},
-    {C_STRING_WITH_LEN("MERGE")},
-    {C_STRING_WITH_LEN("MRG_MYISAM")},
-    {NullS, 0}};
+static const LEX_CSTRING sys_table_aliases[] = {{STRING_WITH_LEN("INNOBASE")},
+                                                {STRING_WITH_LEN("INNODB")},
+                                                {STRING_WITH_LEN("NDB")},
+                                                {STRING_WITH_LEN("NDBCLUSTER")},
+                                                {STRING_WITH_LEN("HEAP")},
+                                                {STRING_WITH_LEN("MEMORY")},
+                                                {STRING_WITH_LEN("MERGE")},
+                                                {STRING_WITH_LEN("MRG_MYISAM")},
+                                                {NullS, 0}};
 
 const char *ha_row_type[] = {"",
                              "FIXED",
@@ -413,9 +415,9 @@ plugin_ref ha_resolve_by_name_raw(THD *thd, const LEX_CSTRING &name) {
   RETURN
     pointer to storage engine plugin handle
 */
-plugin_ref ha_resolve_by_name(THD *thd, const LEX_STRING *name,
+plugin_ref ha_resolve_by_name(THD *thd, const LEX_CSTRING *name,
                               bool is_temp_table) {
-  const LEX_STRING *table_alias;
+  const LEX_CSTRING *table_alias;
   plugin_ref plugin;
 
 redo:
@@ -464,7 +466,7 @@ void ha_set_normalized_disabled_se_str(const std::string &disabled_se) {
   boost::tokenizer<boost::char_separator<char>> tokens(disabled_se, sep);
   normalized_se_str.append(",");
   BOOST_FOREACH (std::string se_name, tokens) {
-    const LEX_STRING *table_alias;
+    const LEX_CSTRING *table_alias;
     boost::algorithm::to_upper(se_name);
     for (table_alias = sys_table_aliases; table_alias->str; table_alias += 2) {
       if (!native_strcasecmp(se_name.c_str(), table_alias->str) ||
@@ -690,6 +692,7 @@ int ha_init_errors(void) {
   SETMSG(HA_ERR_DISK_FULL_NOWAIT, ER_DEFAULT(ER_DISK_FULL_NOWAIT));
   SETMSG(HA_ERR_NO_SESSION_TEMP, ER_DEFAULT(ER_NO_SESSION_TEMP));
   SETMSG(HA_ERR_WRONG_TABLE_NAME, ER_DEFAULT(ER_WRONG_TABLE_NAME));
+  SETMSG(HA_ERR_TOO_LONG_PATH, ER_DEFAULT(ER_TABLE_NAME_CAUSES_TOO_LONG_PATH));
   /* Register the error messages for use with my_error(). */
   return my_error_register(get_handler_errmsg, HA_ERR_FIRST, HA_ERR_LAST);
 }
@@ -1325,6 +1328,31 @@ void trans_register_ha(THD *thd, bool all, handlerton *ht_arg,
   DBUG_VOID_RETURN;
 }
 
+/** XA Prepare one SE.
+@param[in]	thd	Session THD
+@param[in]	ht	SE handlerton
+@return 0 for success, 1 for error - entire transaction is rolled back. */
+static int prepare_one_ht(THD *thd, handlerton *ht) {
+  DBUG_ENTER("prepare_one_ht");
+  DBUG_ASSERT(!thd->status_var_aggregated);
+  thd->status_var.ha_prepare_count++;
+  if (ht->prepare) {
+    DBUG_EXECUTE_IF("simulate_xa_failure_prepare", {
+      ha_rollback_trans(thd, true);
+      DBUG_RETURN(1);
+    });
+    if (ht->prepare(ht, thd, true)) {
+      ha_rollback_trans(thd, true);
+      DBUG_RETURN(1);
+    }
+  } else {
+    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_ILLEGAL_HA,
+                        ER_THD(thd, ER_ILLEGAL_HA),
+                        ha_resolve_storage_engine_name(ht));
+  }
+  DBUG_RETURN(0);
+}
+
 /**
   @retval
     0   ok
@@ -1348,30 +1376,33 @@ int ha_prepare(THD *thd) {
       goto err;
     }
 
-    while (ha_info) {
-      handlerton *ht = ha_info->ht();
-      DBUG_ASSERT(!thd->status_var_aggregated);
-      thd->status_var.ha_prepare_count++;
-      if (ht->prepare) {
-        DBUG_EXECUTE_IF("simulate_xa_failure_prepare", {
-          ha_rollback_trans(thd, true);
-          DBUG_RETURN(1);
-        });
-        if (ht->prepare(ht, thd, true)) {
-          ha_rollback_trans(thd, true);
-          error = 1;
+    /* Allow GTID to be read by SE for XA prepare. */
+    {
+      Clone_handler::XA_Operation xa_guard(thd);
+
+      /* Prepare binlog SE first, if there. */
+      while (ha_info != nullptr && error == 0) {
+        auto ht = ha_info->ht();
+        if (ht->db_type == DB_TYPE_BINLOG) {
+          error = prepare_one_ht(thd, ht);
           break;
         }
-      } else {
-        push_warning_printf(thd, Sql_condition::SL_WARNING, ER_ILLEGAL_HA,
-                            ER_THD(thd, ER_ILLEGAL_HA),
-                            ha_resolve_storage_engine_name(ht));
+        ha_info = ha_info->next();
       }
-      ha_info = ha_info->next();
+      /* Prepare all SE other than binlog. */
+      ha_info = trn_ctx->ha_trx_info(Transaction_ctx::SESSION);
+      while (ha_info != nullptr && error == 0) {
+        auto ht = ha_info->ht();
+        error = prepare_one_ht(thd, ht);
+        if (error != 0) {
+          break;
+        }
+        ha_info = ha_info->next();
+      }
     }
 
-    DBUG_ASSERT(
-        thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_IDLE));
+    DBUG_ASSERT(error != 0 || thd->get_transaction()->xid_state()->has_state(
+                                  XID_STATE::XA_IDLE));
 
   err:
     gtid_state_commit_or_rollback(thd, need_clear_owned_gtid, !gtid_error);
@@ -1464,11 +1495,17 @@ int commit_owned_gtids(THD *thd, bool all, bool *need_clear_owned_gtid_ptr) {
       mysql.gtid_executed table and @@GLOBAL.GTID_EXECUTED as it
       did when binlog is enabled.
     */
-    if (thd->owned_gtid.sidno > 0) {
+    if (thd->owned_gtid.sidno > 0 ||
+        thd->owned_gtid.sidno == THD::OWNED_SIDNO_ANONYMOUS) {
+      *need_clear_owned_gtid_ptr = true;
+    }
+    /*
+      If GTID is not persisted by SE, write it to
+      mysql.gtid_executed table.
+    */
+    if (thd->owned_gtid.sidno > 0 && !thd->se_persists_gtid()) {
       error = gtid_state->save(thd);
-      *need_clear_owned_gtid_ptr = true;
-    } else if (thd->owned_gtid.sidno == THD::OWNED_SIDNO_ANONYMOUS)
-      *need_clear_owned_gtid_ptr = true;
+    }
   } else {
     *need_clear_owned_gtid_ptr = false;
   }
@@ -2062,9 +2099,9 @@ int ha_commit_attachable(THD *thd) {
     trn_ctx->reset_scope(Transaction_ctx::STMT);
   }
 
-    /*
-      Mark transaction as commited in PSI.
-    */
+  /*
+    Mark transaction as commited in PSI.
+  */
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
   if (thd->m_transaction_psi != NULL) {
     MYSQL_COMMIT_TRANSACTION(thd->m_transaction_psi);
@@ -2432,11 +2469,11 @@ int ha_delete_table(THD *thd, handlerton *table_type, const char *path,
     Ha_delete_table_error_handler ha_delete_table_error_handler;
 
     /* Fill up strucutures that print_error may need */
-    dummy_share.path.str = (char *)path;
+    dummy_share.path.str = const_cast<char *>(path);
     dummy_share.path.length = strlen(path);
-    dummy_share.db.str = (char *)db;
+    dummy_share.db.str = db;
     dummy_share.db.length = strlen(db);
-    dummy_share.table_name.str = (char *)alias;
+    dummy_share.table_name.str = alias;
     dummy_share.table_name.length = strlen(alias);
     dummy_table.alias = alias;
 
@@ -2540,7 +2577,7 @@ handler *handler::clone(const char *name, MEM_ROOT *mem_root) {
     when the clone handler object is destroyed.
   */
   if (!(new_handler->ref =
-            (uchar *)alloc_root(mem_root, ALIGN_SIZE(ref_length) * 2)))
+            (uchar *)mem_root->Alloc(ALIGN_SIZE(ref_length) * 2)))
     goto err;
   /*
     TODO: Implement a more efficient way to have more than one index open for
@@ -2683,12 +2720,16 @@ int handler::ha_open(TABLE *table_arg, const char *name, int mode,
     (void)extra(HA_EXTRA_NO_READCHECK);  // Not needed in SQL
 
     /* ref is already allocated for us if we're called from handler::clone() */
-    if (!ref &&
-        !(ref = (uchar *)alloc_root(mem_root, ALIGN_SIZE(ref_length) * 2))) {
+    if (!ref && !(ref = (uchar *)mem_root->Alloc(ALIGN_SIZE(ref_length) * 2))) {
       ha_close();
       error = HA_ERR_OUT_OF_MEM;
     } else
       dup_ref = ref + ALIGN_SIZE(ref_length);
+
+    // Give the table a defined starting cursor, even if it never actually seeks
+    // or writes. This is important for things like weedout on const tables
+    // (which is a nonsensical combination, but can happen).
+    memset(ref, 0, ref_length);
     cached_table_flags = table_flags();
   }
 
@@ -2721,6 +2762,11 @@ int handler::ha_close(void) {
   DBUG_ASSERT(m_psi == NULL);
   DBUG_ASSERT(m_lock_type == F_UNLCK);
   DBUG_ASSERT(inited == NONE);
+  if (m_unique) {
+    // It's allocated on memroot and will be freed along with it
+    m_unique->cleanup();
+    m_unique = nullptr;
+  }
   DBUG_RETURN(close());
 }
 
@@ -2763,6 +2809,7 @@ int handler::ha_index_end() {
   inited = NONE;
   end_range = NULL;
   m_record_buffer = nullptr;
+  if (m_unique) m_unique->reset(false);
   DBUG_RETURN(index_end());
 }
 
@@ -3454,80 +3501,80 @@ inline ulonglong prev_insert_id(ulonglong nr,
           variables->auto_increment_offset);
 }
 
-  /**
-    Update the auto_increment field if necessary.
+/**
+  Update the auto_increment field if necessary.
 
-    Updates columns with type NEXT_NUMBER if:
+  Updates columns with type NEXT_NUMBER if:
 
-    - If column value is set to NULL (in which case
-      auto_increment_field_not_null is 0)
-    - If column is set to 0 and (sql_mode & MODE_NO_AUTO_VALUE_ON_ZERO) is not
-      set. In the future we will only set NEXT_NUMBER fields if one sets them
-      to NULL (or they are not included in the insert list).
+  - If column value is set to NULL (in which case
+    auto_increment_field_not_null is 0)
+  - If column is set to 0 and (sql_mode & MODE_NO_AUTO_VALUE_ON_ZERO) is not
+    set. In the future we will only set NEXT_NUMBER fields if one sets them
+    to NULL (or they are not included in the insert list).
 
-      In those cases, we check if the currently reserved interval still has
-      values we have not used. If yes, we pick the smallest one and use it.
-      Otherwise:
+    In those cases, we check if the currently reserved interval still has
+    values we have not used. If yes, we pick the smallest one and use it.
+    Otherwise:
 
-    - If a list of intervals has been provided to the statement via SET
-      INSERT_ID or via an Intvar_log_event (in a replication slave), we pick the
-      first unused interval from this list, consider it as reserved.
+  - If a list of intervals has been provided to the statement via SET
+    INSERT_ID or via an Intvar_log_event (in a replication slave), we pick the
+    first unused interval from this list, consider it as reserved.
 
-    - Otherwise we set the column for the first row to the value
-      next_insert_id(get_auto_increment(column))) which is usually
-      max-used-column-value+1.
-      We call get_auto_increment() for the first row in a multi-row
-      statement. get_auto_increment() will tell us the interval of values it
-      reserved for us.
+  - Otherwise we set the column for the first row to the value
+    next_insert_id(get_auto_increment(column))) which is usually
+    max-used-column-value+1.
+    We call get_auto_increment() for the first row in a multi-row
+    statement. get_auto_increment() will tell us the interval of values it
+    reserved for us.
 
-    - In both cases, for the following rows we use those reserved values without
-      calling the handler again (we just progress in the interval, computing
-      each new value from the previous one). Until we have exhausted them, then
-      we either take the next provided interval or call get_auto_increment()
-      again to reserve a new interval.
+  - In both cases, for the following rows we use those reserved values without
+    calling the handler again (we just progress in the interval, computing
+    each new value from the previous one). Until we have exhausted them, then
+    we either take the next provided interval or call get_auto_increment()
+    again to reserve a new interval.
 
-    - In both cases, the reserved intervals are remembered in
-      thd->auto_inc_intervals_in_cur_stmt_for_binlog if statement-based
-      binlogging; the last reserved interval is remembered in
-      auto_inc_interval_for_cur_row. The number of reserved intervals is
-      remembered in auto_inc_intervals_count. It differs from the number of
-      elements in thd->auto_inc_intervals_in_cur_stmt_for_binlog() because the
-      latter list is cumulative over all statements forming one binlog event
-      (when stored functions and triggers are used), and collapses two
-      contiguous intervals in one (see its append() method).
+  - In both cases, the reserved intervals are remembered in
+    thd->auto_inc_intervals_in_cur_stmt_for_binlog if statement-based
+    binlogging; the last reserved interval is remembered in
+    auto_inc_interval_for_cur_row. The number of reserved intervals is
+    remembered in auto_inc_intervals_count. It differs from the number of
+    elements in thd->auto_inc_intervals_in_cur_stmt_for_binlog() because the
+    latter list is cumulative over all statements forming one binlog event
+    (when stored functions and triggers are used), and collapses two
+    contiguous intervals in one (see its append() method).
 
-      The idea is that generated auto_increment values are predictable and
-      independent of the column values in the table.  This is needed to be
-      able to replicate into a table that already has rows with a higher
-      auto-increment value than the one that is inserted.
+    The idea is that generated auto_increment values are predictable and
+    independent of the column values in the table.  This is needed to be
+    able to replicate into a table that already has rows with a higher
+    auto-increment value than the one that is inserted.
 
-      After we have already generated an auto-increment number and the user
-      inserts a column with a higher value than the last used one, we will
-      start counting from the inserted value.
+    After we have already generated an auto-increment number and the user
+    inserts a column with a higher value than the last used one, we will
+    start counting from the inserted value.
 
-      This function's "outputs" are: the table's auto_increment field is filled
-      with a value, thd->next_insert_id is filled with the value to use for the
-      next row, if a value was autogenerated for the current row it is stored in
-      thd->insert_id_for_cur_row, if get_auto_increment() was called
-      thd->auto_inc_interval_for_cur_row is modified, if that interval is not
-      present in thd->auto_inc_intervals_in_cur_stmt_for_binlog it is added to
-      this list.
+    This function's "outputs" are: the table's auto_increment field is filled
+    with a value, thd->next_insert_id is filled with the value to use for the
+    next row, if a value was autogenerated for the current row it is stored in
+    thd->insert_id_for_cur_row, if get_auto_increment() was called
+    thd->auto_inc_interval_for_cur_row is modified, if that interval is not
+    present in thd->auto_inc_intervals_in_cur_stmt_for_binlog it is added to
+    this list.
 
-    @todo
-      Replace all references to "next number" or NEXT_NUMBER to
-      "auto_increment", everywhere (see below: there is
-      table->auto_increment_field_not_null, and there also exists
-      table->next_number_field, it's not consistent).
+  @todo
+    Replace all references to "next number" or NEXT_NUMBER to
+    "auto_increment", everywhere (see below: there is
+    table->auto_increment_field_not_null, and there also exists
+    table->next_number_field, it's not consistent).
 
-    @retval
-      0	ok
-    @retval
-      HA_ERR_AUTOINC_READ_FAILED  get_auto_increment() was called and
-      returned ~(ulonglong) 0
-    @retval
-      HA_ERR_AUTOINC_ERANGE storing value in field caused strict mode
-      failure.
-  */
+  @retval
+    0	ok
+  @retval
+    HA_ERR_AUTOINC_READ_FAILED  get_auto_increment() was called and
+    returned ~(ulonglong) 0
+  @retval
+    HA_ERR_AUTOINC_ERANGE storing value in field caused strict mode
+    failure.
+*/
 
 #define AUTO_INC_DEFAULT_NB_ROWS 1  // Some prefer 1024 here
 #define AUTO_INC_DEFAULT_NB_MAX_BITS 16
@@ -4220,6 +4267,9 @@ void handler::print_error(int error, myf errflag) {
     case HA_ERR_WRONG_TABLE_NAME:
       textno = ER_WRONG_TABLE_NAME;
       break;
+    case HA_ERR_TOO_LONG_PATH:
+      textno = ER_TABLE_NAME_CAUSES_TOO_LONG_PATH;
+      break;
     default: {
       /* The error was "unknown" to this function.
          Ask handler if it has got a message for this error */
@@ -4507,7 +4557,7 @@ void handler::mark_trx_read_write() {
     have been started, unless it's a DDL call, for which the
     storage engine starts the transaction internally, and commits
     it internally, without registering in the ha_list.
-    Unfortunately here we can't know know for sure if the engine
+    Unfortunately here we can't know for sure if the engine
     has registered the transaction or not, so we must check.
   */
   if (ha_info->is_started()) {
@@ -4869,8 +4919,9 @@ int handler::ha_load_table(const TABLE &table) { return load_table(table); }
  *
  * @sa handler::unload_table()
  */
-int handler::ha_unload_table(const char *db_name, const char *table_name) {
-  return unload_table(db_name, table_name);
+int handler::ha_unload_table(const char *db_name, const char *table_name,
+                             bool error_if_not_loaded) {
+  return unload_table(db_name, table_name, error_if_not_loaded);
 }
 
 /**
@@ -4911,7 +4962,7 @@ int handler::index_next_same(uchar *buf, const uchar *key, uint keylen) {
   int error;
   DBUG_ENTER("index_next_same");
   if (!(error = index_next(buf))) {
-    my_ptrdiff_t ptrdiff = buf - table->record[0];
+    ptrdiff_t ptrdiff = buf - table->record[0];
     uchar *save_record_0 = NULL;
     KEY *key_info = NULL;
     KEY_PART_INFO *key_part = NULL;
@@ -6207,7 +6258,12 @@ int handler::ha_multi_range_read_next(char **range_info) {
 int handler::multi_range_read_next(char **range_info) {
   int result = HA_ERR_END_OF_FILE;
   int range_res = 0;
+  bool dup_found = false;
   DBUG_ENTER("handler::multi_range_read_next");
+  // For a multi-valued index the unique filter have to be used for correct
+  // result
+  DBUG_ASSERT(!(table->key_info[active_index].flags & HA_MULTI_VALUED_KEY) ||
+              m_unique);
 
   if (!mrr_have_range) {
     mrr_have_range = true;
@@ -6222,8 +6278,11 @@ int handler::multi_range_read_next(char **range_info) {
     if (!((mrr_cur_range.range_flag & UNIQUE_RANGE) &&
           (mrr_cur_range.range_flag & EQ_RANGE))) {
       result = read_range_next();
-      /* On success or non-EOF errors jump to the end. */
-      if (result != HA_ERR_END_OF_FILE) break;
+      /*
+        On success or non-EOF errors check loop condition to filter
+        duplicates, if needed.
+      */
+      if (result != HA_ERR_END_OF_FILE) continue;
     } else {
       if (was_semi_consistent_read()) goto scan_it_again;
     }
@@ -6238,9 +6297,16 @@ int handler::multi_range_read_next(char **range_info) {
           mrr_cur_range.range_flag & EQ_RANGE, mrr_is_output_sorted);
       if (result != HA_ERR_END_OF_FILE) break;
     }
-  } while ((result == HA_ERR_END_OF_FILE) && !range_res);
+  } while (((result == HA_ERR_END_OF_FILE) ||
+            (m_unique && (dup_found = filter_dup_records()))) &&
+           !range_res);
 
   *range_info = mrr_cur_range.ptr;
+  /*
+    Last found record was a duplicate and we retrieved records from all
+    ranges, so no more records can be returned.
+  */
+  if (dup_found && range_res) result = HA_ERR_END_OF_FILE;
 
   DBUG_PRINT("exit", ("handler::multi_range_read_next result %d", result));
   DBUG_RETURN(result);
@@ -6372,6 +6438,10 @@ int DsMrr_impl::dsmrr_init(RANGE_SEQ_IF *seq_funcs, void *seq_init_param,
     if ((retval = h2->extra(HA_EXTRA_KEYREAD))) goto error;
 
     if ((retval = h2->ha_index_init(mrr_keyno, false))) goto error;
+
+    if ((table->key_info[mrr_keyno].flags & HA_MULTI_VALUED_KEY) &&
+        (retval = h2->ha_extra(HA_EXTRA_ENABLE_UNIQUE_RECORD_FILTER)))
+      goto error; /* purecov: inspected */
 
     // Transfer ICP from h to h2
     if (mrr_keyno == h->pushed_idx_cond_keyno) {
@@ -7257,7 +7327,7 @@ int handler::compare_key_icp(const key_range *range) const {
 */
 static inline void move_key_field_offsets(const key_range *range,
                                           const KEY_PART_INFO *key_part,
-                                          my_ptrdiff_t diff) {
+                                          ptrdiff_t diff) {
   for (size_t len = 0; len < range->length;
        len += key_part->store_length, ++key_part)
     key_part->field->move_field_offset(diff);
@@ -7285,7 +7355,7 @@ int handler::compare_key_in_buffer(const uchar *buf) const {
   DBUG_ASSERT(range_scan_direction == RANGE_SCAN_ASC);
 
   // Make the fields in the key point into the buffer instead of record[0].
-  const my_ptrdiff_t diff = buf - table->record[0];
+  const ptrdiff_t diff = buf - table->record[0];
   if (diff != 0) move_key_field_offsets(end_range, range_key_part, diff);
 
   // Compare the key in buf against end_range.
@@ -7348,7 +7418,7 @@ static bool exts_handlerton(THD *, plugin_ref plugin, void *arg) {
       while ((old_ext = it++)) {
         if (!strcmp(old_ext, *ext)) break;
       }
-      if (!old_ext) found_exts->push_back((char *)*ext);
+      if (!old_ext) found_exts->push_back(const_cast<char *>(*ext));
 
       it.rewind();
     }
@@ -7357,7 +7427,7 @@ static bool exts_handlerton(THD *, plugin_ref plugin, void *arg) {
 }
 
 TYPELIB *ha_known_exts() {
-  TYPELIB *known_extensions = (TYPELIB *)sql_alloc(sizeof(TYPELIB));
+  TYPELIB *known_extensions = (TYPELIB *)(*THR_MALLOC)->Alloc(sizeof(TYPELIB));
   known_extensions->name = "known_exts";
   known_extensions->type_lengths = NULL;
 
@@ -7368,7 +7438,7 @@ TYPELIB *ha_known_exts() {
                  &found_exts);
 
   size_t arr_length = sizeof(char *) * (found_exts.elements + 1);
-  ext = (const char **)sql_alloc(arr_length);
+  ext = (const char **)(*THR_MALLOC)->Alloc(arr_length);
 
   DBUG_ASSERT(NULL != ext);
   known_extensions->count = found_exts.elements;
@@ -7555,6 +7625,8 @@ int binlog_log_row(TABLE *table, const uchar *before_record,
         add_pke(table, thd, table->record[0]);
       }
     }
+    if (table->in_use->is_error()) return error ? HA_ERR_RBR_LOGGING_FAILED : 0;
+
     DBUG_DUMP("read_set 10", (uchar *)table->read_set->bitmap,
               (table->s->fields + 7) / 8);
 
@@ -7647,6 +7719,7 @@ int handler::ha_reset() {
   cancel_pushed_idx_cond();
   // Forget the record buffer.
   m_record_buffer = nullptr;
+  m_unique = nullptr;
 
   const int retval = reset();
   DBUG_RETURN(retval);
@@ -7845,18 +7918,17 @@ static void extract_blob_space_and_length_from_record_buff(
     // Check if this field should be included
     if (bitmap_is_set(fields, (*vfield)->field_index) &&
         (*vfield)->is_virtual_gcol() && (*vfield)->type() == MYSQL_TYPE_BLOB) {
-      blob_len_ptr_array[num].length = (*vfield)->data_length();
+      auto field = down_cast<Field_blob *>(*vfield);
+      blob_len_ptr_array[num].length = field->data_length();
       // TODO: The following check is only for Innodb.
       DBUG_ASSERT(blob_len_ptr_array[num].length == 255 ||
                   blob_len_ptr_array[num].length == 768 ||
                   blob_len_ptr_array[num].length == 3073);
 
-      uchar *ptr;
-      (*vfield)->get_ptr(&ptr);
-      blob_len_ptr_array[num].ptr = ptr;
+      blob_len_ptr_array[num].ptr = field->get_blob_data();
 
       // Let server allocate the space for BLOB virtual generated columns
-      (*vfield)->reset();
+      field->reset();
 
       num++;
       DBUG_ASSERT(num <= MAX_FIELDS);
@@ -7898,9 +7970,7 @@ static void copy_blob_data(const TABLE *table, const MY_BITMAP *const fields,
       const uint alloc_len = blob_len_ptr_array[num].length;
       length = length > alloc_len ? alloc_len : length;
 
-      uchar *ptr;
-      (*vfield)->get_ptr(&ptr);
-      memcpy(blob_len_ptr_array[num].ptr, ptr, length);
+      memcpy(blob_len_ptr_array[num].ptr, (*vfield)->get_ptr(), length);
       (down_cast<Field_blob *>(*vfield))
           ->store_in_allocated_space(
               pointer_cast<char *>(blob_len_ptr_array[num].ptr), length);
@@ -7921,14 +7991,16 @@ static void copy_blob_data(const TABLE *table, const MY_BITMAP *const fields,
   @param[in,out] record record buff of base columns generated column depends.
                         After calling this function, it will be used to return
                         the value of generated column.
-  @param in_purge   whehter the function is called by purge thread
+  @param in_purge   whether the function is called by purge thread
 
   @return true in case of error, false otherwise.
 */
 
 static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
                                         const MY_BITMAP *const fields,
-                                        uchar *record, bool in_purge) {
+                                        uchar *record, bool in_purge,
+                                        const char **mv_data_ptr,
+                                        ulong *mv_length) {
   DBUG_ENTER("my_eval_gcolumn_expr_helper");
   DBUG_ASSERT(table && table->vfield);
   DBUG_ASSERT(!thd->is_error());
@@ -7947,6 +8019,7 @@ static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
                                                    blob_len_ptr_array);
 
   bool res = false;
+  Field *mv_field = nullptr;
   MY_BITMAP fields_to_evaluate;
   my_bitmap_map bitbuf[bitmap_buffer_size(MAX_FIELDS) / sizeof(my_bitmap_map)];
   bitmap_init(&fields_to_evaluate, bitbuf, table->s->fields, 0);
@@ -7965,8 +8038,14 @@ static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
     // Validate that the field number is less than the bit map size
     DBUG_ASSERT(field->field_index < fields->n_bits);
 
-    if (bitmap_is_set(fields, field->field_index))
+    if (bitmap_is_set(fields, field->field_index)) {
       bitmap_union(&fields_to_evaluate, &field->gcol_info->base_columns_map);
+      if (field->is_array()) {
+        mv_field = field;
+        // Backup current value and use dedicated temporary buffer
+        if ((down_cast<Field_blob *>(field))->backup_blob_field()) return true;
+      }
+    }
   }
 
   /*
@@ -8019,6 +8098,16 @@ static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
     after table is closed.
   */
   if (in_purge) copy_blob_data(table, fields, blob_len_ptr_array);
+
+  if (mv_field) {
+    DBUG_ASSERT(mv_data_ptr);
+    Field_json *fld = down_cast<Field_json *>(mv_field);
+    // Save calculated value
+    *mv_data_ptr = fld->get_binary();
+    *mv_length = fld->data_length();
+    // Restore original value
+    (fld)->restore_blob_backup();
+  }
 
   repoint_field_to_record(table, record, old_buf);
   DBUG_RETURN(res);
@@ -8104,6 +8193,9 @@ bool handler::my_prepare_gcolumn_template(THD *thd, const char *db_name,
   @param table_name  name of table to open
   @param fields      bitmap of field index of evaluated generated column
   @param record      record buffer
+  @param[out] mv_data_ptr     For a typed array field in this arg the pointer
+                              to its value is returned
+  @param[out] mv_length  Length of the value above
 
   @return true in case of error, false otherwise.
 */
@@ -8111,7 +8203,9 @@ bool handler::my_prepare_gcolumn_template(THD *thd, const char *db_name,
 bool handler::my_eval_gcolumn_expr_with_open(THD *thd, const char *db_name,
                                              const char *table_name,
                                              const MY_BITMAP *const fields,
-                                             uchar *record) {
+                                             uchar *record,
+                                             const char **mv_data_ptr,
+                                             ulong *mv_length) {
   bool retval = true;
 
   char path[FN_REFLEN + 1];
@@ -8139,7 +8233,8 @@ bool handler::my_eval_gcolumn_expr_with_open(THD *thd, const char *db_name,
   dd::release_mdl(thd, mdl_ticket);
 
   if (table) {
-    retval = my_eval_gcolumn_expr_helper(thd, table, fields, record, true);
+    retval = my_eval_gcolumn_expr_helper(thd, table, fields, record, true,
+                                         mv_data_ptr, mv_length);
     intern_close_table(table);
   }
 
@@ -8147,13 +8242,46 @@ bool handler::my_eval_gcolumn_expr_with_open(THD *thd, const char *db_name,
 }
 
 bool handler::my_eval_gcolumn_expr(THD *thd, TABLE *table,
-                                   const MY_BITMAP *const fields,
-                                   uchar *record) {
+                                   const MY_BITMAP *const fields, uchar *record,
+                                   const char **mv_data_ptr, ulong *mv_length) {
   DBUG_ENTER("my_eval_gcolumn_expr");
 
-  const bool res =
-      my_eval_gcolumn_expr_helper(thd, table, fields, record, false);
+  const bool res = my_eval_gcolumn_expr_helper(thd, table, fields, record,
+                                               false, mv_data_ptr, mv_length);
   DBUG_RETURN(res);
+}
+
+bool handler::filter_dup_records() {
+  DBUG_ASSERT(inited == INDEX && m_unique);
+  position(table->record[0]);
+  return m_unique->unique_add(ref);
+}
+
+int handler::ha_extra(enum ha_extra_function operation) {
+  if (operation == HA_EXTRA_ENABLE_UNIQUE_RECORD_FILTER) {
+    // This operation should be called only for active multi-valued index
+    DBUG_ASSERT(inited == INDEX &&
+                (table->key_info[active_index].flags & HA_MULTI_VALUED_KEY));
+    // This unique filter uses only row id to weed out duplicates. Due to that
+    // it will work with any active index.
+    if (!m_unique &&
+        (!(m_unique = new (*THR_MALLOC) Unique_on_insert(ref_length)) ||
+         m_unique->init())) {
+      /* purecov: begin inspected */
+      destroy(m_unique);
+      return HA_ERR_OUT_OF_MEM;
+      /* purecov: end */
+    }
+    m_unique->reset(true);
+    return 0;
+  } else if (operation == HA_EXTRA_DISABLE_UNIQUE_RECORD_FILTER) {
+    if (m_unique) {
+      m_unique->cleanup();
+      destroy(m_unique);
+      m_unique = nullptr;
+    }
+  }
+  return extra(operation);
 }
 
 /**
@@ -8694,5 +8822,6 @@ static bool is_reserved_db_name_handlerton(THD *, plugin_ref plugin,
 */
 bool ha_check_reserved_db_name(const char *name) {
   return (plugin_foreach(NULL, is_reserved_db_name_handlerton,
-                         MYSQL_STORAGE_ENGINE_PLUGIN, (char *)name));
+                         MYSQL_STORAGE_ENGINE_PLUGIN,
+                         const_cast<char *>(name)));
 }

@@ -138,23 +138,23 @@ inline Item_result numeric_context_result_type(enum_field_types data_type,
   return result_type;
 }
 
-  /*
-     "Declared Type Collation"
-     A combination of collation and its derivation.
+/*
+   "Declared Type Collation"
+   A combination of collation and its derivation.
 
-    Flags for collation aggregation modes:
-    MY_COLL_ALLOW_SUPERSET_CONV  - allow conversion to a superset
-    MY_COLL_ALLOW_COERCIBLE_CONV - allow conversion of a coercible value
-                                   (i.e. constant).
-    MY_COLL_ALLOW_CONV           - allow any kind of conversion
-                                   (combination of the above two)
-    MY_COLL_ALLOW_NUMERIC_CONV   - if all items were numbers, convert to
-                                   @@character_set_connection
-    MY_COLL_DISALLOW_NONE        - don't allow return DERIVATION_NONE
-                                   (e.g. when aggregating for comparison)
-    MY_COLL_CMP_CONV             - combination of MY_COLL_ALLOW_CONV
-                                   and MY_COLL_DISALLOW_NONE
-  */
+  Flags for collation aggregation modes:
+  MY_COLL_ALLOW_SUPERSET_CONV  - allow conversion to a superset
+  MY_COLL_ALLOW_COERCIBLE_CONV - allow conversion of a coercible value
+                                 (i.e. constant).
+  MY_COLL_ALLOW_CONV           - allow any kind of conversion
+                                 (combination of the above two)
+  MY_COLL_ALLOW_NUMERIC_CONV   - if all items were numbers, convert to
+                                 @@character_set_connection
+  MY_COLL_DISALLOW_NONE        - don't allow return DERIVATION_NONE
+                                 (e.g. when aggregating for comparison)
+  MY_COLL_CMP_CONV             - combination of MY_COLL_ALLOW_CONV
+                                 and MY_COLL_DISALLOW_NONE
+*/
 
 #define MY_COLL_ALLOW_SUPERSET_CONV 1
 #define MY_COLL_ALLOW_COERCIBLE_CONV 2
@@ -337,7 +337,7 @@ class Name_string : public Simple_cstring {
   }
 };
 
-#define NAME_STRING(x) Name_string(C_STRING_WITH_LEN(x))
+#define NAME_STRING(x) Name_string(STRING_WITH_LEN(x))
 
 extern const Name_string null_name_string;
 
@@ -639,7 +639,7 @@ class Settable_routine_parameter {
 
     RETURN
       false if parameter value has been set,
-      true if error has occured.
+      true if error has occurred.
   */
   virtual bool set_value(THD *thd, sp_rcontext *ctx, Item **it) = 0;
 
@@ -683,11 +683,13 @@ class Item : public Parse_tree_node {
  public:
   Item(const Item &) = delete;
   void operator=(Item &) = delete;
-  static void *operator new(size_t size) noexcept { return sql_alloc(size); }
+  static void *operator new(size_t size) noexcept {
+    return (*THR_MALLOC)->Alloc(size);
+  }
   static void *operator new(size_t size, MEM_ROOT *mem_root,
                             const std::nothrow_t &arg MY_ATTRIBUTE((unused)) =
                                 std::nothrow) noexcept {
-    return alloc_root(mem_root, size);
+    return mem_root->Alloc(size);
   }
 
   static void operator delete(void *ptr MY_ATTRIBUTE((unused)),
@@ -733,6 +735,29 @@ class Item : public Parse_tree_node {
   enum cond_result { COND_UNDEF, COND_OK, COND_TRUE, COND_FALSE };
 
   enum traverse_order { POSTFIX, PREFIX };
+
+  /// How to cache constant JSON data
+  enum enum_const_item_cache {
+    /// Don't cache
+    CACHE_NONE = 0,
+    /// Source data is a JSON string, parse and cache result
+    CACHE_JSON_VALUE,
+    /// Source data is SQL scalar, convert and cache result
+    CACHE_JSON_ATOM
+  };
+
+  enum Bool_test  ///< Modifier for result transformation
+  { BOOL_IS_TRUE = 0x00,
+    BOOL_IS_FALSE = 0x01,
+    BOOL_IS_UNKNOWN = 0x02,
+    BOOL_NOT_TRUE = 0x03,
+    BOOL_NOT_FALSE = 0x04,
+    BOOL_NOT_UNKNOWN = 0x05,
+    BOOL_IDENTITY = 0x06,
+    BOOL_NEGATED = 0x07,
+    BOOL_ALWAYS_TRUE = 0x08,
+    BOOL_ALWAYS_FALSE = 0x09,
+  };
 
   /**
     Provide data type for a user or system variable, based on the type of
@@ -1281,6 +1306,8 @@ class Item : public Parse_tree_node {
     return NON_MONOTONIC;
   }
 
+  /// For template-compatibility with Field
+  inline bool is_null_value() { return null_value; }
   /*
     Convert "func_arg $CMP$ const" half-interval into "FUNC(func_arg) $CMP2$
     const2"
@@ -1824,7 +1851,7 @@ class Item : public Parse_tree_node {
     This function should not be used by code that is called during optimization
     and/or execution only. Use const_for_execution() in this case.
   */
-  bool may_evaluate_const(THD *thd) const;
+  bool may_evaluate_const(const THD *thd) const;
 
   /**
     This method is used for to:
@@ -1881,17 +1908,16 @@ class Item : public Parse_tree_node {
   /// Make sure the null_value member has a correct value.
   bool update_null_value();
 
-  /*
-    Inform the item that there will be no distinction between its result
-    being false or NULL.
+  /**
+    Apply the IS TRUE truth property, meaning that an UNKNOWN result and a
+    FALSE result are treated the same.
 
-    NOTE
-      This function will be called for eg. Items that are top-level AND-parts
-      of the WHERE clause. Items implementing this function (currently
-      Item_cond_and and subquery-related item) enable special optimizations
-      when they are "top level".
-  */
-  virtual void top_level_item() {}
+    This property is applied e.g to all conditions in WHERE, HAVING and ON
+    clauses, and is recursively applied to operands of AND, OR
+    operators. Some items (currently AND and subquery predicates) may enable
+    special optimizations when they have this property.
+   */
+  virtual void apply_is_true() {}
   /*
     set field of temporary table for Item which can be switched on temporary
     table during query processing (grouping and so on). @see
@@ -1899,6 +1925,7 @@ class Item : public Parse_tree_node {
   */
   virtual void set_result_field(Field *) {}
   virtual bool is_result_field() const { return false; }
+  virtual Field *get_result_field() const { return nullptr; }
   virtual bool is_bool_func() const { return false; }
   virtual void save_in_result_field(
       bool no_conversions MY_ATTRIBUTE((unused))) {}
@@ -2355,8 +2382,16 @@ class Item : public Parse_tree_node {
 
   Field *tmp_table_field_from_field_type(TABLE *table, bool fixed_length);
   virtual Item_field *field_for_view_update() { return 0; }
-
-  virtual Item *neg_transformer(THD *) { return NULL; }
+  /**
+    Informs an item that it is wrapped in a truth test, in case it wants to
+    transforms itself to implement this test by itself.
+    @param thd   Thread handle
+    @param test  Truth test
+  */
+  virtual Item *truth_transformer(THD *thd MY_ATTRIBUTE((unused)),
+                                  Bool_test test MY_ATTRIBUTE((unused))) {
+    return nullptr;
+  }
   virtual Item *update_value_transformer(uchar *) { return this; }
   virtual Item *safe_charset_converter(THD *thd, const CHARSET_INFO *tocs);
   void delete_self() {
@@ -2588,6 +2623,7 @@ class Item : public Parse_tree_node {
   }
   virtual Field *get_orig_field() { return NULL; }
   virtual void set_orig_field(Field *) {}
+  virtual bool strip_db_table_name_processor(uchar *) { return false; }
 
  private:
   virtual bool subq_opt_away_processor(uchar *) { return false; }
@@ -2757,6 +2793,32 @@ class Item : public Parse_tree_node {
       const Field_json *field MY_ATTRIBUTE((unused))) const {
     return false;
   }
+
+  /**
+    Whether the item returns array of its data type
+  */
+  virtual bool returns_array() const { return false; }
+
+  /**
+   A helper funciton to ensure proper usage of CAST(.. AS .. ARRAY)
+  */
+  virtual void allow_array_cast() {}
+};
+
+/**
+  Descriptor of what and how to cache for
+  Item::cache_const_expr_transformer/analyzer.
+
+*/
+
+struct cache_const_expr_arg {
+  /// Path from the expression's top to the current item in item tree
+  /// used to track parent of current item for caching JSON data
+  List<Item> stack;
+  /// Item to cache. Used as a binary flag, but kept as Item* for assertion
+  Item *cache_item{nullptr};
+  /// How to cache JSON data. @see Item::enum_const_item_cache
+  Item::enum_const_item_cache cache_arg{Item::CACHE_NONE};
 };
 
 /**
@@ -3277,7 +3339,7 @@ class Item_ident_for_show final : public Item {
   bool get_time(MYSQL_TIME *ltime) override { return field->get_time(ltime); }
   void make_field(Send_field *tmp_field) override;
   const CHARSET_INFO *charset_for_protocol() const override {
-    return (CHARSET_INFO *)field->charset_for_protocol();
+    return field->charset_for_protocol();
   }
 };
 
@@ -3382,7 +3444,13 @@ class Item_field : public Item_ident {
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
   bool get_time(MYSQL_TIME *ltime) override;
   bool get_timeval(struct timeval *tm, int *warnings) override;
-  bool is_null() override { return field->is_null(); }
+  bool is_null() override {
+    // NOTE: May return true even if maybe_null is not set!
+    // This can happen if the underlying TABLE did not have a NULL row
+    // at set_field() time (ie., table->is_null_row() was false),
+    // but does now.
+    return field->is_null();
+  }
   Item *get_tmp_table_item(THD *thd) override;
   bool collect_item_field_processor(uchar *arg) override;
   bool add_field_to_set_processor(uchar *arg) override;
@@ -3493,9 +3561,12 @@ class Item_field : public Item_ident {
   void set_orig_field(Field *orig_field_arg) override {
     if (orig_field_arg) orig_field = orig_field_arg;
   }
+  bool returns_array() const override { return field && field->is_array(); }
+
   void set_can_use_prefix_key() override { can_use_prefix_key = true; }
 
   bool replace_field_processor(uchar *arg) override;
+  bool strip_db_table_name_processor(uchar *) override;
 };
 
 class Item_null : public Item_basic_constant {
@@ -3573,7 +3644,9 @@ class Item_null_result final : public Item_null {
       : Item_null(), res_type(res_type), result_field(NULL) {
     set_data_type(fld_type);
   }
+  void set_result_field(Field *field) override { result_field = field; }
   bool is_result_field() const override { return result_field != nullptr; }
+  Field *get_result_field() const override { return result_field; }
   void save_in_result_field(bool no_conversions) override {
     save_in_field(result_field, no_conversions);
   }
@@ -4214,7 +4287,7 @@ class Item_string : public Item_basic_constant {
 
   /* Create from the given name and string. */
   Item_string(const POS &pos, const Name_string name_par,
-              const LEX_STRING &literal, const CHARSET_INFO *cs,
+              const LEX_CSTRING &literal, const CHARSET_INFO *cs,
               Derivation dv = DERIVATION_COERCIBLE,
               uint repertoire = MY_REPERTOIRE_UNICODE30)
       : super(pos), m_cs_specified(false) {
@@ -4450,7 +4523,7 @@ class Item_hex_string : public Item_basic_constant {
   bool eq(const Item *item, bool binary_cmp) const override;
   Item *safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) override;
   bool check_partition_func_processor(uchar *) override { return false; }
-  static LEX_STRING make_hex_str(const char *str, size_t str_length);
+  static LEX_CSTRING make_hex_str(const char *str, size_t str_length);
 
  private:
   void hex_string_init(const char *str, uint str_length);
@@ -4467,7 +4540,7 @@ class Item_bin_string final : public Item_hex_string {
     bin_string_init(literal.str, literal.length);
   }
 
-  static LEX_STRING make_bin_str(const char *str, size_t str_length);
+  static LEX_CSTRING make_bin_str(const char *str, size_t str_length);
 
  private:
   void bin_string_init(const char *str, size_t str_length);
@@ -4517,6 +4590,7 @@ class Item_result_field : public Item {
 
   void set_result_field(Field *field) override { result_field = field; }
   bool is_result_field() const override { return true; }
+  Field *get_result_field() const override { return result_field; }
   void save_in_result_field(bool no_conversions) override {
     DBUG_ENTER("Item_result_field::save_in_result_field");
     save_in_field(result_field, no_conversions);
@@ -4636,7 +4710,7 @@ class Item_ref : public Item_ident {
         chop_ref(!ref) {}
   enum Type type() const override { return REF_ITEM; }
   bool eq(const Item *item, bool binary_cmp) const override {
-    Item *it = ((Item *)item)->real_item();
+    const Item *it = const_cast<Item *>(item)->real_item();
     return ref && (*ref)->eq(it, binary_cmp);
   }
   double val_real() override;
@@ -4689,6 +4763,7 @@ class Item_ref : public Item_ident {
   }
   void set_result_field(Field *field) override { result_field = field; }
   bool is_result_field() const override { return true; }
+  Field *get_result_field() const override { return result_field; }
   void save_in_result_field(bool no_conversions) override {
     (*ref)->save_in_field(result_field, no_conversions);
   }
@@ -5965,7 +6040,10 @@ class Item_cache_datetime : public Item_cache {
 
 /// An item cache for values of type JSON.
 class Item_cache_json : public Item_cache {
+  /// Cached value
   Json_wrapper *m_value;
+  /// Whether the cached value is array and it is sorted
+  bool m_is_sorted;
 
  public:
   Item_cache_json();
@@ -5981,6 +6059,10 @@ class Item_cache_json : public Item_cache {
   my_decimal *val_decimal(my_decimal *val) override;
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
   bool get_time(MYSQL_TIME *ltime) override;
+  /// Sort cached data. Only arrays are affected.
+  void sort();
+  /// Returns true when cached value is array and it's sorted
+  bool is_sorted() { return m_is_sorted; }
 };
 
 /**
@@ -6032,6 +6114,60 @@ class Item_type_holder final : public Item {
     func_arg->err_code = func_arg->get_unnamed_function_error_code();
     return true;
   }
+};
+
+/// A class that represents a constant JSON value.
+class Item_json final : public Item_basic_constant {
+  Json_wrapper m_value;
+
+ public:
+  Item_json(Json_wrapper &&value, const Item_name_string &name)
+      : m_value(std::move(value)) {
+    set_data_type_json();
+    item_name = name;
+  }
+  enum Type type() const override { return STRING_ITEM; }
+  void print(const THD *, String *str, enum_query_type) const override {
+    str->append("json'");
+    m_value.to_string(str, true, "");
+    str->append("'");
+  }
+  bool val_json(Json_wrapper *result) override {
+    *result = m_value;
+    return false;
+  }
+
+  /*
+    The functions below don't get called currently, because Item_json
+    is used in a more limited way than other subclasses of
+    Item_basic_constant. Most notably, there is no JSON literal syntax
+    which gets translated into Item_json objects by the parser.
+
+    Still, the functions need to be implemented in order to satisfy
+    the compiler. Annotate them so that they don't clutter the test
+    coverage results.
+  */
+
+  /* purecov: begin inspected */
+  Item_result result_type() const override { return STRING_RESULT; }
+  double val_real() override { return m_value.coerce_real(item_name.ptr()); }
+  longlong val_int() override { return m_value.coerce_int(item_name.ptr()); }
+  String *val_str(String *str) override {
+    str->length(0);
+    if (m_value.to_string(str, true, item_name.ptr())) return error_str();
+    return str;
+  }
+  my_decimal *val_decimal(my_decimal *buf) override {
+    return m_value.coerce_decimal(buf, item_name.ptr());
+  }
+  bool get_date(MYSQL_TIME *ltime, my_time_flags_t) override {
+    return m_value.coerce_date(ltime, item_name.ptr());
+  }
+  bool get_time(MYSQL_TIME *ltime) override {
+    return m_value.coerce_time(ltime, item_name.ptr());
+  }
+  Item *clone_item() const override;
+  /* purecov: end */
 };
 
 extern Cached_item *new_Cached_item(THD *thd, Item *item);

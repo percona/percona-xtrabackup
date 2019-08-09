@@ -768,6 +768,10 @@ if(WIN32)
             -D_CRT_SECURE_NO_WARNINGS
             -D_CRT_NONSTDC_NO_DEPRECATE)
 
+    # Removing WIN32_LEAN_AND_MEAN definition to avoid:
+    # "warning C4005: 'WIN32_LEAN_AND_MEAN': macro redefinition" in several files
+    remove_definitions(-DWIN32_LEAN_AND_MEAN)
+
     include_directories(./WIN32-Code)
 endif()
 
@@ -795,7 +799,7 @@ include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/include)
 if (EVENT__BUILD_SHARED_LIBRARIES)
   set(EVENT__LIBRARY_TYPE SHARED)
 
-  if ((CMAKE_COMPILER_IS_GNUCC) OR (${CMAKE_C_COMPILER_ID} STREQUAL "Clang"))
+  if ((CMAKE_COMPILER_IS_GNUCC) OR (${CMAKE_C_COMPILER_ID} MATCHES "Clang"))
         add_compiler_flags(-fvisibility=hidden)
   elseif ("${CMAKE_C_COMPILER_ID}" STREQUAL "SunPro")
     add_compiler_flags(-xldscope=hidden)

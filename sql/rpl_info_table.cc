@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,7 +58,7 @@ Rpl_info_table::Rpl_info_table(uint nparam, const char *param_schema,
                                const uint param_n_pk_fields,
                                const uint *param_pk_field_indexes)
     : Rpl_info_handler(nparam), is_transactional(false) {
-  str_schema.str = str_table.str = NULL;
+  str_schema.str = str_table.str = nullptr;
   str_schema.length = str_table.length = 0;
 
   size_t schema_length = strlen(param_schema);
@@ -108,7 +108,7 @@ int Rpl_info_table::do_init_info(uint instance) {
 int Rpl_info_table::do_init_info(enum_find_method method, uint instance) {
   int error = 1;
   enum enum_return_id res = FOUND_ID;
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
 
@@ -123,8 +123,9 @@ int Rpl_info_table::do_init_info(enum_find_method method, uint instance) {
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (access->open_table(thd, str_schema, str_table, get_number_info(),
-                         TL_WRITE, &table, &backup))
+  if (access->open_table(thd, to_lex_cstring(str_schema),
+                         to_lex_cstring(str_table), get_number_info(), TL_WRITE,
+                         &table, &backup))
     goto end;
 
   if (verify_table_primary_key_fields(table)) goto end;
@@ -160,7 +161,7 @@ end:
   /*
     Unlocks and closes the rpl_info table.
   */
-  access->close_table(thd, table, &backup, error);
+  error = access->close_table(thd, table, &backup, error) || error;
   thd->variables.sql_mode = saved_mode;
   thd->variables.option_bits = saved_options;
   access->drop_thd(thd);
@@ -170,7 +171,7 @@ end:
 int Rpl_info_table::do_flush_info(const bool force) {
   int error = 1;
   enum enum_return_id res = FOUND_ID;
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
 
@@ -190,8 +191,9 @@ int Rpl_info_table::do_flush_info(const bool force) {
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (access->open_table(thd, str_schema, str_table, get_number_info(),
-                         TL_WRITE, &table, &backup))
+  if (access->open_table(thd, to_lex_cstring(str_schema),
+                         to_lex_cstring(str_table), get_number_info(), TL_WRITE,
+                         &table, &backup))
     goto end;
 
   /*
@@ -260,7 +262,7 @@ end:
   /*
     Unlocks and closes the rpl_info table.
   */
-  access->close_table(thd, table, &backup, error);
+  error = access->close_table(thd, table, &backup, error) || error;
   thd->is_operating_substatement_implicitly = false;
   thd->variables.sql_mode = saved_mode;
   thd->variables.option_bits = saved_options;
@@ -273,7 +275,7 @@ int Rpl_info_table::do_remove_info() { return do_clean_info(); }
 int Rpl_info_table::do_clean_info() {
   int error = 1;
   enum enum_return_id res = FOUND_ID;
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
 
@@ -288,8 +290,9 @@ int Rpl_info_table::do_clean_info() {
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (access->open_table(thd, str_schema, str_table, get_number_info(),
-                         TL_WRITE, &table, &backup))
+  if (access->open_table(thd, to_lex_cstring(str_schema),
+                         to_lex_cstring(str_table), get_number_info(), TL_WRITE,
+                         &table, &backup))
     goto end;
 
   /*
@@ -310,7 +313,7 @@ end:
   /*
     Unlocks and closes the rpl_info table.
   */
-  access->close_table(thd, table, &backup, error);
+  error = access->close_table(thd, table, &backup, error) || error;
   thd->variables.sql_mode = saved_mode;
   thd->variables.option_bits = saved_options;
   access->drop_thd(thd);
@@ -332,11 +335,11 @@ int Rpl_info_table::do_reset_info(uint nparam, const char *param_schema,
                                   const char *param_table,
                                   const char *channel_name) {
   int error = 0;
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
-  Rpl_info_table *info = NULL;
-  THD *thd = NULL;
+  Rpl_info_table *info = nullptr;
+  THD *thd = nullptr;
   int handler_error = 0;
 
   DBUG_ENTER("Rpl_info_table::do_reset_info");
@@ -352,7 +355,8 @@ int Rpl_info_table::do_reset_info(uint nparam, const char *param_schema,
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (info->access->open_table(thd, info->str_schema, info->str_table,
+  if (info->access->open_table(thd, to_lex_cstring(info->str_schema),
+                               to_lex_cstring(info->str_table),
                                info->get_number_info(), TL_WRITE, &table,
                                &backup)) {
     error = 1;
@@ -404,7 +408,7 @@ end:
   /*
     Unlocks and closes the rpl_info table.
   */
-  info->access->close_table(thd, table, &backup, error);
+  error = info->access->close_table(thd, table, &backup, error) || error;
   thd->variables.sql_mode = saved_mode;
   thd->variables.option_bits = saved_options;
   info->access->drop_thd(thd);
@@ -413,7 +417,7 @@ end:
 }
 
 enum_return_check Rpl_info_table::do_check_info() {
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
   enum_return_check return_check = ERROR_CHECKING_REPOSITORY;
@@ -426,7 +430,8 @@ enum_return_check Rpl_info_table::do_check_info() {
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (access->open_table(thd, str_schema, str_table, get_number_info(), TL_READ,
+  if (access->open_table(thd, to_lex_cstring(str_schema),
+                         to_lex_cstring(str_table), get_number_info(), TL_READ,
                          &table, &backup)) {
     LogErr(WARNING_LEVEL, ER_RPL_CANT_OPEN_INFO_TABLE, str_schema.str,
            str_table.str);
@@ -462,7 +467,7 @@ end:
 }
 
 enum_return_check Rpl_info_table::do_check_info(uint instance) {
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
   enum_return_check return_check = ERROR_CHECKING_REPOSITORY;
@@ -475,7 +480,8 @@ enum_return_check Rpl_info_table::do_check_info(uint instance) {
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (access->open_table(thd, str_schema, str_table, get_number_info(), TL_READ,
+  if (access->open_table(thd, to_lex_cstring(str_schema),
+                         to_lex_cstring(str_table), get_number_info(), TL_READ,
                          &table, &backup)) {
     LogErr(WARNING_LEVEL, ER_RPL_CANT_OPEN_INFO_TABLE, str_schema.str,
            str_table.str);
@@ -518,11 +524,11 @@ end:
 bool Rpl_info_table::do_count_info(uint nparam, const char *param_schema,
                                    const char *param_table, uint *counter) {
   int error = 1;
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   sql_mode_t saved_mode;
   Open_tables_backup backup;
-  Rpl_info_table *info = NULL;
-  THD *thd = NULL;
+  Rpl_info_table *info = nullptr;
+  THD *thd = nullptr;
 
   DBUG_ENTER("Rpl_info_table::do_count_info");
 
@@ -535,7 +541,8 @@ bool Rpl_info_table::do_count_info(uint nparam, const char *param_schema,
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (info->access->open_table(thd, info->str_schema, info->str_table,
+  if (info->access->open_table(thd, to_lex_cstring(info->str_schema),
+                               to_lex_cstring(info->str_table),
                                info->get_number_info(), TL_READ, &table,
                                &backup)) {
     /*
@@ -560,7 +567,7 @@ end:
   /*
     Unlocks and closes the rpl_info table.
   */
-  info->access->close_table(thd, table, &backup, error);
+  error = info->access->close_table(thd, table, &backup, error) || error;
   thd->variables.sql_mode = saved_mode;
   info->access->drop_thd(thd);
   delete info;
@@ -590,7 +597,8 @@ bool Rpl_info_table::do_set_info(const int pos, const char *value) {
 
 bool Rpl_info_table::do_set_info(const int pos, const uchar *value,
                                  const size_t size) {
-  return (field_values->value[pos].copy((char *)value, size, &my_charset_bin));
+  return (field_values->value[pos].copy(pointer_cast<const char *>(value), size,
+                                        &my_charset_bin));
 }
 
 bool Rpl_info_table::do_set_info(const int pos, const ulong value) {
@@ -692,7 +700,7 @@ bool Rpl_info_table::do_is_transactional() { return is_transactional; }
 bool Rpl_info_table::do_update_is_transactional() {
   bool error = true;
   sql_mode_t saved_mode;
-  TABLE *table = NULL;
+  TABLE *table = nullptr;
   Open_tables_backup backup;
 
   DBUG_ENTER("Rpl_info_table::do_update_is_transactional");
@@ -707,7 +715,8 @@ bool Rpl_info_table::do_update_is_transactional() {
   /*
     Opens and locks the rpl_info table before accessing it.
   */
-  if (access->open_table(thd, str_schema, str_table, get_number_info(), TL_READ,
+  if (access->open_table(thd, to_lex_cstring(str_schema),
+                         to_lex_cstring(str_table), get_number_info(), TL_READ,
                          &table, &backup))
     goto end;
 
@@ -715,7 +724,7 @@ bool Rpl_info_table::do_update_is_transactional() {
   error = false;
 
 end:
-  access->close_table(thd, table, &backup, 0);
+  error = access->close_table(thd, table, &backup, 0) || error;
   thd->variables.sql_mode = saved_mode;
   thd->variables.option_bits = saved_options;
   access->drop_thd(thd);

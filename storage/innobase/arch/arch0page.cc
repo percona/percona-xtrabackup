@@ -44,9 +44,6 @@ uint ARCH_PAGE_FILE_DATA_CAPACITY =
     ARCH_PAGE_FILE_CAPACITY - ARCH_PAGE_FILE_NUM_RESET_PAGE;
 #endif
 
-/** Global to indicate if the page archiver task is active */
-bool page_archiver_is_active = false;
-
 /** Event to signal the page archiver thread. */
 os_event_t page_archiver_thread_event;
 
@@ -76,8 +73,6 @@ void page_archiver_thread() {
       os_event_reset(page_archiver_thread_event);
     }
   }
-
-  page_archiver_is_active = false;
 }
 
 void Arch_Reset_File::init() {
@@ -928,6 +923,7 @@ int Page_Arch_Client_Ctx::start(bool recovery, uint64_t *start_id) {
     case ARCH_CLIENT_STATE_STOPPED:
       if (!m_is_durable) {
         ib::error() << "Client needs to release its resources";
+        arch_client_mutex_exit();
         return (ER_PAGE_TRACKING_NOT_STARTED);
       }
       DBUG_PRINT("page_archiver", ("Archiver in progress"));
@@ -973,6 +969,12 @@ int Page_Arch_Client_Ctx::start(bool recovery, uint64_t *start_id) {
   arch_client_mutex_exit();
 
   if (!m_is_durable) {
+    /* Update DD table buffer to get rid of recovery dependency for auto INC */
+    dict_persist_to_dd_table_buffer();
+
+    /* Make sure all written pages are synced to disk. */
+    fil_flush_file_spaces(to_int(FIL_TYPE_TABLESPACE));
+
     ib::info(ER_IB_MSG_20) << "Clone Start PAGE ARCH : start LSN : "
                            << m_start_lsn << ", checkpoint LSN : "
                            << log_get_checkpoint_lsn(*log_sys);
@@ -1155,13 +1157,12 @@ bool wait_flush_archiver(Page_Wait_Flush_Archiver_Cbk cbk_func) {
 
     auto err = Clone_Sys::wait_default(
         [&](bool alert, bool &result) {
-
           ut_ad(mutex_own(arch_page_sys->get_oper_mutex()));
           result = cbk_func();
 
           int err2 = 0;
-          if (srv_shutdown_state == SRV_SHUTDOWN_LAST_PHASE ||
-              srv_shutdown_state == SRV_SHUTDOWN_EXIT_THREADS ||
+          if (srv_shutdown_state.load() == SRV_SHUTDOWN_LAST_PHASE ||
+              srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS ||
               arch_page_sys->is_abort()) {
             err2 = ER_QUERY_INTERRUPTED;
 
@@ -1735,7 +1736,7 @@ void Arch_Page_Sys::track_page(buf_page_t *bpage, lsn_t track_lsn,
 
     /* Can possibly loop only two times. */
     if (count >= 2) {
-      if (srv_shutdown_state != SRV_SHUTDOWN_NONE) {
+      if (srv_shutdown_state.load() != SRV_SHUTDOWN_NONE) {
         arch_oper_mutex_exit();
         return;
       }
@@ -2124,11 +2125,10 @@ bool Arch_Page_Sys::wait_idle() {
 
     auto err = Clone_Sys::wait_default(
         [&](bool alert, bool &result) {
-
           ut_ad(mutex_own(&m_mutex));
           result = (m_state == ARCH_STATE_PREPARE_IDLE);
 
-          if (srv_shutdown_state != SRV_SHUTDOWN_NONE) {
+          if (srv_shutdown_state.load() != SRV_SHUTDOWN_NONE) {
             return (ER_QUERY_INTERRUPTED);
           }
 
@@ -2372,7 +2372,7 @@ int Arch_Page_Sys::start(Arch_Group **group, lsn_t *start_lsn,
   if (!wait_idle()) {
     int err = 0;
 
-    if (srv_shutdown_state != SRV_SHUTDOWN_NONE) {
+    if (srv_shutdown_state.load() != SRV_SHUTDOWN_NONE) {
       err = ER_QUERY_INTERRUPTED;
       my_error(err, MYF(0));
     } else {
@@ -2582,8 +2582,8 @@ int Arch_Page_Sys::start(Arch_Group **group, lsn_t *start_lsn,
   arch_mutex_exit();
 
   if (!recovery) {
-    /* Make sure all written pages are synced to disk. */
-    log_request_checkpoint(*log_sys, false);
+    /* Request checkpoint */
+    log_request_checkpoint(*log_sys, true);
   }
 
   return (0);
@@ -2834,8 +2834,8 @@ dberr_t Arch_Page_Sys::flush_blocks(bool *wait) {
 bool Arch_Page_Sys::archive(bool *wait) {
   dberr_t db_err;
 
-  auto is_abort = (srv_shutdown_state == SRV_SHUTDOWN_LAST_PHASE ||
-                   srv_shutdown_state == SRV_SHUTDOWN_EXIT_THREADS ||
+  auto is_abort = (srv_shutdown_state.load() == SRV_SHUTDOWN_LAST_PHASE ||
+                   srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS ||
                    m_state == ARCH_STATE_ABORT);
 
   arch_oper_mutex_enter();

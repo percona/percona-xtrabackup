@@ -1,7 +1,7 @@
 #ifndef SQL_STRING_INCLUDED
 #define SQL_STRING_INCLUDED
 
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -214,7 +214,7 @@ class String {
   static void *operator new(size_t size, MEM_ROOT *mem_root,
                             const std::nothrow_t &arg MY_ATTRIBUTE((unused)) =
                                 std::nothrow) noexcept {
-    return alloc_root(mem_root, size);
+    return mem_root->Alloc(size);
   }
   static void operator delete(void *ptr_arg, size_t size) {
     (void)ptr_arg;
@@ -232,12 +232,14 @@ class String {
   const CHARSET_INFO *charset() const { return m_charset; }
   size_t length() const { return m_length; }
   size_t alloced_length() const { return m_alloced_length; }
-  char &operator[](size_t i) const { return m_ptr[i]; }
+  const char &operator[](size_t i) const { return m_ptr[i]; }
+  char &operator[](size_t i) { return m_ptr[i]; }
   void length(size_t len) { m_length = len; }
   bool is_empty() const { return (m_length == 0); }
   void mark_as_const() { m_alloced_length = 0; }
   /* Returns a pointer to data, may not include NULL terminating character. */
   const char *ptr() const { return m_ptr; }
+  char *ptr() { return m_ptr; }
   char *c_ptr() {
     DBUG_ASSERT(!m_is_alloced || !m_ptr || !m_alloced_length ||
                 (m_alloced_length >= (m_length + 1)));
@@ -270,7 +272,7 @@ class String {
   void set(String &str, size_t offset, size_t arg_length) {
     DBUG_ASSERT(&str != this);
     mem_free();
-    m_ptr = const_cast<char *>(str.ptr()) + offset;
+    m_ptr = str.ptr() + offset;
     m_length = arg_length;
     m_is_alloced = false;
     if (str.m_alloced_length)

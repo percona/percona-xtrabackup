@@ -698,7 +698,8 @@ class Relay_log_info : public Rpl_info {
   bool get_table_data(TABLE *table_arg, table_def **tabledef_var,
                       TABLE **conv_table_var) const {
     DBUG_ASSERT(tabledef_var && conv_table_var);
-    for (TABLE_LIST *ptr = tables_to_lock; ptr != NULL; ptr = ptr->next_global)
+    for (TABLE_LIST *ptr = tables_to_lock; ptr != nullptr;
+         ptr = ptr->next_global)
       if (ptr->table == table_arg) {
         *tabledef_var = &static_cast<RPL_TABLE_LIST *>(ptr)->m_tabledef;
         *conv_table_var = static_cast<RPL_TABLE_LIST *>(ptr)->m_conv_table;
@@ -944,15 +945,15 @@ class Relay_log_info : public Rpl_info {
   */
   Slave_worker *get_worker(size_t n) {
     if (workers_array_initialized) {
-      if (n >= workers.size()) return NULL;
+      if (n >= workers.size()) return nullptr;
 
       return workers[n];
     } else if (workers_copy_pfs.size()) {
-      if (n >= workers_copy_pfs.size()) return NULL;
+      if (n >= workers_copy_pfs.size()) return nullptr;
 
       return workers_copy_pfs[n];
     } else
-      return NULL;
+      return nullptr;
   }
 
   /**
@@ -1372,7 +1373,7 @@ class Relay_log_info : public Rpl_info {
     mysql_mutex_lock(&data_lock);
     if (until_option) {
       delete until_option;
-      until_option = NULL;
+      until_option = nullptr;
     }
     mysql_mutex_unlock(&data_lock);
   }
@@ -1539,14 +1540,15 @@ class Relay_log_info : public Rpl_info {
   const char *get_until_log_name();
   my_off_t get_until_log_pos();
   bool is_until_satisfied_at_start_slave() {
-    return until_option != NULL && until_option->is_satisfied_at_start_slave();
+    return until_option != nullptr &&
+           until_option->is_satisfied_at_start_slave();
   }
   bool is_until_satisfied_before_dispatching_event(const Log_event *ev) {
-    return until_option != NULL &&
+    return until_option != nullptr &&
            until_option->is_satisfied_before_dispatching_event(ev);
   }
   bool is_until_satisfied_after_dispatching_event() {
-    return until_option != NULL &&
+    return until_option != nullptr &&
            until_option->is_satisfied_after_dispatching_event();
   }
   /**
@@ -1740,7 +1742,83 @@ class RLI_current_event_raii {
     m_rli->current_event = ev;
   }
   void set_current_event(Log_event *ev) { m_rli->current_event = ev; }
-  ~RLI_current_event_raii() { m_rli->current_event = NULL; }
+  ~RLI_current_event_raii() { m_rli->current_event = nullptr; }
+};
+
+/**
+ @class MDL_lock_guard
+
+ Utility class to allow RAII pattern with `MDL_request` and `MDL_context`
+ classes.
+ */
+class MDL_lock_guard {
+ public:
+  /**
+   Constructor that initializes the object and the target `THD` object but
+   doesn't try to acquire any lock.
+
+   @param target THD object, source for the `MDL_context` to use.
+   */
+  MDL_lock_guard(THD *target);
+  /**
+   Constructor that initializes the object and the target `THD` object and tries
+   to acquire the lock identified by `namespace_arg` with MDL type identified by
+   `mdl_type_arg`.
+
+   If the `blocking` parameter is true, it will instantly try to acquire the
+   lock and block. If the `blocking` parameter is false, it will first test if
+   the lock is already acquired and only try to lock if no conflicting lock is
+   already acquired.
+
+   @param target THD object, source for the `MDL_context` to use.
+   @param namespace_arg MDL key namespace to acquire the lock from.
+   @param mdl_type_arg MDL acquisition type
+   @param blocking whether or not the execution should block if the lock is
+                   already acquired.
+   */
+  MDL_lock_guard(THD *target, MDL_key::enum_mdl_namespace namespace_arg,
+                 enum_mdl_type mdl_type_arg, bool blocking = false);
+  /**
+   Destructor that unlocks all acquired locks.
+   */
+  virtual ~MDL_lock_guard();
+
+  /**
+   Uses the target `THD` object MDL context to acquire the lock identified by
+   `namespace_arg` with MDL type identified by `mdl_type_arg`.
+
+   If the `blocking` parameter is true, it will instantly try to acquire the
+   lock and block. If the `blocking` parameter is false, it will first test if
+   the lock is already acquired and only try to lock if no conflicting lock is
+   already acquired.
+
+   The lock is determined to have been acquired if the `THD` object MDL context
+   hasn't already a lock and the lock is acquired. In other words, if the MDL
+   context already has acquired the lock, the method will return failure.
+
+   @param namespace_arg MDL key namespace to acquire the lock from.
+   @param mdl_type_arg MDL acquisition type
+   @param blocking whether or not the execution should block if the lock is
+                   already acquired.
+
+   @return false if the lock has been acquired by this method invocation and
+           true if not.
+   */
+  bool lock(MDL_key::enum_mdl_namespace namespace_arg,
+            enum_mdl_type mdl_type_arg, bool blocking = false);
+  /**
+   Returns whether or not the lock as been acquired within this object
+   life-cycle.
+
+   @return true if the lock has been acquired within this object life-cycle.
+   */
+  bool is_locked();
+
+ private:
+  /** The `THD` object holding the MDL context used for acquiring/releasing. */
+  THD *m_target;
+  /** The MDL request holding the MDL ticket issued upon acquisition */
+  MDL_request m_request;
 };
 
 #endif /* RPL_RLI_H */

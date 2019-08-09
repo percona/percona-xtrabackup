@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,14 +30,21 @@
 #include "my_dbug.h"
 #include "ndbapi/ndb_cluster_connection.hpp"
 #include "sql/ha_ndbcluster_tables.h"
+#include "sql/ndb_anyvalue.h"
 #include "sql/ndb_name_util.h"
+#include "sql/ndb_require.h"
+#include "sql/ndb_schema_dist_table.h"
+#include "sql/ndb_schema_result_table.h"
 #include "sql/ndb_share.h"
 #include "sql/ndb_thd.h"
 #include "sql/ndb_thd_ndb.h"
-#include "sql/ndb_schema_dist_table.h"
+#include "sql/query_options.h"          // OPTION_BIN_LOG
+#include "sql/sql_thd_internal_api.h"
+
 
 static const std::string NDB_SCHEMA_TABLE_DB = NDB_REP_DB;
 static const std::string NDB_SCHEMA_TABLE_NAME = NDB_SCHEMA_TABLE;
+static const std::string NDB_SCHEMA_RESULT_TABLE_NAME = "ndb_schema_result";
 
 #ifdef _WIN32
 #define DIR_SEP "\\"
@@ -54,6 +61,29 @@ static const char* NDB_SCHEMA_TABLE_KEY =
 
 #undef DIR_SEP
 
+bool Ndb_schema_dist::is_ready(void* requestor) {
+  DBUG_TRACE;
+
+  std::stringstream ss;
+  ss << "is_ready_" << std::hex << requestor;
+  const std::string reference = ss.str();
+
+  NDB_SHARE* schema_share =
+      NDB_SHARE::acquire_reference_by_key(NDB_SCHEMA_TABLE_KEY,
+                                          reference.c_str());
+  if (schema_share == nullptr)
+    return false; // Not ready
+
+  if (!schema_share->have_event_operation()) {
+    NDB_SHARE::release_reference(schema_share, reference.c_str());
+    return false; // Not ready
+  }
+
+  NDB_SHARE::release_reference(schema_share, reference.c_str());
+  return true;
+}
+
+
 bool Ndb_schema_dist_client::is_schema_dist_table(const char* db,
                                                   const char* table_name)
 {
@@ -61,6 +91,15 @@ bool Ndb_schema_dist_client::is_schema_dist_table(const char* db,
       table_name == NDB_SCHEMA_TABLE_NAME)
   {
     // This is the NDB table used for schema distribution
+    return true;
+  }
+  return false;
+}
+
+bool Ndb_schema_dist_client::is_schema_dist_result_table(
+    const char *db, const char *table_name) {
+  if (db == NDB_SCHEMA_TABLE_DB && table_name == NDB_SCHEMA_RESULT_TABLE_NAME) {
+    // This is the NDB table used for schema distribution results
     return true;
   }
   return false;
@@ -79,10 +118,12 @@ bool Ndb_schema_dist_client::prepare(const char* db, const char* tabname)
   m_share =
       NDB_SHARE::acquire_reference_by_key(NDB_SCHEMA_TABLE_KEY,
                                           "ndb_schema_dist_client");
-  if (!m_share)
+  if (m_share == nullptr ||
+      m_share->have_event_operation() == false ||
+      DBUG_EVALUATE_IF("ndb_schema_dist_not_ready_early", true, false))
   {
-    // Failed to acquire reference to mysql.ndb_schema-> schema distribution
-    // is not ready
+    // The NDB_SHARE for mysql.ndb_schema hasn't been created or not setup
+    // yet -> schema distribution is not ready
     m_thd_ndb->push_warning("Schema distribution is not ready");
     DBUG_RETURN(false);
   }
@@ -100,9 +141,16 @@ bool Ndb_schema_dist_client::prepare(const char* db, const char* tabname)
     DBUG_RETURN(false);
   }
 
-  // Dimension max number of participants to what's supported by the slock
-  // column of ndb_schema
-  m_max_participants = schema_dist_table.get_slock_bits();
+  // Open the ndb_schema_result table, the table is created by ndbcluster
+  // when connecting to NDB and thus it shall exist at this time.
+  Ndb_schema_result_table schema_result_table(m_thd_ndb);
+  if (!schema_result_table.open()) {
+    DBUG_RETURN(false);
+  }
+
+  if (!schema_result_table.check_schema()) {
+    DBUG_RETURN(false);
+  }
 
   // Schema distribution is ready
   DBUG_RETURN(true);
@@ -121,7 +169,7 @@ bool Ndb_schema_dist_client::prepare_rename(const char* db, const char* tabname,
 
   // Allow additional keys for rename which will use the "old" name
   // when communicating with participants until the rename is done.
-  // After rename has occured, the new name will be used
+  // After rename has occurred, the new name will be used
   m_prepared_keys.add_key(new_db, new_tabname);
 
   // Schema distribution is ready
@@ -237,13 +285,9 @@ bool Ndb_schema_dist_client::log_schema_op(const char* query,
     DBUG_RETURN(false);
   }
 
-  // Check that m_share has been initialized to reference the
+  // Require that m_share has been initialized to reference the
   // schema distribution table
-  if (m_share == nullptr)
-  {
-    DBUG_ASSERT(m_share);
-    DBUG_RETURN(false);
-  }
+  ndbcluster::ndbrequire(m_share);
 
   // Check that prepared keys match
   if (!m_prepared_keys.check_key(db, table_name))
@@ -270,9 +314,12 @@ bool Ndb_schema_dist_client::log_schema_op(const char* query,
     }
   }
 
+  // Calculate anyvalue
+  const Uint32 anyvalue = calculate_anyvalue(log_query_on_participant);
+
   const int result = log_schema_op_impl(
       m_thd_ndb->ndb, query, static_cast<int>(query_length), db, table_name, id,
-      version, type, log_query_on_participant);
+      version, type, anyvalue);
   if (result != 0) {
     // Schema distribution failed
     m_thd_ndb->push_warning("Schema distribution failed!");
@@ -403,12 +450,22 @@ bool Ndb_schema_dist_client::drop_table(const char* db, const char* table_name,
       .append("`");
   DBUG_PRINT("info", ("rewritten query: '%s'", rewritten_query.c_str()));
 
+  // Special case where the table to be dropped was already dropped in the
+  // client. This is considered acceptable behavior and the query is distributed
+  // to ensure that the table is dropped in the pariticipants. Assign values to
+  // id and version to workaround the assumption that they will always be != 0
+  if (id == 0 && version == 0) {
+    id = unique_id();
+    version = unique_version();
+  }
+
   DBUG_RETURN(log_schema_op(rewritten_query.c_str(), rewritten_query.length(),
                             db, table_name, id, version, SOT_DROP_TABLE));
 }
 
 bool Ndb_schema_dist_client::create_db(const char* query, uint query_length,
-                                       const char* db) {
+                                       const char* db, unsigned int id,
+                                       unsigned int version) {
   DBUG_ENTER("Ndb_schema_dist_client::create_db");
 
   // Checking identifier limits "late", there is no way to return
@@ -422,12 +479,13 @@ bool Ndb_schema_dist_client::create_db(const char* query, uint query_length,
     DBUG_RETURN(false);
   }
 
-  DBUG_RETURN(log_schema_op(query, query_length, db, "", unique_id(),
-                            unique_version(), SOT_CREATE_DB));
+  DBUG_RETURN(log_schema_op(query, query_length, db, "",
+                            id, version, SOT_CREATE_DB));
 }
 
 bool Ndb_schema_dist_client::alter_db(const char* query, uint query_length,
-                                      const char* db) {
+                                      const char* db, unsigned int id,
+                                      unsigned int version) {
   DBUG_ENTER("Ndb_schema_dist_client::alter_db");
 
   // Checking identifier limits "late", there is no way to return
@@ -441,8 +499,8 @@ bool Ndb_schema_dist_client::alter_db(const char* query, uint query_length,
     DBUG_RETURN(false);
   }
 
-  DBUG_RETURN(log_schema_op(query, query_length, db, "", unique_id(),
-                            unique_version(), SOT_ALTER_DB));
+  DBUG_RETURN(log_schema_op(query, query_length, db, "",
+                            id, version, SOT_ALTER_DB));
 }
 
 bool Ndb_schema_dist_client::drop_db(const char* db) {
@@ -537,64 +595,6 @@ Ndb_schema_dist_client::drop_logfile_group(const char* logfile_group_name,
                             SOT_DROP_LOGFILE_GROUP));
 }
 
-const char* Ndb_schema_dist_client::type_str(SCHEMA_OP_TYPE type) const {
-  switch (type) {
-    case SOT_DROP_TABLE:
-      return "drop table";
-    case SOT_RENAME_TABLE_PREPARE:
-      return "rename table prepare";
-    case SOT_RENAME_TABLE:
-      return "rename table";
-    case SOT_CREATE_TABLE:
-      return "create table";
-    case SOT_ALTER_TABLE_COMMIT:
-      return "alter table";
-    case SOT_ONLINE_ALTER_TABLE_PREPARE:
-      return "online alter table prepare";
-    case SOT_ONLINE_ALTER_TABLE_COMMIT:
-      return "online alter table commit";
-    case SOT_DROP_DB:
-      return "drop db";
-    case SOT_CREATE_DB:
-      return "create db";
-    case SOT_ALTER_DB:
-      return "alter db";
-    case SOT_TABLESPACE:
-      return "tablespace";
-    case SOT_LOGFILE_GROUP:
-      return "logfile group";
-    case SOT_TRUNCATE_TABLE:
-      return "truncate table";
-    case SOT_CREATE_USER:
-      return "create user";
-    case SOT_DROP_USER:
-      return "drop user";
-    case SOT_RENAME_USER:
-      return "rename user";
-    case SOT_GRANT:
-      return "grant/revoke";
-    case SOT_REVOKE:
-      return "revoke all";
-    case SOT_CREATE_TABLESPACE:
-      return "create tablespace";
-    case SOT_ALTER_TABLESPACE:
-      return "alter tablespace";
-    case SOT_DROP_TABLESPACE:
-      return "drop tablespace";
-    case SOT_CREATE_LOGFILE_GROUP:
-      return "create logfile group";
-    case SOT_ALTER_LOGFILE_GROUP:
-      return "alter logfile group";
-    case SOT_DROP_LOGFILE_GROUP:
-      return "drop logfile group";
-    default:
-      break;
-  }
-  // String representation for SCHEMA_OP_TYPE missing
-  DBUG_ASSERT(false);  // Catch in debug
-  return "<unknown>";
-}
-
 const char*
 Ndb_schema_dist_client::type_name(SCHEMA_OP_TYPE type)
 {
@@ -654,4 +654,52 @@ Ndb_schema_dist_client::type_name(SCHEMA_OP_TYPE type)
   }
   DBUG_ASSERT(false);
   return "<unknown>";
+}
+
+uint32 Ndb_schema_dist_client::calculate_anyvalue(bool force_nologging) const {
+  Uint32 anyValue = 0;
+  if (!thd_slave_thread(m_thd)) {
+    /* Schema change originating from this MySQLD, check SQL_LOG_BIN
+     * variable and pass 'setting' to all logging MySQLDs via AnyValue
+     */
+    if (thd_test_options(m_thd, OPTION_BIN_LOG)) /* e.g. SQL_LOG_BIN == on */
+    {
+      DBUG_PRINT("info", ("Schema event for binlogging"));
+      ndbcluster_anyvalue_set_normal(anyValue);
+    } else {
+      DBUG_PRINT("info", ("Schema event not for binlogging"));
+      ndbcluster_anyvalue_set_nologging(anyValue);
+    }
+
+    if (!force_nologging) {
+      DBUG_PRINT("info", ("Forcing query not to be binlogged on participant"));
+      ndbcluster_anyvalue_set_nologging(anyValue);
+    }
+  } else {
+    /*
+       Slave propagating replicated schema event in ndb_schema
+       In case replicated serverId is composite
+       (server-id-bits < 31) we copy it into the
+       AnyValue as-is
+       This is for 'future', as currently Schema operations
+       do not have composite AnyValues.
+       In future it may be useful to support *not* mapping composite
+       AnyValues to/from Binlogged server-ids.
+    */
+    DBUG_PRINT("info", ("Replicated schema event with original server id"));
+    anyValue = thd_unmasked_server_id(m_thd);
+  }
+
+#ifndef DBUG_OFF
+  /*
+    MySQLD will set the user-portion of AnyValue (if any) to all 1s
+    This tests code filtering ServerIds on the value of server-id-bits.
+  */
+  const char *p = getenv("NDB_TEST_ANYVALUE_USERDATA");
+  if (p != 0 && *p != 0 && *p != '0' && *p != 'n' && *p != 'N') {
+    dbug_ndbcluster_anyvalue_set_userbits(anyValue);
+  }
+#endif
+  DBUG_PRINT("info", ("anyvalue: %u", anyValue));
+  return anyValue;
 }

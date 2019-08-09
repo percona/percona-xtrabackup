@@ -95,8 +95,8 @@
 #include "sql/conn_handler/socket_connection.h"  // MY_BIND_ALL_ADDRESSES
 #include "sql/derror.h"                          // read_texts
 #include "sql/discrete_interval.h"
-#include "sql/events.h"    // Events
-#include "sql/hostname.h"  // host_cache_resize
+#include "sql/events.h"          // Events
+#include "sql/hostname_cache.h"  // host_cache_resize
 #include "sql/log.h"
 #include "sql/log_event.h"  // MAX_MAX_ALLOWED_PACKET
 #include "sql/mdl.h"
@@ -134,6 +134,10 @@
 #ifdef _WIN32
 #include "sql/named_pipe.h"
 #endif
+
+#ifdef WITH_LOCK_ORDER
+#include "sql/debug_lock_order.h"
+#endif /* WITH_LOCK_ORDER */
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
 #include "storage/perfschema/pfs_server.h"
@@ -251,6 +255,84 @@ static bool check_session_admin(sys_var *self MY_ATTRIBUTE((unused)), THD *thd,
   not a mistakenly forgotten 'static' keyword.
 */
 #define export /* not static */
+
+#ifdef WITH_LOCK_ORDER
+
+#define LO_TRAILING_PROPERTIES                                          \
+  NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL), ON_UPDATE(NULL), NULL, \
+      sys_var::PARSE_EARLY
+
+static Sys_var_bool Sys_lo_enabled("lock_order", "Enable the lock order.",
+                                   READ_ONLY GLOBAL_VAR(lo_param.m_enabled),
+                                   CMD_LINE(OPT_ARG), DEFAULT(false),
+                                   LO_TRAILING_PROPERTIES);
+
+static Sys_var_charptr Sys_lo_out_dir("lock_order_output_directory",
+                                      "Lock order output directory.",
+                                      READ_ONLY GLOBAL_VAR(lo_param.m_out_dir),
+                                      CMD_LINE(OPT_ARG), IN_FS_CHARSET,
+                                      DEFAULT(nullptr), LO_TRAILING_PROPERTIES);
+
+static Sys_var_charptr Sys_lo_dep_1(
+    "lock_order_dependencies", "Lock order dependencies file.",
+    READ_ONLY GLOBAL_VAR(lo_param.m_dependencies_1), CMD_LINE(OPT_ARG),
+    IN_FS_CHARSET, DEFAULT(nullptr), LO_TRAILING_PROPERTIES);
+
+static Sys_var_charptr Sys_lo_dep_2(
+    "lock_order_extra_dependencies", "Lock order extra dependencies file.",
+    READ_ONLY GLOBAL_VAR(lo_param.m_dependencies_2), CMD_LINE(OPT_ARG),
+    IN_FS_CHARSET, DEFAULT(nullptr), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_print_txt("lock_order_print_txt",
+                                     "Print the lock_order.txt file.",
+                                     READ_ONLY GLOBAL_VAR(lo_param.m_print_txt),
+                                     CMD_LINE(OPT_ARG), DEFAULT(false),
+                                     LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_trace_loop(
+    "lock_order_trace_loop", "Enable tracing for all loops.",
+    READ_ONLY GLOBAL_VAR(lo_param.m_trace_loop), CMD_LINE(OPT_ARG),
+    DEFAULT(false), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_debug_loop(
+    "lock_order_debug_loop", "Enable debugging for all loops.",
+    READ_ONLY GLOBAL_VAR(lo_param.m_debug_loop), CMD_LINE(OPT_ARG),
+    DEFAULT(false), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_trace_missing_arc(
+    "lock_order_trace_missing_arc", "Enable tracing for all missing arcs.",
+    READ_ONLY GLOBAL_VAR(lo_param.m_trace_missing_arc), CMD_LINE(OPT_ARG),
+    DEFAULT(true), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_debug_missing_arc(
+    "lock_order_debug_missing_arc", "Enable debugging for all missing arcs.",
+    READ_ONLY GLOBAL_VAR(lo_param.m_debug_missing_arc), CMD_LINE(OPT_ARG),
+    DEFAULT(false), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_trace_missing_unlock(
+    "lock_order_trace_missing_unlock", "Enable tracing for all missing unlocks",
+    READ_ONLY GLOBAL_VAR(lo_param.m_trace_missing_unlock), CMD_LINE(OPT_ARG),
+    DEFAULT(true), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_debug_missing_unlock(
+    "lock_order_debug_missing_unlock",
+    "Enable debugging for all missing unlocks",
+    READ_ONLY GLOBAL_VAR(lo_param.m_debug_missing_unlock), CMD_LINE(OPT_ARG),
+    DEFAULT(false), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_trace_missing_key(
+    "lock_order_trace_missing_key",
+    "Enable trace for missing performance schema keys",
+    READ_ONLY GLOBAL_VAR(lo_param.m_trace_missing_key), CMD_LINE(OPT_ARG),
+    DEFAULT(false), LO_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_lo_debug_missing_key(
+    "lock_order_debug_missing_key",
+    "Enable debugging for missing performance schema keys",
+    READ_ONLY GLOBAL_VAR(lo_param.m_debug_missing_key), CMD_LINE(OPT_ARG),
+    DEFAULT(false), LO_TRAILING_PROPERTIES);
+
+#endif /* WITH_LOCK_ORDER */
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
 
@@ -953,7 +1035,7 @@ static bool check_outside_trx(sys_var *, THD *thd, set_var *var) {
              var->var->name.str);
     return true;
   }
-  if (!thd->owned_gtid.is_empty()) {
+  if (!thd->owned_gtid_is_empty()) {
     char buf[Gtid::MAX_TEXT_LENGTH + 1];
     if (thd->owned_gtid.sidno > 0)
       thd->owned_gtid.to_string(thd->owned_sid, buf);
@@ -1212,7 +1294,7 @@ static Sys_var_enum Sys_binlog_row_image(
     "Controls whether rows should be logged in 'FULL', 'NOBLOB' or "
     "'MINIMAL' formats. 'FULL', means that all columns in the before "
     "and after image are logged. 'NOBLOB', means that mysqld avoids logging "
-    "blob columns whenever possible (eg, blob column was not changed or "
+    "blob columns whenever possible (e.g. blob column was not changed or "
     "is not part of primary key). 'MINIMAL', means that a PK equivalent (PK "
     "columns or full row if there is no PK in the table) is logged in the "
     "before image, and only changed columns are logged in the after image. "
@@ -1478,17 +1560,17 @@ static bool check_storage_engine(sys_var *self, THD *thd, set_var *var) {
   if (!opt_initialize && !opt_noacl) {
     char buff[STRING_BUFFER_USUAL_SIZE];
     String str(buff, sizeof(buff), system_charset_info), *res;
-    LEX_STRING se_name;
+    LEX_CSTRING se_name;
 
     if (var->value) {
       res = var->value->val_str(&str);
-      lex_string_set(&se_name, const_cast<char *>(res->ptr()));
+      lex_cstring_set(&se_name, res->ptr());
     } else {
       // Use the default value defined by sys_var.
-      lex_string_set(&se_name,
-                     pointer_cast<char *>(
-                         down_cast<Sys_var_plugin *>(self)->global_value_ptr(
-                             thd, nullptr)));
+      lex_cstring_set(&se_name,
+                      pointer_cast<const char *>(
+                          down_cast<Sys_var_plugin *>(self)->global_value_ptr(
+                              thd, nullptr)));
     }
 
     plugin_ref plugin;
@@ -3306,8 +3388,7 @@ static Sys_var_ulong Sys_range_alloc_block_size(
 
 static bool fix_thd_mem_root(sys_var *self, THD *thd, enum_var_type type) {
   if (!self->is_global_persist(type))
-    reset_root_defaults(thd->mem_root, thd->variables.query_alloc_block_size,
-                        thd->variables.query_prealloc_size);
+    thd->mem_root->set_block_size(thd->variables.query_alloc_block_size);
   return false;
 }
 static Sys_var_ulong Sys_query_alloc_block_size(
@@ -3866,6 +3947,20 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
   if (new_gtid_mode == GTID_MODE_ON && sql_slave_skip_counter > 0) {
     my_error(ER_CANT_SET_GTID_MODE, MYF(0), "ON",
              "@@GLOBAL.SQL_SLAVE_SKIP_COUNTER is greater than zero");
+    goto err;
+  }
+
+  if (new_gtid_mode != GTID_MODE_ON && replicate_same_server_id &&
+      opt_log_slave_updates && opt_bin_log) {
+    std::string mode = get_gtid_mode_string(new_gtid_mode);
+    std::stringstream ss;
+
+    ss << "replicate_same_server_id is set together with log_slave_updates"
+       << " and log_bin. Thus, setting @@global.GTID_MODE = " << mode
+       << " would lead to infinite loops in case this server is part of a"
+       << " circular replication topology";
+
+    my_error(ER_CANT_SET_GTID_MODE, MYF(0), mode.c_str(), ss.str().c_str());
     goto err;
   }
 
@@ -5623,7 +5718,7 @@ static Sys_var_ulong Sys_slave_parallel_workers(
 
 static Sys_var_ulonglong Sys_mts_pending_jobs_size_max(
     "slave_pending_jobs_size_max",
-    "Max size of Slave Worker queues holding yet not applied events."
+    "Max size of Slave Worker queues holding not yet applied events. "
     "The least possible value must be not less than the master side "
     "max_allowed_packet.",
     GLOBAL_VAR(opt_mts_pending_jobs_size_max), CMD_LINE(REQUIRED_ARG),
@@ -5693,9 +5788,9 @@ static Sys_var_struct<MY_LOCALE, Get_locale_name> Sys_lc_time_names(
     NO_MUTEX_GUARD, IN_BINLOG, ON_CHECK(check_locale));
 
 static Sys_var_tz Sys_time_zone("time_zone", "time_zone",
-                                SESSION_VAR(time_zone), NO_CMD_LINE,
-                                DEFAULT(&default_tz), NO_MUTEX_GUARD,
-                                IN_BINLOG);
+                                HINT_UPDATEABLE SESSION_VAR(time_zone),
+                                NO_CMD_LINE, DEFAULT(&default_tz),
+                                NO_MUTEX_GUARD, IN_BINLOG);
 
 static bool fix_host_cache_size(sys_var *, THD *, enum_var_type) {
   hostname_cache_resize(host_cache_size);
@@ -6535,8 +6630,8 @@ static bool check_set_default_table_encryption_access(
 
 static Sys_var_bool Sys_default_table_encryption(
     "default_table_encryption",
-    "Database and tablespace created with this default encryption property"
-    "unless, the user specify a explicit encryption property.",
+    "Database and tablespace are created with this default encryption property "
+    "unless the user specifies an explicit encryption property.",
     HINT_UPDATEABLE SESSION_VAR(default_table_encryption), CMD_LINE(OPT_ARG),
     DEFAULT(false), NO_MUTEX_GUARD, IN_BINLOG,
     ON_CHECK(check_set_default_table_encryption_access), ON_UPDATE(0));
@@ -6561,3 +6656,10 @@ static Sys_var_bool Sys_table_encryption_privilege_check(
     GLOBAL_VAR(opt_table_encryption_privilege_check), CMD_LINE(OPT_ARG),
     DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(check_set_table_encryption_privilege_access), ON_UPDATE(0));
+
+static Sys_var_bool Sys_var_print_identified_with_as_hex(
+    "print_identified_with_as_hex",
+    "SHOW CREATE USER will print the AS clause as HEX if it contains "
+    "non-prinable characters",
+    SESSION_VAR(print_identified_with_as_hex), CMD_LINE(OPT_ARG),
+    DEFAULT(false));

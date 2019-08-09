@@ -404,7 +404,7 @@ Item_sum::Item_sum(const POS &pos, PT_item_list *opt_list, PT_window *w)
       used_tables_cache(0),
       forced_const(false) {
   if (arg_count > 0) {
-    args = (Item **)sql_alloc(sizeof(Item *) * arg_count);
+    args = (Item **)(*THR_MALLOC)->Alloc(sizeof(Item *) * arg_count);
     if (args == NULL) {
       return;  // OOM
     }
@@ -428,7 +428,7 @@ Item_sum::Item_sum(THD *thd, Item_sum *item)
       next_sum(nullptr),
       base_select(item->base_select),
       aggr_select(item->aggr_select),
-      quick_group(item->quick_group),
+      allow_group_via_temp_table(item->allow_group_via_temp_table),
       arg_count(item->arg_count),
       used_tables_cache(item->used_tables_cache),
       forced_const(item->forced_const) {
@@ -661,8 +661,8 @@ Field *Item_sum::create_tmp_field(bool, TABLE *table) {
   Field *field;
   switch (result_type()) {
     case REAL_RESULT:
-      field = new (*THR_MALLOC)
-          Field_double(max_length, maybe_null, item_name.ptr(), decimals, true);
+      field = new (*THR_MALLOC) Field_double(
+          max_length, maybe_null, item_name.ptr(), decimals, false, true);
       break;
     case INT_RESULT:
       field = new (*THR_MALLOC) Field_longlong(max_length, maybe_null,
@@ -843,7 +843,8 @@ static int simple_str_key_cmp(const void *arg, const void *a, const void *b) {
 
 int Aggregator_distinct::composite_key_cmp(const void *arg, const void *a,
                                            const void *b) {
-  Aggregator_distinct *aggr = (Aggregator_distinct *)arg;
+  const Aggregator_distinct *aggr =
+      static_cast<const Aggregator_distinct *>(arg);
   const uchar *key1 = pointer_cast<const uchar *>(a);
   const uchar *key2 = pointer_cast<const uchar *>(b);
   Field **field = aggr->table->field;
@@ -980,7 +981,7 @@ bool Aggregator_distinct::setup(THD *thd) {
               create_tmp_table(thd, tmp_table_param, list, NULL, true, false,
                                select_lex->active_options(), HA_POS_ERROR, "")))
       return true;
-    table->file->extra(HA_EXTRA_NO_ROWS);  // Don't update rows
+    table->file->ha_extra(HA_EXTRA_NO_ROWS);  // Don't update rows
     table->no_rows = 1;
     if (table->hash_field) table->file->ha_index_init(0, 0);
 
@@ -1064,7 +1065,7 @@ bool Aggregator_distinct::setup(THD *thd) {
     if (field_list.push_back(&field_def)) DBUG_RETURN(true);
 
     item_sum->null_value = item_sum->maybe_null = 1;
-    item_sum->quick_group = 0;
+    item_sum->allow_group_via_temp_table = false;
 
     DBUG_ASSERT(item_sum->get_arg(0)->fixed);
 
@@ -1225,7 +1226,7 @@ void Aggregator_distinct::endup() {
     DBUG_ASSERT(item_sum->fixed == 1);
     Item_sum_count *sum = (Item_sum_count *)item_sum;
 
-    if (tree && tree->elements == 0) {
+    if (tree && tree->is_in_memory()) {
       /* everything fits in memory */
       sum->count = (longlong)tree->elements_in_tree();
       endup_done = true;
@@ -1393,7 +1394,7 @@ void Item_sum_bit::remove_bits(const String *s1, ulonglong b1) {
 
   if (hybrid_type == STRING_RESULT) {
     s1_c_p = pointer_cast<const uchar *>(s1->ptr());
-    value_bits = pointer_cast<uchar *>(const_cast<char *>(value_buff.ptr()));
+    value_bits = pointer_cast<uchar *>(value_buff.ptr());
     buff_length = value_buff.length() - 1;
   } else {
     s1_c_p = pointer_cast<const uchar *>(&b1);
@@ -1493,8 +1494,7 @@ bool Item_sum_bit::add_bits(const String *s1, ulonglong b1) {
       }
 
       // At this point the values should be not-null and have the same size.
-      uchar *value_bits =
-          pointer_cast<uchar *>(const_cast<char *>(value_buff.ptr()));
+      uchar *value_bits = pointer_cast<uchar *>(value_buff.ptr());
       if (m_is_xor)
         apply_bit_op<std::bit_xor<char>, std::bit_xor<ulonglong>>(
             buff_length, s1_c_p, value_bits);
@@ -1639,6 +1639,8 @@ bool Item_sum_hybrid::fix_fields(THD *thd, Item **ref) {
   item = item->real_item();
   if (item->type() == Item::FIELD_ITEM)
     set_data_type(item->data_type());
+  else if (item->data_type() == MYSQL_TYPE_JSON)
+    set_data_type_json();
   else
     set_data_type_from_result(hybrid_type, max_length);
 
@@ -1762,6 +1764,7 @@ bool Item_sum_sum::resolve_type(THD *) {
   maybe_null = true;
   null_value = true;
   decimals = args[0]->decimals;
+  max_length = float_length(decimals);
 
   switch (args[0]->numeric_context_result_type()) {
     case REAL_RESULT:
@@ -2146,8 +2149,8 @@ Field *Item_sum_avg::create_tmp_field(bool group, TABLE *table) {
   } else if (hybrid_type == DECIMAL_RESULT)
     field = Field_new_decimal::create_from_item(this);
   else
-    field = new (*THR_MALLOC)
-        Field_double(max_length, maybe_null, item_name.ptr(), decimals, true);
+    field = new (*THR_MALLOC) Field_double(
+        max_length, maybe_null, item_name.ptr(), decimals, false, true);
   if (field) field->init(table);
   DBUG_RETURN(field);
 }
@@ -2515,8 +2518,8 @@ Field *Item_sum_variance::create_tmp_field(bool group, TABLE *table) {
         new (*THR_MALLOC) Field_string(sizeof(double) * 2 + sizeof(longlong), 0,
                                        item_name.ptr(), &my_charset_bin);
   } else
-    field = new (*THR_MALLOC)
-        Field_double(max_length, maybe_null, item_name.ptr(), decimals, true);
+    field = new (*THR_MALLOC) Field_double(
+        max_length, maybe_null, item_name.ptr(), decimals, false, true);
 
   if (field != NULL) field->init(table);
 
@@ -3271,7 +3274,7 @@ void Item_sum_bit::update_field() {
     // Add the current value to the previously determined one
     add();
     // Store the value in the result_field
-    result_field->store((char *)value_buff.ptr(), value_buff.length(),
+    result_field->store(value_buff.ptr(), value_buff.length(),
                         default_charset());
   }
 }
@@ -3363,6 +3366,8 @@ void Item_sum_hybrid::update_field() {
     case STRING_RESULT:
       if (args[0]->is_temporal())
         min_max_update_temporal_field();
+      else if (data_type() == MYSQL_TYPE_JSON)
+        min_max_update_json_field();
       else
         min_max_update_str_field();
       break;
@@ -3393,6 +3398,21 @@ void Item_sum_hybrid::min_max_update_temporal_field() {
   } else if (result_field->is_null())
     result_field->set_null();
   result_field->store_packed(old_nr);
+}
+
+void Item_sum_hybrid::min_max_update_json_field() {
+  Json_wrapper json1;
+  if (args[0]->val_json(&json1)) return;
+  if (args[0]->null_value) return;
+
+  Field_json *json_field = down_cast<Field_json *>(result_field);
+  Json_wrapper json2;
+
+  if (json_field->is_null() ||
+      (!json_field->val_json(&json2) && cmp_sign * json1.compare(json2) < 0)) {
+    json_field->set_notnull();
+    json_field->store_json(&json1);
+  }
 }
 
 void Item_sum_hybrid::min_max_update_str_field() {
@@ -3593,8 +3613,7 @@ String *Item_sum_bit_field::val_str(String *str) {
     if (!non_nulls) {
       DBUG_EXECUTE_IF("simulate_sum_out_of_memory", { return nullptr; });
       if (res_str->alloc(max_length - 1)) return nullptr;
-      std::memset(const_cast<char *>(res_str->ptr()),
-                  static_cast<int>(reset_bits), max_length - 1);
+      std::memset(res_str->ptr(), static_cast<int>(reset_bits), max_length - 1);
       res_str->length(max_length - 1);
       res_str->set_charset(&my_charset_bin);
     } else
@@ -3836,7 +3855,8 @@ String *Item_sum_udf_str::val_str(String *str) {
 int group_concat_key_cmp_with_distinct(const void *arg, const void *key1,
                                        const void *key2) {
   DBUG_ENTER("group_concat_key_cmp_with_distinct");
-  Item_func_group_concat *item_func = (Item_func_group_concat *)arg;
+  const Item_func_group_concat *item_func =
+      static_cast<const Item_func_group_concat *>(arg);
   TABLE *table = item_func->table;
 
   for (uint i = 0; i < item_func->arg_count_field; i++) {
@@ -3856,7 +3876,8 @@ int group_concat_key_cmp_with_distinct(const void *arg, const void *key1,
     if (!field) continue;
 
     uint offset = field->offset(field->table->record[0]) - table->s->null_bytes;
-    int res = field->cmp((uchar *)key1 + offset, (uchar *)key2 + offset);
+    int res = field->cmp(pointer_cast<const uchar *>(key1) + offset,
+                         pointer_cast<const uchar *>(key2) + offset);
     if (res) DBUG_RETURN(res);
   }
   DBUG_RETURN(0);
@@ -3869,7 +3890,8 @@ int group_concat_key_cmp_with_distinct(const void *arg, const void *key1,
 int group_concat_key_cmp_with_order(const void *arg, const void *key1,
                                     const void *key2) {
   DBUG_ENTER("group_concat_key_cmp_with_order");
-  const Item_func_group_concat *grp_item = (Item_func_group_concat *)arg;
+  const Item_func_group_concat *grp_item =
+      static_cast<const Item_func_group_concat *>(arg);
   const ORDER *order_item, *end;
   TABLE *table = grp_item->table;
 
@@ -3892,7 +3914,8 @@ int group_concat_key_cmp_with_order(const void *arg, const void *key1,
 
     uint offset =
         (field->offset(field->table->record[0]) - table->s->null_bytes);
-    int res = field->cmp((uchar *)key1 + offset, (uchar *)key2 + offset);
+    int res = field->cmp(pointer_cast<const uchar *>(key1) + offset,
+                         pointer_cast<const uchar *>(key2) + offset);
     if (res) DBUG_RETURN(((order_item)->direction == ORDER_ASC) ? res : -res);
   }
   /*
@@ -4019,10 +4042,11 @@ Item_func_group_concat::Item_func_group_concat(
   Item *item_select;
   Item **arg_ptr;
 
-  quick_group = false;
+  allow_group_via_temp_table = false;
   arg_count = arg_count_field + arg_count_order;
 
-  if (!(args = (Item **)sql_alloc(sizeof(Item *) * arg_count))) return;
+  if (!(args = (Item **)(*THR_MALLOC)->Alloc(sizeof(Item *) * arg_count)))
+    return;
 
   if (order_array.reserve(arg_count_order)) return;
 
@@ -4069,7 +4093,7 @@ Item_func_group_concat::Item_func_group_concat(THD *thd,
       always_null(item->always_null),
       force_copy_fields(item->force_copy_fields),
       original(item) {
-  quick_group = item->quick_group;
+  allow_group_via_temp_table = item->allow_group_via_temp_table;
   result.set_charset(collation.collation);
 
   /*
@@ -4360,9 +4384,9 @@ bool Item_func_group_concat::setup(THD *thd) {
   */
   if (!(table = create_tmp_table(thd, tmp_table_param, all_fields, NULL, false,
                                  true, aggr_select->active_options(),
-                                 HA_POS_ERROR, (char *)"")))
+                                 HA_POS_ERROR, "")))
     DBUG_RETURN(true);
-  table->file->extra(HA_EXTRA_NO_ROWS);
+  table->file->ha_extra(HA_EXTRA_NO_ROWS);
   table->no_rows = 1;
 
   /**
@@ -4542,9 +4566,8 @@ bool Item_rank::check_wf_semantics(THD *thd, SELECT_LEX *select,
       We need to access the value of the ORDER expression when evaluating
       RANK to determine equality or not, so we need a handle.
     */
-    Item_ref *ir =
-        new Item_ref(&select->context, o->item, (char *)"<no matter>",
-                     (char *)"<partition order>");
+    Item_ref *ir = new Item_ref(&select->context, o->item, "<no matter>",
+                                "<partition order>");
     if (ir == nullptr) return true;
 
     m_previous.push_back(new_Cached_item(thd, ir));
@@ -5742,7 +5765,12 @@ bool Item_sum_json_object::add() {
           auto it = m_key_map.find(key);
           if (it != m_key_map.end()) {
             int count = it->second - 1;
-            count > 0 ? it->second = count : object->remove(key);
+            if (count > 0) {
+              it->second = count;
+            } else {
+              m_key_map.erase(it);
+              object->remove(key);
+            }
           }
         }
         object->cardinality() == 0 ? null_value = true : null_value = false;
@@ -5773,7 +5801,7 @@ bool Item_sum_json_object::add() {
         count = count + it->second;
         it->second = count;
       } else
-        m_key_map.emplace(key, 0).first->second = count;
+        m_key_map.emplace(std::make_pair(key, count));
     }
 
     null_value = false;

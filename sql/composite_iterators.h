@@ -1,7 +1,7 @@
 #ifndef SQL_COMPOSITE_ITERATORS_INCLUDED
 #define SQL_COMPOSITE_ITERATORS_INCLUDED
 
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,12 +52,14 @@
 #include "sql/row_iterator.h"
 #include "sql/table.h"
 
-class JOIN;
-class SELECT_LEX;
-class THD;
-class Temp_table_param;
 template <class T>
 class List;
+class JOIN;
+class SELECT_LEX;
+class SJ_TMP_TABLE;
+class THD;
+class Temp_table_param;
+class Window;
 
 /**
   An iterator that takes in a stream of rows and passes through only those that
@@ -103,16 +105,25 @@ class LimitOffsetIterator final : public RowIterator {
     @param limit Maximum number of rows to read, including the ones skipped by
       offset. Can be HA_POS_ERROR for no limit.
     @param offset Number of initial rows to skip. Can be 0 for no offset.
+    @param count_all_rows If true, the query will run to completion to get
+      more accurate numbers for skipped_rows, so you will not get any
+      performance benefits of early end.
     @param skipped_rows If not nullptr, is incremented for each row skipped by
-      offset.
+      offset or limit.
    */
   LimitOffsetIterator(THD *thd, unique_ptr_destroy_only<RowIterator> source,
-                      ha_rows limit, ha_rows offset, ha_rows *skipped_rows)
+                      ha_rows limit, ha_rows offset, bool count_all_rows,
+                      ha_rows *skipped_rows)
       : RowIterator(thd),
         m_source(move(source)),
         m_limit(limit),
         m_offset(offset),
-        m_skipped_rows(skipped_rows) {}
+        m_count_all_rows(count_all_rows),
+        m_skipped_rows(skipped_rows) {
+    if (count_all_rows) {
+      DBUG_ASSERT(m_skipped_rows != nullptr);
+    }
+  }
 
   bool Init() override;
 
@@ -143,8 +154,19 @@ class LimitOffsetIterator final : public RowIterator {
 
  private:
   unique_ptr_destroy_only<RowIterator> m_source;
+
+  // Note: The number of seen rows starts off at m_limit if we have OFFSET,
+  // which means we don't need separate LIMIT and OFFSET tests on the
+  // fast path of Read().
   ha_rows m_seen_rows;
+
+  /**
+     Whether we have OFFSET rows that we still need to skip.
+   */
+  bool m_needs_offset;
+
   const ha_rows m_limit, m_offset;
+  const bool m_count_all_rows;
   ha_rows *m_skipped_rows;
 };
 
@@ -184,12 +206,7 @@ class AggregateIterator final : public RowIterator {
  public:
   AggregateIterator(THD *thd, unique_ptr_destroy_only<RowIterator> source,
                     JOIN *join, Temp_table_param *temp_table_param,
-                    int output_slice)
-      : RowIterator(thd),
-        m_source(move(source)),
-        m_join(join),
-        m_output_slice(output_slice),
-        m_temp_table_param(temp_table_param) {}
+                    int output_slice, bool rollup);
 
   bool Init() override;
   int Read() override;
@@ -205,6 +222,14 @@ class AggregateIterator final : public RowIterator {
   std::vector<std::string> DebugString() const override;
 
  private:
+  enum {
+    READING_FIRST_ROW,
+    LAST_ROW_STARTED_NEW_GROUP,
+    READING_ROWS,
+    OUTPUTTING_ROLLUP_ROWS,
+    DONE_OUTPUTTING_ROWS
+  } m_state;
+
   unique_ptr_destroy_only<RowIterator> m_source;
 
   /**
@@ -221,11 +246,8 @@ class AggregateIterator final : public RowIterator {
   /// The slice of the fields we are outputting to. See the class comment.
   int m_output_slice;
 
-  /// Whether we are about to read the very first row.
-  bool m_first_row;
-
   /// Whether we have seen the last input row.
-  bool m_eof;
+  bool m_seen_eof;
 
   /**
     Used to save NULL information in the specific case where we have
@@ -235,6 +257,72 @@ class AggregateIterator final : public RowIterator {
 
   /// The parameters for the temporary table we are materializing into, if any.
   Temp_table_param *m_temp_table_param;
+
+  /// Whether this is a rollup query.
+  const bool m_rollup;
+
+  /**
+    Whether we have a rollup query where we needed to replace m_join->fields
+    with a set of Item_refs. See the constructor for more information.
+   */
+  bool m_replace_field_list;
+
+  /// If we have replaced the field list, contains the original field list.
+  List<Item> *m_original_fields = nullptr;
+
+  /**
+    If we have replaced the field list, this is the list of Item pointers
+    that each Item_ref points into.
+   */
+  Mem_root_array<Item *> *m_current_fields = nullptr;
+
+  /**
+    The list that the current values in m_current_fields come from.
+    This is used purely as an optimization so that SwitchFieldList()
+    does not have to do copying work if m_current_fields is already set up
+    correctly. Only used if m_replace_field_list is true.
+   */
+  const List<Item> *m_current_fields_source = nullptr;
+
+  /**
+    For rollup: The index of the first group item that did _not_ change when we
+    last switched groups. E.g., if we have group fields A,B,C,D and then switch
+    to group A,B,D,D, this value will become 1 (which means that we need
+    to output rollup rows for 2 -- A,B,D,NULL -- and then 1 -- A,B,NULL,NULL).
+    m_current_rollup_position will count down from the end until it becomes
+    less than this value.
+
+    In addition, it is important to know this value so that we known
+    which aggregates to reset once we start reading rows again; e.g.,
+    in the given example, the two first aggregates should keep counting,
+    while the two last ones should be reset. join->sum_funcs_end contains
+    the right end pointers for this purpose.
+
+    If we do not have rollup, this value is perennially zero, because there
+    is only one element in join->sum_funcs_end (representing all aggregates
+    in the query).
+   */
+  int m_last_unchanged_group_item_idx;
+
+  /**
+    If we are in state OUTPUTTING_ROLLUP_ROWS, where we are in the iteration.
+    This value will start at the index of the last group expression and then
+    count backwards down to and including m_last_unchanged_group_item_idx.
+    It is used to know which field list we should send.
+   */
+  int m_current_rollup_position;
+
+  void SwitchFieldList(List<Item> *fields) {
+    if (!m_replace_field_list || m_current_fields_source == fields) {
+      return;
+    }
+
+    size_t item_index = 0;
+    for (Item &item : *fields) {
+      (*m_current_fields)[item_index++] = &item;
+    }
+    m_current_fields_source = fields;
+  }
 };
 
 /**
@@ -285,7 +373,7 @@ class PrecomputedAggregateIterator final : public RowIterator {
   int m_output_slice;
 };
 
-enum class JoinType { INNER, OUTER, ANTI };
+enum class JoinType { INNER, OUTER, ANTI, SEMI };
 
 /**
   A simple nested loop join, taking in two iterators (left/outer and
@@ -315,9 +403,11 @@ class NestedLoopIterator final : public RowIterator {
     DBUG_ASSERT(m_source_outer != nullptr);
     DBUG_ASSERT(m_source_inner != nullptr);
 
-    // Batch mode makes no sense for anti-joins, since they should only
+    // Batch mode makes no sense for anti- or semijoins, since they should only
     // be reading one row.
-    DBUG_ASSERT(!(pfs_batch_mode && join_type == JoinType::ANTI));
+    if (join_type == JoinType::ANTI || join_type == JoinType::SEMI) {
+      DBUG_ASSERT(!pfs_batch_mode);
+    }
   }
 
   bool Init() override;
@@ -595,6 +685,274 @@ class MaterializedTableFunctionIterator final : public TableRowIterator {
   unique_ptr_destroy_only<RowIterator> m_table_iterator;
 
   Table_function *m_table_function;
+};
+
+/**
+  Like semijoin materialization, weedout works on the basic idea that a semijoin
+  is just like an inner join as we long as we can get rid of the duplicates
+  somehow. (This is advantageous, because inner joins can be reordered, whereas
+  semijoins generally can't.) However, unlike semijoin materialization, weedout
+  removes duplicates after the join, not before it. Consider something like
+
+    SELECT * FROM t1 WHERE a IN ( SELECT b FROM t2 );
+
+  Semijoin materialization solves this by materializing t2, with deduplication,
+  and then joining. Weedout joins t1 to t2 and then leaves only one output row
+  per t1 row. The disadvantage is that this potentially needs to discard more
+  rows; the (potential) advantage is that we deduplicate on t1 instead of t2.
+
+  Weedout, unlike materialization, works in a streaming fashion; rows are output
+  (or discarded) as they come in, with a temporary table used for recording the
+  row IDs we've seen before. (We need to deduplicate on t1's row IDs, not its
+  contents.) See SJ_TMP_TABLE for details about the table format.
+ */
+class WeedoutIterator final : public RowIterator {
+ public:
+  WeedoutIterator(THD *thd, unique_ptr_destroy_only<RowIterator> source,
+                  SJ_TMP_TABLE *sj);
+
+  bool Init() override;
+  int Read() override;
+  std::vector<std::string> DebugString() const override;
+
+  std::vector<Child> children() const override {
+    return std::vector<Child>{{m_source.get(), ""}};
+  }
+
+  void SetNullRowFlag(bool is_null_row) override {
+    m_source->SetNullRowFlag(is_null_row);
+  }
+
+  void UnlockRow() override { m_source->UnlockRow(); }
+
+ private:
+  unique_ptr_destroy_only<RowIterator> m_source;
+  SJ_TMP_TABLE *m_sj;
+};
+
+/**
+  An iterator that removes consecutive rows that are the same according to
+  a given index (or more accurately, its keypart), so-called “loose scan”
+  (not to be confused with “loose index scan”, which is a QUICK_SELECT_I).
+  This is similar in spirit to WeedoutIterator above (removing duplicates
+  allows us to treat the semijoin as a normal join), but is much cheaper
+  if the data is already ordered/grouped correctly, as the removal can
+  happen before the join, and it does not need a temporary table.
+ */
+class RemoveDuplicatesIterator final : public RowIterator {
+ public:
+  RemoveDuplicatesIterator(THD *thd,
+                           unique_ptr_destroy_only<RowIterator> source,
+                           const TABLE *table, KEY *key, size_t key_len);
+
+  bool Init() override;
+  int Read() override;
+  std::vector<std::string> DebugString() const override;
+
+  std::vector<Child> children() const override {
+    return std::vector<Child>{{m_source.get(), ""}};
+  }
+
+  void SetNullRowFlag(bool is_null_row) override {
+    m_source->SetNullRowFlag(is_null_row);
+  }
+
+  void UnlockRow() override { m_source->UnlockRow(); }
+
+ private:
+  unique_ptr_destroy_only<RowIterator> m_source;
+  const TABLE *m_table;
+  KEY *m_key;
+  uchar *m_key_buf;  // Owned by the THD's MEM_ROOT.
+  const size_t m_key_len;
+  bool m_first_row;
+};
+
+/**
+  An iterator that is semantically equivalent to a semijoin NestedLoopIterator
+  immediately followed by a RemoveDuplicatesIterator. It is used to implement
+  the “loose scan” strategy in queries with multiple tables on the inside of a
+  semijoin, like
+
+    ... FROM t1 WHERE ... IN ( SELECT ... FROM t2 JOIN t3 ... )
+
+  In this case, the query tree without this iterator would ostensibly look like
+
+    -> Table scan on t1
+       -> Remove duplicates on t2_idx
+          -> Nested loop semijoin
+             -> Index scan on t2 using t2_idx
+             -> Filter (e.g. t3.a = t2.a)
+                -> Table scan on t3
+
+  (t3 will be marked as “first match” on t2 when implementing loose scan,
+  thus the semijoin.)
+
+  First note that we can't put the duplicate removal directly on t2 in this
+  case, as the first t2 row doesn't necessarily match anything in t3, so it
+  needs to be above. However, this is wasteful, because once we find a matching
+  t2/t3 pair, we should stop scanning t3 until we have a new t2.
+
+  NestedLoopSemiJoinWithDuplicateRemovalIterator solves the problem by doing
+  exactly this; it gets a row from the outer side, gets exactly one row from the
+  inner side, and then skips over rows from the outer side (_without_ scanning
+  the inner side) until its keypart changes.
+ */
+class NestedLoopSemiJoinWithDuplicateRemovalIterator final
+    : public RowIterator {
+ public:
+  NestedLoopSemiJoinWithDuplicateRemovalIterator(
+      THD *thd, unique_ptr_destroy_only<RowIterator> source_outer,
+      unique_ptr_destroy_only<RowIterator> source_inner, const TABLE *table,
+      KEY *key, size_t key_len);
+
+  bool Init() override;
+
+  int Read() override;
+
+  void SetNullRowFlag(bool is_null_row) override {
+    m_source_outer->SetNullRowFlag(is_null_row);
+    m_source_inner->SetNullRowFlag(is_null_row);
+  }
+
+  void UnlockRow() override {
+    m_source_outer->UnlockRow();
+    m_source_inner->UnlockRow();
+  }
+
+  std::vector<std::string> DebugString() const override;
+
+  std::vector<Child> children() const override {
+    return std::vector<Child>{{m_source_outer.get(), ""},
+                              {m_source_inner.get(), ""}};
+  }
+
+ private:
+  unique_ptr_destroy_only<RowIterator> const m_source_outer;
+  unique_ptr_destroy_only<RowIterator> const m_source_inner;
+
+  const TABLE *m_table_outer;
+  KEY *m_key;
+  uchar *m_key_buf;  // Owned by the THD's MEM_ROOT.
+  const size_t m_key_len;
+  bool m_deduplicate_against_previous_row;
+};
+
+/**
+  WindowingIterator is similar to AggregateIterator, but deals with windowed
+  aggregates (i.e., OVER expressions). It deals specifically with aggregates
+  that don't need to buffer rows.
+
+  WindowingIterator always outputs to a temporary table. Similarly to
+  AggregateIterator, needs to do some of MaterializeIterator's work in
+  copying fields and Items into the destination fields (see AggregateIterator
+  for more information).
+ */
+class WindowingIterator final : public RowIterator {
+ public:
+  WindowingIterator(THD *thd, unique_ptr_destroy_only<RowIterator> source,
+                    Temp_table_param *temp_table_param,  // Includes the window.
+                    JOIN *join, int output_slice);
+
+  bool Init() override;
+
+  int Read() override;
+
+  void SetNullRowFlag(bool is_null_row) override {
+    m_source->SetNullRowFlag(is_null_row);
+  }
+
+  void UnlockRow() override {
+    // There's nothing we can do here.
+  }
+
+  std::vector<std::string> DebugString() const override;
+
+  std::vector<Child> children() const override {
+    return std::vector<Child>{{m_source.get(), ""}};
+  }
+
+ private:
+  /// The iterator we are reading from.
+  unique_ptr_destroy_only<RowIterator> const m_source;
+
+  /// Parameters for the temporary table we are outputting to.
+  Temp_table_param *m_temp_table_param;
+
+  /// The window function itself.
+  Window *m_window;
+
+  /// The join we are a part of.
+  JOIN *m_join;
+
+  /// The slice we will be using when reading rows.
+  int m_input_slice;
+
+  /// The slice we will be using when outputting rows.
+  int m_output_slice;
+};
+
+/**
+  BufferingWindowingIterator is like WindowingIterator, but deals with window
+  functions that need to buffer rows.
+ */
+class BufferingWindowingIterator final : public RowIterator {
+ public:
+  BufferingWindowingIterator(
+      THD *thd, unique_ptr_destroy_only<RowIterator> source,
+      Temp_table_param *temp_table_param,  // Includes the window.
+      JOIN *join, int output_slice);
+
+  bool Init() override;
+
+  int Read() override;
+
+  void SetNullRowFlag(bool is_null_row) override {
+    m_source->SetNullRowFlag(is_null_row);
+  }
+
+  void UnlockRow() override {
+    // There's nothing we can do here.
+  }
+
+  std::vector<std::string> DebugString() const override;
+
+  std::vector<Child> children() const override {
+    return std::vector<Child>{{m_source.get(), ""}};
+  }
+
+ private:
+  int ReadBufferedRow(bool new_partition_or_eof);
+
+  /// The iterator we are reading from.
+  unique_ptr_destroy_only<RowIterator> const m_source;
+
+  /// Parameters for the temporary table we are outputting to.
+  Temp_table_param *m_temp_table_param;
+
+  /// The window function itself.
+  Window *m_window;
+
+  /// The join we are a part of.
+  JOIN *m_join;
+
+  /// The slice we will be using when reading rows.
+  int m_input_slice;
+
+  /// The slice we will be using when outputting rows.
+  int m_output_slice;
+
+  /// If true, we may have more buffered rows to process that need to be
+  /// checked for before reading more rows from the source.
+  bool m_possibly_buffered_rows;
+
+  /// Whether the last input row started a new partition, and was tucked away
+  /// to finalize the previous partition; if so, we need to bring it back
+  /// for processing before we read more rows.
+  bool m_last_input_row_started_new_partition;
+
+  /// Whether we have seen the last input row.
+  bool m_eof;
 };
 
 #endif  // SQL_COMPOSITE_ITERATORS_INCLUDED

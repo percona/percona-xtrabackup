@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@ IF(NOT GMOCK_FOUND OR DISABLE_SHARED)
   RETURN()
 ENDIF()
 
-MY_CHECK_CXX_COMPILER_FLAG("-Wno-unused-local-typedefs" HAVE_NO_UNUSED_TYPEDEFS)
-IF(HAVE_NO_UNUSED_TYPEDEFS)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
+MY_CHECK_CXX_COMPILER_WARNING("-Wno-unused-local-typedefs" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
 ENDIF()
 
 INCLUDE_DIRECTORIES(SYSTEM
@@ -43,10 +43,9 @@ SET(TESTS
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc ADD_TEST ${test})
-  TARGET_LINK_LIBRARIES(${test}-t gr_unit_test_resource gunit_small ${GCS_LIBRARY})
-  # mysys_ssl/libmysys_ssl.a already includes SSL objects on Solaris
-  IF(NOT CMAKE_SYSTEM_NAME MATCHES "SunOS")
-    TARGET_LINK_LIBRARIES(${test}-t mysqlclient)
-  ENDIF()
+  TARGET_LINK_LIBRARIES(${test}-t
+    gr_unit_test_resource gunit_small ${GCS_LIBRARY})
+  SET_TARGET_PROPERTIES(${test}-t PROPERTIES ENABLE_EXPORTS TRUE)
+  TARGET_LINK_LIBRARIES(${test}-t mysqlclient)
 ENDFOREACH()
 

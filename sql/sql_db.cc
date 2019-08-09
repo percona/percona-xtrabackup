@@ -354,9 +354,6 @@ bool mysql_create_db(THD *thd, const char *db, HA_CREATE_INFO *create_info) {
     }
   }
 
-  ha_binlog_log_query(thd, 0, LOGCOM_CREATE_DB, thd->query().str,
-                      thd->query().length, db, "");
-
   /*
     Create schema in DD. This is done even when initializing the server
     and creating the system schema. In that case, the shared cache will
@@ -380,14 +377,15 @@ bool mysql_create_db(THD *thd, const char *db, HA_CREATE_INFO *create_info) {
         database operation. Even if the call fails due to some
         other error we ignore the error as we anyway return
         failure (true) here.
-
-        We rely on called to do rollback in case of error and thus
-        revert change to the binary log.
       */
       if (!schema_dir_exists) rm_dir_w_symlink(path, true);
       DBUG_RETURN(true);
     }
   }
+
+  // Log the query in the handler's binlog
+  ha_binlog_log_query(thd, nullptr, LOGCOM_CREATE_DB, thd->query().str,
+                      thd->query().length, db, "");
 
   /*
     If we have not added database to the data-dictionary we don't have
@@ -765,7 +763,7 @@ bool mysql_rm_db(THD *thd, const LEX_CSTRING &db, bool if_exists) {
     */
     if (thd->session_tracker.get_tracker(CURRENT_SCHEMA_TRACKER)
             ->is_enabled()) {
-      LEX_CSTRING dummy = {C_STRING_WITH_LEN("")};
+      LEX_CSTRING dummy = {STRING_WITH_LEN("")};
       dummy.length = dummy.length * 1;
       thd->session_tracker.get_tracker(CURRENT_SCHEMA_TRACKER)
           ->mark_as_changed(thd, &dummy);
@@ -1049,7 +1047,7 @@ static void mysql_change_db_impl(THD *thd, const LEX_CSTRING &new_db_name,
       INFORMATION_SCHEMA_NAME constant.
     */
 
-    thd->set_db(to_lex_cstring(INFORMATION_SCHEMA_NAME));
+    thd->set_db(INFORMATION_SCHEMA_NAME);
   } else {
     /*
       Here we already have a copy of database name to be used in THD. So,
@@ -1226,8 +1224,8 @@ bool mysql_change_db(THD *thd, const LEX_CSTRING &new_db_name,
   if (is_infoschema_db(new_db_name.str, new_db_name.length)) {
     /* Switch the current database to INFORMATION_SCHEMA. */
 
-    mysql_change_db_impl(thd, to_lex_cstring(INFORMATION_SCHEMA_NAME),
-                         SELECT_ACL, system_charset_info);
+    mysql_change_db_impl(thd, INFORMATION_SCHEMA_NAME, SELECT_ACL,
+                         system_charset_info);
     goto done;
   }
 
@@ -1267,8 +1265,8 @@ bool mysql_change_db(THD *thd, const LEX_CSTRING &new_db_name,
 
   if (sctx->get_active_roles()->size() == 0) {
     db_access =
-        sctx->check_access(DB_ACLS, new_db_file_name.str)
-            ? DB_ACLS
+        sctx->check_access(DB_OP_ACLS, new_db_file_name.str)
+            ? DB_OP_ACLS
             : acl_get(thd, sctx->host().str, sctx->ip().str,
                       sctx->priv_user().str, new_db_file_name.str, false) |
                   sctx->master_access(new_db_file_name.str);
@@ -1277,7 +1275,7 @@ bool mysql_change_db(THD *thd, const LEX_CSTRING &new_db_name,
                 sctx->master_access(new_db_file_name.str);
   }
 
-  if (!force_switch && !(db_access & DB_ACLS) &&
+  if (!force_switch && !(db_access & DB_OP_ACLS) &&
       check_grant_db(thd, new_db_file_name.str)) {
     my_error(ER_DBACCESS_DENIED_ERROR, MYF(0), sctx->priv_user().str,
              sctx->priv_host().str, new_db_file_name.str);
@@ -1340,7 +1338,7 @@ done:
     Check if current database tracker is enabled. If so, set the 'changed' flag.
   */
   if (thd->session_tracker.get_tracker(CURRENT_SCHEMA_TRACKER)->is_enabled()) {
-    LEX_CSTRING dummy = {C_STRING_WITH_LEN("")};
+    LEX_CSTRING dummy = {STRING_WITH_LEN("")};
     dummy.length = dummy.length * 1;
     thd->session_tracker.get_tracker(CURRENT_SCHEMA_TRACKER)
         ->mark_as_changed(thd, &dummy);

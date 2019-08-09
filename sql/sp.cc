@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -379,22 +379,27 @@ static enum_sp_return_code db_find_routine(THD *thd, enum_sp_type type,
   DBUG_RETURN(ret);
 }
 
+namespace {
+
 /**
   Silence DEPRECATED SYNTAX warnings when loading a stored procedure
   into the cache.
 */
-class Silence_deprecated_warning : public Internal_error_handler {
+class Silence_deprecated_warning final : public Internal_error_handler {
  public:
-  virtual bool handle_condition(THD *, uint sql_errno, const char *,
-                                Sql_condition::enum_severity_level *level,
-                                const char *) {
-    if (sql_errno == ER_WARN_DEPRECATED_SYNTAX &&
+  bool handle_condition(THD *, uint sql_errno, const char *,
+                        Sql_condition::enum_severity_level *level,
+                        const char *) override {
+    if ((sql_errno == ER_WARN_DEPRECATED_SYNTAX ||
+         sql_errno == ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT) &&
         (*level) == Sql_condition::SL_WARNING)
       return true;
 
     return false;
   }
 };
+
+}  // namespace
 
 /**
   The function parses input strings and returns SP structure.
@@ -2133,7 +2138,7 @@ sp_head *sp_start_parsing(THD *thd, enum_sp_type sp_type, sp_name *sp_name) {
   init_sql_alloc(key_memory_sp_head_main_root, &own_root, MEM_ROOT_BLOCK_SIZE,
                  MEM_ROOT_PREALLOC);
 
-  void *rawmem = alloc_root(&own_root, sizeof(sp_head));
+  void *rawmem = own_root.Alloc(sizeof(sp_head));
   if (!rawmem) return NULL;
 
   sp_head *sp = new (rawmem) sp_head(std::move(own_root), sp_type);

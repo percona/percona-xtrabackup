@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,10 +33,6 @@
 #include "sql/ha_ndbcluster_connection.h"
 #include "sql/mysqld.h"     // LOCK_global_system_variables
 #include "sql/ndb_require.h"
-
-
-/* from other files */
-extern struct st_ndb_status g_ndb_status;
 
 // Implementation still uses its own instance
 extern Ndb_index_stat_thread ndb_index_stat_thread;
@@ -2815,7 +2811,7 @@ ndb_index_stat_wait_analyze(Ndb_index_stat *st,
       break;
     if (st->error_count != snap.error_count)
     {
-      /* A new error has occured */
+      /* A new error has occurred */
       DBUG_ASSERT(st->error_count > snap.error_count);
       err= st->error.code;
       glob.analyze_error++;
@@ -3076,7 +3072,6 @@ static SHOW_VAR ndb_status_vars_index_stat[]=
 int
 show_ndb_status_index_stat(THD*, SHOW_VAR* var, char*)
 {
-  /* Just a function to allow moving array into this file */
   var->type = SHOW_ARRAY;
   var->value = (char*) &ndb_status_vars_index_stat;
   return 0;

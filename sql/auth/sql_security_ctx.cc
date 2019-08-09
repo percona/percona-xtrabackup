@@ -61,7 +61,7 @@ Security_context::Security_context(MEM_ROOT *mem_root, THD *thd /* = nullptr*/)
 Security_context::~Security_context() { destroy(); }
 
 Security_context::Security_context(const Security_context &src_sctx)
-    : m_restrictions(nullptr) {
+    : m_restrictions(nullptr), m_thd(nullptr) {
   copy_security_ctx(src_sctx);
 }
 
@@ -207,7 +207,7 @@ void Security_context::copy_security_ctx(const Security_context &src_sctx) {
   assign_host(src_sctx.m_host.ptr(), src_sctx.m_host.length());
   assign_ip(src_sctx.m_ip.ptr(), src_sctx.m_ip.length());
   if (!strcmp(src_sctx.m_host_or_ip.ptr(), my_localhost))
-    set_host_or_ip_ptr((char *)my_localhost, strlen(my_localhost));
+    set_host_or_ip_ptr(my_localhost, strlen(my_localhost));
   else
     set_host_or_ip_ptr();
   assign_external_user(src_sctx.m_external_user.ptr(),
@@ -374,6 +374,11 @@ int Security_context::activate_role(LEX_CSTRING role, LEX_CSTRING role_host,
   Subscribes to a cache entry of aggregated ACLs.
   A Security_context can only have one subscription at a time. If another one
   is requested, the former will be returned.
+
+  We do this subscription before execution of every statement(prepared or
+  conventional) as the global acl version might have increased due to
+  a grant/revoke or flush. Hence, the granularity of after effects of
+  grant/revoke or flush due to roles is per statement.
 */
 void Security_context::checkout_access_maps(void) {
   DBUG_ENTER("Security_context::checkout_access_maps");

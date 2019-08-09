@@ -18,6 +18,7 @@ audit_null.audit_plugin_bugs : BUG#28080637 Test fails consistently
 auth_sec.openssl_without_fips : BUG#28812609 Test fails all over
 
 # binlog suite tests
+binlog.binlog_mysqlbinlog_rewrite_db @windows     : BUG#26717205 Requires a debug client binary and fails consistently.
 
 # func1 suite tests
 funcs_1.is_basics_mixed @darwin  : BUG#25882809 INCORRECT RESULT WHEN USING SUBQUERY ON TOP OF VIEW.
@@ -35,15 +36,17 @@ innodb.truncate                                   : WL#12034 Enable again once s
 innodb.subpartition                               : WL#12034 Enable again once shared tablespaces are allowed in partitioned table.
 innodb.ddl_crash_alter_table_partition_tablespace : WL#12034 Enable again once shared tablespaces are allowed in partitioned table.
 innodb.innodb_bug14676111                         : BUG#18200831 The test has never worked correctly
+innodb.log_first_rec_group                        : Bug#29692047 Disable for now until we can find a better way to test this.
+innodb.fts_exec_interrupt                         : Bug#28534199 The test is unstable and should be rewritten 
 
 # json suite tests
 json.json_ddl_ndb : BUG#26616564 PB2 failures.
 
+# group replication suite tests
+group_replication.gr_stop_gr_and_modify_wc_during_dml       : BUG#29620900 Disable the test until the bug is fixed
+
 # main suite tests
 main.ds_mrr-big @solaris : BUG#14168107 Test leads to timeout on Solaris on slow sparc servers.
-
-# Memcached tests
-memcached.memc242_set : BUG#28834121
 
 # Disabled due to InnoDB issues
 main.internal_tmp_disk_storage_engine : BUG#26917416 Disabled it since it's failing on pb2.

@@ -89,7 +89,7 @@ void Rpl_encryption::report_keyring_error(Keyring_status error,
       if (current_thd)
         my_error(ER_RPL_ENCRYPTION_FAILED_TO_REMOVE_KEY, MYF(0));
       else
-        LogErr(ERROR_LEVEL, ER_RPL_ENCRYPTION_FAILED_TO_REMOVE_KEY);
+        LogErr(ERROR_LEVEL, ER_SERVER_RPL_ENCRYPTION_FAILED_TO_REMOVE_KEY);
       break;
     case Keyring_status::SUCCESS:
     default:
@@ -1213,11 +1213,11 @@ Key_string Rpl_encryption_header_v1::decrypt_file_password() {
   DBUG_RETURN(file_password);
 }
 
-std::unique_ptr<Rpl_cipher> Rpl_encryption_header_v1::get_encryptor() {
+std::unique_ptr<Stream_cipher> Rpl_encryption_header_v1::get_encryptor() {
   return Aes_ctr::get_encryptor();
 }
 
-std::unique_ptr<Rpl_cipher> Rpl_encryption_header_v1::get_decryptor() {
+std::unique_ptr<Stream_cipher> Rpl_encryption_header_v1::get_decryptor() {
   return Aes_ctr::get_decryptor();
 }
 

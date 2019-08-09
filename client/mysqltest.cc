@@ -30,13 +30,13 @@
 #include "client/mysqltest/error_names.h"
 #include "client/mysqltest/expected_errors.h"
 #include "client/mysqltest/expected_warnings.h"
+#include "client/mysqltest/logfile.h"
 #include "client/mysqltest/secondary_engine.h"
 #include "client/mysqltest/utils.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>  // std::isinf
-#include <functional>
 #include <limits>
 #include <new>
 #include <regex>
@@ -83,7 +83,6 @@
 #include "my_default.h"
 #include "my_dir.h"
 #include "my_inttypes.h"
-#include "my_io.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_stacktrace.h"
@@ -211,6 +210,7 @@ static bool testcase_disabled = 0;
 static bool display_result_vertically = false, display_result_lower = false,
             display_metadata = false, display_result_sorted = false,
             display_session_track_info = false;
+static int start_sort_column = 0;
 static bool disable_query_log = 0, disable_result_log = 0;
 static bool disable_connect_log = 1;
 static bool disable_warnings = 0;
@@ -246,6 +246,8 @@ static HANDLE mysqltest_thread;
 static HANDLE stacktrace_request_event = NULL;
 static std::thread wait_for_stacktrace_request_event_thread;
 #endif
+
+Logfile log_file;
 
 /// Info on properties that can be set with '--disable_X' and
 /// '--disable_X' commands.
@@ -322,7 +324,7 @@ static struct st_test_file file_stack[16];
 static struct st_test_file *cur_file;
 static struct st_test_file *file_stack_end;
 
-static char *default_charset = (char *)MYSQL_DEFAULT_CHARSET_NAME;
+static const char *default_charset = MYSQL_DEFAULT_CHARSET_NAME;
 static CHARSET_INFO *charset_info =
     &my_charset_utf8mb4_0900_ai_ci; /* Default charset */
 
@@ -437,7 +439,7 @@ static std::regex opt_trace_re(opt_trace_re_str,
 static std::regex explain_re(explain_re_str, std::regex_constants::nosubs |
                                                  std::regex_constants::icase);
 
-static int search_protocol_re(std::regex *re, char *str);
+static int search_protocol_re(std::regex *re, const char *str);
 
 /* To retrieve a filename from a filepath */
 const char *get_filename_from_path(const char *path) {
@@ -570,6 +572,7 @@ enum enum_commands {
   Q_QUERY_VERTICAL,
   Q_QUERY_HORIZONTAL,
   Q_SORTED_RESULT,
+  Q_PARTIALLY_SORTED_RESULT,
   Q_LOWERCASE,
   Q_START_TIMER,
   Q_END_TIMER,
@@ -636,11 +639,11 @@ const char *command_names[] = {
     "disable_async_client", "exec", "execw", "exec_in_background", "delimiter",
     "disable_abort_on_error", "enable_abort_on_error", "vertical_results",
     "horizontal_results", "query_vertical", "query_horizontal", "sorted_result",
-    "lowercase_result", "start_timer", "end_timer", "character_set",
-    "disable_ps_protocol", "enable_ps_protocol", "disable_reconnect",
-    "enable_reconnect", "if", "disable_testcase", "enable_testcase",
-    "replace_regex", "replace_numeric_round", "remove_file", "file_exists",
-    "write_file", "copy_file", "perl", "die",
+    "partially_sorted_result", "lowercase_result", "start_timer", "end_timer",
+    "character_set", "disable_ps_protocol", "enable_ps_protocol",
+    "disable_reconnect", "enable_reconnect", "if", "disable_testcase",
+    "enable_testcase", "replace_regex", "replace_numeric_round", "remove_file",
+    "file_exists", "write_file", "copy_file", "perl", "die",
 
     /* Don't execute any more commands, compare result */
     "exit", "skip", "chmod", "append_file", "cat_file", "diff_files",
@@ -1105,159 +1108,11 @@ static void mysql_free_result_wrapper(MYSQL_RES *result) {
 
 /* async client test code (end) */
 
-class LogFile {
-  FILE *m_file;
-  char m_file_name[FN_REFLEN];
-  size_t m_bytes_written;
-
- public:
-  LogFile() : m_file(NULL), m_bytes_written(0) {
-    memset(m_file_name, 0, sizeof(m_file_name));
-  }
-
-  ~LogFile() { close(); }
-
-  const char *file_name() const { return m_file_name; }
-  size_t bytes_written() const { return m_bytes_written; }
-
-  void open(const char *dir, const char *name, const char *ext) {
-    DBUG_ENTER("LogFile::open");
-    DBUG_PRINT("enter", ("dir: '%s', name: '%s'", dir, name));
-    if (!name) {
-      m_file = stdout;
-      DBUG_VOID_RETURN;
-    }
-
-    fn_format(m_file_name, name, dir, ext,
-              *dir ? MY_REPLACE_DIR | MY_REPLACE_EXT : MY_REPLACE_EXT);
-
-    DBUG_PRINT("info", ("file_name: %s", m_file_name));
-
-    if ((m_file = fopen(m_file_name, "wb+")) == NULL)
-      die("Failed to open log file %s, errno: %d", m_file_name, errno);
-
-    DBUG_VOID_RETURN;
-  }
-
-  void close() {
-    if (m_file) {
-      if (m_file != stdout)
-        fclose(m_file);
-      else
-        fflush(m_file);
-    }
-    m_file = NULL;
-  }
-
-  void flush() {
-    if (m_file) {
-      if (fflush(m_file))
-        die("Failed to flush '%s', errno: %d", m_file_name, errno);
-    }
-  }
-
-  void write(DYNAMIC_STRING *ds) {
-    DBUG_ENTER("LogFile::write");
-    DBUG_ASSERT(m_file);
-
-    if (ds->length == 0) DBUG_VOID_RETURN;
-    DBUG_ASSERT(ds->str);
-
-    if (fwrite(ds->str, 1, ds->length, m_file) != ds->length)
-      die("Failed to write %lu bytes to '%s', errno: %d",
-          (unsigned long)ds->length, m_file_name, errno);
-    m_bytes_written += ds->length;
-    DBUG_VOID_RETURN;
-  }
-
-  void show_tail(uint lines) {
-    DBUG_ENTER("LogFile::show_tail");
-
-    if (!m_file || m_file == stdout) DBUG_VOID_RETURN;
-
-    if (lines == 0) DBUG_VOID_RETURN;
-    lines++;
-
-    int show_offset = 0;
-    char buf[256];
-    size_t bytes;
-    bool found_bof = false;
-
-    /* Search backward in file until "lines" newline has been found */
-    while (lines && !found_bof) {
-      show_offset -= sizeof(buf);
-      while (fseek(m_file, show_offset, SEEK_END) != 0 && show_offset < 0) {
-        found_bof = true;
-        // Seeking before start of file
-        show_offset++;
-      }
-
-      if ((bytes = fread(buf, 1, sizeof(buf), m_file)) <= 0) {
-        // ferror=0 will happen here if no queries executed yet
-        if (ferror(m_file))
-          fprintf(stderr,
-                  "Failed to read from '%s', errno: %d, feof:%d, ferror:%d\n",
-                  m_file_name, errno, feof(m_file), ferror(m_file));
-        DBUG_VOID_RETURN;
-      }
-
-      DBUG_PRINT("info",
-                 ("Read %lu bytes from file, buf: %.*s", (unsigned long)bytes,
-                  static_cast<int>(sizeof(buf)), buf));
-
-      char *show_from = buf + bytes;
-      while (show_from > buf && lines > 0) {
-        show_from--;
-        if (*show_from == '\n') lines--;
-      }
-      if (show_from != buf) {
-        // The last new line was found in this buf, adjust offset
-        show_offset += static_cast<int>(show_from - buf) + 1;
-        DBUG_PRINT("info", ("adjusted offset to %d", show_offset));
-      }
-      DBUG_PRINT("info", ("show_offset: %d", show_offset));
-    }
-
-    fprintf(stderr, "\nThe result from queries just before the failure was:\n");
-
-    DBUG_PRINT("info", ("show_offset: %d", show_offset));
-    if (!lines) {
-      fprintf(stderr, "< snip >\n");
-
-      if (fseek(m_file, show_offset, SEEK_END) != 0) {
-        fprintf(stderr, "Failed to seek to position %d in '%s', errno: %d",
-                show_offset, m_file_name, errno);
-        DBUG_VOID_RETURN;
-      }
-
-    } else {
-      DBUG_PRINT("info", ("Showing the whole file"));
-      if (fseek(m_file, 0L, SEEK_SET) != 0) {
-        fprintf(stderr, "Failed to seek to pos 0 in '%s', errno: %d",
-                m_file_name, errno);
-        DBUG_VOID_RETURN;
-      }
-    }
-
-    while ((bytes = fread(buf, 1, sizeof(buf), m_file)) > 0) {
-      if (fwrite(buf, 1, bytes, stderr) != bytes) {
-        perror("fwrite");
-      }
-    }
-    fflush(stderr);
-
-    DBUG_VOID_RETURN;
-  }
-};
-
-LogFile log_file;
-LogFile temp_log_file;
-LogFile progress_file;
-
 void replace_dynstr_append_mem(DYNAMIC_STRING *ds, const char *val, size_t len);
 void replace_dynstr_append(DYNAMIC_STRING *ds, const char *val);
 void replace_dynstr_append_uint(DYNAMIC_STRING *ds, uint val);
-void dynstr_append_sorted(DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_input);
+void dynstr_append_sorted(DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_input,
+                          int start_sort_column);
 
 void revert_properties();
 
@@ -1314,7 +1169,7 @@ void do_eval(DYNAMIC_STRING *query_eval, const char *query,
   Run query and dump the result to stderr in vertical format
 
   NOTE! This function should be safe to call when an error
-  has occured and thus any further errors will be ignored(although logged)
+  has occurred and thus any further errors will be ignored(although logged)
 
   SYNOPSIS
   show_query
@@ -1373,7 +1228,7 @@ static void show_query(MYSQL *mysql, const char *query) {
   is added to the warning stack, only print @@warning_count-1 warnings.
 
   NOTE! This function should be safe to call when an error
-  has occured and this any further errors will be ignored(although logged)
+  has occurred and this any further errors will be ignored(although logged)
 
   SYNOPSIS
   show_warnings_before_error
@@ -1439,12 +1294,11 @@ struct command_arg {
   const char *description; /* Description of the argument */
 };
 
-static void check_command_args(struct st_command *command,
-                               const char *arguments,
+static void check_command_args(struct st_command *command, char *arguments,
                                const struct command_arg *args, int num_args,
                                const char delimiter_arg) {
   int i;
-  const char *ptr = arguments;
+  char *ptr = arguments;
   const char *start;
   DBUG_ENTER("check_command_args");
   DBUG_PRINT("enter", ("num_args: %d", num_args));
@@ -1478,7 +1332,7 @@ static void check_command_args(struct st_command *command,
         /* This will do nothing if arg was not closed by quotes */
         while (*ptr && *ptr != delimiter_arg) ptr++;
 
-        command->last_argument = (char *)ptr;
+        command->last_argument = ptr;
 
         /* Step past the delimiter */
         if (*ptr && *ptr == delimiter_arg) ptr++;
@@ -1910,7 +1764,7 @@ void die(const char *fmt, ...) {
 
   fflush(stderr);
 
-  log_file.show_tail(opt_tail_lines);
+  if (result_file_name) log_file.show_tail(opt_tail_lines);
 
   // Help debugging by displaying any warnings that might have
   // been produced prior to the error.
@@ -2104,16 +1958,16 @@ static int run_tool(const char *tool_path, DYNAMIC_STRING *ds_res, ...) {
   DBUG_RETURN(ret);
 }
 
-  /*
-    Test if diff is present.  This is needed on Windows systems
-    as the OS returns 1 whether diff is successful or if it is
-    not present.
+/*
+  Test if diff is present.  This is needed on Windows systems
+  as the OS returns 1 whether diff is successful or if it is
+  not present.
 
-    We run diff -v and look for output in stdout.
-    We don't redirect stderr to stdout to make for a simplified check
-    Windows will output '"diff"' is not recognized... to stderr if it is
-    not present.
-  */
+  We run diff -v and look for output in stdout.
+  We don't redirect stderr to stdout to make for a simplified check
+  Windows will output '"diff"' is not recognized... to stderr if it is
+  not present.
+*/
 
 #ifdef _WIN32
 
@@ -2728,8 +2582,8 @@ void revert_properties() {
 */
 
 static void var_query_set(VAR *var, const char *query, const char **query_end) {
-  char *end = (char *)((query_end && *query_end) ? *query_end
-                                                 : query + std::strlen(query));
+  const char *end =
+      (query_end && *query_end) ? *query_end : query + std::strlen(query);
   MYSQL_RES *res = NULL;
   MYSQL_ROW row;
   MYSQL *mysql = &cur_con->mysql;
@@ -2801,7 +2655,7 @@ static void var_query_set(VAR *var, const char *query, const char **query_end) {
           Call the replace_numeric_round function with the specified
           precision. It may be used along with replace_result, so use the
           output from replace_result as the input for replace_numeric_round.
-       */
+*/
         if (glob_replace_numeric_round >= 0) {
           /* Copy the result from replace_result if it was used, into buffer */
           if (ds_temp.length > 0) {
@@ -2826,7 +2680,7 @@ static void var_query_set(VAR *var, const char *query, const char **query_end) {
     }
     end = result.str + result.length - 1;
     /* Evaluation should not recurse via backtick */
-    eval_expr(var, result.str, (const char **)&end, false, false);
+    eval_expr(var, result.str, &end, false, false);
     dynstr_free(&result);
   } else
     eval_expr(var, "", 0);
@@ -3108,10 +2962,10 @@ void eval_expr(VAR *v, const char *p, const char **p_end, bool open_end,
     if (std::strncmp(p, get_value_str, len) == 0) {
       struct st_command command;
       memset(&command, 0, sizeof(command));
-      command.query = (char *)p;
+      command.query = const_cast<char *>(p);
       command.first_word_len = len;
       command.first_argument = command.query + len;
-      command.end = (char *)*p_end;
+      command.end = const_cast<char *>(*p_end);
       var_set_query_get_value(&command, v);
       DBUG_VOID_RETURN;
     }
@@ -3121,10 +2975,10 @@ void eval_expr(VAR *v, const char *p, const char **p_end, bool open_end,
     if (std::strncmp(p, get_value_str1, len1) == 0) {
       struct st_command command;
       memset(&command, 0, sizeof(command));
-      command.query = (char *)p;
+      command.query = const_cast<char *>(p);
       command.first_word_len = len;
       command.first_argument = command.query + len;
-      command.end = (char *)*p_end;
+      command.end = const_cast<char *>(*p_end);
       var_set_convert_error(&command, v);
       DBUG_VOID_RETURN;
     }
@@ -3367,7 +3221,7 @@ static void replace_crlf_with_lf(char *buf) {
 static void do_exec(struct st_command *command, bool run_in_background) {
   DBUG_ENTER("do_exec");
 
-  char *cmd = command->first_argument;
+  const char *cmd = command->first_argument;
   DBUG_PRINT("enter", ("cmd: '%s'", cmd));
 
   // Skip leading space
@@ -3573,7 +3427,7 @@ static int do_modify_var(struct st_command *command, enum enum_operator op) {
       break;
   }
   v->int_dirty = true;
-  command->last_argument = (char *)++p;
+  command->last_argument = const_cast<char *>(++p);
   return 0;
 }
 
@@ -4690,54 +4544,49 @@ static void do_cat_file(struct st_command *command) {
   DBUG_VOID_RETURN;
 }
 
-/*
-  SYNOPSIS
-  do_diff_files
-  command	called command
-
-  DESCRIPTION
-  diff_files <file1> <file2>;
-
-  Fails if the two files differ.
-
-*/
-
+/// Compare the two files.
+///
+/// Success if 2 files are same, failure if the files are different or
+/// either file does not exist.
+///
+/// @code
+/// diff_files <file1> <file2>;
+/// @endcode
+///
+/// @param command Pointer to the st_command structure which holds the
+///                arguments and information for the command.
 static void do_diff_files(struct st_command *command) {
-  int error = 0;
-  static DYNAMIC_STRING ds_filename;
+  static DYNAMIC_STRING ds_filename1;
   static DYNAMIC_STRING ds_filename2;
+
   const struct command_arg diff_file_args[] = {
-      {"file1", ARG_STRING, true, &ds_filename, "First file to diff"},
+      {"file1", ARG_STRING, true, &ds_filename1, "First file to diff"},
       {"file2", ARG_STRING, true, &ds_filename2, "Second file to diff"}};
-  DBUG_ENTER("do_diff_files");
 
   check_command_args(command, command->first_argument, diff_file_args,
                      sizeof(diff_file_args) / sizeof(struct command_arg), ' ');
 
-  if (access(ds_filename.str, F_OK) != 0)
-    die("command \"diff_files\" failed, file '%s' does not exist",
-        ds_filename.str);
+  if (access(ds_filename1.str, F_OK) != 0)
+    die("Command \"diff_files\" failed, file '%s' does not exist.",
+        ds_filename1.str);
 
   if (access(ds_filename2.str, F_OK) != 0)
-    die("command \"diff_files\" failed, file '%s' does not exist",
+    die("Command \"diff_files\" failed, file '%s' does not exist.",
         ds_filename2.str);
 
-  if ((error = compare_files(ds_filename.str, ds_filename2.str)) &&
+  int error = 0;
+  if ((error = compare_files(ds_filename1.str, ds_filename2.str)) &&
       match_expected_error(command, error, NULL) < 0) {
-    /* Compare of the two files failed, append them to output
-       so the failure can be analyzed, but only if it was not
-       expected to fail.
-    */
-    show_diff(&ds_res, ds_filename.str, ds_filename2.str);
-    log_file.write(&ds_res);
-    log_file.flush();
+    // Compare of the two files failed, append them to output so the
+    // failure can be analyzed, but only if it was not expected to fail.
+    show_diff(&ds_res, ds_filename1.str, ds_filename2.str);
+    if (log_file.write(ds_res.str, ds_res.length) || log_file.flush())
+      cleanup_and_exit(1);
     dynstr_set(&ds_res, 0);
   }
 
-  dynstr_free(&ds_filename);
-  dynstr_free(&ds_filename2);
+  free_dynamic_strings(&ds_filename1, &ds_filename2);
   handle_command_error(command, error);
-  DBUG_VOID_RETURN;
 }
 
 static struct st_connection *find_connection_by_name(const char *name) {
@@ -4761,7 +4610,8 @@ static struct st_connection *find_connection_by_name(const char *name) {
 */
 
 static void do_send_quit(struct st_command *command) {
-  char *p = command->first_argument, *name;
+  char *p = command->first_argument;
+  const char *name;
   struct st_connection *con;
 
   DBUG_ENTER("do_send_quit");
@@ -4897,8 +4747,9 @@ static void do_perl(struct st_command *command) {
     DBUG_PRINT("info", ("Executing perl: %s", ds_script.str));
 
     /* Create temporary file name */
-    if ((fd = create_temp_file(temp_file_path, getenv("MYSQLTEST_VARDIR"),
-                               "tmp", O_CREAT | O_RDWR, MYF(MY_WME))) < 0)
+    if ((fd =
+             create_temp_file(temp_file_path, getenv("MYSQLTEST_VARDIR"), "tmp",
+                              O_CREAT | O_RDWR, KEEP_FILE, MYF(MY_WME))) < 0)
       die("Failed to create temporary file for perl command");
     my_close(fd, MYF(0));
 
@@ -5053,7 +4904,7 @@ static void do_sync_with_master2(struct st_command *command, long offset) {
         master_pos_wait returned NULL. This indicates that
         slave SQL thread is not started, the slave's master
         information is not initialized, the arguments are
-        incorrect, or an error has occured
+        incorrect, or an error has occurred
       */
       die("%.*s failed: '%s' returned NULL "
           "indicating slave SQL thread failure",
@@ -5259,7 +5110,7 @@ static void check_variable_name(const char *var_name, const char *var_name_end,
   is_operator()
   op - character pointer to mathematical expression
 */
-static bool is_operator(char *op) {
+static bool is_operator(const char *op) {
   if (*op == '+')
     return true;
   else if (*op == '-')
@@ -5334,14 +5185,14 @@ static bool is_operator(char *op) {
 static void do_expr(struct st_command *command) {
   DBUG_ENTER("do_expr");
 
-  char *p = command->first_argument;
+  const char *p = command->first_argument;
   if (!*p) die("Missing arguments to expr command.");
 
   // Find <var_name>
-  char *var_name = p;
+  const char *var_name = p;
   while (*p && (*p != '=') && !my_isspace(charset_info, *p)) p++;
-  char *var_name_end = p;
-  check_variable_name(var_name, var_name_end, 1);
+  const char *var_name_end = p;
+  check_variable_name(var_name, var_name_end, true);
 
   // Skip spaces between <var_name> and '='
   while (my_isspace(charset_info, *p)) p++;
@@ -5355,10 +5206,10 @@ static void do_expr(struct st_command *command) {
   const char *expr = p;
 
   // First operand in the expression
-  char *operand_name = p;
+  const char *operand_name = p;
   while (*p && !is_operator(p) && !my_isspace(charset_info, *p)) p++;
   const char *operand_name_end = p;
-  check_variable_name(operand_name, operand_name_end, 0);
+  check_variable_name(operand_name, operand_name_end, false);
   VAR *v1 = var_get(operand_name, &operand_name_end, 0, 0);
 
   double operand1;
@@ -5372,7 +5223,7 @@ static void do_expr(struct st_command *command) {
   while (*p && my_isspace(charset_info, *p)) p++;
 
   // Extract the operator
-  char *operator_start = p;
+  const char *operator_start = p;
   while (*p && (*p != '$') &&
          !(my_isspace(charset_info, *p) || my_isvar(charset_info, *p)))
     p++;
@@ -5389,7 +5240,7 @@ static void do_expr(struct st_command *command) {
   operand_name = p;
   while (*p && !my_isspace(charset_info, *p)) p++;
   operand_name_end = p;
-  check_variable_name(operand_name, operand_name_end, 0);
+  check_variable_name(operand_name, operand_name_end, false);
   VAR *v2 = var_get(operand_name, &operand_name_end, 0, 0);
 
   double operand2;
@@ -5491,8 +5342,8 @@ static void do_expr(struct st_command *command) {
 */
 
 static void do_let(struct st_command *command) {
-  char *p = command->first_argument;
-  char *var_name, *var_name_end;
+  const char *p = command->first_argument;
+  const char *var_name, *var_name_end;
   DYNAMIC_STRING let_rhs_expr;
   DBUG_ENTER("do_let");
 
@@ -6265,10 +6116,11 @@ static void do_error(struct st_command *command) {
   If string is a '$variable', return the value of the variable.
 */
 
-static char *get_string(char **to_ptr, char **from_ptr,
+static char *get_string(char **to_ptr, const char **from_ptr,
                         struct st_command *command) {
   char c, sep;
-  char *to = *to_ptr, *from = *from_ptr, *start = to;
+  char *to = *to_ptr, *start = to;
+  const char *from = *from_ptr;
   DBUG_ENTER("get_string");
 
   /* Find separator */
@@ -6319,7 +6171,7 @@ static char *get_string(char **to_ptr, char **from_ptr,
   if (*start == '$') {
     const char *end = to;
     VAR *var = var_get(start, &end, 0, 1);
-    if (var && to == (char *)end + 1) {
+    if (var && to == end + 1) {
       DBUG_PRINT("info", ("var: '%s' -> '%s'", start, var->str_val));
       DBUG_RETURN(var->str_val); /* return found variable value */
     }
@@ -6974,8 +6826,9 @@ static enum block_op find_operand(const char *start) {
 */
 
 static void do_block(enum block_cmd cmd, struct st_command *command) {
-  char *p = command->first_argument;
-  const char *expr_start, *expr_end;
+  const char *p = command->first_argument;
+  const char *expr_start;
+  const char *expr_end;
   VAR v;
   const char *cmd_name = (cmd == cmd_while ? "while" : "if");
   bool not_expr = false;
@@ -7013,7 +6866,7 @@ static void do_block(enum block_cmd cmd, struct st_command *command) {
   /* Find ending ')' */
   expr_end = strrchr(expr_start, ')');
   if (!expr_end) die("missing ')' in %s", cmd_name);
-  p = (char *)expr_end + 1;
+  p = expr_end + 1;
 
   while (*p && my_isspace(charset_info, *p)) p++;
   if (*p && *p != '{') die("Missing '{' after %s. Found \"%s\"", cmd_name, p);
@@ -7279,10 +7132,10 @@ static int read_line(char *buf, int size) {
         } else if ((c == '{' &&
                     (!charset_info->coll->strnncoll(
                          charset_info, (const uchar *)"while", 5, (uchar *)buf,
-                         std::min<my_ptrdiff_t>(5, p - buf), 0) ||
+                         std::min<ptrdiff_t>(5, p - buf), 0) ||
                      !charset_info->coll->strnncoll(
                          charset_info, (const uchar *)"if", 2, (uchar *)buf,
-                         std::min<my_ptrdiff_t>(2, p - buf), 0)))) {
+                         std::min<ptrdiff_t>(2, p - buf), 0)))) {
           /* Only if and while commands can be terminated by { */
           *p++ = c;
           *p = 0;
@@ -7830,8 +7683,13 @@ static bool get_one_option(int optid, const struct my_option *opt,
       break;
     }
     case 'p':
-      if (argument == disabled_my_option)
-        argument = (char *)"";  // Don't require password
+      if (argument == disabled_my_option) {
+        // Don't require password
+        static char empty_password[] = {'\0'};
+        DBUG_ASSERT(empty_password[0] ==
+                    '\0');  // Check that it has not been overwritten
+        argument = empty_password;
+      }
       if (argument) {
         my_free(opt_pass);
         opt_pass = my_strdup(PSI_NOT_INSTRUMENTED, argument, MYF(MY_FAE));
@@ -8267,7 +8125,7 @@ static void append_metadata(DYNAMIC_STRING *ds, MYSQL_FIELD *field,
     dynstr_append_mem(ds, "\t", 1);
     replace_dynstr_append_uint(ds, field->max_length);
     dynstr_append_mem(ds, "\t", 1);
-    dynstr_append_mem(ds, (char *)(IS_NOT_NULL(field->flags) ? "N" : "Y"), 1);
+    dynstr_append_mem(ds, (IS_NOT_NULL(field->flags) ? "N" : "Y"), 1);
     dynstr_append_mem(ds, "\t", 1);
     replace_dynstr_append_uint(ds, field->flags);
     dynstr_append_mem(ds, "\t", 1);
@@ -8487,9 +8345,9 @@ static int append_warnings(DYNAMIC_STRING *ds, MYSQL *mysql) {
 /// @param ds_warnings Buffer to store the warnings generated while
 ///                    executing the query.
 static void run_query_normal(struct st_connection *cn,
-                             struct st_command *command, int flags, char *query,
-                             size_t query_len, DYNAMIC_STRING *ds,
-                             DYNAMIC_STRING *ds_warnings) {
+                             struct st_command *command, int flags,
+                             const char *query, size_t query_len,
+                             DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_warnings) {
   int error = 0;
   std::uint32_t counter = 0;
   MYSQL *mysql = &cn->mysql;
@@ -8623,8 +8481,8 @@ end:
 /// @param ds_warnings Buffer to store the warnings generated while
 ///                    executing the query.
 static void run_query_stmt(MYSQL *mysql, struct st_command *command,
-                           char *query, size_t query_len, DYNAMIC_STRING *ds,
-                           DYNAMIC_STRING *ds_warnings) {
+                           const char *query, size_t query_len,
+                           DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_warnings) {
   // Init a new stmt if it's not already one created for this connection.
   MYSQL_STMT *stmt;
   if (!(stmt = cur_con->stmt)) {
@@ -8868,7 +8726,7 @@ static void run_query(struct st_connection *cn, struct st_command *command,
   DYNAMIC_STRING ds_sorted;
   DYNAMIC_STRING ds_warnings;
   DYNAMIC_STRING eval_query;
-  char *query;
+  const char *query;
   size_t query_len;
   bool view_created = 0, sp_created = 0;
   bool complete_query =
@@ -8944,7 +8802,7 @@ static void run_query(struct st_connection *cn, struct st_command *command,
         Yes, it was possible to create this query as a view
       */
       view_created = 1;
-      query = (char *)"SELECT * FROM mysqltest_tmp_v";
+      query = "SELECT * FROM mysqltest_tmp_v";
       query_len = std::strlen(query);
 
       /*
@@ -8986,7 +8844,7 @@ static void run_query(struct st_connection *cn, struct st_command *command,
     } else {
       sp_created = 1;
 
-      query = (char *)"CALL mysqltest_tmp_sp()";
+      query = "CALL mysqltest_tmp_sp()";
       query_len = std::strlen(query);
     }
     dynstr_free(&query_str);
@@ -9025,7 +8883,7 @@ static void run_query(struct st_connection *cn, struct st_command *command,
 
   if (display_result_sorted) {
     /* Sort the result set and append it to result */
-    dynstr_append_sorted(save_ds, &ds_sorted);
+    dynstr_append_sorted(save_ds, &ds_sorted, start_sort_column);
     ds = save_ds;
     dynstr_free(&ds_sorted);
   }
@@ -9118,10 +8976,10 @@ static void run_explain(struct st_connection *cn, struct st_command *command,
   @retval 1 If the pattern is found.
   @retval 0 If the pattern is not found.
 */
-static int search_protocol_re(std::regex *re, char *str) {
+static int search_protocol_re(std::regex *re, const char *str) {
   while (my_isspace(charset_info, *str)) str++;
   if (str[0] == '/' && str[1] == '*') {
-    char *comm_end = strstr(str, "*/");
+    const char *comm_end = strstr(str, "*/");
     if (!comm_end) die("Statement is unterminated comment");
     str = comm_end + 2;
   }
@@ -9185,47 +9043,44 @@ static void get_command_type(struct st_command *command) {
   DBUG_VOID_RETURN;
 }
 
-/*
-  Record how many milliseconds it took to execute the test file
-  up until the current line and write it to .progress file
+/// Record how many milliseconds it took to execute the test file
+/// up until the current line and write it to .progress file.
+///
+/// @param progress_file Logfile object to store the progress information
+/// @param line          Line number of the progress file where the progress
+///                      information should be recorded.
+static void mark_progress(Logfile progress_file, int line) {
+  static unsigned long long int progress_start = 0;
+  unsigned long long int timer = timer_now();
 
-*/
-
-static void mark_progress(struct st_command *command MY_ATTRIBUTE((unused)),
-                          int line) {
-  static ulonglong progress_start = 0;  // < Beware
-  DYNAMIC_STRING ds_progress;
-
-  char buf[32], *end;
-  ulonglong timer = timer_now();
   if (!progress_start) progress_start = timer;
-  timer -= progress_start;
+  timer = timer - progress_start;
 
-  if (init_dynamic_string(&ds_progress, "", 256, 256)) die("Out of memory");
+  std::string str_progress;
 
-  /* Milliseconds since start */
-  end = longlong2str(timer, buf, 10);
-  dynstr_append_mem(&ds_progress, buf, (int)(end - buf));
-  dynstr_append_mem(&ds_progress, "\t", 1);
+  // Milliseconds since start
+  std::string str_timer = std::to_string(timer);
+  str_progress.append(str_timer);
+  str_progress.append("\t");
 
-  /* Parser line number */
-  end = int10_to_str(line, buf, 10);
-  dynstr_append_mem(&ds_progress, buf, (int)(end - buf));
-  dynstr_append_mem(&ds_progress, "\t", 1);
+  // Parse the line number
+  std::string str_line = std::to_string(line);
+  str_progress.append(str_line);
+  str_progress.append("\t");
 
-  /* Filename */
-  dynstr_append(&ds_progress, cur_file->file_name);
-  dynstr_append_mem(&ds_progress, ":", 1);
+  // Filename
+  str_progress.append(cur_file->file_name);
+  str_progress.append(":");
 
-  /* Line in file */
-  end = int10_to_str(cur_file->lineno, buf, 10);
-  dynstr_append_mem(&ds_progress, buf, (int)(end - buf));
+  // Line in file
+  str_line = std::to_string(cur_file->lineno);
+  str_progress.append(str_line);
+  str_progress.append("\n");
 
-  dynstr_append_mem(&ds_progress, "\n", 1);
-
-  progress_file.write(&ds_progress);
-
-  dynstr_free(&ds_progress);
+  if (progress_file.write(str_progress.c_str(), str_progress.length()) ||
+      progress_file.flush()) {
+    cleanup_and_exit(1);
+  }
 }
 
 #ifdef HAVE_STACKTRACE
@@ -9523,29 +9378,39 @@ int main(int argc, char **argv) {
     cur_file->lineno = 1;
   }
 
-  log_file.open(opt_logdir, result_file_name, ".log");
+  if (log_file.open(opt_logdir, result_file_name, ".log")) cleanup_and_exit(1);
+
   verbose_msg("Logging to '%s'.", log_file.file_name());
   enable_async_client = use_async_client;
 
-  /*
-    Creating a temporary log file using current file name if
-    result file doesn't exist
-  */
-  if (!result_file_name) {
-    if (std::strcmp(cur_file->file_name, "<stdin>"))
-      temp_log_file.open(opt_logdir, cur_file->file_name, ".log");
-    else
-      temp_log_file.open(opt_logdir, "stdin", ".log");
+  // Creating a log file using current file name if result file doesn't exist.
+  if (result_file_name) {
+    if (log_file.open(opt_logdir, result_file_name, ".log"))
+      cleanup_and_exit(1);
+  } else {
+    if (std::strcmp(cur_file->file_name, "<stdin>")) {
+      if (log_file.open(opt_logdir, cur_file->file_name, ".log"))
+        cleanup_and_exit(1);
+    } else {
+      if (log_file.open(opt_logdir, "stdin", ".log")) cleanup_and_exit(1);
+    }
   }
 
+  // File to store the progress
+  Logfile progress_file;
+
   if (opt_mark_progress) {
-    if (result_file_name)
-      progress_file.open(opt_logdir, result_file_name, ".progress");
-    else {
-      if (std::strcmp(cur_file->file_name, "<stdin>"))
-        progress_file.open(opt_logdir, cur_file->file_name, ".progress");
-      else
-        progress_file.open(opt_logdir, "stdin", ".progress");
+    if (result_file_name) {
+      if (progress_file.open(opt_logdir, result_file_name, ".progress"))
+        cleanup_and_exit(1);
+    } else {
+      if (std::strcmp(cur_file->file_name, "<stdin>")) {
+        if (progress_file.open(opt_logdir, cur_file->file_name, ".progress"))
+          cleanup_and_exit(1);
+      } else {
+        if (progress_file.open(opt_logdir, "stdin", ".progress"))
+          cleanup_and_exit(1);
+      }
     }
     verbose_msg("Tracing progress in '%s'.", progress_file.file_name());
   }
@@ -9851,6 +9716,16 @@ int main(int argc, char **argv) {
             command
           */
           display_result_sorted = true;
+          start_sort_column = 0;
+          break;
+        case Q_PARTIALLY_SORTED_RESULT:
+          /*
+            Turn on sorting of result set, will be reset after next
+            command
+          */
+          display_result_sorted = true;
+          start_sort_column = atoi(command->first_argument);
+          command->last_argument = command->end;
           break;
         case Q_LOWERCASE:
           /*
@@ -10173,22 +10048,23 @@ int main(int argc, char **argv) {
     last_command_executed = command_executed;
 
     parser.current_line += current_line_inc;
-    if (opt_mark_progress) mark_progress(command, parser.current_line);
+    if (opt_mark_progress) mark_progress(progress_file, parser.current_line);
 
-    /* Write result from command to log file immediately */
-    log_file.write(&ds_res);
-    log_file.flush();
+    // Write result from command to log file immediately.
+    if (log_file.write(ds_res.str, ds_res.length) || log_file.flush())
+      cleanup_and_exit(1);
 
     if (!result_file_name) {
-      temp_log_file.write(&ds_res);
-      temp_log_file.flush();
+      std::fwrite(ds_res.str, 1, ds_res.length, stdout);
+      std::fflush(stdout);
     }
+
     dynstr_set(&ds_res, 0);
   }
 
   log_file.close();
 
-  if (!result_file_name) temp_log_file.close();
+  if (opt_mark_progress) progress_file.close();
 
   start_lineno = 0;
   verbose_msg("... Done processing test commands.");
@@ -10286,7 +10162,7 @@ ulonglong timer_now(void) { return my_micro_time() / 1000; }
 */
 
 void do_get_replace_column(struct st_command *command) {
-  char *from = command->first_argument;
+  const char *from = command->first_argument;
   char *buff, *start;
   DBUG_ENTER("get_replace_columns");
 
@@ -10476,7 +10352,8 @@ struct POINTER_ARRAY {  /* when using array-strings */
   uint array_allocs{0}, max_count{0}, length{0}, max_length{0};
 };
 
-REPLACE *init_replace(char **from, char **to, uint count, char *word_end_chars);
+REPLACE *init_replace(const char **from, const char **to, uint count,
+                      const char *word_end_chars);
 int insert_pointer_name(POINTER_ARRAY *pa, char *name);
 void free_pointer_array(POINTER_ARRAY *pa);
 
@@ -10490,7 +10367,7 @@ void free_pointer_array(POINTER_ARRAY *pa);
 
 void do_get_replace(struct st_command *command) {
   uint i;
-  char *from = command->first_argument;
+  const char *from = command->first_argument;
   char *buff, *start;
   char word_end_chars[256], *pos;
   POINTER_ARRAY to_array, from_array;
@@ -10517,10 +10394,9 @@ void do_get_replace(struct st_command *command) {
   for (i = 1, pos = word_end_chars; i < 256; i++)
     if (my_isspace(charset_info, i)) *pos++ = i;
   *pos = 0; /* End pointer */
-  if (!(glob_replace =
-            init_replace((char **)from_array.typelib.type_names,
-                         (char **)to_array.typelib.type_names,
-                         (uint)from_array.typelib.count, word_end_chars)))
+  if (!(glob_replace = init_replace(
+            from_array.typelib.type_names, to_array.typelib.type_names,
+            (uint)from_array.typelib.count, word_end_chars)))
     die("Can't initialize replace from '%s'", command->query);
   free_pointer_array(&from_array);
   free_pointer_array(&to_array);
@@ -10543,7 +10419,7 @@ struct REPLACE {
 
 struct REPLACE_STRING {
   int found;
-  char *replace_string;
+  const char *replace_string;
   uint to_offset;
   int from_offset;
 };
@@ -10594,14 +10470,14 @@ void replace_strings_append(REPLACE *rep, DYNAMIC_STRING *ds, const char *str,
   }
 }
 
-  /*
-    Regex replace  functions
-  */
+/*
+  Regex replace  functions
+*/
 
-  /*
-    Finds the next (non-escaped) '/' in the expression.
-    (If the character '/' is needed, it can be escaped using '\'.)
-  */
+/*
+  Finds the next (non-escaped) '/' in the expression.
+  (If the character '/' is needed, it can be escaped using '\'.)
+*/
 
 #define PARSE_REGEX_ARG     \
   while (p < expr_end) {    \
@@ -10628,10 +10504,11 @@ void replace_strings_append(REPLACE *rep, DYNAMIC_STRING *ds, const char *str,
                 for substitution.
   @retval st_replace_regex structure with pairs of substitutions.
 */
-static struct st_replace_regex *init_replace_regex(char *expr) {
+static struct st_replace_regex *init_replace_regex(const char *expr) {
   struct st_replace_regex *res;
-  char *buf, *expr_end;
-  char *p;
+  char *buf;
+  const char *expr_end;
+  const char *p;
   char *buf_p;
   size_t expr_len = std::strlen(expr);
   char last_c = 0;
@@ -10811,7 +10688,7 @@ int multi_reg_replace(struct st_replace_regex *r, char *val, size_t *len) {
 
 */
 void do_get_replace_regex(struct st_command *command) {
-  char *expr = command->first_argument;
+  const char *expr = command->first_argument;
   free_replace_regex();
   /* Allow variable for the *entire* list of replacements */
   if (*expr == '$') {
@@ -10882,12 +10759,12 @@ int cmp_bits(REP_SET *set1, REP_SET *set2);
 int get_next_bit(REP_SET *set, uint lastpos);
 int find_set(REP_SETS *sets, REP_SET *find);
 int find_found(FOUND_SET *found_set, uint table_offset, int found_offset);
-uint start_at_word(char *pos);
-uint end_of_word(char *pos);
+uint start_at_word(const char *pos);
+uint end_of_word(const char *pos);
 
 static uint found_sets = 0;
 
-static uint replace_len(char *str) {
+static uint replace_len(const char *str) {
   uint len = 0;
   while (*str) {
     str++;
@@ -10898,8 +10775,8 @@ static uint replace_len(char *str) {
 
 /* Init a replace structure for further calls */
 
-REPLACE *init_replace(char **from, char **to, uint count,
-                      char *word_end_chars) {
+REPLACE *init_replace(const char **from, const char **to, uint count,
+                      const char *word_end_chars) {
   static const int SPACE_CHAR = 256;
   static const int END_OF_LINE = 258;
 
@@ -10907,7 +10784,8 @@ REPLACE *init_replace(char **from, char **to, uint count,
       bit_nr;
   int used_sets, chr, default_state;
   char used_chars[LAST_CHAR_CODE], is_word_end[256];
-  char *pos, *to_pos, **to_array;
+  const char *pos, **to_array;
+  char *to_pos;
   REP_SETS sets;
   REP_SET *set, *start_states, *word_states, *new_set;
   FOLLOWS *follow, *follow_ptr;
@@ -11089,7 +10967,7 @@ REPLACE *init_replace(char **from, char **to, uint count,
                                     sizeof(char *) * count + result_len,
                                 MYF(MY_WME | MY_ZEROFILL)))) {
     rep_str = (REPLACE_STRING *)(replace + sets.count);
-    to_array = (char **)(rep_str + found_sets + 1);
+    to_array = pointer_cast<const char **>(rep_str + found_sets + 1);
     to_pos = (char *)(to_array + count);
     for (i = 0; i < count; i++) {
       to_array[i] = to_pos;
@@ -11272,22 +11150,22 @@ int find_found(FOUND_SET *found_set, uint table_offset, int found_offset) {
 
 /* Return 1 if regexp starts with \b or ends with \b*/
 
-uint start_at_word(char *pos) {
+uint start_at_word(const char *pos) {
   return (((!memcmp(pos, "\\b", 2) && pos[2]) || !memcmp(pos, "\\^", 2)) ? 1
                                                                          : 0);
 }
 
-uint end_of_word(char *pos) {
-  char *end = strend(pos);
+uint end_of_word(const char *pos) {
+  const char *end = strend(pos);
   return ((end > pos + 2 && !memcmp(end - 2, "\\b", 2)) ||
           (end >= pos + 2 && !memcmp(end - 2, "\\$", 2)))
              ? 1
              : 0;
 }
 
-  /****************************************************************************
-   * Handle replacement of strings
-   ****************************************************************************/
+/****************************************************************************
+ * Handle replacement of strings
+ ****************************************************************************/
 
 #define PC_MALLOC 256 /* Bytes for pointers */
 #define PS_MALLOC 512 /* Bytes for data */
@@ -11380,13 +11258,13 @@ void replace_dynstr_append_mem(DYNAMIC_STRING *ds, const char *val,
 
   if (display_result_lower) {
     /* Convert to lower case, and do this first */
-    my_casedn_str(charset_info, (char *)val);
+    my_casedn_str(charset_info, const_cast<char *>(val));
   }
 
   if (glob_replace_regex) {
     size_t orig_len = len;
     // Regex replace
-    if (!multi_reg_replace(glob_replace_regex, (char *)val, &len)) {
+    if (!multi_reg_replace(glob_replace_regex, const_cast<char *>(val), &len)) {
       val = glob_replace_regex->buf;
     } else {
       len = orig_len;
@@ -11449,18 +11327,33 @@ void replace_dynstr_append_uint(DYNAMIC_STRING *ds, uint val) {
   dynstr_append_sorted
   ds - string where the sorted output will be appended
   ds_input - string to be sorted
-
+  start_sort_column - column to start sorting from (0 for sorting
+    the entire line); a stable sort will be used
 */
 
-class Comp_lines
-    : public std::binary_function<const char *, const char *, bool> {
+class Comp_lines {
  public:
   bool operator()(const char *a, const char *b) {
     return std::strcmp(a, b) < 0;
   }
 };
 
-void dynstr_append_sorted(DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_input) {
+static size_t length_of_n_first_columns(const char *str,
+                                        int start_sort_column) {
+  const char *ptr = str;
+  for (int i = 0; i < start_sort_column; ++i) {
+    const char *first_tab = strchr(ptr, '\t');
+    if (first_tab == nullptr) {
+      return strlen(str);
+    } else {
+      ptr = first_tab + 1;
+    }
+  }
+  return ptr - str;
+}
+
+void dynstr_append_sorted(DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_input,
+                          int start_sort_column) {
   char *start = ds_input->str;
   Prealloced_array<const char *, 32> lines(PSI_NOT_INSTRUMENTED);
   DBUG_ENTER("dynstr_append_sorted");
@@ -11473,12 +11366,30 @@ void dynstr_append_sorted(DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_input) {
   dynstr_append_mem(ds, ds_input->str, start - ds_input->str);
 
   /* Insert line(s) in array */
+  size_t first_unsorted_row = 0;
   while (*start) {
     char *line_end = (char *)start;
 
     /* Find end of line */
     while (*line_end && *line_end != '\n') line_end++;
     *line_end = 0;
+
+    if (!lines.empty() && start_sort_column > 0) {
+      /*
+        If doing partial sorting, and the prefix is different from that of the
+        previous line, the group is done. Sort it and start another one.
+       */
+      size_t prev_line_prefix_len =
+          length_of_n_first_columns(lines.back(), start_sort_column);
+      size_t this_line_prefix_len =
+          length_of_n_first_columns(start, start_sort_column);
+      if (this_line_prefix_len != prev_line_prefix_len ||
+          memcmp(lines.back(), start, prev_line_prefix_len) != 0) {
+        std::sort(lines.begin() + first_unsorted_row, lines.end(),
+                  Comp_lines());
+        first_unsorted_row = lines.size();
+      }
+    }
 
     /* Insert pointer to the line in array */
     if (lines.push_back(start)) die("Out of memory inserting lines to sort");
@@ -11487,7 +11398,8 @@ void dynstr_append_sorted(DYNAMIC_STRING *ds, DYNAMIC_STRING *ds_input) {
   }
 
   /* Sort array */
-  std::sort(lines.begin(), lines.end(), Comp_lines());
+  std::stable_sort(lines.begin() + first_unsorted_row, lines.end(),
+                   Comp_lines());
 
   /* Create new result */
   for (const char **line = lines.begin(); line != lines.end(); ++line) {

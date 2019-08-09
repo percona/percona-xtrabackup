@@ -71,6 +71,7 @@ Note: YYTHD is passed as an argument to yyparse(), and subsequently to yylex().
 #include "sql/log_event.h"
 #include "sql/opt_explain_json.h"
 #include "sql/opt_explain_traditional.h"
+#include "sql/parser_yystype.h"
 #include "sql/resourcegroups/resource_group_mgr.h" // resource_group_support
 #include "sql/resourcegroups/resource_group_sql_cmd.h" // Sql_cmd_*_resource_group etc.
 #include "sql/rpl_filter.h"
@@ -105,8 +106,7 @@ Note: YYTHD is passed as an argument to yyparse(), and subsequently to yylex().
 #include "sql/sql_signal.h"
 #include "sql/sql_table.h"                        /* primary_key_name */
 #include "sql/sql_tablespace.h"                  // Sql_cmd_alter_tablespace
-#include "sql/sql_trigger.h"                     // Sql_cmd_create_trigger,
-                                             // Sql_cmd_create_trigger
+#include "sql/sql_trigger.h"                     // Sql_cmd_create_trigger
 #include "sql/sql_truncate.h"                      // Sql_cmd_truncate_table
 
 /* this is to get the bison compilation windows warnings out */
@@ -133,7 +133,7 @@ int yylex(void *yylval, void *yythd);
     ulong val= *(H);                          \
     if (my_yyoverflow((B), (D), (F), &val))   \
     {                                         \
-      yyerror(NULL, YYTHD, NULL, (char*) (A));\
+      yyerror(NULL, YYTHD, NULL, (const char*) (A));\
       return 2;                               \
     }                                         \
     else                                      \
@@ -431,6 +431,12 @@ void warn_about_deprecated_national(THD *thd)
     push_warning(thd, ER_DEPRECATED_NATIONAL);
 }
 
+void warn_about_deprecated_binary(THD *thd)
+{
+  push_deprecated_warn(thd, "BINARY as attribute of a type",
+  "a CHARACTER SET clause with _bin collation");
+}
+
 %}
 
 %start start_entry
@@ -444,7 +450,7 @@ void warn_about_deprecated_national(THD *thd)
   1. We do not accept any reduce/reduce conflicts
   2. We should not introduce new shift/reduce conflicts any more.
 */
-%expect 104
+%expect 99
 
 /*
    MAINTAINER:
@@ -535,10 +541,10 @@ void warn_about_deprecated_national(THD *thd)
 %token  BINARY_SYM                    /* SQL-2003-R */
 %token<lexer.keyword> BINLOG_SYM
 %token  BIN_NUM
-%token  BIT_AND                       /* MYSQL-FUNC */
-%token  BIT_OR                        /* MYSQL-FUNC */
+%token  BIT_AND_SYM                   /* MYSQL-FUNC */
+%token  BIT_OR_SYM                    /* MYSQL-FUNC */
 %token<lexer.keyword> BIT_SYM               /* MYSQL-FUNC */
-%token  BIT_XOR                       /* MYSQL-FUNC */
+%token  BIT_XOR_SYM                   /* MYSQL-FUNC */
 %token  BLOB_SYM                      /* SQL-2003-R */
 %token<lexer.keyword> BLOCK_SYM
 %token<lexer.keyword> BOOLEAN_SYM           /* SQL-2003-R */
@@ -888,7 +894,7 @@ void warn_about_deprecated_national(THD *thd)
 %token  ORDER_SYM                     /* SQL-2003-R */
 %token  OR_OR_SYM                     /* OPERATOR */
 %token  OR_SYM                        /* SQL-2003-R */
-%token  OUTER
+%token  OUTER_SYM
 %token  OUTFILE
 %token  OUT_SYM                       /* SQL-2003-R */
 %token<lexer.keyword> OWNER_SYM
@@ -1222,6 +1228,8 @@ void warn_about_deprecated_national(THD *thd)
 %token<lexer.keyword> ACTIVE_SYM                    /* MYSQL */
 %token<lexer.keyword> INACTIVE_SYM                  /* MYSQL */
 %token          LATERAL_SYM                   /* SQL-1999-R */
+%token<lexer.keyword>ARRAY_SYM                     /* SQL-2003-R */
+%token          MEMBER_SYM                    /* SQL-2003-R */
 %token<lexer.keyword> OPTIONAL_SYM                  /* MYSQL */
 %token<lexer.keyword> SECONDARY_SYM                 /* MYSQL */
 %token<lexer.keyword> SECONDARY_ENGINE_SYM          /* MYSQL */
@@ -1268,17 +1276,20 @@ void warn_about_deprecated_national(THD *thd)
         LEX_HOSTNAME ULONGLONG_NUM select_alias ident opt_ident ident_or_text
         role_ident role_ident_or_text
         IDENT_sys TEXT_STRING_sys TEXT_STRING_literal
-        NCHAR_STRING opt_component key_cache_name
+        NCHAR_STRING opt_component
         sp_opt_label BIN_NUM label_ident TEXT_STRING_filesystem ident_or_empty
         TEXT_STRING_sys_nonewline TEXT_STRING_password TEXT_STRING_hash
+        TEXT_STRING_validated
         filter_wild_db_table_string
         opt_constraint_name
         ts_datafile lg_undofile /*lg_redofile*/ opt_logfile_group_name opt_ts_datafile_name
         opt_describe_column
         opt_datadir_ssl default_encryption
         lvalue_ident
+        schema
 
 %type <lex_cstr>
+        key_cache_name
         opt_table_alias
         opt_replace_password
 
@@ -1352,7 +1363,7 @@ void warn_about_deprecated_national(THD *thd)
         table_wild simple_expr udf_expr
         expr_or_default set_expr_or_default
         geometry_function
-        signed_literal now_or_signed_literal opt_escape
+        signed_literal now_or_signed_literal
         simple_ident_nospvar simple_ident_q
         field_or_var limit_option
         function_call_keyword
@@ -1525,7 +1536,7 @@ void warn_about_deprecated_national(THD *thd)
 %type <c_str> field_length opt_field_length type_datetime_precision
         opt_place
 
-%type <precision> precision opt_precision float_options
+%type <precision> precision opt_precision float_options standard_float_options
 
 %type <charset_with_opt_binary> opt_charset_with_opt_binary
 
@@ -1898,6 +1909,7 @@ void warn_about_deprecated_national(THD *thd)
 
 %type <load_set_list> load_data_set_list opt_load_data_set_spec
 
+%type <num> opt_array_cast
 %type <sql_cmd_srs_attributes> srs_attributes
 
 %type <alter_tablespace_type> undo_tablespace_state
@@ -2400,7 +2412,7 @@ filter_table_list:
         ;
 
 filter_table_ident:
-          ident '.' ident /* qualified table name */
+          schema '.' ident /* qualified table name */
           {
             THD *thd= YYTHD;
             Item_string *table_item= NEW_PTN Item_string($1.str, $1.length,
@@ -3300,7 +3312,7 @@ sp_fdparam:
             if (sp_check_name(&$1))
               MYSQL_YYABORT;
 
-            if (pctx->find_variable($1, true))
+            if (pctx->find_variable($1.str, $1.length, true))
             {
               my_error(ER_SP_DUP_PARAM, MYF(0), $1.str);
               MYSQL_YYABORT;
@@ -3314,7 +3326,7 @@ sp_fdparam:
             if (spvar->field_def.init(thd, "", field_type,
                                       $2->get_length(), $2->get_dec(),
                                       $2->get_type_flags(),
-                                      NULL, NULL, &NULL_STR, 0,
+                                      NULL, NULL, &NULL_CSTR, 0,
                                       $2->get_interval_list(),
                                       cs ? cs : thd->variables.collation_database,
                                       $3 != nullptr, $2->get_uint_geom_type(),
@@ -3355,7 +3367,7 @@ sp_pdparam:
             if (sp_check_name(&$2))
               MYSQL_YYABORT;
 
-            if (pctx->find_variable($2, true))
+            if (pctx->find_variable($2.str, $2.length, true))
             {
               my_error(ER_SP_DUP_PARAM, MYF(0), $2.str);
               MYSQL_YYABORT;
@@ -3375,7 +3387,7 @@ sp_pdparam:
             if (spvar->field_def.init(thd, "", field_type,
                                       $3->get_length(), $3->get_dec(),
                                       $3->get_type_flags(),
-                                      NULL, NULL, &NULL_STR, 0,
+                                      NULL, NULL, &NULL_CSTR, 0,
                                       $3->get_interval_list(),
                                       cs ? cs : thd->variables.collation_database,
                                       $4 != nullptr, $3->get_uint_geom_type(),
@@ -3505,7 +3517,7 @@ sp_decl:
               if (spvar->field_def.init(thd, "", var_type,
                                         $3->get_length(), $3->get_dec(),
                                         $3->get_type_flags(),
-                                        NULL, NULL, &NULL_STR, 0,
+                                        NULL, NULL, &NULL_CSTR, 0,
                                         $3->get_interval_list(),
                                         cs ? cs : thd->variables.collation_database,
                                         $4 != nullptr, $3->get_uint_geom_type(),
@@ -4145,7 +4157,7 @@ sp_decl_idents:
             LEX *lex= thd->lex;
             sp_pcontext *pctx= lex->get_sp_current_parsing_ctx();
 
-            if (pctx->find_variable($1, true))
+            if (pctx->find_variable($1.str, $1.length, true))
             {
               my_error(ER_SP_DUP_VAR, MYF(0), $1.str);
               MYSQL_YYABORT;
@@ -4165,7 +4177,7 @@ sp_decl_idents:
             LEX *lex= thd->lex;
             sp_pcontext *pctx= lex->get_sp_current_parsing_ctx();
 
-            if (pctx->find_variable($3, true))
+            if (pctx->find_variable($3.str, $3.length, true))
             {
               my_error(ER_SP_DUP_VAR, MYF(0), $3.str);
               MYSQL_YYABORT;
@@ -4546,7 +4558,7 @@ sp_fetch_list:
             sp_pcontext *pctx= lex->get_sp_current_parsing_ctx();
             sp_variable *spv;
 
-            if (!pctx || !(spv= pctx->find_variable($1, false)))
+            if (!pctx || !(spv= pctx->find_variable($1.str, $1.length, false)))
             {
               my_error(ER_SP_UNDECLARED_VAR, MYF(0), $1.str);
               MYSQL_YYABORT;
@@ -4564,7 +4576,7 @@ sp_fetch_list:
             sp_pcontext *pctx= lex->get_sp_current_parsing_ctx();
             sp_variable *spv;
 
-            if (!pctx || !(spv= pctx->find_variable($3, false)))
+            if (!pctx || !(spv= pctx->find_variable($3.str, $3.length, false)))
             {
               my_error(ER_SP_UNDECLARED_VAR, MYF(0), $3.str);
               MYSQL_YYABORT;
@@ -5409,7 +5421,7 @@ ts_option_comment:
 ts_option_engine:
           opt_storage ENGINE_SYM opt_equal ident_or_text
           {
-            $$= NEW_PTN PT_alter_tablespace_option_engine($4);
+            $$= NEW_PTN PT_alter_tablespace_option_engine(to_lex_cstring($4));
           }
         ;
 
@@ -5863,7 +5875,7 @@ part_option:
           TABLESPACE_SYM opt_equal ident
           { $$= NEW_PTN PT_partition_tablespace($3.str); }
         | opt_storage ENGINE_SYM opt_equal ident_or_text
-          { $$= NEW_PTN PT_partition_engine($4); }
+          { $$= NEW_PTN PT_partition_engine(to_lex_cstring($4)); }
         | NODEGROUP_SYM opt_equal real_ulong_num
           { $$= NEW_PTN PT_partition_nodegroup($3); }
         | MAX_ROWS opt_equal real_ulonglong_num
@@ -5960,7 +5972,7 @@ opt_comma:
 create_table_option:
           ENGINE_SYM opt_equal ident_or_text
           {
-            $$= NEW_PTN PT_create_table_engine_option($3);
+            $$= NEW_PTN PT_create_table_engine_option(to_lex_cstring($3));
           }
         | SECONDARY_ENGINE_SYM opt_equal NULL_SYM
           {
@@ -5968,7 +5980,7 @@ create_table_option:
           }
         | SECONDARY_ENGINE_SYM opt_equal ident_or_text
           {
-            $$= NEW_PTN PT_create_table_secondary_engine_option($3);
+            $$= NEW_PTN PT_create_table_secondary_engine_option(to_lex_cstring($3));
           }
         | MAX_ROWS opt_equal ulonglong_num
           {
@@ -6291,15 +6303,15 @@ opt_stored_attribute:
 type:
           int_type opt_field_length field_options
           {
-            $$= NEW_PTN PT_numeric_type($1, $2, $3);
+            $$= NEW_PTN PT_numeric_type(YYTHD, $1, $2, $3);
           }
         | real_type opt_precision field_options
           {
-            $$= NEW_PTN PT_numeric_type($1, $2.length, $2.dec, $3);
+            $$= NEW_PTN PT_numeric_type(YYTHD, $1, $2.length, $2.dec, $3);
           }
         | numeric_type float_options field_options
           {
-            $$= NEW_PTN PT_numeric_type($1, $2.length, $2.dec, $3);
+            $$= NEW_PTN PT_numeric_type(YYTHD, $1, $2.length, $2.dec, $3);
           }
         | BIT_SYM
           {
@@ -6539,6 +6551,19 @@ numeric_type:
         | FIXED_SYM   { $$= Numeric_type::DECIMAL; }
         ;
 
+standard_float_options:
+          /* empty */
+          {
+            $$.length = nullptr;
+            $$.dec = nullptr;
+          }
+        | field_length
+          {
+            $$.length = $1;
+            $$.dec = nullptr;
+          }
+        ;
+
 float_options:
           /* empty */
           {
@@ -6578,23 +6603,27 @@ func_datetime_precision:
         ;
 
 field_options:
-          /* empty */ { $$= Field_option::NONE; }
+          /* empty */ { $$ = 0; }
         | field_opt_list
         ;
 
 field_opt_list:
           field_opt_list field_option
           {
-            $$= static_cast<Field_option>(static_cast<ulong>($1) |
-                                          static_cast<ulong>($2));
+            $$ = $1 | $2;
           }
         | field_option
         ;
 
 field_option:
-          SIGNED_SYM   { $$= Field_option::NONE; } // TODO: remove undocumented ignored syntax
-        | UNSIGNED_SYM { $$= Field_option::UNSIGNED; }
-        | ZEROFILL_SYM { $$= Field_option::ZEROFILL_UNSIGNED; }
+          SIGNED_SYM   { $$ = 0; } // TODO: remove undocumented ignored syntax
+        | UNSIGNED_SYM { $$ = UNSIGNED_FLAG; }
+        | ZEROFILL_SYM {
+            $$ = ZEROFILL_FLAG;
+            push_warning(YYTHD, Sql_condition::SL_WARNING,
+                         ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                         ER_THD(YYTHD, ER_WARN_DEPRECATED_ZEROFILL));
+          }
         ;
 
 field_length:
@@ -6707,7 +6736,7 @@ column_attribute:
           }
         | COMMENT_SYM TEXT_STRING_sys
           {
-            $$= NEW_PTN PT_comment_column_attr($2);
+            $$= NEW_PTN PT_comment_column_attr(to_lex_cstring($2));
           }
         | COLLATE_SYM collation_name
           {
@@ -6839,8 +6868,14 @@ opt_default:
 
 ascii:
           ASCII_SYM        { $$= &my_charset_latin1; }
-        | BINARY_SYM ASCII_SYM { $$= &my_charset_latin1_bin; }
-        | ASCII_SYM BINARY_SYM { $$= &my_charset_latin1_bin; }
+        | BINARY_SYM ASCII_SYM {
+            warn_about_deprecated_binary(YYTHD);
+            $$= &my_charset_latin1_bin;
+        }
+        | ASCII_SYM BINARY_SYM {
+            warn_about_deprecated_binary(YYTHD);
+            $$= &my_charset_latin1_bin;
+        }
         ;
 
 unicode:
@@ -6854,11 +6889,13 @@ unicode:
           }
         | UNICODE_SYM BINARY_SYM
           {
+            warn_about_deprecated_binary(YYTHD);
             if (!($$= mysqld_collation_get_by_name("ucs2_bin")))
               MYSQL_YYABORT;
           }
         | BINARY_SYM UNICODE_SYM
           {
+            warn_about_deprecated_binary(YYTHD);
             if (!($$= mysqld_collation_get_by_name("ucs2_bin")))
               my_error(ER_UNKNOWN_COLLATION, MYF(0), "ucs2_bin");
           }
@@ -6894,11 +6931,13 @@ opt_charset_with_opt_binary:
           }
         | BINARY_SYM
           {
+            warn_about_deprecated_binary(YYTHD);
             $$.charset= NULL;
             $$.force_binary= true;
           }
         | BINARY_SYM character_set charset_name
           {
+            warn_about_deprecated_binary(YYTHD);
             $$.charset= get_bin_collation($3);
             if ($$.charset == NULL)
               MYSQL_YYABORT;
@@ -6908,7 +6947,10 @@ opt_charset_with_opt_binary:
 
 opt_bin_mod:
           /* empty */ { $$= false; }
-        | BINARY_SYM  { $$= true; }
+        | BINARY_SYM {
+            warn_about_deprecated_binary(YYTHD);
+            $$= true;
+          }
         ;
 
 ws_num_codepoints:
@@ -8757,7 +8799,7 @@ assign_to_keycache:
         ;
 
 key_cache_name:
-          ident    { $$= $1; }
+          ident    { $$= to_lex_cstring($1); }
         | DEFAULT_SYM { $$ = default_key_cache_base; }
         ;
 
@@ -9244,9 +9286,9 @@ select_item:
 select_alias:
           /* empty */ { $$=null_lex_str;}
         | AS ident { $$=$2; }
-        | AS TEXT_STRING_sys { $$=$2; }
+        | AS TEXT_STRING_validated { $$=$2; }
         | ident { $$=$1; }
-        | TEXT_STRING_sys { $$=$1; }
+        | TEXT_STRING_validated { $$=$1; }
         ;
 
 optional_braces:
@@ -9275,23 +9317,23 @@ expr:
           }
         | NOT_SYM expr %prec NOT_SYM
           {
-            $$= NEW_PTN PTI_negate_expression(@$, $2);
+            $$= NEW_PTN PTI_truth_transform(@$, $2, Item::BOOL_NEGATED);
           }
         | bool_pri IS TRUE_SYM %prec IS
           {
-            $$= NEW_PTN Item_func_istrue(@$, $1);
+            $$= NEW_PTN PTI_truth_transform(@$, $1, Item::BOOL_IS_TRUE);
           }
         | bool_pri IS not TRUE_SYM %prec IS
           {
-            $$= NEW_PTN Item_func_isnottrue(@$, $1);
+            $$= NEW_PTN PTI_truth_transform(@$, $1, Item::BOOL_NOT_TRUE);
           }
         | bool_pri IS FALSE_SYM %prec IS
           {
-            $$= NEW_PTN Item_func_isfalse(@$, $1);
+            $$= NEW_PTN PTI_truth_transform(@$, $1, Item::BOOL_IS_FALSE);
           }
         | bool_pri IS not FALSE_SYM %prec IS
           {
-            $$= NEW_PTN Item_func_isnotfalse(@$, $1);
+            $$= NEW_PTN PTI_truth_transform(@$, $1, Item::BOOL_NOT_FALSE);
           }
         | bool_pri IS UNKNOWN_SYM %prec IS
           {
@@ -9341,7 +9383,7 @@ predicate:
         | bit_expr not IN_SYM table_subquery
           {
             Item *item= NEW_PTN Item_in_subselect(@$, $1, $4);
-            $$= NEW_PTN PTI_negate_expression(@$, item);
+            $$= NEW_PTN PTI_truth_transform(@$, item, Item::BOOL_NEGATED);
           }
         | bit_expr IN_SYM '(' expr ')'
           {
@@ -9365,6 +9407,10 @@ predicate:
 
             $$= NEW_PTN Item_func_in(@$, $7, true);
           }
+        | bit_expr MEMBER_SYM opt_of '(' simple_expr ')'
+          {
+            $$= NEW_PTN Item_func_member_of(@$, $1, $5);
+          }
         | bit_expr BETWEEN_SYM bit_expr AND_SYM predicate
           {
             $$= NEW_PTN Item_func_between(@$, $1, $3, $5, false);
@@ -9381,16 +9427,23 @@ predicate:
               MYSQL_YYABORT;
             $$= NEW_PTN Item_func_eq(@$, item1, item4);
           }
-        | bit_expr LIKE simple_expr opt_escape
+        | bit_expr LIKE simple_expr
           {
-            $$= NEW_PTN Item_func_like(@$, $1, $3, $4);
+            $$ = NEW_PTN Item_func_like(@$, $1, $3, nullptr);
           }
-        | bit_expr not LIKE simple_expr opt_escape
+        | bit_expr LIKE simple_expr ESCAPE_SYM simple_expr %prec LIKE
           {
-            Item *item= NEW_PTN Item_func_like(@$, $1, $4, $5);
-            if (item == NULL)
-              MYSQL_YYABORT;
-            $$= NEW_PTN Item_func_not(@$, item);
+            $$ = NEW_PTN Item_func_like(@$, $1, $3, $5);
+          }
+        | bit_expr not LIKE simple_expr
+          {
+            auto item = NEW_PTN Item_func_like(@$, $1, $4, nullptr);
+            $$ = NEW_PTN Item_func_not(@$, item);
+          }
+        | bit_expr not LIKE simple_expr ESCAPE_SYM simple_expr %prec LIKE
+          {
+            auto item = NEW_PTN Item_func_like(@$, $1, $4, $6);
+            $$ = NEW_PTN Item_func_not(@$, item);
           }
         | bit_expr REGEXP bit_expr
           {
@@ -9406,9 +9459,14 @@ predicate:
             args->push_back($1);
             args->push_back($4);
             Item *item= NEW_PTN Item_func_regexp_like(@$, args);
-            $$= NEW_PTN PTI_negate_expression(@$, item);
+            $$= NEW_PTN PTI_truth_transform(@$, item, Item::BOOL_NEGATED);
           }
         | bit_expr
+        ;
+
+opt_of:
+          OF_SYM
+        |
         ;
 
 bit_expr:
@@ -9479,6 +9537,9 @@ or:
 and:
           AND_SYM
        | AND_AND_SYM
+         {
+           push_deprecated_warn(YYTHD, "&&", "AND");
+         }
        ;
 
 not:
@@ -9487,7 +9548,7 @@ not:
         ;
 
 not2:
-          '!'
+          '!' { push_deprecated_warn(YYTHD, "!", "NOT"); }
         | NOT2_SYM
         ;
 
@@ -9539,7 +9600,7 @@ simple_expr:
           }
         | not2 simple_expr %prec NEG
           {
-            $$= NEW_PTN PTI_negate_expression(@$, $2);
+            $$= NEW_PTN PTI_truth_transform(@$, $2, Item::BOOL_NEGATED);
           }
         | row_subquery
           {
@@ -9570,9 +9631,9 @@ simple_expr:
           {
             $$= create_func_cast(YYTHD, @2, $2, ITEM_CAST_CHAR, &my_charset_bin);
           }
-        | CAST_SYM '(' expr AS cast_type ')'
+        | CAST_SYM '(' expr AS cast_type opt_array_cast ')'
           {
-            $$= create_func_cast(YYTHD, @3, $3, &$5);
+            $$= create_func_cast(YYTHD, @3, $3, &$5, $6);
           }
         | CASE_SYM opt_expr when_list opt_else END
           {
@@ -9616,6 +9677,11 @@ simple_expr:
           }
         ;
 
+opt_array_cast:
+        /* empty */ { $$= false; }
+        | ARRAY_SYM { $$= true; }
+        ;
+
 /*
   Function call syntax using official SQL 2003 keywords.
   Because the function name is an official token,
@@ -9637,7 +9703,7 @@ function_call_keyword:
           }
         | DATE_SYM '(' expr ')'
           {
-            $$= NEW_PTN Item_date_typecast(@$, $3);
+            $$= NEW_PTN Item_typecast_date(@$, $3);
           }
         | DAY_SYM '(' expr ')'
           {
@@ -9681,11 +9747,11 @@ function_call_keyword:
           }
         | TIME_SYM '(' expr ')'
           {
-            $$= NEW_PTN Item_time_typecast(@$, $3);
+            $$= NEW_PTN Item_typecast_time(@$, $3);
           }
         | TIMESTAMP_SYM '(' expr ')'
           {
-            $$= NEW_PTN Item_datetime_typecast(@$, $3);
+            $$= NEW_PTN Item_typecast_datetime(@$, $3);
           }
         | TIMESTAMP_SYM '(' expr ',' expr ')'
           {
@@ -10070,11 +10136,11 @@ sum_expr:
           {
             $$= NEW_PTN Item_sum_avg(@$, $4, true, $6);
           }
-        | BIT_AND  '(' in_sum_expr ')' opt_windowing_clause
+        | BIT_AND_SYM  '(' in_sum_expr ')' opt_windowing_clause
           {
             $$= NEW_PTN Item_sum_and(@$, $3, $5);
           }
-        | BIT_OR  '(' in_sum_expr ')' opt_windowing_clause
+        | BIT_OR_SYM  '(' in_sum_expr ')' opt_windowing_clause
           {
             $$= NEW_PTN Item_sum_or(@$, $3, $5);
           }
@@ -10086,7 +10152,7 @@ sum_expr:
           {
             $$= NEW_PTN Item_sum_json_object(@$, $3, $5, $7);
           }
-        | BIT_XOR  '(' in_sum_expr ')' opt_windowing_clause
+        | BIT_XOR_SYM  '(' in_sum_expr ')' opt_windowing_clause
           {
             $$= NEW_PTN Item_sum_xor(@$, $3, $5);
           }
@@ -10653,6 +10719,21 @@ cast_type:
             $$.length= NULL;
             $$.dec= NULL;
           }
+        | real_type
+          {
+            $$.target = ($1 == Numeric_type::DOUBLE) ?
+              ITEM_CAST_DOUBLE : ITEM_CAST_FLOAT;
+            $$.charset = nullptr;
+            $$.length = nullptr;
+            $$.dec = nullptr;
+          }
+        | FLOAT_SYM standard_float_options
+          {
+            $$.target = ITEM_CAST_FLOAT;
+            $$.charset = nullptr;
+            $$.length = $2.length;
+            $$.dec = nullptr;
+          }
         ;
 
 opt_expr_list:
@@ -10877,7 +10958,7 @@ opt_inner:
 
 opt_outer:
           /* empty */
-        | OUTER
+        | OUTER_SYM
         ;
 
 /*
@@ -11408,11 +11489,6 @@ window_definition:
               MYSQL_YYABORT; // OOM
             $$->set_name($1);
           }
-        ;
-
-opt_escape:
-          ESCAPE_SYM simple_expr { $$= $2; }
-        | /* empty */            { $$= NULL; }
         ;
 
 /*
@@ -12547,7 +12623,7 @@ show_param:
           {
             const bool is_temp_table=
               Lex->create_info->options & HA_LEX_CREATE_TMP_TABLE;
-            if (resolve_engine(YYTHD, $2, is_temp_table, true,
+            if (resolve_engine(YYTHD, to_lex_cstring($2), is_temp_table, true,
                                &Lex->create_info->db_type))
               MYSQL_YYABORT;
           }
@@ -12930,7 +13006,7 @@ opt_wild_or_where:
 
             Select->set_where_cond($2);
             if ($2)
-              $2->top_level_item();
+              $2->apply_is_true();
           }
         ;
 
@@ -13515,14 +13591,14 @@ text_string:
           }
         | HEX_NUM
           {
-            LEX_STRING s= Item_hex_string::make_hex_str($1.str, $1.length);
+            LEX_CSTRING s= Item_hex_string::make_hex_str($1.str, $1.length);
             $$= NEW_PTN String(s.str, s.length, &my_charset_bin);
             if ($$ == NULL)
               MYSQL_YYABORT;
           }
         | BIN_NUM
           {
-            LEX_STRING s= Item_bin_string::make_bin_str($1.str, $1.length);
+            LEX_CSTRING s= Item_bin_string::make_bin_str($1.str, $1.length);
             $$= NEW_PTN String(s.str, s.length, &my_charset_bin);
             if ($$ == NULL)
               MYSQL_YYABORT;
@@ -13579,11 +13655,11 @@ literal:
           }
         | FALSE_SYM
           {
-            $$= NEW_PTN Item_int(@$, NAME_STRING("FALSE"), 0, 1);
+            $$= NEW_PTN Item_func_false(@$);
           }
         | TRUE_SYM
           {
-            $$= NEW_PTN Item_int(@$, NAME_STRING("TRUE"), 1, 1);
+            $$= NEW_PTN Item_func_true(@$);
           }
         | HEX_NUM
           {
@@ -13661,6 +13737,8 @@ table_wild:
           }
         | ident '.' ident '.' '*'
           {
+            if (check_and_convert_db_name(&$1, false) != Ident_name_check::OK)
+              MYSQL_YYABORT;
             $$= NEW_PTN PTI_table_wild(@$, $1.str, $3.str);
           }
         ;
@@ -13702,6 +13780,8 @@ simple_ident_q:
           }
         | ident '.' ident '.' ident
           {
+            if (check_and_convert_db_name(&$1, false) != Ident_name_check::OK)
+              MYSQL_YYABORT;
             $$= NEW_PTN PTI_simple_ident_q_3d(@$, $1.str, $3.str, $5.str);
           }
         ;
@@ -13854,6 +13934,26 @@ TEXT_STRING_password:
 
 TEXT_STRING_hash:
           TEXT_STRING_sys
+        | HEX_NUM
+          {
+            $$= to_lex_string(Item_hex_string::make_hex_str($1.str, $1.length));
+          }
+        ;
+
+TEXT_STRING_validated:
+          TEXT_STRING
+          {
+            THD *thd= YYTHD;
+
+            if (thd->charset_is_system_charset)
+              $$= $1;
+            else
+            {
+              if (thd->convert_string(&$$, system_charset_info,
+                                  $1.str, $1.length, thd->charset(), true))
+                MYSQL_YYABORT;
+            }
+          }
         ;
 
 ident:
@@ -13947,6 +14047,15 @@ role:
         | role_ident_or_text '@' ident_or_text
           {
             if (!($$= LEX_USER::alloc(YYTHD, &$1, &$3)))
+              MYSQL_YYABORT;
+          }
+        ;
+
+schema:
+          ident
+          {
+            $$ = $1;
+            if (check_and_convert_db_name(&$$, false) != Ident_name_check::OK)
               MYSQL_YYABORT;
           }
         ;
@@ -15305,19 +15414,19 @@ grant_ident:
             if (lex->copy_db_to(&lex->current_select()->db, &dummy))
               MYSQL_YYABORT;
             if (lex->grant == GLOBAL_ACLS)
-              lex->grant = DB_ACLS & ~GRANT_ACL;
+              lex->grant = DB_OP_ACLS;
             else if (lex->columns.elements)
             {
               my_error(ER_ILLEGAL_GRANT_FOR_TABLE, MYF(0));
               MYSQL_YYABORT;
             }
           }
-        | ident '.' '*'
+        | schema '.' '*'
           {
             LEX *lex= Lex;
             lex->current_select()->db = $1.str;
             if (lex->grant == GLOBAL_ACLS)
-              lex->grant = DB_ACLS & ~GRANT_ACL;
+              lex->grant = DB_OP_ACLS;
             else if (lex->columns.elements)
             {
               my_error(ER_ILLEGAL_GRANT_FOR_TABLE, MYF(0));
@@ -15336,14 +15445,34 @@ grant_ident:
               MYSQL_YYABORT;
             }
           }
-        | table_ident
+        | ident
           {
+            auto tmp = NEW_PTN Table_ident(to_lex_cstring($1));
+            if (tmp == NULL)
+              MYSQL_YYABORT;
             LEX *lex=Lex;
-            if (!lex->current_select()->add_table_to_list(lex->thd, $1,NULL,
+            if (!lex->current_select()->add_table_to_list(lex->thd, tmp, NULL,
                                                         TL_OPTION_UPDATING))
               MYSQL_YYABORT;
             if (lex->grant == GLOBAL_ACLS)
-              lex->grant =  TABLE_ACLS & ~GRANT_ACL;
+              lex->grant =  TABLE_OP_ACLS;
+          }
+        | schema '.' ident
+          {
+            Table_ident *tmp;
+            if (YYTHD->get_protocol()->has_client_capability(CLIENT_NO_SCHEMA))
+              tmp = NEW_PTN Table_ident(to_lex_cstring($3));
+            else {
+              tmp = NEW_PTN Table_ident(to_lex_cstring($1), to_lex_cstring($3));
+            }
+            if (tmp == NULL)
+              MYSQL_YYABORT;
+            LEX *lex=Lex;
+            if (!lex->current_select()->add_table_to_list(lex->thd, tmp, NULL,
+                                                        TL_OPTION_UPDATING))
+              MYSQL_YYABORT;
+            if (lex->grant == GLOBAL_ACLS)
+              lex->grant =  TABLE_OP_ACLS;
           }
         ;
 
@@ -15752,7 +15881,12 @@ query_spec_option:
         | SQL_SMALL_RESULT    { $$= SELECT_SMALL_RESULT; }
         | SQL_BIG_RESULT      { $$= SELECT_BIG_RESULT; }
         | SQL_BUFFER_RESULT   { $$= OPTION_BUFFER_RESULT; }
-        | SQL_CALC_FOUND_ROWS { $$= OPTION_FOUND_ROWS; }
+        | SQL_CALC_FOUND_ROWS {
+            push_warning(YYTHD, Sql_condition::SL_WARNING,
+                         ER_WARN_DEPRECATED_SYNTAX,
+                         ER_THD(YYTHD, ER_WARN_DEPRECATED_SQL_CALC_FOUND_ROWS));
+            $$= OPTION_FOUND_ROWS;
+          }
         | ALL                 { $$= SELECT_ALL; }
         ;
 
@@ -16167,7 +16301,7 @@ sf_tail:
 
             if (sp->m_return_field_def.init(YYTHD, "", field_type,
                                             $9->get_length(), $9->get_dec(),
-                                            $9->get_type_flags(), NULL, NULL, &NULL_STR, 0,
+                                            $9->get_type_flags(), NULL, NULL, &NULL_CSTR, 0,
                                             $9->get_interval_list(),
                                             cs ? cs : YYTHD->variables.collation_database,
                                             $10 != nullptr, $9->get_uint_geom_type(),

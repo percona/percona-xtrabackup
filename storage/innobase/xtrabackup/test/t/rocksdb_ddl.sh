@@ -6,6 +6,10 @@
 
 require_rocksdb
 
+MYSQLD_EXTRA_MY_CNF_OPTS="
+secure-file-priv=$TEST_VAR_ROOT
+"
+
 start_server
 
 init_rocksdb
@@ -51,6 +55,8 @@ while true ; do
     echo "ALTER TABLE t4_old RENAME t4;"
     echo "INSERT INTO t4 VALUES (7), (8), (9);"
 
+    echo "ALTER TABLE t4 RENAME t4_old;"
+
     echo "INSERT INTO t5 VALUES (4), (5), (6);"
     echo "INSERT INTO t6 VALUES ('d'), ('e'), ('f');"
 
@@ -58,6 +64,8 @@ while true ; do
 
     echo "INSERT INTO t5 VALUES ('g'), ('h'), ('i');"
     echo "INSERT INTO t6 VALUES (7), (8), (9);"
+
+    echo "RENAME TABLE t5 TO temp, t6 TO t5, temp TO t6;"
 
 done | $MYSQL $MYSQL_ARGS test &
 
@@ -82,9 +90,13 @@ done
 
 xb_pid=`cat $pid_file`
 
-kill $mysql_pid
-wait $mysql_pid
+run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
+    select concat('KILL ',id,';') from information_schema.processlist
+    where state = 'Waiting for table backup lock' into outfile '$MYSQLD_TMPDIR/kill.sql';
+    source $MYSQLD_TMPDIR/kill.sql;
+EOF
 
+run_cmd_expect_failure wait $mysql_pid
 
 record_db_state test
 

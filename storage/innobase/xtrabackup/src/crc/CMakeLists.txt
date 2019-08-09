@@ -29,6 +29,6 @@ IF(NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
 ENDIF()
 
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
-               ${CMAKE_CURRENT_SOURCE_DIR}/config.h )
+               ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 ADD_LIBRARY(crc crc_glue.cc crc-intel-pclmul.cc)

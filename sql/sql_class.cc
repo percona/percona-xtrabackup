@@ -815,6 +815,7 @@ void THD::init(void) {
 
   owned_gtid.clear();
   owned_sid.clear();
+  m_se_gtid_flags.reset();
   owned_gtid.dbug_print(NULL, "set owned_gtid (clear) in THD::init");
 
   // This will clear the writeset session history.
@@ -822,8 +823,7 @@ void THD::init(void) {
 }
 
 void THD::init_query_mem_roots() {
-  reset_root_defaults(mem_root, variables.query_alloc_block_size,
-                      variables.query_prealloc_size);
+  mem_root->set_block_size(variables.query_alloc_block_size);
   get_transaction()->init_mem_root_defaults(variables.trans_alloc_block_size,
                                             variables.trans_prealloc_size);
 }
@@ -889,7 +889,7 @@ void THD::cleanup_connection(void) {
     /* check if tables are unlocked */
     DBUG_ASSERT(locked_tables_list.locked_tables() == NULL);
   }
-    /* DEBUG code only (end) */
+  /* DEBUG code only (end) */
 #endif
 }
 
@@ -1319,7 +1319,7 @@ void THD::notify_shared_lock(MDL_context_owner *ctx_in_use,
 
 /*
   Remember the location of thread info, the structure needed for
-  sql_alloc() and the structure for the net buffer
+  (*THR_MALLOC)->Alloc() and the structure for the net buffer
 */
 
 void THD::store_globals() {
@@ -1464,6 +1464,8 @@ void THD::cleanup_after_query() {
   @param from           String to convert
   @param from_length    Length of string to convert
   @param from_cs        Original character set
+  @param report_error   Raise error (when true) or warning (when false) if
+                        there is problem when doing conversion
 
   @note to will be 0-terminated to make it easy to pass to system funcs
 
@@ -1474,14 +1476,14 @@ void THD::cleanup_after_query() {
 
 bool THD::convert_string(LEX_STRING *to, const CHARSET_INFO *to_cs,
                          const char *from, size_t from_length,
-                         const CHARSET_INFO *from_cs) {
+                         const CHARSET_INFO *from_cs, bool report_error) {
   DBUG_ENTER("convert_string");
   size_t new_length = to_cs->mbmaxlen * from_length;
-  uint errors = 0;
   if (!(to->str = (char *)alloc(new_length + 1))) {
     to->length = 0;  // Safety fix
     DBUG_RETURN(1);  // EOM
   }
+  uint errors = 0;
   to->length = copy_and_convert(to->str, new_length, to_cs, from, from_length,
                                 from_cs, &errors);
   to->str[to->length] = 0;  // Safety
@@ -1489,10 +1491,16 @@ bool THD::convert_string(LEX_STRING *to, const CHARSET_INFO *to_cs,
     char printable_buff[32];
     convert_to_printable(printable_buff, sizeof(printable_buff), from,
                          from_length, from_cs, 6);
-    push_warning_printf(this, Sql_condition::SL_WARNING,
-                        ER_INVALID_CHARACTER_STRING,
-                        ER_THD(this, ER_INVALID_CHARACTER_STRING),
-                        from_cs->csname, printable_buff);
+    if (report_error) {
+      my_error(ER_CANNOT_CONVERT_STRING, MYF(0), printable_buff,
+               from_cs->csname, to_cs->csname);
+      DBUG_RETURN(1);
+    } else {
+      push_warning_printf(this, Sql_condition::SL_WARNING,
+                          ER_INVALID_CHARACTER_STRING,
+                          ER_THD(this, ER_CANNOT_CONVERT_STRING),
+                          printable_buff, from_cs->csname, to_cs->csname);
+    }
   }
 
   DBUG_RETURN(0);
@@ -1590,7 +1598,7 @@ void THD::nocheck_register_item_tree_change(Item **place, Item *new_value) {
     but still is rather fast as we use alloc_root for allocations.
     A list of item tree changes of an average query should be short.
   */
-  void *change_mem = alloc_root(mem_root, sizeof(*change));
+  void *change_mem = mem_root->Alloc(sizeof(*change));
   if (change_mem == 0) {
     /*
       OOM, thd->fatal_error() is called by the error handler of the
@@ -1639,7 +1647,7 @@ void Query_arena::add_item(Item *item) {
 void Query_arena::free_items() {
   Item *next;
   DBUG_ENTER("Query_arena::free_items");
-  /* This works because items are allocated with sql_alloc() */
+  /* This works because items are allocated with (*THR_MALLOC)->Alloc() */
   for (; m_item_list; m_item_list = next) {
     next = m_item_list->next_free;
     m_item_list->delete_self();
@@ -2172,7 +2180,7 @@ void THD::get_definer(LEX_USER *definer) {
   if (slave_thread && has_invoker()) {
     definer->user = m_invoker_user;
     definer->host = m_invoker_host;
-    definer->plugin.str = (char *)"";
+    definer->plugin.str = "";
     definer->plugin.length = 0;
     definer->auth.str = NULL;
     definer->auth.length = 0;
@@ -2592,7 +2600,7 @@ void THD::claim_memory_ownership() {
   and call PSI_MEMORY_CALL(memory_claim)().
 */
 #ifdef HAVE_PSI_MEMORY_INTERFACE
-  claim_root(&main_mem_root);
+  main_mem_root.Claim();
   my_claim(m_token_array);
   Protocol_classic *p = get_protocol_classic();
   if (p != NULL) p->claim_memory_ownership();
@@ -2744,6 +2752,16 @@ bool THD::sql_parser() {
     return true;
   }
   return false;
+}
+
+bool THD::is_one_phase_commit() {
+  /* Check if XA Commit. */
+  if (lex->sql_command != SQLCOM_XA_COMMIT) {
+    return (false);
+  }
+  auto xa_commit_cmd = static_cast<Sql_cmd_xa_commit *>(lex->m_sql_cmd);
+  auto xa_op = xa_commit_cmd->get_xa_opt();
+  return (xa_op == XA_ONE_PHASE);
 }
 
 bool THD::secondary_storage_engine_eligible() const {

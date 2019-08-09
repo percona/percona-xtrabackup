@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -187,12 +187,8 @@ void Autorejoin_thread::execute_rejoin_process() {
     });
 
     // Attempt a single rejoin.
-    DBUG_EXECUTE_IF("group_replication_fail_rejoin", goto retry_wait;);
     if (!attempt_rejoin()) break;
 
-#if !defined(DBUG_OFF)
-  retry_wait:
-#endif
     /*
       Wait on m_run_cond up to 5 minutes. This is a simple way to allow the
       thread to be interrupted and/or canceled at will.
@@ -216,15 +212,15 @@ void Autorejoin_thread::execute_rejoin_process() {
   */
   if (num_attempts > m_attempts) {
     LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_FINISHED_AUTO_REJOIN,
-                 num_attempts - 1ULL, m_attempts, " not");
+                 num_attempts - 1UL, m_attempts, " not");
 
-    enable_server_read_mode(PSESSION_USE_THREAD);
+    enable_server_read_mode(PSESSION_INIT_THREAD);
     /*
       Only abort() if the auto-rejoin thread wasn't explicitly stopped, i.e.
       if someone called Autorejoin_thread::abort(), because that implies an
       explicit stop and thus we probably don't want to abort right here.
     */
-    if (exit_state_action_var == EXIT_STATE_ACTION_ABORT_SERVER &&
+    if (get_exit_state_action_var() == EXIT_STATE_ACTION_ABORT_SERVER &&
         (error && !m_abort)) {
       std::stringstream ss;
       ss << "Could not rejoin the member to the group after " << m_attempts
@@ -263,9 +259,9 @@ void Autorejoin_thread::execute_rejoin_process() {
   mysql_mutex_lock(&m_run_lock);
   m_thd->release_resources();
   global_thd_manager_remove_thd(m_thd);
+  m_autorejoin_thd_state.set_terminated();
   delete m_thd;
   m_thd = nullptr;
-  m_autorejoin_thd_state.set_terminated();
   mysql_cond_broadcast(&m_run_cond);
   mysql_mutex_unlock(&m_run_lock);
 
