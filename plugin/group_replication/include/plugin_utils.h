@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -141,8 +141,8 @@ class Synchronized_queue {
   void push(const T &value) {
     mysql_mutex_lock(&lock);
     queue.push(value);
-    mysql_mutex_unlock(&lock);
     mysql_cond_broadcast(&cond);
+    mysql_mutex_unlock(&lock);
   }
 
   /**
@@ -713,5 +713,15 @@ class Plugin_waitlock {
   /** determine whether calling thread should be blocked or not */
   bool wait_status;
 };
+
+/**
+  Simple method to escape character on a string
+
+  @note based on escape_string_for_mysql
+  @note the result is stored in the parameter string
+
+  @param[in,out] string_to_escape the string to escape
+*/
+void plugin_escape_string(std::string &string_to_escape);
 
 #endif /* PLUGIN_UTILS_INCLUDED */

@@ -2358,7 +2358,7 @@ private:
 
     // Whether the 'lcp' is already completed under the
     // coordination of the failed master
-    bool already_completed_lcp(Uint32 lcp, Uint32 current_master)
+    bool already_completed_lcp(Uint32 lcp, Uint32 current_master) const
     {
       const Uint32 last_completed_master_node =
         refToNode(m_lastLCP_COMPLETE_REP_ref);
@@ -2776,6 +2776,7 @@ private:
   RedoStateRep::RedoAlertState m_global_redo_alert_state;
   RedoStateRep::RedoAlertState get_global_redo_alert_state();
   void sendREDO_STATE_REP_to_all(Signal*, Uint32 block, bool send_to_all);
+  bool m_master_lcp_req_lcp_already_completed;
 };
 
 #if (DIH_CDATA_SIZE < _SYSFILE_SIZE32)

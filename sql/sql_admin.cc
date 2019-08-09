@@ -70,6 +70,7 @@
 #include "sql/mysqld.h"             // key_file_misc
 #include "sql/partition_element.h"  // PART_ADMIN
 #include "sql/protocol.h"
+#include "sql/rpl_group_replication.h"  // is_group_replication_running
 #include "sql/rpl_gtid.h"
 #include "sql/sp.h"           // Sroutine_hash_entry
 #include "sql/sp_rcontext.h"  // sp_rcontext
@@ -107,7 +108,7 @@ static int send_check_errmsg(THD *thd, TABLE_LIST *table,
   Protocol *protocol = thd->get_protocol();
   protocol->start_row();
   protocol->store(table->alias, system_charset_info);
-  protocol->store((char *)operator_name, system_charset_info);
+  protocol->store(operator_name, system_charset_info);
   protocol->store(STRING_WITH_LEN("error"), system_charset_info);
   protocol->store(errmsg, system_charset_info);
   thd->clear_error();
@@ -314,7 +315,7 @@ bool Sql_cmd_analyze_table::drop_histogram(THD *thd, TABLE_LIST *table,
          "analyze" or "histogram".
   @param table_name The name of the table that ANALYZE TABLE operated on.
 
-  @retval true An error occured while sending the result set to the client.
+  @retval true An error occurred while sending the result set to the client.
   @retval false The result set was sent to the client.
 */
 static bool send_analyze_table_errors(THD *thd, const char *operator_name,
@@ -1611,11 +1612,11 @@ class Alter_instance_reload_tls : public Alter_instance {
       const char *error_text = sslGetErrString(error);
       if (force_) {
         push_warning_printf(m_thd, Sql_condition::SL_WARNING,
-                            ER_SSL_LIBRARY_ERROR,
-                            ER_THD(m_thd, ER_SSL_LIBRARY_ERROR), error_text);
+                            ER_DA_SSL_LIBRARY_ERROR,
+                            ER_THD(m_thd, ER_DA_SSL_LIBRARY_ERROR), error_text);
         LogErr(WARNING_LEVEL, ER_SSL_LIBRARY_ERROR, sslGetErrString(error));
       } else {
-        my_error(ER_SSL_LIBRARY_ERROR, MYF(0), error_text);
+        my_error(ER_DA_SSL_LIBRARY_ERROR, MYF(0), error_text);
         res = true;
       }
     }
@@ -1679,23 +1680,33 @@ Sql_cmd_clone::Sql_cmd_clone(LEX_USER *user_info, ulong port,
 bool Sql_cmd_clone::execute(THD *thd) {
   DBUG_ENTER("Sql_cmd_clone::execute");
 
+  bool is_replace = (m_data_dir.str == nullptr);
+
   if (is_local()) {
     DBUG_PRINT("admin", ("CLONE type = local, DIR = %s", m_data_dir.str));
 
   } else {
     DBUG_PRINT("admin", ("CLONE type = remote, DIR = %s",
-                         (m_data_dir.str == nullptr) ? "" : m_data_dir.str));
+                         is_replace ? "" : m_data_dir.str));
   }
 
   auto sctx = thd->security_context();
 
-  if (!(sctx->has_global_grant(STRING_WITH_LEN("BACKUP_ADMIN")).first)) {
+  /* For replacing current data directory, needs clone_admin privilege. */
+  if (is_replace) {
+    if (!(sctx->has_global_grant(STRING_WITH_LEN("CLONE_ADMIN")).first)) {
+      my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "CLONE_ADMIN");
+      DBUG_RETURN(true);
+    }
+  } else if (!(sctx->has_global_grant(STRING_WITH_LEN("BACKUP_ADMIN")).first)) {
     my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "BACKUP_ADMIN");
     DBUG_RETURN(true);
   }
 
-  if (m_data_dir.str == nullptr) {
-    my_error(ER_NOT_SUPPORTED_YET, MYF(0), "clone to current data directory");
+  /* A user session cannot run clone on a group member. */
+  if (is_group_replication_running() &&
+      strcmp(thd->security_context()->priv_user().str, "mysql.session")) {
+    my_error(ER_CLONE_DISALLOWED, MYF(0), "Group Replication is running");
     DBUG_RETURN(true);
   }
 
@@ -1708,6 +1719,7 @@ bool Sql_cmd_clone::execute(THD *thd) {
   }
 
   if (is_local()) {
+    DBUG_ASSERT(!is_replace);
     auto err = m_clone->clone_local(thd, m_data_dir.str);
     clone_plugin_unlock(thd, m_plugin);
 
@@ -1749,8 +1761,20 @@ bool Sql_cmd_clone::execute(THD *thd) {
   }
 
   /* Check for KILL after setting active VIO */
-  if (thd->killed != THD::NOT_KILLED) {
+  if (!is_replace && thd->killed != THD::NOT_KILLED) {
     my_error(ER_QUERY_INTERRUPTED, MYF(0));
+    DBUG_RETURN(true);
+  }
+
+  /* Restart server after successfully cloning to current data directory. */
+  if (is_replace && signal_restart_server()) {
+    /* Shutdown server if restart failed. */
+    LogErr(ERROR_LEVEL, ER_CLONE_SHUTDOWN_TRACE);
+    Diagnostics_area shutdown_da(false);
+    thd->push_diagnostics_area(&shutdown_da);
+    /* CLONE_ADMIN privilege allows us to shutdown/restart at end. */
+    kill_mysql();
+    thd->pop_diagnostics_area();
     DBUG_RETURN(true);
   }
 
@@ -1855,10 +1879,10 @@ void Sql_cmd_clone::rewrite(THD *thd) {
 
   /* Append SSL information. */
   if (thd->lex->ssl_type == SSL_TYPE_NONE) {
-    rlb->append(STRING_WITH_LEN(" REQUIRES NO SSL"));
+    rlb->append(STRING_WITH_LEN(" REQUIRE NO SSL"));
 
   } else if (thd->lex->ssl_type == SSL_TYPE_SPECIFIED) {
-    rlb->append(STRING_WITH_LEN(" REQUIRES SSL"));
+    rlb->append(STRING_WITH_LEN(" REQUIRE SSL"));
   }
 
   /* Set the query to be displayed in SHOW PROCESSLIST */

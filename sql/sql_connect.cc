@@ -71,9 +71,10 @@
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // SUPER_ACL
 #include "sql/auth/sql_security_ctx.h"
-#include "sql/derror.h"     // ER_THD
-#include "sql/hostname.h"   // Host_errors
-#include "sql/item_func.h"  // mqh_used
+#include "sql/debug_sync.h"      // DEBUG_SYNC
+#include "sql/derror.h"          // ER_THD
+#include "sql/hostname_cache.h"  // Host_errors
+#include "sql/item_func.h"       // mqh_used
 #include "sql/log.h"
 #include "sql/mysqld.h"  // LOCK_user_conn
 #include "sql/net_ns.h"  // set_network_namespace
@@ -346,6 +347,7 @@ void free_max_user_conn(void) {
 
 void reset_mqh(THD *thd, LEX_USER *lu, bool get_them = 0) {
   mysql_mutex_lock(&LOCK_user_conn);
+  DEBUG_SYNC(thd, "in_reset_mqh_flush_privileges");
   if (lu)  // for GRANT
   {
     size_t temp_len = lu->user.length + lu->host.length + 2;
@@ -566,10 +568,19 @@ static int check_connection(THD *thd) {
       }
 #endif
       thd->m_main_security_ctx.assign_host(host, host ? strlen(host) : 0);
+      DBUG_EXECUTE_IF("vio_peer_addr_fake_hostname1", {
+        thd->m_main_security_ctx.assign_host(
+            "host_"
+            "1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij123456"
+            "7890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890ab"
+            "cdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefgh"
+            "ij1234567890abcdefghij1234567890abcdefghij1234567890",
+            255);
+      });
+
       main_sctx_host = thd->m_main_security_ctx.host();
       if (host && host != my_localhost) {
         my_free(host);
-        host = (char *)main_sctx_host.str;
       }
 
       /* Cut very long hostnames to avoid possible overflows */

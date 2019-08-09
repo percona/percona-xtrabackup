@@ -47,9 +47,10 @@
 #include "sql/dd/types/routine.h"              // dd::Table
 #include "sql/dd/types/table.h"                // dd::Table
 #include "sql/dd/types/tablespace.h"
-#include "sql/dd_sp.h"    // prepare_sp_chistics_from_dd_routine
-#include "sql/sp.h"       // Stored_routine_creation_ctx
-#include "sql/sp_head.h"  // sp_head
+#include "sql/dd_sp.h"      // prepare_sp_chistics_from_dd_routine
+#include "sql/sd_notify.h"  // sysd::notify
+#include "sql/sp.h"         // Stored_routine_creation_ctx
+#include "sql/sp_head.h"    // sp_head
 #include "sql/sql_base.h"
 #include "sql/sql_prepare.h"
 #include "sql/strfunc.h"
@@ -554,23 +555,19 @@ bool upgrade_help_tables(THD *thd) {
   return false;
 }
 
-bool create_upgrade_file() {
+static void create_upgrade_file() {
   FILE *out;
   char upgrade_info_file[FN_REFLEN] = {0};
-
   fn_format(upgrade_info_file, "mysql_upgrade_info", mysql_real_data_home_ptr,
             "", MYF(0));
 
-  if (!(out = my_fopen(upgrade_info_file, O_TRUNC | O_WRONLY, MYF(0)))) {
-    LogErr(ERROR_LEVEL, ER_SERVER_UPGRADE_INFO_FILE, mysql_real_data_home_ptr);
-    return true;
+  if ((out = my_fopen(upgrade_info_file, O_TRUNC | O_WRONLY, MYF(0)))) {
+    /* Write new version to file */
+    fputs(MYSQL_SERVER_VERSION, out);
+    my_fclose(out, MYF(0));
+    return;
   }
-
-  /* Write new version to file */
-  fputs(MYSQL_SERVER_VERSION, out);
-  my_fclose(out, MYF(0));
-
-  return false;
+  LogErr(WARNING_LEVEL, ER_SERVER_UPGRADE_INFO_FILE, upgrade_info_file);
 }
 
 }  // namespace
@@ -584,8 +581,54 @@ bool do_server_upgrade_checks(THD *thd) {
   if (!dd::bootstrap::DD_bootstrap_ctx::instance().is_server_upgrade_from_after(
           bootstrap::SERVER_VERSION_50700))
     return false;
+
   dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   Upgrade_error_counter error_count;
+
+  /*
+    If we upgrade from server version 8.0.14, 8.0.15 or 8.0.16, then we
+    must reject upgrade if all of the below hold:
+    - We are running with l_c_t_n == 1.
+    - We are running on a case sensitive file system.
+    - We have partitioned tables in our system.
+    - The user does not submit 'upgrade=FORCE' on the command line.
+  */
+  if (dd::bootstrap::DD_bootstrap_ctx::instance().upgraded_server_version_is(
+          bootstrap::SERVER_VERSION_80014) ||
+      dd::bootstrap::DD_bootstrap_ctx::instance().upgraded_server_version_is(
+          bootstrap::SERVER_VERSION_80015) ||
+      dd::bootstrap::DD_bootstrap_ctx::instance().upgraded_server_version_is(
+          bootstrap::SERVER_VERSION_80016)) {
+    if (lower_case_table_names == 1 && lower_case_file_system == 0 &&
+        opt_upgrade_mode != UPGRADE_FORCE) {
+      /*
+        We could do SELECT COUNT(*), but then we would need to analyze the
+        result set. With the query below, we can determine whether there
+        are partitioned tables just by comparing the end markers of the
+        result set iterator.
+      */
+      dd::String_type query = "SELECT id FROM mysql.table_partitions";
+      LEX_STRING str;
+      lex_string_strmake(thd->mem_root, &str, query.c_str(), query.size());
+      Ed_connection con(thd);
+      if (con.execute_direct(str)) {
+        LogErr(ERROR_LEVEL, ER_DD_INITIALIZE_SQL_ERROR, query.c_str(),
+               con.get_last_errno(), con.get_last_error());
+        return dd::end_transaction(thd, true);
+      }
+      List<Ed_row> &rows = *con.get_result_sets();
+      /*
+        If rows are found, then there are partitioned tables, and we reject
+        upgrade.
+      */
+      if (rows.begin() != rows.end()) {
+        LogErr(ERROR_LEVEL, ER_UPGRADE_WITH_PARTITIONED_TABLES_REJECTED,
+               dd::bootstrap::DD_bootstrap_ctx::instance()
+                   .get_upgraded_server_version());
+        return dd::end_transaction(thd, true);
+      }
+    }
+  }
 
   /*
     For any server upgrade, we will analyze events, routines, views and
@@ -669,7 +712,7 @@ bool do_server_upgrade_checks(THD *thd) {
       using shared tablespaces is only relevant for InnoDB.
     */
     plugin_ref pr =
-        ha_resolve_by_name_raw(thd, LEX_CSTRING{C_STRING_WITH_LEN("InnoDB")});
+        ha_resolve_by_name_raw(thd, LEX_CSTRING{STRING_WITH_LEN("InnoDB")});
     handlerton *hton =
         (pr != nullptr ? plugin_data<handlerton *>(pr) : nullptr);
     DBUG_ASSERT(hton != nullptr && hton->get_tablespace_type);
@@ -857,12 +900,12 @@ bool build_event_sp(const THD *thd, const char *name, size_t name_len,
   const uint STATIC_SQL_LENGTH = 44;
   String temp(STATIC_SQL_LENGTH + name_len + body_len);
 
-  temp.append(C_STRING_WITH_LEN("CREATE "));
-  temp.append(C_STRING_WITH_LEN("PROCEDURE "));
+  temp.append(STRING_WITH_LEN("CREATE "));
+  temp.append(STRING_WITH_LEN("PROCEDURE "));
 
   append_identifier(thd, &temp, name, name_len);
 
-  temp.append(C_STRING_WITH_LEN("() SQL SECURITY INVOKER "));
+  temp.append(STRING_WITH_LEN("() SQL SECURITY INVOKER "));
   temp.append(body, body_len);
 
   *sp_sql = temp.ptr();
@@ -894,6 +937,7 @@ bool upgrade_system_schemas(THD *thd) {
   LogErr(SYSTEM_LEVEL, ER_SERVER_UPGRADE_STATUS, server_version,
          MYSQL_VERSION_ID, "started");
   log_sink_buffer_check_timeout();
+  sysd::notify("STATUS=Server upgrade in progress\n");
 
   bootstrap_error_handler.set_log_error(false);
   bool err =
@@ -907,14 +951,16 @@ bool upgrade_system_schemas(THD *thd) {
            : check.check_system_schemas(thd)) ||
       check.repair_tables(thd) ||
       dd::tables::DD_properties::instance().set(thd, "MYSQLD_VERSION_UPGRADED",
-                                                MYSQL_VERSION_ID) ||
-      create_upgrade_file();
+                                                MYSQL_VERSION_ID);
+
+  create_upgrade_file();
   bootstrap_error_handler.set_log_error(true);
 
   if (!err)
     LogErr(SYSTEM_LEVEL, ER_SERVER_UPGRADE_STATUS, server_version,
            MYSQL_VERSION_ID, "completed");
   log_sink_buffer_check_timeout();
+  sysd::notify("STATUS=Server upgrade complete\n");
 
   /*
    * During server startup, dd::reset_tables_and_tablespaces is called, which

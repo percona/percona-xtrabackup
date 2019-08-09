@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -57,14 +57,14 @@ MYSQL_HARNESS_ENABLE_WARNINGS()
 
 using mysql_harness::Path;
 using mysql_harness::logging::FileHandler;
-using mysql_harness::logging::LogLevel;
-using mysql_harness::logging::Logger;
-using mysql_harness::logging::Record;
-using mysql_harness::logging::StreamHandler;
 using mysql_harness::logging::log_debug;
 using mysql_harness::logging::log_error;
 using mysql_harness::logging::log_info;
 using mysql_harness::logging::log_warning;
+using mysql_harness::logging::Logger;
+using mysql_harness::logging::LogLevel;
+using mysql_harness::logging::Record;
+using mysql_harness::logging::StreamHandler;
 
 #if GTEST_HAS_COMBINE
 // only available if the system has <tr1/tuple> [if not gtest's own, minimal
@@ -479,7 +479,7 @@ TEST_F(LoggingTest,
   ASSERT_TRUE(dir_path.exists());
   { std::ofstream file(file_path.str()); }
 
-    // set file read-only
+  // set file read-only
 #ifdef _WIN32
   // set file read-only
   if (SetFileAttributes(file_path.c_str(), FILE_ATTRIBUTE_READONLY) == FALSE)
@@ -549,6 +549,9 @@ TEST_F(LoggingTest, Messages) {
   check_message("Sloth tantrum", LogLevel::kWarning, " WARNING ");
   check_message("Russel's teapot", LogLevel::kInfo, " INFO ");
   check_message("Bugs galore", LogLevel::kDebug, " DEBUG ");
+
+  // Ensure no truncation of long messages
+  check_message(std::string(512, 'a'), LogLevel::kInfo, " INFO ");
 
   // clean up
   g_registry->remove_handler("TestStreamHandler");

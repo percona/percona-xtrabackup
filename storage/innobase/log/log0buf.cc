@@ -43,7 +43,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #include "arch0arch.h"
 #include "log0log.h"
-#include "log0recv.h"  /* recv_recovery_is_on() */
+#include "log0recv.h" /* recv_recovery_is_on() */
+#include "log0test.h"
 #include "srv0start.h" /* SRV_SHUTDOWN_FLUSH_PHASE */
 
 /**************************************************/ /**
@@ -632,7 +633,6 @@ sn_t log_free_check_margin(const log_t &log) {
 
 void log_free_check_wait(log_t &log, sn_t sn) {
   auto stop_condition = [&log, sn](bool) {
-
     const sn_t margins = log_free_check_margin(log);
 
     const lsn_t start_lsn = log_translate_sn_to_lsn(sn + margins);
@@ -697,7 +697,9 @@ Log_handle log_buffer_reserve(log_t &log, size_t len) {
   to reflect mtr commit rate. */
   srv_stats.log_write_requests.inc();
 
-  ut_a(srv_shutdown_state <= SRV_SHUTDOWN_FLUSH_PHASE);
+  ut_ad(srv_shutdown_state.load() <= SRV_SHUTDOWN_FLUSH_PHASE ||
+        srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS);
+
   ut_a(len > 0);
 
   /* Reserve space in sequence of data bytes: */
@@ -901,6 +903,7 @@ void log_buffer_write_completed(log_t &log, const Log_handle &handle,
   uint64_t wait_loops = 0;
 
   while (!log.recent_written.has_space(start_lsn)) {
+    os_event_set(log.writer_event);
     ++wait_loops;
     os_thread_sleep(20);
   }
@@ -938,6 +941,7 @@ void log_wait_for_space_in_log_recent_closed(log_t &log, lsn_t lsn) {
   uint64_t wait_loops = 0;
 
   while (!log.recent_closed.has_space(lsn)) {
+    os_event_set(log.closer_event);
     ++wait_loops;
     os_thread_sleep(20);
   }
@@ -1092,7 +1096,6 @@ bool log_advance_ready_for_write_lsn(log_t &log) {
   ut_a(write_max_size > 0);
 
   auto stop_condition = [&](lsn_t prev_lsn, lsn_t next_lsn) {
-
     ut_a(log_lsn_validate(prev_lsn));
     ut_a(log_lsn_validate(next_lsn));
 
@@ -1147,7 +1150,6 @@ bool log_advance_dirty_pages_added_up_to_lsn(log_t &log) {
   ut_d(log_closer_thread_active_validate(log));
 
   auto stop_condition = [&](lsn_t prev_lsn, lsn_t next_lsn) {
-
     ut_a(log_lsn_validate(prev_lsn));
     ut_a(log_lsn_validate(next_lsn));
 
@@ -1184,6 +1186,6 @@ bool log_advance_dirty_pages_added_up_to_lsn(log_t &log) {
   }
 }
 
-  /* @} */
+/* @} */
 
 #endif /* !UNIV_HOTBACKUP */

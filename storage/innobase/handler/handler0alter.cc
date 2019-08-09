@@ -223,13 +223,9 @@ struct ha_innobase_inplace_ctx : public inplace_alter_handler_ctx {
   const char *tmp_name;
   /** whether the order of the clustered index is unchanged */
   bool skip_pk_sort;
-  /** number of virtual columns to be added */
-  ulint num_to_add_vcol;
   /** virtual columns to be added */
   dict_v_col_t *add_vcol;
   const char **add_vcol_name;
-  /** number of virtual columns to be dropped */
-  ulint num_to_drop_vcol;
   /** virtual columns to be dropped */
   dict_v_col_t *drop_vcol;
   const char **drop_vcol_name;
@@ -275,10 +271,8 @@ struct ha_innobase_inplace_ctx : public inplace_alter_handler_ctx {
         max_autoinc(0),
         tmp_name(0),
         skip_pk_sort(false),
-        num_to_add_vcol(0),
         add_vcol(0),
         add_vcol_name(0),
-        num_to_drop_vcol(0),
         drop_vcol(0),
         drop_vcol_name(0),
         m_stage(NULL),
@@ -528,8 +522,9 @@ static bool check_v_col_in_order(const TABLE *table, const TABLE *altered_table,
 
     /* Check if this column is in drop list */
     for (const Alter_drop *drop : ha_alter_info->alter_info->drop_list) {
-      if (my_strcasecmp(system_charset_info, field->field_name, drop->name) ==
-          0) {
+      if (drop->type == Alter_drop::COLUMN &&
+          my_strcasecmp(system_charset_info, field->field_name, drop->name) ==
+              0) {
         dropped = true;
         break;
       }
@@ -1151,8 +1146,7 @@ bool ha_innobase::prepare_inplace_alter_table(TABLE *altered_table,
       altered_table, ha_alter_info, old_dd_tab, new_dd_tab));
 }
 
-int ha_innobase::pread_adapter_parallel_scan_start(void *&parallel_scan_ctx,
-                                                   size_t &num_threads) {
+int ha_innobase::parallel_scan_init(void *&scan_ctx, size_t &num_threads) {
   if (dict_table_is_discarded(m_prebuilt->table)) {
     ib_senderrf(ha_thd(), IB_LOG_LEVEL_ERROR, ER_TABLESPACE_DISCARDED,
                 m_prebuilt->table->name.m_name);
@@ -1160,37 +1154,62 @@ int ha_innobase::pread_adapter_parallel_scan_start(void *&parallel_scan_ctx,
     return (HA_ERR_NO_SUCH_TABLE);
   }
 
-  parallel_scan_ctx = nullptr;
-
-  auto index = m_prebuilt->table->first_index();
+  scan_ctx = nullptr;
 
   update_thd();
+
   auto trx = m_prebuilt->trx;
+
   innobase_register_trx(ht, ha_thd(), trx);
+
   trx_start_if_not_started_xa(trx, false);
+
   trx_assign_read_view(trx);
 
   size_t n_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
 
-  Parallel_reader_adapter *parallel_reader =
-      UT_NEW_NOKEY(Parallel_reader_adapter(m_prebuilt->table, trx, index,
-                                           n_threads, m_prebuilt));
+  n_threads = Parallel_reader::available_threads(n_threads);
 
-  if (parallel_reader == nullptr) {
+  if (n_threads == 0) {
+    return (HA_ERR_GENERIC);
+  }
+
+  const auto row_len = m_prebuilt->mysql_row_len;
+
+  auto adapter = UT_NEW_NOKEY(Parallel_reader_adapter(n_threads, row_len));
+
+  if (adapter == nullptr) {
+    Parallel_reader::release_threads(n_threads);
     return (HA_ERR_OUT_OF_MEM);
   }
 
-  num_threads = parallel_reader->calc_num_threads();
-  parallel_scan_ctx = parallel_reader;
+  Parallel_reader::Scan_range full_scan{};
+
+  Parallel_reader::Config config(full_scan, m_prebuilt->table->first_index());
+
+  auto success =
+      adapter->add_scan(trx, config, [=](const Parallel_reader::Ctx *ctx) {
+        return (adapter->process_rows(ctx));
+      });
+
+  if (!success) {
+    UT_DELETE(adapter);
+    return (HA_ERR_GENERIC);
+  }
+
+  scan_ctx = adapter;
+  num_threads = n_threads;
+
+  build_template(true);
+
+  adapter->set(m_prebuilt);
 
   return (0);
 }
 
-int ha_innobase::pread_adapter_parallel_scan_run(
-    void *parallel_scan_ctx, void **thread_contexts,
-    pread_adapter_pload_init_cbk load_init_fn,
-    pread_adapter_pload_row_cbk load_rows_fn,
-    pread_adapter_pload_end_cbk load_end_fn) {
+int ha_innobase::parallel_scan(void *scan_ctx, void **thread_ctxs,
+                               Reader::Init_fn init_fn, Reader::Load_fn load_fn,
+                               Reader::End_fn end_fn) {
   if (dict_table_is_discarded(m_prebuilt->table)) {
     ib_senderrf(ha_thd(), IB_LOG_LEVEL_ERROR, ER_TABLESPACE_DISCARDED,
                 m_prebuilt->table->name.m_name);
@@ -1198,36 +1217,20 @@ int ha_innobase::pread_adapter_parallel_scan_run(
     return (HA_ERR_NO_SUCH_TABLE);
   }
 
+  ut_a(scan_ctx != nullptr);
+
   update_thd();
+
   build_template(true);
 
-  Parallel_reader_adapter *parallel_reader =
-      static_cast<Parallel_reader_adapter *>(parallel_scan_ctx);
+  auto adapter = static_cast<Parallel_reader_adapter *>(scan_ctx);
 
-  ut_ad(parallel_reader != nullptr);
-  ut_ad(parallel_reader->table() == m_prebuilt->table);
-  ut_ad(parallel_reader->index() == m_prebuilt->table->first_index());
-  ut_ad(parallel_reader->trx() == m_prebuilt->trx);
+  auto err = adapter->run(thread_ctxs, init_fn, load_fn, end_fn);
 
-#ifdef UNIV_DEBUG
-  size_t n_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
-  ut_ad(parallel_reader->n_threads() == n_threads);
-#endif
-
-  parallel_reader->set_callback(thread_contexts, load_init_fn, load_rows_fn,
-                                load_end_fn);
-
-  dberr_t err = parallel_reader->read([&](size_t id, const buf_block_t *block,
-                                          const rec_t *rec, dict_index_t *index,
-                                          row_prebuilt_t *prebuilt) {
-    return (parallel_reader->process_rows(id, rec, index, prebuilt));
-  });
-
-  int error = convert_error_code_to_mysql(err, 0, ha_thd());
-  return (error);
+  return (convert_error_code_to_mysql(err, 0, ha_thd()));
 }
 
-int ha_innobase::pread_adapter_parallel_scan_end(void *parallel_scan_ctx) {
+int ha_innobase::parallel_scan_end(void *parallel_scan_ctx) {
   Parallel_reader_adapter *parallel_reader =
       static_cast<Parallel_reader_adapter *>(parallel_scan_ctx);
   UT_DELETE(parallel_reader);
@@ -1530,8 +1533,7 @@ static MY_ATTRIBUTE((warn_unused_result)) const KEY *innobase_find_equiv_index(
       length field for a true VARCHAR. */
 
       if (key_part.field->type() == MYSQL_TYPE_VARCHAR) {
-        col_len -=
-            static_cast<const Field_varstring *>(key_part.field)->length_bytes;
+        col_len -= key_part.field->get_length_bytes();
       }
 
       if (key_part.length < col_len) {
@@ -1769,10 +1771,11 @@ static MY_ATTRIBUTE((warn_unused_result)) bool innobase_get_foreign_key_info(
     /* Test the case when referenced_table failed to
     open, if trx->check_foreigns is not set, we should
     still be able to add the foreign key */
-    DBUG_EXECUTE_IF("innodb_test_open_ref_fail", if (referenced_table) {
-      dd_table_close(referenced_table, current_thd, &mdl, true);
-      referenced_table = NULL;
-    });
+    DBUG_EXECUTE_IF(
+        "innodb_test_open_ref_fail", if (referenced_table) {
+          dd_table_close(referenced_table, current_thd, &mdl, true);
+          referenced_table = NULL;
+        });
 
     if (!referenced_table && trx->check_foreigns) {
       mutex_exit(&dict_sys->mutex);
@@ -2193,12 +2196,12 @@ static MY_ATTRIBUTE((warn_unused_result)) int innobase_check_index_keys(
 
           if (field->type() == MYSQL_TYPE_VARCHAR) {
             if (key_part1.length >=
-                field->pack_length() -
-                    ((Field_varstring *)field)->length_bytes) {
+                field->pack_length() - field->get_length_bytes()) {
               break;
             }
           } else {
-            if (key_part1.length >= field->pack_length()) {
+            if (key_part1.length >= field->pack_length() ||
+                innobase_is_multi_value_fld(field)) {
               break;
             }
           }
@@ -2259,6 +2262,7 @@ static void innobase_create_index_field_def(const TABLE *altered_table,
 
   col_type = get_innobase_type_from_mysql_type(&is_unsigned, field);
 
+  index_field->is_multi_value = innobase_is_multi_value_fld(field);
   if (!field->stored_in_db && field->gcol_info) {
     index_field->is_v_col = true;
     index_field->col_no = num_v;
@@ -2268,12 +2272,13 @@ static void innobase_create_index_field_def(const TABLE *altered_table,
   }
   index_field->is_ascending = !(key_part->key_part_flag & HA_REVERSE_SORT);
 
-  if (DATA_LARGE_MTYPE(col_type) ||
-      (key_part->length < field->pack_length() &&
-       field->type() != MYSQL_TYPE_VARCHAR) ||
-      (field->type() == MYSQL_TYPE_VARCHAR &&
-       key_part->length <
-           field->pack_length() - ((Field_varstring *)field)->length_bytes)) {
+  /* No prefix index on multi-value field */
+  if (!index_field->is_multi_value &&
+      (DATA_LARGE_MTYPE(col_type) ||
+       (key_part->length < field->pack_length() &&
+        field->type() != MYSQL_TYPE_VARCHAR) ||
+       (field->type() == MYSQL_TYPE_VARCHAR &&
+        key_part->length < field->pack_length() - field->get_length_bytes()))) {
     index_field->prefix_len = key_part->length;
   } else {
     index_field->prefix_len = 0;
@@ -2433,6 +2438,10 @@ static void innobase_create_index_def(const TABLE *altered_table,
 
       if (index->fields[i].is_v_col) {
         index->ind_type |= DICT_VIRTUAL;
+      }
+
+      if (index->fields[i].is_multi_value) {
+        index->ind_type |= DICT_MULTI_VALUE;
       }
     }
   }
@@ -2877,10 +2886,6 @@ static bool check_col_exists_in_indexes(const dict_table_t *table, ulint col_no,
 
   for (const dict_index_t *index = table->first_index(); index;
        index = index->next()) {
-    if (index->to_be_dropped) {
-      continue;
-    }
-
     for (ulint i = 0; i < index->n_user_defined_cols; i++) {
       const dict_col_t *idx_col = index->get_col(i);
 
@@ -3437,13 +3442,12 @@ static bool prepare_inplace_add_virtual(Alter_inplace_info *ha_alter_info,
 
   ctx = static_cast<ha_innobase_inplace_ctx *>(ha_alter_info->handler_ctx);
 
-  ctx->num_to_add_vcol =
-      altered_table->s->fields + ctx->num_to_drop_vcol - table->s->fields;
-
-  ctx->add_vcol = static_cast<dict_v_col_t *>(
-      mem_heap_zalloc(ctx->heap, ctx->num_to_add_vcol * sizeof *ctx->add_vcol));
+  ctx->add_vcol = static_cast<dict_v_col_t *>(mem_heap_zalloc(
+      ctx->heap,
+      ha_alter_info->virtual_column_add_count * sizeof *ctx->add_vcol));
   ctx->add_vcol_name = static_cast<const char **>(mem_heap_alloc(
-      ctx->heap, ctx->num_to_add_vcol * sizeof *ctx->add_vcol_name));
+      ctx->heap,
+      ha_alter_info->virtual_column_add_count * sizeof *ctx->add_vcol_name));
 
   List_iterator_fast<Create_field> cf_it(
       ha_alter_info->alter_info->create_list);
@@ -3475,13 +3479,18 @@ static bool prepare_inplace_add_virtual(Alter_inplace_info *ha_alter_info,
     field = altered_table->field[i - 1];
 
     ulint col_type = get_innobase_type_from_mysql_type(&is_unsigned, field);
+    bool is_multi_value = innobase_is_multi_value_fld(field);
 
     if (!field->gcol_info || field->stored_in_db) {
       my_error(ER_WRONG_KEY_COLUMN, MYF(0), field->field_name);
       return (true);
     }
 
-    col_len = field->pack_length();
+    if (is_multi_value) {
+      col_len = field->key_length();
+    } else {
+      col_len = field->pack_length();
+    }
     field_type = (ulint)field->type();
 
     if (!field->real_maybe_null()) {
@@ -3510,9 +3519,8 @@ static bool prepare_inplace_add_virtual(Alter_inplace_info *ha_alter_info,
       charset_no = 0;
     }
 
-    if (field->type() == MYSQL_TYPE_VARCHAR) {
-      uint32 length_bytes =
-          static_cast<const Field_varstring *>(field)->length_bytes;
+    if (field->type() == MYSQL_TYPE_VARCHAR && !is_multi_value) {
+      uint32 length_bytes = field->get_length_bytes();
 
       col_len -= length_bytes;
 
@@ -3525,6 +3533,10 @@ static bool prepare_inplace_add_virtual(Alter_inplace_info *ha_alter_info,
 
     ctx->add_vcol[j].m_col.prtype |= DATA_VIRTUAL;
 
+    if (is_multi_value) {
+      ctx->add_vcol[j].m_col.prtype |= DATA_MULTI_VALUE;
+    }
+
     ctx->add_vcol[j].m_col.mtype = col_type;
 
     ctx->add_vcol[j].m_col.len = col_len;
@@ -3536,7 +3548,7 @@ static bool prepare_inplace_add_virtual(Alter_inplace_info *ha_alter_info,
         ctx->heap,
         ctx->add_vcol[j].num_base * sizeof *(ctx->add_vcol[j].base_col)));
     ctx->add_vcol[j].v_pos =
-        ctx->old_table->n_v_cols - ctx->num_to_drop_vcol + j;
+        ctx->old_table->n_v_cols - ha_alter_info->virtual_column_drop_count + j;
 
     /* No need to track the list */
     ctx->add_vcol[j].v_indexes = NULL;
@@ -3561,18 +3573,18 @@ static bool prepare_inplace_drop_virtual(Alter_inplace_info *ha_alter_info,
 
   ctx = static_cast<ha_innobase_inplace_ctx *>(ha_alter_info->handler_ctx);
 
-  ctx->num_to_drop_vcol = ha_alter_info->alter_info->drop_list.size();
-
   ctx->drop_vcol = static_cast<dict_v_col_t *>(mem_heap_alloc(
-      ctx->heap, ctx->num_to_drop_vcol * sizeof *ctx->drop_vcol));
+      ctx->heap,
+      ha_alter_info->virtual_column_drop_count * sizeof *ctx->drop_vcol));
   ctx->drop_vcol_name = static_cast<const char **>(mem_heap_alloc(
-      ctx->heap, ctx->num_to_drop_vcol * sizeof *ctx->drop_vcol_name));
+      ctx->heap,
+      ha_alter_info->virtual_column_drop_count * sizeof *ctx->drop_vcol_name));
 
   for (const Alter_drop *drop : ha_alter_info->alter_info->drop_list) {
     const Field *field;
     ulint old_i;
 
-    ut_ad(drop->type == Alter_drop::COLUMN);
+    if (drop->type != Alter_drop::COLUMN) continue;
 
     for (old_i = 0; table->field[old_i]; old_i++) {
       const Field *n_field = table->field[old_i];
@@ -3581,26 +3593,36 @@ static bool prepare_inplace_drop_virtual(Alter_inplace_info *ha_alter_info,
         break;
       }
     }
+    /* SQL-layer already has checked that all columns to be dropped exist. */
+    ut_ad(table->field[old_i]);
+    field = table->field[old_i];
 
-    if (!table->field[old_i]) {
-      continue;
-    }
+    /*
+      We don't support simultaneous removal of virtual and stored columns
+      as in-place operation yet.
+    */
+    ut_ad(field->gcol_info && !field->stored_in_db);
 
     ulint col_len;
     ulint is_unsigned;
     ulint field_type;
     ulint charset_no;
 
-    field = table->field[old_i];
-
     ulint col_type = get_innobase_type_from_mysql_type(&is_unsigned, field);
+
+    bool is_multi_value = innobase_is_multi_value_fld(field);
 
     if (!field->gcol_info || field->stored_in_db) {
       my_error(ER_WRONG_KEY_COLUMN, MYF(0), field->field_name);
       return (true);
     }
 
-    col_len = field->pack_length();
+    if (is_multi_value) {
+      col_len = field->key_length();
+    } else {
+      col_len = field->pack_length();
+    }
+
     field_type = (ulint)field->type();
 
     if (!field->real_maybe_null()) {
@@ -3629,9 +3651,8 @@ static bool prepare_inplace_drop_virtual(Alter_inplace_info *ha_alter_info,
       charset_no = 0;
     }
 
-    if (field->type() == MYSQL_TYPE_VARCHAR) {
-      uint32 length_bytes =
-          static_cast<const Field_varstring *>(field)->length_bytes;
+    if (field->type() == MYSQL_TYPE_VARCHAR && !is_multi_value) {
+      uint32 length_bytes = field->get_length_bytes();
 
       col_len -= length_bytes;
 
@@ -4217,7 +4238,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
     /* Need information for newly added virtual columns
     for create index */
     if (ha_alter_info->handler_flags & Alter_inplace_info::ADD_INDEX) {
-      for (ulint i = 0; i < ctx->num_to_add_vcol; i++) {
+      for (ulint i = 0; i < ha_alter_info->virtual_column_add_count; i++) {
         /* Set mbminmax for newly added column */
         ulint i_mbminlen, i_mbmaxlen;
         dtype_get_mblen(ctx->add_vcol[i].m_col.mtype,
@@ -4228,7 +4249,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
       }
       add_v = static_cast<dict_add_v_col_t *>(
           mem_heap_alloc(ctx->heap, sizeof *add_v));
-      add_v->n_v_col = ctx->num_to_add_vcol;
+      add_v->n_v_col = ha_alter_info->virtual_column_add_count;
       add_v->v_col = ctx->add_vcol;
       add_v->v_col_name = ctx->add_vcol_name;
     }
@@ -4342,6 +4363,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
         ctx->heap, ctx->new_table->name.m_name, ctx->new_table->id);
     ulint n_cols = 0;
     ulint n_v_cols = 0;
+    ulint n_m_v_cols = 0;
     dtuple_t *add_cols;
     space_id_t space_id = 0;
     ulint z = 0;
@@ -4356,6 +4378,9 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
 
       if (innobase_is_v_fld(field)) {
         n_v_cols++;
+        if (innobase_is_multi_value_fld(field)) {
+          n_m_v_cols++;
+        }
       } else {
         n_cols++;
       }
@@ -4398,8 +4423,9 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
 
     /* The initial space id 0 may be overridden later if this
     table is going to be a file_per_table tablespace. */
-    ctx->new_table = dict_mem_table_create(
-        new_table_name, space_id, n_cols + n_v_cols, n_v_cols, flags, flags2);
+    ctx->new_table =
+        dict_mem_table_create(new_table_name, space_id, n_cols + n_v_cols,
+                              n_v_cols, n_m_v_cols, flags, flags2);
 
     /* TODO: Fix this problematic assignment */
     ctx->new_table->dd_space_id = new_dd_tab->tablespace_id();
@@ -4421,6 +4447,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
       ulint charset_no;
       ulint col_len;
       bool is_virtual = innobase_is_v_fld(field);
+      bool is_multi_value = innobase_is_multi_value_fld(field);
 
       /* we assume in dtype_form_prtype() that this
       fits in two bytes */
@@ -4450,7 +4477,11 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
         charset_no = 0;
       }
 
-      col_len = field->pack_length();
+      if (is_multi_value) {
+        col_len = field->key_length();
+      } else {
+        col_len = field->pack_length();
+      }
 
       /* The MySQL pack length contains 1 or 2 bytes
       length field for a true VARCHAR. Let us
@@ -4458,9 +4489,8 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
       length in the InnoDB data dictionary is the
       real maximum byte length of the actual data. */
 
-      if (field->type() == MYSQL_TYPE_VARCHAR) {
-        uint32 length_bytes =
-            static_cast<const Field_varstring *>(field)->length_bytes;
+      if (field->type() == MYSQL_TYPE_VARCHAR && !is_multi_value) {
+        uint32 length_bytes = field->get_length_bytes();
 
         col_len -= length_bytes;
 
@@ -4482,10 +4512,14 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
       }
 
       if (is_virtual) {
+        field_type |= DATA_VIRTUAL;
+        if (is_multi_value) {
+          field_type |= DATA_MULTI_VALUE;
+        }
         dict_mem_table_add_v_col(
             ctx->new_table, ctx->heap, field->field_name, col_type,
-            dtype_form_prtype(field_type, charset_no) | DATA_VIRTUAL, col_len,
-            i, field->gcol_info->non_virtual_base_columns());
+            dtype_form_prtype(field_type, charset_no), col_len, i,
+            field->gcol_info->non_virtual_base_columns());
       } else {
         dict_mem_table_add_col(
             ctx->new_table, ctx->heap, field->field_name, col_type,
@@ -4650,9 +4684,10 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
   /* Create the indexes and load into dictionary. */
 
   for (ulint a = 0; a < ctx->num_to_add_index; a++) {
-    if (index_defs[a].ind_type & DICT_VIRTUAL && ctx->num_to_drop_vcol > 0 &&
-        !new_clustered) {
-      innodb_v_adjust_idx_col(ha_alter_info, old_table, ctx->num_to_drop_vcol,
+    if (index_defs[a].ind_type & DICT_VIRTUAL &&
+        ha_alter_info->virtual_column_drop_count > 0 && !new_clustered) {
+      innodb_v_adjust_idx_col(ha_alter_info, old_table,
+                              ha_alter_info->virtual_column_drop_count,
                               &index_defs[a]);
     }
 
@@ -4742,8 +4777,8 @@ static MY_ATTRIBUTE((warn_unused_result)) bool prepare_inplace_alter_table_dict(
   }
 
   if (fts_index) {
-  /* Ensure that the dictionary operation mode will
-  not change while creating the auxiliary tables. */
+    /* Ensure that the dictionary operation mode will
+    not change while creating the auxiliary tables. */
 #ifdef UNIV_DEBUG
     trx_dict_op_t op = trx_get_dict_operation(ctx->trx);
 #endif
@@ -5448,8 +5483,6 @@ bool ha_innobase::prepare_inplace_alter_table_impl(
     }
 
     DBUG_ASSERT(n_drop_fk > 0);
-
-    DBUG_ASSERT(n_drop_fk == ha_alter_info->alter_info->drop_list.size());
   } else {
     drop_fk = NULL;
   }
@@ -5948,7 +5981,8 @@ bool ha_innobase::inplace_alter_table_impl(TABLE *altered_table,
                            NULL);
 
     ctx->new_table->vc_templ = s_templ;
-  } else if (ctx->num_to_add_vcol > 0 && ctx->num_to_drop_vcol == 0) {
+  } else if (ha_alter_info->virtual_column_add_count > 0 &&
+             ha_alter_info->virtual_column_drop_count == 0) {
     /* if there is ongoing drop virtual column, then we disallow
     inplace add index on newly added virtual column, so it does
     not need to come in here to rebuild template with add_v.
@@ -5958,7 +5992,7 @@ bool ha_innobase::inplace_alter_table_impl(TABLE *altered_table,
 
     add_v = static_cast<dict_add_v_col_t *>(
         mem_heap_alloc(ctx->heap, sizeof *add_v));
-    add_v->n_v_col = ctx->num_to_add_vcol;
+    add_v->n_v_col = ha_alter_info->virtual_column_add_count;
     add_v->v_col = ctx->add_vcol;
     add_v->v_col_name = ctx->add_vcol_name;
 
@@ -5973,7 +6007,7 @@ bool ha_innobase::inplace_alter_table_impl(TABLE *altered_table,
   /* Drop virtual column without rebuild will keep dict table
   unchanged, we use old table to evaluate virtual column value
   in innobase_get_computed_value(). */
-  if (!ctx->need_rebuild() && ctx->num_to_drop_vcol > 0) {
+  if (!ctx->need_rebuild() && ha_alter_info->virtual_column_drop_count > 0) {
     eval_table = table;
   }
 
@@ -5999,7 +6033,8 @@ oom:
   }
 
   if (s_templ) {
-    ut_ad(ctx->need_rebuild() || ctx->num_to_add_vcol > 0 || rebuild_templ);
+    ut_ad(ctx->need_rebuild() || ha_alter_info->virtual_column_add_count > 0 ||
+          rebuild_templ);
     dict_free_vc_templ(s_templ);
     UT_DELETE(s_templ);
 
@@ -6855,9 +6890,6 @@ inline MY_ATTRIBUTE((warn_unused_result)) bool commit_try_norebuild(
   DBUG_ASSERT(
       !(ha_alter_info->handler_flags & Alter_inplace_info::DROP_FOREIGN_KEY) ||
       ctx->num_to_drop_fk > 0);
-  DBUG_ASSERT(
-      ctx->num_to_drop_fk == ha_alter_info->alter_info->drop_list.size() ||
-      ctx->num_to_drop_vcol == ha_alter_info->alter_info->drop_list.size());
 
   for (ulint i = 0; i < ctx->num_to_add_index; i++) {
     dict_index_t *index = ctx->add_index[i];
@@ -6922,20 +6954,8 @@ inline MY_ATTRIBUTE((warn_unused_result)) bool commit_cache_norebuild(
 
   /* Check if the column, part of an index to be dropped is part of any
   other index which is not being dropped. If not, then set the ord_part
-  of the column to 0. */
+  of the column to 0. Here the columns are collected first. */
   get_col_list_to_be_dropped(ctx, drop_list, v_drop_list);
-
-  for (col_it = drop_list.begin(); col_it != drop_list.end(); ++col_it) {
-    if (!check_col_exists_in_indexes(ctx->new_table, *col_it, false)) {
-      ctx->new_table->cols[*col_it].ord_part = 0;
-    }
-  }
-
-  for (col_it = v_drop_list.begin(); col_it != v_drop_list.end(); ++col_it) {
-    if (!check_col_exists_in_indexes(ctx->new_table, *col_it, true)) {
-      ctx->new_table->v_cols[*col_it].m_col.ord_part = 0;
-    }
-  }
 
   for (ulint i = 0; i < ctx->num_to_add_index; i++) {
     dict_index_t *index = ctx->add_index[i];
@@ -6983,6 +7003,19 @@ inline MY_ATTRIBUTE((warn_unused_result)) bool commit_cache_norebuild(
 
       btr_drop_ahi_for_index(index);
       dict_index_remove_from_cache(index->table, index);
+    }
+  }
+
+  /* Update the ord_part after index dropped, to get accurate values */
+  for (col_it = drop_list.begin(); col_it != drop_list.end(); ++col_it) {
+    if (!check_col_exists_in_indexes(ctx->new_table, *col_it, false)) {
+      ctx->new_table->cols[*col_it].ord_part = 0;
+    }
+  }
+
+  for (col_it = v_drop_list.begin(); col_it != v_drop_list.end(); ++col_it) {
+    if (!check_col_exists_in_indexes(ctx->new_table, *col_it, true)) {
+      ctx->new_table->v_cols[*col_it].m_col.ord_part = 0;
     }
   }
 
@@ -7520,7 +7553,8 @@ rollback_trx:
     DBUG_RETURN(true);
   }
 
-  if (ctx0->num_to_drop_vcol || ctx0->num_to_add_vcol) {
+  if (ha_alter_info->virtual_column_drop_count ||
+      ha_alter_info->virtual_column_add_count) {
     if (ctx0->old_table->get_ref_count() > 1) {
       row_mysql_unlock_data_dictionary(trx);
       my_error(ER_TABLE_REFERENCED, MYF(0));
@@ -9686,26 +9720,40 @@ static inline Instant_Type innopart_support_instant(
   return (type);
 }
 
-int ha_innopart::pread_adapter_parallel_scan_start(void *&parallel_scan_ctx,
-                                                   size_t &num_threads) {
-  size_t n_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
+int ha_innopart::parallel_scan_init(void *&scan_ctx, size_t &num_threads) {
+  auto n_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
+  ut_a(n_threads <= Parallel_reader::MAX_THREADS);
 
-  parallel_scan_ctx = nullptr;
+  n_threads = Parallel_reader::available_threads(n_threads);
 
-  auto index = m_prebuilt->table->first_index();
+  if (n_threads == 0) {
+    return (HA_ERR_GENERIC);
+  }
 
-  Parallel_partition_reader_adapter *parallel_reader =
-      UT_NEW_NOKEY(Parallel_partition_reader_adapter(
-          m_prebuilt->table, m_prebuilt->trx, index, n_threads, m_prebuilt,
-          m_tot_parts));
+  scan_ctx = nullptr;
 
-  if (parallel_reader == nullptr) {
+  const auto row_len = m_prebuilt->mysql_row_len;
+
+  auto adapter = UT_NEW_NOKEY(Parallel_reader_adapter(n_threads, row_len));
+
+  if (adapter == nullptr) {
+    Parallel_reader::release_threads(n_threads);
     return (HA_ERR_OUT_OF_MEM);
   }
 
-  const uint first_used_partition = m_part_info->get_first_used_partition();
+  auto trx = m_prebuilt->trx;
 
-  for (uint i = first_used_partition; i < m_tot_parts;
+  innobase_register_trx(ht, ha_thd(), trx);
+
+  trx_start_if_not_started_xa(trx, false);
+
+  trx_assign_read_view(trx);
+
+  const Parallel_reader::Scan_range FULL_SCAN{};
+
+  const auto first_used_partition = m_part_info->get_first_used_partition();
+
+  for (auto i = first_used_partition; i < m_tot_parts;
        i = m_part_info->get_next_used_partition(i)) {
     set_partition(i);
 
@@ -9713,57 +9761,47 @@ int ha_innopart::pread_adapter_parallel_scan_start(void *&parallel_scan_ctx,
       ib_senderrf(ha_thd(), IB_LOG_LEVEL_ERROR, ER_TABLESPACE_DISCARDED,
                   m_prebuilt->table->name.m_name);
 
+      UT_DELETE(adapter);
       return (HA_ERR_NO_SUCH_TABLE);
     }
 
     build_template(true);
-    auto trx = m_prebuilt->trx;
-    innobase_register_trx(ht, ha_thd(), trx);
-    trx_start_if_not_started_xa(trx, false);
-    trx_assign_read_view(trx);
 
-    parallel_reader->set_info(
-        m_prebuilt->table, m_prebuilt->table->first_index(), trx, m_prebuilt);
+    Parallel_reader::Config config(FULL_SCAN, m_prebuilt->table->first_index());
+
+    auto success =
+        adapter->add_scan(trx, config, [=](const Parallel_reader::Ctx *ctx) {
+          return (adapter->process_rows(ctx));
+        });
+
+    if (!success) {
+      UT_DELETE(adapter);
+      return (HA_ERR_GENERIC);
+    }
   }
 
-  num_threads = parallel_reader->calc_num_threads();
-  parallel_scan_ctx = parallel_reader;
+  scan_ctx = adapter;
+  num_threads = n_threads;
+
+  adapter->set(m_prebuilt);
+
   return (0);
 }
 
-int ha_innopart::pread_adapter_parallel_scan_run(
-    void *parallel_scan_ctx, void **thread_contexts,
-    pread_adapter_pload_init_cbk load_init_fn,
-    pread_adapter_pload_row_cbk load_rows_fn,
-    pread_adapter_pload_end_cbk load_end_fn) {
-  Parallel_reader_adapter *parallel_reader =
-      static_cast<Parallel_reader_adapter *>(parallel_scan_ctx);
+int ha_innopart::parallel_scan(void *scan_ctx, void **thread_ctxs,
+                               Parallel_reader_adapter::Init_fn init_fn,
+                               Parallel_reader_adapter::Load_fn load_fn,
+                               Parallel_reader_adapter::End_fn end_fn) {
+  auto adapter = static_cast<Parallel_reader_adapter *>(scan_ctx);
 
-  ut_ad(parallel_reader != nullptr);
+  auto err = adapter->run(thread_ctxs, init_fn, load_fn, end_fn);
 
-#ifdef UNIV_DEBUG
-  size_t n_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
-  ut_ad(parallel_reader->n_threads() == n_threads);
-#endif
-
-  parallel_reader->set_callback(thread_contexts, load_init_fn, load_rows_fn,
-                                load_end_fn);
-
-  dberr_t err = parallel_reader->read([&](size_t id, const buf_block_t *block,
-                                          const rec_t *rec, dict_index_t *index,
-                                          row_prebuilt_t *prebuilt) {
-    return (parallel_reader->process_rows(id, rec, index, prebuilt));
-  });
-
-  int error = convert_error_code_to_mysql(err, 0, ha_thd());
-
-  return (error);
+  return (convert_error_code_to_mysql(err, 0, ha_thd()));
 }
 
-int ha_innopart::pread_adapter_parallel_scan_end(void *parallel_scan_ctx) {
-  Parallel_reader_adapter *parallel_reader =
-      static_cast<Parallel_reader_adapter *>(parallel_scan_ctx);
-  UT_DELETE(parallel_reader);
+int ha_innopart::parallel_scan_end(void *parallel_scan_ctx) {
+  auto adapter = static_cast<Parallel_reader_adapter *>(parallel_scan_ctx);
+  UT_DELETE(adapter);
   return 0;
 }
 
@@ -10758,7 +10796,7 @@ ib_sequence_t::ib_sequence_t(THD *thd, ulonglong start_value,
 Postfix increment
 @return the next value to insert */
 
-ulonglong ib_sequence_t::operator++(int)UNIV_NOTHROW {
+ulonglong ib_sequence_t::operator++(int) UNIV_NOTHROW {
   ulonglong current = m_next_value;
 
   ut_ad(!m_eof);

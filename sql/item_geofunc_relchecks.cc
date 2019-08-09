@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -457,7 +457,7 @@ int Item_func_spatial_rel::multipoint_within_geometry_collection(
   int tres = 0;
   bool had_error = false;
 
-  Rtree_index &rtree = *((Rtree_index *)prtree);
+  const Rtree_index &rtree = *static_cast<const Rtree_index *>(prtree);
 
   typename BG_models<Coordsys>::Multipoint mpts(
       pmpts->get_data_ptr(), pmpts->get_data_size(), pmpts->get_flags(),
@@ -716,7 +716,7 @@ int Item_func_spatial_rel::geocol_equals_check(
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -757,7 +757,7 @@ int Item_func_spatial_rel::within_check(Geometry *g1, Geometry *g2,
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -834,7 +834,7 @@ int Item_func_spatial_rel::equals_check(Geometry *g1, Geometry *g2,
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -890,7 +890,7 @@ int Item_func_spatial_rel::disjoint_check(Geometry *g1, Geometry *g2,
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -949,7 +949,7 @@ int Item_func_spatial_rel::intersects_check(Geometry *g1, Geometry *g2,
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -1057,7 +1057,7 @@ int Item_func_spatial_rel::overlaps_check(Geometry *g1, Geometry *g2,
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -1118,7 +1118,7 @@ int Item_func_spatial_rel::touches_check(Geometry *g1, Geometry *g2,
   @tparam Geom_types Geometry types definitions.
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
 */
@@ -1173,7 +1173,7 @@ int Item_func_spatial_rel::crosses_check(Geometry *g1, Geometry *g2,
   @param g1 First Geometry operand, not a geometry collection.
   @param g2 Second Geometry operand, not a geometry collection.
   @param relchk_type The type of relation check.
-  @param[out] pnull_value Returns whether error occured duirng the computation.
+  @param[out] pnull_value Returns whether error occurred duirng the computation.
   @return 0 if specified relation doesn't hold for the given operands,
                 otherwise returns none 0.
  */

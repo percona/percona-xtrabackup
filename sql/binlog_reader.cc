@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -111,14 +111,14 @@ Binlog_read_error::Error_type binlog_event_deserialize(
     const Format_description_event *fde, bool verify_checksum,
     Log_event **event) {
   const char *buf = reinterpret_cast<const char *>(buffer);
-  Log_event *ev = NULL;
+  Log_event *ev = nullptr;
   enum_binlog_checksum_alg alg;
 
   DBUG_ENTER("binlog_event_deserialize");
 
   DBUG_ASSERT(fde != 0);
   DBUG_PRINT("info", ("binlog_version: %d", fde->binlog_version));
-  DBUG_DUMP("data", (unsigned char *)buf, event_len);
+  DBUG_DUMP("data", buffer, event_len);
 
   /* Check the integrity */
   if (event_len < LOG_EVENT_MINIMAL_HEADER_LEN) {
@@ -170,7 +170,8 @@ Binlog_read_error::Error_type binlog_event_deserialize(
 #endif
 
   if (verify_checksum &&
-      Log_event_footer::event_checksum_test((uchar *)buf, event_len, alg) &&
+      Log_event_footer::event_checksum_test(const_cast<uchar *>(buffer),
+                                            event_len, alg) &&
       /* Skip the crc check when simulating an unknown ignorable log event. */
       !DBUG_EVALUATE_IF("simulate_unknown_ignorable_log_event", 1, 0)) {
     DBUG_RETURN(Binlog_read_error::CHECKSUM_FAILURE);
@@ -299,7 +300,7 @@ Binlog_read_error::Error_type binlog_event_deserialize(
       } else {
         DBUG_PRINT("error",
                    ("Unknown event code: %d", (int)buf[EVENT_TYPE_OFFSET]));
-        ev = NULL;
+        ev = nullptr;
       }
       break;
   }

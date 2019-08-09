@@ -381,21 +381,25 @@ int do_sj_dups_weedout(THD *thd, SJ_TMP_TABLE *sjtbl);
 int update_item_cache_if_changed(List<Cached_item> &list);
 
 // Create list for using with tempory table
-bool change_to_use_tmp_fields(THD *thd, Ref_item_array ref_item_array,
-                              List<Item> &new_list1, List<Item> &new_list2,
-                              uint elements, List<Item> &items);
+bool change_to_use_tmp_fields(List<Item> &all_fields,
+                              size_t num_select_elements, THD *thd,
+                              Ref_item_array ref_item_array,
+                              List<Item> *res_selected_fields,
+                              List<Item> *res_all_fields);
 // Create list for using with tempory table
-bool change_refs_to_tmp_fields(THD *thd, Ref_item_array ref_item_array,
-                               List<Item> &new_list1, List<Item> &new_list2,
-                               uint elements, List<Item> &items);
+bool change_refs_to_tmp_fields(List<Item> &all_fields,
+                               size_t num_select_elements, THD *thd,
+                               Ref_item_array ref_item_array,
+                               List<Item> *res_selected_fields,
+                               List<Item> *res_all_fields);
 bool prepare_sum_aggregators(Item_sum **func_ptr, bool need_distinct);
 bool setup_sum_funcs(THD *thd, Item_sum **func_ptr);
 bool make_group_fields(JOIN *main_join, JOIN *curr_join);
-bool setup_copy_fields(THD *thd, Temp_table_param *param,
+bool setup_copy_fields(List<Item> &all_fields, size_t num_select_elements,
+                       THD *thd, Temp_table_param *param,
                        Ref_item_array ref_item_array,
-                       List<Item> &res_selected_fields,
-                       List<Item> &res_all_fields, uint elements,
-                       List<Item> &all_fields);
+                       List<Item> *res_selected_fields,
+                       List<Item> *res_all_fields);
 bool check_unique_constraint(TABLE *table);
 ulonglong unique_hash(Field *field, ulonglong *hash);
 
@@ -727,6 +731,7 @@ bool init_sum_functions(Item_sum **func_ptr, Item_sum **end_ptr);
 void init_tmptable_sum_functions(Item_sum **func_ptr);
 bool update_sum_func(Item_sum **func_ptr);
 void update_tmptable_sum_func(Item_sum **func_ptr, TABLE *tmp_table);
+bool has_rollup_result(Item *item);
 
 /*
   If a condition cannot be applied right away, for instance because it is a
@@ -746,5 +751,15 @@ unique_ptr_destroy_only<RowIterator> PossiblyAttachFilterIterator(
 void SplitConditions(Item *condition,
                      std::vector<Item *> *predicates_below_join,
                      std::vector<PendingCondition> *predicates_above_join);
+
+bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
+                                       const bool new_partition_or_eof,
+                                       bool *output_row_ready);
+bool buffer_windowing_record(THD *thd, Temp_table_param *param,
+                             bool *new_partition);
+bool bring_back_frame_row(THD *thd, Window &w, Temp_table_param *out_param,
+                          int64 rowno,
+                          enum Window::retrieve_cached_row_reason reason,
+                          int fno = 0);
 
 #endif /* SQL_EXECUTOR_INCLUDED */

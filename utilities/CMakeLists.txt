@@ -25,13 +25,13 @@ SET(MYSQL_INSTALL_COMPONENT Server)
 
 IF(NOT CMAKE_CROSSCOMPILING)
   MYSQL_ADD_EXECUTABLE(comp_err comp_err.cc SKIP_INSTALL)
-  TARGET_LINK_LIBRARIES(comp_err mysys mysys_ssl)
+  TARGET_LINK_LIBRARIES(comp_err mysys)
 ENDIF()
 
 MYSQL_ADD_EXECUTABLE(comp_client_err
   comp_client_err.cc ${CMAKE_SOURCE_DIR}/libmysql/errmsg.cc
   SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(comp_client_err mysys mysys_ssl)
+TARGET_LINK_LIBRARIES(comp_client_err mysys)
 
 ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/include/mysqlclient_ername.h
   COMMAND comp_client_err
@@ -45,7 +45,7 @@ ADD_CUSTOM_TARGET(GenClientError
 
 
 IF (BUILD_BUNDLED_LZ4)
-  ADD_CONVENIENCE_LIBRARY(lz4_lib
+  ADD_LIBRARY(lz4_lib STATIC
     ../extra/lz4/lz4.c
     ../extra/lz4/lz4frame.c
     ../extra/lz4/lz4hc.c
@@ -73,10 +73,14 @@ ADD_CUSTOM_TARGET(GenError
                   ${PROJECT_BINARY_DIR}/${INSTALL_MYSQLSHAREDIR}/english/errmsg.sys
                   ${PROJECT_SOURCE_DIR}/share/errmsg-utf8.txt)
 
+MYSQL_ADD_EXECUTABLE(range_check_err range_check_err.cc SKIP_INSTALL)
+TARGET_LINK_LIBRARIES(range_check_err mysys)
+add_dependencies(range_check_err GenError)
+
 # Set InnoDB mutex type
 ADD_DEFINITIONS(-DMUTEX_EVENT)
 
-## Most executables depend on libeay32.dll (through mysys_ssl).
+## Most executables depend on libeay32.dll (through mysys).
 ## For 'comp_err' we need it to be available during build.
 IF (WIN32 AND WITH_SSL_PATH AND HAVE_CRYPTO_DLL)
   ADD_DEPENDENCIES(GenError copy_openssl_dlls)
@@ -90,9 +94,78 @@ IF(APPLE AND HAVE_CRYPTO_DYLIB AND HAVE_OPENSSL_DYLIB)
   ADD_DEPENDENCIES(comp_err copy_openssl_dlls)
 ENDIF()
 
-# In published release builds on Solaris, we need to bundle gcc source.
-# PB2 will take care of putting it in extra/ when needed
-IF(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gcc-4.8.1.tar.bz2)
-  INSTALL(FILES gcc-4.8.1.tar.bz2 
-          DESTINATION ${INSTALL_MYSQLSHAREDIR} COMPONENT Development)
+MYSQL_ADD_EXECUTABLE(my_print_defaults my_print_defaults.cc)
+TARGET_LINK_LIBRARIES(my_print_defaults  mysys)
+
+MYSQL_ADD_EXECUTABLE(perror perror.cc)
+ADD_DEPENDENCIES(perror GenError)
+TARGET_LINK_LIBRARIES(perror mysys)
+
+IF (BUILD_BUNDLED_LZ4)
+  MYSQL_ADD_EXECUTABLE(lz4_decompress lz4_decompress.cc)
+  TARGET_LINK_LIBRARIES(lz4_decompress ${LZ4_LIBRARY} mysys)
+ENDIF()
+
+IF (BUILD_BUNDLED_ZLIB OR NOT OPENSSL_EXECUTABLE_HAS_ZLIB)
+  MYSQL_ADD_EXECUTABLE(zlib_decompress zlib_decompress.cc)
+  TARGET_LINK_LIBRARIES(zlib_decompress ${ZLIB_LIBRARY} mysys)
+ENDIF()
+
+IF(WITH_INNOBASE_STORAGE_ENGINE)
+
+  IF(LZ4_LIBRARY)
+    ADD_DEFINITIONS(-DHAVE_LZ4=1)
+  ENDIF()
+
+  IF(NOT MSVC)
+    IF(NOT CMAKE_CROSSCOMPILING)
+    CHECK_C_SOURCE_RUNS(
+    "#include<stdint.h>
+    int main()
+    {
+      unsigned char       a = 0;
+      unsigned char       b = 0;
+      unsigned char       c = 1;
+
+      __atomic_exchange(&a, &b,  &c, __ATOMIC_RELEASE);
+      __atomic_compare_exchange(&a, &b, &c, 0,
+                                __ATOMIC_RELEASE, __ATOMIC_ACQUIRE);
+      return(0);
+    }"
+    HAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE
+    )
+    ENDIF()
+
+    IF(HAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE)
+      ADD_DEFINITIONS(-DHAVE_IB_GCC_ATOMIC_COMPARE_EXCHANGE=1)
+    ENDIF()
+  ENDIF(NOT MSVC)
+
+  # Add path to the InnoDB headers and DD
+  INCLUDE_DIRECTORIES(
+    ${CMAKE_SOURCE_DIR}/storage/innobase
+    ${CMAKE_SOURCE_DIR}/storage/innobase/include
+    ${CMAKE_SOURCE_DIR}/sql
+    ${CMAKE_SOURCE_DIR}/libbinlogevents/include
+  )
+
+  # We use the InnoDB code directly in case the code changes.
+  MYSQL_ADD_EXECUTABLE(innochecksum innochecksum.cc)
+  TARGET_COMPILE_DEFINITIONS(innochecksum PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY)
+  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    ADD_COMPILE_FLAGS(innochecksum.cc COMPILE_FLAGS "-Wno-unused-parameter -Wno-cast-qual")
+  ENDIF()
+  TARGET_LINK_LIBRARIES(innochecksum
+    mysys innodb_zipdecompress ${LZ4_LIBRARY})
+  ADD_DEPENDENCIES(innochecksum GenError)
+
+  MYSQL_ADD_EXECUTABLE(ibd2sdi ibd2sdi.cc)
+  TARGET_COMPILE_DEFINITIONS(ibd2sdi PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY)
+  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    ADD_COMPILE_FLAGS(ibd2sdi.cc COMPILE_FLAGS "-Wno-unused-parameter -Wno-cast-qual")
+  ENDIF()
+  TARGET_LINK_LIBRARIES(ibd2sdi
+    mysys innodb_zipdecompress ${LZ4_LIBRARY})
+  ADD_DEPENDENCIES(ibd2sdi GenError)
+
 ENDIF()

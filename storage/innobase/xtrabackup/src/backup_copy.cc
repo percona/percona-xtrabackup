@@ -580,7 +580,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
     data_threads[i].count = &count;
     data_threads[i].count_mutex = &count_mutex;
     data_threads[i].queue = &queue;
-    os_thread_create(PFS_NOT_INSTRUMENTED, func, &data_threads[i]);
+    os_thread_create(PFS_NOT_INSTRUMENTED, func, &data_threads[i]).start();
   }
 
   xb_process_datadir(
@@ -891,8 +891,9 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
 
   const page_size_t page_size(fsp_header_get_page_size(page));
 
-  if (!Encryption::fill_encryption_info(
-          space.encryption_key, space.encryption_iv, encrypt_info, false)) {
+  if (!Encryption::fill_encryption_info(space.encryption_key,
+                                        space.encryption_iv, encrypt_info,
+                                        false, true)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }

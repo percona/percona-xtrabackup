@@ -25,7 +25,9 @@
 #ifndef NDB_DD_CLIENT_H
 #define NDB_DD_CLIENT_H
 
+#include <map>
 #include <set>
+#include <string>
 #include <vector>
 #include <unordered_set>
 
@@ -38,6 +40,7 @@ namespace dd {
   namespace cache {
     class Dictionary_client;
   }
+  class Schema;
   class Table;
   class Tablespace;
 }
@@ -96,7 +99,7 @@ public:
   ~Ndb_dd_client();
 
   // Metadata lock functions
-  bool mdl_lock_schema(const char* schema_name);
+  bool mdl_lock_schema(const char* schema_name, bool exclusive_lock = false);
   bool mdl_lock_table(const char* schema_name, const char* table_name);
   bool mdl_locks_acquire_exclusive(const char* schema_name,
                                    const char* table_name);
@@ -134,7 +137,7 @@ public:
                      const dd::sdi_t &sdi,
                      int ndb_table_id, int ndb_table_version,
                      size_t ndb_num_partitions,
-                     bool force_overwrite,
+                     const std::string &tablespace_name, bool force_overwrite,
                      Ndb_referenced_tables_invalidator *invalidator= nullptr);
   bool migrate_table(const char* schema_name, const char* table_name,
                      const unsigned char* frm_data,
@@ -142,13 +145,19 @@ public:
                      bool force_overwrite);
   bool get_table(const char* schema_name, const char* table_name,
                  const dd::Table **table_def);
+  bool set_tablespace_id_in_table(const char *schema_name,
+                                  const char *table_name,
+                                  dd::Object_id tablespace_id);
 
+  bool fetch_all_schemas(std::map<std::string, const dd::Schema*>&);
   bool fetch_schema_names(std::vector<std::string>*);
   bool get_ndb_table_names_in_schema(const char* schema_name,
                                      std::unordered_set<std::string> *names);
   bool have_local_tables_in_schema(const char* schema_name,
                                    bool* found_local_tables);
   bool schema_exists(const char* schema_name, bool* schema_exists);
+  bool update_schema_version(const char* schema_name,
+                             unsigned int counter, unsigned int node_id);
 
   /*
      @brief Lookup tablespace id from tablespace name

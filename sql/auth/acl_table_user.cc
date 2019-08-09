@@ -233,7 +233,7 @@ bool Acl_user_attributes::deserialize(const Json_object &json_object) {
     if (db_restrictions.add(json_object)) return true;
     /* Filtering & warnings */
     report_and_remove_invalid_db_restrictions(
-        db_restrictions, DB_ACLS, WARNING_LEVEL,
+        db_restrictions, DB_OP_ACLS, WARNING_LEVEL,
         ER_WARN_INCORRECT_PRIVILEGE_FOR_DB_RESTRICTIONS);
     report_and_remove_invalid_db_restrictions(db_restrictions, m_global_privs,
                                               WARNING_LEVEL,
@@ -306,9 +306,11 @@ void Acl_user_attributes::update_restrictions(
 bool parse_user_attributes(THD *thd, TABLE *table,
                            User_table_schema *table_schema,
                            Acl_user_attributes &user_attributes) {
-  const Json_object *json_object;
-  Json_wrapper json_wrapper;
-  if (!table->field[table_schema->user_attributes_idx()]->is_null()) {
+  // Read only if the column of type JSON and it is not null.
+  if (table->field[table_schema->user_attributes_idx()]->type() ==
+          MYSQL_TYPE_JSON &&
+      !table->field[table_schema->user_attributes_idx()]->is_null()) {
+    Json_wrapper json_wrapper;
     if ((down_cast<Field_json *>(
              table->field[table_schema->user_attributes_idx()])
              ->val_json(&json_wrapper)))
@@ -318,7 +320,7 @@ bool parse_user_attributes(THD *thd, TABLE *table,
     if (!json_dom || json_dom->json_type() != enum_json_type::J_OBJECT)
       return true;
 
-    json_object = down_cast<const Json_object *>(json_dom);
+    const Json_object *json_object = down_cast<const Json_object *>(json_dom);
     if (user_attributes.deserialize(*json_object)) return true;
   }
   return false;
@@ -496,7 +498,7 @@ bool Acl_table_user_writer::setup_table(int &error, bool &builtin_plugin) {
           my_error(ER_NONEXISTING_GRANT, MYF(0), m_combo->user.str,
                    m_combo->host.str);
           /*
-            Return 1 as an indication that expected error occured during
+            Return 1 as an indication that expected error occurred during
             handling of REVOKE statement for an unknown user.
           */
           error = 1;
@@ -1723,9 +1725,9 @@ bool Acl_table_user_reader::read_user_attributes(ACL_USER &user) {
       if (additional_password.length()) {
         user.credentials[SECOND_CRED].m_auth_string.length =
             additional_password.length();
-        user.credentials[SECOND_CRED].m_auth_string.str = (char *)alloc_root(
-            &m_mem_root,
-            user.credentials[SECOND_CRED].m_auth_string.length + 1);
+        user.credentials[SECOND_CRED].m_auth_string.str =
+            (char *)m_mem_root.Alloc(
+                user.credentials[SECOND_CRED].m_auth_string.length + 1);
         memcpy(user.credentials[SECOND_CRED].m_auth_string.str,
                additional_password.c_str(),
                user.credentials[SECOND_CRED].m_auth_string.length);

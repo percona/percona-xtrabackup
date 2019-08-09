@@ -27,6 +27,10 @@ FIND_GCRYPT()
 MYSQL_CHECK_CURL()
 FIND_EV()
 
+# Remove -Wundef from C++ compiler flags since there are several
+# undefined identifiers which are evaluated in for example ev.h
+STRING(REPLACE "-Wundef " "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/include
   ${CMAKE_SOURCE_DIR}/storage/innobase/include
@@ -55,7 +59,6 @@ TARGET_LINK_LIBRARIES(xbcloud
   ${LIBEV_LIBRARIES}
   ${CURL_LIBRARIES}
   mysys
-  mysys_ssl
   crc
   )
 
@@ -83,7 +86,6 @@ IF (WITH_DEBUG)
       ${GTEST_BOTH_LIBRARIES}
       gmock
       mysys
-      mysys_ssl
       crc
       )
 

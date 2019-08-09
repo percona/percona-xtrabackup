@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -71,6 +71,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/plugin_handlers/server_ongoing_transactions_handler.cc
   src/plugin_handlers/stage_monitor_handler.cc
   src/plugin_handlers/read_mode_handler.cc
+  src/plugin_handlers/remote_clone_handler.cc
   src/plugin_messages/group_action_message.cc
   src/plugin_messages/group_validation_message.cc
   src/plugin_messages/recovery_message.cc
@@ -108,7 +109,7 @@ ADD_DEFINITIONS(-DLOG_SUBSYSTEM_TAG="Repl")
 ADD_DEFINITIONS(-DLOG_COMPONENT_TAG="group_replication")
 
 IF(WITH_UNIT_TESTS)
-  ADD_CONVENIENCE_LIBRARY(gr_unit_test_resource
+  ADD_LIBRARY(gr_unit_test_resource STATIC
     src/gcs_plugin_messages.cc
     src/member_info.cc
     src/member_version.cc

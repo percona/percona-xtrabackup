@@ -34,7 +34,9 @@
 #include "lex_string.h"
 #include "my_command.h"
 #include "my_dbug.h"
+#include "my_hostname.h"  // HOSTNAME_LENGTH
 #include "my_inttypes.h"
+#include "mysql_com.h"  // USERNAME_LENGTH
 #include "template_utils.h"
 
 /* Forward Declarations */
@@ -168,7 +170,7 @@ class ACL_internal_schema_access {
 */
 class ACL_internal_schema_registry {
  public:
-  static void register_schema(const LEX_STRING &name,
+  static void register_schema(const LEX_CSTRING &name,
                               const ACL_internal_schema_access *access);
   static const ACL_internal_schema_access *lookup(const char *name);
 };
@@ -698,8 +700,8 @@ bool reload_acl_caches(THD *thd);
 ulong acl_get(THD *thd, const char *host, const char *ip, const char *user,
               const char *db, bool db_is_pattern);
 bool is_acl_user(THD *thd, const char *host, const char *user);
-bool acl_getroot(THD *thd, Security_context *sctx, char *user, char *host,
-                 char *ip, const char *db);
+bool acl_getroot(THD *thd, Security_context *sctx, const char *user,
+                 const char *host, const char *ip, const char *db);
 bool check_acl_tables_intact(THD *thd);
 bool check_acl_tables_intact(THD *thd, TABLE_LIST *tables);
 void notify_flush_event(THD *thd);
@@ -819,7 +821,8 @@ ulong get_global_acl_cache_size();
 #if defined(HAVE_OPENSSL) && !defined(HAVE_WOLFSSL)
 extern bool opt_auto_generate_certs;
 bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status,
-                             char **ssl_ca, char **ssl_key, char **ssl_cert);
+                             const char **ssl_ca, const char **ssl_key,
+                             const char **ssl_cert);
 #endif /* HAVE_OPENSSL && !HAVE_WOLFSSL */
 
 #define DEFAULT_SSL_CA_CERT "ca.pem"
@@ -1001,10 +1004,17 @@ class Auth_id {
   const std::string &host() const;
 
  private:
+  void create_key();
   /** User part */
   std::string m_user;
   /** Host part */
   std::string m_host;
+  /**
+    Key: Internal representation mainly to facilitate use of
+         Auth_id class in standard container.
+         Format: 'user\0host\0'
+  */
+  std::string m_key;
 };
 
 /*
@@ -1013,5 +1023,14 @@ class Auth_id {
   more substances are added to latter.
 */
 using Role_id = Auth_id;
+
+/**
+  Length of string buffer, that is enough to contain
+  username and hostname parts of the user identifier with trailing zero in
+  MySQL standard format:
+  user_name_part\@host_name_part\\0
+*/
+static constexpr int USER_HOST_BUFF_SIZE =
+    HOSTNAME_LENGTH + USERNAME_LENGTH + 2;
 
 #endif /* AUTH_COMMON_INCLUDED */

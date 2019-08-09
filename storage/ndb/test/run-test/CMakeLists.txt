@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,9 +36,15 @@ INCLUDE_DIRECTORIES(
 IF(NOT WIN32)
   ADD_DEFINITIONS(-DDEFAULT_PREFIX=\"${CMAKE_INSTALL_PREFIX}\")
 ENDIF()
-MYSQL_ADD_EXECUTABLE(atrt main.cpp setup.cpp files.cpp db.cpp command.cpp
-  DESTINATION mysql-test/ndb
-  )
+MYSQL_ADD_EXECUTABLE(atrt
+  main.cpp
+  setup.cpp
+  files.cpp
+  db.cpp
+  command.cpp
+  test_execution_resources.cpp
+  DESTINATION mysql-test/ndb)
+
 TARGET_LINK_LIBRARIES(atrt ndbNDBT ndbclient_static mysqlclient)
 
 FILE(GLOB testcase_files RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*-tests.txt")
@@ -59,7 +65,7 @@ ADD_CUSTOM_COMMAND(OUTPUT check_testcase_files.passed
 ADD_CUSTOM_TARGET(check_testcase_files ALL
                   SOURCES check_testcase_files.passed)
 
-INSTALL(PROGRAMS   atrt-testBackup atrt-mysql-test-run
+INSTALL(PROGRAMS atrt-mysql-test-run
         DESTINATION bin)
 INSTALL(PROGRAMS atrt-analyze-result.sh atrt-backtrace.sh atrt-gather-result.sh
                  atrt-setup.sh atrt-mysqltest autotest-boot.sh autotest-run.sh

@@ -35,6 +35,7 @@ perl mysql-test-run.pl --debug-server --force --timer    --big-test --testcase-t
 # Run the suites that are not part of the default - funcs_2, stress, jp, nist
 # interactive_utilities,engines, memcached
 perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=audit_null-big  --vardir=var-audit_null-big --suite=audit_null --no-skip
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=funcs1-big  --vardir=var-funcs1-big --suite=funcs_1 --no-skip
 perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=funcs2-big  --vardir=var-funcs2-big --suite=funcs_2 --no-skip
 perl mysql-test-run.pl --debug-server --force --timer --big-test    --comment=stress --vardir=var-stress  --suite=stress --no-skip
 perl mysql-test-run.pl --debug-server --force --timer --big-test    --comment=jp --vardir=var-jp --suite=jp --no-skip
@@ -73,10 +74,10 @@ perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-time
 
 #######SECTION 4 : EXTENDED RUNS FOR INNODB SUITES #####
 # Run innodb suite including big-test with innodb-page-size=4k
-perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60   --comment=innodb-page-size-4k --vardir=var-innodb-page-size-4k   --initialize=--innodb-page-size=4k --suite=innodb,innodb_undo --no-skip
+perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60   --comment=innodb-page-size-4k --vardir=var-innodb-page-size-4k   --initialize=--innodb-page-size=4k --suite=innodb,innodb_undo,clone --no-skip
 
 # Run innodb suite with innodb-page-size=8k
-perl mysql-test-run.pl --debug-server --timer --force  --comment=innodb-page-size-8k --vardir=var-innodb-page-size-8k   --initialize=--innodb-page-size=8k --suite=innodb,innodb_undo --no-skip
+perl mysql-test-run.pl --debug-server --timer --force  --comment=innodb-page-size-8k --vardir=var-innodb-page-size-8k   --initialize=--innodb-page-size=8k --suite=innodb,innodb_undo,clone --no-skip
 
 ####END OF SECTION4(EXTENDED INNODB) ####################
 ####### END OF SECTION - REPEAT DAILY###############################
@@ -101,9 +102,9 @@ perl mysql-test-run.pl --comment=all-skiplogbin --vardir=var-skiplogbin --force 
 # Runs with innodb-page-size=4k and 8k are covered in SECTION 4
 
 # Run innodb suite including big-test with innodb-page-size=32k and 64k
-perl mysql-test-run.pl --timer --force --big-test --testcase-timeout=60 --debug-server  --comment=innodb_32k_size --vardir=var-innodb_32k   --initialize=--innodb-page-size=32k --suite=innodb,innodb_undo,innodb_zip --no-skip
+perl mysql-test-run.pl --timer --force --big-test --testcase-timeout=60 --debug-server  --comment=innodb_32k_size --vardir=var-innodb_32k   --initialize=--innodb-page-size=32k --suite=innodb,innodb_undo,innodb_zip,clone --no-skip
 
-perl mysql-test-run.pl --timer --force --big-test --testcase-timeout=60 --debug-server  --comment=innodb_64k_size --vardir=var-innodb-64k  --initialize=--innodb-page-size=64k --suite=innodb,innodb_undo,innodb_zip --no-skip
+perl mysql-test-run.pl --timer --force --big-test --testcase-timeout=60 --debug-server  --comment=innodb_64k_size --vardir=var-innodb-64k  --initialize=--innodb-page-size=64k --suite=innodb,innodb_undo,innodb_zip,clone --no-skip
 
 # Run innodb_gis suite including big-test with innodb-page-size=4k
 perl mysql-test-run.pl --timer --force --big-test --testcase-timeout=60 --debug-server  --comment=innodb_gis_4k_size --vardir=var-innodb_gis-4k   --initialize=--innodb-page-size=4k --suite=innodb_gis --no-skip
@@ -134,6 +135,9 @@ perl mysql-test-run.pl --timer  --force  --comment=innodb_undo_32_16k --vardir=v
 
 # Run innodb suites with explicit undo tablespaces >0  and pagesize=64k
 perl mysql-test-run.pl --timer  --force  --comment=innodb_undo_32_64k --vardir=var-innodb-undo-32-64k  --suite=innodb_zip,innodb --initialize=--init-file=std_data/explicit_undo_32.sql --initialize=--innodb-page-size=64k --no-skip
+
+# Run innodb suite with --innodb_sync_debug=1
+perl mysql-test-run.pl --timer  --force  --comment=innodb_sync_debug --vardir=var-innodb-sync-debug  --suite=innodb --mysqld=--innodb_sync_debug=1 --no-skip
 
 ######################END OF SECTION 6 (INNODB(EXTENDED-WEEKLY))#######
 #

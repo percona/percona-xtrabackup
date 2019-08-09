@@ -1058,7 +1058,7 @@ static bool fold_or_simplify(THD *thd, Item *ref_or_field,
   Item *i = nullptr;
   const int is_top_level =
       ft == Item_func::MULT_EQUAL_FUNC ||
-      down_cast<Item_bool_func2 *>(*retcond)->is_top_level_item();
+      down_cast<Item_bool_func2 *>(*retcond)->ignore_unknown();
   if (always_true) {
     if (ref_or_field->maybe_null) {
       if (is_top_level) {
@@ -1078,7 +1078,7 @@ static bool fold_or_simplify(THD *thd, Item *ref_or_field,
         *retcond = nullptr;
         return false;
       }
-      i = new (thd->mem_root) Item_int(1, 1);
+      i = new (thd->mem_root) Item_func_true();
     }
   } else {
     if (is_top_level && !manifest_result) {
@@ -1090,7 +1090,7 @@ static bool fold_or_simplify(THD *thd, Item *ref_or_field,
     if (ref_or_field->maybe_null) {
       i = new (thd->mem_root) Item_func_ne(ref_or_field, ref_or_field);
     } else {
-      i = new (thd->mem_root) Item_int(0, 1);
+      i = new (thd->mem_root) Item_func_false();
     }
   }
 
@@ -1262,7 +1262,7 @@ bool fold_condition(THD *thd, Item *cond, Item **retcond,
 
       /* The test can be elided. If top level, drop the condition */
       if (manifest_result) {
-        const auto i = new (thd->mem_root) Item_int(1);
+        const auto i = new (thd->mem_root) Item_func_true();
         if (i == nullptr) return true;
         thd->change_item_tree(retcond, i);
       } else {
@@ -1370,8 +1370,7 @@ bool fold_condition(THD *thd, Item *cond, Item **retcond,
     return true; /* purecov: inspected */
 
   if (discount_eq && (ft == Item_func::LE_FUNC || ft == Item_func::GE_FUNC)) {
-    bool top_level_item =
-        down_cast<Item_bool_func2 *>(cond)->is_top_level_item();
+    bool ignore_unknown = down_cast<Item_bool_func2 *>(cond)->ignore_unknown();
     if (ft == Item_func::LE_FUNC) {
       if (!(cond = new (thd->mem_root) Item_func_lt(args[0], args[1])))
         return true; /* purecov: inspected */
@@ -1380,7 +1379,7 @@ bool fold_condition(THD *thd, Item *cond, Item **retcond,
         return true; /* purecov: inspected */
     }
     auto cond_alias = down_cast<Item_bool_func2 *>(cond);
-    if (top_level_item) cond_alias->top_level_item();
+    if (ignore_unknown) cond_alias->apply_is_true();
     if (cond->fix_fields(thd, &cond)) return true;
     ft = cond_alias->functype();
     thd->change_item_tree(retcond, cond);

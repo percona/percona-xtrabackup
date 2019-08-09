@@ -1,3 +1,4 @@
+# Set different paths for --datadir
 ###########################################################################
 # Stop the default mtr server
 ###########################################################################
@@ -5,7 +6,6 @@
 ###########################################################################
 # Setup the 5.7 data directory
 ###########################################################################
-# Set different paths for --datadir
 # Copy the remote tablespace & DB zip files from suite location to working location.
 # Check that the file exists in the working folder.
 # Unzip the zip file.
@@ -29,6 +29,7 @@ Pattern "Storage engine \'MyISAM\' does not support system tables\. \[mysql\.col
 Pattern "Storage engine \'MyISAM\' does not support system tables\. \[mysql\.procs_priv\]\." found
 Pattern "Storage engine \'MyISAM\' does not support system tables\. \[mysql\.proxies_priv\]\." found
 Pattern "Column count of mysql\.user is wrong\. Expected 51, found 45\. The table is probably corrupted" found
+Pattern "The current layout of the ACL tables does not conform to the server\'s expected layout" found
 Pattern "ACL table mysql\.role_edges missing\. Some operations may fail\." found
 Pattern "ACL table mysql\.default_roles missing\. Some operations may fail\." found
 Pattern "ACL table mysql\.global_grants missing\. Some operations may fail\." found
@@ -86,10 +87,16 @@ Pattern "\[ERROR\]" not found
 ###########################################################################
 general_log.CSM
 general_log.CSV
-general_log_470.sdi
+general_log_XXX.sdi
 slow_log.CSM
 slow_log.CSV
-slow_log_472.sdi
+slow_log_XXX.sdi
+###########################################################################
+# Cleanup
+###########################################################################
+###########################################################################
+# Bug#29791350: NON-INSTALL IN-PLACE UPGRADE FAILING FROM 5.7.25 TO 8.0.16
+###########################################################################
 ###########################################################################
 # Cleanup
 ###########################################################################

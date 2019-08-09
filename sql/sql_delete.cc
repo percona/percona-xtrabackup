@@ -195,6 +195,12 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     DBUG_RETURN(true); /* purecov: inspected */
 
   /*
+    Reset the field list to remove any hidden fields added by substitute_gc() in
+    the previous execution.
+  */
+  select_lex->all_fields = select_lex->fields_list;
+
+  /*
     See if we can substitute expressions with equivalent generated
     columns in the WHERE and ORDER BY clauses of the DELETE statement.
     It is unclear if this is best to do before or after the other
@@ -216,7 +222,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     HA_EXTRA_NO_IGNORE_DUP_KEY flag should be removed from
     delete_from_single_table(), Query_result_delete::optimize() and
   */
-  if (lex->is_ignore()) table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+  if (lex->is_ignore()) table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
 
   /*
     Test if the user wants to delete all rows and deletion doesn't have
@@ -419,7 +425,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     }
 
     if (select_lex->active_options() & OPTION_QUICK)
-      (void)table->file->extra(HA_EXTRA_QUICK);
+      (void)table->file->ha_extra(HA_EXTRA_QUICK);
 
     unique_ptr_destroy_only<Filesort> fsort;
     READ_RECORD info;
@@ -443,8 +449,8 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
       fsort.reset(new (thd->mem_root) Filesort(&qep_tab, order, HA_POS_ERROR));
       unique_ptr_destroy_only<RowIterator> sort(new (
           &info.sort_holder) SortingIterator(thd, fsort.get(), move(iterator),
+                                             /*force_sort_position=*/true,
                                              /*rows_examined=*/nullptr));
-      qep_tab.keep_current_rowid = true;  // Force filesort to sort by position.
       if (sort->Init()) DBUG_RETURN(true);
       info.iterator = move(sort);
       thd->inc_examined_row_count(examined_rows);
@@ -469,7 +475,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
         and therefore might need delete to be done immediately. So we turn-off
         the batching.
       */
-      (void)table->file->extra(HA_EXTRA_DELETE_CANNOT_BATCH);
+      (void)table->file->ha_extra(HA_EXTRA_DELETE_CANNOT_BATCH);
       will_batch = false;
     } else {
       // No after delete triggers, attempt to start bulk delete
@@ -561,7 +567,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
       deleted_rows = table->file->end_read_removal();
     }
     if (select_lex->active_options() & OPTION_QUICK)
-      (void)table->file->extra(HA_EXTRA_NORMAL);
+      (void)table->file->ha_extra(HA_EXTRA_NORMAL);
   }  // End of scope for Modification_plan
 
 cleanup:
@@ -809,8 +815,9 @@ bool Sql_cmd_delete::execute_inner(THD *thd) {
 ***************************************************************************/
 
 extern "C" int refpos_order_cmp(const void *arg, const void *a, const void *b) {
-  handler *file = (handler *)arg;
-  return file->cmp_ref((const uchar *)a, (const uchar *)b);
+  const handler *file = static_cast<const handler *>(arg);
+  return file->cmp_ref(static_cast<const uchar *>(a),
+                       static_cast<const uchar *>(b));
 }
 
 bool Query_result_delete::prepare(THD *thd, List<Item> &, SELECT_LEX_UNIT *u) {
@@ -895,9 +902,9 @@ bool Query_result_delete::optimize() {
         table and therefore might need delete to be done immediately.
         So we turn-off the batching.
       */
-      (void)table->file->extra(HA_EXTRA_DELETE_CANNOT_BATCH);
+      (void)table->file->ha_extra(HA_EXTRA_DELETE_CANNOT_BATCH);
     }
-    if (thd->lex->is_ignore()) table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
+    if (thd->lex->is_ignore()) table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
     table->prepare_for_position();
     table->mark_columns_needed_for_delete(thd);
     if (thd->is_error()) DBUG_RETURN(true);
@@ -1225,6 +1232,7 @@ bool Query_result_delete::send_eof(THD *thd) {
         thd->clear_error();
       else
         errcode = query_error_code(thd, killed_status == THD::NOT_KILLED);
+      thd->thread_specific_used = true;
       if (thd->binlog_query(THD::ROW_QUERY_TYPE, thd->query().str,
                             thd->query().length, transactional_table_map != 0,
                             false, false, errcode) &&

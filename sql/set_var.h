@@ -37,7 +37,8 @@
 
 #include "lex_string.h"
 #include "m_ctype.h"
-#include "my_getopt.h"  // get_opt_arg_type
+#include "my_getopt.h"    // get_opt_arg_type
+#include "my_hostname.h"  // HOSTNAME_LENGTH
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_systime.h"  // my_micro_time()
@@ -151,9 +152,9 @@ class sys_var {
   const char *const deprecation_substitute;
   bool is_os_charset;  ///< true if the value is in character_set_filesystem
   struct get_opt_arg_source source;
-  char user[USERNAME_CHAR_LENGTH]; /* which user  has set this variable */
-  char host[HOSTNAME_LENGTH];      /* host on which this variable is set */
-  ulonglong timestamp;             /* represents when this variable was set */
+  char user[USERNAME_CHAR_LENGTH + 1]; /* which user  has set this variable */
+  char host[HOSTNAME_LENGTH + 1];      /* host on which this variable is set */
+  ulonglong timestamp; /* represents when this variable was set */
 
  public:
   sys_var(sys_var_chain *chain, const char *name_arg, const char *comment,
@@ -177,9 +178,9 @@ class sys_var {
   virtual sys_var_pluginvar *cast_pluginvar() { return 0; }
 
   bool check(THD *thd, set_var *var);
-  uchar *value_ptr(THD *running_thd, THD *target_thd, enum_var_type type,
-                   LEX_STRING *base);
-  uchar *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+  const uchar *value_ptr(THD *running_thd, THD *target_thd, enum_var_type type,
+                         LEX_STRING *base);
+  const uchar *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   virtual void update_default(longlong new_def_value) {
     option.def_value = new_def_value;
   }
@@ -200,13 +201,18 @@ class sys_var {
   void set_source(enum_variable_source src) {
     option.arg_source->m_source = src;
   }
-  void set_source_name(const char *path) {
-    strcpy(option.arg_source->m_path_name, path);
+  bool set_source_name(const char *path) {
+    return set_and_truncate(option.arg_source->m_path_name, path,
+                            sizeof(option.arg_source->m_path_name));
   }
-  void set_user(const char *usr) { strcpy(user, usr); }
+  bool set_user(const char *usr) {
+    return set_and_truncate(user, usr, sizeof(user));
+  }
   const char *get_user() { return user; }
   const char *get_host() { return host; }
-  void set_host(const char *hst) { strcpy(host, hst); }
+  bool set_host(const char *hst) {
+    return set_and_truncate(host, hst, sizeof(host));
+  }
   ulonglong get_timestamp() const { return timestamp; }
   void set_user_host(THD *thd);
   my_option *get_option() { return &option; }
@@ -304,6 +310,14 @@ class sys_var {
   void save_default(THD *thd, set_var *var) { global_save_default(thd, var); }
 
  private:
+  inline static bool set_and_truncate(char *dst, const char *string,
+                                      size_t sizeof_dst) {
+    size_t string_length = strlen(string), length;
+    length = std::min(sizeof_dst - 1, string_length);
+    memcpy(dst, string, length);
+    dst[length] = 0;
+    return length < string_length;  // truncated
+  }
   virtual bool do_check(THD *thd, set_var *var) = 0;
   /**
     save the session default value of the variable in var
@@ -322,9 +336,9 @@ class sys_var {
     It must be of show_val_type type (bool for SHOW_BOOL, int for SHOW_INT,
     longlong for SHOW_LONGLONG, etc).
   */
-  virtual uchar *session_value_ptr(THD *running_thd, THD *target_thd,
-                                   LEX_STRING *base);
-  virtual uchar *global_value_ptr(THD *thd, LEX_STRING *base);
+  virtual const uchar *session_value_ptr(THD *running_thd, THD *target_thd,
+                                         LEX_STRING *base);
+  virtual const uchar *global_value_ptr(THD *thd, LEX_STRING *base);
 
   /**
     A pointer to a storage area of the variable, to the raw data.

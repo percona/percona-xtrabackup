@@ -141,18 +141,14 @@ static void row_mysql_delay_if_needed(void) {
   }
 }
 
-/** Frees the blob heap in prebuilt when no longer needed. */
-void row_mysql_prebuilt_free_blob_heap(
-    row_prebuilt_t *prebuilt) /*!< in: prebuilt struct of a
-                              ha_innobase:: table handle */
-{
+void row_mysql_prebuilt_free_blob_heap(row_prebuilt_t *prebuilt) {
   DBUG_ENTER("row_mysql_prebuilt_free_blob_heap");
 
   DBUG_PRINT("row_mysql_prebuilt_free_blob_heap",
              ("blob_heap freeing: %p", prebuilt->blob_heap));
 
   mem_heap_free(prebuilt->blob_heap);
-  prebuilt->blob_heap = NULL;
+  prebuilt->blob_heap = nullptr;
   DBUG_VOID_RETURN;
 }
 
@@ -237,15 +233,8 @@ void row_mysql_store_blob_ref(
   memcpy(dest + col_len - 8, &data, sizeof data);
 }
 
-/** Reads a reference to a BLOB in the MySQL format.
- @return pointer to BLOB data */
-const byte *row_mysql_read_blob_ref(
-    ulint *len,      /*!< out: BLOB length */
-    const byte *ref, /*!< in: BLOB reference in the
-                     MySQL format */
-    ulint col_len)   /*!< in: BLOB reference length
-                     (not BLOB length) */
-{
+const byte *row_mysql_read_blob_ref(ulint *len, const byte *ref,
+                                    ulint col_len) {
   byte *data;
 
   *len = mach_read_from_n_little_endian(ref, col_len - 8);
@@ -579,17 +568,24 @@ static void row_mysql_convert_row_to_innobase(
   ulint i;
   ulint n_col = 0;
   ulint n_v_col = 0;
+  ulint n_m_v_col = 0;
 
   ut_ad(prebuilt->template_type == ROW_MYSQL_WHOLE_ROW);
   ut_ad(prebuilt->mysql_template);
 
   for (i = 0; i < prebuilt->n_template; i++) {
+    bool is_multi_val = false;
+
     templ = prebuilt->mysql_template + i;
 
     if (templ->is_virtual) {
       ut_ad(n_v_col < dtuple_get_n_v_fields(row));
       dfield = dtuple_get_nth_v_field(row, n_v_col);
       n_v_col++;
+      if (dfield_is_multi_value(dfield)) {
+        is_multi_val = true;
+        n_m_v_col++;
+      }
     } else {
       dfield = dtuple_get_nth_field(row, n_col);
       n_col++;
@@ -604,25 +600,43 @@ static void row_mysql_convert_row_to_innobase(
 
         dfield_set_null(dfield);
 
-        goto next_column;
+        continue;
       }
     }
 
-    row_mysql_store_col_in_innobase_format(
-        dfield, prebuilt->ins_upd_rec_buff + templ->mysql_col_offset,
-        TRUE, /* MySQL row format data */
-        mysql_rec + templ->mysql_col_offset, templ->mysql_col_len,
-        dict_table_is_comp(prebuilt->table));
+    if (is_multi_val) {
+      dict_v_col_t *v_col =
+          dict_table_get_nth_v_col(prebuilt->table, n_v_col - 1);
 
-    /* server has issue regarding handling BLOB virtual fields,
-    and we need to duplicate it with our own memory here */
-    if (templ->is_virtual && DATA_LARGE_MTYPE(dfield_get_type(dfield)->mtype)) {
-      if (*blob_heap == NULL) {
-        *blob_heap = mem_heap_create(dfield->len);
+      innobase_get_multi_value(prebuilt->m_mysql_table, v_col->m_col.ind,
+                               dfield, &prebuilt->mv_data[n_m_v_col - 1], 0,
+                               dict_table_is_comp(prebuilt->table),
+                               prebuilt->heap);
+
+      /* For multi-value data, the deep copy may cost too much.
+      So ideally this should be optimized by keeping and reading the
+      raw data. However, once more virtual column data needs to be
+      calculated later, for example, insert by modify, server will
+      overwrites the memory used here. So the safest way is a deep
+      copy. */
+      dfield_multi_value_dup(dfield, prebuilt->heap);
+    } else {
+      row_mysql_store_col_in_innobase_format(
+          dfield, prebuilt->ins_upd_rec_buff + templ->mysql_col_offset,
+          TRUE, /* MySQL row format data */
+          mysql_rec + templ->mysql_col_offset, templ->mysql_col_len,
+          dict_table_is_comp(prebuilt->table));
+
+      /* server has issue regarding handling BLOB virtual fields,
+      and we need to duplicate it with our own memory here */
+      if (templ->is_virtual &&
+          DATA_LARGE_MTYPE(dfield_get_type(dfield)->mtype)) {
+        if (*blob_heap == NULL) {
+          *blob_heap = mem_heap_create(dfield->len);
+        }
+        dfield_dup(dfield, *blob_heap);
       }
-      dfield_dup(dfield, *blob_heap);
     }
-  next_column:;
   }
 
   /* If there is a FTS doc id column and it is not user supplied (
@@ -983,13 +997,7 @@ void row_prebuilt_free(
   DBUG_VOID_RETURN;
 }
 
-/** Updates the transaction pointers in query graphs stored in the prebuilt
- struct. */
-void row_update_prebuilt_trx(
-    row_prebuilt_t *prebuilt, /*!< in/out: prebuilt struct
-                              in MySQL handle */
-    trx_t *trx)               /*!< in: transaction handle */
-{
+void row_update_prebuilt_trx(row_prebuilt_t *prebuilt, trx_t *trx) {
   ut_a(trx->magic_n == TRX_MAGIC_N);
   ut_a(prebuilt->magic_n == ROW_PREBUILT_ALLOCATED);
   ut_a(prebuilt->magic_n2 == ROW_PREBUILT_ALLOCATED);
@@ -1022,6 +1030,8 @@ static dtuple_t *row_get_prebuilt_insert_row(
   ut_ad(prebuilt && table && prebuilt->trx);
 
   if (prebuilt->ins_node != 0) {
+    prebuilt->ins_node->ins_multi_val_pos = 0;
+
     /* Check if indexes have been dropped or added and we
     may need to rebuild the row insert template. */
 
@@ -1049,6 +1059,15 @@ static dtuple_t *row_get_prebuilt_insert_row(
   if (prebuilt->ins_upd_rec_buff == 0) {
     prebuilt->ins_upd_rec_buff = static_cast<byte *>(
         mem_heap_alloc(prebuilt->heap, prebuilt->mysql_row_len));
+  }
+
+  if (table->n_m_v_cols > 0 && prebuilt->mv_data == nullptr) {
+    prebuilt->mv_data = static_cast<multi_value_data *>(mem_heap_zalloc(
+        prebuilt->heap, table->n_m_v_cols * sizeof(*prebuilt->mv_data)));
+    for (ulint i = 0; i < table->n_m_v_cols; i++) {
+      prebuilt->mv_data[i].alloc(multi_value_data::s_default_allocate_num,
+                                 false, prebuilt->heap);
+    }
   }
 
   dtuple_t *row;
@@ -1684,11 +1703,7 @@ dberr_t row_insert_for_mysql(const byte *mysql_rec, row_prebuilt_t *prebuilt) {
   }
 }
 
-/** Builds a dummy query graph used in selects. */
-void row_prebuild_sel_graph(
-    row_prebuilt_t *prebuilt) /*!< in: prebuilt struct in MySQL
-                              handle */
-{
+void row_prebuild_sel_graph(row_prebuilt_t *prebuilt) {
   sel_node_t *node;
 
   ut_ad(prebuilt && prebuilt->trx);
@@ -1741,6 +1756,9 @@ upd_node_t *row_create_update_node_for_mysql(
 
   node->table_sym = NULL;
   node->col_assign_list = NULL;
+
+  node->del_multi_val_pos = 0;
+  node->upd_multi_val_pos = 0;
 
   DBUG_RETURN(node);
 }
@@ -2162,7 +2180,7 @@ static dberr_t row_del_upd_for_mysql_using_cursor(const byte *mysql_rec,
     for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes); index != NULL;
          index = UT_LIST_GET_NEXT(indexes, index)) {
       key_changed = row_upd_changes_ord_field_binary(
-          index, node->update, thr, node->upd_row, node->upd_ext);
+          index, node->update, thr, node->upd_row, node->upd_ext, nullptr);
 
       if (key_changed) {
         break;
@@ -2271,6 +2289,8 @@ static dberr_t row_update_for_mysql_using_upd_graph(const byte *mysql_rec,
   }
 
   node = prebuilt->upd_node;
+  node->del_multi_val_pos = 0;
+  node->upd_multi_val_pos = 0;
 
   clust_index = table->first_index();
 
@@ -3905,7 +3925,7 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
   ut_ad(!(table->stats_bg_flag & BG_STAT_IN_PROGRESS));
 
   if (!table->is_temporary() && !table->is_fts_aux()) {
-    if (srv_threads.m_dict_stats_thread_active) {
+    if (srv_thread_is_active(srv_threads.m_dict_stats)) {
       dict_stats_recalc_pool_del(table);
     }
 
@@ -4165,14 +4185,8 @@ funct_exit:
   DBUG_RETURN(err);
 }
 
-/** Checks if a table name contains the string "/#sql" which denotes temporary
- tables in MySQL.
- @return true if temporary table */
 MY_ATTRIBUTE((warn_unused_result))
-bool row_is_mysql_tmp_table_name(
-    const char *name) /*!< in: table name in the form
-                      'database/tablename' */
-{
+bool row_is_mysql_tmp_table_name(const char *name) {
   return (strstr(name, "/" TEMP_FILE_PREFIX) != NULL);
   /* return(strstr(name, "/@0023sql") != NULL); */
 }
@@ -4280,9 +4294,7 @@ dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
           << " exists in the InnoDB internal data"
              " dictionary though MySQL is trying to rename"
              " table "
-          << ut_get_name(trx, old_name)
-          << " to it. Have you deleted the .frm file and"
-             " not used DROP TABLE?";
+          << ut_get_name(trx, old_name) << " to it.";
       ib::info(ER_IB_MSG_1001) << TROUBLESHOOTING_MSG;
       ib::error(ER_IB_MSG_1002)
           << "If table " << ut_get_name(trx, new_name)
@@ -4292,8 +4304,7 @@ dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
              " automatically when the queries end. You can"
              " drop the orphaned table inside InnoDB by"
              " creating an InnoDB table with the same name"
-             " in another database and copying the .frm file"
-             " to the current database. Then MySQL thinks"
+             " in another database. Then MySQL thinks"
              " the table exists, and DROP TABLE will"
              " succeed.";
     }
@@ -4404,42 +4415,85 @@ funct_exit:
 }
 
 /** Read the total number of records in a consistent view.
-@param[in,out]  reader   Index scanner
-@param[out]     n_rows   Number of rows seen.
+@param[in,out]  trx             Covering transaction.
+@param[in]  indexes             Indexes to scan.
+@param[in]  max_threads         Maximum number of threads to use.
+@param[out] n_rows              Number of rows seen.
 @return DB_SUCCESS or error code. */
-static dberr_t parallel_select_count_star(Key_reader &reader, ulint *n_rows) {
-  Counter::Shards n_recs;
+dberr_t row_mysql_parallel_select_count_star(
+    trx_t *trx, std::vector<dict_index_t *> &indexes, size_t max_threads,
+    ulint *n_rows) {
+  ut_a(!indexes.empty());
 
+  Counter::Shards n_recs;
   Counter::clear(n_recs);
 
-  const buf_block_t *prev_block = nullptr;
+  struct Check_interrupt {
+    byte m_pad[INNOBASE_CACHE_LINE_SIZE - (sizeof(size_t) + sizeof(void *))];
+    size_t m_count{};
+    const buf_block_t *m_prev_block{};
+  };
 
-  dberr_t err =
-      reader.read([&](size_t id, const buf_block_t *block, const rec_t *rec,
-                      dict_index_t *index, row_prebuilt_t *prebuilt) {
-        Counter::inc(n_recs, id);
+  Check_interrupt checker[Parallel_reader::MAX_THREADS] = {};
 
-        /* Only check the THD state for the first thread. */
-        if (id == 0 && block != prev_block) {
-          prev_block = block;
-          if (trx_is_interrupted(reader.trx())) {
-            return (DB_INTERRUPTED);
-          }
+  Parallel_reader reader(max_threads);
+
+  ib::info() << "Parallel scan: " << max_threads;
+
+  const Parallel_reader::Scan_range FULL_SCAN;
+
+  // clang-format off
+  bool success{};
+
+  for (auto index : indexes) {
+    Parallel_reader::Config config(FULL_SCAN, index);
+
+    success =
+      reader.add_scan(trx, config, [&](const Parallel_reader::Ctx *ctx) {
+      Counter::inc(n_recs, ctx->m_thread_id);
+
+      auto &check = checker[ctx->m_thread_id];
+
+      if (ctx->m_block != check.m_prev_block) {
+        check.m_prev_block = ctx->m_block;
+
+        ++check.m_count;
+
+        if (!(check.m_count % 64) && trx_is_interrupted(trx)) {
+          return (DB_INTERRUPTED);
         }
+      }
+      return (DB_SUCCESS);
+    });
 
-        return (DB_SUCCESS);
-      });
+    if (!success) {
+      break;
+    }
+  }
+  // clang-format on
 
-  *n_rows = Counter::total(n_recs);
+  auto err = success ? reader.run() : DB_ERROR;
+
+  if (err == DB_SUCCESS) {
+    Counter::for_each(n_recs, [=](const Counter::Type n) {
+      if (n > 0) {
+        *n_rows += n;
+        ib::info() << "n: " << n;
+      }
+    });
+  }
 
   return (err);
 }
 
 /** Scan the rows in parallel.
-@param[in,out]  reader   Index scanner
-@param[out]     n_rows   Number of rows seen.
+@param[in,out] trx              Transaction covering the scan.
+@param[in] index                (Cluster) Index to scan.
+@param[in] max_threads          Maximum threads to use for the scan.
+@param[out] n_rows              Number of rows seen.
 @return DB_SUCCESS or error code. */
-static dberr_t parallel_check_table(Key_reader &reader, ulint *n_rows) {
+static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
+                                    size_t max_threads, ulint *n_rows) {
   Counter::Shards n_recs{};
   Counter::Shards n_dups{};
   Counter::Shards n_corrupt{};
@@ -4453,29 +4507,31 @@ static dberr_t parallel_check_table(Key_reader &reader, ulint *n_rows) {
   using Blocks =
       std::vector<const buf_block_t *, ut_allocator<const buf_block_t *>>;
 
-  dberr_t err;
-
   Tuples prev_tuples;
-
-  prev_tuples.resize(reader.n_threads());
-
   Blocks prev_blocks;
-
-  prev_blocks.resize(reader.n_threads());
 
   Heaps heaps;
 
-  for (size_t i = 0; i < reader.n_threads(); ++i) {
+  for (size_t i = 0; i < max_threads; ++i) {
     heaps.push_back(mem_heap_create(100));
   }
 
   /* Check for transaction interrupted every 1000 rows. */
   size_t counter = 1000;
 
-  const auto index = reader.index();
+  Parallel_reader reader(max_threads);
 
-  err = reader.read([&](size_t id, const buf_block_t *block, const rec_t *rec,
-                        dict_index_t *index, row_prebuilt_t *prebuilt) {
+  Parallel_reader::Scan_range full_scan;
+
+  Parallel_reader::Config config(full_scan, index);
+
+  // clang-format off
+  auto success = reader.add_scan(
+    trx, config, [&](const Parallel_reader::Ctx* ctx) {
+
+    const auto rec = ctx->m_rec;
+    const auto block = ctx->m_block;
+    const auto id = ctx->m_thread_id;
 
     Counter::inc(n_recs, id);
 
@@ -4483,7 +4539,7 @@ static dberr_t parallel_check_table(Key_reader &reader, ulint *n_rows) {
     if (id == 0) {
       --counter;
 
-      if (counter == 0 && trx_is_interrupted(reader.trx())) {
+      if (counter == 0 && trx_is_interrupted(trx)) {
         return (DB_INTERRUPTED);
       }
 
@@ -4491,6 +4547,13 @@ static dberr_t parallel_check_table(Key_reader &reader, ulint *n_rows) {
     }
 
     auto heap = heaps[id];
+
+    if (ctx->m_start) {
+      /* Starting scan of a new range. We need to reset the previous tuple
+      because we don't know what the value of the previous last tuple was. */
+      prev_tuples[id] = nullptr;
+    }
+
     auto prev_tuple = prev_tuples[id];
 
     auto offsets = rec_get_offsets(rec, index, nullptr, ULINT_UNDEFINED, &heap);
@@ -4498,16 +4561,18 @@ static dberr_t parallel_check_table(Key_reader &reader, ulint *n_rows) {
     if (prev_tuple != nullptr) {
       ulint matched_fields = 0;
 
-      auto cmp = cmp_dtuple_rec_with_match(prev_tuple, rec, index, offsets,
-                                           &matched_fields);
+      auto cmp = prev_tuple->compare(rec, index, offsets, &matched_fields);
+
       /* In a unique secondary index we allow equal key values if
       they contain SQL NULLs */
 
       bool contains_null = false;
-      for (size_t i = 0; i < dict_index_get_n_ordering_defined_by_user(index);
-           ++i) {
-        if (UNIV_SQL_NULL ==
-            dfield_get_len(dtuple_get_nth_field(prev_tuple, i))) {
+      const auto n_ordering = dict_index_get_n_ordering_defined_by_user(index);
+
+      for (size_t i = 0; i < n_ordering; ++i) {
+        const auto nth_field = dtuple_get_nth_field(prev_tuple, i);
+
+        if (UNIV_SQL_NULL == dfield_get_len(nth_field)) {
           contains_null = true;
           break;
         }
@@ -4544,6 +4609,19 @@ static dberr_t parallel_check_table(Key_reader &reader, ulint *n_rows) {
 
     return (DB_SUCCESS);
   });
+
+  // clang-format off
+
+  dberr_t err;
+
+  if (success) {
+    prev_tuples.resize(max_threads);
+    prev_blocks.resize(max_threads);
+
+    err = reader.run();
+  } else {
+    err = DB_ERROR;
+  }
 
   for (auto heap : heaps) {
     mem_heap_free(heap);
@@ -4593,23 +4671,34 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
 
   DBUG_EXECUTE_IF("ib_disable_parallel_read", goto skip_parallel_read;);
 
-  if (prebuilt->select_lock_type == LOCK_NONE && index->is_clustered() &&
+  if (prebuilt->trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
+      prebuilt->select_lock_type == LOCK_NONE && index->is_clustered() &&
       (check_keys || prebuilt->trx->mysql_n_tables_locked == 0) &&
-      !prebuilt->ins_sel_stmt && n_threads > 1) {
-    /* No INSERT INTO  ... SELECT  and non-locking selects only. */
-    trx_start_if_not_started_xa(prebuilt->trx, false);
+      !prebuilt->ins_sel_stmt) {
 
-    trx_assign_read_view(prebuilt->trx);
+    n_threads = Parallel_reader::available_threads(n_threads);
 
-    auto trx = prebuilt->trx;
+    if (n_threads > 0) {
+      /* No INSERT INTO  ... SELECT  and non-locking selects only. */
+      trx_start_if_not_started_xa(prebuilt->trx, false);
 
-    Key_reader reader(prebuilt->table, trx, index, prebuilt, n_threads);
+      trx_assign_read_view(prebuilt->trx);
 
-    if (!check_keys) {
-      return (parallel_select_count_star(reader, n_rows));
+      auto trx = prebuilt->trx;
+
+      ut_a(prebuilt->table == index->table);
+
+      std::vector<dict_index_t*> indexes;
+
+      indexes.push_back(index);
+
+      if (!check_keys) {
+        return (row_mysql_parallel_select_count_star(trx, indexes, n_threads,
+                                                     n_rows));
+      }
+
+      return (parallel_check_table(trx, index, n_threads, n_rows));
     }
-
-    return (parallel_check_table(reader, n_rows));
   }
 
 #ifdef UNIV_DEBUG
@@ -4685,8 +4774,7 @@ loop:
   if (prev_entry != NULL) {
     matched_fields = 0;
 
-    auto cmp = cmp_dtuple_rec_with_match(prev_entry, rec, index, offsets,
-                                         &matched_fields);
+    auto cmp = prev_entry->compare(rec, index, offsets, &matched_fields);
     contains_null = false;
 
     /* In a unique secondary index we allow equal key values if

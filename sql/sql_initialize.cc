@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,6 +61,8 @@ char
     insert_user_buffer[sizeof(INSERT_USER_CMD) + GENERATED_PASSWORD_LENGTH * 2];
 
 bool opt_initialize_insecure = false;
+/** True if --initialize has actually created the directory */
+bool mysql_initialize_directory_freshly_created = false;
 
 static const char *initialization_data[] = {
     "FLUSH PRIVILEGES", insert_user_buffer,
@@ -253,13 +255,10 @@ bool initialize_create_data_directory(const char *data_home) {
     char path[FN_REFLEN];
     File fd;
 
-    /*
-      Ignore files starting with . and in the --ignore-db list.
-      This is exactly how find_files() in sql_show.cc operates.
-    */
+    /* Ignore files that start with . or == 'lost+found'. */
     for (uint i = 0; i < dir->number_off_files; i++) {
       FILEINFO *file = dir->dir_entry + i;
-      if (file->name[0] != '.') {
+      if (file->name[0] != '.' && strcmp(file->name, "lost+found")) {
         no_files = false;
         break;
       }
@@ -297,5 +296,6 @@ bool initialize_create_data_directory(const char *data_home) {
   if (my_mkdir(data_home, flags, MYF(MY_WME)))
     return true; /* purecov: inspected */
 
+  mysql_initialize_directory_freshly_created = true;
   return false;
 }

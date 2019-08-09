@@ -43,10 +43,12 @@
   to global instances we do the next best thing and make these static so that
   the visibility is confined to the current file
 */
-static char *opt_ssl_ca = NULL, *opt_ssl_capath = NULL, *opt_ssl_cert = NULL,
-            *opt_ssl_cipher = NULL, *opt_tls_ciphersuites = NULL,
-            *opt_ssl_key = NULL, *opt_ssl_crl = NULL, *opt_ssl_crlpath = NULL,
-            *opt_tls_version = NULL;
+static const char *opt_ssl_ca = nullptr;
+static const char *opt_ssl_key = nullptr;
+static const char *opt_ssl_cert = nullptr;
+static char *opt_ssl_capath = NULL, *opt_ssl_cipher = NULL,
+            *opt_tls_ciphersuites = NULL, *opt_ssl_crl = NULL,
+            *opt_ssl_crlpath = NULL, *opt_tls_version = NULL;
 
 static PolyLock_mutex lock_ssl_ctx(&LOCK_tls_ctx_options);
 
@@ -515,6 +517,36 @@ bool SslAcceptorContext::singleton_init(bool use_ssl_arg) {
   return false;
 }
 
+/**
+  Verifies the server certificate for formal validity and against the
+    CA certificates if specified.
+
+  This verifies things like expiration dates, full certificate chains
+  present etc.
+
+  @param ctx The listening SSL context with all certificates installed
+  @param ssl An SSL handle to extract the certificate from.
+  @retval NULL No errors found
+  @retval non-null The text of the error from the library
+*/
+#ifndef HAVE_WOLFSSL
+static const char *verify_store_cert(SSL_CTX *ctx, SSL *ssl) {
+  const char *result = NULL;
+  X509 *cert = SSL_get_certificate(ssl);
+  X509_STORE_CTX *sctx = X509_STORE_CTX_new();
+
+  if (NULL != sctx &&
+      0 != X509_STORE_CTX_init(sctx, SSL_CTX_get_cert_store(ctx), cert, NULL) &&
+      !X509_verify_cert(sctx)) {
+    result = X509_verify_cert_error_string(X509_STORE_CTX_get_error(sctx));
+  }
+  if (sctx != NULL) X509_STORE_CTX_free(sctx);
+  return result;
+}
+#else  /* HAVE_WOLFSSL */
+static const char *verify_store_cert(SSL_CTX *, SSL *) { return NULL; }
+#endif /* HAVE_WOLFSSL */
+
 SslAcceptorContext::SslAcceptorContext(bool use_ssl_arg, bool report_ssl_error,
                                        enum enum_ssl_init_error *out_error)
     : ssl_acceptor_fd(nullptr), acceptor(nullptr) {
@@ -536,6 +568,14 @@ SslAcceptorContext::SslAcceptorContext(bool use_ssl_arg, bool report_ssl_error,
       LogErr(WARNING_LEVEL, ER_SSL_LIBRARY_ERROR, sslGetErrString(error));
 
     if (ssl_acceptor_fd) acceptor = SSL_new(ssl_acceptor_fd->ssl_context);
+
+    if (ssl_acceptor_fd && acceptor) {
+      const char *error =
+          verify_store_cert(ssl_acceptor_fd->ssl_context, acceptor);
+
+      if (error && report_ssl_error)
+        LogErr(WARNING_LEVEL, ER_SSL_SERVER_CERT_VERIFY_FAILED, error);
+    }
   }
   if (out_error) *out_error = error;
 }

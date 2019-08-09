@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ SET (DEB_RULES_DEBUG_CMAKE
 		-DINSTALL_LIBDIR=lib/$(DEB_HOST_MULTIARCH) \\
 		-DINSTALL_MANDIR=share/man \\
 		-DINSTALL_MYSQLTESTDIR=lib/mysql-test \\
-		-DINSTALL_PLUGINDIR=lib/mysql/plugin \\
+		-DINSTALL_PLUGINDIR=lib/mysql/plugin/debug \\
 		-DINSTALL_SBINDIR=sbin \\
 		-DSYSCONFDIR=/etc/mysql \\
 		-DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \\
@@ -86,6 +86,7 @@ usr/lib/mysql/plugin/debug/libmemcached.so
 usr/lib/mysql/plugin/debug/libpluginmecab.so
 usr/lib/mysql/plugin/debug/locking_service.so
 usr/lib/mysql/plugin/debug/mypluglib.so
+usr/lib/mysql/plugin/debug/mysql_clone.so
 usr/lib/mysql/plugin/debug/mysql_no_login.so
 usr/lib/mysql/plugin/debug/rewriter.so
 usr/lib/mysql/plugin/debug/semisync_master.so
@@ -110,6 +111,7 @@ usr/lib/mysql/plugin/debug/component_test_pfs_notification.so
 usr/lib/mysql/plugin/debug/component_test_pfs_resource_group.so
 usr/lib/mysql/plugin/debug/component_test_udf_registration.so
 usr/lib/mysql/plugin/debug/component_test_host_application_signal.so
+usr/lib/mysql/plugin/debug/component_test_mysql_current_thread_reader.so
 usr/lib/mysql/plugin/debug/component_test_mysql_runtime_error.so
 usr/lib/mysql/plugin/debug/component_udf_reg_3_func.so
 usr/lib/mysql/plugin/debug/component_udf_reg_avg_func.so
@@ -174,4 +176,42 @@ usr/lib/mysql/plugin/debug/pfs_example_plugin_employee.so
 usr/lib/mysql/plugin/debug/component_pfs_example.so
 usr/lib/mysql/plugin/debug/component_mysqlx_global_reset.so
 usr/lib/mysql/plugin/debug/component_test_audit_api_message.so
+")
+
+IF (DEB_PRODUCT STREQUAL "commercial")
+  # Add debug versions of commercial plugins, if enabled
+  IF (DEFINED DEB_WITH_DEBUG)
+    SET (DEB_INSTALL_DEBUG_SERVER_PLUGINS "${DEB_INSTALL_DEBUG_SERVER_PLUGINS}
+usr/lib/mysql/plugin/debug/audit_log.so
+usr/lib/mysql/plugin/debug/authentication_pam.so
+usr/lib/mysql/plugin/debug/authentication_ldap_sasl.so
+usr/lib/mysql/plugin/debug/authentication_ldap_simple.so
+usr/lib/mysql/plugin/debug/data_masking.so
+usr/lib/mysql/plugin/debug/keyring_okv.so
+usr/lib/mysql/plugin/debug/keyring_encrypted_file.so
+usr/lib/mysql/plugin/debug/openssl_udf.so
+usr/lib/mysql/plugin/debug/thread_pool.so
+usr/lib/mysql/plugin/debug/firewall.so
+usr/lib/mysql/plugin/debug/component_test_page_track_component.so
+")
+  ENDIF()
+  IF (DEB_AWS_SDK)
+    SET (DEB_INSTALL_DEBUG_SERVER_PLUGINS "${DEB_INSTALL_DEBUG_SERVER_PLUGINS}
+usr/lib/mysql/plugin/debug/keyring_aws.so
+")
+  ENDIF()
+ENDIF()
+SET (DEB_CONTROL_DEBUG
+"
+Package: mysql-${DEB_PRODUCTNAME}-server-debug
+Architecture: any
+Section: debug
+Depends: \${misc:Depends}
+Description: Debug binaries for MySQL Server
+
+Package: mysql-${DEB_PRODUCTNAME}-test-debug
+Architecture: any
+Section: debug
+Depends: mysql-${DEB_PRODUCTNAME}-test, \${misc:Depends}
+Description: Debug binaries for MySQL Testsuite
 ")

@@ -598,8 +598,8 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
   if (lower_case_table_names && dbname != any_db)
     my_casedn_str(files_charset_info, dbname);
 
-  if (sctx->check_access(DB_ACLS, orig_dbname))
-    db_access = DB_ACLS;
+  if (sctx->check_access(DB_OP_ACLS, orig_dbname))
+    db_access = DB_OP_ACLS;
   else {
     if (sctx->get_active_roles()->size() > 0 && dbname != 0) {
       db_access = sctx->db_acl({dbname, strlen(dbname)});
@@ -609,7 +609,7 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
                    sctx->master_access(dbname ? dbname : ""));
     }
   }
-  if (!(db_access & DB_ACLS) && check_grant_db(thd, dbname)) {
+  if (!(db_access & DB_OP_ACLS) && check_grant_db(thd, dbname)) {
     my_error(ER_DBACCESS_DENIED_ERROR, MYF(0), sctx->priv_user().str,
              sctx->host_or_ip().str, dbname);
     query_logger.general_log_print(
@@ -620,7 +620,6 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
 
   bool is_encrypted_schema = false;
   if (is_infoschema_db(dbname)) {
-    dbname = INFORMATION_SCHEMA_NAME.str;
     create.default_table_charset = system_charset_info;
   } else {
     dd::Schema_MDL_locker mdl_handler(thd);
@@ -946,8 +945,6 @@ static void append_directory(THD *thd, String *packet, const char *dir_type,
   }
 }
 
-#define LIST_PROCESS_HOST_LEN 64
-
 /**
   Print "ON UPDATE" clause of a field into a string.
 
@@ -1136,7 +1133,7 @@ bool store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
     it also saves a few bytes of the binary log.
    */
   if (show_database) {
-    const LEX_STRING *const db =
+    const LEX_CSTRING *const db =
         table_list->schema_table ? &INFORMATION_SCHEMA_NAME : &table->s->db;
     if (!thd->db().str || strcmp(db->str, thd->db().str)) {
       append_identifier(thd, packet, db->str, db->length);
@@ -1164,7 +1161,7 @@ bool store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
                                   &table_obj))
       DBUG_RETURN(true);
     DBUG_EXECUTE_IF("sim_acq_fail_in_store_ci", {
-      my_error(ER_UNKNOWN_ERROR_NUMBER, MYF(0), 42);
+      my_error(ER_DA_UNKNOWN_ERROR_NUMBER, MYF(0), 42);
       DBUG_RETURN(true);
     });
   }
@@ -1890,9 +1887,8 @@ class List_process_list : public Do_THD_Impl {
     if (inspect_thd->peer_port &&
         (inspect_sctx_host.length || inspect_sctx->ip().length) &&
         m_client_thd->security_context()->host_or_ip().str[0]) {
-      if ((thd_info->host =
-               (char *)m_client_thd->alloc(LIST_PROCESS_HOST_LEN + 1)))
-        snprintf((char *)thd_info->host, LIST_PROCESS_HOST_LEN, "%s:%u",
+      if ((thd_info->host = (char *)m_client_thd->alloc(HOST_AND_PORT_LENGTH)))
+        snprintf((char *)thd_info->host, HOST_AND_PORT_LENGTH, "%s:%u",
                  inspect_sctx_host_or_ip.str, inspect_thd->peer_port);
     } else
       thd_info->host = m_client_thd->mem_strdup(
@@ -1965,7 +1961,7 @@ void mysqld_list_processes(THD *thd, const char *user, bool verbose) {
   field_list.push_back(
       new Item_int(NAME_STRING("Id"), 0, MY_INT64_NUM_DECIMAL_DIGITS));
   field_list.push_back(new Item_empty_string("User", USERNAME_CHAR_LENGTH));
-  field_list.push_back(new Item_empty_string("Host", LIST_PROCESS_HOST_LEN));
+  field_list.push_back(new Item_empty_string("Host", HOSTNAME_LENGTH));
   field_list.push_back(field = new Item_empty_string("db", NAME_CHAR_LEN));
   field->maybe_null = 1;
   field_list.push_back(new Item_empty_string("Command", 16));
@@ -2067,9 +2063,9 @@ class Fill_process_list : public Do_THD_Impl {
     if (inspect_thd->peer_port &&
         (inspect_sctx_host.length || inspect_sctx->ip().length) &&
         m_client_thd->security_context()->host_or_ip().str[0]) {
-      char host[LIST_PROCESS_HOST_LEN + 1];
-      snprintf(host, LIST_PROCESS_HOST_LEN, "%s:%u",
-               inspect_sctx_host_or_ip.str, inspect_thd->peer_port);
+      char host[HOST_AND_PORT_LENGTH];
+      snprintf(host, HOST_AND_PORT_LENGTH, "%s:%u", inspect_sctx_host_or_ip.str,
+               inspect_thd->peer_port);
       table->field[2]->store(host, strlen(host), system_charset_info);
     } else
       table->field[2]->store(inspect_sctx_host_or_ip.str,
@@ -3773,7 +3769,7 @@ bool get_schema_tables_result(JOIN *join,
         'executed_place' value then we should refresh the table.
       */
       if (table_list->schema_table_state && is_subselect) {
-        table_list->table->file->extra(HA_EXTRA_RESET_STATE);
+        table_list->table->file->ha_extra(HA_EXTRA_RESET_STATE);
         table_list->table->file->ha_delete_all_rows();
         free_io_cache(table_list->table);
         filesort_free_buffers(table_list->table, 1);
@@ -3878,15 +3874,22 @@ ST_FIELD_INFO tmp_table_keys_fields_info[] = {
      0},
     {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, 0}};
 
+/**
+  Grantee is of form 'user'@'hostname', so add +1 for '@' and +4 for the
+  single qoutes.
+*/
+static const int GRANTEE_MAX_CHAR_LENGTH =
+    USERNAME_CHAR_LENGTH + 1 + HOSTNAME_LENGTH + 4;
+
 ST_FIELD_INFO user_privileges_fields_info[] = {
-    {"GRANTEE", 81, MYSQL_TYPE_STRING, 0, 0, 0, 0},
+    {"GRANTEE", GRANTEE_MAX_CHAR_LENGTH, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_CATALOG", FN_REFLEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"PRIVILEGE_TYPE", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"IS_GRANTABLE", 3, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, 0}};
 
 ST_FIELD_INFO schema_privileges_fields_info[] = {
-    {"GRANTEE", 81, MYSQL_TYPE_STRING, 0, 0, 0, 0},
+    {"GRANTEE", GRANTEE_MAX_CHAR_LENGTH, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_CATALOG", FN_REFLEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_SCHEMA", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"PRIVILEGE_TYPE", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
@@ -3894,7 +3897,7 @@ ST_FIELD_INFO schema_privileges_fields_info[] = {
     {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, 0}};
 
 ST_FIELD_INFO table_privileges_fields_info[] = {
-    {"GRANTEE", 81, MYSQL_TYPE_STRING, 0, 0, 0, 0},
+    {"GRANTEE", GRANTEE_MAX_CHAR_LENGTH, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_CATALOG", FN_REFLEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_SCHEMA", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
@@ -3903,7 +3906,7 @@ ST_FIELD_INFO table_privileges_fields_info[] = {
     {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, 0}};
 
 ST_FIELD_INFO column_privileges_fields_info[] = {
-    {"GRANTEE", 81, MYSQL_TYPE_STRING, 0, 0, 0, 0},
+    {"GRANTEE", GRANTEE_MAX_CHAR_LENGTH, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_CATALOG", FN_REFLEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_SCHEMA", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
     {"TABLE_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, 0},
@@ -3922,7 +3925,7 @@ ST_FIELD_INFO open_tables_fields_info[] = {
 ST_FIELD_INFO processlist_fields_info[] = {
     {"ID", 21, MYSQL_TYPE_LONGLONG, 0, MY_I_S_UNSIGNED, "Id", 0},
     {"USER", USERNAME_CHAR_LENGTH, MYSQL_TYPE_STRING, 0, 0, "User", 0},
-    {"HOST", LIST_PROCESS_HOST_LEN, MYSQL_TYPE_STRING, 0, 0, "Host", 0},
+    {"HOST", HOST_AND_PORT_LENGTH - 1, MYSQL_TYPE_STRING, 0, 0, "Host", 0},
     {"DB", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 1, "Db", 0},
     {"COMMAND", 16, MYSQL_TYPE_STRING, 0, 0, "Command", 0},
     {"TIME", 7, MYSQL_TYPE_LONG, 0, 0, "Time", 0},
@@ -4454,6 +4457,7 @@ static void get_cs_converted_string_value(THD *thd, String *input_str,
   A field's SQL type printout
 
   @param type     the type to print
+  @param is_array whether the field is a typed array
   @param metadata field's metadata, depending on the type
                   could be nothing, length, or length + decimals
   @param str      String to print to
@@ -4462,8 +4466,8 @@ static void get_cs_converted_string_value(THD *thd, String *input_str,
 
 */
 
-void show_sql_type(enum_field_types type, uint16 metadata, String *str,
-                   const CHARSET_INFO *field_cs) {
+void show_sql_type(enum_field_types type, bool is_array, uint metadata,
+                   String *str, const CHARSET_INFO *field_cs) {
   DBUG_ENTER("show_sql_type");
   DBUG_PRINT("enter", ("type: %d, metadata: 0x%x", type, metadata));
 
@@ -4530,43 +4534,35 @@ void show_sql_type(enum_field_types type, uint16 metadata, String *str,
       size_t length;
       if (field_cs)
         length =
-            cs->cset->snprintf(cs, (char *)str->ptr(), str->alloced_length(),
+            cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
                                "varchar(%u)", metadata / field_cs->mbmaxlen);
       else
-        length =
-            cs->cset->snprintf(cs, (char *)str->ptr(), str->alloced_length(),
-                               "varchar(%u(bytes))", metadata);
+        length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                    "varchar(%u(bytes))", metadata);
       str->length(length);
     } break;
 
     case MYSQL_TYPE_BIT: {
       const CHARSET_INFO *cs = str->charset();
       int bit_length = 8 * (metadata >> 8) + (metadata & 0xFF);
-      size_t length = cs->cset->snprintf(
-          cs, (char *)str->ptr(), str->alloced_length(), "bit(%d)", bit_length);
+      size_t length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                         "bit(%d)", bit_length);
       str->length(length);
     } break;
 
     case MYSQL_TYPE_DECIMAL: {
       const CHARSET_INFO *cs = str->charset();
-      size_t length =
-          cs->cset->snprintf(cs, (char *)str->ptr(), str->alloced_length(),
-                             "decimal(%d,?)", metadata);
+      size_t length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                         "decimal(%d,?)", metadata);
       str->length(length);
     } break;
 
     case MYSQL_TYPE_NEWDECIMAL: {
       const CHARSET_INFO *cs = str->charset();
-      /*
-        Field_new_decimal encodes metadata this way. Bit shifts can't be used
-        due to different endianness on different platforms.
-      */
-      uchar *metadata_ptr = (uchar *)&metadata;
-      uint len = *metadata_ptr;
-      uint dec = *(metadata_ptr + 1);
-      size_t length =
-          cs->cset->snprintf(cs, (char *)str->ptr(), str->alloced_length(),
-                             "decimal(%d,%d)", len, dec);
+      uint len = (metadata >> 8) & 0xff;
+      uint dec = metadata & 0xff;
+      size_t length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                         "decimal(%d,%d)", len, dec);
       str->length(length);
     } break;
 
@@ -4637,13 +4633,11 @@ void show_sql_type(enum_field_types type, uint16 metadata, String *str,
       uint bytes = (((metadata >> 4) & 0x300) ^ 0x300) + (metadata & 0x00ff);
       size_t length;
       if (field_cs)
-        length =
-            cs->cset->snprintf(cs, (char *)str->ptr(), str->alloced_length(),
-                               "char(%d)", bytes / field_cs->mbmaxlen);
+        length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                    "char(%d)", bytes / field_cs->mbmaxlen);
       else
-        length =
-            cs->cset->snprintf(cs, (char *)str->ptr(), str->alloced_length(),
-                               "char(%d(bytes))", bytes);
+        length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                    "char(%d(bytes))", bytes);
       str->length(length);
     } break;
 
@@ -4658,5 +4652,6 @@ void show_sql_type(enum_field_types type, uint16 metadata, String *str,
     default:
       str->set_ascii(STRING_WITH_LEN("<unknown type>"));
   }
+  if (is_array) str->append(STRING_WITH_LEN(" array"));
   DBUG_VOID_RETURN;
 }

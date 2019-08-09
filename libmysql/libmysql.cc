@@ -163,9 +163,9 @@ int STDCALL mysql_server_init(int argc MY_ATTRIBUTE((unused)),
     if (!mysql_unix_port) {
       char *env;
 #ifdef _WIN32
-      mysql_unix_port = (char *)MYSQL_NAMEDPIPE;
+      mysql_unix_port = const_cast<char *>(MYSQL_NAMEDPIPE);
 #else
-      mysql_unix_port = (char *)MYSQL_UNIX_ADDR;
+      mysql_unix_port = const_cast<char *>(MYSQL_UNIX_ADDR);
 #endif
       if ((env = getenv("MYSQL_UNIX_PORT"))) mysql_unix_port = env;
     }
@@ -757,9 +757,9 @@ int STDCALL mysql_shutdown(MYSQL *mysql,
                            enum mysql_enum_shutdown_level shutdown_level
                                MY_ATTRIBUTE((unused))) {
   if (mysql_get_server_version(mysql) < 50709)
-    return simple_command(mysql, COM_DEPRECATED_1, 0, 1, 0);
+    return simple_command(mysql, COM_DEPRECATED_1, 0, 0, 0);
   else
-    return mysql_real_query(mysql, C_STRING_WITH_LEN("shutdown"));
+    return mysql_real_query(mysql, STRING_WITH_LEN("shutdown"));
 }
 
 int STDCALL mysql_refresh(MYSQL *mysql, uint options) {
@@ -840,9 +840,7 @@ uint STDCALL mysql_get_proto_info(MYSQL *mysql) {
   return (mysql->protocol_version);
 }
 
-const char *STDCALL mysql_get_client_info(void) {
-  return (char *)MYSQL_SERVER_VERSION;
-}
+const char *STDCALL mysql_get_client_info(void) { return MYSQL_SERVER_VERSION; }
 
 ulong STDCALL mysql_get_client_version(void) { return MYSQL_VERSION_ID; }
 
@@ -1094,20 +1092,20 @@ void STDCALL myodbc_remove_escape(MYSQL *mysql, char *name) {
   *to = 0;
 }
 
-  /********************************************************************
-   Implementation of new client API for 4.1 version.
+/********************************************************************
+ Implementation of new client API for 4.1 version.
 
-   mysql_stmt_* are real prototypes used by applications.
+ mysql_stmt_* are real prototypes used by applications.
 
-   All functions performing
-   real I/O are prefixed with 'cli_' (abbreviated from 'Call Level
-   Interface'). This functions are invoked via pointers set in
-   MYSQL::methods structure.
-  *********************************************************************/
+ All functions performing
+ real I/O are prefixed with 'cli_' (abbreviated from 'Call Level
+ Interface'). This functions are invoked via pointers set in
+ MYSQL::methods structure.
+*********************************************************************/
 
-  /******************* Declarations ***********************************/
+/******************* Declarations ***********************************/
 
-  /* Default number of rows fetched per one COM_STMT_FETCH command. */
+/* Default number of rows fetched per one COM_STMT_FETCH command. */
 
 #define DEFAULT_PREFETCH_ROWS (ulong)1
 
@@ -1508,8 +1506,7 @@ int STDCALL mysql_stmt_prepare(MYSQL_STMT *stmt, const char *query,
     or stmt->params when checking for existence of placeholders or
     result set.
   */
-  if (!(stmt->params = (MYSQL_BIND *)alloc_root(
-            stmt->mem_root,
+  if (!(stmt->params = (MYSQL_BIND *)stmt->mem_root->Alloc(
             sizeof(MYSQL_BIND) * (stmt->param_count + stmt->field_count)))) {
     set_stmt_error(stmt, CR_OUT_OF_MEMORY, unknown_sqlstate, NULL);
     DBUG_RETURN(1);
@@ -1547,10 +1544,10 @@ static void alloc_stmt_fields(MYSQL_STMT *stmt) {
     Get the field information for non-select statements
     like SHOW and DESCRIBE commands
   */
-  if (!(stmt->fields = (MYSQL_FIELD *)alloc_root(
-            fields_mem_root, sizeof(MYSQL_FIELD) * stmt->field_count)) ||
-      !(stmt->bind = (MYSQL_BIND *)alloc_root(
-            fields_mem_root, sizeof(MYSQL_BIND) * stmt->field_count))) {
+  if (!(stmt->fields = (MYSQL_FIELD *)fields_mem_root->Alloc(
+            sizeof(MYSQL_FIELD) * stmt->field_count)) ||
+      !(stmt->bind = (MYSQL_BIND *)fields_mem_root->Alloc(sizeof(MYSQL_BIND) *
+                                                          stmt->field_count))) {
     set_stmt_error(stmt, CR_OUT_OF_MEMORY, unknown_sqlstate, NULL);
     return;
   }
@@ -1895,8 +1892,8 @@ static inline int add_binary_row(NET *net, MYSQL_STMT *stmt, ulong pkt_len,
   MYSQL_ROWS *row;
   uchar *cp = net->read_pos;
   MYSQL_DATA *result = &stmt->result;
-  if (!(row = (MYSQL_ROWS *)alloc_root(result->alloc,
-                                       sizeof(MYSQL_ROWS) + pkt_len - 1))) {
+  if (!(row = (MYSQL_ROWS *)result->alloc->Alloc(sizeof(MYSQL_ROWS) + pkt_len -
+                                                 1))) {
     set_stmt_error(stmt, CR_OUT_OF_MEMORY, unknown_sqlstate, NULL);
     return 1;
   }
@@ -2101,7 +2098,7 @@ static int stmt_read_row_buffered(MYSQL_STMT *stmt, unsigned char **row) {
 
 /*
   Read one row from network: unbuffered non-cursor fetch.
-  If last row was read, or error occured, erase this statement
+  If last row was read, or error occurred, erase this statement
   from record pointing to object unbuffered fetch is performed from.
 
   SYNOPSIS
@@ -2248,13 +2245,14 @@ bool STDCALL mysql_stmt_attr_set(MYSQL_STMT *stmt,
       break;
     case STMT_ATTR_CURSOR_TYPE: {
       ulong cursor_type;
-      cursor_type = value ? *(ulong *)value : 0UL;
+      cursor_type = value ? *static_cast<const ulong *>(value) : 0UL;
       if (cursor_type > (ulong)CURSOR_TYPE_READ_ONLY) goto err_not_implemented;
       stmt->flags = cursor_type;
       break;
     }
     case STMT_ATTR_PREFETCH_ROWS: {
-      ulong prefetch_rows = value ? *(ulong *)value : DEFAULT_PREFETCH_ROWS;
+      ulong prefetch_rows =
+          value ? *static_cast<const ulong *>(value) : DEFAULT_PREFETCH_ROWS;
       if (value == 0) return true;
       stmt->prefetch_rows = prefetch_rows;
       break;
@@ -2832,9 +2830,9 @@ bool STDCALL mysql_stmt_send_long_data(MYSQL_STMT *stmt, uint param_number,
       Note that we don't get any ok packet from the server in this case
       This is intentional to save bandwidth.
     */
-    if ((*mysql->methods->advanced_command)(mysql, COM_STMT_SEND_LONG_DATA,
-                                            buff, sizeof(buff), (uchar *)data,
-                                            length, 1, stmt)) {
+    if ((*mysql->methods->advanced_command)(
+            mysql, COM_STMT_SEND_LONG_DATA, buff, sizeof(buff),
+            pointer_cast<const uchar *>(data), length, 1, stmt)) {
       /*
         Don't set stmt error if stmt->mysql is NULL, as the error in this case
         has already been set by mysql_prune_stmt_list().

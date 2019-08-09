@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +57,7 @@
 #include "welcome_copyright_notice.h"
 
 #define MAX_ERROR_NAME_LENGTH 64
-#define MAX_ROWS 5000
+#define MAX_ROWS 6000
 #define HEADER_LENGTH 32 /* Length of header in errmsg.sys */
 #define ERRMSG_VERSION 3 /* Version number of errmsg.sys */
 #define DEFAULT_CHARSET_DIR "../share/charsets"
@@ -65,13 +65,13 @@
 #define WARN_PREFIX "WARN_"
 #define OBSOLETE_ER_PREFIX "OBSOLETE_ER_"
 #define OBSOLETE_WARN_PREFIX "OBSOLETE_WARN_"
-static char *OUTFILE = (char *)"errmsg.sys";
-static char *HEADERFILE = (char *)"mysqld_error.h";
-static char *NAMEFILE = (char *)"mysqld_ername.h";
-static char *TXTFILE = (char *)"../share/errmsg-utf8.txt";
-static char *DATADIRECTORY = (char *)"../share/";
+static const char *OUTFILE = "errmsg.sys";
+static const char *HEADERFILE = "mysqld_error.h";
+static const char *NAMEFILE = "mysqld_ername.h";
+static const char *TXTFILE = "../share/errmsg-utf8.txt";
+static const char *DATADIRECTORY = "../share/";
 #ifndef DBUG_OFF
-static char *default_dbug_option = (char *)"d:t:O,/tmp/comp_err.trace";
+static const char *default_dbug_option = "d:t:O,/tmp/comp_err.trace";
 #endif
 
 /*
@@ -653,7 +653,6 @@ static uint parse_error_offset(char *str) {
 */
 static bool parse_reserved_error_section(char *str) {
   char *offset;
-  const char *end;
   int error;
 
   DBUG_ENTER("parse_reserved_error_section");
@@ -667,7 +666,7 @@ static bool parse_reserved_error_section(char *str) {
 
   /* reading the section start number */
   if (!(offset = get_word(&str))) DBUG_RETURN(true); /* OOM: Fatal error */
-  uint sec_start = static_cast<uint>(my_strtoll10(offset, &end, &error));
+  uint sec_start = static_cast<uint>(my_strtoll10(offset, nullptr, &error));
   my_free(offset);
   DBUG_PRINT("info", ("reserved_range_start: %u", sec_start));
 
@@ -678,7 +677,7 @@ static bool parse_reserved_error_section(char *str) {
 
   /* reading the section end number */
   if (!(offset = get_word(&str))) DBUG_RETURN(true); /* OOM: Fatal error */
-  uint sec_end = static_cast<uint>(my_strtoll10(offset, &end, &error));
+  uint sec_end = static_cast<uint>(my_strtoll10(offset, nullptr, &error));
   my_free(offset);
   DBUG_PRINT("info", ("reserved_range_end: %u", sec_end));
 
@@ -815,7 +814,7 @@ static ha_checksum checksum_format_specifier(const char *msg) {
         case 'u':
         case 'x':
         case 's':
-          chksum = my_checksum(chksum, (uchar *)start, (uint)(p + 1 - start));
+          chksum = my_checksum(chksum, start, (uint)(p + 1 - start));
           start = 0; /* Not in format specifier anymore */
           break;
 

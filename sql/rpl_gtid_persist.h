@@ -44,10 +44,10 @@ class Field;
 
 class Gtid_table_access_context : public System_table_access {
  public:
-  static const LEX_STRING DB_NAME;
-  static const LEX_STRING TABLE_NAME;
+  static const LEX_CSTRING DB_NAME;
+  static const LEX_CSTRING TABLE_NAME;
 
-  Gtid_table_access_context() : m_drop_thd_object(NULL) {}
+  Gtid_table_access_context() : m_drop_thd_object(nullptr) {}
   virtual ~Gtid_table_access_context() {}
 
   /**
@@ -145,12 +145,14 @@ class Gtid_table_persistor {
     @param gtid_set  contains a set of gtid, which holds
                      the sidno and the gno.
 
+    @param compress notify to compress gtid_executed table
+
     @retval
       0    OK
     @retval
       -1   Error
   */
-  int save(const Gtid_set *gtid_set);
+  int save(const Gtid_set *gtid_set, bool compress = true);
   /**
     Delete all rows from the table.
 

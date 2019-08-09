@@ -244,7 +244,7 @@ static int vio_set_cert_stuff(SSL_CTX *ctx, const char *cert_file,
   so we don't need the following callback functions.
 */
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-  /* OpenSSL specific */
+/* OpenSSL specific */
 
 #ifdef HAVE_PSI_INTERFACE
 static PSI_rwlock_key key_rwlock_openssl;
@@ -580,6 +580,9 @@ static struct st_VioSSLFd *new_VioSSLFd(
 #ifdef HAVE_TLSv13
                      | SSL_OP_NO_TLSv1_3
 #endif /* HAVE_TLSv13 */
+#ifndef HAVE_WOLFSSL
+                     | SSL_OP_NO_TICKET
+#endif
                     );
   if (!(ssl_fd = ((struct st_VioSSLFd *)my_malloc(
             key_memory_vio_ssl_fd, sizeof(struct st_VioSSLFd), MYF(0)))))

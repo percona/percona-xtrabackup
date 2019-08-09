@@ -39,6 +39,7 @@
 #include "plugin/group_replication/include/plugin_handlers/group_partition_handling.h"
 #include "plugin/group_replication/include/plugin_handlers/primary_election_invocation_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/read_mode_handler.h"
+#include "plugin/group_replication/include/plugin_handlers/remote_clone_handler.h"
 #include "plugin/group_replication/include/plugin_observers/channel_observation_manager.h"
 #include "plugin/group_replication/include/plugin_observers/group_event_observer.h"
 #include "plugin/group_replication/include/plugin_observers/group_transaction_observation_manager.h"
@@ -60,8 +61,6 @@ class Transaction_consistency_manager;
 struct SYS_VAR {
   MYSQL_PLUGIN_VAR_HEADER;
 };
-
-// Plugin variables
 
 /**
   Position of channel observation manager's in channel_observation_manager_list
@@ -103,29 +102,12 @@ struct gr_modules {
     WAIT_ON_START,
     COMPATIBILITY_MANAGER,
     GCS_EVENTS_HANDLER,
+    REMOTE_CLONE_HANDLER,
     NUM_MODULES
   };
   using mask = std::bitset<NUM_MODULES>;
   static constexpr mask all_modules = (1 << NUM_MODULES) - 1;
 };
-
-extern const char *group_replication_plugin_name;
-extern char *group_name_var;
-extern rpl_sidno group_sidno;
-extern bool wait_on_engine_initialization;
-extern bool server_shutdown_status;
-extern const char *available_bindings_names[];
-extern char *communication_debug_options_var;
-extern char *communication_debug_file_var;
-// Flag to register if read mode is being set
-extern bool plugin_is_setting_read_mode;
-// Flag to register server rest master command invocations
-extern bool known_server_reset;
-// Latch used as the control point of the event driven
-// management of the transactions.
-extern Wait_ticket<my_thread_id> *transactions_latch;
-extern ulong exit_state_action_var;
-extern std::atomic<bool> plugin_is_stopping;
 
 /**
   The plugin modules.
@@ -161,6 +143,10 @@ extern Group_member_info *local_member_info;
 extern Compatibility_module *compatibility_mgr;
 extern Group_partition_handling *group_partition_handler;
 extern Blocked_transaction_handler *blocked_transaction_handler;
+extern Remote_clone_handler *remote_clone_handler;
+// Latch used as the control point of the event driven
+// management of the transactions.
+extern Wait_ticket<my_thread_id> *transactions_latch;
 
 // Plugin global methods
 bool server_engine_initialized();
@@ -171,7 +157,8 @@ int initialize_plugin_and_join(enum_plugin_con_isolation sql_api_isolation,
                                Delayed_initialization_thread *delayed_init_thd);
 int initialize_plugin_modules(gr_modules::mask modules_to_init);
 int terminate_plugin_modules(gr_modules::mask modules_to_terminate,
-                             char **error_message = nullptr);
+                             char **error_message = nullptr,
+                             bool rejoin = false);
 void register_server_reset_master();
 bool get_allow_local_lower_version_join();
 ulong get_transaction_size_limit();
@@ -186,6 +173,7 @@ rpl_sidno get_group_sidno();
 bool is_autorejoin_enabled();
 uint get_number_of_autorejoin_tries();
 ulonglong get_rejoin_timeout();
+void declare_plugin_cloning(bool is_running);
 
 /**
   Encapsulates the logic necessary to attempt a rejoin, i.e. gracefully leave
@@ -198,6 +186,24 @@ ulonglong get_rejoin_timeout();
   @retval false the rejoin succeeded.
 */
 bool attempt_rejoin();
+bool get_plugin_is_stopping();
+bool get_wait_on_engine_initialization();
+void enable_server_shutdown_status();
+bool get_server_shutdown_status();
+void set_plugin_is_setting_read_mode(bool value);
+bool get_plugin_is_setting_read_mode();
+const char *get_group_name_var();
+ulong get_exit_state_action_var();
+ulong get_flow_control_mode_var();
+long get_flow_control_certifier_threshold_var();
+long get_flow_control_applier_threshold_var();
+long get_flow_control_min_quota_var();
+long get_flow_control_min_recovery_quota_var();
+long get_flow_control_max_quota_var();
+int get_flow_control_member_quota_percent_var();
+int get_flow_control_period_var();
+int get_flow_control_hold_percent_var();
+int get_flow_control_release_percent_var();
 
 // Plugin public methods
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info);
@@ -205,10 +211,11 @@ int plugin_group_replication_deinit(void *p);
 int plugin_group_replication_start(char **error_message = NULL);
 int plugin_group_replication_stop(char **error_message = NULL);
 bool plugin_is_group_replication_running();
+bool plugin_is_group_replication_cloning();
 bool is_plugin_auto_starting_on_non_bootstrap_member();
 bool is_plugin_configured_and_starting();
-void initiate_wait_on_start_process();
-void terminate_wait_on_start_process();
+bool initiate_wait_on_start_process();
+void terminate_wait_on_start_process(bool abort = false);
 void set_wait_on_start_process(bool cond);
 bool plugin_get_connection_status(
     const GROUP_REPLICATION_CONNECTION_STATUS_CALLBACKS &callbacks);

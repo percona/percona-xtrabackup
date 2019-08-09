@@ -23,7 +23,6 @@
 */
 
 #include <Logger.hpp>
-#include <NDBT_ReturnCodes.h>
 #include <NdbOut.hpp>
 #include <NdbTCP.h>
 #include <OutputStream.hpp>
@@ -32,6 +31,7 @@
 #include <ndb_global.h>
 #include <ndb_limits.h>
 #include <ndb_opts.h>
+#include <ndb_version.h>
 
 #include "../src/ndbapi/NdbDictionaryImpl.hpp"
 #include "consumer_printer.hpp"
@@ -108,6 +108,8 @@ Vector<class RestoreOption *> g_include_exclude;
 static void save_include_exclude(int optid, char * argument);
 
 static inline void parse_rewrite_database(char * argument);
+static void exitHandler(int code);
+static void free_include_excludes_vector();
 
 /**
  * print and restore flags
@@ -486,7 +488,7 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
     if (ga_nodeId == 0)
     {
       err << "Error in --nodeid,-n setting, see --help";
-      exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+      exitHandler(NdbRestoreStatus::WrongArgs);
     }
     info.setLevel(254);
     info << "Nodeid = " << ga_nodeId << endl;
@@ -495,7 +497,7 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
     if (ga_backupId == 0)
     {
       err << "Error in --backupid,-b setting, see --help";
-      exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+      exitHandler(NdbRestoreStatus::WrongArgs);
     }
     info.setLevel(254);
     info << "Backup Id = " << ga_backupId << endl;
@@ -512,7 +514,7 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
     if (analyse_nodegroup_map(opt_nodegroup_map_str,
                               &opt_nodegroup_map[0]))
     {
-      exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+      exitHandler(NdbRestoreStatus::WrongArgs);
     }
     break;
   case OPT_INCLUDE_DATABASES:
@@ -567,7 +569,7 @@ processTableList(const char* str, Vector<BaseString> &lst)
     if (makeInternalTableName(tmp[i], internalName))
     {
       info << "`" << tmp[i] << "` is not a valid tablename!" << endl;
-      exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+      exitHandler(NdbRestoreStatus::WrongArgs);
     }
     lst.push_back(internalName);
   }
@@ -618,17 +620,17 @@ readArguments(Ndb_opts & opts, char*** pargv)
 
   if (opts.handle_options(get_one_option))
   {
-    exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+    exitHandler(NdbRestoreStatus::WrongArgs);
   }
   if (ga_nodeId == 0)
   {
     err << "Backup file node ID not specified, please provide --nodeid" << endl;
-    exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+    exitHandler(NdbRestoreStatus::WrongArgs);
   }
   if (ga_backupId == 0)
   {
     err << "Backup ID not specified, please provide --backupid" << endl;
-    exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+    exitHandler(NdbRestoreStatus::WrongArgs);
   }
 
 
@@ -659,7 +661,7 @@ o verify nodegroup mapping
   for (i = 0; i < 8 ; i++)
     printf("NG %u mapped to %u \n", i >> 1, map_ng[i]);
   }
-  exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+  exit(NdbRestoreStatus::WrongArgs);
 #endif
 
   for (;;)
@@ -1044,7 +1046,7 @@ static void parse_rewrite_database(char * argument)
 
   info << "argument `" << arg.c_str()
        << "` is not a pair 'a,b' of non-empty names." << endl;
-  exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+  exitHandler(NdbRestoreStatus::WrongArgs);
 }
 
 static void save_include_exclude(int optid, char * argument)
@@ -1064,7 +1066,7 @@ static void save_include_exclude(int optid, char * argument)
       if (makeInternalTableName(args[i], arg))
       {
         info << "`" << args[i] << "` is not a valid tablename!" << endl;
-        exit(NDBT_ProgramExit(NDBT_WRONGARGS));
+        exitHandler(NdbRestoreStatus::WrongArgs);
       }
       break;
     default:
@@ -1186,9 +1188,13 @@ checkDbAndTableName(const TableS* table)
     return false;
   }
 
-  // If new options are given, ignore the old format
-  if (opt_include_tables || g_exclude_tables.size() > 0 ||
-      opt_include_databases || opt_exclude_databases ) {
+  // If --exclude lists are given, check them
+  if ((g_exclude_tables.size() || opt_exclude_databases)
+       && ! checkDoRestore(table))
+    return false;
+
+  // If --include lists are given, ignore the old-style table list
+  if (opt_include_tables || opt_include_databases ) {
     return (checkDoRestore(table));
   }
   
@@ -1285,7 +1291,6 @@ free_include_excludes_vector()
 static void exitHandler(int code)
 {
   free_include_excludes_vector();
-  NDBT_ProgramExit(code);
   if (opt_core)
     abort();
   else
@@ -1303,7 +1308,7 @@ static void init_restore()
     if (g_cluster_connection == NULL)
     {
       err << "Failed to create cluster connection!!" << endl;
-      exitHandler(NDBT_FAILED);
+      exitHandler(NdbRestoreStatus::Failed);
     }
     g_cluster_connection->set_name(g_options.c_str());
     if(g_cluster_connection->connect(opt_connect_retries - 1,
@@ -1311,7 +1316,7 @@ static void init_restore()
     {
       delete g_cluster_connection;
       g_cluster_connection = NULL;
-      exitHandler(NDBT_FAILED);
+      exitHandler(NdbRestoreStatus::Failed);
     }
   }
 }
@@ -1403,7 +1408,7 @@ int do_restore(RestoreThreadData *thrdata)
   if (!metaData.readHeader())
   {
     restoreLogger.log_error("Failed to read %s", metaData.getFilename());
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   const BackupFormat::FileHeader & tmp = metaData.getFileHeader();
@@ -1417,7 +1422,7 @@ int do_restore(RestoreThreadData *thrdata)
   {
   restoreLogger.log_info("Backup version in files: %s ndb version: %s",
            ndbGetVersionString(version, 0,
-                               isDrop6(version) ? "-drop6" : 0,
+                               ndbd_drop6(version) ? "-drop6" : 0,
                                buf, sizeof(buf)),
            ndbGetVersionString(tmp.NdbVersion, tmp.MySQLVersion, 0,
                                 buf, sizeof(buf)));
@@ -1426,7 +1431,7 @@ int do_restore(RestoreThreadData *thrdata)
   {
     restoreLogger.log_info("Backup version in files: %s",
            ndbGetVersionString(version, 0,
-                               isDrop6(version) ? "-drop6" : 0,
+                               ndbd_drop6(version) ? "-drop6" : 0,
                                buf, sizeof(buf)));
   }
 
@@ -1441,13 +1446,13 @@ int do_restore(RestoreThreadData *thrdata)
         ,ndbGetVersionString(MAKE_VERSION(5,1,3), 0, 0, buf, sizeof(buf))
         ,ndbGetVersionString(MAKE_VERSION(5,1,9), 0, 0, new_buf, sizeof(new_buf))
        );
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   if (version > NDB_VERSION)
   {
     restoreLogger.log_error("Restore program older than backup version. Not supported. Use new restore program");
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   restoreLogger.log_debug("Load content");
@@ -1457,11 +1462,12 @@ int do_restore(RestoreThreadData *thrdata)
   int res  = metaData.loadContent();
 
   restoreLogger.log_info("Stop GCP of Backup: %u", metaData.getStopGCP());
+  restoreLogger.log_info("Start GCP of Backup: %u", metaData.getStartGCP());
   
   if (res == 0)
   {
     restoreLogger.log_error("Restore: Failed to load content");
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
   restoreLogger.log_debug("Get number of Tables");
   Logger::format_timestamp(time(NULL), timestamp, sizeof(timestamp));
@@ -1469,14 +1475,14 @@ int do_restore(RestoreThreadData *thrdata)
   if (metaData.getNoOfTables() == 0) 
   {
     restoreLogger.log_error("The backup contains no tables");
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   if(_print_sql_log && _print_log)
   {
     restoreLogger.log_debug("Check to ensure that both print-sql-log and print-log options are not passed");
     restoreLogger.log_error("Both print-sql-log and print-log options passed. Exiting...");
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   if (_print_sql_log)
@@ -1493,10 +1499,10 @@ int do_restore(RestoreThreadData *thrdata)
       BaseString tableName(table->getTableName());
       Vector<BaseString> tableNameParts;
       tableName.split(tableNameParts, "/");
-      if (tableNameParts[2].substr(0,8) == "NDB$BLOB")
+      if (tableNameParts[2].starts_with("NDB$BLOB"))
       {
         restoreLogger.log_error("Found column of type blob with print-sql-log option set. Exiting..." );
-        return NDBT_FAILED;
+        return NdbRestoreStatus::Failed;
       }
       /* Hidden PKs are stored with the name $PK */
       int noOfPK = table->m_dictTable->getNoOfPrimaryKeys();
@@ -1506,7 +1512,7 @@ int do_restore(RestoreThreadData *thrdata)
         if(strcmp(pkName,"$PK") == 0)
         {
           restoreLogger.log_error("Found hidden primary key with print-sql-log option set. Exiting...");
-          return NDBT_FAILED;
+          return NdbRestoreStatus::Failed;
         }
       }
     }
@@ -1519,7 +1525,7 @@ int do_restore(RestoreThreadData *thrdata)
   if (!metaData.validateFooter()) 
   {
     restoreLogger.log_error("Restore: Failed to validate footer.");
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
   restoreLogger.log_debug("Init Backup objects");
   Uint32 i;
@@ -1528,7 +1534,7 @@ int do_restore(RestoreThreadData *thrdata)
     if (!g_consumers[i]->init(g_tableCompabilityMask))
     {
       restoreLogger.log_error("Failed to initialize consumers");
-      return NDBT_FAILED;
+      return NdbRestoreStatus::Failed;
     }
 
   }
@@ -1543,7 +1549,7 @@ int do_restore(RestoreThreadData *thrdata)
   /* before syncing on m_barrier, check if any threads have already exited */
   if (ga_error_thread > 0)
   {
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   if (!thrdata->m_restore_meta)
@@ -1570,7 +1576,7 @@ int do_restore(RestoreThreadData *thrdata)
     if (!thrdata->m_barrier->wait())
     {
       ga_error_thread = thrdata->m_part_id;
-      return NDBT_FAILED;
+      return NdbRestoreStatus::Failed;
     }
   }
   restoreLogger.log_debug("Restore objects (tablespaces, ..)");
@@ -1584,7 +1590,7 @@ int do_restore(RestoreThreadData *thrdata)
       {
 	restoreLogger.log_error("Restore: Failed to restore table: %s ... Exiting",
                                 metaData[i]->getTableName());
-	return NDBT_FAILED;
+	return NdbRestoreStatus::Failed;
       } 
     if (check_progress())
     {
@@ -1633,7 +1639,7 @@ int do_restore(RestoreThreadData *thrdata)
                       MYF(MY_WME));
         if (res == 0)
         {
-          return NDBT_FAILED;
+          return NdbRestoreStatus::Failed;
         }
         FileOutputStream *f= new FileOutputStream(res);
         table_output[i]= f;
@@ -1643,7 +1649,7 @@ int do_restore(RestoreThreadData *thrdata)
 	{
 	  restoreLogger.log_error("Restore: Failed to restore table: `%s` ... Exiting ",
                                 table->getTableName());
-	  return NDBT_FAILED;
+	  return NdbRestoreStatus::Failed;
 	} 
     } else {
       for(Uint32 j= 0; j < g_consumers.size(); j++)
@@ -1651,7 +1657,7 @@ int do_restore(RestoreThreadData *thrdata)
         {
 	  restoreLogger.log_error("Restore: Failed to restore system table: `%s` ... Exiting",
                                 table->getTableName());
-          return NDBT_FAILED;
+          return NdbRestoreStatus::Failed;
         }
     }
     if (check_progress())
@@ -1671,7 +1677,7 @@ int do_restore(RestoreThreadData *thrdata)
       if (!g_consumers[j]->fk(metaData.getObjType(i),
 			      metaData.getObjPtr(i)))
       {
-        return NDBT_FAILED;
+        return NdbRestoreStatus::Failed;
       } 
   }
 
@@ -1681,14 +1687,14 @@ int do_restore(RestoreThreadData *thrdata)
     if (!g_consumers[i]->endOfTables())
     {
       restoreLogger.log_error("Restore: Failed while closing tables" );
-      return NDBT_FAILED;
+      return NdbRestoreStatus::Failed;
     } 
     if (!ga_disable_indexes && !ga_rebuild_indexes)
     {
       if (!g_consumers[i]->endOfTablesFK())
       {
         restoreLogger.log_error("Restore: Failed while closing tables FKs" );
-        return NDBT_FAILED;
+        return NdbRestoreStatus::Failed;
       } 
     }
   }
@@ -1696,7 +1702,7 @@ int do_restore(RestoreThreadData *thrdata)
   /* before syncing on m_barrier, check if any threads have already exited */
   if (ga_error_thread > 0)
   {
-    return NDBT_FAILED;
+    return NdbRestoreStatus::Failed;
   }
 
   if (thrdata->m_restore_meta)
@@ -1705,7 +1711,7 @@ int do_restore(RestoreThreadData *thrdata)
     if (!thrdata->m_barrier->wait())
     {
       ga_error_thread = thrdata->m_part_id;
-      return NDBT_FAILED;
+      return NdbRestoreStatus::Failed;
     }
   }
 
@@ -1732,13 +1738,13 @@ int do_restore(RestoreThreadData *thrdata)
             if (!g_consumers[j]->table_compatible_check(tableS))
             {
               restoreLogger.log_error("Restore: Failed to restore data, %s table structure incompatible with backup's ... Exiting ", tableS.getTableName());
-              return NDBT_FAILED;
+              return NdbRestoreStatus::Failed;
             } 
             if (tableS.m_staging &&
                 !g_consumers[j]->prepare_staging(tableS))
             {
               restoreLogger.log_error("Restore: Failed to restore data, %s failed to prepare staging table for data conversion ... Exiting", tableS.getTableName());
-              return NDBT_FAILED;
+              return NdbRestoreStatus::Failed;
             }
           } 
         }
@@ -1757,7 +1763,7 @@ int do_restore(RestoreThreadData *thrdata)
               if (!g_consumers[j]->check_blobs(tableS))
               {
                  restoreLogger.log_error("Restore: Failed to restore data, %s table's blobs incompatible with backup's ... Exiting ", tableS.getTableName());;
-                  return NDBT_FAILED;
+                  return NdbRestoreStatus::Failed;
               }
             }
           }
@@ -1769,14 +1775,14 @@ int do_restore(RestoreThreadData *thrdata)
       if (!dataIter.validateBackupFile())
       {
           restoreLogger.log_error("Unable to allocate memory for BackupFile constructor");
-          return NDBT_FAILED;
+          return NdbRestoreStatus::Failed;
       }
 
 
       if (!dataIter.validateRestoreDataIterator())
       {
           restoreLogger.log_error("Unable to allocate memory for RestoreDataIterator constructor");
-          return NDBT_FAILED;
+          return NdbRestoreStatus::Failed;
       }
       
       Logger::format_timestamp(time(NULL), timestamp, sizeof(timestamp));
@@ -1786,7 +1792,7 @@ int do_restore(RestoreThreadData *thrdata)
       if (!dataIter.readHeader())
       {
 	restoreLogger.log_error("Failed to read header of data file. Exiting...");
-	return NDBT_FAILED;
+	return NdbRestoreStatus::Failed;
       }
       
       Logger::format_timestamp(time(NULL), timestamp, sizeof(timestamp));
@@ -1813,19 +1819,19 @@ int do_restore(RestoreThreadData *thrdata)
 	
 	if (res < 0)
 	{
-	  restoreLogger.log_error(" Restore: An error occured while restoring data. Exiting...");
-	  return NDBT_FAILED;
+	  restoreLogger.log_error(" Restore: An error occurred while restoring data. Exiting...");
+	  return NdbRestoreStatus::Failed;
 	}
 	if (!dataIter.validateFragmentFooter()) {
 	  restoreLogger.log_error("Restore: Error validating fragment footer. ... Exiting");
-	  return NDBT_FAILED;
+	  return NdbRestoreStatus::Failed;
 	}
       } // while (dataIter.readFragmentHeader(res))
       
       if (res < 0)
       {
-	restoreLogger.log_error("Restore: An error occured while restoring data. Exiting... res= %u", res);
-	return NDBT_FAILED;
+	restoreLogger.log_error("Restore: An error occurred while restoring data. Exiting... res= %u", res);
+	return NdbRestoreStatus::Failed;
       }
       
       
@@ -1851,7 +1857,7 @@ int do_restore(RestoreThreadData *thrdata)
       if (!logIter.readHeader())
       {
 	restoreLogger.log_error("Failed to read header of data file. Exiting...");
-	return NDBT_FAILED;
+	return NdbRestoreStatus::Failed;
       }
       
       const LogEntry * logEntry = 0;
@@ -1873,7 +1879,7 @@ int do_restore(RestoreThreadData *thrdata)
       if (res < 0)
       {
 	restoreLogger.log_error("Restore: An restoring the data log. Exiting... res=%u", res);
-	return NDBT_FAILED;
+	return NdbRestoreStatus::Failed;
       }
       logIter.validateFooter(); //not implemented
       for (i= 0; i < g_consumers.size(); i++)
@@ -1900,7 +1906,7 @@ int do_restore(RestoreThreadData *thrdata)
             {
               restoreLogger.log_error("Restore: Failed staging data to table: %s. Exiting...",
                             table->getTableName());
-              return NDBT_FAILED;
+              return NdbRestoreStatus::Failed;
             }
           }
         }
@@ -1920,7 +1926,7 @@ int do_restore(RestoreThreadData *thrdata)
           if (!g_consumers[j]->finalize_table(*table))
           {
             restoreLogger.log_error("Restore: Failed to finalize restore table: %s. Exiting... ",  metaData[i]->getTableName());
-            return NDBT_FAILED;
+            return NdbRestoreStatus::Failed;
           }
       }
     }
@@ -1929,26 +1935,33 @@ int do_restore(RestoreThreadData *thrdata)
   if (ga_error_thread > 0)
   {
     restoreLogger.log_error("Thread %u exits on error", thrdata->m_part_id);
-    return NDBT_FAILED; // thread 1 failed to restore metadata, exiting
+    return NdbRestoreStatus::Failed; // thread 1 failed to restore metadata, exiting
   }
 
   if (ga_restore_epoch)
   {
     Logger::format_timestamp(time(NULL), timestamp, sizeof(timestamp));
     restoreLogger.log_info("%s [restore_epoch] Restoring epoch", timestamp);
+    RestoreLogIterator logIter(metaData);
 
+    if (!logIter.readHeader())
+    {
+      err << "Failed to read snapshot info from log file. Exiting..." << endl;
+      return NdbRestoreStatus::Failed;
+    }
+    bool snapshotstart = logIter.isSnapshotstartBackup();
     for (i= 0; i < g_consumers.size(); i++)
-      if (!g_consumers[i]->update_apply_status(metaData))
+      if (!g_consumers[i]->update_apply_status(metaData, snapshotstart))
       {
         restoreLogger.log_error("Restore: Failed to restore epoch");
-        return NDBT_FAILED;
+        return NdbRestoreStatus::Failed;
       }
   }
 
   if (ga_error_thread > 0)
   {
     restoreLogger.log_error("Thread %u exits on error", thrdata->m_part_id);
-    return NDBT_FAILED; // thread 1 failed to restore metadata, exiting
+    return NdbRestoreStatus::Failed; // thread 1 failed to restore metadata, exiting
   }
 
   unsigned j;
@@ -1972,7 +1985,7 @@ int do_restore(RestoreThreadData *thrdata)
     if (!thrdata->m_barrier->wait())
     {
       ga_error_thread = thrdata->m_part_id;
-      return NDBT_FAILED;
+      return NdbRestoreStatus::Failed;
     }
 
     restoreLogger.log_debug("Rebuilding indexes");
@@ -1989,20 +2002,20 @@ int do_restore(RestoreThreadData *thrdata)
       for(Uint32 j= 0; j < g_consumers.size(); j++)
       {
         if (!g_consumers[j]->rebuild_indexes(* table))
-          return NDBT_FAILED;
+          return NdbRestoreStatus::Failed;
       }
     }
     for(Uint32 j= 0; j < g_consumers.size(); j++)
     {
       if (!g_consumers[j]->endOfTablesFK())
-        return NDBT_FAILED;
+        return NdbRestoreStatus::Failed;
     }
   }
 
   if (ga_error_thread > 0)
   {
     restoreLogger.log_error("Thread %u exits on error", thrdata->m_part_id);
-    return NDBT_FAILED; // thread 1 failed to restore metadata, exiting
+    return NdbRestoreStatus::Failed; // thread 1 failed to restore metadata, exiting
   }
 
   /* report to clusterlog if applicable */
@@ -2019,7 +2032,7 @@ int do_restore(RestoreThreadData *thrdata)
       table_output[i] = NULL;
     }
   }
-  return NDBT_OK;
+  return NdbRestoreStatus::Ok;
 } // do_restore
 
 /* Detects the backup type (single part or multiple parts) by locating
@@ -2068,17 +2081,17 @@ int detect_backup_format()
       if(my_stat(name, &buf, 0))
         break; // part found, end of parts
       if(ga_part_count == g_max_parts)
-        return NDBT_FAILED; // too many parts
+        return NdbRestoreStatus::Failed; // too many parts
     }
   }
-  return NDBT_OK;
+  return NdbRestoreStatus::Ok;
 } // detect_backup_format
 
 static void* start_restore_worker(void *data)
 {
   RestoreThreadData *rdata = (RestoreThreadData*)data;
   rdata->m_result = do_restore(rdata);
-  if (rdata->m_result == NDBT_FAILED)
+  if (rdata->m_result == NdbRestoreStatus::Failed)
   {
     info << "Thread " << rdata->m_part_id << " failed, exiting" << endl;
     ga_error_thread = rdata->m_part_id;
@@ -2096,7 +2109,7 @@ main(int argc, char** argv)
 
   if (!readArguments(opts, &argv))
   {
-    exitHandler(NDBT_FAILED);
+    exitHandler(NdbRestoreStatus::Failed);
   }
 
   g_options.appfmt(" -b %u", ga_backupId);
@@ -2136,7 +2149,7 @@ main(int argc, char** argv)
   // determine backup format: simple or multi-part, and count parts
   int result = detect_backup_format();
 
-  if (result != NDBT_OK)
+  if (result != NdbRestoreStatus::Ok)
     exitHandler(result);
 
   init_restore();
@@ -2183,7 +2196,7 @@ main(int argc, char** argv)
          break;
       }
 
-      if (do_restore(&thrdata) == NDBT_FAILED)
+      if (do_restore(&thrdata) == NdbRestoreStatus::Failed)
       {
         if (ga_backup_format == BF_SINGLE)
         {
@@ -2253,12 +2266,9 @@ main(int argc, char** argv)
   cleanup_restore();
 
   if (ga_error_thread > 0)
-    exitHandler(NDBT_FAILED);
+    exitHandler(NdbRestoreStatus::Failed);
 
-  if (opt_verbose)
-    return NDBT_ProgramExit(NDBT_OK);
-  else
-    return 0;
+  return NdbRestoreStatus::Ok;
 } // main
 
 template class Vector<BackupConsumer*>;

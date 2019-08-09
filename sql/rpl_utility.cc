@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -88,7 +88,7 @@ using std::unique_ptr;
   This function returns the field size in raw bytes based on the type
   and the encoded field data from the master's raw data.
 */
-uint32 table_def::calc_field_size(uint col, uchar *master_data) const {
+uint32 table_def::calc_field_size(uint col, const uchar *master_data) const {
   uint32 length =
       ::calc_field_size(type(col), master_data, m_field_metadata[col]);
   return length;
@@ -217,6 +217,7 @@ inline bool time_cross_check(enum_field_types type1, enum_field_types type2) {
    @param[in] field    Target field
    @param[in] source_type Source field type
    @param[in] metadata Source field metadata
+   @param[in] is_array Whether the source field is a typed array
    @param[in] rli      Relay log info (for error reporting)
    @param[in] mflags   Flags from the table map event
    @param[out] order_var Order between source field and target field
@@ -226,8 +227,9 @@ inline bool time_cross_check(enum_field_types type1, enum_field_types type2) {
    current setting.
  */
 static bool can_convert_field_to(Field *field, enum_field_types source_type,
-                                 uint16 metadata, Relay_log_info *rli,
-                                 uint16 mflags, int *order_var) {
+                                 uint metadata, bool is_array,
+                                 Relay_log_info *rli, uint16 mflags,
+                                 int *order_var) {
   DBUG_ENTER("can_convert_field_to");
 #ifndef DBUG_OFF
   char field_type_buf[MAX_FIELD_WIDTH];
@@ -238,6 +240,9 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
                        field_type.c_ptr_safe(), field->real_type(), source_type,
                        metadata));
 #endif
+  // Can't convert from scalar to array and vice versa
+  if (is_array != field->is_array()) DBUG_RETURN(false);
+
   /*
     If the real type is the same, we need to check the metadata to
     decide if conversions are allowed.
@@ -263,6 +268,9 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
       DBUG_RETURN(is_conversion_ok(*order_var));
     else
       DBUG_RETURN(false);
+  } else if (is_array) {
+    // Can't covert between typed array of different types
+    DBUG_RETURN(false);
   } else if (metadata == 0 &&
              (timestamp_cross_check(field->real_type(), source_type) ||
               datetime_cross_check(field->real_type(), source_type) ||
@@ -414,6 +422,7 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
     case MYSQL_TYPE_TIMESTAMP2:
     case MYSQL_TYPE_DATETIME2:
     case MYSQL_TYPE_TIME2:
+    case MYSQL_TYPE_TYPED_ARRAY:
       DBUG_RETURN(false);
   }
   DBUG_RETURN(false);  // To keep GCC happy
@@ -474,13 +483,13 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
     We only check the initial columns for the tables.
   */
   uint const cols_to_check = min<ulong>(table->s->fields, size());
-  TABLE *tmp_table = NULL;
+  TABLE *tmp_table = nullptr;
 
   for (uint col = 0; col < cols_to_check; ++col) {
     Field *const field = table->field[col];
     int order;
-    if (can_convert_field_to(field, type(col), field_metadata(col), rli,
-                             m_flags, &order)) {
+    if (can_convert_field_to(field, type(col), field_metadata(col),
+                             is_array(col), rli, m_flags, &order)) {
       DBUG_PRINT("debug", ("Checking column %d -"
                            " field '%s' can be converted - order: %d",
                            col, field->field_name, order));
@@ -490,20 +499,20 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
         If order is not 0, a conversion is required, so we need to set
         up the conversion table.
        */
-      if (order != 0 && tmp_table == NULL) {
+      if (order != 0 && tmp_table == nullptr) {
         /*
           This will create the full table with all fields. This is
           necessary to ge the correct field lengths for the record.
         */
         tmp_table = create_conversion_table(thd, rli, table);
-        if (tmp_table == NULL) return false;
+        if (tmp_table == nullptr) return false;
         /*
           Clear all fields up to, but not including, this column.
         */
-        for (unsigned int i = 0; i < col; ++i) tmp_table->field[i] = NULL;
+        for (unsigned int i = 0; i < col; ++i) tmp_table->field[i] = nullptr;
       }
 
-      if (order == 0 && tmp_table != NULL) tmp_table->field[col] = NULL;
+      if (order == 0 && tmp_table != nullptr) tmp_table->field[col] = nullptr;
     } else {
       DBUG_PRINT("debug", ("Checking column %d -"
                            " field '%s' can not be converted",
@@ -518,17 +527,13 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
       enum loglevel report_level = INFORMATION_LEVEL;
       String source_type(source_buf, sizeof(source_buf), &my_charset_latin1);
       String target_type(target_buf, sizeof(target_buf), &my_charset_latin1);
-      show_sql_type(type(col), field_metadata(col), &source_type);
+      show_sql_type(type(col), is_array(col), field_metadata(col),
+                    &source_type);
       field->sql_type(target_type);
       if (!ignored_error_code(ER_SERVER_SLAVE_CONVERSION_FAILED)) {
         report_level = ERROR_LEVEL;
         thd->is_slave_error = 1;
-      }
-      /*
-        In case of ignored errors report warnings only if
-        log_error_verbosity > 2.
-      */
-      else if (log_error_verbosity > 2)
+      } else if (log_error_verbosity >= 2)
         report_level = WARNING_LEVEL;
 
       if (field->has_charset() && (field->type() == MYSQL_TYPE_VARCHAR ||
@@ -537,7 +542,7 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
                                                                     : "char");
         const CHARSET_INFO *cs = field->charset();
         size_t length = cs->cset->snprintf(
-            cs, (char *)target_type.ptr(), target_type.alloced_length(),
+            cs, target_type.ptr(), target_type.alloced_length(),
             "%s(%u(bytes) %s)", field_sql_type.c_ptr_safe(),
             field->field_length, field->charset()->csname);
         target_type.length(length);
@@ -591,7 +596,7 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli,
   DBUG_ENTER("table_def::create_conversion_table");
 
   List<Create_field> field_list;
-  TABLE *conv_table = NULL;
+  TABLE *conv_table = nullptr;
   /*
     At slave, columns may differ. So we should create
     min(columns@master, columns@slave) columns in the
@@ -613,17 +618,17 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli,
 
   for (uint col = 0; col < cols_to_create; ++col) {
     Create_field *field_def = new (thd->mem_root) Create_field();
-    if (field_list.push_back(field_def)) DBUG_RETURN(NULL);
+    if (field_list.push_back(field_def)) DBUG_RETURN(nullptr);
 
     uint decimals = 0;
-    TYPELIB *interval = NULL;
+    TYPELIB *interval = nullptr;
     uint pack_length_override = 0;  // 0 => NA. Only assigned below when needed.
     enum_field_types field_type = type(col);
     uint32 max_length =
         max_display_length_for_field(field_type, field_metadata(col));
 
     switch (field_type) {
-      int precision;
+      uint precision;
       case MYSQL_TYPE_ENUM:
       case MYSQL_TYPE_SET:
         interval = static_cast<Field_enum *>(target_table->field[col])->typelib;
@@ -683,20 +688,16 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli,
     field_def->interval = interval;
   }
 
-  conv_table = create_tmp_table_from_fields(thd, field_list);
-
+  conv_table = DBUG_EVALUATE_IF(
+      "simulate_out_of_memory_while_creating_temp_table_for_conversion",
+      nullptr, create_tmp_table_from_fields(thd, field_list));
 err:
-  if (conv_table == NULL) {
+  if (conv_table == nullptr) {
     enum loglevel report_level = INFORMATION_LEVEL;
     if (!ignored_error_code(ER_SLAVE_CANT_CREATE_CONVERSION)) {
       report_level = ERROR_LEVEL;
       thd->is_slave_error = 1;
-    }
-    /*
-      In case of ignored errors report warnings only if
-      log_error_verbosity > 2.
-    */
-    else if (log_error_verbosity > 2)
+    } else if (log_error_verbosity >= 2)
       report_level = WARNING_LEVEL;
 
     if (report_level != INFORMATION_LEVEL)
@@ -709,24 +710,117 @@ err:
 
 #endif /* MYSQL_SERVER */
 
+/**
+  Decode field metadata from a char buffer (serialized form) into an int
+  (packed form).
+
+  @note On little-endian platforms (e.g Intel) this function effectively
+  inverts order of bytes compared to what Field::save_field_metadata()
+  writes. E.g for MYSQL_TYPE_NEWDECIMAL save_field_metadata writes precision
+  into the first byte and decimals into the second, this function puts
+  precision into the second byte and decimals into the first. This layout
+  is expected by replication code that reads metadata in the uint form.
+  Due to this design feature show_sql_type() can't correctly print
+  immediate output of save_field_metadata(), this function have to be used
+  as translator.
+
+  @param buffer Field metadata, in the character stream form produced by
+                save_field_metadata.
+  @param binlog_type The type of the field, in the form returned by
+                      Field::binlog_type and stored in Table_map_log_event.
+  @retval pair where:
+  - the first component is the length of the metadata within 'buffer',
+    i.e., how much the buffer pointer should move forward in order to skip it.
+  - the second component is pair containing:
+    - the metadata, encoded as an 'uint', in the form required by e.g.
+      show_sql_type.
+    - bool indicating whether the field is array (true) or a scalar (false)
+*/
+
+std::pair<my_off_t, std::pair<uint, bool>> read_field_metadata(
+    const uchar *buffer, enum_field_types binlog_type) {
+  bool is_array = false;
+  uint metadata = 0;
+  uint index = 0;
+  if (binlog_type == MYSQL_TYPE_TYPED_ARRAY) {
+    binlog_type = static_cast<enum_field_types>(buffer[index++]);
+    is_array = true;
+  }
+  switch (binlog_type) {
+    case MYSQL_TYPE_TINY_BLOB:
+    case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_MEDIUM_BLOB:
+    case MYSQL_TYPE_LONG_BLOB:
+    case MYSQL_TYPE_DOUBLE:
+    case MYSQL_TYPE_FLOAT:
+    case MYSQL_TYPE_GEOMETRY:
+    case MYSQL_TYPE_TIME2:
+    case MYSQL_TYPE_DATETIME2:
+    case MYSQL_TYPE_TIMESTAMP2:
+    case MYSQL_TYPE_JSON: {
+      /*
+        These types store a single byte.
+      */
+      metadata = buffer[index++];
+      break;
+    }
+    case MYSQL_TYPE_SET:
+    case MYSQL_TYPE_ENUM:
+    case MYSQL_TYPE_STRING: {
+      metadata = buffer[index++] << 8U;  // real_type
+      metadata += buffer[index++];       // pack or field length
+      break;
+    }
+    case MYSQL_TYPE_BIT: {
+      metadata = buffer[index++];
+      metadata += (buffer[index++] << 8U);
+      break;
+    }
+    case MYSQL_TYPE_VARCHAR: {
+      /*
+        These types store two bytes.
+      */
+      if (is_array) {
+        metadata = uint3korr(buffer + index);
+        index = index + 3;
+      } else {
+        metadata = uint2korr(buffer + index);
+        index = index + 2;
+      }
+      break;
+    }
+    case MYSQL_TYPE_NEWDECIMAL: {
+      metadata = buffer[index++] << 8U;  // precision
+      metadata += buffer[index++];       // decimals
+      break;
+    }
+    default:
+      metadata = 0;
+      break;
+  }
+  return std::make_pair(index, std::make_pair(metadata, is_array));
+}
+
 PSI_memory_key key_memory_table_def_memory;
 
 table_def::table_def(unsigned char *types, ulong size, uchar *field_metadata,
                      int metadata_size, uchar *null_bitmap, uint16 flags)
     : m_size(size),
-      m_type(0),
+      m_type(nullptr),
       m_field_metadata_size(metadata_size),
-      m_field_metadata(0),
-      m_null_bits(0),
+      m_field_metadata(nullptr),
+      m_null_bits(nullptr),
       m_flags(flags),
-      m_memory(NULL),
-      m_json_column_count(-1) {
-  m_memory = (uchar *)my_multi_malloc(key_memory_table_def_memory, MYF(MY_WME),
-                                      &m_type, size, &m_field_metadata,
-                                      size * sizeof(uint16), &m_null_bits,
-                                      (size + 7) / 8, NULL);
+      m_memory(nullptr),
+      m_json_column_count(-1),
+      m_is_array(nullptr) {
+  m_memory = (uchar *)my_multi_malloc(
+      key_memory_table_def_memory, MYF(MY_WME), &m_type, size,
+      &m_field_metadata, size * sizeof(uint), &m_is_array, size * sizeof(bool),
+      &m_null_bits, (size + 7) / 8, nullptr);
 
-  memset(m_field_metadata, 0, size * sizeof(uint16));
+  memset(m_field_metadata, 0, size * sizeof(uint));
+  memset(m_is_array, 0, size * sizeof(bool));
 
   if (m_type)
     memcpy(m_type, types, size);
@@ -742,60 +836,16 @@ table_def::table_def(unsigned char *types, ulong size, uchar *field_metadata,
   if (m_size && metadata_size) {
     int index = 0;
     for (unsigned int i = 0; i < m_size; i++) {
-      switch (binlog_type(i)) {
-        case MYSQL_TYPE_TINY_BLOB:
-        case MYSQL_TYPE_BLOB:
-        case MYSQL_TYPE_MEDIUM_BLOB:
-        case MYSQL_TYPE_LONG_BLOB:
-        case MYSQL_TYPE_DOUBLE:
-        case MYSQL_TYPE_FLOAT:
-        case MYSQL_TYPE_GEOMETRY:
-        case MYSQL_TYPE_JSON: {
-          /*
-            These types store a single byte.
-          */
-          m_field_metadata[i] = field_metadata[index];
-          index++;
-          break;
-        }
-        case MYSQL_TYPE_SET:
-        case MYSQL_TYPE_ENUM:
-        case MYSQL_TYPE_STRING: {
-          uint16 x = field_metadata[index++] << 8U;  // real_type
-          x += field_metadata[index++];              // pack or field length
-          m_field_metadata[i] = x;
-          break;
-        }
-        case MYSQL_TYPE_BIT: {
-          uint16 x = field_metadata[index++];
-          x = x + (field_metadata[index++] << 8U);
-          m_field_metadata[i] = x;
-          break;
-        }
-        case MYSQL_TYPE_VARCHAR: {
-          /*
-            These types store two bytes.
-          */
-          char *ptr = (char *)&field_metadata[index];
-          m_field_metadata[i] = uint2korr(ptr);
-          index = index + 2;
-          break;
-        }
-        case MYSQL_TYPE_NEWDECIMAL: {
-          uint16 x = field_metadata[index++] << 8U;  // precision
-          x += field_metadata[index++];              // decimals
-          m_field_metadata[i] = x;
-          break;
-        }
-        case MYSQL_TYPE_TIME2:
-        case MYSQL_TYPE_DATETIME2:
-        case MYSQL_TYPE_TIMESTAMP2:
-          m_field_metadata[i] = field_metadata[index++];
-          break;
-        default:
-          m_field_metadata[i] = 0;
-          break;
-      }
+      std::pair<my_off_t, std::pair<uint, bool>> pack = read_field_metadata(
+          static_cast<const uchar *>(field_metadata + index), binlog_type(i));
+      // Update type of the typed array
+      if (binlog_type(i) == MYSQL_TYPE_TYPED_ARRAY)
+        m_type[i] = static_cast<enum_field_types>(field_metadata[index]);
+      // Fill in read metadata
+      m_field_metadata[i] = pack.second.first;
+      m_is_array[i] = pack.second.second;
+      index += pack.first;
+      DBUG_ASSERT(index <= metadata_size);
     }
   }
   if (m_size && null_bitmap) memcpy(m_null_bits, null_bitmap, (m_size + 7) / 8);
@@ -846,7 +896,9 @@ bool Hash_slave_rows::deinit(void) {
 
 int Hash_slave_rows::size() { return m_hash.size(); }
 
-HASH_ROW_ENTRY *Hash_slave_rows::make_entry() { return make_entry(NULL, NULL); }
+HASH_ROW_ENTRY *Hash_slave_rows::make_entry() {
+  return make_entry(nullptr, nullptr);
+}
 
 HASH_ROW_ENTRY *Hash_slave_rows::make_entry(const uchar *bi_start,
                                             const uchar *bi_ends) {
@@ -891,7 +943,7 @@ err:
     my_free(preamble);
   }
   if (pos) my_free(pos);
-  DBUG_RETURN(NULL);
+  DBUG_RETURN(nullptr);
 }
 
 bool Hash_slave_rows::put(TABLE *table, MY_BITMAP *cols,
@@ -918,7 +970,7 @@ bool Hash_slave_rows::put(TABLE *table, MY_BITMAP *cols,
 HASH_ROW_ENTRY *Hash_slave_rows::get(TABLE *table, MY_BITMAP *cols) {
   DBUG_ENTER("Hash_slave_rows::get");
   uint key;
-  HASH_ROW_ENTRY *entry = NULL;
+  HASH_ROW_ENTRY *entry = nullptr;
 
   key = make_hash_key(table, cols);
 
@@ -944,7 +996,7 @@ bool Hash_slave_rows::next(HASH_ROW_ENTRY **entry) {
   DBUG_ENTER("Hash_slave_rows::next");
   DBUG_ASSERT(*entry);
 
-  if (*entry == NULL) DBUG_RETURN(true);
+  if (*entry == nullptr) DBUG_RETURN(true);
 
   HASH_ROW_PREAMBLE *preamble = (*entry)->preamble;
 
@@ -1054,7 +1106,8 @@ uint Hash_slave_rows::make_hash_key(TABLE *table, MY_BITMAP *cols) {
         case MYSQL_TYPE_BIT: {
           String tmp;
           f->val_str(&tmp);
-          crc = checksum_crc32(crc, (uchar *)tmp.ptr(), tmp.length());
+          crc = checksum_crc32(crc, pointer_cast<const uchar *>(tmp.ptr()),
+                               tmp.length());
           break;
         }
         default:
@@ -1099,7 +1152,7 @@ Deferred_log_events::~Deferred_log_events() { m_array.clear(); }
 
 int Deferred_log_events::add(Log_event *ev) {
   m_array.push_back(ev);
-  ev->worker = NULL;  // to mark event busy avoiding deletion
+  ev->worker = nullptr;  // to mark event busy avoiding deletion
   return 0;
 }
 

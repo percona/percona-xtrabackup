@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include "sql/dd_table_share.h"
 #include "sql/field.h"
 #include "sql/ndb_dd_table.h"
+#include "sql/ndb_ndbapi_util.h"
 #include "sql/ndb_table_map.h"
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"
@@ -159,9 +160,10 @@ TABLE* Ndb_event_data::open_shadow_table(THD* thd, const char* db,
   DBUG_ENTER("Ndb_event_data::open_shadow_table");
   DBUG_ASSERT(table_def);
 
+  // Allocate memory for shadow table from MEM_ROOT
   TABLE_SHARE* shadow_table_share =
-      (TABLE_SHARE*)alloc_root(&mem_root, sizeof(TABLE_SHARE));
-  TABLE* shadow_table = (TABLE*)alloc_root(&mem_root, sizeof(TABLE));
+      (TABLE_SHARE*)mem_root.Alloc(sizeof(TABLE_SHARE));
+  TABLE* shadow_table = (TABLE*)mem_root.Alloc(sizeof(TABLE));
 
   init_tmp_table_share(thd, shadow_table_share, db, 0, table_name, key,
                        nullptr);
@@ -256,4 +258,12 @@ void Ndb_event_data::destroy(const Ndb_event_data* event_data)
   delete event_data;
 
   DBUG_VOID_RETURN;
+}
+
+uint32 Ndb_event_data::unpack_uint32(unsigned attr_id) const {
+  return ndb_value[0][attr_id].rec->u_32_value();
+}
+
+const char* Ndb_event_data::unpack_string(unsigned attr_id) const {
+  return ndb_value[0][attr_id].rec->aRef();
 }

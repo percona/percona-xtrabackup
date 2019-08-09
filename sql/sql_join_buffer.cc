@@ -232,8 +232,8 @@ void JOIN_CACHE::calc_record_fields() {
 int JOIN_CACHE::alloc_fields(uint external_fields) {
   uint ptr_cnt = external_fields + blobs + 1;
   uint fields_size = sizeof(CACHE_FIELD) * fields;
-  field_descr =
-      (CACHE_FIELD *)sql_alloc(fields_size + sizeof(CACHE_FIELD *) * ptr_cnt);
+  field_descr = (CACHE_FIELD *)(*THR_MALLOC)
+                    ->Alloc(fields_size + sizeof(CACHE_FIELD *) * ptr_cnt);
   blob_ptr = (CACHE_FIELD **)((uchar *)field_descr + fields_size);
   return (field_descr == NULL);
 }
@@ -543,12 +543,15 @@ static void filter_gcol_for_dynamic_range_scan(QEP_TAB *const tab) {
 */
 
 void JOIN_CACHE::filter_virtual_gcol_base_cols() {
+  DBUG_ASSERT(save_read_set_for_gcol.empty());
+
   for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
     TABLE *table = tab->table();
     if (table->vfield == NULL) continue;
 
     const uint index = tab->effective_index();
-    if (index != MAX_KEY && table->index_contains_some_virtual_gcol(index) &&
+    const bool cov_index =
+        index != MAX_KEY && table->index_contains_some_virtual_gcol(index) &&
         /*
           There are two cases:
           - If the table scan uses covering index scan, we can get the value
@@ -558,21 +561,33 @@ void JOIN_CACHE::filter_virtual_gcol_base_cols() {
             After restore the base columns, the value of virtual generated
             columns can be calculated correctly.
         */
-        table->covering_keys.is_set(index)) {
-      DBUG_ASSERT(bitmap_is_clear_all(&table->tmp_set));
-      // Keep table->read_set in tmp_set so that it can be restored
-      bitmap_copy(&table->tmp_set, table->read_set);
+        table->covering_keys.is_set(index);
+    if (!(cov_index || tab->dynamic_range())) continue;
+
+    /*
+      Save of a copy of table->read_set in save_read_set so that it can be
+      restored. tmp_set cannot be used as recipient for this as it's already
+      used in other parts of JOIN_CACHE::init().
+    */
+    auto bitbuf =
+        (my_bitmap_map *)(*THR_MALLOC)->Alloc(table->s->column_bitmap_size);
+    auto save_read_set = (MY_BITMAP *)(*THR_MALLOC)->Alloc(sizeof(MY_BITMAP));
+    bitmap_init(save_read_set, bitbuf, table->s->fields, false);
+    bitmap_copy(save_read_set, table->read_set);
+    /*
+      restore_virtual_gcol_base_cols() will need old bitmap so we save a
+      reference to it.
+    */
+    save_read_set_for_gcol.insert(std::make_pair(tab, save_read_set));
+
+    if (cov_index) {
       bitmap_clear_all(table->read_set);
       table->mark_columns_used_by_index_no_reset(index, table->read_set);
       if (table->s->primary_key != MAX_KEY)
         table->mark_columns_used_by_index_no_reset(table->s->primary_key,
                                                    table->read_set);
-      bitmap_intersect(table->read_set, &table->tmp_set);
+      bitmap_intersect(table->read_set, save_read_set);
     } else if (tab->dynamic_range()) {
-      DBUG_ASSERT(bitmap_is_clear_all(&table->tmp_set));
-      // Keep table->read_set in tmp_set so that it can be restored
-      bitmap_copy(&table->tmp_set, table->read_set);
-
       filter_gcol_for_dynamic_range_scan(tab);
     }
   }
@@ -588,10 +603,9 @@ void JOIN_CACHE::restore_virtual_gcol_base_cols() {
     TABLE *table = tab->table();
     if (table->vfield == NULL) continue;
 
-    if (!bitmap_is_clear_all(&table->tmp_set)) {
-      bitmap_copy(table->read_set, &table->tmp_set);
-      bitmap_clear_all(&table->tmp_set);
-    }
+    auto saved = save_read_set_for_gcol.find(tab);
+    if (saved != save_read_set_for_gcol.end())
+      bitmap_copy(table->read_set, saved->second);
   }
 }
 
@@ -1134,7 +1148,7 @@ uint JOIN_CACHE::write_record_data(uchar *link, bool *is_full) {
         uint blob_len = blob_field->get_length();
         (*copy_ptr)->blob_length = blob_len;
         len += blob_len;
-        blob_field->get_ptr(&(*copy_ptr)->str);
+        (*copy_ptr)->str = blob_field->get_blob_data();
       }
     }
   }
@@ -1794,6 +1808,7 @@ finish:
     for (plan_idx i = qep_tab->first_inner(); i <= qep_tab->last_inner(); ++i)
       join->qep_tab[i].first_unmatched = NO_PLAN_IDX;
   }
+  restore_last_record();
   for (int cnt = 1; cnt <= static_cast<int>(tables); cnt++) {
     /*
       We must restore the status of outer tables as it was before entering
@@ -1804,10 +1819,14 @@ finish:
     const table_map map = tr->map();
     if (saved_status_bits[0] & map) table->set_not_started();
     if (saved_status_bits[1] & map) table->set_no_row();
-    if (saved_status_bits[2] & map) table->set_null_row();
+    if (saved_status_bits[2] & map)
+      table->set_null_row();
+    else {
+      table->reset_null_row();
+    }
   }
-  restore_last_record();
   reset_cache(true);
+  DBUG_ASSERT(!qep_tab->table()->has_null_row());
   DBUG_RETURN(rc);
 }
 

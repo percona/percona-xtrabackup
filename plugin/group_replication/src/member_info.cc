@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ using std::string;
 using std::vector;
 
 Group_member_info::Group_member_info(
-    char *hostname_arg, uint port_arg, char *uuid_arg,
+    const char *hostname_arg, uint port_arg, const char *uuid_arg,
     int write_set_extraction_algorithm_arg,
     const std::string &gcs_member_id_arg,
     Group_member_info::Group_member_status status_arg,
@@ -84,6 +84,7 @@ Group_member_info::Group_member_info(Group_member_info &other)
       uuid(other.get_uuid()),
       status(other.get_recovery_status()),
       executed_gtid_set(other.get_gtid_executed()),
+      purged_gtid_set(other.get_gtid_purged()),
       retrieved_gtid_set(other.get_gtid_retrieved()),
       write_set_extraction_algorithm(
           other.get_write_set_extraction_algorithm()),
@@ -159,6 +160,7 @@ void Group_member_info::update(
   primary_election_running = false;
 
   executed_gtid_set.clear();
+  purged_gtid_set.clear();
   retrieved_gtid_set.clear();
 
   delete gcs_member_id;
@@ -260,6 +262,9 @@ void Group_member_info::encode_payload(
 #endif
     encode_payload_item_char(buffer, PIT_DEFAULT_TABLE_ENCRYPTION,
                              default_table_encryption_aux);
+
+  encode_payload_item_string(buffer, PIT_PURGED_GTID, purged_gtid_set.c_str(),
+                             purged_gtid_set.length());
 
   DBUG_VOID_RETURN;
 }
@@ -388,6 +393,13 @@ void Group_member_info::decode_payload(const unsigned char *buffer,
               (default_table_encryption_aux == '1') ? true : false;
         }
         break;
+      case PIT_PURGED_GTID:
+        if (slider + payload_item_length <= end) {
+          purged_gtid_set.assign(reinterpret_cast<const char *>(slider),
+                                 static_cast<size_t>(payload_item_length));
+          slider += payload_item_length;
+        }
+        break;
     }
   }
 
@@ -448,9 +460,11 @@ void Group_member_info::update_recovery_status(Group_member_status new_status) {
 }
 
 void Group_member_info::update_gtid_sets(std::string &executed_gtids,
+                                         std::string &purged_gtids,
                                          std::string &retrieved_gtids) {
   MUTEX_LOCK(lock, &update_lock);
   executed_gtid_set.assign(executed_gtids);
+  purged_gtid_set.assign(purged_gtids);
   retrieved_gtid_set.assign(retrieved_gtids);
 }
 
@@ -467,6 +481,11 @@ Member_version Group_member_info::get_member_version() {
 std::string Group_member_info::get_gtid_executed() {
   MUTEX_LOCK(lock, &update_lock);
   return executed_gtid_set;
+}
+
+std::string Group_member_info::get_gtid_purged() {
+  MUTEX_LOCK(lock, &update_lock);
+  return purged_gtid_set;
 }
 
 std::string Group_member_info::get_gtid_retrieved() {
@@ -774,6 +793,26 @@ Group_member_info *Group_member_info_manager::get_group_member_info_by_index(
   return member_copy;
 }
 
+Member_version Group_member_info_manager::get_group_lowest_online_version() {
+  Member_version lowest_version(0xFFFFFF);
+
+  mysql_mutex_lock(&update_lock);
+
+  for (auto it = members->begin(); it != members->end(); it++) {
+    if ((*it).second->get_member_version() < lowest_version &&
+        (*it).second->get_recovery_status() != /* Not part of group */
+            Group_member_info::MEMBER_OFFLINE &&
+        (*it).second->get_recovery_status() !=
+            Group_member_info::MEMBER_ERROR) {
+      lowest_version = (*it).second->get_member_version();
+    }
+  }
+
+  mysql_mutex_unlock(&update_lock);
+
+  return lowest_version;
+}
+
 Group_member_info *
 Group_member_info_manager::get_group_member_info_by_member_id(
     Gcs_member_identifier idx) {
@@ -904,6 +943,7 @@ void Group_member_info_manager::update_member_status(
 
 void Group_member_info_manager::update_gtid_sets(const string &uuid,
                                                  string &gtid_executed,
+                                                 std::string &purged_gtids,
                                                  string &gtid_retrieved) {
   mysql_mutex_lock(&update_lock);
 
@@ -912,7 +952,7 @@ void Group_member_info_manager::update_gtid_sets(const string &uuid,
   it = members->find(uuid);
 
   if (it != members->end()) {
-    (*it).second->update_gtid_sets(gtid_executed, gtid_retrieved);
+    (*it).second->update_gtid_sets(gtid_executed, purged_gtids, gtid_retrieved);
   }
 
   mysql_mutex_unlock(&update_lock);

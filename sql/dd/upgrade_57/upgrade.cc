@@ -70,6 +70,7 @@
 #include "sql/lock.h"       // Tablespace_hash_set
 #include "sql/log.h"        // sql_print_warning
 #include "sql/mysqld.h"     // key_file_sdi
+#include "sql/sd_notify.h"  // sysd::notify
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_list.h"
 #include "sql/sql_plugin.h"
@@ -290,13 +291,7 @@ bool finalize_upgrade(THD *thd) {
       file_ext.assign(file.c_str() + file.size() - 4);
 
       // Get the name without the file extension.
-      // Even though the stats backup tables were dropped earlier, the
-      // tablespace files on the disk still exists. This is because the InnoDB
-      // post DDL hook is skipped on a bootstrap thread. We must manually delete
-      // these files.
-      if (check_file_extension(file_ext) ||
-          file.compare("innodb_table_stats_backup57.ibd") == 0 ||
-          file.compare("innodb_index_stats_backup57.ibd") == 0) {
+      if (check_file_extension(file_ext)) {
         if (fn_format(from_path, file.c_str(), dir_path, "",
                       MYF(MY_UNPACK_FILENAME | MY_SAFE_PATH)) == NULL)
           continue;
@@ -560,7 +555,7 @@ bool add_sdi_info(THD *thd) {
     }
 
     if (dd::sdi::store(thd, table)) {
-      LogErr(ERROR_LEVEL, ER_BAD_TABLE_ERROR, table->name().c_str());
+      LogErr(ERROR_LEVEL, ER_UNKNOWN_TABLE_IN_UPGRADE, table->name().c_str());
       trans_rollback_stmt(thd);
     }
     trans_commit_stmt(thd);
@@ -575,6 +570,7 @@ bool add_sdi_info(THD *thd) {
 
   LogErr(SYSTEM_LEVEL, ER_DD_UPGRADE_DD_POPULATED);
   log_sink_buffer_check_timeout();
+  sysd::notify("STATUS=Data Dictionary upgrade from MySQL 5.7 complete\n");
 
   return false;
 }  // add_sdi_info
@@ -893,6 +889,7 @@ bool do_pre_checks_and_initialize_dd(THD *thd) {
     */
     LogErr(SYSTEM_LEVEL, ER_DD_UPGRADE_START);
     log_sink_buffer_check_timeout();
+    sysd::notify("STATUS=Data Dictionary upgrade from MySQL 5.7 in progress\n");
   }
 
   /*

@@ -213,6 +213,10 @@ Key_use *Optimize_table_order::find_best_ref(
     key_part_map found_part = 0;
     // Bitmap of keyparts where the ref access is over 'keypart=const'
     key_part_map const_part = 0;
+    // Keyparts where ref access will not match on NULL values.
+    // Used for unique indexes on nullable columns to decide whether
+    // a specific key may match on (multiple) NULL valued rows.
+    key_part_map null_rejecting_part = 0;
     /*
       Cost of ref access on current index. Calculated as follows:
       cost_ref_for_one_value * prefix_rowcount
@@ -282,6 +286,13 @@ Key_use *Optimize_table_order::find_best_ref(
              (keyuse->optimize & KEY_OPTIMIZE_REF_OR_NULL)))  // 3b)
           continue;
 
+        if (keypart != FT_KEYPART) {
+          const bool keyinfo_maybe_null =
+              keyinfo->key_part[keypart].field->maybe_null();
+          if (keyuse->null_rejecting || !keyuse->val->maybe_null ||
+              !keyinfo_maybe_null)
+            null_rejecting_part |= keyuse->keypart_map;
+        }
         found_part |= keyuse->keypart_map;
         if (!(keyuse->used_tables & ~join->const_table_map))
           const_part |= keyuse->keypart_map;
@@ -322,12 +333,18 @@ Key_use *Optimize_table_order::find_best_ref(
 
       const bool all_key_parts_covered =
           (found_part == LOWER_BITS(key_part_map, actual_key_parts(keyinfo)));
+      const bool all_key_parts_non_null =
+          (ref_or_null_part == 0 &&
+           null_rejecting_part ==
+               LOWER_BITS(key_part_map, actual_key_parts(keyinfo)));
       /*
         check for the current key type.
         If we find a key with all the keyparts having equality predicates and
         --> if it is a clustered primary key, current key type is set to
             CLUSTERED_PK.
         --> if it is non-nullable unique key, it is set as UNIQUE.
+        --> If none of the specified key parts may result in NULL value(s)
+            being matched, it is set as UNIQUE.
         --> otherwise its a NOT_UNIQUE keytype.
       */
       if (all_key_parts_covered && (keyinfo->flags & HA_NOSAME)) {
@@ -335,6 +352,8 @@ Key_use *Optimize_table_order::find_best_ref(
             table->file->primary_key_is_clustered())
           cur_keytype = CLUSTERED_PK;
         else if ((keyinfo->flags & HA_NULL_PART_KEY) == 0)
+          cur_keytype = UNIQUE;
+        else if (all_key_parts_non_null)
           cur_keytype = UNIQUE;
       }
 
@@ -362,7 +381,9 @@ Key_use *Optimize_table_order::find_best_ref(
       if (all_key_parts_covered && !ref_or_null_part) /* use eq key */
       {
         cur_used_keyparts = (uint)~0;
-        if ((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY)) == HA_NOSAME) {
+        if (keyinfo->flags & HA_NOSAME &&
+            ((keyinfo->flags & HA_NULL_PART_KEY) == 0 ||
+             all_key_parts_non_null)) {
           cur_read_cost = prev_record_reads(join, idx, table_deps) *
                           table->cost_model()->page_read_cost(1.0);
           cur_fanout = 1.0;
@@ -2353,8 +2374,8 @@ static const handlerton *secondary_engine_handlerton(const THD *thd) {
 */
 bool Optimize_table_order::consider_plan(uint idx,
                                          Opt_trace_object *trace_obj) {
-  double sort_cost = join->sort_cost;
   double cost = join->positions[idx].prefix_cost;
+  double sort_cost = 0;
   double windowing_cost = 0;
   /*
     We may have to make a temp table, note that this is only a
@@ -2370,10 +2391,9 @@ bool Optimize_table_order::consider_plan(uint idx,
   if (join->sort_by_table &&
       join->sort_by_table !=
           join->positions[join->const_tables].table->table()) {
-    cost += join->positions[idx].prefix_rowcount;
-    trace_obj->add("sort_cost", join->positions[idx].prefix_rowcount)
-        .add("new_cost_for_plan", cost);
     sort_cost = join->positions[idx].prefix_rowcount;
+    cost += sort_cost;
+    trace_obj->add("sort_cost", sort_cost).add("new_cost_for_plan", cost);
   }
 
   /*
@@ -3306,8 +3326,6 @@ bool Optimize_table_order::fix_semijoin_strategies() {
 
     } else if (pos->sj_strategy == SJ_OPT_FIRST_MATCH) {
       first = pos->first_firstmatch_table;
-      join->best_positions[first].sj_strategy = SJ_OPT_FIRST_MATCH;
-      join->best_positions[first].n_sj_tables = tableno - first + 1;
 
       Opt_trace_object trace_final_strategy(trace);
       trace_final_strategy.add_alnum("final_semijoin_strategy", "FirstMatch");
@@ -3316,6 +3334,18 @@ bool Optimize_table_order::fix_semijoin_strategies() {
       double rowcount, cost;
       (void)semijoin_firstmatch_loosescan_access_paths(
           first, tableno, remaining_tables, false, &rowcount, &cost);
+
+      if (pos->table->emb_sj_nest->is_aj_nest()) {
+        /*
+          Antijoin doesn't use the execution logic of FirstMatch. So we
+          won't set it up; and we won't either have the incompatibilities of
+          FirstMatch with outer join. Declare that we don't use it:
+        */
+        pos->sj_strategy = SJ_OPT_NONE;
+      } else {
+        join->best_positions[first].sj_strategy = SJ_OPT_FIRST_MATCH;
+        join->best_positions[first].n_sj_tables = tableno - first + 1;
+      }
     } else if (pos->sj_strategy == SJ_OPT_LOOSE_SCAN) {
       first = pos->first_loosescan_table;
 
@@ -3473,7 +3503,6 @@ bool Optimize_table_order::check_interleaving_with_nj(JOIN_TAB *tab) {
 
     next_emb->nested_join->nj_counter++;
     cur_embedding_map |= next_emb->nested_join->nj_map;
-
     if (next_emb->nested_join->nj_total != next_emb->nested_join->nj_counter)
       break;
 
@@ -3895,6 +3924,18 @@ void Optimize_table_order::semijoin_dupsweedout_access_paths(uint first_tab,
 
 /**
   Do semi-join optimization step after we've added a new tab to join prefix
+
+  This function cannot work with nested SJ nests, for two reasons:
+  (a) QEP_TAB::emb_sj_nest points to the most inner SJ nest, and this
+  function looks only at it, so misses to do any SJ strategy choice for
+  outer nests
+  (b) POSITION has only one set of SJ-info (e.g. first_firstmatch_table): so
+  planning for two nested nests would require more info than we have.
+  And indeed, SJ nests cannot be nested, because:
+  (c) a SJ nest is not nested in another SJ or anti SJ nest (it would have been
+  dissolved into the outer nest by simplify_joins()).
+  (d) an anti SJ nest is not nested inside another SJ or anti SJ nest (this case
+  is blocked by resolve_subquery()).
 
   @param remaining_tables Tables not in the join prefix
   @param new_join_tab     Join tab that we are adding to the join prefix
@@ -4467,6 +4508,7 @@ void Optimize_table_order::backout_nj_state(const table_map remaining_tables
     DBUG_ASSERT(nest->nj_counter > 0);
 
     cur_embedding_map |= nest->nj_map;
+
     bool was_fully_covered = nest->nj_total == nest->nj_counter;
 
     if (--nest->nj_counter == 0) cur_embedding_map &= ~nest->nj_map;

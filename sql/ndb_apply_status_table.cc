@@ -1,5 +1,5 @@
 ﻿/*
-   Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +61,7 @@ bool Ndb_apply_status_table::check_schema() const {
   }
 
   // log_name
-  // varchar, min 255 long
+  // varbinary, min 255 long
   if (!(check_column_exist(COL_LOG_NAME) &&
         check_column_varbinary(COL_LOG_NAME) &&
         check_column_minlength(COL_LOG_NAME, 255))) {
@@ -146,7 +146,7 @@ bool Ndb_apply_status_table::define_table_ndb(NdbDictionary::Table &new_table,
   }
 
   {
-    // log_name VARCHAR(255) BINARY NOT NULL
+    // log_name VARBINARY(255) NOT NULL
     NdbDictionary::Column col_log_name(COL_LOG_NAME);
     col_log_name.setType(NdbDictionary::Column::Varchar);
     col_log_name.setCharset(&my_charset_latin1_bin);
@@ -176,6 +176,14 @@ bool Ndb_apply_status_table::define_table_ndb(NdbDictionary::Table &new_table,
   return true;
 }
 
+bool Ndb_apply_status_table::drop_events_in_NDB() const
+{
+  // Drop the default event
+  if (!drop_event_in_NDB("REPL$mysql/ndb_apply_status"))
+    return false;
+  return true;
+}
+
 bool Ndb_apply_status_table::need_upgrade() const { return false; }
 
 std::string Ndb_apply_status_table::define_table_dd() const
@@ -184,7 +192,7 @@ std::string Ndb_apply_status_table::define_table_dd() const
   ss << "CREATE TABLE " << db_name() << "." << table_name() << "(\n";
   ss << "server_id INT UNSIGNED NOT NULL,"
         "epoch BIGINT UNSIGNED NOT NULL,"
-        "log_name VARCHAR(255) BINARY NOT NULL,"
+        "log_name VARBINARY(255) NOT NULL,"
         "start_pos BIGINT UNSIGNED NOT NULL,"
         "end_pos BIGINT UNSIGNED NOT NULL,"
         "PRIMARY KEY USING HASH (server_id)\n"

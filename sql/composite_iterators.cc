@@ -41,6 +41,7 @@
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"
 #include "sql/sql_executor.h"
+#include "sql/sql_join_buffer.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_optimizer.h"
 #include "sql/sql_tmp_table.h"
@@ -94,21 +95,63 @@ bool LimitOffsetIterator::Init() {
   if (m_source->Init()) {
     return true;
   }
-  for (ha_rows row_idx = 0; row_idx < m_offset; ++row_idx) {
-    int err = m_source->Read();
-    if (err == 1) {
-      return true;  // Note that this will propagate Read() errors to Init().
-    } else if (err == -1) {
-      m_seen_rows = m_limit;  // So that Read() will return -1.
-      return false;           // EOF is not an error.
-    }
-    if (m_skipped_rows != nullptr) {
-      ++*m_skipped_rows;
-    }
-    m_source->UnlockRow();
+  if (m_offset > 0) {
+    m_seen_rows = m_limit;
+    m_needs_offset = true;
+  } else {
+    m_seen_rows = 0;
+    m_needs_offset = false;
   }
-  m_seen_rows = m_offset;
   return false;
+}
+
+int LimitOffsetIterator::Read() {
+  if (m_seen_rows >= m_limit) {
+    // We either have hit our LIMIT, or we need to skip OFFSET rows.
+    // Check which one.
+    if (m_needs_offset) {
+      // We skip OFFSET rows here and not in Init(), since performance schema
+      // batch mode may not be set up by the executor before the first Read().
+      // This makes sure that
+      //
+      //   a) we get the performance benefits of batch mode even when reading
+      //      OFFSET rows, and
+      //   b) we don't inadvertedly enable batch mode (e.g. through the
+      //      NestedLoopIterator) during Init(), since the executor may not
+      //      be ready to _disable_ it if it gets an error before first Read().
+      for (ha_rows row_idx = 0; row_idx < m_offset; ++row_idx) {
+        int err = m_source->Read();
+        if (err != 0) {
+          // Note that we'll go back into this loop if Init() is called again,
+          // and return the same error/EOF status.
+          return err;
+        }
+        if (m_skipped_rows != nullptr) {
+          ++*m_skipped_rows;
+        }
+        m_source->UnlockRow();
+      }
+      m_seen_rows = m_offset;
+      m_needs_offset = false;
+
+      // Fall through to LIMIT testing.
+    }
+
+    if (m_seen_rows >= m_limit) {
+      // We really hit LIMIT (or hit LIMIT immediately after OFFSET finished),
+      // so EOF.
+      if (m_count_all_rows) {
+        // Count rows until the end or error (ignore the error if any).
+        while (m_source->Read() == 0) {
+          ++*m_skipped_rows;
+        }
+      }
+      return -1;
+    }
+  }
+
+  ++m_seen_rows;
+  return m_source->Read();
 }
 
 vector<RowIterator::Child> FilterIterator::children() const {
@@ -138,11 +181,53 @@ vector<RowIterator::Child> FilterIterator::children() const {
   return ret;
 }
 
-int LimitOffsetIterator::Read() {
-  if (m_seen_rows++ >= m_limit) {
-    return -1;
-  } else {
-    return m_source->Read();
+AggregateIterator::AggregateIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> source, JOIN *join,
+    Temp_table_param *temp_table_param, int output_slice, bool rollup)
+    : RowIterator(thd),
+      m_source(move(source)),
+      m_join(join),
+      m_output_slice(output_slice),
+      m_temp_table_param(temp_table_param),
+      m_rollup(rollup) {
+  // If we have rollup, the rollup rows will contain a different set of items
+  // from the normal rows. (In particular, fields that are not normally nullable
+  // can be NULL, and the rollup aggregates are also different Items.)
+  // Unfortunately, we don't have any good way of returning rows from iterators;
+  // the executor will send whatever is in join->fields.
+  //
+  // However, there is no problem in programming that can't be solved with
+  // another layer of indirection. Thus, we replace the entire field list with a
+  // set of Item_ref, which work as pointers into either the original fields or
+  // to the rollup fields, depending on what we want to output. (For outputting
+  // to temporary tables, we don't need this, as join->fields isn't used.)
+  //
+  // If we do this, ConvertItemsToCopy() needs to be careful to propagate the
+  // result fields correctly (so we mark in the JOIN that it needs to do so),
+  // but it runs after this constructor, so it should be fine.
+  m_replace_field_list =
+      m_rollup && m_output_slice == REF_SLICE_ORDERED_GROUP_BY;
+  if (m_replace_field_list) {
+    m_join->replaced_items_for_rollup = true;
+    m_original_fields = m_join->fields;
+    m_current_fields = new (thd->mem_root)
+        Mem_root_array<Item *>(thd->mem_root, m_original_fields->size());
+
+    // Create the new list of items.
+    List<Item> *ref_items = new (thd->mem_root) List<Item>;
+    size_t item_index = 0;
+    for (Item &item : *m_original_fields) {
+      (*m_current_fields)[item_index] = &item;
+      Item_ref *ref = new (thd->mem_root) Item_ref(
+          /*name_resolution_context=*/nullptr,
+          &((*m_current_fields)[item_index]),
+          /*table_name=*/nullptr, /*field_name=*/nullptr,
+          /*alias_of_expr=*/false);
+      ref->set_result_field(item.get_result_field());
+      ref_items->push_back(ref);
+      ++item_index;
+    }
+    m_join->fields = ref_items;
   }
 }
 
@@ -155,173 +240,281 @@ bool AggregateIterator::Init() {
   // Store which slice we will be reading from.
   m_input_slice = m_join->get_ref_item_slice();
 
-  m_first_row = true;
-  m_eof = false;
+  m_seen_eof = false;
   m_save_nullinfo = 0;
+
+  // Not really used, just to be sure.
+  m_current_rollup_position = 0;
+  m_last_unchanged_group_item_idx = 0;
+
+  m_current_fields_source = nullptr;
+  m_state = READING_FIRST_ROW;
+
   return false;
 }
 
 int AggregateIterator::Read() {
-  if (m_eof) {
-    // We've seen the last row earlier.
-    if (m_save_nullinfo != 0) {
-      m_join->restore_fields(m_save_nullinfo);
-      m_save_nullinfo = 0;
-    }
-    return -1;
-  }
+  switch (m_state) {
+    case READING_FIRST_ROW: {
+      // Switch to the input slice before we call Read(), so that any processing
+      // that happens in sub-iterators is on the right slice.
+      SwitchSlice(m_join, m_input_slice);
 
-  // Switch to the input slice before we call Read(), so that any processing
-  // that happens in sub-iterators is on the right slice.
-  SwitchSlice(m_join, m_input_slice);
+      // Start the first group, if possible. (If we're not at the first row,
+      // we already saw the first row in the new group at the previous Read().)
+      int err = m_source->Read();
+      if (err == -1) {
+        m_seen_eof = true;
+        m_state = DONE_OUTPUTTING_ROWS;
+        if (m_join->grouped || m_join->group_optimized_away) {
+          return -1;
+        } else {
+          // If there's no GROUP BY, we need to output a row even if there are
+          // no input rows.
 
-  if (m_first_row) {
-    // Start the first group, if possible. (If we're not at the first row,
-    // we already saw the first row in the new group at the previous Read().)
-    m_first_row = false;
-    int err = m_source->Read();
-    if (err == -1) {
-      m_eof = true;
-      if (m_join->grouped || m_join->group_optimized_away) {
-        return -1;
-      } else {
-        // If there's no GROUP BY, we need to output a row even if there are no
-        // input rows.
+          // Calculate aggregate functions for no rows
+          for (Item &item : *m_join->get_current_fields()) {
+            item.no_rows_in_result();
+          }
 
-        // Calculate aggregate functions for no rows
-        for (Item &item : *m_join->get_current_fields()) {
-          item.no_rows_in_result();
+          /*
+            Mark tables as containing only NULL values for ha_write_row().
+            Calculate a set of tables for which NULL values need to
+            be restored after sending data.
+          */
+          if (m_join->clear_fields(&m_save_nullinfo)) {
+            return 1;
+          }
+          // If we are outputting to a materialized table, copy the output of
+          // the aggregate functions into it.
+          if (copy_fields_and_funcs(m_temp_table_param, m_join->thd)) {
+            return 1;
+          }
+          SwitchFieldList(m_original_fields);
+          return 0;
         }
-
-        /*
-          Mark tables as containing only NULL values for ha_write_row().
-          Calculate a set of tables for which NULL values need to
-          be restored after sending data.
-        */
-        if (m_join->clear_fields(&m_save_nullinfo)) {
-          return 1;
-        }
-        return 0;
       }
+      if (err != 0) return err;
+
+      // Set the initial value of the group fields.
+      (void)update_item_cache_if_changed(m_join->group_fields);
+
+      m_state = LAST_ROW_STARTED_NEW_GROUP;
+      m_last_unchanged_group_item_idx = 0;
     }
-    if (err != 0) return err;
-  }
+      // Fall through.
 
-  // This is the start of a new group. Make a copy of the group expressions,
-  // because they risk being overwritten on the next call to m_source->Read().
-  // We cannot reuse the Item_cached_* fields in m_join->group_fields for this
-  // (even though also need to be initialized as part of the start of the
-  // group), because they are overwritten by the testing at each row, just like
-  // the data from Read() will be.
-  //
-  // If we are outputting to a temporary table (ie., there's a
-  // MaterializeIterator after us), this copy of the group expressions actually
-  // goes directly into the output row, since there's room there. In this case,
-  // MaterializeIterator does not try to do the copying itself; it would only
-  // get the wrong version.
-  {
-    Switch_ref_item_slice slice_switch(m_join, m_output_slice);
-
-    // m_temp_table_param->items_to_copy, copied through copy_funcs(),
-    // can contain two distinct kinds of Items:
-    //
-    //  - Group expressions, similar to the ones we are copying in copy_fields()
-    //    (by way of copy_fields_and_funcs()), e.g. GROUP BY f1 + 1. If we are
-    //    materializing, and setup_copy_fields() was never called (which happens
-    //    when we materialize due to ORDER BY and set up copy_funcs() via
-    //    ConvertItemsToCopy -- the difference is largely due to historical
-    //    accident), these expressions will point to the input fields, whose
-    //    values are lost when we start the next group. If, on the other hand,
-    //    setup_copy_fields() _was_ called, we can copy them later, and due to
-    //    the slice system, they'll refer to the Item_fields we just copied
-    //    _to_, but we can't rely on that.
-    //  - When outputting to a materialized table only: Non-group expressions.
-    //    When we copy them here, they can refer to aggregates that
-    //    are not ready before output time (e.g., SUM(f1) + 1), and will thus
-    //    get the wrong value.
-    //
-    // We solve the case of #1 by calling copy_funcs() here (through
-    // copy_fields_and_funcs()), and then the case of #2 by calling copy_funcs()
-    // again later for only those expressions containing aggregates, once those
-    // aggregates have their final value. This works even for cases that
-    // reference group expressions (e.g. SELECT f1 + SUM(f2) GROUP BY f1),
-    // because setup_fields() has done special splitting of such expressions and
-    // replaced the group fields by Item_refs pointing to saved copies of them.
-    // It's complicated, and it's really a problem we brought on ourselves.
-    if (copy_fields_and_funcs(m_temp_table_param, m_join->thd)) {
-      return 1;
-    }
-
-    (void)update_item_cache_if_changed(m_join->group_fields);
-    // TODO: Implement rollup.
-    if (init_sum_functions(m_join->sum_funcs, m_join->sum_funcs_end[0])) {
-      return 1;
-    }
-  }
-
-  // Keep reading rows as long as they are part of the existing group.
-  for (;;) {
-    int err = m_source->Read();
-    if (err == 1) return 1;  // Error.
-
-    if (err == -1) {
-      // End of input rows; return the last group.
+    case LAST_ROW_STARTED_NEW_GROUP: {
+      // This is the start of a new group. Make a copy of the group expressions,
+      // because they risk being overwritten on the next call to
+      // m_source->Read(). We cannot reuse the Item_cached_* fields in
+      // m_join->group_fields for this (even though also need to be initialized
+      // as part of the start of the group), because they are overwritten by the
+      // testing at each row, just like the data from Read() will be.
+      //
+      // If we are outputting to a temporary table (ie., there's a
+      // MaterializeIterator after us), this copy of the group expressions
+      // actually goes directly into the output row, since there's room there.
+      // In this case, MaterializeIterator does not try to do the copying
+      // itself; it would only get the wrong version.
       SwitchSlice(m_join, m_output_slice);
 
-      // Store the result in the temporary table, if we are outputting to that.
-      // Also see the comment after create_field(), above.
-      copy_sum_funcs(m_join->sum_funcs,
-                     m_join->sum_funcs_end[m_join->send_group_parts]);
-      if (m_temp_table_param->items_to_copy != nullptr) {
-        if (copy_funcs(m_temp_table_param, m_join->thd,
-                       CFT_DEPENDING_ON_AGGREGATE)) {
-          return 1;
-        }
-      }
-
-      m_eof = true;
-      return 0;
-    }
-
-    int idx = update_item_cache_if_changed(m_join->group_fields);
-    if (idx >= 0) {
-      // The group changed. Return the current row; the next Read() will deal
-      // with the new group.
-      SwitchSlice(m_join, m_output_slice);
-
-      // Store the result in the temporary table, if we are outputting to that.
-      // Also see the comment after create_field(), above.
-      copy_sum_funcs(m_join->sum_funcs,
-                     m_join->sum_funcs_end[m_join->send_group_parts]);
-      if (m_temp_table_param->items_to_copy != nullptr) {
-        if (copy_funcs(m_temp_table_param, m_join->thd,
-                       CFT_DEPENDING_ON_AGGREGATE)) {
-          return 1;
-        }
-      }
-
-      return 0;
-    } else {
-      // We're still in the same group.
-      if (update_sum_func(m_join->sum_funcs)) {
+      // m_temp_table_param->items_to_copy, copied through copy_funcs(),
+      // can contain two distinct kinds of Items:
+      //
+      //  - Group expressions, similar to the ones we are copying in
+      //    copy_fields() (by way of copy_fields_and_funcs()), e.g.
+      //    GROUP BY f1 + 1. If we are materializing, and setup_copy_fields()
+      //    was never called (which happens when we materialize due to ORDER BY
+      //    and set up copy_funcs() via ConvertItemsToCopy -- the difference is
+      //    largely due to historical accident), these expressions will point to
+      //    the input fields, whose values are lost when we start the next
+      //    group. If, on the other hand, setup_copy_fields() _was_ called, we
+      //    can copy them later, and due to the slice system, they'll refer to
+      //    the Item_fields we just copied _to_, but we can't rely on that.
+      //  - When outputting to a materialized table only: Non-group expressions.
+      //    When we copy them here, they can refer to aggregates that
+      //    are not ready before output time (e.g., SUM(f1) + 1), and will thus
+      //    get the wrong value.
+      //
+      // We solve the case of #1 by calling copy_funcs() here (through
+      // copy_fields_and_funcs()), and then the case of #2 by calling
+      // copy_funcs() again later for only those expressions containing
+      // aggregates, once those aggregates have their final value. This works
+      // even for cases that reference group expressions (e.g. SELECT f1 +
+      // SUM(f2) GROUP BY f1), because setup_fields() has done special splitting
+      // of such expressions and replaced the group fields by Item_refs pointing
+      // to saved copies of them. It's complicated, and it's really a problem we
+      // brought on ourselves.
+      if (copy_fields_and_funcs(m_temp_table_param, m_join->thd)) {
         return 1;
       }
+
+      if (init_sum_functions(
+              m_join->sum_funcs,
+              m_join->sum_funcs_end[m_last_unchanged_group_item_idx])) {
+        return 1;
+      }
+
+      m_state = READING_ROWS;
     }
+      // Fall through.
+
+    case READING_ROWS:
+      // Switch to the input slice before we call Read(), so that any
+      // processing that happens in sub-iterators is on the right slice.
+      SwitchSlice(m_join, m_input_slice);
+
+      // Keep reading rows as long as they are part of the existing group.
+      for (;;) {
+        int err = m_source->Read();
+        if (err == 1) return 1;  // Error.
+
+        if (err == -1) {
+          m_seen_eof = true;
+
+          // End of input rows; return the last group.
+          SwitchSlice(m_join, m_output_slice);
+
+          // Store the result in the temporary table, if we are outputting
+          // to that.
+          SwitchFieldList(m_original_fields);
+          copy_sum_funcs(m_join->sum_funcs,
+                         m_join->sum_funcs_end[m_join->send_group_parts]);
+          if (m_temp_table_param->items_to_copy != nullptr) {
+            if (copy_funcs(m_temp_table_param, m_join->thd,
+                           CFT_DEPENDING_ON_AGGREGATE)) {
+              return 1;
+            }
+          }
+
+          if (m_rollup && m_join->send_group_parts > 0) {
+            // Also output the final groups, including the total row
+            // (with NULLs in all fields).
+            m_current_rollup_position = m_join->send_group_parts - 1;
+            m_last_unchanged_group_item_idx = 0;
+            m_state = OUTPUTTING_ROLLUP_ROWS;
+          } else {
+            m_state = DONE_OUTPUTTING_ROWS;
+          }
+          return 0;
+        }
+
+        int first_changed_idx =
+            update_item_cache_if_changed(m_join->group_fields);
+        if (first_changed_idx >= 0) {
+          // The group changed. Return the current row and mark so that next
+          // Read() will deal with the new group.
+          SwitchSlice(m_join, m_output_slice);
+
+          // Store the result in the temporary table, if we are outputting
+          // to that.
+          SwitchFieldList(m_original_fields);
+          copy_sum_funcs(m_join->sum_funcs,
+                         m_join->sum_funcs_end[m_join->send_group_parts]);
+          if (m_temp_table_param->items_to_copy != nullptr) {
+            if (copy_funcs(m_temp_table_param, m_join->thd,
+                           CFT_DEPENDING_ON_AGGREGATE)) {
+              return 1;
+            }
+          }
+
+          // If we have rollup, we may need to output more than one row.
+          // Mark so that the next calls to Read() will return those rows.
+          //
+          // NOTE: first_changed_idx is the first group value that _changed_,
+          // while what we store is the last item that did _not_ change.
+          if (m_rollup) {
+            m_last_unchanged_group_item_idx = first_changed_idx + 1;
+            if (static_cast<unsigned>(first_changed_idx) <
+                m_join->send_group_parts - 1) {
+              m_current_rollup_position = m_join->send_group_parts - 1;
+              m_state = OUTPUTTING_ROLLUP_ROWS;
+            } else {
+              m_state = LAST_ROW_STARTED_NEW_GROUP;
+            }
+          } else {
+            m_last_unchanged_group_item_idx = 0;
+            m_state = LAST_ROW_STARTED_NEW_GROUP;
+          }
+          return 0;
+        }
+
+        // We're still in the same group, so just loop back.
+        if (update_sum_func(m_join->sum_funcs)) {
+          return 1;
+        }
+      }
+
+    case OUTPUTTING_ROLLUP_ROWS: {
+      m_join->copy_ref_item_slice(
+          m_join->ref_items[REF_SLICE_ACTIVE],
+          m_join->rollup.ref_item_arrays[m_current_rollup_position]);
+      m_join->current_ref_item_slice = -1;
+
+      SwitchFieldList(&m_join->rollup.fields_list[m_current_rollup_position]);
+
+      // Store the result in the temporary table, if we are outputting to that.
+      copy_sum_funcs(m_join->sum_funcs_end[m_current_rollup_position + 1],
+                     m_join->sum_funcs_end[m_current_rollup_position]);
+      if (m_temp_table_param->items_to_copy != nullptr) {
+        if (copy_funcs(m_temp_table_param, m_join->thd,
+                       CFT_DEPENDING_ON_AGGREGATE)) {
+          return 1;
+        }
+      }
+      for (Item &item : m_join->rollup.all_fields[m_current_rollup_position]) {
+        if (has_rollup_result(&item) && item.get_result_field() != nullptr) {
+          item.save_in_result_field(true);
+        }
+      }
+
+      --m_current_rollup_position;
+      if (m_current_rollup_position < m_last_unchanged_group_item_idx) {
+        // Done outputting rollup rows; on next Read() call, deal with the new
+        // group instead.
+        if (m_seen_eof) {
+          m_state = DONE_OUTPUTTING_ROWS;
+        } else {
+          m_state = LAST_ROW_STARTED_NEW_GROUP;
+        }
+      }
+
+      return 0;
+    }
+
+    case DONE_OUTPUTTING_ROWS:
+      SwitchSlice(m_join,
+                  m_output_slice);  // We could have set it to -1 earlier.
+      if (m_save_nullinfo != 0) {
+        m_join->restore_fields(m_save_nullinfo);
+        m_save_nullinfo = 0;
+      }
+      return -1;
   }
+
+  DBUG_ASSERT(false);
+  return 1;
 }
 
 void AggregateIterator::UnlockRow() {
-  // Most likely, HAVING failed. Ideally, we'd like to backtrack and unlock
-  // all rows that went into this aggregate, but we can't do that, and we also
-  // can't unlock the _current_ row, since that belongs to a different group.
-  // Thus, do nothing.
+  // Most likely, HAVING failed. Ideally, we'd like to backtrack and
+  // unlock all rows that went into this aggregate, but we can't do that,
+  // and we also can't unlock the _current_ row, since that belongs to a
+  // different group. Thus, do nothing.
 }
 
 vector<string> AggregateIterator::DebugString() const {
+  Item_sum **sum_funcs_end =
+      m_rollup ? m_join->sum_funcs_end[m_join->send_group_parts]
+               : m_join->sum_funcs_end[0];
+
   string ret;
   if (m_join->grouped || m_join->group_optimized_away) {
-    if (m_join->sum_funcs == m_join->sum_funcs_end[0]) {
+    if (m_join->sum_funcs == sum_funcs_end) {
       ret = "Group (no aggregates)";
+    } else if (m_rollup) {
+      ret = "Group aggregate with rollup: ";
     } else {
       ret = "Group aggregate: ";
     }
@@ -330,8 +523,7 @@ vector<string> AggregateIterator::DebugString() const {
   }
 
   bool first = true;
-  for (Item_sum **item = m_join->sum_funcs; item != m_join->sum_funcs_end[0];
-       ++item) {
+  for (Item_sum **item = m_join->sum_funcs; item != sum_funcs_end; ++item) {
     if (first) {
       first = false;
     } else {
@@ -461,13 +653,19 @@ int NestedLoopIterator::Read() {
     // An inner row has been found.
 
     if (m_join_type == JoinType::ANTI) {
-      // Anti-joins should stop scanning the inner side as soon as we see a row.
+      // Anti-joins should stop scanning the inner side as soon as we see
+      // a row, without returning that row.
       m_state = NEEDS_OUTER_ROW;
       continue;
     }
 
-    // We have a new row.
-    m_state = READING_INNER_ROWS;
+    // We have a new row. Semijoins should stop after the first row;
+    // regular joins (inner and outer) should go on to scan the rest.
+    if (m_join_type == JoinType::SEMI) {
+      m_state = NEEDS_OUTER_ROW;
+    } else {
+      m_state = READING_INNER_ROWS;
+    }
     return 0;
   }
 }
@@ -480,6 +678,8 @@ vector<string> NestedLoopIterator::DebugString() const {
       return {"Nested loop left join"};
     case JoinType::ANTI:
       return {"Nested loop anti-join"};
+    case JoinType::SEMI:
+      return {"Nested loop semijoin"};
     default:
       DBUG_ASSERT(false);
       return {"Nested loop <error>"};
@@ -513,6 +713,16 @@ MaterializeIterator::MaterializeIterator(
       m_invalidators(thd->mem_root) {}
 
 bool MaterializeIterator::Init() {
+  if (!table()->materialized && table()->pos_in_table_list != nullptr &&
+      table()->pos_in_table_list->is_view_or_derived()) {
+    // Create the table if it's the very first time.
+    // TODO: Figure out why this is done only for derived tables and views,
+    // not for e.g. sort materialization.
+    if (table()->pos_in_table_list->create_materialized_table(thd())) {
+      return true;
+    }
+  }
+
   // If this is a CTE, it could be referred to multiple times in the same query.
   // If so, check if we have already been materialized through any of our alias
   // tables.
@@ -529,11 +739,12 @@ bool MaterializeIterator::Init() {
     bool rematerialize = m_rematerialize;
 
     if (!rematerialize) {
-      // See if any lateral tables that we depend on have changed since last
-      // time (which would force a rematerialization).
+      // See if any lateral tables that we depend on have changed since
+      // last time (which would force a rematerialization).
       //
-      // TODO: It would be better, although probably much harder, to check the
-      // actual column values instead of just whether we've seen any new rows.
+      // TODO: It would be better, although probably much harder, to check
+      // the actual column values instead of just whether we've seen any
+      // new rows.
       for (const Invalidator &invalidator : m_invalidators) {
         if (invalidator.iterator->generation() !=
             invalidator.generation_at_last_materialize) {
@@ -558,6 +769,15 @@ bool MaterializeIterator::Init() {
     Opt_trace_array trace_steps(trace, "steps");
 
     if (m_subquery_iterator->Init()) {
+      // Nothing should really enable PSI batch mode from Init(), since nothing
+      // calls Read() from Init() without also being capable of cleaning up
+      // (e.g. MaterializeIterator); see the comment in
+      // LimitOffsetIterator::Read(). Nevertheless, just to be sure, we clean up
+      // here.
+      if (m_join->qep_tab != nullptr && m_join->primary_tables > 0) {
+        QEP_TAB *last_qep_tab = &m_join->qep_tab[m_join->primary_tables - 1];
+        last_qep_tab->table()->file->end_psi_batch_mode_if_started();
+      }
       return true;
     }
 
@@ -566,6 +786,11 @@ bool MaterializeIterator::Init() {
         return true;
       }
       empty_record(table());
+    } else if (table()->file->inited) {
+      // If we're being called several times (in particular, as part of a
+      // LATERAL join), the table iterator may have started a scan, so end it
+      // before we start our own.
+      table()->file->ha_index_or_rnd_end();
     }
 
     table()->file->ha_delete_all_rows();
@@ -578,7 +803,7 @@ bool MaterializeIterator::Init() {
     // m_table_iterator will do that for us.)
     auto end_unique_index =
         create_scope_guard([&] { table()->file->ha_index_end(); });
-    if (!table()->file->inited && doing_hash_deduplication()) {
+    if (doing_hash_deduplication()) {
       if (table()->file->ha_index_init(0, 0)) {
         return true;
       }
@@ -621,9 +846,9 @@ bool MaterializeIterator::Init() {
         if (table()->hash_field) table()->file->ha_index_init(0, false);
         ++stored_rows;
       } else {
-        // An ignorable error means duplicate key, ie. we deduplicated away
-        // the row. This is seemingly separate from check_unique_constraint(),
-        // which only checks hash indexes.
+        // An ignorable error means duplicate key, ie. we deduplicated
+        // away the row. This is seemingly separate from
+        // check_unique_constraint(), which only checks hash indexes.
       }
     }
 
@@ -646,8 +871,9 @@ bool MaterializeIterator::Init() {
 
 int MaterializeIterator::Read() {
   /*
-    Enable the items which one should use if one wants to evaluate anything
-    (e.g. functions in WHERE, HAVING) involving columns of this table.
+    Enable the items which one should use if one wants to evaluate
+    anything (e.g. functions in WHERE, HAVING) involving columns of this
+    table.
   */
   if (m_join != nullptr && m_ref_slice != -1) {
     if (!m_join->ref_items[m_ref_slice].is_null()) {
@@ -670,8 +896,8 @@ vector<string> MaterializeIterator::DebugString() const {
     for (string str : sub_iterator->DebugString()) {
       if (sub_iterator->children().size() > 1) {
         // This can happen if e.g. a filter has subqueries in it.
-        // TODO: Consider having a RowIterator::parent(), so that we can show
-        // the entire tree.
+        // TODO: Consider having a RowIterator::parent(), so that we can
+        // show the entire tree.
         str += " [other sub-iterators not shown]";
       }
       ret.push_back(str);
@@ -731,7 +957,7 @@ vector<string> MaterializeIterator::DebugString() const {
 }
 
 vector<RowIterator::Child> MaterializeIterator::children() const {
-  // If a CTE is references multiple times, only bother printing its query plan
+  // If a CTE is referenced multiple times, only bother printing its query plan
   // once, instead of repeating it over and over again.
   //
   // TODO: Consider printing CTE query plans on the top level of the query block
@@ -742,8 +968,8 @@ vector<RowIterator::Child> MaterializeIterator::children() const {
 
   char heading[256] = "";
   if (m_limit_rows != HA_POS_ERROR) {
-    // We call this “Limit table size” as opposed to “Limit”, to be able to
-    // distinguish between the two in EXPLAIN when debugging.
+    // We call this “Limit table size” as opposed to “Limit”, to be able
+    // to distinguish between the two in EXPLAIN when debugging.
     if (doing_hash_deduplication() || table()->key_info != nullptr) {
       snprintf(heading, sizeof(heading), "Limit table size: %llu unique row(s)",
                m_limit_rows);
@@ -753,9 +979,9 @@ vector<RowIterator::Child> MaterializeIterator::children() const {
     }
   }
 
-  // We don't list the table iterator as an explicit child; we mark it in our
-  // DebugString() instead. (Anything else would look confusingly much like a
-  // join.)
+  // We don't list the table iterator as an explicit child; we mark it in
+  // our DebugString() instead. (Anything else would look confusingly much
+  // like a join.)
   return vector<Child>{{m_subquery_iterator.get(), heading}};
 }
 
@@ -802,6 +1028,11 @@ bool TemptableAggregateIterator::Init() {
       return true;
     }
     empty_record(table());
+  } else if (table()->file->inited) {
+    // If we're being called several times (in particular, as part of a
+    // LATERAL join), the table iterator may have started a scan, so end it
+    // before we start our own.
+    table()->file->ha_index_or_rnd_end();
   }
 
   table()->file->ha_delete_all_rows();
@@ -841,10 +1072,10 @@ bool TemptableAggregateIterator::Init() {
     if (using_hash_key()) {
       /*
         We need to call copy_funcs here in order to get correct value for
-        hash_field. However, this call isn't needed so early when hash_field
-        isn't used as it would cause unnecessary additional evaluation of
-        functions to be copied when 2nd and further records in group are
-        found.
+        hash_field. However, this call isn't needed so early when
+        hash_field isn't used as it would cause unnecessary additional
+        evaluation of functions to be copied when 2nd and further records
+        in group are found.
       */
       if (copy_funcs(m_tmp_table_param, thd()))
         return 1; /* purecov: inspected */
@@ -875,19 +1106,19 @@ bool TemptableAggregateIterator::Init() {
       continue;
     }
 
-    // OK, we need to insert a new row; we need to materialize any items that we
-    // are doing GROUP BY on.
+    // OK, we need to insert a new row; we need to materialize any items
+    // that we are doing GROUP BY on.
 
     /*
       Why do we advance the slice here and not before copy_fields()?
-      Because of the evaluation of *group->item above: if we do it with this tmp
-      table's slice, *group->item points to the field materializing the
-      expression, which hasn't been calculated yet. We could force the missing
-      calculation by doing copy_funcs() before evaluating *group->item; but
-      then, for a group made of N rows, we might be doing N evaluations of
-      another function when only one would suffice (like the '*' in
-      "SELECT a, a*a ... GROUP BY a": only the first/last row of the group,
-      needs to evaluate a*a).
+      Because of the evaluation of *group->item above: if we do it with
+      this tmp table's slice, *group->item points to the field
+      materializing the expression, which hasn't been calculated yet. We
+      could force the missing calculation by doing copy_funcs() before
+      evaluating *group->item; but then, for a group made of N rows, we
+      might be doing N evaluations of another function when only one would
+      suffice (like the '*' in "SELECT a, a*a ... GROUP BY a": only the
+      first/last row of the group, needs to evaluate a*a).
 
       The assertion on tmp_tbl->grouped_expressions.size() is to make sure
       copy_fields() doesn't suffer from the late switching.
@@ -905,7 +1136,8 @@ bool TemptableAggregateIterator::Init() {
       for (group = table()->group, key_part = table()->key_info[0].key_part;
            group; group = group->next, key_part++) {
         // Field null indicator is located one byte ahead of field value.
-        // @todo - check if this NULL byte is really necessary for grouping
+        // @todo - check if this NULL byte is really necessary for
+        // grouping
         if (key_part->null_bit)
           memcpy(table()->record[0] + key_part->offset - 1, group->buff - 1, 1);
       }
@@ -915,6 +1147,23 @@ bool TemptableAggregateIterator::Init() {
     init_tmptable_sum_functions(m_join->sum_funcs);
     error = table()->file->ha_write_row(table()->record[0]);
     if (error != 0) {
+      /*
+         If the error is HA_ERR_FOUND_DUPP_KEY and the grouping involves a
+         TIMESTAMP field, throw a meaningfull error to user with the actual
+         reason and the workaround. I.e, "Grouping on temporal is
+         non-deterministic for timezones having DST. Please consider switching
+         to UTC for this query". This is a temporary measure until we implement
+         WL#13148 (Do all internal handling TIMESTAMP in UTC timezone), which
+         will make such problem impossible.
+     */
+      if (error == HA_ERR_FOUND_DUPP_KEY) {
+        for (ORDER *group = table()->group; group; group = group->next) {
+          if (group->field_in_tmp_table->type() == MYSQL_TYPE_TIMESTAMP) {
+            my_error(ER_GROUPING_ON_TIMESTAMP_IN_DST, MYF(0));
+            return 1;
+          }
+        }
+      }
       if (create_ondisk_from_heap(thd(), table(), error, false, NULL)) {
         end_unique_index.commit();
         return 1;  // Not a table_is_full error.
@@ -939,8 +1188,9 @@ bool TemptableAggregateIterator::Init() {
 
 int TemptableAggregateIterator::Read() {
   /*
-    Enable the items which one should use if one wants to evaluate anything
-    (e.g. functions in WHERE, HAVING) involving columns of this table.
+    Enable the items which one should use if one wants to evaluate
+    anything (e.g. functions in WHERE, HAVING) involving columns of this
+    table.
   */
   if (m_join != nullptr && m_ref_slice != -1) {
     if (!m_join->ref_items[m_ref_slice].is_null()) {
@@ -957,9 +1207,9 @@ vector<string> TemptableAggregateIterator::DebugString() const {
 }
 
 vector<RowIterator::Child> TemptableAggregateIterator::children() const {
-  // We don't list the table iterator as an explicit child; we mark it in our
-  // DebugString() instead. (Anything else would look confusingly much like a
-  // join.)
+  // We don't list the table iterator as an explicit child; we mark it in
+  // our DebugString() instead. (Anything else would look confusingly much
+  // like a join.)
   return vector<Child>{{m_subquery_iterator.get(), ""}};
 }
 
@@ -971,9 +1221,420 @@ MaterializedTableFunctionIterator::MaterializedTableFunctionIterator(
       m_table_function(table_function) {}
 
 bool MaterializedTableFunctionIterator::Init() {
+  if (!table()->materialized) {
+    // Create the table if it's the very first time.
+    if (table()->pos_in_table_list->create_materialized_table(thd())) {
+      return true;
+    }
+  }
   (void)m_table_function->fill_result_table();
   if (table()->in_use->is_error()) {
     return true;
   }
   return m_table_iterator->Init();
+}
+
+WeedoutIterator::WeedoutIterator(THD *thd,
+                                 unique_ptr_destroy_only<RowIterator> source,
+                                 SJ_TMP_TABLE *sj)
+    : RowIterator(thd), m_source(move(source)), m_sj(sj) {
+  // Confluent weedouts should have been rewritten to LIMIT 1 earlier.
+  DBUG_ASSERT(!m_sj->is_confluent);
+  DBUG_ASSERT(m_sj->tmp_table != nullptr);
+}
+
+bool WeedoutIterator::Init() {
+  if (m_sj->tmp_table->file->ha_delete_all_rows()) {
+    return true;
+  }
+  return m_source->Init();
+}
+
+int WeedoutIterator::Read() {
+  for (;;) {
+    int ret = m_source->Read();
+    if (ret != 0) {
+      // Error, or EOF.
+      return ret;
+    }
+
+    for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
+      TABLE *table = tab->qep_tab->table();
+      if (!(table->is_nullable() && table->has_null_row()) &&
+          !table->const_table) {
+        table->file->position(table->record[0]);
+      }
+    }
+
+    ret = do_sj_dups_weedout(thd(), m_sj);
+    if (ret == -1) {
+      // Error.
+      return 1;
+    }
+
+    if (ret == 0) {
+      // Not a duplicate, so return the row.
+      return 0;
+    }
+
+    // Duplicate, so read the next row instead.
+  }
+}
+
+vector<string> WeedoutIterator::DebugString() const {
+  string ret = "Remove duplicate ";
+  if (m_sj->tabs_end == m_sj->tabs + 1) {  // Only one table.
+    ret += m_sj->tabs->qep_tab->table()->alias;
+  } else {
+    ret += "(";
+    for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
+      if (tab != m_sj->tabs) {
+        ret += ", ";
+      }
+      ret += tab->qep_tab->table()->alias;
+    }
+    ret += ")";
+  }
+  ret += " rows using temporary table (weedout)";
+  return {ret};
+}
+
+RemoveDuplicatesIterator::RemoveDuplicatesIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> source, const TABLE *table,
+    KEY *key, size_t key_len)
+    : RowIterator(thd),
+      m_source(move(source)),
+      m_table(table),
+      m_key(key),
+      m_key_buf(new (thd->mem_root) uchar[key_len]),
+      m_key_len(key_len) {}
+
+bool RemoveDuplicatesIterator::Init() {
+  m_first_row = true;
+  return m_source->Init();
+}
+
+int RemoveDuplicatesIterator::Read() {
+  for (;;) {
+    int err = m_source->Read();
+    if (err != 0) {
+      return err;
+    }
+
+    if (thd()->killed) {  // Aborted by user.
+      thd()->send_kill_message();
+      return 1;
+    }
+
+    if (!m_first_row && key_cmp(m_key->key_part, m_key_buf, m_key_len) == 0) {
+      // Same as previous row, so keep scanning.
+      continue;
+    }
+
+    m_first_row = false;
+    key_copy(m_key_buf, m_table->record[0], m_key, m_key_len);
+    return 0;
+  }
+}
+
+vector<string> RemoveDuplicatesIterator::DebugString() const {
+  return {string("Remove duplicates from input sorted on ") + m_key->name};
+}
+
+NestedLoopSemiJoinWithDuplicateRemovalIterator::
+    NestedLoopSemiJoinWithDuplicateRemovalIterator(
+        THD *thd, unique_ptr_destroy_only<RowIterator> source_outer,
+        unique_ptr_destroy_only<RowIterator> source_inner, const TABLE *table,
+        KEY *key, size_t key_len)
+    : RowIterator(thd),
+      m_source_outer(move(source_outer)),
+      m_source_inner(move(source_inner)),
+      m_table_outer(table),
+      m_key(key),
+      m_key_buf(new (thd->mem_root) uchar[key_len]),
+      m_key_len(key_len) {
+  DBUG_ASSERT(m_source_outer != nullptr);
+  DBUG_ASSERT(m_source_inner != nullptr);
+}
+
+bool NestedLoopSemiJoinWithDuplicateRemovalIterator::Init() {
+  if (m_source_outer->Init()) {
+    return true;
+  }
+  m_deduplicate_against_previous_row = false;
+  return false;
+}
+
+int NestedLoopSemiJoinWithDuplicateRemovalIterator::Read() {
+  m_source_inner->SetNullRowFlag(false);
+
+  for (;;) {  // Termination condition within loop.
+    // Find an outer row that is different (key-wise) from the previous
+    // one we returned.
+    for (;;) {
+      int err = m_source_outer->Read();
+      if (err != 0) {
+        return err;
+      }
+      if (thd()->killed) {  // Aborted by user.
+        thd()->send_kill_message();
+        return 1;
+      }
+
+      if (m_deduplicate_against_previous_row &&
+          key_cmp(m_key->key_part, m_key_buf, m_key_len) == 0) {
+        // Same as previous row, so keep scanning.
+        continue;
+      }
+
+      break;
+    }
+
+    if (thd()->killed) {  // Aborted by user.
+      thd()->send_kill_message();
+      return 1;
+    }
+
+    // Now find a single (matching) inner row.
+    if (m_source_inner->Init()) {
+      return 1;
+    }
+
+    int err = m_source_inner->Read();
+    if (err == 1) {
+      return 1;  // Error.
+    }
+    if (err == -1) {
+      // No inner row found for this outer row, so search for a new outer
+      // row, potentially with the same key.
+      m_deduplicate_against_previous_row = false;
+      continue;
+    }
+
+    // We found an inner row for this outer row, so we do not want more
+    // with the same key.
+    m_deduplicate_against_previous_row = true;
+    key_copy(m_key_buf, m_table_outer->record[0], m_key, m_key_len);
+
+    return 0;
+  }
+}
+
+vector<string> NestedLoopSemiJoinWithDuplicateRemovalIterator::DebugString()
+    const {
+  return {string("Nested loop semijoin with duplicate removal on ") +
+          m_key->name};
+}
+
+WindowingIterator::WindowingIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> source,
+    Temp_table_param *temp_table_param, JOIN *join, int output_slice)
+    : RowIterator(thd),
+      m_source(move(source)),
+      m_temp_table_param(temp_table_param),
+      m_window(temp_table_param->m_window),
+      m_join(join),
+      m_output_slice(output_slice) {
+  DBUG_ASSERT(!m_window->needs_buffering());
+}
+
+bool WindowingIterator::Init() {
+  if (m_source->Init()) {
+    return true;
+  }
+  m_window->reset_round();
+
+  // Store which slice we will be reading from.
+  m_input_slice = m_join->get_ref_item_slice();
+
+  return false;
+}
+
+int WindowingIterator::Read() {
+  SwitchSlice(m_join, m_input_slice);
+
+  int err = m_source->Read();
+  if (err != 0) {
+    return err;
+  }
+
+  SwitchSlice(m_join, m_output_slice);
+
+  if (copy_fields_and_funcs(m_temp_table_param, thd(), CFT_HAS_NO_WF)) return 1;
+
+  m_window->check_partition_boundary();
+
+  if (copy_funcs(m_temp_table_param, thd(), CFT_WF)) return 1;
+
+  if (m_window->is_last() && copy_funcs(m_temp_table_param, thd(), CFT_HAS_WF))
+    return 1;
+
+  return 0;
+}
+
+vector<string> WindowingIterator::DebugString() const {
+  return {"Window aggregate"};
+}
+
+BufferingWindowingIterator::BufferingWindowingIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> source,
+    Temp_table_param *temp_table_param, JOIN *join, int output_slice)
+    : RowIterator(thd),
+      m_source(move(source)),
+      m_temp_table_param(temp_table_param),
+      m_window(temp_table_param->m_window),
+      m_join(join),
+      m_output_slice(output_slice) {
+  DBUG_ASSERT(m_window->needs_buffering());
+}
+
+bool BufferingWindowingIterator::Init() {
+  if (m_source->Init()) {
+    return true;
+  }
+  m_window->reset_round();
+  m_possibly_buffered_rows = false;
+  m_last_input_row_started_new_partition = false;
+  m_eof = false;
+
+  // Store which slice we will be reading from.
+  m_input_slice = m_join->get_ref_item_slice();
+  DBUG_ASSERT(m_input_slice >= 0);
+
+  return false;
+}
+
+int BufferingWindowingIterator::Read() {
+  SwitchSlice(m_join, m_output_slice);
+
+  if (m_eof) {
+    return ReadBufferedRow(/*new_partition_or_eof=*/true);
+  }
+
+  // The previous call to Read() may have caused multiple rows to be ready
+  // for output, but could only return one of them. See if there are more
+  // to be output.
+  if (m_possibly_buffered_rows) {
+    int err = ReadBufferedRow(m_last_input_row_started_new_partition);
+    if (err != -1) {
+      return err;
+    }
+  }
+
+  for (;;) {
+    if (m_last_input_row_started_new_partition) {
+      /*
+        We didn't really buffer this row yet since, we found a partition
+        change so we had to finalize the previous partition first.
+        Bring back saved row for next partition.
+      */
+      if (bring_back_frame_row(thd(), *m_window, m_temp_table_param,
+                               Window::FBC_FIRST_IN_NEXT_PARTITION,
+                               Window::REA_WONT_UPDATE_HINT)) {
+        return 1;
+      }
+
+      /*
+        copy_funcs(CFT_HAS_NO_WF) is not necessary: a non-WF function was
+        calculated and saved in OUT, then this OUT column was copied to
+        special record, then restored to OUT column.
+      */
+
+      m_window->reset_partition_state();
+      if (buffer_windowing_record(thd(), m_temp_table_param,
+                                  nullptr /* first in new partition */)) {
+        return 1;
+      }
+
+      m_last_input_row_started_new_partition = false;
+    } else {
+      // Read a new input row, if it exists. This needs to be done under
+      // the input slice, so that any expressions in sub-iterators are
+      // evaluated correctly.
+      int err;
+      {
+        Switch_ref_item_slice slice_switch(m_join, m_input_slice);
+        err = m_source->Read();
+      }
+      if (err == 1) {
+        return 1;  // Error.
+      }
+      if (err == -1) {
+        // EOF. Read any pending buffered rows, and then that's it.
+        m_eof = true;
+        return ReadBufferedRow(/*new_partition_or_eof=*/true);
+      }
+
+      /*
+        This saves the values of non-WF functions for the row. For
+        example, 1+t.a. But also 1+LEAD. Even though at this point we lack
+        data to compute LEAD; the saved value is thus incorrect; later,
+        when the row is fully computable, we will re-evaluate the
+        CFT_NON_WF to get a correct value for 1+LEAD.
+      */
+      if (copy_fields_and_funcs(m_temp_table_param, thd(), CFT_HAS_NO_WF)) {
+        return 1;
+      }
+
+      bool new_partition = false;
+      if (buffer_windowing_record(thd(), m_temp_table_param, &new_partition)) {
+        return 1;
+      }
+      m_last_input_row_started_new_partition = new_partition;
+    }
+
+    int err = ReadBufferedRow(m_last_input_row_started_new_partition);
+    if (err == 1) {
+      return 1;
+    }
+
+    if (m_window->needs_restore_input_row()) {
+      /*
+        Reestablish last row read from input table in case it is needed
+        again before reading a new row. May be necessary if this is the
+        first window following after a join, cf. the caching presumption
+        in EQRefIterator. This logic can be removed if we move to copying
+        between out tmp record and frame buffer record, instead of
+        involving the in record. FIXME.
+      */
+      if (bring_back_frame_row(thd(), *m_window, nullptr /* no copy to OUT */,
+                               Window::FBC_LAST_BUFFERED_ROW,
+                               Window::REA_WONT_UPDATE_HINT)) {
+        return 1;
+      }
+    }
+
+    if (err == 0) {
+      return 0;
+    }
+
+    // This input row didn't generate an output row right now, so we'll just
+    // continue the loop.
+  }
+}
+
+int BufferingWindowingIterator::ReadBufferedRow(bool new_partition_or_eof) {
+  bool output_row_ready;
+  if (process_buffered_windowing_record(
+          thd(), m_temp_table_param, new_partition_or_eof, &output_row_ready)) {
+    return 1;
+  }
+  if (thd()->killed) {
+    thd()->send_kill_message();
+    return 1;
+  }
+  if (output_row_ready) {
+    // Return the buffered row, and there are possibly more.
+    // These will be checked on the next call to Read().
+    m_possibly_buffered_rows = true;
+    return 0;
+  } else {
+    // No more buffered rows.
+    m_possibly_buffered_rows = false;
+    return -1;
+  }
+}
+
+vector<string> BufferingWindowingIterator::DebugString() const {
+  return {"Window aggregate with buffering"};
 }

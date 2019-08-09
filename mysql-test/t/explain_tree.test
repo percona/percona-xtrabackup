@@ -57,6 +57,7 @@ INSERT INTO t1 VALUES ( 3 );
 EXPLAIN FORMAT=tree SELECT SUM(f1) FROM t1;
 EXPLAIN FORMAT=tree SELECT f1 FROM t1 GROUP BY f1;
 EXPLAIN FORMAT=tree SELECT f1,COUNT(*) FROM t1 GROUP BY f1;
+EXPLAIN FORMAT=tree SELECT f1,COUNT(*) FROM t1 GROUP BY f1 WITH ROLLUP;
 DROP TABLE t1;
 
 # Only const tables.
@@ -199,6 +200,14 @@ INSERT INTO t1 VALUES ( 3 );
 EXPLAIN FORMAT=tree SELECT ( SELECT f1 FROM t1 UNION SELECT f1 + 10 FROM t1 LIMIT 1 ) FROM t1;
 DROP TABLE t1;
 
+# A subquery which is pushed to a temporary table due to ordering.
+CREATE TABLE t1 ( f1 INT PRIMARY KEY );
+INSERT INTO t1 VALUES ( 1 );
+INSERT INTO t1 VALUES ( 2 );
+INSERT INTO t1 VALUES ( 3 );
+EXPLAIN FORMAT=tree SELECT ( SELECT f1 FROM t1 AS inner_t1 WHERE inner_t1.f1 > t1.f1 LIMIT 1 ) AS tmp1 FROM t1 ORDER BY tmp1;
+DROP TABLE t1;
+
 # Condition pushed before filesort.
 CREATE TABLE t1 (a INTEGER, b INTEGER);
 INSERT INTO t1 VALUES (1,3), (2,4), (1,5),
@@ -258,3 +267,97 @@ CREATE TABLE t2 ( f1 INT );
 EXPLAIN format=tree WITH my_cte AS ( SELECT * FROM t1 LIMIT 3 ) SELECT * FROM my_cte, t2;
 DROP TABLE t1;
 DROP TABLE t2;
+
+# A simple semijoin.
+CREATE TABLE t1 (i INTEGER);
+CREATE TABLE t2 (i INTEGER);
+EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE (t1.i) IN (SELECT t2.i FROM t2);
+DROP TABLE t1, t2;
+
+# A semijoin of two const tables against a multi-table join.
+CREATE TABLE t1 (pk INTEGER PRIMARY KEY, i INTEGER);
+CREATE TABLE t2 (pk INTEGER PRIMARY KEY, i INTEGER);
+CREATE TABLE t3 (i INTEGER);
+CREATE TABLE t4 (i INTEGER);
+INSERT INTO t1 VALUES (2, 3);
+INSERT INTO t2 VALUES (4, 5);
+EXPLAIN FORMAT=tree SELECT * FROM t1,t2 WHERE (t1.i) IN (SELECT t3.i FROM t3,t4) AND t1.pk = 2 AND t2.pk = 4;
+DROP TABLE t1, t2, t3, t4;
+
+# Conditions should be pushed up above outer joins, but not above semijoins.
+CREATE TABLE t1 (i INTEGER);
+CREATE TABLE t2 (i INTEGER);
+CREATE TABLE t3 (i INTEGER, j INTEGER);
+EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE t1.i IN ( SELECT i FROM t2 LEFT JOIN t3 USING (i) WHERE t3.j = 1234 OR t3.j IS NULL );
+DROP TABLE t1, t2, t3;
+
+# Semijoin by materialization; there's a materialization with deduplication,
+# which allows us to run the rest as a normal join.
+set @old_opt_switch=@@optimizer_switch;
+set optimizer_switch='firstmatch=off';
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+EXPLAIN FORMAT=tree SELECT a FROM t1 WHERE a = ANY ( SELECT a FROM t1 WHERE b = 2 );
+DROP TABLE t1;
+set @@optimizer_switch=@old_opt_switch;
+
+# Same, for a NOT IN query (which then becomes an anti-join).
+set @old_opt_switch=@@optimizer_switch;
+set optimizer_switch='firstmatch=off';
+CREATE TABLE t1 ( a INTEGER NOT NULL, b INTEGER NOT NULL );
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+EXPLAIN FORMAT=tree SELECT a FROM t1 WHERE a NOT IN ( SELECT b FROM t1 WHERE b > 2 );
+DROP TABLE t1;
+set @@optimizer_switch=@old_opt_switch;
+
+# Demonstrate that if there's aggregation within the IN, it just becomes
+# an EXISTS clause instead of the strategy above. (If this changes, one would
+# need to modify the setup of MaterializeIterator for semijoin materialization.)
+set @old_opt_switch=@@optimizer_switch;
+set optimizer_switch='firstmatch=off';
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+EXPLAIN FORMAT=tree SELECT a FROM t1 WHERE a = ANY ( SELECT MAX(a) FROM t1 WHERE b = 2 );
+DROP TABLE t1;
+set @@optimizer_switch=@old_opt_switch;
+
+# Semijoin by duplicate weedout.
+set @old_opt_switch=@@optimizer_switch;
+set optimizer_switch='firstmatch=off,materialization=off,loosescan=off';
+CREATE TABLE t1 ( i INTEGER );
+CREATE TABLE t2 ( i INTEGER );
+INSERT INTO t1 VALUES (1), (2), (3);
+INSERT INTO t2 VALUES (2);
+EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE (t1.i) IN (SELECT t2.i FROM t2);
+DROP TABLE t1;
+DROP TABLE t2;
+set @@optimizer_switch=@old_opt_switch;
+
+# Confluent weedout becomes LIMIT 1.
+#
+# The only difference between this and the previous query is that t2 has
+# somewhat more data, which flips the join order. This means that the
+# weedout can go over t2 only instead of both tables, which makes it a
+# confluent weedout, which we rewrite to LIMIT 1.
+set @old_opt_switch=@@optimizer_switch;
+set optimizer_switch='firstmatch=off,materialization=off,loosescan=off';
+CREATE TABLE t1 ( i INTEGER );
+CREATE TABLE t2 ( i INTEGER );
+INSERT INTO t1 VALUES (1), (2), (3);
+INSERT INTO t2 VALUES (1), (2), (3), (4);
+EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE (t1.i) IN (SELECT t2.i FROM t2);
+DROP TABLE t1;
+DROP TABLE t2;
+set @@optimizer_switch=@old_opt_switch;
+
+# A simple single-table loose scan.
+set @old_opt_switch=@@optimizer_switch;
+set optimizer_switch='firstmatch=off,materialization=off,duplicateweedout=off,loosescan=on';
+CREATE TABLE t1 ( i INTEGER, PRIMARY KEY (i) );
+CREATE TABLE t2 ( i INTEGER, INDEX i1 (i) );
+INSERT INTO t1 VALUES (2), (3), (4), (5);
+INSERT INTO t2 VALUES (1), (2), (3), (4);
+EXPLAIN format=tree SELECT * FROM t1 WHERE t1.i IN (SELECT t2.i FROM t2);
+DROP TABLE t1;
+DROP TABLE t2;
+set @@optimizer_switch=@old_opt_switch;

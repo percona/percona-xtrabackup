@@ -49,10 +49,10 @@
 #include <stdexcept>
 
 using mysql_harness::Path;
-using mysql_harness::logging::LogLevel;
-using mysql_harness::logging::Logger;
-using mysql_harness::logging::Record;
 using mysql_harness::serial_comma;
+using mysql_harness::logging::Logger;
+using mysql_harness::logging::LogLevel;
+using mysql_harness::logging::Record;
 
 // TODO one day we'll improve this and move it to a common spot
 #define harness_assert(COND) \
@@ -167,7 +167,7 @@ void Registry::remove_handler(std::string name) {
 }
 
 // throws std::logic_error
-std::shared_ptr<Handler> Registry::get_handler(std::string name) const {
+std::shared_ptr<Handler> Registry::get_handler(const std::string &name) const {
   std::lock_guard<std::mutex> lock(mtx_);
 
   auto it = handlers_.find(name);
@@ -182,6 +182,16 @@ std::set<std::string> Registry::get_handler_names() const {
   std::set<std::string> result;
   for (const auto &pair : handlers_) result.emplace(pair.first);
   return result;
+}
+
+bool Registry::is_handled(LogLevel level) const {
+  std::lock_guard<std::mutex> lock(mtx_);
+
+  for (const auto &handler_pair : handlers_) {
+    if (level <= handler_pair.second->get_level()) return true;
+  }
+
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -244,7 +254,7 @@ void create_main_log_handler(Registry &registry, const std::string &program,
     return;
   }
 
-    // if user wants to log to OS log, make that our main handler
+  // if user wants to log to OS log, make that our main handler
 #ifdef _WIN32  // only Windows Eventlog is supported at the moment
   if (use_os_log) {
     // throws std::runtime_error on failure to init Windows Eventlog
@@ -355,6 +365,19 @@ void set_log_level_for_all_loggers(LogLevel level) {
   set_log_level_for_all_loggers(registry, level);
 }
 
+bool log_level_is_handled(LogLevel level, const char *module) {
+  mysql_harness::logging::Registry &registry =
+      mysql_harness::DIM::instance().get_LoggingRegistry();
+
+  Logger logger;
+  try {
+    logger = registry.get_logger(module);
+  } catch (const std::logic_error &) {
+    logger = registry.get_logger(mysql_harness::logging::g_main_app_log_domain);
+  }
+
+  return logger.is_handled(level);
+}
 }  // namespace logging
 
 }  // namespace mysql_harness
@@ -381,8 +404,7 @@ extern "C" void log_message(LogLevel level, const char *module, const char *fmt,
   harness_assert(level <= LogLevel::kDebug);
 
   // get timestamp
-  time_t now;
-  time(&now);
+  time_t now{};
 
   mysql_harness::logging::Registry &registry =
       mysql_harness::DIM::instance().get_LoggingRegistry();
@@ -396,7 +418,7 @@ extern "C" void log_message(LogLevel level, const char *module, const char *fmt,
   Logger logger;
   try {
     logger = registry.get_logger(module);
-  } catch (std::logic_error &) {
+  } catch (const std::logic_error &) {
     // Logger is not registered for this module (log domain), so log as main
     // application domain instead (which should always be available)
     using mysql_harness::logging::g_main_app_log_domain;
@@ -413,6 +435,7 @@ extern "C" void log_message(LogLevel level, const char *module, const char *fmt,
              "Module '%s' not registered with logger - "
              "logging the following message as '%s' instead",
              module, g_main_app_log_domain.c_str());
+    if (0 == now) time(&now);
     logger.handle(
         {LogLevel::kError, getpid(), now, g_main_app_log_domain, msg});
 
@@ -420,6 +443,10 @@ extern "C" void log_message(LogLevel level, const char *module, const char *fmt,
     // log message
     module = g_main_app_log_domain.c_str();
   }
+
+  if (!logger.is_handled(level)) return;
+
+  if (0 == now) time(&now);
 
   // Build the message
   char message[mysql_harness::logging::kLogMessageMaxSize];

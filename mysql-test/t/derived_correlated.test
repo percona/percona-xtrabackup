@@ -582,7 +582,7 @@ select trace from information_schema.optimizer_trace;
 
 --echo # LDT depending on const table only
 
-create table t3(a int) engine=myisam;
+create table t3(a int) engine=innodb;
 insert into t3 values(3);
 analyze table t3;
 let $query=
@@ -728,6 +728,40 @@ DROP TABLE bb;
 SET SQL_MODE=DEFAULT;
 
 --echo #
+--echo # Bug #29268512: ASSERTION FAILED: INITED == NONE INTERMITTENTLY
+--echo #
+
+CREATE TABLE t1 (
+  f1 integer
+);
+
+INSERT INTO t1 VALUES (0),(1);
+
+CREATE TABLE t2 (
+  f2 integer
+);
+
+SELECT * FROM t1, LATERAL ( SELECT MAX(1) FROM t2 GROUP BY t1.f1 ) AS l1;
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug #29334082: Still crashing in actual_key_parts() / assert inited == INDEX
+--echo #
+
+CREATE TABLE t1 ( f1 INTEGER );
+CREATE TABLE t2 ( f2 LONGBLOB );
+
+INSERT INTO t1 VALUES (1);
+INSERT INTO t2 VALUES ('abc'),('def');
+
+# The longblob requires deduplication by means of a hidden hash field,
+# which triggers a special path in MaterializeIterator that involves an index.
+SELECT STD(0) FROM t2, LATERAL ( SELECT f1 FROM t1 GROUP BY f2,f1 ) AS d1;
+
+DROP TABLE t1, t2;
+
+--echo #
 --echo # Bug#28954838 ASSERTION `(REMAINING_TABLES_AFTER != 0) || ((CUR_EMBEDDING_MAP == 0) && (JOIN->
 --echo #
 
@@ -869,3 +903,23 @@ GROUP BY 1, 1;
 
 DROP TABLE t0007, t0008, t0009;
 SET SQL_MODE=DEFAULT;
+
+--echo #
+--echo # Bug #29514504: WRONG RESULT WITH CORRELATED LATERAL JOIN
+--echo #
+
+#
+# In this case, the derived table has an aggregation function that can get zero
+# input rows, _and_ is evaluated multiple times (due to LATERAL). If so,
+# we have to be careful to properly reset the value we write to the derived
+# table, or the value from the previous iteration would leak through.
+#
+CREATE TABLE t1 (id INTEGER);
+CREATE TABLE t2 (id INTEGER);
+INSERT INTO t1 VALUES (10), (20), (30);
+INSERT INTO t2 VALUES (20), (20);
+SELECT * FROM t1 JOIN LATERAL (
+  SELECT GROUP_CONCAT(t.id) AS c FROM t2 t WHERE (t.id = t1.id)
+) d0 ON (1);
+
+DROP TABLE t1, t2;

@@ -27,6 +27,11 @@
 
 #include "consumer.hpp"
 
+namespace NdbRestoreStatus
+{
+  enum {Ok = 0, Failed = 1, WrongArgs = 2};
+}
+
 bool map_nodegroups(Uint32 *ng_array, Uint32 no_parts);
 
 struct restore_callback_t {
@@ -127,7 +132,7 @@ public:
   virtual bool column_compatible_check(const char* tableName,
                                        const NDBCOL* backupCol, 
                                        const NDBCOL* dbCol);
-  virtual bool update_apply_status(const RestoreMetaData &metaData);
+  virtual bool update_apply_status(const RestoreMetaData &metaData, bool snapshotstart);
   virtual bool report_started(unsigned node_id, unsigned backup_id);
   virtual bool report_meta_data(unsigned node_id, unsigned backup_id);
   virtual bool report_data(unsigned node_id, unsigned backup_id);
@@ -154,6 +159,12 @@ public:
   static AttrConvType check_compat_text_to_char(const NDBCOL &old_col,
                                                 const NDBCOL &new_col);
   static AttrConvType check_compat_text_to_text(const NDBCOL &old_col,
+                                                const NDBCOL &new_col);
+  static AttrConvType check_compat_binary_to_blob(const NDBCOL &old_col,
+                                                  const NDBCOL &new_col);
+  static AttrConvType check_compat_blob_to_binary(const NDBCOL &old_col,
+                                                  const NDBCOL &new_col);
+  static AttrConvType check_compat_blob_to_blob(const NDBCOL &old_col,
                                                 const NDBCOL &new_col);
   static AttrConvType check_compat_promotion(const NDBCOL &old_col,
                                              const NDBCOL &new_col);

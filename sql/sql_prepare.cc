@@ -1134,7 +1134,7 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
   @note This function handles create view commands.
 
   @retval false Operation was a success.
-  @retval true An error occured.
+  @retval true An error occurred.
 */
 
 static bool mysql_test_create_view(Prepared_statement *stmt) {
@@ -1380,8 +1380,8 @@ static bool init_param_array(Prepared_statement *stmt) {
     Item_param **to;
     List_iterator<Item_param> param_iterator(lex->param_list);
     /* Use thd->mem_root as it points at statement mem_root */
-    stmt->param_array = (Item_param **)alloc_root(
-        stmt->thd->mem_root, sizeof(Item_param *) * stmt->param_count);
+    stmt->param_array = (Item_param **)stmt->thd->mem_root->Alloc(
+        sizeof(Item_param *) * stmt->param_count);
     if (!stmt->param_array) return true;
     for (to = stmt->param_array; to < stmt->param_array + stmt->param_count;
          ++to) {
@@ -1605,7 +1605,7 @@ static const char *get_dynamic_sql_string(LEX *lex, size_t *query_len) {
 
     len = (needs_conversion ? var_value->length() * to_cs->mbmaxlen
                             : var_value->length());
-    if (!(query_str = (char *)alloc_root(thd->mem_root, len + 1))) goto end;
+    if (!(query_str = (char *)thd->mem_root->Alloc(len + 1))) goto end;
 
     if (needs_conversion) {
       uint dummy_errors;
@@ -2777,6 +2777,7 @@ reexecute:
                            true)) {
         thd->clear_error();
         error = reprepare();
+        DEBUG_SYNC(thd, "after_statement_reprepare");
       } else {
         /*
           Reprepare_observer sets error status in DA but Sql_condition is not
@@ -3102,8 +3103,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor) {
   /* Allocate query. */
 
   if (expanded_query->length() &&
-      alloc_query(thd, (char *)expanded_query->ptr(),
-                  expanded_query->length())) {
+      alloc_query(thd, expanded_query->ptr(), expanded_query->length())) {
     my_error(ER_OUTOFMEMORY, MYF(ME_FATALERROR), expanded_query->length());
     flags &= ~(uint)IS_IN_USE;
     stmt_backup.restore_thd(thd, this);
@@ -3632,7 +3632,7 @@ void Protocol_local::start_row() {
 
   /* Start a new row. */
   m_current_row =
-      (Ed_column *)alloc_root(&m_rset_root, sizeof(Ed_column) * m_column_count);
+      (Ed_column *)m_rset_root.Alloc(sizeof(Ed_column) * m_column_count);
   m_current_column = m_current_row;
   DBUG_VOID_RETURN;
 }

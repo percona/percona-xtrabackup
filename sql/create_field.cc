@@ -78,6 +78,7 @@ Create_field::Create_field(Field *old_field, Field *orig_field)
       gcol_info(old_field->gcol_info),
       stored_in_db(old_field->stored_in_db),
       m_default_val_expr(old_field->m_default_val_expr),
+      is_array(old_field->is_array()),
       m_max_display_width_in_codepoints(old_field->char_length()) {
   switch (sql_type) {
     case MYSQL_TYPE_TINY_BLOB:
@@ -139,7 +140,7 @@ Create_field::Create_field(Field *old_field, Field *orig_field)
       StringBuffer<MAX_FIELD_WIDTH> tmp(charset);
 
       /* Get the value from default_values */
-      my_ptrdiff_t diff = orig_field->table->default_values_offset();
+      ptrdiff_t diff = orig_field->table->default_values_offset();
       orig_field->move_field_offset(diff);  // Points now at default_values
       if (!orig_field->is_real_null()) {
         StringBuffer<MAX_FIELD_WIDTH> tmp(charset);
@@ -178,6 +179,7 @@ Create_field::Create_field(Field *old_field, Field *orig_field)
   @param srid                  The SRID specification. This might be null
                                (has_value() may return false).
   @param hidden                Whether this column should be hidden or not.
+  @param is_array_arg          Whether the field is a typed array
 
   @retval
     false on success.
@@ -189,11 +191,12 @@ bool Create_field::init(
     THD *thd, const char *fld_name, enum_field_types fld_type,
     const char *display_width_in_codepoints, const char *fld_decimals,
     uint fld_type_modifier, Item *fld_default_value, Item *fld_on_update_value,
-    LEX_STRING *fld_comment, const char *fld_change,
+    LEX_CSTRING *fld_comment, const char *fld_change,
     List<String> *fld_interval_list, const CHARSET_INFO *fld_charset,
     bool has_explicit_collation, uint fld_geom_type,
     Value_generator *fld_gcol_info, Value_generator *fld_default_val_expr,
-    Nullable<gis::srid_t> srid, dd::Column::enum_hidden_type hidden) {
+    Nullable<gis::srid_t> srid, dd::Column::enum_hidden_type hidden,
+    bool is_array_arg) {
   uint sign_len, allowed_type_modifier = 0;
   ulong max_field_charlength = MAX_FIELD_CHARLENGTH;
 
@@ -214,6 +217,7 @@ bool Create_field::init(
   auto_flags = Field::NONE;
   maybe_null = !(fld_type_modifier & NOT_NULL_FLAG);
   this->hidden = hidden;
+  is_array = is_array_arg;
 
   if (fld_default_value != NULL &&
       fld_default_value->type() == Item::FUNC_ITEM) {
@@ -528,6 +532,7 @@ bool Create_field::init(
       break;
     }
     case MYSQL_TYPE_DECIMAL:
+    default:
       DBUG_ASSERT(0); /* Was obsolete */
   }
 
@@ -711,7 +716,9 @@ size_t Create_field::max_display_width_in_bytes() const {
   }
 }
 
-size_t Create_field::pack_length() const {
+size_t Create_field::pack_length(bool dont_override) const {
+  if (!dont_override && pack_length_override != 0) return pack_length_override;
+
   switch (sql_type) {
     case MYSQL_TYPE_SET: {
       return get_set_pack_length(interval == nullptr ? interval_list.elements
@@ -768,6 +775,12 @@ size_t Create_field::key_length() const {
       precision = std::min(precision, static_cast<uint>(DECIMAL_MAX_PRECISION));
       return my_decimal_get_binary_size(precision, decimals);
     }
-    default: { return pack_length(); }
+    default: {
+      return pack_length(is_array);
+    }
   }
+}
+
+bool is_field_for_functional_index(const Create_field *create_field) {
+  return create_field->hidden == dd::Column::enum_hidden_type::HT_HIDDEN_SQL;
 }

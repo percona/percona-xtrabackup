@@ -521,24 +521,24 @@ bool partition_info::set_used_partition(List<Item> &fields, List<Item> &values,
   return false;
 }
 
-  /*
-    Create a memory area where default partition names are stored and fill it
-    up with the names.
+/*
+  Create a memory area where default partition names are stored and fill it
+  up with the names.
 
-    SYNOPSIS
-      create_default_partition_names()
-      num_parts                       Number of partitions
-      start_no                        Starting partition number
-      subpart                         Is it subpartitions
+  SYNOPSIS
+    create_default_partition_names()
+    num_parts                       Number of partitions
+    start_no                        Starting partition number
+    subpart                         Is it subpartitions
 
-    RETURN VALUE
-      A pointer to the memory area of the default partition names
+  RETURN VALUE
+    A pointer to the memory area of the default partition names
 
-    DESCRIPTION
-      A support routine for the partition code where default values are
-      generated.
-      The external routine needing this code is check_partition_info
-  */
+  DESCRIPTION
+    A support routine for the partition code where default values are
+    generated.
+    The external routine needing this code is check_partition_info
+*/
 
 #define MAX_PART_NAME_SIZE 8
 
@@ -1155,7 +1155,8 @@ bool partition_info::check_range_constants(THD *thd) {
     longlong part_range_value;
     bool signed_flag = !part_expr->unsigned_flag;
 
-    range_int_array = (longlong *)sql_alloc(num_parts * sizeof(longlong));
+    range_int_array =
+        (longlong *)(*THR_MALLOC)->Alloc(num_parts * sizeof(longlong));
     if (unlikely(range_int_array == NULL)) {
       mem_alloc_error(num_parts * sizeof(longlong));
       goto end;
@@ -1632,7 +1633,7 @@ end:
 
 void partition_info::print_no_partition_found(THD *thd, TABLE *table_arg) {
   char buf[100];
-  char *buf_ptr = (char *)&buf;
+  const char *buf_ptr = buf;
   TABLE_LIST table_list;
 
   table_list.db = table_arg->s->db.str;
@@ -1643,12 +1644,12 @@ void partition_info::print_no_partition_found(THD *thd, TABLE *table_arg) {
                ER_THD(thd, ER_NO_PARTITION_FOR_GIVEN_VALUE_SILENT), MYF(0));
   } else {
     if (column_list)
-      buf_ptr = (char *)"from column_list";
+      buf_ptr = "from column_list";
     else {
       my_bitmap_map *old_map =
           dbug_tmp_use_all_columns(table_arg, table_arg->read_set);
       if (part_expr->null_value)
-        buf_ptr = (char *)"NULL";
+        buf_ptr = "NULL";
       else
         longlong2str(err_value, buf, part_expr->unsigned_flag ? 10 : -10);
       dbug_tmp_restore_column_map(table_arg->read_set, old_map);
@@ -1766,7 +1767,7 @@ bool partition_info::set_up_charset_field_preps() {
     if (!(char_ptrs = (uchar **)sql_calloc(size))) goto error;
     restore_part_field_ptrs = char_ptrs;
     size = (tot_part_fields + 1) * sizeof(Field *);
-    if (!(char_ptrs = (uchar **)sql_alloc(size))) goto error;
+    if (!(char_ptrs = (uchar **)(*THR_MALLOC)->Alloc(size))) goto error;
     part_charset_field_array = (Field **)char_ptrs;
     ptr = part_field_array;
     i = 0;
@@ -1797,7 +1798,7 @@ bool partition_info::set_up_charset_field_preps() {
     if (!(char_ptrs = (uchar **)sql_calloc(size))) goto error;
     restore_subpart_field_ptrs = char_ptrs;
     size = (tot_subpart_fields + 1) * sizeof(Field *);
-    if (!(char_ptrs = (uchar **)sql_alloc(size))) goto error;
+    if (!(char_ptrs = (uchar **)(*THR_MALLOC)->Alloc(size))) goto error;
     subpart_charset_field_array = (Field **)char_ptrs;
     ptr = subpart_field_array;
     i = 0;
@@ -2878,7 +2879,7 @@ bool partition_info::init_partition_bitmap(MY_BITMAP *bitmap,
   uint bitmap_bits = num_subparts ? (num_subparts * num_parts) : num_parts;
   uint bitmap_bytes = bitmap_buffer_size(bitmap_bits);
 
-  if (!(bitmap_buf = (uint32 *)alloc_root(mem_root, bitmap_bytes))) {
+  if (!(bitmap_buf = (uint32 *)mem_root->Alloc(bitmap_bytes))) {
     mem_alloc_error(bitmap_bytes);
     return true;
   }

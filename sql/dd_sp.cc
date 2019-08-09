@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -106,11 +106,11 @@ static Field *make_field(const dd::Parameter &param, TABLE_SHARE *share,
     numeric_scale =
         param.is_numeric_scale_null() ? NOT_FIXED_DEC : param.numeric_scale();
 
-  return make_field(share, (uchar *)0, param.char_length(), (uchar *)"", 0,
-                    dd_get_old_field_type(param.data_type()),
+  return make_field(*THR_MALLOC, share, nullptr, param.char_length(), nullptr,
+                    0, dd_get_old_field_type(param.data_type()),
                     dd_get_mysql_charset(param.collation_id()), geom_type,
                     Field::NONE, interval, "", false, param.is_zerofill(),
-                    param.is_unsigned(), numeric_scale, 0, 0, {});
+                    param.is_unsigned(), numeric_scale, 0, 0, {}, false);
 }
 
 /**
@@ -137,14 +137,13 @@ static void prepare_type_string_from_dd_param(THD *thd,
     // Allocate space for interval.
     size_t interval_parts = param->elements_count();
 
-    interval =
-        static_cast<TYPELIB *>(alloc_root(thd->mem_root, sizeof(TYPELIB)));
+    interval = static_cast<TYPELIB *>(thd->mem_root->Alloc(sizeof(TYPELIB)));
     interval->type_names = static_cast<const char **>(
-        alloc_root(thd->mem_root, (sizeof(char *) * (interval_parts + 1))));
+        thd->mem_root->Alloc((sizeof(char *) * (interval_parts + 1))));
     interval->type_names[interval_parts] = 0;
 
     interval->type_lengths = static_cast<uint *>(
-        alloc_root(thd->mem_root, sizeof(uint) * interval_parts));
+        thd->mem_root->Alloc(sizeof(uint) * interval_parts));
     interval->count = interval_parts;
     interval->name = NULL;
 

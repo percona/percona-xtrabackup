@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1074,7 +1074,8 @@ static int caching_sha2_password_authenticate(MYSQL_PLUGIN_VIO *vio,
           strlen(g_caching_sha2_rsa_keys->get_public_key_as_pem()));
       if (vio->write_packet(
               vio,
-              (unsigned char *)g_caching_sha2_rsa_keys->get_public_key_as_pem(),
+              pointer_cast<const uchar *>(
+                  g_caching_sha2_rsa_keys->get_public_key_as_pem()),
               pem_length))
         DBUG_RETURN(CR_ERROR);
       /* Get the encrypted response from the client */
@@ -1358,7 +1359,7 @@ static MYSQL_SYSVAR_STR(
 static MYSQL_SYSVAR_BOOL(
     auto_generate_rsa_keys, caching_sha2_auto_generate_rsa_keys,
     PLUGIN_VAR_READONLY | PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_NOPERSIST,
-    "Auto generate RSA keys at server startup if correpsonding "
+    "Auto generate RSA keys at server startup if corresponding "
     "system variables are not specified and key files are not present "
     "at the default location.",
     NULL, NULL, true);

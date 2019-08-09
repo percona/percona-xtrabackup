@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -458,10 +458,12 @@ vector<string> SortBufferIndirectIterator::DebugString() const {
 
 SortingIterator::SortingIterator(THD *thd, Filesort *filesort,
                                  unique_ptr_destroy_only<RowIterator> source,
+                                 bool force_sort_positions,
                                  ha_rows *examined_rows)
     : RowIterator(thd),
       m_filesort(filesort),
       m_source_iterator(move(source)),
+      m_force_sort_positions(force_sort_positions),
       m_examined_rows(examined_rows) {}
 
 SortingIterator::~SortingIterator() { ReleaseBuffers(); }
@@ -481,8 +483,6 @@ void SortingIterator::ReleaseBuffers() {
 bool SortingIterator::Init() {
   QEP_TAB *qep_tab = m_filesort->qep_tab;
   ReleaseBuffers();
-
-  THD_STAGE_INFO(thd(), stage_creating_sort_index);
 
   // Both empty result and error count as errors. (TODO: Why? This is a legacy
   // choice that doesn't always seem right to me, although it should nearly
@@ -618,11 +618,9 @@ int SortingIterator::DoSort(QEP_TAB *qep_tab) {
       return -1;
   }
 
-  ha_rows found_rows, returned_rows;
-  bool error = filesort(thd(), m_filesort, qep_tab->keep_current_rowid,
-                        m_source_iterator.get(), &m_sort_result, &found_rows,
-                        &returned_rows);
-  m_sort_result.found_records = returned_rows;
+  ha_rows found_rows;
+  bool error = filesort(thd(), m_filesort, m_force_sort_positions,
+                        m_source_iterator.get(), &m_sort_result, &found_rows);
   qep_tab->set_records(found_rows);  // For SQL_CALC_ROWS
   table->set_keyread(false);         // Restore if we used indexes
   if (qep_tab->type() == JT_FT)
@@ -653,7 +651,12 @@ inline void Filesort_info::unpack_addon_fields(uchar *buff) {
 }
 
 vector<string> SortingIterator::DebugString() const {
-  string ret = "Sort: ";
+  string ret;
+  if (m_filesort->m_remove_duplicates) {
+    ret = "Sort with duplicate removal: ";
+  } else {
+    ret = "Sort: ";
+  }
 
   bool first = true;
   for (unsigned i = 0; i < m_filesort->sort_order_length(); ++i) {

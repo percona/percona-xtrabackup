@@ -356,13 +356,12 @@ void xdes_set_bit(xdes_t *descr,    /*!< in: descriptor */
  the start of the extent.
  @return bit index of the bit, ULINT_UNDEFINED if not found */
 UNIV_INLINE
-page_no_t xdes_find_bit(
-    xdes_t *descr,  /*!< in: descriptor */
-    ulint bit,      /*!< in: XDES_FREE_BIT or XDES_CLEAN_BIT */
-    ibool val,      /*!< in: desired bit value */
-    page_no_t hint, /*!< in: hint of which bit position would
-                    be desirable */
-    mtr_t *mtr)     /*!< in/out: mini-transaction */
+page_no_t xdes_find_bit(xdes_t *descr, /*!< in: descriptor */
+                        ulint bit, /*!< in: XDES_FREE_BIT or XDES_CLEAN_BIT */
+                        ibool val, /*!< in: desired bit value */
+                        page_no_t hint, /*!< in: hint of which bit position
+                                        would be desirable */
+                        mtr_t *mtr)     /*!< in/out: mini-transaction */
 {
   page_no_t i;
 
@@ -948,8 +947,9 @@ bool fsp_header_rotate_encryption(fil_space_t *space, byte *encrypt_info,
   DBUG_EXECUTE_IF("fsp_header_rotate_encryption_failure", return (false););
 
   /* Fill encryption info. */
-  if (!Encryption::fill_encryption_info(
-          space->encryption_key, space->encryption_iv, encrypt_info, false)) {
+  if (!Encryption::fill_encryption_info(space->encryption_key,
+                                        space->encryption_iv, encrypt_info,
+                                        false, true)) {
     return (false);
   }
 
@@ -1060,7 +1060,7 @@ bool fsp_header_init(space_id_t space_id, page_no_t size, mtr_t *mtr,
 
     if (!Encryption::fill_encryption_info(space->encryption_key,
                                           space->encryption_iv, encryption_info,
-                                          is_boot)) {
+                                          is_boot, true)) {
       space->encryption_type = Encryption::NONE;
       memset(space->encryption_key, 0, ENCRYPTION_KEY_LEN);
       memset(space->encryption_iv, 0, ENCRYPTION_KEY_LEN);
@@ -1130,7 +1130,7 @@ bool fsp_header_get_encryption_key(uint32_t fsp_flags, byte *key, byte *iv,
     return (false);
   }
 
-  return (Encryption::decode_encryption_info(key, iv, page + offset));
+  return (Encryption::decode_encryption_info(key, iv, page + offset, true));
 }
 
 #ifndef UNIV_HOTBACKUP
@@ -2360,14 +2360,33 @@ static ulint fseg_n_reserved_pages_low(
   ut_ad(inode && used && mtr);
   ut_ad(mtr_memo_contains_page(mtr, inode, MTR_MEMO_PAGE_SX_FIX));
 
-  *used = mach_read_from_4(inode + FSEG_NOT_FULL_N_USED) +
-          FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_FULL) +
-          fseg_get_n_frag_pages(inode, mtr);
+  /* number of used segment pages in the FSEG_NOT_FULL list */
+  ulint n_used_not_full = mach_read_from_4(inode + FSEG_NOT_FULL_N_USED);
 
-  ret = fseg_get_n_frag_pages(inode, mtr) +
-        FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_FREE) +
-        FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_NOT_FULL) +
-        FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_FULL);
+  /* total number of segment pages in the FSEG_NOT_FULL list */
+  ulint n_total_not_full =
+      FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_NOT_FULL);
+
+  /* n_used can be zero only if n_total is zero. */
+  ut_ad(n_used_not_full > 0 || n_total_not_full == 0);
+  ut_ad((n_used_not_full < n_total_not_full) ||
+        ((n_used_not_full == 0) && (n_total_not_full == 0)));
+
+  /* total number of pages in FSEG_FULL list. */
+  ulint n_total_full = FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_FULL);
+
+  /* total number of pages in FSEG_FREE list. */
+  ulint n_total_free = FSP_EXTENT_SIZE * flst_get_len(inode + FSEG_FREE);
+
+  /* Number of fragment pages in the segment. */
+  ulint n_frags = fseg_get_n_frag_pages(inode, mtr);
+
+  *used = n_frags + n_total_full + n_used_not_full;
+  ret = n_frags + n_total_full + n_total_free + n_total_not_full;
+
+  ut_ad(*used <= ret);
+  ut_ad((*used < ret) || ((n_used_not_full == 0) && (n_total_not_full == 0) &&
+                          (n_total_free == 0)));
 
   return (ret);
 }
@@ -2762,7 +2781,7 @@ static buf_block_t *fseg_alloc_free_page_low(fil_space_t *space,
                              hint % FSP_EXTENT_SIZE, mtr);
     ut_ad(!has_done_reservation || ret_page != FIL_NULL);
     /*-----------------------------------------------------------*/
-  } else if (reserved - used > 0) {
+  } else if (used < reserved) {
     /* 5. We take any unused page from the segment
     ==============================================*/
     fil_addr_t first;
@@ -3218,6 +3237,7 @@ static void fseg_mark_page_used(
     flst_remove(seg_inode + FSEG_NOT_FULL, descr + XDES_FLST_NODE, mtr);
     flst_add_last(seg_inode + FSEG_FULL, descr + XDES_FLST_NODE, mtr);
 
+    ut_ad(not_full_n_used >= FSP_EXTENT_SIZE);
     mlog_write_ulint(seg_inode + FSEG_NOT_FULL_N_USED,
                      not_full_n_used - FSP_EXTENT_SIZE, MLOG_4BYTES, mtr);
   }
@@ -3344,6 +3364,8 @@ static void fseg_free_page_low(fseg_inode_t *seg_inode,
   the segment.*/
   if (state == XDES_FSEG_FRAG && n_used == XDES_FRAG_N_USED) {
     n_used = 0;
+
+    ut_ad(not_full_n_used >= XDES_FRAG_N_USED);
     not_full_n_used -= XDES_FRAG_N_USED;
   }
 
@@ -3952,10 +3974,11 @@ dberr_t fsp_has_sdi(space_id_t space_id) {
 #endif /* UNIV_DEBUG && !XTRABACKUP */
 
   fil_space_release(space);
-  DBUG_EXECUTE_IF("ib_sdi", if (!FSP_FLAGS_HAS_SDI(space->flags)) {
-    ib::warn(ER_IB_MSG_429)
-        << "SDI doesn't exist in tablespace: " << space->name;
-  });
+  DBUG_EXECUTE_IF(
+      "ib_sdi", if (!FSP_FLAGS_HAS_SDI(space->flags)) {
+        ib::warn(ER_IB_MSG_429)
+            << "SDI doesn't exist in tablespace: " << space->name;
+      });
   return (FSP_FLAGS_HAS_SDI(space->flags) ? DB_SUCCESS : DB_ERROR);
 }
 
@@ -4048,6 +4071,11 @@ static void mark_all_page_dirty_in_tablespace(THD *thd, space_id_t space_id,
                     buf_LRU_flush_or_remove_pages(
                         space_id, BUF_REMOVE_FLUSH_WRITE, 0, false););
   }
+
+#ifdef HAVE_PSI_STAGE_INTERFACE
+  /* Confirm that all pages are covered. */
+  ut_ad(progress_monitor.is_completed());
+#endif
 }
 
 /** Encrypt/Unencrypt a tablespace.
@@ -4093,7 +4121,8 @@ dberr_t fsp_alter_encrypt_tablespace(THD *thd, space_id_t space_id,
       Encryption::random_value(iv);
 
       /* Prepare encrypted encryption information to be written on page 0. */
-      if (!Encryption::fill_encryption_info(key, iv, encryption_info, false)) {
+      if (!Encryption::fill_encryption_info(key, iv, encryption_info, false,
+                                            true)) {
         ut_ad(0);
       }
 
@@ -4513,7 +4542,6 @@ static void resume_alter_encrypt_tablespace(THD *thd) {
 
 /* Initiate roll-forward of alter encrypt in background thread */
 void fsp_init_resume_alter_encrypt_tablespace() {
-  my_thread_init();
 #ifdef UNIV_PFS_THREAD
   THD *thd =
       create_thd(false, true, true, srv_ts_alter_encrypt_thread_key.m_value);
@@ -4523,11 +4551,6 @@ void fsp_init_resume_alter_encrypt_tablespace() {
 
   resume_alter_encrypt_tablespace(thd);
 
-  srv_threads.m_ts_alter_encrypt_thread_active = false;
-
   destroy_thd(thd);
-  my_thread_end();
-
-  return;
 }
 #endif /* !UNIV_HOTBACKUP */

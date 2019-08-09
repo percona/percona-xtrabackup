@@ -22,13 +22,13 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status1
 
-diff -u - $topdir/status1 <<EOF
+run_cmd diff -u - $topdir/status1 <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_lock_tables_for_backup	1
 Com_unlock_instance	0
 Com_unlock_tables	1
-Com_flush	2
+Com_flush	3
 EOF
 
 xtrabackup --backup \
@@ -41,13 +41,13 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status2
 
-diff -u - $topdir/status2 <<EOF
+run_cmd diff -u - $topdir/status2 <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_lock_tables_for_backup	2
 Com_unlock_instance	0
 Com_unlock_tables	2
-Com_flush	4
+Com_flush	5
 EOF
 
 ########################################################################
@@ -66,7 +66,7 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        SHOW GLOBAL STATUS LIKE 'Com_flush%'" \
        > $topdir/status3
 
-diff -u - $topdir/status3 <<EOF
+run_cmd diff -u - $topdir/status3 <<EOF
 Com_lock_instance	0
 Com_lock_tables	0
 Com_lock_tables_for_backup	2

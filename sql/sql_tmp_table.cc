@@ -170,7 +170,7 @@ static Field *create_tmp_field_from_item(Item *item, TABLE *table,
     case REAL_RESULT:
       new_field = new (*THR_MALLOC)
           Field_double(item->max_length, maybe_null, item->item_name.ptr(),
-                       item->decimals, true);
+                       item->decimals, false, true);
       break;
     case INT_RESULT:
       /*
@@ -779,39 +779,39 @@ inline void relocate_field(Field *field, uchar *pos, uchar *null_flags,
   field->reset();
 }
 
-  /**
-    Create a temp table according to a field list.
+/**
+  Create a temp table according to a field list.
 
-    Given field pointers are changed to point at tmp_table for
-    send_result_set_metadata. The table object is self contained: it's
-    allocated in its own memory root, as well as Field objects
-    created for table columns. Those Field objects are common to TABLE and
-    TABLE_SHARE.
-    This function will replace Item_sum items in 'fields' list with
-    corresponding Item_field items, pointing at the fields in the
-    temporary table, unless this was prohibited by true
-    value of argument save_sum_fields. The Item_field objects
-    are created in THD memory root.
+  Given field pointers are changed to point at tmp_table for
+  send_result_set_metadata. The table object is self contained: it's
+  allocated in its own memory root, as well as Field objects
+  created for table columns. Those Field objects are common to TABLE and
+  TABLE_SHARE.
+  This function will replace Item_sum items in 'fields' list with
+  corresponding Item_field items, pointing at the fields in the
+  temporary table, unless this was prohibited by true
+  value of argument save_sum_fields. The Item_field objects
+  are created in THD memory root.
 
-    @param thd                  thread handle
-    @param param                a description used as input to create the table
-    @param fields               list of items that will be used to define
-                                column types of the table (also see NOTES)
-    @param group                Group key to use for temporary table, NULL if
-    none
-    @param distinct             should table rows be distinct
-    @param save_sum_fields      see NOTES
-    @param select_options
-    @param rows_limit
-    @param table_alias          possible name of the temporary table that can
-                                be used for name resolving; can be "".
+  @param thd                  thread handle
+  @param param                a description used as input to create the table
+  @param fields               list of items that will be used to define
+                              column types of the table (also see NOTES)
+  @param group                Group key to use for temporary table, NULL if
+  none
+  @param distinct             should table rows be distinct
+  @param save_sum_fields      see NOTES
+  @param select_options
+  @param rows_limit
+  @param table_alias          possible name of the temporary table that can
+                              be used for name resolving; can be "".
 
-    @remark mysql_create_view() checks that views have less than
-            MAX_FIELDS columns.
+  @remark mysql_create_view() checks that views have less than
+          MAX_FIELDS columns.
 
-    @remark We may actually end up with a table without any columns at all.
-            See comment below: We don't have to store this.
-  */
+  @remark We may actually end up with a table without any columns at all.
+          See comment below: We don't have to store this.
+*/
 
 #define STRING_TOTAL_LENGTH_TO_PACK_ROWS 128
 #define AVG_STRING_LENGTH_TO_PACK_ROWS 64
@@ -863,7 +863,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
               (int)distinct, (int)save_sum_fields, (ulong)rows_limit,
               static_cast<bool>(group)));
   if (group) {
-    if (!param->quick_group)
+    if (!param->allow_group_via_temp_table)
       group = 0;  // Can't use group key
     else
       for (ORDER *tmp = group; tmp; tmp = tmp->next) {
@@ -899,7 +899,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 
   init_sql_alloc(key_memory_TABLE, &own_root, TABLE_ALLOC_BLOCK_SIZE, 0);
 
-  void *rawmem = alloc_root(&own_root, sizeof(Func_ptr_array));
+  void *rawmem = own_root.Alloc(sizeof(Func_ptr_array));
   if (!rawmem) DBUG_RETURN(NULL); /* purecov: inspected */
   Func_ptr_array *copy_func = new (rawmem) Func_ptr_array(&own_root);
   copy_func->reserve(copy_func_count);
@@ -1400,7 +1400,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
         point into record[0] if previous step is REF_SLICE_ORDERED_GROUP_BY and
         we are creating a tmp table to materialize the query's result.
       */
-      my_ptrdiff_t diff = orig_field->table->default_values_offset();
+      ptrdiff_t diff = orig_field->table->default_values_offset();
       Field *f_in_record0 = orig_field->table->field[orig_field->field_index];
       f_in_record0->move_field_offset(diff);  // Points now at default_values
       if (f_in_record0->is_real_null())
@@ -1545,19 +1545,19 @@ err:
   DBUG_RETURN(NULL);          /* purecov: inspected */
 }
 
-/*
+/**
   Create a temporary table to weed out duplicate rowid combinations
 
-  SYNOPSIS
 
-    create_duplicate_weedout_tmp_table()
-      thd                    Thread handle
-      uniq_tuple_length_arg  Length of the table's column
-      sjtbl                  Update sjtbl->[start_]recinfo values which
+  @param    thd                    Thread handle
+  @param    uniq_tuple_length_arg  Length of the table's column
+  @param    sjtbl                  Update sjtbl->[start_]recinfo values which
                              will be needed if we'll need to convert the
                              created temptable from HEAP to MyISAM/Maria.
 
-  DESCRIPTION
+  @details
+    create_duplicate_weedout_tmp_table()
+
     Create a temporary table to weed out duplicate rowid combinations. The
     table has a single column that is a concatenation of all rowids in the
     combination.
@@ -1575,7 +1575,7 @@ err:
     The code in this function was produced by extraction of relevant parts
     from create_tmp_table().
 
-  RETURN
+  @return
     created table
     NULL on error
 */
@@ -1592,14 +1592,14 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
   uchar *bitmaps;
   uint *blob_field;
   bool using_unique_constraint = false;
-  Field *field, *key_field;
+  Field *field, *key_field, *hash_field = nullptr;
   uint null_pack_length;
   uchar *null_flags;
   uchar *pos;
   uint i;
 
   DBUG_ENTER("create_duplicate_weedout_tmp_table");
-  DBUG_ASSERT(!sjtbl->is_confluent);
+  DBUG_ASSERT(!sjtbl || !sjtbl->is_confluent);
 
   DBUG_EXECUTE_IF("create_duplicate_weedout_tmp_table_error", {
     my_error(ER_UNKNOWN_ERROR, MYF(0));
@@ -1643,7 +1643,8 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
     }
     // Mark hash_field as NOT NULL
     field->flags = NOT_NULL_FLAG;
-    *(reg_field++) = sjtbl->hash_field = field;
+    *(reg_field++) = hash_field = field;
+    if (sjtbl) sjtbl->hash_field = field;
     table->hash_field = field;
     field->table = field->orig_table = table;
     share->fields++;
@@ -1716,7 +1717,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
     hash_key->table = table;
     hash_key->key_part = hash_kpi;
     hash_key->actual_flags = hash_key->flags = HA_NULL_ARE_EQUAL;
-    hash_kpi->init_from_field(sjtbl->hash_field);
+    hash_kpi->init_from_field(hash_field);
     hash_key->key_length = hash_kpi->store_length;
   } else {
     DBUG_PRINT("info", ("Creating group key in temporary table"));
@@ -1844,7 +1845,7 @@ TABLE *create_tmp_table_from_fields(THD *thd, List<Create_field> &field_list,
         cdef->maybe_null
             ? make_field(*cdef, share, nullptr,
                          pointer_cast<uchar *>(const_cast<char *>("")), 1)
-            : make_field(*cdef, share, nullptr, nullptr, 0);
+            : make_field(*cdef, share);
     if (!*reg_field) goto error;
     (*reg_field)->init(table);
     record_length += (*reg_field)->pack_length();
@@ -2056,8 +2057,8 @@ static bool alloc_record_buffers(TABLE *table) {
     is allocated in a single chuck with TABLE::record[0] for the first
     TABLE instance.
   */
-  if (!(table->record[0] = (uchar *)alloc_root(
-            &share->mem_root, (alloc_length * 3 + share->null_bytes))))
+  if (!(table->record[0] = (uchar *)share->mem_root.Alloc(
+            (alloc_length * 3 + share->null_bytes))))
     return true;
   table->record[1] = table->record[0] + alloc_length;
   share->default_values = table->record[1] + alloc_length;
@@ -2094,7 +2095,7 @@ bool open_tmp_table(TABLE *table) {
     table->db_stat = 0;
     return (1);
   }
-  (void)table->file->extra(HA_EXTRA_QUICK); /* Faster */
+  (void)table->file->ha_extra(HA_EXTRA_QUICK); /* Faster */
 
   table->set_created();
   table->s->tmp_handler_count++;
@@ -2529,7 +2530,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
         }
 
         if (table->no_rows) {
-          new_table.file->extra(HA_EXTRA_NO_ROWS);
+          new_table.file->ha_extra(HA_EXTRA_NO_ROWS);
           new_table.no_rows = 1;
         }
 

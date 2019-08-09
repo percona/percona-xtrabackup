@@ -21,6 +21,8 @@ INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 FIND_GCRYPT()
 
+CHECK_TYPE_SIZE("unsigned long" SIZEOF_UNSIGNED_LONG)
+
 IF(WITH_VERSION_CHECK)
 # xxd is needed to embed version_check script
 FIND_PROGRAM(XXD_PATH xxd)
@@ -164,7 +166,6 @@ SET_TARGET_PROPERTIES(xbstream
 TARGET_LINK_LIBRARIES(xbstream
   ${GCRYPT_LIBS}
   mysys
-  mysys_ssl
   crc
   ${LZ4_LIBRARY}
   )
@@ -191,6 +192,5 @@ SET_TARGET_PROPERTIES(xbcrypt
 TARGET_LINK_LIBRARIES(xbcrypt
   ${GCRYPT_LIBS}
   mysys
-  mysys_ssl
   crc
   )

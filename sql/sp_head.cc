@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,6 +58,7 @@
 #include "sql/dd/dictionary.h"  // is_dd_table_access_allowed
 #include "sql/derror.h"         // ER_THD
 #include "sql/discrete_interval.h"
+#include "sql/field.h"
 #include "sql/gis/srid.h"
 #include "sql/handler.h"
 #include "sql/item.h"
@@ -1913,6 +1914,7 @@ sp_head::~sp_head() {
 Field *sp_head::create_result_field(size_t field_max_length,
                                     const char *field_name_or_null,
                                     TABLE *table) {
+  DBUG_ASSERT(!m_return_field_def.is_array);
   size_t field_length = !m_return_field_def.max_display_width_in_bytes()
                             ? field_max_length
                             : m_return_field_def.max_display_width_in_bytes();
@@ -3191,7 +3193,7 @@ bool sp_head::merge_table_list(THD *thd, TABLE_LIST *table,
   }
 
   for (; table; table = table->next_global)
-    if (!table->is_derived() && !table->schema_table) {
+    if (!table->is_internal() && !table->schema_table) {
       /* Fail if this is an inaccessible DD table. */
       const dd::Dictionary *dictionary = dd::get_dictionary();
       if (dictionary &&
@@ -3411,7 +3413,8 @@ void sp_parser_data::start_parsing_sp_body(THD *thd, sp_head *sp) {
 }
 
 bool sp_parser_data::add_backpatch_entry(sp_branch_instr *i, sp_label *label) {
-  Backpatch_info *bp = (Backpatch_info *)sql_alloc(sizeof(Backpatch_info));
+  Backpatch_info *bp =
+      (Backpatch_info *)(*THR_MALLOC)->Alloc(sizeof(Backpatch_info));
 
   if (!bp) return true;
 

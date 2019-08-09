@@ -121,6 +121,7 @@ struct st_ndb_status {
   long number_of_ready_data_nodes;
   long connect_count;
   long execute_count;
+  long trans_hint_count;
   long scan_count;
   long pruned_scan_count;
   long schema_locks_count;
@@ -131,8 +132,6 @@ struct st_ndb_status {
   long pushed_reads;
   long long last_commit_epoch_server;
   long long last_commit_epoch_session;
-  long transaction_no_hint_count[MAX_NDB_NODES];
-  long transaction_hint_count[MAX_NDB_NODES];
   long long api_client_stats[Ndb::NumClientStatistics];
   const char * system_name;
 };
@@ -170,6 +169,7 @@ public:
   int index_prev(uchar *buf) override;
   int index_first(uchar *buf) override;
   int index_last(uchar *buf) override;
+  int index_next_same(uchar *buf, const uchar *key, uint keylen) override;
   int index_read_last(uchar * buf, const uchar * key, uint key_len) override;
   int rnd_init(bool scan) override;
   int rnd_end() override;
@@ -204,6 +204,13 @@ public:
                                 Cost_estimate *cost) override;
 
   void append_create_info(String *packet) override;
+
+  /* Get partition row type
+  @param[in] table   partition table
+  @param[in] part_id Id of partition for which row type to be retrieved
+  @return Partition row type. */
+  enum row_type get_partition_row_type(const dd::Table *table,
+                                       uint part_id) override;
 
  private:
   bool choose_mrr_impl(uint keyno, uint n_ranges, ha_rows n_rows,
@@ -401,8 +408,8 @@ public:
   int ndb_err(NdbTransaction*);
 
   enum_alter_inplace_result
-  check_if_supported_inplace_alter(TABLE *altered_table,
-                                   Alter_inplace_info *ha_alter_info) override;
+    check_if_supported_inplace_alter(TABLE *altered_table,
+                                     Alter_inplace_info *ha_alter_info) override;
 
 private:
   bool parse_comment_changes(NdbDictionary::Table *new_tab,
@@ -433,6 +440,17 @@ public:
   void prepare_inplace__drop_index(uint key_num);
   int inplace__final_drop_index(TABLE *table_arg);
 
+  enum_alter_inplace_result
+    supported_inplace_field_change(Alter_inplace_info*,
+                                   Field*, Field*, bool, bool) const;
+  bool table_storage_changed(HA_CREATE_INFO*) const;
+  bool column_has_index(TABLE*, uint, uint, uint) const;
+  enum_alter_inplace_result
+    supported_inplace_ndb_column_change(uint, TABLE*,
+                                        Alter_inplace_info*,
+                                        bool, bool) const;
+  enum_alter_inplace_result
+    supported_inplace_column_change(THD*, TABLE*, uint, Field*, Alter_inplace_info*) const;
   enum_alter_inplace_result
     check_inplace_alter_supported(TABLE *altered_table,
                                   Alter_inplace_info *ha_alter_info);
@@ -492,6 +510,7 @@ public:
                                       Ndb_fk_list&);
   static int recreate_fk_for_truncate(THD*, Ndb*, const char*,
                                       Ndb_fk_list&);
+  bool has_fk_dependency(THD*, const NdbDictionary::Column*) const;
   int check_default_values(const NdbDictionary::Table* ndbtab);
   int get_metadata(THD *thd, const dd::Table* table_def);
   void release_metadata(THD *thd, Ndb *ndb);
@@ -567,7 +586,7 @@ public:
 
   int get_blob_values(const NdbOperation *ndb_op, uchar *dst_record,
                       const MY_BITMAP *bitmap);
-  int set_blob_values(const NdbOperation *ndb_op, my_ptrdiff_t row_offset,
+  int set_blob_values(const NdbOperation *ndb_op, ptrdiff_t row_offset,
                       const MY_BITMAP *bitmap, uint *set_count, bool batch);
   friend int g_get_ndb_blobs_value(NdbBlob *ndb_blob, void *arg);
   void release_blobs_buffer();

@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -102,26 +102,27 @@ IF(NOT GIT_EXECUTABLE)
     # Save bison output first.
     CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_yacc.cc
        ${CMAKE_BINARY_DIR}/sql_yacc.cc COPYONLY)
-    CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_yacc.h 
+    CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_yacc.h
        ${CMAKE_BINARY_DIR}/sql_yacc.h COPYONLY)
     #
     CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_hints.yy.cc
        ${CMAKE_BINARY_DIR}/sql_hints.yy.cc COPYONLY)
     CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_hints.yy.h
        ${CMAKE_BINARY_DIR}/sql_hints.yy.h COPYONLY)
+    #
 
     IF(BUILD_IS_SINGLE_CONFIG)
-    # make clean
-    EXECUTE_PROCESS(
-      COMMAND ${CMAKE_MAKE_PROGRAM} clean 
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
+      # make clean
+      EXECUTE_PROCESS(
+        COMMAND ${CMAKE_MAKE_PROGRAM} clean
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        )
     ENDIF()
     
     # Restore bison output
     CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql_yacc.cc
        ${CMAKE_BINARY_DIR}/sql/sql_yacc.cc COPYONLY)
-    CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql_yacc.h 
+    CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql_yacc.h
        ${CMAKE_BINARY_DIR}/sql/sql_yacc.h COPYONLY)
     FILE(REMOVE ${CMAKE_BINARY_DIR}/sql_yacc.cc)
     FILE(REMOVE ${CMAKE_BINARY_DIR}/sql_yacc.h)
@@ -149,7 +150,7 @@ IF(NOT GIT_EXECUTABLE)
 ENDIF()
 
 # Copy bison output
-CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_yacc.h 
+CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_yacc.h
    ${PACKAGE_DIR}/sql/sql_yacc.h COPYONLY)
 CONFIGURE_FILE(${CMAKE_BINARY_DIR}/sql/sql_yacc.cc
    ${PACKAGE_DIR}/sql/sql_yacc.cc COPYONLY)

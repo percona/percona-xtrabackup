@@ -117,7 +117,7 @@ bool Sql_data_context::kill() {
           Query_string_builder qb;
           qb.put("KILL ").put(mysql_session_id());
 
-          data.com_query.query = (char *)qb.get().c_str();
+          data.com_query.query = qb.get().c_str();
           data.com_query.length = static_cast<unsigned int>(qb.get().length());
 
           if (!command_service_run_command(
@@ -494,13 +494,15 @@ ngs::Error_code Sql_data_context::deallocate_prep_stmt(
 }
 
 ngs::Error_code Sql_data_context::execute_prep_stmt(
-    const uint32_t stmt_id, const bool has_cursor, PS_PARAM *parameters,
+    const uint32_t stmt_id, const bool has_cursor, const PS_PARAM *parameters,
     const std::size_t parameters_count, ngs::Resultset_interface *rset) {
   COM_DATA cmd;
-  cmd.com_stmt_execute = {static_cast<unsigned long>(stmt_id),
-                          static_cast<unsigned long>(has_cursor), parameters,
-                          static_cast<unsigned long>(parameters_count),
-                          static_cast<unsigned char>(true)};
+  cmd.com_stmt_execute = {
+      static_cast<unsigned long>(stmt_id),     // NOLINT(runtime/int)
+      static_cast<unsigned long>(has_cursor),  // NOLINT(runtime/int)
+      const_cast<PS_PARAM *>(parameters),
+      static_cast<unsigned long>(parameters_count),  // NOLINT(runtime/int)
+      static_cast<unsigned char>(true)};             // NOLINT(runtime/int)
 
   return execute_server_command(COM_STMT_EXECUTE, cmd, rset);
 }
