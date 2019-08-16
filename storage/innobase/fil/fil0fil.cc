@@ -3678,7 +3678,6 @@ dberr_t Fil_shard::iterate_spaces(bool include_log,
   return (DB_SUCCESS);
 }
 
-
 /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
 returning the nodes via callback function cbk.
 @param[in]	include_log	Include log files, if true
@@ -10375,17 +10374,29 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
   ptr += 2;
 
   if (end < ptr + len) {
+    if (is_new) {
+      ut_free(key);
+      ut_free(iv);
+    }
     return (nullptr);
   }
 
   if (offset >= UNIV_PAGE_SIZE || len + offset > UNIV_PAGE_SIZE ||
       len != ENCRYPTION_INFO_SIZE) {
     recv_sys->found_corrupt_log = true;
+    if (is_new) {
+      ut_free(key);
+      ut_free(iv);
+    }
     return (nullptr);
   }
 
   if (srv_backup_mode || !use_dumped_tablespace_keys) {
     if (!Encryption::decode_encryption_info(key, iv, ptr, true)) {
+      if (is_new) {
+        ut_free(key);
+        ut_free(iv);
+      }
       return (ptr + len);
     }
   } else {

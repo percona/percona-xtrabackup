@@ -291,7 +291,7 @@ static bool ends_with(const char *str, const char *suffix) {
 
 /** Create directories recursively.
 @return 0 if directories created successfully. */
-static int mkdirp(const char *pathname, int Flags, myf MyFlags) {
+int mkdirp(const char *pathname, int Flags, myf MyFlags) {
   char parent[PATH_MAX], *p;
 
   /* make a parent directory path */
@@ -303,12 +303,14 @@ static int mkdirp(const char *pathname, int Flags, myf MyFlags) {
 
   *p = 0;
 
-  /* try to make parent directory */
-  if (p != parent && mkdirp(parent, Flags, MyFlags) != 0) {
-    return (-1);
+  /* try to create parent directory if it doesn't exist */
+  if (!file_exists(parent)) {
+    if (p != parent && mkdirp(parent, Flags, MyFlags) != 0) {
+      return (-1);
+    }
   }
 
-  /* make this one if parent has been made */
+  /* create this one if parent has been created */
   if (my_mkdir(pathname, Flags, MyFlags) == 0) {
     return (0);
   }

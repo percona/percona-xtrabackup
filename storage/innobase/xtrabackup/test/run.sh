@@ -49,6 +49,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
+-X options  Extra options to pass to mysqld
 -r path     Use specified path as root directory for test workers.
 EOF
 }
@@ -751,7 +752,7 @@ SUBUNIT_OUT=test_results.subunit
 NWORKERS=
 DEBUG_WORKER=""
 
-while getopts "fgh?:t:s:d:c:j:T:x:i:r:" options; do
+while getopts "fgh?:t:s:d:c:j:T:x:X:i:r:" options; do
         case $options in
             f ) force="yes";;
             t )
@@ -791,6 +792,10 @@ recognized for compatibility";;
 
             x )
                 XB_EXTRA_MY_CNF_OPTS="$OPTARG"
+                ;;
+
+            X )
+                MYSQLD_EXTRA_MY_CNF_OPTS="$OPTARG"
                 ;;
 
             r )

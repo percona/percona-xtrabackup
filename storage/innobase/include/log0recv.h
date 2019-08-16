@@ -666,6 +666,9 @@ bool recv_sys_add_to_parsing_buf(const byte *log_block, lsn_t scanned_lsn,
 /** Moves the parsing buffer data left to the buffer start. */
 void recv_reset_buffer();
 
+/** Resize the recovery parsing buffer upto log_buffer_size */
+bool recv_sys_resize_buf();
+
 /** Parse log records from a buffer and optionally store them to a
 hash table to wait merging to file pages.
 @param[in]  checkpoint_lsn  the LSN of the latest checkpoint */
