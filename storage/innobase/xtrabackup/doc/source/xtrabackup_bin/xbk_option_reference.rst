@@ -9,6 +9,59 @@
 This page documents all of the command-line options for the
 :program:`xtrabackup` binary.
 
+Modes of operation
+================================================================================
+
+You invoke |program| in one of the following modes:
+
+- :option:`--backup` mode to make a backup in a target directory
+- :option:`--prepare` mode to restore data from a backup (created in :option:`--backup` mode)
+- :option:`--copy-back` to copy data from a backup to the location
+  that contained the original data; to move data instead of copying use
+  the alternate :option:`--move-back` mode.
+- :option:`--stats` mode to scan the specified data files and print out index statistics.
+
+When you intend to run |program| in any of these modes, use the following syntax:
+
+.. code-block:: bash
+
+   $ xtrabackup [--defaults-file=#] --backup|--prepare|--copy-back|--stats [OPTIONS]
+
+For example, the :option:`--prepare` mode is applied as follows:
+
+.. code-block:: bash
+
+   $ xtrabackup --prepare --target-dir=/data/backup/mysql/
+
+For all modes, the default options are read from the **xtrabackup** and
+**mysqld** configuration groups from the following files in the given order:
+
+1. :file:`/etc/my.cnf`
+#. :file:`/etc/mysql/my.cnf`
+#. :file:`/usr/etc/my.cnf`
+#. :file:`~/.my.cnf`. 
+
+As the first parameter to |program| (in place of the :option:`defaults-file`,
+you may supply one of the following:
+
+- :option:`--print-defaults` to have |program| print the argument list and exit.
+- :option:`--no-defaults` to forbid reading options from any file but the login file.   
+- :option:`--defaults-file`  to read the default options from the given file.
+- :option:`--defaults-extra-file` to read the specified additional file after
+  the global files have been read.
+- :option:`--defaults-group-suffix` to read the configuration groups with the
+  given suffix. The effective group name is constructed by concatenating the default
+  configuration groups (**xtrabackup** and **mysqld**) with the given suffix.
+- :option:`--login-path` to read the given path from the login file.
+
+.. rubric:: InnoDB Options
+
+There is a large group of InnoDB options that are normally read from the
+:file:`my.cnf` configuration file, so that |program| boots up its embedded
+InnoDB in the same configuration as your current server. You normally do not
+need to specify them explicitly. These options have the same behavior in InnoDB
+and XtraDB. See :option:`--innodb-miscellaneous` for more information.
+
 Options
 =======
 
@@ -94,9 +147,13 @@ Options
    unless :option:`--force-non-empty-directories` option is
    specified.
 
+.. option:: --core-file
+
+   Write core on fatal signals.
+
 .. option:: --databases=#
 
-   This option specifies the list of databases and tables that should be backed
+   This option specifies a list of databases and tables that should be backed
    up. The option accepts the list of the form ``"databasename1[.table_name1]
    databasename2[.table_name2] . . ."``.
 
@@ -119,9 +176,17 @@ Options
    for your |MySQL| server, so it should be read from :file:`my.cnf` if that
    exists; otherwise you must specify it on the command line.
 
-   When combined with the :option:`xtrabackup --copy-back` or
-   :option:`xtrabackup --move-back` option, :option:`xtrabackup --datadir`
+   When combined with the :option:`--copy-back` or
+   :option:`--move-back` option, :option:`--datadir`
    refers to the destination directory.
+
+.. option:: --debug-sleep-before-unlock=#
+
+   This is a debug-only option used by the |xtrabackup| test suite.
+
+.. option:: --debug-sync=name
+
+   The debug sync point. This option is only used by the |xtrabackup| test suite.
 
 .. option:: --decompress
 
@@ -171,6 +236,10 @@ Options
    file. This is used by |xtrabackup| if you use the
    :option:`--defaults-group` option. It is needed for
    ``mysqld_multi`` deployments.
+
+.. option:: --defaults-group-suffix=#
+
+   Also reads groups with concat(group, suffix).
 
 .. option::  --dump-innodb-buffer-pool
 
@@ -316,6 +385,17 @@ Options
    This option specifies which types of queries are allowed to complete before
    xtrabackup will issue the global lock. Default is ``all``.
 
+.. option:: --galera-info
+
+   This option creates the :file:`xtrabackup_galera_info` file which contains
+   the local node state at the time of the backup. Option should be used when
+   performing the backup of |Percona XtraDB Cluster|. It has no effect when
+   backup locks are used to create the backup.
+
+.. option:: --generate-new-master-key 
+
+   Generate a new master key when doing a copy-back.
+
 .. option:: --generate-transition-key
 
    |xtrabackup| needs to access the same keyring file or vault server
@@ -326,12 +406,15 @@ Options
    a transition key for |xtrabackup| to use if the master key used for
    encryption is not found because it has been rotated and purged.
 
-.. option:: --galera-info
+.. option:: --get-server-public-key
 
-   This option creates the :file:`xtrabackup_galera_info` file which contains
-   the local node state at the time of the backup. Option should be used when
-   performing the backup of |Percona XtraDB Cluster|. It has no effect when
-   backup locks are used to create the backup.
+   Get the server public key
+
+   .. seealso::
+
+      |MySQL| Documentation: The --get-server-public-key Option
+
+         https://dev.mysql.com/doc/refman/5.7/en/connection-options.html#option_general_get-server-public-key
 
 .. option:: --help
  
@@ -414,10 +497,9 @@ Options
    a wrong LSN value is specified (a user  error which |Percona XtraBackup| is
    unable to detect), the backup will be unusable. Be careful!
 
-.. option:: --innodb-log-arch-dir=DIRECTORY
+.. option::   --innodb[=name]
 
-   This option is used to specify the directory containing the archived logs.
-   It can only be used with the :option:`--prepare` option.
+   This option is ignored for MySQL option compatibility.
 
 .. option:: --innodb-miscellaneous
 
@@ -428,35 +510,44 @@ Options
    same behavior in InnoDB and XtraDB:
 
    .. hlist::
-      :columns: 2
-
-      - `--innodb-adaptive-hash-index`
-      - `--innodb-additional-mem-pool-size`
-      - `--innodb-autoextend-increment`
-      - `--innodb-buffer-pool-size`
-      - `--innodb-checksums`
-      - `--innodb-data-file-path`
-      - `--innodb-data-home-dir`
-      - `--innodb-doublewrite-file`
-      - `--innodb-doublewrite`
-      - `--innodb-extra-undoslots`
-      - `--innodb-fast-checksum`
-      - `--innodb-file-io-threads`
-      - `--innodb-file-per-table`
-      - `--innodb-flush-log-at-trx-commit`
-      - `--innodb-flush-method`
-      - `--innodb-force-recovery`
-      - `--innodb-io-capacity`
-      - `--innodb-lock-wait-timeout`
-      - `--innodb-log-buffer-size`
-      - `--innodb-log-files-in-group`
-      - `--innodb-log-file-size`
-      - `--innodb-log-group-home-dir`
-      - `--innodb-max-dirty-pages-pct`
-      - `--innodb-open-files`
-      - `--innodb-page-size`
-      - `--innodb-read-io-threads`
-      - `--innodb-write-io-threads`
+      :colums: 2
+      
+      - --innodb-adaptive-hash-index
+      - --innodb-additional-mem-pool-size
+      - --innodb-autoextend-increment
+      - --innodb-buffer-pool-size
+      - --innodb-buffer-pool-filename
+      - --innodb-checksum-algorithm
+      - --innodb-checksums
+      - --innodb-data-file-path
+      - --innodb-data-home-dir
+      - --innodb-directories
+      - --innodb-doublewrite-file
+      - --innodb-doublewrite
+      - --innodb-extra-undoslots
+      - --innodb-fast-checksum
+      - --innodb-file-io-threads
+      - --innodb-file-per-table
+      - --innodb-flush-log-at-trx-commit
+      - --innodb-flush-method
+      - --innodb-io-capacity
+      - --innodb-lock-wait-timeout
+      - --innodb-log-block-size
+      - --innodb-log-buffer-size
+      - --innodb-log-checksums
+      - --innodb-log-files-in-group
+      - --innodb-log-file-size
+      - --innodb-log-group-home-dir
+      - --innodb-max-dirty-pages-pct
+      - --innodb-open-files
+      - --innodb-page-size
+      - --innodb-read-io-threads
+      - --innodb-redo-log-encrypt
+      - --innodb-undo-directory
+      - --innodb-undo-log-encrypt
+      - --innodb-undo-tablespaces` 
+      - --innodb-use-native-aio
+      - --innodb-write-io-threads
 
 .. option:: --keyring-file-data=FILENAME
 
@@ -496,10 +587,22 @@ Options
    If ``LOCK TABLES FOR BACKUP`` or ``LOCK INSTANCE FOR BACKUP`` does not return
    within given timeout, abort the backup.
 
+.. option:: --log
+
+   This option is ignored for |mysql|
+
+.. option:: --log-bin
+
+   The base name for the log sequence.
+
+.. option:: --log-bin-index=name 
+
+   File that holds the names for binary log files.
+
 .. option:: --log-copy-interval=#
 
-   This option specifies time interval between checks done by log copying
-   thread in milliseconds (default is 1 second).
+   This option specifies the time interval between checks done by the log
+   copying thread in milliseconds (default is 1 second).
 
 .. option:: --move-back
 
@@ -514,8 +617,7 @@ Options
 
 .. option:: --no-defaults
 
-   Don\'t read default options from any option file. Must be given as the first
-   option on the command-line.
+   The default options are only read from the login file.
 
 .. option:: --no-lock
 
@@ -542,6 +644,10 @@ Options
 
 .. include:: ../.res/contents/option.no-version-check.txt
 
+.. option:: --open-files-limit=# 
+
+   The maximum number of file descriptors to reserve with setrlimit().
+
 .. option:: --parallel=#
 
    This option specifies the number of threads to use to copy multiple data
@@ -555,6 +661,10 @@ Options
 
    This option specifies the password to use when connecting to the database.
    It accepts a string argument. See :command:`mysql --help` for details.
+
+.. option::   --plugin-load
+
+   List of plugins to load.
 
 .. option:: --port=PORT
 
@@ -579,11 +689,41 @@ Options
    Makes :program:`xtrabackup` print out parameters that can be used for
    copying the data files back to their original locations to restore them. 
 
+.. option:: --read-buffer-size
+
+   Set the datafile read buffer size, given value is scaled up to page size. Default
+   is 10Mb.
+
+
+.. option:: --rebuild-indexes
+
+   Rebuilds indexes in a compact backup. This option only has effect when the
+   :option:`--prepare` and :option:`rebuild-threads` options are provided.
+
+.. option:: --rebuild-threads=#
+
+   Uses the given number of threads to rebuild indexes in a compact backup. This
+   option only has effect with the :option:`--prepare` and
+   :option:`--rebuild-indexes` options.
+
 .. option:: --remove-original
 
    Implemented in |Percona XtraBackup| 2.4.6, this option when specified will
    remove :file:`.qp`, :file:`.xbcrypt` and :file:`.qp.xbcrypt` files after
    decryption and decompression.
+
+.. option:: --rocksdb-datadir
+
+   RocksDB data directory
+
+.. option:: --rocksdb-wal-dir
+
+   RocksDB WAL directory.
+
+
+.. option:: --rollback-prepared-trx
+
+   Force rollback prepared InnoDB transactions.
 
 .. option:: --rsync
 
@@ -620,6 +760,19 @@ Options
 .. option:: --server-id=#
 
    The server instance being backed up.
+
+.. option:: --server-public-key-path
+
+   The file path to the server public RSA key in the PEM format.
+
+   .. seealso::
+
+      |MySQL| Documentation: The --server-public-key-path Option
+         https://dev.mysql.com/doc/refman/8.0/en/connection-options.html#option_general_server-public-key-path
+
+.. option:: --skip-tables-compatibility-check
+
+   See :option:`--tables-compatibility-check`.
 
 .. option:: --slave-info
 
@@ -685,6 +838,11 @@ Options
    <https://dev.mysql.com/doc/refman/8.0/en/encrypted-connection-options.html#option_general_ssl-crlpath>`_
    MySQL server documentation.
 
+.. option:: --ssl-fips-mode
+
+   SSL FIPS mode (applies only for OpenSSL); permitted values are: *OFF*, *ON*,
+   *STRICT*.
+
 .. option:: --ssl-key
 
    Path of file that contains X509 key in PEM format. More information can be
@@ -717,11 +875,23 @@ Options
    Stream all backup files to the standard output in the specified format.
    Currently supported formats are ``xbstream`` and ``tar``.
 
+.. option:: --strict
+
+   If this option is specified, |xtrabackup| fails with an error when invalid
+   parameters are passed.
+
 .. option:: --tables=name
 
    A regular expression against which the full tablename, in
    ``databasename.tablename`` format, is matched. If the name matches, the
    table is backed up. See :doc:`partial backups <partial_backups>`.
+
+.. option:: --tables-compatibility-check
+
+   Enables the engine compatibility warning. The default value is
+   ON. To disable the engine compatibility warning use
+   :option:`--skip-tables-compatibility-check`.
+
 
 .. option:: --tables-exclude=name
 
@@ -746,6 +916,10 @@ Options
    If this option is a relative path, it is interpreted as being relative to
    the current working directory from which :program:`xtrabackup` is executed.
 
+.. option:: --innodb-temp-tablespaces-dir=DIRECTORY
+
+   Directory where temp tablespace files live, this path can be absolute.
+
 .. option:: --throttle=#
 
    This option limits the number of chunks copied per second. The chunk size is
@@ -757,9 +931,19 @@ Options
       More information about how to throttle a backup
          :ref:`throttling_backups`
 
+.. option:: --tls-ciphersuites
+
+   TLS v1.3 cipher to use.
+
+.. option:: --tls-version
+
+   TLS version to use, permitted values are: *TLSv1*, *TLSv1.1*,
+   *TLSv1.2*, *TLSv1.3*.
+
 .. option:: --tmpdir=name
 
-   Specify the directory that will be used to store temporary files during the backup
+   Specify the directory that will be used to store temporary files during the
+   backup
 
 .. option:: --transition-key=name
 
@@ -770,7 +954,7 @@ Options
 
    If :option:`--transition-key` does not have any
    value, :program:`xtrabackup` will ask for it. The same passphrase should be
-   specified for the :option:`xtrabackup --prepare` command.
+   specified for the :option:`--prepare` command.
 
 .. option:: --use-memory
 
@@ -788,6 +972,10 @@ Options
    This option specifies the MySQL username used when connecting to the server,
    if that's not the current user. The option accepts a string argument. See
    mysql --help for details.
+
+.. option:: -v
+
+   See :option:`--version`
 
 .. option:: --version
 
