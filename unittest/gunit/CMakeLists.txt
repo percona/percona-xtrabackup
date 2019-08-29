@@ -445,17 +445,6 @@ ENDIF(MERGE_UNITTESTS)
       COMPILE_FLAGS "-Wno-empty-body"
   )
   ENDIF()
-<<<<<<< HEAD
-  ADD_COMPILE_FLAGS(
-    bounded_queue-t.cc
-    COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
-  )
-  ADD_COMPILE_FLAGS(
-    pump_object_filter-t.cc
-    COMPILE_FLAGS -I${BOOST_PATCHES_DIR} -isystem ${BOOST_INCLUDE_DIR}
-  )
-=======
->>>>>>> mysql-5.7.26
 
   FOREACH(test ${SERVER_TESTS})
     SET(SRC_FILES ${test}-t.cc)
