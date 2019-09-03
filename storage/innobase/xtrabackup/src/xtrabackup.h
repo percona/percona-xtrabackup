@@ -179,6 +179,8 @@ extern uint opt_lock_wait_timeout;
 extern uint opt_lock_wait_threshold;
 extern uint opt_debug_sleep_before_unlock;
 extern uint opt_safe_slave_backup_timeout;
+extern uint opt_backup_lock_timeout;
+extern uint opt_backup_lock_retry_count;
 
 extern const char *opt_history;
 extern bool opt_decrypt;

@@ -439,6 +439,8 @@ bool opt_dump_innodb_buffer_pool = FALSE;
 bool opt_lock_ddl = FALSE;
 bool opt_lock_ddl_per_table = FALSE;
 uint opt_lock_ddl_timeout = 0;
+uint opt_backup_lock_timeout = 0;
+uint opt_backup_lock_retry_count = 0;
 
 const char *opt_history = NULL;
 bool opt_decrypt = FALSE;
@@ -639,6 +641,8 @@ enum options_xtrabackup {
   OPT_LOCK_DDL,
   OPT_LOCK_DDL_TIMEOUT,
   OPT_LOCK_DDL_PER_TABLE,
+  OPT_BACKUP_LOCK_TIMEOUT,
+  OPT_BACKUP_LOCK_RETRY,
   OPT_DUMP_INNODB_BUFFER,
   OPT_DUMP_INNODB_BUFFER_TIMEOUT,
   OPT_DUMP_INNODB_BUFFER_PCT,
@@ -952,6 +956,17 @@ struct my_option xb_client_options[] = {
      "before xtrabackup starts to copy it and until the backup is completed.",
      (uchar *)&opt_lock_ddl_per_table, (uchar *)&opt_lock_ddl_per_table, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"backup-lock-timeout", OPT_BACKUP_LOCK_TIMEOUT,
+     "Timeout in seconds for attempts to acquire metadata locks.",
+     (uchar *)&opt_backup_lock_timeout, (uchar *)&opt_backup_lock_timeout, 0,
+     GET_UINT, REQUIRED_ARG, 31536000, 1, 31536000, 0, 1, 0},
+
+    {"backup-lock-retry-count", OPT_BACKUP_LOCK_RETRY,
+     "Number of attempts to acquire metadata locks.",
+     (uchar *)&opt_backup_lock_retry_count,
+     (uchar *)&opt_backup_lock_retry_count, 0, GET_UINT, REQUIRED_ARG, 0, 0,
+     UINT_MAX, 0, 1, 0},
 
     {"dump-innodb-buffer-pool", OPT_DUMP_INNODB_BUFFER,
      "Instruct MySQL server to dump innodb buffer pool by issuing a "
@@ -7285,7 +7300,7 @@ bool xb_init() {
     history_start_time = time(NULL);
 
     if (opt_lock_ddl &&
-        !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout)) {
+        !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout, 0)) {
       return (false);
     }
 

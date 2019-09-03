@@ -173,9 +173,9 @@ bool write_xtrabackup_info(MYSQL *connection);
 
 bool write_backup_config_file();
 
-bool lock_tables_for_backup(MYSQL *connection, int timeout = 31536000);
+bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count);
 
-bool lock_tables_maybe(MYSQL *connection);
+bool lock_tables_maybe(MYSQL *connection, int timeout, int retry_count);
 
 bool wait_for_safe_slave(MYSQL *connection);
 

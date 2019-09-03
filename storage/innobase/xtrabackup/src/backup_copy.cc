@@ -1352,7 +1352,8 @@ bool backup_start(Backup_context &context) {
 
     history_lock_time = time(NULL);
 
-    if (!lock_tables_maybe(mysql_connection)) {
+    if (!lock_tables_maybe(mysql_connection, opt_backup_lock_timeout,
+                           opt_backup_lock_retry_count)) {
       return (false);
     }
   }
