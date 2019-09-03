@@ -1508,7 +1508,9 @@ backup_start()
 
 		history_lock_time = time(NULL);
 
-		if (!lock_tables_maybe(mysql_connection)) {
+		if (!lock_tables_maybe(mysql_connection,
+				       opt_backup_lock_timeout,
+				       opt_backup_lock_retry_count)) {
 			return(false);
 		}
 	}
@@ -1529,7 +1531,8 @@ backup_start()
 	}
 
 	if (opt_slave_info) {
-		lock_binlog_maybe(mysql_connection);
+		lock_binlog_maybe(mysql_connection, opt_backup_lock_timeout,
+				  opt_backup_lock_retry_count);
 
 		if (!write_slave_info(mysql_connection)) {
 			return(false);
@@ -1550,8 +1553,8 @@ backup_start()
 	}
 
 	if (opt_binlog_info == BINLOG_INFO_ON) {
-
-		lock_binlog_maybe(mysql_connection);
+		lock_binlog_maybe(mysql_connection, opt_backup_lock_timeout,
+				  opt_backup_lock_retry_count);
 		write_binlog_info(mysql_connection);
 	}
 

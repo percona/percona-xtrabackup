@@ -200,8 +200,10 @@ xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
 	MYSQL_RES *mysql_result = NULL;
 
 	if (mysql_query(connection, query)) {
-		msg("Error: failed to execute query %s: %s\n", query,
-			mysql_error(connection));
+		msg("Error: failed to execute query '%s': %u (%s) %s\n", query,
+		    mysql_errno(connection),
+		    mysql_errno_to_sqlstate(mysql_errno(connection)),
+		    mysql_error(connection));
 		if (die_on_error) {
 			exit(EXIT_FAILURE);
 		}
@@ -212,7 +214,7 @@ xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
 	if (mysql_field_count(connection) > 0) {
 		if ((mysql_result = mysql_store_result(connection)) == NULL) {
 			msg("Error: failed to fetch query result %s: %s\n",
-				query, mysql_error(connection));
+			    query, mysql_error(connection));
 			exit(EXIT_FAILURE);
 		}
 
@@ -1035,7 +1037,7 @@ Function acquires a backup tables lock if supported by the server.
 Allows to specify timeout in seconds for attempts to acquire the lock.
 @returns true if lock acquired */
 bool
-lock_tables_for_backup(MYSQL *connection, int timeout)
+lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count)
 {
 	if (have_lock_wait_timeout) {
 		char query[200];
@@ -1047,9 +1049,23 @@ lock_tables_for_backup(MYSQL *connection, int timeout)
 	}
 
 	if (have_backup_locks) {
-		msg_ts("Executing LOCK TABLES FOR BACKUP...\n");
-		xb_mysql_query(connection, "LOCK TABLES FOR BACKUP", true);
-		tables_locked = true;
+		for (int i = 0; i <= retry_count; ++i) {
+			msg_ts("Executing LOCK TABLES FOR BACKUP...\n");
+			xb_mysql_query(connection, "LOCK TABLES FOR BACKUP",
+				       false, false);
+			uint err = mysql_errno(connection);
+			if (err == ER_LOCK_WAIT_TIMEOUT) {
+				os_thread_sleep(1000000);
+				continue;
+			}
+			if (err == 0) {
+				tables_locked = true;
+			}
+			break;
+		}
+		if (!tables_locked) {
+			exit(EXIT_FAILURE);
+		}
 		return(true);
 	}
 
@@ -1064,22 +1080,23 @@ by the server, or a global read lock (FLUSH TABLES WITH READ LOCK)
 otherwise.
 @returns true if lock acquired */
 bool
-lock_tables_maybe(MYSQL *connection)
+lock_tables_maybe(MYSQL *connection, int timeout, int retry_count)
 {
 	if (tables_locked || opt_lock_ddl_per_table) {
 		return(true);
 	}
 
 	if (have_backup_locks) {
-		return lock_tables_for_backup(connection);
+		return lock_tables_for_backup(connection, timeout, retry_count);
 	}
 
 	if (have_lock_wait_timeout) {
-		/* Set the maximum supported session value for
-		lock_wait_timeout to prevent unnecessary timeouts when the
-		global value is changed from the default */
-		xb_mysql_query(connection,
-			"SET SESSION lock_wait_timeout=31536000", false);
+		char query[200];
+
+		ut_snprintf(query, sizeof(query),
+			    "SET SESSION lock_wait_timeout=%d", timeout);
+
+		xb_mysql_query(connection, query, false);
 	}
 
 	if (!opt_lock_wait_timeout && !opt_kill_long_queries_timeout) {
@@ -1137,12 +1154,34 @@ If backup locks are used, execute LOCK BINLOG FOR BACKUP provided that we are
 not in the --no-lock mode and the lock has not been acquired already.
 @returns true if lock acquired */
 bool
-lock_binlog_maybe(MYSQL *connection)
+lock_binlog_maybe(MYSQL *connection, int timeout, int retry_count)
 {
 	if (have_backup_locks && !opt_no_lock && !binlog_locked) {
-		msg_ts("Executing LOCK BINLOG FOR BACKUP...\n");
-		xb_mysql_query(connection, "LOCK BINLOG FOR BACKUP", false);
-		binlog_locked = true;
+		if (have_lock_wait_timeout) {
+			char query[200];
+
+			ut_snprintf(query, sizeof(query),
+				    "SET SESSION lock_wait_timeout=%d",
+				    timeout);
+		}
+
+		for (int i = 0; i <= retry_count; ++i) {
+			msg_ts("Executing LOCK BINLOG FOR BACKUP...\n");
+			xb_mysql_query(connection, "LOCK BINLOG FOR BACKUP",
+				       false, false);
+			uint err = mysql_errno(connection);
+			if (err == ER_LOCK_WAIT_TIMEOUT) {
+				os_thread_sleep(1000000);
+				continue;
+			}
+			if (err == 0) {
+				binlog_locked = true;
+			}
+			break;
+		}
+		if (!binlog_locked) {
+			exit(EXIT_FAILURE);
+		}
 
 		return(true);
 	}
@@ -1576,7 +1615,8 @@ write_current_binlog_file(MYSQL *connection)
 	if (gtid_exists) {
 		size_t log_bin_dir_length;
 
-		lock_binlog_maybe(connection);
+		lock_binlog_maybe(connection, opt_backup_lock_timeout,
+				  opt_backup_lock_retry_count);
 
 		xb_mysql_query(connection, "FLUSH BINARY LOGS", false);
 
