@@ -211,7 +211,9 @@ MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
   MYSQL_RES *mysql_result = NULL;
 
   if (mysql_query(connection, query)) {
-    msg("Error: failed to execute query %s: %s\n", query,
+    msg("Error: failed to execute query '%s': %u (%s) %s\n", query,
+        mysql_errno(connection),
+        mysql_errno_to_sqlstate(mysql_errno(connection)),
         mysql_error(connection));
     if (die_on_error) {
       exit(EXIT_FAILURE);
@@ -1000,29 +1002,48 @@ static void stop_query_killer() {
   os_event_wait_time(kill_query_thread_stopped, 60000);
 }
 
+static bool execute_query_with_timeout(MYSQL *mysql, const char *query,
+                                       int timeout, int retry_count) {
+  bool success = false;
+  if (have_lock_wait_timeout) {
+    char query[200];
+    snprintf(query, sizeof(query), "SET SESSION lock_wait_timeout=%d", timeout);
+    xb_mysql_query(mysql, query, false, true);
+  }
+
+  for (int i = 0; i <= retry_count; ++i) {
+    msg_ts("Executing %s...\n", query);
+    xb_mysql_query(mysql, query, true);
+    uint err = mysql_errno(mysql);
+    if (err == ER_LOCK_WAIT_TIMEOUT) {
+      os_thread_sleep(1000000);
+      continue;
+    }
+    if (err == 0) {
+      success = true;
+    }
+    break;
+  }
+
+  return (success);
+}
+
 /*********************************************************************/ /**
  Function acquires a backup tables lock if supported by the server.
  Allows to specify timeout in seconds for attempts to acquire the lock.
  @returns true if lock acquired */
-bool lock_tables_for_backup(MYSQL *connection, int timeout) {
-  if (have_lock_wait_timeout) {
-    char query[200];
-
-    snprintf(query, sizeof(query), "SET SESSION lock_wait_timeout=%d", timeout);
-
-    xb_mysql_query(connection, query, false);
-  }
-
+bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count) {
   if (have_backup_locks) {
-    msg_ts("Executing LOCK TABLES FOR BACKUP...\n");
-    xb_mysql_query(connection, "LOCK TABLES FOR BACKUP", true);
+    execute_query_with_timeout(connection, "LOCK TABLES FOR BACKUP", timeout,
+                               retry_count);
     tables_locked = true;
+
     return (true);
   }
 
+  execute_query_with_timeout(connection, "LOCK INSTANCE FOR BACKUP", timeout,
+                             retry_count);
   instance_locked = true;
-  msg_ts("Executing LOCK INSTANCE FOR BACKUP...\n");
-  xb_mysql_query(connection, "LOCK INSTANCE FOR BACKUP", true);
 
   return (true);
 }
@@ -1091,7 +1112,7 @@ bool lock_tables_ftwrl(MYSQL *connection) {
  acquired. If slave_info option is specified and slave is not
  using auto_position.
  @returns true if lock acquired */
-bool lock_tables_maybe(MYSQL *connection) {
+bool lock_tables_maybe(MYSQL *connection, int timeout, int retry_count) {
   bool force_ftwrl = opt_slave_info && !slave_auto_position &&
                      !(server_flavor == FLAVOR_PERCONA_SERVER);
 
@@ -1104,7 +1125,7 @@ bool lock_tables_maybe(MYSQL *connection) {
   }
 
   if (have_backup_locks && !force_ftwrl) {
-    return lock_tables_for_backup(connection);
+    return lock_tables_for_backup(connection, timeout, retry_count);
   }
 
   return lock_tables_ftwrl(connection);
