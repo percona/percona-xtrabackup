@@ -679,31 +679,31 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
     ulint is_virtual = (dd_col->is_virtual()) ? DATA_VIRTUAL : 0;
 
+    ulint is_multi_val = (dd_col->is_array()) ? DATA_MULTI_VALUE : 0;
+
     bool is_stored =
         !dd_col->is_generation_expression_null() && !dd_col->is_virtual();
 
-    prtype =
-        dtype_form_prtype((ulint)(field_type) | nulls_allowed | unsigned_type |
-                              binary_type | long_true_varchar | is_virtual,
-                          charset_no);
+    if (is_multi_val) {
+      col_len = field_length;
+    }
+
+    prtype = dtype_form_prtype(
+        (ulint)(field_type) | nulls_allowed | unsigned_type | binary_type |
+            long_true_varchar | is_virtual | is_multi_val,
+        charset_no);
     if (!is_virtual) {
       dict_mem_table_add_col(table, heap, dd_col->name().c_str(), mtype, prtype,
                              col_len);
     } else {
       dict_mem_table_add_v_col(table, heap, dd_col->name().c_str(), mtype,
-                               prtype, col_len, i,
-                               /*field->gcol_info->non_virtual_base_columns()*/
-                               /* see unpack_gcol_info */
-                               1);
+                               prtype, col_len, i, 0);
     }
 
     if (is_stored) {
       ut_ad(!is_virtual);
       /* Added stored column in m_s_cols list. */
-      dict_mem_table_add_s_col(table,
-                               /*field->gcol_info->non_virtual_base_columns()*/
-                               /* see unpack_gcol_info */
-                               1);
+      dict_mem_table_add_s_col(table, 0);
     }
   }
 
@@ -712,6 +712,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     fts_add_doc_id_column(table, heap);
   }
 
+  /* Add system columns to make adding index work */
   dict_table_add_system_columns(table, heap);
 
   /* It appears that index list for InnoDB table always starts with
@@ -785,8 +786,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
       uint col_pos = 0;
       for (auto c : dd_index->table().columns()) {
         if (c == dd_col) break;
-        if (c->is_virtual()) continue;
-        col_pos++;
+        if (c->is_virtual() == dd_col->is_virtual()) col_pos++;
       }
 
       bool is_asc = (idx_elem->order() == dd::Index_element::ORDER_ASC);
@@ -796,6 +796,8 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         prefix_len = 0;
       } else if (dd_index->type() == dd::Index::IT_FULLTEXT) {
         prefix_len = 0;
+      } else if (dd_index->type() == dd::Index::IT_MULTIPLE) {
+        prefix_len = 0;
       } else if (idx_elem->length() != (uint)(-1) &&
                  idx_elem->length() != table->cols[col_pos].len) {
         prefix_len = idx_elem->length();
@@ -803,8 +805,10 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         prefix_len = 0;
       }
 
-      dict_index_add_col(index, table, &table->cols[col_pos], prefix_len,
-                         is_asc);
+      dict_index_add_col(index, table,
+                         dd_col->is_virtual() ? &table->v_cols[col_pos].m_col
+                                              : &table->cols[col_pos],
+                         prefix_len, is_asc);
     }
 
     if (dict_index_add_to_cache(table, index, 0, FALSE) != DB_SUCCESS) {
