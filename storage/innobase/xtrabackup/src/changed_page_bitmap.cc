@@ -564,7 +564,7 @@ static bool xb_find_lsn_in_bitmap_file(
 
  @return the built bitmap tree or NULL if unable to read the full interval for
  any reason. */
-xb_page_bitmap *xb_page_bitmap_init(void)
+xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
 /*=====================*/
 {
   log_online_bitmap_file_t bitmap_file;

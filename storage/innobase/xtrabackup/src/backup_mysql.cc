@@ -226,7 +226,9 @@ MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
     if ((mysql_result = mysql_store_result(connection)) == NULL) {
       msg("Error: failed to fetch query result %s: %s\n", query,
           mysql_error(connection));
-      exit(EXIT_FAILURE);
+      if (die_on_error) {
+        exit(EXIT_FAILURE);
+      }
     }
 
     if (!use_result) {
@@ -247,11 +249,6 @@ my_ulonglong xb_mysql_numrows(MYSQL *connection, const char *query,
   }
   return rows_count;
 }
-
-struct mysql_variable {
-  const char *name;
-  char **value;
-};
 
 /*********************************************************************/ /**
  Read mysql_variable from MYSQL_RES, return number of rows consumed. */
@@ -296,14 +293,14 @@ static int read_mysql_variables_from_result(MYSQL_RES *mysql_result,
   return rows_read;
 }
 
-static void read_mysql_variables(MYSQL *connection, const char *query,
-                                 mysql_variable *vars, bool vertical_result) {
+void read_mysql_variables(MYSQL *connection, const char *query,
+                          mysql_variable *vars, bool vertical_result) {
   MYSQL_RES *mysql_result = xb_mysql_query(connection, query, true);
   read_mysql_variables_from_result(mysql_result, vars, vertical_result);
   mysql_free_result(mysql_result);
 }
 
-static void free_mysql_variables(mysql_variable *vars) {
+void free_mysql_variables(mysql_variable *vars) {
   mysql_variable *var;
 
   for (var = vars; var->name; var++) {

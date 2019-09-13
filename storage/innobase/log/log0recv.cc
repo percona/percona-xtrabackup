@@ -398,7 +398,7 @@ void recv_sys_create() {
 }
 
 /** Resize the recovery parsing buffer upto log_buffer_size */
-static bool recv_sys_resize_buf() {
+bool recv_sys_resize_buf() {
   ut_ad(recv_sys->buf_len <= srv_log_buffer_size);
 
   /* If the buffer cannot be extended further, return false. */

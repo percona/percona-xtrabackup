@@ -1,3 +1,21 @@
+/******************************************************
+Copyright (c) 2011-2019 Percona LLC and/or its affiliates.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; version 2 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+*******************************************************/
+
 #ifndef XTRABACKUP_BACKUP_MYSQL_H
 #define XTRABACKUP_BACKUP_MYSQL_H
 
@@ -39,6 +57,11 @@ struct log_status_t {
   lsn_t lsn_checkpoint;
   std::vector<replication_channel_status_t> channels;
   std::vector<rocksdb_wal_t> rocksdb_wal_files;
+};
+
+struct mysql_variable {
+  const char *name;
+  char **value;
 };
 
 #define ROCKSDB_SUBDIR ".rocksdb"
@@ -151,6 +174,11 @@ my_ulonglong xb_mysql_numrows(MYSQL *connection, const char *query,
                               bool die_on_error);
 
 char *read_mysql_one_value(MYSQL *connection, const char *query);
+
+void read_mysql_variables(MYSQL *connection, const char *query,
+                          mysql_variable *vars, bool vertical_result);
+
+void free_mysql_variables(mysql_variable *vars);
 
 void unlock_all(MYSQL *connection);
 

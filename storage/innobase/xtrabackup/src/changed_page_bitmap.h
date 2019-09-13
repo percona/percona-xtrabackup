@@ -41,7 +41,7 @@ typedef struct xb_page_bitmap_range_struct xb_page_bitmap_range;
  LSN interval incremental_lsn to checkpoint_lsn_start.
 
  @return the built bitmap tree */
-xb_page_bitmap *xb_page_bitmap_init(void);
+xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start);
 /*=====================*/
 
 /****************************************************************/ /**

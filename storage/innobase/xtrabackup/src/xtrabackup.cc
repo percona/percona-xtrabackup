@@ -105,6 +105,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fil_cur.h"
 #include "keyring_plugins.h"
 #include "read_filt.h"
+#include "redo_log.h"
 #include "space_map.h"
 #include "write_filt.h"
 #include "wsrep.h"
@@ -160,8 +161,6 @@ bool xtrabackup_create_ib_logfile = FALSE;
 long xtrabackup_throttle = 0; /* 0:unlimited */
 lint io_ticket;
 os_event_t wait_throttle = NULL;
-os_event_t log_copying_stop = NULL;
-lsn_t log_copying_stop_lsn = 0;
 
 char *xtrabackup_incremental = NULL;
 lsn_t incremental_lsn;
@@ -206,11 +205,7 @@ struct xb_filter_entry_struct {
 };
 typedef struct xb_filter_entry_struct xb_filter_entry_t;
 
-lsn_t checkpoint_lsn_start;
-lsn_t checkpoint_no_start;
-lsn_t log_copy_scanned_lsn;
-bool log_copying = true;
-bool log_copying_running = false;
+bool io_watching_thread_stop = false;
 bool io_watching_thread_running = false;
 
 bool xtrabackup_logfile_is_renamed = false;
@@ -462,8 +457,8 @@ extern const char *innodb_flush_method_names[];
 /** Enumeration of innodb_flush_method */
 extern TYPELIB innodb_flush_method_typelib;
 
-#include "sslopt-vars.h"
 #include "caching_sha2_passwordopt-vars.h"
+#include "sslopt-vars.h"
 
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
@@ -2951,281 +2946,6 @@ skip:
   return (FALSE);
 }
 
-/*******************************************************/ /**
- Scans log from a buffer and writes new log data to the outpud datasinc.
- @return true if success */
-static bool xtrabackup_scan_log_recs(
-    /*===============*/
-    log_t &log,               /*!< in: redo log */
-    bool is_last,             /*!< in: whether it is last segment
-                              to copy */
-    lsn_t start_lsn,          /*!< in: buffer start lsn */
-    lsn_t *contiguous_lsn,    /*!< in/out: it is known that all log
-                              groups contain contiguous log data up
-                              to this lsn */
-    lsn_t *group_scanned_lsn, /*!< out: scanning succeeded up to
-                            this lsn */
-    lsn_t checkpoint_lsn,     /*!< in: latest checkpoint LSN */
-    bool *finished)           /*!< out: false if is not able to scan
-                              any more in this log group */
-{
-  lsn_t scanned_lsn;
-  ulint data_len;
-  ulint write_size;
-  const byte *log_block;
-  bool more_data = false;
-
-  ulint scanned_checkpoint_no = 0;
-
-  *finished = false;
-  scanned_lsn = start_lsn;
-  log_block = log_sys->buf;
-
-  while (log_block < log_sys->buf + RECV_SCAN_SIZE && !*finished) {
-    ulint no = log_block_get_hdr_no(log_block);
-    ulint scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
-    ibool checksum_is_ok = log_block_checksum_is_ok(log_block);
-
-    if (no != scanned_no && checksum_is_ok) {
-      ulint blocks_in_group;
-
-      blocks_in_group = log_block_convert_lsn_to_no(log.lsn_real_capacity) - 1;
-
-      if ((no < scanned_no && ((scanned_no - no) % blocks_in_group) == 0) ||
-          no == 0 ||
-          /* Log block numbers wrap around at 0x3FFFFFFF */
-          ((scanned_no | 0x40000000UL) - no) % blocks_in_group == 0) {
-        /* old log block, do nothing */
-        *finished = true;
-        break;
-      }
-
-      msg("xtrabackup: error: log block numbers mismatch:\n"
-          "xtrabackup: error: expected log block no. %lu,"
-          " but got no. %lu from the log file.\n",
-          (ulong)scanned_no, (ulong)no);
-
-      if ((no - scanned_no) % blocks_in_group == 0) {
-        msg("xtrabackup: error:"
-            " it looks like InnoDB log has wrapped"
-            " around before xtrabackup could"
-            " process all records due to either"
-            " log copying being too slow, or "
-            " log files being too small.\n");
-      }
-
-      return (false);
-    } else if (!checksum_is_ok) {
-      /* Garbage or an incompletely written log block */
-      msg("xtrabackup: warning: Log block checksum mismatch"
-          " (block no %lu at lsn " LSN_PF
-          "): \n"
-          "expected %lu, calculated checksum %lu\n",
-          (ulong)no, scanned_lsn, (ulong)log_block_get_checksum(log_block),
-          (ulong)log_block_calc_checksum(log_block));
-      msg("xtrabackup: warning: this is possible when the "
-          "log block has not been fully written by the "
-          "server, will retry later.\n");
-      *finished = true;
-      break;
-    }
-
-    if (log_block_get_flush_bit(log_block)) {
-      /* This block was a start of a log flush operation:
-      we know that the previous flush operation must have
-      been completed for all log groups before this block
-      can have been flushed to any of the groups. Therefore,
-      we know that log data is contiguous up to scanned_lsn
-      in all non-corrupt log groups. */
-
-      if (scanned_lsn > *contiguous_lsn) {
-        *contiguous_lsn = scanned_lsn;
-      }
-    }
-
-    data_len = log_block_get_data_len(log_block);
-
-    if ((scanned_checkpoint_no > 0) &&
-        (log_block_get_checkpoint_no(log_block) < scanned_checkpoint_no) &&
-        (scanned_checkpoint_no - log_block_get_checkpoint_no(log_block) >
-         0x80000000UL)) {
-      /* Garbage from a log buffer flush which was made
-      before the most recent database recovery */
-
-      *finished = true;
-      break;
-    }
-
-    if (!recv_sys->parse_start_lsn &&
-        (log_block_get_first_rec_group(log_block) > 0)) {
-      /* We found a point from which to start the parsing
-      of log records */
-
-      recv_sys->parse_start_lsn =
-          scanned_lsn + log_block_get_first_rec_group(log_block);
-      recv_sys->scanned_lsn = recv_sys->parse_start_lsn;
-      recv_sys->recovered_lsn = recv_sys->parse_start_lsn;
-    }
-
-    scanned_lsn = scanned_lsn + data_len;
-    scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
-
-    if (scanned_lsn > recv_sys->scanned_lsn) {
-      /* We were able to find more log data: add it to the
-      parsing buffer if parse_start_lsn is already
-      non-zero */
-
-      if (recv_sys->len + 4 * OS_FILE_LOG_BLOCK_SIZE >= RECV_PARSING_BUF_SIZE) {
-        ib::error() << "Log parsing buffer overflow. Recovery may have failed!";
-
-        recv_sys->found_corrupt_log = true;
-
-      } else if (!recv_sys->found_corrupt_log) {
-        more_data = recv_sys_add_to_parsing_buf(log_block, scanned_lsn, 0);
-      }
-
-      recv_sys->scanned_lsn = scanned_lsn;
-      recv_sys->scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
-    }
-
-    if (data_len < OS_FILE_LOG_BLOCK_SIZE) {
-      /* Log data for this group ends here */
-
-      *finished = true;
-    } else {
-      log_block += OS_FILE_LOG_BLOCK_SIZE;
-    }
-  }
-
-  *group_scanned_lsn = scanned_lsn;
-
-  /* ===== write log to 'xtrabackup_logfile' ====== */
-  if (!*finished) {
-    write_size = RECV_SCAN_SIZE;
-  } else {
-    write_size =
-        ut_uint64_align_up(scanned_lsn, OS_FILE_LOG_BLOCK_SIZE) - start_lsn;
-    if (!is_last && scanned_lsn % OS_FILE_LOG_BLOCK_SIZE) {
-      write_size -= OS_FILE_LOG_BLOCK_SIZE;
-    }
-  }
-
-  byte encrypted_buf[4 * UNIV_PAGE_SIZE_MAX];
-  byte *write_buf = log_sys->buf;
-
-  if (srv_redo_log_encrypt) {
-    IORequest req_type(IORequestLogWrite);
-    fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
-    fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
-    Encryption encryption(req_type.encryption_algorithm());
-    ulint dst_len = write_size;
-    write_buf = encryption.encrypt_log(req_type, log_sys->buf, write_size,
-                                       encrypted_buf, &dst_len);
-    ut_a(write_size == dst_len);
-  }
-
-  if (ds_write(dst_log_file, write_buf, write_size)) {
-    msg("xtrabackup: Error: "
-        "write to logfile failed\n");
-    return (false);
-  }
-
-  if (more_data && !recv_sys->found_corrupt_log) {
-    /* Try to parse more log records */
-
-    recv_parse_log_recs(checkpoint_lsn);
-
-    if (recv_sys->recovered_offset > RECV_PARSING_BUF_SIZE / 4) {
-      /* Move parsing buffer data to the buffer start */
-
-      recv_reset_buffer();
-    }
-  }
-
-  return (true);
-}
-
-static bool xtrabackup_copy_logfile(log_t &log, lsn_t from_lsn, bool is_last) {
-  /* definition from recv_recovery_from_checkpoint_start() */
-  lsn_t scanned_lsn;
-  lsn_t contiguous_lsn;
-
-  ut_a(dst_log_file != NULL);
-
-  /* read from checkpoint_lsn_start to current */
-  contiguous_lsn = ut_uint64_align_down(from_lsn, OS_FILE_LOG_BLOCK_SIZE);
-
-  bool finished;
-  lsn_t start_lsn;
-  lsn_t end_lsn;
-
-  /* reference recv_group_scan_log_recs() */
-  finished = false;
-
-  start_lsn = contiguous_lsn;
-  scanned_lsn = start_lsn;
-
-  while (!finished) {
-    end_lsn = start_lsn + RECV_SCAN_SIZE;
-
-    xtrabackup_io_throttling();
-
-    recv_read_log_seg(log, log.buf, start_lsn, end_lsn);
-
-    if (!xtrabackup_scan_log_recs(log, is_last, start_lsn, &contiguous_lsn,
-                                  &scanned_lsn, from_lsn, &finished)) {
-      goto error;
-    }
-
-    start_lsn = end_lsn;
-  }
-
-  log.scanned_lsn = scanned_lsn;
-
-  msg_ts(">> log scanned up to (" LSN_PF ")\n", log.scanned_lsn);
-
-  /* update global variable*/
-  log_copy_scanned_lsn = scanned_lsn;
-
-  debug_sync_point("xtrabackup_copy_logfile_pause");
-
-  return (FALSE);
-
-error:
-  ds_close(dst_log_file);
-  msg("xtrabackup: Error: xtrabackup_copy_logfile() failed.\n");
-  return (TRUE);
-}
-
-static void log_copying_thread() {
-  /*
-    Initialize mysys thread-specific memory so we can
-    use mysys functions in this thread.
-  */
-  my_thread_init();
-
-  ut_a(dst_log_file != NULL);
-
-  log_copying_running = true;
-
-  while (log_copying || log_copy_scanned_lsn < log_copying_stop_lsn) {
-    os_event_reset(log_copying_stop);
-    os_event_wait_time_low(log_copying_stop,
-                           xtrabackup_log_copy_interval * 1000ULL, 0);
-    if (xtrabackup_copy_logfile(*log_sys, log_copy_scanned_lsn, false)) {
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  /* last copying */
-  if (xtrabackup_copy_logfile(*log_sys, log_copy_scanned_lsn, true)) {
-    exit(EXIT_FAILURE);
-  }
-
-  log_copying_running = false;
-  my_thread_end();
-}
-
 /* io throttle watching (rough) */
 void io_watching_thread() {
   /* currently, for --backup only */
@@ -3233,7 +2953,7 @@ void io_watching_thread() {
 
   io_watching_thread_running = true;
 
-  while (log_copying) {
+  while (!io_watching_thread_stop) {
     os_thread_sleep(1000000); /*1 sec*/
     io_ticket = xtrabackup_throttle;
     os_event_set(wait_throttle);
@@ -3442,10 +3162,10 @@ static void xb_fil_io_init(void)
 /****************************************************************************
 Populates the tablespace memory cache by scanning for and opening data files.
 @returns DB_SUCCESS or error code.*/
-static ulint xb_load_tablespaces(void)
+static dberr_t xb_load_tablespaces(void)
 /*=====================*/
 {
-  ulint err;
+  dberr_t err;
   page_no_t sum_of_new_sizes;
   lsn_t flush_lsn;
 
@@ -3878,88 +3598,6 @@ static void xb_filters_free() {
 }
 
 /*********************************************************************/ /**
- Creates or opens the log files and closes them.
- @return	DB_SUCCESS or error code */
-static ulint open_or_create_log_file(
-    /*====================*/
-    bool create_new_db,            /*!< in: true if we should create a
-                                   new database */
-    bool *log_file_created,        /*!< out: true if new log file
-                                   created */
-    bool log_file_has_been_opened, /*!< in: true if a log file has been
-                                  opened before: then it is an error
-                                  to try to create another log file */
-    ulint k,                       /*!< in: log group number */
-    ulint i,                       /*!< in: log file number in group */
-    fil_space_t **log_space)       /*!< out: log space */
-{
-  bool ret;
-  os_offset_t size;
-  char name[10000];
-  ulint dirnamelen;
-
-  UT_NOT_USED(create_new_db);
-  UT_NOT_USED(log_file_has_been_opened);
-  UT_NOT_USED(k);
-  ut_ad(k == 0);
-
-  *log_file_created = false;
-
-  Fil_path::normalize(srv_log_group_home_dir);
-
-  dirnamelen = strlen(srv_log_group_home_dir);
-  ut_a(dirnamelen < (sizeof name) - 10 - sizeof "ib_logfile");
-  memcpy(name, srv_log_group_home_dir, dirnamelen);
-
-  /* Add a path separator if needed. */
-  if (dirnamelen && name[dirnamelen - 1] != OS_PATH_SEPARATOR) {
-    name[dirnamelen++] = OS_PATH_SEPARATOR;
-  }
-
-  sprintf(name + dirnamelen, "%s%lu", "ib_logfile", (ulong)i);
-
-  pfs_os_file_t file = os_file_create(0, name, OS_FILE_OPEN, OS_FILE_NORMAL,
-                                      OS_LOG_FILE, true, &ret);
-  if (!ret) {
-    fprintf(stderr, "InnoDB: Error in opening %s\n", name);
-
-    return (DB_ERROR);
-  }
-
-  size = os_file_get_size(file);
-
-  if (size != srv_log_file_size) {
-    fprintf(stderr,
-            "InnoDB: Error: log file %s is of different size " UINT64PF
-            " bytes\n"
-            "InnoDB: than specified in the .cnf file %llu bytes!\n",
-            name, size, srv_log_file_size * UNIV_PAGE_SIZE);
-
-    return (DB_ERROR);
-  }
-
-  ret = os_file_close(file);
-  ut_a(ret);
-
-  if (i == 0) {
-    /* Create in memory the file space object
-    which is for this log group */
-
-    *log_space = fil_space_create(
-        name, 2 * k + dict_sys_t::s_log_space_first_id,
-        fsp_flags_set_page_size(0, univ_page_size), FIL_TYPE_LOG);
-  }
-
-  ut_a(*log_space != NULL);
-  ut_ad(fil_validate());
-
-  ut_a(fil_node_create(name, srv_log_file_size / univ_page_size.physical(),
-                       *log_space, false, false) != NULL);
-
-  return (DB_SUCCESS);
-}
-
-/*********************************************************************/ /**
  Normalizes init parameter values to use units we use inside InnoDB.
  @return	DB_SUCCESS or error code */
 static void xb_normalize_init_values(void)
@@ -4102,7 +3740,6 @@ static void cleanup_mysql_environment() {
 
 void xtrabackup_backup_func(void) {
   MY_STAT stat_info;
-  lsn_t latest_cp;
   uint i;
   uint count;
   ib_mutex_t count_mutex;
@@ -4208,77 +3845,26 @@ void xtrabackup_backup_func(void) {
     xb_tables_compatibility_check();
   }
 
-  {
-    bool log_file_created = false;
-    bool log_created = false;
-    bool log_opened = false;
-    ulint err;
-    ulint i;
-    fil_space_t *log_space = nullptr;
+  srv_is_being_started = true;
 
-    srv_is_being_started = true;
+  os_create_block_cache();
 
-    os_create_block_cache();
+  xb_fil_io_init();
 
-    xb_fil_io_init();
+  Redo_Log_Data_Manager redo_mgr;
 
-    dict_persist_init();
+  dict_persist_init();
 
-    srv_n_log_files = (ulint)innobase_log_files_in_group;
-    srv_log_file_size = (ulint)innobase_log_file_size;
+  srv_n_log_files = (ulint)innobase_log_files_in_group;
+  srv_log_file_size = (ulint)innobase_log_file_size;
 
-    if (!log_sys_init(srv_n_log_files, srv_log_file_size,
-                      dict_sys_t::s_log_space_first_id)) {
-      exit(EXIT_FAILURE);
-    }
+  clone_init();
 
-    recv_sys_create();
-    recv_sys_init(buf_pool_get_curr_size());
+  lock_sys_create(srv_lock_table_size);
 
-    clone_init();
-
-    lock_sys_create(srv_lock_table_size);
-
-    ut_a(srv_n_log_files > 0);
-
-    for (i = 0; i < srv_n_log_files; i++) {
-      err = open_or_create_log_file(false, &log_file_created, log_opened, 0, i,
-                                    &log_space);
-      if (err != DB_SUCCESS) {
-        exit(EXIT_FAILURE);
-      }
-
-      if (log_file_created) {
-        log_created = TRUE;
-      } else {
-        log_opened = TRUE;
-      }
-      if ((log_opened && log_created)) {
-        msg("xtrabackup: Error: all log files must be created at the same "
-            "time.\n"
-            "xtrabackup: All log files must be created also in database "
-            "creation.\n"
-            "xtrabackup: If you want bigger or smaller log files, shut down "
-            "the\n"
-            "xtrabackup: database and make sure there were no errors in "
-            "shutdown.\n"
-            "xtrabackup: Then delete the existing log files. Edit the .cnf "
-            "file\n"
-            "xtrabackup: and start the database again.\n");
-
-        exit(EXIT_FAILURE);
-      }
-    }
-
-    /* log_file_created must not be TRUE, if online */
-    if (log_file_created) {
-      msg("xtrabackup: Something wrong with source files...\n");
-      exit(EXIT_FAILURE);
-    }
-
-    ut_a(log_space != nullptr);
-
-    log_read_encryption();
+  redo_mgr.set_copy_interval(xtrabackup_log_copy_interval);
+  if (!redo_mgr.init()) {
+    exit(EXIT_FAILURE);
   }
 
   /* create extra LSN dir if it does not exist. */
@@ -4298,198 +3884,110 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  {
-    /* definition from recv_recovery_from_checkpoint_start() */
-    ulint max_cp_field;
-    byte *buf;
-    byte *log_hdr_buf_;
-    byte *log_hdr_buf;
-    ulint err;
+  xtrabackup_init_datasinks();
 
-    /* start back ground thread to copy newer log */
-    datafiles_iter_t *it;
+  if (!select_history()) {
+    exit(EXIT_FAILURE);
+  }
 
-    log_hdr_buf_ = static_cast<byte *>(
-        ut_malloc_nokey(LOG_FILE_HDR_SIZE + UNIV_PAGE_SIZE_MAX));
-    log_hdr_buf =
-        static_cast<byte *>(ut_align(log_hdr_buf_, UNIV_PAGE_SIZE_MAX));
+  io_ticket = xtrabackup_throttle;
+  wait_throttle = os_event_create("wait_throttle");
+  os_thread_create(PFS_NOT_INSTRUMENTED, io_watching_thread).start();
 
-    /* get current checkpoint_lsn */
-    /* Look for the latest checkpoint from any of the log groups */
+  if (!redo_mgr.start()) {
+    exit(EXIT_FAILURE);
+  }
 
-    err = recv_find_max_checkpoint(*log_sys, &max_cp_field);
+  Tablespace_map::instance().scan(mysql_connection);
 
-    if (err != DB_SUCCESS) {
-      ut_free(log_hdr_buf_);
-      exit(EXIT_FAILURE);
+  /* Populate fil_system with tablespaces to copy */
+  dberr_t err = xb_load_tablespaces();
+  if (err != DB_SUCCESS) {
+    msg("xtrabackup: error: xb_load_tablespaces() failed with error code "
+        "%u\n",
+        err);
+    exit(EXIT_FAILURE);
+  }
+
+  /* FLUSH CHANGED_PAGE_BITMAPS call */
+  if (!flush_changed_page_bitmaps()) {
+    exit(EXIT_FAILURE);
+  }
+  debug_sync_point("xtrabackup_suspend_at_start");
+
+  if (xtrabackup_incremental) {
+    if (!xtrabackup_incremental_force_scan && have_changed_page_bitmaps) {
+      changed_page_bitmap =
+          xb_page_bitmap_init(redo_mgr.get_start_checkpoint_lsn());
     }
-
-    log_files_header_read(*log_sys, max_cp_field);
-    buf = log_sys->checkpoint_buf;
-
-    checkpoint_lsn_start = mach_read_from_8(buf + LOG_CHECKPOINT_LSN);
-    checkpoint_no_start = mach_read_from_8(buf + LOG_CHECKPOINT_NO);
-
-  reread_log_header:
-    err = fil_io(IORequest(IORequest::READ), true,
-                 page_id_t(log_sys->files_space_id, 0), univ_page_size, 0,
-                 LOG_FILE_HDR_SIZE, log_hdr_buf, nullptr);
-
-    if (err != DB_SUCCESS) {
-      ut_free(log_hdr_buf_);
-      exit(EXIT_FAILURE);
+    if (!changed_page_bitmap) {
+      msg("xtrabackup: using the full scan for incremental backup\n");
+    } else if (incremental_lsn != redo_mgr.get_start_checkpoint_lsn()) {
+      /* Do not print that bitmaps are used when dummy bitmap
+      is build for an empty LSN range. */
+      msg("xtrabackup: using the changed page bitmap\n");
     }
+  }
 
-    /* check consistency of log file header to copy */
+  ut_a(xtrabackup_parallel > 0);
 
-    err = recv_find_max_checkpoint(*log_sys, &max_cp_field);
+  if (xtrabackup_parallel > 1) {
+    msg("xtrabackup: Starting %u threads for parallel data files transfer\n",
+        xtrabackup_parallel);
+  }
 
-    if (err != DB_SUCCESS) {
-      ut_free(log_hdr_buf_);
-      exit(EXIT_FAILURE);
-    }
+  if (opt_lock_ddl_per_table) {
+    mdl_lock_init();
+  }
 
-    log_files_header_read(*log_sys, max_cp_field);
-    buf = log_sys->checkpoint_buf;
+  auto it = datafiles_iter_new();
+  if (it == NULL) {
+    msg("xtrabackup: Error: datafiles_iter_new() failed.\n");
+    exit(EXIT_FAILURE);
+  }
 
-    if (checkpoint_no_start != mach_read_from_8(buf + LOG_CHECKPOINT_NO)) {
-      checkpoint_lsn_start = mach_read_from_8(buf + LOG_CHECKPOINT_LSN);
-      checkpoint_no_start = mach_read_from_8(buf + LOG_CHECKPOINT_NO);
-      goto reread_log_header;
-    }
+  /* Create data copying threads */
+  data_threads = (data_thread_ctxt_t *)ut_malloc_nokey(
+      sizeof(data_thread_ctxt_t) * xtrabackup_parallel);
+  count = xtrabackup_parallel;
+  mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
 
-    xtrabackup_init_datasinks();
+  for (i = 0; i < (uint)xtrabackup_parallel; i++) {
+    data_threads[i].it = it;
+    data_threads[i].num = i + 1;
+    data_threads[i].count = &count;
+    data_threads[i].count_mutex = &count_mutex;
+    data_threads[i].error = &data_copying_error;
+    os_thread_create(PFS_NOT_INSTRUMENTED, data_copy_thread_func,
+                     data_threads + i)
+        .start();
+  }
 
-    if (!select_history()) {
-      exit(EXIT_FAILURE);
-    }
-
-    /* open the log file */
-    memset(&stat_info, 0, sizeof(MY_STAT));
-    dst_log_file = ds_open(ds_redo, XB_LOG_FILENAME, &stat_info);
-    if (dst_log_file == NULL) {
-      msg("xtrabackup: error: failed to open the target stream for '%s'.\n",
-          XB_LOG_FILENAME);
-      ut_free(log_hdr_buf_);
-      exit(EXIT_FAILURE);
-    }
-
-    /* label it */
-    strcpy((char *)log_hdr_buf + LOG_HEADER_CREATOR, "xtrabkup ");
-    ut_sprintf_timestamp((char *)log_hdr_buf +
-                         (LOG_HEADER_CREATOR + (sizeof "xtrabkup ") - 1));
-
-    if (ds_write(dst_log_file, log_hdr_buf, LOG_FILE_HDR_SIZE)) {
-      msg("xtrabackup: error: write to logfile failed\n");
-      ut_free(log_hdr_buf_);
-      exit(EXIT_FAILURE);
-    }
-
-    ut_free(log_hdr_buf_);
-
-    /* start flag */
-    log_copying = TRUE;
-
-    /* start io throttle */
-    if (xtrabackup_throttle) {
-      io_ticket = xtrabackup_throttle;
-      wait_throttle = os_event_create("wait_throttle");
-
-      os_thread_create(PFS_NOT_INSTRUMENTED, io_watching_thread).start();
-    }
-
-    /* copy log file by current position */
-    if (xtrabackup_copy_logfile(*log_sys, checkpoint_lsn_start, FALSE))
-      exit(EXIT_FAILURE);
-
-    log_copying_stop = os_event_create("log_copying_stop");
-    os_thread_create(PFS_NOT_INSTRUMENTED, log_copying_thread).start();
-
-    Tablespace_map::instance().scan(mysql_connection);
-
-    /* Populate fil_system with tablespaces to copy */
-    err = xb_load_tablespaces();
-    if (err != DB_SUCCESS) {
-      msg("xtrabackup: error: xb_load_tablespaces() failed with error code "
-          "%lu\n",
-          err);
-      exit(EXIT_FAILURE);
-    }
-
-    /* FLUSH CHANGED_PAGE_BITMAPS call */
-    if (!flush_changed_page_bitmaps()) {
-      exit(EXIT_FAILURE);
-    }
-    debug_sync_point("xtrabackup_suspend_at_start");
-
-    if (xtrabackup_incremental) {
-      if (!xtrabackup_incremental_force_scan && have_changed_page_bitmaps) {
-        changed_page_bitmap = xb_page_bitmap_init();
-      }
-      if (!changed_page_bitmap) {
-        msg("xtrabackup: using the full scan for incremental backup\n");
-      } else if (incremental_lsn != checkpoint_lsn_start) {
-        /* Do not print that bitmaps are used when dummy bitmap
-        is build for an empty LSN range. */
-        msg("xtrabackup: using the changed page bitmap\n");
-      }
-    }
-
-    ut_a(xtrabackup_parallel > 0);
-
-    if (xtrabackup_parallel > 1) {
-      msg("xtrabackup: Starting %u threads for parallel data files transfer\n",
-          xtrabackup_parallel);
-    }
-
-    if (opt_lock_ddl_per_table) {
-      mdl_lock_init();
-    }
-
-    it = datafiles_iter_new();
-    if (it == NULL) {
-      msg("xtrabackup: Error: datafiles_iter_new() failed.\n");
-      exit(EXIT_FAILURE);
-    }
-
-    /* Create data copying threads */
-    data_threads = (data_thread_ctxt_t *)ut_malloc_nokey(
-        sizeof(data_thread_ctxt_t) * xtrabackup_parallel);
-    count = xtrabackup_parallel;
-    mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
-
-    for (i = 0; i < (uint)xtrabackup_parallel; i++) {
-      data_threads[i].it = it;
-      data_threads[i].num = i + 1;
-      data_threads[i].count = &count;
-      data_threads[i].count_mutex = &count_mutex;
-      data_threads[i].error = &data_copying_error;
-      os_thread_create(PFS_NOT_INSTRUMENTED, data_copy_thread_func,
-                       data_threads + i).start();
-    }
-
-    /* Wait for threads to exit */
-    while (1) {
-      os_thread_sleep(1000000);
-      mutex_enter(&count_mutex);
-      if (count == 0) {
-        mutex_exit(&count_mutex);
-        break;
-      }
+  /* Wait for threads to exit */
+  while (1) {
+    os_thread_sleep(1000000);
+    mutex_enter(&count_mutex);
+    if (count == 0) {
       mutex_exit(&count_mutex);
+      break;
     }
-
-    mutex_free(&count_mutex);
-    ut_free(data_threads);
-    datafiles_iter_free(it);
-
-    if (data_copying_error) {
+    if (redo_mgr.is_error()) {
+      msg("xtrabackup: error: log copyiing failed.\n");
       exit(EXIT_FAILURE);
     }
+    mutex_exit(&count_mutex);
+  }
 
-    if (changed_page_bitmap) {
-      xb_page_bitmap_deinit(changed_page_bitmap);
-    }
+  mutex_free(&count_mutex);
+  ut_free(data_threads);
+  datafiles_iter_free(it);
+
+  if (data_copying_error) {
+    exit(EXIT_FAILURE);
+  }
+
+  if (changed_page_bitmap) {
+    xb_page_bitmap_deinit(changed_page_bitmap);
   }
 
   Backup_context backup_ctxt;
@@ -4497,43 +3995,16 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  /* read the latest checkpoint lsn */
-  latest_cp = 0;
-  {
-    ulint max_cp_field;
-    ulint err;
-
-    err = recv_find_max_checkpoint(*log_sys, &max_cp_field);
-
-    if (err != DB_SUCCESS) {
-      msg("xtrabackup: Error: recv_find_max_checkpoint() failed.\n");
-      goto skip_last_cp;
-    }
-
-    log_files_header_read(*log_sys, max_cp_field);
-
-    latest_cp = mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
-
-    msg("xtrabackup: The latest check point (for incremental): '" LSN_PF "'\n",
-        latest_cp);
+  if (!redo_mgr.stop_at(backup_ctxt.log_status.lsn)) {
+    exit(EXIT_FAILURE);
   }
-skip_last_cp:
-  /* stop log_copying_thread */
-  log_copying = FALSE;
-  log_copying_stop_lsn = backup_ctxt.log_status.lsn;
-  os_event_set(log_copying_stop);
-  msg("xtrabackup: Stopping log copying thread at LSN " LSN_PF ".\n",
-      backup_ctxt.log_status.lsn);
-  while (log_copying_running) {
-    msg(".");
-    os_thread_sleep(200000); /*0.2 sec*/
+  if (redo_mgr.is_error()) {
+    msg("xtrabackup: error: log copyiing failed.\n");
+    exit(EXIT_FAILURE);
   }
   msg("\n");
 
-  os_event_destroy(log_copying_stop);
-  if (ds_close(dst_log_file)) {
-    exit(EXIT_FAILURE);
-  }
+  io_watching_thread_stop = true;
 
   if (!xtrabackup_incremental) {
     strcpy(metadata_type_str, "full-backuped");
@@ -4542,8 +4013,8 @@ skip_last_cp:
     strcpy(metadata_type_str, "incremental");
     metadata_from_lsn = incremental_lsn;
   }
-  metadata_to_lsn = latest_cp;
-  metadata_last_lsn = log_copying_stop_lsn;
+  metadata_to_lsn = redo_mgr.get_last_checkpoint_lsn();
+  metadata_last_lsn = redo_mgr.get_stop_lsn();
 
   if (!xtrabackup_stream_metadata(ds_meta)) {
     msg("xtrabackup: Error: failed to stream metadata.\n");
@@ -4601,7 +4072,8 @@ skip_last_cp:
 
   msg("xtrabackup: Transaction log of lsn (" LSN_PF ") to (" LSN_PF
       ") was copied.\n",
-      checkpoint_lsn_start, log_copy_scanned_lsn);
+      redo_mgr.get_start_checkpoint_lsn(), redo_mgr.get_scanned_lsn());
+
   xb_filters_free();
 
   xb_data_files_close();
@@ -4620,7 +4092,7 @@ skip_last_cp:
 
   row_mysql_close();
 
-  log_sys_close();
+  redo_mgr.close();
 
   dict_persist_close();
 
@@ -4629,14 +4101,6 @@ skip_last_cp:
   xb_keyring_shutdown();
 
   cleanup_mysql_environment();
-
-  /* Make sure that the latest checkpoint made it to xtrabackup_logfile */
-  if (latest_cp > log_copy_scanned_lsn) {
-    msg("xtrabackup: error: last checkpoint LSN (" LSN_PF
-        ") is larger than last copied LSN (" LSN_PF ").\n",
-        latest_cp, log_copy_scanned_lsn);
-    exit(EXIT_FAILURE);
-  }
 }
 
 /* ================= stats ================= */
@@ -5721,8 +5185,7 @@ found:
   /* open the file and return it's handle */
 
   file = os_file_create_simple_no_error_handling(
-      0, real_name, create_option, OS_FILE_READ_WRITE,
-      srv_read_only_mode, &ok);
+      0, real_name, create_option, OS_FILE_READ_WRITE, srv_read_only_mode, &ok);
 
   if (ok) {
     *success = true;
@@ -6488,9 +5951,8 @@ xb_export_cfg_write_header(
  Write MySQL 5.6-style meta data config file.
  @return true in case of success otherwise false. */
 static bool xb_export_cfg_write(
-    const fil_node_t *node,
-    const dict_table_t *table) /*!< in: write the meta data for
-                               this table */
+    const fil_node_t *node, const dict_table_t *table) /*!< in: write the meta
+                                                       data for this table */
 {
   char file_path[FN_REFLEN];
   FILE *file;
