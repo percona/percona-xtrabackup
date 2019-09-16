@@ -43,6 +43,7 @@ typedef struct {
 	ulint	page_size;
 	ulint	zip_size;
 	ulint	space_id;
+	ulint	space_flags;
 } xb_delta_info_t;
 
 /* ======== Datafiles iterator ======== */
