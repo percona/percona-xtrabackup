@@ -89,6 +89,13 @@ export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 export MAKE_JFLAG=-j4
 
+CMAKE_BIN='cmake'
+
+OS_VERSION=$(lsb_release -d -s)
+if [[ "${OS_VERSION}" = *"CentOS release 6."* ]] || [[ "${OS_VERSION}" = *"CentOS Linux release 7."* ]]; then
+    CMAKE_BIN='cmake3'
+fi
+
 # Create a temporary working directory
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
 INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"   # Make it absolute
@@ -105,7 +112,7 @@ mkdir "$INSTALLDIR"
 
         # Install the files
         mkdir -p "$INSTALLDIR"
-        cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
+        $CMAKE_BIN -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
           -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test -DINSTALL_MANDIR=${INSTALLDIR}/man \
           -DDOWNLOAD_BOOST=1 -DWITH_BOOST=${WORKDIR_ABS}/libboost \
           -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DFORCE_INSOURCE_BUILD=1 .
