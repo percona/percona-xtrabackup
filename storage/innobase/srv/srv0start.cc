@@ -1923,8 +1923,6 @@ dberr_t srv_start(bool create_new_db, const std::string &scan_directories,
   /* output from call to create_log_files(...) */
   lsn_t new_checkpoint_lsn = 0;
 
-  page_no_t sum_of_data_file_sizes;
-  page_no_t tablespace_size_in_header;
   dberr_t err;
   ulint srv_n_log_files_found = srv_n_log_files;
   mtr_t mtr;
@@ -2824,39 +2822,6 @@ files_checked:
 
   /* wake main loop of page cleaner up */
   os_event_set(buf_flush_event);
-
-  sum_of_data_file_sizes = srv_sys_space.get_sum_of_sizes();
-  ut_a(sum_of_new_sizes != FIL_NULL);
-
-  tablespace_size_in_header = fsp_header_get_tablespace_size();
-
-  if (!srv_read_only_mode && !srv_sys_space.can_auto_extend_last_file() &&
-      sum_of_data_file_sizes != tablespace_size_in_header) {
-    ib::error(ER_IB_MSG_1147, ulong{tablespace_size_in_header},
-              ulong{sum_of_data_file_sizes});
-
-    if (srv_force_recovery == 0 &&
-        sum_of_data_file_sizes < tablespace_size_in_header) {
-      /* This is a fatal error, the tail of a tablespace is
-      missing */
-
-      ib::error(ER_IB_MSG_1148);
-
-      return (srv_init_abort(DB_ERROR));
-    }
-  }
-
-  if (!srv_read_only_mode && srv_sys_space.can_auto_extend_last_file() &&
-      sum_of_data_file_sizes < tablespace_size_in_header) {
-    ib::error(ER_IB_MSG_1149, ulong{tablespace_size_in_header},
-              ulong{sum_of_data_file_sizes});
-
-    if (srv_force_recovery == 0) {
-      ib::error(ER_IB_MSG_1150);
-
-      return (srv_init_abort(DB_ERROR));
-    }
-  }
 
   /* Finish clone files recovery. This call is idempotent and is no op
   if it is already done before creating new log files. */

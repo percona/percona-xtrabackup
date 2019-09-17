@@ -684,7 +684,7 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       if (srv_backup_mode) {
         mutex_enter(&recv_sys->mutex);
         for (const auto &recv_key : *recv_sys->keys) {
-          if (recv_key.space_id == space_id) {
+          if (recv_key.space_id == m_space_id) {
             memcpy(m_encryption_key, recv_key.ptr, ENCRYPTION_KEY_LEN);
             memcpy(m_encryption_iv, recv_key.iv, ENCRYPTION_KEY_LEN);
             found = true;

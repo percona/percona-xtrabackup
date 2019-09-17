@@ -135,6 +135,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->node = NULL;
 
   cursor->space_id = node->space->id;
+  cursor->space_flags = node->space->flags;
   cursor->is_system = fsp_is_system_or_temp_tablespace(node->space->id);
   cursor->is_ibd = fsp_is_ibd_tablespace(node->space->id);
 
