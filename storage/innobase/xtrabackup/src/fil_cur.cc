@@ -147,6 +147,7 @@ xb_fil_cur_open(
 	cursor->node = NULL;
 
 	cursor->space_id = node->space->id;
+	cursor->space_flags = node->space->flags;
 	cursor->is_system = !fil_is_user_tablespace_id(node->space->id);
 
 	strncpy(cursor->abs_path, node->name, sizeof(cursor->abs_path));
