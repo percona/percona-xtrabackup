@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <mysql.h>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "xtrabackup.h"
@@ -85,11 +86,13 @@ class Myrocks_datadir {
 
   file_list wal_files(const char *dest_wal_dir = ROCKSDB_SUBDIR) const;
 
+  file_list meta_files(const char *dest_wal_dir = ROCKSDB_SUBDIR) const;
+
  private:
   std::string rocksdb_datadir;
   std::string rocksdb_wal_dir;
 
-  enum scan_type_t { SCAN_ALL, SCAN_WAL, SCAN_DATA };
+  enum scan_type_t { SCAN_ALL, SCAN_WAL, SCAN_DATA, SCAN_META };
 
   void scan_dir(const std::string &dir, const char *dest_data_dir,
                 const char *dest_wal_dir, scan_type_t scan_type,
@@ -109,8 +112,8 @@ class Myrocks_checkpoint {
 
   Myrocks_checkpoint() {}
 
-  /* disable file deletions and create checkpoint */
-  void create(MYSQL *con);
+  /* create checkpoint and optionally disable file deletions */
+  void create(MYSQL *con, bool disable_file_deletions);
 
   /* remove checkpoint */
   void remove() const;
@@ -123,11 +126,15 @@ class Myrocks_checkpoint {
 
   /* get the list of checkpoint files */
   file_list checkpoint_files(const log_status_t &log_status) const;
+
+  /* get the list of sst files */
+  file_list data_files() const;
 };
 
 struct Backup_context {
   log_status_t log_status;
   Myrocks_checkpoint myrocks_checkpoint;
+  std::unordered_set<std::string> rocksdb_files;
 };
 
 /* server capabilities */

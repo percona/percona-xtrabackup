@@ -1135,16 +1135,20 @@ void Myrocks_datadir::scan_dir(const std::string &dir,
         }
         char buf[FN_REFLEN];
         fn_format(buf, name, path, "", MY_UNPACK_FILENAME | MY_SAFE_PATH);
-        if (!ends_with(name, ".log")) {
-          if (scan_type != SCAN_WAL) {
+        if (ends_with(name, ".log")) {
+          if (scan_type == SCAN_ALL || scan_type == SCAN_WAL) {
+            result.push_back(datadir_entry_t(
+                "", buf, dest_wal_dir != nullptr ? dest_wal_dir : dest_data_dir,
+                name, false));
+          }
+        } else if (ends_with(name, ".sst")) {
+          if (scan_type == SCAN_ALL || scan_type == SCAN_DATA) {
             result.push_back(
                 datadir_entry_t("", buf, dest_data_dir, name, false));
           }
-        } else {
-          if (scan_type != SCAN_DATA) {
-            result.push_back(
-                datadir_entry_t("", buf, dest_wal_dir, name, false));
-          }
+        } else if (scan_type == SCAN_ALL || scan_type == SCAN_META) {
+          result.push_back(
+              datadir_entry_t("", buf, dest_data_dir, name, false));
         }
       },
       false);
@@ -1183,11 +1187,22 @@ Myrocks_datadir::file_list Myrocks_datadir::wal_files(
   return result;
 }
 
-void Myrocks_checkpoint::create(MYSQL *con) {
+Myrocks_datadir::file_list Myrocks_datadir::meta_files(
+    const char *dest_datadir) const {
+  file_list result;
+
+  scan_dir(rocksdb_datadir, dest_datadir, NULL, SCAN_META, result);
+
+  return result;
+}
+
+void Myrocks_checkpoint::create(MYSQL *con, bool disable_file_deletions) {
   msg_ts("xtrabackup: Creating RocksDB checkpoint\n");
 
-  xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = TRUE",
-                 false);
+  if (disable_file_deletions) {
+    xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = TRUE",
+                   false);
+  }
 
   constexpr auto checkpoint_basename = ".xtrabackup_rocksdb_checkpoint";
   using namespace std::chrono;
@@ -1240,7 +1255,7 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::wal_files(
 
 Myrocks_checkpoint::file_list Myrocks_checkpoint::checkpoint_files(
     const log_status_t &log_status) const {
-  std::set<std::string> live_wal_set;
+  std::unordered_set<std::string> live_wal_set;
   for (const auto &f : log_status.rocksdb_wal_files) {
     live_wal_set.insert(f.path_name.substr(1));
   }
@@ -1255,6 +1270,10 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::checkpoint_files(
       checkpoint_files.end());
 
   return checkpoint_files;
+}
+
+Myrocks_checkpoint::file_list Myrocks_checkpoint::data_files() const {
+  return Myrocks_datadir(checkpoint_dir).data_files();
 }
 
 static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
@@ -1314,8 +1333,7 @@ static bool backup_rocksdb_wal(const Myrocks_checkpoint &checkpoint,
   return result;
 }
 
-static bool backup_rocksdb_checkpoint(const Myrocks_checkpoint &checkpoint,
-                                      const log_status_t &log_status) {
+static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
   bool result = true;
 
   using std::placeholders::_1;
@@ -1326,7 +1344,21 @@ static bool backup_rocksdb_checkpoint(const Myrocks_checkpoint &checkpoint,
                      const Myrocks_datadir::const_iterator &, size_t)>
       copy = std::bind(&backup_rocksdb_files, _1, _2, _3, &result);
 
-  auto checkpoint_files = checkpoint.checkpoint_files(log_status);
+  auto checkpoint_files =
+      final ? context.myrocks_checkpoint.checkpoint_files(context.log_status)
+            : context.myrocks_checkpoint.data_files();
+
+  checkpoint_files.erase(
+      std::remove_if(checkpoint_files.begin(), checkpoint_files.end(),
+                     [&context](const datadir_entry_t &f) {
+                       return (context.rocksdb_files.count(f.file_name));
+                     }),
+      checkpoint_files.end());
+  context.rocksdb_files.reserve(context.rocksdb_files.size() +
+                                checkpoint_files.size());
+  for (const auto &f : checkpoint_files) {
+    context.rocksdb_files.insert(f.file_name);
+  }
 
   par_for(PFS_NOT_INSTRUMENTED, checkpoint_files, xtrabackup_parallel, copy);
 
@@ -1373,8 +1405,34 @@ bool backup_start(Backup_context &context) {
     }
   }
 
+  if (have_rocksdb && opt_rocksdb_checkpoint_max_age > 0) {
+    int elapsed_time = 0, n = 0;
+    do {
+      using namespace std::chrono;
+      context.myrocks_checkpoint.create(mysql_connection, false);
+      auto start_time =
+          duration_cast<seconds>(system_clock::now().time_since_epoch())
+              .count();
+
+      if (!backup_rocksdb_checkpoint(context, false)) {
+        return (false);
+      }
+
+      auto end_time =
+          duration_cast<seconds>(system_clock::now().time_since_epoch())
+              .count();
+
+      context.myrocks_checkpoint.remove();
+
+      elapsed_time = end_time - start_time;
+      ++n;
+    } while (elapsed_time > opt_rocksdb_checkpoint_max_age &&
+             (opt_rocksdb_checkpoint_max_count == 0 ||
+              n < opt_rocksdb_checkpoint_max_count));
+  }
+
   if (have_rocksdb) {
-    context.myrocks_checkpoint.create(mysql_connection);
+    context.myrocks_checkpoint.create(mysql_connection, true);
   }
 
   msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS\n");
@@ -1444,7 +1502,9 @@ bool backup_finish(Backup_context &context) {
   }
 
   if (have_rocksdb) {
-    backup_rocksdb_checkpoint(context.myrocks_checkpoint, context.log_status);
+    if (!backup_rocksdb_checkpoint(context, true)) {
+      return (false);
+    }
     context.myrocks_checkpoint.remove();
   }
 
@@ -2282,6 +2342,8 @@ bool copy_back(int argc, char **argv) {
               copy);
     } else {
       par_for(PFS_NOT_INSTRUMENTED, rocksdb.data_files(""), xtrabackup_parallel,
+              copy);
+      par_for(PFS_NOT_INSTRUMENTED, rocksdb.meta_files(""), xtrabackup_parallel,
               copy);
     }
 

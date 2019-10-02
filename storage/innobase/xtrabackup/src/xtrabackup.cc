@@ -444,6 +444,9 @@ uint opt_read_buffer_size = 0;
 char *opt_rocksdb_datadir = nullptr;
 char *opt_rocksdb_wal_dir = nullptr;
 
+int opt_rocksdb_checkpoint_max_age = 0;
+int opt_rocksdb_checkpoint_max_count = 0;
+
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
 
@@ -627,6 +630,8 @@ enum options_xtrabackup {
 
   OPT_ROCKSDB_DATADIR,
   OPT_ROCKSDB_WAL_DIR,
+  OPT_ROCKSDB_CHECKPOINT_MAX_AGE,
+  OPT_ROCKSDB_CHECKPOINT_MAX_COUNT,
 
   OPT_COPY_BACK,
   OPT_MOVE_BACK,
@@ -1236,6 +1241,16 @@ struct my_option xb_client_options[] = {
     {"strict", OPT_XTRA_STRICT,
      "Fail with error when invalid arguments were passed to the xtrabackup.",
      (uchar *)&opt_strict, (uchar *)&opt_strict, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+     0, 0, 0},
+
+    {"rocksdb-checkpoint-max-age", OPT_ROCKSDB_CHECKPOINT_MAX_AGE,
+     "Maximum ROCKSB checkpoint age in seconds.",
+     &opt_rocksdb_checkpoint_max_age, &opt_rocksdb_checkpoint_max_age, 0,
+     GET_INT, REQUIRED_ARG, 0, 0, INT_MAX, 0, 0, 0},
+
+    {"rocksdb-checkpoint-max-count", OPT_ROCKSDB_CHECKPOINT_MAX_COUNT,
+     "Maximum count of ROCKSB checkpoints.", &opt_rocksdb_checkpoint_max_count,
+     &opt_rocksdb_checkpoint_max_count, 0, GET_INT, REQUIRED_ARG, 0, 0, INT_MAX,
      0, 0, 0},
 
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
