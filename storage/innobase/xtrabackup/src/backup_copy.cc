@@ -1601,8 +1601,10 @@ struct binlog_file_location {
           r.path = buf + suffix;
         }
       } else {
+        char buf[FN_REFLEN];
+        fn_format(buf, name.c_str(), datadir.c_str(), "", MY_UNPACK_FILENAME);
         r.name = name;
-        r.path = path;
+        r.path = buf;
       }
     }
 
@@ -2255,6 +2257,7 @@ bool copy_back(int argc, char **argv) {
       if (!ret) {
         msg("xtrabackup: Error: failed to reencrypt binary log file "
             "header.\n");
+        goto cleanup;
       }
       /* make sure we don't copy binary log and .index files twice */
       skip_copy_back_list.insert(binlog.name.c_str());
