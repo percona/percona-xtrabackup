@@ -3687,6 +3687,9 @@ xb_load_single_table_tablespace(
 		if (xtrabackup_backup && err != DB_PAGE_IS_BLANK) {
 			exit(EXIT_FAILURE);
 		}
+		if (xtrabackup_prepare) {
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	ut_free(name);
