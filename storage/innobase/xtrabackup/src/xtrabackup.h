@@ -160,6 +160,8 @@ extern char *opt_binlog_index_name;
 
 extern char *opt_rocksdb_datadir;
 extern char *opt_rocksdb_wal_dir;
+extern int opt_rocksdb_checkpoint_max_age;
+extern int opt_rocksdb_checkpoint_max_count;
 
 extern const char *query_type_names[];
 
