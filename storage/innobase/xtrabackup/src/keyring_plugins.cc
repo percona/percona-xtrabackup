@@ -845,6 +845,10 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
 
   auto header = binlog_header_read(binlog_file_path);
 
+  if (header == nullptr) {
+    return (false);
+  }
+
   Key_string file_password(key, ENCRYPTION_KEY_LEN);
   header->encrypt_file_password(file_password);
 
