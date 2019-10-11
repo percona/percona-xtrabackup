@@ -1,7 +1,7 @@
 /******************************************************
 Copyright (c) 2019 Percona LLC and/or its affiliates.
 
-Data sink interface.
+Redo log handling.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -682,14 +682,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
     archive.filename.append(".000001.log");
 
     archive.label = dir.first;
-  }
 
-  if (archive.label.empty()) {
-    msg("xtrabackup: Redo Log Archiving is not used.\n");
-    free_mysql_variables(vars);
-    mysql_close(mysql);
-    my_thread_end();
-    return;
+    break;
   }
 
   free_mysql_variables(vars);
@@ -777,7 +771,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
 
   xb_mysql_query(mysql, "SELECT innodb_redo_log_archive_stop()", false);
   unlink(archive.filename.c_str());
-  rmdir(archive.subdir.c_str());
+  rmdir(archive.dir.c_str());
   mysql_close(mysql);
   my_thread_end();
 }
