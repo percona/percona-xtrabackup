@@ -227,6 +227,9 @@ class Archived_Redo_Log_Monitor {
   /** Get first log block checksum from the archived redo log. */
   uint32_t get_first_log_block_checksum() const;
 
+  /** Read archived log until the given log block. */
+  void skip_for_block(lsn_t lsn, uint32_t no, uint32_t checksum);
+
  private:
   /** Parse the value of innodb_redo_log_archive_dirs. */
   void parse_archive_dirs(const std::string &s);
