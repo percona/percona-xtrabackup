@@ -27,6 +27,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xbstream.h"
 #include "xtrabackup_config.h"
 
+#define XB_LOG_FILENAME "xtrabackup_logfile"
+
 #ifdef __WIN__
 #define XB_FILE_UNDEFINED {NULL};
 #else

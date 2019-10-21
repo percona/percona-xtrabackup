@@ -32,8 +32,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "xtrabackup.h"
 
-#define XB_LOG_FILENAME "xtrabackup_logfile"
-
 extern ds_ctxt_t *ds_redo;
 
 Redo_Log_Reader::Redo_Log_Reader() {
@@ -603,6 +601,26 @@ uint32_t Archived_Redo_Log_Monitor::get_first_log_block_checksum() const {
   return first_log_block_checksum;
 }
 
+void Archived_Redo_Log_Monitor::skip_for_block(lsn_t lsn, uint32_t no,
+                                               uint32_t checksum) {
+  bool finished = false;
+  lsn_t bytes_read = OS_FILE_LOG_BLOCK_SIZE;
+
+  while (true) {
+    auto len = reader.read_logfile(&finished);
+    for (auto ptr = reader.get_buffer(); ptr < reader.get_buffer() + len;
+         ptr += OS_FILE_LOG_BLOCK_SIZE, bytes_read += OS_FILE_LOG_BLOCK_SIZE) {
+      auto arch_block_no = log_block_get_hdr_no(ptr);
+      auto arch_block_checksum = log_block_get_checksum(ptr);
+      if (no == arch_block_no && checksum == arch_block_checksum) {
+        msg("xtrabackup: Archived redo log has caught up\n");
+        reader.set_start_lsn(lsn - bytes_read);
+        return;
+      }
+    }
+  }
+}
+
 void Archived_Redo_Log_Monitor::parse_archive_dirs(const std::string &s) {
   std::stringstream ss(s);
   std::string item;
@@ -939,6 +957,15 @@ void Redo_Log_Data_Manager::track_archived_log(lsn_t start_lsn, const byte *buf,
   if (!archived_log_monitor.is_ready() ||
       archived_log_state == ARCHIVED_LOG_MATCHED) {
     return;
+  }
+
+  if (archived_log_state == ARCHIVED_LOG_NONE) {
+    auto no = log_block_get_hdr_no(buf);
+    auto checksum = log_block_get_checksum(buf);
+    if (no > archived_log_monitor.get_first_log_block_no()) {
+      archived_log_monitor.skip_for_block(start_lsn, no, checksum);
+      archived_log_state = ARCHIVED_LOG_MATCHED;
+    }
   }
 
   if (archived_log_state == ARCHIVED_LOG_NONE) {

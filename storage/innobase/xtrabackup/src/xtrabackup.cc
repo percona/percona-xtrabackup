@@ -258,8 +258,6 @@ lsn_t metadata_from_lsn = 0;
 lsn_t metadata_to_lsn = 0;
 lsn_t metadata_last_lsn = 0;
 
-#define XB_LOG_FILENAME "xtrabackup_logfile"
-
 ds_file_t *dst_log_file = NULL;
 
 static char mysql_data_home_buff[2];
@@ -3885,6 +3883,8 @@ void xtrabackup_backup_func(void) {
   if (!redo_mgr.init()) {
     exit(EXIT_FAILURE);
   }
+
+  debug_sync_point("after_redo_log_manager_init");
 
   /* create extra LSN dir if it does not exist. */
   if (xtrabackup_extra_lsndir &&
