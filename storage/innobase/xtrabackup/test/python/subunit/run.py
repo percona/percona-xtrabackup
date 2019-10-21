@@ -1,13 +1,13 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 #
 # Simple subunit testrunner for python
 # Copyright (C) Jelmer Vernooij <jelmer@samba.org> 2007
-#   
+#
 #  Licensed under either the Apache License, Version 2.0 or the BSD 3-clause
 #  license at the users choice. A copy of both licenses are available in the
 #  project source as Apache-2.0 and BSD. You may not use this file except in
 #  compliance with one of these two licences.
-#  
+#
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under these licenses is distributed on an "AS IS" BASIS, WITHOUT
 #  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
@@ -29,7 +29,7 @@ from testtools.run import (
     FAILFAST,
     TestProgram,
     USAGE_AS_MAIN,
-    )
+)
 
 
 class SubunitTestRunner(object):
@@ -70,4 +70,4 @@ if __name__ == '__main__':
     stream = get_default_formatter()
     runner = SubunitTestRunner(stream)
     SubunitTestProgram(module=None, argv=sys.argv, testRunner=runner,
-        stdout=sys.stdout)
+                       stdout=sys.stdout)

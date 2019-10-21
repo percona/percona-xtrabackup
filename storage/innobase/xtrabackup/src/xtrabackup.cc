@@ -101,6 +101,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_encrypt.h"
 #include "xbcrypt_common.h"
 #include "crc_glue.h"
+#include "xtrabackup_config.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT	10
@@ -381,7 +382,9 @@ my_bool opt_no_lock = FALSE;
 my_bool opt_safe_slave_backup = FALSE;
 my_bool opt_rsync = FALSE;
 my_bool opt_force_non_empty_dirs = FALSE;
+#ifdef HAVE_VERSION_CHECK
 my_bool opt_noversioncheck = FALSE;
+#endif
 my_bool opt_no_backup_locks = FALSE;
 my_bool opt_decompress = FALSE;
 my_bool opt_remove_original = FALSE;
@@ -424,6 +427,9 @@ uint opt_lock_wait_timeout = 0;
 uint opt_lock_wait_threshold = 0;
 uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
+uint opt_dump_innodb_buffer_pool_timeout = 10;
+uint opt_dump_innodb_buffer_pool_pct = 0;
+my_bool opt_dump_innodb_buffer_pool = FALSE;
 
 my_bool opt_lock_ddl = FALSE;
 my_bool opt_lock_ddl_per_table = FALSE;
@@ -548,6 +554,7 @@ typedef struct {
 	uint			num;
 	uint			*count;
 	ib_mutex_t		*count_mutex;
+	bool			*error;
 	os_thread_id_t		id;
 } data_thread_ctxt_t;
 
@@ -655,10 +662,15 @@ enum options_xtrabackup
   OPT_LOCK_DDL,
   OPT_LOCK_DDL_TIMEOUT,
   OPT_LOCK_DDL_PER_TABLE,
+  OPT_DUMP_INNODB_BUFFER,
+  OPT_DUMP_INNODB_BUFFER_TIMEOUT,
+  OPT_DUMP_INNODB_BUFFER_PCT,
   OPT_SAFE_SLAVE_BACKUP,
   OPT_RSYNC,
   OPT_FORCE_NON_EMPTY_DIRS,
+#ifdef HAVE_VERSION_CHECK
   OPT_NO_VERSION_CHECK,
+#endif
   OPT_NO_BACKUP_LOCKS,
   OPT_DECOMPRESS,
   OPT_INCREMENTAL_HISTORY_NAME,
@@ -917,6 +929,27 @@ struct my_option xb_client_options[] =
    (uchar*) &opt_lock_ddl_per_table, (uchar*) &opt_lock_ddl_per_table, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+  {"dump-innodb-buffer-pool", OPT_DUMP_INNODB_BUFFER,
+   "Instruct MySQL server to dump innodb buffer pool by issuing a "
+   "SET GLOBAL innodb_buffer_pool_dump_now=ON ",
+   (uchar*) &opt_dump_innodb_buffer_pool,
+   (uchar*) &opt_dump_innodb_buffer_pool, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"dump-innodb-buffer-pool-timeout", OPT_DUMP_INNODB_BUFFER_TIMEOUT,
+   "This option specifies the number of seconds xtrabackup waits "
+   "for innodb buffer pool dump to complete",
+   (uchar*) &opt_dump_innodb_buffer_pool_timeout,
+   (uchar*) &opt_dump_innodb_buffer_pool_timeout, 0, GET_UINT,
+   REQUIRED_ARG, 10, 0, 0, 0, 0, 0},
+
+  {"dump-innodb-buffer-pool-pct", OPT_DUMP_INNODB_BUFFER_PCT,
+   "This option specifies the percentage of buffer pool "
+   "to be dumped ",
+   (uchar*) &opt_dump_innodb_buffer_pool_pct,
+   (uchar*) &opt_dump_innodb_buffer_pool_pct, 0, GET_UINT,
+   REQUIRED_ARG, 0, 0, 100, 0, 1, 0},
+
   {"safe-slave-backup", OPT_SAFE_SLAVE_BACKUP, "Stop slave SQL thread "
    "and wait to start backup until Slave_open_temp_tables in "
    "\"SHOW STATUS\" is zero. If there are no open temporary tables, "
@@ -948,11 +981,13 @@ struct my_option xb_client_options[] =
    (uchar *) &opt_force_non_empty_dirs,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+#ifdef HAVE_VERSION_CHECK
   {"no-version-check", OPT_NO_VERSION_CHECK, "This option disables the "
    "version check which is enabled by the --version-check option.",
    (uchar *) &opt_noversioncheck,
    (uchar *) &opt_noversioncheck,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 
   {"tables-compatibility-check", OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
    "This option enables engine compatibility warning.",
@@ -1719,7 +1754,7 @@ xb_init_log_block_size(void)
 {
 	srv_log_block_size = 0;
 	if (innobase_log_block_size != 512) {
-		uint	n_shift = get_bit_shift(innobase_log_block_size);;
+		uint	n_shift = get_bit_shift(innobase_log_block_size);
 
 		if (n_shift > 0) {
 			srv_log_block_size = (1 << n_shift);
@@ -2214,7 +2249,9 @@ xtrabackup_print_metadata(char *buf, size_t buf_len)
 		 metadata_to_lsn,
 		 metadata_last_lsn,
 		 MY_TEST(xtrabackup_compact == TRUE),
-		 MY_TEST(opt_binlog_info == BINLOG_INFO_LOCKLESS));
+		 MY_TEST((xtrabackup_backup &&
+			  (opt_binlog_info == BINLOG_INFO_LOCKLESS)) ||
+			 (xtrabackup_prepare && recover_binlog_info)));
 }
 
 /***********************************************************************
@@ -2393,7 +2430,7 @@ xtrabackup_write_info(const char *filepath)
 void
 xtrabackup_io_throttling(void)
 {
-	if (xtrabackup_throttle && (io_ticket--) < 0) {
+	if (xtrabackup_throttle && (--io_ticket) < 0) {
 		os_event_reset(wait_throttle);
 		os_event_wait(wait_throttle);
 	}
@@ -2829,7 +2866,7 @@ error:
 		ds_close(dstfile);
 	}
 	if (write_filter && write_filter->deinit) {
-		write_filter->deinit(&write_filt_ctxt);;
+		write_filter->deinit(&write_filt_ctxt);
 	}
 	msg("[%02u] xtrabackup: Error: "
 	    "xtrabackup_copy_datafile() failed.\n", thread_n);
@@ -3333,13 +3370,14 @@ data_copy_thread_func(
 
 	debug_sync_point("data_copy_thread_func");
 
-	while ((node = datafiles_iter_next(ctxt->it)) != NULL) {
+	while ((node = datafiles_iter_next(ctxt->it)) != NULL &&
+		!*(ctxt->error)) {
 
 		/* copy the datafile */
 		if(xtrabackup_copy_datafile(node, num)) {
 			msg("[%02u] xtrabackup: Error: "
 			    "failed to copy datafile.\n", num);
-			exit(EXIT_FAILURE);
+			*(ctxt->error) = true;
 		}
 	}
 
@@ -4731,6 +4769,11 @@ xtrabackup_backup_func(void)
 		exit(EXIT_FAILURE);
 	}
 
+
+	if (opt_dump_innodb_buffer_pool) {
+		dump_innodb_buffer_pool(mysql_connection);
+	}
+
         {
         fil_system_t*   f_system = fil_system;
 
@@ -4741,6 +4784,7 @@ xtrabackup_backup_func(void)
 	byte*		log_hdr_buf_;
 	byte*		log_hdr_buf;
 	ulint		err;
+	bool		data_copying_error = false;
 
 	/* start back ground thread to copy newer log */
 	os_thread_id_t log_copying_thread_id;
@@ -4916,6 +4960,7 @@ reread_log_header:
 		data_threads[i].num = i+1;
 		data_threads[i].count = &count;
 		data_threads[i].count_mutex = &count_mutex;
+		data_threads[i].error = &data_copying_error;
 		os_thread_create(data_copy_thread_func, data_threads + i,
 				 &data_threads[i].id);
 	}
@@ -4934,6 +4979,10 @@ reread_log_header:
 	mutex_free(&count_mutex);
 	ut_free(data_threads);
 	datafiles_iter_free(it);
+
+	if (data_copying_error) {
+		exit(EXIT_FAILURE);
+	}
 
 	if (changed_page_bitmap) {
 		xb_page_bitmap_deinit(changed_page_bitmap);
@@ -8236,9 +8285,11 @@ xb_init()
 
 	if (xtrabackup_backup) {
 
+#ifdef HAVE_VERSION_CHECK
 		if (!opt_noversioncheck) {
 			version_check();
 		}
+#endif
 
 		if ((mysql_connection = xb_mysql_connect()) == NULL) {
 			return(false);

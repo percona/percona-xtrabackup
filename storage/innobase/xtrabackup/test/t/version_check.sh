@@ -5,6 +5,9 @@
 # just test that the percona-version-check file is created
 ################################################################################
 
+( $XB_BIN --help 2>/dev/null | grep -q -- --no-version-check ) || \
+    skip_test "Requres version check"
+
 start_server
 
 # Override the directory where percona-version-check is created to make the test

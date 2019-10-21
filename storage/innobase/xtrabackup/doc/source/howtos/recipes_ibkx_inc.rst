@@ -13,7 +13,9 @@ Assuming that variable ``$FULLBACKUP`` contains :file:`/path/to/backup/dir/2011-
   innobackupex --incremental /path/to/inc/dir \
     --incremental-basedir=$FULLBACKUP --user=USER --password=PASSWORD
 
-Now, the incremental backup should be in :file:`/path/to/inc/dir/2011-12-25_00-01-00/`. Let's call ``$INCREMENTALBACKUP=2011-5-23_23-50-10``.
+Now, the incremental backup should be in
+:file:`/path/to/inc/dir/2011-12-25_00-01-00/`. Let's call
+``$INCREMENTALBACKUP=2011-5-23_23-50-10``.
 
 Preparing incremental backups is a bit different than full ones:
 
@@ -22,7 +24,9 @@ First you have to replay the committed transactions on each backup, ::
   innobackupex --apply-log --redo-only $FULLBACKUP \
    --use-memory=1G --user=USER --password=PASSWORD
 
-The :option:`--use-memory` option is not necessary, it will speed up the process if it is used (provided that the amount of RAM given is available).
+The :option:`innobackupex --use-memory` option is not necessary, it will speed
+up the process if it is used (provided that the amount of RAM given is
+available).
 
 If everything went fine, you should see an output similar to: ::
 
@@ -36,9 +40,13 @@ Now apply the incremental backup to the base backup, by issuing: ::
 
 Note the ``$INCREMENTALBACKUP``.
 
-*The final data will be in the base backup directory*, not in the incremental one. In this example, ``/path/to/backup/dir/2011-12-24_23-01-00`` or ``$FULLBACKUP``.
+*The final data will be in the base backup directory*, not in the incremental
+ one. In this example, ``/path/to/backup/dir/2011-12-24_23-01-00`` or
+ ``$FULLBACKUP``.
 
-If you want to apply more incremental backups, repeat this step with the next one. It is important that you do this in the chronological order in which the backups were done.
+If you want to apply more incremental backups, repeat this step with the next
+one. It is important that you do this in the chronological order in which the
+backups were done.
 
 You can check the file xtrabackup_checkpoints at the directory of each one.
 
@@ -56,9 +64,15 @@ and in the incremental ones: ::
 
 The ``to_lsn`` number must match the ``from_lsn`` of the next one.
 
-Once you put all the parts together, you can prepare again the full backup (base + incrementals) once again to rollback the pending transactions: ::
+Once you put all the parts together, you can prepare again the full backup
+(base + incrementals) once again to rollback the pending transactions:
 
-  innobackupex-1.5.1 --apply-log $FULLBACKUP --use-memory=1G \
-    --user=$USERNAME --password=$PASSWORD
+.. code-block:: bash 
 
-Now your backup is ready to be used immediately after restoring it. This preparation step is optional, as if you restore it without doing it, the database server will assume that a crash occurred and will begin to rollback the uncommitted transaction (causing some downtime which can be avoided).
+  $ innobackupex-1.5.1 --apply-log $FULLBACKUP --use-memory=1G \
+  --user=$USERNAME --password=$PASSWORD
+
+Now your backup is ready to be used immediately after restoring it. This
+preparation step is optional, as if you restore it without doing it, the
+database server will assume that a crash occurred and will begin to rollback the
+uncommitted transaction (causing some downtime which can be avoided).

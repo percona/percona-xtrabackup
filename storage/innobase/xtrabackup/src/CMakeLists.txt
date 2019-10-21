@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2017 Percona LLC and/or its affiliates.
+# Copyright (c) 2013, 2018 Percona LLC and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@ INCLUDE(gcrypt)
 INCLUDE(curl)
 INCLUDE(libev)
 
+OPTION(WITH_VERSION_CHECK "Build with version check" ON)
+
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 ADD_SUBDIRECTORY(libarchive)
@@ -28,12 +30,18 @@ FIND_GCRYPT()
 MYSQL_CHECK_CURL()
 FIND_EV()
 
+IF(WITH_VERSION_CHECK)
 # xxd is needed to embed version_check script
 FIND_PROGRAM(XXD_PATH xxd)
 
 IF(NOT XXD_PATH)
   MESSAGE(FATAL_ERROR "xxd not found. Try to install vim-common.")
 ENDIF(NOT XXD_PATH)
+
+SET(HAVE_VERSION_CHECK 1)
+ELSE()
+SET(HAVE_VERSION_CHECK 0)
+ENDIF(WITH_VERSION_CHECK)
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/include
@@ -55,15 +63,10 @@ ADD_DEFINITIONS(${SSL_DEFINES})
 # xtrabackup binary
 ########################################################################
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/xtrabackup_version.h.in
-               ${CMAKE_CURRENT_BINARY_DIR}/xtrabackup_version.h )
+               ${CMAKE_CURRENT_BINARY_DIR}/xtrabackup_version.h)
 
-ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
-                   COMMAND ${XXD_PATH} --include version_check.pl
-                   ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
-                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-
-ADD_CUSTOM_TARGET(GenVersionCheck
-                  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
+               ${CMAKE_CURRENT_BINARY_DIR}/xtrabackup_config.h)
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/plugin/keyring
@@ -118,7 +121,17 @@ TARGET_LINK_LIBRARIES(xtrabackup
   crc
   )
 
+IF(WITH_VERSION_CHECK)
+ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
+                   COMMAND ${XXD_PATH} --include version_check.pl
+                   ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
+                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+ADD_CUSTOM_TARGET(GenVersionCheck
+                  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
+
 ADD_DEPENDENCIES(xtrabackup GenVersionCheck)
+ENDIF(WITH_VERSION_CHECK)
 
 ########################################################################
 # innobackupex symlink

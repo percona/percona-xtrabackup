@@ -1,41 +1,79 @@
-============================
+================================================================================
 |Percona XtraBackup| 2.0.6
-============================
+================================================================================
 
-Percona is glad to announce the release of Percona XtraBackup 2.0.6 on March 20, 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.6/>`_ and :doc:`Percona Software Repositories </installation>`.
+Percona is glad to announce the release of Percona XtraBackup 2.0.6 on March
+20, 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/XtraBackup-2.0.6/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
-This release is the current GA (Generally Available) stable release in the 2.0 series. 
+This release is the current GA (Generally Available) stable release in the 2.0
+series.
 
 New Features
-=============
+================================================================================
 
- |Percona XtraBackup| has implemented basic support for |MySQL| 5.6, |Percona Server| 5.6 and *MariaDB* 10.0. Basic support means that these versions are are recognized by |Percona XtraBackup|, and that backup/restore works as long as no 5.6-specific features are used (such as ``GTID``, remote/transportable tablespaces, separate undo tablespace, 5.6-style buffer pool dump files).
+|Percona XtraBackup| has implemented basic support for |MySQL| 5.6, |Percona
+Server| 5.6 and *MariaDB* 10.0. Basic support means that these versions are are
+recognized by |Percona XtraBackup|, and that backup/restore works as long as no
+5.6-specific features are used (such as ``GTID``, remote/transportable
+tablespaces, separate undo tablespace, 5.6-style buffer pool dump files).
 
 Bugs Fixed
-==========
+================================================================================
 
- Individual *InnoDB* tablespaces with size less than 1MB were extended to 1MB on the backup prepare operation. This led to a large increase in disk usage in cases when there are many small *InnoDB* tablespaces. Bug fixed :bug:`950334` (*Daniel Frett*, *Alexey Kopytov*).
+Individual *InnoDB* tablespaces with size less than 1MB were extended to 1MB on
+the backup prepare operation. This led to a large increase in disk usage in
+cases when there are many small *InnoDB* tablespaces. Bug fixed :bug:`950334`
+(*Daniel Frett*, *Alexey Kopytov*).
 
- Fixed the issue that caused databases corresponding to inaccessible :term:`datadir` subdirectories to be ignored by |Percona XtraBackup| without warning or error messages. This was happening because |InnoDB| code silently ignored :term:`datadir` subdirectories it could not open. Bug fixed :bug:`664986` (*Alexey Kopytov*).
+Fixed the issue that caused databases corresponding to inaccessible
+:term:`datadir` subdirectories to be ignored by |Percona XtraBackup| without
+warning or error messages. This was happening because |InnoDB| code silently
+ignored :term:`datadir` subdirectories it could not open. Bug fixed
+:bug:`664986` (*Alexey Kopytov*).
 
- Under some circumstances |Percona XtraBackup| could fail to copy a tablespace with a high :option:`--parallel` option value and a low :option:`innodb_open_files` value. Bug fixed :bug:`870119` (*Alexey Kopytov*).
+Under some circumstances |Percona XtraBackup| could fail to copy a tablespace
+with a high :option:`xtrabackup --parallel` option value and a low
+``innodb_open_files`` value. Bug fixed :bug:`870119` (*Alexey Kopytov*).
 
- Fix for the bug :bug:`711166` introduced a regression that caused individual partition backups to fail when used with :option:`--include` option in |innobackupex| or the :option:`--tables` option in xtrabackup. Bug fixed :bug:`1130627` (*Alexey Kopytov*).
+Fix for the bug :bug:`711166` introduced a regression that caused individual
+partition backups to fail when used with :option:`innobackupex --include` option in
+|innobackupex| or the :option:`xtrabackup --tables` option in xtrabackup. Bug fixed
+:bug:`1130627` (*Alexey Kopytov*).
 
- |innobackupex| didn't add the :option:`file-per-table` setting for table-independent backups. Fixed by making |Percona XtraBackup| auto-enable :option:`innodb_file_per_table` when the :option:`--export` option is used. Bug fixed :bug:`930062` (*Alexey Kopytov*).
+|innobackupex| didn't add the ``file-per-table`` setting for
+table-independent backups. Fixed by making |Percona XtraBackup| auto-enable
+``innodb_file_per_table`` when the :option:`innobackupex --export` option is used. Bug
+fixed :bug:`930062` (*Alexey Kopytov*).
 
- Under some circumstances |Percona XtraBackup| could fail on a backup prepare with :option:`innodb_flush_method=O_DIRECT`. Bug fixed :bug:`1055547` (*Alexey Kopytov*).
+Under some circumstances |Percona XtraBackup| could fail on a backup prepare
+with ``innodb_flush_method=O_DIRECT``. Bug fixed :bug:`1055547` (*Alexey
+Kopytov*).
 
- |innobackupex| did not pass the :option:`--tmpdir` option to the xtrabackup binary resulting in the server's ``tmpdir`` always being used for temporary files. Bug fixed :bug:`1085099` (*Alexey Kopytov*).
+|innobackupex| did not pass the :option:`innobackupex --tmpdir` option to the
+xtrabackup binary resulting in the server's ``tmpdir`` always being used for
+temporary files. Bug fixed :bug:`1085099` (*Alexey Kopytov*).
 
- |Percona XtraBackup| has improved the error reporting for unrecognized server versions. Bug fixed :bug:`1087219` (*Alexey Kopytov*).
+|Percona XtraBackup| has improved the error reporting for unrecognized server
+versions. Bug fixed :bug:`1087219` (*Alexey Kopytov*).
 
- Fixed the missing ``rpm`` dependency for Perl ``Time::HiRes`` package that caused |innobackupex| to fail on minimal CentOS installations. Bug fixed :bug:`1121573` (*Alexey Bychko*).
+Fixed the missing ``rpm`` dependency for Perl ``Time::HiRes`` package that
+caused |innobackupex| to fail on minimal CentOS installations. Bug fixed
+:bug:`1121573` (*Alexey Bychko*).
 
- |innobackupex| would fail when :option:`--no-lock` and :option:`--rsync` were used in conjunction. Bug fixed :bug:`1123335` (*Sergei Glushchenko*).
+|innobackupex| would fail when :option:`innobackupex --no-lock` and
+:option:`innobackupex --rsync` were used in conjunction. Bug fixed
+:bug:`1123335` (*Sergei Glushchenko*).
 
- Fix for the bug :bug:`1055989` introduced a regression that caused :file:`xtrabackup_pid` file to remain in the temporary dir after execution. Bug fixed :bug:`1114955` (*Alexey Kopytov*).
+Fix for the bug :bug:`1055989` introduced a regression that caused
+:file:`xtrabackup_pid` file to remain in the temporary dir after execution. Bug
+fixed :bug:`1114955` (*Alexey Kopytov*).
 
- Unnecessary debug messages have been removed from the |Percona XtraBackup| output. Bug fixed :bug:`1131084` (*Alexey Kopytov*).
+Unnecessary debug messages have been removed from the |Percona XtraBackup|
+output. Bug fixed :bug:`1131084` (*Alexey Kopytov*).
 
-Other bug fixes: bug fixed :bug:`1153334` (*Alexey Kopytov*), bug fixed :bug:`1098498` (*Laurynas Biveinis*), bug fixed :bug:`1132763` (*Laurynas Biveinis*), bug fixed :bug:`1142229` (*Laurynas Biveinis*), bug fixed :bug:`1130581` (*Laurynas Biveinis*).
+Other bug fixes: bug fixed :bug:`1153334` (*Alexey Kopytov*), bug fixed
+:bug:`1098498` (*Laurynas Biveinis*), bug fixed :bug:`1132763` (*Laurynas
+Biveinis*), bug fixed :bug:`1142229` (*Laurynas Biveinis*), bug fixed
+:bug:`1130581` (*Laurynas Biveinis*).

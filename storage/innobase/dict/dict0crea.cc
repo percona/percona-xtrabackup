@@ -1737,10 +1737,12 @@ dict_check_if_system_table_exists(
 	if (sys_table == NULL) {
 		error = DB_TABLE_NOT_FOUND;
 
+#if 0
 	} else if (UT_LIST_GET_LEN(sys_table->indexes) != num_indexes
 		   || sys_table->n_cols != num_fields) {
 		error = DB_CORRUPTION;
 
+#endif
 	} else {
 		/* This table has already been created, and it is OK.
 		Ensure that it can't be evicted from the table LRU cache. */

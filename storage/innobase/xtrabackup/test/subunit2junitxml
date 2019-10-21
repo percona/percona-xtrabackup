@@ -6,7 +6,7 @@
 #  license at the users choice. A copy of both licenses are available in the
 #  project source as Apache-2.0 and BSD. You may not use this file except in
 #  compliance with one of these two licences.
-#  
+#
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under these licenses is distributed on an "AS IS" BASIS, WITHOUT
 #  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
@@ -25,16 +25,16 @@ try:
     from junitxml import JUnitXmlResult
 except ImportError:
     sys.stderr.write("python-junitxml (https://launchpad.net/pyjunitxml or "
-        "http://pypi.python.org/pypi/junitxml) is required for this filter.")
+                     "http://pypi.python.org/pypi/junitxml) is required for this filter.")
     raise
 
 parser = OptionParser(description=__doc__)
 parser.add_option("--no-passthrough", action="store_true",
-    help="Hide all non subunit input.", default=False, dest="no_passthrough")
+                  help="Hide all non subunit input.", default=False, dest="no_passthrough")
 parser.add_option("-o", "--output-to",
-    help="Output the XML to this path rather than stdout.")
+                  help="Output the XML to this path rather than stdout.")
 parser.add_option("-f", "--forward", action="store_true", default=False,
-    help="Forward subunit stream on stdout.")
+                  help="Forward subunit stream on stdout.")
 (options, args) = parser.parse_args()
 if options.output_to is None:
     output_to = sys.stdout
@@ -51,7 +51,7 @@ try:
     else:
         forward_stream = None
     test = ProtocolTestCase(sys.stdin, passthrough=passthrough_stream,
-       forward=forward_stream)
+                            forward=forward_stream)
     result.startTestRun()
     test.run(result)
     result.stopTestRun()

@@ -1,6 +1,6 @@
-===========================
+================================================================================
 |Percona XtraBackup| 2.2.13
-===========================
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.2.13 on
 October 22nd 2015. Downloads are available from our download site `here
@@ -11,30 +11,30 @@ This release is the current stable release in the 2.2 series.
 
 .. note::
 
-  Package name has been changed from ``percona-xtrabackup`` to
-  ``percona-xtrabackup-22`` (``percona-xtrabackup`` now points to the latest
-  GA release 2.3.2).
+   Package name has been changed from ``percona-xtrabackup`` to
+   ``percona-xtrabackup-22`` (``percona-xtrabackup`` now points to the latest
+   GA release 2.3.2).
 
 Bugs Fixed
-----------
+================================================================================
 
- Improved the detection when the log block that has the different number from
- what is expected, was caused by log block not being flushed to position
- xtrabackup is reading from or if it was caused by using incorrect last
- checkpoint LSN offset in our calculations. Bug fixed :bug:`1497912`.
+Improved the detection when the log block that has the different number from
+what is expected, was caused by log block not being flushed to position
+xtrabackup is reading from or if it was caused by using incorrect last
+checkpoint LSN offset in our calculations. Bug fixed :bug:`1497912`.
 
- Fixed false positive error: ``The log was not applied to the intended LSN``
- which was happening even when the redo log was applied correctly. Bug fixed
- :bug:`1505017`.
+Fixed false positive error: ``The log was not applied to the intended LSN``
+which was happening even when the redo log was applied correctly. Bug fixed
+:bug:`1505017`.
 
- :file:`xtrabackup_logfile` was not compressed when :option:`--compress` option
- was used. Bug fixed :bug:`1242309`.
+:file:`xtrabackup_logfile` was not compressed when :option:`xtrabackup --compress`
+was used. Bug fixed :bug:`1242309`.
 
- |innobackupex| wrote error message to ``STDOUT`` instead of ``STDIN`` which
- broke xbstream and tar stream. Bug fixed :bug:`1503964`.
+|innobackupex| wrote error message to ``STDOUT`` instead of ``STDIN`` which
+broke xbstream and tar stream. Bug fixed :bug:`1503964`.
 
- Incremental backups did not work with |MariaDB| below 10.1.6. Bug fixed
- :bug:`1505865`.
+Incremental backups did not work with |MariaDB| below 10.1.6. Bug fixed
+:bug:`1505865`.
 
 Other bugs fixed: :bug:`1493015`.
 

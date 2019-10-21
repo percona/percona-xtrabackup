@@ -929,8 +929,10 @@ srv_undo_tablespaces_init(
 		for (uint i = 0; i < dir->number_off_files; ++i) {
 			const fileinfo& file = dir->dir_entry[i];
 			ulint id = 0;
+			int pos;
 			if (MY_S_ISREG(file.mystat->st_mode) &&
-			    sscanf(file.name, "undo%03lu", &id) == 1) {
+			    sscanf(file.name, "undo%03lu%n", &id, &pos) == 1 &&
+			    pos == (int) strlen(file.name)) {
 				undo_tablespace_ids[j++] = id;
 			}
 		}
@@ -2284,7 +2286,13 @@ files_checked:
 			respective file pages, for the last batch of
 			recv_group_scan_log_recs(). */
 
-			recv_apply_hashed_log_recs(TRUE);
+			if (!srv_read_only_mode) {
+				log_mutex_enter();
+				recv_apply_hashed_log_recs(FALSE);
+				log_mutex_exit();
+			} else {
+				recv_apply_hashed_log_recs(TRUE);
+			}
 			DBUG_PRINT("ib_log", ("apply completed"));
 
 			if (recv_needed_recovery) {
@@ -2329,17 +2337,19 @@ files_checked:
 			goto skip_processes;
 		}
 
-		/* do not create system tablespaces for xtrabackup */
-#if 0
 		if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
 			/* Open or Create SYS_TABLESPACES and SYS_DATAFILES
 			so that tablespace names and other metadata can be
 			found. */
+
+			/* do not create SYS_DATAFILES in xtrabackup */
+#if 0
 			srv_sys_tablespaces_open = true;
 			err = dict_create_or_check_sys_tablespace();
 			if (err != DB_SUCCESS) {
 				return(srv_init_abort(err));
 			}
+#endif
 
 			/* The following call is necessary for the insert
 			buffer to work with multiple tablespaces. We must
@@ -2368,7 +2378,6 @@ files_checked:
 
 			dict_check_tablespaces_and_store_max_id(validate);
 		}
-#endif
 
 		/* Rotate the encryption key for recovery. It's because
 		server could crash in middle of key rotation. Some tablespace

@@ -1,6 +1,6 @@
-================================
+================================================================================
 |Percona XtraBackup| 2.2.2-beta1
-================================
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.2.2-beta1 on
 May 8th 2014. Downloads are available from our download site `here
@@ -14,38 +14,38 @@ version should be used (currently 2.1.9 in the 2.1 series at the time of
 writing).
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| has now been rebased on |MySQL| 5.6.17.
+|Percona XtraBackup| has now been rebased on |MySQL| 5.6.17.
 
- |Percona XtraBackup| package is now available for *Ubuntu* 14.04.
+|Percona XtraBackup| package is now available for *Ubuntu* 14.04.
 
 Bugs Fixed
-----------
+================================================================================
 
- |Percona XtraBackup| couldn't be built with *Bison* 3.0. Bug fixed
- :bug:`1262439`.
+|Percona XtraBackup| couldn't be built with *Bison* 3.0. Bug fixed
+:bug:`1262439`.
 
- The |xtrabackup| binaries now recognize a new :file:`my.cnf` option,
- :option:`open_files_limit`. The effect is the same as for the server: it
- changes the maximum number of file descriptors available to the xtrabackup
- process. The actual limit depends on the platform and ``ulimit`` settings.
- Bug fixed :bug:`1183793`.
+The |xtrabackup| binaries now recognize a new :file:`my.cnf` option,
+``open_files_limit``. The effect is the same as for the server: it
+changes the maximum number of file descriptors available to the xtrabackup
+process. The actual limit depends on the platform and ``ulimit`` settings.
+Bug fixed :bug:`1183793`.
 
- If a remote |InnoDB| tablespace got CREATEd or ALTERed during the backup, an
- attempt to prepare such a backup later would lead to |Percona XtraBackup|
- crash. Bug fixed :bug:`1291299`.
+If a remote |InnoDB| tablespace got CREATEd or ALTERed during the backup, an
+attempt to prepare such a backup later would lead to |Percona XtraBackup|
+crash. Bug fixed :bug:`1291299`.
 
- Code in both |innobackupex| and |xtrabackup|, that was supposed to make sure
- no child processes are left running in case |innobackupex| got killed or
- failed with an error, relied on the fact the ``SIGTERM`` and ``SIGINT``
- signals were not blocked by the xtrabackup process. However, both ``SIGTERM``
- and ``SIGINT`` might be blocked by the process that had invoked
- |innobackupex|, for example, by the |Percona XtraDB Cluster| server processes
- doing an SST, in which case they were also blocked by the xtrabackup process,
- since the signal mask is inherited by child processes. Fixed by replacing
- ``SIGTERM`` in |innobackupex| and ``SIGINT`` in |xtrabackup| auto-termination
- with ``SIGKILL``. Bug fixed :bug:`1294782`.
+Code in both |innobackupex| and |xtrabackup|, that was supposed to make sure
+no child processes are left running in case |innobackupex| got killed or
+failed with an error, relied on the fact the ``SIGTERM`` and ``SIGINT``
+signals were not blocked by the xtrabackup process. However, both ``SIGTERM``
+and ``SIGINT`` might be blocked by the process that had invoked
+|innobackupex|, for example, by the |Percona XtraDB Cluster| server processes
+doing an SST, in which case they were also blocked by the xtrabackup process,
+since the signal mask is inherited by child processes. Fixed by replacing
+``SIGTERM`` in |innobackupex| and ``SIGINT`` in |xtrabackup| auto-termination
+with ``SIGKILL``. Bug fixed :bug:`1294782`.
 
 All of Percona's software is open-source and free, all the details of the
 release can be found in the `2.2.2-beta1 milestone

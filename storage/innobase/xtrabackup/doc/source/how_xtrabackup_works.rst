@@ -1,8 +1,8 @@
 .. _how_xtrabackup_works:
 
-================================
+================================================================================
  How |Percona XtraBackup| Works
-================================
+================================================================================
 
 |Percona XtraBackup| is based on :term:`InnoDB`'s crash-recovery functionality.
 It copies your |InnoDB| data files, which results in data that is internally

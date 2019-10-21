@@ -1,6 +1,6 @@
-===========================
+================================================================================
 |Percona XtraBackup| 2.2.11
-===========================
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.2.11 on May
 28th 2015. Downloads are available from our download site `here
@@ -10,43 +10,43 @@ Percona is glad to announce the release of |Percona XtraBackup| 2.2.11 on May
 This release is the current stable release in the 2.2 series.
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| has been rebased on |MySQL| 5.6.24.
+|Percona XtraBackup| has been rebased on |MySQL| 5.6.24.
 
 Bugs Fixed
-----------
+================================================================================
 
- Version check would crash |innobackupex| and abort the backup on *CentOS* 5.
- Bug fixed :bug:`1255451`.
+Version check would crash |innobackupex| and abort the backup on *CentOS* 5.
+Bug fixed :bug:`1255451`.
 
- |Percona XtraBackup| could crash when preparing the backup taken on
- |MySQL|/|Percona Server| 5.5 if there were open temporary tables during the
- backup. Bug fixed :bug:`1399471` (*Fungo Wang*).
+|Percona XtraBackup| could crash when preparing the backup taken on
+|MySQL|/|Percona Server| 5.5 if there were open temporary tables during the
+backup. Bug fixed :bug:`1399471` (*Fungo Wang*).
 
- |Percona XtraBackup| would fail to prepare the backup if the
- :file:`xtrabackup_logfile` was lager than 512GB. Bug fixed :bug:`1425269`.
+|Percona XtraBackup| would fail to prepare the backup if the
+:file:`xtrabackup_logfile` was lager than 512GB. Bug fixed :bug:`1425269`.
 
- Fix for bug :bug:`1403237` was incomplete, due to setting wrong offset, last
- copied batch of log records was copied from wrong location. Bug fixed
- :bug:`1448447`.
+Fix for bug :bug:`1403237` was incomplete, due to setting wrong offset, last
+copied batch of log records was copied from wrong location. Bug fixed
+:bug:`1448447`.
 
- |Percona XtraBackup| now executes an extra ``FLUSH TABLES`` before executing
- ``FLUSH TABLES WITH READ LOCK`` to potentially lower the impact from ``FLUSH
- TABLES WITH READ LOCK``. Bug fixed :bug:`1277403`.
+|Percona XtraBackup| now executes an extra ``FLUSH TABLES`` before executing
+``FLUSH TABLES WITH READ LOCK`` to potentially lower the impact from ``FLUSH
+TABLES WITH READ LOCK``. Bug fixed :bug:`1277403`.
 
- Regression introduced by fixing :bug:`1436793` in |Percona XtraBackup| 2.2.10
- caused an error when taking an incremental backup from *MariaDB* 10. Bug fixed
- :bug:`1444541`.
+Regression introduced by fixing :bug:`1436793` in |Percona XtraBackup| 2.2.10
+caused an error when taking an incremental backup from *MariaDB* 10. Bug fixed
+:bug:`1444541`.
 
- |Percona XtraBackup| now prints and stores the file based binlog coordinates
- in :file:`xtrabackup_binlog_info` even though GTID is enabled. Bug fixed
- :bug:`1449834`.
+|Percona XtraBackup| now prints and stores the file based binlog coordinates in
+:file:`xtrabackup_binlog_info` even though GTID is enabled. Bug fixed
+:bug:`1449834`.
 
- |Percona XtraBackup| doesn't print warnings anymore during the prepare phase
- about missing tables when a filtering option (:option:`--databases`,
- :option:`--tables`, etc.) is provided. Bug fixed :bug:`1454815` (*Davi
- Arnaut*).
+|Percona XtraBackup| doesn't print warnings anymore during the prepare phase
+about missing tables when a filtering option (:option:`xtrabackup --databases`,
+:option:`xtrabackup --tables`, etc.) is provided. Bug fixed :bug:`1454815`
+(*Davi Arnaut*).
 
 Other bugs fixed: :bug:`1415191`.
 

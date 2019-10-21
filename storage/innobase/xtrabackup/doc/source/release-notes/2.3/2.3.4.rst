@@ -1,6 +1,6 @@
-============================
- |Percona XtraBackup| 2.3.4
-============================
+================================================================================
+|Percona XtraBackup| 2.3.4
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.3.4 on March
 17th 2016. Downloads are available from our `download site
@@ -11,25 +11,23 @@ This release is the current GA (Generally Available) stable release in the 2.3
 series.
 
 Bugs fixed
-----------
+================================================================================
 
- |Percona XtraBackup| didn't respect variables stored in :file:`backup-my.cnf`
- unless it was specified. One needed to specify
- ``--defaults-file=backup-my.cnf`` for options to be respected. Bug fixed
- :bug:`1527081`.
+|Percona XtraBackup| didn't respect variables stored in :file:`backup-my.cnf`
+unless it was specified. One needed to specify ``--defaults-file=backup-my.cnf``
+for options to be respected. Bug fixed :bug:`1527081`.
 
- |Percona XtraBackup| didn't abort the backup if :option:`innobackupex --rsync`
- completed with error. Bug fixed :bug:`1537256`.
+|Percona XtraBackup| didn't abort the backup if :option:`innobackupex --rsync`
+completed with error. Bug fixed :bug:`1537256`.
 
- When backup was taken on *MariaDB* 10 with GTID enabled, |Percona XtraBackup|
- didn't store ``gtid_slave_pos`` in :file:`xtrabackup_slave_info` but logged it
- only to ``STDERR``. Bug fixed :bug:`1404484`.
+When backup was taken on *MariaDB* 10 with GTID enabled, |Percona XtraBackup|
+didn't store ``gtid_slave_pos`` in :file:`xtrabackup_slave_info` but logged it
+only to ``STDERR``. Bug fixed :bug:`1404484`.
 
- |Percona XtraBackup| was silently skipping extra arguments. Bug fixed
- :bug:`1533542` (*Fungo Wang*).
+|Percona XtraBackup| was silently skipping extra arguments. Bug fixed
+:bug:`1533542` (*Fungo Wang*).
 
- |Percona XtraBackup| refuses client connecting to server if it uses old
- (pre-4.1.1) protocol. To disable this check in order to allow backing up
- servers with legacy passwords still set, new
- :option:`xtrabackup --skip-secure-auth` option has been implemented. Bug fixed
- :bug:`1508450`.
+|Percona XtraBackup| refuses client connecting to server if it uses old
+(pre-4.1.1) protocol. To disable this check in order to allow backing up servers
+with legacy passwords still set, new ``xtrabackup --skip-secure-auth``
+option has been implemented. Bug fixed :bug:`1508450`.

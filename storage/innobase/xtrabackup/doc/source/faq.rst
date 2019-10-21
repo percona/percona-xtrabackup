@@ -24,13 +24,13 @@ Aside from the options for specific features of |innobackupex|, the main
 differences are:
 
   * printing to ``STDERR`` instead of ``STDOUT`` (which enables the
-    :option:`--stream` option),
+    :option:`innobackupex --stream` option),
 
   * the configuration file - :term:`my.cnf` - is detected automatically (or
     set with :option:`innobackupex --defaults-file`) instead of the mandotory
     first argument,
 
-  * and defaults to |xtrabackup| as binary to use in the :option:`--ibbackup`.
+  * and defaults to |xtrabackup| as binary to use in the :option:`innobackupex --ibbackup`.
 
 See :doc:`innobackupex/innobackupex_option_reference` for more details.
 
@@ -94,12 +94,10 @@ In this case, the following error is printed::
 To avoid this error,
 Percona XtraBackup can use metadata locks on tables while they are copied:
 
-* To block all DDL operations, use the :option:`--lock-ddl` option
+* To block all DDL operations, use the :option:`xtrabackup --lock-ddl` option
   that issues ``LOCK TABLES FOR BACKUP``.
 
-* If ``LOCK TABLES FOR BACKUP`` is not supported,
-  you can block DDL for each table
-  before XtraBackup starts to copy it
-  and until the backup is completed
-  using the :option:`--lock-ddl-per-table` option.
+* If ``LOCK TABLES FOR BACKUP`` is not supported, you can block DDL for each
+  table before XtraBackup starts to copy it and until the backup is completed
+  using the :option:`xtrabackup --lock-ddl-per-table` option.
 

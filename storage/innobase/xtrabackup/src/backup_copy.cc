@@ -53,7 +53,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <string>
 #include <mysqld.h>
 #include <my_default.h>
-#include <version_check_pl.h>
 #include <sstream>
 #include <algorithm>
 #include "fil_cur.h"
@@ -63,6 +62,11 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "keyring_plugins.h"
 #include "xb0xb.h"
+#include "xtrabackup_version.h"
+#include "xtrabackup_config.h"
+#ifdef HAVE_VERSION_CHECK
+#include <version_check_pl.h>
+#endif
 
 using std::min;
 
@@ -1392,6 +1396,12 @@ backup_files(const char *from, bool prep_mode)
 		int err;
 
 		if (buffer_pool_filename && file_exists(buffer_pool_filename)) {
+			/* Check if dump of buffer pool has completed
+			and potentially wait for it to complete
+			is only executed before FTWRL - prep_mode */
+			if (prep_mode && opt_dump_innodb_buffer_pool) {
+				check_dump_innodb_buffer_pool(mysql_connection);
+			}
 			fprintf(rsync_tmpfile, "%s\n", buffer_pool_filename);
 			rsync_list.insert(buffer_pool_filename);
 		}
@@ -1559,6 +1569,10 @@ backup_finish()
 
 	/* Copy buffer pool dump or LRU dump */
 	if (!opt_rsync) {
+		if (opt_dump_innodb_buffer_pool) {
+			check_dump_innodb_buffer_pool(mysql_connection);
+		}
+
 		if (buffer_pool_filename && file_exists(buffer_pool_filename)) {
 			const char *dst_name;
 
@@ -1781,11 +1795,12 @@ bool should_skip_file_on_copy_back(const char *filepath) {
 
 os_thread_ret_t
 copy_back_thread_func(void* data) {
-	bool ret = false;
+	bool ret = true;
 	datadir_thread_ctxt_t* ctx = (datadir_thread_ctxt_t*)data;
-	datadir_node_t node;
+	datadir_node_t node = datadir_node_t();
 
 	if (my_thread_init()) {
+		ret = false;
 		goto cleanup;
 	}
 
@@ -2298,6 +2313,7 @@ decrypt_decompress()
 	return(ret);
 }
 
+#ifdef HAVE_VERSION_CHECK
 void
 version_check()
 {
@@ -2318,6 +2334,7 @@ version_check()
 		snprintf(port, sizeof(port), "%u", opt_port);
 		setenv("option_mysql_port", port, 1);
 	}
+	setenv("XTRABACKUP_VERSION", XTRABACKUP_VERSION, 1);
 
 	FILE *pipe = popen("perl", "w");
 	if (pipe == NULL) {
@@ -2328,3 +2345,4 @@ version_check()
 
 	pclose(pipe);
 }
+#endif

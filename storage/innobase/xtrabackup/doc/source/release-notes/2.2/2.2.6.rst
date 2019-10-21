@@ -1,61 +1,61 @@
-==========================
+================================================================================
 |Percona XtraBackup| 2.2.6
-==========================
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.2.6 on
 November 3rd 2014. Downloads are available from our download site `here
-<http://www.percona.com/downloads/XtraBackup/2.2.6/>`_ and from
-:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+<http://www.percona.com/downloads/XtraBackup/2.2.6/>`_ and from :ref:`apt
+<apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
 This release is the current stable release in the 2.2 series.
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| now reads server options from ``SHOW VARIABLES`` rather
- than :file:`my.cnf` configuration file.
+|Percona XtraBackup| now reads server options from ``SHOW VARIABLES`` rather
+than :file:`my.cnf` configuration file.
 
- |Percona XtraBackup| now has more verbose output during initial table scan (it
- will now print a diagnostic message before performing a tablespace scan, which
- may take a long time on systems with large numbers of tablespaces) and before
- starting a backup/apply-log/copy-back operation in innobackupex (it will now
- print a diagnostic message with a timestamp to make it easier for users to get
- duration of the operation.)
+|Percona XtraBackup| now has more verbose output during initial table scan (it
+will now print a diagnostic message before performing a tablespace scan, which
+may take a long time on systems with large numbers of tablespaces) and before
+starting a backup/apply-log/copy-back operation in innobackupex (it will now
+print a diagnostic message with a timestamp to make it easier for users to get
+duration of the operation.)
 
 Bugs Fixed
-----------
+================================================================================
 
- |innobackupex| didn't take the default datadir, which caused backups to fail
- if the datadir wasn't specified in the :file:`my.cnf` configuration file. Bug
- fixed :bug:`936934`.
+|innobackupex| didn't take the default datadir, which caused backups to fail
+if the datadir wasn't specified in the :file:`my.cnf` configuration file. Bug
+fixed :bug:`936934`.
 
- |innobackupex| will now fail with an error when
- :option:`innobackupex --slave-info` is used on  a multi-threaded non-GTID
- slave, because ``Exec_Master_Log_Pos`` cannot be trusted for a multi-threaded
- slave. Bug fixed :bug:`1372679`.
+|innobackupex| will now fail with an error when
+:option:`innobackupex --slave-info` is used on  a multi-threaded non-GTID
+slave, because ``Exec_Master_Log_Pos`` cannot be trusted for a multi-threaded
+slave. Bug fixed :bug:`1372679`.
 
- |InnoDB| log scanning failure (bug :mysqlbug:`60788`) would cause backups to
- fail. Fixed by porting the fix from |MySQL| 5.7. Bug fixed :bug:`1375383`.
+|InnoDB| log scanning failure (bug :mysqlbug:`60788`) would cause backups to
+fail. Fixed by porting the fix from |MySQL| 5.7. Bug fixed :bug:`1375383`.
 
- Options :option:`innobackupex --apply-log` and
- :option:`innobackupex --decompress` weren't marked as mutually exclusive, ie.
- if they were both specified, only :option:`innobackupex --decompress` would
- work, which could lead to |MySQL| instance being started with an unprepared
- backup. Fixed by making mutually exclusive categories of options: 1.
- :option:`innobackupex --decompress`, :option:`innobackupex --decrypt`; 2.
- :option:`innobackupex --copy-back`; 3. :option:`innobackupex --move-back`;
- 4. :option:`innobackupex --apply-log`. Bug fixed :bug:`1376874`.
+Options :option:`innobackupex --apply-log` and
+:option:`innobackupex --decompress` weren't marked as mutually exclusive, ie.
+if they were both specified, only :option:`innobackupex --decompress` would
+work, which could lead to |MySQL| instance being started with an unprepared
+backup. Fixed by making mutually exclusive categories of options: 1.
+:option:`innobackupex --decompress`, :option:`innobackupex --decrypt`; 2.
+:option:`innobackupex --copy-back`; 3. :option:`innobackupex --move-back`;
+4. :option:`innobackupex --apply-log`. Bug fixed :bug:`1376874`.
 
- |innobackupex| wasn't creating directories specified in
- :option:`innodb_data_home_dir` and :option:`innodb_log_group_home_dir` when
- :option:`innobackupex --copy-back` option was used. Bug fixed :bug:`1382347`.
+|innobackupex| wasn't creating directories specified in
+``innodb_data_home_dir`` and ``innodb_log_group_home_dir`` when
+:option:`innobackupex --copy-back` option was used. Bug fixed :bug:`1382347`.
 
- |Percona XtraBackup| now supports all option modifiers supported by upstream
- MySQL: skip, disable, enable, maximum, loose. Bug fixed :bug:`664128`.
+|Percona XtraBackup| now supports all option modifiers supported by upstream
+MySQL: skip, disable, enable, maximum, loose. Bug fixed :bug:`664128`.
 
- |Percona Xtrabackup| would fail to perform a full backup on |Percona Server|
- 5.5 if :option:`innodb_log_file_size` variable wasn't set in the ``[mysqld]``
- section of :file:`my.cnf`. Bug fixed :bug:`1334062`.
+|Percona Xtrabackup| would fail to perform a full backup on |Percona Server|
+5.5 if ``innodb_log_file_size`` variable wasn't set in the ``[mysqld]``
+section of :file:`my.cnf`. Bug fixed :bug:`1334062`.
 
 Other bugs fixed: :bug:`1379905`, :bug:`1386013`, :bug:`1072695`,
 :bug:`1375241`, :bug:`1182841`, and :bug:`1343722`.

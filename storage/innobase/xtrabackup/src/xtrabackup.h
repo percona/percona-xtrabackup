@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "datasink.h"
 #include "xbstream.h"
 #include "changed_page_bitmap.h"
+#include "xtrabackup_config.h"
 
 #ifdef __WIN__
 #define XB_FILE_UNDEFINED { NULL };
@@ -135,7 +136,9 @@ extern my_bool		opt_no_lock;
 extern my_bool		opt_safe_slave_backup;
 extern my_bool		opt_rsync;
 extern my_bool		opt_force_non_empty_dirs;
+#ifdef HAVE_VERSION_CHECK
 extern my_bool		opt_noversioncheck;
+#endif
 extern my_bool		opt_no_backup_locks;
 extern my_bool		opt_decompress;
 extern my_bool		opt_remove_original;
@@ -179,6 +182,10 @@ extern uint		opt_read_buffer_size;
 extern char		*opt_xtra_plugin_dir;
 extern char		*opt_transition_key;
 extern my_bool		opt_generate_new_master_key;
+
+extern uint		opt_dump_innodb_buffer_pool_timeout;
+extern uint		opt_dump_innodb_buffer_pool_pct;
+extern my_bool		opt_dump_innodb_buffer_pool;
 
 #if defined(HAVE_OPENSSL)
 extern uint opt_ssl_mode;

@@ -1,54 +1,54 @@
-============================
- |Percona XtraBackup| 2.3.2
-============================
+================================================================================
+|Percona XtraBackup| 2.3.2
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.3.2 on
-October 22nd 2015. Downloads are available from our `download site
+Percona is glad to announce the release of |Percona XtraBackup| 2.3.2 on October
+22nd 2015. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.3.2/>`_ and
 from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
 This release is the first GA (Generally Available) stable release in the 2.3
 series.
 
-This release contains all the features and bug fixes in :doc:`Percona
-XtraBackup 2.2.13 </release-notes/2.2/2.2.13>`, plus the following:
+This release contains all the features and bug fixes in :doc:`Percona XtraBackup
+2.2.13 </release-notes/2.2/2.2.13>`, plus the following:
 
 New Features
-------------
+================================================================================
 
- |Percona XtraBackup| 2.3 command line syntax has been changed to follow
- `command-line-option guidelines
- <http://dev.mysql.com/doc/refman/5.6/en/command-line-options.html>`_.
+|Percona XtraBackup| 2.3 command line syntax has been changed to follow
+`command-line-option guidelines
+<http://dev.mysql.com/doc/refman/5.6/en/command-line-options.html>`_.
 
 Bugs fixed
-----------
+================================================================================
 
- :ref:`xbcloud <xbcloud_binary>` contained password in the processlist which
- would allow an unprivileged user privileged access to the swift service, and
- more likely the entire OpenStack deploy for which keystone is providing the
- identity service. Bug fixed :bug:`1447610`.
+:ref:`xbcloud <xbcloud_binary>` contained password in the processlist which
+would allow an unprivileged user privileged access to the swift service, and
+more likely the entire OpenStack deploy for which keystone is providing the
+identity service. Bug fixed :bug:`1447610`.
 
- |Percona XtraBackup| 2.3 didn't set :option:`wait_timeout` session variable in
- order to prevent server to kill the connection while it is copying data files.
- Bug fixed :bug:`1495367`.
+|Percona XtraBackup| 2.3 didn't set the ``wait_timeout`` session variable in
+order to prevent server to kill the connection while it is copying data files.
+Bug fixed :bug:`1495367`.
 
- :ref:`xbcloud <xbcloud_binary>` would fail to create a container with ``error:
- curl_easy_perform() failed: Failed sending data to the peer``. Bug fixed
- :bug:`1500508`.
+:ref:`xbcloud <xbcloud_binary>` would fail to create a container with ``error:
+curl_easy_perform() failed: Failed sending data to the peer``. Bug fixed
+:bug:`1500508`.
 
- In some cases streaming backup could be corrupted due to a broken pipe error,
- particularly if error occurred when |xtrabackup| copied set of tiny files
- (:file:`*.frm` or similar), but |xtrabackup| would not notice it and complete
- successfully. Bug fixed :bug:`1452387`.
+In some cases streaming backup could be corrupted due to a broken pipe error,
+particularly if error occurred when |xtrabackup| copied set of tiny files
+(:file:`*.frm` or similar), but |xtrabackup| would not notice it and complete
+successfully. Bug fixed :bug:`1452387`.
 
- |xtrabackup| 2.3 now adds timestamps to the ``STDERR`` output. Bug fixed
- :bug:`1454692`.
+|xtrabackup| 2.3 now adds timestamps to the ``STDERR`` output. Bug fixed
+:bug:`1454692`.
 
- Stream decryption would fail if the encryption options were in :file:`my.cnf`
- configuration file because they were ignored by |innobackupex|. Bug fixed
- :bug:`1190335`.
+Stream decryption would fail if the encryption options were in :file:`my.cnf`
+configuration file because they were ignored by |innobackupex|. Bug fixed
+:bug:`1190335`.
 
- Fixed broken out-of-source tree builds in 2.3 trunk. Bug fixed :bug:`1457016`.
+Fixed broken out-of-source tree builds in 2.3 trunk. Bug fixed :bug:`1457016`.
 
- |Percona XtraBackup| now supports :option:`--datadir` as a command line
- option. Bug fixed :bug:`1042887`.
+|Percona XtraBackup| now supports :option:`xtrabackup --datadir` as a command
+line option. Bug fixed :bug:`1042887`.

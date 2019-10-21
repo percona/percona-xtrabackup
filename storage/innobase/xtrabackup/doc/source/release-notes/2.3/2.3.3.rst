@@ -1,6 +1,6 @@
-============================
- |Percona XtraBackup| 2.3.3
-============================
+================================================================================
+|Percona XtraBackup| 2.3.3
+================================================================================
 
 Percona is glad to announce the release of |Percona XtraBackup| 2.3.3 on
 December 17th 2015. Downloads are available from our `download site
@@ -11,44 +11,44 @@ This release is the current GA (Generally Available) stable release in the 2.3
 series.
 
 Bugs fixed
-----------
+================================================================================
 
- Database directories were not removed if ``DROP DATABASE`` happened during the
- backup. Bug fixed :bug:`1461735`.
+Database directories were not removed if ``DROP DATABASE`` happened during the
+backup. Bug fixed :bug:`1461735`.
 
- Backup would fail if :ref:`storing_history` feature was enabled and backup was
- taken from server without binary log enabled. Bug fixed :bug:`1509812`.
+Backup would fail if :ref:`storing_history` feature was enabled and backup was
+taken from server without binary log enabled. Bug fixed :bug:`1509812`.
 
- |Percona XtraBackup| now fails with descriptive error message if
- :option:`--defaults-extra-file` is not specified first. Bug fixed
- :bug:`1511451`.
+|Percona XtraBackup| now fails with descriptive error message if
+:option:`xtrabackup --defaults-extra-file` is not specified first. Bug fixed
+:bug:`1511451`.
 
- Backup would fail if :option:`--rsync` option was used without specifying
- temporary folder. Bug fixed :bug:`1511701`.
+Backup would fail if :option:`innobackupex --rsync` option was used without
+specifying temporary folder. Bug fixed :bug:`1511701`.
 
- Fixed |Percona XtraBackup| crash which happened when it was used for SST on
- *MariaDB Galera Cluster* caused by double free of :option:`datadir`' variable.
- Bug fixed :bug:`1512281`.
+Fixed |Percona XtraBackup| crash which happened when it was used for SST on
+*MariaDB Galera Cluster* caused by double free of ``datadir`` variable.
+Bug fixed :bug:`1512281`.
 
- :option:`--move-back` did not respect the :option:`innodb_log_group_home_dir`
- and :option:`innodb_data_home_dir` options which caused ``ib_logfiles`` and
- data files not to be moved to correct location. Bug fixed :bug:`1512616`.
+:option:`xtrabackup --move-back` did not respect the ``innodb_log_group_home_dir``
+and ``innodb_data_home_dir`` options which caused ``ib_logfiles`` and
+data files not to be moved to correct location. Bug fixed :bug:`1512616`.
 
- :file:`xtrabackup_binlog_info` was not updated correctly when applying
- incremental backups. Bug fixed :bug:`1523687`.
+:file:`xtrabackup_binlog_info` was not updated correctly when applying
+incremental backups. Bug fixed :bug:`1523687`.
 
- When using a :option:`--defaults-file` option |Percona XtraBackup| would
- complain about :option:`datadir` being mismatched if it wasn't explicitly set
- in the defaults file. Bug fixed :bug:`1508448`.
+When using a :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| would
+complain about ``datadir`` being mismatched if it wasn't explicitly set
+in the defaults file. Bug fixed :bug:`1508448`.
 
- Fixed build issues by adding missing check in ``cmake`` script for ``xxd``
- presence. Bug fixed :bug:`1511267`.
+Fixed build issues by adding missing check in ``cmake`` script for ``xxd``
+presence. Bug fixed :bug:`1511267`.
 
- |Percona Xtrabackup| would terminate backup process without error if
- :option:`--slave-info` option was used on a server not running as a
- replication slave. Bug fixed :bug:`1513520`.
+|Percona Xtrabackup| would terminate backup process without error if
+:option:`xtrabackup --slave-info` option was used on a server not running as a
+replication slave. Bug fixed :bug:`1513520`.
 
- |innobackupex| when used with :option:`--stream` option would create an empty
- directory with a timestamp as a name. Bug fixed :bug:`1520569`.
+|innobackupex| when used with :option:`innobackupex --stream` option would
+create an empty directory with a timestamp as a name. Bug fixed :bug:`1520569`.
 
 Other bugs fixed :bug:`1523728` and :bug:`1507238`.

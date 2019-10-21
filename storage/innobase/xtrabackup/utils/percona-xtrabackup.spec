@@ -23,9 +23,7 @@ BuildRequires:  libcurl-devel
 %else
 BuildRequires:  curl-devel
 %endif
-%if 0%{?rhel} > 6 
-BuildRequires:  python-sphinx >= 1.0.1, python-docutils >= 0.6 
-%endif
+
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup
 Requires:       perl(DBD::mysql), rsync
 Requires:	perl(Digest::MD5)
@@ -66,14 +64,28 @@ export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
+#
+%if 0%{?rhel} == 8
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/subunit2junitxml
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-two-script.py
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-script.py
+sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/run.py
+%endif
+#
 %if 0%{?rhel} > 5
-  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-    -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" .
+  cmake . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+  -DWITH_SSL=system -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost \
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
+  -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
+  -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin"
 %else
-  cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-    -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} -DINSTALL_MANDIR=%{_mandir} \
-  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin"  .
+  cmake . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
+  -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost \
+  -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin"
 %endif
 
 #

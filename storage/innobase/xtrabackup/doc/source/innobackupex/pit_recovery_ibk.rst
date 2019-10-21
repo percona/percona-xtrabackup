@@ -10,7 +10,7 @@ For taking the snapshot, we will use |innobackupex| for a full backup::
 
   $ innobackupex /path/to/backup --no-timestamp
 
-(the :option:`--no-timestamp` option is for convenience in this example) and we will prepare it to be ready for restoration: ::
+(the :option:`innobackupex --no-timestamp` option is for convenience in this example) and we will prepare it to be ready for restoration: ::
 
   $ innobackupex --apply-log /path/to/backup
 

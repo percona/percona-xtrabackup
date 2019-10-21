@@ -44,6 +44,22 @@ common_init(
 }
 
 /****************************************************************//**
+Update the filter with the actual batch size asfter it has
+been read. */
+static
+void
+common_update(
+/*========*/
+	xb_read_filt_ctxt_t*	ctxt,	/*!<in/out: read filter context */
+	ib_uint64_t		len,	/*!in: length in bytes of the batch has
+					been read */
+	const xb_fil_cur_t*	cursor)	/*!<in: file cursor */
+{
+	ctxt->data_file_size = cursor->statinfo.st_size;
+	ctxt->offset += len;
+}
+
+/****************************************************************//**
 Initialize the pass-through read filter. */
 static
 void
@@ -73,13 +89,15 @@ rf_pass_through_get_next_batch(
 							of pages */
 {
 	*read_batch_start = ctxt->offset;
+	if (ctxt->offset >= ctxt->data_file_size) {
+		*read_batch_len = 0;
+		return;
+	}
 	*read_batch_len = ctxt->data_file_size - ctxt->offset;
 
 	if (*read_batch_len > ctxt->buffer_capacity) {
 		*read_batch_len = ctxt->buffer_capacity;
 	}
-
-	ctxt->offset += *read_batch_len;
 }
 
 /****************************************************************//**
@@ -157,6 +175,10 @@ rf_bitmap_get_next_batch(
 	}
 
 	*read_batch_start = ctxt->offset;
+	if (ctxt->offset >= ctxt->data_file_size) {
+		*read_batch_len = 0;
+		return;
+	}
 	if (ctxt->filter_batch_end == ULINT_UNDEFINED) {
 		/* No more cleared bits in the bitmap, need to copy all the
 		remaining pages.  */
@@ -174,7 +196,6 @@ rf_bitmap_get_next_batch(
 		*read_batch_len = ctxt->buffer_capacity;
 	}
 
-	ctxt->offset += *read_batch_len;
 	xb_a (ctxt->offset % ctxt->page_size == 0);
 	xb_a (*read_batch_start % ctxt->page_size == 0);
 	xb_a (*read_batch_len % ctxt->page_size == 0);
@@ -195,12 +216,14 @@ rf_bitmap_deinit(
 xb_read_filt_t rf_pass_through = {
 	&rf_pass_through_init,
 	&rf_pass_through_get_next_batch,
-	&rf_pass_through_deinit
+	&rf_pass_through_deinit,
+	&common_update
 };
 
 /* The changed page bitmap-based read filter */
 xb_read_filt_t rf_bitmap = {
 	&rf_bitmap_init,
 	&rf_bitmap_get_next_batch,
-	&rf_bitmap_deinit
+	&rf_bitmap_deinit,
+	&common_update
 };

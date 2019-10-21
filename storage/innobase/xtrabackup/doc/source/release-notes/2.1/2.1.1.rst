@@ -1,38 +1,68 @@
-============================
- |Percona XtraBackup| 2.1.1
-============================
+================================================================================
+|Percona XtraBackup| 2.1.1
+================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.1.1 on May 15th 2013. Downloads are available from our download site `here <http://www.percona.com/downloads/XtraBackup/2.1.1/>`_ and :doc:`Percona Software Repositories </installation>`. 
+Percona is glad to announce the release of |Percona XtraBackup| 2.1.1
+on May 15th 2013. Downloads are available from our download site `here
+<http://www.percona.com/downloads/XtraBackup/2.1.1/>`_ and
+:doc:`Percona Software Repositories </installation>`.
 
 This release is the first GA (Generally Available) stable release in the 2.1 series.
 
 New features
-------------
+================================================================================
 
- |Percona XtraBackup| now has support for :ref:`compact_backups_ibk`. This feature can be used for taking the backups that will take less amount of disk space. GA release now contains new :option:`innobackupex --rebuild-threads` that can be used to specify the number of threads started by XtraBackup when rebuilding secondary indexes on ``innobackupex --apply-log --rebuild-indexes``. This allows parallel processing of individual tables when rebuilding the index.  
+|Percona XtraBackup| now has support for :ref:`compact_backups_ibk`. This
+feature can be used for taking the backups that will take less amount of disk
+space. GA release now contains new :option:`innobackupex --rebuild-threads` that
+can be used to specify the number of threads started by XtraBackup when
+rebuilding secondary indexes on ``innobackupex --apply-log
+--rebuild-indexes``. This allows parallel processing of individual tables when
+rebuilding the index.
  
- |Percona XtraBackup| has implemented :ref:`encrypted_backups_ibk`. This feature can be used to encrypt/decrypt both local and streamed backups in order to add another layer of protection to the backups.
+|Percona XtraBackup| has implemented :ref:`encrypted_backups_ibk`. This feature
+can be used to encrypt/decrypt both local and streamed backups in order to add
+another layer of protection to the backups.
 
- |innobackupex| now uses Perl's ``DBD::MySQL`` package for server communication instead of spawning the mysql command line client.
+|innobackupex| now uses Perl's ``DBD::MySQL`` package for server communication
+instead of spawning the mysql command line client.
 
- Support for |InnoDB| 5.0 and |InnoDB| 5.1 builtin has been removed from |Percona XtraBackup|.
+Support for |InnoDB| 5.0 and |InnoDB| 5.1 builtin has been removed from |Percona
+XtraBackup|.
 
- After being deprecated in previous version, option :option:`--remote-host` has been completely removed in |Percona XtraBackup| 2.1.
+After being deprecated in previous version, option ``--remote-host`` has
+been completely removed in |Percona XtraBackup| 2.1.
 
- |Percona XtraBackup| can use `XtraDB changed page tracking <http://www.percona.com/doc/percona-server/5.5/management/changed_page_tracking.html>`_ feature to perform the :ref:`xb_incremental` now.
-
+|Percona XtraBackup| can use `XtraDB changed page tracking
+<http://www.percona.com/doc/percona-server/5.5/management/changed_page_tracking.html>`_
+feature to perform the :ref:`xb_incremental` now.
 
 Bugs Fixed
-----------
+================================================================================
 
- |innobackupex| is using ``SHOW MASTER STATUS`` to obtain binlog file and position. This could trigger a bug if the server being backed up was standalone server (neither master nor slave in replication) and binlog information wasn't available. Fixed by not creating :file:`xtrabackup_binlog_info` file when binlog isn't available. Bug fixed :bug:`1168513`.
+|innobackupex| is using ``SHOW MASTER STATUS`` to obtain binlog file and
+position. This could trigger a bug if the server being backed up was standalone
+server (neither master nor slave in replication) and binlog information wasn't
+available. Fixed by not creating :file:`xtrabackup_binlog_info` file when binlog
+isn't available. Bug fixed :bug:`1168513`.
 
- |Percona XtraBackup| would leave ``xbtemp`` temp files behind due to a typo. Bug fixed :bug:`1172016`.
+|Percona XtraBackup| would leave ``xbtemp`` temp files behind due to a typo. Bug
+fixed :bug:`1172016`.
 
- |Percona XtraBackup| would assume the table has been dropped if the tablespace was renamed after it was scanned by |XtraBackup| on startup and before |XtraBackup| attempted to copy it. Bug fixed :bug:`1079700`.
+|Percona XtraBackup| would assume the table has been dropped if the tablespace
+was renamed after it was scanned by |XtraBackup| on startup and before
+|XtraBackup| attempted to copy it. Bug fixed :bug:`1079700`.
 
- Orphaned ``xtrabackup_pid`` file left inside tmpdir could cause `SST <http://www.percona.com/doc/percona-xtradb-cluster/manual/state_snapshot_transfer.html>`_ to fail. Fixed by fix checking if ``xtrabackup_pid`` file exists once |innobackupex| starts, and try to remove it or fail if it cannot be removed. Bug fixed :bug:`1175860`.
+Orphaned ``xtrabackup_pid`` file left inside tmpdir could cause `SST
+<http://www.percona.com/doc/percona-xtradb-cluster/manual/state_snapshot_transfer.html>`_
+to fail. Fixed by fix checking if ``xtrabackup_pid`` file exists once
+|innobackupex| starts, and try to remove it or fail if it cannot be removed. Bug
+fixed :bug:`1175860`.
 
- :option:`xtrabackup --stats` option would not work with server :term:`datadir` if the server isn't running and logs were in a separate directory. Bug fixed :bug:`1174314`.
+:option:`xtrabackup --stats` option would not work with server :term:`datadir`
+if the server isn't running and logs were in a separate directory. Bug fixed
+:bug:`1174314`.
 
-Other bugs fixed: bug fixed :bug:`1166713`, bug fixed :bug:`1175581`, bug fixed :bug:`1175318`, bug fixed :bug:`1175309`, bug fixed :bug:`1176198`, bug fixed :bug:`1175566`.
+Other bugs fixed: bug fixed :bug:`1166713`, bug fixed :bug:`1175581`, bug fixed
+:bug:`1175318`, bug fixed :bug:`1175309`, bug fixed :bug:`1176198`, bug fixed
+:bug:`1175566`.

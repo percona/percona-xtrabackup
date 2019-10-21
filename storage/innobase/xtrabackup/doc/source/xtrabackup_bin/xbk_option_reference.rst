@@ -87,11 +87,6 @@ Options
    unless :option:`xtrabackup --force-non-empty-directories` option is
    specified.
 
-.. option:: --create-ib-logfile
-
-   This option is not currently implemented. To create the InnoDB log files,
-   you must prepare the backup twice at present.
-
 .. option:: --databases=#
 
    This option specifies the list of databases and tables that should be backed
@@ -116,6 +111,10 @@ Options
    The source directory for the backup. This should be the same as the datadir
    for your |MySQL| server, so it should be read from :file:`my.cnf` if that
    exists; otherwise you must specify it on the command line.
+
+   When combined with the :option:`xtrabackup --copy-back` or
+   :option:`xtrabackup --move-back` option, :option:`xtrabackup --datadir`
+   refers to the destination directory.
 
 .. option:: --decompress
 
@@ -153,6 +152,65 @@ Options
    file. This is used by |innobackupex| if you use the
    :option:`xtrabackup --defaults-group` option. It is needed for
    ``mysqld_multi`` deployments.
+
+.. option::  --dump-innodb-buffer-pool
+
+   This option controls whether or not a new dump of buffer pool
+   content should be done.
+
+   With ``--dump-innodb-buffer-pool``, |xtrabackup|
+   makes a request to the server to start the buffer pool dump (it
+   takes some time to complete and is done in background) at the
+   beginning of a backup provided the status variable
+   ``innodb_buffer_pool_dump_status`` reports that the dump has been
+   completed.
+
+   .. code-block:: bash
+
+      $ xtrabackup --backup --dump-innodb-buffer-pool --target-dir=/home/user/backup
+
+   By default, this option is set to `OFF`.
+
+   If ``innodb_buffer_pool_dump_status`` reports that there is running
+   dump of buffer pool, |xtrabackup| waits for the dump to complete
+   using the value of :option:`--dump-innodb-buffer-pool-timeout`
+
+   The file :file:`ib_buffer_pool` stores tablespace ID and page ID
+   data used to warm up the buffer pool sooner.
+
+   .. seealso::
+
+      |MySQL| Documentation: Saving and Restoring the Buffer Pool State
+         https://dev.mysql.com/doc/refman/5.7/en/innodb-preload-buffer-pool.html
+
+.. option:: --dump-innodb-buffer-pool-timeout
+
+   This option contains the number of seconds that |xtrabackup| should
+   monitor the value of ``innodb_buffer_pool_dump_status`` to
+   determine if buffer pool dump has completed.
+      
+   This option is used in combination with
+   :option:`--dump-innodb-buffer-pool`. By default, it is set to `10`
+   seconds.
+
+.. option:: --dump-innodb-buffer-pool-pct
+
+   This option contains the percentage of the most recently used buffer pool
+   pages to dump.
+
+   This option is effective if :option:`--dump-innodb-buffer-pool` option is set
+   to `ON`. If this option contains a value, |xtrabackup| sets the |MySQL|
+   system variable ``innodb_buffer_pool_dump_pct``. As soon as the buffer pool
+   dump completes or it is stopped (see
+   :option:`--dump-innodb-buffer-pool-timeout`), the value of the |MySQL| system
+   variable is restored.
+
+   .. seealso::
+
+      Changing the timeout for buffer pool dump
+         :option:`--dump-innodb-buffer-pool-timeout`
+      |MySQL| Documentation: innodb_buffer_pool_dump_pct system variable
+         https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_buffer_pool_dump_pct
 
 .. option:: --encrypt=ENCRYPTION_ALGORITHM
 
@@ -382,16 +440,6 @@ Options
    copying the data files back to their original locations to restore them. See
    :ref:`scripting-xtrabackup`.
 
-.. option:: --rebuild_indexes
-
-   Rebuild secondary indexes in InnoDB tables after applying the log. Only has
-   effect with --prepare.
-
-.. option::  --rebuild_threads=#
-
-   Use this number of threads to rebuild indexes in a compact backup. Only has
-   effect with --prepare and --rebuild-indexes.
-
 .. option:: --reencrypt-for-server-id=<new_server_id>
 
    Use this option to start the server instance with different server_id from
@@ -556,9 +604,14 @@ Options
 
 .. option:: --throttle=#
 
-   This option limits :option:`xtrabackup --backup` to the specified number of
-   read+write pairs of operations per second. See :doc:`throttling a backup
-   <throttling_backups>`.
+   This option limits the number of chunks copied per second. The chunk size is
+   *10 MB*. To limit the bandwidth to *10 MB/s*, set the option to *1*:
+   `--throttle=1`.
+
+   .. seealso::
+
+      More information about how to throttle a backup
+         :ref:`throttling_backups`
 
 .. option:: --tmpdir=name
 
@@ -570,6 +623,17 @@ Options
    This option is used to specify the LSN to which the logs should be applied
    when backups are being prepared. It can only be used with the
    :option:`xtrabackup --prepare` option.
+
+.. option:: --transition-key
+
+   This option is used to enable processing the backup without accessing the
+   keyring vault server. In this case, :program:`xtrabackup` derives the AES
+   encryption key from the specified passphrase and uses it to encrypt
+   tablespace keys of tablespaces being backed up.
+
+   If :option:`--transition-key <xtrabackup --transition-key>` does not have any
+   value, :program:`xtrabackup` will ask for it. The same passphrase should be
+   specified for the :option:`xtrabackup --prepare` command.
 
 .. option:: --use-memory=#
 
