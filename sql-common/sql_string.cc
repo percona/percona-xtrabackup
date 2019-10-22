@@ -176,15 +176,13 @@ bool String::set_int(longlong num, bool unsigned_flag, const CHARSET_INFO *cs) {
 bool String::set_real(double num, uint decimals, const CHARSET_INFO *cs) {
   char buff[FLOATING_POINT_BUFFER];
   uint dummy_errors;
-  size_t len;
 
-  m_charset = cs;
-  if (decimals >= NOT_FIXED_DEC) {
-    len = my_gcvt(num, MY_GCVT_ARG_DOUBLE, static_cast<int>(sizeof(buff)) - 1,
-                  buff, NULL);
+  if (decimals >= DECIMAL_NOT_SPECIFIED) {
+    size_t len = my_gcvt(num, MY_GCVT_ARG_DOUBLE,
+                         static_cast<int>(sizeof(buff)) - 1, buff, nullptr);
     return copy(buff, len, &my_charset_latin1, cs, &dummy_errors);
   }
-  len = my_fcvt(num, decimals, buff, NULL);
+  size_t len = my_fcvt(num, decimals, buff, nullptr);
   return copy(buff, len, &my_charset_latin1, cs, &dummy_errors);
 }
 
@@ -691,10 +689,9 @@ bool String::replace(size_t offset, size_t arg_length, const char *to,
 }
 
 // added by Holyfoot for "geometry" needs
-int String::reserve(size_t space_needed, size_t grow_by) {
+bool String::reserve(size_t space_needed, size_t grow_by) {
   if (m_alloced_length < m_length + space_needed) {
-    if (mem_realloc(m_alloced_length + max(space_needed, grow_by) - 1))
-      return true;
+    return mem_realloc(m_alloced_length + max(space_needed, grow_by) - 1);
   }
   return false;
 }
@@ -1134,9 +1131,10 @@ size_t convert_to_printable(char *to, size_t to_len, const char *from,
 
   @return   number of bytes in the output string
 */
-size_t bin_to_hex_str(char *to, size_t to_len, char *from, size_t from_len) {
+size_t bin_to_hex_str(char *to, size_t to_len, const char *from,
+                      size_t from_len) {
   char *out;
-  char *in;
+  const char *in;
   size_t i;
 
   if (to_len < ((from_len * 2) + 1)) return 0;

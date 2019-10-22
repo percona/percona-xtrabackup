@@ -318,7 +318,7 @@ static bool is_equal(const LEX_CSTRING &a, const LEX_CSTRING &b) {
 bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
                                    const char *db_name, const char *table_name,
                                    List<::Trigger> *triggers) {
-  DBUG_ENTER("Trigger_loader::load_triggers");
+  DBUG_TRACE;
 
   // Construct TRG-file name.
 
@@ -333,11 +333,11 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
 
   File_parser *parser = sql_parse_prepare(&trg_file_path, mem_root, true);
 
-  if (!parser) DBUG_RETURN(true);
+  if (!parser) return true;
 
   if (!is_equal(trg_file_type, parser->type())) {
     my_error(ER_WRONG_OBJECT, MYF(0), table_name, TRG_EXT + 1, "TRIGGER");
-    DBUG_RETURN(true);
+    return true;
   }
 
   Handle_old_incorrect_sql_modes_hook sql_modes_hook(trg_file_path.str);
@@ -346,7 +346,7 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
 
   if (parser->parse((uchar *)&trg, mem_root, trg_file_parameters,
                     TRG_NUM_REQUIRED_PARAMETERS, &sql_modes_hook))
-    DBUG_RETURN(true);
+    return true;
 
   if (trg.definitions.is_empty()) {
     DBUG_ASSERT(trg.sql_modes.is_empty());
@@ -354,7 +354,7 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
     DBUG_ASSERT(trg.client_cs_names.is_empty());
     DBUG_ASSERT(trg.connection_cl_names.is_empty());
     DBUG_ASSERT(trg.db_cl_names.is_empty());
-    DBUG_RETURN(false);
+    return false;
   }
 
   // Make sure character set properties are filled.
@@ -365,7 +365,7 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
         !trg.connection_cl_names.is_empty() || !trg.db_cl_names.is_empty()) {
       my_error(ER_TRG_CORRUPTED_FILE, MYF(0), db_name, table_name);
 
-      DBUG_RETURN(true);
+      return true;
     }
 
     LogErr(WARNING_LEVEL, ER_TRG_CREATION_CTX_NOT_SET, db_name, table_name);
@@ -508,11 +508,11 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
     */
     if (triggers->push_back(t, mem_root)) {
       destroy(t);
-      DBUG_RETURN(true);
+      return true;
     }
   }
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -540,7 +540,7 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
 bool Handle_old_incorrect_sql_modes_hook::process_unknown_string(
     const char *&unknown_key, uchar *base, MEM_ROOT *mem_root,
     const char *end) {
-  DBUG_ENTER("Handle_old_incorrect_sql_modes_hook::process_unknown_string");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("unknown key: %60s", unknown_key));
 
   if (unknown_key + INVALID_SQL_MODES_LENGTH + 1 < end &&
@@ -552,7 +552,7 @@ bool Handle_old_incorrect_sql_modes_hook::process_unknown_string(
     LogErr(WARNING_LEVEL, ER_FILE_HAS_OLD_FORMAT, m_path, "TRIGGER");
     if (get_file_options_ulllist(ptr, end, unknown_key, base,
                                  &sql_modes_parameters, mem_root)) {
-      DBUG_RETURN(true);
+      return true;
     }
     /*
       Set parsing pointer to the last symbol of string (\n)
@@ -561,7 +561,7 @@ bool Handle_old_incorrect_sql_modes_hook::process_unknown_string(
     */
     unknown_key = ptr - 1;
   }
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -945,11 +945,8 @@ static bool migrate_view_to_dd(THD *thd, const FRM_context &frm_context,
                                const String_type &db_name,
                                const String_type &view_name, MEM_ROOT *mem_root,
                                bool is_fix_view_cols_and_deps) {
-  TABLE_LIST table_list;
-
-  table_list.init_one_table(db_name.c_str(), db_name.length(),
-                            view_name.c_str(), view_name.length(),
-                            view_name.c_str(), TL_READ);
+  TABLE_LIST table_list(db_name.c_str(), db_name.length(), view_name.c_str(),
+                        view_name.length(), view_name.c_str(), TL_READ);
 
   // Initialize timestamp
   table_list.timestamp.str = table_list.timestamp_buffer;
@@ -1788,6 +1785,37 @@ bool migrate_plugin_table_to_dd(THD *thd) {
 }
 
 /**
+  Migration of NDB tables is deferred until later, except for legacy privilege
+  tables stored in NDB, which must be migrated now so that they can be moved to
+  InnoDB later in the upgrade.
+
+  To check whether the table is a NDB table, look for the presence of a
+  table_name.ndb file in the data directory. These files still exist at this
+  point, though they will be permanently removed later in the upgrade.
+*/
+static bool is_skipped_ndb_table(const char *db_name, const char *table_name) {
+  char path[FN_REFLEN];
+  build_table_filename(path, FN_REFLEN - 1, db_name, table_name,
+                       NDB_EXT.c_str(), 0);
+
+  if (access(path, F_OK)) {
+    if (errno == ENOENT) return false;
+  }
+
+  if (strcmp("mysql", db_name) == 0) {
+    if ((strcmp("user", table_name) == 0) || (strcmp("db", table_name) == 0) ||
+        (strcmp("tables_priv", table_name) == 0) ||
+        (strcmp("columns_priv", table_name) == 0) ||
+        (strcmp("procs_priv", table_name) == 0) ||
+        (strcmp("proxies_priv", table_name) == 0)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
   Scan the database to identify all .frm files.
   Triggers existence will be checked only for tables found here.
 */
@@ -1848,6 +1876,9 @@ bool migrate_all_frm_to_dd(THD *thd, const char *dbname,
           strcmp(schema_name, PERFORMANCE_SCHEMA_DB_NAME.str) == 0;
 
       if (is_skip_table) continue;
+
+      // Skip NDB tables which are upgraded later by the ndbcluster plugin
+      if (is_skipped_ndb_table(schema_name, table_name)) continue;
 
       log_sink_buffer_check_timeout();
 

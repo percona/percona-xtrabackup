@@ -177,7 +177,7 @@ int zReader::setup_zstream() {
 /** Fetch the BLOB.
 @return DB_SUCCESS on success, DB_FAIL on error. */
 dberr_t zReader::fetch() {
-  DBUG_ENTER("zReader::fetch");
+  DBUG_TRACE;
 
   dberr_t err = DB_SUCCESS;
 
@@ -239,7 +239,7 @@ end_of_blob:
   inflateEnd(&m_stream);
   mem_heap_free(m_heap);
   UNIV_MEM_ASSERT_RW(m_rctx.m_buf, m_stream.total_out);
-  DBUG_RETURN(err);
+  return err;
 }
 
 #ifdef UNIV_DEBUG
@@ -425,7 +425,7 @@ dberr_t btr_store_big_rec_extern_fields(trx_t *trx, btr_pcur_t *pcur,
   ut_ad(btr_mtr);
   ut_ad(mtr_memo_contains_flagged(btr_mtr, dict_index_get_lock(index),
                                   MTR_MEMO_X_LOCK | MTR_MEMO_SX_LOCK) ||
-        index->table->is_intrinsic());
+        index->table->is_intrinsic() || !index->is_committed());
   ut_ad(
       mtr_is_block_fix(btr_mtr, rec_block, MTR_MEMO_PAGE_X_FIX, index->table));
   ut_ad(buf_block_get_frame(rec_block) == page_align(rec));
@@ -1087,7 +1087,7 @@ mark as extern storage in a record inserted for an update.
 @return number of flagged external columns */
 ulint btr_push_update_extern_fields(dtuple_t *tuple, const upd_t *update,
                                     mem_heap_t *heap) {
-  DBUG_ENTER("btr_push_update_extern_fields");
+  DBUG_TRACE;
 
   ulint n_pushed = 0;
   ulint n;
@@ -1152,7 +1152,7 @@ ulint btr_push_update_extern_fields(dtuple_t *tuple, const upd_t *update,
     }
   }
 
-  DBUG_RETURN(n_pushed);
+  return n_pushed;
 }
 
 /** Gets the externally stored size of a record, in units of a database page.

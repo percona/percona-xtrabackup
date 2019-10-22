@@ -33,6 +33,7 @@
 
 #include "plugin/x/generated/mysqlx_version.h"
 #include "plugin/x/src/helper/to_string.h"
+#include "plugin/x/tests/driver/common/utils_string_parsing.h"
 #include "plugin/x/tests/driver/processor/commands/command.h"
 #include "plugin/x/tests/driver/processor/commands/mysqlxtest_error_names.h"
 

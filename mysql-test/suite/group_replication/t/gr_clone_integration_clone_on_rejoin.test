@@ -22,7 +22,6 @@
 --source include/have_debug_sync.inc
 --source include/linux.inc
 --source include/have_mysqld_monitoring_process.inc
---source include/have_openssl.inc
 --source include/have_clone_plugin.inc
 --source include/have_group_replication_plugin.inc
 --let $rpl_server_count= 3
@@ -220,6 +219,7 @@ UNINSTALL PLUGIN clone;
 set session sql_log_bin=0;
 call mtr.add_suppression("Due to the number of missing transactions being higher than the configured threshold of*");
 call mtr.add_suppression("Member was expelled from the group due to network failures, changing member status to ERROR.");
+call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
 call mtr.add_suppression("Started auto-rejoin procedure attempt*");
 call mtr.add_suppression("Auto-rejoin procedure attempt 1 of 1");
 call mtr.add_suppression("Clone removing all user data for provisioning: Started");

@@ -105,6 +105,22 @@ inline std::ostream &operator<<(std::ostream &out, const lock_rec_t &lock) {
   return (lock.print(out));
 }
 
+/**
+Checks if the `mode` is LOCK_S or LOCK_X, which means the lock is a
+Next Key Lock, a.k.a. LOCK_ORDINARY, as opposed to Predicate Lock,
+GAP lock, Insert Intention or Record Lock.
+@param  mode  A mode and flags, of a non-waiting lock.
+@return true iff the only bits set in `mode` are LOCK_S or LOCK_X */
+UNIV_INLINE
+bool lock_mode_is_next_key_lock(ulint mode) {
+  static_assert(LOCK_ORDINARY == 0, "LOCK_ORDINARY must be 0 (no flags)");
+  ut_ad((mode & LOCK_WAIT) == 0);
+  ut_ad((mode & LOCK_TYPE_MASK) == 0);
+  ut_ad(((mode & ~(LOCK_MODE_MASK)) == LOCK_ORDINARY) ==
+        (mode == LOCK_S || mode == LOCK_X));
+  return (mode & ~(LOCK_MODE_MASK)) == LOCK_ORDINARY;
+}
+
 /** Lock struct; protected by lock_sys->mutex */
 struct lock_t {
   /** transaction owning the lock */
@@ -174,6 +190,12 @@ struct lock_t {
 
   /** @return true if the not gap lock bit is set */
   bool is_record_not_gap() const { return (type_mode & LOCK_REC_NOT_GAP); }
+
+  /** @return true iff the lock is a Next Key Lock */
+  bool is_next_key_lock() const {
+    return is_record_lock() &&
+           lock_mode_is_next_key_lock(type_mode & ~(LOCK_WAIT | LOCK_REC));
+  }
 
   /** @return true if the insert intention bit is set */
   bool is_insert_intention() const {
@@ -276,14 +298,6 @@ inline std::ostream &operator<<(std::ostream &out, const lock_t &lock) {
 #ifdef UNIV_DEBUG
 extern ibool lock_print_waits;
 #endif /* UNIV_DEBUG */
-
-/** Restricts the length of search we will do in the waits-for
-graph of transactions */
-static const ulint LOCK_MAX_N_STEPS_IN_DEADLOCK_CHECK = 1000000;
-
-/** Restricts the search depth we will do in the waits-for graph of
-transactions */
-static const ulint LOCK_MAX_DEPTH_IN_DEADLOCK_CHECK = 200;
 
 /* Safety margin when creating a new record lock: this many extra records
 can be inserted to the page without need to create a lock with a bigger
@@ -719,18 +733,18 @@ class RecLock {
   }
 
   /**
-  Enqueue a lock wait for a transaction. If it is a high priority
-  transaction (cannot rollback) then jump ahead in the record lock wait
-  queue and if the transaction at the head of the queue is itself waiting
-  roll it back.
-  @param[in, out] wait_for	The lock that the the joining
-                                  transaction is waiting for
-  @param[in] prdt			Predicate [optional]
-  @return DB_LOCK_WAIT, DB_DEADLOCK, or
-          DB_SUCCESS_LOCKED_REC; DB_SUCCESS_LOCKED_REC means that
-          there was a deadlock, but another transaction was chosen
-          as a victim, and we got the lock immediately: no need to
-          wait then */
+  Enqueue a lock wait for a transaction. If it is a high priority transaction
+  (cannot rollback) then try to jump ahead in the record lock wait queue. Also
+  check if async rollback was request for our trx.
+  @param[in, out] wait_for      The lock that the the joining transaction is
+                                waiting for
+  @param[in] prdt               Predicate [optional]
+  @return DB_LOCK_WAIT, DB_DEADLOCK, or DB_SUCCESS_LOCKED_REC
+  @retval DB_DEADLOCK means that async rollback was requested for our trx
+  @retval DB_SUCCESS_LOCKED_REC means that we are High Priority transaction and
+                                we've managed to jump in front of other waiting
+                                transactions and got the lock granted, so there
+                                is no need to wait. */
   dberr_t add_to_waitq(const lock_t *wait_for, const lock_prdt_t *prdt = NULL);
 
   /**
@@ -807,23 +821,6 @@ class RecLock {
                           rec hash and the transaction lock list
   @param[in] add_to_hash	If the lock should be added to the hash table */
   void lock_add(lock_t *lock, bool add_to_hash);
-
-  /**
-  Check and resolve any deadlocks
-  @param[in, out] lock		The lock being acquired
-  @return DB_LOCK_WAIT, DB_DEADLOCK, or
-          DB_SUCCESS_LOCKED_REC; DB_SUCCESS_LOCKED_REC means that
-          there was a deadlock, but another transaction was chosen
-          as a victim, and we got the lock immediately: no need to
-          wait then */
-  dberr_t deadlock_check(lock_t *lock);
-
-  /**
-  Check the outcome of the deadlock check
-  @param[in,out] victim_trx	Transaction selected for rollback
-  @param[in,out] lock		Lock being requested
-  @return DB_LOCK_WAIT, DB_DEADLOCK or DB_SUCCESS_LOCKED_REC */
-  dberr_t check_deadlock_result(const trx_t *victim_trx, lock_t *lock);
 
   /**
   Setup the context from the requirements */
@@ -1058,11 +1055,11 @@ UNIV_INLINE
 ulint lock_mode_compatible(enum lock_mode mode1, enum lock_mode mode2);
 
 /** Calculates if lock mode 1 is stronger or equal to lock mode 2.
-@param[in]	mode1	lock mode
-@param[in]	mode2	lock mode
-@return nonzero if mode1 stronger or equal to mode2 */
+@param[in]	mode1	lock mode 1
+@param[in]	mode2	lock mode 2
+@return true iff mode1 stronger or equal to mode2 */
 UNIV_INLINE
-ulint lock_mode_stronger_or_eq(enum lock_mode mode1, enum lock_mode mode2);
+bool lock_mode_stronger_or_eq(enum lock_mode mode1, enum lock_mode mode2);
 
 /** Gets the wait flag of a lock.
  @return LOCK_WAIT if waiting, 0 if not */
@@ -1083,13 +1080,36 @@ lock_t *lock_rec_find_similar_on_page(ulint type_mode, ulint heap_no,
 
 /** Checks if a transaction has the specified table lock, or stronger. This
 function should only be called by the thread that owns the transaction.
+This function acquires trx->mutex which protects trx->lock.table_locks, but you
+should understand that this only makes it easier to argue against races at the
+level of access to the data structure, yet does not buy us any protection at
+the higher level of making actual decisions based on the result of this call -
+it may happen that another thread is performing lock_trx_table_locks_remove(),
+and even though lock_table_has returned true to the caller, the lock is no
+longer in possession of trx once the caller gets to evaluate if/else condition
+based on the result.
+Therefore it is up to caller to make sure that the context of the call to this
+function and making any decisions based on the result is protected from any
+concurrent modifications. This in turn makes the whole trx_mutex_enter/exit
+a bit redundant, but it does not affect performance yet makes the reasoning
+about data structure a bit easier and protects trx->lock.table_locks data
+structure from corruption in case our high level reasoning about absence of
+parallel modifications turns out wrong.
 @param[in]	trx	transaction
 @param[in]	table	table
 @param[in]	mode	lock mode
 @return lock or NULL */
 UNIV_INLINE
-const lock_t *lock_table_has(const trx_t *trx, const dict_table_t *table,
-                             enum lock_mode mode);
+bool lock_table_has(const trx_t *trx, const dict_table_t *table,
+                    enum lock_mode mode);
+
+/** Handles writing the information about found deadlock to the log files
+and caches it for future lock_latest_err_file() calls (for example used by
+SHOW ENGINE INNODB STATUS)
+@param[in] trxs_on_cycle  trxs causing deadlock, i-th waits for i+1-th
+@param[in] victim_trx     the trx from trx_on_cycle which will be rolled back */
+void lock_notify_about_deadlock(const ut::vector<const trx_t *> &trxs_on_cycle,
+                                const trx_t *victim_trx);
 
 #include "lock0priv.ic"
 

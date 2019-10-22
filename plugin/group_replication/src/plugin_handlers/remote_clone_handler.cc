@@ -20,6 +20,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "plugin/group_replication/include/plugin_handlers/remote_clone_handler.h"
+#include "plugin/group_replication/include/leave_group_on_failure.h"
 #include "plugin/group_replication/include/plugin.h"
 
 [[noreturn]] void *Remote_clone_handler::launch_thread(void *arg) {
@@ -124,7 +125,7 @@ Remote_clone_handler::check_clone_plugin_presence() {
 
   std::string conditional_query =
       "SELECT COUNT(*)=1 FROM information_schema.plugins WHERE plugin_name = "
-      "\"clone\" AND plugin_status = \"ACTIVE\";";
+      "\'clone\' AND plugin_status = \'ACTIVE\';";
   bool is_present = false;
   std::string error_msg;
   long error = sql_command_interface->execute_conditional_query(
@@ -375,21 +376,21 @@ int Remote_clone_handler::set_clone_ssl_options(
   int error = 0;
 
   if (!ssl_ca.empty()) {
-    std::string ssl_ca_query = " SET GLOBAL clone_ssl_ca = \"";
+    std::string ssl_ca_query = " SET GLOBAL clone_ssl_ca = \'";
     ssl_ca_query.append(ssl_ca);
-    ssl_ca_query.append("\"");
+    ssl_ca_query.append("\'");
     error = sql_command_interface->execute_query(ssl_ca_query);
   }
   if (!error && !ssl_cert.empty()) {
-    std::string ssl_cert_query = " SET GLOBAL clone_ssl_cert = \"";
+    std::string ssl_cert_query = " SET GLOBAL clone_ssl_cert = \'";
     ssl_cert_query.append(ssl_cert);
-    ssl_cert_query.append("\"");
+    ssl_cert_query.append("\'");
     error = sql_command_interface->execute_query(ssl_cert_query);
   }
   if (!error && !ssl_key.empty()) {
-    std::string ssl_key_query = " SET GLOBAL clone_ssl_key = \"";
+    std::string ssl_key_query = " SET GLOBAL clone_ssl_key = \'";
     ssl_key_query.append(ssl_key);
-    ssl_key_query.append("\"");
+    ssl_key_query.append("\'");
     error = sql_command_interface->execute_query(ssl_key_query);
   }
   return error;
@@ -397,7 +398,13 @@ int Remote_clone_handler::set_clone_ssl_options(
 
 int Remote_clone_handler::fallback_to_recovery_or_leave(
     Sql_service_command_interface *sql_command_interface, bool critical_error) {
-  if (sql_command_interface->set_super_read_only()) {
+  // Do nothing if the server is shutting down.
+  // The stop process will leave the group
+  if (get_server_shutdown_status()) return 0;
+
+  // If it failed to (re)connect to the server or the set read only query
+  if (!sql_command_interface->is_session_valid() ||
+      sql_command_interface->set_super_read_only()) {
     abort_plugin_process(
         "Cannot re-enable the super read only after clone failure.");
     return 1;
@@ -420,71 +427,18 @@ int Remote_clone_handler::fallback_to_recovery_or_leave(
 
   if (!critical_error) {
     LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_RECOVERY_STRAT_FALLBACK,
-                 "Distributed Recovery.");
+                 "Incremental Recovery.");
     recovery_module->start_recovery(this->m_group_name, this->m_view_id);
     return 0;
   } else {
-    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_RECOVERY_STRAT_NO_FALLBACK);
-
-    Notification_context ctx;
-    // If you can't leave at least force the Error state.
-    group_member_mgr->update_member_status(
-        local_member_info->get_uuid(), Group_member_info::MEMBER_ERROR, ctx);
-
-    /*
-      unblock threads waiting for the member to become ONLINE
-    */
-    terminate_wait_on_start_process();
-
-    /* Single state update. Notify right away. */
-    notify_and_reset_ctx(ctx);
-
-    Plugin_gcs_view_modification_notifier view_change_notifier;
-    view_change_notifier.start_view_modification();
-    Gcs_operations::enum_leave_state leave_state =
-        gcs_module->leave(&view_change_notifier);
-
-    Replication_thread_api::rpl_channel_stop_all(
-        CHANNEL_APPLIER_THREAD | CHANNEL_RECEIVER_THREAD, m_stop_wait_timeout);
-
-    longlong errcode = 0;
-    enum loglevel log_severity = WARNING_LEVEL;
-    /* purecov: begin inspected */
-    switch (leave_state) {
-      case Gcs_operations::ERROR_WHEN_LEAVING:
-        errcode = ER_GRP_RPL_FAILED_TO_CONFIRM_IF_SERVER_LEFT_GRP;
-        log_severity = ERROR_LEVEL;
-        break;
-      case Gcs_operations::ALREADY_LEAVING:
-        errcode = ER_GRP_RPL_SERVER_IS_ALREADY_LEAVING;
-        break;
-      case Gcs_operations::ALREADY_LEFT:
-        errcode = ER_GRP_RPL_SERVER_ALREADY_LEFT;
-        break;
-      case Gcs_operations::NOW_LEAVING:
-        break;
-    }
-    /* purecov: end */
-
-    if (errcode) LogPluginErr(log_severity, errcode);
-
-    if (Gcs_operations::ERROR_WHEN_LEAVING != leave_state &&
-        Gcs_operations::ALREADY_LEFT != leave_state) {
-      LogPluginErr(INFORMATION_LEVEL, ER_GRP_RPL_WAITING_FOR_VIEW_UPDATE);
-      if (view_change_notifier.wait_for_view_modification()) {
-        /* purecov: begin inspected */
-        LogPluginErr(WARNING_LEVEL,
-                     ER_GRP_RPL_TIMEOUT_RECEIVING_VIEW_CHANGE_ON_SHUTDOWN);
-        /* purecov: end */
-      }
-    }
-    gcs_module->remove_view_notifer(&view_change_notifier);
-
-    if (get_exit_state_action_var() == EXIT_STATE_ACTION_ABORT_SERVER) {
-      abort_plugin_process(
-          "Fatal error while Group Replication was using clone for "
-          "provisioning.");
-    }
+    const char *exit_state_action_abort_log_message =
+        "Fatal error while Group Replication was provisoning with Clone.";
+    leave_group_on_failure::mask leave_actions;
+    leave_actions.set(leave_group_on_failure::SKIP_SET_READ_ONLY, true);
+    leave_actions.set(leave_group_on_failure::HANDLE_EXIT_STATE_ACTION, true);
+    leave_group_on_failure::leave(
+        leave_actions, ER_GRP_RPL_RECOVERY_STRAT_NO_FALLBACK,
+        PSESSION_INIT_THREAD, nullptr, exit_state_action_abort_log_message);
     return 1;
   }
 }
@@ -492,7 +446,7 @@ int Remote_clone_handler::fallback_to_recovery_or_leave(
 int Remote_clone_handler::update_donor_list(
     Sql_service_command_interface *sql_command_interface, std::string &hostname,
     std::string &port) {
-  std::string donor_list_query = " SET GLOBAL clone_valid_donor_list = \"";
+  std::string donor_list_query = " SET GLOBAL clone_valid_donor_list = \'";
 
   // Escape possible weird hostnames
   plugin_escape_string(hostname);
@@ -500,7 +454,7 @@ int Remote_clone_handler::update_donor_list(
   donor_list_query.append(hostname);
   donor_list_query.append(":");
   donor_list_query.append(port);
-  donor_list_query.append("\"");
+  donor_list_query.append("\'");
 
   std::string error_msg;
   if (sql_command_interface->execute_query(donor_list_query, error_msg)) {

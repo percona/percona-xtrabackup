@@ -29,6 +29,7 @@
 #include "my_byteorder.h"
 #include "mysql.h"
 #include "sql/mysqld.h"
+#include "sql/protocol_classic.h"
 #include "sql/set_var.h"
 #include "sql/sql_class.h"
 #include "sql/sql_show.h"
@@ -240,7 +241,7 @@ DEFINE_METHOD(MYSQL *, mysql_clone_connect,
               (THD * thd, const char *host, uint32_t port, const char *user,
                const char *passwd, mysql_clone_ssl_context *ssl_ctx,
                MYSQL_SOCKET *socket)) {
-  DBUG_ENTER("mysql_clone_connect");
+  DBUG_TRACE;
 
   /* Set default as 5 seconds */
   uint net_read_timeout = 5;
@@ -296,6 +297,7 @@ DEFINE_METHOD(MYSQL *, mysql_clone_connect,
   /* Enable compression. */
   if (ssl_ctx->m_enable_compression) {
     mysql_options(mysql, MYSQL_OPT_COMPRESS, nullptr);
+    mysql_extension_set_server_extn(mysql, ssl_ctx->m_server_extn);
   }
 
   ret_mysql =
@@ -310,7 +312,7 @@ DEFINE_METHOD(MYSQL *, mysql_clone_connect,
     LogErr(INFORMATION_LEVEL, ER_CLONE_CLIENT_TRACE, err_buf);
 
     mysql_close(mysql);
-    DBUG_RETURN(nullptr);
+    return nullptr;
   }
 
   NET *net = &mysql->net;
@@ -344,24 +346,24 @@ DEFINE_METHOD(MYSQL *, mysql_clone_connect,
 
     my_error(ER_CLONE_DONOR, MYF(0), err_buf);
 
-    snprintf(err_buf, sizeof(err_buf), "COM_CLONE failed %d : %s",
+    snprintf(err_buf, sizeof(err_buf), "COM_CLONE failed: %d : %s",
              net->last_errno, net->last_error);
     LogErr(INFORMATION_LEVEL, ER_CLONE_CLIENT_TRACE, err_buf);
 
     mysql_close(mysql);
     mysql = nullptr;
   }
-  DBUG_RETURN(mysql);
+  return mysql;
 }
 
 DEFINE_METHOD(int, mysql_clone_send_command,
               (THD * thd, MYSQL *connection, bool set_active, uchar command,
                uchar *com_buffer, size_t buffer_length)) {
-  DBUG_ENTER("mysql_clone_send_command");
+  DBUG_TRACE;
   NET *net = &connection->net;
 
   if (net->last_errno != 0) {
-    DBUG_RETURN(static_cast<int>(net->last_errno));
+    return static_cast<int>(net->last_errno);
   }
 
   net_clear_error(net);
@@ -369,13 +371,13 @@ DEFINE_METHOD(int, mysql_clone_send_command,
 
   if (set_active && thd->killed != THD::NOT_KILLED) {
     my_error(ER_QUERY_INTERRUPTED, MYF(0));
-    DBUG_RETURN(ER_QUERY_INTERRUPTED);
+    return ER_QUERY_INTERRUPTED;
   }
 
   auto result =
       net_write_command(net, command, nullptr, 0, com_buffer, buffer_length);
   if (!result) {
-    DBUG_RETURN(0);
+    return 0;
   }
 
   int err = static_cast<int>(net->last_errno);
@@ -389,22 +391,22 @@ DEFINE_METHOD(int, mysql_clone_send_command,
   }
 
   DBUG_ASSERT(err != 0);
-  DBUG_RETURN(err);
+  return err;
 }
 
 DEFINE_METHOD(int, mysql_clone_get_response,
               (THD * thd, MYSQL *connection, bool set_active, uint32_t timeout,
                uchar **packet, size_t *length, size_t *net_length)) {
-  DBUG_ENTER("mysql_clone_get_response");
+  DBUG_TRACE;
   NET *net = &connection->net;
 
   if (net->last_errno != 0) {
-    DBUG_RETURN(static_cast<int>(net->last_errno));
+    return static_cast<int>(net->last_errno);
   }
 
   if (set_active && thd->killed != THD::NOT_KILLED) {
     my_error(ER_QUERY_INTERRUPTED, MYF(0));
-    DBUG_RETURN(ER_QUERY_INTERRUPTED);
+    return ER_QUERY_INTERRUPTED;
   }
 
   net_new_transaction(net);
@@ -428,14 +430,19 @@ DEFINE_METHOD(int, mysql_clone_get_response,
   server_extn.m_user_data = static_cast<void *>(net_length);
   server_extn.m_before_header = func_before;
   server_extn.m_after_header = func_after;
-
   auto saved_extn = net->extension;
+  if (saved_extn != nullptr && net->compress)
+    server_extn.compress_ctx =
+        (static_cast<NET_SERVER *>(saved_extn))->compress_ctx;
+  else
+    server_extn.compress_ctx.algorithm = MYSQL_UNCOMPRESSED;
   net->extension = &server_extn;
 
   *net_length = 0;
   *length = my_net_read(net);
 
   net->extension = saved_extn;
+  server_extn.compress_ctx.algorithm = MYSQL_UNCOMPRESSED;
 
   /* Reset timeout back to default value. */
   my_net_set_read_timeout(net, thd->variables.net_read_timeout);
@@ -443,7 +450,7 @@ DEFINE_METHOD(int, mysql_clone_get_response,
   *packet = net->read_pos;
 
   if (*length != packet_error && *length != 0) {
-    DBUG_RETURN(0);
+    return 0;
   }
 
   int err = static_cast<int>(net->last_errno);
@@ -460,12 +467,12 @@ DEFINE_METHOD(int, mysql_clone_get_response,
     err = ER_NET_PACKETS_OUT_OF_ORDER;
     my_error(err, MYF(0));
   }
-  DBUG_RETURN(err);
+  return err;
 }
 
 DEFINE_METHOD(int, mysql_clone_kill,
               (MYSQL * connection, MYSQL *kill_connection)) {
-  DBUG_ENTER("mysql_clone_kill");
+  DBUG_TRACE;
 
   auto kill_conn_id = kill_connection->thread_id;
 
@@ -475,12 +482,12 @@ DEFINE_METHOD(int, mysql_clone_kill,
   auto err = mysql_real_query(connection, kill_buffer,
                               static_cast<ulong>(strlen(kill_buffer)));
 
-  DBUG_RETURN(err);
+  return err;
 }
 
 DEFINE_METHOD(void, mysql_clone_disconnect,
               (THD * thd, MYSQL *mysql, bool is_fatal, bool clear_error)) {
-  DBUG_ENTER("mysql_clone_disconnect");
+  DBUG_TRACE;
 
   if (thd != nullptr) {
     thd->clear_clone_vio();
@@ -503,38 +510,36 @@ DEFINE_METHOD(void, mysql_clone_disconnect,
 
   /* Disconnect */
   mysql_close(mysql);
-  DBUG_VOID_RETURN;
 }
 
 DEFINE_METHOD(void, mysql_clone_get_error,
               (THD * thd, uint32_t *err_num, const char **err_mesg)) {
-  DBUG_ENTER("mysql_clone_get_error");
+  DBUG_TRACE;
   *err_num = 0;
   *err_mesg = nullptr;
   /* Check if THD exists. */
   if (thd == nullptr) {
-    DBUG_VOID_RETURN;
+    return;
   }
   /* Check if DA exists. */
   auto da = thd->get_stmt_da();
   if (da == nullptr || !da->is_error()) {
-    DBUG_VOID_RETURN;
+    return;
   }
   /* Get error from DA. */
   *err_num = da->mysql_errno();
   *err_mesg = da->message_text();
-  DBUG_VOID_RETURN;
 }
 
 DEFINE_METHOD(int, mysql_clone_get_command,
               (THD * thd, uchar *command, uchar **com_buffer,
                size_t *buffer_length)) {
-  DBUG_ENTER("mysql_clone_get_command");
+  DBUG_TRACE;
 
   NET *net = thd->get_protocol_classic()->get_net();
 
   if (net->last_errno != 0) {
-    DBUG_RETURN(static_cast<int>(net->last_errno));
+    return static_cast<int>(net->last_errno);
   }
 
   /* flush any data in write buffer */
@@ -555,7 +560,7 @@ DEFINE_METHOD(int, mysql_clone_get_command,
       ++(*com_buffer);
       --(*buffer_length);
 
-      DBUG_RETURN(0);
+      return 0;
     }
   }
 
@@ -566,40 +571,40 @@ DEFINE_METHOD(int, mysql_clone_get_command,
     err = ER_NET_PACKETS_OUT_OF_ORDER;
     my_error(err, MYF(0));
   }
-  DBUG_RETURN(err);
+  return err;
 }
 
 DEFINE_METHOD(int, mysql_clone_send_response,
               (THD * thd, bool secure, uchar *packet, size_t length)) {
-  DBUG_ENTER("mysql_clone_send_response");
+  DBUG_TRACE;
   NET *net = thd->get_protocol_classic()->get_net();
 
   if (net->last_errno != 0) {
-    DBUG_RETURN(static_cast<int>(net->last_errno));
+    return static_cast<int>(net->last_errno);
   }
 
   auto conn_type = thd->get_vio_type();
 
   if (secure && conn_type != VIO_TYPE_SSL) {
     my_error(ER_CLONE_ENCRYPTION, MYF(0));
-    DBUG_RETURN(ER_CLONE_ENCRYPTION);
+    return ER_CLONE_ENCRYPTION;
   }
 
   net_clear(net, true);
 
   if (!my_net_write(net, packet, length) && !net_flush(net)) {
-    DBUG_RETURN(0);
+    return 0;
   }
 
   int err = static_cast<int>(net->last_errno);
 
   DBUG_ASSERT(err != 0);
-  DBUG_RETURN(err);
+  return err;
 }
 
 DEFINE_METHOD(int, mysql_clone_send_error,
               (THD * thd, uchar err_cmd, bool is_fatal)) {
-  DBUG_ENTER("mysql_clone_send_error");
+  DBUG_TRACE;
 
   uchar err_packet[1 + 4 + MYSQL_ERRMSG_SIZE + 1];
   uchar *buf_ptr = &err_packet[0];
@@ -626,7 +631,7 @@ DEFINE_METHOD(int, mysql_clone_send_error,
       thd->shutdown_active_vio();
       mysql_mutex_unlock(&thd->LOCK_thd_data);
 
-      DBUG_RETURN(da->mysql_errno());
+      return da->mysql_errno();
     }
   } else {
     int4store(buf_ptr, ER_INTERNAL_ERROR);
@@ -640,7 +645,7 @@ DEFINE_METHOD(int, mysql_clone_send_error,
   NET *net = thd->get_protocol_classic()->get_net();
 
   if (net->last_errno != 0) {
-    DBUG_RETURN(static_cast<int>(net->last_errno));
+    return static_cast<int>(net->last_errno);
   }
 
   DBUG_ASSERT(!is_fatal);
@@ -658,7 +663,7 @@ DEFINE_METHOD(int, mysql_clone_send_error,
       err = ER_NET_PACKETS_OUT_OF_ORDER;
       my_error(err, MYF(0));
     }
-    DBUG_RETURN(err);
+    return err;
   }
-  DBUG_RETURN(0);
+  return 0;
 }

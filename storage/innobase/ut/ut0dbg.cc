@@ -90,10 +90,6 @@ void ut_set_assert_callback(std::function<void()> &callback) {
       "InnoDB: about forcing recovery.\n",
       stderr);
 
-#ifndef DBUG_OFF
-  dump_trace();
-#endif /* DBUG_OFF */
-
   fflush(stderr);
   fflush(stdout);
   /* Call any registered callback function. */

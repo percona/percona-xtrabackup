@@ -1168,8 +1168,11 @@ dberr_t sel_set_rec_lock(btr_pcur_t *pcur, const rec_t *rec,
   block = btr_pcur_get_block(pcur);
 
   trx = thr_get_trx(thr);
+  trx_mutex_enter(trx);
+  bool too_many_locks = (UT_LIST_GET_LEN(trx->lock.trx_locks) > 10000);
+  trx_mutex_exit(trx);
 
-  if (UT_LIST_GET_LEN(trx->lock.trx_locks) > 10000) {
+  if (too_many_locks) {
     if (buf_LRU_buf_pool_running_out()) {
       return (DB_LOCK_TABLE_FULL);
     }
@@ -2779,7 +2782,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_sel_store_mysql_field_func(
     const dict_index_t *index, const ulint *offsets, ulint field_no,
     const mysql_row_templ_t *templ, ulint sec_field_no,
     lob::undo_vers_t *lob_undo, mem_heap_t *blob_heap) {
-  DBUG_ENTER("row_sel_store_mysql_field_func");
+  DBUG_TRACE;
 
   const byte *data;
   ulint len;
@@ -2859,7 +2862,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_sel_store_mysql_field_func(
       ut_a((!prebuilt->idx_cond &&
             prebuilt->m_mysql_handler->end_range != nullptr) ||
            (prebuilt->trx->isolation_level == TRX_ISO_READ_UNCOMMITTED));
-      DBUG_RETURN(false);
+      return false;
     }
 
     if (lob_undo != nullptr) {
@@ -2900,7 +2903,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_sel_store_mysql_field_func(
       memcpy(mysql_rec + templ->mysql_col_offset,
              (const byte *)prebuilt->default_rec + templ->mysql_col_offset,
              templ->mysql_col_len);
-      DBUG_RETURN(true);
+      return true;
     }
 
     if (DATA_LARGE_MTYPE(templ->type) || DATA_GEOMETRY_MTYPE(templ->type)) {
@@ -2948,7 +2951,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_sel_store_mysql_field_func(
         ~(byte)templ->mysql_null_bit_mask;
   }
 
-  DBUG_RETURN(true);
+  return true;
 }
 
 bool row_sel_store_mysql_rec(byte *mysql_rec, row_prebuilt_t *prebuilt,
@@ -2959,7 +2962,7 @@ bool row_sel_store_mysql_rec(byte *mysql_rec, row_prebuilt_t *prebuilt,
                              mem_heap_t *blob_heap) {
   std::vector<const dict_col_t *> template_col;
 
-  DBUG_ENTER("row_sel_store_mysql_rec");
+  DBUG_TRACE;
 
   ut_ad(rec_clust || index == prebuilt->index);
   ut_ad(!rec_clust || index->is_clustered());
@@ -3071,7 +3074,7 @@ bool row_sel_store_mysql_rec(byte *mysql_rec, row_prebuilt_t *prebuilt,
     if (!row_sel_store_mysql_field(mysql_rec, prebuilt, rec, index, offsets,
                                    field_no, templ, sec_field_no, lob_undo,
                                    blob_heap)) {
-      DBUG_RETURN(false);
+      return false;
     }
   }
 
@@ -3088,7 +3091,7 @@ bool row_sel_store_mysql_rec(byte *mysql_rec, row_prebuilt_t *prebuilt,
     }
   }
 
-  DBUG_RETURN(true);
+  return true;
 }
 
 /** Builds a previous version of a clustered index record for a consistent read
@@ -3115,7 +3118,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
                                       mem_heap_t **offset_heap,
                                       rec_t **old_vers, const dtuple_t **vrow,
                                       mtr_t *mtr, lob::undo_vers_t *lob_undo) {
-  DBUG_ENTER("row_sel_build_prev_vers_for_mysql");
+  DBUG_TRACE;
 
   dberr_t err;
 
@@ -3129,7 +3132,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
       rec, mtr, clust_index, offsets, read_view, offset_heap,
       prebuilt->old_vers_heap, old_vers, vrow, lob_undo);
 
-  DBUG_RETURN(err);
+  return err;
 }
 
 /** Helper class to cache clust_rec and old_ver */
@@ -3177,7 +3180,7 @@ dberr_t Row_sel_get_clust_rec_for_mysql::operator()(
     que_thr_t *thr, const rec_t **out_rec, ulint **offsets,
     mem_heap_t **offset_heap, const dtuple_t **vrow, mtr_t *mtr,
     lob::undo_vers_t *lob_undo) {
-  DBUG_ENTER("row_sel_get_clust_rec_for_mysql");
+  DBUG_TRACE;
 
   dict_index_t *clust_index;
   const rec_t *clust_rec;
@@ -3428,7 +3431,7 @@ func_exit:
   }
 
 err_exit:
-  DBUG_RETURN(err);
+  return err;
 }
 
 /** Restores cursor position after it has been stored. We have to take into
@@ -4268,6 +4271,129 @@ static void row_sel_fill_vrow(const rec_t *rec, dict_index_t *index,
     }
   }
 }
+/** The return type of row_compare_row_to_range() which summarizes information
+about the relation between the row being processed, and the range of the scan */
+struct row_to_range_relation_t {
+  /** true: we don't know, false: row is not in range */
+  bool row_can_be_in_range;
+  /** true: we don't know, false: gap has nothing in common with range */
+  bool gap_can_intersect_range;
+  /** true: row exactly matches end of range, false: we don't know */
+  bool row_must_be_at_end;
+};
+
+/** A helper function extracted from row_search_mvcc() which compares the row
+being processed with the range of the scan.
+It does not modify any of it's arguments and returns a summary of situation.
+All the arguments are named the same way as local variables at place of call,
+and have same values. */
+static row_to_range_relation_t row_compare_row_to_range(
+    const bool set_also_gap_locks, const trx_t *const trx,
+    const ibool unique_search, const dict_index_t *const index,
+    const dict_index_t *const clust_index, const rec_t *const rec,
+    const ibool comp, const page_cur_mode_t mode, const ulint direction,
+    const dtuple_t *search_tuple, const ulint *const offsets,
+    const ibool moves_up, const row_prebuilt_t *const prebuilt) {
+  row_to_range_relation_t row_to_range_relation;
+  row_to_range_relation.row_can_be_in_range = true;
+  row_to_range_relation.gap_can_intersect_range = true;
+  row_to_range_relation.row_must_be_at_end = false;
+
+  /* We don't know how to compare row which is on supremum with range, but this
+  should not be a problem because row_search_mvcc "skips" over them without
+  calling our function */
+  ut_ad(!page_rec_is_supremum(rec));
+  if (page_rec_is_supremum(rec)) {
+    return (row_to_range_relation);
+  }
+
+  /* Try to place a lock on the index record; note that delete
+  marked records are a special case in a unique search. If there
+  is a non-delete marked record, then it is enough to lock its
+  existence with LOCK_REC_NOT_GAP. */
+
+  /* If we are doing a 'greater or equal than a primary key
+  value' search from a clustered index, and we find a record
+  that has that exact primary key value, then there is no need
+  to lock the gap before the record, because no insert in the
+  gap can be in our search range. That is, no phantom row can
+  appear that way.
+
+  An example: if col1 is the primary key, the search is WHERE
+  col1 >= 100, and we find a record where col1 = 100, then no
+  need to lock the gap before that record. */
+
+  if (!set_also_gap_locks || trx->skip_gap_locks() ||
+      (unique_search && !rec_get_deleted_flag(rec, comp)) ||
+      dict_index_is_spatial(index) ||
+      (index == clust_index && mode == PAGE_CUR_GE && direction == 0 &&
+       dtuple_get_n_fields_cmp(search_tuple) ==
+           dict_index_get_n_unique(index) &&
+       0 == cmp_dtuple_rec(search_tuple, rec, index, offsets))) {
+    row_to_range_relation.gap_can_intersect_range = false;
+    return (row_to_range_relation);
+  }
+
+  /* We don't know how to handle HANDLER interface */
+  if (prebuilt->used_in_HANDLER) {
+    return (row_to_range_relation);
+  }
+
+  /* While I believe that we handle semi-consistent reads correctly, the proof
+  is quite complicated and lingers on the fact that semi-consistent reads are
+  used only if we don't use gap locks. And fortunately, we've already checked
+  above that trx->skip_gap_locks() is false, so we don't have to go through the
+  whole reasoning about what exactly happens in case the row which is at the
+  end of the range got locked by another transaction, removed, purged, and while
+  we were doing semi-consistent read on it. */
+  ut_ad(!trx->skip_gap_locks());
+  ut_ad(prebuilt->row_read_type == ROW_READ_WITH_LOCKS);
+
+  /* Following heuristics are meant to avoid locking the row itself, or even
+  the gap before it, in case when the row is "after the end of range". The
+  difficulty here is in that the index itself can be declared as either
+  ascending or descending, separately for each column, and cursor can be
+  PAGE_CUR_G(E) or PAGE_CUR_L(E) etc., and direction of scan can be 0,
+  ROW_SEL_NEXT or ROW_SEL_PREV, and this might be a secondary index (with
+  duplicates). So we limit ourselves just to the cases, which are at the
+  same common, tested, actionable and easy to reason about.
+  In particular we only handle cases where we iterate the index in its
+  natural order. */
+  if (index == clust_index && (mode == PAGE_CUR_GE || mode == PAGE_CUR_G) &&
+      (direction == 0 || direction == ROW_SEL_NEXT) &&
+      prebuilt->is_reading_range()) {
+    ut_ad(moves_up);
+    const auto stop_len = dtuple_get_n_fields_cmp(prebuilt->m_stop_tuple);
+    if (0 < stop_len) {
+      const auto index_len = dict_index_get_n_unique(index);
+      ut_ad(prebuilt->m_mysql_handler->end_range != nullptr);
+      if (stop_len <= index_len) {
+        const auto cmp =
+            cmp_dtuple_rec(prebuilt->m_stop_tuple, rec, index, offsets);
+
+        if (cmp < 0) {
+          row_to_range_relation.row_can_be_in_range = false;
+          if (prebuilt->m_stop_tuple_found) {
+            ut_ad(stop_len == index_len);
+            ut_ad(direction != 0);
+            row_to_range_relation.gap_can_intersect_range = false;
+            return (row_to_range_relation);
+          }
+          return (row_to_range_relation);
+        }
+
+        if (cmp == 0) {
+          ut_ad(!prebuilt->m_stop_tuple_found);
+          row_to_range_relation.row_can_be_in_range =
+              prebuilt->m_mysql_handler->end_range->flag != HA_READ_BEFORE_KEY;
+          row_to_range_relation.row_must_be_at_end = stop_len == index_len;
+          return (row_to_range_relation);
+        }
+      }
+    }
+  }
+  return (row_to_range_relation);
+}
 
 /** Searches for rows in the database using cursor.
 Function is mainly used for tables that are shared accorss connection and
@@ -4291,7 +4417,7 @@ It also has optimization such as pre-caching the rows, using AHI, etc.
 dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
                         row_prebuilt_t *prebuilt, ulint match_mode,
                         ulint direction) {
-  DBUG_ENTER("row_search_mvcc");
+  DBUG_TRACE;
 
   dict_index_t *index = prebuilt->index;
   ibool comp = dict_table_is_comp(index->table);
@@ -4347,7 +4473,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   So anything related to traditional index query would not apply to
   it. */
   if (prebuilt->index->type & DICT_FTS) {
-    DBUG_RETURN(DB_END_OF_INDEX);
+    return DB_END_OF_INDEX;
   }
 
 #ifdef UNIV_DEBUG
@@ -4358,16 +4484,16 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 #endif /* UNIV_DEBUG */
 
   if (dict_table_is_discarded(prebuilt->table)) {
-    DBUG_RETURN(DB_TABLESPACE_DELETED);
+    return DB_TABLESPACE_DELETED;
 
   } else if (prebuilt->table->ibd_file_missing) {
-    DBUG_RETURN(DB_TABLESPACE_NOT_FOUND);
+    return DB_TABLESPACE_NOT_FOUND;
 
   } else if (!prebuilt->index_usable) {
-    DBUG_RETURN(DB_MISSING_HISTORY);
+    return DB_MISSING_HISTORY;
 
   } else if (prebuilt->index->is_corrupted()) {
-    DBUG_RETURN(DB_CORRUPTION);
+    return DB_CORRUPTION;
   }
 
   /* We need to get the virtual column values stored in secondary
@@ -5060,38 +5186,24 @@ rec_loop:
   set: the cursor is now placed on a user record */
 
   if (prebuilt->select_lock_type != LOCK_NONE) {
-    /* Try to place a lock on the index record; note that delete
-    marked records are a special case in a unique search. If there
-    is a non-delete marked record, then it is enough to lock its
-    existence with LOCK_REC_NOT_GAP. */
+    auto row_to_range_relation = row_compare_row_to_range(
+        set_also_gap_locks, trx, unique_search, index, clust_index, rec, comp,
+        mode, direction, search_tuple, offsets, moves_up, prebuilt);
 
     ulint lock_type;
-
-    if (!set_also_gap_locks || trx->skip_gap_locks() ||
-        (unique_search && !rec_get_deleted_flag(rec, comp)) ||
-        dict_index_is_spatial(index)) {
-      goto no_gap_lock;
+    if (row_to_range_relation.row_can_be_in_range) {
+      if (row_to_range_relation.gap_can_intersect_range) {
+        lock_type = LOCK_ORDINARY;
+      } else {
+        lock_type = LOCK_REC_NOT_GAP;
+      }
     } else {
-      lock_type = LOCK_ORDINARY;
-    }
-
-    /* If we are doing a 'greater or equal than a primary key
-    value' search from a clustered index, and we find a record
-    that has that exact primary key value, then there is no need
-    to lock the gap before the record, because no insert in the
-    gap can be in our search range. That is, no phantom row can
-    appear that way.
-
-    An example: if col1 is the primary key, the search is WHERE
-    col1 >= 100, and we find a record where col1 = 100, then no
-    need to lock the gap before that record. */
-
-    if (index == clust_index && mode == PAGE_CUR_GE && direction == 0 &&
-        dtuple_get_n_fields_cmp(search_tuple) ==
-            dict_index_get_n_unique(index) &&
-        0 == cmp_dtuple_rec(search_tuple, rec, index, offsets)) {
-    no_gap_lock:
-      lock_type = LOCK_REC_NOT_GAP;
+      if (row_to_range_relation.gap_can_intersect_range) {
+        lock_type = LOCK_GAP;
+      } else {
+        err = DB_RECORD_NOT_FOUND;
+        goto normal_return;
+      }
     }
 
     err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
@@ -5109,6 +5221,9 @@ rec_loop:
         err = DB_SUCCESS;
         // Fall through
       case DB_SUCCESS:
+        if (row_to_range_relation.row_must_be_at_end) {
+          prebuilt->m_stop_tuple_found = true;
+        }
         break;
       case DB_SKIP_LOCKED:
         goto next_rec;
@@ -5134,6 +5249,7 @@ rec_loop:
         a deadlock and the transaction had to wait then
         release the lock it is waiting on. */
 
+        DEBUG_SYNC_C("semi_consistent_read_would_wait");
         err = lock_trx_handle_wait(trx);
 
         switch (err) {
@@ -5175,6 +5291,11 @@ rec_loop:
       default:
 
         goto lock_wait_or_error;
+    }
+  locks_ok:
+    if (err == DB_SUCCESS && !row_to_range_relation.row_can_be_in_range) {
+      err = DB_RECORD_NOT_FOUND;
+      goto normal_return;
     }
   } else {
     /* This is a non-locking consistent read: if necessary, fetch
@@ -5245,7 +5366,6 @@ rec_loop:
     }
   }
 
-locks_ok:
   /* NOTE that at this point rec can be an old version of a clustered
   index record built for a consistent read. We cannot assume after this
   point that rec is on a buffer pool page. Functions like
@@ -5880,7 +6000,7 @@ func_exit:
 
   ut_a(!trx->has_search_latch);
 
-  DBUG_RETURN(err);
+  return err;
 }
 
 /** Count rows in a R-Tree leaf level.

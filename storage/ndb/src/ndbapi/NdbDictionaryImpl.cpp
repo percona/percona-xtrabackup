@@ -2950,10 +2950,21 @@ NdbDictInterface::execSignal(void* dictImpl,
     const NodeFailRep *rep = CAST_CONSTPTR(NodeFailRep,
                                            signal->getDataPtr());
     Uint32 len = NodeFailRep::getNodeMaskLength(signal->getLength());
-    assert(len == NodeBitmask::Size); // only full length in ndbapi
-    for (Uint32 i = BitmaskImpl::find_first(len, rep->theAllNodes);
+    const Uint32* nbm;
+    if (signal->m_noOfSections >= 1)
+    {
+      assert (len == 0);
+      nbm = ptr[0].p;
+      len = ptr[0].sz;
+    }
+    else
+    {
+      assert(len == NodeBitmask::Size); // only full length in ndbapi
+      nbm = rep->theAllNodes;
+    }
+    for (Uint32 i = BitmaskImpl::find_first(len, nbm);
          i != BitmaskImpl::NotFound;
-         i = BitmaskImpl::find_next(len, rep->theAllNodes, i + 1))
+         i = BitmaskImpl::find_next(len, nbm, i + 1))
     {
       if (i <= MAX_DATA_NODE_ID)
       {
@@ -3438,7 +3449,8 @@ void NdbTableImpl::IndirectReader(SimpleProperties::Reader & it,
   NdbTableImpl * impl = static_cast<NdbTableImpl *>(dest);
   Uint16 key = it.getKey();
 
-  if(key == DictTabInfo::FrmData) {
+  /* Metadata may be stored as FrmData or MysqlDictMetadata */
+  if(key == DictTabInfo::FrmData || key == DictTabInfo::MysqlDictMetadata) {
     /* Expand the UtilBuffer to the required length, then copy data in */
     impl->m_frm.grow(it.getPaddedLength());
     it.getString(static_cast<char *>(impl->m_frm.append(it.getValueLen())));
@@ -3450,7 +3462,8 @@ bool NdbTableImpl::IndirectWriter(SimpleProperties::Writer & it,
                                   const void * src) {
   const NdbTableImpl * impl = static_cast<const NdbTableImpl *>(src);
 
-  if(key == DictTabInfo::FrmData)
+  /* Always store metadata as MysqlDictMetadata */
+  if(key == DictTabInfo::MysqlDictMetadata)
     return it.add(key, impl->m_frm.get_data(), impl->m_frm.length());
 
   return true;

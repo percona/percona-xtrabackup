@@ -32,6 +32,7 @@
 #include <new>
 #include <string>
 
+#include "decimal.h"
 #include "field_types.h"  // enum_field_types
 #include "lex_string.h"
 #include "m_ctype.h"
@@ -296,6 +297,7 @@ class Name_string : public Simple_cstring {
   */
   Name_string(const char *str, size_t length) : Simple_cstring(str, length) {}
   Name_string(const LEX_STRING str) : Simple_cstring(str) {}
+  Name_string(const LEX_CSTRING str) : Simple_cstring(str) {}
   Name_string(const char *str, size_t length, bool is_null_terminated)
       : Simple_cstring() {
     set_or_copy(str, length, is_null_terminated);
@@ -823,7 +825,7 @@ class Item : public Parse_tree_node {
     Also used for Item_cond_and/Item_cond_or for creating top AND/OR structure
     of WHERE clause to protect it of optimisation changes in prepared statements
   */
-  Item(THD *thd, Item *item);
+  Item(THD *thd, const Item *item);
 
   /**
     Parse-time context-independent constructor.
@@ -1053,7 +1055,7 @@ class Item : public Parse_tree_node {
   /// Set the data type of the Item to be double precision floating point.
   inline void set_data_type_double() {
     set_data_type(MYSQL_TYPE_DOUBLE);
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     max_length = float_length(decimals);
     collation.set_numeric();
   }
@@ -1061,7 +1063,7 @@ class Item : public Parse_tree_node {
   /// Set the data type of the Item to be single precision floating point.
   inline void set_data_type_float() {
     set_data_type(MYSQL_TYPE_FLOAT);
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     max_length = float_length(decimals);
     collation.set_numeric();
   }
@@ -1069,7 +1071,7 @@ class Item : public Parse_tree_node {
   /// Initialize an Item to be of VARCHAR type, other properties undetermined.
   inline void set_data_type_string_init() {
     set_data_type(MYSQL_TYPE_VARCHAR);
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
   }
 
   /**
@@ -1213,7 +1215,7 @@ class Item : public Parse_tree_node {
   void set_data_type_json() {
     set_data_type(MYSQL_TYPE_JSON);
     collation.set(&my_charset_utf8mb4_bin, DERIVATION_IMPLICIT);
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     max_length = MAX_BLOB_WIDTH;
   }
 
@@ -1231,7 +1233,7 @@ class Item : public Parse_tree_node {
   */
   inline void set_data_type_geometry() {
     set_data_type(MYSQL_TYPE_GEOMETRY);
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     max_length = MAX_BLOB_WIDTH;
   }
 
@@ -1756,8 +1758,8 @@ class Item : public Parse_tree_node {
   type_conversion_status save_str_value_in_field(Field *field, String *result);
 
   virtual Field *get_tmp_table_field() {
-    DBUG_ENTER("Item::get_tmp_table_field");
-    DBUG_RETURN(0);
+    DBUG_TRACE;
+    return 0;
   }
   /* This is also used to create fields in CREATE ... SELECT: */
   virtual Field *tmp_table_field(TABLE *) { return 0; }
@@ -1780,7 +1782,8 @@ class Item : public Parse_tree_node {
     have to be updated in update_used_tables()
   */
   virtual table_map not_null_tables() const { return used_tables(); }
-  /*
+
+  /**
     Returns true if this is a simple constant item like an integer, not
     a constant expression. Used in the optimizer to propagate basic constants.
     It is assumed that val_xxx() does not modify the item's state for
@@ -1795,8 +1798,8 @@ class Item : public Parse_tree_node {
   virtual Item *clone_item() const { return nullptr; }
   virtual cond_result eq_cmp_result() const { return COND_OK; }
   inline uint float_length(uint decimals_par) const {
-    return decimals != NOT_FIXED_DEC ? (DBL_DIG + 2 + decimals_par)
-                                     : DBL_DIG + 8;
+    return decimals != DECIMAL_NOT_SPECIFIED ? (DBL_DIG + 2 + decimals_par)
+                                             : DBL_DIG + 8;
   }
   virtual uint decimal_precision() const;
   inline int decimal_int_part() const {
@@ -1942,9 +1945,9 @@ class Item : public Parse_tree_node {
   }
   virtual void set_runtime_created() { runtime_item = true; }
   virtual Item *get_tmp_table_item(THD *thd) {
-    DBUG_ENTER("Item::get_tmp_table_item");
+    DBUG_TRACE;
     Item *result = copy_or_same(thd);
-    DBUG_RETURN(result);
+    return result;
   }
 
   static const CHARSET_INFO *default_charset();
@@ -2117,6 +2120,8 @@ class Item : public Parse_tree_node {
   }
   /// Is this an Item_field which references the given Field argument?
   virtual bool find_field_processor(uchar *) { return false; }
+  /// Wrap incompatible arguments in CAST nodes to the expected data types
+  virtual bool cast_incompatible_args(uchar *) { return false; }
   /**
     Mark underlying field in read or write map of a table.
 
@@ -2197,17 +2202,8 @@ class Item : public Parse_tree_node {
       that was removed.
     */
     SELECT_LEX *m_root;
-    /**
-      True if we are eliminating constant predicates (i.e. always TRUE or FALSE
-      predicates) in Item_cond::fix_fields. Referenced subqueries via an alias
-      from the SELECT list will not be removed in such a case, cf.
-      Item_subselect::clean_up_after_removal.
-    */
-    bool m_removing_const_preds;
 
-    Cleanup_after_removal_context(SELECT_LEX *root,
-                                  bool removing_const_preds = false)
-        : m_root(root), m_removing_const_preds(removing_const_preds) {}
+    Cleanup_after_removal_context(SELECT_LEX *root) : m_root(root) {}
   };
   /**
      Clean up after removing the item from the item tree.
@@ -2907,7 +2903,11 @@ class Item_sp_variable : public Item {
 
  public:
   inline void make_field(Send_field *field) override;
-  inline bool send(Protocol *protocol, String *str) override;
+  bool send(Protocol *protocol, String *str) override {
+    // Need to override send() in case this_item() is an Item_field with a
+    // ZEROFILL attribute.
+    return this_item()->send(protocol, str);
+  }
 
  protected:
   inline type_conversion_status save_in_field_inner(
@@ -2927,10 +2927,6 @@ inline void Item_sp_variable::make_field(Send_field *field) {
 inline type_conversion_status Item_sp_variable::save_in_field_inner(
     Field *field, bool no_conversions) {
   return this_item()->save_in_field(field, no_conversions);
-}
-
-inline bool Item_sp_variable::send(Protocol *protocol, String *str) {
-  return this_item()->send(protocol, str);
 }
 
 /*****************************************************************************
@@ -3072,10 +3068,6 @@ class Item_name_const final : public Item {
              enum_query_type query_type) const override;
 
   Item_result result_type() const override { return value_item->result_type(); }
-
-  bool send(Protocol *protocol, String *str) override {
-    return value_item->send(protocol, str);
-  }
 
   bool cache_const_expr_analyzer(uchar **) override {
     // Item_name_const always wraps a literal, so there is no need to cache it.
@@ -3472,7 +3464,7 @@ class Item_field : public Item_ident {
   bool check_column_privileges(uchar *arg) override;
   bool check_partition_func_processor(uchar *) override { return false; }
   void cleanup() override;
-  Item_equal *find_item_equal(COND_EQUAL *cond_equal);
+  Item_equal *find_item_equal(COND_EQUAL *cond_equal) const;
   bool subst_argument_checker(uchar **arg) override;
   Item *equal_fields_propagator(uchar *arg) override;
   bool set_no_const_sub(uchar *) override;
@@ -4137,6 +4129,7 @@ class Item_float : public Item_num {
   Item_float(double value_par, uint decimal_par) : value(value_par) {
     set_data_type(MYSQL_TYPE_DOUBLE);
     decimals = (uint8)decimal_par;
+    max_length = float_length(decimal_par);
     fixed = 1;
   }
 
@@ -4219,7 +4212,7 @@ class Item_string : public Item_basic_constant {
     */
     max_length = static_cast<uint32>(str_value.numchars() * cs->mbmaxlen);
     item_name.copy(str, length, cs);
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     // it is constant => can be used without fix_fields (and frequently used)
     fixed = 1;
     /*
@@ -4252,7 +4245,7 @@ class Item_string : public Item_basic_constant {
     collation.set(cs, dv);
     set_data_type(MYSQL_TYPE_VARCHAR);
     max_length = 0;
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     fixed = 1;
   }
 
@@ -4266,7 +4259,7 @@ class Item_string : public Item_basic_constant {
     set_data_type(MYSQL_TYPE_VARCHAR);
     max_length = static_cast<uint32>(str_value.numchars() * cs->mbmaxlen);
     item_name = name_par;
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     // it is constant => can be used without fix_fields (and frequently used)
     fixed = 1;
   }
@@ -4280,7 +4273,7 @@ class Item_string : public Item_basic_constant {
     set_data_type(MYSQL_TYPE_VARCHAR);
     max_length = static_cast<uint32>(str_value.numchars() * cs->mbmaxlen);
     item_name = name_par;
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     // it is constant => can be used without fix_fields (and frequently used)
     fixed = 1;
   }
@@ -4297,7 +4290,7 @@ class Item_string : public Item_basic_constant {
     set_data_type(MYSQL_TYPE_VARCHAR);
     max_length = static_cast<uint32>(str_value.numchars() * cs->mbmaxlen);
     item_name = name_par;
-    decimals = NOT_FIXED_DEC;
+    decimals = DECIMAL_NOT_SPECIFIED;
     // it is constant => can be used without fix_fields (and frequently used)
     fixed = 1;
   }
@@ -4570,7 +4563,7 @@ class Item_result_field : public Item {
   explicit Item_result_field(const POS &pos) : Item(pos), result_field(0) {}
 
   // Constructor used for Item_sum/Item_cond_and/or (see Item comment)
-  Item_result_field(THD *thd, Item_result_field *item)
+  Item_result_field(THD *thd, const Item_result_field *item)
       : Item(thd, item), result_field(item->result_field) {}
   ~Item_result_field() override {} /* Required with gcc 2.95 */
   Field *get_tmp_table_field() override { return result_field; }
@@ -4592,9 +4585,9 @@ class Item_result_field : public Item {
   bool is_result_field() const override { return true; }
   Field *get_result_field() const override { return result_field; }
   void save_in_result_field(bool no_conversions) override {
-    DBUG_ENTER("Item_result_field::save_in_result_field");
+    DBUG_TRACE;
     save_in_field(result_field, no_conversions);
-    DBUG_VOID_RETURN;
+    return;
   }
 
   void cleanup() override;
@@ -4915,10 +4908,10 @@ class Item_view_ref final : public Item_ref {
 
   bool eq(const Item *item, bool) const override;
   Item *get_tmp_table_item(THD *thd) override {
-    DBUG_ENTER("Item_view_ref::get_tmp_table_item");
+    DBUG_TRACE;
     Item *item = Item_ref::get_tmp_table_item(thd);
     item->item_name = item_name;
-    DBUG_RETURN(item);
+    return item;
   }
   Ref_Type ref_type() const override { return VIEW_REF; }
 
@@ -5914,7 +5907,7 @@ class Item_cache_str final : public Item_cache {
         is_varbinary(item->type() == FIELD_ITEM &&
                      data_type() == MYSQL_TYPE_VARCHAR &&
                      !((const Item_field *)item)->field->has_charset()) {
-    collation.set(const_cast<DTCollation &>(item->collation));
+    collation.set(item->collation);
   }
   double val_real() override;
   longlong val_int() override;
@@ -5988,13 +5981,13 @@ class Item_cache_row final : public Item_cache {
   void bring_value() override;
   void keep_array() override { save_array = true; }
   void cleanup() override {
-    DBUG_ENTER("Item_cache_row::cleanup");
+    DBUG_TRACE;
     Item_cache::cleanup();
     if (save_array)
       memset(values, 0, item_count * sizeof(Item **));
     else
       values = 0;
-    DBUG_VOID_RETURN;
+    return;
   }
   bool cache_value() override;
 };
@@ -6180,6 +6173,6 @@ extern const String my_null_string;
 void convert_and_print(const String *from_str, String *to_str,
                        const CHARSET_INFO *to_cs);
 
-std::string ItemToString(Item *item);
+std::string ItemToString(const Item *item);
 
 #endif /* ITEM_INCLUDED */

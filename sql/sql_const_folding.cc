@@ -273,11 +273,13 @@ static bool analyze_int_field_constant(THD *thd, Item_field *f,
         if (v > 0) {
           // underflow on the positive side
           String s("0.1", thd->charset());
-          err = string2my_decimal(E_DEC_FATAL_ERROR, &s, &dec);
+          err = str2my_decimal(E_DEC_FATAL_ERROR, s.ptr(), s.length(),
+                               s.charset(), &dec);
           DBUG_ASSERT(err == 0);
         } else {
           String s("-0.1", thd->charset());
-          err = string2my_decimal(E_DEC_FATAL_ERROR, &s, &dec);
+          err = str2my_decimal(E_DEC_FATAL_ERROR, s.ptr(), s.length(),
+                               s.charset(), &dec);
           DBUG_ASSERT(err == 0);
         }
       }
@@ -1031,10 +1033,13 @@ static bool analyze_field_constant(THD *thd, Item_field *f, Item **const_val,
 
                    !top_level_item        top_level_item
                 ------------------------------------------
-     nullable   |  field <> field     |   COND_FALSE     |
+     nullable   |  field <> field [*] |   COND_FALSE     |
     !nullable   |  FALSE (0)          |   COND_FALSE     |
                 ------------------------------------------
+
+  [*] for the "<=>" operator, we fold to FALSE (0) in this case.
   </pre>
+
   @param      thd         current session context
   @param      ref_or_field
                           a field (that is being being compared to a constant)
@@ -1087,7 +1092,7 @@ static bool fold_or_simplify(THD *thd, Item *ref_or_field,
       return false;
     }
 
-    if (ref_or_field->maybe_null) {
+    if (ref_or_field->maybe_null && ft != Item_func::EQUAL_FUNC) {
       i = new (thd->mem_root) Item_func_ne(ref_or_field, ref_or_field);
     } else {
       i = new (thd->mem_root) Item_func_false();
@@ -1109,11 +1114,9 @@ static bool fold_or_simplify(THD *thd, Item *ref_or_field,
 */
 static bool fold_arguments(THD *thd, Item_func *func) {
   for (uint i = 0; i < func->argument_count(); i++) {
-    Item *rc = nullptr;
     Item::cond_result cv;
-    const auto arg = func->arguments()[i];
-    if (fold_condition(thd, arg, &rc, &cv, true)) return true;
-    if (rc != arg) thd->change_item_tree(func->arguments() + i, rc);
+    Item **args = func->arguments();
+    if (fold_condition(thd, args[i], args + i, &cv, true)) return true;
   }
   func->update_used_tables();
   return false;
@@ -1131,10 +1134,8 @@ static bool fold_arguments(THD *thd, Item_cond *cond) {
   Item *item;
 
   while ((item = li++)) {
-    Item *rc = nullptr;
     Item::cond_result cv;
-    if (fold_condition(thd, item, &rc, &cv, true)) return true;
-    if (rc != item) thd->change_item_tree(li.ref(), rc);
+    if (fold_condition(thd, item, li.ref(), &cv, true)) return true;
   }
   cond->update_used_tables();
   return false;

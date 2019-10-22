@@ -114,6 +114,7 @@ IF(DEFINED CMAKE_BUILD_TYPE)
 ENDIF()
 
 OPTION(WITH_DEBUG "Use dbug/safemutex" OFF)
+OPTION(CHECK_ERRMSG_FORMAT "Check printf format for English error messages" OFF)
 
 # Use a default manufacturer if no manufacturer was identified.
 SET(MANUFACTURER_DOCSTRING
@@ -178,7 +179,7 @@ ENDIF()
 # Same with SLES 12, look for gcc 7 there.
 # We need to look for gcc before calling PROJECT below.
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
-MARK_AS_ADVANCED(WITHOUT_SERVER DISABLE_SHARED FORCE_UNSUPPORTED_COMPILER)
+MARK_AS_ADVANCED(WITHOUT_SERVER FORCE_UNSUPPORTED_COMPILER)
 
 # Use 'uname -r' and 'rpm -qf /' to figure out host system.
 # For Docker images we cannot trust uname, so use rpm instead.
@@ -384,9 +385,19 @@ IF(CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_GENERATOR STREQUAL "Xcode")
   SET(BUILD_IS_SINGLE_CONFIG FALSE)
 ENDIF()
 
+IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  SET(MY_COMPILER_IS_CLANG 1)
+ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  SET(MY_COMPILER_IS_GNU 1)
+ENDIF()
+
+IF(MY_COMPILER_IS_CLANG OR MY_COMPILER_IS_GNU)
+  SET(MY_COMPILER_IS_GNU_OR_CLANG 1)
+ENDIF()
+
 # Maintainer mode is default on only for debug builds using GCC/G++
-IF(CMAKE_BUILD_TYPE MATCHES "Debug" OR WITH_DEBUG)
-  IF(CMAKE_COMPILER_IS_GNUCC AND CMAKE_COMPILER_IS_GNUCXX)
+IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
+  IF(MY_COMPILER_IS_GNU)
     SET(MYSQL_MAINTAINER_MODE ON CACHE BOOL
         "MySQL maintainer-specific development environment")
   ENDIF()
@@ -408,6 +419,13 @@ OPTION(INSTALL_STATIC_LIBRARIES "Install static libraries" ON)
 #cmake on 64bit windows/mac/solaris doesn't set CMAKE_SYSTEM_PROCESSOR correctly
 SET(MYSQL_MACHINE_TYPE ${CMAKE_SYSTEM_PROCESSOR})
 
+SET(KNOWN_64BIT_ARCHITECTURES
+  aarch64
+  ppc64
+  ppc64le
+  s390x
+  x86_64
+)
 
 # Include the platform-specific file. To allow exceptions, this code
 # looks for files in order of how specific they are. If there is, for
@@ -478,9 +496,10 @@ INCLUDE(pkg-config)
 INCLUDE(character_sets)
 INCLUDE(compile_flags)
 INCLUDE(cpu_info)
+INCLUDE(fileutils)
 INCLUDE(zlib)
+INCLUDE(zstd)
 INCLUDE(lz4)
-INCLUDE(re2)
 INCLUDE(icu)
 INCLUDE(libevent)
 INCLUDE(ssl)
@@ -528,7 +547,8 @@ IF(WIN32)
   OPTION(WITH_MSCRT_DEBUG "MS Visual Studio Debug CRT instrumentation" OFF)
 ENDIF()
 IF(NOT WITHOUT_SERVER)
-  OPTION (WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
+  OPTION(WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
+  OPTION(WITH_ROUTER "Build MySQL Router" OFF)
 ENDIF()
 OPTION(WITH_AUTHENTICATION_LDAP
   "Report error if the LDAP authentication plugin cannot be built." OFF)
@@ -601,7 +621,7 @@ FUNCTION(MY_CHECK_CXX_COMPILER_WARNING WARNING_OPTION RETURN_VALUE)
   STRING(REPLACE "=" "_" VAR_NAME ${VAR_NAME})
   STRING(REPLACE "c++" "cpp" VAR_NAME ${VAR_NAME})
   SET(VAR_NAME "HAVE_CXX_W_${VAR_NAME}")
-  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  IF(MY_COMPILER_IS_GNU_OR_CLANG)
     MY_CHECK_CXX_COMPILER_FLAG("-W${WARNING_OPTION}" ${VAR_NAME})
   ELSE()
     SET(${VAR_NAME} 0 CACHE INTERNAL "-W${WARNING_OPTION} not supported")
@@ -623,8 +643,13 @@ MACRO(MY_SANITIZER_CHECK SAN_OPT ADD_OPTIMIZATION RESULT)
     # We disable inlining for stack trace readability.
     # With optimization we may get some warnings, so we switch off -Werror
     IF(${ADD_OPTIMIZATION})
-      STRING_APPEND(CMAKE_C_FLAGS   " -O1 -fno-inline")
-      STRING_APPEND(CMAKE_CXX_FLAGS " -O1 -fno-inline")
+      IF(MSVC)
+        STRING_APPEND(CMAKE_C_FLAGS   " -O1 /Ob0")
+        STRING_APPEND(CMAKE_CXX_FLAGS " -O1 /Ob0")
+      ELSE()
+        STRING_APPEND(CMAKE_C_FLAGS   " -O1 -fno-inline")
+        STRING_APPEND(CMAKE_CXX_FLAGS " -O1 -fno-inline")
+      ENDIF()
       IF(NOT SANITIZE_MAINTAINER_MODE)
         SET(MYSQL_MAINTAINER_MODE OFF CACHE BOOL
           "MySQL maintainer-specific development environment" FORCE)
@@ -825,6 +850,38 @@ IF(LINK_RANDOMIZE)
   SET(CMAKE_C_ARCHIVE_CREATE_APPEND ${CMAKE_CXX_ARCHIVE_CREATE_APPEND})
 ENDIF()
 
+# Gold and LLD support the --gdb-index option, which adds a .gdb_index
+# section to the binaries. It makes loading the binaries in gdb much
+# faster. The overhead of generating the index is small in LLD.
+OPTION(ADD_GDB_INDEX "Generate a .gdb_index section in the binaries." OFF)
+
+IF(ADD_GDB_INDEX AND
+    (CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld" OR
+      CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=gold"))
+  # -fuse-ld=lld is not enough to ensure that ld.lld will actually be used.
+  # On some platforms we need an extra check for -Wl,--gdb-index
+  CMAKE_PUSH_CHECK_STATE()
+  IF(CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld")
+    SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=lld -Wl,--gdb-index")
+  ELSE()
+    SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=gold -Wl,--gdb-index")
+  ENDIF()
+  CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_GDB_INDEX_RESULT)
+  CMAKE_POP_CHECK_STATE()
+
+  IF(CXX_LD_GDB_INDEX_RESULT)
+    STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--gdb-index")
+    STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--gdb-index")
+    # gdb sometimes reports "incomplete type" after linking with
+    # --gdb-index. This flag makes the index contain enough
+    # information to avoid the problem.
+    STRING_APPEND(CMAKE_C_FLAGS " -ggnu-pubnames")
+    STRING_APPEND(CMAKE_CXX_FLAGS " -ggnu-pubnames")
+  ELSE()
+    MESSAGE(STATUS "Seems like linker does not support --gdb-index")
+  ENDIF()
+ENDIF()
+
 IF(LINUX)
   # May be set to ON in cmake/build_configurations/mysql_release.cmake
   IF(DEFINED REPRODUCIBLE_BUILD)
@@ -832,7 +889,9 @@ IF(LINUX)
   ELSE()
     SET(REPRODUCIBLE_BUILD_DEFAULT OFF)
   ENDIF()
-  OPTION(REPRODUCIBLE_BUILD "Take extra pains to make build result independent of build location and time" ${REPRODUCIBLE_BUILD_DEFAULT})
+  OPTION(REPRODUCIBLE_BUILD
+    "Take extra pains to make build result independent of build location and time"
+    ${REPRODUCIBLE_BUILD_DEFAULT})
 ENDIF()
 IF(REPRODUCIBLE_BUILD)
   SET(DEBUG_PREFIX_FLAGS
@@ -841,7 +900,8 @@ IF(REPRODUCIBLE_BUILD)
   # See if -fdebug-prefix= commands are included in the debug output,
   # making the build unreproducible with switches recorded.
   # See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=69821.
-  EXECUTE_PROCESS(COMMAND ${CMAKE_C_COMPILER} -g3 -x c -S -fdebug-prefix-map=foo=bar -o - -
+  EXECUTE_PROCESS(COMMAND
+    ${CMAKE_C_COMPILER} -g3 -x c -S -fdebug-prefix-map=foo=bar -o - -
     INPUT_FILE /dev/null OUTPUT_VARIABLE DEBUG_PREFIX_MAP_RESULT)
   IF(DEBUG_PREFIX_MAP_RESULT MATCHES "foo=bar")
     SET(DEBUG_PREFIX_FLAGS "${DEBUG_PREFIX_FLAGS} -gno-record-gcc-switches")
@@ -850,10 +910,11 @@ IF(REPRODUCIBLE_BUILD)
   STRING_APPEND(CMAKE_C_FLAGS   " ${DEBUG_PREFIX_FLAGS}")
   STRING_APPEND(CMAKE_CXX_FLAGS " ${DEBUG_PREFIX_FLAGS}")
 
-  SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--build-id=none")
-  SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--build-id=none")
+  STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--build-id=none")
+  STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--build-id=none")
+  SET(BISON_NO_LINE_OPT "--no-lines")
 
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
+  SET_PROPERTY(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
     "${CMAKE_SOURCE_DIR}/scripts/invoke-with-relative-paths.pl")
 ENDIF()
 
@@ -873,14 +934,15 @@ OPTION(WITH_TEST_TRACE_PLUGIN
 # Sanity checks for protocol tracing options
 
 IF(WITH_TEST_TRACE_PLUGIN AND NOT WITH_CLIENT_PROTOCOL_TRACING)
-MESSAGE("WARNING: Test trace plugin was selected but client protocol tracing infrastructure is not enabled - ignoring")
-SET(WITH_TEST_TRACE_PLUGIN 0)
+  MESSAGE("WARNING: Test trace plugin was selected but client protocol tracing
+           infrastructure is not enabled - ignoring")
+  SET(WITH_TEST_TRACE_PLUGIN 0)
 ENDIF()
 
-IF(WITH_TEST_TRACE_PLUGIN AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
+IF(WITH_TEST_TRACE_PLUGIN AND NOT CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
   MESSAGE(SEND_ERROR 
-          "Test trace plugin was selected but it can be included only in debug binaries.
-          Set WITH_TEST_TRACE_PLUGIN to OFF or WITH_DEBUG to ON.")
+    "Test trace plugin was selected but it can be included only in
+     debug binaries. Set WITH_TEST_TRACE_PLUGIN to OFF or WITH_DEBUG to ON.")
 ENDIF()
 
 # Set DBUG_OFF for non-debug project types.
@@ -995,8 +1057,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}/include
   ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/libbinlogevents/include
-  ${CMAKE_SOURCE_DIR}/libbinlogevents/export)
+  )
 
 
 SET(WITH_SYSTEM_LIBS_DEFAULT OFF)
@@ -1038,7 +1099,7 @@ IF(WITH_LTO)
 
   # On some platforms (Fedora) we *must* use gcc-ar / gcc-ranlib
   # to get the right plugins for supporting -flto output from gcc.
-  IF(CMAKE_COMPILER_IS_GNUCC AND CMAKE_COMPILER_IS_GNUCXX)
+  IF(MY_COMPILER_IS_GNU)
     IF(ALTERNATIVE_ENABLE)
       GET_FILENAME_COMPONENT(ALTERNATIVE_ENABLE_DIR ${ALTERNATIVE_ENABLE} PATH)
       SET(DEVTOOLSET_ROOT "${ALTERNATIVE_ENABLE_DIR}/root")
@@ -1049,7 +1110,8 @@ IF(WITH_LTO)
         NO_DEFAULT_PATH
         PATHS "${DEVTOOLSET_ROOT}/usr/bin")
     ELSEIF(ALTERNATIVE_GCC)
-      STRING(REGEX MATCH  "^([0-9])" ALTERNATIVE_GCC_MAJ_VER ${CMAKE_C_COMPILER_VERSION})
+      STRING(REGEX MATCH  "^([0-9])"
+        ALTERNATIVE_GCC_MAJ_VER ${CMAKE_C_COMPILER_VERSION})
       GET_FILENAME_COMPONENT(ALTERNATIVE_GCC_DIR ${ALTERNATIVE_GCC} PATH)
       FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-${ALTERNATIVE_GCC_MAJ_VER}
         NO_DEFAULT_PATH
@@ -1086,9 +1148,9 @@ SET(SYSTEM_LIBRARIES
   LIBEVENT
   LZ4
   PROTOBUF
-  RE2
   SSL
   ZLIB
+  ZSTD
   )
 
 OPTION(WITH_SYSTEM_LIBS
@@ -1127,9 +1189,19 @@ ENDIF()
 # Add bundled or system zlib.
 MYSQL_CHECK_ZLIB_WITH_COMPRESS()
 IF(BUILD_BUNDLED_ZLIB)
-  INCLUDE_DIRECTORIES(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/extra/zlib ${CMAKE_CURRENT_BINARY_DIR}/extra/zlib)
+  INCLUDE_DIRECTORIES(BEFORE SYSTEM
+    ${CMAKE_CURRENT_SOURCE_DIR}/extra/zlib
+    ${CMAKE_CURRENT_BINARY_DIR}/extra/zlib)
 ENDIF()
-# Add bundled wolfssl/wolfcrypt or system openssl.
+# Add bundled or system zstd.
+MYSQL_CHECK_ZSTD()
+IF(BUILD_BUNDLED_ZSTD)
+  INCLUDE_DIRECTORIES(BEFORE SYSTEM
+    ${CMAKE_SOURCE_DIR}/extra/zstd/lib)
+  ADD_SUBDIRECTORY(extra/zstd)
+ENDIF()
+
+# Add system openssl.
 MYSQL_CHECK_SSL()
 MYSQL_CHECK_SSL_DLLS()
 
@@ -1139,8 +1211,6 @@ MYSQL_CHECK_EDITLINE()
 MYSQL_CHECK_LIBEVENT()
 # Add lz4 library
 MYSQL_CHECK_LZ4()
-# Add re2 library
-MYSQL_CHECK_RE2()
 # Add icu library
 MYSQL_CHECK_ICU()
 # Add SASL library
@@ -1152,6 +1222,7 @@ ENDIF()
 # Try and set CURL_LIBRARY
 SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 MYSQL_CHECK_CURL()
+MYSQL_CHECK_CURL_DLLS()
 # Add RapidJSON library.
 MYSQL_CHECK_RAPIDJSON()
 
@@ -1204,8 +1275,9 @@ IF(LINUX)
   HAVE_PTHREAD_SETNAME_NP)
 ENDIF()
 
-IF (BUILD_BUNDLED_RE2)
-  ADD_SUBDIRECTORY(extra/re2)
+IF(WITH_PROTOBUF STREQUAL "bundled")
+  SET(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR 1)
+  ADD_SUBDIRECTORY(extra/protobuf)
 ENDIF()
 
 #
@@ -1222,13 +1294,11 @@ OPTION(MYSQL_MAINTAINER_MODE
 INCLUDE(maintainer)
 
 IF(WITH_UNIT_TESTS)
- MESSAGE(STATUS "With unit tests")
- ERROR()
- ENABLE_TESTING()
+  ENABLE_TESTING()
+  INCLUDE(googletest)
 ENDIF()
 
 ADD_SUBDIRECTORY(include)
-ADD_SUBDIRECTORY(dbug)
 ADD_SUBDIRECTORY(strings)
 ADD_SUBDIRECTORY(vio)
 ADD_SUBDIRECTORY(mysys)
@@ -1259,7 +1329,6 @@ ELSE()
 ENDIF()
 
 IF(NOT WITHOUT_SERVER)
-  SET (MYSQLD_STATIC_COMPONENT_LIBS "" CACHE INTERNAL "")
   CONFIGURE_COMPONENTS()
 ENDIF()
 
@@ -1298,6 +1367,17 @@ CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/include/mysql_version.h.in
                ${CMAKE_BINARY_DIR}/include/mysql_version.h )
 CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/sql/sql_builtin.cc.in
     ${CMAKE_BINARY_DIR}/sql/sql_builtin.cc)
+
+# depends on mysql_version.h to exist
+IF(NOT WITHOUT_SERVER)
+  IF(WITH_ROUTER)
+    ADD_SUBDIRECTORY(router)
+  ENDIF()
+ENDIF()
+
+IF(ENABLE_GCOV)
+  INCLUDE(fastcov)
+ENDIF()
 
 IF(UNIX)
   ADD_SUBDIRECTORY(man)
@@ -1372,10 +1452,46 @@ ELSE()
   SET(CPACK_GENERATOR "TGZ")
 ENDIF() 
 
+# Produce separate tarballs for each INSTALL COMPONENT
+IF(PACK_SEPARATE_COMPONENTS)
+  SET(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+  SET(CPACK_COMPONENTS_GROUPING IGNORE)
+ENDIF()
+
+IF(UNIX)
+  INSTALL(FILES
+    Docs/mysql.info
+    DESTINATION ${INSTALL_INFODIR} OPTIONAL COMPONENT Info)
+ENDIF()
 #
 # RPM installs documentation directly from the source tree
 #
 IF(NOT INSTALL_LAYOUT MATCHES "RPM")
+  INSTALL(FILES
+    README
+    LICENSE
+    DESTINATION ${INSTALL_DOCREADMEDIR} COMPONENT Readme)
+  INSTALL(FILES
+    ${CMAKE_BINARY_DIR}/Docs/INFO_SRC
+    ${CMAKE_BINARY_DIR}/Docs/INFO_BIN
+    DESTINATION ${INSTALL_DOCDIR} COMPONENT Info
+    )
+
+  # MYSQL_DOCS_LOCATON is used in "make dist",
+  # points to the documentation directory
+  SET(MYSQL_DOCS_LOCATION "" CACHE PATH
+    "Location from where documentation is copied")
+  MARK_AS_ADVANCED(MYSQL_DOCS_LOCATION)
+  INSTALL(DIRECTORY Docs/ DESTINATION ${INSTALL_DOCDIR}
+    COMPONENT Documentation
+    PATTERN "Makefile.*" EXCLUDE
+    PATTERN "glibc*" EXCLUDE
+    PATTERN "linuxthreads.txt" EXCLUDE
+    PATTERN "myisam.txt" EXCLUDE
+    PATTERN "mysql.info" EXCLUDE
+    PATTERN "sp-imp-spec.txt" EXCLUDE
+    PATTERN "README.build" EXCLUDE
+  )
 ENDIF()
 
 # Now that we're done with all ADD_SUBDIRECTORY and thus all feature tests,

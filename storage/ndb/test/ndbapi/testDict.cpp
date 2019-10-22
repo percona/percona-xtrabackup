@@ -69,8 +69,6 @@
 #define ndb_master_failure 1
 #define NO_NODE_GROUP int(-1)
 #define FREE_NODE_GROUP 65535
-#define MAX_NDB_NODES 49
-#define MAX_NDB_NODE_GROUPS 48
 
 #define TEST_FRM_DATA_SIZE 14000
 
@@ -1166,7 +1164,8 @@ runCreateMaxTables(NDBT_Context* ctx, NDBT_Step* step)
     if (newTab.createTableInDb(pNdb) != 0) {
       ndbout << tabName << " could not be created: "
              << pDic->getNdbError() << endl;
-      if (pDic->getNdbError().code == 707 ||
+      if (pDic->getNdbError().code == 625 ||
+          pDic->getNdbError().code == 707 ||
           pDic->getNdbError().code == 708 ||
           pDic->getNdbError().code == 826 ||
           pDic->getNdbError().code == 827 ||

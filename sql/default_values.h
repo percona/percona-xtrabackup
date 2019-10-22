@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -98,7 +98,7 @@ size_t column_pack_length(const dd::Column &col_obj);
   @retval         false     Success.
 */
 
-bool prepare_default_value(THD *thd, uchar *buf, const TABLE &table,
+bool prepare_default_value(THD *thd, uchar *buf, TABLE *table,
                            const Create_field &field, dd::Column *col_obj);
 
 /**

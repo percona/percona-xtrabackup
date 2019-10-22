@@ -92,18 +92,12 @@ SET(harness_source
   keyring/keyring_manager.cc
   keyring/keyring_memory.cc
   keyring/keyring_file.cc
+  keyring/master_key_file.cc
   networking/ip_address.cc
   networking/ipv4_address.cc
   networking/ipv6_address.cc
-  networking/resolver.cc)
-
-IF(WITH_SSL STREQUAL "wolfssl")
-  LIST(APPEND harness_source
-    my_aes_wolfssl.cc)
-ELSE()
-  LIST(APPEND harness_source
-    my_aes_openssl.cc)
-ENDIF()
+  networking/resolver.cc
+  my_aes_openssl.cc)
 
 IF(WIN32)
   LIST(APPEND harness_source
@@ -208,9 +202,9 @@ SET_PATH_TO_SSL(harness-library ${CMAKE_BINARY_DIR}/library_output_directory)
 #   DESTINATION ${HARNESS_INSTALL_INCLUDE_PREFIX}/${HARNESS_NAME})
 IF(NOT WIN32)
   INSTALL(TARGETS harness-archive harness-library
-    LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR}
-    COMPONENT Router)
+    LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+    ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+    )
 ELSE()
   INSTALL(TARGETS harness-library
     RUNTIME DESTINATION "${ROUTER_INSTALL_BINDIR}"

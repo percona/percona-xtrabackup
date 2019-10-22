@@ -98,6 +98,8 @@ my $opt_helgrind;
 my $opt_json_explain_protocol;
 my $opt_mark_progress;
 my $opt_max_connections;
+my $opt_platform;
+my $opt_platform_exclude;
 my $opt_ps_protocol;
 my $opt_report_features;
 my $opt_skip_core;
@@ -204,7 +206,6 @@ our $opt_non_parallel_test;
 our $opt_record;
 our $opt_report_unstable_tests;
 our $opt_skip_combinations;
-our $opt_ssl;
 our $opt_suites;
 our $opt_suite_opt;
 our $opt_summary_report;
@@ -284,7 +285,6 @@ our $start_only;
 our $glob_debugger      = 0;
 our $group_replication  = 0;
 our $ndbcluster_enabled = 0;
-our $ssl_supported      = 1;
 
 our @share_locations;
 
@@ -378,7 +378,7 @@ sub main {
   close(FH);
 
   # --help will not reach here, so now it's safe to assume we have binaries
-  My::SafeProcess::find_bin($bindir);
+  My::SafeProcess::find_bin($bindir, $path_client_bindir);
 
   $secondary_engine_support = ($secondary_engine_support and
                 find_secondary_engine($bindir)) ? 1 : 0 ;
@@ -1366,7 +1366,6 @@ sub print_global_resfile {
   resfile_global("shutdown-timeout", $opt_shutdown_timeout ? 1 : 0);
   resfile_global("sleep",            $opt_sleep);
   resfile_global("sp-protocol",      $opt_sp_protocol      ? 1 : 0);
-  resfile_global("ssl",              $opt_ssl              ? 1 : 0);
   resfile_global("start_time",       isotime $^T);
   resfile_global("suite-opt",        $opt_suite_opt);
   resfile_global("suite-timeout",    $opt_suite_timeout);
@@ -1412,9 +1411,7 @@ sub command_line_setup {
     'json-explain-protocol' => \$opt_json_explain_protocol,
     'opt-trace-protocol'    => \$opt_trace_protocol,
     'ps-protocol'           => \$opt_ps_protocol,
-    'skip-ssl'              => sub { $opt_ssl = 0; $ssl_supported = 0; },
     'sp-protocol'           => \$opt_sp_protocol,
-    'ssl|with-openssl'      => \$opt_ssl,
     'view-protocol'         => \$opt_view_protocol,
     'vs-config=s'           => \$opt_vs_config,
 
@@ -1439,6 +1436,8 @@ sub command_line_setup {
     'ndb|include-ndbcluster'   => \$opt_include_ndbcluster,
     'no-skip'                  => \$opt_no_skip,
     'only-big-test'            => \$opt_only_big_test,
+    'platform=s'               => \$opt_platform,
+    'exclude-platform=s'       => \$opt_platform_exclude,
     'skip-combinations'        => \$opt_skip_combinations,
     'skip-im'                  => \&ignore_option,
     'skip-ndbcluster|skip-ndb' => \$opt_skip_ndbcluster,
@@ -1593,6 +1592,8 @@ sub command_line_setup {
   usage("") if $opt_usage;
   list_options(\%options) if $opt_list_options;
 
+  check_platform() if defined $ENV{PB2WORKDIR};
+
   # Setup verbosity if verbose option is enabled.
   if ($opt_verbose) {
     report_option('verbose', $opt_verbose);
@@ -1721,6 +1722,10 @@ sub command_line_setup {
       '../internal/mysql-test/include/i_excludenoskip.list';
     push(@noskip_exclude_lists, $i_noskip_exclude_list)
       if (-e $i_noskip_exclude_list);
+    my $cloud_noskip_exclude_list =
+      '../internal/cloud/mysql-test/include/cloud_excludenoskip.list';
+    push(@noskip_exclude_lists, $cloud_noskip_exclude_list)
+       if (-e $cloud_noskip_exclude_list);
 
     foreach my $excludedList (@noskip_exclude_lists) {
       open(my $fh, '<', $excludedList) or
@@ -2089,7 +2094,6 @@ sub command_line_setup {
 
   check_debug_support(\%mysqld_variables);
   check_ndbcluster_support(\%mysqld_variables);
-  check_ssl_support();
 
   executable_setup();
 }
@@ -3089,6 +3093,24 @@ sub setup_vardir() {
   }
 }
 
+# Check if detected platform conforms to the rules specified
+# by options --platform and --exclude-platform.
+# Note: These two options are no-op's when MTR is not running
+#       in the pushbuild test environment.
+sub check_platform {
+  my $platform = $ENV{PRODUCT_ID} || "";
+  if(defined $opt_platform and $platform !~ $opt_platform) {
+    print STDERR "mysql-test-run: Detected platform '$platform' does not ".
+                 "match specified platform '$opt_platform', terminating.\n";
+    exit(0);
+  }
+  if(defined $opt_platform_exclude and $platform =~ $opt_platform_exclude) {
+    print STDERR "mysql-test-run: Detected platform '$platform' matches ".
+                 "excluded platform '$opt_platform_exclude', terminating.\n";
+    exit(0);
+  }
+}
+
 # Check if running as root i.e a file can be read regardless what mode
 # we set it to.
 sub check_running_as_root () {
@@ -3134,15 +3156,6 @@ sub check_debug_support ($) {
   }
   mtr_report(" - Binaries are debug compiled");
   $debug_compiled_binaries = 1;
-}
-
-# Check if SSL support is enabled.
-sub check_ssl_support {
-  if (!$opt_ssl and !$ssl_supported) {
-    mtr_report(" - Skipping SSL");
-  } elsif ($opt_ssl and !$ssl_supported) {
-    $ssl_supported = 1;
-  }
 }
 
 # Helper function to handle configuration-based subdirectories which
@@ -3855,9 +3868,8 @@ sub mysql_install_db {
     # If init-file is passed, get the file path to merge the contents
     # of the file with bootstrap.sql
     if ($extra_opt =~ /--init[-_]file=(.*)/) {
-      $init_file = $1;
+      $init_file = get_bld_path($1);
     }
-    $init_file = get_bld_path($init_file);
     mtr_add_arg($args, $extra_opt);
   }
 
@@ -3950,13 +3962,13 @@ sub mysql_install_db {
     "INSERT INTO mysql.proxies_priv VALUES ('localhost', 'root',
               '', '', TRUE, '', now());\n");
 
-  # Add help tables and data for warning detection and supression
+  # Add help tables and data for warning detection and suppression
   mtr_tofile($bootstrap_sql_file,
-             sql_to_bootstrap(mtr_grab_file("include/mtr_warnings.sql")));
+             mtr_grab_file("include/mtr_warnings.sql"));
 
   # Add procedures for checking server is restored after testcase
   mtr_tofile($bootstrap_sql_file,
-             sql_to_bootstrap(mtr_grab_file("include/mtr_check.sql")));
+             mtr_grab_file("include/mtr_check.sql"));
 
   if (defined $init_file) {
     # Append the contents of the init-file to the end of bootstrap.sql
@@ -5506,8 +5518,6 @@ sub check_expected_crash_and_restart($$) {
           my $restart_flag = 1;
           # Start secondary engine servers.
           start_secondary_engine_servers($tinfo, $restart_flag);
-          # Load table contents to secondary engine.
-          load_table_contents($mysqld) if defined $tinfo->{'load_pool'};
         }
 
         return 1;
@@ -6690,11 +6700,6 @@ sub start_mysqltest ($) {
     mtr_add_arg($args, "--sleep=%d", $opt_sleep);
   }
 
-  if ($opt_ssl) {
-    # Turn on SSL for _all_ test cases if option --ssl was used
-    mtr_add_arg($args, "--ssl-mode=REQUIRED");
-  }
-
   if ($opt_max_connections) {
     mtr_add_arg($args, "--max-connections=%d", $opt_max_connections);
   }
@@ -7252,9 +7257,7 @@ Options to control what engine/variation to run
   opt-trace-protocol    Print optimizer trace.
   ps-protocol           Use the binary protocol between client and server.
   skip-combinations     Ignore combination file (or options).
-  skip-ssl              Dont start server with support for ssl connections.
   sp-protocol           Create a stored procedure to execute all queries.
-  ssl                   Use ssl protocol between client and server.
   view-protocol         Create a view to execute all non updating queries.
   vs-config             Visual Studio configuration used to create executables
                         (default: MTR_VS_CONFIG environment variable).

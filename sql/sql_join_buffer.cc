@@ -46,7 +46,9 @@
 #include "my_table_map.h"
 #include "sql/field.h"
 #include "sql/item.h"
+#include "sql/item_func.h"
 #include "sql/key.h"
+#include "sql/opt_hints.h"
 #include "sql/opt_trace.h"       // Opt_trace_object
 #include "sql/psi_memory_key.h"  // key_memory_JOIN_CACHE
 #include "sql/records.h"
@@ -59,6 +61,7 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thr_malloc.h"
+#include "template_utils.h"
 
 using std::max;
 using std::min;
@@ -189,9 +192,10 @@ void JOIN_CACHE::calc_record_fields() {
 
   for (; tab < qep_tab; tab++) {
     uint used_fields, used_fieldlength, used_blobs;
+    const bool needs_rowid = (tab->rowid_status != NO_ROWID_NEEDED);
     calc_used_field_length(
-        tab->table(), tab->keep_current_rowid, &used_fields, &used_fieldlength,
-        &used_blobs, &tab->used_null_fields, &tab->used_uneven_bit_fields);
+        tab->table(), needs_rowid, &used_fields, &used_fieldlength, &used_blobs,
+        &tab->used_null_fields, &tab->used_uneven_bit_fields);
     flag_fields += tab->used_null_fields || tab->used_uneven_bit_fields;
     flag_fields += tab->table()->is_nullable();
     fields += used_fields;
@@ -361,7 +365,7 @@ void JOIN_CACHE::create_remaining_fields(bool all_read_fields) {
         &copy_ptr);
 
     /* SemiJoinDuplicateElimination: allocate space for rowid if needed */
-    if (tab->keep_current_rowid) {
+    if (tab->rowid_status != NO_ROWID_NEEDED) {
       copy->str = table->file->ref;
       copy->length = table->file->ref_length;
       copy->type = 0;
@@ -496,7 +500,7 @@ bool JOIN_CACHE::alloc_buffer() {
   @param tab the query execution tab
 */
 
-static void filter_gcol_for_dynamic_range_scan(QEP_TAB *const tab) {
+static void filter_gcol_for_dynamic_range_scan(const QEP_TAB *tab) {
   TABLE *table = tab->table();
   DBUG_ASSERT(tab->dynamic_range() && table->vfield);
 
@@ -522,91 +526,64 @@ static void filter_gcol_for_dynamic_range_scan(QEP_TAB *const tab) {
   }
 }
 
-/**
-  Filter the base columns of virtual generated columns if using a covering index
-  scan.
+void filter_virtual_gcol_base_cols(
+    const QEP_TAB *qep_tab, MEM_ROOT *mem_root,
+    memroot_unordered_map<const QEP_TAB *, MY_BITMAP *> *saved_bitmaps) {
+  TABLE *table = qep_tab->table();
+  if (table->vfield == nullptr) return;
 
-  When setting up the join buffer, adjust read_set temporarily so that
-  only contains the columns that are needed in the join operation and
-  afterwards. Afterwards, the regular contents are restored (the
-  columns to be read from input tables).
+  const uint index = qep_tab->effective_index();
+  const bool cov_index =
+      index != MAX_KEY && table->index_contains_some_virtual_gcol(index) &&
+      /*
+        There are two cases:
+        - If the table scan uses covering index scan, we can get the value
+          of virtual generated column from index
+        - If not, JOIN_CACHE only needs the value of virtual generated
+          columns (This is why the index can be chosen as a covering index).
+          After restore the base columns, the value of virtual generated
+          columns can be calculated correctly.
+      */
+      table->covering_keys.is_set(index);
+  if (!(cov_index || qep_tab->dynamic_range())) return;
 
-  For a virtual generated column, all base columns are added to the read_set
-  of the table. The storage engine will then copy all base column values so
-  that the value of the GC can be calculated inside the executor.
-  But when a virtual GC is fetched using a covering index, the actual GC
-  value is fetched by the storage engine and the base column values are not
-  needed. Join buffering code must not try to copy them (in
-  create_remaining_fields()).
-  So, we eliminate from read_set those columns that are available from the
-  covering index.
-*/
+  /*
+    Save of a copy of table->read_set in save_read_set so that it can be
+    restored. tmp_set cannot be used as recipient for this as it's already
+    used in other parts of JOIN_CACHE::init().
+  */
+  auto bitbuf =
+      mem_root->ArrayAlloc<my_bitmap_map>(table->s->column_bitmap_size);
+  auto save_read_set = new (mem_root) MY_BITMAP;
+  bitmap_init(save_read_set, bitbuf, table->s->fields, false);
+  bitmap_copy(save_read_set, table->read_set);
+  /*
+    restore_virtual_gcol_base_cols() will need old bitmap so we save a
+    reference to it.
+  */
+  saved_bitmaps->emplace(qep_tab, save_read_set);
 
-void JOIN_CACHE::filter_virtual_gcol_base_cols() {
-  DBUG_ASSERT(save_read_set_for_gcol.empty());
-
-  for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
-    TABLE *table = tab->table();
-    if (table->vfield == NULL) continue;
-
-    const uint index = tab->effective_index();
-    const bool cov_index =
-        index != MAX_KEY && table->index_contains_some_virtual_gcol(index) &&
-        /*
-          There are two cases:
-          - If the table scan uses covering index scan, we can get the value
-            of virtual generated column from index
-          - If not, JOIN_CACHE only needs the value of virtual generated
-            columns (This is why the index can be chosen as a covering index).
-            After restore the base columns, the value of virtual generated
-            columns can be calculated correctly.
-        */
-        table->covering_keys.is_set(index);
-    if (!(cov_index || tab->dynamic_range())) continue;
-
-    /*
-      Save of a copy of table->read_set in save_read_set so that it can be
-      restored. tmp_set cannot be used as recipient for this as it's already
-      used in other parts of JOIN_CACHE::init().
-    */
-    auto bitbuf =
-        (my_bitmap_map *)(*THR_MALLOC)->Alloc(table->s->column_bitmap_size);
-    auto save_read_set = (MY_BITMAP *)(*THR_MALLOC)->Alloc(sizeof(MY_BITMAP));
-    bitmap_init(save_read_set, bitbuf, table->s->fields, false);
-    bitmap_copy(save_read_set, table->read_set);
-    /*
-      restore_virtual_gcol_base_cols() will need old bitmap so we save a
-      reference to it.
-    */
-    save_read_set_for_gcol.insert(std::make_pair(tab, save_read_set));
-
-    if (cov_index) {
-      bitmap_clear_all(table->read_set);
-      table->mark_columns_used_by_index_no_reset(index, table->read_set);
-      if (table->s->primary_key != MAX_KEY)
-        table->mark_columns_used_by_index_no_reset(table->s->primary_key,
-                                                   table->read_set);
-      bitmap_intersect(table->read_set, save_read_set);
-    } else if (tab->dynamic_range()) {
-      filter_gcol_for_dynamic_range_scan(tab);
-    }
+  if (cov_index) {
+    bitmap_clear_all(table->read_set);
+    table->mark_columns_used_by_index_no_reset(index, table->read_set);
+    if (table->s->primary_key != MAX_KEY)
+      table->mark_columns_used_by_index_no_reset(table->s->primary_key,
+                                                 table->read_set);
+    bitmap_intersect(table->read_set, save_read_set);
+  } else if (qep_tab->dynamic_range()) {
+    filter_gcol_for_dynamic_range_scan(qep_tab);
   }
 }
 
-/**
-  After JOIN_CACHE initialization, the table->read_set is restored so that the
-  virtual generated column can be calculated during later time.
-*/
+void restore_virtual_gcol_base_cols(
+    const QEP_TAB *qep_tab,
+    memroot_unordered_map<const QEP_TAB *, MY_BITMAP *> *saved_bitmaps) {
+  TABLE *table = qep_tab->table();
+  if (table->vfield == nullptr) return;
 
-void JOIN_CACHE::restore_virtual_gcol_base_cols() {
-  for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
-    TABLE *table = tab->table();
-    if (table->vfield == NULL) continue;
-
-    auto saved = save_read_set_for_gcol.find(tab);
-    if (saved != save_read_set_for_gcol.end())
-      bitmap_copy(table->read_set, saved->second);
-  }
+  auto saved = saved_bitmaps->find(qep_tab);
+  if (saved != saved_bitmaps->end())
+    bitmap_copy(table->read_set, saved->second);
 }
 
 /*
@@ -636,7 +613,7 @@ void JOIN_CACHE::restore_virtual_gcol_base_cols() {
 */
 
 int JOIN_CACHE_BNL::init() {
-  DBUG_ENTER("JOIN_CACHE::init");
+  DBUG_TRACE;
 
   /*
     If there is a previous cache, start with the corresponding table, otherwise:
@@ -651,21 +628,26 @@ int JOIN_CACHE_BNL::init() {
 
   tables = qep_tab - tab;
 
-  filter_virtual_gcol_base_cols();
+  for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
+    filter_virtual_gcol_base_cols(tab, join->thd->mem_root,
+                                  &save_read_set_for_gcol);
+  }
 
   calc_record_fields();
 
-  if (alloc_fields(0)) DBUG_RETURN(1);
+  if (alloc_fields(0)) return 1;
 
   create_flag_fields();
 
   create_remaining_fields(true);
 
-  restore_virtual_gcol_base_cols();
+  for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
+    restore_virtual_gcol_base_cols(tab, &save_read_set_for_gcol);
+  }
 
   set_constants();
 
-  if (alloc_buffer()) DBUG_RETURN(1);
+  if (alloc_buffer()) return 1;
 
   reset_cache(true);
 
@@ -687,7 +669,70 @@ int JOIN_CACHE_BNL::init() {
     }
   }
 
-  DBUG_RETURN(0);
+  return 0;
+}
+
+bool JOIN_CACHE_BNL::can_be_replaced_with_hash_join() const {
+  if (!hint_table_state(join->thd, qep_tab->table_ref, HASH_JOIN_HINT_ENUM,
+                        OPTIMIZER_SWITCH_HASH_JOIN)) {
+    // Disabled by optimizer switch.
+    return false;
+  }
+
+  if (qep_tab->last_inner() != NO_PLAN_IDX) {
+    // Outer join.
+    return false;
+  }
+
+  if (qep_tab->firstmatch_return != NO_PLAN_IDX) {
+    // Semijoin.
+    return false;
+  }
+
+  if (qep_tab->condition() == nullptr) {
+    // No condition attached to this table, so the join condition is always
+    // true.
+    return true;
+  }
+
+  const Item *condition = qep_tab->condition();
+  if (condition->type() != Item::FUNC_ITEM &&
+      condition->type() != Item::COND_ITEM) {
+    return false;
+  }
+
+  // Find the first table in the join, so that we can build a bitmap of the
+  // tables in the join. The bitmap will later be used to determine whether or
+  // not we have a join condition that can be implemented as hash join.
+  //
+  // Since the join cache objects are linked, traverse to the beginning and add
+  // up the number of tables.
+  const JOIN_CACHE *prev_join_cache = this;
+  int num_tables = 0;
+  do {
+    num_tables += prev_join_cache->tables;
+    prev_join_cache = prev_join_cache->prev_cache;
+  } while (prev_join_cache != nullptr);
+
+  // Now that we know how many tables we have in the left side of the join,
+  // we can build a bitmap from the range of the tables.
+  QEP_TAB *tab = qep_tab - num_tables;
+  table_map prefix_tables = 0;
+  for (; tab < qep_tab; tab++) {
+    prefix_tables |= tab->table_ref->map();
+  }
+
+  const Item_func *func_item =
+      down_cast<const Item_func *>(qep_tab->condition());
+  if (func_item->has_any_hash_join_condition(prefix_tables, *qep_tab)) {
+    return true;
+  }
+
+  // If we have at least one non equi-join conditions, use BNL to execute the
+  // join. Seen the other way around; we replace BNL with hash join if the join
+  // is the Cartesian product, and the conditions attached to the QEP_TAB are
+  // filters that should be attached to the table.
+  return !func_item->has_any_non_equi_join_condition();
 }
 
 /*
@@ -717,7 +762,7 @@ int JOIN_CACHE_BNL::init() {
 */
 
 int JOIN_CACHE_BKA::init() {
-  DBUG_ENTER("JOIN_CACHE_BKA::init");
+  DBUG_TRACE;
 #ifndef DBUG_OFF
   m_read_only = false;
 #endif
@@ -735,7 +780,10 @@ int JOIN_CACHE_BKA::init() {
 
   tables = qep_tab - tab;
 
-  filter_virtual_gcol_base_cols();
+  for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
+    filter_virtual_gcol_base_cols(tab, join->thd->mem_root,
+                                  &save_read_set_for_gcol);
+  }
   calc_record_fields();
 
   /* Mark all fields that can be used as arguments for this key access */
@@ -770,7 +818,7 @@ int JOIN_CACHE_BKA::init() {
     cache = cache->prev_cache;
   } while (cache);
 
-  if (alloc_fields(external_key_arg_fields)) DBUG_RETURN(1);
+  if (alloc_fields(external_key_arg_fields)) return 1;
 
   create_flag_fields();
 
@@ -834,16 +882,18 @@ int JOIN_CACHE_BKA::init() {
   use_emb_key = check_emb_key_usage();
 
   create_remaining_fields(false);
-  restore_virtual_gcol_base_cols();
+  for (QEP_TAB *tab = qep_tab - tables; tab < qep_tab; tab++) {
+    restore_virtual_gcol_base_cols(tab, &save_read_set_for_gcol);
+  }
   bitmap_clear_all(&qep_tab->table()->tmp_set);
 
   set_constants();
 
-  if (alloc_buffer()) DBUG_RETURN(1);
+  if (alloc_buffer()) return 1;
 
   reset_cache(true);
 
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*
@@ -1050,10 +1100,10 @@ uint JOIN_CACHE_BKA::aux_buffer_min_size() const {
 */
 
 bool JOIN_CACHE_BKA::skip_index_tuple(range_seq_t rseq, char *range_info) {
-  DBUG_ENTER("JOIN_CACHE_BKA::skip_index_tuple");
+  DBUG_TRACE;
   JOIN_CACHE_BKA *cache = (JOIN_CACHE_BKA *)rseq;
   cache->get_record_by_pos((uchar *)range_info);
-  DBUG_RETURN(!qep_tab->cache_idx_cond->val_int());
+  return !qep_tab->cache_idx_cond->val_int();
 }
 
 /*
@@ -1077,9 +1127,9 @@ bool JOIN_CACHE_BKA::skip_index_tuple(range_seq_t rseq, char *range_info) {
 */
 
 static bool bka_skip_index_tuple(range_seq_t rseq, char *range_info) {
-  DBUG_ENTER("bka_skip_index_tuple");
+  DBUG_TRACE;
   JOIN_CACHE_BKA *cache = (JOIN_CACHE_BKA *)rseq;
-  DBUG_RETURN(cache->skip_index_tuple(rseq, range_info));
+  return cache->skip_index_tuple(rseq, range_info);
 }
 
 /**
@@ -1699,7 +1749,7 @@ void JOIN_CACHE::restore_last_record() {
 
 enum_nested_loop_state JOIN_CACHE::join_records(bool skip_last) {
   enum_nested_loop_state rc = NESTED_LOOP_OK;
-  DBUG_ENTER("JOIN_CACHE::join_records");
+  DBUG_TRACE;
 
   table_map saved_status_bits[3] = {0, 0, 0};
   for (int cnt = 1; cnt <= static_cast<int>(tables); cnt++) {
@@ -1827,7 +1877,7 @@ finish:
   }
   reset_cache(true);
   DBUG_ASSERT(!qep_tab->table()->has_null_row());
-  DBUG_RETURN(rc);
+  return rc;
 }
 
 /*
@@ -1877,14 +1927,15 @@ enum_nested_loop_state JOIN_CACHE_BNL::join_matching_records(bool skip_last) {
   DBUG_ASSERT(!(qep_tab->dynamic_range() && qep_tab->quick()));
 
   /* Start retrieving all records of the joined table */
-  if (qep_tab->read_record.iterator->Init()) return NESTED_LOOP_ERROR;
-  if ((error = qep_tab->read_record->Read()))
+  if (qep_tab->iterator->Init()) return NESTED_LOOP_ERROR;
+  if ((error = qep_tab->iterator->Read()))
     return error < 0 ? NESTED_LOOP_OK : NESTED_LOOP_ERROR;
 
-  READ_RECORD *info = &qep_tab->read_record;
+  RowIterator *iterator = qep_tab->iterator.get();
   do {
-    if (qep_tab->keep_current_rowid)
+    if (qep_tab->rowid_status == NEED_TO_CALL_POSITION_FOR_ROWID) {
       qep_tab->table()->file->position(qep_tab->table()->record[0]);
+    }
 
     if (join->thd->killed) {
       /* The user has aborted the execution of the query */
@@ -1924,7 +1975,7 @@ enum_nested_loop_state JOIN_CACHE_BNL::join_matching_records(bool skip_last) {
         }
       }
     }
-  } while (!(error = info->iterator->Read()));
+  } while (!(error = iterator->Read()));
 
   if (error > 0)  // Fatal error
     rc = NESTED_LOOP_ERROR;
@@ -2143,10 +2194,10 @@ enum_nested_loop_state JOIN_CACHE::join_null_complements(bool skip_last) {
   uint cnt;
   enum_nested_loop_state rc = NESTED_LOOP_OK;
   bool is_first_inner = qep_tab->idx() == qep_tab->first_unmatched;
-  DBUG_ENTER("JOIN_CACHE::join_null_complements");
+  DBUG_TRACE;
 
   /* Return at once if there are no records in the join buffer */
-  if (!records) DBUG_RETURN(NESTED_LOOP_OK);
+  if (!records) return NESTED_LOOP_OK;
 
   cnt = records - (is_key_access() ? 0 : skip_last);
 
@@ -2180,7 +2231,7 @@ enum_nested_loop_state JOIN_CACHE::join_null_complements(bool skip_last) {
   }
 
 finish:
-  DBUG_RETURN(rc);
+  return rc;
 }
 
 /*
@@ -2203,10 +2254,10 @@ finish:
 */
 
 static range_seq_t bka_range_seq_init(void *init_param, uint, uint) {
-  DBUG_ENTER("bka_range_seq_init");
+  DBUG_TRACE;
   JOIN_CACHE_BKA *cache = (JOIN_CACHE_BKA *)init_param;
   cache->reset_cache(false);
-  DBUG_RETURN((range_seq_t)init_param);
+  return (range_seq_t)init_param;
 }
 
 /*
@@ -2231,20 +2282,20 @@ static range_seq_t bka_range_seq_init(void *init_param, uint, uint) {
 */
 
 static uint bka_range_seq_next(range_seq_t rseq, KEY_MULTI_RANGE *range) {
-  DBUG_ENTER("bka_range_seq_next");
+  DBUG_TRACE;
   JOIN_CACHE_BKA *cache = (JOIN_CACHE_BKA *)rseq;
   TABLE_REF *ref = &cache->qep_tab->ref();
   key_range *start_key = &range->start_key;
-  if ((start_key->length = cache->get_next_key((uchar **)&start_key->key))) {
+  if (!cache->get_next_key(start_key)) {
     start_key->keypart_map = (1 << ref->key_parts) - 1;
     start_key->flag = HA_READ_KEY_EXACT;
     range->end_key = *start_key;
     range->end_key.flag = HA_READ_AFTER_KEY;
     range->ptr = (char *)cache->get_curr_rec();
     range->range_flag = EQ_RANGE;
-    DBUG_RETURN(0);
+    return 0;
   }
-  DBUG_RETURN(1);
+  return 1;
 }
 
 /*
@@ -2274,10 +2325,10 @@ static uint bka_range_seq_next(range_seq_t rseq, KEY_MULTI_RANGE *range) {
 
 static bool bka_range_seq_skip_record(range_seq_t rseq, char *range_info,
                                       uchar *) {
-  DBUG_ENTER("bka_range_seq_skip_record");
+  DBUG_TRACE;
   JOIN_CACHE_BKA *cache = (JOIN_CACHE_BKA *)rseq;
   bool res = cache->get_match_flag_by_pos((uchar *)range_info);
-  DBUG_RETURN(res);
+  return res;
 }
 
 /*
@@ -2357,8 +2408,9 @@ enum_nested_loop_state JOIN_CACHE_BKA::join_matching_records(
       join->thd->send_kill_message();
       return NESTED_LOOP_KILLED;
     }
-    if (qep_tab->keep_current_rowid)
+    if (qep_tab->rowid_status == NEED_TO_CALL_POSITION_FOR_ROWID) {
       qep_tab->table()->file->position(qep_tab->table()->record[0]);
+    }
     /*
       If only the first match is needed and it has been already found
       for the associated partial join record then the returned candidate
@@ -2461,7 +2513,7 @@ void JOIN_CACHE::read_all_flag_fields_by_pos(uchar *rec_ptr) {
 
   SYNOPSIS
     get_next_key()
-      key    pointer to the buffer where the key value is to be placed
+      key    where the key value is to be placed
 
   DESCRIPTION
     The function reads key fields from the current record in the join buffer.
@@ -2482,18 +2534,18 @@ void JOIN_CACHE::read_all_flag_fields_by_pos(uchar *rec_ptr) {
     of the record fields for last record from the join buffer.
 
   RETURN
-    length of the key value - if the starting value of 'pos' points to
+    false - if the starting value of 'pos' points to
     the position before the fields for the last record,
-    0 - otherwise.
+    true - otherwise.
 */
 
-uint JOIN_CACHE_BKA::get_next_key(uchar **key) {
+bool JOIN_CACHE_BKA::get_next_key(key_range *key) {
   uint len;
   uint32 rec_len;
   uchar *init_pos;
   JOIN_CACHE *cache;
 
-  if (records == 0) return 0;
+  if (records == 0) return true;
 
   /* Any record in a BKA cache is prepended with its length, which we need */
   DBUG_ASSERT(with_length);
@@ -2527,7 +2579,7 @@ uint JOIN_CACHE_BKA::get_next_key(uchar **key) {
 
     if (use_emb_key) {
       /* An embedded key is taken directly from the join buffer */
-      *key = pos;
+      key->key = pos;
       len = emb_key_length;
       DBUG_ASSERT(len != 0);
     } else {
@@ -2574,13 +2626,14 @@ uint JOIN_CACHE_BKA::get_next_key(uchar **key) {
       } else {
         /* Build the key over the fields read into the record buffers */
         cp_buffer_from_ref(join->thd, qep_tab->table(), ref);
-        *key = ref->key_buff;
+        key->key = ref->key_buff;
         len = ref->key_length;
         DBUG_ASSERT(len != 0);
       }
     }
   }
-  return len;
+  key->length = len;
+  return len == 0;
 }
 
 /*
@@ -2616,12 +2669,12 @@ int JOIN_CACHE_BKA_UNIQUE::init() {
   int rc = 0;
   TABLE_REF *ref = &qep_tab->ref();
 
-  DBUG_ENTER("JOIN_CACHE_BKA_UNIQUE::init");
+  DBUG_TRACE;
 
   hash_table = 0;
   key_entries = 0;
 
-  if ((rc = JOIN_CACHE_BKA::init())) DBUG_RETURN(rc);
+  if ((rc = JOIN_CACHE_BKA::init())) return rc;
 
   key_length = ref->key_length;
 
@@ -2668,7 +2721,7 @@ int JOIN_CACHE_BKA_UNIQUE::init() {
     for (; copy < copy_end; copy++) data_fields_offset += copy->length;
   }
 
-  DBUG_RETURN(rc);
+  return rc;
 }
 
 void JOIN_CACHE_BKA_UNIQUE::reset_cache(bool for_writing) {
@@ -2937,10 +2990,10 @@ void JOIN_CACHE_BKA_UNIQUE::cleanup_hash_table() {
 */
 
 static range_seq_t bka_unique_range_seq_init(void *init_param, uint, uint) {
-  DBUG_ENTER("bka_unique_range_seq_init");
+  DBUG_TRACE;
   JOIN_CACHE_BKA_UNIQUE *cache = (JOIN_CACHE_BKA_UNIQUE *)init_param;
   cache->reset_cache(false);
-  DBUG_RETURN((range_seq_t)init_param);
+  return (range_seq_t)init_param;
 }
 
 /*
@@ -2966,20 +3019,20 @@ static range_seq_t bka_unique_range_seq_init(void *init_param, uint, uint) {
 
 static uint bka_unique_range_seq_next(range_seq_t rseq,
                                       KEY_MULTI_RANGE *range) {
-  DBUG_ENTER("bka_unique_range_seq_next");
+  DBUG_TRACE;
   JOIN_CACHE_BKA_UNIQUE *cache = (JOIN_CACHE_BKA_UNIQUE *)rseq;
   TABLE_REF *ref = &cache->qep_tab->ref();
   key_range *start_key = &range->start_key;
-  if ((start_key->length = cache->get_next_key((uchar **)&start_key->key))) {
+  if (!cache->get_next_key(start_key)) {
     start_key->keypart_map = (1 << ref->key_parts) - 1;
     start_key->flag = HA_READ_KEY_EXACT;
     range->end_key = *start_key;
     range->end_key.flag = HA_READ_AFTER_KEY;
     range->ptr = (char *)cache->get_curr_key_chain();
     range->range_flag = EQ_RANGE;
-    DBUG_RETURN(0);
+    return 0;
   }
-  DBUG_RETURN(1);
+  return 1;
 }
 
 /*
@@ -3007,10 +3060,10 @@ static uint bka_unique_range_seq_next(range_seq_t rseq,
 
 static bool bka_unique_range_seq_skip_record(range_seq_t rseq, char *range_info,
                                              uchar *) {
-  DBUG_ENTER("bka_unique_range_seq_skip_record");
+  DBUG_TRACE;
   JOIN_CACHE_BKA_UNIQUE *cache = (JOIN_CACHE_BKA_UNIQUE *)rseq;
   bool res = cache->check_all_match_flags_for_key((uchar *)range_info);
-  DBUG_RETURN(res);
+  return res;
 }
 
 /**
@@ -3056,7 +3109,7 @@ static bool bka_unique_range_seq_skip_record(range_seq_t rseq, char *range_info,
 
 bool JOIN_CACHE_BKA_UNIQUE::skip_index_tuple(range_seq_t rseq,
                                              char *range_info) {
-  DBUG_ENTER("JOIN_CACHE_BKA_UNIQUE::skip_index_tuple");
+  DBUG_TRACE;
   JOIN_CACHE_BKA_UNIQUE *cache = (JOIN_CACHE_BKA_UNIQUE *)rseq;
   uchar *last_rec_ref_ptr = cache->get_next_rec_ref((uchar *)range_info);
   uchar *next_rec_ref_ptr = last_rec_ref_ptr;
@@ -3064,9 +3117,9 @@ bool JOIN_CACHE_BKA_UNIQUE::skip_index_tuple(range_seq_t rseq,
     next_rec_ref_ptr = cache->get_next_rec_ref(next_rec_ref_ptr);
     uchar *rec_ptr = next_rec_ref_ptr + cache->rec_fields_offset;
     cache->get_record_by_pos(rec_ptr);
-    if (qep_tab->cache_idx_cond->val_int()) DBUG_RETURN(false);
+    if (qep_tab->cache_idx_cond->val_int()) return false;
   } while (next_rec_ref_ptr != last_rec_ref_ptr);
-  DBUG_RETURN(true);
+  return true;
 }
 
 /*
@@ -3090,9 +3143,9 @@ bool JOIN_CACHE_BKA_UNIQUE::skip_index_tuple(range_seq_t rseq,
 */
 
 static bool bka_unique_skip_index_tuple(range_seq_t rseq, char *range_info) {
-  DBUG_ENTER("bka_unique_skip_index_tuple");
+  DBUG_TRACE;
   JOIN_CACHE_BKA_UNIQUE *cache = (JOIN_CACHE_BKA_UNIQUE *)rseq;
-  DBUG_RETURN(cache->skip_index_tuple(rseq, range_info));
+  return cache->skip_index_tuple(rseq, range_info);
 }
 
 /*
@@ -3166,7 +3219,9 @@ enum_nested_loop_state JOIN_CACHE_BKA_UNIQUE::join_matching_records(
       key_chain_ptr = key_ref_ptr + get_size_of_key_offset();
     }
 
-    if (qep_tab->keep_current_rowid) table->file->position(table->record[0]);
+    if (qep_tab->rowid_status == NEED_TO_CALL_POSITION_FOR_ROWID) {
+      table->file->position(table->record[0]);
+    }
 
     if (unlikely(qep_tab->lateral_derived_tables_depend_on_me)) {
       /*
@@ -3235,7 +3290,7 @@ bool JOIN_CACHE_BKA_UNIQUE::check_all_match_flags_for_key(
 
   SYNOPSIS
     get_next_key()
-      key    pointer to the buffer where the key value is to be placed
+      key    where the key value is to be placed
 
   DESCRIPTION
     The function reads the next key value stored in the hash table of the
@@ -3244,21 +3299,22 @@ bool JOIN_CACHE_BKA_UNIQUE::check_all_match_flags_for_key(
     the record field where it occurs.
 
   RETURN
-    length of the key value - if the starting value of 'cur_key_entry' refers
+    false - if the starting value of 'cur_key_entry' refers
     to the position after that referred by the value of 'last_key_entry'
-    0 - otherwise.
+    true - otherwise.
 */
 
-uint JOIN_CACHE_BKA_UNIQUE::get_next_key(uchar **key) {
-  if (curr_key_entry == last_key_entry) return 0;
+bool JOIN_CACHE_BKA_UNIQUE::get_next_key(key_range *key) {
+  if (curr_key_entry == last_key_entry) return true;
 
   curr_key_entry -= key_entry_length;
 
-  *key = use_emb_key ? get_emb_key(curr_key_entry) : curr_key_entry;
+  key->key = use_emb_key ? get_emb_key(curr_key_entry) : curr_key_entry;
+  key->length = key_length;
 
-  DBUG_ASSERT(*key >= buff && *key < hash_table);
+  DBUG_ASSERT(key->key >= buff && key->key < hash_table);
 
-  return key_length;
+  return key_length == 0;
 }
 
 /**

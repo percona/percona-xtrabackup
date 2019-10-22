@@ -26,7 +26,6 @@
   - Transaction progress
   - Server state
  */
-#define LOG_COMPONENT_TAG "replication_observers_example"
 
 #include <assert.h>
 #include <mysql/components/my_service.h>
@@ -36,6 +35,7 @@
 #include <mysql/service_rpl_transaction_ctx.h>
 #include <mysqld_error.h>
 #include <sys/types.h>
+#include "plugin/replication_observers_example/gr_message_service_example.h"
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -64,6 +64,7 @@ static int after_engine_recovery_call = 0;
 static int after_recovery_call = 0;
 static int before_server_shutdown_call = 0;
 static int after_server_shutdown_call = 0;
+static int after_dd_upgrade_call = 0;
 static bool thread_aborted = false;
 
 static void dump_server_state_calls() {
@@ -141,6 +142,12 @@ static int after_server_shutdown(Server_state_param *) {
   return 0;
 }
 
+static int after_dd_upgrade(Server_state_param *) {
+  after_dd_upgrade_call++;
+
+  return 0;
+}
+
 Server_state_observer server_state_observer = {
     sizeof(Server_state_observer),
 
@@ -150,6 +157,7 @@ Server_state_observer server_state_observer = {
     after_recovery,            // after_recovery
     before_server_shutdown,    // before shutdown
     after_server_shutdown,     // after shutdown
+    after_dd_upgrade,          // after DD upgrade from 5.7 to 8.0
 };
 
 static int trans_before_dml_call = 0;
@@ -1033,24 +1041,23 @@ bool test_channel_service_interface_relay_log_renamed() {
 static int replication_observers_example_plugin_init(MYSQL_PLUGIN plugin_info) {
   plugin_info_ptr = plugin_info;
 
-  DBUG_ENTER("replication_observers_example_plugin_init");
+  DBUG_TRACE;
 
-  if (init_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs))
-    DBUG_RETURN(1);
+  if (init_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs)) return 1;
 
   if (register_server_state_observer(&server_state_observer,
                                      (void *)plugin_info_ptr)) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Failure in registering the server state observers");
     deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
-    DBUG_RETURN(1);
+    return 1;
   }
 
   if (register_trans_observer(&trans_observer, (void *)plugin_info_ptr)) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Failure in registering the transactions state observers");
     deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
-    DBUG_RETURN(1);
+    return 1;
   }
 
   if (register_binlog_relay_io_observer(&relay_io_observer,
@@ -1058,13 +1065,20 @@ static int replication_observers_example_plugin_init(MYSQL_PLUGIN plugin_info) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Failure in registering the relay io observer");
     deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
-    DBUG_RETURN(1);
+    return 1;
+  }
+
+  if (gr_service_message_example_init()) {
+    LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
+                 "Failure on init gr service message example");
+    deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
+    return 1;
   }
 
   LogPluginErr(INFORMATION_LEVEL, ER_LOG_PRINTF_MSG,
                "replication_observers_example_plugin: init finished");
 
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*
@@ -1084,7 +1098,7 @@ static int replication_observers_example_plugin_init(MYSQL_PLUGIN plugin_info) {
 */
 
 static int replication_observers_example_plugin_deinit(void *p) {
-  DBUG_ENTER("replication_observers_example_plugin_deinit");
+  DBUG_TRACE;
 
   dump_server_state_calls();
   dump_transaction_calls();
@@ -1094,28 +1108,35 @@ static int replication_observers_example_plugin_deinit(void *p) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Failure in unregistering the server state observers");
     deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
-    DBUG_RETURN(1);
+    return 1;
   }
 
   if (unregister_trans_observer(&trans_observer, p)) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Failure in unregistering the transactions state observers");
     deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
-    DBUG_RETURN(1);
+    return 1;
+  }
+
+  if (gr_service_message_example_deinit()) {
+    LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
+                 "Failure on deinit gr service message example");
+    deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
+    return 1;
   }
 
   if (unregister_binlog_relay_io_observer(&relay_io_observer, p)) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                  "Failure in unregistering the relay io observer");
     deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
-    DBUG_RETURN(1);
+    return 1;
   }
 
   LogPluginErr(INFORMATION_LEVEL, ER_LOG_PRINTF_MSG,
                "replication_observers_example_plugin: deinit finished");
   deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
 
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*

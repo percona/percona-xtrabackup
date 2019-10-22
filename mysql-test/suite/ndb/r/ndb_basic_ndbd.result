@@ -97,7 +97,9 @@ Ndb_index_stat_cache_query	#
 Ndb_index_stat_status	#
 Ndb_last_commit_epoch_server	#
 Ndb_last_commit_epoch_session	#
+Ndb_metadata_blacklist_size	#
 Ndb_metadata_detected_count	#
+Ndb_metadata_synced_count	#
 Ndb_number_of_data_nodes	#
 Ndb_number_of_ready_data_nodes	#
 Ndb_pruned_scan_count	#
@@ -158,6 +160,7 @@ ndb_recv_thread_cpu_mask	#
 ndb_report_thresh_binlog_epoch_slip	#
 ndb_report_thresh_binlog_mem_usage	#
 ndb_row_checksum	#
+ndb_schema_dist_lock_wait_timeout	#
 ndb_schema_dist_timeout	#
 ndb_schema_dist_upgrade_allowed	#
 ndb_show_foreign_key_mock_tables	#

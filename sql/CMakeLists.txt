@@ -20,10 +20,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-
-INCLUDE_DIRECTORIES(
-  ${CMAKE_SOURCE_DIR}/libbinlogevents/include
-)
 INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
 MY_INCLUDE_SYSTEM_DIRECTORIES(ICU)
@@ -45,16 +41,20 @@ SET(GEN_KEYWORD_LIST_SOURCES
   ${CMAKE_CURRENT_BINARY_DIR}/keyword_list.h
 )
 
-SET_SOURCE_FILES_PROPERTIES(${GEN_SOURCES}
-                            ${GEN_DIGEST_SOURCES}
-                            ${GEN_KEYWORD_LIST_SOURCES}
-                            ${CONF_SOURCES}
-                            PROPERTIES GENERATED 1)
+SET_SOURCE_FILES_PROPERTIES(
+  ${GEN_SOURCES}
+  ${GEN_DIGEST_SOURCES}
+  ${GEN_KEYWORD_LIST_SOURCES}
+  ${CONF_SOURCES}
+  PROPERTIES GENERATED 1)
 
 # Gen_lex_token
 # Make sure sql_yacc.h is generated before compiling gen_lex_token
-MYSQL_ADD_EXECUTABLE(gen_lex_token gen_lex_token.cc SKIP_INSTALL)
-ADD_DEPENDENCIES(gen_lex_token GenServerSource)
+MYSQL_ADD_EXECUTABLE(gen_lex_token
+  gen_lex_token.cc
+  DEPENDENCIES GenServerSource
+  SKIP_INSTALL
+  )
 
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/lex_token.h
@@ -64,9 +64,13 @@ ADD_CUSTOM_COMMAND(
 
 # gen_keyword_list
 # Make sure sql_yacc.h is generated before compiling gen_keyword_list
-MYSQL_ADD_EXECUTABLE(gen_keyword_list gen_keyword_list.cc SKIP_INSTALL)
-ADD_DEPENDENCIES(gen_keyword_list GenServerSource)
-TARGET_LINK_LIBRARIES(gen_keyword_list ${ICU_LIBRARIES} ${CMAKE_DL_LIBS})
+MYSQL_ADD_EXECUTABLE(gen_keyword_list
+  gen_keyword_list.cc
+  DEPENDENCIES GenServerSource
+  LINK_LIBRARIES ${ICU_LIBRARIES} ${CMAKE_DL_LIBS}
+  SKIP_INSTALL
+  )
+
 # ICU headers for WIN32 need extra info about their libs state
 IF(WIN32)
   ADD_COMPILE_DEFINITIONS(gen_keyword_list.cc COMPILE_DEFINITIONS
@@ -343,6 +347,9 @@ SET(SQL_SHARED_SOURCES
   aggregate_check.cc
   gstream.cc
   handler.cc
+  hash_join_buffer.cc
+  hash_join_chunk.cc
+  hash_join_iterator.cc
   histograms/equi_height.cc
   histograms/equi_height_bucket.cc
   histograms/histogram.cc
@@ -386,7 +393,6 @@ SET(SQL_SHARED_SOURCES
   my_decimal.cc
   mysqld.cc
   mysqld_thd_manager.cc
-  net_ns.cc
   opt_costconstantcache.cc
   opt_costconstants.cc
   opt_costmodel.cc
@@ -563,7 +569,7 @@ IF(WITH_LOCK_ORDER)
   BISON_TARGET(debug_lo_parser
     debug_lo_parser.yy
     ${CMAKE_BINARY_DIR}/sql/debug_lo_parser.cc
-    COMPILE_FLAGS "--name-prefix=LOCK_ORDER_"
+    COMPILE_FLAGS "--name-prefix=LOCK_ORDER_ ${BISON_NO_LINE_OPT}"
     DEFINES_FILE ${CMAKE_BINARY_DIR}/sql/debug_lo_parser.h
     )
   FLEX_TARGET(debug_lo_scanner
@@ -585,7 +591,7 @@ IF(WITH_LOCK_ORDER)
     debug_lock_order.cc
     )
 
-  IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  IF(MY_COMPILER_IS_GNU_OR_CLANG)
     ADD_COMPILE_FLAGS(${FLEX_debug_lo_scanner_OUTPUTS}
       COMPILE_FLAGS
       "-Wno-sign-compare"
@@ -654,8 +660,10 @@ SET(SQL_SOURCE
   ../sql-common/client.cc
   ../sql-common/client_plugin.cc
   ../sql-common/client_authentication.cc
+  ../sql-common/compression.cc
   ../sql-common/get_password.cc
   ../sql-common/my_path_permissions.cc
+  ../sql-common/net_ns.cc
   ../sql-common/net_serv.cc
   ../sql-common/sql_string.cc 
   command_service.cc
@@ -694,8 +702,7 @@ ENDIF()
 
 # Segfault in boost::geometry code at high optimization levels
 IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-  STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
-  IF(CMAKEBT MATCHES "REL")
+  IF(CMAKE_BUILD_TYPE_UPPER MATCHES "REL")
     ADD_COMPILE_FLAGS(item_geofunc_buffer.cc COMPILE_FLAGS "-xO2")
   ENDIF()
 ENDIF()
@@ -718,6 +725,19 @@ IF(WIN32)
     COMPILE_FLAGS "/bigobj")
 ENDIF()
 
+# Downgrade -Werror to warning for gcc 8.2.x
+IF(MY_COMPILER_IS_GNU
+    AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.2
+    AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.3)
+  MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    ADD_COMPILE_FLAGS(
+      item_geofunc_relchecks_bgwrap.cc
+      COMPILE_FLAGS ${HAS_WARN_FLAG}
+      )
+  ENDIF()
+ENDIF()
+
 # Force optimization of (large) MYSQLparse function in MSVC
 IF(WIN32 AND NOT WIN32_CLANG)
   ADD_COMPILE_FLAGS(
@@ -727,7 +747,7 @@ ENDIF()
 
 # Common for all versions of GCC/Clang
 # Bison output uses undefined symbols in #if checks
-IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+IF(MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
                     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
                     COMPILE_FLAGS "-Wno-undef")
@@ -749,7 +769,7 @@ ADD_DEPENDENCIES(sql_main GenDigestServerSource)
 ADD_DEPENDENCIES(sql_main GenBootstrapPriv)
 ADD_DEPENDENCIES(sql_main GenSysSchema)
 TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS} 
-  ${MYSQLD_STATIC_COMPONENT_LIBS}  mysys dbug strings vio
+  component_mysql_server mysys strings vio
   binlogevents_static ${LIBWRAP} ${LIBCRYPT} ${LIBDL} ${SSL_LIBRARIES})
 
 ADD_LIBRARY(sql_gis STATIC ${SQL_GIS_SOURCES})
@@ -808,15 +828,33 @@ IF(WIN32)
   ENDIF()
 ENDIF()
 
-SET (BINLOG_SOURCE rpl_gtid_misc.cc
-                   rpl_gtid_sid_map.cc rpl_gtid_set.cc rpl_gtid_specification.cc
-                   rpl_gtid_state.cc rpl_gtid_owned.cc rpl_gtid_execution.cc
-                   rpl_gtid_mutex_cond_array.cc rpl_gtid_persist.cc
-                   log_event.cc binlog.cc sql_binlog.cc basic_ostream.cc
-                   binlog_ostream.cc basic_istream.cc binlog_istream.cc
-                   binlog_reader.cc rpl_log_encryption.cc stream_cipher.cc
-                   rpl_filter.cc rpl_record.cc rpl_trx_tracking.cc
-                   rpl_utility.cc rpl_injector.cc rpl_table_access.cc)
+SET(BINLOG_SOURCE
+  basic_istream.cc
+  basic_ostream.cc
+  binlog.cc
+  binlog_istream.cc
+  binlog_ostream.cc
+  binlog_reader.cc
+  log_event.cc
+  rpl_filter.cc
+  rpl_gtid_execution.cc
+  rpl_gtid_misc.cc
+  rpl_gtid_mutex_cond_array.cc
+  rpl_gtid_owned.cc
+  rpl_gtid_persist.cc
+  rpl_gtid_set.cc
+  rpl_gtid_sid_map.cc
+  rpl_gtid_specification.cc
+  rpl_gtid_state.cc
+  rpl_injector.cc
+  rpl_log_encryption.cc
+  rpl_record.cc
+  rpl_table_access.cc
+  rpl_trx_tracking.cc
+  rpl_utility.cc
+  sql_binlog.cc
+  stream_cipher.cc
+  )
 ADD_LIBRARY(binlog STATIC ${BINLOG_SOURCE})
 TARGET_LINK_LIBRARIES(binlog binlogevents_static)
 TARGET_LINK_LIBRARIES(binlog rpl)
@@ -832,20 +870,38 @@ ADD_LIBRARY(master STATIC ${MASTER_SOURCE})
 ADD_DEPENDENCIES(master GenError)
 TARGET_LINK_LIBRARIES(master binlog sql_main)
 
-SET (SLAVE_SOURCE rpl_slave.cc rpl_reporting.cc rpl_mi.cc rpl_rli.cc
-                  rpl_info_handler.cc rpl_info_file.cc
-                  rpl_info_table.cc rpl_info_values.cc rpl_info.cc
-                  rpl_info_factory.cc rpl_info_table_access.cc dynamic_ids.cc
-                  rpl_rli_pdb.cc rpl_info_dummy.cc rpl_mts_submode.cc
-                  rpl_slave_commit_order_manager.cc rpl_msr.cc
-                  rpl_trx_boundary_parser.cc rpl_channel_service_interface.cc
-                  rpl_slave_until_options.cc rpl_applier_reader.cc)
+SET (SLAVE_SOURCE
+  dynamic_ids.cc
+  rpl_applier_reader.cc
+  rpl_channel_service_interface.cc
+  rpl_info.cc
+  rpl_info_dummy.cc
+  rpl_info_factory.cc
+  rpl_info_file.cc
+  rpl_info_handler.cc
+  rpl_info_table.cc
+  rpl_info_table_access.cc
+  rpl_info_values.cc
+  rpl_mi.cc
+  rpl_msr.cc
+  rpl_mts_submode.cc
+  rpl_reporting.cc
+  rpl_rli.cc
+  rpl_rli_pdb.cc
+  rpl_slave.cc
+  rpl_slave_commit_order_manager.cc
+  rpl_slave_until_options.cc
+  rpl_trx_boundary_parser.cc
+  )
 ADD_LIBRARY(slave STATIC ${SLAVE_SOURCE})
 ADD_DEPENDENCIES(slave GenError)
 TARGET_LINK_LIBRARIES(slave binlog sql_main)
 
 # All these libraries depend on each other.
 TARGET_LINK_LIBRARIES(sql_main rpl master slave binlog)
+IF(WITH_ICU STREQUAL "bundled")
+  TARGET_LINK_LIBRARIES(sql_main ${ICU_LIBRARIES})
+ENDIF()
 
 IF(WIN32)
   SET(MYSQLD_SOURCE main.cc nt_servc.cc nt_servc.h message.rc)
@@ -853,41 +909,65 @@ ELSE()
   SET(MYSQLD_SOURCE main.cc)
 ENDIF()
 
+
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
-# Handle out-of-source build from source package with possibly broken 
-# bison. Copy bison output to from source to build directory, if not already 
-# there
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/bison.cmake)
 
-COPY_BISON_OUTPUT(
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.h
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.h
-)
+IF(BISON_FOUND)
+  SET(USE_BISON_RESULTS_FROM_MAKE_DIST_DEFAULT OFF)
+ELSE()
+  SET(USE_BISON_RESULTS_FROM_MAKE_DIST_DEFAULT ON)
+ENDIF()
 
-COPY_BISON_OUTPUT(
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_hints.yy.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_hints.yy.h
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.h
-)
+# bison should be REQUIRED, but we have to support source tarball build.
+# https://dev.mysql.com/doc/refman/8.0/en/source-installation.html
+OPTION(USE_BISON_RESULTS_FROM_MAKE_DIST
+  "Use bison results from source distribution tarball"
+  ${USE_BISON_RESULTS_FROM_MAKE_DIST_DEFAULT}
+  )
 
-RUN_BISON(
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy 
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.h
-  MYSQL
-)
+IF(USE_BISON_RESULTS_FROM_MAKE_DIST)
+  # No bison found, see if generated files are available as sources.
+  FOREACH(genfile sql_yacc.h sql_yacc.cc sql_hints.yy.h sql_hints.yy.cc)
+    IF(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${genfile}")
+      MESSAGE(FATAL_ERROR "Cannot find ${CMAKE_CURRENT_SOURCE_DIR}/${genfile}")
+    ENDIF()
+    ADD_CUSTOM_COMMAND(
+      OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${genfile}
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/${genfile}
+        ${CMAKE_CURRENT_BINARY_DIR}/${genfile}
+      COMMENT "Copying file ${genfile}"
+      VERBATIM
+      )
+  ENDFOREACH()
+ELSE()
+  BISON_TARGET(mysql_parser
+    sql_yacc.yy
+    ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+    COMPILE_FLAGS
+    "--name-prefix=MYSQL --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
+    DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.h
+    )
 
-RUN_BISON(
-  ${CMAKE_CURRENT_SOURCE_DIR}/sql_hints.yy 
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.h
-  HINT_PARSER_
-)
+  BISON_TARGET(hints_parser
+    sql_hints.yy
+    ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+    COMPILE_FLAGS
+    "--name-prefix=HINT_PARSER_ --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
+    DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.h
+    )
+
+  MESSAGE(STATUS "BISON outputs ${BISON_mysql_parser_OUTPUTS}")
+  MESSAGE(STATUS "BISON outputs ${BISON_hints_parser_OUTPUTS}")
+
+  # Some targets, for easier debugging.
+  ADD_CUSTOM_TARGET(GenBison_mysql DEPENDS ${BISON_mysql_parser_OUTPUTS})
+  ADD_CUSTOM_TARGET(GenBison_hints DEPENDS ${BISON_hints_parser_OUTPUTS})
+
+ENDIF()
 
 SET_SOURCE_FILES_PROPERTIES(
   ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
@@ -931,10 +1011,7 @@ CONFIGURE_FILE(
 
 ADD_CUSTOM_TARGET(dist 
   COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/make_dist.cmake
-  DEPENDS ${CMAKE_BINARY_DIR}/sql/sql_yacc.cc
-          ${CMAKE_BINARY_DIR}/sql/sql_yacc.h
-          ${CMAKE_BINARY_DIR}/sql/sql_hints.yy.cc
-          ${CMAKE_BINARY_DIR}/sql/sql_hints.yy.h
+  DEPENDS GenBison_mysql GenBison_hints
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 

@@ -74,6 +74,9 @@ class Replication_thread_api {
     @param preserve_logs If logs should be always preserved
     @param public_key_path The file with public key path information
     @param get_public_key Preference to get public key if unavailable.
+    @param compression_algorithm The compression algorithm
+    @param zstd_compression_level The compression level
+
 
     @return the operation status
       @retval 0      OK
@@ -85,7 +88,9 @@ class Replication_thread_api {
                          char *ssl_crl, char *ssl_crlpath,
                          bool ssl_verify_server_cert, int priority,
                          int retry_count, bool preserve_logs,
-                         char *public_key_path, bool get_public_key);
+                         char *public_key_path, bool get_public_key,
+                         char *compression_algorithm,
+                         uint zstd_compression_level);
 
   /**
     Start the Applier/Receiver threads according to the given options.
@@ -305,15 +310,12 @@ class Replication_thread_api {
 
     @param threads_to_stop      The types of threads to be stopped
     @param timeout              The max time in which the thread should stop
-    @param ecode                The error message code
 
     @return the operation status
       @retval 0      OK
       @retval !=0    Error
   */
-  static int rpl_channel_stop_all(
-      int threads_to_stop, long timeout,
-      int ecode = ER_GRP_RPL_ERROR_STOPPING_CHANNELS);
+  static int rpl_channel_stop_all(int threads_to_stop, long timeout);
 
   /**
     Method to get the credentials configured for a channel

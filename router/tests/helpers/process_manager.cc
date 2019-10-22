@@ -245,18 +245,57 @@ void ProcessManager::shutdown_all() {
 
 void ProcessManager::ensure_clean_exit() {
   for (auto &proc : processes_) {
-    try {
-      EXPECT_EQ(std::get<1>(proc), std::get<0>(proc).wait_for_exit())
-          << std::get<0>(proc).get_command_line() << "\n"
-          << std::get<0>(proc).get_full_output() << "\n"
-          << std::get<0>(proc).get_full_logfile() << "\n";
-    } catch (const std::exception &e) {
-      FAIL() << std::get<0>(proc).get_command_line() << "\n"
-             << e.what() << "\n"
-             << "output: " << std::get<0>(proc).get_full_output() << "\n"
-             << "log: " << std::get<0>(proc).get_full_logfile() << "\n";
-    }
+    check_exit_code(std::get<0>(proc), std::get<1>(proc));
   }
+}
+
+void ProcessManager::check_exit_code(ProcessWrapper &process,
+                                     int expected_exit_code,
+                                     std::chrono::milliseconds timeout) {
+  try {
+    ASSERT_EQ(expected_exit_code, process.wait_for_exit(timeout))
+        << process.get_command_line() << "\n"
+        << "output: " << process.get_full_output() << "\n"
+        << "log: " << process.get_full_logfile() << "\n";
+  } catch (const std::exception &e) {
+    FAIL() << process.get_command_line() << "\n"
+           << e.what() << "\n"
+           << "output: " << process.get_full_output() << "\n"
+           << "log: " << process.get_full_logfile() << "\n";
+  }
+}
+
+void ProcessManager::check_port(bool should_be_ready, ProcessWrapper &process,
+                                uint16_t port,
+                                std::chrono::milliseconds timeout,
+                                const std::string &hostname) {
+  bool ready = wait_for_port_ready(port, timeout, hostname);
+
+  // let's collect some more info
+  std::string netstat_info;
+  if (ready != should_be_ready) {
+    auto &netstat = launch_command("netstat", {});
+    check_exit_code(netstat);
+    netstat_info = netstat.get_full_output();
+  }
+
+  ASSERT_EQ(ready, should_be_ready) << process.get_full_output() << "\n"
+                                    << process.get_full_logfile() << "\n"
+                                    << "port: " << std::to_string(port) << "\n"
+                                    << "netstat output: " << netstat_info;
+}
+
+void ProcessManager::check_port_ready(ProcessWrapper &process, uint16_t port,
+                                      std::chrono::milliseconds timeout,
+                                      const std::string &hostname) {
+  check_port(true, process, port, timeout, hostname);
+}
+
+void ProcessManager::check_port_not_ready(ProcessWrapper &process,
+                                          uint16_t port,
+                                          std::chrono::milliseconds timeout,
+                                          const std::string &hostname) {
+  check_port(false, process, port, timeout, hostname);
 }
 
 void ProcessManager::set_origin(const Path &dir) {

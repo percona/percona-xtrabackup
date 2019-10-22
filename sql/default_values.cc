@@ -178,24 +178,22 @@ static void set_pack_record_and_unused_preamble_bits(bool pack_record,
 size_t max_pack_length(const List<Create_field> &create_fields) {
   size_t max_pack_length = 0;
   // Iterate over the create fields and find the largest one.
-  List_iterator<Create_field> field_it(
-      const_cast<List<Create_field> &>(create_fields));
-  Create_field *field;
-  while ((field = field_it++))
-    max_pack_length = std::max<size_t>(field->pack_length(), max_pack_length);
+  for (const Create_field &field : create_fields) {
+    max_pack_length = std::max(field.pack_length(), max_pack_length);
+  }
   return max_pack_length;
 }
 
-bool prepare_default_value(THD *thd, uchar *buf, const TABLE &table,
+bool prepare_default_value(THD *thd, uchar *buf, TABLE *table,
                            const Create_field &field, dd::Column *col_obj) {
   // Create a fake field with a real data buffer in which to store the value.
-  Field *regfield = make_field(field, table.s, buf + 1, buf, 0 /* null_bit */);
+  Field *regfield = make_field(field, table->s, buf + 1, buf, 0 /* null_bit */);
 
   bool retval = true;
   if (!regfield) goto err;
 
   // save_in_field() will access regfield->table->in_use.
-  regfield->init(const_cast<TABLE *>(&table));
+  regfield->init(table);
 
   // Set if the field may be NULL.
   if (!(field.flags & NOT_NULL_FLAG)) regfield->set_null();

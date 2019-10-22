@@ -28,9 +28,10 @@
 #include "my_dbug.h"
 #include "my_loglevel.h"
 #include "my_sys.h"
+#include "violite.h"
+
 #include "plugin/x/tests/driver/driver_command_line_options.h"
 #include "plugin/x/tests/driver/processor/stream_processor.h"
-#include "violite.h"
 
 static void ignore_traces_from_libraries(enum loglevel ll, uint ecode,
                                          va_list args) {}
@@ -195,7 +196,7 @@ static void daemonize() {
 
 int main(int argc, char **argv) {
   MY_INIT(argv[0]);
-  DBUG_ENTER("main");
+  DBUG_TRACE;
 
   local_message_hook = ignore_traces_from_libraries;
 
@@ -215,7 +216,7 @@ int main(int argc, char **argv) {
 #ifdef WIN32
   if (!have_tcpip) {
     std::cerr << "OS doesn't have tcpip\n";
-    DBUG_RETURN(1);
+    return 1;
   }
 #endif
 
@@ -237,5 +238,5 @@ int main(int argc, char **argv) {
 
   vio_end();
   my_end(0);
-  DBUG_RETURN(return_code);
+  return return_code;
 }

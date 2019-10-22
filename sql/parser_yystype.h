@@ -33,7 +33,6 @@
 #include "sql/lexer_yystype.h"                          // Lexer_yystype
 #include "sql/opt_hints.h"                              // opt_hints_enum
 #include "sql/parse_tree_hints.h"
-#include "sql/parser_yystype.h"
 #include "sql_admin.h"            // Sql_cmd_analyze_table::Histogram_command
 #include "sql_alter.h"            // Alter_info::enum_with_validation
 #include "sql_exchange.h"         // Line_separators, enum_filetype
@@ -72,7 +71,7 @@ enum class enum_ha_read_modes;
 */
 struct sys_var_with_base {
   sys_var *var;
-  LEX_STRING base_name;
+  LEX_CSTRING base_name;
 };
 
 enum enum_drop_mode {
@@ -229,7 +228,7 @@ struct Value_or_default {
   T value;  ///< undefined if is_default is true
 };
 
-enum class Explain_format_type { TRADITIONAL, JSON, TREE };
+enum class Explain_format_type { TRADITIONAL, JSON, TREE, TREE_WITH_EXECUTE };
 
 // Compatibility with Bison 2.3:
 #ifndef YYSTYPE_IS_DECLARED

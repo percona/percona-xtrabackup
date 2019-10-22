@@ -99,7 +99,14 @@ bool Rotate_innodb_master_key::execute() {
     return true;
   }
 
-  if (acquire_shared_backup_lock(m_thd, m_thd->variables.lock_wait_timeout)) {
+  /*
+    Acquire shared backup lock to block concurrent backup. Acquire exclusive
+    backup lock to block any concurrent DDL. The fact that we acquire both
+    these locks also ensures that concurrent KEY rotation requests are blocked.
+  */
+  if (acquire_exclusive_backup_lock(m_thd, m_thd->variables.lock_wait_timeout,
+                                    true) ||
+      acquire_shared_backup_lock(m_thd, m_thd->variables.lock_wait_timeout)) {
     // MDL subsystem has to set an error in Diagnostics Area
     DBUG_ASSERT(m_thd->get_stmt_da()->is_error());
     return true;
@@ -132,7 +139,7 @@ bool Rotate_innodb_master_key::execute() {
 }
 
 bool Rotate_binlog_master_key::execute() {
-  DBUG_ENTER("Rotate_binlog_master_key::execute");
+  DBUG_TRACE;
 
   MUTEX_LOCK(lock, &LOCK_rotate_binlog_master_key);
 
@@ -142,18 +149,18 @@ bool Rotate_binlog_master_key::execute() {
            .first) {
     my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
              "SUPER or BINLOG_ENCRYPTION_ADMIN");
-    DBUG_RETURN(true);
+    return true;
   }
 
   if (!rpl_encryption.is_enabled()) {
     my_error(ER_RPL_ENCRYPTION_CANNOT_ROTATE_BINLOG_MASTER_KEY, MYF(0));
-    DBUG_RETURN(true);
+    return true;
   }
 
-  if (rpl_encryption.remove_remaining_seqnos_from_keyring()) DBUG_RETURN(true);
+  if (rpl_encryption.remove_remaining_seqnos_from_keyring()) return true;
 
-  if (rpl_encryption.rotate_master_key()) DBUG_RETURN(true);
+  if (rpl_encryption.rotate_master_key()) return true;
 
   my_ok(m_thd);
-  DBUG_RETURN(false);
+  return false;
 }

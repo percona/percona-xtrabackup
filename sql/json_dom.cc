@@ -47,6 +47,7 @@
 #include "m_string.h"  // my_gcvt, _dig_vec_lower
 #include "malloc_allocator.h"
 #include "my_byteorder.h"
+#include "my_compare.h"
 #include "my_dbug.h"
 #include "my_decimal.h"
 #include "my_double2ulonglong.h"
@@ -2313,19 +2314,6 @@ size_t Json_wrapper::length() const {
   }
 }
 
-/**
-  Compare two numbers of the same type.
-  @param val1 the first number
-  @param val2 the second number
-  @retval -1 if val1 is less than val2,
-  @retval 0 if val1 is equal to val2,
-  @retval 1 if val1 is greater than val2
-*/
-template <class T>
-static int compare_numbers(T val1, T val2) {
-  return (val1 < val2) ? -1 : ((val1 == val2) ? 0 : 1);
-}
-
 #ifdef MYSQL_SERVER
 /**
   Compare a decimal value to a double by converting the double to a
@@ -2821,7 +2809,7 @@ static void handle_coercion_error(enum_coercion_error cr_error,
       */
       push_warning_printf(
           current_thd, Sql_condition::SL_WARNING, error_code,
-          ER_THD(current_thd, error_code), target_type, "", msgnam,
+          ER_THD_NONCONST(current_thd, error_code), target_type, "", msgnam,
           current_thd->get_stmt_da()->current_row_for_condition());
       return;
     }

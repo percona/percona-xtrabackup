@@ -689,8 +689,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
     sys_var *sysvar = NULL;
     string var_name = iter->key;
 
-    LEX_STRING base_name = {const_cast<char *>(var_name.c_str()),
-                            var_name.length()};
+    LEX_CSTRING base_name = {var_name.c_str(), var_name.length()};
 
     sysvar = intern_find_sys_var(var_name.c_str(), var_name.length());
     if (sysvar == NULL) {
@@ -743,7 +742,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
         goto err;
     }
 
-    var = new (thd->mem_root) set_var(OPT_GLOBAL, sysvar, &base_name, res);
+    var = new (thd->mem_root) set_var(OPT_GLOBAL, sysvar, base_name, res);
     tmp_var_list.push_back(var);
 
     if (sql_set_variables(thd, &tmp_var_list, false)) {
@@ -795,6 +794,31 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
 
 err:
   if (new_thd) {
+    /* check for warnings in DA */
+    Diagnostics_area::Sql_condition_iterator it =
+        thd->get_stmt_da()->sql_conditions();
+    const Sql_condition *err = nullptr;
+    while ((err = it++)) {
+      if (err->severity() == Sql_condition::SL_WARNING) {
+        // Rewrite error number for "deprecated" to error log equivalent.
+        if (err->mysql_errno() == ER_WARN_DEPRECATED_SYNTAX)
+          LogEvent()
+              .type(LOG_TYPE_ERROR)
+              .prio(WARNING_LEVEL)
+              .errcode(ER_SERVER_WARN_DEPRECATED)
+              .verbatim(err->message_text());
+        /*
+          Any other (unexpected) message is wrapped to preserve its
+          original error number, and to explain the issue.
+          This is a failsafe; "expected", that is to say, common
+          messages should be handled explicitly like the deprecation
+          warning above.
+        */
+        else
+          LogErr(WARNING_LEVEL, ER_ERROR_INFO_FROM_DA, err->mysql_errno(),
+                 err->message_text());
+      }
+    }
     thd->free_items();
     lex_end(thd->lex);
     thd->release_resources();

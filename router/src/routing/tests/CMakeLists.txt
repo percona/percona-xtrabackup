@@ -33,7 +33,6 @@ INCLUDE_DIRECTORIES(SYSTEM
   ${MYSQLX_GENERATE_DIR}/protobuf_lite
 )
 
-# link_directories(${PROJECT_BINARY_DIR}/ext/protobuf/protobuf-3.0.0/cmake/)
 ADD_LIBRARY(routing_tests STATIC ${ROUTING_SOURCE_FILES})
 TARGET_LINK_LIBRARIES(routing_tests routertest_helpers router_lib
                       metadata_cache_static mysql_protocol_static
@@ -59,17 +58,33 @@ IF(SOLARIS)
   TARGET_LINK_LIBRARIES(routing_plugin_tests -lnsl -lsocket)
 ENDIF()
 
-IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated")
+IF(MY_COMPILER_IS_CLANG)
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-deprecated")
 ENDIF()
 
 SET(TEST_MODULE "routing")
-add_test_dir(${CMAKE_CURRENT_SOURCE_DIR}
+FOREACH(test_file
+    test_block_clients.cc
+    test_classic_protocol.cc
+    test_config.cc
+    test_connection.cc
+    test_connection_container.cc
+    test_first_available.cc
+    test_metadata_cache_group.cc
+    test_next_available.cc
+    test_round_robin.cc
+    test_routing.cc
+    test_setup_named_socket_service.cc
+    test_setup_tcp_service.cc
+    test_x_protocol.cc
+    )
+  add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE ${TEST_MODULE}
   LIB_DEPENDS routing_tests test-helpers
   INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/src/harness/shared/include)
+ENDFOREACH()
 
-add_test_dir(${CMAKE_CURRENT_SOURCE_DIR}/plugin
+add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/plugin/test_plugin.cc
   MODULE "routing"
   LIB_DEPENDS
     routing_tests
@@ -81,7 +96,14 @@ add_test_dir(${CMAKE_CURRENT_SOURCE_DIR}/plugin
     ${PROJECT_SOURCE_DIR}/src/harness/shared/include
   )
 
-add_test_dir(issues MODULE issues
+FOREACH(test_file
+    test_bug21873666.cc
+    test_bug21962350.cc
+    test_bug22062859.cc
+    test_bug22579989.cc
+    )
+  add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/issues/${test_file}
+    MODULE issues
   LIB_DEPENDS
     routing_tests
     routing_plugin_tests
@@ -91,6 +113,7 @@ add_test_dir(issues MODULE issues
     ${PROJECT_SOURCE_DIR}/tests/helpers
     ${PROJECT_SOURCE_DIR}/src/harness/shared/include
   )
+ENDFOREACH()
 
 ROUTERTEST_GET_TARGET(test_target "test_classic_protocol.cc" ${TEST_MODULE})
 TARGET_COMPILE_DEFINITIONS(${test_target}

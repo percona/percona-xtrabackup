@@ -109,12 +109,8 @@ class mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
   MOCK_METHOD0(xcom_init_ssl, bool());
   MOCK_METHOD0(xcom_destroy_ssl, void());
   MOCK_METHOD0(xcom_use_ssl, bool());
-  MOCK_METHOD10(xcom_set_ssl_parameters,
-                void(const char *server_key_file, const char *server_cert_file,
-                     const char *client_key_file, const char *client_cert_file,
-                     const char *ca_file, const char *ca_path,
-                     const char *crl_file, const char *crl_path,
-                     const char *cipher, const char *tls_version));
+  MOCK_METHOD2(xcom_set_ssl_parameters,
+               void(ssl_parameters ssl, tls_parameters tls));
   MOCK_METHOD1(find_site_def, site_def const *(synode_no synode));
   MOCK_METHOD2(xcom_open_handlers, bool(std::string saddr, xcom_port port));
   MOCK_METHOD0(xcom_close_handlers, bool());
@@ -140,7 +136,9 @@ class mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
   MOCK_METHOD0(get_should_exit, bool());
   MOCK_METHOD1(set_should_exit, void(bool should_exit));
 
-  MOCK_METHOD0(xcom_input_connect, bool());
+  MOCK_METHOD2(xcom_input_connect,
+               bool(std::string const &address, xcom_port port));
+  MOCK_METHOD0(xcom_input_disconnect, void());
   MOCK_METHOD1(xcom_input_try_push, bool(app_data_ptr data));
   /* Mocking fails compilation on Windows. It attempts to copy the std::future
    * which is non-copyable. */
@@ -161,12 +159,13 @@ class XComCommunicationTest : public GcsBaseTest {
     static_cast<Gcs_xcom_interface *>(Gcs_xcom_interface::get_interface())
         ->set_xcom_group_information(mock_gid->get_group_id());
     mock_xcom_address = new Gcs_xcom_node_address("127.0.0.1:12345");
+    static_cast<Gcs_xcom_interface *>(Gcs_xcom_interface::get_interface())
+        ->set_node_address(mock_xcom_address->get_member_address());
     mock_stats = new mock_gcs_xcom_statistics_updater();
     mock_proxy = new mock_gcs_xcom_proxy();
     mock_vce = new mock_gcs_xcom_view_change_control_interface();
-    xcom_comm_if =
-        new Gcs_xcom_communication(mock_stats, mock_proxy, mock_vce,
-                                   *mock_xcom_address, engine, *mock_gid);
+    xcom_comm_if = new Gcs_xcom_communication(mock_stats, mock_proxy, mock_vce,
+                                              engine, *mock_gid);
 
     // clang-format off
     xcom_comm_if->get_msg_pipeline().register_stage<Gcs_message_stage_lz4>();
@@ -318,6 +317,12 @@ TEST_F(XComCommunicationTest, ReceiveMessageTest) {
   // Mock the sending of a dummy message instead of our test payload.
   EXPECT_CALL(*mock_vce, belongs_to_group()).Times(1).WillOnce(Return(true));
   EXPECT_CALL(*mock_vce, is_view_changing()).Times(1).WillOnce(Return(false));
+  Gcs_view mock_view(
+      {Gcs_member_identifier(mock_xcom_address->get_member_address())},
+      Gcs_xcom_view_identifier(0, 0), {}, {}, group_id);
+  EXPECT_CALL(*mock_vce, get_unsafe_current_view())
+      .Times(1)
+      .WillOnce(Return(&mock_view));
   EXPECT_CALL(*mock_proxy, xcom_client_send_data(_, _))
       .Times(1)
       .WillOnce(Invoke(&mock_xcom_client_send_data));
@@ -384,6 +389,12 @@ TEST_F(XComCommunicationTest, BufferMessageTest) {
   // Mock the sending of a dummy message instead of our test payload.
   EXPECT_CALL(*mock_vce, belongs_to_group()).Times(1).WillOnce(Return(true));
   EXPECT_CALL(*mock_vce, is_view_changing()).Times(1).WillOnce(Return(false));
+  Gcs_view mock_view(
+      {Gcs_member_identifier(mock_xcom_address->get_member_address())},
+      Gcs_xcom_view_identifier(0, 0), {}, {}, group_id);
+  EXPECT_CALL(*mock_vce, get_unsafe_current_view())
+      .Times(1)
+      .WillOnce(Return(&mock_view));
   EXPECT_CALL(*mock_proxy, xcom_client_send_data(_, _))
       .Times(1)
       .WillOnce(Invoke(&mock_xcom_client_send_data));

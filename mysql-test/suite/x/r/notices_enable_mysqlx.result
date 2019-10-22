@@ -732,6 +732,7 @@ RUN set max_error_count=500
 
 0 rows affected
 RUN insert into t1 select unhex(concat(t24.a, t23.a, t22.a, t21.a)) from t2 t21, t2 t22, t2 t23, t2 t24
+  ORDER BY t24.a, t23.a, t22.a, t21.a
 
 65536 rows affected
 Records: 65536  Duplicates: 0  Warnings: 17775

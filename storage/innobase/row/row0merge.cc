@@ -514,14 +514,14 @@ static ulint row_merge_buf_add(row_merge_buf_t *buf, dict_index_t *fts_index,
   ulint n_row_added = 0;
   ulint n_row_to_add = 0;
   multi_value_data *multi_v = nullptr;
-  DBUG_ENTER("row_merge_buf_add");
+  DBUG_TRACE;
 
   if (buf->n_tuples >= buf->max_tuples) {
-    DBUG_RETURN(0);
+    return 0;
   }
 
   DBUG_EXECUTE_IF("ib_row_merge_buf_add_two",
-                  if (buf->n_tuples >= 2) DBUG_RETURN(0););
+                  if (buf->n_tuples >= 2) return 0;);
 
   UNIV_PREFETCH_R(row->fields);
 
@@ -537,11 +537,11 @@ add_next:
   n_fields = dict_index_get_n_fields(index);
 
   if (buf->n_tuples >= buf->max_tuples) {
-    DBUG_RETURN(n_row_added);
+    return n_row_added;
   }
 
   DBUG_EXECUTE_IF("row_merge_add_multi_value",
-                  if (n_row_added == 5) DBUG_RETURN(n_row_added););
+                  if (n_row_added == 5) return n_row_added;);
 
   entry = &buf->tuples[buf->n_tuples];
   field = entry->fields = static_cast<dfield_t *>(
@@ -599,7 +599,7 @@ add_next:
 
             if (row_field == nullptr) {
               *err = DB_COMPUTE_VALUE_FAILED;
-              DBUG_RETURN(0);
+              return 0;
             }
 
             if (dfield_is_null(row_field)) {
@@ -619,7 +619,7 @@ add_next:
               }
             } else {
               /* Nothing to be indexed */
-              DBUG_RETURN(UNIV_NO_INDEX_VALUE);
+              return UNIV_NO_INDEX_VALUE;
             }
 
             ut_ad(n_row_to_add > 0);
@@ -635,7 +635,7 @@ add_next:
 
           if (row_field == NULL) {
             *err = DB_COMPUTE_VALUE_FAILED;
-            DBUG_RETURN(0);
+            return 0;
           }
         }
         dfield_copy(field, row_field);
@@ -668,7 +668,7 @@ add_next:
             ib::warn(ER_IB_MSG_964) << "FTS Doc ID is"
                                        " zero. Record"
                                        " skipped";
-            DBUG_RETURN(0);
+            return 0;
           }
         }
 
@@ -805,7 +805,7 @@ add_next:
   /* If this is FTS index, we already populated the sort buffer, return
   here */
   if (index->type & DICT_FTS) {
-    DBUG_RETURN(n_row_added);
+    return n_row_added;
   }
 
 #ifdef UNIV_DEBUG
@@ -839,7 +839,7 @@ add_next:
 
   /* Reserve one byte for the end marker of row_merge_block_t. */
   if (buf->total_size + data_size >= srv_sort_buf_size - 1) {
-    DBUG_RETURN(index->is_multi_value() ? n_row_added : 0);
+    return (index->is_multi_value() ? n_row_added : 0);
   }
 
   buf->total_size += data_size;
@@ -863,7 +863,7 @@ add_next:
     *multi_val_added += 1;
 
     DBUG_EXECUTE_IF("row_merge_add_multi_value",
-                    if (*multi_val_added == 7) DBUG_RETURN(n_row_added););
+                    if (*multi_val_added == 7) return n_row_added;);
 
     goto add_next;
   }
@@ -872,7 +872,7 @@ add_next:
     *multi_val_added = 0;
   }
 
-  DBUG_RETURN(n_row_added);
+  return n_row_added;
 }
 
 /** Report a duplicate key. */
@@ -1011,7 +1011,7 @@ void row_merge_buf_write(
   ulint n_fields = dict_index_get_n_fields(index);
   byte *b = &block[0];
 
-  DBUG_ENTER("row_merge_buf_write");
+  DBUG_TRACE;
 
   for (ulint i = 0; i < buf->n_tuples; i++) {
     const mtuple_t *entry = &buf->tuples[i];
@@ -1037,7 +1037,6 @@ void row_merge_buf_write(
   DBUG_PRINT("ib_merge_sort",
              ("write %p,%d,%lu EOF", reinterpret_cast<const void *>(b), of->fd,
               ulong(of->offset)));
-  DBUG_VOID_RETURN;
 }
 
 /** Create a memory heap and allocate space for row_merge_rec_offsets()
@@ -1074,16 +1073,16 @@ ibool row_merge_read(int fd,                 /*!< in: file descriptor */
   os_offset_t ofs = ((os_offset_t)offset) * srv_sort_buf_size;
   dberr_t err;
 
-  DBUG_ENTER("row_merge_read");
+  DBUG_TRACE;
   DBUG_PRINT("ib_merge_sort", ("fd=%d ofs=" UINT64PF, fd, ofs));
-  DBUG_EXECUTE_IF("row_merge_read_failure", DBUG_RETURN(FALSE););
+  DBUG_EXECUTE_IF("row_merge_read_failure", return FALSE;);
 
   IORequest request;
 
   /* Merge sort pages are never compressed. */
   request.disable_compression();
 
-  err = os_file_read_no_error_handling_int_fd(request, fd, buf, ofs,
+  err = os_file_read_no_error_handling_int_fd(request, nullptr, fd, buf, ofs,
                                               srv_sort_buf_size, NULL);
 
 #ifdef POSIX_FADV_DONTNEED
@@ -1095,7 +1094,7 @@ ibool row_merge_read(int fd,                 /*!< in: file descriptor */
     ib::error(ER_IB_MSG_965) << "Failed to read merge block at " << ofs;
   }
 
-  DBUG_RETURN(err == DB_SUCCESS);
+  return err == DB_SUCCESS;
 }
 
 /** Write a merge block to the file system.
@@ -1109,9 +1108,9 @@ ibool row_merge_write(int fd,          /*!< in: file descriptor */
   os_offset_t ofs = buf_len * (os_offset_t)offset;
   dberr_t err;
 
-  DBUG_ENTER("row_merge_write");
+  DBUG_TRACE;
   DBUG_PRINT("ib_merge_sort", ("fd=%d ofs=" UINT64PF, fd, ofs));
-  DBUG_EXECUTE_IF("row_merge_write_failure", DBUG_RETURN(FALSE););
+  DBUG_EXECUTE_IF("row_merge_write_failure", return FALSE;);
 
   IORequest request(IORequest::WRITE);
 
@@ -1125,7 +1124,7 @@ ibool row_merge_write(int fd,          /*!< in: file descriptor */
   posix_fadvise(fd, ofs, buf_len, POSIX_FADV_DONTNEED);
 #endif /* POSIX_FADV_DONTNEED */
 
-  DBUG_RETURN(err == DB_SUCCESS);
+  return err == DB_SUCCESS;
 }
 
 /** Read a merge record.
@@ -1157,7 +1156,7 @@ const byte *row_merge_read_rec(
 
   ut_ad(*offsets == 1 + REC_OFFS_HEADER_SIZE + dict_index_get_n_fields(index));
 
-  DBUG_ENTER("row_merge_read_rec");
+  DBUG_TRACE;
 
   extra_size = *b++;
 
@@ -1167,7 +1166,7 @@ const byte *row_merge_read_rec(
     DBUG_PRINT("ib_merge_sort",
                ("read %p,%p,%d,%lu EOF\n", reinterpret_cast<const void *>(b),
                 reinterpret_cast<const void *>(block), fd, ulong(*foffs)));
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   if (extra_size >= 0x80) {
@@ -1178,7 +1177,7 @@ const byte *row_merge_read_rec(
       err_exit:
         /* Signal I/O error. */
         *mrec = b;
-        DBUG_RETURN(NULL);
+        return NULL;
       }
 
       /* Wrap around to the beginning of the buffer. */
@@ -1278,7 +1277,7 @@ func_exit:
              ("%p,%p,fd=%d,%lu: %s", reinterpret_cast<const void *>(b),
               reinterpret_cast<const void *>(block), fd, ulong(*foffs),
               rec_printer(*mrec, 0, offsets).str().c_str()));
-  DBUG_RETURN(b);
+  return b;
 }
 
 /** Write a merge record. */
@@ -1297,7 +1296,7 @@ static void row_merge_write_rec_low(
   row_merge_write_rec_low(b, e, mrec, offsets)
 #endif /* !UNIV_DEBUG */
 {
-  DBUG_ENTER("row_merge_write_rec_low");
+  DBUG_TRACE;
 
 #ifdef UNIV_DEBUG
   const byte *const end = b + size;
@@ -1316,7 +1315,6 @@ static void row_merge_write_rec_low(
 
   memcpy(b, mrec - rec_offs_extra_size(offsets), rec_offs_size(offsets));
   DBUG_ASSERT(b + rec_offs_size(offsets) == end);
-  DBUG_VOID_RETURN;
 }
 
 /** Write a merge record.
@@ -1392,7 +1390,7 @@ static byte *row_merge_write_eof(
   ut_ad(b < &block[srv_sort_buf_size]);
   ut_ad(foffs);
 
-  DBUG_ENTER("row_merge_write_eof");
+  DBUG_TRACE;
   DBUG_PRINT("ib_merge_sort",
              ("%p,%p,fd=%d,%lu", reinterpret_cast<const void *>(b),
               reinterpret_cast<const void *>(block), fd, ulong(*foffs)));
@@ -1407,11 +1405,11 @@ static byte *row_merge_write_eof(
 #endif /* UNIV_DEBUG_VALGRIND */
 
   if (!row_merge_write(fd, (*foffs)++, block)) {
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   UNIV_MEM_INVALID(&block[0], srv_sort_buf_size);
-  DBUG_RETURN(&block[0]);
+  return &block[0];
 }
 
 /** Create a temporary file if it has not been created already.
@@ -1632,7 +1630,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   mtuple_t prev_mtuple;
   mem_heap_t *conv_heap = NULL;
   FlushObserver *observer = trx->flush_observer;
-  DBUG_ENTER("row_merge_read_clustered_index");
+  DBUG_TRACE;
 
   ut_ad((old_table == new_table) == !col_map);
   ut_ad(!add_cols || col_map);
@@ -2520,7 +2518,7 @@ all_done:
 
   trx->op_info = "";
 
-  DBUG_RETURN(err);
+  return err;
 }
 
 /** Write a record via buffer 2 and read the next record to buffer N.
@@ -2586,7 +2584,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   ulint *offsets0;     /* offsets of mrec0 */
   ulint *offsets1;     /* offsets of mrec1 */
 
-  DBUG_ENTER("row_merge_blocks");
+  DBUG_TRACE;
   DBUG_PRINT("ib_merge_sort",
              ("fd=%d,%lu+%lu to fd=%d,%lu", file->fd, ulong(*foffs0),
               ulong(*foffs1), of->fd, ulong(of->offset)));
@@ -2600,7 +2598,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
       !row_merge_read(file->fd, *foffs1, &block[srv_sort_buf_size])) {
   corrupt:
     mem_heap_free(heap);
-    DBUG_RETURN(DB_CORRUPTION);
+    return DB_CORRUPTION;
   }
 
   b0 = &block[0];
@@ -2624,7 +2622,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
       ROW_MERGE_WRITE_GET_NEXT(1, dup->index, goto merged);
     } else {
       mem_heap_free(heap);
-      DBUG_RETURN(DB_DUPLICATE_KEY);
+      return DB_DUPLICATE_KEY;
     }
   }
 
@@ -2647,7 +2645,7 @@ done1:
   mem_heap_free(heap);
   b2 = row_merge_write_eof(&block[2 * srv_sort_buf_size], b2, of->fd,
                            &of->offset);
-  DBUG_RETURN(b2 ? DB_SUCCESS : DB_CORRUPTION);
+  return b2 ? DB_SUCCESS : DB_CORRUPTION;
 }
 
 /** Copy a block of index entries.
@@ -2674,7 +2672,7 @@ static MY_ATTRIBUTE((warn_unused_result)) ibool
   ulint *offsets0;     /* offsets of mrec0 */
   ulint *offsets1;     /* dummy offsets */
 
-  DBUG_ENTER("row_merge_blocks_copy");
+  DBUG_TRACE;
   DBUG_PRINT("ib_merge_sort", ("fd=%d," ULINTPF " to fd=%d," ULINTPF, file->fd,
                                *foffs0, of->fd, of->offset));
 
@@ -2686,7 +2684,7 @@ static MY_ATTRIBUTE((warn_unused_result)) ibool
   if (!row_merge_read(file->fd, *foffs0, &block[0])) {
   corrupt:
     mem_heap_free(heap);
-    DBUG_RETURN(FALSE);
+    return FALSE;
   }
 
   b0 = &block[0];
@@ -2712,8 +2710,8 @@ done0:
   (*foffs0)++;
 
   mem_heap_free(heap);
-  DBUG_RETURN(row_merge_write_eof(&block[2 * srv_sort_buf_size], b2, of->fd,
-                                  &of->offset) != NULL);
+  return row_merge_write_eof(&block[2 * srv_sort_buf_size], b2, of->fd,
+                             &of->offset) != NULL;
 }
 
 /** Merge disk files.
@@ -2854,7 +2852,7 @@ dberr_t row_merge_sort(trx_t *trx, const row_merge_dup_t *dup,
   ulint num_runs;
   ulint *run_offset;
   dberr_t error = DB_SUCCESS;
-  DBUG_ENTER("row_merge_sort");
+  DBUG_TRACE;
 
   /* Record the number of merge runs we need to perform */
   num_runs = file->offset;
@@ -2865,7 +2863,7 @@ dberr_t row_merge_sort(trx_t *trx, const row_merge_dup_t *dup,
 
   /* If num_runs are less than 1, nothing to merge */
   if (num_runs <= 1) {
-    DBUG_RETURN(error);
+    return error;
   }
 
   /* "run_offset" records each run's first offset number */
@@ -2893,7 +2891,7 @@ dberr_t row_merge_sort(trx_t *trx, const row_merge_dup_t *dup,
 
   ut_free(run_offset);
 
-  DBUG_RETURN(error);
+  return error;
 }
 
 #ifdef UNIV_DEBUG
@@ -3014,7 +3012,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_merge_insert_index_tuples(
   mrec_buf_t *buf;
   ulint n_rows = 0;
   dtuple_t *dtuple;
-  DBUG_ENTER("row_merge_insert_index_tuples");
+  DBUG_TRACE;
 
   ut_ad(!srv_read_only_mode);
   ut_ad(!(index->type & DICT_FTS));
@@ -3144,7 +3142,7 @@ err_exit:
   mem_heap_free(tuple_heap);
   mem_heap_free(heap);
 
-  DBUG_RETURN(error);
+  return error;
 }
 
 /** Sets an exclusive lock on a table, for the duration of creating indexes.
@@ -3464,7 +3462,7 @@ dict_index_t *row_merge_create_index(trx_t *trx, dict_table_t *table,
   ulint i;
   bool has_new_v_col = false;
 
-  DBUG_ENTER("row_merge_create_index");
+  DBUG_TRACE;
 
   ut_ad(!srv_read_only_mode);
 
@@ -3511,7 +3509,7 @@ dict_index_t *row_merge_create_index(trx_t *trx, dict_table_t *table,
   if (err != DB_SUCCESS) {
     trx->error_state = err;
     mutex_enter(&dict_sys->mutex);
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   index =
@@ -3528,7 +3526,7 @@ dict_index_t *row_merge_create_index(trx_t *trx, dict_table_t *table,
     }
 
     trx->error_state = err;
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   if (dict_index_is_spatial(index)) {
@@ -3563,7 +3561,7 @@ dict_index_t *row_merge_create_index(trx_t *trx, dict_table_t *table,
 
   index->table->def_trx_id = trx->id;
 
-  DBUG_RETURN(index);
+  return index;
 }
 
 /** Drop a table. The caller must have ensured that the background stats
@@ -3647,7 +3645,7 @@ dberr_t row_merge_build_indexes(
   fts_psort_t *merge_info = NULL;
   int64_t sig_count = 0;
   bool fts_psort_initiated = false;
-  DBUG_ENTER("row_merge_build_indexes");
+  DBUG_TRACE;
 
   ut_ad(!srv_read_only_mode);
   ut_ad((old_table == new_table) == !col_map);
@@ -3666,7 +3664,7 @@ dberr_t row_merge_build_indexes(
   block = alloc.allocate_large(3 * srv_sort_buf_size, &block_pfx);
 
   if (block == NULL) {
-    DBUG_RETURN(DB_OUT_OF_MEMORY);
+    return DB_OUT_OF_MEMORY;
   }
 
   trx_start_if_not_started_xa(trx, true);
@@ -3967,5 +3965,5 @@ func_exit:
     }
   }
 
-  DBUG_RETURN(error);
+  return error;
 }

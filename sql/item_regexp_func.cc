@@ -142,7 +142,7 @@ bool Item_func_regexp_instr::fix_fields(THD *thd, Item **arguments) {
 }
 
 longlong Item_func_regexp_instr::val_int() {
-  DBUG_ENTER("Item_func_regexp_instr::val_int");
+  DBUG_TRACE;
   DBUG_ASSERT(fixed);
   Nullable<int> pos = position();
   Nullable<int> occ = occurrence();
@@ -151,23 +151,23 @@ longlong Item_func_regexp_instr::val_int() {
   if (set_pattern() || !pos.has_value() || !occ.has_value() ||
       !retopt.has_value()) {
     null_value = true;
-    DBUG_RETURN(0);
+    return 0;
   }
 
   Nullable<int32_t> result =
       m_facade->Find(subject(), pos.value(), occ.value(), retopt.value());
-  if (result.has_value()) DBUG_RETURN(result.value());
+  if (result.has_value()) return result.value();
   null_value = true;
-  DBUG_RETURN(0);
+  return 0;
 }
 
 longlong Item_func_regexp_like::val_int() {
-  DBUG_ENTER("Item_func_regexp_like::val_int");
+  DBUG_TRACE;
   DBUG_ASSERT(fixed);
 
   if (set_pattern()) {
     null_value = true;
-    DBUG_RETURN(0);
+    return 0;
   }
 
   /*
@@ -177,9 +177,9 @@ longlong Item_func_regexp_like::val_int() {
   Nullable<bool> result =
       m_facade->Matches(subject(), position().value(), occurrence().value());
   null_value = !result.has_value();
-  if (null_value) DBUG_RETURN(0);
+  if (null_value) return 0;
 
-  DBUG_RETURN(result.value());
+  return result.value();
 }
 
 bool Item_func_regexp_replace::resolve_type(THD *thd) {

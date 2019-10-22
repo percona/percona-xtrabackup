@@ -47,6 +47,7 @@ struct plugin_local_variables {
   std::atomic<bool> plugin_is_stopping;
   std::atomic<bool> group_replication_running;
   std::atomic<bool> group_replication_cloning;
+  std::atomic<bool> error_state_due_to_error_during_autorejoin;
 
   bool force_members_running;
   uint gr_lower_case_table_names;
@@ -83,6 +84,7 @@ struct plugin_local_variables {
     plugin_is_stopping = false;
     group_replication_running = false;
     group_replication_cloning = false;
+    error_state_due_to_error_during_autorejoin = false;
 
     force_members_running = false;
     gr_lower_case_table_names = 0;
@@ -160,6 +162,8 @@ struct plugin_options_variables {
   bool recovery_ssl_verify_server_cert_var;
   char *recovery_public_key_path_var;
   bool recovery_get_public_key_var;
+  char *recovery_compression_algorithm_var;
+  uint recovery_zstd_compression_level_var;
 
   const char *recovery_policies[3] = {"TRANSACTIONS_CERTIFIED",
                                       "TRANSACTIONS_APPLIED", (char *)0};
@@ -231,8 +235,9 @@ struct plugin_options_variables {
 
   char *communication_debug_options_var;
 
-  const char *exit_state_actions[3] = {"READ_ONLY", "ABORT_SERVER", (char *)0};
-  TYPELIB exit_state_actions_typelib_t = {2, "exit_state_actions_typelib_t",
+  const char *exit_state_actions[4] = {"READ_ONLY", "ABORT_SERVER",
+                                       "OFFLINE_MODE", (char *)0};
+  TYPELIB exit_state_actions_typelib_t = {3, "exit_state_actions_typelib_t",
                                           exit_state_actions, NULL};
   ulong exit_state_action_var;
 

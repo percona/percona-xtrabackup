@@ -88,12 +88,12 @@ The tablespace memory cache */
 using Dirs = std::vector<std::string>;
 using Space_id_set = std::set<space_id_t>;
 
-#if defined(__SUNPRO_CC)
-char *Fil_path::SEPARATOR = "\\/";
-char *Fil_path::DOT_SLASH = "./";
-char *Fil_path::DOT_DOT_SLASH = "../";
-char *Fil_path::SLASH_DOT_DOT_SLASH = "/../";
-#endif /* defined(__SUNPRO_CC) */
+constexpr char Fil_path::DB_SEPARATOR;
+constexpr char Fil_path::OS_SEPARATOR;
+constexpr const char *Fil_path::SEPARATOR;
+constexpr const char *Fil_path::DOT_SLASH;
+constexpr const char *Fil_path::DOT_DOT_SLASH;
+constexpr const char *Fil_path::SLASH_DOT_DOT_SLASH;
 
 /** Used for collecting the data in boot_tablespaces() */
 namespace dd_fil {
@@ -629,12 +629,7 @@ class Fil_shard {
 
   /** Destructor */
   ~Fil_shard() {
-#ifndef UNIV_HOTBACKUP
     mutex_destroy(&m_mutex);
-#else
-    mutex_free(&m_mutex);
-#endif /* !UNIV_HOTBACKUP */
-
     ut_a(UT_LIST_GET_LEN(m_LRU) == 0);
     ut_a(UT_LIST_GET_LEN(m_unflushed_spaces) == 0);
   }
@@ -2340,8 +2335,8 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
 
   IORequest request(IORequest::READ);
 
-  dberr_t err =
-      os_file_read_first_page(request, file->handle, page, UNIV_PAGE_SIZE);
+  dberr_t err = os_file_read_first_page(request, file->name, file->handle, page,
+                                        UNIV_PAGE_SIZE);
 
   ut_a(err == DB_SUCCESS);
 
@@ -2577,13 +2572,12 @@ bool Fil_shard::open_file(fil_node_t *file, bool extend) {
                        OS_FILE_AIO, OS_DATA_FILE, read_only_mode, &success);
   }
 
-  ut_a(success);
+  if (success) {
+    /* The file is ready for IO. */
+    file_opened(file);
+  }
 
-  /* The file is ready for IO. */
-
-  file_opened(file);
-
-  return (true);
+  return (success);
 }
 
 /** Close a tablespace file.
@@ -4204,9 +4198,6 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
 
   if (err != DB_SUCCESS) {
     ut_a(err == DB_TABLESPACE_NOT_FOUND);
-
-    ib::error(ER_IB_MSG_290, ulong{space_id});
-
     return (err);
   }
 
@@ -5082,24 +5073,25 @@ dberr_t fil_rename_tablespace(space_id_t space_id, const char *old_path,
 dberr_t Fil_system::rename_tablespace_name(space_id_t space_id,
                                            const char *old_name,
                                            const char *new_name) {
-  Fil_shard *old_shard = fil_system->shard_by_id(space_id);
+  auto old_shard = fil_system->shard_by_id(space_id);
 
   old_shard->mutex_acquire();
 
-  fil_space_t *old_space = old_shard->get_space_by_id(space_id);
+  auto old_space = old_shard->get_space_by_id(space_id);
 
   if (old_space == nullptr) {
+    old_shard->mutex_release();
+
     ib::error(ER_IB_MSG_299, old_name);
 
     return (DB_TABLESPACE_NOT_FOUND);
   }
 
   ut_ad(old_space == old_shard->get_space_by_name(old_name));
-
   old_shard->mutex_release();
 
-  Fil_shard *new_shard = nullptr;
-  fil_space_t *new_space = nullptr;
+  Fil_shard *new_shard{};
+  fil_space_t *new_space{};
 
   mutex_acquire_all();
 
@@ -7434,7 +7426,7 @@ dberr_t Fil_shard::do_redo_io(const IORequest &type, const page_id_t &page_id,
   }
 
   if (req_type.is_read()) {
-    err = os_file_read(req_type, file->handle, buf, offset, len);
+    err = os_file_read(req_type, file->name, file->handle, buf, offset, len);
 
   } else {
     ut_ad(!srv_read_only_mode);
@@ -7687,7 +7679,7 @@ dberr_t Fil_shard::do_io(const IORequest &type, bool sync,
 #ifdef UNIV_HOTBACKUP
   /* In mysqlbackup do normal I/O, not AIO */
   if (req_type.is_read()) {
-    err = os_file_read(req_type, file->handle, buf, offset, len);
+    err = os_file_read(req_type, file->name, file->handle, buf, offset, len);
 
   } else {
     ut_ad(!srv_read_only_mode || fsp_is_system_temporary(page_id.space()));
@@ -8354,8 +8346,8 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
       read_request.encryption_algorithm(Encryption::AES);
     }
 
-    err = os_file_read(read_request, iter.m_file, io_buffer, offset,
-                       (ulint)n_bytes);
+    err = os_file_read(read_request, iter.m_filepath, iter.m_file, io_buffer,
+                       offset, (ulint)n_bytes);
 
     if (err != DB_SUCCESS) {
       ib::error(ER_IB_MSG_335) << "os_file_read() failed";
@@ -8503,7 +8495,8 @@ dberr_t fil_tablespace_iterate(dict_table_t *table, ulint n_io_buffers,
 
   IORequest request(IORequest::READ);
 
-  err = os_file_read_first_page(request, file, page, UNIV_PAGE_SIZE);
+  err = os_file_read_first_page(request, path.c_str(), file, page,
+                                UNIV_PAGE_SIZE);
 
   if (err != DB_SUCCESS) {
     err = DB_IO_ERROR;
@@ -8527,15 +8520,21 @@ dberr_t fil_tablespace_iterate(dict_table_t *table, ulint n_io_buffers,
     ulint space_flags = callback.get_space_flags();
 
     if (FSP_FLAGS_GET_ENCRYPTION(space_flags)) {
-      ut_ad(table->encryption_key != nullptr);
-
       if (!dd_is_table_in_encrypted_tablespace(table)) {
-        ib::error(ER_IB_MSG_338) << "Table is not in an encrypted"
-                                    " tablespace, but the data file which"
-                                    " trying to import is an encrypted"
-                                    " tablespace";
+        ib::error(ER_IB_MSG_338) << "Table is not in an encrypted tablespace,"
+                                    " but the data file intended for import"
+                                    " is an encrypted tablespace";
 
         err = DB_IO_NO_ENCRYPT_TABLESPACE;
+      } else {
+        /* encryption_key must have been populated while reading CFP file. */
+        ut_ad(table->encryption_key != nullptr &&
+              table->encryption_iv != nullptr);
+
+        if (table->encryption_key == nullptr ||
+            table->encryption_iv == nullptr) {
+          err = DB_ERROR;
+        }
       }
     }
 
@@ -8989,6 +8988,31 @@ Fil_path::Fil_path(const char *path, size_t len, bool normalize_path)
 /** Default constructor. */
 Fil_path::Fil_path() : m_path(), m_abs_path() { /* No op */
 }
+
+bool Fil_path::is_hidden(std::string path) {
+  std::string basename(path);
+  while (!basename.empty()) {
+    char c = basename.back();
+    if (!(Fil_path::is_separator(c) || c == '*')) {
+      break;
+    }
+    basename.resize(basename.size() - 1);
+  }
+  auto sep = basename.find_last_of(SEPARATOR);
+
+  return (sep != std::string::npos && basename[sep + 1] == '.');
+}
+
+#ifdef _WIN32
+bool Fil_path::is_hidden(WIN32_FIND_DATA &dirent) {
+  if (dirent.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN ||
+      dirent.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) {
+    return (true);
+  }
+
+  return (false);
+}
+#endif /* WIN32 */
 
 /** @return true if the path exists and is a file . */
 os_file_type_t Fil_path::get_file_type(const std::string &path) {
@@ -9553,7 +9577,7 @@ static void convert_space_name_to_filesystem_charset(
   }
 
   /* Remove the trailing extension (if any), from the filename. */
-  pos = filename.find(".");
+  pos = filename.find_last_of(".");
   if (pos != std::string::npos) {
     filename.resize(pos);
   }
@@ -9574,8 +9598,10 @@ static void convert_space_name_to_filesystem_charset(
   char db_buf[MAX_DATABASE_NAME_LEN + 1];
   char tbl_buf[MAX_TABLE_NAME_LEN + 1];
 
+  /* This call sets stay_quiet to true because the subdir might be "." which
+  would cause an unnecessary warning. */
   auto len = filename_to_tablename(subdir.c_str(), db_buf,
-                                   (MAX_DATABASE_NAME_LEN + 1));
+                                   (MAX_DATABASE_NAME_LEN + 1), true);
   db_buf[len] = '\0';
 
   len = filename_to_tablename(filename.c_str(), tbl_buf,
@@ -10614,7 +10640,7 @@ static dberr_t fil_rename_validate(fil_space_t *space, const std::string &name,
 @param[in]	old_name	old file name
 @param[in]	new_name	new file name
 @return	whether the operation was successfully applied (the name did not exist,
-or new_name did not exist and name was successfully renamed to new_name)  */
+or new_name did not exist and name was successfully renamed to new_name) */
 static bool fil_op_replay_rename(const page_id_t &page_id,
                                  const std::string &old_name,
                                  const std::string &new_name) {

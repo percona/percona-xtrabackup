@@ -1929,6 +1929,8 @@ ERROR HY000: Variable 'relay_log_info_file' is a GLOBAL variable
 SELECT @@global.relay_log_info_file;
 @@global.relay_log_info_file
 relay-log.info
+Warnings:
+Warning	1287	'@@relay_log_info_file' is deprecated and will be removed in a future release.
 SET @@session.relay_log_info_file= 'x';
 ERROR HY000: Variable 'relay_log_info_file' is a read only variable
 SET @@global.relay_log_info_file= 'x';
@@ -2026,6 +2028,7 @@ SET SESSION pseudo_thread_id = @@session.pseudo_thread_id;
 SET SESSION rand_seed1 = @@session.rand_seed1;
 SET SESSION rand_seed2 = @@session.rand_seed2;
 SET SESSION resultset_metadata = @@session.resultset_metadata;
+SET SESSION show_create_table_skip_secondary_engine = @@session.show_create_table_skip_secondary_engine;
 SET SESSION sql_log_bin = @@session.sql_log_bin;
 SET SESSION timestamp = @@session.timestamp;
 SET SESSION transaction_allow_batching = @@session.transaction_allow_batching;

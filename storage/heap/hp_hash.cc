@@ -22,6 +22,7 @@
 
 /* The hash functions used for saveing keys */
 
+#include <inttypes.h>
 #include <math.h>
 #include <sys/types.h>
 
@@ -65,7 +66,7 @@ ha_rows hp_rb_records_in_range(HP_INFO *info, int inx, key_range *min_key,
   HP_KEYDEF *keyinfo = info->s->keydef + inx;
   TREE *rb_tree = &keyinfo->rb_tree;
   heap_rb_param custom_arg;
-  DBUG_ENTER("hp_rb_records_in_range");
+  DBUG_TRACE;
 
   info->lastinx = inx;
   custom_arg.keyseg = keyinfo->seg;
@@ -90,11 +91,10 @@ ha_rows hp_rb_records_in_range(HP_INFO *info, int inx, key_range *min_key,
 
   DBUG_PRINT("info", ("start_pos: %lu  end_pos: %lu", (ulong)start_pos,
                       (ulong)end_pos));
-  if (start_pos == HA_POS_ERROR || end_pos == HA_POS_ERROR)
-    DBUG_RETURN(HA_POS_ERROR);
-  DBUG_RETURN(end_pos < start_pos
-                  ? (ha_rows)0
-                  : (end_pos == start_pos ? (ha_rows)1 : end_pos - start_pos));
+  if (start_pos == HA_POS_ERROR || end_pos == HA_POS_ERROR) return HA_POS_ERROR;
+  return end_pos < start_pos
+             ? (ha_rows)0
+             : (end_pos == start_pos ? (ha_rows)1 : end_pos - start_pos);
 }
 
 /* Search after a record based on a key */
@@ -107,7 +107,7 @@ uchar *hp_search(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
   int flag;
   uint old_nextflag;
   HP_SHARE *share = info->s;
-  DBUG_ENTER("hp_search");
+  DBUG_TRACE;
   old_nextflag = nextflag;
   flag = 1;
   prev_ptr = 0;
@@ -122,7 +122,7 @@ uchar *hp_search(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
           case 0: /* Search after key */
             DBUG_PRINT("exit", ("found key at %p", pos->ptr_to_rec));
             info->current_hash_ptr = pos;
-            DBUG_RETURN(info->current_ptr = pos->ptr_to_rec);
+            return info->current_ptr = pos->ptr_to_rec;
           case 1: /* Search next */
             if (pos->ptr_to_rec == info->current_ptr) nextflag = 0;
             break;
@@ -130,15 +130,14 @@ uchar *hp_search(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
             if (pos->ptr_to_rec == info->current_ptr) {
               set_my_errno(HA_ERR_KEY_NOT_FOUND); /* If gpos == 0 */
               info->current_hash_ptr = prev_ptr;
-              DBUG_RETURN(info->current_ptr =
-                              prev_ptr ? prev_ptr->ptr_to_rec : 0);
+              return info->current_ptr = prev_ptr ? prev_ptr->ptr_to_rec : 0;
             }
             prev_ptr = pos; /* Prev. record found */
             break;
           case 3: /* Search same */
             if (pos->ptr_to_rec == info->current_ptr) {
               info->current_hash_ptr = pos;
-              DBUG_RETURN(info->current_ptr);
+              return info->current_ptr;
             }
         }
       }
@@ -155,14 +154,14 @@ uchar *hp_search(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
   if (nextflag == 2 && !info->current_ptr) {
     /* Do a previous from end */
     info->current_hash_ptr = prev_ptr;
-    DBUG_RETURN(info->current_ptr = prev_ptr ? prev_ptr->ptr_to_rec : 0);
+    return info->current_ptr = prev_ptr ? prev_ptr->ptr_to_rec : 0;
   }
 
   if (old_nextflag && nextflag)
     set_my_errno(HA_ERR_RECORD_CHANGED); /* Didn't find old record */
   DBUG_PRINT("exit", ("Error: %d", my_errno()));
   info->current_hash_ptr = 0;
-  DBUG_RETURN((info->current_ptr = 0));
+  return (info->current_ptr = 0);
 }
 
 /*
@@ -172,18 +171,18 @@ uchar *hp_search(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
 
 uchar *hp_search_next(HP_INFO *info, HP_KEYDEF *keyinfo, const uchar *key,
                       HASH_INFO *pos) {
-  DBUG_ENTER("hp_search_next");
+  DBUG_TRACE;
 
   while ((pos = pos->next_key)) {
     if (!hp_key_cmp(keyinfo, pos->ptr_to_rec, key)) {
       info->current_hash_ptr = pos;
-      DBUG_RETURN(info->current_ptr = pos->ptr_to_rec);
+      return info->current_ptr = pos->ptr_to_rec;
     }
   }
   set_my_errno(HA_ERR_KEY_NOT_FOUND);
   DBUG_PRINT("exit", ("Error: %d", my_errno()));
   info->current_hash_ptr = 0;
-  DBUG_RETURN((info->current_ptr = 0));
+  return (info->current_ptr = 0);
 }
 
 /*
@@ -283,7 +282,7 @@ uint64 hp_hashnr(HP_KEYDEF *keydef, const uchar *key) {
       }
     }
   }
-  DBUG_PRINT("exit", ("hash: 0x%llx", nr));
+  DBUG_PRINT("exit", ("hash: 0x%" PRIx64, nr));
   return nr;
 }
 
@@ -342,7 +341,7 @@ uint64 hp_rec_hashnr(HP_KEYDEF *keydef, const uchar *rec) {
       }
     }
   }
-  DBUG_PRINT("exit", ("hash: 0x%llx", nr));
+  DBUG_PRINT("exit", ("hash: 0x%" PRIx64, nr));
   return (nr);
 }
 

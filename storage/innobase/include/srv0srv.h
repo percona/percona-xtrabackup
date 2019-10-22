@@ -534,9 +534,18 @@ extern ulint srv_buf_pool_size;
 extern const ulint srv_buf_pool_min_size;
 /** Default pool size in bytes */
 extern const ulint srv_buf_pool_def_size;
+/** Maximum pool size in bytes */
+extern const longlong srv_buf_pool_max_size;
 /** Requested buffer pool chunk size. Each buffer pool instance consists
 of one or more chunks. */
 extern ulonglong srv_buf_pool_chunk_unit;
+/** Minimum buffer pool chunk size. */
+extern const ulonglong srv_buf_pool_chunk_unit_min;
+/** The buffer pool chunk size must be a multiple of this number. */
+extern const ulonglong srv_buf_pool_chunk_unit_blk_sz;
+/** Maximum buffer pool chunk size. */
+extern const ulonglong srv_buf_pool_chunk_unit_max;
+
 /** Requested number of buffer pool instances */
 extern ulong srv_buf_pool_instances;
 /** Default number of buffer pool instances */
@@ -565,6 +574,11 @@ extern ulong srv_n_read_io_threads;
 extern ulong srv_n_write_io_threads;
 
 extern uint srv_change_buffer_max_size;
+
+/** Default value of srv_idle_flush_pct */
+extern const ulong srv_idle_flush_pct_default;
+/** How much flush to be done in case of server is idle */
+extern ulong srv_idle_flush_pct;
 
 /* Number of IO operations per second the server can do */
 extern ulong srv_io_capacity;
@@ -665,7 +679,7 @@ extern bool srv_purge_view_update_only_debug;
 extern bool srv_master_thread_disabled_debug;
 #endif /* UNIV_DEBUG */
 
-extern ulint srv_fatal_semaphore_wait_threshold;
+extern ulong srv_fatal_semaphore_wait_threshold;
 #define SRV_SEMAPHORE_WAIT_EXTENSION 7200
 extern ulint srv_dml_needed_delay;
 
@@ -1147,6 +1161,12 @@ struct srv_slot_t {
   /** Time when the thread was suspended. Initialized by
   lock_wait_table_reserve_slot() for lock wait. */
   ib_time_monotonic_t suspend_time;
+
+  /** Stores the current value of lock_wait_table_reservations, when
+  lock_wait_table_reserve_slot is called.
+  This can be used as a version number to avoid ABA problems.
+  Protected by lock->wait_mutex. */
+  uint64_t reservation_no;
 
   /** Wait time that if exceeded the thread will be timed out.
   Initialized by lock_wait_table_reserve_slot() for lock wait. */

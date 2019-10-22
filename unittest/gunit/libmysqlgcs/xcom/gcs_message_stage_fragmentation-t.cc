@@ -80,12 +80,8 @@ class Mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
   MOCK_METHOD0(xcom_init_ssl, bool());
   MOCK_METHOD0(xcom_destroy_ssl, void());
   MOCK_METHOD0(xcom_use_ssl, bool());
-  MOCK_METHOD10(xcom_set_ssl_parameters,
-                void(const char *server_key_file, const char *server_cert_file,
-                     const char *client_key_file, const char *client_cert_file,
-                     const char *ca_file, const char *ca_path,
-                     const char *crl_file, const char *crl_path,
-                     const char *cipher, const char *tls_version));
+  MOCK_METHOD2(xcom_set_ssl_parameters,
+               void(ssl_parameters ssl, tls_parameters tls));
   MOCK_METHOD1(find_site_def, site_def const *(synode_no synode));
   MOCK_METHOD2(xcom_open_handlers, bool(std::string saddr, xcom_port port));
   MOCK_METHOD0(xcom_close_handlers, bool());
@@ -111,7 +107,9 @@ class Mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
   MOCK_METHOD0(get_should_exit, bool());
   MOCK_METHOD1(set_should_exit, void(bool should_exit));
 
-  MOCK_METHOD0(xcom_input_connect, bool());
+  MOCK_METHOD2(xcom_input_connect,
+               bool(std::string const &address, xcom_port port));
+  MOCK_METHOD0(xcom_input_disconnect, void());
   MOCK_METHOD1(xcom_input_try_push, bool(app_data_ptr data));
   /* Mocking fails compilation on Windows. It attempts to copy the std::future
    * which is non-copyable. */
@@ -162,14 +160,15 @@ class GcsMessageStageFragmentationTest : public GcsBaseTest {
   Mock_gcs_xcom_proxy m_mock_proxy;
   Mock_gcs_xcom_view_change_control_interface m_mock_vce;
   Gcs_xcom_communication m_xcom_comm_if{&m_mock_stats, &m_mock_proxy,
-                                        &m_mock_vce,   m_mock_xcom_address,
-                                        &m_engine,     m_mock_gid};
+                                        &m_mock_vce, &m_engine, m_mock_gid};
   Gcs_message_stage_split_v2 *m_fragmentation_stage{nullptr};
 
  public:
   GcsMessageStageFragmentationTest() {
     static_cast<Gcs_xcom_interface *>(Gcs_xcom_interface::get_interface())
         ->set_xcom_group_information(m_mock_gid.get_group_id());
+    static_cast<Gcs_xcom_interface *>(Gcs_xcom_interface::get_interface())
+        ->set_node_address(m_mock_xcom_address.get_member_address());
   }
 
   void configure_pipeline(bool const fragmentation_enabled,
@@ -268,6 +267,12 @@ TEST_F(GcsMessageStageFragmentationTest, ReassemblyOfFragmentsThatCrossViews) {
   auto last_fragment = Gcs_packet::make_incoming_packet(
       std::move(buffer_pointer), buffer_size, synod_last_fragment,
       m_xcom_comm_if.get_msg_pipeline());
+  Gcs_view mock_view(
+      {Gcs_member_identifier(m_mock_xcom_address.get_member_address())},
+      Gcs_xcom_view_identifier(0, 0), {}, {}, m_mock_gid);
+  EXPECT_CALL(m_mock_vce, get_unsafe_current_view())
+      .Times(1)
+      .WillOnce(Return(&mock_view));
   m_xcom_comm_if.process_user_data_packet(std::move(last_fragment),
                                           std::move(xcom_nodes_last_view));
 

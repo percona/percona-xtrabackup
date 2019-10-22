@@ -1672,6 +1672,10 @@ static void log_files_write_buffer(log_t &log, byte *buffer, size_t buffer_size,
 
   notify_about_advanced_write_lsn(log, old_write_lsn, new_write_lsn);
 
+  LOG_SYNC_POINT("log_writer_before_buf_limit_update");
+
+  log_update_buf_limit(log, new_write_lsn);
+
   srv_stats.os_log_pending_writes.dec();
   srv_stats.log_writes.inc();
 
@@ -1919,10 +1923,6 @@ static void log_writer_write_buffer(log_t &log, lsn_t next_write_lsn) {
   log_files_write_buffer(
       log, buf_begin, buf_end - buf_begin,
       ut_uint64_align_down(last_write_lsn, OS_FILE_LOG_BLOCK_SIZE));
-
-  LOG_SYNC_POINT("log_writer_before_limits_update");
-
-  log_update_limits(log);
 
   LOG_SYNC_POINT("log_writer_write_end");
 }

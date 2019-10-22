@@ -231,7 +231,7 @@ static void dict_index_remove_from_cache_low(
 have some changed dynamic metadata in memory and have not been written
 back to mysql.innodb_dynamic_metadata. Update LSN limit, which is used
 to stop user threads when redo log is running out of space and they
-do not hold latches (log.sn_limit_for_start). */
+do not hold latches (log.free_check_limit_sn). */
 static void dict_persist_update_log_margin(void);
 
 /** Removes a table object from the dictionary cache. */
@@ -1076,7 +1076,7 @@ dict_table_t *dict_table_open_on_name(
                                   loading a table definition */
 {
   dict_table_t *table;
-  DBUG_ENTER("dict_table_open_on_name");
+  DBUG_TRACE;
   DBUG_PRINT("dict_table_open_on_name", ("table: '%s'", table_name));
 
   if (!dict_locked) {
@@ -1106,7 +1106,7 @@ dict_table_t *dict_table_open_on_name(
       ib::info(ER_IB_MSG_175) << "Table " << table->name
                               << " is corrupted. Please drop the table"
                                  " and recreate it";
-      DBUG_RETURN(NULL);
+      return NULL;
     }
 
     if (table->can_be_evicted) {
@@ -1122,7 +1122,7 @@ dict_table_t *dict_table_open_on_name(
     dict_table_try_drop_aborted_and_mutex_exit(table, try_drop);
   }
 
-  DBUG_RETURN(table);
+  return table;
 }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -3320,7 +3320,7 @@ dberr_t dict_foreign_add_to_cache(dict_foreign_t *foreign,
   ibool added_to_referenced_list = FALSE;
   FILE *ef = dict_foreign_err_file;
 
-  DBUG_ENTER("dict_foreign_add_to_cache");
+  DBUG_TRACE;
   DBUG_PRINT("dict_foreign_add_to_cache", ("id: %s", foreign->id));
 
   ut_ad(mutex_own(&dict_sys->mutex));
@@ -3366,7 +3366,7 @@ dberr_t dict_foreign_add_to_cache(dict_foreign_t *foreign,
         mem_heap_free(foreign->heap);
       }
 
-      DBUG_RETURN(DB_CANNOT_ADD_CONSTRAINT);
+      return DB_CANNOT_ADD_CONSTRAINT;
     }
 
     for_in_cache->referenced_table = ref_table;
@@ -3410,7 +3410,7 @@ dberr_t dict_foreign_add_to_cache(dict_foreign_t *foreign,
         mem_heap_free(foreign->heap);
       }
 
-      DBUG_RETURN(DB_CANNOT_ADD_CONSTRAINT);
+      return DB_CANNOT_ADD_CONSTRAINT;
     }
 
     for_in_cache->foreign_table = for_table;
@@ -3435,7 +3435,7 @@ dberr_t dict_foreign_add_to_cache(dict_foreign_t *foreign,
   }
 
   ut_ad(dict_lru_validate());
-  DBUG_RETURN(DB_SUCCESS);
+  return DB_SUCCESS;
 }
 
 /** Scans from pointer onwards. Stops if is at the start of a copy of
@@ -3841,7 +3841,7 @@ static char *dict_strip_comments(
   char quote = 0;
   bool escape = false;
 
-  DBUG_ENTER("dict_strip_comments");
+  DBUG_TRACE;
 
   DBUG_PRINT("dict_strip_comments", ("%s", sql_string));
 
@@ -3859,7 +3859,7 @@ static char *dict_strip_comments(
       ut_a(ptr <= str + sql_length);
 
       DBUG_PRINT("dict_strip_comments", ("%s", str));
-      DBUG_RETURN(str);
+      return str;
     }
 
     if (*sptr == quote) {
@@ -3942,7 +3942,7 @@ ulint dict_table_get_highest_foreign_id(
   ulint id;
   ulint len;
 
-  DBUG_ENTER("dict_table_get_highest_foreign_id");
+  DBUG_TRACE;
 
   ut_a(table);
 
@@ -3975,7 +3975,7 @@ ulint dict_table_get_highest_foreign_id(
 
   DBUG_PRINT("dict_table_get_highest_foreign_id", ("id: %lu", biggest_id));
 
-  DBUG_RETURN(biggest_id);
+  return biggest_id;
 }
 
 /** Reports a simple foreign key create clause syntax error. */
@@ -5483,7 +5483,7 @@ void dict_persist_to_dd_table_buffer() {
   bool persisted = false;
 
   if (dict_sys == nullptr) {
-    log_sys->dict_max_allowed_checkpoint_lsn = 0;
+    log_set_dict_max_allowed_checkpoint_lsn(*log_sys, 0);
     return;
   }
 
@@ -5518,7 +5518,7 @@ void dict_persist_to_dd_table_buffer() {
   We must not remove redo which could allow to deduce them.
   Therefore the maximum allowed lsn for checkpoint is the
   current lsn. */
-  log_sys->dict_max_allowed_checkpoint_lsn = persisted_lsn;
+  log_set_dict_max_allowed_checkpoint_lsn(*log_sys, persisted_lsn);
 
   mutex_exit(&dict_persist->mutex);
 
@@ -5533,7 +5533,7 @@ void dict_persist_to_dd_table_buffer() {
 have some changed dynamic metadata in memory and have not been written
 back to mysql.innodb_dynamic_metadata. Update LSN limit, which is used
 to stop user threads when redo log is running out of space and they
-do not hold latches (log.sn_limit_for_start). */
+do not hold latches (log.free_check_limit_sn). */
 static void dict_persist_update_log_margin() {
   /* Below variables basically considers only the AUTO_INCREMENT counter
   and a small margin for corrupted indexes. */
@@ -5574,10 +5574,7 @@ static void dict_persist_update_log_margin() {
 
   if (log_sys != nullptr) {
     /* Update margin for redo log */
-    log_sys->dict_persist_margin.store(margin);
-
-    /* Update log.sn_limit_for_start. */
-    log_update_limits(*log_sys);
+    log_set_dict_persist_margin(*log_sys, margin);
   }
 }
 #endif /* !UNIV_HOTBACKUP */
@@ -5876,6 +5873,7 @@ void dict_resize() {
 
   mutex_exit(&dict_sys->mutex);
 }
+#endif /* !UNIV_HOTBACKUP */
 
 /** Closes the data dictionary module. */
 void dict_close(void) {
@@ -5901,6 +5899,7 @@ void dict_close(void) {
     dict_table_close(dict_sys->ddl_log, true, false);
   }
 
+#ifndef UNIV_HOTBACKUP
   /* Free the hash elements. We don't remove them from the table
   because we are going to destroy the table anyway. */
   for (ulint i = 0; i < hash_get_n_cells(dict_sys->table_id_hash); i++) {
@@ -5917,6 +5916,7 @@ void dict_close(void) {
       dict_table_remove_from_cache(prev_table);
     }
   }
+#endif /* !UNIV_HOTBACKUP */
 
   hash_table_free(dict_sys->table_hash);
 
@@ -5924,7 +5924,9 @@ void dict_close(void) {
   therefore we don't delete the individual elements. */
   hash_table_free(dict_sys->table_id_hash);
 
+#ifndef UNIV_HOTBACKUP
   dict_ind_free();
+#endif /* !UNIV_HOTBACKUP */
 
   mutex_exit(&dict_sys->mutex);
   mutex_free(&dict_sys->mutex);
@@ -5936,10 +5938,12 @@ void dict_close(void) {
 
   mutex_free(&dict_foreign_err_mutex);
 
+#ifndef UNIV_HOTBACKUP
   if (dict_foreign_err_file != NULL) {
     fclose(dict_foreign_err_file);
     dict_foreign_err_file = NULL;
   }
+#endif /* !UNIV_HOTBACKUP */
 
   ut_ad(dict_sys->size == 0);
 
@@ -5947,6 +5951,7 @@ void dict_close(void) {
   dict_sys = NULL;
 }
 
+#ifndef UNIV_HOTBACKUP
 #ifdef UNIV_DEBUG
 /** Validate the dictionary table LRU list.
  @return true if valid */

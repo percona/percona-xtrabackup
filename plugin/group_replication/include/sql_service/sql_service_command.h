@@ -154,6 +154,7 @@ class Sql_service_commands {
    Method to kill the session identified by the given session id in those
    cases where the server hangs while executing the sql query.
 
+   @param sql_interface  the server session interface for query execution
    @param session_id  id of the session to be killed.
 
    @return the error value returned
@@ -161,7 +162,7 @@ class Sql_service_commands {
     @retval >0 - Failure
   */
   long internal_kill_session(Sql_service_interface *sql_interface,
-                             void *arg = NULL);
+                             void *session_id = NULL);
 
   /**
    Method to set a variable using SET PERSIST_ONLY
@@ -212,6 +213,19 @@ class Sql_service_commands {
   */
   long internal_execute_conditional_query(Sql_service_interface *sql_interface,
                                           void *variable_args = NULL);
+
+  /**
+    Internal method to set the offline mode.
+
+    @param sql_interface the server session interface for query execution
+    @param arg a generic argument to give the method info or get a result
+
+    @return error code during execution of the sql query.
+       @retval 0  - success
+       @retval >0 - failure
+  */
+  long internal_set_offline_mode(Sql_service_interface *sql_interface,
+                                 void *arg = NULL);
 };
 
 struct st_session_method {
@@ -390,6 +404,15 @@ class Sql_service_command_interface {
   long kill_session(unsigned long session_id);
 
   /**
+    Checks if there is an existing session
+
+    @return the error value returned
+      @retval true  valid
+      @retval false some issue prob happened on connection
+  */
+  bool is_session_valid();
+
+  /**
     Method to set the super_read_only variable "ON".
 
     @return error code during execution of the sql query.
@@ -549,6 +572,15 @@ class Sql_service_command_interface {
   */
   long execute_conditional_query(std::string &query, bool *result,
                                  std::string &error);
+
+  /**
+    Method to set the offline_mode variable "ON".
+
+    @return error code during execution of the sql query.
+       @retval 0  - success
+       @retval >0 - failure
+  */
+  long set_offline_mode();
 
  private:
   enum_plugin_con_isolation connection_thread_isolation;

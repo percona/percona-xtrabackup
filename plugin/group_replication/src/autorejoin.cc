@@ -24,6 +24,7 @@
 
 #include "plugin/group_replication/include/autorejoin.h"
 #include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_handlers/offline_mode_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/read_mode_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/stage_monitor_handler.h"
 
@@ -100,7 +101,7 @@ bool Autorejoin_thread::abort_rejoin() {
 }
 
 int Autorejoin_thread::start_autorejoin(uint attempts, ulonglong timeout) {
-  DBUG_ENTER("Autorejoin_thread::start_autorejoin");
+  DBUG_TRACE;
   int ret = 0;
 
   mysql_mutex_lock(&m_run_lock);
@@ -145,7 +146,7 @@ int Autorejoin_thread::start_autorejoin(uint attempts, ulonglong timeout) {
 
 end:
   mysql_mutex_unlock(&m_run_lock);
-  DBUG_RETURN(ret);
+  return ret;
 }
 
 bool Autorejoin_thread::is_autorejoin_ongoing() {
@@ -220,13 +221,20 @@ void Autorejoin_thread::execute_rejoin_process() {
       if someone called Autorejoin_thread::abort(), because that implies an
       explicit stop and thus we probably don't want to abort right here.
     */
-    if (get_exit_state_action_var() == EXIT_STATE_ACTION_ABORT_SERVER &&
-        (error && !m_abort)) {
-      std::stringstream ss;
-      ss << "Could not rejoin the member to the group after " << m_attempts
-         << " attempts";
-      std::string msg = ss.str();
-      abort_plugin_process(msg.c_str());
+    if (error && !m_abort) {
+      switch (get_exit_state_action_var()) {
+        case EXIT_STATE_ACTION_ABORT_SERVER: {
+          std::stringstream ss;
+          ss << "Could not rejoin the member to the group after " << m_attempts
+             << " attempts";
+          std::string msg = ss.str();
+          abort_plugin_process(msg.c_str());
+          break;
+        }
+        case EXIT_STATE_ACTION_OFFLINE_MODE:
+          enable_server_offline_mode(PSESSION_INIT_THREAD);
+          break;
+      }
     }
   } else {
     LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_FINISHED_AUTO_REJOIN, num_attempts,
@@ -259,9 +267,9 @@ void Autorejoin_thread::execute_rejoin_process() {
   mysql_mutex_lock(&m_run_lock);
   m_thd->release_resources();
   global_thd_manager_remove_thd(m_thd);
-  m_autorejoin_thd_state.set_terminated();
   delete m_thd;
   m_thd = nullptr;
+  m_autorejoin_thd_state.set_terminated();
   mysql_cond_broadcast(&m_run_cond);
   mysql_mutex_unlock(&m_run_lock);
 

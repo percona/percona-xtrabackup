@@ -123,22 +123,16 @@ void Dbdih::initRecords()
                                               ctabFileSize);
 
   // Initialize BAT for interface to file system
-  NewVARIABLE* bat = allocateBat(22);
-  bat[1].WA = &pageRecord->word[0];
-  bat[1].nrr = cpageFileSize;
-  bat[1].ClusterSize = sizeof(PageRecord);
-  bat[1].bits.q = 11;
-  bat[1].bits.v = 5;
-  bat[20].WA = &sysfileData[0];
-  bat[20].nrr = 1;
-  bat[20].ClusterSize = sizeof(sysfileData);
-  bat[20].bits.q = 7;
-  bat[20].bits.v = 5;
-  bat[21].WA = &sysfileDataToFile[0];
-  bat[21].nrr = 1;
-  bat[21].ClusterSize = sizeof(sysfileDataToFile);
-  bat[21].bits.q = 7;
-  bat[21].bits.v = 5;
+  NewVARIABLE* bat = allocateBat(3);
+  bat[0].WA = &pageRecord->word[0];
+  bat[0].nrr = cpageFileSize;
+  bat[0].ClusterSize = sizeof(PageRecord);
+  bat[0].bits.q = 11;
+  bat[0].bits.v = 5;
+  bat[1].WA = &cdata[0];
+  bat[1].nrr = 1;
+  bat[2].WA = &sysfileDataToFile[0];
+  bat[2].nrr = 1;
 }//Dbdih::initRecords()
 
 Dbdih::Dbdih(Block_context& ctx):
@@ -160,6 +154,7 @@ Dbdih::Dbdih(Block_context& ctx):
   c_mainTakeOverPtr.p = 0;
   c_activeThreadTakeOverPtr.i = RNIL;
   c_activeThreadTakeOverPtr.p = 0;
+  m_max_node_id = Uint32(~0);
 
   /* Node Recovery Status Module signals */
   addRecSignal(GSN_ALLOC_NODEID_REP, &Dbdih::execALLOC_NODEID_REP);
@@ -190,8 +185,6 @@ Dbdih::Dbdih(Block_context& ctx):
   addRecSignal(GSN_MASTER_GCPREQ, &Dbdih::execMASTER_GCPREQ);
   addRecSignal(GSN_MASTER_GCPREF, &Dbdih::execMASTER_GCPREF);
   addRecSignal(GSN_MASTER_GCPCONF, &Dbdih::execMASTER_GCPCONF);
-  addRecSignal(GSN_EMPTY_LCP_CONF, &Dbdih::execEMPTY_LCP_CONF);
-  addRecSignal(GSN_EMPTY_LCP_REP, &Dbdih::execEMPTY_LCP_REP);
 
   addRecSignal(GSN_MASTER_LCPREQ, &Dbdih::execMASTER_LCPREQ);
   addRecSignal(GSN_MASTER_LCPREF, &Dbdih::execMASTER_LCPREF);

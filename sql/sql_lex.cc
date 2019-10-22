@@ -84,7 +84,6 @@ sys_var *trg_new_row_fake_var = (sys_var *)0x01;
   LEX_STRING constant for null-string to be used in parser and other places.
 */
 const LEX_STRING null_lex_str = {NULL, 0};
-const LEX_STRING empty_lex_str = {(char *)"", 0};
 /**
   Mapping from enum values in enum_binlog_stmt_unsafe to error codes.
 
@@ -148,21 +147,20 @@ Table_ident::Table_ident(Protocol *protocol, const LEX_CSTRING &db_arg,
 }
 
 bool lex_init(void) {
-  DBUG_ENTER("lex_init");
+  DBUG_TRACE;
 
   for (CHARSET_INFO **cs = all_charsets;
        cs < all_charsets + array_elements(all_charsets) - 1; cs++) {
     if (*cs && (*cs)->ctype && is_supported_parser_charset(*cs)) {
-      if (init_state_maps(*cs)) DBUG_RETURN(true);  // OOM
+      if (init_state_maps(*cs)) return true;  // OOM
     }
   }
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 void lex_free(void) {  // Call this when daemon ends
-  DBUG_ENTER("lex_free");
-  DBUG_VOID_RETURN;
+  DBUG_TRACE;
 }
 
 void st_parsing_options::reset() {
@@ -459,6 +457,7 @@ void LEX::reset() {
   create_info = NULL;
   server_options.reset();
   explain_format = NULL;
+  is_explain_analyze = false;
   is_lex_started = true;
   reset_slave_info.all = false;
   mi.channel = NULL;
@@ -472,6 +471,7 @@ void LEX::reset() {
   binlog_need_explicit_defaults_ts = false;
   m_extended_show = false;
   option_type = OPT_DEFAULT;
+  force_iterator_executor = false;
 
   clear_privileges();
   grant_as.cleanup();
@@ -487,7 +487,7 @@ void LEX::reset() {
 */
 
 bool lex_start(THD *thd) {
-  DBUG_ENTER("lex_start");
+  DBUG_TRACE;
 
   LEX *lex = thd->lex;
 
@@ -503,7 +503,7 @@ bool lex_start(THD *thd) {
   lex->m_IS_table_stats.invalidate_cache();
   lex->m_IS_tablespace_stats.invalidate_cache();
 
-  DBUG_RETURN(status);
+  return status;
 }
 
 /**
@@ -511,7 +511,7 @@ bool lex_start(THD *thd) {
 */
 
 void lex_end(LEX *lex) {
-  DBUG_ENTER("lex_end");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("lex: %p", lex));
 
   /* release used plugins */
@@ -523,8 +523,6 @@ void lex_end(LEX *lex) {
 
   sp_head::destroy(lex->sphead);
   lex->sphead = NULL;
-
-  DBUG_VOID_RETURN;
 }
 
 SELECT_LEX *LEX::new_empty_query_block() {
@@ -548,26 +546,26 @@ SELECT_LEX *LEX::new_empty_query_block() {
   @return new query specification if successful, NULL if error
 */
 SELECT_LEX *LEX::new_query(SELECT_LEX *curr_select) {
-  DBUG_ENTER("LEX::new_query");
+  DBUG_TRACE;
 
   if (curr_select != NULL &&
       curr_select->nest_level >= (int)MAX_SELECT_NESTING) {
     my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0),
              MAX_SELECT_NESTING);
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   Name_resolution_context *outer_context = current_context();
 
   SELECT_LEX *const select = new_empty_query_block();
-  if (!select) DBUG_RETURN(NULL); /* purecov: inspected */
+  if (!select) return NULL; /* purecov: inspected */
 
   enum_parsing_context parsing_place =
       curr_select ? curr_select->parsing_place : CTX_NONE;
 
   SELECT_LEX_UNIT *const sel_unit =
       new (thd->mem_root) SELECT_LEX_UNIT(parsing_place);
-  if (!sel_unit) DBUG_RETURN(NULL); /* purecov: inspected */
+  if (!sel_unit) return NULL; /* purecov: inspected */
 
   // Link the new "unit" below the current select_lex, if any
   if (curr_select != NULL) sel_unit->include_down(this, curr_select);
@@ -576,7 +574,7 @@ SELECT_LEX *LEX::new_query(SELECT_LEX *curr_select) {
 
   select->include_in_global(&all_selects_list);
 
-  if (select->set_context(NULL)) DBUG_RETURN(NULL); /* purecov: inspected */
+  if (select->set_context(NULL)) return NULL; /* purecov: inspected */
   /*
     Assume that a subquery has an outer name resolution context
     (even a non-lateral derived table may have outer references).
@@ -609,7 +607,7 @@ SELECT_LEX *LEX::new_query(SELECT_LEX *curr_select) {
   DBUG_PRINT("outer_field",
              ("ctx %p <-> SL# %d", &select->context, select->select_number));
 
-  DBUG_RETURN(select);
+  return select;
 }
 
 /**
@@ -620,19 +618,11 @@ SELECT_LEX *LEX::new_query(SELECT_LEX *curr_select) {
   @param curr_select current query specification
   @param distinct True if part of UNION DISTINCT query
 
-  @param check_syntax This function is called from both new and legacy
-  code. New code uses the actual parse tree for checking syntax before
-  creating SELECT_LEX'es (good), while legacy code checks the SELECT_LEX
-  structures later on to see what syntax they seem to be generated from
-  (bad). When all parser rules have been converted, this parameter will always
-  be false, and can be removed.
-
   @return new query specification if successful, NULL if an error occurred.
 */
 
-SELECT_LEX *LEX::new_union_query(SELECT_LEX *curr_select, bool distinct,
-                                 bool check_syntax) {
-  DBUG_ENTER("LEX::new_union_query");
+SELECT_LEX *LEX::new_union_query(SELECT_LEX *curr_select, bool distinct) {
+  DBUG_TRACE;
 
   DBUG_ASSERT(unit != NULL && select_lex != NULL);
 
@@ -645,33 +635,21 @@ SELECT_LEX *LEX::new_union_query(SELECT_LEX *curr_select, bool distinct,
   */
   if (outer_most && result) {
     my_error(ER_WRONG_USAGE, MYF(0), "UNION", "INTO");
-    DBUG_RETURN(NULL);
-  }
-
-  if (check_syntax) {
-    if (curr_select->order_list.first && !curr_select->braces) {
-      my_error(ER_WRONG_USAGE, MYF(0), "UNION", "ORDER BY");
-      DBUG_RETURN(NULL);
-    }
-
-    if (curr_select->explicit_limit && !curr_select->braces) {
-      my_error(ER_WRONG_USAGE, MYF(0), "UNION", "LIMIT");
-      DBUG_RETURN(NULL);
-    }
+    return NULL;
   }
 
   SELECT_LEX *const select = new_empty_query_block();
-  if (!select) DBUG_RETURN(NULL); /* purecov: inspected */
+  if (!select) return NULL; /* purecov: inspected */
 
   select->include_neighbour(this, curr_select);
 
   SELECT_LEX_UNIT *const sel_unit = select->master_unit();
 
   if (!sel_unit->fake_select_lex && sel_unit->add_fake_select_lex(thd))
-    DBUG_RETURN(NULL); /* purecov: inspected */
+    return NULL; /* purecov: inspected */
 
   if (select->set_context(sel_unit->first_select()->context.outer_context))
-    DBUG_RETURN(NULL); /* purecov: inspected */
+    return NULL; /* purecov: inspected */
 
   select->include_in_global(&all_selects_list);
 
@@ -686,7 +664,7 @@ SELECT_LEX *LEX::new_union_query(SELECT_LEX *curr_select, bool distinct,
   */
   select->context.resolve_in_select_list = true;
 
-  DBUG_RETURN(select);
+  return select;
 }
 
 /**
@@ -697,7 +675,7 @@ SELECT_LEX *LEX::new_union_query(SELECT_LEX *curr_select, bool distinct,
 */
 
 bool LEX::new_top_level_query() {
-  DBUG_ENTER("LEX::new_top_level_query");
+  DBUG_TRACE;
 
   // Assure that the LEX does not contain any query expression already
   DBUG_ASSERT(unit == NULL && select_lex == NULL);
@@ -706,11 +684,11 @@ bool LEX::new_top_level_query() {
   DBUG_ASSERT(result == 0);
 
   select_lex = new_query(NULL);
-  if (select_lex == NULL) DBUG_RETURN(true); /* purecov: inspected */
+  if (select_lex == NULL) return true; /* purecov: inspected */
 
   unit = select_lex->master_unit();
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -731,7 +709,7 @@ bool LEX::new_top_level_query() {
 void LEX::new_static_query(SELECT_LEX_UNIT *sel_unit, SELECT_LEX *select)
 
 {
-  DBUG_ENTER("LEX::new_static_query");
+  DBUG_TRACE;
 
   reset();
 
@@ -751,8 +729,6 @@ void LEX::new_static_query(SELECT_LEX_UNIT *sel_unit, SELECT_LEX *select)
   set_current_select(select);
 
   select->context.resolve_in_select_list = true;
-
-  DBUG_VOID_RETURN;
 }
 
 Yacc_state::~Yacc_state() {
@@ -815,7 +791,7 @@ static int find_keyword(Lex_input_stream *lip, uint len, bool function) {
 
   if (symbol) {
     lip->yylval->keyword.symbol = symbol;
-    lip->yylval->keyword.str = (char *)tok;
+    lip->yylval->keyword.str = const_cast<char *>(tok);
     lip->yylval->keyword.length = len;
 
     if ((symbol->tok == NOT_SYM) &&
@@ -968,7 +944,7 @@ static char *get_text(Lex_input_stream *lip, int pre_skip, int post_skip) {
 
       if (!(start =
                 static_cast<char *>(lip->m_thd->alloc((uint)(end - str) + 1))))
-        return (char *)"";  // MEM_ROOT has set error flag
+        return const_cast<char *>("");  // MEM_ROOT has set error flag
 
       lip->m_cpp_text_start = lip->get_cpp_tok_start() + pre_skip;
       lip->m_cpp_text_end = lip->get_cpp_ptr() - post_skip;
@@ -1454,7 +1430,7 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
         return (result_state);  // IDENT or IDENT_QUOTED
 
       case MY_LEX_IDENT_SEP:  // Found ident and now '.'
-        yylval->lex_str.str = (char *)lip->get_ptr();
+        yylval->lex_str.str = const_cast<char *>(lip->get_ptr());
         yylval->lex_str.length = 1;
         c = lip->yyGet();  // should be '.'
         lip->next_state =
@@ -1882,7 +1858,7 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
             lip->next_state = MY_LEX_HOSTNAME;
             break;
         }
-        yylval->lex_str.str = (char *)lip->get_ptr();
+        yylval->lex_str.str = const_cast<char *>(lip->get_ptr());
         yylval->lex_str.length = 1;
         return ((int)'@');
       case MY_LEX_HOSTNAME:  // end '@' of user@hostname
@@ -1893,7 +1869,7 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
         yylval->lex_str = get_token(lip, 0, lip->yyLength());
         return (LEX_HOSTNAME);
       case MY_LEX_SYSTEM_VAR:
-        yylval->lex_str.str = (char *)lip->get_ptr();
+        yylval->lex_str.str = const_cast<char *>(lip->get_ptr());
         yylval->lex_str.length = 1;
         lip->yySkip();  // Skip '@'
         lip->next_state =
@@ -2104,7 +2080,6 @@ SELECT_LEX::SELECT_LEX(Item *where, Item *having)
       nest_level(0),
       inner_sum_func_list(NULL),
       with_wild(0),
-      braces(false),
       having_fix_field(false),
       group_fix_field(false),
       explicit_limit(false),
@@ -2451,9 +2426,9 @@ void SELECT_LEX::add_order_to_list(ORDER *order) {
 }
 
 bool SELECT_LEX::add_item_to_list(Item *item) {
-  DBUG_ENTER("SELECT_LEX::add_item_to_list");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("Item: %p", item));
-  DBUG_RETURN(item_list.push_back(item));
+  return item_list.push_back(item);
 }
 
 bool SELECT_LEX::add_ftfunc_to_list(Item_func_match *func) {
@@ -2471,11 +2446,6 @@ void SELECT_LEX::invalidate() {
   slave = NULL;
   link_next = NULL;
   link_prev = NULL;
-}
-
-bool SELECT_LEX::set_braces(bool value) {
-  braces = value;
-  return 0;
 }
 
 bool SELECT_LEX::setup_base_ref_items(THD *thd) {
@@ -2549,9 +2519,13 @@ void SELECT_LEX_UNIT::print(const THD *thd, String *str,
       else if (union_distinct == sl)
         union_all = true;
     }
-    if (sl->braces) str->append('(');
+    bool parentheses_are_needed =
+        sl->has_explicit_limit_or_order() &&
+        (is_union() || (fake_select_lex != nullptr &&
+                        fake_select_lex->has_explicit_limit_or_order()));
+    if (parentheses_are_needed) str->append('(');
     sl->print(thd, str, query_type);
-    if (sl->braces) str->append(')');
+    if (parentheses_are_needed) str->append(')');
   }
   if (fake_select_lex) {
     if (fake_select_lex->order_list.elements) {
@@ -4146,12 +4120,12 @@ void LEX::restore_backup_query_tables_list(Query_tables_list *backup) {
 */
 
 bool LEX::table_or_sp_used() {
-  DBUG_ENTER("table_or_sp_used");
+  DBUG_TRACE;
 
   if ((sroutines != nullptr && !sroutines->empty()) || query_tables)
-    DBUG_RETURN(true);
+    return true;
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 /**
@@ -4698,6 +4672,10 @@ void LEX_MASTER_INFO::initialize() {
   repl_ignore_server_ids.clear();
   channel = NULL;
   for_channel = false;
+  compression_algorithm = nullptr;
+  zstd_compression_level = 0;
+  privilege_checks_none = false;
+  privilege_checks_username = privilege_checks_hostname = NULL;
 }
 
 void LEX_MASTER_INFO::set_unspecified() {

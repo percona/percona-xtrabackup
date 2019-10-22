@@ -77,6 +77,7 @@ struct st_opt_hint_info opt_hint_info[] = {
     {"INDEX_MERGE", false, false, false},
     {"RESOURCE_GROUP", false, false, false},
     {"SKIP_SCAN", false, false, false},
+    {"HASH_JOIN", true, true, false},
     {0, 0, 0, 0}};
 
 /**
@@ -631,8 +632,8 @@ bool Sys_var_hint::add_var(THD *thd, sys_var *sys_var, Item *sys_var_value) {
     }
   }
 
-  set_var *var = new (thd->mem_root) set_var(
-      OPT_SESSION, sys_var, (const LEX_STRING *)&sys_var->name, sys_var_value);
+  set_var *var = new (thd->mem_root)
+      set_var(OPT_SESSION, sys_var, sys_var->name, sys_var_value);
   if (!var) return true;
 
   Hint_set_var *hint_var = new (thd->mem_root) Hint_set_var(var);

@@ -34,11 +34,14 @@ Clone Plugin: Clone status as performance schema plugin table
 #include "plugin/clone/include/clone.h"
 #include "plugin/clone/include/clone_client.h"
 
-SERVICE_TYPE(pfs_plugin_table_v1) *mysql_pfs_table = nullptr;
-SERVICE_TYPE(pfs_plugin_column_integer_v1) *mysql_pfscol_int = nullptr;
-SERVICE_TYPE(pfs_plugin_column_bigint_v1) *mysql_pfscol_bigint = nullptr;
-SERVICE_TYPE(pfs_plugin_column_string_v1) *mysql_pfscol_string = nullptr;
-SERVICE_TYPE(pfs_plugin_column_timestamp_v2) *mysql_pfscol_timestamp = nullptr;
+SERVICE_TYPE_NO_CONST(pfs_plugin_table_v1) *mysql_pfs_table = nullptr;
+SERVICE_TYPE_NO_CONST(pfs_plugin_column_integer_v1) *mysql_pfscol_int = nullptr;
+SERVICE_TYPE_NO_CONST(pfs_plugin_column_bigint_v1) *mysql_pfscol_bigint =
+    nullptr;
+SERVICE_TYPE_NO_CONST(pfs_plugin_column_string_v1) *mysql_pfscol_string =
+    nullptr;
+SERVICE_TYPE_NO_CONST(pfs_plugin_column_timestamp_v2) *mysql_pfscol_timestamp =
+    nullptr;
 
 #define FILE_PREFIX "#"
 
@@ -71,10 +74,10 @@ static bool acquire_service(T &service, const char *name) {
     return (true);                           \
   }
 
-#define RELEASE_SERVICE(service)                            \
-  if (service != nullptr) {                                 \
-    mysql_service_registry->release((my_h_service)service); \
-    service = nullptr;                                      \
+#define RELEASE_SERVICE(service)                                              \
+  if (service != nullptr) {                                                   \
+    mysql_service_registry->release(reinterpret_cast<my_h_service>(service)); \
+    service = nullptr;                                                        \
   }
 
 /* Namespace for all clone data types */

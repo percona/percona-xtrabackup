@@ -116,9 +116,9 @@ std::pair<int, int> Regexp_engine::MatchedSubstring() {
 }
 
 void Regexp_engine::AppendHead(size_t size) {
-  DBUG_ENTER("Regexp_engine::AppendHead");
+  DBUG_TRACE;
 
-  if (size == 0) DBUG_VOID_RETURN;
+  if (size == 0) return;
 
   // This won't be written to in case of errors.
   int32_t text_length32 = 0;
@@ -128,14 +128,12 @@ void Regexp_engine::AppendHead(size_t size) {
 #endif
 
   // We make sure we are not in an error state before we start copying.
-  if (m_error_code != U_ZERO_ERROR) DBUG_VOID_RETURN;
+  if (m_error_code != U_ZERO_ERROR) return;
 
   DBUG_ASSERT(size <= text_length);
   if (m_replace_buffer.size() < size) m_replace_buffer.resize(size);
   std::copy(text, text + size, &m_replace_buffer.at(0));
   m_replace_buffer_pos = size;
-
-  DBUG_VOID_RETURN;
 }
 
 int Regexp_engine::TryToAppendReplacement(const std::u16string &replacement) {
@@ -150,13 +148,13 @@ int Regexp_engine::TryToAppendReplacement(const std::u16string &replacement) {
 }
 
 void Regexp_engine::AppendReplacement(const std::u16string &replacement) {
-  DBUG_ENTER("Regexp_engine::AppendReplacement");
+  DBUG_TRACE;
 
   int replacement_size = TryToAppendReplacement(replacement);
 
   if (m_error_code == U_BUFFER_OVERFLOW_ERROR) {
     size_t required_buffer_size = m_replace_buffer_pos + replacement_size;
-    if (required_buffer_size >= HardLimit()) DBUG_VOID_RETURN;
+    if (required_buffer_size >= HardLimit()) return;
     /*
       The buffer size was inadequate to write the replacement, but there is
       still room to try and grow the buffer before we hit the hard limit. ICU
@@ -170,7 +168,6 @@ void Regexp_engine::AppendReplacement(const std::u16string &replacement) {
     TryToAppendReplacement(replacement);
   }
   m_replace_buffer_pos += replacement_size;
-  DBUG_VOID_RETURN;
 }
 
 int Regexp_engine::TryToAppendTail() {
@@ -182,13 +179,13 @@ int Regexp_engine::TryToAppendTail() {
 }
 
 void Regexp_engine::AppendTail() {
-  DBUG_ENTER("Regexp_engine::AppendTail");
+  DBUG_TRACE;
 
   int tail_size = TryToAppendTail();
 
   if (m_error_code == U_BUFFER_OVERFLOW_ERROR) {
     size_t required_buffer_size = m_replace_buffer_pos + tail_size;
-    if (required_buffer_size >= HardLimit()) DBUG_VOID_RETURN;
+    if (required_buffer_size >= HardLimit()) return;
 
     /*
       The buffer size was inadequate to write the tail, but there is still
@@ -203,7 +200,6 @@ void Regexp_engine::AppendTail() {
     TryToAppendTail();
   }
   m_replace_buffer_pos += tail_size;
-  DBUG_VOID_RETURN;
 }
 
 }  // namespace regexp

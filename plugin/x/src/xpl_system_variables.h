@@ -25,9 +25,15 @@
 #ifndef PLUGIN_X_SRC_XPL_SYSTEM_VARIABLES_H_
 #define PLUGIN_X_SRC_XPL_SYSTEM_VARIABLES_H_
 
+#include <stdint.h>
+
 #include <algorithm>
 #include <functional>
+
+#include <memory>
 #include <vector>
+
+#include "my_inttypes.h"
 
 #ifdef max_allowed_packet
 #undef max_allowed_packet
