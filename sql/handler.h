@@ -225,9 +225,8 @@ enum enum_alter_inplace_result {
 #define HA_CAN_GEOMETRY (1 << 4)
 /*
   Reading keys in random order is as fast as reading keys in sort order
-  (Used in records.cc to decide if we should use a record cache and by
-  filesort to decide if we should sort key + data or key + pointer-to-row.
-  For further explanation see intro to init_read_record.
+  (Used by filesort to decide if we should sort key + data or key +
+  pointer-to-row.)
 */
 #define HA_FAST_KEY_READ (1 << 5)
 /*
@@ -286,12 +285,8 @@ enum enum_alter_inplace_result {
 */
 #define HA_PRIMARY_KEY_REQUIRED_FOR_POSITION (1 << 16)
 #define HA_CAN_RTREEKEYS (1 << 17)
-/*
-  Seems to be an old MyISAM feature that is no longer used. No handler
-  has it defined but it is checked in init_read_record. Further investigation
-  needed.
-*/
-#define HA_NOT_DELETE_WITH_CACHE (1 << 18)
+/// Not in use.
+#define HA_UNUSED18
 /*
   The following is we need to a primary key to delete (and update) a row.
   If there is no primary key, all columns needs to be read on update and delete
@@ -696,7 +691,6 @@ enum enum_binlog_command {
   LOGCOM_CREATE_DB,
   LOGCOM_ALTER_DB,
   LOGCOM_DROP_DB,
-  LOGCOM_ACL_NOTIFY
 };
 
 enum class enum_sampling_method { SYSTEM };
@@ -1490,6 +1484,9 @@ typedef void (*binlog_log_query_t)(handlerton *hton, THD *thd,
                                    enum_binlog_command binlog_command,
                                    const char *query, uint query_length,
                                    const char *db, const char *table_name);
+
+typedef void (*acl_notify_t)(THD *thd,
+                             const class Acl_change_notification *notice);
 
 typedef int (*discover_t)(handlerton *hton, THD *thd, const char *db,
                           const char *name, uchar **frmblob, size_t *frmlen);
@@ -2358,6 +2355,7 @@ struct handlerton {
 
   binlog_func_t binlog_func;
   binlog_log_query_t binlog_log_query;
+  acl_notify_t acl_notify;
   discover_t discover;
   find_files_t find_files;
   table_exists_in_engine_t table_exists_in_engine;
@@ -2431,6 +2429,16 @@ struct handlerton {
   uint32 foreign_keys_flags;
 
   check_fk_column_compat_t check_fk_column_compat;
+
+  /**
+    Suffix for auto-generated foreign key names for tables using this storage
+    engine. If such suffix is specified by SE then its generated foreign key
+    names follow (table name)(SE-specific FK name suffix)(FK number) pattern.
+    Length of such suffix should not exceed MAX_FK_NAME_SUFFIX_LENGTH bytes.
+    If no suffix is specified then FK_NAME_DEFAULT_SUFFIX is used as
+    default.
+  */
+  LEX_CSTRING fk_name_suffix;
 
   /**
     Pointer to a function that prepares a secondary engine for executing a
@@ -2589,6 +2597,20 @@ static const uint32 HTON_FKS_NEED_DIFFERENT_PARENT_AND_SUPPORTING_KEYS =
 */
 
 static const uint32 HTON_FKS_WITH_EXTENDED_PARENT_KEYS = (1 << 4);
+
+/**
+  Maximum possible length of SE-specific suffixes for auto-generated
+  foreign key names.
+*/
+static const size_t MAX_FK_NAME_SUFFIX_LENGTH = 16;
+
+/**
+  Suffix for auto-generated foreign key names for tables in SE's which
+  don't specify own suffix. I.e. for foreign keys on tables in such
+  SE's generated names follow (table name)FK_NAME_DEFAULT_SUFFIX(FK number)
+  pattern.
+*/
+static const LEX_CSTRING FK_NAME_DEFAULT_SUFFIX = {STRING_WITH_LEN("_fk_")};
 
 enum enum_tx_isolation : int {
   ISO_READ_UNCOMMITTED,
@@ -4251,6 +4273,11 @@ class handler {
     DBUG_ASSERT(m_lock_type == F_UNLCK);
     DBUG_ASSERT(inited == NONE);
   }
+
+  /**
+    Return extra handler specific text for EXPLAIN.
+  */
+  virtual std::string explain_extra() const { return ""; }
 
   /*
     @todo reorganize functions, make proper public/protected/private qualifiers
@@ -6802,6 +6829,7 @@ void ha_binlog_log_query(THD *thd, handlerton *db_type,
                          enum_binlog_command binlog_command, const char *query,
                          size_t query_length, const char *db,
                          const char *table_name);
+void ha_acl_notify(THD *thd, class Acl_change_notification *);
 void ha_binlog_wait(THD *thd);
 
 /* It is required by basic binlog features on both MySQL server and libmysqld */

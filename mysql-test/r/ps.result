@@ -158,8 +158,6 @@ c29 longblob, c30 longtext, c31 enum('one', 'two', 'three'),
 c32 set('monday', 'tuesday', 'wednesday')
 ) engine = MYISAM ;
 create table t2 like t1;
-Warnings:
-Warning	1681	The ZEROFILL attribute is deprecated and will be removed in a future release. Use the LPAD function to zero-pad numbers, or store the formatted numbers in a CHAR column.
 set @stmt= ' explain SELECT (SELECT SUM(c1 + c12 + 0.0) FROM t2 where (t1.c2 - 0e-3) = t2.c2 GROUP BY t1.c15 LIMIT 1) as scalar_s, exists (select 1.0e+0 from t2 where t2.c3 * 9.0000000000 = t1.c4) as exists_s, c5 * 4 in (select c6 + 0.3e+1 from t2) as in_s, (c7 - 4, c8 - 4) in (select c9 + 4.0, c10 + 40e-1 from t2) as in_row_s FROM t1, (select c25 x, c32 y from t2) tt WHERE x * 1 = c25 ' ;
 prepare stmt1 from @stmt ;
 Warnings:
@@ -912,7 +910,7 @@ Warnings:
 Warning	1292	Truncated incorrect max_prepared_stmt_count value: '10000000000000000'
 select @@max_prepared_stmt_count;
 @@max_prepared_stmt_count
-1048576
+4194304
 set global max_prepared_stmt_count=default;
 select @@max_prepared_stmt_count;
 @@max_prepared_stmt_count
@@ -2531,13 +2529,13 @@ union all
 create procedure proc_1() show create view v1;
 call proc_1();
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS (select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a`) union all (select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`)	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a` union all select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`	utf8mb4	utf8mb4_0900_ai_ci
 call proc_1();
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS (select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a`) union all (select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`)	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a` union all select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`	utf8mb4	utf8mb4_0900_ai_ci
 call proc_1();
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS (select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a`) union all (select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`)	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a` union all select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`	utf8mb4	utf8mb4_0900_ai_ci
 drop procedure proc_1;
 create function func_1() returns int begin show create view v1; return 1; end|
 ERROR 0A000: Not allowed to return a result set from a function
@@ -2548,13 +2546,13 @@ ERROR 42000: FUNCTION test.func_1 does not exist
 prepare abc from "show create view v1";
 execute abc;
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS (select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a`) union all (select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`)	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a` union all select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`	utf8mb4	utf8mb4_0900_ai_ci
 execute abc;
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS (select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a`) union all (select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`)	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a` union all select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`	utf8mb4	utf8mb4_0900_ai_ci
 execute abc;
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS (select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a`) union all (select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`)	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`a` AS `a`,count(0) AS `count(*)` from `t1` group by `t1`.`a` union all select `t1`.`b` AS `b`,count(0) AS `count(*)` from `t1` group by `t1`.`b`	utf8mb4	utf8mb4_0900_ai_ci
 deallocate prepare abc;
 drop view v1;
 drop table t1;

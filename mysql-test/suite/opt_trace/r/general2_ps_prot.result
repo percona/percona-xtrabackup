@@ -843,7 +843,7 @@ TRACE
                                   "table_dependencies": [
                                     {
                                       "table": "`t1`",
-                                      "row_may_be_null": false,
+                                      "row_may_be_null": true,
                                       "map_bit": 0,
                                       "depends_on_map_bits": [
                                       ] /* depends_on_map_bits */
@@ -1180,26 +1180,10 @@ TRACE
         "select#": 1,
         "steps": [
           {
-            "creating_tmp_table": {
-              "tmp_table_info": {
-                "table": "intermediate_tmp_table",
-                "in_plan_at_position": 3,
-                "columns": 1,
-                "row_length": 6,
-                "key_length": 0,
-                "unique_constraint": false,
-                "makes_grouped_rows": false,
-                "cannot_insert_duplicates": false,
-                "location": "TempTable"
-              } /* tmp_table_info */
-            } /* creating_tmp_table */
-          },
-          {
             "sorting_table_in_plan_at_position": 3,
             "filesort_information": [
               {
                 "direction": "asc",
-                "table": "intermediate_tmp_table",
                 "field": "f2"
               }
             ] /* filesort_information */,
@@ -1213,14 +1197,14 @@ TRACE
               "memory_available": 262144,
               "key_size": "XXX",
               "row_size": "XXX",
-              "max_rows_per_buffer": 15,
-              "num_rows_estimate": 15,
+              "max_rows_per_buffer": "XXX",
+              "num_rows_estimate": 18446744073709551615,
               "num_rows_found": 4,
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_heap_table",
-              "sort_mode": "<varlen_sort_key, rowid>"
+              "unpacked_addon_fields": "skip_heuristic",
+              "sort_mode": "<varlen_sort_key, additional_fields>"
             } /* filesort_summary */
           }
         ] /* steps */
@@ -4100,11 +4084,11 @@ select 497, tmp.ID, NULL from (select 497 as ID, MAX(t3.DATA) as DATA      from 
             } /* creating_tmp_table */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           }
         ] /* steps */
       } /* join_execution */
@@ -5420,8 +5404,7 @@ GROUP BY field2 ORDER BY alias1.col_int_key,alias2.pk	{
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_heap_table",
-              "sort_mode": "<fixed_sort_key, rowid>"
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             } /* filesort_summary */
           }
         ] /* steps */

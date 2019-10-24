@@ -849,7 +849,6 @@ WARN_LOGFILE           =
 
 INPUT                  = ./client \
                          ./components \
-                         ./dbug \
                          ./include \
                          ./libbinlogevents \
                          ./libbinlogstandalone \
@@ -861,6 +860,7 @@ INPUT                  = ./client \
                          ./plugin/daemon_example \
                          ./plugin/ddl_rewriter \
                          ./plugin/fulltext \
+                         ./plugin/group_replication \
                          ./plugin/innodb_memcached \
                          ./plugin/password_validation \
                          ./plugin/replication_observers_example \
@@ -960,6 +960,7 @@ EXCLUDE                = cmd-line-utils \
                          storage/ndb/memcache \
                          storage/ndb/ndbapi-examples \
                          storage/ndb/nodejs \
+                         storage/ndb/plugin \
                          storage/ndb/src \
                          storage/ndb/test \
                          storage/ndb/tools \
@@ -984,8 +985,6 @@ EXCLUDE_SYMLINKS       = NO
 EXCLUDE_PATTERNS       = */include/boost*/* \
                          */include/mysql/psi/psi_abi*.h \
                          */router/src/*/tests/* \
-                         */sql/*ndb*.h \
-                         */sql/*ndb*.cc \
                          */unittest/* \
                          */build-*/*
 

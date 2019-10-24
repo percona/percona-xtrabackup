@@ -50,6 +50,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
+#include "os0event.h"
 
 #ifdef __linux__
 #include <sys/prctl.h>
@@ -2268,6 +2269,8 @@ static void dict_load_from_spaces_sdi() {
 }
 
 static bool innodb_init(bool init_dd, bool for_apply_log) {
+  os_event_global_init();
+
   /* Check if the data files exist or not. */
   dberr_t err = srv_sys_space.check_file_spec(false, 5 * 1024 * 1024 /* 5M */);
 
@@ -2338,6 +2341,8 @@ static bool innodb_end(void) {
   srv_pre_dd_shutdown();
 
   srv_shutdown();
+
+  os_event_global_destroy();
 
   free(internal_innobase_data_file_path);
   internal_innobase_data_file_path = NULL;
@@ -3843,6 +3848,7 @@ void xtrabackup_backup_func(void) {
                               computers */
   }
 
+  os_event_global_init();
   srv_general_init();
   ut_crc32_init();
   crc_init();
@@ -4116,6 +4122,8 @@ void xtrabackup_backup_func(void) {
   dict_persist_close();
 
   sync_check_close();
+
+  os_event_global_destroy();
 
   xb_keyring_shutdown();
 
@@ -4617,8 +4625,8 @@ retry:
       goto error;
     }
 
-    success =
-        os_file_read(read_request, src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
+    success = os_file_read(read_request, dst_path, src_file, log_buf, 0,
+                           LOG_FILE_HDR_SIZE);
     if (!success) {
       goto error;
     }
@@ -4654,7 +4662,8 @@ retry:
    */
 
   /* read log file header */
-  success = os_file_read(read_request, src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
+  success = os_file_read(read_request, dst_path, src_file, log_buf, 0,
+                         LOG_FILE_HDR_SIZE);
   if (!success) {
     goto error;
   }
@@ -5332,8 +5341,8 @@ static bool xtrabackup_apply_delta(
     /* read to buffer */
     /* first block of block cluster */
     offset = ((incremental_buffers * (page_size / 4)) << page_size_shift);
-    success = os_file_read(read_request, src_file, incremental_buffer, offset,
-                           page_size);
+    success = os_file_read(read_request, src_path, src_file, incremental_buffer,
+                           offset, page_size);
     if (!success) {
       goto error;
     }
@@ -5359,8 +5368,8 @@ static bool xtrabackup_apply_delta(
     ut_a(last_buffer || page_in_buffer == page_size / 4);
 
     /* read whole of the cluster */
-    success = os_file_read(read_request, src_file, incremental_buffer, offset,
-                           page_in_buffer * page_size);
+    success = os_file_read(read_request, src_path, src_file, incremental_buffer,
+                           offset, page_in_buffer * page_size);
     if (!success) {
       goto error;
     }
@@ -5619,7 +5628,8 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
     goto error;
   }
 
-  success = os_file_read(read_request, src_file, log_buf, 0, LOG_FILE_HDR_SIZE);
+  success = os_file_read(read_request, src_path, src_file, log_buf, 0,
+                         LOG_FILE_HDR_SIZE);
   if (!success) {
     goto error;
   }
@@ -6297,6 +6307,7 @@ skip_check:
   /* temporally dummy value to avoid crash */
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
+  os_event_global_init();
   sync_check_init(srv_max_n_threads);
 #ifdef UNIV_DEBUG
   sync_check_enable();
@@ -6385,6 +6396,7 @@ skip_check:
   os_thread_close();
 
   sync_check_close();
+  os_event_global_destroy();
 
   innodb_free_param();
 
@@ -6545,6 +6557,7 @@ skip_check:
   innodb_free_param();
 
   /* re-init necessary components */
+  os_event_global_init();
   sync_check_init(srv_max_n_threads);
 #ifdef UNIV_DEBUG
   sync_check_enable();
@@ -6596,6 +6609,7 @@ skip_check:
   os_thread_close();
 
   sync_check_close();
+  os_event_global_destroy();
 
   /* start InnoDB once again to create log files */
 

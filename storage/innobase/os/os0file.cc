@@ -3614,9 +3614,9 @@ void os_aio_simulated_put_read_threads_to_sleep() { /* No op on non Windows */
 }
 
 /** Depth first traversal of the directory starting from basedir
-@param[in]	basedir		Start scanning from this directory
-@param[in]      recursive       True if scan should be recursive
-@param[in]	f		Function to call for each entry */
+@param[in]  basedir     Start scanning from this directory
+@param[in]  recursive  `true` if scan should be recursive
+@param[in]  f           Function to call for each entry */
 void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
   using Stack = std::stack<Entry>;
 
@@ -3628,6 +3628,12 @@ void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
     Entry current = directories.top();
 
     directories.pop();
+
+    /* Ignore hidden directories and files. */
+    if (Fil_path::is_hidden(current.m_path)) {
+      ib::info(ER_IB_MSG_SKIP_HIDDEN_DIR, current.m_path.c_str());
+      continue;
+    }
 
     DIR *parent = opendir(current.m_path.c_str());
 
@@ -3664,9 +3670,14 @@ void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
 
       path.append(dirent->d_name);
 
+      /* Ignore hidden subdirectories and files. */
+      if (Fil_path::is_hidden(path)) {
+        ib::info(ER_IB_MSG_SKIP_HIDDEN_DIR, path.c_str());
+        continue;
+      }
+
       if (is_directory(path) && recursive) {
         directories.push(Entry(path, current.m_depth + 1));
-
       } else {
         f(path, current.m_depth + 1);
       }
@@ -4821,10 +4832,9 @@ void AIO::simulated_put_read_threads_to_sleep() {
 }
 
 /** Depth first traversal of the directory starting from basedir
-@param[in]	basedir		Start scanning from this directory
-@param[in]      recursive       true if scan should be recursive
-@param[in]	f		Callback for each entry found
-@param[in,out]	args		Optional arguments for f */
+@param[in]      basedir    Start scanning from this directory
+@param[in]      recursive  `true` if scan should be recursive
+@param[in]      f          Callback for each entry found */
 void Dir_Walker::walk_win32(const Path &basedir, bool recursive, Function &&f) {
   using Stack = std::stack<Entry>;
 
@@ -4865,6 +4875,11 @@ void Dir_Walker::walk_win32(const Path &basedir, bool recursive, Function &&f) {
 
     directories.pop();
 
+    if (Fil_path::is_hidden(current.m_path)) {
+      ib::info(ER_IB_MSG_SKIP_HIDDEN_DIR, current.m_path.c_str());
+      continue;
+    }
+
     HANDLE h;
     WIN32_FIND_DATA dirent;
 
@@ -4891,6 +4906,12 @@ void Dir_Walker::walk_win32(const Path &basedir, bool recursive, Function &&f) {
 
       path.resize(path.size() - 1);
       path.append(dirent.cFileName);
+
+      /* Ignore hidden files and directories. */
+      if (Fil_path::is_hidden(dirent) || Fil_path::is_hidden(path)) {
+        ib::info(ER_IB_MSG_SKIP_HIDDEN_DIR, path.c_str());
+        continue;
+      }
 
       if ((dirent.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && recursive) {
         path.append("\\*");
@@ -5152,6 +5173,7 @@ static MY_ATTRIBUTE((warn_unused_result)) ssize_t
 /** Requests a synchronous positioned read operation.
 @return DB_SUCCESS if request was successful, false if fail
 @param[in]	type		IO flags
+@param[in]  file_name file name
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer where to read
 @param[in]	offset		file offset from the start where to read
@@ -5160,8 +5182,9 @@ static MY_ATTRIBUTE((warn_unused_result)) ssize_t
 @param[in]	exit_on_err	if true then exit on error
 @return DB_SUCCESS or error code */
 static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    os_file_read_page(IORequest &type, os_file_t file, void *buf,
-                      os_offset_t offset, ulint n, ulint *o, bool exit_on_err) {
+    os_file_read_page(IORequest &type, const char *file_name, os_file_t file,
+                      void *buf, os_offset_t offset, ulint n, ulint *o,
+                      bool exit_on_err) {
   dberr_t err;
 
 #ifdef UNIV_HOTBACKUP
@@ -5207,12 +5230,12 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
         << ", but was only able to read " << n_bytes;
 
     if (exit_on_err) {
-      if (!os_file_handle_error(NULL, "read")) {
+      if (!os_file_handle_error(file_name, "read")) {
         /* Hard error */
         break;
       }
 
-    } else if (!os_file_handle_error_no_exit(NULL, "read", false)) {
+    } else if (!os_file_handle_error_no_exit(file_name, "read", false)) {
       /* Hard error */
       break;
     }
@@ -5578,16 +5601,18 @@ function!
 Requests a synchronous positioned read operation.
 @return DB_SUCCESS if request was successful, DB_IO_ERROR on failure
 @param[in]	type		IO flags
+@param[in]  file_name file name
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer where to read
 @param[in]	offset		file offset from the start where to read
 @param[in]	n		number of bytes to read, starting from offset
 @return DB_SUCCESS or error code */
-dberr_t os_file_read_func(IORequest &type, os_file_t file, void *buf,
-                          os_offset_t offset, ulint n) {
+dberr_t os_file_read_func(IORequest &type, const char *file_name,
+                          os_file_t file, void *buf, os_offset_t offset,
+                          ulint n) {
   ut_ad(type.is_read());
 
-  return (os_file_read_page(type, file, buf, offset, n, NULL, true));
+  return (os_file_read_page(type, file_name, file, buf, offset, n, NULL, true));
 }
 
 /** NOTE! Use the corresponding macro os_file_read_first_page(), not
@@ -5595,23 +5620,24 @@ directly this function!
 Requests a synchronous positioned read operation of page 0 of IBD file
 @return DB_SUCCESS if request was successful, DB_IO_ERROR on failure
 @param[in]	type		IO flags
+@param[in]  file_name file name
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer where to read
 @param[in]	n		number of bytes to read, starting from offset
 @return DB_SUCCESS or error code */
-dberr_t os_file_read_first_page_func(IORequest &type, os_file_t file, void *buf,
-                                     ulint n) {
+dberr_t os_file_read_first_page_func(IORequest &type, const char *file_name,
+                                     os_file_t file, void *buf, ulint n) {
   ut_ad(type.is_read());
 
-  dberr_t err =
-      os_file_read_page(type, file, buf, 0, UNIV_ZIP_SIZE_MIN, NULL, true);
+  dberr_t err = os_file_read_page(type, file_name, file, buf, 0,
+                                  UNIV_ZIP_SIZE_MIN, NULL, true);
 
   if (err == DB_SUCCESS) {
     uint32_t flags = fsp_header_get_flags(static_cast<byte *>(buf));
     const page_size_t page_size(flags);
     ut_ad(page_size.physical() <= n);
-    err =
-        os_file_read_page(type, file, buf, 0, page_size.physical(), NULL, true);
+    err = os_file_read_page(type, file_name, file, buf, 0, page_size.physical(),
+                            NULL, true);
   }
   return (err);
 }
@@ -5651,8 +5677,8 @@ static dberr_t os_file_copy_read_write(os_file_t src_file,
       request_size = size;
     }
 
-    err = os_file_read_func(read_request, src_file, buf_ptr, src_offset,
-                            request_size);
+    err = os_file_read_func(read_request, nullptr, src_file, buf_ptr,
+                            src_offset, request_size);
 
     if (err != DB_SUCCESS) {
       return (err);
@@ -5747,18 +5773,21 @@ not directly this function!
 Requests a synchronous positioned read operation.
 @return DB_SUCCESS if request was successful, DB_IO_ERROR on failure
 @param[in]	type		IO flags
+@param[in]  file_name file name
 @param[in]	file		handle to an open file
 @param[out]	buf		buffer where to read
 @param[in]	offset		file offset from the start where to read
 @param[in]	n		number of bytes to read, starting from offset
 @param[out]	o		number of bytes actually read
 @return DB_SUCCESS or error code */
-dberr_t os_file_read_no_error_handling_func(IORequest &type, os_file_t file,
-                                            void *buf, os_offset_t offset,
-                                            ulint n, ulint *o) {
+dberr_t os_file_read_no_error_handling_func(IORequest &type,
+                                            const char *file_name,
+                                            os_file_t file, void *buf,
+                                            os_offset_t offset, ulint n,
+                                            ulint *o) {
   ut_ad(type.is_read());
 
-  return (os_file_read_page(type, file, buf, offset, n, o, false));
+  return (os_file_read_page(type, file_name, file, buf, offset, n, o, false));
 }
 
 /** NOTE! Use the corresponding macro os_file_write(), not directly
@@ -7068,7 +7097,7 @@ dberr_t os_aio_func(IORequest &type, AIO_mode aio_mode, const char *name,
     and os_file_write_func() */
 
     if (type.is_read()) {
-      return (os_file_read_func(type, file.m_file, buf, offset, n));
+      return (os_file_read_func(type, name, file.m_file, buf, offset, n));
     }
 
     ut_ad(type.is_write());
@@ -7360,8 +7389,8 @@ class SimulatedAIOHandler {
   /** Do the file read
   @param[in,out]	slot		Slot that has the IO context */
   void read(Slot *slot) {
-    dberr_t err = os_file_read_func(slot->type, slot->file.m_file, slot->ptr,
-                                    slot->offset, slot->len);
+    dberr_t err = os_file_read_func(slot->type, slot->name, slot->file.m_file,
+                                    slot->ptr, slot->offset, slot->len);
     ut_a(err == DB_SUCCESS);
   }
 
@@ -8066,20 +8095,23 @@ void Encryption::get_master_key(ulint *master_key_id, byte **master_key) {
   extern ib_mutex_t master_key_id_mutex;
   bool key_id_locked = false;
 
-  if (s_master_key_id == 0) {
+  if (s_master_key_id == ENCRYPTION_DEFAULT_MASTER_KEY_ID) {
+    /* Take mutex as master_key_id is going to change. */
     mutex_enter(&master_key_id_mutex);
     key_id_locked = true;
   }
 
   memset(key_name, 0x0, sizeof(key_name));
 
-  if (s_master_key_id == 0) {
+  /* Check for s_master_key_id again, as a parallel rotation might have caused
+  it to change. */
+  if (s_master_key_id == ENCRYPTION_DEFAULT_MASTER_KEY_ID) {
     ut_ad(strlen(server_uuid) > 0);
     memset(s_uuid, 0x0, sizeof(s_uuid));
 
-    /* If m_master_key is 0, means there's no encrypted
-    tablespace, we need to generate the first master key,
-    and store it to key ring. */
+    /* If m_master_key is ENCRYPTION_DEFAULT_MASTER_KEY_ID, it means there's
+    no encrypted tablespace yet. Generate the first master key now and store
+    it to keyring. */
     memcpy(s_uuid, server_uuid, sizeof(s_uuid) - 1);
 
     /* Prepare the server s_uuid. */

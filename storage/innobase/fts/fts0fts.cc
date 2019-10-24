@@ -4066,8 +4066,6 @@ static MY_ATTRIBUTE((nonnull, warn_unused_result)) dberr_t
   dberr_t error = DB_SUCCESS;
   ibool print_error = FALSE;
   dict_table_t *table = index_cache->index->table;
-  /* We use this to deduce threshold value of time
-  that we can let sync to go on holding cache lock */
   const float cutoff = 0.98;
   ulint lock_threshold =
       (srv_fatal_semaphore_wait_threshold % SRV_SEMAPHORE_WAIT_EXTENSION) *
@@ -4133,7 +4131,7 @@ static MY_ATTRIBUTE((nonnull, warn_unused_result)) dberr_t
                                &fts_table, &word->text, fts_node);
 
         DBUG_EXECUTE_IF("fts_instrument_sync_write",
-                        os_thread_sleep(15000000););
+                        os_thread_sleep(10000000););
 
         DEBUG_SYNC_C("fts_write_node");
         DBUG_EXECUTE_IF("fts_write_node_crash", DBUG_SUICIDE(););
@@ -4369,7 +4367,6 @@ static dberr_t fts_sync(fts_sync_t *sync, bool unlock_cache, bool wait,
 
     rw_lock_x_lock(&cache->lock);
   }
-
   sync->unlock_cache = unlock_cache;
   sync->in_progress = true;
 

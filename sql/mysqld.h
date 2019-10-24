@@ -35,6 +35,7 @@
 #include "m_ctype.h"
 #include "my_command.h"
 #include "my_compiler.h"
+#include "my_compress.h"
 #include "my_getopt.h"
 #include "my_hostname.h"  // HOSTNAME_LENGTH
 #include "my_inttypes.h"
@@ -208,7 +209,7 @@ extern bool opt_enable_shared_memory;
 extern mysql_rwlock_t LOCK_named_pipe_full_access_group;
 #endif
 extern bool opt_allow_suspicious_udfs;
-extern char *opt_secure_file_priv;
+extern const char *opt_secure_file_priv;
 extern bool opt_log_slow_admin_statements, opt_log_slow_slave_statements;
 extern bool sp_automatic_privileges, opt_noacl;
 extern bool opt_old_style_user_limits, trust_function_creators;
@@ -220,8 +221,8 @@ extern const char *shared_memory_base_name;
 extern const char *mysqld_unix_port;
 extern char *default_tz_name;
 extern Time_zone *default_tz;
-extern char *default_storage_engine;
-extern char *default_tmp_storage_engine;
+extern const char *default_storage_engine;
+extern const char *default_tmp_storage_engine;
 extern ulonglong temptable_max_ram;
 extern bool temptable_use_mmap;
 extern bool using_udf_functions;
@@ -254,7 +255,7 @@ extern char *opt_general_logname, *opt_slow_logname, *opt_bin_logname,
 extern char *mysql_home_ptr, *pidfile_name_ptr;
 extern char *default_auth_plugin;
 extern uint default_password_lifetime;
-extern volatile bool password_require_current;
+extern bool password_require_current;
 /*
   @warning : The real value is in @ref partial_revokes. The @ref
   opt_partial_revokes is just a tool to trick the Sys_var class into
@@ -364,6 +365,7 @@ extern ulong connection_errors_internal;
 extern ulong connection_errors_peer_addr;
 extern char *opt_log_error_suppression_list;
 extern char *opt_log_error_services;
+extern char *opt_protocol_compression_algorithms;
 /** The size of the host_cache. */
 extern uint host_cache_size;
 extern ulong log_error_verbosity;
@@ -501,6 +503,7 @@ extern PSI_file_key key_file_relaylog_cache;
 extern PSI_file_key key_file_relaylog_index;
 extern PSI_file_key key_file_relaylog_index_cache;
 extern PSI_file_key key_file_sdi;
+extern PSI_file_key key_file_hash_join;
 
 extern PSI_socket_key key_socket_tcpip;
 extern PSI_socket_key key_socket_unix;

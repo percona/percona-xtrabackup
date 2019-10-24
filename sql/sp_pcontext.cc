@@ -75,19 +75,15 @@ void sp_condition_value::print(String *str) const {
 }
 
 void sp_handler::print_conditions(String *str) const {
-  List_iterator_fast<const sp_condition_value> li(
-      const_cast<List<const sp_condition_value> &>(condition_values));
-  const sp_condition_value *cv;
   bool first = true;
-
-  while ((cv = li++)) {
+  for (const sp_condition_value &cv : condition_values) {
     if (first) {
       first = false;
       str->append(STRING_WITH_LEN(" HANDLER FOR"));
     } else
       str->append(STRING_WITH_LEN(","));
 
-    cv->print(str);
+    cv.print(str);
   }
 }
 
@@ -245,7 +241,7 @@ sp_variable *sp_pcontext::add_variable(THD *thd, LEX_STRING name,
   return m_vars.push_back(p) ? NULL : p;
 }
 
-sp_label *sp_pcontext::push_label(THD *thd, LEX_STRING name, uint ip) {
+sp_label *sp_pcontext::push_label(THD *thd, LEX_CSTRING name, uint ip) {
   sp_label *label =
       new (thd->mem_root) sp_label(name, ip, sp_label::IMPLICIT, this);
 
@@ -256,7 +252,7 @@ sp_label *sp_pcontext::push_label(THD *thd, LEX_STRING name, uint ip) {
   return label;
 }
 
-sp_label *sp_pcontext::find_label(LEX_STRING name) {
+sp_label *sp_pcontext::find_label(LEX_CSTRING name) {
   List_iterator_fast<sp_label> li(m_labels);
   sp_label *lab;
 

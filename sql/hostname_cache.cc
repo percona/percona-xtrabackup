@@ -337,7 +337,8 @@ static void add_hostname(const char *ip_string, const char *hostname,
   ulonglong now = my_micro_time();
 
   MUTEX_LOCK(hostname_lock, &hostname_cache_mutex);
-  add_hostname_impl(ip_string, hostname, validated, errors, now);
+  if (hostname_cache_size() != 0)
+    add_hostname_impl(ip_string, hostname, validated, errors, now);
 
   return;
 }
@@ -448,7 +449,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
 
   mysql_mutex_assert_not_owner(&hostname_cache_mutex);
 
-  DBUG_ENTER("ip_to_hostname");
+  DBUG_TRACE;
   DBUG_PRINT("info",
              ("IP address: '%s'; family: %d.", ip_string, (int)ip->sa_family));
 
@@ -464,7 +465,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
     /* Do not count connect errors from localhost. */
     *hostname = const_cast<char *>(my_localhost);
 
-    DBUG_RETURN(0);
+    return 0;
   }
 
   /* Check first if we have host name in the cache. */
@@ -483,7 +484,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
       if (entry->m_errors.m_connect >= max_connect_errors) {
         entry->m_errors.m_host_blocked++;
         entry->set_error_timestamps(now);
-        DBUG_RETURN(RC_BLOCKED_HOST);
+        return RC_BLOCKED_HOST;
       }
 
       /*
@@ -500,7 +501,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
                             "Hostname: '%s'",
                             ip_string, (*hostname ? *hostname : "null")));
 
-        DBUG_RETURN(0);
+        return 0;
       }
     }
   }
@@ -594,7 +595,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
     }
     add_hostname(ip_string, NULL, validated, &errors);
 
-    DBUG_RETURN(0);
+    return 0;
   }
 
   DBUG_PRINT("info", ("IP '%s' resolved to '%s'.", (const char *)ip_string,
@@ -627,7 +628,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
     errors.m_format = 1;
     add_hostname(ip_string, hostname_buffer, false, &errors);
 
-    DBUG_RETURN(false);
+    return false;
   }
 
   /* Get IP-addresses for the resolved host name (FCrDNS technique). */
@@ -899,7 +900,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
     }
     add_hostname(ip_string, NULL, validated, &errors);
 
-    DBUG_RETURN(false);
+    return false;
   }
 
   /* Check that getaddrinfo() returned the used IP (FCrDNS technique). */
@@ -931,7 +932,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
         DBUG_PRINT("error", ("Out of memory."));
 
         if (free_addr_info_list) freeaddrinfo(addr_info_list);
-        DBUG_RETURN(true);
+        return true;
       }
 
       break;
@@ -970,5 +971,5 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
   /* Free the result of getaddrinfo(). */
   if (free_addr_info_list) freeaddrinfo(addr_info_list);
 
-  DBUG_RETURN(false);
+  return false;
 }

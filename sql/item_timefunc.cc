@@ -209,7 +209,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
   const char *ptr = format->format.str;
   const char *end = ptr + format->format.length;
   const CHARSET_INFO *cs = &my_charset_bin;
-  DBUG_ENTER("extract_date_time");
+  DBUG_TRACE;
 
   if (!sub_pattern_end) memset(l_time, 0, sizeof(*l_time));
 
@@ -380,14 +380,14 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
           */
           if (extract_date_time(&time_ampm_format, val, (uint)(val_end - val),
                                 l_time, cached_timestamp_type, &val, "time"))
-            DBUG_RETURN(1);
+            return 1;
           break;
 
           /* Time in 24-hour notation */
         case 'T':
           if (extract_date_time(&time_24hrs_format, val, (uint)(val_end - val),
                                 l_time, cached_timestamp_type, &val, "time"))
-            DBUG_RETURN(1);
+            return 1;
           break;
 
           /* Conversion specifiers that match classes of characters */
@@ -421,7 +421,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
   */
   if (sub_pattern_end) {
     *sub_pattern_end = val;
-    DBUG_RETURN(0);
+    return 0;
   }
 
   if (yearday > 0) {
@@ -485,7 +485,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
       }
     } while (++val != val_end);
   }
-  DBUG_RETURN(0);
+  return 0;
 
 err : {
   char buff[128];
@@ -495,7 +495,7 @@ err : {
                       ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
                       date_time_type, buff, "str_to_date");
 }
-  DBUG_RETURN(1);
+  return 1;
 }
 
 /**
@@ -2163,6 +2163,21 @@ bool Item_date_add_interval::get_time_internal(MYSQL_TIME *ltime) {
            1000000LL +
        interval.second_part) *
       (interval.neg ? -1 : 1);
+
+  // Possible overflow adding date and interval values below.
+  if (usec1 > 0 && usec2 > 0) {
+    lldiv_t usec2_as_seconds;
+    usec2_as_seconds.quot = usec2 / 1000000;
+    usec2_as_seconds.rem = 0;
+    MYSQL_TIME unused;
+    if ((null_value = sec_to_time(usec2_as_seconds, &unused))) {
+      push_warning_printf(
+          current_thd, Sql_condition::SL_WARNING, ER_DATETIME_FUNCTION_OVERFLOW,
+          ER_THD(current_thd, ER_DATETIME_FUNCTION_OVERFLOW), "time");
+      return true;
+    }
+  }
+
   longlong diff = usec1 + usec2;
   lldiv_t seconds;
   seconds.quot = diff / 1000000;
@@ -3056,6 +3071,23 @@ bool Item_func_str_to_date::resolve_type(THD *thd) {
   return false;
 }
 
+/**
+  Determines whether this date should be NULL (and a warning raised) under the
+  given sql_mode. Zeroes are allowed in the date if the data type is TIME.
+
+  @param target_type The data type of the time/date.
+  @param time Date and time data
+  @param fuzzy_date What sql_mode dictates.
+  @return Whether the result is valid or NULL.
+*/
+static bool date_should_be_null(enum_field_types target_type,
+                                const MYSQL_TIME &time,
+                                my_time_flags_t fuzzy_date) {
+  return (fuzzy_date & TIME_NO_ZERO_DATE) != 0 &&
+         (target_type != MYSQL_TYPE_TIME) &&
+         (time.year == 0 || time.month == 0 || time.day == 0);
+}
+
 bool Item_func_str_to_date::val_datetime(MYSQL_TIME *ltime,
                                          my_time_flags_t fuzzy_date) {
   Date_time_format date_time_format;
@@ -3077,8 +3109,7 @@ bool Item_func_str_to_date::val_datetime(MYSQL_TIME *ltime,
   date_time_format.format.length = format->length();
   if (extract_date_time(&date_time_format, val->ptr(), val->length(), ltime,
                         cached_timestamp_type, 0, "datetime") ||
-      ((fuzzy_date & TIME_NO_ZERO_DATE) &&
-       (ltime->year == 0 || ltime->month == 0 || ltime->day == 0)))
+      date_should_be_null(data_type(), *ltime, fuzzy_date))
     goto null_date;
   ltime->time_type = cached_timestamp_type;
   if (cached_timestamp_type == MYSQL_TIMESTAMP_TIME && ltime->day) {
@@ -3138,7 +3169,7 @@ bool Item_func_internal_update_time::resolve_type(THD *thd) {
 
 bool Item_func_internal_update_time::get_date(
     MYSQL_TIME *ltime, my_time_flags_t fuzzy_date MY_ATTRIBUTE((unused))) {
-  DBUG_ENTER("Item_func_internal_update_time::get_date");
+  DBUG_TRACE;
 
   String schema_name;
   String *schema_name_ptr;
@@ -3199,12 +3230,12 @@ bool Item_func_internal_update_time::get_date(
     if (unixtime) {
       null_value = 0;
       thd->variables.time_zone->gmt_sec_to_TIME(ltime, (my_time_t)unixtime);
-      DBUG_RETURN(false);
+      return false;
     }
   }
 
   null_value = 1;
-  DBUG_RETURN(true);
+  return true;
 }
 
 bool Item_func_internal_check_time::resolve_type(THD *thd) {
@@ -3217,7 +3248,7 @@ bool Item_func_internal_check_time::resolve_type(THD *thd) {
 
 bool Item_func_internal_check_time::get_date(
     MYSQL_TIME *ltime, my_time_flags_t fuzzy_date MY_ATTRIBUTE((unused))) {
-  DBUG_ENTER("Item_func_internal_check_time::get_date");
+  DBUG_TRACE;
 
   String schema_name;
   String *schema_name_ptr;
@@ -3246,7 +3277,7 @@ bool Item_func_internal_check_time::get_date(
     // Convert longlong time to MYSQL_TIME format
     if (my_longlong_to_datetime_with_warn(stat_data, &time, MYF(0))) {
       null_value = 1;
-      DBUG_RETURN(true);
+      return true;
     }
 
     // Convert MYSQL_TIME to epoc second according to local time_zone as
@@ -3281,10 +3312,10 @@ bool Item_func_internal_check_time::get_date(
     if (unixtime) {
       null_value = 0;
       thd->variables.time_zone->gmt_sec_to_TIME(ltime, (my_time_t)unixtime);
-      DBUG_RETURN(false);
+      return false;
     }
   }
 
   null_value = 1;
-  DBUG_RETURN(true);
+  return true;
 }

@@ -38,10 +38,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 /***********************************************************************
 Reads the space flags from a given data file and returns the
 page size and whether the file is compressable. */
-static bool xb_get_zip_size(pfs_os_file_t file, byte *buf,
-                            page_size_t &page_size, bool &is_compressable) {
+static bool xb_get_zip_size(const char *file_name, pfs_os_file_t file,
+                            byte *buf, page_size_t &page_size,
+                            bool &is_compressable) {
   IORequest read_request(IORequest::READ | IORequest::NO_COMPRESSION);
-  const auto ret = os_file_read(read_request, file, buf, 0, UNIV_PAGE_SIZE_MIN);
+  const auto ret =
+      os_file_read(read_request, file_name, file, buf, 0, UNIV_PAGE_SIZE_MIN);
   if (!ret) {
     return (false);
   }
@@ -58,8 +60,8 @@ static bool xb_get_zip_size(pfs_os_file_t file, byte *buf,
   if (page_size.is_compressed() || FSP_FLAGS_GET_ENCRYPTION(flags)) {
     is_compressable = false;
   } else {
-    const auto ret =
-        os_file_read(read_request, file, buf, 0, page_size.physical() * 2);
+    const auto ret = os_file_read(read_request, file_name, file, buf, 0,
+                                  page_size.physical() * 2);
     if (!ret) {
       return (false);
     }
@@ -199,7 +201,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->buf = static_cast<byte *>(ut_align(cursor->orig_buf, UNIV_PAGE_SIZE));
 
   /* Determine the page size */
-  if (!xb_get_zip_size(cursor->file, cursor->buf, page_size,
+  if (!xb_get_zip_size(cursor->rel_path, cursor->file, cursor->buf, page_size,
                        cursor->is_compressable)) {
     xb_fil_cur_close(cursor);
     return (XB_FIL_CUR_SKIP);
@@ -319,8 +321,9 @@ read_retry:
   cursor->buf_offset = offset;
   cursor->buf_page_no = (ulint)(offset >> cursor->page_size_shift);
 
-  err = os_file_read_no_error_handling(read_request, cursor->file, cursor->buf,
-                                       offset, to_read, &n_read);
+  err = os_file_read_no_error_handling(read_request, cursor->rel_path,
+                                       cursor->file, cursor->buf, offset,
+                                       to_read, &n_read);
   if (err != DB_SUCCESS) {
     if (err == DB_IO_ERROR) {
       /* If the file is truncated by MySQL, os_file_read will

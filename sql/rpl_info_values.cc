@@ -39,11 +39,18 @@ Rpl_info_values::Rpl_info_values(int param_ninfo)
   @retval true Failure
 */
 bool Rpl_info_values::init() {
-  DBUG_ENTER("Rpl_info_values::init");
+  DBUG_TRACE;
 
-  if (!value && !(value = new String[ninfo])) DBUG_RETURN(true);
-
-  DBUG_RETURN(false);
+  if (!value && !(value = new String[ninfo])) return true;
+  if (bitmap_init(&is_null, nullptr, ninfo, false)) {
+    delete[] value;
+    return true;
+  }
+  bitmap_clear_all(&is_null);
+  return false;
 }
 
-Rpl_info_values::~Rpl_info_values() { delete[] value; }
+Rpl_info_values::~Rpl_info_values() {
+  delete[] value;
+  bitmap_free(&is_null);
+}

@@ -12022,9 +12022,10 @@ EXPLAIN
         "read_cost": "2.70",
         "eval_cost": "1.60",
         "prefix_cost": "4.30",
-        "data_read_per_join": "512"
+        "data_read_per_join": "640"
       },
       "used_columns": [
+        "<hash_field>",
         "i",
         "j",
         "ROW_NUMBER() OVER (ORDER BY j)"
@@ -15344,7 +15345,7 @@ a	SUM(t2.b) OVER(ORDER BY t1.a)
 1	1
 SHOW STATUS LIKE 'Created_tmp_tables';
 Variable_name	Value
-Created_tmp_tables	3
+Created_tmp_tables	2
 EXPLAIN FORMAT=JSON SELECT t1.a, SUM(t2.b) OVER(ORDER BY t1.a) FROM t1, t1 AS t2 ORDER BY t2.a;
 EXPLAIN
 {
@@ -16709,31 +16710,59 @@ SELECT ROW_NUMBER() OVER (PARTITION BY i), SUM(i) OVER (ORDER BY i DESC) FROM t 
         "select#": 1,
         "steps": [
           {
+            "creating_tmp_table": {
+              "tmp_table_info": {
+                "in_plan_at_position": 3,
+                "columns": 7,
+                "row_length": 45,
+                "key_length": 0,
+                "unique_constraint": false,
+                "makes_grouped_rows": false,
+                "cannot_insert_duplicates": false,
+                "location": "TempTable"
+              }
+            }
+          },
+          {
             "materialize": {
               "select#": 1,
               "steps": [
+                {
+                  "creating_tmp_table": {
+                    "tmp_table_info": {
+                      "in_plan_at_position": 2,
+                      "columns": 6,
+                      "row_length": 29,
+                      "key_length": 0,
+                      "unique_constraint": false,
+                      "makes_grouped_rows": false,
+                      "cannot_insert_duplicates": false,
+                      "location": "TempTable"
+                    }
+                  }
+                },
                 {
                   "materialize": {
                     "select#": 1,
                     "steps": [
                       {
+                        "creating_tmp_table": {
+                          "tmp_table_info": {
+                            "in_plan_at_position": 1,
+                            "columns": 5,
+                            "row_length": 22,
+                            "key_length": 5,
+                            "unique_constraint": false,
+                            "makes_grouped_rows": true,
+                            "cannot_insert_duplicates": false,
+                            "location": "TempTable"
+                          }
+                        }
+                      },
+                      {
                         "materialize": {
                           "select#": 1,
                           "steps": [
-                            {
-                              "creating_tmp_table": {
-                                "tmp_table_info": {
-                                  "in_plan_at_position": 1,
-                                  "columns": 5,
-                                  "row_length": 22,
-                                  "key_length": 5,
-                                  "unique_constraint": false,
-                                  "makes_grouped_rows": true,
-                                  "cannot_insert_duplicates": false,
-                                  "location": "TempTable"
-                                }
-                              }
-                            }
                           ]
                         }
                       },
@@ -16761,22 +16790,7 @@ SELECT ROW_NUMBER() OVER (PARTITION BY i), SUM(i) OVER (ORDER BY i DESC) FROM t 
                           "num_initial_chunks_spilled_to_disk": 0,
                           "peak_memory_used": "NNN",
                           "sort_algorithm": "std::stable_sort",
-                          "unpacked_addon_fields": "using_heap_table",
-                          "sort_mode": "<fixed_sort_key, rowid>"
-                        }
-                      },
-                      {
-                        "creating_tmp_table": {
-                          "tmp_table_info": {
-                            "in_plan_at_position": 2,
-                            "columns": 6,
-                            "row_length": 29,
-                            "key_length": 0,
-                            "unique_constraint": false,
-                            "makes_grouped_rows": false,
-                            "cannot_insert_duplicates": false,
-                            "location": "TempTable"
-                          }
+                          "sort_mode": "<fixed_sort_key, packed_additional_fields>"
                         }
                       }
                     ]
@@ -16806,22 +16820,7 @@ SELECT ROW_NUMBER() OVER (PARTITION BY i), SUM(i) OVER (ORDER BY i DESC) FROM t 
                     "num_initial_chunks_spilled_to_disk": 0,
                     "peak_memory_used": "NNN",
                     "sort_algorithm": "std::stable_sort",
-                    "unpacked_addon_fields": "using_heap_table",
-                    "sort_mode": "<fixed_sort_key, rowid>"
-                  }
-                },
-                {
-                  "creating_tmp_table": {
-                    "tmp_table_info": {
-                      "in_plan_at_position": 3,
-                      "columns": 7,
-                      "row_length": 45,
-                      "key_length": 0,
-                      "unique_constraint": false,
-                      "makes_grouped_rows": false,
-                      "cannot_insert_duplicates": false,
-                      "location": "TempTable"
-                    }
+                    "sort_mode": "<fixed_sort_key, packed_additional_fields>"
                   }
                 }
               ]
@@ -16851,8 +16850,7 @@ SELECT ROW_NUMBER() OVER (PARTITION BY i), SUM(i) OVER (ORDER BY i DESC) FROM t 
               "num_initial_chunks_spilled_to_disk": 0,
               "peak_memory_used": "NNN",
               "sort_algorithm": "std::sort",
-              "unpacked_addon_fields": "using_heap_table",
-              "sort_mode": "<fixed_sort_key, rowid>"
+              "sort_mode": "<fixed_sort_key, packed_additional_fields>"
             }
           }
         ]

@@ -39,7 +39,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
 
-#include <binlog_event.h>
 #include <ha_prototypes.h>
 #include <my_rapidjson_size_t.h>
 #include <my_sys.h>
@@ -57,6 +56,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "common.h"
 #include "keyring_plugins.h"
 #include "mysqld.h"
+#include "os0event.h"
 #include "space_map.h"
 #include "typelib.h"
 #include "xb0xb.h"
@@ -997,6 +997,10 @@ static void start_query_killer() {
 static void stop_query_killer() {
   os_event_set(kill_query_thread_stop);
   os_event_wait_time(kill_query_thread_stopped, 60000);
+
+  os_event_destroy(kill_query_thread_stop);
+  os_event_destroy(kill_query_thread_started);
+  os_event_destroy(kill_query_thread_stopped);
 }
 
 static bool execute_query_with_timeout(MYSQL *mysql, const char *query,

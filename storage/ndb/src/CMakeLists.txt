@@ -28,6 +28,7 @@ FOREACH(warning
     "unused-but-set-variable"
     "strict-aliasing"
     "unused-parameter"
+    "cast-qual"
     # Downgrade -Werror to warning for "may be used uninitialized"
     "error=maybe-uninitialized"
     # Downgrade placement-new as part of Bug #24822203
@@ -91,7 +92,7 @@ ENDIF()
 # Build static ndbclient library
 #
 SET(NDBCLIENT_LIBS
-  mysys dbug strings
+  mysys strings
   ${SSL_LIBRARIES} ${ZLIB_LIBRARY}
   ndbapi
   ndbtransport
@@ -105,23 +106,23 @@ SET(NDBCLIENT_LIBS
   ndbconf)
 
 SET(LIBS_TO_MERGE
-  mysys dbug mytime strings
+  mysys
+  mytime
   ndbapi
-  ndbtransport
-  ndbtrace
-  ndbsignaldata
+  ndbconf
+  ndbgeneral
+  ndblogger
   ndbmgmapi
   ndbmgmcommon
-  ndblogger
   ndbportlib
-  ndbgeneral
-  ndbconf)
+  ndbsignaldata
+  ndbtrace
+  ndbtransport
+  strings
+  )
 
 IF(WITH_ZLIB STREQUAL "bundled")
   LIST(APPEND LIBS_TO_MERGE ${ZLIB_LIBRARY})
-ENDIF()
-IF(WITH_SSL STREQUAL "wolfssl")
-  LIST(APPEND LIBS_TO_MERGE wolfssl wolfcrypt)
 ENDIF()
 
 
@@ -154,7 +155,8 @@ IF(LINUX_INSTALL_RPATH_ORIGIN)
   SET_PROPERTY(TARGET ndbclient_so PROPERTY INSTALL_RPATH "\$ORIGIN/")
 ENDIF()
 IF(WIN32_CLANG AND WITH_ASAN)
-  TARGET_LINK_LIBRARIES(ndbclient_so "${ASAN_LIB_DIR}/clang_rt.asan_dll_thunk-x86_64.lib")
+  TARGET_LINK_LIBRARIES(ndbclient_so
+    "${ASAN_LIB_DIR}/clang_rt.asan_dll_thunk-x86_64.lib")
 ENDIF()
 
 IF(WIN32)

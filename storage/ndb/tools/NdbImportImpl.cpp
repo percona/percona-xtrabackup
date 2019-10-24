@@ -24,6 +24,8 @@
 
 #include "NdbImportImpl.hpp"
 
+#include <inttypes.h>
+
 NdbImportImpl::NdbImportImpl(NdbImport& facade) :
   NdbImport(*this),
   m_facade(&facade),
@@ -648,7 +650,7 @@ NdbImportImpl::Job::start_resume()
       m_util.set_error_gen(m_error, __LINE__,
                            "inconsistent counts from old state files"
                            " (*.stt vs *.map)"
-                           " rows %llu vs %llu reject %llu vs %llu",
+                           " rows %" PRIu64 " vs %" PRIu64 " reject %" PRIu64 " vs %" PRIu64,
                            m_old_rows, old_rows, m_old_reject, old_reject);
       return;
     }
@@ -1558,7 +1560,7 @@ NdbImportImpl::RandomInputWorker::create_row(uint64 rowid, const Table& table)
   const uint attrcnt = attrs.size();
   char keychr[100];
   uint keylen;
-  sprintf(keychr, "%llu:", rowid);
+  sprintf(keychr, "%" PRIu64 ":", rowid);
   keylen = strlen(keychr);
   for (uint i = 0; i < attrcnt; i++)
   {
@@ -2133,7 +2135,8 @@ NdbImportImpl::OpList::~OpList()
   Op* one_op = NULL;
   while ((one_op = pop_front()) != NULL)
   {
-    require(one_op->m_row == NULL);
+    // See bug 30192989
+    //  require(one_op->m_row == NULL);
     delete one_op;
   }
 }
@@ -3040,7 +3043,7 @@ NdbImportImpl::ExecOpWorkerAsynch::state_define()
       const uint attrcnt = attrs.size();
       const Attr& attr = attrs[attrcnt - 1];
       require(attr.m_type == NdbDictionary::Column::Bigunsigned);
-      uint64 val;
+      Uint64 val;
       if (m_ndb->getAutoIncrementValue(table.m_tab, val,
                                        opt.m_ai_prefetch_sz,
                                        opt.m_ai_increment,
@@ -3341,13 +3344,13 @@ NdbImportImpl::DiagTeam::read_old_diags(const char* name,
   Buf* buf[2];
   CsvInput* csvinput[2];
   RowList rows_reject;
+  RowMap rowmap_in[] = {m_util, m_util};
   for (uint i = 0; i < 2; i++)
   {
     uint pagesize = opt.m_pagesize;
     uint pagecnt = opt.m_pagecnt;
     buf[i] = new Buf(true);
     buf[i]->alloc(pagesize, 2 * pagecnt);
-    RowMap rowmap_in(m_util);   // dummy
     csvinput[i] = new CsvInput(m_impl.m_csv,
                                Name(name, i),
                                csvspec,
@@ -3355,7 +3358,7 @@ NdbImportImpl::DiagTeam::read_old_diags(const char* name,
                                *buf[i],
                                rows_out,
                                rows_reject,
-                               rowmap_in,
+                               rowmap_in[i],
                                m_job.m_stats);
     csvinput[i]->do_init();
   }

@@ -37,6 +37,7 @@
 
 using mysqlrouter::MySQLSession;
 using ::testing::PrintToString;
+using namespace std::chrono_literals;
 
 class MetadataChacheTTLTest : public RouterComponentTest {
  protected:
@@ -63,7 +64,7 @@ class MetadataChacheTTLTest : public RouterComponentTest {
            (ttl.empty() ? "" : std::string("ttl=" + ttl + "\n")) + "\n";
   }
 
-  std::string get_metadata_cache_routing_section(unsigned router_port,
+  std::string get_metadata_cache_routing_section(uint16_t router_port,
                                                  const std::string &role,
                                                  const std::string &strategy,
                                                  const std::string &mode = "") {
@@ -91,12 +92,12 @@ class MetadataChacheTTLTest : public RouterComponentTest {
   }
 
   bool wait_for_refresh_thread_started(const ProcessWrapper &router,
-                                       unsigned timeout_msec) {
+                                       std::chrono::milliseconds timeout) {
     if (getenv("WITH_VALGRIND")) {
-      timeout_msec *= 10;
+      timeout *= 10;
     }
 
-    const unsigned MSEC_STEP = 10;
+    const auto MSEC_STEP = 10ms;
     bool thread_started = false;
     const auto started = std::chrono::steady_clock::now();
     do {
@@ -104,15 +105,12 @@ class MetadataChacheTTLTest : public RouterComponentTest {
       const std::string needle = "Starting metadata cache refresh thread";
       thread_started = (log_content.find(needle) != log_content.npos);
       if (!thread_started) {
-        unsigned step = std::min(timeout_msec, MSEC_STEP);
+        auto step = std::min(timeout, MSEC_STEP);
         std::this_thread::sleep_for(std::chrono::milliseconds(step));
-        timeout_msec -= step;
+        timeout -= step;
       }
     } while (!thread_started &&
-             timeout_msec >
-                 std::chrono::duration_cast<std::chrono::milliseconds>(
-                     std::chrono::steady_clock::now() - started)
-                     .count());
+             timeout > std::chrono::steady_clock::now() - started);
 
     return thread_started;
   }
@@ -140,7 +138,7 @@ class MetadataChacheTTLTest : public RouterComponentTest {
     auto &router = ProcessManager::launch_router(
         {"-c", conf_file}, expected_exitcode, true, false);
     if (wait_for_md_refresh_started) {
-      bool ready = wait_for_refresh_thread_started(router, 5000);
+      bool ready = wait_for_refresh_thread_started(router, 5000ms);
       EXPECT_TRUE(ready) << router.get_full_logfile();
     }
 
@@ -161,10 +159,10 @@ struct MetadataTTLTestParams {
   // value, we should not check for maximum
   bool at_least;
 
-  MetadataTTLTestParams(
-      std::string ttl_,
-      std::chrono::milliseconds router_uptime_ = std::chrono::milliseconds(0),
-      int expected_md_queries_count_ = 0, bool at_least_ = false)
+  MetadataTTLTestParams(std::string ttl_,
+                        std::chrono::milliseconds router_uptime_ = 0ms,
+                        int expected_md_queries_count_ = 0,
+                        bool at_least_ = false)
       : ttl(ttl_),
         router_uptime(router_uptime_),
         expected_md_queries_count(expected_md_queries_count_),
@@ -206,8 +204,7 @@ TEST_P(MetadataChacheTTLTestParam, CheckTTLValid) {
 
   auto &metadata_server = launch_mysql_server_mock(
       json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
-  bool ready = wait_for_port_ready(md_server_port);
-  EXPECT_TRUE(ready) << metadata_server.get_full_output();
+  ASSERT_NO_FATAL_FAILURE(check_port_ready(metadata_server, md_server_port));
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
   const auto router_port = port_pool_.get_next_available();
@@ -278,8 +275,7 @@ TEST_P(MetadataChacheTTLTestParamInvalid, CheckTTLInvalid) {
 
   auto &metadata_server = launch_mysql_server_mock(
       json_metadata, md_server_port, false, md_server_http_port);
-  bool ready = wait_for_port_ready(md_server_port);
-  EXPECT_TRUE(ready) << metadata_server.get_full_output();
+  ASSERT_NO_FATAL_FAILURE(check_port_ready(metadata_server, md_server_port));
 
   // launch the router with metadata-cache configuration
   const auto router_port = port_pool_.get_next_available();
@@ -292,7 +288,7 @@ TEST_P(MetadataChacheTTLTestParamInvalid, CheckTTLInvalid) {
                     metadata_cache_section, routing_section, EXIT_FAILURE,
                     /*wait_for_md_refresh_started=*/false);
 
-  EXPECT_EQ(router.wait_for_exit(), EXIT_FAILURE);
+  check_exit_code(router, EXIT_FAILURE);
   EXPECT_THAT(router.exit_code(), testing::Ne(0));
   EXPECT_TRUE(router.expect_output(
       "Configuration error: option ttl in [metadata_cache:test] needs value "
@@ -342,8 +338,7 @@ TEST_F(MetadataChacheTTLTest, InstancesListUnordered) {
     nodes.push_back(
         &launch_mysql_server_mock(json_metadata, node_classic_ports[i],
                                   EXIT_SUCCESS, false, node_http_ports[i]));
-    bool ready = wait_for_port_ready(node_classic_ports[i]);
-    ASSERT_TRUE(ready) << nodes[i]->get_full_output();
+    ASSERT_NO_FATAL_FAILURE(check_port_ready(*nodes[i], node_classic_ports[i]));
 
     ASSERT_TRUE(
         MockServerRestClient(node_http_ports[i]).wait_for_rest_endpoint_ready())
@@ -370,7 +365,8 @@ TEST_F(MetadataChacheTTLTest, InstancesListUnordered) {
   std::vector<uint16_t> node_classic_ports_reverse(node_classic_ports.rbegin(),
                                                    node_classic_ports.rend());
   for (size_t i = 0; i < 2; ++i) {
-    set_mock_metadata(node_http_ports[i], kGroupID, node_classic_ports_reverse);
+    set_mock_metadata(node_http_ports[i], kGroupID, node_classic_ports_reverse,
+                      1);
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
@@ -379,7 +375,7 @@ TEST_F(MetadataChacheTTLTest, InstancesListUnordered) {
   const std::string log_content = router.get_full_logfile();
 
   // 1 is expected, that comes from the inital reading of the metadata
-  EXPECT_EQ(1, count_str_occurences(log_content, needle));
+  EXPECT_EQ(1, count_str_occurences(log_content, needle)) << log_content;
 }
 
 int main(int argc, char *argv[]) {

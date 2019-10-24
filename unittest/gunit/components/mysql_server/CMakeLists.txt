@@ -20,12 +20,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-IF(DISABLE_SHARED)
-  RETURN()
-ENDIF()
-
 INCLUDE_DIRECTORIES(
-# ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/components/example
   ${CMAKE_SOURCE_DIR}/components/mysql_server
 )
@@ -52,13 +47,19 @@ ENDFOREACH()
 
 MYSQL_ADD_COMPONENT(self_required_test_component
   self_required_test_component.cc
-  NO_INSTALL MODULE)
+  MODULE_ONLY
+  SKIP_INSTALL
+  )
 MYSQL_ADD_COMPONENT(cyclic_dependency_test_component_1
   cyclic_dependency_test_component_1.cc
-  NO_INSTALL MODULE)
+  MODULE_ONLY
+  SKIP_INSTALL
+  )
 MYSQL_ADD_COMPONENT(cyclic_dependency_test_component_2
   cyclic_dependency_test_component_2.cc
-  NO_INSTALL MODULE)
+  MODULE_ONLY
+  SKIP_INSTALL
+  )
 
 SET(EXAMPLE_COMPONENTS
   component_example_component1

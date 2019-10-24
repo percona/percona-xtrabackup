@@ -37,6 +37,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "gmock/gmock.h"
 #include "keyring/keyring_manager.h"
 #include "mock_server_rest_client.h"
+#include "mock_server_testutils.h"
 #include "mysql_session.h"
 #include "mysqlrouter/rest_client.h"
 #include "router_component_system_layout.h"
@@ -155,7 +156,8 @@ class GrNotificationsTest : public RouterComponentTest {
     for (auto &gr_node : gr_node_ports) {
       JsonValue node(rapidjson::kArrayType);
       node.PushBack(JsonValue((int)gr_node), allocator);
-      node.PushBack(JsonValue("ONLINE", strlen("ONLINE")), allocator);
+      node.PushBack(JsonValue("ONLINE", strlen("ONLINE"), allocator),
+                    allocator);
       node.PushBack(JsonValue((int)gr_node_xports[i++]), allocator);
       gr_nodes_->PushBack(node, allocator);
     }
@@ -214,14 +216,6 @@ class GrNotificationsTest : public RouterComponentTest {
     }
     const auto json_str = json_to_string(json_doc);
     EXPECT_NO_THROW(MockServerRestClient(http_port).set_globals(json_str));
-  }
-
-  std::string json_to_string(const JsonValue &json_doc) {
-    JsonStringBuffer out_buffer;
-
-    rapidjson::Writer<JsonStringBuffer> out_writer{out_buffer};
-    json_doc.Accept(out_writer);
-    return out_buffer.GetString();
   }
 
   int get_ttl_queries_count(const std::string &json_string) {
@@ -334,10 +328,10 @@ TEST_P(GrNotificationsParamTest, GrNotification) {
     cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
         trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
         cluster_http_ports[i], cluster_nodes_xports[i]));
-    ASSERT_TRUE(wait_for_port_ready(cluster_nodes_ports[i], 5000))
-        << cluster_nodes[i]->get_full_output();
-    ASSERT_TRUE(wait_for_port_ready(cluster_nodes_xports[i], 5000))
-        << cluster_nodes[i]->get_full_output();
+    ASSERT_NO_FATAL_FAILURE(
+        check_port_ready(*cluster_nodes[i], cluster_nodes_ports[i], 5000ms));
+    ASSERT_NO_FATAL_FAILURE(
+        check_port_ready(*cluster_nodes[i], cluster_nodes_xports[i], 5000ms));
     ASSERT_TRUE(MockServerRestClient(cluster_http_ports[i])
                     .wait_for_rest_endpoint_ready())
         << cluster_nodes[i]->get_full_output();
@@ -515,8 +509,8 @@ TEST_F(GrNotificationsTestNoParam, GrNotificationNoXPort) {
     cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
         trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
         cluster_http_ports[i]));
-    ASSERT_TRUE(wait_for_port_ready(cluster_nodes_ports[i], 5000))
-        << cluster_nodes[i]->get_full_output();
+    ASSERT_NO_FATAL_FAILURE(
+        check_port_ready(*cluster_nodes[i], cluster_nodes_ports[i], 5000ms));
     ASSERT_TRUE(MockServerRestClient(cluster_http_ports[i])
                     .wait_for_rest_endpoint_ready())
         << cluster_nodes[i]->get_full_output();
@@ -564,6 +558,15 @@ TEST_F(GrNotificationsTestNoParam, GrNotificationNoXPort) {
       << "mock[0]: " << cluster_nodes[0]->get_full_output() << "\n"
       << "mock[1]: " << cluster_nodes[1]->get_full_output() << "\n"
       << "router: " << router.get_full_logfile();
+
+  // we expect that the router will not be able to connect to both nodes on the
+  // x-port. that can take up to 2 * 10s as 10 seconds is a timeout we use for
+  // the x connect. If the port that we try to connect to is not used/blocked by
+  // anyone that should error out right away but that is not a case sometimes on
+  // Solaris so in the worst case we will wait 20 seconds here for the router to
+  // exit
+  ASSERT_FALSE(router.send_shutdown_event());
+  check_exit_code(router, EXIT_SUCCESS, 22000ms);
 }
 
 /**
@@ -594,8 +597,8 @@ TEST_F(GrNotificationsTestNoParam, GrNotificationXPortConnectionFailure) {
     cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
         trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
         cluster_http_ports[i], cluster_nodes_xports[i]));
-    ASSERT_TRUE(wait_for_port_ready(cluster_nodes_ports[i], 5000))
-        << cluster_nodes[i]->get_full_output();
+    ASSERT_NO_FATAL_FAILURE(
+        check_port_ready(*cluster_nodes[i], cluster_nodes_ports[i], 5000ms));
     ASSERT_TRUE(MockServerRestClient(cluster_http_ports[i])
                     .wait_for_rest_endpoint_ready())
         << cluster_nodes[i]->get_full_output();
@@ -683,8 +686,8 @@ TEST_P(GrNotificationsConfErrorTest, GrNotificationConfError) {
   auto &router = launch_router(temp_test_dir.name(), metadata_cache_section,
                                routing_section, state_file, EXIT_FAILURE);
 
-  const unsigned wait_for_process_exit_timeout{10000};
-  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), EXIT_FAILURE);
+  const auto wait_for_process_exit_timeout{10000ms};
+  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string log_content = router.get_full_logfile();
   EXPECT_NE(log_content.find(test_params.expected_error_message),

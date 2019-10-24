@@ -28,6 +28,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <math.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -39,6 +40,7 @@
 #include "client/client_priv.h"
 #include "client/my_readline.h"
 #include "client/pattern_matcher.h"
+#include "compression.h"
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "my_compiler.h"
@@ -89,7 +91,7 @@
 
 #include "sql_common.h"
 
-#include "sql/net_ns.h"
+#include "sql-common/net_ns.h"
 
 using std::max;
 using std::min;
@@ -211,6 +213,8 @@ static uint prompt_counter;
 static char delimiter[16] = DEFAULT_DELIMITER;
 static size_t delimiter_length = 1;
 unsigned short terminal_width = 80;
+static uint opt_zstd_compress_level = default_zstd_compression_level;
+static char *opt_compress_algorithm = nullptr;
 
 #if defined(_WIN32)
 static char *shared_memory_base_name = 0;
@@ -1224,7 +1228,7 @@ int main(int argc, char *argv[]) {
   char buff[80];
 
   MY_INIT(argv[0]);
-  DBUG_ENTER("main");
+  DBUG_TRACE;
   DBUG_PROCESS(argv[0]);
 
   charset_index = get_command_index('C');
@@ -1418,7 +1422,7 @@ int main(int argc, char *argv[]) {
   status.exit_status = read_and_execute(!status.batch);
   if (opt_outfile) end_tee();
   mysql_end(0);
-  DBUG_RETURN(0);  // Keep compiler happy
+  return 0;  // Keep compiler happy
 }
 
 void mysql_end(int sig) {
@@ -1856,6 +1860,18 @@ static struct my_option my_long_options[] = {
      &opt_network_namespace, &opt_network_namespace, 0, GET_STR, REQUIRED_ARG,
      0, 0, 0, 0, 0, 0},
 #endif
+    {"compression-algorithms", 0,
+     "Use compression algorithm in server/client protocol. Valid values "
+     "are any combination of 'zstd','zlib','uncompressed'.",
+     &opt_compress_algorithm, &opt_compress_algorithm, 0, GET_STR, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
+    {"zstd-compression-level", 0,
+     "Use this compression level in the client/server protocol, in case "
+     "--compression-algorithms=zstd. Valid range is between 1 and 22, "
+     "inclusive. Default is 3.",
+     &opt_zstd_compress_level, &opt_zstd_compress_level, 0, GET_UINT,
+     REQUIRED_ARG, 3, 1, 22, 0, 0, 0},
+
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 static void usage(int version) {
@@ -2267,7 +2283,7 @@ static inline void reset_prompt(char *in_string, bool *ml_comment) {
      the command's pointer or NULL.
 */
 static COMMANDS *find_command(char cmd_char) {
-  DBUG_ENTER("find_command");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("cmd_char: %d", cmd_char));
 
   int index = -1;
@@ -2283,9 +2299,9 @@ static COMMANDS *find_command(char cmd_char) {
 
   if (index >= 0) {
     DBUG_PRINT("exit", ("found command: %s", commands[index].name));
-    DBUG_RETURN(&commands[index]);
+    return &commands[index];
   } else
-    DBUG_RETURN((COMMANDS *)0);
+    return (COMMANDS *)0;
 }
 
 /**
@@ -2300,7 +2316,7 @@ static COMMANDS *find_command(char cmd_char) {
 static COMMANDS *find_command(char *name) {
   uint len;
   char *end;
-  DBUG_ENTER("find_command");
+  DBUG_TRACE;
 
   DBUG_ASSERT(name != NULL);
   DBUG_PRINT("enter", ("name: '%s'", name));
@@ -2314,7 +2330,7 @@ static COMMANDS *find_command(char *name) {
   if ((!real_binary_mode && strstr(name, "\\g")) ||
       (strstr(name, delimiter) &&
        !is_delimiter_command(name, DELIMITER_NAME_LEN)))
-    DBUG_RETURN((COMMANDS *)0);
+    return (COMMANDS *)0;
 
   if ((end = strcont(name, " \t"))) {
     len = (uint)(end - name);
@@ -2344,9 +2360,9 @@ static COMMANDS *find_command(char *name) {
 
   if (index >= 0) {
     DBUG_PRINT("exit", ("found command: %s", commands[index].name));
-    DBUG_RETURN(&commands[index]);
+    return &commands[index];
   }
-  DBUG_RETURN((COMMANDS *)0);
+  return (COMMANDS *)0;
 }
 
 static bool add_line(String &buffer, char *line, size_t line_length,
@@ -2356,9 +2372,9 @@ static bool add_line(String &buffer, char *line, size_t line_length,
   COMMANDS *com;
   bool need_space = 0;
   enum { SSC_NONE = 0, SSC_CONDITIONAL, SSC_HINT } ss_comment = SSC_NONE;
-  DBUG_ENTER("add_line");
+  DBUG_TRACE;
 
-  if (!line[0] && buffer.is_empty()) DBUG_RETURN(0);
+  if (!line[0] && buffer.is_empty()) return 0;
 
   if (status.add_to_history && line[0]) add_filtered_history(line);
 
@@ -2405,7 +2421,7 @@ static bool add_line(String &buffer, char *line, size_t line_length,
           out = line;
         }
 
-        if ((*com->func)(&buffer, pos - 1) > 0) DBUG_RETURN(1);  // Quit
+        if ((*com->func)(&buffer, pos - 1) > 0) return 1;  // Quit
         if (com->takes_params) {
           if (ss_comment) {
             /*
@@ -2429,7 +2445,7 @@ static bool add_line(String &buffer, char *line, size_t line_length,
         }
       } else {
         sprintf(buff, "Unknown command '\\%c'.", inchar);
-        if (put_info(buff, INFO_ERROR) > 0) DBUG_RETURN(1);
+        if (put_info(buff, INFO_ERROR) > 0) return 1;
         *out++ = '\\';
         *out++ = (char)inchar;
         continue;
@@ -2459,10 +2475,10 @@ static bool add_line(String &buffer, char *line, size_t line_length,
       pos--;
 
       if ((com = find_command(buffer.c_ptr()))) {
-        if ((*com->func)(&buffer, buffer.c_ptr()) > 0) DBUG_RETURN(1);  // Quit
+        if ((*com->func)(&buffer, buffer.c_ptr()) > 0) return 1;  // Quit
       } else {
         if (com_go(&buffer, 0) > 0)  // < 0 is not fatal
-          DBUG_RETURN(1);
+          return 1;
       }
       buffer.length(0);
     } else if (!*ml_comment &&
@@ -2495,7 +2511,7 @@ static bool add_line(String &buffer, char *line, size_t line_length,
         */
         if (started_with_nothing) {
           if (com_go(&buffer, 0) > 0)  // < 0 is not fatal
-            DBUG_RETURN(1);
+            return 1;
           buffer.length(0);
         }
       }
@@ -2569,9 +2585,9 @@ static bool add_line(String &buffer, char *line, size_t line_length,
     if (buffer.length() + length >= buffer.alloced_length())
       buffer.mem_realloc(buffer.length() + length + batch_io_size);
     if ((!*ml_comment || preserve_comments) && buffer.append(line, length))
-      DBUG_RETURN(1);
+      return 1;
   }
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*****************************************************************
@@ -2736,17 +2752,17 @@ static void build_completion_hash(bool rehash, bool write_info) {
   MYSQL_FIELD *sql_field;
   char buf[NAME_LEN * 2 + 2];  // table name plus field name plus 2
   int i, j, num_fields;
-  DBUG_ENTER("build_completion_hash");
+  DBUG_TRACE;
 
 #ifndef DBUG_OFF
   if (!opt_build_completion_hash)
 #endif
   {
     if (status.batch || quick || !current_db)
-      DBUG_VOID_RETURN;  // We don't need completion in batches
+      return;  // We don't need completion in batches
   }
 
-  if (!rehash) DBUG_VOID_RETURN;
+  if (!rehash) return;
 
   /* Free old used memory */
   if (field_names) field_names = 0;
@@ -2795,13 +2811,13 @@ You can turn off this feature to get a quicker startup with -A\n\n");
   /* hash all field names, both with the table prefix and without it */
   if (!tables) /* no tables */
   {
-    DBUG_VOID_RETURN;
+    return;
   }
   mysql_data_seek(tables, 0);
   if (!(field_names = (char ***)hash_mem_root.Alloc(
             sizeof(char **) * (uint)(mysql_num_rows(tables) + 1)))) {
     mysql_free_result(tables);
-    DBUG_VOID_RETURN;
+    return;
   }
   i = 0;
   while ((table_row = mysql_fetch_row(tables))) {
@@ -2835,7 +2851,6 @@ You can turn off this feature to get a quicker startup with -A\n\n");
   }
   mysql_free_result(tables);
   field_names[i] = 0;  // End pointer
-  DBUG_VOID_RETURN;
 }
 
 /* for gnu readline */
@@ -3036,7 +3051,7 @@ static int com_server_help(String *buffer MY_ATTRIBUTE((unused)),
 
   if (result) {
     unsigned int num_fields = mysql_num_fields(result);
-    my_ulonglong num_rows = mysql_num_rows(result);
+    uint64_t num_rows = mysql_num_rows(result);
     mysql_fetch_fields(result);
     if (num_fields == 3 && num_rows == 1) {
       if (!(cur = mysql_fetch_row(result))) {
@@ -3267,7 +3282,7 @@ static int com_go(String *buffer, char *line MY_ATTRIBUTE((unused))) {
         else
           print_table_data(result);
         if (!batchmode)
-          sprintf(buff, "%lld %s in set", mysql_num_rows(result),
+          sprintf(buff, "%" PRId64 " %s in set", mysql_num_rows(result),
                   mysql_num_rows(result) == 1LL ? "row" : "rows");
         end_pager();
         if (mysql_errno(&mysql)) error = put_error(&mysql);
@@ -3275,7 +3290,8 @@ static int com_go(String *buffer, char *line MY_ATTRIBUTE((unused))) {
     } else if (mysql_affected_rows(&mysql) == ~(ulonglong)0)
       my_stpcpy(buff, "Query OK");
     else if (!batchmode)
-      sprintf(buff, "Query OK, %lld %s affected", mysql_affected_rows(&mysql),
+      sprintf(buff, "Query OK, %" PRId64 " %s affected",
+              mysql_affected_rows(&mysql),
               mysql_affected_rows(&mysql) == 1LL ? "row" : "rows");
 
     pos = strend(buff);
@@ -3807,7 +3823,7 @@ static void print_warnings() {
   const char *query;
   MYSQL_RES *result;
   MYSQL_ROW cur;
-  my_ulonglong num_rows;
+  uint64_t num_rows;
 
   /* Save current error before calling "show warnings" */
   uint error = mysql_errno(&mysql);
@@ -4532,6 +4548,12 @@ static bool init_connection_options(MYSQL *mysql) {
   if (opt_bind_addr) mysql_options(mysql, MYSQL_OPT_BIND, opt_bind_addr);
 
   if (opt_compress) mysql_options(mysql, MYSQL_OPT_COMPRESS, NullS);
+  if (opt_compress_algorithm)
+    mysql_options(mysql, MYSQL_OPT_COMPRESSION_ALGORITHMS,
+                  opt_compress_algorithm);
+
+  mysql_options(mysql, MYSQL_OPT_ZSTD_COMPRESSION_LEVEL,
+                &opt_zstd_compress_level);
 
   if (using_opt_local_infile)
     mysql_options(mysql, MYSQL_OPT_LOCAL_INFILE, (char *)&opt_local_infile);

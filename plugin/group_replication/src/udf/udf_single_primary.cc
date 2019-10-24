@@ -30,7 +30,7 @@ static char *group_replication_set_as_primary(UDF_INIT *, UDF_ARGS *args,
                                               unsigned long *length,
                                               unsigned char *is_null,
                                               unsigned char *error) {
-  DBUG_ENTER("group_replication_set_as_primary");
+  DBUG_TRACE;
 
   const char *action_name = "group_replication_set_as_primary";
   *is_null = 0;  // result is not null
@@ -46,7 +46,7 @@ static char *group_replication_set_as_primary(UDF_INIT *, UDF_ARGS *args,
     if (invalid_uuid) {
       *error = 1;
       throw_udf_error(action_name, return_message);
-      DBUG_RETURN(result);
+      return result;
     }
   }
 
@@ -58,7 +58,7 @@ static char *group_replication_set_as_primary(UDF_INIT *, UDF_ARGS *args,
       size_t return_length = strlen(return_message);
       strcpy(result, return_message);
       *length = return_length;
-      DBUG_RETURN(result);
+      return result;
     }
   } else {
     // This case means the group changed to MPM since this UDF was initialized.
@@ -68,7 +68,7 @@ static char *group_replication_set_as_primary(UDF_INIT *, UDF_ARGS *args,
     size_t return_length = strlen(return_message);
     strcpy(result, return_message);
     *length = return_length;
-    DBUG_RETURN(result);
+    return result;
   }
 
   my_thread_id udf_thread_id = 0;
@@ -83,13 +83,13 @@ static char *group_replication_set_as_primary(UDF_INIT *, UDF_ARGS *args,
     *error = 1;
   }
 
-  DBUG_RETURN(result);
+  return result;
 }
 
 static bool group_replication_set_as_primary_init(UDF_INIT *init_id,
                                                   UDF_ARGS *args,
                                                   char *message) {
-  DBUG_ENTER("group_replication_set_as_primary_init");
+  DBUG_TRACE;
 
   /*
     Increment only after verifying the plugin is not stopping
@@ -98,46 +98,46 @@ static bool group_replication_set_as_primary_init(UDF_INIT *init_id,
   */
   if (get_plugin_is_stopping()) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, member_offline_or_minority_str);
-    DBUG_RETURN(true);
+    return true;
   }
   UDF_counter udf_counter;
 
   if (get_plugin_is_stopping()) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, member_offline_or_minority_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   if (args->arg_count != 1 || args->arg_type[0] != STRING_RESULT ||
       args->lengths[0] == 0) {
     my_stpcpy(message, "Wrong arguments: You need to specify a server uuid.");
-    DBUG_RETURN(true);
+    return true;
   }
   privilege_result privilege = user_has_gr_admin_privilege();
   bool has_privileges = (privilege.status == privilege_status::ok);
   if (!has_privileges) {
     log_privilege_status_result(privilege, message);
-    DBUG_RETURN(true);
+    return true;
   }
 
   bool has_locked_tables = check_locked_tables(message);
-  if (!has_locked_tables) DBUG_RETURN(true);
+  if (!has_locked_tables) return true;
 
   bool plugin_online = member_online_with_majority();
   if (!plugin_online) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, member_offline_or_minority_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   bool is_a_member_in_recovery = group_contains_recovering_member();
   if (is_a_member_in_recovery) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, recovering_member_on_group_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   bool is_a_member_unreachable = group_contains_unreachable_member();
   if (is_a_member_unreachable) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, unreachable_member_on_group_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   const char *uuid_arg = args->args[0];
@@ -150,7 +150,7 @@ static bool group_replication_set_as_primary_init(UDF_INIT *init_id,
 
     if (invalid_uuid) {
       my_stpcpy(message, return_message);
-      DBUG_RETURN(true);
+      return true;
     }
   }
 
@@ -159,12 +159,12 @@ static bool group_replication_set_as_primary_init(UDF_INIT *init_id,
         "In multi-primary mode."
         " Use group_replication_switch_to_single_primary_mode.";
     strcpy(message, return_message);
-    DBUG_RETURN(true);
+    return true;
   }
 
   init_id->maybe_null = 0;
   udf_counter.succeeded();
-  DBUG_RETURN(false);
+  return false;
 }
 
 static void group_replication_set_as_primary_deinit(UDF_INIT *) {
@@ -181,7 +181,7 @@ udf_descriptor set_as_primary_udf() {
 static char *group_replication_switch_to_single_primary_mode(
     UDF_INIT *, UDF_ARGS *args, char *result, unsigned long *length,
     unsigned char *is_null, unsigned char *error) {
-  DBUG_ENTER("group_replication_switch_to_single_primary_mode");
+  DBUG_TRACE;
 
   const char *action_name = "group_replication_switch_to_single_primary_mode";
   *is_null = 0;  // result is not null
@@ -200,7 +200,7 @@ static char *group_replication_switch_to_single_primary_mode(
     strcpy(result, return_message);
     *length = return_length;
 
-    DBUG_RETURN(result);
+    return result;
   }
 
   std::string uuid =
@@ -213,7 +213,7 @@ static char *group_replication_switch_to_single_primary_mode(
     if (invalid_uuid) {
       *error = 1;
       throw_udf_error(action_name, return_message);
-      DBUG_RETURN(result);
+      return result;
     }
   }
 
@@ -229,12 +229,12 @@ static char *group_replication_switch_to_single_primary_mode(
     *error = 1;
   }
 
-  DBUG_RETURN(result);
+  return result;
 }
 
 static bool group_replication_switch_to_single_primary_mode_init(
     UDF_INIT *initid, UDF_ARGS *args, char *message) {
-  DBUG_ENTER("group_replication_switch_to_single_primary_mode_init");
+  DBUG_TRACE;
 
   /*
     Increment only after verifying the plugin is not stopping
@@ -243,13 +243,13 @@ static bool group_replication_switch_to_single_primary_mode_init(
   */
   if (get_plugin_is_stopping()) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, member_offline_or_minority_str);
-    DBUG_RETURN(true);
+    return true;
   }
   UDF_counter udf_counter;
 
   if (get_plugin_is_stopping()) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, member_offline_or_minority_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   DBUG_EXECUTE_IF("group_replication_hold_udf_after_plugin_is_stopping", {
@@ -265,35 +265,35 @@ static bool group_replication_switch_to_single_primary_mode_init(
     my_stpcpy(message,
               "Wrong arguments: This function either takes no arguments"
               " or a single server uuid.");
-    DBUG_RETURN(true);
+    return true;
   }
 
   privilege_result privilege = user_has_gr_admin_privilege();
   bool has_privileges = (privilege.status == privilege_status::ok);
   if (!has_privileges) {
     log_privilege_status_result(privilege, message);
-    DBUG_RETURN(true);
+    return true;
   }
 
   bool has_locked_tables = check_locked_tables(message);
-  if (!has_locked_tables) DBUG_RETURN(true);
+  if (!has_locked_tables) return true;
 
   bool plugin_online = member_online_with_majority();
   if (!plugin_online) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, member_offline_or_minority_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   bool is_a_member_in_recovery = group_contains_recovering_member();
   if (is_a_member_in_recovery) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, recovering_member_on_group_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   bool is_a_member_unreachable = group_contains_unreachable_member();
   if (is_a_member_unreachable) {
     std::snprintf(message, MYSQL_ERRMSG_SIZE, unreachable_member_on_group_str);
-    DBUG_RETURN(true);
+    return true;
   }
 
   // We can do this test here for dynamic values (e.g.: SQL query values)
@@ -308,14 +308,14 @@ static bool group_replication_switch_to_single_primary_mode_init(
 
       if (invalid_uuid) {
         my_stpcpy(message, return_message);
-        DBUG_RETURN(true);
+        return true;
       }
     }
   }
 
   initid->maybe_null = 0;
   udf_counter.succeeded();
-  DBUG_RETURN(false);
+  return false;
 }
 
 static void group_replication_switch_to_single_primary_mode_deinit(UDF_INIT *) {

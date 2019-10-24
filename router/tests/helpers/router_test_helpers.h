@@ -79,7 +79,7 @@
 
 #include "mysql/harness/filesystem.h"
 
-constexpr unsigned kDefaultPortReadyTimeout{5000};
+constexpr auto kDefaultPortReadyTimeout = std::chrono::milliseconds(5000);
 
 /** @brief Returns the CMake source root folder
  *
@@ -166,15 +166,15 @@ void init_windows_sockets();
 
 /** @brief Probes if the selected TCP port is accepting the connections.
  *
- * @param port          TCP port number to check
- * @param timeout_msec  maximum timeout to wait for the port
- * @param hostname      name/IP address of the network host to check
+ * @param port      TCP port number to check
+ * @param timeout   maximum timeout to wait for the port
+ * @param hostname  name/IP address of the network host to check
  *
  * @returns true if the selected port accepts connections, false otherwise
  */
-bool wait_for_port_ready(unsigned port,
-                         unsigned timeout_msec = kDefaultPortReadyTimeout,
-                         const std::string &hostname = "127.0.0.1");
+bool wait_for_port_ready(
+    uint16_t port, std::chrono::milliseconds timeout = kDefaultPortReadyTimeout,
+    const std::string &hostname = "127.0.0.1");
 
 /** @brief Initializes keyring and adds keyring-related config items to
  * [DEFAULT] section
@@ -188,17 +188,6 @@ void init_keyring(std::map<std::string, std::string> &default_section,
                   const std::string &keyring_dir,
                   const std::string &user = "mysql_router1_user",
                   const std::string &password = "root");
-
-/** @brief replace the 'process.env.{id}' in the input stream
- *
- * @pre assumes the input stream is a JS(ON) document with 'process.env.{id}'
- * references.
- *
- * replaces all references of process.env.{id} with the "environment
- * variables" provided in env_vars, line-by-line
- */
-void replace_process_env(std::istream &ins, std::ostream &outs,
-                         const std::map<std::string, std::string> &env_vars);
 
 /** @brief returns true if the selected file contains a string
  *          that is true for a given predicate
@@ -229,9 +218,5 @@ std::string get_file_output(const std::string &file_name);
 // need to return void to be able to use ASSERT_ macros
 void connect_client_and_query_port(unsigned router_port, std::string &out_port,
                                    bool should_fail = false);
-
-void rewrite_js_to_tracefile(
-    const std::string &infile_name, const std::string &outfile_name,
-    const std::map<std::string, std::string> &env_vars);
 
 #endif  // ROUTER_TESTS_TEST_HELPERS_INCLUDED

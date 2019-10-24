@@ -99,7 +99,7 @@ class ACL_ACCESS {
   ulong access;
 };
 
-class ACL_compare : public std::binary_function<ACL_ACCESS, ACL_ACCESS, bool> {
+class ACL_compare {
  public:
   bool operator()(const ACL_ACCESS &a, const ACL_ACCESS &b);
   bool operator()(const ACL_ACCESS *a, const ACL_ACCESS *b);
@@ -119,13 +119,13 @@ class ACL_HOST : public ACL_ACCESS {
 class Acl_credential {
  public:
   Acl_credential() {
-    m_auth_string = {const_cast<char *>(""), 0};
+    m_auth_string = {"", 0};
     memset(m_salt, 0, SCRAMBLE_LENGTH + 1);
     m_salt_len = 0;
   }
 
  public:
-  LEX_STRING m_auth_string;
+  LEX_CSTRING m_auth_string;
   /**
     The salt variable is used as the password hash for
     native_password_authetication.

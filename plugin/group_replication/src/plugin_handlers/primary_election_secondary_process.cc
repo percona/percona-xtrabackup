@@ -60,8 +60,7 @@ void Primary_election_secondary_process::set_stop_wait_timeout(ulong timeout) {
 int Primary_election_secondary_process::launch_secondary_election_process(
     enum_primary_election_mode mode, std::string &primary_to_elect,
     std::vector<Group_member_info *> *group_members_info) {
-  DBUG_ENTER(
-      "Primary_election_secondary_process::launch_secondary_election_process");
+  DBUG_TRACE;
 
   mysql_mutex_lock(&election_lock);
 
@@ -69,7 +68,7 @@ int Primary_election_secondary_process::launch_secondary_election_process(
   DBUG_ASSERT(election_process_thd_state.is_thread_dead());
   if (election_process_thd_state.is_thread_alive()) {
     mysql_mutex_unlock(&election_lock); /* purecov: inspected */
-    DBUG_RETURN(2);                     /* purecov: inspected */
+    return 2;                           /* purecov: inspected */
   }
 
   election_mode = mode;
@@ -103,7 +102,7 @@ int Primary_election_secondary_process::launch_secondary_election_process(
     /* purecov: begin inspected */
     group_events_observation_manager->unregister_group_event_observer(this);
     mysql_mutex_unlock(&election_lock);
-    DBUG_RETURN(1);
+    return 1;
     /* purecov: end */
   }
 
@@ -115,14 +114,13 @@ int Primary_election_secondary_process::launch_secondary_election_process(
   }
   mysql_mutex_unlock(&election_lock);
 
-  DBUG_RETURN(0);
+  return 0;
 
   return 0;
 }
 
 int Primary_election_secondary_process::secondary_election_process_handler() {
-  DBUG_ENTER(
-      "Primary_election_secondary_process::secondary_election_process_handler");
+  DBUG_TRACE;
   int error = 0;
   std::string err_msg;
 
@@ -234,7 +232,7 @@ end:
     group_events_observation_manager->after_primary_election(
         primary_uuid, true, election_mode, error); /* purecov: inspected */
     kill_transactions_and_leave_on_election_error(
-        err_msg, stop_wait_timeout); /* purecov: inspected */
+        err_msg); /* purecov: inspected */
   }
 
   stage_handler->end_stage();
@@ -244,6 +242,7 @@ end:
 
   thd->release_resources();
   global_thd_manager_remove_thd(thd);
+  delete thd;
 
   mysql_mutex_lock(&election_lock);
   election_process_thd_state.set_terminated();
@@ -254,9 +253,8 @@ end:
       Gcs_operations::get_gcs_engine());
 
   my_thread_end();
-  delete thd;
 
-  DBUG_RETURN(error);
+  return error;
 }
 
 bool Primary_election_secondary_process::is_election_process_running() {

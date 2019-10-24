@@ -215,6 +215,9 @@ class Archived_Redo_Log_Monitor {
   /** Signal monitor to stop. */
   void stop();
 
+  /** Release used resources. */
+  void close();
+
   /** Get archived log reader. */
   Archived_Redo_Log_Reader &get_reader();
 

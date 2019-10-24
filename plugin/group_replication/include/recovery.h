@@ -246,7 +246,6 @@ class Recovery_module {
     recovery_state_transfer.get_recovery_base_ssl_options(ssl_ca, ssl_cert,
                                                           ssl_key);
   }
-
   /**
     Sets the recovery shutdown timeout.
 
@@ -276,6 +275,16 @@ class Recovery_module {
   /** Get public key automatically */
   void set_recovery_get_public_key(bool set) {
     recovery_state_transfer.set_recovery_get_public_key(set);
+  }
+
+  /** Set compression algorithm */
+  void set_recovery_compression_algorithm(const char *name) {
+    recovery_state_transfer.set_recovery_compression_algorithm(name);
+  }
+
+  /** Set compression level */
+  void set_recovery_zstd_compression_level(uint level) {
+    recovery_state_transfer.set_recovery_zstd_compression_level(level);
   }
 
   /**

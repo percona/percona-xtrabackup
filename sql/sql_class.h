@@ -93,8 +93,6 @@
 #include "sql/mdl.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_trace_context.h"  // Opt_trace_context
-#include "sql/protocol.h"           // Protocol
-#include "sql/protocol_classic.h"   // Protocol_text
 #include "sql/query_options.h"
 #include "sql/rpl_context.h"  // Rpl_thd_context
 #include "sql/rpl_gtid.h"
@@ -123,6 +121,10 @@ class Query_tables_list;
 class Relay_log_info;
 class THD;
 class partition_info;
+class Protocol;
+class Protocol_binary;
+class Protocol_classic;
+class Protocol_text;
 class sp_rcontext;
 class user_var_entry;
 struct LEX;
@@ -178,7 +180,6 @@ extern "C" void thd_set_waiting_for_disk_space(void *opaque_thd,
   (thd)->enter_stage(&stage, NULL, __func__, __FILE__, __LINE__)
 
 extern char empty_c_string[1];
-extern LEX_STRING EMPTY_STR;
 extern LEX_STRING NULL_STR;
 extern LEX_CSTRING EMPTY_CSTR;
 extern LEX_CSTRING NULL_CSTR;
@@ -1080,6 +1081,19 @@ class THD : public MDL_context_owner,
   void set_security_context(Security_context *sctx) { m_security_ctx = sctx; }
   List<Security_context> m_view_ctx_list;
 
+  /**
+    @note
+    The optional password validation plugin doesn't have any API for
+    temporally disable its functionality for a particular session.
+    To get around this issue we introduce a boolean variable in the THD
+    which we check before each call to the password validation plugin.
+    Password validation is invoked from within the authentication plugin
+    in the generate_authentication_string() method.
+
+    @see generate_authentication_string
+  */
+  bool m_disable_password_validation;
+
   /*
     Points to info-string that we show in SHOW PROCESSLIST
     You are supposed to update thd->proc_info only if you have coded
@@ -1094,8 +1108,8 @@ class THD : public MDL_context_owner,
   */
   const char *proc_info;
 
-  Protocol_text protocol_text;      // Normal protocol
-  Protocol_binary protocol_binary;  // Binary protocol
+  std::unique_ptr<Protocol_text> protocol_text;      // Normal protocol
+  std::unique_ptr<Protocol_binary> protocol_binary;  // Binary protocol
 
   const Protocol *get_protocol() const { return m_protocol; }
 
@@ -1122,12 +1136,12 @@ class THD : public MDL_context_owner,
   */
   const Protocol_classic *get_protocol_classic() const {
     DBUG_ASSERT(is_classic_protocol());
-    return down_cast<const Protocol_classic *>(m_protocol);
+    return pointer_cast<const Protocol_classic *>(m_protocol);
   }
 
   Protocol_classic *get_protocol_classic() {
     DBUG_ASSERT(is_classic_protocol());
-    return down_cast<Protocol_classic *>(m_protocol);
+    return pointer_cast<Protocol_classic *>(m_protocol);
   }
 
  private:
@@ -2204,7 +2218,7 @@ class THD : public MDL_context_owner,
    */
   /**@{*/
   void set_trans_pos(const char *file, my_off_t pos) {
-    DBUG_ENTER("THD::set_trans_pos");
+    DBUG_TRACE;
     DBUG_ASSERT(((file == 0) && (pos == 0)) || ((file != 0) && (pos != 0)));
     if (file) {
       DBUG_PRINT("enter", ("file: %s, pos: %llu", file, pos));
@@ -2224,27 +2238,27 @@ class THD : public MDL_context_owner,
                ("m_trans_log_file: %s, m_trans_fixed_log_file: %s, "
                 "m_trans_end_pos: %llu",
                 m_trans_log_file, m_trans_fixed_log_file, m_trans_end_pos));
-    DBUG_VOID_RETURN;
+    return;
   }
 
   void get_trans_pos(const char **file_var, my_off_t *pos_var) const {
-    DBUG_ENTER("THD::get_trans_pos");
+    DBUG_TRACE;
     if (file_var) *file_var = m_trans_log_file;
     if (pos_var) *pos_var = m_trans_end_pos;
     DBUG_PRINT("return",
                ("file: %s, pos: %llu", file_var ? *file_var : "<none>",
                 pos_var ? *pos_var : 0));
-    DBUG_VOID_RETURN;
+    return;
   }
 
   void get_trans_fixed_pos(const char **file_var, my_off_t *pos_var) const {
-    DBUG_ENTER("THD::get_trans_fixed_pos");
+    DBUG_TRACE;
     if (file_var) *file_var = m_trans_fixed_log_file;
     if (pos_var) *pos_var = m_trans_end_pos;
     DBUG_PRINT("return",
                ("file: %s, pos: %llu", file_var ? *file_var : "<none>",
                 pos_var ? *pos_var : 0));
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**@}*/
@@ -2551,7 +2565,7 @@ class THD : public MDL_context_owner,
                   const PSI_stage_info *stage, PSI_stage_info *old_stage,
                   const char *src_function, const char *src_file,
                   int src_line) {
-    DBUG_ENTER("THD::enter_cond");
+    DBUG_TRACE;
     mysql_mutex_assert_owner(mutex);
     /*
       Sic: We don't lock LOCK_current_cond here.
@@ -2561,12 +2575,12 @@ class THD : public MDL_context_owner,
     current_mutex = mutex;
     current_cond = cond;
     enter_stage(stage, old_stage, src_function, src_file, src_line);
-    DBUG_VOID_RETURN;
+    return;
   }
 
   void exit_cond(const PSI_stage_info *stage, const char *src_function,
                  const char *src_file, int src_line) {
-    DBUG_ENTER("THD::exit_cond");
+    DBUG_TRACE;
     /*
       current_mutex must be unlocked _before_ LOCK_current_cond is
       locked (if that would not be the case, you'll get a deadlock if someone
@@ -2578,7 +2592,7 @@ class THD : public MDL_context_owner,
     current_cond = NULL;
     mysql_mutex_unlock(&LOCK_current_cond);
     enter_stage(stage, NULL, src_function, src_file, src_line);
-    DBUG_VOID_RETURN;
+    return;
   }
 
   virtual int is_killed() const final { return killed; }
@@ -2772,32 +2786,17 @@ class THD : public MDL_context_owner,
     mechanism. In future this function will be removed.
   */
   inline void clear_error() {
-    DBUG_ENTER("clear_error");
+    DBUG_TRACE;
     if (get_stmt_da()->is_error()) get_stmt_da()->reset_diagnostics_area();
     is_slave_error = false;
-    DBUG_VOID_RETURN;
+    return;
   }
 
-  bool is_classic_protocol() const {
-    return get_protocol()->type() == Protocol::PROTOCOL_BINARY ||
-           get_protocol()->type() == Protocol::PROTOCOL_TEXT;
-  }
+  bool is_classic_protocol() const;
 
   /** Return false if connection to client is broken. */
-  virtual bool is_connected() {
-    /*
-      All system threads (e.g., the slave IO thread) are connected but
-      not using vio. So this function always returns true for all
-      system threads.
-    */
-    if (system_thread) return true;
+  bool is_connected() final;
 
-    if (is_classic_protocol())
-      return get_protocol()->connection_alive() &&
-             vio_is_connected(get_protocol_classic()->get_vio());
-    else
-      return get_protocol()->connection_alive();
-  }
   /**
     Mark the current error as fatal. Warning: this does not
     set any error, it sets a property of the error, so must be
@@ -2883,22 +2882,18 @@ class THD : public MDL_context_owner,
 
     @param protocol Protocol to be inserted.
   */
-  void push_protocol(Protocol *protocol) {
-    DBUG_ASSERT(m_protocol);
-    DBUG_ASSERT(protocol);
-    m_protocol->push_protocol(protocol);
-    m_protocol = protocol;
+  void push_protocol(Protocol *protocol);
+
+  template <typename ProtocolClass>
+  void push_protocol(const std::unique_ptr<ProtocolClass> &protocol) {
+    push_protocol(protocol.get());
   }
 
   /**
     Pops the top protocol of the Protocol stack and sets the previous one
     as the current protocol.
   */
-  void pop_protocol() {
-    DBUG_ASSERT(m_protocol);
-    m_protocol = m_protocol->pop_protocol();
-    DBUG_ASSERT(m_protocol);
-  }
+  void pop_protocol();
 
  public:
   const CHARSET_INFO *charset() const { return variables.character_set_client; }
@@ -3007,7 +3002,7 @@ class THD : public MDL_context_owner,
     decide_logging_format should call them. /Sven
   */
   inline void set_current_stmt_binlog_format_row_if_mixed() {
-    DBUG_ENTER("set_current_stmt_binlog_format_row_if_mixed");
+    DBUG_TRACE;
     /*
       This should only be called from decide_logging_format.
 
@@ -3028,20 +3023,20 @@ class THD : public MDL_context_owner,
     if ((variables.binlog_format == BINLOG_FORMAT_MIXED) && (in_sub_stmt == 0))
       set_current_stmt_binlog_format_row();
 
-    DBUG_VOID_RETURN;
+    return;
   }
   inline void set_current_stmt_binlog_format_row() {
-    DBUG_ENTER("set_current_stmt_binlog_format_row");
+    DBUG_TRACE;
     current_stmt_binlog_format = BINLOG_FORMAT_ROW;
-    DBUG_VOID_RETURN;
+    return;
   }
   inline void clear_current_stmt_binlog_format_row() {
-    DBUG_ENTER("clear_current_stmt_binlog_format_row");
+    DBUG_TRACE;
     current_stmt_binlog_format = BINLOG_FORMAT_STMT;
-    DBUG_VOID_RETURN;
+    return;
   }
   inline void reset_current_stmt_binlog_format_row() {
-    DBUG_ENTER("reset_current_stmt_binlog_format_row");
+    DBUG_TRACE;
     DBUG_PRINT("debug", ("in_sub_stmt: %d, system_thread: %s", in_sub_stmt != 0,
                          show_system_thread(system_thread)));
     if (in_sub_stmt == 0) {
@@ -3050,7 +3045,7 @@ class THD : public MDL_context_owner,
       else
         clear_current_stmt_binlog_format_row();
     }
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -3707,6 +3702,13 @@ class THD : public MDL_context_owner,
     Assign a new value to thd->m_query_string.
     Protected with the LOCK_thd_query mutex.
   */
+  void set_query_for_display(const char *query_arg, size_t query_length_arg) {
+    MYSQL_SET_STATEMENT_TEXT(m_statement_psi, query_arg, query_length_arg);
+#ifdef HAVE_PSI_THREAD_INTERFACE
+    PSI_THREAD_CALL(set_thread_info)(query_arg, query_length_arg);
+#endif
+  }
+  void reset_query_for_display(void) { set_query_for_display(nullptr, 0); }
   void set_query(const char *query_arg, size_t query_length_arg) {
     LEX_CSTRING tmp = {query_arg, query_length_arg};
     set_query(tmp);

@@ -151,7 +151,7 @@ class Plugin_gcs_events_handler : public Gcs_communication_event_listener,
     This method handles the election of a new primary node when the plugin runs
     in single primary mode.
 
-    @param enum_primary_election_mode election mode
+    @param election_mode     election type
     @param suggested_primary what should be the next primary to elect
 
     @note This function unsets the super read only mode on primary node
@@ -252,11 +252,6 @@ class Plugin_gcs_events_handler : public Gcs_communication_event_listener,
       @retval true   a primary election is running
   */
   bool is_group_running_a_primary_election() const;
-
-  /**
-    This method submits a request to leave the group
-  */
-  void leave_group_on_error() const;
 
   /**
     This method checks if member was expelled from the group due

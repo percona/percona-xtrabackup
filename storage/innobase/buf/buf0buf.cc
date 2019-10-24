@@ -1983,6 +1983,43 @@ static void buf_pool_resize_chunk_make_null(buf_chunk_t **new_chunks) {
 }
 #endif /* UNIV_DEBUG */
 
+ulonglong buf_pool_adjust_chunk_unit(ulonglong size) {
+  /* Size unit of buffer pool is larger than srv_buf_pool_size.
+  adjust srv_buf_pool_chunk_unit for srv_buf_pool_size. */
+  if (size * srv_buf_pool_instances > srv_buf_pool_size) {
+    size = (srv_buf_pool_size + srv_buf_pool_instances - 1) /
+           srv_buf_pool_instances;
+  }
+
+  /* Make sure that srv_buf_pool_chunk_unit is divisible by blk_sz */
+  if (size % srv_buf_pool_chunk_unit_blk_sz != 0) {
+    size += srv_buf_pool_chunk_unit_blk_sz -
+            (size % srv_buf_pool_chunk_unit_blk_sz);
+  }
+
+  /* Make sure that srv_buf_pool_chunk_unit is not larger than max, and don't
+  forget that it also has to be divisible by blk_sz */
+  const auto CHUNK_UNIT_ALIGNED_MAX =
+      srv_buf_pool_chunk_unit_max -
+      (srv_buf_pool_chunk_unit_max % srv_buf_pool_chunk_unit_blk_sz);
+  if (size > CHUNK_UNIT_ALIGNED_MAX) {
+    size = CHUNK_UNIT_ALIGNED_MAX;
+  }
+
+  /* Make sure that srv_buf_pool_chunk_unit is not smaller than min */
+  ut_ad(srv_buf_pool_chunk_unit_min % srv_buf_pool_chunk_unit_blk_sz == 0);
+  if (size < srv_buf_pool_chunk_unit_min) {
+    size = srv_buf_pool_chunk_unit_min;
+  }
+
+  ut_ad(size >= srv_buf_pool_chunk_unit_min);
+  ut_ad(size <= srv_buf_pool_chunk_unit_max);
+  ut_ad(size % srv_buf_pool_chunk_unit_blk_sz == 0);
+  ut_ad(size % UNIV_PAGE_SIZE == 0);
+
+  return size;
+}
+
 /** Resize the buffer pool based on srv_buf_pool_size from
 srv_buf_pool_old_size. */
 static void buf_pool_resize() {
@@ -2024,6 +2061,7 @@ static void buf_pool_resize() {
 
     buf_pool->curr_size = new_instance_size;
 
+    ut_ad(srv_buf_pool_chunk_unit % UNIV_PAGE_SIZE == 0);
     buf_pool->n_chunks_new =
         new_instance_size * UNIV_PAGE_SIZE / srv_buf_pool_chunk_unit;
 
@@ -4148,8 +4186,6 @@ buf_block_t *buf_page_get_gen(const page_id_t &page_id,
   const page_size_t &space_page_size =
       fil_space_get_page_size(page_id.space(), &found);
 
-  ut_ad(found);
-
   ut_ad(page_size.equals_to(space_page_size));
 #endif /* UNIV_DEBUG */
 
@@ -4867,9 +4903,16 @@ buf_block_t *buf_page_create(const page_id_t &page_id,
 
   mutex_exit(&buf_pool->LRU_list_mutex);
 
-  /* Delete possible entries for the page from the insert buffer:
-  such can exist if the page belonged to an index which was dropped */
-  ibuf_merge_or_delete_for_page(NULL, page_id, &page_size, TRUE);
+  /* Change buffer will not contain entries for undo tablespaces or temporary
+   * tablespaces. */
+  bool skip_ibuf = fsp_is_system_temporary(page_id.space()) ||
+                   fsp_is_undo_tablespace(page_id.space());
+
+  if (!skip_ibuf) {
+    /* Delete possible entries for the page from the insert buffer:
+    such can exist if the page belonged to an index which was dropped */
+    ibuf_merge_or_delete_for_page(NULL, page_id, &page_size, TRUE);
+  }
 
   frame = block->frame;
 

@@ -28,13 +28,7 @@ SET (DEB_RULES_DEBUG_CMAKE
 		-DCMAKE_INSTALL_PREFIX=/usr \\
 		-DCMAKE_BUILD_TYPE=Debug \\
 		-DINSTALL_DOCDIR=share/mysql/docs \\
-		-DINSTALL_INCLUDEDIR=include/mysql \\
-		-DINSTALL_INFODIR=share/mysql/docs \\
 		-DINSTALL_LIBDIR=lib/$(DEB_HOST_MULTIARCH) \\
-		-DINSTALL_MANDIR=share/man \\
-		-DINSTALL_MYSQLTESTDIR=lib/mysql-test \\
-		-DINSTALL_PLUGINDIR=lib/mysql/plugin/debug \\
-		-DINSTALL_SBINDIR=sbin \\
 		-DSYSCONFDIR=/etc/mysql \\
 		-DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \\
 		-DWITH_INNODB_MEMCACHED=1 \\
@@ -75,6 +69,7 @@ usr/lib/mysql/plugin/debug/authentication_ldap_sasl_client.so
 usr/lib/mysql/plugin/debug/component_log_filter_dragnet.so
 usr/lib/mysql/plugin/debug/component_log_sink_json.so
 usr/lib/mysql/plugin/debug/component_log_sink_syseventlog.so
+usr/lib/mysql/plugin/debug/component_mysqlbackup.so
 usr/lib/mysql/plugin/debug/component_validate_password.so
 usr/lib/mysql/plugin/debug/ddl_rewriter.so
 usr/lib/mysql/plugin/debug/group_replication.so
@@ -189,6 +184,7 @@ usr/lib/mysql/plugin/debug/authentication_ldap_simple.so
 usr/lib/mysql/plugin/debug/data_masking.so
 usr/lib/mysql/plugin/debug/keyring_okv.so
 usr/lib/mysql/plugin/debug/keyring_encrypted_file.so
+usr/lib/mysql/plugin/debug/keyring_hashicorp.so
 usr/lib/mysql/plugin/debug/openssl_udf.so
 usr/lib/mysql/plugin/debug/thread_pool.so
 usr/lib/mysql/plugin/debug/firewall.so

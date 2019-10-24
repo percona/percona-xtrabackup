@@ -1661,7 +1661,7 @@ ib_err_t ib_cursor_position(
     prebuilt->cursor_heap = cursor->heap;
   }
   buf = static_cast<unsigned char *>(ut_malloc_nokey(UNIV_PAGE_SIZE));
-  dtuple_set_n_fields(prebuilt->search_tuple, 0);
+  prebuilt->clear_search_tuples();
 
   /* We want to position at one of the ends, row_search_for_mysql()
   uses the search_tuple fields to work out what to do. */
@@ -1696,7 +1696,7 @@ ib_err_t ib_cursor_next(ib_crsr_t ib_crsr) /*!< in: InnoDB cursor instance */
     prebuilt->cursor_heap = cursor->heap;
   }
   /* We want to move to the next record */
-  dtuple_set_n_fields(prebuilt->search_tuple, 0);
+  prebuilt->clear_search_tuples();
 
   err = static_cast<ib_err_t>(
       row_search_for_mysql(buf, PAGE_CUR_G, prebuilt, 0, ROW_SEL_NEXT));
@@ -1728,6 +1728,7 @@ ib_err_t ib_cursor_moveto(ib_crsr_t ib_crsr, /*!< in: InnoDB cursor instance */
     n_fields = dtuple_get_n_fields(tuple->ptr);
   }
 
+  dtuple_set_n_fields(prebuilt->m_stop_tuple, 0);
   dtuple_set_n_fields(search_tuple, n_fields);
   dtuple_set_n_fields_cmp(search_tuple, n_fields);
 
@@ -3019,7 +3020,7 @@ dberr_t ib_sdi_get_keys(uint32_t tablespace_id, ib_sdi_vector_t *ib_sdi_vector,
   return (err);
 }
 
-/** Retrieve SDI from tablespace
+/** Retrieve SDI from tablespace.
 @param[in]	tablespace_id	tablespace id
 @param[in]	ib_sdi_key	SDI key
 @param[in,out]	comp_sdi	in: buffer to hold the SDI BLOB
@@ -3028,10 +3029,9 @@ dberr_t ib_sdi_get_keys(uint32_t tablespace_id, ib_sdi_vector_t *ib_sdi_vector,
                                 out: compressed length of SDI
 @param[out]	uncomp_sdi_len	out: uncompressed length of SDI
 @param[in,out]	trx		innodb transaction
-@return DB_SUCCESS if SDI retrieval is successful, else error
-in case the passed buffer length is smaller than the actual SDI
-DB_OUT_OF_MEMORY is thrown and uncompressed length is set in
-uncomp_sdi_len */
+@return DB_SUCCESS if SDI retrieval is successful, else error.
+@return DB_OUT_OF_MEMORY if the passed buffer is not sufficient to
+hold the compressed SDI retrieved from tablespace. */
 dberr_t ib_sdi_get(uint32_t tablespace_id, const ib_sdi_key_t *ib_sdi_key,
                    void *comp_sdi, uint32_t *comp_sdi_len,
                    uint32_t *uncomp_sdi_len, trx_t *trx) {
@@ -3074,7 +3074,7 @@ dberr_t ib_sdi_get(uint32_t tablespace_id, const ib_sdi_key_t *ib_sdi_key,
       ib_tuple_read_u32(tuple, 2, uncomp_sdi_len);
       ib_tuple_read_u32(tuple, 3, comp_sdi_len);
 
-      /* If the passed memory is not sufficient, we
+      /* If the passed memory is not sufficient to hold the compressed SDI, we
       return failure and the actual length of SDI. */
       if (buf_len < *comp_sdi_len) {
         ib_tuple_delete(tuple);
@@ -3300,10 +3300,11 @@ static ib_err_t parse_string_to_number(const char *num_str,
 static ib_err_t parse_mem_key_to_sdi_key(const char *key_str, sdi_key_t *sk) {
   /* 25 is sufficient here, the prefix will be
   sdi_number:number:number */
-  char key[25];
+  char key[25 + 1];
   char *saveptr1;
 
-  strncpy(key, key_str + strlen("sdi_"), sizeof(key));
+  strncpy(key, key_str + strlen("sdi_"), sizeof(key) - 1);
+  key[sizeof(key) - 1] = '\0';
 
   char *type_str = strtok_r(key, ":", &saveptr1);
   char *id_str = strtok_r(NULL, ":", &saveptr1);
@@ -3477,8 +3478,8 @@ ib_err_t ib_memc_sdi_get_keys(ib_crsr_t crsr, const char *key_str, void *sdi,
   uint64_t bytes_printed;
   for (sdi_container::iterator it = ib_vector.sdi_vector->m_vec.begin();
        it != ib_vector.sdi_vector->m_vec.end(); it++) {
-    bytes_printed =
-        snprintf(ptr, list_buf_len - cur_len, "%llu:%u|", it->id, it->type);
+    bytes_printed = snprintf(ptr, list_buf_len - cur_len, "%" PRIu64 ":%u|",
+                             it->id, it->type);
     ptr += bytes_printed;
     cur_len += bytes_printed;
   }

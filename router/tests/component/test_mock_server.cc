@@ -32,6 +32,8 @@
 #include "router_config.h"
 #include "tcp_port_pool.h"
 
+using namespace std::chrono_literals;
+
 class MockServerCLITest : public RouterComponentTest {
  protected:
   TcpPortPool port_pool_;
@@ -56,7 +58,7 @@ TEST_F(MockServerCLITest, has_version) {
                      std::vector<std::string>{"--version"}, EXIT_SUCCESS, true);
 
   SCOPED_TRACE("// wait for exit");
-  EXPECT_EQ(cmd.wait_for_exit(1000), 0);  // should be quick, and return 0
+  check_exit_code(cmd, EXIT_SUCCESS, 1000ms);  // should be quick, and return 0
   SCOPED_TRACE("// checking stdout");
   EXPECT_THAT(cmd.get_full_output(),
               ::testing::HasSubstr(MYSQL_ROUTER_VERSION));
@@ -76,8 +78,7 @@ TEST_F(MockServerCLITest, has_help) {
                      EXIT_SUCCESS, true);
 
   SCOPED_TRACE("// wait for exit");
-  EXPECT_NO_THROW(
-      EXPECT_EQ(cmd.wait_for_exit(1000), 0));  // should be quick, and return 0
+  check_exit_code(cmd, EXIT_SUCCESS, 1000ms);  // should be quick, and return 0
   SCOPED_TRACE("// checking stdout contains --version");
   EXPECT_THAT(cmd.get_full_output(), ::testing::HasSubstr("--version"));
 }
@@ -101,44 +102,10 @@ TEST_F(MockServerCLITest, http_port_too_large) {
                              EXIT_FAILURE, true);
 
   SCOPED_TRACE("// wait for exit");
-  EXPECT_NO_THROW(EXPECT_NE(cmd.wait_for_exit(5000),
-                            0));  // should be quick, and return failure (255)
+  check_exit_code(cmd, EXIT_FAILURE,
+                  5000ms);  // should be quick, and return failure
   SCOPED_TRACE("// checking stdout contains errormsg");
   EXPECT_THAT(cmd.get_full_output(), ::testing::HasSubstr("was '65536'"));
-}
-
-/**
- * ensure a sending a statement after no more statements are known by mock leads
- * to proper error.
- */
-TEST_F(MockServerCLITest, fail_on_no_more_stmts) {
-  auto mysql_server_mock_path = get_mysqlserver_mock_exec().str();
-
-  ASSERT_THAT(mysql_server_mock_path, ::testing::StrNe(""));
-
-  auto server_port = port_pool_.get_next_available();
-  const std::string json_stmts =
-      get_data_dir().join("js_test_stmts_is_empty.json").str();
-
-  SCOPED_TRACE("// start mock");
-  auto &server_mock =
-      launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
-
-  EXPECT_TRUE(wait_for_port_ready(server_port))
-      << server_mock.get_full_output();
-
-  mysqlrouter::MySQLSession client;
-
-  SCOPED_TRACE("// connecting via mysql protocol");
-  ASSERT_NO_THROW(
-      client.connect("127.0.0.1", server_port, "username", "password", "", ""))
-      << server_mock.get_full_output();
-
-  SCOPED_TRACE("// select @@port, should throw");
-  ASSERT_THROW_LIKE(client.execute("select @@port"),
-                    mysqlrouter::MySQLSession::Error,
-                    "Error executing MySQL query: Unexpected stmt, got: "
-                    "\"select @@port\"; expected nothing (1064)");
 }
 
 static void init_DIM() {

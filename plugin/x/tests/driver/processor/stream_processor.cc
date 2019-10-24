@@ -74,6 +74,7 @@ std::vector<Block_processor_ptr> create_block_processors(
 int process_client_input(std::istream &input,
                          std::vector<Block_processor_ptr> *eaters,
                          Script_stack *script_stack, const Console &console) {
+  DBUG_TRACE;
   std::string linebuf;
 
   if (!input.good()) {

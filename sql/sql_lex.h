@@ -56,7 +56,8 @@
 #include "mysql/psi/psi_base.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "prealloced_array.h"                // Prealloced_array
+#include "prealloced_array.h"  // Prealloced_array
+#include "sql/composite_iterators.h"
 #include "sql/dd/info_schema/table_stats.h"  // dd::info_schema::Table_stati...
 #include "sql/dd/info_schema/tablespace_stats.h"  // dd::info_schema::Tablesp...
 #include "sql/enum_query_type.h"
@@ -74,6 +75,7 @@
 #include "sql/parse_tree_node_base.h"  // enum_parsing_context
 #include "sql/parser_yystype.h"
 #include "sql/query_options.h"  // OPTION_NO_CONST_TABLES
+#include "sql/row_iterator.h"
 #include "sql/set_var.h"
 #include "sql/sql_alter.h"  // Alter_info
 #include "sql/sql_array.h"
@@ -342,7 +344,19 @@ struct LEX_MASTER_INFO {
   char *public_key_path;
   char *relay_log_name;
   ulong relay_log_pos;
+  char *compression_algorithm;
+  uint zstd_compression_level;
   Prealloced_array<ulong, 2> repl_ignore_server_ids;
+  /**
+    Flag that is set to `true` whenever `PRIVILEGE_CHECKS_USER` is set to `NULL`
+    as a part of a `CHANGE MASTER TO` statement.
+   */
+  bool privilege_checks_none;
+  /**
+    Username and hostname parts of the `PRIVILEGE_CHECKS_USER`, when it's set to
+    a user.
+   */
+  const char *privilege_checks_username, *privilege_checks_hostname;
 
   /// Initializes everything to zero/NULL/empty.
   void initialize();
@@ -530,6 +544,7 @@ class JOIN;
 class PT_with_clause;
 class Query_result;
 class Query_result_union;
+class RowIterator;
 struct LEX;
 
 /**
@@ -568,9 +583,56 @@ class SELECT_LEX_UNIT {
 
   TABLE_LIST result_table_list;
   Query_result_union *union_result;
-  TABLE *table; /* temporary table using for appending UNION results */
-  /// Object to which the result for this query expression is sent
+  /// Temporary table using for appending UNION results.
+  /// Not used if we materialize directly into a parent query expression's
+  /// result table (see optimize()).
+  TABLE *table;
+  /// Object to which the result for this query expression is sent.
+  /// Not used if we materialize directly into a parent query expression's
+  /// result table (see optimize()).
   Query_result *m_query_result;
+
+  /**
+    An iterator you can read from to get all records for this query.
+
+    May be nullptr even after create_iterators() if the current query
+    is not supported by the iterator executor, or in the case of an
+    unfinished materialization (see optimize()).
+   */
+  unique_ptr_destroy_only<RowIterator> m_root_iterator;
+
+  /**
+    If there is an unfinished materialization (see optimize()),
+    contains one element for each query block in this query expression.
+   */
+  Mem_root_array<MaterializeIterator::QueryBlock> m_query_blocks_to_materialize;
+
+  /**
+    Sets up each query block in this query expression for materialization
+    into the given table.
+
+    @param thd thread handle
+    @param dst_table the table to materialize into
+    @param union_distinct_only if true, keep only UNION DISTINCT query blocks
+      (any UNION ALL blocks are presumed handled higher up, by AppendIterator)
+   */
+  Mem_root_array<MaterializeIterator::QueryBlock> setup_materialization(
+      THD *thd, TABLE *dst_table, bool union_distinct_only);
+
+  /**
+    If possible, convert the executor structures to a set of row iterators,
+    storing the result in m_root_iterator. If not, m_root_iterator will remain
+    nullptr.
+   */
+  void create_iterators(THD *thd);
+
+  /**
+    Whether all children use the iterator executor or not.
+
+    Before optimize(), can return false positives. See
+    can_materialize_directly_into_result().
+   */
+  bool all_query_blocks_use_iterator_executor() const;
 
  public:
   /**
@@ -705,6 +767,22 @@ class SELECT_LEX_UNIT {
   /// @return the query result object in use for this query expression
   Query_result *query_result() const { return m_query_result; }
 
+  RowIterator *root_iterator() const { return m_root_iterator.get(); }
+  unique_ptr_destroy_only<RowIterator> release_root_iterator() {
+    return move(m_root_iterator);
+  }
+
+  /// See optimize().
+  bool unfinished_materialization() const {
+    return !m_query_blocks_to_materialize.empty();
+  }
+
+  /// See optimize().
+  Mem_root_array<MaterializeIterator::QueryBlock>
+  release_query_blocks_to_materialize() {
+    return std::move(m_query_blocks_to_materialize);
+  }
+
   /**
     If this unit is recursive, then this returns the Query_result which holds
     the rows of the recursive reference read by 'reader':
@@ -717,9 +795,41 @@ class SELECT_LEX_UNIT {
   /// Set new query result object for this query expression
   void set_query_result(Query_result *res) { m_query_result = res; }
 
+  /**
+    Whether there is a chance that optimize() is capable of materializing
+    directly into a result table if given one. Note that even if this function
+    returns true, optimize() can choose later not to do so, since it depends
+    on information (in particular, whether the query blocks can run under
+    the iterator executor or not) that is not available before optimize time.
+   */
+  bool can_materialize_directly_into_result(THD *thd) const;
+
   bool prepare(THD *thd, Query_result *result, ulonglong added_options,
                ulonglong removed_options);
-  bool optimize(THD *thd);
+
+  /**
+    If and only if materialize_destination is non-nullptr, it means that the
+    caller intends to materialize our result into the given table. If it is
+    advantageous (in particular, if this query expression is a UNION DISTINCT),
+    optimize() will not create an iterator by itself, but rather do an
+    unfinished materialize. This means that it will collect iterators for
+    all the query blocks and prepare them for materializing into the given
+    table, but not actually create a root iterator for this query expression;
+    the caller is responsible for calling release_tables_to_materialize() and
+    creating the iterator itself.
+
+    Even if materialize_destination is non-nullptr, this function may choose
+    to make a regular iterator. The caller is responsible for checking
+    unfinished_materialization() if it has given a non-nullptr table.
+
+    @param thd Thread handle.
+
+    @param materialize_destination What table to try to materialize into,
+      or nullptr if the caller does not intend to materialize the result.
+   */
+  bool optimize(THD *thd, TABLE *materialize_destination);
+
+  bool ExecuteIteratorQuery(THD *thd);
   bool execute(THD *thd);
   bool explain(THD *explain_thd, const THD *query_thd);
   bool cleanup(THD *thd, bool full);
@@ -765,6 +875,19 @@ class SELECT_LEX_UNIT {
   List<Item> *get_unit_column_types();
   List<Item> *get_field_list();
 
+  // If we are doing a query with global LIMIT but without fake_select_lex,
+  // we need somewhere to store the record count for FOUND_ROWS().
+  // It can't be in any of the JOINs, since they may have their own
+  // LimitOffsetIterators, which will write to join->send_records
+  // whenever there is an OFFSET. (It also can't be in saved_fake_select_lex,
+  // which has no join.) Thus, we'll keep it here instead.
+  //
+  // If we have a fake_select_lex, we use its send_records instead
+  // (since its LimitOffsetIterator will write there), and if we don't
+  // have a UNION, FOUND_ROWS() refers to the (single) JOIN, and thus,
+  // we use its send_records.
+  ha_rows send_records;
+
   enum_parsing_context get_explain_marker(const THD *thd) const;
   void set_explain_marker(THD *thd, enum_parsing_context m);
   void set_explain_marker_from(THD *thd, const SELECT_LEX_UNIT *u);
@@ -784,7 +907,7 @@ class SELECT_LEX_UNIT {
 
   bool check_materialized_derived_query_blocks(THD *thd);
 
-  bool clear_corr_ctes();
+  bool clear_correlated_query_blocks();
 
   void fix_after_pullout(SELECT_LEX *parent_select, SELECT_LEX *removed_select);
 
@@ -836,6 +959,7 @@ enum class enum_explain_type {
   EXPLAIN_MATERIALIZED,
   // Total:
   EXPLAIN_total  ///< fake type, total number of all valid types
+
   // Don't insert new types below this line!
 };
 
@@ -1137,7 +1261,11 @@ class SELECT_LEX {
     in an outer query block.
   */
   bool with_sum_func;
-  /// Number of Item_sum-derived objects in this SELECT
+  /**
+    Number of Item_sum-derived objects in this SELECT. Keeps count of
+    aggregate functions and window functions(to allocate items in ref array).
+    See SELECT_LEX::setup_base_ref_items.
+  */
   uint n_sum_items;
   /// Number of Item_sum-derived objects in children and descendant SELECTs
   uint n_child_sum_items;
@@ -1156,7 +1284,7 @@ class SELECT_LEX {
     has 3 wildcards.
   */
   uint with_wild;
-  bool braces;  ///< SELECT ... UNION (SELECT ... ) <- this braces
+
   /// true when having fix field called in processing of this query block
   bool having_fix_field;
   /// true when GROUP BY fix field called in processing of this query block
@@ -1301,6 +1429,9 @@ class SELECT_LEX {
   /// @return true if this query block has a LIMIT clause
   bool has_limit() const { return select_limit != NULL; }
 
+  bool has_explicit_limit_or_order() const {
+    return explicit_limit || order_list.elements > 0;
+  }
   /// @return true if query block references full-text functions
   bool has_ft_funcs() const { return ftfunc_list->elements > 0; }
 
@@ -1312,7 +1443,6 @@ class SELECT_LEX {
 
   void invalidate();
 
-  bool set_braces(bool value);
   uint get_in_sum_expr() const { return in_sum_expr; }
 
   bool add_item_to_list(Item *item);
@@ -1894,7 +2024,6 @@ struct st_sp_chistics {
 };
 
 extern const LEX_STRING null_lex_str;
-extern const LEX_STRING empty_lex_str;
 
 struct st_trg_chistics {
   enum enum_trigger_action_time_type action_time;
@@ -2232,10 +2361,10 @@ class Query_tables_list {
     BINLOG_STMT_FLAG_UNSAFE_* flags in @c enum_binlog_stmt_flag.
   */
   inline void set_stmt_unsafe(enum_binlog_stmt_unsafe unsafe_type) {
-    DBUG_ENTER("set_stmt_unsafe");
+    DBUG_TRACE;
     DBUG_ASSERT(unsafe_type >= 0 && unsafe_type < BINLOG_STMT_UNSAFE_COUNT);
     binlog_stmt_flags |= (1U << unsafe_type);
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -2247,10 +2376,10 @@ class Query_tables_list {
     where flag is a member of enum_binlog_stmt_unsafe.
   */
   inline void set_stmt_unsafe_flags(uint32 flags) {
-    DBUG_ENTER("set_stmt_unsafe_flags");
+    DBUG_TRACE;
     DBUG_ASSERT((flags & ~BINLOG_STMT_UNSAFE_ALL_FLAGS) == 0);
     binlog_stmt_flags |= flags;
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -2260,8 +2389,8 @@ class Query_tables_list {
     from this function has bit (1<<flag) set to 1.
   */
   inline uint32 get_stmt_unsafe_flags() const {
-    DBUG_ENTER("get_stmt_unsafe_flags");
-    DBUG_RETURN(binlog_stmt_flags & BINLOG_STMT_UNSAFE_ALL_FLAGS);
+    DBUG_TRACE;
+    return binlog_stmt_flags & BINLOG_STMT_UNSAFE_ALL_FLAGS;
   }
 
   /**
@@ -2281,10 +2410,10 @@ class Query_tables_list {
     the slave SQL thread.
   */
   inline void set_stmt_row_injection() {
-    DBUG_ENTER("set_stmt_row_injection");
+    DBUG_TRACE;
     binlog_stmt_flags |=
         (1U << (BINLOG_STMT_UNSAFE_COUNT + BINLOG_STMT_TYPE_ROW_INJECTION));
-    DBUG_VOID_RETURN;
+    return;
   }
 
   enum enum_stmt_accessed_table {
@@ -2395,13 +2524,13 @@ class Query_tables_list {
                            e.g. temporary, transactional, non-transactional.
   */
   inline void set_stmt_accessed_table(enum_stmt_accessed_table accessed_table) {
-    DBUG_ENTER("LEX::set_stmt_accessed_table");
+    DBUG_TRACE;
 
     DBUG_ASSERT(accessed_table >= 0 &&
                 accessed_table < STMT_ACCESS_TABLE_COUNT);
     stmt_accessed_table_flag |= (1U << accessed_table);
 
-    DBUG_VOID_RETURN;
+    return;
   }
 
   /**
@@ -2416,12 +2545,12 @@ class Query_tables_list {
       @retval false otherwise
   */
   inline bool stmt_accessed_table(enum_stmt_accessed_table accessed_table) {
-    DBUG_ENTER("LEX::stmt_accessed_table");
+    DBUG_TRACE;
 
     DBUG_ASSERT(accessed_table >= 0 &&
                 accessed_table < STMT_ACCESS_TABLE_COUNT);
 
-    DBUG_RETURN((stmt_accessed_table_flag & (1U << accessed_table)) != 0);
+    return (stmt_accessed_table_flag & (1U << accessed_table)) != 0;
   }
 
   /*
@@ -3087,14 +3216,16 @@ struct LEX : public Query_tables_list {
   }
   /// @return true if this is an EXPLAIN statement
   bool is_explain() const { return explain_format != nullptr; }
+  bool is_explain_analyze = false;
   LEX_STRING name;
   char *help_arg;
   char *to_log; /* For PURGE MASTER LOGS TO */
-  char *x509_subject, *x509_issuer, *ssl_cipher;
+  const char *x509_subject, *x509_issuer, *ssl_cipher;
   // Widcard from SHOW ... LIKE <wildcard> statements.
   String *wild;
   Query_result *result;
-  LEX_STRING binlog_stmt_arg;  ///< Argument of the BINLOG event statement.
+  LEX_STRING binlog_stmt_arg = {
+      nullptr, 0};  ///< Argument of the BINLOG event statement.
   LEX_STRING ident;
   LEX_USER *grant_user;
   LEX_ALTER alter_password;
@@ -3328,7 +3459,13 @@ struct LEX : public Query_tables_list {
   ulonglong m_statement_options{0};
 
  public:
-  /// @return a bit set of options set for this statement
+  /**
+    Gets the options that have been set for this statement. The options are
+    propagated to the SELECT_LEX objects and should usually be read with
+    #SELECT_LEX::active_options().
+
+    @return a bit set of options set for this statement
+  */
   ulonglong statement_options() { return m_statement_options; }
   /**
     Add options to values of m_statement_options. options is an ORed
@@ -3449,8 +3586,7 @@ struct LEX : public Query_tables_list {
   SELECT_LEX *new_query(SELECT_LEX *curr_select);
 
   /// Create query block and attach it to the current query expression.
-  SELECT_LEX *new_union_query(SELECT_LEX *curr_select, bool distinct,
-                              bool check_syntax = true);
+  SELECT_LEX *new_union_query(SELECT_LEX *curr_select, bool distinct);
 
   /// Create top-level query expression and query block.
   bool new_top_level_query();
@@ -3609,6 +3745,13 @@ struct LEX : public Query_tables_list {
   */
   void set_secondary_engine_execution_context(
       Secondary_engine_execution_context *context);
+
+  /**
+    If true, features that would prohibit the iterator executor from
+    being used (BNL/BKA) are turned off.
+    See SELECT_LEX::find_common_table_expr().
+   */
+  bool force_iterator_executor = false;
 };
 
 /**

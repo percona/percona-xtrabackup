@@ -186,11 +186,9 @@ void append_auth_id(const THD *thd, const LEX_USER *user, bool comma,
   String from_user(user->user.str, user->user.length, system_charset_info);
   String from_host(user->host.str, user->host.length, system_charset_info);
   if (comma) str->append(',');
-  append_query_string(const_cast<THD *>(thd), system_charset_info, &from_user,
-                      str);
+  append_query_string(thd, system_charset_info, &from_user, str);
   str->append(STRING_WITH_LEN("@"));
-  append_query_string(const_cast<THD *>(thd), system_charset_info, &from_host,
-                      str);
+  append_query_string(thd, system_charset_info, &from_host, str);
 }
 /**
   Used with List<>::sort for alphabetic sorting of LEX_USER records
@@ -230,7 +228,7 @@ int lex_user_comp(LEX_USER *l1, LEX_USER *l2) {
     @retval false   Otherwise
 */
 bool rewrite_query(THD *thd, Consumer_type type, Rewrite_params *params) {
-  DBUG_ENTER("rewrite_query");
+  DBUG_TRACE;
   std::unique_ptr<I_rewriter> rw = nullptr;
   bool rewrite = false;
 
@@ -292,7 +290,7 @@ bool rewrite_query(THD *thd, Consumer_type type, Rewrite_params *params) {
   }
   if (rw) rewrite = rw->rewrite();
 
-  DBUG_RETURN(rewrite);
+  return rewrite;
 }
 }  // anonymous namespace
 
@@ -319,14 +317,13 @@ bool rewrite_query(THD *thd, Consumer_type type, Rewrite_params *params) {
 */
 void mysql_rewrite_query(THD *thd, Consumer_type type /*= Consumer_type::LOG */,
                          Rewrite_params *params /*= nullptr*/) {
-  DBUG_ENTER("mysql_rewrite_query");
+  DBUG_TRACE;
   DBUG_ASSERT(thd);
   String *rlb = &thd->rewritten_query;
   rlb->mem_free();
   if (thd->lex->contains_plaintext_password) {
     rewrite_query(thd, type, params);
   }
-  DBUG_VOID_RETURN;
 }
 /**
   Provides the default interface to rewrite the ACL query.
@@ -389,7 +386,8 @@ Rewriter_user::Rewriter_user(THD *thd, Consumer_type type)
 bool Rewriter_user::rewrite() const {
   LEX *lex = m_thd->lex;
   String *rlb = &m_thd->rewritten_query;
-
+  rewrite_users(lex, rlb);
+  rewrite_default_roles(lex, rlb);
   rewrite_ssl_properties(lex, rlb);
   rewrite_user_resources(lex, rlb);
   rewrite_password_expired(lex, rlb);
@@ -618,6 +616,27 @@ void Rewriter_user::rewrite_users(LEX *lex, String *str) const {
   }
 }
 
+/**
+  Append the DEFAULT ROLE clause for users iff it is specified
+
+  @param [in]       lex     LEX struct to check if clause is specified
+  @param [in, out]  str     The string in which clause is suffixed
+*/
+void Rewriter_user::rewrite_default_roles(const LEX *lex, String *str) const {
+  bool comma = false;
+  if (lex->default_roles && lex->default_roles->elements > 0) {
+    str->append(" DEFAULT ROLE ");
+    lex->default_roles->sort(&lex_user_comp);
+    List_iterator<LEX_USER> role_it(*(lex->default_roles));
+    LEX_USER *role;
+    while ((role = role_it++)) {
+      if (comma) str->append(',');
+      str->append(create_authid_str_from(role).c_str());
+      comma = true;
+    }
+  }
+}
+
 Rewriter_create_user::Rewriter_create_user(THD *thd, Consumer_type type)
     : Rewriter_user(thd, type) {}
 
@@ -635,7 +654,6 @@ bool Rewriter_create_user::rewrite() const {
   if (lex->create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS)
     rlb->append("IF NOT EXISTS ");
 
-  rewrite_users(lex, rlb);
   parent::rewrite();
   return true;
 }
@@ -711,7 +729,6 @@ bool Rewriter_alter_user::rewrite() const {
 
   if (lex->drop_if_exists) rlb->append("IF EXISTS ");
 
-  rewrite_users(lex, rlb);
   parent::rewrite();
   return true;
 }
@@ -794,12 +811,9 @@ Rewriter_show_create_user::Rewriter_show_create_user(THD *thd,
   @retval true  the query is rewritten
 */
 bool Rewriter_show_create_user::rewrite() const {
-  LEX *lex = m_thd->lex;
   String *rlb = &m_thd->rewritten_query;
   rlb->mem_free();
   rlb->append("CREATE USER ");
-  rewrite_users(lex, rlb);
-  rewrite_default_roles(lex, rlb);
   parent::rewrite();
   return true;
 }
@@ -873,27 +887,6 @@ void Rewriter_show_create_user::append_user_auth_info(LEX_USER *user,
       append_literal_secret(str);
     } else {
       append_auth_str(user, str);
-    }
-  }
-}
-/**
-  Append the DEFAULT ROLE clause for users iff it is specified
-
-  @param [in]       lex     LEX struct to check if clause is specified
-  @param [in, out]  str     The string in which clause is suffixed
-*/
-void Rewriter_show_create_user::rewrite_default_roles(const LEX *lex,
-                                                      String *str) const {
-  bool comma = false;
-  if (lex->default_roles && lex->default_roles->elements > 0) {
-    str->append(" DEFAULT ROLE ");
-    lex->default_roles->sort(&lex_user_comp);
-    List_iterator<LEX_USER> role_it(*(lex->default_roles));
-    LEX_USER *role;
-    while ((role = role_it++)) {
-      if (comma) str->append(',');
-      str->append(create_authid_str_from(role).c_str());
-      comma = true;
     }
   }
 }
@@ -1283,6 +1276,12 @@ bool Rewriter_change_master::rewrite() const {
     }
     rlb->append(STRING_WITH_LEN(" )"));
   }
+  if (lex->mi.compression_algorithm)
+    comma = append_str(rlb, comma, "MASTER_COMPRESSION_ALGORITHMS = ",
+                       lex->mi.compression_algorithm);
+  comma = append_int(
+      rlb, comma, STRING_WITH_LEN("MASTER_ZSTD_COMPRESSION_LEVEL = "),
+      lex->mi.zstd_compression_level, lex->mi.zstd_compression_level != 0);
 
   /* channel options -- no preceding comma here! */
   if (lex->mi.for_channel)

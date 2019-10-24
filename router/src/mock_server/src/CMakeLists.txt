@@ -46,8 +46,7 @@ ELSE()
   LIST(APPEND math_libraries -lm)
 ENDIF()
 
-## Ubuntu 18.02 has duktape-2.2.0
-SET(DUKTAPE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extra/duktape/duktape-2.1.0/)
+SET(DUKTAPE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extra/duktape/duktape-2.3.0/)
 
 SET(DUKTAPE_SRCS
   ${DUKTAPE_SOURCE_DIR}/src/duktape.c
@@ -57,6 +56,7 @@ SET(DUKTAPE_SRCS
 SET(MOCK_SERVER_HTTP_CLIENT_SRCS
     mock_server_rest_client.cc)
 
+# disable compiler warnings in duktape
 MY_CHECK_CXX_COMPILER_WARNING("-Werror" HAS_WARN_FLAG)
 IF(HAS_WARN_FLAG)
   ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
@@ -92,6 +92,12 @@ IF(HAS_WARN_FLAG)
   ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
+MY_CHECK_CXX_COMPILER_WARNING("-Wparentheses-equality" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  ADD_COMPILE_FLAGS(${DUKTAPE_SRCS} COMPILE_FLAGS "${HAS_WARN_FLAG}")
+ENDIF()
+
+
 ADD_LIBRARY(duktape SHARED ${DUKTAPE_SRCS})
 TARGET_INCLUDE_DIRECTORIES(duktape SYSTEM PUBLIC
   ${DUKTAPE_SOURCE_DIR}/src/
@@ -118,8 +124,7 @@ ENDIF()
 
 add_harness_plugin(mock_server
   NO_INSTALL
-  SOURCES json_statement_reader.cc
-  duktape_statement_reader.cc
+  SOURCES duktape_statement_reader.cc
   mysql_protocol_decoder.cc
   mysql_protocol_encoder.cc
   x_protocol_decoder.cc
@@ -170,6 +175,7 @@ TARGET_INCLUDE_DIRECTORIES(mock_server_rest_client PUBLIC
     ${PROJECT_SOURCE_DIR}/src/mock_server/include/
     ${PROJECT_SOURCE_DIR}/src/http/include/
     )
+TARGET_LINK_LIBRARIES(mock_server_rest_client http_client)
 
 # add all targets to the build-all target
 ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET}

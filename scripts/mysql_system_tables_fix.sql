@@ -817,6 +817,9 @@ ALTER TABLE slave_master_info ADD Get_public_key BOOLEAN NOT NULL COMMENT 'Prefe
 
 ALTER TABLE slave_master_info ADD Network_namespace TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Network namespace used for communication with the master server.';
 
+ALTER TABLE slave_master_info ADD Master_compression_algorithm CHAR(64) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL COMMENT 'Compression algorithm supported for data transfer between master and slave.',
+                              ADD Master_zstd_compression_level INTEGER UNSIGNED NOT NULL COMMENT 'Compression level associated with zstd compression algorithm.';
+
 # If the order of column Public_key_path, Get_public_key is wrong, this will correct the order in
 # slave_master_info table.
 ALTER TABLE slave_master_info
@@ -830,6 +833,11 @@ ALTER TABLE slave_master_info
   MODIFY COLUMN Network_namespace TEXT CHARACTER SET utf8 COLLATE utf8_bin
   COMMENT 'Network namespace used for communication with the master server.'
   AFTER Get_public_key;
+
+# Columns added to keep information about the replication applier thread
+# privilege context user
+ALTER TABLE slave_relay_log_info ADD Privilege_checks_username CHAR(32) COLLATE utf8_bin DEFAULT NULL COMMENT 'Username part of PRIVILEGE_CHECKS_USER.',
+                                 ADD Privilege_checks_hostname CHAR(255) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Hostname part of PRIVILEGE_CHECKS_USER.';
 
 #
 # Drop legacy NDB distributed privileges function & procedures
@@ -1132,6 +1140,8 @@ INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'SE
 INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'BACKUP_ADMIN', 'N');
 
 INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'CLONE_ADMIN', 'N');
+
+INSERT IGNORE INTO mysql.global_grants VALUES ('mysql.session', 'localhost', 'CONNECTION_ADMIN', 'N');
 
 # mysql.session is granted the SUPER and other administrative privileges.
 # This user should not be modified inadvertently. Therefore, server grants

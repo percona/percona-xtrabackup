@@ -584,7 +584,8 @@ int decimal2string(const decimal_t *from, char *to, int *to_len,
                      be written by this address
 */
 
-static void digits_bounds(decimal_t *from, int *start_result, int *end_result) {
+static void digits_bounds(const decimal_t *from, int *start_result,
+                          int *end_result) {
   int start, stop, i;
   dec1 *buf_beg = from->buf;
   dec1 *end = from->buf + ROUND_UP(from->intg) + ROUND_UP(from->frac);
@@ -1045,12 +1046,12 @@ int decimal2double(const decimal_t *from, double *to) {
 int double2decimal(double from, decimal_t *to) {
   char buff[FLOATING_POINT_BUFFER];
   int res;
-  DBUG_ENTER("double2decimal");
+  DBUG_TRACE;
   const char *end = buff + my_gcvt(from, MY_GCVT_ARG_DOUBLE,
                                    (int)sizeof(buff) - 1, buff, NULL);
   res = string2decimal(buff, to, &end);
   DBUG_PRINT("exit", ("res: %d", res));
-  DBUG_RETURN(res);
+  return res;
 }
 
 static int ull2dec(ulonglong from, decimal_t *to) {
@@ -1095,7 +1096,7 @@ int longlong2decimal(longlong from, decimal_t *to) {
   return ull2dec(from, to);
 }
 
-int decimal2ulonglong(decimal_t *from, ulonglong *to) {
+int decimal2ulonglong(const decimal_t *from, ulonglong *to) {
   dec1 *buf = from->buf;
   ulonglong x = 0;
   int intg, frac;
@@ -1119,7 +1120,7 @@ int decimal2ulonglong(decimal_t *from, ulonglong *to) {
   return E_DEC_OK;
 }
 
-int decimal2longlong(decimal_t *from, longlong *to) {
+int decimal2longlong(const decimal_t *from, longlong *to) {
   dec1 *buf = from->buf;
   longlong x = 0;
   int intg, frac;
@@ -1312,7 +1313,7 @@ int double2lldiv_t(double nr, lldiv_t *lld) {
 
                 7E F2 04 C7 2D FB 2D
 */
-int decimal2bin(decimal_t *from, uchar *to, int precision, int frac) {
+int decimal2bin(const decimal_t *from, uchar *to, int precision, int frac) {
   dec1 mask = from->sign ? -1 : 0, *buf1 = from->buf, *stop1;
   int error = E_DEC_OK, intg = precision - frac, isize1, intg1, intg1x,
       from_intg, intg0 = intg / DIG_PER_DEC1, frac0 = frac / DIG_PER_DEC1,
@@ -1821,7 +1822,7 @@ done:
     multiply by sizeof(dec1)
 */
 
-int decimal_result_size(decimal_t *from1, decimal_t *from2, char op,
+int decimal_result_size(const decimal_t *from1, const decimal_t *from2, char op,
                         int param) {
   switch (op) {
     case '-':
@@ -2110,7 +2111,7 @@ int decimal_mul(const decimal_t *from_1, const decimal_t *from_2,
   FIX_INTG_FRAC_ERROR(to->len, intg0, frac0, error); /* bound size */
   to->sign = from1->sign != from2->sign;
   to->frac = from1->frac + from2->frac; /* store size in digits */
-  set_if_smaller(to->frac, NOT_FIXED_DEC);
+  set_if_smaller(to->frac, DECIMAL_NOT_SPECIFIED);
   to->intg = intg0 * DIG_PER_DEC1;
 
   if (unlikely(error)) {

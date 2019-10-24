@@ -57,7 +57,7 @@
 
 void prepare_sp_chistics_from_dd_routine(const dd::Routine *routine,
                                          st_sp_chistics *sp_chistics) {
-  DBUG_ENTER("prepare_sp_chistics_from_dd_routine");
+  DBUG_TRACE;
 
   sp_chistics->detistic = routine->is_deterministic();
 
@@ -90,8 +90,6 @@ void prepare_sp_chistics_from_dd_routine(const dd::Routine *routine,
                             routine->comment().length()};
   } else
     sp_chistics->comment = EMPTY_CSTR;
-
-  DBUG_VOID_RETURN;
 }
 
 static Field *make_field(const dd::Parameter &param, TABLE_SHARE *share,
@@ -103,8 +101,8 @@ static Field *make_field(const dd::Parameter &param, TABLE_SHARE *share,
     numeric_scale = param.numeric_scale();
   else if (param.data_type() == dd::enum_column_types::FLOAT ||
            param.data_type() == dd::enum_column_types::DOUBLE)
-    numeric_scale =
-        param.is_numeric_scale_null() ? NOT_FIXED_DEC : param.numeric_scale();
+    numeric_scale = param.is_numeric_scale_null() ? DECIMAL_NOT_SPECIFIED
+                                                  : param.numeric_scale();
 
   return make_field(*THR_MALLOC, share, nullptr, param.char_length(), nullptr,
                     0, dd_get_old_field_type(param.data_type()),
@@ -128,7 +126,7 @@ static Field *make_field(const dd::Parameter &param, TABLE_SHARE *share,
 static void prepare_type_string_from_dd_param(THD *thd,
                                               const dd::Parameter *param,
                                               String *type_str) {
-  DBUG_ENTER("prepare_type_string_from_dd_param");
+  DBUG_TRACE;
 
   // ENUM/SET elements.
   TYPELIB *interval = NULL;
@@ -162,8 +160,7 @@ static void prepare_type_string_from_dd_param(THD *thd,
   Field::geometry_type geom_type = Field::GEOM_GEOMETRY;
   if (param->data_type() == dd::enum_column_types::GEOMETRY) {
     uint32 sub_type = 0;
-    dd::Properties *options = const_cast<dd::Properties *>(&param->options());
-    options->get("geom_type", &sub_type);
+    param->options().get("geom_type", &sub_type);
     geom_type = static_cast<Field::geometry_type>(sub_type);
   }
 
@@ -187,13 +184,11 @@ static void prepare_type_string_from_dd_param(THD *thd,
       type_str->append(field->charset()->name);
     }
   }
-
-  DBUG_VOID_RETURN;
 }
 
 void prepare_return_type_string_from_dd_routine(
     THD *thd, const dd::Routine *routine, dd::String_type *return_type_str) {
-  DBUG_ENTER("prepare_return_type_string_from_dd_routine");
+  DBUG_TRACE;
 
   *return_type_str = "";
 
@@ -217,13 +212,11 @@ void prepare_return_type_string_from_dd_routine(
       *return_type_str = type_str.ptr();
     }
   }
-
-  DBUG_VOID_RETURN;
 }
 
 void prepare_params_string_from_dd_routine(THD *thd, const dd::Routine *routine,
                                            dd::String_type *params_str) {
-  DBUG_ENTER("prepare_params_string_from_dd_routine");
+  DBUG_TRACE;
 
   *params_str = "";
 
@@ -275,6 +268,4 @@ void prepare_params_string_from_dd_routine(THD *thd, const dd::Routine *routine,
   }
 
   if (params_ss.str().length()) *params_str = params_ss.str();
-
-  DBUG_VOID_RETURN;
 }

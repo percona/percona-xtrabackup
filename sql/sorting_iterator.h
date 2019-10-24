@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "my_alloc.h"
 #include "my_base.h"
 #include "sql/basic_row_iterators.h"
 #include "sql/row_iterator.h"
@@ -59,7 +60,7 @@ class SortingIterator final : public RowIterator {
   // "examined_rows", if not nullptr, is incremented for each successful Read().
   SortingIterator(THD *thd, Filesort *filesort,
                   unique_ptr_destroy_only<RowIterator> source,
-                  bool force_sort_positions, ha_rows *examined_rows);
+                  ha_rows *examined_rows);
   ~SortingIterator() override;
 
   // Calls Init() on the source iterator, then does the actual sort.
@@ -91,6 +92,15 @@ class SortingIterator final : public RowIterator {
 
   std::vector<std::string> DebugString() const override;
 
+  /// Optional (when JOIN::destroy() runs, the iterator and its buffers
+  /// will be cleaned up anyway); used to clean up the buffers a little
+  /// bit earlier.
+  ///
+  /// When we get cached JOIN objects (prepare/optimize once) that can
+  /// live for a long time between queries, calling this will become more
+  /// important.
+  void CleanupAfterQuery();
+
  private:
   int DoSort(QEP_TAB *qep_tab);
   void ReleaseBuffers();
@@ -109,18 +119,20 @@ class SortingIterator final : public RowIterator {
   // using packed addons, etc..
   unique_ptr_destroy_only<RowIterator> m_result_iterator;
 
-  Sort_result m_sort_result;
+  // Holds the buffers for m_sort_result.
+  Filesort_info m_fs_info;
 
-  // If true, we will always sort references to rows on table (and crucially,
-  // the result iterators used will always position the underlying table on
-  // the original row before returning from Read()).
-  bool m_force_sort_positions;
+  Sort_result m_sort_result;
 
   ha_rows *m_examined_rows;
 
-  // Similarly to iterator_holder in READ_RECORD, allows us to keep one of
-  // the different forms of result iterators without incurring a heap
-  // allocation.
+  // Holds one out of all RowIterator implementations we need so that it is
+  // possible to initialize a RowIterator without heap allocations.
+  // (m_result_iterator typically points to this union, and is responsible for
+  // running the right destructor.)
+  //
+  // TODO: If we need to add TimingIterator directly on this iterator,
+  // switch to allocating it on the MEM_ROOT.
   union IteratorHolder {
     IteratorHolder() {}
     ~IteratorHolder() {}

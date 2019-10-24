@@ -677,7 +677,7 @@ dtuple_t *row_rec_to_index_entry(
   dtuple_t *entry;
   byte *buf;
   const rec_t *copy_rec;
-  DBUG_ENTER("row_rec_to_index_entry");
+  DBUG_TRACE;
 
   ut_ad(rec != NULL);
   ut_ad(heap != NULL);
@@ -695,7 +695,7 @@ dtuple_t *row_rec_to_index_entry(
 
   dtuple_set_info_bits(entry, rec_get_info_bits(rec, rec_offs_comp(offsets)));
 
-  DBUG_RETURN(entry);
+  return entry;
 }
 
 /** Builds from a secondary index record a row reference with which we can

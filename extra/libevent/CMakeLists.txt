@@ -128,12 +128,6 @@ option(EVENT__DISABLE_THREAD_SUPPORT
 option(EVENT__DISABLE_OPENSSL
     "Define if libevent should build without support for OpenSSL encrpytion" OFF)
 
-IF(WITH_SSL STREQUAL "wolfssl")
-  MESSAGE(STATUS "This version of libevent does not support the wolfssl  SSL library")
-  SET(EVENT__DISABLE_OPENSSL ON CACHE INTERNAL "" FORCE)
-  SET(EVENT__DISABLE_OPENSSL 1)
-ENDIF()
-
 option(EVENT__DISABLE_BENCHMARK
     "Defines if libevent should build without the benchmark exectuables" ON)
 
@@ -180,7 +174,7 @@ if (EVENT__COVERAGE)
 endif()
 
 # GCC specific options.
-if (CMAKE_COMPILER_IS_GNUCC)
+if (MY_COMPILER_IS_GNU)
     option(EVENT__DISABLE_GCC_WARNINGS "Disable verbose warnings with GCC" OFF)
     option(EVENT__ENABLE_GCC_HARDENING "Enable compiler security checks" OFF)
     option(EVENT__ENABLE_GCC_FUNCTION_SECTIONS "Enable gcc function sections" OFF)
@@ -701,11 +695,6 @@ if (NOT EVENT__DISABLE_OPENSSL)
 
     set(EVENT__HAVE_OPENSSL 1)
 
-    message(STATUS "OpenSSL include: ${OPENSSL_INCLUDE_DIR}")
-    message(STATUS "OpenSSL lib: ${OPENSSL_LIBRARIES}")
-
-    include_directories(${OPENSSL_INCLUDE_DIR})
-
     list(APPEND SRC_CORE bufferevent_openssl.c)
     list(APPEND HDR_PUBLIC include/event2/bufferevent_ssl.h)
     list(APPEND LIB_APPS ${OPENSSL_LIBRARIES})
@@ -799,7 +788,7 @@ include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/include)
 if (EVENT__BUILD_SHARED_LIBRARIES)
   set(EVENT__LIBRARY_TYPE SHARED)
 
-  if ((CMAKE_COMPILER_IS_GNUCC) OR (${CMAKE_C_COMPILER_ID} MATCHES "Clang"))
+  if (MY_COMPILER_IS_GNU_OR_CLANG)
         add_compiler_flags(-fvisibility=hidden)
   elseif ("${CMAKE_C_COMPILER_ID}" STREQUAL "SunPro")
     add_compiler_flags(-xldscope=hidden)

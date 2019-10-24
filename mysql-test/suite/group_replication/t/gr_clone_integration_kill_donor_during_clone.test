@@ -18,8 +18,6 @@
 # 10. Cleanup
 #
 
-# Due to mysqld_safe/restart limitation this test only works on windows for now
---source include/windows.inc
 --source include/big_test.inc
 --source include/have_debug_sync.inc
 --source include/have_clone_plugin.inc
@@ -137,7 +135,6 @@ if ($donor_ip_port == $server3_ip_port) {
 --source include/rpl_connection.inc
 
 SET DEBUG_SYNC = 'now SIGNAL gr_clone_continue';
-SET DEBUG_SYNC = 'RESET';
 SET @@GLOBAL.DEBUG = '-d,gr_clone_wait';
 
 --let $disconnect_timeout= 600
@@ -183,6 +180,8 @@ if ($donor_ip_port == $server3_ip_port) {
 --let $rpl_connection_name= server2
 --source include/rpl_connection.inc
 
+SET DEBUG_SYNC = 'RESET';
+
 --eval SET GLOBAL group_replication_clone_threshold= $_group_replication_threshold_save
 
 RESET PERSIST IF EXISTS group_replication_group_name;
@@ -191,8 +190,8 @@ RESET PERSIST IF EXISTS group_replication_group_seeds;
 RESET PERSIST IF EXISTS group_replication_start_on_boot;
 
 set session sql_log_bin=0;
-call mtr.add_suppression("Due to the number of missing transactions being higher than the configured threshold of 1, this member will use cloning as its recovery strategy.");
-call mtr.add_suppression("Internal query: CLONE INSTANCE FROM \"root\"@\"127.0.0.1\":[0-9]+ IDENTIFIED BY \"\\*\\*\\*\\*\\*\" REQUIRE NO SSL; result in error. Error number:*");
+call mtr.add_suppression("Due to the number of missing transactions being higher than the configured threshold of 1, this member will start distributed recovery using clone.");
+call mtr.add_suppression("Internal query: CLONE INSTANCE FROM \'root\'@\'127.0.0.1\':[0-9]+ IDENTIFIED BY \'\\*\\*\\*\\*\\*\' REQUIRE NO SSL; result in error. Error number:*");
 call mtr.add_suppression("There was an issue when cloning from another server: Error number: 3862 Error message: Clone Donor Error: Connect failed: 2003 : Can't connect to MySQL server on.*");
 call mtr.add_suppression("Clone removing all user data for provisioning: Started");
 call mtr.add_suppression("Clone removing all user data for provisioning: Finished");

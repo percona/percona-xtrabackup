@@ -279,7 +279,8 @@ static void load_event_creation_context(THD *thd, TABLE *table,
 */
 
 static bool update_event_timing_fields(THD *thd, TABLE *table,
-                                       char *event_db_name, char *event_name) {
+                                       const char *event_db_name,
+                                       const char *event_name) {
   dd::Event *new_event = nullptr;
   dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
 
@@ -322,13 +323,14 @@ static bool update_event_timing_fields(THD *thd, TABLE *table,
   @retval >=0  Ordinal position.
 */
 
-static int find_string_in_array(const LEX_STRING *haystack,
-                                const LEX_STRING *needle,
+static int find_string_in_array(const LEX_CSTRING *haystack,
+                                const LEX_CSTRING *needle,
                                 const CHARSET_INFO *cs) {
-  const LEX_STRING *pos;
+  const LEX_CSTRING *pos;
   for (pos = haystack; pos->str; pos++) {
-    if (!cs->coll->strnncollsp(cs, (uchar *)pos->str, pos->length,
-                               (uchar *)needle->str, needle->length)) {
+    if (!cs->coll->strnncollsp(
+            cs, pointer_cast<const uchar *>(pos->str), pos->length,
+            pointer_cast<const uchar *>(needle->str), needle->length)) {
       return static_cast<int>(pos - haystack);
     }
   }
@@ -373,7 +375,7 @@ static bool set_status_and_interval_for_event(THD *thd, TABLE *table,
     int i;
     char buff[MAX_FIELD_WIDTH];
     String str(buff, sizeof(buff), &my_charset_bin);
-    LEX_STRING tmp;
+    LEX_CSTRING tmp;
 
     table->field[ET_FIELD_TRANSIENT_INTERVAL]->val_str(&str);
     if (!(tmp.length = str.length())) return true;
@@ -537,16 +539,15 @@ static bool migrate_event_to_dd(THD *thd, TABLE *event_table) {
 
 bool migrate_events_to_dd(THD *thd) {
   TABLE *event_table;
-  TABLE_LIST tables, *table_list;
   int error = 0;
   uint flags = MYSQL_LOCK_IGNORE_TIMEOUT;
   DML_prelocking_strategy prelocking_strategy;
   MEM_ROOT records_mem_root;
   Thd_mem_root_guard root_guard(thd, &records_mem_root);
 
-  tables.init_one_table("mysql", 5, "event", 5, "event", TL_READ);
+  TABLE_LIST tables("mysql", "event", TL_READ);
+  auto table_list = &tables;
 
-  table_list = &tables;
   if (open_and_lock_tables(thd, table_list, flags, &prelocking_strategy)) {
     LogErr(ERROR_LEVEL, ER_EVENT_CANT_OPEN_TABLE_MYSQL_EVENT);
     return true;

@@ -23,13 +23,9 @@
 SET(MY_TIME_SOURCES my_time.cc my_systime.cc)
 
 ADD_CONVENIENCE_LIBRARY(mytime ${MY_TIME_SOURCES})
-IF(SOLARIS)
+IF(SOLARIS_INTEL)
   # Sun Studio 12.6 generates code that segfaults for std::chrono stuff.
-  IF(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64"
-      OR CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-    TARGET_COMPILE_OPTIONS(mytime_objlib PRIVATE
-      $<$<CONFIG:RelWithDebInfo>:-xO1>)
-  ENDIF()
+  TARGET_COMPILE_OPTIONS(mytime_objlib PRIVATE $<$<CONFIG:RelWithDebInfo>:-xO1>)
 ENDIF()
 
 SET(MYSYS_SOURCES
@@ -38,6 +34,7 @@ SET(MYSYS_SOURCES
   charset.cc
   charset-def.cc
   checksum.cc
+  dbug.cc
   errors.cc
   lf_alloc-pin.cc
   lf_dynarray.cc
@@ -126,11 +123,7 @@ SET(MYSYS_SOURCES
   my_md5.cc
   my_rnd.cc
 )
-IF(WITH_SSL STREQUAL "wolfssl")
-  LIST(APPEND MYSYS_SOURCES my_aes_wolfssl.cc)
-ELSE()
-  LIST(APPEND MYSYS_SOURCES my_aes_openssl.cc)
-ENDIF()
+LIST(APPEND MYSYS_SOURCES my_aes_openssl.cc)
 
 IF (WIN32)
   LIST(APPEND MYSYS_SOURCES
@@ -170,10 +163,10 @@ ENDIF()
 
 ADD_CONVENIENCE_LIBRARY(mysys ${MYSYS_SOURCES}
   LINK_LIBRARIES
-  dbug
   mytime
   strings
   ${ZLIB_LIBRARY}
+  ${ZSTD_LIBRARY}
   ${LIBNSL}
   ${LIBM}
   ${LIBRT}
@@ -187,24 +180,33 @@ IF(CMAKE_USE_PTHREADS_INIT AND CMAKE_C_FLAGS MATCHES "-fsanitize=")
   TARGET_LINK_LIBRARIES(mysys pthread)
 ENDIF()
 # Needed to resolve OpenSSL dependency on Windows
-IF(WIN32 AND NOT WITH_SSL STREQUAL "wolfssl")
+IF(WIN32)
   TARGET_LINK_LIBRARIES(mysys crypt32)
 ENDIF()
 
 # Bug in std::call_once in optimized mode
-IF(SOLARIS_SPARC AND CMAKE_COMPILER_IS_GNUCXX)
+IF(SOLARIS_SPARC AND MY_COMPILER_IS_GNU)
   ADD_COMPILE_FLAGS(charset.cc COMPILE_FLAGS "-O0")
 ENDIF()
 
-MYSQL_ADD_EXECUTABLE(thr_lock thr_lock.cc SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(thr_lock mysys)
+MYSQL_ADD_EXECUTABLE(thr_lock
+  thr_lock.cc
+  LINK_LIBRARIES mysys
+  SKIP_INSTALL
+  )
 SET_TARGET_PROPERTIES(thr_lock PROPERTIES COMPILE_FLAGS "-DMAIN")
 
-MYSQL_ADD_EXECUTABLE(mf_iocache_test mf_iocache.cc SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(mf_iocache_test mysys)
+MYSQL_ADD_EXECUTABLE(mf_iocache_test
+  mf_iocache.cc
+  LINK_LIBRARIES mysys
+  SKIP_INSTALL
+  )
 SET_TARGET_PROPERTIES(mf_iocache_test PROPERTIES COMPILE_FLAGS "-DMAIN")
 
-MYSQL_ADD_EXECUTABLE(base64_test base64.cc SKIP_INSTALL)
+MYSQL_ADD_EXECUTABLE(base64_test
+  base64.cc
+  DEPENDENCIES GenError
+  LINK_LIBRARIES mysys
+  SKIP_INSTALL
+  )
 SET_TARGET_PROPERTIES(base64_test PROPERTIES COMPILE_FLAGS "-DMAIN")
-TARGET_LINK_LIBRARIES(base64_test mysys)
-ADD_DEPENDENCIES(base64_test GenError)

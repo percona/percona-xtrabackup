@@ -250,8 +250,9 @@ ulint buf_pool_get_dirty_pages_count(
 void buf_flush_sync_all_buf_pools(void);
 
 /** Request IO burst and wake page_cleaner up.
-@param[in]	lsn_limit	upper limit of LSN to be flushed */
-void buf_flush_request_force(lsn_t lsn_limit);
+@param[in]	lsn_limit	upper limit of LSN to be flushed
+@return true if we requested higher lsn than ever requested so far */
+bool buf_flush_request_force(lsn_t lsn_limit);
 
 /** Checks if all flush lists are empty. It is supposed to be used in
 single thread, during startup or shutdown. Hence it does not acquire

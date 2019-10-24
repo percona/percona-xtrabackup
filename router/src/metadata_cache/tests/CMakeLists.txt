@@ -49,29 +49,48 @@ SET(include_dirs
 # already built as part of the test libraries.
 IF(NOT WIN32)
   ADD_LIBRARY(metadata_cache_tests SHARED ${METADATA_CACHE_TESTS_HELPER})
-  TARGET_LINK_LIBRARIES(metadata_cache_tests router_lib ${MySQL_CLIENT_LIB} mysqlxclient_lite mysqlxmessages_lite ${PROTOBUF_LITE_LIBRARY})
+  TARGET_LINK_LIBRARIES(metadata_cache_tests
+    router_lib
+    mysqlclient
+    mysqlxclient_lite
+    mysqlxmessages_lite
+    ${PROTOBUF_LITE_LIBRARY}
+    )
 ELSE()
   ADD_LIBRARY(metadata_cache_tests STATIC ${METADATA_CACHE_TESTS_HELPER})
-  TARGET_LINK_LIBRARIES(metadata_cache_tests router_lib metadata_cache
-                        ${MySQL_CLIENT_LIB} mysqlxclient_lite mysqlxmessages_lite ${PROTOBUF_LIBRARY}-lite)
+  TARGET_LINK_LIBRARIES(metadata_cache_tests
+    router_lib
+    metadata_cache
+    mysqlclient
+    mysqlxclient_lite
+    mysqlxmessages_lite
+    ${PROTOBUF_LIBRARY}-lite
+    )
   TARGET_COMPILE_DEFINITIONS(metadata_cache_tests
-                             PRIVATE -Dmetadata_cache_DEFINE_STATIC=1)
+    PRIVATE -Dmetadata_cache_DEFINE_STATIC=1)
   TARGET_COMPILE_DEFINITIONS(metadata_cache_tests
-                             PRIVATE -Dmetadata_cache_tests_DEFINE_STATIC=1)
+    PRIVATE -Dmetadata_cache_tests_DEFINE_STATIC=1)
 ENDIF()
 
 SET_PATH_TO_SSL(metadata_cache_tests
-                ${CMAKE_BINARY_DIR}/library_output_directory)
+  ${CMAKE_BINARY_DIR}/library_output_directory)
 
 SET_TARGET_PROPERTIES(metadata_cache_tests PROPERTIES
-                      LIBRARY_OUTPUT_DIRECTORY
-                      ${CMAKE_BINARY_DIR}/library_output_directory)
+  LIBRARY_OUTPUT_DIRECTORY
+  ${CMAKE_BINARY_DIR}/library_output_directory)
 
 
 TARGET_INCLUDE_DIRECTORIES(metadata_cache_tests PRIVATE ${include_dirs})
 
 SET(TEST_MODULE metadata_cache)
-add_test_dir(${CMAKE_CURRENT_SOURCE_DIR}
+FOREACH(test_file 
+    test_cache_plugin.cc
+    test_failover.cc
+    test_metadata.cc
+    test_metadata_cache.cc
+    test_plugin_config.cc
+    )
+  add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
              MODULE ${TEST_MODULE}
              LIB_DEPENDS
                metadata_cache_tests
@@ -83,7 +102,7 @@ add_test_dir(${CMAKE_CURRENT_SOURCE_DIR}
                ${PROJECT_SOURCE_DIR}/tests/helpers
                ${PROJECT_SOURCE_DIR}/src/harness/shared/include
 )
-
+ENDFOREACH()
 
 ROUTERTEST_GET_TARGET(test_target "test_cache_plugin.cc" ${TEST_MODULE})
 TARGET_COMPILE_DEFINITIONS(${test_target}

@@ -53,7 +53,7 @@ SELECT city.Name, country.Name, countrylanguage.Language
         city.Name LIKE 'L%' AND country.Population > 3000000 AND
         countrylanguage.Percentage > 50;
 
-set join_buffer_size=256;
+set join_buffer_size=2048;
 show variables like 'join_buffer_size';
 
 EXPLAIN
@@ -1267,9 +1267,10 @@ INSERT INTO t2 VALUES (2),(3);
 --echo
 
 --echo # The query shall return 1 record with a max value 9 and one of the 
---echo # int_key values inserted above (undefined which one). A changed 
---echo # execution plan may change the value in the second column
+--echo # int_key values inserted above (undefined which one, so it's replaced
+--echo # with "#").
 --source include/turn_off_only_full_group_by.inc
+--replace_column 2 #
 SELECT  MAX(t1.int_key), t1.int_key
 FROM t1 STRAIGHT_JOIN t2  
 ORDER BY t1.int_key;

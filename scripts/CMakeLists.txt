@@ -20,6 +20,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+ADD_SUBDIRECTORY(sys_schema)
+
 MYSQL_ADD_EXECUTABLE(comp_sql comp_sql.cc SKIP_INSTALL)
 
 # Add compiler information, for easier debugging of output from mysql_config.
@@ -94,44 +96,18 @@ ADD_CUSTOM_COMMAND(
 ADD_CUSTOM_TARGET(GenFixPrivs
   ALL
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables_sql.h
-  ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_sys_schema.h
 )
 
-# If we do not have performance schema compiled in then sys will not work,
-# so only create an empty sys database with an auto-generated file,
-# otherwise, load the full schema file normally.
-IF(NOT WITH_PERFSCHEMA_STORAGE_ENGINE)
-  FILE(WRITE ${CMAKE_CURRENT_BINARY_DIR}/mysql_sys_schema_empty.sql "CREATE DATABASE sys;")
-
-  ADD_CUSTOM_COMMAND(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_sys_schema.h
-    COMMAND comp_sql
-    mysql_sys_schema
-    ${CMAKE_CURRENT_BINARY_DIR}/mysql_sys_schema_empty.sql
-    sql_commands_sys_schema.h
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS comp_sql
-    ${CMAKE_CURRENT_BINARY_DIR}/mysql_sys_schema_empty.sql
+ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_sys_schema.h
+  COMMAND comp_sql
+  mysql_sys_schema
+  ${CMAKE_CURRENT_SOURCE_DIR}/mysql_sys_schema.sql
+  sql_commands_sys_schema.h
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS comp_sql
+  ${CMAKE_CURRENT_SOURCE_DIR}/mysql_sys_schema.sql
   )
-ELSE()
-  ADD_CUSTOM_COMMAND(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_sys_schema.h
-    COMMAND comp_sql
-    mysql_sys_schema
-    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_sys_schema.sql
-    sql_commands_sys_schema.h
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS comp_sql
-    ${CMAKE_CURRENT_SOURCE_DIR}/mysql_sys_schema.sql
-  )
-ENDIF()
-
-IF(NOT WITHOUT_SERVER)
-  ADD_CUSTOM_TARGET(GenSysSchema
-    ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_sys_schema.h
-  )
-ENDIF()
 
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_data.h
@@ -188,17 +164,6 @@ ADD_CUSTOM_COMMAND(
   ${CMAKE_CURRENT_SOURCE_DIR}/fill_help_tables.sql
 )
 
-ADD_CUSTOM_COMMAND(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_ndb_privileges.h
-  COMMAND comp_sql
-  ndb_upgrade_privileges
-  ${CMAKE_CURRENT_SOURCE_DIR}/ndb_upgrade_privileges.sql
-  sql_commands_ndb_privileges.h
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS comp_sql
-  ${CMAKE_CURRENT_SOURCE_DIR}/ndb_upgrade_privileges.sql
-)
-
 # Add target for the above to be built
 IF(NOT WITHOUT_SERVER)
   ADD_CUSTOM_TARGET(GenBootstrapPriv
@@ -208,7 +173,6 @@ IF(NOT WITHOUT_SERVER)
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_users.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_help_data.h
     ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_system_tables_data_fix.h
-    ${CMAKE_CURRENT_BINARY_DIR}/sql_commands_ndb_privileges.h
   )
 ENDIF()
 
@@ -249,8 +213,8 @@ FOREACH(white_flag ${COMPILE_DEFINITIONS_WHITELIST})
 ENDFOREACH()
 
 IF(CMAKE_BUILD_TYPE AND BUILD_IS_SINGLE_CONFIG)
-  STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
-  SET(CMAKEBT_FLAGS "${CMAKE_C_FLAGS_${CMAKEBT}} ${CMAKE_C_FLAGS}")
+  SET(CMAKEBT_FLAGS
+    "${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE_UPPER}} ${CMAKE_C_FLAGS}")
   SEPARATE_ARGUMENTS(CMAKEBT_FLAGS)
 ENDIF()
 
@@ -263,9 +227,9 @@ FOREACH(white_flag ${CMAKE_C_FLAGS_WHITELIST})
   ENDFOREACH()
 ENDFOREACH()
 
-# Do not remove -std=c++11 for Solaris Studio as it is required to get
+# Do not remove -std=c++14 for Oracle Studio as it is required to get
 # the correct libraries. Only remove for GCC/Clang
-IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+IF(MY_COMPILER_IS_GNU_OR_CLANG)
   STRING(REGEX REPLACE "-std=c..[0-9]+" "" CXXFLAGS "${CXXFLAGS}")
 ENDIF()
 
@@ -520,22 +484,25 @@ ELSE()
     ENDIF()
 
     INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/${SYSTEMD_SERVICE_NAME}.service
-       DESTINATION ${SYSTEMD_INSTALL_PREFIX}${SYSTEMD_SERVICES_DIR} COMPONENT Server
-       PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+      DESTINATION ${SYSTEMD_INSTALL_PREFIX}${SYSTEMD_SERVICES_DIR}
+      COMPONENT Server
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     )
     INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/${SYSTEMD_SERVICE_NAME}@.service
-       DESTINATION ${SYSTEMD_INSTALL_PREFIX}${SYSTEMD_SERVICES_DIR} COMPONENT Server
-       PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+      DESTINATION ${SYSTEMD_INSTALL_PREFIX}${SYSTEMD_SERVICES_DIR}
+      COMPONENT Server
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     )
     INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/mysql.conf
-       DESTINATION ${SYSTEMD_INSTALL_PREFIX}${SYSTEMD_TMPFILES_DIR} COMPONENT Server
-       PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+      DESTINATION ${SYSTEMD_INSTALL_PREFIX}${SYSTEMD_TMPFILES_DIR}
+      COMPONENT Server
+      PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     )
   ENDIF()
 ENDIF()
 
 # Install libgcc as  mylibgcc.a
-IF(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_FLAGS MATCHES "-static")
+IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_FLAGS MATCHES "-static")
   EXECUTE_PROCESS (
    COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1}
      ${CMAKE_CXX_FLAGS} --print-libgcc

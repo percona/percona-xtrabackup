@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "common.h"
+#include "os0event.h"
 #include "xtrabackup.h"
 
 extern ds_ctxt_t *ds_redo;
@@ -572,9 +573,9 @@ Archived_Redo_Log_Monitor::Archived_Redo_Log_Monitor() {
   event = os_event_create("archived_redo_log_monitor");
 }
 
-Archived_Redo_Log_Monitor::~Archived_Redo_Log_Monitor() {
-  os_event_destroy(event);
-}
+Archived_Redo_Log_Monitor::~Archived_Redo_Log_Monitor() {}
+
+void Archived_Redo_Log_Monitor::close() { os_event_destroy(event); }
 
 void Archived_Redo_Log_Monitor::start() {
   thread = os_thread_create(PFS_NOT_INSTRUMENTED, [this] { thread_func(); });
@@ -1132,4 +1133,8 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn) {
   return (true);
 }
 
-void Redo_Log_Data_Manager::close() { log_sys_close(); }
+void Redo_Log_Data_Manager::close() {
+  log_sys_close();
+  archived_log_monitor.close();
+  os_event_destroy(event);
+}

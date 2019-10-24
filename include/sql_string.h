@@ -89,6 +89,7 @@ class Simple_cstring {
     set(str_arg, length_arg);
   }
   Simple_cstring(const LEX_STRING arg) { set(arg.str, arg.length); }
+  Simple_cstring(const LEX_CSTRING arg) { set(arg.str, arg.length); }
   void reset() { set(NULL, 0); }
   /**
     Set to a null-terminated string.
@@ -146,7 +147,8 @@ size_t convert_to_printable(char *to, size_t to_len, const char *from,
                             size_t from_len, const CHARSET_INFO *from_cs,
                             size_t nbytes = 0);
 
-size_t bin_to_hex_str(char *to, size_t to_len, char *from, size_t from_len);
+size_t bin_to_hex_str(char *to, size_t to_len, const char *from,
+                      size_t from_len);
 
 /**
   Using this class is fraught with peril, and you need to be very careful
@@ -321,6 +323,16 @@ class String {
   bool set(ulonglong num, const CHARSET_INFO *cs) {
     return set_int((longlong)num, true, cs);
   }
+
+  /**
+    Sets the contents of this string to the string representation of the given
+    double value.
+
+    @param num the double value
+    @param decimals the number of decimals
+    @param cs the character set of the string
+    @return false on success, true on error
+  */
   bool set_real(double num, uint decimals, const CHARSET_INFO *cs);
 
   /*
@@ -527,10 +539,10 @@ class String {
   size_t numchars() const;
   size_t charpos(size_t i, size_t offset = 0) const;
 
-  int reserve(size_t space_needed) {
+  bool reserve(size_t space_needed) {
     return mem_realloc(m_length + space_needed);
   }
-  int reserve(size_t space_needed, size_t grow_by);
+  bool reserve(size_t space_needed, size_t grow_by);
 
   /* Inline (general) functions used by the protocol functions */
 

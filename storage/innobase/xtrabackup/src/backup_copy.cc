@@ -62,6 +62,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <string>
 #include "common.h"
 #include "fil_cur.h"
+#include "os0event.h"
 #include "space_map.h"
 #include "xb0xb.h"
 
@@ -2172,6 +2173,7 @@ bool copy_back(int argc, char **argv) {
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
   srv_max_n_threads = 1000;
+  os_event_global_init();
   sync_check_init(srv_max_n_threads);
   ut_crc32_init();
 
@@ -2397,6 +2399,7 @@ cleanup:
   xb_keyring_shutdown();
 
   sync_check_close();
+  os_event_global_destroy();
 
   return (ret);
 }
@@ -2500,6 +2503,7 @@ bool decrypt_decompress() {
   bool ret;
 
   srv_max_n_threads = 1000;
+  os_event_global_init();
   sync_check_init(srv_max_n_threads);
 
   /* cd to backup directory */
@@ -2523,6 +2527,7 @@ bool decrypt_decompress() {
   ds_data = NULL;
 
   sync_check_close();
+  os_event_global_destroy();
 
   return (ret);
 }

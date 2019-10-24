@@ -1734,8 +1734,8 @@ sp_head::sp_head(MEM_ROOT &&mem_root, enum_sp_type type)
   m_params = NULL_STR;
 
   m_defstr = NULL_STR;
-  m_body = NULL_STR;
-  m_body_utf8 = NULL_STR;
+  m_body = NULL_CSTR;
+  m_body_utf8 = NULL_CSTR;
 
   m_trg_chistics.ordering_clause = TRG_ORDER_NONE;
   m_trg_chistics.anchor_trigger_name = NULL_CSTR;
@@ -1792,17 +1792,21 @@ void sp_head::set_body_end(THD *thd) {
 
   /* Make the string of body (in the original character set). */
 
-  m_body.length = end_ptr - m_parser_data.get_body_start_ptr();
-  m_body.str = thd->strmake(m_parser_data.get_body_start_ptr(), m_body.length);
-  trim_whitespace(thd->charset(), &m_body);
+  LEX_STRING body;
+  body.length = end_ptr - m_parser_data.get_body_start_ptr();
+  body.str = thd->strmake(m_parser_data.get_body_start_ptr(), body.length);
+  trim_whitespace(thd->charset(), &body);
+  m_body = to_lex_cstring(body);
 
   /* Make the string of UTF-body. */
 
   lip->body_utf8_append(end_ptr);
 
-  m_body_utf8.length = lip->get_body_utf8_length();
-  m_body_utf8.str = thd->strmake(lip->get_body_utf8_str(), m_body_utf8.length);
-  trim_whitespace(thd->charset(), &m_body_utf8);
+  LEX_STRING body_utf8;
+  body_utf8.length = lip->get_body_utf8_length();
+  body_utf8.str = thd->strmake(lip->get_body_utf8_str(), body_utf8.length);
+  trim_whitespace(thd->charset(), &body_utf8);
+  m_body_utf8 = to_lex_cstring(body_utf8);
 
   /*
     Make the string of whole stored-program-definition query (in the
@@ -2365,7 +2369,7 @@ bool sp_head::execute_trigger(THD *thd, const LEX_CSTRING &db_name,
   Query_arena call_arena(&call_mem_root, Query_arena::STMT_INITIALIZED_FOR_SP);
   Query_arena backup_arena;
 
-  DBUG_ENTER("sp_head::execute_trigger");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("trigger %s", m_name.str));
 
   Security_context *save_ctx = NULL;
@@ -2379,8 +2383,8 @@ bool sp_head::execute_trigger(THD *thd, const LEX_CSTRING &db_name,
   */
   DBUG_ASSERT(m_chistics->suid != SP_IS_NOT_SUID);
   if (m_security_ctx.change_security_context(thd, definer_user, definer_host,
-                                             &m_db, &save_ctx))
-    DBUG_RETURN(true);
+                                             m_db.str, &save_ctx))
+    return true;
 
   /*
     Fetch information about table-level privileges for subject table into
@@ -2402,7 +2406,7 @@ bool sp_head::execute_trigger(THD *thd, const LEX_CSTRING &db_name,
              thd->security_context()->host_or_ip().str, table_name.str);
 
     m_security_ctx.restore_security_context(thd, save_ctx);
-    DBUG_RETURN(true);
+    return true;
   }
   /*
     Optimizer trace note: we needn't explicitly test here that the connected
@@ -2462,7 +2466,7 @@ err_with_cleanup:
 
   if (thd->killed) thd->send_kill_message();
 
-  DBUG_RETURN(err_status);
+  return err_status;
 }
 
 bool sp_head::execute_function(THD *thd, Item **argp, uint argcount,
@@ -2478,7 +2482,7 @@ bool sp_head::execute_function(THD *thd, Item **argp, uint argcount,
   Query_arena call_arena(&call_mem_root, Query_arena::STMT_INITIALIZED_FOR_SP);
   Query_arena backup_arena;
 
-  DBUG_ENTER("sp_head::execute_function");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("function %s", m_name.str));
 
   // Resetting THD::where to its default value
@@ -2496,7 +2500,7 @@ bool sp_head::execute_function(THD *thd, Item **argp, uint argcount,
     */
     my_error(ER_SP_WRONG_NO_OF_ARGS, MYF(0), "FUNCTION", m_qname.str,
              m_root_parsing_ctx->context_var_count(), argcount);
-    DBUG_RETURN(true);
+    return true;
   }
 
   /*
@@ -2689,7 +2693,7 @@ err_with_cleanup:
       !thd->binlog_evt_union.do_union)
     thd->issue_unsafe_warnings();
 
-  DBUG_RETURN(err_status);
+  return err_status;
 }
 
 bool sp_head::execute_procedure(THD *thd, List<Item> *args) {
@@ -2702,7 +2706,7 @@ bool sp_head::execute_procedure(THD *thd, List<Item> *args) {
   bool save_enable_slow_log = false;
   bool save_log_general = false;
 
-  DBUG_ENTER("sp_head::execute_procedure");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("procedure %s", m_name.str));
 
   // Argument count has been validated in prepare function.
@@ -2712,7 +2716,7 @@ bool sp_head::execute_procedure(THD *thd, List<Item> *args) {
     // Create a temporary old context. We need it to pass OUT-parameter values.
     parent_sp_runtime_ctx = sp_rcontext::create(thd, m_root_parsing_ctx, NULL);
 
-    if (!parent_sp_runtime_ctx) DBUG_RETURN(true);
+    if (!parent_sp_runtime_ctx) return true;
 
     parent_sp_runtime_ctx->sp = 0;
     thd->sp_runtime_ctx = parent_sp_runtime_ctx;
@@ -2729,7 +2733,7 @@ bool sp_head::execute_procedure(THD *thd, List<Item> *args) {
 
     if (!sp_runtime_ctx_saved) ::destroy(parent_sp_runtime_ctx);
 
-    DBUG_RETURN(true);
+    return true;
   }
 
   proc_runtime_ctx->sp = this;
@@ -2912,7 +2916,7 @@ bool sp_head::execute_procedure(THD *thd, List<Item> *args) {
       !thd->binlog_evt_union.do_union)
     thd->issue_unsafe_warnings();
 
-  DBUG_RETURN(err_status);
+  return err_status;
 }
 
 bool sp_head::reset_lex(THD *thd) {
@@ -3172,7 +3176,7 @@ bool sp_head::show_routine_code(THD *thd) {
 
     buffer.set("", 0, system_charset_info);
     i->print(thd, &buffer);
-    protocol->store(buffer.ptr(), buffer.length(), system_charset_info);
+    protocol->store_string(buffer.ptr(), buffer.length(), system_charset_info);
     if ((res = protocol->end_row())) break;
   }
 
@@ -3202,8 +3206,8 @@ bool sp_head::merge_table_list(THD *thd, TABLE_LIST *table,
               table->mdl_request.is_ddl_or_lock_tables_lock_request(),
               table->db, table->db_length, table->table_name)) {
         my_error(ER_NO_SYSTEM_TABLE_ACCESS, MYF(0),
-                 ER_THD(thd, dictionary->table_type_error_code(
-                                 table->db, table->table_name)),
+                 ER_THD_NONCONST(thd, dictionary->table_type_error_code(
+                                          table->db, table->table_name)),
                  table->db, table->table_name);
         return true;
       }
@@ -3376,7 +3380,7 @@ bool sp_head::set_security_ctx(THD *thd, Security_context **save_ctx) {
 
   if (m_chistics->suid != SP_IS_NOT_SUID &&
       m_security_ctx.change_security_context(thd, definer_user, definer_host,
-                                             &m_db, save_ctx)) {
+                                             m_db.str, save_ctx)) {
     return true;
   }
 

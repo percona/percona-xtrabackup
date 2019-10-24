@@ -20,7 +20,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-INCLUDE_DIRECTORIES(SYSTEM ${GTEST_INCLUDE_DIRS} ${GMOCK_INCLUDE_DIRS})
+INCLUDE_DIRECTORIES(SYSTEM ${GMOCK_INCLUDE_DIRS})
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/tests/)
 
 add_test_file(test_time.cc
@@ -75,6 +75,7 @@ add_test_file(test_auth_method.cc
 
 add_test_file(test_content_type.cc
   MODULE http
+  LIB_DEPENDS http_server
   )
 
 

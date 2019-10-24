@@ -103,9 +103,7 @@ bool init_rsa_keys(void);
 void deinit_rsa_keys(void);
 int show_rsa_public_key(THD *thd, SHOW_VAR *var, char *buff);
 
-#ifndef HAVE_WOLFSSL
 typedef struct rsa_st RSA;
-#endif
 class Rsa_authentication_keys {
  private:
   RSA *m_public_key;
@@ -234,7 +232,7 @@ class Cached_authentication_plugins {
 
 extern Cached_authentication_plugins *g_cached_authentication_plugins;
 
-ACL_USER *decoy_user(const LEX_STRING &username, const LEX_CSTRING &hostname,
+ACL_USER *decoy_user(const LEX_CSTRING &username, const LEX_CSTRING &hostname,
                      MEM_ROOT *mem, struct rand_struct *rand,
                      bool is_initialized);
 #define AUTH_DEFAULT_RSA_PRIVATE_KEY "private_key.pem"

@@ -22,11 +22,6 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#ifdef _WIN32
-// ensure windows.h doesn't expose min() nor max()
-#define NOMINMAX
-#endif
-
 #include <gmock/gmock.h>
 
 #include <event2/event.h>  // EVENT__HAVE_OPENSSL
@@ -72,6 +67,8 @@ static const char kInvalidBindAddress[]{"::::::::::"};
 static_assert(sizeof(kInvalidBindAddress) > 7 + 1,
               "kInvalidBindAddress is too short");
 #endif
+
+using namespace std::chrono_literals;
 
 const std::string kHttpBasedir(kPlaceholderHttpBaseDir);
 
@@ -272,16 +269,15 @@ TEST_P(HttpServerPlainTest, ensure) {
     RestClient rest_client(io_ctx, http_hostname_, http_port);
 
     SCOPED_TRACE("// wait http port connectable");
-    ASSERT_TRUE(wait_for_port_ready(http_port))
-        << http_server.get_full_logfile();
+    ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server, http_port));
 
     SCOPED_TRACE("// requesting " + rel_uri);
     auto req = rest_client.request_sync(GetParam().http_method, rel_uri);
     ASSERT_TRUE(req) << rest_client.error_msg();
     ASSERT_EQ(req.get_response_code(), GetParam().status_code);
   } else {
-    EXPECT_EQ(EXIT_FAILURE,
-              http_server.wait_for_exit(1000));  // assume it finishes in 1s
+    check_exit_code(http_server, EXIT_FAILURE,
+                    1000ms);  // assume it finishes in 1s
     EXPECT_THAT(http_server.get_full_output(),
                 ::testing::ContainsRegex(GetParam().stderr_regex));
     EXPECT_THAT(http_server.get_full_logfile(),
@@ -800,7 +796,8 @@ INSTANTIATE_TEST_CASE_P(
 const char kServerCertFile[]{"server-cert.pem"};  // 2048 bit
 const char kServerKeyFile[]{"server-key.pem"};
 const char kServerCertCaFile[]{"cacert.pem"};
-static const char kServerCertRsa1024File[]{"crl-server-cert.pem"};  // 1024 bit
+static const char kServerCertRsa1024File[]{
+    "server-sha1-1024-cert.pem"};  // 1024 bit
 
 #ifdef EVENT__HAVE_OPENSSL
 static const char kWrongServerCertCaFile[]{"ca-sha512.pem"};
@@ -955,9 +952,7 @@ TEST_P(HttpClientSecureTest, ensure) {
     }
     if (where & SSL_CB_HANDSHAKE_START) {
       const char *cipher;
-      // wolfssl 3.14.0 needs the const_cast<>
-      for (int i = 0; (cipher = SSL_get_cipher_list(const_cast<SSL *>(ssl), i));
-           i++) {
+      for (int i = 0; (cipher = SSL_get_cipher_list(ssl, i)); i++) {
         std::cerr << __LINE__ << ": available cipher[" << i << "]: " << cipher
                   << std::endl;
       }
@@ -965,9 +960,7 @@ TEST_P(HttpClientSecureTest, ensure) {
 
     if (where & SSL_CB_HANDSHAKE_DONE) {
       const char *cipher;
-      // wolfssl 3.14.0 needs the const_cast<>
-      for (int i = 0; (cipher = SSL_get_cipher_list(const_cast<SSL *>(ssl), i));
-           i++) {
+      for (int i = 0; (cipher = SSL_get_cipher_list(ssl, i)); i++) {
         std::cerr << __LINE__ << ": available cipher[" << i << "]: " << cipher
                   << std::endl;
       }
@@ -980,9 +973,7 @@ TEST_P(HttpClientSecureTest, ensure) {
   RestClient rest_client(std::move(http_client));
 
   SCOPED_TRACE("// wait http port connectable");
-  ASSERT_TRUE(wait_for_port_ready(http_port_))
-      << http_server_.get_full_output() << "\n"
-      << http_server_.get_full_logfile();
+  ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server_, http_port_));
 
   SCOPED_TRACE("// GETing " + u.join());
   auto req = rest_client.request_sync(HttpMethod::Get, u.get_path());
@@ -1133,17 +1124,15 @@ TEST_P(HttpServerSecureTest, ensure) {
     RestClient rest_client(std::move(http_client));
 
     SCOPED_TRACE("// wait for port ready");
-    ASSERT_TRUE(wait_for_port_ready(http_port_))
-        << http_server.get_full_logfile() << "\n"
-        << ConfigBuilder::build_section("http_server", http_section);
+    ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server, http_port_));
 
     SCOPED_TRACE("// GETing " + u.join());
     auto req = rest_client.request_sync(HttpMethod::Get, u.get_path());
     ASSERT_TRUE(req) << rest_client.error_msg();
     ASSERT_EQ(req.get_response_code(), 404);
   } else {
-    EXPECT_EQ(EXIT_FAILURE,
-              http_server.wait_for_exit(1000));  // assume it finishes in 1s
+    check_exit_code(http_server, EXIT_FAILURE,
+                    1000ms);  // assume it finishes in 1s
     EXPECT_EQ(kSuccessfulLogOutput, http_server.get_full_output());
 
     // if openssl 1.1.0 is used and it is compiled with
@@ -1481,8 +1470,7 @@ class HttpServerAuthTest
  */
 TEST_P(HttpServerAuthTest, ensure) {
   SCOPED_TRACE("// wait http port connectable");
-  ASSERT_TRUE(wait_for_port_ready(http_port_))
-      << http_server_.get_full_logfile();
+  ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server_, http_port_));
 
   std::string http_uri = GetParam().url;
   SCOPED_TRACE("// connecting " + http_hostname_ + ":" +
@@ -1597,8 +1585,7 @@ TEST_P(HttpServerAuthFailTest, ensure) {
   pwf.close();
 
   if (GetParam().check_at_runtime) {
-    ASSERT_TRUE(wait_for_port_ready(http_port_))
-        << http_server.get_full_logfile();
+    ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server, http_port_));
     std::string http_uri = "/";
     SCOPED_TRACE("// connecting " + http_hostname_ + ":" +
                  std::to_string(http_port_) + " for " + http_uri);
@@ -1610,7 +1597,7 @@ TEST_P(HttpServerAuthFailTest, ensure) {
     ASSERT_EQ(req.get_response_code(), 404);
   } else {
     SCOPED_TRACE("// wait process to exit with with error");
-    EXPECT_NO_THROW({ ASSERT_NE(0, http_server.wait_for_exit()); });
+    check_exit_code(http_server, EXIT_FAILURE);
     EXPECT_THAT(http_server.get_full_logfile(),
                 ::testing::HasSubstr(GetParam().expected_errmsg));
   }

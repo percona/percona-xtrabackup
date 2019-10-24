@@ -191,7 +191,7 @@ struct DuktapeStatementReader::Pimpl {
 
   std::unique_ptr<Response> get_ok(duk_idx_t idx) {
     if (!duk_is_object(ctx, idx)) {
-      throw std::runtime_error("expect a object");
+      throw std::runtime_error("expect an object");
     }
 
     return std::unique_ptr<Response>(new OkResponse(
@@ -201,7 +201,7 @@ struct DuktapeStatementReader::Pimpl {
 
   std::unique_ptr<Response> get_error(duk_idx_t idx) {
     if (!duk_is_object(ctx, idx)) {
-      throw std::runtime_error("expect a object");
+      throw std::runtime_error("expect an object");
     }
 
     return std::unique_ptr<Response>(new ErrorResponse(
@@ -213,12 +213,12 @@ struct DuktapeStatementReader::Pimpl {
   std::unique_ptr<Response> get_result(duk_idx_t idx) {
     std::unique_ptr<ResultsetResponse> response(new ResultsetResponse);
     if (!duk_is_object(ctx, idx)) {
-      throw std::runtime_error("expect a object");
+      throw std::runtime_error("expect an object");
     }
     duk_get_prop_string(ctx, idx, "columns");
 
     if (!duk_is_array(ctx, idx)) {
-      throw std::runtime_error("expect a object");
+      throw std::runtime_error("expect an object");
     }
     // iterate over the column meta
     duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
@@ -329,6 +329,25 @@ duk_int_t duk_peval_file(duk_context *ctx, const char *path) {
   return duk_pcall_method(ctx, 0);
 }
 
+static duk_int_t process_get_keys(duk_context *ctx) {
+  duk_push_global_stash(ctx);
+  duk_get_prop_string(ctx, -1, "shared");
+  auto *shared_globals =
+      static_cast<MockServerGlobalScope *>(duk_get_pointer(ctx, -1));
+
+  duk_push_array(ctx);
+  size_t ndx{0};
+  for (const auto &key : shared_globals->get_keys()) {
+    duk_push_lstring(ctx, key.data(), key.size());
+    duk_put_prop_index(ctx, -2, ndx++);
+  }
+
+  duk_remove(ctx, -2);  // 'shared' pointer
+  duk_remove(ctx, -2);  // global stash
+
+  return 1;
+}
+
 static duk_int_t process_get_shared(duk_context *ctx) {
   const char *key = duk_require_string(ctx, 0);
 
@@ -347,6 +366,22 @@ static duk_int_t process_get_shared(duk_context *ctx) {
     duk_push_lstring(ctx, value.c_str(), value.size());
     duk_json_decode(ctx, -1);
   }
+
+  duk_remove(ctx, -2);  // 'shared' pointer
+  duk_remove(ctx, -2);  // global stash
+
+  return 1;
+}
+
+static duk_int_t process_erase(duk_context *ctx) {
+  const char *key = duk_require_string(ctx, 0);
+
+  duk_push_global_stash(ctx);
+  duk_get_prop_string(ctx, -1, "shared");
+  auto *shared_globals =
+      static_cast<MockServerGlobalScope *>(duk_get_pointer(ctx, -1));
+
+  duk_push_int(ctx, shared_globals->erase(key));
 
   duk_remove(ctx, -2);  // 'shared' pointer
   duk_remove(ctx, -2);  // global stash
@@ -430,14 +465,14 @@ static void check_handshake_section(duk_context *ctx) {
   duk_get_prop_string(ctx, -1, "handshake");
   if (!duk_is_undefined(ctx, -1)) {
     if (!duk_is_object(ctx, -1)) {
-      throw std::runtime_error("handshake must be a object, if set. Is " +
+      throw std::runtime_error("handshake must be an object, if set. Is " +
                                duk_get_type_names(ctx, -1));
     }
     duk_get_prop_string(ctx, -1, "greeting");
     if (!duk_is_undefined(ctx, -1)) {
       if (!duk_is_object(ctx, -1)) {
         throw std::runtime_error(
-            "handshake.greeting must be a object, if set. Is " +
+            "handshake.greeting must be an object, if set. Is " +
             duk_get_type_names(ctx, -1));
       }
       duk_get_prop_string(ctx, -1, "exec_time");
@@ -491,6 +526,12 @@ DuktapeStatementReader::DuktapeStatementReader(
   duk_push_c_function(ctx, process_set_shared, 2);
   duk_put_prop_string(ctx, -2, "set_shared");
 
+  duk_push_c_function(ctx, process_get_keys, 0);
+  duk_put_prop_string(ctx, -2, "get_keys");
+
+  duk_push_c_function(ctx, process_erase, 1);
+  duk_put_prop_string(ctx, -2, "erase");
+
   duk_pop(ctx);
 
   // mysqld = {
@@ -516,12 +557,26 @@ DuktapeStatementReader::DuktapeStatementReader(
       duk_pcompile_string(ctx, DUK_COMPILE_FUNCTION,
                           "function () {\n"
                           "  return new Proxy({}, {\n"
-                          "    get: function(targ, key, recv) {return "
-                          "process.get_shared(key);},\n"
-                          "    set: function(targ, key, val, recv) {return "
-                          "process.set_shared(key, val);}\n"
+                          "    ownKeys: function(target) {\n"
+                          "      process.get_keys().forEach(function(el) {\n"
+                          "        Object.defineProperty(\n"
+                          "          target, el, {\n"
+                          "            configurable: true,\n"
+                          "            enumerable: true});\n"
+                          "      });\n"
+                          "      return Object.keys(target);\n"
+                          "    },\n"
+                          "    get: function(target, key, recv) {\n"
+                          "      return process.get_shared(key);},\n"
+                          "    set: function(target, key, val, recv) {\n"
+                          "      return process.set_shared(key, val);},\n"
+                          "    deleteProperty: function(target, prop) {\n"
+                          "      if (process.erase(prop) > 0) {\n"
+                          "        delete target[prop];\n"
+                          "      }\n"
+                          "    },\n"
                           "  });\n"
-                          "}")) {
+                          "}\n")) {
     throw DuktapeRuntimeError(ctx, -1);
   }
   if (DUK_EXEC_SUCCESS != duk_pcall(ctx, 0)) {
@@ -587,14 +642,14 @@ HandshakeResponse DuktapeStatementReader::handle_handshake_init(
   duk_get_prop_string(ctx, -1, "handshake");
   if (!duk_is_undefined(ctx, -1)) {
     if (!duk_is_object(ctx, -1)) {
-      throw std::runtime_error("handshake must be a object, if set. Is " +
+      throw std::runtime_error("handshake must be an object, if set. Is " +
                                duk_get_type_names(ctx, -1));
     }
     duk_get_prop_string(ctx, -1, "greeting");
     if (!duk_is_undefined(ctx, -1)) {
       if (!duk_is_object(ctx, -1)) {
         throw std::runtime_error(
-            "handshake.greeting must be a object, if set. Is " +
+            "handshake.greeting must be an object, if set. Is " +
             duk_get_type_names(ctx, -1));
       }
       duk_get_prop_string(ctx, -1, "exec_time");
@@ -912,7 +967,7 @@ std::vector<AsyncNotice> DuktapeStatementReader::get_async_notices() {
     duk_get_prop_string(ctx, -1, "payload");
     if (!duk_is_undefined(ctx, -1)) {
       if (!duk_is_object(ctx, -1)) {
-        throw std::runtime_error("payload must be a object, if set, got " +
+        throw std::runtime_error("payload must be an object, if set, got " +
                                  duk_get_type_names(ctx, -1));
       }
 

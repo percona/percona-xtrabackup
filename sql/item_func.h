@@ -52,7 +52,7 @@
 #include "sql/field.h"
 #include "sql/handler.h"
 #include "sql/item.h"        // Item_result_field
-#include "sql/my_decimal.h"  // string2my_decimal
+#include "sql/my_decimal.h"  // str2my_decimal
 #include "sql/parse_tree_node_base.h"
 #include "sql/set_var.h"  // enum_var_type
 #include "sql/sql_const.h"
@@ -70,6 +70,7 @@ class sp_rcontext;
 struct MY_BITMAP;
 template <class T>
 class List;
+class QEP_TAB;
 
 /* Function items used by mysql */
 
@@ -176,6 +177,8 @@ class Item_func : public Item_result_field {
     MUL_FUNC,
     DIV_FUNC,
     CEILING_FUNC,
+    ROUND_FUNC,
+    TRUNCATE_FUNC,
     SQRT_FUNC,
     ABS_FUNC,
     FLOOR_FUNC,
@@ -190,6 +193,7 @@ class Item_func : public Item_result_field {
     ACOS_FUNC,
     MOD_FUNC,
     IF_FUNC,
+    NULLIF_FUNC,
     CASE_FUNC,
     YEAR_FUNC,
     MONTH_FUNC,
@@ -203,8 +207,10 @@ class Item_func : public Item_result_field {
     WEEK_FUNC,
     WEEKDAY_FUNC,
     DATEADD_FUNC,
+    TIMESTAMPDIFF_FUNC,
     DATETIME_LITERAL,
     GREATEST_FUNC,
+    COALESCE_FUNC,
     LEAST_FUNC,
     JSON_CONTAINS,
     JSON_OVERLAPS,
@@ -546,6 +552,28 @@ class Item_func : public Item_result_field {
       Item *arg MY_ATTRIBUTE((unused))) {
     return CACHE_NONE;
   }
+
+  /// Returns true if this Item has at least one condition that can be
+  /// implemented as hash join. A hash join condition is an equi-join condition
+  /// where one side of the condition refers to the right table, and the other
+  /// side of the condition refers to one or more of the left tables.
+  ///
+  /// @param left_tables the left tables in the join
+  /// @param right_table the right table of the join
+  ///
+  /// @retval true if the Item has at least one hash join condition
+  virtual bool has_any_hash_join_condition(
+      const table_map left_tables MY_ATTRIBUTE((unused)),
+      const QEP_TAB &right_table MY_ATTRIBUTE((unused))) const {
+    return false;
+  }
+
+  /// Returns true if this Item has at least one non equi-join condition.
+  /// A non equi-join condition is a condition where both sides refer to at
+  /// least one table, and the operator is not equals '='.
+  ///
+  /// @retval true if the Item has at least one non equi-join condition
+  virtual bool has_any_non_equi_join_condition() const { return false; }
 
  protected:
   /**
@@ -965,6 +993,7 @@ class Item_typecast_real final : public Item_func {
     else
       set_data_type_float();
   }
+  Item_typecast_real(Item *a) : Item_func(a) { set_data_type_double(); }
   String *val_str(String *str) override;
   double val_real() override;
   longlong val_int() override;
@@ -1299,6 +1328,9 @@ class Item_func_round final : public Item_func_num1 {
   longlong int_op() override;
   my_decimal *decimal_op(my_decimal *) override;
   bool resolve_type(THD *) override;
+  enum Functype functype() const override {
+    return truncate ? TRUNCATE_FUNC : ROUND_FUNC;
+  }
 };
 
 class Item_func_rand final : public Item_real_func {
@@ -2077,7 +2109,8 @@ class Item_func_udf_str : public Item_udf_func {
   my_decimal *val_decimal(my_decimal *dec_buf) override {
     String *res = val_str(&str_value);
     if (!res) return NULL;
-    string2my_decimal(E_DEC_FATAL_ERROR, res, dec_buf);
+    str2my_decimal(E_DEC_FATAL_ERROR, res->ptr(), res->length(), res->charset(),
+                   dec_buf);
     return dec_buf;
   }
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
@@ -2235,11 +2268,9 @@ class Item_master_gtid_set_wait final : public Item_int_func {
   String value;
 
  public:
-  Item_master_gtid_set_wait(const POS &pos, Item *a) : Item_int_func(pos, a) {}
-  Item_master_gtid_set_wait(const POS &pos, Item *a, Item *b)
-      : Item_int_func(pos, a, b) {}
-  Item_master_gtid_set_wait(const POS &pos, Item *a, Item *b, Item *c)
-      : Item_int_func(pos, a, b, c) {}
+  Item_master_gtid_set_wait(const POS &pos, Item *a);
+  Item_master_gtid_set_wait(const POS &pos, Item *a, Item *b);
+  Item_master_gtid_set_wait(const POS &pos, Item *a, Item *b, Item *c);
 
   bool itemize(Parse_context *pc, Item **res) override;
   longlong val_int() override;
@@ -3312,7 +3343,7 @@ class Item_func_match final : public Item_real_func {
   bool itemize(Parse_context *pc, Item **res) override;
 
   void cleanup() override {
-    DBUG_ENTER("Item_func_match::cleanup");
+    DBUG_TRACE;
     Item_real_func::cleanup();
     if (!master && ft_handler) {
       ft_handler->please->close_search(ft_handler);
@@ -3322,7 +3353,7 @@ class Item_func_match final : public Item_real_func {
     concat_ws = NULL;
     table_ref = NULL;  // required by Item_func_match::eq()
     master = NULL;
-    DBUG_VOID_RETURN;
+    return;
   }
   Item *key_item() const override { return against; }
   enum Functype functype() const override { return FT_FUNC; }
@@ -3790,7 +3821,7 @@ class Item_func_version final : public Item_static_string_func {
 
 Item *get_system_var(Parse_context *pc, enum_var_type var_type, LEX_STRING name,
                      LEX_STRING component);
-extern bool check_reserved_words(LEX_STRING *name);
+extern bool check_reserved_words(const char *name);
 extern enum_field_types agg_field_type(Item **items, uint nitems);
 double my_double_round(double value, longlong dec, bool dec_unsigned,
                        bool truncate);

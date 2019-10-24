@@ -497,6 +497,8 @@ const char *ut_strerr(dberr_t num) {
       return (
           "Cannot create tablespace since the filepath is too long for this "
           "OS");
+    case DB_BTREE_LEVEL_LIMIT_EXCEEDED:
+      return ("Btree level limit exceeded");
 
     case DB_PAGE_IS_BLANK:
       return ("Page is blank");
@@ -518,39 +520,35 @@ namespace ib {
 
 #if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS)
 
-logger::~logger() {
-  auto s = m_oss.str();
-
+void logger::log_event(std::string msg) {
 #if !(defined XTRABACKUP)
   LogEvent()
       .type(LOG_TYPE_ERROR)
       .prio(m_level)
       .errcode(m_err)
       .subsys("InnoDB")
-      .verbatim(s.c_str());
+      .verbatim(msg.c_str());
 #else
-  fprintf(stderr, "%s\n", s.c_str());
+  fprintf(stderr, "%s\n", msg.c_str());
 #endif
 }
+logger::~logger() { log_event(m_oss.str()); }
 
 fatal::~fatal() {
-  auto s = m_oss.str();
-
 #if !(defined XTRABACKUP)
-  LogEvent()
-      .type(LOG_TYPE_ERROR)
-      .prio(m_level)
-      .errcode(m_err)
-      .subsys("InnoDB")
-      .verbatim(s.c_str());
+  log_event("[FATAL] " + m_oss.str());
 #else
-  fprintf(stderr, "%s\n", s.c_str());
+  fprintf(stderr, "%s\n", m_oss.str().c_str());
 #endif
-
   ut_error;
 }
 
-fatal_or_error::~fatal_or_error() { ut_a(!m_fatal); }
+fatal_or_error::~fatal_or_error() {
+  if (m_fatal) {
+    log_event("[FATAL] " + m_oss.str());
+    ut_error;
+  }
+}
 
 #endif /* !UNIV_NO_ERR_MSGS */
 

@@ -303,7 +303,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
                         Field **default_field, bool group, bool modify_item,
                         bool table_cant_handle_bit_fields, bool make_copy_field,
                         bool copy_result_field) {
-  DBUG_ENTER("create_tmp_field");
+  DBUG_TRACE;
   Field *result = NULL;
   Item::Type orig_type = type;
   Item *orig_item = 0;
@@ -440,7 +440,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
       DBUG_ASSERT(false);
       break;
   }
-  DBUG_RETURN(result);
+  return result;
 }
 
 /*
@@ -622,6 +622,9 @@ static void register_hidden_field(TABLE *table, Field **default_field,
   from_field[-1] = NULL;
   field->table = field->orig_table = table;
   field->field_index = 0;
+
+  // Keep the field from being expanded by SELECT *.
+  field->set_hidden(dd::Column::enum_hidden_type::HT_HIDDEN_SQL);
 }
 
 /**
@@ -835,10 +838,11 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   /**
     When true, enforces unique constraint (by adding a hidden hash_field and
     creating a key over this field) when:
-    (1) unique key is too long or
-    (2) number of key parts in distinct key is too big.
+    (1) unique key is too long, or
+    (2) number of key parts in distinct key is too big, or
+    (3) the caller has requested it.
   */
-  bool using_unique_constraint = false;
+  bool unique_constraint_via_hash_field = false;
   bool use_packed_rows = false;
   const bool not_all_columns = !(select_options & TMP_TABLE_ALL_COLUMNS);
   uchar *pos, *group_buff, *bitmaps;
@@ -857,7 +861,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   uint max_key_length, max_key_part_length, max_key_parts;
   /* Treat sum functions as normal ones when loose index scan is used. */
   save_sum_fields |= param->precomputed_group_by;
-  DBUG_ENTER("create_tmp_table");
+  DBUG_TRACE;
   DBUG_PRINT("enter",
              ("distinct: %d  save_sum_fields: %d  rows_limit: %lu  group: %d",
               (int)distinct, (int)save_sum_fields, (ulong)rows_limit,
@@ -877,10 +881,11 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
         const uint char_len = (*tmp->item)->max_length /
                               (*tmp->item)->collation.collation->mbmaxlen;
         if (char_len > CONVERT_IF_BIGGER_TO_BLOB)
-          using_unique_constraint = true;
+          unique_constraint_via_hash_field = true;
       }
     if (group) {
-      if (param->group_length >= MAX_BLOB_WIDTH) using_unique_constraint = true;
+      if (param->group_length >= MAX_BLOB_WIDTH)
+        unique_constraint_via_hash_field = true;
       distinct = 0;  // Can't use distinct
     }
   }
@@ -900,7 +905,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   init_sql_alloc(key_memory_TABLE, &own_root, TABLE_ALLOC_BLOCK_SIZE, 0);
 
   void *rawmem = own_root.Alloc(sizeof(Func_ptr_array));
-  if (!rawmem) DBUG_RETURN(NULL); /* purecov: inspected */
+  if (!rawmem) return NULL; /* purecov: inspected */
   Func_ptr_array *copy_func = new (rawmem) Func_ptr_array(&own_root);
   copy_func->reserve(copy_func_count);
 
@@ -912,15 +917,16 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
           sizeof(Field *) * (field_count + 1), &param->keyinfo,
           sizeof(*param->keyinfo), &key_part_info,
           sizeof(*key_part_info) * (param->group_parts + 1), &group_buff,
-          (group && !using_unique_constraint ? param->group_length : 0),
+          (group && !unique_constraint_via_hash_field ? param->group_length
+                                                      : 0),
           &bitmaps, bitmap_buffer_size(field_count + 1) * 3, NullS)) {
-    DBUG_RETURN(NULL); /* purecov: inspected */
+    return NULL; /* purecov: inspected */
   }
 
   try {
     param->copy_fields.reserve(field_count);
   } catch (std::bad_alloc &) {
-    DBUG_RETURN(nullptr);
+    return nullptr;
   }
 
   param->items_to_copy = copy_func;
@@ -1142,10 +1148,10 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
       key or unique constraint. As blobs force unique constraint on their
       own due to their length, they aren't taken into account.
     */
-    if (distinct && !using_unique_constraint && hidden_field_count <= 0 &&
-        new_field) {
+    if (distinct && !unique_constraint_via_hash_field &&
+        hidden_field_count <= 0 && new_field) {
       if (new_field->flags & BLOB_FLAG)
-        using_unique_constraint = true;
+        unique_constraint_via_hash_field = true;
       else
         distinct_key_length += new_field->pack_length();
     }
@@ -1195,7 +1201,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 
   if (group && (param->group_parts > max_key_parts ||
                 param->group_length > max_key_length))
-    using_unique_constraint = true;
+    unique_constraint_via_hash_field = true;
   keyinfo = param->keyinfo;
   keyinfo->table = table;
   keyinfo->is_visible = true;
@@ -1214,18 +1220,19 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
     // Use key definition created below only if the key isn't too long.
     // Otherwise a dedicated key over a hash value will be created and this
     // definition will be used by server to calc hash.
-    if (!using_unique_constraint) {
+    if (!unique_constraint_via_hash_field) {
       table->key_info = share->key_info = keyinfo;
       keyinfo->key_part = key_part_info;
       keyinfo->flags = HA_NOSAME;
       keyinfo->usable_key_parts = keyinfo->user_defined_key_parts =
           param->group_parts;
       keyinfo->actual_key_parts = keyinfo->user_defined_key_parts;
+      share->key_parts = keyinfo->user_defined_key_parts;
       keyinfo->rec_per_key = 0;
       // keyinfo->algorithm is set later, when storage engine is known
       keyinfo->set_rec_per_key_array(NULL, NULL);
       keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
-      keyinfo->name = (char *)"<group_key>";
+      keyinfo->name = "<group_key>";
       ORDER *cur_group = group;
       for (; cur_group; cur_group = cur_group->next, key_part_info++) {
         Field *field = cur_group->field_in_tmp_table;
@@ -1235,7 +1242,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
         key_part_info->key_part_flag |= HA_END_SPACE_ARE_EQUAL;
 
         if (key_part_info->store_length > max_key_part_length) {
-          using_unique_constraint = true;
+          unique_constraint_via_hash_field = true;
           break;
         }
       }
@@ -1253,27 +1260,40 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
     DBUG_PRINT("info", ("hidden_field_count: %d", param->hidden_field_count));
     share->keys = 1;
     table->is_distinct = true;
-    if (!using_unique_constraint) {
+    if (!unique_constraint_via_hash_field) {
       Field **reg_field;
       keyinfo->user_defined_key_parts = field_count - param->hidden_field_count;
       keyinfo->actual_key_parts = keyinfo->user_defined_key_parts;
+      share->key_parts = keyinfo->user_defined_key_parts;
       if (!(key_part_info = new (&share->mem_root)
                 KEY_PART_INFO[keyinfo->user_defined_key_parts]))
         goto err;
       table->key_info = share->key_info = keyinfo;
       keyinfo->key_part = key_part_info;
       keyinfo->actual_flags = keyinfo->flags = HA_NOSAME | HA_NULL_ARE_EQUAL;
-      // TODO rename to <distinct_key>
-      keyinfo->name = (char *)"<auto_key>";
+      keyinfo->name = "<auto_distinct_key>";
       // keyinfo->algorithm is set later, when storage engine is known
-      keyinfo->set_rec_per_key_array(NULL, NULL);
       keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
+
+      // Set up records-per-key estimates.
+      ulong *rec_per_key =
+          share->mem_root.ArrayAlloc<ulong>(keyinfo->user_defined_key_parts);
+      rec_per_key_t *rec_per_key_float =
+          share->mem_root.ArrayAlloc<rec_per_key_t>(
+              keyinfo->user_defined_key_parts);
+      keyinfo->set_rec_per_key_array(rec_per_key, rec_per_key_float);
+      for (unsigned key_part_idx = 0;
+           key_part_idx < keyinfo->user_defined_key_parts; ++key_part_idx) {
+        keyinfo->rec_per_key[key_part_idx] = 0;
+        keyinfo->set_records_per_key(key_part_idx, REC_PER_KEY_UNKNOWN);
+      }
+
       /* Create a distinct key over the columns we are going to return */
       for (i = param->hidden_field_count, reg_field = table->field + i;
            i < field_count; i++, reg_field++, key_part_info++) {
         key_part_info->init_from_field(*reg_field);
         if (key_part_info->store_length > max_key_part_length) {
-          using_unique_constraint = true;
+          unique_constraint_via_hash_field = true;
           break;
         }
       }
@@ -1282,15 +1302,17 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 
   /*
     To enforce unique constraint we need to add a field to hold key's hash
-    A1) already detected unique constraint
-    A2) distinct key is too long
-    A3) number of keyparts in distinct key is too big
+    A1) distinct key is too long
+    A2) number of keyparts in distinct key is too big
+    A3) caller cannot accept distinct via indexes (e.g. because it wants
+        to turn off the checking at some point)
   */
-  if (using_unique_constraint ||               // 1
-      distinct_key_length > max_key_length ||  // 2
-      (distinct &&                             // 3
-       (fieldnr - param->hidden_field_count) > max_key_parts)) {
-    using_unique_constraint = true;
+  if (distinct_key_length > max_key_length ||  // 1
+      (distinct &&                             // 2
+       (fieldnr - param->hidden_field_count) > max_key_parts) ||
+      (distinct && param->force_hash_field_for_unique)  // 3
+  ) {
+    unique_constraint_via_hash_field = true;
   }
 
   if (setup_tmp_table_handler(table, select_options, false,
@@ -1300,14 +1322,14 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   if (table->s->keys == 1 && table->key_info)
     table->key_info->algorithm = table->file->get_default_index_algorithm();
 
-  if (using_unique_constraint) {
+  if (unique_constraint_via_hash_field) {
     Field_longlong *field = new (&share->mem_root)
         Field_longlong(sizeof(ulonglong), false, "<hash_field>", true);
     if (!field) {
       /* purecov: begin inspected */
       DBUG_ASSERT(thd->is_fatal_error());
       goto err;  // Got OOM
-      /* purecov: end */
+                 /* purecov: end */
     }
 
     // Mark hash_field as NOT NULL
@@ -1329,7 +1351,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 
   table->hidden_field_count = param->hidden_field_count;
 
-  if (!using_unique_constraint)
+  if (!unique_constraint_via_hash_field)
     reclength += group_null_items;  // null flag is stored separately
 
   if (blob_count == 0) {
@@ -1374,7 +1396,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
     uint length;
 
     if (!(field->flags & NOT_NULL_FLAG)) {
-      if (field->flags & GROUP_FLAG && !using_unique_constraint) {
+      if (field->flags & GROUP_FLAG && !unique_constraint_via_hash_field) {
         /*
           We have to reserve one byte here for NULL bits,
           as this is updated by 'end_update()'
@@ -1444,7 +1466,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   set_if_smaller(share->max_rows, rows_limit);
   param->end_write_records = rows_limit;
 
-  if (group && !using_unique_constraint) {
+  if (group && !unique_constraint_via_hash_field) {
     ORDER *cur_group = group;
     key_part_info = keyinfo->key_part;
     if (param->can_use_pk_for_unique) share->primary_key = 0;
@@ -1481,7 +1503,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   }
 
   if (distinct && field_count != param->hidden_field_count &&
-      !using_unique_constraint) {
+      !unique_constraint_via_hash_field) {
     null_pack_length -= hidden_null_pack_length;
     key_part_info = keyinfo->key_part;
     if (param->can_use_pk_for_unique) share->primary_key = 0;
@@ -1498,7 +1520,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
   }
 
   // Create a key over hash_field to enforce unique constraint
-  if (using_unique_constraint) {
+  if (unique_constraint_via_hash_field) {
     KEY *hash_key;
     KEY_PART_INFO *hash_kpi;
 
@@ -1507,6 +1529,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
                           NullS))
       goto err;
     table->key_info = share->key_info = hash_key;
+    share->key_parts = 1;
     hash_key->table = table;
     hash_key->key_part = hash_kpi;
     hash_key->actual_flags = hash_key->flags = HA_NULL_ARE_EQUAL;
@@ -1516,9 +1539,9 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
     hash_key->algorithm = table->file->get_default_index_algorithm();
     hash_key->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
     if (distinct)
-      hash_key->name = (char *)"<hash_distinct_key>";
+      hash_key->name = "<hash_distinct_key>";
     else
-      hash_key->name = (char *)"<hash_group_key>";
+      hash_key->name = "<hash_group_key>";
     hash_kpi->init_from_field(table->hash_field);
     hash_key->key_length = hash_kpi->store_length;
     param->keyinfo = hash_key;
@@ -1537,12 +1560,12 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 
   DEBUG_SYNC(thd, "tmp_table_created");
 
-  DBUG_RETURN(table);
+  return table;
 
 err:
   thd->mem_root = mem_root_save;
   free_tmp_table(thd, table); /* purecov: inspected */
-  DBUG_RETURN(NULL);          /* purecov: inspected */
+  return NULL;                /* purecov: inspected */
 }
 
 /**
@@ -1591,24 +1614,24 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
   uchar *group_buff;
   uchar *bitmaps;
   uint *blob_field;
-  bool using_unique_constraint = false;
+  bool unique_constraint_via_hash_field = false;
   Field *field, *key_field, *hash_field = nullptr;
   uint null_pack_length;
   uchar *null_flags;
   uchar *pos;
   uint i;
 
-  DBUG_ENTER("create_duplicate_weedout_tmp_table");
+  DBUG_TRACE;
   DBUG_ASSERT(!sjtbl || !sjtbl->is_confluent);
 
   DBUG_EXECUTE_IF("create_duplicate_weedout_tmp_table_error", {
     my_error(ER_UNKNOWN_ERROR, MYF(0));
-    DBUG_RETURN(nullptr);
+    return nullptr;
   });
 
   /* STEP 1: Figure if we'll be using a key or blob+constraint */
   if (uniq_tuple_length_arg > CONVERT_IF_BIGGER_TO_BLOB)
-    using_unique_constraint = true;
+    unique_constraint_via_hash_field = true;
 
   /* STEP 2: Allocate memory for temptable description */
   init_sql_alloc(key_memory_TABLE, &own_root, TABLE_ALLOC_BLOCK_SIZE, 0);
@@ -1616,9 +1639,10 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
           &own_root, &table, sizeof(*table), &share, sizeof(*share), &reg_field,
           sizeof(Field *) * (1 + 2), &blob_field, sizeof(uint) * 3, &keyinfo,
           sizeof(*keyinfo), &key_part_info, sizeof(*key_part_info) * 2,
-          &group_buff, (!using_unique_constraint ? uniq_tuple_length_arg : 0),
+          &group_buff,
+          (!unique_constraint_via_hash_field ? uniq_tuple_length_arg : 0),
           &bitmaps, bitmap_buffer_size(1) * 3, NullS)) {
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   /* STEP 3: Create TABLE description */
@@ -1634,7 +1658,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
   uint null_count = 0;
 
   /* Create the field */
-  if (using_unique_constraint) {
+  if (unique_constraint_via_hash_field) {
     Field_longlong *field = new (&share->mem_root)
         Field_longlong(sizeof(ulonglong), false, "<hash_field>", true);
     if (!field) {
@@ -1659,7 +1683,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
     */
     field = new (thd->mem_root) Field_varstring(
         uniq_tuple_length_arg, false, "rowids", share, &my_charset_bin);
-    if (!field) DBUG_RETURN(0);
+    if (!field) return 0;
     field->table = table;
     field->auto_flags = Field::NONE;
     field->flags = (NOT_NULL_FLAG | BINARY_FLAG | NO_DEFAULT_VALUE_FLAG);
@@ -1678,7 +1702,8 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
   }
 
   /* See also create_tmp_table() */
-  if (setup_tmp_table_handler(table, 0LL, using_unique_constraint, false))
+  if (setup_tmp_table_handler(table, 0LL, unique_constraint_via_hash_field,
+                              false))
     goto err;
 
   null_pack_length = 1;
@@ -1708,7 +1733,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
   }
 
   // Create a key over param->hash_field to enforce unique constraint
-  if (using_unique_constraint) {
+  if (unique_constraint_via_hash_field) {
     KEY *hash_key = keyinfo;
     KEY_PART_INFO *hash_kpi = key_part_info;
 
@@ -1741,10 +1766,11 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
     table->key_info->user_defined_key_parts = 1;
     table->key_info->usable_key_parts = 1;
     table->key_info->actual_key_parts = table->key_info->user_defined_key_parts;
+    share->key_parts = table->key_info->user_defined_key_parts;
     table->key_info->set_rec_per_key_array(NULL, NULL);
     table->key_info->algorithm = table->file->get_default_index_algorithm();
     table->key_info->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
-    table->key_info->name = (char *)"weedout_key";
+    table->key_info->name = "weedout_key";
   }
 
   if (thd->is_fatal_error())  // If end of memory
@@ -1755,13 +1781,13 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
   if (instantiate_tmp_table(thd, table)) goto err;
 
   thd->mem_root = mem_root_save;
-  DBUG_RETURN(table);
+  return table;
 
 err:
   thd->mem_root = mem_root_save;
   table->file->ha_index_or_rnd_end();
   free_tmp_table(thd, table); /* purecov: inspected */
-  DBUG_RETURN(NULL);          /* purecov: inspected */
+  return NULL;                /* purecov: inspected */
 }
 
 /****************************************************************************/
@@ -2126,7 +2152,7 @@ bool open_tmp_table(TABLE *table) {
 static bool create_tmp_table_with_fallback(TABLE *table) {
   TABLE_SHARE *share = table->s;
 
-  DBUG_ENTER("create_tmp_table_with_fallback");
+  DBUG_TRACE;
 
   HA_CREATE_INFO create_info;
 
@@ -2144,7 +2170,7 @@ static bool create_tmp_table_with_fallback(TABLE *table) {
       if ((*field)->type() == MYSQL_TYPE_STRING &&
           (*field)->key_length() > 1024) {
         my_error(ER_TOO_LONG_KEY, MYF(0), 1024);
-        DBUG_RETURN(true);
+        return true;
       }
     }
   }
@@ -2162,12 +2188,12 @@ static bool create_tmp_table_with_fallback(TABLE *table) {
   if (error) {
     table->file->print_error(error, MYF(0)); /* purecov: inspected */
     table->db_stat = 0;
-    DBUG_RETURN(true);
+    return true;
   } else {
     if (table->s->db_type() != temptable_hton) {
       table->in_use->inc_status_created_tmp_disk_tables();
     }
-    DBUG_RETURN(false);
+    return false;
   }
 }
 
@@ -2272,7 +2298,7 @@ bool instantiate_tmp_table(THD *thd, TABLE *table) {
 */
 void free_tmp_table(THD *thd, TABLE *entry) {
   const char *save_proc_info;
-  DBUG_ENTER("free_tmp_table");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("table: %s", entry->alias));
 
   save_proc_info = thd->proc_info;
@@ -2317,8 +2343,6 @@ void free_tmp_table(THD *thd, TABLE *entry) {
   }
 
   thd_proc_info(thd, save_proc_info);
-
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -2386,7 +2410,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
   bool rows_on_disk = false;
 #endif
   bool table_on_disk = false;
-  DBUG_ENTER("create_ondisk_from_heap");
+  DBUG_TRACE;
 
   if (error != HA_ERR_RECORD_FILE_FULL) {
     /*
@@ -2394,7 +2418,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
       INSERT IGNORE ... SELECT.
     */
     wtable->file->print_error(error, MYF(ME_FATALERROR));
-    DBUG_RETURN(1);
+    return 1;
   }
 
   if (wtable->s->db_type() != heap_hton) {
@@ -2405,7 +2429,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
       temptable_use_mmap to true to use mmap'ed files for temporary
       tables. */
       wtable->file->print_error(error, MYF(ME_FATALERROR));
-      DBUG_RETURN(1);
+      return 1;
     }
 
     /* If we are here, then the in-memory temporary tables need
@@ -2563,6 +2587,8 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
 
       /* remove heap table and change to use on-disk table */
 
+      // TODO(sgunders): Move this into MaterializeIterator when we remove the
+      // pre-iterator executor.
       if (table->pos_in_table_list &&
           table->pos_in_table_list->is_recursive_reference() &&
           table->file->inited) {
@@ -2630,6 +2656,8 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
       tab->quick()->set_handler(table->file);
     }
 
+    // TODO(sgunders): Move this into MaterializeIterator when we remove the
+    // pre-iterator executor.
     if (rec_ref_w_open_cursor) {
       /*
         The table just changed from MEMORY to INNODB. 'table' is a reader and
@@ -2642,8 +2670,15 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
         cursor after the same N rows in the InnoDB table.
       */
       if (psi_batch_started) table->file->start_psi_batch_mode();
-      if (reposition_innodb_cursor(table, qep_tab->m_fetched_rows))
-        goto err_after_proc_info; /* purecov: inspected */
+
+      // In the iterator executor, repositioning happens by
+      // means of an explicit call to
+      // FollowTailIterator::RepositionCursorAfterSpillToDisk().
+      // qep_tab->m_fetched_rows is not used.
+      if (qep_tab->recursive_iterator == nullptr) {
+        if (reposition_innodb_cursor(table, qep_tab->m_fetched_rows))
+          goto err_after_proc_info; /* purecov: inspected */
+      }
     }
 
     // Point 'table' back to old_share; *old_share will be updated after loop.
@@ -2673,7 +2708,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
     thd_proc_info(thd, (!strcmp(save_proc_info, "Copying to tmp table")
                             ? "Copying to tmp table on disk"
                             : save_proc_info));
-  DBUG_RETURN(0);
+  return 0;
 
 err_after_open:
   if (write_err) {
@@ -2690,7 +2725,7 @@ err_after_proc_info:
   thd_proc_info(thd, save_proc_info);
   // New share took control of old share mem_root; regain control:
   old_share->mem_root = std::move(share.mem_root);
-  DBUG_RETURN(1);
+  return 1;
 }
 
 /**

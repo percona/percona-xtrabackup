@@ -179,11 +179,11 @@ int init_io_cache_ext(IO_CACHE *info, File file, size_t cachesize,
   size_t min_cache;
   my_off_t pos;
   my_off_t end_of_file = ~(my_off_t)0;
-  DBUG_ENTER("init_io_cache_ext");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("cache: %p  type: %d  pos: %ld", info, (int)type,
                        (ulong)seek_offset));
 
-  DBUG_EXECUTE_IF("simulate_init_io_cache_failure", DBUG_RETURN(1););
+  DBUG_EXECUTE_IF("simulate_init_io_cache_failure", return 1;);
 
   info->file = file;
   info->file_key = file_key;
@@ -217,7 +217,7 @@ int init_io_cache_ext(IO_CACHE *info, File file, size_t cachesize,
   info->share = 0;
 
   if (!cachesize && !(cachesize = my_default_record_cache_size))
-    DBUG_RETURN(1); /* No cache requested */
+    return 1; /* No cache requested */
   min_cache = use_async_io ? IO_SIZE * 4 : IO_SIZE * 2;
   if (type == READ_CACHE ||
       type == SEQ_READ_APPEND) { /* Assume file isn't growing */
@@ -259,7 +259,7 @@ int init_io_cache_ext(IO_CACHE *info, File file, size_t cachesize,
         info->alloced_buffer = 1;
         break; /* Enough memory found */
       }
-      if (cachesize == min_cache) DBUG_RETURN(2); /* Can't alloc cache */
+      if (cachesize == min_cache) return 2; /* Can't alloc cache */
       /* Try with less memory */
       cachesize = (cachesize * 3 / 4 & ~(min_cache - 1));
     }
@@ -293,7 +293,7 @@ int init_io_cache_ext(IO_CACHE *info, File file, size_t cachesize,
   info->error = 0;
   info->type = type;
   init_functions(info);
-  DBUG_RETURN(0);
+  return 0;
 } /* init_io_cache_ext */
 
 /*
@@ -304,13 +304,17 @@ int init_io_cache_ext(IO_CACHE *info, File file, size_t cachesize,
 
   NOTE
     This function should be used if the IO_CACHE tempfile is not instrumented.
+    However, if a PSI key other than PSI_NOT_INSTRUMENTED is set explicitly,
+    that key will be used for instrumentation.
 */
 
 int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
                   enum cache_type type, my_off_t seek_offset, bool use_async_io,
                   myf cache_myflags) {
-  return init_io_cache_ext(info, file, cachesize, type, seek_offset,
-                           use_async_io, cache_myflags, key_file_io_cache);
+  return init_io_cache_ext(
+      info, file, cachesize, type, seek_offset, use_async_io, cache_myflags,
+      info->file_key != PSI_NOT_INSTRUMENTED ? info->file_key
+                                             : key_file_io_cache);
 }
 
 /*
@@ -323,7 +327,7 @@ int init_io_cache(IO_CACHE *info, File file, size_t cachesize,
 bool reinit_io_cache(IO_CACHE *info, enum cache_type type, my_off_t seek_offset,
                      bool use_async_io MY_ATTRIBUTE((unused)),
                      bool clear_cache) {
-  DBUG_ENTER("reinit_io_cache");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("cache: %p type: %d  seek_offset: %lu  clear_cache: %d",
                        info, type, (ulong)seek_offset, (int)clear_cache));
 
@@ -365,7 +369,7 @@ bool reinit_io_cache(IO_CACHE *info, enum cache_type type, my_off_t seek_offset,
     if (info->type == WRITE_CACHE && type == READ_CACHE)
       info->end_of_file = my_b_tell(info);
     /* flush cache if we want to reuse it */
-    if (!clear_cache && my_b_flush_io_cache(info, 1)) DBUG_RETURN(1);
+    if (!clear_cache && my_b_flush_io_cache(info, 1)) return 1;
     info->pos_in_file = seek_offset;
     /* Better to do always do a seek */
     info->seek_not_done = true;
@@ -382,7 +386,7 @@ bool reinit_io_cache(IO_CACHE *info, enum cache_type type, my_off_t seek_offset,
   info->error = 0;
   init_functions(info);
 
-  DBUG_RETURN(0);
+  return 0;
 } /* reinit_io_cache */
 
 /*
@@ -418,7 +422,7 @@ bool reinit_io_cache(IO_CACHE *info, enum cache_type type, my_off_t seek_offset,
 int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
   size_t length, diff_length, left_length, max_length;
   my_off_t pos_in_file;
-  DBUG_ENTER("_my_b_read");
+  DBUG_TRACE;
 
   /* If the buffer is not empty yet, copy what is available. */
   if ((left_length = (size_t)(info->read_end - info->read_pos))) {
@@ -450,7 +454,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
       */
       DBUG_ASSERT(my_errno() != ESPIPE);
       info->error = -1;
-      DBUG_RETURN(1);
+      return 1;
     }
   }
 
@@ -471,7 +475,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
     if (info->end_of_file <= pos_in_file) {
       /* End of file. Return, what we did copy from the buffer. */
       info->error = (int)left_length;
-      DBUG_RETURN(1);
+      return 1;
     }
     /*
       Crop the wanted count to a multiple of IO_SIZE and subtract,
@@ -487,7 +491,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
       */
       info->error =
           (read_length == (size_t)-1 ? -1 : (int)(read_length + left_length));
-      DBUG_RETURN(1);
+      return 1;
     }
     Count -= length;
     Buffer += length;
@@ -514,7 +518,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
     if (Count) {
       /* We couldn't fulfil the request. Return, how much we got. */
       info->error = (int)left_length;
-      DBUG_RETURN(1);
+      return 1;
     }
     length = 0; /* Didn't read any chars */
   } else if ((length = mysql_encryption_file_read(
@@ -529,7 +533,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
     /* For a read error, return -1, otherwise, what we got in total. */
     info->error = length == (size_t)-1 ? -1 : (int)(length + left_length);
     info->read_pos = info->read_end = info->buffer;
-    DBUG_RETURN(1);
+    return 1;
   }
   /*
     Count is the remaining number of bytes requested.
@@ -540,7 +544,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
   info->read_end = info->buffer + length;
   info->pos_in_file = pos_in_file;
   memcpy(Buffer, info->buffer, Count);
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*
@@ -613,7 +617,7 @@ int _my_b_read(IO_CACHE *info, uchar *Buffer, size_t Count) {
 
 void init_io_cache_share(IO_CACHE *read_cache, IO_CACHE_SHARE *cshare,
                          IO_CACHE *write_cache, uint num_threads) {
-  DBUG_ENTER("init_io_cache_share");
+  DBUG_TRACE;
   DBUG_PRINT("io_cache_share", ("read_cache: %p  share: %p  "
                                 "write_cache: %p  threads: %u",
                                 read_cache, cshare, write_cache, num_threads));
@@ -641,8 +645,6 @@ void init_io_cache_share(IO_CACHE *read_cache, IO_CACHE_SHARE *cshare,
   read_cache->current_end = NULL;
 
   if (write_cache) write_cache->share = cshare;
-
-  DBUG_VOID_RETURN;
 }
 
 /*
@@ -667,7 +669,7 @@ void init_io_cache_share(IO_CACHE *read_cache, IO_CACHE_SHARE *cshare,
 void remove_io_thread(IO_CACHE *cache) {
   IO_CACHE_SHARE *cshare = cache->share;
   uint total;
-  DBUG_ENTER("remove_io_thread");
+  DBUG_TRACE;
 
   /* If the writer goes, it needs to flush the write cache. */
   if (cache == cshare->source_cache) flush_io_cache(cache);
@@ -705,8 +707,6 @@ void remove_io_thread(IO_CACHE *cache) {
     mysql_cond_destroy(&cshare->cond);
     mysql_mutex_destroy(&cshare->mutex);
   }
-
-  DBUG_VOID_RETURN;
 }
 
 /*
@@ -739,7 +739,7 @@ void remove_io_thread(IO_CACHE *cache) {
 
 static int lock_io_cache(IO_CACHE *cache, my_off_t pos) {
   IO_CACHE_SHARE *cshare = cache->share;
-  DBUG_ENTER("lock_io_cache");
+  DBUG_TRACE;
 
   /* Enter the lock. */
   mysql_mutex_lock(&cshare->mutex);
@@ -761,7 +761,7 @@ static int lock_io_cache(IO_CACHE *cache, my_off_t pos) {
       DBUG_PRINT("io_cache_share", ("writer awoke, going to copy"));
 
       /* Stay locked. Leave the lock later by unlock_io_cache(). */
-      DBUG_RETURN(1);
+      return 1;
     }
 
     /* The last thread wakes the writer. */
@@ -802,7 +802,7 @@ static int lock_io_cache(IO_CACHE *cache, my_off_t pos) {
     if (!cshare->running_threads) {
       DBUG_PRINT("io_cache_share", ("last thread joined, going to read"));
       /* Stay locked. Leave the lock later by unlock_io_cache(). */
-      DBUG_RETURN(1);
+      return 1;
     }
 
     /*
@@ -822,7 +822,7 @@ static int lock_io_cache(IO_CACHE *cache, my_off_t pos) {
     if (!cshare->read_end || (cshare->pos_in_file < pos)) {
       DBUG_PRINT("io_cache_share", ("reader awoke, going to read"));
       /* Stay locked. Leave the lock later by unlock_io_cache(). */
-      DBUG_RETURN(1);
+      return 1;
     }
 
     /* Another thread did read the block already. */
@@ -838,7 +838,7 @@ static int lock_io_cache(IO_CACHE *cache, my_off_t pos) {
     filled the buffer did this and marked all threads as running.
   */
   mysql_mutex_unlock(&cshare->mutex);
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*
@@ -870,7 +870,7 @@ static int lock_io_cache(IO_CACHE *cache, my_off_t pos) {
 
 static void unlock_io_cache(IO_CACHE *cache) {
   IO_CACHE_SHARE *cshare = cache->share;
-  DBUG_ENTER("unlock_io_cache");
+  DBUG_TRACE;
   DBUG_PRINT("io_cache_share",
              ("%s: %p  pos: %lu  running: %u",
               (cache == cshare->source_cache) ? "writer" : "reader", cache,
@@ -879,7 +879,6 @@ static void unlock_io_cache(IO_CACHE *cache) {
   cshare->running_threads = cshare->total_threads;
   mysql_cond_broadcast(&cshare->cond);
   mysql_mutex_unlock(&cshare->mutex);
-  DBUG_VOID_RETURN;
 }
 
 /*
@@ -923,7 +922,7 @@ int _my_b_read_r(IO_CACHE *cache, uchar *Buffer, size_t Count) {
   my_off_t pos_in_file;
   size_t length, diff_length, left_length;
   IO_CACHE_SHARE *cshare = cache->share;
-  DBUG_ENTER("_my_b_read_r");
+  DBUG_TRACE;
 
   if ((left_length = (size_t)(cache->read_end - cache->read_pos))) {
     DBUG_ASSERT(Count >= left_length); /* User is not using my_b_read() */
@@ -945,7 +944,7 @@ int _my_b_read_r(IO_CACHE *cache, uchar *Buffer, size_t Count) {
       length = (size_t)(cache->end_of_file - pos_in_file);
     if (length == 0) {
       cache->error = (int)left_length;
-      DBUG_RETURN(1);
+      return 1;
     }
     if (lock_io_cache(cache, pos_in_file)) {
       /* With a synchronized write/read cache we won't come here... */
@@ -969,7 +968,7 @@ int _my_b_read_r(IO_CACHE *cache, uchar *Buffer, size_t Count) {
                                          MYF(0)) == MY_FILEPOS_ERROR) {
             cache->error = -1;
             unlock_io_cache(cache);
-            DBUG_RETURN(1);
+            return 1;
           }
         }
         len = mysql_encryption_file_read(cache, cache->buffer, length,
@@ -1006,7 +1005,7 @@ int _my_b_read_r(IO_CACHE *cache, uchar *Buffer, size_t Count) {
       DBUG_PRINT("io_cache_share", ("reader error. len %lu  left %lu",
                                     (ulong)len, (ulong)left_length));
       cache->error = (int)left_length;
-      DBUG_RETURN(1);
+      return 1;
     }
     cnt = (len > Count) ? Count : len;
     memcpy(Buffer, cache->read_pos, cnt);
@@ -1015,7 +1014,7 @@ int _my_b_read_r(IO_CACHE *cache, uchar *Buffer, size_t Count) {
     left_length += cnt;
     cache->read_pos += cnt;
   }
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*
@@ -1430,16 +1429,16 @@ int my_b_flush_io_cache(IO_CACHE *info, int need_append_buffer_lock) {
   size_t length;
   my_off_t pos_in_file;
   bool append_cache = (info->type == SEQ_READ_APPEND);
-  DBUG_ENTER("my_b_flush_io_cache");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("cache: %p", info));
 
   DBUG_EXECUTE_IF("simulate_error_during_flush_cache_to_file",
-                  { DBUG_RETURN(true); });
+                  { return true; });
   if (!append_cache) need_append_buffer_lock = 0;
 
   if (info->type == WRITE_CACHE || append_cache) {
     if (info->file == -1) {
-      if (real_open_cached_file(info)) DBUG_RETURN((info->error = -1));
+      if (real_open_cached_file(info)) return (info->error = -1);
     }
     LOCK_APPEND_BUFFER;
 
@@ -1461,7 +1460,7 @@ int my_b_flush_io_cache(IO_CACHE *info, int need_append_buffer_lock) {
         if (mysql_encryption_file_seek(info, pos_in_file, MY_SEEK_SET,
                                        MYF(0)) == MY_FILEPOS_ERROR) {
           UNLOCK_APPEND_BUFFER;
-          DBUG_RETURN((info->error = -1));
+          return (info->error = -1);
         }
         if (!append_cache) info->seek_not_done = false;
       }
@@ -1484,11 +1483,11 @@ int my_b_flush_io_cache(IO_CACHE *info, int need_append_buffer_lock) {
       info->append_read_pos = info->write_pos = info->write_buffer;
       ++info->disk_writes;
       UNLOCK_APPEND_BUFFER;
-      DBUG_RETURN(info->error);
+      return info->error;
     }
   }
   UNLOCK_APPEND_BUFFER;
-  DBUG_RETURN(0);
+  return 0;
 }
 
 /*
@@ -1511,7 +1510,7 @@ int my_b_flush_io_cache(IO_CACHE *info, int need_append_buffer_lock) {
 int end_io_cache(IO_CACHE *info) {
   int error = 0;
   IO_CACHE_CALLBACK pre_close;
-  DBUG_ENTER("end_io_cache");
+  DBUG_TRACE;
   DBUG_PRINT("enter", ("cache: %p", info));
 
   /*
@@ -1538,7 +1537,7 @@ int end_io_cache(IO_CACHE *info) {
     info->type = TYPE_NOT_SET;
     mysql_mutex_destroy(&info->append_buffer_lock);
   }
-  DBUG_RETURN(error);
+  return error;
 } /* end_io_cache */
 
 /**********************************************************************

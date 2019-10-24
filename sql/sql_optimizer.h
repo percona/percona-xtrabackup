@@ -276,7 +276,6 @@ class JOIN {
         plan_state(NO_PLAN),
         select_count(false) {
     rollup.state = ROLLUP::STATE_NONE;
-    tmp_table_param.end_write_records = HA_POS_ERROR;
     if (select->order_list.first) explain_flags.set(ESC_ORDER_BY, ESP_EXISTS);
     if (select->group_list.first) explain_flags.set(ESC_GROUP_BY, ESP_EXISTS);
     if (select->is_distinct()) explain_flags.set(ESC_DISTINCT, ESP_EXISTS);
@@ -918,10 +917,20 @@ class JOIN {
   unique_ptr_destroy_only<RowIterator> release_root_iterator() {
     return move(m_root_iterator);
   }
+  void set_root_iterator(unique_ptr_destroy_only<RowIterator> iterator) {
+    m_root_iterator = move(iterator);
+  }
 
  private:
   bool optimized;  ///< flag to avoid double optimization in EXPLAIN
-  bool executed;   ///< Set by exec(), reset by reset()
+
+  /**
+    Set by exec(), reset by reset(). Note that this needs to be set
+    _during_ the query (not only when it's done executing), or the
+    dynamic range optimizer will not understand which tables have been
+    read.
+   */
+  bool executed;
 
   /// Final execution plan state. Currently used only for EXPLAIN
   enum_plan_state plan_state;
@@ -1115,6 +1124,22 @@ class JOIN {
   void create_iterators();
 
   /**
+    Create iterators with the knowledge that there are going to be zero rows
+    coming from tables (before aggregation); typically because we know that
+    all of them would be filtered away by WHERE (e.g. SELECT * FROM t1
+    WHERE 1=2). This will normally yield no output rows, but if we have implicit
+    aggregation, it might yield a single one.
+   */
+  void create_iterators_for_zero_rows();
+
+  /** @{ Helpers for create_iterators. */
+  void create_table_iterators();
+  unique_ptr_destroy_only<RowIterator> create_root_iterator_for_join();
+  unique_ptr_destroy_only<RowIterator> attach_iterators_for_having_and_limit(
+      unique_ptr_destroy_only<RowIterator> iterator);
+  /** @} */
+
+  /**
     An iterator you can read from to get all records for this query.
 
     May be nullptr even after create_iterators() if the current query
@@ -1290,5 +1315,17 @@ class Candidate_table_order {
 };
 
 extern const char *antijoin_null_cond;
+
+/**
+  Checks if an Item, which is constant for execution, can be evaluated during
+  optimization. It cannot be evaluated if it contains a subquery and the
+  OPTION_NO_SUBQUERY_DURING_OPTIMIZATION query option is active.
+
+  @param item    the Item to check
+  @param select  the query block that contains the Item
+  @return false if this Item contains a subquery and subqueries cannot be
+  evaluated during optimization, or true otherwise
+*/
+bool evaluate_during_optimization(const Item *item, const SELECT_LEX *select);
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

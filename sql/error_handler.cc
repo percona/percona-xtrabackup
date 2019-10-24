@@ -287,8 +287,8 @@ static bool report_error(THD *thd, int error_code,
       return true;
     }
     case Sql_condition::SL_WARNING: {
-      push_warning_printf(thd, level, error_code, ER_THD(thd, error_code),
-                          args...);
+      push_warning_printf(thd, level, error_code,
+                          ER_THD_NONCONST(thd, error_code), args...);
       return true;
     }
     default: {
@@ -307,7 +307,7 @@ static bool report_error(THD *thd, int error_code,
       return true;
     }
     case Sql_condition::SL_WARNING: {
-      push_warning(thd, level, error_code, ER_THD(thd, error_code));
+      push_warning(thd, level, error_code, ER_THD_NONCONST(thd, error_code));
       return true;
     }
     default: {
@@ -488,16 +488,15 @@ bool Info_schema_error_handler::handle_condition(
 bool Foreign_key_error_handler::handle_condition(
     THD *, uint sql_errno, const char *, Sql_condition::enum_severity_level *,
     const char *) {
-  TABLE_LIST table;
   const TABLE_SHARE *share = m_table_handler->get_table_share();
 
   if (sql_errno == ER_NO_REFERENCED_ROW_2) {
     for (TABLE_SHARE_FOREIGN_KEY_INFO *fk = share->foreign_key;
          fk < share->foreign_key + share->foreign_keys; ++fk) {
-      table.init_one_table(
-          fk->referenced_table_db.str, fk->referenced_table_db.length,
-          fk->referenced_table_name.str, fk->referenced_table_name.length,
-          fk->referenced_table_name.str, TL_READ);
+      TABLE_LIST table(fk->referenced_table_db.str,
+                       fk->referenced_table_db.length,
+                       fk->referenced_table_name.str,
+                       fk->referenced_table_name.length, TL_READ);
       if (check_table_access(m_thd, TABLE_OP_ACLS, &table, true, 1, true)) {
         my_error(ER_NO_REFERENCED_ROW, MYF(0));
         return true;
@@ -507,10 +506,10 @@ bool Foreign_key_error_handler::handle_condition(
     for (TABLE_SHARE_FOREIGN_KEY_PARENT_INFO *fk_p = share->foreign_key_parent;
          fk_p < share->foreign_key_parent + share->foreign_key_parents;
          ++fk_p) {
-      table.init_one_table(
-          fk_p->referencing_table_db.str, fk_p->referencing_table_db.length,
-          fk_p->referencing_table_name.str, fk_p->referencing_table_name.length,
-          fk_p->referencing_table_name.str, TL_READ);
+      TABLE_LIST table(fk_p->referencing_table_db.str,
+                       fk_p->referencing_table_db.length,
+                       fk_p->referencing_table_name.str,
+                       fk_p->referencing_table_name.length, TL_READ);
       if (check_table_access(m_thd, TABLE_OP_ACLS, &table, true, 1, true)) {
         my_error(ER_ROW_IS_REFERENCED, MYF(0));
         return true;

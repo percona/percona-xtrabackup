@@ -29,6 +29,7 @@
 #include <NdbDictionaryImpl.hpp>
 
 #include <Vector.hpp>
+#include <inttypes.h>
 // STL
 #include <cmath>
 
@@ -1102,6 +1103,17 @@ NdbImportUtil::Row::Row()
 NdbImportUtil::Row::~Row()
 {
   delete [] m_data;
+
+  for (uint i = 0; i < m_blobs.size(); ++i)
+  {
+    Blob* blob = m_blobs[i];
+    if (blob != NULL)
+    {
+      delete blob;
+    }
+  }
+
+  m_blobs.clear();
 }
 
 void
@@ -1400,11 +1412,8 @@ NdbImportUtil::alloc_rows(const Table& table, uint cnt, RowList& dst)
 }
 
 void
-NdbImportUtil::free_row(Row* row)
+NdbImportUtil::free_blobs_from_row(Row *row)
 {
-  RowList& rows = *c_rows_free;
-  rows.lock();
-  
   for (uint i = 0; i < row->m_blobs.size(); ++i)
   {
     Blob* blob = row->m_blobs[i];
@@ -1414,7 +1423,15 @@ NdbImportUtil::free_row(Row* row)
     }
   }
   row->m_blobs.clear();
+}
 
+void
+NdbImportUtil::free_row(Row* row)
+{
+  free_blobs_from_row(row);
+
+  RowList& rows = *c_rows_free;
+  rows.lock();
   rows.push_back(row);
   rows.unlock();
 }
@@ -1422,9 +1439,16 @@ NdbImportUtil::free_row(Row* row)
 void
 NdbImportUtil::free_rows(RowList& src)
 {
+  RowList blob_freed_rows;
+  while (!src.empty())
+  {
+    Row *one_row = src.pop_front();
+    free_blobs_from_row(one_row);
+    blob_freed_rows.push_back(one_row);
+  }
   RowList& rows = *c_rows_free;
   rows.lock();
-  rows.push_back_from(src);
+  rows.push_back_from(blob_freed_rows);
   rows.unlock();
 }
 
@@ -2707,7 +2731,7 @@ NdbImportUtil::File::do_seek(uint64 offset)
 #endif
   {
     m_util.set_error_os(m_error, __LINE__,
-                        "%s: lseek %llu failed", path, offset);
+                        "%s: lseek %" PRIu64 " failed", path, offset);
     return -1;
   }
   return 0;
@@ -2982,7 +3006,7 @@ NdbImportUtil::Timer::stop()
     m_start = m_stop;
   }
   struct ndb_rusage ru;
-  if (Ndb_GetRUsage(&ru) == 0)
+  if (Ndb_GetRUsage(&ru, false) == 0)
   {
     m_utime_msec = ru.ru_utime / 1000;
     m_stime_msec = ru.ru_stime / 1000;
@@ -3943,7 +3967,7 @@ testmain()
   if (mycase("teststat") && teststat() != 0)
     return -1;
   struct ndb_rusage ru;
-  require(Ndb_GetRUsage(&ru) == 0);
+  require(Ndb_GetRUsage(&ru, false) == 0);
   ndbout << "utime=" << ru.ru_utime/1000
          << " stime=" << ru.ru_stime/1000 << " (ms)" << endl;
   return 0;

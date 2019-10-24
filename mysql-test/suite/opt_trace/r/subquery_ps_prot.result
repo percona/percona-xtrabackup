@@ -3034,10 +3034,18 @@ TRACE
           {
             "rows_estimation": [
               {
-                "table": "`q`"
+                "table": "`q`",
+                "table_scan": {
+                  "rows": 2,
+                  "cost": 2.525
+                } /* table_scan */
               },
               {
-                "table": "`q` `q1`"
+                "table": "`q` `q1`",
+                "table_scan": {
+                  "rows": 2,
+                  "cost": 2.525
+                } /* table_scan */
               }
             ] /* rows_estimation */
           },
@@ -3213,18 +3221,18 @@ TRACE
             } /* creating_tmp_table */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 3,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           }
         ] /* steps */
       } /* join_execution */
@@ -3260,32 +3268,25 @@ show_json_object('"join_execution": {', TRACE)
             } /* creating_tmp_table */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 3,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 3,
               "steps": [
               ] /* steps */
-            } /* join_execution */
-          },
-          {
-            "join_execution": {
-              "select#": 3,
-              "steps": [
-              ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           }
         ] /* steps */
       } 
@@ -3317,18 +3318,18 @@ show_json_object('"join_execution": {', TRACE)
             } /* creating_tmp_table */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 2,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           },
           {
-            "join_execution": {
+            "materialize": {
               "select#": 3,
               "steps": [
               ] /* steps */
-            } /* join_execution */
+            } /* materialize */
           }
         ] /* steps */
       } 

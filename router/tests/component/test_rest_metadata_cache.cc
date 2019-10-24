@@ -49,6 +49,8 @@
 
 #include "mysqlrouter/rest_client.h"
 
+using namespace std::chrono_literals;
+
 static const std::string http_auth_realm_name("somerealm");
 static const std::string http_auth_backend_name("somebackend");
 
@@ -331,8 +333,8 @@ TEST_P(RestMetadataCacheApiTest, ensure_openapi) {
       &default_section_)};
 
   // delay the wait until we really need it.
-  ASSERT_TRUE(wait_for_port_ready(metadata_server_port_, 5000))
-      << md_server.get_full_output();
+  ASSERT_NO_FATAL_FAILURE(
+      check_port_ready(md_server, metadata_server_port_, 5000ms));
   auto &router_proc{launch_router({"-c", conf_file})};
 
   g_refresh_succeeded = 0;
@@ -789,8 +791,8 @@ TEST_F(RestMetadataCacheApiTest, metadata_cache_api_no_auth) {
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
   auto &router = launch_router({"-c", conf_file}, EXIT_FAILURE);
 
-  const unsigned wait_for_process_exit_timeout{10000};
-  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), EXIT_FAILURE);
+  const auto wait_for_process_exit_timeout{10000ms};
+  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string router_output = router.get_full_logfile();
   EXPECT_NE(
@@ -817,8 +819,8 @@ TEST_F(RestMetadataCacheApiTest, invalid_realm) {
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
   auto &router = launch_router({"-c", conf_file}, EXIT_FAILURE);
 
-  const unsigned wait_for_process_exit_timeout{10000};
-  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), EXIT_FAILURE);
+  const auto wait_for_process_exit_timeout{10000ms};
+  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string router_output = router.get_full_logfile();
   EXPECT_NE(router_output.find(
@@ -843,8 +845,8 @@ TEST_F(RestMetadataCacheApiTest, metadata_cache_api_no_rest_api) {
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
   auto &router = launch_router({"-c", conf_file}, EXIT_FAILURE);
 
-  const unsigned wait_for_process_exit_timeout{10000};
-  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), EXIT_FAILURE);
+  const auto wait_for_process_exit_timeout{10000ms};
+  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string router_output = router.get_full_output();
   EXPECT_NE(router_output.find("Plugin 'rest_metadata_cache' needs plugin "
@@ -872,7 +874,7 @@ TEST_F(RestMetadataCacheApiTest, metadata_cache_api_no_rest_api) {
 //  auto router = launch_router({"-c", conf_file});
 
 //  const unsigned wait_for_process_exit_timeout{10000};
-//  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), 1);
+//  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
 //  const std::string router_output = router.get_full_output();
 //  EXPECT_NE(router_output.find("Plugin 'rest_metadata_cache' needs plugin "
@@ -903,8 +905,8 @@ TEST_F(RestMetadataCacheApiTest, rest_metadata_cache_section_twice) {
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
   auto &router = launch_router({"-c", conf_file}, EXIT_FAILURE);
 
-  const unsigned wait_for_process_exit_timeout{10000};
-  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), EXIT_FAILURE);
+  const auto wait_for_process_exit_timeout{10000ms};
+  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string router_output = router.get_full_output();
   EXPECT_NE(
@@ -932,8 +934,8 @@ TEST_F(RestMetadataCacheApiTest, rest_metadata_cache_section_has_key) {
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
   auto &router = launch_router({"-c", conf_file}, EXIT_FAILURE);
 
-  const unsigned wait_for_process_exit_timeout{10000};
-  EXPECT_EQ(router.wait_for_exit(wait_for_process_exit_timeout), EXIT_FAILURE);
+  const auto wait_for_process_exit_timeout{10000ms};
+  check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string router_output = router.get_full_logfile();
   EXPECT_NE(

@@ -420,7 +420,7 @@ void dtuple_print(std::ostream &o, const dtuple_t *tuple) {
 
 big_rec_t *dtuple_convert_big_rec(dict_index_t *index, upd_t *upd,
                                   dtuple_t *entry, ulint *n_ext) {
-  DBUG_ENTER("dtuple_convert_big_rec");
+  DBUG_TRACE;
 
   mem_heap_t *heap;
   big_rec_t *vector;
@@ -432,7 +432,7 @@ big_rec_t *dtuple_convert_big_rec(dict_index_t *index, upd_t *upd,
   ulint local_prefix_len;
 
   if (!index->is_clustered()) {
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   if (!dict_table_has_atomic_blobs(index->table)) {
@@ -523,7 +523,7 @@ big_rec_t *dtuple_convert_big_rec(dict_index_t *index, upd_t *upd,
 
       mem_heap_free(heap);
 
-      DBUG_RETURN(NULL);
+      return NULL;
     }
 
     /* Move data from field longest_i to big rec vector.
@@ -611,7 +611,7 @@ big_rec_t *dtuple_convert_big_rec(dict_index_t *index, upd_t *upd,
   }
 
   ut_ad(n_fields == vector->n_fields);
-  DBUG_RETURN(vector);
+  return vector;
 }
 
 void dtuple_convert_back_big_rec(dtuple_t *entry, big_rec_t *vector) {

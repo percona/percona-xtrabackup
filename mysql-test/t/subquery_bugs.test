@@ -450,6 +450,7 @@ INSERT INTO t1 VALUES (3, 'K');
 INSERT INTO t1 VALUES (4, 'v');
 INSERT INTO t1 VALUES (5, 'E');
 
+ANALYZE TABLE t1, t2;
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE pk IN ( SELECT pk FROM t1 LEFT JOIN v2 USING (pk) WHERE f1 >= 'o' );
 
 DROP TABLE t1, t2;
@@ -508,6 +509,8 @@ INSERT INTO t1 VALUES (1,100,'x'),(2,200,'y');
 CREATE TABLE t2 (
   f2 varchar(1)
 );
+
+ANALYZE TABLE t1, t2;
 
 EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN t1 AS t3 ON t1.pk = t3.pk AND t1.f2 IN ( SELECT f2 FROM t2 )
 WHERE EXISTS ( SELECT * FROM t1 AS t4, t2 AS t5 ) AND t1.f1 = 80 AND t1.pk > t1.f1;
@@ -607,6 +610,8 @@ CREATE TABLE t4 (
 );
 INSERT INTO t4 VALUES (6,2),(34,3);
 
+ANALYZE TABLE t1, t2, t3, t4;
+
 set optimizer_switch='firstmatch=off';
 
 # Creates a weedout that overlaps with the right side of an outer join.
@@ -624,6 +629,19 @@ eval $query;
 DROP TABLE t1, t2, t3, t4;
 
 set optimizer_switch=default;
+
+--echo #
+--echo # Bug #29693294: ASSERTION FAILURE M_INDEX_CURSOR.IS_POSITIONED() | SRC/HANDLER.CC
+--echo #
+
+# Sorts inside weedouts need to be by row ID (see JOIN::add_sorting_to_table()).
+# The EXPLAIN demonstrates it, and running the query verifies that it doesn't crash.
+CREATE TABLE t1 ( pk integer, f1 varchar(1) );
+INSERT INTO t1 VALUES (1,'D'), (20,'G');
+ANALYZE TABLE t1;
+EXPLAIN FORMAT=TREE SELECT * FROM ( SELECT DISTINCT * FROM t1 ) AS d0 LEFT JOIN t1 ON d0.pk IN ( SELECT 1 FROM t1 ) ORDER BY d0.f1;
+SELECT * FROM ( SELECT DISTINCT * FROM t1 ) AS d0 LEFT JOIN t1 ON d0.pk IN ( SELECT 1 FROM t1 ) ORDER BY d0.f1;
+DROP TABLE t1;
 
 --echo #
 --echo # Bug#29664504 REGRESSION: CRASHING FROM ITEM_FUNC_AS_WKT::VAL_STR_ASCII()
@@ -668,4 +686,78 @@ INSERT INTO t1 VALUES(1),(2),(3);
 --error ER_SUBQUERY_NO_1_ROW
 SELECT 1 FROM t1 WHERE
 (EXISTS(SELECT 1 FROM t1 WHERE (SELECT 1 FROM t1 WINDOW w1 AS())))/1;
+DROP TABLE t1;
+
+--echo # Bug#29525304 Sig 6 at Item_in_subselect::val_int()
+
+CREATE TABLE t1 (vc varchar(1) NOT NULL);
+
+CREATE VIEW v1 AS SELECT * FROM t1 WHERE 5 IN (SELECT 1) IS UNKNOWN;
+
+DROP VIEW v1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #29889223: SIG 6 AT TEMPTABLE::HANDLER::UPDATE_ROW | SRC/HANDLER.CC
+--echo #
+
+set optimizer_switch='block_nested_loop=off,batched_key_access=off';
+
+CREATE TABLE t1 (
+  field1 integer
+);
+INSERT INTO t1 VALUES (13);
+
+CREATE TABLE t2 (
+  field2 integer
+);
+INSERT INTO t2 VALUES (18);
+
+CREATE TABLE t3 (
+  field3 integer
+);
+INSERT INTO t3 VALUES (1);
+
+# Set up a query where we have weedout of a streamed materialization,
+# which verifies that we have working row IDs on the temporary table
+# used for streaming.
+#
+# We don't care about the result of the output; it should just not crash.
+UPDATE t3 SET field3 = 9 WHERE field3 IN (
+  SELECT 1
+  FROM ( SELECT * FROM t2 ) AS alias1
+  WHERE EXISTS ( SELECT * FROM t1 WHERE field1 <> alias1.field2 )
+);
+
+DROP TABLE t1, t2, t3;
+set optimizer_switch=default;
+
+--echo #
+--echo # Bug #29836364: WL#13000: SIG 11 AT COST_SKIP_SCAN() | SQL/OPT_RANGE.CC
+--echo #
+
+CREATE TABLE t1 (
+  f1 integer NOT NULL PRIMARY KEY,
+  f2 varchar(1),
+  KEY f2_idx (f2)
+);
+
+INSERT INTO t1 VALUES (20,'2');
+
+ANALYZE TABLE t1;
+
+# Essentially verifies that running the range optimizer on a three-table
+# JOIN during execution (“re-planned for each iteration”) doesn't crash.
+# If it does, it's typically because the range optimizer doesn't know which
+# join it is working over.
+let $query = SELECT (
+        SELECT t2.f2 FROM t1 JOIN (
+                t1 AS t2 LEFT JOIN t1 AS t3 USING (f2)
+        ) ON t3.f2 = t2.f2
+        WHERE t2.f1 > table1.f2
+) FROM t1 AS table1;
+
+eval explain format=tree $query;
+eval $query;
+
 DROP TABLE t1;

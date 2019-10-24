@@ -29,8 +29,12 @@
 
 #include "my_inttypes.h"
 #include "scope_guard.h"
+#include "sql/basic_row_iterators.h"
 #include "sql/debug_sync.h"
+#include "sql/derror.h"
+#include "sql/error_handler.h"
 #include "sql/field.h"
+#include "sql/filesort.h"
 #include "sql/handler.h"
 #include "sql/item.h"
 #include "sql/item_sum.h"
@@ -44,10 +48,12 @@
 #include "sql/sql_join_buffer.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_optimizer.h"
+#include "sql/sql_show.h"
 #include "sql/sql_tmp_table.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/temp_table_param.h"
+#include "sql/timing_iterator.h"
 
 class Opt_trace_context;
 template <class T>
@@ -497,13 +503,6 @@ int AggregateIterator::Read() {
   return 1;
 }
 
-void AggregateIterator::UnlockRow() {
-  // Most likely, HAVING failed. Ideally, we'd like to backtrack and
-  // unlock all rows that went into this aggregate, but we can't do that,
-  // and we also can't unlock the _current_ row, since that belongs to a
-  // different group. Thus, do nothing.
-}
-
 vector<string> AggregateIterator::DebugString() const {
   Item_sum **sum_funcs_end =
       m_rollup ? m_join->sum_funcs_end[m_join->send_group_parts]
@@ -556,10 +555,6 @@ int PrecomputedAggregateIterator::Read() {
   return 0;
 }
 
-void PrecomputedAggregateIterator::UnlockRow() {
-  // See AggregateIterator::UnlockRow().
-}
-
 vector<string> PrecomputedAggregateIterator::DebugString() const {
   string ret;
 
@@ -592,7 +587,9 @@ bool NestedLoopIterator::Init() {
     return true;
   }
   m_state = NEEDS_OUTER_ROW;
-  m_source_inner->EndPSIBatchModeIfStarted();
+  if (m_pfs_batch_mode) {
+    m_source_inner->EndPSIBatchModeIfStarted();
+  }
   return false;
 }
 
@@ -624,7 +621,7 @@ int NestedLoopIterator::Read() {
                 m_state == READING_FIRST_INNER_ROW);
 
     int err = m_source_inner->Read();
-    if (err != 0) {
+    if (err != 0 && m_pfs_batch_mode) {
       m_source_inner->EndPSIBatchModeIfStarted();
     }
     if (err == 1) {
@@ -693,31 +690,67 @@ vector<string> CacheInvalidatorIterator::DebugString() const {
 }
 
 MaterializeIterator::MaterializeIterator(
-    THD *thd, unique_ptr_destroy_only<RowIterator> subquery_iterator,
-    Temp_table_param *tmp_table_param, TABLE *table,
-    unique_ptr_destroy_only<RowIterator> table_iterator,
-    const Common_table_expr *cte, SELECT_LEX *select_lex, JOIN *join,
-    int ref_slice, bool copy_fields_and_items, bool rematerialize,
-    ha_rows limit_rows)
+    THD *thd, Mem_root_array<QueryBlock> query_blocks_to_materialize,
+    TABLE *table, unique_ptr_destroy_only<RowIterator> table_iterator,
+    const Common_table_expr *cte, SELECT_LEX_UNIT *unit, JOIN *join,
+    int ref_slice, bool rematerialize, ha_rows limit_rows)
     : TableRowIterator(thd, table),
-      m_subquery_iterator(move(subquery_iterator)),
+      m_query_blocks_to_materialize(std::move(query_blocks_to_materialize)),
       m_table_iterator(move(table_iterator)),
       m_cte(cte),
-      m_tmp_table_param(tmp_table_param),
-      m_select_lex(select_lex),
+      m_unit(unit),
       m_join(join),
       m_ref_slice(ref_slice),
-      m_copy_fields_and_items(copy_fields_and_items),
       m_rematerialize(rematerialize),
       m_limit_rows(limit_rows),
-      m_invalidators(thd->mem_root) {}
+      m_invalidators(thd->mem_root) {
+  if (ref_slice != -1) {
+    DBUG_ASSERT(m_join != nullptr);
+  }
+  if (m_join != nullptr) {
+    DBUG_ASSERT(m_query_blocks_to_materialize.size() == 1);
+    DBUG_ASSERT(m_query_blocks_to_materialize[0].join == m_join);
+  }
+}
+
+MaterializeIterator::MaterializeIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> subquery_iterator,
+    Temp_table_param *temp_table_param, TABLE *table,
+    unique_ptr_destroy_only<RowIterator> table_iterator,
+    const Common_table_expr *cte, int select_number, SELECT_LEX_UNIT *unit,
+    JOIN *join, int ref_slice, bool copy_fields_and_items, bool rematerialize,
+    ha_rows limit_rows)
+    : TableRowIterator(thd, table),
+      m_query_blocks_to_materialize(thd->mem_root, 1),
+      m_table_iterator(move(table_iterator)),
+      m_cte(cte),
+      m_unit(unit),
+      m_join(join),
+      m_ref_slice(ref_slice),
+      m_rematerialize(rematerialize),
+      m_limit_rows(limit_rows),
+      m_invalidators(thd->mem_root) {
+  DBUG_ASSERT(m_table_iterator != nullptr);
+  DBUG_ASSERT(subquery_iterator != nullptr);
+
+  QueryBlock &query_block = m_query_blocks_to_materialize[0];
+  query_block.subquery_iterator = move(subquery_iterator);
+  query_block.select_number = select_number;
+  query_block.join = join;
+  query_block.copy_fields_and_items = copy_fields_and_items;
+  query_block.temp_table_param = temp_table_param;
+}
 
 bool MaterializeIterator::Init() {
   if (!table()->materialized && table()->pos_in_table_list != nullptr &&
       table()->pos_in_table_list->is_view_or_derived()) {
     // Create the table if it's the very first time.
-    // TODO: Figure out why this is done only for derived tables and views,
-    // not for e.g. sort materialization.
+    //
+    // TODO(sgunders): create_materialized_table() calls
+    // instantiate_tmp_table(), and then has some logic to deal with more
+    // complicated cases like multiple reference to the same CTE.
+    // Consider unifying this with the instantiate_tmp_table() case below
+    // (which is used for e.g. materialization for sorting).
     if (table()->pos_in_table_list->create_materialized_table(thd())) {
       return true;
     }
@@ -761,101 +794,58 @@ bool MaterializeIterator::Init() {
   }
   table()->set_not_started();
 
-  {
-    Opt_trace_context *const trace = &thd()->opt_trace;
-    Opt_trace_object trace_wrapper(trace);
-    Opt_trace_object trace_exec(trace, "materialize");
-    trace_exec.add_select_number(m_select_lex->select_number);
-    Opt_trace_array trace_steps(trace, "steps");
-
-    if (m_subquery_iterator->Init()) {
-      // Nothing should really enable PSI batch mode from Init(), since nothing
-      // calls Read() from Init() without also being capable of cleaning up
-      // (e.g. MaterializeIterator); see the comment in
-      // LimitOffsetIterator::Read(). Nevertheless, just to be sure, we clean up
-      // here.
-      if (m_join->qep_tab != nullptr && m_join->primary_tables > 0) {
-        QEP_TAB *last_qep_tab = &m_join->qep_tab[m_join->primary_tables - 1];
-        last_qep_tab->table()->file->end_psi_batch_mode_if_started();
-      }
+  if (!table()->is_created()) {
+    if (instantiate_tmp_table(thd(), table())) {
       return true;
     }
-
-    if (!table()->is_created()) {
-      if (instantiate_tmp_table(thd(), table())) {
-        return true;
-      }
-      empty_record(table());
-    } else if (table()->file->inited) {
+    empty_record(table());
+  } else {
+    if (table()->file->inited) {
       // If we're being called several times (in particular, as part of a
       // LATERAL join), the table iterator may have started a scan, so end it
       // before we start our own.
+      //
+      // If we're in a recursive CTE, this also provides a signal to
+      // FollowTailIterator that we're starting a new recursive materalization.
       table()->file->ha_index_or_rnd_end();
     }
-
     table()->file->ha_delete_all_rows();
-    m_join->unit->clear_corr_ctes();
-
-    // If we are removing duplicates by way of a hash field
-    // (see doing_hash_deduplication() for an explanation), we need to
-    // initialize scanning of the index over that hash field. (This is entirely
-    // separate from any index usage when reading back the materialized table;
-    // m_table_iterator will do that for us.)
-    auto end_unique_index =
-        create_scope_guard([&] { table()->file->ha_index_end(); });
-    if (doing_hash_deduplication()) {
-      if (table()->file->ha_index_init(0, 0)) {
-        return true;
-      }
-    } else {
-      // We didn't open the index, so we don't need to close it.
-      end_unique_index.commit();
-    }
-
-    PFSBatchMode pfs_batch_mode(&m_join->qep_tab[m_join->const_tables], m_join);
-    ha_rows stored_rows = 0;
-    while (stored_rows < m_limit_rows) {
-      int error = m_subquery_iterator->Read();
-      if (error > 0 || thd()->is_error())
-        return true;
-      else if (error < 0)
-        break;
-      else if (thd()->killed) {
-        thd()->send_kill_message();
-        return true;
-      }
-
-      // Materialize items for this row.
-      if (m_copy_fields_and_items) {
-        if (copy_fields_and_funcs(m_tmp_table_param, thd())) return true;
-      }
-
-      if (!check_unique_constraint(table())) continue;
-
-      error = table()->file->ha_write_row(table()->record[0]);
-      if (error == 0) {
-        ++stored_rows;
-        continue;
-      }
-      // create_ondisk_from_heap will generate error if needed.
-      if (!table()->file->is_ignorable_error(error)) {
-        bool is_duplicate;
-        if (create_ondisk_from_heap(thd(), table(), error, true, &is_duplicate))
-          return true; /* purecov: inspected */
-        // Table's engine changed; index is not initialized anymore.
-        if (table()->hash_field) table()->file->ha_index_init(0, false);
-        ++stored_rows;
-      } else {
-        // An ignorable error means duplicate key, ie. we deduplicated
-        // away the row. This is seemingly separate from
-        // check_unique_constraint(), which only checks hash indexes.
-      }
-    }
-
-    end_unique_index.rollback();
-
-    table()->materialized = true;
   }
+
+  if (m_unit != nullptr) {
+    m_unit->clear_correlated_query_blocks();
+  }
+
+  // If we are removing duplicates by way of a hash field
+  // (see doing_hash_deduplication() for an explanation), we need to
+  // initialize scanning of the index over that hash field. (This is entirely
+  // separate from any index usage when reading back the materialized table;
+  // m_table_iterator will do that for us.)
+  auto end_unique_index =
+      create_scope_guard([&] { table()->file->ha_index_end(); });
+  if (doing_hash_deduplication()) {
+    if (table()->file->ha_index_init(0, /*sorted=*/false)) {
+      return true;
+    }
+  } else {
+    // We didn't open the index, so we don't need to close it.
+    end_unique_index.commit();
+  }
+
+  if (m_unit != nullptr && m_unit->is_recursive()) {
+    if (MaterializeRecursive()) return true;
+  } else {
+    ha_rows stored_rows = 0;
+    for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+      if (MaterializeQueryBlock(query_block, &stored_rows)) return true;
+      if (stored_rows >= m_limit_rows) {
+        break;
+      }
+    }
+  }
+
+  end_unique_index.rollback();
+  table()->materialized = true;
 
   if (!m_rematerialize) {
     DEBUG_SYNC(thd(), "after_materialize_derived");
@@ -869,13 +859,223 @@ bool MaterializeIterator::Init() {
   return m_table_iterator->Init();
 }
 
+/**
+  Recursive materialization happens much like regular materialization,
+  but some steps are repeated multiple times. Our general strategy is:
+
+    1. Materialize all non-recursive query blocks, once.
+
+    2. Materialize all recursive query blocks in turn.
+
+    3. Repeat #2 until no query block writes any more rows (ie., we have
+       converged) -- for UNION DISTINCT queries, rows removed by deduplication
+       do not count. Each materialization sees only rows that were newly added
+       since the previous iteration; see FollowTailIterator for more details
+       on the implementation.
+
+  Note that the result table is written to while other iterators are still
+  reading from it; again, see FollowTailIterator. This means that each run
+  of #2 can potentially run many actual CTE iterations -- possibly the entire
+  query to completion if we have only one query block.
+
+  This is not how the SQL standard specifies recursive CTE execution
+  (it assumes building up the new result set from scratch for each iteration,
+  using the previous iteration's results), but it is equivalent, and more
+  efficient for the class of queries we support, since we don't need to
+  re-create the same rows over and over again.
+ */
+bool MaterializeIterator::MaterializeRecursive() {
+  /*
+    For RECURSIVE, beginners will forget that:
+    - the CTE's column types are defined by the non-recursive member
+    - which implies that recursive member's selected expressions are cast to
+    the non-recursive member's type.
+    That will cause silent truncation and possibly an infinite recursion due
+    to a condition like: 'LENGTH(growing_col) < const', or,
+    'growing_col < const',
+    which is always satisfied due to truncation.
+
+    This situation is similar to
+    create table t select "x" as a;
+    insert into t select concat("x",a) from t;
+    which sends ER_DATA_TOO_LONG in strict mode.
+
+    So we should inform the user.
+
+    If we only raised warnings: it will not interrupt an infinite recursion,
+    a MAX_RECURSION hint (if we featured one) may interrupt; but then the
+    warnings won't be seen, as the interruption will raise an error. So
+    warnings are useless.
+    Instead, we send a truncation error: it is visible, indicates the
+    source of the problem, and is consistent with the INSERT case above.
+
+    Usually, truncation in SELECT triggers an error only in
+    strict mode; but if we don't send an error we get a runaway query;
+    and as WITH RECURSIVE is a new feature we don't have to carry the
+    permissiveness of the past, so we send an error even if in non-strict
+    mode.
+
+    For a non-recursive UNION, truncation shouldn't happen as all UNION
+    members participated in type calculation.
+  */
+  Strict_error_handler strict_handler(
+      Strict_error_handler::ENABLE_SET_SELECT_STRICT_ERROR_HANDLER);
+  enum_check_fields save_check_for_truncated_fields{};
+  bool set_error_handler = thd()->is_strict_mode();
+  if (set_error_handler) {
+    save_check_for_truncated_fields = thd()->check_for_truncated_fields;
+    thd()->check_for_truncated_fields = CHECK_FIELD_WARN;
+    thd()->push_internal_handler(&strict_handler);
+  }
+  auto cleanup_handler = create_scope_guard(
+      [this, set_error_handler, save_check_for_truncated_fields] {
+        if (set_error_handler) {
+          thd()->pop_internal_handler();
+          thd()->check_for_truncated_fields = save_check_for_truncated_fields;
+        }
+      });
+
+  DBUG_ASSERT(m_limit_rows == HA_POS_ERROR);
+
+  ha_rows stored_rows = 0;
+
+  // Give each recursive iterator access to the stored number of rows
+  // (see FollowTailIterator::Read() for details).
+  for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+    if (query_block.is_recursive_reference) {
+      query_block.recursive_reader->set_stored_rows_pointer(&stored_rows);
+    }
+  }
+
+#ifndef DBUG_OFF
+  // Trash the pointers on exit, to ease debugging of dangling ones to the
+  // stack.
+  auto pointer_cleanup = create_scope_guard([this] {
+    for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+      if (query_block.is_recursive_reference) {
+        query_block.recursive_reader->set_stored_rows_pointer(nullptr);
+      }
+    }
+  });
+#endif
+
+  // First, materialize all non-recursive query blocks.
+  for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+    if (!query_block.is_recursive_reference) {
+      if (MaterializeQueryBlock(query_block, &stored_rows)) return true;
+    }
+  }
+
+  // Then, materialize all recursive query blocks until we converge.
+  Opt_trace_context &trace = thd()->opt_trace;
+  bool disabled_trace = false;
+  ha_rows last_stored_rows;
+  do {
+    last_stored_rows = stored_rows;
+    for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+      if (query_block.is_recursive_reference) {
+        if (MaterializeQueryBlock(query_block, &stored_rows)) return true;
+      }
+    }
+
+    /*
+      If recursive query blocks have been executed at least once, and repeated
+      executions should not be traced, disable tracing, unless it already is
+      disabled.
+    */
+    if (!disabled_trace &&
+        !trace.feature_enabled(Opt_trace_context::REPEATED_SUBSELECT)) {
+      trace.disable_I_S_for_this_and_children();
+      disabled_trace = true;
+    }
+  } while (stored_rows > last_stored_rows);
+
+  if (disabled_trace) {
+    trace.restore_I_S();
+  }
+  return false;
+}
+
+bool MaterializeIterator::MaterializeQueryBlock(const QueryBlock &query_block,
+                                                ha_rows *stored_rows) {
+  Opt_trace_context *const trace = &thd()->opt_trace;
+  Opt_trace_object trace_wrapper(trace);
+  Opt_trace_object trace_exec(trace, "materialize");
+  trace_exec.add_select_number(query_block.select_number);
+  Opt_trace_array trace_steps(trace, "steps");
+
+  JOIN *join = query_block.join;
+  if (join != nullptr) {
+    join->set_executed();  // The dynamic range optimizer expects this.
+  }
+
+  if (query_block.subquery_iterator->Init()) {
+    return true;
+  }
+
+  PFSBatchMode pfs_batch_mode(query_block.subquery_iterator.get());
+  while (*stored_rows < m_limit_rows) {
+    int error = query_block.subquery_iterator->Read();
+    if (error > 0 || thd()->is_error())
+      return true;
+    else if (error < 0)
+      break;
+    else if (thd()->killed) {
+      thd()->send_kill_message();
+      return true;
+    }
+
+    // Materialize items for this row.
+    if (query_block.copy_fields_and_items) {
+      if (copy_fields_and_funcs(query_block.temp_table_param, thd()))
+        return true;
+    }
+
+    if (query_block.disable_deduplication_by_hash_field) {
+      DBUG_ASSERT(doing_hash_deduplication());
+    } else if (!check_unique_constraint(table())) {
+      continue;
+    }
+
+    error = table()->file->ha_write_row(table()->record[0]);
+    if (error == 0) {
+      ++*stored_rows;
+      continue;
+    }
+    // create_ondisk_from_heap will generate error if needed.
+    if (!table()->file->is_ignorable_error(error)) {
+      bool is_duplicate;
+      if (create_ondisk_from_heap(thd(), table(), error, true, &is_duplicate))
+        return true; /* purecov: inspected */
+      // Table's engine changed; index is not initialized anymore.
+      if (table()->hash_field) table()->file->ha_index_init(0, false);
+      if (!is_duplicate) ++*stored_rows;
+
+      // Inform each reader that the table has changed under their feet,
+      // so they'll need to reposition themselves.
+      for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+        if (query_block.is_recursive_reference) {
+          query_block.recursive_reader->RepositionCursorAfterSpillToDisk();
+        }
+      }
+    } else {
+      // An ignorable error means duplicate key, ie. we deduplicated
+      // away the row. This is seemingly separate from
+      // check_unique_constraint(), which only checks hash indexes.
+    }
+  }
+
+  return false;
+}
+
 int MaterializeIterator::Read() {
   /*
     Enable the items which one should use if one wants to evaluate
     anything (e.g. functions in WHERE, HAVING) involving columns of this
     table.
   */
-  if (m_join != nullptr && m_ref_slice != -1) {
+  if (m_ref_slice != -1) {
+    DBUG_ASSERT(m_join != nullptr);
     if (!m_join->ref_items[m_ref_slice].is_null()) {
       m_join->set_ref_item_slice(m_ref_slice);
     }
@@ -893,7 +1093,7 @@ vector<string> MaterializeIterator::DebugString() const {
   vector<string> ret;
   RowIterator *sub_iterator = m_table_iterator.get();
   for (;;) {
-    for (string str : sub_iterator->DebugString()) {
+    for (string str : FullDebugString(thd(), *sub_iterator)) {
       if (sub_iterator->children().size() > 1) {
         // This can happen if e.g. a filter has subqueries in it.
         // TODO: Consider having a RowIterator::parent(), so that we can
@@ -906,36 +1106,33 @@ vector<string> MaterializeIterator::DebugString() const {
     sub_iterator = sub_iterator->children()[0].iterator;
   }
 
+  const bool is_union = m_query_blocks_to_materialize.size() > 1;
   string str;
-  if (m_cte != nullptr) {
-    if (m_cte->tmp_tables.size() == 1) {
-      str = "Materialize CTE " + to_string(m_cte->name);
+
+  if (m_cte != nullptr && m_cte->recursive) {
+    str = "Materialize recursive CTE " + to_string(m_cte->name);
+  } else if (m_cte != nullptr) {
+    if (is_union) {
+      str = "Materialize union CTE " + to_string(m_cte->name);
     } else {
-      str = "Materialize CTE " + to_string(m_cte->name) + " if needed";
+      str = "Materialize CTE " + to_string(m_cte->name);
+    }
+    if (m_cte->tmp_tables.size() > 1) {
+      str += " if needed";
       if (m_cte->tmp_tables[0]->table != table()) {
         // See children().
         str += " (query plan printed elsewhere)";
       }
     }
+  } else if (is_union) {
+    str = "Union materialize";
   } else if (m_rematerialize) {
     str = "Temporary table";
   } else {
     str = "Materialize";
   }
 
-  // We assume that if there's an unique index, it has to be used for
-  // deduplication.
-  bool any_unique_index = false;
-  if (table()->key_info != nullptr) {
-    for (size_t i = 0; i < table()->s->keys; ++i) {
-      if ((table()->key_info[i].flags & HA_NOSAME) != 0) {
-        any_unique_index = true;
-        break;
-      }
-    }
-  }
-
-  if (doing_hash_deduplication() || any_unique_index) {
+  if (doing_deduplication()) {
     str += " with deduplication";
   }
 
@@ -967,10 +1164,11 @@ vector<RowIterator::Child> MaterializeIterator::children() const {
   }
 
   char heading[256] = "";
+
   if (m_limit_rows != HA_POS_ERROR) {
     // We call this “Limit table size” as opposed to “Limit”, to be able
     // to distinguish between the two in EXPLAIN when debugging.
-    if (doing_hash_deduplication() || table()->key_info != nullptr) {
+    if (doing_deduplication()) {
       snprintf(heading, sizeof(heading), "Limit table size: %llu unique row(s)",
                m_limit_rows);
     } else {
@@ -982,7 +1180,53 @@ vector<RowIterator::Child> MaterializeIterator::children() const {
   // We don't list the table iterator as an explicit child; we mark it in
   // our DebugString() instead. (Anything else would look confusingly much
   // like a join.)
-  return vector<Child>{{m_subquery_iterator.get(), heading}};
+  vector<Child> ret;
+  for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+    string this_heading = heading;
+
+    if (query_block.disable_deduplication_by_hash_field) {
+      if (this_heading.empty()) {
+        this_heading = "Disable deduplication";
+      } else {
+        this_heading += ", disable deduplication";
+      }
+    }
+
+    if (query_block.is_recursive_reference) {
+      if (this_heading.empty()) {
+        this_heading = "Repeat until convergence";
+      } else {
+        this_heading += ", repeat until convergence";
+      }
+    }
+
+    ret.emplace_back(Child{query_block.subquery_iterator.get(), this_heading});
+  }
+  return ret;
+}
+
+void MaterializeIterator::EndPSIBatchModeIfStarted() {
+  for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
+    query_block.subquery_iterator->EndPSIBatchModeIfStarted();
+  }
+  m_table_iterator->EndPSIBatchModeIfStarted();
+}
+
+bool MaterializeIterator::doing_deduplication() const {
+  if (doing_hash_deduplication()) {
+    return true;
+  }
+
+  // We assume that if there's an unique index, it has to be used for
+  // deduplication.
+  if (table()->key_info != nullptr) {
+    for (size_t i = 0; i < table()->s->keys; ++i) {
+      if ((table()->key_info[i].flags & HA_NOSAME) != 0) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 void MaterializeIterator::AddInvalidator(
@@ -996,15 +1240,78 @@ void MaterializeIterator::AddInvalidator(
   // (create_iterators() always sets rematerialize=true for such cases).
 }
 
+StreamingIterator::StreamingIterator(
+    THD *thd, unique_ptr_destroy_only<RowIterator> subquery_iterator,
+    Temp_table_param *temp_table_param, TABLE *table,
+    bool copy_fields_and_items)
+    : TableRowIterator(thd, table),
+      m_subquery_iterator(move(subquery_iterator)),
+      m_temp_table_param(temp_table_param),
+      m_copy_fields_and_items(copy_fields_and_items) {
+  DBUG_ASSERT(m_subquery_iterator != nullptr);
+
+  // If we have weedout in this query, it will expect to have row IDs that
+  // uniquely identify each row, so calling position() will fail (since we
+  // do not actually write these rows to anywhere). Use the row number as a
+  // fake ID; since the real handler on this temporary table is never called,
+  // it is safe to replace it with something of the same length.
+  //
+  // We notify other iterators that we provide the row ID so that they won't
+  // try to call position(), but will just blindly trust the pointer we give it.
+  // But only do so if a row ID is actually needed for this table. Otherwise,
+  // iterators above us might start copying the row ID when it is not needed.
+  QEP_TAB *qep_tab = table->reginfo.qep_tab;
+  m_provide_rowid =
+      qep_tab != nullptr && qep_tab->rowid_status != NO_ROWID_NEEDED;
+  if (m_provide_rowid) {
+    qep_tab->rowid_status = ROWID_PROVIDED_BY_ITERATOR_READ_CALL;
+
+    if (table->file->ref_length < sizeof(m_row_number)) {
+      table->file->ref_length = sizeof(m_row_number);
+      table->file->ref = nullptr;
+    }
+    if (table->file->ref == nullptr) {
+      table->file->ref =
+          pointer_cast<uchar *>(thd->mem_calloc(table->file->ref_length));
+    }
+  }
+}
+
+bool StreamingIterator::Init() {
+  if (m_provide_rowid) {
+    memset(table()->file->ref, 0, table()->file->ref_length);
+  }
+
+  m_row_number = 0;
+  return m_subquery_iterator->Init();
+}
+
+int StreamingIterator::Read() {
+  int error = m_subquery_iterator->Read();
+  if (error != 0) return error;
+
+  // Materialize items for this row.
+  if (m_copy_fields_and_items) {
+    if (copy_fields_and_funcs(m_temp_table_param, thd())) return 1;
+  }
+
+  if (m_provide_rowid) {
+    memcpy(table()->file->ref, &m_row_number, sizeof(m_row_number));
+    ++m_row_number;
+  }
+
+  return 0;
+}
+
 TemptableAggregateIterator::TemptableAggregateIterator(
     THD *thd, unique_ptr_destroy_only<RowIterator> subquery_iterator,
-    Temp_table_param *tmp_table_param, TABLE *table,
+    Temp_table_param *temp_table_param, TABLE *table,
     unique_ptr_destroy_only<RowIterator> table_iterator, SELECT_LEX *select_lex,
     JOIN *join, int ref_slice)
     : TableRowIterator(thd, table),
       m_subquery_iterator(move(subquery_iterator)),
       m_table_iterator(move(table_iterator)),
-      m_tmp_table_param(tmp_table_param),
+      m_temp_table_param(temp_table_param),
       m_select_lex(select_lex),
       m_join(join),
       m_ref_slice(ref_slice) {}
@@ -1028,14 +1335,15 @@ bool TemptableAggregateIterator::Init() {
       return true;
     }
     empty_record(table());
-  } else if (table()->file->inited) {
-    // If we're being called several times (in particular, as part of a
-    // LATERAL join), the table iterator may have started a scan, so end it
-    // before we start our own.
-    table()->file->ha_index_or_rnd_end();
+  } else {
+    if (table()->file->inited) {
+      // If we're being called several times (in particular, as part of a
+      // LATERAL join), the table iterator may have started a scan, so end it
+      // before we start our own.
+      table()->file->ha_index_or_rnd_end();
+    }
+    table()->file->ha_delete_all_rows();
   }
-
-  table()->file->ha_delete_all_rows();
 
   // Initialize the index used for finding the groups.
   if (table()->file->ha_index_init(0, 0)) {
@@ -1044,7 +1352,7 @@ bool TemptableAggregateIterator::Init() {
   auto end_unique_index =
       create_scope_guard([&] { table()->file->ha_index_end(); });
 
-  PFSBatchMode pfs_batch_mode(&m_join->qep_tab[m_join->const_tables], m_join);
+  PFSBatchMode pfs_batch_mode(m_subquery_iterator.get());
   for (;;) {
     int error = m_subquery_iterator->Read();
     if (error > 0 || thd()->is_error())  // Fatal error
@@ -1058,12 +1366,12 @@ bool TemptableAggregateIterator::Init() {
     }
 
     // See comment below.
-    DBUG_ASSERT(m_tmp_table_param->grouped_expressions.size() == 0);
+    DBUG_ASSERT(m_temp_table_param->grouped_expressions.size() == 0);
 
     // Materialize items for this row. Note that groups are copied twice.
     // (FIXME: Is this comment really still current? It seems to date back
     // to pre-2000, but I can't see that it's really true.)
-    if (copy_fields(m_tmp_table_param, thd()))
+    if (copy_fields(m_temp_table_param, thd()))
       return 1; /* purecov: inspected */
 
     // See if we have seen this row already; if so, we want to update it,
@@ -1077,7 +1385,7 @@ bool TemptableAggregateIterator::Init() {
         evaluation of functions to be copied when 2nd and further records
         in group are found.
       */
-      if (copy_funcs(m_tmp_table_param, thd()))
+      if (copy_funcs(m_temp_table_param, thd()))
         return 1; /* purecov: inspected */
       group_found = !check_unique_constraint(table());
     } else {
@@ -1088,7 +1396,7 @@ bool TemptableAggregateIterator::Init() {
         if (item->maybe_null)
           group->buff[-1] = (char)group->field_in_tmp_table->is_null();
       }
-      const uchar *key = m_tmp_table_param->group_buff;
+      const uchar *key = m_temp_table_param->group_buff;
       group_found = !table()->file->ha_index_read_map(
           table()->record[1], key, HA_WHOLE_KEY, HA_READ_KEY_EXACT);
     }
@@ -1142,7 +1450,7 @@ bool TemptableAggregateIterator::Init() {
           memcpy(table()->record[0] + key_part->offset - 1, group->buff - 1, 1);
       }
       /* See comment on copy_funcs above. */
-      if (copy_funcs(m_tmp_table_param, thd())) return 1;
+      if (copy_funcs(m_temp_table_param, thd())) return 1;
     }
     init_tmptable_sum_functions(m_join->sum_funcs);
     error = table()->file->ha_write_row(table()->record[0]);
@@ -1155,7 +1463,7 @@ bool TemptableAggregateIterator::Init() {
          to UTC for this query". This is a temporary measure until we implement
          WL#13148 (Do all internal handling TIMESTAMP in UTC timezone), which
          will make such problem impossible.
-     */
+       */
       if (error == HA_ERR_FOUND_DUPP_KEY) {
         for (ORDER *group = table()->group; group; group = group->next) {
           if (group->field_in_tmp_table->type() == MYSQL_TYPE_TIMESTAMP) {
@@ -1201,7 +1509,7 @@ int TemptableAggregateIterator::Read() {
 }
 
 vector<string> TemptableAggregateIterator::DebugString() const {
-  vector<string> ret = m_table_iterator->DebugString();
+  vector<string> ret = FullDebugString(thd(), *m_table_iterator);
   ret.push_back("Aggregate using temporary table");
   return ret;
 }
@@ -1237,10 +1545,21 @@ bool MaterializedTableFunctionIterator::Init() {
 WeedoutIterator::WeedoutIterator(THD *thd,
                                  unique_ptr_destroy_only<RowIterator> source,
                                  SJ_TMP_TABLE *sj)
-    : RowIterator(thd), m_source(move(source)), m_sj(sj) {
+    : RowIterator(thd),
+      m_source(move(source)),
+      m_sj(sj),
+      m_rowid_status(PSI_NOT_INSTRUMENTED) {
   // Confluent weedouts should have been rewritten to LIMIT 1 earlier.
   DBUG_ASSERT(!m_sj->is_confluent);
   DBUG_ASSERT(m_sj->tmp_table != nullptr);
+
+  // Cache the value of rowid_status, as iterators above this one may change the
+  // value later (see QEP_TAB::rowid_status for details around this). The value
+  // indicates whether it is safe to call position().
+  for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
+    DBUG_ASSERT(tab->qep_tab->rowid_status != NO_ROWID_NEEDED);
+    m_rowid_status.push_back(tab->qep_tab->rowid_status);
+  }
 }
 
 bool WeedoutIterator::Init() {
@@ -1258,10 +1577,11 @@ int WeedoutIterator::Read() {
       return ret;
     }
 
+    size_t tmp_table_idx = 0;
     for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
       TABLE *table = tab->qep_tab->table();
-      if (!(table->is_nullable() && table->has_null_row()) &&
-          !table->const_table) {
+      if (m_rowid_status[tmp_table_idx++] == NEED_TO_CALL_POSITION_FOR_ROWID &&
+          can_call_position(table)) {
         table->file->position(table->record[0]);
       }
     }
@@ -1637,4 +1957,124 @@ int BufferingWindowingIterator::ReadBufferedRow(bool new_partition_or_eof) {
 
 vector<string> BufferingWindowingIterator::DebugString() const {
   return {"Window aggregate with buffering"};
+}
+
+MaterializeInformationSchemaTableIterator::
+    MaterializeInformationSchemaTableIterator(
+        THD *thd, QEP_TAB *qep_tab,
+        unique_ptr_destroy_only<RowIterator> table_iterator)
+    : RowIterator(thd),
+      m_table_iterator(move(table_iterator)),
+      m_qep_tab(qep_tab) {}
+
+bool MaterializeInformationSchemaTableIterator::Init() {
+  TABLE_LIST *const table_list = m_qep_tab->table_ref;
+
+  table_list->table->file->ha_extra(HA_EXTRA_RESET_STATE);
+  table_list->table->file->ha_delete_all_rows();
+  free_io_cache(table_list->table);
+  table_list->table->set_not_started();
+
+  if (do_fill_information_schema_table(thd(), table_list, m_qep_tab)) {
+    return true;
+  }
+
+  table_list->schema_table_state = PROCESSED_BY_JOIN_EXEC;
+
+  return m_table_iterator->Init();
+}
+
+vector<string> MaterializeInformationSchemaTableIterator::DebugString() const {
+  // The table iterator could be a whole string of iterators
+  // (sort, filter, etc.) due to add_sorting_to_table(), so show them all.
+  //
+  // TODO(sgunders): Make the optimizer put these above us instead (or perhaps
+  // better yet, on the subquery iterator), so that table_iterator is
+  // always just a single basic iterator.
+  vector<string> ret;
+  RowIterator *sub_iterator = m_table_iterator.get();
+  for (;;) {
+    for (string str : sub_iterator->DebugString()) {
+      if (sub_iterator->children().size() > 1) {
+        // This can happen if e.g. a filter has subqueries in it.
+        // TODO(sgunders): Consider having a RowIterator::parent(), so that we
+        // can show the entire tree.
+        str += " [other sub-iterators not shown]";
+      }
+      ret.push_back(str);
+    }
+    if (sub_iterator->children().empty()) break;
+    sub_iterator = sub_iterator->children()[0].iterator;
+  }
+  ret.push_back("Fill information schema table " +
+                string(m_qep_tab->table()->alias));
+  return ret;
+}
+
+AppendIterator::AppendIterator(
+    THD *thd, std::vector<unique_ptr_destroy_only<RowIterator>> &&sub_iterators)
+    : RowIterator(thd), m_sub_iterators(move(sub_iterators)) {
+  DBUG_ASSERT(!m_sub_iterators.empty());
+}
+
+bool AppendIterator::Init() {
+  m_current_iterator_index = 0;
+  m_pfs_batch_mode_enabled = false;
+  return m_sub_iterators[0]->Init();
+}
+
+int AppendIterator::Read() {
+  if (m_current_iterator_index >= m_sub_iterators.size()) {
+    // Already exhausted all iterators.
+    return -1;
+  }
+  int err = m_sub_iterators[m_current_iterator_index]->Read();
+  if (err != -1) {
+    // A row, or error.
+    return err;
+  }
+
+  // EOF. Go to the next iterator.
+  m_sub_iterators[m_current_iterator_index]->EndPSIBatchModeIfStarted();
+  if (++m_current_iterator_index >= m_sub_iterators.size()) {
+    return -1;
+  }
+  if (m_sub_iterators[m_current_iterator_index]->Init()) {
+    return 1;
+  }
+  if (m_pfs_batch_mode_enabled) {
+    m_sub_iterators[m_current_iterator_index]->StartPSIBatchMode();
+  }
+  return Read();  // Try again, with the new iterator as current.
+}
+
+vector<RowIterator::Child> AppendIterator::children() const {
+  vector<Child> children;
+  for (const unique_ptr_destroy_only<RowIterator> &child : m_sub_iterators) {
+    children.emplace_back(Child{child.get(), ""});
+  }
+  return children;
+}
+
+void AppendIterator::SetNullRowFlag(bool is_null_row) {
+  DBUG_ASSERT(m_current_iterator_index < m_sub_iterators.size());
+  m_sub_iterators[m_current_iterator_index]->SetNullRowFlag(is_null_row);
+}
+
+void AppendIterator::StartPSIBatchMode() {
+  m_pfs_batch_mode_enabled = true;
+  m_sub_iterators[m_current_iterator_index]->StartPSIBatchMode();
+}
+
+void AppendIterator::EndPSIBatchModeIfStarted() {
+  for (const unique_ptr_destroy_only<RowIterator> &sub_iterator :
+       m_sub_iterators) {
+    sub_iterator->EndPSIBatchModeIfStarted();
+  }
+  m_pfs_batch_mode_enabled = false;
+}
+
+void AppendIterator::UnlockRow() {
+  DBUG_ASSERT(m_current_iterator_index < m_sub_iterators.size());
+  m_sub_iterators[m_current_iterator_index]->UnlockRow();
 }

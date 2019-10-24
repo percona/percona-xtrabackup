@@ -22,7 +22,7 @@
 
 #include "sql/dd/info_schema/show_query_builder.h"  // Select_lex_builder
 
-#include "m_string.h"  // C_STRING_WITH_LEN
+#include "m_string.h"  // STRING_WITH_LEN
 #include "my_dbug.h"
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/item_cmpfunc.h"  // Item_func_like
@@ -76,7 +76,7 @@ bool Select_lex_builder::add_star_select_item() {
   const LEX_CSTRING star = {STRING_WITH_LEN("*")};
 
   PTI_simple_ident_ident *ident_star =
-      new (m_thd->mem_root) PTI_simple_ident_ident(*m_pos, to_lex_string(star));
+      new (m_thd->mem_root) PTI_simple_ident_ident(*m_pos, star);
   if (ident_star == nullptr) return true;
 
   return add_to_select_item_list(ident_star);
@@ -89,14 +89,14 @@ bool Select_lex_builder::add_star_select_item() {
 bool Select_lex_builder::add_select_item(const LEX_CSTRING &field_name,
                                          const LEX_CSTRING &alias) {
   /* ... FIELD_NAME ... */
-  PTI_simple_ident_ident *ident_field = new (m_thd->mem_root)
-      PTI_simple_ident_ident(*m_pos, to_lex_string(field_name));
+  PTI_simple_ident_ident *ident_field =
+      new (m_thd->mem_root) PTI_simple_ident_ident(*m_pos, field_name);
   if (ident_field == nullptr) return true;
 
   /* ... FIELD_NAME as alias ... */
   PTI_expr_with_alias *expr;
-  expr = new (m_thd->mem_root) PTI_expr_with_alias(
-      *m_pos, ident_field, m_pos->cpp, to_lex_string(alias));
+  expr = new (m_thd->mem_root)
+      PTI_expr_with_alias(*m_pos, ident_field, m_pos->cpp, alias);
   if (expr == nullptr) return true;
 
   return add_to_select_item_list(expr);
@@ -109,8 +109,8 @@ bool Select_lex_builder::add_select_item(const LEX_CSTRING &field_name,
 bool Select_lex_builder::add_select_expr(Item *select_list_item,
                                          const LEX_CSTRING &alias) {
   /* ... FIELD_NAME as alias ... */
-  PTI_expr_with_alias *expr = new (m_thd->mem_root) PTI_expr_with_alias(
-      *m_pos, select_list_item, m_pos->cpp, to_lex_string(alias));
+  PTI_expr_with_alias *expr = new (m_thd->mem_root)
+      PTI_expr_with_alias(*m_pos, select_list_item, m_pos->cpp, alias);
   if (expr == nullptr) return true;
 
   return add_to_select_item_list(expr);
@@ -169,8 +169,8 @@ bool Select_lex_builder::add_from_item(PT_derived_table *dt) {
 Item *Select_lex_builder::prepare_like_item(const LEX_CSTRING &field_name,
                                             const String *wild) {
   /* ... FIELD_NAME ... */
-  PTI_simple_ident_ident *ident_field = new (m_thd->mem_root)
-      PTI_simple_ident_ident(*m_pos, to_lex_string(field_name));
+  PTI_simple_ident_ident *ident_field =
+      new (m_thd->mem_root) PTI_simple_ident_ident(*m_pos, field_name);
   if (ident_field == nullptr) return nullptr;
 
   /* ... <value> ... */
@@ -197,8 +197,8 @@ Item *Select_lex_builder::prepare_like_item(const LEX_CSTRING &field_name,
 Item *Select_lex_builder::prepare_equal_item(const LEX_CSTRING &field_name,
                                              const LEX_CSTRING &value) {
   /* ... FIELD_NAME ... */
-  PTI_simple_ident_ident *ident_field = new (m_thd->mem_root)
-      PTI_simple_ident_ident(*m_pos, to_lex_string(field_name));
+  PTI_simple_ident_ident *ident_field =
+      new (m_thd->mem_root) PTI_simple_ident_ident(*m_pos, field_name);
   if (ident_field == nullptr) return nullptr;
 
   /* ... <value> ... */
@@ -251,8 +251,8 @@ bool Select_lex_builder::add_order_by(const LEX_CSTRING &field_name) {
   }
 
   /* ... FIELD_NAME ... */
-  PTI_simple_ident_ident *ident_field = new (m_thd->mem_root)
-      PTI_simple_ident_ident(*m_pos, to_lex_string(field_name));
+  PTI_simple_ident_ident *ident_field =
+      new (m_thd->mem_root) PTI_simple_ident_ident(*m_pos, field_name);
   if (ident_field == nullptr) return true;
 
   PT_order_expr *expression =
@@ -268,14 +268,9 @@ bool Select_lex_builder::add_order_by(const LEX_CSTRING &field_name) {
 */
 PT_derived_table *Select_lex_builder::prepare_derived_table(
     const LEX_CSTRING &table_alias) {
-  Item *where_cond = nullptr;
-  if (m_where_clause != nullptr)
-    where_cond =
-        new (m_thd->mem_root) PTI_context<CTX_WHERE>(*m_pos, m_where_clause);
-
   PT_query_primary *query_specification =
       new (m_thd->mem_root) PT_query_specification(
-          options, m_select_item_list, m_table_reference_list, where_cond);
+          options, m_select_item_list, m_table_reference_list, m_where_clause);
 
   if (query_specification == nullptr) return nullptr;
 
@@ -305,14 +300,9 @@ PT_derived_table *Select_lex_builder::prepare_derived_table(
   added to this Select_lex_builder.
 */
 SELECT_LEX *Select_lex_builder::prepare_select_lex() {
-  Item *where_cond = nullptr;
-  if (m_where_clause != nullptr)
-    where_cond =
-        new (m_thd->mem_root) PTI_context<CTX_WHERE>(*m_pos, m_where_clause);
-
   PT_query_specification *query_specification2 =
       new (m_thd->mem_root) PT_query_specification(
-          options, m_select_item_list, m_table_reference_list, where_cond);
+          options, m_select_item_list, m_table_reference_list, m_where_clause);
   if (query_specification2 == nullptr) return nullptr;
 
   PT_query_expression_body_primary *query_expression_body_primary2 =

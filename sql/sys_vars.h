@@ -101,8 +101,8 @@ class Sys_var_integer;
 #define VALID_RANGE(X, Y) X, Y
 #define DEFAULT(X) X
 #define BLOCK_SIZE(X) X
-#define GLOBAL_VAR(X)                                                   \
-  sys_var::GLOBAL, (((char *)&(X)) - (char *)&global_system_variables), \
+#define GLOBAL_VAR(X)                                                         \
+  sys_var::GLOBAL, (((const char *)&(X)) - (char *)&global_system_variables), \
       sizeof(X)
 #define SESSION_VAR(X)                             \
   sys_var::SESSION, offsetof(System_variables, X), \
@@ -597,7 +597,7 @@ class Sys_var_multi_enum : public sys_var {
     argument.
   */
   const char *fixup_command_line(const char *value_str) {
-    DBUG_ENTER("Sys_var_multi_enum::fixup_command_line");
+    DBUG_TRACE;
     char *end = NULL;
     long value;
 
@@ -619,46 +619,46 @@ class Sys_var_multi_enum : public sys_var {
       if (value >= 0 && (longlong)value < (longlong)value_count) goto end;
 
     // Not a valid value.
-    DBUG_RETURN(value_str);
+    return value_str;
 
   end:
     global_var(ulong) = value;
-    DBUG_RETURN(NULL);
+    return NULL;
   }
 
   bool do_check(THD *, set_var *var) {
-    DBUG_ENTER("Sys_var_multi_enum::do_check");
+    DBUG_TRACE;
     char buff[STRING_BUFFER_USUAL_SIZE];
     String str(buff, sizeof(buff), system_charset_info), *res;
     if (var->value->result_type() == STRING_RESULT) {
       res = var->value->val_str(&str);
-      if (!res) DBUG_RETURN(true);
+      if (!res) return true;
 
       /* Check if the value is a valid string. */
       size_t valid_len;
       bool len_error;
       if (validate_string(system_charset_info, res->ptr(), res->length(),
                           &valid_len, &len_error))
-        DBUG_RETURN(true);
+        return true;
 
       int value = find_value(res->ptr());
-      if (value == -1) DBUG_RETURN(true);
+      if (value == -1) return true;
       var->save_result.ulonglong_value = (uint)value;
     } else {
       longlong value = var->value->val_int();
       if (value < 0 || value >= (longlong)value_count)
-        DBUG_RETURN(true);
+        return true;
       else
         var->save_result.ulonglong_value = value;
     }
 
-    DBUG_RETURN(false);
+    return false;
   }
   bool check_update_type(Item_result type) {
     return type != INT_RESULT && type != STRING_RESULT;
   }
   bool session_update(THD *, set_var *) {
-    DBUG_ENTER("Sys_var_multi_enum::session_update");
+    DBUG_TRACE;
     DBUG_ASSERT(0);
     /*
     Currently not used: uncomment if this class is used as a base for
@@ -667,10 +667,10 @@ class Sys_var_multi_enum : public sys_var {
     session_var(thd, ulong)=
       static_cast<ulong>(var->save_result.ulonglong_value);
     */
-    DBUG_RETURN(false);
+    return false;
   }
   bool global_update(THD *, set_var *) {
-    DBUG_ENTER("Sys_var_multi_enum::global_update");
+    DBUG_TRACE;
     DBUG_ASSERT(0);
     /*
     Currently not used: uncomment if this some inheriting class does
@@ -680,10 +680,10 @@ class Sys_var_multi_enum : public sys_var {
       static_cast<ulong>(var->save_result.ulonglong_value);
     global_var(ulong)= val;
     */
-    DBUG_RETURN(false);
+    return false;
   }
   void session_save_default(THD *, set_var *) {
-    DBUG_ENTER("Sys_var_multi_enum::session_save_default");
+    DBUG_TRACE;
     DBUG_ASSERT(0);
     /*
     Currently not used: uncomment if this class is used as a base for
@@ -693,33 +693,33 @@ class Sys_var_multi_enum : public sys_var {
     DBUG_ASSERT(value != -1);
     var->save_result.ulonglong_value= value;
     */
-    DBUG_VOID_RETURN;
+    return;
   }
   void global_save_default(THD *, set_var *var) {
-    DBUG_ENTER("Sys_var_multi_enum::global_save_default");
+    DBUG_TRACE;
     int value = find_value((char *)option.def_value);
     DBUG_ASSERT(value != -1);
     var->save_result.ulonglong_value = value;
-    DBUG_VOID_RETURN;
+    return;
   }
   void saved_value_to_string(THD *, set_var *var, char *def_val) {
     longlong10_to_str((longlong)var->save_result.ulonglong_value, def_val, 10);
   }
 
   const uchar *session_value_ptr(THD *, THD *, LEX_STRING *) {
-    DBUG_ENTER("Sys_var_multi_enum::session_value_ptr");
+    DBUG_TRACE;
     DBUG_ASSERT(0);
     /*
     Currently not used: uncomment if this class is used as a base for
     a session variable.
 
-    DBUG_RETURN((uchar*)aliases[session_var(target_thd, ulong)].alias);
+    return (uchar*)aliases[session_var(target_thd, ulong)].alias;
     */
-    DBUG_RETURN(0);
+    return 0;
   }
   const uchar *global_value_ptr(THD *, LEX_STRING *) {
-    DBUG_ENTER("Sys_var_multi_enum::global_value_ptr");
-    DBUG_RETURN(pointer_cast<const uchar *>(aliases[global_var(ulong)].alias));
+    DBUG_TRACE;
+    return pointer_cast<const uchar *>(aliases[global_var(ulong)].alias);
   }
 
  private:
@@ -1075,7 +1075,7 @@ class Sys_var_keycache : public Sys_var_ulonglong {
                           "future release",
                           var->base.str, name.str);
 
-    LEX_CSTRING base_name = to_lex_cstring(var->base);
+    LEX_CSTRING base_name = var->base;
     /* If no basename, assume it's for the key cache named 'default' */
     if (!base_name.length) base_name = default_key_cache_base;
 
@@ -1374,7 +1374,7 @@ class Sys_var_set : public Sys_var_typelib {
       if (!(res = var->value->val_str(&str)))
         return true;
       else {
-        char *error;
+        const char *error;
         uint error_len;
         bool not_used;
 
@@ -1452,7 +1452,7 @@ class Sys_var_plugin : public sys_var {
   Sys_var_plugin(
       const char *name_arg, const char *comment, int flag_args, ptrdiff_t off,
       size_t size MY_ATTRIBUTE((unused)), CMD_LINE getopt, int plugin_type_arg,
-      char **def_val, PolyLock *lock = 0,
+      const char **def_val, PolyLock *lock = 0,
       enum binlog_status_enum binlog_status_arg = VARIABLE_NOT_IN_BINLOG,
       on_check_function on_check_func = 0,
       on_update_function on_update_func = 0, const char *substitute = 0,
@@ -1936,7 +1936,8 @@ class Sys_var_struct : public sys_var {
   void saved_value_to_string(THD *, set_var *var, char *def_val) {
     const Struct_type *ptr =
         static_cast<const Struct_type *>(var->save_result.ptr);
-    if (ptr) strcpy(def_val, (char *)Name_getter(ptr).get_name());
+    if (ptr)
+      strcpy(def_val, pointer_cast<const char *>(Name_getter(ptr).get_name()));
   }
   bool check_update_type(Item_result type) {
     return type != INT_RESULT && type != STRING_RESULT;
@@ -2113,11 +2114,11 @@ class Sys_var_gtid_next : public sys_var {
     return true;
   }
   void session_save_default(THD *, set_var *var) {
-    DBUG_ENTER("Sys_var_gtid_next::session_save_default");
+    DBUG_TRACE;
     char *ptr = (char *)(intptr)option.def_value;
     var->save_result.string_value.str = ptr;
     var->save_result.string_value.length = ptr ? strlen(ptr) : 0;
-    DBUG_VOID_RETURN;
+    return;
   }
   void global_save_default(THD *, set_var *) { DBUG_ASSERT(false); }
   void saved_value_to_string(THD *, set_var *, char *) { DBUG_ASSERT(false); }
@@ -2125,14 +2126,14 @@ class Sys_var_gtid_next : public sys_var {
   bool check_update_type(Item_result type) { return type != STRING_RESULT; }
   const uchar *session_value_ptr(THD *running_thd, THD *target_thd,
                                  LEX_STRING *) {
-    DBUG_ENTER("Sys_var_gtid_next::session_value_ptr");
+    DBUG_TRACE;
     char buf[Gtid_specification::MAX_TEXT_LENGTH + 1];
     global_sid_lock->rdlock();
     ((Gtid_specification *)session_var_ptr(target_thd))
         ->to_string(global_sid_map, buf);
     global_sid_lock->unlock();
     char *ret = running_thd->mem_strdup(buf);
-    DBUG_RETURN((uchar *)ret);
+    return (uchar *)ret;
   }
   const uchar *global_value_ptr(THD *, LEX_STRING *) {
     DBUG_ASSERT(false);
@@ -2170,41 +2171,41 @@ class Sys_var_gtid_set : public sys_var {
     return true;
   }
   void session_save_default(THD *thd, set_var *var) {
-    DBUG_ENTER("Sys_var_gtid_set::session_save_default");
+    DBUG_TRACE;
     global_sid_lock->rdlock();
     char *ptr = (char *)(intptr)option.def_value;
     var->save_result.string_value.str = ptr;
     var->save_result.string_value.length = ptr ? strlen(ptr) : 0;
     global_sid_lock->unlock();
-    DBUG_VOID_RETURN;
+    return;
   }
   void global_save_default(THD *thd, set_var *var) { DBUG_ASSERT(false); }
   void saved_value_to_string(THD *, set_var *, char *) { DBUG_ASSERT(false); }
   bool do_check(THD *thd, set_var *var) {
-    DBUG_ENTER("Sys_var_gtid_set::do_check");
+    DBUG_TRACE;
     String str;
     String *res = var->value->val_str(&str);
     if (res == NULL) {
       var->save_result.string_value.str = NULL;
-      DBUG_RETURN(false);
+      return false;
     }
     DBUG_ASSERT(res->ptr() != NULL);
     var->save_result.string_value.str = thd->strmake(res->ptr(), res->length());
     if (var->save_result.string_value.str == NULL) {
       my_error(ER_OUT_OF_RESOURCES, MYF(0));  // thd->strmake failed
-      DBUG_RETURN(1);
+      return 1;
     }
     var->save_result.string_value.length = res->length();
     bool ret = !Gtid_set::is_valid(res->ptr());
-    DBUG_RETURN(ret);
+    return ret;
   }
   bool check_update_type(Item_result type) { return type != STRING_RESULT; }
   uchar *session_value_ptr(THD *running_thd, THD *target_thd,
                            LEX_STRING *base) {
-    DBUG_ENTER("Sys_var_gtid_set::session_value_ptr");
+    DBUG_TRACE;
     Gtid_set_or_null *gsn = (Gtid_set_or_null *)session_var_ptr(target_thd);
     Gtid_set *gs = gsn->get_gtid_set();
-    if (gs == NULL) DBUG_RETURN(NULL);
+    if (gs == NULL) return NULL;
     char *buf;
     global_sid_lock->rdlock();
     buf = (char *)running_thd->alloc(gs->get_string_length() + 1);
@@ -2213,7 +2214,7 @@ class Sys_var_gtid_set : public sys_var {
     else
       my_error(ER_OUT_OF_RESOURCES, MYF(0));  // thd->alloc failed
     global_sid_lock->unlock();
-    DBUG_RETURN((uchar *)buf);
+    return (uchar *)buf;
   }
   uchar *global_value_ptr(THD *thd, LEX_STRING *base) {
     DBUG_ASSERT(false);
@@ -2280,7 +2281,7 @@ class Sys_var_gtid_executed : Sys_var_charptr_func {
       : Sys_var_charptr_func(name_arg, comment_arg, GLOBAL) {}
 
   const uchar *global_value_ptr(THD *thd, LEX_STRING *) {
-    DBUG_ENTER("Sys_var_gtid_executed::global_value_ptr");
+    DBUG_TRACE;
     global_sid_lock->wrlock();
     const Gtid_set *gs = gtid_state->get_executed_gtids();
     char *buf = (char *)thd->alloc(gs->get_string_length() + 1);
@@ -2289,7 +2290,7 @@ class Sys_var_gtid_executed : Sys_var_charptr_func {
     else
       gs->to_string(buf);
     global_sid_lock->unlock();
-    DBUG_RETURN((uchar *)buf);
+    return (uchar *)buf;
   }
 };
 
@@ -2328,28 +2329,28 @@ class Sys_var_gtid_purged : public sys_var {
   }
 
   bool do_check(THD *thd, set_var *var) {
-    DBUG_ENTER("Sys_var_gtid_purged::do_check");
+    DBUG_TRACE;
     char buf[1024];
     String str(buf, sizeof(buf), system_charset_info);
     String *res = var->value->val_str(&str);
-    if (!res) DBUG_RETURN(true);
+    if (!res) return true;
     var->save_result.string_value.str =
         thd->strmake(res->c_ptr(), res->length());
     if (!var->save_result.string_value.str) {
       my_error(ER_OUT_OF_RESOURCES, MYF(0));  // thd->strmake failed
-      DBUG_RETURN(true);
+      return true;
     }
     var->save_result.string_value.length = res->length();
     bool ret =
         Gtid_set::is_valid(var->save_result.string_value.str) ? false : true;
     DBUG_PRINT("info", ("ret=%d", ret));
-    DBUG_RETURN(ret);
+    return ret;
   }
 
   bool check_update_type(Item_result type) { return type != STRING_RESULT; }
 
   const uchar *global_value_ptr(THD *thd, LEX_STRING *) {
-    DBUG_ENTER("Sys_var_gtid_purged::global_value_ptr");
+    DBUG_TRACE;
     const Gtid_set *gs;
     global_sid_lock->wrlock();
     if (opt_bin_log)
@@ -2369,7 +2370,7 @@ class Sys_var_gtid_purged : public sys_var {
     else
       gs->to_string(buf);
     global_sid_lock->unlock();
-    DBUG_RETURN((uchar *)buf);
+    return (uchar *)buf;
   }
 
   const uchar *session_value_ptr(THD *, THD *, LEX_STRING *) {
@@ -2386,15 +2387,15 @@ class Sys_var_gtid_owned : Sys_var_charptr_func {
  public:
   const uchar *session_value_ptr(THD *running_thd, THD *target_thd,
                                  LEX_STRING *) {
-    DBUG_ENTER("Sys_var_gtid_owned::session_value_ptr");
+    DBUG_TRACE;
     char *buf = NULL;
     bool remote = (target_thd != running_thd);
 
     if (target_thd->owned_gtid.sidno == 0)
-      DBUG_RETURN((uchar *)running_thd->mem_strdup(""));
+      return (uchar *)running_thd->mem_strdup("");
     else if (target_thd->owned_gtid.sidno == THD::OWNED_SIDNO_ANONYMOUS) {
       DBUG_ASSERT(gtid_state->get_anonymous_ownership_count() > 0);
-      DBUG_RETURN((uchar *)running_thd->mem_strdup("ANONYMOUS"));
+      return (uchar *)running_thd->mem_strdup("ANONYMOUS");
     } else if (target_thd->owned_gtid.sidno == THD::OWNED_SIDNO_GTID_SET) {
 #ifdef HAVE_GTID_NEXT_LIST
       buf = (char *)running_thd->alloc(
@@ -2418,11 +2419,11 @@ class Sys_var_gtid_owned : Sys_var_charptr_func {
       } else
         my_error(ER_OUT_OF_RESOURCES, MYF(0));
     }
-    DBUG_RETURN((uchar *)buf);
+    return (uchar *)buf;
   }
 
   const uchar *global_value_ptr(THD *thd, LEX_STRING *) {
-    DBUG_ENTER("Sys_var_gtid_owned::global_value_ptr");
+    DBUG_TRACE;
     const Owned_gtids *owned_gtids = gtid_state->get_owned_gtids();
     global_sid_lock->wrlock();
     char *buf = (char *)thd->alloc(owned_gtids->get_max_string_length());
@@ -2431,7 +2432,7 @@ class Sys_var_gtid_owned : Sys_var_charptr_func {
     else
       my_error(ER_OUT_OF_RESOURCES, MYF(0));  // thd->alloc failed
     global_sid_lock->unlock();
-    DBUG_RETURN((uchar *)buf);
+    return (uchar *)buf;
   }
 };
 

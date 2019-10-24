@@ -33,6 +33,8 @@
 #include <utility>
 #include <vector> /* std::vector */
 
+#include "include/compression.h"
+
 #include <mysql/components/my_service.h>
 #include <sql/ssl_acceptor_context.h>
 #include "crypt_genhash_impl.h"  // generate_user_salt
@@ -823,17 +825,15 @@ const LEX_CSTRING Cached_authentication_plugins::cached_plugins_names[(
 */
 void Cached_authentication_plugins::optimize_plugin_compare_by_pointer(
     LEX_CSTRING *plugin) {
-  DBUG_ENTER(
-      "Cached_authentication_plugins::optimize_plugin_compare_by_pointer");
+  DBUG_TRACE;
   for (uint i = 0; i < (uint)PLUGIN_LAST; ++i) {
     if (my_strcasecmp(system_charset_info, cached_plugins_names[i].str,
                       plugin->str) == 0) {
       plugin->str = cached_plugins_names[i].str;
       plugin->length = cached_plugins_names[i].length;
-      DBUG_VOID_RETURN;
+      return;
     }
   }
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -842,7 +842,7 @@ void Cached_authentication_plugins::optimize_plugin_compare_by_pointer(
   Cache plugin_ref for each plugin in cached_plugins_names list
 */
 Cached_authentication_plugins::Cached_authentication_plugins() {
-  DBUG_ENTER("Cached_authentication_plugins::Cached_authentication_plugins");
+  DBUG_TRACE;
   m_valid = true;
   for (uint i = 0; i < (uint)PLUGIN_LAST; ++i) {
     if (cached_plugins_names[i].str[0]) {
@@ -852,7 +852,6 @@ Cached_authentication_plugins::Cached_authentication_plugins() {
     } else
       cached_plugins[i] = 0;
   }
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -861,11 +860,10 @@ Cached_authentication_plugins::Cached_authentication_plugins() {
   Releases all plugin_refs
 */
 Cached_authentication_plugins::~Cached_authentication_plugins() {
-  DBUG_ENTER("Cached_authentication_plugins::~Cached_authentication_plugins");
+  DBUG_TRACE;
   for (uint i = 0; i < (uint)PLUGIN_LAST; ++i) {
     if (cached_plugins[i]) plugin_unlock(0, cached_plugins[i]);
   }
-  DBUG_VOID_RETURN;
 }
 
 /**
@@ -879,8 +877,8 @@ plugin_ref Cached_authentication_plugins::get_cached_plugin_ref(
     const LEX_CSTRING *plugin) {
   plugin_ref cached_plugin = 0;
   LEX_CSTRING plugin_cstring;
-  DBUG_ENTER("Cached_authentication_plugins::get_cached_plugin_ref");
-  if (!plugin || !plugin->str || !this->is_valid()) DBUG_RETURN(cached_plugin);
+  DBUG_TRACE;
+  if (!plugin || !plugin->str || !this->is_valid()) return cached_plugin;
 
   plugin_cstring.str = plugin->str;
   plugin_cstring.length = plugin->length;
@@ -889,10 +887,10 @@ plugin_ref Cached_authentication_plugins::get_cached_plugin_ref(
   for (uint i = 0; i < (uint)PLUGIN_LAST; ++i) {
     if (plugin_cstring.str == cached_plugins_names[i].str) {
       cached_plugin = cached_plugins[i];
-      DBUG_RETURN(cached_plugin);
+      return cached_plugin;
     }
   }
-  DBUG_RETURN(cached_plugin);
+  return cached_plugin;
 }
 
 Cached_authentication_plugins *g_cached_authentication_plugins = 0;
@@ -909,7 +907,6 @@ extern bool initialized;
 #define MAX_CIPHER_LENGTH 1024
 #define SHA256_PASSWORD_MAX_PASSWORD_LENGTH MAX_PLAINTEXT_LENGTH
 
-#if !defined(HAVE_WOLFSSL)
 #define DEFAULT_SSL_CLIENT_CERT "client-cert.pem"
 #define DEFAULT_SSL_CLIENT_KEY "client-key.pem"
 
@@ -924,7 +921,6 @@ static bool do_auto_rsa_keys_generation();
 char *auth_rsa_private_key_path;
 char *auth_rsa_public_key_path;
 Rsa_authentication_keys *g_sha256_rsa_keys = 0;
-#endif /* HAVE_WOLFSSL */
 #endif /* HAVE_OPENSSL */
 
 bool Thd_charset_adapter::init_client_charset(uint cs_number) {
@@ -1013,9 +1009,7 @@ bool Rsa_authentication_keys::read_key_file(RSA **key_ptr, bool is_priv_key,
         Call ERR_clear_error() just in case there are more than 1 entry in the
         OpenSSL thread's error queue.
       */
-#ifndef HAVE_WOLFSSL
       ERR_clear_error();
-#endif
 
       return true;
     }
@@ -1351,7 +1345,7 @@ static bool send_server_handshake_packet(MPVIO_EXT *mpvio, const char *data,
   char scramble_buf[SCRAMBLE_LENGTH];
   char *end = buff;
 
-  DBUG_ENTER("send_server_handshake_packet");
+  DBUG_TRACE;
   *end++ = protocol_version;
 
   protocol->set_client_capabilities(CLIENT_BASIC_FLAGS);
@@ -1364,6 +1358,38 @@ static bool send_server_handshake_packet(MPVIO_EXT *mpvio, const char *data,
   if (SslAcceptorContext::have_ssl()) {
     protocol->add_client_capability(CLIENT_SSL);
     protocol->add_client_capability(CLIENT_SSL_VERIFY_SERVER_CERT);
+  }
+
+  if (opt_protocol_compression_algorithms &&
+      opt_protocol_compression_algorithms[0] != 0) {
+    /* turn off the capability flag as the global variable might have changed */
+    protocol->remove_client_capability(CLIENT_COMPRESS);
+    protocol->remove_client_capability(CLIENT_ZSTD_COMPRESSION_ALGORITHM);
+    std::vector<std::string> list;
+    parse_compression_algorithms_list(opt_protocol_compression_algorithms,
+                                      list);
+    auto it = list.begin();
+    NET_SERVER *ext = static_cast<NET_SERVER *>(protocol->get_net()->extension);
+    struct compression_attributes *compression = &(ext->compression);
+    compression->compression_optional = false;
+    while (it != list.end()) {
+      std::string value = *it;
+      switch (get_compression_algorithm(value)) {
+        case enum_compression_algorithm::MYSQL_ZSTD:
+          protocol->add_client_capability(CLIENT_ZSTD_COMPRESSION_ALGORITHM);
+          break;
+        case enum_compression_algorithm::MYSQL_ZLIB:
+          protocol->add_client_capability(CLIENT_COMPRESS);
+          break;
+        case enum_compression_algorithm::MYSQL_UNCOMPRESSED:
+          compression->compression_optional = true;
+          break;
+        case enum_compression_algorithm::MYSQL_INVALID:
+          DBUG_ASSERT(false);
+          break;
+      }
+      it++;
+    }
   }
 
   if (data_len) {
@@ -1430,7 +1456,7 @@ static bool send_server_handshake_packet(MPVIO_EXT *mpvio, const char *data,
 
   int res = protocol->write((uchar *)buff, (size_t)(end - buff + 1)) ||
             protocol->flush();
-  DBUG_RETURN(res);
+  return res;
 }
 
 /* clang-format off */
@@ -1599,7 +1625,7 @@ static bool send_plugin_request_packet(MPVIO_EXT *mpvio, const uchar *data,
   DBUG_ASSERT(mpvio->packets_read == 1);
   static uchar switch_plugin_request_buf[] = {254};
 
-  DBUG_ENTER("send_plugin_request_packet");
+  DBUG_TRACE;
 
   /*
     In case of --skip-grant-tables, mpvio->status might already have set to
@@ -1627,16 +1653,16 @@ static bool send_plugin_request_packet(MPVIO_EXT *mpvio, const uchar *data,
     DBUG_ASSERT(mpvio->cached_client_reply.pkt);
     /* get the status back so the read can process the cached result */
     mpvio->status = MPVIO_EXT::RESTART;
-    DBUG_RETURN(0);
+    return 0;
   }
 
   DBUG_PRINT("info",
              ("requesting client to use the %s plugin", client_auth_plugin));
-  DBUG_RETURN(net_write_command(mpvio->protocol->get_net(),
-                                switch_plugin_request_buf[0],
-                                pointer_cast<const uchar *>(client_auth_plugin),
-                                strlen(client_auth_plugin) + 1,
-                                pointer_cast<const uchar *>(data), data_len));
+  return net_write_command(mpvio->protocol->get_net(),
+                           switch_plugin_request_buf[0],
+                           pointer_cast<const uchar *>(client_auth_plugin),
+                           strlen(client_auth_plugin) + 1,
+                           pointer_cast<const uchar *>(data), data_len);
 }
 
 /* Return true if there is no users that can match the given host */
@@ -1682,7 +1708,7 @@ bool acl_check_host(THD *thd, const char *host, const char *ip) {
 
   @retval A dummy ACL USER
 */
-ACL_USER *decoy_user(const LEX_STRING &username, const LEX_CSTRING &hostname,
+ACL_USER *decoy_user(const LEX_CSTRING &username, const LEX_CSTRING &hostname,
                      MEM_ROOT *mem, struct rand_struct *rand,
                      bool is_initialized) {
   ACL_USER *user = (ACL_USER *)mem->Alloc(sizeof(ACL_USER));
@@ -1736,7 +1762,7 @@ ACL_USER *decoy_user(const LEX_STRING &username, const LEX_CSTRING &hostname,
   for (int i = 0; i < NUM_CREDENTIALS; ++i) {
     memset(user->credentials[i].m_salt, 0, SCRAMBLE_LENGTH + 1);
     user->credentials[i].m_salt_len = 0;
-    user->credentials[i].m_auth_string = empty_lex_str;
+    user->credentials[i].m_auth_string = EMPTY_CSTR;
   }
   return user;
 }
@@ -1754,12 +1780,12 @@ ACL_USER *decoy_user(const LEX_STRING &username, const LEX_CSTRING &hostname,
    @retval 1    not found
 */
 static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
-  DBUG_ENTER("find_mpvio_user");
+  DBUG_TRACE;
   DBUG_PRINT("info", ("entry: %s", mpvio->auth_info.user_name));
   DBUG_ASSERT(mpvio->acl_user == 0);
 
   Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::READ_MODE);
-  if (!acl_cache_lock.lock(false)) DBUG_RETURN(true);
+  if (!acl_cache_lock.lock(false)) return true;
 
   Acl_user_ptr_list *list = nullptr;
   if (likely(acl_users)) {
@@ -1797,8 +1823,8 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
       Pretend the user exists; let the plugin decide how to handle
       bad credentials.
     */
-    LEX_STRING usr = {mpvio->auth_info.user_name,
-                      mpvio->auth_info.user_name_length};
+    LEX_CSTRING usr = {mpvio->auth_info.user_name,
+                       mpvio->auth_info.user_name_length};
     LEX_CSTRING hst = {mpvio->host ? mpvio->host : mpvio->ip,
                        mpvio->host ? strlen(mpvio->host) : strlen(mpvio->ip)};
     mpvio->acl_user =
@@ -1815,7 +1841,7 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
     my_error(ER_NOT_SUPPORTED_AUTH_MODE, MYF(0));
     query_logger.general_log_print(thd, COM_CONNECT, "%s",
                                    ER_DEFAULT(ER_NOT_SUPPORTED_AUTH_MODE));
-    DBUG_RETURN(1);
+    return 1;
   }
 
   mpvio->auth_info.auth_string =
@@ -1840,7 +1866,7 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
               ", plugin=%s",
               mpvio->auth_info.user_name, mpvio->auth_info.auth_string,
               mpvio->auth_info.authenticated_as, mpvio->acl_user->plugin.str));
-  DBUG_RETURN(0);
+  return 0;
 }
 
 static bool read_client_connect_attrs(char **ptr, size_t *max_bytes_available,
@@ -1876,6 +1902,8 @@ static bool read_client_connect_attrs(char **ptr, size_t *max_bytes_available,
            auth_info->host_or_ip, auth_info->authenticated_as,
            mpvio->can_authenticate() ? "yes" : "no");
 #endif /* HAVE_PSI_THREAD_INTERFACE */
+  *max_bytes_available -= length;
+  *ptr = *ptr + length;
   return false;
 }
 
@@ -1983,12 +2011,12 @@ static bool acl_check_ssl(THD *thd, const ACL_USER *acl_user) {
     @retval true RSA support is not available
 */
 bool sha256_rsa_auth_status() {
-#if !defined(HAVE_OPENSSL) || defined(HAVE_WOLFSSL)
+#if !defined(HAVE_OPENSSL)
   return false;
 #else
   return (!g_sha256_rsa_keys->get_private_key() ||
           !g_sha256_rsa_keys->get_public_key());
-#endif /* !HAVE_OPENSSL || HAVE_WOLFSSL */
+#endif /* !HAVE_OPENSSL */
 }
 
 /* clang-format off */
@@ -2089,10 +2117,10 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
   char user_buff[USERNAME_LENGTH + 1];  // buffer to store user in utf8
   uint dummy_errors;
 
-  DBUG_ENTER("parse_com_change_user_packet");
+  DBUG_TRACE;
   if (passwd >= end) {
     my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
-    DBUG_RETURN(true);
+    return true;
   }
 
   /*
@@ -2110,7 +2138,7 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
   */
   if (db >= end) {
     my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
-    DBUG_RETURN(true);
+    return true;
   }
 
   size_t db_len = strlen(db);
@@ -2119,7 +2147,7 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
 
   if (ptr + 1 < end) {
     if (mpvio->charset_adapter->init_client_charset(uint2korr(ptr)))
-      DBUG_RETURN(true);
+      return true;
   }
 
   /* Convert database and user names to utf8 */
@@ -2136,11 +2164,11 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
   /* we should not free mpvio->user here: it's saved by dispatch_command() */
   if (!(mpvio->auth_info.user_name = my_strndup(
             key_memory_MPVIO_EXT_auth_info, user_buff, user_len, MYF(MY_WME))))
-    DBUG_RETURN(true);
+    return true;
   mpvio->auth_info.user_name_length = user_len;
 
   if (lex_string_strmake(mpvio->mem_root, &mpvio->db, db_buff, db_len))
-    DBUG_RETURN(true); /* The error is set by make_lex_string(). */
+    return true; /* The error is set by make_lex_string(). */
 
   if (!initialized) {
     // if mysqld's been started with --skip-grant-tables option
@@ -2148,11 +2176,11 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
             USERNAME_LENGTH);
 
     mpvio->status = MPVIO_EXT::SUCCESS;
-    DBUG_RETURN(false);
+    return false;
   }
 
   if (find_mpvio_user(thd, mpvio)) {
-    DBUG_RETURN(true);
+    return true;
   }
 
   const char *client_plugin;
@@ -2166,7 +2194,7 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
 
     if (client_plugin >= end) {
       my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
-      DBUG_RETURN(true);
+      return true;
     }
   } else
     client_plugin = Cached_authentication_plugins::get_plugin_name(
@@ -2176,7 +2204,7 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
 
   if (protocol->has_client_capability(CLIENT_CONNECT_ATTRS) &&
       read_client_connect_attrs(&ptr, &bytes_remaining_in_packet, mpvio))
-    DBUG_RETURN(packet_error);
+    return packet_error;
 
   DBUG_PRINT("info", ("client_plugin=%s, restart", client_plugin));
   /*
@@ -2188,7 +2216,7 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
   mpvio->cached_client_reply.plugin = client_plugin;
   mpvio->status = MPVIO_EXT::RESTART;
 
-  DBUG_RETURN(false);
+  return false;
 }
 
 /** Get a string according to the protocol of the underlying buffer. */
@@ -2393,6 +2421,11 @@ static size_t parse_client_handshake_packet(THD *thd, MPVIO_EXT *mpvio,
   Protocol_classic *protocol = mpvio->protocol;
   char *end;
   bool packet_has_required_size = false;
+  /* save server capabilities before setting client capabilities */
+  bool is_server_supports_zlib =
+      protocol->has_client_capability(CLIENT_COMPRESS);
+  bool is_server_supports_zstd =
+      protocol->has_client_capability(CLIENT_ZSTD_COMPRESSION_ALGORITHM);
   DBUG_ASSERT(mpvio->status == MPVIO_EXT::FAILURE);
 
   uint charset_code = 0;
@@ -2656,6 +2689,45 @@ skip_to_ssl:
       read_client_connect_attrs(&end, &bytes_remaining_in_packet, mpvio))
     return packet_error;
 
+  NET_SERVER *ext = static_cast<NET_SERVER *>(protocol->get_net()->extension);
+  struct compression_attributes *compression = &(ext->compression);
+  bool is_client_supports_zlib =
+      protocol->has_client_capability(CLIENT_COMPRESS);
+  bool is_client_supports_zstd =
+      protocol->has_client_capability(CLIENT_ZSTD_COMPRESSION_ALGORITHM);
+
+  if (is_client_supports_zlib && is_server_supports_zlib) {
+    strcpy(compression->compress_algorithm, COMPRESSION_ALGORITHM_ZLIB);
+    /*
+      for zlib compression method client does not send any compression level,
+      set default compression level
+    */
+    compression->compress_level = 6;
+  } else if (is_client_supports_zstd && is_server_supports_zstd) {
+    strcpy(compression->compress_algorithm, COMPRESSION_ALGORITHM_ZSTD);
+    compression->compress_level = (uint) * (end);
+    end += 1;
+    bytes_remaining_in_packet -= 1;
+    if (!is_zstd_compression_level_valid(compression->compress_level)) {
+      my_error(ER_WRONG_COMPRESSION_LEVEL_CLIENT, MYF(0),
+               compression->compress_algorithm);
+      mpvio->status = MPVIO_EXT::FAILURE;
+      return CR_COMPRESSION_WRONGLY_CONFIGURED;
+    }
+  } else if (!compression->compression_optional) {
+    /*
+      if server is configured to only allow connections with compression enabled
+      then check if client has enabled compression else report error
+    */
+    my_error(
+        ER_WRONG_COMPRESSION_ALGORITHM_CLIENT, MYF(0),
+        (compression->compress_algorithm[0] ? compression->compress_algorithm
+                                            : "uncompressed"));
+
+    mpvio->status = MPVIO_EXT::FAILURE;
+    return CR_COMPRESSION_WRONGLY_CONFIGURED;
+  }
+
   if (!(protocol->has_client_capability(CLIENT_PLUGIN_AUTH))) {
     /* An old client is connecting */
     client_plugin = Cached_authentication_plugins::get_plugin_name(
@@ -2754,7 +2826,7 @@ static int server_mpvio_write_packet(MYSQL_PLUGIN_VIO *param,
   int res;
   Protocol_classic *protocol = mpvio->protocol;
 
-  DBUG_ENTER("server_mpvio_write_packet");
+  DBUG_TRACE;
   /*
     Reset cached_client_reply if not an old client doing mysql_change_user,
     as this is where the password from COM_CHANGE_USER is stored.
@@ -2775,7 +2847,7 @@ static int server_mpvio_write_packet(MYSQL_PLUGIN_VIO *param,
     res = wrap_plguin_data_into_proper_command(protocol->get_net(), packet,
                                                packet_len);
   mpvio->packets_written++;
-  DBUG_RETURN(res);
+  return res;
 }
 
 /**
@@ -2797,7 +2869,7 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
   Protocol_classic *protocol = mpvio->protocol;
   size_t pkt_len;
 
-  DBUG_ENTER("server_mpvio_read_packet");
+  DBUG_TRACE;
   if (mpvio->packets_written == 0) {
     /*
       plugin wants to read the data without sending anything first.
@@ -2829,7 +2901,7 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
           pointer_cast<const uchar *>(mpvio->cached_client_reply.pkt));
       mpvio->cached_client_reply.pkt = 0;
       mpvio->packets_read++;
-      DBUG_RETURN((int)mpvio->cached_client_reply.pkt_len);
+      return (int)mpvio->cached_client_reply.pkt_len;
     }
 
     /* older clients don't support change of client plugin request */
@@ -2869,13 +2941,13 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
   } else
     *buf = protocol->get_net()->read_pos;
 
-  DBUG_RETURN((int)pkt_len);
+  return (int)pkt_len;
 
 err:
   if (mpvio->status == MPVIO_EXT::FAILURE) {
     my_error(ER_HANDSHAKE_ERROR, MYF(0));
   }
-  DBUG_RETURN(-1);
+  return -1;
 }
 
 /**
@@ -2892,7 +2964,7 @@ static void server_mpvio_info(MYSQL_PLUGIN_VIO *vio,
 
 static int do_auth_once(THD *thd, const LEX_CSTRING &auth_plugin_name,
                         MPVIO_EXT *mpvio) {
-  DBUG_ENTER("do_auth_once");
+  DBUG_TRACE;
   int res = CR_OK, old_status = MPVIO_EXT::FAILURE;
   bool unlock_plugin = false;
   plugin_ref plugin =
@@ -2932,7 +3004,7 @@ static int do_auth_once(THD *thd, const LEX_CSTRING &auth_plugin_name,
   if (old_status == MPVIO_EXT::RESTART && mpvio->status == MPVIO_EXT::RESTART)
     mpvio->status = MPVIO_EXT::FAILURE;  // reset to the default
 
-  DBUG_RETURN(res);
+  return res;
 }
 
 static void server_mpvio_initialize(THD *thd, MPVIO_EXT *mpvio,
@@ -3147,7 +3219,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
   LEX_CSTRING auth_plugin_name = default_auth_plugin_name;
   Thd_charset_adapter charset_adapter(thd);
 
-  DBUG_ENTER("acl_authenticate");
+  DBUG_TRACE;
   static_assert(MYSQL_USERNAME_LENGTH == USERNAME_LENGTH, "");
   DBUG_ASSERT(command == COM_CONNECT || command == COM_CHANGE_USER);
 
@@ -3296,7 +3368,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       ACL_PROXY_USER *proxy_user;
       /* check if the user is allowed to proxy as another user */
       Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::READ_MODE);
-      if (!acl_cache_lock.lock()) DBUG_RETURN(1);
+      if (!acl_cache_lock.lock()) return 1;
 
       proxy_user =
           acl_find_proxy_user(auth_user, sctx->host().str, sctx->ip().str,
@@ -3308,7 +3380,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
                         command);
       }
 
-      if (thd->is_error()) DBUG_RETURN(1);
+      if (thd->is_error()) return 1;
 
       if (is_proxy_user) {
         ACL_USER *acl_proxy_user;
@@ -3329,7 +3401,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         sctx->assign_proxy_user(proxy_user_buf, strlen(proxy_user_buf));
 
         /* we're proxying : find the proxy user definition */
-        if (!acl_cache_lock.lock()) DBUG_RETURN(1);
+        if (!acl_cache_lock.lock()) return 1;
         acl_proxy_user = find_acl_user(proxy_user->get_proxied_host()
                                            ? proxy_user->get_proxied_host()
                                            : "",
@@ -3355,7 +3427,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       /* Assign default role */
       {
         List_of_auth_id_refs default_roles;
-        if (!acl_cache_lock.lock()) DBUG_RETURN(1);
+        if (!acl_cache_lock.lock()) return 1;
         Auth_id_ref authid = create_authid_from(acl_user);
         if (opt_always_activate_granted_roles) {
           activate_all_granted_and_mandatory_roles(acl_user, sctx);
@@ -3545,7 +3617,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
 end:
   if (mpvio.restrictions) mpvio.restrictions->~Restrictions();
   /* Ready to handle queries */
-  DBUG_RETURN(ret);
+  return ret;
 }
 
 bool is_secure_transport(int vio_type) {
@@ -3560,7 +3632,10 @@ bool is_secure_transport(int vio_type) {
 
 static int generate_native_password(char *outbuf, unsigned int *buflen,
                                     const char *inbuf, unsigned int inbuflen) {
-  if (my_validate_password_policy(inbuf, inbuflen)) return 1;
+  THD *thd = current_thd;
+  if (!thd->m_disable_password_validation) {
+    if (my_validate_password_policy(inbuf, inbuflen)) return 1;
+  }
   /* for empty passwords */
   if (inbuflen == 0) {
     *buflen = 0;
@@ -3618,9 +3693,12 @@ static int generate_sha256_password(char *outbuf, unsigned int *buflen,
       Cached_authentication_plugins::get_plugin_name(PLUGIN_SHA256_PASSWORD),
       Cached_authentication_plugins::get_plugin_name(
           PLUGIN_CACHING_SHA2_PASSWORD));
-  if (inbuflen > SHA256_PASSWORD_MAX_PASSWORD_LENGTH ||
-      my_validate_password_policy(inbuf, inbuflen))
-    return 1;
+  if (inbuflen > SHA256_PASSWORD_MAX_PASSWORD_LENGTH) return 1;
+
+  THD *thd = current_thd;
+  if (!thd->m_disable_password_validation) {
+    if (my_validate_password_policy(inbuf, inbuflen)) return 1;
+  }
   if (inbuflen == 0) {
     *buflen = 0;
     return 0;
@@ -3684,12 +3762,12 @@ static int compare_native_password_with_hash(const char *hash,
                                              const char *cleartext,
                                              unsigned long cleartext_length,
                                              int *is_error) {
-  DBUG_ENTER("compare_native_password_with_hash");
+  DBUG_TRACE;
 
   char buffer[SCRAMBLED_PASSWORD_CHAR_LENGTH + 1];
 
   /** empty password results in an empty hash */
-  if (!hash_length && !cleartext_length) DBUG_RETURN(0);
+  if (!hash_length && !cleartext_length) return 0;
 
   DBUG_ASSERT(hash_length <= SCRAMBLED_PASSWORD_CHAR_LENGTH);
 
@@ -3699,7 +3777,7 @@ static int compare_native_password_with_hash(const char *hash,
   *is_error = 0;
   int result = memcmp(hash, buffer, SCRAMBLED_PASSWORD_CHAR_LENGTH);
 
-  DBUG_RETURN(result);
+  return result;
 }
 
 /* clang-format off */
@@ -3768,7 +3846,7 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
   int pkt_len;
   MPVIO_EXT *mpvio = (MPVIO_EXT *)vio;
 
-  DBUG_ENTER("native_password_authenticate");
+  DBUG_TRACE;
 
   /* generate the scramble, or reuse the old one */
   if (mpvio->scramble[SCRAMBLE_LENGTH])
@@ -3776,7 +3854,7 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
 
   /* send it to the client */
   if (mpvio->write_packet(mpvio, (uchar *)mpvio->scramble, SCRAMBLE_LENGTH + 1))
-    DBUG_RETURN(CR_AUTH_HANDSHAKE);
+    return CR_AUTH_HANDSHAKE;
 
   /* reply and authenticate */
 
@@ -3816,8 +3894,7 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
   */
 
   /* read the reply with the encrypted password */
-  if ((pkt_len = mpvio->read_packet(mpvio, &pkt)) < 0)
-    DBUG_RETURN(CR_AUTH_HANDSHAKE);
+  if ((pkt_len = mpvio->read_packet(mpvio, &pkt)) < 0) return CR_AUTH_HANDSHAKE;
   DBUG_PRINT("info", ("reply read : pkt_len=%d", pkt_len));
 
   DBUG_EXECUTE_IF("native_password_bad_reply", {
@@ -3831,9 +3908,9 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
   }
   if (pkt_len == 0) {
     info->password_used = PASSWORD_USED_NO;
-    DBUG_RETURN(mpvio->acl_user->credentials[PRIMARY_CRED].m_salt_len != 0
-                    ? CR_AUTH_USER_CREDENTIALS
-                    : CR_OK);
+    return mpvio->acl_user->credentials[PRIMARY_CRED].m_salt_len != 0
+               ? CR_AUTH_USER_CREDENTIALS
+               : CR_OK;
   } else
     info->password_used = PASSWORD_USED_YES;
   bool second = false;
@@ -3845,7 +3922,7 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
       if (!mpvio->acl_user->credentials[SECOND_CRED].m_salt_len ||
           check_scramble(pkt, mpvio->scramble,
                          mpvio->acl_user->credentials[SECOND_CRED].m_salt)) {
-        DBUG_RETURN(CR_AUTH_USER_CREDENTIALS);
+        return CR_AUTH_USER_CREDENTIALS;
       } else {
         if (second) {
           MPVIO_EXT *mpvio = (MPVIO_EXT *)vio;
@@ -3857,15 +3934,15 @@ static int native_password_authenticate(MYSQL_PLUGIN_VIO *vio,
               ER_MYSQL_NATIVE_PASSWORD_SECOND_PASSWORD_USED_INFORMATION,
               username, hostname ? hostname : "");
         }
-        DBUG_RETURN(CR_OK);
+        return CR_OK;
       }
     } else {
-      DBUG_RETURN(CR_OK);
+      return CR_OK;
     }
   }
 
   my_error(ER_HANDSHAKE_ERROR, MYF(0));
-  DBUG_RETURN(CR_AUTH_HANDSHAKE);
+  return CR_AUTH_HANDSHAKE;
 }
 
 #if defined(HAVE_OPENSSL)
@@ -3885,21 +3962,17 @@ static int my_vio_is_encrypted(MYSQL_PLUGIN_VIO *vio) {
   in sql_show.cc.
 */
 int show_rsa_public_key(THD *, SHOW_VAR *var MY_ATTRIBUTE((unused)), char *) {
-#ifndef HAVE_WOLFSSL
   var->type = SHOW_CHAR;
   var->value = const_cast<char *>(g_sha256_rsa_keys->get_public_key_as_pem());
-#endif
   return 0;
 }
 
 void deinit_rsa_keys(void) {
-#ifndef HAVE_WOLFSSL
   if (g_sha256_rsa_keys) {
     g_sha256_rsa_keys->free_memory();
     delete g_sha256_rsa_keys;
     g_sha256_rsa_keys = 0;
   }
-#endif
   if (g_caching_sha2_rsa_keys) {
     g_caching_sha2_rsa_keys->free_memory();
     delete g_caching_sha2_rsa_keys;
@@ -3929,28 +4002,21 @@ class FileCloser {
 */
 
 bool init_rsa_keys(void) {
-#ifndef HAVE_WOLFSSL
   if (!do_auto_rsa_keys_generation()) return true;
 
   if (!(g_sha256_rsa_keys = new Rsa_authentication_keys(
             &auth_rsa_private_key_path, &auth_rsa_public_key_path)))
     return true;
-#endif
   if (!(g_caching_sha2_rsa_keys =
             new Rsa_authentication_keys(&caching_sha2_rsa_private_key_path,
                                         &caching_sha2_rsa_public_key_path))) {
-#ifndef HAVE_WOLFSSL
     delete g_sha256_rsa_keys;
     g_sha256_rsa_keys = 0;
-#endif
     return true;
   }
 
-  return (
-#ifndef HAVE_WOLFSSL
-      g_sha256_rsa_keys->read_rsa_keys() ||
-#endif
-      g_caching_sha2_rsa_keys->read_rsa_keys());
+  return (g_sha256_rsa_keys->read_rsa_keys() ||
+          g_caching_sha2_rsa_keys->read_rsa_keys());
 }
 
 static MYSQL_PLUGIN plugin_info_ptr;
@@ -4004,10 +4070,10 @@ static int compare_sha256_password_with_hash(const char *hash,
   const char *user_salt_begin;
   const char *user_salt_end;
 
-  DBUG_ENTER("compare_sha256_password_with_hash");
+  DBUG_TRACE;
   DBUG_ASSERT(cleartext_length <= SHA256_PASSWORD_MAX_PASSWORD_LENGTH);
 
-  if (cleartext_length > SHA256_PASSWORD_MAX_PASSWORD_LENGTH) DBUG_RETURN(-1);
+  if (cleartext_length > SHA256_PASSWORD_MAX_PASSWORD_LENGTH) return -1;
 
   /*
     Fetch user authentication_string and extract the password salt
@@ -4017,7 +4083,7 @@ static int compare_sha256_password_with_hash(const char *hash,
   if (extract_user_salt(&user_salt_begin, &user_salt_end) !=
       CRYPT_SALT_LENGTH) {
     *is_error = 1;
-    DBUG_RETURN(-1);
+    return -1;
   }
 
   *is_error = 0;
@@ -4029,7 +4095,7 @@ static int compare_sha256_password_with_hash(const char *hash,
   /* Compare the newly created hash digest with the password record */
   int result = memcmp(hash, stage2, hash_length);
 
-  DBUG_RETURN(result);
+  return result;
 }
 
 #undef LOG_COMPONENT_TAG
@@ -4057,14 +4123,12 @@ static int sha256_password_authenticate(MYSQL_PLUGIN_VIO *vio,
   uchar *pkt;
   int pkt_len;
   String scramble_response_packet;
-#if !defined(HAVE_WOLFSSL)
   int cipher_length = 0;
   unsigned char plain_text[MAX_CIPHER_LENGTH + 1];
   RSA *private_key = NULL;
   RSA *public_key = NULL;
-#endif /* HAVE_WOLFSSL */
 
-  DBUG_ENTER("sha256_password_authenticate");
+  DBUG_TRACE;
 
   /*
    Deprecate message for SHA-256 authentication plugin.
@@ -4084,7 +4148,7 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     if it is set to operate as a default plugin.
   */
   if (vio->write_packet(vio, (unsigned char *)scramble, SCRAMBLE_LENGTH + 1))
-    DBUG_RETURN(CR_ERROR);
+    return CR_ERROR;
 
   /*
     Save the scramble so it could be used by native plugin in case
@@ -4096,7 +4160,7 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     After the call to read_packet() the user name will appear in
     mpvio->acl_user and info will contain current data.
   */
-  if ((pkt_len = vio->read_packet(vio, &pkt)) == -1) DBUG_RETURN(CR_ERROR);
+  if ((pkt_len = vio->read_packet(vio, &pkt)) == -1) return CR_ERROR;
 
   /*
     If first packet is a 0 byte then the client isn't sending any password
@@ -4118,14 +4182,13 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
         DBUG_PRINT("info", ("sha256_password_proxy_users is enabled \
                              , setting authenticated_as to NULL"));
       }
-      DBUG_RETURN(CR_OK);
+      return CR_OK;
     } else
-      DBUG_RETURN(CR_ERROR);
+      return CR_ERROR;
   } else
     info->password_used = PASSWORD_USED_YES;
 
   if (!my_vio_is_encrypted(vio)) {
-#if !defined(HAVE_WOLFSSL)
     /*
       Since a password is being used it must be encrypted by RSA since no
       other encryption is being active.
@@ -4138,14 +4201,14 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     */
     if (private_key == NULL || public_key == NULL) {
       LogPluginErr(ERROR_LEVEL, ER_SHA_PWD_AUTH_REQUIRES_RSA_OR_SSL);
-      DBUG_RETURN(CR_ERROR);
+      return CR_ERROR;
     }
 
     if ((cipher_length = g_sha256_rsa_keys->get_cipher_length()) >
         MAX_CIPHER_LENGTH) {
       LogPluginErr(ERROR_LEVEL, ER_SHA_PWD_RSA_KEY_TOO_LONG,
                    g_sha256_rsa_keys->get_cipher_length(), MAX_CIPHER_LENGTH);
-      DBUG_RETURN(CR_ERROR);
+      return CR_ERROR;
     }
 
     /*
@@ -4160,16 +4223,16 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
                             pointer_cast<const uchar *>(
                                 g_sha256_rsa_keys->get_public_key_as_pem()),
                             pem_length))
-        DBUG_RETURN(CR_ERROR);
+        return CR_ERROR;
       /* Get the encrypted response from the client */
-      if ((pkt_len = vio->read_packet(vio, &pkt)) == -1) DBUG_RETURN(CR_ERROR);
+      if ((pkt_len = vio->read_packet(vio, &pkt)) == -1) return CR_ERROR;
     }
 
     /*
       The packet will contain the cipher used. The length of the packet
       must correspond to the expected cipher length.
     */
-    if (pkt_len != cipher_length) DBUG_RETURN(CR_ERROR);
+    if (pkt_len != cipher_length) return CR_ERROR;
 
     /* Decrypt password */
     RSA_private_decrypt(cipher_length, pkt, plain_text, private_key,
@@ -4185,18 +4248,15 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     pkt = plain_text;
     pkt_len = strlen((char *)plain_text) + 1;  // include \0 intentionally.
 
-    if (pkt_len == 1) DBUG_RETURN(CR_ERROR);
-#else
-    DBUG_RETURN(CR_ERROR);
-#endif /* HAVE_WOLFSSL */
-  }    // if(!my_vio_is_encrypter())
+    if (pkt_len == 1) return CR_ERROR;
+  }  // if(!my_vio_is_encrypted())
 
   /* Don't process the password if it is longer than maximum limit */
-  if (pkt_len > SHA256_PASSWORD_MAX_PASSWORD_LENGTH + 1) DBUG_RETURN(CR_ERROR);
+  if (pkt_len > SHA256_PASSWORD_MAX_PASSWORD_LENGTH + 1) return CR_ERROR;
 
   /* A password was sent to an account without a password */
   if (info->auth_string_length == 0 && info->additional_auth_string_length == 0)
-    DBUG_RETURN(CR_ERROR);
+    return CR_ERROR;
 
   int is_error = 0;
   int result = compare_sha256_password_with_hash(
@@ -4207,7 +4267,7 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
     /* User salt is not correct */
     LogPluginErr(ERROR_LEVEL, ER_SHA_PWD_SALT_FOR_USER_CORRUPT,
                  info->user_name);
-    DBUG_RETURN(CR_ERROR);
+    return CR_ERROR;
   }
 
   if (result && info->additional_auth_string_length) {
@@ -4218,7 +4278,7 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
       /* User salt is not correct */
       LogPluginErr(ERROR_LEVEL, ER_SHA_PWD_SALT_FOR_USER_CORRUPT,
                    info->user_name);
-      DBUG_RETURN(CR_ERROR);
+      return CR_ERROR;
     }
     if (result == 0) {
       MPVIO_EXT *mpvio = (MPVIO_EXT *)vio;
@@ -4237,13 +4297,12 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
       DBUG_PRINT("info", ("mysql_native_authentication_proxy_users is enabled \
 						   , setting authenticated_as to NULL"));
     }
-    DBUG_RETURN(CR_OK);
+    return CR_OK;
   }
 
-  DBUG_RETURN(CR_ERROR);
+  return CR_ERROR;
 }
 
-#if !defined(HAVE_WOLFSSL)
 static MYSQL_SYSVAR_STR(
     private_key_path, auth_rsa_private_key_path,
     PLUGIN_VAR_READONLY | PLUGIN_VAR_NOPERSIST,
@@ -4542,7 +4601,7 @@ static Sql_string_t rsa_priv_key_write(RSA *rsa) {
   if (PEM_write_bio_RSAPrivateKey(buf, rsa, NULL, NULL, 0, NULL, NULL)) {
     size_t len = BIO_pending(buf);
     if (resize_no_exception(read_buffer, len + 1) == true) {
-      BIO_read(buf, (void *)read_buffer.c_str(), len);
+      BIO_read(buf, const_cast<char *>(read_buffer.c_str()), len);
       read_buffer[len] = '\0';
     }
   }
@@ -4564,7 +4623,7 @@ static Sql_string_t rsa_pub_key_write(RSA *rsa) {
   if (PEM_write_bio_RSA_PUBKEY(buf, rsa)) {
     size_t len = BIO_pending(buf);
     if (resize_no_exception(read_buffer, len + 1) == true) {
-      BIO_read(buf, (void *)read_buffer.c_str(), len);
+      BIO_read(buf, const_cast<char *>(read_buffer.c_str()), len);
       read_buffer[len] = '\0';
     }
   }
@@ -4681,7 +4740,7 @@ static Sql_string_t x509_cert_write(X509 *cert) {
   if (PEM_write_bio_X509(buf, cert)) {
     size_t len = BIO_pending(buf);
     if (resize_no_exception(read_buffer, len + 1) == true) {
-      BIO_read(buf, (void *)read_buffer.c_str(), len);
+      BIO_read(buf, const_cast<char *>(read_buffer.c_str()), len);
       read_buffer[len] = '\0';
     }
   }
@@ -4727,7 +4786,7 @@ static Sql_string_t x509_key_write(EVP_PKEY *pkey) {
   if (PEM_write_bio_RSAPrivateKey(buf, rsa, NULL, NULL, 10, NULL, NULL)) {
     size_t len = BIO_pending(buf);
     if (resize_no_exception(read_buffer, len + 1) == true) {
-      BIO_read(buf, (void *)read_buffer.c_str(), len);
+      BIO_read(buf, const_cast<char *>(read_buffer.c_str()), len);
       read_buffer[len] = '\0';
     }
   }
@@ -5106,19 +5165,19 @@ bool do_auto_cert_generation(ssl_artifacts_status auto_detection_status,
 
 static bool generate_rsa_keys(bool auto_generate, const char *priv_key_path,
                               const char *pub_key_path, const char *message) {
-  DBUG_ENTER("generate_rsa_keys");
+  DBUG_TRACE;
   if (auto_generate) {
     MY_STAT priv_stat, pub_stat;
     if (strcmp(priv_key_path, AUTH_DEFAULT_RSA_PRIVATE_KEY) ||
         strcmp(pub_key_path, AUTH_DEFAULT_RSA_PUBLIC_KEY)) {
       LogErr(INFORMATION_LEVEL, ER_AUTH_RSA_CONF_PREVENTS_KEY_GENERATION,
              message);
-      DBUG_RETURN(true);
+      return true;
     } else if (my_stat(AUTH_DEFAULT_RSA_PRIVATE_KEY, &priv_stat, MYF(0)) ||
                my_stat(AUTH_DEFAULT_RSA_PUBLIC_KEY, &pub_stat, MYF(0))) {
       LogErr(INFORMATION_LEVEL, ER_AUTH_KEY_GENERATION_SKIPPED_PAIR_PRESENT,
              message);
-      DBUG_RETURN(true);
+      return true;
     } else {
       /* Initialize the key pair generator. */
       RSA_gen rsa_gen;
@@ -5127,14 +5186,14 @@ static bool generate_rsa_keys(bool auto_generate, const char *priv_key_path,
 
       if (create_RSA_key_pair(rsa_gen, "private_key.pem", "public_key.pem",
                               fcr) == false)
-        DBUG_RETURN(false);
+        return false;
 
       LogErr(INFORMATION_LEVEL, ER_AUTH_KEYS_SAVED_TO_DATADIR, message);
-      DBUG_RETURN(true);
+      return true;
     }
   } else {
     LogErr(INFORMATION_LEVEL, ER_AUTH_KEY_GENERATION_DISABLED, message);
-    DBUG_RETURN(true);
+    return true;
   }
 }
 
@@ -5171,7 +5230,6 @@ static bool do_auto_rsa_keys_generation() {
                             caching_sha2_rsa_public_key_path,
                             "--caching_sha2_password_auto_generate_rsa_keys"));
 }
-#endif /* HAVE_WOLFSSL */
 #endif /* HAVE_OPENSSL */
 
 bool MPVIO_EXT::can_authenticate() {
@@ -5233,13 +5291,9 @@ mysql_declare_plugin(mysql_password) {
       NULL,                             /* Deinit function  */
       0x0101,                           /* Version (1.0)    */
       NULL,                             /* status variables */
-#if !defined(HAVE_WOLFSSL)
-      sha256_password_sysvars, /* system variables */
-#else
-      NULL,
-#endif      /* HAVE_WOLFSSL */
-      NULL, /* config options   */
-      0     /* flags            */
+      sha256_password_sysvars,          /* system variables */
+      NULL,                             /* config options   */
+      0                                 /* flags            */
 }
 #endif /* HAVE_OPENSSL */
 mysql_declare_plugin_end;

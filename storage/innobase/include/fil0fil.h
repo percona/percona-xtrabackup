@@ -350,12 +350,6 @@ class Fil_path {
   static constexpr auto OS_SEPARATOR = OS_PATH_SEPARATOR;
 
   /** Directory separators that are supported. */
-#if defined(__SUNPRO_CC)
-  static char *SEPARATOR;
-  static char *DOT_SLASH;
-  static char *DOT_DOT_SLASH;
-  static char *SLASH_DOT_DOT_SLASH;
-#else
   static constexpr auto SEPARATOR = "\\/";
 #ifdef _WIN32
   static constexpr auto DOT_SLASH = ".\\";
@@ -366,8 +360,6 @@ class Fil_path {
   static constexpr auto DOT_DOT_SLASH = "../";
   static constexpr auto SLASH_DOT_DOT_SLASH = "/../";
 #endif /* _WIN32 */
-
-#endif /* __SUNPRO_CC */
 
   /** Various types of file paths. */
   enum path_type { absolute, relative, file_name_only, invalid };
@@ -479,6 +471,26 @@ class Fil_path {
   Fil_path::normalize() must be run before this.
   @return true if a circular section if found, false if not */
   bool is_circular() const MY_ATTRIBUTE((warn_unused_result));
+
+  /** Determine if the file or directory is considered HIDDEN.
+  Most file systems identify the HIDDEN attribute by a '.' preceeding the
+  basename.  On Windows, a HIDDEN path is identified by a file attribute.
+  We will use the preceeding '.' to indicate a HIDDEN attribute on ALL
+  file systems so that InnoDB tablespaces and their directory structure
+  remain portable.
+  @param[in]  path  The full or relative path of a file or directory.
+  @return true if the directory or path is HIDDEN. */
+  static bool is_hidden(std::string path);
+
+#ifdef _WIN32
+  /** Use the WIN32_FIND_DATA struncture to determine if the file or
+  directory is HIDDEN.  Consider a SYSTEM attribute also as an indicator
+  that it is HIDDEN to InnoDB.
+  @param[in]  dirent  A directory entry obtained from a call to FindFirstFile()
+  or FindNextFile()
+  @return true if the directory or path is HIDDEN. */
+  static bool is_hidden(WIN32_FIND_DATA &dirent);
+#endif /* WIN32 */
 
   /** Remove quotes e.g., 'a;b' or "a;b" -> a;b.
   Assumes matching quotes.

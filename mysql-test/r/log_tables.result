@@ -30,11 +30,11 @@ select verbose_comment, user_host, argument
 from  mysql.general_log join join_test
 on (mysql.general_log.command_type = join_test.command_type);
 verbose_comment	user_host	argument
-User performed a usual SQL query	USER_HOST	select * from general_log where argument like '%general_log%'
 User performed a usual SQL query	USER_HOST	create table join_test (verbose_comment varchar (80), command_type varchar(64))
-User performed a usual SQL query	USER_HOST	insert into join_test values ("User performed a usual SQL query", "Query")
-User performed a usual SQL query	USER_HOST	insert into join_test values ("New DB connection was registered", "Connect")
 User performed a usual SQL query	USER_HOST	insert into join_test values ("Get the table info", "Field List")
+User performed a usual SQL query	USER_HOST	insert into join_test values ("New DB connection was registered", "Connect")
+User performed a usual SQL query	USER_HOST	insert into join_test values ("User performed a usual SQL query", "Query")
+User performed a usual SQL query	USER_HOST	select * from general_log where argument like '%general_log%'
 User performed a usual SQL query	USER_HOST	select verbose_comment, user_host, argument
 from  mysql.general_log join join_test
 on (mysql.general_log.command_type = join_test.command_type)
@@ -157,7 +157,7 @@ sleep(2)
 0
 select * from mysql.slow_log;
 start_time	user_host	query_time	lock_time	rows_sent	rows_examined	db	last_insert_id	insert_id	server_id	sql_text	thread_id
-TIMESTAMP	USER_HOST	QUERY_TIME	00:00:00.000000	1	0	mysql	0	0	1	QUERY	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	00:00:00.000000	1	1	mysql	0	0	1	QUERY	THREAD_ID
 set @@session.long_query_time = @saved_long_query_time;
 flush tables with read lock;
 unlock tables;

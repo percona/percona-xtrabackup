@@ -20,17 +20,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-
-IF(NOT GMOCK_FOUND)
-  RETURN()
-ENDIF()
-
-INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
-
-INCLUDE_DIRECTORIES(
-  ${GMOCK_INCLUDE_DIRS}
-)
-
 SET(TESTS
   keyring-api
   keys_container
@@ -52,6 +41,9 @@ LIST(APPEND SRC_FILES
   ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keyring_key.cc
   ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keys_container.cc
   ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keys_iterator.cc
+  ${CMAKE_SOURCE_DIR}/plugin/keyring/common/system_keys_container.cc
+  ${CMAKE_SOURCE_DIR}/plugin/keyring/common/system_key_adapter.cc
+  ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keyring_impl.cc
   ${CMAKE_SOURCE_DIR}/plugin/keyring/buffered_file_io.cc
   ${CMAKE_SOURCE_DIR}/plugin/keyring/converter.cc
   ${CMAKE_SOURCE_DIR}/plugin/keyring/buffer.cc
@@ -73,56 +65,32 @@ ENDIF()
 ADD_LIBRARY(keyring_test STATIC ${SRC_FILES})
 ADD_DEPENDENCIES(keyring_test GenError)
 
-IF (MERGE_UNITTESTS)
-  MYSQL_ADD_EXECUTABLE(merge_keyring_file_tests-t
-    ${ALL_KEYRING_TESTS} SKIP_INSTALL)
-  SET_TARGET_PROPERTIES(merge_keyring_file_tests-t
-    PROPERTIES ENABLE_EXPORTS TRUE)
-  TARGET_LINK_LIBRARIES(merge_keyring_file_tests-t keyring_test)
+MYSQL_ADD_EXECUTABLE(merge_keyring_file_tests-t
+  ${ALL_KEYRING_TESTS}
+  ENABLE_EXPORTS
+  EXCLUDE_ON_SOLARIS
+  ADD_TEST merge_keyring_file_tests)
 
-  TARGET_LINK_LIBRARIES(merge_keyring_file_tests-t
-    sql_main binlog rpl master slave sql_gis sql_dd)
-  TARGET_LINK_LIBRARIES(merge_keyring_file_tests-t
-    gunit_large strings dbug mysys)
-  TARGET_LINK_LIBRARIES(merge_keyring_file_tests-t ${ICU_LIBRARIES})
+TARGET_LINK_LIBRARIES(merge_keyring_file_tests-t
+  keyring_test
+  gunit_large
+  perfschema
+  sql_main
+  ${ICU_LIBRARIES}
+  )
 
-  IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
-    TARGET_LINK_LIBRARIES(merge_keyring_file_tests-t perfschema)
-  ENDIF()
-
-  ADD_DEPENDENCIES(merge_keyring_file_tests-t GenError)
-
-  # See ../CMakeLists.txt
-  IF(ADD_MERGE_LARGE_TESTS)
-    ADD_TEST(merge_keyring_file_tests
-      ${CMAKE_BINARY_DIR}/runtime_output_directory/merge_keyring_file_tests-t)
-  ELSE()
-    MESSAGE(WARNING
-      "Likely link failure, skipping merge_keyring_file_tests-t")
-    SET_PROPERTY(TARGET merge_keyring_file_tests-t
-      PROPERTY EXCLUDE_FROM_ALL TRUE)
-  ENDIF()
-
-ENDIF(MERGE_UNITTESTS)
+ADD_DEPENDENCIES(merge_keyring_file_tests-t GenError)
 
 FOREACH(test ${TESTS})
-  MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc SKIP_INSTALL ${EXCLUDE_FROM_ALL})
-  SET_TARGET_PROPERTIES(${test}-t PROPERTIES ENABLE_EXPORTS TRUE)
-  TARGET_LINK_LIBRARIES(${test}-t keyring_test)
+  MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
+    ENABLE_EXPORTS SKIP_INSTALL EXCLUDE_FROM_ALL)
 
   TARGET_LINK_LIBRARIES(${test}-t
-    sql_main binlog rpl master slave sql_gis sql_dd)
-  TARGET_LINK_LIBRARIES(${test}-t
-    gunit_large strings dbug mysys)
-  TARGET_LINK_LIBRARIES(${test}-t ${ICU_LIBRARIES})
-
-  IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
-    TARGET_LINK_LIBRARIES(${test}-t perfschema)
-    TARGET_LINK_LIBRARIES(${test}-t perfschema)
-  ENDIF()
-
-  IF(NOT MERGE_UNITTESTS)
-    ADD_TEST(${test} ${CMAKE_BINARY_DIR}/runtime_output_directory/${test}-t)
-  ENDIF()
+    keyring_test
+    gunit_large
+    sql_main
+    perfschema
+    ${ICU_LIBRARIES}
+    )
 ENDFOREACH()
 

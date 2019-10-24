@@ -20,7 +20,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-INCLUDE_DIRECTORIES(SYSTEM ${GTEST_INCLUDE_DIRS} ${GMOCK_INCLUDE_DIRS})
+INCLUDE_DIRECTORIES(SYSTEM ${GMOCK_INCLUDE_DIRS})
 
 INCLUDE_DIRECTORIES(helpers
   ${PROJECT_SOURCE_DIR}/src/harness/include
@@ -45,8 +45,8 @@ SET(helper_sources
   helpers/rest_metadata_client.cc
 )
 
-IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated")
+IF(MY_COMPILER_IS_CLANG)
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-deprecated")
 ENDIF()
 
 ADD_LIBRARY(routertest_helpers STATIC ${helper_sources})
@@ -54,13 +54,12 @@ ADD_LIBRARY(routertest_helpers STATIC ${helper_sources})
 TARGET_LINK_LIBRARIES(routertest_helpers harness-library router_lib
   rest_api_lib mock_server_rest_client)
 
-FOREACH(test_dir tools)
-    IF(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${test_dir})
-        add_test_dir(${CMAKE_CURRENT_SOURCE_DIR}/${test_dir} MODULE project)
-    ENDIF()
-ENDFOREACH()
+add_test_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/tools/gtest_cxx.cc
+  MODULE project)
 
 ADD_SUBDIRECTORY(component)
 ADD_SUBDIRECTORY(fuzzers)
 
-ADD_DEFINITIONS(-DCOMPONENT_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/component/data/")
+ADD_DEFINITIONS(
+  -DCOMPONENT_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/component/data/")
