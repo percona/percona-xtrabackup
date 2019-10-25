@@ -700,7 +700,7 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
         ut_free(m_encryption_iv);
         m_encryption_key = NULL;
         m_encryption_iv = NULL;
-        return (DB_CORRUPTION);
+        return (DB_INVALID_ENCRYPTION_META);
       }
     } else {
       ib::info(ER_IB_MSG_402) << "Read encryption metadata from " << m_filepath
