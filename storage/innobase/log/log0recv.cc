@@ -1692,6 +1692,11 @@ fil_write_encryption_parse(
 		if (!fsp_header_decode_encryption_info(key,
 						       iv,
 						       ptr)) {
+			if (!srv_backup_mode) {
+				ib::error() << "Cannot decode encryption "
+					       "information in the redo log.";
+				exit(EXIT_FAILURE);
+			}
 			return(ptr + len);
 		}
 	} else {
