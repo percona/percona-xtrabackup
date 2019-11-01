@@ -1,0 +1,39 @@
+================================================================================
+|Percona XtraBackup| |release|
+================================================================================
+
+Percona is glad to announce the release of |Percona XtraBackup| |release| on
+|date|. Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.16/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories. 
+
+All Percona software is open-source and free.
+
+Improvements
+================================================================================
+
+- Add timeout options for FTWRL, LTFB, LBFB. Bug fixed :jirabug:`PXB-1914`
+
+Bugs Fixed
+================================================================================
+
+- |Percona Xtrabackup| was not able to connect to the database when
+  the password was specified along with the transition-key
+  parameter. Bug fixed :jirabug:`PXB-1902`.
+- In some cases, |Percona Xtrabackup| stuck with redo log corruption
+  when master key is rotated. Bug fixed :jirabug:`PXB-1903`.
+- In rare cases, when both full and incremental backups were made
+  before MySQL flushed the first page of the encrypted tablespace,
+  |Percona Xtrabackup| could crash during the incremental backup
+  prepare for the tablespace encryption. Bug fixed
+  :jirabug:`PXB-1894`.
+- An encrypted table could not be restored when ADD/DROP INDEX was run
+  on the table. Bug fixed :jirabug:`PXB-1905`.
+- In some cases :option:`xtrabackup --prepare` could fail to decrypt a
+  table but reported that the operation *completed ok*. Bug fixed
+  :jirabug:`PXB-1936`.
+
+.. |release| replace:: 2.4.16
+.. |date| replace:: November 4, 2019
+
+
