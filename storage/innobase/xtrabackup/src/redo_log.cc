@@ -642,7 +642,11 @@ void Archived_Redo_Log_Monitor::thread_func() {
   stopped = false;
   ready = false;
 
-  MYSQL *mysql = xb_mysql_connect();
+  auto mysql = xb_mysql_connect();
+  if (mysql == nullptr) {
+    my_thread_end();
+    return;
+  }
 
   char *redo_log_archive_dirs = nullptr;
   char *server_uuid = nullptr;
