@@ -4,7 +4,7 @@
 
 Percona is glad to announce the release of |Percona XtraBackup| |release| on
 |date|. Downloads are available from our `download site
-<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4/>`_ and
+<http://www.percona.com/downloads/Percona-XtraBackup-2.4/>`_ and
 from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories. 
 
 All Percona software is open-source and free.
