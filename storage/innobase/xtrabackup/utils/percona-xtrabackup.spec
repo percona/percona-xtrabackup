@@ -98,6 +98,8 @@ rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
 rm -rf $RPM_BUILD_ROOT/%{_libdir}/libmysqlservices.a
 rm -rf $RPM_BUILD_ROOT/usr/lib/libmysqlservices.a
+rm -f $RPM_BUILD_ROOT/usr/COPYING-test
+rm -f $RPM_BUILD_ROOT/usr/README-test
 
 %clean
 rm -rf $RPM_BUILD_ROOT
