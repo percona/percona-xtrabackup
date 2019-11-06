@@ -29,6 +29,10 @@ briefly pausing writes at the end of the backup: |MyISAM|,
 :term:`Merge <.MRG>`, and :term:`Archive <.ARM>`, including partitioned tables,
 triggers, and database options.
 
+.. important::
+
+   |Percona XtraBackup| 2.4 does not support the MyRocks or TokuDB storage engines.
+
 Percona's enterprise-grade commercial `MySQL Support
 <http://www.percona.com/mysql-support/>`_ contracts include support for
 |Percona XtraBackup|. We recommend support for critical production deployments.
