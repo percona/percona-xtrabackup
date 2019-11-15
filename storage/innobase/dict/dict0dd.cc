@@ -668,8 +668,14 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
       }
     }
 
-    binary_type = ((mtype == DATA_VARMYSQL) || (mtype == DATA_VARCHAR) ||
-                   (mtype == DATA_CHAR) || (mtype == DATA_MYSQL))
+    binary_type = (((dd_col->type() == dd::enum_column_types::VARCHAR) ||
+                    (dd_col->type() == dd::enum_column_types::STRING) ||
+                    (dd_col->type() == dd::enum_column_types::VAR_STRING) ||
+                    (dd_col->type() == dd::enum_column_types::BLOB) ||
+                    (dd_col->type() == dd::enum_column_types::TINY_BLOB) ||
+                    (dd_col->type() == dd::enum_column_types::MEDIUM_BLOB) ||
+                    (dd_col->type() == dd::enum_column_types::LONG_BLOB)) &&
+                   dd_col->collation_id() != my_charset_bin.number)
                       ? 0
                       : DATA_BINARY_TYPE;
 
@@ -796,8 +802,6 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
       if (dd_index->type() == dd::Index::IT_SPATIAL) {
         prefix_len = 0;
       } else if (dd_index->type() == dd::Index::IT_FULLTEXT) {
-        prefix_len = 0;
-      } else if (dd_index->type() == dd::Index::IT_MULTIPLE) {
         prefix_len = 0;
       } else if (idx_elem->length() != (uint)(-1) &&
                  idx_elem->length() != table->cols[col_pos].len) {
