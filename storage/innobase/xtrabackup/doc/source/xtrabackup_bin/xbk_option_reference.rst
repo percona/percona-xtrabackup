@@ -75,6 +75,14 @@ Options
    Make a backup and place it in :option:`--target-dir`. See
    :ref:`Creating a backup <creating_a_backup>`.
 
+.. option:: --backup-lock-timeout
+
+   The timeout in seconds for attempts to acquire metadata locks.
+
+.. option:: --backup-lock-retry-count
+
+   The number of attempts to acquire metadata locks.
+
 .. option:: --backup-locks
 
    This option controls if backup locks should be used instead of ``FLUSH TABLES
@@ -720,6 +728,15 @@ Options
 
    RocksDB WAL directory.
 
+.. option:: --rocksdb-checkpoint-max-age
+
+   The checkpoint cannot be older than this number of seconds when the backup
+   completes.
+
+.. option:: --rocksdb-checkpoint-max-count
+
+   Complete the backup even if the checkpoint age requirement has not been met after
+   this number of checkpoints.
 
 .. option:: --rollback-prepared-trx
 

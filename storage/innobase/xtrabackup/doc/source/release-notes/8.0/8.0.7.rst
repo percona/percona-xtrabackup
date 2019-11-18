@@ -16,7 +16,7 @@ drives down backup costs while providing unique features for |MySQL| backups.
 
 In release |release|, |pxb.name| enables making backups of databases
 that contain the `encrypted system tablespace
-<https://www.percona.com/doc/percona-server/5.7/management/data_at_rest_encryption.html#innodb_sys_tablespace_encrypt>`_.
+<https://www.percona.com/doc/percona-server/8.0/security/data-at-rest-encryption.html#data-at-rest-encryption>`_.
 Encrypted `mysql` tablespace is now also supported.
 
 |pxb.name| |release| implements the support of the ``lz4`` compression algorithm
