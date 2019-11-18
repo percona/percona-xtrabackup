@@ -15,27 +15,31 @@ databases. With *Percona XtraBackup*, you can achieve the following benefits:
 * Higher uptime due to faster restore time
 
 |Percona XtraBackup| makes |MySQL| hot backups for all versions of |Percona
-Server|, and |MySQL|. It performs streaming, compressed, and
-incremental |MySQL| backups.
+Server|, and |MySQL|. It performs streaming, compressed, and incremental |MySQL|
+backups.
 
 .. important::
 
-   With the introduction of Percona XtraBackup 8.0, Percona XtraBackup
-   2.4 will continue to support MySQL and Percona Server 5.6 and 5.7
-   databases. Due to the new MySQL redo log and data dictionary
-   formats the Percona XtraBackup 8.0.x versions will only be
-   compatible with MySQL 8.0.x and the upcoming Percona Server for
-   MySQL 8.0.x
-
-|Percona XtraBackup| works with |MySQL| and |Percona Server|. It supports
-completely non-blocking backups of |InnoDB|, |XtraDB|, and MyRocks storage engines. In
-addition, it can back up the following storage engines by briefly pausing writes
-at the end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive
-<.ARM>`, including partitioned tables, triggers, and database options.
+   With the introduction of |Percona XtraBackup| 8.0, |Percona XtraBackup| 2.4
+   will continue to support MySQL and Percona Server 5.6 and 5.7 databases. Due
+   to the new MySQL redo log and data dictionary formats the Percona XtraBackup
+   8.0.x versions will only be compatible with MySQL 8.0.x and the upcoming
+   Percona Server for MySQL 8.0.x
 
 Percona's enterprise-grade commercial `MySQL Support
-<http://www.percona.com/mysql-support/>`_ contracts include support for
-|Percona XtraBackup|. We recommend support for critical production deployments.
+<http://www.percona.com/mysql-support/>`_ contracts include support for |Percona
+XtraBackup|. We recommend support for critical production deployments.
+
+.. rubric:: Supported storage engines
+
+|Percona XtraBackup| works with |MySQL| and |Percona Server|. It supports
+completely non-blocking backups of |InnoDB|, |XtraDB|, and MyRocks storage
+engines. In addition, it can back up the following storage engines by briefly
+pausing writes at the end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and
+:term:`Archive <.ARM>`, including partitioned tables, triggers, and database
+options.
+
+.. include:: .res/contents/important.storage-engine.txt   
 
 MySQL Backup Tool Feature Comparison
 ====================================
