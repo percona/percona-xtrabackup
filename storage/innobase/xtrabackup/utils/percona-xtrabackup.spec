@@ -81,6 +81,8 @@ rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
 rm -rf $RPM_BUILD_ROOT/%{_libdir}/libmysqlservices.a
 rm -rf $RPM_BUILD_ROOT/usr/lib/libmysqlservices.a
+rm -rf $RPM_BUILD_ROOT/usr/lib/private/libprotobuf*
+rm -rf $RPM_BUILD_ROOT/usr/docs/INFO_SRC
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -96,6 +98,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/xtrabackup/plugin/keyring_vault.so
 %doc LICENSE
 %doc %{_mandir}/man1/*.1.gz
+%doc %{_mandir}/man8/*.8.gz
 
 %files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 %defattr(-,root,root,-)
