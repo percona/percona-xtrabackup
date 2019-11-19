@@ -12,6 +12,12 @@ function is_sparse_file() {
     [ "$n" = "0" ]
 }
 
+function is_multiple_of_page_size() {
+    let n=$(stat --printf "%s" $1)
+    remainder=$((n % 16384 ))
+    [ "$remainder" -eq 0 ]
+}
+
 start_server
 
 cat $MYSQLD_ERRFILE
@@ -44,7 +50,7 @@ done
 # wait for InnoDB to flush all dirty pages
 innodb_wait_for_flush_all
 
-if ! is_sparse_file $mysql_datadir/test t1.ibd ; then
+if is_sparse_file $mysql_datadir/test/t1.ibd ; then
     working_compression="yes"
 else
     working_compression="no"
@@ -57,9 +63,10 @@ xtrabackup --backup --target-dir=$topdir/tmp --transition-key=123 \
            --extra-lsndir=$topdir/backuplsn \
            --stream=xbstream --compress=lz4 --compress-threads=2 > $topdir/backup.xbs
 
-if [ working_compression = "yes" ] ; then
+if [ $working_compression = "yes" ] ; then
     for i in {1..4} ; do
-        is_sparse_file $topdir/backup/test/t1.ibd || die "Backed up t$i.ibd is not sparse"
+        is_sparse_file $topdir/backup/test/t$i.ibd || die "Backed up t$i.ibd is not sparse"
+        is_multiple_of_page_size $topdir/backup/test/t$i.ibd || die "Backed up t$i.ibd is not mulitple of page_size"
     done
 fi
 
@@ -88,18 +95,20 @@ function restore_and_verify() {
     xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
                --transition-key=123
 
-    if [ working_compression = "yes" ] ; then
+    if [ $working_compression = "yes" ] ; then
         for i in {1..4} ; do
             is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared t$i.ibd is not sparse"
+            is_multiple_of_page_size $topdir/backup/test/t$i.ibd || die "Prepared t$i.ibd is not mulitple of page_size"
         done
     fi
 
     xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/backup1 \
                --transition-key=123
 
-    if [ working_compression = "yes" ] ; then
+    if [ $working_compression = "yes" ] ; then
         for i in {1..4} ; do
             is_sparse_file $topdir/backup/test/t$i.ibd || die "Prepared (incremental) t$i.ibd is not sparse"
+	    is_multiple_of_page_size $topdir/backup/test/t$i.ibd || die "Prepared (incremental) t$i.ibd is not mulitple of page_size"
         done
     fi
 
@@ -111,9 +120,10 @@ function restore_and_verify() {
                --generate-new-master-key \
                --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
-    if [ working_compression = "yes" ] ; then
+    if [ $working_compression = "yes" ] ; then
         for i in {1..4} ; do
             is_sparse_file $topdir/backup/test/t$i.ibd || die "Restored t$i.ibd is not sparse"
+            is_multiple_of_page_size $topdir/backup/test/t$i.ibd || die "Restored t$i.ibd is not mulitple of page_size"
         done
     fi
 
