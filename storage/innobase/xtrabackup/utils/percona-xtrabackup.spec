@@ -83,6 +83,13 @@ rm -rf $RPM_BUILD_ROOT/%{_libdir}/libmysqlservices.a
 rm -rf $RPM_BUILD_ROOT/usr/lib/libmysqlservices.a
 rm -rf $RPM_BUILD_ROOT/usr/lib/private/libprotobuf*
 rm -rf $RPM_BUILD_ROOT/usr/docs/INFO_SRC
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man8
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/c*
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/m*
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/i*
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/l*
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -98,7 +105,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/xtrabackup/plugin/keyring_vault.so
 %doc LICENSE
 %doc %{_mandir}/man1/*.1.gz
-%doc %{_mandir}/man8/*.8.gz
 
 %files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 %defattr(-,root,root,-)
