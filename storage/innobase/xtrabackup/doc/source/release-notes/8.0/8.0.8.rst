@@ -55,5 +55,5 @@ Bugs Fixed
 
 .. |percona| replace:: Percona
 .. |pxb.name| replace:: Percona XtraBackup
-.. |date| replace:: November 20, 2019
+.. |date| replace:: November 21, 2019
 .. |release| replace:: 8.0.8
