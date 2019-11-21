@@ -1352,7 +1352,6 @@ ADD_SUBDIRECTORY(scripts)
 
 IF(NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(mysql-test)
-  ADD_SUBDIRECTORY(support-files)
   IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
     ADD_SUBDIRECTORY(internal)
   ENDIF()
@@ -1409,16 +1408,6 @@ INCLUDE(${CMAKE_BINARY_DIR}/info_macros.cmake)
 # Source: This can be done during the cmake phase, all information is
 # available, but should be repeated on each "make" just in case someone
 # does "cmake ; make ; git pull ; make".
-CREATE_INFO_SRC(${CMAKE_BINARY_DIR}/Docs)
-ADD_CUSTOM_TARGET(INFO_SRC ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_src.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-# Build flags: This must be postponed to the make phase.
-ADD_CUSTOM_TARGET(INFO_BIN ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_bin.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
 
 # Packaging
 IF(WIN32)
@@ -1458,25 +1447,10 @@ IF(PACK_SEPARATE_COMPONENTS)
   SET(CPACK_COMPONENTS_GROUPING IGNORE)
 ENDIF()
 
-IF(UNIX)
-  INSTALL(FILES
-    Docs/mysql.info
-    DESTINATION ${INSTALL_INFODIR} OPTIONAL COMPONENT Info)
-ENDIF()
 #
 # RPM installs documentation directly from the source tree
 #
 IF(NOT INSTALL_LAYOUT MATCHES "RPM")
-  INSTALL(FILES
-    README
-    LICENSE
-    DESTINATION ${INSTALL_DOCREADMEDIR} COMPONENT Readme)
-  INSTALL(FILES
-    ${CMAKE_BINARY_DIR}/Docs/INFO_SRC
-    ${CMAKE_BINARY_DIR}/Docs/INFO_BIN
-    DESTINATION ${INSTALL_DOCDIR} COMPONENT Info
-    )
-
   # MYSQL_DOCS_LOCATON is used in "make dist",
   # points to the documentation directory
   SET(MYSQL_DOCS_LOCATION "" CACHE PATH
