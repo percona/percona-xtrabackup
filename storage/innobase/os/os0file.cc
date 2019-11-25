@@ -8898,6 +8898,9 @@ ulint	Encryption::master_key_id = 0;
 /** Current uuid of server instance */
 char	Encryption::uuid[ENCRYPTION_SERVER_UUID_LEN + 1] = {0};
 
+/** Default max_version */
+Encryption::Version Encryption::max_version = Encryption::ENCRYPTION_VERSION_2;
+
 /** Get current master key and master key id
 @param[in,out]	master_key_id	master key id
 @param[in,out]	master_key	master key
@@ -8914,7 +8917,7 @@ Encryption::get_master_key(ulint* master_key_id,
 	int	ret;
 
 	memset(key_name, 0, ENCRYPTION_KEY_LEN);
-	*version = Encryption::ENCRYPTION_VERSION_2;
+	*version = Encryption::max_version;
 
 	if (Encryption::master_key_id == 0) {
 		/* If m_master_key is 0, means there's no encrypted
