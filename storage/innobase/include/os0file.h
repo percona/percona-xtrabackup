@@ -317,6 +317,10 @@ static const char ENCRYPTION_KEY_MAGIC_V1[] = "lCA";
 version. */
 static const char ENCRYPTION_KEY_MAGIC_V2[] = "lCB";
 
+/** Encryption magic bytes for 5.7.28+, it's for checking the encryption
+information version. */
+static const char ENCRYPTION_KEY_MAGIC_V3[] = "lCC";
+
 /** Encryption master key prifix */
 static const char ENCRYPTION_MASTER_KEY_PRIFIX[] = "INNODBKey";
 
@@ -365,6 +369,9 @@ struct Encryption {
 
 		/** Version in > 5.7.11 */
 		ENCRYPTION_VERSION_2 = 1,
+
+		/** Version in > 5.7.29 */
+		ENCRYPTION_VERSION_3 = 2,
 	};
 
 	/** Default constructor */
@@ -508,6 +515,10 @@ struct Encryption {
 
 	/** Current uuid of server instance */
 	static char		uuid[ENCRYPTION_SERVER_UUID_LEN + 1];
+
+	/** current maximum version, used to avoid writing V3 encryption on
+	old versions that support only upto V2 header */
+	static Version max_version;
 };
 
 /** Types for AIO operations @{ */
