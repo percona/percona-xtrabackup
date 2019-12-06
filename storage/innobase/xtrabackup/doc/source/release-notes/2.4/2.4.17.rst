@@ -1,0 +1,19 @@
+================================================================================
+|Percona XtraBackup| |release|
+================================================================================
+
+Percona is glad to announce the release of |Percona XtraBackup| |release| on
+|date|. Downloads are available from our `download site
+<http://www.percona.com/downloads/Percona-XtraBackup-2.4/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories. 
+
+All Percona software is open-source and free.
+
+Bugs Fixed
+================================================================================
+
+- |Percona XtraBackup| could crash when making a backup for Percona Server
+  5.7.28-31 where the tablespace encryption was used. Bug fixed :jirabug:`PXB-1968`.
+
+.. |release| replace:: 2.4.17
+.. |date| replace:: December 9, 2019
