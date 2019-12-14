@@ -423,7 +423,7 @@ bool S3_client::create_bucket(const std::string &name) {
   return true;
 }
 
-bool S3_client::probe_api_version_and_lookup() {
+bool S3_client::probe_api_version_and_lookup(const std::string &bucket) {
   for (auto lookup : {LOOKUP_DNS, LOOKUP_PATH}) {
     if (bucket_lookup != LOOKUP_AUTO && bucket_lookup != lookup) {
       continue;
@@ -446,7 +446,7 @@ bool S3_client::probe_api_version_and_lookup() {
       api_version = version;
 
       bool exists;
-      if (bucket_exists("probe-bucket", exists)) {
+      if (bucket_exists(bucket.c_str(),exists)) {
         msg_ts("%s: Successfully connected.\n", my_progname);
         return true;
       }

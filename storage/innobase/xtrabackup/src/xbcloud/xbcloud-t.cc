@@ -49,7 +49,7 @@ TEST(s3_client, basicDNSv4) {
                 HasHeader("Authorization")),
           Response(200, "", std::vector<char *>{})))
       .WillOnce(Return(true));
-  c.probe_api_version_and_lookup();
+  c.probe_api_version_and_lookup("probe-bucket");
 
   EXPECT_CALL(
       http_client,
@@ -99,7 +99,7 @@ TEST(s3_client, basicPATHv4) {
                 HasHeader("Authorization")),
           Response(200, "", std::vector<char *>{})))
       .WillOnce(Return(true));
-  c.probe_api_version_and_lookup();
+  c.probe_api_version_and_lookup("probe-bucket");
 
   EXPECT_CALL(
       http_client,
@@ -138,7 +138,7 @@ TEST(s3_client, basicEndpoint) {
                 HasHeader("Authorization")),
           Response(200, "", std::vector<char *>{})))
       .WillOnce(Return(true));
-  c.probe_api_version_and_lookup();
+  c.probe_api_version_and_lookup("probe-bucket");
 
   EXPECT_CALL(
       http_client,
