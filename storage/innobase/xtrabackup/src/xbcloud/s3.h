@@ -187,7 +187,7 @@ class S3_client {
 
   void set_api_version(s3_api_version_t version) { api_version = version; }
 
-  bool probe_api_version_and_lookup();
+  bool probe_api_version_and_lookup(const std::string &bucket);
 
   bool delete_object(const std::string &bucket, const std::string &name);
 
@@ -240,8 +240,8 @@ class S3_object_store : public Object_store {
   void set_extra_http_headers(const Http_request::headers_t &headers) {
     extra_http_headers = headers;
   }
-  bool probe_api_version_and_lookup() {
-    return s3_client.probe_api_version_and_lookup();
+  bool probe_api_version_and_lookup(const std::string &bucket) {
+    return s3_client.probe_api_version_and_lookup(bucket);
   };
   virtual bool create_container(const std::string &name) override {
     return s3_client.create_bucket(name);
