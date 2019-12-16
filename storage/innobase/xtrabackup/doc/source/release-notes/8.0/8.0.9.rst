@@ -1,0 +1,29 @@
+.. _rn.8-0-9:
+
+================================================================================
+|pxb.name| |release|
+================================================================================
+
+|percona| is glad to announce the release of |pxb.name| |release| on |date|.
+Downloads are available from our `download site
+<https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+|pxb.name| enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot
+tolerate long periods of downtime. Offered free as an open source solution, it
+drives down backup costs while providing unique features for |MySQL| backups.
+
+All |percona| software is open-source and free.
+
+Bugs Fixed
+================================================================================
+
+- Sometime between December 3rd and December 10th, a change was introduced in
+  :abbr:`AWS (Amazon Web Services)` that caused an incompatibility with our
+  |pxb.name| ``xbcloud`` utility. Bug fixed :jirabug:`PXB-1978`.
+
+.. |percona| replace:: Percona
+.. |pxb.name| replace:: Percona XtraBackup
+.. |date| replace:: December 16, 2019
+.. |release| replace:: 8.0.9
