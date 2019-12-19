@@ -17,15 +17,16 @@ procedure without disrupting the performance of the server in a production
 environment. `Commercial support contracts are available
 <http://www.percona.com/mysql-support/>`_.
 
-|Percona XtraBackup| can back up data from |InnoDB|, |XtraDB|, and
-|MyISAM| tables on |MySQL| 8.0 servers as well as |Percona Server|
+|Percona XtraBackup| can back up data from |InnoDB|, |XtraDB|, 
+|MyISAM|, and MyRocks tables on |MySQL| 8.0 servers as well as |Percona Server|
 with |XtraDB|, |Percona Server| 8.0, and |Percona XtraDB Cluster| 8.0.
+
+.. include:: .res/contents/important.storage-engine.txt
 
 .. include:: .res/contents/text.pxb.8-0.txt	     
 
 For a high-level overview of many of its advanced features, including
 a feature comparison, please see :doc:`intro`.
-
 
 
 Introduction
