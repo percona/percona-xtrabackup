@@ -64,6 +64,5 @@ following values:
 .. [#n-1]
 
   This feature is exclusive to |Percona Server| starting with version
-  5.6.26-74.0. It is also used in |Percona XtraDB Cluster| starting with
-  version 5.6.26-25.12 when the node is being backed up without
-  :option:`xtrabackup --galera-info`.
+  5.6.26-74.0. It is also used in |Percona XtraDB Cluster| when the
+  node is being backed up without :option:`xtrabackup --galera-info`.
