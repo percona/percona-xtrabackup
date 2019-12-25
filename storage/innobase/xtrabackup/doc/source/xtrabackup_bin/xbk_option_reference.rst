@@ -519,11 +519,11 @@ Options
 .. option:: --slave-info
 
    This option is useful when backing up a replication slave server. It prints
-   the binary log position of the master server. It also writes this
-   information to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER``
-   command. A new slave for this master can be set up by starting a slave
-   server on this backup and issuing a ``CHANGE MASTER`` command with the
-   binary log position saved in the :file:`xtrabackup_slave_info` file.
+   the binary log position of the master server. It also writes the binary log
+   coordinates to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER``
+   command. A new slave for this master can be set up by starting a slave server
+   on this backup and issuing a ``CHANGE MASTER`` command with the binary log
+   position saved in the :file:`xtrabackup_slave_info` file.
 
 .. option:: --ssl
 
