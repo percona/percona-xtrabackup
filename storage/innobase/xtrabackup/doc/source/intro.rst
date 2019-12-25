@@ -18,16 +18,18 @@ databases. With *Percona XtraBackup*, you can achieve the following benefits:
 
 * Higher uptime due to faster restore time
 
-|Percona XtraBackup| makes |MySQL| hot backups for all versions of |Percona
-Server|, |MySQL|, and |MariaDB|. It performs streaming, compressed, and
-incremental |MySQL| backups.
+|Percona XtraBackup| makes |MySQL| hot backups for all versions of
+|Percona Server|, |MySQL|, and |MariaDB|. It performs streaming,
+compressed, and incremental |MySQL| backups.
 
-|Percona XtraBackup| works with |MySQL|, |MariaDB|, and |Percona Server|. It
-supports completely non-blocking backups of |InnoDB|, |XtraDB|, and *HailDB*
-storage engines. In addition, it can back up the following storage engines by
-briefly pausing writes at the end of the backup: |MyISAM|,
-:term:`Merge <.MRG>`, and :term:`Archive <.ARM>`, including partitioned tables,
-triggers, and database options.
+.. include:: .res/contents/important.mariadb-support.txt
+
+|Percona XtraBackup| works with |MySQL|, |MariaDB|, and |Percona
+Server|. . It supports completely non-blocking backups of
+|InnoDB|, |XtraDB|, and *HailDB* storage engines. In addition, it can
+back up the following storage engines by briefly pausing writes at the
+end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive
+<.ARM>`, including partitioned tables, triggers, and database options.
 
 .. important::
 
@@ -219,6 +221,8 @@ for more.
           |Percona Server| 5.1, 5.5 or 5.6+, or |MySQL| 5.6+. Transportable
           tablespaces created with *MySQL Enterprise Backup* can only be
           imported to |Percona Server| 5.6+, |MySQL| 5.6+ or |MariaDB| 10.0+.
+
+	  .. include:: .res/contents/important.mariadb-support.txt	  
 
 .. [#n-8] Backup locks is a lightweight alternative to ``FLUSH TABLES WITH READ
           LOCK`` available in |Percona Server| 5.6+. |Percona XtraBackup| uses
