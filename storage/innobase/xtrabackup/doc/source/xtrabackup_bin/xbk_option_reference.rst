@@ -188,6 +188,11 @@ Options
    :option:`--move-back` option, :option:`--datadir`
    refers to the destination directory.
 
+   Once connected to the server, in order to perform a backup you will need
+   ``READ`` and ``EXECUTE`` permissions at a filesystem level in the
+   server's :term:`datadir`.
+
+
 .. option:: --debug-sleep-before-unlock=#
 
    This is a debug-only option used by the |xtrabackup| test suite.
@@ -932,6 +937,11 @@ Options
 
    If this option is a relative path, it is interpreted as being relative to
    the current working directory from which :program:`xtrabackup` is executed.
+
+   In order to perform a backup, you need ``READ``, ``WRITE``, and ``EXECUTE``
+   permissions at a filesystem level for the directory that you supply as the
+   value of :option:`--target-dir`.
+
 
 .. option:: --innodb-temp-tablespaces-dir=DIRECTORY
 
