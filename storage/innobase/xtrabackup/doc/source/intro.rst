@@ -25,7 +25,7 @@ compressed, and incremental |MySQL| backups.
 .. include:: .res/contents/important.mariadb-support.txt
 
 |Percona XtraBackup| works with |MySQL|, |MariaDB|, and |Percona
-Server|. . It supports completely non-blocking backups of
+Server|. It supports completely non-blocking backups of
 |InnoDB|, |XtraDB|, and *HailDB* storage engines. In addition, it can
 back up the following storage engines by briefly pausing writes at the
 end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive

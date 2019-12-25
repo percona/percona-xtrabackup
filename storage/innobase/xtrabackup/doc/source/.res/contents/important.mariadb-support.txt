@@ -1,0 +1,4 @@
+
+.. important::
+
+   |Percona XtraBackup| is not compatible with |MariaDB| 10.3 and later.
