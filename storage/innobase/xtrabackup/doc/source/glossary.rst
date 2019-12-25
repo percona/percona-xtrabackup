@@ -148,9 +148,8 @@
      |Percona XtraBackup|.
 
    xbstream
-     To support simultaneous compression and streaming, a new custom streaming
-     format called xbstream was introduced to |Percona XtraBackup| in addition
-     to the TAR format.
+     To support simultaneous compression and streaming, |Percona XtraBackup| uses the 
+      xbstream format. For more information see :option:`--stream` 
 
    ibdata
      Default prefix for tablespace files, e.g. :file:`ibdata1` is a 10MB

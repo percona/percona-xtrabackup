@@ -890,7 +890,7 @@ Options
 .. option:: --stream=FORMAT
 
    Stream all backup files to the standard output in the specified format.
-   Currently supported formats are ``xbstream`` and ``tar``.
+   Currently, this option only supports the `xbstream` format.
 
 .. option:: --strict
 
