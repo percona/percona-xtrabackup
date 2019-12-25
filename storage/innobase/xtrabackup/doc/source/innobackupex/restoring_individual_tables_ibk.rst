@@ -88,5 +88,11 @@ tablespace: ::
 
    OTHERSERVER|mysql> ALTER TABLE mydatabase.mytable IMPORT TABLESPACE;
 
+Set the owner and group of the files:
+
+.. code-block:: bash
+		
+   $ chown -R mysql:mysql /datadir/db_name/table_name.*
+
 After running this command, data in the imported table will be available.
 
