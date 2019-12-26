@@ -453,11 +453,6 @@ Options
    How many seconds :option:`innobackupex --safe-slave-backup` should wait for
    ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
 
-.. option:: --scpopt = SCP-OPTIONS
-
-   This option accepts a string argument that specifies the command line options
-   to pass to :command:`scp`. The default options are ``-Cp -c arcfour``.
-
 .. option:: --slave-info
 
    This option is useful when backing up a replication slave server. It prints
@@ -473,11 +468,6 @@ Options
    connecting to the local database server with a UNIX domain socket. It is
    passed to the mysql child process without alteration. See :command:`mysql
    --help` for details.
-
-.. option:: --sshopt=SSH-OPTIONS
-
-   This option accepts a string argument that specifies the command line options
-   to pass to :command:`ssh`.
 
 .. option:: --stream=STREAMNAME
 
