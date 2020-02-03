@@ -1476,9 +1476,9 @@ bool backup_finish(Backup_context &context) {
   /* release all locks */
   if (!opt_no_lock) {
     unlock_all(mysql_connection);
-    history_lock_time = 0;
-  } else {
     history_lock_time = time(NULL) - history_lock_time;
+  } else {
+    history_lock_time = 0;
   }
 
   if (opt_safe_slave_backup && sql_thread_started) {
