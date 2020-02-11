@@ -4,8 +4,6 @@
  The :program:`xtrabackup` Option Reference
 ============================================
 
-.. .. program:: xtrabackup
-
 This page documents all of the command-line options for the
 :program:`xtrabackup` binary.
 
@@ -154,6 +152,9 @@ Options
    their original locations. This option will not copy over existing files
    unless :option:`--force-non-empty-directories` option is
    specified.
+
+   Any tables detected as missing are not removed automatically. Remove such
+   tables explicitly by running the `DROP TABLE` command.
 
 .. option:: --core-file
 

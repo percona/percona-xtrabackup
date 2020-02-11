@@ -50,7 +50,7 @@ command. Here is an example:
       $ xtrabackup --prepare --export --target-dir=/tmp/table \
       --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-Now you should see a :term:`.exp` file in the target directory:
+Now, you should see a :term:`.exp` file in the target directory:
 
 .. code-block:: bash
 
