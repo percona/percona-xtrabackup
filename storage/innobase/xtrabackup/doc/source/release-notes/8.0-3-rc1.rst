@@ -26,14 +26,14 @@ current Stable version (the most recent stable version at the time of writing is
 Improvements
 ================================================================================
 
-- :jirabug:`1655`: The ``--lock-ddl`` option is supported when backing up MySQL 8
+- :jirabug:`PXB-1655`: The ``--lock-ddl`` option is supported when backing up MySQL 8
 
 Bugs Fixed
 ================================================================================
 
-- :jirabug:`1678`: Incremental backup prepare with the ``--apply-log-only``
+- :jirabug:`PXB-1678`: Incremental backup prepare with the ``--apply-log-only``
   option could roll back uncommitted transactions
-- :jirabug:`1672`: The MTS slave without GTID could be backed up when the
+- :jirabug:`PXB-1672`: The MTS slave without GTID could be backed up when the
   ``--safe-slave-backup`` option was applied.
 
 .. |release| replace:: 8.0-3-rc1

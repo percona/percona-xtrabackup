@@ -77,7 +77,7 @@ existing empty directory in which the source code should be built.
 Before running the ``make`` command, change the working directory to the
 directory that you used as the value of the ``-B`` parameter ``cmake3``.
   
-.. code-block::
+.. code-block:: bash
 
    $ cd TARGETDIR
    $ make

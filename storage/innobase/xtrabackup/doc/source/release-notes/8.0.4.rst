@@ -46,10 +46,10 @@ New Features
 Bugs Fixed
 ================================================================================
 
-- :bug:`1699`: `xtrabackup --prepare` could fail on backups of MySQL 8.0.13 databases
-- :bug:`1704`: `xtrabackup --prepare` could hang while performing insert buffer merge
-- :bug:`1668`: When the `--throttle` option was used, the applied value was different from the one specified by the user (off by one error)
-- :bug:`1679`: PXB could crash when ``ALTER TABLE ... TRUNCATE PARTITION`` command was run during a backup without locking DDL
+- :jirabug:`PXB-1699`: `xtrabackup --prepare` could fail on backups of MySQL 8.0.13 databases
+- :jirabug:`PXB-1704`: `xtrabackup --prepare` could hang while performing insert buffer merge
+- :jirabug:`PXB-1668`: When the `--throttle` option was used, the applied value was different from the one specified by the user (off by one error)
+- :jirabug:`PXB-1679`: PXB could crash when ``ALTER TABLE ... TRUNCATE PARTITION`` command was run during a backup without locking DDL
 
 
 .. |release| replace:: 8.0.4

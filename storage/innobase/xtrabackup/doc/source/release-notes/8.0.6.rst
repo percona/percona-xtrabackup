@@ -41,28 +41,28 @@ New Features
 ================================================================================
 
 - The MyRocks storage engine is now supported with |pxb.name|. More
-  information in :bug:`1754`.
-- Amazon S3 is now supported in xbcloud. More information in :bug:`1813`.
+  information in :jirabug:`PXB-1754`.
+- Amazon S3 is now supported in xbcloud. More information in :jirabug:`PXB-1813`.
 
 Bugs Fixed
 ================================================================================
 
 - |pxb.name| could fail to restore the undo tablespace created during or before
-  incremental backup. Bug fixed :bug:`1780`.
+  incremental backup. Bug fixed :jirabug:`PXB-1780`.
 - A backup could fail if ``log_bin_index`` was defined in :file:`my.cnf`. Bug
-  fixed :bug:`1801`.
+  fixed :jirabug:`PXB-1801`.
 - When the row format was changed during the backup, xtrabackup could crash
-  during the incremental prepare stage. Bug fixed :bug:`1824`.
+  during the incremental prepare stage. Bug fixed :jirabug:`PXB-1824`.
 - During the ``prepare`` phase, |PXB| could freeze and never finish
-  execution. Bug fixed :bug:`1819`.
+  execution. Bug fixed :jirabug:`PXB-1819`.
 - |pxb.name| could crash during the ``prepare`` stage when making a backup of a
-  host running MySQL Server v8.0.16. Bug fixed :bug:`1839`.
+  host running MySQL Server v8.0.16. Bug fixed :jirabug:`PXB-1839`.
 
 Other bugs fixed:
-:bug:`1809`,
-:bug:`1810`,
-:bug:`1832`,
-:bug:`1837`.
+:jirabug:`PXB-1809`,
+:jirabug:`PXB-1810`,
+:jirabug:`PXB-1832`,
+:jirabug:`PXB-1837`.
 
 
 .. |percona| replace:: Percona

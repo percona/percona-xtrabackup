@@ -41,7 +41,7 @@ For all modes, the default options are read from the **xtrabackup** and
 #. :file:`/usr/etc/my.cnf`
 #. :file:`~/.my.cnf`. 
 
-As the first parameter to |program| (in place of the :option:`defaults-file`,
+As the first parameter to |program| (in place of the :option:`--defaults-file`,
 you may supply one of the following:
 
 - :option:`--print-defaults` to have |program| print the argument list and exit.
@@ -523,7 +523,7 @@ Options
    same behavior in InnoDB and XtraDB:
 
    .. hlist::
-      :colums: 2
+      :columns: 2
       
       - --innodb-adaptive-hash-index
       - --innodb-additional-mem-pool-size
@@ -565,7 +565,7 @@ Options
 .. option:: --keyring-file-data=FILENAME
 
    The path to the keyring file. Combine this option with
-   :option:`xtrabackup --xtrabackup-plugin-dir`.
+   :option:`--xtrabackup-plugin-dir`.
 
 .. option:: --kill-long-queries-timeout=SECONDS
 
@@ -616,6 +616,10 @@ Options
 
    This option specifies the time interval between checks done by the log
    copying thread in milliseconds (default is 1 second).
+
+.. option:: --login-path
+
+   Read the given path from the login file.
 
 .. option:: --move-back
 
@@ -711,7 +715,7 @@ Options
 .. option:: --rebuild-indexes
 
    Rebuilds indexes in a compact backup. This option only has effect when the
-   :option:`--prepare` and :option:`rebuild-threads` options are provided.
+   :option:`--prepare` and :option:`--rebuild-threads` options are provided.
 
 .. option:: --rebuild-threads=#
 
