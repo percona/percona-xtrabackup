@@ -121,6 +121,8 @@ rst_prolog = '''
 
 .. |Percona XtraBackup|  replace:: *Percona XtraBackup*
 
+.. |PXB|  replace:: *Percona XtraBackup*
+
 .. |Percona XtraDB Cluster|  replace:: *Percona XtraDB Cluster*
 
 .. |Percona Server|  replace:: *Percona Server for MySQL*
@@ -139,9 +141,8 @@ rst_prolog = '''
 
 '''
 
-extlinks = {'bug': ('https://jira.percona.com/browse/PXB-%s',
-                   'PXB-'), 'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s',
-                   '#'), 'jirabug': ('https://jira.percona.com/browse/%s', '')}
+extlinks = {'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s', '#'),
+            'jirabug': ('https://jira.percona.com/browse/%s', '')}
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []

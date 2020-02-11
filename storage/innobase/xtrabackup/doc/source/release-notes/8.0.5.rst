@@ -50,15 +50,15 @@ All Percona software is open-source and free.
 New Features
 ================================================================================
 
-- :jirabug:`1548`: |pxb.name| enables updating the :file:`ib_buffer_pool` file
+- :jirabug:`PXB-1548`: |pxb.name| enables updating the :file:`ib_buffer_pool` file
   with the latest pages present in the buffer pool using the
   :option:`--dump-innodb-buffer-pool` option. Thanks to Marcelo Altmann for
   contribution.
-- :jirabug:`1768`: Added support for undo tablespaces created with the new
+- :jirabug:`PXB-1768`: Added support for undo tablespaces created with the new
   |MySQL| 8.0.14 syntax.
-- :jirabug:`1781`: Added support for binary log encryption introduced
+- :jirabug:`PXB-1781`: Added support for binary log encryption introduced
   in |MySQL| 8.0.14.
-- :jirabug:`1797`: For |xbstream|, two new options were added. The
+- :jirabug:`PXB-1797`: For |xbstream|, two new options were added. The
   :option:`--decompress` option enables |xbstream| to decompress
   individual qpress files. The :option:`--decompress-threads` option
   controls the number of threads to apply when decompressing. Thanks to
@@ -69,17 +69,22 @@ Bugs Fixed
 
 - Using ``--lock-ddl-per-table`` caused the server to scan all records of
   partitioned tables which could lead to the "out of memory" error. Bugs fixed
-  :jirabug:`1691` and :jirabug:`1698`.
+  :jirabug:`PXB-1691` and :jirabug:`PXB-1698`.
 - When |pxb.name| was started run with the :option:`--slave-info`, incorrect
-  coordinates were written to the xtrabackup_slave_info file.. Bug fixed :jirabug:`1737`
+  coordinates were written to the xtrabackup_slave_info file.. Bug fixed :jirabug:`PXB-1737`
 - |pxb.name| could crash at the prepare stage when making an
   incremental backup if the variable ``innodb-rollback-segments`` was
   changed after starting the |MySQL| Server. Bug fixed
-  :jirabug:`1785`.
+  :jirabug:`PXB-1785`.
 - The full backup could fail when |Percona Server| was started with the ``--innodb-encrypt-tables``
-  parameter. Bug fixed :jirabug:`1793`.
+  parameter. Bug fixed :jirabug:`PXB-1793`.
 
-Other bugs fixed: :jirabug:`1632`, :jirabug:`1715`, :jirabug:`1770`, :jirabug:`1771`, :jirabug:`1773`.
+Other bugs fixed:
+:jirabug:`PXB-1632`,
+:jirabug:`PXB-1715`,
+:jirabug:`PXB-1770`,
+:jirabug:`PXB-1771`,
+:jirabug:`PXB-1773`.
 
 .. |percona| replace:: Percona
 .. |pxb.name| replace:: Percona XtraBackup

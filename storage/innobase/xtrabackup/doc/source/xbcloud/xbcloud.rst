@@ -4,8 +4,6 @@
 The xbcloud Binary
 ================================================================================
 
-.. note::
-
 The purpose of |xbcloud| is to download and upload full or part of |xbstream|
 archive from/to cloud. |xbcloud| will not overwrite the backup with the same
 name. |xbcloud| accepts input via a pipe from |xbstream| so that it can be

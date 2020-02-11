@@ -207,10 +207,10 @@ first incremental backup.
 
 .. warning::
 
-   |PXB| does not support using the same incremental backup directory to
-   prepare two copies of backup. Do not run :option:`xtrabackup
-   --prepare` with the same incremental backup directory (the value of
-   `--incremental-dir`) more than once.
+   |PXB| does not support using the same incremental backup directory to prepare
+   two copies of backup. Do not run :option:`--prepare` with the same
+   incremental backup directory (the value of `--incremental-dir`) more than
+   once.
 
 Preparing the second incremental backup is a similar process: apply the deltas
 to the (modified) base backup, and you will roll its data forward in time to
@@ -233,4 +233,4 @@ Once prepared incremental backups are the same as the :ref:`full backups
 <full_backup>` and they can be :ref:`restored <restoring_a_backup>` in the same
 way.
 
-.. |PXB| replace:: PXB
+
