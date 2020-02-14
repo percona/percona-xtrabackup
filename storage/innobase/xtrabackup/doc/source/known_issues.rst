@@ -26,11 +26,13 @@ Known issues:
    ``zlib`` version than the one that was used by the server during runtime,
    backup prepare may fail due to differences in compression algorithms.
 
- * Backed-up table data could not be recovered if backup was taken while
-   running ``OPTIMIZE TABLE`` (bug :bug:`1541763`) or ``ALTER TABLE ...
-   TABLESPACE`` (bug :bug:`1532878`) on that table.
+ * Backed-up table data could not be recovered if backup was taken while running
+   ``OPTIMIZE TABLE`` (bug
+   https://bugs.launchpad.net/percona-xtrabackup/+bug/1541763) or ``ALTER
+   TABLE ...  TABLESPACE``
+   (bug :jirabug:`PXB-1360`) on that table.
 
- * Compact Backups currently don't work due to bug :bug:`1192834`.
+ * Compact Backups currently don't work due to bug :jirabug:`PXB-372`.
 
  * Backup fails with ``Error 24: 'Too many open files'``. This usually happens
    when database being backed up contains large amount of files and |Percona

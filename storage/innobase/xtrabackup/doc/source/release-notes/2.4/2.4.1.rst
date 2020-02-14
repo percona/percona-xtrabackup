@@ -23,14 +23,14 @@ Bugs Fixed
 ----------
 
  |Percona XtraBackup| didn't respect ``innodb_log_file_size`` variable
- stored in :file:`backup-my.cnf`. Bug fixed :bug:`1527081`.
+ stored in :file:`backup-my.cnf`. Bug fixed :jirabug:`PXB-450`.
 
  If server would run out of space while backups were taken with
  :option:`innobackupex --rsync` option backup process would fail but
  |innobackupex| would still complete with ``completed OK!`` message. Bug fixed
- :bug:`1537256`.
+ :jirabug:`PXB-459`.
 
  |Percona XtraBackup| was silently skipping extra arguments. Bug fixed
- :bug:`1533542` (*Fungo Wang*).
+ :jirabug:`PXB-747` (*Fungo Wang*).
 
-Other bugs fixed: :bug:`1544671` and :bug:`1535535`.
+Other bugs fixed: :jirabug:`PXB-1368` and :jirabug:`1363`.

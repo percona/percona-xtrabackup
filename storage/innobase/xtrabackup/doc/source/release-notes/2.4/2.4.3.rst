@@ -28,37 +28,37 @@ Bugs Fixed
 
  Running DDL statements on |Percona Server| 5.7 during the backup process
  could in some cases lead to failure while preparing the backup. Bug fixed
- :bug:`1555626`.
+ :jirabug:`PXB-247`.
 
  |MySQL| 5.7 can sometimes skip redo logging when creating an index. If such
  ``ALTER TABLE`` is being issued during the backup, the backup would be
  inconsistent. |xtrabackup| will now abort with error message if such ``ALTER
- TABLE`` has been done during the backup. Bug fixed :bug:`1582345`.
+ TABLE`` has been done during the backup. Bug fixed :jirabug:`PXB-249`.
 
  :file:`.ibd` files for remote tablespaces were not copied back to original
- location pointed by the :file:`.isl` files. Bug fixed :bug:`1555423`.
+ location pointed by the :file:`.isl` files. Bug fixed :jirabug:`PXB-466`.
 
  When called with insufficient parameters, like specifying the empty
  :option:`xtrabackup --defaults-file` option, |Percona XtraBackup| could crash.
- Bug fixed :bug:`1566228`.
+ Bug fixed :jirabug:`PXB-471`.
 
  Documentation states that the default value for
  :option:`xtrabackup --ftwrl-wait-query-type` is ``all``, however it was
  ``update``. Changed the default value to reflect the documentation. Bug fixed
- :bug:`1566315`.
+ :jirabug:`PXB-472`.
 
  When :option:`xtrabackup --keyring-file-data` option was specified, but no
  keyring file was found, |xtrabackup| would create an empty one instead of
- reporting an error. Bug fixed :bug:`1578607`.
+ reporting an error. Bug fixed :jirabug:`PXB-476`.
 
  If ``ALTER INSTANCE ROTATE INNODB MASTER KEY`` was run at same time when
  :option:`xtrabackup --backup` was bootstrapping it could catch a moment when
  the key was not written into the keyring file yet and |xtrabackup| would
  overwrite the keyring with the old copy of a keyring, so the new key would be
- lost. Bug fixed :bug:`1582601`.
+ lost. Bug fixed :jirabug:`PXB-478`.
 
  Output of :option:`xtrabackup --slave-info` option was missing an apostrophe.
- Bug fixed :bug:`1573371`.
+ Bug fixed :jirabug:`PXB-940`.
 
 
 

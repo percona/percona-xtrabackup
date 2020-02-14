@@ -38,19 +38,19 @@ Bugs fixed
 ==========
 
  Backups were missing :file:`*.isl` files for general tablespace. Bug fixed
- :bug:`1658692`.
+ :jirabug:`PXB-494`.
 
  In 5.7 |MySQL| changed default checksum algorithm to ``crc32``, while
  |xtrabackup| was using ``innodb``. This caused |xtrabackup| to perform extra
- checksum calculations which were not needed. Bug fixed :bug:`1664405`.
+ checksum calculations which were not needed. Bug fixed :jirabug:`PXB-495`.
 
  For system tablespaces consisting of multiple files |xtrabackup| updated LSN
  only in first file. This caused |MySQL| versions lower than 5.7 to fail on
- startup. Bug fixed :bug:`1669592`.
+ startup. Bug fixed :jirabug:`PXB-498`.
 
  :option:`xtrabackup --export` can now export tables that have more than 31
- index. Bug fixed :bug:`1089681`.
+ index. Bug fixed :jirabug:`PXB-58`.
 
  ``Unrecognized character \x01; marked by <-- HERE`` message could be seen if
  backups were taken with the version check enabled. Bug fixed
- :bug:`1651978`.
+ :jirabug:`PXB-944`.
