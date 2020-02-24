@@ -1125,7 +1125,7 @@ bool lock_tables_maybe(MYSQL *connection, int timeout, int retry_count) {
     return (true);
   }
 
-  if (have_backup_locks && !force_ftwrl) {
+  if (!force_ftwrl) {
     return lock_tables_for_backup(connection, timeout, retry_count);
   }
 
