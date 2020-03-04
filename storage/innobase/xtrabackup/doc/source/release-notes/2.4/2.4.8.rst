@@ -28,37 +28,37 @@ Bugs fixed
 ==========
 
  |xtrabackup| would hang with ``Waiting for master thread to be
- suspended`` message when backup was being prepared. Bug fixed :bug:`1671437`.
+ suspended`` message when backup was being prepared. Bug fixed :jirabug:`PXB-499`.
 
  |xtrabackup| would fail to prepare the backup with ``6th page is not
  initialized`` message in case server didn't properly initialize the page. Bug
- fixed :bug:`1671722`.
+ fixed :jirabug:`PXB-500`.
 
  |xbstream| could run out of file descriptors while extracting the backup
- which contains many tables. Bug fixed :bug:`1690823`
+ which contains many tables. Bug fixed :jirabug:`PXB-503`
 
  When a table was created with the ``DATA DIRECTORY`` option |xtrabackup| would
  back up the ``.frm`` and ``.isl`` files, but not the ``.ibd`` file. Due to the
  missing ``.ibd`` files backup then could not be restored. Bug fixed
- :bug:`1701736`.
+ :jirabug:`PXB-504`.
 
  |Percona XtraBackup| incorrectly determined use of ``master_auto_postion``
  on a slave, and thus generated invalid :file:`xtrabackup_slave_info` file.
- Bug fixed :bug:`1705193`.
+ Bug fixed :jirabug:`PXB-505`.
 
  |Percona XtraBackup| will now print a warning if it encounters unsupported
- storage engine. Bug fixed :bug:`1394493`.
+ storage engine. Bug fixed :jirabug:`PXB-713`.
 
  |Percona XtraBackup| would crash while backing up MariaDB 10.2.x with
- ``--ftwrl-*`` options. Bug fixed :bug:`1704636`.
+ ``--ftwrl-*`` options. Bug fixed :jirabug:`PXB-790`.
 
  :option:`xtrabackup --slave-info` didn't write the correct information into
  :file:`xtrabackup_slave_info` file when multi-source replication was used.
- Bug fixed :bug:`1551634`.
+ Bug fixed :jirabug:`PXB-1022`.
 
  Along with :file:`xtrabackup_checkpints` file, |xtrabackup| now copies
  :file:`xtrabackup_info` file into directory specified by
- :option:`xtrabackup --extra-lsndir` option. Bug fixed :bug:`1600656`.
+ :option:`xtrabackup --extra-lsndir` option. Bug fixed :jirabug:`PXB-1026`.
 
  GTID position was not recorded when :option:`xtrabackup --binlog-info` option
- was set to ``AUTO``. Bug fixed :bug:`1651505`.
+ was set to ``AUTO``. Bug fixed :jirabug:`PXB-1030`.

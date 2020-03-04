@@ -23,7 +23,7 @@ Bugs Fixed
 
  When backup was taken on *MariaDB* 10 with GTID enabled, |Percona XtraBackup|
  didn't store ``gtid_slave_pos`` in :file:`xtrabackup_slave_info` but logged it
- only to ``STDERR``. Bug fixed :bug:`1404484`.
+ only to ``STDERR``. Bug fixed :jirabug:`PXB-715`.
 
  Backup process would fail if :option:`xtrabackup --throttle` option was used.
- Bug fixed :bug:`1554235`.
+ Bug fixed :jirabug:`PXB-465`.

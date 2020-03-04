@@ -43,7 +43,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Percona XtraBackup'
-copyright = u'2009-2019, Percona LLC and/or its affiliates'
+copyright = u'2009-2020, Percona LLC and/or its affiliates'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -129,9 +129,9 @@ rst_prolog = '''
 
 '''
 
-extlinks = {'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s',
-                   '#'), 'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s',
-                   '#'), 'jirabug': ('https://jira.percona.com/browse/%s', '')}
+#'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s', '#'),
+extlinks = {'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s', '#'),
+            'jirabug': ('https://jira.percona.com/browse/%s', '')}
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []
@@ -141,7 +141,7 @@ extlinks = {'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s',
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'percona-theme-1-4'
+html_theme = 'percona-theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -149,7 +149,7 @@ html_theme = 'percona-theme-1-4'
 #html_theme_options = {}
 
 # Add any paths that contain custom themes here, relative to this directory.
-html_theme_path = ['.', './percona-theme']
+#html_theme_path = ['.', './percona-theme']
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
