@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2015 Percona LLC and/or its affiliates
+(c) 2009-2020 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -1988,8 +1988,12 @@ static void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
 
     std::string dst_path = entry.rel_path;
 
-    if (file_purpose == FILE_PURPOSE_DATAFILE ||
-        file_purpose == FILE_PURPOSE_UNDO_LOG) {
+    if (file_purpose == FILE_PURPOSE_UNDO_LOG) {
+      /* undo tablespace can only be in undo_dir or data dir */
+      std::string dst_dir =
+          (srv_undo_dir && *srv_undo_dir) ? srv_undo_dir : mysql_data_home;
+      dst_path = dst_dir + "/" + dst_path;
+    } else if (file_purpose == FILE_PURPOSE_DATAFILE) {
       std::string tablespace_name = entry.path;
       /* Remove starting ./ and trailing .ibd/.ibu from tablespace name */
       tablespace_name = tablespace_name.substr(2, tablespace_name.length() - 6);
