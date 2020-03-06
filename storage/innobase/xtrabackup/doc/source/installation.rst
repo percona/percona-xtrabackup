@@ -1,4 +1,5 @@
 .. _installation:
+.. _install:
 
 ===================================
 Installing |Percona XtraBackup| 8.0
