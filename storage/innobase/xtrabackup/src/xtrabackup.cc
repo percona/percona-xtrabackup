@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2017 Percona LLC and/or its affiliates
+(c) 2009-2020 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -2867,12 +2867,7 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-  if (is_undo && Fil_path::has_suffix(IBU, cursor.rel_path)) {
-    strncpy(dst_name, xb_tablespace_backup_file_path(cursor.abs_path).c_str(),
-            sizeof(dst_name));
-  } else {
     strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
-  }
 
   /* Setup the page write filter */
   if (xtrabackup_incremental) {
