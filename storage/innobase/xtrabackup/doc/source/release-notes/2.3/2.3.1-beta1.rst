@@ -49,18 +49,18 @@ Bugs fixed
 ----------
 
  |innobackupex| didn't work correctly when credentials were specified in
- :file:`.mylogin.cnf`. Bug fixed :bug:`1388122`.
+ :file:`.mylogin.cnf`. Bug fixed :jirabug:`PXB-413`.
 
  :option:`--decrypt` and :option:`--decompress` options didn't work with
- |xtrabackup| binary. Bug fixed :bug:`1452307`.
+ |xtrabackup| binary. Bug fixed :jirabug:`PXB-427`.
 
  |Percona XtraBackup| now executes an extra ``FLUSH TABLES`` before executing
  ``FLUSH TABLES WITH READ LOCK`` to potentially lower the impact from ``FLUSH
- TABLES WITH READ LOCK``. Bug fixed :bug:`1277403`.
+ TABLES WITH READ LOCK``. Bug fixed :jirabug:`PXB-684`.
 
  |innobackupex| didn't read user, password options from :file:`~/.my.cnf` file.
- Bug fixed :bug:`1092235`.
+ Bug fixed :jirabug:`PXB-861`.
 
  |innobackupex| was always reporting the original version of the ``innobackup``
- script from *InnoDB Hot Backup*. Bug fixed :bug:`1092380`.
+ script from *InnoDB Hot Backup*. Bug fixed :jirabug:`PXB-89`.
 
