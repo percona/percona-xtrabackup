@@ -14,25 +14,25 @@ New Features
 Bugs Fixed
 ----------
 
- |Percona XtraBackup| is now built with system ``zlib`` library instead of the older bundled one. Bug fixed :bug:`1108016`.
+ |Percona XtraBackup| is now built with system ``zlib`` library instead of the older bundled one. Bug fixed :jirabug:`PXB-352`.
 
- ``apt-get source`` was downloading older version of |Percona XtraBackup|. Bug fixed :bug:`1363259`. 
+ ``apt-get source`` was downloading older version of |Percona XtraBackup|. Bug fixed :jirabug:`PXB-693`. 
 
- |innobackupex| would ignore the :option:`innobackupex --databases` without :option:`innobackupex --stream` option and back up all the databases. Bug fixed :bug:`569387`.
+ |innobackupex| would ignore the :option:`innobackupex --databases` without :option:`innobackupex --stream` option and back up all the databases. Bug fixed :jirabug:`PXB-4`.
 
- ``rsync`` package wasn't a dependency although it is required for the :option:`innobackupex --rsync` option. Bug fixed :bug:`1259436`.
+ ``rsync`` package wasn't a dependency although it is required for the :option:`innobackupex --rsync` option. Bug fixed :jirabug:`PXB-395`.
  
- :option:`innobackupex --galera-info` was checking only for non-capitalized wsrep_* status variables which was incompatible with *MariaDB Galera Cluster* 10.0. Bug fixed :bug:`1306875`.
+ :option:`innobackupex --galera-info` was checking only for non-capitalized wsrep_* status variables which was incompatible with *MariaDB Galera Cluster* 10.0. Bug fixed :jirabug:`PXB-404`.
 
- |Percona XtraBackup| now supports *MariaDB* GTID. Bugs fixed :bug:`1329539` and :bug:`1326967` (*Nirbhay Choubey*).
+ |Percona XtraBackup| now supports *MariaDB* GTID. Bugs fixed :jirabug:`PXB-409` and :jirabug:`PXB-407` (*Nirbhay Choubey*).
 
- |Percona XtraBackup| would crash trying to remove absent table from |InnoDB| data dictionary while preparing a partial backup. Bug fixed :bug:`1340717`.
+ |Percona XtraBackup| would crash trying to remove absent table from |InnoDB| data dictionary while preparing a partial backup. Bug fixed :jirabug:`PXB-410`.
 
- *MariaDB* 10.1 is now added to the list of supported servers. Bug fixed :bug:`1364398`.
+ *MariaDB* 10.1 is now added to the list of supported servers. Bug fixed :jirabug:`PXB-411`.
 
- |Percona XtraBackup| would fail to restore (copy-back) tables that have partitions with their own tablespace location. Bug fixed :bug:`1322658`.
+ |Percona XtraBackup| would fail to restore (copy-back) tables that have partitions with their own tablespace location. Bug fixed :jirabug:`PXB-688`.
 
-Other bugs fixed: :bug:`1333570`, :bug:`1326224`, and :bug:`1181171`.
+Other bugs fixed: :jirabug:`PXB-916`, :jirabug:`PXB-914`, and :jirabug:`PXB-881`.
 
 All of Percona's software is open-source and free, all the details of the release can be found in the `2.2.4 milestone <https://launchpad.net/percona-xtrabackup/+milestone/2.2.4>`_ at Launchpad.
 

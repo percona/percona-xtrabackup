@@ -50,7 +50,7 @@ copyright = u'2009-2016, Percona LLC and/or its affiliates'
 # built documents.
 #
 # The short X.Y version.
-version = '2.2.13'
+version = '2.2'
 # The full version, including alpha/beta/rc tags.
 release = '2.2.13'
 
@@ -127,9 +127,9 @@ rst_prolog = '''
 
 '''
 
-extlinks = {'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s',
-                   '#'), 'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s',
-                   '#')}
+extlinks = {'bug': ('https://bugs.launchpad.net/percona-xtrabackup/+bug/%s', '#'),
+            'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s', '#'),
+            'jirabug': ('https://jira.percona.com/browse/%s', '#')}
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []
