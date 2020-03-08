@@ -37,7 +37,7 @@ IF(WITH_HTML_DOCS)
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build/html
     # Downloads percona-theme into source dir because of sphinx bug:
     # https://github.com/sphinx-doc/sphinx/issues/925
-    COMMAND wget -O ${CMAKE_CURRENT_SOURCE_DIR}/percona-theme.tar.gz http://percona.com/docs/theme/percona-xtrabackup/2.2
+    COMMAND wget -O ${CMAKE_CURRENT_SOURCE_DIR}/percona-theme.tar.gz https://www.percona.com/docs/theme-1-4/
     COMMAND tar -zxf ${CMAKE_CURRENT_SOURCE_DIR}/percona-theme.tar.gz -C ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND rm -f ${CMAKE_CURRENT_SOURCE_DIR}/percona-theme.tar.gz
     COMMAND sphinx-build -b html -d ${CMAKE_CURRENT_BINARY_DIR}/build/doctrees ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/build/html
