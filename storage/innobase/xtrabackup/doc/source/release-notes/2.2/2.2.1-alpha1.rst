@@ -28,8 +28,8 @@ New features
 Bugs Fixed
 ----------
 
- Information about tool version used to take the backup was added by implementing :ref:`backup history <storing_history>` feature. Bug fixed :bug:`1133017`.
+ Information about tool version used to take the backup was added by implementing :ref:`backup history <storing_history>` feature. Bug fixed :jirabug:`PXB-988`.
  
- If an XtraDB-based binary was used to a backup an |InnoDB| database, it will convert it to |XtraDB| by adding the ``XTRADB_1`` marker in the dictionary header page and by adding the ``SYS_STATS`` table. Bug fixed :bug:`988310`.
+ If an XtraDB-based binary was used to a backup an |InnoDB| database, it will convert it to |XtraDB| by adding the ``XTRADB_1`` marker in the dictionary header page and by adding the ``SYS_STATS`` table. Bug fixed :jirabug:`PXB-18`.
  
-Other bugs fixed: :bug:`721690`, :bug:`1255899`, :bug:`1255901`, :bug:`1268300`, and :bug:`788316`.
+Other bugs fixed: :jirabug:`PXB-63`, :jirabug:`PXB-678`, :jirabug:`PXB-679`, :jirabug:`PXB-682`, and :jirabug:`PXB-77`.

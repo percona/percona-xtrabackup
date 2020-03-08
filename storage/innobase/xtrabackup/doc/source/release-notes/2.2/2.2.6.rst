@@ -16,21 +16,21 @@ New Features
 Bugs Fixed
 ----------
 
- |innobackupex| didn't take the default datadir, which caused backups to fail if the datadir wasn't specified in the :file:`my.cnf` configuration file. Bug fixed :bug:`936934`.
+ |innobackupex| didn't take the default datadir, which caused backups to fail if the datadir wasn't specified in the :file:`my.cnf` configuration file. Bug fixed :jirabug:`PXB-591`.
 
- |innobackupex| will now fail with an error when :option:`innobackupex --slave-info` is used on  a multi-threaded non-GTID slave, because ``Exec_Master_Log_Pos`` cannot be trusted for a multi-threaded slave. Bug fixed :bug:`1372679`.
+ |innobackupex| will now fail with an error when :option:`innobackupex --slave-info` is used on  a multi-threaded non-GTID slave, because ``Exec_Master_Log_Pos`` cannot be trusted for a multi-threaded slave. Bug fixed :jirabug:`PXB-704`.
 
- InnoDB log scanning failure (bug :mysqlbug:`60788`) would cause backups to fail. Fixed by porting the fix from |MySQL| 5.7. Bug fixed :bug:`1375383`.  
+ InnoDB log scanning failure (bug :mysqlbug:`60788`) would cause backups to fail. Fixed by porting the fix from |MySQL| 5.7. Bug fixed :jirabug:`PXB-707`.  
 
- Options :option:`innobackupex --apply-log` and :option:`innobackupex --decompress` weren't marked as mutually exclusive, ie. if they were both specified, only :option:`innobackupex --decompress` would work, which could lead to |MySQL| instance being started with an unprepared backup. Fixed by making mutually exclusive categories of options: 1. :option:`innobackupex --decompress`, :option:`innobackupex --decrypt`; 2. :option:`innobackupex --copy-back`; 3. :option:`innobackupex --move-back`; 4. :option:`innobackupex --apply-log`. Bug fixed :bug:`1376874`.
+ Options :option:`innobackupex --apply-log` and :option:`innobackupex --decompress` weren't marked as mutually exclusive, ie. if they were both specified, only :option:`innobackupex --decompress` would work, which could lead to |MySQL| instance being started with an unprepared backup. Fixed by making mutually exclusive categories of options: 1. :option:`innobackupex --decompress`, :option:`innobackupex --decrypt`; 2. :option:`innobackupex --copy-back`; 3. :option:`innobackupex --move-back`; 4. :option:`innobackupex --apply-log`. Bug fixed :jirabug:`PXB-708`.
 
- |innobackupex| wasn't creating directories specified in :option:`innodb_data_home_dir` and :option:`innodb_log_group_home_dir` when :option:`innobackupex --copy-back` option was used. Bug fixed :bug:`1382347`.
+ |innobackupex| wasn't creating directories specified in :option:`innodb_data_home_dir` and :option:`innodb_log_group_home_dir` when :option:`innobackupex --copy-back` option was used. Bug fixed :jirabug:`PXB-710`.
 
- |Percona XtraBackup| now supports all option modifiers supported by upstream MySQL: skip, disable, enable, maximum, loose. Bug fixed :bug:`664128`.
+ |Percona XtraBackup| now supports all option modifiers supported by upstream MySQL: skip, disable, enable, maximum, loose. Bug fixed :jirabug:`PXB-74`.
 
- |Percona Xtrabackup| would fail to perform a full backup on |Percona Server| 5.5 if :option:`innodb_log_file_size` variable wasn't set in the ``[mysqld]`` section of :file:`my.cnf`. Bug fixed :bug:`1334062`. 
+ |Percona Xtrabackup| would fail to perform a full backup on |Percona Server| 5.5 if :option:`innodb_log_file_size` variable wasn't set in the ``[mysqld]`` section of :file:`my.cnf`. Bug fixed :jirabug:`PXB-917`. 
 
-Other bugs fixed: :bug:`1379905`, :bug:`1386013`, :bug:`1072695`, :bug:`1375241`, :bug:`1182841`, and :bug:`1343722`.
+Other bugs fixed: :jirabug:`PXB-709`, :jirabug:`PXB-711`, :jirabug:`PXB-86`, :jirabug:`PXB-924`, :jirabug:`PXB-1003`, and :jirabug:`PXB-1009`.
 
 All of Percona's software is open-source and free, all the details of the release can be found in the `2.2.6 milestone <https://launchpad.net/percona-xtrabackup/+milestone/2.2.6>`_ at Launchpad. Bugs can be reported on the `launchpad bug tracker <https://bugs.launchpad.net/percona-xtrabackup/+filebug>`_.
 

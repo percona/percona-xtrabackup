@@ -14,13 +14,13 @@ New Features
 Bugs Fixed
 ----------
 
- Incremental backups would fail if the number of undo tablespaces (`innodb_undo_tablespaces <https://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_undo_tablespaces>`_) was more than ``1``. This was caused by innobackupex removing the undo tablespaces during the prepare phase. Bug fixed :bug:`1363234`. 
+ Incremental backups would fail if the number of undo tablespaces (`innodb_undo_tablespaces <https://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html#sysvar_innodb_undo_tablespaces>`_) was more than ``1``. This was caused by innobackupex removing the undo tablespaces during the prepare phase. Bug fixed :jirabug:`PXB-165`. 
 
- Fixed multiple memory leaks detected by AddressSanitizer. Bug fixed :bug:`1395143`.
+ Fixed multiple memory leaks detected by AddressSanitizer. Bug fixed :jirabug:`PXB-416`.
  
- |innobackupex| could fail when preparing backup that was taken from |Percona Server| 5.5 with log files (``log_file_size``) bigger than ``4G``. The root cause was that the last checkpoint LSN offset in log group is stored at different offsets in ``ibdata1`` for |Percona Server| 5.5 and |MySQL| 5.6 when the total size of log files is greater than 4G. Bug fixed :bug:`1403237`.
+ |innobackupex| could fail when preparing backup that was taken from |Percona Server| 5.5 with log files (``log_file_size``) bigger than ``4G``. The root cause was that the last checkpoint LSN offset in log group is stored at different offsets in ``ibdata1`` for |Percona Server| 5.5 and |MySQL| 5.6 when the total size of log files is greater than 4G. Bug fixed :jirabug:`PXB-166`.
 
- |Percona XtraBackup| out-of-source builds failed. Bug fixed :bug:`1402450`. 
+ |Percona XtraBackup| out-of-source builds failed. Bug fixed :jirabug:`PXB-930`. 
  
 All of Percona's software is open-source and free, all the details of the release can be found in the `2.2.8 milestone <https://launchpad.net/percona-xtrabackup/+milestone/2.2.8>`_ at Launchpad. Bugs can be reported on the `launchpad bug tracker <https://bugs.launchpad.net/percona-xtrabackup/+filebug>`_.
 
