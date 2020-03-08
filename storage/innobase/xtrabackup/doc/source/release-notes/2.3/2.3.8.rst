@@ -38,11 +38,11 @@ Bugs fixed
 ==========
 
  |xtrabackup| would not create fresh |InnoDB| redo logs when preparing
- incremental backup. Bug fixed :bug:`1669592`.
+ incremental backup. Bug fixed :jirabug:`PXB-498`.
 
  :option:`xtrabackup --export` can now export tables that have more than 31
- index. Bug fixed :bug:`1089681`.
+ index. Bug fixed :jirabug:`PXB-58`.
 
  ``Unrecognized character \x01; marked by <-- HERE`` message could be seen if
  backups were taken with the version check enabled. Bug fixed
- :bug:`1651978`.
+ :jirabug:`PXB-944`.

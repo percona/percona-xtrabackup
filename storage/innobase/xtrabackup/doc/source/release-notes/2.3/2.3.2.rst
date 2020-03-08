@@ -26,29 +26,29 @@ Bugs fixed
  :ref:`xbcloud <xbcloud_binary>` contained password in the processlist which
  would allow an unprivileged user privileged access to the swift service, and
  more likely the entire OpenStack deploy for which keystone is providing the
- identity service. Bug fixed :bug:`1447610`.
+ identity service. Bug fixed :jirabug:`PXB-425`.
 
  |Percona XtraBackup| 2.3 didn't set :option:`wait_timeout` session variable in
  order to prevent server to kill the connection while it is copying data files.
- Bug fixed :bug:`1495367`.
+ Bug fixed :jirabug:`PXB-436`.
 
  :ref:`xbcloud <xbcloud_binary>` would fail to create a container with ``error:
  curl_easy_perform() failed: Failed sending data to the peer``. Bug fixed
- :bug:`1500508`.
+ :jirabug:`PXB-438`.
 
  In some cases streaming backup could be corrupted due to a broken pipe error,
  particularly if error occurred when |xtrabackup| copied set of tiny files
  (:file:`*.frm` or similar), but |xtrabackup| would not notice it and complete
- successfully. Bug fixed :bug:`1452387`.
+ successfully. Bug fixed :jirabug:`PXB-725`.
 
  |xtrabackup| 2.3 now adds timestamps to the ``STDERR`` output. Bug fixed
- :bug:`1454692`.
+ :jirabug:`PXB-726`.
 
  Stream decryption would fail if the encryption options were in :file:`my.cnf`
  configuration file because they were ignored by |innobackupex|. Bug fixed
- :bug:`1190335`.
+ :jirabug:`PXB-135`.
 
- Fixed broken out-of-source tree builds in 2.3 trunk. Bug fixed :bug:`1457016`.
+ Fixed broken out-of-source tree builds in 2.3 trunk. Bug fixed :jirabug:`PXB-935`.
 
  |Percona XtraBackup| now supports :option:`--datadir` as a command line
- option. Bug fixed :bug:`1042887`.
+ option. Bug fixed :jirabug:`PXB-106`.

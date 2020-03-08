@@ -29,30 +29,30 @@ Bugs fixed
 
  Fixed intermittent assertion failures that were happening when |Percona
  XtraBackup| couldn't correctly identify server version. Bug fixed
- :bug:`1568009`.
+ :jirabug:`PXB-473`.
 
  Safe slave backup algorithm performed too short delays between retries which
- could cause backups to fail on a busy servers. Bug fixed :bug:`1624473`.
+ could cause backups to fail on a busy servers. Bug fixed :jirabug:`PB-484`.
 
- Fixed new compilation warnings with GCC 6. Bug fixed :bug:`1641612`.
+ Fixed new compilation warnings with GCC 6. Bug fixed :jirabug:`PXB-487`.
 
  |xbcrypt| was not setting the Initialization Vector (IV) correctly (and thus
  is was not using an IV). This was causing the same ciphertext to be generated
  across different runs (for the same message/same key). The IV provides the
  extra randomness to ensure that the same ciphertext is not generated across
- runs. Bug fixed :bug:`1643949`.
+ runs. Bug fixed :jirabug:`PXB-490`.
 
  Backup would still succeed even if |xtrabackup| would fail to write the
- metadata. Bug fixed :bug:`1623210`.
+ metadata. Bug fixed :jirabug:`PXB-763`.
 
  |xbcloud| now supports EMC ECS Swift API Authorization requests. Bugs fixed
- :bug:`1638017` and :bug:`1638020` (*Txomin Barturen*).
+ :jirabug:`PXB-769` and :jirabug:`PXB-770` (*Txomin Barturen*).
 
  |Percona XtraBackup| would fail to backup *MariaDB* 10.2 with the
- ``unsupported server version`` error message. Bug fixed :bug:`1602842`.
+ ``unsupported server version`` error message. Bug fixed :jirabug:`PXB-1027`.
 
- Fixed misleading error message about missing metadata. Bug fixed :bug:`1557027`.
+ Fixed misleading error message about missing metadata. Bug fixed :jirabug:`PXB-752`.
 
- Backing up with an SSL user didn't work correctly. Bug fixed :bug:`1546872`.
+ Backing up with an SSL user didn't work correctly. Bug fixed :jirabug:`PXB-750`.
 
-Other bugs fixed: :bug:`1639764` and :bug:`1639767`.
+Other bugs fixed: :jirabug:`PXB-486` and :jirabug:`PXB-771`.
