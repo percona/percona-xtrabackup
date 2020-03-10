@@ -36,9 +36,7 @@ start_server
 
 # create some undo tablespaces
 mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE '$undo_directory_ext/undo1.ibu'"
-mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE '$undo_directory_ext/undo2.ibu'"
-mysql -e "CREATE UNDO TABLESPACE undo3 ADD DATAFILE 'undo1.ibu'"
-mysql -e "CREATE UNDO TABLESPACE undo4 ADD DATAFILE 'undo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE 'undo2.ibu'"
 
 mysql -e "ALTER UNDO TABLESPACE innodb_undo_001 SET INACTIVE"
 mysql -e "ALTER UNDO TABLESPACE innodb_undo_002 SET INACTIVE"
@@ -59,10 +57,8 @@ job_master=$!
 
 xtrabackup --backup --target-dir=$topdir/backup
 
-mysql -e "CREATE UNDO TABLESPACE undo5 ADD DATAFILE '$undo_directory_ext/undo3.ibu'"
-mysql -e "CREATE UNDO TABLESPACE undo6 ADD DATAFILE '$undo_directory_ext/undo4.ibu'"
-mysql -e "CREATE UNDO TABLESPACE undo7 ADD DATAFILE 'undo3.ibu'"
-mysql -e "CREATE UNDO TABLESPACE undo8 ADD DATAFILE 'undo4.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo3 ADD DATAFILE '$undo_directory_ext/undo3.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo4 ADD DATAFILE 'undo4.ibu'"
 
 xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/backup
 
@@ -257,3 +253,104 @@ then
     vlog "Checksums do not match"
     exit -1
 fi
+
+#check if undo tablespace can be created in symbolic directory
+
+stop_server
+
+rm -rf $MYSQLD_DATADIR/*
+rm -rf $undo_directory_ext/*
+rm -rf $topdir/*
+rm -rf $undo_directory
+
+mkdir $topdir/server_undo
+ln -s $topdir/server_undo $undo_directory
+
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_file_per_table=1
+innodb_undo_directory=$undo_directory
+"
+start_server
+
+# create some undo tablespaces
+mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE 'undo1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE 'undo2.ibu'"
+
+mysql -e "ALTER UNDO TABLESPACE innodb_undo_001 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE innodb_undo_002 SET INACTIVE"
+
+load_sakila
+
+checksum1=`checksum_table sakila payment`
+test -n "$checksum1" || die "Failed to checksum table sakila.payment"
+
+ls -al $undo_directory
+ls -al $topdir/server_undo
+# Start a transaction, modify some data and keep it uncommitted for the backup
+# stage. InnoDB avoids using the rollback segment in the system tablespace, if
+# separate undo tablespaces are used, so the test would fail if we did not
+# handle separate undo tablespaces correctly.
+start_uncomitted_transaction &
+job_master=$!
+
+xtrabackup --backup --target-dir=$topdir/backup
+kill -SIGKILL $job_master
+stop_server
+
+xtrabackup --prepare --target-dir=$topdir/backup
+data_dir=$topdir/restore
+undo_dir=$topdir/undo
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_undo_directory=$undo_dir
+datadir=$data_dir
+"
+xtrabackup --copy-back --target-dir=$topdir/backup --datadir=$data_dir --innodb_undo_directory=$undo_dir
+
+for file in $undo_dir/undo1.ibu $undo_dir/undo2.ibu ; do
+    if [ ! -f $file ] ; then
+        vlog "Tablepace $file is missing!"
+        exit -1
+    fi
+done
+
+start_server
+
+# Check that the uncommitted transaction has been rolled back
+
+checksum2=`checksum_table sakila payment`
+test -n "$checksum2" || die "Failed to checksum table sakila.payment"
+
+vlog "Old checksum: $checksum1"
+vlog "New checksum: $checksum2"
+
+if [ "$checksum1" != "$checksum2"  ]
+then
+    vlog "Checksums do not match"
+    exit -1
+fi
+
+#check for failure when datadir and undo tablespace have same file name
+
+stop_server
+
+rm -rf $MYSQLD_DATADIR/*
+rm -rf $undo_directory_ext/*
+rm -rf $topdir/*
+rm -rf $undo_directory
+
+mkdir $undo_directory
+
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb_file_per_table=1
+innodb_undo_directory=$undo_directory
+"
+start_server
+
+# create some undo tablespaces
+mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE '$MYSQLD_DATADIR/undo1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE '$undo_directory/undo1.ibu'"
+
+# Invoke xtrabckup to take --backup
+run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --target-dir=$topdir/backup
+
+vlog "backup is failed"
