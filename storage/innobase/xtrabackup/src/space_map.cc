@@ -36,7 +36,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 Tablespace_map Tablespace_map::static_tablespace_map;
 
 const char *XBTS_FILE_NAME = "xtrabackup_tablespaces";
-const int XBTS_FILE_VERSION = 2;
+const int XBTS_FILE_VERSION = 3;
 
 /** Add file to tablespace map.
 @param[in]  file_name file name
@@ -65,22 +65,30 @@ Tablespace_map &Tablespace_map::instance() { return (static_tablespace_map); }
 /** Scan I_S.FILES for extended tablespaces.
 @param[in]  connection MySQL connection object */
 void Tablespace_map::scan(MYSQL *connection) {
+  /* combine General and single tablespace */
   const char *query =
-      "SELECT FILE_NAME, TABLESPACE_NAME, FILE_TYPE"
-      "  FROM INFORMATION_SCHEMA.FILES"
-      "  WHERE ENGINE = 'InnoDB'"
-      "    AND STATUS = 'NORMAL'"
-      "    AND FILE_TYPE <> 'TEMPORARY'"
-      "    AND FILE_ID <> 0";
+      "SELECT T2.PATH, "
+      "       T2.NAME, "
+      "       T1.SPACE_TYPE "
+      "FROM   INFORMATION_SCHEMA.INNODB_TABLESPACES T1 "
+      "       JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES_BRIEF T2 USING "
+      "(SPACE) "
+      "WHERE  T1.SPACE_TYPE = 'Single' && T1.ROW_FORMAT != 'Undo'"
+      "UNION "
+      "SELECT T2.PATH, "
+      "       SUBSTRING_INDEX(SUBSTRING_INDEX(T2.PATH, '/', -1), '.', 1) NAME, "
+      "       T1.SPACE_TYPE "
+      "FROM   INFORMATION_SCHEMA .INNODB_TABLESPACES T1 "
+      "       JOIN INFORMATION_SCHEMA .INNODB_TABLESPACES_BRIEF T2 USING "
+      "(SPACE) "
+      "WHERE  T1.SPACE_TYPE = 'General' && T1.ROW_FORMAT != 'Undo'";
   MYSQL_RES *mysql_result;
   MYSQL_ROW row;
 
   mysql_result = xb_mysql_query(connection, query, true);
 
   while ((row = mysql_fetch_row(mysql_result)) != nullptr) {
-    const tablespace_type_t file_type =
-        strcmp(row[2], "UNDO LOG") == 0 ? UNDO_LOG : TABLESPACE;
-    const tablespace_t tablespace(row[0], row[1], file_type);
+    const tablespace_t tablespace(row[0], row[1], TABLESPACE);
     add(tablespace);
   }
 

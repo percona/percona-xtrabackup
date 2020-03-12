@@ -24,31 +24,31 @@ EOF
 force_checkpoint
 
 # Test that specifying partitions with --tables works
-xtrabackup --backup --tables='^test.*#P#p5' --target-dir=$topdir/backup
+xtrabackup --backup --tables='^test.*#p#p5' --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
 
 file_cnt=`ls $topdir/backup/test | wc -l`
 
 test "$file_cnt" -eq 1
 
-test -f $topdir/backup/test/t_innodb#P#p5.ibd
+test -f $topdir/backup/test/t_innodb#p#p5.ibd
 
 rm -rf $topdir/backup
 
 # Test that specifying partitions with --databases works
 
 xtrabackup --backup \
-    --databases='test.t_innodb#P#p5' --target-dir=$topdir/backup
+    --databases='test.t_innodb#p#p5' --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
 
 test "$file_cnt" -eq 1
-test -f $topdir/backup/test/t_innodb#P#p5.ibd
+test -f $topdir/backup/test/t_innodb#p#p5.ibd
 
 rm -rf $topdir/backup
 
 # Test that specifying partitions with --tables-file works
 cat >$topdir/tables_file <<EOF
-test.t_innodb#P#p5
+test.t_innodb#p#p5
 EOF
 xtrabackup --backup --tables-file=$topdir/tables_file --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
