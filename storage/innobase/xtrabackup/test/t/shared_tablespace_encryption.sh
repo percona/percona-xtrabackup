@@ -7,7 +7,7 @@ require_server_version_higher_than 8.0.13
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb-sys-tablespace-encrypt
-innodb-encrypt-tables=FORCE
+loose-innodb-default-encryption=on
 "
 
 . inc/keyring_file.sh

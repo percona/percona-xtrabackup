@@ -15,9 +15,17 @@ mkdir -p $undo_dir
 start_server --innodb_file_per_table --innodb_directories="$remote_dir;$undo_dir"
 
 $MYSQL $MYSQL_ARGS test <<EOF
+CREATE TABLESPACE TS1 ADD DATAFILE '$remote_dir/ts1.ibd';
+CREATE TABLESPACE TS2 ADD DATAFILE '$remote_dir/ts2_name_mismatch.ibd';
 CREATE TABLE t(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
   DATA DIRECTORY = '$remote_dir' ENGINE=InnoDB;
 INSERT INTO t(c) VALUES (1), (2), (3), (4), (5), (6), (7), (8);
+CREATE TABLE b(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
+  TABLESPACE TS1  ENGINE=InnoDB;
+INSERT INTO b(c) VALUES (1), (2), (3), (4), (5), (6), (7), (8);
+CREATE TABLE c(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
+  TABLESPACE TS2 ENGINE=InnoDB;
+INSERT INTO c(c) VALUES (1), (2), (3), (4), (5), (6), (7), (8);
 EOF
 
 for ((i=0; i<12; i++))
@@ -25,6 +33,10 @@ do
     $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t$i(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
   DATA DIRECTORY = '$remote_dir' ENGINE=InnoDB;
+CREATE TABLE b$i(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
+  TABLESPACE TS1 ENGINE=InnoDB;
+CREATE TABLE c$i(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
+  TABLESPACE TS2 ENGINE=InnoDB;
 EOF
 done
 
@@ -33,14 +45,18 @@ do
     $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE p$i(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
   DATA DIRECTORY = '$undo_dir' ENGINE=InnoDB;
+CREATE TABLE r$i(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
+  TABLESPACE TS1 ENGINE=InnoDB;
+CREATE TABLE s$i(id INT AUTO_INCREMENT PRIMARY KEY, c INT)
+  TABLESPACE TS2 ENGINE=InnoDB;
 EOF
 done
 
 # create some undo tablespaces
-mysql -e "CREATE UNDO TABLESPACE rundo1 ADD DATAFILE '$remote_dir/undo1.ibu'"
-mysql -e "CREATE UNDO TABLESPACE rundo2 ADD DATAFILE '$remote_dir/undo2.ibu'"
-mysql -e "CREATE UNDO TABLESPACE uundo1 ADD DATAFILE '$undo_dir/undo1.ibu'"
-mysql -e "CREATE UNDO TABLESPACE uundo2 ADD DATAFILE '$undo_dir/undo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE rundo1 ADD DATAFILE '$remote_dir/rundo1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE rundo2 ADD DATAFILE '$remote_dir/rundo2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE uundo1 ADD DATAFILE '$undo_dir/uundo1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE uundo2 ADD DATAFILE '$undo_dir/uundo2.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo1 ADD DATAFILE 'undo1.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo2 ADD DATAFILE 'undo2.ibu'"
 
@@ -49,6 +65,8 @@ for ((i=0; i<12; i++))
 do
     $MYSQL $MYSQL_ARGS test <<EOF
       INSERT INTO t(c) SELECT c FROM t;
+      INSERT INTO b(c) SELECT c FROM t;
+      INSERT INTO c(c) SELECT c FROM t;
 EOF
 done
 
@@ -82,12 +100,12 @@ for cmd in "--copy-back" "--move-back" ; do
         vlog "Tablepace $remote_dir/t.ibd is missing!"
         exit -1
     fi
-
     for ((i=0; i<12; i++)) ; do
         if [ ! -f $remote_dir/test/t$i.ibd ] ; then
             vlog "Tablepace $remote_dir/t$i.ibd is missing!"
             exit -1
         fi
+
     done
 
     for ((i=0; i<12; i++)) ; do
@@ -95,10 +113,11 @@ for cmd in "--copy-back" "--move-back" ; do
             vlog "Tablepace $undo_dir/p$i.ibd is missing!"
             exit -1
         fi
+
     done
 
-    for file in $remote_dir/undo1.ibu $remote_dir/undo2.ibu \
-                $undo_dir/undo1.ibu $undo_dir/undo2.ibu \
+    for file in $mysql_datadir/rundo1.ibu $mysql_datadir/rundo2.ibu \
+                $mysql_datadir/uundo1.ibu $mysql_datadir/uundo2.ibu \
                 $mysql_datadir/undo1.ibu $mysql_datadir/undo2.ibu ; do
         if [ ! -f $file ] ; then
             vlog "Tablepace $file is missing!"
