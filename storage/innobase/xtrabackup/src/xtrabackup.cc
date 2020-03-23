@@ -156,7 +156,10 @@ bool xtrabackup_print_param = FALSE;
 bool xtrabackup_export = FALSE;
 bool xtrabackup_apply_log_only = FALSE;
 
+
 longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
+/* default value max memory is 50% of availabe memory */
+longlong xtrabackup_free_memory_per = 50;
 bool xtrabackup_create_ib_logfile = FALSE;
 
 long xtrabackup_throttle = 0; /* 0:unlimited */
@@ -543,6 +546,7 @@ enum options_xtrabackup {
   OPT_XTRA_APPLY_LOG_ONLY,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
+  OPT_XTRA_MAX_MEMORY,
   OPT_XTRA_THROTTLE,
   OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
@@ -731,6 +735,10 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_use_memory, (G_PTR *)&xtrabackup_use_memory, 0,
      GET_LL, REQUIRED_ARG, 100 * 1024 * 1024L, 1024 * 1024L, LLONG_MAX, 0,
      1024 * 1024L, 0},
+    {"max-free-memory-per", OPT_XTRA_MAX_MEMORY,
+     "Maximum free memory percentage of server can be used during prepare ",
+     (G_PTR *)&xtrabackup_free_memory_per, (G_PTR *)&xtrabackup_free_memory_per,
+     0, GET_LL, REQUIRED_ARG, 50, 0, LONG_MAX, 0, 1, 0},
     {"throttle", OPT_XTRA_THROTTLE,
      "limit count of IO operations (pairs of read&write) per second to IOS "
      "values (for '--backup')",
@@ -7246,6 +7254,7 @@ static void handle_options(int argc, char **argv, int *argc_client,
     opt_transition_key = get_tty_password("Enter transition key: ");
   }
 }
+
 
 void setup_error_messages() {
   my_default_lc_messages = &my_locale_en_US;

@@ -2055,7 +2055,6 @@ static void buf_pool_resize() {
     mutex_exit(&buf_pool->free_list_mutex);
 
     buf_flush_list_mutex_enter(buf_pool);
-    ut_ad(buf_pool->flush_rbt == NULL);
     buf_flush_list_mutex_exit(buf_pool);
 #endif
 
@@ -2066,25 +2065,6 @@ static void buf_pool_resize() {
         new_instance_size * UNIV_PAGE_SIZE / srv_buf_pool_chunk_unit;
 
     os_wmb;
-  }
-
-  /* disable AHI if needed */
-  bool btr_search_disabled = false;
-
-  buf_resize_status("Disabling adaptive hash index.");
-
-  btr_search_s_lock_all();
-  if (btr_search_enabled) {
-    btr_search_s_unlock_all();
-    btr_search_disabled = true;
-  } else {
-    btr_search_s_unlock_all();
-  }
-
-  btr_search_disable(true);
-
-  if (btr_search_disabled) {
-    ib::info(ER_IB_MSG_60) << "disabled adaptive hash index.";
   }
 
   /* set withdraw target */
@@ -2448,18 +2428,8 @@ withdraw_retry:
     srv_lock_table_size = 5 * (srv_buf_pool_size / UNIV_PAGE_SIZE);
     lock_sys_resize(srv_lock_table_size);
 
-    /* normalize btr_search_sys */
-    btr_search_sys_resize(buf_pool_get_curr_size() / sizeof(void *) / 64);
-
-    /* normalize dict_sys */
-    dict_resize();
-
-    ib::info(ER_IB_MSG_68) << "Resized hash tables at lock_sys,"
-                              " adaptive hash index, dictionary.";
+    ib::info(ER_IB_MSG_68) << "Resized hash tables at lock_sys,";
   }
-
-  /* normalize ibuf->max_size */
-  ibuf_max_size_update(srv_change_buffer_max_size);
 
   if (srv_buf_pool_old_size != srv_buf_pool_size) {
     ib::info(ER_IB_MSG_69) << "Completed to resize buffer pool from "
@@ -2467,12 +2437,6 @@ withdraw_retry:
                            << srv_buf_pool_size << ".";
     srv_buf_pool_old_size = srv_buf_pool_size;
     os_wmb;
-  }
-
-  /* enable AHI if needed */
-  if (btr_search_disabled) {
-    btr_search_enable();
-    ib::info(ER_IB_MSG_70) << "Re-enabled adaptive hash index.";
   }
 
   char now[32];
@@ -2497,27 +2461,12 @@ withdraw_retry:
 /** This is the thread for resizing buffer pool. It waits for an event and
 when waked up either performs a resizing and sleeps again. */
 void buf_resize_thread() {
-  while (srv_shutdown_state.load() == SRV_SHUTDOWN_NONE) {
     os_event_wait(srv_buf_resize_event);
     os_event_reset(srv_buf_resize_event);
 
-    if (srv_shutdown_state.load() != SRV_SHUTDOWN_NONE) {
-      break;
-    }
-
     os_rmb;
-    if (srv_buf_pool_old_size == srv_buf_pool_size) {
-      std::ostringstream sout;
-      sout << "Size did not change (old size = new size = " << srv_buf_pool_size
-           << ". Nothing to do.";
-      buf_resize_status("%s", sout.str().c_str());
-
-      /* nothing to do */
-      continue;
-    }
 
     buf_pool_resize();
-  }
 }
 
 /** Clears the adaptive hash index on all pages in the buffer pool. */

@@ -132,6 +132,7 @@ extern ulint xtrabackup_log_copy_interval;
 extern char *xtrabackup_stream_str;
 extern long xtrabackup_throttle;
 extern longlong xtrabackup_use_memory;
+extern longlong xtrabackup_free_memory_per;
 
 extern bool opt_galera_info;
 extern bool opt_slave_info;

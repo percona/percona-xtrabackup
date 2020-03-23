@@ -85,6 +85,8 @@ bool meb_replay_file_ops = true;
 #endif /* !UNIV_HOTBACKUP */
 
 std::list<space_id_t> recv_encr_ts_list;
+extern longlong xtrabackup_use_memory;
+extern longlong xtrabackup_free_memory_per;
 
 /** Log records are stored in the hash table in chunks at most of this size;
 this must be less than UNIV_PAGE_SIZE as it is stored in the buffer pool */
@@ -3221,6 +3223,7 @@ automatically when the hash table becomes full.
                                 contiguous log data up to this lsn
 @param[out]	read_upto_lsn	scanning succeeded up to this lsn
 @param[in]  to_lsn LSN to stop scanning at
+@param[in]  true if the data is flushed to disk
 @return true if not able to scan any more in this log */
 #ifndef UNIV_HOTBACKUP
 static bool recv_scan_log_recs(log_t &log,
@@ -3230,7 +3233,7 @@ bool meb_scan_log_recs(
                                ulint max_memory, const byte *buf, ulint len,
                                lsn_t checkpoint_lsn, lsn_t start_lsn,
                                lsn_t *contiguous_lsn, lsn_t *read_upto_lsn,
-                               lsn_t to_lsn) {
+                               lsn_t to_lsn, bool *flushed) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool finished = false;
@@ -3424,7 +3427,6 @@ bool meb_scan_log_recs(
     if (finished || (recv_scan_print_counter % 80) == 0) {
       ib::info(ER_IB_MSG_725, ulonglong{scanned_lsn});
     }
-  }
 
   if (more_data && !recv_sys->found_corrupt_log) {
     /* Try to parse more log records */
@@ -3432,9 +3434,13 @@ bool meb_scan_log_recs(
     recv_parse_log_recs(checkpoint_lsn);
 
 #ifndef UNIV_HOTBACKUP
-    if (recv_heap_used() > max_memory) {
-      recv_apply_hashed_log_recs(log, false);
-    }
+  }
+
+  if (recv_heap_used() > max_memory) {
+    recv_apply_hashed_log_recs(log, false);
+    ut_ad(*flushed == false);
+    *flushed = true;
+  }
 #endif /* !UNIV_HOTBACKUP */
 
     if (recv_sys->recovered_offset > recv_sys->buf_len / 4) {
@@ -3627,15 +3633,63 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
 
   bool finished = false;
 
+  static int redo_applied = 0;
+  static int redo_applied_total = 0;
+
+
+
   while (!finished) {
     lsn_t end_lsn = start_lsn + RECV_SCAN_SIZE;
 
     recv_read_log_seg(log, log.buf, start_lsn, end_lsn);
 
+    bool flushed = false;
     finished = recv_scan_log_recs(log, max_mem, log.buf, RECV_SCAN_SIZE,
                                   checkpoint_lsn, start_lsn, contiguous_lsn,
-                                  &log.scanned_lsn, to_lsn);
+                                  &log.scanned_lsn, to_lsn, &flushed);
 
+    redo_applied += RECV_SCAN_SIZE;
+    if (flushed) {
+      redo_applied_total += redo_applied;
+
+      auto per = ((double)redo_applied / (double)srv_log_file_size) * 100;
+      auto total_applied_per =
+          ((double)redo_applied_total / (double)srv_log_file_size) * 100;
+
+      ib::info() << "redo applied in last iteration:" << per
+                 << "%\n total redo applied:" << total_applied_per << "%";
+
+      /* find the availabe memory */
+      auto xtrabackup_max_memory =
+          (ulint)(double(sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGESIZE) *
+                         xtrabackup_free_memory_per) /
+                  100);
+
+      ib::info() << "Maximum memory for buffer pool:" << xtrabackup_max_memory;
+
+      /* gradually increase the buffer pool until it can processed redo log in
+       * one iteration or it hit threshold */
+      if (xtrabackup_use_memory == 100 * 1024 * 1024L &&
+          srv_buf_pool_size <= xtrabackup_max_memory &&
+          per <= (100 - total_applied_per)) {
+        srv_buf_pool_size *= 2;
+
+        if (srv_buf_pool_size > xtrabackup_max_memory)
+          srv_buf_pool_size = xtrabackup_max_memory;
+        srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
+
+        ib::info() << " increasing the  buffer pool to " << srv_buf_pool_size;
+
+        os_event_set(srv_buf_resize_event);
+        buf_resize_thread();
+
+        max_mem = UNIV_PAGE_SIZE *
+                  (srv_buf_pool_size / UNIV_PAGE_SIZE -
+                   (recv_n_pool_free_frames * srv_buf_pool_instances));
+      }
+
+      redo_applied = 0;
+    }
     start_lsn = end_lsn;
   }
 
