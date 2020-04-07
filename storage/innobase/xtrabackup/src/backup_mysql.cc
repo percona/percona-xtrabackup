@@ -2100,6 +2100,12 @@ static char *make_argv(char *buf, size_t len, int argc, char **argv) {
     if (strncmp(*argv, "--encrypt_key", strlen("--encrypt_key")) == 0) {
       arg = "--encrypt_key=...";
     }
+    if (strncmp(*argv, "--transition-key", strlen("--transition-key")) == 0) {
+      arg = "--transition-key=...";
+    }
+    if (strncmp(*argv, "--transition_key", strlen("--transition_key")) == 0) {
+      arg = "--transition_key=...";
+    }
     left -= snprintf(buf + len - left, left, "%s%c", arg, argc > 1 ? ' ' : 0);
     ++argv;
     --argc;
