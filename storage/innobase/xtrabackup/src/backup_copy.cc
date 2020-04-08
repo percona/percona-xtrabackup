@@ -2026,8 +2026,7 @@ copy_back(int argc, char **argv)
 					   &master_key,
 					   &version);
 
-		msg_ts("Generated new master key with ID '%s-%lu'.\n",
-		       server_uuid, master_key_id);
+		msg_ts("Generated new master key");
 
 	        my_free(master_key);
 
