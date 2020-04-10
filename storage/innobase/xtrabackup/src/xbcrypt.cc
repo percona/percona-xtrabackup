@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2013-2018 Percona LLC and/or its affiliates.
+Copyright (c) 2013-2020 Percona LLC and/or its affiliates.
 
 The xbcrypt utility: decrypt files in the XBCRYPT format.
 
@@ -76,8 +76,8 @@ static struct my_option my_long_options[] = {
      &opt_encrypt_algo, &xbcrypt_encrypt_algo_typelib, GET_ENUM, REQUIRED_ARG,
      0, 0, 0, 0, 0, 0},
 
-    {"encrypt-key", 'k', "Encryption key.", &opt_encrypt_key, &opt_encrypt_key,
-     0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"encrypt-key", 'k', "Encryption key", 0, 0, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
 
     {"encrypt-key-file", 'f', "File which contains encryption key.",
      &opt_encrypt_key_file, &opt_encrypt_key_file, 0, GET_STR_ALLOC,
@@ -302,6 +302,9 @@ static bool get_one_option(int optid,
   switch (optid) {
     case 'd':
       opt_run_mode = RUN_MODE_DECRYPT;
+      break;
+    case 'k':
+      hide_option(argument, &opt_encrypt_key);
       break;
     case '?':
       usage();

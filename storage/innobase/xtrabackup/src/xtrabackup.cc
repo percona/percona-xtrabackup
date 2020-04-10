@@ -1584,14 +1584,6 @@ bool check_if_param_set(const char *param) {
   return param_set.find(param) != param_set.end();
 }
 
-static void hide_option(char *argument, char **opt) {
-  char *start = argument;
-  my_free(*opt);
-  *opt = my_strdup(PSI_NOT_INSTRUMENTED, argument, MYF(MY_FAE));
-  while (*argument) *argument++ = 'x'; /* Destroy argument */
-  if (*start) start[1] = 0;            /* Cut length of argument */
-}
-
 bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
   static const char *hide_value[] = {"password", "encrypt-key",
                                      "transition-key"};
