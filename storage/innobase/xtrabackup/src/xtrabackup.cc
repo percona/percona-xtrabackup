@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2017 Percona LLC and/or its affiliates
+(c) 2009-2020 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -1529,17 +1529,6 @@ bool
 check_if_param_set(const char *param)
 {
 	return param_set.find(param) != param_set.end();
-}
-
-/************************************************************************
-Mask the argument value. This is to avoid showing secret data on command
-line output */
-static void hide_option(char *argument, char **opt) {
-	char *start = argument;
-	my_free(*opt);
-	*opt = my_strdup(PSI_NOT_INSTRUMENTED, argument, MYF(MY_FAE));
-	while (*argument) *argument++ = 'x'; /*Destroy argument */
-	if (*start) start[1] = 0;   /*Cut length of argument */
 }
 
 my_bool
