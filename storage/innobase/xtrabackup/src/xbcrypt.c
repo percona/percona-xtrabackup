@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2013 Percona LLC and/or its affiliates.
+Copyright (c) 2013,2020 Percona LLC and/or its affiliates.
 
 The xbcrypt utility: decrypt files in the XBCRYPT format.
 
@@ -48,7 +48,7 @@ static char 		*opt_input_file = NULL;
 static char 		*opt_output_file = NULL;
 static ulong 		opt_encrypt_algo;
 static char 		*opt_encrypt_key_file = NULL;
-static void 		*opt_encrypt_key = NULL;
+static char 		*opt_encrypt_key = NULL;
 static ulonglong	opt_encrypt_chunk_size = 0;
 static my_bool		opt_verbose = FALSE;
 static uint 		opt_encrypt_threads = 1;
@@ -77,8 +77,7 @@ static struct my_option my_long_options[] =
 	 &opt_encrypt_algo, &opt_encrypt_algo, &xbcrypt_encrypt_algo_typelib,
 	 GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-	{"encrypt-key", 'k', "Encryption key.",
-	 &opt_encrypt_key, &opt_encrypt_key, 0,
+	{"encrypt-key", 'k', "Encryption key.", 0, 0, 0,
 	 GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
 	{"encrypt-key-file", 'f', "File which contains encryption key.",
@@ -337,6 +336,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	switch (optid) {
 	case 'd':
 		opt_run_mode = RUN_MODE_DECRYPT;
+		break;
+	case 'k':
+		hide_option(argument, &opt_encrypt_key);
 		break;
 	case '?':
 		usage();

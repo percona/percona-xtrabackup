@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2017 Percona LLC and/or its affiliates.
+Copyright (c) 2017, 2020 Percona LLC and/or its affiliates.
 
 Encryption datasink implementation for XtraBackup.
 
@@ -57,6 +57,11 @@ xb_crypt_cipher_open(gcry_cipher_hd_t *cipher_handle);
 /* Close gcrypt cipher */
 void
 xb_crypt_cipher_close(gcry_cipher_hd_t cipher_handle);
+
+/************************************************************************
+Mask the argument value. This is to avoid showing secret data on command
+line output */
+void hide_option(char *argument, char **opt);
 
 /* Decrypt buffer */
 gcry_error_t
