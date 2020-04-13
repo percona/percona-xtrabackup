@@ -18,7 +18,7 @@ drives down backup costs while providing unique features for |MySQL| backups.
 
 All |percona| software is open-source and free.
 
-This release fixes security vulneribility *CVE-2020-10997*.
+This release fixes security vulnerability *CVE-2020-10997*.
 
 
 .. |percona| replace:: Percona
