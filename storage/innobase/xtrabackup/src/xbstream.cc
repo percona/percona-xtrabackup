@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2018 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2020 Percona LLC and/or its affiliates.
 
 The xbstream utility: serialize/deserialize files in the XBSTREAM format.
 
@@ -100,8 +100,8 @@ static struct my_option my_long_options[] = {
     {"decrypt", 'd', "Decrypt files ending with .xbcrypt.", &opt_encrypt_algo,
      &opt_encrypt_algo, &xbstream_encrypt_algo_typelib, GET_ENUM, REQUIRED_ARG,
      0, 0, 0, 0, 0, 0},
-    {"encrypt-key", 'k', "Encryption key.", &opt_encrypt_key, &opt_encrypt_key,
-     0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"encrypt-key", 'k', "Encryption key", 0, 0, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
     {"encrypt-key-file", 'f', "File which contains encryption key.",
      &opt_encrypt_key_file, &opt_encrypt_key_file, 0, GET_STR_ALLOC,
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -246,6 +246,9 @@ static bool get_one_option(int optid,
       if (set_run_mode(RUN_MODE_EXTRACT)) {
         return true;
       }
+      break;
+    case 'k':
+      hide_option(argument, &opt_encrypt_key);
       break;
     case '?':
       usage();

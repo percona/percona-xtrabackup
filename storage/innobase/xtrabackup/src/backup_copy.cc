@@ -2153,8 +2153,7 @@ bool copy_back(int argc, char **argv) {
     ulint master_key_id;
     Encryption::get_master_key(&master_key_id, &master_key);
 
-    msg_ts("Generated new master key with ID '%s-%lu'.\n", server_uuid,
-           master_key_id);
+    msg_ts("Generated new master key");
 
     my_free(master_key);
   }
