@@ -109,6 +109,11 @@ init_schema incremental_sample test3 $indices_count "y"
 insert_data incremental_sample test $max_indices_count $rows_count
 insert_data incremental_sample test2 $indices_count $rows_count
 
+# check if we can import all the columns type in mysql
+mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
+col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
+col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
+col17 mediumtext, col18 enum("01","2"),col19 SET("0","1","2") )' incremental_sample;
 
 checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
@@ -126,20 +131,27 @@ start_server $mysql_extra_args
 init_schema incremental_sample test $max_indices_count "n"
 init_schema incremental_sample test2 $indices_count "n"
 init_schema incremental_sample test3 $indices_count "y"
+# check if we can import all the columns type in mysql
+mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
+col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
+col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
+col17 mediumtext, col18 enum("01","2"),col19 SET("0","1","2") )' incremental_sample;
 vlog "Database was re-initialized"
 
 mysql -e "alter table test discard tablespace;" incremental_sample
 mysql -e "alter table test2 discard tablespace;" incremental_sample
 mysql -e "alter table test3 discard tablespace;" incremental_sample
+mysql -e "alter table test4 discard tablespace;" incremental_sample
 
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
 
+ls -tlr $backup_dir/incremental_sample/*cfg
 cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
-vlog "Verifying .cfg files in backup, expecting 5."
-if [ $cfg_count -ne 5 ]
+vlog "Verifying .cfg files in backup, expecting 6."
+if [ $cfg_count -ne 6 ]
 then
-   vlog "Expecting 5 cfg files. Found only $cfg_count"
+   vlog "Expecting 6 cfg files. Found only $cfg_count"
    exit -1
 fi
 
@@ -147,6 +159,7 @@ run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sampl
 mysql -e "alter table test import tablespace" incremental_sample
 mysql -e "alter table test2 import tablespace" incremental_sample
 mysql -e "alter table test3 import tablespace" incremental_sample
+mysql -e "alter table test4 import tablespace" incremental_sample
 vlog "Table has been imported"
 
 vlog "Cheking checksums"
@@ -156,7 +169,7 @@ rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental
 vlog "rowsnum_1 is $rowsnum_1"
 
 if [ "$checksum_1" != "$checksum_2"  ]
-then 
+then
     vlog "Checksums are not equal"
     exit -1
 fi

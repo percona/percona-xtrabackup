@@ -647,6 +647,8 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     enum_field_types field_type = dd_get_old_field_type(dd_col->type());
     ulint mtype = get_innobase_type_from_dd(dd_col, unsigned_type);
 
+    if (field_type == MYSQL_TYPE_BIT) unsigned_type = DATA_UNSIGNED;
+
     /* Following are MySQL internal types, never used in protocol. We have
     field->real_type(), lets convert it to field->type() */
     switch (field_type) {
@@ -658,6 +660,18 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         break;
       case MYSQL_TYPE_TIMESTAMP2:
         field_type = MYSQL_TYPE_TIMESTAMP;
+        break;
+      case MYSQL_TYPE_MEDIUM_BLOB:
+      case MYSQL_TYPE_LONG_BLOB:
+      case MYSQL_TYPE_TINY_BLOB:
+        field_type = MYSQL_TYPE_BLOB;
+        break;
+      case MYSQL_TYPE_NEWDATE:
+        field_type = MYSQL_TYPE_DATE;
+        break;
+      case MYSQL_TYPE_ENUM:
+      case MYSQL_TYPE_SET:
+        field_type = MYSQL_TYPE_STRING;
         break;
       default:
         break;
@@ -697,6 +711,8 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
                     (dd_col->type() == dd::enum_column_types::VAR_STRING) ||
                     (dd_col->type() == dd::enum_column_types::BLOB) ||
                     (dd_col->type() == dd::enum_column_types::TINY_BLOB) ||
+                    (dd_col->type() == dd::enum_column_types::ENUM) ||
+                    (dd_col->type() == dd::enum_column_types::SET) ||
                     (dd_col->type() == dd::enum_column_types::MEDIUM_BLOB) ||
                     (dd_col->type() == dd::enum_column_types::LONG_BLOB)) &&
                    dd_col->collation_id() != my_charset_bin.number)
@@ -704,7 +720,14 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
                       : DATA_BINARY_TYPE;
 
     charset_no = 0;
-    if (dtype_is_string_type(mtype)) {
+
+    if (dd_col->type() == dd::enum_column_types::NEWDECIMAL)
+      charset_no = my_charset_latin1.number;
+    else if (dd_col->type() == dd::enum_column_types::BIT)
+      charset_no = my_charset_bin.number;
+    else if (dd_col->type() == dd::enum_column_types::JSON)
+      charset_no = my_charset_utf8mb4_bin.number;
+    else if (dtype_is_string_type(mtype)) {
       charset_no = static_cast<ulint>(dd_col->collation_id());
     }
 
