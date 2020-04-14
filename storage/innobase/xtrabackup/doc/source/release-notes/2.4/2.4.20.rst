@@ -20,17 +20,6 @@ All |percona| software is open-source and free.
 
 This release fixes security vulnerability *CVE-2020-10997*
 
-Bugs Fixed
-================================================================================
-
-- :jirabug:`PXB-2142`: Transition key was written to backup / stream
-- :jirabug:`PXB-2145`: encrypt-key could appear in the process-list
-- :jirabug:`PXB-2152`: PXB wrote a new master key to standard error output
-- :jirabug:`PXB-2154`: Xbstream displayed the encrypt-key in process during
-  backup decryption
-
-
-
 .. |percona| replace:: Percona
 .. |pxb.name| replace:: Percona XtraBackup
 .. |date| replace:: April 14, 2020
