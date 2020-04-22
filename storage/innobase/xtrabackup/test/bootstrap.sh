@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -e
+set -o xtrace
 
 function usage()
 {
@@ -47,6 +48,12 @@ function ssl_version()
             fi
             ;;
     esac
+
+    if [ $sslv -eq '102' -a -f '/usr/bin/yum' ]; then
+        sslv="${sslv}.rpm"
+    else
+        sslv="${sslv}.deb"
+    fi
 
     echo $sslv
 }
