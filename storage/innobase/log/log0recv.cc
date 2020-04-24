@@ -1727,9 +1727,20 @@ static byte *recv_parse_or_apply_log_rec_body(
         if (page_no == 0 && !fsp_is_system_or_temp_tablespace(space_id) &&
             /* For cloned db header page has the encryption information. */
             !recv_sys->is_cloned_db) {
-          if (fil_tablespace_redo_encryption(ptr, end_ptr, space_id) == nullptr)
-            return (nullptr);
+          byte *ptr_copy = ptr;
+          ptr_copy += 2;  // skip offset
+          ulint len = mach_read_from_2(ptr_copy);
+          ptr_copy += 2;
+          if (end_ptr < ptr_copy + len) return NULL;
+          if (memcmp(ptr_copy, ENCRYPTION_KEY_MAGIC_V3,
+                     ENCRYPTION_MAGIC_SIZE) == 0) {
+            return (fil_tablespace_redo_encryption(ptr, end_ptr, space_id));
+          } else if (memcmp(ptr_copy, ENCRYPTION_KEY_MAGIC_PS_V2,
+                            ENCRYPTION_MAGIC_SIZE) == 0) {
+            break;
+          }
         }
+        break;
 #ifdef UNIV_HOTBACKUP
       }
 #endif /* UNIV_HOTBACKUP */

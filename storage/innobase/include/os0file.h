@@ -1,7 +1,7 @@
 /***********************************************************************
 
 Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2009, Percona Inc.
+Copyright (c) 2009, 2020 Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
 by Percona Inc.. Those modifications are
@@ -243,6 +243,8 @@ static const char ENCRYPTION_KEY_MAGIC_V2[] = "lCB";
 /** Encryption magic bytes for 8.0.5+, it's for checking the encryption
 information version. */
 static const char ENCRYPTION_KEY_MAGIC_V3[] = "lCC";
+
+static const char ENCRYPTION_KEY_MAGIC_PS_V2[] = "PSB";
 
 /** Encryption master key prifix */
 static const char ENCRYPTION_MASTER_KEY_PRIFIX[] = "INNODBKey";
