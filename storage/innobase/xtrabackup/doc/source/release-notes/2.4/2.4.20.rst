@@ -1,26 +1,33 @@
-.. _rn.2-4-20:
+.. _PXB-2.4.20:
 
 ================================================================================
-|pxb.name| |release|
+*Percona XtraBackup* 2.4.20
 ================================================================================
 
-:Date: |date|
-:Installation: :ref:`install`
+:Date: April 14, 2020
+:Installation: `Installing Percona XtraBackup <https://www.percona.com/doc/percona-xtrabackup/2.4/installation.html>`_
 
-Downloads are available from our `download site
-<https://www.percona.com/downloads/Percona-XtraBackup-2.4/>`_ and from
-:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot tolerate
+long periods of downtime. Offered free as an open source solution, it drives down backup
+costs while providing unique features for MySQL backups.
 
-|pxb.name| enables MySQL backups without blocking user queries, making it ideal
-for companies with large data sets and mission-critical applications that cannot
-tolerate long periods of downtime. Offered free as an open source solution, it
-drives down backup costs while providing unique features for |MySQL| backups.
+This release fixes security vulnerability `CVE-2020-10997
+<https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-10997>`_
 
-All |percona| software is open-source and free.
+.. seealso::
 
-This release fixes security vulnerability *CVE-2020-10997*
+   Percona Database Performance Blog
+      `CVE-2020-10997
+      <https://www.percona.com/blog/2020/04/16/cve-2020-10997-percona-xtrabackup-information-disclosure-of-command-line-arguments/>`_
 
-.. |percona| replace:: Percona
-.. |pxb.name| replace:: Percona XtraBackup
-.. |date| replace:: April 14, 2020
-.. |release| replace:: 2.4.20
+Bugs Fixed
+================================================================================
+
+* :jirabug:`PXB-1783`: Xtrabackup GTID is incorrect after prepare
+* :jirabug:`PXB-2154`: Xbstream displayed the encrypt-key in process during backup decryption
+* :jirabug:`PXB-2152`: PXB wrote a new master key to standard error output
+* :jirabug:`PXB-2145`: encrypt-key could appear in the process-list
+* :jirabug:`PXB-2142`: Transition key was written to backup / stream
+
+
