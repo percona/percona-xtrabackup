@@ -154,7 +154,7 @@ void Group_action_coordinator::set_stop_wait_timeout(ulong timeout) {
 static void *launch_handler_thread(void *arg) {
   Group_action_coordinator *handler = (Group_action_coordinator *)arg;
   handler->execute_group_action_handler();
-  return 0;
+  return nullptr;
 }
 
 bool Group_action_coordinator::is_group_action_running() {
@@ -381,7 +381,7 @@ end:
 }
 
 bool Group_action_coordinator::thread_killed() {
-  return current_thd != NULL && current_thd->is_killed();
+  return current_thd != nullptr && current_thd->is_killed();
 }
 
 bool Group_action_coordinator::handle_action_message(
@@ -389,10 +389,10 @@ bool Group_action_coordinator::handle_action_message(
   // If we are not online just ignore it
   Group_member_info::Group_member_status member_status =
       local_member_info->get_recovery_status();
-  if (member_status != Group_member_info::MEMBER_ONLINE) return 0;
+  if (member_status != Group_member_info::MEMBER_ONLINE) return false;
 
   if (coordinator_terminating) {
-    return 0; /* purecov: inspected */
+    return false; /* purecov: inspected */
   }
 
   Group_action_message::enum_action_message_phase message_phase =
@@ -411,7 +411,7 @@ bool Group_action_coordinator::handle_action_message(
       break; /* purecov: inspected */
   }
 
-  return 0;
+  return false;
 }
 
 bool Group_action_coordinator::handle_action_start_message(
@@ -736,7 +736,7 @@ int Group_action_coordinator::signal_action_terminated() {
     DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
 
-  Group_action_message *end_message = NULL;
+  Group_action_message *end_message = nullptr;
   current_executing_action->executing_action->get_action_message(&end_message);
   end_message->set_group_action_message_phase(
       Group_action_message::ACTION_END_PHASE);
@@ -789,7 +789,7 @@ int Group_action_coordinator::execute_group_action_handler() {
   DBUG_TRACE;
   int error = 0;
 
-  THD *thd = NULL;
+  THD *thd = nullptr;
   thd = new THD;
   my_thread_init();
   thd->set_new_thread_id();

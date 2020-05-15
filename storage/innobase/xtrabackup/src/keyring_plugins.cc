@@ -24,6 +24,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql/components/services/log_builtins.h>
 #include <mysql/service_mysql_keyring.h>
 #include <mysqld.h>
+#include <sql/basic_istream.h>
+#include <sql/basic_ostream.h>
 #include <sql/log_event.h>
 #include <sql/rpl_log_encryption.h>
 #include <sql/sql_list.h>
@@ -35,14 +37,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "backup_mysql.h"
 #include "keyring_plugins.h"
+#include "rpl_log_encryption.h"
 #include "xb0xb.h"
 #include "xtrabackup.h"
 
 #include <map>
 
 struct tablespace_encryption_info {
-  byte key[ENCRYPTION_KEY_LEN];
-  byte iv[ENCRYPTION_KEY_LEN];
+  byte key[Encryption::KEY_LEN];
+  byte iv[Encryption::KEY_LEN];
 };
 
 static std::map<ulint, tablespace_encryption_info> encryption_info;
@@ -97,8 +100,8 @@ bool xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv) {
     return (false);
   }
 
-  memcpy(key, it->second.key, ENCRYPTION_KEY_LEN);
-  memcpy(iv, it->second.iv, ENCRYPTION_KEY_LEN);
+  memcpy(key, it->second.key, Encryption::KEY_LEN);
+  memcpy(iv, it->second.iv, Encryption::KEY_LEN);
 
   return (true);
 }
@@ -110,8 +113,8 @@ bool xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv) {
 void xb_insert_tablespace_key(ulint space_id, const byte *key, const byte *iv) {
   tablespace_encryption_info info;
 
-  memcpy(info.key, key, ENCRYPTION_KEY_LEN);
-  memcpy(info.iv, iv, ENCRYPTION_KEY_LEN);
+  memcpy(info.key, key, Encryption::KEY_LEN);
+  memcpy(info.iv, iv, Encryption::KEY_LEN);
   encryption_info[space_id] = info;
 }
 
@@ -120,8 +123,8 @@ type for the tablespace.
 @param[in]	space		tablespace
 @return DB_SUCCESS or error code */
 dberr_t xb_set_encryption(fil_space_t *space) {
-  byte key[ENCRYPTION_KEY_LEN];
-  byte iv[ENCRYPTION_KEY_LEN];
+  byte key[Encryption::KEY_LEN];
+  byte iv[Encryption::KEY_LEN];
 
   bool found = xb_fetch_tablespace_key(space->id, key, iv);
   ut_a(found);
@@ -131,7 +134,7 @@ dberr_t xb_set_encryption(fil_space_t *space) {
 }
 
 const char *TRANSITION_KEY_PRIFIX = "XBKey";
-const size_t TRANSITION_KEY_NAME_MAX_LEN = ENCRYPTION_SERVER_UUID_LEN + 2 + 45;
+const size_t TRANSITION_KEY_NAME_MAX_LEN = Encryption::SERVER_UUID_LEN + 2 + 45;
 
 /** Fetch the key from keyring.
 @param[in]	key_name	key name
@@ -152,14 +155,14 @@ static bool xb_fetch_key(char *key_name, char *key) {
     return (false);
   }
 
-  if (key_len != ENCRYPTION_KEY_LEN) {
+  if (key_len != Encryption::KEY_LEN) {
     msg("xtrabackup: Error: Can't fetch the key, key length "
         "mismatch.\n");
     my_free(tmp_key);
     return (false);
   }
 
-  memcpy(key, tmp_key, ENCRYPTION_KEY_LEN);
+  memcpy(key, tmp_key, Encryption::KEY_LEN);
 
   my_free(tmp_key);
   my_free(key_type);
@@ -191,7 +194,7 @@ static bool xb_create_transition_key(char *key_name, char *key) {
            TRANSITION_KEY_PRIFIX, server_uuid, rand64);
 
   /* Let keyring generate key for us. */
-  ret = my_key_generate(key_name, "AES", NULL, ENCRYPTION_KEY_LEN);
+  ret = my_key_generate(key_name, "AES", NULL, Encryption::KEY_LEN);
   if (ret) {
     msg("xtrabackup: Error: Can't generate the key, please "
         "check the keyring plugin is loaded.\n");
@@ -342,9 +345,9 @@ bool xb_keyring_init_for_prepare(int argc, char **argv) {
         my_strdup(PSI_NOT_INSTRUMENTED, plugin_load, MYF(MY_FAE))));
   }
 
-  memset(server_uuid, 0, ENCRYPTION_SERVER_UUID_LEN + 1);
+  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
   if (uuid != NULL) {
-    strncpy(server_uuid, uuid, ENCRYPTION_SERVER_UUID_LEN);
+    strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
   }
 
   init_plugins(argc, argv);
@@ -410,9 +413,9 @@ bool xb_keyring_init_for_copy_back(int argc, char **argv) {
     return (false);
   }
 
-  memset(server_uuid, 0, ENCRYPTION_SERVER_UUID_LEN + 1);
+  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
   if (uuid != NULL) {
-    strncpy(server_uuid, uuid, ENCRYPTION_SERVER_UUID_LEN);
+    strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
   }
 
   /* copy argc, argv because handle_options will destroy them */
@@ -472,16 +475,16 @@ bool xb_tablespace_keys_exist() {
 
 bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                                  size_t transition_key_len) {
-  byte derived_key[ENCRYPTION_KEY_LEN];
+  byte derived_key[Encryption::KEY_LEN];
   byte salt[XB_KDF_SALT_SIZE];
-  byte read_buf[ENCRYPTION_KEY_LEN * 2 + 8];
-  byte tmp[ENCRYPTION_KEY_LEN * 2];
+  byte read_buf[Encryption::KEY_LEN * 2 + 8];
+  byte tmp[Encryption::KEY_LEN * 2];
   char magic[XTRABACKUP_KEYS_MAGIC_SIZE];
   char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN];
-  char transition_key_buf[ENCRYPTION_KEY_LEN];
+  char transition_key_buf[Encryption::KEY_LEN];
   bool ret;
 
-  const size_t record_len = ENCRYPTION_KEY_LEN * 2 + 8;
+  const size_t record_len = Encryption::KEY_LEN * 2 + 8;
 
   char fname[FN_REFLEN];
 
@@ -527,7 +530,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
       goto error;
     }
     transition_key = transition_key_buf;
-    transition_key_len = ENCRYPTION_KEY_LEN;
+    transition_key_len = Encryption::KEY_LEN;
   }
 
   ret = xb_derive_key(transition_key, transition_key_len, salt, sizeof(salt),
@@ -545,7 +548,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     int olen;
 
     olen =
-        my_aes_decrypt(read_buf + 4, ENCRYPTION_KEY_LEN, info.key, derived_key,
+        my_aes_decrypt(read_buf + 4, Encryption::KEY_LEN, info.key, derived_key,
                        sizeof(derived_key), my_aes_256_ecb, NULL, false);
 
     if (olen == MY_AES_BAD_DATA) {
@@ -554,9 +557,9 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
       goto error;
     }
 
-    olen = my_aes_decrypt(read_buf + ENCRYPTION_KEY_LEN + 4, ENCRYPTION_KEY_LEN,
-                          info.iv, derived_key, sizeof(derived_key),
-                          my_aes_256_ecb, NULL, false);
+    olen = my_aes_decrypt(read_buf + Encryption::KEY_LEN + 4,
+                          Encryption::KEY_LEN, info.iv, derived_key,
+                          sizeof(derived_key), my_aes_256_ecb, NULL, false);
 
     if (olen == MY_AES_BAD_DATA) {
       msg_ts("Error reading %s: failed to decrypt iv for tablespace %lu.\n",
@@ -564,10 +567,10 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
       goto error;
     }
 
-    memcpy(tmp, info.key, ENCRYPTION_KEY_LEN);
-    memcpy(tmp + ENCRYPTION_KEY_LEN, info.iv, ENCRYPTION_KEY_LEN);
-    ulint crc1 = ut_crc32(tmp, ENCRYPTION_KEY_LEN * 2);
-    ulint crc2 = uint4korr(read_buf + ENCRYPTION_KEY_LEN * 2 + 4);
+    memcpy(tmp, info.key, Encryption::KEY_LEN);
+    memcpy(tmp + Encryption::KEY_LEN, info.iv, Encryption::KEY_LEN);
+    ulint crc1 = ut_crc32(tmp, Encryption::KEY_LEN * 2);
+    ulint crc2 = uint4korr(read_buf + Encryption::KEY_LEN * 2 + 4);
 
     if (crc1 != crc2) {
       msg_ts(
@@ -610,16 +613,16 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
                                             const byte *derived_key,
                                             ulint space_id, const byte *key,
                                             const byte *iv) {
-  byte write_buf[ENCRYPTION_KEY_LEN * 2 + 8];
-  byte tmp[ENCRYPTION_KEY_LEN * 2];
+  byte write_buf[Encryption::KEY_LEN * 2 + 8];
+  byte tmp[Encryption::KEY_LEN * 2];
   int elen;
 
   /* Store space id. */
   int4store(write_buf, space_id);
 
   /* Store encrypted tablespace key. */
-  elen = my_aes_encrypt(key, ENCRYPTION_KEY_LEN, write_buf + 4, derived_key,
-                        ENCRYPTION_KEY_LEN, my_aes_256_ecb, NULL, false);
+  elen = my_aes_encrypt(key, Encryption::KEY_LEN, write_buf + 4, derived_key,
+                        Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
     msg_ts("Failed to encrypt key for tablespace %lu.\n", space_id);
@@ -627,23 +630,23 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
   }
 
   /* Store encrypted tablespace iv. */
-  elen = my_aes_encrypt(iv, ENCRYPTION_KEY_LEN,
-                        write_buf + ENCRYPTION_KEY_LEN + 4, derived_key,
-                        ENCRYPTION_KEY_LEN, my_aes_256_ecb, NULL, false);
+  elen = my_aes_encrypt(iv, Encryption::KEY_LEN,
+                        write_buf + Encryption::KEY_LEN + 4, derived_key,
+                        Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
     msg_ts("Failed to encrypt iv for tablespace %lu.\n", space_id);
     return (false);
   }
 
-  memcpy(tmp, key, ENCRYPTION_KEY_LEN);
-  memcpy(tmp + ENCRYPTION_KEY_LEN, iv, ENCRYPTION_KEY_LEN);
-  ulint crc = ut_crc32(tmp, ENCRYPTION_KEY_LEN * 2);
+  memcpy(tmp, key, Encryption::KEY_LEN);
+  memcpy(tmp + Encryption::KEY_LEN, iv, Encryption::KEY_LEN);
+  ulint crc = ut_crc32(tmp, Encryption::KEY_LEN * 2);
 
   /* Store crc. */
-  int4store(write_buf + ENCRYPTION_KEY_LEN * 2 + 4, crc);
+  int4store(write_buf + Encryption::KEY_LEN * 2 + 4, crc);
 
-  if (ds_write(stream, write_buf, ENCRYPTION_KEY_LEN * 2 + 8)) {
+  if (ds_write(stream, write_buf, Encryption::KEY_LEN * 2 + 8)) {
     msg_ts("Failed to write key for tablespace %lu.\n", space_id);
     return (false);
   }
@@ -659,10 +662,10 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
 @return true if success */
 bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
                              size_t transition_key_len) {
-  byte derived_key[ENCRYPTION_KEY_LEN];
+  byte derived_key[Encryption::KEY_LEN];
   byte salt[XB_KDF_SALT_SIZE];
   char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN];
-  char transition_key_buf[ENCRYPTION_KEY_LEN];
+  char transition_key_buf[Encryption::KEY_LEN];
 
   msg_ts("Saving %s.\n", XTRABACKUP_KEYS_FILE);
 
@@ -677,7 +680,7 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
       return (false);
     }
     transition_key = transition_key_buf;
-    transition_key_len = ENCRYPTION_KEY_LEN;
+    transition_key_len = Encryption::KEY_LEN;
   }
 
   bool ret = xb_derive_key(transition_key, transition_key_len, salt,
@@ -814,7 +817,7 @@ bool xb_binlog_password_store(const char *binlog_file_path) {
 
   Key_string file_password = header->decrypt_file_password();
 
-  unsigned char iv[ENCRYPTION_KEY_LEN]{0};
+  unsigned char iv[Encryption::KEY_LEN]{0};
   memcpy(iv, BINLOG_KEY_MAGIC, BINLOG_KEY_MAGIC_SIZE);
 
   xb_insert_tablespace_key(dict_sys_t::s_invalid_space_id, file_password.data(),
@@ -824,8 +827,8 @@ bool xb_binlog_password_store(const char *binlog_file_path) {
 }
 
 bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
-  unsigned char key[ENCRYPTION_KEY_LEN];
-  unsigned char iv[ENCRYPTION_KEY_LEN];
+  unsigned char key[Encryption::KEY_LEN];
+  unsigned char iv[Encryption::KEY_LEN];
 
   bool found = xb_fetch_tablespace_key(dict_sys_t::s_invalid_space_id, key, iv);
   if (!found) {
@@ -849,7 +852,7 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
     return (false);
   }
 
-  Key_string file_password(key, ENCRYPTION_KEY_LEN);
+  Key_string file_password(key, Encryption::KEY_LEN);
   header->encrypt_file_password(file_password);
 
   IO_CACHE_ostream ostream;

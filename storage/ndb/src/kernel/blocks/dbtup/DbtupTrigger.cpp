@@ -623,7 +623,7 @@ Dbtup::execFIRE_TRIG_REQ(Signal* signal)
 
   jamEntry();
 
-  c_operation_pool.getPtr(regOperPtr);
+  ndbrequire(c_operation_pool.getValidPtr(regOperPtr));
 
   regFragPtr.i = regOperPtr.p->fragmentPtr;
   Uint32 no_of_fragrec = cnoOfFragrec;
@@ -651,7 +651,7 @@ Dbtup::execFIRE_TRIG_REQ(Signal* signal)
 
   OperationrecPtr lastOperPtr;
   lastOperPtr.i = tuple_ptr->m_operation_ptr_i;
-  c_operation_pool.getPtr(lastOperPtr);
+  ndbrequire(c_operation_pool.getValidPtr(lastOperPtr));
   ndbassert(regOperPtr.p->op_struct.bit_field.m_reorg ==
             lastOperPtr.p->op_struct.bit_field.m_reorg);
 
@@ -1611,7 +1611,7 @@ out:
     jam();
     ref = req_struct->TC_ref;
     executeDirect = false;
-    longsignal = ndbd_long_fire_trig_ord(getNodeInfo(refToNode(ref)).m_version);
+    longsignal = true;
     break;
   case (TriggerType::SUBSCRIPTION):
   case (TriggerType::SUBSCRIPTION_BEFORE):

@@ -23,13 +23,57 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #ifndef ACL_TABLE_USER_INCLUDED
 #define ACL_TABLE_USER_INCLUDED
 
+#include "my_config.h"
+
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>
+#endif
+
+#include <sys/types.h>
+#include <memory>
+#include <string>
+#include <utility>
+
+#include "my_alloc.h"
 #include "sql/auth/acl_table_base.h"
-#include "sql/auth/auth_common.h"
-#include "sql/auth/auth_internal.h"
 #include "sql/auth/partial_revokes.h"
+#include "sql/auth/user_table.h"
+
+class ACL_USER;
+class RowIterator;
+class THD;
+class User_table_schema;
+struct LEX_USER;
+struct TABLE;
 
 namespace acl_table {
-enum class User_attribute_type { ADDITIONAL_PASSWORD = 0, RESTRICTIONS };
+enum class User_attribute_type {
+  ADDITIONAL_PASSWORD = 0,
+  RESTRICTIONS,
+  PASSWORD_LOCKING
+};
+
+struct Password_lock {
+  /**
+     read from the user config. The number of days to keep the accont locked
+  */
+  int password_lock_time_days;
+  /**
+    read from the user config. The number of failed login attemps before the
+    account is locked
+  */
+  uint failed_login_attempts;
+
+  Password_lock();
+
+  Password_lock &operator=(const Password_lock &other);
+
+  Password_lock &operator=(Password_lock &&other);
+
+  Password_lock(const Password_lock &other);
+
+  Password_lock(Password_lock &&other);
+};
 
 // Forward and alias declarations
 using acl_table_user_writer_status =
@@ -44,13 +88,14 @@ class Acl_table_user_writer_status {
   Acl_table_user_writer_status(MEM_ROOT *mem_root);
   Acl_table_user_writer_status(bool skip, ulong rights, Table_op_error_code err,
                                struct timeval pwd_timestamp, std::string cred,
-                               MEM_ROOT *mem_root)
+                               MEM_ROOT *mem_root, Password_lock &password_lock)
       : skip_cache_update(skip),
         updated_rights(rights),
         error(err),
         password_change_timestamp(pwd_timestamp),
         second_cred(cred),
-        restrictions(mem_root) {}
+        restrictions(mem_root),
+        password_lock(password_lock) {}
 
   bool skip_cache_update;
   ulong updated_rights;
@@ -58,6 +103,7 @@ class Acl_table_user_writer_status {
   struct timeval password_change_timestamp;
   std::string second_cred;
   Restrictions restrictions;
+  Password_lock password_lock;
 };
 
 class Acl_table_user_writer : public Acl_table {

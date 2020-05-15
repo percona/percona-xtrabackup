@@ -91,14 +91,23 @@ Connection_manager::Connection_manager(const Connection_options &co,
           m_default_connection_options.compression_algorithm));
 
   m_variables->make_special_variable(
-      k_variable_option_compression_server_style,
-      new Variable_dynamic_array_of_strings(
-          m_default_connection_options.compression_server_style));
+      k_variable_option_compression_combine_mixed_messages,
+      new Variable_string_readonly(
+          m_default_connection_options.compression_combine_mixed_messages));
 
   m_variables->make_special_variable(
-      k_variable_option_compression_client_style,
-      new Variable_dynamic_array_of_strings(
-          m_default_connection_options.compression_client_style));
+      k_variable_option_compression_max_combine_messages,
+      new Variable_string_readonly(
+          m_default_connection_options.compression_max_combine_messages));
+
+  const std::string level =
+      m_default_connection_options.compression_level.has_value()
+          ? std::to_string(
+                m_default_connection_options.compression_level.value())
+          : std::string("DEFAULT");
+
+  m_variables->make_special_variable(k_variable_option_compression_level,
+                                     new Variable_string_readonly(level));
 
   m_active_holder.reset(new Session_holder(xcl::create_session(), m_console,
                                            m_default_connection_options));

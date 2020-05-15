@@ -51,11 +51,13 @@ ADD_CONVENIENCE_LIBRARY(ndbportlib
   NdbTick.cpp
   NdbDir.cpp
   ndb_daemon.cpp
+  ndb_stacktrace.cpp
   ${EXTRA_SRC}
   NdbNuma.cpp
   NdbMutex_DeadlockDetector.cpp
   NdbGetRUsage.cpp
   NdbLockCpuUtil.cpp
+  NdbSpin.cpp
   LINK_LIBRARIES mysys ${LIBSOCKET}
   )
 

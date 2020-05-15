@@ -73,6 +73,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <iterator>
 #include <memory> /* std::unique_ptr */
 #include <set>
+#include <string>
 #include <vector>
 
 /* Forward declaration. */
@@ -451,6 +452,9 @@ struct dict_col_default_t {
   byte *value;
   /** Length of default value */
   size_t len;
+
+  bool operator==(const dict_col_default_t &other);
+  bool operator!=(const dict_col_default_t &other);
 };
 
 /** Data structure for a column in a table */
@@ -528,7 +532,7 @@ struct dict_col_t {
   /** Gets the column data type.
   @param[out] type	data type */
   void copy_type(dtype_t *type) const {
-    ut_ad(type != NULL);
+    ut_ad(type != nullptr);
 
     type->mtype = mtype;
     type->prtype = prtype;
@@ -834,8 +838,8 @@ class last_ops_cur_t {
     if (mtr.is_active()) {
       mtr_commit(&mtr);
     }
-    rec = NULL;
-    block = NULL;
+    rec = nullptr;
+    block = nullptr;
     invalid = false;
   }
 
@@ -1236,6 +1240,15 @@ struct dict_index_t {
 
     return (0);
   }
+
+ public:
+  /** Get the page size of the tablespace to which this index belongs.
+  @return the page size. */
+  page_size_t get_page_size() const;
+
+  /** Get the space id of the tablespace to which this index belongs.
+  @return the space id. */
+  space_id_t space_id() const { return space; }
 };
 
 /** The status of online index creation */
@@ -1346,28 +1359,6 @@ struct dict_foreign_different_tables {
   }
 };
 
-/** A function object to check if the foreign key constraint has the same
-name as given.  If the full name of the foreign key constraint doesn't match,
-then, check if removing the database name from the foreign key constraint
-matches. Return true if it matches, false otherwise. */
-struct dict_foreign_matches_id {
-  dict_foreign_matches_id(const char *id) : m_id(id) {}
-
-  bool operator()(const dict_foreign_t *foreign) const {
-    if (0 == innobase_strcasecmp(foreign->id, m_id)) {
-      return (true);
-    }
-    if (const char *pos = strchr(foreign->id, '/')) {
-      if (0 == innobase_strcasecmp(m_id, pos + 1)) {
-        return (true);
-      }
-    }
-    return (false);
-  }
-
-  const char *m_id;
-};
-
 typedef std::set<dict_foreign_t *, dict_foreign_compare,
                  ut_allocator<dict_foreign_t *>>
     dict_foreign_set;
@@ -1404,7 +1395,7 @@ bool dict_foreign_set_validate(const dict_table_t &table);
 inline void dict_foreign_free(
     dict_foreign_t *foreign) /*!< in, own: foreign key struct */
 {
-  if (foreign->v_cols != NULL) {
+  if (foreign->v_cols != nullptr) {
     UT_DELETE(foreign->v_cols);
   }
 
@@ -1549,6 +1540,11 @@ struct dict_table_t {
   inline void unlock();
 
 #ifndef UNIV_HOTBACKUP
+  /** Get schema and table name in system character set.
+  @param[out]	schema	schema name
+  @param[out]	table	table name */
+  void get_table_name(std::string &schema, std::string &table);
+
   /** Mutex of the table for concurrency access. */
   ib_mutex_t *mutex;
 
@@ -1692,6 +1688,10 @@ struct dict_table_t {
 
   /** Virtual column names */
   const char *v_col_names;
+
+  /** True if the table belongs to a system database (mysql, information_schema
+  or performance_schema) */
+  bool is_system_table;
 
   /** Hash chain node. */
   hash_node_t name_hash;
@@ -2083,9 +2083,9 @@ detect this and will eventually quit sooner. */
     the clustered index may be NULL.  If the clustered index is corrupted,
     the table is corrupt.  We do not consider the table corrupt if only
     a secondary index is corrupt. */
-    ut_ad(index == NULL || index->is_clustered());
+    ut_ad(index == nullptr || index->is_clustered());
 
-    return (index != NULL && index->type & DICT_CORRUPT);
+    return (index != nullptr && index->type & DICT_CORRUPT);
   }
 
   /** Returns a column's name.
@@ -2512,12 +2512,12 @@ or from a thread that has not shared the table object with other threads.
 @param[in,out]	table	table whose stats latch to destroy */
 inline void dict_table_autoinc_destroy(dict_table_t *table) {
   if (table->autoinc_mutex_created == os_once::DONE) {
-    if (table->autoinc_mutex != NULL) {
+    if (table->autoinc_mutex != nullptr) {
       mutex_free(table->autoinc_mutex);
       UT_DELETE(table->autoinc_mutex);
     }
 
-    if (table->autoinc_persisted_mutex != NULL) {
+    if (table->autoinc_persisted_mutex != nullptr) {
       mutex_free(table->autoinc_persisted_mutex);
       UT_DELETE(table->autoinc_persisted_mutex);
     }
@@ -2529,8 +2529,8 @@ This function is only called from either single threaded environment
 or from a thread that has not shared the table object with other threads.
 @param[in,out]	table	table whose autoinc latch is to be created. */
 inline void dict_table_autoinc_create_lazy(dict_table_t *table) {
-  table->autoinc_mutex = NULL;
-  table->autoinc_persisted_mutex = NULL;
+  table->autoinc_mutex = nullptr;
+  table->autoinc_persisted_mutex = nullptr;
   table->autoinc_mutex_created = os_once::NEVER_DONE;
 }
 
@@ -2539,7 +2539,7 @@ This function is only called from either single threaded environment
 or from a thread that has not shared the table object with other threads.
 @param[in,out]	index	index whose zip_pad mutex is to be created */
 inline void dict_index_zip_pad_mutex_create_lazy(dict_index_t *index) {
-  index->zip_pad.mutex = NULL;
+  index->zip_pad.mutex = nullptr;
   index->zip_pad.mutex_created = os_once::NEVER_DONE;
 }
 
@@ -2549,7 +2549,7 @@ or from a thread that has not shared the table object with other threads.
 @param[in,out]	index	index whose stats latch to destroy */
 inline void dict_index_zip_pad_mutex_destroy(dict_index_t *index) {
   if (index->zip_pad.mutex_created == os_once::DONE &&
-      index->zip_pad.mutex != NULL) {
+      index->zip_pad.mutex != nullptr) {
     mutex_free(index->zip_pad.mutex);
     UT_DELETE(index->zip_pad.mutex);
   }

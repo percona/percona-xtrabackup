@@ -35,7 +35,7 @@ using std::vector;
 const char *load_default_groups[] = {
     "client",        /* Read settings how to connect to server */
     "mysql_upgrade", /* Read special settings for mysql_upgrade*/
-    0};
+    nullptr};
 
 namespace Mysql {
 namespace Tools {
@@ -61,7 +61,7 @@ class Program : public Base::Abstract_connection_program {
  public:
   Program()
       : Abstract_connection_program(),
-        m_mysql_connection(NULL),
+        m_mysql_connection(nullptr),
         m_temporary_verbose(false) {}
 
   string get_version() { return "2.0"; }
@@ -85,7 +85,7 @@ class Program : public Base::Abstract_connection_program {
 
     @return 0 (success)
    */
-  int execute(vector<string> positional_options MY_ATTRIBUTE((unused))) {
+  int execute(const vector<string> &) {
     return this->print_message(0, deprecation_msg);
   }
 

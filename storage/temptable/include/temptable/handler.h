@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2018, Oracle and/or its affiliates. All Rights Reserved.
+/* Copyright (c) 2016, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -444,13 +444,6 @@ class Handler : public ::handler {
   /* Not implemented methods. */
 
   /** Not implemented.
-  @return nullptr */
-  char *get_foreign_key_create_info() override;
-
-  /** Not implemented. */
-  void free_foreign_key_create_info(char *) override;
-
-  /** Not implemented.
   @return 0 */
   int external_lock(THD *, int) override;
 
@@ -500,8 +493,7 @@ class Handler : public ::handler {
   @return 0 */
   int records(ha_rows *) override;
 
-  /** Not implemented.
-  @return 0 */
+  /** Not implemented. */
   void update_create_info(HA_CREATE_INFO *) override;
 
   /** Not implemented.

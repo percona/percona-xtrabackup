@@ -41,20 +41,21 @@ CREATE_JAR(ndbjtie-test ${JAVA_SOURCES}
 
 
 INCLUDE_DIRECTORIES(
-  	${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/utils
-  	${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/jtie
-  	${CMAKE_SOURCE_DIR}/storage/ndb/include/mgmapi
-  	${CMAKE_SOURCE_DIR}/storage/ndb/include/ndbapi
-  	${JNI_INCLUDE_DIRS})
+  ${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/utils
+  ${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/jtie
+  ${CMAKE_SOURCE_DIR}/storage/ndb/include/mgmapi
+  ${CMAKE_SOURCE_DIR}/storage/ndb/include/ndbapi
+  ${JNI_INCLUDE_DIRS}
+  )
 
 # enable safety behaviour
-SET(CMAKE_CXX_FLAGS
-	"${CMAKE_CXX_FLAGS} -DJTIE_OBJECT_CLEAR_ADDRESS_UPON_DELETE")
+STRING_APPEND(CMAKE_CXX_FLAGS " -DJTIE_OBJECT_CLEAR_ADDRESS_UPON_DELETE")
 
 # shared library for testing
 ADD_LIBRARY(libndbjtie_unit_tests SHARED
-	ndbjtie_unit_tests_consts.cpp
-	ndbjtie_unit_tests_lib.cpp)
+  ndbjtie_unit_tests_consts.cpp
+  ndbjtie_unit_tests_lib.cpp
+  )
 
 SET_TARGET_PROPERTIES(libndbjtie_unit_tests PROPERTIES
   LINK_FLAGS "${CMAKE_SHARED_LIBRARY_C_FLAGS}"
@@ -87,15 +88,26 @@ SET(NDBJTIE_JAR "${NDBJTIE_DIR}/ndbjtie-${JAVA_NDB_VERSION}.jar")
 GET_FILENAME_COMPONENT(NDBCLIENT_DIR "${NDBJTIE_DIR}" PATH)
 
 SET(MYJAPI_TEST_DIR "${NDBJTIE_DIR}/jtie/test/myjapi")
-SET(MYJAPI_TEST_JAR "${MYJAPI_TEST_DIR}/jtie-test-myjapi-${JAVA_NDB_VERSION}.jar")
+SET(MYJAPI_TEST_JAR
+  "${MYJAPI_TEST_DIR}/jtie-test-myjapi-${JAVA_NDB_VERSION}.jar")
 
 SET(UNLOAD_TEST_DIR "${NDBJTIE_DIR}/jtie/test/unload")
-SET(UNLOAD_TEST_JAR "${UNLOAD_TEST_DIR}/jtie-test-unload-${JAVA_NDB_VERSION}.jar")
+SET(UNLOAD_TEST_JAR
+  "${UNLOAD_TEST_DIR}/jtie-test-unload-${JAVA_NDB_VERSION}.jar")
 
 IF(WITH_ASAN)
   MESSAGE(STATUS "Skipping java tests for ASAN builds")
   RETURN()
 ENDIF()
+
+# Needed on Windows, to find SSL .dlls at runtime.
+IF(WIN32)
+  SET(JAVATEST_WORKING_DIRECTORY
+    WORKING_DIRECTORY
+    "${CMAKE_BINARY_DIR}/runtime_output_directory/${JAVA_SUBDIR}")
+ENDIF()
+
+MESSAGE(STATUS "JAVATEST_WORKING_DIRECTORY is ${JAVATEST_WORKING_DIRECTORY}")
 
 ADD_TEST(
   NAME test_ndbjtie_mutils
@@ -104,6 +116,7 @@ ADD_TEST(
   "-classpath" "${TEST_JAR}${JAVA_SEPERATOR}${NDBJTIE_JAR}"
   "-Djava.library.path=${CMAKE_BINARY_DIR}/library_output_directory/${JAVA_SUBDIR}"
   "test.MySqlUtilsTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 ADD_TEST(
@@ -114,6 +127,7 @@ ADD_TEST(
   "-Djava.library.path=${CMAKE_BINARY_DIR}/library_output_directory/${JAVA_SUBDIR}${JAVA_SEPERATOR}${BIN_DIR}"
   "-Dtest.NdbJTieConstantsTest.ndbjtie_jar_file=${NDBJTIE_JAR}"
   "test.NdbJTieConstantsTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 ADD_TEST(
@@ -123,6 +137,7 @@ ADD_TEST(
   "-classpath" "${TEST_JAR}${JAVA_SEPERATOR}${NDBJTIE_JAR}${JAVA_SEPERATOR}${MYJAPI_TEST_JAR}"
   "-Djava.library.path=${CMAKE_BINARY_DIR}/library_output_directory/${JAVA_SUBDIR}${JAVA_SEPERATOR}${MYJAPI_TEST_DIR}/${JAVA_SUBDIR}${JAVA_SEPERATOR}${BIN_DIR}"
   "test.NdbJTieMultiLibTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 ADD_TEST(
@@ -132,6 +147,7 @@ ADD_TEST(
   "-classpath" "${TEST_JAR}${JAVA_SEPERATOR}${NDBJTIE_JAR}"
   "-Djava.library.path=${CMAKE_BINARY_DIR}/library_output_directory/${JAVA_SUBDIR}"
   "test.NdbJTieSmokeTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 SET(UNLOAD_TEST "com.mysql.jtie.test.MyLoadUnloadTest")
@@ -147,6 +163,7 @@ ADD_TEST(
   "-D${UNLOAD_TEST}.target_class_name=test.MySqlUtilsTest"
   "-D${UNLOAD_TEST}.target_method_name=test"
   "test.MyLoadUnloadTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 
@@ -161,6 +178,7 @@ ADD_TEST(
   "-D${UNLOAD_TEST}.target_method_name=test"
   "-Dtest.NdbJTieConstantsTest.ndbjtie_jar_file=${NDBJTIE_JAR}"
   "test.MyLoadUnloadTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 ADD_TEST(
@@ -173,6 +191,7 @@ ADD_TEST(
   "-D${UNLOAD_TEST}.target_class_name=test.NdbJTieMultiLibTest"
   "-D${UNLOAD_TEST}.target_method_name=test"
   "test.MyLoadUnloadTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )
 
 ADD_TEST(
@@ -185,4 +204,5 @@ ADD_TEST(
   "-D${UNLOAD_TEST}.target_class_name=test.NdbJTieSmokeTest"
   "-D${UNLOAD_TEST}.target_method_name=test"
   "test.MyLoadUnloadTest"
+  ${JAVATEST_WORKING_DIRECTORY}
 )

@@ -22,11 +22,12 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-#include "errmsg.h"
-#include "my_config.h"
-#include "my_inttypes.h"
-#include "my_macros.h"
-#include "mysql_version.h"
+#include <cstdint>
+
+#include "errmsg.h"         // NOLINT(build/include_subdir)
+#include "my_config.h"      // NOLINT(build/include_subdir)
+#include "my_macros.h"      // NOLINT(build/include_subdir)
+#include "mysql_version.h"  // NOLINT(build/include_subdir)
 
 #include "plugin/x/generated/mysqlx_error.h"
 #include "plugin/x/generated/mysqlx_version.h"
@@ -42,7 +43,7 @@ const char *expected_pass = "user_pass";
 const char *expected_host = "host";
 const char *expected_socket_file = "socket_file";
 const char *expected_schema = "schema";
-const uint16 expected_port = 1290;
+const uint16_t expected_port = 1290;
 const int expected_error_code = 10;
 const int expected_error_code_success = 0;
 
@@ -184,6 +185,7 @@ TEST_F(Xcl_session_impl_tests_connect, connect_nullptrs) {
       .WillRepeatedly(Return(XError{}));
   EXPECT_CALL(*m_mock_protocol, execute_authenticate("", "", "", "MYSQL41"))
       .WillOnce(Return(XError{}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   EXPECT_CALL(*m_mock_protocol, add_notice_handler(_, Handler_position::Begin,
                                                    Handler_priority_low))
@@ -216,6 +218,7 @@ TEST_F(Xcl_session_impl_tests_connect, connect_localhost_nullptrs) {
       .WillRepeatedly(Return(XError{}));
   EXPECT_CALL(*m_mock_protocol, execute_authenticate("", "", "", "MYSQL41"))
       .WillOnce(Return(XError{}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   EXPECT_CALL(*m_mock_protocol, add_notice_handler(_, Handler_position::Begin,
                                                    Handler_priority_low))
@@ -348,6 +351,7 @@ TEST_P(Xcl_session_impl_tests_challenge_response_connect_param,
               execute_authenticate(expected_user, expected_pass,
                                    expected_schema, this->GetParam().m_auth))
       .WillOnce(Return(XError{}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   auto error = (this->*GetParam().m_open)(expected_error_code_success);
 
@@ -371,6 +375,7 @@ TEST_P(Xcl_session_impl_tests_challenge_response_connect_param,
               execute_authenticate(expected_user, expected_pass,
                                    expected_schema, this->GetParam().m_auth))
       .WillOnce(Return(XError{}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   m_sut->set_capability(XSession::Capability_can_handle_expired_password, true);
   auto error = (this->*GetParam().m_open)(expected_error_code_success);
@@ -412,6 +417,7 @@ TEST_P(Xcl_session_impl_tests_challenge_response_connect_param,
               execute_authenticate(expected_user, expected_pass,
                                    expected_schema, this->GetParam().m_auth))
       .WillOnce(Return(XError{expected_error_code, ""}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   auto error = (this->*GetParam().m_open)(expected_error_code_success);
 
@@ -453,6 +459,7 @@ TEST_P(Xcl_session_impl_tests_plain_connect_param,
               execute_authenticate(expected_user, expected_pass,
                                    expected_schema, this->GetParam().m_auth))
       .WillOnce(Return(XError{}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   auto error = (this->*GetParam().m_open)(expected_error_code_success);
 
@@ -517,6 +524,7 @@ TEST_P(Xcl_session_impl_tests_plain_connect_param, connect_plain_tls) {
               execute_authenticate(expected_user, expected_pass,
                                    expected_schema, this->GetParam().m_auth))
       .WillOnce(Return(XError{}));
+  EXPECT_CALL(*m_mock_protocol, use_compression(Compression_algorithm::k_none));
 
   auto error = (this->*GetParam().m_open)(expected_error_code_success);
 

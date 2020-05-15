@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -75,6 +75,8 @@ MACRO(MYSQL_ADD_COMPONENT)
   ADD_VERSION_INFO(${target} ${kind} SOURCES)
   ADD_LIBRARY(${target} ${kind} ${SOURCES})
 
+  TARGET_COMPILE_DEFINITIONS(${target} PUBLIC MYSQL_COMPONENT)
+
   IF(ARG_LINK_LIBRARIES)
     TARGET_LINK_LIBRARIES(${target} ${ARG_LINK_LIBRARIES})
   ENDIF()
@@ -92,6 +94,15 @@ MACRO(MYSQL_ADD_COMPONENT)
         "${ASAN_LIB_DIR}/clang_rt.asan_dll_thunk-x86_64.lib")
     ENDIF()
 
+    # To hide the component symbols in the shared object
+    IF(UNIX)
+      IF(MY_COMPILER_IS_CLANG AND WITH_UBSAN)
+        # nothing, clang/ubsan gets confused
+      ELSE()
+        TARGET_COMPILE_OPTIONS(${target} PRIVATE "-fvisibility=hidden")
+      ENDIF()
+    ENDIF()
+
     IF(NOT ARG_SKIP_INSTALL)
       # Install dynamic library.
       IF(ARG_TEST_ONLY)
@@ -100,9 +111,7 @@ MACRO(MYSQL_ADD_COMPONENT)
         SET(INSTALL_COMPONENT Server)
       ENDIF()
 
-      IF(LINUX_INSTALL_RPATH_ORIGIN)
-        ADD_INSTALL_RPATH(${target} "\$ORIGIN/")
-      ENDIF()
+      ADD_INSTALL_RPATH_FOR_OPENSSL(${target})
       MYSQL_INSTALL_TARGETS(${target}
         DESTINATION ${INSTALL_PLUGINDIR}
         COMPONENT ${INSTALL_COMPONENT})

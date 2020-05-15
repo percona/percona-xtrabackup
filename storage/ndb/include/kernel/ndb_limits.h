@@ -61,6 +61,15 @@
 #define MAX_REPLICAS 4
 
 /**
+ * The maximum number of transporters allowed
+ * A maximum is needed to be able to allocate the array of transporters
+ * We need one 
+ */
+#define MAX_NODE_GROUP_TRANSPORTERS 32
+#define MAX_NTRANSPORTERS (MAX_NODES + \
+                           ((MAX_REPLICAS - 1) * MAX_NODE_GROUP_TRANSPORTERS))
+
+/**
  * The maximum number of local checkpoints stored at a time
  */
 #define MAX_LCP_STORED 3
@@ -155,11 +164,7 @@
 /*
 * The default batch size. Configurable parameter.
 */
-#if NDB_VERSION_D < NDB_MAKE_VERSION(7,2,0)
-#define DEF_BATCH_SIZE 64
-#else
 #define DEF_BATCH_SIZE 256
-#endif
 /*
 * When calculating the number of records sent from LQH in each batch
 * one uses SCAN_BATCH_SIZE divided by the expected size of signals

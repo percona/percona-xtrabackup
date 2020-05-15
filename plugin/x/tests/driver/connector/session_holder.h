@@ -34,9 +34,12 @@
 #include <utility>
 #include <vector>
 
-#include "my_macros.h"
+#include "my_macros.h"  // NOLINT(build/include_subdir)
+
 #include "plugin/x/client/mysqlxclient/xconnection.h"
 #include "plugin/x/client/mysqlxclient/xsession.h"
+#include "plugin/x/protocol/stream/compression/compression_algorithm_interface.h"
+#include "plugin/x/src/helper/optional_value.h"
 #include "plugin/x/tests/driver/formatters/console.h"
 
 struct Connection_options {
@@ -57,19 +60,19 @@ struct Connection_options {
   std::string ssl_cipher;
   std::string ssl_key;
   std::string allowed_tls;
-  std::int64_t io_timeout{-1};
-  std::int64_t session_connect_timeout{-1};
+  int64_t io_timeout{-1};
+  int64_t session_connect_timeout{-1};
   bool dont_wait_for_disconnect{false};
   bool trace_protocol{false};
   xcl::Internet_protocol ip_mode{xcl::Internet_protocol::V4};
   std::vector<std::string> auth_methods;
   bool compatible{false};
-  std::vector<std::string> compression_server_style{"GROUP", "MULTIPLE",
-                                                    "SINGLE"};
-  std::vector<std::string> compression_client_style{"SINGLE", "MULTIPLE",
-                                                    "GROUP"};
-  std::vector<std::string> compression_algorithm{"DEFLATE", "LZ4"};
+  std::vector<std::string> compression_algorithm{"DEFLATE_STREAM",
+                                                 "LZ4_MESSAGE", "ZSTD_STREAM"};
   std::string compression_mode{"DISABLED"};
+  bool compression_combine_mixed_messages{true};
+  int64_t compression_max_combine_messages{0};
+  xpl::Optional_value<int32_t> compression_level;
 
   bool is_ssl_set() const {
     return !ssl_ca.empty() || !ssl_ca_path.empty() || !ssl_cert.empty() ||
@@ -85,8 +88,11 @@ class Session_holder {
   Session_holder(std::unique_ptr<xcl::XSession> session, const Console &console,
                  const Connection_options &options);
 
+  protocol::Compression_algorithm_interface *get_algorithm();
   xcl::XSession *get_session();
 
+  bool enable_compression(const xcl::Compression_algorithm algorithm,
+                          const int64_t level);
   void clear_received_messages();
   bool try_get_number_of_received_messages(const std::string message_name,
                                            uint64_t *value) const;
@@ -98,6 +104,7 @@ class Session_holder {
  private:
   xcl::XError setup_session();
   xcl::XError setup_connection();
+  void setup_compression();
   void setup_ssl();
   void setup_other_options();
   void setup_msg_callbacks();
@@ -125,6 +132,7 @@ class Session_holder {
   void print_message(const std::string &direction,
                      const xcl::XProtocol::Message &msg);
 
+  std::shared_ptr<protocol::Compression_algorithm_interface> m_algorithm;
   xcl::XProtocol::Handler_id m_handler_id{-1};
   std::unique_ptr<xcl::XSession> m_session;
   std::map<std::string, uint64_t> m_received_msg_counters;

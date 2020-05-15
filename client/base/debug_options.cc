@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,13 +36,13 @@ using namespace Mysql::Tools::Base::Options;
 using Mysql::Tools::Base::Abstract_program;
 using std::placeholders::_1;
 
-static Debug_options *primary_debug_options = NULL;
+static Debug_options *primary_debug_options = nullptr;
 static uint my_end_arg;
 
 static void debug_do_exit() { my_end(::my_end_arg); }
 
 Debug_options::Debug_options(Abstract_program *program) : m_program(program) {
-  if (::primary_debug_options == NULL) {
+  if (::primary_debug_options == nullptr) {
     primary_debug_options = this;
     /*
       We don't want to call this routine in destructor, as we want it being
@@ -82,7 +82,7 @@ void Debug_options::debug_option_callback(
   if (this->m_dbug_option.has_value()) {
     DBUG_PUSH(this->m_dbug_option.value().c_str());
   }
-  this->m_debug_check_flag = 1;
+  this->m_debug_check_flag = true;
 }
 
 void Debug_options::options_parsed() {

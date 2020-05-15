@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -258,7 +258,7 @@ Archive_share::Archive_share() {
 }
 
 ha_archive::ha_archive(handlerton *hton, TABLE_SHARE *table_arg)
-    : handler(hton, table_arg), share(NULL), bulk_insert(0) {
+    : handler(hton, table_arg), share(nullptr), bulk_insert(false) {
   /* Set our original buffer from pre-allocated memory */
   buffer.set((char *)byte_buffer, IO_SIZE, system_charset_info);
 
@@ -442,7 +442,7 @@ Archive_share *ha_archive::get_share(const char *table_name, int *rc) {
     if (!(azopen(&archive_tmp, tmp_share->data_file_name, O_RDONLY))) {
       delete tmp_share;
       *rc = my_errno() ? my_errno() : HA_ERR_CRASHED;
-      tmp_share = NULL;
+      tmp_share = nullptr;
       goto err;
     }
     stats.auto_increment_value = archive_tmp.auto_increment + 1;
@@ -546,7 +546,7 @@ int ha_archive::open(const char *name, int, uint open_options,
 
   if (!record_buffer) return HA_ERR_OUT_OF_MEM;
 
-  thr_lock_data_init(&share->lock, &lock, NULL);
+  thr_lock_data_init(&share->lock, &lock, nullptr);
 
   DBUG_PRINT("ha_archive", ("archive table was crashed %s",
                             rc == HA_ERR_CRASHED_ON_USAGE ? "yes" : "no"));
@@ -783,7 +783,7 @@ unsigned int ha_archive::pack_row(uchar *record, azio_stream *writer) {
 */
 int ha_archive::write_row(uchar *buf) {
   int rc;
-  uchar *read_buf = NULL;
+  uchar *read_buf = nullptr;
   ulonglong temp_auto;
   uchar *record = table->record[0];
   DBUG_TRACE;
@@ -862,7 +862,7 @@ int ha_archive::index_read(uchar *buf, const uchar *key, uint key_len,
 int ha_archive::index_read_idx(uchar *buf, uint index, const uchar *key,
                                uint key_len, enum ha_rkey_function) {
   int rc;
-  bool found = 0;
+  bool found = false;
   KEY *mkey = &table->s->key_info[index];
   current_k_offset = mkey->key_part->offset;
   current_key = key;
@@ -876,7 +876,7 @@ int ha_archive::index_read_idx(uchar *buf, uint index, const uchar *key,
 
   while (!(get_row(&archive, buf))) {
     if (!memcmp(current_key, buf + current_k_offset, current_key_len)) {
-      found = 1;
+      found = true;
       break;
     }
   }
@@ -891,14 +891,14 @@ error:
 }
 
 int ha_archive::index_next(uchar *buf) {
-  bool found = 0;
+  bool found = false;
   int rc;
 
   DBUG_TRACE;
 
   while (!(get_row(&archive, buf))) {
     if (!memcmp(current_key, buf + current_k_offset, current_key_len)) {
-      found = 1;
+      found = true;
       break;
     }
   }
@@ -962,14 +962,14 @@ bool ha_archive::fix_rec_buff(unsigned int length) {
     if (!(newptr = (uchar *)my_realloc(az_key_memory_record_buffer,
                                        (uchar *)record_buffer->buffer, length,
                                        MYF(MY_ALLOW_ZERO_PTR))))
-      return 1;
+      return true;
     record_buffer->buffer = newptr;
     record_buffer->length = length;
   }
 
   DBUG_ASSERT(length <= record_buffer->length);
 
-  return 0;
+  return false;
 }
 
 int ha_archive::unpack_row(azio_stream *file_to_read, uchar *record) {
@@ -1549,8 +1549,6 @@ bool ha_archive::check_and_repair(THD *thd) {
   HA_CHECK_OPT check_opt;
   DBUG_TRACE;
 
-  check_opt.init();
-
   return repair(thd, &check_opt);
 }
 
@@ -1560,14 +1558,14 @@ archive_record_buffer *ha_archive::create_record_buffer(unsigned int length) {
   if (!(r = (archive_record_buffer *)my_malloc(az_key_memory_record_buffer,
                                                sizeof(archive_record_buffer),
                                                MYF(MY_WME)))) {
-    return NULL; /* purecov: inspected */
+    return nullptr; /* purecov: inspected */
   }
   r->length = (int)length;
 
   if (!(r->buffer = (uchar *)my_malloc(az_key_memory_record_buffer, r->length,
                                        MYF(MY_WME)))) {
     my_free(r);
-    return NULL; /* purecov: inspected */
+    return nullptr; /* purecov: inspected */
   }
 
   return r;
@@ -1597,15 +1595,15 @@ mysql_declare_plugin(archive){
     MYSQL_STORAGE_ENGINE_PLUGIN,
     &archive_storage_engine,
     "ARCHIVE",
-    "Brian Aker, MySQL AB",
+    PLUGIN_AUTHOR_ORACLE,
     "Archive storage engine",
     PLUGIN_LICENSE_GPL,
     archive_db_init, /* Plugin Init */
-    NULL,            /* Plugin check uninstall */
-    NULL,            /* Plugin Deinit */
+    nullptr,         /* Plugin check uninstall */
+    nullptr,         /* Plugin Deinit */
     0x0300 /* 3.0 */,
-    NULL, /* status variables                */
-    NULL, /* system variables                */
-    NULL, /* config options                  */
-    0,    /* flags                           */
+    nullptr, /* status variables                */
+    nullptr, /* system variables                */
+    nullptr, /* config options                  */
+    0,       /* flags                           */
 } mysql_declare_plugin_end;

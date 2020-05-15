@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -19,6 +19,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+
+DISABLE_MISSING_PROFILE_WARNING()
 
 SET(protoc_plugin_SRC
   message_field_chain.cc
@@ -48,6 +50,25 @@ TARGET_LINK_LIBRARIES(
   ${PROTOBUF_PROTOC_LIBRARY}
   ${PROTOBUF_LIBRARY}
 )
+
+# Workaround for an issue present on Debian 5.3.7-1
+# and gcc9.
+#
+# The problem is that the linker eliminates the dependency
+# to libpthread.so, even presents of -pthread and -lpthread
+# flags.
+# This leaves some unresolved symbols which trigger
+# exception while starting the ELF file.
+#
+# The issue is not visible while using gcc standard linker.
+# It can be observed with gcc+gold and gcc+lld.
+#
+IF(MY_COMPILER_IS_GNU)
+  SET_TARGET_PROPERTIES(
+    xprotocol_plugin
+    PROPERTIES LINK_FLAGS
+    "-Wl,--no-as-needed -lpthread")
+ENDIF()
 
 SET(PROTOC_PLUGIN_GENERATED_HDR
   "xprotocol_tags.h"

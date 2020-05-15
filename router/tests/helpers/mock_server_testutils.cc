@@ -51,32 +51,55 @@ std::string json_to_string(const JsonValue &json_doc) {
   return out_buffer.GetString();
 }
 
-JsonValue mock_GR_metadata_as_json(const std::string &gr_id,
-                                   const std::vector<uint16_t> &gr_node_ports,
-                                   unsigned primary_id) {
+JsonValue mock_GR_metadata_as_json(
+    const std::string &gr_id, const std::vector<uint16_t> &gr_node_ports,
+    unsigned primary_id, unsigned view_id, bool error_on_md_query,
+    const std::string &gr_node_host,
+    const std::vector<uint32_t> &gr_node_xports) {
   JsonValue json_doc(rapidjson::kObjectType);
   JsonAllocator allocator;
   json_doc.AddMember(
       "gr_id", JsonValue(gr_id.c_str(), gr_id.length(), allocator), allocator);
 
   JsonValue gr_nodes_json(rapidjson::kArrayType);
+  if (!gr_node_xports.empty() &&
+      gr_node_xports.size() != gr_node_ports.size()) {
+    throw std::runtime_error("gr_node_xports.size() != gr_node_ports.size(), " +
+                             std::to_string(gr_node_xports.size()) +
+                             " != " + std::to_string(gr_node_ports.size()));
+  }
+  size_t i = 0;
   for (auto &gr_node : gr_node_ports) {
     JsonValue node(rapidjson::kArrayType);
     node.PushBack(static_cast<int>(gr_node), allocator);
     node.PushBack(JsonValue("ONLINE", strlen("ONLINE"), allocator), allocator);
+    if (!gr_node_xports.empty())
+      node.PushBack(static_cast<int>(gr_node_xports[i]), allocator);
+    ++i;
     gr_nodes_json.PushBack(node, allocator);
   }
   json_doc.AddMember("gr_nodes", gr_nodes_json, allocator);
   json_doc.AddMember("primary_id", static_cast<int>(primary_id), allocator);
+  if (view_id > 0) {
+    json_doc.AddMember("view_id", static_cast<int>(view_id), allocator);
+  }
+  json_doc.AddMember("error_on_md_query", error_on_md_query ? 1 : 0, allocator);
+  json_doc.AddMember(
+      "gr_node_host",
+      JsonValue(gr_node_host.c_str(), gr_node_host.length(), allocator),
+      allocator);
 
   return json_doc;
 }
 
 void set_mock_metadata(uint16_t http_port, const std::string &gr_id,
                        const std::vector<uint16_t> &gr_node_ports,
-                       unsigned primary_id) {
+                       unsigned primary_id, unsigned view_id,
+                       bool error_on_md_query, const std::string &gr_node_host,
+                       const std::vector<uint32_t> &gr_node_xports) {
   const auto json_doc =
-      mock_GR_metadata_as_json(gr_id, gr_node_ports, primary_id);
+      mock_GR_metadata_as_json(gr_id, gr_node_ports, primary_id, view_id,
+                               error_on_md_query, gr_node_host, gr_node_xports);
 
   const auto json_str = json_to_string(json_doc);
 
@@ -85,7 +108,9 @@ void set_mock_metadata(uint16_t http_port, const std::string &gr_id,
 
 void set_mock_bootstrap_data(
     uint16_t http_port, const std::string &cluster_name,
-    const std::vector<std::pair<std::string, unsigned>> &gr_members_ports) {
+    const std::vector<std::pair<std::string, unsigned>> &gr_members_ports,
+    const mysqlrouter::MetadataSchemaVersion &metadata_version,
+    const std::string &cluster_specific_id) {
   JsonValue json_doc(rapidjson::kObjectType);
   JsonAllocator allocator;
   json_doc.AddMember(
@@ -103,6 +128,18 @@ void set_mock_bootstrap_data(
     gr_members_json.PushBack(member, allocator);
   }
   json_doc.AddMember("gr_members", gr_members_json, allocator);
+  json_doc.AddMember("innodb_cluster_instances", gr_members_json, allocator);
+
+  JsonValue md_version(rapidjson::kArrayType);
+  md_version.PushBack(static_cast<int>(metadata_version.major), allocator);
+  md_version.PushBack(static_cast<int>(metadata_version.minor), allocator);
+  md_version.PushBack(static_cast<int>(metadata_version.patch), allocator);
+  json_doc.AddMember("metadata_version", md_version, allocator);
+
+  json_doc.AddMember("cluster_specific_id",
+                     JsonValue(cluster_specific_id.c_str(),
+                               cluster_specific_id.length(), allocator),
+                     allocator);
 
   const auto json_str = json_to_string(json_doc);
 

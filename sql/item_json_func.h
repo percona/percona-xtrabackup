@@ -29,6 +29,8 @@
 #include <utility>  // std::forward
 
 #include "m_ctype.h"
+#include "my_alloc.h"
+#include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_time.h"
 #include "mysql/udf_registration_types.h"
@@ -38,22 +40,23 @@
 #include "sql/enum_query_type.h"
 #include "sql/field.h"
 #include "sql/item.h"
+#include "sql/item_cmpfunc.h"
 #include "sql/item_func.h"
 #include "sql/item_strfunc.h"    // Item_str_func
-#include "sql/json_dom.h"        // Json_array
 #include "sql/json_path.h"       // Json_path
 #include "sql/mem_root_array.h"  // Mem_root_array
 #include "sql/parse_tree_node_base.h"
 #include "sql_string.h"
 
 class Json_schema_validator;
-class Item_func_like;
+class Json_array;
 class Json_dom;
 class Json_scalar_holder;
 class Json_wrapper;
 class PT_item_list;
 class THD;
 class my_decimal;
+struct TABLE;
 
 /** For use by JSON_CONTAINS_PATH() and JSON_SEARCH() */
 enum enum_one_or_all_type {
@@ -314,6 +317,7 @@ class Item_func_json_valid final : public Item_int_func {
 class Item_func_json_schema_valid final : public Item_bool_func {
  public:
   Item_func_json_schema_valid(const POS &pos, Item *a, Item *b);
+  ~Item_func_json_schema_valid() override;
 
   const char *func_name() const override { return "json_schema_valid"; }
 
@@ -340,6 +344,7 @@ class Item_func_json_schema_validation_report final : public Item_json_func {
  public:
   Item_func_json_schema_validation_report(THD *thd, const POS &pos,
                                           PT_item_list *a);
+  ~Item_func_json_schema_validation_report() override;
 
   const char *func_name() const override {
     return "json_schema_validation_report";
@@ -840,7 +845,6 @@ enum Cast_target : unsigned char;
 class Item_func_array_cast final : public Item_func {
   /// Type to cast to
   Cast_target cast_type;
-  const CHARSET_INFO *cs;
   /**
     Whether use of CAST(.. AS .. ARRAY) is allowed
 
@@ -850,10 +854,18 @@ class Item_func_array_cast final : public Item_func {
   */
   bool m_is_allowed{false};
 
+  /**
+    An array used by #save_in_field_inner() to store the result of an array cast
+    operation. It is cached in the Item in order to avoid the need for
+    reallocation on each row.
+  */
+  unique_ptr_destroy_only<Json_array> m_result_array;
+
  public:
   Item_func_array_cast(const POS &pos, Item *a, Cast_target type, uint len_arg,
                        uint dec_arg, const CHARSET_INFO *cs_arg);
-  const char *func_name() const override { return "cast"; }
+  ~Item_func_array_cast() override;
+  const char *func_name() const override { return "cast_as_array"; }
   enum Functype functype() const override { return TYPECAST_FUNC; }
   bool returns_array() const override { return true; }
   bool val_json(Json_wrapper *wr) override;
@@ -863,33 +875,33 @@ class Item_func_array_cast final : public Item_func {
   bool resolve_type(THD *) override;
   Field *tmp_table_field(TABLE *table) override;
   bool fix_fields(THD *thd, Item **ref) override;
-  void cleanup() override;
   void allow_array_cast() override { m_is_allowed = true; }
+  type_conversion_status save_in_field_inner(Field *field,
+                                             bool no_conversions) override;
   // Regular val_x() funcs shouldn't be called
   /* purecov: begin inspected */
-  longlong val_int() override  // For tests only
-  {
-    DBUG_ASSERT(0);
-    return 0;  // For tests only
-  }
-  String *val_str(String *) override {
-    DBUG_ASSERT(0);
-    return NULL;  // For tests only
-  }
-  my_decimal *val_decimal(my_decimal *) override {
-    DBUG_ASSERT(0);  // For tests only
-    return NULL;
-  }
-  virtual double val_real() override {
-    DBUG_ASSERT(0);
+  longlong val_int() override {
+    DBUG_ASSERT(false);
     return 0;
   }
-  virtual bool get_date(MYSQL_TIME *, my_time_flags_t) override {
-    DBUG_ASSERT(0);
+  String *val_str(String *) override {
+    DBUG_ASSERT(false);
+    return nullptr;
+  }
+  my_decimal *val_decimal(my_decimal *) override {
+    DBUG_ASSERT(false);
+    return nullptr;
+  }
+  double val_real() override {
+    DBUG_ASSERT(false);
+    return 0;
+  }
+  bool get_date(MYSQL_TIME *, my_time_flags_t) override {
+    DBUG_ASSERT(false);
     return true;
   }
-  virtual bool get_time(MYSQL_TIME *) override {
-    DBUG_ASSERT(0);
+  bool get_time(MYSQL_TIME *) override {
+    DBUG_ASSERT(false);
     return true;
   }
   /* purecov: end */
@@ -994,7 +1006,6 @@ typedef Prealloced_array<size_t, 16> Sorted_index_array;
 bool sort_and_remove_dups(const Json_wrapper &orig, Sorted_index_array *v);
 
 enum class enum_jtc_on : uint16;
-bool save_json_to_field(THD *thd, Field *field, enum_jtc_on m_on_error,
-                        const Json_wrapper *w, enum_check_fields warn,
-                        bool set_field_null = false);
+bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
+                        bool no_error);
 #endif /* ITEM_JSON_FUNC_INCLUDED */

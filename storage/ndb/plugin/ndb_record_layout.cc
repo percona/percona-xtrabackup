@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ Ndb_record_layout::Ndb_record_layout(int ncol)
     : record_specs(new NdbDictionary::RecordSpecification[ncol]),
       record_size(4),  // Use first four bytes for null bitmap
       m_columns(ncol),
-      m_seq(0){};
+      m_seq(0) {}
 
 Ndb_record_layout::~Ndb_record_layout() { delete[] record_specs; }
 
@@ -74,7 +74,7 @@ void Ndb_record_layout::addColumn(const NdbDictionary::Column *column) {
   /* Increment the counter and record size */
   m_seq += 1;
   record_size += column->getSizeInBytes();
-};
+}
 
 bool Ndb_record_layout::isNull(const char *data, int idx) const {
   if (record_specs[idx].column->getNullable()) {
@@ -90,7 +90,8 @@ void Ndb_record_layout::setValue(int idx, unsigned short value,
   DBUG_ASSERT(record_specs[idx].column->getSizeInBytes() == sizeof(short));
 
   setNotNull(idx, data);
-  int2store((data + record_specs[idx].offset), value);
+  data += record_specs[idx].offset;
+  *(reinterpret_cast<unsigned short *>(data)) = value;
 }
 
 void Ndb_record_layout::setValue(int idx, std::string value, char *data) const {
@@ -105,7 +106,8 @@ void Ndb_record_layout::setValue(int idx, unsigned int *value,
   DBUG_ASSERT(idx < (int)m_columns);
   if (value) {
     setNotNull(idx, data);
-    int4store((data + record_specs[idx].offset), *value);
+    data += record_specs[idx].offset;
+    *(reinterpret_cast<unsigned int *>(data)) = *value;
   } else {
     setNull(idx, data);
   }
@@ -122,7 +124,7 @@ bool Ndb_record_layout::getValue(const char *data, int idx,
   DBUG_ASSERT(idx < (int)m_columns);
   if (isNull(data, idx)) return false;
   data += record_specs[idx].offset;
-  *value = uint2korr(data);
+  *value = *reinterpret_cast<const unsigned short *>(data);
   return true;
 }
 
@@ -140,6 +142,6 @@ bool Ndb_record_layout::getValue(const char *data, int idx,
   DBUG_ASSERT(idx < (int)m_columns);
   if (isNull(data, idx)) return false;
   data += record_specs[idx].offset;
-  *value = uint4korr(data);
+  *value = *reinterpret_cast<const int *>(data);
   return true;
 }

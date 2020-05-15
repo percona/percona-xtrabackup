@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # -*- cperl -*-
 
-# Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2004, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -215,7 +215,8 @@ our $opt_xml_report;
 #
 # Suites run by default (i.e. when invoking ./mtr without parameters)
 #
-our $DEFAULT_SUITES = "auth_sec,binlog_gtid,binlog_nogtid,clone,collations,connection_control,encryption,federated,funcs_2,gcol,sysschema,gis,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,json,main,opt_trace,parts,perfschema,query_rewrite_plugins,rpl,rpl_gtid,rpl_nogtid,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,binlog,test_service_sql_api,test_services,x";
+our $DEFAULT_SUITES =
+"auth_sec,binlog_gtid,binlog_nogtid,clone,collations,connection_control,encryption,federated,funcs_2,gcol,sysschema,gis,information_schema,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,json,main,opt_trace,parts,perfschema,query_rewrite_plugins,rpl,rpl_gtid,rpl_nogtid,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,binlog,test_service_sql_api,test_services,x";
 
 # End of list of default suites
 
@@ -318,6 +319,9 @@ sub testcase_timeout ($) {
   if (exists $tinfo->{'case-timeout'}) {
     # Return test specific timeout if *longer* that the general timeout
     my $test_to = $tinfo->{'case-timeout'};
+    # Double the testcase timeout for sanitizer (ASAN/UBSAN) runs
+    $test_to *= 2 if $opt_sanitize;
+    # Multiply the testcase timeout by 10 for valgrind runs
     $test_to *= 10 if $opt_valgrind;
     return $test_to * 60 if $test_to > $opt_testcase_timeout;
   }
@@ -628,13 +632,13 @@ sub main {
   # Read definitions from include/plugin.defs
   read_plugin_defs("include/plugin.defs");
 
-  # Also read from any plugin local or suite specific plugin.defs
-  my $plugin_def =
-    "$basedir/internal/cloud/mysql-test/suite/*/plugin.defs " .
-    "suite/*/plugin.defs ";
+  # Also read from plugin.defs files in internal and internal/cloud if they exist
 
-  $plugin_def = $plugin_def . "$basedir/internal/mysql-test/include/plugin.defs"
+  my $plugin_def = "$basedir/internal/mysql-test/include/plugin.defs"
     if (-e "$basedir/internal/mysql-test/include/plugin.defs");
+
+  $plugin_def = $plugin_def." "."$basedir/internal/cloud/mysql-test/include/plugin.defs"
+    if (-e "$basedir/internal/cloud/mysql-test/include/plugin.defs");
 
   for (glob $plugin_def) {
     read_plugin_defs($_);
@@ -2016,6 +2020,14 @@ sub command_line_setup {
     mtr_report("Turning on valgrind for secondary engine server(s) only.");
   }
 
+  if ($opt_sanitize) {
+    # Increase the timeouts when running with sanitizers (ASAN/UBSAN)
+    $opt_testcase_timeout   *= 2;
+    $opt_suite_timeout      *= 2;
+    $opt_start_timeout      *= 2;
+    $opt_debug_sync_timeout *= 2;
+  }
+
   if ($opt_callgrind) {
     mtr_report("Turning on valgrind with callgrind for mysqld(s)");
     $opt_valgrind        = 1;
@@ -2548,7 +2560,7 @@ sub mysqlxtest_arguments() {
   return mtr_args2str($exe, @$args);
 }
 
-sub mysqlpump_arguments ($) {
+sub mysql_pump_arguments ($) {
   my ($group_suffix) = @_;
   my $exe = mtr_exe_exists("$path_client_bindir/mysqlpump");
 
@@ -2561,6 +2573,19 @@ sub mysqlpump_arguments ($) {
   mtr_add_arg($args, "--defaults-file=%s",         $path_config_file);
   mtr_add_arg($args, "--defaults-group-suffix=%s", $group_suffix);
   client_debug_arg($args, "mysqlpump-$group_suffix");
+  return mtr_args2str($exe, @$args);
+}
+
+
+sub mysqlpump_arguments () {
+  my $exe = mtr_exe_exists("$path_client_bindir/mysqlpump");
+
+  my $args;
+  mtr_init_args(\$args);
+  if ($opt_valgrind_clients) {
+    valgrind_client_arguments($args, \$exe);
+  }
+
   return mtr_args2str($exe, @$args);
 }
 
@@ -2663,8 +2688,9 @@ sub read_plugin_defs($) {
       $ENV{$plug_var}            = "";
       $ENV{ $plug_var . '_DIR' } = "";
       $ENV{ $plug_var . '_OPT' } = "";
-      $ENV{ $plug_var . '_LOAD' }     = "" if $plug_names;
-      $ENV{ $plug_var . '_LOAD_ADD' } = "" if $plug_names;
+      $ENV{ $plug_var . '_LOAD' }       = "" if $plug_names;
+      $ENV{ $plug_var . '_LOAD_EARLY' } = "" if $plug_names;
+      $ENV{ $plug_var . '_LOAD_ADD' }   = "" if $plug_names;
     }
   }
   close PLUGDEF;
@@ -2746,6 +2772,9 @@ sub environment_setup {
   $ENV{'LC_COLLATE'} = "C";
   $ENV{'LC_CTYPE'}   = "C";
 
+  # This might be set; remove to avoid warnings in error log and test failure
+  delete $ENV{'NOTIFY_SOCKET'};
+
   $ENV{'DEFAULT_MASTER_PORT'} = $mysqld_variables{'port'};
   $ENV{'MYSQL_BINDIR'}        = "$bindir";
   $ENV{'MYSQL_CHARSETSDIR'}   = $path_charsetsdir;
@@ -2771,7 +2800,19 @@ sub environment_setup {
     $ENV{'NDB_MGM'} =
       my_find_bin($bindir, [ "runtime_output_directory", "bin" ], "ndb_mgm");
 
+    # We need to extend PATH to ensure we find libcrypto/libssl at runtime
+    # (ndbclient.dll depends on them)
+    # These .dlls are stored in runtime_output_directory/<config>/
+    # or in bin/ after MySQL package installation.
+    if (IS_WINDOWS) {
+      my $bin_dir = dirname($ENV{NDB_MGM});
+      $ENV{'PATH'} = "$ENV{'PATH'}" . ";" . $bin_dir;
+    }
+
     $ENV{'NDB_WAITER'} = $exe_ndb_waiter;
+
+    $ENV{'NDB_MGMD'} =
+      my_find_bin($bindir, [ "runtime_output_directory", "libexec", "sbin", "bin" ], "ndb_mgmd");
 
     $ENV{'NDB_CONFIG'} =
       my_find_bin($bindir, [ "runtime_output_directory", "bin" ], "ndb_config");
@@ -2814,7 +2855,8 @@ sub environment_setup {
   $ENV{'MYSQL_DUMP'}          = mysqldump_arguments(".1");
   $ENV{'MYSQL_DUMP_SLAVE'}    = mysqldump_arguments(".2");
   $ENV{'MYSQL_IMPORT'}        = client_arguments("mysqlimport");
-  $ENV{'MYSQL_PUMP'}          = mysqlpump_arguments(".1");
+  $ENV{'MYSQL_PUMP'}          = mysql_pump_arguments(".1");
+  $ENV{'MYSQLPUMP'}           = mysqlpump_arguments();
   $ENV{'MYSQL_SHOW'}          = client_arguments("mysqlshow");
   $ENV{'MYSQL_SLAP'}          = mysqlslap_arguments();
   $ENV{'MYSQL_SLAVE'}         = client_arguments("mysql", ".2");
@@ -2948,8 +2990,10 @@ sub environment_setup {
   $ENV{'UBSAN_OPTIONS'} = "print_stacktrace=1,halt_on_error=1" if $opt_sanitize;
 
   # Make sure LeakSanitizer exits if leaks are found
+  # We may get "Suppressions used:" reports in .result files, do not print them.
   $ENV{'LSAN_OPTIONS'} =
     "exitcode=42,suppressions=${glob_mysql_test_dir}/lsan.supp"
+    .",print_suppressions=0"
     if $opt_sanitize;
 
   $ENV{'ASAN_OPTIONS'} = "suppressions=${glob_mysql_test_dir}/asan.supp"
@@ -3435,7 +3479,7 @@ sub ndbd_start {
   my $args;
   mtr_init_args(\$args);
   mtr_add_arg($args, "--defaults-file=%s",         $path_config_file);
-  mtr_add_arg($args, "--defaults-group-suffix=%s", $cluster->suffix());
+  mtr_add_arg($args, "--defaults-group-suffix=%s", $ndbd->after('cluster_config.ndbd'));
   mtr_add_arg($args, "--nodaemon");
 
   # > 5.0 { 'character-sets-dir' => \&fix_charset_dir },
@@ -3909,7 +3953,7 @@ sub mysql_install_db {
   }
 
   if (-f "include/mtr_test_data_timezone.sql") {
-    # Add the offical mysql system tables for a production system.
+    # Add the official mysql system tables in a production system.
     mtr_tofile($bootstrap_sql_file, "use mysql;\n");
 
     # Add test data for timezone - this is just a subset, on a real
@@ -3976,9 +4020,17 @@ sub mysql_install_db {
     mtr_appendfile_to_file($init_file, $bootstrap_sql_file);
   }
 
-  # Set blacklist option early so it works during bootstrap
-  $ENV{'TSAN_OPTIONS'} = "suppressions=${glob_mysql_test_dir}/tsan.supp"
-    if $opt_sanitize;
+  if ($opt_sanitize) {
+    if ($ENV{'TSAN_OPTIONS'}) {
+      # Don't want TSAN_OPTIONS to start with a leading separator. XSanitizer
+      # options are pretty relaxed about what to use as a
+      # separator: ',' ':' and ' ' all work.
+      $ENV{'TSAN_OPTIONS'} .= ",";
+    } else { $ENV{'TSAN_OPTIONS'} = ""; }
+    # Append TSAN_OPTIONS already present in the environment
+    # Set blacklist option early so it works during bootstrap
+    $ENV{'TSAN_OPTIONS'} .= "suppressions=${glob_mysql_test_dir}/tsan.supp"
+  }
 
   if ($opt_manual_boot_gdb) {
     # The configuration has been set up and user has been prompted for

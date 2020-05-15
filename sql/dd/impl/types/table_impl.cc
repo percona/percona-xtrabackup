@@ -635,9 +635,9 @@ void Table_impl::debug_print(String_type &outb) const {
 
   {
     for (const Partition *i : partitions()) {
-      String_type s;
-      i->debug_print(s);
-      ss << s << " | ";
+      String_type sp;
+      i->debug_print(sp);
+      ss << sp << " | ";
     }
   }
 
@@ -645,9 +645,9 @@ void Table_impl::debug_print(String_type &outb) const {
 
   {
     for (const Index *i : indexes()) {
-      String_type s;
-      i->debug_print(s);
-      ss << s << " | ";
+      String_type si;
+      i->debug_print(si);
+      ss << si << " | ";
     }
   }
 
@@ -655,9 +655,9 @@ void Table_impl::debug_print(String_type &outb) const {
 
   {
     for (const Foreign_key *fk : foreign_keys()) {
-      String_type s;
-      fk->debug_print(s);
-      ss << s << " | ";
+      String_type sfk;
+      fk->debug_print(sfk);
+      ss << sfk << " | ";
     }
   }
 
@@ -665,9 +665,9 @@ void Table_impl::debug_print(String_type &outb) const {
 
   {
     for (const Check_constraint *cc : check_constraints()) {
-      String_type s;
-      cc->debug_print(s);
-      ss << s << " | ";
+      String_type scc;
+      cc->debug_print(scc);
+      ss << scc << " | ";
     }
   }
 
@@ -675,9 +675,9 @@ void Table_impl::debug_print(String_type &outb) const {
 
   {
     for (const Trigger *trig : triggers()) {
-      String_type s;
-      trig->debug_print(s);
-      ss << s << " | ";
+      String_type st;
+      trig->debug_print(st);
+      ss << st << " | ";
     }
   }
   ss << "] ";
@@ -712,7 +712,7 @@ Index *Table_impl::get_index(Object_id index_id) {
     if (i->id() == index_id) return i;
   }
 
-  return NULL;
+  return nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -753,7 +753,7 @@ Partition *Table_impl::get_partition(Object_id partition_id) {
     if (i->id() == partition_id) return i;
   }
 
-  return NULL;
+  return nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -958,7 +958,7 @@ Partition *Table_impl::get_partition(const String_type &name) {
     if (i->name() == name) return i;
   }
 
-  return NULL;
+  return nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////

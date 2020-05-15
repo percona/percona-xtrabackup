@@ -20,18 +20,20 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include "sql/named_pipe.h"
+
 #include <AclAPI.h>
 #include <accctrl.h>
 #include <errno.h>
-#include "sql_class.h"
 
 #include <mysql/components/services/log_builtins.h>
 #include "my_config.h"
 #include "my_sys.h"
 #include "mysqld_error.h"
+#include "sql/current_thd.h"
 #include "sql/log.h"
 #include "sql/mysqld.h"
-#include "sql/named_pipe.h"
+#include "sql/sql_error.h"
 
 bool is_existing_windows_group_name(const char *group_name) {
   // First, let's get a SID for the given group name...
@@ -232,7 +234,7 @@ bool my_security_attr_add_rights_to_group(SECURITY_ATTRIBUTES *psa,
   DWORD dwRes = SetEntriesInAcl(1, &ea, pOldDACL, &pNewDACL);
   if (ERROR_SUCCESS != dwRes) {
     char num_buff[20];
-    int10_to_str(dwRes, num_buff, 10);
+    longlong10_to_str(dwRes, num_buff, 10);
     log_message(LOG_TYPE_ERROR, LOG_ITEM_LOG_PRIO, (longlong)ERROR_LEVEL,
                 LOG_ITEM_LOG_LOOKUP, ER_NPIPE_CANT_CREATE,
                 "SetEntriesInAcl to add group permissions failed", num_buff);
@@ -329,7 +331,7 @@ HANDLE create_server_named_pipe(SECURITY_ATTRIBUTES **ppsec_attr,
                     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), last_error_msg,
                     sizeof(last_error_msg) / sizeof(TCHAR), NULL);
       char num_buff[20];
-      int10_to_str(last_error_num, num_buff, 10);
+      longlong10_to_str(last_error_num, num_buff, 10);
 
       log_message(LOG_TYPE_ERROR, LOG_ITEM_LOG_PRIO, (longlong)ERROR_LEVEL,
                   LOG_ITEM_LOG_LOOKUP, ER_NPIPE_CANT_CREATE, last_error_msg,

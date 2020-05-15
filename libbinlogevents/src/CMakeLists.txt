@@ -20,14 +20,23 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+
 SET(REPLICATION_SOURCES
   binary_log_funcs.cpp
   binlog_event.cpp
+  codecs/binary.cpp
+  codecs/factory.cpp
+  compression/base.cpp
+  compression/factory.cpp
+  compression/iterator.cpp
+  compression/none.cpp
+  compression/zstd.cpp
   control_events.cpp
   event_reader.cpp
   load_data_events.cpp
   rows_event.cpp
   statement_events.cpp
+  trx_boundary_parser.cpp
   uuid.cpp
   )
 
@@ -35,9 +44,9 @@ SET(REPLICATION_SOURCES
 ADD_LIBRARY(binlogevents_static STATIC ${REPLICATION_SOURCES})
 
 IF(STANDALONE_BINLOG)
-  TARGET_LINK_LIBRARIES(binlogevents_static ${ZLIB_LIBRARIES})
+  TARGET_LINK_LIBRARIES(binlogevents_static  ${ZSTD_LIBRARY})
 ELSE()
-  TARGET_LINK_LIBRARIES(binlogevents_static ${ZLIB_LIBRARIES} mysys)
+  TARGET_LINK_LIBRARIES(binlogevents_static ${ZSTD_LIBRARY} mysys)
   ADD_DEPENDENCIES(binlogevents_static GenError)
 ENDIF()
 

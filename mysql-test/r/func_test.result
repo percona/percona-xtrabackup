@@ -360,7 +360,7 @@ t1	CREATE TABLE `t1` (
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `greatest(9223372036854775808, 9223372036854775808)` bigint(19) unsigned NOT NULL DEFAULT '0'
+  `greatest(9223372036854775808, 9223372036854775808)` bigint unsigned NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1, t2;
 #
@@ -462,7 +462,7 @@ GREATEST(_utf8mb4 x'c3a5', _binary '1') AS c64;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` bigint(2) NOT NULL DEFAULT '0',
+  `c1` bigint NOT NULL DEFAULT '0',
   `c2` decimal(2,1) NOT NULL DEFAULT '0.0',
   `c3` double NOT NULL DEFAULT '0',
   `c4` varchar(1) NOT NULL DEFAULT '',
@@ -495,7 +495,7 @@ t1	CREATE TABLE `t1` (
 SHOW CREATE TABLE t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `c1` int(2) NOT NULL DEFAULT '0',
+  `c1` int NOT NULL DEFAULT '0',
   `c2` decimal(2,1) NOT NULL DEFAULT '0.0',
   `c3` double NOT NULL DEFAULT '0',
   `c4` varchar(1) NOT NULL DEFAULT '',
@@ -528,7 +528,7 @@ t2	CREATE TABLE `t2` (
 SHOW CREATE TABLE t3;
 Table	Create Table
 t3	CREATE TABLE `t3` (
-  `c1` int(2) NOT NULL DEFAULT '0',
+  `c1` int NOT NULL DEFAULT '0',
   `c2` decimal(2,1) NOT NULL DEFAULT '0.0',
   `c3` double NOT NULL DEFAULT '0',
   `c4` varchar(1) NOT NULL DEFAULT '',
@@ -683,6 +683,8 @@ Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 INSERT INTO t1 VALUES (1, 13836376518955650385);
 INSERT INTO t1 VALUES (1, 13836376518955650385) ON DUPLICATE KEY UPDATE b=GREATEST(b, VALUES(b));
+Warnings:
+Warning	1287	'VALUES function' is deprecated and will be removed in a future release. Please use an alias (INSERT INTO ... VALUES (...) AS alias) and replace VALUES(col) in the ON DUPLICATE KEY UPDATE clause with alias.col instead
 SELECT * FROM t1;
 a	b
 1	13836376518955650385
@@ -725,3 +727,13 @@ INSERT INTO t1 VALUES (202, 1);
 SELECT * FROM t1 WHERE (GREATEST(c1, c2) = 42) AND (c2 = 1);
 c1	c2
 DROP TABLE t1;
+#
+# Bug#30326848 ASSERTION FAILED: (SLEN % 4) == 0 IN MY_STRNNCOLLSP_UTF32
+#
+DO NULLIF((GREATEST(FROM_UNIXTIME(1537024679) , _utf32 "*b!" )),
+(FROM_UNIXTIME(1537013301) )
+);
+Warnings:
+Warning	1300	Invalid utf32 character string: '002A62'
+Warning	1292	Incorrect datetime value: '?' for column 'FROM_UNIXTIME(1537024679)' at row 1
+Warning	1292	Incorrect datetime value: '?' for column 'FROM_UNIXTIME(1537024679)' at row 1

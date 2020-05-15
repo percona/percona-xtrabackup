@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -155,7 +155,7 @@ struct sort_tv_by_timestamp {
   }
 };
 
-Persisted_variables_cache *Persisted_variables_cache::m_instance = NULL;
+Persisted_variables_cache *Persisted_variables_cache::m_instance = nullptr;
 
 /* Standard Constructors for st_persist_var */
 
@@ -207,16 +207,18 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
 
   int temp_argc = *argc;
   MEM_ROOT alloc{PSI_NOT_INSTRUMENTED, 512};
-  char *ptr, **res, *datadir = NULL;
-  char dir[FN_REFLEN] = {0};
+  char *ptr, **res, *datadir = nullptr;
+  char dir[FN_REFLEN] = {0}, local_datadir_buffer[FN_REFLEN] = {0};
   const char *dirs = NULL;
   bool persist_load = true;
 
   my_option persist_options[] = {
-      {"persisted_globals_load", 0, "", &persist_load, &persist_load, 0,
-       GET_BOOL, OPT_ARG, 1, 0, 0, 0, 0, 0},
-      {"datadir", 0, "", &datadir, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
+      {"persisted_globals_load", 0, "", &persist_load, &persist_load, nullptr,
+       GET_BOOL, OPT_ARG, 1, 0, 0, nullptr, 0, nullptr},
+      {"datadir", 0, "", &datadir, nullptr, nullptr, GET_STR, OPT_ARG, 0, 0, 0,
+       nullptr, 0, nullptr},
+      {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
+       0, nullptr, 0, nullptr}};
 
   /* create temporary args list and pass it to handle_options */
   init_alloc_root(key_memory_persisted_variables, &alloc, 512, 0);
@@ -228,29 +230,36 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
   memcpy((uchar *)res, (char *)(*argv), (*argc) * sizeof(char *));
 
   my_getopt_skip_unknown = true;
-  if (my_handle_options(&temp_argc, &res, persist_options, NULL, NULL, true,
-                        false)) {
+  if (my_handle_options(&temp_argc, &res, persist_options, nullptr, nullptr,
+                        true, false)) {
     free_root(&alloc, MYF(0));
     return 1;
   }
-  my_getopt_skip_unknown = 0;
+  my_getopt_skip_unknown = false;
   free_root(&alloc, MYF(0));
 
   persisted_globals_load = persist_load;
 
-  // mysql_real_data_home must be initialized at this point
-  DBUG_ASSERT(mysql_real_data_home[0]);
+  if (!datadir) {
+    // mysql_real_data_home must be initialized at this point
+    DBUG_ASSERT(mysql_real_data_home[0]);
+    /*
+      mysql_home_ptr should also be initialized at this point.
+      See calculate_mysql_home_from_my_progname() for details
+    */
+    DBUG_ASSERT(mysql_home_ptr && mysql_home_ptr[0]);
+    convert_dirname(local_datadir_buffer, mysql_real_data_home, NullS);
+    (void)my_load_path(local_datadir_buffer, local_datadir_buffer,
+                       mysql_home_ptr);
+    datadir = local_datadir_buffer;
+  }
 
-  /*
-    if datadir is set then search in this data dir else search in
-    MYSQL_DATADIR
-  */
-  dirs = ((datadir) ? datadir : mysql_real_data_home);
+  dirs = datadir;
   unpack_dirname(dir, dirs);
   my_realpath(datadir_buffer, dir, MYF(0));
   unpack_dirname(datadir_buffer, datadir_buffer);
   if (fn_format(dir, MYSQL_PERSIST_CONFIG_NAME, datadir_buffer, ".cnf",
-                MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL)
+                MY_UNPACK_FILENAME | MY_SAFE_PATH) == nullptr)
     return 1;
   m_persist_filename = string(dir);
 
@@ -267,8 +276,32 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
   Return a singleton object
 */
 Persisted_variables_cache *Persisted_variables_cache::get_instance() {
-  DBUG_ASSERT(m_instance != NULL);
+  DBUG_ASSERT(m_instance != nullptr);
   return m_instance;
+}
+
+/**
+  For boolean variable types do validation on what value is set for the
+  variable and then report error in case an invalid value is set.
+
+   @param [in]  value        Value which needs to be checked for.
+   @param [out] bool_str     Target String into which correct value needs to be
+                             stored after validation.
+
+   @return true  Failure if value is set to anything other than "true", "on",
+                 "1", "false" , "off", "0"
+   @return false Success
+*/
+static bool check_boolean_value(const char *value, String &bool_str) {
+  bool ret = false;
+  bool result = get_bool_argument(value, &ret);
+  if (ret) return true;
+  if (result) {
+    bool_str = String("ON", system_charset_info);
+  } else {
+    bool_str = String("OFF", system_charset_info);
+  }
+  return false;
 }
 
 /**
@@ -279,11 +312,11 @@ Persisted_variables_cache *Persisted_variables_cache::get_instance() {
    @param [in] thd           Pointer to connection handler
    @param [in] setvar        Pointer to set_var which is being SET
 
-   @return void
+   @return true  Failure
+   @return false Success
 */
-void Persisted_variables_cache::set_variable(THD *thd, set_var *setvar) {
+bool Persisted_variables_cache::set_variable(THD *thd, set_var *setvar) {
   char val_buf[1024] = {0};
-  String str(val_buf, sizeof(val_buf), system_charset_info), *res;
   String utf8_str;
   bool is_null = false;
 
@@ -294,10 +327,22 @@ void Persisted_variables_cache::set_variable(THD *thd, set_var *setvar) {
       Persisted_variables_cache::get_variable_name(system_var);
   const char *var_value = val_buf;
   if (setvar->type == OPT_PERSIST_ONLY) {
+    String str(val_buf, sizeof(val_buf), system_charset_info), *res;
     const CHARSET_INFO *tocs = &my_charset_utf8mb4_bin;
     uint dummy_err;
+    String bool_str;
     if (setvar->value) {
       res = setvar->value->val_str(&str);
+      if (system_var->get_var_type() == GET_BOOL) {
+        if (res == nullptr ||
+            check_boolean_value(res->c_ptr_quick(), bool_str)) {
+          my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), var_name,
+                   (res ? res->c_ptr_quick() : "null"));
+          return true;
+        } else {
+          res = &bool_str;
+        }
+      }
       if (res && res->length()) {
         /*
           value held by Item class can be of different charset,
@@ -311,7 +356,13 @@ void Persisted_variables_cache::set_variable(THD *thd, set_var *setvar) {
       /* persist default value */
       setvar->var->save_default(thd, setvar);
       setvar->var->saved_value_to_string(thd, setvar, str.ptr());
-      utf8_str.copy(str.ptr(), str.length(), str.charset(), tocs, &dummy_err);
+      res = &str;
+      if (system_var->get_var_type() == GET_BOOL) {
+        check_boolean_value(res->c_ptr_quick(), bool_str);
+        res = &bool_str;
+      }
+      utf8_str.copy(res->ptr(), res->length(), res->charset(), tocs,
+                    &dummy_err);
       var_value = utf8_str.c_ptr_quick();
     }
   } else {
@@ -340,10 +391,10 @@ void Persisted_variables_cache::set_variable(THD *thd, set_var *setvar) {
      at end of vector to restore insertion order.
     */
     string str = tmp_var.key;
-    auto it =
+    auto itt =
         std::find_if(m_persist_variables.begin(), m_persist_variables.end(),
                      [str](st_persist_var const &s) { return s.key == str; });
-    if (it != m_persist_variables.end()) m_persist_variables.erase(it);
+    if (itt != m_persist_variables.end()) m_persist_variables.erase(itt);
     m_persist_variables.push_back(tmp_var);
     /* for plugin variables update m_persist_plugin_variables */
     if (setvar->var->cast_pluginvar()) {
@@ -356,6 +407,7 @@ void Persisted_variables_cache::set_variable(THD *thd, set_var *setvar) {
     }
   }
   unlock();
+  return false;
 }
 
 /**
@@ -388,7 +440,7 @@ String *Persisted_variables_cache::get_variable_value(THD *thd,
   show->value = (char *)system_var;
 
   mysql_mutex_lock(&LOCK_global_system_variables);
-  value = get_one_variable(thd, show, OPT_GLOBAL, show->type, NULL, &fromcs,
+  value = get_one_variable(thd, show, OPT_GLOBAL, show->type, nullptr, &fromcs,
                            val_buf, &val_length, is_null);
   mysql_mutex_unlock(&LOCK_global_system_variables);
 
@@ -579,12 +631,11 @@ bool Persisted_variables_cache::open_persist_file(int flag) {
 }
 
 /**
-  Close persisted config file
-   @return void
+  Close persisted config file.
 */
 void Persisted_variables_cache::close_persist_file() {
   mysql_file_fclose(m_fd, MYF(0));
-  m_fd = NULL;
+  m_fd = nullptr;
 }
 
 /**
@@ -595,8 +646,8 @@ void Persisted_variables_cache::close_persist_file() {
     @retval false Success
 */
 bool Persisted_variables_cache::load_persist_file() {
-  if (read_persist_file() > 0) return 1;
-  return 0;
+  if (read_persist_file() > 0) return true;
+  return false;
 }
 
 /**
@@ -615,10 +666,10 @@ bool Persisted_variables_cache::load_persist_file() {
 */
 bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
   THD *thd;
-  LEX lex_tmp, *sav_lex = NULL;
+  LEX lex_tmp, *sav_lex = nullptr;
   List<set_var_base> tmp_var_list;
-  vector<st_persist_var> *persist_variables = NULL;
-  bool result = 0, new_thd = 0;
+  vector<st_persist_var> *persist_variables = nullptr;
+  bool result = false, new_thd = false;
   const std::vector<std::string> priv_list = {
       "ENCRYPTION_KEY_ADMIN", "ROLE_ADMIN", "SYSTEM_VARIABLES_ADMIN",
       "AUDIT_ADMIN"};
@@ -628,7 +679,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
     if persisted_globals_load is set to false or --no-defaults is set
     then do not set persistent options
   */
-  if (no_defaults || !persisted_globals_load) return 0;
+  if (no_defaults || !persisted_globals_load) return false;
   /*
     This function is called in only 2 places
       1. During server startup.
@@ -645,7 +696,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
   } else {
     if (!(thd = new THD)) {
       LogErr(ERROR_LEVEL, ER_FAILED_TO_SET_PERSISTED_OPTIONS);
-      return 1;
+      return true;
     }
     thd->thread_stack = (char *)&thd;
     thd->set_new_thread_id();
@@ -661,7 +712,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
     /* attach this auth id to current security_context */
     thd->set_security_context(ctx.get());
     thd->real_id = my_thread_self();
-    new_thd = 1;
+    new_thd = true;
     alloc_and_copy_thd_dynamic_variables(thd, !plugin_options);
   }
   /*
@@ -684,15 +735,15 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
       persist_variables->begin(), persist_variables->end());
 
   for (auto iter = sorted_vars.begin(); iter != sorted_vars.end(); iter++) {
-    Item *res = NULL;
-    set_var *var = NULL;
-    sys_var *sysvar = NULL;
+    Item *res = nullptr;
+    set_var *var = nullptr;
+    sys_var *sysvar = nullptr;
     string var_name = iter->key;
 
     LEX_CSTRING base_name = {var_name.c_str(), var_name.length()};
 
     sysvar = intern_find_sys_var(var_name.c_str(), var_name.length());
-    if (sysvar == NULL) {
+    if (sysvar == nullptr) {
       /*
         for plugin variables we report a warning in error log,
         keep track of this variable so that it is set when plugin
@@ -738,7 +789,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
         break;
       default:
         my_error(ER_UNKNOWN_SYSTEM_VARIABLE, MYF(0), sysvar->name.str);
-        result = 1;
+        result = true;
         goto err;
     }
 
@@ -763,7 +814,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
         else
           LogErr(ERROR_LEVEL, ER_FAILED_TO_SET_PERSISTED_OPTIONS);
       }
-      result = 1;
+      result = true;
       goto err;
     }
     tmp_var_list.empty();
@@ -884,7 +935,7 @@ bool Persisted_variables_cache::extract_variables_from_json(const Json_dom *dom,
       "mysql_server_static_options" as parent element.
     */
     if (var_name == "mysql_server_static_options") {
-      if (extract_variables_from_json(dom_obj, true)) return 1;
+      if (extract_variables_from_json(dom_obj, true)) return true;
       continue;
     }
 
@@ -954,11 +1005,11 @@ bool Persisted_variables_cache::extract_variables_from_json(const Json_dom *dom,
       m_persist_variables.push_back(persist_var);
     unlock();
   }
-  return 0;
+  return false;
 
 err:
   LogErr(ERROR_LEVEL, ER_JSON_PARSE_ERROR);
-  return 1;
+  return true;
 }
 
 /**
@@ -981,10 +1032,11 @@ err:
 int Persisted_variables_cache::read_persist_file() {
   char buff[4096] = {0};
   string parsed_value;
-  const char *error = NULL;
+  const char *error = nullptr;
   size_t offset = 0;
 
-  if ((check_file_permissions(m_persist_filename.c_str(), 0)) < 2) return -1;
+  if ((check_file_permissions(m_persist_filename.c_str(), false)) < 2)
+    return -1;
 
   if (open_persist_file(O_RDONLY)) return -1;
   do {
@@ -1053,7 +1105,7 @@ bool Persisted_variables_cache::append_read_only_variables(
   Prealloced_array<char *, 100> my_args(key_memory_persisted_variables);
   MEM_ROOT alloc;
 
-  if (*argc < 2 || no_defaults || !persisted_globals_load) return 0;
+  if (*argc < 2 || no_defaults || !persisted_globals_load) return false;
 
   init_alloc_root(key_memory_persisted_variables, &alloc, 512, 0);
 
@@ -1065,9 +1117,9 @@ bool Persisted_variables_cache::append_read_only_variables(
     string persist_option = "--loose_" + iter.key + "=" + iter.value;
     char *tmp;
 
-    if (NULL == (tmp = strdup_root(&alloc, persist_option.c_str())) ||
+    if (nullptr == (tmp = strdup_root(&alloc, persist_option.c_str())) ||
         my_args.push_back(tmp))
-      return 1;
+      return true;
   }
   /*
    Update existing command line options if there are any persisted
@@ -1089,7 +1141,7 @@ bool Persisted_variables_cache::append_read_only_variables(
       /* copy arguments from persistent config file */
       memcpy((res + *argc + 1), &my_args[0], my_args.size() * sizeof(char *));
     }
-    res[my_args.size() + *argc + 1] = 0; /* last null */
+    res[my_args.size() + *argc + 1] = nullptr; /* last null */
     (*argc) += (int)my_args.size() + 1;
     *argv = res;
     if (plugin_options)
@@ -1097,9 +1149,9 @@ bool Persisted_variables_cache::append_read_only_variables(
           std::move(alloc);  // Possibly overwrite previous.
     else
       ro_persisted_argv_alloc = std::move(alloc);
-    return 0;
+    return false;
   }
-  return 0;
+  return false;
 
 err:
   LogErr(ERROR_LEVEL, ER_FAILED_TO_HANDLE_DEFAULTS_FILE);
@@ -1123,7 +1175,7 @@ err:
 bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
                                                           const char *name,
                                                           bool if_exists) {
-  bool result = 0, flush = 0, not_present = 1;
+  bool result = false, flush = false, not_present = true;
   string var_name;
   bool reset_all = (name ? 0 : 1);
   var_name = (name ? name : string());
@@ -1138,16 +1190,16 @@ bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
 
     if (!m_persist_variables.empty()) {
       m_persist_variables.clear();
-      flush = 1;
+      flush = true;
     }
     if (!m_persist_ro_variables.empty()) {
       m_persist_ro_variables.clear();
-      flush = 1;
+      flush = true;
     }
     /* remove plugin variables if any */
     if (!m_persist_plugin_variables.empty()) {
       m_persist_plugin_variables.clear();
-      flush = 1;
+      flush = true;
     }
   } else {
     auto checkvariable = [&var_name](st_persist_var const &s) -> bool {
@@ -1160,8 +1212,8 @@ bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
         /* if variable is present in config file remove it */
         if (check_priv(thd, false)) goto end;
         m_persist_variables.erase(it);
-        flush = 1;
-        not_present = 0;
+        flush = true;
+        not_present = false;
       }
     }
     if (m_persist_plugin_variables.size()) {
@@ -1170,16 +1222,16 @@ bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
       if (it != m_persist_plugin_variables.end()) {
         if (check_priv(thd, false)) goto end;
         m_persist_plugin_variables.erase(it);
-        flush = 1;
-        not_present = 0;
+        flush = true;
+        not_present = false;
       }
     }
     if (it_ro != m_persist_ro_variables.end()) {
       if (check_priv(thd, true)) goto end;
       /* if static variable is present in config file remove it */
       m_persist_ro_variables.erase(it_ro);
-      flush = 1;
-      not_present = 0;
+      flush = true;
+      not_present = false;
     }
     if (not_present) {
       /* if not present and if exists is specified, report warning */
@@ -1190,7 +1242,7 @@ bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
       } else /* report error */
       {
         my_error(ER_VAR_DOES_NOT_EXIST, MYF(0), var_name.c_str());
-        result = 1;
+        result = true;
       }
     }
   }
@@ -1201,7 +1253,7 @@ bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
 
 end:
   unlock();
-  return 1;
+  return true;
 }
 
 /**

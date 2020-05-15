@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -84,7 +84,7 @@ Plugin_table table_events_transactions_current::m_table_def(
 PFS_engine_table_share table_events_transactions_current::m_share = {
     &pfs_truncatable_acl,
     table_events_transactions_current::create,
-    NULL, /* write_row */
+    nullptr, /* write_row */
     table_events_transactions_current::delete_all_rows,
     table_events_transactions_current::get_row_count,
     sizeof(PFS_simple_index), /* ref length */
@@ -137,7 +137,7 @@ Plugin_table table_events_transactions_history::m_table_def(
 PFS_engine_table_share table_events_transactions_history::m_share = {
     &pfs_truncatable_acl,
     table_events_transactions_history::create,
-    NULL, /* write_row */
+    nullptr, /* write_row */
     table_events_transactions_history::delete_all_rows,
     table_events_transactions_history::get_row_count,
     sizeof(pos_events_transactions_history), /* ref length */
@@ -189,7 +189,7 @@ Plugin_table table_events_transactions_history_long::m_table_def(
 PFS_engine_table_share table_events_transactions_history_long::m_share = {
     &pfs_truncatable_acl,
     table_events_transactions_history_long::create,
-    NULL, /* write_row */
+    nullptr, /* write_row */
     table_events_transactions_history_long::delete_all_rows,
     table_events_transactions_history_long::get_row_count,
     sizeof(PFS_simple_index), /* ref length */
@@ -235,7 +235,7 @@ int table_events_transactions_common::make_row(
 
   PFS_transaction_class *unsafe = (PFS_transaction_class *)transaction->m_class;
   PFS_transaction_class *klass = sanitize_transaction_class(unsafe);
-  if (unlikely(klass == NULL)) {
+  if (unlikely(klass == nullptr)) {
     return HA_ERR_RECORD_DELETED;
   }
 
@@ -455,7 +455,8 @@ int table_events_transactions_common::read_row_values(TABLE *table,
           }
           break;
         case 14: /* TIMER_WAIT */
-          if (m_row.m_timer_wait != 0) {
+          /* TIMER_START != 0 when TIMED=YES. */
+          if (m_row.m_timer_start != 0) {
             set_field_ulonglong(f, m_row.m_timer_wait);
           } else {
             f->set_null();
@@ -529,7 +530,7 @@ int table_events_transactions_current::rnd_next(void) {
 
   for (m_pos.set_at(&m_next_pos); has_more_thread; m_pos.next()) {
     pfs_thread = global_thread_container.get(m_pos.m_index, &has_more_thread);
-    if (pfs_thread != NULL) {
+    if (pfs_thread != nullptr) {
       transaction = &pfs_thread->m_transaction_current;
       m_next_pos.set_after(&m_pos);
       return make_row(transaction);
@@ -546,9 +547,9 @@ int table_events_transactions_current::rnd_pos(const void *pos) {
   set_position(pos);
 
   pfs_thread = global_thread_container.get(m_pos.m_index);
-  if (pfs_thread != NULL) {
+  if (pfs_thread != nullptr) {
     transaction = &pfs_thread->m_transaction_current;
-    if (transaction->m_class != NULL) {
+    if (transaction->m_class != nullptr) {
       return make_row(transaction);
     }
   }
@@ -573,7 +574,7 @@ int table_events_transactions_current::index_next(void) {
 
   for (m_pos.set_at(&m_next_pos); has_more_thread; m_pos.next()) {
     pfs_thread = global_thread_container.get(m_pos.m_index, &has_more_thread);
-    if (pfs_thread != NULL) {
+    if (pfs_thread != nullptr) {
       if (m_opened_index->match(pfs_thread)) {
         transaction = &pfs_thread->m_transaction_current;
         if (m_opened_index->match(transaction)) {
@@ -626,7 +627,7 @@ int table_events_transactions_history::rnd_next(void) {
 
   for (m_pos.set_at(&m_next_pos); has_more_thread; m_pos.next_thread()) {
     pfs_thread = global_thread_container.get(m_pos.m_index_1, &has_more_thread);
-    if (pfs_thread != NULL) {
+    if (pfs_thread != nullptr) {
       if (m_pos.m_index_2 >= events_transactions_history_per_thread) {
         /* This thread does not have more (full) history */
         continue;
@@ -639,7 +640,7 @@ int table_events_transactions_history::rnd_next(void) {
       }
 
       transaction = &pfs_thread->m_transactions_history[m_pos.m_index_2];
-      if (transaction->m_class != NULL) {
+      if (transaction->m_class != nullptr) {
         /* Next iteration, look for the next history in this thread */
         m_next_pos.set_after(&m_pos);
         return make_row(transaction);
@@ -660,14 +661,14 @@ int table_events_transactions_history::rnd_pos(const void *pos) {
   DBUG_ASSERT(m_pos.m_index_2 < events_transactions_history_per_thread);
 
   pfs_thread = global_thread_container.get(m_pos.m_index_1);
-  if (pfs_thread != NULL) {
+  if (pfs_thread != nullptr) {
     if (!pfs_thread->m_transactions_history_full &&
         (m_pos.m_index_2 >= pfs_thread->m_transactions_history_index)) {
       return HA_ERR_RECORD_DELETED;
     }
 
     transaction = &pfs_thread->m_transactions_history[m_pos.m_index_2];
-    if (transaction->m_class != NULL) {
+    if (transaction->m_class != nullptr) {
       return make_row(transaction);
     }
   }
@@ -696,7 +697,7 @@ int table_events_transactions_history::index_next(void) {
 
   for (m_pos.set_at(&m_next_pos); has_more_thread; m_pos.next_thread()) {
     pfs_thread = global_thread_container.get(m_pos.m_index_1, &has_more_thread);
-    if (pfs_thread != NULL) {
+    if (pfs_thread != nullptr) {
       if (m_opened_index->match(pfs_thread)) {
         do {
           if (m_pos.m_index_2 >= events_transactions_history_per_thread) {
@@ -711,7 +712,7 @@ int table_events_transactions_history::index_next(void) {
           }
 
           transaction = &pfs_thread->m_transactions_history[m_pos.m_index_2];
-          if (transaction->m_class != NULL) {
+          if (transaction->m_class != nullptr) {
             if (m_opened_index->match(transaction)) {
               if (!make_row(transaction)) {
                 m_next_pos.set_after(&m_pos);
@@ -720,7 +721,7 @@ int table_events_transactions_history::index_next(void) {
             }
             m_pos.set_after(&m_pos);
           }
-        } while (transaction->m_class != NULL);
+        } while (transaction->m_class != nullptr);
       }
     }
   }
@@ -772,7 +773,7 @@ int table_events_transactions_history_long::rnd_next(void) {
   for (m_pos.set_at(&m_next_pos); m_pos.m_index < limit; m_pos.next()) {
     transaction = &events_transactions_history_long_array[m_pos.m_index];
 
-    if (transaction->m_class != NULL) {
+    if (transaction->m_class != nullptr) {
       /* Next iteration, look for the next entry */
       m_next_pos.set_after(&m_pos);
       return make_row(transaction);
@@ -804,7 +805,7 @@ int table_events_transactions_history_long::rnd_pos(const void *pos) {
 
   transaction = &events_transactions_history_long_array[m_pos.m_index];
 
-  if (transaction->m_class == NULL) {
+  if (transaction->m_class == nullptr) {
     return HA_ERR_RECORD_DELETED;
   }
 

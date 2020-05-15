@@ -371,6 +371,15 @@ Suma::execSTTOR(Signal* signal) {
   
   if (m_startphase == 101)
   {
+    if (ERROR_INSERTED(13053))
+    {
+      jam();
+      ndbout_c("SUMA : ERROR 13053 : Stalling phase 101");
+      sendSignalWithDelay(SUMA_REF, GSN_STTOR, signal,
+                          1000, signal->getLength());
+      return;
+    }
+
     if (m_typeOfStart == NodeState::ST_NODE_RESTART ||
 	m_typeOfStart == NodeState::ST_INITIAL_NODE_RESTART)
     {
@@ -415,34 +424,13 @@ Suma::execSTTOR(Signal* signal) {
 void
 Suma::send_dict_lock_req(Signal* signal, Uint32 state)
 {
-  if (state == DictLockReq::SumaStartMe &&
-      !ndbd_suma_dictlock_startme(getNodeInfo(c_masterNodeId).m_version))
-  {
-    jam();
-    goto notsupported;
-  }
-  else if (state == DictLockReq::SumaHandOver &&
-           !ndbd_suma_dictlock_handover(getNodeInfo(c_masterNodeId).m_version))
-  {
-    jam();
-    goto notsupported;
-  }
-
-  {
-    jam();
-    DictLockReq* req = (DictLockReq*)signal->getDataPtrSend();
-    req->lockType = state;
-    req->userPtr = state;
-    req->userRef = reference();
-    sendSignal(calcDictBlockRef(c_masterNodeId),
+  jam();
+  DictLockReq* req = (DictLockReq*)signal->getDataPtrSend();
+  req->lockType = state;
+  req->userPtr = state;
+  req->userRef = reference();
+  sendSignal(calcDictBlockRef(c_masterNodeId),
                GSN_DICT_LOCK_REQ, signal, DictLockReq::SignalLength, JBB);
-  }
-  return;
-
-notsupported:
-  DictLockConf* conf = (DictLockConf*)signal->getDataPtrSend();
-  conf->userPtr = state;
-  execDICT_LOCK_CONF(signal);
 }
 
 void
@@ -488,19 +476,6 @@ Suma::execDICT_LOCK_REF(Signal* signal)
 void
 Suma::send_dict_unlock_ord(Signal* signal, Uint32 state)
 {
-  if (state == DictLockReq::SumaStartMe &&
-      !ndbd_suma_dictlock_startme(getNodeInfo(c_masterNodeId).m_version))
-  {
-    jam();
-    return;
-  }
-  else if (state == DictLockReq::SumaHandOver &&
-           !ndbd_suma_dictlock_handover(getNodeInfo(c_masterNodeId).m_version))
-  {
-    jam();
-    return;
-  }
-
   jam();
   DictUnlockOrd* ord = (DictUnlockOrd*)signal->getDataPtrSend();
   ord->lockPtr = 0;
@@ -5151,8 +5126,8 @@ Suma::doFIRE_TRIG_ORD(Signal* signal, LinearSectionPtr lsptr[3])
   {
     jam();
     constexpr uint buffer_header_sz = 6;
-    Uint32* dst1;
-    Uint32* dst2;
+    Uint32* dst1 = nullptr;
+    Uint32* dst2 = nullptr;
     Uint32 sz1 = f_trigBufferSize + buffer_header_sz;
     Uint32 sz2 = b_trigBufferSize;
     Page_pos save_pos= c_buckets[bucket].m_buffer_head;
@@ -5181,7 +5156,6 @@ Suma::doFIRE_TRIG_ORD(Signal* signal, LinearSectionPtr lsptr[3])
     {
       jam();
       // Revert first buffer allocation
-      Page_pos curr_pos= c_buckets[bucket].m_buffer_head;
       Uint32 first_page_id = save_pos.m_page_id;
 
       Uint32 page_id;
@@ -5454,7 +5428,7 @@ Suma::sendSUB_GCP_COMPLETE_REP(Signal* signal)
   Bucket_mask dropped_buckets;
   if(!m_switchover_buckets.isclear())
   {
-    bool unlock = false;
+    bool starting_unlock = false;
     Uint32 i = m_switchover_buckets.find(0);
     for(; i != Bucket_mask::NotFound; i = m_switchover_buckets.find(i + 1))
     {
@@ -5479,7 +5453,7 @@ Suma::sendSUB_GCP_COMPLETE_REP(Signal* signal)
 	  c_buckets[i].m_state &= ~(Uint32)Bucket::BUCKET_STARTING;
 	  ndbout_c("starting");
 	  m_gcp_complete_rep_count++;
-          unlock = true;
+          starting_unlock = true;
 	}
 	else if(state & Bucket::BUCKET_TAKEOVER)
 	{
@@ -5580,7 +5554,7 @@ Suma::sendSUB_GCP_COMPLETE_REP(Signal* signal)
           ndbout_c("shutdown handover takeover");
         }
       }
-    }
+    } // for (m_switchover_buckets...)
 
     if (m_switchover_buckets.isclear())
     {
@@ -5614,10 +5588,36 @@ Suma::sendSUB_GCP_COMPLETE_REP(Signal* signal)
       }
     }
 
-    if (unlock)
+    /**
+     * Check whether we have now completed handover of all starting
+     * buckets, and should send a DICT_UNLOCK_ORD
+     */
+    if (starting_unlock)
     {
       jam();
-      send_dict_unlock_ord(signal, DictLockReq::SumaHandOver);
+      /* All pending SUMA_HANDOVER_CONF received ?*/
+      if (c_startup.m_handover_nodes.isclear())
+      {
+        jam();
+        /* All bucket handovers completed? */
+        Uint32 i = m_switchover_buckets.find(0);
+        for(; i != Bucket_mask::NotFound; i = m_switchover_buckets.find(i + 1))
+        {
+          if (c_buckets[i].m_state & Bucket::BUCKET_STARTING)
+          {
+            jam();
+            /* Some other bucket still to handover, don't unlock yet */
+            starting_unlock = false;
+            break;
+          }
+        }
+      }
+
+      if (starting_unlock)
+      {
+        jam();
+        send_dict_unlock_ord(signal, DictLockReq::SumaHandOver);
+      }
     }
   }
 
@@ -6045,12 +6045,7 @@ Suma::execSUB_GCP_COMPLETE_ACK(Signal* signal)
   Uint32 gci_hi = ack->rep.gci_hi;
   Uint32 gci_lo = ack->rep.gci_lo;
   Uint32 senderRef  = ack->rep.senderRef;
-  if (unlikely(signal->getLength() < SubGcpCompleteAck::SignalLength))
-  {
-    jam();
-    ndbassert(!ndb_check_micro_gcp(getNodeInfo(refToNode(senderRef)).m_version));
-    gci_lo = 0;
-  }
+  ndbrequire(signal->getLength() >= SubGcpCompleteAck::SignalLength);
 
   Uint64 gci = gci_lo | (Uint64(gci_hi) << 32);
   m_max_seen_gci = (gci > m_max_seen_gci ? gci : m_max_seen_gci);
@@ -6512,18 +6507,6 @@ Suma::sendSubCreateReq(Signal* signal, Ptr<Subscription> subPtr)
   {
     jam();
     c_restart.m_waiting_on_self = 0;
-    if (!ndbd_suma_dictlock_startme(getNodeInfo(refToNode(c_restart.m_ref)).m_version))
-    {
-      jam();
-      /**
-       * Downgrade
-       *
-       * In pre suma v2, SUB_CREATE_REQ::SignalLength is one greater
-       *   but code checks length and set a default value...
-       *   so we dont need to do anything...
-       *   Thank you Ms. Fortuna
-       */
-    }
 
     sendSignal(c_restart.m_ref, GSN_SUB_CREATE_REQ, signal,
                SubCreateReq::SignalLength, JBB);
@@ -6707,15 +6690,21 @@ Suma::execSUMA_HANDOVER_REQ(Signal* signal)
   const SumaHandoverReq * req = CAST_CONSTPTR(SumaHandoverReq,
                                               signal->getDataPtr());
 
+  if (ERROR_INSERTED(13054))
+  {
+    SET_ERROR_INSERT_VALUE(13055);
+    sendSignalWithDelay(reference(), GSN_SUMA_HANDOVER_REQ, signal,
+                        5000, signal->length());
+    return;
+  }
+  if (ERROR_INSERTED(13055))
+  {
+    SET_ERROR_INSERT_VALUE(13054);
+  }
   Uint32 gci = req->gci;
   Uint32 nodeId = req->nodeId;
   Uint32 new_gci = Uint32(m_last_complete_gci >> 32) + MAX_CONCURRENT_GCP + 1;
   Uint32 requestType = req->requestType;
-  if (!ndbd_suma_stop_me(getNodeInfo(nodeId).m_version))
-  {
-    jam();
-    requestType = SumaHandoverReq::RT_START_NODE;
-  }
   
   Uint32 start_gci = (gci > new_gci ? gci : new_gci);
   // mark all active buckets really belonging to restarting SUMA
@@ -6824,12 +6813,6 @@ Suma::execSUMA_HANDOVER_CONF(Signal* signal) {
   ndbout_c("Suma::execSUMA_HANDOVER_CONF, gci = %u", gci);
 #endif
 
-  if (!ndbd_suma_stop_me(getNodeInfo(nodeId).m_version))
-  {
-    jam();
-    requestType = SumaHandoverReq::RT_START_NODE;
-  }
-
   if (requestType == SumaHandoverReq::RT_START_NODE)
   {
     jam();
@@ -6895,34 +6878,6 @@ Suma::execSTOP_ME_REQ(Signal* signal)
   NdbTick_Invalidate(&c_startup.m_wait_handover_expire);
   c_shutdown.m_senderRef = req.senderRef;
   c_shutdown.m_senderData = req.senderData;
-
-  for (Uint32 i = c_nodes_in_nodegroup_mask.find(0);
-       i != c_nodes_in_nodegroup_mask.NotFound ;
-       i = c_nodes_in_nodegroup_mask.find(i + 1))
-  {
-    jam();
-    jamLine(i);
-    /**
-     * Check that all SUMA nodes support graceful shutdown...
-     *   and it's too late to stop it...
-     * Shutdown instead...
-     *
-     * Only check live nodes, if version is 0 then the node is
-     * already dead.
-     */
-    if (!ndbd_suma_stop_me(getNodeInfo(i).m_version) &&
-        getNodeInfo(i).m_version != 0)
-    {
-      jam();
-      char buf[255];
-      BaseString::snprintf(buf, sizeof(buf),
-			   "Not all versions support graceful shutdown (suma)."
-			   " Shutdown directly instead");
-      progError(__LINE__,
-		NDBD_EXIT_GRACEFUL_SHUTDOWN_ERROR,
-		buf);
-    }
-  }
   send_handover_req(signal, SumaHandoverReq::RT_STOP_NODE);
 }
 
@@ -7385,7 +7340,7 @@ Suma::resend_bucket(Signal* signal, Uint32 buck, Uint64 min_gci,
    */
   {
     Uint32 *src = nullptr;
-    Uint32 sz;
+    Uint32 sz = 0;
     Uint32 part = 0;
     while (ptr < end)
     {

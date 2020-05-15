@@ -1,4 +1,4 @@
-// Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -25,13 +25,14 @@
 
 #include <sys/types.h>
 
+#include <cstdint>
 #include <memory>
 
-#include "my_inttypes.h"
 #include "plugin/x/ngs/include/ngs/error_code.h"
-#include "plugin/x/ngs/include/ngs/interface/protocol_monitor_interface.h"
 #include "plugin/x/ngs/include/ngs/message_cache.h"
 #include "plugin/x/ngs/include/ngs/protocol/protocol_config.h"
+#include "plugin/x/protocol/stream/compression/decompression_algorithm_interface.h"
+#include "plugin/x/src/interface/protocol_monitor.h"
 #include "plugin/x/src/io/vio_input_stream.h"
 
 namespace ngs {
@@ -42,8 +43,6 @@ enum class Frame_layout {
   k_compressed_multiple_frames,
   k_compressed_group_of_frames
 };
-
-class Client_interface;
 
 /**
  X Protocol Message decoder
@@ -116,7 +115,7 @@ class Message_decoder {
 
  public:
   Message_decoder(Message_dispatcher_interface *dispatcher,
-                  Protocol_monitor_interface *monitor,
+                  xpl::iface::Protocol_monitor *monitor,
                   std::shared_ptr<Protocol_config> config);
 
   /**
@@ -128,8 +127,9 @@ class Message_decoder {
     point a success.
 
     @param message_type   message that should be deserialized
+    @param message_size   number of bytes which must be read from the stream to
+    deserialize message
     @param stream        object wrapping IO operations
-    @param out_msg   returns message that is result of parsing
 
     @return Error_code is used only to pass logic error.
   */
@@ -138,6 +138,8 @@ class Message_decoder {
                                   xpl::Vio_input_stream *stream);
 
  private:
+  class Compressed_message_decoder;
+
   static Error_code parse_coded_stream_generic(CodedInputStream *stream,
                                                Message *message);
   Decode_error parse_coded_stream_inner(CodedInputStream *coded_input,
@@ -147,10 +149,16 @@ class Message_decoder {
   Decode_error parse_protobuf_frame(const uint8_t message_type,
                                     const uint32_t message_size,
                                     xpl::Vio_input_stream *net_input_stream);
+  Decode_error parse_compressed_frame(const uint32_t message_size,
+                                      xpl::Vio_input_stream *net_input_stream);
+
+  protocol::Decompression_algorithm_interface *get_decompression_algorithm();
 
   Message_dispatcher_interface *m_dispatcher;
-  Protocol_monitor_interface *m_monitor;
+  xpl::iface::Protocol_monitor *m_monitor;
   std::shared_ptr<Protocol_config> m_config;
+  std::unique_ptr<protocol::Decompression_algorithm_interface>
+      m_decompression_algorithm;
   Message_cache m_cache;
 };
 

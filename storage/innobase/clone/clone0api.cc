@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2018, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2018, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1576,7 +1576,7 @@ class Fixup_data {
   bool fix_config_tables(THD *thd);
 
   /** Number of system configuration tables. */
-  static const size_t S_NUM_CONFIG_TABLES = 2;
+  static const size_t S_NUM_CONFIG_TABLES = 0;
 
   /** Array of configuration tables. */
   static const std::array<const char *, S_NUM_CONFIG_TABLES> s_config_tables;
@@ -1602,8 +1602,7 @@ class Fixup_data {
   size_t get_num_tasks() const { return (m_num_tasks); }
 
   /** Calculate and set number of new tasks to spawn.
-  @param[in]	num_entries	number of entries to handle
-  @param[in]	concurrent	allow multiple threads */
+  @param[in]	num_entries	number of entries to handle */
   void set_num_tasks(size_t num_entries) {
     /* Check if we are allowed to spawn multiple threads. Disable
     multithreading while dropping objects for now. We need more
@@ -1849,7 +1848,7 @@ class Fixup_data {
 /** All configuration tables for which data should not be cloned. From
 replication configurations only clone slave_master_info table needed by GR. */
 const std::array<const char *, Fixup_data::S_NUM_CONFIG_TABLES>
-    Fixup_data::s_config_tables = {"slave_relay_log_info", "slave_worker_info"};
+    Fixup_data::s_config_tables = {};
 
 bool Fixup_data::fix_config_tables(THD *thd) {
   /* No privilege check needed for individual tables. */
@@ -2224,6 +2223,7 @@ static int clone_drop_binary_logs(THD *thd) {
 
 static int clone_drop_user_data(THD *thd, bool allow_threads) {
   ib::warn(ER_IB_CLONE_USER_DATA, "Started");
+  Clone_handler::set_drop_data();
 
   auto dc = dd::get_dd_client(thd);
   Releaser releaser(dc);

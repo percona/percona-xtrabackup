@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,10 @@ SET(ngs_SRC
   ngs/src/notice_descriptor.cc
   ngs/src/protocol_decoder.cc
   ngs/src/protocol_encoder.cc
+  ngs/src/protocol_encoder_compression.cc
   ngs/src/protocol_flusher.cc
+  ngs/src/protocol_flusher_compression.cc
   ngs/src/scheduler.cc
-  ngs/src/server.cc
   ngs/src/server_client_timeout.cc
   ngs/src/socket_acceptors_task.cc
   ngs/src/socket_events.cc
@@ -43,9 +44,19 @@ SET(ngs_SRC
 )
 
 SET(xplugin_SRC
+  src/module_mysqlx.cc
+  src/module_cache.cc
+  src/server/builder/ssl_context_builder.cc
+  src/server/builder/server_builder.cc
+  src/server/server.cc
+  src/server/authentication_container.cc
+  src/server/session_scheduler.cc
+  src/variables/status_variables.cc
+  src/server/server_factory.cc
   src/helper/multithread/mutex.cc
   src/helper/multithread/cond.cc
   src/helper/multithread/rw_lock.cc
+  src/helper/generate_hash.cc
   src/expect/expect.cc
   src/expect/expect_stack.cc
   src/expect/expect_condition_field.cc
@@ -57,33 +68,37 @@ SET(xplugin_SRC
   src/mq/broker_task.cc
   src/mq/notice_input_queue.cc
   src/mq/notice_output_queue.cc
-  src/services/service_registrator.cc
   src/services/mysqlx_group_membership_listener.cc
   src/services/mysqlx_group_member_status_listener.cc
   src/services/mysqlx_maintenance.cc
   src/udf/registrator.cc
   src/udf/mysqlx_error.cc
   src/xpl_log.cc
-  src/xpl_server.cc
   src/xpl_session.cc
   src/xpl_client.cc
   src/xpl_dispatcher.cc
-  src/xpl_system_variables.cc
   src/xpl_regex.cc
+  src/services/registrator.cc
+  src/services/service_registry_registration.cc
+  src/services/service_sys_variables.cc
+  src/services/services.cc
+  src/services/service_udf_registration.cc
   src/xpl_plugin.cc
   src/xpl_performance_schema.cc
   src/mysql_variables.cc
   src/mysql_function_names.cc
   src/mysql_show_variable_wrapper.cc
   src/auth_plain.cc
+  src/challenge_response_verification.cc
   src/native_plain_verification.cc
   src/native_verification.cc
   src/cache_based_verification.cc
   src/sha256_plain_verification.cc
   src/sha2_plain_verification.cc
-  src/sha256_password_cache.cc
+  src/variables/system_variables.cc
   src/account_verification_handler.cc
   src/admin_cmd_handler.cc
+  src/admin_cmd_collection_handler.cc
   src/admin_cmd_arguments.cc
   src/admin_cmd_index.cc
   src/query_formatter.cc
@@ -102,6 +117,7 @@ SET(xplugin_SRC
   src/update_statement_builder.cc
   src/find_statement_builder.cc
   src/delete_statement_builder.cc
+  src/sha256_password_cache.cc
   src/view_statement_builder.cc
   src/insert_statement_builder.cc
   src/notices.cc
@@ -127,6 +143,8 @@ SET(xplugin_SRC
   src/capabilities/handler_tls.cc
   src/index_field.cc
   src/index_array_field.cc
+  src/capabilities/capability_compression.cc
+  src/meta_schema_validator.cc
 
   ${ngs_SRC}
 )

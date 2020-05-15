@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -174,19 +174,13 @@ bool Gtid_table_access_context::deinit(THD *thd, TABLE *table, bool error,
   DBUG_TRACE;
 
   bool err;
-  err = this->close_table(thd, table, &m_backup, 0 != error, need_commit);
 
   /*
-    If err is true this means that there was some problem during
-    FLUSH LOGS commit phase.
+    This fails on errors committing the info, or when
+    slave_preserve_commit_order is enabled and a previous transaction
+    has failed.  In both cases, the error is reported already.
   */
-  if (err) {
-    my_printf_error(ER_ERROR_DURING_FLUSH_LOGS,
-                    ER_THD(thd, ER_ERROR_DURING_FLUSH_LOGS), MYF(ME_FATALERROR),
-                    err);
-    LogErr(ERROR_LEVEL, ER_ERROR_DURING_FLUSH_LOG_COMMIT_PHASE, err);
-    return err;
-  }
+  err = this->close_table(thd, table, &m_backup, 0 != error, need_commit);
 
   /*
     If Gtid is inserted through Attachable_trx_rw its has been done
@@ -300,7 +294,7 @@ int Gtid_table_persistor::update_row(TABLE *table, const char *sid,
   key_copy(user_key, table->record[0], table->key_info,
            table->key_info->key_length);
 
-  if ((error = table->file->ha_index_init(0, 1))) {
+  if ((error = table->file->ha_index_init(0, true))) {
     table->file->print_error(error, MYF(0));
     DBUG_PRINT("info", ("ha_index_init error"));
     goto end;
@@ -364,7 +358,7 @@ int Gtid_table_persistor::save(THD *thd, const Gtid *gtid) {
   error = write_row(table, buf, gtid->gno, gtid->gno);
 
 end:
-  table_access_ctx.deinit(thd, table, 0 != error, false);
+  if (table_access_ctx.deinit(thd, table, 0 != error, false)) error = -1;
 
   /* Do not protect m_atomic_count for improving transactions' concurrency */
   if (error == 0 && gtid_executed_compression_period != 0) {
@@ -760,6 +754,10 @@ static void *compress_gtid_table(void *p_thd) {
       replication repository tables.
     */
     thd->set_skip_readonly_check();
+
+    // Compress the table at server startup
+    should_compress = true;
+
     for (;;) {
       mysql_mutex_lock(&LOCK_compress_gtid_table);
       if (terminate_compress_thread) break;
@@ -792,8 +790,8 @@ static void *compress_gtid_table(void *p_thd) {
     deinit_thd(thd);
   }
   my_thread_end();
-  my_thread_exit(0);
-  return 0;
+  my_thread_exit(nullptr);
+  return nullptr;
 }
 }  // extern "C"
 

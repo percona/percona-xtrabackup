@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
 
 #include "mysql_com.h"
 #include "sql/my_decimal.h"
@@ -119,7 +120,7 @@ static bool sec_to_time(lldiv_t seconds, MYSQL_TIME *ltime) {
   set_zero_time(ltime, MYSQL_TIMESTAMP_TIME);
 
   if (seconds.quot < 0 || seconds.rem < 0) {
-    ltime->neg = 1;
+    ltime->neg = true;
     seconds.quot = -seconds.quot;
     seconds.rem = -seconds.rem;
   }
@@ -200,7 +201,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
   int error = 0;
   int strict_week_number_year = -1;
   int frac_part;
-  bool usa_time = 0;
+  bool usa_time = false;
   bool sunday_first_n_first_week_non_iso = false;
   bool strict_week_number = false;
   bool strict_week_number_year_type = false;
@@ -228,14 +229,14 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
       switch (*++ptr) {
           /* Year */
         case 'Y':
-          tmp = val + MY_MIN(4, val_len);
+          tmp = val + min(4, val_len);
           l_time->year = (int)my_strtoll10(val, &tmp, &error);
           if ((int)(tmp - val) <= 2)
             l_time->year = year_2000_handling(l_time->year);
           val = tmp;
           break;
         case 'y':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->year = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           l_time->year = year_2000_handling(l_time->year);
@@ -244,7 +245,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
           /* Month */
         case 'm':
         case 'c':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->month = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
@@ -261,33 +262,33 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
           /* Day */
         case 'd':
         case 'e':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->day = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
         case 'D':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->day = (int)my_strtoll10(val, &tmp, &error);
           /* Skip 'st, 'nd, 'th .. */
-          val = tmp + MY_MIN((int)(val_end - tmp), 2);
+          val = tmp + min<long>((val_end - tmp), 2);
           break;
 
           /* Hour */
         case 'h':
         case 'I':
         case 'l':
-          usa_time = 1;
+          usa_time = true;
           /* fall through */
         case 'k':
         case 'H':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->hour = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
 
           /* Minute */
         case 'i':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->minute = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
@@ -295,7 +296,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
           /* Second */
         case 's':
         case 'S':
-          tmp = val + MY_MIN(2, val_len);
+          tmp = val + min(2, val_len);
           l_time->second = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
@@ -344,7 +345,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
           val = tmp;
           break;
         case 'j':
-          tmp = val + MY_MIN(val_len, 3);
+          tmp = val + min(val_len, 3);
           yearday = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
@@ -356,7 +357,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
         case 'u':
           sunday_first_n_first_week_non_iso = (*ptr == 'U' || *ptr == 'V');
           strict_week_number = (*ptr == 'V' || *ptr == 'v');
-          tmp = val + MY_MIN(val_len, 2);
+          tmp = val + min(val_len, 2);
           if ((week_number = (int)my_strtoll10(val, &tmp, &error)) < 0 ||
               (strict_week_number && !week_number) || week_number > 53)
             goto err;
@@ -367,7 +368,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
         case 'X':
         case 'x':
           strict_week_number_year_type = (*ptr == 'X');
-          tmp = val + MY_MIN(4, val_len);
+          tmp = val + min(4, val_len);
           strict_week_number_year = (int)my_strtoll10(val, &tmp, &error);
           val = tmp;
           break;
@@ -380,14 +381,14 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
           */
           if (extract_date_time(&time_ampm_format, val, (uint)(val_end - val),
                                 l_time, cached_timestamp_type, &val, "time"))
-            return 1;
+            return true;
           break;
 
           /* Time in 24-hour notation */
         case 'T':
           if (extract_date_time(&time_24hrs_format, val, (uint)(val_end - val),
                                 l_time, cached_timestamp_type, &val, "time"))
-            return 1;
+            return true;
           break;
 
           /* Conversion specifiers that match classes of characters */
@@ -421,7 +422,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
   */
   if (sub_pattern_end) {
     *sub_pattern_end = val;
-    return 0;
+    return false;
   }
 
   if (yearday > 0) {
@@ -485,7 +486,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
       }
     } while (++val != val_end);
   }
-  return 0;
+  return false;
 
 err : {
   char buff[128];
@@ -495,7 +496,7 @@ err : {
                       ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
                       date_time_type, buff, "str_to_date");
 }
-  return 1;
+  return true;
 }
 
 /**
@@ -523,14 +524,14 @@ bool make_date_time(Date_time_format *format, MYSQL_TIME *l_time,
     else {
       switch (*++ptr) {
         case 'M':
-          if (!l_time->month) return 1;
+          if (!l_time->month) return true;
           str->append(
               locale->month_names->type_names[l_time->month - 1],
               strlen(locale->month_names->type_names[l_time->month - 1]),
               system_charset_info);
           break;
         case 'b':
-          if (!l_time->month) return 1;
+          if (!l_time->month) return true;
           str->append(
               locale->ab_month_names->type_names[l_time->month - 1],
               strlen(locale->ab_month_names->type_names[l_time->month - 1]),
@@ -538,25 +539,25 @@ bool make_date_time(Date_time_format *format, MYSQL_TIME *l_time,
           break;
         case 'W':
           if (type == MYSQL_TIMESTAMP_TIME || !(l_time->month || l_time->year))
-            return 1;
+            return true;
           weekday = calc_weekday(
-              calc_daynr(l_time->year, l_time->month, l_time->day), 0);
+              calc_daynr(l_time->year, l_time->month, l_time->day), false);
           str->append(locale->day_names->type_names[weekday],
                       strlen(locale->day_names->type_names[weekday]),
                       system_charset_info);
           break;
         case 'a':
           if (type == MYSQL_TIMESTAMP_TIME || !(l_time->month || l_time->year))
-            return 1;
+            return true;
           weekday = calc_weekday(
-              calc_daynr(l_time->year, l_time->month, l_time->day), 0);
+              calc_daynr(l_time->year, l_time->month, l_time->day), false);
           str->append(locale->ab_day_names->type_names[weekday],
                       strlen(locale->ab_day_names->type_names[weekday]),
                       system_charset_info);
           break;
         case 'D':
-          if (type == MYSQL_TIMESTAMP_TIME) return 1;
-          length = (uint)(int10_to_str(l_time->day, intbuff, 10) - intbuff);
+          if (type == MYSQL_TIMESTAMP_TIME) return true;
+          length = longlong10_to_str(l_time->day, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 1, '0');
           if (l_time->day >= 10 && l_time->day <= 19)
             str->append(STRING_WITH_LEN("th"));
@@ -578,67 +579,66 @@ bool make_date_time(Date_time_format *format, MYSQL_TIME *l_time,
           }
           break;
         case 'Y':
-          length = (uint)(int10_to_str(l_time->year, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->year, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 4, '0');
           break;
         case 'y':
-          length =
-              (uint)(int10_to_str(l_time->year % 100, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->year % 100, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'm':
-          length = (uint)(int10_to_str(l_time->month, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->month, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'c':
-          length = (uint)(int10_to_str(l_time->month, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->month, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 1, '0');
           break;
         case 'd':
-          length = (uint)(int10_to_str(l_time->day, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->day, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'e':
-          length = (uint)(int10_to_str(l_time->day, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->day, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 1, '0');
           break;
         case 'f':
           length =
-              (uint)(int10_to_str(l_time->second_part, intbuff, 10) - intbuff);
+              longlong10_to_str(l_time->second_part, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 6, '0');
           break;
         case 'H':
-          length = (uint)(int10_to_str(l_time->hour, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->hour, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'h':
         case 'I':
           hours_i = (l_time->hour % 24 + 11) % 12 + 1;
-          length = (uint)(int10_to_str(hours_i, intbuff, 10) - intbuff);
+          length = longlong10_to_str(hours_i, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'i': /* minutes */
-          length = (uint)(int10_to_str(l_time->minute, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->minute, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'j': {
-          if (type == MYSQL_TIMESTAMP_TIME) return 1;
+          if (type == MYSQL_TIMESTAMP_TIME) return true;
 
           int radix = 10;
           int diff = calc_daynr(l_time->year, l_time->month, l_time->day) -
                      calc_daynr(l_time->year, 1, 1) + 1;
           if (diff < 0) radix = -10;
 
-          length = (uint)(int10_to_str(diff, intbuff, radix) - intbuff);
+          length = longlong10_to_str(diff, intbuff, radix) - intbuff;
           str->append_with_prefill(intbuff, length, 3, '0');
         } break;
         case 'k':
-          length = (uint)(int10_to_str(l_time->hour, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->hour, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 1, '0');
           break;
         case 'l':
           hours_i = (l_time->hour % 24 + 11) % 12 + 1;
-          length = (uint)(int10_to_str(hours_i, intbuff, 10) - intbuff);
+          length = longlong10_to_str(hours_i, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 1, '0');
           break;
         case 'p':
@@ -655,7 +655,7 @@ bool make_date_time(Date_time_format *format, MYSQL_TIME *l_time,
           break;
         case 'S':
         case 's':
-          length = (uint)(int10_to_str(l_time->second, intbuff, 10) - intbuff);
+          length = longlong10_to_str(l_time->second, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
           break;
         case 'T':
@@ -666,47 +666,47 @@ bool make_date_time(Date_time_format *format, MYSQL_TIME *l_time,
         case 'U':
         case 'u': {
           uint year;
-          if (type == MYSQL_TIMESTAMP_TIME) return 1;
+          if (type == MYSQL_TIMESTAMP_TIME) return true;
           length =
-              (uint)(int10_to_str(calc_week(*l_time,
-                                            (*ptr) == 'U' ? WEEK_FIRST_WEEKDAY
-                                                          : WEEK_MONDAY_FIRST,
-                                            &year),
-                                  intbuff, 10) -
-                     intbuff);
+              longlong10_to_str(calc_week(*l_time,
+                                          (*ptr) == 'U' ? WEEK_FIRST_WEEKDAY
+                                                        : WEEK_MONDAY_FIRST,
+                                          &year),
+                                intbuff, 10) -
+              intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
         } break;
         case 'v':
         case 'V': {
           uint year;
-          if (type == MYSQL_TIMESTAMP_TIME) return 1;
-          length = (uint)(
-              int10_to_str(
+          if (type == MYSQL_TIMESTAMP_TIME) return true;
+          length =
+              longlong10_to_str(
                   calc_week(*l_time,
                             ((*ptr) == 'V' ? (WEEK_YEAR | WEEK_FIRST_WEEKDAY)
                                            : (WEEK_YEAR | WEEK_MONDAY_FIRST)),
                             &year),
                   intbuff, 10) -
-              intbuff);
+              intbuff;
           str->append_with_prefill(intbuff, length, 2, '0');
         } break;
         case 'x':
         case 'X': {
           uint year;
-          if (type == MYSQL_TIMESTAMP_TIME) return 1;
+          if (type == MYSQL_TIMESTAMP_TIME) return true;
           (void)calc_week(*l_time,
                           ((*ptr) == 'X' ? WEEK_YEAR | WEEK_FIRST_WEEKDAY
                                          : WEEK_YEAR | WEEK_MONDAY_FIRST),
                           &year);
-          length = (uint)(int10_to_str(year, intbuff, 10) - intbuff);
+          length = longlong10_to_str(year, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 4, '0');
         } break;
         case 'w':
           if (type == MYSQL_TIMESTAMP_TIME || !(l_time->month || l_time->year))
-            return 1;
+            return true;
           weekday = calc_weekday(
-              calc_daynr(l_time->year, l_time->month, l_time->day), 1);
-          length = (uint)(int10_to_str(weekday, intbuff, 10) - intbuff);
+              calc_daynr(l_time->year, l_time->month, l_time->day), true);
+          length = longlong10_to_str(weekday, intbuff, 10) - intbuff;
           str->append_with_prefill(intbuff, length, 1, '0');
           break;
 
@@ -716,7 +716,7 @@ bool make_date_time(Date_time_format *format, MYSQL_TIME *l_time,
       }
     }
   }
-  return 0;
+  return false;
 }
 
 /**
@@ -850,7 +850,7 @@ my_decimal *Item_temporal_hybrid_func::val_decimal(my_decimal *decimal_value) {
     if (sql_mode & MODE_INVALID_DATES) flags |= TIME_INVALID_DATES;
 
     val_datetime(&ltime, flags);
-    return null_value ? 0
+    return null_value ? nullptr
                       : ltime.time_type == MYSQL_TIMESTAMP_TIME
                             ? time2my_decimal(&ltime, decimal_value)
                             : date2my_decimal(&ltime, decimal_value);
@@ -892,7 +892,7 @@ String *Item_temporal_hybrid_func::val_str_ascii(String *str) {
                           data_type() == MYSQL_TYPE_STRING
                               ? ltime.second_part ? DATETIME_MAX_DECIMALS : 0
                               : decimals)))
-    return NULL;
+    return nullptr;
 
   /* Check that the returned timestamp type matches to the function type */
   DBUG_ASSERT((data_type() == MYSQL_TYPE_TIME &&
@@ -1161,7 +1161,7 @@ String *Item_func_monthname::val_str(String *str) {
   MYSQL_TIME ltime;
 
   if ((null_value = (get_arg0_date(&ltime, TIME_FUZZY_DATE) || !ltime.month)))
-    return (String *)0;
+    return (String *)nullptr;
 
   month_name = locale->month_names->type_names[ltime.month - 1];
   str->copy(month_name, strlen(month_name), &my_charset_utf8_bin,
@@ -1209,11 +1209,11 @@ static uint week_mode(uint mode) {
 
 bool Item_func_week::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (args[1] == NULL) {
+  if (args[1] == nullptr) {
     THD *thd = pc->thd;
     args[1] = new (pc->mem_root)
         Item_int(NAME_STRING("0"), thd->variables.default_week_format, 1);
-    if (args[1] == NULL) return true;
+    if (args[1] == nullptr) return true;
   }
   return super::itemize(pc, res);
 }
@@ -1294,7 +1294,7 @@ String *Item_func_dayname::val_str(String *str) {
   const char *day_name;
   uint err;
 
-  if (null_value) return (String *)0;
+  if (null_value) return (String *)nullptr;
 
   day_name = locale->day_names->type_names[weekday];
   str->copy(day_name, strlen(day_name), &my_charset_utf8_bin,
@@ -1395,7 +1395,7 @@ double Item_timeval_func::val_real() {
 String *Item_timeval_func::val_str(String *str) {
   struct timeval tm;
   if (val_timeval(&tm) || (null_value = str->alloc(MAX_DATE_STRING_REP_LENGTH)))
-    return (String *)0;
+    return (String *)nullptr;
   str->length(my_timeval_to_str(&tm, str->ptr(), decimals));
   str->set_charset(collation.collation);
   return str;
@@ -1608,7 +1608,7 @@ bool get_interval_value(Item *args, interval_type int_type, String *str_value,
 bool Item_func_from_days::get_date(MYSQL_TIME *ltime,
                                    my_time_flags_t fuzzy_date) {
   longlong value = args[0]->val_int();
-  if ((null_value = args[0]->null_value)) return 1;
+  if ((null_value = args[0]->null_value)) return true;
   memset(ltime, 0, sizeof(MYSQL_TIME));
   get_date_from_daynr((long)value, &ltime->year, &ltime->month, &ltime->day);
 
@@ -1617,7 +1617,7 @@ bool Item_func_from_days::get_date(MYSQL_TIME *ltime,
     return true;
 
   ltime->time_type = MYSQL_TIMESTAMP_DATE;
-  return 0;
+  return false;
 }
 
 void MYSQL_TIME_cache::set_time(MYSQL_TIME *ltime, uint8 dec_arg) {
@@ -1636,10 +1636,14 @@ void MYSQL_TIME_cache::set_date(MYSQL_TIME *ltime) {
   string_length = my_TIME_to_str(time, string_buff, decimals());
 }
 
-void MYSQL_TIME_cache::set_datetime(MYSQL_TIME *ltime, uint8 dec_arg) {
-  DBUG_ASSERT(ltime->time_type == MYSQL_TIMESTAMP_DATETIME);
+void MYSQL_TIME_cache::set_datetime(MYSQL_TIME *ltime, uint8 dec_arg,
+                                    const Time_zone *tz) {
+  DBUG_ASSERT(ltime->time_type == MYSQL_TIMESTAMP_DATETIME ||
+              ltime->time_type == MYSQL_TIMESTAMP_DATETIME_TZ);
   time = *ltime;
+  adjust_time_zone_displacement(tz, &time);
   time_packed = TIME_to_longlong_datetime_packed(time);
+
   dec = dec_arg;
   string_length = my_TIME_to_str(time, string_buff, decimals());
 }
@@ -1688,7 +1692,7 @@ String *MYSQL_TIME_cache::val_str(String *str) {
 bool Item_func_curdate::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::itemize(pc, res)) return true;
-  pc->thd->lex->safe_to_cache_query = 0;
+  pc->thd->lex->safe_to_cache_query = false;
   return false;
 }
 
@@ -1709,7 +1713,7 @@ Time_zone *Item_func_curdate_utc::time_zone() { return my_tz_UTC; }
 bool Item_func_curtime::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::itemize(pc, res)) return true;
-  pc->thd->lex->safe_to_cache_query = 0;
+  pc->thd->lex->safe_to_cache_query = false;
   return false;
 }
 
@@ -1748,7 +1752,7 @@ bool Item_func_now::resolve_type(THD *thd) {
 }
 
 void Item_func_now_local::store_in(Field *field) {
-  THD *thd = field->table != NULL ? field->table->in_use : current_thd;
+  THD *thd = field->table != nullptr ? field->table->in_use : current_thd;
   const timeval tm = thd->query_start_timeval_trunc(field->decimals());
   field->set_notnull();
   return field->store_timestamp(&tm);
@@ -1759,7 +1763,7 @@ Time_zone *Item_func_now_local::time_zone() { return current_thd->time_zone(); }
 bool Item_func_now_utc::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::itemize(pc, res)) return true;
-  pc->thd->lex->safe_to_cache_query = 0;
+  pc->thd->lex->safe_to_cache_query = false;
   return false;
 }
 
@@ -1827,8 +1831,8 @@ bool Item_func_date_format::resolve_type(THD *thd) {
     char_length = format_length(arg1->val_str(&str));
   } else {
     fixed_length = false;
-    char_length = min<uint32>(arg1->max_char_length(), MAX_BLOB_WIDTH) * 10;
-    set_if_smaller(char_length, MAX_BLOB_WIDTH);
+    char_length = min(min(arg1->max_char_length(), uint32(MAX_BLOB_WIDTH)) * 10,
+                      uint32(MAX_BLOB_WIDTH));
   }
   set_data_type_string(char_length);
   maybe_null = true;  // If wrong date
@@ -1848,7 +1852,7 @@ bool Item_func_date_format::eq(const Item *item, bool binary_cmp) const {
     This needed because format modifiers with different case,
     for example %m and %M, have different meaning.
   */
-  if (!args[1]->eq(item_func->args[1], 1)) return false;
+  if (!args[1]->eq(item_func->args[1], true)) return false;
   return true;
 }
 
@@ -1929,9 +1933,9 @@ String *Item_func_date_format::val_str(String *str) {
   DBUG_ASSERT(fixed == 1);
 
   if (!is_time_format) {
-    if (get_arg0_date(&l_time, TIME_FUZZY_DATE)) return 0;
+    if (get_arg0_date(&l_time, TIME_FUZZY_DATE)) return nullptr;
   } else {
-    if (get_arg0_time(&l_time)) return 0;
+    if (get_arg0_time(&l_time)) return nullptr;
     l_time.year = l_time.month = l_time.day = 0;
   }
 
@@ -1960,12 +1964,12 @@ String *Item_func_date_format::val_str(String *str) {
     return str;
 
 null_date:
-  null_value = 1;
-  return 0;
+  null_value = true;
+  return nullptr;
 }
 
 bool Item_func_from_unixtime::resolve_type(THD *thd) {
-  set_data_type_datetime(MY_MIN(args[0]->decimals, DATETIME_MAX_DECIMALS));
+  set_data_type_datetime(min(args[0]->decimals, uint8{DATETIME_MAX_DECIMALS}));
   maybe_null = true;
   thd->time_zone_used = true;
   return false;
@@ -2035,9 +2039,10 @@ bool Item_func_convert_tz::get_date(
     to_tz_cached = args[2]->const_item();
   }
 
-  if (from_tz == 0 || to_tz == 0 || get_arg0_date(ltime, TIME_NO_ZERO_DATE)) {
-    null_value = 1;
-    return 1;
+  if (from_tz == nullptr || to_tz == nullptr ||
+      get_arg0_date(ltime, TIME_NO_ZERO_DATE)) {
+    null_value = true;
+    return true;
   }
 
   {
@@ -2051,12 +2056,12 @@ bool Item_func_convert_tz::get_date(
     }
   }
 
-  null_value = 0;
-  return 0;
+  null_value = false;
+  return false;
 }
 
 void Item_func_convert_tz::cleanup() {
-  from_tz_cached = to_tz_cached = 0;
+  from_tz_cached = to_tz_cached = false;
   Item_datetime_func::cleanup();
 }
 
@@ -2081,11 +2086,11 @@ bool Item_date_add_interval::resolve_type(THD *) {
        int_type <= INTERVAL_SECOND_MICROSECOND))
     interval_dec = DATETIME_MAX_DECIMALS;
   else if (int_type == INTERVAL_SECOND && args[1]->decimals > 0)
-    interval_dec = MY_MIN(args[1]->decimals, DATETIME_MAX_DECIMALS);
+    interval_dec = min(args[1]->decimals, uint8{DATETIME_MAX_DECIMALS});
 
   if (arg0_data_type == MYSQL_TYPE_DATETIME ||
       arg0_data_type == MYSQL_TYPE_TIMESTAMP) {
-    uint8 dec = MY_MAX(args[0]->datetime_precision(), interval_dec);
+    uint8 dec = max<uint8>(args[0]->datetime_precision(), interval_dec);
     set_data_type_datetime(dec);
   } else if (arg0_data_type == MYSQL_TYPE_DATE) {
     if (int_type <= INTERVAL_DAY || int_type == INTERVAL_YEAR_MONTH)
@@ -2093,7 +2098,7 @@ bool Item_date_add_interval::resolve_type(THD *) {
     else
       set_data_type_datetime(interval_dec);
   } else if (arg0_data_type == MYSQL_TYPE_TIME) {
-    uint8 dec = MY_MAX(args[0]->time_precision(), interval_dec);
+    uint8 dec = max<uint8>(args[0]->time_precision(), interval_dec);
     set_data_type_time(dec);
   } else {
     /* Behave as a usual string function when return type is VARCHAR. */
@@ -2200,7 +2205,7 @@ bool Item_date_add_interval::val_datetime(MYSQL_TIME *ltime,
 }
 
 bool Item_date_add_interval::eq(const Item *item, bool binary_cmp) const {
-  if (!Item_func::eq(item, binary_cmp)) return 0;
+  if (!Item_func::eq(item, binary_cmp)) return false;
   const Item_date_add_interval *other =
       down_cast<const Item_date_add_interval *>(item);
   return ((int_type == other->int_type) &&
@@ -2258,83 +2263,83 @@ bool Item_extract::resolve_type(THD *) {
   switch (int_type) {
     case INTERVAL_YEAR:
       max_length = 4;
-      date_value = 1;
+      date_value = true;
       break;
     case INTERVAL_YEAR_MONTH:
       max_length = 6;
-      date_value = 1;
+      date_value = true;
       break;
     case INTERVAL_QUARTER:
       max_length = 2;
-      date_value = 1;
+      date_value = true;
       break;
     case INTERVAL_MONTH:
       max_length = 2;
-      date_value = 1;
+      date_value = true;
       break;
     case INTERVAL_WEEK:
       max_length = 2;
-      date_value = 1;
+      date_value = true;
       break;
     case INTERVAL_DAY:
       max_length = 2;
-      date_value = 1;
+      date_value = true;
       break;
     case INTERVAL_DAY_HOUR:
       max_length = 9;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_DAY_MINUTE:
       max_length = 11;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_DAY_SECOND:
       max_length = 13;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_HOUR:
       max_length = 2;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_HOUR_MINUTE:
       max_length = 4;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_HOUR_SECOND:
       max_length = 6;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_MINUTE:
       max_length = 2;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_MINUTE_SECOND:
       max_length = 4;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_SECOND:
       max_length = 2;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_MICROSECOND:
       max_length = 2;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_DAY_MICROSECOND:
       max_length = 20;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_HOUR_MICROSECOND:
       max_length = 13;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_MINUTE_MICROSECOND:
       max_length = 11;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_SECOND_MICROSECOND:
       max_length = 9;
-      date_value = 0;
+      date_value = false;
       break;
     case INTERVAL_LAST:
       DBUG_ASSERT(0);
@@ -2425,7 +2430,7 @@ bool Item_extract::eq(const Item *item, bool binary_cmp) const {
   if (this == item) return true;
   if (item->type() != FUNC_ITEM ||
       functype() != down_cast<const Item_func *>(item)->functype())
-    return 0;
+    return false;
 
   const Item_extract *ie = down_cast<const Item_extract *>(item);
   if (ie->int_type != int_type) return false;
@@ -2523,16 +2528,16 @@ bool Item_func_makedate::get_date(MYSQL_TIME *ltime, my_time_flags_t) {
   days = calc_daynr(year, 1, 1) + daynr - 1;
   /* Day number from year 0 to 9999-12-31 */
   if (days >= 0 && days <= MAX_DAY_NUMBER) {
-    null_value = 0;
+    null_value = false;
     get_date_from_daynr(days, &ltime->year, &ltime->month, &ltime->day);
-    ltime->neg = 0;
+    ltime->neg = false;
     ltime->hour = ltime->minute = ltime->second = ltime->second_part = 0;
     ltime->time_type = MYSQL_TIMESTAMP_DATE;
     return false;
   }
 
 err:
-  null_value = 1;
+  null_value = true;
   return true;
 }
 
@@ -2550,11 +2555,10 @@ bool Item_func_add_time::resolve_type(THD *) {
     when the first argument is MYSQL_TYPE_DATE.
   */
   if (args[0]->data_type() == MYSQL_TYPE_TIME && !is_date) {
-    uint8 dec = MY_MAX(args[0]->time_precision(), args[1]->time_precision());
+    uint8 dec = max(args[0]->time_precision(), args[1]->time_precision());
     set_data_type_time(dec);
   } else if (args[0]->is_temporal_with_date_and_time() || is_date) {
-    uint8 dec =
-        MY_MAX(args[0]->datetime_precision(), args[1]->time_precision());
+    uint8 dec = max(args[0]->datetime_precision(), args[1]->time_precision());
     set_data_type_datetime(dec);
   } else {
     set_data_type_char(MAX_DATETIME_FULL_WIDTH, default_charset());
@@ -2593,7 +2597,8 @@ bool Item_func_add_time::val_datetime(MYSQL_TIME *time,
   } else  // ADDTIME function
   {
     if (args[0]->get_time(&l_time1) || args[1]->get_time(&l_time2) ||
-        l_time2.time_type == MYSQL_TIMESTAMP_DATETIME)
+        l_time2.time_type == MYSQL_TIMESTAMP_DATETIME ||
+        l_time2.time_type == MYSQL_TIMESTAMP_DATETIME_TZ)
       goto null_date;
     is_time = (l_time1.time_type == MYSQL_TIMESTAMP_TIME);
   }
@@ -2638,7 +2643,7 @@ bool Item_func_add_time::val_datetime(MYSQL_TIME *time,
   return false;
 
 null_date:
-  null_value = 1;
+  null_value = true;
   return true;
 }
 
@@ -2666,7 +2671,6 @@ void Item_func_add_time::print(const THD *thd, String *str,
   t and s: time_or_datetime_expression
   @param[out]  l_time3   Result is stored here.
 
-  @returns
   @retval   false  On succes
   @retval   true   On error
 */
@@ -2678,7 +2682,7 @@ bool Item_func_timediff::get_time(MYSQL_TIME *l_time3) {
   int l_sign = 1;
   MYSQL_TIME l_time1, l_time2;
 
-  null_value = 0;
+  null_value = false;
 
   if ((args[0]->is_temporal_with_date() &&
        args[1]->data_type() == MYSQL_TYPE_TIME) ||
@@ -2718,7 +2722,7 @@ bool Item_func_timediff::get_time(MYSQL_TIME *l_time3) {
   return false;
 
 null_date:
-  return (null_value = 1);
+  return (null_value = true);
 }
 
 /**
@@ -2729,7 +2733,7 @@ null_date:
 
 bool Item_func_maketime::get_time(MYSQL_TIME *ltime) {
   DBUG_ASSERT(fixed == 1);
-  bool overflow = 0;
+  bool overflow = false;
   longlong hour = args[0]->val_int();
   longlong minute = args[1]->val_int();
   my_decimal tmp, *sec = args[2]->val_decimal(&tmp);
@@ -2747,11 +2751,11 @@ bool Item_func_maketime::get_time(MYSQL_TIME *ltime) {
   /* Check for integer overflows */
   if (hour < 0) {
     if (args[0]->unsigned_flag)
-      overflow = 1;
+      overflow = true;
     else
-      ltime->neg = 1;
+      ltime->neg = true;
   }
-  if (-hour > UINT_MAX || hour > UINT_MAX) overflow = 1;
+  if (-hour > UINT_MAX || hour > UINT_MAX) overflow = true;
 
   if (!overflow) {
     ltime->hour = (uint)((hour < 0 ? -hour : hour));
@@ -2778,7 +2782,7 @@ bool Item_func_maketime::get_time(MYSQL_TIME *ltime) {
       Display fractional part up to nanoseconds (9 digits),
       which is the maximum precision of my_decimal2lldiv_t().
     */
-    int dec = MY_MIN(args[2]->decimals, 9);
+    int dec = min(args[2]->decimals, uint8{9});
     len += sprintf(buf + len, ".%0*lld", dec,
                    second.rem / (ulong)log_10_int[9 - dec]);
   }
@@ -2809,7 +2813,7 @@ longlong Item_func_timestamp_diff::val_int() {
   long months = 0;
   int neg = 1;
 
-  null_value = 0;
+  null_value = false;
   if (args[0]->get_date(&ltime1, TIME_NO_ZERO_DATE) ||
       args[1]->get_date(&ltime2, TIME_NO_ZERO_DATE))
     goto null_date;
@@ -2894,7 +2898,7 @@ longlong Item_func_timestamp_diff::val_int() {
   }
 
 null_date:
-  null_value = 1;
+  null_value = true;
   return 0;
 }
 
@@ -2949,7 +2953,7 @@ String *Item_func_get_format::val_str_ascii(String *str) {
   String *val = args[0]->val_str_ascii(str);
   size_t val_len;
 
-  if ((null_value = args[0]->null_value)) return 0;
+  if ((null_value = args[0]->null_value)) return nullptr;
 
   val_len = val->length();
   for (format = &known_date_time_formats[0];
@@ -2965,8 +2969,8 @@ String *Item_func_get_format::val_str_ascii(String *str) {
     }
   }
 
-  null_value = 1;
-  return 0;
+  null_value = true;
+  return nullptr;
 }
 
 void Item_func_get_format::print(const THD *thd, String *str,
@@ -3009,7 +3013,7 @@ void Item_func_get_format::print(const THD *thd, String *str,
 void Item_func_str_to_date::fix_from_format(const char *format, size_t length) {
   const char *time_part_frms = "HISThiklrs";
   const char *date_part_frms = "MVUXYWabcjmvuxyw";
-  bool date_part_used = 0, time_part_used = 0, frac_second_used = 0;
+  bool date_part_used = false, time_part_used = false, frac_second_used = false;
   const char *val = format;
   const char *end = format + length;
 
@@ -3017,11 +3021,11 @@ void Item_func_str_to_date::fix_from_format(const char *format, size_t length) {
     if (*val == '%' && val + 1 != end) {
       val++;
       if (*val == 'f')
-        frac_second_used = time_part_used = 1;
+        frac_second_used = time_part_used = true;
       else if (!time_part_used && strchr(time_part_frms, *val))
-        time_part_used = 1;
+        time_part_used = true;
       else if (!date_part_used && strchr(date_part_frms, *val))
-        date_part_used = 1;
+        date_part_used = true;
       if (date_part_used && frac_second_used) {
         /*
           frac_second_used implies time_part_used, and thus we already
@@ -3103,12 +3107,12 @@ bool Item_func_str_to_date::val_datetime(MYSQL_TIME *ltime,
   format = args[1]->val_str(&format_str);
   if (args[0]->null_value || args[1]->null_value) goto null_date;
 
-  null_value = 0;
+  null_value = false;
   memset(ltime, 0, sizeof(*ltime));
   date_time_format.format.str = format->ptr();
   date_time_format.format.length = format->length();
   if (extract_date_time(&date_time_format, val->ptr(), val->length(), ltime,
-                        cached_timestamp_type, 0, "datetime") ||
+                        cached_timestamp_type, nullptr, "datetime") ||
       date_should_be_null(data_type(), *ltime, fuzzy_date))
     goto null_date;
   ltime->time_type = cached_timestamp_type;
@@ -3121,7 +3125,7 @@ bool Item_func_str_to_date::val_datetime(MYSQL_TIME *ltime,
     ltime->hour += ltime->day * 24;
     ltime->day = 0;
   }
-  return 0;
+  return false;
 
 null_date:
   if (val && (fuzzy_date & TIME_NO_ZERO_DATE) /*warnings*/) {
@@ -3132,7 +3136,7 @@ null_date:
                         ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
                         "datetime", buff, "str_to_date");
   }
-  return (null_value = 1);
+  return (null_value = true);
 }
 
 bool Item_func_last_day::get_date(MYSQL_TIME *ltime,
@@ -3228,13 +3232,13 @@ bool Item_func_internal_update_time::get_date(
         nullptr, static_cast<ulonglong>(timestamp), cached_timestamp,
         dd::info_schema::enum_table_stats_type::TABLE_UPDATE_TIME);
     if (unixtime) {
-      null_value = 0;
+      null_value = false;
       thd->variables.time_zone->gmt_sec_to_TIME(ltime, (my_time_t)unixtime);
       return false;
     }
   }
 
-  null_value = 1;
+  null_value = true;
   return true;
 }
 
@@ -3276,7 +3280,7 @@ bool Item_func_internal_check_time::get_date(
     bool not_used = true;
     // Convert longlong time to MYSQL_TIME format
     if (my_longlong_to_datetime_with_warn(stat_data, &time, MYF(0))) {
-      null_value = 1;
+      null_value = true;
       return true;
     }
 
@@ -3310,12 +3314,12 @@ bool Item_func_internal_check_time::get_date(
         dd::info_schema::enum_table_stats_type::CHECK_TIME);
 
     if (unixtime) {
-      null_value = 0;
+      null_value = false;
       thd->variables.time_zone->gmt_sec_to_TIME(ltime, (my_time_t)unixtime);
       return false;
     }
   }
 
-  null_value = 1;
+  null_value = true;
   return true;
 }

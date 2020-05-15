@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -99,21 +99,21 @@ bool my_gethwaddr(uchar *to) {
   int res = 1;
   struct ifreq ifr;
   struct ifreq ifs[MAX_IFS];
-  struct ifreq *ifri = NULL;
-  struct ifreq *ifend = NULL;
+  struct ifreq *ifri = nullptr;
+  struct ifreq *ifend = nullptr;
 
   char zero_array[ETHER_ADDR_LEN] = {0};
   struct ifconf ifc;
 
   fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (fd < 0) return 1;
+  if (fd < 0) return true;
 
   /* Retrieve interfaces */
   ifc.ifc_len = sizeof(ifs);
   ifc.ifc_req = ifs;
   if (ioctl(fd, SIOCGIFCONF, &ifc) < 0) {
     close(fd);
-    return 1;
+    return true;
   }
 
   /* Initialize out parameter */

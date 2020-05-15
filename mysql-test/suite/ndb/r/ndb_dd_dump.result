@@ -207,16 +207,16 @@ ALTER TABLE test.t ADD INDEX (d), ADD INDEX (f);
 SHOW CREATE TABLE test.t;
 Table	Create Table
 t	CREATE TABLE `t` (
-  `a` smallint(6) NOT NULL,
-  `b` int(11) NOT NULL,
-  `c` bigint(20) NOT NULL,
+  `a` smallint NOT NULL,
+  `b` int NOT NULL,
+  `c` bigint NOT NULL,
   `d` char(10) DEFAULT NULL,
   `e` text,
   `f` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`a`),
   KEY `d` (`d`),
   KEY `f` (`f`)
-) /*!50100 TABLESPACE `ts1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) /*!50100 TABLESPACE `ts1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 SELECT * FROM test.t order by a;
 a	b	c	d	e	f
 1	2	3	aaa1	bbb1	ccccc1

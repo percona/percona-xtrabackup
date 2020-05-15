@@ -167,11 +167,11 @@ INSERT INTO t2 VALUES (3,4433,10005,493,500);
 INSERT INTO t2 VALUES (3,4433,10005,492,500);
 UPDATE IGNORE t2,t1 set t2.colE = t2.colE + 1,colF=0 WHERE t1.colA = t2.colA AND (t1.colB & 4096) > 0 AND (colE + 1) < colF;
 Warnings:
-Warning	1062	Duplicate entry '3-4433-10005-493' for key 'PRIMARY'
-Warning	1062	Duplicate entry '3-4433-10005-494' for key 'PRIMARY'
-Warning	1062	Duplicate entry '3-4433-10005-495' for key 'PRIMARY'
-Warning	1062	Duplicate entry '3-4433-10005-496' for key 'PRIMARY'
-Warning	1062	Duplicate entry '3-4433-10005-497' for key 'PRIMARY'
+Warning	1062	Duplicate entry '3-4433-10005-493' for key 't2.PRIMARY'
+Warning	1062	Duplicate entry '3-4433-10005-494' for key 't2.PRIMARY'
+Warning	1062	Duplicate entry '3-4433-10005-495' for key 't2.PRIMARY'
+Warning	1062	Duplicate entry '3-4433-10005-496' for key 't2.PRIMARY'
+Warning	1062	Duplicate entry '3-4433-10005-497' for key 't2.PRIMARY'
 SELECT * FROM t2;
 colC	colA	colD	colE	colF
 3	4433	10005	492	500
@@ -256,7 +256,7 @@ Handler_read_prev	0
 Handler_read_rnd	2
 Handler_read_rnd_next	18
 flush status;
-delete from t1 order by a limit 1;
+delete from t1 order by a, b desc limit 1;
 show status like 'handler_read%';
 Variable_name	Value
 Handler_read_first	1
@@ -267,7 +267,7 @@ Handler_read_prev	0
 Handler_read_rnd	1
 Handler_read_rnd_next	9
 flush status;
-delete from t1 order by a desc limit 1;
+delete from t1 order by a desc, b desc limit 1;
 show status like 'handler_read%';
 Variable_name	Value
 Handler_read_first	1
@@ -890,3 +890,29 @@ SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 DELETE FROM t1 WHERE a=2;
 DROP TABLE t1;
 SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+#
+# Bug#30158954: INCONSISTENT ROWS MATCHED VALUE FOR UPDATE
+#               WITH FAILED CONSTRAINT
+#
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT CHECK (f2 < 400));
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT);
+CREATE VIEW v2 AS SELECT * FROM t2 WHERE f2 < 400 WITH CHECK OPTION;
+INSERT INTO t1 VALUES (1, 10), (2, 20);
+INSERT INTO t2 VALUES (1, 10), (2, 20);
+UPDATE IGNORE t1 SET f2 = 400;
+affected rows: 0
+info: Rows matched: 2  Changed: 0  Warnings: 2
+Warnings:
+Warning	3819	Check constraint 't1_chk_1' is violated.
+Warning	3819	Check constraint 't1_chk_1' is violated.
+UPDATE IGNORE v2 SET f2 = 400;
+affected rows: 0
+info: Rows matched: 2  Changed: 0  Warnings: 2
+Warnings:
+Warning	1369	CHECK OPTION failed 'test.v2'
+Warning	1369	CHECK OPTION failed 'test.v2'
+UPDATE IGNORE t2 SET f2 = 400;
+affected rows: 2
+info: Rows matched: 2  Changed: 2  Warnings: 0
+DROP VIEW v2;
+DROP TABLE t2, t1;

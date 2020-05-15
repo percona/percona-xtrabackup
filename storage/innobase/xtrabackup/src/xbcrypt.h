@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <my_base.h>
 #include "common.h"
+#include "template_utils.h"
 
 #define XB_CRYPT_CHUNK_MAGIC1 "XBCRYP01"
 #define XB_CRYPT_CHUNK_MAGIC2 "XBCRYP02"

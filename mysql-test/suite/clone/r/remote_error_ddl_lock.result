@@ -28,20 +28,13 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
+  `col1` int NOT NULL,
   PRIMARY KEY (`col1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 # 1B. CREATE TABLE while clone in progress
@@ -79,21 +72,14 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
   PRIMARY KEY (`col1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SELECT * FROM t1 ORDER BY col1;
@@ -136,22 +122,15 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 SELECT * FROM t1 ORDER BY col1;
@@ -177,9 +156,9 @@ SET DEBUG_SYNC = 'RESET';
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 # In connection CON1
@@ -197,22 +176,15 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`),
   KEY `col2_idx` (`col2`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -233,9 +205,9 @@ SET DEBUG_SYNC = 'RESET';
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`),
   KEY `col2_idx` (`col2`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -254,22 +226,15 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`),
   KEY `col2_idx` (`col2`),
   KEY `col3_idx` (`col3`)
@@ -304,9 +269,9 @@ SET DEBUG_SYNC = 'RESET';
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`),
   KEY `col2_idx` (`col2`),
   KEY `col3_idx` (`col3`)
@@ -326,22 +291,15 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`),
   KEY `col2_idx` (`col2`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -362,9 +320,9 @@ SET DEBUG_SYNC = 'RESET';
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`),
   KEY `col2_idx` (`col2`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -383,22 +341,15 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 # 5A. TRUNCATE TABLE while clone in progress
@@ -435,13 +386,6 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT
@@ -463,9 +407,9 @@ SET DEBUG_SYNC = 'RESET';
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `col1` int(11) NOT NULL,
-  `col2` int(11) DEFAULT NULL,
-  `col3` int(11) DEFAULT NULL,
+  `col1` int NOT NULL,
+  `col2` int DEFAULT NULL,
+  `col3` int DEFAULT NULL,
   PRIMARY KEY (`col1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 # 6B. Clone while DROP TABLE in progress
@@ -484,13 +428,6 @@ ID	STATE	ERROR_NO
 1	Failed	3862
 select ID, STAGE, STATE from performance_schema.clone_progress;
 ID	STAGE	STATE
-1	DROP DATA	Failed
-1	FILE COPY	Not Started
-1	PAGE COPY	Not Started
-1	REDO COPY	Not Started
-1	FILE SYNC	Not Started
-1	RESTART	Not Started
-1	RECOVERY	Not Started
 SET DEBUG_SYNC = 'now SIGNAL resume_ddl';
 # In connection CON1
 # In connection DEFAULT

@@ -31,7 +31,6 @@
 
 namespace dd {
 class Table;
-typedef String_type sdi_t;
 typedef unsigned long long Object_id;
 }  // namespace dd
 
@@ -117,6 +116,17 @@ bool ndb_dd_table_get_previous_mysql_version(const dd::Table *table_def,
 void ndb_dd_table_set_tablespace_id(dd::Table *table_def,
                                     dd::Object_id tablespace_id);
 
+/*
+  Save the schema UUID in table definition
+*/
+void ndb_dd_table_set_schema_uuid(dd::Table *table_def, const char *value);
+
+/*
+  Retrieve the schema UUID from table definition
+*/
+bool ndb_dd_table_get_schema_uuid(const dd::Table *table_def,
+                                  dd::String_type *value);
+
 /* interface for working with opaque dd::Table RAII-style */
 class Ndb_dd_table {
   class THD *const m_thd;
@@ -128,8 +138,6 @@ class Ndb_dd_table {
   Ndb_dd_table(THD *thd);
 
   ~Ndb_dd_table();
-
-  bool deserialize(const dd::sdi_t &sdi);
 
   dd::Table *get_table_def() { return m_table_def; }
 };

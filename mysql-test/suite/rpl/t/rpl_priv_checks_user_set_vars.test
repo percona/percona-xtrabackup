@@ -96,7 +96,7 @@ INSERT INTO t_system VALUES (1), (2);
 
 --source include/rpl_connection_slave.inc
 --source include/rpl_use_privilege_db.inc
-CALL mtr.add_suppression(".*you need .at least one of. the SUPER, SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN.*");
+CALL mtr.add_suppression(".*you need .at least one of. the SUPER.* SYSTEM_VARIABLES_ADMIN.*");
 CALL mtr.add_suppression(".*The slave coordinator and worker threads are stopped.*");
 
 # 2) Grant `REPLICATION_APPLIER`, `CREATE`, `DROP` and `INSERT` to the
@@ -225,8 +225,6 @@ SET default_table_encryption = 1;
 CREATE DATABASE new_db;
 
 --source include/rpl_connection_slave.inc
-CALL mtr.add_suppression(".*you need .at least one of. the SUPER or SYSTEM_VARIABLES_ADMIN and TABLE_ENCRYPTION_ADMIN.*");
-
 # 2) Ensure that `PRIVILEGE_CHECKS_USER` doesn't have the necessary privileges
 #    to set `default_table_encryption`.
 REVOKE SUPER, SYSTEM_VARIABLES_ADMIN, TABLE_ENCRYPTION_ADMIN ON *.* FROM 'u1'@'localhost';

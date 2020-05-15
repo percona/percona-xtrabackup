@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -110,28 +110,12 @@ DB_restrictions &DB_restrictions::operator=(DB_restrictions &&restrictions) {
 
   @param [in] restrictions DB_restrictions object to be compared with this
 
-  @returns
-    @retval true    If both DB_restrictions are same
-    @retval false   Otherwise
+  @retval true    If both DB_restrictions are same
+  @retval false   Otherwise
 
 */
 bool DB_restrictions::operator==(const DB_restrictions &restrictions) const {
   return (m_restrictions == restrictions.m_restrictions);
-}
-
-/**
-  Add given set of privileges (in string format) and
-  add them to restriction list for given database.
-
-  @param [in] db_name Database information
-  @param [in] privs   Restricted access - In string format
-*/
-void DB_restrictions::add(const std::string &db_name,
-                          const std::set<std::string> &privs) {
-  for (const auto &priv : privs) {
-    auto priv_itr = global_acls_map.find(priv);
-    if (priv_itr != global_acls_map.end()) add(db_name, priv_itr->second);
-  }
 }
 
 /**
@@ -213,26 +197,6 @@ bool DB_restrictions::add(const Json_object &json_object) {
     }
   }
   return false;
-}
-
-/**
-  Remove given set of privileges for a database from restriction list
-
-  @param [in] db_name      Database information
-  @param [in] revoke_privs List of privileges to remove
-*/
-void DB_restrictions::remove(const std::string &db_name,
-                             const std::set<std::string> &revoke_privs) {
-  auto rest_itr = m_restrictions.find(db_name);
-  if (rest_itr != m_restrictions.end()) {
-    for (auto &priv : revoke_privs) {
-      const auto &itr = global_acls_map.find(priv);
-      if (itr != global_acls_map.end()) {
-        auto &priv_mask = rest_itr->second;
-        priv_mask ^= (1UL << itr->second);
-      }
-    }
-  }
 }
 
 /**
@@ -393,9 +357,8 @@ bool DB_restrictions::has_more_restrictions(const DB_restrictions &other,
   @param [in]     rights    access specified in the SQL statement
   @param [in]     is_grant_revoke_all_on_db  flag that indicates if the
                             REVOKE/GRANT ALL was executed on a DB
-  @returns
-    @retval   A restriction aggregator object
-    @retval   nullptr, if partial_revokes system variable is OFF
+  @returns A restriction aggregator object
+  @retval  nullptr if partial_revokes system variable is OFF
 */
 std::unique_ptr<Restrictions_aggregator>
 Restrictions_aggregator_factory::create(THD *thd, const ACL_USER *acl_user,
@@ -497,8 +460,7 @@ Restrictions_aggregator_factory::create(
   Returns the grantor user name and host id.
   @param  [in]  sctx Security context
 
-  @returns
-    @retval Grantor's user name and host info
+  @returns Grantor's user name and host info
 */
 Auth_id Restrictions_aggregator_factory::fetch_grantor(
     const Security_context *sctx) {
@@ -515,8 +477,7 @@ Auth_id Restrictions_aggregator_factory::fetch_grantor(
 
   @param [in]  acl_user user handle from ACL_Cache
 
-  @returns
-    @retval Grantee's user name and host info
+  @returns Grantee's user name and host info
 */
 Auth_id Restrictions_aggregator_factory::fetch_grantee(
     const ACL_USER *acl_user) {
@@ -534,8 +495,7 @@ Auth_id Restrictions_aggregator_factory::fetch_grantee(
   @param  [in]  thd Thread handle
   @param  [in]  db  Database name for which privileges to be fetched.
 
-  @returns
-    @retval privilege access to the grantor on the specified database
+  @returns privilege access to the grantor on the specified database
 */
 ulong Restrictions_aggregator_factory::fetch_grantor_db_access(THD *thd,
                                                                const char *db) {
@@ -552,8 +512,7 @@ ulong Restrictions_aggregator_factory::fetch_grantor_db_access(THD *thd,
   @param  [in]  acl_user  user handle from ACL_Cache
   @param  [in]  db        Database name for which privileges to be fetched.
 
-  @returns
-    @retval privilege access to the grantee on the specified database
+  @returns privilege access to the grantee on the specified database
 */
 ulong Restrictions_aggregator_factory::fetch_grantee_db_access(
     THD *thd, const ACL_USER *acl_user, const char *db) {
@@ -568,9 +527,6 @@ ulong Restrictions_aggregator_factory::fetch_grantee_db_access(
   @param  [in]  db            Database name for which privileges to be fetched.
   @param  [out] global_access fetch grantor's global access
   @param  [out] restrictions  fetch grantor's restrictions
-
-  @returns
-    @retval global privilege access to the grantor
 */
 void Restrictions_aggregator_factory::fetch_grantor_access(
     const Security_context *sctx, const char *db, ulong &global_access,
@@ -864,8 +820,7 @@ void DB_restrictions_aggregator::aggregate_restrictions(
 
   @param [in] db_name   Database name for which we need to fetch the DB level
                         access.
-  @returns
-    @retval DB level access.
+  @returns DB level access.
 */
 ulong DB_restrictions_aggregator::get_grantee_db_access(
     const std::string &db_name) const {
@@ -928,8 +883,7 @@ DB_restrictions_aggregator_set_role::DB_restrictions_aggregator_set_role(
   -  Checks possible descrepancy between DB access being granted and
      existing restrictions.
 
-  @returns
-    @retval Status  Moves the object in the appropiate status.
+  @returns Status   Moves the object in the appropiate status.
                     For instance :
                     - Validated, if validation was performed successfuly
                     - NO_op, if there is no aggregation of privileges required.
@@ -958,11 +912,11 @@ DB_restrictions_aggregator_set_role::validate() {
   - else if grantee has restrictions
     - Remove the restrictions on which global grant is requested.
 
-  @param  [out]  restrictions  Fills the paramter with the generated
-                               DB_restrictions
+  @param  [out]  db_restrictions  Fills the paramter with the generated
+                                  DB_restrictions
 */
 void DB_restrictions_aggregator_set_role::aggregate(
-    DB_restrictions &restrictions) {
+    DB_restrictions &db_restrictions) {
   DBUG_ASSERT(m_status == Status::Validated);
 
   if (m_grantee_rl.is_not_empty()) {
@@ -991,7 +945,7 @@ void DB_restrictions_aggregator_set_role::aggregate(
       }
     }
   }
-  aggregate_restrictions(SQL_OP::SET_ROLE, m_db_map, restrictions);
+  aggregate_restrictions(SQL_OP::SET_ROLE, m_db_map, db_restrictions);
   m_status = Status::Aggregated;
 }
 
@@ -1024,8 +978,7 @@ DB_restrictions_aggregator_global_grant::
   -  Checks possible descrepancy between DB access being granted and
      existing restrictions.
 
-  @returns
-    @retval Status  Moves the object in the appropiate status.
+  @returns Status   Moves the object in the appropiate status.
                     For instance :
                     - Validated, if validation was performed successfuly
                     - NO_op, if there is no aggregation of privileges required.
@@ -1106,8 +1059,7 @@ DB_restrictions_aggregator_global_revoke::
   Evaluates the restrictions list of grantor and grantee, as well as requested
   privilege.
 
-  @returns
-    @retval Status  Moves the object in the appropiate status.
+  @returns Status   Moves the object in the appropiate status.
                     For instance :
                     - Validated, if validation was performed successfuly
                     - NO_op, if there is no aggregation of privileges required.
@@ -1173,8 +1125,7 @@ void DB_restrictions_aggregator_global_revoke::aggregate(
   - Check if grantee has same DB level privilege as well as
     restriction list on the  database
 
-  @returns
-    @retval Status  Moves the object in the appropiate status.
+  @returns  Status  Moves the object in the appropiate status.
                     For instance :
                     - Validated, if validation was performed successfuly
                     - NO_op, if there is no aggregation of privileges required.
@@ -1520,11 +1471,6 @@ const DB_restrictions &Restrictions::db() const { return m_db_restrictions; }
 /** Set given database restrictions */
 void Restrictions::set_db(const DB_restrictions &db_restrictions) {
   m_db_restrictions = db_restrictions;
-}
-
-/** Add given database restrictions */
-void Restrictions::add_db(const DB_restrictions &db_restrictions) {
-  m_db_restrictions.add(db_restrictions);
 }
 
 /** Clear database restrictions */

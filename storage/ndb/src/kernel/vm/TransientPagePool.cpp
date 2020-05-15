@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,8 +26,11 @@
 #include "ndbd_malloc_impl.hpp"
 #include "Pool.hpp"
 #include "TransientPagePool.hpp"
+#include "debugger/EventLogger.hpp"
 
 #define JAM_FILE_ID 503
+
+extern EventLogger * g_eventLogger;
 
 TransientPagePool::TransientPagePool()
 : m_mem_manager(NULL),
@@ -128,7 +138,22 @@ bool TransientPagePool::getPtr(Ptr<Page>& p) const
   {
     return false;
   }
-  require(p.p != NULL && Magic::match(p.p->m_magic, m_type_id));
+  if (unlikely(!(p.p != NULL && Magic::match(p.p->m_magic, m_type_id))))
+  {
+    g_eventLogger->info("Magic::match failed in %s: "
+                        "type_id %08x rg %u tid %u: "
+                        "slot_size -: ptr.i %u: ptr.p %p: "
+                        "magic %08x expected %08x",
+                        __func__,
+                        m_type_id,
+                        GET_RG(m_type_id),
+                        GET_TID(m_type_id),
+                        p.i,
+                        p.p,
+                        p.p->m_magic,
+                        Magic::make(m_type_id));
+    require(p.p != NULL && Magic::match(p.p->m_magic, m_type_id));
+  }
   return true;
 }
 

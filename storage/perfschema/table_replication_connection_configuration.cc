@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -80,6 +80,7 @@ Plugin_table table_replication_connection_configuration::m_table_def(
     "  ZSTD_COMPRESSION_LEVEL INTEGER not null\n"
     "  COMMENT 'Compression level associated with zstd compression "
     "algorithm.',\n"
+    "  TLS_CIPHERSUITES TEXT CHARACTER SET utf8 COLLATE utf8_bin NULL,\n"
     "  PRIMARY KEY (channel_name) USING HASH\n",
     /* Options */
     " ENGINE=PERFORMANCE_SCHEMA",
@@ -89,8 +90,8 @@ Plugin_table table_replication_connection_configuration::m_table_def(
 PFS_engine_table_share table_replication_connection_configuration::m_share = {
     &pfs_readonly_acl,
     table_replication_connection_configuration::create,
-    NULL, /* write_row */
-    NULL, /* delete_all_rows */
+    nullptr, /* write_row */
+    nullptr, /* delete_all_rows */
     table_replication_connection_configuration::get_row_count, /* records */
     sizeof(pos_t),                                             /* ref length */
     &m_table_lock,
@@ -182,7 +183,7 @@ int table_replication_connection_configuration::rnd_pos(const void *pos) {
 
 int table_replication_connection_configuration::index_init(
     uint idx MY_ATTRIBUTE((unused)), bool) {
-  PFS_index_rpl_connection_config *result = NULL;
+  PFS_index_rpl_connection_config *result = nullptr;
   DBUG_ASSERT(idx == 0);
   result = PFS_NEW(PFS_index_rpl_connection_config);
   m_opened_index = result;
@@ -218,7 +219,7 @@ int table_replication_connection_configuration::index_next(void) {
 int table_replication_connection_configuration::make_row(Master_info *mi) {
   const char *temp_store;
 
-  DBUG_ASSERT(mi != NULL);
+  DBUG_ASSERT(mi != nullptr);
 
   mysql_mutex_lock(&mi->data_lock);
   mysql_mutex_lock(&mi->rli->data_lock);
@@ -247,11 +248,7 @@ int table_replication_connection_configuration::make_row(Master_info *mi) {
     m_row.auto_position = PS_RPL_NO;
   }
 
-#ifdef HAVE_OPENSSL
   m_row.ssl_allowed = mi->ssl ? PS_SSL_ALLOWED_YES : PS_SSL_ALLOWED_NO;
-#else
-  m_row.ssl_allowed = mi->ssl ? PS_SSL_ALLOWED_IGNORED : PS_SSL_ALLOWED_NO;
-#endif
 
   temp_store = mi->ssl_ca;
   m_row.ssl_ca_file_length = strlen(temp_store);
@@ -314,19 +311,22 @@ int table_replication_connection_configuration::make_row(Master_info *mi) {
 
   m_row.zstd_compression_level = mi->zstd_compression_level;
 
+  m_row.tls_ciphersuites = mi->tls_ciphersuites;
+
   mysql_mutex_unlock(&mi->rli->data_lock);
   mysql_mutex_unlock(&mi->data_lock);
 
   return 0;
 }
 
-int table_replication_connection_configuration::read_row_values(TABLE *table,
-                                                                unsigned char *,
-                                                                Field **fields,
-                                                                bool read_all) {
-  Field *f;
+int table_replication_connection_configuration::read_row_values(
+    TABLE *table, unsigned char *buf, Field **fields, bool read_all) {
+  DBUG_TRACE;
+  /* Set the null bits */
+  DBUG_ASSERT(table->s->null_bytes == 1);
+  buf[0] = 0;
 
-  for (; (f = *fields); fields++) {
+  for (Field *f = nullptr; (f = *fields); fields++) {
     if (read_all || bitmap_is_set(table->read_set, f->field_index)) {
       switch (f->field_index) {
         case 0: /** channel_name */
@@ -410,6 +410,14 @@ int table_replication_connection_configuration::read_row_values(TABLE *table,
           break;
         case 23: /** zstd_compression_level */
           set_field_ulong(f, m_row.zstd_compression_level);
+          break;
+        case 24: /** tls_ciphersuites */
+          if (m_row.tls_ciphersuites.first)
+            f->set_null();
+          else
+            set_field_text(f, m_row.tls_ciphersuites.second.data(),
+                           m_row.tls_ciphersuites.second.length(),
+                           &my_charset_utf8mb4_bin);
           break;
         default:
           DBUG_ASSERT(false);

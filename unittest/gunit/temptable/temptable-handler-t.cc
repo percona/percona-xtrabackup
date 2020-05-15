@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -91,7 +91,7 @@ TEST_F(Handler_test, SimpleTableCreate) {
   const char *table_name = "t1";
 
   Table_helper table_helper(table_name, thd());
-  table_helper.add_field_long("col0", false, false);
+  table_helper.add_field_long("col0", false);
   table_helper.finalize();
 
   temptable::Handler handler(hton(), table_helper.table_share());
@@ -105,12 +105,66 @@ TEST_F(Handler_test, SimpleTableCreate) {
   EXPECT_EQ(handler.delete_table(table_name, nullptr), 0);
 }
 
+#ifndef DBUG_OFF
+TEST_F(
+    Handler_test,
+    TableCreateReturnsRecordFileFullWhenTempTableAllocatorThrowsRecordFileFull) {
+  const char *table_name = "t1";
+
+  Table_helper table_helper(table_name, thd());
+  table_helper.add_field_long("col0", false);
+  table_helper.finalize();
+
+  temptable::Handler handler(hton(), table_helper.table_share());
+  table_helper.set_handler(&handler);
+
+  DBUG_SET("+d,temptable_allocator_record_file_full");
+  EXPECT_EQ(handler.create(table_name, table_helper.table(), nullptr, nullptr),
+            HA_ERR_RECORD_FILE_FULL);
+  DBUG_SET("-d,temptable_allocator_record_file_full");
+}
+
+TEST_F(Handler_test,
+       TableCreateReturnsOutOfMemoryWhenTempTableAllocatorThrowsOutOfMemory) {
+  const char *table_name = "t1";
+
+  Table_helper table_helper(table_name, thd());
+  table_helper.add_field_long("col0", false);
+  table_helper.finalize();
+
+  temptable::Handler handler(hton(), table_helper.table_share());
+  table_helper.set_handler(&handler);
+
+  DBUG_SET("+d,temptable_allocator_oom");
+  EXPECT_EQ(handler.create(table_name, table_helper.table(), nullptr, nullptr),
+            HA_ERR_OUT_OF_MEM);
+  DBUG_SET("-d,temptable_allocator_oom");
+}
+
+TEST_F(Handler_test,
+       TableCreateReturnsOutOfMemoryWhenCatchAllHandlerIsActivated) {
+  const char *table_name = "t1";
+
+  Table_helper table_helper(table_name, thd());
+  table_helper.add_field_long("col0", false);
+  table_helper.finalize();
+
+  temptable::Handler handler(hton(), table_helper.table_share());
+  table_helper.set_handler(&handler);
+
+  DBUG_SET("+d,temptable_create_return_non_result_type_exception");
+  EXPECT_EQ(handler.create(table_name, table_helper.table(), nullptr, nullptr),
+            HA_ERR_OUT_OF_MEM);
+  DBUG_SET("-d,temptable_create_return_non_result_type_exception");
+}
+#endif /* DBUG_OFF */
+
 TEST_F(Handler_test, SimpleTableOpsFixedSize) {
   const char *table_name = "t1";
 
   Table_helper table_helper(table_name, thd());
-  table_helper.add_field_long("col0", false, false);
-  table_helper.add_field_long("col1", true, false);
+  table_helper.add_field_long("col0", false);
+  table_helper.add_field_long("col1", true);
   table_helper.finalize();
 
   temptable::Handler handler(hton(), table_helper.table_share());
@@ -204,8 +258,8 @@ TEST_F(Handler_test, SingleIndex) {
   const char *table_name = "t1";
 
   Table_helper table_helper(table_name, thd());
-  table_helper.add_field_long("col0", false, false);
-  table_helper.add_field_long("col1", false, false);
+  table_helper.add_field_long("col0", false);
+  table_helper.add_field_long("col1", false);
   table_helper.add_index(HA_KEY_ALG_HASH, true, {0});
   table_helper.finalize();
 
@@ -270,9 +324,9 @@ TEST_F(Handler_test, MultiIndex) {
   const char *table_name = "t1";
 
   Table_helper table_helper(table_name, thd());
-  table_helper.add_field_long("col0", false, false);
-  table_helper.add_field_long("col1", false, false);
-  table_helper.add_field_long("col2", false, false);
+  table_helper.add_field_long("col0", false);
+  table_helper.add_field_long("col1", false);
+  table_helper.add_field_long("col2", false);
   table_helper.add_index(HA_KEY_ALG_HASH, true, {0});
   table_helper.add_index(HA_KEY_ALG_BTREE, true, {1});
   table_helper.add_index(HA_KEY_ALG_HASH, false, {0, 1});
@@ -438,7 +492,7 @@ TEST_F(Handler_test, IndexOnOff) {
   const char *table_name = "t1";
 
   Table_helper table_helper(table_name, thd());
-  table_helper.add_field_long("col0", false, false);
+  table_helper.add_field_long("col0", false);
   table_helper.add_index(HA_KEY_ALG_HASH, true, {0});
   table_helper.finalize();
 

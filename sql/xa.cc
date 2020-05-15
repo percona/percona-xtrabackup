@@ -61,7 +61,8 @@
 #include "sql/query_options.h"
 #include "sql/rpl_context.h"
 #include "sql/rpl_gtid.h"
-#include "sql/sql_class.h"  // THD
+#include "sql/rpl_slave_commit_order_manager.h"  // Commit_order_manager
+#include "sql/sql_class.h"                       // THD
 #include "sql/sql_const.h"
 #include "sql/sql_error.h"
 #include "sql/sql_list.h"
@@ -242,7 +243,7 @@ MEM_ROOT *Recovered_xa_transactions::get_allocated_memroot() {
 struct xarecover_st {
   int len, found_foreign_xids, found_my_xids;
   XA_recover_txn *list;
-  const memroot_unordered_set<my_xid> *commit_list;
+  const mem_root_unordered_set<my_xid> *commit_list;
   bool dry_run;
 };
 
@@ -364,17 +365,17 @@ static bool xarecover_handlerton(THD *, plugin_ref plugin, void *arg) {
   return false;
 }
 
-int ha_recover(const memroot_unordered_set<my_xid> *commit_list) {
+int ha_recover(const mem_root_unordered_set<my_xid> *commit_list) {
   xarecover_st info;
   DBUG_TRACE;
   info.found_foreign_xids = info.found_my_xids = 0;
   info.commit_list = commit_list;
-  info.dry_run =
-      (info.commit_list == 0 && tc_heuristic_recover == TC_HEURISTIC_NOT_USED);
-  info.list = NULL;
+  info.dry_run = (info.commit_list == nullptr &&
+                  tc_heuristic_recover == TC_HEURISTIC_NOT_USED);
+  info.list = nullptr;
 
   /* commit_list and tc_heuristic_recover cannot be set both */
-  DBUG_ASSERT(info.commit_list == 0 ||
+  DBUG_ASSERT(info.commit_list == nullptr ||
               tc_heuristic_recover == TC_HEURISTIC_NOT_USED);
   /* if either is set, total_ha_2pc must be set too */
   DBUG_ASSERT(info.dry_run || total_ha_2pc > (ulong)opt_bin_log);
@@ -399,7 +400,7 @@ int ha_recover(const memroot_unordered_set<my_xid> *commit_list) {
   }
 
   for (info.len = MAX_XID_LIST_SIZE;
-       info.list == 0 && info.len > MIN_XID_LIST_SIZE; info.len /= 2) {
+       info.list == nullptr && info.len > MIN_XID_LIST_SIZE; info.len /= 2) {
     info.list = new (std::nothrow) XA_recover_txn[info.len];
   }
   if (!info.list) {
@@ -600,6 +601,18 @@ bool Sql_cmd_xa_commit::process_external_xa_commit(THD *thd,
   */
   bool res = xs->xa_trans_rolled_back();
 
+  /*
+    Metadata locks taken during XA COMMIT should be released when
+    there is error in commit order execution, so we take a savepoint
+    and rollback to it in case of error. The error during commit order
+    execution can be temporary like commit order deadlock (check header
+    comment for check_and_report_deadlock()) and can be recovered after
+    retrying unlike other commit errors. And to do so we need to restore
+    status of metadata locks i.e. rollback to savepoint, before the retry
+    attempt to ensure order for applier threads.
+  */
+  MDL_savepoint mdl_savepoint = thd->mdl_context.mdl_savepoint();
+
   DEBUG_SYNC(thd, "external_xa_commit_before_acquire_xa_lock");
   /*
     Acquire XID_STATE::m_xa_lock to prevent concurrent running of two
@@ -633,8 +646,9 @@ bool Sql_cmd_xa_commit::process_external_xa_commit(THD *thd,
   DEBUG_SYNC(thd, "external_xa_commit_after_acquire_commit_lock");
 
   /* Do not execute gtid wrapper whenever 'res' is true (rm error) */
+  bool gtid_error = false;
   bool need_clear_owned_gtid = false;
-  bool gtid_error = commit_owned_gtids(thd, true, &need_clear_owned_gtid);
+  std::tie(gtid_error, need_clear_owned_gtid) = commit_owned_gtids(thd, true);
   if (gtid_error) my_error(ER_XA_RBROLLBACK, MYF(0));
   res = res || gtid_error;
 
@@ -648,7 +662,39 @@ bool Sql_cmd_xa_commit::process_external_xa_commit(THD *thd,
   else
     xid_state->unset_binlogged();
 
+  /*
+    Ensure externalization order for applier threads.
+
+    Note: the calls to Commit_order_manager::wait/wait_and_finish() will be
+          no-op for threads other than replication applier threads.
+  */
+  if (Commit_order_manager::wait(thd)) {
+    /*
+      In case of error, wait_and_finish() checks if transaction can be
+      retried and if it can be retried then only it remove itself from
+      waiting (Commit Order Queue) and allow next applier thread to be
+      ordered.
+    */
+    Commit_order_manager::wait_and_finish(thd, true);
+
+    need_clear_owned_gtid = true;
+    gtid_error = true;
+    gtid_state_commit_or_rollback(thd, need_clear_owned_gtid, !gtid_error);
+    thd->mdl_context.rollback_to_savepoint(mdl_savepoint);
+    return true;
+  }
+
   res = ha_commit_or_rollback_by_xid(thd, external_xid, !res) || res;
+
+  /*
+    After ensuring externalization order for applier thread, remove it
+    from waiting (Commit Order Queue) and allow next applier thread to
+    be ordered.
+
+    Note: the calls to Commit_order_manager::wait_and_finish() will be
+          no-op for threads other than replication applier threads.
+  */
+  Commit_order_manager::wait_and_finish(thd, res);
 
   xid_state->unset_binlogged();
 
@@ -711,7 +757,7 @@ bool Sql_cmd_xa_commit::process_internal_xa_commit(THD *thd,
       return true;
     }
 
-    gtid_error = commit_owned_gtids(thd, true, &need_clear_owned_gtid);
+    std::tie(gtid_error, need_clear_owned_gtid) = commit_owned_gtids(thd, true);
     if (gtid_error) {
       res = true;
       /*
@@ -841,6 +887,13 @@ bool Sql_cmd_xa_rollback::process_external_xa_rollback(THD *thd,
   DBUG_ASSERT(xs->get_xid()->eq(external_xid));
 
   /*
+    Metadata locks taken during XA ROLLBACK should be released when
+    there is error in commit order execution, so we take a savepoint
+    and rollback to it in case of error.
+  */
+  MDL_savepoint mdl_savepoint = thd->mdl_context.mdl_savepoint();
+
+  /*
     Acquire XID_STATE::m_xa_lock to prevent concurrent running of two
     XA COMMIT/XA ROLLBACK statements. Without acquiring this lock an attempt
     to run two XA COMMIT/XA ROLLBACK statement for the same xid value may lead
@@ -869,8 +922,9 @@ bool Sql_cmd_xa_rollback::process_external_xa_rollback(THD *thd,
     return true;
   }
 
+  bool gtid_error = false;
   bool need_clear_owned_gtid = false;
-  bool gtid_error = commit_owned_gtids(thd, true, &need_clear_owned_gtid);
+  std::tie(gtid_error, need_clear_owned_gtid) = commit_owned_gtids(thd, true);
   if (gtid_error) my_error(ER_XA_RBROLLBACK, MYF(0));
   bool res = xs->xa_trans_rolled_back();
 
@@ -879,8 +933,39 @@ bool Sql_cmd_xa_rollback::process_external_xa_rollback(THD *thd,
   else
     xid_state->unset_binlogged();
 
+  /*
+    Ensure externalization order for applier threads.
+
+    Note: the calls to Commit_order_manager::wait/wait_and_finish() will be
+          no-op for threads other than replication applier threads.
+  */
+  if (Commit_order_manager::wait(thd)) {
+    /*
+      In case of error, wait_and_finish() checks if transaction can be
+      retried and if it can be retried then only it remove itself from
+      waiting (Commit Order Queue) and allow next applier thread to be
+      ordered.
+    */
+    Commit_order_manager::wait_and_finish(thd, true);
+
+    need_clear_owned_gtid = true;
+    gtid_error = true;
+    gtid_state_commit_or_rollback(thd, need_clear_owned_gtid, !gtid_error);
+    thd->mdl_context.rollback_to_savepoint(mdl_savepoint);
+    return true;
+  }
+
   res = ha_commit_or_rollback_by_xid(thd, external_xid, false) || res;
 
+  /*
+    After ensuring externalization order for applier thread, remove it
+    from waiting (Commit Order Queue) and allow next applier thread to
+    be ordered.
+
+    Note: the calls to Commit_order_manager::wait_and_finish() will be
+          no-op for threads other than replication applier threads.
+  */
+  Commit_order_manager::wait_and_finish(thd, res);
   xid_state->unset_binlogged();
 
   MDL_context_backup_manager::instance().delete_backup(
@@ -933,8 +1018,9 @@ bool Sql_cmd_xa_rollback::process_internal_xa_rollback(THD *thd,
     return true;
   }
 
+  bool gtid_error = false;
   bool need_clear_owned_gtid = false;
-  bool gtid_error = commit_owned_gtids(thd, true, &need_clear_owned_gtid);
+  std::tie(gtid_error, need_clear_owned_gtid) = commit_owned_gtids(thd, true);
   bool res = xa_trans_force_rollback(thd) || gtid_error;
   gtid_state_commit_or_rollback(thd, need_clear_owned_gtid, !gtid_error);
   // todo: report a bug in that the raised rm_error in this branch
@@ -1105,19 +1191,19 @@ bool Sql_cmd_xa_prepare::trans_xa_prepare(THD *thd) {
                      MDL_INTENTION_EXCLUSIVE, MDL_STATEMENT);
     if (thd->mdl_context.acquire_lock(&mdl_request,
                                       thd->variables.lock_wait_timeout) ||
-        ha_prepare(thd)) {
+        ha_xa_prepare(thd)) {
       /*
-        Rollback the transaction if lock failed. For ha_prepare() failure
-        scenarios, transaction is already rolled back by ha_prepare().
+        Rollback the transaction if lock failed. For ha_xa_prepare() failure
+        scenarios, transaction is already rolled back by ha_xa_prepare().
       */
       if (!mdl_request.ticket) ha_rollback_trans(thd, true);
 
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
-      DBUG_ASSERT(thd->m_transaction_psi == NULL);
+      DBUG_ASSERT(thd->m_transaction_psi == nullptr);
 #endif
 
       /*
-        Reset rm_error in case ha_prepare() returned error,
+        Reset rm_error in case ha_xa_prepare() returned error,
         so thd->transaction.xid structure gets reset
         by THD::transaction::cleanup().
       */
@@ -1602,11 +1688,11 @@ bool applier_reset_xa_trans(THD *thd) {
      previously saved is restored.
   */
   attach_native_trx(thd);
-  trn_ctx->set_ha_trx_info(Transaction_ctx::SESSION, NULL);
+  trn_ctx->set_ha_trx_info(Transaction_ctx::SESSION, nullptr);
   trn_ctx->set_no_2pc(Transaction_ctx::SESSION, false);
   trn_ctx->cleanup();
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
-  thd->m_transaction_psi = NULL;
+  thd->m_transaction_psi = nullptr;
 #endif
   thd->mdl_context.release_transactional_locks();
   /*
@@ -1649,7 +1735,7 @@ bool detach_native_trx(THD *thd, plugin_ref plugin, void *) {
     DBUG_ASSERT(!thd->get_ha_data(hton->slot)->ha_ptr_backup);
 
     hton->replace_native_transaction_in_thd(
-        thd, NULL, &thd->get_ha_data(hton->slot)->ha_ptr_backup);
+        thd, nullptr, &thd->get_ha_data(hton->slot)->ha_ptr_backup);
   }
 
   return false;
@@ -1663,8 +1749,8 @@ bool reattach_native_trx(THD *thd, plugin_ref plugin, void *) {
     /* restore the saved original engine transaction's link with thd */
     void **trx_backup = &thd->get_ha_data(hton->slot)->ha_ptr_backup;
 
-    hton->replace_native_transaction_in_thd(thd, *trx_backup, NULL);
-    *trx_backup = NULL;
+    hton->replace_native_transaction_in_thd(thd, *trx_backup, nullptr);
+    *trx_backup = nullptr;
   }
   return false;
 }

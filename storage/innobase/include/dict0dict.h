@@ -73,18 +73,6 @@ ulint dict_get_db_name_len(const char *name) /*!< in: table name in the form
                                              dbname '/' tablename */
     MY_ATTRIBUTE((warn_unused_result));
 #ifndef UNIV_HOTBACKUP
-/** Open a table from its database and table name, this is currently used by
- foreign constraint parser to get the referenced table.
- @return complete table name with database and table name, allocated from
- heap memory passed in */
-char *dict_get_referenced_table(
-    const char *name,          /*!< in: foreign key table name */
-    const char *database_name, /*!< in: table db name */
-    ulint database_name_len,   /*!< in: db name length */
-    const char *table_name,    /*!< in: table name */
-    ulint table_name_len,      /*!< in: table name length */
-    dict_table_t **table,      /*!< out: table object or NULL */
-    mem_heap_t *heap);         /*!< in: heap memory */
 /** Frees a foreign key struct. */
 void dict_foreign_free(
     dict_foreign_t *foreign); /*!< in, own: foreign key struct */
@@ -335,43 +323,6 @@ bool dict_foreign_replace_index(
     to use table->col_names */
     const dict_index_t *index) /*!< in: index to be replaced */
     MY_ATTRIBUTE((warn_unused_result));
-/** Scans a table create SQL string and adds to the data dictionary
-the foreign key constraints declared in the string. This function
-should be called after the indexes for a table have been created.
-Each foreign key constraint must be accompanied with indexes in
-bot participating tables. The indexes are allowed to contain more
-fields than mentioned in the constraint.
-
-@param[in]	trx		transaction
-@param[in]	sql_string	table create statement where
-                                foreign keys are declared like:
-                                FOREIGN KEY (a, b) REFERENCES table2(c, d),
-                                table2 can be written also with the database
-                                name before it: test.table2; the default
-                                database id the database of parameter name
-@param[in]	sql_length	length of sql_string
-@param[in]	name		table full name in normalized form
-@param[in]	reject_fks	if TRUE, fail with error code
-                                DB_CANNOT_ADD_CONSTRAINT if any
-                                foreign keys are found.
-@return error code or DB_SUCCESS */
-dberr_t dict_create_foreign_constraints(trx_t *trx, const char *sql_string,
-                                        size_t sql_length, const char *name,
-                                        ibool reject_fks)
-    MY_ATTRIBUTE((warn_unused_result));
-/** Parses the CONSTRAINT id's to be dropped in an ALTER TABLE statement.
- @return DB_SUCCESS or DB_CANNOT_DROP_CONSTRAINT if syntax error or the
- constraint id does not match */
-dberr_t dict_foreign_parse_drop_constraints(
-    mem_heap_t *heap,                  /*!< in: heap from which we can
-                                       allocate memory */
-    trx_t *trx,                        /*!< in: transaction */
-    dict_table_t *table,               /*!< in: table */
-    ulint *n,                          /*!< out: number of constraints
-                                       to drop */
-    const char ***constraints_to_drop) /*!< out: id's of the
-                                       constraints to drop */
-    MY_ATTRIBUTE((warn_unused_result));
 #endif /* !UNIV_HOTBACKUP */
 /** Returns a table object and increments its open handle count.
  NOTE! This is a high-level function to be used mainly from outside the
@@ -428,15 +379,6 @@ otherwise table->n_def */
 ulint dict_table_has_column(const dict_table_t *table, const char *col_name,
                             ulint col_nr = 0);
 
-/** Outputs info on foreign keys of a table. */
-void dict_print_info_on_foreign_keys(
-    ibool create_table_format, /*!< in: if TRUE then print in
-                  a format suitable to be inserted into
-                  a CREATE TABLE, otherwise in the format
-                  of SHOW TABLE STATUS */
-    FILE *file,                /*!< in: file where to print */
-    trx_t *trx,                /*!< in: transaction */
-    dict_table_t *table);      /*!< in: table */
 /** Outputs info on a foreign key of a table in a format suitable for
  CREATE TABLE. */
 void dict_print_info_on_foreign_key_in_create_format(
@@ -607,7 +549,7 @@ bool dict_table_has_atomic_blobs(const dict_table_t *table)
 @param[in]	use_data_dir	Table uses DATA DIRECTORY
 @param[in]	shared_space	Table uses a General Shared Tablespace */
 UNIV_INLINE
-void dict_tf_set(uint32_t *flags, rec_format_t format, ulint zip_ssize,
+void dict_tf_set(uint32_t *flags, rec_format_t format, uint32_t zip_ssize,
                  bool use_data_dir, bool shared_space);
 
 /** Initialize a dict_table_t::flags pointer.
@@ -1561,7 +1503,7 @@ ulint dict_index_zip_pad_optimal_page_size(
 /** Convert table flag to row format string.
  @return row format name */
 const char *dict_tf_to_row_format_string(
-    ulint table_flag); /*!< in: row format setting */
+    uint32_t table_flag); /*!< in: row format setting */
 /** Return maximum size of the node pointer record.
  @return maximum size of the record in bytes */
 ulint dict_index_node_ptr_max_size(const dict_index_t *index) /*!< in: index */

@@ -37,7 +37,7 @@
 #include "my_psi_config.h"
 #include "mysql/psi/mysql_memory.h"
 
-LIST *myisam_open_list = 0;
+LIST *myisam_open_list = nullptr;
 uchar myisam_file_magic[] = {
     (uchar)254,
     (uchar)254,
@@ -54,7 +54,8 @@ const char *myisam_log_filename = "myisam.log";
 File myisam_log_file = -1;
 uint myisam_quick_table_bits = 9;
 ulong myisam_block_size = MI_KEY_BLOCK_LENGTH; /* Best by test */
-bool myisam_flush = 0, myisam_delay_key_write = 0, myisam_single_user = 0;
+bool myisam_flush = false, myisam_delay_key_write = false,
+     myisam_single_user = false;
 /* Assume that we are in a single threaded program by default. */
 ulong myisam_concurrent_insert = 0;
 ulonglong myisam_max_temp_length = MAX_FILE_SIZE;

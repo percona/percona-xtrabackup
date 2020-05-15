@@ -51,16 +51,16 @@ LINE_BUFFER *batch_readline_init(ulong max_size, FILE *file) {
   if (my_fstat(fileno(file), &input_file_stat) ||
       MY_S_ISDIR(input_file_stat.st_mode) ||
       MY_S_ISBLK(input_file_stat.st_mode))
-    return 0;
+    return nullptr;
 #endif
 
   if (!(line_buff =
             (LINE_BUFFER *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(*line_buff),
                                      MYF(MY_WME | MY_ZEROFILL))))
-    return 0;
+    return nullptr;
   if (init_line_buffer(line_buff, my_fileno(file), batch_io_size, max_size)) {
     my_free(line_buff);
-    return 0;
+    return nullptr;
   }
   return line_buff;
 }
@@ -69,7 +69,7 @@ char *batch_readline(LINE_BUFFER *line_buff, bool binary_mode) {
   char *pos;
   ulong out_length;
 
-  if (!(pos = intern_read_line(line_buff, &out_length))) return 0;
+  if (!(pos = intern_read_line(line_buff, &out_length))) return nullptr;
   if (out_length && pos[out_length - 1] == '\n') {
 #if defined(_WIN32)
     /*
@@ -110,10 +110,10 @@ LINE_BUFFER *batch_readline_command(LINE_BUFFER *line_buff, char *str) {
     if (!(line_buff =
               (LINE_BUFFER *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(*line_buff),
                                        MYF(MY_WME | MY_ZEROFILL))))
-      return 0;
+      return nullptr;
   if (init_line_buffer_from_string(line_buff, str)) {
     my_free(line_buff);
-    return 0;
+    return nullptr;
   }
   return line_buff;
 }
@@ -129,10 +129,10 @@ static bool init_line_buffer(LINE_BUFFER *buffer, File file, ulong size,
   buffer->max_size = max_buffer;
   if (!(buffer->buffer = (char *)my_malloc(
             PSI_NOT_INSTRUMENTED, buffer->bufread + 1, MYF(MY_WME | MY_FAE))))
-    return 1;
+    return true;
   buffer->end_of_line = buffer->end = buffer->buffer;
   buffer->buffer[0] = 0; /* For easy start test */
-  return 0;
+  return false;
 }
 
 /*
@@ -147,7 +147,7 @@ static bool init_line_buffer_from_string(LINE_BUFFER *buffer, char *str) {
             (char *)my_realloc(PSI_NOT_INSTRUMENTED, (uchar *)buffer->buffer,
                                old_length + length + 2,
                                MYF(MY_FAE | MY_ALLOW_ZERO_PTR))))
-    return 1;
+    return true;
   buffer->end = buffer->buffer + old_length;
   if (old_length) buffer->end[-1] = ' ';
   memcpy(buffer->end, str, length);
@@ -156,7 +156,7 @@ static bool init_line_buffer_from_string(LINE_BUFFER *buffer, char *str) {
   buffer->end += length + 1;
   buffer->eof = 1;
   buffer->max_size = 1;
-  return 0;
+  return false;
 }
 
 /*
@@ -241,15 +241,15 @@ char *intern_read_line(LINE_BUFFER *buffer, ulong *out_length) {
         string truncation.
       */
       if (!(length = fill_buffer(buffer))) {
-        if (buffer->eof) return 0;
+        if (buffer->eof) return nullptr;
       } else if (length == (size_t)-1)
-        return NULL;
+        return nullptr;
       else
         continue;
       pos--; /* break line here */
-      buffer->truncated = 1;
+      buffer->truncated = true;
     } else
-      buffer->truncated = 0;
+      buffer->truncated = false;
     buffer->end_of_line = pos + 1;
     *out_length = (ulong)(pos + 1 - buffer->eof - buffer->start_of_line);
 

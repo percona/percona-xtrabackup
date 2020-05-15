@@ -25,15 +25,18 @@
 #include <stddef.h>
 
 #include <mysql/components/services/log_builtins.h>
+#include <mysql/components/services/mysql_admin_session.h>
 #include <mysqld_error.h>
 #include "lex_string.h"
 #include "my_dbug.h"
 #include "my_systime.h"  // my_sleep()
 
+static SERVICE_TYPE_NO_CONST(mysql_admin_session) * admin_session_factory;
+
 /* Sql_service_interface constructor */
 Sql_service_interface::Sql_service_interface(enum cs_text_or_binary cs_txt_bin,
                                              const CHARSET_INFO *charset)
-    : m_plugin(NULL), m_txt_or_bin(cs_txt_bin), m_charset(charset) {}
+    : m_plugin(nullptr), m_txt_or_bin(cs_txt_bin), m_charset(charset) {}
 
 Sql_service_interface::~Sql_service_interface() {
   /* close server session */
@@ -60,11 +63,11 @@ static void srv_session_error_handler(void *, unsigned int sql_errno,
 int Sql_service_interface::open_session() {
   DBUG_TRACE;
 
-  m_session = NULL;
+  m_session = nullptr;
   /* open a server session after server is in operating state */
   if (!wait_for_session_server(SESSION_WAIT_TIMEOUT)) {
-    m_session = srv_session_open(srv_session_error_handler, NULL);
-    if (m_session == NULL) return 1; /* purecov: inspected */
+    m_session = admin_session_factory->open(srv_session_error_handler, nullptr);
+    if (m_session == nullptr) return 1; /* purecov: inspected */
   } else {
     return 1; /* purecov: inspected */
   }
@@ -73,9 +76,9 @@ int Sql_service_interface::open_session() {
 }
 
 int Sql_service_interface::open_thread_session(void *plugin_ptr) {
-  DBUG_ASSERT(plugin_ptr != NULL);
+  DBUG_ASSERT(plugin_ptr != nullptr);
 
-  m_session = NULL;
+  m_session = nullptr;
   /* open a server session after server is in operating state */
   if (!wait_for_session_server(SESSION_WAIT_TIMEOUT)) {
     /* initalize new thread to be used with server session */
@@ -87,8 +90,8 @@ int Sql_service_interface::open_thread_session(void *plugin_ptr) {
       /* purecov: end */
     }
 
-    m_session = srv_session_open(srv_session_error_handler, NULL);
-    if (m_session == NULL) {
+    m_session = admin_session_factory->open(srv_session_error_handler, nullptr);
+    if (m_session == nullptr) {
       srv_session_deinit_thread();
       return 1;
     }
@@ -240,7 +243,7 @@ int Sql_service_interface::set_session_user(const char *user) {
     return 1;
     /* purecov: end */
   }
-  if (security_context_lookup(sc, user, "localhost", NULL, NULL)) {
+  if (security_context_lookup(sc, user, "localhost", nullptr, nullptr)) {
     /* purecov: begin inspected */
     LogPluginErr(ERROR_LEVEL,
                  ER_GRP_RPL_SQL_SERVICE_SERVER_ACCESS_DENIED_FOR_USER, user);
@@ -260,5 +263,37 @@ bool Sql_service_interface::is_acl_disabled() {
   if (false != security_context_get_option(scontext, "priv_user", &value))
     return false; /* purecov: inspected */
 
-  return 0 != value.length && NULL != strstr(value.str, "skip-grants ");
+  return 0 != value.length && nullptr != strstr(value.str, "skip-grants ");
+}
+
+bool sql_service_interface_init() {
+  SERVICE_TYPE(registry) *plugin_registry = mysql_plugin_registry_acquire();
+  my_h_service hadmin;
+  if (!plugin_registry) return true;
+
+  if (plugin_registry->acquire("mysql_admin_session", &hadmin)) {
+    mysql_plugin_registry_release(plugin_registry);
+    admin_session_factory = nullptr;
+    return true;
+  }
+
+  admin_session_factory =
+      reinterpret_cast<SERVICE_TYPE_NO_CONST(mysql_admin_session) *>(hadmin);
+  mysql_plugin_registry_release(plugin_registry);
+  return false;
+}
+
+bool sql_service_interface_deinit() {
+  if (admin_session_factory) {
+    SERVICE_TYPE(registry) *plugin_registry = mysql_plugin_registry_acquire();
+    if (!plugin_registry) return true;
+    my_h_service hadmin;
+
+    hadmin = reinterpret_cast<my_h_service>(admin_session_factory);
+    plugin_registry->release(hadmin);
+    admin_session_factory = nullptr;
+
+    mysql_plugin_registry_release(plugin_registry);
+  }
+  return false;
 }

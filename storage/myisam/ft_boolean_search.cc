@@ -62,6 +62,8 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
+#include <algorithm>
+
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -227,8 +229,8 @@ static int ftb_query_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
       ftbe->up = ftb_param->ftbe;
       ftbe->max_docid = ftbe->ythresh = ftbe->yweaks = 0;
       ftbe->docid[0] = ftbe->docid[1] = HA_OFFSET_ERROR;
-      ftbe->phrase = NULL;
-      ftbe->document = 0;
+      ftbe->phrase = nullptr;
+      ftbe->document = nullptr;
       if (info->quot) ftb_param->ftb->with_scan |= 2;
       if (info->yesno > 0) ftbe->up->ythresh++;
       ftb_param->ftbe = ftbe;
@@ -244,12 +246,12 @@ static int ftb_query_add_word(MYSQL_FTPARSER_PARAM *param, char *word,
         tmp_element->next = ftb_param->ftbe->document;
         ftb_param->ftbe->document->prev = tmp_element;
       }
-      info->quot = 0;
+      info->quot = nullptr;
       if (ftb_param->ftbe->up) {
         DBUG_ASSERT(ftb_param->depth);
         ftb_param->ftbe = ftb_param->ftbe->up;
         ftb_param->depth--;
-        ftb_param->up_quot = 0;
+        ftb_param->up_quot = nullptr;
       }
       break;
     case FT_TOKEN_EOF:
@@ -269,7 +271,7 @@ static int ftb_parse_query_internal(MYSQL_FTPARSER_PARAM *param, char *query,
   FT_WORD w;
 
   info.prev = ' ';
-  info.quot = 0;
+  info.quot = nullptr;
   while (ft_get_word(cs, start, end, &w, &info))
     param->mysql_add_word(param, (char *)w.pos, w.len, &info);
   return (0);
@@ -288,7 +290,7 @@ static int _ftb_parse_query(FTB *ftb, uchar *query, uint len,
   ftb_param.ftb = ftb;
   ftb_param.depth = 0;
   ftb_param.ftbe = ftb->root;
-  ftb_param.up_quot = 0;
+  ftb_param.up_quot = nullptr;
 
   param->mysql_parse = ftb_parse_query_internal;
   param->mysql_add_word = ftb_query_add_word;
@@ -347,7 +349,7 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, bool init_search) {
     FTB_EXPR *tmp;
 
     for (tmp = ftbw->max_docid_expr; tmp; tmp = tmp->up)
-      set_if_bigger(max_docid, tmp->max_docid);
+      max_docid = std::max(max_docid, tmp->max_docid);
 
     if (ftbw->docid[0] < max_docid) {
       sflag |= SEARCH_SAME;
@@ -384,7 +386,7 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, bool init_search) {
   {
     if (!ftbw->off || !(ftbw->flags & FTB_FLAG_TRUNC)) {
       ftbw->docid[0] = HA_OFFSET_ERROR;
-      if ((ftbw->flags & FTB_FLAG_YES) && ftbw->up->up == 0) {
+      if ((ftbw->flags & FTB_FLAG_YES) && ftbw->up->up == nullptr) {
         /*
           This word MUST BE present in every document returned,
           so we can stop the search right now
@@ -410,7 +412,7 @@ static int _ft2_search_no_lock(FTB *ftb, FTB_WORD *ftbw, bool init_search) {
     ftbw->key_root = info->s->state.key_root[ftb->keynr];
     ftbw->keyinfo = info->s->keyinfo + ftb->keynr;
     ftbw->off = 0;
-    return _ft2_search_no_lock(ftb, ftbw, 0);
+    return _ft2_search_no_lock(ftb, ftbw, false);
   }
 
   /* matching key found */
@@ -482,7 +484,7 @@ static void _ftb_init_index_search(FT_INFO *ftb_base) {
            ftbe->up->flags |= FTB_FLAG_TRUNC, ftbe = ftbe->up) {
         if (ftbe->flags & FTB_FLAG_NO || /* 2 */
             ftbe->up->ythresh - ftbe->up->yweaks >
-                (uint)MY_TEST(ftbe->flags & FTB_FLAG_YES)) /* 1 */
+                ((ftbe->flags & FTB_FLAG_YES) ? 1 : 0)) /* 1 */
         {
           FTB_EXPR *top_ftbe = ftbe->up;
           ftbw->docid[0] = HA_OFFSET_ERROR;
@@ -490,21 +492,21 @@ static void _ftb_init_index_search(FT_INFO *ftb_base) {
                ftbe != top_ftbe && !(ftbe->flags & FTB_FLAG_NO);
                ftbe = ftbe->up)
             ftbe->up->yweaks++;
-          ftbe = 0;
+          ftbe = nullptr;
           break;
         }
       }
       if (!ftbe) continue;
       /* 4 */
       if (!is_tree_inited(&ftb->no_dupes))
-        init_tree(&ftb->no_dupes, 0, 0, sizeof(my_off_t), _ftb_no_dupes_cmp, 0,
-                  0, 0);
+        init_tree(&ftb->no_dupes, 0, sizeof(my_off_t), _ftb_no_dupes_cmp, false,
+                  nullptr, nullptr);
       else
         reset_tree(&ftb->no_dupes);
     }
 
     ftbw->off = 0; /* in case of reinit */
-    if (_ft2_search(ftb, ftbw, 1)) return;
+    if (_ft2_search(ftb, ftbw, true)) return;
   }
   queue_fix(&ftb->queue);
 }
@@ -516,7 +518,7 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   FTB_WORD *ftbw;
 
   if (!(ftb = (FTB *)my_malloc(mi_key_memory_FTB, sizeof(FTB), MYF(MY_WME))))
-    return 0;
+    return nullptr;
   ftb->please = const_cast<struct _ft_vft *>(&_ft_vft_boolean);
   ftb->state = FTB::UNINITIALIZED;
   ftb->info = info;
@@ -527,7 +529,7 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   ftb->with_scan = 0;
   ftb->lastpos = HA_OFFSET_ERROR;
   memset(&ftb->no_dupes, 0, sizeof(TREE));
-  ftb->last_word = 0;
+  ftb->last_word = nullptr;
 
   init_alloc_root(PSI_INSTRUMENT_ME, &ftb->mem_root, 1024, 1024);
   ftb->queue.max_elements = 0;
@@ -535,11 +537,11 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   ftbe->weight = 1;
   ftbe->flags = FTB_FLAG_YES;
   ftbe->nos = 1;
-  ftbe->up = 0;
+  ftbe->up = nullptr;
   ftbe->max_docid = ftbe->ythresh = ftbe->yweaks = 0;
   ftbe->docid[0] = ftbe->docid[1] = HA_OFFSET_ERROR;
-  ftbe->phrase = NULL;
-  ftbe->document = 0;
+  ftbe->phrase = nullptr;
+  ftbe->document = nullptr;
   ftb->root = ftbe;
   if (unlikely(_ftb_parse_query(ftb, query, query_len,
                                 keynr == NO_SUCH_KEY
@@ -553,8 +555,8 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
   if (!(ftb->queue.root = (uchar **)ftb->mem_root.Alloc(
             (ftb->queue.max_elements + 1) * sizeof(void *))))
     goto err;
-  reinit_queue(&ftb->queue, key_memory_QUEUE, ftb->queue.max_elements, 0, 0,
-               FTB_WORD_cmp, 0);
+  reinit_queue(&ftb->queue, key_memory_QUEUE, ftb->queue.max_elements, 0, false,
+               FTB_WORD_cmp, nullptr);
   for (ftbw = ftb->last_word; ftbw; ftbw = ftbw->prev)
     queue_insert(&ftb->queue, (uchar *)ftbw);
   ftb->list = (FTB_WORD **)ftb->mem_root.Alloc(sizeof(FTB_WORD *) *
@@ -566,7 +568,7 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
               /* ORDER BY word, ndepth */
               int i = ha_compare_text(ftb->charset, (uchar *)a->word + 1,
                                       a->len - 1, (uchar *)b->word + 1,
-                                      b->len - 1, 0);
+                                      b->len - 1, false);
               if (i != 0) return i < 0;
               return a->ndepth < b->ndepth;
             });
@@ -576,7 +578,7 @@ FT_INFO *ft_init_boolean_search(MI_INFO *info, uint keynr, uchar *query,
 err:
   free_root(&ftb->mem_root, MYF(0));
   my_free(ftb);
-  return 0;
+  return nullptr;
 }
 
 struct MY_FTB_PHRASE_PARAM {
@@ -625,7 +627,7 @@ static int ftb_check_phrase_internal(MYSQL_FTPARSER_PARAM *param,
   const uchar *docend = (uchar *)document + len;
   while (ft_simple_get_word(phrase_param->cs, (uchar **)&document, docend,
                             &word, false)) {
-    param->mysql_add_word(param, (char *)word.pos, word.len, 0);
+    param->mysql_add_word(param, (char *)word.pos, word.len, nullptr);
     if (phrase_param->match) break;
   }
   return 0;
@@ -679,7 +681,7 @@ static int _ftb_climb_the_tree(FTB *ftb, FTB_WORD *ftbw,
   FT_SEG_ITERATOR ftsi;
   FTB_EXPR *ftbe;
   float weight = ftbw->weight;
-  int yn_flag = ftbw->flags, ythresh, mode = (ftsi_orig != 0);
+  int yn_flag = ftbw->flags, ythresh, mode = (ftsi_orig != nullptr);
   my_off_t curdoc = ftbw->docid[mode];
   struct st_mysql_ftparser *parser =
       ftb->keynr == NO_SUCH_KEY ? &ft_default_parser
@@ -763,13 +765,13 @@ extern "C" int ft_boolean_read_next(FT_INFO *ftb_base, char *record) {
          (curdoc = ((FTB_WORD *)queue_top(&ftb->queue))->docid[0]) !=
              HA_OFFSET_ERROR) {
     while (curdoc == (ftbw = (FTB_WORD *)queue_top(&ftb->queue))->docid[0]) {
-      if (unlikely(_ftb_climb_the_tree(ftb, ftbw, 0))) {
+      if (unlikely(_ftb_climb_the_tree(ftb, ftbw, nullptr))) {
         set_my_errno(HA_ERR_OUT_OF_MEM);
         goto err;
       }
 
       /* update queue */
-      _ft2_search(ftb, ftbw, 0);
+      _ft2_search(ftb, ftbw, false);
       queue_replaced(&ftb->queue);
     }
 
@@ -801,7 +803,7 @@ extern "C" int ft_boolean_read_next(FT_INFO *ftb_base, char *record) {
   ftb->state = FTB::INDEX_DONE;
   set_my_errno(HA_ERR_END_OF_FILE);
 err:
-  ftb->queue.first_cmp_arg = (void *)0;
+  ftb->queue.first_cmp_arg = (void *)nullptr;
   return my_errno();
 }
 
@@ -872,7 +874,7 @@ static int ftb_find_relevance_parse(MYSQL_FTPARSER_PARAM *param, char *doc,
   uchar *end = (uchar *)doc + len;
   FT_WORD w;
   while (ft_simple_get_word(ftb->charset, (uchar **)&doc, end, &w, true))
-    param->mysql_add_word(param, (char *)w.pos, w.len, 0);
+    param->mysql_add_word(param, (char *)w.pos, w.len, nullptr);
   return (0);
 }
 

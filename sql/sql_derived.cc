@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
 #include <sys/types.h>
 
 #include "lex_string.h"
+#include "my_alloc.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -55,10 +56,9 @@
 #include "sql/sql_tmp_table.h"  // Tmp tables
 #include "sql/sql_union.h"      // Query_result_union
 #include "sql/sql_view.h"       // check_duplicate_names
-#include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/table_function.h"
-#include "sql/temp_table_param.h"
+#include "sql/thd_raii.h"
 #include "thr_lock.h"
 
 class Opt_trace_context;
@@ -203,7 +203,7 @@ TABLE *Common_table_expr::clone_tmp_table(THD *thd, TABLE_LIST *tl) {
   // In case this clone is used to fill the materialized table:
   bitmap_set_all(t->write_set);
   t->reginfo.lock_type = TL_WRITE;
-  t->copy_blobs = 1;
+  t->copy_blobs = true;
 
   tl->table = t;
   t->pos_in_table_list = tl;
@@ -232,7 +232,7 @@ bool Common_table_expr::substitute_recursive_reference(THD *thd,
   if (t == nullptr) return true; /* purecov: inspected */
   // Eliminate the dummy unit:
   tl->derived_unit()->exclude_tree(thd);
-  tl->set_derived_unit(NULL);
+  tl->set_derived_unit(nullptr);
   tl->set_privileges(SELECT_ACL);
   return false;
 }
@@ -287,6 +287,9 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
 
   if (!is_view_or_derived() || is_merged() || is_table_function()) return false;
 
+  // This early return can be deleted after WL#6570.
+  if (derived->is_prepared()) return false;
+
   // Dummy derived tables for recursive references disappear before this stage
   DBUG_ASSERT(this != select_lex->recursive_reference);
 
@@ -302,7 +305,7 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
   if (is_view())  // but views cannot.
     for (SELECT_LEX *sl = derived->first_select(); sl; sl = sl->next_select()) {
       // Make sure there are no outer references
-      DBUG_ASSERT(sl->context.outer_context == NULL);
+      DBUG_ASSERT(sl->context.outer_context == nullptr);
     }
 #endif
 
@@ -314,8 +317,7 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
       my_error(ER_CTE_RECURSIVE_REQUIRES_UNION, MYF(0), alias);
       return true;
     }
-    if (derived->global_parameters()->is_ordered() ||
-        derived->global_parameters()->has_limit()) {
+    if (derived->global_parameters()->is_ordered()) {
       /*
         ORDER BY applied to the UNION causes the use of the union tmp
         table. The fake_select_lex would want to sort that table, which isn't
@@ -324,16 +326,16 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
         Another reason: allowing
         ORDER BY <condition using fulltext> would make the UNION tmp table be
         of MyISAM engine which recursive CTEs don't support.
-        LIMIT will mislead people; they'll possibly add it to an infinite
-        recursive query and think it will stop it, but it won't, as LIMIT
-        isn't quite pushed down to UNION parts (see Bug #79340). Moreover,
-        without ORDER BY the LIMIT theoretically returns unpredictable rows.
-        Instead of LIMIT, the user can have a counter column and use a WHERE
+        LIMIT is allowed and will stop the row generation after N rows.
+        However, without ORDER BY the CTE's content is ordered in an
+        unpredictable way, so LIMIT theoretically returns an unpredictable
+        subset of rows. Users are on their own.
+        Instead of LIMIT, users can have a counter column and use a WHERE
         on it, to control depth level, which sounds more intelligent than a
         limit.
       */
       my_error(ER_NOT_SUPPORTED_YET, MYF(0),
-               "ORDER BY / LIMIT over UNION "
+               "ORDER BY over UNION "
                "in recursive Common Table Expression");
       return true;
     }
@@ -346,7 +348,7 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
       it to have more than one recursive SELECT.
     */
     bool previous_is_recursive = false;
-    SELECT_LEX *last_non_recursive = NULL;
+    SELECT_LEX *last_non_recursive = nullptr;
     for (SELECT_LEX *sl = derived->first_select(); sl; sl = sl->next_select()) {
       if (sl->is_recursive()) {
         if (sl->is_ordered() || sl->has_limit() || sl->is_distinct()) {
@@ -413,10 +415,10 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
     The SELECT_STRAIGHT_JOIN option prevents semi-join transformation.
   */
   if (derived->prepare(thd, derived_result,
-                       !apply_semijoin ? SELECT_STRAIGHT_JOIN : 0, 0))
+                       !apply_semijoin ? SELECT_NO_SEMI_JOIN : 0, 0))
     return true;
 
-  if (check_duplicate_names(m_derived_column_names, derived->types, 0))
+  if (check_duplicate_names(m_derived_column_names, derived->types, false))
     return true;
 
   if (is_derived()) {
@@ -497,7 +499,7 @@ bool TABLE_LIST::setup_materialized_derived_tmp_table(THD *thd)
 {
   DBUG_TRACE;
 
-  DBUG_ASSERT(is_view_or_derived() && !is_merged() && table == NULL);
+  DBUG_ASSERT(is_view_or_derived() && !is_merged() && table == nullptr);
 
   DBUG_PRINT("info", ("algorithm: TEMPORARY TABLE"));
 
@@ -520,7 +522,7 @@ bool TABLE_LIST::setup_materialized_derived_tmp_table(THD *thd)
     derived_result->table = table;
   }
 
-  if (table == NULL) {
+  if (table == nullptr) {
     // Create the result table for the materialization
     ulonglong create_options =
         derived->first_select()->active_options() | TMP_TABLE_ALL_COLUMNS;
@@ -543,7 +545,7 @@ bool TABLE_LIST::setup_materialized_derived_tmp_table(THD *thd)
     // will happen on that table, and is not set here.) create_result_table()
     // will figure out whether it wants to create it as the primary key or just
     // a regular index.
-    bool is_distinct = derived->can_materialize_directly_into_result(thd) &&
+    bool is_distinct = derived->can_materialize_directly_into_result() &&
                        derived->union_distinct != nullptr;
 
     bool rc = derived_result->create_result_table(
@@ -599,11 +601,10 @@ bool SELECT_LEX_UNIT::check_materialized_derived_query_blocks(THD *thd_arg) {
 
     // Set all selected fields to be read:
     // @todo Do not set fields that are not referenced from outer query
-    DBUG_ASSERT(thd_arg->mark_used_columns == MARK_COLUMNS_READ);
     List_iterator<Item> it(sl->all_fields);
     Item *item;
     Column_privilege_tracker tracker(thd_arg, SELECT_ACL);
-    Mark_field mf(thd_arg->mark_used_columns);
+    Mark_field mf(MARK_COLUMNS_READ);
     while ((item = it++)) {
       if (item->walk(&Item::check_column_privileges, enum_walk::PREFIX,
                      (uchar *)thd_arg))
@@ -749,7 +750,7 @@ bool TABLE_LIST::create_materialized_table(THD *thd) {
     2) Table is a constant one with all NULL values.
   */
   if (table->is_created() ||                          // 1
-      (select_lex->join != NULL &&                    // 2
+      (select_lex->join != nullptr &&                 // 2
        (select_lex->join->const_table_map & map())))  // 2
   {
     /*
@@ -757,9 +758,9 @@ bool TABLE_LIST::create_materialized_table(THD *thd) {
       they would have been materialized already.
     */
 #ifndef DBUG_OFF
-    if (table != NULL) {
+    if (table != nullptr) {
       QEP_TAB *tab = table->reginfo.qep_tab;
-      DBUG_ASSERT(tab == NULL || tab->type() != JT_CONST ||
+      DBUG_ASSERT(tab == nullptr || tab->type() != JT_CONST ||
                   table->has_null_row());
     }
 #endif
@@ -797,6 +798,7 @@ bool TABLE_LIST::materialize_derived(THD *thd) {
   while (TABLE *t = it.get_next())
     if (t->materialized) {
       table->materialized = true;
+      table->set_not_started();
       return false;
     }
 
@@ -834,6 +836,11 @@ bool TABLE_LIST::materialize_derived(THD *thd) {
   }
 
   table->materialized = true;
+
+  // Mark the table as not started (default is just zero status),
+  // or read_system() and read_const() will forget to read the row.
+  table->set_not_started();
+
   return res;
 }
 

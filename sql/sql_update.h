@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@ class COPY_INFO;
 class Copy_field;
 class Item;
 class SELECT_LEX_UNIT;
+class Select_lex_visitor;
 class THD;
 class Temp_table_param;
 struct TABLE;
@@ -116,20 +117,20 @@ class Query_result_update final : public Query_result_interceptor {
   Query_result_update(List<Item> *field_list, List<Item> *value_list)
       : Query_result_interceptor(),
         update_table_count(0),
-        update_tables(NULL),
-        tmp_tables(NULL),
-        main_table(NULL),
-        table_to_update(NULL),
+        update_tables(nullptr),
+        tmp_tables(nullptr),
+        main_table(nullptr),
+        table_to_update(nullptr),
         found_rows(0),
         updated_rows(0),
         fields(field_list),
         values(value_list),
-        copy_field(NULL),
+        copy_field(nullptr),
         update_completed(false),
         trans_safe(true),
         transactional_tables(false),
         error_handled(false),
-        update_operations(NULL) {}
+        update_operations(nullptr) {}
   bool need_explain_interceptor() const override { return true; }
   bool prepare(THD *thd, List<Item> &list, SELECT_LEX_UNIT *u) override;
   bool optimize() override;

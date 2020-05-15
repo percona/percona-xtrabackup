@@ -77,9 +77,9 @@ class Tablespace {
   /** Set tablespace name
   @param[in]	name	tablespace name */
   void set_name(const char *name) {
-    ut_ad(m_name == NULL);
+    ut_ad(m_name == nullptr);
     m_name = mem_strdup(name);
-    ut_ad(m_name != NULL);
+    ut_ad(m_name != nullptr);
   }
 
   /** Get tablespace name
@@ -90,9 +90,9 @@ class Tablespace {
   @param[in]	path	where tablespace file(s) resides
   @param[in]	len	length of the file path */
   void set_path(const char *path, size_t len) {
-    ut_ad(m_path == NULL);
+    ut_ad(m_path == nullptr);
     m_path = mem_strdupl(path, len);
-    ut_ad(m_path != NULL);
+    ut_ad(m_path != nullptr);
 
     Fil_path::normalize(m_path);
   }

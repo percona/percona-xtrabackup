@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -19,10 +26,13 @@
 #define TRANSPOOL_HPP
 
 #include "TransientSlotPool.hpp"
+#include "debugger/EventLogger.hpp"
 #include "vm/ComposedSlotPool.hpp"
 #include "vm/Slot.hpp"
 
 #define JAM_FILE_ID 506
+
+extern EventLogger * g_eventLogger;
 
 #define SIZEOF_IN_WORDS(T) ((sizeof(T) + sizeof(Uint32) - 1) / sizeof(Uint32))
 
@@ -79,8 +89,27 @@ template<typename T, Uint32 Slot_size> inline bool TransientPool<T, Slot_size>::
     return false;
   }
   p.i = slot.i;
+#if defined VM_TRACE || defined ERROR_INSERT
+  memset(reinterpret_cast<void*>(slot.p), 0xF4, Slot_size * sizeof(Uint32));
+#endif
   p.p = new (slot.p) T;
-  require(Magic::match(p.p->m_magic, T::TYPE_ID));
+  if (unlikely(!Magic::match(p.p->m_magic, T::TYPE_ID)))
+  {
+    g_eventLogger->info("Magic::match failed in %s: "
+                        "type_id %08x rg %u tid %u: "
+                        "slot_size %u: ptr.i %u: ptr.p %p: "
+                        "magic %08x expected %08x",
+                        __func__,
+                        T::TYPE_ID,
+                        GET_RG(T::TYPE_ID),
+                        GET_TID(T::TYPE_ID),
+                        Slot_size,
+                        p.i,
+                        p.p,
+                        p.p->m_magic,
+                        Magic::make(T::TYPE_ID));
+    require(Magic::match(p.p->m_magic, T::TYPE_ID));
+  }
   return true;
 }
 

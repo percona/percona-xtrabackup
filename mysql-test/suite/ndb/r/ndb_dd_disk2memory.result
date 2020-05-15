@@ -213,38 +213,38 @@ COUNT(*)
 SHOW CREATE TABLE test.t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `pk2` int(11) NOT NULL,
-  `b2` int(11) NOT NULL,
-  `c2` int(11) NOT NULL,
+  `pk2` int NOT NULL,
+  `b2` int NOT NULL,
+  `c2` int NOT NULL,
   PRIMARY KEY (`pk2`)
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 SHOW CREATE TABLE test.t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `pk1` int(11) NOT NULL,
-  `b` int(11) NOT NULL,
-  `c` int(11) NOT NULL,
+  `pk1` int NOT NULL,
+  `b` int NOT NULL,
+  `c` int NOT NULL,
   PRIMARY KEY (`pk1`)
-) /*!50100 TABLESPACE `table_space1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) /*!50100 TABLESPACE `table_space1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 ALTER TABLE test.t2 TABLESPACE table_space1 STORAGE DISK
 ENGINE=NDB;
 SHOW CREATE TABLE test.t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `pk2` int(11) NOT NULL,
-  `b2` int(11) NOT NULL,
-  `c2` int(11) NOT NULL,
+  `pk2` int NOT NULL,
+  `b2` int NOT NULL,
+  `c2` int NOT NULL,
   PRIMARY KEY (`pk2`)
-) /*!50100 TABLESPACE `table_space1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) /*!50100 TABLESPACE `table_space1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 ALTER TABLE test.t1 STORAGE MEMORY ENGINE=NDBCLUSTER;
 SHOW CREATE TABLE test.t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `pk1` int(11) NOT NULL,
-  `b` int(11) NOT NULL,
-  `c` int(11) NOT NULL,
+  `pk1` int NOT NULL,
+  `b` int NOT NULL,
+  `c` int NOT NULL,
   PRIMARY KEY (`pk1`)
-) /*!50100 TABLESPACE `table_space1` STORAGE MEMORY */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) /*!50100 TABLESPACE `table_space1` STORAGE MEMORY */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 
 DROP TABLE test.t1;
 DROP TABLE test.t2;
@@ -329,9 +329,9 @@ ALTER TABLE test.t2 ADD INDEX (b2), ADD INDEX (b3), ADD INDEX (b8);
 SHOW CREATE TABLE test.t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a1` smallint(6) NOT NULL,
-  `a2` int(11) NOT NULL,
-  `a3` bigint(20) NOT NULL,
+  `a1` smallint NOT NULL,
+  `a2` int NOT NULL,
+  `a3` bigint NOT NULL,
   `a4` char(10) DEFAULT NULL,
   `a5` decimal(5,1) DEFAULT NULL,
   `a6` time DEFAULT NULL,
@@ -343,13 +343,13 @@ t1	CREATE TABLE `t1` (
   KEY `a2` (`a2`),
   KEY `a3` (`a3`),
   KEY `a8` (`a8`)
-) /*!50100 TABLESPACE `table_space1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) /*!50100 TABLESPACE `table_space1` STORAGE DISK */ ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 SHOW CREATE TABLE test.t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `b1` smallint(6) NOT NULL,
-  `b2` int(11) NOT NULL,
-  `b3` bigint(20) NOT NULL,
+  `b1` smallint NOT NULL,
+  `b2` int NOT NULL,
+  `b3` bigint NOT NULL,
   `b4` char(10) DEFAULT NULL,
   `b5` decimal(5,1) DEFAULT NULL,
   `b6` time DEFAULT NULL,
@@ -361,7 +361,7 @@ t2	CREATE TABLE `t2` (
   KEY `b2` (`b2`),
   KEY `b3` (`b3`),
   KEY `b8` (`b8`)
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=READ_BACKUP=1'
 SELECT * FROM test.t1 order by a1;
 a1	a2	a3	a4	a5	a6	a7	a8	a9	a10
 1	2	2000000001	aaa1	34.2	04:03:02	2006-01-01	1971-05-28 16:55:03	bbbbbbbbbbbbb1	binary data

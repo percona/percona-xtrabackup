@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
+#include <algorithm>
+
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -112,7 +114,7 @@ int main(int argc, char **argv) {
   log_filename = myisam_log_filename;
   get_options(&argc, &argv);
   /* Number of MyISAM files we can have open at one time */
-  max_files = (my_set_max_open_files(MY_MIN(max_files, 8)) - 6) / 2;
+  max_files = (my_set_max_open_files(std::min(max_files, 8U)) - 6) / 2;
   if (update)
     printf("Trying to %s MyISAM files according to log '%s'\n",
            (recover ? "recover" : "update"), log_filename);
@@ -139,7 +141,6 @@ int main(int argc, char **argv) {
     printf("Had to do %d re-open because of too few possibly open files\n",
            re_open_count);
   (void)mi_panic(HA_PANIC_CLOSE);
-  my_free_open_file_info();
   my_end(test_info ? MY_CHECK_ERROR | MY_GIVE_INFO : MY_CHECK_ERROR);
   mysql_cond_destroy(&main_thread_keycache_var.suspend);
   exit(error);
@@ -197,7 +198,7 @@ static void get_options(int *argc, char ***argv) {
             else
               pos = *(++*argv);
           }
-          start_offset = (my_off_t)my_strtoll(pos, NULL, 10);
+          start_offset = (my_off_t)my_strtoll(pos, nullptr, 10);
           pos = " ";
           break;
         case 'p':
@@ -225,7 +226,7 @@ static void get_options(int *argc, char ***argv) {
           }
           record_pos_file = pos;
           if (!--*argc) goto err;
-          record_pos = (my_off_t)my_strtoll(*(++*argv), NULL, 10);
+          record_pos = (my_off_t)my_strtoll(*(++*argv), nullptr, 10);
           pos = " ";
           break;
         case 'v':
@@ -328,7 +329,7 @@ static int examine_log(const char *file_name, char **table_names) {
   DBUG_TRACE;
 
   if ((file = my_open(file_name, O_RDONLY, MYF(MY_WME))) < 0) return 1;
-  write_file = 0;
+  write_file = nullptr;
   if (write_filename) {
     if (!(write_file = my_fopen(write_filename, O_WRONLY, MYF(MY_WME)))) {
       my_close(file, MYF(0));
@@ -336,10 +337,10 @@ static int examine_log(const char *file_name, char **table_names) {
     }
   }
 
-  init_io_cache(&cache, file, 0, READ_CACHE, start_offset, 0, MYF(0));
+  init_io_cache(&cache, file, 0, READ_CACHE, start_offset, false, MYF(0));
   memset(com_count, 0, sizeof(com_count));
-  init_tree(&tree, 0, 0, sizeof(file_info), file_info_compare, 1,
-            file_info_free, NULL);
+  init_tree(&tree, 0, sizeof(file_info), file_info_compare, true,
+            file_info_free, nullptr);
   (void)init_key_cache(dflt_key_cache, KEY_CACHE_BLOCK_SIZE, KEY_CACHE_SIZE, 0,
                        0);
 
@@ -382,10 +383,10 @@ static int examine_log(const char *file_name, char **table_names) {
               "Maybe you should use the -P option ?\n",
               curr_file_info->show_name);
         if (my_b_read(&cache, (uchar *)head, 2)) goto err;
-        buff = 0;
-        file_info.name = 0;
-        file_info.show_name = 0;
-        file_info.record = 0;
+        buff = nullptr;
+        file_info.name = nullptr;
+        file_info.show_name = nullptr;
+        file_info.record = nullptr;
         if (read_string(&cache, &buff, (uint)mi_uint2korr(head))) goto err;
         {
           uint i;
@@ -424,15 +425,15 @@ static int examine_log(const char *file_name, char **table_names) {
                               (uint)strlen(isam_file_name) + 10, MYF(MY_WME));
         if (file_info.id > 1)
           sprintf(strend(file_info.show_name), "<%d>", file_info.id);
-        file_info.closed = 1;
+        file_info.closed = true;
         file_info.accessed = access_time;
-        file_info.used = 1;
+        file_info.used = true;
         if (table_names[0]) {
           char **name;
-          file_info.used = 0;
+          file_info.used = false;
           for (name = table_names; *name; name++) {
             if (!strcmp(*name, isam_file_name))
-              file_info.used = 1; /* Update/log only this */
+              file_info.used = true; /* Update/log only this */
           }
         }
         if (update && file_info.used) {
@@ -448,7 +449,7 @@ static int examine_log(const char *file_name, char **table_names) {
                     MYF(MY_WME))))
             goto end;
           files_open++;
-          file_info.closed = 0;
+          file_info.closed = false;
         }
         (void)tree_insert(&tree, (uchar *)&file_info, 0, tree.custom_arg);
         if (file_info.used) {
@@ -476,7 +477,8 @@ static int examine_log(const char *file_name, char **table_names) {
           printf_log("%s: %s(%d) -> %d", FILENAME(curr_file_info),
                      command_name[command], (int)extra_command, result);
         if (update && curr_file_info && !curr_file_info->closed) {
-          if (mi_extra(curr_file_info->isam, extra_command, 0) != (int)result) {
+          if (mi_extra(curr_file_info->isam, extra_command, nullptr) !=
+              (int)result) {
             fflush(stdout);
             (void)fprintf(
                 stderr, "Warning: error %d, expected %d on command %s at %s\n",
@@ -519,7 +521,7 @@ static int examine_log(const char *file_name, char **table_names) {
         if (my_b_read(&cache, (uchar *)head, 12)) goto err;
         filepos = mi_sizekorr(head);
         length = mi_uint4korr(head + 8);
-        buff = 0;
+        buff = nullptr;
         if (read_string(&cache, &buff, (uint)length)) goto err;
         if ((!record_pos_file ||
              ((record_pos == filepos || record_pos == NO_FILEPOS) &&
@@ -609,7 +611,7 @@ static int examine_log(const char *file_name, char **table_names) {
         goto end;
     }
   }
-  end_key_cache(dflt_key_cache, 1);
+  end_key_cache(dflt_key_cache, true);
   delete_tree(&tree);
   (void)end_io_cache(&cache);
   (void)my_close(file, MYF(0));
@@ -628,7 +630,7 @@ com_err:
                 llstr(isamlog_filepos, llbuff));
   fflush(stderr);
 end:
-  end_key_cache(dflt_key_cache, 1);
+  end_key_cache(dflt_key_cache, true);
   delete_tree(&tree);
   (void)end_io_cache(&cache);
   (void)my_close(file, MYF(0));
@@ -644,7 +646,7 @@ static int read_string(IO_CACHE *file, uchar **to, uint length) {
                                  MYF(MY_WME))) ||
       my_b_read(file, (uchar *)*to, length)) {
     if (*to) my_free(*to);
-    *to = 0;
+    *to = nullptr;
     return 1;
   }
   *((uchar *)*to + length) = '\0';
@@ -712,13 +714,13 @@ static int close_some_file(TREE *tree) {
   struct st_access_param access_param;
 
   access_param.min_accessed = LONG_MAX;
-  access_param.found = 0;
+  access_param.found = nullptr;
 
   (void)tree_walk(tree, test_when_accessed, &access_param, left_root_right);
   if (!access_param.found)
     return 1; /* No open file that is possibly to close */
   if (mi_close(access_param.found->isam)) return 1;
-  access_param.found->closed = 1;
+  access_param.found->closed = true;
   return 0;
 }
 
@@ -730,7 +732,7 @@ static int reopen_closed_file(TREE *tree, struct file_info *fileinfo) {
 
   if (!(fileinfo->isam = mi_open(name, O_RDWR, HA_OPEN_WAIT_IF_LOCKED)))
     return 1;
-  fileinfo->closed = 0;
+  fileinfo->closed = false;
   re_open_count++;
   return 0;
 }
@@ -765,8 +767,8 @@ static void printf_log(const char *format, ...) {
 }
 
 static bool cmp_filename(struct file_info *file_info, const char *name) {
-  if (!file_info) return 1;
-  return strcmp(file_info->name, name) ? 1 : 0;
+  if (!file_info) return true;
+  return strcmp(file_info->name, name) ? true : false;
 }
 
 #include "storage/myisam/mi_extrafunc.h"

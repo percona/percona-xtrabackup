@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "my_bitmap.h"     // MY_BITMAP
 #include "my_byteorder.h"  // int8store
 #include "my_dbug.h"
+#include "template_utils.h"
 
 template <uint default_width>
 class Bitmap {
@@ -44,7 +45,7 @@ class Bitmap {
   Bitmap() { init(); }
   Bitmap(const Bitmap &from) { *this = from; }
   explicit Bitmap(uint prefix_to_set) { init(prefix_to_set); }
-  void init() { bitmap_init(&map, buffer, default_width, 0); }
+  void init() { bitmap_init(&map, buffer, default_width); }
   void init(uint prefix_to_set) {
     init();
     set_prefix(prefix_to_set);
@@ -66,7 +67,7 @@ class Bitmap {
     ulonglong buf2;
     MY_BITMAP map2;
 
-    bitmap_init(&map2, (uint32 *)&buf2, sizeof(ulonglong) * 8, 0);
+    bitmap_init(&map2, (uint32 *)&buf2, sizeof(ulonglong) * 8);
 
     // Store the original bits.
     if (sizeof(ulonglong) >= 8) {
@@ -86,9 +87,8 @@ class Bitmap {
   void intersect_extended(ulonglong map2buff) {
     intersect(map2buff);
     if (map.n_bits > sizeof(ulonglong) * 8)
-      bitmap_set_above(
-          &map, sizeof(ulonglong),
-          MY_TEST(map2buff & (1LL << (sizeof(ulonglong) * 8 - 1))));
+      bitmap_set_above(&map, sizeof(ulonglong),
+                       (map2buff & (1LL << (sizeof(ulonglong) * 8 - 1))));
   }
   void subtract(const Bitmap &map2) { bitmap_subtract(&map, &map2.map); }
   void merge(const Bitmap &map2) { bitmap_union(&map, &map2.map); }
@@ -108,7 +108,8 @@ class Bitmap {
   bool operator!=(const Bitmap &map2) const { return !(*this == map2); }
   char *print(char *buf) const {
     char *s = buf;
-    const uchar *e = (uchar *)buffer, *b = e + sizeof(buffer) - 1;
+    const uchar *e = pointer_cast<const uchar *>(&buffer[0]),
+                *b = e + sizeof(buffer) - 1;
     while (!*b && b > e) b--;
     if ((*s = _dig_vec_upper[*b >> 4]) != '0') s++;
     *s++ = _dig_vec_upper[*b & 15];
@@ -188,7 +189,13 @@ class Bitmap<64> {
     return buf;
   }
   ulonglong to_ulonglong() const { return map; }
-  uint get_first_set() {
+  uint bits_set() const {
+    uint res = 0;
+    for (uint i = 0; i < ALL_BITS; i++)
+      if (is_set(i)) res++;
+    return res;
+  }
+  uint get_first_set() const {
     for (uint i = 0; i < ALL_BITS; i++)
       if (map & (1ULL << i)) return i;
     return MY_BIT_NONE;

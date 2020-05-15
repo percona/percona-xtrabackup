@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -344,31 +344,19 @@ dberr_t row_create_index_for_mysql(
                                 large. */
     dict_table_t *handler)      /* ! in/out: table handler. */
     MY_ATTRIBUTE((warn_unused_result));
-/** Scans a table create SQL string and adds to the data dictionary
- the foreign key constraints declared in the string. This function
- should be called after the indexes for a table have been created.
- Each foreign key constraint must be accompanied with indexes in
- bot participating tables. The indexes are allowed to contain more
+
+/** Loads foreign key constraints for the table being created. This
+ function should be called after the indexes for a table have been
+ created. Each foreign key constraint must be accompanied with indexes
+ in both participating tables. The indexes are allowed to contain more
  fields than mentioned in the constraint.
 
  @param[in]	trx		transaction
- @param[in]	sql_string	table create statement where
-                                 foreign keys are declared like:
-                                 FOREIGN KEY (a, b) REFERENCES table2(c, d),
-                                 table2 can be written also with the database
-                                 name before it: test.table2; the default
-                                 database id the database of parameter name
- @param[in]	sql_length	length of sql_string
  @param[in]	name		table full name in normalized form
- @param[in]	reject_fks	if TRUE, fail with error code
-                                 DB_CANNOT_ADD_CONSTRAINT if any
-                                 foreign keys are found.
  @param[in]	dd_table	MySQL dd::Table for the table
  @return error code or DB_SUCCESS */
-dberr_t row_table_add_foreign_constraints(trx_t *trx, const char *sql_string,
-                                          size_t sql_length, const char *name,
-                                          ibool reject_fks,
-                                          const dd::Table *dd_table)
+dberr_t row_table_load_foreign_constraints(trx_t *trx, const char *name,
+                                           const dd::Table *dd_table)
     MY_ATTRIBUTE((warn_unused_result));
 
 /** The master thread in srv0srv.cc calls this regularly to drop tables which
@@ -407,7 +395,7 @@ to release and reacquire dict_operation_lock
 @param[in,out]	handler		intrinsic temporary table handle, or NULL
 @return error code or DB_SUCCESS */
 dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
-                                 dict_table_t *handler = NULL);
+                                 dict_table_t *handler = nullptr);
 /** Drop a table for MySQL. If the data dictionary was not already locked
 by the transaction, the transaction will be committed.  Otherwise, the
 data dictionary will remain locked.
@@ -415,7 +403,7 @@ data dictionary will remain locked.
 @param[in,out]	trx		data dictionary transaction
 @return error code or DB_SUCCESS */
 inline dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx) {
-  return (row_drop_table_for_mysql(name, trx, true, NULL));
+  return (row_drop_table_for_mysql(name, trx, true, nullptr));
 }
 
 /** Discards the tablespace of a table which stored in an .ibd file. Discarding
@@ -921,6 +909,9 @@ struct row_prebuilt_t {
     dtuple_set_n_fields(m_stop_tuple, 0);
   }
 
+  /** @return true iff the operation can skip concurrency ticket. */
+  bool skip_concurrency_ticket() const;
+
   /** It is unsafe to copy this struct, and moving it would be non-trivial,
   because we want to keep in sync with row_is_reading_range_guard_t. Therefore
   it is much safer/easier to just forbid such operations.  */
@@ -999,8 +990,6 @@ void innobase_rename_vc_templ(dict_table_t *table);
 #define ROW_READ_WITH_LOCKS 0
 #define ROW_READ_TRY_SEMI_CONSISTENT 1
 #define ROW_READ_DID_SEMI_CONSISTENT 2
-
-#include "row0mysql.ic"
 
 #ifdef UNIV_DEBUG
 /** Wait for the background drop list to become empty. */

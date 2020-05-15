@@ -28,6 +28,9 @@
 --source include/have_binlog_format_row.inc
 --let $rpl_skip_start_slave = 1
 --source include/master-slave.inc
+# do not run with binlog compression on, otherwise it will make
+# this test fail, since it needs large transactions
+--source include/not_binlog_transaction_compression_on.inc
 
 
 --echo #### Initialize ####
@@ -298,7 +301,7 @@ EOF
   if ($level_it != 1) {
     --let $better_than_last = `SELECT position > $last_position FROM levels WHERE id = $level_it`
     if ($better_than_last) {
-      --let $assert_cond = $bytes_sent < $last_bytes_sent
+      --let $assert_cond = $bytes_sent <= $last_bytes_sent
       --let $assert_text = Compression ratio should be better than previous algorithm
     }
     if (!$better_than_last) {
@@ -348,7 +351,7 @@ EOF
 
 # Generate some binlog data. This will be more than 10000 bytes
 # uncompressed, and less than 10000 bytes compressed.
---let $data_size = 10000
+--let $data_size = 1000000
 CREATE TABLE t (a LONGTEXT);
 eval INSERT INTO t VALUES (REPEAT('a', $data_size));
 

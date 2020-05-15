@@ -57,7 +57,7 @@ int _mi_check_index(MI_INFO *info, int inx) {
   if (info->lastinx != inx) /* Index changed */
   {
     info->lastinx = inx;
-    info->page_changed = 1;
+    info->page_changed = true;
     info->update = ((info->update & (HA_STATE_CHANGED | HA_STATE_ROW_CHANGED)) |
                     HA_STATE_NEXT_FOUND | HA_STATE_PREV_FOUND);
   }
@@ -159,7 +159,7 @@ int _mi_search(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key, uint key_len,
   info->int_nod_flag = nod_flag;
   info->int_keytree_version = keyinfo->version;
   info->last_search_keypage = info->last_keypage;
-  info->page_changed = 0;
+  info->page_changed = false;
   info->buff_used = (info->buff != buff); /* If we have to reread buff */
 
   DBUG_PRINT("exit", ("found key at %lu", (ulong)info->lastpos));
@@ -168,7 +168,7 @@ int _mi_search(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key, uint key_len,
 err:
   DBUG_PRINT("exit", ("Error: %d", my_errno()));
   info->lastpos = HA_OFFSET_ERROR;
-  info->page_changed = 1;
+  info->page_changed = true;
   return -1;
 } /* _mi_search */
 
@@ -289,8 +289,8 @@ int _mi_prefix_search(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
   const uchar *kseg, *vseg;
   const uchar *sort_order = keyinfo->seg->charset->sort_order;
   uchar tt_buff[MI_MAX_KEY_BUFF + 2], *t_buff = tt_buff + 2;
-  const uchar *saved_from = NULL;
-  uchar *saved_to = NULL;
+  const uchar *saved_from = nullptr;
+  uchar *saved_to = nullptr;
   const uchar *saved_vseg = nullptr;
   uint saved_length = 0, saved_prefix_len = 0;
   uint length_pack;
@@ -514,21 +514,12 @@ int _mi_prefix_search(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
 my_off_t _mi_kpos(uint nod_flag, uchar *after_key) {
   after_key -= nod_flag;
   switch (nod_flag) {
-#if SIZEOF_OFF_T > 4
     case 7:
       return mi_uint7korr(after_key) * MI_MIN_KEY_BLOCK_LENGTH;
     case 6:
       return mi_uint6korr(after_key) * MI_MIN_KEY_BLOCK_LENGTH;
     case 5:
       return mi_uint5korr(after_key) * MI_MIN_KEY_BLOCK_LENGTH;
-#else
-    case 7:
-      after_key++;
-    case 6:
-      after_key++;
-    case 5:
-      after_key++;
-#endif
     case 4:
       return ((my_off_t)mi_uint4korr(after_key)) * MI_MIN_KEY_BLOCK_LENGTH;
     case 3:
@@ -548,7 +539,6 @@ my_off_t _mi_kpos(uint nod_flag, uchar *after_key) {
 void _mi_kpointer(MI_INFO *info, uchar *buff, my_off_t pos) {
   pos /= MI_MIN_KEY_BLOCK_LENGTH;
   switch (info->s->base.key_reflength) {
-#if SIZEOF_OFF_T > 4
     case 7:
       mi_int7store(buff, pos);
       break;
@@ -558,17 +548,6 @@ void _mi_kpointer(MI_INFO *info, uchar *buff, my_off_t pos) {
     case 5:
       mi_int5store(buff, pos);
       break;
-#else
-    case 7:
-      *buff++ = 0;
-      /* fall trough */
-    case 6:
-      *buff++ = 0;
-      /* fall trough */
-    case 5:
-      *buff++ = 0;
-      /* fall trough */
-#endif
     case 4:
       mi_int4store(buff, pos);
       break;
@@ -592,7 +571,6 @@ my_off_t _mi_dpos(MI_INFO *info, uint nod_flag, const uchar *after_key) {
   my_off_t pos;
   after_key -= (nod_flag + info->s->rec_reflength);
   switch (info->s->rec_reflength) {
-#if SIZEOF_OFF_T > 4
     case 8:
       pos = (my_off_t)mi_uint8korr(after_key);
       break;
@@ -605,20 +583,6 @@ my_off_t _mi_dpos(MI_INFO *info, uint nod_flag, const uchar *after_key) {
     case 5:
       pos = (my_off_t)mi_uint5korr(after_key);
       break;
-#else
-    case 8:
-      pos = (my_off_t)mi_uint4korr(after_key + 4);
-      break;
-    case 7:
-      pos = (my_off_t)mi_uint4korr(after_key + 3);
-      break;
-    case 6:
-      pos = (my_off_t)mi_uint4korr(after_key + 2);
-      break;
-    case 5:
-      pos = (my_off_t)mi_uint4korr(after_key + 1);
-      break;
-#endif
     case 4:
       pos = (my_off_t)mi_uint4korr(after_key);
       break;
@@ -642,7 +606,6 @@ my_off_t _mi_dpos(MI_INFO *info, uint nod_flag, const uchar *after_key) {
 my_off_t _mi_rec_pos(MYISAM_SHARE *s, uchar *ptr) {
   my_off_t pos;
   switch (s->rec_reflength) {
-#if SIZEOF_OFF_T > 4
     case 8:
       pos = (my_off_t)mi_uint8korr(ptr);
       if (pos == HA_OFFSET_ERROR) return HA_OFFSET_ERROR; /* end of list */
@@ -662,14 +625,6 @@ my_off_t _mi_rec_pos(MYISAM_SHARE *s, uchar *ptr) {
       if (pos == (((my_off_t)1) << 40) - 1)
         return HA_OFFSET_ERROR; /* end of list */
       break;
-#else
-    case 8:
-    case 7:
-    case 6:
-    case 5:
-      ptr += (s->rec_reflength - 4);
-      /* fall through */
-#endif
     case 4:
       pos = (my_off_t)mi_uint4korr(ptr);
       if (pos == (my_off_t)(uint32)~0L) return HA_OFFSET_ERROR;
@@ -699,7 +654,6 @@ void _mi_dpointer(MI_INFO *info, uchar *buff, my_off_t pos) {
     pos /= info->s->base.pack_reclength;
 
   switch (info->s->rec_reflength) {
-#if SIZEOF_OFF_T > 4
     case 8:
       mi_int8store(buff, pos);
       break;
@@ -712,20 +666,6 @@ void _mi_dpointer(MI_INFO *info, uchar *buff, my_off_t pos) {
     case 5:
       mi_int5store(buff, pos);
       break;
-#else
-    case 8:
-      *buff++ = 0;
-      /* fall trough */
-    case 7:
-      *buff++ = 0;
-      /* fall trough */
-    case 6:
-      *buff++ = 0;
-      /* fall trough */
-    case 5:
-      *buff++ = 0;
-      /* fall trough */
-#endif
     case 4:
       mi_int4store(buff, pos);
       break;
@@ -1025,7 +965,7 @@ uchar *_mi_get_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page, uchar *key,
       if (*return_key_length == 0) {
         mi_print_error(info->s, HA_ERR_CRASHED);
         set_my_errno(HA_ERR_CRASHED);
-        return 0;
+        return nullptr;
       }
     }
   }
@@ -1047,7 +987,7 @@ static bool _mi_get_prev_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
     *return_key_length = keyinfo->keylength;
     memmove((uchar *)key, (uchar *)keypos - *return_key_length - nod_flag,
             *return_key_length);
-    return 0;
+    return false;
   } else {
     page += 2 + nod_flag;
     key[0] = 0; /* safety */
@@ -1056,11 +996,11 @@ static bool _mi_get_prev_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
       if (*return_key_length == 0) {
         mi_print_error(info->s, HA_ERR_CRASHED);
         set_my_errno(HA_ERR_CRASHED);
-        return 1;
+        return true;
       }
     }
   }
-  return 0;
+  return false;
 } /* _mi_get_key */
 
 /* Get last key from key-page */
@@ -1092,7 +1032,7 @@ uchar *_mi_get_last_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
         DBUG_PRINT("error", ("Couldn't find last key:  page: %p", page));
         mi_print_error(info->s, HA_ERR_CRASHED);
         set_my_errno(HA_ERR_CRASHED);
-        return 0;
+        return nullptr;
       }
     }
   }
@@ -1185,7 +1125,7 @@ int _mi_search_next(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key,
     if (!_mi_fetch_keypage(info, keyinfo, info->last_search_keypage,
                            DFLT_INIT_HITS, info->buff, 0))
       return -1;
-    info->buff_used = 0;
+    info->buff_used = false;
   }
 
   /* Last used buffer is in info->buff */
@@ -1261,7 +1201,7 @@ int _mi_search_first(MI_INFO *info, MI_KEYDEF *keyinfo, my_off_t pos) {
   info->int_nod_flag = nod_flag;
   info->int_keytree_version = keyinfo->version;
   info->last_search_keypage = info->last_keypage;
-  info->page_changed = info->buff_used = 0;
+  info->page_changed = info->buff_used = false;
   info->lastpos = _mi_dpos(info, 0, info->lastkey + info->lastkey_length);
 
   DBUG_PRINT("exit", ("found key at %lu", (ulong)info->lastpos));
@@ -1300,7 +1240,7 @@ int _mi_search_last(MI_INFO *info, MI_KEYDEF *keyinfo, my_off_t pos) {
   info->int_nod_flag = nod_flag;
   info->int_keytree_version = keyinfo->version;
   info->last_search_keypage = info->last_keypage;
-  info->page_changed = info->buff_used = 0;
+  info->page_changed = info->buff_used = false;
 
   DBUG_PRINT("exit", ("found key at %lu", (ulong)info->lastpos));
   return 0;
@@ -1374,11 +1314,11 @@ int _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo, uint nod_flag,
 
   length_pack = s_temp->ref_length = s_temp->n_ref_length = s_temp->n_length =
       0;
-  same_length = 0;
+  same_length = false;
   keyseg = keyinfo->seg;
   key_length = _mi_keylength(keyinfo, key) + nod_flag;
 
-  sort_order = 0;
+  sort_order = nullptr;
   if ((keyinfo->flag & HA_FULLTEXT) &&
       ((keyseg->type == HA_KEYTYPE_TEXT) ||
        (keyseg->type == HA_KEYTYPE_VARTEXT1) ||
@@ -1402,17 +1342,17 @@ int _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo, uint nod_flag,
       s_temp->key = key;
       s_temp->key_length = 0;
       s_temp->totlength = key_length - 1 + diff_flag;
-      s_temp->next_key_pos = 0; /* No next key */
+      s_temp->next_key_pos = nullptr; /* No next key */
       return (s_temp->totlength);
     }
-    s_temp->store_not_null = 1;
+    s_temp->store_not_null = true;
     key_length--; /* We don't store NULL */
     if (prev_key && !*prev_key++)
-      org_key = prev_key = 0; /* Can't pack against prev */
+      org_key = prev_key = nullptr; /* Can't pack against prev */
     else if (org_key)
       org_key++; /* Skip NULL */
   } else
-    s_temp->store_not_null = 0;
+    s_temp->store_not_null = false;
   s_temp->prev_key = org_key;
 
   /* The key part will start with a packed length */
@@ -1427,7 +1367,7 @@ int _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo, uint nod_flag,
     s_temp->prev_key = prev_key; /* Pointer at data */
     /* Don't use key-pack if length == 0 */
     if (new_key_length && new_key_length == org_key_length)
-      same_length = 1;
+      same_length = true;
     else if (new_key_length > org_key_length)
       end = key + org_key_length;
 
@@ -1455,7 +1395,7 @@ int _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo, uint nod_flag,
     length += diff_flag;
     if (next_key) {                 /* Can't combine with next */
       s_temp->n_length = *next_key; /* Needed by _mi_store_key */
-      next_key = 0;
+      next_key = nullptr;
     }
   } else {
     if (start != key) { /* Starts as prev key */
@@ -1586,7 +1526,7 @@ int _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo, uint nod_flag,
           }
         }
         if (!(tmp_length = (uint)(key - start))) { /* Key can't be re-packed */
-          s_temp->next_key_pos = 0;
+          s_temp->next_key_pos = nullptr;
           return length;
         }
         ref_length += tmp_length;
@@ -1665,7 +1605,7 @@ int _mi_calc_bin_pack_key_length(MI_KEYDEF *keyinfo, uint nod_flag,
     while (*key++ == *next_key++)
       ;
     if ((ref_length = (uint)(key - s_temp->key) - 1) == next_length) {
-      s_temp->next_key_pos = 0;
+      s_temp->next_key_pos = nullptr;
       return length; /* can't pack next key */
     }
     s_temp->prev_length = 0;

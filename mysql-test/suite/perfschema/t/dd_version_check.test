@@ -73,8 +73,16 @@ insert into test.pfs_published_schema
  values("MySQL 8.0.18",
         "1d6747d842bb2483c860cd7b28e886bdc6111ff61fd6b4d07e367aa7b3e9d9bf");
 
+insert into test.pfs_published_schema
+ values("MySQL 8.0.19",
+        "f58dba20c4234c34cedfcacd3b9a295dcac77a09b79d5f41d5f740878f272d4d");
+
+insert into test.pfs_published_schema
+ values("MySQL 8.0.20",
+        "a9aa0ab4a94ca91622145d735e60bbb03577616970351032d3194d8bfd7a69c7");
+
 create table test.pfs_check_table
-  (id int(11) NOT NULL AUTO_INCREMENT,
+  (id int NOT NULL AUTO_INCREMENT,
    t text NOT NULL,
    row_hash varchar(64) default null,
    PRIMARY KEY (id));
@@ -84,7 +92,7 @@ delimiter $$;
 create procedure test.pfs_check_proc()
 begin
   declare whole_schema longtext;
-  declare max_length int(11);
+  declare max_length int;
   declare found_signature varchar(64);
   declare found_version varchar(20);
 

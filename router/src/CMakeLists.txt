@@ -46,20 +46,16 @@ IF (APPLE AND HAVE_CRYPTO_DYLIB AND HAVE_OPENSSL_DYLIB)
     COMMAND ${CMAKE_COMMAND} -E create_symlink
       "../../lib/${OPENSSL_VERSION}" "${OPENSSL_VERSION}"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/plugin_output_directory/mysqlrouter"
+
+    BYPRODUCTS
+    "${CMAKE_BINARY_DIR}/plugin_output_directory/mysqlrouter/${CRYPTO_VERSION}"
+    "${CMAKE_BINARY_DIR}/plugin_output_directory/mysqlrouter/${OPENSSL_VERSION}"
   )
 
-  ADD_CUSTOM_TARGET(link_openssl_dlls_for_build_mysqlrouter ALL
-    COMMAND ${CMAKE_COMMAND} -E create_symlink
-      "../lib/${CRYPTO_VERSION}" "${CRYPTO_VERSION}"
-    COMMAND ${CMAKE_COMMAND} -E create_symlink
-      "../lib/${OPENSSL_VERSION}" "${OPENSSL_VERSION}"
-    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/plugin_output_directory"
-  )
-
-  ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET}
+  ADD_DEPENDENCIES(mysqlrouter_all
     link_openssl_dlls_for_install_mysqlrouter)
-  ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET}
-    link_openssl_dlls_for_build_mysqlrouter)
+  ADD_DEPENDENCIES(mysqlrouter_all
+    link_openssl_dlls)
 
   INSTALL(FILES
     ${CMAKE_BINARY_DIR}/plugin_output_directory/mysqlrouter/${CRYPTO_VERSION}

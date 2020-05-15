@@ -35,9 +35,9 @@ NULL
 SHOW CREATE TABLE t;
 Table	Create Table
 t	CREATE TABLE `t` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) DEFAULT NULL,
-  `c` int(11) GENERATED ALWAYS AS ((`a` + `b`)) VIRTUAL,
+  `a` int DEFAULT NULL,
+  `b` int DEFAULT NULL,
+  `c` int GENERATED ALWAYS AS ((`a` + `b`)) VIRTUAL,
   `h` varchar(10) DEFAULT NULL,
   KEY `idx` (`c`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -89,9 +89,9 @@ affected rows: 0
 SHOW CREATE TABLE t;
 Table	Create Table
 t	CREATE TABLE `t` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) DEFAULT NULL,
-  `c` int(11) GENERATED ALWAYS AS ((`a` + `b`)) VIRTUAL,
+  `a` int DEFAULT NULL,
+  `b` int DEFAULT NULL,
+  `c` int GENERATED ALWAYS AS ((`a` + `b`)) VIRTUAL,
   `h` varchar(10) DEFAULT NULL,
   KEY `idx_1` (`c`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -120,24 +120,24 @@ optimize table t;
 SET DEBUG_SYNC = 'now WAIT_FOR start_create';
 insert ignore into t values();
 Warnings:
-Warning	1062	Duplicate entry '1' for key 'c'
+Warning	1062	Duplicate entry '1' for key 't.c'
 SET DEBUG_SYNC = 'now SIGNAL go_ahead';
 /* connection default */ optimize table t;
 Table	Op	Msg_type	Msg_text
 test.t	optimize	note	Table does not support optimize, doing recreate + analyze instead
-test.t	optimize	error	Duplicate entry 'NULL' for key 'c'
+test.t	optimize	error	Duplicate entry 'NULL' for key 't.c'
 test.t	optimize	status	Operation failed
 Warnings:
-Error	1062	Duplicate entry 'NULL' for key 'c'
+Error	1062	Duplicate entry 'NULL' for key 't.c'
 SELECT c FROM t;
 c
 1
 SHOW CREATE TABLE t;
 Table	Create Table
 t	CREATE TABLE `t` (
-  `a` int(11) GENERATED ALWAYS AS (1) VIRTUAL,
-  `b` int(11) DEFAULT NULL,
-  `c` int(11) GENERATED ALWAYS AS (1) VIRTUAL,
+  `a` int GENERATED ALWAYS AS (1) VIRTUAL,
+  `b` int DEFAULT NULL,
+  `c` int GENERATED ALWAYS AS (1) VIRTUAL,
   UNIQUE KEY `b` (`b`),
   UNIQUE KEY `c` (`c`),
   KEY `a` (`a`)
@@ -339,8 +339,8 @@ test.t1	check	status	OK
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL,
-  `d` int(11) NOT NULL,
+  `a` int NOT NULL,
+  `d` int NOT NULL,
   `b` varchar(198) NOT NULL,
   `c` char(84) DEFAULT NULL,
   `vbcol` char(2) GENERATED ALWAYS AS (substr(`b`,2,2)) VIRTUAL

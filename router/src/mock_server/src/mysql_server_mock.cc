@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,18 +24,9 @@
 
 #include "mysql_server_mock.h"
 
-#include "common.h"  // rename_thread()
-#include "duktape_statement_reader.h"
-#include "mock_session.h"
-#include "mysql_protocol_utils.h"
-#include "socket_operations.h"
-
-#include "mysql/harness/logging/logging.h"
-IMPORT_LOG_FUNCTIONS()
-#include "mysql/harness/mpmc_queue.h"
-
 #include <atomic>
 #include <condition_variable>
+#include <csignal>
 #include <cstring>
 #include <deque>
 #include <functional>
@@ -51,7 +42,6 @@ IMPORT_LOG_FUNCTIONS()
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <signal.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -63,7 +53,15 @@ IMPORT_LOG_FUNCTIONS()
 #include <ws2tcpip.h>
 #endif
 
-using namespace std::placeholders;
+#include "common.h"  // rename_thread()
+#include "duktape_statement_reader.h"
+#include "mock_session.h"
+#include "mysql_protocol_utils.h"
+#include "socket_operations.h"
+
+#include "mysql/harness/logging/logging.h"
+IMPORT_LOG_FUNCTIONS()
+#include "mysql/harness/mpmc_queue.h"
 
 namespace server_mock {
 
@@ -79,9 +77,11 @@ void non_blocking(socket_t handle_, bool mode) noexcept {
 
 MySQLServerMock::MySQLServerMock(const std::string &expected_queries_file,
                                  const std::string &module_prefix,
+                                 const std::string &bind_address,
                                  unsigned bind_port,
                                  const std::string &protocol, bool debug_mode)
-    : bind_port_{bind_port},
+    : bind_address_(bind_address),
+      bind_port_{bind_port},
       debug_mode_{debug_mode},
       expected_queries_file_{expected_queries_file},
       module_prefix_{module_prefix},
@@ -119,12 +119,12 @@ void MySQLServerMock::setup_service() {
   struct addrinfo hints, *ainfo;
 
   std::memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
 
-  err =
-      getaddrinfo(nullptr, std::to_string(bind_port_).c_str(), &hints, &ainfo);
+  err = getaddrinfo(bind_address_.c_str(), std::to_string(bind_port_).c_str(),
+                    &hints, &ainfo);
   if (err != 0) {
     throw std::runtime_error(std::string("getaddrinfo() failed: ") +
                              gai_strerror(err));
@@ -148,9 +148,9 @@ void MySQLServerMock::setup_service() {
 
   err = bind(listener_, ainfo->ai_addr, ainfo->ai_addrlen);
   if (err < 0) {
-    throw std::system_error(
-        get_last_socket_error_code(),
-        "bind('0.0.0.0', " + std::to_string(bind_port_) + ") failed");
+    throw std::system_error(get_last_socket_error_code(),
+                            "bind(" + bind_address_ + ":" +
+                                std::to_string(bind_port_) + ") failed");
   }
 
   err = listen(listener_, kListenQueueSize);
@@ -200,19 +200,32 @@ void MySQLServerMock::handle_connections(mysql_harness::PluginFuncEnv *env) {
       if (work.client_socket == mysql_harness::kInvalidSocket) break;
 
       try {
-        sockaddr_in addr;
+        sockaddr_storage addr;
         socklen_t addr_len = sizeof(addr);
         if (-1 == getsockname(work.client_socket,
                               reinterpret_cast<sockaddr *>(&addr), &addr_len)) {
           throw std::system_error(get_last_socket_error_code(),
                                   "getsockname() failed");
         }
+
+        uint16_t port{0};
+        if (addr.ss_family == AF_INET6) {
+          auto *sin6 = reinterpret_cast<const struct sockaddr_in6 *>(&addr);
+          port = sin6->sin6_port;
+        } else if (addr.ss_family == AF_INET) {
+          auto *sin4 = reinterpret_cast<const struct sockaddr_in *>(&addr);
+          port = sin4->sin_port;
+        } else {
+          throw std::runtime_error("unknown address family: " +
+                                   std::to_string(addr.ss_family));
+        }
+
         std::unique_ptr<StatementReaderBase> statement_reader{
             StatementReaderFactory::create(
                 work.expected_queries_file, work.module_prefix,
                 // expose session data json-encoded string
                 {
-                    {"port", std::to_string(ntohs(addr.sin_port))},
+                    {"port", std::to_string(ntohs(port))},
                 },
                 MySQLServerSharedGlobals::get())};
 
@@ -275,7 +288,7 @@ void MySQLServerMock::handle_connections(mysql_harness::PluginFuncEnv *env) {
     tv.tv_sec = 0;
     tv.tv_usec = 10000;
 
-    int err = select(listener_ + 1, &fds, NULL, NULL, &tv);
+    int err = select(listener_ + 1, &fds, nullptr, nullptr, &tv);
 
     if (err < 0) {
       std::cerr << std::system_error(get_last_socket_error_code(),
@@ -329,7 +342,7 @@ void MySQLServerMock::handle_connections(mysql_harness::PluginFuncEnv *env) {
 
   // std::cerr << "sending death-signal to threads" << std::endl;
   for (size_t ndx = 0; ndx < worker_threads.size(); ndx++) {
-    work_queue.push(Work{mysql_harness::kInvalidSocket, "", "", 0});
+    work_queue.push(Work{mysql_harness::kInvalidSocket, "", "", false});
   }
   // std::cerr << "joining threads" << std::endl;
   for (size_t ndx = 0; ndx < worker_threads.size(); ndx++) {

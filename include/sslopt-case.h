@@ -50,4 +50,3 @@ case OPT_SSL_CRL:
 case OPT_SSL_CRLPATH:
 case OPT_TLS_VERSION:
   break;
-#endif /* HAVE_OPENSSL */

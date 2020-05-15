@@ -30,7 +30,7 @@ EOF
 xtrabackup --backup --target-dir=$topdir/backup 2>&1 | tee /dev/stderr | \
     while read line ; do
         echo $line
-        if [ $( echo $line | grep -c './test/test01#P#p3.ibd') -eq 1 ]; then
+        if [ $( echo $line | grep -i -c './test/test01#p#p3.ibd') -eq 1 ]; then
             mysql -e "ALTER TABLE test01 TRUNCATE PARTITION p3" test
         fi
         if [ $( echo $line | grep -c './test/test02.ibd') -eq 1 ]; then

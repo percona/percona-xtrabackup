@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_io.h>
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
+#define XXH_STATIC_LINKING_ONLY
 #include "../extra/lz4/my_xxhash.h"
 #include "common.h"
 #include "datasink.h"
@@ -83,7 +84,7 @@ class LZ4_stream {
 
   err_t next_block(block_info_t &block_info);
 
-  bool empty() const { return stream.empty(); };
+  bool empty() const { return stream.empty(); }
 
   size_t block_max_size() const { return frame_info.block_max_size; }
 

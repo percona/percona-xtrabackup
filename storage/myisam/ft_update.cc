@@ -26,6 +26,7 @@
 
 #include <math.h>
 #include <sys/types.h>
+#include <algorithm>
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
@@ -48,7 +49,7 @@ void _mi_ft_segiterator_dummy_init(const uchar *record, uint len,
   DBUG_TRACE;
 
   ftsi->num = 1;
-  ftsi->seg = 0;
+  ftsi->seg = nullptr;
   ftsi->pos = record;
   ftsi->len = len;
 }
@@ -74,7 +75,7 @@ uint _mi_ft_segiterator(FT_SEG_ITERATOR *ftsi) {
 
   if (ftsi->seg->null_bit &&
       (ftsi->rec[ftsi->seg->null_pos] & ftsi->seg->null_bit)) {
-    ftsi->pos = 0;
+    ftsi->pos = nullptr;
     return 1;
   }
   ftsi->pos = ftsi->rec + ftsi->seg->start;
@@ -98,7 +99,7 @@ uint _mi_ft_segiterator(FT_SEG_ITERATOR *ftsi) {
 
 uint _mi_ft_parse(TREE *parsed, MI_INFO *info, uint keynr, const uchar *record,
                   MYSQL_FTPARSER_PARAM *param, MEM_ROOT *mem_root) {
-  FT_SEG_ITERATOR ftsi = {0, 0, NULL, NULL, NULL};
+  FT_SEG_ITERATOR ftsi = {0, 0, nullptr, nullptr, nullptr};
   struct st_mysql_ftparser *parser;
   DBUG_TRACE;
 
@@ -120,10 +121,11 @@ FT_WORD *_mi_ft_parserecord(MI_INFO *info, uint keynr, const uchar *record,
   TREE ptree;
   MYSQL_FTPARSER_PARAM *param;
   DBUG_TRACE;
-  if (!(param = ftparser_call_initializer(info, keynr, 0))) return NULL;
+  if (!(param = ftparser_call_initializer(info, keynr, 0))) return nullptr;
   memset(&ptree, 0, sizeof(ptree));
   param->flags = 0;
-  if (_mi_ft_parse(&ptree, info, keynr, record, param, mem_root)) return NULL;
+  if (_mi_ft_parse(&ptree, info, keynr, record, param, mem_root))
+    return nullptr;
 
   return ft_linearize(&ptree, mem_root);
 }
@@ -162,8 +164,8 @@ static int _mi_ft_erase(MI_INFO *info, uint keynr, uchar *keybuf,
 
 int _mi_ft_cmp(MI_INFO *info, uint keynr, const uchar *rec1,
                const uchar *rec2) {
-  FT_SEG_ITERATOR ftsi1 = {0, 0, NULL, NULL, NULL};
-  FT_SEG_ITERATOR ftsi2 = {0, 0, NULL, NULL, NULL};
+  FT_SEG_ITERATOR ftsi1 = {0, 0, nullptr, nullptr, nullptr};
+  FT_SEG_ITERATOR ftsi2 = {0, 0, nullptr, nullptr, nullptr};
   const CHARSET_INFO *cs = info->s->keyinfo[keynr].seg->charset;
   DBUG_TRACE;
   _mi_ft_segiterator_init(info, keynr, rec1, &ftsi1);
@@ -172,7 +174,8 @@ int _mi_ft_cmp(MI_INFO *info, uint keynr, const uchar *rec1,
   while (_mi_ft_segiterator(&ftsi1) && _mi_ft_segiterator(&ftsi2)) {
     if ((ftsi1.pos != ftsi2.pos) &&
         (!ftsi1.pos || !ftsi2.pos ||
-         ha_compare_text(cs, ftsi1.pos, ftsi1.len, ftsi2.pos, ftsi2.len, 0)))
+         ha_compare_text(cs, ftsi1.pos, ftsi1.len, ftsi2.pos, ftsi2.len,
+                         false)))
       return THOSE_TWO_DAMN_KEYS_ARE_REALLY_DIFFERENT;
   }
   return GEE_THEY_ARE_ABSOLUTELY_IDENTICAL;
@@ -198,7 +201,7 @@ int _mi_ft_update(MI_INFO *info, uint keynr, uchar *keybuf, const uchar *oldrec,
   error = 0;
   while (old_word->pos && new_word->pos) {
     cmp = ha_compare_text(cs, (uchar *)old_word->pos, old_word->len,
-                          (uchar *)new_word->pos, new_word->len, 0);
+                          (uchar *)new_word->pos, new_word->len, false);
     cmp2 = cmp ? 0 : (fabs(old_word->weight - new_word->weight) > 1.e-5);
 
     if (cmp < 0 || cmp2) {
@@ -288,7 +291,7 @@ uint _mi_ft_convert_to_ft2(MI_INFO *info, uint keynr, uchar *key) {
   /* we'll generate one pageful at once, and insert the rest one-by-one */
   /* calculating the length of this page ...*/
   length = (keyinfo->block_length - 2) / keyinfo->keylength;
-  set_if_smaller(length, da->elements);
+  length = std::min(length, da->elements);
   length = length * keyinfo->keylength;
 
   get_key_full_length_rdonly(key_length, key);
@@ -302,7 +305,7 @@ uint _mi_ft_convert_to_ft2(MI_INFO *info, uint keynr, uchar *key) {
   /* creating pageful of keys */
   mi_putint(info->buff, length + 2, 0);
   memcpy(info->buff + 2, key_ptr, length);
-  info->buff_used = info->page_changed = 1; /* info->buff is used */
+  info->buff_used = info->page_changed = true; /* info->buff is used */
   if ((root = _mi_new(info, keyinfo, DFLT_INIT_HITS)) == HA_OFFSET_ERROR ||
       _mi_write_keypage(info, keyinfo, root, DFLT_INIT_HITS, info->buff))
     return -1;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,15 +26,17 @@
 #include <sys/types.h>
 #include <algorithm>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <unordered_set>
 
+#include "field_types.h"
 #include "m_ctype.h"
-#include "my_base.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_table_map.h"
+#include "my_time.h"
 #include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
 #include "sql/derror.h"  // ER_THD
@@ -48,6 +50,7 @@
 #include "sql/key_spec.h"
 #include "sql/mem_root_array.h"
 #include "sql/parse_tree_nodes.h"  // PT_*
+#include "sql/parser_yystype.h"
 #include "sql/sql_array.h"
 #include "sql/sql_class.h"
 #include "sql/sql_const.h"
@@ -58,10 +61,10 @@
 #include "sql/sql_optimizer.h"  // JOIN
 #include "sql/sql_resolver.h"   // find_order_in_list
 #include "sql/sql_show.h"
-#include "sql/sql_time.h"
 #include "sql/sql_tmp_table.h"  // free_tmp_table
 #include "sql/system_variables.h"
 #include "sql/table.h"
+#include "sql/thd_raii.h"
 #include "sql/window_lex.h"
 #include "sql_string.h"
 #include "template_utils.h"
@@ -100,11 +103,11 @@ static void append_to_back(ORDER **first_next, ORDER *column) {
 }
 
 ORDER *Window::first_partition_by() const {
-  return m_partition_by != NULL ? m_partition_by->value.first : NULL;
+  return m_partition_by != nullptr ? m_partition_by->value.first : nullptr;
 }
 
 ORDER *Window::first_order_by() const {
-  return m_order_by != NULL ? m_order_by->value.first : NULL;
+  return m_order_by != nullptr ? m_order_by->value.first : nullptr;
 }
 
 bool Window::check_window_functions(THD *thd, SELECT_LEX *select) {
@@ -125,7 +128,7 @@ bool Window::check_window_functions(THD *thd, SELECT_LEX *select) {
   m_opt_lead_lag.m_offsets.init(thd->mem_root);
 
   while ((wf = li++)) {
-    Evaluation_requirements reqs;
+    Window_evaluation_requirements reqs;
 
     Item_sum *wfs = down_cast<Item_sum *>(wf);
     if (wfs->check_wf_semantics(thd, select, &reqs)) return true;
@@ -1172,14 +1175,14 @@ bool Window::setup_windows(THD *thd, SELECT_LEX *select,
           const Window *seen_orderer = nullptr;
 
           /* SR 10.d) No redefines of ORDER BY along inheritance path */
-          for (const Window *w = leaf; w != nullptr; w = w->m_ancestor) {
-            if (w->m_order_by != nullptr) {
+          for (const Window *w3 = leaf; w3 != nullptr; w3 = w3->m_ancestor) {
+            if (w3->m_order_by != nullptr) {
               if (seen_orderer != nullptr) {
                 my_error(ER_WINDOW_NO_REDEFINE_ORDER_BY, MYF(0),
-                         seen_orderer->printable_name(), w->printable_name());
+                         seen_orderer->printable_name(), w3->printable_name());
                 return true;
               } else {
-                seen_orderer = w;
+                seen_orderer = w3;
               }
             }
           }
@@ -1293,6 +1296,8 @@ void Window::cleanup(THD *thd) {
   if (m_needs_frame_buffering && m_frame_buffer != nullptr) {
     (void)m_frame_buffer->file->ha_index_or_rnd_end();
     free_tmp_table(thd, m_frame_buffer);
+    destroy(m_frame_buffer_param);
+    m_frame_buffer_param = nullptr;
   }
 
   for (auto it : {&m_order_by_items, &m_partition_items}) {
@@ -1339,7 +1344,7 @@ void Window::reset_execution_state(Reset_level level) {
       {
         for (auto it : {m_partition_by, m_order_by}) {
           if (it != nullptr) {
-            for (ORDER *o = it->value.first; o != NULL; o = o->next)
+            for (ORDER *o = it->value.first; o != nullptr; o = o->next)
               o->item = &o->item_ptr;
           }
         }
@@ -1469,6 +1474,13 @@ void Window::print(const THD *thd, String *str, enum_query_type qt,
 
     str->append(") ");
   }
+}
+
+const char *Window::printable_name() const {
+  if (m_name == nullptr) return "<unnamed window>";
+  // Since Item_string::val_str() ignores the argument, it is safe
+  // to use nullptr as argument.
+  return m_name->val_str(nullptr)->ptr();
 }
 
 void Window::reset_all_wf_state() {

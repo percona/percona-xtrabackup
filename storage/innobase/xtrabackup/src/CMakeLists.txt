@@ -118,6 +118,7 @@ TARGET_LINK_LIBRARIES(xtrabackup
   binlog
   mysqlclient
   master
+  minchassis
   ${GCRYPT_LIBS}
   ${ICU_LIBRARIES}
   crc

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -40,7 +40,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "handler0alter.h"
 #include "rem0cmp.h"
 #include "srv0srv.h"
-
 namespace dd {
 class Spatial_reference_system;
 }
@@ -303,7 +302,7 @@ static int cmp_gis_field(
     return (cmp_geometry_field(DATA_GEOMETRY, DATA_GIS_MBR, a, a_length, b,
                                b_length));
   } else {
-    return (rtree_key_cmp(mode, a, a_length, b, b_length, srs));
+    return (rtree_key_cmp(mode, a, a_length, b, b_length, srs) ? 0 : 1);
   }
 }
 
@@ -993,8 +992,9 @@ int cmp_rec_rec_simple(const rec_t *rec1, const rec_t *rec2,
 
 int cmp_rec_rec_with_match(const rec_t *rec1, const rec_t *rec2,
                            const ulint *offsets1, const ulint *offsets2,
-                           const dict_index_t *index, bool nulls_unequal,
-                           ulint *matched_fields) {
+                           const dict_index_t *index,
+                           bool spatial_index_non_leaf, bool nulls_unequal,
+                           ulint *matched_fields, bool cmp_btree_recs) {
   ut_ad(rec1 != nullptr);
   ut_ad(rec2 != nullptr);
   ut_ad(index != nullptr);
@@ -1008,20 +1008,25 @@ int cmp_rec_rec_with_match(const rec_t *rec1, const rec_t *rec2,
 
   *matched_fields = 0;
 
-  /* Test if rec is the predefined minimum record */
-  if (rec_get_info_bits(rec1, comp) & REC_INFO_MIN_REC_FLAG) {
-    /* There should only be one such record. */
-    ut_ad(!(rec_get_info_bits(rec2, comp) & REC_INFO_MIN_REC_FLAG));
-    return (-1);
-  } else if (rec_get_info_bits(rec2, comp) & REC_INFO_MIN_REC_FLAG) {
-    return (1);
+  /* NOTE: This is an optimisation where we're comparing two B-tree records
+  during index validation. */
+  if (cmp_btree_recs) {
+    /* Test if rec is the predefined minimum record */
+    if (rec_get_info_bits(rec1, comp) & REC_INFO_MIN_REC_FLAG) {
+      ut_ad(!(rec_get_info_bits(rec2, comp) & REC_INFO_MIN_REC_FLAG));
+      return (-1);
+    } else if (rec_get_info_bits(rec2, comp) & REC_INFO_MIN_REC_FLAG) {
+      return (1);
+    }
   }
 
   ulint i;
 
   for (i = 0; i < rec1_n_fields && i < rec2_n_fields; ++i) {
     /* If this is node-ptr records then avoid comparing node-ptr
-    field. Only key field needs to be compared. */
+    field. Only key field needs to be compared. In case of a
+    spatial index we need to compare the node-ptr for a non-leaf
+    page */
     if (i == dict_index_get_n_unique_in_tree(index)) {
       *matched_fields = i;
       return (0);
@@ -1036,6 +1041,15 @@ int cmp_rec_rec_with_match(const rec_t *rec1, const rec_t *rec2,
       mtype = DATA_BINARY;
       prtype = 0;
       is_asc = true;
+    } else if ((i == 1) && spatial_index_non_leaf) {
+      /* When the page is non-leaf spatial index page we should
+      not depend upon the dictionary information because the
+      page doesn't hold any primary key information.The spatial
+      non-leaf has only two fields MBR and page number to child
+      node.*/
+      mtype = DATA_SYS_CHILD;
+      prtype = 0;
+      is_asc = true;
     } else {
       auto col = index->get_col(i);
       const auto field = index->get_field(i);
@@ -1043,13 +1057,13 @@ int cmp_rec_rec_with_match(const rec_t *rec1, const rec_t *rec2,
       mtype = col->mtype;
       prtype = col->prtype;
       is_asc = field->is_ascending;
+    }
 
-      /* If the index is spatial index, we mark the
-      prtype of the first field as MBR field. */
-      if (i == 0 && dict_index_is_spatial(index)) {
-        ut_ad(DATA_GEOMETRY_MTYPE(mtype));
-        prtype |= DATA_GIS_MBR;
-      }
+    /* If the index is spatial index, we mark the
+    prtype of the first field as MBR field. */
+    if (i == 0 && dict_index_is_spatial(index)) {
+      ut_ad(DATA_GEOMETRY_MTYPE(mtype));
+      prtype |= DATA_GIS_MBR;
     }
 
     /* We should never encounter an externally stored field.

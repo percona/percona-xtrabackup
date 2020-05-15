@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,6 +45,7 @@ extern thread_local EmulatedJamBuffer* NDB_THREAD_TLS_JAM;
 extern NdbRecordPrintFormat g_ndbrecord_print_format;
 extern bool ga_skip_unknown_objects;
 extern bool ga_skip_broken_objects;
+extern bool opt_include_stored_grants;
 
 #define LOG_MSGLEN 1024
 
@@ -635,7 +636,10 @@ RestoreMetaData::markSysTables()
         strcmp(tableName, OLD_NDB_REP_DB "/def/" OLD_NDB_SCHEMA_TABLE) == 0 ||
         strcmp(tableName, NDB_REP_DB "/def/" NDB_APPLY_TABLE) == 0 ||
         strcmp(tableName, NDB_REP_DB "/def/" NDB_SCHEMA_TABLE)== 0 ||
-        strcmp(tableName, "mysql/def/ndb_schema_result") == 0)
+        strcmp(tableName, "mysql/def/ndb_schema_result") == 0 ||
+        (strcmp(tableName, "mysql/def/ndb_sql_metadata") == 0
+         && !opt_include_stored_grants)
+       )
     {
       table->m_isSysTable = true;
       if (strcmp(tableName, "SYSTAB_0") == 0 ||
@@ -644,27 +648,24 @@ RestoreMetaData::markSysTables()
     }
   }
   for (i = 0; i < getNoOfTables(); i++) {
-    TableS* blobTable = allTables[i];
-    const char* blobTableName = blobTable->getTableName();
-    // yet another match blob
-    int cnt, id1, id2;
+    TableS* auxTable = allTables[i];
+    const char* auxTableName = auxTable->getTableName();
+    // Use pattern matching to find blob tables or ordered indexes and
+    // associate them with their main tables
+    static constexpr const char * indxPattern = "sys/def/%d/";
+    static constexpr const char * blobPattern = "%[^/]/%[^/]/NDB$BLOB_%d_%d";
+     int id1, id2 = ~(Uint32)0;
     char buf[256];
-    cnt = sscanf(blobTableName, "%[^/]/%[^/]/NDB$BLOB_%d_%d",
-                 buf, buf, &id1, &id2);
-    if (cnt == 4) {
-      Uint32 j;
-      for (j = 0; j < getNoOfTables(); j++) {
-        TableS* table = allTables[j];
-        if (table->getTableId() == (Uint32) id1) {
-          if (table->m_isSysTable)
-            blobTable->m_isSysTable = true;
-          blobTable->m_main_table = table;
-          blobTable->m_main_column_id = id2;
-          break;
-        }
-      }
-      if (j == getNoOfTables()) {
-        restoreLogger.log_error("Restore: Bad primary table id in %s", blobTableName);
+
+    if((sscanf(auxTableName, indxPattern, &id1) == 1) ||
+       (sscanf(auxTableName, blobPattern, buf, buf, &id1, &id2) == 4)) {
+      TableS *mainTable = getTable(id1);
+      if(mainTable) {
+        auxTable->m_isSysTable = mainTable->m_isSysTable;
+        auxTable->m_main_table = mainTable;
+        auxTable->m_main_column_id = id2;
+      } else {
+        restoreLogger.log_error("Restore: Bad primary table id in %s", auxTableName);
         return false;
       }
     }
@@ -802,6 +803,7 @@ RestoreMetaData::readFragmentInfo()
       (((Uint64)ntohl(fragInfo.NoOfRecordsHigh)) << 32);
     tmp->filePosLow = ntohl(fragInfo.FilePosLow);
     tmp->filePosHigh = ntohl(fragInfo.FilePosHigh);
+    tmp->sliceSkip = false; /* Init, set later */
 
     table->m_fragmentInfo.push_back(tmp);
     table->m_noOfRecords += tmp->noOfRecords;
@@ -822,6 +824,7 @@ TableS::TableS(Uint32 version, NdbTableImpl* tableImpl)
   m_broken = false;
   m_main_table = NULL;
   m_main_column_id = ~(Uint32)0;
+  m_has_blobs = false;
   
   for (int i = 0; i < tableImpl->getNoOfColumns(); i++)
     createAttr(tableImpl->getColumn(i));
@@ -1047,7 +1050,7 @@ charpad:
 }
 
 const TupleS *
-RestoreDataIterator::getNextTuple(int  & res)
+RestoreDataIterator::getNextTuple(int  & res, const bool skipFragment)
 {
   if (m_currentTable->backupVersion >= NDBD_RAW_LCP)
   {
@@ -1064,52 +1067,65 @@ RestoreDataIterator::getNextTuple(int  & res)
     }
   }
   
-  Uint32  dataLength = 0;
-  // Read record length
-  if (buffer_read(&dataLength, sizeof(dataLength), 1) != 1){
-    restoreLogger.log_error("getNextTuple:Error reading length of data part");
-    res = -1;
-    return NULL;
-  } // if
+  while (true)
+  {
+    Uint32  dataLength = 0;
+    // Read record length
+    if (buffer_read(&dataLength, sizeof(dataLength), 1) != 1){
+      restoreLogger.log_error("getNextTuple:Error reading length of data part");
+      res = -1;
+      return NULL;
+    } // if
   
-  // Convert length from network byte order
-  dataLength = ntohl(dataLength);
-  const Uint32 dataLenBytes = 4 * dataLength;
+    // Convert length from network byte order
+    dataLength = ntohl(dataLength);
+    const Uint32 dataLenBytes = 4 * dataLength;
   
-  if (dataLength == 0) {
-    // Zero length for last tuple
-    // End of this data fragment
-    restoreLogger.log_debug("End of fragment");
+    if (dataLength == 0) {
+      // Zero length for last tuple
+      // End of this data fragment
+      restoreLogger.log_debug("End of fragment");
+      res = 0;
+      return NULL;
+    } // if
+
+    // Read tuple data
+    void *_buf_ptr;
+    if (buffer_get_ptr(&_buf_ptr, 1, dataLenBytes) != dataLenBytes) {
+      restoreLogger.log_error("getNextTuple:Read error: ");
+      res = -1;
+      return NULL;
+    }
+
+    m_count++;
+
+    if (skipFragment)
+    {
+      /**
+       * Skip unpacking work, we just want to read all the tuples up
+       * to the end of this fragment
+       */
+      continue;
+    }
+
+    Uint32 *buf_ptr = (Uint32*)_buf_ptr;
+    if (m_currentTable->backupVersion >= NDBD_RAW_LCP)
+    {
+      res = readTupleData_packed(buf_ptr, dataLength);
+    }
+    else
+    {
+      res = readTupleData_old(buf_ptr, dataLength);
+    }
+
+    if (res)
+    {
+      return NULL;
+    }
+
     res = 0;
-    return NULL;
-  } // if
-
-  // Read tuple data
-  void *_buf_ptr;
-  if (buffer_get_ptr(&_buf_ptr, 1, dataLenBytes) != dataLenBytes) {
-    restoreLogger.log_error("getNextTuple:Read error: ");
-    res = -1;
-    return NULL;
+    return &m_tuple;
   }
-
-  Uint32 *buf_ptr = (Uint32*)_buf_ptr;
-  if (m_currentTable->backupVersion >= NDBD_RAW_LCP)
-  {
-    res = readTupleData_packed(buf_ptr, dataLength);
-  }
-  else
-  {
-    res = readTupleData_old(buf_ptr, dataLength);
-  }
-  
-  if (res)
-  {
-    return NULL;
-  }
-
-  m_count ++;  
-  res = 0;
-  return &m_tuple;
 } // RestoreDataIterator::getNextTuple
 
 TableS *
@@ -1983,6 +1999,14 @@ void TableS::createAttr(NdbDictionary::Column *column)
     d->m_nullBitIndex = m_noOfNullable; 
     m_noOfNullable++;
     m_nullBitmaskSize = (m_noOfNullable + 31) / 32;
+  }
+  if ((d->m_column->getType() == NdbDictionary::Column::Blob) ||
+      (d->m_column->getType() == NdbDictionary::Column::Text))
+  {
+    if (d->m_column->getPartSize() > 0)
+    {
+      m_has_blobs = true;
+    }
   }
   m_variableAttribs.push_back(d);
 } // TableS::createAttr

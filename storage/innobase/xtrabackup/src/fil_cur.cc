@@ -209,11 +209,11 @@ xb_fil_cur_result_t xb_fil_cur_open(
     page_size_shift = get_bit_shift(page_size.physical());
     msg("[%02u] %s is compressed with page size = "
         "%u bytes\n",
-        thread_n, node->name, page_size.physical());
+        thread_n, node->name, (uint)page_size.physical());
     if (page_size_shift < 10 || page_size_shift > 14) {
       msg("[%02u] xtrabackup: Error: Invalid "
           "page size: %u.\n",
-          thread_n, page_size.physical());
+          thread_n, (uint)page_size.physical());
       ut_error;
     }
   } else {

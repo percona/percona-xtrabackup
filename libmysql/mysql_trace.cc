@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@
   Definition of the global trace_plugin pointer - see plugin_trace.h
   for declaration and description.
 */
-struct st_mysql_client_plugin_TRACE *trace_plugin = NULL;
+struct st_mysql_client_plugin_TRACE *trace_plugin = nullptr;
 
 /*
   Macros for manipulating trace_info structure.
@@ -113,7 +113,7 @@ void mysql_trace_start(MYSQL *m) {
     trace_info->trace_plugin_data = trace_info->plugin->tracing_start(
         trace_info->plugin, m, PROTOCOL_STAGE_CONNECTING);
   } else {
-    trace_info->trace_plugin_data = NULL;
+    trace_info->trace_plugin_data = nullptr;
   }
 
   /* Store trace_info in the connection handle. */
@@ -138,7 +138,7 @@ void mysql_trace_trace(MYSQL *m, enum trace_event ev,
                        struct st_trace_event_args args) {
   struct st_mysql_trace_info *trace_info = TRACE_DATA(m);
   struct st_mysql_client_plugin_TRACE *plugin =
-      trace_info ? trace_info->plugin : NULL;
+      trace_info ? trace_info->plugin : nullptr;
   int quit_tracing = 0;
 
   /*
@@ -158,8 +158,8 @@ void mysql_trace_trace(MYSQL *m, enum trace_event ev,
     */
     bool saved_reconnect_flag = m->reconnect;
 
-    TRACE_DATA(m) = NULL;
-    m->reconnect = 0;
+    TRACE_DATA(m) = nullptr;
+    m->reconnect = false;
     quit_tracing = plugin->trace_event(plugin, GET_DATA(trace_info), m,
                                        GET_STAGE(trace_info), ev, args);
     m->reconnect = saved_reconnect_flag;
@@ -171,7 +171,7 @@ void mysql_trace_trace(MYSQL *m, enum trace_event ev,
   if (quit_tracing || TEST_STAGE(trace_info, DISCONNECTED) ||
       TRACE_EVENT_DISCONNECTED == ev) {
     /* Note: this disables further tracing */
-    TRACE_DATA(m) = NULL;
+    TRACE_DATA(m) = nullptr;
 
     if (plugin->tracing_stop)
       plugin->tracing_stop(plugin, m, GET_DATA(trace_info));

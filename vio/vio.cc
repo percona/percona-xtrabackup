@@ -44,21 +44,16 @@
 #include "mysql/psi/mysql_socket.h"
 #include "mysql/psi/psi_memory.h"  // IWYU pragma: keep
 #include "mysql/service_mysql_alloc.h"
+#include "template_utils.h"
 #include "vio/vio_priv.h"
 
-#ifdef HAVE_OPENSSL
 PSI_memory_key key_memory_vio_ssl_fd;
-#endif
-
 PSI_memory_key key_memory_vio;
 PSI_memory_key key_memory_vio_read_buffer;
 
 #ifdef HAVE_PSI_INTERFACE
 static PSI_memory_info all_vio_memory[] = {
-#ifdef HAVE_OPENSSL
     {&key_memory_vio_ssl_fd, "ssl_fd", 0, 0, PSI_DOCUMENT_ME},
-#endif
-
     {&key_memory_vio, "vio", 0, 0, PSI_DOCUMENT_ME},
     {&key_memory_vio_read_buffer, "read_buffer", 0, 0, PSI_DOCUMENT_ME},
 };
@@ -185,9 +180,7 @@ Vio &Vio::operator=(Vio &&vio) {
   hPipe = vio.hPipe;
 #endif
 
-#ifdef HAVE_OPENSSL
   ssl_arg = vio.ssl_arg;
-#endif
 
 #ifdef _WIN32
   handle_file_map = vio.handle_file_map;
@@ -277,7 +270,6 @@ static bool vio_init(Vio *vio, enum enum_vio_type type, my_socket sd,
     return false;
   }
 #endif /* _WIN32 */
-#ifdef HAVE_OPENSSL
   if (type == VIO_TYPE_SSL) {
     vio->viodelete = vio_ssl_delete;
     vio->vioerrno = vio_errno;
@@ -299,7 +291,6 @@ static bool vio_init(Vio *vio, enum enum_vio_type type, my_socket sd,
     vio->is_blocking_flag = true;
     return false;
   }
-#endif /* HAVE_OPENSSL */
   vio->viodelete = vio_delete;
   vio->vioerrno = vio_errno;
   vio->read = vio->read_buffer ? vio_read_buff : vio_read;
@@ -362,9 +353,7 @@ bool vio_reset(Vio *vio, enum enum_vio_type type, my_socket sd,
   /* Preserve perfschema info for this connection */
   new_vio.mysql_socket.m_psi = vio->mysql_socket.m_psi;
 
-#ifdef HAVE_OPENSSL
   new_vio.ssl_arg = ssl;
-#endif
 
   /*
     Propagate the timeout values. Necessary to also propagate
@@ -552,11 +541,7 @@ void vio_delete(Vio *vio) { internal_vio_delete(vio); }
   components below it when application finish
 
 */
-void vio_end(void) {
-#if defined(HAVE_OPENSSL)
-  vio_ssl_end();
-#endif
-}
+void vio_end(void) { vio_ssl_end(); }
 
 struct vio_string {
   const char *m_str;

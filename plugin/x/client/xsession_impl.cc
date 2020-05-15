@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,23 +27,24 @@
 #include <algorithm>
 #include <array>
 #include <chrono>  // NOLINT(build/c++11)
+#include <limits>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <utility>
 
-#include "errmsg.h"
-#include "my_compiler.h"
-#include "my_config.h"
-#include "my_dbug.h"
-#include "my_macros.h"
-#include "mysql_version.h"
-#include "mysqld_error.h"
+#include "errmsg.h"         // NOLINT(build/include_subdir)
+#include "my_compiler.h"    // NOLINT(build/include_subdir)
+#include "my_config.h"      // NOLINT(build/include_subdir)
+#include "my_dbug.h"        // NOLINT(build/include_subdir)
+#include "my_macros.h"      // NOLINT(build/include_subdir)
+#include "mysql_version.h"  // NOLINT(build/include_subdir)
+#include "mysqld_error.h"   // NOLINT(build/include_subdir)
 
 #include "plugin/x/client/mysqlxclient/xerror.h"
-#include "plugin/x/client/validator/capability_compression_validator.h"
 #include "plugin/x/client/validator/descriptor.h"
+#include "plugin/x/client/validator/option_compression_validator.h"
 #include "plugin/x/client/validator/option_connection_validator.h"
 #include "plugin/x/client/validator/option_context_validator.h"
 #include "plugin/x/client/validator/option_ssl_validator.h"
@@ -292,6 +293,28 @@ Option_descriptor get_option_descriptor(const XSession::Mysqlx_option option) {
       return Option_descriptor{
           new Con_str_store<&Con_conf::m_network_namespace>()};
 
+    case Mysqlx_option::Compression_negotiation_mode:
+      return Option_descriptor{new Compression_negotiation_validator()};
+
+    case Mysqlx_option::Compression_algorithms:
+      return Option_descriptor{new Compression_algorithms_validator()};
+
+    case Mysqlx_option::Compression_combine_mixed_messages:
+      return Option_descriptor{new Compression_bool_store<
+          &Compression_config::m_use_server_combine_mixed_messages>()};
+
+    case Mysqlx_option::Compression_max_combine_messages:
+      return Option_descriptor{new Compression_int_store<
+          &Compression_config::m_use_server_max_combine_messages>()};
+
+    case Mysqlx_option::Compression_level_client:
+      return Option_descriptor{new Compression_optional_int_store<
+          &Compression_config::m_use_level_client>()};
+
+    case Mysqlx_option::Compression_level_server:
+      return Option_descriptor{new Compression_optional_int_store<
+          &Compression_config::m_use_level_server>()};
+
     default:
       return {};
   }
@@ -445,7 +468,7 @@ XError Session_impl::set_mysql_option(
                   ER_TEXT_OPTION_NOT_SUPPORTED_AFTER_CONNECTING};
 
   Argument_array array;
-  for (const auto value : values_list) {
+  for (const auto &value : values_list) {
     array.push_back(Argument_value{value});
   }
 
@@ -708,10 +731,6 @@ void Session_impl::setup_server_supported_compression(
 
   if ("algorithm" == field->key()) {
     negotiator.server_supports_algorithms(text_values);
-  } else if ("client_style" == field->key()) {
-    negotiator.server_supports_client_styles(text_values);
-  } else if ("server_style" == field->key()) {
-    negotiator.server_supports_server_styles(text_values);
   }
 }
 
@@ -813,21 +832,42 @@ XError Session_impl::authenticate(const char *user, const char *pass,
 
     XError error;
     auto &config = m_context->m_compression_config;
-    Capabilities_builder capability_builder;
 
-    if (config.m_negotiator.update_compression_options(
-            &config.m_use_algorithm, &config.m_use_client_style,
-            &config.m_use_server_style, &capability_builder, &error)) {
+    if (config.m_negotiator.update_compression_options(&config.m_use_algorithm,
+                                                       &error)) {
+      Capabilities_builder capability_builder;
+      capability_builder.add_capability("compression",
+                                        get_compression_capability());
       error = protocol.execute_set_capability(capability_builder.get_result());
-
       // We shouldn't fail here, server supports needed capability
-      if (error) return error;
+      // still there is possibility that compression_level is not
+      // supported by the server
+      if (error && error.is_fatal()) return error;
+
+      if (error) {
+        const bool without_compression_level = false;
+        capability_builder.clear();
+        capability_builder.add_capability(
+            "compression",
+            get_compression_capability(without_compression_level));
+        // We shouldn't fail here, server supports needed capability
+        error =
+            protocol.execute_set_capability(capability_builder.get_result());
+      }
     }
 
     // Server doesn't support given compression configuration
     // and client didn't mark it as optional (its "required").
     if (error) return error;
   }
+
+  if (m_context->m_compression_config.m_use_level_client.has_value())
+    m_protocol->use_compression(
+        m_context->m_compression_config.m_use_algorithm,
+        m_context->m_compression_config.m_use_level_client.value());
+  else
+    m_protocol->use_compression(
+        m_context->m_compression_config.m_use_algorithm);
 
   const auto is_secure_connection =
       connection.state().is_ssl_activated() ||
@@ -964,18 +1004,15 @@ bool Session_impl::is_auto_method(const Auth auto_authentication) {
 }
 
 std::pair<XError, std::vector<std::string>>
-Session_impl::validate_and_adjust_auth_methods(std::vector<Auth> auth_methods,
-                                               const bool can_use_plain) {
+Session_impl::validate_and_adjust_auth_methods(
+    const std::vector<Auth> &auth_methods, bool can_use_plain) {
   DBUG_TRACE;
-  const auto auth_methods_count = auth_methods.size();
   const Auth first_method =
-      auth_methods_count == 0 ? Auth::k_auto : auth_methods[0];
+      auth_methods.empty() ? Auth::k_auto : auth_methods[0];
 
   const auto auto_sequence =
       get_methods_sequence_from_auto(first_method, can_use_plain);
-  if (!auto_sequence.empty()) {
-    auth_methods.assign(auto_sequence.begin(), auto_sequence.end());
-  } else {
+  if (auto_sequence.empty()) {
     if (std::any_of(std::begin(auth_methods), std::end(auth_methods),
                     is_auto_method))
       return {XError{CR_X_INVALID_AUTH_METHOD,
@@ -985,7 +1022,8 @@ Session_impl::validate_and_adjust_auth_methods(std::vector<Auth> auth_methods,
 
   std::vector<std::string> auth_method_string_list;
 
-  for (const auto auth_method : auth_methods) {
+  for (const auto &auth_method :
+       auto_sequence.empty() ? auth_methods : auto_sequence) {
     if (0 < m_server_supported_auth_methods.count(auth_method))
       auth_method_string_list.push_back(get_method_from_auth(auth_method));
   }
@@ -996,7 +1034,7 @@ Session_impl::validate_and_adjust_auth_methods(std::vector<Auth> auth_methods,
             {}};
   }
 
-  return {{}, auth_method_string_list};
+  return {{}, std::move(auth_method_string_list)};
 }
 
 Handler_result Session_impl::handle_notices(
@@ -1071,6 +1109,26 @@ Argument_uobject Session_impl::get_connect_attrs() const {
   };
 }
 
+Argument_value Session_impl::get_compression_capability(
+    const bool include_compression_level) const {
+  static const std::map<Compression_algorithm, std::string> k_algorithm{
+      {Compression_algorithm::k_deflate, "DEFLATE_STREAM"},
+      {Compression_algorithm::k_lz4, "LZ4_MESSAGE"},
+      {Compression_algorithm::k_zstd, "ZSTD_STREAM"}};
+
+  Argument_object obj;
+  auto &config = m_context->m_compression_config;
+  obj["algorithm"] = k_algorithm.at(config.m_use_algorithm);
+  obj["server_combine_mixed_messages"] =
+      config.m_use_server_combine_mixed_messages;
+  obj["server_max_combine_messages"] =
+      static_cast<int64_t>(config.m_use_server_max_combine_messages);
+  if (config.m_use_level_server.has_value() && include_compression_level)
+    obj["level"] = static_cast<int64_t>(config.m_use_level_server.value());
+
+  return Argument_value{obj};
+}
+
 Session_impl::Session_connect_timeout_scope_guard::
     Session_connect_timeout_scope_guard(Session_impl *parent)
     : m_parent{parent}, m_start_time{std::chrono::steady_clock::now()} {
@@ -1110,31 +1168,10 @@ Session_impl::Session_connect_timeout_scope_guard::
       (write_timeout < 0) ? -1 : write_timeout / 1000));
 }
 
-static void initialize_xmessages() {
-  /* Workaround for initialization of protobuf data.
-     Call default_instance for first msg from every
-     protobuf file.
-
-     This should have be changed to a proper fix.
-   */
-  Mysqlx::ServerMessages::default_instance();
-  Mysqlx::Sql::StmtExecute::default_instance();
-  Mysqlx::Session::AuthenticateStart::default_instance();
-  Mysqlx::Resultset::ColumnMetaData::default_instance();
-  Mysqlx::Notice::Warning::default_instance();
-  Mysqlx::Expr::Expr::default_instance();
-  Mysqlx::Expect::Open::default_instance();
-  Mysqlx::Datatypes::Any::default_instance();
-  Mysqlx::Crud::Update::default_instance();
-  Mysqlx::Connection::Capabilities::default_instance();
-}
-
 std::unique_ptr<XSession> create_session(const char *socket_file,
                                          const char *user, const char *pass,
                                          const char *schema,
                                          XError *out_error) {
-  initialize_xmessages();
-
   auto result = create_session();
   auto error = result->connect(socket_file, user, pass, schema);
 
@@ -1150,8 +1187,6 @@ std::unique_ptr<XSession> create_session(const char *host, const uint16_t port,
                                          const char *user, const char *pass,
                                          const char *schema,
                                          XError *out_error) {
-  initialize_xmessages();
-
   auto result = create_session();
   auto error = result->connect(host, port, user, pass, schema);
 
@@ -1164,8 +1199,6 @@ std::unique_ptr<XSession> create_session(const char *host, const uint16_t port,
 }
 
 std::unique_ptr<XSession> create_session() {
-  initialize_xmessages();
-
   std::unique_ptr<XSession> result{new Session_impl()};
 
   return result;

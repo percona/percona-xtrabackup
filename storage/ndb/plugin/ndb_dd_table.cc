@@ -33,7 +33,6 @@
 #include "sql/dd/types/column.h"
 #include "sql/dd/types/partition.h"
 #include "sql/dd/types/table.h"
-#include "storage/ndb/plugin/ndb_dd_sdi.h"
 
 // The key used to store the NDB tables object version in the
 // se_private_data field of DD
@@ -201,14 +200,42 @@ void ndb_dd_table_set_tablespace_id(dd::Table *table_def,
   table_def->set_tablespace_id(tablespace_id);
 }
 
+// The key used to store the Schema UUID in the
+// se_private_data field of ndb_schema table in DD
+static const char *schema_uuid_key = "schema_uuid";
+
+void ndb_dd_table_set_schema_uuid(dd::Table *table_def, const char *value) {
+  DBUG_TRACE;
+  DBUG_ASSERT(value != nullptr);
+  // Schema UUID is to be stored in the ndb_schema table only
+  DBUG_ASSERT(table_def->name().compare("ndb_schema") == 0);
+  table_def->se_private_data().set(schema_uuid_key, value);
+}
+
+bool ndb_dd_table_get_schema_uuid(const dd::Table *table_def,
+                                  dd::String_type *value) {
+  DBUG_TRACE;
+
+  // Schema UUID will be stored in the ndb_schema table
+  DBUG_ASSERT(table_def->name().compare("ndb_schema") == 0);
+
+  if (!table_def->se_private_data().exists(schema_uuid_key)) {
+    DBUG_PRINT("info", ("Table definition didn't contain property '%s'",
+                        schema_uuid_key));
+    return true;
+  }
+
+  if (table_def->se_private_data().get(schema_uuid_key, value)) {
+    DBUG_PRINT("error", ("Table definition didn't have a valid value for '%s'",
+                         schema_uuid_key));
+    return false;
+  }
+
+  DBUG_PRINT("exit", ("schema uuid value: %s", value->c_str()));
+  return true;
+}
+
 Ndb_dd_table::Ndb_dd_table(THD *thd)
     : m_thd(thd), m_table_def{dd::create_object<dd::Table>()} {}
 
 Ndb_dd_table::~Ndb_dd_table() { delete m_table_def; }
-
-bool Ndb_dd_table::deserialize(const dd::sdi_t &sdi) {
-  if (ndb_dd_sdi_deserialize(m_thd, sdi, m_table_def)) {
-    return false;
-  }
-  return true;
-}

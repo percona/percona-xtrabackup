@@ -2,12 +2,12 @@
 .\"     Title: \fBmysqlimport\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 09/06/2019
+.\"      Date: 03/06/2020
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBMYSQLIMPORT\FR" "1" "09/06/2019" "MySQL 8\&.0" "MySQL Database System"
+.TH "\FBMYSQLIMPORT\FR" "1" "03/06/2020" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -43,7 +43,7 @@ SQL statement\&. Most options to
 correspond directly to clauses of
 LOAD DATA
 syntax\&. See
-Section\ \&13.2.7, \(lqLOAD DATA Syntax\(rq\&.
+Section\ \&13.2.7, \(lqLOAD DATA Statement\(rq\&.
 .PP
 Invoke
 \fBmysqlimport\fR
@@ -185,6 +185,11 @@ Write a debugging log\&. A typical
 string is
 d:t:o,\fIfile_name\fR\&. The default is
 d:t:o\&.
+.sp
+This option is available only if MySQL was built using
+\fBWITH_DEBUG\fR\&. MySQL release binaries provided by Oracle are
+\fInot\fR
+built using this option\&.
 .RE
 .sp
 .RS 4
@@ -198,6 +203,11 @@ d:t:o\&.
 \fB\-\-debug\-check\fR
 .sp
 Print some debugging information when the program exits\&.
+.sp
+This option is available only if MySQL was built using
+\fBWITH_DEBUG\fR\&. MySQL release binaries provided by Oracle are
+\fInot\fR
+built using this option\&.
 .RE
 .sp
 .RS 4
@@ -211,6 +221,11 @@ Print some debugging information when the program exits\&.
 \fB\-\-debug\-info\fR
 .sp
 Print debugging information and memory and CPU usage statistics when the program exits\&.
+.sp
+This option is available only if MySQL was built using
+\fBWITH_DEBUG\fR\&. MySQL release binaries provided by Oracle are
+\fInot\fR
+built using this option\&.
 .RE
 .sp
 .RS 4
@@ -359,7 +374,7 @@ Section\ \&6.4.1.4, \(lqClient-Side Cleartext Pluggable Authentication\(rq\&.)
 .sp
 These options have the same meaning as the corresponding clauses for
 LOAD DATA\&. See
-Section\ \&13.2.7, \(lqLOAD DATA Syntax\(rq\&.
+Section\ \&13.2.7, \(lqLOAD DATA Statement\(rq\&.
 .RE
 .sp
 .RS 4
@@ -401,7 +416,7 @@ is given and specifies a valid public key file, it takes precedence over
 For information about the
 caching_sha2_password
 plugin, see
-Section\ \&6.4.1.3, \(lqCaching SHA-2 Pluggable Authentication\(rq\&.
+Section\ \&6.4.1.2, \(lqCaching SHA-2 Pluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -463,7 +478,7 @@ lines of the data file\&.
 This option has the same meaning as the corresponding clause for
 LOAD DATA\&. For example, to import Windows files that have lines terminated with carriage return/linefeed pairs, use
 \fB\-\-lines\-terminated\-by="\er\en"\fR\&. (You might have to double the backslashes, depending on the escaping conventions of your command interpreter\&.) See
-Section\ \&13.2.7, \(lqLOAD DATA Syntax\(rq\&.
+Section\ \&13.2.7, \(lqLOAD DATA Statement\(rq\&.
 .RE
 .sp
 .RS 4
@@ -479,7 +494,13 @@ Section\ \&13.2.7, \(lqLOAD DATA Syntax\(rq\&.
 .sp
 By default, files are read by the server on the server host\&. With this option,
 \fBmysqlimport\fR
-reads input files locally on the client host\&. Enabling local data loading also requires that the server permits it; see
+reads input files locally on the client host\&.
+.sp
+Successful use of
+LOCAL
+load operations within
+\fBmysqlimport\fR
+also requires that the server permits local loading; see
 Section\ \&6.1.6, \(lqSecurity Issues with LOAD DATA LOCAL\(rq
 .RE
 .sp
@@ -707,19 +728,6 @@ options control handling of input rows that duplicate existing rows on unique ke
 .sp -1
 .IP \(bu 2.3
 .\}
-\fB\-\-secure\-auth\fR
-.sp
-This option was removed in MySQL 8\&.0\&.3\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
 \fB\-\-server\-public\-key\-path=\fR\fB\fIfile_name\fR\fR
 .sp
 The path name to a file containing a client\-side copy of the public key required by the server for RSA key pair\-based password exchange\&. The file must be in PEM format\&. This option applies to clients that authenticate with the
@@ -741,8 +749,8 @@ sha256_password
 and
 caching_sha2_password
 plugins, see
-Section\ \&6.4.1.2, \(lqSHA-256 Pluggable Authentication\(rq, and
-Section\ \&6.4.1.3, \(lqCaching SHA-2 Pluggable Authentication\(rq\&.
+Section\ \&6.4.1.3, \(lqSHA-256 Pluggable Authentication\(rq, and
+Section\ \&6.4.1.2, \(lqCaching SHA-2 Pluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1041,7 +1049,7 @@ shell> \fBmysql \-e \*(AqSELECT * FROM imptest\*(Aq test\fR
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2020, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

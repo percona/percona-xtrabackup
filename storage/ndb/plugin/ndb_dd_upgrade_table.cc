@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,75 +22,25 @@
 
 #include "storage/ndb/plugin/ndb_dd_upgrade_table.h"
 
-#include <assert.h>
-#include <errno.h>
-#include <string.h>
-#include <sys/stat.h>
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
-#include <sys/types.h>
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
 #include <algorithm>
 #include <string>
+#include <unordered_set>
 
-#include "lex_string.h"
-#include "m_string.h"
-#include "my_alloc.h"
-#include "my_base.h"
-#include "my_dbug.h"
-#include "my_dir.h"
-#include "my_io.h"
-#include "my_loglevel.h"
-#include "my_sys.h"
-#include "my_user.h"  // parse_user
-#include "mysql/psi/mysql_file.h"
-#include "mysql/psi/psi_base.h"
-#include "mysql/udf_registration_types.h"
-#include "mysql_com.h"
-#include "mysqld_error.h"                    // ER_*
-#include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
-#include "sql/dd/dd_schema.h"                // Schema_MDL_locker
-#include "sql/dd/dd_table.h"                 // create_dd_user_tableW
-#include "sql/dd/dictionary.h"
-#include "sql/dd/impl/utils.h"  // execute_query
-#include "sql/dd/properties.h"
-#include "sql/dd/types/foreign_key.h"  // dd::Foreign_key
-#include "sql/dd/types/table.h"        // dd::Table
-#include "sql/dd/upgrade_57/upgrade.h"
-#include "sql/field.h"
-#include "sql/handler.h"  // legacy_db_type
-#include "sql/key.h"
-#include "sql/lock.h"  // Tablespace_hash_set
-#include "sql/log.h"
-#include "sql/mdl.h"
-#include "sql/mysqld.h"      // mysql_real_data_home
-#include "sql/parse_file.h"  // File_option
-#include "sql/partition_element.h"
-#include "sql/partition_info.h"  // partition_info
-#include "sql/psi_memory_key.h"  // key_memory_TABLE
-#include "sql/sp_head.h"         // sp_head
-#include "sql/sql_alter.h"
-#include "sql/sql_base.h"  // open_tables
-#include "sql/sql_const.h"
-#include "sql/sql_lex.h"  // new_empty_query_block
-#include "sql/sql_list.h"
-#include "sql/sql_parse.h"  // check_string_char_length
-#include "sql/sql_table.h"  // build_tablename
-#include "sql/system_variables.h"
-#include "sql/table.h"     // Table_check_intact
-#include "sql/thd_raii.h"  // Disable_autocommit_guard
-#include "sql/thr_malloc.h"
-#include "sql/transaction.h"  // trans_commit
-#include "sql_string.h"
-#include "storage/ndb/plugin/ndb_log.h"
-#include "storage/ndb/plugin/ndb_thd.h"
-#include "storage/ndb/plugin/ndb_thd_ndb.h"  // Thd_ndb
-#include "thr_lock.h"
+#include "my_dbug.h"               // DBUG_TRACE
+#include "mysql/psi/mysql_file.h"  // mysql_file_create
+#include "sql/create_field.h"      // Create_field
+#include "sql/dd/dd_table.h"       // create_dd_user_table
+#include "sql/dd/types/table.h"    // dd::Table
+#include "sql/mysqld.h"            // key_file_frm
+#include "sql/sql_lex.h"           // lex_start
+#include "sql/sql_parse.h"         // free_items
+#include "sql/sql_table.h"         // build_tablename
+#include "sql/thd_raii.h"          // Implicit_substatement_state_guard
+#include "storage/ndb/plugin/ndb_dd_client.h"  // Ndb_dd_client
+#include "storage/ndb/plugin/ndb_log.h"        // ndb_log_error
+#include "storage/ndb/plugin/ndb_thd.h"        // get_thd_ndb
+#include "storage/ndb/plugin/ndb_thd_ndb.h"    // Thd_ndb
 
-class Sroutine_hash_entry;
 namespace dd {
 class Schema;
 class Table;
@@ -98,115 +48,6 @@ class Table;
 
 namespace dd {
 namespace ndb_upgrade {
-
-/*
-  Custom version of standard offsetof() macro which can be used to get
-  offsets of members in class for non-POD types (according to the current
-  version of C++ standard offsetof() macro can't be used in such cases and
-  attempt to do so causes warnings to be emitted, OTOH in many cases it is
-  still OK to assume that all instances of the class has the same offsets
-  for the same members).
-
-  This is temporary solution which should be removed once File_parser class
-  and related routines are refactored.
-*/
-
-#define my_offsetof_upgrade(TYPE, MEMBER) \
-  ((size_t)((char *)&(((TYPE *)0x10)->MEMBER) - (char *)0x10))
-
-/**
-  Bootstrap thread executes SQL statements.
-  Any error in the execution of SQL statements causes call to my_error().
-  At this moment, error handler hook is set to my_message_stderr.
-  my_message_stderr() prints the error messages to standard error stream but
-  it does not follow the standard error format. Further, the error status is
-  not set in Diagnostics Area.
-
-  This class is to create RAII error handler hooks to be used when executing
-  statements from bootstrap thread.
-
-  It will print the error in the standard error format.
-  Diagnostics Area error status will be set to avoid asserts.
-  Error will be handler by caller function.
-*/
-
-class Bootstrap_error_handler {
- private:
-  void (*m_old_error_handler_hook)(uint, const char *, myf);
-
-  //  Set the error in DA. Optionally print error in log.
-  static void my_message_bootstrap(uint error, const char *str, myf MyFlags) {
-    set_abort_on_error(error);
-    my_message_sql(error, str, MyFlags | (m_log_error ? ME_ERRORLOG : 0));
-  }
-
-  // Set abort on error flag and enable error logging for certain fatal error.
-  static void set_abort_on_error(uint error) {
-    switch (error) {
-      case ER_WRONG_COLUMN_NAME: {
-        abort_on_error = true;
-        m_log_error = true;
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
- public:
-  Bootstrap_error_handler() {
-    m_old_error_handler_hook = error_handler_hook;
-    error_handler_hook = my_message_bootstrap;
-  }
-
-  // Mark as error is set.
-  void set_log_error(bool log_error) { m_log_error = log_error; }
-
-  ~Bootstrap_error_handler() { error_handler_hook = m_old_error_handler_hook; }
-  static bool m_log_error;
-  static bool abort_on_error;
-};
-
-bool Bootstrap_error_handler::m_log_error = true;
-bool Bootstrap_error_handler::abort_on_error = false;
-
-/**
-  RAII to handle MDL locks while upgrading.
-*/
-
-class Upgrade_MDL_guard {
-  MDL_ticket *m_mdl_ticket_schema;
-  MDL_ticket *m_mdl_ticket_table;
-  bool m_tablespace_lock;
-
-  THD *m_thd;
-
- public:
-  bool acquire_lock(const String_type &db_name, const String_type &table_name) {
-    return dd::acquire_exclusive_schema_mdl(m_thd, db_name.c_str(), false,
-                                            &m_mdl_ticket_schema) ||
-           dd::acquire_exclusive_table_mdl(m_thd, db_name.c_str(),
-                                           table_name.c_str(), false,
-                                           &m_mdl_ticket_table);
-  }
-  bool acquire_lock_tablespace(Tablespace_hash_set *tablespace_names) {
-    m_tablespace_lock = true;
-    return lock_tablespace_names(m_thd, tablespace_names,
-                                 m_thd->variables.lock_wait_timeout);
-  }
-
-  Upgrade_MDL_guard(THD *thd)
-      : m_mdl_ticket_schema(nullptr),
-        m_mdl_ticket_table(nullptr),
-        m_tablespace_lock(false),
-        m_thd(thd) {}
-  ~Upgrade_MDL_guard() {
-    if (m_mdl_ticket_schema != nullptr)
-      dd::release_mdl(m_thd, m_mdl_ticket_schema);
-    if ((m_mdl_ticket_table != nullptr) || m_tablespace_lock)
-      m_thd->mdl_context.release_transactional_locks();
-  }
-};
 
 /**
   RAII to handle cleanup after table upgrading.
@@ -383,166 +224,6 @@ static bool fix_generated_columns_for_upgrade(
 }
 
 /**
-  Call handler API to get storage engine specific metadata. Storage Engine
-  should fill table id and version
-
-  @param[in]    thd             Thread Handle
-  @param[in]    schema_name     Name of schema
-  @param[in]    table_name      Name of table
-  @param[in]    table           TABLE object
-
-  @retval true   ON SUCCESS
-  @retval false  ON FAILURE
-*/
-
-static bool set_se_data_for_user_tables(THD *thd,
-                                        const String_type &schema_name,
-                                        const String_type &table_name,
-                                        TABLE *table) {
-  Disable_autocommit_guard autocommit_guard(thd);
-  dd::Schema_MDL_locker mdl_locker(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-
-  const dd::Schema *sch = nullptr;
-  if (thd->dd_client()->acquire<dd::Schema>(schema_name.c_str(), &sch))
-    return false;
-
-  dd::Table *table_def = nullptr;
-  if (thd->dd_client()->acquire_for_modification(
-          schema_name.c_str(), table_name.c_str(), &table_def)) {
-    // Error is reported by the dictionary subsystem.
-    return false;
-  }
-
-  if (!table_def) {
-    /*
-       Should never hit this case as the caller of this function stores
-       the information in dictionary.
-    */
-    ndb_log_error("Error in fetching %s.%s table data from dictionary",
-                  table_name.c_str(), schema_name.c_str());
-    return false;
-  }
-
-  if (table->file->ha_upgrade_table(thd, schema_name.c_str(),
-                                    table_name.c_str(), table_def, table)) {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    return false;
-  }
-
-  if (thd->dd_client()->update<dd::Table>(table_def)) {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    return false;
-  }
-
-  return !(trans_commit_stmt(thd) || trans_commit(thd));
-}
-
-/**
-  Set names of parent keys (unique constraint names matching FK
-  in parent tables) for the FKs in which table participates.
-
-  @param  thd         Thread context.
-  @param  schema_name Name of schema.
-  @param  table_name  Name of table.
-  @param  hton        Table's handlerton.
-
-  @retval true  - Success.
-  @retval false - Failure.
-*/
-
-static bool fix_fk_parent_key_names(THD *thd, const String_type &schema_name,
-                                    const String_type &table_name,
-                                    handlerton *hton) {
-  if (!(hton->flags & HTON_SUPPORTS_FOREIGN_KEYS)) {
-    // Shortcut. No need to process FKs for engines which don't support them.
-    return true;
-  }
-
-  Disable_autocommit_guard autocommit_guard(thd);
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  dd::Table *table_def = nullptr;
-
-  if (thd->dd_client()->acquire_for_modification(
-          schema_name.c_str(), table_name.c_str(), &table_def)) {
-    // Error is reported by the dictionary subsystem.
-    return false;
-  }
-
-  if (!table_def) {
-    /*
-      Should never hit this case as the caller of this function stores
-      the information in dictionary.
-    */
-    ndb_log_error("Error in fetching %s.%s table data from dictionary",
-                  schema_name.c_str(), table_name.c_str());
-    return false;
-  }
-
-  for (dd::Foreign_key *fk : *(table_def->foreign_keys())) {
-    const dd::Table *parent_table_def = nullptr;
-
-    if (my_strcasecmp(table_alias_charset,
-                      fk->referenced_table_schema_name().c_str(),
-                      schema_name.c_str()) == 0 &&
-        my_strcasecmp(table_alias_charset, fk->referenced_table_name().c_str(),
-                      table_name.c_str()) == 0) {
-      // This FK references the same table as on which it is defined.
-      parent_table_def = table_def;
-    } else {
-      if (thd->dd_client()->acquire(fk->referenced_table_schema_name().c_str(),
-                                    fk->referenced_table_name().c_str(),
-                                    &parent_table_def))
-        return false;
-    }
-
-    if (parent_table_def == nullptr) {
-      /*
-        This is legal situaton. Parent table was not upgraded yet or
-        simply doesn't exist. In the former case our FKs will be
-        updated with the correct parent key names once parent table
-        is upgraded.
-      */
-    } else {
-      bool is_self_referencing_fk = (parent_table_def == table_def);
-      if (prepare_fk_parent_key(hton, parent_table_def, nullptr, nullptr,
-                                is_self_referencing_fk, fk))
-        return false;
-    }
-  }
-
-  /*
-    Adjust parent key names for FKs belonging to already upgraded tables,
-    which reference the table being upgraded here. Also adjust the
-    foreign key parent collection, both for this table and for other
-    tables being referenced by this one.
-  */
-  if (adjust_fk_children_after_parent_def_change(
-          thd,
-          true,  // Check charsets.
-          schema_name.c_str(), table_name.c_str(), hton, table_def, nullptr,
-          false) ||  // Don't invalidate
-                     // TDC we don't have
-                     // proper MDL.
-      adjust_fk_parents(thd, schema_name.c_str(), table_name.c_str(), true,
-                        nullptr)) {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    return false;
-  }
-
-  if (thd->dd_client()->update(table_def)) {
-    trans_rollback_stmt(thd);
-    trans_rollback(thd);
-    return false;
-  }
-
-  return !(trans_commit_stmt(thd) || trans_commit(thd));
-}
-
-/**
   THD::mem_root is only switched with the given mem_root and switched back
   on destruction. This does not free any mem_root.
  */
@@ -563,11 +244,11 @@ class Thd_mem_root_guard {
   Read .frm files and enter metadata for tables
 */
 
-bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
+bool migrate_table_to_dd(THD *thd, Ndb_dd_client *dd_client,
+                         const String_type &schema_name,
                          const String_type &table_name,
                          const unsigned char *frm_data,
-                         const unsigned int unpacked_len,
-                         bool is_fix_view_cols_and_deps) {
+                         const unsigned int unpacked_len) {
   DBUG_TRACE;
 
   FRM_context frm_context;
@@ -590,14 +271,21 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
                                          MY_UNPACK_FILENAME | MY_APPEND_EXT),
                                CREATE_MODE, O_RDWR | O_TRUNC, MYF(MY_WME));
 
+  Thd_ndb *thd_ndb = get_thd_ndb(thd);
   if (frm_file < 0) {
-    ndb_log_error("Could not create frm file, error: %d", frm_file);
+    thd_ndb->push_warning("Failed to create .frm file for table %s.%s",
+                          schema_name.c_str(), table_name.c_str());
+    ndb_log_error("Failed to create .frm file for table '%s.%s', error: %d",
+                  schema_name.c_str(), table_name.c_str(), frm_file);
     return false;
   }
 
   if (mysql_file_write(frm_file, frm_data, unpacked_len,
                        MYF(MY_WME | MY_NABP))) {
-    ndb_log_error("Could not write frm file ");
+    thd_ndb->push_warning("Failed to write .frm file for table %s.%s",
+                          schema_name.c_str(), table_name.c_str());
+    ndb_log_error("Failed to write .frm file for table '%s.%s'",
+                  schema_name.c_str(), table_name.c_str());
     // Delete frm file
     mysql_file_delete(key_file_frm, index_file, MYF(0));
     return false;
@@ -608,7 +296,10 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   // Create table share for tables
   if (create_table_share_for_upgrade(thd, path, &share, &frm_context,
                                      schema_name.c_str(), table_name.c_str(),
-                                     is_fix_view_cols_and_deps)) {
+                                     false)) {
+    thd_ndb->push_warning(ER_CANT_CREATE_TABLE_SHARE_FROM_FRM,
+                          "Error in creating TABLE_SHARE from %s.frm file",
+                          table_name.c_str());
     ndb_log_error("Error in creating TABLE_SHARE from %s.frm file",
                   table_name.c_str());
     // Delete frm file
@@ -630,6 +321,9 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   // Get the handler
   if (!(file = get_new_handler(&share, share.partition_info_str_len != 0,
                                thd->mem_root, share.db_type()))) {
+    thd_ndb->push_warning(ER_CANT_CREATE_HANDLER_OBJECT_FOR_TABLE,
+                          "Error in creating handler object for table %s.%s",
+                          schema_name.c_str(), table_name.c_str());
     ndb_log_error("Error in creating handler object for table %s.%s",
                   schema_name.c_str(), table_name.c_str());
     return false;
@@ -638,8 +332,11 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   table_guard.update_handler(file);
 
   if (table.file->set_ha_share_ref(&share.ha_share)) {
+    thd_ndb->push_warning(ER_CANT_SET_HANDLER_REFERENCE_FOR_TABLE,
+                          "Error in setting handler reference for table %s.%s",
+                          schema_name.c_str(), table_name.c_str());
     ndb_log_error("Error in setting handler reference for table %s.%s",
-                  table_name.c_str(), schema_name.c_str());
+                  schema_name.c_str(), table_name.c_str());
     return false;
   }
 
@@ -678,21 +375,26 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   const bool check_temporal_upgrade = true;
   const int error = check_table_for_old_types(&table, check_temporal_upgrade);
   if (error) {
-    if (error == HA_ADMIN_NEEDS_DUMP_UPGRADE)
+    if (error == HA_ADMIN_NEEDS_DUMP_UPGRADE) {
+      thd_ndb->push_warning(ER_TABLE_NEEDS_DUMP_UPGRADE,
+                            "Table upgrade required for %s.%s. Please "
+                            "dump/reload table to fix it",
+                            schema_name.c_str(), table_name.c_str());
       ndb_log_error(
           "Table upgrade required for "
           "`%-.64s`.`%-.64s`. Please dump/reload table to "
           "fix it!",
           schema_name.c_str(), table_name.c_str());
-    else
+    } else {
       ndb_log_error(
           "Table upgrade required. Please do \"REPAIR TABLE `%s`\" "
           "or dump/reload to fix it",
           table_name.c_str());
-    Thd_ndb *thd_ndb = get_thd_ndb(thd);
-    thd_ndb->push_warning(
-        "Table definition contains obsolete data types such "
-        "as old temporal or decimal types");
+      thd_ndb->push_warning(
+          ER_TABLE_UPGRADE_REQUIRED,
+          "Table definition contains obsolete data types such "
+          "as old temporal or decimal types");
+    }
     return false;
   }
 
@@ -766,8 +468,8 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   if (!fill_partition_info_for_upgrade(thd, &share, &frm_context, &table))
     return false;
 
-  // Add name of all tablespaces used by partitions to the hash set.
-  Tablespace_hash_set tablespace_name_set(PSI_INSTRUMENT_ME);
+  // Store names of all tablespaces used by partitions
+  std::unordered_set<std::string> tablespace_names;
   if (thd->work_part_info != nullptr) {
     List_iterator<partition_element> partition_iter(
         thd->work_part_info->partitions);
@@ -776,7 +478,7 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
     while ((partition_elem = partition_iter++)) {
       if (partition_elem->tablespace_name != nullptr) {
         // Add name of all partitions to take MDL
-        tablespace_name_set.insert(partition_elem->tablespace_name);
+        tablespace_names.insert(partition_elem->tablespace_name);
       }
       if (thd->work_part_info->is_sub_partitioned()) {
         // Add name of all sub partitions to take MDL
@@ -784,15 +486,15 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
         partition_element *sub_elem;
         while ((sub_elem = sub_it++)) {
           if (sub_elem->tablespace_name != nullptr) {
-            tablespace_name_set.insert(sub_elem->tablespace_name);
+            tablespace_names.insert(sub_elem->tablespace_name);
           }
         }
       }
     }
   }
 
-  // Add name of the tablespace used by table to the hash set.
-  if (share.tablespace != nullptr) tablespace_name_set.insert(share.tablespace);
+  // Add name of the tablespace used by the table
+  if (share.tablespace != nullptr) tablespace_names.insert(share.tablespace);
 
   /*
     Acquire lock on tablespace names
@@ -806,12 +508,15 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
     still have to acquire locks. IX locks are acquired on tablespaces
     to satisfy asserts in dd::create_table()).
   */
-  Upgrade_MDL_guard mdl_guard(thd);
-  if ((tablespace_name_set.size() != 0) &&
-      mdl_guard.acquire_lock_tablespace(&tablespace_name_set)) {
-    ndb_log_error("Unable to acquire lock on tablespace name %s",
-                  share.tablespace);
-    return false;
+  for (const std::string &tablespace_name : tablespace_names) {
+    if (!dd_client->mdl_lock_tablespace(tablespace_name.c_str(), true)) {
+      thd_ndb->push_warning(ER_CANT_LOCK_TABLESPACE,
+                            "Unable to acquire lock on tablespace %s",
+                            tablespace_name.c_str());
+      ndb_log_error("Unable to acquire lock on tablespace %s",
+                    tablespace_name.c_str());
+      return false;
+    }
   }
 
   /*
@@ -819,69 +524,63 @@ bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
     asserts that Field objects in TABLE_SHARE doesn't have
     expressions assigned.
   */
-  Bootstrap_error_handler bootstrap_error_handler;
-  bootstrap_error_handler.set_log_error(false);
   if (!fix_generated_columns_for_upgrade(thd, &table, alter_info.create_list)) {
-    ndb_log_error("Error in processing generated columns");
+    thd_ndb->push_warning(
+        ER_CANT_UPGRADE_GENERATED_COLUMNS_TO_DD,
+        "Error in processing generated columns for table %s.%s",
+        schema_name.c_str(), table_name.c_str());
+    ndb_log_error("Error in processing generated columns for table '%s.%s'",
+                  schema_name.c_str(), table_name.c_str());
     return false;
   }
-  bootstrap_error_handler.set_log_error(true);
 
-  FOREIGN_KEY *fk_key_info_buffer = NULL;
-  uint fk_number = 0;
-
-  // Set sql_mode=0 for handling default values, it will be restored vai RAII.
+  // Set sql_mode=0 for handling default values, it will be restored via RAII.
   thd->variables.sql_mode = 0;
-  // Disable autocommit option in thd variable
-  Disable_autocommit_guard autocommit_guard(thd);
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  const dd::Schema *sch_obj = nullptr;
-  String_type to_table_name(table_name);
-
-  if (thd->dd_client()->acquire(schema_name, &sch_obj)) {
-    // Error is reported by the dictionary subsystem.
+  const dd::Schema *schema_def = nullptr;
+  if (!dd_client->get_schema(schema_name.c_str(), &schema_def) || !schema_def) {
+    thd_ndb->push_warning(ER_BAD_DB_ERROR, "Unknown database '%s'",
+                          schema_name.c_str());
+    ndb_log_error("Unknown database '%s'", schema_name.c_str());
     return false;
   }
 
-  if (!sch_obj) {
-    my_error(ER_BAD_DB_ERROR, MYF(0), schema_name.c_str());
-    return false;
-  }
+  Implicit_substatement_state_guard substatement_guard(thd);
 
-  Disable_gtid_state_update_guard disabler(thd);
-
+  const String_type to_table_name(table_name);
   std::unique_ptr<dd::Table> table_def = dd::create_dd_user_table(
-      thd, *sch_obj, to_table_name, &create_info, alter_info.create_list,
-      key_info_buffer, key_count, Alter_info::ENABLE, fk_key_info_buffer,
-      fk_number, nullptr, table.file);
-
-  if (!table_def || thd->dd_client()->store(table_def.get())) {
-    ndb_log_error("Error in Creating DD entry for %s.%s", schema_name.c_str(),
-                  table_name.c_str());
-    trans_rollback_stmt(thd);
-    // Full rollback in case we have THD::transaction_rollback_request.
-    trans_rollback(thd);
-    return false;
-  }
-
-  if (trans_commit_stmt(thd) || trans_commit(thd)) {
+      thd, *schema_def, to_table_name, &create_info, alter_info.create_list,
+      key_info_buffer, key_count, Alter_info::ENABLE, nullptr, 0, nullptr,
+      table.file);
+  if (!table_def) {
+    thd_ndb->push_warning(ER_DD_ERROR_CREATING_ENTRY,
+                          "Error in Creating DD entry for %s.%s",
+                          schema_name.c_str(), table_name.c_str());
     ndb_log_error("Error in Creating DD entry for %s.%s", schema_name.c_str(),
                   table_name.c_str());
     return false;
   }
 
-  if (!set_se_data_for_user_tables(thd, schema_name, to_table_name, &table)) {
-    ndb_log_error("Error in fixing SE data for %s.%s", schema_name.c_str(),
+  // Set storage engine specific metadata in the new DD table object
+  if (table.file->ha_upgrade_table(thd, schema_name.c_str(), table_name.c_str(),
+                                   table_def.get(), &table)) {
+    thd_ndb->push_warning(ER_DD_CANT_FIX_SE_DATA,
+                          "Failed to set SE specific data for table %s.%s",
+                          schema_name.c_str(), table_name.c_str());
+    ndb_log_error("Failed to set SE specific data for table %s.%s",
+                  schema_name.c_str(), table_name.c_str());
+    return false;
+  }
+
+  // As a final step, store the newly created DD table object
+  if (!dd_client->store_table(table_def.get())) {
+    thd_ndb->push_warning(ER_DD_ERROR_CREATING_ENTRY,
+                          "Error in Creating DD entry for %s.%s",
+                          schema_name.c_str(), table_name.c_str());
+    ndb_log_error("Error in Creating DD entry for %s.%s", schema_name.c_str(),
                   table_name.c_str());
     return false;
   }
-
-  if (!fix_fk_parent_key_names(thd, schema_name, to_table_name,
-                               share.db_type())) {
-    return false;
-  }
-
   return true;
 }
 

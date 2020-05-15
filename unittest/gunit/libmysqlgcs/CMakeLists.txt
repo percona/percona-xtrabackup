@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,6 @@
 IF(NOT WIN32)
   MYSQL_CHECK_RPC()
 ENDIF()
-
-# Add the definition to build XCom with SSL support.
-# The testing code needs to have the same #defines as the code under test.
-# (Specifically struct connection_descriptor)
-ADD_DEFINITIONS(-DXCOM_HAVE_OPENSSL)
 
 INCLUDE_DIRECTORIES(
   SYSTEM
@@ -81,6 +76,7 @@ SET(GCS_XCOM_TESTS
   xcom/gcs_xcom_control_interface
   xcom/gcs_xcom_view_identifier
   xcom/gcs_message_stage_fragmentation
+  xcom/gcs_xcom_expels_in_progress
   )
 
 ###
@@ -89,9 +85,11 @@ SET(GCS_XCOM_TESTS
 
 FOREACH(tpath ${GCS_INTERFACE_TESTS} ${GCS_XCOM_TESTS})
   GET_FILENAME_COMPONENT(test ${tpath} NAME)
-  MYSQL_ADD_EXECUTABLE(${test}-t ${tpath}-t.cc ADD_TEST ${test})
-  SET_TARGET_PROPERTIES(${test}-t PROPERTIES ENABLE_EXPORTS TRUE)
-  TARGET_LINK_LIBRARIES(${test}-t gunit_small ${GCS_LIBRARY} ${LZ4_LIBRARY})
+  MYSQL_ADD_EXECUTABLE(${test}-t ${tpath}-t.cc
+    ADD_TEST ${test}
+    ENABLE_EXPORTS
+    LINK_LIBRARIES gunit_small mysqlgcs ${LZ4_LIBRARY}
+    )
   SET(GCS_UNIT_TESTS "${GCS_UNIT_TESTS}" "${test}-t")
 ENDFOREACH()
 
@@ -102,6 +100,6 @@ ENDIF()
 ADD_CUSTOM_TARGET(
   libmysqlgcs-tests
   DEPENDS
-  ${GCS_LIBRARY}
+  mysqlgcs
   ${LZ4_LIBRARY}
   ${GCS_UNIT_TESTS})

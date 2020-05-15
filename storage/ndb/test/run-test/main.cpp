@@ -37,14 +37,17 @@
 
 #include <NdbSleep.h>
 #include "my_alloc.h"  // MEM_ROOT
+#include "my_sys.h" // my_realpath()
+#include "my_io.h" // FN_REFLEN
 #include <ndb_version.h>
 #include <vector>
 #include <ndb_version.h>
+#include "template_utils.h"
 #include "typelib.h"
 
 #define PATH_SEPARATOR DIR_SEPARATOR
 #define TESTCASE_RETRIES_THRESHOLD_WARNING 5
-#define ATRT_VERSION_NUMBER 5
+#define ATRT_VERSION_NUMBER 7
 
 /** Global variables */
 static const char progname[] = "ndb_atrt";
@@ -352,13 +355,15 @@ int main(int argc, char **argv) {
   g_logger.info("Starting server processes...");
 
   if (!start_clusters(g_config)) {
-    shutdown_processes(g_config, atrt_process::AP_ALL);
-    return atrt_exit(ATRT_FAILURE);
-  }
+    if (!shutdown_processes(g_config, atrt_process::AP_ALL)) {
+      g_logger.warning("Failure to shutdown processes");
+    }
 
-  if (!check_cluster_status(g_config, atrt_process::AP_ALL)) {
-    g_logger.critical("Cluster start up failed(%d)", ERR_CRITICAL);
-    shutdown_processes(g_config, atrt_process::AP_ALL);
+    int result = 0;
+    if (!gather_result(g_config, &result)) {
+      g_logger.warning("Failure to gather results");
+    }
+
     return atrt_exit(ATRT_FAILURE);
   }
 
@@ -403,6 +408,14 @@ int main(int argc, char **argv) {
       g_logger.info("Aborting the test suite execution!");
       break;
     }
+  }
+
+  /**
+   * Stopping all the processes after all the tests are run
+   */
+  if (!shutdown_processes(g_config, atrt_process::AP_ALL)) {
+    g_logger.critical("Failed to stop all processes");
+    return_code = ATRT_FAILURE;
   }
 
   if (g_report_file != 0) {
@@ -663,11 +676,14 @@ bool parse_args(int argc, char **argv, MEM_ROOT *alloc) {
   }
 
   /* Read username from environment, default to sakila */
-  g_user = strdup(getenv("LOGNAME"));
-  if (g_user == 0) {
+  const char * logname = getenv("LOGNAME");
+  if ((logname != nullptr) && (strlen(logname) > 0)) {
+    g_user = strdup(logname);
+  } else {
     g_user = "sakila";
-    g_logger.info("No default user specified, will use 'sakila'.");
-    g_logger.info("Please set LOGNAME environment variable for other username");
+    g_logger.info(
+      "No default user specified, will use 'sakila'. "
+      "Please set LOGNAME environment variable for other username");
   }
 
   return true;
@@ -1223,7 +1239,6 @@ bool setup_hosts_filesystem(atrt_config &config) {
 }
 
 bool start_clusters(atrt_config &config) {
-  g_logger.debug("Setup complete, starting servers");
   if (!start(config, p_ndb | p_servers)) {
     g_logger.critical("Failed to start server processes");
     return false;
@@ -1231,6 +1246,11 @@ bool start_clusters(atrt_config &config) {
 
   if (!setup_db(config)) {
     g_logger.critical("Failed to setup database");
+    return false;
+  }
+
+  if (!check_cluster_status(g_config, atrt_process::AP_ALL)) {
+    g_logger.critical("Cluster start up failed");
     return false;
   }
 
@@ -1296,12 +1316,6 @@ TestResult run_test_case(const atrt_testcase &testcase) {
       }
 
       g_logger.info("All servers start completed");
-    }
-
-    if (!check_cluster_status(g_config, atrt_process::AP_ALL)) {
-      g_logger.critical("Cluster processes failed before test starts");
-      test_result.result = ERR_CRITICAL;
-      continue;
     }
 
     {
@@ -1910,8 +1924,9 @@ static bool find_config_ini_files() {
 }
 
 BaseString get_atrt_path(const char *arg) {
-  char *fullPath = realpath(arg, nullptr);
-  if (fullPath == nullptr) return {};
+  char fullPath[FN_REFLEN];
+  int ret = my_realpath(fullPath, arg, 0);
+  if (ret == -1) return {};
 
   BaseString path;
   char *last_folder_sep = strrchr(fullPath, '/');
@@ -1920,7 +1935,6 @@ BaseString get_atrt_path(const char *arg) {
     path.assign(fullPath);
   }
 
-  free(fullPath);
   return path;
 }
 
