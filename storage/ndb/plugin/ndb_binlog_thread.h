@@ -87,6 +87,16 @@ class Ndb_binlog_thread : public Ndb_component {
   bool add_tablespace_to_check(const std::string &tablespace_name);
 
   /*
+    @brief Pass the schema object detected to the internal implementation that
+           shall eventually synchronize the object
+
+    @param schema_name  Name of the schema
+
+    @return true on success, false on failure
+  */
+  bool add_schema_to_check(const std::string &schema_name);
+
+  /*
     @brief Pass the table object detected to the internal implementation that
            shall eventually synchronize the object
 
@@ -161,5 +171,11 @@ class Ndb_binlog_thread : public Ndb_component {
   */
   void synchronize_detected_object(THD *thd);
 };
+
+/*
+  Called as part of SHOW STATUS or performance_schema queries. Returns
+  information about the number of NDB metadata objects synched
+*/
+int show_ndb_metadata_synced(THD *, SHOW_VAR *var, char *);
 
 #endif

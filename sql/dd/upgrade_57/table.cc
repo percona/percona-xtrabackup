@@ -250,7 +250,7 @@ static File_option trg_file_parameters[] = {
     {{STRING_WITH_LEN("created")},
      my_offsetof_upgrade(struct Trg_file_data, created_timestamps),
      FILE_OPTIONS_ULLLIST},
-    {{0, 0}, 0, FILE_OPTIONS_STRING}};
+    {{nullptr, 0}, 0, FILE_OPTIONS_STRING}};
 
 static File_option sql_modes_parameters = {
     {STRING_WITH_LEN("sql_modes")},
@@ -445,7 +445,7 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
     LEX_CSTRING body_utf8 = {tmp_body_utf8, strlen(tmp_body_utf8)};
 
     // Allocate space to hold username and hostname.
-    char *pos = NULL;
+    char *pos = nullptr;
     if (!(pos = static_cast<char *>(mem_root->Alloc(USERNAME_LENGTH + 1)))) {
       LogErr(ERROR_LEVEL, ER_DD_TRG_DEFINER_OOM, "User");
       return true;
@@ -641,7 +641,7 @@ class Table_upgrade_guard {
 
   ~Table_upgrade_guard() {
     m_thd->variables.sql_mode = m_sql_mode;
-    m_thd->work_part_info = 0;
+    m_thd->work_part_info = nullptr;
 
     // Free item list for partitions
     if (m_table->s->m_part_info) free_items(m_table->s->m_part_info->item_list);
@@ -767,11 +767,11 @@ static bool create_unlinked_view(THD *thd, TABLE_LIST *view_ref) {
   TABLE_LIST *saved_query_tables = thd->lex->query_tables;
   SQL_I_List<Sroutine_hash_entry> saved_sroutines_list;
   // For creation of view without column information.
-  SELECT_LEX select(nullptr, nullptr);
+  SELECT_LEX select(thd->mem_root, nullptr, nullptr);
 
   // Backup
   thd->lex->select_lex = &select;
-  thd->lex->query_tables = NULL;
+  thd->lex->query_tables = nullptr;
   thd->lex->sroutines_list.save_and_clear(&saved_sroutines_list);
 
   dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
@@ -784,7 +784,7 @@ static bool create_unlinked_view(THD *thd, TABLE_LIST *view_ref) {
 
   bool result = dd::create_view(thd, *schema, view_ref);
 
-  Disable_gtid_state_update_guard disabler(thd);
+  Implicit_substatement_state_guard substatement_guard(thd);
   if (result) {
     trans_rollback_stmt(thd);
     // Full rollback in case we have THD::transaction_rollback_request.
@@ -872,7 +872,7 @@ static bool fix_view_cols_and_deps(THD *thd, TABLE_LIST *view_ref,
   // Switch off modes which can prevent normal parsing of VIEW.
   Sql_mode_parse_guard parse_guard(thd);
 
-  String full_view_definition((char *)0, 0, m_connection_cl);
+  String full_view_definition((char *)nullptr, 0, m_connection_cl);
   create_alter_view_stmt(thd, view_ref, &full_view_definition, db_name,
                          view_name, m_connection_cl);
 
@@ -953,7 +953,7 @@ static bool migrate_view_to_dd(THD *thd, const FRM_context &frm_context,
 
   // Prepare default values for old format
   table_list.view_suid = true;
-  table_list.definer.user.str = table_list.definer.host.str = 0;
+  table_list.definer.user.str = table_list.definer.host.str = nullptr;
   table_list.definer.user.length = table_list.definer.host.length = 0;
 
   if (frm_context.view_def->parse(
@@ -1137,17 +1137,17 @@ static bool add_triggers_to_table(THD *thd, TABLE *table,
     */
 
     // Get 1st Trigger
-    ::Trigger *t = it++;
+    ::Trigger *t1st = it++;
 
     // If no Trigger found, return
-    if (!t) return false;
+    if (!t1st) return false;
 
     ulonglong order = 1;
-    enum_trigger_event_type t_type = t->get_event();
-    enum_trigger_action_time_type t_time = t->get_action_time();
+    enum_trigger_event_type t_type = t1st->get_event();
+    enum_trigger_action_time_type t_time = t1st->get_action_time();
 
     // Set order for 1st Trigger as 1.
-    t->set_action_order(order);
+    t1st->set_action_order(order);
     order = order + 1;
 
     // Set action order for rest of the Triggers.
@@ -1203,10 +1203,10 @@ static bool add_triggers_to_table(THD *thd, TABLE *table,
 
       if (!t) break;
 
-      Disable_gtid_state_update_guard disabler(thd);
+      Implicit_substatement_state_guard substatement_guard(thd);
 
       // Ordering of Triggers is taken care above, pass dummy arguments here.
-      LEX_CSTRING anchor_trigger_name{0, 0};
+      LEX_CSTRING anchor_trigger_name{nullptr, 0};
       if (dd::create_trigger(thd, t, enum_trigger_order_type::TRG_ORDER_NONE,
                              anchor_trigger_name)) {
         trans_rollback_stmt(thd);
@@ -1263,6 +1263,11 @@ static bool fix_generated_columns_for_upgrade(
                 thd, table, &(*field_ptr)->gcol_info, VGS_GENERATED_COLUMN,
                 (*field_ptr)->field_name, *field_ptr, false, &error_reported)) {
           error = true;
+          LogErr(ERROR_LEVEL,
+                 ER_CANT_PROCESS_EXPRESSION_FOR_GENERATED_COLUMN_TO_DD,
+                 to_string((*field_ptr)->gcol_info->expr_str).c_str(),
+                 table->s->db.str, table->s->table_name.str,
+                 (*field_ptr)->field_name);
           break;
         }
         sql_field->gcol_info->expr_item = (*field_ptr)->gcol_info->expr_item;
@@ -1389,6 +1394,27 @@ static bool fix_fk_parent_key_names(THD *thd, const String_type &schema_name,
       // This FK references the same table as on which it is defined.
       parent_table_def = table_def;
     } else {
+      /*
+        With l_c_t_n = 1, the referenced table and schema name must be
+        all lower case; this is an invariant of l_c_t_n = 1.
+      */
+      if (lower_case_table_names == 1) {
+        if (!is_string_in_lowercase(fk->referenced_table_schema_name().c_str(),
+                                    system_charset_info)) {
+          LogErr(ERROR_LEVEL, ER_SCHEMA_NAME_IN_UPPER_CASE_NOT_ALLOWED_FOR_FK,
+                 fk->referenced_table_schema_name().c_str(), fk->name().c_str(),
+                 schema_name.c_str(), table_name.c_str());
+          return true;
+        }
+        if (!is_string_in_lowercase(fk->referenced_table_name().c_str(),
+                                    system_charset_info)) {
+          LogErr(ERROR_LEVEL, ER_TABLE_NAME_IN_UPPER_CASE_NOT_ALLOWED_FOR_FK,
+                 fk->referenced_table_schema_name().c_str(),
+                 fk->referenced_table_name().c_str(), fk->name().c_str(),
+                 schema_name.c_str(), table_name.c_str());
+          return true;
+        }
+      }
       if (thd->dd_client()->acquire(fk->referenced_table_schema_name().c_str(),
                                     fk->referenced_table_name().c_str(),
                                     &parent_table_def))
@@ -1527,7 +1553,7 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   table.s->db_low_byte_first = table.file->low_byte_first();
   table.use_all_columns();
   table.record[0] = table.record[1] = share.default_values;
-  table.null_row = 0;
+  table.null_row = false;
   table.field = share.field;
   table.key_info = share.key_info;
 
@@ -1584,6 +1610,13 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
       key_info->is_algorithm_explicit = true;
   }
 
+  if (share.key_parts &&
+      create_key_part_field_with_prefix_length(&table, &share.mem_root)) {
+    LogErr(ERROR_LEVEL, ER_MIGRATE_TABLE_TO_DD_OOM, schema_name.c_str(),
+           table_name.c_str());
+    return true;
+  }
+
   // Fill create_info to be passed to the DD framework.
   HA_CREATE_INFO create_info;
   Alter_info alter_info(thd->mem_root);
@@ -1601,7 +1634,7 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   uint key_count;
 
   // Foreign keys are handled at later stage by retrieving info from SE.
-  FOREIGN_KEY *dummy_fk_key_info = NULL;
+  FOREIGN_KEY *dummy_fk_key_info = nullptr;
   uint dummy_fk_key_count = 0;
 
   /* Suppress key length errors if this is a white listed table. */
@@ -1707,7 +1740,7 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   }
   bootstrap_error_handler.set_log_error(true);
 
-  FOREIGN_KEY *fk_key_info_buffer = NULL;
+  FOREIGN_KEY *fk_key_info_buffer = nullptr;
   uint fk_number = 0;
   Sql_check_constraint_spec_list cc_spec_list_unused(thd->mem_root);
 
@@ -1737,7 +1770,7 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
     return true;
   }
 
-  Disable_gtid_state_update_guard disabler(thd);
+  Implicit_substatement_state_guard substatement_guard(thd);
 
   std::unique_ptr<dd::Table> table_def = dd::create_dd_user_table(
       thd, *sch_obj, to_table_name, &create_info, alter_info.create_list,
@@ -1822,7 +1855,6 @@ static bool is_skipped_ndb_table(const char *db_name, const char *table_name) {
 
 bool migrate_all_frm_to_dd(THD *thd, const char *dbname,
                            bool is_fix_view_cols_and_deps) {
-  uint i;
   MY_DIR *a;
   String_type path;
   bool error = false;
@@ -1836,15 +1868,16 @@ bool migrate_all_frm_to_dd(THD *thd, const char *dbname,
     LogErr(ERROR_LEVEL, ER_CANT_OPEN_DIR, path.c_str());
     return true;
   }
-  for (i = 0; i < (uint)a->number_off_files &&
-              !dd::upgrade::Syntax_error_handler::has_too_many_errors();
-       i++) {
+
+  for (unsigned int idx = a->number_off_files;
+       idx > 0 && !dd::upgrade::Syntax_error_handler::has_too_many_errors();
+       idx--) {
     String_type file;
 
-    file.assign(a->dir_entry[i].name);
+    file.assign(a->dir_entry[idx - 1].name);
     if (file.at(0) == '.') continue;
 
-    if (!MY_S_ISDIR(a->dir_entry[i].mystat->st_mode)) {
+    if (!MY_S_ISDIR(a->dir_entry[idx - 1].mystat->st_mode)) {
       String_type file_ext;
       char schema_name[NAME_LEN + 1];
       char table_name[NAME_LEN + 1];
@@ -1864,6 +1897,46 @@ bool migrate_all_frm_to_dd(THD *thd, const char *dbname,
       // Construct the schema name from its canonical format.
       filename_to_tablename(dbname, schema_name, sizeof(schema_name));
       filename_to_tablename(file.c_str(), table_name, sizeof(table_name));
+
+      /*
+        Check that schema- and table names do not break the selected l_c_t_n
+        related invariants. The schema and table names are constructed from
+        file system names.
+
+        - l_c_t_n = 0: Supported only for case sensitive file systems.
+                       Everything should be fine.
+        - l_c_t_n = 1: Check that the name does not contain upper case
+                       characters.
+        - l_c_t_n = 2: Supported only for case insensitive file systems.
+                       This guarantees that there are no names differing
+                       only in character case, and hence, everything should
+                       be fine.
+
+        There is also a potential issue regarding implicit tablespaces in
+        InnoDB, as these have lower case names even with l_c_t_n = 2 and an
+        upper case table name. This will be an issue if upgrading to
+        l_c_t_n = 0, where InnoDB expects tablespace names with the same
+        letter case as the table name. However, this is detected by InnoDB
+        during the migration of meta data from 5.7 to 8.0 when we call
+        ha_upgrade_table(). In this case, InnoDB will emit an error, and
+        hence, we do not need to check this issue at the SQL layer.
+
+        See also the corresponding check in migrate_schema_to_dd(). We do
+        not repeat the DBUG_ASSERTS here, but check only if l_c_t_n = 1.
+        Additionally, we do the check below only once, hence the test for
+        is_fix_view_cols_and_deps = false.
+      */
+      if (!is_fix_view_cols_and_deps && lower_case_table_names == 1) {
+        // Already checked schema name while migrating schema meta data.
+        DBUG_ASSERT(is_string_in_lowercase(schema_name, system_charset_info));
+        // Upper case table names break invariant when l_c_t_n = 1.
+        if (!is_string_in_lowercase(table_name, system_charset_info)) {
+          LogErr(ERROR_LEVEL, ER_TABLE_NAME_IN_UPPER_CASE_NOT_ALLOWED,
+                 schema_name, table_name);
+          error = true;
+          continue;
+        }
+      }
 
       /*
         Skip mysql.plugin tables during upgrade of user and system tables as

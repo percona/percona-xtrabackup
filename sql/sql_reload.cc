@@ -79,14 +79,14 @@
 
 bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
                            int *write_to_binlog) {
-  bool result = 0;
+  bool result = false;
   select_errors = 0; /* Write if more errors */
   int tmp_write_to_binlog = *write_to_binlog = 1;
 
   DBUG_ASSERT(!thd || !thd->in_sub_stmt);
 
   if (options & REFRESH_GRANT) {
-    THD *tmp_thd = 0;
+    THD *tmp_thd = nullptr;
     /*
       If handle_reload_request() is called from SIGHUP handler we have to
       allocate temporary THD for execution of acl_reload()/grant_reload().
@@ -101,7 +101,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
       bool reload_servers_failed = servers_reload(thd);
       notify_flush_event(thd);
       if (reload_acl_failed || reload_servers_failed) {
-        result = 1;
+        result = true;
         /*
           When an error is returned, my_message may have not been called and
           the client will hang waiting for a response.
@@ -110,10 +110,10 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
       }
     }
 
-    reset_mqh(thd, (LEX_USER *)NULL, true);
+    reset_mqh(thd, (LEX_USER *)nullptr, true);
     if (tmp_thd) {
       delete tmp_thd;
-      thd = 0;
+      thd = nullptr;
     }
   }
 
@@ -133,18 +133,20 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
   }
 
   if (options & REFRESH_ERROR_LOG) {
-    if (reopen_error_log()) result = 1;
+    if (reopen_error_log()) result = true;
   }
 
-  if ((options & REFRESH_SLOW_LOG) && opt_slow_log)
-    if (query_logger.reopen_log_file(QUERY_LOG_SLOW)) result = 1;
+  if ((options & REFRESH_SLOW_LOG) && opt_slow_log &&
+      (log_output_options & LOG_FILE))
+    if (query_logger.reopen_log_file(QUERY_LOG_SLOW)) result = true;
 
-  if ((options & REFRESH_GENERAL_LOG) && opt_general_log)
-    if (query_logger.reopen_log_file(QUERY_LOG_GENERAL)) result = 1;
+  if ((options & REFRESH_GENERAL_LOG) && opt_general_log &&
+      (log_output_options & LOG_FILE))
+    if (query_logger.reopen_log_file(QUERY_LOG_GENERAL)) result = true;
 
   if (options & REFRESH_ENGINE_LOG) {
     if (ha_flush_logs()) {
-      result = 1;
+      result = true;
     }
   }
   if ((options & REFRESH_BINARY_LOG) || (options & REFRESH_RELAY_LOG)) {
@@ -152,7 +154,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
       If handle_reload_request() is called from SIGHUP handler we have to
       allocate temporary THD for execution of binlog/relay log rotation.
      */
-    THD *tmp_thd = 0;
+    THD *tmp_thd = nullptr;
     if (!thd && (thd = (tmp_thd = new THD))) {
       thd->thread_stack = (char *)(&tmp_thd);
       thd->store_globals();
@@ -177,7 +179,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
       delete tmp_thd;
       /* Remember that we don't have a THD */
       current_thd = nullptr;
-      thd = 0;
+      thd = nullptr;
     }
   }
 
@@ -203,14 +205,15 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
       */
       if (thd->locked_tables_mode) {
         my_error(ER_LOCK_OR_ACTIVE_TRANSACTION, MYF(0));
-        return 1;
+        return true;
       }
       /*
         Writing to the binlog could cause deadlocks, as we don't log
         UNLOCK TABLES
       */
       tmp_write_to_binlog = 0;
-      if (thd->global_read_lock.lock_global_read_lock(thd)) return 1;  // Killed
+      if (thd->global_read_lock.lock_global_read_lock(thd))
+        return true;  // Killed
       if (close_cached_tables(thd, tables,
                               ((options & REFRESH_FAST) ? false : true),
                               thd->variables.lock_wait_timeout)) {
@@ -218,7 +221,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
           NOTE: my_error() has been already called by reopen_tables() within
           close_cached_tables().
         */
-        result = 1;
+        result = true;
       }
 
       if (thd->global_read_lock.make_global_read_lock_block_commit(
@@ -226,7 +229,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
       {
         /* Don't leave things in a half-locked state */
         thd->global_read_lock.unlock_global_read_lock(thd);
-        return 1;
+        return true;
       }
     } else {
       if (thd && thd->locked_tables_mode) {
@@ -237,7 +240,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
         if (tables) {
           for (TABLE_LIST *t = tables; t; t = t->next_local)
             if (!find_table_for_mdl_upgrade(thd, t->db, t->table_name, false))
-              return 1;
+              return true;
         } else {
           /*
             It is not safe to upgrade the metadata lock without GLOBAL IX lock.
@@ -257,7 +260,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
             if (!tab->mdl_ticket->is_upgradable_or_exclusive()) {
               my_error(ER_TABLE_NOT_LOCKED_FOR_WRITE, MYF(0),
                        tab->s->table_name.str);
-              return 1;
+              return true;
             }
           }
         }
@@ -270,7 +273,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
           NOTE: my_error() has been already called by reopen_tables() within
           close_cached_tables().
         */
-        result = 1;
+        result = true;
       }
     }
   }
@@ -291,7 +294,7 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
     */
     if (reset_master(thd, options & REFRESH_READ_LOCK)) {
       /* NOTE: my_error() has been already called by reset_master(). */
-      result = 1;
+      result = true;
     }
   }
   if (options & REFRESH_OPTIMIZER_COSTS) reload_optimizer_cost_constants();
@@ -299,11 +302,11 @@ bool handle_reload_request(THD *thd, unsigned long options, TABLE_LIST *tables,
     tmp_write_to_binlog = 0;
     if (reset_slave_cmd(thd)) {
       /*NOTE: my_error() has been already called by reset_slave() */
-      result = 1;
+      result = true;
     }
   }
   if (options & REFRESH_USER_RESOURCES)
-    reset_mqh(thd, nullptr, 0); /* purecov: inspected */
+    reset_mqh(thd, nullptr, false); /* purecov: inspected */
   if (*write_to_binlog != -1) *write_to_binlog = tmp_write_to_binlog;
   /*
     If the query was killed then this function must fail.
@@ -404,7 +407,8 @@ bool flush_tables_with_read_lock(THD *thd, TABLE_LIST *all_tables) {
     IX and database-scope IX locks on the tables as this will make
     this statement incompatible with FLUSH TABLES WITH READ LOCK.
   */
-  if (lock_table_names(thd, all_tables, NULL, thd->variables.lock_wait_timeout,
+  if (lock_table_names(thd, all_tables, nullptr,
+                       thd->variables.lock_wait_timeout,
                        MYSQL_OPEN_SKIP_SCOPED_MDL_LOCK))
     goto error;
 
@@ -416,7 +420,7 @@ bool flush_tables_with_read_lock(THD *thd, TABLE_LIST *all_tables) {
     tdc_remove_table(thd, TDC_RT_REMOVE_UNUSED, table_list->db,
                      table_list->table_name, false);
     /* Reset ticket to satisfy asserts in open_tables(). */
-    table_list->mdl_request.ticket = NULL;
+    table_list->mdl_request.ticket = nullptr;
   }
 
   /*

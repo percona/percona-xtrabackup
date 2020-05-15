@@ -1,7 +1,7 @@
 #ifndef SQL_STRING_INCLUDED
 #define SQL_STRING_INCLUDED
 
-/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
   See in particular the comment on String before you use anything from here.
 */
 
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 #include <new>
@@ -84,13 +85,13 @@ class Simple_cstring {
     m_str = str_arg;
     m_length = length_arg;
   }
-  Simple_cstring() { set(NULL, 0); }
+  Simple_cstring() { set(nullptr, 0); }
   Simple_cstring(const char *str_arg, size_t length_arg) {
     set(str_arg, length_arg);
   }
   Simple_cstring(const LEX_STRING arg) { set(arg.str, arg.length); }
   Simple_cstring(const LEX_CSTRING arg) { set(arg.str, arg.length); }
-  void reset() { set(NULL, 0); }
+  void reset() { set(nullptr, 0); }
   /**
     Set to a null-terminated string.
   */
@@ -102,7 +103,7 @@ class Simple_cstring {
   /**
     Check if m_ptr is set.
   */
-  bool is_set() const { return m_str != NULL; }
+  bool is_set() const { return m_str != nullptr; }
   /**
     Return name length.
   */
@@ -128,6 +129,8 @@ class String;
 struct CHARSET_INFO;
 struct IO_CACHE;
 
+bool validate_string(const CHARSET_INFO *cs, const char *str, size_t length,
+                     size_t *valid_length, bool *length_error);
 int sortcmp(const String *a, const String *b, const CHARSET_INFO *cs);
 String *copy_if_not_alloced(String *to, String *from, size_t from_length);
 inline size_t copy_and_convert(char *to, size_t to_length,
@@ -168,13 +171,13 @@ class String {
 
  public:
   String()
-      : m_ptr(NULL),
+      : m_ptr(nullptr),
         m_length(0),
         m_charset(&my_charset_bin),
         m_alloced_length(0),
         m_is_alloced(false) {}
   explicit String(size_t length_arg)
-      : m_ptr(NULL),
+      : m_ptr(nullptr),
         m_length(0),
         m_charset(&my_charset_bin),
         m_alloced_length(0),
@@ -374,7 +377,7 @@ class String {
       m_is_alloced = false;
       m_alloced_length = 0;
       my_free(m_ptr);
-      m_ptr = NULL;
+      m_ptr = nullptr;
       m_length = 0; /* Safety */
     }
   }
@@ -443,9 +446,9 @@ class String {
   }
   /**
     Takeover the buffer owned by another string.
-    "this" becames the owner of the buffer and
+    "this" becomes the owner of the buffer and
     is further responsible to free it.
-    The string "s" is detouched from the buffer (cleared).
+    The string "s" is detached from the buffer (cleared).
 
     @param s - a String object to steal buffer from.
   */
@@ -459,7 +462,7 @@ class String {
     m_alloced_length = s.m_alloced_length;
     m_is_alloced = s.m_is_alloced;
     m_charset = s.m_charset;
-    s.m_ptr = NULL;
+    s.m_ptr = nullptr;
     s.m_alloced_length = 0;
     s.m_length = 0;
     s.m_is_alloced = false;
@@ -471,6 +474,16 @@ class String {
   bool copy(const char *s, size_t arg_length, const CHARSET_INFO *cs);
   static bool needs_conversion(size_t arg_length, const CHARSET_INFO *cs_from,
                                const CHARSET_INFO *cs_to, size_t *offset);
+  bool needs_conversion(const CHARSET_INFO *cs_to) const {
+    size_t offset;
+    return needs_conversion(length(), charset(), cs_to, &offset);
+  }
+  bool is_valid_string(const CHARSET_INFO *cs_to) const {
+    size_t valid_length;
+    bool length_error;
+    return !validate_string(cs_to, ptr(), length(), &valid_length,
+                            &length_error);
+  }
   static bool needs_conversion_on_storage(size_t arg_length,
                                           const CHARSET_INFO *cs_from,
                                           const CHARSET_INFO *cs_to);
@@ -488,10 +501,9 @@ class String {
   bool append(const char *s, size_t arg_length, const CHARSET_INFO *cs);
   bool append_ulonglong(ulonglong val);
   bool append_longlong(longlong val);
-  bool append(IO_CACHE *file, size_t arg_length);
   bool append_with_prefill(const char *s, size_t arg_length, size_t full_length,
                            char fill_char);
-  bool append_parenthesized(long nr, int radix = 10);
+  bool append_parenthesized(int64_t nr);
   /**
     Search for a substring.
 
@@ -525,13 +537,12 @@ class String {
     if (m_length < m_alloced_length) {
       m_ptr[m_length++] = chr;
     } else {
-      if (mem_realloc_exp(m_length + 1)) return 1;
+      if (mem_realloc_exp(m_length + 1)) return true;
       m_ptr[m_length++] = chr;
     }
-    return 0;
+    return false;
   }
   bool fill(size_t max_length, char fill);
-  void strip_sp();
   friend int sortcmp(const String *a, const String *b, const CHARSET_INFO *cs);
   friend int stringcmp(const String *a, const String *b);
   friend String *copy_if_not_alloced(String *to, String *from,
@@ -549,7 +560,7 @@ class String {
   char *prep_append(size_t arg_length, size_t step_alloc) {
     size_t new_length = arg_length + m_length;
     if (new_length > m_alloced_length) {
-      if (mem_realloc(new_length + step_alloc)) return NULL;
+      if (mem_realloc(new_length + step_alloc)) return nullptr;
     }
     size_t old_length = m_length;
     m_length += arg_length;
@@ -640,12 +651,9 @@ inline LEX_STRING to_lex_string(const LEX_CSTRING &s) {
 }
 
 inline LEX_CSTRING to_lex_cstring(const char *s) {
-  LEX_CSTRING cstr = {s, s != NULL ? strlen(s) : 0};
+  LEX_CSTRING cstr = {s, s != nullptr ? strlen(s) : 0};
   return cstr;
 }
-
-bool validate_string(const CHARSET_INFO *cs, const char *str, size_t length,
-                     size_t *valid_length, bool *length_error);
 
 bool append_escaped(String *to_str, const String *from_str);
 

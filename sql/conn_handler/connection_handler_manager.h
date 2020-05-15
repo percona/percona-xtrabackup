@@ -78,7 +78,7 @@ class Connection_handler_manager {
   */
   Connection_handler_manager(Connection_handler *connection_handler)
       : m_connection_handler(connection_handler),
-        m_saved_connection_handler(NULL),
+        m_saved_connection_handler(nullptr),
         m_saved_thread_handling(0),
         m_aborted_connects(0),
         m_connection_errors_max_connection(0) {}
@@ -135,7 +135,7 @@ class Connection_handler_manager {
     Singleton method to return an instance of this class.
   */
   static Connection_handler_manager *get_instance() {
-    DBUG_ASSERT(m_instance != NULL);
+    DBUG_ASSERT(m_instance != nullptr);
     return m_instance;
   }
 
@@ -163,11 +163,15 @@ class Connection_handler_manager {
   /**
     Increment connection count if max_connections is not exceeded.
 
+    @param ignore_max_connection_count  true if checking for a limit
+                                        specified by the max-connections
+                                        server option should be skipped
+
     @retval
       true   max_connections NOT exceeded
       false  max_connections reached
   */
-  bool check_and_incr_conn_count(bool is_admin_connection);
+  bool check_and_incr_conn_count(bool ignore_max_connection_count);
 
   /**
     Reset the max_used_connections counter to the number of current

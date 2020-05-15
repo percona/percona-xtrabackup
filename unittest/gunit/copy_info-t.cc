@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,11 +58,9 @@ class CopyInfoTest : public ::testing::Test {
   called. We inherit Field_long, but the data type does not matter.
 */
 class Mock_field : public Field_long {
-  uchar null_byte;
-
  public:
-  Mock_field(uchar auto_flags_arg)
-      : Field_long(NULL, 0, &null_byte, 0, auto_flags_arg, "", false, false) {}
+  explicit Mock_field(uchar auto_flags_arg)
+      : Field_long(nullptr, 0, nullptr, 0, auto_flags_arg, "", false, false) {}
 
   MOCK_METHOD1(store_timestamp, void(const timeval *));
 };
@@ -89,7 +87,8 @@ class Mock_COPY_INFO : public COPY_INFO {
 class Mock_COPY_INFO_insert : public COPY_INFO {
  public:
   Mock_COPY_INFO_insert()
-      : COPY_INFO(COPY_INFO::INSERT_OPERATION, static_cast<List<Item> *>(NULL),
+      : COPY_INFO(COPY_INFO::INSERT_OPERATION,
+                  static_cast<List<Item> *>(nullptr),
                   true,  // manage_defaults
                   DUP_UPDATE) {}
   Mock_COPY_INFO_insert(List<Item> *fields)
@@ -108,7 +107,7 @@ class Mock_COPY_INFO_insert : public COPY_INFO {
 class Mock_COPY_INFO_update : public COPY_INFO {
  public:
   Mock_COPY_INFO_update()
-      : COPY_INFO(COPY_INFO::UPDATE_OPERATION, NULL, NULL) {}
+      : COPY_INFO(COPY_INFO::UPDATE_OPERATION, nullptr, nullptr) {}
   // Import protected member functions, so we can test them.
   using COPY_INFO::get_cached_bitmap;
   using COPY_INFO::get_function_default_columns;
@@ -155,7 +154,7 @@ TEST_F(CopyInfoTest, insertAccessors) {
 
   EXPECT_EQ(COPY_INFO::INSERT_OPERATION, insert.get_operation_type());
   EXPECT_EQ(&inserted_columns, insert.get_changed_columns());
-  EXPECT_EQ(static_cast<List<Item> *>(NULL), insert.get_changed_columns2());
+  EXPECT_EQ(static_cast<List<Item> *>(nullptr), insert.get_changed_columns2());
   EXPECT_TRUE(insert.get_manage_defaults());
   EXPECT_EQ(DUP_REPLACE, insert.get_duplicate_handling());
 }
@@ -191,16 +190,13 @@ TEST_F(CopyInfoTest, updateAccessors) {
 
   EXPECT_EQ(COPY_INFO::UPDATE_OPERATION, update.get_operation_type());
   EXPECT_EQ(&columns, update.get_changed_columns());
-  EXPECT_EQ(static_cast<List<Item> *>(NULL), update.get_changed_columns2());
+  EXPECT_EQ(static_cast<List<Item> *>(nullptr), update.get_changed_columns2());
   EXPECT_TRUE(update.get_manage_defaults());
   EXPECT_EQ(DUP_ERROR, update.get_duplicate_handling());
 }
 
 static Field_long make_field() {
-  static uchar unused_null_byte;
-
-  Field_long a(NULL, 0, &unused_null_byte, 0, Field::DEFAULT_NOW, "a", false,
-               false);
+  Field_long a(nullptr, 0, nullptr, 0, Field::DEFAULT_NOW, "a", false, false);
   return a;
 }
 
@@ -224,7 +220,7 @@ TEST_F(CopyInfoTest, getFunctionDefaultColumns) {
   Field_long a = make_field();
   Fake_TABLE table(&a);
 
-  MY_BITMAP *initial_value = NULL;
+  MY_BITMAP *initial_value = nullptr;
 
   EXPECT_EQ(initial_value, insert.get_cached_bitmap());
 

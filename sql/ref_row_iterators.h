@@ -27,6 +27,7 @@
 #include <memory>
 
 #include "my_alloc.h"
+#include "my_bitmap.h"
 #include "my_inttypes.h"
 #include "sql/basic_row_iterators.h"
 #include "sql/row_iterator.h"
@@ -46,7 +47,12 @@ class RefIterator final : public TableRowIterator {
  public:
   // "examined_rows", if not nullptr, is incremented for each successful Read().
   RefIterator(THD *thd, TABLE *table, TABLE_REF *ref, bool use_order,
-              QEP_TAB *qep_tab, ha_rows *examined_rows);
+              QEP_TAB *qep_tab, ha_rows *examined_rows)
+      : TableRowIterator(thd, table),
+        m_ref(ref),
+        m_use_order(use_order),
+        m_qep_tab(qep_tab),
+        m_examined_rows(examined_rows) {}
 
   bool Init() override;
   int Read() override;
@@ -199,6 +205,16 @@ class DynamicRangeIterator final : public TableRowIterator {
   bool m_quick_traced_before = false;
 
   ha_rows *const m_examined_rows;
+
+  /**
+    A read set we can use when we fall back to table scans,
+    to get the base columns we need for virtual generated columns.
+    See add_virtual_gcol_base_cols().
+   */
+  MY_BITMAP m_table_scan_read_set;
+
+  /// The original value of table->read_set.
+  MY_BITMAP *m_original_read_set;
 };
 
 /**
@@ -282,12 +298,29 @@ class AlternativeIterator final : public RowIterator {
   // depending on the value of applicable_cond_guards. Set up during Init().
   RowIterator *m_iterator = nullptr;
 
+  // Points to the last iterator that was Init()-ed. Used to reset the handler
+  // when switching from one iterator to the other.
+  RowIterator *m_last_iterator_inited = nullptr;
+
   // The iterator we are normally reading records from (a RefIterator or
   // similar).
   unique_ptr_destroy_only<RowIterator> m_source_iterator;
 
   // Our fallback iterator (possibly wrapped in a TimingIterator).
   unique_ptr_destroy_only<RowIterator> m_table_scan_iterator;
+
+  // The underlying table.
+  TABLE *const m_table;
+
+  /**
+    A read set we can use when we fall back to table scans,
+    to get the base columns we need for virtual generated columns.
+    See add_virtual_gcol_base_cols().
+   */
+  MY_BITMAP m_table_scan_read_set;
+
+  /// The original value of table->read_set.
+  MY_BITMAP *m_original_read_set;
 };
 
 #endif  // SQL_REF_ROW_ITERATORS_H

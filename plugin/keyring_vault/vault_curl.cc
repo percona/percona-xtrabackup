@@ -105,16 +105,19 @@ int progress_callback(void *clientp MY_ATTRIBUTE((unused)), double dltotal,
   // The calls to threadpool are disabled till bug PS-244 gets resolved.
   /* <--Uncomment when PS-244 gets resolved
   if (!was_thd_wait_started)
-  { 
-    if ((dlnow < dltotal || ulnow < ultotal) && last_ping_time - curr_ping_time > slow_connection_threshold)
-    { 
-      // there is a good chance that connection is slow, thus we can let know the threadpool that there is time
+  {
+    if ((dlnow < dltotal || ulnow < ultotal) && last_ping_time - curr_ping_time
+  > slow_connection_threshold)
+    {
+      // there is a good chance that connection is slow, thus we can let know
+  the threadpool that there is time
       // to start new thread(s)
       thd_wait_begin(current_thd, THD_WAIT_NET);
       was_thd_wait_started = true;
     }
   }
-  else if ((dlnow == dltotal && ulnow == ultotal) || last_ping_time - curr_ping_time <= slow_connection_threshold)
+  else if ((dlnow == dltotal && ulnow == ultotal) || last_ping_time -
+  curr_ping_time <= slow_connection_threshold)
   {
     // connection has speed up or we have finished transfering
     thd_wait_end(current_thd);
@@ -261,7 +264,7 @@ bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
   }
   CURLcode curl_res = CURLE_OK;
   Secure_string postdata = "{\"type\":\"";
-  postdata += key.get_key_type()->c_str();
+  postdata += key.get_key_type_as_string()->c_str();
   postdata += "\",\"";
   postdata += "value\":\"" + encoded_key_data + "\"}";
 

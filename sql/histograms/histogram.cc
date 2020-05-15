@@ -44,6 +44,7 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"  // my_micro_time, get_charset
+#include "my_systime.h"
 #include "my_time.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql_time.h"
@@ -73,7 +74,6 @@
 // close_thread_tables
 #include "sql/sql_class.h"  // make_lex_string_root
 #include "sql/sql_const.h"
-#include "sql/sql_error.h"
 #include "sql/strfunc.h"  // find_type2, find_set
 #include "sql/system_variables.h"
 #include "sql/table.h"
@@ -730,26 +730,29 @@ static bool fill_value_maps(
   std::random_device rd;
   std::uniform_int_distribution<int> dist;
   int sampling_seed = dist(rd);
+
   DBUG_EXECUTE_IF("histogram_force_sampling", {
     sampling_seed = 1;
     sample_percentage = 50.0;
   });
 
+  void *scan_ctx = nullptr;
+
   for (auto &value_map : value_maps)
     value_map.second->set_sampling_rate(sample_percentage / 100.0);
 
-  if (table->file->ha_sample_init(sample_percentage, sampling_seed,
+  if (table->file->ha_sample_init(scan_ctx, sample_percentage, sampling_seed,
                                   enum_sampling_method::SYSTEM)) {
-    DBUG_ASSERT(false); /* purecov: deadcode */
     return true;
   }
 
-  auto handler_guard = create_scope_guard([table]() {
-    table->file->ha_sample_end(); /* purecov: deadcode */
+  auto handler_guard = create_scope_guard([table, scan_ctx]() {
+    table->file->ha_sample_end(scan_ctx); /* purecov: deadcode */
   });
 
   // Read the data from each column into its own Value_map.
-  int res = table->file->ha_sample_next(table->record[0]);
+  int res = table->file->ha_sample_next(scan_ctx, table->record[0]);
+
   while (res == 0) {
     for (Field *field : fields) {
       histograms::Value_map_base *value_map =
@@ -840,14 +843,21 @@ static bool fill_value_maps(
       }
     }
 
-    res = table->file->ha_sample_next(table->record[0]);
+    res = table->file->ha_sample_next(scan_ctx, table->record[0]);
+
+    DBUG_EXECUTE_IF(
+        "sample_read_sample_half", static uint count = 1;
+        if (count == std::max(1ULL, table->file->stats.records) / 2) {
+          res = HA_ERR_END_OF_FILE;
+          break;
+        } ++count;);
   }
 
   if (res != HA_ERR_END_OF_FILE) return true; /* purecov: deadcode */
 
   // Close the handler
   handler_guard.commit();
-  if (table->file->ha_sample_end()) {
+  if (table->file->ha_sample_end(scan_ctx)) {
     DBUG_ASSERT(false); /* purecov: deadcode */
     return true;
   }
@@ -1118,16 +1128,16 @@ bool Histogram::store_histogram(THD *thd) const {
       get_database_name().str, get_table_name().str, get_column_name().str);
 
   // Do we have an existing histogram for this column?
-  dd::Column_statistics *column_statistics = nullptr;
-  if (client->acquire_for_modification(dd_name, &column_statistics)) {
+  dd::Column_statistics *column_stats = nullptr;
+  if (client->acquire_for_modification(dd_name, &column_stats)) {
     // Error has already been reported
     return true; /* purecov: deadcode */
   }
 
-  if (column_statistics != nullptr) {
+  if (column_stats != nullptr) {
     // Update the existing object.
-    column_statistics->set_histogram(this);
-    if (client->update(column_statistics)) {
+    column_stats->set_histogram(this);
+    if (client->update(column_stats)) {
       /* purecov: begin inspected */
       my_error(ER_UNABLE_TO_UPDATE_COLUMN_STATISTICS, MYF(0),
                get_column_name().str, get_database_name().str,

@@ -94,14 +94,28 @@ class Ndb_metadata {
   /*
     @brief Compare the NdbApi table with the DD table definition
 
-    @thd                Thread context
-    @ndbtab             NdbApi table
-    @table_def          DD table definition
+    @param thd              Thread context
+    @param ndbtab           NdbApi table
+    @param table_def        DD table definition
 
     @return true if the NdbApi table is identical to the DD table def.
   */
   static bool compare(class THD *thd, const NdbDictionary::Table *ndbtab,
                       const dd::Table *table_def);
+
+  /*
+    @brief Compare the NdbApi table with the DD table definition to see if the
+           number of indexes match
+
+    @param dict      NDB Dictionary object
+    @param ndbtab    NdbApi table
+    @param table_def DD table definition
+
+    @return true if the number of indexes in both definitions match
+  */
+  static bool compare_indexes(const NdbDictionary::Dictionary *dict,
+                              const NdbDictionary::Table *ndbtab,
+                              const dd::Table *table_def);
 };
 
 #endif

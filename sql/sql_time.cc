@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -183,6 +183,9 @@ bool str_to_datetime_with_warn(String *str, MYSQL_TIME *l_time,
                                      NullS))
       return true;
   }
+
+  adjust_time_zone_displacement(thd->time_zone(), l_time);
+
   return ret_val;
 }
 
@@ -415,7 +418,7 @@ bool my_longlong_to_time_with_warn(longlong nr, MYSQL_TIME *ltime) {
   @param  in_dst_time_gap - pointer to bool which is set to true if t represents
                             value which doesn't exists (falls into the spring
                             time-gap) or to false otherwise.
-  @return
+
   @retval  Number seconds in UTC since start of Unix Epoch corresponding to t.
   @retval  0 - t contains datetime value which is out of TIMESTAMP range.
 */
@@ -423,7 +426,7 @@ my_time_t TIME_to_timestamp(THD *thd, const MYSQL_TIME *t,
                             bool *in_dst_time_gap) {
   my_time_t timestamp;
 
-  *in_dst_time_gap = 0;
+  *in_dst_time_gap = false;
 
   timestamp = thd->time_zone()->TIME_to_gmt_sec(t, in_dst_time_gap);
   if (timestamp) {
@@ -544,17 +547,21 @@ bool datetime_to_timeval(THD *thd, const MYSQL_TIME *ltime, struct timeval *tm,
 bool str_to_time_with_warn(String *str, MYSQL_TIME *l_time) {
   MYSQL_TIME_STATUS status;
   my_time_flags_t flags = 0;
+  THD *thd = current_thd;
 
   if (current_thd->is_fsp_truncate_mode()) flags = TIME_FRAC_TRUNCATE;
 
   bool ret_val = propagate_datetime_overflow(
       current_thd, &status.warnings, str_to_time(str, l_time, flags, &status));
   if (ret_val || status.warnings) {
-    if (make_truncated_value_warning(current_thd, Sql_condition::SL_WARNING,
+    if (make_truncated_value_warning(thd, Sql_condition::SL_WARNING,
                                      ErrConvString(str), MYSQL_TIMESTAMP_TIME,
                                      NullS))
       return true;
   }
+
+  if (!ret_val) adjust_time_zone_displacement(thd->time_zone(), l_time);
+
   return ret_val;
 }
 
@@ -808,7 +815,7 @@ ulonglong gmt_time_to_local_time(ulonglong gmt_time) {
 MYSQL_TIME my_time_set(uint y, uint m, uint d, uint h, uint mi, uint s,
                        unsigned long ms, bool negative,
                        enum_mysql_timestamp_type type) {
-  return {y, m, d, h, mi, s, ms, negative, type};
+  return {y, m, d, h, mi, s, ms, negative, type, 0};
 }
 
 uint actual_decimals(const MYSQL_TIME *ts) {

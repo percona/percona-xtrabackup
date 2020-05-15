@@ -81,7 +81,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `name` varchar(10) DEFAULT NULL,
-  `level` smallint(5) unsigned DEFAULT NULL
+  `level` smallint unsigned DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=ucs2
 insert into t1 values ('string',1);
 select concat(name,space(level)), concat(name, repeat(' ',level)) from t1;
@@ -1550,7 +1550,7 @@ create table t1 as select concat(ceiling(0.5)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(4) CHARACTER SET ucs2 DEFAULT NULL
+  `c1` varchar(21) CHARACTER SET ucs2 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(floor(0.5)));
@@ -1560,7 +1560,7 @@ create table t1 as select concat(floor(0.5)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(4) CHARACTER SET ucs2 DEFAULT NULL
+  `c1` varchar(21) CHARACTER SET ucs2 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(round(0.5)));
@@ -2036,7 +2036,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c1` varchar(1) CHARACTER SET ucs2 DEFAULT NULL,
-  `c2` int(1) NOT NULL DEFAULT '0'
+  `c2` int NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 set @a2=1;
@@ -2051,7 +2051,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c1` varchar(20) CHARACTER SET ucs2 DEFAULT NULL,
-  `c2` bigint(20) DEFAULT NULL
+  `c2` bigint DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(@a1:=sqrt(1)));
@@ -3257,18 +3257,6 @@ hex(concat(a))	a
 00300030003000300030003000300030003000300030003000300030003000300031003000300030002E0031	00000000000000001000.1
 00300030003000300030003000300030003000300030003000300030003000310030003000300030002E0031	00000000000000010000.1
 drop table t1;
-create table t1 (a year(4));
-insert into t1 values (1);
-select hex(concat(a)) from t1;
-hex(concat(a))
-0032003000300031
-create table t2 as select concat(a) from t1;
-show create table t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `concat(a)` varchar(4) CHARACTER SET ucs2 DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-drop table t1, t2;
 create table t1 (a year);
 insert into t1 values (1);
 select hex(concat(a)) from t1;
@@ -3589,17 +3577,6 @@ hex(a)
 00300030003000300030003000300030003000300030003000300030003000310030003000300030002E0031
 drop table t1;
 drop view v1;
-create table t1 (a year(4));
-insert into t1 values (1);
-create view v1(a) as select concat(a) from t1;
-show columns from v1;
-Field	Type	Null	Key	Default	Extra
-a	varchar(4)	YES		NULL	
-select hex(a) from v1;
-hex(a)
-0032003000300031
-drop table t1;
-drop view v1;
 create table t1 (a year);
 insert into t1 values (1);
 create view v1(a) as select concat(a) from t1;
@@ -3695,7 +3672,7 @@ create table t1 as select f1(1) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` int(11) DEFAULT NULL
+  `c1` int DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 as select concat(f1(1)) as c1;
@@ -4312,7 +4289,7 @@ hex(char(0x01020304 using ucs2))
 CREATE TABLE t1 (f1 CHAR(255) unicode);
 INSERT INTO t1 values ('abc'),('bcd'),('abc');
 ALTER TABLE t1 ADD UNIQUE Index_1 (f1);
-ERROR 23000: Duplicate entry 'abc' for key 'Index_1'
+ERROR 23000: Duplicate entry 'abc' for key 't1.Index_1'
 DROP TABLE t1;
 #
 # Test how character set works with date/time

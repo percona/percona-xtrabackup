@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -255,7 +255,7 @@ ulonglong my_timer_microseconds(void) {
   {
     static std::atomic<ulonglong> atomic_last_value{0};
     struct timeval tv;
-    if (gettimeofday(&tv, NULL) == 0)
+    if (gettimeofday(&tv, nullptr) == 0)
       atomic_last_value =
           (ulonglong)tv.tv_sec * 1000000 + (ulonglong)tv.tv_usec;
     else {
@@ -293,7 +293,7 @@ ulonglong my_timer_milliseconds(void) {
   {
     static ulonglong last_ms_value = 0;
     struct timeval tv;
-    if (gettimeofday(&tv, NULL) == 0)
+    if (gettimeofday(&tv, nullptr) == 0)
       last_ms_value =
           (ulonglong)tv.tv_sec * 1000 + (ulonglong)tv.tv_usec / 1000;
     else {
@@ -465,8 +465,6 @@ static ulonglong my_timer_init_frequency(MY_TIMER_INFO *mti) {
 void my_timer_init(MY_TIMER_INFO *mti) {
   ulonglong (*best_timer)(void);
   ulonglong best_timer_overhead;
-  ulonglong time1, time2;
-  int i;
 
   /* cycles */
   mti->cycles.frequency = 1000000000;
@@ -608,7 +606,9 @@ void my_timer_init(MY_TIMER_INFO *mti) {
   }
 
   /* best_timer_overhead = least of 20 calculations */
-  for (i = 0, best_timer_overhead = 1000000000; i < 20; ++i) {
+  best_timer_overhead = 1000000000;
+  for (int i = 0; i < 20; ++i) {
+    ulonglong time1, time2;
     time1 = best_timer();
     time2 = best_timer() - time1;
     if (best_timer_overhead > time2) best_timer_overhead = time2;

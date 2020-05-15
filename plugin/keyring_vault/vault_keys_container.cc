@@ -10,13 +10,13 @@ bool Vault_keys_container::init(IKeyring_io *keyring_io,
 
 IKey *Vault_keys_container::fetch_key(IKey *key) {
   DBUG_ASSERT(key->get_key_data() == nullptr);
-  DBUG_ASSERT(key->get_key_type()->empty());
+  DBUG_ASSERT(key->get_key_type_as_string()->empty());
 
   IKey *fetched_key = get_key_from_hash(key);
 
   if (fetched_key == nullptr) return nullptr;
 
-  if (fetched_key->get_key_type()->empty() &&
+  if (fetched_key->get_key_type_as_string()->empty() &&
       vault_io->retrieve_key_type_and_data(
           fetched_key))  // key is fetched for the first time
     return nullptr;

@@ -6,13 +6,13 @@ Note	####	Storing MySQL user name or password information in the master info rep
 
 ############################################################
 # 1. Set group_replication_member_expel_timeout to
-#    30 seconds.
+#    60 seconds.
 [connection server1]
-SET GLOBAL group_replication_member_expel_timeout = 30;
+SET GLOBAL group_replication_member_expel_timeout = 60;
 [connection server2]
-SET GLOBAL group_replication_member_expel_timeout = 30;
+SET GLOBAL group_replication_member_expel_timeout = 60;
 [connection server3]
-SET GLOBAL group_replication_member_expel_timeout = 30;
+SET GLOBAL group_replication_member_expel_timeout = 60;
 set session sql_log_bin=0;
 call mtr.add_suppression("read failed");
 call mtr.add_suppression("The member was unable to join the group. Local port: *.*");

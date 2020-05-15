@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -132,7 +132,9 @@ class Session_impl : public XSession {
                                        const char *, const uint32_t);
 
   std::pair<XError, std::vector<std::string>> validate_and_adjust_auth_methods(
-      std::vector<Auth> auth_methods, const bool can_use_plain);
+      const std::vector<Auth> &auth_methods, bool can_use_plain);
+  Argument_value get_compression_capability(
+      const bool include_compression_level = true) const;
 
   Argument_object m_required_capabilities;
   Argument_object m_optional_capabilities;

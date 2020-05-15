@@ -13,7 +13,7 @@ CREATE TABLE t_system (c1 INT);
 INSERT INTO t_system VALUES (1), (2);
 [connection slave]
 include/rpl_use_privilege_db.inc [USE rpl_priv]
-CALL mtr.add_suppression(".*you need .at least one of. the SUPER, SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN.*");
+CALL mtr.add_suppression(".*you need .at least one of. the SUPER.* SYSTEM_VARIABLES_ADMIN.*");
 CALL mtr.add_suppression(".*The slave coordinator and worker threads are stopped.*");
 GRANT REPLICATION_APPLIER, CREATE, INSERT, DROP ON *.* TO 'u1'@'localhost';
 SHOW GRANTS FOR 'u1'@'localhost';
@@ -101,7 +101,6 @@ STOP SLAVE;
 SET default_table_encryption = 1;
 CREATE DATABASE new_db;
 [connection slave]
-CALL mtr.add_suppression(".*you need .at least one of. the SUPER or SYSTEM_VARIABLES_ADMIN and TABLE_ENCRYPTION_ADMIN.*");
 REVOKE SUPER, SYSTEM_VARIABLES_ADMIN, TABLE_ENCRYPTION_ADMIN ON *.* FROM 'u1'@'localhost';
 Warnings:
 Warning	1287	The SUPER privilege identifier is deprecated

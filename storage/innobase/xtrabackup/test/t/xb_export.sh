@@ -137,7 +137,11 @@ xtrabackup --datadir=$mysql_datadir --prepare --export \
 
 cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
 vlog "Verifying .cfg files in backup, expecting 5."
-test "$cfg_count" -eq 5
+if [ $cfg_count -ne 5 ]
+then
+   vlog "Expecting 5 cfg files. Found only $cfg_count"
+   exit -1
+fi
 
 run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
 mysql -e "alter table test import tablespace" incremental_sample

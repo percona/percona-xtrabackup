@@ -863,15 +863,6 @@ MgmtSrvr::get_packed_config_from_node(NodeId nodeId,
   }
 
   const Uint32 version = node.m_info.m_version;
-
-  if (!ndbd_get_config_supported(version))
-  {
-    error.assfmt("Data node %d (version %d.%d.%d) does not support getting config. ",
-                 nodeId, ndbGetMajor(version),
-                 ndbGetMinor(version), ndbGetBuild(version));
-    DBUG_RETURN(false);
-  }
-
   bool v2_data_node = ndb_config_version_v2(version);
   INIT_SIGNAL_SENDER(ss,nodeId);
 
@@ -1179,8 +1170,6 @@ MgmtSrvr::sendVersionReq(int v_nodeId,
 
       version = conf->version;
       mysql_version = conf->mysql_version;
-      if (version < NDBD_SPLIT_VERSION)
-	mysql_version = 0;
       struct in_addr in;
       in.s_addr= conf->m_inet_addr;
       *address= Ndb_inet_ntop(AF_INET,
@@ -1211,14 +1200,19 @@ MgmtSrvr::sendVersionReq(int v_nodeId,
              len == 0); // only full length in ndbapi
       if (signal->header.m_noOfSections >= 1)
       {
+        len = signal->ptr[0].sz;
         if (BitmaskImpl::safe_get(len, signal->ptr[0].p, nodeId))
         {
           do_send = true;
         }
       }
-      else if (BitmaskImpl::safe_get(len, rep->theAllNodes, nodeId))
+      else
       {
-	do_send = true; // retry with other node
+        assert(len > 0);
+        if (BitmaskImpl::safe_get(len, rep->theAllNodes, nodeId))
+        {
+	  do_send = true; // retry with other node
+        }
       }
       continue;
     }
@@ -3893,6 +3887,7 @@ MgmtSrvr::alloc_node_id_req(NodeId free_node_id,
         return NO_CONTACT_WITH_DB_NODES;
       }
 
+      const bool refFromMaster = (refToNode(ref->masterRef) == nodeId);
       if (ref->errorCode == AllocNodeIdRef::NotMaster ||
           ref->errorCode == AllocNodeIdRef::Busy ||
           ref->errorCode == AllocNodeIdRef::NodeFailureHandlingNotCompleted)
@@ -3901,20 +3896,38 @@ MgmtSrvr::alloc_node_id_req(NodeId free_node_id,
         nodeId = refToNode(ref->masterRef);
 	if (!getNodeInfo(nodeId).is_confirmed())
 	  nodeId = 0;
-        if (ref->errorCode != AllocNodeIdRef::NotMaster)
+        if (first_attempt && (ref->errorCode != AllocNodeIdRef::NotMaster))
         {
-          if (first_attempt)
-          {
-            first_attempt = false;
-            g_eventLogger->info("Alloc node id %u rejected with error code %u, will retry",
-                                free_node_id,
-                                ref->errorCode);
-          }
-          /* sleep for a while (100ms) before retrying */
-          ss.unlock();
-          NdbSleep_MilliSleep(100);  
-          ss.lock();
+          first_attempt = false;
+          g_eventLogger->info("Alloc node id %u rejected with error code %u, will retry",
+                              free_node_id,
+                              ref->errorCode);
         }
+        /* sleep for a while before retrying */
+        ss.unlock();
+        if (ref->errorCode == AllocNodeIdRef::Busy)
+        {
+          NdbSleep_MilliSleep(100);  
+        }
+        else if (ref->errorCode == AllocNodeIdRef::NotMaster)
+        {
+          if (refFromMaster)
+          {
+            /* AllocNodeIdReq sent to master node, but master not ready
+             * to alloc node ID. Sleep before retrying. */
+            NdbSleep_SecSleep(1);
+          }
+          else
+          {
+            /* AllocNodeIdReq sent to non-master node, retry by sending
+             * AllocNodeIdReq to ref->masterRef. No sleep before retrying */
+          }
+        }
+        else /* AllocNodeIdRef::NodeFailureHandlingNotCompleted */
+        {
+          NdbSleep_SecSleep(1);
+        }
+        ss.lock();
         continue;
       }
       return ref->errorCode;
@@ -4044,6 +4057,13 @@ MgmtSrvr::find_node_type(NodeId node_id,
       }
       exact_match = true;
     }
+    unsigned dedicated_node = 0;
+    iter.get(CFG_NODE_DEDICATED, &dedicated_node);
+    if (dedicated_node && id != node_id)
+    {
+      // id is only handed out if explicitly requested.
+      continue;
+    }
     /*
       Insert this node in the nodes list sorted with the
       exact matches ahead of the open nodes
@@ -4152,7 +4172,9 @@ MgmtSrvr::find_node_type(NodeId node_id,
 int
 MgmtSrvr::try_alloc(NodeId id,
                     ndb_mgm_node_type type,
-                    Uint32 timeout_ms)
+                    Uint32 timeout_ms,
+                    int& error_code,
+                    BaseString& error_string)
 {
   assert(type == NDB_MGM_NODE_TYPE_NDB ||
          type == NDB_MGM_NODE_TYPE_API);
@@ -4184,6 +4206,9 @@ MgmtSrvr::try_alloc(NodeId id,
         g_eventLogger->debug("Unable to allocate nodeid %u for API node " \
                              "in cluster (retried during %u milliseconds)",
                              id, (unsigned)elapsed);
+        error_string.appfmt("No contact with data nodes to get node id %u",
+                            id);
+        error_code = NDB_MGM_ALLOCID_ERROR;
         return -1;
       }
 
@@ -4224,7 +4249,9 @@ int
 MgmtSrvr::try_alloc_from_list(NodeId& nodeid,
                               ndb_mgm_node_type type,
                               Uint32 timeout_ms,
-                              Vector<PossibleNode>& nodes)
+                              Vector<PossibleNode>& nodes,
+                              int& error_code,
+                              BaseString& error_string)
 {
   for (unsigned i = 0; i < nodes.size(); i++)
   {
@@ -4250,7 +4277,11 @@ MgmtSrvr::try_alloc_from_list(NodeId& nodeid,
     m_reserved_nodes.set(id, timeout_ms);
 
     NdbMutex_Unlock(m_reserved_nodes_mutex);
-    int res = try_alloc(id, type, timeout_ms);
+    int res = try_alloc(id,
+                        type,
+                        timeout_ms,
+                        error_code,
+                        error_string);
     if (res > 0)
     {
       // Nodeid allocation succeeded
@@ -4300,7 +4331,6 @@ MgmtSrvr::alloc_node_id_impl(NodeId& nodeid,
     }
     return true;
   }
-
   /* Don't allow allocation of this ndb_mgmd's nodeid */
   assert(_ownNodeId);
   if (nodeid == _ownNodeId)
@@ -4410,8 +4440,12 @@ MgmtSrvr::alloc_node_id_impl(NodeId& nodeid,
   }
 
   const int try_alloc_rc =
-    try_alloc_from_list(nodeid, type, timeout_ms, nodes);
-
+    try_alloc_from_list(nodeid,
+                        type,
+                        timeout_ms,
+                        nodes,
+                        error_code,
+                        error_string);
   if (try_alloc_rc == 0)
   {
     if (type == NDB_MGM_NODE_TYPE_NDB)
@@ -4423,7 +4457,6 @@ MgmtSrvr::alloc_node_id_impl(NodeId& nodeid,
     return true;
   }
 
-  error_code = NDB_MGM_ALLOCID_ERROR;
 
   if (try_alloc_rc == -1)
   {
@@ -4433,23 +4466,30 @@ MgmtSrvr::alloc_node_id_impl(NodeId& nodeid,
     */
     if (nodeid)
     {
-      error_string.appfmt("Id %d already allocated by another node.",
-                          nodeid);
+      if (error_code == 0)
+      {
+        error_string.appfmt("Id %d already allocated by another node.",
+                            nodeid);
+      }
     }
     else
     {
-      const char *alias, *str;
-      alias= ndb_mgm_get_node_type_alias_string(type, &str);
-      error_string.appfmt("No free node id found for %s(%s).",
-                          alias, str);
+      if (error_code == 0)
+      {
+        const char *alias, *str;
+        alias = ndb_mgm_get_node_type_alias_string(type, &str);
+        error_string.appfmt("No free node id found for %s(%s).",
+                            alias,
+                            str);
+      }
     }
+    error_code = NDB_MGM_ALLOCID_ERROR;
   }
   else
   {
     assert(try_alloc_rc == -2); /* No contact with cluster */
-    error_string.appfmt("Cluster not ready for nodeid allocation.");
+    error_string.assfmt("Cluster not ready for nodeid allocation.");
   }
-
   return false;
 }
 
@@ -4470,6 +4510,7 @@ MgmtSrvr::alloc_node_id(NodeId& nodeid,
                                  addr_buf,
                                  sizeof(addr_buf));
 
+  error_code = 0;
   g_eventLogger->debug("Trying to allocate nodeid for %s" \
                        "(nodeid: %u, type: %s)",
                        addr_str, (unsigned)nodeid, type_str);
@@ -4888,7 +4929,8 @@ MgmtSrvr::transporter_connect(NDB_SOCKET_TYPE sockfd,
 {
   DBUG_ENTER("MgmtSrvr::transporter_connect");
   TransporterRegistry* tr= theFacade->get_registry();
-  if (!tr->connect_server(sockfd, msg, close_with_reset))
+  bool dummy_log_failure = false;
+  if (!tr->connect_server(sockfd, msg, close_with_reset, dummy_log_failure))
     DBUG_RETURN(false);
 
   /**
@@ -5185,13 +5227,6 @@ MgmtSrvr::show_variables(NdbOut& out)
 void
 MgmtSrvr::make_sync_req(SignalSender& ss, Uint32 nodeId)
 {
-  const trp_node node = ss.getNodeInfo(nodeId);
-  if (!ndbd_sync_req_support(node.m_info.m_version))
-  {
-    /* The node hasn't got SYNC_REQ support */
-    return;
-  }
-
   /**
    * This subroutine is used to make a async request(error insert/dump)
    *   "more" syncronous, i.e increasing the likelyhood that

@@ -116,7 +116,7 @@ void dict_mem_table_free(dict_table_t *table) /*!< in: table */
 #endif /* !UNIV_HOTBACKUP */
 
   ut_free(table->name.m_name);
-  table->name.m_name = NULL;
+  table->name.m_name = nullptr;
 
 #ifndef UNIV_HOTBACKUP
 #ifndef UNIV_LIBRARY
@@ -130,18 +130,50 @@ void dict_mem_table_free(dict_table_t *table) /*!< in: table */
 #endif /* !UNIV_LIBRARY */
 #endif /* !UNIV_HOTBACKUP */
 
-  if (table->s_cols != NULL) {
+  if (table->s_cols != nullptr) {
     UT_DELETE(table->s_cols);
   }
 
 #ifndef UNIV_HOTBACKUP
-  if (table->temp_prebuilt != NULL) {
+  if (table->temp_prebuilt != nullptr) {
     ut_ad(table->is_intrinsic());
     UT_DELETE(table->temp_prebuilt);
   }
 #endif /* !UNIV_HOTBACKUP */
 
   mem_heap_free(table->heap);
+}
+
+/** System databases */
+static std::string innobase_system_databases[] = {
+    "mysql/", "information_schema/", "performance_schema/", ""};
+
+/** Determines if a table is a system table
+@param[in]  name  table_name
+@return true if table is system table */
+static bool dict_mem_table_is_system(const std::string name) {
+  /* Table has the following format: database/table and some system table are
+  of the form SYS_* */
+  if (name.find('/') != std::string::npos) {
+    size_t table_len = name.length();
+
+    std::string system_db = std::string(innobase_system_databases[0]);
+    int i = 0;
+
+    while (system_db.compare("") != 0) {
+      size_t len = system_db.length();
+
+      if (table_len > len && name.compare(0, len, system_db) == 0) {
+        return true;
+      }
+
+      system_db = std::string(innobase_system_databases[++i]);
+    }
+
+    return false;
+  } else {
+    return true;
+  }
 }
 
 /** Creates a table memory object.
@@ -185,6 +217,7 @@ dict_table_t *dict_mem_table_create(
   table->flags = (unsigned int)flags;
   table->flags2 = (unsigned int)flags2;
   table->name.m_name = mem_strdup(name);
+  table->is_system_table = dict_mem_table_is_system(table->name.m_name);
   table->space = (unsigned int)space;
   table->dd_space_id = dd::INVALID_OBJECT_ID;
   table->n_t_cols = (unsigned int)(n_cols + table->get_n_sys_cols());
@@ -227,7 +260,7 @@ dict_table_t *dict_mem_table_create(
     table->fts = fts_create(table);
     table->fts->cache = fts_cache_create(table);
   } else {
-    table->fts = NULL;
+    table->fts = nullptr;
   }
 
   if (DICT_TF_HAS_SHARED_SPACE(table->flags)) {

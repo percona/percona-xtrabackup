@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,6 +52,7 @@
 #include "sql/sql_tmp_table.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
+#include "sql/table_function.h"  // Table_function
 #include "sql/temp_table_param.h"
 #include "sql/timing_iterator.h"
 
@@ -471,7 +472,7 @@ int AggregateIterator::Read() {
       }
       for (Item &item : m_join->rollup.all_fields[m_current_rollup_position]) {
         if (has_rollup_result(&item) && item.get_result_field() != nullptr) {
-          item.save_in_result_field(true);
+          item.save_in_field(item.get_result_field(), true);
         }
       }
 
@@ -611,10 +612,14 @@ int NestedLoopIterator::Read() {
       if (m_pfs_batch_mode) {
         m_source_inner->StartPSIBatchMode();
       }
+
+      // Init() could read the NULL row flags (e.g., when building a hash
+      // table), so unset them before instead of after.
+      m_source_inner->SetNullRowFlag(false);
+
       if (m_source_inner->Init()) {
         return 1;
       }
-      m_source_inner->SetNullRowFlag(false);
       m_state = READING_FIRST_INNER_ROW;
     }
     DBUG_ASSERT(m_state == READING_INNER_ROWS ||
@@ -674,7 +679,7 @@ vector<string> NestedLoopIterator::DebugString() const {
     case JoinType::OUTER:
       return {"Nested loop left join"};
     case JoinType::ANTI:
-      return {"Nested loop anti-join"};
+      return {"Nested loop antijoin"};
     case JoinType::SEMI:
       return {"Nested loop semijoin"};
     default:
@@ -935,8 +940,6 @@ bool MaterializeIterator::MaterializeRecursive() {
         }
       });
 
-  DBUG_ASSERT(m_limit_rows == HA_POS_ERROR);
-
   ha_rows stored_rows = 0;
 
   // Give each recursive iterator access to the stored number of rows
@@ -1053,9 +1056,9 @@ bool MaterializeIterator::MaterializeQueryBlock(const QueryBlock &query_block,
 
       // Inform each reader that the table has changed under their feet,
       // so they'll need to reposition themselves.
-      for (const QueryBlock &query_block : m_query_blocks_to_materialize) {
-        if (query_block.is_recursive_reference) {
-          query_block.recursive_reader->RepositionCursorAfterSpillToDisk();
+      for (const QueryBlock &query_b : m_query_blocks_to_materialize) {
+        if (query_b.is_recursive_reference) {
+          query_b.recursive_reader->RepositionCursorAfterSpillToDisk();
         }
       }
     } else {
@@ -1346,7 +1349,7 @@ bool TemptableAggregateIterator::Init() {
   }
 
   // Initialize the index used for finding the groups.
-  if (table()->file->ha_index_init(0, 0)) {
+  if (table()->file->ha_index_init(0, false)) {
     return true;
   }
   auto end_unique_index =
@@ -1354,10 +1357,10 @@ bool TemptableAggregateIterator::Init() {
 
   PFSBatchMode pfs_batch_mode(m_subquery_iterator.get());
   for (;;) {
-    int error = m_subquery_iterator->Read();
-    if (error > 0 || thd()->is_error())  // Fatal error
+    int read_error = m_subquery_iterator->Read();
+    if (read_error > 0 || thd()->is_error())  // Fatal error
       return true;
-    else if (error < 0)
+    else if (read_error < 0)
       break;
     else if (thd()->killed)  // Aborted by user
     {
@@ -1372,7 +1375,7 @@ bool TemptableAggregateIterator::Init() {
     // (FIXME: Is this comment really still current? It seems to date back
     // to pre-2000, but I can't see that it's really true.)
     if (copy_fields(m_temp_table_param, thd()))
-      return 1; /* purecov: inspected */
+      return true; /* purecov: inspected */
 
     // See if we have seen this row already; if so, we want to update it,
     // not insert a new one.
@@ -1386,7 +1389,7 @@ bool TemptableAggregateIterator::Init() {
         in group are found.
       */
       if (copy_funcs(m_temp_table_param, thd()))
-        return 1; /* purecov: inspected */
+        return true; /* purecov: inspected */
       group_found = !check_unique_constraint(table());
     } else {
       for (ORDER *group = table()->group; group; group = group->next) {
@@ -1409,7 +1412,7 @@ bool TemptableAggregateIterator::Init() {
           table()->file->ha_update_row(table()->record[1], table()->record[0]);
       if (error != 0 && error != HA_ERR_RECORD_IS_THE_SAME) {
         PrintError(error);
-        return 1;
+        return true;
       }
       continue;
     }
@@ -1450,10 +1453,10 @@ bool TemptableAggregateIterator::Init() {
           memcpy(table()->record[0] + key_part->offset - 1, group->buff - 1, 1);
       }
       /* See comment on copy_funcs above. */
-      if (copy_funcs(m_temp_table_param, thd())) return 1;
+      if (copy_funcs(m_temp_table_param, thd())) return true;
     }
     init_tmptable_sum_functions(m_join->sum_funcs);
-    error = table()->file->ha_write_row(table()->record[0]);
+    int error = table()->file->ha_write_row(table()->record[0]);
     if (error != 0) {
       /*
          If the error is HA_ERR_FOUND_DUPP_KEY and the grouping involves a
@@ -1468,20 +1471,20 @@ bool TemptableAggregateIterator::Init() {
         for (ORDER *group = table()->group; group; group = group->next) {
           if (group->field_in_tmp_table->type() == MYSQL_TYPE_TIMESTAMP) {
             my_error(ER_GROUPING_ON_TIMESTAMP_IN_DST, MYF(0));
-            return 1;
+            return true;
           }
         }
       }
-      if (create_ondisk_from_heap(thd(), table(), error, false, NULL)) {
+      if (create_ondisk_from_heap(thd(), table(), error, false, nullptr)) {
         end_unique_index.commit();
-        return 1;  // Not a table_is_full error.
+        return true;  // Not a table_is_full error.
       }
       // Table's engine changed, index is not initialized anymore
       error = table()->file->ha_index_init(0, false);
       if (error != 0) {
         end_unique_index.commit();
         PrintError(error);
-        return 1;
+        return true;
       }
     }
   }
@@ -1556,7 +1559,7 @@ WeedoutIterator::WeedoutIterator(THD *thd,
   // Cache the value of rowid_status, as iterators above this one may change the
   // value later (see QEP_TAB::rowid_status for details around this). The value
   // indicates whether it is safe to call position().
-  for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
+  for (SJ_TMP_TABLE_TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
     DBUG_ASSERT(tab->qep_tab->rowid_status != NO_ROWID_NEEDED);
     m_rowid_status.push_back(tab->qep_tab->rowid_status);
   }
@@ -1565,6 +1568,10 @@ WeedoutIterator::WeedoutIterator(THD *thd,
 bool WeedoutIterator::Init() {
   if (m_sj->tmp_table->file->ha_delete_all_rows()) {
     return true;
+  }
+  if (m_sj->tmp_table->hash_field != nullptr &&
+      !m_sj->tmp_table->file->inited) {
+    m_sj->tmp_table->file->ha_index_init(0, false);
   }
   return m_source->Init();
 }
@@ -1578,7 +1585,7 @@ int WeedoutIterator::Read() {
     }
 
     size_t tmp_table_idx = 0;
-    for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
+    for (SJ_TMP_TABLE_TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
       TABLE *table = tab->qep_tab->table();
       if (m_rowid_status[tmp_table_idx++] == NEED_TO_CALL_POSITION_FOR_ROWID &&
           can_call_position(table)) {
@@ -1607,7 +1614,7 @@ vector<string> WeedoutIterator::DebugString() const {
     ret += m_sj->tabs->qep_tab->table()->alias;
   } else {
     ret += "(";
-    for (SJ_TMP_TABLE::TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
+    for (SJ_TMP_TABLE_TAB *tab = m_sj->tabs; tab != m_sj->tabs_end; ++tab) {
       if (tab != m_sj->tabs) {
         ret += ", ";
       }
@@ -1793,7 +1800,18 @@ int WindowingIterator::Read() {
 }
 
 vector<string> WindowingIterator::DebugString() const {
-  return {"Window aggregate"};
+  string buf = "Window aggregate: ";
+  bool first = true;
+  for (const Func_ptr &func : *(m_temp_table_param->items_to_copy)) {
+    if (func.func()->m_is_window_function) {
+      if (!first) {
+        buf += ", ";
+      }
+      buf += ItemToString(func.func());
+      first = false;
+    }
+  }
+  return {buf};
 }
 
 BufferingWindowingIterator::BufferingWindowingIterator(
@@ -1848,9 +1866,10 @@ int BufferingWindowingIterator::Read() {
         change so we had to finalize the previous partition first.
         Bring back saved row for next partition.
       */
-      if (bring_back_frame_row(thd(), *m_window, m_temp_table_param,
-                               Window::FBC_FIRST_IN_NEXT_PARTITION,
-                               Window::REA_WONT_UPDATE_HINT)) {
+      if (bring_back_frame_row(
+              thd(), m_window, m_temp_table_param,
+              Window::FBC_FIRST_IN_NEXT_PARTITION,
+              Window_retrieve_cached_row_reason::WONT_UPDATE_HINT)) {
         return 1;
       }
 
@@ -1917,9 +1936,10 @@ int BufferingWindowingIterator::Read() {
         between out tmp record and frame buffer record, instead of
         involving the in record. FIXME.
       */
-      if (bring_back_frame_row(thd(), *m_window, nullptr /* no copy to OUT */,
-                               Window::FBC_LAST_BUFFERED_ROW,
-                               Window::REA_WONT_UPDATE_HINT)) {
+      if (bring_back_frame_row(
+              thd(), m_window, nullptr /* no copy to OUT */,
+              Window::FBC_LAST_BUFFERED_ROW,
+              Window_retrieve_cached_row_reason::WONT_UPDATE_HINT)) {
         return 1;
       }
     }
@@ -1956,7 +1976,25 @@ int BufferingWindowingIterator::ReadBufferedRow(bool new_partition_or_eof) {
 }
 
 vector<string> BufferingWindowingIterator::DebugString() const {
-  return {"Window aggregate with buffering"};
+  string buf;
+  if (m_window->optimizable_row_aggregates() ||
+      m_window->optimizable_range_aggregates() ||
+      m_window->static_aggregates()) {
+    buf = "Window aggregate with buffering: ";
+  } else {
+    buf = "Window multi-pass aggregate with buffering: ";
+  }
+  bool first = true;
+  for (const Func_ptr &func : *(m_temp_table_param->items_to_copy)) {
+    if (func.func()->m_is_window_function) {
+      if (!first) {
+        buf += ", ";
+      }
+      buf += ItemToString(func.func());
+      first = false;
+    }
+  }
+  return {buf};
 }
 
 MaterializeInformationSchemaTableIterator::

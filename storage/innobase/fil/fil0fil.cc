@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -33,10 +33,10 @@ The tablespace memory cache */
 #include <fcntl.h>
 #include <sys/types.h>
 
+#include "arch0page.h"
 #include "btr0btr.h"
 #include "buf0buf.h"
 #include "buf0flu.h"
-#include "clone0api.h"
 #include "dict0boot.h"
 #include "dict0dd.h"
 #include "dict0dict.h"
@@ -51,9 +51,12 @@ The tablespace memory cache */
 #include "mem0mem.h"
 #include "mtr0log.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
+
+#include "clone0api.h"
 #include "os0file.h"
 #include "page0zip.h"
+#include "sql/mysqld.h"  // lower_case_file_system
+#include "srv0srv.h"
 #include "srv0start.h"
 
 #ifndef UNIV_HOTBACKUP
@@ -95,6 +98,9 @@ constexpr const char *Fil_path::DOT_SLASH;
 constexpr const char *Fil_path::DOT_DOT_SLASH;
 constexpr const char *Fil_path::SLASH_DOT_DOT_SLASH;
 
+dberr_t dict_stats_rename_table(const char *old_name, const char *new_name,
+                                char *errstr, size_t errstr_sz);
+
 /** Used for collecting the data in boot_tablespaces() */
 namespace dd_fil {
 
@@ -120,6 +126,39 @@ using Moved = std::tuple<dd::Object_id, space_id_t, std::string, std::string,
 
 using Tablespaces = std::vector<Moved>;
 }  // namespace dd_fil
+
+size_t fil_get_scan_threads(size_t num_files) {
+  /* Number of additional threads required to scan all the files.
+  n_threads == 0 means that the main thread itself will do all the
+  work instead of spawning any additional threads. */
+  size_t n_threads = num_files / FIL_SCAN_MAX_TABLESPACES_PER_THREAD;
+
+  /* Return if no additional threads are needed. */
+  if (n_threads == 0) {
+    return 0;
+  }
+
+  /* Number of concurrent threads supported by the host machine. */
+  size_t max_threads =
+      FIL_SCAN_THREADS_PER_CORE * std::thread::hardware_concurrency();
+
+  /* If the number of concurrent threads supported by the host
+  machine could not be calculated, assume the supported threads
+  to be FIL_SCAN_MAX_THREADS. */
+  max_threads = max_threads == 0 ? FIL_SCAN_MAX_THREADS : max_threads;
+
+  /* Restrict the number of threads to the lower of number of threads
+  supported by the host machine or FIL_SCAN_MAX_THREADS. */
+  if (n_threads > max_threads) {
+    n_threads = max_threads;
+  }
+
+  if (n_threads > FIL_SCAN_MAX_THREADS) {
+    n_threads = FIL_SCAN_MAX_THREADS;
+  }
+
+  return n_threads;
+}
 
 /* uint16_t is the index into Tablespace_dirs::m_dirs */
 using Scanned_files = std::vector<std::pair<uint16_t, std::string>>;
@@ -238,11 +277,11 @@ members as noted in the fil_space_t and fil_node_t definition. */
 /** Reference to the server data directory. */
 Fil_path MySQL_datadir_path;
 
-/** Sentinel value to check for "NULL" Fil_path. */
-Fil_path Fil_path::s_null_path;
+/** Reference to the server undo directory. */
+Fil_path MySQL_undo_path;
 
 /** Common InnoDB file extentions */
-const char *dot_ext[] = {"", ".ibd", ".cfg", ".cfp", ".ibt", ".ibu"};
+const char *dot_ext[] = {"", ".ibd", ".cfg", ".cfp", ".ibt", ".ibu", ".dblwr"};
 
 /** The number of fsyncs done to the log */
 ulint fil_n_log_flushes = 0;
@@ -290,8 +329,8 @@ enum fil_operation_t {
 /** The null file address */
 fil_addr_t fil_addr_null = {FIL_NULL, 0};
 
-/** Maximum number of threads to use for scanning data files. */
-static const size_t MAX_SCAN_THREADS = 8;
+/** Maximum number of pages to read to determine the space ID. */
+static const size_t MAX_PAGES_TO_READ = 1;
 
 #ifndef UNIV_HOTBACKUP
 /** Maximum number of shards supported. */
@@ -316,9 +355,6 @@ static const size_t REDO_SHARD = 0;
 /** The UNDO logs have their own shards (4). */
 static const size_t UNDO_SHARDS_START = 0;
 #endif /* !UNIV_HOTBACKUP */
-
-/** Maximum pages to check for valid space ID during start up. */
-static const size_t MAX_PAGES_TO_CHECK = 3;
 
 /** Sentinel for empty open slot. */
 static const size_t EMPTY_OPEN_SLOT = std::numeric_limits<size_t>::max();
@@ -422,9 +458,6 @@ class Tablespace_files {
   /** @return the directory path specified by the user. */
   const std::string &path() const { return (m_dir.path()); }
 
-  /** @return the real path of the directory searched. */
-  const std::string &real_path() const { return (m_dir.abs_path()); }
-
  private:
   /* Note:  The file names in m_ibd_paths and m_undo_paths are relative
   to m_real_path. */
@@ -436,7 +469,7 @@ class Tablespace_files {
   Paths m_undo_paths;
 
   /** Top level directory where the above files were found. */
-  const Fil_path m_dir;
+  Fil_path m_dir;
 };
 
 /** Directories scanned during startup and the files discovered. */
@@ -457,11 +490,20 @@ class Tablespace_dirs {
 #endif /* __SUNPRO_CC */
   }
 
+  /** Normalize and save a directory to scan for IBD and IBU datafiles
+  before recovery.
+  @param[in]  directory    directory to scan for ibd and ibu files
+  @param[in]  is_undo_dir  true for an undo directory */
+  void set_scan_dir(const std::string &directory, bool is_undo_dir = false);
+
+  /** Normalize and save a list of directories to scan for IBD and IBU
+  datafiles before recovery.
+  @param[in]  directories  Directories to scan for ibd and ibu files */
+  void set_scan_dirs(const std::string &directories);
+
   /** Discover tablespaces by reading the header from .ibd files.
-  @param[in]	in_directories	Directories to scan
   @return DB_SUCCESS if all goes well */
-  dberr_t scan(const std::string &in_directories, bool populate_fil_cache)
-      MY_ATTRIBUTE((warn_unused_result));
+  dberr_t scan(bool populate_fil_cache) MY_ATTRIBUTE((warn_unused_result));
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -502,22 +544,20 @@ class Tablespace_dirs {
     return (Result{"", nullptr});
   }
 
-  /** @return the directory that contains path */
-  const Fil_path &contains(const std::string &path) const
+  /** Determine if this Fil_path contains the path provided.
+  @param[in]  path  file or directory path to compare.
+  @return true if this Fil_path contains path */
+  bool contains(const std::string &path) const
       MY_ATTRIBUTE((warn_unused_result)) {
-    Fil_path file{path};
+    const Fil_path descendant{path};
 
     for (const auto &dir : m_dirs) {
-      const auto &d = dir.root().abs_path();
-      auto abs_path = Fil_path::get_real_path(d);
-
-      if (dir.root().is_ancestor(file) ||
-          abs_path.compare(file.abs_path()) == 0) {
-        return (dir.root());
+      if (dir.root().is_ancestor(descendant) ||
+          dir.root().is_same_as(descendant)) {
+        return (true);
       }
     }
-
-    return (Fil_path::null());
+    return (false);
   }
 
   /** Insert a file with given space ID to filename mapping.
@@ -571,13 +611,22 @@ class Tablespace_dirs {
   /** first=dir path from the user, second=files found under first. */
   using Scanned = std::vector<Tablespace_files>;
 
-  /** Tokenize a path specification. Convert relative paths to
-  absolute paths. Check if the paths are valid and filter out
-  invalid or unreadable directories.  Sort and filter out duplicates
-  from dirs.
+  /** Report a warning that a path is being ignored and include the reason. */
+  void warn_ignore(std::string path_in, const char *reason);
+
+  /** Add a single path specification to this list of tablespace directories.
+  Convert it to an absolute path. Check if the path is valid.  Ignore
+  unreadable, duplicate or invalid directories.
+  @param[in]  str  Path specification to tokenize
+  @param[in]  is_undo_dir  true for an undo directory */
+  void add_path(const std::string &str, bool is_undo_dir = false);
+
+  /** Add a delimited list of path specifications to this list of tablespace
+  directories. Convert relative paths to absolute paths. Check if the paths
+  are valid.  Ignore unreadable, duplicate or invalid directories.
   @param[in]	str		Path specification to tokenize
   @param[in]	delimiters	Delimiters */
-  void tokenize_paths(const std::string &str, const std::string &delimiters);
+  void add_paths(const std::string &str, const std::string &delimiters);
 
   using Const_iter = Scanned_files::const_iterator;
 
@@ -1237,6 +1286,21 @@ class Fil_system {
     return (m_dirs.erase(space_id));
   }
 
+  /** Add file to old file list. The list is used during 5.7 upgrade failure
+  to revert back the modified file names. We modify partitioned file names
+  to lower case.
+  @param[in]	file_path	old file name with path */
+  void add_old_file(const std::string &file_path) {
+    m_old_paths.push_back(file_path);
+  }
+
+  /** Rename partition files during upgrade.
+  @param[in]	revert	if true, revert to old names */
+  void rename_partition_files(bool revert);
+
+  /** Clear all accumulated old files. */
+  void clear_old_files() { m_old_paths.clear(); }
+
   /** Get the top level directory where this filename was found.
   @param[in]	path		Path to look for.
   @return the top level directory under which this file was found. */
@@ -1421,9 +1485,7 @@ class Fil_system {
   @param[in]	path		Path to check
   @return true if path is known to InnoDB */
   bool check_path(const std::string &path) const {
-    const auto &dir = m_dirs.contains(path);
-
-    return (dir != Fil_path::null());
+    return (m_dirs.contains(path));
   }
 
   /** Get the list of directories that InnoDB knows about.
@@ -1436,10 +1498,25 @@ class Fil_system {
   static bool space_belongs_in_LRU(const fil_space_t *space)
       MY_ATTRIBUTE((warn_unused_result));
 
+  /** Normalize and save a directory to scan for IBD and IBU datafiles
+  before recovery.
+  @param[in]  directory    Directory to scan
+  @param[in]  is_undo_dir  true for an undo directory */
+  void set_scan_dir(const std::string &directory, bool is_undo_dir) {
+    m_dirs.set_scan_dir(directory, is_undo_dir);
+  }
+
+  /** Normalize and save a list of directories to scan for IBD and IBU
+  datafiles before recovery.
+  @param[in]  directories  Directories to scan */
+  void set_scan_dirs(const std::string &directories) {
+    m_dirs.set_scan_dirs(directories);
+  }
+
   /** Scan the directories to build the tablespace ID to file name
   mapping table. */
-  dberr_t scan(const std::string &directories, bool populate_fil_cache) {
-    return (m_dirs.scan(directories, populate_fil_cache));
+  dberr_t scan(bool populate_fil_cache) {
+    return (m_dirs.scan(populate_fil_cache));
   }
 
   /** Open all known tablespaces. */
@@ -1455,9 +1532,7 @@ class Fil_system {
   }
 
   /** Get the tablespace ID from an .ibd and/or an undo tablespace.
-  If the ID is == 0 on the first page then check for at least
-  MAX_PAGES_TO_CHECK  pages with the same tablespace ID. Do a Light
-  weight check before trying with DataFile::find_space_id().
+  If the ID is == 0 on the first page then try with Datafile::find_space_id().
   @param[in]	filename	File name to check
   @return s_invalid_space_id if not found, otherwise the space ID */
   static space_id_t get_tablespace_id(const std::string &filename)
@@ -1615,6 +1690,9 @@ class Fil_system {
   /** Tablespace directories scanned at startup */
   Tablespace_dirs m_dirs;
 
+  /** Old file paths during 5.7 upgrade. */
+  std::vector<std::string> m_old_paths;
+
   // Disable copying
   Fil_system(Fil_system &&) = delete;
   Fil_system(const Fil_system &) = delete;
@@ -1648,6 +1726,28 @@ static bool fil_op_replay_rename(const page_id_t &page_id,
                                  const std::string &old_name,
                                  const std::string &new_name)
     MY_ATTRIBUTE((warn_unused_result));
+
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
+/** Rename partition file.
+@param[in]	old_path	old file path
+@param[in]	extn		file extension suffix
+@param[in]	revert		if true, rename from new to old file
+@param[in]	import		if called during import */
+static void fil_rename_partition_file(const std::string &old_path,
+                                      ib_file_suffix extn, bool revert,
+                                      bool import);
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
+
+#ifndef XTRABACKUP
+/** Get modified name for partition file. During upgrade we change all
+partition files to have lower case separator and partition name.
+@param[in]	old_path	old file name and path
+@param[in]	extn		file extension suffix
+@param[out]	new_path	modified new name for partitioned file
+@return true, iff name needs modification. */
+static bool fil_get_partition_file(const std::string &old_path,
+                                   ib_file_suffix extn, std::string &new_path);
+#endif /* XTRABACKUP */
 
 #ifdef UNIV_DEBUG
 /** Try fil_validate() every this many times */
@@ -3311,8 +3411,6 @@ value returned.
 @return own: A copy of fil_node_t::path, nullptr if space ID is zero
 or not found. */
 char *fil_space_get_first_path(space_id_t space_id) {
-  ut_a(space_id != TRX_SYS_SPACE);
-
   auto shard = fil_system->shard_by_id(space_id);
 
   shard->mutex_acquire();
@@ -3545,6 +3643,15 @@ void Fil_system::close_all_files() {
 
     shard->mutex_release();
   }
+
+#ifndef UNIV_HOTBACKUP
+  /* Revert to old names if downgrading after upgrade failure. */
+  if (srv_downgrade_partition_files) {
+    rename_partition_files(true);
+  }
+
+  clear_old_files();
+#endif /* !UNIV_HOTBACKUP */
 }
 
 /** Closes all open files. There must not be any pending i/o's or not flushed
@@ -3951,7 +4058,7 @@ dberr_t Fil_shard::space_check_pending_operations(space_id_t space_id,
 
   /* Check for pending IO. */
 
-  *path = 0;
+  *path = nullptr;
 
   do {
     mutex_acquire();
@@ -3987,24 +4094,34 @@ dberr_t Fil_shard::space_check_pending_operations(space_id_t space_id,
   return (DB_SUCCESS);
 }
 
-/** Get the real path for a directory or a file name, useful for comparing
-symlinked files. If path doesn't exist it will be ignored.
-@param[in]	path		Directory or filename
-@return the absolute path of path, or "" on error.  */
-std::string Fil_path::get_real_path(const std::string &path) {
-  char abspath[FN_REFLEN + 2];
-
-  /* FIXME: This should be an assertion eventually. */
+std::string Fil_path::get_real_path(const std::string &path, bool force) {
   if (path.empty()) {
-    return (path);
+    return (std::string(""));
   }
 
+  char abspath[OS_FILE_MAX_PATH];
   int ret = my_realpath(abspath, path.c_str(), MYF(0));
 
   if (ret == -1) {
-    ib::info(ER_IB_MSG_289) << "my_realpath(" << path << ") failed!";
+    /* It is common for this to fail on non-Windows platforms if the
+    path does not yet exist. If so, do not report this failure. */
+    if (!force) {
+      if (get_file_type(path) != OS_FILE_TYPE_MISSING) {
+        ib::info(ER_IB_MSG_289)
+            << "my_realpath('" << path << "') failed for path type "
+            << get_file_type_string(path);
+      }
+      return (std::string(""));
+    }
 
-    return (path);
+    /* Use the given path and make it comparable. */
+    ut_a(path.length() < sizeof(abspath));
+    memcpy(abspath, path.c_str(), path.length());
+    abspath[path.length()] = 0;
+  }
+
+  if (lower_case_file_system) {
+    my_casedn_str(&my_charset_filename, abspath);
   }
 
   std::string real_path(abspath);
@@ -4016,8 +4133,6 @@ std::string Fil_path::get_real_path(const std::string &path) {
       get_file_type(real_path) == OS_FILE_TYPE_DIR) {
     real_path.push_back(OS_SEPARATOR);
   }
-
-  ut_a(real_path.length() < sizeof(abspath));
 
   return (real_path);
 }
@@ -4229,7 +4344,7 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
   To deal with potential read requests, we will check the
   ::stop_new_ops flag in fil_io(). */
 
-  buf_LRU_flush_or_remove_pages(space_id, buf_remove, 0);
+  buf_LRU_flush_or_remove_pages(space_id, buf_remove, nullptr);
 
 #endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
@@ -4366,7 +4481,7 @@ bool Fil_shard::space_truncate(space_id_t space_id, page_no_t size_in_pages) {
 #ifndef UNIV_HOTBACKUP
   /* Step-2: Invalidate buffer pool pages belonging to the tablespace
   to re-create. Remove all insert buffer entries for the tablespace */
-  buf_LRU_flush_or_remove_pages(space_id, BUF_REMOVE_ALL_NO_WRITE, 0);
+  buf_LRU_flush_or_remove_pages(space_id, BUF_REMOVE_ALL_NO_WRITE, nullptr);
 #endif /* !UNIV_HOTBACKUP */
 
   /* Step-3: Truncate the tablespace and accordingly update
@@ -4467,7 +4582,7 @@ bool fil_replace_tablespace(space_id_t old_space_id, space_id_t new_space_id,
   page_no_t n_pages = SRV_UNDO_TABLESPACE_SIZE_IN_PAGES;
 #if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
   bool atomic_write = false;
-  if (!srv_use_doublewrite_buf) {
+  if (!dblwr::enabled) {
     atomic_write = fil_fusionio_enable_atomic_write(fh);
   }
 #else
@@ -4699,17 +4814,43 @@ char *Fil_path::make(const std::string &path_in, const std::string &name_in,
   return (mem_strdup(filepath.c_str()));
 }
 
-/** Create an IBD path name after replacing the basename in an old path
-with a new basename.  The old_path is a full path name including the
-extension.  The tablename is in the normal form "schema/tablename".
+bool Fil_path::parse_file_path(const std::string &file_path,
+                               ib_file_suffix extn, std::string &dict_name) {
+  dict_name.assign(file_path);
+  if (!Fil_path::truncate_suffix(extn, dict_name)) {
+    dict_name.clear();
+    return (false);
+  }
 
-@param[in]	path_in			Pathname
-@param[in]	name_in			Contains new base name
-@return own: new full pathname */
-std::string Fil_path::make_new_ibd(const std::string &path_in,
-                                   const std::string &name_in) {
-  ut_a(Fil_path::has_suffix(IBD, path_in));
-  ut_a(!Fil_path::has_suffix(IBD, name_in));
+  /* Extract table name */
+  auto table_pos = dict_name.find_last_of(SEPARATOR);
+  if (table_pos == std::string::npos) {
+    dict_name.clear();
+    return (false);
+  }
+  std::string table_name = dict_name.substr(table_pos + 1);
+  dict_name.resize(table_pos);
+
+  /* Extract schema name */
+  auto schema_pos = dict_name.find_last_of(SEPARATOR);
+  if (schema_pos == std::string::npos) {
+    dict_name.clear();
+    return (false);
+  }
+  std::string schema_name = dict_name.substr(schema_pos + 1);
+
+  /* Build dictionary table name schema/table form. */
+  dict_name.assign(schema_name);
+  dict_name.push_back(DB_SEPARATOR);
+  dict_name.append(table_name);
+  return (true);
+}
+
+std::string Fil_path::make_new_path(const std::string &path_in,
+                                    const std::string &name_in,
+                                    ib_file_suffix extn) {
+  ut_a(Fil_path::has_suffix(extn, path_in));
+  ut_a(!Fil_path::has_suffix(extn, name_in));
 
   std::string path(path_in);
 
@@ -4725,7 +4866,7 @@ std::string Fil_path::make_new_ibd(const std::string &path_in,
 
   path.resize(pos + 1);
 
-  path.append(name_in + ".ibd");
+  path.append(name_in + dot_ext[extn]);
 
   normalize(path);
 
@@ -5198,8 +5339,12 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
 
     switch (error) {
       case OS_FILE_ALREADY_EXISTS:
+#ifndef UNIV_HOTBACKUP
         ib::error(ER_IB_MSG_UNEXPECTED_FILE_EXISTS, path, path);
         return (DB_TABLESPACE_EXISTS);
+#else  /* !UNIV_HOTBACKUP */
+        return (DB_SUCCESS); /* Already existing file not an error here. */
+#endif /* !UNIV_HOTBACKUP */
 
       case OS_FILE_NAME_TOO_LONG:
         ib::error(ER_IB_MSG_TOO_LONG_PATH, path);
@@ -5508,7 +5653,7 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
 
 #if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
   const bool atomic_write =
-      !srv_use_doublewrite_buf && fil_fusionio_enable_atomic_write(df.handle());
+      !dblwr::enabled && fil_fusionio_enable_atomic_write(df.handle());
 #else
   const bool atomic_write = false;
 #endif /* !NO_FALLOCATE && UNIV_LINUX */
@@ -5525,6 +5670,7 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
       /* The following call prints an error message.
       For encrypted tablespace we skip print, since it should
       be keyring plugin issues. */
+
       os_file_get_last_error(true);
 
       ib::error(ER_IB_MSG_306, space_name, TROUBLESHOOT_DATADICT_MSG);
@@ -5556,7 +5702,7 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
   we pass the 0 below */
 
   const fil_node_t *file =
-      shard->create_node(df.filepath(), 0, space, false, true, atomic_write);
+      shard->create_node(df.filepath(), 0, space, false, atomic_write, false);
 
   if (file == nullptr) {
     return (DB_ERROR);
@@ -5590,10 +5736,8 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
   if ((is_encrypted || space->encryption_op_in_progress == ENCRYPTION) &&
       !for_import) {
     dberr_t err;
-    byte *key = df.m_encryption_key;
     byte *iv = df.m_encryption_iv;
-
-    ut_ad(key && iv);
+    byte *key = df.m_encryption_key;
 
     err = fil_set_encryption(space->id, Encryption::AES, key, iv);
 
@@ -5737,7 +5881,7 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
     const auto &file = space->files.front();
 
     /* Compare the real paths. */
-    if (Fil_path::equal(filename, file.name)) {
+    if (Fil_path::is_same_as(filename, file.name)) {
       return (FIL_LOAD_OK);
     }
 
@@ -5877,15 +6021,12 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
     return (FIL_LOAD_OK);
   }
 #endif /* UNIV_HOTBACKUP */
-  std::string tablespace_name;
+  std::string tablespace_name(df.name());
 
-#ifndef UNIV_HOTBACKUP
-  dd_filename_to_spacename(df.name(), &tablespace_name);
-#else
   /* During the apply-log operation, MEB already has translated the
-  file name, so file name to space name conversin is not required. */
-
-  tablespace_name = df.name();
+  file name, so file name to space name conversion is not required. */
+#ifndef UNIV_HOTBACKUP
+  dict_name::convert_to_space(tablespace_name);
 #endif /* !UNIV_HOTBACKUP */
 
   fil_system->mutex_acquire_all();
@@ -5904,7 +6045,7 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
 
   /* We do not use the size information we have about the file, because
   the rounding formula for extents and pages is somewhat complex; we
-  let fil_node_create() do that task. */
+  let create_node() do that task. */
 
   const fil_node_t *file;
 
@@ -6831,7 +6972,7 @@ static bool meb_has_back_link(const std::string &path) {
 /** Parse a file name retrieved from a MLOG_FILE_* record,
 and return the absolute file path corresponds to backup dir
 as well as in the form of database/tablespace
-@param[in]	file_name	path emitted by the redo log
+@param[in]	name		path emitted by the redo log
 @param[in]	flags		flags emitted by the redo log
 @param[in]	space_id	space_id emmited by the redo log
 @param[out]	absolute_path	absolute path of tablespace
@@ -6918,7 +7059,7 @@ static void meb_tablespace_redo_create(const page_id_t &page_id, uint32_t flags,
   meb_make_abs_file_path(name, flags, page_id.space(), abs_file_path,
                          tablespace_name);
 
-  if (!meb_replay_file_ops || meb_is_intermediate_file(abs_file_path.c_str()) ||
+  if (meb_is_intermediate_file(abs_file_path.c_str()) ||
       fil_space_get(page_id.space()) ||
       fil_space_get_id_by_name(tablespace_name.c_str()) != SPACE_UNKNOWN ||
       meb_fil_space_get_rem_gen_ts_id_by_name(tablespace_name) !=
@@ -6973,7 +7114,7 @@ static void meb_tablespace_redo_rename(const page_id_t &page_id,
 
   char *new_name = nullptr;
 
-  if (!meb_replay_file_ops || meb_is_intermediate_file(from_name) ||
+  if (meb_is_intermediate_file(from_name) ||
       meb_is_intermediate_file(to_name) ||
       fil_space_get_id_by_name(tablespace_name.c_str()) != SPACE_UNKNOWN ||
       meb_fil_space_get_rem_gen_ts_id_by_name(tablespace_name) !=
@@ -7006,14 +7147,12 @@ static void meb_tablespace_redo_rename(const page_id_t &page_id,
   meb_fil_name_process(from_name, page_id.space());
   meb_fil_name_process(new_name, page_id.space());
 
-  if (meb_replay_file_ops) {
-    if (!fil_op_replay_rename(page_id, abs_from_path.c_str(),
-                              abs_to_path.c_str())) {
-      recv_sys->found_corrupt_fs = true;
-    }
-
-    meb_fil_name_process(to_name, page_id.space());
+  if (!fil_op_replay_rename(page_id, abs_from_path.c_str(),
+                            abs_to_path.c_str())) {
+    recv_sys->found_corrupt_fs = true;
   }
+
+  meb_fil_name_process(to_name, page_id.space());
 
   ut_free(new_name);
 }
@@ -7033,7 +7172,9 @@ static void meb_tablespace_redo_delete(const page_id_t &page_id,
 
   fil_system->meb_name_process(file_name, page_id.space(), true);
 
-  if (meb_replay_file_ops && fil_space_get(page_id.space())) {
+  if (fil_space_get(page_id.space())) {
+    ib::trace_1() << "Deleting the tablespace : " << abs_file_path
+                  << ", space_id : " << page_id.space();
     dberr_t err =
         fil_delete_tablespace(page_id.space(), BUF_REMOVE_FLUSH_NO_WRITE);
 
@@ -7276,8 +7417,7 @@ void fil_io_set_encryption(IORequest &req_type, const page_id_t &page_id,
   /* Don't encrypt page 0 of all tablespaces except redo log
   tablespace, all pages from the system tablespace. */
   if (space->encryption_type == Encryption::NONE ||
-      (space->encryption_op_in_progress == UNENCRYPTION &&
-       req_type.is_write()) ||
+      (space->encryption_op_in_progress == DECRYPTION && req_type.is_write()) ||
       (page_id.page_no() == 0 && !req_type.is_log())) {
     req_type.clear_encrypted();
     return;
@@ -7458,7 +7598,8 @@ dberr_t Fil_shard::do_redo_io(const IORequest &type, const page_id_t &page_id,
 @param[in]	page_id		page id
 @param[in]	page_size	page size
 @param[in]	byte_offset	remainder of offset in bytes; in aio this
-                                must be divisible by the OS block size
+                                must be divisible by the OS block
+                                size
 @param[in]	len		how many bytes to read or write; this must
                                 not cross a file boundary; in AIO this must
                                 be a block size multiple
@@ -7711,7 +7852,7 @@ dberr_t Fil_shard::do_io(const IORequest &type, bool sync,
   /* We an try to recover the page from the double write buffer if
   the decompression fails or the page is corrupt. */
 
-  ut_a(req_type.is_dblwr_recover() || err == DB_SUCCESS);
+  ut_a(req_type.is_dblwr() || err == DB_SUCCESS);
 
   if (sync) {
     /* The i/o operation is already completed when we return from
@@ -7762,20 +7903,23 @@ segment it wants to wait for.
 @param[in]	segment		The number of the segment in the AIO array
                                 to wait for */
 void fil_aio_wait(ulint segment) {
-  fil_node_t *file;
+  void *m2;
+  fil_node_t *m1;
   IORequest type;
-  void *message;
 
   ut_ad(fil_validate_skip());
 
-  dberr_t err = os_aio_handler(segment, &file, &message, &type);
-
+  auto err = os_aio_handler(segment, &m1, &m2, &type);
   ut_a(err == DB_SUCCESS);
+
+  auto file = reinterpret_cast<fil_node_t *>(m1);
 
   if (file == nullptr) {
     ut_ad(srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS);
     return;
   }
+
+  ut_a(!type.is_dblwr());
 
   srv_set_io_thread_op_info(segment, "complete io for file");
 
@@ -7803,8 +7947,8 @@ void fil_aio_wait(ulint segment) {
 
       /* async single page writes from the dblwr buffer don't have
       access to the page */
-      if (message != nullptr) {
-        buf_page_io_complete(static_cast<buf_page_t *>(message));
+      if (m2 != nullptr) {
+        buf_page_io_complete(static_cast<buf_page_t *>(m2));
       }
       return;
     case FIL_TYPE_LOG:
@@ -8317,7 +8461,8 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
       page_zip_set_size(&block->page.zip, iter.m_page_size);
 
       block->page.size.copy_from(
-          page_size_t(iter.m_page_size, univ_page_size.logical(), true));
+          page_size_t(static_cast<uint32_t>(iter.m_page_size),
+                      static_cast<uint32_t>(univ_page_size.logical()), true));
 
       block->page.zip.data = block->frame + UNIV_PAGE_SIZE;
       ut_d(block->page.zip.m_external = true);
@@ -8343,7 +8488,7 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
 
     /* For encrypted table, set encryption information. */
     if (iter.m_encryption_key != nullptr && offset != 0) {
-      read_request.encryption_key(iter.m_encryption_key, ENCRYPTION_KEY_LEN,
+      read_request.encryption_key(iter.m_encryption_key, Encryption::KEY_LEN,
                                   iter.m_encryption_iv);
 
       read_request.encryption_algorithm(Encryption::AES);
@@ -8367,6 +8512,9 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
     for (size_t i = 0; i < n_pages_read; ++i) {
       buf_block_set_file_page(block, page_id_t(space_id, page_no++));
 
+      /* We are going to modify the page. Add to page tracking system. */
+      arch_page_sys->track_page(&block->page, LSN_MAX, LSN_MAX, true);
+
       if ((err = callback(page_off, block)) != DB_SUCCESS) {
         return (err);
 
@@ -8385,7 +8533,7 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
 
     /* For encrypted table, set encryption information. */
     if (iter.m_encryption_key != nullptr && offset != 0) {
-      write_request.encryption_key(iter.m_encryption_key, ENCRYPTION_KEY_LEN,
+      write_request.encryption_key(iter.m_encryption_key, Encryption::KEY_LEN,
                                    iter.m_encryption_iv);
 
       write_request.encryption_algorithm(Encryption::AES);
@@ -8412,6 +8560,85 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
   }
 
   return (DB_SUCCESS);
+}
+
+void fil_adjust_name_import(dict_table_t *table, const char *path,
+                            ib_file_suffix extn) {
+  os_file_type_t type;
+  bool exists = false;
+
+  /* Try to open with current name first. */
+  auto ret = os_file_status(path, &exists, &type);
+
+  if (ret && exists) {
+    return;
+  }
+
+  /* On failure we need to check if file exists in different letter case
+  for partitioned table. */
+#ifdef _WIN32
+  /* Safe check. Never needed on Windows. */
+  return;
+#endif /* WIN32 */
+
+  /* Needed only for case sensitive file system. */
+  if (lower_case_file_system) {
+    return;
+  }
+
+  /* Only needed for partition file. */
+  if (!dict_name::is_partition(table->name.m_name)) {
+    return;
+  }
+
+  /* Get Import directory path. */
+  std::string import_dir(path);
+  Fil_path::normalize(import_dir);
+
+  auto pos = import_dir.find_last_of(Fil_path::SEPARATOR);
+  if (pos == std::string::npos) {
+    import_dir.assign(Fil_path::DOT_SLASH);
+
+  } else {
+    import_dir.resize(pos + 1);
+    ut_ad(Fil_path::is_separator(import_dir.back()));
+  }
+
+  /* Walk through all files under the directory and match the import file
+  after adjusting case. This is a safe check to allow files exported from
+  earlier versions where the case for partition name and separator could
+  be different. */
+  bool found_path = false;
+  std::string saved_path;
+
+  Dir_Walker::walk(import_dir, false, [&](const std::string &file_path) {
+    /* Skip entry if already found. */
+    if (found_path) {
+      return;
+    }
+    /* Check only for partition files. */
+    if (!dict_name::is_partition(file_path)) {
+      return;
+    }
+
+    /* Extract table name from path. */
+    std::string table_name;
+    if (!Fil_path::parse_file_path(file_path, extn, table_name)) {
+      /* Not a valid file-per-table path */
+      return;
+    }
+
+    /* Check if the file name would match after correcting the case. */
+    dict_name::rebuild(table_name);
+    if (table_name.compare(table->name.m_name) != 0) {
+      return;
+    }
+
+    saved_path.assign(file_path);
+    found_path = true;
+  });
+
+  return;
 }
 
 /** Iterate over all the pages in the tablespace.
@@ -8441,6 +8668,9 @@ dberr_t fil_tablespace_iterate(dict_table_t *table, ulint n_io_buffers,
   if (filepath == nullptr) {
     return (DB_OUT_OF_MEMORY);
   }
+
+  /* Adjust filename for partition file if in different letter case. */
+  fil_adjust_name_import(table, filepath, IBD);
 
   file = os_file_create_simple_no_error_handling(
       innodb_data_file_key, filepath, OS_FILE_OPEN, OS_FILE_READ_WRITE,
@@ -8808,15 +9038,15 @@ dberr_t fil_set_encryption(space_id_t space_id, Encryption::Type algorithm,
   if (key == nullptr) {
     Encryption::random_value(space->encryption_key);
   } else {
-    memcpy(space->encryption_key, key, ENCRYPTION_KEY_LEN);
+    memcpy(space->encryption_key, key, Encryption::KEY_LEN);
   }
 
-  space->encryption_klen = ENCRYPTION_KEY_LEN;
+  space->encryption_klen = Encryption::KEY_LEN;
 
   if (iv == nullptr) {
     Encryption::random_value(space->encryption_iv);
   } else {
-    memcpy(space->encryption_iv, iv, ENCRYPTION_KEY_LEN);
+    memcpy(space->encryption_iv, iv, Encryption::KEY_LEN);
   }
 
   ut_ad(algorithm != Encryption::NONE);
@@ -8843,15 +9073,15 @@ dberr_t fil_reset_encryption(space_id_t space_id) {
 
   fil_space_t *space = shard->get_space_by_id(space_id);
 
-  if (space == NULL) {
+  if (space == nullptr) {
     shard->mutex_release();
     return (DB_NOT_FOUND);
   }
 
-  memset(space->encryption_key, 0, ENCRYPTION_KEY_LEN);
+  memset(space->encryption_key, 0, Encryption::KEY_LEN);
   space->encryption_klen = 0;
 
-  memset(space->encryption_iv, 0, ENCRYPTION_KEY_LEN);
+  memset(space->encryption_iv, 0, Encryption::KEY_LEN);
 
   space->encryption_type = Encryption::NONE;
 
@@ -8865,7 +9095,7 @@ dberr_t fil_reset_encryption(space_id_t space_id) {
 @param[in,out]	shard		Rotate the keys in this shard
 @return true if the re-encrypt succeeds */
 bool Fil_system::encryption_rotate_in_a_shard(Fil_shard *shard) {
-  byte encrypt_info[ENCRYPTION_INFO_SIZE];
+  byte encrypt_info[Encryption::INFO_SIZE];
 
   for (auto &elem : shard->m_spaces) {
     auto space = elem.second;
@@ -8883,13 +9113,13 @@ bool Fil_system::encryption_rotate_in_a_shard(Fil_shard *shard) {
     server uuid is not ready yet. */
 
     if (fsp_is_undo_tablespace(space->id) &&
-        Encryption::s_master_key_id == ENCRYPTION_DEFAULT_MASTER_KEY_ID) {
+        Encryption::get_master_key_id() == Encryption::DEFAULT_MASTER_KEY_ID) {
       continue;
     }
 
     /* Rotate the encrypted tablespaces. */
     if (space->encryption_type != Encryption::NONE) {
-      memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
+      memset(encrypt_info, 0, Encryption::INFO_SIZE);
 
       MDL_ticket *mdl_ticket = nullptr;
 #if !defined(XTRABACKUP)
@@ -8961,7 +9191,8 @@ Fil_path::Fil_path(const std::string &path, bool normalize_path)
   if (normalize_path) {
     normalize(m_path);
   }
-  m_abs_path = get_real_path(m_path);
+
+  m_abs_path = get_real_path(m_path, false);
 }
 
 /** Constructor
@@ -8972,7 +9203,8 @@ Fil_path::Fil_path(const char *path, bool normalize_path) : m_path(path) {
   if (normalize_path) {
     normalize(m_path);
   }
-  m_abs_path = get_real_path(m_path);
+
+  m_abs_path = get_real_path(m_path, false);
 }
 
 /** Constructor
@@ -8985,7 +9217,8 @@ Fil_path::Fil_path(const char *path, size_t len, bool normalize_path)
   if (normalize_path) {
     normalize(m_path);
   }
-  m_abs_path = get_real_path(m_path);
+
+  m_abs_path = get_real_path(m_path, false);
 }
 
 /** Default constructor. */
@@ -9045,14 +9278,47 @@ os_file_type_t Fil_path::get_file_type(const std::string &path) {
   return (type);
 }
 
+/** Return a string to display the file type of a path.
+@param[in]  path  path name
+@return true if the path exists and is a file . */
+const char *Fil_path::get_file_type_string(const std::string &path) {
+  return (get_file_type_string(Fil_path::get_file_type(path)));
+}
+
+/** Return a string to display the file type of a path.
+@param[in]  type  OS file type
+@return true if the path exists and is a file . */
+const char *Fil_path::get_file_type_string(os_file_type_t type) {
+  switch (type) {
+    case OS_FILE_TYPE_FILE:
+      return ("file");
+    case OS_FILE_TYPE_LINK:
+      return ("symbolic link");
+    case OS_FILE_TYPE_DIR:
+      return ("directory");
+    case OS_FILE_TYPE_BLOCK:
+      return ("block device");
+    case OS_FILE_TYPE_NAME_TOO_LONG:
+      return ("name too long");
+    case OS_FILE_PERMISSION_ERROR:
+      return ("permission error");
+    case OS_FILE_TYPE_MISSING:
+      return ("missing");
+    case OS_FILE_TYPE_UNKNOWN:
+    case OS_FILE_TYPE_FAILED:
+      break;
+  }
+  return ("unknown");
+}
+
 /** @return true if the path exists and is a file . */
 bool Fil_path::is_file_and_exists() const {
-  return (get_file_type(m_abs_path) == OS_FILE_TYPE_FILE);
+  return (get_file_type(abs_path()) == OS_FILE_TYPE_FILE);
 }
 
 /** @return true if the path exists and is a directory. */
 bool Fil_path::is_directory_and_exists() const {
-  return (get_file_type(m_abs_path) == OS_FILE_TYPE_DIR);
+  return (get_file_type(abs_path()) == OS_FILE_TYPE_DIR);
 }
 
 /** This validation is only for ':'.
@@ -9102,7 +9368,7 @@ bool Fil_path::is_circular() const {
   location and we must allow it. On Windows, it backs up to the directory
   where the symlink starts, which is a circular reference. */
   std::string up_path = m_path.substr(0, back_up);
-  if (my_is_symlink(up_path.c_str(), NULL)) {
+  if (my_is_symlink(up_path.c_str(), nullptr)) {
     return (false);
   }
 #endif /* _WIN32 */
@@ -9320,6 +9586,52 @@ static void fil_tablespace_encryption_init(const fil_space_t *space) {
   }
 }
 
+/** Modify table name in Innodb persistent stat tables, if needed. Required
+when partitioned table file names from old versions are modified to change
+the letter case.
+@param[in]	old_path	path to old file
+@param[in]	new_path	path to new file */
+static void fil_adjust_partition_stat(const std::string &old_path,
+                                      const std::string &new_path) {
+  char errstr[FN_REFLEN];
+  std::string path;
+
+  /* Skip if not IBD file extension. */
+  if (!Fil_path::has_suffix(IBD, old_path) ||
+      !Fil_path::has_suffix(IBD, new_path)) {
+    return;
+  }
+
+  /* Check if partitioned table. */
+  if (!dict_name::is_partition(old_path) ||
+      !dict_name::is_partition(new_path)) {
+    return;
+  }
+
+  std::string old_name;
+  path.assign(old_path);
+  if (!Fil_path::parse_file_path(path, IBD, old_name)) {
+    return;
+  }
+  ut_ad(!old_name.empty());
+
+  std::string new_name;
+  path.assign(new_path);
+  if (!Fil_path::parse_file_path(path, IBD, new_name)) {
+    return;
+  }
+  ut_ad(!new_name.empty());
+
+  /* Required for case insensitive file system where file path letter case
+  doesn't matter. We need to keep the name in stat table consistent. */
+  dict_name::rebuild(new_name);
+
+  if (old_name.compare(new_name) != 0) {
+    dict_stats_rename_table(old_name.c_str(), new_name.c_str(), errstr,
+                            sizeof(errstr));
+  }
+}
+
 /** Update the DD if any files were moved to a new location.
 Free the Tablespace_files instance.
 @param[in]	read_only_mode	true if InnoDB is started in read only mode.
@@ -9361,7 +9673,9 @@ dberr_t Fil_system::prepare_open_for_business(bool read_only_mode) {
     auto new_path = std::get<dd_fil::NEW_PATH>(tablespace);
     auto object_id = std::get<dd_fil::OBJECT_ID>(tablespace);
 
-    err = dd_tablespace_rename(object_id, space_name.c_str(), new_path.c_str());
+    /* We already have the space name in system cs. */
+    err = dd_tablespace_rename(object_id, true, space_name.c_str(),
+                               new_path.c_str());
 
     if (err != DB_SUCCESS) {
       ib::error(ER_IB_MSG_345) << "Unable to update tablespace ID"
@@ -9371,6 +9685,9 @@ dberr_t Fil_system::prepare_open_for_business(bool read_only_mode) {
 
       ++failed;
     }
+
+    /* Update persistent stat table if table name is modified. */
+    fil_adjust_partition_stat(old_path, new_path);
 
     ++count;
 
@@ -9507,8 +9824,12 @@ bool Fil_system::open_for_recovery(space_id_t space_id) {
       fil_tablespace_encryption_init(space);
     }
 
-    if (!recv_sys->dblwr.deferred.empty()) {
-      buf_dblwr_recover_pages(space);
+    if (!recv_sys->dblwr->empty()) {
+      recv_sys->dblwr->recover(space);
+
+    } else {
+      ib::info(ER_IB_MSG_DBLWR_1317) << "DBLWR recovery skipped for "
+                                     << space->name << " ID: " << space->id;
     }
 
     return (true);
@@ -9525,143 +9846,6 @@ bool Fil_system::open_for_recovery(space_id_t space_id) {
 @return true if the open was successful */
 bool fil_tablespace_open_for_recovery(space_id_t space_id) {
   return (fil_system->open_for_recovery(space_id));
-}
-
-/** Convert space_name to filesystem charset by extracting it from the
-path. If space_name is not a substring of path, return the original
-space_name.
-This function is called only while moving the location of IBD files from
-one directory to other and subsequently starting the server using
---innodb-directories. While starting, the server looks for IBD files in
-these directories and marks them as moved and updates the data dictionary
-with the new location. However, in this case, the space name passed is in
-the tablespace charset which in certain cases is parsed incorrectly. For
-example, if the tablename or dbname contains "/", then it is considered as
-a directory separator, resulting in an incorrectly formed tablespace name.
-The path is always in the filesystem charset and hence, it can be used to
-recreate the space name.
-@param[in]	new_space_name          Tablespace name in system charset
-@param[in]	new_path                File path
-@param[out]	tablespace_name         Tablespace name in filesystem charset */
-static void convert_space_name_to_filesystem_charset(
-    const char *new_space_name, const std::string &new_path,
-    std::string *tablespace_name) {
-  ut_ad(!new_path.empty());
-
-  std::string path{new_path};
-  std::string name{new_space_name};
-  std::string filename, subdir, part, sub;
-
-  if (Fil_path::is_undo_tablespace_name(path)) {
-    tablespace_name->append(name);
-    return;
-  }
-
-  /* The tablespace name could be of the form dbname/filename#P#part#SP#subpart.
-  Parse the path to find out these different components and recreate the space
-  name in the tablespace charset for comparing with the new_space_name which
-  is also in the tablespace charset. */
-
-  auto pos = path.find_last_of(Fil_path::SEPARATOR);
-
-  /* Extract the subdir and filename from the path. */
-  subdir = path.substr(0, pos);
-  filename = path.substr(pos + 1, path.length());
-
-  pos = subdir.find_last_of(Fil_path::SEPARATOR);
-
-  if (pos != std::string::npos) {
-    subdir = subdir.substr(pos + 1);
-  }
-
-  /* Remove the trailing extension (if any), from the filename. */
-  pos = filename.find_last_of(".");
-  if (pos != std::string::npos) {
-    filename.resize(pos);
-  }
-
-  /* Find the partition and sub partition, if available in the file name */
-  pos = filename.find("#");
-  if (pos != std::string::npos) {
-    /* Find the partition and remove it from the filename. */
-    part = filename.substr(pos + 1, filename.length());
-
-    /* Strip the filename to remove the partition information. */
-    filename.resize(pos);
-  }
-
-  /* Recreate the space name in the tablespace charset from the path using
-  the subdir, filename, part and subpart. */
-  std::string temp_space;
-  char db_buf[MAX_DATABASE_NAME_LEN + 1];
-  char tbl_buf[MAX_TABLE_NAME_LEN + 1];
-
-  /* This call sets stay_quiet to true because the subdir might be "." which
-  would cause an unnecessary warning. */
-  auto len = filename_to_tablename(subdir.c_str(), db_buf,
-                                   (MAX_DATABASE_NAME_LEN + 1), true);
-  db_buf[len] = '\0';
-
-  len = filename_to_tablename(filename.c_str(), tbl_buf,
-                              (MAX_TABLE_NAME_LEN + 1));
-  tbl_buf[len] = '\0';
-
-  temp_space.append(db_buf);
-  temp_space.append("/");
-  temp_space.append(tbl_buf);
-
-  if (!part.empty()) {
-    /* Extract all the partition and subpartition information */
-
-    std::string temp_part = part;
-
-    pos = temp_part.find("#");
-
-    /* Parse the partition and subpartition information until no
-    more partition separators are found */
-    while (pos != std::string::npos) {
-      temp_space.append("#");
-
-      /* Extract the subpart and convert it to the tablespace charset */
-      sub = temp_part.substr(0, pos);
-
-      char sub_buf[MAX_TABLE_NAME_LEN + 1];
-      len =
-          filename_to_tablename(sub.c_str(), sub_buf, (MAX_TABLE_NAME_LEN + 1));
-      sub_buf[len] = '\0';
-
-      temp_space.append(sub_buf);
-
-      temp_part = temp_part.substr(pos + 1, temp_part.length());
-
-      pos = temp_part.find("#");
-    }
-
-    /* Append the last remaining partition information */
-    temp_space.append("#");
-
-    char tmp_buf[MAX_TABLE_NAME_LEN + 1];
-    len = filename_to_tablename(temp_part.c_str(), tmp_buf,
-                                (MAX_TABLE_NAME_LEN + 1));
-    tmp_buf[len] = '\0';
-    temp_space.append(tmp_buf);
-  }
-
-  /* Compare the recreated space name in the tablespace charset with the space
-  name being moved. If they are same, then return the space name in the
-  filesystem charset. If they are different, then return the original space
-  name. */
-  if (temp_space.compare(name) == 0) {
-    tablespace_name->append(subdir);
-    tablespace_name->append("/");
-    tablespace_name->append(filename);
-    if (!part.empty()) {
-      tablespace_name->append("#");
-      tablespace_name->append(part);
-    }
-  } else {
-    tablespace_name->append(name);
-  }
 }
 
 /** Lookup the tablespace ID and return the path to the file. The filename
@@ -9695,12 +9879,6 @@ Fil_state fil_tablespace_path_equals(dd::Object_id dd_object_id,
       Fil_state state = ((old_path.compare(*new_path) == 0) ? Fil_state::MATCHES
                                                             : Fil_state::MOVED);
       undo::spaces->s_unlock();
-
-      if (state == Fil_state::MOVED) {
-        fil_system->moved(dd_object_id, space_id, space_name, old_path,
-                          *new_path);
-      }
-
       return (state);
     }
     undo::spaces->s_unlock();
@@ -9785,20 +9963,87 @@ Fil_state fil_tablespace_path_equals(dd::Object_id dd_object_id,
 
   if (old_dir.compare(new_dir) != 0) {
     *new_path = result.first + result.second->front();
-
-    // Convert space_name to filesystem charset
-    std::string tablespace_name;
-    convert_space_name_to_filesystem_charset(space_name, *new_path,
-                                             &tablespace_name);
-    fil_system->moved(dd_object_id, space_id, tablespace_name.c_str(), old_path,
-                      *new_path);
-
     return (Fil_state::MOVED);
   }
 
   *new_path = old_path;
-
   return (Fil_state::MATCHES);
+}
+
+void fil_add_moved_space(dd::Object_id dd_object_id, space_id_t space_id,
+                         const char *space_name, const std::string &old_path,
+                         const std::string &new_path) {
+  /* Keep space_name in system cs. We handle it while modifying DD. */
+  fil_system->moved(dd_object_id, space_id, space_name, old_path, new_path);
+}
+
+bool fil_update_partition_name(space_id_t space_id, uint32_t fsp_flags,
+                               bool update_space, std::string &space_name,
+                               std::string &dd_path) {
+#ifdef _WIN32
+  /* Safe check. Never needed on Windows for path. */
+  if (!update_space) {
+    return (false);
+  }
+#endif /* WIN32 */
+
+  /* Never needed in case insensitive file system for path. */
+  if (!update_space && lower_case_file_system) {
+    return (false);
+  }
+
+  /* Only needed for file per table. */
+  if (update_space && !fsp_is_file_per_table(space_id, fsp_flags)) {
+    return (false);
+  }
+
+  /* Extract dictionary name schema_name/table_name from dd path. */
+  std::string table_name;
+
+  if (!Fil_path::parse_file_path(dd_path, IBD, table_name)) {
+    /* Not a valid file-per-table IBD path */
+    return (false);
+  }
+  ut_ad(!table_name.empty());
+
+  /* Only needed for partition file. */
+  if (!dict_name::is_partition(table_name)) {
+    return (false);
+  }
+
+  /* Rebuild dictionary name to convert partition names to lower case. */
+  dict_name::rebuild(table_name);
+
+  if (update_space) {
+    /* Rebuild space name if required. */
+    dict_name::rebuild_space(table_name, space_name);
+  }
+
+  /* No need to update file name for lower case file system. */
+  if (lower_case_file_system) {
+    return (false);
+  }
+
+  /* Rebuild path and compare. */
+  std::string table_path = Fil_path::make_new_path(dd_path, table_name, IBD);
+  ut_ad(!table_path.empty());
+
+  if (dd_path.compare(table_path) != 0) {
+    /* Validate that the file exists. */
+    os_file_type_t type;
+    bool exists = false;
+    bool ret = os_file_status(table_path.c_str(), &exists, &type);
+
+    if (ret && exists) {
+      dd_path.assign(table_path);
+      return (true);
+
+    } else {
+      ib::warn(ER_IB_WARN_OPEN_PARTITION_FILE, table_path.c_str());
+    }
+  }
+
+  return (false);
 }
 
 #endif /* !UNIV_HOTBACKUP */
@@ -9810,43 +10055,11 @@ or MLOG_FILE_RENAME record. These could not be recovered.
         ignore redo log records during the apply phase */
 bool Fil_system::check_missing_tablespaces() {
   bool missing = false;
-  auto &dblwr = recv_sys->dblwr;
   const auto end = recv_sys->deleted.end();
 
   /* Called in single threaded mode, no need to acquire the mutex. */
 
-  /* First check if we were able to restore all the doublewrite
-  buffer pages. If not then print a warning. */
-
-  for (auto &page : dblwr.deferred) {
-    space_id_t space_id;
-
-    space_id = page_get_space_id(page.m_page);
-
-    /* If the tablespace was in the missing IDs then we
-    know that the problem is elsewhere. If a file deleted
-    record was not found in the redo log and the tablespace
-    doesn't exist in the SYS_TABLESPACES file then it is
-    an error or data corruption. The special case is an
-    undo truncate in progress. */
-
-    if (recv_sys->deleted.find(space_id) == end &&
-        recv_sys->missing_ids.find(space_id) != recv_sys->missing_ids.end()) {
-      page_no_t page_no;
-
-      page_no = page_get_page_no(page.m_page);
-
-      ib::warn(ER_IB_MSG_1263)
-          << "Doublewrite page " << page.m_no << " for {space: " << space_id
-          << ", page_no:" << page_no << "} could not be restored."
-          << " File name unknown for tablespace ID " << space_id;
-    }
-
-    /* Free the memory. */
-    page.close();
-  }
-
-  dblwr.deferred.clear();
+  recv_sys->dblwr->check_missing_tablespaces();
 
   for (auto space_id : recv_sys->missing_ids) {
     if (recv_sys->deleted.find(space_id) != end) {
@@ -10145,7 +10358,12 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
 #else  /* !UNIV_HOTBACKUP */
 
-  auto abs_to_name = Fil_path::get_real_path(to_name);
+  /* Update filename with correct partition case, if needed. */
+  std::string to_name_str(to_name);
+  std::string space_name;
+  fil_update_partition_name(page_id.space(), 0, false, space_name, to_name_str);
+
+  auto abs_to_name = Fil_path::get_real_path(to_name_str);
 
   if (from_len == to_len && strncmp(to_name, from_name, to_len) == 0) {
     ib::error(ER_IB_MSG_360)
@@ -10313,7 +10531,12 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
 
   ut_a(result.second->size() == 1);
 
-  auto abs_name = Fil_path::get_real_path(name);
+  /* Update filename with correct partition case, if needed. */
+  std::string name_str(name);
+  std::string space_name;
+  fil_update_partition_name(page_id.space(), 0, false, space_name, name_str);
+
+  auto abs_name = Fil_path::get_real_path(name_str);
 
   ut_ad(!Fil_path::is_separator(abs_name.back()));
 
@@ -10369,15 +10592,15 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
     if (key != nullptr) {
       DBUG_EXECUTE_IF(
           "dont_update_key_found_during_REDO_scan", is_allocated = true;
-          key = static_cast<byte *>(ut_malloc_nokey(ENCRYPTION_KEY_LEN));
-          iv = static_cast<byte *>(ut_malloc_nokey(ENCRYPTION_KEY_LEN)););
+          key = static_cast<byte *>(ut_malloc_nokey(Encryption::KEY_LEN));
+          iv = static_cast<byte *>(ut_malloc_nokey(Encryption::KEY_LEN)););
     }
 #endif
 
     if (key == nullptr) {
-      key = static_cast<byte *>(ut_malloc_nokey(ENCRYPTION_KEY_LEN));
+      key = static_cast<byte *>(ut_malloc_nokey(Encryption::KEY_LEN));
 
-      iv = static_cast<byte *>(ut_malloc_nokey(ENCRYPTION_KEY_LEN));
+      iv = static_cast<byte *>(ut_malloc_nokey(Encryption::KEY_LEN));
 
       is_new = true;
     }
@@ -10406,7 +10629,7 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
   }
 
   if (offset >= UNIV_PAGE_SIZE || len + offset > UNIV_PAGE_SIZE ||
-      len != ENCRYPTION_INFO_SIZE) {
+      len != Encryption::INFO_SIZE) {
     recv_sys->found_corrupt_log = true;
     if (is_new) {
       ut_free(key);
@@ -10428,15 +10651,15 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
       return (ptr + len);
     }
   } else {
-    ulint master_key_id = mach_read_from_4(ptr + ENCRYPTION_MAGIC_SIZE);
-    if (Encryption::s_master_key_id < master_key_id) {
-      Encryption::s_master_key_id = master_key_id;
+    ulint master_key_id = mach_read_from_4(ptr + Encryption::MAGIC_SIZE);
+    if (Encryption::get_master_key_id() < master_key_id) {
+      Encryption::set_master_key(master_key_id);
     }
     bool found = xb_fetch_tablespace_key(space_id, key, iv);
     ut_a(found);
   }
 
-  ut_ad(len == ENCRYPTION_INFO_SIZE);
+  ut_ad(len == Encryption::INFO_SIZE);
 
   ptr += len;
 
@@ -10454,7 +10677,7 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
     if (FSP_FLAGS_GET_ENCRYPTION(space->flags) ||
         space->encryption_op_in_progress == ENCRYPTION) {
       space->encryption_type = Encryption::AES;
-      space->encryption_klen = ENCRYPTION_KEY_LEN;
+      space->encryption_klen = Encryption::KEY_LEN;
     }
   }
 
@@ -10468,110 +10691,94 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
   return (ptr);
 }
 
-/** Tokenize a path specification. Convert relative paths to absolute paths.
-Check if the paths are valid and filter out invalid or unreadable directories.
-Sort and filter out duplicates from dirs.
-@param[in]	str		Path specification to tokenize
-@param[in]	delimiters	Delimiters */
-void Tablespace_dirs::tokenize_paths(const std::string &str,
-                                     const std::string &delimiters) {
-  std::string::size_type start = str.find_first_not_of(delimiters);
-  std::string::size_type end = str.find_first_of(delimiters, start);
+void Tablespace_dirs::warn_ignore(std::string ignore_path, const char *reason) {
+  ib::warn(ER_IB_MSG_IGNORE_SCAN_PATH, ignore_path.c_str(), reason);
+}
 
-  using Paths = std::vector<std::pair<std::string, std::string>>;
+void Tablespace_dirs::add_path(const std::string &path_in, bool is_undo_dir) {
+  /* Ignore an invalid path. */
+  if (path_in == "/") {
+    warn_ignore(path_in,
+                "the root directory '/' is not allowed to be scanned.");
+    return;
+  }
+  if (std::string::npos != path_in.find('*')) {
+    warn_ignore(path_in, "it contains '*'.");
+    return;
+  }
 
-  Paths dirs;
+  /* Assume this path is a directory and put a trailing slash on it. */
+  std::string dir_in(path_in);
+  if (!Fil_path::is_separator(dir_in.back())) {
+    dir_in.push_back(Fil_path::OS_SEPARATOR);
+  }
 
-  /* Scan until 'end' and 'start' don't reach the end of string (npos) */
-  while (std::string::npos != start || std::string::npos != end) {
-    std::array<char, OS_FILE_MAX_PATH> dir;
+  Fil_path found_path(dir_in, true);
 
-    dir.fill(0);
+  /* Exclude this path if it is a duplicate of a path already stored or
+  if a previously stored path is an ancestor.  Remove any previously stored
+  path that is a descendant of this path. */
+  for (auto it = m_dirs.cbegin(); it != m_dirs.cend(); /* No op */) {
+    if (it->root().is_same_as(found_path)) {
+      /* The exact same path is obviously ignored, so there is no need to
+      log a warning. */
+      return;
+    }
+
+    /* Check if dir_abs_path is an ancestor of this path */
+    if (it->root().is_ancestor(found_path)) {
+      /* Descendant directories will be scanned recursively, so don't
+      add it to the scan list.  Log a warning unless this descendant
+      is the undo directory since it must be supplied even if it is
+      a descendant of another data location. */
+      if (!is_undo_dir) {
+        std::string reason = "it is a sub-directory of '";
+        reason += it->root().abs_path();
+        warn_ignore(path_in, reason.c_str());
+      }
+      return;
+    }
+
+    if (found_path.is_ancestor(it->root())) {
+      /* This path is an ancestor of an existing dir in fil_system::m_dirs.
+      The settings have overlapping locations.  Put a note about it to
+      the error log. The undo_dir is added last, so if it is an ancestor,
+      the descendant was listed as a datafile directory. So always issue
+      this message*/
+      std::string reason = "it is a sub-directory of '";
+      reason += found_path;
+      warn_ignore(it->root().path(), reason.c_str());
+
+      /* It might also be an ancestor to another dir as well, so keep looking.
+      We must delete this descendant because we know that this ancestor path
+      will be inserted and all its descendants will be scanned. */
+      it = m_dirs.erase(it);
+    } else {
+      it++;
+    }
+  }
+
+  m_dirs.push_back(Tablespace_files{found_path.path()});
+  return;
+}
+
+void Tablespace_dirs::add_paths(const std::string &str,
+                                const std::string &delimiters) {
+  std::string::size_type start = 0;
+  std::string::size_type end = 0;
+
+  /* Scan until 'start' reaches the end of the string (npos) */
+  for (;;) {
+    start = str.find_first_not_of(delimiters, end);
+    if (std::string::npos == start) {
+      break;
+    }
+
+    end = str.find_first_of(delimiters, start);
 
     const auto path = str.substr(start, end - start);
 
-    ut_a(path.length() < dir.max_size());
-
-    std::copy(path.begin(), path.end(), dir.data());
-
-    /* Filter out paths that contain '*'. */
-    auto pos = path.find('*');
-
-    /* Filter out invalid path components. */
-
-    if (path == "/") {
-      ib::warn(ER_IB_MSG_365) << "Scan path '" << path << "' ignored";
-
-    } else if (pos == std::string::npos) {
-      Fil_path::normalize(dir.data());
-
-      std::string cur_path;
-      std::string d{dir.data()};
-
-      if (Fil_path::get_file_type(dir.data()) == OS_FILE_TYPE_DIR) {
-        cur_path = Fil_path::get_real_path(d);
-
-      } else {
-        cur_path = d;
-      }
-
-      if (!Fil_path::is_separator(d.back())) {
-        d.push_back(Fil_path::OS_SEPARATOR);
-      }
-
-      using value = Paths::value_type;
-
-      dirs.push_back(value(d, cur_path));
-
-    } else {
-      ib::warn(ER_IB_MSG_366) << "Scan path '" << path << "' ignored"
-                              << " contains '*'";
-    }
-
-    start = str.find_first_not_of(delimiters, end);
-
-    end = str.find_first_of(delimiters, start);
-  }
-
-  /* Remove duplicate paths by comparing the real paths.  Note, this
-  will change the order of the directory scan because of the sort. */
-
-  using type = Paths::value_type;
-
-  std::sort(dirs.begin(), dirs.end(), [](const type &lhs, const type &rhs) {
-    return (lhs.second < rhs.second);
-  });
-
-  dirs.erase(std::unique(dirs.begin(), dirs.end(),
-                         [](const type &lhs, const type &rhs) {
-                           return (lhs.second == rhs.second);
-                         }),
-             dirs.end());
-
-  /* Eliminate sub-trees */
-
-  Dirs scan_dirs;
-
-  for (size_t i = 0; i < dirs.size(); ++i) {
-    const auto &path_i = dirs[i].second;
-
-    for (size_t j = i + 1; j < dirs.size(); ++j) {
-      auto &path_j = dirs[j].second;
-
-      if (Fil_path::is_ancestor(path_i, path_j)) {
-        path_j.resize(0);
-      }
-    }
-  }
-
-  for (auto &dir : dirs) {
-    if (dir.second.length() == 0) {
-      continue;
-    }
-
-    Fil_path::normalize(dir.first);
-
-    m_dirs.push_back(Tablespace_files{dir.first});
+    add_path(path);
   }
 }
 
@@ -10646,10 +10853,6 @@ or new_name did not exist and name was successfully renamed to new_name) */
 static bool fil_op_replay_rename(const page_id_t &page_id,
                                  const std::string &old_name,
                                  const std::string &new_name) {
-#ifdef UNIV_HOTBACKUP
-  ut_ad(meb_replay_file_ops);
-#endif /* UNIV_HOTBACKUP */
-
   ut_ad(page_id.page_no() == 0);
   ut_ad(old_name.compare(new_name) != 0);
   ut_ad(Fil_path::has_suffix(IBD, new_name));
@@ -10736,16 +10939,14 @@ static bool fil_op_replay_rename(const page_id_t &page_id,
 }
 
 /** Get the tablespace ID from an .ibd and/or an undo tablespace. If the ID
-is == 0 on the first page then check for at least MAX_PAGES_TO_CHECK  pages
-with the same tablespace ID. Do a Light weight check before trying with
+is == 0 on the first page then try finding the ID with
 Datafile::find_space_id().
 @param[in]	filename	File name to check
 @return s_invalid_space_id if not found, otherwise the space ID */
 space_id_t Fil_system::get_tablespace_id(const std::string &filename) {
-  char buf[sizeof(space_id_t)];
-  std::ifstream ifs(filename, std::ios::binary);
+  FILE *fp = fopen(filename.c_str(), "rb");
 
-  if (!ifs) {
+  if (fp == nullptr) {
     ib::warn(ER_IB_MSG_372) << "Unable to open '" << filename << "'";
     return (dict_sys_t::s_invalid_space_id);
   }
@@ -10753,63 +10954,60 @@ space_id_t Fil_system::get_tablespace_id(const std::string &filename) {
   std::vector<space_id_t> space_ids;
   auto page_size = srv_page_size;
 
-  space_ids.reserve(MAX_PAGES_TO_CHECK);
+  space_ids.reserve(MAX_PAGES_TO_READ);
 
-  for (page_no_t page_no = 0; page_no < MAX_PAGES_TO_CHECK; ++page_no) {
-    off_t off;
+  const auto n_bytes = page_size * MAX_PAGES_TO_READ;
 
-    off = page_no * page_size + FIL_PAGE_SPACE_ID;
+  std::unique_ptr<byte[]> buf(new byte[n_bytes]);
 
-    if (off == FIL_PAGE_SPACE_ID) {
-      /* Figure out the page size of the tablespace. If it's
-      a compressed tablespace. */
-      ifs.seekg(FSP_HEADER_OFFSET + FSP_SPACE_FLAGS, ifs.beg);
-
-      if ((ifs.rdstate() & std::ifstream::eofbit) != 0 ||
-          (ifs.rdstate() & std::ifstream::failbit) != 0 ||
-          (ifs.rdstate() & std::ifstream::badbit) != 0) {
-        return (dict_sys_t::s_invalid_space_id);
-      }
-
-      ifs.read(buf, sizeof(buf));
-
-      if (!ifs.good() || (size_t)ifs.gcount() < sizeof(buf)) {
-        return (dict_sys_t::s_invalid_space_id);
-      }
-
-      uint32_t flags;
-
-      flags = mach_read_from_4(reinterpret_cast<byte *>(buf));
-
-      const page_size_t space_page_size(flags);
-
-      page_size = space_page_size.physical();
-    }
-
-    ifs.seekg(off, ifs.beg);
-
-    if ((ifs.rdstate() & std::ifstream::eofbit) != 0 ||
-        (ifs.rdstate() & std::ifstream::failbit) != 0 ||
-        (ifs.rdstate() & std::ifstream::badbit) != 0) {
-      /* Trucated files can be a single page */
-      break;
-    }
-
-    ifs.read(buf, sizeof(buf));
-
-    if (!ifs.good() || (size_t)ifs.gcount() < sizeof(buf)) {
-      /* Trucated files can be a single page */
-      break;
-    }
-
-    space_id_t space_id;
-
-    space_id = mach_read_from_4(reinterpret_cast<byte *>(buf));
-
-    space_ids.push_back(space_id);
+  if (!buf) {
+    return dict_sys_t::s_invalid_space_id;
   }
 
-  ifs.close();
+  auto pages_read = fread(buf.get(), page_size, MAX_PAGES_TO_READ, fp);
+
+  DBUG_EXECUTE_IF("invalid_header", pages_read = 0;);
+
+  /* Find the space id from the pages read if enough pages could be read.
+  Fall back to the more heavier method of finding the space id from
+  Datafile::find_space_id() if pages cannot be read properly. */
+  if (pages_read >= MAX_PAGES_TO_READ) {
+    auto bytes_read = pages_read * page_size;
+
+#ifdef POSIX_FADV_DONTNEED
+    posix_fadvise(fileno(fp), 0, bytes_read, POSIX_FADV_DONTNEED);
+#endif /* POSIX_FADV_DONTNEED */
+
+    for (page_no_t i = 0; i < MAX_PAGES_TO_READ; ++i) {
+      const auto off = i * page_size + FIL_PAGE_SPACE_ID;
+
+      if (off == FIL_PAGE_SPACE_ID) {
+        /* Find out the page size of the tablespace from the first page.
+        In case of compressed pages, the subsequent pages can be of different
+        sizes. If MAX_PAGES_TO_READ is changed to a different value, then the
+        page size of subsequent pages is needed to find out the offset for
+        space ID. */
+
+        auto space_flags_offset = FSP_HEADER_OFFSET + FSP_SPACE_FLAGS;
+
+        ut_a(space_flags_offset + 4 < n_bytes);
+
+        const auto flags = mach_read_from_4(buf.get() + space_flags_offset);
+
+        page_size_t space_page_size(flags);
+
+        page_size = space_page_size.physical();
+      }
+
+      space_ids.push_back(mach_read_from_4(buf.get() + off));
+
+      if ((i + 1) * page_size >= bytes_read) {
+        break;
+      }
+    }
+  }
+
+  fclose(fp);
 
   space_id_t space_id;
 
@@ -10829,11 +11027,9 @@ space_id_t Fil_system::get_tablespace_id(const std::string &filename) {
 
   /* Try the more heavy duty method, as a last resort. */
   if (space_id == UINT32_UNDEFINED) {
-    /* The ifstream will work for all file formats compressed or
-    otherwise because the header of the page is not compressed.
-    Where it will fail is if the first page is corrupt. Then for
-    compressed tablespaces we don't know where the page boundary
-    starts because we don't know the page size. */
+    /* If the first page cannot be read properly, then for compressed
+    tablespaces we don't know where the page boundary starts because
+    we don't know the page size. */
 
     Datafile file;
 
@@ -10844,8 +11040,8 @@ space_id_t Fil_system::get_tablespace_id(const std::string &filename) {
     ut_a(file.is_open());
     ut_a(err == DB_SUCCESS);
 
-    /* Read and validate the first page of the tablespace.
-    Assign a tablespace name based on the tablespace type. */
+    /* Use the heavier Datafile::find_space_id() method to
+    find the space id. */
     err = file.find_space_id();
 
     if (err == DB_SUCCESS) {
@@ -10971,6 +11167,26 @@ void Tablespace_dirs::open_ibds() const {
   }
 }
 
+void Fil_system::rename_partition_files(bool revert) {
+  /* If revert, then we are downgrading after upgrade failure from 5.7 */
+  ut_ad(!revert || srv_downgrade_partition_files);
+
+  if (m_old_paths.empty()) {
+    return;
+  }
+
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
+  ut_ad(!lower_case_file_system);
+
+  for (auto &old_path : m_old_paths) {
+    ut_ad(Fil_path::has_suffix(IBD, old_path));
+    ut_ad(dict_name::is_partition(old_path));
+
+    fil_rename_partition_file(old_path, IBD, revert, false);
+  }
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
+}
+
 /** Check for duplicate tablespace IDs.
 @param[in]	start		Slice start
 @param[in]	end		Slice end
@@ -11076,35 +11292,162 @@ void Tablespace_dirs::print_duplicates(const Space_id_set &duplicates) {
   }
 }
 
-/** Discover tablespaces by reading the header from .ibd files.
-@param[in]	in_directories	Directories to scan
-@return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(const std::string &in_directories,
-                              bool populate_fil_cache) {
+#ifndef XTRABACKUP
+static bool fil_get_partition_file(const std::string &old_path,
+                                   ib_file_suffix extn, std::string &new_path) {
+#ifdef _WIN32
+  /* Safe check. Never needed on Windows. */
+  return (false);
+#endif /* WIN32 */
+
+#ifndef UNIV_HOTBACKUP
+
+  /* Needed only for case sensitive file system. */
+  if (lower_case_file_system) {
+    return (false);
+  }
+
+  /* Skip if not right file extension. */
+  if (!Fil_path::has_suffix(extn, old_path)) {
+    return (false);
+  }
+
+  /* Check if partitioned table. */
+  if (!dict_name::is_partition(old_path)) {
+    return (false);
+  }
+
+  std::string table_name;
+  /* Get Innodb dictionary name from file path. */
+  if (!Fil_path::parse_file_path(old_path, extn, table_name)) {
+    ut_ad(false);
+    return (false);
+  }
+  ut_ad(!table_name.empty());
+
+  /* Rebuild partition table name with lower case. */
+  std::string save_name(table_name);
+  dict_name::rebuild(table_name);
+
+  if (save_name.compare(table_name) == 0) {
+    return (false);
+  }
+
+  /* Build new partition file name. */
+  new_path = Fil_path::make_new_path(old_path, table_name, extn);
+  ut_ad(!new_path.empty());
+#endif /* !UNIV_HOTBACKUP */
+
+  return (true);
+}
+
+#endif /* !XTRABACKUP */
+
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
+static void fil_rename_partition_file(const std::string &old_path,
+                                      ib_file_suffix extn, bool revert,
+                                      bool import) {
+  std::string new_path;
+
+  if (!fil_get_partition_file(old_path, extn, new_path)) {
+    ut_ad(false);
+    return;
+  }
+
+  ut_ad(!new_path.empty());
+
+  os_file_type_t type;
+  bool exists = false;
+
+  bool status = os_file_status(old_path.c_str(), &exists, &type);
+  bool old_exists = (status && exists);
+
+  status = os_file_status(new_path.c_str(), &exists, &type);
+  bool new_exists = (status && exists);
+
+  static bool print_upgrade = true;
+  static bool print_downgrade = true;
+  bool ret = false;
+
+  if (revert) {
+    /* Check if rename is required. */
+    if (!new_exists || old_exists) {
+      return;
+    }
+    ret = os_file_rename(innodb_data_file_key, new_path.c_str(),
+                         old_path.c_str());
+    ut_ad(ret);
+
+    if (ret && print_downgrade) {
+      ib::info(ER_IB_MSG_DOWNGRADE_PARTITION_FILE, new_path.c_str(),
+               old_path.c_str());
+      print_downgrade = false;
+    }
+    return;
+  }
+
+  /* Check if rename is required. */
+  if (new_exists || !old_exists) {
+    return;
+  }
+
+  ret =
+      os_file_rename(innodb_data_file_key, old_path.c_str(), new_path.c_str());
+
+  if (!ret) {
+    /* File rename failed. */
+    ut_ad(false);
+    return;
+  }
+
+  if (import) {
+    ib::info(ER_IB_MSG_UPGRADE_PARTITION_FILE_IMPORT, old_path.c_str(),
+             new_path.c_str());
+    return;
+  }
+
+  if (print_upgrade) {
+    ib::info(ER_IB_MSG_UPGRADE_PARTITION_FILE, old_path.c_str(),
+             new_path.c_str());
+    print_upgrade = false;
+  }
+}
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
+
+void Tablespace_dirs::set_scan_dir(const std::string &in_directory,
+                                   bool is_undo_dir) {
+  std::string directory(in_directory);
+
+  Fil_path::normalize(directory);
+
+  add_path(directory, is_undo_dir);
+}
+
+void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
   std::string directories(in_directories);
 
   Fil_path::normalize(directories);
 
-  ib::info(ER_IB_MSG_378) << "Directories to scan '" << directories << "'";
+  std::string separators;
 
+  separators.push_back(FIL_PATH_SEPARATOR);
+
+  add_paths(directories, separators);
+}
+
+/** Discover tablespaces by reading the header from .ibd files.
+@param[in]      in_directories  Directories to scan
+@return DB_SUCCESS if all goes well */
+dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
   Scanned_files ibd_files;
   Scanned_files undo_files;
-
-  {
-    std::string separators;
-
-    separators.push_back(FIL_PATH_SEPARATOR);
-
-    tokenize_paths(directories, separators);
-  }
-
   uint16_t count = 0;
   bool print_msg = false;
   auto start_time = ut_time_monotonic();
 
   /* Should be trivial to parallelize the scan and ID check. */
   for (const auto &dir : m_dirs) {
-    const auto &real_path_dir = dir.real_path();
+    const auto real_path_dir = dir.root().abs_path();
 
     ut_a(Fil_path::is_separator(dir.path().back()));
 
@@ -11120,10 +11463,8 @@ dberr_t Tablespace_dirs::scan(const std::string &in_directories,
       ut_a(path.length() > real_path_dir.length());
       ut_a(Fil_path::get_file_type(path) != OS_FILE_TYPE_DIR);
 
-      /* Make the filename relative to the directory that
-      was scanned. */
-
-      std::string file = path.substr(real_path_dir.length(), path.length());
+      /* Make the filename relative to the directory that was scanned. */
+      std::string file = path.substr(real_path_dir.length());
 
       if (file.size() <= 4) {
         return;
@@ -11151,6 +11492,9 @@ dberr_t Tablespace_dirs::scan(const std::string &in_directories,
     ++count;
   }
 
+  /* Rename all old partition files. */
+  //  fil_system->rename_partition_files(false);
+
   if (print_msg) {
     ib::info(ER_IB_MSG_381) << "Found " << ibd_files.size() << " '.ibd' and "
                             << undo_files.size() << " undo files";
@@ -11159,15 +11503,13 @@ dberr_t Tablespace_dirs::scan(const std::string &in_directories,
   Space_id_set unique;
   Space_id_set duplicates;
 
-  size_t n_threads = (ibd_files.size() / 50000);
+  /* Get the number of additional threads needed to scan the files. */
+  size_t n_threads = fil_get_scan_threads(ibd_files.size());
 
   if (n_threads > 0) {
-    if (n_threads > MAX_SCAN_THREADS) {
-      n_threads = MAX_SCAN_THREADS;
-    }
-
-    ib::info(ER_IB_MSG_382) << "Using " << (n_threads + 1) << " threads to"
-                            << " scan the tablespace files";
+    ib::info(ER_IB_MSG_382)
+        << "Using " << (n_threads + 1) << " threads to"
+        << " scan " << ibd_files.size() << " tablespace files";
   }
 
   std::mutex m;
@@ -11221,13 +11563,19 @@ dberr_t Tablespace_dirs::scan(const std::string &in_directories,
   return (err);
 }
 
+void fil_set_scan_dir(const std::string &directory, bool is_undo_dir) {
+  fil_system->set_scan_dir(directory, is_undo_dir);
+}
+
+void fil_set_scan_dirs(const std::string &directories) {
+  fil_system->set_scan_dirs(directories);
+}
+
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]  directories Directories to scan
 @param[in]  populate_fil_cache Whether to load tablespaces into fil cache
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(const std::string &directories,
-                                 bool populate_fil_cache) {
-  return (fil_system->scan(directories, populate_fil_cache));
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache) {
+  return (fil_system->scan(populate_fil_cache));
 }
 
 /** Open all known tablespaces. */

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -33,7 +33,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "mtr0types.h"
 #include "ut0byte.h"
+#include "log0types.h"
 
+extern uint32_t log_detected_format;
+ 
 /** The following function is used to store data in one byte.
 @param[in]	b	pointer to byte where to store
 @param[in]	n	ulint integer to be stored, >= 0, < 256 */
@@ -160,7 +163,7 @@ else the storage is 5-byte.
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
 UNIV_INLINE
-ulint mach_write_compressed(byte *b, ulint n) {
+ulint mach_write_compressed_v3(byte *b, ulint n) {
   ut_ad(b);
 
   if (n < 0x80) {
@@ -187,11 +190,86 @@ ulint mach_write_compressed(byte *b, ulint n) {
   }
 }
 
+/** Writes a ulint in a compressed form where the first byte codes the
+length of the stored ulint. We look at the most significant bits of
+the byte. If the most significant bit is zero, it means 1-byte storage,
+else if the 2nd bit is 0, it means 2-byte storage, else if 3rd is 0,
+it means 3-byte storage, else if 4th is 0, it means 4-byte storage,
+else the storage is 5-byte.
+@param[in]	b	pointer to memory where to store
+@param[in]	n	ulint integer (< 2^32) to be stored
+@return compressed size in bytes */
+UNIV_INLINE
+ulint mach_write_compressed_v4(byte *b, ulint n) {
+  ut_ad(b);
+
+  if (n < 0x80) {
+    /* 0nnnnnnn (7 bits) */
+    mach_write_to_1(b, n);
+    return (1);
+  } else if (n < 0x4000) {
+    /* 10nnnnnn nnnnnnnn (14 bits) */
+    mach_write_to_2(b, n | 0x8000);
+    return (2);
+  } else if (n < 0x200000) {
+    /* 110nnnnn nnnnnnnn nnnnnnnn (21 bits) */
+    mach_write_to_3(b, n | 0xC00000);
+    return (3);
+  } else if (n < 0x10000000) {
+    /* 1110nnnn nnnnnnnn nnnnnnnn nnnnnnnn (28 bits) */
+    mach_write_to_4(b, n | 0xE0000000);
+    return (4);
+  } else if (n >= 0xFFFFFC00) {
+    /* 111110nn nnnnnnnn (10 bits) (extended) */
+    mach_write_to_2(b, (n & 0x3FF) | 0xF800);
+    return (2);
+  } else if (n >= 0xFFFE0000) {
+    /* 1111110n nnnnnnnn nnnnnnnn (17 bits) (extended) */
+    mach_write_to_3(b, (n & 0x1FFFF) | 0xFC0000);
+    return (3);
+  } else if (n >= 0xFF000000) {
+    /* 11111110 nnnnnnnn nnnnnnnn nnnnnnnn (24 bits) (extended) */
+    mach_write_to_4(b, (n & 0xFFFFFF) | 0xFE000000);
+    return (4);
+  } else {
+    /* 11110000 nnnnnnnn nnnnnnnn nnnnnnnn nnnnnnnn (32 bits) */
+    mach_write_to_1(b, 0xF0);
+    mach_write_to_4(b + 1, n);
+    return (5);
+  }
+}
+
+/** Writes a ulint in a compressed form where the first byte codes the
+length of the stored ulint. We look at the most significant bits of
+the byte. If the most significant bit is zero, it means 1-byte storage,
+else if the 2nd bit is 0, it means 2-byte storage, else if 3rd is 0,
+it means 3-byte storage, else if 4th is 0, it means 4-byte storage,
+else the storage is 5-byte.
+@param[in]	b	pointer to memory where to store
+@param[in]	n	ulint integer (< 2^32) to be stored
+@return compressed size in bytes */
+UNIV_INLINE
+ulint mach_write_compressed(byte *b, ulint n) {
+  switch (log_detected_format) {
+    case LOG_HEADER_FORMAT_5_7_9:
+      ut_a(0);
+      return (0);
+    case LOG_HEADER_FORMAT_8_0_1:
+    case LOG_HEADER_FORMAT_8_0_3:
+      return (mach_write_compressed_v3(b, n));
+    case LOG_HEADER_FORMAT_8_0_19:
+      return (mach_write_compressed_v4(b, n));
+  }
+  /* make compiler happy */
+  ut_a(0);
+  return (0);
+}
+
 /** Return the size of an ulint when written in the compressed form.
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
 UNIV_INLINE
-ulint mach_get_compressed_size(ulint n) {
+uint32_t mach_get_compressed_size_v3(ulint n) {
   if (n < 0x80) {
     /* 0nnnnnnn (7 bits) */
     return (1);
@@ -210,11 +288,63 @@ ulint mach_get_compressed_size(ulint n) {
   }
 }
 
+/** Return the size of an ulint when written in the compressed form.
+@param[in]	n	uint32_t integer (< 2^32) to be stored
+@return compressed size in bytes */
+UNIV_INLINE
+uint32_t mach_get_compressed_size_v4(ulint n) {
+  if (n < 0x80) {
+    /* 0nnnnnnn (7 bits) */
+    return (1);
+  } else if (n < 0x4000) {
+    /* 10nnnnnn nnnnnnnn (14 bits) */
+    return (2);
+  } else if (n < 0x200000) {
+    /* 110nnnnn nnnnnnnn nnnnnnnn (21 bits) */
+    return (3);
+  } else if (n < 0x10000000) {
+    /* 1110nnnn nnnnnnnn nnnnnnnn nnnnnnnn (28 bits) */
+    return (4);
+  } else if (n >= 0xFFFFFC00) {
+    /* 111110nn nnnnnnnn (10 bits) (extended) */
+    return (2);
+  } else if (n >= 0xFFFE0000) {
+    /* 1111110n nnnnnnnn nnnnnnnn (17 bits) (extended) */
+    return (3);
+  } else if (n >= 0xFF000000) {
+    /* 11111110 nnnnnnnn nnnnnnnn nnnnnnnn (24 bits) (extended) */
+    return (4);
+  } else {
+    /* 11110000 nnnnnnnn nnnnnnnn nnnnnnnn nnnnnnnn (32 bits) */
+    return (5);
+  }
+}
+
+/** Return the size of an ulint when written in the compressed form.
+@param[in]	n	uint32_t integer (< 2^32) to be stored
+@return compressed size in bytes */
+UNIV_INLINE
+uint32_t mach_get_compressed_size(ulint n) {
+  switch (log_detected_format) {
+    case LOG_HEADER_FORMAT_5_7_9:
+      ut_a(0);
+      return (0);
+    case LOG_HEADER_FORMAT_8_0_1:
+    case LOG_HEADER_FORMAT_8_0_3:
+      return (mach_get_compressed_size_v3(n));
+    case LOG_HEADER_FORMAT_8_0_19:
+      return (mach_get_compressed_size_v4(n));
+  }
+  /* make compiler happy */
+  ut_a(0);
+  return (0);
+}
+
 /** Read a ulint in a compressed form.
 @param[in]	b	pointer to memory from where to read
 @return read integer (< 2^32) */
 UNIV_INLINE
-ulint mach_read_compressed(const byte *b) {
+ulint mach_read_compressed_v3(const byte *b) {
   ulint val;
 
   ut_ad(b);
@@ -244,13 +374,80 @@ ulint mach_read_compressed(const byte *b) {
 
   return (val);
 }
+/** Read a ulint in a compressed form.
+@param[in]	b	pointer to memory from where to read
+@return read integer (< 2^32) */
+UNIV_INLINE
+ulint mach_read_compressed_v4(const byte *b) {
+  ulint val;
+
+  ut_ad(b);
+
+  val = mach_read_from_1(b);
+
+  if (val < 0x80) {
+    /* 0nnnnnnn (7 bits) */
+  } else if (val < 0xC0) {
+    /* 10nnnnnn nnnnnnnn (14 bits) */
+    val = mach_read_from_2(b) & 0x3FFF;
+    ut_ad(val > 0x7F);
+  } else if (val < 0xE0) {
+    /* 110nnnnn nnnnnnnn nnnnnnnn (21 bits) */
+    val = mach_read_from_3(b) & 0x1FFFFF;
+    ut_ad(val > 0x3FFF);
+  } else if (val < 0xF0) {
+    /* 1110nnnn nnnnnnnn nnnnnnnn nnnnnnnn (28 bits) */
+    val = mach_read_from_4(b) & 0xFFFFFFF;
+    ut_ad(val > 0x1FFFFF);
+  } else if (val < 0xF8) {
+    /* 11110000 nnnnnnnn nnnnnnnn nnnnnnnn nnnnnnnn (32 bits) */
+    ut_ad(val == 0xF0);
+    val = mach_read_from_4(b + 1);
+    /* this can treat not-extended format also. */
+    ut_ad(val > 0xFFFFFFF);
+  } else if (val < 0xFC) {
+    /* 111110nn nnnnnnnn (10 bits) (extended) */
+    val = (mach_read_from_2(b) & 0x3FF) | 0xFFFFFC00;
+  } else if (val < 0xFE) {
+    /* 1111110n nnnnnnnn nnnnnnnn (17 bits) (extended) */
+    val = (mach_read_from_3(b) & 0x1FFFF) | 0xFFFE0000;
+    ut_ad(val < 0xFFFFFC00);
+  } else {
+    /* 11111110 nnnnnnnn nnnnnnnn nnnnnnnn (24 bits) (extended) */
+    ut_ad(val == 0xFE);
+    val = mach_read_from_3(b + 1) | 0xFF000000;
+    ut_ad(val < 0xFFFE0000);
+  }
+
+  return (val);
+}
+
+/** Read a ulint in a compressed form.
+@param[in]	b	pointer to memory from where to read
+@return read integer (< 2^32) */
+UNIV_INLINE
+ulint mach_read_compressed(const byte *b) {
+  switch (log_detected_format) {
+    case LOG_HEADER_FORMAT_5_7_9:
+      ut_a(0);
+      return (0);
+    case LOG_HEADER_FORMAT_8_0_1:
+    case LOG_HEADER_FORMAT_8_0_3:
+      return (mach_read_compressed_v3(b));
+    case LOG_HEADER_FORMAT_8_0_19:
+      return (mach_read_compressed_v4(b));
+  }
+  /* make compiler happy */
+  ut_a(0);
+  return (0);
+}
 
 /** Read a 32-bit integer in a compressed form.
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
 UNIV_INLINE
-ib_uint32_t mach_read_next_compressed(const byte **b) {
+ib_uint32_t mach_read_next_compressed_v3(const byte **b) {
   ulint val = mach_read_from_1(*b);
 
   if (val < 0x80) {
@@ -280,6 +477,81 @@ ib_uint32_t mach_read_next_compressed(const byte **b) {
   }
 
   return (static_cast<ib_uint32_t>(val));
+}
+
+/** Read a 32-bit integer in a compressed form.
+@param[in,out]	b	pointer to memory where to read;
+advanced by the number of bytes consumed
+@return unsigned value */
+UNIV_INLINE
+ib_uint32_t mach_read_next_compressed_v4(const byte **b) {
+  ulint val = mach_read_from_1(*b);
+
+  if (val < 0x80) {
+    /* 0nnnnnnn (7 bits) */
+    ++*b;
+  } else if (val < 0xC0) {
+    /* 10nnnnnn nnnnnnnn (14 bits) */
+    val = mach_read_from_2(*b) & 0x3FFF;
+    ut_ad(val > 0x7F);
+    *b += 2;
+  } else if (val < 0xE0) {
+    /* 110nnnnn nnnnnnnn nnnnnnnn (21 bits) */
+    val = mach_read_from_3(*b) & 0x1FFFFF;
+    ut_ad(val > 0x3FFF);
+    *b += 3;
+  } else if (val < 0xF0) {
+    /* 1110nnnn nnnnnnnn nnnnnnnn nnnnnnnn (28 bits) */
+    val = mach_read_from_4(*b) & 0xFFFFFFF;
+    ut_ad(val > 0x1FFFFF);
+    *b += 4;
+  } else if (val < 0xF8) {
+    /* 11110000 nnnnnnnn nnnnnnnn nnnnnnnn nnnnnnnn (32 bits) */
+    ut_ad(val == 0xF0);
+    val = mach_read_from_4(*b + 1);
+    /* this can treat not-extended format also. */
+    ut_ad(val > 0xFFFFFFF);
+    *b += 5;
+  } else if (val < 0xFC) {
+    /* 111110nn nnnnnnnn (10 bits) (extended) */
+    val = (mach_read_from_2(*b) & 0x3FF) | 0xFFFFFC00;
+    *b += 2;
+  } else if (val < 0xFE) {
+    /* 1111110n nnnnnnnn nnnnnnnn (17 bits) (extended) */
+    val = (mach_read_from_3(*b) & 0x1FFFF) | 0xFFFE0000;
+    ut_ad(val < 0xFFFFFC00);
+    *b += 3;
+  } else {
+    /* 11111110 nnnnnnnn nnnnnnnn nnnnnnnn (24 bits) (extended) */
+    ut_ad(val == 0xFE);
+    val = mach_read_from_3(*b + 1) | 0xFF000000;
+    ut_ad(val < 0xFFFE0000);
+    *b += 4;
+  }
+
+  return (static_cast<ib_uint32_t>(val));
+}
+
+/** Read a 32-bit integer in a compressed form.
+@param[in,out]	b	pointer to memory where to read;
+advanced by the number of bytes consumed
+@return unsigned value */
+UNIV_INLINE
+ib_uint32_t mach_read_next_compressed(const byte **b) {
+  switch (log_detected_format) {
+    case LOG_HEADER_FORMAT_5_7_9:
+      ut_a(0);
+      return (0);
+    case LOG_HEADER_FORMAT_8_0_1:
+    case LOG_HEADER_FORMAT_8_0_3:
+      return (mach_read_next_compressed_v3(b));
+    case LOG_HEADER_FORMAT_8_0_19:
+      return (mach_read_next_compressed_v4(b));
+  }
+  /* make compiler happy */
+
+  ut_a(0);
+  return (0);
 }
 
 /** The following function is used to store data in 8 consecutive
@@ -335,7 +607,7 @@ ib_uint64_t mach_read_from_7(const byte *b) {
 /** The following function is used to store data in 6 consecutive
 bytes. We store the most significant byte to the lowest address.
 @param[in]	b	pointer to 6 bytes where to store
-@param[in]	id	48-bit integer to write */
+@param[in]	n	48-bit integer to write */
 UNIV_INLINE
 void mach_write_to_6(byte *b, ib_uint64_t n) {
   ut_ad(b);
@@ -436,7 +708,7 @@ ib_uint64_t mach_u64_read_much_compressed(
 advanced by the number of bytes consumed
 @return unsigned value */
 UNIV_INLINE
-ib_uint64_t mach_read_next_much_compressed(const byte **b) {
+ib_uint64_t mach_read_next_much_compressed_v3(const byte **b) {
   ib_uint64_t val = mach_read_from_1(*b);
 
   if (val < 0x80) {
@@ -474,6 +746,87 @@ ib_uint64_t mach_read_next_much_compressed(const byte **b) {
 
   return (val);
 }
+/** Read a 64-bit integer in a compressed form.
+@param[in,out]	b	pointer to memory where to read;
+advanced by the number of bytes consumed
+@return unsigned value */
+UNIV_INLINE
+ib_uint64_t mach_read_next_much_compressed_v4(const byte **b) {
+  ib_uint64_t val = mach_read_from_1(*b);
+
+  if (val < 0x80) {
+    /* 0nnnnnnn (7 bits) */
+    ++*b;
+  } else if (val < 0xC0) {
+    /* 10nnnnnn nnnnnnnn (14 bits) */
+    val = mach_read_from_2(*b) & 0x3FFF;
+    ut_ad(val > 0x7F);
+    *b += 2;
+  } else if (val < 0xE0) {
+    /* 110nnnnn nnnnnnnn nnnnnnnn (21 bits) */
+    val = mach_read_from_3(*b) & 0x1FFFFF;
+    ut_ad(val > 0x3FFF);
+    *b += 3;
+  } else if (val < 0xF0) {
+    /* 1110nnnn nnnnnnnn nnnnnnnn nnnnnnnn (28 bits) */
+    val = mach_read_from_4(*b) & 0xFFFFFFF;
+    ut_ad(val > 0x1FFFFF);
+    *b += 4;
+  } else if (val < 0xF8) {
+    /* 11110000 nnnnnnnn nnnnnnnn nnnnnnnn nnnnnnnn (32 bits) */
+    ut_ad(val == 0xF0);
+    val = mach_read_from_4(*b + 1);
+    /* this can treat not-extended format also. */
+    ut_ad(val > 0xFFFFFFF);
+    *b += 5;
+  } else if (val < 0xFC) {
+    /* 111110nn nnnnnnnn (10 bits) (extended) */
+    val = (mach_read_from_2(*b) & 0x3FF) | 0xFFFFFC00;
+    *b += 2;
+  } else if (val < 0xFE) {
+    /* 1111110n nnnnnnnn nnnnnnnn (17 bits) (extended) */
+    val = (mach_read_from_3(*b) & 0x1FFFF) | 0xFFFE0000;
+    ut_ad(val < 0xFFFFFC00);
+    *b += 3;
+  } else if (val == 0xFE) {
+    /* 11111110 nnnnnnnn nnnnnnnn nnnnnnnn (24 bits) (extended) */
+    ut_ad(val == 0xFE);
+    val = mach_read_from_3(*b + 1) | 0xFF000000;
+    ut_ad(val < 0xFFFE0000);
+    *b += 4;
+  } else {
+    /* 11111111 followed by up to 80 bits */
+    ut_ad(val == 0xFF);
+    ++*b;
+    val = mach_read_next_compressed(b);
+    ut_ad(val > 0);
+    val <<= 32;
+    val |= mach_read_next_compressed(b);
+  }
+
+  return (val);
+}
+
+/** Read a 64-bit integer in a compressed form.
+@param[in,out]	b	pointer to memory where to read;
+advanced by the number of bytes consumed
+@return unsigned value */
+UNIV_INLINE
+ib_uint64_t mach_read_next_much_compressed(const byte **b) {
+  switch (log_detected_format) {
+    case LOG_HEADER_FORMAT_5_7_9:
+      ut_a(0);
+      return (0);
+    case LOG_HEADER_FORMAT_8_0_1:
+    case LOG_HEADER_FORMAT_8_0_3:
+      return (mach_read_next_much_compressed_v3(b));
+    case LOG_HEADER_FORMAT_8_0_19:
+      return (mach_read_next_much_compressed_v4(b));
+  }
+  /* make compiler happy */
+  ut_a(0);
+  return (0);
+}
 
 /** Read a 64-bit integer in a compressed form.
 @param[in,out]	ptr	pointer to memory where to read;
@@ -485,14 +838,14 @@ ib_uint64_t mach_u64_parse_compressed(const byte **ptr, const byte *end_ptr) {
   ib_uint64_t val = 0;
 
   if (end_ptr < *ptr + 5) {
-    *ptr = NULL;
+    *ptr = nullptr;
     return (val);
   }
 
   val = mach_read_next_compressed(ptr);
 
   if (end_ptr < *ptr + 4) {
-    *ptr = NULL;
+    *ptr = nullptr;
     return (val);
   }
 

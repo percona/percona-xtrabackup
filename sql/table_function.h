@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,23 +26,23 @@
 #include <sys/types.h>
 #include <array>  // std::array
 
-#include "field.h"      // Field
-#include "json_dom.h"   // Json_wrapper
-#include "json_path.h"  // Json_path
-#include "lex_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_table_map.h"
-#include "psi_memory_key.h"  // key_memory_JSON
 #include "sql/create_field.h"
 #include "sql/enum_query_type.h"
-
+#include "sql/json_dom.h"   // Json_wrapper
+#include "sql/json_path.h"  // Json_path
 #include "sql/mem_root_array.h"
-#include "sql_list.h"  // List
-#include "table.h"     // TABLE
+#include "sql/psi_memory_key.h"  // key_memory_JSON
+#include "sql/sql_const.h"       // Item_processor, enum_walk
+#include "sql/sql_list.h"        // List
+#include "sql/table.h"           // TABLE
 
+class Field;
 class Item;
 class String;
+class Table_function_json;
 class THD;
 
 /**
@@ -59,7 +59,8 @@ class Table_function {
   bool inited;
 
  public:
-  Table_function(THD *thd_arg) : thd(thd_arg), table(nullptr), inited(false) {}
+  explicit Table_function(THD *thd_arg)
+      : thd(thd_arg), table(nullptr), inited(false) {}
 
   virtual ~Table_function() {}
   /**
@@ -142,7 +143,7 @@ class Table_function {
       true  on error
       false on success
   */
-  virtual bool print(String *str, enum_query_type query_type) = 0;
+  virtual bool print(String *str, enum_query_type query_type) const = 0;
   /**
     Clean up table function
   */
@@ -151,13 +152,6 @@ class Table_function {
     table = nullptr;
     inited = false;
   }
-  /**
-    Retruns thread handler
-
-    @returns
-      thread handler
-  */
-  inline THD *get_thd() { return thd; }
 
   virtual bool walk(Item_processor processor, enum_walk walk, uchar *arg) = 0;
 
@@ -246,17 +240,17 @@ class Json_table_column : public Create_field {
   /// Type of ON EMPTY clause
   enum_jtc_on m_on_empty{enum_jtc_on::JTO_IMPLICIT};
   /// Default value string for ON EMPTY clause
-  LEX_STRING m_default_empty_str;
+  Item *m_default_empty_string{nullptr};
   /// Parsed JSON for default value of ON MISSING clause
   Json_wrapper m_default_empty_json;
   /// Default value string for ON ERROR clause
-  LEX_STRING m_default_error_str;
+  Item *m_default_error_string{nullptr};
   /// Parsed JSON string for ON ERROR clause
   Json_wrapper m_default_error_json;
   /// List of nested columns, valid only for NESTED PATH
-  List<Json_table_column> *m_nested_columns;
+  List<Json_table_column> *m_nested_columns{nullptr};
   /// Nested path
-  LEX_STRING m_path_str;
+  Item *m_path_string{nullptr};
   /// parsed nested path
   Json_path m_path_json;
   /// An element in table function's data source array
@@ -274,39 +268,33 @@ class Json_table_column : public Create_field {
   int m_field_idx{-1};
 
  public:
-  Json_table_column(enum_jt_column type)
-      : m_jtc_type(type),
-        m_jds_elt(nullptr),
-        m_child_jds_elt(nullptr),
-        m_next_nested(nullptr),
-        m_prev_nested(nullptr),
-        m_field_idx(-1) {}
-  Json_table_column(enum_jt_column col_type, const LEX_STRING &path,
-                    enum_jtc_on on_err, const LEX_STRING error_def,
-                    enum_jtc_on on_miss, const LEX_STRING &missing_def)
+  explicit Json_table_column(enum_jt_column type) : m_jtc_type(type) {}
+  Json_table_column(enum_jt_column col_type, Item *path, enum_jtc_on on_err,
+                    Item *error_default, enum_jtc_on on_miss,
+                    Item *missing_default)
       : m_jtc_type(col_type),
         m_on_error(on_err),
         m_on_empty(on_miss),
-        m_default_empty_str(missing_def),
-        m_default_error_str(error_def),
-        m_path_str(path) {}
-  Json_table_column(LEX_STRING path, List<Json_table_column> *cols)
+        m_default_empty_string(missing_default),
+        m_default_error_string(error_default),
+        m_path_string(path) {}
+  Json_table_column(Item *path, List<Json_table_column> *cols)
       : m_jtc_type(enum_jt_column::JTC_NESTED_PATH),
         m_nested_columns(cols),
-        m_path_str(path) {}
+        m_path_string(path) {}
   void cleanup();
 
   /**
     Process JSON_TABLE's column
 
-    @param fld        field to save data to, if applicable, NULL otherwise
+    @param table_function the JSON table function
     @param[out] skip  whether current NESTED PATH column should be
                       completely skipped
     @returns
       true  on error
       false on success
   */
-  bool fill_column(Field *fld, jt_skip_reason *skip);
+  bool fill_column(Table_function_json *table_function, jt_skip_reason *skip);
 };
 
 #define MAX_NESTED_PATH 16
@@ -369,7 +357,7 @@ class Table_function_json final : public Table_function {
       true  on error
       false on success
   */
-  bool print(String *str, enum_query_type query_type) override;
+  bool print(String *str, enum_query_type query_type) const override;
 
   bool walk(Item_processor processor, enum_walk walk, uchar *arg) override;
 
@@ -401,19 +389,6 @@ class Table_function_json final : public Table_function {
     @param [out] last  last column which belongs to the given NESTED PATH
   */
   void set_subtree_to_null(Json_table_column *root, Json_table_column **last);
-  /**
-    Helper function to print single NESTED PATH column
-
-    @param col        column to print
-    @param str        string to print to
-    @param query_type type of the query
-
-    @returns
-      true  on error
-      false on success
-  */
-  bool print_nested_path(Json_table_column *col, String *str,
-                         enum_query_type query_type);
 
   /**
     Return list of fields to create result table from

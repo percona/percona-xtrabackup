@@ -36,7 +36,7 @@
 
 TlsLibraryContext::TlsLibraryContext() {
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
-  OPENSSL_init_ssl(0, NULL);
+  OPENSSL_init_ssl(0, nullptr);
 #else
   SSL_library_init();
 #endif
@@ -79,7 +79,7 @@ void TlsContext::curves_list(const std::string &curves) {
 }
 
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
-static constexpr int o11x_version(TlsVersion version) {
+static int o11x_version(TlsVersion version) {
   switch (version) {
     case TlsVersion::AUTO:
       return 0;

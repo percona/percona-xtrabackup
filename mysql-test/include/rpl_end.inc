@@ -34,6 +34,10 @@
 #     channels are deleted in multi-source. set it to 1, if channel deletion
 #     is not required.
 #
+#  $rpl_skip_stop_slave
+#     If set to '1' the slaves are not stopped. Useful if the slaves are stopped
+#     in the test case before sourcing this file.
+#
 #   $rpl_only_running_threads
 #     If one or both of the IO and SQL threads is stopped, sync and
 #     stop only the threads that are running.  See
@@ -145,7 +149,10 @@ if ($rpl_group_replication)
 
 if (!$rpl_group_replication)
 {
-  --source include/rpl_stop_slaves.inc
+  if (!$rpl_skip_stop_slave)
+  {
+    --source include/rpl_stop_slaves.inc
+  }
 }
 
 # Restore the server state by deleting all channels
@@ -206,13 +213,22 @@ while ($_rpl_server)
     --enable_query_log
   }
 
-  # Drop created privileged database
+  # Restore state for PRIVILEGE_CHECKS_USER
   if ($rpl_privilege_checks_user)
   {
     --disable_query_log
     SET @@sql_log_bin = 0;
+    # Drop created privileged database
     DROP DATABASE rpl_priv;
     SET @@sql_log_bin = 1;
+    CHANGE MASTER TO PRIVILEGE_CHECKS_USER=NULL;
+    --enable_query_log
+  }
+  # Restore state for REQUIRE_ROW_FORMAT
+  if ($rpl_require_row_format)
+  {
+    --disable_query_log
+    CHANGE MASTER TO REQUIRE_ROW_FORMAT=0;
     --enable_query_log
   }
 

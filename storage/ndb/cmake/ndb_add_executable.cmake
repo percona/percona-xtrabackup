@@ -1,4 +1,4 @@
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -46,6 +46,7 @@ FUNCTION(NDB_ADD_EXECUTABLE target)
   ENDFOREACH(arg)
 
   MYSQL_ADD_EXECUTABLE(${PASSTHROUGH_ARGS})
+  SET_TARGET_PROPERTIES(${target} PROPERTIES ENABLE_EXPORTS TRUE)
 
   IF(OPT_NDBTEST)
     TARGET_LINK_LIBRARIES(${target} ndbNDBT ndbclient_so)
@@ -61,4 +62,5 @@ FUNCTION(NDB_ADD_EXECUTABLE target)
 
   SET_PROPERTY(TARGET ${target}
     PROPERTY INSTALL_RPATH "\$ORIGIN/../${INSTALL_LIBDIR}")
+  ADD_INSTALL_RPATH_FOR_OPENSSL(${target})
 ENDFUNCTION()

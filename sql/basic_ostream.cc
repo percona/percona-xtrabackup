@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@ bool IO_CACHE_ostream::open(
                               MYF(MY_WME))) < 0)
     return true;
 
-  if (init_io_cache(&m_io_cache, file, IO_SIZE, WRITE_CACHE, 0, 0, flags)) {
+  if (init_io_cache(&m_io_cache, file, IO_SIZE, WRITE_CACHE, 0, false, flags)) {
     mysql_file_close(file, MYF(0));
     return true;
   }
@@ -86,4 +86,26 @@ bool IO_CACHE_ostream::flush() {
 bool IO_CACHE_ostream::sync() {
   DBUG_ASSERT(my_b_inited(&m_io_cache));
   return mysql_file_sync(m_io_cache.file, MYF(MY_WME)) != 0;
+}
+
+Compressed_ostream::Compressed_ostream() : m_compressor(nullptr) {}
+
+Compressed_ostream::~Compressed_ostream() {}
+
+binary_log::transaction::compression::Compressor *
+Compressed_ostream::get_compressor() {
+  return m_compressor;
+}
+
+void Compressed_ostream::set_compressor(
+    binary_log::transaction::compression::Compressor *c) {
+  m_compressor = c;
+}
+
+bool Compressed_ostream::write(const unsigned char *buffer, my_off_t length) {
+  if (m_compressor == nullptr) return true;
+  auto res{false};
+  auto left{0};
+  std::tie(left, res) = m_compressor->compress(buffer, length);
+  return (res || left > 0);
 }

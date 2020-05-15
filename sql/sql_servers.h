@@ -1,7 +1,7 @@
 #ifndef SQL_SERVERS_INCLUDED
 #define SQL_SERVERS_INCLUDED
 
-/* Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,23 +41,23 @@ class FOREIGN_SERVER {
   char *db, *scheme, *username, *password, *socket, *owner, *host, *sport;
 
   FOREIGN_SERVER()
-      : server_name(NULL),
+      : server_name(nullptr),
         port(-1),
         server_name_length(0),
-        db(NULL),
-        scheme(NULL),
-        username(NULL),
-        password(NULL),
-        socket(NULL),
-        owner(NULL),
-        host(NULL),
-        sport(NULL) {}
+        db(nullptr),
+        scheme(nullptr),
+        username(nullptr),
+        password(nullptr),
+        socket(nullptr),
+        owner(nullptr),
+        host(nullptr),
+        sport(nullptr) {}
 };
 
 /* cache handlers */
 bool servers_init(bool dont_read_server_table);
 bool servers_reload(THD *thd);
-void servers_free(bool end = 0);
+void servers_free(bool end = false);
 
 /* lookup functions */
 FOREIGN_SERVER *get_server_by_name(MEM_ROOT *mem, const char *server_name,
@@ -148,7 +148,7 @@ class Sql_cmd_common_server : public Sql_cmd {
  protected:
   TABLE *table;
 
-  Sql_cmd_common_server() : table(NULL) {}
+  Sql_cmd_common_server() : table(nullptr) {}
 
   virtual ~Sql_cmd_common_server() {}
 

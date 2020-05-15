@@ -21,7 +21,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #
 
-INCLUDE(configure.cmake)
+ADD_WSHADOW_WARNING()
 
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/libbinlogevents/include)
 

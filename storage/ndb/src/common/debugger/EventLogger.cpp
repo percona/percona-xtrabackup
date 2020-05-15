@@ -42,10 +42,6 @@
 //
 // PUBLIC
 //
-EventLoggerBase::~EventLoggerBase()
-{
-  
-}
 
 #define QQQQ char *m_text, size_t m_text_len, const Uint32* theData, Uint32 len
 
@@ -57,8 +53,6 @@ void getTextConnected(QQQQ) {
 void getTextConnectedApiVersion(QQQQ) {
   char tmp[100];
   Uint32 mysql_version = theData[3];
-  if (theData[2] < NDBD_SPLIT_VERSION)
-  mysql_version = 0;
   BaseString::snprintf(m_text, m_text_len, 
 		       "Node %u: API %s",
 		       theData[1],
@@ -94,8 +88,6 @@ void getTextNDBStartStarted(QQQQ) {
 
   char tmp[100];
   Uint32 mysql_version = theData[2];
-  if (theData[1] < NDBD_SPLIT_VERSION)
-    mysql_version = 0;
   BaseString::snprintf(m_text, m_text_len, 
 		       "Start initiated (%s)", 
 		       ndbGetVersionString(theData[1], mysql_version, 0,
@@ -169,8 +161,6 @@ void getTextNDBStartCompleted(QQQQ) {
 
   char tmp[100];
   Uint32 mysql_version = theData[2];
-  if (theData[1] < NDBD_SPLIT_VERSION)
-    mysql_version = 0;
   BaseString::snprintf(m_text, m_text_len, 
 		       "Started (%s)", 
 		       ndbGetVersionString(theData[1], mysql_version, 0,
@@ -940,14 +930,27 @@ void getTextBackupFailedToStart(QQQQ) {
 		       refToNode(theData[1]), theData[2]);
 }
 void getTextBackupCompleted(QQQQ) {
+  // Build 64-bit data bytes and records by assembling 32-bit signal parts
+  const Uint64 bytes_hi = theData[11];
+  const Uint64 records_hi = theData[12];
+  const Uint64 data_bytes = (bytes_hi << 32) | theData[5];
+  const Uint64 data_records = (records_hi << 32) | theData[6];
+
+  // Build 64-bit log bytes and records by assembling 32-bit signal parts
+  const Uint64 bytes_hi_log = theData[13];
+  const Uint64 records_hi_log = theData[14];
+  const Uint64 log_bytes = theData[7] | (bytes_hi_log << 32);
+  const Uint64 log_records = theData[8] | (records_hi_log << 32);
+
   BaseString::snprintf(m_text, m_text_len, 
 		       "Backup %u started from node %u completed." 
 		       " StartGCP: %u StopGCP: %u"
-		       " #Records: %u #LogRecords: %u"
-		       " Data: %u bytes Log: %u bytes",
-		       theData[2], refToNode(theData[1]),
-		       theData[3], theData[4], theData[6], theData[8],
-		       theData[5], theData[7]);
+		       " #Records: %llu #LogRecords: %llu"
+		       " Data: %llu bytes Log: %llu bytes",
+                       theData[2], refToNode(theData[1]),
+                       theData[3], theData[4],
+                       data_records, log_records,
+                       data_bytes, log_bytes);
 }
 void getTextBackupStatus(QQQQ) {
   if (theData[1])

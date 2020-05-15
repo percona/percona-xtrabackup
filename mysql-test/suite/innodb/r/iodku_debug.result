@@ -6,9 +6,9 @@ f2 int, f3 int, unique key(f2))engine=innodb;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `f1` int(11) NOT NULL,
-  `f2` int(11) DEFAULT NULL,
-  `f3` int(11) DEFAULT NULL,
+  `f1` int NOT NULL,
+  `f2` int DEFAULT NULL,
+  `f3` int DEFAULT NULL,
   PRIMARY KEY (`f1`),
   UNIQUE KEY `f2` (`f2`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -49,10 +49,10 @@ INSERT INTO t1 VALUES(2, 300);;
 SET DEBUG_SYNC='now WAIT_FOR after_insert';
 START TRANSACTION;
 INSERT INTO t1 VALUES(1, 300);
-ERROR 23000: Duplicate entry '300' for key 'b'
+ERROR 23000: Duplicate entry '300' for key 't1.b'
 SET GLOBAL innodb_purge_run_now=ON;
 SET DEBUG_SYNC='now SIGNAL rollback';
-ERROR 23000: Duplicate entry '300' for key 'b'
+ERROR 23000: Duplicate entry '300' for key 't1.b'
 COMMIT;
 DROP TABLE t1;
 SET GLOBAL innodb_purge_stop_now = ON;
@@ -68,7 +68,7 @@ SELECT * FROM t1 WHERE a = 1 LOCK IN SHARE MODE;
 ERROR HY000: Lock wait timeout exceeded; try restarting transaction
 SET GLOBAL innodb_purge_run_now=ON;
 SET DEBUG_SYNC='now SIGNAL rollback';
-ERROR 23000: Duplicate entry '10' for key 'b'
+ERROR 23000: Duplicate entry '10' for key 't1.b'
 SELECT * FROM t1;
 a	b
 2	10

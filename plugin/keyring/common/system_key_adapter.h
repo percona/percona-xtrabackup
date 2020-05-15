@@ -14,8 +14,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#include "i_keyring_key.h"
 #include <my_dbug.h>
+#include "i_keyring_key.h"
 
 namespace keyring {
 
@@ -39,10 +39,16 @@ class System_key_adapter : public IKey {
     return keyring_key->get_key_signature();
   }
 
-  virtual std::string *get_key_type() {
+  virtual Key_type get_key_type() const {
     DBUG_ASSERT(keyring_key != nullptr);
     return keyring_key->get_key_type();
   }
+
+  virtual std::string *get_key_type_as_string() {
+    DBUG_ASSERT(keyring_key != nullptr);
+    return keyring_key->get_key_type_as_string();
+  }
+
   virtual std::string *get_key_id() {
     DBUG_ASSERT(keyring_key != nullptr);
     return keyring_key->get_key_id();

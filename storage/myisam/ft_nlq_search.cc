@@ -119,7 +119,7 @@ static int walk_and_match(void *v_word, uint32 count, void *v_aio) {
   while (!r && gweight) {
     if (keylen && ha_compare_text(aio->charset, info->lastkey + 1,
                                   info->lastkey_length - extra - 1, keybuff + 1,
-                                  keylen - 1, 0))
+                                  keylen - 1, false))
       break;
 
     if (subkeys < 0) {
@@ -202,7 +202,7 @@ static int walk_and_push(void *v_from, uint32, void *v_best) {
   QUEUE *best = static_cast<QUEUE *>(v_best);
   DBUG_TRACE;
   from->doc.weight += from->tmp_weight * from->word_ptr->weight;
-  set_if_smaller(best->elements, ft_query_expansion_limit - 1);
+  best->elements = std::min(best->elements, uint(ft_query_expansion_limit - 1));
   queue_insert(best, (uchar *)&from->doc);
   return 0;
 }
@@ -219,15 +219,15 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, uchar *query,
   TREE wtree;
   ALL_IN_ONE aio;
   FT_DOC *dptr;
-  st_ft_info_nlq *dlist = NULL;
+  st_ft_info_nlq *dlist = nullptr;
   my_off_t saved_lastpos = info->lastpos;
   struct st_mysql_ftparser *parser;
   MYSQL_FTPARSER_PARAM *ftparser_param;
   DBUG_TRACE;
 
   /* black magic ON */
-  if ((int)(keynr = _mi_check_index(info, keynr)) < 0) return NULL;
-  if (_mi_readinfo(info, F_RDLCK, 1)) return NULL;
+  if ((int)(keynr = _mi_check_index(info, keynr)) < 0) return nullptr;
+  if (_mi_readinfo(info, F_RDLCK, 1)) return nullptr;
   /* black magic OFF */
 
   aio.info = info;
@@ -239,8 +239,8 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, uchar *query,
 
   memset(&wtree, 0, sizeof(wtree));
 
-  init_tree(&aio.dtree, 0, 0, sizeof(FT_SUPERDOC), &FT_SUPERDOC_cmp, 0, NULL,
-            NULL);
+  init_tree(&aio.dtree, 0, sizeof(FT_SUPERDOC), &FT_SUPERDOC_cmp, false,
+            nullptr, nullptr);
 
   ft_parse_init(&wtree, aio.charset);
   ftparser_param->flags = 0;
@@ -252,8 +252,8 @@ FT_INFO *ft_init_nlq_search(MI_INFO *info, uint keynr, uchar *query,
 
   if (flags & FT_EXPAND && ft_query_expansion_limit) {
     QUEUE best;
-    init_queue(&best, key_memory_QUEUE, ft_query_expansion_limit, 0, 0,
-               &FT_DOC_cmp, 0);
+    init_queue(&best, key_memory_QUEUE, ft_query_expansion_limit, 0, false,
+               &FT_DOC_cmp, nullptr);
     tree_walk(&aio.dtree, &walk_and_push, &best, left_root_right);
     while (best.elements) {
       my_off_t docid = ((FT_DOC *)queue_remove(&best, 0))->dpos;

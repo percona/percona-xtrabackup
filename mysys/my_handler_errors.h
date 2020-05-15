@@ -88,7 +88,7 @@ static const char *handler_error_messages[] = {
     "The event was corrupt, leading to illegal data being read",
     "The table is of a new format not supported by this version",
     "The event could not be processed no other hanlder error happened",
-    "Got a fatal error during initialzaction of handler",
+    "Got a fatal error during initialization of handler",
     "File too short; Expected more data in file",
     "Read page with wrong checksum",
     "Too many active concurrent transactions",
@@ -121,7 +121,9 @@ static const char *handler_error_messages[] = {
     "No more room in disk",
     "No session temporary tablespace available",
     "Invalid table name",
-    "Path is too long for the OS"};
+    "Path is too long for the OS",
+    "Histogram sampling initialization failed",
+};
 
 extern void my_handler_error_register(void);
 extern void my_handler_error_unregister(void);

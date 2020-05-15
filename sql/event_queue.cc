@@ -214,7 +214,7 @@ void Event_queue::update_event(THD *thd, LEX_CSTRING dbname, LEX_CSTRING name,
       object from the cache.
     */
     delete new_element;
-    new_element = NULL;
+    new_element = nullptr;
   } else
     new_element->compute_next_execution_time(thd);
 
@@ -397,7 +397,7 @@ void Event_queue::recalculate_activation_times(THD *thd) {
     events are at the end.
   */
   dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
-  Disable_gtid_state_update_guard disabler(thd);
+  Implicit_substatement_state_guard substatement_guard(thd);
   std::vector<std::unique_ptr<Event_queue_element>> events_to_drop;
   for (size_t i = queue.size(); i > 0; i--) {
     Event_queue_element *element = queue[i - 1];
@@ -553,7 +553,7 @@ bool Event_queue::get_top_for_execution_if_time(
       mysql_audit_release(thd);
 
       /* Wait on condition until signaled. Release LOCK_queue while waiting. */
-      cond_wait(thd, NULL, &stage_waiting_on_empty_queue, __func__, __FILE__,
+      cond_wait(thd, nullptr, &stage_waiting_on_empty_queue, __func__, __FILE__,
                 __LINE__);
 
       continue;
@@ -710,8 +710,8 @@ void Event_queue::cond_wait(THD *thd, struct timespec *abstime,
   mutex_queue_data_locked = false;
   mutex_last_unlocked_in_func = src_func;
 
-  thd->enter_cond(&COND_queue_state, &LOCK_event_queue, stage, NULL, src_func,
-                  src_file, src_line);
+  thd->enter_cond(&COND_queue_state, &LOCK_event_queue, stage, nullptr,
+                  src_func, src_file, src_line);
 
   if (!thd->killed) {
     if (!abstime)
@@ -730,7 +730,7 @@ void Event_queue::cond_wait(THD *thd, struct timespec *abstime,
     Not the best thing to do but we need to obey cond_wait()
   */
   unlock_data(src_func, src_line);
-  thd->exit_cond(NULL, src_func, src_file, src_line);
+  thd->exit_cond(nullptr, src_func, src_file, src_line);
   lock_data(src_func, src_line);
 }
 

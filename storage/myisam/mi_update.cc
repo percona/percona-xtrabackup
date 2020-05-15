@@ -39,7 +39,7 @@ int mi_update(MI_INFO *info, const uchar *oldrec, uchar *newrec) {
   my_off_t pos;
   uint i;
   uchar old_key[MI_MAX_KEY_BUFF], *new_key;
-  bool auto_key_changed = 0;
+  bool auto_key_changed = false;
   ulonglong changed;
   MYISAM_SHARE *share = info->s;
   ha_checksum old_checksum = 0;
@@ -74,7 +74,7 @@ int mi_update(MI_INFO *info, const uchar *oldrec, uchar *newrec) {
   key_changed = 0;
   for (i = 0; i < share->state.header.uniques; i++) {
     MI_UNIQUEDEF *def = share->uniqueinfo + i;
-    if (mi_unique_comp(def, newrec, oldrec, 1) &&
+    if (mi_unique_comp(def, newrec, oldrec, true) &&
         mi_check_unique(info, def, newrec, mi_unique_hash(def, newrec),
                         info->lastpos)) {
       save_errno = my_errno();
@@ -119,7 +119,7 @@ int mi_update(MI_INFO *info, const uchar *oldrec, uchar *newrec) {
             goto err;
           if (share->keyinfo[i].ck_insert(info, i, new_key, new_length))
             goto err;
-          if (share->base.auto_key == i + 1) auto_key_changed = 1;
+          if (share->base.auto_key == i + 1) auto_key_changed = true;
         }
       }
     }
@@ -155,8 +155,8 @@ int mi_update(MI_INFO *info, const uchar *oldrec, uchar *newrec) {
       key_changed |= HA_STATE_CHANGED; /* Must update index file */
   }
   if (auto_key_changed)
-    set_if_bigger(info->s->state.auto_increment,
-                  retrieve_auto_increment(info, newrec));
+    info->s->state.auto_increment = std::max(
+        info->s->state.auto_increment, retrieve_auto_increment(info, newrec));
   if (share->calc_checksum)
     info->state->checksum += (info->checksum - old_checksum);
 

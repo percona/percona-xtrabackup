@@ -42,6 +42,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <ha_prototypes.h>
 #include <my_rapidjson_size_t.h>
 #include <my_sys.h>
+#include <my_systime.h>
 #include <mysql.h>
 #include <os0thread-create.h>
 #include <rapidjson/document.h>
@@ -57,6 +58,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "keyring_plugins.h"
 #include "mysqld.h"
 #include "os0event.h"
+#include "rpl_log_encryption.h"
 #include "space_map.h"
 #include "typelib.h"
 #include "xb0xb.h"
@@ -573,7 +575,7 @@ bool get_mysql_vars(MYSQL *connection) {
 
   if (!check_if_param_set("innodb_directories") && innodb_directories_var &&
       *innodb_directories_var) {
-    innobase_directories =
+    srv_innodb_directories =
         my_strdup(PSI_NOT_INSTRUMENTED, innodb_directories_var, MYF(MY_FAE));
   }
 
@@ -635,9 +637,9 @@ bool get_mysql_vars(MYSQL *connection) {
     }
   }
 
-  memset(server_uuid, 0, ENCRYPTION_SERVER_UUID_LEN + 1);
+  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
   if (server_uuid_var != NULL) {
-    strncpy(server_uuid, server_uuid_var, ENCRYPTION_SERVER_UUID_LEN);
+    strncpy(server_uuid, server_uuid_var, Encryption::SERVER_UUID_LEN);
   }
 
   if (innodb_track_changed_pages_var != nullptr &&
@@ -2077,7 +2079,7 @@ bool write_backup_config_file() {
   if (server_uuid[0] != 0) {
     s << "server_uuid=" << server_uuid << "\n";
   }
-  s << "master_key_id=" << Encryption::s_master_key_id << "\n";
+  s << "master_key_id=" << Encryption::get_master_key_id() << "\n";
 
   return backup_file_print("backup-my.cnf", s.str().c_str(), s.tellp());
 }

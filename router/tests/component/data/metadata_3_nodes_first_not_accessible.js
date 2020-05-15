@@ -9,6 +9,7 @@ var group_replication_membership_online =
   gr_memberships.nodes(gr_node_host, mysqld.global.gr_nodes);
 
 var options = {
+  metadata_schema_version: [1, 0, 2],
   group_replication_membership: group_replication_membership_online,
 };
 
@@ -21,7 +22,11 @@ options.group_replication_primary_member = options.group_replication_membership[
 
 // prepare the responses for common statements
 var common_responses = common_stmts.prepare_statement_responses([
+  "router_set_session_options",
+  "router_set_gr_consistency_level",
   "select_port",
+  "router_start_transaction",
+  "router_commit",
   "router_select_schema_version",
   "router_select_metadata",
 ], options);

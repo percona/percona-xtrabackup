@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,16 +28,17 @@
 #include <iostream>
 
 #include "my_dbug.h"
+#include "sql/auth/auth_common.h"  // check_readonly()
 #include "sql/dd/cache/dictionary_client.h"
 #include "sql/dd/dd.h"
 #include "sql/dd/dd_table.h"
 #include "sql/dd/properties.h"
 #include "sql/dd/types/schema.h"
 #include "sql/dd/types/table.h"
-#include "sql/mdl.h"            // MDL_*
 #include "sql/query_options.h"  // OPTION_AUTOCOMMIT
 #include "sql/sql_class.h"      // THD
-#include "sql/sql_trigger.h"    // remove_all_triggers_from_perfschema
+#include "sql/sql_table.h"
+#include "sql/sql_trigger.h"  // remove_all_triggers_from_perfschema
 #include "sql/system_variables.h"
 #include "sql/transaction.h"            // trans_*
 #include "storage/ndb/plugin/ndb_dd.h"  // ndb_dd_fs_name_case
@@ -48,11 +49,15 @@
 #include "storage/ndb/plugin/ndb_dd_upgrade_table.h"
 #include "storage/ndb/plugin/ndb_fk_util.h"
 #include "storage/ndb/plugin/ndb_log.h"
+#include "storage/ndb/plugin/ndb_schema_dist_table.h"
 #include "storage/ndb/plugin/ndb_tdc.h"
 #include "storage/ndb/plugin/ndb_thd.h"
 
 Ndb_dd_client::Ndb_dd_client(THD *thd)
-    : m_thd(thd), m_client(thd->dd_client()) {
+    : m_thd(thd),
+      m_client(thd->dd_client()),
+      m_save_mdl_locks(thd->mdl_context.mdl_savepoint()) {
+  DBUG_TRACE;
   disable_autocommit();
 
   // Create dictionary client auto releaser, stored as
@@ -63,9 +68,7 @@ Ndb_dd_client::Ndb_dd_client(THD *thd)
 }
 
 Ndb_dd_client::~Ndb_dd_client() {
-  // Automatically release acquired MDL locks
-  mdl_locks_release();
-
+  DBUG_TRACE;
   // Automatically restore the option_bits in THD if they have
   // been modified
   if (m_save_option_bits) m_thd->variables.option_bits = m_save_option_bits;
@@ -74,6 +77,9 @@ Ndb_dd_client::~Ndb_dd_client() {
     // Automatically rollback unless commit has been called
     if (!m_comitted) rollback();
   }
+
+  // Release MDL locks
+  mdl_locks_release();
 
   // Free the dictionary client auto releaser
   dd::cache::Dictionary_client::Auto_releaser *ar =
@@ -106,40 +112,52 @@ bool Ndb_dd_client::mdl_lock_table(const char *schema_name,
   return true;
 }
 
-/**
-  Acquire MDL locks for the Schema.
-
-  @param schema_name          Schema name.
-  @param exclusive_lock       If true, acquire exclusive locks on the Schema
-                              for updating it. If false, acquire the default
-                              intention_exclusive lock.
-
-  @return true        On success.
-  @return false       On failure
-*/
-bool Ndb_dd_client::mdl_lock_schema(const char *schema_name,
-                                    bool exclusive_lock) {
+bool Ndb_dd_client::mdl_lock_schema_exclusive(const char *schema_name,
+                                              bool custom_lock_wait,
+                                              ulong lock_wait_timeout) {
   MDL_request_list mdl_requests;
   MDL_request schema_request;
   MDL_request backup_lock_request;
   MDL_request grl_request;
 
-  // By default acquire MDL_INTENTION_EXCLUSIVE lock on Schema
-  enum_mdl_type schema_lock_type = MDL_INTENTION_EXCLUSIVE;
-
-  if (exclusive_lock) {
-    // exclusive lock has been requested
-    schema_lock_type = MDL_EXCLUSIVE;
-    // Also acquire the backup and global locks
-    MDL_REQUEST_INIT(&backup_lock_request, MDL_key::BACKUP_LOCK, "", "",
-                     MDL_INTENTION_EXCLUSIVE, MDL_EXPLICIT);
-    MDL_REQUEST_INIT(&grl_request, MDL_key::GLOBAL, "", "",
-                     MDL_INTENTION_EXCLUSIVE, MDL_EXPLICIT);
-    mdl_requests.push_front(&backup_lock_request);
-    mdl_requests.push_front(&grl_request);
+  // If protection against GRL can't be acquired, err out early.
+  if (m_thd->global_read_lock.can_acquire_protection()) {
+    return false;
   }
+
   MDL_REQUEST_INIT(&schema_request, MDL_key::SCHEMA, schema_name, "",
-                   schema_lock_type, MDL_EXPLICIT);
+                   MDL_EXCLUSIVE, MDL_EXPLICIT);
+  MDL_REQUEST_INIT(&backup_lock_request, MDL_key::BACKUP_LOCK, "", "",
+                   MDL_INTENTION_EXCLUSIVE, MDL_EXPLICIT);
+  MDL_REQUEST_INIT(&grl_request, MDL_key::GLOBAL, "", "",
+                   MDL_INTENTION_EXCLUSIVE, MDL_EXPLICIT);
+
+  mdl_requests.push_front(&schema_request);
+  mdl_requests.push_front(&backup_lock_request);
+  mdl_requests.push_front(&grl_request);
+
+  if (!custom_lock_wait) {
+    lock_wait_timeout = m_thd->variables.lock_wait_timeout;
+  }
+
+  if (m_thd->mdl_context.acquire_locks(&mdl_requests, lock_wait_timeout)) {
+    return false;
+  }
+
+  // Remember tickets of the acquired mdl locks
+  m_acquired_mdl_tickets.push_back(schema_request.ticket);
+  m_acquired_mdl_tickets.push_back(backup_lock_request.ticket);
+  m_acquired_mdl_tickets.push_back(grl_request.ticket);
+
+  return true;
+}
+
+bool Ndb_dd_client::mdl_lock_schema(const char *schema_name) {
+  MDL_request_list mdl_requests;
+  MDL_request schema_request;
+
+  MDL_REQUEST_INIT(&schema_request, MDL_key::SCHEMA, schema_name, "",
+                   MDL_INTENTION_EXCLUSIVE, MDL_EXPLICIT);
   mdl_requests.push_front(&schema_request);
 
   if (m_thd->mdl_context.acquire_locks(&mdl_requests,
@@ -147,12 +165,14 @@ bool Ndb_dd_client::mdl_lock_schema(const char *schema_name,
     return false;
   }
 
+  /*
+    Now when we have protection against concurrent change of read_only
+    option we can safely re-check its value.
+  */
+  if (check_readonly(m_thd, true)) return false;
+
   // Remember ticket(s) of the acquired mdl lock
   m_acquired_mdl_tickets.push_back(schema_request.ticket);
-  if (exclusive_lock) {
-    m_acquired_mdl_tickets.push_back(backup_lock_request.ticket);
-    m_acquired_mdl_tickets.push_back(grl_request.ticket);
-  }
 
   return true;
 }
@@ -188,6 +208,12 @@ bool Ndb_dd_client::mdl_lock_logfile_group_exclusive(
   if (m_thd->mdl_context.acquire_locks(&mdl_requests, lock_wait_timeout)) {
     return false;
   }
+
+  /*
+    Now when we have protection against concurrent change of read_only
+    option we can safely re-check its value.
+  */
+  if (check_readonly(m_thd, true)) return false;
 
   // Remember tickets of the acquired mdl locks
   m_acquired_mdl_tickets.push_back(logfile_group_request.ticket);
@@ -251,6 +277,12 @@ bool Ndb_dd_client::mdl_lock_tablespace_exclusive(const char *tablespace_name,
   if (m_thd->mdl_context.acquire_locks(&mdl_requests, lock_wait_timeout)) {
     return false;
   }
+
+  /*
+    Now when we have protection against concurrent change of read_only
+    option we can safely re-check its value.
+  */
+  if (check_readonly(m_thd, true)) return false;
 
   // Remember tickets of the acquired mdl locks
   m_acquired_mdl_tickets.push_back(tablespace_request.ticket);
@@ -318,6 +350,12 @@ bool Ndb_dd_client::mdl_locks_acquire_exclusive(const char *schema_name,
     return false;
   }
 
+  /*
+    Now when we have protection against concurrent change of read_only
+    option we can safely re-check its value.
+  */
+  if (check_readonly(m_thd, true)) return false;
+
   // Remember tickets of the acquired mdl locks
   m_acquired_mdl_tickets.push_back(schema_request.ticket);
   m_acquired_mdl_tickets.push_back(mdl_request.ticket);
@@ -328,9 +366,12 @@ bool Ndb_dd_client::mdl_locks_acquire_exclusive(const char *schema_name,
 }
 
 void Ndb_dd_client::mdl_locks_release() {
+  // Release MDL locks acquired in EXPLICIT scope
   for (MDL_ticket *ticket : m_acquired_mdl_tickets) {
     m_thd->mdl_context.release_lock(ticket);
   }
+  // Release new MDL locks acquired in TRANSACTIONAL and STATEMENT scope
+  m_thd->mdl_context.rollback_to_savepoint(m_save_mdl_locks);
 }
 
 void Ndb_dd_client::disable_autocommit() {
@@ -408,6 +449,17 @@ bool Ndb_dd_client::rename_table(
     return false;
   }
 
+  // Collect and lock all the tables referencing this table,
+  // referenced by this table and the foreign key names.
+  // Note : This re-attempts to lock the referenced tables that were already
+  //        locked by fetch_referenced_tables_to_invalidate(). This will be
+  //        fixed when Bug#30500825 gets fixed.
+  if (collect_and_lock_fk_tables_for_rename_table(
+          m_thd, old_schema_name, old_table_name, to_table_def, new_schema_name,
+          new_table_name, ndbcluster_hton, nullptr)) {
+    return false;
+  }
+
   // Set schema id and table name
   to_table_def->set_schema_id(new_schema->id());
   to_table_def->set_name(new_table_name);
@@ -423,10 +475,29 @@ bool Ndb_dd_client::rename_table(
     return false;
   }
 
+  // Adjust parent table for self-referencing foreign keys.
+  dd::Table::Foreign_key_collection *foreign_keys =
+      to_table_def->foreign_keys();
+  for (dd::Foreign_key *fk : *foreign_keys) {
+    if (strcmp(fk->referenced_table_schema_name().c_str(), old_schema_name) ==
+            0 &&
+        strcmp(fk->referenced_table_name().c_str(), old_table_name) == 0) {
+      fk->set_referenced_table_schema_name(new_schema_name);
+      fk->set_referenced_table_name(new_table_name);
+    }
+  }
+
   // Save table in DD
   if (m_client->update(to_table_def)) {
     // Failed to save, unexpected
     DBUG_ASSERT(false);
+    return false;
+  }
+
+  // Update the foreign key information of tables referencing this table in DD
+  if (adjust_fks_for_rename_table(m_thd, old_schema_name, old_table_name,
+                                  new_schema_name, new_table_name,
+                                  ndbcluster_hton)) {
     return false;
   }
 
@@ -471,6 +542,23 @@ bool Ndb_dd_client::remove_table(const char *schema_name,
   }
 
   return true;
+}
+
+bool Ndb_dd_client::deserialize_table(const dd::sdi_t &sdi,
+                                      dd::Table *table_def) {
+  if (ndb_dd_sdi_deserialize(m_thd, sdi, table_def)) {
+    return false;
+  }
+  return true;
+}
+
+bool Ndb_dd_client::store_table(dd::Table *install_table) const {
+  DBUG_TRACE;
+
+  if (!m_client->store(install_table)) {
+    return true;  // OK
+  }
+  return false;
 }
 
 bool Ndb_dd_client::store_table(dd::Table *install_table, int ndb_table_id) {
@@ -691,7 +779,7 @@ bool Ndb_dd_client::migrate_table(const char *schema_name,
   }
 
   const bool migrate_result = dd::ndb_upgrade::migrate_table_to_dd(
-      m_thd, schema_name, table_name, frm_data, unpacked_len, false);
+      m_thd, this, schema_name, table_name, frm_data, unpacked_len);
 
   return migrate_result;
 }
@@ -779,7 +867,10 @@ bool Ndb_dd_client::fetch_all_schemas(
   }
 
   for (const dd::Schema *schema : schemas_list) {
-    schemas.insert(std::make_pair(schema->name().c_str(), schema));
+    // Convert the schema name to lower case on platforms that have
+    // lower_case_table_names set to 2
+    const std::string schema_name = ndb_dd_fs_name_case(schema->name());
+    schemas.insert(std::make_pair(schema_name.c_str(), schema));
   }
   return true;
 }
@@ -793,7 +884,10 @@ bool Ndb_dd_client::fetch_schema_names(std::vector<std::string> *names) {
   }
 
   for (const dd::Schema *schema : schemas) {
-    names->push_back(schema->name().c_str());
+    // Convert the schema name to lower case on platforms that have
+    // lower_case_table_names set to 2
+    const std::string schema_name = ndb_dd_fs_name_case(schema->name());
+    names->push_back(schema_name.c_str());
   }
   return true;
 }
@@ -949,6 +1043,15 @@ bool Ndb_dd_client::is_local_table(const char *schema_name,
     return false;
   }
   local_table = table->engine() != "ndbcluster";
+  return true;
+}
+
+bool Ndb_dd_client::get_schema(const char *schema_name,
+                               const dd::Schema **schema_def) const {
+  if (m_client->acquire(schema_name, schema_def)) {
+    // Error is reported by the dictionary subsystem.
+    return false;
+  }
   return true;
 }
 
@@ -1351,6 +1454,60 @@ bool Ndb_dd_client::drop_logfile_group(const char *logfile_group_name,
   }
 
   if (m_client->drop(existing)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool Ndb_dd_client::get_schema_uuid(dd::String_type *value) const {
+  DBUG_TRACE;
+
+  // Schema UUID will be stored in ndb_schema table definition in DD
+  const dd::Table *table = nullptr;
+  if (m_client->acquire(Ndb_schema_dist_table::DB_NAME.c_str(),
+                        Ndb_schema_dist_table::TABLE_NAME.c_str(), &table)) {
+    DBUG_ASSERT(false);
+    return false;
+  }
+
+  if (table == nullptr) {
+    // Table doesn't exists. This is OK as it might happen
+    // if the function is called before ndb_schema is created.
+    return true;
+  }
+
+  if (!ndb_dd_table_get_schema_uuid(table, value)) {
+    // Table has invalid Schema UUID
+    return false;
+  }
+
+  return true;
+}
+
+bool Ndb_dd_client::update_schema_uuid(const char *value) const {
+  DBUG_TRACE;
+
+  // Schema UUID should be updated in ndb_schema table definition in DD
+  dd::Table *table = nullptr;
+  if (m_client->acquire_for_modification(
+          Ndb_schema_dist_table::DB_NAME.c_str(),
+          Ndb_schema_dist_table::TABLE_NAME.c_str(), &table)) {
+    DBUG_ASSERT(false);
+    return false;
+  }
+
+  if (table == nullptr) {
+    // Table does not exist in DD
+    DBUG_ASSERT(false);
+    return false;
+  }
+
+  // Set the schema uuid value to the table object
+  ndb_dd_table_set_schema_uuid(table, value);
+
+  if (m_client->update(table)) {
+    DBUG_ASSERT(false);
     return false;
   }
 

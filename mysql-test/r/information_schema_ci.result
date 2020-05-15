@@ -7,9 +7,9 @@ SET SESSION information_schema_stats_expiry=0;
 #
 select table_name, data_type, column_type from information_schema.columns  where column_name = 'numeric_precision' and table_schema = 'information_schema';
 TABLE_NAME	DATA_TYPE	COLUMN_TYPE
-COLUMNS	bigint	bigint(10) unsigned
-PARAMETERS	int	int(10) unsigned
-ROUTINES	int	int(10) unsigned
+COLUMNS	bigint	bigint unsigned
+PARAMETERS	int	int unsigned
+ROUTINES	int	int unsigned
 show variables where variable_name like "skip_show_database";
 Variable_name	Value
 skip_show_database	OFF
@@ -60,6 +60,8 @@ table_name COLLATE utf8_general_ci not like 'ndb_%' AND
 table_name COLLATE utf8_general_ci not like 'innodb_%';
 select * from v1;
 c
+ADMINISTRABLE_ROLE_AUTHORIZATIONS
+APPLICABLE_ROLES
 CHARACTER_SETS
 CHECK_CONSTRAINTS
 COLLATIONS
@@ -67,6 +69,7 @@ COLLATION_CHARACTER_SET_APPLICABILITY
 COLUMNS
 COLUMN_PRIVILEGES
 COLUMN_STATISTICS
+ENABLED_ROLES
 ENGINES
 EVENTS
 FILES
@@ -80,6 +83,9 @@ PROCESSLIST
 PROFILING
 REFERENTIAL_CONSTRAINTS
 RESOURCE_GROUPS
+ROLE_COLUMN_GRANTS
+ROLE_ROUTINE_GRANTS
+ROLE_TABLE_GRANTS
 ROUTINES
 SCHEMATA
 SCHEMA_PRIVILEGES
@@ -190,7 +196,7 @@ t5	InnoDB	10	Dynamic	1	#	#	#	#	0	11	#	#	NULL	utf8mb4_0900_ai_ci	NULL
 v1	NULL	NULL	NULL	NULL	#	#	#	#	NULL	NULL	#	#	NULL	NULL	NULL	NULL	VIEW
 show full columns from t3 like "a%";
 Field	Type	Collation	Null	Key	Default	Extra	Privileges	Comment
-a	int(11)	NULL	YES	MUL	NULL		select,insert,update,references	
+a	int	NULL	YES	MUL	NULL		select,insert,update,references	
 show full columns from mysql.db like "Insert%";
 Field	Type	Collation	Null	Key	Default	Extra	Privileges	Comment
 Insert_priv	enum('N','Y')	utf8_general_ci	NO		N		select,insert,update,references	
@@ -200,10 +206,10 @@ c	varchar(64)	utf8_bin	YES		NULL		select,insert,update,references
 select * from information_schema.COLUMNS where table_name="t1"
 and column_name= "a" order by table_name;
 TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	COLUMN_DEFAULT	IS_NULLABLE	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	COLUMN_TYPE	COLUMN_KEY	EXTRA	PRIVILEGES	COLUMN_COMMENT	GENERATION_EXPRESSION	SRS_ID
-def	mysqltest	t1	a	1	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)			select,insert,update,references			NULL
+def	mysqltest	t1	a	1	NULL	YES	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select,insert,update,references			NULL
 show columns from mysqltest.t1 where field like "%a%";
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
+a	int	YES		NULL	
 create view mysqltest.v1 (c) as select a from mysqltest.t1;
 grant select (a) on mysqltest.t1 to mysqltest_2@localhost;
 grant select on mysqltest.v1 to mysqltest_3;
@@ -213,7 +219,7 @@ TABLE_NAME	COLUMN_NAME	PRIVILEGES
 t1	a	select
 show columns from mysqltest.t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
+a	int	YES		NULL	
 select table_name, column_name, privileges from information_schema.columns
 where table_schema = 'mysqltest' and table_name = 'v1' order by table_name, column_name;
 TABLE_NAME	COLUMN_NAME	PRIVILEGES
@@ -288,7 +294,7 @@ end|
 select parameter_style, sql_data_access, dtd_identifier
 from information_schema.routines where routine_schema='test';
 PARAMETER_STYLE	SQL_DATA_ACCESS	DTD_IDENTIFIER
-SQL	CONTAINS SQL	int(11)
+SQL	CONTAINS SQL	int
 SQL	CONTAINS SQL	NULL
 show procedure status where db='test';
 Db	Name	Type	Definer	Modified	Created	Security_type	Comment	character_set_client	collation_connection	Database Collation
@@ -345,7 +351,7 @@ Function	sql_mode	Create Function	character_set_client	collation_connection	Data
 sub1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 show create function sub2;
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
-sub2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`mysqltest_1`@`localhost` FUNCTION `sub2`(i int) RETURNS int(11)
+sub2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`mysqltest_1`@`localhost` FUNCTION `sub2`(i int) RETURNS int
 return i+1	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
 show function status like "sub2";
 Db	Name	Type	Definer	Modified	Created	Security_type	Comment	character_set_client	collation_connection	Database Collation
@@ -370,7 +376,7 @@ test
 explain select * from v0;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	#	NULL	index	PRIMARY	name	194	NULL	#	#	Using index; Using temporary; Using filesort
-1	SIMPLE	#	NULL	ALL	catalog_id,default_collation_id	NULL	NULL	NULL	#	#	Using where; Using join buffer (Block Nested Loop)
+1	SIMPLE	#	NULL	ALL	catalog_id,default_collation_id	NULL	NULL	NULL	#	#	Using where; Using join buffer (hash join)
 1	SIMPLE	#	NULL	eq_ref	PRIMARY,character_set_id	PRIMARY	8	mysql.sch.default_collation_id	#	#	NULL
 1	SIMPLE	#	NULL	eq_ref	PRIMARY	PRIMARY	8	mysql.col.character_set_id	#	#	Using index
 Warnings:
@@ -468,7 +474,7 @@ Warning	1831	Duplicate index 'key_2' defined on the table 'test.t1'. This is dep
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL,
+  `a` int NOT NULL,
   PRIMARY KEY (`a`),
   UNIQUE KEY `constraint_1` (`a`),
   UNIQUE KEY `key_1` (`a`),
@@ -568,7 +574,7 @@ t1	CREATE TABLE `t1` (
   `CHARACTER_SET_NAME` varchar(64) NOT NULL,
   `DEFAULT_COLLATE_NAME` varchar(64) NOT NULL,
   `DESCRIPTION` varchar(2048) NOT NULL,
-  `MAXLEN` int(10) unsigned NOT NULL
+  `MAXLEN` int unsigned NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8
 drop table t1;
 create view v1 as select * from information_schema.TABLES;
@@ -590,7 +596,7 @@ c	float(5,2)	NULL	NULL	5	2
 d	decimal(6,4)	NULL	NULL	6	4
 e	float	NULL	NULL	12	NULL
 f	decimal(6,3)	NULL	NULL	6	3
-g	int(11)	NULL	NULL	10	0
+g	int	NULL	NULL	10	0
 h	double(10,3)	NULL	NULL	10	3
 i	double	NULL	NULL	22	NULL
 drop table t1;
@@ -620,8 +626,8 @@ from information_schema.tables
 where table_schema='information_schema'
 order by table_name collate utf8_general_ci limit 2;
 TABLE_NAME	TABLE_TYPE	ENGINE
-CHARACTER_SETS	SYSTEM VIEW	NULL
-CHECK_CONSTRAINTS	SYSTEM VIEW	NULL
+ADMINISTRABLE_ROLE_AUTHORIZATIONS	SYSTEM VIEW	NULL
+APPLICABLE_ROLES	SYSTEM VIEW	NULL
 show tables from information_schema like "T%";
 Tables_in_information_schema (T%)
 TABLES
@@ -842,6 +848,8 @@ INNODB_CMP_PER_INDEX_RESET	table_name	select
 KEY_COLUMN_USAGE	TABLE_NAME	select
 PARTITIONS	TABLE_NAME	select
 REFERENTIAL_CONSTRAINTS	TABLE_NAME	select
+ROLE_COLUMN_GRANTS	TABLE_NAME	select
+ROLE_TABLE_GRANTS	TABLE_NAME	select
 STATISTICS	TABLE_NAME	select
 ST_GEOMETRY_COLUMNS	TABLE_NAME	select
 TABLES	TABLE_NAME	select
@@ -858,7 +866,7 @@ table_schema IN ('mysql', 'information_schema', 'test', 'mysqltest')
 AND table_name not like 'ndb%' AND table_name COLLATE utf8_general_ci not like 'innodb_%'
 GROUP BY TABLE_SCHEMA;
 TABLE_SCHEMA	count(*)
-information_schema	36
+information_schema	42
 mysql	31
 create table t1 (i int, j int);
 create trigger trg1 before insert on t1 for each row
@@ -896,7 +904,8 @@ if new.j = -1 then
 set @fired:= "Yes";
 end if;
 end	AFTER	#	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	root@localhost	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
-select * from information_schema.triggers where trigger_schema in ('mysql', 'information_schema', 'test', 'mysqltest');
+select * from information_schema.triggers where trigger_schema in ('mysql', 'information_schema', 'test', 'mysqltest')
+order by trigger_name;
 TRIGGER_CATALOG	TRIGGER_SCHEMA	TRIGGER_NAME	EVENT_MANIPULATION	EVENT_OBJECT_CATALOG	EVENT_OBJECT_SCHEMA	EVENT_OBJECT_TABLE	ACTION_ORDER	ACTION_CONDITION	ACTION_STATEMENT	ACTION_ORIENTATION	ACTION_TIMING	ACTION_REFERENCE_OLD_TABLE	ACTION_REFERENCE_NEW_TABLE	ACTION_REFERENCE_OLD_ROW	ACTION_REFERENCE_NEW_ROW	CREATED	SQL_MODE	DEFINER	CHARACTER_SET_CLIENT	COLLATION_CONNECTION	DATABASE_COLLATION
 def	test	trg1	INSERT	def	test	t1	1	NULL	begin
 if new.j > 10 then
@@ -1048,8 +1057,8 @@ b	NULL
 use test;
 show columns from t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	NO		NULL	
-b	int(11)	YES		NULL	
+a	int	NO		NULL	
+b	int	YES		NULL	
 drop table t1;
 CREATE TABLE t1 (a int);
 CREATE TABLE t2 (b int);
@@ -1071,7 +1080,7 @@ database()
 NULL
 show fields from test.v1;
 Field	Type	Null	Key	Default	Extra
-c	int(11)	YES		NULL	
+c	int	YES		NULL	
 drop view v1;
 drop table t1;
 alter database information_schema;
@@ -1121,10 +1130,10 @@ drop view v1;
 create temporary table t1(f1 int, index(f1));
 show columns from t1;
 Field	Type	Null	Key	Default	Extra
-f1	int(11)	YES	MUL	NULL	NULL
+f1	int	YES	MUL	NULL	NULL
 describe t1;
 Field	Type	Null	Key	Default	Extra
-f1	int(11)	YES	MUL	NULL	NULL
+f1	int	YES	MUL	NULL	NULL
 show indexes from t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 t1	1	f1	1	f1	A	0	NULL	NULL	YES	BTREE			YES	NULL
@@ -1214,7 +1223,7 @@ p1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR
 SET @a= 1	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 SHOW CREATE FUNCTION f1;
 Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
-f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`() RETURNS int(11)
+f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`() RETURNS int
 RETURN @a + 1	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 SELECT ROUTINE_NAME, ROUTINE_DEFINITION FROM INFORMATION_SCHEMA.ROUTINES
 WHERE ROUTINE_SCHEMA='test' ORDER BY ROUTINE_NAME;
@@ -1308,12 +1317,15 @@ group by c2.column_type order by num limit 1)
 and t.table_name not like 'INNODB_%'
 group by t.table_name order by num1, t.table_name COLLATE utf8_general_ci;
 TABLE_NAME	group_concat(t.table_schema, '.', t.table_name)	num1
+ADMINISTRABLE_ROLE_AUTHORIZATIONS	information_schema.ADMINISTRABLE_ROLE_AUTHORIZATIONS	1
+APPLICABLE_ROLES	information_schema.APPLICABLE_ROLES	1
 CHARACTER_SETS	information_schema.CHARACTER_SETS	1
 CHECK_CONSTRAINTS	information_schema.CHECK_CONSTRAINTS	1
 COLLATIONS	information_schema.COLLATIONS	1
 COLUMNS	information_schema.COLUMNS	1
 COLUMN_PRIVILEGES	information_schema.COLUMN_PRIVILEGES	1
 COLUMN_STATISTICS	information_schema.COLUMN_STATISTICS	1
+ENABLED_ROLES	information_schema.ENABLED_ROLES	1
 ENGINES	information_schema.ENGINES	1
 EVENTS	information_schema.EVENTS	1
 FILES	information_schema.FILES	1
@@ -1326,6 +1338,9 @@ PROCESSLIST	information_schema.PROCESSLIST	1
 PROFILING	information_schema.PROFILING	1
 REFERENTIAL_CONSTRAINTS	information_schema.REFERENTIAL_CONSTRAINTS	1
 RESOURCE_GROUPS	information_schema.RESOURCE_GROUPS	1
+ROLE_COLUMN_GRANTS	information_schema.ROLE_COLUMN_GRANTS	1
+ROLE_ROUTINE_GRANTS	information_schema.ROLE_ROUTINE_GRANTS	1
+ROLE_TABLE_GRANTS	information_schema.ROLE_TABLE_GRANTS	1
 ROUTINES	information_schema.ROUTINES	1
 SCHEMATA	information_schema.SCHEMATA	1
 SCHEMA_PRIVILEGES	information_schema.SCHEMA_PRIVILEGES	1
@@ -1372,7 +1387,7 @@ Trigger	Event	Table	Statement	Timing	Created	sql_mode	Definer	character_set_clie
 t1_ai	INSERT	t1	set @a = new.a + new.b + new.c	AFTER	#	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	root@localhost	latin1	latin1_swedish_ci	utf8mb4_0900_ai_ci
 show columns from t1;
 Field	Type	Null	Key	Default	Extra
-b	int(11)	YES		NULL	
+b	int	YES		NULL	
 select column_name from information_schema.columns where table_name='t1' order by column_name;
 COLUMN_NAME
 b
@@ -1409,8 +1424,8 @@ f1	varchar(50)	YES		NULL
 f2	varchar(50)	NO		NULL	
 f3	varchar(50)	YES			
 f4	varchar(50)	YES		NULL	
-f5	bigint(20)	NO		NULL	
-f6	bigint(20)	NO		10	
+f5	bigint	NO		NULL	
+f6	bigint	NO		10	
 f7	datetime	NO		NULL	
 f8	datetime	YES		2006-01-01 00:00:00	
 drop table t1;
@@ -1694,7 +1709,7 @@ create procedure p2 (p1 enum('c', 's'), p2 blob, p3 text) begin end;
 select * from information_schema.parameters where specific_schema='test';
 SPECIFIC_CATALOG	SPECIFIC_SCHEMA	SPECIFIC_NAME	ORDINAL_POSITION	PARAMETER_MODE	PARAMETER_NAME	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	DTD_IDENTIFIER	ROUTINE_TYPE
 def	test	f1	0	NULL	NULL	char	10	40	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	char(10)	FUNCTION
-def	test	f1	1	IN	p1	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)	FUNCTION
+def	test	f1	1	IN	p1	int	NULL	NULL	10	0	NULL	NULL	NULL	int	FUNCTION
 def	test	f1	2	IN	p2	datetime	NULL	NULL	NULL	NULL	0	NULL	NULL	datetime	FUNCTION
 def	test	f1	3	IN	p3	decimal	NULL	NULL	10	2	NULL	NULL	NULL	decimal(10,2)	FUNCTION
 def	test	p1	1	IN	p1	float	NULL	NULL	8	5	NULL	NULL	NULL	float(8,5)	PROCEDURE
@@ -2141,8 +2156,8 @@ c6	NO	point	NULL
 c7	NO	geometry	NULL	MUL
 SHOW COLUMNS FROM t1;
 Field	Type	Null	Key	Default	Extra
-c1	int(11)	YES		NULL	
-c2	int(11)	YES	MUL	NULL	
+c1	int	YES		NULL	
+c2	int	YES	MUL	NULL	
 c3	char(255)	YES	MUL	NULL	
 c4	char(255)	YES	MUL	NULL	
 c5	char(255)	YES		NULL	
@@ -2360,7 +2375,7 @@ CREATE TABLE t1 (a INT);
 SET SESSION optimizer_switch='derived_merge=off';
 SHOW FIELDS FROM t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
+a	int	YES		NULL	
 SET SESSION optimizer_switch=DEFAULT;
 DROP TABLE t1;
 #
@@ -2424,6 +2439,8 @@ AND t.table_name NOT LIKE 'ndb%'
   ORDER BY t.table_name COLLATE utf8_general_ci,
 c1.column_name COLLATE utf8_general_ci;
 TABLE_NAME	COLUMN_NAME
+ADMINISTRABLE_ROLE_AUTHORIZATIONS	USER
+APPLICABLE_ROLES	USER
 CHARACTER_SETS	CHARACTER_SET_NAME
 CHECK_CONSTRAINTS	CONSTRAINT_SCHEMA
 COLLATIONS	COLLATION_NAME
@@ -2431,6 +2448,7 @@ COLLATION_CHARACTER_SET_APPLICABILITY	COLLATION_NAME
 COLUMNS	TABLE_SCHEMA
 COLUMN_PRIVILEGES	TABLE_SCHEMA
 COLUMN_STATISTICS	SCHEMA_NAME
+ENABLED_ROLES	ROLE_NAME
 ENGINES	ENGINE
 EVENTS	EVENT_SCHEMA
 FILES	TABLE_SCHEMA
@@ -2444,6 +2462,9 @@ PROCESSLIST	ID
 PROFILING	QUERY_ID
 REFERENTIAL_CONSTRAINTS	CONSTRAINT_SCHEMA
 RESOURCE_GROUPS	RESOURCE_GROUP_NAME
+ROLE_COLUMN_GRANTS	TABLE_SCHEMA
+ROLE_ROUTINE_GRANTS	SPECIFIC_SCHEMA
+ROLE_TABLE_GRANTS	TABLE_SCHEMA
 ROUTINES	ROUTINE_SCHEMA
 SCHEMATA	SCHEMA_NAME
 SCHEMA_PRIVILEGES	TABLE_SCHEMA
@@ -2479,6 +2500,8 @@ AND t.table_name NOT LIKE 'ndb%'
   ORDER BY t.table_name COLLATE utf8_general_ci,
 c1.column_name COLLATE utf8_general_ci;
 TABLE_NAME	COLUMN_NAME
+ADMINISTRABLE_ROLE_AUTHORIZATIONS	USER
+APPLICABLE_ROLES	USER
 CHARACTER_SETS	CHARACTER_SET_NAME
 CHECK_CONSTRAINTS	CONSTRAINT_SCHEMA
 COLLATIONS	COLLATION_NAME
@@ -2486,6 +2509,7 @@ COLLATION_CHARACTER_SET_APPLICABILITY	COLLATION_NAME
 COLUMNS	TABLE_SCHEMA
 COLUMN_PRIVILEGES	TABLE_SCHEMA
 COLUMN_STATISTICS	SCHEMA_NAME
+ENABLED_ROLES	ROLE_NAME
 ENGINES	ENGINE
 EVENTS	EVENT_SCHEMA
 FILES	TABLE_SCHEMA
@@ -2499,6 +2523,9 @@ PROCESSLIST	ID
 PROFILING	QUERY_ID
 REFERENTIAL_CONSTRAINTS	CONSTRAINT_SCHEMA
 RESOURCE_GROUPS	RESOURCE_GROUP_NAME
+ROLE_COLUMN_GRANTS	TABLE_SCHEMA
+ROLE_ROUTINE_GRANTS	SPECIFIC_SCHEMA
+ROLE_TABLE_GRANTS	TABLE_SCHEMA
 ROUTINES	ROUTINE_SCHEMA
 SCHEMATA	SCHEMA_NAME
 SCHEMA_PRIVILEGES	TABLE_SCHEMA
@@ -2863,4 +2890,23 @@ TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	TABLE_TYPE	ENGINE	VERSION	ROW_FORMAT	TABLE
 def	test	v1	VIEW	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	#	NULL	NULL	NULL	NULL	NULL	VIEW
 SET OPTIMIZER_SWITCH=default;
 DROP VIEW v1;
+DROP TABLE t1;
+#
+# Bug#30476213 ASSERTION TEMPTABLE..HANDLER..GET_ERROR_MESSAGE
+#
+SET @@SESSION.optimizer_switch="derived_merge=off";
+LOCK TABLE mysql.user READ;
+# Without the fix, this statement fails.
+SELECT * FROM information_schema.ST_GEOMETRY_COLUMNS;
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	SRS_NAME	SRS_ID	GEOMETRY_TYPE_NAME
+UNLOCK TABLES;
+#
+# Bug#30764651 ASSERTION "TEMPTABLE..HANDLER..INIT_TABLE_HANDLE_FOR_HANDLER"
+#
+CREATE TABLE t1 (f1 INT);
+FLUSH TABLES t1 FOR EXPORT;
+# Without the fix, this statement fails in debug build.
+SELECT * FROM INFORMATION_SCHEMA.APPLICABLE_ROLES;
+USER	HOST	GRANTEE	GRANTEE_HOST	ROLE_NAME	ROLE_HOST	IS_GRANTABLE	IS_DEFAULT	IS_MANDATORY
+UNLOCK TABLES;
 DROP TABLE t1;

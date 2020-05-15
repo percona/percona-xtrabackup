@@ -225,7 +225,7 @@ unique_ptr_destroy_only<RowIterator> create_table_iterator(
     examined_rows = &qep_tab->join()->examined_rows;
   }
 
-  QUICK_SELECT_I *quick = qep_tab ? qep_tab->quick() : NULL;
+  QUICK_SELECT_I *quick = qep_tab ? qep_tab->quick() : nullptr;
   if (table->unique_result.io_cache &&
       my_b_inited(table->unique_result.io_cache)) {
     DBUG_PRINT("info", ("using SortFileIndirectIterator"));
@@ -255,7 +255,7 @@ unique_ptr_destroy_only<RowIterator> create_table_iterator(
     unique_ptr_destroy_only<RowIterator> iterator =
         NewIterator<FollowTailIterator>(thd, table, qep_tab, examined_rows);
     qep_tab->recursive_iterator =
-        down_cast<FollowTailIterator *>(iterator.get());
+        down_cast<FollowTailIterator *>(iterator->real_iterator());
     return iterator;
   } else {
     DBUG_PRINT("info", ("using TableScanIterator"));
@@ -343,7 +343,7 @@ bool IndexRangeScanIterator::Init() {
   }
 
   if (first_init && table()->file->inited && set_record_buffer(m_qep_tab))
-    return 1; /* purecov: inspected */
+    return true; /* purecov: inspected */
 
   m_seen_eof = false;
   return false;
@@ -406,7 +406,7 @@ bool TableScanIterator::Init() {
   */
   const bool first_init = !table()->file->inited;
 
-  int error = table()->file->ha_rnd_init(1);
+  int error = table()->file->ha_rnd_init(true);
   if (error) {
     PrintError(error);
     return true;

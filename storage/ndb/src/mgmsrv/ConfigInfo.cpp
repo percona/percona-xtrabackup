@@ -36,6 +36,7 @@
 #include <ConfigObject.hpp>
 #include <unordered_map>
 #include <string>
+#include "../src/kernel/vm/mt-asm.h"
 
 #include <portlib/ndb_localtime.h>
 
@@ -437,6 +438,24 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     0, 0 },
 
   {
+    CFG_NODE_DEDICATED,
+    "Dedicated",
+    DB_TOKEN,
+    "The node id for this node will only be handed out to connections that "
+    "explicitly request it. Data nodes that request 'any' nodeid will not be "
+    "able to use this one. Can be used when HostName is not enough to "
+    "distinguish different processes, and one runs several data nodes on same "
+    "host. There is typically no need to use this option since ven if one run "
+    "several data nodes on same host it is enough to always use --ndb-nodeid "
+    "option when starting data nodes even without this option. ",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_BOOL,
+    "false",
+    "false",
+    "true" },
+
+  {
     CFG_NODE_SYSTEM,
     "System",
     DB_TOKEN,
@@ -482,6 +501,18 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "2",
     "1",
     "4" },
+
+  {
+    CFG_DB_NODE_GROUP_TRANSPORTERS,
+    "NodeGroupTransporters",
+    DB_TOKEN,
+    "Number of transporters to use between nodes in same node group",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_INT,
+    "0",
+    "0",
+    STR_VALUE(MAX_NODE_GROUP_TRANSPORTERS) },
 
   {
     CFG_DB_NO_ATTRIBUTES,
@@ -535,8 +566,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_NO_INDEX_OPS,
     "MaxNoOfConcurrentIndexOperations",
     DB_TOKEN,
-    "Total number of index operations that can execute simultaneously on one " DB_TOKEN_PRINT " node",
-    ConfigInfo::CI_USED,
+    "TransactionMemory",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "8K",
@@ -560,8 +591,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_NO_TRIGGER_OPS,
     "MaxNoOfFiredTriggers",
     DB_TOKEN,
-    "Total number of triggers that can fire simultaneously in one " DB_TOKEN_PRINT " node",
-    ConfigInfo::CI_USED,
+    "TransactionMemory",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "4000",
@@ -701,6 +732,41 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "500" },
 
   {
+    /**
+     * Allowed values are:
+     * StaticSpinning
+     *   Use traditional static spinning based on configuration.
+     *
+     * CostBasedSpinning
+     *   Use adaptive spinning, allow overhead of 200% and max
+     *   spintime of 100 us. This gives some benefits on VMs
+     *   even in shared environment although it pays a small
+     *   cost for improved latency.
+     *
+     * LatencyOptimisedSpinning
+     *   Use adaptive spinning, allow overhead of 1000% and
+     *   max spintime of 200 us. This mode means spinning at a
+     *   fairly high cost, but still limited. This mode can
+     *   be used when latency is important, but it one still
+     *   attempts to have reasonable limits on CPU usage.
+     *
+     * DatabaseMachineSpinning
+     *   Use adaptive spinning, allow overhead of 10000% and
+     *   max spintime of 500 us. This mode means spinning
+     *   all the time except when we are idle. Use this when
+     *   latency is vital and no other users exists on the
+     *   machine or at least the CPUs used by the data node.
+     */
+    CFG_DB_SPIN_METHOD,
+    "SpinMethod",
+    DB_TOKEN,
+    "Spin method used by data node",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_STRING,
+    "StaticSpinning", 0, 0 },
+
+  {
     CFG_DB_SCHED_RESPONSIVENESS,
     "SchedulerResponsiveness",
     DB_TOKEN,
@@ -813,8 +879,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_NO_LOCAL_OPS,
     "MaxNoOfLocalOperations",
     DB_TOKEN,
-    "Max number of operation records defined in the local storage node",
-    ConfigInfo::CI_USED,
+    "TransactionMemory",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     0,
@@ -825,8 +891,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_NO_LOCAL_SCANS,
     "MaxNoOfLocalScans",
     DB_TOKEN,
-    "Max number of fragment scans in parallel in the local storage node",
-    ConfigInfo::CI_USED,
+    "TransactionMemory",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     0,
@@ -903,7 +969,19 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT64,
     "98M",
     "1M",
-    "1024G" },
+    "16384G" },
+
+  {
+    CFG_DB_TRANSACTION_MEM,
+    "TransactionMemory",
+    DB_TOKEN,
+    "Number bytes on each " DB_TOKEN_PRINT " node allocated for operations",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_INT64,
+    "0",
+    "0",
+    "16384G" },
 
   {
     CFG_DB_UNDO_INDEX_BUFFER,
@@ -963,7 +1041,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_INT64,
     "64M",
     "4M",
-    "1024G" },
+    "16384G" },
 
   {
     CFG_DB_SGA,
@@ -973,11 +1051,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT64,
-#if NDB_VERSION_D < NDB_MAKE_VERSION(7,2,0)
-    "20M",
-#else
     "128M",
-#endif
     "0",
     "65536G" }, // 32k pages * 32-bit i value
   
@@ -1582,7 +1656,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_BACKUP_MEM,
     "BackupMemory",
     DB_TOKEN,
-    "Total memory allocated for backups per node (in bytes)",
+    "sum of hardcoded BackupDataBufferSize(=2MB) and BackupLogBufferSize",
     ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
@@ -1594,7 +1668,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_BACKUP_DATA_BUFFER_MEM,
     "BackupDataBufferSize",
     DB_TOKEN,
-    "Default size of databuffer for a backup (in bytes)",
+    "hardcoded value of 2MB",
     ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
@@ -1618,7 +1692,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_BACKUP_WRITE_SIZE,
     "BackupWriteSize",
     DB_TOKEN,
-    "Default size of filesystem writes made by backup (in bytes)",
+    "hardcoded value of 256 KB",
     ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
@@ -1630,7 +1704,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_BACKUP_MAX_WRITE_SIZE,
     "BackupMaxWriteSize",
     DB_TOKEN,
-    "Max size of filesystem writes made by backup (in bytes)",
+    "hardcoded value of 2MB",
     ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
@@ -1646,7 +1720,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
-    "25",
+    "5",
     "0",
     STR_VALUE(MAX_INT_RNIL) },
 
@@ -2041,7 +2115,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     false,
     ConfigInfo::CI_INT,
     "20",                    /* Default */
-    "0",                     /* Min */
+    "1",                     /* Min */
     STR_VALUE(MAX_INT_RNIL)  /* Max */
   },
 
@@ -2055,7 +2129,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     false,
     ConfigInfo::CI_INT,
     "3",                     /* Default */
-    "0",                     /* Min */
+    "1",                     /* Min */
     STR_VALUE(MAX_INT_RNIL)  /* Max */
   },
 
@@ -2283,9 +2357,40 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
-    "60",
+    "180",
     "0",
     STR_VALUE(MAX_INT_RNIL)
+  },
+
+  {
+    CFG_DB_MAX_DD_LATENCY,
+    "MaxDiskDataLatency",
+    DB_TOKEN,
+    "Maximum allowed mean latency of disk access in milliseconds."
+    "When this limit is reached we will start aborting transactions"
+    " to decrease pressure on IO susbsystem. 0 means this check is"
+    " not active",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_INT,
+    "0",
+    "0",
+    "8000"
+  },
+
+  {
+    CFG_DB_DD_USING_SAME_DISK,
+    "DiskDataUsingSameDisk",
+    DB_TOKEN,
+    "Set this to false if Disk data tablespaces uses their own disk"
+    " drives. This means that we can push checkpoints to tablespaces"
+    " at a higher rate than if disk drives are shared.",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_BOOL,
+    "true",
+    "false",
+    "true"
   },
 
   {
@@ -2489,7 +2594,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
-    "0", // "8k",
+    "0", // "32k",
     "0",
     STR_VALUE(MAX_INT_RNIL)
   },
@@ -2584,6 +2689,24 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_STRING,
     "",
     0, 0 },
+
+  {
+    CFG_NODE_DEDICATED,
+    "Dedicated",
+    API_TOKEN,
+    "The node id for this node will only be handed out to connections that "
+    "explicitly request it. Api client that request 'any' nodeid will not be "
+    "able to use this one. Can be used when HostName is not enough to "
+    "distinguish different processes, and one runs a server process like "
+    "mysqld on same host as some other ndb client programs and want to avoid "
+    "the client program steal a node id dedicated to mysqld while the mysqld "
+    "is not connected.",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_BOOL,
+    "false",
+    "false",
+    "true" },
 
   {
     CFG_NODE_SYSTEM,
@@ -2885,6 +3008,23 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_STRING,
     "",
     0, 0 },
+
+  {
+    CFG_NODE_DEDICATED,
+    "Dedicated",
+    MGM_TOKEN,
+    "The node id for this node will only be handed out to connections that "
+    "explicitly request it. Management servers that request 'any' nodeid will "
+    "not be able to use this one. Can be used when HostName is not enough to "
+    "distinguish different processes, and one runs several management "
+    "servers on same host, which should typically only be the case in test "
+    "clusters.",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_BOOL,
+    "false",
+    "false",
+    "true" },
 
   {
     CFG_NODE_DATADIR,
@@ -3227,6 +3367,19 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "2M",
     "64K",
     STR_VALUE(MAX_INT_RNIL) },
+
+  {
+    CFG_TCP_SPINTIME,
+    "TcpSpintime",
+    "TCP",
+    "Number of microseconds to spin before going to sleep when receiving",
+    ConfigInfo::CI_USED,
+    false,
+    ConfigInfo::CI_INT,
+    "0",
+    "0",
+    "2000"
+  },
 
   {
     CFG_TCP_RECEIVE_BUFFER_SIZE,
@@ -4332,6 +4485,16 @@ ConfigInfo::verify_enum(const Properties * section, const char* fname,
 }
 
 
+/*
+ * Get allowed values for enum parameters in a space separated list.
+ *
+ * It returns values in order of increasing numerical value to make it possible
+ * to map numerical value to string value.
+ *
+ * At least in the cases there enum values are consecutive and zero based,
+ * which is the case for ConfigInfo.
+ */
+
 void
 ConfigInfo::get_enum_values(const Properties * section, const char* fname,
                       BaseString& list) const {
@@ -4342,9 +4505,25 @@ ConfigInfo::get_enum_values(const Properties * section, const char* fname,
 
   const char* separator = "";
   Properties::Iterator it(values);
+  Vector<const char*> enum_names;
+  const char* fill = nullptr;
+  unsigned cnt = 0;
   for (const char* name = it.first(); name != NULL; name = it.next())
   {
-    list.appfmt("%s%s", separator, name);
+    Uint32 val;
+    values->get(name, &val);
+    enum_names.set(name, val, fill);
+    cnt++;
+  }
+  // Enum values should be consecutive starting at zero.
+  assert(enum_names.size() == cnt);
+  for (unsigned i = 0; i < enum_names.size(); i++)
+  {
+    if (enum_names[i] == nullptr)
+    {
+      continue;
+    }
+    list.appfmt("%s%s", separator, enum_names[i]);
     separator = " ";
   }
 }

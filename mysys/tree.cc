@@ -83,7 +83,6 @@
 #define BLACK 1
 #define RED 0
 #define DEFAULT_ALLOC_SIZE 8192
-#define DEFAULT_ALIGN_SIZE 8192
 
 static void delete_tree_element(TREE *, TREE_ELEMENT *);
 static int tree_walk_left_root_right(TREE *, TREE_ELEMENT *, tree_walk_action,
@@ -101,45 +100,40 @@ static void rb_delete_fixup(TREE *tree, TREE_ELEMENT ***parent);
 static int test_rb_tree(TREE_ELEMENT *element);
 #endif
 
-void init_tree(TREE *tree, size_t default_alloc_size, ulong memory_limit,
-               int size, qsort2_cmp compare, bool with_delete,
+void init_tree(TREE *tree, ulong memory_limit, int element_size,
+               qsort2_cmp compare, bool with_delete,
                tree_element_free free_element, const void *custom_arg) {
   DBUG_TRACE;
-  DBUG_PRINT("enter", ("tree: %p  size: %d", tree, size));
+  DBUG_PRINT("enter", ("tree: %p  element_size: %d", tree, element_size));
 
-  if (default_alloc_size < DEFAULT_ALLOC_SIZE)
-    default_alloc_size = DEFAULT_ALLOC_SIZE;
-  default_alloc_size = MY_ALIGN(default_alloc_size, DEFAULT_ALIGN_SIZE);
   new (&tree->null_element) TREE_ELEMENT();
   tree->root = &tree->null_element;
   tree->compare = compare;
-  tree->size_of_element = size > 0 ? (uint)size : 0;
+  tree->size_of_element =
+      element_size > 0 ? static_cast<uint>(element_size) : 0;
   tree->memory_limit = memory_limit;
   tree->free = free_element;
   tree->allocated = 0;
   tree->elements_in_tree = 0;
   tree->custom_arg = custom_arg;
   tree->null_element.colour = BLACK;
-  tree->null_element.left = tree->null_element.right = 0;
+  tree->null_element.left = tree->null_element.right = nullptr;
   tree->flag = 0;
-  if (!free_element && size >= 0 &&
-      ((uint)size <= sizeof(void *) || ((uint)size & (sizeof(void *) - 1)))) {
+  if (!free_element && element_size >= 0 &&
+      (static_cast<uint>(element_size) <= sizeof(void *) ||
+       (static_cast<uint>(element_size) & (sizeof(void *) - 1)))) {
     /*
       We know that the data doesn't have to be aligned (like if the key
       contains a double), so we can store the data combined with the
       TREE_ELEMENT.
     */
     tree->offset_to_key = sizeof(TREE_ELEMENT); /* Put key after element */
-    /* Fix allocation size so that we don't lose any memory */
-    default_alloc_size /= (sizeof(TREE_ELEMENT) + size);
-    if (!default_alloc_size) default_alloc_size = 1;
-    default_alloc_size *= (sizeof(TREE_ELEMENT) + size);
   } else {
     tree->offset_to_key = 0; /* use key through pointer */
     tree->size_of_element += sizeof(void *);
   }
   if (!(tree->with_delete = with_delete)) {
-    init_alloc_root(key_memory_TREE, &tree->mem_root, default_alloc_size, 0);
+    init_alloc_root(key_memory_TREE, &tree->mem_root, DEFAULT_ALLOC_SIZE, 0);
   }
 }
 
@@ -154,9 +148,10 @@ static void free_tree(TREE *tree, myf free_flags) {
     else {
       if (tree->free) {
         if (tree->memory_limit)
-          (*tree->free)(NULL, free_init, tree->custom_arg);
+          (*tree->free)(nullptr, free_init, tree->custom_arg);
         delete_tree_element(tree, tree->root);
-        if (tree->memory_limit) (*tree->free)(NULL, free_end, tree->custom_arg);
+        if (tree->memory_limit)
+          (*tree->free)(nullptr, free_end, tree->custom_arg);
       }
       free_root(&tree->mem_root, free_flags);
     }
@@ -234,7 +229,7 @@ TREE_ELEMENT *tree_insert(TREE *tree, void *key, uint key_size,
           (TREE_ELEMENT *)my_malloc(key_memory_TREE, alloc_size, MYF(MY_WME));
     else
       element = (TREE_ELEMENT *)tree->mem_root.Alloc(alloc_size);
-    if (!element) return (NULL);
+    if (!element) return (nullptr);
     **parent = element;
     element->left = element->right = &tree->null_element;
     if (!tree->offset_to_key) {
@@ -251,7 +246,7 @@ TREE_ELEMENT *tree_insert(TREE *tree, void *key, uint key_size,
     tree->elements_in_tree++;
     rb_insert(tree, parent, element); /* rebalance tree */
   } else {
-    if (tree->flag & TREE_NO_DUPS) return (NULL);
+    if (tree->flag & TREE_NO_DUPS) return (nullptr);
     element->count++;
     /* Avoid a wrap over of the count. */
     if (!element->count) element->count--;
@@ -317,7 +312,7 @@ void *tree_search(TREE *tree, void *key, const void *custom_arg) {
   TREE_ELEMENT *element = tree->root;
 
   for (;;) {
-    if (element == &tree->null_element) return (void *)0;
+    if (element == &tree->null_element) return (void *)nullptr;
     if ((cmp = (*tree->compare)(custom_arg, ELEMENT_KEY(tree, element), key)) ==
         0)
       return ELEMENT_KEY(tree, element);
@@ -333,8 +328,9 @@ void *tree_search_key(TREE *tree, const void *key, TREE_ELEMENT **parents,
                       const void *custom_arg) {
   int cmp;
   TREE_ELEMENT *element = tree->root;
-  TREE_ELEMENT **last_left_step_parent = NULL, **last_right_step_parent = NULL;
-  TREE_ELEMENT **last_equal_element = NULL;
+  TREE_ELEMENT **last_left_step_parent = nullptr,
+               **last_right_step_parent = nullptr;
+  TREE_ELEMENT **last_equal_element = nullptr;
 
   /*
     TODO: support for HA_READ_KEY_OR_PREV, HA_READ_PREFIX flags if needed.
@@ -361,7 +357,7 @@ void *tree_search_key(TREE *tree, const void *key, TREE_ELEMENT **parents,
           cmp = -1;
           break;
         default:
-          return NULL;
+          return nullptr;
       }
     }
     if (cmp < 0) /* element < key */
@@ -393,9 +389,9 @@ void *tree_search_key(TREE *tree, const void *key, TREE_ELEMENT **parents,
       *last_pos = last_right_step_parent;
       break;
     default:
-      return NULL;
+      return nullptr;
   }
-  return *last_pos ? ELEMENT_KEY(tree, **last_pos) : NULL;
+  return *last_pos ? ELEMENT_KEY(tree, **last_pos) : nullptr;
 }
 
 /*
@@ -412,7 +408,7 @@ void *tree_search_edge(TREE *tree, TREE_ELEMENT **parents,
   }
   *last_pos = parents;
   return **last_pos != &tree->null_element ? ELEMENT_KEY(tree, **last_pos)
-                                           : NULL;
+                                           : nullptr;
 }
 
 void *tree_search_next(TREE *tree, TREE_ELEMENT ***last_pos, int l_offs,
@@ -433,7 +429,7 @@ void *tree_search_next(TREE *tree, TREE_ELEMENT ***last_pos, int l_offs,
       x = y;
       y = *--*last_pos;
     }
-    return y == &tree->null_element ? NULL : ELEMENT_KEY(tree, y);
+    return y == &tree->null_element ? nullptr : ELEMENT_KEY(tree, y);
   }
 }
 

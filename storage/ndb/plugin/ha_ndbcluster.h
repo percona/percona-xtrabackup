@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,12 +85,6 @@ struct NDB_INDEX_DATA {
   NdbRecord *ndb_unique_record_row;
 };
 
-// Wrapper class for list to hold NDBFKs
-class Ndb_fk_list : public List<NdbDictionary::ForeignKey> {
- public:
-  ~Ndb_fk_list() { delete_elements(); }
-};
-
 #include "storage/ndb/plugin/ndb_ndbapi_util.h"
 #include "storage/ndb/plugin/ndb_share.h"
 
@@ -129,6 +123,7 @@ struct st_ndb_status {
 int ndbcluster_commit(handlerton *, THD *thd, bool all);
 
 class ha_ndbcluster : public handler, public Partition_handler {
+  friend class ha_ndbcluster_cond;
   friend class ndb_pushed_builder_ctx;
 
  public:
@@ -140,10 +135,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
   int open(const char *name, int mode, uint test_if_locked,
            const dd::Table *table_def) override;
 
- private:
-  void local_close(THD *thd, bool release_metadata);
-
- public:
   int close(void) override;
 
   int optimize(THD *thd, HA_CHECK_OPT *) override;
@@ -248,20 +239,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
   uint max_supported_key_length() const override;
   uint max_supported_key_part_length(
       HA_CREATE_INFO *create_info) const override;
-
- private:
-  int get_child_or_parent_fk_list(List<FOREIGN_KEY_INFO> *f_key_list,
-                                  bool is_child, bool is_parent);
-
- public:
-  int get_foreign_key_list(THD *thd,
-                           List<FOREIGN_KEY_INFO> *f_key_list) override;
-  int get_parent_foreign_key_list(THD *thd,
-                                  List<FOREIGN_KEY_INFO> *f_key_list) override;
-  uint referenced_by_foreign_key() override;
-
-  char *get_foreign_key_create_info() override;
-  void free_foreign_key_create_info(char *str) override;
 
   int rename_table(const char *from, const char *to,
                    const dd::Table *from_table_def,
@@ -380,14 +357,16 @@ class ha_ndbcluster : public handler, public Partition_handler {
                                     const key_range *start_key,
                                     const key_range *end_key);
 
+  int engine_push(AQP::Table_access *table) override;
+
  private:
   bool maybe_pushable_join(const char *&reason) const;
 
  public:
-  int assign_pushed_join(const ndb_pushed_join *pushed_join);
   uint number_of_pushed_joins() const override;
   const TABLE *member_of_pushed_join() const override;
   const TABLE *parent_of_pushed_join() const override;
+  table_map tables_in_pushed_join() const override;
 
   int index_read_pushed(uchar *buf, const uchar *key,
                         key_part_map keypart_map) override;
@@ -427,6 +406,10 @@ class ha_ndbcluster : public handler, public Partition_handler {
   void notify_table_changed(Alter_inplace_info *alter_info) override;
 
  private:
+  bool open_table_set_key_fields();
+  void release_key_fields();
+  void release_ndb_share();
+  NDB_SHARE *open_table_before_schema_sync(THD *, const char *);
   void prepare_inplace__drop_index(uint key_num);
   int inplace__final_drop_index(TABLE *table_arg);
 
@@ -479,21 +462,16 @@ class ha_ndbcluster : public handler, public Partition_handler {
   int add_hidden_pk_ndb_record(NdbDictionary::Dictionary *dict);
   int add_index_ndb_record(NdbDictionary::Dictionary *dict, KEY *key_info,
                            uint index_no);
-  int get_fk_data(THD *thd, Ndb *ndb);
-  void release_fk_data();
   int create_fks(THD *thd, Ndb *ndb);
   int copy_fk_for_offline_alter(THD *thd, Ndb *, const char *tabname);
   int inplace__drop_fks(THD *, Ndb *, NdbDictionary::Dictionary *,
                         const NdbDictionary::Table *);
-  static int get_fk_data_for_truncate(NdbDictionary::Dictionary *,
-                                      const NdbDictionary::Table *,
-                                      Ndb_fk_list &);
   static int recreate_fk_for_truncate(THD *, Ndb *, const char *,
-                                      Ndb_fk_list &);
+                                      std::vector<NdbDictionary::ForeignKey> *);
   bool has_fk_dependency(THD *, const NdbDictionary::Column *) const;
   int check_default_values(const NdbDictionary::Table *ndbtab);
   int get_metadata(THD *thd, const dd::Table *table_def);
-  void release_metadata(THD *thd, Ndb *ndb);
+  void release_metadata(THD *thd);
   NDB_INDEX_TYPE get_index_type(uint idx_no) const;
   NDB_INDEX_TYPE get_index_type_from_table(uint index_no) const;
   NDB_INDEX_TYPE get_index_type_from_key(uint index_no, KEY *key_info,
@@ -677,9 +655,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
   bool m_lock_tuple;
   NDB_SHARE *m_share;
   NDB_INDEX_DATA m_index[MAX_KEY];
-  static const size_t fk_root_block_size = 1024;
-  MEM_ROOT m_fk_mem_root;
-  struct Ndb_fk_data *m_fk_data;
 
   /*
     Pointer to row returned from scan nextResult().

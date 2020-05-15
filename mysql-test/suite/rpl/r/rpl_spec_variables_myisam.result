@@ -86,7 +86,7 @@ CREATE TABLE s1.t1 (a INT NOT NULL PRIMARY KEY, b VARCHAR(10)) ENGINE=MyISAM;
 SHOW CREATE TABLE s1.t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL,
+  `a` int NOT NULL,
   `b` varchar(10) COLLATE latin1_german1_ci DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_german1_ci
@@ -101,21 +101,21 @@ CREATE TABLE s2.t1 (a INT NOT NULL PRIMARY KEY, b VARCHAR(10)) ENGINE=MyISAM;
 SHOW CREATE TABLE s1.t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL,
+  `a` int NOT NULL,
   `b` varchar(10) COLLATE latin1_german1_ci DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_german1_ci
 SHOW CREATE TABLE s1.t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
-  `a` int(11) NOT NULL,
+  `a` int NOT NULL,
   `b` varchar(10) COLLATE latin1_german1_ci DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_german1_ci
 SHOW CREATE TABLE s2.t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL,
+  `a` int NOT NULL,
   `b` varchar(10) COLLATE utf8_bin DEFAULT NULL,
   PRIMARY KEY (`a`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin
@@ -159,7 +159,7 @@ COUNT(*)
 70
 include/sync_slave_sql_with_master.inc
 LOAD DATA LOCAL INFILE 'FILE2' INTO TABLE t1 (b);
-ERROR 42000: The used command is not allowed with this MySQL version
+ERROR 42000: Loading local data is disabled; this must be enabled on both the client and server sides
 SELECT COUNT(*) FROM t1;
 COUNT(*)
 70

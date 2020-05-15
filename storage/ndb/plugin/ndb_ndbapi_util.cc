@@ -27,6 +27,7 @@
 #include <string.h>  // memcpy
 
 #include "my_byteorder.h"
+#include "my_dbug.h"
 #include "storage/ndb/plugin/ndb_name_util.h"  // ndb_name_is_temp
 
 void ndb_pack_varchar(const NdbDictionary::Table *ndbtab, unsigned column_index,
@@ -326,7 +327,7 @@ bool ndb_get_datafile_names(NdbDictionary::Dictionary *dict,
 
 bool ndb_get_database_names_in_dictionary(
     NdbDictionary::Dictionary *dict,
-    std::unordered_set<std::string> &database_names) {
+    std::unordered_set<std::string> *database_names) {
   DBUG_TRACE;
 
   /* Get all the list of tables from NDB and read the database names */
@@ -341,14 +342,40 @@ bool ndb_get_database_names_in_dictionary(
        or if it is a temporary or blob table.*/
     if ((elmt.state != NdbDictionary::Object::StateOnline &&
          elmt.state != NdbDictionary::Object::StateBuilding) ||
-        ndb_name_is_temp(elmt.name) || ndb_name_is_blob_prefix(elmt.name)) {
+        ndb_name_is_temp(elmt.name) || ndb_name_is_blob_prefix(elmt.name) ||
+        ndb_name_is_fk_mock_prefix(elmt.name)) {
       DBUG_PRINT("debug", ("Skipping table %s.%s", elmt.database, elmt.name));
       continue;
     }
     DBUG_PRINT("debug", ("Found %s.%s in NDB", elmt.database, elmt.name));
 
-    database_names.insert(elmt.database);
+    database_names->insert(elmt.database);
   }
+  return true;
+}
+
+bool ndb_database_exists(NdbDictionary::Dictionary *dict,
+                         const std::string &database_name, bool &exists) {
+  // Get list of tables from NDB and read database names
+  NdbDictionary::Dictionary::List list;
+  if (dict->listObjects(list, NdbDictionary::Object::UserTable) != 0)
+    return false;
+  for (uint i = 0; i < list.count; i++) {
+    NdbDictionary::Dictionary::List::Element &elmt = list.elements[i];
+    // Skip the table if it is not in an expected state or if it is a temporary
+    // or blob table
+    if ((elmt.state != NdbDictionary::Object::StateOnline &&
+         elmt.state != NdbDictionary::Object::StateBuilding) ||
+        ndb_name_is_temp(elmt.name) || ndb_name_is_blob_prefix(elmt.name) ||
+        ndb_name_is_fk_mock_prefix(elmt.name)) {
+      continue;
+    }
+    if (database_name == elmt.database) {
+      exists = true;
+      return true;
+    }
+  }
+  exists = false;
   return true;
 }
 
@@ -429,5 +456,47 @@ bool ndb_get_tablespace_id_and_version(NdbDictionary::Dictionary *dict,
   }
   id = ts.getObjectId();
   version = ts.getObjectVersion();
+  return true;
+}
+
+bool ndb_table_index_count(const NdbDictionary::Dictionary *dict,
+                           const NdbDictionary::Table *ndbtab,
+                           unsigned int &index_count) {
+  NdbDictionary::Dictionary::List list;
+  if (dict->listIndexes(list, *ndbtab) != 0) {
+    // List indexes failed
+    return false;
+  }
+  // Separate indexes into ordered and unique indexes
+  std::unordered_set<std::string> ordered_indexes;
+  std::unordered_set<std::string> unique_indexes;
+  for (uint i = 0; i < list.count; i++) {
+    NdbDictionary::Dictionary::List::Element &elmt = list.elements[i];
+    switch (elmt.type) {
+      case NdbDictionary::Object::UniqueHashIndex:
+        unique_indexes.insert(elmt.name);
+        break;
+      case NdbDictionary::Object::OrderedIndex:
+        ordered_indexes.insert(elmt.name);
+        break;
+      default:
+        // Unexpected object type
+        return false;
+    }
+  }
+  index_count = ordered_indexes.size();
+  // Iterate through the ordered indexes and check if any of them are
+  // "companion" ordered indexes. This is required since creating a unique key
+  // leads to 2 indexes being created - a unique hash index (of the form
+  // <index_name>$unique) and a companion ordered index. Note that this is not
+  // the case for hash based unique indexes which have no companion ordered
+  // index
+  for (auto &ordered_index : ordered_indexes) {
+    const std::string unique_index = ordered_index + "$unique";
+    if (unique_indexes.find(unique_index) != unique_indexes.end()) {
+      index_count--;
+    }
+  }
+  index_count += unique_indexes.size();
   return true;
 }

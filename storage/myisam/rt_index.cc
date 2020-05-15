@@ -114,9 +114,9 @@ static int rtree_find_req(MI_INFO *info, MI_KEYDEF *keyinfo, uint search_flag,
           info->int_keypos = info->buff;
           info->int_maxpos = info->buff + (last - after_key);
           memcpy(info->buff, after_key, last - after_key);
-          info->buff_used = 0;
+          info->buff_used = false;
         } else {
-          info->buff_used = 1;
+          info->buff_used = true;
         }
 
         res = 0;
@@ -181,7 +181,7 @@ int rtree_find_first(MI_INFO *info, uint keynr, uchar *key, uint key_length,
   info->last_rkey_length = key_length;
 
   info->rtree_recursion_depth = -1;
-  info->buff_used = 1;
+  info->buff_used = true;
 
   nod_cmp_flag =
       ((search_flag & (MBR_EQUAL | MBR_WITHIN)) ? MBR_WITHIN : MBR_INTERSECT);
@@ -226,7 +226,7 @@ int rtree_find_next(MI_INFO *info, uint keynr, uint search_flag) {
         if (after_key < info->int_maxpos)
           info->int_keypos = after_key;
         else
-          info->buff_used = 1;
+          info->buff_used = true;
         return 0;
       }
       key += keyinfo->keylength;
@@ -312,9 +312,9 @@ static int rtree_get_req(MI_INFO *info, MI_KEYDEF *keyinfo, uint key_length,
         info->int_keypos = (uchar *)saved_key;
         memcpy(info->buff, page_buf, keyinfo->block_length);
         info->int_maxpos = rt_PAGE_END(info->buff);
-        info->buff_used = 0;
+        info->buff_used = false;
       } else {
-        info->buff_used = 1;
+        info->buff_used = true;
       }
 
       res = 0;
@@ -352,7 +352,7 @@ int rtree_get_first(MI_INFO *info, uint keynr, uint key_length) {
   }
 
   info->rtree_recursion_depth = -1;
-  info->buff_used = 1;
+  info->buff_used = true;
 
   return rtree_get_req(info, keyinfo, key_length, root, 0);
 }
@@ -389,7 +389,7 @@ int rtree_get_next(MI_INFO *info, uint keynr, uint key_length) {
 
     *(uint *)info->int_keypos = (uint)(key - info->buff);
     if (after_key >= info->int_maxpos) {
-      info->buff_used = 1;
+      info->buff_used = true;
     }
 
     return 0;
@@ -436,7 +436,7 @@ static uchar *rtree_pick_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key,
   double best_incr = 0.0;
   double area;
   double best_area = 0.0;
-  uchar *best_key = NULL;
+  uchar *best_key = nullptr;
   uchar *k = rt_PAGE_FIRST_KEY(page_buf, nod_flag);
   uchar *last = rt_PAGE_END(page_buf);
 
@@ -444,7 +444,7 @@ static uchar *rtree_pick_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key,
     /* The following is safe as -1.0 is an exact number */
     if ((increase = rtree_area_increase(keyinfo->seg, k, key, key_length,
                                         &area)) == -1.0)
-      return NULL;
+      return nullptr;
     /* The following should be safe, even if we compare doubles */
     if (!best_key || increase < best_incr ||
         ((increase == best_incr) && (area < best_area))) {
@@ -491,7 +491,7 @@ static int rtree_insert_req(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key,
       (ins_level > -1 && ins_level > level)) /* branch: go down to ins_level */
   {
     if ((k = rtree_pick_key(info, keyinfo, key, key_length, page_buf,
-                            nod_flag)) == NULL)
+                            nod_flag)) == nullptr)
       goto err1;
     switch ((res = rtree_insert_req(info, keyinfo, key, key_length,
                                     _mi_kpos(nod_flag, k), new_page, ins_level,
@@ -560,9 +560,9 @@ static int rtree_insert_level(MI_INFO *info, uint keynr, uchar *key,
   if ((old_root = info->s->state.key_root[keynr]) == HA_OFFSET_ERROR) {
     if ((old_root = _mi_new(info, keyinfo, DFLT_INIT_HITS)) == HA_OFFSET_ERROR)
       return -1;
-    info->buff_used = 1;
+    info->buff_used = true;
     mi_putint(info->buff, 2, 0);
-    res = rtree_add_key(info, keyinfo, key, key_length, info->buff, NULL);
+    res = rtree_add_key(info, keyinfo, key, key_length, info->buff, nullptr);
     if (_mi_write_keypage(info, keyinfo, old_root, DFLT_INIT_HITS, info->buff))
       return 1;
     info->s->state.key_root[keynr] = old_root;
@@ -595,13 +595,13 @@ static int rtree_insert_level(MI_INFO *info, uint keynr, uchar *key,
       if (rtree_set_key_mbr(info, keyinfo, new_key, key_length, old_root))
         goto err1;
       if (rtree_add_key(info, keyinfo, new_key, key_length, new_root_buf,
-                        NULL) == -1)
+                        nullptr) == -1)
         goto err1;
       _mi_kpointer(info, new_key - nod_flag, new_page);
       if (rtree_set_key_mbr(info, keyinfo, new_key, key_length, new_page))
         goto err1;
       if (rtree_add_key(info, keyinfo, new_key, key_length, new_root_buf,
-                        NULL) == -1)
+                        nullptr) == -1)
         goto err1;
       if (_mi_write_keypage(info, keyinfo, new_root, DFLT_INIT_HITS,
                             new_root_buf))
@@ -819,7 +819,7 @@ int rtree_delete(MI_INFO *info, uint keynr, uchar *key, uint key_length) {
   }
   DBUG_PRINT("rtree", ("starting deletion at root page: %lu", (ulong)old_root));
 
-  ReinsertList.pages = NULL;
+  ReinsertList.pages = nullptr;
   ReinsertList.n_pages = 0;
   ReinsertList.m_pages = 0;
 

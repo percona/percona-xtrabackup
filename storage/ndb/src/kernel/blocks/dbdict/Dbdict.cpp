@@ -6720,27 +6720,6 @@ void Dbdict::handleTabInfo(SimpleProperties::Reader & it,
   tabRequire(keyCount <= MAX_ATTRIBUTES_IN_INDEX,
              CreateTableRef::InvalidPrimaryKeySize);
 
-  /* Check that all currently running nodes data support
-   * table features
-   */
-  for (Uint32 nodeId=1; nodeId < MAX_NODES; nodeId++)
-  {
-    const NodeInfo& ni = getNodeInfo(nodeId);
-
-    if (ni.m_connected &&
-        (ni.m_type == NODE_TYPE_DB))
-    {
-      /* Check that all nodes support extra bits */
-      if (tablePtr.p->m_extra_row_gci_bits ||
-          tablePtr.p->m_extra_row_author_bits)
-      {
-        tabRequire(ndb_tup_extrabits(ni.m_version),
-                   CreateTableRef::FeatureRequiresUpgrade);
-      }
-    }
-  }
-
-
   if(tablePtr.p->m_tablespace_id != RNIL || counts[3] || counts[4])
   {
     FilegroupPtr tablespacePtr;
@@ -12642,207 +12621,7 @@ Dbdict::execLIST_TABLES_REQ(Signal* signal)
     return;
   }
 
-  Uint32 senderRef  = req->senderRef;
-  Uint32 receiverVersion = getNodeInfo(refToNode(senderRef)).m_version;
-
-  if (ndbd_LIST_TABLES_CONF_long_signal(receiverVersion))
-    sendLIST_TABLES_CONF(signal, req);
-  else
-    sendOLD_LIST_TABLES_CONF(signal, req);
-}
-
-void Dbdict::sendOLD_LIST_TABLES_CONF(Signal* signal, ListTablesReq* req)
-{
-  Uint32 senderRef  = req->senderRef;
-  Uint32 senderData = req->senderData;
-  // save req flags
-  const Uint32 reqTableId = req->oldGetTableId();
-  const Uint32 reqTableType = req->oldGetTableType();
-  const bool reqListNames = req->getListNames();
-  const bool reqListIndexes = req->getListIndexes();
-  XSchemaFile * xsf = &c_schemaFile[SchemaRecord::NEW_SCHEMA_FILE];
-  // init the confs
-  OldListTablesConf * conf = (OldListTablesConf *)signal->getDataPtrSend();
-  conf->senderData = senderData;
-  conf->counter = 0;
-  Uint32 pos = 0;
-
-  DictObjectName_hash::Iterator iter;
-  bool ok = c_obj_name_hash.first(iter);
-  for (; ok; ok = c_obj_name_hash.next(iter)){
-    Uint32 type = iter.curr.p->m_type;
-    if ((reqTableType != (Uint32)0) && (reqTableType != type))
-      continue;
-
-    if (reqListIndexes && !DictTabInfo::isIndex(type))
-      continue;
-
-    TableRecordPtr tablePtr;
-    if (DictTabInfo::isTable(type) || DictTabInfo::isIndex(type)){
-      c_tableRecordPool_.getPtr(tablePtr, iter.curr.p->m_object_ptr_i);
-
-      if(reqListIndexes && (reqTableId != tablePtr.p->primaryTableId))
-	continue;
-
-      conf->tableData[pos] = 0;
-      conf->setTableId(pos, iter.curr.p->m_id); // id
-      conf->setTableType(pos, type); // type
-      // state
-
-      if(DictTabInfo::isTable(type))
-      {
-        SchemaFile::TableEntry * te = getTableEntry(xsf, iter.curr.p->m_id);
-        switch(te->m_tableState){
-        case SchemaFile::SF_CREATE:
-          jam();
-          conf->setTableState(pos, DictTabInfo::StateBuilding);
-          break;
-        case SchemaFile::SF_ALTER:
-          jam();
-          conf->setTableState(pos, DictTabInfo::StateOnline);
-          break;
-        case SchemaFile::SF_DROP:
-          jam();
-	  conf->setTableState(pos, DictTabInfo::StateDropping);
-          break;
-        case SchemaFile::SF_IN_USE:
-        {
-          jam();
-          // Remove unused state StateBackup from backup handling
-          // - Rename StateBackup to ObsoleteStateBackup
-          // - Modify DICT so that it never sets table state to StateBackup
-          // - Map ObsoleteStateBackup to StateOnline in ndbapi
-          conf->setTableState(pos, DictTabInfo::StateOnline);
-	  break;
-        }
-	default:
-	  conf->setTableState(pos, DictTabInfo::StateBroken);
-	  break;
-	}
-      }
-      if (tablePtr.p->isIndex()) {
-	switch (tablePtr.p->indexState) {
-	case TableRecord::IS_OFFLINE:
-	  conf->setTableState(pos, DictTabInfo::StateOffline);
-	  break;
-	case TableRecord::IS_BUILDING:
-	  conf->setTableState(pos, DictTabInfo::StateBuilding);
-	  break;
-	case TableRecord::IS_DROPPING:
-	  conf->setTableState(pos, DictTabInfo::StateDropping);
-	  break;
-	case TableRecord::IS_ONLINE:
-	  conf->setTableState(pos, DictTabInfo::StateOnline);
-	  break;
-	default:
-	  conf->setTableState(pos, DictTabInfo::StateBroken);
-	  break;
-	}
-      }
-      // Logging status
-      if (! (tablePtr.p->m_bits & TableRecord::TR_Logged)) {
-	conf->setTableStore(pos, DictTabInfo::StoreNotLogged);
-      } else {
-	conf->setTableStore(pos, DictTabInfo::StorePermanent);
-      }
-      // Temporary status
-      if (tablePtr.p->m_bits & TableRecord::TR_Temporary) {
-	conf->setTableTemp(pos, NDB_TEMP_TAB_TEMPORARY);
-      } else {
-	conf->setTableTemp(pos, NDB_TEMP_TAB_PERMANENT);
-      }
-      pos++;
-    }
-    if(DictTabInfo::isTrigger(type)){
-      TriggerRecordPtr triggerPtr;
-      bool ok = find_object(triggerPtr, iter.curr.p->m_id);
-      conf->tableData[pos] = 0;
-      conf->setTableId(pos, iter.curr.p->m_id);
-      conf->setTableType(pos, type);
-      if (!ok)
-      {
-        conf->setTableState(pos, DictTabInfo::StateBroken);
-      }
-      else
-      {
-        switch (triggerPtr.p->triggerState) {
-        case TriggerRecord::TS_DEFINING:
-          conf->setTableState(pos, DictTabInfo::StateBuilding);
-          break;
-        case TriggerRecord::TS_OFFLINE:
-          conf->setTableState(pos, DictTabInfo::StateOffline);
-          break;
-        case TriggerRecord::TS_ONLINE:
-          conf->setTableState(pos, DictTabInfo::StateOnline);
-          break;
-        default:
-          conf->setTableState(pos, DictTabInfo::StateBroken);
-          break;
-        }
-      }
-      conf->setTableStore(pos, DictTabInfo::StoreNotLogged);
-      pos++;
-    }
-    if (DictTabInfo::isFilegroup(type)){
-      jam();
-      conf->tableData[pos] = 0;
-      conf->setTableId(pos, iter.curr.p->m_id);
-      conf->setTableType(pos, type); // type
-      conf->setTableState(pos, DictTabInfo::StateOnline);  // XXX todo
-      pos++;
-    }
-    if (DictTabInfo::isFile(type)){
-      jam();
-      conf->tableData[pos] = 0;
-      conf->setTableId(pos, iter.curr.p->m_id);
-      conf->setTableType(pos, type); // type
-      conf->setTableState(pos, DictTabInfo::StateOnline); // XXX todo
-      pos++;
-    }
-
-    if (pos >= OldListTablesConf::DataLength) {
-      sendSignal(senderRef, GSN_LIST_TABLES_CONF, signal,
-		 OldListTablesConf::SignalLength, JBB);
-      conf->counter++;
-      pos = 0;
-    }
-
-    if (! reqListNames)
-      continue;
-
-    LocalRope name(c_rope_pool, iter.curr.p->m_name);
-    const Uint32 size = name.size();
-    conf->tableData[pos] = size;
-    pos++;
-    if (pos >= OldListTablesConf::DataLength) {
-      sendSignal(senderRef, GSN_LIST_TABLES_CONF, signal,
-		 OldListTablesConf::SignalLength, JBB);
-      conf->counter++;
-      pos = 0;
-    }
-    Uint32 i = 0;
-    char tmp[PATH_MAX];
-    name.copy(tmp);
-    while (i < size) {
-      char* p = (char*)&conf->tableData[pos];
-      for (Uint32 j = 0; j < 4; j++) {
-	if (i < size)
-	  *p++ = tmp[i++];
-	else
-	  *p++ = 0;
-      }
-      pos++;
-      if (pos >= OldListTablesConf::DataLength) {
-	sendSignal(senderRef, GSN_LIST_TABLES_CONF, signal,
-		   OldListTablesConf::SignalLength, JBB);
-	conf->counter++;
-	pos = 0;
-      }
-    }
-  }
-  // last signal must have less than max length
-  sendSignal(senderRef, GSN_LIST_TABLES_CONF, signal,
-	     OldListTablesConf::HeaderLength + pos, JBB);
+  sendLIST_TABLES_CONF(signal, req);
 }
 
 bool Dbdict::buildListTablesData(const DictObject& dictObject,
@@ -15020,12 +14799,31 @@ Dbdict::set_index_stat_frag(Signal* signal, TableRecordPtr indexPtr)
   const Uint32 nodeIndex = value % noOfReplicas;
 
   indexPtr.p->indexStatFragId = fragId;
-  bzero(indexPtr.p->indexStatNodes, sizeof(indexPtr.p->indexStatNodes));
+
+  /**
+   * Use the bitmask for sorting, the order of node IDs in frag_data is
+   * not the same in all the data nodes.
+   */
+  NdbNodeBitmask sortedNodes;
   for (Uint32 i = 0; i < noOfReplicas; i++)
   {
-    Uint32 idx = fragIndex + 1 + (nodeIndex + i) % noOfReplicas;
-    indexPtr.p->indexStatNodes[i] = frag_data[idx];
+    Uint32 idx = fragIndex + 1 + i;
+    sortedNodes.set(frag_data[idx]);
   }
+
+  // clear list
+  memset(indexPtr.p->indexStatNodes, 0, sizeof(indexPtr.p->indexStatNodes));
+
+  // rotate the sorted nodes into the list
+  for (Uint32 nodeId = sortedNodes.find_first(), i = 0;
+       nodeId != BitmaskImpl::NotFound;
+       nodeId = sortedNodes.find_next(nodeId + 1), i++)
+  {
+    ndbrequire(i < noOfReplicas);
+    Uint32 idx = (nodeIndex + i) % noOfReplicas;
+    indexPtr.p->indexStatNodes[idx] = nodeId;
+  }
+
   D("set_index_stat_frag" << V(indexId) << V(fragId)
     << V(indexPtr.p->indexStatNodes[0]));
 }
@@ -19495,22 +19293,6 @@ busy:
   }
 }
 
-bool
-Dbdict::upgrade_suma_NotStarted(Uint32 err, Uint32 ref) const
-{
-  /**
-   * Check that receiver can handle 1428,
-   *   else return true if error code should be replaced by NF_FakeErrorREF
-   */
-  if (err == 1428)
-  {
-    jam();
-    if (!ndb_suma_not_started_ref(getNodeInfo(refToNode(ref)).m_version))
-      return true;
-  }
-  return false;
-}
-
 void Dbdict::execSUB_START_REF(Signal* signal)
 {
   jamEntry();
@@ -19533,12 +19315,6 @@ void Dbdict::execSUB_START_REF(Signal* signal)
 #ifdef EVENT_PH3_DEBUG
     ndbout_c("DBDICT(Participant) got GSN_SUB_START_REF = (%d)", subbPtr.i);
 #endif
-
-    if (upgrade_suma_NotStarted(err, subbPtr.p->m_senderRef))
-    {
-      jam();
-      err = SubStartRef::NF_FakeErrorREF;
-    }
 
     SubStartRef* ref = (SubStartRef*) signal->getDataPtrSend();
     ref->senderRef = reference();
@@ -19840,12 +19616,6 @@ void Dbdict::execSUB_STOP_REF(Signal* signal)
      * Participant
      */
     jam();
-
-    if (upgrade_suma_NotStarted(err, subbPtr.p->m_senderRef))
-    {
-      jam();
-      err = SubStopRef::NF_FakeErrorREF;
-    }
 
     SubStopRef* ref = (SubStopRef*) signal->getDataPtrSend();
     ref->senderRef = reference();
@@ -20245,12 +20015,6 @@ Dbdict::execSUB_REMOVE_REF(Signal* signal)
     else
     {
       jam();
-
-      if (upgrade_suma_NotStarted(err, subbPtr.p->m_senderRef))
-      {
-        jam();
-        err = SubRemoveRef::NF_FakeErrorREF;
-      }
 
       SubRemoveRef* ref = (SubRemoveRef*) signal->getDataPtrSend();
       ref->senderRef = reference();
@@ -22432,7 +22196,10 @@ Dbdict::execDICT_LOCK_REQ(Signal* signal)
 
     c_sub_startstop_lock.set(refToNode(req.userRef));
 
-    g_eventLogger->info("granting SumaStartMe dict lock to %u", refToNode(req.userRef));
+    g_eventLogger->info("granting %s dict lock to %u",
+                        req.lockType == DictLockReq::SumaStartMe ?
+                          "SumaStartMe" : "SumaHandover",
+                        refToNode(req.userRef));
     DictLockConf* conf = (DictLockConf*)signal->getDataPtrSend();
     conf->userPtr = req.userPtr;
     conf->lockType = req.lockType;
@@ -22551,9 +22318,12 @@ Dbdict::execDICT_UNLOCK_ORD(Signal* signal)
   {
     Uint32 nodeId = refToNode(ord->senderRef);
     jam();
-    g_eventLogger->info("clearing SumaStartMe dict lock for %u", nodeId);
+    g_eventLogger->info("clearing %s dict lock for %u",
+                        ord->lockType == DictLockReq::SumaStartMe ?
+                          "SumaStartMe" : "SumaHandover",
+                        nodeId);
+    ndbrequire(c_sub_startstop_lock.get(nodeId));
     c_sub_startstop_lock.clear(nodeId);
-
     if (ord->lockType == DictLockReq::SumaHandOver)
     {
       /**

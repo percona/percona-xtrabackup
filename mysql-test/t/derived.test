@@ -479,6 +479,7 @@ CREATE TABLE `t1` (
 INSERT INTO t1 VALUES (2, 9, NULL), (3, 3, '1900-01-01 00:00:00'),
 (8, 8, '1900-01-01 00:00:00'), (15, 0, '2007-12-15 12:39:34');
 
+--sorted_result
 SELECT * FROM ( 
   SELECT DISTINCT tableb.col_datetime_key 
   FROM t1 tablea LEFT JOIN t1 tableb ON tablea.pk < tableb.col_int_key
@@ -2985,3 +2986,101 @@ SET a=5
 WHERE a IN (SELECT a FROM t2
             ORDER BY (SELECT a FROM (SELECT SUM(a) FROM t1) AS dt));
 DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#30381092 WRONG BEHAVIOR OF '=' CONDITION WHEN WORKING WITH COMPLEX SUBQUERIES
+--echo #
+
+# Parent table
+CREATE TABLE t1 (t1_id INT PRIMARY KEY);
+# Child table, one-to-many.
+CREATE TABLE t2 (t2_id INT, t1_id INT);
+
+INSERT INTO t1 VALUES (-1), (1);
+INSERT INTO t2 SELECT t1_id, t1_id FROM t1;
+ANALYZE TABLE t1,t2;
+
+# ot.t2_id is a deeply nested outer reference.
+
+# We verify that the pulling-out finds the outer reference. We hide
+# this reference in various places :-)
+
+# Inside the WHERE clause of a merged derived table in a scalar subquery.
+
+let $query=
+SELECT * FROM t2 AS ot
+WHERE
+( SELECT t1_id AS it1
+  FROM ( SELECT * FROM t1 AS it2
+         WHERE t1_id = ( SELECT t1_id
+                         FROM ( SELECT * FROM t2 AS it3
+                                WHERE t2_id=ot.t2_id
+                              ) AS dt1
+                       )
+       ) AS dt2
+) IS NOT NULL;
+
+eval EXPLAIN $query;
+eval $query;
+
+# Inside the WHERE clause of a non-merged derived table in a scalar
+# subquery.
+
+let $query=
+SELECT * FROM t2 AS ot
+WHERE
+( SELECT t1_id AS it1
+  FROM ( SELECT * FROM t1 AS it2
+         WHERE t1_id = ( SELECT /*+ NO_MERGE() */ t1_id
+                         FROM ( SELECT * FROM t2 AS it3
+                                WHERE t2_id=ot.t2_id
+                              ) AS dt1
+                       )
+       ) AS dt2
+) IS NOT NULL;
+
+eval EXPLAIN $query;
+eval $query;
+
+DROP TABLE t1,t2;
+
+--echo # Bug#30488700: Mysql chooses different execution plan in 5.7
+
+CREATE TABLE tbl1 (
+  id BIGINT NOT NULL,
+  rec_id INTEGER NOT NULL,
+  id_value2 BIGINT DEFAULT NULL,
+  PRIMARY KEY (id, rec_id)
+) ENGINE=INNODB;
+
+CREATE TABLE tbl2 (
+  t_id BIGINT NOT NULL,
+  s_date DATETIME DEFAULT NULL,
+  PRIMARY KEY (t_id)
+) ENGINE=INNODB;
+
+let select_statement =
+SELECT t1.rec_id
+FROM tbl1 AS t1 INNER JOIN
+       (SELECT a.id, a.rec_id,s_date
+        FROM tbl2 AS b, tbl1 AS a
+        WHERE a.id_value2 = b.t_id AND a.id = 6889877970355107670
+        ORDER BY s_date DESC) t2
+     ON t1.id = t2.id AND t1.rec_id = t2.rec_id;
+
+let update_statement =
+UPDATE tbl1 AS t1 INNER JOIN
+       (SELECT a.id, a.rec_id, b.s_date
+        FROM tbl2 AS b, tbl1 AS a
+        WHERE a.id_value2 = b.t_id AND a.id = 6889877970355107670
+        ORDER BY s_date DESC) t2
+       ON t1.id = t2.id AND t1.rec_id = t2.rec_id
+SET t1.rec_id = @ROWNUM:= @ROWNUM+1;
+
+SET @ROWNUM = 0;
+eval $select_statement;
+eval $update_statement;
+eval explain $select_statement;
+eval explain $update_statement;
+
+DROP TABLE tbl1, tbl2;

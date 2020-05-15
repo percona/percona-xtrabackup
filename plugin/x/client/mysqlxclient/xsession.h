@@ -92,6 +92,21 @@ class XSession {
       1024 characters.
      */
     Capability_session_connect_attrs,
+
+    /**
+      Enable compression and choose the algorithm and style.
+
+      Capability type: OBJECT.
+      Key: "algorithm" = type STRING;
+            one of "deflate_stream|lz4_message|zstd_stream".
+      Key: "server_combine_mixed_messages" = type BOOL;
+           if true, server is allowed to combine different message types
+           into a compressed message.
+      Key: "server_max_combine_messages" = type INT;
+           if set, the server MUST not store more than N uncompressed
+           messages into a compressed message.
+     */
+    Capability_compression,
   };
 
   /**
@@ -271,6 +286,60 @@ class XSession {
       Option type: STRING
     */
     Network_namespace,
+    /** Compression negotiation check which compression algorithms or styles
+      are supported by the server and choose one supported by both sides.
+      Setting compression from "options" has priority over
+      "capabilities". If "compression_negotiation_mode" will have other value
+      than "DISABLED", then it will overwrite settings done by "capabilities".
+
+      Following modes are possible:
+
+      * "DISABLED" - client doesn't wont to use negotiation
+      * "REQUIRED" - if there is no common compression configuration or setting
+                     it fails, then such connection is rejected
+      * "PREFERRED" - client tries to negotiate compression configuration still
+                     when it fail, the connection is still usable
+
+
+      Default: "DISABLED"
+      Option type: STRING
+    */
+    Compression_negotiation_mode,
+    /** Try to negotiate following compression algorithms
+
+      Default: ["deflate_stream","lz4_message","zstd_stream"]
+      Option type: STRING, ARRAY OF STRINGS
+    */
+    Compression_algorithms,
+    /** The server is allowed to combine different message types
+      into a compressed message.
+
+      Default: true
+      Option type: BOOL
+     */
+    Compression_combine_mixed_messages,
+    /** The server MUST not store more than N uncompressed
+      messages into a compressed message.
+
+      Default: 0 (no limit)
+      Option type: INTEGER
+     */
+    Compression_max_combine_messages,
+
+    /** The server can compress messages at a given level.
+
+      Default: -2^63 (default level depend on compression algorithm
+                      and the server configuration)
+      Option type: INTEGER
+     */
+    Compression_level_server,
+    /** The client can compress messages at a given level.
+
+      Default: -2^63 (default level depend on compression algorithm;
+                      deflate_stream:3, lz4_frame:2, zstd_stream:3)
+      Option type: INTEGER
+     */
+    Compression_level_client,
   };
 
  public:

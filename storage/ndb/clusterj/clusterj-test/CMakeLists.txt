@@ -20,10 +20,11 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-SET ( BROKEN_JAVAC
+SET(BROKEN_JAVAC
  ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java/testsuite/clusterj/*.java
  ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java/testsuite/clusterj/domaintypehandler/*.java
  ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java/testsuite/clusterj/model/*.java
+ ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java/testsuite/clusterj/util/*.java
  ${CMAKE_CURRENT_SOURCE_DIR}/../clusterj-unit/src/main/java/junit/framework/*.java
  ${CMAKE_CURRENT_SOURCE_DIR}/../clusterj-unit/src/main/java/junit/textui/*.java
  ${CMAKE_CURRENT_SOURCE_DIR}/../clusterj-unit/src/main/java/org/junit/*.java)
@@ -65,6 +66,7 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/DynamicObjectTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DynamicShortPKTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/FindByPrimaryKey2Test.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/FindByPrimaryKeyErrorHandlingTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/FindByPrimaryKeyTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/FixedLengthCharTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/HashOnlyLongIntStringPKTest.java
@@ -205,6 +207,7 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/VarbinaryPK.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/VarbinaryTypes.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/model/YearTypes.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/util/MgmClient.java
 
   ${CLUSTERJ_JUNIT_PREFIX}/junit/framework/AssertionFailedError.java
   ${CLUSTERJ_JUNIT_PREFIX}/junit/framework/Test.java
@@ -215,16 +218,26 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_JUNIT_PREFIX}/junit/textui/ResultPrinter.java
   ${CLUSTERJ_JUNIT_PREFIX}/junit/textui/TestRunner.java
   ${CLUSTERJ_JUNIT_PREFIX}/org/junit/Ignore.java
+  ${CLUSTERJ_JUNIT_PREFIX}/org/junit/DebugTest.java
   )
 
-SET ( CLASSPATH 
+SET(CLASSPATH
   target/classes
   ${WITH_CLASSPATH}
   ${CMAKE_BINARY_DIR}/storage/ndb/clusterj/clusterj-api/target/classes
   ${CMAKE_BINARY_DIR}/storage/ndb/clusterj/clusterj-core/target/classes)
 
-SET(CLUSTERJ_TEST_EXPORTS regression,testsuite.clusterj,testsuite.clusterj.model,testsuite.clusterj.domaintypehandler,junit.framework,junit.textui,org.junit)
-CREATE_MANIFEST(manifest.mf ${CLUSTERJ_TEST_EXPORTS} clusterj-test)
+SET(CLUSTERJ_TEST_EXPORTS
+  junit.framework
+  junit.textui
+  org.junit
+  regression
+  testsuite.clusterj
+  testsuite.clusterj.domaintypehandler
+  testsuite.clusterj.model
+  testsuite.clusterj.util
+  )
+CREATE_MANIFEST(manifest.mf "${CLUSTERJ_TEST_EXPORTS}" clusterj-test)
 
 CREATE_JAR(clusterj-test ${JAVA_SOURCES}
   CLASSPATH ${CLASSPATH}
@@ -235,4 +248,4 @@ CREATE_JAR(clusterj-test ${JAVA_SOURCES}
   BROKEN_JAVAC ${BROKEN_JAVAC})
 
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/clusterj-test-${JAVA_NDB_VERSION}.jar
-        DESTINATION ${INSTALL_MYSQLSHAREDIR}/java COMPONENT ClusterJ)
+  DESTINATION ${INSTALL_MYSQLSHAREDIR}/java COMPONENT ClusterJ)

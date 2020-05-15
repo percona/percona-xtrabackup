@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -155,7 +155,7 @@ static MY_UNI_IDX idx_uni_cp1250[] = {{0x0000, 0x00FD, tab_uni_cp1250_plane00},
                                       {0x2013, 0x20AC, tab_uni_cp1250_plane20},
                                       {0x02C7, 0x02DD, tab_uni_cp1250_plane02},
                                       {0x2122, 0x2122, tab_uni_cp1250_plane21},
-                                      {0, 0, NULL}};
+                                      {0, 0, nullptr}};
 
 static const uchar ctype_win1250ch[] = {
     0x00, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x28, 0x28,
@@ -431,7 +431,7 @@ static int my_strnncollsp_win1250ch(const CHARSET_INFO *cs, const uchar *s,
     ;
   for (; tlen && t[tlen - 1] == ' '; tlen--)
     ;
-  return my_strnncoll_win1250ch(cs, s, slen, t, tlen, 0);
+  return my_strnncoll_win1250ch(cs, s, slen, t, tlen, false);
 }
 
 static size_t my_strnxfrm_win1250ch(
@@ -600,19 +600,19 @@ CHARSET_INFO my_charset_cp1250_czech_ci = {
     MY_CS_COMPILED | MY_CS_STRNXFRM | MY_CS_CSSORT, /* state     */
     "cp1250",                                       /* cs name   */
     "cp1250_czech_cs",                              /* name      */
-    "",                                             /* comment   */
-    NULL,                                           /* tailoring */
-    NULL,                                           /* coll_param */
+    "Windows Central European",                     /* comment   */
+    nullptr,                                        /* tailoring */
+    nullptr,                                        /* coll_param */
     ctype_win1250ch,
     to_lower_win1250ch,
     to_upper_win1250ch,
     sort_order_win1250ch,
-    NULL,                /* uca          */
+    nullptr,             /* uca          */
     tab_cp1250_uni,      /* tab_to_uni   */
     idx_uni_cp1250,      /* tab_from_uni */
     &my_unicase_default, /* caseinfo     */
-    NULL,                /* state_map    */
-    NULL,                /* ident_map    */
+    nullptr,             /* state_map    */
+    nullptr,             /* ident_map    */
     2,                   /* strxfrm_multiply */
     1,                   /* caseup_multiply  */
     1,                   /* casedn_multiply  */
@@ -622,7 +622,7 @@ CHARSET_INFO my_charset_cp1250_czech_ci = {
     0,                   /* min_sort_char */
     0,                   /* max_sort_char */
     ' ',                 /* pad char      */
-    0,                   /* escape_with_backslash_is_dangerous */
+    false,               /* escape_with_backslash_is_dangerous */
     2,                   /* levels_for_compare */
     &my_charset_8bit_handler,
     &my_collation_czech_ci_handler,

@@ -1002,11 +1002,11 @@ a int, b varchar(255), c datetime
 );
 SHOW COLUMNS FROM t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
+a	int	YES		NULL	
 b	varchar(255)	YES		NULL	
 c	datetime	YES		NULL	
-statement=SHOW COLUMNS FROM t1 row_number=1, column_name="Type", Value=int(11)
-statement="SHOW COLUMNS FROM t1" row_number=1, column_name="Type", Value=int(11)
+statement=SHOW COLUMNS FROM t1 row_number=1, column_name="Type", Value=int
+statement="SHOW COLUMNS FROM t1" row_number=1, column_name="Type", Value=int
 statement=SHOW COLUMNS FROM t1 row_number=1, column_name=Default, Value=NULL
 value= ->A B<-
 value= 1
@@ -1026,7 +1026,7 @@ mysqltest: At line 1: Query 'let $value= query_get_value(SHOW COLNS FROM t1, Fie
 ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'COLNS FROM t1' at line 1
 
 Field Type Null Key Default Extra
-a int(11) YES -><- NULL 
+a int YES -><- NULL 
 b varchar(255) YES -><- NULL 
 c datetime YES -><- NULL 
 
@@ -1034,7 +1034,7 @@ Number of columns with Default NULL: 3
 
 SHOW COLUMNS FROM t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
+a	int	YES		NULL	
 b	varchar(255)	YES		NULL	
 c	datetime	YES		NULL	
 drop table t1;
@@ -1308,7 +1308,7 @@ COUNT(*)
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TEMPORARY TABLE `t1` (
-  `a` int(11) DEFAULT NULL
+  `a` int DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TEMPORARY TABLE t1;
 #
@@ -1344,6 +1344,7 @@ loaddata_utf8.dat
 loadxml.dat
 loadxml2.dat
 numbers.txt
+secret_data_cert.txt
 wl5766_data.txt
 words.dat
 words2.dat
@@ -1369,6 +1370,7 @@ loaddata_utf8.dat
 loadxml.dat
 loadxml2.dat
 numbers.txt
+secret_data_cert.txt
 wl5766_data.txt
 words.dat
 words2.dat
@@ -2143,3 +2145,32 @@ res
 SELECT 200 AS res;
 res
 200
+#
+# Bug#29901754: ADD SUPORT FOR COLUMN MASKING TO DIFF_TABLES.INC
+#
+CREATE TABLE t1(col1 INT, col2 INT, col3 INT);
+INSERT INTO t1 VALUES(1, RAND(), 4);
+INSERT INTO t1 VALUES(2, RAND(), 5);
+INSERT INTO t1 VALUES(3, RAND(), 6);
+CREATE TABLE t2(col1 INT, col2 INT, col3 INT);
+INSERT INTO t2 VALUES(1, RAND(), 4);
+INSERT INTO t2 VALUES(2, RAND(), 5);
+INSERT INTO t2 VALUES(3, RAND(), 6);
+include/diff_tables.inc [default:t1, default:t2]
+DROP TABLE t1, t2;
+#
+#Bug#29769715 MTR: --REPLACE_* COMMANDS DON'T WORK WITH CAT_FILE COMMAND
+#
+def 456.27
+SELECT "abc 456.27" as c1;
+c1
+abc 456.27
+abc 456.27
+def 456.27
+abc 456.27
+abc 456.3
+SELECT "abc 456.27" as c1;
+c1
+abc 456.27
+long_string
+long_string

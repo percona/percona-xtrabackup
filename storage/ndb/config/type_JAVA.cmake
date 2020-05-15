@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 INCLUDE(libutils)
 INCLUDE(cmake_parse_arguments)
 
-SET(JAVAC_TARGET "1.7")
+SET(JAVAC_TARGET "1.8")
 
 # Build (if not already done) NDB version string used for generating jars etc.
 MACRO(SET_JAVA_NDB_VERSION)
@@ -33,7 +33,8 @@ MACRO(SET_JAVA_NDB_VERSION)
     MESSAGE(FATAL_ERROR "NDB_VERSION_MAJOR variable not set!")
   ENDIF()
 
-  SET(JAVA_NDB_VERSION "${NDB_VERSION_MAJOR}.${NDB_VERSION_MINOR}.${NDB_VERSION_BUILD}")
+  SET(JAVA_NDB_VERSION
+    "${NDB_VERSION_MAJOR}.${NDB_VERSION_MINOR}.${NDB_VERSION_BUILD}")
   IF(NDB_VERSION_STATUS)
     SET(JAVA_NDB_VERSION "${JAVA_NDB_VERSION}.${NDB_VERSION_STATUS}")
   ENDIF()
@@ -42,9 +43,11 @@ MACRO(SET_JAVA_NDB_VERSION)
 
 ENDMACRO(SET_JAVA_NDB_VERSION)
 
-MACRO(CREATE_MANIFEST filename EXPORTS NAME)
+MACRO(CREATE_MANIFEST filename EXPORTS_LIST NAME)
+  # Convert cmake list to comma-separated string
+  STRING(REPLACE ";" "," EXPORTS_STRING "${EXPORTS_LIST}")
   FILE(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${filename}" "Manifest-Version: 1.0
-Export-Package: ${EXPORTS}
+Export-Package: ${EXPORTS_STRING}
 Bundle-Name: ${NAME}
 Bundle-Description: ClusterJ")
 ENDMACRO(CREATE_MANIFEST)
@@ -100,6 +103,9 @@ MACRO(CREATE_JAR)
   ELSE()
     SET(JAVA_ARGS "-J-Xmx1G")
   ENDIF()
+
+  # Treat all deprecation warnings as errors
+  SET(JAVA_ARGS ${JAVA_ARGS} -Xlint:deprecation -Xlint:-options -Werror)
 
   # Compile
   IF (JAVA_FILES)

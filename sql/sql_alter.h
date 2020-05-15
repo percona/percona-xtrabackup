@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,19 +57,19 @@ enum enum_field_types : int;
 using Mysql::Nullable;
 
 /**
-  Class representing DROP COLUMN, DROP KEY, DROP FOREIGN KEY and DROP CHECK
-  CONSTRAINT clauses in ALTER TABLE statement.
+  Class representing DROP COLUMN, DROP KEY, DROP FOREIGN KEY, DROP CHECK
+  CONSTRAINT and DROP CONSTRAINT clauses in ALTER TABLE statement.
 */
 
 class Alter_drop {
  public:
-  enum drop_type { KEY, COLUMN, FOREIGN_KEY, CHECK_CONSTRAINT };
+  enum drop_type { KEY, COLUMN, FOREIGN_KEY, CHECK_CONSTRAINT, ANY_CONSTRAINT };
   const char *name;
   drop_type type;
 
   Alter_drop(drop_type par_type, const char *par_name)
       : name(par_name), type(par_type) {
-    DBUG_ASSERT(par_name != NULL);
+    DBUG_ASSERT(par_name != nullptr);
   }
 };
 
@@ -135,7 +135,7 @@ class Alter_index_visibility {
  public:
   Alter_index_visibility(const char *name, bool is_visible)
       : m_name(name), m_is_visible(is_visible) {
-    assert(name != NULL);
+    assert(name != nullptr);
   }
 
   const char *name() const { return m_name; }
@@ -163,19 +163,20 @@ class Alter_rename_key {
 };
 
 /**
-  Class which instances represents state(i.e ENFORCED | NOT ENFORCED) of
-  CHECK CONSTRAINT in ALTER TABLE statement.
+  Class representing ALTER CHECK and ALTER CONSTRAINT clauses in ALTER TABLE
+  statement.
 */
 
-class Alter_state {
+class Alter_constraint_enforcement {
  public:
-  enum class Type { CHECK_CONSTRAINT };
+  enum class Type { CHECK_CONSTRAINT, ANY_CONSTRAINT };
   const char *name;
   Type type;
-  bool state;
+  bool is_enforced;
 
-  Alter_state(Type par_type, const char *par_name, bool par_state)
-      : name(par_name), type(par_type), state(par_state) {
+  Alter_constraint_enforcement(Type par_type, const char *par_name,
+                               bool par_is_enforced)
+      : name(par_name), type(par_type), is_enforced(par_is_enforced) {
     DBUG_ASSERT(par_name != nullptr);
   }
 };
@@ -309,6 +310,15 @@ class Alter_info {
 
     /// Set for check constraint suspend.
     SUSPEND_CHECK_CONSTRAINT = 1ULL << 35,
+
+    /// Set for DROP CONSTRAINT.
+    DROP_ANY_CONSTRAINT = 1ULL << 36,
+
+    /// Set for ALTER CONSTRAINT symbol ENFORCED.
+    ENFORCE_ANY_CONSTRAINT = 1ULL << 37,
+
+    /// Set for ALTER CONSTRAINT symbol NOT ENFORCED.
+    SUSPEND_ANY_CONSTRAINT = 1ULL << 38,
   };
 
   enum enum_enable_or_disable { LEAVE_AS_IS, ENABLE, DISABLE };
@@ -379,8 +389,9 @@ class Alter_info {
   /// Indexes whose visibilities are to be changed.
   Mem_root_array<const Alter_index_visibility *> alter_index_visibility_list;
 
-  /// List of check constraints whose state is changed.
-  Mem_root_array<const Alter_state *> alter_state_list;
+  /// List of check constraints whose enforcement state is changed.
+  Mem_root_array<const Alter_constraint_enforcement *>
+      alter_constraint_enforcement_list;
 
   /// Check constraints specification for CREATE and ALTER TABLE operations.
   Sql_check_constraint_spec_list check_constraint_spec_list;
@@ -409,7 +420,11 @@ class Alter_info {
   /// ALTER TABLE [db.]table [ RENAME [TO|AS|=] [new_db.]new_table ]
   LEX_CSTRING new_db_name;
 
-  /// New table name in the "RENAME [TO] <table_name>" clause or NULL_STR
+  /// New table name in the
+  /// \code
+  /// RENAME [TO] <table_name>
+  /// \endcode
+  /// clause or NULL_STR
   LEX_CSTRING new_table_name;
 
   explicit Alter_info(MEM_ROOT *mem_root)
@@ -418,7 +433,7 @@ class Alter_info {
         key_list(mem_root),
         alter_rename_key_list(mem_root),
         alter_index_visibility_list(mem_root),
-        alter_state_list(mem_root),
+        alter_constraint_enforcement_list(mem_root),
         check_constraint_spec_list(mem_root),
         flags(0),
         keys_onoff(LEAVE_AS_IS),

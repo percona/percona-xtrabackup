@@ -13,11 +13,11 @@
 -- along with this program; if not, write to the Free Software
 -- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-DROP FUNCTION IF EXISTS format_bytes;
+DROP FUNCTION IF EXISTS sys.format_bytes;
 
 DELIMITER $$
 
-CREATE DEFINER='mysql.sys'@'localhost' FUNCTION format_bytes (
+CREATE DEFINER='mysql.sys'@'localhost' FUNCTION sys.format_bytes (
         -- We feed in and return TEXT here, as aggregates of
         -- bytes can return numbers larger than BIGINT UNSIGNED
         bytes TEXT
@@ -71,13 +71,10 @@ mysql> SELECT sys.format_bytes(23487234) AS size;
     DETERMINISTIC
     NO SQL
 BEGIN
-  IF bytes IS NULL THEN RETURN NULL;
-  ELSEIF bytes >= 1125899906842624 THEN RETURN CONCAT(ROUND(bytes / 1125899906842624, 2), ' PiB');
-  ELSEIF bytes >= 1099511627776 THEN RETURN CONCAT(ROUND(bytes / 1099511627776, 2), ' TiB');
-  ELSEIF bytes >= 1073741824 THEN RETURN CONCAT(ROUND(bytes / 1073741824, 2), ' GiB');
-  ELSEIF bytes >= 1048576 THEN RETURN CONCAT(ROUND(bytes / 1048576, 2), ' MiB');
-  ELSEIF bytes >= 1024 THEN RETURN CONCAT(ROUND(bytes / 1024, 2), ' KiB');
-  ELSE RETURN CONCAT(ROUND(bytes, 0), ' bytes');
+  IF (bytes IS NULL) THEN
+    RETURN NULL;
+  ELSE
+    RETURN format_bytes(bytes);
   END IF;
 END$$
 

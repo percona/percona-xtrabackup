@@ -403,8 +403,6 @@ class PrecomputedAggregateIterator final : public RowIterator {
   int m_output_slice;
 };
 
-enum class JoinType { INNER, OUTER, ANTI, SEMI };
-
 /**
   A simple nested loop join, taking in two iterators (left/outer and
   right/inner) and joining them together. This may, of course, scan the inner
@@ -631,13 +629,14 @@ class MaterializeIterator final : public TableRowIterator {
       (e.g., because we have a dependency on a value from outside the query
       block).
     @param limit_rows
-      Does the same job as a LimitOffsetIterator right before the
-      MaterializeIterator would have done, except that it works _after_
-      deduplication (if that is active). It is used for when pushing LIMIT down
-      to MaterializeIterator, so that we can stop materializing when there are
-      enough rows. The deduplication is the reason why this specific limit has
-      to be handled in MaterializeIterator and not using a regular
-      LimitOffsetIterator. Set to HA_POS_ERROR for no limit.
+      Used for when pushing LIMIT down to MaterializeIterator; this is
+      more efficient than having a LimitOffsetIterator above the
+      MaterializeIterator, since we can stop materializing when there are
+      enough rows. (This is especially important for recursive CTEs.)
+      Note that we cannot have a LimitOffsetIterator _below_ the
+      MaterializeIterator, as that would count wrong if we have deduplication,
+      and would not work at all for recursive CTEs.
+      Set to HA_POS_ERROR for no limit.
    */
   MaterializeIterator(THD *thd,
                       Mem_root_array<QueryBlock> query_blocks_to_materialize,
@@ -1012,7 +1011,8 @@ class RemoveDuplicatesIterator final : public RowIterator {
 
   In this case, the query tree without this iterator would ostensibly look like
 
-    -> Table scan on t1
+    -> Nested loop join
+       -> Table scan on t1
        -> Remove duplicates on t2_idx
           -> Nested loop semijoin
              -> Index scan on t2 using t2_idx

@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,11 +51,7 @@
 #define MAX_KEY MAX_INDEXES  /* Max used keys */
 #define MAX_REF_PARTS 16U    /* Max parts used as ref */
 #define MAX_KEY_LENGTH 3072U /* max possible key */
-#if SIZEOF_OFF_T > 4
-#define MAX_REFLENGTH 8 /* Max length for record ref */
-#else
-#define MAX_REFLENGTH 4 /* Max length for record ref */
-#endif
+#define MAX_REFLENGTH 8      /* Max length for record ref */
 
 #define MAX_MBWIDTH 3 /* Max multibyte sequence */
 #define MAX_FIELD_CHARLENGTH 255

@@ -47,7 +47,7 @@
 
 using ::testing::Return;
 using namespace testing;
-using mysqlrouter::MySQLInnoDBClusterMetadata;
+using mysqlrouter::ClusterMetadataGRV2;
 
 class MockSocketOperations : public mysql_harness::SocketOperationsBase {
  public:
@@ -89,34 +89,27 @@ class ClusterMetadataTest : public ::testing::Test {
 };
 
 const std::string kQueryGetHostname =
-    "SELECT h.host_id, h.host_name"
-    " FROM mysql_innodb_cluster_metadata.routers r"
-    " JOIN mysql_innodb_cluster_metadata.hosts h"
-    "    ON r.host_id = h.host_id"
-    " WHERE r.router_id =";
-
-const std::string kCheckHostExists =
-    "SELECT host_id, host_name, ip_address"
-    " FROM mysql_innodb_cluster_metadata.hosts"
-    " WHERE host_name =";
+    "SELECT address FROM mysql_innodb_cluster_metadata.v2_routers WHERE "
+    "router_id =";
 
 const std::string kRegisterRouter =
-    "INSERT INTO mysql_innodb_cluster_metadata.routers"
-    "        (host_id, router_name) VALUES";
+    "INSERT INTO mysql_innodb_cluster_metadata.v2_routers"
+    "        (address, product_name, router_name) VALUES";
+
+const mysqlrouter::MetadataSchemaVersion kNewSchemaVersion{1, 0, 1};
 
 TEST_F(ClusterMetadataTest, check_router_id_ok) {
-  const std::string kHostId = "2";
   const std::string kHostname = "hostname";
-  MySQLInnoDBClusterMetadata cluster_metadata(&session_replayer,
-                                              &hostname_operations);
+  ClusterMetadataGRV2 cluster_metadata(kNewSchemaVersion, &session_replayer,
+                                       &hostname_operations);
 
   session_replayer.expect_query_one(kQueryGetHostname)
-      .then_return(2, {{kHostId.c_str(), kHostname.c_str()}});
+      .then_return(1, {{kHostname.c_str()}});
   EXPECT_CALL(hostname_operations, get_local_hostname())
       .Times(1)
       .WillOnce(Return(kHostname));
 
-  EXPECT_NO_THROW(cluster_metadata.check_router_id(1));
+  EXPECT_NO_THROW(cluster_metadata.verify_router_id_is_ours(1));
 }
 
 ACTION_P(ThrowLocalHostnameResolutionError, msg) {
@@ -124,35 +117,35 @@ ACTION_P(ThrowLocalHostnameResolutionError, msg) {
 }
 
 /**
- * @test verify that check_router_id() will throw if get_local_hostname() fails
+ * @test verify that verify_router_id_is_ours() will throw if
+ * get_local_hostname() fails
  */
 TEST_F(ClusterMetadataTest, check_router_id_get_hostname_throws) {
-  const std::string kHostId = "2";
   const std::string kHostname = "";
-  MySQLInnoDBClusterMetadata cluster_metadata(&session_replayer,
-                                              &hostname_operations);
+  ClusterMetadataGRV2 cluster_metadata(kNewSchemaVersion, &session_replayer,
+                                       &hostname_operations);
 
   session_replayer.expect_query_one(kQueryGetHostname)
-      .then_return(2, {{kHostId.c_str(), kHostname.c_str()}});
+      .then_return(1, {{kHostname.c_str()}});
   EXPECT_CALL(hostname_operations, get_local_hostname())
       .Times(1)
       .WillOnce(ThrowLocalHostnameResolutionError(
           "some error from get_local_hostname()"));
 
   EXPECT_THROW_LIKE(
-      cluster_metadata.check_router_id(1),
+      cluster_metadata.verify_router_id_is_ours(1),
       mysql_harness::SocketOperationsBase::LocalHostnameResolutionError,
       "some error from get_local_hostname()");
 }
 
 TEST_F(ClusterMetadataTest, check_router_id_router_not_found) {
-  MySQLInnoDBClusterMetadata cluster_metadata(&session_replayer,
-                                              &hostname_operations);
+  ClusterMetadataGRV2 cluster_metadata(kNewSchemaVersion, &session_replayer,
+                                       &hostname_operations);
 
   session_replayer.expect_query_one(kQueryGetHostname).then_return(2, {});
 
   try {
-    cluster_metadata.check_router_id(1);
+    cluster_metadata.verify_router_id_is_ours(1);
     FAIL() << "Expected exception";
   } catch (std::runtime_error &e) {
     ASSERT_STREQ("router_id 1 not found in metadata", e.what());
@@ -160,20 +153,19 @@ TEST_F(ClusterMetadataTest, check_router_id_router_not_found) {
 }
 
 TEST_F(ClusterMetadataTest, check_router_id_different_hostname) {
-  const std::string kHostId = "2";
   const std::string kHostname1 = "hostname";
   const std::string kHostname2 = "another.hostname";
-  MySQLInnoDBClusterMetadata cluster_metadata(&session_replayer,
-                                              &hostname_operations);
+  ClusterMetadataGRV2 cluster_metadata(kNewSchemaVersion, &session_replayer,
+                                       &hostname_operations);
 
   session_replayer.expect_query_one(kQueryGetHostname)
-      .then_return(2, {{kHostId.c_str(), kHostname1.c_str()}});
+      .then_return(1, {{kHostname1.c_str()}});
   EXPECT_CALL(hostname_operations, get_local_hostname())
       .Times(1)
       .WillOnce(Return(kHostname2));
 
   try {
-    cluster_metadata.check_router_id(1);
+    cluster_metadata.verify_router_id_is_ours(1);
     FAIL() << "Expected exception";
   } catch (std::runtime_error &e) {
     ASSERT_STREQ(
@@ -186,11 +178,9 @@ TEST_F(ClusterMetadataTest, check_router_id_different_hostname) {
 TEST_F(ClusterMetadataTest, register_router_ok) {
   const std::string kRouterName = "routername";
   const std::string kHostName = "hostname";
-  MySQLInnoDBClusterMetadata cluster_metadata(&session_replayer,
-                                              &hostname_operations);
+  ClusterMetadataGRV2 cluster_metadata(kNewSchemaVersion, &session_replayer,
+                                       &hostname_operations);
 
-  session_replayer.expect_query_one(kCheckHostExists)
-      .then_return(3, {{"1", kHostName.c_str(), "127.0.0.1"}});
   session_replayer.expect_execute(kRegisterRouter).then_ok();
   EXPECT_CALL(hostname_operations, get_local_hostname())
       .Times(1)
@@ -200,16 +190,15 @@ TEST_F(ClusterMetadataTest, register_router_ok) {
 }
 
 /**
- * @test verify that register_router() will throw if get_local_hostname() fails
+ * @test verify that register_router() will throw if get_local_hostname()
+ fails
  */
 TEST_F(ClusterMetadataTest, register_router_get_hostname_throws) {
   const std::string kRouterName = "routername";
   const std::string kHostName = "";
-  MySQLInnoDBClusterMetadata cluster_metadata(&session_replayer,
-                                              &hostname_operations);
+  ClusterMetadataGRV2 cluster_metadata(kNewSchemaVersion, &session_replayer,
+                                       &hostname_operations);
 
-  session_replayer.expect_query_one(kCheckHostExists)
-      .then_return(3, {{"1", kHostName.c_str(), "127.0.0.1"}});
   session_replayer.expect_execute(kRegisterRouter).then_ok();
   EXPECT_CALL(hostname_operations, get_local_hostname())
       .Times(1)

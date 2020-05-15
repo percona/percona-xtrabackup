@@ -160,7 +160,7 @@ select @log;
 set @log:= "";
 insert ignore t1 values (1, 2);
 Warnings:
-Warning	1062	Duplicate entry '1' for key 'PRIMARY'
+Warning	1062	Duplicate entry '1' for key 't1.PRIMARY'
 select @log;
 @log
 (BEFORE_INSERT: new=(id=1, data=2))
@@ -831,7 +831,7 @@ mysqltest	t1_bi	mysqltest	t1	set @a:=new.id
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` int(11) DEFAULT NULL
+  `id` int DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop trigger test.t1_bi;
 ERROR HY000: Trigger does not exist
@@ -1258,8 +1258,14 @@ id	val
 1	test1
 2	test2
 INSERT INTO t1 VALUES (2,'test2') ON DUPLICATE KEY UPDATE val=VALUES(val);
+Warnings:
+Warning	1287	'VALUES function' is deprecated and will be removed in a future release. Please use an alias (INSERT INTO ... VALUES (...) AS alias) and replace VALUES(col) in the ON DUPLICATE KEY UPDATE clause with alias.col instead
 INSERT INTO t1 VALUES (2,'test3') ON DUPLICATE KEY UPDATE val=VALUES(val);
+Warnings:
+Warning	1287	'VALUES function' is deprecated and will be removed in a future release. Please use an alias (INSERT INTO ... VALUES (...) AS alias) and replace VALUES(col) in the ON DUPLICATE KEY UPDATE clause with alias.col instead
 INSERT INTO t1 VALUES (3,'test4') ON DUPLICATE KEY UPDATE val=VALUES(val);
+Warnings:
+Warning	1287	'VALUES function' is deprecated and will be removed in a future release. Please use an alias (INSERT INTO ... VALUES (...) AS alias) and replace VALUES(col) in the ON DUPLICATE KEY UPDATE clause with alias.col instead
 SELECT * FROM t1;
 id	val
 1	test1
@@ -2427,17 +2433,17 @@ INSERT INTO t2 VALUES("POST UPDATE TRIGGER FOR UPDATE IGNORE ON t1 FIRED");
 END|
 UPDATE IGNORE t1 SET a=2 WHERE a=1;
 Warnings:
-Warning	1062	Duplicate entry '2' for key 'PRIMARY'
+Warning	1062	Duplicate entry '2' for key 't1.PRIMARY'
 SELECT * FROM t2;
 after_update
 UPDATE IGNORE t1,t3 SET t1.a=2 WHERE t1.a=1;
 Warnings:
-Warning	1062	Duplicate entry '2' for key 'PRIMARY'
+Warning	1062	Duplicate entry '2' for key 't1.PRIMARY'
 SELECT * FROM t2;
 after_update
 UPDATE IGNORE t3,t1 SET t1.a=2 WHERE t1.a=1;
 Warnings:
-Warning	1062	Duplicate entry '2' for key 'PRIMARY'
+Warning	1062	Duplicate entry '2' for key 't1.PRIMARY'
 SELECT * FROM t1;
 a
 1
