@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2020 Percona LLC and/or its affiliates.
 
 AWS S3 client implementation.
 
@@ -34,6 +34,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #define AWS_DATE_HEADER "X-Amz-Date"
 #define AWS_CONTENT_SHA256_HEADER "X-Amz-Content-SHA256"
+#define AWS_SESSION_TOKEN_HEADER "X-Amz-Security-Token"
 #define AWS_SIGNATURE_ALGORITHM "AWS4-HMAC-SHA256"
 
 namespace xbcloud {
@@ -180,6 +181,10 @@ void S3_signerV4::sign_request(const std::string &hostname,
   req.add_header(AWS_DATE_HEADER, date_time);
   /* in case we updating already signed request */
   req.remove_header("Authorization");
+
+  if (!session_token.empty()) {
+    req.add_header(AWS_SESSION_TOKEN_HEADER, session_token);
+  }
 
   std::string signed_headers;
   auto string_to_sign = build_string_to_sign(req, signed_headers);
@@ -436,8 +441,8 @@ bool S3_client::probe_api_version_and_lookup(const std::string &bucket) {
         signer = std::unique_ptr<S3_signer>(
             new S3_signerV2(lookup, region, access_key, secret_key));
       } else {
-        signer = std::unique_ptr<S3_signer>(
-            new S3_signerV4(lookup, region, access_key, secret_key));
+        signer = std::unique_ptr<S3_signer>(new S3_signerV4(
+            lookup, region, access_key, secret_key, session_token));
       }
       auto tmp_lookup = bucket_lookup;
       auto tmp_version = api_version;
@@ -446,7 +451,7 @@ bool S3_client::probe_api_version_and_lookup(const std::string &bucket) {
       api_version = version;
 
       bool exists;
-      if (bucket_exists(bucket.c_str(),exists)) {
+      if (bucket_exists(bucket.c_str(), exists)) {
         msg_ts("%s: Successfully connected.\n", my_progname);
         return true;
       }

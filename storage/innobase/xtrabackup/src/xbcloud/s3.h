@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2020 Percona LLC and/or its affiliates.
 
 AWS S3 client implementation.
 
@@ -60,6 +60,7 @@ class S3_signerV4 : public S3_signer {
   std::string region;
   std::string access_key;
   std::string secret_key;
+  std::string session_token;
 
   static std::string aws_date_format(time_t t);
 
@@ -71,11 +72,13 @@ class S3_signerV4 : public S3_signer {
 
  public:
   S3_signerV4(s3_bucket_lookup_t lookup, const std::string &region,
-              const std::string &access_key, const std::string &secret_key)
+              const std::string &access_key, const std::string &secret_key,
+              const std::string &session_token = std::string())
       : lookup(lookup),
         region(region),
         access_key(access_key),
-        secret_key(secret_key) {}
+        secret_key(secret_key),
+        session_token(session_token) {}
 
   void sign_request(const std::string &hostname, const std::string &bucket,
                     Http_request &req, time_t t);
@@ -122,6 +125,7 @@ class S3_client {
   std::string host;
   std::string access_key;
   std::string secret_key;
+  std::string session_token;
 
   s3_bucket_lookup_t bucket_lookup{LOOKUP_AUTO};
 
@@ -166,6 +170,7 @@ class S3_client {
     endpoint = "https://" + host;
     protocol = Http_request::HTTPS;
     rtrim_slashes(host);
+    session_token = "";
   }
 
   void set_endpoint(const std::string &ep) {
@@ -182,6 +187,8 @@ class S3_client {
     }
     rtrim_slashes(host);
   }
+
+  void set_session_token(const std::string &st) { session_token = st; }
 
   void set_bucket_lookup(s3_bucket_lookup_t val) { bucket_lookup = val; }
 
@@ -229,10 +236,12 @@ class S3_object_store : public Object_store {
  public:
   S3_object_store(const Http_client *client, std::string &region,
                   const std::string &access_key, const std::string &secret_key,
+                  const std::string &session_token,
                   const std::string &endpoint = std::string(),
                   s3_bucket_lookup_t bucket_lookup = LOOKUP_DNS,
                   s3_api_version_t api_version = S3_V_AUTO)
       : s3_client{client, region, access_key, secret_key} {
+    if (!session_token.empty()) s3_client.set_session_token(session_token);
     if (!endpoint.empty()) s3_client.set_endpoint(endpoint);
     s3_client.set_bucket_lookup(bucket_lookup);
     s3_client.set_api_version(api_version);
@@ -266,11 +275,12 @@ class S3_object_store : public Object_store {
                                    const Http_buffer &contents,
                                    Event_handler *h,
                                    std::function<void(bool)> f = {}) override {
-    return s3_client.async_upload_object(container, object, contents, h,
-                                         [f](bool success) {
-                                           if (f) f(success);
-                                         },
-                                         extra_http_headers);
+    return s3_client.async_upload_object(
+        container, object, contents, h,
+        [f](bool success) {
+          if (f) f(success);
+        },
+        extra_http_headers);
   }
   virtual bool async_download_object(
       const std::string &container, const std::string &object, Event_handler *h,
