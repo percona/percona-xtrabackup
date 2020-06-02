@@ -3108,17 +3108,23 @@ static void xtrabackup_init_datasinks(void) {
                        : DS_TYPE_COMPRESS_QUICKLZ);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
-    if (ds_data != ds_redo) {
+
+    /* disable redo compression if redo log is encrypt */
+    if (srv_redo_log_encrypt) {
       ds_data = ds;
-      ds = ds_create(xtrabackup_target_dir,
-                     xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
-                         ? DS_TYPE_COMPRESS_LZ4
-                         : DS_TYPE_COMPRESS_QUICKLZ);
-      xtrabackup_add_datasink(ds);
-      ds_set_pipe(ds, ds_redo);
-      ds_redo = ds;
     } else {
-      ds_redo = ds_data = ds;
+      if (ds_data != ds_redo) {
+        ds_data = ds;
+        ds = ds_create(xtrabackup_target_dir,
+                       xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
+                           ? DS_TYPE_COMPRESS_LZ4
+                           : DS_TYPE_COMPRESS_QUICKLZ);
+        xtrabackup_add_datasink(ds);
+        ds_set_pipe(ds, ds_redo);
+        ds_redo = ds;
+      } else {
+        ds_redo = ds_data = ds;
+      }
     }
   }
 }
