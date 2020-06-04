@@ -14,24 +14,7 @@ The easiest way to install the *Percona Yum* repository is to install an *RPM*
 that configures :program:`yum` and installs the `Percona GPG key
 <https://www.percona.com/downloads/RPM-GPG-KEY-percona>`_.
 
-Supported Releases:
-
-
- * *CentOS* 5 and *RHEL* 5
-
- * *CentOS* 6 and *RHEL* 6 (Current Stable) [#f1]_
-
- * *CentOS* 7 and *RHEL* 7
-
- * *Amazon Linux AMI* (works the same as *CentOS* 6)
-
-The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too,
-provided that :program:`yum` is installed on the server.
-
-Supported Platforms:
-
- * x86
- * x86_64 (also known as ``amd64``)
+Specific information on the supported platforms, products, and versions is described in `Percona Software and Platform Lifecycle <https://www.percona.com/services/policies/percona-software-platform-lifecycle#mysql>`_.
 
 What's in each RPM package?
 ===========================
