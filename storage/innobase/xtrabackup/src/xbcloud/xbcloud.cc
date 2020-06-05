@@ -776,7 +776,8 @@ bool xbcloud_download(Object_store *store, const std::string &container,
                       const std::string &backup_name) {
   std::vector<std::string> object_list;
 
-  if (!store->list_objects_in_directory(container, backup_name, object_list)) {
+  if (!store->list_objects_in_directory(container, backup_name, object_list) ||
+      object_list.size() == 0) {
     msg_ts("%s: Download failed. Cannot list %s.\n", my_progname,
            backup_name.c_str());
     return false;
