@@ -221,7 +221,10 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len) {
 
     if (error) continue;
 
-    if (thd.to_len > 0) {
+    /* Compressing encrypted or already compressed
+    data the length of compression should exceed, in such case
+    skip the compression */
+    if (thd.to_len > 0 && thd.to_len < COMPRESS_CHUNK_SIZE) {
       /* compressed block length */
       if (write_uint32_le(dest_file, thd.to_len)) {
         error = true;
