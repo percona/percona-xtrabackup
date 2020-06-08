@@ -1397,7 +1397,7 @@ backup_files(const char *from, bool prep_mode)
 			/* backup fake file into empty directory */
 			char path[FN_REFLEN];
 			ut_snprintf(path, sizeof(path),
-					"%s/db.opt", node.filepath);
+					"%sdb.opt", node.filepath);
 			if (!(ret = backup_file_printf(
 					trim_dotslash(path), "%s", ""))) {
 				msg("Failed to create file %s\n", path);
