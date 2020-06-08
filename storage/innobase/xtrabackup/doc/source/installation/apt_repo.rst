@@ -8,26 +8,7 @@ Ready-to-use packages are available from the |Percona XtraBackup| software
 repositories and the `download page
 <https://www.percona.com/downloads/XtraBackup/>`_.
 
-Supported Releases:
-
-* Debian:
-
- * 7.0 (wheezy)
- * 8.0 (jessie)
- * 9.0 (stretch)
-
-* Ubuntu:
-
- * 14.04LTS (trusty)
- * 16.04LTS (xenial)
- * 17.04 (zesty)
- * 17.10 (artful)
- * 18.04 (bionic)
-
-Supported Platforms:
-
-* x86
-* x86_64 (also known as ``amd64``)
+Specific information on the supported platforms, products, and versions is described in `Percona Software and Platform Lifecycle <https://www.percona.com/services/policies/percona-software-platform-lifecycle#mysql>`_.
 
 What's in each DEB package?
 ===========================
