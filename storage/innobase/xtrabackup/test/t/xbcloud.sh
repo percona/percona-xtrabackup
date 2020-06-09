@@ -31,6 +31,7 @@ echo ${XBCLOUD_CREDENTIALS} | sed 's/ *--/\'$'\n/g' >> $topdir/xbcloud.cnf
 
 load_dbase_schema sakila
 load_dbase_data sakila
+mysql -e "CREATE database emptyDatabase"
 
 now=$(date +%s)
 pwdpart=($(pwd | md5sum))
