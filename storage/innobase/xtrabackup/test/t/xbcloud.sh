@@ -33,6 +33,7 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 mysql -e "ALTER TABLE payment COMPRESSION='lz4'" sakila
+mysql -e "CREATE database emptydatabase"
 
 now=$(date +%s)
 pwdpart=($(pwd | md5sum))
