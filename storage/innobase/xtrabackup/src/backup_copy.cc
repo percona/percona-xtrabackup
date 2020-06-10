@@ -999,6 +999,8 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
     } else if (!prep_mode) {
       /* backup fake file into empty directory */
       char opath[FN_REFLEN + 10];
+      /* remove trailing / */
+      if (path[strlen(path) - 1] == '/') path[strlen(path) - 1] = '\0';
       snprintf(opath, sizeof(opath), "%s/db.opt", path);
       if (!(ret = backup_file_printf(trim_dotslash(opath), "%s", ""))) {
         msg("Failed to create file %s\n", opath);
