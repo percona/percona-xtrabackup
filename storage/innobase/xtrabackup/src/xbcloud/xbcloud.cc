@@ -409,6 +409,16 @@ static void get_env_args() {
   get_env_value(opt_swift_storage_url, "OS_STORAGE_URL");
   get_env_value(opt_cacert, "OS_CACERT");
 
+  /* Below block should always be above AWS_* and should not be moved because
+  the order of prefrence are like S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID and
+  ACCESS_KEY  */
+  get_env_value(opt_s3_access_key, "S3_ACCESS_KEY_ID");
+  get_env_value(opt_s3_secret_key, "S3_SECRET_ACCESS_KEY");
+  get_env_value(opt_s3_session_token, "S3_SESSION_TOKEN");
+  get_env_value(opt_s3_region, "S3_DEFAULT_REGION");
+  get_env_value(opt_cacert, "S3_CA_BUNDLE");
+  get_env_value(opt_s3_endpoint, "S3_ENDPOINT");
+
   get_env_value(opt_s3_access_key, "AWS_ACCESS_KEY_ID");
   get_env_value(opt_s3_secret_key, "AWS_SECRET_ACCESS_KEY");
   get_env_value(opt_s3_session_token, "AWS_SESSION_TOKEN");
