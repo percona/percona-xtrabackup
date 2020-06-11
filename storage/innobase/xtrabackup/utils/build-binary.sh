@@ -91,9 +91,11 @@ export MAKE_JFLAG=-j4
 
 CMAKE_BIN='cmake'
 
-OS_VERSION=$(lsb_release -d -s)
-if [[ "${OS_VERSION}" = *"CentOS release 6."* ]] || [[ "${OS_VERSION}" = *"CentOS Linux release 7."* ]]; then
-    CMAKE_BIN='cmake3'
+if [ -f /etc/redhat-release ]; then
+    RHEL=$(rpm --eval %rhel)
+    if [[ "${RHEL}" -lt 8 ]]; then
+        CMAKE_BIN='cmake3'
+    fi
 fi
 
 # Create a temporary working directory

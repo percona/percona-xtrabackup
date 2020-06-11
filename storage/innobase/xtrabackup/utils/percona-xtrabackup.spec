@@ -4,6 +4,11 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%if 0%{?rhel} == 8
+%define cmake_bin cmake
+%else
+%define cmake_bin cmake3
+%endif
 %global mysqldatadir /var/lib/mysql
 
 #####################################
@@ -17,7 +22,7 @@ License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
-BuildRequires:  cmake, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
+BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
 Requires:       perl(DBD::mysql), rsync
@@ -66,7 +71,7 @@ sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrab
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/run.py
 %endif
 #
-cmake . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+%{cmake_bin} . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
   -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
