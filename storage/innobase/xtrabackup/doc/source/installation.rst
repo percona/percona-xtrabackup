@@ -27,7 +27,7 @@ packages for *Ubuntu* and *Debian*) for software such as |Percona Server|,
 update your software and its dependencies through your operating system's
 package manager. This is the recommend way of installing where possible.
 
-Following guides describe the installation process for using the official
+The following guides describe the installation process for using the official
 Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
 .. toctree::
