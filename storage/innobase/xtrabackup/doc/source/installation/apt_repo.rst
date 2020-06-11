@@ -25,10 +25,13 @@ The ``percona-xtrabackup-test-24`` package contains the test suite for
 The ``percona-xtrabackup`` package contains the older version of the
 |Percona XtraBackup|.
 
-Installing |Percona XtraBackup| from Percona ``apt`` repository
-===============================================================
+Installing |Percona XtraBackup| via |percona-release|
+================================================================================
 
-1. Fetch the repository packages from Percona web:
+|Percona XtraBackup|, like many other |percona| products, is installed
+via the |percona-release| package configuration tool.
+
+1. Download a deb package for |percona-release| the repository packages from Percona web:
 
    .. code-block:: bash
             
@@ -45,41 +48,22 @@ Installing |Percona XtraBackup| from Percona ``apt`` repository
    can check the repository setup in the
    :file:`/etc/apt/sources.list.d/percona-release.list` file.
 
-3. Remember to update the local cache:
+#.
+   .. include:: ../.res/contents/instruction.repository.enabling.txt
+
+#. After that you can install the ``percona-xtrabackup-80`` package:
+
+   .. code-block:: bash
+		   
+      $ sudo apt-get install percona-xtrabackup-80
+
+#. In order to make compressed backups, install the ``qpress`` package:
 
    .. code-block:: bash
 
-     $ sudo apt-get update
+      $ sudo apt-get install qpress
 
-4. After that you can install the package:
-
-   .. code-block:: bash
-
-     $ sudo apt-get install percona-xtrabackup-24
-
-.. _debian_testing:
-
-Percona ``apt`` Testing repository
-----------------------------------
-
-Percona offers pre-release builds from the testing repository. To enable it add
-the just add the ``testing`` word at the end of the Percona repository
-definition in your repository file (default
-:file:`/etc/apt/sources.list.d/percona-release.list`). It should looks like
-this (in this example ``VERSION`` is the name of your distribution):
-
-.. code-block:: text
-
-  deb http://repo.percona.com/apt VERSION main testing
-  deb-src http://repo.percona.com/apt VERSION main testing
-
-For example, if you are running *Debian* 8 (*jessie*) and want to install the
-latest testing builds, the definitions should look like this:
-
-.. code-block:: text
-
-  deb http://repo.percona.com/apt jessie main testing
-  deb-src http://repo.percona.com/apt jessie main testing
+   .. seealso:: :ref:`compressed_backup`
 
 Apt-Pinning the packages
 ------------------------
@@ -134,4 +118,6 @@ packages.
 
    .. code-block:: bash
 
-     $ sudo apt-get remove percona-xtrabackup-24
+      $ sudo apt-get remove percona-xtrabackup-80
+
+.. |percona-release| replace:: ``percona-release``

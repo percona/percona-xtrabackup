@@ -93,9 +93,10 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
    You can now install |Percona XtraBackup| by running:
 
-   .. code-block:: bash
-
-     yum install percona-xtrabackup-24
+#.
+   .. include:: ../.res/contents/instruction.repository.enabling.txt
+	     
+#. Install |Percona XtraBackup| by running:  :bash:`yum install percona-xtrabackup-80`
 
 .. warning::
 
@@ -116,6 +117,12 @@ the testing repository, you'll need to enable the testing repository in
 and experimental - in this case it is the second section that requires
 updating). **NOTE:** You'll need to install the Percona repository first (ref
 above) if this hasn't been done already.
+
+#. To be able to make compressed backups, install the ``qpress`` package:
+
+   $ yum install qpress
+
+   .. seealso:: :ref:`compressed_backup`
 
 .. _standalone_rpm:
 
