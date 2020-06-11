@@ -18,6 +18,8 @@ Usage: $0 [OPTIONS]
         --install_deps      Install build dependencies(root previlages are required)
         --branch            Branch for build
         --repo              Repo for build
+        --rpm_release       RPM version( default = 1)
+        --deb_release       DEB version( default = 1)
         --help) usage ;;
 Example $0 --builddir=/tmp/PXB --get_sources=1 --build_src_rpm=1 --build_rpm=1
 EOF
@@ -51,6 +53,8 @@ append_arg_to_args () {
             --install_deps=*) INSTALL="$val" ;;
             --branch=*) BRANCH="$val" ;;
             --repo=*) REPO="$val" ;;
+            --rpm_release=*) RPM_RELEASE="$val" ;;
+            --deb_release=*) DEB_RELEASE="$val" ;;
             --help) usage ;;
             *)
               if test -n "$pick_args"
