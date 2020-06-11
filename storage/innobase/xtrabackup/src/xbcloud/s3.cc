@@ -402,6 +402,9 @@ bool S3_client::create_bucket(const std::string &name) {
   Http_request req(Http_request::PUT, protocol, hostname(name),
                    bucketname(name) + "/");
   signer->sign_request(hostname(name), name, req, time(0));
+  req.append_payload("<CreateBucketConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LocationConstraint>");
+  req.append_payload(region);
+  req.append_payload("</LocationConstraint></CreateBucketConfiguration>");
 
   Http_response resp;
   if (!http_client->make_request(req, resp)) {
