@@ -117,9 +117,15 @@ fi
 xbcloud --defaults-file=$topdir/xbcloud.cnf get somedummyjunkbackup 2>$topdir/pxb-2164.log
 
 if ! grep -q failed $topdir/pxb-2164.log ; then
-    die 'xbcloud did not exit with error'
+    die 'xbcloud did not exit with error on get'
 fi
 
+#PXB-2198 xbcloud doesn't return the error on delete if the backup doesn't exist in s3 bucket
+xbcloud --defaults-file=$topdir/xbcloud.cnf delete somedummyjunkbackup 2>$topdir/pxb-2198.log
+
+if ! grep -q failed $topdir/pxb-2198.log ; then
+    die 'xbcloud did not exit with error on delete'
+fi
 # cleanup
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
 	${full_backup_name} --parallel=4
