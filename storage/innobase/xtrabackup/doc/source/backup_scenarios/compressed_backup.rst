@@ -4,18 +4,33 @@
 Compressed Backup
 =================
 
-|Percona XtraBackup| has implemented support for compressed backups. It can be
-used to compress/decompress local or streaming backup with |xbstream|.
+|Percona XtraBackup| supports compressed backups: a local or streaming backup
+can be compressed or decompressed with |xbstream|.
 
 Creating Compressed Backups
 ===========================
 
-In order to make a compressed backup you'll need to use
-:option:`--compress` option:
+In order to make a compressed backup you'll need to use the :option:`--compress`
+option:
 
 .. code-block:: bash
 
   $ xtrabackup --backup --compress --target-dir=/data/compressed/
+
+The :option:`--compress` uses the ``qpress`` tool that you can install via
+the ``percona-release`` package configuration tool as follows:
+
+.. code-block:: bash
+
+   $ sudo percona-release enable tools
+   $ sudo apt-get update
+   $ sudo apt-get install qpress
+
+.. note::
+
+   .. include:: ../.res/contents/instruction.repository.enabling.txt
+
+   .. seealso:: :ref:`installing_from_binaries`
 
 If you want to speed up the compression you can use the parallel compression,
 which can be enabled with :option:`--compress-threads` option.
@@ -46,11 +61,6 @@ Before you can prepare the backup you'll need to uncompress all the files.
 |Percona XtraBackup| has implemented :option:`--decompress` option
 that can be used to decompress the backup.
 
-.. note::
-
-   Before proceeding make sure that `qpress <http://www.quicklz.com/>`_ is
-   installed. It's available from :ref:`Percona Software repositories
-   <installing_from_binaries>`
 
 .. code-block:: bash
 
