@@ -734,6 +734,11 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
            backup_name.c_str());
     return false;
   }
+  if (object_list.empty()) {
+    msg_ts("%s: error: backup named %s doesn't exists!\n", my_progname,
+           backup_name.c_str());
+    return false;
+  }
 
   Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
   if (!h.init()) {
