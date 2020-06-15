@@ -9,27 +9,21 @@ software that performs non-blocking backups for |InnoDB| and |XtraDB|
 databases. With *Percona XtraBackup*, you can achieve the following benefits:
 
 * Backups that complete quickly and reliably
-
 * Uninterrupted transaction processing during backups
-
 * Savings on disk space and network bandwidth
-
 * Automatic backup verification
-
 * Higher uptime due to faster restore time
 
-|Percona XtraBackup| makes |MySQL| hot backups for all versions of
-|Percona Server|, |MySQL|, and |MariaDB|. It performs streaming,
-compressed, and incremental |MySQL| backups.
+See the compatibility matrix in `Percona Software and Platform Lifecycle
+<https://www.percona.com/services/policies/percona-software-platform-lifecycle>`_
+to find out which versions of |MySQL|, |MariaDB|, and |Percona Server| are
+supported by |Percona XtraBackup|.
 
-.. include:: .res/contents/important.mariadb-support.txt
-
-|Percona XtraBackup| works with |MySQL|, |MariaDB|, and |Percona
-Server|. It supports completely non-blocking backups of
-|InnoDB|, |XtraDB|, and *HailDB* storage engines. In addition, it can
-back up the following storage engines by briefly pausing writes at the
-end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and :term:`Archive
-<.ARM>`, including partitioned tables, triggers, and database options.
+Non-blocking backups of |InnoDB|, |XtraDB|, and *HailDB* storage engines are
+supported. In addition, |Percona XtraBackup| can back up the following storage
+engines by briefly pausing writes at the end of the backup: |MyISAM|,
+:term:`Merge <.MRG>`, and :term:`Archive <.ARM>`, including partitioned tables,
+triggers, and database options.
 
 .. important::
 
