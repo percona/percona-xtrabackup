@@ -29,6 +29,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 namespace xbcloud {
 
+static char *default_s3_region __attribute__((unused)) = (char *)"us-east-1";
+
 class S3_response {
  private:
   bool error_{false};
