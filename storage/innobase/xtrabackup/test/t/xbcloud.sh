@@ -123,9 +123,22 @@ fi
 #PXB-2198 xbcloud doesn't return the error on delete if the backup doesn't exist in s3 bucket
 xbcloud --defaults-file=$topdir/xbcloud.cnf delete somedummyjunkbackup 2>$topdir/pxb-2198.log
 
-if ! grep -q failed $topdir/pxb-2198.log ; then
+if ! grep -q "error: backup" $topdir/pxb-2198.log ; then
     die 'xbcloud did not exit with error on delete'
 fi
+
+#PXB-2202 Xbcloud does not display an error when xtrabackup fails to create a backup
+xtrabackup --backup --stream=xbstream --extra-lsndir=$full_backup_dir \
+	   --target-dir=/some/unknown/dir | \
+    run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
+	    --parallel=4 \
+	    somedummyjunkbackup 2>$topdir/pxb-2202.log
+
+
+if ! grep -q "Upload failed" $topdir/pxb-2202.log ; then
+    die 'xbcloud did not exit with error on upload'
+fi
+
 # cleanup
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
 	${full_backup_name} --parallel=4
