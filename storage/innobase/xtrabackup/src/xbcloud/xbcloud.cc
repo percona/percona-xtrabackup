@@ -698,20 +698,32 @@ bool xbcloud_put(Object_store *store, const std::string &container,
 
   xb_stream_read_done(stream);
 
-  bool ret = (res != XB_STREAM_READ_ERROR) && (!has_errors);
 
-  if (ret && upload_md5) {
-    msg_ts("%s: Uploading md5\n", my_progname);
-    ret = store->upload_object(container, backup_name + ".md5", buf_md5);
-  }
-
-  if (!ret) {
+  // check if backup directory exists and it has some files
+  if (res == XB_STREAM_READ_ERROR || has_errors ||
+      !store->list_objects_in_directory(container, backup_name, object_list) ||
+      object_list.size() == 0) {
     msg_ts("%s: Upload failed.\n", my_progname);
-  } else {
-    msg_ts("%s: Upload completed.\n", my_progname);
+    return false;
   }
 
-  return ret;
+  // check if xtrabackup_info, almost the last file exists in backup
+  if (std::count(object_list.begin(), object_list.end(),
+                 backup_name + "/xtrabackup_info.00000000000000000000") == 0) {
+    msg_ts("%s: Upload failed: backup is incomplete.\n", my_progname);
+    return false;
+  }
+
+  if (upload_md5) {
+    msg_ts("%s: Uploading md5\n", my_progname);
+    if (!store->upload_object(container, backup_name + ".md5", buf_md5)) {
+      msg_ts("%s: Upload failed: Error uploading md5.\n", my_progname);
+      return false;
+    }
+  }
+
+  msg_ts("%s: Upload completed.\n", my_progname);
+  return true;
 }
 
 bool chunk_name_to_file_name(const std::string &chunk_name,
