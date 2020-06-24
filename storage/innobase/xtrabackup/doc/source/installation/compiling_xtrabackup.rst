@@ -1,13 +1,13 @@
 .. _compiling_xtrabackup:
 
-=========================================
+================================================================================
 Compiling and Installing from Source Code
-=========================================
+================================================================================
 
 The source code is available from the |Percona XtraBackup| *Github* `project
 <https://github.com/percona/percona-xtrabackup>`_. The easiest way to get the
-code is with :command:`git clone` and switch to the desired release branch,
-such as the following:
+code is by using the :command:`git clone` command. Then, switch to the release
+branch that you want to install, such as **8.0**.
 
 .. code-block:: bash
 
@@ -15,25 +15,39 @@ such as the following:
   $ cd percona-xtrabackup
   $ git checkout 8.0
 
-You should then have a directory named after the release you branched, such as
-``percona-xtrabackup``.
+.. _pxb.source-code.installing/prerequesite:
 
-Compiling on Linux
-==================
-
-Prerequisites
--------------
+Step 1: Installing prerequisites
+================================================================================
 
 The following packages and tools must be installed to compile |Percona
 XtraBackup| from source. These might vary from system to system.
 
-In Debian-based distributions, you need to:
+.. important::
+
+   In order to build |Percona XtraBackup| v8.0 from source, you need to use
+   `cmake` version 3. In your distribution, it may be available either as a
+   separate package ``cmake3`` or as ``cmake``. To check which version is
+   installed, run ``cmake --version`` and if it does report a version 3, install
+   ``cmake3`` for your system.
+
+   .. seealso:: https://cmake.org/
+
+.. rubric:: Debian or Ubuntu using ``apt``
 
 .. code-block:: bash
 
-   $ apt install build-essential flex bison automake autoconf \
+   $ sudo apt install build-essential flex bison automake autoconf \
    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
    libgcrypt11-dev libev-dev libcurl4-gnutls-dev vim-common
+
+|optional.python3-sphinx|:
+
+.. code-block:: bash
+
+   $ sudo apt install python3-sphinx
+
+.. rubric:: CentOS or Red Hat using ``yum``
 
 |Percona Xtrabackup| requires GCC version 5.3 or higher. If the
 version of GCC installed on your system is lower then you may need to
@@ -45,45 +59,41 @@ dependencies:
 
 .. code-block:: bash
 
-   $ yum install cmake openssl-devel libaio libaio-devel automake autoconf \
+   $ sudo yum install cmake openssl-devel libaio libaio-devel automake autoconf \
    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel zlib-devel \
    vim-common
 
-.. important::
-
-   In order to build |Percona XtraBackup| v8.0 from source, you need
-   to use `cmake` version 3. In your distribution it may be available
-   either as a separate package ``cmake3`` or as ``cmake``. To check,
-   run ``cmake --version`` and if it does report a version 3, install
-   ``cmake3`` for your system.
-
-Compiling with CMake
---------------------------------------------------------------------------------
-
-At the base directory of the source code tree, run `cmake` or `cmake3`. In both
-cases the options you need to use are the same. The following example
-demonstrates the usage of ``cmake``. If you have ``cmake3``, replace ``cmake``
-with ``cmake3`` accordingly.
+|optional.python3-sphinx|:
 
 .. code-block:: bash
 
-   $ cmake -DWITH_BOOST=PATH-TO-BOOST-LIBRARY -DDOWNLOAD_BOOST=ON \
-   -DBUILD_CONFIG=xtrabackup_release -DWITH_MAN_PAGES=OFF -B TARGETDIR
+   $ sudo yum install python3-sphinx
 
-For the ``-DWITH_BOOST`` parameter, specify a directory in your file
-system to download the boost library to. The ``-B`` parameter refers to an
-existing empty directory in which the source code should be built.
+.. _pxb.source-code.installing/build-pipe-line.generating:
 
-Before running the ``make`` command, change the working directory to the
-directory that you used as the value of the ``-B`` parameter ``cmake3``.
-  
-.. code-block:: bash
+Step 2: Generating the build pipeline
+================================================================================
 
-   $ cd TARGETDIR
-   $ make
+At this step, you have ``cmake`` run the commands in the :file:`CMakeList.txt`
+file to generate the build pipeline, i.e. a native build environment that will
+be used to compile the source code).
 
-After the ``make`` completes, |Percona XtraBackup| 8.0 will be ready for further
-installation with ``make install``.
+1. Change to the directory where you cloned the |percona-xtrabackup| repository 
+
+   .. code-block:: bash
+
+      $ cd percona-xtrabackup
+
+#. Create a directory to store the compiled files and then change to that
+   directory:
+
+   .. code-block:: bash
+
+      $ mkdir build
+      $ cd build
+
+#. Run `cmake` or `cmake3`. In either case, the options you need to use are the
+   same. 
 
 .. note::
 
@@ -92,24 +102,129 @@ installation with ``make install``.
    for every distribution. If you installed the ``python-sphinx`` package you
    need to remove the ``-DWITH_MAN_PAGES=OFF`` from previous command.
 
-Installation
-------------
 
-The following command will install all |Percona XtraBackup| binaries,
-|xtrabackup| and tests to :file:`/usr/local/xtrabackup`.
+   .. code-block:: bash
+
+      $ cmake -DWITH_BOOST=PATH-TO-BOOST-LIBRARY -DDOWNLOAD_BOOST=ON \
+      -DBUILD_CONFIG=xtrabackup_release -DWITH_MAN_PAGES=OFF -B ..
+
+   .. admonition:: More information about parameters
+
+      -DWITH_BOOST
+         For the ``-DWITH_BOOST`` parameter, specify the name of a directory to
+	 download the boost library to. This directory will be created automatically
+	 in your current directory.
+
+      -B (--build)
+         |PXB| is configured to forbid generating the build pipeline for
+	 ``make`` in the same directory where you store your sources. The ``-B``
+	 parameter refers to the directory that contains the source code. In
+	 this example we use the relative path to the parent directory (..).
+
+	 .. important::
+
+	    CMake Error at CMakeLists.txt:367 (MESSAGE): Please do not build
+	    in-source.  Out-of source builds are highly recommended: you can
+	    have multiple builds for the same source, and there is an easy way
+	    to do cleanup, simply remove the build directory (note that 'make
+	    clean' or 'make distclean' does *not* work)
+
+	    You *can* force in-source build by invoking cmake with
+	    -DFORCE_INSOURCE_BUILD=1
+
+      -DWITH_MAN_PAGES
+         To build |Percona XtraBackup| man pages, use ``ON`` or remove this
+	 parameter from the command line (it is ``ON`` by default).
+
+	 |optional.python3-sphinx|.
+
+	 .. seealso:: :ref:`pxb.source-code.installing/prerequesite`
+
+.. _pxb.source-code.installing/compiling:
+
+Step 2: Compiling the source code
+================================================================================
+
+To compile the source code in your :file:`build` directory, use the ``make`` command.
+
+.. important::
+   
+   The computer where you intend to compile |Percona XtraBackup| 8.0 must have
+   at least 2G of RAM available.
+
+1. Change to the :file:`build` directory (created at
+   :ref:`pxb.source-code.installing/build-pipe-line.generating`).
+#. Run the ``make`` command. This command may take a long time to complete.
+
+   .. code-block:: bash
+
+      $ make
+
+.. _pxb.source-code.installing/target-system:
+
+Step 3: Installing on the target system
+================================================================================
+
+The following command installs all |Percona XtraBackup| binaries |xtrabackup|
+and tests to default location on the target system: :file:`/usr/local/xtrabackup`.
+
+Run ``make install`` to install |Percona XtraBackup| to the default location.
 
 .. code-block:: bash
 
-   $ make install
+   $ sudo make install
 
- You can override this default by using the `DESTDIR` parameter.
+.. rubric:: Installing to a non-default location
 
-.. code-block:: bash
-
-   $ make DESTDIR=... install
-
-Alternatively, you can change the installation layout:
+You may use the `DESTDIR` parameter with ``make install`` to install |Percona
+XtraBackup| to another location. Make sure that the effective user is able to
+write to the destination you choose.
 
 .. code-block:: bash
 
-   $ cmake -DINSTALL_LAYOUT=...
+   $ sudo make DESTDIR=<DIR_NAME> install
+
+In fact, the destination directory is determined by the installation layout
+(``-DINSTALL_LAYOUT``) that ``cmake`` applies (see
+:ref:`pxb.source-code.installing/build-pipe-line.generating`). In addition to
+the installation directory, this parameter controls a number of other
+destinations that you can adjust for your system.
+
+By default, this parameter is set to ``STANDALONE``, which implies the
+installation directory to be :file:`/usr/local/xtrabackup`.
+
+.. seealso:: `MySQL Documentation: -DINSTALL_LAYOUT
+             <https://dev.mysql.com/doc/refman/8.0/en/source-configuration-options.html#option_cmake_install_layout>`_
+
+.. _pxb.source-code.installing/running:
+
+Step 4: Running
+================================================================================
+
+After |Percona XtraBackup| is installed on your system, you may run it by using
+the full path to the ``xtrabackup`` command:
+
+.. code-block:: bash
+
+   $ /usr/local/xtrabackup/bin/xtrabackup
+
+Update your PATH environment variable if you would like to use the command on
+the command line directly.
+
+.. code-block:: bash
+
+   $# Setting $PATH on the command line
+   $ PATH=$PATH:/usr/local/xtrabackup/bin/xtrabackup
+
+   $# Run xtrabackup directly
+   $ xtrabackup
+
+Alternatively, you may consider placing a soft link (using ``ln -s``) to one of
+the locations listed in your ``PATH`` environment variable.
+
+.. seealso:: ``man ln``
+
+To view the documentation with ``man``, update the ``MANPATH`` variable.
+
+.. |percona-xtrabackup| replace:: :file:`percona-xtrabackup`
+.. |optional.python3-sphinx| replace:: To be able to install the man pages, install the ``python3-sphinx`` package
