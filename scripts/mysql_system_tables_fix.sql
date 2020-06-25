@@ -1,4 +1,4 @@
--- Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
+-- Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
@@ -148,9 +148,9 @@ UPDATE user SET Show_db_priv= Select_priv, Super_priv=Process_priv, Execute_priv
 #  for some users.
 
 ALTER TABLE user
-ADD max_questions int(11) NOT NULL DEFAULT 0 AFTER x509_subject,
-ADD max_updates   int(11) unsigned NOT NULL DEFAULT 0 AFTER max_questions,
-ADD max_connections int(11) unsigned NOT NULL DEFAULT 0 AFTER max_updates;
+ADD max_questions int NOT NULL DEFAULT 0 AFTER x509_subject,
+ADD max_updates   int unsigned NOT NULL DEFAULT 0 AFTER max_questions,
+ADD max_connections int unsigned NOT NULL DEFAULT 0 AFTER max_updates;
 
 #
 # Update proxies_priv definition.
@@ -169,7 +169,7 @@ ALTER TABLE db
 ADD Create_tmp_table_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL,
 ADD Lock_tables_priv enum('N','Y') COLLATE utf8_general_ci DEFAULT 'N' NOT NULL;
 
-alter table user change max_questions max_questions int(11) unsigned DEFAULT 0  NOT NULL;
+alter table user change max_questions max_questions int unsigned DEFAULT 0  NOT NULL;
 
 
 alter table db comment='Database privileges';
@@ -243,7 +243,7 @@ ALTER TABLE general_log
   MODIFY command_type VARCHAR(64) NOT NULL,
   MODIFY argument MEDIUMBLOB NOT NULL;
 ALTER TABLE general_log
-  MODIFY thread_id BIGINT(21) UNSIGNED NOT NULL;
+  MODIFY thread_id BIGINT UNSIGNED NOT NULL;
 SET GLOBAL general_log = @old_log_state;
 
 SET @old_log_state = @@global.slow_query_log;
@@ -263,7 +263,7 @@ ALTER TABLE slow_log
 ALTER TABLE slow_log
   ADD COLUMN thread_id INTEGER NOT NULL AFTER sql_text;
 ALTER TABLE slow_log
-  MODIFY thread_id BIGINT(21) UNSIGNED NOT NULL;
+  MODIFY thread_id BIGINT UNSIGNED NOT NULL;
 SET GLOBAL slow_query_log = @old_log_state;
 
 SET @@session.sql_require_primary_key = @old_sql_require_primary_key;
@@ -337,7 +337,7 @@ UPDATE db SET Create_routine_priv=Create_priv, Alter_routine_priv=Alter_priv, Ex
 #
 # Add max_user_connections resource limit
 #
-ALTER TABLE user ADD max_user_connections int(11) unsigned DEFAULT '0' NOT NULL AFTER max_connections;
+ALTER TABLE user ADD max_user_connections int unsigned DEFAULT '0' NOT NULL AFTER max_connections;
 
 #
 # user.Create_user_priv
@@ -767,7 +767,18 @@ COMMIT;
 -- provided that there isn't a user who already has the privilige TABLE_ENCRYPTION_ADMIN.
 SET @hadTableEncryptionAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'TABLE_ENCRYPTION_ADMIN');
 INSERT INTO global_grants SELECT user, host, 'TABLE_ENCRYPTION_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
-FROM mysql.user WHERE super_priv = 'Y' AND @hadTableEncryptionAdminPriv = 0;
+FROM mysql.user WHERE super_priv = 'Y' AND @hadTableEncryptionAdminPriv = 0 AND user != 'mysql.session';
+-- The TABLE_ENCRYPTION_ADMIN privilege was previously granted to 'mysql.session'
+-- during upgrade. However, this user should not have this privilege, so we need
+-- to explicitly revoke it.
+DELETE FROM global_grants WHERE user = 'mysql.session' AND host = 'localhost' AND priv = 'TABLE_ENCRYPTION_ADMIN';
+COMMIT;
+
+-- Add the privilege SHOW_ROUTINE for every user who has global SELECT privilege
+-- provided that there isn't a user who already has the privilege SHOW_ROUTINE
+SET @hadShowRoutinePriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'SHOW_ROUTINE');
+INSERT INTO global_grants SELECT user, host, 'SHOW_ROUTINE', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE select_priv = 'Y' AND @hadShowRoutinePriv = 0 AND user NOT IN ('mysql.infoschema','mysql.session','mysql.sys');
 COMMIT;
 
 # Activate the new, possible modified privilege tables
@@ -820,6 +831,8 @@ ALTER TABLE slave_master_info ADD Network_namespace TEXT CHARACTER SET utf8 COLL
 ALTER TABLE slave_master_info ADD Master_compression_algorithm CHAR(64) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL COMMENT 'Compression algorithm supported for data transfer between master and slave.',
                               ADD Master_zstd_compression_level INTEGER UNSIGNED NOT NULL COMMENT 'Compression level associated with zstd compression algorithm.';
 
+ALTER TABLE slave_master_info ADD Tls_ciphersuites TEXT CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL COMMENT 'Ciphersuites used for TLS 1.3 communication with the master server.';
+
 # If the order of column Public_key_path, Get_public_key is wrong, this will correct the order in
 # slave_master_info table.
 ALTER TABLE slave_master_info
@@ -834,10 +847,29 @@ ALTER TABLE slave_master_info
   COMMENT 'Network namespace used for communication with the master server.'
   AFTER Get_public_key;
 
+ALTER TABLE slave_master_info
+  MODIFY COLUMN Tls_ciphersuites TEXT CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL
+  COMMENT 'Ciphersuites used for TLS 1.3 communication with the master server.'
+  AFTER Master_zstd_compression_level;
+
 # Columns added to keep information about the replication applier thread
 # privilege context user
-ALTER TABLE slave_relay_log_info ADD Privilege_checks_username CHAR(32) COLLATE utf8_bin DEFAULT NULL COMMENT 'Username part of PRIVILEGE_CHECKS_USER.',
-                                 ADD Privilege_checks_hostname CHAR(255) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Hostname part of PRIVILEGE_CHECKS_USER.';
+ALTER TABLE slave_relay_log_info ADD Privilege_checks_username CHAR(32) COLLATE utf8_bin DEFAULT NULL COMMENT 'Username part of PRIVILEGE_CHECKS_USER.' AFTER Channel_name,
+                                 ADD Privilege_checks_hostname CHAR(255) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Hostname part of PRIVILEGE_CHECKS_USER.' AFTER Privilege_checks_username;
+
+# Columns added to keep information about REQUIRE_ROW_FORMAT replication field
+ALTER TABLE slave_relay_log_info ADD Require_row_format BOOLEAN DEFAULT 0 COMMENT 'Indicates whether the channel shall only accept row based events.' AFTER Privilege_checks_hostname;
+
+ALTER TABLE slave_relay_log_info MODIFY Relay_log_name TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The name of the current relay log file.',
+                                 MODIFY Relay_log_pos BIGINT UNSIGNED COMMENT 'The relay log position of the last executed event.',
+                                 MODIFY Master_log_name TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The name of the master binary log file from which the events in the relay log file were read.',
+                                 MODIFY Master_log_pos BIGINT UNSIGNED COMMENT 'The master log position of the last executed event.',
+                                 MODIFY Sql_delay INTEGER COMMENT 'The number of seconds that the slave must lag behind the master.',
+                                 MODIFY Number_of_workers INTEGER UNSIGNED,
+                                 MODIFY Id INTEGER UNSIGNED COMMENT 'Internal Id that uniquely identifies this record.';
+
+# Columns added to keep information about REQUIRE_TABLE_PRIMARY_KEY_CHECK replication field
+ALTER TABLE slave_relay_log_info ADD Require_table_primary_key_check ENUM('STREAM','ON','OFF') NOT NULL DEFAULT 'STREAM' COMMENT 'Indicates what is the channel policy regarding tables having primary keys on create and alter table queries' AFTER Require_row_format;
 
 #
 # Drop legacy NDB distributed privileges function & procedures

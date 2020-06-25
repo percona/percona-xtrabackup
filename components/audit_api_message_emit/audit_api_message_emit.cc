@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -33,14 +33,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <ctype.h>
 #include <my_dbug.h>
-#include <my_macros.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/audit_api_message_service.h>
+#include <mysql/components/services/udf_metadata.h>
 #include <mysql/components/services/udf_registration.h>
 #include <mysql/service_plugin_registry.h>
 #include <mysql_com.h>
+#include "template_utils.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,9 +52,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <map>
 #include <memory>
 #include <string>
+#include "template_utils.h"
 
-REQUIRES_SERVICE_PLACEHOLDER(udf_registration);
+REQUIRES_SERVICE_PLACEHOLDER(mysql_udf_metadata);
 REQUIRES_SERVICE_PLACEHOLDER(mysql_audit_api_message);
+REQUIRES_SERVICE_PLACEHOLDER(udf_registration);
 
 /**
   @class IError_handler
@@ -175,6 +179,51 @@ size_t max_arg_count(Arg_def *arg_def, size_t arg_def_size) {
   return max;
 }
 
+namespace {
+// We chose this collation since audit_log plugin sets the same explicitly.
+const char *collation = ("utf8mb4_general_ci");
+char *collation_name = const_cast<char *>(collation);
+}  // namespace
+
+/**
+  Set the character set and collation of each argument
+
+  @param [in, out]  args      UDF arguments structure
+  @param [out]      handler   Error handler
+
+  @retval false Set the charset of all arguments successully
+  @retval true  Otherwise
+*/
+static bool set_args_charset_info(UDF_ARGS *args, IError_handler &handler) {
+  for (size_t index = 0; index < args->arg_count; ++index) {
+    if (mysql_service_mysql_udf_metadata->argument_set(
+            args, "collation", index, pointer_cast<void *>(collation_name))) {
+      handler.error("Could not set the %s collation of argument '%d'.",
+                    collation_name, index);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+  Sets the charset info of the return value to utf8.
+
+  @param [in, out]  initid    A pointer to the UDF_INIT structure
+  @param [out]      handler   Error handler that keeps the error message
+
+  @retval false Charset info of return value set successfully.
+  @retval true  Otherwise
+*/
+bool set_return_value_charset_info(UDF_INIT *initid, IError_handler &handler) {
+  if (mysql_service_mysql_udf_metadata->result_set(
+          initid, "collation", pointer_cast<void *>(collation_name))) {
+    handler.error("Could not set the %s collation of return value.", collation);
+    return true;
+  }
+  return false;
+}
+
 /**
   Check, whether specified arguments match the definitions.
 
@@ -189,7 +238,6 @@ size_t max_arg_count(Arg_def *arg_def, size_t arg_def_size) {
                           set to false, if the provided argument count is
                           greater, this does not return error.
 
-  @return
   @retval -1  None of the argument definition was matched.
   @retval >=0 n-th argument definition was matched.
 */
@@ -277,7 +325,6 @@ static int arg_check(IError_handler &handler, unsigned int arg_count,
   @param handler Error handler used for error handling.
   @param args    UDF_ARGS structure.
 
-  @return
   @retval false Succeeded. Arguments are ok.
   @retval true  Failed. Error is reported via specified handler.
 */
@@ -320,6 +367,8 @@ static bool arg_check(IError_handler &handler, UDF_ARGS *args) {
     arguments += audit_log_extra_args_def[arg_res].count;
     arg_lengths += audit_log_extra_args_def[arg_res].count;
   };
+
+  if (set_args_charset_info(args, handler)) return true;
 
   return false;
 }
@@ -504,13 +553,15 @@ static char *emit(UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
 /**
   UDF initialization. Check argument correctness.
 
+  @param initd   UDF initializer structure
   @param args    UDF arguments.
   @param message Buffer, where the error is to be written.
 */
-static bool emit_init(UDF_INIT *, UDF_ARGS *args, char *message) {
+static bool emit_init(UDF_INIT *initd, UDF_ARGS *args, char *message) {
   String_error_handler handler(message, MYSQL_ERRMSG_SIZE);
 
-  return arg_check(handler, args);
+  return (arg_check(handler, args) ||
+          set_return_value_charset_info(initd, handler));
 }
 
 /**
@@ -519,7 +570,7 @@ static bool emit_init(UDF_INIT *, UDF_ARGS *args, char *message) {
 static mysql_service_status_t init() {
   return mysql_service_udf_registration->udf_register(
       "audit_api_message_emit_udf", STRING_RESULT, (Udf_func_any)emit,
-      (Udf_func_init)emit_init, NULL);
+      (Udf_func_init)emit_init, nullptr);
 }
 
 /**
@@ -536,7 +587,7 @@ END_COMPONENT_PROVIDES();
 
 BEGIN_COMPONENT_REQUIRES(audit_api_message_emit)
 REQUIRES_SERVICE(mysql_audit_api_message), REQUIRES_SERVICE(udf_registration),
-    END_COMPONENT_REQUIRES();
+    REQUIRES_SERVICE(mysql_udf_metadata), END_COMPONENT_REQUIRES();
 
 BEGIN_COMPONENT_METADATA(audit_api_message_emit)
 METADATA("mysql.author", "Oracle Corporation"),

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -e
+set -o xtrace
 
 function usage()
 {
@@ -48,13 +49,18 @@ function ssl_version()
             ;;
     esac
 
+    if [ $sslv -eq '102' -a -f '/usr/bin/yum' ]; then
+        sslv="${sslv}.rpm"
+    elif [ $sslv -eq '102' ]; then
+        sslv="${sslv}.deb"
+    fi
     echo $sslv
 }
 
 case "$1" in
     innodb80)
         url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
-        tarball="mysql-8.0.19-linux-glibc2.12-${arch}.tar.xz"
+        tarball="mysql-8.0.20-linux-glibc2.12-${arch}.tar.xz"
         ;;
 
     xtradb80)

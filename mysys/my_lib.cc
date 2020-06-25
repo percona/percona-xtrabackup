@@ -84,19 +84,19 @@ static char *directory_file_name(char *dst, const char *src);
 
 MY_DIR *my_dir(const char *path, myf MyFlags) {
   char *buffer;
-  MY_DIR *result = 0;
+  MY_DIR *result = nullptr;
   FILEINFO finfo;
   Entries_array *dir_entries_storage;
   MEM_ROOT *names_storage;
   DIR *dirp;
   char tmp_path[FN_REFLEN + 2], *tmp_file;
-  void *rawmem = NULL;
+  void *rawmem = nullptr;
 
   DBUG_TRACE;
   DBUG_PRINT("my", ("path: '%s' MyFlags: %d", path, MyFlags));
 
   dirp = opendir(directory_file_name(tmp_path, path));
-  if (dirp == NULL ||
+  if (dirp == nullptr ||
       !(buffer = static_cast<char *>(
             my_malloc(key_memory_MY_DIR,
                       ALIGN_SIZE(sizeof(MY_DIR)) +
@@ -129,7 +129,7 @@ MY_DIR *my_dir(const char *path, myf MyFlags) {
       (void)my_stat(tmp_path, finfo.mystat, MyFlags);
       if (!(finfo.mystat->st_mode & MY_S_IREAD)) continue;
     } else
-      finfo.mystat = NULL;
+      finfo.mystat = nullptr;
 
     if (dir_entries_storage->push_back(finfo)) goto error;
   }
@@ -151,12 +151,10 @@ error:
   if (dirp) (void)closedir(dirp);
   my_dirend(result);
   if (MyFlags & (MY_FAE | MY_WME)) {
-    char errbuf[MYSYS_STRERROR_SIZE];
-    my_error(EE_DIR, MYF(0), path, my_errno(),
-             my_strerror(errbuf, sizeof(errbuf), my_errno()));
+    MyOsError(my_errno(), EE_DIR, MYF(0), path);
   }
-  return (MY_DIR *)NULL;
-} /* my_dir */
+  return nullptr;
+}
 
 /*
  * Convert from directory name to filename.
@@ -283,13 +281,11 @@ error:
   set_my_errno(errno);
   if (handle != -1) _findclose(handle);
   my_dirend(result);
-  if (MyFlags & MY_FAE + MY_WME) {
-    char errbuf[MYSYS_STRERROR_SIZE];
-    my_error(EE_DIR, MYF(0), path, errno,
-             my_strerror(errbuf, sizeof(errbuf), errno));
+  if (MyFlags & (MY_FAE | MY_WME)) {
+    MyOsError(my_errno(), EE_DIR, MYF(0), path);
   }
-  return (MY_DIR *)NULL;
-} /* my_dir */
+  return nullptr;
+}
 
 #endif /* _WIN32 */
 
@@ -308,11 +304,11 @@ int my_fstat(File Filedes, MY_STAT *stat_area) {
 #endif
 }
 
-MY_STAT *my_stat(const char *path, MY_STAT *stat_area, myf my_flags) {
+MY_STAT *my_stat(const char *path, MY_STAT *stat_area, myf MyFlags) {
   DBUG_TRACE;
   DBUG_ASSERT(stat_area != nullptr);
   DBUG_PRINT("my", ("path: '%s'  stat_area: %p  MyFlags: %d", path, stat_area,
-                    my_flags));
+                    MyFlags));
 
 #ifndef _WIN32
   if (!stat(path, stat_area)) return stat_area;
@@ -323,10 +319,8 @@ MY_STAT *my_stat(const char *path, MY_STAT *stat_area, myf my_flags) {
   DBUG_PRINT("error", ("Got errno: %d from stat", errno));
   set_my_errno(errno);
 
-  if (my_flags & (MY_FAE + MY_WME)) {
-    char errbuf[MYSYS_STRERROR_SIZE];
-    my_error(EE_STAT, MYF(0), path, my_errno(),
-             my_strerror(errbuf, sizeof(errbuf), my_errno()));
+  if (MyFlags & (MY_FAE | MY_WME)) {
+    MyOsError(my_errno(), EE_STAT, MYF(0), path);
   }
   return nullptr;
-} /* my_stat */
+}

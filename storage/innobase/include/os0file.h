@@ -1,7 +1,7 @@
 /***********************************************************************
 
-Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2009, 2020 Percona Inc.
+Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2009, Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
 by Percona Inc.. Those modifications are
@@ -43,8 +43,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #include "my_dbug.h"
 #include "my_io.h"
+
 #include "os/file.h"
-#include "univ.i"
+#include "os0atomic.h"
+#include "os0enc.h"
 
 #ifndef _WIN32
 #include <dirent.h>
@@ -79,6 +81,20 @@ extern unsigned long long os_fsync_threshold;
 
 /** File offset in bytes */
 typedef ib_uint64_t os_offset_t;
+
+namespace file {
+/** Blocks for doing IO, used in the transparent compression
+and encryption code. */
+struct Block {
+  /** Default constructor */
+  Block() : m_ptr(), m_in_use() {}
+
+  byte *m_ptr;
+
+  byte pad[INNOBASE_CACHE_LINE_SIZE - sizeof(ulint)];
+  lock_word_t m_in_use;
+};
+}  // namespace file
 
 #ifdef _WIN32
 
@@ -204,6 +220,10 @@ static const ulint OS_BUFFERED_FILE = 102;
 static const ulint OS_CLONE_DATA_FILE = 103;
 static const ulint OS_CLONE_LOG_FILE = 104;
 
+/** Doublewrite files. */
+static const ulint OS_DBLWR_FILE = 105;
+
+/** Redo log archive file. */
 static const ulint OS_REDO_LOG_ARCHIVE_FILE = 105;
 /* @} */
 
@@ -526,8 +546,8 @@ class IORequest {
     READ = 1,
     WRITE = 2,
 
-    /** Double write buffer recovery. */
-    DBLWR_RECOVER = 4,
+    /** Request for a doublewrite page IO */
+    DBLWR = 4,
 
     /** Enumerations below can be ORed to READ/WRITE above*/
 
@@ -714,7 +734,7 @@ class IORequest {
       return;
     }
 
-    m_encryption.m_type = type;
+    m_encryption.set_type(type);
   }
 
   /** Set encryption key and iv
@@ -722,9 +742,9 @@ class IORequest {
   @param[in] key_len	length of the encryption key
   @param[in] iv		The encryption iv to use */
   void encryption_key(byte *key, ulint key_len, byte *iv) {
-    m_encryption.m_key = key;
-    m_encryption.m_klen = key_len;
-    m_encryption.m_iv = iv;
+    m_encryption.set_key(key);
+    m_encryption.set_key_length(key_len);
+    m_encryption.set_initial_vector(iv);
   }
 
   /** Get the encryption algorithm.
@@ -735,23 +755,23 @@ class IORequest {
 
   /** @return true if the page should be encrypted. */
   bool is_encrypted() const MY_ATTRIBUTE((warn_unused_result)) {
-    return (m_encryption.m_type != Encryption::NONE);
+    return (m_encryption.get_type() != Encryption::NONE);
   }
 
   /** Clear all encryption related flags */
   void clear_encrypted() {
-    m_encryption.m_key = NULL;
-    m_encryption.m_klen = 0;
-    m_encryption.m_iv = NULL;
-    m_encryption.m_type = Encryption::NONE;
+    m_encryption.set_key(nullptr);
+    m_encryption.set_key_length(0);
+    m_encryption.set_initial_vector(nullptr);
+    m_encryption.set_type(Encryption::NONE);
   }
 
-  /** Note that the IO is for double write recovery. */
-  void dblwr_recover() { m_type |= DBLWR_RECOVER; }
+  /** Note that the IO is for double write buffer page write. */
+  void dblwr() { m_type |= DBLWR; }
 
-  /** @return true if the request is from the dblwr recovery */
-  bool is_dblwr_recover() const MY_ATTRIBUTE((warn_unused_result)) {
-    return ((m_type & DBLWR_RECOVER) == DBLWR_RECOVER);
+  /** @return true if the request is for a dblwr page. */
+  bool is_dblwr() const MY_ATTRIBUTE((warn_unused_result)) {
+    return ((m_type & DBLWR) == DBLWR);
   }
 
   /** @return true if punch hole is supported */
@@ -766,6 +786,53 @@ class IORequest {
 #else
     return (false);
 #endif /* HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE || _WIN32 */
+  }
+
+  /** @return string representation. */
+  std::string to_string() const {
+    std::ostringstream os;
+
+    os << "bs: " << m_block_size << " flags:";
+
+    if (m_type & READ) {
+      os << " READ";
+    } else if (m_type & WRITE) {
+      os << " WRITE";
+    } else if (m_type & DBLWR) {
+      os << " DBLWR";
+    }
+
+    /** Enumerations below can be ORed to READ/WRITE above*/
+
+    /** Data file */
+    if (m_type & DATA_FILE) {
+      os << " | DATA_FILE";
+    }
+
+    if (m_type & LOG) {
+      os << " | LOG";
+    }
+
+    if (m_type & DISABLE_PARTIAL_IO_WARNINGS) {
+      os << " | DISABLE_PARTIAL_IO_WARNINGS";
+    }
+
+    if (m_type & DO_NOT_WAKE) {
+      os << " | IGNORE_MISSING";
+    }
+
+    if (m_type & PUNCH_HOLE) {
+      os << " | PUNCH_HOLE";
+    }
+
+    if (m_type & NO_COMPRESSION) {
+      os << " | NO_COMPRESSION";
+    }
+
+    os << ", comp: " << m_compression.to_string();
+    os << ", enc: " << m_encryption.to_string(m_encryption.get_type());
+
+    return (os.str());
   }
 
  private:
@@ -915,7 +982,7 @@ for each entry.
 @param[in]	is_drop		attempt to drop the directory after scan
 @return true if call succeeds, false on error */
 bool os_file_scan_directory(const char *path, os_dir_cbk_t scan_cbk,
-                            bool is_delete);
+                            bool is_drop);
 
 /** NOTE! Use the corresponding macro os_file_create_simple(), not directly
 this function!
@@ -969,7 +1036,7 @@ Opens an existing file or creates a new.
                                 and srv_.. variables whether we really use
                                 async I/O or unbuffered I/O: look in the
                                 function source code for the exact rules
-@param[in]	type		OS_DATA_FILE or OS_LOG_FILE
+@param[in]	type		OS_DATA_FILE, OS_LOG_FILE etc.
 @param[in]	read_only	if true read only mode checks are enforced
 @param[in]	success		true if succeeded
 @return own: handle to the file, not defined if error, error number
@@ -1012,6 +1079,7 @@ bool os_file_close_func(os_file_t file);
 /* Keys to register InnoDB I/O with performance schema */
 extern mysql_pfs_key_t innodb_log_file_key;
 extern mysql_pfs_key_t innodb_temp_file_key;
+extern mysql_pfs_key_t innodb_dblwr_file_key;
 extern mysql_pfs_key_t innodb_arch_file_key;
 extern mysql_pfs_key_t innodb_clone_file_key;
 extern mysql_pfs_key_t innodb_data_file_key;
@@ -1032,7 +1100,7 @@ are used to register file deletion operations*/
   do {                                                                       \
     locker = PSI_FILE_CALL(get_thread_file_name_locker)(state, key.m_value,  \
                                                         op, name, &locker);  \
-    if (locker != NULL) {                                                    \
+    if (locker != nullptr) {                                                 \
       PSI_FILE_CALL(start_file_open_wait)                                    \
       (locker, src_file, static_cast<uint>(src_line));                       \
     }                                                                        \
@@ -1040,19 +1108,25 @@ are used to register file deletion operations*/
 
 #define register_pfs_file_open_end(locker, file, result)              \
   do {                                                                \
-    if (locker != NULL) {                                             \
+    if (locker != nullptr) {                                          \
       file.m_psi = PSI_FILE_CALL(end_file_open_wait)(locker, result); \
     }                                                                 \
   } while (0)
 
-#define register_pfs_file_rename_begin(state, locker, key, op, name, src_file, \
-                                       src_line)                               \
-  register_pfs_file_open_begin(state, locker, key, op, name, src_file,         \
-                               static_cast<uint>(src_line))
+#define register_pfs_file_rename_begin(state, locker, key, op, from, to,    \
+                                       src_file, src_line)                  \
+  do {                                                                      \
+    locker = PSI_FILE_CALL(get_thread_file_name_locker)(state, key.m_value, \
+                                                        op, from, &locker); \
+    if (locker != nullptr) {                                                \
+      PSI_FILE_CALL(start_file_rename_wait)                                 \
+      (locker, (size_t)0, from, to, src_file, static_cast<uint>(src_line)); \
+    }                                                                       \
+  } while (0)
 
 #define register_pfs_file_rename_end(locker, from, to, result)       \
   do {                                                               \
-    if (locker != NULL) {                                            \
+    if (locker != nullptr) {                                         \
       PSI_FILE_CALL(end_file_rename_wait)(locker, from, to, result); \
     }                                                                \
   } while (0)
@@ -1062,7 +1136,7 @@ are used to register file deletion operations*/
   do {                                                                        \
     locker = PSI_FILE_CALL(get_thread_file_name_locker)(state, key.m_value,   \
                                                         op, name, &locker);   \
-    if (locker != NULL) {                                                     \
+    if (locker != nullptr) {                                                  \
       PSI_FILE_CALL(start_file_close_wait)                                    \
       (locker, src_file, static_cast<uint>(src_line));                        \
     }                                                                         \
@@ -1070,7 +1144,7 @@ are used to register file deletion operations*/
 
 #define register_pfs_file_close_end(locker, result)       \
   do {                                                    \
-    if (locker != NULL) {                                 \
+    if (locker != nullptr) {                              \
       PSI_FILE_CALL(end_file_close_wait)(locker, result); \
     }                                                     \
   } while (0)
@@ -1080,7 +1154,7 @@ are used to register file deletion operations*/
   do {                                                                       \
     locker =                                                                 \
         PSI_FILE_CALL(get_thread_file_stream_locker)(state, file.m_psi, op); \
-    if (locker != NULL) {                                                    \
+    if (locker != nullptr) {                                                 \
       PSI_FILE_CALL(start_file_wait)                                         \
       (locker, count, src_file, static_cast<uint>(src_line));                \
     }                                                                        \
@@ -1088,7 +1162,7 @@ are used to register file deletion operations*/
 
 #define register_pfs_file_io_end(locker, count)    \
   do {                                             \
-    if (locker != NULL) {                          \
+    if (locker != nullptr) {                       \
       PSI_FILE_CALL(end_file_wait)(locker, count); \
     }                                              \
   } while (0)
@@ -1607,14 +1681,28 @@ os_file_size_t os_file_get_size(const char *filename)
 os_offset_t os_file_get_size(pfs_os_file_t file)
     MY_ATTRIBUTE((warn_unused_result));
 
+/** Allocate a block to file using fallocate from the given offset if
+fallocate is supported. Falls back to the old slower method of writing
+zeros otherwise.
+@param[in]	name		name of the file
+@param[in]	file		handle to the file
+@param[in]	offset		file offset
+@param[in]	size		file size
+@param[in]	read_only	enable read-only checks if true
+@param[in]	flush		flush file content to disk
+@return true if success */
+bool os_file_set_size_fast(const char *name, pfs_os_file_t file,
+                           os_offset_t offset, os_offset_t size, bool read_only,
+                           bool flush) MY_ATTRIBUTE((warn_unused_result));
+
 /** Write the specified number of zeros to a file from specific offset.
 @param[in]	name		name of the file or path as a null-terminated
                                 string
 @param[in]	file		handle to a file
 @param[in]	offset		file offset
 @param[in]	size		file size
-@param[in]	read_only	Enable read-only checks if true
-@param[in]	flush		Flush file content to disk
+@param[in]	read_only	enable read-only checks if true
+@param[in]	flush		flush file content to disk
 @return true if success */
 bool os_file_set_size(const char *name, pfs_os_file_t file, os_offset_t offset,
                       os_offset_t size, bool read_only, bool flush)
@@ -1774,7 +1862,7 @@ segment in these arrays. This function also creates the sync array.
 No i/o handler thread needs to be created for that
 @param[in]	n_readers	number of reader threads
 @param[in]	n_writers	number of writer threads
-@param[in]	n_slots_sync	number of slots in the sync aio array */
+@param[in]	n_slots_sync	number of slots in the dblwr aio array */
 
 bool os_aio_init(ulint n_readers, ulint n_writers, ulint n_slots_sync);
 
@@ -1937,13 +2025,13 @@ bool os_is_sparse_file_supported(const char *path, pfs_os_file_t fh)
 
 /** Decompress the page data contents. Page type must be FIL_PAGE_COMPRESSED, if
 not then the source contents are left unchanged and DB_SUCCESS is returned.
-@param[in]	dblwr_recover	true of double write recovery in progress
+@param[in]	dblwr_read	true of double write recovery in progress
 @param[in,out]	src		Data read from disk, decompressed data will be
                                 copied to this page
 @param[in,out]	dst		Scratch area to use for decompression
 @param[in]	dst_len		Size of the scratch area in bytes
 @return DB_SUCCESS or error code */
-dberr_t os_file_decompress_page(bool dblwr_recover, byte *src, byte *dst,
+dberr_t os_file_decompress_page(bool dblwr_read, byte *src, byte *dst,
                                 ulint dst_len)
     MY_ATTRIBUTE((warn_unused_result));
 
@@ -1964,6 +2052,21 @@ byte *os_file_compress_page(Compression compression, ulint block_size,
 @retval	false	if O_DIRECT is not supported. */
 bool os_is_o_direct_supported() MY_ATTRIBUTE((warn_unused_result));
 
+/** Fill the pages with NULs
+@param[in] file		File handle
+@param[in] name		File name
+@param[in] page_size	physical page size
+@param[in] start	Offset from the start of the file in bytes
+@param[in] len		Length in bytes
+@param[in] read_only_mode
+                        if true, then read only mode checks are enforced.
+@return DB_SUCCESS or error code */
+dberr_t os_file_write_zeros(pfs_os_file_t file, const char *name,
+                            ulint page_size, os_offset_t start, ulint len,
+                            bool read_only_mode)
+    MY_ATTRIBUTE((warn_unused_result));
+
+#ifndef UNIV_NONINL
 /** Class to scan the directory heirarchy using a depth first scan. */
 class Dir_Walker {
  public:
@@ -2018,6 +2121,15 @@ class Dir_Walker {
 #endif /* _WIN32 */
 };
 
+/** Allocate a page for sync IO
+@return pointer to page */
+file::Block *os_alloc_block() noexcept;
+
+/** Free a page after sync IO
+@param[in,out]	block		The block to free/release */
+void os_free_block(file::Block *block) noexcept;
+
 #include "os0file.ic"
+#endif /* UNIV_NONINL */
 
 #endif /* os0file_h */

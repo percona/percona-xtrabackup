@@ -254,7 +254,7 @@ class KEY {
     DBUG_ASSERT(key_part_no < actual_key_parts);
     DBUG_ASSERT(rec_per_key_est == REC_PER_KEY_UNKNOWN ||
                 rec_per_key_est >= 1.0);
-    DBUG_ASSERT(rec_per_key_float != NULL);
+    DBUG_ASSERT(rec_per_key_float != nullptr);
 
     rec_per_key_float[key_part_no] = rec_per_key_est;
   }
@@ -267,7 +267,7 @@ class KEY {
   */
 
   bool supports_records_per_key() const {
-    if (rec_per_key_float != NULL && rec_per_key != NULL) return true;
+    if (rec_per_key_float != nullptr && rec_per_key != nullptr) return true;
 
     return false;
   }
@@ -332,7 +332,7 @@ void key_copy(uchar *to_key, const uchar *from_record, const KEY *key_info,
               uint key_length);
 void key_restore(uchar *to_record, const uchar *from_key, const KEY *key_info,
                  uint key_length);
-bool key_cmp_if_same(TABLE *form, const uchar *key, uint index,
+bool key_cmp_if_same(const TABLE *table, const uchar *key, uint index,
                      uint key_length);
 void key_unpack(String *to, TABLE *table, KEY *key);
 void field_unpack(String *to, Field *field, uint max_length, bool prefix_key);

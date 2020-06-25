@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,26 +27,32 @@
 
 #include <algorithm>
 #include <list>
+#include <memory>
 #include <vector>
 
-#include "plugin/x/ngs/include/ngs/interface/client_interface.h"
 #include "plugin/x/ngs/include/ngs/thread.h"
+#include "plugin/x/src/helper/multithread/lock_container.h"
 #include "plugin/x/src/helper/multithread/rw_lock.h"
+#include "plugin/x/src/interface/client.h"
 
 namespace ngs {
 
-typedef std::shared_ptr<Client_interface> Client_ptr;
-
 class Client_list {
  public:
+  using Client_ptr = std::shared_ptr<xpl::iface::Client>;
+  using Client_ptr_list = std::list<Client_ptr>;
+  using Client_ptr_list_with_lock =
+      xpl::Locked_container<Client_ptr_list, xpl::RWLock_writelock,
+                            xpl::RWLock>;
+
+ public:
   Client_list();
-  ~Client_list();
 
   size_t size();
 
-  void add(Client_ptr client);
+  void add(std::shared_ptr<xpl::iface::Client> client);
   void remove(uint64_t client_id);
-  Client_ptr find(const uint64_t client_id);
+  std::shared_ptr<xpl::iface::Client> find(const uint64_t client_id);
 
   /**
     Enumerate clients.
@@ -57,43 +63,46 @@ class Client_list {
     its done by returning 'true'.
    */
   template <typename Functor>
-  void enumerate(Functor &matcher);
+  void enumerate(Functor *matcher);
+
+  /* Please note that this method doesn't take pointer as in previous overload.
+   * Previous method can't have non-const references, because code standard
+   * forces the use of a pointer. Still having object instead pointer (const
+   * reference) in this method allows us to consume lambda function.
+   */
   template <typename Functor>
   void enumerate(const Functor &matcher);
 
-  void get_all_clients(std::vector<Client_ptr> &result);
+  Client_ptr_list_with_lock direct_access() {
+    return Client_ptr_list_with_lock(&m_clients, &m_clients_lock);
+  }
+
+  void get_all_clients(
+      std::vector<std::shared_ptr<xpl::iface::Client>> *result);
 
  private:
-  struct Match_client {
-    Match_client(uint64_t client_id);
-
-    bool operator()(Client_ptr client);
-
-    uint64_t m_id;
-  };
-
   Client_list(const Client_list &);
   Client_list &operator=(const Client_list &);
 
   xpl::RWLock m_clients_lock;
-  std::list<Client_ptr> m_clients;
+  Client_ptr_list m_clients;
 };
 
 template <typename Functor>
-void Client_list::enumerate(Functor &matcher) {
-  xpl::RWLock_readlock guard(m_clients_lock);
+void Client_list::enumerate(Functor *matcher) {
+  xpl::RWLock_readlock guard(&m_clients_lock);
 
   /*
     Matcher can stop enumeration process by returning
     'true'. 'std::find_if' is used as stoppable enumeration
     dispatcher.
    */
-  std::find_if(m_clients.begin(), m_clients.end(), matcher);
+  std::find_if(m_clients.begin(), m_clients.end(), *matcher);
 }
 
 template <typename Functor>
 void Client_list::enumerate(const Functor &matcher) {
-  xpl::RWLock_readlock guard(m_clients_lock);
+  xpl::RWLock_readlock guard(&m_clients_lock);
 
   /*
     Matcher can stop enumeration process by returning

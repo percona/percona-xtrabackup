@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,7 +39,7 @@ class Replication_thread_api {
       : stop_wait_timeout(LONG_TIMEOUT), interface_channel(channel_interface) {}
 
   Replication_thread_api()
-      : stop_wait_timeout(LONG_TIMEOUT), interface_channel(NULL) {}
+      : stop_wait_timeout(LONG_TIMEOUT), interface_channel(nullptr) {}
 
   ~Replication_thread_api() {}
 
@@ -76,7 +76,8 @@ class Replication_thread_api {
     @param get_public_key Preference to get public key if unavailable.
     @param compression_algorithm The compression algorithm
     @param zstd_compression_level The compression level
-
+    @param tls_version   TLS versions
+    @param tls_ciphersuites Permissible ciphersuites for TLS 1.3.
 
     @return the operation status
       @retval 0      OK
@@ -90,7 +91,8 @@ class Replication_thread_api {
                          int retry_count, bool preserve_logs,
                          char *public_key_path, bool get_public_key,
                          char *compression_algorithm,
-                         uint zstd_compression_level);
+                         uint zstd_compression_level, char *tls_version,
+                         char *tls_ciphersuites);
 
   /**
     Start the Applier/Receiver threads according to the given options.
@@ -250,7 +252,8 @@ class Replication_thread_api {
        @retval true   the id matches a SQL or worker thread
        @retval false  the id doesn't match any thread
    */
-  bool is_own_event_applier(my_thread_id id, const char *channel_name = NULL);
+  bool is_own_event_applier(my_thread_id id,
+                            const char *channel_name = nullptr);
 
   /**
      Checks if the given id matches the receiver thread for
@@ -271,8 +274,7 @@ class Replication_thread_api {
                     last GNO of group's already certified transactions
                     on relay log.
 
-    @return
-      @retval       GNO value
+    @retval       GNO value
   */
   rpl_gno get_last_delivered_gno(rpl_sidno sidno);
 
@@ -289,18 +291,17 @@ class Replication_thread_api {
     @param[out] retrieved_set the set in string format.
     @param channel_name the name of the channel to get the information.
 
-    @return
-      @retval true there was an error.
-      @retval false the operation has succeeded.
+    @retval true there was an error.
+    @retval false the operation has succeeded.
   */
   bool get_retrieved_gtid_set(std::string &retrieved_set,
-                              const char *channel_name = NULL);
+                              const char *channel_name = nullptr);
 
   /**
     Checks if the channel's relay log contains partial transaction.
-    @return
-      @retval true  If relaylog contains partial transaction.
-      @retval false If relaylog does not contain partial transaction.
+
+    @retval true  If relaylog contains partial transaction.
+    @retval false If relaylog does not contain partial transaction.
   */
   bool is_partial_transaction_on_relay_log();
 
@@ -318,6 +319,16 @@ class Replication_thread_api {
   static int rpl_channel_stop_all(int threads_to_stop, long timeout);
 
   /**
+    Interface to kill binlog dump thread.
+    Kills binlog dump thread thus killing all slave connections.
+    @note binlog dump GTID thread is not killed as of now.
+
+    @return the operation status
+      @retval 0      OK
+  */
+  static int rpl_binlog_dump_thread_kill();
+
+  /**
     Method to get the credentials configured for a channel
 
     @param[out] username      The user to extract
@@ -329,7 +340,7 @@ class Replication_thread_api {
       @retval true    Error, channel not found
   */
   bool get_channel_credentials(std::string &username, std::string &password,
-                               const char *channel_name = NULL);
+                               const char *channel_name = nullptr);
 
  private:
   ulong stop_wait_timeout;

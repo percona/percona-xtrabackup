@@ -104,8 +104,8 @@ static bool safe_hash_init(SAFE_HASH *hash, uchar *default_value) {
   DBUG_TRACE;
   mysql_rwlock_init(key_SAFE_HASH_lock, &hash->lock);
   hash->default_value = default_value;
-  hash->root = 0;
-  return 0;
+  hash->root = nullptr;
+  return false;
 }
 
 /*
@@ -123,7 +123,7 @@ static void safe_hash_free(SAFE_HASH *hash) {
   if (hash->default_value) {
     hash->hash.clear();
     mysql_rwlock_destroy(&hash->lock);
-    hash->default_value = 0;
+    hash->default_value = nullptr;
   }
 }
 
@@ -168,7 +168,7 @@ static uchar *safe_hash_search(SAFE_HASH *hash, const uchar *key, uint length) {
 static bool safe_hash_set(SAFE_HASH *hash, const uchar *key, uint length,
                           uchar *data) {
   SAFE_HASH_ENTRY *entry;
-  bool error = 0;
+  bool error = false;
   DBUG_TRACE;
   DBUG_PRINT("enter", ("key: %.*s  data: %p", length, key, data));
   string key_str(pointer_cast<const char *>(key), length);
@@ -196,7 +196,7 @@ static bool safe_hash_set(SAFE_HASH *hash, const uchar *key, uint length,
     if (!(entry = (SAFE_HASH_ENTRY *)my_malloc(key_memory_SAFE_HASH_ENTRY,
                                                sizeof(*entry) + length,
                                                MYF(MY_WME)))) {
-      error = 1;
+      error = true;
       goto end;
     }
     entry->key = (char *)(entry + 1);

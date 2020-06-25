@@ -13,11 +13,11 @@
 -- along with this program; if not, write to the Free Software
 -- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-DROP FUNCTION IF EXISTS ps_thread_id;
+DROP FUNCTION IF EXISTS sys.ps_thread_id;
 
 DELIMITER $$
 
-CREATE DEFINER='mysql.sys'@'localhost' FUNCTION ps_thread_id (
+CREATE DEFINER='mysql.sys'@'localhost' FUNCTION sys.ps_thread_id (
         in_connection_id BIGINT UNSIGNED
     ) RETURNS BIGINT UNSIGNED
     COMMENT '
@@ -57,10 +57,12 @@ mysql> SELECT sys.ps_thread_id(CONNECTION_ID());
     NOT DETERMINISTIC
     READS SQL DATA
 BEGIN
-    RETURN (SELECT THREAD_ID
-              FROM `performance_schema`.`threads`
-             WHERE PROCESSLIST_ID = IFNULL(in_connection_id, CONNECTION_ID())
-           );
+  IF (in_connection_id IS NULL) THEN
+    RETURN ps_current_thread_id();
+  ELSE
+    RETURN ps_thread_id(in_connection_id);
+  END IF;
+
 END$$
 
 DELIMITER ;

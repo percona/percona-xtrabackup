@@ -33,6 +33,7 @@ load_dbase_schema sakila
 load_dbase_data sakila
 
 mysql -e "ALTER TABLE payment COMPRESSION='lz4'" sakila
+mysql -e "CREATE database emptydatabase"
 
 now=$(date +%s)
 pwdpart=($(pwd | md5sum))
@@ -103,15 +104,28 @@ sakila/payment.ibd
 EOF
 
 # PXB-1832: Xbcloud does not exit when a piped command fails
-xbcloud --defaults-file=$topdir/xbcloud.cnf get 2>$topdir/pxb-1832.log | true
+xbcloud --defaults-file=$topdir/xbcloud.cnf get ${full_backup_name} 2>$topdir/pxb-1832.log | true
 if [ "${PIPESTATUS[0]}" == "0" ] ; then
     die 'xbcloud did not exit with error'
 fi
 
-if [ ! grep failed 2>$topdir/pxb-1832.log ] ; then
+if ! grep -q failed $topdir/pxb-1832.log ; then
     die 'xbcloud did not exit with error'
 fi
 
+#PXB-2164 xbcloud doesn't return the error if the backup doesn't exist in s3 bucket
+xbcloud --defaults-file=$topdir/xbcloud.cnf get somedummyjunkbackup 2>$topdir/pxb-2164.log
+
+if ! grep -q failed $topdir/pxb-2164.log ; then
+    die 'xbcloud did not exit with error on get'
+fi
+
+#PXB-2198 xbcloud doesn't return the error on delete if the backup doesn't exist in s3 bucket
+xbcloud --defaults-file=$topdir/xbcloud.cnf delete somedummyjunkbackup 2>$topdir/pxb-2198.log
+
+if ! grep -q failed $topdir/pxb-2198.log ; then
+    die 'xbcloud did not exit with error on delete'
+fi
 # cleanup
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
 	${full_backup_name} --parallel=4

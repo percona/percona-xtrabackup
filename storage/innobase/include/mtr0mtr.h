@@ -359,7 +359,7 @@ struct mtr_t {
   /** Set flush observer
   @param[in]	observer	flush observer */
   void set_flush_observer(FlushObserver *observer) {
-    ut_ad(observer == NULL || m_impl.m_log_mode == MTR_LOG_NO_REDO);
+    ut_ad(observer == nullptr || m_impl.m_log_mode == MTR_LOG_NO_REDO);
 
     m_impl.m_flush_observer = observer;
   }
@@ -430,6 +430,7 @@ struct mtr_t {
     return (m_impl.m_log.size() + (m_impl.m_n_log_recs > 1 ? 1 : 0));
   }
 
+  void wait_for_flush();
 #endif /* UNIV_DEBUG */
 
   /** @return true if a record was added to the mini-transaction */

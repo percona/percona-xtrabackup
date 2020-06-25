@@ -103,10 +103,24 @@ static const Uint32 WaitTableStateChangeMillis = 10;
 
 extern EventLogger * g_eventLogger;
 
-#ifdef VM_TRACE
+#if (defined(VM_TRACE) || defined(ERROR_INSERT))
+//#define DEBUG_MULTI_TRP 1
+//#define DEBUG_NODE_STOP 1
 //#define DEBUG_REDO_CONTROL 1
 //#define DEBUG_LCP 1
-//#define DEBUG_LCP_COMP 1
+#define DEBUG_LCP_COMP 1
+#endif
+
+#ifdef DEBUG_MULTI_TRP
+#define DEB_MULTI_TRP(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_MULTI_TRP(arglist) do { } while (0)
+#endif
+
+#ifdef DEBUG_NODE_STOP
+#define DEB_NODE_STOP(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_NODE_STOP(arglist) do { } while (0)
 #endif
 
 #ifdef DEBUG_REDO_CONTROL
@@ -297,6 +311,8 @@ void Dbdih::sendGCP_COMMIT(Signal* signal, Uint32 nodeId, Uint32 extra)
   req->nodeId = cownNodeId;
   req->gci_hi = Uint32(m_micro_gcp.m_master.m_new_gci >> 32);
   req->gci_lo = Uint32(m_micro_gcp.m_master.m_new_gci);
+  DEB_NODE_STOP(("Send GCP_COMMIT(%u,%u) to %u",
+                 req->gci_hi, req->gci_lo, nodeId));
   sendSignal(ref, GSN_GCP_COMMIT, signal, GCPCommit::SignalLength, JBA);
 
   ndbassert(m_micro_gcp.m_enabled || Uint32(m_micro_gcp.m_new_gci) == 0);
@@ -309,6 +325,9 @@ void Dbdih::sendGCP_PREPARE(Signal* signal, Uint32 nodeId, Uint32 extra)
   req->nodeId = cownNodeId;
   req->gci_hi = Uint32(m_micro_gcp.m_master.m_new_gci >> 32);
   req->gci_lo = Uint32(m_micro_gcp.m_master.m_new_gci);
+
+  DEB_NODE_STOP(("Send GCP_PREPARE(%u,%u) to %u",
+                 req->gci_hi, req->gci_lo, nodeId));
 
   if (! (ERROR_INSERTED(7201) || ERROR_INSERTED(7202)))
   {
@@ -336,11 +355,6 @@ void
 Dbdih::sendSUB_GCP_COMPLETE_REP(Signal* signal, Uint32 nodeId, Uint32 extra)
 {
   ndbassert(m_micro_gcp.m_enabled || Uint32(m_micro_gcp.m_new_gci) == 0);
-  if (!ndbd_dih_sub_gcp_complete_ack(getNodeInfo(nodeId).m_version))
-  {
-    jam();
-    c_SUB_GCP_COMPLETE_REP_Counter.clearWaitingFor(nodeId);
-  }
   BlockReference ref = calcDihBlockRef(nodeId);
   sendSignal(ref, GSN_SUB_GCP_COMPLETE_REP, signal,
              SubGcpCompleteRep::SignalLength, JBA);
@@ -429,7 +443,7 @@ void Dbdih::sendSTART_RECREQ(Signal* signal, Uint32 nodeId, Uint32 extra)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
 
   signal->theData[0] = NDB_LE_StartREDOLog;
@@ -976,7 +990,7 @@ Dbdih::pack_sysfile_format_v2(void)
       default:
       {
         ndbout_c("active_status = %u", active_status);
-        ndbrequire(false);
+        ndbabort();
       }
     }
     if (diff != 0)
@@ -1067,14 +1081,14 @@ Dbdih::pack_sysfile_format_v2(void)
         if (nodeGroup != NO_NODE_GROUP_ID)
         {
           jamDebug();
-          ndbrequire(false);
+          ndbabort();
           diff = 1;
         }
         break;
       }
       default:
       {
-        ndbrequire(false);
+        ndbabort();
       }
     }
     if (diff != 0)
@@ -1260,7 +1274,7 @@ Dbdih::unpack_sysfile_format_v2(bool set_max_node_id)
       }
       default:
       {
-        ndbrequire(false);
+        ndbabort();
       }
     }
     start_bit += 4;
@@ -1324,7 +1338,7 @@ Dbdih::unpack_sysfile_format_v2(bool set_max_node_id)
       }
       default:
       {
-        ndbrequire(false);
+        ndbabort();
       }
     }
     SYSFILE->setNodeGroup(i,
@@ -1621,10 +1635,20 @@ void Dbdih::execCOPY_GCIREQ(Signal* signal)
     setNodeGroups();
     /**
      * We dont really need to make anything durable here...skip it
+     *
+     * We have received the current setting of node groups from the
+     * master node, we are thus ready to setup multi sockets to our
+     * neighbour nodes in the same node group.
+     *
+     * We should only reach here in the context of node restarts,
+     * initial and normal ones.
      */
-    c_copyGCISlave.m_copyReason = CopyGCIReq::IDLE;
-    signal->theData[0] = c_copyGCISlave.m_senderData;
-    sendSignal(c_copyGCISlave.m_senderRef, GSN_COPY_GCICONF, signal, 1, JBB);
+    ndbrequire(cstarttype == NodeState::ST_INITIAL_NODE_RESTART ||
+               cstarttype == NodeState::ST_NODE_RESTART);
+    jam();
+    m_set_up_multi_trp_in_node_restart = true;
+    signal->theData[0] = reference();
+    sendSignal(QMGR_REF, GSN_SET_UP_MULTI_TRP_REQ, signal, 1, JBB);
     return;
   }
   ndbrequire(ok);
@@ -1658,6 +1682,35 @@ void Dbdih::execCOPY_GCIREQ(Signal* signal)
   filePtr.p->reqStatus = FileRecord::OPENING_COPY_GCI;
   return;
 }//Dbdih::execCOPY_GCIREQ()
+
+void
+Dbdih::execSET_UP_MULTI_TRP_CONF(Signal *signal)
+{
+  if (m_set_up_multi_trp_in_node_restart)
+  {
+    jam();
+    g_eventLogger->info("Completed setting up multiple transporters to nodes"
+                        " in the same node group");
+    complete_restart_nr(signal);
+  }
+  else
+  {
+    jam();
+    /**
+     * Newly created multi sockets between nodes in a new nodegroup is now
+     * created. No need to do anything more here.
+     */
+  }
+}
+
+void
+Dbdih::complete_restart_nr(Signal* signal)
+{
+  jam();
+  c_copyGCISlave.m_copyReason = CopyGCIReq::IDLE;
+  signal->theData[0] = c_copyGCISlave.m_senderData;
+  sendSignal(c_copyGCISlave.m_senderRef, GSN_COPY_GCICONF, signal, 1, JBB);
+}
 
 void Dbdih::execDICTSTARTCONF(Signal* signal) 
 {
@@ -2305,10 +2358,12 @@ void Dbdih::execSTTOR(Signal* signal)
 
   switch(signal->theData[1]){
   case 1:
+    jam();
     createMutexes(signal, 0);
     init_lcp_pausing_module();
     return;
   case 3:
+    jam();
     signal->theData[0] = reference();
     sendSignal(NDBCNTR_REF, GSN_READ_NODESREQ, signal, 1, JBB);
     return;
@@ -2531,20 +2586,8 @@ void Dbdih::execNDB_STTOR(Signal* signal)
         req->senderData = RNIL;
         req->flags = StartCopyReq::WAIT_LCP;
         req->startingNodeId = getOwnNodeId();
-        if (!ndb_pnr(getNodeInfo(refToNode(cmasterdihref)).m_version))
-        {
-          jam();
-          infoEvent("Detecting upgrade: Master(%u) does not support parallel"
-                    " node recovery",
-                    refToNode(cmasterdihref));
-          sendSignal(cmasterdihref, GSN_START_COPYREQ, signal, 
-                     StartCopyReq::SignalLength, JBB);
-        }
-        else
-        {
-          sendSignal(reference(), GSN_START_COPYREQ, signal, 
-                     StartCopyReq::SignalLength, JBB);
-        }
+        sendSignal(reference(), GSN_START_COPYREQ, signal,
+                   StartCopyReq::SignalLength, JBB);
       }
       return;
     }
@@ -2614,7 +2657,10 @@ Dbdih::execNODE_START_REP(Signal* signal)
       c_dictLockSlavePtrI_nodeRestart = RNIL;
     }
   }
-  setGCPStopTimeouts(signal);
+  // Request max lag recalculation to reflect new cluster scale
+  // after a node start
+  m_gcp_monitor.m_gcp_save.m_need_max_lag_recalc = true;
+  m_gcp_monitor.m_micro_gcp.m_need_max_lag_recalc = true;
 }
 
 void
@@ -2801,16 +2847,6 @@ void Dbdih::execREAD_NODESCONF(Signal* signal)
     {
       if (readNodes->inactiveNodes.get(nodeArray[i]))
         continue;
-
-      if (!ndbd_non_trans_copy_frag_req(getNodeInfo(nodeArray[i]).m_version))
-      {
-        jam();
-        c_2pass_inr = false;
-#ifdef VM_TRACE
-        printf("not ok (version node %u) => disabled\n", nodeArray[i]);
-#endif
-        break;
-      }
 
       if (workers > 1 &&
           workers != getNodeInfo(nodeArray[i]).m_lqh_workers)
@@ -3156,12 +3192,6 @@ void Dbdih::execSTART_COPYCONF(Signal* signal)
   Uint32 nodeId = conf->startingNodeId;
   Uint32 senderData = conf->senderData;
 
-  if (!ndb_pnr(getNodeInfo(refToNode(signal->getSendersBlockRef())).m_version))
-  {
-    jam();
-    senderData = RNIL;
-  }
-  
   if (senderData == RNIL)
   {
     /**
@@ -3219,7 +3249,7 @@ void Dbdih::execSTART_COPYCONF(Signal* signal)
     }
     else
     {
-      ndbrequire(false);
+      ndbabort();
     }
     return;
   }
@@ -3630,7 +3660,6 @@ void Dbdih::init_lcp_pausing_module(void)
   /* Master state variables */
   c_pause_lcp_master_state = PAUSE_LCP_IDLE;
   c_lcp_runs_with_pause_support = false;
-  c_old_node_waiting_for_lcp_end = false;
 
   /* Pause participant state variables */
   c_dequeue_lcp_rep_ongoing = false;
@@ -3663,8 +3692,6 @@ bool Dbdih::check_pause_state_sanity(void)
   ndbrequire(c_lcp_id_paused == RNIL ||
              is_lcp_paused() ||
              c_dequeue_lcp_rep_ongoing);
-  ndbrequire(!c_old_node_waiting_for_lcp_end ||
-             c_lcp_runs_with_pause_support);
   return true;
 }
 
@@ -3736,39 +3763,6 @@ void Dbdih::start_copy_meta_data(Signal *signal)
 /**---------------------------------------------------------------
  * MASTER FUNCTIONALITY
  **--------------------------------------------------------------*/
-/**
- * If all nodes that are currently running the LCP can support PAUSE of an
- * LCP then we can use this function to find this out. We compute this
- * variable at a point where we start the LCP. We can still not get an old
- * node up and running until we get to a natural pause between two LCPs.
- * 
- * If an old node comes around then it will block until the LCP is done,
- * this will also ensure that no other nodes will try to become part of
- * this LCP. However we could have new node already being included in
- * this LCP and then have more new nodes arriving that want to be included
- * and we can also have an old node arriving while we are including a new
- * node. But only one node at a time will be in the copy meta data phase
- * so this will work fine.
- */
-bool Dbdih::check_if_pause_lcp_possible(void)
-{
-  NodeRecordPtr nodePtr;
-  ndbrequire(isMaster());
-  for (nodePtr.i = 1; nodePtr.i <= m_max_node_id; nodePtr.i++)
-  {
-    ptrAss(nodePtr, nodeRecord);
-    if (nodePtr.p->nodeStatus == NodeRecord::ALIVE)
-    {
-      if (getNodeInfo(nodePtr.i).m_version < NDBD_SUPPORT_PAUSE_LCP)
-      {
-        jam();
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 /* Support function to check if LCP is still runnning */
 bool Dbdih::check_if_lcp_idle(void)
 {
@@ -4054,13 +4048,6 @@ void Dbdih::pause_lcp(Signal *signal,
       /* Ignore, node already died */
       return;
     }
-    /**
-     * Verify that the master isn't starting PAUSE protocol for old nodes
-     * that doesn't support the PAUSE LCP protocol. We make it an assert mostly
-     * to find bugs early on, a proper handling would probably be to shoot
-     * down the master node.
-     */
-    ndbassert(getNodeInfo(startNode).m_version >= NDBD_SUPPORT_PAUSE_LCP);
   }
 
   ndbrequire(sender_ref == cmasterdihref);
@@ -4171,7 +4158,7 @@ void Dbdih::check_for_pause_action(Signal *signal,
       }
       else
       {
-        ndbrequire(false);
+        ndbabort();
       }
     }
     else
@@ -4222,7 +4209,7 @@ void Dbdih::check_for_pause_action(Signal *signal,
       }
       else
       {
-        ndbrequire(false);
+        ndbabort();
       }
       return;
     }
@@ -4550,8 +4537,8 @@ void Dbdih::execSTART_MEREQ(Signal* signal)
   ndbrequire(isMaster());
   ndbrequire(c_nodeStartMaster.startNode == Tnodeid);
   ndbrequire(getNodeStatus(Tnodeid) == NodeRecord::STARTING);
-  
-  if (getNodeInfo(Tnodeid).m_version >= NDBD_COPY_GCI_RESTART_NR)
+
+  DEB_MULTI_TRP(("START_MEREQ"));
   {
     jam();
     /**
@@ -4565,11 +4552,6 @@ void Dbdih::execSTART_MEREQ(Signal* signal)
      */
     c_nodeStartMaster.m_outstandingGsn = GSN_COPY_GCIREQ;
     copyGciLab(signal, CopyGCIReq::RESTART_NR);
-  }
-  else
-  {
-    jam();
-    startme_copygci_conf(signal);
   }
 }
 
@@ -4644,13 +4626,16 @@ Dbdih::startme_copygci_conf(Signal* signal)
    * status to control the start of local checkpoints in a proper manner.
    * This code is only executed in master nodes.
    */
-  setNodeRecoveryStatus(c_nodeStartMaster.startNode,
-                        NodeRecord::WAIT_LCP_TO_COPY_DICT);
+  if (c_nodeStartMaster.startNode != RNIL)
+  {
+    setNodeRecoveryStatus(c_nodeStartMaster.startNode,
+                          NodeRecord::WAIT_LCP_TO_COPY_DICT);
 
-  Callback c = { safe_cast(&Dbdih::lcpBlockedLab), 
-                 c_nodeStartMaster.startNode };
-  Mutex mutex(signal, c_mutexMgr, c_nodeStartMaster.m_fragmentInfoMutex);
-  mutex.lock(c, true, true);
+    Callback c = { safe_cast(&Dbdih::lcpBlockedLab), 
+                   c_nodeStartMaster.startNode };
+    Mutex mutex(signal, c_mutexMgr, c_nodeStartMaster.m_fragmentInfoMutex);
+    mutex.lock(c, true, true);
+  }
 }
 
 void Dbdih::lcpBlockedLab(Signal* signal, Uint32 nodeId, Uint32 retVal)
@@ -4683,8 +4668,6 @@ void Dbdih::lcpBlockedLab(Signal* signal, Uint32 nodeId, Uint32 retVal)
 
   if (c_lcp_runs_with_pause_support)
   {
-    if (getNodeInfo(c_nodeStartMaster.startNode).m_version >=
-        NDBD_SUPPORT_PAUSE_LCP)
     {
       /**
        * All nodes running the LCP supports the PAUSE LCP protocol. Also the
@@ -4694,24 +4677,6 @@ void Dbdih::lcpBlockedLab(Signal* signal, Uint32 nodeId, Uint32 retVal)
        */
       jam();
       sendPAUSE_LCP_REQ(signal, true);
-      return;
-    }
-    else
-    {
-      jam();
-      /**
-       * We can only come here trying to start an old version with a master of
-       * a new version. In this case we cannot use the PAUSE LCP protocol since
-       * the new node can only handle copying of meta data outside the LCP
-       * protocol.
-       *
-       * We come here holding the Fragment Info mutex. We will keep this mutex
-       * and this means that a new LCP cannot start. We also set an indicator
-       * to ensure that the LCP finish will know that we're waiting to copy
-       * the data.
-       */
-      ndbrequire(!c_old_node_waiting_for_lcp_end);
-      c_old_node_waiting_for_lcp_end = true;
       return;
     }
   }
@@ -4807,17 +4772,7 @@ void Dbdih::gcpBlockedLab(Signal* signal)
   // global checkpoint id and the correct state. We do not wait for any reply
   // since the starting node will not send any.
   /*-------------------------------------------------------------------------*/
-  Uint32 startVersion = getNodeInfo(c_nodeStartMaster.startNode).m_version;
-  
-  if ((getMajor(startVersion) == 4 && 
-       startVersion >= NDBD_INCL_NODECONF_VERSION_4) ||
-      (getMajor(startVersion) == 5 && 
-       startVersion >= NDBD_INCL_NODECONF_VERSION_5) ||
-      (getMajor(startVersion) > 5))
-  {
-    c_INCL_NODEREQ_Counter.setWaitingFor(c_nodeStartMaster.startNode);
-  }
-  
+  c_INCL_NODEREQ_Counter.setWaitingFor(c_nodeStartMaster.startNode);
   sendINCL_NODEREQ(signal, c_nodeStartMaster.startNode, RNIL);
 }//Dbdih::gcpBlockedLab()
 
@@ -4871,19 +4826,22 @@ void Dbdih::execINCL_NODECONF(Signal* signal)
       else
       {
 	/**
-	 * All done, reply to master
+	 * All done, reply to master if node is still up.
 	 */
 	jam();
-        if (!isMaster())
+        if (getNodeStatus(c_nodeStartSlave.nodeId) == NodeRecord::ALIVE)
         {
           jam();
-          setNodeRecoveryStatus(c_nodeStartSlave.nodeId,
-                                NodeRecord::NODE_GETTING_INCLUDED);
+          if (!isMaster())
+          {
+            jam();
+            setNodeRecoveryStatus(c_nodeStartSlave.nodeId,
+                                  NodeRecord::NODE_GETTING_INCLUDED);
+          }
+	  signal->theData[0] = c_nodeStartSlave.nodeId;
+	  signal->theData[1] = cownNodeId;
+	  sendSignal(cmasterdihref, GSN_INCL_NODECONF, signal, 2, JBB);
         }
-	signal->theData[0] = c_nodeStartSlave.nodeId;
-	signal->theData[1] = cownNodeId;
-	sendSignal(cmasterdihref, GSN_INCL_NODECONF, signal, 2, JBB);
-	
 	c_nodeStartSlave.nodeId = 0;
 	return;
       }
@@ -5007,8 +4965,11 @@ void Dbdih::execUNBLO_DICTCONF(Signal* signal)
   /**
    * Allow next node to start...
    */
-  signal->theData[0] = nodeId;
-  sendSignal(NDBCNTR_REF, GSN_START_PERMREP, signal, 1, JBB);
+  StartPermRep *rep = (StartPermRep*)signal->getDataPtrSend();
+  rep->startNodeId = nodeId;
+  rep->reason = StartPermRep::PermissionToStart;
+  sendSignal(NDBCNTR_REF, GSN_START_PERMREP, signal,
+             StartPermRep::SignalLength, JBB);
 }//Dbdih::execUNBLO_DICTCONF()
 
 /*---------------------------------------------------------------------------*/
@@ -5225,18 +5186,9 @@ void Dbdih::execINCL_NODEREQ(Signal* signal)
     // id's and the lcp status.
     /*-----------------------------------------------------------------------*/
     CRASH_INSERTION(7171);
-    Uint32 masterVersion = getNodeInfo(refToNode(cmasterdihref)).m_version;
-    
-    if ((NDB_VERSION_MAJOR == 4 && 
-	 masterVersion >= NDBD_INCL_NODECONF_VERSION_4) ||
-	(NDB_VERSION_MAJOR == 5 && 
-	 masterVersion >= NDBD_INCL_NODECONF_VERSION_5) ||
-	(NDB_VERSION_MAJOR > 5))
-    {
-      signal->theData[0] = getOwnNodeId();
-      signal->theData[1] = getOwnNodeId();
-      sendSignal(cmasterdihref, GSN_INCL_NODECONF, signal, 2, JBB);
-    }
+    signal->theData[0] = getOwnNodeId();
+    signal->theData[1] = getOwnNodeId();
+    sendSignal(cmasterdihref, GSN_INCL_NODECONF, signal, 2, JBB);
     return;
   }//if
   if (getNodeStatus(nodeId) != NodeRecord::STARTING) {
@@ -5297,7 +5249,6 @@ void Dbdih::execSTART_TOREQ(Signal* signal)
   StartToReq req = *(StartToReq *)&signal->theData[0];
   
 
-  if (ndb_pnr(getNodeInfo(refToNode(req.senderRef)).m_version))
   {
     jam();
     TakeOverRecordPtr takeOverPtr;
@@ -5331,7 +5282,6 @@ void Dbdih::execUPDATE_TOREQ(Signal* signal)
   Uint32 extra;
   g_eventLogger->debug("Received UPDATE_TOREQ for startnode: %u, copynode:%u",
                        req.startingNodeId, req.copyNodeId);
-  if (ndb_pnr(getNodeInfo(refToNode(req.senderRef)).m_version))
   {
     jam();
     /**
@@ -5416,12 +5366,6 @@ void Dbdih::execUPDATE_TOREQ(Signal* signal)
     }
     }
   }
-  else
-  {
-    CRASH_INSERTION(7154);
-    RETURN_IF_NODE_NOT_ALIVE(req.startingNodeId);
-  }
-  
   {
     UpdateToConf * conf = (UpdateToConf *)&signal->theData[0];
     conf->senderData = req.senderData;
@@ -5667,7 +5611,6 @@ void Dbdih::execEND_TOREQ(Signal* signal)
   Uint32 nodeId = refToNode(req.senderRef);
   TakeOverRecordPtr takeOverPtr;
 
-  if (ndb_pnr(getNodeInfo(nodeId).m_version))
   {
     jam();
     /**
@@ -5776,12 +5719,6 @@ void Dbdih::execUPDATE_FRAG_STATEREQ(Signal* signal)
   Uint32 replicaType = req->replicaType;
   Uint32 tFailedNodeId = req->failedNodeId;
 
-  if (!ndb_pnr(getNodeInfo(refToNode(senderRef)).m_version))
-  {
-    jam();
-    tFailedNodeId = tdestNodeid;
-  }
-  
   FragmentstorePtr fragPtr;
   getFragstore(tabPtr.p, fragId, fragPtr);
   RETURN_IF_NODE_NOT_ALIVE(tdestNodeid);
@@ -6006,17 +5943,8 @@ void Dbdih::execLOCAL_RECOVERY_COMP_REP(Signal *signal)
   if (reference() != cmasterdihref)
   {
     jam();
-    if (likely(getNodeInfo(refToNode(cmasterdihref)).m_version >=
-               NDBD_NODE_RECOVERY_STATUS_VERSION))
-    {
-      jam();
-      sendSignal(cmasterdihref, GSN_LOCAL_RECOVERY_COMP_REP, signal,
-                 LocalRecoveryCompleteRep::SignalLengthMaster, JBB);
-    }
-    else
-    {
-      jam();
-    }
+    sendSignal(cmasterdihref, GSN_LOCAL_RECOVERY_COMP_REP, signal,
+               LocalRecoveryCompleteRep::SignalLengthMaster, JBB);
     return;
   }
   LocalRecoveryCompleteRep *rep =
@@ -6058,13 +5986,7 @@ void Dbdih::sendEND_TOREP(Signal *signal, Uint32 startingNodeId)
   do
   {
     ptrCheckGuard(nodePtr, MAX_NDB_NODES, nodeRecord);
-    if (likely(getNodeInfo(nodePtr.i).m_version >=
-               NDBD_NODE_RECOVERY_STATUS_VERSION))
     {
-      /**
-       * Don't send to nodes with earlier versions that don't have support
-       * for this code.
-       */
       jamLine(nodePtr.i);
       BlockReference ref = calcDihBlockRef(nodePtr.i);
       if (ref != cmasterdihref)
@@ -6174,16 +6096,6 @@ void Dbdih::setNodeRecoveryStatus(Uint32 nodeId,
      */
     if (!isMaster())
     {
-      if (getNodeInfo(nodePtr.i).m_version <
-          NDBD_NODE_RECOVERY_STATUS_VERSION)
-      {
-        jam();
-        /**
-         * We ignore state changes for non-master nodes that are from
-         * too old versions to support all state transitions.
-         */
-        return;
-      }
       if (nodePtr.p->nodeRecoveryStatus == NodeRecord::NODE_NOT_RESTARTED_YET &&
           new_status != NodeRecord::NODE_GETTING_PERMIT)
       {
@@ -6414,12 +6326,8 @@ void Dbdih::setNodeRecoveryStatus(Uint32 nodeId,
        * new version of the starting node we come here rather from
        * EXECUTE_REDO_LOG_COMPLETED.
        */
-      ndbrequire((nodePtr.p->nodeRecoveryStatus ==
-                  NodeRecord::EXECUTE_REDO_LOG_COMPLETED) ||
-                 ((nodePtr.p->nodeRecoveryStatus ==
-                  NodeRecord::LOCAL_RECOVERY_STARTED) &&
-                  (getNodeInfo(nodePtr.i).m_version <
-                  NDBD_NODE_RECOVERY_STATUS_VERSION)));
+      ndbrequire(nodePtr.p->nodeRecoveryStatus ==
+                 NodeRecord::EXECUTE_REDO_LOG_COMPLETED);
       if (nodePtr.p->nodeRecoveryStatus ==
           NodeRecord::LOCAL_RECOVERY_STARTED)
       {
@@ -9012,17 +8920,6 @@ Dbdih::check_takeover_thread(TakeOverRecordPtr takeOverPtr,
   lqhWorkers = MAX(lqhWorkers, 1);
   Uint32 instanceId = fragmentReplicaInstanceKey % lqhWorkers;
 
-  if (getNodeInfo(refToNode(cmasterdihref)).m_version <
-      NDBD_SUPPORT_PARALLEL_SYNCH)
-  {
-    jam();
-    /**
-     * The master node has no support to receive multiple requests to copy a
-     * fragment on the same node group. We fix this by ensuring that we only
-     * use one thread in the parallel copy scheme.
-     */
-    instanceId = 0;
-  }
   if ((instanceId % takeOverPtr.p->m_number_of_copy_threads) ==
       takeOverPtr.p->m_copy_thread_id)
   {
@@ -9217,8 +9114,6 @@ Dbdih::execPREPARE_COPY_FRAG_CONF(Signal* signal)
     replicaPtr.p->m_restorable_gci = conf.completedGci;
   }
 
-  Uint32 version = getNodeInfo(refToNode(conf.senderRef)).m_version;
-  ndbrequire(ndb_check_prep_copy_frag_version(version) >= 2);
   takeOverPtr.p->maxPage = conf.maxPageNo;
 
   c_activeTakeOverList.remove(takeOverPtr);
@@ -9590,8 +9485,6 @@ void Dbdih::execCOPY_FRAGCONF(Signal* signal)
   req->distributionKey = fragPtr.p->distributionKey;
   req->flags = 0;
 
-  Uint32 min_version = getNodeVersionInfo().m_type[NodeInfo::DB].m_min_version;
-  if (ndb_delayed_copy_active_req(min_version))
   {
     jam();
     /**
@@ -9787,40 +9680,12 @@ void Dbdih::toCopyCompletedLab(Signal * signal, TakeOverRecordPtr takeOverPtr)
   infoEvent("Bring Database On-line Completed on node %u",
             takeOverPtr.p->toStartingNode);
 
-  Uint32 min_version = getNodeVersionInfo().m_type[NodeInfo::DB].m_min_version;
-  if (ndb_delayed_copy_active_req(min_version))
   {
     jam();
     g_eventLogger->info("Starting REDO logging");
     infoEvent("Starting REDO logging on node %u",
               takeOverPtr.p->toStartingNode);
     start_thread_takeover_logging(signal);
-    return;
-  }
-  else
-  {
-    jam();
-
-    /**
-     * We won't need the threads anymore so we remove them from the
-     * completed list and release them to the pool.
-     */
-    release_take_over_threads();
-    g_eventLogger->info("Make On-line Database recoverable by waiting"
-                        " for LCP Starting");
-    infoEvent("Make On-line Database recoverable by waiting"
-              " for LCP Starting on node %u",
-              takeOverPtr.p->toStartingNode);
-
-    takeOverPtr.p->toSlaveStatus = TakeOverRecord::TO_END_TO;
-
-    EndToReq* req = (EndToReq*)signal->getDataPtrSend();
-    req->senderData = takeOverPtr.i;
-    req->senderRef = reference();
-    req->flags = takeOverPtr.p->m_flags;
-    sendSignal(cmasterdihref, GSN_END_TOREQ,
-               signal, EndToReq::SignalLength, JBB);
-    sendEND_TOREP(signal, takeOverPtr.p->toStartingNode);
     return;
   }
 }//Dbdih::toCopyCompletedLab()
@@ -9949,8 +9814,7 @@ void Dbdih::releaseTakeOver(TakeOverRecordPtr takeOverPtr,
      * lying around since this will block any future restarts in
      * this node group.
      *
-     * TODO:
-     * We should make take over be parallelised within one node
+     * We could perform take over in parallel within one node
      * group. There is really nothing preventing multiple nodes
      * to copy different fragments to a starting node in case
      * we have more than 2 replicas.
@@ -9972,18 +9836,30 @@ void Dbdih::releaseTakeOver(TakeOverRecordPtr takeOverPtr,
       NGPtr.i = nodePtr.p->nodeGroup;
       if (NGPtr.i != ZNIL)
       {
-        jam();
         ptrCheckGuard(NGPtr, MAX_NDB_NODE_GROUPS, nodeGroupRecord);
 
         if (NGPtr.p->activeTakeOver == 0)
         {
+          jam();
           ndbrequire(NGPtr.p->activeTakeOverCount == 0);
+        }
+        else if (NGPtr.p->activeTakeOver == startingNode)
+        {
+          jam();
+          NGPtr.p->activeTakeOver = 0;
+          NGPtr.p->activeTakeOverCount = 0;
         }
         else
         {
-          ndbrequire(NGPtr.p->activeTakeOver == startingNode);
-          NGPtr.p->activeTakeOver = 0;
-          NGPtr.p->activeTakeOverCount = 0;
+          jam();
+          /**
+           * We arrive here for instance when a takeover is completed
+           * after waiting for LCP and a new takeover has already started
+           * of another node in the same node group. In this case our
+           * node is not the active node being taken over, we are only
+           * passively waiting for the LCP to complete before we can
+           * proceed with our recovery.
+           */
         }
       }
     }
@@ -10416,6 +10292,7 @@ void Dbdih::execNODE_FAILREP(Signal* signal)
   if (ERROR_INSERTED(7179) || ERROR_INSERTED(7217))
   {
     CLEAR_ERROR_INSERT_VALUE;
+    CLEAR_ERROR_INSERT_EXTRA;
   }
 
   if (ERROR_INSERTED(7184))
@@ -10590,7 +10467,10 @@ void Dbdih::execNODE_FAILREP(Signal* signal)
     setNodeRestartInfoBits(signal);
   }//if
 
-  setGCPStopTimeouts(signal);
+  // Request max lag recalculation to reflect new cluster scale
+  // after a node failure
+  m_gcp_monitor.m_gcp_save.m_need_max_lag_recalc = true;
+  m_gcp_monitor.m_micro_gcp.m_need_max_lag_recalc = true;
 
   /**
    * Need to check if a node failed that was part of LCP. In this
@@ -11470,7 +11350,7 @@ void Dbdih::execMASTER_GCPREQ(Signal* signal)
     }
     else
     {
-      ndbrequire(false);
+      ndbabort();
     }
   }
 
@@ -11680,17 +11560,6 @@ void Dbdih::MASTER_GCPhandling(Signal* signal, Uint32 failedNodeId)
 
   NdbTick_Invalidate(&m_micro_gcp.m_master.m_start_time);
   NdbTick_Invalidate(&m_gcp_save.m_master.m_start_time);
-  if (m_gcp_monitor.m_micro_gcp.m_max_lag_ms > 0)
-  {
-    infoEvent("GCP Monitor: Computed max GCP_SAVE lag to %u seconds",
-              m_gcp_monitor.m_gcp_save.m_max_lag_ms / 1000);
-    infoEvent("GCP Monitor: Computed max GCP_COMMIT lag to %u seconds",
-              m_gcp_monitor.m_micro_gcp.m_max_lag_ms / 1000);
-  }
-  else
-  {
-    infoEvent("GCP Monitor: unlimited lags allowed");
-  }
 
   bool ok = false;
   switch(m_micro_gcp.m_master.m_state){
@@ -12899,26 +12768,10 @@ void Dbdih::MASTER_LCPhandling(Signal* signal, Uint32 failedNodeId)
        * reason is that a starting node will always fail also if any node
        * fails in the middle of the start process.
        */
-      c_lcp_runs_with_pause_support = check_if_pause_lcp_possible();
-      if (!c_lcp_runs_with_pause_support)
-      {
-        jam();
-        /**
-         * We need to reaquire the mutex...
-         */
-        Mutex mutex(signal, c_mutexMgr, c_fragmentInfoMutex_lcp);
-        Callback c = 
-          { safe_cast(&Dbdih::master_lcp_fragmentMutex_locked),
-            failedNodePtr.i
-          };
-        ndbrequire(mutex.lock(c, false));
-      }
-      else
-      {
-        jam();
-        /* No mutex is needed, call callback function immediately */
-        master_lcp_fragmentMutex_locked(signal, failedNodePtr.i, 0);
-      }
+      c_lcp_runs_with_pause_support = true;
+      jam();
+      /* No mutex is needed, call callback function immediately */
+      master_lcp_fragmentMutex_locked(signal, failedNodePtr.i, 0);
       return;
     }
   case LMTOS_LCP_CONCLUDING:
@@ -12945,7 +12798,7 @@ void Dbdih::MASTER_LCPhandling(Signal* signal, Uint32 failedNodeId)
        */
       ndbrequire(c_lcpState.lcpStatus != LCP_STATUS_IDLE ||
                  lcp_already_completed);
-
+   
       if (c_lcpState.lcpStatus == LCP_STATUS_IDLE)
       {
         jam();
@@ -12957,30 +12810,28 @@ void Dbdih::MASTER_LCPhandling(Signal* signal, Uint32 failedNodeId)
          * handling LCP_COMPLETE_REP we need to get back to the state
          * LCP_TAB_SAVED and ensure that we send LCP_COMPLETE_REP with
          * block 0 for all nodes that haven't heard of the completed LCP yet.
+         *
+         * We accomplish this by transferring the bitmap for the wait for
+         * LCP_COMPLETE_REP to m_participatingDIH bitmask that is used to
+         * send the LCP_COMPLETE_REP for block 0.
          */
+        DEB_LCP_COMP(("LCP_IDLE => LCP_TAB_SAVED"));
         c_lcpState.setLcpStatus(LCP_TAB_SAVED, __LINE__);
+        m_local_lcp_state.init_master_take_over_idle_to_tab_saved();
+        for (Uint32 node = 1; node < MAX_NDB_NODES; node++)
+        {
+          if (c_lcpState.m_LCP_COMPLETE_REP_Counter_DIH.isWaitingFor(node))
+          {
+            jam();
+            c_lcpState.m_participatingDIH.set(node);
+          }
+        }
       }
-      c_lcp_runs_with_pause_support = check_if_pause_lcp_possible();
-      if (!c_lcp_runs_with_pause_support)
-      {
-        jam();
-        /**
-         * We need to reaquire the mutex...
-         * We have nodes in the cluster without support of pause lcp.
-         */
-        Mutex mutex(signal, c_mutexMgr, c_fragmentInfoMutex_lcp);
-        Callback c = 
-          { safe_cast(&Dbdih::master_lcp_fragmentMutex_locked),
-            failedNodePtr.i
-          };
-        ndbrequire(mutex.lock(c, false));
-      }
-      else
-      {
-        jam();
-        /* No mutex is needed, call callback function immediately */
-        master_lcp_fragmentMutex_locked(signal, failedNodePtr.i, 0);
-      }
+
+      c_lcp_runs_with_pause_support = true;
+      jam();
+      /* No mutex is needed, call callback function immediately */
+      master_lcp_fragmentMutex_locked(signal, failedNodePtr.i, 0);
       return;
     }
   default:
@@ -17400,7 +17251,6 @@ Dbdih::check_enable_micro_gcp(Signal* signal, bool broadcast)
     }
   }
 
-  if (ndb_check_micro_gcp(min))
   {
     jam();
     m_micro_gcp.m_enabled = true;
@@ -17661,11 +17511,10 @@ void Dbdih::execGCP_PREPARECONF(Signal* signal)
   Uint32 gci_hi = signal->theData[1];
   Uint32 gci_lo = signal->theData[2];
 
-  if (unlikely(signal->getLength() < GCPPrepareConf::SignalLength))
-  {
-    gci_lo = 0;
-    ndbassert(!ndb_check_micro_gcp(getNodeInfo(senderNodeId).m_version));
-  }
+  DEB_NODE_STOP(("Recv GCP_PREPARECONF(%u,%u) from %u",
+                 gci_hi, gci_lo, senderNodeId));
+
+  ndbrequire(signal->getLength() >= GCPPrepareConf::SignalLength);
 
   Uint64 gci = gci_lo | (Uint64(gci_hi) << 32);
   ndbrequire(gci == m_micro_gcp.m_master.m_new_gci);
@@ -17706,6 +17555,9 @@ void Dbdih::execGCP_NODEFINISH(Signal* signal)
   const Uint32 tcFailNo = signal->theData[2];
   const Uint32 gci_lo = signal->theData[3];
   const Uint64 gci = gci_lo | (Uint64(gci_hi) << 32);
+
+  DEB_NODE_STOP(("Recv GCP_NODEFINISH(%u,%u) from %u",
+                 gci_hi, gci_lo, senderNodeId));
 
   /* Check that there has not been a node failure since TC
    * reported this GCP complete...
@@ -17821,7 +17673,7 @@ void Dbdih::execGCP_NODEFINISH(Signal* signal)
   Uint32 saveGCI = old_hi;
   m_gcp_save.m_master.m_state = GcpSave::GCP_SAVE_REQ;
   m_gcp_save.m_master.m_new_gci = saveGCI;
-  
+
 #ifdef ERROR_INSERT
   if (ERROR_INSERTED(7188))
   {
@@ -18037,13 +17889,11 @@ void Dbdih::execGCP_PREPARE(Signal* signal)
   Uint32 masterNodeId = req->nodeId;
   Uint32 gci_hi = req->gci_hi;
   Uint32 gci_lo = req->gci_lo;
-  if (unlikely(signal->getLength() < GCPPrepare::SignalLength))
-  {
-    jam();
-    gci_lo = 0;
-    ndbassert(!ndb_check_micro_gcp(getNodeInfo(masterNodeId).m_version));
-  }
+  ndbrequire(signal->getLength() >= GCPPrepare::SignalLength);
   Uint64 gci = gci_lo | (Uint64(gci_hi) << 32);
+
+  DEB_NODE_STOP(("Recv GCP_PREPARE(%u,%u) from %u",
+                 gci_hi, gci_lo, masterNodeId));
 
   BlockReference retRef = calcDihBlockRef(masterNodeId);
 
@@ -18109,6 +17959,8 @@ reply:
   conf->nodeId = cownNodeId;
   conf->gci_hi = gci_hi;
   conf->gci_lo = gci_lo;
+  DEB_NODE_STOP(("Send GCP_PREPARECONF(%u,%u) to %u",
+                 req->gci_hi, req->gci_lo, refToNode(retRef)));
   sendSignal(retRef, GSN_GCP_PREPARECONF, signal, 
              GCPPrepareConf::SignalLength, JBA);
   return;
@@ -18132,11 +17984,10 @@ void Dbdih::execGCP_COMMIT(Signal* signal)
   Uint32 gci_hi = req->gci_hi;
   Uint32 gci_lo = req->gci_lo;
 
-  if (unlikely(signal->getLength() < GCPCommit::SignalLength))
-  {
-    gci_lo = 0;
-    ndbassert(!ndb_check_micro_gcp(getNodeInfo(masterNodeId).m_version));
-  }
+  DEB_NODE_STOP(("Recv GCP_COMMIT(%u,%u) from %u",
+                 gci_hi, gci_lo, masterNodeId));
+
+  ndbrequire(signal->getLength() >= GCPCommit::SignalLength);
   Uint64 gci = gci_lo | (Uint64(gci_hi) << 32);
 
 #ifdef ERROR_INSERT
@@ -18194,6 +18045,10 @@ void Dbdih::execGCP_COMMIT(Signal* signal)
     conf->gci_hi = (Uint32)(m_micro_gcp.m_old_gci >> 32);
     conf->failno = cfailurenr;
     conf->gci_lo = (Uint32)(m_micro_gcp.m_old_gci & 0xFFFFFFFF);
+
+    DEB_NODE_STOP(("Send GCP_NODEFINISH(%u,%u) to %u",
+                 conf->gci_hi, conf->gci_lo, refToNode(masterRef)));
+
     sendSignal(masterRef, GSN_GCP_NODEFINISH, signal,
                GCPNodeFinished::SignalLength, JBB);
     return;
@@ -18292,7 +18147,11 @@ Dbdih::execGCP_TCFINISHED_sync_conf(Signal* signal, Uint32 cb, Uint32 err)
   conf2->gci_hi = (Uint32)(m_micro_gcp.m_old_gci >> 32);
   conf2->failno = cb;  /* tcFailNo */
   conf2->gci_lo = (Uint32)(m_micro_gcp.m_old_gci & 0xFFFFFFFF);
-  sendSignal(retRef, GSN_GCP_NODEFINISH, signal, 
+
+  DEB_NODE_STOP(("2:Send GCP_NODEFINISH(%u,%u) to %u",
+                 conf2->gci_hi, conf2->gci_lo, refToNode(retRef)));
+
+  sendSignal(retRef, GSN_GCP_NODEFINISH, signal,
              GCPNodeFinished::SignalLength, JBB);
 }
 
@@ -18356,13 +18215,6 @@ Dbdih::execSUB_GCP_COMPLETE_REP(Signal* signal)
     m_micro_gcp.m_last_sent_gci = gci;
   }
 reply:
-  Uint32 nodeId = refToNode(masterRef);
-  if (!ndbd_dih_sub_gcp_complete_ack(getNodeInfo(nodeId).m_version))
-  {
-    jam();
-    return;
-  }
-
   SubGcpCompleteAck* ack = CAST_PTR(SubGcpCompleteAck,
                                     signal->getDataPtrSend());
   ack->rep = rep;
@@ -18997,9 +18849,7 @@ void Dbdih::execSTART_LCP_REQ(Signal* signal)
     req->participatingDIH = req->participatingDIH_v1;
   }
 
-  if (((getNodeInfo(refToNode(req->senderRef)).m_version <
-        NDBD_SUPPORT_PAUSE_LCP) ||
-        req->pauseStart == StartLcpReq::NormalLcpStart) &&
+  if ((req->pauseStart == StartLcpReq::NormalLcpStart) &&
         ownNodeIdSet)
   {
     jam();
@@ -19015,8 +18865,6 @@ void Dbdih::execSTART_LCP_REQ(Signal* signal)
 
 void Dbdih::handleStartLcpReq(Signal *signal, StartLcpReq *req)
 {
-  if (getNodeInfo(refToNode(req->senderRef)).m_version >=
-      NDBD_SUPPORT_PAUSE_LCP)
   {
     if (req->pauseStart == StartLcpReq::PauseLcpStartFirst)
     {
@@ -19123,11 +18971,6 @@ void Dbdih::handleStartLcpReq(Signal *signal, StartLcpReq *req)
      * to worry about this. If any node fails in the state of me being
      * started, I will fail as well.
      */
-    if (!isMaster() && c_lcpState.m_participatingLQH.get(nodeId))
-    {
-      jamLine(Uint16(nodeId));
-      ndbrequire(c_lcpState.m_participatingLQH.get(nodeId) == 0);
-    }
     NodeRecordPtr nodePtr;
     if (req->participatingDIH.get(nodeId) ||
         req->participatingLQH.get(nodeId))
@@ -19195,6 +19038,20 @@ Dbdih::LocalLCPState::init(const StartLcpReq * req)
 }
 
 void
+Dbdih::LocalLCPState::init_master_take_over_idle_to_tab_saved()
+{
+  if (m_state == LS_COMPLETE)
+  {
+    m_state = LS_RUNNING;
+  }
+  else
+  {
+    assert(m_state == LS_INITIAL);
+    m_state = LS_RUNNING_MTO_TAB_SAVED;
+  }
+}
+
+void
 Dbdih::LocalLCPState::lcp_frag_rep(const LcpFragRep * rep)
 {
   assert(m_state == LS_RUNNING);
@@ -19212,10 +19069,20 @@ Dbdih::LocalLCPState::lcp_frag_rep(const LcpFragRep * rep)
 void
 Dbdih::LocalLCPState::lcp_complete_rep(Uint32 gci)
 {
-  assert(m_state == LS_RUNNING);
-  m_state = LS_COMPLETE;
-  if (gci > m_stop_gci)
-    m_stop_gci = gci;
+  if (m_state == LS_RUNNING)
+  {
+    m_state = LS_COMPLETE;
+    if (gci > m_stop_gci)
+      m_stop_gci = gci;
+  }
+  else if (m_state == LS_RUNNING_MTO_TAB_SAVED)
+  {
+    reset();
+  }
+  else
+  {
+    require(false);
+  }
 }
 
 bool
@@ -20054,8 +19921,6 @@ void Dbdih::execCOPY_TABREQ(Signal* signal)
      * master here to ensure that we're up to date with this value.
      */
     c_lcp_id_while_copy_meta_data = req->currentLcpId;
-    Uint32 masterNodeId = refToNode(ref);
-    if (getNodeInfo(masterNodeId).m_version >= NDBD_SUPPORT_PAUSE_LCP)
     {
       if (req->tabLcpStatus == CopyTabReq::LcpCompleted)
       {
@@ -20068,11 +19933,6 @@ void Dbdih::execCOPY_TABREQ(Signal* signal)
         ndbrequire(req->tabLcpStatus == CopyTabReq::LcpActive);
         tabPtr.p->tabLcpStatus = TabRecord::TLS_ACTIVE;
       }
-    }
-    else
-    {
-      jam();
-      tabPtr.p->tabLcpStatus = TabRecord::TLS_COMPLETED;
     }
   }//if
   ndbrequire(tabPtr.p->noPages < NDB_ARRAY_SIZE(tabPtr.p->pageRef));
@@ -20723,7 +20583,7 @@ void Dbdih::execSTART_RECCONF(Signal* signal)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
 }//Dbdih::execSTART_RECCONF()
 
@@ -21576,7 +21436,7 @@ Dbdih::sendSTART_LCP_REQ(Signal* signal, Uint32 nodeId, Uint32 extra)
     }
     else
     {
-      ndbrequire(false);
+      ndbabort();
     }
     return;
   }
@@ -21610,7 +21470,7 @@ Dbdih::sendSTART_LCP_REQ(Signal* signal, Uint32 nodeId, Uint32 extra)
   }
   else
   {
-    ndbrequire(false);
+    ndbabort();
   }
 }
 
@@ -21676,8 +21536,7 @@ Dbdih::startLcpMutex_unlocked(Signal* signal, Uint32 data, Uint32 retVal){
   DEB_LCP(("startLcpMutex_unlocked: m_LAST_LCP_FRAG_ORD = %s",
 	   c_lcpState.m_LAST_LCP_FRAG_ORD.getText()));
 
-  c_lcp_runs_with_pause_support = check_if_pause_lcp_possible();
-  if (c_lcp_runs_with_pause_support)
+  c_lcp_runs_with_pause_support = true;
   {
     jam();
     /**
@@ -22137,34 +21996,22 @@ void Dbdih::execLCP_FRAG_REP(Signal* signal)
 
   jamEntry();
 
-  if (ERROR_INSERTED(7178) && nodeId != getOwnNodeId())
+  if (ERROR_INSERTED(7178) && (nodeId == ERROR_INSERT_EXTRA))
   {
     jam();
-    Uint32 owng =Sysfile::getNodeGroup(getOwnNodeId(), SYSFILE->nodeGroups);
-    Uint32 nodeg = Sysfile::getNodeGroup(nodeId, SYSFILE->nodeGroups);
-    if (owng == nodeg)
-    {
-      jam();
-      ndbout_c("throwing away LCP_FRAG_REP from  (and killing) %d", nodeId);
-      SET_ERROR_INSERT_VALUE(7179);
-      signal->theData[0] = 9999;
-      sendSignal(numberToRef(CMVMI, nodeId), 
-		 GSN_NDB_TAMPER, signal, 1, JBA);  
-      return;
-    }
+    ndbout_c("throwing away LCP_FRAG_REP from  (and killing) %d", nodeId);
+    SET_ERROR_INSERT_VALUE2(7179, nodeId);
+    signal->theData[0] = 9999;
+    sendSignal(numberToRef(CMVMI, nodeId),
+		  GSN_NDB_TAMPER, signal, 1, JBA);
+    return;
   }
  
-  if (ERROR_INSERTED(7179) && nodeId != getOwnNodeId())
+  if (ERROR_INSERTED(7179) && (nodeId == ERROR_INSERT_EXTRA))
   {
     jam();
-    Uint32 owng =Sysfile::getNodeGroup(getOwnNodeId(), SYSFILE->nodeGroups);
-    Uint32 nodeg = Sysfile::getNodeGroup(nodeId, SYSFILE->nodeGroups);
-    if (owng == nodeg)
-    {
-      jam();
-      ndbout_c("throwing away LCP_FRAG_REP from %d", nodeId);
-      return;
-    }
+    ndbout_c("throwing away LCP_FRAG_REP from %d", nodeId);
+    return;
   }    
 
   CRASH_INSERTION2(7025, isMaster());
@@ -22523,14 +22370,8 @@ Dbdih::handle_invalid_lcp_no(const LcpFragRep* rep,
   Uint32 lcpNo = rep->lcpNo;
   Uint32 lcpId = rep->lcpId;
 
-  if (!ndb_pnr(getNodeInfo(refToNode(cmasterdihref)).m_version))
-  {
-  }
-  else
-  {
-    warningEvent("Detected previous node failure of %d during lcp",
-                 rep->nodeId);
-  }
+  warningEvent("Detected previous node failure of %d during lcp",
+               rep->nodeId);
   
   replicaPtr.p->nextLcp = lcpNo;
   replicaPtr.p->lcpId[lcpNo] = 0;
@@ -22816,6 +22657,7 @@ void Dbdih::execLCP_COMPLETE_REP(Signal* signal)
   printLCP_COMPLETE_REP(stdout, 
 			signal->getDataPtr(),
 			signal->length(), number());
+  fflush(stdout);
 #endif
 
   LcpCompleteRep * rep = (LcpCompleteRep*)signal->getDataPtr();
@@ -23131,8 +22973,8 @@ void Dbdih::allNodesLcpCompletedLab(Signal* signal)
   if (!isMaster() && 
       c_lcpState.m_LCP_COMPLETE_REP_From_Master_Received == false){
     jam();
-    /**
     DEB_LCP_COMP(("LCP_COMPLETE_REQ not complete, Master not done"));
+    /**
      * Wait until master DIH has signalled lcp is complete
      */
     return;
@@ -23164,6 +23006,7 @@ void Dbdih::allNodesLcpCompletedLab(Signal* signal)
   c_lcpState.setLcpStatus(LCP_STATUS_IDLE, __LINE__);
   c_increase_lcp_speed_after_nf = false;
 
+  DEB_LCP_COMP(("LCP all completed"));
   /**
    * Update m_local_lcp_state
    */
@@ -23284,12 +23127,6 @@ void Dbdih::allNodesLcpCompletedLab(Signal* signal)
     jam();
     Mutex mutex(signal, c_mutexMgr, c_fragmentInfoMutex_lcp);
     mutex.unlock();
-  }
-  else if (c_old_node_waiting_for_lcp_end)
-  {
-    jam();
-    c_old_node_waiting_for_lcp_end = false;
-    start_copy_meta_data(signal);
   }
 
   c_lcp_runs_with_pause_support = false;
@@ -23561,15 +23398,16 @@ void Dbdih::checkGcpStopLab(Signal* signal)
     {
       if (m_gcp_monitor.m_gcp_save.m_max_lag_ms)
       {
-        warningEvent("GCP Monitor: GCP_SAVE lag %u seconds"
-                     " (max lag: %us)",
-                     lag0/1000, m_gcp_monitor.m_gcp_save.m_max_lag_ms/1000);
+        warningEvent("GCP Monitor: GCP_SAVE lag %u sec"
+                     " (max lag: %us), %s",
+                     lag0/1000, m_gcp_monitor.m_gcp_save.m_max_lag_ms/1000,
+                     c_GCP_SAVEREQ_Counter.getText());
       }
       else
       {
-        warningEvent("GCP Monitor: GCP_SAVE lag %u seconds"
-                     " (no max lag)",
-                     lag0/1000);
+        warningEvent("GCP Monitor: GCP_SAVE lag %u sec"
+                     " (no max lag), %s",
+                     lag0/1000, c_GCP_SAVEREQ_Counter.getText());
       }
     }
   }
@@ -23578,6 +23416,19 @@ void Dbdih::checkGcpStopLab(Signal* signal)
     jam();
     m_gcp_monitor.m_gcp_save.m_gci = m_gcp_save.m_gci;
     m_gcp_monitor.m_gcp_save.m_elapsed_ms = 0;
+
+    /**
+     * Recalculate gcp_save.m_max_lag.
+     * Since the maxima for gcp_save and micro_gcp are calculated
+     * separately at protocol basis, the normal constraint that
+     * GCP_SAVE max is > GCP_COMMIT max, may not hold in cases where
+     * GCP_SAVE is stalled.
+    */
+    if (m_gcp_monitor.m_gcp_save.m_need_max_lag_recalc)
+    {
+      setGCPStopTimeouts(signal, true, false); // true: for gcp_save
+      m_gcp_monitor.m_gcp_save.m_need_max_lag_recalc = false;
+    }
   }
 
   if (m_gcp_monitor.m_micro_gcp.m_gci == m_micro_gcp.m_current_gci)
@@ -23602,15 +23453,16 @@ void Dbdih::checkGcpStopLab(Signal* signal)
     {
       if (m_gcp_monitor.m_micro_gcp.m_max_lag_ms)
       {
-        warningEvent("GCP Monitor: GCP_COMMIT lag %u seconds"
-                     " (max lag: %u)",
-                     lag1/1000, m_gcp_monitor.m_micro_gcp.m_max_lag_ms/1000);
+        warningEvent("GCP Monitor: GCP_COMMIT lag %u sec"
+                     " (max lag: %us), %s",
+                     lag1/1000, m_gcp_monitor.m_micro_gcp.m_max_lag_ms/1000,
+                     c_GCP_COMMIT_Counter.getText());
       }
       else
       {
-        warningEvent("GCP Monitor: GCP_COMMIT lag %u seconds"
-                     " (no max lag)",
-                     lag1/1000);
+        warningEvent("GCP Monitor: GCP_COMMIT lag %u sec"
+                     " (no max lag), %s",
+                     lag1/1000, c_GCP_COMMIT_Counter.getText());
       }
     }
   }
@@ -23619,6 +23471,19 @@ void Dbdih::checkGcpStopLab(Signal* signal)
     jam();
     m_gcp_monitor.m_micro_gcp.m_elapsed_ms = 0;
     m_gcp_monitor.m_micro_gcp.m_gci = m_micro_gcp.m_current_gci;
+
+    /**
+     * Recalculate micro_gcp.m_max_lag.
+     * Since the maxima for gcp_save and micro_gcp are calculated
+     * separately at protocol basis, the normal constraint that
+     * GCP_SAVE max is > GCP_COMMIT max, may not hold in cases where
+     * GCP_SAVE is stalled.
+    */
+    if (m_gcp_monitor.m_micro_gcp.m_need_max_lag_recalc)
+    {
+      setGCPStopTimeouts(signal, false); // set_micro_gcp_max_lag is true by default
+      m_gcp_monitor.m_micro_gcp.m_need_max_lag_recalc = false;
+    }
   }
   
   signal->theData[0] = DihContinueB::ZCHECK_GCP_STOP;
@@ -24651,7 +24516,9 @@ Dbdih::compute_max_failure_time()
   Calculate timeouts for detecting GCP stops. These must be set such that
   node failures are not falsely interpreted as GCP stops.
 */
-void Dbdih::setGCPStopTimeouts(Signal *signal)
+void Dbdih::setGCPStopTimeouts(Signal *signal,
+                               bool set_gcp_save_max_lag,
+                               bool set_micro_gcp_max_lag)
 {
   
   const ndb_mgm_configuration_iterator* cfgIter = 
@@ -24689,15 +24556,21 @@ void Dbdih::setGCPStopTimeouts(Signal *signal)
       gcp_timeout = 0;
     }
 
-    m_gcp_monitor.m_micro_gcp.m_max_lag_ms = 
-      m_micro_gcp.m_master.m_time_between_gcp + micro_GCP_timeout 
-      + max_failure_time;
-    
-    m_gcp_monitor.m_gcp_save.m_max_lag_ms = 
-      m_gcp_save.m_master.m_time_between_gcp + 
-      // Ensure that GCP-commit times out before GCP-save if both stops. 
-      MAX(gcp_timeout, micro_GCP_timeout) + 
-      max_failure_time;
+    if (set_micro_gcp_max_lag)
+    {
+      m_gcp_monitor.m_micro_gcp.m_max_lag_ms =
+        m_micro_gcp.m_master.m_time_between_gcp + micro_GCP_timeout
+        + max_failure_time;
+    }
+
+    if (set_gcp_save_max_lag)
+    {
+      m_gcp_monitor.m_gcp_save.m_max_lag_ms =
+        m_gcp_save.m_master.m_time_between_gcp +
+        // Ensure that GCP-commit times out before GCP-save if both stops.
+        MAX(gcp_timeout, micro_GCP_timeout) +
+        max_failure_time;
+    }
   }
   else
   {
@@ -24706,9 +24579,22 @@ void Dbdih::setGCPStopTimeouts(Signal *signal)
     m_gcp_monitor.m_micro_gcp.m_max_lag_ms = 0;
   }
 
-  // If timeouts have changed, log it.
-  if (old_micro_GCP_max_lag != m_gcp_monitor.m_micro_gcp.m_max_lag_ms ||
-      old_GCP_save_max_lag != m_gcp_monitor.m_gcp_save.m_max_lag_ms)
+#ifdef ERROR_INSERT
+  // If a test has already set gcp save max lag, don't overwrite it
+  if (m_gcp_monitor.m_gcp_save.test_set_max_lag)
+  {
+    m_gcp_monitor.m_gcp_save.m_max_lag_ms = old_GCP_save_max_lag;
+  }
+
+  // If a test has already set gcp commit max lag, don't overwrite it
+  if (m_gcp_monitor.m_micro_gcp.test_set_max_lag)
+  {
+    m_gcp_monitor.m_micro_gcp.m_max_lag_ms = old_micro_GCP_max_lag;
+  }
+#endif
+
+  // If timeouts have changed, log it for micro_gcp
+  if (old_micro_GCP_max_lag != m_gcp_monitor.m_micro_gcp.m_max_lag_ms)
   {
     if (m_gcp_monitor.m_micro_gcp.m_max_lag_ms > 0)
     {
@@ -24719,13 +24605,38 @@ void Dbdih::setGCPStopTimeouts(Signal *signal)
         // Log to mgmd.
         infoEvent("GCP Monitor: Computed max GCP_COMMIT lag to %u seconds",
                   m_gcp_monitor.m_micro_gcp.m_max_lag_ms / 1000);
-        infoEvent("GCP Monitor: Computed max GCP_SAVE lag to %u seconds",
-                  m_gcp_monitor.m_gcp_save.m_max_lag_ms / 1000);
       }
       // Log locallly.
       g_eventLogger->info("GCP Monitor: Computed max GCP_COMMIT lag to %u"
                           " seconds",
                           m_gcp_monitor.m_micro_gcp.m_max_lag_ms / 1000);
+    }
+    else
+    {
+      jam();
+      if (isMaster())
+      {
+        jam();
+        infoEvent("GCP Monitor: GCP_COMMIT: unlimited lags allowed");
+      }
+      g_eventLogger->info("GCP Monitor: GCP_COMMIT: unlimited lags allowed");
+    }
+  }
+
+  // If timeouts have changed, log it for gcp_save
+  if (old_GCP_save_max_lag != m_gcp_monitor.m_gcp_save.m_max_lag_ms)
+  {
+    if (m_gcp_monitor.m_gcp_save.m_max_lag_ms > 0)
+    {
+      jam();
+      if (isMaster())
+      {
+        jam();
+        // Log to mgmd.
+        infoEvent("GCP Monitor: Computed max GCP_SAVE lag to %u seconds",
+                  m_gcp_monitor.m_gcp_save.m_max_lag_ms / 1000);
+      }
+      // Log locallly.
       g_eventLogger->info("GCP Monitor: Computed max GCP_SAVE lag to %u"
                           " seconds", 
                           m_gcp_monitor.m_gcp_save.m_max_lag_ms / 1000);    
@@ -24736,9 +24647,9 @@ void Dbdih::setGCPStopTimeouts(Signal *signal)
       if (isMaster())
       {
         jam();
-        infoEvent("GCP Monitor: unlimited lags allowed");
+        infoEvent("GCP Monitor: GCP_SAVE: unlimited lags allowed");
       }
-      g_eventLogger->info("GCP Monitor: unlimited lags allowed");
+      g_eventLogger->info("GCP Monitor: GCP_SAVE: unlimited lags allowed");
     }
   }
   sendINFO_GCP_STOP_TIMER(signal);
@@ -24831,8 +24742,6 @@ void Dbdih::initCommonData()
   ndb_mgm_get_int_parameter(p, CFG_DB_LCP_INTERVAL, &c_lcpState.clcpDelay);
   c_lcpState.clcpDelay = c_lcpState.clcpDelay > 31 ? 31 : c_lcpState.clcpDelay;
   
-  //ndb_mgm_get_int_parameter(p, CFG_DB_MIN_HOT_SPARES, &cminHotSpareNodes);
-
   cnoReplicas = 1;
   ndb_mgm_get_int_parameter(p, CFG_DB_NO_REPLICAS, &cnoReplicas);
   if (cnoReplicas > MAX_REPLICAS)
@@ -25664,6 +25573,7 @@ void Dbdih::execCHECKNODEGROUPSREQ(Signal* signal)
   case CheckNodeGroups::GetNodeGroupMembers: {
     ok = true;
     Uint32 ng = Sysfile::getNodeGroup(sd->nodeId, SYSFILE->nodeGroups);
+    DEB_MULTI_TRP(("My node group is %u", ng));
     if (ng == NO_NODE_GROUP_ID)
       ng = RNIL;
 
@@ -25676,8 +25586,11 @@ void Dbdih::execCHECKNODEGROUPSREQ(Signal* signal)
     {
       jamNoBlock();
       ptrAss(ngPtr, nodeGroupRecord);
+      DEB_MULTI_TRP(("%u nodes in node group", ngPtr.p->nodeCount));
       for (Uint32 j = 0; j < ngPtr.p->nodeCount; j++) {
         jamNoBlock();
+        DEB_MULTI_TRP(("Node %u is in same node group",
+                       ngPtr.p->nodesInGroup[j]));
         sd->mask.set(ngPtr.p->nodesInGroup[j]);
       }
     }
@@ -25985,16 +25898,6 @@ void Dbdih::readFragment(RWFragment* rf, FragmentstorePtr fragPtr)
   fragPtr.p->distributionKey = TdistKey;
 
   fragPtr.p->m_log_part_id = readPageWord(rf);
-  if (!ndbd_128_instances_address(getMinVersion()))
-  {
-    jam();
-    /**
-     * Limit log-part to 0-3 as older version didn't handle
-     *   getting requests to instances > 4
-     *   (in reality 7 i think...but that is useless as log-part dividor anyway)
-     */
-    fragPtr.p->m_log_part_id %= 4;
-  }
 
   /* Older nodes stored unlimited log part ids in the fragment definition, 
    * now we constrain them to a valid range of actual values for this node.  
@@ -26809,6 +26712,7 @@ void Dbdih::setNodeActiveStatus()
 /***************************************************************************/
 void Dbdih::setNodeGroups()
 {
+  DEB_MULTI_TRP(("setNodeGroups"));
   NodeGroupRecordPtr NGPtr;
   NodeRecordPtr sngNodeptr;
   Uint32 Ti;
@@ -26840,6 +26744,7 @@ void Dbdih::setNodeGroups()
       NGPtr.p->nodeCount++;
       ndbrequire(NGPtr.p->nodeCount <= cnoReplicas);
       add_nodegroup(NGPtr);
+      DEB_MULTI_TRP(("Node %u into node group %u", sngNodeptr.i, NGPtr.i));
       break;
     case Sysfile::NS_NotDefined:
     case Sysfile::NS_Configured:
@@ -26878,6 +26783,7 @@ void Dbdih::setNodeGroups()
    * replicas we will still only have one neighbour, so we will
    * have most communication with this neighbour node.
    */
+  startChangeNeighbourNode();
   for (Uint32 i = 0; i < NGPtr.p->nodeCount; i++)
   {
     jam();
@@ -26889,6 +26795,7 @@ void Dbdih::setNodeGroups()
       setNeighbourNode(nodeId);
     }
   }
+  endChangeNeighbourNode();
 }//Dbdih::setNodeGroups()
 
 /*************************************************************************/
@@ -27010,9 +26917,17 @@ Dbdih::startGcpMonitor(Signal* signal)
   jam();
   m_gcp_monitor.m_gcp_save.m_gci = m_gcp_save.m_gci;
   m_gcp_monitor.m_gcp_save.m_elapsed_ms = 0;
+  m_gcp_monitor.m_gcp_save.m_need_max_lag_recalc = true;
   m_gcp_monitor.m_micro_gcp.m_gci = m_micro_gcp.m_current_gci;
   m_gcp_monitor.m_micro_gcp.m_elapsed_ms = 0;
+  m_gcp_monitor.m_micro_gcp.m_need_max_lag_recalc = true;
   m_gcp_monitor.m_last_check = NdbTick_getCurrentTicks();
+
+#ifdef ERROR_INSERT
+  m_gcp_monitor.m_savedMaxCommitLag = 0;
+  m_gcp_monitor.m_gcp_save.test_set_max_lag = false;
+  m_gcp_monitor.m_micro_gcp.test_set_max_lag = false;
+#endif
 
   signal->theData[0] = DihContinueB::ZCHECK_GCP_STOP;
   sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100, 1);
@@ -27913,10 +27828,8 @@ Dbdih::execDUMP_STATE_ORD(Signal* signal)
               cmasterdihref,
               is_lcp_paused(),
               c_dequeue_lcp_rep_ongoing);
-    infoEvent("c_pause_lcp_master_state: %u,"
-              " c_old_node_waiting_for_lcp_end: %u",
-              Uint32(c_pause_lcp_master_state),
-              c_old_node_waiting_for_lcp_end);
+    infoEvent("c_pause_lcp_master_state: %u,",
+              Uint32(c_pause_lcp_master_state));
     infoEvent("c_queued_lcp_complete_rep: %u,"
               " c_lcp_id_paused: %u",
               c_queued_lcp_complete_rep,
@@ -27993,6 +27906,10 @@ Dbdih::execDUMP_STATE_ORD(Signal* signal)
                           m_gcp_monitor.m_micro_gcp.m_max_lag_ms,
                           signal->theData[2]);
       m_gcp_monitor.m_micro_gcp.m_max_lag_ms = signal->theData[2];
+
+#ifdef ERROR_INSERT
+      m_gcp_monitor.m_micro_gcp.test_set_max_lag = true;
+#endif
     }
     else
     {
@@ -28000,6 +27917,10 @@ Dbdih::execDUMP_STATE_ORD(Signal* signal)
                           m_gcp_monitor.m_gcp_save.m_max_lag_ms,
                           signal->theData[2]);
       m_gcp_monitor.m_gcp_save.m_max_lag_ms = signal->theData[2];
+
+#ifdef ERROR_INSERT
+      m_gcp_monitor.m_gcp_save.test_set_max_lag = true;
+#endif
     }
     sendINFO_GCP_STOP_TIMER(signal);
   }
@@ -28032,6 +27953,27 @@ Dbdih::execDUMP_STATE_ORD(Signal* signal)
     }
     return;
   }
+#ifdef ERROR_INSERT
+  if (arg == DumpStateOrd::DihSaveGcpCommitLag)
+  {
+    jam();
+    m_gcp_monitor.m_savedMaxCommitLag =
+      m_gcp_monitor.m_micro_gcp.m_max_lag_ms;
+    g_eventLogger->info("Saving Gcp commit lag %u",
+                        m_gcp_monitor.m_savedMaxCommitLag);
+    return;
+  }
+  if (arg == DumpStateOrd::DihCheckGcpCommitLag)
+  {
+    jam();
+    g_eventLogger->info("Checking Gcp commit lag (%u) == saved lag (%u)",
+                        m_gcp_monitor.m_micro_gcp.m_max_lag_ms,
+                        m_gcp_monitor.m_savedMaxCommitLag);
+    ndbrequire(m_gcp_monitor.m_micro_gcp.m_max_lag_ms ==
+               m_gcp_monitor.m_savedMaxCommitLag);
+    return;
+  }
+#endif
 
 }//Dbdih::execDUMP_STATE_ORD()
 
@@ -28857,6 +28799,8 @@ void Dbdih::execWAIT_GCP_REQ(Signal* signal)
        * containing the next epoch.
        */
       ptr.p->waitGCI = Uint32(m_micro_gcp.m_current_gci >> 32);
+      DEB_NODE_STOP(("waitGCI = %u",
+                     Uint32(m_micro_gcp.m_current_gci >> 32)));
       
       if (m_micro_gcp.m_master.m_state == MicroGcp::M_GCP_COMMIT)
       {
@@ -28872,6 +28816,8 @@ void Dbdih::execWAIT_GCP_REQ(Signal* signal)
          * CONF.
          */
         ptr.p->waitGCI = Uint32(m_micro_gcp.m_master.m_new_gci >> 32);
+        DEB_NODE_STOP(("2: waitGCI = %u",
+          Uint32(m_micro_gcp.m_master.m_new_gci >> 32)));
       }
 
       if (requestType == WaitGCPReq::CompleteForceStart)
@@ -28887,7 +28833,7 @@ void Dbdih::execWAIT_GCP_REQ(Signal* signal)
     }
     default:
       jamLine(requestType);
-      ndbrequire(false);
+      ndbabort();
     }
     
     return;
@@ -29182,35 +29128,6 @@ Dbdih::sendDictLockReq(Signal* signal, Uint32 lockType, Callback c)
   lockPtr.p->locked = false;
   lockPtr.p->callback = c;
 
-  // handle rolling upgrade
-  {
-    Uint32 masterVersion = getNodeInfo(cmasterNodeId).m_version;
-
-    const unsigned int get_major = getMajor(masterVersion);
-    const unsigned int get_minor = getMinor(masterVersion);
-    const unsigned int get_build = getBuild(masterVersion);
-    ndbrequire(get_major >= 4);
-    
-    if (masterVersion < NDBD_DICT_LOCK_VERSION_5 ||
-        (masterVersion < NDBD_DICT_LOCK_VERSION_5_1 &&
-         get_major == 5 && get_minor == 1) ||
-        ERROR_INSERTED(7176)) {
-      jam();
-
-      infoEvent("DIH: detect upgrade: master node %u old version %u.%u.%u",
-                (unsigned int)cmasterNodeId, get_major, get_minor, get_build);
-
-      DictLockConf* conf = (DictLockConf*)&signal->theData[0];
-      conf->userPtr = lockPtr.i;
-      conf->lockType = lockType;
-      conf->lockPtr = ZNIL;
-      
-      sendSignal(reference(), GSN_DICT_LOCK_CONF, signal,
-                 DictLockConf::SignalLength, JBB);
-      return;
-    }
-  }
-  
   BlockReference dictMasterRef = calcDictBlockRef(cmasterNodeId);
   sendSignal(dictMasterRef, GSN_DICT_LOCK_REQ, signal,
       DictLockReq::SignalLength, JBB);
@@ -29261,22 +29178,6 @@ Dbdih::sendDictUnlockOrd(Signal* signal, Uint32 lockSlavePtrI)
   ord->senderRef = reference();
 
   c_dictLockSlavePool.release(lockPtr);
-
-  // handle rolling upgrade
-  {
-    Uint32 masterVersion = getNodeInfo(cmasterNodeId).m_version;
-
-    const unsigned int get_major = getMajor(masterVersion);
-    const unsigned int get_minor = getMinor(masterVersion);
-    ndbrequire(get_major >= 4);
-    
-    if (masterVersion < NDBD_DICT_LOCK_VERSION_5 ||
-        (masterVersion < NDBD_DICT_LOCK_VERSION_5_1 &&
-         get_major == 5 && get_minor == 1) ||
-        ERROR_INSERTED(7176)) {
-      return;
-    }
-  }
 
   Uint32 len = DictUnlockOrd::SignalLength;
   if (unlikely(getNodeInfo(cmasterNodeId).m_version < NDB_MAKE_VERSION(6,3,0)))
@@ -29541,6 +29442,7 @@ Dbdih::execCREATE_NODEGROUP_IMPL_REQ(Signal* signal)
     }
 
     ndbrequire(rt == CreateNodegroupImplReq::RT_COMMIT);
+    bool our_node_in_new_nodegroup = false;
     for (Uint32 i = 0; i<cnoReplicas; i++)
     {
       Uint32 nodeId = req->nodes[i];
@@ -29549,6 +29451,11 @@ Dbdih::execCREATE_NODEGROUP_IMPL_REQ(Signal* signal)
       {
         jam();
         Sysfile::setNodeStatus(nodeId, SYSFILE->nodeStatus, Sysfile::NS_Active);
+        if (nodeId == getOwnNodeId())
+        {
+          jam();
+          our_node_in_new_nodegroup = true;
+        }
       }
       else
       {
@@ -29557,6 +29464,19 @@ Dbdih::execCREATE_NODEGROUP_IMPL_REQ(Signal* signal)
       }
       setNodeActiveStatus();
       setNodeGroups();
+    }
+    if (our_node_in_new_nodegroup)
+    {
+      jam();
+      /**
+       * We are part of a newly created node group. Thus it is now time to
+       * setup multi socket transporter to communicate with other nodes in
+       * the new node group.
+       */
+      DEB_MULTI_TRP(("Set up multi transporter after Create nodegroup"));
+      m_set_up_multi_trp_in_node_restart = false;
+      signal->theData[0] = reference();
+      sendSignal(QMGR_REF, GSN_SET_UP_MULTI_TRP_REQ, signal, 1, JBB);
     }
     break;
   }
@@ -29714,15 +29634,7 @@ Dbdih::getMinVersion() const
 Uint8
 Dbdih::getMaxStartedFragCheckpointsForNode(Uint32 nodeId) const
 {
-  if (likely(getNodeInfo(nodeId).m_version >= NDBD_EXTRA_PARALLEL_FRAG_LCP))
-  {
-    return MAX_STARTED_FRAG_CHECKPOINTS_PER_NODE;
-  }
-  else
-  {
-    /* Older node - only 2 parallel frag checkpoints supported */
-    return 2;
-  }
+  return MAX_STARTED_FRAG_CHECKPOINTS_PER_NODE;
 }
   
   

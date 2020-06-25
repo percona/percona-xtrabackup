@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,21 +25,22 @@
 #ifndef PLUGIN_X_SRC_XPL_CLIENT_H_
 #define PLUGIN_X_SRC_XPL_CLIENT_H_
 
-#include "plugin/x/ngs/include/ngs/client.h"
-#include "plugin/x/ngs/include/ngs/interface/protocol_monitor_interface.h"
-#include "plugin/x/ngs/include/ngs/interface/vio_interface.h"
-#include "plugin/x/src/global_timeouts.h"
+#include <memory>
+#include <string>
 
-struct SHOW_VAR;
+#include "plugin/x/ngs/include/ngs/client.h"
+#include "plugin/x/src/interface/protocol_monitor.h"
+#include "plugin/x/src/interface/session.h"
+#include "plugin/x/src/interface/vio.h"
 
 namespace xpl {
 class Session;
 
 class Client;
 
-class Protocol_monitor : public ngs::Protocol_monitor_interface {
+class Protocol_monitor : public iface::Protocol_monitor {
  public:
-  Protocol_monitor() : m_client(0) {}
+  Protocol_monitor() : m_client(nullptr) {}
   void init(Client *client);
 
   void on_notice_warning_send() override;
@@ -65,9 +66,8 @@ class Protocol_monitor : public ngs::Protocol_monitor_interface {
 
 class Client : public ngs::Client {
  public:
-  Client(std::shared_ptr<ngs::Vio_interface> connection,
-         ngs::Server_interface &server, Client_id client_id,
-         Protocol_monitor *pmon, const Global_timeouts &timeouts);
+  Client(std::shared_ptr<iface::Vio> connection, iface::Server &server,
+         Client_id client_id, Protocol_monitor *pmon);
   ~Client() override;
 
  public:  // impl ngs::Client
@@ -79,9 +79,11 @@ class Client : public ngs::Client {
  public:
   bool is_handler_thd(const THD *thd) const override;
 
-  void get_status_ssl_cipher_list(SHOW_VAR *var);
+  std::string get_status_ssl_cipher_list() const;
+  std::string get_status_compression_algorithm() const;
+  std::string get_status_compression_level() const;
 
-  void kill();
+  void kill() override;
 
  private:
   bool is_localhost(const char *hostname);

@@ -2,7 +2,7 @@
 Frequently Asked Questions
 ================================================================================
 
-Does |Percona XtraBackup| 8.0 Support making backups of databases in versions prior to 8.0?
+Does |Percona XtraBackup| 8.0 support making backups of databases in versions prior to 8.0?
 ====================================================================================================
 
 .. include:: .res/contents/text.pxb.8-0.txt

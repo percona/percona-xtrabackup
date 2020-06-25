@@ -178,7 +178,7 @@ create table t1 select round(1, 6);
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `round(1, 6)` int(1) NOT NULL DEFAULT '0'
+  `round(1, 6)` int NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t1;
 round(1, 6)
@@ -1439,3 +1439,511 @@ select -9223372036854775808 * 2 as result;
 ERROR 22003: BIGINT value is out of range in '(-(9223372036854775808) * 2)'
 select 2 * -9223372036854775808 as result;
 ERROR 22003: BIGINT value is out of range in '(2 * -(9223372036854775808))'
+#
+# Bug#30139913 CEILING AND FLOOR HAVE INCORRECT RESOLVED TYPES FOR BIGINT
+#              ARGUMENTS
+#
+CREATE TABLE t1(a BIGINT UNSIGNED);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` bigint unsigned DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+INSERT INTO t1 VALUES(18446744073709551615);
+CREATE TABLE t2 AS
+SELECT CEILING(a) AS c, FLOOR(a) AS f FROM t1;
+DESCRIBE t2;
+Field	Type	Null	Key	Default	Extra
+c	bigint unsigned	YES		NULL	
+f	bigint unsigned	YES		NULL	
+SELECT * FROM t2;
+c	f
+18446744073709551615	18446744073709551615
+DROP TABLE t1, t2;
+# BIGINT should resolve to BIGINT.
+CREATE TABLE t AS
+SELECT CEILING(18446744073709551615) AS c,
+FLOOR(18446744073709551615) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	bigint unsigned	NO		0	
+f	bigint unsigned	NO		0	
+DROP TABLE t;
+# DECIMAL should resolve to DECIMAL when too big for BIGINT.
+CREATE TABLE t AS
+SELECT CEILING(18446744073709551616) AS c,
+FLOOR(18446744073709551616) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	decimal(20,0)	NO		0	
+f	decimal(20,0)	NO		0	
+DROP TABLE t;
+# CEILING/FLOOR has to always assume a signed DECIMAL, making this too
+# big for BIGINT.
+CREATE TABLE t AS
+SELECT CEILING(CAST(1844674407370955161 AS DECIMAL(19, 0))) AS c,
+FLOOR(CAST(1844674407370955161 AS DECIMAL(19, 0))) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	decimal(19,0)	NO		0	
+f	decimal(19,0)	NO		0	
+SELECT * FROM t;
+c	f
+1844674407370955161	1844674407370955161
+DROP TABLE t;
+CREATE TABLE t AS
+SELECT CEILING(CAST(-9223372036854775808 AS DECIMAL(19, 0))) AS c,
+FLOOR(CAST(-9223372036854775808 AS DECIMAL(19, 0))) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	decimal(19,0)	NO		0	
+f	decimal(19,0)	NO		0	
+SELECT * FROM t;
+c	f
+-9223372036854775808	-9223372036854775808
+DROP TABLE t;
+# DECIMAL should resolve to BIGINT when it fits.
+CREATE TABLE t AS
+SELECT CEILING(CAST(184467440737095516 AS DECIMAL(18, 0))) AS c,
+FLOOR(CAST(184467440737095516 AS DECIMAL(18, 0))) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	bigint	NO		0	
+f	bigint	NO		0	
+SELECT * FROM t;
+c	f
+184467440737095516	184467440737095516
+DROP TABLE t;
+CREATE TABLE t AS
+SELECT CEILING(CAST(-922337203685477580 AS DECIMAL(18, 0))) AS c,
+FLOOR(CAST(-922337203685477580 AS DECIMAL(18, 0))) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	bigint	NO		0	
+f	bigint	NO		0	
+SELECT * FROM t;
+c	f
+-922337203685477580	-922337203685477580
+DROP TABLE t;
+# Account for possible increase of order of magnitude when rounding.
+CREATE TABLE t AS
+SELECT CEILING(CAST(99999999999999999.9 AS DECIMAL(18, 1))) AS c,
+FLOOR(CAST(-99999999999999999.9 AS DECIMAL(18, 1))) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	bigint	NO		0	
+f	bigint	NO		0	
+SELECT * FROM t;
+c	f
+100000000000000000	-100000000000000000
+DROP TABLE t;
+CREATE TABLE t AS
+SELECT CEILING(CAST(999999999999999999.9 AS DECIMAL(19, 1))) AS c,
+FLOOR(CAST(-999999999999999999.9 AS DECIMAL(19, 1))) AS f;
+DESCRIBE t;
+Field	Type	Null	Key	Default	Extra
+c	decimal(19,0)	NO		0	
+f	decimal(19,0)	NO		0	
+SELECT * FROM t;
+c	f
+1000000000000000000	-1000000000000000000
+DROP TABLE t;
+#
+# Bug #29952066 CAST OF NEGATIVE FUNCTION RETURN VALUE TO
+#               UNSIGNED MALFUNCTIONS WITH BIGINT
+#
+CREATE TABLE t0(c0 BIGINT UNSIGNED);
+INSERT INTO t0(c0) VALUES(NULL);
+SELECT * FROM t0 WHERE CAST(COALESCE(t0.c0, -1) AS UNSIGNED);
+c0
+NULL
+SELECT * FROM t0 WHERE CAST(IFNULL(t0.c0, -1) AS UNSIGNED);
+c0
+NULL
+SELECT CAST(COALESCE(t0.c0, -1) AS UNSIGNED) IS TRUE FROM t0;
+CAST(COALESCE(t0.c0, -1) AS UNSIGNED) IS TRUE
+1
+SELECT CAST(COALESCE(t0.c0, -1) AS UNSIGNED) FROM t0;
+CAST(COALESCE(t0.c0, -1) AS UNSIGNED)
+18446744073709551615
+DROP TABLE t0;
+SELECT CAST(-1.1 AS UNSIGNED);
+CAST(-1.1 AS UNSIGNED)
+18446744073709551615
+#
+#
+# Bug #30680384 UBSAN: RUNTIME ERROR: NEGATION
+#               OF -9223372036854775808 IN ITEM_FUNC_ROUND::INT_OP()
+#
+select (round(-9223372036854775808, -4));
+ERROR 22003: BIGINT value is out of range in 'round(-(9223372036854775808),-(4))'
+CREATE PROCEDURE test_round(in arg bigint)
+BEGIN
+DECLARE i int;
+SET i = 0;
+WHILE (i >= -20) DO
+BEGIN
+# Ignore SQLSTATE 22003 numeric value out of range
+DECLARE CONTINUE HANDLER FOR SQLSTATE '22003' SHOW ERRORS;
+SELECT arg, i, round(arg, i);
+END;
+SET i = i - 1;
+END WHILE;
+END//
+CREATE PROCEDURE test_round_unsigned(in arg bigint unsigned)
+BEGIN
+DECLARE i int;
+SET i = 0;
+WHILE (i >= -20) DO
+BEGIN
+# Ignore SQLSTATE 22003 numeric value out of range
+DECLARE CONTINUE HANDLER FOR SQLSTATE '22003' SHOW ERRORS;
+SELECT arg, i, round(arg, i);
+END;
+SET i = i - 1;
+END WHILE;
+END//
+CALL test_round(-123456);
+arg	i	round(arg, i)
+-123456	0	-123456
+arg	i	round(arg, i)
+-123456	-1	-123460
+arg	i	round(arg, i)
+-123456	-2	-123500
+arg	i	round(arg, i)
+-123456	-3	-123000
+arg	i	round(arg, i)
+-123456	-4	-120000
+arg	i	round(arg, i)
+-123456	-5	-100000
+arg	i	round(arg, i)
+-123456	-6	0
+arg	i	round(arg, i)
+-123456	-7	0
+arg	i	round(arg, i)
+-123456	-8	0
+arg	i	round(arg, i)
+-123456	-9	0
+arg	i	round(arg, i)
+-123456	-10	0
+arg	i	round(arg, i)
+-123456	-11	0
+arg	i	round(arg, i)
+-123456	-12	0
+arg	i	round(arg, i)
+-123456	-13	0
+arg	i	round(arg, i)
+-123456	-14	0
+arg	i	round(arg, i)
+-123456	-15	0
+arg	i	round(arg, i)
+-123456	-16	0
+arg	i	round(arg, i)
+-123456	-17	0
+arg	i	round(arg, i)
+-123456	-18	0
+arg	i	round(arg, i)
+-123456	-19	0
+arg	i	round(arg, i)
+-123456	-20	0
+CALL test_round(-9223372036854775807);
+arg	i	round(arg, i)
+-9223372036854775807	0	-9223372036854775807
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775807	-2	-9223372036854775800
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775807	-7	-9223372036850000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775807	-11	-9223372000000000000
+arg	i	round(arg, i)
+-9223372036854775807	-12	-9223372000000000000
+arg	i	round(arg, i)
+-9223372036854775807	-13	-9223370000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775807	-15	-9223000000000000000
+arg	i	round(arg, i)
+-9223372036854775807	-16	-9220000000000000000
+arg	i	round(arg, i)
+-9223372036854775807	-17	-9200000000000000000
+arg	i	round(arg, i)
+-9223372036854775807	-18	-9000000000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775807	-20	0
+CALL test_round(-9223372036854775808);
+arg	i	round(arg, i)
+-9223372036854775808	0	-9223372036854775808
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775808	-2	-9223372036854775800
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775808	-7	-9223372036850000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775808	-11	-9223372000000000000
+arg	i	round(arg, i)
+-9223372036854775808	-12	-9223372000000000000
+arg	i	round(arg, i)
+-9223372036854775808	-13	-9223370000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775808	-15	-9223000000000000000
+arg	i	round(arg, i)
+-9223372036854775808	-16	-9220000000000000000
+arg	i	round(arg, i)
+-9223372036854775808	-17	-9200000000000000000
+arg	i	round(arg, i)
+-9223372036854775808	-18	-9000000000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+-9223372036854775808	-20	0
+CALL test_round(9223372036854775807);
+arg	i	round(arg, i)
+9223372036854775807	0	9223372036854775807
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+9223372036854775807	-2	9223372036854775800
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+9223372036854775807	-7	9223372036850000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+9223372036854775807	-11	9223372000000000000
+arg	i	round(arg, i)
+9223372036854775807	-12	9223372000000000000
+arg	i	round(arg, i)
+9223372036854775807	-13	9223370000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+9223372036854775807	-15	9223000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-16	9220000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-17	9200000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-18	9000000000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+9223372036854775807	-20	0
+CALL test_round(9223372036854775808);
+ERROR 22003: Out of range value for column 'arg' at row 1
+CALL test_round_unsigned(9223372036854775807);
+arg	i	round(arg, i)
+9223372036854775807	0	9223372036854775807
+arg	i	round(arg, i)
+9223372036854775807	-1	9223372036854775810
+arg	i	round(arg, i)
+9223372036854775807	-2	9223372036854775800
+arg	i	round(arg, i)
+9223372036854775807	-3	9223372036854776000
+arg	i	round(arg, i)
+9223372036854775807	-4	9223372036854780000
+arg	i	round(arg, i)
+9223372036854775807	-5	9223372036854800000
+arg	i	round(arg, i)
+9223372036854775807	-6	9223372036855000000
+arg	i	round(arg, i)
+9223372036854775807	-7	9223372036850000000
+arg	i	round(arg, i)
+9223372036854775807	-8	9223372036900000000
+arg	i	round(arg, i)
+9223372036854775807	-9	9223372037000000000
+arg	i	round(arg, i)
+9223372036854775807	-10	9223372040000000000
+arg	i	round(arg, i)
+9223372036854775807	-11	9223372000000000000
+arg	i	round(arg, i)
+9223372036854775807	-12	9223372000000000000
+arg	i	round(arg, i)
+9223372036854775807	-13	9223370000000000000
+arg	i	round(arg, i)
+9223372036854775807	-14	9223400000000000000
+arg	i	round(arg, i)
+9223372036854775807	-15	9223000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-16	9220000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-17	9200000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-18	9000000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-19	10000000000000000000
+arg	i	round(arg, i)
+9223372036854775807	-20	0
+CALL test_round_unsigned(9223372036854775808);
+arg	i	round(arg, i)
+9223372036854775808	0	9223372036854775808
+arg	i	round(arg, i)
+9223372036854775808	-1	9223372036854775810
+arg	i	round(arg, i)
+9223372036854775808	-2	9223372036854775800
+arg	i	round(arg, i)
+9223372036854775808	-3	9223372036854776000
+arg	i	round(arg, i)
+9223372036854775808	-4	9223372036854780000
+arg	i	round(arg, i)
+9223372036854775808	-5	9223372036854800000
+arg	i	round(arg, i)
+9223372036854775808	-6	9223372036855000000
+arg	i	round(arg, i)
+9223372036854775808	-7	9223372036850000000
+arg	i	round(arg, i)
+9223372036854775808	-8	9223372036900000000
+arg	i	round(arg, i)
+9223372036854775808	-9	9223372037000000000
+arg	i	round(arg, i)
+9223372036854775808	-10	9223372040000000000
+arg	i	round(arg, i)
+9223372036854775808	-11	9223372000000000000
+arg	i	round(arg, i)
+9223372036854775808	-12	9223372000000000000
+arg	i	round(arg, i)
+9223372036854775808	-13	9223370000000000000
+arg	i	round(arg, i)
+9223372036854775808	-14	9223400000000000000
+arg	i	round(arg, i)
+9223372036854775808	-15	9223000000000000000
+arg	i	round(arg, i)
+9223372036854775808	-16	9220000000000000000
+arg	i	round(arg, i)
+9223372036854775808	-17	9200000000000000000
+arg	i	round(arg, i)
+9223372036854775808	-18	9000000000000000000
+arg	i	round(arg, i)
+9223372036854775808	-19	10000000000000000000
+arg	i	round(arg, i)
+9223372036854775808	-20	0
+CALL test_round_unsigned(18446744073709551614);
+arg	i	round(arg, i)
+18446744073709551614	0	18446744073709551614
+arg	i	round(arg, i)
+18446744073709551614	-1	18446744073709551610
+arg	i	round(arg, i)
+18446744073709551614	-2	18446744073709551600
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+18446744073709551614	-4	18446744073709550000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+18446744073709551614	-8	18446744073700000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+18446744073709551614	-10	18446744070000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+18446744073709551614	-12	18446744000000000000
+arg	i	round(arg, i)
+18446744073709551614	-13	18446740000000000000
+arg	i	round(arg, i)
+18446744073709551614	-14	18446700000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+18446744073709551614	-17	18400000000000000000
+arg	i	round(arg, i)
+18446744073709551614	-18	18000000000000000000
+arg	i	round(arg, i)
+Level	Code	Message
+Error	1690	BIGINT UNSIGNED value is out of range in 'round(arg@0,i@1)'
+arg	i	round(arg, i)
+18446744073709551614	-20	0
+DROP PROCEDURE test_round;
+DROP PROCEDURE test_round_unsigned;

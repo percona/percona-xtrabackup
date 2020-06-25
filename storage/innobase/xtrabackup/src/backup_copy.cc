@@ -855,7 +855,7 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
                                       uint thread_n) {
   char fullpath[FN_REFLEN];
   byte buf[UNIV_PAGE_SIZE_MAX * 2];
-  byte encrypt_info[ENCRYPTION_INFO_SIZE];
+  byte encrypt_info[Encryption::INFO_SIZE];
   fil_space_t space;
 
   fn_format(fullpath, filepath, dir, "", MYF(MY_RELATIVE_PATH));
@@ -883,14 +883,14 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
   msg_ts("[%02u] Encrypting %s tablespace header with new master key.\n",
          thread_n, fullpath);
 
-  memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
+  memset(encrypt_info, 0, Encryption::INFO_SIZE);
 
   space.id = page_get_space_id(page);
   bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
                                        space.encryption_iv);
   ut_a(found);
   space.encryption_type = Encryption::AES;
-  space.encryption_klen = ENCRYPTION_KEY_LEN;
+  space.encryption_klen = Encryption::KEY_LEN;
 
   const page_size_t page_size(fsp_header_get_page_size(page));
 
@@ -903,7 +903,7 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
 
   ulint offset = fsp_header_get_encryption_offset(page_size);
 
-  memcpy(page + offset, encrypt_info, ENCRYPTION_INFO_SIZE);
+  memcpy(page + offset, encrypt_info, Encryption::INFO_SIZE);
 
   page_checksum_fix(page, page_size);
 
@@ -999,6 +999,8 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
     } else if (!prep_mode) {
       /* backup fake file into empty directory */
       char opath[FN_REFLEN + 10];
+      /* remove trailing / */
+      if (path[strlen(path) - 1] == '/') path[strlen(path) - 1] = '\0';
       snprintf(opath, sizeof(opath), "%s/db.opt", path);
       if (!(ret = backup_file_printf(trim_dotslash(opath), "%s", ""))) {
         msg("Failed to create file %s\n", opath);
@@ -2123,7 +2125,8 @@ bool copy_back(int argc, char **argv) {
       msg("xtrabackup: Error: can't read master_key_id\n");
       return (false);
     }
-    int ret = fscanf(f, "%lu", &Encryption::s_master_key_id);
+    auto key = Encryption::get_master_key_id();
+    int ret = fscanf(f, "%lu", &key);
     ut_a(ret == 1);
     fclose(f);
 

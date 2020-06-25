@@ -247,10 +247,11 @@ class sys_var_pluginvar : public sys_var {
                         : (plugin_var_arg->flags & PLUGIN_VAR_RQCMDARG
                                ? REQUIRED_ARG
                                : REQUIRED_ARG))),
-            pluginvar_show_type(plugin_var_arg), 0, 0, VARIABLE_NOT_IN_BINLOG,
+            pluginvar_show_type(plugin_var_arg), 0, nullptr,
+            VARIABLE_NOT_IN_BINLOG,
             (plugin_var_arg->flags & PLUGIN_VAR_NODEFAULT) ? on_check_pluginvar
-                                                           : NULL,
-            NULL, NULL, PARSE_NORMAL),
+                                                           : nullptr,
+            nullptr, nullptr, PARSE_NORMAL),
         plugin_var(plugin_var_arg),
         orig_pluginvar_name(plugin_var_arg->name) {
     plugin_var->name = name_arg;
@@ -279,7 +280,6 @@ class sys_var_pluginvar : public sys_var {
   virtual void global_save_default(THD *, set_var *) {}
   bool session_update(THD *thd, set_var *var);
   bool global_update(THD *thd, set_var *var);
-  bool is_default(THD *thd, set_var *var);
   longlong get_min_value();
   ulonglong get_max_value();
   void set_arg_source(get_opt_arg_source *src) {

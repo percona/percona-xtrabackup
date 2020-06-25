@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,21 +24,20 @@
 
 #include "plugin/x/src/xpl_session.h"
 
-#include "plugin/x/ngs/include/ngs/interface/client_interface.h"
 #include "plugin/x/ngs/include/ngs/protocol/protocol_protobuf.h"
 #include "plugin/x/ngs/include/ngs/scheduler.h"
 #include "plugin/x/src/document_id_aggregator.h"
+#include "plugin/x/src/interface/client.h"
+#include "plugin/x/src/interface/server.h"
 #include "plugin/x/src/notices.h"
 #include "plugin/x/src/sql_data_context.h"
 #include "plugin/x/src/xpl_dispatcher.h"
 #include "plugin/x/src/xpl_error.h"
 #include "plugin/x/src/xpl_log.h"
-#include "plugin/x/src/xpl_server.h"
 
 namespace xpl {
 
-Session::Session(ngs::Client_interface *client,
-                 ngs::Protocol_encoder_interface *proto,
+Session::Session(iface::Client *client, iface::Protocol_encoder *proto,
                  const Session_id session_id)
     : ngs::Session(client, proto, session_id),
       m_notice_output_queue(proto, &m_notice_configuration),
@@ -56,7 +55,7 @@ Session::~Session() {
 }
 
 // handle a message while in Ready state
-bool Session::handle_ready_message(ngs::Message_request &command) {
+bool Session::handle_ready_message(const ngs::Message_request &command) {
   // check if the session got killed
   if (m_sql.is_killed()) {
     m_encoder->send_result(ngs::Error_code(ER_QUERY_INTERRUPTED,
@@ -103,8 +102,7 @@ void Session::on_kill() {
   on_close(true);
 }
 
-void Session::on_auth_success(
-    const ngs::Authentication_interface::Response &response) {
+void Session::on_auth_success(const iface::Authentication::Response &response) {
   proto().send_notice_client_id(m_client->client_id_num());
   ngs::Session::on_auth_success(response);
 
@@ -114,13 +112,12 @@ void Session::on_auth_success(
   m_was_authenticated = true;
 }
 
-void Session::on_auth_failure(
-    const ngs::Authentication_interface::Response &response) {
+void Session::on_auth_failure(const iface::Authentication::Response &response) {
   if (response.error_code == ER_MUST_CHANGE_PASSWORD &&
       !m_sql.password_expired()) {
-    ngs::Authentication_interface::Response r{
-        response.status, response.error_code,
-        "Password for " MYSQLXSYS_ACCOUNT " account has been expired"};
+    iface::Authentication::Response r{response.status, response.error_code,
+                                      "Password for " MYSQLXSYS_ACCOUNT
+                                      " account has been expired"};
     ngs::Session::on_auth_failure(r);
   } else {
     ngs::Session::on_auth_failure(response);
@@ -150,14 +147,14 @@ THD *Session::get_thd() const { return m_sql.get_thd(); }
 bool Session::can_see_user(const std::string &user) const {
   const std::string owner = m_sql.get_authenticated_user_name();
 
-  if (state() == ngs::Session_interface::k_ready && !owner.empty()) {
+  if (state() == iface::Session::State::k_ready && !owner.empty()) {
     if (m_sql.has_authenticated_user_a_super_priv() || (owner == user))
       return true;
   }
   return false;
 }
 
-void Session::set_proto(ngs::Protocol_encoder_interface *encoder) {
+void Session::set_proto(iface::Protocol_encoder *encoder) {
   ngs::Session::set_proto(encoder);
 
   m_notice_output_queue.set_encoder(encoder);

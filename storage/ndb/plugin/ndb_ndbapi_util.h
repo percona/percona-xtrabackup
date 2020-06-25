@@ -221,7 +221,17 @@ bool ndb_get_datafile_names(NdbDictionary::Dictionary *dict,
  */
 bool ndb_get_database_names_in_dictionary(
     NdbDictionary::Dictionary *dict,
-    std::unordered_set<std::string> &database_names);
+    std::unordered_set<std::string> *database_names);
+
+/**
+ * @brief Checks if a database is being used in NDB Dictionary
+ * @param dict           NDB Dictionary
+ * @param database_name  Name of database being checked
+ * @param exists [out]   True if database exists, false if not
+ * @return true on success, false on failure
+ */
+bool ndb_database_exists(NdbDictionary::Dictionary *dict,
+                         const std::string &database_name, bool &exists);
 
 /**
  * @brief Check if a logfile group exists in NDB Dictionary
@@ -284,5 +294,16 @@ bool ndb_get_logfile_group_id_and_version(NdbDictionary::Dictionary *dict,
 bool ndb_get_tablespace_id_and_version(NdbDictionary::Dictionary *dict,
                                        const std::string &tablespace_name,
                                        int &id, int &version);
+
+/**
+ * @brief Return the number of indexes created on an NDB table
+ * @param dict               NDB Dictionary
+ * @param ndbtab             NDB Table object
+ * @param index_count [out]  Number of indexes
+ * @return true if the number of indexes could be determined, false if not
+ */
+bool ndb_table_index_count(const NdbDictionary::Dictionary *dict,
+                           const NdbDictionary::Table *ndbtab,
+                           unsigned int &index_count);
 
 #endif

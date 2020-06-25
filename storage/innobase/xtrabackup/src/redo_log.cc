@@ -50,6 +50,7 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
   }
 
   log_files_header_read(*log_sys, max_cp_field);
+  log_detected_format = log_sys->format;
 
   checkpoint_lsn_start =
       mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);

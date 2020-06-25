@@ -73,7 +73,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <srv0start.h>
 
 #include <clone0api.h>
-#include <components/mysql_server/server_component.h>
 #include <mysql.h>
 #include <mysqld_thd_manager.h>
 #include <sql/current_thd.h>
@@ -122,7 +121,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #define DICT_TF_ZSSIZE_SHIFT 1
 #define DICT_TF_FORMAT_ZIP 1
 #define DICT_TF_FORMAT_SHIFT 5
-
 static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 
 /* we cannot include sql/log.h because it conflicts with innodb headers */
@@ -140,6 +138,7 @@ const char reserved_system_space_name[] = "innodb_system";
 /* This tablespace name is reserved by InnoDB for the predefined temporary
 tablespace. */
 const char reserved_temporary_space_name[] = "innodb_temporary";
+ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 
 /* === xtrabackup specific options === */
 char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
@@ -460,7 +459,6 @@ extern const char *innodb_flush_method_names[];
 extern TYPELIB innodb_flush_method_typelib;
 
 #include "caching_sha2_passwordopt-vars.h"
-#include "sslopt-vars.h"
 
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
@@ -1199,7 +1197,6 @@ struct my_option xb_client_options[] = {
      0},
 
 #include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
 
 #if !defined(HAVE_YASSL)
     {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
@@ -1426,7 +1423,8 @@ Disable with --skip-innodb-checksums.",
     {"innodb_directories", OPT_INNODB_DIRECTORIES,
      "List of directories 'dir1;dir2;..;dirN' to scan for tablespace files. "
      "Default is to scan 'innodb-data-home-dir;innodb-undo-directory;datadir'",
-     &innobase_directories, &innobase_directories, 0, GET_STR_ALLOC,
+     &srv_innodb_directories, &srv_innodb_directories, 0, GET_STR_ALLOC,
+
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"temp_tablespaces_dir", OPT_INNODB_TEMP_TABLESPACE_DIRECTORY,
      "Directory where temp tablespace files live, this path can be absolute.",
@@ -1769,9 +1767,6 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
     case OPT_XTRA_ENCRYPT_KEY:
       hide_option(argument, &xtrabackup_encrypt_key);
       break;
-
-#include "sslopt-case.h"
-
     case '?':
       usage();
       exit(EXIT_SUCCESS);
@@ -1869,9 +1864,10 @@ static bool innodb_init_param(void) {
   default_path = current_dir;
 
   ut_a(default_path);
-
-  MySQL_datadir_path = Fil_path{default_path};
-
+  {
+    std::string mysqld_datadir{default_path};
+    MySQL_datadir_path = Fil_path{mysqld_datadir};
+  }
   /* Set InnoDB initialization parameters according to the values
   read from MySQL .cnf file */
 
@@ -1886,10 +1882,12 @@ static bool innodb_init_param(void) {
 
   /* The default dir for data files is the datadir of MySQL */
 
-  srv_data_home =
-      ((xtrabackup_backup || xtrabackup_stats) && innobase_data_home_dir
-           ? innobase_data_home_dir
-           : default_path);
+  srv_data_home = ((xtrabackup_backup || xtrabackup_stats) &&
+                           (innobase_data_home_dir != nullptr &&
+                            *innobase_data_home_dir != '\0')
+                       ? innobase_data_home_dir
+                       : default_path);
+  Fil_path::normalize(srv_data_home);
   msg("xtrabackup:   innodb_data_home_dir = %s\n", srv_data_home);
 
   /*--------------- Shared tablespaces -------------------------*/
@@ -2004,7 +2002,7 @@ static bool innodb_init_param(void) {
 
   srv_force_recovery = (ulint)innobase_force_recovery;
 
-  srv_use_doublewrite_buf = false;
+  dblwr::enabled = false;
 
   if (!innobase_use_checksums) {
     srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_NONE;
@@ -2089,6 +2087,10 @@ static bool innodb_init_param(void) {
     my_free(srv_undo_dir);
     srv_undo_dir = my_strdup(PSI_NOT_INSTRUMENTED, ".", MYF(MY_FAE));
   }
+
+  ut_ad(srv_undo_dir != nullptr);
+  Fil_path::normalize(srv_undo_dir);
+  MySQL_undo_path = Fil_path{srv_undo_dir};
 
   /* We want to save original value of srv_temp_dir because InnoDB will
   modify ibt::srv_temp_dir. */
@@ -2208,28 +2210,27 @@ error:
 }
 
 static void xb_scan_for_tablespaces() {
-  std::string directories;
+  /* This is the default directory for IBD and IBU files. Put it first
+  in the list of known directories. */
+  fil_set_scan_dir(MySQL_datadir_path.path());
 
-  if (innobase_directories != nullptr && *innobase_directories != 0) {
-    Fil_path::normalize(innobase_directories);
-    directories.append(Fil_path::parse(innobase_directories));
-    directories.push_back(FIL_PATH_SEPARATOR);
+  /* Add --innodb-data-home-dir as a known location for IBD and IBU files
+  if it is not already there. */
+  ut_ad(srv_data_home != nullptr && *srv_data_home != '\0');
+  fil_set_scan_dir(Fil_path::remove_quotes(srv_data_home));
+
+  /* Add --innodb-directories as known locations for IBD and IBU files. */
+  if (srv_innodb_directories != nullptr && *srv_innodb_directories != 0) {
+    fil_set_scan_dirs(Fil_path::remove_quotes(srv_innodb_directories));
   }
 
-  directories.append(srv_data_home);
-
-  if (srv_undo_dir != nullptr && *srv_undo_dir != 0) {
-    directories.push_back(FIL_PATH_SEPARATOR);
-    directories.append(srv_undo_dir);
-  }
-
-  /* This is the default directory for .ibd files. */
-  directories.push_back(FIL_PATH_SEPARATOR);
-  directories.append(MySQL_datadir_path.path());
+  /* For the purpose of file discovery at startup, we need to scan
+  --innodb-undo-directory also. */
+  fil_set_scan_dir(Fil_path::remove_quotes(MySQL_undo_path), true);
 
   msg("xtrabackup: Generating a list of tablespaces\n");
 
-  fil_scan_for_tablespaces(directories, true);
+  fil_scan_for_tablespaces(true);
 }
 
 static void dict_load_from_spaces_sdi() {
@@ -2271,20 +2272,6 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
     return (false);
   }
 
-  /* InnoDB files should be found in the following locations only. */
-  std::string directories;
-
-  directories.append(srv_data_home);
-
-  if (srv_undo_dir != nullptr && *srv_undo_dir != 0) {
-    directories.push_back(FIL_PATH_SEPARATOR);
-    directories.append(srv_undo_dir);
-  }
-
-  /* This is the default directory for .ibd files. */
-  directories.push_back(FIL_PATH_SEPARATOR);
-  directories.append(MySQL_datadir_path.path());
-
   lsn_t to_lsn = ULLONG_MAX;
   if (for_apply_log && (metadata_type == METADATA_FULL_BACKUP ||
                         xtrabackup_incremental_dir != nullptr)) {
@@ -2292,7 +2279,7 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
                                                      : incremental_last_lsn;
   }
 
-  err = srv_start(false, directories, to_lsn);
+  err = srv_start(false, to_lsn);
 
   if (err != DB_SUCCESS) {
     free(internal_innobase_data_file_path);
@@ -2748,7 +2735,7 @@ bool check_if_skip_table(
                                      tables_include_hash)) {
     return (false);
   }
-  if ((eptr = strstr(buf, "#P#")) != NULL) {
+  if ((eptr = strcasestr(buf, "#P#")) != NULL) {
     *eptr = 0;
 
     if (check_if_table_matches_filters(buf, regex_exclude_list,
@@ -3121,17 +3108,23 @@ static void xtrabackup_init_datasinks(void) {
                        : DS_TYPE_COMPRESS_QUICKLZ);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
-    if (ds_data != ds_redo) {
+
+    /* disable redo compression if redo log is encrypt */
+    if (srv_redo_log_encrypt) {
       ds_data = ds;
-      ds = ds_create(xtrabackup_target_dir,
-                     xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
-                         ? DS_TYPE_COMPRESS_LZ4
-                         : DS_TYPE_COMPRESS_QUICKLZ);
-      xtrabackup_add_datasink(ds);
-      ds_set_pipe(ds, ds_redo);
-      ds_redo = ds;
     } else {
-      ds_redo = ds_data = ds;
+      if (ds_data != ds_redo) {
+        ds_data = ds;
+        ds = ds_create(xtrabackup_target_dir,
+                       xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
+                           ? DS_TYPE_COMPRESS_LZ4
+                           : DS_TYPE_COMPRESS_QUICKLZ);
+        xtrabackup_add_datasink(ds);
+        ds_set_pipe(ds, ds_redo);
+        ds_redo = ds;
+      } else {
+        ds_redo = ds_data = ds;
+      }
     }
   }
 }
@@ -3212,6 +3205,7 @@ static dberr_t xb_load_tablespaces(void)
     return (err);
   }
 
+  msg("xtrabackup: Generating a list of tablespaces\n");
   xb_scan_for_tablespaces();
 
   /* Add separate undo tablespaces to fil_system */
@@ -3287,11 +3281,6 @@ void xb_data_files_close(void)
   fil_close_all_files();
 
   fil_close();
-
-  /* Free the double write data structures. */
-  if (buf_dblwr) {
-    buf_dblwr_free();
-  }
 
   /* Reset srv_file_io_threads to its default value to avoid confusing
   warning on --prepare in innobase_start_or_create_for_mysql()*/
@@ -3728,8 +3717,7 @@ static void init_mysql_environment() {
   transaction_cache_init();
 
   mdl_init();
-
-  mysql_services_bootstrap(nullptr);
+  component_infrastructure_init();
 }
 
 static void cleanup_mysql_environment() {
@@ -3739,8 +3727,7 @@ static void cleanup_mysql_environment() {
   table_def_free();
   mdl_destroy();
   Srv_session::module_deinit();
-  shutdown_dynamic_loader();
-  mysql_services_shutdown();
+  component_infrastructure_deinit();
 
   mysql_mutex_destroy(&LOCK_status);
   mysql_mutex_destroy(&LOCK_global_system_variables);
@@ -4656,6 +4643,9 @@ retry:
     goto error;
   }
 
+  log_format = mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
+  log_detected_format = log_format;
+
   if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
                 (sizeof "xtrabkup") - 1) != 0) {
     if (xtrabackup_incremental_dir) {
@@ -4667,8 +4657,6 @@ retry:
         "to '--prepare'.\n");
     goto skip_modify;
   }
-
-  log_format = mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
 
   if (log_format < LOG_HEADER_FORMAT_8_0_1) {
     msg("xtrabackup: error: Unsupported redo log format " UINT32PF
@@ -4688,8 +4676,10 @@ retry:
     /* InnoDB using CRC32 by default since 5.7.9+ */
     if (log_block_get_checksum(log_buf + field) ==
             log_block_calc_checksum_crc32(log_buf + field) &&
-        mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-            LOG_HEADER_FORMAT_CURRENT) {
+        (mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
+            LOG_HEADER_FORMAT_CURRENT ||
+	 mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
+            LOG_HEADER_FORMAT_8_0_3)) {
       if (!innodb_checksum_algorithm_specified) {
         srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_CRC32;
       }
@@ -4712,7 +4702,7 @@ retry:
     goto error;
   }
 
-  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, LOG_HEADER_FORMAT_CURRENT);
+  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, log_format);
   update_log_temp_checkpoint(log_buf, max_lsn);
 
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
@@ -6011,7 +6001,7 @@ static bool xb_export_cfg_write(
 static __attribute__((nonnull, warn_unused_result)) dberr_t
 xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
   byte key_size[sizeof(ib_uint32_t)];
-  byte row[ENCRYPTION_KEY_LEN * 3];
+  byte row[Encryption::KEY_LEN * 3];
   byte *ptr = row;
   byte *transfer_key = ptr;
   lint elen;
@@ -6019,7 +6009,7 @@ xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
   ut_ad(table->encryption_key != NULL && table->encryption_iv != NULL);
 
   /* Write the encryption key size. */
-  mach_write_to_4(key_size, ENCRYPTION_KEY_LEN);
+  mach_write_to_4(key_size, Encryption::KEY_LEN);
 
   if (fwrite(&key_size, 1, sizeof(key_size), file) != sizeof(key_size)) {
     msg("IO Write error: (%d, %s) %s", errno, strerror(errno),
@@ -6030,20 +6020,21 @@ xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
 
   /* Generate and write the transfer key. */
   Encryption::random_value(transfer_key);
-  if (fwrite(transfer_key, 1, ENCRYPTION_KEY_LEN, file) != ENCRYPTION_KEY_LEN) {
+  if (fwrite(transfer_key, 1, Encryption::KEY_LEN, file) !=
+      Encryption::KEY_LEN) {
     msg("IO Write error: (%d, %s) %s", errno, strerror(errno),
         "while writing transfer key.");
 
     return (DB_IO_ERROR);
   }
 
-  ptr += ENCRYPTION_KEY_LEN;
+  ptr += Encryption::KEY_LEN;
 
   /* Encrypt tablespace key. */
   elen = my_aes_encrypt(
       reinterpret_cast<unsigned char *>(table->encryption_key),
-      ENCRYPTION_KEY_LEN, ptr, reinterpret_cast<unsigned char *>(transfer_key),
-      ENCRYPTION_KEY_LEN, my_aes_256_ecb, NULL, false);
+      Encryption::KEY_LEN, ptr, reinterpret_cast<unsigned char *>(transfer_key),
+      Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
     msg("IO Write error: (%d, %s) %s", errno, strerror(errno),
@@ -6052,19 +6043,19 @@ xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
   }
 
   /* Write encrypted tablespace key */
-  if (fwrite(ptr, 1, ENCRYPTION_KEY_LEN, file) != ENCRYPTION_KEY_LEN) {
+  if (fwrite(ptr, 1, Encryption::KEY_LEN, file) != Encryption::KEY_LEN) {
     msg("IO Write error: (%d, %s) %s", errno, strerror(errno),
         "while writing encrypted tablespace key.");
 
     return (DB_IO_ERROR);
   }
-  ptr += ENCRYPTION_KEY_LEN;
+  ptr += Encryption::KEY_LEN;
 
   /* Encrypt tablespace iv. */
   elen = my_aes_encrypt(reinterpret_cast<unsigned char *>(table->encryption_iv),
-                        ENCRYPTION_KEY_LEN, ptr,
+                        Encryption::KEY_LEN, ptr,
                         reinterpret_cast<unsigned char *>(transfer_key),
-                        ENCRYPTION_KEY_LEN, my_aes_256_ecb, NULL, false);
+                        Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
     msg("IO Write error: (%d, %s) %s", errno, strerror(errno),
@@ -6073,7 +6064,7 @@ xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
   }
 
   /* Write encrypted tablespace iv */
-  if (fwrite(ptr, 1, ENCRYPTION_KEY_LEN, file) != ENCRYPTION_KEY_LEN) {
+  if (fwrite(ptr, 1, Encryption::KEY_LEN, file) != Encryption::KEY_LEN) {
     msg("IO Write error: (%d, %s) %s", errno, strerror(errno),
         "while writing encrypted tablespace iv.");
 
@@ -6103,16 +6094,16 @@ static __attribute__((nonnull, warn_unused_result)) dberr_t xb_export_cfp_write(
   with fil_space_free(). */
   if (table->encryption_key == NULL) {
     table->encryption_key =
-        static_cast<byte *>(mem_heap_alloc(table->heap, ENCRYPTION_KEY_LEN));
+        static_cast<byte *>(mem_heap_alloc(table->heap, Encryption::KEY_LEN));
 
     table->encryption_iv =
-        static_cast<byte *>(mem_heap_alloc(table->heap, ENCRYPTION_KEY_LEN));
+        static_cast<byte *>(mem_heap_alloc(table->heap, Encryption::KEY_LEN));
 
     fil_space_t *space = fil_space_get(table->space);
     ut_ad(space != NULL && FSP_FLAGS_GET_ENCRYPTION(space->flags));
 
-    memcpy(table->encryption_key, space->encryption_key, ENCRYPTION_KEY_LEN);
-    memcpy(table->encryption_iv, space->encryption_iv, ENCRYPTION_KEY_LEN);
+    memcpy(table->encryption_key, space->encryption_key, Encryption::KEY_LEN);
+    memcpy(table->encryption_iv, space->encryption_iv, Encryption::KEY_LEN);
   }
 
   srv_get_encryption_data_filename(table, name, sizeof(name));
@@ -6214,7 +6205,7 @@ static bool store_master_key_id(
     return (false);
   }
 
-  fprintf(fp, "%lu", Encryption::s_master_key_id);
+  fprintf(fp, "%lu", Encryption::get_master_key_id());
   fclose(fp);
 
   return (true);
@@ -6629,9 +6620,7 @@ skip_check:
     innodb_free_param();
   }
 
-  if (!use_dumped_tablespace_keys) {
-    xb_keyring_shutdown();
-  }
+  xb_keyring_shutdown();
 
   Tablespace_map::instance().serialize();
 
@@ -6643,9 +6632,7 @@ skip_check:
 
 error_cleanup:
 
-  if (!use_dumped_tablespace_keys) {
-    xb_keyring_shutdown();
-  }
+  xb_keyring_shutdown();
 
   xtrabackup_close_temp_log(FALSE);
 

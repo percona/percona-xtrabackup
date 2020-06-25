@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -66,7 +66,7 @@ TEST_F(FatalSignalDeathTest, Segfault) {
 /* Newer versions of ASAN give other error message, disable it */
 // EXPECT_DEATH_IF_SUPPORTED(*pint= 42, ".*ASAN:SIGSEGV.*");
 #else
-  int *pint = NULL;
+  int *pint = nullptr;
   /*
    On most platforms we get SIGSEGV == 11, but SIGBUS == 10 is also possible.
    And on Mac OsX we can get SIGILL == 4 (but only in optmized mode).
@@ -106,7 +106,7 @@ TEST(PrintUtilities, Itoa) {
     my_res = my_safe_itoa(10, intarr[ix], &buff[sizeof(buff) - 1]);
     EXPECT_STREQ(sprintbuff, my_res);
 
-    ll2str(intarr[ix], buff, 10, 0);
+    ll2str(intarr[ix], buff, 10, false);
     EXPECT_STREQ(sprintbuff, buff);
 
     sprintf(sprintbuff, "%lld", -intarr[ix]);
@@ -114,7 +114,7 @@ TEST(PrintUtilities, Itoa) {
     EXPECT_STREQ(sprintbuff, my_res);
 
     // This one fails ....
-    // ll2str(-intarr[ix], buff, 10, 0);
+    // ll2str(-intarr[ix], buff, 10, false);
     // EXPECT_STREQ(sprintbuff, buff)
     //  << "failed for " << -intarr[ix];
 
@@ -122,14 +122,14 @@ TEST(PrintUtilities, Itoa) {
     my_res = my_safe_itoa(16, intarr[ix], &buff[sizeof(buff) - 1]);
     EXPECT_STREQ(sprintbuff, my_res);
 
-    ll2str(intarr[ix], buff, 16, 0);
+    ll2str(intarr[ix], buff, 16, false);
     EXPECT_STREQ(sprintbuff, buff);
 
     sprintf(sprintbuff, "%llx", -intarr[ix]);
     my_res = my_safe_itoa(16, -intarr[ix], &buff[sizeof(buff) - 1]);
     EXPECT_STREQ(sprintbuff, my_res) << "failed for " << -intarr[ix];
 
-    ll2str(-intarr[ix], buff, 16, 0);
+    ll2str(-intarr[ix], buff, 16, false);
     EXPECT_STREQ(sprintbuff, buff);
   }
 }
@@ -138,7 +138,7 @@ TEST(PrintUtilities, Itoa) {
 TEST(PrintUtilities, Printf) {
   char buff[512];
   char sprintfbuff[512];
-  const char *null_str = NULL;
+  const char *null_str = nullptr;
 
   my_safe_snprintf(buff, sizeof(buff), "hello");
   EXPECT_STREQ("hello", buff);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,27 +62,14 @@ const type_conversion_status FieldDateTest::nozero_expected_status[] = {
     TYPE_ERR_BAD_VALUE, TYPE_ERR_BAD_VALUE, TYPE_ERR_BAD_VALUE};
 
 class Mock_field_date : public Field_newdate {
- private:
-  uchar buffer[PACK_LENGTH];
-  uchar null_byte;
-
-  void initialize() {
-    ptr = buffer;
-    memset(buffer, 0, PACK_LENGTH);
-    null_byte = '\0';
-    set_null_ptr(&null_byte, 1);
-  }
-
  public:
   Mock_field_date()
-      : Field_newdate(0,             // ptr_arg
-                      NULL,          // null_ptr_arg
-                      1,             // null_bit_arg
-                      Field::NONE,   // auto_flags_arg
-                      "field_name")  // field_name_arg
-  {
-    initialize();
-  }
+      : Field_newdate(nullptr,                    // ptr_arg
+                      &Field::dummy_null_buffer,  // null_ptr_arg
+                      1,                          // null_bit_arg
+                      Field::NONE,                // auto_flags_arg
+                      "field_name")               // field_name_arg
+  {}
 
   void make_writable() { bitmap_set_bit(table->write_set, field_index); }
   void make_readable() { bitmap_set_bit(table->read_set, field_index); }

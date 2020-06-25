@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,6 @@
 
 #include <NdbTick.h>
 #include <dbtup/Dbtup.hpp>
-#include <dbtup/Dbtup.hpp>
 
 #include <EventLogger.hpp>
 extern EventLogger * g_eventLogger;
@@ -87,7 +86,7 @@ static const Uint32 WaitScanTempErrorRetryMillis = 10;
 
 static NDB_TICKS startTime;
 
-#ifdef VM_TRACE
+#if (defined(VM_TRACE) || defined(ERROR_INSERT))
 //#define DEBUG_LCP 1
 //#define DEBUG_LCP_ROW 1
 //#define DEBUG_LCP_DEL_FILES 1
@@ -97,6 +96,7 @@ static NDB_TICKS startTime;
 //#define DEBUG_REDO_CONTROL_DETAIL 1
 //#define DEBUG_LCP_DD 1
 //#define DEBUG_LCP_STAT 1
+//#define DEBUG_LCP_LAG 1
 #endif
 
 #ifdef DEBUG_REDO_CONTROL
@@ -139,6 +139,12 @@ static NDB_TICKS startTime;
 #define DEB_LCP_STAT(arglist) do { g_eventLogger->info arglist ; } while (0)
 #else
 #define DEB_LCP_STAT(arglist) do { } while (0)
+#endif
+
+#ifdef DEBUG_LCP_LAG
+#define DEB_LCP_LAG(arglist) do { g_eventLogger->info arglist ; } while (0)
+#else
+#define DEB_LCP_LAG(arglist) do { } while (0)
 #endif
 
 #ifdef DEBUG_EXTRA_LCP
@@ -191,6 +197,8 @@ Backup::execSTTOR(Signal* signal)
     ndbrequire((c_tup = (Dbtup*)globalData.getBlock(DBTUP, instance())) != 0);
     ndbrequire((c_lgman =
                 (Lgman*)globalData.getBlock(LGMAN, instance())) != 0);
+    ndbrequire((c_pgman =
+                (Pgman*)globalData.getBlock(PGMAN, instance())) != 0);
 
     m_words_written_this_period = 0;
     m_backup_words_written_this_period = 0;
@@ -655,7 +663,7 @@ Backup::init_lcp_timers(Uint64 redo_written_since_last_call)
 }
 
 void
-Backup::lcp_start_point()
+Backup::lcp_start_point(Signal *signal)
 {
   /**
    * A new LCP is starting up, we need to keep track of this to handle
@@ -673,6 +681,11 @@ Backup::lcp_start_point()
   {
     m_prev_lcp_start_time = m_lcp_start_time;
   }
+  c_pgman->lcp_start_point(signal,
+                           m_max_undo_log_level_percentage + 1,
+                           m_max_redo_percentage);
+  m_max_undo_log_level_percentage = m_undo_log_level_percentage;
+  m_max_redo_percentage = m_redo_percentage;
   m_first_lcp_started = true;
   m_lcp_start_time = getHighResTimer();
   ndbrequire(NdbTick_IsValid(m_lcp_start_time));
@@ -701,6 +714,7 @@ Backup::lcp_end_point()
     NdbTick_Elapsed(m_lcp_start_time, current_time).milliSec();
   m_lcp_current_cut_point = m_lcp_start_time;
 
+  c_pgman->lcp_end_point(m_last_lcp_exec_time_in_ms);
   reset_lcp_timing_factors();
 #ifdef DEBUG_REDO_CONTROL
   Uint64 checkpoint_size = m_insert_size_lcp[1] - m_insert_size_lcp[0];
@@ -804,7 +818,7 @@ Backup::calculate_seconds_since_lcp_cut(Uint64& seconds_since_lcp_cut)
   {
     jam();
     seconds_since_lcp_cut = 0;
-    return; 
+    return;
   }
   seconds_since_lcp_cut =
     NdbTick_Elapsed(m_lcp_current_cut_point, now).seconds();
@@ -966,17 +980,20 @@ Backup::change_alert_state_redo_percent(Uint64 redo_percentage)
    * to recover at a restart substantially.
    */
   m_redo_alert_state = RedoStateRep::NO_REDO_ALERT;
-  if (redo_percentage > Uint64(60))
+  if (redo_percentage > Uint64(60) ||
+      m_undo_log_level_percentage > 60)
   {
     jam();
     m_redo_alert_state = RedoStateRep::REDO_ALERT_CRITICAL;
   }
-  else if (redo_percentage > Uint64(40))
+  else if (redo_percentage > Uint64(40) ||
+           m_undo_log_level_percentage > 40)
   {
     jam();
     m_redo_alert_state = RedoStateRep::REDO_ALERT_HIGH;
   }
-  else if (redo_percentage > Uint64(25))
+  else if (redo_percentage > Uint64(25) ||
+           m_undo_log_level_percentage > 25)
   {
     jam();
     m_redo_alert_state = RedoStateRep::REDO_ALERT_LOW;
@@ -1333,10 +1350,32 @@ Backup::set_proposed_disk_write_speed(Uint64 current_redo_speed_per_sec,
     jam();
     Uint64 percentage_increase = lag_per_sec * Uint64(100);
     percentage_increase /= (m_proposed_disk_write_speed + 1);
-    if (percentage_increase > Uint64(25))
+    DEB_LCP_LAG(("(%u)Lag per second is %lld, percent_increase: %llu",
+                 instance(), lag_per_sec, percentage_increase));
+    Uint64 max_percentage_increase = Uint64(25);
+    if (m_last_lcp_dd_percentage > 85)
     {
       jam();
-      m_proposed_disk_write_speed *= Uint64(125);
+      max_percentage_increase = Uint64(600);
+    }
+    else if (m_last_lcp_dd_percentage > 10)
+    {
+      /**
+       * increase =  percentage / (100 - percentage)
+       * Multiply by 100 to get it in percent
+       */
+      jam();
+      Uint64 divisor = Uint64(100) - Uint64(m_last_lcp_dd_percentage);
+      Uint64 mult = Uint64(100) * Uint64(m_last_lcp_dd_percentage);
+      max_percentage_increase = mult / divisor;
+
+    }
+    
+    if (percentage_increase > max_percentage_increase)
+    {
+      jam();
+      Uint64 increase_factor = Uint64(100) + max_percentage_increase;
+      m_proposed_disk_write_speed *= increase_factor;
       m_proposed_disk_write_speed /= Uint64(100);
     }
     else
@@ -1495,6 +1534,33 @@ Backup::measure_change_speed(Signal *signal, Uint64 millis_since_last_call)
   }
   init_lcp_timers(redo_written_since_last_call);
 
+  Uint64 total_memory = get_total_memory();
+  Uint64 curr_change_rate;
+  {
+    /**
+     * In some cases we might have had an almost idle system for a while,
+     * in this case it is not so good to base our disk write speed on
+     * the average change rate, in this case it is better to use the
+     * current change rate. But we don't want to base on the current
+     * too much, so we decrease the current rate by 75% to avoid being
+     * too much impacted by sudden hikes in write rates.
+     */
+    Uint64 curr_update_size = update_size - m_update_size_lcp_last;
+    Uint64 curr_insert_size = insert_size - m_insert_size_lcp_last;
+    Uint64 curr_delete_size = delete_size - m_delete_size_lcp_last;
+    Uint64 curr_seconds_since_lcp_cut = 0;
+    curr_change_rate = calculate_checkpoint_rate(curr_update_size,
+                                                 curr_insert_size,
+                                                 curr_delete_size,
+                                                 total_memory,
+                                                 curr_seconds_since_lcp_cut);
+    if (curr_change_rate != 0)
+    {
+      curr_change_rate *= curr_seconds_since_lcp_cut;
+    }
+    curr_change_rate /= Uint64(100);
+    curr_change_rate *= Uint64(75);
+  }
   m_update_size_lcp_last = update_size;
   m_insert_size_lcp_last = insert_size;
   m_delete_size_lcp_last = delete_size;
@@ -1525,8 +1591,12 @@ Backup::measure_change_speed(Signal *signal, Uint64 millis_since_last_call)
                                                  delete_size,
                                                  get_total_memory(),
                                                  seconds_since_lcp_cut);
+  change_rate = MAX(change_rate, curr_change_rate);
+
   m_proposed_disk_write_speed = change_rate;
 
+  m_redo_percentage = redo_percentage;
+  m_max_redo_percentage = MAX(redo_percentage, m_max_redo_percentage);
   RedoStateRep::RedoAlertState save_redo_alert_state =
     m_local_redo_alert_state;
   change_alert_state_redo_percent(redo_percentage);
@@ -1534,6 +1604,7 @@ Backup::measure_change_speed(Signal *signal, Uint64 millis_since_last_call)
                                 mean_redo_used_before_cut,
                                 redo_available);
   handle_global_alert_state(signal, save_redo_alert_state);
+  c_pgman->set_redo_alert_state(m_redo_alert_state);
   set_redo_alert_factor(redo_percentage);
   set_lcp_timing_factors(seconds_since_lcp_cut);
   set_proposed_disk_write_speed(current_redo_speed_per_sec,
@@ -2149,22 +2220,6 @@ Backup::execCHECK_NODE_RESTARTCONF(Signal *signal)
 {
   bool old_is_backup_running = m_is_backup_running;
   bool old_is_any_node_restarting = m_is_any_node_restarting;
-  if (!m_is_lcp_running)
-  {
-    if (signal->theData[0] == 1)
-    {
-      jam();
-      lcp_start_point();
-    }
-  }
-  else
-  {
-    if (signal->theData[0] == 0)
-    {
-      jam();
-      lcp_end_point();
-    }
-  }
   m_is_lcp_running = (signal->theData[0] == 1);
   m_is_backup_running = g_is_single_thr_backup_running;  /* Global from backup instance */
   m_is_any_node_restarting = (signal->theData[1] == 1);
@@ -2258,6 +2313,8 @@ Backup::execCONTINUEB(Signal* signal)
       monitor_disk_write_speed(curr_time, millisPassed);
       measure_change_speed(signal, Uint64(millisPassed));
       calculate_disk_write_speed(signal);
+      c_pgman->set_current_disk_write_speed(m_curr_disk_write_speed *
+                    Uint64(CURR_DISK_SPEED_CONVERSION_FACTOR_TO_SECONDS));
     }
     handle_overflow(m_overflow_disk_write,
                     m_words_written_this_period,
@@ -2430,48 +2487,6 @@ Backup::execCONTINUEB(Signal* signal)
     sendSignal(DBDICT_REF, GSN_GET_TABINFOREQ, signal, 
 	       GetTabInfoReq::SignalLength, JBB);
     return;
-  }
-  case BackupContinueB::ZDELAY_SCAN_NEXT:
-  {
-    if (ERROR_INSERTED(10039))
-    {
-      jam();
-      sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 300, 
-			  signal->getLength());
-      return;
-    }
-    else
-    {
-      jam();
-      CLEAR_ERROR_INSERT_VALUE;
-      ndbout_c("Resuming backup");
-
-      Uint32 filePtr_I = Tdata1;
-      BackupFilePtr filePtr;
-      c_backupFilePool.getPtr(filePtr, filePtr_I);
-      BackupRecordPtr ptr;
-      c_backupPool.getPtr(ptr, filePtr.p->backupPtr);
-      TablePtr tabPtr;
-      ndbrequire(findTable(ptr, tabPtr, filePtr.p->tableId));
-      FragmentPtr fragPtr;
-      tabPtr.p->fragments.getPtr(fragPtr, filePtr.p->fragmentNo);
-
-      BlockReference lqhRef = 0;
-      if (ptr.p->is_lcp()) {
-        lqhRef = calcInstanceBlockRef(DBLQH);
-      } else {
-        const Uint32 instanceKey = fragPtr.p->lqhInstanceKey;
-        ndbrequire(instanceKey != 0);
-        lqhRef = numberToRef(DBLQH, instanceKey, getOwnNodeId());
-      }
-
-      memmove(signal->theData, signal->theData + 2, 
-	      4*ScanFragNextReq::SignalLength);
-
-      sendSignal(lqhRef, GSN_SCAN_NEXTREQ, signal, 
-		 ScanFragNextReq::SignalLength, JBB);
-      return ;
-    }
   }
   case BackupContinueB::ZGET_NEXT_FRAGMENT:
   {
@@ -3470,7 +3485,7 @@ void Backup::execDBINFO_SCANREQ(Signal *signal)
         usableBytes = c_defaults.m_logBufferSize;
         break;
       default:
-        ndbrequire(false);
+        ndbabort();
         break;
       };
 
@@ -3928,7 +3943,7 @@ Backup::checkNodeFail(Signal* signal,
 		      Uint32 theFailedNodes[NdbNodeBitmask::Size])
 {
   NdbNodeBitmask mask;
-  mask.assign(2, theFailedNodes);
+  mask.assign(NdbNodeBitmask::Size, theFailedNodes);
 
   /* Update ptr.p->nodes to be up to date with current alive nodes
    */
@@ -5729,6 +5744,15 @@ Backup::stopBackupReply(Signal* signal, BackupRecordPtr ptr, Uint32 nodeId)
 		 BackupCompleteRep::SignalLength, JBB);
     }
 
+    if (ERROR_INSERTED(10042))
+    {
+      // Change backup statistics to reflect values > 32 bit
+      ptr.p->noOfRecords = INT_MAX64;
+      ptr.p->noOfBytes = INT_MAX64;
+      ptr.p->noOfLogRecords = INT_MAX64;
+      ptr.p->noOfLogBytes = INT_MAX64;
+    }
+
     signal->theData[0] = NDB_LE_BackupCompleted;
     signal->theData[1] = ptr.p->clientRef;
     signal->theData[2] = ptr.p->backupId;
@@ -7481,6 +7505,12 @@ Backup::execBACKUP_FRAGMENT_REQ(Signal* signal)
   {
     jam();
     /* Backup path */
+    if (ERROR_INSERTED(10039))
+    {
+      sendSignalWithDelay(reference(), GSN_BACKUP_FRAGMENT_REQ, signal,
+                          300, signal->getLength());
+      return;
+    }
     /* Get Table */
     ndbrequire(findTable(ptr, tabPtr, tableId));
   }
@@ -9513,6 +9543,7 @@ Backup::fragmentCompleted(Signal* signal,
 #endif
       c_tup->stop_lcp_scan(tabPtr.p->tableId, fragPtr.p->fragmentId);
     }
+
     /* Save errCode for later checks */
     ptr.p->m_save_error_code = errCode;
     ptr.p->slaveState.setState(STOPPING);
@@ -9815,23 +9846,6 @@ Backup::checkScan(Signal* signal,
     req->batch_size_rows= ZRESERVED_SCAN_BATCH_SIZE;
     req->batch_size_bytes= 0;
 
-    if (ERROR_INSERTED(10039) && 
-	filePtr.p->tableId >= 2 &&
-	filePtr.p->operation.noOfRecords > 0 &&
-        !ptr.p->is_lcp())
-    {
-      ndbout_c("halting backup for table %d fragment: %d after %llu records",
-	       filePtr.p->tableId,
-	       filePtr.p->fragmentNo,
-	       filePtr.p->operation.noOfRecords);
-      memmove(signal->theData+2, signal->theData, 
-	      4*ScanFragNextReq::SignalLength);
-      signal->theData[0] = BackupContinueB::ZDELAY_SCAN_NEXT;
-      signal->theData[1] = filePtr.i;
-      sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 
-			  300, 2+ScanFragNextReq::SignalLength);
-      return;
-    }
     if(ERROR_INSERTED(10032))
       sendSignalWithDelay(lqhRef, GSN_SCAN_NEXTREQ, signal, 
 			  100, ScanFragNextReq::SignalLength);
@@ -10209,23 +10223,27 @@ Backup::checkFile(Signal* signal, BackupFilePtr filePtr)
     }
 #endif
 
-    if (!eof ||
-        !c_defaults.m_o_direct ||
-        (sz % 128 == 0) ||
-        (filePtr.i != ptr.p->dataFilePtr[0]) ||
-        (ptr.p->slaveState.getState() != STOPPING) ||
-        ptr.p->is_lcp())
+    const bool write_to_datafile = (filePtr.i == ptr.p->dataFilePtr[0]);
+    /**
+     * If O_DIRECT is enabled, the write should be done in 128-word chunks.
+     * For O_DIRECT writes of less than 128 words, we skip the writes when
+     * we have reached end of file and we are about to abort the backup (and
+     * will not be interested in its results). We avoid writing in this case
+     * since we don't want to handle errors for O_DIRECT calls.
+     * However we only avoid this write for data files since CTL files and
+     * LOG files never use O_DIRECT. Also no need to avoid write if we don't
+     * use O_DIRECT at all.
+     */
+    const bool skip_write = (c_defaults.m_o_direct &&  // O_DIRECT write
+                       write_to_datafile &&   // to datafile
+                       !ptr.p->is_lcp() &&    // during backup
+                       eof &&    // last chunk of data to write to file
+                       (sz % 128 != 0) &&     // too small for O_DIRECT
+                       (ptr.p->slaveState.getState() == STOPPING) &&
+                       ptr.p->checkError());  // backup to be aborted
+
+    if(likely(!skip_write))
     {
-      /**
-       * We always perform the writes for LCPs, for backups we ignore
-       * the writes when we have reached end of file and we are in the
-       * process of stopping a backup (this means we are about to abort
-       * the backup and will not be interested in its results.). We avoid
-       * writing in this case since we don't want to handle errors for
-       * e.g. O_DIRECT calls in this case. However we only avoid this write
-       * for data files since CTL files and LOG files never use O_DIRECT.
-       * Also no need to avoid write if we don't use O_DIRECT at all.
-       */
       jam();
       ndbassert((Uint64(tmp - c_startOfPages) >> 32) == 0); // 4Gb buffers!
       FsAppendReq * req = (FsAppendReq *)signal->getDataPtrSend();
@@ -12975,6 +12993,9 @@ Backup::execLCP_PREPARE_REQ(Signal* signal)
     ptr.p->m_first_fragment = true;
     ptr.p->m_is_lcp_scan_active = false;
     ptr.p->m_current_lcp_lsn = Uint64(0);
+    ptr.p->m_high_res_lcp_start_time = getHighResTimer();
+    m_current_dd_time_us = Uint64(0);
+    lcp_start_point(signal);
     DEB_LCP_STAT(("(%u)TAGS Start new LCP, id: %u", instance(), req.backupId));
     LocalDeleteLcpFile_list queue(c_deleteLcpFilePool,
                                   m_delete_lcp_file_head);
@@ -15043,19 +15064,19 @@ Backup::start_execute_lcp(Signal *signal,
                             ptr.p->m_lcp_max_page_cnt);
   Uint32 newestGci = c_lqh->get_lcp_newest_gci();
 
-#ifdef DEBUG_LCP
-  TablePtr debTabPtr;
   FragmentPtr fragPtr;
-  ptr.p->tables.first(debTabPtr);
-  debTabPtr.p->fragments.getPtr(fragPtr, 0);
-  DEB_LCP(("(%u)TAGY LCP_Start: tab(%u,%u).%u, row_count: %llu,"
+  ptr.p->tables.first(tabPtr);
+  tabPtr.p->fragments.getPtr(fragPtr, 0);
+#ifdef DEBUG_LCP_STAT
+  DEB_LCP_STAT((
+           "(%u)TAGY LCP_Start: tab(%u,%u).%u, row_count: %llu,"
            " row_change_count: %llu,"
            " prev_row_count: %llu,"
            " memory_used_in_bytes: %llu, max_page_cnt: %u, LCP lsn: %llu",
            instance(),
-           debTabPtr.p->tableId,
+           tabPtr.p->tableId,
            fragPtr.p->fragmentId,
-           c_lqh->getCreateSchemaVersion(debTabPtr.p->tableId),
+           c_lqh->getCreateSchemaVersion(ttabPtr.p->tableId),
            ptr.p->m_row_count,
            ptr.p->m_row_change_count,
            ptr.p->m_prev_row_count,
@@ -15067,7 +15088,9 @@ Backup::start_execute_lcp(Signal *signal,
   if (ptr.p->m_row_change_count == 0 &&
       ptr.p->preparePrevLcpId != 0 &&
       (ptr.p->prepareMaxGciWritten == newestGci &&
-       m_our_node_started))
+       m_our_node_started) &&
+      c_pgman->idle_fragment_lcp(tabPtr.p->tableId,
+                                 fragPtr.p->fragmentId))
   {
     /**
      * We don't handle it as an idle LCP when it is the first LCP
@@ -15202,6 +15225,12 @@ Backup::lcp_start_complete_processing(Signal *signal, BackupRecordPtr ptr)
      */
     jam();
     ptr.p->m_wait_disk_data_sync = false;
+    if (ptr.p->m_first_fragment)
+    {
+      jam();
+      send_firstSYNC_EXTENT_PAGES_REQ(signal, ptr);
+      return;
+    }
     ptr.p->m_wait_sync_extent = false;
     lcp_write_ctl_file(signal, ptr);
     return;
@@ -15212,6 +15241,7 @@ Backup::lcp_start_complete_processing(Signal *signal, BackupRecordPtr ptr)
   ptr.p->tables.first(tabPtr);
   tabPtr.p->fragments.getPtr(fragPtr, 0);
   ptr.p->m_num_sync_pages_waiting = Uint32(~0);
+  ptr.p->m_start_sync_op = getHighResTimer();
 
   SyncPageCacheReq *sync_req = (SyncPageCacheReq*)signal->getDataPtrSend();
   sync_req->senderData = ptr.i;
@@ -15261,6 +15291,10 @@ Backup::execSYNC_PAGE_CACHE_CONF(Signal *signal)
   ndbrequire(conf->tableId == tabPtr.p->tableId);
   ndbrequire(conf->fragmentId == fragPtr.p->fragmentId);
 
+  NDB_TICKS now = getHighResTimer();
+  Uint64 elapsed_us = NdbTick_Elapsed(ptr.p->m_start_sync_op, now).microSec();
+  m_current_dd_time_us += elapsed_us;
+
   DEB_LCP_DD(("(%u)Completed SYNC_PAGE_CACHE_CONF for tab(%u,%u)"
               ", diskDataExistFlag: %u",
              instance(),
@@ -15269,14 +15303,11 @@ Backup::execSYNC_PAGE_CACHE_CONF(Signal *signal)
              conf->diskDataExistFlag));
 
   ptr.p->m_wait_disk_data_sync = false;
-  if (!conf->diskDataExistFlag)
+  if (conf->diskDataExistFlag)
   {
     jam();
-    ptr.p->m_wait_sync_extent = false;
-    lcp_write_ctl_file(signal, ptr);
-    return;
+    ptr.p->m_disk_data_exist = true;
   }
-  ptr.p->m_disk_data_exist = true;
   if (!ptr.p->m_first_fragment)
   {
     jam();
@@ -15284,7 +15315,15 @@ Backup::execSYNC_PAGE_CACHE_CONF(Signal *signal)
     lcp_write_ctl_file(signal, ptr);
     return;
   }
+  send_firstSYNC_EXTENT_PAGES_REQ(signal, ptr);
+}
+
+void
+Backup::send_firstSYNC_EXTENT_PAGES_REQ(Signal *signal,
+                                        BackupRecordPtr ptr)
+{
   ptr.p->m_num_sync_extent_pages_written = Uint32(~0);
+  ptr.p->m_start_sync_op = getHighResTimer();
   /**
    * Sync extent pages, this is sent to Proxy block that routes the signal to
    * the "extra" PGMAN worker that handles the extent pages.
@@ -15296,7 +15335,6 @@ Backup::execSYNC_PAGE_CACHE_CONF(Signal *signal)
   ptr.p->m_first_fragment = false;
   sendSignal(PGMAN_REF, GSN_SYNC_EXTENT_PAGES_REQ, signal,
              SyncExtentPagesReq::SignalLength, JBB);
-  return;
 }
 
 void
@@ -15308,6 +15346,11 @@ Backup::execSYNC_EXTENT_PAGES_CONF(Signal *signal)
 
   c_backupPool.getPtr(ptr, conf->senderData);
   ptr.p->m_num_sync_extent_pages_written = 0;
+
+  NDB_TICKS now = getHighResTimer();
+  Uint64 elapsed_us = NdbTick_Elapsed(ptr.p->m_start_sync_op, now).microSec();
+  m_current_dd_time_us += elapsed_us;
+
   if (ptr.p->slaveState.getState() == DEFINED)
   {
     jam();
@@ -16661,12 +16704,22 @@ Backup::execEND_LCPREQ(Signal* signal)
    */
   ptr.p->m_wait_final_sync_extent = true;
   ptr.p->m_num_sync_extent_pages_written = Uint32(~0);
+  ptr.p->m_start_sync_op = getHighResTimer();
   {
     SyncExtentPagesReq *req = (SyncExtentPagesReq*)signal->getDataPtrSend();
     req->senderData = ptr.i;
     req->senderRef = reference();
-    req->lcpOrder = SyncExtentPagesReq::END_LCP;
-    ptr.p->m_first_fragment = false;
+    if (ptr.p->m_first_fragment)
+    {
+      jam();
+      ptr.p->m_first_fragment = false;
+      req->lcpOrder = SyncExtentPagesReq::FIRST_AND_END_LCP;
+    }
+    else
+    {
+      jam();
+      req->lcpOrder = SyncExtentPagesReq::END_LCP;
+    }
     sendSignal(PGMAN_REF, GSN_SYNC_EXTENT_PAGES_REQ, signal,
                SyncExtentPagesReq::SignalLength, JBB);
   }
@@ -16707,9 +16760,22 @@ Backup::sendEND_LCPCONF(Signal *signal, BackupRecordPtr ptr)
           ptr.p->backupId));
   ndbrequire(!ptr.p->m_wait_end_lcp);
   ptr.p->backupId = 0; /* Ensure next LCP_PREPARE_REQ sees a new LCP id */
-  DEB_LCP_STAT(("(%u)Bytes written in this LCP: %llu MB",
+
+  {
+    NDB_TICKS now = getHighResTimer();
+    Uint64 lcp_elapsed_us =
+      NdbTick_Elapsed(ptr.p->m_high_res_lcp_start_time, now).microSec();
+    Uint64 dd_percentage = 100 * m_current_dd_time_us;
+    dd_percentage = dd_percentage / lcp_elapsed_us;
+    m_last_lcp_dd_percentage = dd_percentage;
+    c_pgman->set_lcp_dd_percentage(dd_percentage);
+  }
+  DEB_LCP_STAT(("(%u)Bytes written in this LCP: %llu MB, dd_percent: %u",
                  instance(),
-                 ptr.p->noOfBytes / (1024 * 1024)));
+                 ptr.p->noOfBytes / (1024 * 1024),
+                 m_last_lcp_dd_percentage));
+  lcp_end_point();
+
   EndLcpConf* conf= (EndLcpConf*)signal->getDataPtrSend();
   conf->senderData = ptr.p->senderData;
   conf->senderRef = reference();
@@ -17100,5 +17166,16 @@ Backup::get_lcp_record(BackupRecordPtr &ptr)
     }
   }
   ndbrequire(false);
+}
+
+void
+Backup::set_undo_log_level(Uint32 percentage)
+{
+  m_undo_log_level_percentage = percentage;
+  if (percentage > m_max_undo_log_level_percentage)
+  {
+    jam();
+    m_max_undo_log_level_percentage = percentage;
+  }
 }
 bool Backup::g_is_single_thr_backup_running = false;

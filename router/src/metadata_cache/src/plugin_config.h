@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -50,11 +50,15 @@ class MetadataCachePluginConfig final : public mysqlrouter::BasePluginConfig {
    */
   MetadataCachePluginConfig(const mysql_harness::ConfigSection *section)
       : BasePluginConfig(section),
-        metadata_cache_dynamic_state(get_dynamic_state()),
+        metadata_cache_dynamic_state(get_dynamic_state(section)),
         metadata_servers_addresses(get_metadata_servers(
             section, metadata_cache::kDefaultMetadataPort)),
         user(get_option_string(section, "user")),
         ttl(get_option_milliseconds(section, "ttl", 0.0, 3600.0)),
+        auth_cache_ttl(
+            get_option_milliseconds(section, "auth_cache_ttl", -1, 3600.0)),
+        auth_cache_refresh_interval(get_option_milliseconds(
+            section, "auth_cache_refresh_interval", 0.001, 3600.0)),
         metadata_cluster(get_option_string(section, "metadata_cluster")),
         connect_timeout(
             get_uint_option<uint16_t>(section, "connect_timeout", 1)),
@@ -62,7 +66,23 @@ class MetadataCachePluginConfig final : public mysqlrouter::BasePluginConfig {
         thread_stack_size(
             get_uint_option<uint32_t>(section, "thread_stack_size", 1, 65535)),
         use_gr_notifications(get_uint_option<uint16_t>(
-                                 section, "use_gr_notifications", 0, 1) == 1) {}
+                                 section, "use_gr_notifications", 0, 1) == 1),
+        cluster_type(get_cluster_type(section)),
+        router_id(get_uint_option<uint32_t>(section, "router_id")) {
+    if (cluster_type == mysqlrouter::ClusterType::RS_V2 &&
+        section->has("use_gr_notifications")) {
+      throw std::invalid_argument(
+          "option 'use_gr_notifications' is not valid for cluster type 'rs'");
+    }
+    if (auth_cache_ttl > std::chrono::seconds(-1) &&
+        auth_cache_ttl < std::chrono::milliseconds(1)) {
+      throw std::invalid_argument(
+          "'auth_cache_ttl' option value '" +
+          get_option_string(section, "auth_cache_ttl") +
+          "' should be in range 0.001 and 3600 inclusive or -1 for "
+          "auth_cache_ttl disabled");
+    }
+  }
 
   /**
    * @param option name of the option
@@ -78,6 +98,12 @@ class MetadataCachePluginConfig final : public mysqlrouter::BasePluginConfig {
   const std::string user;
   /** @brief TTL used for storing data in the cache */
   const std::chrono::milliseconds ttl;
+  /** @brief TTL used for limiting the lifetime of the rest user authentication
+   * data stored in the metadata */
+  const std::chrono::milliseconds auth_cache_ttl;
+  /** @brief Refresh rate of the rest user authentication data stored in the
+   * cache */
+  const std::chrono::milliseconds auth_cache_refresh_interval;
   /** @brief Cluster in the metadata */
   const std::string metadata_cluster;
   /** @brief connect_timeout The time in seconds after which trying to connect
@@ -91,13 +117,22 @@ class MetadataCachePluginConfig final : public mysqlrouter::BasePluginConfig {
   /** @brief  Whether we should listen to GR notifications from the cluster
    * nodes. */
   const bool use_gr_notifications;
+  /** @brief  Type of the cluster this configuration was bootstrap against. */
+  const mysqlrouter::ClusterType cluster_type;
+  /** @brief  Id of the router in the metadata. */
+  const unsigned int router_id;
 
-  /** @brief Gets Replication Group ID if preset in the dynamic configuration.
+  /** @brief Gets (Replication Group ID for GR cluster or cluster_id for
+   * ReplicaSet cluster) if preset in the dynamic configuration.
    *
    * @note  If there is no dynamic configuration (backward compatibility) it
    * returns empty string.
    */
-  std::string get_group_replication_id() const;
+  std::string get_cluster_type_specific_id() const;
+
+  /** @brief Gets last know ReplicaSet cluster metadata view_id stored in the
+   * dynamic state file . */
+  unsigned get_view_id() const;
 
  private:
   /** @brief Gets a list of metadata servers.
@@ -112,7 +147,11 @@ class MetadataCachePluginConfig final : public mysqlrouter::BasePluginConfig {
   std::vector<mysql_harness::TCPAddress> get_metadata_servers(
       const mysql_harness::ConfigSection *section, uint16_t default_port) const;
 
-  ClusterMetadataDynamicState *get_dynamic_state();
+  mysqlrouter::ClusterType get_cluster_type(
+      const mysql_harness::ConfigSection *section);
+
+  std::unique_ptr<ClusterMetadataDynamicState> get_dynamic_state(
+      const mysql_harness::ConfigSection *section);
 };
 
 #endif  // METADATA_CACHE_PLUGIN_CONFIG_INCLUDED

@@ -120,7 +120,7 @@ bool plugin_var_memalloc_session_update(THD *thd, SYS_VAR *var, char **dest,
                                         const char *value)
 
 {
-  LIST *old_element = NULL;
+  LIST *old_element = nullptr;
   struct System_variables *vars = &thd->variables;
   DBUG_TRACE;
 
@@ -226,7 +226,7 @@ int item_value_type(st_mysql_value *value) {
 const char *item_val_str(st_mysql_value *value, char *buffer, int *length) {
   String str(buffer, *length, system_charset_info), *res;
   if (!(res = ((st_item_value_holder *)value)->item->val_str(&str)))
-    return NULL;
+    return nullptr;
   *length = static_cast<int>(res->length());
   if (res->c_ptr_quick() == buffer) return buffer;
 
@@ -280,7 +280,7 @@ uchar *sys_var_pluginvar::real_value_ptr(THD *thd, enum_var_type type) {
   DBUG_ASSERT(thd || (type == OPT_GLOBAL) || (type == OPT_PERSIST));
   if (plugin_var->flags & PLUGIN_VAR_THDLOCAL) {
     /* scope of OPT_PERSIST is always GLOBAL */
-    if (type == OPT_GLOBAL || type == OPT_PERSIST) thd = NULL;
+    if (type == OPT_GLOBAL || type == OPT_PERSIST) thd = nullptr;
 
     return intern_sys_var_ptr(thd, *(int *)(plugin_var + 1), false);
   }
@@ -298,9 +298,9 @@ TYPELIB *sys_var_pluginvar::plugin_var_typelib(void) {
     case PLUGIN_VAR_SET | PLUGIN_VAR_THDLOCAL:
       return ((thdvar_set_t *)plugin_var)->typelib;
     default:
-      return NULL;
+      return nullptr;
   }
-  return NULL; /* Keep compiler happy */
+  return nullptr; /* Keep compiler happy */
 }
 
 uchar *sys_var_pluginvar::do_value_ptr(THD *running_thd, THD *target_thd,
@@ -313,7 +313,7 @@ uchar *sys_var_pluginvar::do_value_ptr(THD *running_thd, THD *target_thd,
     result = pointer_cast<uchar *>(const_cast<char *>(
         get_type(plugin_var_typelib(), *pointer_cast<ulong *>(result))));
   else if ((plugin_var->flags & PLUGIN_VAR_TYPEMASK) == PLUGIN_VAR_SET)
-    result = (uchar *)set_to_string(running_thd, 0, *(ulonglong *)result,
+    result = (uchar *)set_to_string(running_thd, nullptr, *(ulonglong *)result,
                                     plugin_var_typelib()->type_names);
   return result;
 }
@@ -429,48 +429,6 @@ bool sys_var_pluginvar::global_update(THD *thd, set_var *var) {
   return rc;
 }
 
-bool sys_var_pluginvar::is_default(THD *thd, set_var *var) {
-  void *tgt = real_value_ptr(thd, var->type);
-
-  switch (plugin_var->flags & (PLUGIN_VAR_TYPEMASK | PLUGIN_VAR_THDLOCAL)) {
-    case PLUGIN_VAR_INT:
-      return (((sysvar_uint_t *)plugin_var)->def_val == *(uint *)tgt);
-    case PLUGIN_VAR_LONG:
-      return (((sysvar_ulong_t *)plugin_var)->def_val == *(ulong *)tgt);
-    case PLUGIN_VAR_LONGLONG:
-      return (((sysvar_ulonglong_t *)plugin_var)->def_val == *(ulonglong *)tgt);
-    case PLUGIN_VAR_ENUM:
-      return (((sysvar_enum_t *)plugin_var)->def_val == *(ulong *)tgt);
-    case PLUGIN_VAR_SET:
-      return (((sysvar_set_t *)plugin_var)->def_val == *(ulong *)tgt);
-    case PLUGIN_VAR_BOOL:
-      return (((sysvar_bool_t *)plugin_var)->def_val == *(bool *)tgt);
-    case PLUGIN_VAR_STR:
-      return !strcmp(pointer_cast<sysvar_str_t *>(plugin_var)->def_val,
-                     *static_cast<char **>(tgt));
-    case PLUGIN_VAR_DOUBLE:
-      return (((sysvar_double_t *)plugin_var)->def_val == *(double *)tgt);
-    case PLUGIN_VAR_INT | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_uint_t *)plugin_var)->def_val == *(uint *)tgt);
-    case PLUGIN_VAR_LONG | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_ulong_t *)plugin_var)->def_val == *(ulong *)tgt);
-    case PLUGIN_VAR_LONGLONG | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_ulonglong_t *)plugin_var)->def_val == *(ulonglong *)tgt);
-    case PLUGIN_VAR_ENUM | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_enum_t *)plugin_var)->def_val == *(ulong *)tgt);
-    case PLUGIN_VAR_SET | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_set_t *)plugin_var)->def_val == *(ulong *)tgt);
-    case PLUGIN_VAR_BOOL | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_bool_t *)plugin_var)->def_val == *(bool *)tgt);
-    case PLUGIN_VAR_STR | PLUGIN_VAR_THDLOCAL:
-      return !strcmp(pointer_cast<thdvar_str_t *>(plugin_var)->def_val,
-                     *static_cast<char **>(tgt));
-    case PLUGIN_VAR_DOUBLE | PLUGIN_VAR_THDLOCAL:
-      return (((thdvar_double_t *)plugin_var)->def_val == *(double *)tgt);
-  }
-  return 0;
-}
-
 longlong sys_var_pluginvar::get_min_value() {
   switch (plugin_var->flags & (PLUGIN_VAR_TYPEMASK | PLUGIN_VAR_THDLOCAL)) {
     case PLUGIN_VAR_INT:
@@ -578,7 +536,7 @@ void sys_var_pluginvar::saved_value_to_string(THD *, set_var *var,
         longlong10_to_str(var->save_result.ulonglong_value, def_val, 10);
         return;
       case PLUGIN_VAR_STR:
-        if (((sysvar_str_t *)plugin_var)->def_val != NULL)
+        if (((sysvar_str_t *)plugin_var)->def_val != nullptr)
           strcpy(def_val, ((sysvar_str_t *)plugin_var)->def_val);
         else /* no default: consider empty */
           def_val[0] = 0;
@@ -586,7 +544,7 @@ void sys_var_pluginvar::saved_value_to_string(THD *, set_var *var,
       case PLUGIN_VAR_DOUBLE:
         var->save_result.double_value =
             ((sysvar_double_t *)plugin_var)->def_val;
-        my_fcvt(var->save_result.double_value, 6, def_val, NULL);
+        my_fcvt(var->save_result.double_value, 6, def_val, nullptr);
         return;
       case PLUGIN_VAR_INT | PLUGIN_VAR_THDLOCAL:
         var->save_result.ulonglong_value =
@@ -614,7 +572,7 @@ void sys_var_pluginvar::saved_value_to_string(THD *, set_var *var,
         longlong10_to_str(var->save_result.ulonglong_value, def_val, 10);
         return;
       case PLUGIN_VAR_STR | PLUGIN_VAR_THDLOCAL:
-        if (((thdvar_str_t *)plugin_var)->def_val != NULL)
+        if (((thdvar_str_t *)plugin_var)->def_val != nullptr)
           strcpy(def_val, ((thdvar_str_t *)plugin_var)->def_val);
         else /* no default: consider empty */
           def_val[0] = 0;
@@ -622,7 +580,7 @@ void sys_var_pluginvar::saved_value_to_string(THD *, set_var *var,
       case PLUGIN_VAR_DOUBLE | PLUGIN_VAR_THDLOCAL:
         var->save_result.double_value =
             ((thdvar_double_t *)plugin_var)->def_val;
-        my_fcvt(var->save_result.double_value, 6, def_val, NULL);
+        my_fcvt(var->save_result.double_value, 6, def_val, nullptr);
         return;
       default:
         DBUG_ASSERT(0);
@@ -643,7 +601,7 @@ int check_func_bool(THD *, SYS_VAR *, void *save, st_mysql_value *value) {
   if (value->value_type(value) == MYSQL_VALUE_TYPE_STRING) {
     length = sizeof(buff);
     if (!(str = value->val_str(value, buff, &length)) ||
-        (result = find_type(&bool_typelib, str, length, 1) - 1) < 0)
+        (result = find_type(&bool_typelib, str, length, true) - 1) < 0)
       goto err;
   } else {
     if (value->val_int(value, &tmp) < 0) goto err;
@@ -748,7 +706,8 @@ int check_func_enum(THD *, SYS_VAR *var, void *save, st_mysql_value *value) {
   if (value->value_type(value) == MYSQL_VALUE_TYPE_STRING) {
     length = sizeof(buff);
     if (!(str = value->val_str(value, buff, &length))) goto err;
-    if ((result = (long)find_type(typelib, str, length, 0) - 1) < 0) goto err;
+    if ((result = (long)find_type(typelib, str, length, false) - 1) < 0)
+      goto err;
   } else {
     if (value->val_int(value, &tmp)) goto err;
     if (tmp < 0 || tmp >= static_cast<long long>(typelib->count)) goto err;
@@ -779,7 +738,7 @@ int check_func_set(THD *, SYS_VAR *var, void *save, st_mysql_value *value) {
     length = sizeof(buff);
     if (!(str = value->val_str(value, buff, &length))) goto err;
     result =
-        find_set(typelib, str, length, NULL, &error, &error_len, &not_used);
+        find_set(typelib, str, length, nullptr, &error, &error_len, &not_used);
     if (error_len) goto err;
   } else {
     if (value->val_int(value, (long long *)&result)) goto err;
@@ -839,7 +798,7 @@ st_bookmark *find_bookmark(const char *plugin, const char *name, int flags) {
   size_t namelen, length, pluginlen = 0;
   char *varname, *p;
 
-  if (!(flags & PLUGIN_VAR_THDLOCAL)) return NULL;
+  if (!(flags & PLUGIN_VAR_THDLOCAL)) return nullptr;
 
   namelen = strlen(name);
   if (plugin) pluginlen = strlen(plugin) + 1;

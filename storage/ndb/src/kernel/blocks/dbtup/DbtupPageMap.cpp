@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@
 
 #define JAM_FILE_ID 415
 
-#ifdef VM_TRACE
+#if (defined(VM_TRACE) || defined(ERROR_INSERT))
 //#define DEBUG_LCP 1
 //#define DEBUG_LCP_REL 1
 //#define DEBUG_LCP_ALLOC 1
@@ -711,7 +711,8 @@ Dbtup::handle_lcp_skip_bit(EmulatedJamBuffer *jamBuf,
     ndbassert((*ptr) != RNIL);
     Uint32 lcp_scanned_bit = (*ptr) & LCP_SCANNED_BIT;
     ScanOpPtr scanOp;
-    c_scanOpPool.getPtr(scanOp, lcp_scan_ptr_i);
+    scanOp.i = lcp_scan_ptr_i;
+    ndbrequire(c_scanOpPool.getValidPtr(scanOp));
     Local_key key;
     key.m_page_no = page_no;
     key.m_page_idx = ZNIL;
@@ -1013,7 +1014,8 @@ Dbtup::releaseFragPage(Fragrecord* fragPtrP,
      */
     ScanOpPtr scanOp;
     Local_key key;
-    c_scanOpPool.getPtr(scanOp, lcp_scan_ptr_i);
+    scanOp.i = lcp_scan_ptr_i;
+    ndbrequire(c_scanOpPool.getValidPtr(scanOp));
     key.m_page_no = logicalPageId;
     key.m_page_idx = ZNIL;
     if (is_rowid_in_remaining_lcp_set(pagePtr.p,

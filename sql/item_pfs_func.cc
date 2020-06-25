@@ -29,9 +29,19 @@
 
 #include "sql/item_pfs_func.h"
 
+#include <stdio.h>
 #include <cmath>
 
-#include "sql/derror.h"  // ER_THD
+#include "m_ctype.h"
+#include "my_dbug.h"
+#include "my_psi_config.h"
+#include "my_sys.h"
+#include "mysql/components/services/psi_thread_bits.h"
+#include "mysqld_error.h"
+#include "pfs_thread_provider.h"
+#include "sql/field.h"
+#include "sql/item.h"
+#include "sql/sql_class.h"
 #include "sql/sql_lex.h"
 
 extern bool pfs_enabled;
@@ -94,11 +104,7 @@ bool Item_func_pfs_thread_id::resolve_type(THD *) {
 
 longlong Item_func_pfs_thread_id::val_int() {
   DBUG_ASSERT(fixed);
-  /* If input is null, return null. */
-  null_value = args[0]->null_value;
-  if (null_value) {
-    return error_int();
-  }
+
   /* Verify Performance Schema available. */
   if (!pfs_enabled) {
     my_printf_error(ER_WRONG_PERFSCHEMA_USAGE,
@@ -106,18 +112,34 @@ longlong Item_func_pfs_thread_id::val_int() {
                     func_name());
     return error_int();
   }
-  /* Verify non-negative integer input. */
-  if (!is_integer_type(args[0]->data_type()) || args[0]->val_int() < 0) {
+
+  /* Evaluate the function argument. */
+  longlong processlist_id = args[0]->val_int();
+
+  /* Verify argument type. */
+  if (!is_integer_type(args[0]->data_type())) {
     return error_int();
   }
+
+  /* If argument is null, return null. */
+  null_value = args[0]->null_value;
+  if (null_value) {
+    return error_int();
+  }
+
+  /* Verify argument sign. */
+  if (processlist_id < 0) {
+    return error_int();
+  }
+
 #ifdef HAVE_PSI_THREAD_INTERFACE
   /* Get the thread id assigned to the processlist id. */
-  m_processlist_id = args[0]->val_int();
-  PSI_thread *psi = PSI_THREAD_CALL(get_thread_by_id)(m_processlist_id);
+  PSI_thread *psi = PSI_THREAD_CALL(get_thread_by_id)(processlist_id);
   if (psi) {
     m_thread_id = PSI_THREAD_CALL(get_thread_internal_id)(psi);
   }
 #endif
+
   /* Valid thread id is > 0. */
   if (m_thread_id == 0) {
     return error_int();
@@ -136,30 +158,26 @@ bool Item_func_pfs_format_bytes::resolve_type(THD *) {
 }
 
 String *Item_func_pfs_format_bytes::val_str(String *) {
+  /* Evaluate argument value. */
+  double bytes = args[0]->val_real();
+
   /* If input is null, return null. */
   null_value = args[0]->null_value;
   if (null_value) {
     return error_str();
   }
 
-  /* Check for numeric input. Negative values are ok. */
-  if (!is_numeric_type(args[0]->data_type())) {
-    my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "Input", func_name());
-    return error_str();
-  }
-
   /* Declaring 'volatile' as workaround for 32-bit optimization bug. */
-  volatile double bytes = args[0]->val_real();
   volatile double bytes_abs = std::abs(bytes);
 
-  volatile const double kib = 1024ULL;
-  volatile const double mib = static_cast<double>(1024ULL * kib);
-  volatile const double gib = static_cast<double>(1024ULL * mib);
-  volatile const double tib = static_cast<double>(1024ULL * gib);
-  volatile const double pib = static_cast<double>(1024ULL * tib);
-  volatile const double eib = static_cast<double>(1024ULL * pib);
+  constexpr uint64_t kib{1024};
+  constexpr uint64_t mib{1024 * kib};
+  constexpr uint64_t gib{1024 * mib};
+  constexpr uint64_t tib{1024 * gib};
+  constexpr uint64_t pib{1024 * tib};
+  constexpr uint64_t eib{1024 * pib};
 
-  volatile double divisor;
+  uint64_t divisor;
   int len;
   const char *unit;
 
@@ -212,31 +230,27 @@ bool Item_func_pfs_format_pico_time::resolve_type(THD *) {
 }
 
 String *Item_func_pfs_format_pico_time::val_str(String *) {
-  /* If input is null, return null. */
+  /* Evaluate the argument */
+  double time_val = args[0]->val_real();
+
+  /* If argument is null, return null. */
   null_value = args[0]->null_value;
   if (null_value) {
     return error_str();
   }
 
-  /* Check for numeric input. Negative values are ok. */
-  if (!is_numeric_type(args[0]->data_type())) {
-    my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "Input", func_name());
-    return error_str();
-  }
+  constexpr uint64_t nano{1000};
+  constexpr uint64_t micro{1000 * nano};
+  constexpr uint64_t milli{1000 * micro};
+  constexpr uint64_t sec{1000 * milli};
+  constexpr uint64_t min{60 * sec};
+  constexpr uint64_t hour{60 * min};
+  constexpr uint64_t day{24 * hour};
 
   /* Declaring 'volatile' as workaround for 32-bit optimization bug. */
-  volatile const double nano = 1000ull;
-  volatile const double micro = static_cast<double>(1000ull * nano);
-  volatile const double milli = static_cast<double>(1000ull * micro);
-  volatile const double sec = static_cast<double>(1000ull * milli);
-  volatile const double min = static_cast<double>(60ull * sec);
-  volatile const double hour = static_cast<double>(60ull * min);
-  volatile const double day = static_cast<double>(24ull * hour);
-
-  volatile double time_val = args[0]->val_real();
   volatile double time_abs = std::abs(time_val);
 
-  volatile double divisor;
+  uint64_t divisor;
   int len;
   const char *unit;
 

@@ -32,7 +32,6 @@
 #include "ft_global.h"
 #include "my_icp.h"
 #include "my_inttypes.h"
-#include "my_macros.h"
 #include "myisam.h"
 #include "sql/handler.h" /* handler */
 #include "sql/table.h"   /* TABLE_SHARE */
@@ -60,13 +59,11 @@ int check_definition(MI_KEYDEF *t1_keyinfo, MI_COLUMNDEF *t1_recinfo,
                      MI_COLUMNDEF *t2_recinfo, uint t2_keys, uint t2_recs,
                      bool strict);
 
-C_MODE_START
 ICP_RESULT index_cond_func_myisam(void *arg);
-C_MODE_END
 
 class Myisam_handler_share : public Handler_share {
  public:
-  Myisam_handler_share() : m_share(NULL) {}
+  Myisam_handler_share() : m_share(nullptr) {}
   ~Myisam_handler_share() {}
   MYISAM_SHARE *m_share;
 };

@@ -70,15 +70,18 @@ bool init_keyring_locks() {
 }
 
 bool is_key_length_and_type_valid(const char *key_type, size_t key_len) {
+  std::string key_type_str(key_type);
   bool is_key_len_valid = false;
   bool is_type_valid = true;
 
-  if (strcmp(key_type, "AES") == 0)
+  if (key_type_str == keyring::AES)
     is_key_len_valid = (key_len == 16 || key_len == 24 || key_len == 32);
-  else if (strcmp(key_type, "RSA") == 0)
+  else if (key_type_str == keyring::RSA)
     is_key_len_valid = (key_len == 128 || key_len == 256 || key_len == 512);
-  else if (strcmp(key_type, "DSA") == 0)
+  else if (key_type_str == keyring::DSA)
     is_key_len_valid = (key_len == 128 || key_len == 256 || key_len == 384);
+  else if (key_type_str == keyring::SECRET)
+    is_key_len_valid = (key_len > 0 && key_len <= 16384);
   else {
     is_type_valid = false;
     logger->log(ERROR_LEVEL, ER_KEYRING_INVALID_KEY_TYPE);
@@ -92,7 +95,7 @@ bool is_key_length_and_type_valid(const char *key_type, size_t key_len) {
 
 void log_operation_error(const char *failed_operation,
                          const char *plugin_name) {
-  if (logger != NULL) {
+  if (logger != nullptr) {
     logger->log(ERROR_LEVEL, ER_KEYRING_OPERATION_FAILED_DUE_TO_INTERNAL_ERROR,
                 failed_operation, plugin_name);
   }
@@ -125,7 +128,7 @@ bool create_keyring_dir_if_does_not_exist(const char *keyring_file_path) {
 
 void log_opearation_error(const char *failed_operation,
                           const char *plugin_name) {
-  if (logger != NULL) {
+  if (logger != nullptr) {
     logger->log(ERROR_LEVEL, ER_KEYRING_OPERATION_FAILED_DUE_TO_INTERNAL_ERROR,
                 failed_operation, plugin_name);
   }
@@ -163,10 +166,11 @@ bool mysql_key_fetch(std::unique_ptr<IKey> key_to_fetch, char **key_type,
     *key_len = fetched_key->get_key_data_size();
     fetched_key->xor_data();
     *key = static_cast<void *>(fetched_key->release_key_data());
-    *key_type = my_strdup(keyring::key_memory_KEYRING,
-                          fetched_key->get_key_type()->c_str(), MYF(MY_WME));
+    *key_type =
+        my_strdup(keyring::key_memory_KEYRING,
+                  fetched_key->get_key_type_as_string()->c_str(), MYF(MY_WME));
   } else
-    *key = NULL;
+    *key = nullptr;
   return false;
 }
 
@@ -228,13 +232,13 @@ void mysql_keyring_iterator_deinit(Keys_iterator *key_iterator) {
 
 bool mysql_keyring_iterator_get_key(Keys_iterator *key_iterator, char *key_id,
                                     char *user_id) {
-  keyring::Key_metadata *key_loaded = NULL;
+  keyring::Key_metadata *key_loaded = nullptr;
   bool error = key_iterator->get_key(&key_loaded);
-  if (error == false && key_loaded != NULL) {
+  if (error == false && key_loaded != nullptr) {
     if (key_id) strcpy(key_id, key_loaded->id->c_str());
     if (user_id) strcpy(user_id, key_loaded->user->c_str());
     delete key_loaded;
-  } else if (error == false && key_loaded == NULL) {
+  } else if (error == false && key_loaded == nullptr) {
     /* no keys exists or all keys are read */
     return true;
   }

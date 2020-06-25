@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2018, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2018, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -62,9 +62,9 @@ class Parallel_reader_adapter {
   @param[in]  trx               Transaction used for parallel read.
   @param[in]  config            (Cluster) Index scan configuration.
   @param[in]  f                 Callback function.
-  @retval true on success. */
-  bool add_scan(trx_t *trx, const Parallel_reader::Config &config,
-                Parallel_reader::F &&f) MY_ATTRIBUTE((warn_unused_result));
+  @retval error. */
+  dberr_t add_scan(trx_t *trx, const Parallel_reader::Config &config,
+                   Parallel_reader::F &&f) MY_ATTRIBUTE((warn_unused_result));
 
   /** Run the parallel scan.
   @param[in]  thread_contexts   Context for each of the spawned threads
@@ -95,15 +95,17 @@ class Parallel_reader_adapter {
   dberr_t init(size_t thread_id) MY_ATTRIBUTE((warn_unused_result));
 
   /** For pushing any left over rows to the caller.
-  @param[in]  thread_id         ID of the thread.
+  @param[in]  ctx       Parallel read context.
+  @param[in]  thread_id ID of the thread.
   @return DB_SUCCESS or error code. */
-  dberr_t end(size_t thread_id) MY_ATTRIBUTE((warn_unused_result));
+  dberr_t end(Parallel_reader::Ctx *ctx, size_t thread_id)
+      MY_ATTRIBUTE((warn_unused_result));
 
   /** Send a batch of records.
-  @param[in]  thread_id         ID of the thread.
-  @param[in]  n_recs            Number of records to send.
+  @param[in]  ctx       Parallel read context.
+  @param[in]  n_recs    Number of records to send.
   @return DB_SUCCESS or error code. */
-  dberr_t send_batch(size_t thread_id, uint64_t n_recs)
+  dberr_t send_batch(const Parallel_reader::Ctx *ctx, uint64_t n_recs)
       MY_ATTRIBUTE((warn_unused_result));
 
   /** Get the number of rows buffered but not sent.

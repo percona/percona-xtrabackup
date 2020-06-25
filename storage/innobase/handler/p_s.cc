@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2016, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -385,7 +385,7 @@ static const trx_t *fetch_trx_in_trx_list(uint64_t filter_trx_immutable_id,
   ut_ad(lock_mutex_own());
   ut_ad(trx_sys_mutex_own());
 
-  for (trx = UT_LIST_GET_FIRST(*trx_list); trx != NULL;
+  for (trx = UT_LIST_GET_FIRST(*trx_list); trx != nullptr;
        trx = get_next_trx(trx, read_write)) {
     if (discard_trx(trx, read_write)) {
       continue;
@@ -396,7 +396,7 @@ static const trx_t *fetch_trx_in_trx_list(uint64_t filter_trx_immutable_id,
     }
   }
 
-  return NULL;
+  return nullptr;
 }
 
 Innodb_data_lock_inspector::Innodb_data_lock_inspector() {}
@@ -423,37 +423,22 @@ void Innodb_data_lock_inspector::destroy_data_lock_wait_iterator(
   delete it;
 }
 
-/** Convert an identifier.
-Convert identifiers stored in innodb to the proper
-character set, and allocate memory for them in the
-performance schema container.
-@param[in] container		The container to fill
-@param[in] str			The identifier string
-@param[in] length		The identifier string length
-@param[out] converted_length	The length of the converted string
-@returns A string in UTF8, allocated in the performance schema container.
+/** Allocate identifier in performance schema container.
+@param[in]	container	The container to fill
+@param[in]	id_str		The identifier string
+@param[out]	id_length	The identifier string length
+@returns string allocated in the performance schema container.
 */
-const char *convert_identifier(PSI_server_data_lock_container *container,
-                               const char *str, size_t length,
-                               size_t *converted_length) {
-  if (str == NULL) {
-    *converted_length = 0;
-    return NULL;
+const char *alloc_identifier(PSI_server_data_lock_container *container,
+                             std::string &id_str, size_t *id_length) {
+  *id_length = id_str.length();
+  const char *id_name = nullptr;
+
+  if (*id_length > 0) {
+    id_name = container->cache_data(id_str.c_str(), *id_length);
   }
 
-  const char *result_string;
-  size_t result_length;
-  char buffer[FN_REFLEN];
-  uint err_cs = 0;
-
-  result_length = my_convert(buffer, sizeof(buffer), system_charset_info, str,
-                             length, &my_charset_filename, &err_cs);
-
-  ut_ad(err_cs == 0);
-
-  result_string = container->cache_data(buffer, result_length);
-  *converted_length = result_length;
-  return result_string;
+  return (id_name);
 }
 
 /** Parse a table path string.
@@ -481,27 +466,28 @@ void parse_table_path(PSI_server_data_lock_container *container,
                       size_t *partition_name_length,
                       const char **subpartition_name,
                       size_t *subpartition_name_length) {
-  const char *p1;
-  size_t s1;
-  const char *p2;
-  size_t s2;
-  const char *p3;
-  size_t s3;
-  const char *p4;
-  size_t s4;
+  std::string dict_table(table_path);
 
-  parse_filename(table_path, table_path_length, &p1, &s1, &p2, &s2, &p3, &s3,
-                 &p4, &s4);
+  /* Get schema and table name in system cs. */
+  std::string schema;
+  std::string table;
+  std::string partition;
+  bool is_tmp;
+  dict_name::get_table(dict_table, true, schema, table, partition, is_tmp);
 
-  *table_schema = convert_identifier(container, p1, s1, table_schema_length);
+  std::string part;
+  std::string sub_part;
+  if (!partition.empty()) {
+    ut_ad(dict_name::is_partition(dict_table));
+    /* Get schema partition and sub-partition name in system cs. */
+    dict_name::get_partition(partition, true, part, sub_part);
+  }
 
-  *table_name = convert_identifier(container, p2, s2, table_name_length);
-
-  *partition_name =
-      convert_identifier(container, p3, s3, partition_name_length);
-
+  *table_schema = alloc_identifier(container, schema, table_schema_length);
+  *table_name = alloc_identifier(container, table, table_name_length);
+  *partition_name = alloc_identifier(container, part, partition_name_length);
   *subpartition_name =
-      convert_identifier(container, p4, s4, subpartition_name_length);
+      alloc_identifier(container, sub_part, subpartition_name_length);
 }
 
 /** Print a table lock id.
@@ -649,12 +635,12 @@ bool Innodb_data_lock_iterator::fetch(PSI_server_data_lock_container *container,
 
   trx = fetch_trx_in_trx_list(trx_immutable_id, true, &trx_sys->rw_trx_list);
 
-  if (trx == NULL) {
+  if (trx == nullptr) {
     trx = fetch_trx_in_trx_list(trx_immutable_id, false,
                                 &trx_sys->mysql_trx_list);
   }
 
-  if (trx != NULL) {
+  if (trx != nullptr) {
     scan_trx(container, with_lock_data, trx, true, lock_immutable_id, heap_id);
   }
 
@@ -683,7 +669,7 @@ size_t Innodb_data_lock_iterator::scan_trx_list(
   ut_ad(lock_mutex_own());
   ut_ad(trx_sys_mutex_own());
 
-  for (trx = UT_LIST_GET_FIRST(*trx_list); trx != NULL;
+  for (trx = UT_LIST_GET_FIRST(*trx_list); trx != nullptr;
        trx = get_next_trx(trx, read_write)) {
     if (discard_trx(trx, read_write)) {
       continue;
@@ -755,7 +741,7 @@ size_t Innodb_data_lock_iterator::scan_trx(
     return 0;
   }
 
-  for (lock = lock_get_first_trx_locks(&trx->lock); lock != NULL;
+  for (lock = lock_get_first_trx_locks(&trx->lock); lock != nullptr;
        lock = lock_get_next_trx_locks(lock)) {
     record_type = lock_get_type(lock);
 
@@ -802,8 +788,8 @@ size_t Innodb_data_lock_iterator::scan_trx(
               trx_id, thread_id, event_id, table_schema, table_schema_length,
               table_name, table_name_length, partition_name,
               partition_name_length, subpartition_name,
-              subpartition_name_length, NULL, 0, identity, lock_mode_str,
-              lock_type_str, lock_status_str, NULL);
+              subpartition_name_length, nullptr, 0, identity, lock_mode_str,
+              lock_type_str, lock_status_str, nullptr);
           found++;
         }
         break;
@@ -824,7 +810,7 @@ size_t Innodb_data_lock_iterator::scan_trx(
               if (with_lock_data) {
                 p_s_fill_lock_data(&lock_data_str, lock, heap_no, container);
               } else {
-                lock_data_str = NULL;
+                lock_data_str = nullptr;
               }
 
               container->add_lock_row(
@@ -936,12 +922,12 @@ bool Innodb_data_lock_wait_iterator::fetch(
   trx = fetch_trx_in_trx_list(requesting_trx_immutable_id, true,
                               &trx_sys->rw_trx_list);
 
-  if (trx == NULL) {
+  if (trx == nullptr) {
     trx = fetch_trx_in_trx_list(requesting_trx_immutable_id, false,
                                 &trx_sys->mysql_trx_list);
   }
 
-  if (trx != NULL) {
+  if (trx != nullptr) {
     scan_trx(container, trx, true, requesting_lock_immutable_id,
              blocking_lock_immutable_id);
   }
@@ -969,7 +955,7 @@ size_t Innodb_data_lock_wait_iterator::scan_trx_list(
   ut_ad(lock_mutex_own());
   ut_ad(trx_sys_mutex_own());
 
-  for (trx = UT_LIST_GET_FIRST(*trx_list); trx != NULL;
+  for (trx = UT_LIST_GET_FIRST(*trx_list); trx != nullptr;
        trx = get_next_trx(trx, read_write)) {
     if (discard_trx(trx, read_write)) {
       continue;
@@ -1027,7 +1013,7 @@ size_t Innodb_data_lock_wait_iterator::scan_trx(
   size_t found = 0;
   lock_queue_iterator_t iter;
 
-  ut_a(wait_lock != NULL);
+  ut_a(wait_lock != nullptr);
 
   requesting_record_type = lock_get_type(wait_lock);
 
@@ -1063,7 +1049,7 @@ size_t Innodb_data_lock_wait_iterator::scan_trx(
   requesting_identity = wait_lock;
   lock_queue_iterator_reset(&iter, wait_lock, ULINT_UNDEFINED);
 
-  for (curr_lock = lock_queue_iterator_get_prev(&iter); curr_lock != NULL;
+  for (curr_lock = lock_queue_iterator_get_prev(&iter); curr_lock != nullptr;
        curr_lock = lock_queue_iterator_get_prev(&iter)) {
     if (with_filter &&
         lock_get_immutable_id(curr_lock) != filter_blocking_lock_immutable_id) {

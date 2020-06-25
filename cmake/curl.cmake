@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,19 +21,19 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 MACRO(GET_CURL_VERSION)
-    FILE(STRINGS "${CURL_INCLUDE_DIR}/curl/curlver.h"
-      CURL_VERSION_NUMBERS
-      REGEX "^#[ ]*define[\t ]+LIBCURL_VERSION_[A-Z]+[\t ]+[0-9].*"
+  FILE(STRINGS "${CURL_INCLUDE_DIR}/curl/curlver.h"
+    CURL_VERSION_NUMBERS
+    REGEX "^#[ ]*define[\t ]+LIBCURL_VERSION_[A-Z]+[\t ]+[0-9].*"
     )
-    STRING(REGEX REPLACE
-      "^.*LIBCURL_VERSION_MAJOR[\t ]+([0-9]+).*$" "\\1"
-      CURL_VERSION_MAJOR "${CURL_VERSION_NUMBERS}"
+  STRING(REGEX REPLACE
+    "^.*LIBCURL_VERSION_MAJOR[\t ]+([0-9]+).*$" "\\1"
+    CURL_VERSION_MAJOR "${CURL_VERSION_NUMBERS}"
     )
-    STRING(REGEX REPLACE
-      "^.*LIBCURL_VERSION_MINOR[\t ]+([0-9]+).*$" "\\1"
-      CURL_VERSION_MINOR "${CURL_VERSION_NUMBERS}"
+  STRING(REGEX REPLACE
+    "^.*LIBCURL_VERSION_MINOR[\t ]+([0-9]+).*$" "\\1"
+    CURL_VERSION_MINOR "${CURL_VERSION_NUMBERS}"
     )
-    MESSAGE(STATUS "CURL version: ${CURL_VERSION_MAJOR}.${CURL_VERSION_MINOR}")
+  MESSAGE(STATUS "CURL version: ${CURL_VERSION_MAJOR}.${CURL_VERSION_MINOR}")
 ENDMACRO()
 
 MACRO(MYSQL_CHECK_CURL)
@@ -45,9 +45,9 @@ MACRO(MYSQL_CHECK_CURL)
     #  CURL_VERSION_STRING - the version of curl found (since CMake 2.8.8)
     FIND_PACKAGE(CURL REQUIRED)
     IF(CURL_FOUND AND
-       CURL_LIBRARIES AND
-       NOT CURL_LIBRARIES MATCHES "CURL_LIBRARY-NOTFOUND" AND
-       NOT CURL_INCLUDE_DIRS MATCHES "CURL_INCLUDE_DIR-NOTFOUND")
+        CURL_LIBRARIES AND
+        NOT CURL_LIBRARIES MATCHES "CURL_LIBRARY-NOTFOUND" AND
+        NOT CURL_INCLUDE_DIRS MATCHES "CURL_INCLUDE_DIR-NOTFOUND")
       SET(CURL_LIBRARY ${CURL_LIBRARIES} CACHE FILEPATH "Curl library")
       SET(CURL_INCLUDE_DIR ${CURL_INCLUDE_DIRS} CACHE PATH "Curl include")
       GET_CURL_VERSION()
@@ -142,21 +142,22 @@ MACRO(MYSQL_CHECK_CURL_DLLS)
 
       SET(ZLIB_DLL_REQUIRED 1)
       FIND_OBJECT_DEPENDENCIES("${HAVE_CURL_DLL}" DEPENDENCY_LIST)
-      LIST(FIND DEPENDENCY_LIST "zlib1.dll" FOUNDIT)
+      LIST(FIND DEPENDENCY_LIST "zlib.dll" FOUNDIT1)
+      LIST(FIND DEPENDENCY_LIST "zlib1.dll" FOUNDIT2)
       MESSAGE(STATUS "${CURL_DLL_NAME} DEPENDENCY_LIST ${DEPENDENCY_LIST}")
-      IF(FOUNDIT LESS 0)
+      IF(FOUNDIT1 LESS 0 AND FOUNDIT2 LESS 0)
         UNSET(ZLIB_DLL_REQUIRED)
       ENDIF()
 
       FIND_FILE(HAVE_ZLIB_DLL
-        NAMES zlib1.dll
+        NAMES zlib.dll zlib1.dll
         PATHS "${WITH_CURL_PATH}/lib"
         NO_DEFAULT_PATH
         )
       MESSAGE(STATUS "HAVE_ZLIB_DLL ${HAVE_ZLIB_DLL}")
 
       IF(ZLIB_DLL_REQUIRED AND NOT HAVE_ZLIB_DLL)
-        MESSAGE(FATAL_ERROR "libcurl.dll depends on zlib1.dll")
+        MESSAGE(FATAL_ERROR "libcurl.dll depends on zlib.dll or zlib1.dll")
       ENDIF()
 
       IF(ZLIB_DLL_REQUIRED AND HAVE_ZLIB_DLL)

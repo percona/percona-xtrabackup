@@ -1,4 +1,4 @@
-# Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,61 +51,117 @@ TARGET_INCLUDE_DIRECTORIES(http_common
 SET_TARGET_PROPERTIES(http_common PROPERTIES
   OUTPUT_NAME "mysqlrouter_http"
   SOVERSION 1
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
   LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
 
 ## the rpath for the bundled openssl
+ADD_INSTALL_RPATH_FOR_OPENSSL(http_common)
 SET_PATH_TO_SSL(http_common ${CMAKE_BINARY_DIR}/library_output_directory)
 
 INSTALL(TARGETS http_common
-  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR}
-  COMPONENT Router
-  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR}
-  COMPONENT Router
-  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR}
-  COMPONENT Router)
+  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR} COMPONENT Router
+  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  NAMELINK_SKIP
+  )
 
 ## split library code from the plugin to use them _passwd and tests
-ADD_LIBRARY(http_auth_backend_lib STATIC
+ADD_LIBRARY(http_auth_backend_lib SHARED
   http_auth_backend.cc
   kdf_sha_crypt.cc
   kdf_pbkdf2.cc
   mcf_error.cc
   http_auth_error.cc
+  http_auth_backend_component.cc
+  )
+GENERATE_EXPORT_HEADER(http_auth_backend_lib
+  EXPORT_FILE_NAME
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/http_auth_backend_lib_export.h
   )
 TARGET_LINK_LIBRARIES(http_auth_backend_lib http_common)
+SET_TARGET_PROPERTIES(http_auth_backend_lib PROPERTIES
+  OUTPUT_NAME "mysqlrouter_http_auth_backend"
+  SOVERSION 1
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
+INSTALL(TARGETS http_auth_backend_lib
+  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR} COMPONENT Router
+  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  NAMELINK_SKIP
+  )
+TARGET_INCLUDE_DIRECTORIES(http_auth_backend_lib PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/)
+## the rpath for the bundled openssl
+ADD_INSTALL_RPATH_FOR_OPENSSL(http_auth_backend_lib)
+SET_PATH_TO_SSL(http_auth_backend_lib ${CMAKE_BINARY_DIR}/library_output_directory)
+
 
 ## the plugin
 ADD_HARNESS_PLUGIN(http_auth_backend
   SOURCES
   http_auth_backend_plugin.cc
-  http_auth_backend_component.cc
+  http_auth_backend_metadata_cache.cc
   REQUIRES
-  http_common;http_auth_backend_lib;router_lib
+  http_common;http_auth_backend_lib;router_lib;metadata_cache
   DESTINATION "${ROUTER_INSTALL_PLUGINDIR}"
   )
 GENERATE_EXPORT_HEADER(http_auth_backend
-  EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/http_auth_backend_export.h)
+  EXPORT_FILE_NAME
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/http_auth_backend_export.h
+  )
+TARGET_INCLUDE_DIRECTORIES(http_auth_backend PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/)
 
-TARGET_INCLUDE_DIRECTORIES(http_auth_backend
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../include/
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../include/)
+## split library code from the plugin to use them with tests
+ADD_LIBRARY(http_auth_realm_lib SHARED
+  http_auth_realm.cc
+  http_auth_realm_component.cc
+  )
+GENERATE_EXPORT_HEADER(http_auth_realm_lib
+  EXPORT_FILE_NAME
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/http_auth_realm_lib_export.h
+  )
+TARGET_LINK_LIBRARIES(http_auth_realm_lib PUBLIC
+  http_auth_backend_lib)
+TARGET_INCLUDE_DIRECTORIES(http_auth_realm_lib PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/)
+SET_TARGET_PROPERTIES(http_auth_realm_lib PROPERTIES
+  OUTPUT_NAME "mysqlrouter_http_auth_realm"
+  SOVERSION 1
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
+INSTALL(TARGETS http_auth_realm_lib
+  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR} COMPONENT Router
+  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  NAMELINK_SKIP
+  )
+## the rpath for the bundled openssl
+ADD_INSTALL_RPATH_FOR_OPENSSL(http_auth_realm_lib)
+SET_PATH_TO_SSL(http_auth_realm_lib ${CMAKE_BINARY_DIR}/library_output_directory)
+
 
 ADD_HARNESS_PLUGIN(http_auth_realm
   SOURCES
   http_auth_realm_plugin.cc
-  http_auth_realm_component.cc
   REQUIRES
-  http_auth_backend;router_lib
+  http_auth_realm_lib;router_lib;http_auth_backend
   DESTINATION "${ROUTER_INSTALL_PLUGINDIR}"
   )
 GENERATE_EXPORT_HEADER(http_auth_realm
-  EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/http_auth_realm_export.h)
-TARGET_INCLUDE_DIRECTORIES(http_auth_realm
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../include/
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../include/)
+  EXPORT_FILE_NAME
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/http_auth_realm_export.h
+  )
+TARGET_INCLUDE_DIRECTORIES(http_auth_realm PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/)
 
 
 ADD_HARNESS_PLUGIN(http_server
@@ -120,9 +176,9 @@ ADD_HARNESS_PLUGIN(http_server
   REQUIRES router_lib;http_common;http_auth_realm;${LIBRT};${LIBEVENT_OPENSSL}
   DESTINATION "${ROUTER_INSTALL_PLUGINDIR}"
   )
-TARGET_INCLUDE_DIRECTORIES(http_server
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../include/)
+TARGET_INCLUDE_DIRECTORIES(http_server PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/)
 
 
 ADD_LIBRARY(http_client
@@ -138,11 +194,11 @@ TARGET_LINK_LIBRARIES(http_client
   http_common)
 
 SET_TARGET_PROPERTIES(http_client PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
   LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
-TARGET_INCLUDE_DIRECTORIES(http_client
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../include/)
+TARGET_INCLUDE_DIRECTORIES(http_client PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/)
 
 ## the rpath for the bundled openssl
 SET_PATH_TO_SSL(http_client ${CMAKE_BINARY_DIR}/library_output_directory)
@@ -155,41 +211,24 @@ SET_PATH_TO_SSL(http_client ${CMAKE_BINARY_DIR}/library_output_directory)
 #   ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR}
 #   COMPONENT Router)
 
-
-IF(WIN32)
-  # unit-tests link against http_server.dll
-  FUNCTION(COPY_TARGET_FOR_UNITTEST tgt)
-    ADD_CUSTOM_COMMAND(TARGET ${tgt} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_FILE:${tgt}>
-      "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/$<TARGET_FILE_NAME:${tgt}>"
-    )
-  ENDFUNCTION()
-
-  COPY_TARGET_FOR_UNITTEST(http_common)
-  COPY_TARGET_FOR_UNITTEST(http_client)
-  COPY_TARGET_FOR_UNITTEST(http_server)
-  COPY_TARGET_FOR_UNITTEST(http_auth_realm)
-  COPY_TARGET_FOR_UNITTEST(http_auth_backend)
-ENDIF()
-
-ADD_EXECUTABLE(rest_cli
-  rest_cli.cc)
-ADD_DEPENDENCIES(mysqlrouter_all rest_cli)
-TARGET_LINK_LIBRARIES(rest_cli
+MYSQL_ADD_EXECUTABLE(rest_cli
+  rest_cli.cc
+  COMPONENT Router
+  LINK_LIBRARIES
   harness-library
-  http_client ${CMAKE_THREAD_LIBS_INIT})
-
+  http_client
+  SKIP_INSTALL
+  )
 MYSQL_ADD_EXECUTABLE(mysqlrouter_passwd
   passwd_cli.cc
   passwd.cc
   COMPONENT Router
-  )
-ADD_DEPENDENCIES(mysqlrouter_all mysqlrouter_passwd)
-TARGET_LINK_LIBRARIES(mysqlrouter_passwd
+  LINK_LIBRARIES
   harness-library
   router_lib
-  http_auth_backend_lib mysys)
+  http_auth_backend_lib
+  metadata_cache
+  )
 ADD_INSTALL_RPATH(mysqlrouter_passwd "${ROUTER_INSTALL_RPATH}")
 
 MY_INCLUDE_SYSTEM_DIRECTORIES(LIBEVENT)

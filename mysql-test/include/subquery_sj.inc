@@ -98,13 +98,13 @@ explain select * from t1 where a in (select t10.pk from t10, t12 where t12.pk=t1
 
 --echo subqueries within outer joins go into ON expr.
 # TODO: psergey: check if case conversions like those are ok (it broke on  windows)
---replace_result a A b B
+--replace_regex /\ba\b/A/ /\bb\b/B/
 explain
 select * from t1 left join (t2 a, t2 b) on ( a.a= t1.a and b.a in (select pk from t10));
 
 # TODO: psergey: check if case conversions like those are ok (it broke on  windows)
 --echo t2 should be wrapped into OJ-nest, so we have "t1 LJ (t2 J t10)"
---replace_result a A b B
+--replace_regex /\ba\b/A/ /\bb\b/B/
 explain
 select * from t1 left join t2 on (t2.a= t1.a and t2.a in (select pk from t10));
 
@@ -450,7 +450,7 @@ insert into t4 select a from t3;
 explain select * from t3 where a in
           (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
 
-# In subquery_sj_loosescan_bka_nixbnl (ie., with loose scan), demonstrates
+# In subquery_sj_loosescan_bka_nobnl (ie., with loose scan), demonstrates
 # how NestedLoopSemiJoinWithDuplicateRemovalIterator is used.
 explain format=tree select * from t3 where a in
           (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
@@ -1410,7 +1410,8 @@ FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a+0 AND
 # reintroduced again at the very top of the join tree.
 #
 # In subquery_sj_{all,firstmatch}_*, demonstrates how partially overlapping
-# outer joins and first matches are rewritten into weedout at the top.
+# outer joins and first matches are rejected by the join optimizer and cannot
+# exist (DBUG_ASSERTs in FindSubstructure verify it).
 EXPLAIN FORMAT=tree SELECT *
 FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a AND ot1.a IN (SELECT a FROM it3)
          LEFT JOIN ot3 ON ot2.a=ot3.a AND ot3.a IN (SELECT a FROM it3);
@@ -3348,21 +3349,9 @@ t1.b=t2.b);
 update t1 set a=3, b=11 where a=4;
 update t2 set b=11 where a=3;
 
-# the query just below may exhibit BUG#49129:
-create temporary table tmp select * from t0 where t0.a in 
-  (select t1.a from t1, t2 where t2.a=t0.a and t1.b=t2.b);
-# detect it and warn in result file if it's the case:
-create temporary table tmp_as_ref (a int);
-insert into tmp_as_ref values(0),(1),(2),(3); # correct desired result
-if (`select count(*) from tmp_as_ref left join tmp on tmp.a=tmp_as_ref.a
-where tmp.a is null`)
-{
-  --echo 
-  --echo # The result below is wrong due to Bug#49129
-}
-select * from tmp;
+select * from t0 where t0.a in (select t1.a from t1, t2 where t2.a=t0.a and t1.b=t2.b);
 
-drop table t0, t1, t2, tmp, tmp_as_ref;
+drop table t0, t1, t2;
 
 #
 # BUG#35767: Processing of uncorrelated subquery with semi-join cause wrong result and crash
@@ -5081,6 +5070,7 @@ WHERE (a, a) IN
 ;
 
 eval explain $query;
+--sorted_result
 eval $query;
 
 DROP TABLE t1, t2;
@@ -6344,6 +6334,7 @@ FROM t2 LEFT JOIN t1 ON t2.vc=t1.vc
 WHERE t2.vc IN (SELECT vc FROM t2 AS t3);
 
 eval explain format=json $query;
+--sorted_result
 eval $query;
 
 DROP TABLE t1, t2;
@@ -6375,7 +6366,9 @@ FROM t1 AS alias1
 eval explain $query;
 
 eval PREPARE stmt FROM "$query";
+--sorted_result
 EXECUTE stmt;
+--sorted_result
 EXECUTE stmt;
 
 DEALLOCATE PREPARE stmt;
@@ -6509,7 +6502,8 @@ INSERT INTO t2 VALUES
  (15,7,'2008-07-02 00:00:00','g','g'), (16,4,'1900-01-01 00:00:00','p','p'),
  (17,1,'2002-12-08 11:34:58','q','q'), (18,9,'1900-01-01 00:00:00','w','w'),
  (19,4,'1900-01-01 00:00:00','d','d'), (20,8,'2002-08-25 20:35:06','e','e');
- 
+
+--sorted_result
 SELECT alias1.col_datetime_key
 FROM t2 AS alias1
      RIGHT JOIN t2 AS alias2
@@ -6539,6 +6533,7 @@ WHERE (alias2.col_varchar_key, alias2.col_varchar_key) IN
         WHERE sq2_alias2.col_int_key < 2);
 
 eval explain format=json $query;
+--sorted_result
 eval $query;
 
 DROP TABLE t1, t2;
@@ -6994,7 +6989,7 @@ ORDER BY col_int_key
 
 eval explain $query;
 
-# In subquery_sj_loosescan_bka_nixbnl (ie., with loose scan), shows a case
+# In subquery_sj_loosescan_bka_nobnl (ie., with loose scan), shows a case
 # where we can't use NestedLoopSemiJoinWithDuplicateRemovalIterator since we
 # have a table that is both firstmatch (semijoin) _and_ outer join.
 eval explain format=tree $query;

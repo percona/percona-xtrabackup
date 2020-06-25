@@ -175,7 +175,7 @@ class sys_var {
     downcast for sys_var_pluginvar. Returns this if it's an instance
     of sys_var_pluginvar, and 0 otherwise.
   */
-  virtual sys_var_pluginvar *cast_pluginvar() { return 0; }
+  virtual sys_var_pluginvar *cast_pluginvar() { return nullptr; }
 
   bool check(THD *thd, set_var *var);
   const uchar *value_ptr(THD *running_thd, THD *target_thd, enum_var_type type,
@@ -185,7 +185,6 @@ class sys_var {
     option.def_value = new_def_value;
   }
   longlong get_default() { return option.def_value; }
-  virtual bool is_default(THD *thd, set_var *var);
   virtual longlong get_min_value() { return option.min_value; }
   virtual ulonglong get_max_value() { return option.max_value; }
   /**

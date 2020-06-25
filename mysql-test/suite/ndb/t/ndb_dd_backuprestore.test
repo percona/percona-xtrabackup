@@ -60,11 +60,12 @@ ENGINE NDB;
 --let $initial_detected_count_server2 = query_get_value(SHOW STATUS LIKE 'Ndb_metadata_detected_count', Value, 1)
 --let $initial_synced_count_server2 = query_get_value(SHOW STATUS LIKE 'Ndb_metadata_synced_count', Value, 1)
 --connection server1
+
+-- source include/ndb_restore_master.inc
+
 # Set low interval so changes are detected quickly
 SET @old_ndb_metadata_check_interval = @@global.ndb_metadata_check_interval;
 SET GLOBAL ndb_metadata_check_interval = 0;
-
--- source include/ndb_restore_master.inc
 
 # Wait until the following 3 object changes are detected:
 # Logfile group 'log_group1'
@@ -181,10 +182,11 @@ ENGINE NDB;
 --let $initial_detected_count_server2 = query_get_value(SHOW STATUS LIKE 'Ndb_metadata_detected_count', Value, 1)
 --let $initial_synced_count_server2 = query_get_value(SHOW STATUS LIKE 'Ndb_metadata_synced_count', Value, 1)
 --connection server1
-# Set low interval so changes are detected quickly
-SET GLOBAL ndb_metadata_check_interval = 0;
 
 -- source include/ndb_restore_master.inc
+
+# Set low interval so changes are detected quickly
+SET GLOBAL ndb_metadata_check_interval = 0;
 
 # Wait until the following 6 object changes are detected:
 # Logfile group 'log_group1'
@@ -283,16 +285,22 @@ SHOW CREATE TABLE test.t5;
 
 SHOW CREATE TABLE test.t6;
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't1'; 
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't2'; 
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression, partition_description FROM information_schema.partitions WHERE table_name= 't3'; 
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't4'; 
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't5'; 
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression, partition_description FROM information_schema.partitions WHERE table_name= 't6';
 
 
@@ -362,10 +370,11 @@ ENGINE NDB;
 --let $initial_detected_count_server2 = query_get_value(SHOW STATUS LIKE 'Ndb_metadata_detected_count', Value, 1)
 --let $initial_synced_count_server2 = query_get_value(SHOW STATUS LIKE 'Ndb_metadata_synced_count', Value, 1)
 --connection server1
-# Set low interval so changes are detected quickly
-SET GLOBAL ndb_metadata_check_interval = 0;
 
 -- source include/ndb_restore_master.inc
+
+# Set low interval so changes are detected quickly
+SET GLOBAL ndb_metadata_check_interval = 0;
 
 # Wait until the following 9 object changes are detected:
 # Logfile group 'log_group1'
@@ -422,16 +431,22 @@ SHOW CREATE TABLE test.t5;
 
 SHOW CREATE TABLE test.t6;
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't1';
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't2';
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression, partition_description FROM information_schema.partitions WHERE table_name= 't3';
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't4';
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression FROM information_schema.partitions WHERE table_name= 't5';
 
+--sorted_result
 SELECT table_name, partition_name, partition_ordinal_position, partition_method, partition_expression, partition_description FROM information_schema.partitions WHERE table_name= 't6';
 
 SELECT COUNT(*) FROM test.t1; 

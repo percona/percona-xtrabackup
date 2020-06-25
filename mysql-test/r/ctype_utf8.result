@@ -440,9 +440,9 @@ Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but wil
 insert into t1 values ('1'),('2'),('3'),('x'),('y'),('z');
 insert into t1 values ('aaaaaaaaaa');
 insert into t1 values ('aaaaaaaaaaa');
-ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 'c'
+ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 't1.c'
 insert into t1 values ('aaaaaaaaaaaa');
-ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 'c'
+ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 't1.c'
 insert into t1 values (repeat('b',20));
 select c c1 from t1 where c='1';
 c1
@@ -475,9 +475,9 @@ Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but wil
 insert into t1 values ('1'),('2'),('3'),('x'),('y'),('z');
 insert into t1 values ('aaaaaaaaaa');
 insert into t1 values ('aaaaaaaaaaa');
-ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 'c'
+ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 't1.c'
 insert into t1 values ('aaaaaaaaaaaa');
-ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 'c'
+ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 't1.c'
 insert into t1 values (repeat('b',20));
 select c c1 from t1 where c='1';
 c1
@@ -511,23 +511,23 @@ insert into t1 values ('1'),('2'),('3'),('4'),('x'),('y'),('z');
 insert into t1 values ('a');
 insert into t1 values ('aa');
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'aa' for key 'c'
+ERROR 23000: Duplicate entry 'aa' for key 't1.c'
 insert into t1 values ('b');
 insert into t1 values ('bb');
 insert into t1 values ('bbb');
-ERROR 23000: Duplicate entry 'bb' for key 'c'
+ERROR 23000: Duplicate entry 'bb' for key 't1.c'
 insert into t1 values ('а');
 insert into t1 values ('аа');
 insert into t1 values ('ааа');
-ERROR 23000: Duplicate entry 'аа' for key 'c'
+ERROR 23000: Duplicate entry 'аа' for key 't1.c'
 insert into t1 values ('б');
 insert into t1 values ('бб');
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'бб' for key 'c'
+ERROR 23000: Duplicate entry 'бб' for key 't1.c'
 insert into t1 values ('ꪪ');
 insert into t1 values ('ꪪꪪ');
 insert into t1 values ('ꪪꪪꪪ');
-ERROR 23000: Duplicate entry 'ꪪꪪ' for key 'c'
+ERROR 23000: Duplicate entry 'ꪪꪪ' for key 't1.c'
 drop table t1;
 create table t1 (c char(3) character set utf8, unique (c(2))) engine=innodb;
 Warnings:
@@ -536,23 +536,23 @@ insert into t1 values ('1'),('2'),('3'),('4'),('x'),('y'),('z');
 insert into t1 values ('a');
 insert into t1 values ('aa');
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'aa' for key 'c'
+ERROR 23000: Duplicate entry 'aa' for key 't1.c'
 insert into t1 values ('b');
 insert into t1 values ('bb');
 insert into t1 values ('bbb');
-ERROR 23000: Duplicate entry 'bb' for key 'c'
+ERROR 23000: Duplicate entry 'bb' for key 't1.c'
 insert into t1 values ('а');
 insert into t1 values ('аа');
 insert into t1 values ('ааа');
-ERROR 23000: Duplicate entry 'аа' for key 'c'
+ERROR 23000: Duplicate entry 'аа' for key 't1.c'
 insert into t1 values ('б');
 insert into t1 values ('бб');
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'бб' for key 'c'
+ERROR 23000: Duplicate entry 'бб' for key 't1.c'
 insert into t1 values ('ꪪ');
 insert into t1 values ('ꪪꪪ');
 insert into t1 values ('ꪪꪪꪪ');
-ERROR 23000: Duplicate entry 'ꪪꪪ' for key 'c'
+ERROR 23000: Duplicate entry 'ꪪꪪ' for key 't1.c'
 drop table t1;
 create table t1 (
 c char(10) character set utf8,
@@ -568,14 +568,14 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('б');
 insert into t1 values ('бб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 select c as c_all from t1 order by c;
 c_all
 a
@@ -606,14 +606,14 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('б');
 insert into t1 values ('бб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 select c as c_all from t1 order by c;
 c_all
 a
@@ -638,14 +638,14 @@ Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('б');
 insert into t1 values ('бб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 select c as c_all from t1 order by c;
 c_all
 a
@@ -669,9 +669,9 @@ Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. 
 insert into t1 values ('1'),('2'),('3'),('x'),('y'),('z');
 insert into t1 values ('aaaaaaaaaa');
 insert into t1 values ('aaaaaaaaaaa');
-ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 'c'
+ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 't1.c'
 insert into t1 values ('aaaaaaaaaaaa');
-ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 'c'
+ERROR 23000: Duplicate entry 'aaaaaaaaaa' for key 't1.c'
 insert into t1 values (repeat('b',20));
 select c c1 from t1 where c='1';
 c1
@@ -706,23 +706,23 @@ insert into t1 values ('1'),('2'),('3'),('4'),('x'),('y'),('z');
 insert into t1 values ('a');
 insert into t1 values ('aa');
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'aa' for key 'c'
+ERROR 23000: Duplicate entry 'aa' for key 't1.c'
 insert into t1 values ('b');
 insert into t1 values ('bb');
 insert into t1 values ('bbb');
-ERROR 23000: Duplicate entry 'bb' for key 'c'
+ERROR 23000: Duplicate entry 'bb' for key 't1.c'
 insert into t1 values ('а');
 insert into t1 values ('аа');
 insert into t1 values ('ааа');
-ERROR 23000: Duplicate entry 'аа' for key 'c'
+ERROR 23000: Duplicate entry 'аа' for key 't1.c'
 insert into t1 values ('б');
 insert into t1 values ('бб');
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'бб' for key 'c'
+ERROR 23000: Duplicate entry 'бб' for key 't1.c'
 insert into t1 values ('ꪪ');
 insert into t1 values ('ꪪꪪ');
 insert into t1 values ('ꪪꪪꪪ');
-ERROR 23000: Duplicate entry 'ꪪꪪ' for key 'c'
+ERROR 23000: Duplicate entry 'ꪪꪪ' for key 't1.c'
 drop table t1;
 create table t1 (
 c char(10) character set utf8 collate utf8_bin,
@@ -739,14 +739,14 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('б');
 insert into t1 values ('бб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 select c as c_all from t1 order by c;
 c_all
 a
@@ -778,14 +778,14 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('б');
 insert into t1 values ('бб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 select c as c_all from t1 order by c;
 c_all
 a
@@ -811,14 +811,14 @@ Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but wil
 Warning	3778	'utf8_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
 insert into t1 values ('aa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('aaa');
-ERROR 23000: Duplicate entry 'a' for key 'a'
+ERROR 23000: Duplicate entry 'a' for key 't1.a'
 insert into t1 values ('б');
 insert into t1 values ('бб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 insert into t1 values ('ббб');
-ERROR 23000: Duplicate entry 'б' for key 'a'
+ERROR 23000: Duplicate entry 'б' for key 't1.a'
 select c as c_all from t1 order by c;
 c_all
 a
@@ -1883,7 +1883,7 @@ explain
 select substr(z.a,-1), z.a from t1 as y join t1 as z on y.a=z.a order by 1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	y	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using temporary; Using filesort
-1	SIMPLE	z	NULL	ALL	NULL	NULL	NULL	NULL	2	50.00	Using where; Using join buffer (Block Nested Loop)
+1	SIMPLE	z	NULL	ALL	NULL	NULL	NULL	NULL	2	50.00	Using where; Using join buffer (hash join)
 Warnings:
 Note	1003	/* select#1 */ select substr(`test`.`z`.`a`,-(1)) AS `substr(z.a,-1)`,`test`.`z`.`a` AS `a` from `test`.`t1` `y` join `test`.`t1` `z` where (`test`.`z`.`a` = `test`.`y`.`a`) order by substr(`test`.`z`.`a`,-(1))
 select substr(z.a,-1), z.a from t1 as y join t1 as z on y.a=z.a order by 1;
@@ -2473,8 +2473,8 @@ ALTER TABLE t1 ADD mos TINYINT DEFAULT 0 AFTER clipid;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `clipid` int(11) NOT NULL,
-  `mos` tinyint(4) DEFAULT '0',
+  `clipid` int NOT NULL,
+  `mos` tinyint DEFAULT '0',
   `Tape` tinytext,
   PRIMARY KEY (`clipid`),
   KEY `tape` (`Tape`(85))
@@ -3169,7 +3169,7 @@ create table t1 as select concat(ceiling(0.5)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(4) CHARACTER SET utf8 DEFAULT NULL
+  `c1` varchar(21) CHARACTER SET utf8 DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(floor(0.5)));
@@ -3179,7 +3179,7 @@ create table t1 as select concat(floor(0.5)) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(4) CHARACTER SET utf8 DEFAULT NULL
+  `c1` varchar(21) CHARACTER SET utf8 DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(round(0.5)));
@@ -3655,7 +3655,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c1` varchar(1) CHARACTER SET utf8 DEFAULT NULL,
-  `c2` int(1) NOT NULL DEFAULT '0'
+  `c2` int NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 set @a2=1;
@@ -3670,7 +3670,7 @@ show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c1` varchar(20) CHARACTER SET utf8 DEFAULT NULL,
-  `c2` bigint(20) DEFAULT NULL
+  `c2` bigint DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(@a1:=sqrt(1)));
@@ -4876,18 +4876,6 @@ hex(concat(a))	a
 30303030303030303030303030303030313030302E31	00000000000000001000.1
 30303030303030303030303030303031303030302E31	00000000000000010000.1
 drop table t1;
-create table t1 (a year(4));
-insert into t1 values (1);
-select hex(concat(a)) from t1;
-hex(concat(a))
-32303031
-create table t2 as select concat(a) from t1;
-show create table t2;
-Table	Create Table
-t2	CREATE TABLE `t2` (
-  `concat(a)` varchar(4) CHARACTER SET utf8 DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-drop table t1, t2;
 create table t1 (a year);
 insert into t1 values (1);
 select hex(concat(a)) from t1;
@@ -5208,17 +5196,6 @@ hex(a)
 30303030303030303030303030303031303030302E31
 drop table t1;
 drop view v1;
-create table t1 (a year(4));
-insert into t1 values (1);
-create view v1(a) as select concat(a) from t1;
-show columns from v1;
-Field	Type	Null	Key	Default	Extra
-a	varchar(4)	YES		NULL	
-select hex(a) from v1;
-hex(a)
-32303031
-drop table t1;
-drop view v1;
 create table t1 (a year);
 insert into t1 values (1);
 create view v1(a) as select concat(a) from t1;
@@ -5314,7 +5291,7 @@ create table t1 as select f1(1) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` int(11) DEFAULT NULL
+  `c1` int DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 as select concat(f1(1)) as c1;

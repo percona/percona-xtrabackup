@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +44,8 @@
 #define ER_X_CMD_ARGUMENT_VALUE 5017
 #define ER_X_BAD_UPSERT_DATA 5018
 #define ER_X_DUPLICATED_CAPABILITIES 5019
+#define ER_X_CMD_ARGUMENT_OBJECT_EMPTY 5020
+#define ER_X_CMD_INVALID_ARGUMENT 5021
 
 #define ER_X_BAD_UPDATE_DATA 5050
 #define ER_X_BAD_TYPE_OF_UPDATE 5051
@@ -56,7 +58,7 @@
 #define ER_X_BAD_TABLE 5113
 #define ER_X_BAD_PROJECTION 5114
 #define ER_X_DOC_ID_MISSING 5115
-#define ER_X_DOC_ID_DUPLICATE 5116
+#define ER_X_DUPLICATE_ENTRY 5116
 #define ER_X_DOC_REQUIRED_FIELD_MISSING 5117
 
 #define ER_X_PROJ_BAD_KEY_NAME 5120
@@ -97,5 +99,9 @@
 #define ER_X_CAPABILITY_COMPRESSION_INVALID_CLIENT_STYLE 5177
 #define ER_X_CAPABILITY_COMPRESSION_INVALID_OPTION 5178
 #define ER_X_CAPABILITY_COMPRESSION_MISSING_REQUIRED_FIELDS 5179
+
+#define ER_X_DOCUMENT_DOESNT_MATCH_EXPECTED_SCHEMA 5180
+#define ER_X_COLLECTION_OPTION_DOESNT_EXISTS 5181
+#define ER_X_INVALID_VALIDATION_SCHEMA 5182
 
 #endif  // PLUGIN_X_SRC_XPL_ERROR_H_

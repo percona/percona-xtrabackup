@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2006, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -134,22 +134,6 @@ const char *innobase_basename(const char *path_name);
  @return true if thd is executing SELECT */
 ibool thd_is_select(const THD *thd); /*!< in: thread handle */
 
-/** Converts an identifier to a table name. */
-void innobase_convert_from_table_id(
-    const CHARSET_INFO *cs, /*!< in: the 'from' character set */
-    char *to,               /*!< out: converted identifier */
-    const char *from,       /*!< in: identifier to convert */
-    ulint len);             /*!< in: length of 'to', in bytes; should
-                            be at least 5 * strlen(to) + 1 */
-
-/** Converts an identifier to UTF-8. */
-void innobase_convert_from_id(
-    const CHARSET_INFO *cs, /*!< in: the 'from' character set */
-    char *to,               /*!< out: converted identifier */
-    const char *from,       /*!< in: identifier to convert */
-    ulint len);             /*!< in: length of 'to', in bytes;
-                            should be at least 3 * strlen(to) + 1 */
-
 /** Makes all characters in a NUL-terminated UTF-8 string lower case. */
 void innobase_casedn_str(char *a); /*!< in/out: string to put in lower case */
 
@@ -228,11 +212,13 @@ ulint innobase_get_table_cache_size(void);
  @return value of lower_case_table_names */
 ulint innobase_get_lower_case_table_names(void);
 
-/** compare two character string case insensitively according to their charset.
- */
-int innobase_fts_text_case_cmp(const void *cs,  /*!< in: Character set */
-                               const void *p1,  /*!< in: key */
-                               const void *p2); /*!< in: node */
+/** Compare two character strings case insensitively according to their
+charset.
+@param[in]  cs  character set
+@param[in]  s1  string 1
+@param[in]  s2  string 2
+@return 0 if the two strings are equal */
+int innobase_nocase_compare(const void *cs, const char *s1, const char *s2);
 
 /** Returns true if transaction should be flagged as read-only.
  @return true if the thd is marked as read-only */
@@ -277,8 +263,8 @@ enum ib_log_level_t {
 };
 
 /** Use this when the args are first converted to a formatted string and then
- passed to the format string from errmsg-utf8.txt. The error message format
- must be: "Some string ... %s".
+ passed to the format string from messages_to_clients.txt. The error message
+ format must be: "Some string ... %s".
 
  Push a warning message to the client, it is a wrapper around:
 
@@ -294,7 +280,7 @@ void ib_errf(THD *thd,             /*!< in/out: session */
     MY_ATTRIBUTE((format(printf, 4, 5)));
 
 /** Use this when the args are passed to the format string from
- errmsg-utf8.txt directly as is.
+ messages_to_clients.txt directly as is.
 
  Push a warning message to the client, it is a wrapper around:
 

@@ -40,7 +40,7 @@ static char *group_replication_set_as_primary(UDF_INIT *, UDF_ARGS *args,
       (args->arg_count == 1 && args->args[0] != nullptr) ? args->args[0] : "";
   size_t ulength = (args->arg_count > 0) ? args->lengths[0] : 0;
   if (args->arg_count > 0) {
-    const char *return_message = NULL;
+    const char *return_message = nullptr;
     bool invalid_uuid = validate_uuid_parameter(uuid, ulength, &return_message);
 
     if (invalid_uuid) {
@@ -145,7 +145,7 @@ static bool group_replication_set_as_primary_init(UDF_INIT *init_id,
     size_t ulength = (args->arg_count > 0) ? args->lengths[0] : 0;
     std::string uuid =
         (args->arg_count == 1 && args->args[0] != nullptr) ? args->args[0] : "";
-    const char *return_message = NULL;
+    const char *return_message = nullptr;
     bool invalid_uuid = validate_uuid_parameter(uuid, ulength, &return_message);
 
     if (invalid_uuid) {
@@ -162,7 +162,11 @@ static bool group_replication_set_as_primary_init(UDF_INIT *init_id,
     return true;
   }
 
-  init_id->maybe_null = 0;
+  if (Charset_service::set_return_value_charset(init_id) ||
+      Charset_service::set_args_charset(args))
+    return true;
+
+  init_id->maybe_null = false;
   udf_counter.succeeded();
   return false;
 }
@@ -207,7 +211,7 @@ static char *group_replication_switch_to_single_primary_mode(
       (args->arg_count == 1 && args->args[0] != nullptr) ? args->args[0] : "";
   size_t ulength = (args->arg_count > 0) ? args->lengths[0] : 0;
   if (args->arg_count > 0) {
-    const char *return_message = NULL;
+    const char *return_message = nullptr;
     bool invalid_uuid = validate_uuid_parameter(uuid, ulength, &return_message);
 
     if (invalid_uuid) {
@@ -302,7 +306,7 @@ static bool group_replication_switch_to_single_primary_mode_init(
         (args->arg_count == 1 && args->args[0] != nullptr) ? args->args[0] : "";
     size_t ulength = args->lengths[0];
     if (args->arg_count > 0) {
-      const char *return_message = NULL;
+      const char *return_message = nullptr;
       bool invalid_uuid =
           validate_uuid_parameter(uuid, ulength, &return_message);
 
@@ -312,8 +316,11 @@ static bool group_replication_switch_to_single_primary_mode_init(
       }
     }
   }
+  if (Charset_service::set_return_value_charset(initid) ||
+      Charset_service::set_args_charset(args))
+    return true;
 
-  initid->maybe_null = 0;
+  initid->maybe_null = false;
   udf_counter.succeeded();
   return false;
 }

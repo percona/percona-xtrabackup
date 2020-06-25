@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -124,6 +124,8 @@ struct MYSQL_XID {
 #define PLUGIN_LICENSE_GPL_STRING "GPL"
 #define PLUGIN_LICENSE_BSD_STRING "BSD"
 
+#define PLUGIN_AUTHOR_ORACLE "Oracle Corporation"
+
 /*
   Macros for beginning and ending plugin declarations.  Between
   mysql_declare_plugin and mysql_declare_plugin_end there should
@@ -174,13 +176,36 @@ struct MYSQL_XID {
 #define PLUGIN_VAR_SET 0x0007
 #define PLUGIN_VAR_DOUBLE 0x0008
 #define PLUGIN_VAR_UNSIGNED 0x0080
-#define PLUGIN_VAR_THDLOCAL 0x0100  /* Variable is per-connection */
-#define PLUGIN_VAR_READONLY 0x0200  /* Server variable is read only */
-#define PLUGIN_VAR_NOSYSVAR 0x0400  /* Configurable only by cmd-line */
-#define PLUGIN_VAR_NOCMDOPT 0x0800  /* Not a command line option */
-#define PLUGIN_VAR_NOCMDARG 0x1000  /* No argument for cmd line */
-#define PLUGIN_VAR_RQCMDARG 0x0000  /* Argument required for cmd line */
-#define PLUGIN_VAR_OPCMDARG 0x2000  /* Argument optional for cmd line */
+#define PLUGIN_VAR_THDLOCAL 0x0100 /* Variable is per-connection */
+#define PLUGIN_VAR_READONLY 0x0200 /* Server variable is read only */
+#define PLUGIN_VAR_NOSYSVAR 0x0400 /* Configurable only by cmd-line */
+
+/**
+  plugin variable CAN'T be used through command line at all
+  neither "--option", nor "--option=value" will work
+  @note you should probably set a default variable value if you use this flag
+*/
+#define PLUGIN_VAR_NOCMDOPT 0x0800
+
+/**
+  plugin variable *value* CAN'T be set via command line
+  you can invoke it with "--option" only, but "--option=value" will not work
+  @note you should probably set a default variable value if you use this flag
+*/
+#define PLUGIN_VAR_NOCMDARG 0x1000
+
+/**
+  plugin variable CAN'T be used through command line without a value
+  "--option=value" must be used, only "--option" won't work
+*/
+#define PLUGIN_VAR_RQCMDARG 0x0000
+
+/**
+  plugin variable can be set via command line, both with or without value
+  either "--option=value", or "--option" will work
+  @note you should probably set a default variable value if you use this flag
+*/
+#define PLUGIN_VAR_OPCMDARG 0x2000
 #define PLUGIN_VAR_NODEFAULT 0x4000 /* SET DEFAULT is prohibited */
 #define PLUGIN_VAR_MEMALLOC 0x8000  /* String needs memory allocated */
 #define PLUGIN_VAR_NOPERSIST                \
@@ -894,6 +919,11 @@ void thd_set_ha_data(MYSQL_THD thd, const struct handlerton *hton,
 */
 
 void remove_ssl_err_thread_state();
+
+/**
+  Interface to get the number of VCPUs.
+*/
+unsigned int thd_get_num_vcpus();
 #ifdef __cplusplus
 }
 #endif

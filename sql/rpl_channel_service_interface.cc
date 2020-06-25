@@ -30,6 +30,7 @@
 #include <sstream>
 #include <utility>
 
+#include "mutex_lock.h"  // MUTEX_LOCK
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -164,11 +165,11 @@ static void delete_surrogate_thread(THD *thd) {
 
 void initialize_channel_creation_info(Channel_creation_info *channel_info) {
   channel_info->type = SLAVE_REPLICATION_CHANNEL;
-  channel_info->hostname = 0;
+  channel_info->hostname = nullptr;
   channel_info->port = 0;
-  channel_info->user = 0;
-  channel_info->password = 0;
-  channel_info->ssl_info = 0;
+  channel_info->user = nullptr;
+  channel_info->password = nullptr;
+  channel_info->ssl_info = nullptr;
   channel_info->auto_position = RPL_SERVICE_SERVER_DEFAULT;
   channel_info->channel_mts_parallel_type = RPL_SERVICE_SERVER_DEFAULT;
   channel_info->channel_mts_parallel_workers = RPL_SERVICE_SERVER_DEFAULT;
@@ -179,7 +180,7 @@ void initialize_channel_creation_info(Channel_creation_info *channel_info) {
   channel_info->preserve_relay_logs = false;
   channel_info->retry_count = 0;
   channel_info->connect_retry = 0;
-  channel_info->public_key_path = 0;
+  channel_info->public_key_path = nullptr;
   channel_info->get_public_key = 0;
   channel_info->compression_algorithm = nullptr;
   channel_info->zstd_compression_level = 0;
@@ -187,21 +188,22 @@ void initialize_channel_creation_info(Channel_creation_info *channel_info) {
 
 void initialize_channel_ssl_info(Channel_ssl_info *channel_ssl_info) {
   channel_ssl_info->use_ssl = 0;
-  channel_ssl_info->ssl_ca_file_name = 0;
-  channel_ssl_info->ssl_ca_directory = 0;
-  channel_ssl_info->ssl_cert_file_name = 0;
-  channel_ssl_info->ssl_crl_file_name = 0;
-  channel_ssl_info->ssl_crl_directory = 0;
-  channel_ssl_info->ssl_key = 0;
-  channel_ssl_info->ssl_cipher = 0;
-  channel_ssl_info->tls_version = 0;
+  channel_ssl_info->ssl_ca_file_name = nullptr;
+  channel_ssl_info->ssl_ca_directory = nullptr;
+  channel_ssl_info->ssl_cert_file_name = nullptr;
+  channel_ssl_info->ssl_crl_file_name = nullptr;
+  channel_ssl_info->ssl_crl_directory = nullptr;
+  channel_ssl_info->ssl_key = nullptr;
+  channel_ssl_info->ssl_cipher = nullptr;
+  channel_ssl_info->tls_version = nullptr;
   channel_ssl_info->ssl_verify_server_cert = 0;
+  channel_ssl_info->tls_ciphersuites = nullptr;
 }
 
 void initialize_channel_connection_info(Channel_connection_info *channel_info) {
   channel_info->until_condition = CHANNEL_NO_UNTIL_CONDITION;
-  channel_info->gtid = 0;
-  channel_info->view_id = 0;
+  channel_info->gtid = nullptr;
+  channel_info->view_id = nullptr;
 }
 
 static void set_mi_ssl_options(LEX_MASTER_INFO *lex_mi,
@@ -239,6 +241,13 @@ static void set_mi_ssl_options(LEX_MASTER_INFO *lex_mi,
 
   if (channel_ssl_info->ssl_cipher != nullptr) {
     lex_mi->ssl_cipher = channel_ssl_info->ssl_cipher;
+  }
+
+  if (channel_ssl_info->tls_ciphersuites != nullptr) {
+    lex_mi->tls_ciphersuites = LEX_MASTER_INFO::SPECIFIED_STRING;
+    lex_mi->tls_ciphersuites_string = channel_ssl_info->tls_ciphersuites;
+  } else {
+    lex_mi->tls_ciphersuites = LEX_MASTER_INFO::SPECIFIED_NULL;
   }
 
   lex_mi->ssl_verify_server_cert = (channel_ssl_info->ssl_verify_server_cert)
@@ -483,7 +492,7 @@ int channel_stop(Master_info *mi, int threads_to_stop, long timeout) {
   mi->channel_wrlock();
   lock_slave_threads(mi);
 
-  init_thread_mask(&server_thd_mask, mi, 0 /* not inverse*/);
+  init_thread_mask(&server_thd_mask, mi, false /* not inverse*/);
 
   if ((threads_to_stop & CHANNEL_APPLIER_THREAD) &&
       (server_thd_mask & SLAVE_SQL)) {
@@ -577,6 +586,29 @@ int channel_stop_all(int threads_to_stop, long timeout,
   return error;
 }
 
+class Kill_binlog_dump : public Do_THD_Impl {
+ public:
+  Kill_binlog_dump() {}
+
+  virtual void operator()(THD *thd_to_kill) {
+    if (thd_to_kill->get_command() == COM_BINLOG_DUMP ||
+        thd_to_kill->get_command() == COM_BINLOG_DUMP_GTID) {
+      DBUG_ASSERT(thd_to_kill != current_thd);
+      MUTEX_LOCK(thd_data_lock, &thd_to_kill->LOCK_thd_data);
+      thd_to_kill->duplicate_slave_id = true;
+      thd_to_kill->awake(THD::KILL_CONNECTION);
+    }
+  }
+};
+
+int binlog_dump_thread_kill() {
+  DBUG_TRACE;
+  Global_THD_manager *thd_manager = Global_THD_manager::get_instance();
+  Kill_binlog_dump kill_binlog_dump;
+  thd_manager->do_for_all_thd(&kill_binlog_dump);
+  return 0;
+}
+
 int channel_purge_queue(const char *channel, bool reset_all) {
   DBUG_TRACE;
 
@@ -616,7 +648,7 @@ bool channel_is_active(const char *channel,
     return false;
   }
 
-  init_thread_mask(&thread_mask, mi, 0 /* not inverse*/);
+  init_thread_mask(&thread_mask, mi, false /* not inverse*/);
 
   channel_map.unlock();
 
@@ -991,7 +1023,7 @@ int channel_get_credentials(const char *channel, const char **user, char **pass,
 
   Master_info *mi = channel_map.get_mi(channel);
 
-  if (mi == NULL) {
+  if (mi == nullptr) {
     channel_map.unlock();
     DBUG_RETURN(RPL_CHANNEL_SERVICE_CHANNEL_DOES_NOT_EXISTS_ERROR);
   }

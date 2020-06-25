@@ -190,7 +190,7 @@ max-time: 360
 
 cmd: testBlobs
 args: -bug 28746560 -skip p -loop 10
-max-time: 180
+max-time: 900
 
 cmd: testLimits
 args: -n NdbfsBulkOpen T1
@@ -211,4 +211,16 @@ max-time: 360
 cmd: testNdbApi
 args: -n PkLockingReadNoWait T1
 max-time:30
+
+cmd: testNodeRestart
+args: -n PostponeRecalculateGCPCommitLag T1
+max-time: 520
+
+cmd: testBackup
+args: -n CheckBackupCompletedPrintout T1
+max-time: 360
+
+cmd: testBasic
+args: -n CheckCompletedLCPStats T1
+max-time: 240
 

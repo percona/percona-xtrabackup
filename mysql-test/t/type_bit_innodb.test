@@ -39,7 +39,6 @@ create table t1 (a bit) engine=innodb;
 insert ignore into t1 values (b'0'), (b'1'), (b'000'), (b'100'), (b'001');
 select hex(a) from t1;
 # It is not deterministic which duplicate will be seen first
---replace_regex /(.*Duplicate entry )'.*'( for key.*)/\1''\2/
 --error ER_DUP_ENTRY
 alter table t1 add unique (a);
 drop table t1;
@@ -75,8 +74,6 @@ select a+0, b+0 from t1;
 explain select a+0, b+0 from t1 where a > 40 and b > 200 order by 1;
 select a+0, b+0 from t1 where a > 40 and b > 200 order by 1;
 explain select a+0, b+0 from t1 where a > 40 and a < 70 order by 2;
-select a+0, b+0 from t1 where a > 40 and a < 70 order by 2;
-set @@max_length_for_sort_data=0;
 select a+0, b+0 from t1 where a > 40 and a < 70 order by 2;
 select hex(min(a)) from t1;
 select hex(min(b)) from t1;

@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -312,6 +312,28 @@ MACRO(ADD_INSTALL_RPATH TARGET VALUE)
 ENDMACRO()
 
 
+# For standalone Linux build or community RPM build, we support
+#   -DWITH_SSL=</path/to/custom/openssl>
+# SSL libraries are installed in lib/private
+# We need to extend INSTALL_RPATH with location of SSL libraries:
+# executable  in bin        rpath $ORIGIN/../lib/private
+# plugins     in lib/plugin rpath $ORIGIN/../private
+# shared libs in lib        rpath $ORIGIN/private
+MACRO(ADD_INSTALL_RPATH_FOR_OPENSSL TARGET)
+  IF(LINUX_INSTALL_RPATH_ORIGIN)
+    GET_TARGET_PROPERTY(TARGET_TYPE_${TARGET} ${TARGET} TYPE)
+    IF(TARGET_TYPE_${TARGET} STREQUAL "EXECUTABLE")
+      ADD_INSTALL_RPATH(${TARGET} "\$ORIGIN/../${INSTALL_PRIV_LIBDIR}")
+    ELSEIF(TARGET_TYPE_${TARGET} STREQUAL "MODULE_LIBRARY")
+      ADD_INSTALL_RPATH(${TARGET} "\$ORIGIN/../private")
+    ELSEIF(TARGET_TYPE_${TARGET} STREQUAL "SHARED_LIBRARY")
+      ADD_INSTALL_RPATH(${TARGET} "\$ORIGIN/private")
+    ELSE()
+      MESSAGE(FATAL_ERROR "unknown type ${TARGET_TYPE_${TARGET}} for ${TARGET}")
+    ENDIF()
+  ENDIF()
+ENDMACRO()
+
 # For APPLE: set INSTALL_RPATH, and adjust path dependecy for libprotobuf.
 # Use 'otool -L' to inspect results.
 # For UNIX: extend INSTALL_RPATH with libprotobuf location.
@@ -335,3 +357,132 @@ MACRO(ADD_INSTALL_RPATH_FOR_PROTOBUF TARGET)
     ADD_INSTALL_RPATH(${TARGET} "\$ORIGIN/../${INSTALL_PRIV_LIBDIR}")
   ENDIF()
 ENDMACRO()
+
+# For APPLE: adjust path dependecy for SSL shared libraries.
+FUNCTION(SET_PATH_TO_SSL target target_out_dir)
+  IF(APPLE AND HAVE_CRYPTO_DYLIB AND HAVE_OPENSSL_DYLIB)
+    IF(BUILD_IS_SINGLE_CONFIG)
+      ADD_CUSTOM_COMMAND(TARGET ${target} POST_BUILD
+        COMMAND install_name_tool -change
+              "${CRYPTO_VERSION}" "@loader_path/../lib/${CRYPTO_VERSION}"
+              $<TARGET_FILE_NAME:${target}>
+        COMMAND install_name_tool -change
+              "${OPENSSL_VERSION}" "@loader_path/../lib/${OPENSSL_VERSION}"
+              $<TARGET_FILE_NAME:${target}>
+        WORKING_DIRECTORY ${target_out_dir}
+      )
+    ELSE()
+      ADD_CUSTOM_COMMAND(TARGET ${target} POST_BUILD
+        COMMAND install_name_tool -change
+            "${CRYPTO_VERSION}"
+            "@loader_path/../../lib/${CMAKE_CFG_INTDIR}/${CRYPTO_VERSION}"
+        $<TARGET_FILE_NAME:${target}>
+        COMMAND install_name_tool -change
+            "${OPENSSL_VERSION}"
+            "@loader_path/../../lib/${CMAKE_CFG_INTDIR}/${OPENSSL_VERSION}"
+        $<TARGET_FILE_NAME:${target}>
+        WORKING_DIRECTORY ${target_out_dir}/${CMAKE_CFG_INTDIR}
+      )
+    ENDIF()
+  ENDIF()
+ENDFUNCTION()
+
+
+# For standalone Linux build and -DWITH_LDAP -DWITH_SASL -DWITH_SSL and
+# -DWITH_KERBEROS set to custom path.
+#
+# Move the custom shared library and symlinks to library_output_directory.
+# The subdir argument is typically empty, but set to "sasl2" for SASL plugins,
+# in which case we move library_full_filename and its symlinks to
+# library_output_directory/sasl2.
+#
+# We ensure that the copied custom libraries have the execute bit set.
+# We also update the RUNPATH of libraries to be '$ORIGIN' to ensure that
+# libraries get correct load-time dependencies. This is done using the
+# linux tool patchelf(1)
+#
+# Set ${OUTPUT_LIBRARY_NAME} to the new location.
+# Set ${OUTPUT_TARGET_NAME} to the name of a target which will do the copying.
+# Add an INSTALL(FILES ....) rule to install library and symlinks into
+#   ${INSTALL_PRIV_LIBDIR} or ${INSTALL_PRIV_LIBDIR}/sasl2
+FUNCTION(COPY_CUSTOM_SHARED_LIBRARY library_full_filename subdir
+    OUTPUT_LIBRARY_NAME
+    OUTPUT_TARGET_NAME
+    )
+  IF(NOT LINUX_WITH_CUSTOM_LIBRARIES)
+    RETURN()
+  ENDIF()
+  GET_FILENAME_COMPONENT(LIBRARY_EXT "${library_full_filename}" EXT)
+  IF(NOT LIBRARY_EXT STREQUAL ".so")
+    RETURN()
+  ENDIF()
+  EXECUTE_PROCESS(
+    COMMAND readlink "${library_full_filename}" OUTPUT_VARIABLE library_version
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  GET_FILENAME_COMPONENT(library_directory "${library_full_filename}" DIRECTORY)
+  GET_FILENAME_COMPONENT(library_name "${library_full_filename}" NAME)
+  GET_FILENAME_COMPONENT(library_name_we "${library_full_filename}" NAME_WE)
+
+  FIND_SONAME(${library_full_filename} library_soname)
+  FIND_OBJECT_DEPENDENCIES(${library_full_filename} library_dependencies)
+
+  MESSAGE(STATUS "CUSTOM library ${library_full_filename}")
+# MESSAGE(STATUS "CUSTOM version ${library_version}")
+# MESSAGE(STATUS "CUSTOM directory ${library_directory}")
+# MESSAGE(STATUS "CUSTOM name ${library_name}")
+# MESSAGE(STATUS "CUSTOM name_we ${library_name_we}")
+# MESSAGE(STATUS "CUSTOM soname ${library_soname}")
+
+  SET(COPIED_LIBRARY_NAME
+    "${CMAKE_BINARY_DIR}/library_output_directory/${subdir}/${library_name}")
+  SET(COPY_TARGET_NAME "copy_${library_name_we}_dll")
+
+  # Keep track of libraries and dependencies.
+  SET(SONAME_${library_name_we} "${library_soname}"
+    CACHE INTERNAL "SONAME for ${library_name_we}" FORCE)
+  SET(NEEDED_${library_name_we} "${library_dependencies}"
+    CACHE INTERNAL "" FORCE)
+  SET(KNOWN_CUSTOM_LIBRARIES
+    ${KNOWN_CUSTOM_LIBRARIES} ${library_name_we} CACHE INTERNAL "" FORCE)
+
+  # Do copying and patching in a sub-process, so that we can skip it if
+  # already done. The BYPRODUCTS arguments is needed by Ninja, and is
+  # ignored on non-Ninja generators except to mark byproducts GENERATED.
+  ADD_CUSTOM_TARGET(${COPY_TARGET_NAME} ALL
+    COMMAND ${CMAKE_COMMAND}
+    -Dlibrary_directory="${library_directory}"
+    -Dlibrary_name="${library_name}"
+    -Dlibrary_soname="${library_soname}"
+    -Dlibrary_version="${library_version}"
+    -Dsubdir="${subdir}"
+    -DPATCHELF_EXECUTABLE="${PATCHELF_EXECUTABLE}"
+    -P ${CMAKE_SOURCE_DIR}/cmake/copy_custom_library.cmake
+
+    BYPRODUCTS
+    "${CMAKE_BINARY_DIR}/library_output_directory/${subdir}/${library_name}"
+
+    WORKING_DIRECTORY
+    "${CMAKE_BINARY_DIR}/library_output_directory/${subdir}"
+    )
+
+  # Link with the copied library, rather than the original one.
+  SET(${OUTPUT_LIBRARY_NAME} "${COPIED_LIBRARY_NAME}" PARENT_SCOPE)
+  SET(${OUTPUT_TARGET_NAME} "${COPY_TARGET_NAME}" PARENT_SCOPE)
+
+  ADD_DEPENDENCIES(copy_linux_custom_dlls ${COPY_TARGET_NAME})
+
+  MESSAGE(STATUS "INSTALL ${library_name} to ${INSTALL_PRIV_LIBDIR}/${subdir}")
+
+  # Cannot use INSTALL_PRIVATE_LIBRARY because these are not targets.
+  INSTALL(FILES
+    ${CMAKE_BINARY_DIR}/library_output_directory/${subdir}/${library_name}
+    ${CMAKE_BINARY_DIR}/library_output_directory/${subdir}/${library_soname}
+    ${CMAKE_BINARY_DIR}/library_output_directory/${subdir}/${library_version}
+    DESTINATION "${INSTALL_PRIV_LIBDIR}/${subdir}" COMPONENT SharedLibraries
+    PERMISSIONS
+    OWNER_READ OWNER_WRITE OWNER_EXECUTE
+    GROUP_READ GROUP_EXECUTE
+    WORLD_READ WORLD_EXECUTE
+    )
+
+ENDFUNCTION()

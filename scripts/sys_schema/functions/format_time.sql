@@ -13,13 +13,13 @@
 -- along with this program; if not, write to the Free Software
 -- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-DROP FUNCTION IF EXISTS format_time;
+DROP FUNCTION IF EXISTS sys.format_time;
 
 DELIMITER $$
 
-CREATE DEFINER='mysql.sys'@'localhost' FUNCTION format_time (
-        -- We feed in and return TEXT here, as aggregates of
-        -- picoseconds can return numbers larger than BIGINT UNSIGNED
+CREATE DEFINER='mysql.sys'@'localhost' FUNCTION sys.format_time (
+-- We feed in and return TEXT here, as aggregates of
+-- picoseconds can return numbers larger than BIGINT UNSIGNED
         picoseconds TEXT
     )
     RETURNS TEXT CHARSET UTF8MB4

@@ -37,8 +37,10 @@ FOREACH(warning
 ENDFOREACH()
 
 # NdbApi examples
-ADD_EXECUTABLE(ndb_ndbapi_array_simple ndbapi_array_simple/ndbapi_array_simple.cpp)
-ADD_EXECUTABLE(ndb_ndbapi_array_using_adapter ndbapi_array_using_adapter/ndbapi_array_using_adapter.cpp)
+ADD_EXECUTABLE(ndb_ndbapi_array_simple
+  ndbapi_array_simple/ndbapi_array_simple.cpp)
+ADD_EXECUTABLE(ndb_ndbapi_array_using_adapter
+  ndbapi_array_using_adapter/ndbapi_array_using_adapter.cpp)
 ADD_EXECUTABLE(ndb_ndbapi_async ndbapi_async/ndbapi_async.cpp)
 ADD_EXECUTABLE(ndb_ndbapi_async1 ndbapi_async1/ndbapi_async1.cpp)
 ADD_EXECUTABLE(ndb_ndbapi_blob ndbapi_blob/ndbapi_blob.cpp)
@@ -76,7 +78,7 @@ SET(EXAMPLES
   ndb_mgmapi_logevent2
 )
 FOREACH(EXAMPLE ${EXAMPLES})
+  SET_TARGET_PROPERTIES(${EXAMPLE} PROPERTIES ENABLE_EXPORTS TRUE)
   TARGET_LINK_LIBRARIES(${EXAMPLE} libmysql)
   TARGET_LINK_LIBRARIES(${EXAMPLE} ndbclient_so)
 ENDFOREACH()
-

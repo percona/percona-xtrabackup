@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -37,18 +37,13 @@
 #  SVR4
 #    Solaris package layout suitable for pkg* tools, prefix=/opt/mysql/xtrabackup
 #
-#  FREEBSD, GLIBC, OSX, TARGZ
+#  TARGZ
 #    Build with prefix=/usr/local/mysql, create tarball with install prefix="."
 #    and relative links.
 #
 # To force a directory layout, use -DINSTALL_LAYOUT=<layout>.
 #
 # The default is STANDALONE.
-#
-# Note : At present layouts like FREEBSD, GLIBC, OSX, TARGZ are similar.
-#        However, they provide
-#        opportunity to fine-tune deployment for each platform without
-#        affecting all other types of deployment.
 #
 # There is the possibility to further fine-tune installation directories.
 # Several variables can be overwritten:
@@ -85,7 +80,8 @@ IF(NOT INSTALL_LAYOUT)
 ENDIF()
 
 SET(INSTALL_LAYOUT "${DEFAULT_INSTALL_LAYOUT}"
-CACHE STRING "Installation directory layout. Options are: TARGZ (as in tar.gz installer), STANDALONE, RPM, DEB, SVR4, FREEBSD, GLIBC, OSX")
+  CACHE STRING "Installation directory layout. Options are: TARGZ (as in tar.gz installer), STANDALONE, RPM, DEB, SVR4"
+  )
 
 IF(UNIX)
   IF(INSTALL_LAYOUT MATCHES "RPM")
@@ -102,7 +98,7 @@ IF(UNIX)
       CACHE PATH "install prefix" FORCE)
   ENDIF()
   SET(VALID_INSTALL_LAYOUTS
-    "RPM" "DEB" "SVR4" "FREEBSD" "GLIBC" "OSX" "TARGZ" "STANDALONE")
+    "RPM" "DEB" "SVR4" "TARGZ" "STANDALONE")
   LIST(FIND VALID_INSTALL_LAYOUTS "${INSTALL_LAYOUT}" ind)
   IF(ind EQUAL -1)
     MESSAGE(FATAL_ERROR "Invalid INSTALL_LAYOUT parameter:${INSTALL_LAYOUT}."
@@ -112,6 +108,18 @@ IF(UNIX)
   SET(SYSCONFDIR "${CMAKE_INSTALL_PREFIX}/etc"
     CACHE PATH "config directory (for my.cnf)")
   MARK_AS_ADVANCED(SYSCONFDIR)
+ENDIF()
+
+IF(LINUX AND INSTALL_LAYOUT MATCHES "STANDALONE")
+  SET(LINUX_STANDALONE 1)
+ENDIF()
+
+IF(LINUX AND INSTALL_LAYOUT MATCHES "RPM")
+  SET(LINUX_RPM 1)
+ENDIF()
+
+IF(LINUX AND INSTALL_LAYOUT MATCHES "DEB")
+  SET(LINUX_DEB 1)
 ENDIF()
 
 IF(WIN32)
@@ -161,84 +169,6 @@ SET(INSTALL_SUPPORTFILESDIR_STANDALONE  "support-files")
 SET(INSTALL_MYSQLDATADIR_STANDALONE     "data")
 SET(INSTALL_MYSQLKEYRINGDIR_STANDALONE  "keyring")
 SET(INSTALL_SECURE_FILE_PRIVDIR_STANDALONE ${secure_file_priv_path})
-
-#
-# FREEBSD layout
-#
-SET(INSTALL_BINDIR_FREEBSD           "bin")
-SET(INSTALL_SBINDIR_FREEBSD          "bin")
-#
-SET(INSTALL_LIBDIR_FREEBSD           "lib")
-SET(INSTALL_PRIV_LIBDIR_FREEBSD      "lib/private")
-SET(INSTALL_PLUGINDIR_FREEBSD        "lib/plugin")
-#
-SET(INSTALL_INCLUDEDIR_FREEBSD       "include")
-#
-SET(INSTALL_DOCDIR_FREEBSD           "docs")
-SET(INSTALL_DOCREADMEDIR_FREEBSD     ".")
-SET(INSTALL_MANDIR_FREEBSD           "man")
-SET(INSTALL_INFODIR_FREEBSD          "docs")
-#
-SET(INSTALL_SHAREDIR_FREEBSD         "share")
-SET(INSTALL_MYSQLSHAREDIR_FREEBSD    "share")
-SET(INSTALL_MYSQLTESTDIR_FREEBSD     "xtrabackup-test")
-SET(INSTALL_SUPPORTFILESDIR_FREEBSD  "support-files")
-#
-SET(INSTALL_MYSQLDATADIR_FREEBSD     "data")
-SET(INSTALL_MYSQLKEYRINGDIR_FREEBSD  "keyring")
-SET(INSTALL_SECURE_FILE_PRIVDIR_FREEBSD ${secure_file_priv_path})
-
-#
-# GLIBC layout
-#
-SET(INSTALL_BINDIR_GLIBC           "bin")
-SET(INSTALL_SBINDIR_GLIBC          "bin")
-#
-SET(INSTALL_LIBDIR_GLIBC           "lib")
-SET(INSTALL_PRIV_LIBDIR_GLIBC      "lib/mysql/private")
-SET(INSTALL_PLUGINDIR_GLIBC        "lib/plugin")
-#
-SET(INSTALL_INCLUDEDIR_GLIBC       "include")
-#
-SET(INSTALL_DOCDIR_GLIBC           "docs")
-SET(INSTALL_DOCREADMEDIR_GLIBC     ".")
-SET(INSTALL_MANDIR_GLIBC           "man")
-SET(INSTALL_INFODIR_GLIBC          "docs")
-#
-SET(INSTALL_SHAREDIR_GLIBC         "share")
-SET(INSTALL_MYSQLSHAREDIR_GLIBC    "share")
-SET(INSTALL_MYSQLTESTDIR_GLIBC     "xtrabackup-test")
-SET(INSTALL_SUPPORTFILESDIR_GLIBC  "support-files")
-#
-SET(INSTALL_MYSQLDATADIR_GLIBC     "data")
-SET(INSTALL_MYSQLKEYRINGDIR_GLIBC  "keyring")
-SET(INSTALL_SECURE_FILE_PRIVDIR_GLIBC ${secure_file_priv_path})
-
-#
-# OSX layout
-#
-SET(INSTALL_BINDIR_OSX           "bin")
-SET(INSTALL_SBINDIR_OSX          "bin")
-#
-SET(INSTALL_LIBDIR_OSX           "lib")
-SET(INSTALL_PRIV_LIBDIR_OSX      "lib")
-SET(INSTALL_PLUGINDIR_OSX        "lib/plugin")
-#
-SET(INSTALL_INCLUDEDIR_OSX       "include")
-#
-SET(INSTALL_DOCDIR_OSX           "docs")
-SET(INSTALL_DOCREADMEDIR_OSX     ".")
-SET(INSTALL_MANDIR_OSX           "man")
-SET(INSTALL_INFODIR_OSX          "docs")
-#
-SET(INSTALL_SHAREDIR_OSX         "share")
-SET(INSTALL_MYSQLSHAREDIR_OSX    "share")
-SET(INSTALL_MYSQLTESTDIR_OSX     "xtrabackup-test")
-SET(INSTALL_SUPPORTFILESDIR_OSX  "support-files")
-#
-SET(INSTALL_MYSQLDATADIR_OSX     "data")
-SET(INSTALL_MYSQLKEYRINGDIR_OSX  "keyring")
-SET(INSTALL_SECURE_FILE_PRIVDIR_OSX ${secure_file_priv_path})
 
 #
 # TARGZ layout
@@ -427,39 +357,6 @@ ENDIF()
 
 # Install layout for router, follows the same pattern as above.
 #
-# Supported layouts here are STANDALONE, RPM, DEB, SVR4 or
-# FREEBSD.
-# Layouts GLIBC, OSX, and TARGZ seems unused and are similar to
-# STANDALONE or RPM any way.
-
-# Variables ROUTER_INSTALL_${X}DIR, where
-#  X = BIN, LIB and DOC is using
-# inheritance from correspondig server variable.
-# While, when
-#  X = CONFIG, DATA, LOG and RUNTIME
-# default value is set by install layouts below.
-# finally, when
-#  X = plugin
-# ROUTER_INSTALL_LIBDIR/mysqlrouter is used by default.
-
-# Relative to CMAKE_INSTALL_PREFIX or absolute
-IF("${ROUTER_INSTALL_BINDIR}" STREQUAL "")
-  SET(ROUTER_INSTALL_BINDIR "${INSTALL_BINDIR}")
-ENDIF()
-
-# If router libdir not set, use MySQL libdir (for libharness and libmysqlrouter)
-IF("${ROUTER_INSTALL_LIBDIR}" STREQUAL "")
-  SET(ROUTER_INSTALL_LIBDIR "${INSTALL_LIBDIR}")
-ENDIF()
-
-# If router plugindir not set, use $router_install_libdir[/mysqlrouter]
-IF("${ROUTER_INSTALL_PLUGINDIR}" STREQUAL "")
-  IF(WIN32)
-    SET(ROUTER_INSTALL_PLUGINDIR "${ROUTER_INSTALL_LIBDIR}")
-  ELSE()
-    SET(ROUTER_INSTALL_PLUGINDIR "${ROUTER_INSTALL_LIBDIR}/mysqlrouter")
-  ENDIF()
-ENDIF()
 
 IF("${ROUTER_INSTALL_DOCDIR}" STREQUAL "")
   SET(ROUTER_INSTALL_DOCDIR "${INSTALL_DOCDIR}")
@@ -472,10 +369,9 @@ ENDIF()
 SET(ROUTER_INSTALL_LAYOUT "${DEFAULT_ROUTER_INSTALL_LAYOUT}"
   CACHE
   STRING
-  "Installation directory layout. Options are: STANDALONE,  RPM, DEB or FREEBSD")
+  "Installation directory layout. Options are: STANDALONE RPM DEB SVR4 TARGZ")
 
-# If are _pure_ STANDALONE we can write into data/ as it is all ours
-# if we are shared STANDALONE with the the server, we shouldn't write
+# If we are shared STANDALONE with the the server, we shouldn't write
 # into the server's data/ as that would create a "schemadir" in
 # mysql-servers sense
 #
@@ -485,13 +381,34 @@ SET(ROUTER_INSTALL_CONFIGDIR_STANDALONE  ".")
 SET(ROUTER_INSTALL_DATADIR_STANDALONE    "var/lib/mysqlrouter")
 SET(ROUTER_INSTALL_LOGDIR_STANDALONE     ".")
 SET(ROUTER_INSTALL_RUNTIMEDIR_STANDALONE "run")
+
+SET(ROUTER_INSTALL_BINDIR_STANDALONE      "bin")
+IF(LINUX)
+  SET(ROUTER_INSTALL_LIBDIR_STANDALONE    "lib/mysqlrouter/private")
+ELSE()
+  SET(ROUTER_INSTALL_LIBDIR_STANDALONE    "lib")
+ENDIF()
+IF(WIN32)
+  SET(ROUTER_INSTALL_PLUGINDIR_STANDALONE "lib")
+ELSE()
+  SET(ROUTER_INSTALL_PLUGINDIR_STANDALONE "lib/mysqlrouter")
+ENDIF()
+
 #
-# FreeBSD layout
+# TARGZ layout
 #
-SET(ROUTER_INSTALL_CONFIGDIR_FREEBSD  "/usr/local/etc/mysqlrouter")
-SET(ROUTER_INSTALL_DATADIR_FREEBSD    "/var/db/mysqlrouter")
-SET(ROUTER_INSTALL_LOGDIR_FREEBSD     "/var/log/mysqlrouter")
-SET(ROUTER_INSTALL_RUNTIMEDIR_FREEBSD "/var/run/mysqlrouter")
+FOREACH(var
+    CONFIG
+    DATA
+    LOG
+    RUNTIME
+    BIN
+    LIB
+    PLUGIN
+    )
+  SET(ROUTER_INSTALL_${var}DIR_TARGZ ${ROUTER_INSTALL_${var}DIR_STANDALONE})
+ENDFOREACH()
+
 #
 # RPM layout
 #
@@ -503,13 +420,42 @@ IF (LINUX_FEDORA)
 ELSE()
   SET(ROUTER_INSTALL_RUNTIMEDIR_RPM "/var/run/mysqlrouter")
 ENDIF()
+
+SET(ROUTER_INSTALL_BINDIR_RPM     "bin")
+IF(CMAKE_SYSTEM_PROCESSOR IN_LIST KNOWN_64BIT_ARCHITECTURES)
+  SET(ROUTER_INSTALL_LIBDIR_RPM     "lib64/mysqlrouter/private")
+  SET(ROUTER_INSTALL_PLUGINDIR_RPM  "lib64/mysqlrouter")
+ELSE()
+  SET(ROUTER_INSTALL_LIBDIR_RPM     "lib/mysqlrouter/private")
+  SET(ROUTER_INSTALL_PLUGINDIR_RPM  "lib/mysqlrouter")
+ENDIF()
+
 #
 # DEB layout
 #
 SET(ROUTER_INSTALL_CONFIGDIR_DEB  "/etc/mysqlrouter")
-SET(ROUTER_INSTALL_DATADIR_DEB    "/var/run/mysqlrouter")
+SET(ROUTER_INSTALL_DATADIR_DEB    "/var/lib/mysqlrouter")
 SET(ROUTER_INSTALL_LOGDIR_DEB     "/var/log/mysqlrouter")
 SET(ROUTER_INSTALL_RUNTIMEDIR_DEB "/var/run/mysqlrouter")
+
+SET(ROUTER_INSTALL_BINDIR_DEB     "bin")
+SET(ROUTER_INSTALL_LIBDIR_DEB     "lib/mysqlrouter/private")
+SET(ROUTER_INSTALL_PLUGINDIR_DEB  "lib/mysqlrouter/plugin")
+
+#
+# SVR4 layout
+#
+FOREACH(var
+    CONFIG
+    DATA
+    LOG
+    RUNTIME
+    BIN
+    LIB
+    PLUGIN
+    )
+  SET(ROUTER_INSTALL_${var}DIR_SVR4 ${ROUTER_INSTALL_${var}DIR_STANDALONE})
+ENDFOREACH()
 
 # Set ROUTER_INSTALL_FOODIR variables for chosen layout for example,
 # ROUTER_INSTALL_CONFIGDIR will be defined as
@@ -520,6 +466,9 @@ FOREACH(directory
     DATA
     LOG
     RUNTIME
+    BIN
+    LIB
+    PLUGIN
     )
   SET(ROUTER_INSTALL_${directory}DIR
     ${ROUTER_INSTALL_${directory}DIR_${ROUTER_INSTALL_LAYOUT}}

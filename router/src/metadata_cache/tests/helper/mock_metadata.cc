@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -32,29 +32,13 @@
 
 using namespace std;
 
-/** @brief Constructor
- * @param user The user name used to authenticate to the metadata server.
- * @param password The password used to authenticate to the metadata server.
- * @param connect_timeout The time after which trying to connect to the
- *                        metadata server should timeout.
- * @param read_timeout The time after which read from metadata server should
- *                     timeout.
- * @param connection_attempts The number of times a connection to metadata must
- *                            be attempted, when a connection attempt fails.
- * @param ttl The TTL of the cached data.
- * @param ssl_options SSL related options for connections
- * @param use_gr_notifications Flag indicating if the metadata cache should
- *                             use GR notifications as an additional trigger
- *                             for metadata refresh
- */
 MockNG::MockNG(const std::string &user, const std::string &password,
                int connect_timeout, int read_timeout, int connection_attempts,
-               std::chrono::milliseconds ttl,
                const mysqlrouter::SSLOptions &ssl_options,
-               const bool use_gr_notifications)
-    : ClusterMetadata(user, password, connect_timeout, read_timeout,
-                      connection_attempts, ttl, ssl_options,
-                      use_gr_notifications) {
+               const bool use_cluster_notifications)
+    : GRClusterMetadata(user, password, connect_timeout, read_timeout,
+                        connection_attempts, ssl_options,
+                        use_cluster_notifications) {
   ms1.replicaset_name = "replicaset-1";
   ms1.mysql_server_uuid = "instance-1";
   ms1.host = "host-1";
@@ -174,7 +158,7 @@ MockNG::MockNG(const std::string &user, const std::string &password,
  *
  * Disconnect and release the connection to the metadata node.
  */
-MockNG::~MockNG() {}
+MockNG::~MockNG() = default;
 
 /** @brief Returns relation between replicaset ID and list of servers
  *
@@ -184,9 +168,14 @@ MockNG::~MockNG() {}
  * @return Map of replicaset ID, server list pairs.
  */
 ClusterMetadata::ReplicaSetsByName MockNG::fetch_instances(
-    const std::string &cluster_name, const string &group_replication_id) {
-  (void)cluster_name;
-  (void)group_replication_id;
+    const std::string & /*cluster_name*/,
+    const string & /*group_replication_id*/) {
+  return replicaset_map;
+}
+
+ClusterMetadata::ReplicaSetsByName MockNG::fetch_instances(
+    const std::vector<metadata_cache::ManagedInstance> & /*instances*/,
+    const string & /*group_replication_id*/, size_t & /*instance_id*/) {
   return replicaset_map;
 }
 
@@ -196,17 +185,14 @@ ClusterMetadata::ReplicaSetsByName MockNG::fetch_instances(
  *
  * @return a boolean to indicate if the connection was successful.
  */
-bool MockNG::connect(
+bool MockNG::connect_and_setup_session(
     const metadata_cache::ManagedInstance &metadata_server) noexcept {
   (void)metadata_server;
   return true;
 }
 
-/** @brief Mock connect method.
- *
- * Mock connect method, does nothing.
- *
- * @return a boolean to indicate if the connection was successful.
+/**
+ * Mock disconnect method, does nothing.
  */
 void MockNG::disconnect() noexcept {}
 

@@ -33,6 +33,7 @@
 #include "m_ctype.h"
 #include "m_string.h"  // strmake
 #include "map_helpers.h"
+#include "mutex_lock.h"  // Mutex_lock
 #include "my_byteorder.h"
 #include "my_command.h"
 #include "my_dbug.h"
@@ -75,7 +76,7 @@
 #include "typelib.h"
 
 int max_binlog_dump_events = 0;  // unlimited
-bool opt_sporadic_binlog_dump_fail = 0;
+bool opt_sporadic_binlog_dump_fail = false;
 
 malloc_unordered_map<uint32, unique_ptr_my_free<SLAVE_INFO>> slave_list{
     key_memory_SLAVE_INFO};
@@ -144,7 +145,7 @@ int register_slave(THD *thd, uchar *packet, size_t packet_length) {
   uchar *p = packet, *p_end = packet + packet_length;
   const char *errmsg = "Wrong parameters to function register_slave";
 
-  if (check_access(thd, REPL_SLAVE_ACL, any_db, nullptr, nullptr, 0, 0))
+  if (check_access(thd, REPL_SLAVE_ACL, any_db, nullptr, nullptr, false, false))
     return 1;
 
   unique_ptr_my_free<SLAVE_INFO> si((SLAVE_INFO *)my_malloc(
@@ -188,7 +189,7 @@ err:
 }
 
 void unregister_slave(THD *thd, bool only_mine, bool need_lock_slave_list) {
-  if (thd->server_id) {
+  if (thd->server_id && slave_list_inited) {
     if (need_lock_slave_list)
       mysql_mutex_lock(&LOCK_slave_list);
     else
@@ -1022,16 +1023,13 @@ String *get_slave_uuid(THD *thd, String *value) {
   if (value == nullptr) return nullptr;
 
   /* Protects thd->user_vars. */
-  mysql_mutex_lock(&thd->LOCK_thd_data);
+  MUTEX_LOCK(lock_guard, &thd->LOCK_thd_data);
 
   const auto it = thd->user_vars.find("slave_uuid");
   if (it != thd->user_vars.end() && it->second->length() > 0) {
     value->copy(it->second->ptr(), it->second->length(), nullptr);
-    mysql_mutex_unlock(&thd->LOCK_thd_data);
     return value;
   }
-
-  mysql_mutex_unlock(&thd->LOCK_thd_data);
   return nullptr;
 }
 
@@ -1303,7 +1301,7 @@ bool show_binlogs(THD *thd) {
 
   cur_dir_len = dirname_length(cur.log_file_name);
 
-  reinit_io_cache(index_file, READ_CACHE, (my_off_t)0, 0, 0);
+  reinit_io_cache(index_file, READ_CACHE, (my_off_t)0, false, false);
 
   /* The file ends with EOF or empty line */
   while ((length = my_b_gets(index_file, fname, sizeof(fname))) > 1) {

@@ -2,7 +2,7 @@
 #define TZTIME_INCLUDED
 
 #include "my_config.h"
-/* Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,6 @@ class THD;
 */
 class Time_zone {
  public:
-  Time_zone() {} /* Remove gcc warning */
   /**
     Converts local time in broken down MYSQL_TIME representation to
     my_time_t (UTC seconds since Epoch) represenation.
@@ -83,7 +82,7 @@ class Time_zone {
     We need this only for surpressing warnings, objects of this type are
     allocated on MEM_ROOT and should not require destruction.
   */
-  virtual ~Time_zone() {}
+  virtual ~Time_zone() = default;
 
  protected:
   static inline void adjust_leap_second(MYSQL_TIME *t);
@@ -97,6 +96,10 @@ extern bool my_tz_init(THD *org_thd, const char *default_tzname,
                        bool bootstrap);
 extern void my_tz_free();
 extern my_time_t sec_since_epoch_TIME(MYSQL_TIME *t);
+
+void adjust_time_zone_displacement(const Time_zone *tz, MYSQL_TIME *mt);
+my_time_t use_input_time_zone(const MYSQL_TIME *input, bool *in_dst_time_gap);
+void sec_to_TIME(MYSQL_TIME *tmp, my_time_t t, int64 offset);
 
 /**
   Number of elements in table list produced by my_tz_get_table_list()

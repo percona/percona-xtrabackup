@@ -477,12 +477,9 @@ int Clone_Handle::check_space() {
     return (0);
   }
   uint64_t free_space;
-  auto data_dir = get_datadir();
-
-  if (replace_datadir()) {
-    auto &abs_path = MySQL_datadir_path.abs_path();
-    data_dir = abs_path.c_str();
-  }
+  auto MySQL_datadir_abs_path = MySQL_datadir_path.abs_path();
+  auto data_dir =
+      (replace_datadir() ? MySQL_datadir_abs_path.c_str() : get_datadir());
 
   auto db_err = os_get_free_space(data_dir, free_space);
   /* We skip space check if the OS interface returns error. */
@@ -879,9 +876,9 @@ int Clone_Handle::modify_and_write(const Clone_Task *task, uint64_t offset,
       buffer += page_length;
       buf_len -= page_length;
     }
-    auto db_err =
-        punch_holes(task->m_current_file_des.m_file, buffer, buf_len,
-                    start_offset, page_length, file_meta->m_fsblk_size);
+    auto db_err = punch_holes(task->m_current_file_des.m_file, buffer, buf_len,
+                              start_offset, page_length,
+                              static_cast<uint32_t>(file_meta->m_fsblk_size));
     if (db_err != DB_SUCCESS) {
       ut_ad(db_err == DB_IO_NO_PUNCH_HOLE);
       ib::info(ER_IB_CLONE_PUNCH_HOLE)

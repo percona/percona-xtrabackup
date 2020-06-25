@@ -911,7 +911,7 @@ explain SELECT t1.a, t1.a in (select t2.a from t2,t3 where t3.a=t2.a) FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	index	NULL	PRIMARY	4	NULL	4	100.00	Using index
 2	DEPENDENT SUBQUERY	t3	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
-2	DEPENDENT SUBQUERY	t2	NULL	index	a	a	5	NULL	3	33.33	Using where; Using index; Using join buffer (Block Nested Loop)
+2	DEPENDENT SUBQUERY	t2	NULL	index	a	a	5	NULL	3	33.33	Using where; Using index; Using join buffer (hash join)
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,<in_optimizer>(`test`.`t1`.`a`,<exists>(/* select#2 */ select 1 from `test`.`t2` join `test`.`t3` where ((`test`.`t2`.`a` = `test`.`t3`.`a`) and ((<cache>(`test`.`t1`.`a`) = `test`.`t3`.`a`) or (`test`.`t3`.`a` is null))) having <is_not_null_test>(`test`.`t2`.`a`))) AS `t1.a in (select t2.a from t2,t3 where t3.a=t2.a)` from `test`.`t1`
 drop table t1,t2,t3;
@@ -1102,24 +1102,24 @@ CREATE TABLE t1 charset utf8mb4 SELECT * FROM (SELECT 1 as a,(SELECT 1)) a;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(1) NOT NULL DEFAULT '0',
-  `(SELECT 1)` int(1) NOT NULL DEFAULT '0'
+  `a` int NOT NULL DEFAULT '0',
+  `(SELECT 1)` int NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 CREATE TABLE t1 charset utf8mb4 SELECT * FROM (SELECT 1 as a,(SELECT a)) a;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(1) NOT NULL DEFAULT '0',
-  `(SELECT a)` int(1) NOT NULL DEFAULT '0'
+  `a` int NOT NULL DEFAULT '0',
+  `(SELECT a)` int NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 CREATE TABLE t1 charset utf8mb4 SELECT * FROM (SELECT 1 as a,(SELECT a+0)) a;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(1) NOT NULL DEFAULT '0',
-  `(SELECT a+0)` int(3) NOT NULL DEFAULT '0'
+  `a` int NOT NULL DEFAULT '0',
+  `(SELECT a+0)` int NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 CREATE TABLE t1 charset utf8mb4 SELECT (SELECT 1 as a UNION SELECT 1+1 limit 1,1) as a;
@@ -1129,7 +1129,7 @@ a
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` bigint(20) NOT NULL DEFAULT '0'
+  `a` bigint NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 (a int);
@@ -4680,7 +4680,7 @@ from t2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t2	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
 2	DEPENDENT SUBQUERY	t1	NULL	ref_or_null	a	a	5	func	2	10.00	Using where; Full scan on NULL key
-2	DEPENDENT SUBQUERY	t4	NULL	ALL	NULL	NULL	NULL	NULL	100	100.00	Using join buffer (Block Nested Loop)
+2	DEPENDENT SUBQUERY	t4	NULL	ALL	NULL	NULL	NULL	NULL	100	100.00	Using join buffer (hash join)
 Warnings:
 Note	1276	Field or reference 'test.t2.oref' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`b` AS `b`,`test`.`t2`.`oref` AS `oref`,<in_optimizer>((`test`.`t2`.`a`,`test`.`t2`.`b`),<exists>(/* select#2 */ select 1,1 from `test`.`t1` join `test`.`t4` where ((`test`.`t1`.`c` = `test`.`t2`.`oref`) and <if>(outer_field_is_not_null, ((<cache>(`test`.`t2`.`a`) = `test`.`t1`.`a`) or (`test`.`t1`.`a` is null)), true) and <if>(outer_field_is_not_null, ((<cache>(`test`.`t2`.`b`) = `test`.`t1`.`b`) or (`test`.`t1`.`b` is null)), true)) having (<if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t1`.`a`), true) and <if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t1`.`b`), true)))) AS `z` from `test`.`t2`
@@ -5824,43 +5824,31 @@ INSERT INTO t1 VALUES (1),(2);
 CREATE TABLE t2( a INT, b INT );
 SELECT * 
 FROM (SELECT a INTO @var FROM t1 WHERE a = 2) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a INTO @var FROM t1 WHERE a = 2) t1a' at line 2
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * 
 FROM (SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2) t1a' at line 2
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * 
 FROM (SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2) t1a' at line 2
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM ( 
 SELECT 1 a 
 UNION 
 SELECT a INTO @var FROM t1 WHERE a = 2 
 ) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( 
-SELECT 1 a 
-UNION 
-SELECT a INTO @var FROM t1 WHERE a = 2 
-) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM ( 
 SELECT 1 a 
 UNION 
 SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2 
 ) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( 
-SELECT 1 a 
-UNION 
-SELECT a INTO OUTFILE 'file' FROM t1 WHERE a = 2 
-) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM ( 
 SELECT 1 a 
 UNION 
 SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2 
 ) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( 
-SELECT 1 a 
-UNION 
-SELECT a INTO DUMPFILE 'file' FROM t1 WHERE a = 2 
-) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT a FROM t1 WHERE a = 2) t1a;
 a
 2
@@ -5890,23 +5878,23 @@ SELECT * FROM (SELECT 1 UNION SELECT 1) t1a;
 1
 1
 SELECT * FROM ((SELECT 1 a INTO @a)) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '((SELECT 1 a INTO @a)) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM ((SELECT 1 a INTO OUTFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '((SELECT 1 a INTO OUTFILE 'file' )) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM ((SELECT 1 a INTO DUMPFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '((SELECT 1 a INTO DUMPFILE 'file' )) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a UNION (SELECT 1 a INTO @a)) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION (SELECT 1 a INTO @a)) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a UNION (SELECT 1 a INTO DUMPFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION (SELECT 1 a INTO DUMPFILE 'file' )) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a UNION (SELECT 1 a INTO OUTFILE 'file' )) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION (SELECT 1 a INTO OUTFILE 'file' )) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a UNION ((SELECT 1 a INTO @a))) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION ((SELECT 1 a INTO @a))) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a UNION ((SELECT 1 a INTO DUMPFILE 'file' ))) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION ((SELECT 1 a INTO DUMPFILE 'file' ))) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a UNION ((SELECT 1 a INTO OUTFILE 'file' ))) t1a;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1 a UNION ((SELECT 1 a INTO OUTFILE 'file' ))) t1a' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM (SELECT 1 a ORDER BY a) t1a;
 a
 1
@@ -5987,11 +5975,11 @@ SELECT * FROM t1 WHERE a = ANY ( SELECT 3 UNION SELECT 1 );
 a
 1
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION SELECT 1 INTO @a);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @a)' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ( SELECT 1 );
 a
 1
@@ -5999,29 +5987,29 @@ SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 );
 a
 1
 SELECT * FROM t1 WHERE a = ( SELECT 1 INTO @a);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @a)' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ( SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO OUTFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ( SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO DUMPFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 INTO @a);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @a)' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a = ( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @v )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO OUTFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO DUMPFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT 1 UNION SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @v )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO OUTFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO DUMPFILE 'file' )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT ( SELECT a FROM t1 WHERE a = 1 ), a FROM t1;
 ( SELECT a FROM t1 WHERE a = 1 )	a
 1	1
@@ -6033,12 +6021,12 @@ SELECT ( SELECT a FROM t1 WHERE a = 1 UNION SELECT 1 ), a FROM t1;
 SELECT * FROM t2 WHERE (a, b) IN (SELECT a, b FROM t2);
 a	b
 SELECT 1 UNION ( SELECT 1 UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 )' at line 1
+ERROR 42000: This version of MySQL doesn't yet support 'nesting of unions at the right-hand side'
 ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
 1
 1
 SELECT ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
+ERROR 42000: This version of MySQL doesn't yet support 'nesting of unions at the right-hand side'
 SELECT ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
 SELECT ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
@@ -6048,7 +6036,7 @@ SELECT ((SELECT 1 UNION SELECT 1 UNION SELECT 1));
 ((SELECT 1 UNION SELECT 1 UNION SELECT 1))
 1
 SELECT * FROM ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
+ERROR 42000: Every derived table must have its own alias
 SELECT * FROM ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1 );
 ERROR 42000: Every derived table must have its own alias
 SELECT * FROM ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1 ) a;
@@ -6058,13 +6046,13 @@ SELECT * FROM ( SELECT 1 UNION SELECT 1 UNION SELECT 1 ) a;
 1
 1
 SELECT * FROM t1 WHERE a =     ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
+ERROR 42000: This version of MySQL doesn't yet support 'nesting of unions at the right-hand side'
 SELECT * FROM t1 WHERE a = ALL ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
+ERROR 42000: This version of MySQL doesn't yet support 'nesting of unions at the right-hand side'
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
+ERROR 42000: This version of MySQL doesn't yet support 'nesting of unions at the right-hand side'
 SELECT * FROM t1 WHERE a IN    ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 ) )' at line 1
+ERROR 42000: This version of MySQL doesn't yet support 'nesting of unions at the right-hand side'
 SELECT * FROM t1 WHERE a =     ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
 a
 1
@@ -6090,18 +6078,18 @@ SELECT * FROM t1 WHERE a IN    ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
 a
 1
 SELECT * FROM t1 WHERE EXISTS ( SELECT 1 UNION SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @v )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT EXISTS(SELECT 1+1);
 EXISTS(SELECT 1+1)
 1
 SELECT EXISTS(SELECT 1+1 INTO @test);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '(SELECT 1+1 INTO @test)' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a IN ( SELECT 1 UNION SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 UNION SELECT 1 INTO @v )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE EXISTS ( SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @v )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 SELECT * FROM t1 WHERE a IN ( SELECT 1 INTO @v );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '( SELECT 1 INTO @v )' at line 1
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 DROP TABLE t1, t2;
 CREATE TABLE t1 (a ENUM('rainbow'));
 INSERT INTO t1 VALUES (),(),(),(),();
@@ -6982,26 +6970,26 @@ SELECT DISTINCT f1_key
 FROM t2 
 WHERE f1_key != table2.f1_key AND f1_key >= table1.f1 );
 f1	f1_key
-v	c
 s	c
-v	d
 s	d
-v	d
 s	d
-v	d
 s	d
-v	j
 s	j
-v	m
 s	m
-v	s
 s	s
-v	t
 s	t
-v	v
 s	v
-v	y
 s	y
+v	c
+v	d
+v	d
+v	d
+v	j
+v	m
+v	s
+v	t
+v	v
+v	y
 explain SELECT table1.f1, table2.f1_key
 FROM t1 AS table1, t2 AS table2
 WHERE EXISTS 
@@ -7011,7 +6999,7 @@ FROM t2
 WHERE f1_key != table2.f1_key AND f1_key >= table1.f1 );
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	table1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
-1	PRIMARY	table2	NULL	index	NULL	f1_key	7	NULL	10	100.00	Using where; Using index; Using join buffer (Block Nested Loop)
+1	PRIMARY	table2	NULL	index	NULL	f1_key	7	NULL	10	100.00	Using where; Using index; Using join buffer (hash join)
 2	DEPENDENT SUBQUERY	t2	NULL	ALL	f1_key	NULL	NULL	NULL	10	30.00	Range checked for each record (index map: 0x1)
 Warnings:
 Note	1276	Field or reference 'test.table2.f1_key' of SELECT #2 was resolved in SELECT #1
@@ -7065,9 +7053,9 @@ FROM
 t1 AS t1f STRAIGHT_JOIN t3 AS t3f;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1f	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
-1	PRIMARY	t3f	NULL	index	NULL	col_varchar_key	9	NULL	3	100.00	Using index; Using join buffer (Block Nested Loop)
+1	PRIMARY	t3f	NULL	index	NULL	col_varchar_key	9	NULL	3	100.00	Using index; Using join buffer (hash join)
 2	DEPENDENT SUBQUERY	t1s	NULL	ref	col_int_key	col_int_key	5	const	1	50.00	Using where
-2	DEPENDENT SUBQUERY	t3s	NULL	index	NULL	col_int_key	5	NULL	3	100.00	Using index; Using join buffer (Block Nested Loop)
+2	DEPENDENT SUBQUERY	t3s	NULL	index	NULL	col_int_key	5	NULL	3	100.00	Using index; Using join buffer (hash join)
 Warnings:
 Note	1276	Field or reference 'test.t1f.col_varchar_nokey' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`t1f`.`col_int_key` AS `col_int_key`,`test`.`t1f`.`col_varchar_key` AS `col_varchar_key`,`test`.`t1f`.`col_varchar_nokey` AS `col_varchar_nokey`,`test`.`t3f`.`col_int_key` AS `col_int_key`,`test`.`t3f`.`col_varchar_key` AS `col_varchar_key`,(/* select#2 */ select min(`test`.`t3s`.`col_int_key`) from `test`.`t3` `t3s` join `test`.`t1` `t1s` where ((`test`.`t1s`.`col_varchar_key` = 'e') and (`test`.`t1s`.`col_int_key` = 9) and ('e' <> `test`.`t1f`.`col_varchar_nokey`))) AS `(
@@ -7247,7 +7235,7 @@ AND sq2_alias1.col_varchar_key > alias1.col_varchar_key
 ;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	alias2	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
-1	PRIMARY	t1	NULL	index	NULL	col_varchar_key	7	NULL	5	100.00	Using where; Using index; Using join buffer (Block Nested Loop)
+1	PRIMARY	t1	NULL	index	NULL	col_varchar_key	7	NULL	5	100.00	Using where; Using index; Using join buffer (hash join)
 2	DEPENDENT SUBQUERY	t1	NULL	ALL	col_varchar_key	NULL	NULL	NULL	5	20.00	Range checked for each record (index map: 0x4)
 2	DEPENDENT SUBQUERY	sq2_alias2	NULL	ref	col_int_key	col_int_key	4	test.t1.pk	2	100.00	Using index
 Warnings:
@@ -7291,7 +7279,7 @@ AND sq2_alias1.col_varchar_key > alias1.col_varchar_key
 EXPLAIN SELECT * FROM v2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	alias2	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
-1	PRIMARY	t1	NULL	index	NULL	col_varchar_key	7	NULL	5	100.00	Using where; Using index; Using join buffer (Block Nested Loop)
+1	PRIMARY	t1	NULL	index	NULL	col_varchar_key	7	NULL	5	100.00	Using where; Using index; Using join buffer (hash join)
 3	DEPENDENT SUBQUERY	t1	NULL	ALL	col_varchar_key	NULL	NULL	NULL	5	20.00	Using where
 3	DEPENDENT SUBQUERY	sq2_alias2	NULL	ref	col_int_key	col_int_key	4	test.t1.pk	2	100.00	Using index
 Warnings:
@@ -7322,7 +7310,7 @@ AND sq2_alias1.col_varchar_key > alias1.col_varchar_key
 );
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	alias2	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
-1	PRIMARY	t1	NULL	index	NULL	col_varchar_key	7	NULL	5	100.00	Using where; Using index; Using join buffer (Block Nested Loop)
+1	PRIMARY	t1	NULL	index	NULL	col_varchar_key	7	NULL	5	100.00	Using where; Using index; Using join buffer (hash join)
 2	DEPENDENT SUBQUERY	t1	NULL	ALL	col_varchar_key	NULL	NULL	NULL	5	20.00	Using where
 2	DEPENDENT SUBQUERY	sq2_alias2	NULL	ref	col_int_key	col_int_key	4	test.t1.pk	2	100.00	Using index
 Warnings:
@@ -7409,7 +7397,7 @@ WHERE (sq4_alias1.col_varchar_key + NULL) IS NULL OR
 sq4_alias1.col_varchar_key = @var3 ) AS alias3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
-2	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
+2	UNCACHEABLE DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 Warnings:
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
 Note	1003	/* select#1 */ select NULL AS `@var3:=12`,NULL AS `pk`,NULL AS `col_int_nokey`,NULL AS `col_int_key`,NULL AS `col_time_key`,NULL AS `col_varchar_key`,NULL AS `col_varchar_nokey` from (/* select#2 */ select (@var3:=12) AS `@var3:=12`,NULL AS `pk`,NULL AS `col_int_nokey`,NULL AS `col_int_key`,NULL AS `col_time_key`,NULL AS `col_varchar_key`,NULL AS `col_varchar_nokey` from `test`.`t1` `sq4_alias1` where (((NULL + NULL) is null) or (NULL = (@`var3`)))) `alias3`
@@ -8296,7 +8284,7 @@ FROM t3 AS outr;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	outr	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
 2	DEPENDENT SUBQUERY	innr2	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
-2	DEPENDENT SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where; Using join buffer (Block Nested Loop)
+2	DEPENDENT SUBQUERY	t2	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where; Using join buffer (hash join)
 Warnings:
 Note	1276	Field or reference 'test.outr.col_int_key' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`outr`.`pk` AS `pk`,<in_optimizer>(`test`.`outr`.`col_int`,<exists>(/* select#2 */ select 1 from `test`.`t1` `innr2` left join (`test`.`t2`) on((`test`.`innr2`.`col_date` <> `test`.`t2`.`col_date`)) where ((`test`.`outr`.`col_int_key` < 6) and <if>(outer_field_is_not_null, ((<cache>(`test`.`outr`.`col_int`) = `test`.`t2`.`pk`) or (`test`.`t2`.`pk` is null)), true)) having <if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t2`.`pk`), true))) AS `x` from `test`.`t3` `outr`

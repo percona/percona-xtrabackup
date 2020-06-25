@@ -38,9 +38,12 @@
 #include "sql/thd_raii.h"
 #include "sql/transaction.h"
 #include "storage/ndb/plugin/ndb_dd_client.h"
+#include "storage/ndb/plugin/ndb_dd_fk.h"
 #include "storage/ndb/plugin/ndb_dd_sdi.h"
 #include "storage/ndb/plugin/ndb_dd_table.h"
+#include "storage/ndb/plugin/ndb_fk_util.h"
 #include "storage/ndb/plugin/ndb_name_util.h"
+#include "storage/ndb/plugin/ndb_schema_dist_table.h"
 
 bool ndb_sdi_serialize(THD *thd, const dd::Table *table_def,
                        const char *schema_name_str, dd::sdi_t &sdi) {
@@ -127,14 +130,18 @@ bool ndb_dd_update_schema_version(THD *thd, const char *schema_name,
                        counter, node_id));
 
   Ndb_dd_client dd_client(thd);
+  /* Convert the schema name to lower case on platforms that have
+     lower_case_table_names set to 2 */
+  const std::string dd_schema_name = ndb_dd_fs_name_case(schema_name);
 
-  if (!dd_client.mdl_lock_schema(schema_name, true)) {
-    DBUG_PRINT("error", ("Failed to acquire exclusive locks on Schema : '%s'",
+  if (!dd_client.mdl_lock_schema_exclusive(dd_schema_name.c_str())) {
+    DBUG_PRINT("error", ("Failed to acquire exclusive lock on schema '%s'",
                          schema_name));
     return false;
   }
 
-  if (!dd_client.update_schema_version(schema_name, counter, node_id)) {
+  if (!dd_client.update_schema_version(dd_schema_name.c_str(), counter,
+                                       node_id)) {
     return false;
   }
 
@@ -154,17 +161,20 @@ bool ndb_dd_has_local_tables_in_schema(THD *thd, const char *schema_name,
              ("Checking if schema '%s' has local tables", schema_name));
 
   Ndb_dd_client dd_client(thd);
+  /* Convert the schema name to lower case on platforms that have
+     lower_case_table_names set to 2 */
+  const std::string dd_schema_name = ndb_dd_fs_name_case(schema_name);
 
   /* Lock the schema in DD */
-  if (!dd_client.mdl_lock_schema(schema_name)) {
-    DBUG_PRINT("error", ("Failed to MDL lock schema : '%s'", schema_name));
+  if (!dd_client.mdl_lock_schema(dd_schema_name.c_str())) {
+    DBUG_PRINT("error", ("Failed to acquire MDL on schema '%s'", schema_name));
     return false;
   }
 
   /* Check if there are any local tables */
-  if (!dd_client.have_local_tables_in_schema(schema_name,
+  if (!dd_client.have_local_tables_in_schema(dd_schema_name.c_str(),
                                              &tables_exist_in_database)) {
-    DBUG_PRINT("error", ("Failed to check if the Schema '%s' has any tables",
+    DBUG_PRINT("error", ("Failed to check if the schema '%s' has local tables",
                          schema_name));
     return false;
   }
@@ -177,4 +187,128 @@ const std::string ndb_dd_fs_name_case(const dd::String_type &name) {
   const std::string lc_name =
       dd::Object_table_definition_impl::fs_name_case(name, name_buf);
   return lc_name;
+}
+
+bool ndb_dd_get_schema_uuid(THD *thd, dd::String_type *dd_schema_uuid) {
+  DBUG_TRACE;
+  Ndb_dd_client dd_client(thd);
+
+  const char *schema_name = Ndb_schema_dist_table::DB_NAME.c_str();
+  const char *table_name = Ndb_schema_dist_table::TABLE_NAME.c_str();
+
+  // Lock the table for reading schema uuid
+  if (!dd_client.mdl_lock_table(schema_name, table_name)) {
+    DBUG_PRINT("error",
+               ("Failed to lock `%s.%s` in DD.", schema_name, table_name));
+    return false;
+  }
+
+  // Retrieve the schema uuid stored in the ndb_schema table in DD
+  if (!dd_client.get_schema_uuid(dd_schema_uuid)) {
+    DBUG_PRINT("error", ("Failed to read schema UUID from DD"));
+    return false;
+  }
+
+  return true;
+}
+
+bool ndb_dd_update_schema_uuid(THD *thd, const std::string &ndb_schema_uuid) {
+  DBUG_TRACE;
+  Ndb_dd_client dd_client(thd);
+
+  const char *schema_name = Ndb_schema_dist_table::DB_NAME.c_str();
+  const char *table_name = Ndb_schema_dist_table::TABLE_NAME.c_str();
+
+  // Acquire exclusive locks on the table
+  if (!dd_client.mdl_locks_acquire_exclusive(schema_name, table_name)) {
+    DBUG_PRINT("error", ("Failed to acquire exclusive lock `%s.%s` in DD.",
+                         schema_name, table_name));
+    return false;
+  }
+
+  // Update the schema UUID in DD
+  if (!dd_client.update_schema_uuid(ndb_schema_uuid.c_str())) {
+    DBUG_PRINT("error", ("Failed to update schema uuid in DD."));
+    return false;
+  }
+
+  // Commit the change into DD and return
+  dd_client.commit();
+  return true;
+}
+
+/**
+  Extract all the foreign key constraint definitions on the given table from
+  NDB and install them in the DD table.
+
+  @param dd_table_def[out]    The DD table object on which the foreign keys
+                              are to be defined.
+  @param ndb                  The Ndb object.
+  @param ndb_table            The NDB table object from which the foreign key
+                              definitions are to be extracted.
+
+  @return true        On success.
+  @return false       On failure
+*/
+bool ndb_dd_upgrade_foreign_keys(dd::Table *dd_table_def, Ndb *ndb,
+                                 const NdbDictionary::Table *ndb_table) {
+  DBUG_TRACE;
+
+  // Retrieve the foreign key list
+  Ndb_fk_list fk_list;
+  if (!retrieve_foreign_key_list_from_ndb(ndb->getDictionary(), ndb_table,
+                                          &fk_list)) {
+    return false;
+  }
+
+  // Loop all foreign keys and add them to the dd table object
+  for (const NdbDictionary::ForeignKey &ndb_fk : fk_list) {
+    char child_schema_name[FN_REFLEN + 1];
+    const char *child_table_name =
+        fk_split_name(child_schema_name, ndb_fk.getChildTable());
+    if (strcmp(child_schema_name, ndb->getDatabaseName()) != 0 ||
+        strcmp(child_table_name, ndb_table->getName())) {
+      // The FK is just referencing the table. Skip it.
+      // It will be handled by the table on which it exists.
+      continue;
+    }
+
+    // Add the foreign key to the DD table
+    dd::Foreign_key *dd_fk_def = dd_table_def->add_foreign_key();
+
+    // Open the parent table from NDB
+    char parent_schema_name[FN_REFLEN + 1];
+    const char *parent_table_name =
+        fk_split_name(parent_schema_name, ndb_fk.getParentTable());
+    if (strcmp(child_schema_name, parent_schema_name) == 0 &&
+        strcmp(child_table_name, parent_table_name) == 0) {
+      // Self referencing foreign key.
+      // Use the child table as parent and update the foreign key information.
+      if (!ndb_dd_fk_set_values_from_ndb(dd_fk_def, dd_table_def, ndb_fk,
+                                         ndb_table, ndb_table,
+                                         parent_schema_name)) {
+        return false;
+      }
+    } else {
+      Ndb_table_guard ndb_parent_table_guard(ndb, parent_schema_name,
+                                             parent_table_name);
+      const NdbDictionary::Table *ndb_parent_table =
+          ndb_parent_table_guard.get_table();
+      if (ndb_parent_table == nullptr) {
+        DBUG_PRINT("error",
+                   ("Unable to load table '%s.%s' from ndb. Error : %s",
+                    parent_schema_name, parent_table_name,
+                    ndb->getDictionary()->getNdbError().message));
+        return false;
+      }
+
+      // Update the foreign key information
+      if (!ndb_dd_fk_set_values_from_ndb(dd_fk_def, dd_table_def, ndb_fk,
+                                         ndb_table, ndb_parent_table,
+                                         parent_schema_name)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }

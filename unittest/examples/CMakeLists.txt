@@ -20,6 +20,9 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+# Warnings about missing PGO profile data are not useful for unit tests.
+DISABLE_MISSING_PROFILE_WARNING()
+
 # We omit core-t here, since it will always fail.
 SET(TESTS simple skip todo skip_all no_plan)
 FOREACH(test ${TESTS})

@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,7 +97,9 @@ const char *info_rli_fields[] = {"number_of_lines",
                                  "id",
                                  "channel_name",
                                  "privilege_checks_user",
-                                 "privilege_checks_hostname"};
+                                 "privilege_checks_hostname",
+                                 "require_row_format",
+                                 "require_table_primary_key_check"};
 
 Relay_log_info::Relay_log_info(bool is_slave_recovery,
 #ifdef HAVE_PSI_INTERFACE
@@ -121,12 +123,14 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
 #endif
                param_id, param_channel),
       replicate_same_server_id(::replicate_same_server_id),
-      relay_log(&sync_relaylog_period),
+      relay_log(&sync_relaylog_period, true),
       is_relay_log_recovery(is_slave_recovery),
       save_temporary_tables(nullptr),
       mi(nullptr),
       error_on_rli_init_info(false),
       gtid_timestamps_warning_logged(false),
+      transaction_parser(
+          Transaction_boundary_parser::TRX_BOUNDARY_PARSER_APPLIER),
       group_relay_log_pos(0),
       event_relay_log_number(0),
       event_relay_log_pos(0),
@@ -138,9 +142,11 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       m_privilege_checks_username{""},
       m_privilege_checks_hostname{""},
       m_privilege_checks_user_corrupted{false},
+      m_require_row_format(false),
+      m_require_table_primary_key_check(PK_CHECK_STREAM),
       is_group_master_log_pos_invalid(false),
       log_space_total(0),
-      ignore_log_space_limit(0),
+      ignore_log_space_limit(false),
       sql_force_rotate_relay(false),
       last_master_timestamp(0),
       slave_skip_counter(0),
@@ -168,7 +174,7 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       recovery_groups_inited(false),
       mts_recovery_group_cnt(0),
       mts_recovery_index(0),
-      mts_recovery_group_seen_begin(0),
+      mts_recovery_group_seen_begin(false),
       mts_group_status(MTS_NOT_IN_GROUP),
       stats_exec_time(0),
       stats_read_time(0),
@@ -472,13 +478,13 @@ int Relay_log_info::count_relay_log_space() {
   DBUG_TRACE;
   MUTEX_LOCK(lock, &log_space_lock);
   log_space_total = 0;
-  if (relay_log.find_log_pos(&flinfo, NullS, 1)) {
+  if (relay_log.find_log_pos(&flinfo, NullS, true)) {
     LogErr(ERROR_LEVEL, ER_RPL_LOG_NOT_FOUND_WHILE_COUNTING_RELAY_LOG_SPACE);
     return 1;
   }
   do {
     if (add_relay_log(this, &flinfo)) return 1;
-  } while (!relay_log.find_next_log(&flinfo, 1));
+  } while (!relay_log.find_next_log(&flinfo, true));
   /*
      As we have counted everything, including what may have written in a
      preceding write, we must reset bytes_written, or we may count some space
@@ -493,7 +499,7 @@ bool Relay_log_info::reset_group_relay_log_pos(const char **errmsg) {
 
   mysql_mutex_assert_owner(&data_lock);
 
-  if (relay_log.find_log_pos(&linfo, NullS, 1)) {
+  if (relay_log.find_log_pos(&linfo, NullS, true)) {
     *errmsg = "Could not find first log during relay log initialization";
     return true;
   }
@@ -508,8 +514,8 @@ bool Relay_log_info::is_group_relay_log_name_invalid(const char **errmsg) {
   static char errmsg_buff[MYSQL_ERRMSG_SIZE + FN_REFLEN];
   LOG_INFO linfo;
 
-  *errmsg = 0;
-  if (relay_log.find_log_pos(&linfo, group_relay_log_name, 1)) {
+  *errmsg = nullptr;
+  if (relay_log.find_log_pos(&linfo, group_relay_log_name, true)) {
     errmsg_fmt =
         "Could not find target log file mentioned in "
         "relay log info in the index file '%s' during "
@@ -1086,7 +1092,7 @@ int Relay_log_info::purge_relay_logs(THD *thd, const char **errmsg,
         log_index_name = add_channel_to_relay_log_name(
             relay_bin_index_channel, FN_REFLEN, index_file_withoutext);
       } else
-        log_index_name = 0;
+        log_index_name = nullptr;
 
       if (relay_log.open_index_file(log_index_name, ln, true)) {
         LogErr(ERROR_LEVEL, ER_SLAVE_RELAY_LOG_PURGE_FAILED,
@@ -1097,7 +1103,7 @@ int Relay_log_info::purge_relay_logs(THD *thd, const char **errmsg,
       mysql_mutex_lock(&mi->data_lock);
       mysql_mutex_lock(log_lock);
       if (relay_log.open_binlog(
-              ln, 0,
+              ln, nullptr,
               (max_relay_log_size ? max_relay_log_size : max_binlog_size), true,
               true /*need_lock_index=true*/, true /*need_sid_lock=true*/,
               mi->get_mi_description_event())) {
@@ -1202,9 +1208,9 @@ bool Relay_log_info::cached_charset_compare(char *charset) const {
 
   if (memcmp(cached_charset, charset, sizeof(cached_charset))) {
     memcpy(const_cast<char *>(cached_charset), charset, sizeof(cached_charset));
-    return 1;
+    return true;
   }
-  return 0;
+  return false;
 }
 
 int Relay_log_info::stmt_done(my_off_t event_master_log_pos) {
@@ -1499,7 +1505,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
   abort_pos_wait = 0;
   log_space_limit = relay_log_space_limit;
   log_space_total = 0;
-  tables_to_lock = 0;
+  tables_to_lock = nullptr;
   tables_to_lock_count = 0;
 
   char pattern[FN_REFLEN];
@@ -1563,7 +1569,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       --relay-log option.
     */
     const char *ln_without_channel_name;
-    static bool name_warning_sent = 0;
+    static bool name_warning_sent = false;
 
     /*
       Buffer to add channel name suffix when relay-log option is provided.
@@ -1577,7 +1583,6 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     /* name of the index file if opt_relaylog_index_name is set*/
     const char *log_index_name;
 
-    relay_log.is_relay_log = true;
     ln_without_channel_name =
         relay_log.generate_name(opt_relay_logname, "-relay-bin", buf);
 
@@ -1596,7 +1601,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       */
       LogErr(WARNING_LEVEL, ER_RPL_PLEASE_USE_OPTION_RELAY_LOG,
              ln_without_channel_name);
-      name_warning_sent = 1;
+      name_warning_sent = true;
     }
 
     /*
@@ -1612,7 +1617,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       log_index_name = add_channel_to_relay_log_name(
           relay_bin_index_channel, FN_REFLEN, index_file_withoutext);
     } else
-      log_index_name = 0;
+      log_index_name = nullptr;
 
     if (relay_log.open_index_file(log_index_name, ln, true)) {
       LogErr(ERROR_LEVEL, ER_RPL_OPEN_INDEX_FILE_FAILED);
@@ -1670,8 +1675,9 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     mysql_mutex_lock(log_lock);
 
     if (relay_log.open_binlog(
-            ln, 0, (max_relay_log_size ? max_relay_log_size : max_binlog_size),
-            true, true /*need_lock_index=true*/, true /*need_sid_lock=true*/,
+            ln, nullptr,
+            (max_relay_log_size ? max_relay_log_size : max_binlog_size), true,
+            true /*need_lock_index=true*/, true /*need_sid_lock=true*/,
             mi->get_mi_description_event())) {
       mysql_mutex_unlock(log_lock);
       LogErr(ERROR_LEVEL, ER_RPL_CANT_OPEN_LOG_IN_RLI_INIT_INFO);
@@ -1698,7 +1704,56 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     goto err;
   }
 
-  if (check_return == REPOSITORY_DOES_NOT_EXIST) {
+  check_return = check_if_info_was_cleared(check_return);
+
+  if (check_return & REPOSITORY_EXISTS) {
+    if (read_info(handler)) {
+      msg = "Error reading relay log configuration";
+      error = 1;
+      goto err;
+    }
+
+    if (clone_startup) {
+      char *channel_name =
+          (const_cast<Relay_log_info *>(mi->rli))->get_channel();
+      bool is_group_replication_applier_channel =
+          channel_map.is_group_replication_channel_name(channel_name);
+      if (is_group_replication_applier_channel) {
+        if (clear_info()) {
+          msg =
+              "Error cleaning relay log configuration for group replication "
+              "after clone";
+          error = 1;
+          goto err;
+        }
+        if (Rpl_info_factory::reset_workers(this)) {
+          msg =
+              "Error cleaning relay log worker configuration for group "
+              "replication after clone";
+          error = 1;
+          goto err;
+        }
+        check_return = REPOSITORY_CLEARED;
+      } else {
+        if (!is_relay_log_recovery) {
+          LogErr(WARNING_LEVEL, ER_RPL_RELAY_LOG_RECOVERY_INFO_AFTER_CLONE,
+                 channel_name);
+          // After a clone if we detect information is present we always invoke
+          // relay log recovery. Not doing so would probably mean failure at
+          // initialization due to missing relay log files.
+          if (init_recovery(mi)) {
+            msg = "Error on the relay log recovery after a clone operation";
+            error = 1;
+            goto err;
+          }
+        }
+      }
+    }
+  }
+
+  if (check_return == REPOSITORY_DOES_NOT_EXIST ||  // Hasn't been initialized
+      check_return == REPOSITORY_CLEARED  // Was initialized but was RESET
+  ) {
     /* Init relay log with first entry in the relay index file */
     if (reset_group_relay_log_pos(&msg)) {
       error = 1;
@@ -1707,12 +1762,6 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     group_master_log_name[0] = 0;
     group_master_log_pos = 0;
   } else {
-    if (read_info(handler)) {
-      msg = "Error reading relay log configuration";
-      error = 1;
-      goto err;
-    }
-
     if (is_relay_log_recovery && init_recovery(mi)) {
       error = 1;
       goto err;
@@ -1726,7 +1775,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     }
   }
 
-  inited = 1;
+  inited = true;
   error_on_rli_init_info = false;
   if (flush_info(true)) {
     msg = "Error reading relay log configuration";
@@ -1749,7 +1798,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
 
 err:
   handler->end_info();
-  inited = 0;
+  inited = false;
   error_on_rli_init_info = true;
   if (msg) LogErr(ERROR_LEVEL, ER_RPL_RLI_INIT_INFO_MSG, msg);
   relay_log.close(LOG_CLOSE_INDEX | LOG_CLOSE_STOP_EVENT,
@@ -1765,7 +1814,7 @@ void Relay_log_info::end_info() {
 
   handler->end_info();
 
-  inited = 0;
+  inited = false;
   relay_log.close(LOG_CLOSE_INDEX | LOG_CLOSE_STOP_EVENT,
                   true /*need_lock_log=true*/, true /*need_lock_index=true*/);
   relay_log.harvest_bytes_written(this, true /*need_log_space_lock=true*/);
@@ -1868,16 +1917,90 @@ err:
   return 1;
 }
 
+enum_return_check Relay_log_info::check_if_info_was_cleared(
+    const enum_return_check &previous_result) const {
+  enum_return_check result = previous_result;
+
+  if (result == REPOSITORY_EXISTS) {
+    char number_of_lines[FN_REFLEN] = {0};
+
+    if (this->handler->prepare_info_for_read() ||
+        !!this->handler->get_info(number_of_lines, sizeof(number_of_lines), ""))
+      return ERROR_CHECKING_REPOSITORY;
+
+    char *first_non_digit{nullptr};
+    int lines = strtoul(number_of_lines, &first_non_digit, 10);
+
+    if (number_of_lines[0] != '\0' && *first_non_digit == '\0' &&
+        lines >= LINES_IN_RELAY_LOG_INFO_WITH_REQUIRE_ROW_FORMAT) {
+      char log_name[FN_REFLEN] = {0};
+
+      if (this->handler->get_info(log_name, sizeof(log_name), "") ==
+          Rpl_info_handler::enum_field_get_status::FAILURE)
+        return ERROR_CHECKING_REPOSITORY;
+
+      if (log_name[0] == '\0') return REPOSITORY_CLEARED;
+    }
+  }
+  return result;
+}
+
+bool Relay_log_info::clear_info() {
+  this->handler->init_info();
+
+  if (this->handler->prepare_info_for_write() ||
+      this->handler->set_info((int)MAXIMUM_LINES_IN_RELAY_LOG_INFO_FILE) ||
+      this->handler->set_info(nullptr) || this->handler->set_info(nullptr) ||
+      this->handler->set_info(nullptr) || this->handler->set_info(nullptr) ||
+      this->handler->set_info(nullptr) || this->handler->set_info(nullptr) ||
+      this->handler->set_info(nullptr) ||
+      this->handler->set_info(this->channel))
+    return true;
+
+  if (this->m_privilege_checks_username.length() != 0) {
+    if (this->handler->set_info(this->m_privilege_checks_username.c_str()))
+      return true;
+  } else {
+    if (this->handler->set_info(nullptr)) {
+      return true;
+    }
+  }
+  if (this->m_privilege_checks_hostname.length() != 0) {
+    if (this->handler->set_info(this->m_privilege_checks_hostname.c_str()))
+      return true;
+  } else {
+    if (this->handler->set_info(nullptr)) return true;
+  }
+
+  if (this->handler->set_info(this->m_require_row_format)) return true;
+
+  if (DBUG_EVALUATE_IF("rpl_rli_clear_info_error", true, false) ||
+      this->handler->set_info((ulong)this->m_require_table_primary_key_check))
+    return true;
+
+  if (this->handler->flush_info(true)) return true;
+
+  this->group_relay_log_name[0] = '\0';
+  this->group_relay_log_pos = 0;
+  this->group_master_log_name[0] = '\0';
+  this->group_master_log_pos = 0;
+  this->sql_delay = 0;
+  this->recovery_parallel_workers = 0;
+  this->internal_id = 1;
+
+  return false;
+}
+
 size_t Relay_log_info::get_number_info_rli_fields() {
   return sizeof(info_rli_fields) / sizeof(info_rli_fields[0]);
 }
 
 void Relay_log_info::set_nullable_fields(MY_BITMAP *nullable_fields) {
   bitmap_init(nullable_fields, nullptr,
-              Relay_log_info::get_number_info_rli_fields(), false);
-  bitmap_clear_all(nullable_fields);
-  bitmap_set_bit(nullable_fields, 9);
-  bitmap_set_bit(nullable_fields, 10);
+              Relay_log_info::get_number_info_rli_fields());
+  bitmap_set_all(nullable_fields);       // All fields may be NULL except for
+  bitmap_clear_bit(nullable_fields, 0);  // NUMBER_OF_LINES and
+  bitmap_clear_bit(nullable_fields, 8);  // CHANNEL_NAME
 }
 
 void Relay_log_info::start_sql_delay(time_t delay_end) {
@@ -1893,6 +2016,10 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
   ulong temp_group_master_log_pos = 0;
   int temp_sql_delay = 0;
   int temp_internal_id = internal_id;
+  int temp_require_row_format = 0;
+  ulong temp_require_table_primary_key_check = Relay_log_info::PK_CHECK_STREAM;
+  Rpl_info_handler::enum_field_get_status status{
+      Rpl_info_handler::enum_field_get_status::FAILURE};
 
   DBUG_TRACE;
 
@@ -1943,28 +2070,40 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
   if (group_relay_log_name[0] != '\0' && *first_non_digit == '\0' &&
       lines >= LINES_IN_RELAY_LOG_INFO_WITH_DELAY) {
     /* Seems to be new format => read group relay log name */
-    if (!!from->get_info(group_relay_log_name, sizeof(group_relay_log_name),
-                         ""))
-      return true;
+    status =
+        from->get_info(group_relay_log_name, sizeof(group_relay_log_name), "");
+    if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
+    if (status == Rpl_info_handler::enum_field_get_status::FIELD_VALUE_IS_NULL)
+      group_relay_log_name[0] = '\0';
   } else
     DBUG_PRINT("info", ("relay_log_info file is in old format."));
 
-  if (!!from->get_info(&temp_group_relay_log_pos, (ulong)BIN_LOG_HEADER_SIZE) ||
-      !!from->get_info(group_master_log_name, sizeof(group_relay_log_name),
-                       "") ||
-      !!from->get_info(&temp_group_master_log_pos, 0UL))
-    return true;
+  status =
+      from->get_info(&temp_group_relay_log_pos, (ulong)BIN_LOG_HEADER_SIZE);
+  if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
+
+  status =
+      from->get_info(group_master_log_name, sizeof(group_master_log_name), "");
+  if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
+  if (status == Rpl_info_handler::enum_field_get_status::FIELD_VALUE_IS_NULL)
+    group_master_log_name[0] = '\0';
+
+  status = from->get_info(&temp_group_master_log_pos, 0UL);
+  if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
 
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_DELAY) {
-    if (!!from->get_info(&temp_sql_delay, 0)) return true;
+    status = from->get_info(&temp_sql_delay, 0);
+    if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
   }
 
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_WORKERS) {
-    if (!!from->get_info(&recovery_parallel_workers, 0UL)) return true;
+    status = from->get_info(&recovery_parallel_workers, 0UL);
+    if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
   }
 
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_ID) {
-    if (!!from->get_info(&temp_internal_id, 1)) return true;
+    status = from->get_info(&temp_internal_id, 1);
+    if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
   }
 
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_CHANNEL) {
@@ -1979,9 +2118,8 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
   char temp_privilege_checks_username[PRIV_CHECKS_USERNAME_LENGTH + 4] = {0};
   char *username = nullptr;
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_PRIV_CHECKS_USERNAME) {
-    Rpl_info_handler::enum_field_get_status status =
-        from->get_info(temp_privilege_checks_username,
-                       PRIV_CHECKS_USERNAME_LENGTH + 1, nullptr);
+    status = from->get_info(temp_privilege_checks_username,
+                            PRIV_CHECKS_USERNAME_LENGTH + 1, nullptr);
     if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
     if (status == Rpl_info_handler::enum_field_get_status::FIELD_VALUE_NOT_NULL)
       username = temp_privilege_checks_username;
@@ -1994,13 +2132,30 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
   char temp_privilege_checks_hostname[PRIV_CHECKS_HOSTNAME_LENGTH + 4] = {0};
   char *hostname = nullptr;
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_PRIV_CHECKS_HOSTNAME) {
-    Rpl_info_handler::enum_field_get_status status =
-        from->get_info(temp_privilege_checks_hostname,
-                       PRIV_CHECKS_HOSTNAME_LENGTH + 1, nullptr);
+    status = from->get_info(temp_privilege_checks_hostname,
+                            PRIV_CHECKS_HOSTNAME_LENGTH + 1, nullptr);
     if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
     if (status == Rpl_info_handler::enum_field_get_status::FIELD_VALUE_NOT_NULL)
       hostname = temp_privilege_checks_hostname;
   }
+
+  if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_REQUIRE_ROW_FORMAT) {
+    if (!!from->get_info(&temp_require_row_format, 0)) return true;
+  } else {
+    if (channel_map.is_group_replication_channel_name(channel))
+      temp_require_row_format = 1;
+  }
+  m_require_row_format = temp_require_row_format;
+
+  if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_REQUIRE_TABLE_PRIMARY_KEY_CHECK) {
+    if (!!from->get_info(&temp_require_table_primary_key_check, 1)) return true;
+  }
+  if (temp_require_table_primary_key_check < PK_CHECK_STREAM ||
+      temp_require_table_primary_key_check > Relay_log_info::PK_CHECK_OFF)
+    return true;
+  m_require_table_primary_key_check =
+      static_cast<Relay_log_info::enum_require_table_primary_key>(
+          temp_require_table_primary_key_check);
 
   group_relay_log_pos = temp_group_relay_log_pos;
   group_master_log_pos = temp_group_master_log_pos;
@@ -2029,6 +2184,7 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
                                  hostname);
     return true;
   }
+
   return false;
 }
 
@@ -2082,6 +2238,14 @@ bool Relay_log_info::write_info(Rpl_info_handler *to) {
 #endif
         if (to->set_info(nullptr))
       return true;
+  }
+
+  if (to->set_info((int)m_require_row_format)) {
+    return true; /* purecov: inspected */
+  }
+
+  if (to->set_info((ulong)m_require_table_primary_key_check)) {
+    return true; /* purecov: inspected */
   }
   return false;
 }
@@ -2659,6 +2823,10 @@ bool operator!(Relay_log_info::enum_priv_checks_status status) {
   return status == Relay_log_info::enum_priv_checks_status::SUCCESS;
 }
 
+bool operator!(Relay_log_info::enum_require_row_status status) {
+  return status == Relay_log_info::enum_require_row_status::SUCCESS;
+}
+
 std::string Relay_log_info::get_privilege_checks_username() const {
   return this->m_privilege_checks_username;
 }
@@ -2980,6 +3148,26 @@ Relay_log_info::initialize_applier_security_context() {
   return this->initialize_security_context(this->info_thd);
 }
 
+bool Relay_log_info::is_row_format_required() const {
+  return this->m_require_row_format;
+}
+
+void Relay_log_info::set_require_row_format(bool require_row) {
+  DBUG_TRACE;
+  this->m_require_row_format = require_row;
+}
+
+Relay_log_info::enum_require_table_primary_key
+Relay_log_info::get_require_table_primary_key_check() const {
+  return this->m_require_table_primary_key_check;
+}
+
+void Relay_log_info::set_require_table_primary_key_check(
+    Relay_log_info::enum_require_table_primary_key require_pk) {
+  DBUG_TRACE;
+  this->m_require_table_primary_key_check = require_pk;
+}
+
 MDL_lock_guard::MDL_lock_guard(THD *target) : m_target{target} { DBUG_TRACE; }
 
 MDL_lock_guard::MDL_lock_guard(THD *target,
@@ -3163,7 +3351,8 @@ void Applier_security_context_guard::extract_columns_to_check(
   else
     return;
 
-  for (size_t idx = 0; idx != table->s->fields; ++idx) {
+  size_t max = std::min(bitmap->n_bits, table->s->fields);
+  for (size_t idx = 0; idx != max; ++idx) {
     if (bitmap_is_set(bitmap, idx)) {
       columns.push_back(table->field[idx]->field_name);
     }

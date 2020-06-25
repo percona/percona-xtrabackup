@@ -27,26 +27,23 @@
 
 #include "plugin/x/client/xconnection_impl.h"
 
-#include "my_config.h"
-#include "my_dbug.h"
-
 #include <errno.h>
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
 #endif  // HAVE_NETINET_IN_H
-#ifdef HAVE_OPENSSL
 #include <openssl/x509v3.h>
-#endif  // HAVE_OPENSSL
 #include <cassert>
-#include <chrono>
-#include <future>
+#include <chrono>  // NOLINT(build/c++11)
+#include <future>  // NOLINT(build/c++11)
 #include <limits>
 #include <sstream>
 #include <string>
 
-#include "errmsg.h"
-#include "my_macros.h"
-#include "scope_guard.h"
+#include "errmsg.h"       // NOLINT(build/include_subdir)
+#include "my_config.h"    // NOLINT(build/include_subdir)
+#include "my_dbug.h"      // NOLINT(build/include_subdir)
+#include "my_macros.h"    // NOLINT(build/include_subdir)
+#include "scope_guard.h"  // NOLINT(build/include_subdir)
 
 #include "plugin/x/client/context/xconnection_config.h"
 #include "plugin/x/client/context/xssl_config.h"
@@ -61,12 +58,6 @@
 #ifdef HAVE_SYS_UN_H
 #include <sys/un.h>
 #endif  // HAVE_SYS_UN_H
-
-#ifdef HAVE_OPENSSL
-#define HAVE_SSL(Y, N) Y
-#else
-#define HAVE_SSL(Y, N) N
-#endif  // HAVE_OPENSSL
 
 #ifdef WIN32
 #define SHUT_RD SD_RECEIVE
@@ -113,15 +104,13 @@ class Connection_state : public XConnection::State {
   std::string get_ssl_version() const override {
     if (nullptr == m_vio->ssl_arg) return "";
 
-    return HAVE_SSL(SSL_get_version(reinterpret_cast<SSL *>(m_vio->ssl_arg)),
-                    "");
+    return SSL_get_version(reinterpret_cast<SSL *>(m_vio->ssl_arg));
   }
 
   std::string get_ssl_cipher() const override {
     if (nullptr == m_vio->ssl_arg) return "";
 
-    return HAVE_SSL(SSL_get_cipher(reinterpret_cast<SSL *>(m_vio->ssl_arg)),
-                    "");
+    return SSL_get_cipher(reinterpret_cast<SSL *>(m_vio->ssl_arg));
   }
 
   Connection_type get_connection_type() const override {
@@ -187,8 +176,9 @@ XError ssl_verify_server_cert(Vio *vio, const std::string &server_hostname) {
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
   const int check_result_for_ip =
       X509_check_ip_asc(server_cert, server_hostname.c_str(), 0);
-  const int check_result_for_host = X509_check_host(
-      server_cert, server_hostname.c_str(), server_hostname.length(), 0, 0);
+  const int check_result_for_host =
+      X509_check_host(server_cert, server_hostname.c_str(),
+                      server_hostname.length(), 0, nullptr);
   if ((check_result_for_host != 1) && (check_result_for_ip != 1)) {
     return XError{
         CR_SSL_CONNECTION_ERROR,
@@ -344,7 +334,7 @@ XError Connection_impl::connect(const std::string &host, const uint16_t port,
 
   const auto timeout = m_context->m_connection_config.m_timeout_session_connect;
   const auto delay = std::chrono::milliseconds(
-      timeout > 0 ? timeout : std::numeric_limits<std::int32_t>::max());
+      timeout > 0 ? timeout : std::numeric_limits<int32_t>::max());
   if (addr_future.wait_for(delay) == std::future_status::timeout) {
     return XError(CR_X_SESSION_CONNECT_TIMEOUT,
                   "Session_connect_timeout limit exceeded", true);
@@ -539,7 +529,8 @@ XError Connection_impl::get_ssl_error(const int error_id) {
     @retval non 1 for Error
     @retval 1 Success
 */
-int set_fips_mode(const uint fips_mode, char err_string[OPENSSL_ERROR_LENGTH]) {
+int set_fips_mode(const uint32_t fips_mode,
+                  char err_string[OPENSSL_ERROR_LENGTH]) {
   int rc = -1;
   unsigned int fips_mode_old = -1;
   unsigned long err_library = 0;
@@ -570,8 +561,9 @@ XError Connection_impl::activate_tls() {
     return XError{CR_SSL_CONNECTION_ERROR, ER_TEXT_TLS_NOT_CONFIGURATED, true};
 
   char err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
-  if (set_fips_mode(static_cast<int>(m_context->m_ssl_config.m_ssl_fips_mode),
-                    err_string) != 1) {
+  if (set_fips_mode(
+          static_cast<uint32_t>(m_context->m_ssl_config.m_ssl_fips_mode),
+          err_string) != 1) {
     return XError{CR_SSL_CONNECTION_ERROR, err_string, true};
   }
   auto ssl_ctx_flags = process_tls_version(
@@ -582,7 +574,7 @@ XError Connection_impl::activate_tls() {
       details::null_when_empty(m_context->m_ssl_config.m_cert),
       details::null_when_empty(m_context->m_ssl_config.m_ca),
       details::null_when_empty(m_context->m_ssl_config.m_ca_path),
-      details::null_when_empty(m_context->m_ssl_config.m_cipher), NULL,
+      details::null_when_empty(m_context->m_ssl_config.m_cipher), nullptr,
       &m_ssl_init_error,
       details::null_when_empty(m_context->m_ssl_config.m_crl),
       details::null_when_empty(m_context->m_ssl_config.m_crl_path),
@@ -619,6 +611,7 @@ XError Connection_impl::shutdown(const Shutdown_type how_to_shutdown) {
 
 XError Connection_impl::write(const uint8_t *data,
                               const std::size_t data_length) {
+  DBUG_DUMP("Connection_impl", data, data_length);
   std::size_t left_data_to_write = data_length;
   const unsigned char *data_to_send = (const unsigned char *)data;
 

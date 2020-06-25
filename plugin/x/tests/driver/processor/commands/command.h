@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -112,6 +112,8 @@ class Command {
   Result cmd_recv_all_until_disc(std::istream &input,
                                  Execution_context *context,
                                  const std::string &args);
+  Result cmd_enable_compression(std::istream &input, Execution_context *context,
+                                const std::string &args);
   Result cmd_peerdisc(std::istream &input, Execution_context *context,
                       const std::string &args);
   Result cmd_recv(std::istream &input, Execution_context *context,
@@ -201,6 +203,8 @@ class Command {
                    const std::string &args);
   Result cmd_noquery(std::istream &input, Execution_context *context,
                      const std::string &args);
+  Result cmd_compress(std::istream &input, Execution_context *context,
+                      const std::string &args);
   Result cmd_wait_for(std::istream &input, Execution_context *context,
                       const std::string &args);
   Result cmd_import(std::istream &input, Execution_context *context,
@@ -263,7 +267,8 @@ class Command {
     context->print_error("Where argument0='", vargs[0], "', argument1='",
                          vargs[1], "'\n");
 
-    return Result::Stop_with_failure;
+    return context->m_options.m_fatal_errors ? Result::Stop_with_failure
+                                             : Result::Continue;
   }
 };
 

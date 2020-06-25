@@ -167,10 +167,9 @@ dberr_t PageBulk::init() {
 @param[in]  tuple     tuple to insert
 @param[in]  big_rec   external record
 @param[in]  rec_size  record size
-@param[in]  n_ext     number of externally stored columns
 @return error code */
 dberr_t PageBulk::insert(const dtuple_t *tuple, const big_rec_t *big_rec,
-                         ulint rec_size, ulint n_ext) {
+                         ulint rec_size) {
   ulint *offsets = nullptr;
 
   DBUG_EXECUTE_IF("BtrBulk_insert_inject_error", return DB_INTERRUPTED;);
@@ -178,7 +177,7 @@ dberr_t PageBulk::insert(const dtuple_t *tuple, const big_rec_t *big_rec,
   /* Convert tuple to record. */
   byte *rec_mem = static_cast<byte *>(mem_heap_alloc(m_heap, rec_size));
 
-  rec_t *rec = rec_convert_dtuple_to_rec(rec_mem, m_index, tuple, n_ext);
+  rec_t *rec = rec_convert_dtuple_to_rec(rec_mem, m_index, tuple);
   offsets = rec_get_offsets(rec, m_index, offsets, ULINT_UNDEFINED, &m_heap);
 
   /* Insert the record.*/
@@ -214,9 +213,11 @@ void PageBulk::insert(const rec_t *rec, ulint *offsets) {
     ulint *old_offsets =
         rec_get_offsets(old_rec, m_index, nullptr, ULINT_UNDEFINED, &m_heap);
 
-    ut_ad(cmp_rec_rec(rec, old_rec, offsets, old_offsets, m_index) > 0 ||
+    ut_ad(cmp_rec_rec(rec, old_rec, offsets, old_offsets, m_index,
+                      page_is_spatial_non_leaf(old_rec, m_index)) > 0 ||
           (m_index->is_multi_value() &&
-           cmp_rec_rec(rec, old_rec, offsets, old_offsets, m_index) >= 0));
+           cmp_rec_rec(rec, old_rec, offsets, old_offsets, m_index,
+                       page_is_spatial_non_leaf(old_rec, m_index)) >= 0));
   }
 
   m_total_data += rec_size;
@@ -889,10 +890,9 @@ dberr_t BtrBulk::prepareSpace(PageBulk *&page_bulk, ulint level,
 @param[in]  big_rec     big record vector, could be nullptr if there is no
                         data to be stored externally.
 @param[in]  rec_size    record size
-@param[in]  n_ext       number of externally stored columns
 @return error code */
 dberr_t BtrBulk::insert(PageBulk *page_bulk, dtuple_t *tuple,
-                        big_rec_t *big_rec, ulint rec_size, ulint n_ext) {
+                        big_rec_t *big_rec, ulint rec_size) {
   dberr_t err = DB_SUCCESS;
 
   if (big_rec != nullptr) {
@@ -908,7 +908,7 @@ dberr_t BtrBulk::insert(PageBulk *page_bulk, dtuple_t *tuple,
     }
   }
 
-  err = page_bulk->insert(tuple, big_rec, rec_size, n_ext);
+  err = page_bulk->insert(tuple, big_rec, rec_size);
 
   if (big_rec != nullptr) {
     /* Restore latches */
@@ -964,19 +964,18 @@ dberr_t BtrBulk::insert(dtuple_t *tuple, ulint level) {
                          dtuple_get_info_bits(tuple) | REC_INFO_MIN_REC_FLAG);
   }
 
-  ulint n_ext = 0;
-  ulint rec_size = rec_get_converted_size(m_index, tuple, n_ext);
+  ulint rec_size = rec_get_converted_size(m_index, tuple);
   big_rec_t *big_rec = nullptr;
 
   if (page_bulk->needExt(tuple, rec_size)) {
     /* The record is so big that we have to store some fields
     externally on separate database pages */
-    big_rec = dtuple_convert_big_rec(m_index, 0, tuple, &n_ext);
+    big_rec = dtuple_convert_big_rec(m_index, nullptr, tuple);
     if (big_rec == nullptr) {
       return (DB_TOO_BIG_RECORD);
     }
 
-    rec_size = rec_get_converted_size(m_index, tuple, n_ext);
+    rec_size = rec_get_converted_size(m_index, tuple);
   }
 
   if (page_bulk->isTableCompressed() && page_zip_is_too_big(m_index, tuple)) {
@@ -998,7 +997,7 @@ dberr_t BtrBulk::insert(dtuple_t *tuple, ulint level) {
     }
   });
 
-  err = insert(page_bulk, tuple, big_rec, rec_size, n_ext);
+  err = insert(page_bulk, tuple, big_rec, rec_size);
 
 func_exit:
   if (big_rec != nullptr) {

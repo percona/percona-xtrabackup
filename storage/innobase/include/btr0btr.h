@@ -263,6 +263,16 @@ page_no_t btr_node_ptr_get_child_page_no(
     const rec_t *rec,     /*!< in: node pointer record */
     const ulint *offsets) /*!< in: array returned by rec_get_offsets() */
     MY_ATTRIBUTE((warn_unused_result));
+
+/** Returns the child page of a node pointer and sx-latches it.
+@param[in]  node_ptr  node pointer
+@param[in]  index index
+@param[in]  offsets array returned by rec_get_offsets()
+@param[in]  mtr mtr
+@return child page, sx-latched */
+buf_block_t *btr_node_ptr_get_child(const rec_t *node_ptr, dict_index_t *index,
+                                    const ulint *offsets, mtr_t *mtr);
+
 /** Create the root node for a new index tree.
 @param[in]	type			type of the index
 @param[in]	space			space where created
@@ -308,7 +318,7 @@ void btr_truncate_recover(const dict_index_t *index);
  guaranteed to be available before this function is called.
  @return inserted record */
 rec_t *btr_root_raise_and_insert(
-    ulint flags,           /*!< in: undo logging and locking flags */
+    uint32_t flags,        /*!< in: undo logging and locking flags */
     btr_cur_t *cursor,     /*!< in: cursor at which to insert: must be
                            on the root page; when the function returns,
                            the cursor is positioned on the predecessor
@@ -317,7 +327,6 @@ rec_t *btr_root_raise_and_insert(
     mem_heap_t **heap,     /*!< in/out: pointer to memory heap
                            that can be emptied, or NULL */
     const dtuple_t *tuple, /*!< in: tuple to insert */
-    ulint n_ext,           /*!< in: number of externally stored columns */
     mtr_t *mtr)            /*!< in: mtr */
     MY_ATTRIBUTE((warn_unused_result));
 /** Reorganizes an index page.
@@ -384,7 +393,7 @@ ibool btr_page_get_split_rec_to_right(
 
  @return inserted record */
 rec_t *btr_page_split_and_insert(
-    ulint flags,           /*!< in: undo logging and locking flags */
+    uint32_t flags,        /*!< in: undo logging and locking flags */
     btr_cur_t *cursor,     /*!< in: cursor at which to insert; when the
                            function returns, the cursor is positioned
                            on the predecessor of the inserted record */
@@ -392,13 +401,12 @@ rec_t *btr_page_split_and_insert(
     mem_heap_t **heap,     /*!< in/out: pointer to memory heap
                            that can be emptied, or NULL */
     const dtuple_t *tuple, /*!< in: tuple to insert */
-    ulint n_ext,           /*!< in: number of externally stored columns */
     mtr_t *mtr)            /*!< in: mtr */
     MY_ATTRIBUTE((warn_unused_result));
 /** Inserts a data tuple to a tree on a non-leaf level. It is assumed
  that mtr holds an x-latch on the tree. */
 void btr_insert_on_non_leaf_level_func(
-    ulint flags,         /*!< in: undo logging and locking flags */
+    uint32_t flags,      /*!< in: undo logging and locking flags */
     dict_index_t *index, /*!< in: index */
     ulint level,         /*!< in: level, must be > 0 */
     dtuple_t *tuple,     /*!< in: the record to be inserted */

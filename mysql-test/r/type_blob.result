@@ -555,9 +555,9 @@ l	longblob	NULL	YES		NULL		select,insert,update,references
 drop table t1;
 create table t1 (id integer primary key auto_increment, txt text not null, unique index txt_index (txt (20))) charset latin1;
 insert into t1 (txt) values ('Chevy'), ('Chevy ');
-ERROR 23000: Duplicate entry 'Chevy ' for key 'txt_index'
+ERROR 23000: Duplicate entry 'Chevy ' for key 't1.txt_index'
 insert into t1 (txt) values ('Chevy'), ('CHEVY');
-ERROR 23000: Duplicate entry 'CHEVY' for key 'txt_index'
+ERROR 23000: Duplicate entry 'CHEVY' for key 't1.txt_index'
 alter table t1 drop index txt_index, add index txt_index (txt(20));
 insert into t1 (txt) values ('Chevy ');
 select * from t1 where txt='Chevy';
@@ -732,11 +732,11 @@ alter table t1 add key (a,b,d,e);
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) NOT NULL,
-  `b` int(11) NOT NULL,
+  `a` int NOT NULL,
+  `b` int NOT NULL,
   `c` tinyblob NOT NULL,
-  `d` int(11) NOT NULL,
-  `e` int(11) DEFAULT NULL,
+  `d` int NOT NULL,
+  `e` int DEFAULT NULL,
   PRIMARY KEY (`a`,`b`,`c`(255),`d`),
   KEY `a` (`a`,`b`,`d`,`e`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -903,17 +903,19 @@ ERROR 42000: Column length too big for column 'a' (max = 255); use BLOB or TEXT 
 CREATE TABLE b15776 (a char(4294967296));
 ERROR 42000: Display width out of range for column 'a' (max = 4294967295)
 CREATE TABLE b15776 (a year(4294967295));
-ERROR HY000: Supports only YEAR or YEAR(4) column.
+ERROR HY000: Invalid display width. Use YEAR instead.
 CREATE TABLE b15776 (a year(4));
+Warnings:
+Warning	1287	'YEAR(4)' is deprecated and will be removed in a future release. Please use YEAR instead
 INSERT INTO b15776 VALUES (42);
 SELECT * FROM b15776;
 a
 2042
 DROP TABLE b15776;
 CREATE TABLE b15776 (a year(4294967296));
-ERROR HY000: Supports only YEAR or YEAR(4) column.
+ERROR HY000: Invalid display width. Use YEAR instead.
 CREATE TABLE b15776 (a year(0));
-ERROR HY000: Supports only YEAR or YEAR(4) column.
+ERROR HY000: Invalid display width. Use YEAR instead.
 CREATE TABLE b15776 (a year(-2));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '-2))' at line 1
 CREATE TABLE b15776 (a int(999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999));
@@ -921,7 +923,7 @@ ERROR 42000: Display width out of range for column 'a' (max = 4294967295)
 CREATE TABLE b15776 (a char(999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999));
 ERROR 42000: Display width out of range for column 'a' (max = 4294967295)
 CREATE TABLE b15776 (a year(999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999));
-ERROR HY000: Supports only YEAR or YEAR(4) column.
+ERROR HY000: Invalid display width. Use YEAR instead.
 CREATE TABLE b15776 select cast(null as char(4294967295));
 Warnings:
 Warning	1301	Result of cast_as_char() was larger than max_allowed_packet (67108864) - truncated
@@ -1258,3 +1260,17 @@ SELECT ( SELECT ( b <> 1 ) FROM t2) <> ALL(SELECT 1681007452 FROM t1) FROM t1;
 1
 DROP TABLE t1,t2;
 set sql_mode=default;
+#
+# Bug#30308063 UBSAN: NULL POINTER PASSED AS ARGUMENT 2,
+#              WHICH IS DECLARED TO NEVER BE NULL
+#
+CREATE TABLE t1 (c1 INTEGER PRIMARY KEY, c2 TEXT, c3 INTEGER);
+INSERT INTO t1(c1) VALUES(0);
+INSERT INTO t1(c1) VALUES(0) ON DUPLICATE KEY
+UPDATE c2 = VALUES(c2), c3 = NULL;
+Warnings:
+Warning	1287	'VALUES function' is deprecated and will be removed in a future release. Please use an alias (INSERT INTO ... VALUES (...) AS alias) and replace VALUES(col) in the ON DUPLICATE KEY UPDATE clause with alias.col instead
+SELECT * FROM t1;
+c1	c2	c3
+0	NULL	NULL
+DROP TABLE t1;

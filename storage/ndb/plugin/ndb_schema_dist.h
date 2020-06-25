@@ -72,14 +72,15 @@ namespace Ndb_schema_dist {
 
 // Schema operation result codes
 enum Schema_op_result_code {
-  NODE_UNSUBSCRIBE = 9001,  // Node unsubscribe during
-  NODE_FAILURE = 9002,      // Node failed during
-  NODE_TIMEOUT = 9003,      // Node timeout during
-  COORD_ABORT = 9004,       // Coordinator aborted
-  CLIENT_ABORT = 9005,      // Client aborted
-  CLIENT_KILLED = 9007,     // Client killed
-  SCHEMA_OP_FAILURE = 9008  // Failure not related to protocol but the actual
-                            // schema operation to be distributed
+  NODE_UNSUBSCRIBE = 9001,   // Node unsubscribe during
+  NODE_FAILURE = 9002,       // Node failed during
+  NODE_TIMEOUT = 9003,       // Node timeout during
+  COORD_ABORT = 9004,        // Coordinator aborted
+  CLIENT_ABORT = 9005,       // Client aborted
+  CLIENT_KILLED = 9007,      // Client killed
+  SCHEMA_OP_FAILURE = 9008,  // Failure not related to protocol but the actual
+                             // schema operation to be distributed
+  NDB_TRANS_FAILURE = 9009   // An NDB read/write transaction failed
 };
 
 /**
@@ -127,6 +128,7 @@ class Ndb_schema_dist_client {
   class THD *const m_thd;
   class Thd_ndb *const m_thd_ndb;
   struct NDB_SHARE *m_share{nullptr};
+  const std::string m_share_reference;
   class Prepared_keys {
     using Key = std::pair<std::string, std::string>;
     std::vector<Key> m_keys;

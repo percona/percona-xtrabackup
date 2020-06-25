@@ -1,4 +1,4 @@
- # Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -49,14 +49,13 @@ CREATE_JAR(jtie-test-myjapi ${JAVA_SOURCES}
   DEPENDENCIES jtie.jar)
 
 INCLUDE_DIRECTORIES(
-  	${JNI_INCLUDE_DIRS}
-  	${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/utils
-  	${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/jtie
-  	${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/jtie/test/myapi)
+  ${JNI_INCLUDE_DIRS}
+  ${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/utils
+  ${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/jtie
+  ${CMAKE_SOURCE_DIR}/storage/ndb/src/ndbjtie/jtie/test/myapi)
 
 # enable safety behaviour, expected by a myjapi subtest
-SET(CMAKE_CXX_FLAGS
-  	"${CMAKE_CXX_FLAGS} -DJTIE_OBJECT_CLEAR_ADDRESS_UPON_DELETE")
+STRING_APPEND(CMAKE_CXX_FLAGS " -DJTIE_OBJECT_CLEAR_ADDRESS_UPON_DELETE")
 
 # the Java API's JNI implementation
 ADD_LIBRARY(libmyjapi SHARED myjapi_lib.cpp)
@@ -65,6 +64,11 @@ SET_TARGET_PROPERTIES(libmyjapi
   PROPERTIES LINK_FLAGS "${CMAKE_SHARED_LIBRARY_C_FLAGS}")
 SET_TARGET_PROPERTIES(libmyjapi PROPERTIES OUTPUT_NAME "myjapi")
 TARGET_LINK_LIBRARIES(libmyjapi libmyapi)
+
+# This is needed for java-based unit tests.
+IF(MY_COMPILER_IS_CLANG AND WITH_UBSAN)
+  TARGET_LINK_LIBRARIES(libmyjapi -lubsan)
+ENDIF()
 
 IF(APPLE)
   SET_TARGET_PROPERTIES(libmyjapi PROPERTIES

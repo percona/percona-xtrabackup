@@ -1,7 +1,7 @@
 #ifndef ITEM_ROW_INCLUDED
 #define ITEM_ROW_INCLUDED
 
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,7 +85,7 @@ class Item_row : public Item {
         used_tables_cache(item->used_tables_cache),
         not_null_tables_cache(0),
         arg_count(item->arg_count),
-        with_null(0) {}
+        with_null(false) {}
 
   bool itemize(Parse_context *pc, Item **res) override;
 
@@ -103,11 +103,11 @@ class Item_row : public Item {
   }
   String *val_str(String *) override {
     illegal_method_call("val_str");
-    return 0;
+    return nullptr;
   }
   my_decimal *val_decimal(my_decimal *) override {
     illegal_method_call("val_decimal");
-    return 0;
+    return nullptr;
   }
   bool get_date(MYSQL_TIME *, my_time_flags_t) override {
     illegal_method_call("get_date");

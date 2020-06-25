@@ -33,6 +33,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "handler.h"
 #include "my_dbug.h"
 #include "row0pread-adapter.h"
+#include "row0pread-histogram.h"
 #include "trx0trx.h"
 
 /** "GEN_CLUST_INDEX" is the name reserved for InnoDB default
@@ -110,18 +111,6 @@ class ha_innobase : public handler {
 
   int open(const char *name, int, uint open_flags,
            const dd::Table *table_def) override;
-
-  /** Opens dictionary table object using table name. For partition, we need to
-  try alternative lower/upper case names to support moving data files across
-  platforms.
-  @param[in]	table_name	name of the table/partition
-  @param[in]	norm_name	normalized name of the table/partition
-  @param[in]	is_partition	if this is a partition of a table
-  @param[in]	ignore_err	error to ignore for loading dictionary object
-  @return dictionary table object or NULL if not found */
-  static dict_table_t *open_dict_table(const char *table_name,
-                                       const char *norm_name, bool is_partition,
-                                       dict_err_ignore_t ignore_err);
 
   handler *clone(const char *name, MEM_ROOT *mem_root) override;
 
@@ -212,6 +201,29 @@ class ha_innobase : public handler {
   int reset() override;
 
   int external_lock(THD *thd, int lock_type) override;
+
+  /** Initialize sampling.
+  @param[out] scan_ctx  A scan context created by this method that has to be
+  used in sample_next
+  @param[in]  sampling_percentage percentage of records that need to be sampled
+  @param[in]  sampling_seed       random seed that the random generator will use
+  @param[in]  sampling_method     sampling method to be used; currently only
+  SYSTEM sampling is supported
+  @return 0 for success, else one of the HA_xxx values in case of error. */
+  int sample_init(void *&scan_ctx, double sampling_percentage,
+                  int sampling_seed,
+                  enum_sampling_method sampling_method) override;
+
+  /** Get the next record for sampling.
+  @param[in]  scan_ctx  Scan context of the sampling
+  @param[in]  buf       buffer to place the read record
+  @return 0 for success, else one of the HA_xxx values in case of error. */
+  int sample_next(void *scan_ctx, uchar *buf) override;
+
+  /** End sampling.
+  @param[in] scan_ctx  Scan context of the sampling
+  @return 0 for success, else one of the HA_xxx values in case of error. */
+  int sample_end(void *scan_ctx) override;
 
   /** MySQL calls this function at the start of each SQL statement
   inside LOCK TABLES. Inside LOCK TABLES the "::external_lock" method
@@ -304,21 +316,6 @@ class ha_innobase : public handler {
                    const dd::Table *from_table, dd::Table *to_table) override;
 
   int check(THD *thd, HA_CHECK_OPT *check_opt) override;
-
-  char *get_foreign_key_create_info() override;
-
-  int get_foreign_key_list(THD *thd,
-                           List<FOREIGN_KEY_INFO> *f_key_list) override;
-
-  int get_parent_foreign_key_list(THD *thd,
-                                  List<FOREIGN_KEY_INFO> *f_key_list) override;
-
-  int get_cascade_foreign_key_table_list(
-      THD *thd, List<st_handler_tablename> *fk_table_list) override;
-
-  uint referenced_by_foreign_key() override;
-
-  void free_foreign_key_create_info(char *str) override;
 
   uint lock_count(void) const override;
 
@@ -456,10 +453,8 @@ class ha_innobase : public handler {
                     Reader::Load_fn load_fn, Reader::End_fn end_fn) override;
 
   /** End of the parallel scan.
-  @param[in]      scan_ctx      A scan context created by parallel_scan_init.
-  @return error code
-  @retval 0 on success */
-  int parallel_scan_end(void *scan_ctx) override;
+  @param[in]      scan_ctx      A scan context created by parallel_scan_init. */
+  void parallel_scan_end(void *scan_ctx) override;
 
   bool check_if_incompatible_data(HA_CREATE_INFO *info,
                                   uint table_changes) override;
@@ -747,7 +742,7 @@ bool innobase_index_name_is_reserved(
 @return true if the table is intended to use a file_per_table tablespace. */
 UNIV_INLINE
 bool tablespace_is_file_per_table(const HA_CREATE_INFO *create_info) {
-  return (create_info->tablespace != NULL &&
+  return (create_info->tablespace != nullptr &&
           (0 ==
            strcmp(create_info->tablespace, dict_sys_t::s_file_per_table_name)));
 }
@@ -758,7 +753,7 @@ or system tablespace.
 @return true if the table will use a shared general or system tablespace. */
 UNIV_INLINE
 bool tablespace_is_shared_space(const HA_CREATE_INFO *create_info) {
-  return (create_info->tablespace != NULL &&
+  return (create_info->tablespace != nullptr &&
           create_info->tablespace[0] != '\0' &&
           (0 !=
            strcmp(create_info->tablespace, dict_sys_t::s_file_per_table_name)));
@@ -770,7 +765,8 @@ bool tablespace_is_shared_space(const HA_CREATE_INFO *create_info) {
 UNIV_INLINE
 bool tablespace_is_general_space(const HA_CREATE_INFO *create_info) {
   return (
-      create_info->tablespace != NULL && create_info->tablespace[0] != '\0' &&
+      create_info->tablespace != nullptr &&
+      create_info->tablespace[0] != '\0' &&
       (0 !=
        strcmp(create_info->tablespace, dict_sys_t::s_file_per_table_name)) &&
       (0 != strcmp(create_info->tablespace, dict_sys_t::s_temp_space_name)) &&
@@ -782,7 +778,7 @@ bool tablespace_is_general_space(const HA_CREATE_INFO *create_info) {
 @return true if tablespace is a shared tablespace. */
 UNIV_INLINE
 bool is_shared_tablespace(const char *tablespace_name) {
-  if (tablespace_name != NULL && tablespace_name[0] != '\0' &&
+  if (tablespace_name != nullptr && tablespace_name[0] != '\0' &&
       (strcmp(tablespace_name, dict_sys_t::s_file_per_table_name) != 0)) {
     return true;
   }
@@ -912,15 +908,12 @@ class create_table_info_t {
 
   /** Normalizes a table name string.
   A normalized name consists of the database name catenated to '/' and
-  table name. An example: test/mytable. On Windows normalization puts
-  both the database name and the table name always to lower case if
-  "set_lower_case" is set to true.
+  table name. An example: test/mytable. On case insensitive file system
+  normalization converts name to lower case.
   @param[in,out]	norm_name	Buffer to return the normalized name in.
-  @param[in]	name		Table name string.
-  @param[in]	set_lower_case	True if we want to set name to lower
-                                  case. */
-  static void normalize_table_name_low(char *norm_name, const char *name,
-                                       ibool set_lower_case);
+  @param[in]		name		Table name string.
+  @return true if successful. */
+  static bool normalize_table_name(char *norm_name, const char *name);
 
  private:
   /** Parses the table name into normal name and either temp path or
@@ -1014,7 +1007,7 @@ class innobase_basic_ddl {
   static int create_impl(THD *thd, const char *name, TABLE *form,
                          HA_CREATE_INFO *create_info, Table *dd_tab,
                          bool file_per_table, bool evictable, bool skip_strict,
-                         ulint old_flags, ulint old_flags2);
+                         uint32_t old_flags, uint32_t old_flags2);
 
   /** Drop an InnoDB table.
   @tparam		Table		dd::Table or dd::Partition
@@ -1129,10 +1122,10 @@ class innobase_truncate {
   bool m_keep_autoinc;
 
   /** flags of the table to be truncated, which should not change */
-  uint64_t m_flags;
+  uint32_t m_flags;
 
   /** flags2 of the table to be truncated, which should not change */
-  uint64_t m_flags2;
+  uint32_t m_flags2;
 };
 
 /**
@@ -1209,14 +1202,8 @@ This condition check should be equal to the following one:
 */
 #define innobase_is_multi_value_fld(field) (field->is_array())
 
-/** Always normalize table name to lower case on Windows */
-#ifdef _WIN32
 #define normalize_table_name(norm_name, name) \
-  create_table_info_t::normalize_table_name_low(norm_name, name, TRUE)
-#else
-#define normalize_table_name(norm_name, name) \
-  create_table_info_t::normalize_table_name_low(norm_name, name, FALSE)
-#endif /* _WIN32 */
+  create_table_info_t::normalize_table_name(norm_name, name)
 
 /** Note that a transaction has been registered with MySQL.
 @param[in]	trx	Transaction.

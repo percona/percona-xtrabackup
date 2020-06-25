@@ -36,29 +36,29 @@ PRIMARY KEY(id));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` varchar(255) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1'
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1,READ_BACKUP=1'
 --- Show table on slave ---
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` varchar(255) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -129,29 +129,29 @@ ALTER TABLE t1 MODIFY vc char(32);
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` char(32) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1'
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1,READ_BACKUP=1'
 --- Make sure that our tables on slave are still same engine ---
 --- and that the alter statements replicated correctly ---
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` char(32) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 Warnings:
@@ -246,16 +246,16 @@ UPDATE t1 SET v='explicit' WHERE id >10;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` text,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned NOT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned NOT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL,
-  `u` int(11) DEFAULT NULL,
+  `u` int DEFAULT NULL,
   `v` char(16) DEFAULT 'default',
   PRIMARY KEY (`id`,`total`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -349,13 +349,13 @@ ALTER TABLE t1 DROP COLUMN y;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` text,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned NOT NULL,
+  `total` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`,`total`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 STOP SLAVE;
@@ -445,29 +445,29 @@ PRIMARY KEY(id));
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` varchar(255) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1'
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1,READ_BACKUP=1'
 --- Show table on slave ---
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` varchar(255) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -538,29 +538,29 @@ ALTER TABLE t1 MODIFY vc char(32);
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` char(32) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1'
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='NDB_TABLE=NOLOGGING=1,READ_BACKUP=1'
 --- Make sure that our tables on slave are still same engine ---
 --- and that the alter statements replicated correctly ---
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` char(32) DEFAULT NULL,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned DEFAULT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned DEFAULT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 Warnings:
@@ -655,16 +655,16 @@ UPDATE t1 SET v='explicit' WHERE id >10;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` text,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned NOT NULL,
-  `y` year(4) DEFAULT NULL,
+  `total` bigint unsigned NOT NULL,
+  `y` year DEFAULT NULL,
   `t` date DEFAULT NULL,
-  `u` int(11) DEFAULT NULL,
+  `u` int DEFAULT NULL,
   `v` char(16) DEFAULT 'default',
   PRIMARY KEY (`id`,`total`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -758,13 +758,13 @@ ALTER TABLE t1 DROP COLUMN y;
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `id` mediumint(9) NOT NULL,
-  `b1` int(11) DEFAULT NULL,
+  `id` mediumint NOT NULL,
+  `b1` int DEFAULT NULL,
   `vc` text,
   `bc` char(255) DEFAULT NULL,
   `d` decimal(10,4) DEFAULT '0.0000',
   `f` float DEFAULT '0',
-  `total` bigint(20) unsigned NOT NULL,
+  `total` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`,`total`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 STOP SLAVE;

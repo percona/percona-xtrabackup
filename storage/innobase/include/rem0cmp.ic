@@ -97,28 +97,19 @@ int cmp_multi_value_dfield_dfield(const dfield_t *dfield1,
               : 1);
 }
 
-/** Compare two B-tree records.
-Only the common first fields are compared, and externally stored field
-are treated as equal.
-@param[in]	rec1		B-tree record
-@param[in]	rec2		B-tree record
-@param[in]	offsets1	rec_get_offsets(rec1, index)
-@param[in]	offsets2	rec_get_offsets(rec2, index)
-@param[out]	matched_fields	number of completely matched fields
-                                within the first field not completely matched
-@return positive, 0, negative if rec1 is greater, equal, less, than rec2,
-respectively */
 UNIV_INLINE
 int cmp_rec_rec(const rec_t *rec1, const rec_t *rec2, const ulint *offsets1,
                 const ulint *offsets2, const dict_index_t *index,
-                ulint *matched_fields) {
+                bool spatial_index_non_leaf, ulint *matched_fields,
+                bool cmp_btree_recs) {
   ulint match_f;
   int ret;
 
-  ret = cmp_rec_rec_with_match(rec1, rec2, offsets1, offsets2, index, false,
-                               &match_f);
+  ret = cmp_rec_rec_with_match(rec1, rec2, offsets1, offsets2, index,
+                               spatial_index_non_leaf, false, &match_f,
+                               cmp_btree_recs);
 
-  if (matched_fields != NULL) {
+  if (matched_fields != nullptr) {
     *matched_fields = match_f;
   }
 
@@ -164,7 +155,7 @@ bool cmp_dfield_dfield_eq_prefix(const dfield_t *dfield1,
     return (!cs->coll->strnncoll(
         cs, static_cast<uchar *>(dfield_get_data(dfield1)),
         dfield_get_len(dfield1), static_cast<uchar *>(dfield_get_data(dfield2)),
-        dfield_get_len(dfield2), 1));
+        dfield_get_len(dfield2), true));
   }
 
 #ifdef UNIV_NO_ERR_MSGS
@@ -174,6 +165,6 @@ bool cmp_dfield_dfield_eq_prefix(const dfield_t *dfield1,
 #endif /* !UNIV_NO_ERR_MSGS */
       << "Unable to find charset-collation " << cs_num;
 
-  return (0);
+  return (false);
 }
 #endif /* UNIV_HOTBACKUP */

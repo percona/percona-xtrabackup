@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -63,10 +63,6 @@ class Table_trigger_dispatcher : public Table_trigger_field_support {
  public:
   static Table_trigger_dispatcher *create(TABLE *subject_table);
 
-  // Only used by NDB - see reload_triggers_for_table().
-  static bool check_n_load(THD *thd, const dd::Table &table,
-                           const char *db_name, const char *table_name);
-
   bool check_n_load(THD *thd, const dd::Table &table);
 
   /*
@@ -118,7 +114,7 @@ class Table_trigger_dispatcher : public Table_trigger_field_support {
 
   bool has_triggers(enum_trigger_event_type event,
                     enum_trigger_action_time_type action_time) const {
-    return get_triggers(event, action_time) != NULL;
+    return get_triggers(event, action_time) != nullptr;
   }
 
   bool has_update_triggers() const {

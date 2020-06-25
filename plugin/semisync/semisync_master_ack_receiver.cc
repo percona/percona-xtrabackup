@@ -54,8 +54,8 @@ static void *ack_receive_handler(void *arg) {
   my_thread_init();
   reinterpret_cast<Ack_receiver *>(arg)->run();
   my_thread_end();
-  my_thread_exit(0);
-  return NULL;
+  my_thread_exit(nullptr);
+  return nullptr;
 }
 }  // extern "C"
 
@@ -126,7 +126,7 @@ void Ack_receiver::stop() {
       When arriving here, the ack thread already exists. Join failure has no
       side effect aganst semisync. So we don't return an error.
     */
-    ret = my_thread_join(&m_pid, NULL);
+    ret = my_thread_join(&m_pid, nullptr);
     if (DBUG_EVALUATE_IF("rpl_semisync_simulate_thread_join_failure", -1, ret))
       LogErr(ERROR_LEVEL, ER_SEMISYNC_FAILED_TO_STOP_ACK_RECEIVER_THD, errno);
   }
@@ -153,7 +153,7 @@ bool Ack_receiver::add_slave(THD *thd) {
   }
   slave.is_leaving = false;
   slave.vio = thd->get_protocol_classic()->get_vio();
-  slave.vio->mysql_socket.m_psi = NULL;
+  slave.vio->mysql_socket.m_psi = nullptr;
   slave.vio->read_timeout = 1;
 
   /* push_back() may throw an exception */
@@ -260,7 +260,7 @@ void Ack_receiver::run() {
   m_slaves_changed = true;
   mysql_mutex_unlock(&m_mutex);
 
-  while (1) {
+  while (true) {
     int ret;
 
     mysql_mutex_lock(&m_mutex);
@@ -309,7 +309,7 @@ void Ack_receiver::run() {
             (server_extension->compress_ctx.algorithm == MYSQL_ZSTD);
 
         do {
-          net_clear(&net, 0);
+          net_clear(&net, false);
 
           len = my_net_read(&net);
           if (likely(len != packet_error))

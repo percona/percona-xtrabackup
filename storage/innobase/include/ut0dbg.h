@@ -65,11 +65,15 @@ void ut_set_assert_callback(std::function<void()> &callback);
 #define ut_ad(EXPR) ut_a(EXPR)
 /** Debug statement. Does nothing unless UNIV_DEBUG is defined. */
 #define ut_d(EXPR) EXPR
+/** Opposite of ut_d().  Does nothing if UNIV_DEBUG is defined. */
+#define ut_o(EXPR)
 #else
 /** Debug assertion. Does nothing unless UNIV_DEBUG is defined. */
 #define ut_ad(EXPR)
 /** Debug statement. Does nothing unless UNIV_DEBUG is defined. */
 #define ut_d(EXPR)
+/** Opposite of ut_d().  Does nothing if UNIV_DEBUG is defined. */
+#define ut_o(EXPR) EXPR
 #endif
 
 /** Debug crash point */
@@ -120,7 +124,7 @@ class ut_chrono_t {
 
   /** Resets the chrono (records the current time in it). */
   void reset() {
-    gettimeofday(&m_tv, NULL);
+    gettimeofday(&m_tv, nullptr);
 
     getrusage(RUSAGE_SELF, &m_ru);
   }
@@ -133,7 +137,7 @@ class ut_chrono_t {
 
     getrusage(RUSAGE_SELF, &ru_now);
 
-    gettimeofday(&tv_now, NULL);
+    gettimeofday(&tv_now, nullptr);
 
 #ifndef timersub
 #define timersub(a, b, r)                       \

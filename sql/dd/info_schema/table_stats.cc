@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -136,12 +136,21 @@ class Update_I_S_statistics_ctx {
 template <typename T>
 bool store_statistics_record(THD *thd, T *object) {
   Update_I_S_statistics_ctx ctx(thd);
-  Disable_gtid_state_update_guard disabler(thd);
+  Implicit_substatement_state_guard substatement_guard(thd);
 
   // Store tablespace object in dictionary
   if (thd->dd_client()->store(object)) {
     trans_rollback_stmt(thd);
     trans_rollback(thd);
+    /**
+      It is ok to ignore ER_DUP_ENTRY, because there is possibility
+      that another thread would have updated statistics in high
+      concurrent environment. See Bug#29948755 for more information.
+    */
+    if (thd->get_stmt_da()->mysql_errno() == ER_DUP_ENTRY) {
+      thd->clear_error();
+      return false;
+    }
     return true;
   }
 
@@ -751,7 +760,7 @@ ulonglong Table_statistics::read_stat_by_open_table(
       DBUG_ASSERT(part_info);
 
       uint part_id;
-      if (part_info->get_part_elem(partition_name, nullptr, &part_id) &&
+      if (part_info->get_part_elem(partition_name, &part_id) &&
           part_id != NOT_A_PARTITION_ID) {
         part_handler->get_dynamic_partition_info(&ha_stat, &check_sum, part_id);
         table_list->table->file->stats = ha_stat;
@@ -851,7 +860,7 @@ end:
   lex_end(thd->lex);
 
   // Free items, before restoring backup_arena below.
-  DBUG_ASSERT(i_s_arena.item_list() == NULL);
+  DBUG_ASSERT(i_s_arena.item_list() == nullptr);
   thd->free_items();
 
   /*

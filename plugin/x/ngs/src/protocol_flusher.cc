@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,8 @@
 #include "plugin/x/ngs/include/ngs/log.h"
 #include "plugin/x/protocol/encoders/encoding_buffer.h"
 #include "plugin/x/protocol/encoders/encoding_xmessages.h"
+#include "plugin/x/src/variables/system_variables.h"
+#include "plugin/x/src/variables/system_variables_defaults.h"
 
 namespace ngs {
 
@@ -39,7 +41,7 @@ namespace details {
 
 class Write_visitor {
  public:
-  explicit Write_visitor(Vio_interface *vio) : m_vio(vio) {}
+  explicit Write_visitor(xpl::iface::Vio *vio) : m_vio(vio) {}
 
   bool visit(const char *buffer, ssize_t size) {
     while (size > 0) {
@@ -62,7 +64,7 @@ class Write_visitor {
   ssize_t get_result() const { return m_result; }
 
  private:
-  Vio_interface *m_vio;
+  xpl::iface::Vio *m_vio;
   ssize_t m_result{0};
 };
 
@@ -123,7 +125,7 @@ bool Protocol_flusher::flush() {
   if (is_valid_socket) {
     details::Write_visitor writter(m_socket.get());
 
-    m_socket->set_timeout_in_ms(ngs::Vio_interface::Direction::k_write,
+    m_socket->set_timeout_in_ms(xpl::iface::Vio::Direction::k_write,
                                 m_write_timeout * 1000);
 
     auto page = m_encoder->m_buffer->m_front;
@@ -149,7 +151,7 @@ bool Protocol_flusher::flush() {
       return false;
     }
 
-    m_protocol_monitor->on_send(static_cast<long>(writter.get_result()));
+    m_protocol_monitor->on_send(static_cast<int64_t>(writter.get_result()));
   }
 
   return true;

@@ -25,9 +25,16 @@
 #include "sql/auth/sql_auth_cache.h"
 
 #include <string.h>
-#include <cmath>
+#include "my_alloc.h"
+#include "mysql/mysql_lex_string.h"
+#include "mysql/psi/psi_base.h"
+#include "sql/auth/auth_internal.h"
+#include "sql/auth/sql_security_ctx.h"
 #include "sql/field.h"
+#include "sql/sql_class.h"
+#include "sql/sql_const.h"
 #include "sql/table.h"
+#include "sql/thr_malloc.h"
 #include "sql_string.h"
 
 namespace consts {
@@ -69,6 +76,9 @@ Mem_root_base::~Mem_root_base() {
 }
 
 bool User_table_schema_factory::is_old_user_table_schema(TABLE *table) {
+  if (table->visible_field_count() <
+      User_table_old_schema::MYSQL_USER_FIELD_PASSWORD_56)
+    return false;
   Field *password_field =
       table->field[User_table_old_schema::MYSQL_USER_FIELD_PASSWORD_56];
   return strncmp(password_field->field_name, "Password", 8) == 0;

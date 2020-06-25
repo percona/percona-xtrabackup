@@ -35,6 +35,7 @@
 #include <NdbMutex.h>
 #include <NdbEnv.h>
 #include <signaldata/DumpStateOrd.hpp>
+#include <string>
 
 static Vector<BaseString> table_list;
 
@@ -434,6 +435,85 @@ uint getNodeCount(NodeSet set, uint numNodes)
 
 
 /**
+ * Perform up/downgrade of MGMDs
+ */
+int runChangeMgmds(NDBT_Context* ctx,
+                   NDBT_Step* step,
+                   NdbRestarter& restarter,
+                   AtrtClient& atrt,
+                   const uint clusterId,
+                   const NodeSet mgmdNodeSet)
+{
+  SqlResultSet mgmds;
+  if (!atrt.getMgmds(clusterId, mgmds))
+    return NDBT_FAILED;
+
+  const uint mgmdCount = mgmds.numRows();
+  uint restartCount = getNodeCount(mgmdNodeSet, mgmdCount);
+
+  if (ctx->getProperty("InitialMgmdRestart", Uint32(0)) == 1)
+  {
+    /**
+     * MGMD initial restart requires that all MGMDs are stopped,
+     * up/downgraded and started together
+     */
+    const char* mgmd_args = "--initial=1";
+
+    if (mgmdNodeSet != All &&
+        mgmdNodeSet != None)
+    {
+      ndbout << "Error cannot restart MGMDs --initial without restarting all."
+             << endl;
+      return NDBT_FAILED;
+    }
+
+    ndbout << "Restarting "
+             << restartCount << " of " << mgmdCount
+            << " mgmds with --initial" << endl;
+
+    uint startCount = restartCount;
+    while (mgmds.next() && restartCount --)
+    {
+      ndbout << "Stop mgmd " << mgmds.columnAsInt("node_id") << endl;
+      if (!atrt.stopProcess(mgmds.columnAsInt("id")) ||
+          !atrt.switchConfig(mgmds.columnAsInt("id"), mgmd_args))
+        return NDBT_FAILED;
+    }
+    mgmds.reset();
+    while (mgmds.next() && startCount --)
+    {
+      ndbout << "Start mgmd " << mgmds.columnAsInt("node_id") << endl;
+      if (!atrt.startProcess(mgmds.columnAsInt("id")))
+        return NDBT_FAILED;
+    }
+  }
+  else
+  {
+    /**
+     * MGMD rolling restart without initial, do one MGMD at a time
+     */
+    const char* mgmd_args = "--initial=0";
+
+    ndbout << "Restarting "
+             << restartCount << " of " << mgmdCount
+            << " mgmds" << endl;
+
+    while (mgmds.next() && restartCount --)
+    {
+      ndbout << "Restart mgmd " << mgmds.columnAsInt("node_id") << endl;
+      if (!atrt.changeVersion(mgmds.columnAsInt("id"), mgmd_args))
+        return NDBT_FAILED;
+
+      if(restarter.waitConnected())
+        return NDBT_FAILED;
+    }
+  }
+
+  return NDBT_OK;
+}
+
+
+/**
   Test that one node at a time can be upgraded
 */
 
@@ -463,36 +543,23 @@ int runUpgrade_NR1(NDBT_Context* ctx, NDBT_Step* step){
       return NDBT_FAILED;
 
     // Restart ndb_mgmd(s)
-    SqlResultSet mgmds;
-    if (!atrt.getMgmds(clusterId, mgmds))
+    if (runChangeMgmds(ctx,
+                       step,
+                       restarter,
+                       atrt,
+                       clusterId,
+                       mgmdNodeSet) != NDBT_OK)
+    {
       return NDBT_FAILED;
-    
-    uint mgmdCount = mgmds.numRows();
-    uint mgmd_start_count = mgmdCount;
-    uint restartCount = getNodeCount(mgmdNodeSet, mgmdCount);
-      
-    while (mgmds.next() && mgmdCount --)
-    {
-      ndbout << "Restart mgmd" << mgmds.columnAsInt("node_id") << endl;
-      if (!atrt.stopProcess(mgmds.columnAsInt("id")) ||
-          !atrt.switchConfig(mgmds.columnAsInt("id"),"--initial"))
-        return NDBT_FAILED;
     }
-    mgmds.reset();
-    while (mgmds.next() && mgmd_start_count --)
-    {
-      ndbout << "Restart mgmd" << mgmds.columnAsInt("node_id") << endl;
-      if (!atrt.startProcess(mgmds.columnAsInt("id")))
-        return NDBT_FAILED;
-    }
-    
+
     // Restart ndbd(s)
     SqlResultSet ndbds;
     if (!atrt.getNdbds(clusterId, ndbds))
       return NDBT_FAILED;
 
     uint ndbdCount = ndbds.numRows();
-    restartCount = getNodeCount(ndbdNodeSet, ndbdCount);
+    uint restartCount = getNodeCount(ndbdNodeSet, ndbdCount);
     
     ndbout << "Restarting "
              << restartCount << " of " << ndbdCount
@@ -544,10 +611,11 @@ runUpgrade_Half(NDBT_Context* ctx, NDBT_Step* step)
 
   const bool waitNode = ctx->getProperty("WaitNode", Uint32(0)) != 0;
   const bool event = ctx->getProperty("CreateDropEvent", Uint32(0)) != 0;
-  const char * args = "";
+  const char * ndbd_args = "";
+
   if (ctx->getProperty("KeepFS", Uint32(0)) != 0)
   {
-    args = "--initial=0";
+    ndbd_args = "--initial=0";
   }
 
   NodeSet mgmdNodeSet = (NodeSet) ctx->getProperty("MgmdNodeSet", Uint32(0));
@@ -573,25 +641,14 @@ runUpgrade_Half(NDBT_Context* ctx, NDBT_Step* step)
       return NDBT_FAILED;
 
     // Restart ndb_mgmd(s)
-    SqlResultSet mgmds;
-    if (!atrt.getMgmds(clusterId, mgmds))
-      return NDBT_FAILED;
-
-    uint mgmdCount = mgmds.numRows();
-    uint restartCount = getNodeCount(mgmdNodeSet, mgmdCount);
-    
-    ndbout << "Restarting "
-             << restartCount << " of " << mgmdCount
-            << " mgmds" << endl;
-      
-    while (mgmds.next() && restartCount --)
+    if (runChangeMgmds(ctx,
+                       step,
+                       restarter,
+                       atrt,
+                       clusterId,
+                       mgmdNodeSet) != NDBT_OK)
     {
-      ndbout << "Restart mgmd" << mgmds.columnAsInt("node_id") << endl;
-      if (!atrt.changeVersion(mgmds.columnAsInt("id"), ""))
-        return NDBT_FAILED;
-
-      if(restarter.waitConnected())
-        return NDBT_FAILED;
+      return NDBT_FAILED;
     }
 
     NdbSleep_SecSleep(5); // TODO, handle arbitration
@@ -612,7 +669,7 @@ runUpgrade_Half(NDBT_Context* ctx, NDBT_Step* step)
     }
 
     uint ndbdCount = ndbds.numRows();
-    restartCount = getNodeCount(ndbdNodeSet, ndbdCount);
+    uint restartCount = getNodeCount(ndbdNodeSet, ndbdCount);
     
     ndbout << "Restarting "
              << restartCount << " of " << ndbdCount
@@ -639,7 +696,7 @@ runUpgrade_Half(NDBT_Context* ctx, NDBT_Step* step)
 
       ndbout << "Restart node " << nodeId << endl;
       
-      if (!atrt.changeVersion(processId, args))
+      if (!atrt.changeVersion(processId, ndbd_args))
         return NDBT_FAILED;
       
       if (waitNode)
@@ -695,7 +752,7 @@ runUpgrade_Half(NDBT_Context* ctx, NDBT_Step* step)
         continue;
       
       ndbout << "Restart node " << nodeId << endl;
-      if (!atrt.changeVersion(processId, args))
+      if (!atrt.changeVersion(processId, ndbd_args))
         return NDBT_FAILED;
 
       if (waitNode)
@@ -1236,6 +1293,34 @@ int runUpgrade_Traffic(NDBT_Context* ctx, NDBT_Step* step){
   return res;
 }
 
+/**
+ * Return true for versions that have tests named Downgrade*
+ * for downgrade tests. (>= 7.2.40, 7.3.28, 7.4.27, 7.5.17, 7.6.13, 8.0.19)
+ */
+static bool haveNamedDowngradeTests(Uint32 version)
+{
+  const Uint32 major = (version >> 16) & 0xFF;
+  const Uint32 minor = (version >>  8) & 0xFF;
+  const Uint32 build = (version >>  0) & 0xFF;
+
+  if (major == 7)
+  {
+    switch (minor)
+    {
+      case 0: return false;
+      case 1: return false;
+      case 2: return build >= 40;
+      case 3: return build >= 28;
+      case 4: return build >= 27;
+      case 5: return build >= 17;
+      case 6: return build >= 13;
+      default: return true;
+    }
+  }
+
+  return version >= NDB_MAKE_VERSION(8,0,19);
+}
+
 int
 startPostUpgradeChecks(NDBT_Context* ctx, NDBT_Step* step)
 {
@@ -1261,8 +1346,37 @@ startPostUpgradeChecks(NDBT_Context* ctx, NDBT_Step* step)
    *     this will restart it as "testUpgrade -n X -n X--post-upgrade"
    */
   BaseString tc;
+  std::string tc_name = ctx->getCase()->getName();
+
+  /**
+   * In older versions, there are no test cases with names of the form
+   * Downgrade* .
+   * Hence, when we downgrade from a version that has a test case like
+   * Downgrade* to a version that doesn't, the post-upgrade test fails
+   * since it is of the form Upgrade* in the lower versions.
+   * Hence, we change the names of the post upgrade test cases of the older
+   * versions to Upgrade* here.
+   */
+  if ((tc_name.find("Downgrade") == 0) && !haveNamedDowngradeTests(postVersion))
+  {
+    // Remove _WithMGMDInitialStart and _WithMGMDStart tags
+    size_t with_mgmd_initial_start_tag = tc_name.find("_WithMGMDInitialStart");
+    size_t with_mgmd_start_tag = tc_name.find("_WithMGMDStart");
+
+    if (with_mgmd_initial_start_tag != std::string::npos)
+    {
+      tc_name = tc_name.substr(0, with_mgmd_initial_start_tag);
+    }
+    else if (with_mgmd_start_tag != std::string::npos)
+    {
+      tc_name = tc_name.substr(0, with_mgmd_start_tag);
+    }
+    // Change tc name from Downgrade* to Upgrade*
+    tc_name = tc_name.substr(strlen("Downgrade"), tc_name.length());
+    tc_name = std::string("Upgrade").append(tc_name);
+  }
   tc.assfmt("-n %s--post-upgrade %s", 
-            ctx->getCase()->getName(),
+            tc_name.c_str(),
             extraArgs.c_str());
 
   ndbout << "About to restart self with extra arg: " << tc.c_str() << endl;
@@ -1396,6 +1510,101 @@ bool versionsSpanBoundary(int verA, int verB, int incBoundaryVer)
            (maxPeerVer >= incBoundaryVer) );
 }
 
+bool versionsProtocolCompatible(int verA, int verB)
+{
+  /**
+   * Version 8.0 introduced some incompatibilities, check
+   * whether they make a test unusable
+   */
+  if (versionsSpanBoundary(verA, verB, NDB_MAKE_VERSION(8,0,0)))
+  {
+    /* Versions span 8.0 boundary, check compatibility */
+    if (!ndbd_protocol_accepted_by_8_0(verA) ||
+        !ndbd_protocol_accepted_by_8_0(verB))
+    {
+      ndbout_c("Versions spanning 8.0 boundary not protocol compatible : "
+               "%x -> %x",
+               verA, verB);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static int checkForDowngrade(NDBT_Context* ctx, NDBT_Step* step)
+{
+  if (preVersion < postVersion)
+  {
+    ndbout_c("Error: Not doing downgrade as expected : "
+             "%x -> %x",
+             preVersion, postVersion);
+    return NDBT_FAILED;
+  }
+
+  if (!versionsProtocolCompatible(preVersion, postVersion))
+  {
+    ndbout_c("Skipping test due to protocol incompatibility");
+    return NDBT_SKIPPED;
+  }
+
+  return NDBT_OK;
+}
+
+static int checkForUpgrade(NDBT_Context* ctx, NDBT_Step* step)
+{
+  if (preVersion > postVersion)
+  {
+    ndbout_c("Error: Not doing upgrade as expected : "
+             "%x -> %x",
+             preVersion, postVersion);
+    return NDBT_FAILED;
+  }
+
+  if (!versionsProtocolCompatible(preVersion, postVersion))
+  {
+    ndbout_c("Skipping test due to protocol incompatibility");
+    return NDBT_SKIPPED;
+  }
+
+  return NDBT_OK;
+}
+
+/**
+ * This function skips the test case if it is configured to do a non-initial restart
+ * but actually requires an initial restart.
+ */
+static int checkDowngradeCompatibleConfigFileformatVersion(
+    NDBT_Context* ctx, NDBT_Step* step) {
+  const Uint32 problemBoundary = NDB_USE_CONFIG_VERSION_V2_80;
+
+  const bool need_initial_mgmd_restart = versionsSpanBoundary(
+                                           preVersion,
+                                           postVersion,
+                                           problemBoundary);
+
+  const Uint32 initial_mgmd_restart = ctx->getProperty(
+                                             "InitialMgmdRestart", Uint32(0));
+  if (initial_mgmd_restart == 1)
+  {
+    ndbout << "InitialMgmdRestart is set to 1" << endl;
+    return NDBT_OK;
+  }
+  if (need_initial_mgmd_restart)
+  {
+    /**
+     * Test case is configured for non initial mgmd restart but
+     * upgrade/downgrade needs initial restart
+     */
+    ndbout << "Skipping test due to incompatible config versions "
+           << "with non-initial mgmd restart" << endl;
+    return NDBT_SKIPPED;
+  }
+  ndbout << "Config versions are compatible" << endl;
+  return NDBT_OK;
+}
+
+
 #define SchemaTransVersion NDB_MAKE_VERSION(6,4,0)
 
 int runPostUpgradeDecideDDL(NDBT_Context* ctx, NDBT_Step* step)
@@ -1491,7 +1700,8 @@ runUpgrade_SR(NDBT_Context* ctx, NDBT_Step* step)
   AtrtClient atrt;
   NodeSet mgmdNodeSet = All;
 
-  const char * args = "";
+  const char * ndbd_args = "";
+
   bool skipMgmds = (ctx->getProperty("SkipMgmds", Uint32(0)) != 0);
 
   SqlResultSet clusters;
@@ -1529,27 +1739,16 @@ runUpgrade_SR(NDBT_Context* ctx, NDBT_Step* step)
     }
     
     // Restart ndb_mgmd(s)
-    SqlResultSet mgmds;
-    if (!atrt.getMgmds(clusterId, mgmds))
-      return NDBT_FAILED;
-
-    uint mgmdCount = mgmds.numRows();
-    uint restartCount = getNodeCount(mgmdNodeSet, mgmdCount);
-
     if (!skipMgmds)
     {
-      ndbout << "Restarting "
-             << restartCount << " of " << mgmdCount
-             << " mgmds" << endl;
-      
-      while (mgmds.next() && restartCount --)
+      if (runChangeMgmds(ctx,
+                         step,
+                         restarter,
+                         atrt,
+                         clusterId,
+                         mgmdNodeSet) != NDBT_OK)
       {
-        ndbout << "Restart mgmd" << mgmds.columnAsInt("node_id") << endl;
-        if (!atrt.changeVersion(mgmds.columnAsInt("id"), ""))
-          return NDBT_FAILED;
-        
-        if(restarter.waitConnected())
-          return NDBT_FAILED;
+        return NDBT_FAILED;
       }
 
       NdbSleep_SecSleep(5); // TODO, handle arbitration
@@ -1565,7 +1764,7 @@ runUpgrade_SR(NDBT_Context* ctx, NDBT_Step* step)
       return NDBT_FAILED;
 
     uint ndbdCount = ndbds.numRows();
-    restartCount = ndbdCount;
+    uint restartCount = ndbdCount;
     
     ndbout << "Upgrading "
              << restartCount << " of " << ndbdCount
@@ -1578,7 +1777,7 @@ runUpgrade_SR(NDBT_Context* ctx, NDBT_Step* step)
       
       ndbout << "Upgrading node " << nodeId << endl;
       
-      if (!atrt.changeVersion(processId, args))
+      if (!atrt.changeVersion(processId, ndbd_args))
         return NDBT_FAILED;
     }
 
@@ -1694,26 +1893,14 @@ runUpgradeAndFail(NDBT_Context* ctx, NDBT_Step* step)
     return NDBT_FAILED;
 
   // Restart ndb_mgmd(s)
-  SqlResultSet mgmds;
-  if (!atrt.getMgmds(clusterId, mgmds))
-    return NDBT_FAILED;
-
-  uint mgmdCount = mgmds.numRows();
-  uint restartCount = mgmdCount;
-
-  ndbout << "Restarting "
-      << restartCount << " of " << mgmdCount
-      << " mgmds" << endl;
-
-  while (mgmds.next() && restartCount --)
+  if (runChangeMgmds(ctx,
+                     step,
+                     restarter,
+                     atrt,
+                     clusterId,
+                     All) != NDBT_OK)
   {
-    ndbout << "Restart mgmd " << mgmds.columnAsInt("node_id") << endl;
-    if (!atrt.changeVersion(mgmds.columnAsInt("id"), ""))
-      return NDBT_FAILED;
-
-    if (restarter.waitConnected())
-      return NDBT_FAILED;
-    ndbout << "Connected to mgmd"<< endl;
+    return NDBT_FAILED;
   }
 
   ndbout << "Waiting for started"<< endl;
@@ -1937,7 +2124,7 @@ runReadVersions(NDBT_Context* ctx, NDBT_Step* step)
 /**
  * runSkipIfCannotKeepFS
  *
- * Check whether we can perform an upgrade while keeping the
+ * Check whether we can perform a test while keeping the
  * FS with the versions being tested.
  * If not, skip
  */
@@ -1950,13 +2137,36 @@ runSkipIfCannotKeepFS(NDBT_Context* ctx, NDBT_Step* step)
     return NDBT_OK;
   }
 
-  const Uint32 problemBoundary = NDB_MAKE_VERSION(7,6,3);  // NDBD_LOCAL_SYSFILE_VERSION
-
-  if (versionsSpanBoundary(preVersion, postVersion, problemBoundary))
+  /**
+   * Crossing the boundary of 7.6 is problematic for
+   * both upgrades and downgrades due to WL#8069 Partial LCP
+   */
   {
-    ndbout_c("Cannot run with these versions as they do not support "
-                  "non initial upgrades.");
-    return NDBT_SKIPPED;
+    const Uint32 problemBoundary = NDB_MAKE_VERSION(7,6,3);  // NDBD_LOCAL_SYSFILE_VERSION
+
+    if (versionsSpanBoundary(preVersion, postVersion, problemBoundary))
+    {
+      ndbout_c("Cannot run with these versions as they do not support "
+               "non initial upgrades or downgrades (WL#8069).");
+      return NDBT_SKIPPED;
+    }
+  }
+
+  /**
+   * Can upgrade across the boundary of 8.0.18, but cannot downgrade
+   * due to WL#12876 SYSFILE format version 2
+   */
+  {
+    const bool isDowngrade = postVersion < preVersion;
+    const Uint32 problemBoundary = NDB_MAKE_VERSION(8,0,18);
+
+    if (isDowngrade &&
+        versionsSpanBoundary(preVersion, postVersion, problemBoundary))
+    {
+      ndbout_c("Cannot run with these versions as they do not support "
+               "non initial downgrades (WL#12876)");
+      return NDBT_SKIPPED;
+    }
   }
   return NDBT_OK;
 }
@@ -2001,6 +2211,12 @@ NDBT_TESTSUITE(testUpgrade);
 TESTCASE("ShowVersions",
          "Upgrade API, showing actual versions run")
 {
+  /**
+   * This test is used to check the versions involved, and
+   * should do a minimal amount of other things, so that it
+   * does not depend on anything that can break between
+   * releases.
+   */
   INITIALIZER(runCheckStarted);
   STEP(runShowVersion);
   STEP(runRecordVersion);
@@ -2008,6 +2224,12 @@ TESTCASE("ShowVersions",
 }
 POSTUPGRADE("ShowVersions")
 {
+  /**
+   * This test postupgrade is used to check the versions involved, and
+   * should do a minimal amount of other things, so that it
+   * does not depend on anything that can break between
+   * releases.
+   */
   TC_PROPERTY("PostUpgrade", Uint32(1));
   INITIALIZER(runCheckStarted);
   STEP(runShowVersion);
@@ -2015,20 +2237,25 @@ POSTUPGRADE("ShowVersions")
 };
 TESTCASE("Upgrade_NR1",
 	 "Test that one node at a time can be upgraded"){
+  TC_PROPERTY("InitialMGMDRestart", Uint32(1));
   INITIALIZER(runCheckStarted);
   INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runBug48416);
   STEP(runUpgrade_NR1);
   VERIFIER(startPostUpgradeChecks);
 }
 POSTUPGRADE("Upgrade_NR1")
 {
+  TC_PROPERTY("InitialMGMDRestart", Uint32(1));
   INITIALIZER(runCheckStarted);
   INITIALIZER(runPostUpgradeChecks);
 }
 TESTCASE("Upgrade_NR2",
 	 "Test that one node in each nodegroup can be upgradde simultaneously"){
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   STEP(runUpgrade_NR2);
   VERIFIER(startPostUpgradeChecks);
 }
@@ -2040,6 +2267,8 @@ POSTUPGRADE("Upgrade_NR2")
 TESTCASE("Upgrade_NR3",
 	 "Test that one node in each nodegroup can be upgradde simultaneously"){
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   STEP(runUpgrade_NR3);
   VERIFIER(startPostUpgradeChecks);
 }
@@ -2054,6 +2283,7 @@ TESTCASE("Upgrade_FS",
   TC_PROPERTY("KeepFS", 1);
   INITIALIZER(runCheckStarted);
   INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runSkipIfCannotKeepFS);
   INITIALIZER(runCreateAllTables);
   INITIALIZER(runLoadAll);
@@ -2070,6 +2300,8 @@ TESTCASE("Upgrade_Traffic",
 {
   TC_PROPERTY("UseRangeScanT1", (Uint32)1);
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateAllTables);
   STEP(runUpgrade_Traffic);
   STEP(runBasic);
@@ -2087,6 +2319,7 @@ TESTCASE("Upgrade_Traffic_FS",
   TC_PROPERTY("KeepFS", 1);
   INITIALIZER(runCheckStarted);
   INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runSkipIfCannotKeepFS);
   INITIALIZER(runCreateAllTables);
   STEP(runUpgrade_Traffic);
@@ -2102,6 +2335,8 @@ TESTCASE("Upgrade_Traffic_one",
 	 "Test upgrade with traffic, *one* table and restart --initial")
 {
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateOneTable);
   STEP(runUpgrade_Traffic);
   STEP(runBasic);
@@ -2118,6 +2353,7 @@ TESTCASE("Upgrade_Traffic_FS_one",
   TC_PROPERTY("KeepFS", 1);
   INITIALIZER(runCheckStarted);
   INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runSkipIfCannotKeepFS);
   INITIALIZER(runCreateOneTable);
   STEP(runUpgrade_Traffic);
@@ -2133,6 +2369,8 @@ TESTCASE("Upgrade_Api_Only",
          "Test that upgrading the Api node only works")
 {
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateAllTables);
   VERIFIER(startPostUpgradeChecksApiFirst);
 }
@@ -2151,12 +2389,16 @@ TESTCASE("Upgrade_Api_Before_NR1",
          "Test that upgrading the Api node before the kernel works")
 {
   /* Api, then MGMD(s), then NDBDs */
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateAllTables);
   VERIFIER(startPostUpgradeChecksApiFirst);
 }
 POSTUPGRADE("Upgrade_Api_Before_NR1")
 {
+  TC_PROPERTY("InitialMGMDRestart", Uint32(1));
   INITIALIZER(runCheckStarted);
   INITIALIZER(runPostUpgradeDecideDDL);
   INITIALIZER(runGetTableList);
@@ -2169,6 +2411,8 @@ TESTCASE("Upgrade_Api_NDBD_MGMD",
          "Test that updating in reverse order works")
 {
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateAllTables);
   VERIFIER(startPostUpgradeChecksApiFirst);
 }
@@ -2186,6 +2430,8 @@ TESTCASE("Upgrade_Mixed_MGMD_API_NDBD",
          "Test that upgrading MGMD/API partially before data nodes works")
 {
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateAllTables);
   STEP(runUpgrade_NotAllMGMD); /* Upgrade an MGMD */
   STEP(runBasic);
@@ -2206,6 +2452,8 @@ TESTCASE("Bug14702377",
          "Dirty PK read of non-existent tuple  6.3->7.x hangs"){
   TC_PROPERTY("HalfStartedHold", (Uint32)1);
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runCreateOneTable);
   STEP(runUpgrade_Half);
   STEP(runBug14702377);
@@ -2222,6 +2470,7 @@ TESTCASE("Upgrade_SR_ManyTablesMaxFrag",
   TC_PROPERTY("FragmentCount", ~Uint32(0));
   INITIALIZER(runCheckStarted);
   INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runSkipIfCannotKeepFS);
   INITIALIZER(createManyTables);
   STEP(runUpgrade_SR);
@@ -2238,6 +2487,8 @@ TESTCASE("Upgrade_NR3_LCP_InProgress",
 {
   TC_PROPERTY("HalfStartedHold", Uint32(1)); /* Stop half way through */
   INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   STEP(runStartBlockLcp);
   STEP(runUpgrade_NR3);
   /* No need for postUpgrade, and cannot rely on it existing for
@@ -2259,10 +2510,633 @@ TESTCASE("Upgrade_Newer_LCP_FS_Fail",
 {
   INITIALIZER(runCheckStarted);
   INITIALIZER(runReadVersions);
+  INITIALIZER(checkForUpgrade);
   INITIALIZER(runSkipIfPostCanKeepFS);
   STEP(runUpgradeAndFail);
   // No postupgradecheck required as the upgrade is expected to fail
 }
+
+
+// Downgrade tests //
+
+TESTCASE("Downgrade_NR1",
+   "Test that one node at a time can be downgraded"){
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runBug48416);
+  STEP(runUpgrade_NR1);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_NR1")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_NR1_WithMGMDStart",
+   "Test that one node at a time can be downgraded"){
+  TC_PROPERTY("InitialMgmdRestart", Uint32(0));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runBug48416);
+  STEP(runUpgrade_NR1);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_NR1_WithMGMDStart")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_NR2",
+   "Test that one node in each nodegroup can be downgraded simultaneously"){
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runUpgrade_NR2);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_NR2")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_NR2_WithMGMDInitialStart",
+   "Test that one node in each nodegroup can be downgraded simultaneously"){
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runUpgrade_NR2);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_NR2_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMGMDRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_NR3",
+   "Test that one node in each nodegroup can be downgraded simultaneously"){
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runUpgrade_NR3);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_NR3")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_NR3_WithMGMDInitialStart",
+   "Test that one node in each nodegroup can be downgraded simultaneously"){
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runUpgrade_NR3);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_NR3_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMGMDRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_FS",
+   "Test that one node in each nodegroup can be downgraded simultaneously")
+{
+  TC_PROPERTY("KeepFS", 1);
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  INITIALIZER(runLoadAll);
+  STEP(runUpgrade_Traffic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_FS")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_FS_WithMGMDInitialStart",
+   "Test that one node in each nodegroup can be downgraded simultaneously")
+{
+  TC_PROPERTY("KeepFS", 1);
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  INITIALIZER(runLoadAll);
+  STEP(runUpgrade_Traffic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_FS_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMGMDRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic",
+   "Test downgrade with traffic, all tables and restart --initial")
+{
+  TC_PROPERTY("UseRangeScanT1", (Uint32)1);
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_WithMGMDInitialStart",
+   "Test downgrade with traffic, all tables and restart --initial")
+{
+  TC_PROPERTY("UseRangeScanT1", (Uint32)1);
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_FS",
+   "Test downgrade with traffic, all tables and restart using FS")
+{
+  TC_PROPERTY("UseRangeScanT1", (Uint32)1);
+  TC_PROPERTY("KeepFS", 1);
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_FS")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_FS_WithMGMDInitialStart",
+   "Test downgrade with traffic, all tables and restart using FS")
+{
+  TC_PROPERTY("UseRangeScanT1", (Uint32)1);
+  TC_PROPERTY("KeepFS", 1);
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_FS_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_one",
+   "Test downgrade with traffic, *one* table and restart --initial")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateOneTable);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_one")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_one_WithMGMDInitialStart",
+   "Test downgrade with traffic, *one* table and restart --initial")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateOneTable);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_one_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_FS_one",
+   "Test downgrade with traffic, all tables and restart using FS")
+{
+  TC_PROPERTY("KeepFS", 1);
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateOneTable);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_FS_one")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Traffic_FS_one_WithMGMDInitialStart",
+   "Test downgrade with traffic, all tables and restart using FS")
+{
+  TC_PROPERTY("KeepFS", 1);
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateOneTable);
+  STEP(runUpgrade_Traffic);
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_Traffic_FS_one_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Api_Only",
+         "Test that downgrading the Api node only works")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  VERIFIER(startPostUpgradeChecksApiFirst);
+}
+POSTUPGRADE("Downgrade_Api_Only")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  TC_PROPERTY("WaitSeconds", 30);
+  STEP(runBasic);
+  STEP(runPostUpgradeChecks);
+  STEP(runWait);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Api_Only_WithMGMDInitialStart",
+         "Test that downgrading the Api node only works")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  VERIFIER(startPostUpgradeChecksApiFirst);
+}
+POSTUPGRADE("Downgrade_Api_Only_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  TC_PROPERTY("WaitSeconds", 30);
+  STEP(runBasic);
+  STEP(runPostUpgradeChecks);
+  STEP(runWait);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Api_Before_NR1",
+         "Test that downgrading the Api node before the kernel works")
+{
+  /* Api, then MGMD(s), then NDBDs */
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  VERIFIER(startPostUpgradeChecksApiFirst);
+}
+POSTUPGRADE("Downgrade_Api_Before_NR1")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  STEP(runBasic);
+  STEP(runUpgrade_NR1); /* Upgrade kernel nodes using NR1 */
+  FINALIZER(runPostUpgradeChecks);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Api_Before_NR1_WithMGMDStart",
+         "Test that downgrading the Api node before the kernel works")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(0));
+  /* Api, then MGMD(s), then NDBDs */
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  VERIFIER(startPostUpgradeChecksApiFirst);
+}
+POSTUPGRADE("Downgrade_Api_Before_NR1_WithMGMDStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(0));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  STEP(runBasic);
+  STEP(runUpgrade_NR1); /* Upgrade kernel nodes using NR1 */
+  FINALIZER(runPostUpgradeChecks);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Api_NDBD_MGMD",
+         "Test that updating in reverse order works")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  VERIFIER(startPostUpgradeChecksApiFirst);
+}
+POSTUPGRADE("Downgrade_Api_NDBD_MGMD")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  STEP(runBasic);
+  STEP(runUpgrade_NdbdFirst);
+  FINALIZER(runPostUpgradeChecks);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Api_NDBD_MGMD_WithMGMDInitialStart",
+         "Test that updating in reverse order works")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  VERIFIER(startPostUpgradeChecksApiFirst);
+}
+POSTUPGRADE("Downgrade_Api_NDBD_MGMD_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  STEP(runBasic);
+  STEP(runUpgrade_NdbdFirst);
+  FINALIZER(runPostUpgradeChecks);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Mixed_MGMD_API_NDBD",
+         "Test that downgrading MGMD/API partially before data nodes works")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateAllTables);
+  STEP(runUpgrade_NotAllMGMD); /* Upgrade an MGMD */
+  STEP(runBasic);
+  VERIFIER(startPostUpgradeChecksApiFirst); /* Upgrade Api */
+}
+POSTUPGRADE("Downgrade_Mixed_MGMD_API_NDBD")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeDecideDDL);
+  INITIALIZER(runGetTableList);
+  INITIALIZER(runClearAll); /* Clear rows from old-ver basic run */
+  STEP(runBasic);
+  STEP(runUpgrade_NdbdFirst); /* Upgrade all Ndbds, then MGMDs finally */
+  FINALIZER(runPostUpgradeChecks);
+  FINALIZER(runClearAll);
+}
+
+TESTCASE("Downgrade_Bug14702377",
+         "Dirty PK read of non-existent tuple  6.3->7.x hangs"){
+  TC_PROPERTY("HalfStartedHold", (Uint32)1);
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateOneTable);
+  STEP(runUpgrade_Half);
+  STEP(runBug14702377);
+}
+POSTUPGRADE("Downgrade_Bug14702377")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Bug14702377_WithMGMDInitialStart",
+         "Dirty PK read of non-existent tuple  6.3->7.x hangs"){
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  TC_PROPERTY("HalfStartedHold", (Uint32)1);
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(runCreateOneTable);
+  STEP(runUpgrade_Half);
+  STEP(runBug14702377);
+}
+POSTUPGRADE("Downgrade_Bug14702377_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_SR_ManyTablesMaxFrag",
+         "Check that number of tables has no impact")
+{
+  TC_PROPERTY("SkipMgmds", Uint32(1)); /* For 7.0.14... */
+  TC_PROPERTY("FragmentCount", ~Uint32(0));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(createManyTables);
+  STEP(runUpgrade_SR);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_SR_ManyTablesMaxFrag")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+  INITIALIZER(dropManyTables);
+}
+
+TESTCASE("Downgrade_SR_ManyTablesMaxFrag_WithMGMDInitialStart",
+         "Check that number of tables has no impact")
+{
+  TC_PROPERTY("SkipMgmds", Uint32(1)); /* For 7.0.14... */
+  TC_PROPERTY("FragmentCount", ~Uint32(0));
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfCannotKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  INITIALIZER(createManyTables);
+  STEP(runUpgrade_SR);
+  VERIFIER(startPostUpgradeChecks);
+}
+POSTUPGRADE("Downgrade_SR_ManyTablesMaxFrag_WithMGMDInitialStart")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runPostUpgradeChecks);
+  INITIALIZER(dropManyTables);
+}
+
+TESTCASE("Downgrade_NR3_LCP_InProgress",
+         "Check that half-cluster downgrade with LCP in progress is ok")
+{
+  TC_PROPERTY("HalfStartedHold", Uint32(1)); /* Stop half way through */
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runStartBlockLcp);
+  STEP(runUpgrade_NR3);
+  /* No need for postUpgrade, and cannot rely on it existing for
+   * downgrades...
+   * Better solution needed for downgrades where postUpgrade is
+   * useful, e.g. RunIfPresentElseIgnore...
+   */
+  //VERIFIER(startPostUpgradeChecks);
+}
+//POSTUPGRADE("Upgrade_NR3_LCP_InProgress")
+//{
+//  INITIALIZER(runCheckStarted);
+//  INITIALIZER(runPostUpgradeChecks);
+//}
+
+TESTCASE("Downgrade_NR3_LCP_InProgress_WithMGMDInitialStart",
+         "Check that half-cluster downgrade with LCP in progress is ok")
+{
+  TC_PROPERTY("HalfStartedHold", Uint32(1)); /* Stop half way through */
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runStartBlockLcp);
+  STEP(runUpgrade_NR3);
+  /* No need for postUpgrade, and cannot rely on it existing for
+   * downgrades...
+   * Better solution needed for downgrades where postUpgrade is
+   * useful, e.g. RunIfPresentElseIgnore...
+   */
+  //VERIFIER(startPostUpgradeChecks);
+}
+
+TESTCASE("Downgrade_Newer_LCP_FS_Fail",
+         "Try downgrading a data node from any lower version to 7.6.4 and fail."
+         "7.6.4 has a newer LCP file system and requires a downgrade with initial."
+         "(Bug#27308632)")
+{
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfPostCanKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runUpgradeAndFail);
+  // No postupgradecheck required as the downgrade is expected to fail
+}
+
+TESTCASE("Downgrade_Newer_LCP_FS_Fail_WithMGMDInitialStart",
+         "Try downgrading a data node from any lower version to 7.6.4 and fail."
+         "7.6.4 has a newer LCP file system and requires a downgrade with initial."
+         "(Bug#27308632)")
+{
+  TC_PROPERTY("InitialMgmdRestart", Uint32(1));
+  INITIALIZER(runCheckStarted);
+  INITIALIZER(runReadVersions);
+  INITIALIZER(checkForDowngrade);
+  INITIALIZER(runSkipIfPostCanKeepFS);
+  INITIALIZER(checkDowngradeCompatibleConfigFileformatVersion);
+  STEP(runUpgradeAndFail);
+  // No postupgradecheck required as the downgrade is expected to fail
+}
+
 NDBT_TESTSUITE_END(testUpgrade)
 
 int main(int argc, const char** argv){

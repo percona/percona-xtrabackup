@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -18,12 +25,15 @@
 #ifndef STATICSLOTPOOL_HPP
 #define STATICSLOTPOOL_HPP
 
+#include "debugger/EventLogger.hpp"
 #include "portlib/ndb_prefetch.h"
 #include "vm/IntrusiveList.hpp"
 #include "vm/ndbd_malloc_impl.hpp"
 #include "vm/Slot.hpp"
 
 #define JAM_FILE_ID 508
+
+extern EventLogger * g_eventLogger;
 
 /**
  * StaticSlotPool
@@ -140,7 +150,23 @@ inline Slot* StaticSlotPool::getPtr(Uint32 i, Uint32 slot_size) const
   }
 
   Slot* p = reinterpret_cast<Slot*>(&page->m_data[page_index * slot_size]);
-  require(Magic::match(p->m_magic, Slot::TYPE_ID));
+  if (unlikely(!Magic::match(p->m_magic, Slot::TYPE_ID)))
+  {
+    g_eventLogger->info("Magic::match failed in %s: "
+                        "type_id %08x rg %u tid %u: "
+                        "slot_size %u: ptr.i %u: ptr.p %p: "
+                        "magic %08x expected %08x",
+                        __func__,
+                        Slot::TYPE_ID,
+                        GET_RG(Slot::TYPE_ID),
+                        GET_TID(Slot::TYPE_ID),
+                        slot_size,
+                        page_index,
+                        p,
+                        p->m_magic,
+                        Magic::make(Slot::TYPE_ID));
+    require(Magic::match(p->m_magic, Slot::TYPE_ID));
+  }
   return p;
 }
 
@@ -158,12 +184,6 @@ inline bool StaticSlotPool::getValidPtr(Ptr<Slot>& p,
   Uint32 page_index = p.i % slots_per_page;
   Uint32 page_number = p.i / slots_per_page;
   Page* page = m_page_base;
-
-  if (unlikely(p.i == RNIL))
-  {
-    p.p = NULL;
-    return true;
-  }
 
   if (unlikely(p.i >= slot_count))
   {
@@ -188,12 +208,6 @@ inline bool StaticSlotPool::getUncheckedPtrRO(Ptr<Slot>& p,
   Uint32 page_number = p.i / slots_per_page;
   Page* page = m_page_base;
 
-  if (unlikely(p.i == RNIL))
-  {
-    p.p = NULL;
-    return true;
-  }
-
   if (unlikely(p.i >= slot_count))
   {
     return false;
@@ -215,12 +229,6 @@ inline bool StaticSlotPool::getUncheckedPtrRW(Ptr<Slot>& p,
   Uint32 page_index = p.i % slots_per_page;
   Uint32 page_number = p.i / slots_per_page;
   Page* page = m_page_base;
-
-  if (unlikely(p.i == RNIL))
-  {
-    p.p = NULL;
-    return true;
-  }
 
   if (unlikely(p.i >= slot_count))
   {

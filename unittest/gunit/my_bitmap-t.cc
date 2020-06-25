@@ -113,8 +113,8 @@ bool test_compare_operators(MY_BITMAP *map, uint bitsize) {
   MY_BITMAP *map2 = &map2_obj, *map3 = &map3_obj;
   my_bitmap_map map2buf[MAX_TESTED_BITMAP_SIZE];
   my_bitmap_map map3buf[MAX_TESTED_BITMAP_SIZE];
-  bitmap_init(&map2_obj, map2buf, bitsize, false);
-  bitmap_init(&map3_obj, map3buf, bitsize, false);
+  bitmap_init(&map2_obj, map2buf, bitsize);
+  bitmap_init(&map3_obj, map3buf, bitsize);
   bitmap_clear_all(map2);
   bitmap_clear_all(map3);
   for (i = 0; i < no_loops; i++) {
@@ -353,7 +353,7 @@ bool test_compare(MY_BITMAP *map, uint bitsize) {
   my_bitmap_map map2buf[MAX_TESTED_BITMAP_SIZE];
   uint i, test_bit;
   uint no_loops = bitsize > 128 ? 128 : bitsize;
-  bitmap_init(&map2, map2buf, bitsize, false);
+  bitmap_init(&map2, map2buf, bitsize);
 
   /* Test all 4 possible combinations of set/unset bits. */
   for (i = 0; i < no_loops; i++) {
@@ -397,38 +397,43 @@ bool test_intersect(MY_BITMAP *map, uint bitsize) {
   uint bitsize2 = 1 + get_rand_bit(MAX_TESTED_BITMAP_SIZE - 1);
   MY_BITMAP map2;
   my_bitmap_map *map2buf = new my_bitmap_map[bitsize2];
-  uint i, test_bit1, test_bit2, test_bit3;
-  bitmap_init(&map2, map2buf, bitsize2, false);
+  bitmap_init(&map2, map2buf, bitsize2);
 
-  test_bit1 = get_rand_bit(bitsize);
-  test_bit2 = get_rand_bit(bitsize);
-  bitmap_set_bit(map, test_bit1);
-  bitmap_set_bit(map, test_bit2);
-  test_bit3 = get_rand_bit(bitsize2);
-  bitmap_set_bit(&map2, test_bit3);
-  if (test_bit2 < bitsize2) bitmap_set_bit(&map2, test_bit2);
+  uint test_bit1 = get_rand_bit(bitsize);
+  uint test_bit2 = get_rand_bit(bitsize2);
 
-  bitmap_intersect(map, &map2);
-  if (test_bit2 < bitsize2) {
-    if (!bitmap_is_set(map, test_bit2)) goto error;
-    bitmap_clear_bit(map, test_bit2);
+  if (test_bit2 < bitsize) {
+    // test_bit2 can be set in map, so the intersection is not empty iff
+    // test_bit1 == test_bit2
+    bitmap_set_bit(map, test_bit1);
+    bitmap_set_bit(&map2, test_bit2);
+    bitmap_intersect(map, &map2);
+    if (test_bit1 == test_bit2) {
+      if (!bitmap_is_set(map, test_bit1)) goto error;
+      bitmap_clear_bit(map, test_bit2);
+    } else {
+      if (bitmap_is_set(map, test_bit1)) goto error;
+    }
+  } else {
+    // test_bit2 cannot be set in map, so the intersection should be empty
+    bitmap_set_bit(map, test_bit1);
+    bitmap_set_bit(&map2, test_bit2);
+    bitmap_intersect(map, &map2);
   }
-  if (test_bit1 == test_bit3) {
-    if (!bitmap_is_set(map, test_bit1)) goto error;
-    bitmap_clear_bit(map, test_bit1);
-  }
+
   if (!bitmap_is_clear_all(map)) goto error;
 
   bitmap_set_all(map);
   bitmap_set_all(&map2);
-  for (i = 0; i < bitsize2; i++) bitmap_clear_bit(&map2, i);
+  for (uint i = 0; i < bitsize2; i++) bitmap_clear_bit(&map2, i);
   bitmap_intersect(map, &map2);
   if (!bitmap_is_clear_all(map)) goto error;
   delete[] map2buf;
   return false;
 error:
+  delete[] map2buf;
   ADD_FAILURE() << "intersect error  bit1=" << test_bit1
-                << ",bit2=" << test_bit2 << ",bit3=" << test_bit3;
+                << ",bit2=" << test_bit2;
   return true;
 }
 
@@ -436,7 +441,7 @@ class BitMapTest : public ::testing::TestWithParam<uint> {
  protected:
   virtual void SetUp() {
     bitsize = GetParam();
-    ASSERT_FALSE(bitmap_init(&map, buf, bitsize, false));
+    ASSERT_FALSE(bitmap_init(&map, buf, bitsize));
     bitmap_clear_all(&map);
   }
 
@@ -509,7 +514,7 @@ bool bitmap_set_prefix_t() {
   MY_BITMAP map;
   my_bitmap_map buf[2]; /* 64-bit buffer */
   uint32 _max = ~((uint32)0);
-  bitmap_init(&map, buf, 32, false);
+  bitmap_init(&map, buf, 32);
 
   // set all bits in the 2nd half of the buf
   buf[1] = _max;

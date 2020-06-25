@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -49,11 +49,17 @@ std::string MetadataCachePluginConfig::get_default(
   static const std::map<std::string, std::string> defaults{
       {"address", metadata_cache::kDefaultMetadataAddress},
       {"ttl", ms_to_seconds_string(metadata_cache::kDefaultMetadataTTL)},
+      {"auth_cache_ttl",
+       ms_to_seconds_string(metadata_cache::kDefaultAuthCacheTTL)},
+      {"auth_cache_refresh_interval",
+       ms_to_seconds_string(metadata_cache::kDefaultAuthCacheRefreshInterval)},
       {"connect_timeout", to_string(metadata_cache::kDefaultConnectTimeout)},
       {"read_timeout", to_string(metadata_cache::kDefaultReadTimeout)},
+      {"router_id", "0"},
       {"thread_stack_size",
        to_string(mysql_harness::kDefaultStackSizeInKiloBytes)},
-      {"use_gr_notifications", "0"}};
+      {"use_gr_notifications", "0"},
+      {"cluster_type", "gr"}};
   auto it = defaults.find(option);
   if (it == defaults.end()) {
     return std::string();
@@ -69,13 +75,22 @@ bool MetadataCachePluginConfig::is_required(const std::string &option) const {
   return std::find(required.begin(), required.end(), option) != required.end();
 }
 
-std::string MetadataCachePluginConfig::get_group_replication_id() const {
+std::string MetadataCachePluginConfig::get_cluster_type_specific_id() const {
   if (metadata_cache_dynamic_state) {
     metadata_cache_dynamic_state->load();
-    return metadata_cache_dynamic_state->get_gr_id();
+    return metadata_cache_dynamic_state->get_cluster_type_specific_id();
   }
 
   return "";
+}
+
+unsigned MetadataCachePluginConfig::get_view_id() const {
+  if (metadata_cache_dynamic_state) {
+    metadata_cache_dynamic_state->load();
+    return metadata_cache_dynamic_state->get_view_id();
+  }
+
+  return 0;
 }
 
 std::vector<mysql_harness::TCPAddress>
@@ -141,12 +156,28 @@ MetadataCachePluginConfig::get_metadata_servers(
   return address_vector;
 }
 
-ClusterMetadataDynamicState *MetadataCachePluginConfig::get_dynamic_state() {
+mysqlrouter::ClusterType MetadataCachePluginConfig::get_cluster_type(
+    const mysql_harness::ConfigSection *section) {
+  std::string value = get_option_string(section, "cluster_type");
+  if (value == "rs") {
+    return mysqlrouter::ClusterType::RS_V2;
+  } else if (value == "gr") {
+    return mysqlrouter::ClusterType::GR_V2;
+  }
+
+  throw invalid_argument(get_log_prefix("cluster_type") + " is incorrect '" +
+                         value + "', expected 'rs' or 'gr'");
+}
+
+std::unique_ptr<ClusterMetadataDynamicState>
+MetadataCachePluginConfig::get_dynamic_state(
+    const mysql_harness::ConfigSection *section) {
   bool use_dynamic_state = mysql_harness::DIM::instance().is_DynamicState();
   if (!use_dynamic_state) {
     return nullptr;
   }
 
   auto &dynamic_state_base = mysql_harness::DIM::instance().get_DynamicState();
-  return new ClusterMetadataDynamicState(&dynamic_state_base);
+  return std::make_unique<ClusterMetadataDynamicState>(
+      &dynamic_state_base, get_cluster_type(section));
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -209,7 +209,7 @@ static TINA_SHARE *get_share(const char *table_name, TABLE *) {
                          &share, sizeof(*share), &tmp_name, length + 1,
                          NullS)) {
       mysql_mutex_unlock(&tina_mutex);
-      return NULL;
+      return nullptr;
     }
 
     share->use_count = 0;
@@ -228,7 +228,7 @@ static TINA_SHARE *get_share(const char *table_name, TABLE *) {
               MY_REPLACE_EXT | MY_UNPACK_FILENAME);
 
     if (mysql_file_stat(csv_key_file_data, share->data_file_name, &file_stat,
-                        MYF(MY_WME)) == NULL)
+                        MYF(MY_WME)) == nullptr)
       goto error;
     share->saved_data_file_length = file_stat.st_size;
 
@@ -261,7 +261,7 @@ error:
   mysql_mutex_unlock(&tina_mutex);
   my_free(share);
 
-  return NULL;
+  return nullptr;
 }
 
 /*
@@ -369,8 +369,6 @@ bool ha_tina::check_and_repair(THD *thd) {
   HA_CHECK_OPT check_opt;
   DBUG_TRACE;
 
-  check_opt.init();
-
   return repair(thd, &check_opt);
 }
 
@@ -476,11 +474,11 @@ ha_tina::ha_tina(handlerton *hton, TABLE_SHARE *table_arg)
       current_position(0),
       next_position(0),
       local_saved_data_file_length(0),
-      file_buff(0),
+      file_buff(nullptr),
       chain_alloced(0),
       chain_size(DEFAULT_CHAIN_LENGTH),
       local_data_file_version(0),
-      records_is_known(0),
+      records_is_known(false),
       blobroot(csv_key_memory_blobroot, BLOB_MEMROOT_ALLOC_SIZE) {
   /* Set our original buffers from pre-allocated memory */
   buffer.set((char *)byte_buffer, IO_SIZE, &my_charset_bin);
@@ -573,7 +571,7 @@ int ha_tina::chain_append() {
         /* Must cast since my_malloc unlike malloc doesn't have a void ptr */
         if ((chain = (tina_set *)my_realloc(
                  csv_key_memory_tina_set, (uchar *)chain,
-                 chain_size * sizeof(tina_set), MYF(MY_WME))) == NULL)
+                 chain_size * sizeof(tina_set), MYF(MY_WME))) == nullptr)
           return -1;
       } else {
         tina_set *ptr =
@@ -785,7 +783,7 @@ void tina_update_status(void *param) {
 }
 
 /* this should exist and return 0 for concurrent insert to work */
-bool tina_check_status(void *) { return 0; }
+bool tina_check_status(void *) { return false; }
 
 /*
   Save the state of the table
@@ -1074,7 +1072,7 @@ int ha_tina::rnd_init(bool) {
 
   current_position = next_position = 0;
   stats.records = 0;
-  records_is_known = 0;
+  records_is_known = false;
   chain_ptr = chain;
 
   return 0;
@@ -1201,7 +1199,7 @@ int ha_tina::rnd_end() {
   DBUG_TRACE;
 
   blobroot.Clear();
-  records_is_known = 1;
+  records_is_known = true;
 
   if ((chain_ptr - chain) > 0) {
     tina_set *ptr = chain;
@@ -1406,7 +1404,7 @@ int ha_tina::repair(THD *thd, HA_CHECK_OPT *) {
   share->rows_recorded = rows_repaired;
 
   /* write repaired file */
-  while (1) {
+  while (true) {
     write_end = min(file_buff->end(), current_position);
     if ((write_end - write_begin) &&
         (mysql_file_write(repair_file, (uchar *)file_buff->ptr(),
@@ -1509,7 +1507,7 @@ int ha_tina::create(const char *name, TABLE *table_arg, HA_CREATE_INFO *,
     check columns
   */
   for (Field **field = table_arg->s->field; *field; field++) {
-    if ((*field)->real_maybe_null()) {
+    if ((*field)->is_nullable()) {
       my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "nullable columns");
       return HA_ERR_UNSUPPORTED;
     }
@@ -1592,15 +1590,15 @@ mysql_declare_plugin(csv){
     MYSQL_STORAGE_ENGINE_PLUGIN,
     &csv_storage_engine,
     "CSV",
-    "Brian Aker, MySQL AB",
+    PLUGIN_AUTHOR_ORACLE,
     "CSV storage engine",
     PLUGIN_LICENSE_GPL,
     tina_init_func, /* Plugin Init */
-    NULL,           /* Plugin check uninstall */
+    nullptr,        /* Plugin check uninstall */
     tina_done_func, /* Plugin Deinit */
     0x0100 /* 1.0 */,
-    NULL, /* status variables                */
-    NULL, /* system variables                */
-    NULL, /* config options                  */
-    0,    /* flags                           */
+    nullptr, /* status variables                */
+    nullptr, /* system variables                */
+    nullptr, /* config options                  */
+    0,       /* flags                           */
 } mysql_declare_plugin_end;

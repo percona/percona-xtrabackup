@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,8 @@
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"            // check_access
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
+#include "sql/dd/properties.h"               // dd::Properties
+#include "sql/dd/types/table.h"              // dd::Table
 #include "sql/dd_table_share.h"              // open_table_def
 #include "sql/debug_sync.h"                  // DEBUG_SYNC
 #include "sql/handler.h"
@@ -96,10 +98,10 @@ bool Sql_cmd_alter_table_exchange_partition::execute(THD *thd) {
 
   if (check_access(thd, priv_needed, first_table->db,
                    &first_table->grant.privilege,
-                   &first_table->grant.m_internal, 0, 0) ||
+                   &first_table->grant.m_internal, false, false) ||
       check_access(thd, priv_needed, first_table->next_local->db,
                    &first_table->next_local->grant.privilege,
-                   &first_table->next_local->grant.m_internal, 0, 0))
+                   &first_table->next_local->grant.m_internal, false, false))
     return true;
 
   if (check_grant(thd, priv_needed, first_table, false, UINT_MAX, false))
@@ -309,12 +311,7 @@ bool Sql_cmd_alter_table_exchange_partition::exchange_partition(
   TABLE_LIST *swap_table_list;
   partition_element *part_elem;
   String *partition_name;
-  char temp_name[FN_REFLEN + 1];
-  char part_file_name[FN_REFLEN + 1];
-  char swap_file_name[FN_REFLEN + 1];
-  char temp_file_name[FN_REFLEN + 1];
   uint swap_part_id;
-  size_t part_file_name_len;
   Alter_table_prelocking_strategy alter_prelocking_strategy;
   uint table_counter;
   DBUG_TRACE;
@@ -363,22 +360,8 @@ bool Sql_cmd_alter_table_exchange_partition::exchange_partition(
 
   THD_STAGE_INFO(thd, stage_verifying_table);
 
-  /* Will append the partition name later in part_info->get_part_elem() */
-  part_file_name_len =
-      build_table_filename(part_file_name, sizeof(part_file_name),
-                           table_list->db, table_list->table_name, "", 0);
-  build_table_filename(swap_file_name, sizeof(swap_file_name),
-                       swap_table_list->db, swap_table_list->table_name, "", 0);
-  /* create a unique temp name #sqlx-nnnn_nnnn, x for eXchange */
-  snprintf(temp_name, sizeof(temp_name), "%sx-%lx_%x", tmp_file_prefix,
-           current_pid, thd->thread_id());
-  if (lower_case_table_names) my_casedn_str(files_charset_info, temp_name);
-  build_table_filename(temp_file_name, sizeof(temp_file_name),
-                       table_list->next_local->db, temp_name, "", FN_IS_TMP);
-
   if (!(part_elem = part_table->part_info->get_part_elem(
-            partition_name->c_ptr(), part_file_name + part_file_name_len,
-            &swap_part_id))) {
+            partition_name->c_ptr(), &swap_part_id))) {
     my_error(ER_UNKNOWN_PARTITION, MYF(0), partition_name->c_ptr(),
              part_table->alias);
     return true;
@@ -453,18 +436,26 @@ bool Sql_cmd_alter_table_exchange_partition::exchange_partition(
   /* Tables were successfully opened above. */
   DBUG_ASSERT(part_table_def != nullptr && swap_table_def != nullptr);
 
+  if (part_table_def->options().exists("secondary_engine") ||
+      swap_table_def->options().exists("secondary_engine")) {
+    /* Exchange operation is not allowed for tables with secondary engine
+     * since it's not currently supported by change propagation
+     */
+    my_error(ER_SECONDARY_ENGINE_DDL, MYF(0));
+    return true;
+  }
+
   DEBUG_SYNC(thd, "swap_partition_before_exchange");
 
-  int ha_error = part_handler->exchange_partition(
-      part_file_name, swap_file_name, swap_part_id, part_table_def,
-      swap_table_def);
+  int ha_error = part_handler->exchange_partition(swap_part_id, part_table_def,
+                                                  swap_table_def);
 
   if (ha_error) {
     handlerton *hton = part_table->file->ht;
     part_table->file->print_error(ha_error, MYF(0));
     // Close TABLE instances which marked as old earlier.
-    close_all_tables_for_name(thd, swap_table->s, false, NULL);
-    close_all_tables_for_name(thd, part_table->s, false, NULL);
+    close_all_tables_for_name(thd, swap_table->s, false, nullptr);
+    close_all_tables_for_name(thd, part_table->s, false, nullptr);
     /*
       Rollback all possible changes to data-dictionary and SE which
       Partition_handler::exchange_partitions() might have done before
@@ -487,31 +478,31 @@ bool Sql_cmd_alter_table_exchange_partition::exchange_partition(
       handlerton *hton = part_table->file->ht;
 
       // Close TABLE instances which marked as old earlier.
-      close_all_tables_for_name(thd, swap_table->s, false, NULL);
-      close_all_tables_for_name(thd, part_table->s, false, NULL);
+      close_all_tables_for_name(thd, swap_table->s, false, nullptr);
+      close_all_tables_for_name(thd, part_table->s, false, nullptr);
 
       /*
         Ensure that we call post-DDL hook and re-open tables even
         in case of error.
       */
-      auto rollback_post_ddl_reopen_lambda = [hton](THD *thd) {
+      auto rollback_post_ddl_reopen_lambda = [hton](THD *thd_arg) {
         /*
           Rollback all possible changes to data-dictionary and SE which
           Partition_handler::exchange_partitions() might have done before
           reporting an error. Do this before we downgrade metadata locks.
         */
-        (void)trans_rollback_stmt(thd);
+        (void)trans_rollback_stmt(thd_arg);
         /*
           Full rollback in case we have THD::transaction_rollback_request
           and to synchronize DD state in cache and on disk (as statement
           rollback doesn't clear DD cache of modified uncommitted objects).
         */
-        (void)trans_rollback(thd);
+        (void)trans_rollback(thd_arg);
         /*
           Call SE post DDL hook. This handles both rollback and commit cases.
         */
-        if (hton->post_ddl) hton->post_ddl(thd);
-        (void)thd->locked_tables_list.reopen_tables(thd);
+        if (hton->post_ddl) hton->post_ddl(thd_arg);
+        (void)thd_arg->locked_tables_list.reopen_tables(thd_arg);
       };
 
       std::unique_ptr<THD, decltype(rollback_post_ddl_reopen_lambda)>
@@ -531,8 +522,8 @@ bool Sql_cmd_alter_table_exchange_partition::exchange_partition(
         tables. Ignore the fact that the statement might fail due to binlog
         write failure.
       */
-      close_all_tables_for_name(thd, swap_table->s, false, NULL);
-      close_all_tables_for_name(thd, part_table->s, false, NULL);
+      close_all_tables_for_name(thd, swap_table->s, false, nullptr);
+      close_all_tables_for_name(thd, part_table->s, false, nullptr);
       (void)thd->locked_tables_list.reopen_tables(thd);
 
       if (write_bin_log(thd, true, thd->query().str, thd->query().length))
@@ -660,6 +651,14 @@ bool Sql_cmd_alter_table_truncate_partition::execute(THD *thd) {
   /* Table was successfully opened above. */
   DBUG_ASSERT(table_def != nullptr);
 
+  if (table_def->options().exists("secondary_engine")) {
+    /* Truncate operation is not allowed for tables with secondary engine
+     * since it's not currently supported by change propagation
+     */
+    my_error(ER_SECONDARY_ENGINE_DDL, MYF(0));
+    return true;
+  }
+
   if (hton->partition_flags() & HA_TRUNCATE_PARTITION_PRECLOSE) {
     /*
       Storage engine requires closing all open table instances before
@@ -693,8 +692,8 @@ bool Sql_cmd_alter_table_truncate_partition::execute(THD *thd) {
     init_tmp_table_share(thd, &share, first_table->db, 0,
                          first_table->table_name, path, nullptr);
 
-    auto free_share_lambda = [](TABLE_SHARE *share) {
-      free_table_share(share);
+    auto free_share_lambda = [](TABLE_SHARE *share_arg) {
+      free_table_share(share_arg);
     };
     std::unique_ptr<TABLE_SHARE, decltype(free_share_lambda)> free_share_guard(
         &share, free_share_lambda);
@@ -711,7 +710,7 @@ bool Sql_cmd_alter_table_truncate_partition::execute(THD *thd) {
                                     &table, true, nullptr);
 
       if (!error) {
-        auto closefrm_lambda = [](TABLE *table) { (void)closefrm(table, 0); };
+        auto closefrm_lambda = [](TABLE *t) { (void)closefrm(t, false); };
         std::unique_ptr<TABLE, decltype(closefrm_lambda)> closefrm_guard(
             &table, closefrm_lambda);
 
@@ -741,7 +740,7 @@ bool Sql_cmd_alter_table_truncate_partition::execute(THD *thd) {
       Since we about to update table definition in the data-dictionary below
       we need to remove its TABLE/TABLE_SHARE from TDC now.
     */
-    close_all_tables_for_name(thd, first_table->table->s, false, NULL);
+    close_all_tables_for_name(thd, first_table->table->s, false, nullptr);
   }
 
   if (hton->flags & HTON_SUPPORTS_ATOMIC_DDL) {

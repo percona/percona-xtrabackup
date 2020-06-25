@@ -63,6 +63,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <memory>
+#include <new>
 #include <unordered_map>
 #include <utility>
 
@@ -88,7 +89,6 @@
 #include "sql/item.h"
 #include "sql/key.h"   // key_copy
 #include "sql/lock.h"  // mysql_unlock_tables
-#include "sql/log.h"
 #include "sql/mdl.h"
 #include "sql/protocol.h"
 #include "sql/psi_memory_key.h"
@@ -100,6 +100,7 @@
 #include "sql/sql_list.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
+#include "sql/thd_raii.h"
 #include "sql/transaction.h"
 #include "sql/transaction_info.h"
 #include "sql/xa.h"
@@ -131,7 +132,7 @@ static void mysql_ha_close_table(THD *thd, TABLE_LIST *tables) {
   if (tables->table && !tables->table->s->tmp_table) {
     /* Non temporary table. */
     tables->table->file->ha_index_or_rnd_end();
-    tables->table->open_by_handler = 0;
+    tables->table->open_by_handler = false;
     close_thread_table(thd, &tables->table);
     thd->mdl_context.release_lock(tables->mdl_request.ticket);
   } else if (tables->table) {
@@ -139,14 +140,14 @@ static void mysql_ha_close_table(THD *thd, TABLE_LIST *tables) {
     TABLE *table = tables->table;
     table->file->ha_index_or_rnd_end();
     table->query_id = thd->query_id;
-    table->open_by_handler = 0;
+    table->open_by_handler = false;
     mark_tmp_table_for_reuse(table);
   }
 
   /* Mark table as closed, ready for re-open if necessary. */
-  tables->table = NULL;
+  tables->table = nullptr;
   /* Safety, cleanup the pointer to satisfy MDL assertions. */
-  tables->mdl_request.ticket = NULL;
+  tables->mdl_request.ticket = nullptr;
 }
 
 /**
@@ -159,7 +160,7 @@ static void mysql_ha_close_table(THD *thd, TABLE_LIST *tables) {
 */
 
 bool Sql_cmd_handler_open::execute(THD *thd) {
-  TABLE_LIST *hash_tables = NULL;
+  TABLE_LIST *hash_tables = nullptr;
   char *db, *name, *alias;
   TABLE_LIST *tables = thd->lex->select_lex->get_table_list();
   DBUG_TRACE;
@@ -267,7 +268,7 @@ static bool mysql_ha_open_table(THD *thd, TABLE_LIST *hash_tables) {
     See open_table() back-off comments for more details.
   */
   backup_open_tables = thd->open_tables;
-  thd->set_open_tables(NULL);
+  thd->set_open_tables(nullptr);
   mdl_savepoint = thd->mdl_context.mdl_savepoint();
 
   /*
@@ -300,9 +301,9 @@ static bool mysql_ha_open_table(THD *thd, TABLE_LIST *hash_tables) {
     close_thread_tables(thd);
     thd->mdl_context.rollback_to_savepoint(mdl_savepoint);
     thd->set_open_tables(backup_open_tables);
-    hash_tables->table = NULL;
+    hash_tables->table = nullptr;
     /* Safety, cleanup the pointer to satisfy MDL assertions. */
-    hash_tables->mdl_request.ticket = NULL;
+    hash_tables->mdl_request.ticket = nullptr;
     DBUG_PRINT("exit", ("ERROR"));
     return true;
   }
@@ -319,14 +320,14 @@ static bool mysql_ha_open_table(THD *thd, TABLE_LIST *hash_tables) {
     was opened for HANDLER as it is used to link them together
     (see thd->temporary_tables).
   */
-  DBUG_ASSERT(hash_tables->table->next == NULL ||
+  DBUG_ASSERT(hash_tables->table->next == nullptr ||
               hash_tables->table->s->tmp_table);
   /*
     If it's a temp table, don't reset table->query_id as the table is
     being used by this handler. For non-temp tables we use this flag
     in asserts.
   */
-  hash_tables->table->open_by_handler = 1;
+  hash_tables->table->open_by_handler = true;
 
   /*
     Generated column expressions have been resolved using the MEM_ROOT of the
@@ -407,7 +408,7 @@ bool Sql_cmd_handler_read::execute(THD *thd) {
   String buffer(buff, sizeof(buff), system_charset_info);
   int error, keyno = -1;
   uint num_rows;
-  uchar *key = NULL;
+  uchar *key = nullptr;
   uint key_len = 0;
   MDL_deadlock_and_lock_abort_error_handler sql_handler_lock_error;
   LEX *lex = thd->lex;
@@ -445,7 +446,7 @@ bool Sql_cmd_handler_read::execute(THD *thd) {
   offset_limit_cnt = unit->offset_limit_cnt;
 
   select_lex->context.resolve_in_table_list_only(tables);
-  list.push_front(new Item_field(&select_lex->context, NULL, NULL, "*"));
+  list.push_front(new Item_field(&select_lex->context, nullptr, nullptr, "*"));
   List_iterator<Item> it(list);
   it++;
 
@@ -477,7 +478,7 @@ retry:
                           hash_tables->table_name, hash_tables->alias, table));
     }
   } else
-    table = NULL;
+    table = nullptr;
 
   if (!table) {
     my_error(ER_UNKNOWN_TABLE, MYF(0), tables->alias, "HANDLER");
@@ -526,7 +527,7 @@ retry:
   /* save open_tables state */
   backup_open_tables = thd->open_tables;
   /* Always a one-element list, see mysql_ha_open(). */
-  DBUG_ASSERT(hash_tables->table->next == NULL ||
+  DBUG_ASSERT(hash_tables->table->next == nullptr ||
               hash_tables->table->s->tmp_table);
   /*
     mysql_lock_tables() needs thd->open_tables to be set correctly to
@@ -599,7 +600,7 @@ retry:
   }
 
   if (insert_fields(thd, &select_lex->context, tables->db, tables->alias, &it,
-                    0))
+                    false))
     goto err;
 
   DBUG_EXECUTE_IF("simulate_handler_read_failure",
@@ -651,17 +652,17 @@ retry:
       case enum_ha_read_modes::RFIRST:
         if (m_key_name) {
           if (!(error = table->file->ha_index_or_rnd_end()) &&
-              !(error = table->file->ha_index_init(keyno, 1)))
+              !(error = table->file->ha_index_init(keyno, true)))
             error = table->file->ha_index_first(table->record[0]);
         } else {
           if (!(error = table->file->ha_index_or_rnd_end()) &&
-              !(error = table->file->ha_rnd_init(1)))
+              !(error = table->file->ha_rnd_init(true)))
             error = table->file->ha_rnd_next(table->record[0]);
         }
         mode = enum_ha_read_modes::RNEXT;
         break;
       case enum_ha_read_modes::RPREV:
-        DBUG_ASSERT(m_key_name != 0);
+        DBUG_ASSERT(m_key_name != nullptr);
         /* Check if we read from the same index. */
         DBUG_ASSERT((uint)keyno == table->file->get_index());
         if (table->file->inited == handler::INDEX) {
@@ -671,9 +672,9 @@ retry:
         /* else fall through, for more info, see comment before 'case RFIRST'.
          */
       case enum_ha_read_modes::RLAST:
-        DBUG_ASSERT(m_key_name != 0);
+        DBUG_ASSERT(m_key_name != nullptr);
         if (!(error = table->file->ha_index_or_rnd_end()) &&
-            !(error = table->file->ha_index_init(keyno, 1)))
+            !(error = table->file->ha_index_init(keyno, true)))
           error = table->file->ha_index_last(table->record[0]);
         mode = enum_ha_read_modes::RPREV;
         break;
@@ -683,7 +684,7 @@ retry:
         error = table->file->ha_index_next_same(table->record[0], key, key_len);
         break;
       case enum_ha_read_modes::RKEY: {
-        DBUG_ASSERT(m_key_name != 0);
+        DBUG_ASSERT(m_key_name != nullptr);
         KEY *keyinfo = table->key_info + keyno;
         KEY_PART_INFO *key_part = keyinfo->key_part;
         if (m_key_expr->elements > keyinfo->user_defined_key_parts) {
@@ -736,7 +737,7 @@ retry:
         if (!(key = (uchar *)thd->mem_calloc(ALIGN_SIZE(key_len)))) goto err;
         if ((error = table->file->ha_index_or_rnd_end())) break;
         key_copy(key, table->record[0], table->key_info + keyno, key_len);
-        if (!(error = table->file->ha_index_init(keyno, 1)))
+        if (!(error = table->file->ha_index_init(keyno, true)))
           error = table->file->ha_index_read_map(table->record[0], key,
                                                  keypart_map, m_rkey_mode);
         mode = rkey_to_rnext[(int)m_rkey_mode];
@@ -806,7 +807,7 @@ err0:
 */
 
 static TABLE_LIST *mysql_ha_find(THD *thd, TABLE_LIST *tables) {
-  TABLE_LIST *head = NULL, *first = tables;
+  TABLE_LIST *head = nullptr, *first = tables;
   DBUG_TRACE;
 
   /* search for all handlers with matching table names */
@@ -954,7 +955,7 @@ void mysql_ha_flush(THD *thd) {
 void mysql_ha_rm_temporary_tables(THD *thd) {
   DBUG_TRACE;
 
-  TABLE_LIST *tmp_handler_tables = NULL;
+  TABLE_LIST *tmp_handler_tables = nullptr;
   for (const auto &key_and_value : thd->handler_tables_hash) {
     TABLE_LIST *handler_table = key_and_value.second.get();
 

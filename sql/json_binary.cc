@@ -349,7 +349,7 @@ static enum_serialization_result append_key_entries(const Json_object *object,
                                                     String *dest, size_t offset,
                                                     bool large) {
 #ifndef DBUG_OFF
-  const std::string *prev_key = NULL;
+  const std::string *prev_key = nullptr;
 #endif
 
   // Add the key entries.
@@ -876,7 +876,7 @@ bool Value::is_valid() const {
         Check that all keys and values are valid, and that the keys come
         in the correct order.
       */
-      const char *prev_key = NULL;
+      const char *prev_key = nullptr;
       size_t prev_key_len = 0;
       for (size_t i = 0; i < element_count(); i++) {
         Value k = key(i);
@@ -949,9 +949,7 @@ static Value parse_scalar(uint8 type, const char *data, size_t len) {
       return Value(Value::UINT, uint8korr(data));
     case JSONB_TYPE_DOUBLE: {
       if (len < 8) return err(); /* purecov: inspected */
-      double d;
-      float8get(&d, data);
-      return Value(d);
+      return Value(float8get(data));
     }
     case JSONB_TYPE_STRING: {
       uint32 str_len;

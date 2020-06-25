@@ -48,7 +48,7 @@ static int FT_WORD_cmp(const void *a, const void *b, const void *c) {
   const FT_WORD *w1 = static_cast<const FT_WORD *>(b);
   const FT_WORD *w2 = static_cast<const FT_WORD *>(c);
   return ha_compare_text(cs, (uchar *)w1->pos, w1->len, (uchar *)w2->pos,
-                         w2->len, 0);
+                         w2->len, false);
 }
 
 static int walk_and_copy(void *v_word, uint32 count, void *v_docstat) {
@@ -75,9 +75,9 @@ FT_WORD *ft_linearize(TREE *wtree, MEM_ROOT *mem_root) {
     tree_walk(wtree, &walk_and_copy, &docstat, left_root_right);
   }
   delete_tree(wtree);
-  if (!wlist) return NULL;
+  if (!wlist) return nullptr;
 
-  docstat.list->pos = NULL;
+  docstat.list->pos = nullptr;
 
   for (p = wlist; p->pos; p++) {
     p->weight = PRENORM_IN_USE;
@@ -97,14 +97,14 @@ bool ft_boolean_check_syntax_string(const uchar *str) {
       (strlen(pointer_cast<const char *>(str)) + 1 !=
        sizeof(DEFAULT_FTB_SYNTAX)) ||
       (str[0] != ' ' && str[1] != ' '))
-    return 1;
+    return true;
   for (i = 0; i < sizeof(DEFAULT_FTB_SYNTAX); i++) {
     /* limiting to 7-bit ascii only */
-    if ((unsigned char)(str[i]) > 127 || isalnum(str[i])) return 1;
+    if ((unsigned char)(str[i]) > 127 || isalnum(str[i])) return true;
     for (j = 0; j < i; j++)
-      if (str[i] == str[j] && (i != 11 || j != 10)) return 1;
+      if (str[i] == str[j] && (i != 11 || j != 10)) return true;
   }
-  return 0;
+  return false;
 }
 
 /*
@@ -122,7 +122,7 @@ uchar ft_get_word(const CHARSET_INFO *cs, uchar **start, uchar *end,
   uint mwc, length;
   int mbl;
 
-  param->yesno = (FTB_YES == ' ') ? 1 : (param->quot != 0);
+  param->yesno = (FTB_YES == ' ') ? 1 : (param->quot != nullptr);
   param->weight_adjust = param->wasign = 0;
   param->type = FT_TOKEN_EOF;
 
@@ -167,7 +167,7 @@ uchar ft_get_word(const CHARSET_INFO *cs, uchar **start, uchar *end,
         }
       }
       param->prev = *doc;
-      param->yesno = (FTB_YES == ' ') ? 1 : (param->quot != 0);
+      param->yesno = (FTB_YES == ' ') ? 1 : (param->quot != nullptr);
       param->weight_adjust = param->wasign = 0;
     }
 
@@ -252,7 +252,7 @@ uchar ft_simple_get_word(const CHARSET_INFO *cs, uchar **start,
 void ft_parse_init(TREE *wtree, const CHARSET_INFO *cs) {
   DBUG_TRACE;
   if (!is_tree_inited(wtree))
-    init_tree(wtree, 0, 0, sizeof(FT_WORD), &FT_WORD_cmp, 0, NULL, cs);
+    init_tree(wtree, 0, sizeof(FT_WORD), &FT_WORD_cmp, false, nullptr, cs);
 }
 
 static int ft_add_word(MYSQL_FTPARSER_PARAM *param, char *word, int word_len,
@@ -291,7 +291,7 @@ static int ft_parse_internal(MYSQL_FTPARSER_PARAM *param, char *doc_arg,
   while (
       ft_simple_get_word(static_cast<const CHARSET_INFO *>(wtree->custom_arg),
                          &doc, end, &w, true))
-    if (param->mysql_add_word(param, (char *)w.pos, w.len, 0)) return 1;
+    if (param->mysql_add_word(param, (char *)w.pos, w.len, nullptr)) return 1;
   return 0;
 }
 
@@ -344,7 +344,7 @@ MYSQL_FTPARSER_PARAM *ftparser_call_initializer(MI_INFO *info, uint keynr,
   uint32 ftparser_nr;
   struct st_mysql_ftparser *parser;
 
-  if (!ftparser_alloc_param(info)) return 0;
+  if (!ftparser_alloc_param(info)) return nullptr;
 
   if (keynr == NO_SUCH_KEY) {
     ftparser_nr = 0;
@@ -363,7 +363,7 @@ MYSQL_FTPARSER_PARAM *ftparser_call_initializer(MI_INFO *info, uint keynr,
     info->ftparser_param[ftparser_nr].mysql_add_word = (int (*)(
         MYSQL_FTPARSER_PARAM *, char *, int, MYSQL_FTPARSER_BOOLEAN_INFO *))1;
     if (parser->init && parser->init(&info->ftparser_param[ftparser_nr]))
-      return 0;
+      return nullptr;
   }
   return &info->ftparser_param[ftparser_nr];
 }
@@ -379,7 +379,7 @@ void ftparser_call_deinitializer(MI_INFO *info) {
           &info->ftparser_param[keyinfo->ftkey_nr * MAX_PARAM_NR + j];
       if (keyinfo->flag & HA_FULLTEXT && ftparser_param->mysql_add_word) {
         if (keyinfo->parser->deinit) keyinfo->parser->deinit(ftparser_param);
-        ftparser_param->mysql_add_word = 0;
+        ftparser_param->mysql_add_word = nullptr;
       } else
         break;
     }

@@ -24,8 +24,8 @@ struct Vault_key final : public Key, public ISerialized_object {
   uchar *get_key_data() const;
   using Key::get_key_data_size;
   size_t get_key_data_size() const;
-  using Key::get_key_type;
-  const std::string *get_key_type() const;
+  using Key::get_key_type_as_string;
+  const std::string *get_key_type_as_string() const;
 
   virtual bool get_next_key(IKey **key);
   virtual bool has_next_key();

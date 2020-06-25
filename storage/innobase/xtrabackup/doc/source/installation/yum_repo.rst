@@ -70,7 +70,8 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 1. Install the Percona yum repository by running the following command as the
    ``root`` user or with :program:`sudo`: :bash:`yum install https://repo.percona.com/yum/percona-release-latest.noarch.rpm`
 
-.. include:: ../.res/contents/instruction.repository.enabling.txt
+#.
+   .. include:: ../.res/contents/instruction.repository.enabling.txt
 	     
 #. Install |Percona XtraBackup| by running:  :bash:`yum install percona-xtrabackup-80`
 
@@ -80,6 +81,12 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
    installing |Percona XtraBackup| on CentOS 6. For this operating system, the
    ``libev`` package is available from the `EPEL
    <https://fedoraproject.org/wiki/EPEL>`_ repositories.
+
+#. To be able to make compressed backups, install the ``qpress`` package:
+
+   $ yum install qpress
+
+   .. seealso:: :ref:`compressed_backup`
 
 .. _standalone_rpm:
 

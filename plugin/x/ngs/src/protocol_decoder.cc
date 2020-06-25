@@ -1,4 +1,4 @@
-// Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,22 @@ const uint32_t k_on_idle_timeout_value = 500;
 
 namespace ngs {
 
-bool Protocol_decoder::read_header(uint8 *message_type, uint32 *message_size,
+Protocol_decoder::Protocol_decoder(
+    Message_dispatcher_interface *dispatcher,
+    std::shared_ptr<xpl::iface::Vio> vio,
+    xpl::iface::Protocol_monitor *protocol_monitor,
+    std::shared_ptr<Protocol_config> config)
+    : m_vio(std::move(vio)),
+      m_protocol_monitor(protocol_monitor),
+      m_vio_input_stream(m_vio),
+      m_config(std::move(config)),
+      m_message_decoder(dispatcher, m_protocol_monitor, m_config) {
+  set_wait_timeout(m_config->m_global->m_timeouts.m_wait_timeout);
+  set_read_timeout(m_config->m_global->m_timeouts.m_read_timeout);
+}
+
+bool Protocol_decoder::read_header(uint8_t *message_type,
+                                   uint32_t *message_size,
                                    xpl::iface::Waiting_for_io *wait_for_io) {
   int header_copied = 0;
   int input_size = 0;
@@ -45,7 +60,7 @@ bool Protocol_decoder::read_header(uint8 *message_type, uint32 *message_size,
   const uint64_t io_read_timeout =
       needs_idle_check ? k_on_idle_timeout_value : m_wait_timeout_in_ms;
 
-  m_vio->set_timeout_in_ms(Vio_interface::Direction::k_read, io_read_timeout);
+  m_vio->set_timeout_in_ms(xpl::iface::Vio::Direction::k_read, io_read_timeout);
 
   uint64_t total_timeout = 0;
 
@@ -84,7 +99,7 @@ bool Protocol_decoder::read_header(uint8 *message_type, uint32 *message_size,
   if (*message_size > 0) {
     if (input_size == copy_from_input) {
       copy_from_input = 0;
-      m_vio->set_timeout_in_ms(Vio_interface::Direction::k_read,
+      m_vio->set_timeout_in_ms(xpl::iface::Vio::Direction::k_read,
                                m_read_timeout_in_ms);
 
       if (!m_vio_input_stream.Next((const void **)&input, &input_size)) {
@@ -163,11 +178,13 @@ Protocol_decoder::Decode_error Protocol_decoder::read_and_decode_impl(
   return {error_code};
 }
 
-void Protocol_decoder::set_wait_timeout(const uint32 wait_timeout_in_seconds) {
+void Protocol_decoder::set_wait_timeout(
+    const uint32_t wait_timeout_in_seconds) {
   m_wait_timeout_in_ms = wait_timeout_in_seconds * 1000;
 }
 
-void Protocol_decoder::set_read_timeout(const uint32 read_timeout_in_seconds) {
+void Protocol_decoder::set_read_timeout(
+    const uint32_t read_timeout_in_seconds) {
   m_read_timeout_in_ms = read_timeout_in_seconds * 1000;
 }
 

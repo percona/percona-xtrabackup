@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,10 +26,10 @@
  * Test the metadata cache implementation.
  */
 
-#include "cluster_metadata.h"
+#include "cluster_metadata_gr.h"
 #include "dim.h"
 #include "gtest/gtest_prod.h"
-#include "metadata_cache.h"
+#include "metadata_cache_gr.h"
 #include "mysql_session_replayer.h"
 #include "tcp_address.h"
 #include "test/helpers.h"
@@ -38,11 +38,13 @@
 
 using namespace metadata_cache;
 
+constexpr unsigned kRouterId = 1;
+
 class FailoverTest : public ::testing::Test {
  public:
   std::shared_ptr<MySQLSessionReplayer> session;
   std::shared_ptr<ClusterMetadata> cmeta;
-  std::shared_ptr<MetadataCache> cache;
+  std::shared_ptr<GRMetadataCache> cache;
 
   FailoverTest() {}
 
@@ -56,22 +58,36 @@ class FailoverTest : public ::testing::Test {
         [](mysqlrouter::MySQLSession *) {}   // and don't try deleting it!
     );
 
-    cmeta.reset(new ClusterMetadata("admin", "admin", 1, 1, 1,
-                                    std::chrono::seconds(10),
-                                    mysqlrouter::SSLOptions()));
+    cmeta.reset(new GRClusterMetadata("admin", "admin", 1, 1, 1,
+                                      mysqlrouter::SSLOptions()));
   }
 
   void init_cache() {
-    cache.reset(new MetadataCache(
-        "3e4338a1-2c5d-49ac-8baa-e5a25ba61e76",
-        {mysql_harness::TCPAddress("localhost", 32275)}, cmeta,
-        std::chrono::seconds(10), mysqlrouter::SSLOptions(), "cluster-1"));
+    cache.reset(
+        new GRMetadataCache(kRouterId, "3e4338a1-2c5d-49ac-8baa-e5a25ba61e76",
+                            {mysql_harness::TCPAddress("localhost", 32275)},
+                            cmeta, std::chrono::seconds(10),
+                            std::chrono::seconds(-1), std::chrono::seconds(20),
+
+                            mysqlrouter::SSLOptions(), "cluster-1"));
   }
 
   // make queries on metadata schema return a 3 members replicaset
   void expect_metadata_1() {
     MySQLSessionReplayer &m = *session;
 
+    m.expect_execute(
+        "SET @@SESSION.autocommit=1, @@SESSION.character_set_client=utf8, "
+        "@@SESSION.character_set_results=utf8, "
+        "@@SESSION.character_set_connection=utf8, "
+        "@@SESSION.sql_mode='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_"
+        "DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
+    m.then_ok();
+    m.expect_execute("SET @@SESSION.group_replication_consistency='EVENTUAL'");
+    m.then_ok();
+
+    m.expect_execute("START TRANSACTION");
+    m.then_ok();
     m.expect_query_one(
         "SELECT * FROM mysql_innodb_cluster_metadata.schema_version");
     m.then_return(3, {
@@ -88,7 +104,7 @@ class FailoverTest : public ::testing::Test {
         "JOIN mysql_innodb_cluster_metadata.instances AS I ON R.replicaset_id "
         "= I.replicaset_id WHERE F.cluster_name = 'cluster-1' "
         "AND R.attributes->>'$.group_replication_group_name' = "
-        "'3e4338a1-2c5d-49ac-8baa-e5a25ba61e76';");
+        "'3e4338a1-2c5d-49ac-8baa-e5a25ba61e76'");
     m.then_return(
         7,
         {// replicaset_name, mysql_server_uuid, role, weight, version_token,
@@ -108,6 +124,9 @@ class FailoverTest : public ::testing::Test {
           m.string_or_null("HA"), m.string_or_null(), m.string_or_null(),
           m.string_or_null("localhost:3002"),
           m.string_or_null("localhost:30020")}});
+
+    m.expect_execute("COMMIT");
+    m.then_ok();
   }
 
   // make queries on PFS.replication_group_members return all members ONLINE
@@ -185,9 +204,9 @@ class FailoverTest : public ::testing::Test {
 
 class DelayCheck {
  public:
-  DelayCheck() { start_time_ = time(NULL); }
+  DelayCheck() { start_time_ = time(nullptr); }
 
-  long time_elapsed() { return time(NULL) - start_time_; }
+  long time_elapsed() { return time(nullptr) - start_time_; }
 
  private:
   time_t start_time_;

@@ -47,7 +47,7 @@ create table t1 (s1 binary(2) primary key);
 insert into t1 values (0x01);
 insert into t1 values (0x0120);
 insert into t1 values (0x0100);
-ERROR 23000: Duplicate entry '\x01' for key 'PRIMARY'
+ERROR 23000: Duplicate entry '\x01' for key 't1.PRIMARY'
 select hex(s1) from t1 order by s1;
 hex(s1)
 0100
@@ -208,7 +208,7 @@ Warning	1292	Truncated incorrect BINARY value: 'x'099999999999999999999999999999
 create table t1 select 0x9999 + 0;
 desc t1;
 Field	Type	Null	Key	Default	Extra
-0x9999 + 0	int(3) unsigned	NO		0	
+0x9999 + 0	int unsigned	NO		0	
 select * from t1;
 0x9999 + 0
 39321

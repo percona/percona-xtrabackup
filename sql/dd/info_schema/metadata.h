@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 
 #include <mysql/plugin.h>  // st_plugin_int
 
+#include "mysql_version.h"       // MYSQL_VERSION_ID
 #include "sql/dd/string_type.h"  // dd::String_type
 
 class THD;
@@ -101,8 +102,8 @@ namespace info_schema {
   Changes from version 80015.
 
   - WL#929 - CHECK CONSTRAINTS
-    New INFORMATION_SCHMEA table CHECK_CONSTRAINTS is introduced and
-    INFORMATION_SCHMEA.TABLE_CONSTRAINTS is modified to include check
+    New INFORMATION_SCHEMA table CHECK_CONSTRAINTS is introduced and
+    INFORMATION_SCHEMA.TABLE_CONSTRAINTS is modified to include check
     constraints defined on the table.
 
   - WL#12261 Control (enforce and disable) table encryption
@@ -124,7 +125,7 @@ namespace info_schema {
     Modifies the INFORMATION_SCHEMA.TABLES dynamic column definitions to
     return NULL, if it finds a view.
 
-  80018: Current
+  80018: Published in 8.0.18
   ------------------------------------
   Changes from version 80017:
 
@@ -143,11 +144,46 @@ namespace info_schema {
                   STATS FOR PARTITIONED TABLES
     This bug changes definition of I_S.STATISTICS.
 
-  80019: Next IS version number after the previous is public.
+  80019: Not published (see below)
+  ------------------------------------
+  Changes from version 80018:
+
+  - WL#10895 INFORMATION_SCHEMA views for Roles.
+    Adds new system view definitions for roles.
+       INFORMATION_SCHEMA.APPLICABLE_ROLES;
+       INFORMATION_SCHEMA.ADMINISTRABLE_ROLE_AUTHORIZATIONS;
+       INFORMATION_SCHEMA.ENABLED_ROLES;
+       INFORMATION_SCHEMA.ROLE_TABLE_GRANTS;
+       INFORMATION_SCHEMA.ROLE_COLUMN_GRANTS;
+       INFORMATION_SCHEMA.ROLE_ROUTINE_GRANTS;
+
+  80020: Published by mistake in server version 8.0.19. To correct this,
+  we set the IS version number to 800201 in mysql server version 8.0.20.
+  Then, in server version 8.0.21, we're back on track with IS_version 80021.
+  ------------------------------------
+  Changes from version 80018:
+
+  - Bug#29871530: MYSQL 8.0 INFORMATION_SCHEMA.EVENTS NOT
+                  OBSERVING CUSTOM TIMEZONE
+    This bug updates LAST_EXECUTED to include time zones in
+    I_S.EVENTS.
+
+  800201: Current
+  ------------------------------------
+  Changes from version 80020:
+
+  - Bug#30263373: INCORRECT OUTPUT FROM TABLE_FUNCTION_JSON::PRINT()
+    This bug updates the character set of columns returned from JSON_TABLE
+    expressions in INFORMATION_SCHEMA views.
+
+  80021: Next IS version number after the previous is public.
   ------------------------------------
 */
 
-static const uint IS_DD_VERSION = 80018;
+static const uint IS_DD_VERSION = 800201;
+static_assert((IS_DD_VERSION <= MYSQL_VERSION_ID) ||
+                  ((IS_DD_VERSION == 800201) && (MYSQL_VERSION_ID >= 80020)),
+              "This release can not use a version number from the future");
 
 /**
   Initialize INFORMATION_SCHEMA system views.
@@ -157,6 +193,15 @@ static const uint IS_DD_VERSION = 80018;
   @return       Upon failure, return true, otherwise false.
 */
 bool initialize(THD *thd);
+
+/**
+  Initialize non DD based INFORMATION_SCHEMA system views.
+
+  @param thd    Thread context.
+
+  @return       Upon failure, return true, otherwise false.
+*/
+bool init_non_dd_based_system_view(THD *thd);
 
 /**
   Create INFORMATION_SCHEMA system views.

@@ -27,8 +27,8 @@
 #include "storage/heap/heapdef.h"
 
 void heap_position(HP_INFO *info, HP_HEAP_POSITION *pos) {
-  pos->ptr =
-      ((info->update & HA_STATE_AKTIV) ? info->current_ptr : (HEAP_PTR)0);
+  pos->ptr = ((info->update & HA_STATE_AKTIV) ? info->current_ptr
+                                              : (HEAP_PTR) nullptr);
   pos->record_no = info->current_record;
 }
 
@@ -45,6 +45,9 @@ int heap_info(HP_INFO *info, HEAPINFO *x, int flag) {
   x->max_records = info->s->max_records;
   x->errkey = info->errkey;
   x->create_time = info->s->create_time;
-  if (flag & HA_STATUS_AUTO) x->auto_increment = info->s->auto_increment + 1;
+  if (flag & HA_STATUS_AUTO)
+    x->auto_increment = info->s->auto_increment + 1;
+  else
+    x->auto_increment = 0;
   return 0;
 } /* heap_info */

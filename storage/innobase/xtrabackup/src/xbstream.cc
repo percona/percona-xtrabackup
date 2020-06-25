@@ -18,6 +18,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
+#include "xbstream.h"
 #include <gcrypt.h>
 #include <my_base.h>
 #include <my_getopt.h>
@@ -27,15 +28,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <pthread.h>
 #include <typelib.h>
 #include <unordered_map>
-
 #include "common.h"
 #include "crc_glue.h"
 #include "datasink.h"
 #include "ds_decompress.h"
 #include "ds_decompress_lz4.h"
 #include "ds_decrypt.h"
+#include "template_utils.h"
 #include "xbcrypt_common.h"
-#include "xbstream.h"
 #include "xtrabackup_version.h"
 
 #define XBSTREAM_VERSION XTRABACKUP_VERSION

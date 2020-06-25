@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,7 @@
 #define CFG_NODE_DATADIR              7
 #define CFG_TOTAL_SEND_BUFFER_MEMORY  9
 #define CFG_LOCATION_DOMAIN_ID        10
+#define CFG_NODE_DEDICATED            11
 
 /**
  * DB config parameters
@@ -248,6 +249,13 @@
 #define CFG_DB_RESERVED_SCANS         665
 #define CFG_DB_RESERVED_TRANS_BUFFER_MEM 666
 
+#define CFG_DB_TRANSACTION_MEM        667
+#define CFG_DB_MAX_DD_LATENCY         668
+#define CFG_DB_DD_USING_SAME_DISK     669
+#define CFG_DB_NODE_GROUP_TRANSPORTERS 670
+#define CFG_DB_SPIN_METHOD            671
+#define CFG_DB_SPIN_TIME_PER_CALL     672
+
 #define CFG_NODE_ARBIT_RANK           200
 #define CFG_NODE_ARBIT_DELAY          201
 #define CFG_EXTRA_SEND_BUFFER_MEMORY  203
@@ -300,6 +308,7 @@
 #define CFG_TCP_SND_BUF_SIZE          458
 #define CFG_TCP_MAXSEG_SIZE           459
 #define CFG_TCP_BIND_INADDR_ANY       460
+#define CFG_TCP_SPINTIME              461
 
 #define CFG_SHM_SEND_SIGNAL_ID        500
 #define CFG_SHM_CHECKSUM              501

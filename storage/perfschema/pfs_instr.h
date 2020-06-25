@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -672,7 +672,7 @@ struct PFS_ALIGNED PFS_thread : PFS_connection_slice {
 
   const PFS_memory_safe_stat *read_instr_class_memory_stats() const {
     if (!m_has_memory_stats) {
-      return NULL;
+      return nullptr;
     }
     return m_instr_class_memory_stats;
   }
@@ -723,11 +723,15 @@ void destroy_thread(PFS_thread *pfs);
 PFS_file *find_or_create_file(PFS_thread *thread, PFS_file_class *klass,
                               const char *filename, uint len, bool create);
 
-void find_and_rename_file(PFS_thread *thread, const char *old_filename,
-                          uint old_len, const char *new_filename, uint new_len);
+PFS_file *start_file_rename(PFS_thread *thread, const char *old_name);
+int end_file_rename(PFS_thread *thread, PFS_file *pfs, const char *new_name,
+                    int rename_result);
 
+PFS_file *find_file(PFS_thread *thread, PFS_file_class *klass,
+                    const char *filename, uint len);
 void release_file(PFS_file *pfs);
-void destroy_file(PFS_thread *thread, PFS_file *pfs);
+void delete_file_name(PFS_thread *thread, PFS_file *pfs);
+void destroy_file(PFS_thread *thread, PFS_file *pfs, bool delete_name);
 PFS_table *create_table(PFS_table_share *share, PFS_thread *opening_thread,
                         const void *identity);
 void destroy_table(PFS_table *pfs);

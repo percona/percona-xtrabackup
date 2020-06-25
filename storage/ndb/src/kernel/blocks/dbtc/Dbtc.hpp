@@ -117,6 +117,7 @@
 #define ZPREPAREINPROGRESS 238
 #define ZWRONG_SCHEMA_VERSION_ERROR 241 // Also Scan
 #define ZSCAN_NODE_ERROR 250
+#define ZNO_FRAG_LOCATION_RECORD_ERROR 251
 #define ZTRANS_STATUS_ERROR 253
 #define ZTIME_OUT_ERROR 266
 #define ZSIMPLE_READ_WITHOUT_AI 271
@@ -1060,8 +1061,6 @@ public:
     };
     Uint32 m_flags;
 
-    Uint16 m_special_op_flags; // Used to mark on-going TcKeyReq as indx table
-
     Uint8 takeOverRec;
     Uint8 currentReplicaNo;
 
@@ -1080,6 +1079,16 @@ public:
     Uint8 timeOutCounter;
     Uint8 singleUserMode;
     
+    Uint8 m_pre_commit_pass;
+
+    // number of on-going cascading scans (FK child scans) at a transaction.
+    Uint8 cascading_scans_count;
+
+    // Trigger execution loop active
+    bool m_inExecuteTriggers;
+
+    Uint16 m_special_op_flags; // Used to mark on-going TcKeyReq as indx table
+
     Uint16 returncode;
     Uint16 takeOverInd;
     //---------------------------------------------------
@@ -1137,32 +1146,25 @@ public:
     Uint32 immediateTriggerId;  // Id of trigger op being fired NOW
     Uint32 firedFragId;
     
-    UintR accumulatingIndexOp;
-    UintR executingIndexOp;
-    UintR tcIndxSendArray[6];
-    NDB_TICKS m_start_ticks;
-    LocalTcIndexOperation_dllist::Head theSeizedIndexOperations;
-
 #ifdef ERROR_INSERT
     Uint32 continueBCount;  // ERROR_INSERT 8082
 #endif
-    Uint8 m_pre_commit_pass;
+    UintR accumulatingIndexOp;
+    UintR executingIndexOp;
+    NDB_TICKS m_start_ticks;
+    LocalTcIndexOperation_dllist::Head theSeizedIndexOperations;
+    UintR tcIndxSendArray[6];
 
     bool isExecutingDeferredTriggers() const {
       return apiConnectstate == CS_SEND_FIRE_TRIG_REQ ||
         apiConnectstate == CS_WAIT_FIRE_TRIG_REQ ;
     }
 
-    // number of on-going cascading scans (FK child scans) at a transaction.
-    Uint8 cascading_scans_count;
-
     // Number of on-going trigger operations at a transaction
     // Limit them in order to avoid the transaction
     // overloading node resources (signal/job buffers).
     Uint32 m_executing_trigger_ops;
 
-    // Trigger execution loop active
-    bool m_inExecuteTriggers;
     /**
      * ExecTriggersGuard
      *
@@ -1571,13 +1573,25 @@ public:
   typedef Ptr<TableRecord> TableRecordPtr;
 
   /**
-   * Specify the location of a fragment. The 'blockRef' is either
-   * the specific LQH where the fragId resides, or the SPJ block
-   * responsible for scaning this fragment, if 'viaSPJ'.
+   * Specify the location of a fragment.
+   * The primaryBlockRef is the location of the primary partition.
+   * The preferredBlockRef is the preferred location using READ
+   * BACKUP and/or location domains. The block reference is always
+   * pointing to a LQH where the data resides.
+   *
+   * primaryBlockRef is only used to sort out which SCAN_FRAGREQ to
+   * SPJ the fragment should be sent to. When using MultiFragFlag
+   * (currently only used by DBSPJ) we will divide the query into
+   * a set of SPJ workers, each handling a subset of the root
+   * table. The primaryBlockRef is used to decide which SPJ worker
+   * should handle this fragment. The preferredBlockRef decides
+   * the placement of the SPJ worker still, this means that we can
+   * have multiple SPJ workers on the same node.
    */
   struct ScanFragLocation
   {
-    Uint32 blockRef;
+    Uint32 primaryBlockRef;
+    Uint32 preferredBlockRef;
     Uint32 fragId;
   };
 
@@ -1680,6 +1694,7 @@ public:
     Uint32 m_ops;
     Uint32 m_apiPtr;
     Uint32 m_totalLen;
+    Uint32 m_hasMore;
     Uint32 nextList;
     Uint32 prevList;
     NDB_TICKS m_start_ticks;
@@ -1829,9 +1844,11 @@ public:
     bool m_pass_all_confs;
 
     /**
-     * Send opcount/total len as different words
+     * Use 4 or 5 word extended conf signal, where opcount, total_len & active
+     * are sent as seperate words. 4 or 5 word extended format is decided
+     * based on 'ndbd_send_active_bitmask(<version>)'
      */
-    bool m_4word_conf;
+    bool m_extended_conf;
     bool m_read_committed_base;
 
     /**
@@ -2131,14 +2148,17 @@ private:
   bool sendDihGetNodeReq(Signal*,
                          ScanRecordPtr,
                          ScanFragLocationPtr &fragLocationPtr,
-                         Uint32 scanFragId);
+                         Uint32 scanFragId,
+                         bool is_multi_spj_scan);
   void get_next_frag_location(ScanFragLocationPtr fragLocationPtr,
                               Uint32 & fragId,
-                              Uint32 & blockRef);
+                              Uint32 & primaryBlockRef,
+                              Uint32 & preferredBlockRef);
   void get_and_step_next_frag_location(ScanFragLocationPtr & fragLocationPtr,
                                        ScanRecord *scanPtrP,
                                        Uint32 & fragId,
-                                       Uint32 & blockRef);
+                                       Uint32 & primaryBlockRef,
+                                       Uint32 & preferredBlockRef);
   void sendFragScansLab(Signal*, ScanRecordPtr, ApiConnectRecordPtr);
   bool sendScanFragReq(Signal*,
                        ScanRecordPtr,
@@ -2334,8 +2354,12 @@ private:
                              Uint32 opPtrI,
                              TcFKData* fkData,
                              Uint32 op, Uint32 attrValuesPtrI);
-  void fk_scanFromChildTable_done(Signal* signal, TcConnectRecordPtr);
-  void fk_scanFromChildTable_abort(Signal* signal, TcConnectRecordPtr);
+  void fk_scanFromChildTable_done(Signal* signal,
+                                  TcConnectRecordPtr,
+                                  ApiConnectRecordPtr);
+  void fk_scanFromChildTable_abort(Signal* signal,
+                                   TcConnectRecordPtr,
+                                   ApiConnectRecordPtr);
 
   void execSCAN_TABREF(Signal*);
   void execSCAN_TABCONF(Signal*);
@@ -2443,7 +2467,6 @@ private:
   void checkNodeFailComplete(Signal* signal, Uint32 failedNodeId, Uint32 bit);
 
   void apiFailBlockCleanupCallback(Signal* signal, Uint32 failedNodeId, Uint32 ignoredRc);
-  bool isRefreshSupported() const;
   
   // Initialisation
   void initData();
@@ -2912,14 +2935,7 @@ public:
 static Uint64 getTransactionMemoryNeed(
     const Uint32 dbtc_instance_count,
     const ndb_mgm_configuration_iterator * mgm_cfg,
-    const Uint32 TakeOverOperations,
-    const Uint32 MaxNoOfConcurrentIndexOperations,
-    const Uint32 MaxNoOfConcurrentOperations,
-    const Uint32 MaxNoOfConcurrentScans,
-    const Uint32 MaxNoOfConcurrentTransactions,
-    const Uint32 MaxNoOfFiredTriggers,
-    const Uint32 MaxNoOfLocalScans,
-    const Uint32 TransactionBufferMemory);
+    const bool use_reserved);
 #endif
 };
 

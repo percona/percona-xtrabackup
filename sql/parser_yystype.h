@@ -23,27 +23,28 @@
 #ifndef PARSER_YYSTYPE_INCLUDED
 #define PARSER_YYSTYPE_INCLUDED
 
-#include "handler.h"
-#include "key_spec.h"  // keytype, fk_option
 #include "my_base.h"
-#include "my_time.h"                                    // interval_type
-#include "resourcegroups/platform/thread_attrs_api.h"   // ...::cpu_id_t
-#include "resourcegroups/resource_group_basic_types.h"  // resourcegroups::Range
-#include "sql/item_create.h"                            // Cast_target
-#include "sql/lexer_yystype.h"                          // Lexer_yystype
-#include "sql/opt_hints.h"                              // opt_hints_enum
+#include "my_time.h"  // interval_type
+#include "sql/comp_creator.h"
+#include "sql/handler.h"
+#include "sql/item_create.h"    // Cast_target
+#include "sql/key_spec.h"       // keytype, fk_option
+#include "sql/lexer_yystype.h"  // Lexer_yystype
+#include "sql/opt_hints.h"      // opt_hints_enum
 #include "sql/parse_tree_hints.h"
-#include "sql_admin.h"            // Sql_cmd_analyze_table::Histogram_command
-#include "sql_alter.h"            // Alter_info::enum_with_validation
-#include "sql_exchange.h"         // Line_separators, enum_filetype
-#include "sql_get_diagnostics.h"  // Diagnostics_information::Which_area
-#include "sql_signal.h"           // enum_condition_item_name
-#include "sql_string.h"           // String
-#include "table.h"                // index_hint_type
-#include "thr_lock.h"             // thr_lock_type
-#include "trigger_def.h"          // enum_trigger_order_type
-#include "window_lex.h"           // enum_window_frame_unit
-#include "xa.h"                   // xa_option_words
+#include "sql/resourcegroups/platform/thread_attrs_api.h"  // ...::cpu_id_t
+#include "sql/resourcegroups/resource_group_basic_types.h"  // resourcegroups::Range
+#include "sql/sql_admin.h"     // Sql_cmd_analyze_table::Histogram_command
+#include "sql/sql_alter.h"     // Alter_info::enum_with_validation
+#include "sql/sql_exchange.h"  // Line_separators, enum_filetype
+#include "sql/sql_get_diagnostics.h"  // Diagnostics_information::Which_area
+#include "sql/sql_signal.h"           // enum_condition_item_name
+#include "sql/table.h"                // index_hint_type
+#include "sql/trigger_def.h"          // enum_trigger_order_type
+#include "sql/window_lex.h"           // enum_window_frame_unit
+#include "sql/xa.h"                   // xa_option_words
+#include "sql_string.h"               // String
+#include "thr_lock.h"                 // thr_lock_type
 
 class PT_ddl_table_option;
 class PT_json_table_column;
@@ -385,7 +386,7 @@ union YYSTYPE {
   } column_row_value_list_pair;
   struct {
     class PT_item_list *column_list;
-    class PT_query_expression *insert_query_expression;
+    class PT_query_primary *insert_query_expression;
   } insert_query_expression;
   struct {
     class Item *offset;
@@ -477,7 +478,7 @@ union YYSTYPE {
     Mem_root_array<PT_create_table_option *> *opt_create_table_options;
     PT_partition *opt_partitioning;
     On_duplicate on_duplicate;
-    PT_query_expression *opt_query_expression;
+    PT_query_primary *opt_query_expression;
   } create_table_tail;
   Lock_strength lock_strength;
   Locked_row_action locked_row_action;
@@ -486,7 +487,7 @@ union YYSTYPE {
   Mem_root_array<PT_json_table_column *> *jtc_list;
   struct jt_on_response {
     enum_jtc_on type;
-    const LEX_STRING *default_str;
+    Item *default_string;
   } jt_on_response;
   struct {
     struct jt_on_response error;
@@ -585,6 +586,10 @@ union YYSTYPE {
   } load_set_list;
   ts_alter_tablespace_type alter_tablespace_type;
   Sql_cmd_srs_attributes *sql_cmd_srs_attributes;
+  struct {
+    LEX_CSTRING table_alias;
+    Create_col_name_list *column_list;
+  } insert_update_values_reference;
 };
 
 static_assert(sizeof(YYSTYPE) <= 32, "YYSTYPE is too big");

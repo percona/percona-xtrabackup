@@ -10,10 +10,11 @@ repositories and the `download page
 
 Supported releases:
 
-* Debian 8.0 (jessie)
-* Debian 9.0 (stretch)
-* Ubuntu 16.04 (xenial)
-* Ubuntu 18.04 LTS (bionic)
+- Debian 9 (stretch)
+- Debian 10 (buster)
+- Ubuntu 16.04 LTS (Xenial Xerus)
+- Ubuntu 18.04 LTS (Bionic Beaver)
+- Ubuntu 20.04 LTS (Focal Fossa)
 
 Supported architectures:
 
@@ -34,10 +35,13 @@ The ``percona-xtrabackup-test-80`` package contains the test suite for
 The ``percona-xtrabackup`` package contains the older version of the
 |Percona XtraBackup|.
 
-Installing |Percona XtraBackup| from Percona ``apt`` repository
-===============================================================
+Installing |Percona XtraBackup| via |percona-release|
+================================================================================
 
-1. Fetch the repository packages from Percona web:
+|Percona XtraBackup|, like many other |percona| products, is installed
+via the |percona-release| package configuration tool.
+
+1. Download a deb package for |percona-release| the repository packages from Percona web:
 
    .. code-block:: bash
 
@@ -50,11 +54,24 @@ Installing |Percona XtraBackup| from Percona ``apt`` repository
    can check the repository setup in the
    :file:`/etc/apt/sources.list.d/percona-release.list` file.
 
-.. include:: ../.res/contents/instruction.repository.enabling.txt
+#.
+   .. include:: ../.res/contents/instruction.repository.enabling.txt
 
 #. Remember to update the local cache: :bash:`apt-get update`
 
-#. After that you can install the package: :bash:`apt-get install percona-xtrabackup-80`
+#. After that you can install the ``percona-xtrabackup-80`` package:
+
+   .. code-block:: bash
+		   
+      $ sudo apt-get install percona-xtrabackup-80
+
+#. In order to make compressed backups, install the ``qpress`` package:
+
+   .. code-block:: bash
+
+      $ sudo apt-get install qpress
+
+   .. seealso:: :ref:`compressed_backup`
 
 Apt-Pinning the packages
 ========================
@@ -109,3 +126,5 @@ packages.
    .. code-block:: bash
 
       $ sudo apt-get remove percona-xtrabackup-80
+
+.. |percona-release| replace:: ``percona-release``

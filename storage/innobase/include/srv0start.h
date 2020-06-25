@@ -88,12 +88,9 @@ dberr_t srv_undo_tablespaces_upgrade();
 
 /** Start InnoDB.
 @param[in]  create_new_db     Whether to create a new database
-@param[in]  scan_directories  Scan directories for .ibd files for
-                                        recovery "dir1;dir2; ... dirN"
 @param[in]  to_lsn            LSN to stop recovery at
 @return DB_SUCCESS or error code */
-dberr_t srv_start(bool create_new_db, const std::string &scan_directories,
-                  lsn_t to_lsn);
+dberr_t srv_start(bool create_new_db, lsn_t to_lsn);
 
 /** Fix up an undo tablespace if it was in the process of being truncated
 when the server crashed. This is the second call and is done after the DD
@@ -149,10 +146,9 @@ ulint srv_path_copy(char *dest,             /*!< out: destination buffer */
 single-table tablespace.
 @param[in]	table		table object
 @param[out]	filename	filename
-@param[in]	max_len		filename max length
-@param[in]	convert		convert to lower case */
+@param[in]	max_len		filename max length */
 void srv_get_encryption_data_filename(dict_table_t *table, char *filename,
-                                      ulint max_len, bool convert = false);
+                                      ulint max_len);
 #endif /* !UNIV_HOTBACKUP */
 
 /** true if the server is being started */

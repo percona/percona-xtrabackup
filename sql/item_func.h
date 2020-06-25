@@ -1,7 +1,7 @@
 #ifndef ITEM_FUNC_INCLUDED
 #define ITEM_FUNC_INCLUDED
 
-/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include <functional>
 
 #include "decimal.h"
+#include "field_types.h"
 #include "ft_global.h"
 #include "lex_string.h"
 #include "m_ctype.h"
@@ -39,7 +40,6 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_pointer_arithmetic.h"
-#include "my_sys.h"
 #include "my_table_map.h"
 #include "my_thread_local.h"
 #include "my_time.h"
@@ -60,6 +60,7 @@
 #include "sql/table.h"
 #include "sql/thr_malloc.h"
 #include "sql_string.h"
+#include "template_utils.h"
 
 class Json_wrapper;
 class PT_item_list;
@@ -188,6 +189,10 @@ class Item_func : public Item_result_field {
     SIN_FUNC,
     TAN_FUNC,
     COS_FUNC,
+    COT_FUNC,
+    DEGREES_FUNC,
+    RADIANS_FUNC,
+    EXP_FUNC,
     ASIN_FUNC,
     ATAN_FUNC,
     ACOS_FUNC,
@@ -214,7 +219,9 @@ class Item_func : public Item_result_field {
     LEAST_FUNC,
     JSON_CONTAINS,
     JSON_OVERLAPS,
-    MEMBER_OF_FUNC
+    MEMBER_OF_FUNC,
+    STRCMP_FUNC,
+    TRUE_FUNC
   };
   enum optimize_type {
     OPTIMIZE_NONE,
@@ -355,7 +362,7 @@ class Item_func : public Item_result_field {
   void set_used_tables(table_map map) { used_tables_cache = map; }
   bool eq(const Item *item, bool binary_cmp) const override;
   virtual optimize_type select_optimize(const THD *) { return OPTIMIZE_NONE; }
-  virtual bool have_rev_func() const { return 0; }
+  virtual bool have_rev_func() const { return false; }
   virtual Item *key_item() const { return args[0]; }
   inline Item **arguments() const {
     DBUG_ASSERT(argument_count() > 0);
@@ -397,7 +404,6 @@ class Item_func : public Item_result_field {
   void signal_divide_by_null();
   void signal_invalid_argument_for_log();
   friend class udf_handler;
-  Field *tmp_table_field() { return result_field; }
   Field *tmp_table_field(TABLE *t_arg) override;
   Item *get_tmp_table_item(THD *thd) override;
 
@@ -427,19 +433,7 @@ class Item_func : public Item_result_field {
     return agg_item_charsets_for_comparison(c, func_name(), items, nitems,
                                             item_sep);
   }
-  /*
-    Aggregate arguments for string result, when some comparison
-    is involved internally, e.g: REPLACE(a,b,c)
-    - convert to @@character_set_connection if all arguments are numbers
-    - disallow DERIVATION_NONE
-  */
-  bool agg_arg_charsets_for_string_result_with_comparison(DTCollation &c,
-                                                          Item **items,
-                                                          uint nitems,
-                                                          int item_sep = 1) {
-    return agg_item_charsets_for_string_result_with_comparison(
-        c, func_name(), items, nitems, item_sep);
-  }
+
   bool walk(Item_processor processor, enum_walk walk, uchar *arg) override;
   Item *transform(Item_transformer transformer, uchar *arg) override;
   Item *compile(Item_analyzer analyzer, uchar **arg_p,
@@ -544,36 +538,23 @@ class Item_func : public Item_result_field {
 
     @param arg  the arg to cache
 
-    @returns
-      true   arg can be cached
-      false  otherwise
+    @retval true   arg can be cached
+    @retval false  otherwise
   */
   virtual enum_const_item_cache can_cache_json_arg(
       Item *arg MY_ATTRIBUTE((unused))) {
     return CACHE_NONE;
   }
 
-  /// Returns true if this Item has at least one condition that can be
-  /// implemented as hash join. A hash join condition is an equi-join condition
-  /// where one side of the condition refers to the right table, and the other
-  /// side of the condition refers to one or more of the left tables.
-  ///
-  /// @param left_tables the left tables in the join
-  /// @param right_table the right table of the join
-  ///
-  /// @retval true if the Item has at least one hash join condition
-  virtual bool has_any_hash_join_condition(
-      const table_map left_tables MY_ATTRIBUTE((unused)),
-      const QEP_TAB &right_table MY_ATTRIBUTE((unused))) const {
-    return false;
-  }
+  /// Whether this Item is an equi-join condition. If this Item is a compound
+  /// item (i.e. multiple condition AND'ed together), it will only return true
+  /// if the Item contains only equi-join conditions AND'ed together. This is
+  /// used to determine whether the condition can be used as a join condition
+  /// for hash join (join conditions in hash join must be equi-join conditions),
+  /// or if it should be placed as a filter after the join.
+  virtual bool contains_only_equi_join_condition() const { return false; }
 
-  /// Returns true if this Item has at least one non equi-join condition.
-  /// A non equi-join condition is a condition where both sides refer to at
-  /// least one table, and the operator is not equals '='.
-  ///
-  /// @retval true if the Item has at least one non equi-join condition
-  virtual bool has_any_non_equi_join_condition() const { return false; }
+  bool ensure_multi_equality_fields_are_available_walker(uchar *) override;
 
  protected:
   /**
@@ -804,15 +785,15 @@ class Item_func_num1 : public Item_func_numhybrid {
   void set_numeric_type() override;
   String *str_op(String *) override {
     DBUG_ASSERT(0);
-    return 0;
+    return nullptr;
   }
   bool date_op(MYSQL_TIME *, my_time_flags_t) override {
     DBUG_ASSERT(0);
-    return 0;
+    return false;
   }
   bool time_op(MYSQL_TIME *) override {
     DBUG_ASSERT(0);
-    return 0;
+    return false;
   }
 };
 
@@ -833,15 +814,15 @@ class Item_num_op : public Item_func_numhybrid {
   void set_numeric_type() override;
   String *str_op(String *) override {
     DBUG_ASSERT(0);
-    return 0;
+    return nullptr;
   }
   bool date_op(MYSQL_TIME *, my_time_flags_t) override {
     DBUG_ASSERT(0);
-    return 0;
+    return false;
   }
   bool time_op(MYSQL_TIME *) override {
     DBUG_ASSERT(0);
-    return 0;
+    return false;
   }
 };
 
@@ -1165,6 +1146,7 @@ class Item_func_exp final : public Item_dec_func {
   Item_func_exp(const POS &pos, Item *a) : Item_dec_func(pos, a) {}
   double val_real() override;
   const char *func_name() const override { return "exp"; }
+  enum Functype functype() const override { return EXP_FUNC; }
 };
 
 class Item_func_ln final : public Item_dec_func {
@@ -1268,6 +1250,7 @@ class Item_func_cot final : public Item_dec_func {
   Item_func_cot(const POS &pos, Item *a) : Item_dec_func(pos, a) {}
   double val_real() override;
   const char *func_name() const override { return "cot"; }
+  enum Functype functype() const override { return COT_FUNC; }
 };
 
 class Item_func_integer : public Item_int_func {
@@ -1280,8 +1263,7 @@ class Item_func_int_val : public Item_func_num1 {
  public:
   Item_func_int_val(Item *a) : Item_func_num1(a) {}
   Item_func_int_val(const POS &pos, Item *a) : Item_func_num1(pos, a) {}
-  void fix_num_length_and_dec() override;
-  void set_numeric_type() override;
+  bool resolve_type(THD *thd) override;
 };
 
 class Item_func_ceiling final : public Item_func_int_val {
@@ -1340,7 +1322,7 @@ class Item_func_rand final : public Item_real_func {
   bool first_eval;  // true if val_real() is called 1st time
  public:
   Item_func_rand(const POS &pos, Item *a)
-      : Item_real_func(pos, a), rand(0), first_eval(true) {}
+      : Item_real_func(pos, a), rand(nullptr), first_eval(true) {}
   explicit Item_func_rand(const POS &pos) : Item_real_func(pos) {}
 
   bool itemize(Parse_context *pc, Item **res) override;
@@ -1382,19 +1364,34 @@ class Item_func_sign final : public Item_int_func {
   bool resolve_type(THD *thd) override;
 };
 
-class Item_func_units final : public Item_real_func {
-  const char *name;
+// Common base class for the DEGREES and RADIANS functions.
+class Item_func_units : public Item_real_func {
   double mul, add;
 
+ protected:
+  Item_func_units(const POS &pos, Item *a, double mul_arg, double add_arg)
+      : Item_real_func(pos, a), mul(mul_arg), add(add_arg) {}
+
  public:
-  Item_func_units(const POS &pos, const char *name_arg, Item *a, double mul_arg,
-                  double add_arg)
-      : Item_real_func(pos, a), name(name_arg), mul(mul_arg), add(add_arg) {}
   double val_real() override;
-  const char *func_name() const override { return name; }
   bool resolve_type(THD *thd) override;
 };
 
+class Item_func_degrees final : public Item_func_units {
+ public:
+  Item_func_degrees(const POS &pos, Item *a)
+      : Item_func_units(pos, a, 180.0 / M_PI, 0.0) {}
+  const char *func_name() const override { return "degrees"; }
+  enum Functype functype() const override { return DEGREES_FUNC; }
+};
+
+class Item_func_radians final : public Item_func_units {
+ public:
+  Item_func_radians(const POS &pos, Item *a)
+      : Item_func_units(pos, a, M_PI / 180.0, 0.0) {}
+  const char *func_name() const override { return "radians"; }
+  enum Functype functype() const override { return RADIANS_FUNC; }
+};
 class Item_func_min_max : public Item_func_numhybrid {
  public:
   Item_func_min_max(const POS &pos, PT_item_list *opt_list, bool is_least_func)
@@ -1661,6 +1658,9 @@ class Item_func_find_in_set final : public Item_int_func {
   longlong val_int() override;
   const char *func_name() const override { return "find_in_set"; }
   bool resolve_type(THD *) override;
+  const CHARSET_INFO *compare_collation() const override {
+    return cmp_collation.collation;
+  }
 };
 
 /* Base class for all bit functions: '~', '|', '^', '&', '>>', '<<' */
@@ -1996,6 +1996,9 @@ class Item_udf_func : public Item_func {
     if ((used_tables_cache & ~PSEUDO_TABLE_BITS) &&
         !(used_tables_cache & RAND_TABLE_BIT))
       Item_func::update_used_tables();
+
+    not_null_tables_cache = 0;
+    DBUG_ASSERT(!null_on_null);  // no need to update not_null_tables_cache
   }
   void cleanup() override;
   Item_result result_type() const override { return udf.result_type(); }
@@ -2025,7 +2028,7 @@ class Item_func_udf_float final : public Item_udf_func {
   }
   my_decimal *val_decimal(my_decimal *dec_buf) override {
     double res = val_real();
-    if (null_value) return NULL;
+    if (null_value) return nullptr;
     double2my_decimal(E_DEC_FATAL_ERROR, res, dec_buf);
     return dec_buf;
   }
@@ -2108,7 +2111,7 @@ class Item_func_udf_str : public Item_udf_func {
   }
   my_decimal *val_decimal(my_decimal *dec_buf) override {
     String *res = val_str(&str_value);
-    if (!res) return NULL;
+    if (!res) return nullptr;
     str2my_decimal(E_DEC_FATAL_ERROR, res->ptr(), res->length(), res->charset(),
                    dec_buf);
     return dec_buf;
@@ -2853,7 +2856,7 @@ class user_var_entry {
   THD *m_owner;
 
   void reset_value() {
-    m_ptr = NULL;
+    m_ptr = nullptr;
     m_length = 0;
   }
   void set_value(char *value, size_t length) {
@@ -2922,7 +2925,6 @@ class user_var_entry {
     @param from    Value
     @param length  Size of the value
     @param type    type
-    @return
     @retval        false on success
     @retval        true on memory allocation error
   */
@@ -2941,8 +2943,6 @@ class user_var_entry {
   void assert_locked() const;
 
  public:
-  user_var_entry() {} /* Remove gcc warning */
-
   Simple_cstring entry_name;  // Variable name
   DTCollation collation;      // Collation with attributes
   query_id_t update_query_id, used_query_id;
@@ -2957,7 +2957,6 @@ class user_var_entry {
     @param cs           Character set and collation of the value
     @param dv           Collation derivation of the value
     @param unsigned_arg Signess of the value
-    @return
     @retval        false on success
     @retval        true on memory allocation error
   */
@@ -3064,14 +3063,14 @@ class Item_func_set_user_var : public Item_var_func {
   Item_func_set_user_var(Name_string a, Item *b, bool delayed)
       : Item_var_func(b),
         cached_result_type(INT_RESULT),
-        entry(NULL),
+        entry(nullptr),
         entry_thread_id(0),
         delayed_non_constness(delayed),
         name(a) {}
   Item_func_set_user_var(const POS &pos, Name_string a, Item *b, bool delayed)
       : Item_var_func(pos, b),
         cached_result_type(INT_RESULT),
-        entry(NULL),
+        entry(nullptr),
         entry_thread_id(0),
         delayed_non_constness(delayed),
         name(a) {}
@@ -3144,7 +3143,10 @@ class Item_func_get_user_var : public Item_var_func,
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *str) override;
   bool resolve_type(THD *) override;
-  void update_used_tables() override {}  // Keep existing used tables
+  void update_used_tables() override {  // Keep existing used tables
+    DBUG_ASSERT(arg_count == 0);
+    not_null_tables_cache = 0;
+  }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
   enum Item_result result_type() const override;
@@ -3331,11 +3333,11 @@ class Item_func_match final : public Item_real_func {
         key(0),
         flags(b),
         join_key(false),
-        ft_handler(NULL),
-        table_ref(NULL),
-        master(NULL),
-        concat_ws(NULL),
-        hints(NULL),
+        ft_handler(nullptr),
+        table_ref(nullptr),
+        master(nullptr),
+        concat_ws(nullptr),
+        hints(nullptr),
         simple_expression(false) {
     null_on_null = false;
   }
@@ -3349,16 +3351,15 @@ class Item_func_match final : public Item_real_func {
       ft_handler->please->close_search(ft_handler);
       destroy(hints);
     }
-    ft_handler = NULL;
-    concat_ws = NULL;
-    table_ref = NULL;  // required by Item_func_match::eq()
-    master = NULL;
+    ft_handler = nullptr;
+    concat_ws = nullptr;
+    table_ref = nullptr;  // required by Item_func_match::eq()
+    master = nullptr;
     return;
   }
   Item *key_item() const override { return against; }
   enum Functype functype() const override { return FT_FUNC; }
   const char *func_name() const override { return "match"; }
-  void update_used_tables() override {}
   bool fix_fields(THD *thd, Item **ref) override;
   bool eq(const Item *, bool binary_cmp) const override;
   /* The following should be safe, even if we compare doubles */
@@ -3655,9 +3656,7 @@ class Item_func_sp final : public Item_func {
  private:
   Name_resolution_context *context;
   sp_name *m_name;
-  mutable sp_head *m_sp;
-  TABLE *dummy_table;
-  uchar result_buf[64];
+  sp_head *m_sp;
   /*
      The result field of the concrete stored function.
   */
@@ -3716,7 +3715,7 @@ class Item_func_sp final : public Item_func {
   }
 
   my_decimal *val_decimal(my_decimal *dec_buf) override {
-    if (execute() || null_value) return NULL;
+    if (execute() || null_value) return nullptr;
     return sp_result_field->val_decimal(dec_buf);
   }
 
@@ -3725,7 +3724,7 @@ class Item_func_sp final : public Item_func {
     char buff[20];
     buf.set(buff, 20, str->charset());
     buf.length(0);
-    if (execute() || null_value) return NULL;
+    if (execute() || null_value) return nullptr;
     /*
       result_field will set buf pointing to internal buffer
       of the resul_field. Due to this it will change any time
@@ -3739,8 +3738,8 @@ class Item_func_sp final : public Item_func {
 
   bool val_json(Json_wrapper *result) override;
 
-  bool change_context_processor(uchar *cntx) override {
-    context = reinterpret_cast<Name_resolution_context *>(cntx);
+  bool change_context_processor(uchar *arg) override {
+    context = reinterpret_cast<Item_ident::Change_context *>(arg)->m_context;
     return false;
   }
 
@@ -3819,6 +3818,44 @@ class Item_func_version final : public Item_static_string_func {
   bool itemize(Parse_context *pc, Item **res) override;
 };
 
+/**
+  Internal function used by INFORMATION_SCHEMA implementation to check
+  if a role is a mandatory role.
+*/
+
+class Item_func_internal_is_mandatory_role : public Item_int_func {
+ public:
+  Item_func_internal_is_mandatory_role(const POS &pos, Item *a, Item *b)
+      : Item_int_func(pos, a, b) {}
+  longlong val_int() override;
+  const char *func_name() const override {
+    return "internal_is_mandatory_role";
+  }
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    maybe_null = true;
+    return false;
+  }
+};
+
+/**
+  Internal function used by INFORMATION_SCHEMA implementation to check
+  if a role is enabled.
+*/
+
+class Item_func_internal_is_enabled_role : public Item_int_func {
+ public:
+  Item_func_internal_is_enabled_role(const POS &pos, Item *a, Item *b)
+      : Item_int_func(pos, a, b) {}
+  longlong val_int() override;
+  const char *func_name() const override { return "internal_is_enabled_role"; }
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    maybe_null = true;
+    return false;
+  }
+};
+
 Item *get_system_var(Parse_context *pc, enum_var_type var_type, LEX_STRING name,
                      LEX_STRING component);
 extern bool check_reserved_words(const char *name);
@@ -3827,7 +3864,7 @@ double my_double_round(double value, longlong dec, bool dec_unsigned,
                        bool truncate);
 bool eval_const_cond(THD *thd, Item *cond, bool *value);
 Item_field *get_gc_for_expr(Item_func **func, Field *fld, Item_result type,
-                            Field **found = NULL);
+                            Field **found = nullptr);
 
 void retrieve_tablespace_statistics(THD *thd, Item **args, bool *null_value);
 

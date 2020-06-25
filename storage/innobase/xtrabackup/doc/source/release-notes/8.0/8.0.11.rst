@@ -1,0 +1,27 @@
+.. _rn.8-0-11:
+
+================================================================================
+|pxb.name| |release|
+================================================================================
+
+:Date: |date|
+:Installation: :ref:`install`
+
+Downloads are available from our `download site
+<https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+|pxb.name| enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot
+tolerate long periods of downtime. Offered free as an open source solution, it
+drives down backup costs while providing unique features for |MySQL| backups.
+
+All |percona| software is open-source and free.
+
+This release fixes security vulnerability *CVE-2020-10997*.
+
+
+.. |percona| replace:: Percona
+.. |pxb.name| replace:: Percona XtraBackup
+.. |date| replace:: April 13, 2020
+.. |release| replace:: 8.0.11

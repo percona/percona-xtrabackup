@@ -34,6 +34,7 @@
 #include <ndb_version.h>
 #include <NodeBitmask.hpp>
 #include <ndb_cluster_connection.hpp>
+#include <ndb_rand.h>
 
 #define MGMERR(h) \
   ndbout << "latest_error="<<ndb_mgm_get_latest_error(h) \
@@ -202,6 +203,10 @@ NdbRestarter::getNodeGroup(int nodeId){
   return -1;
 }
 
+/* getNodeGroups()
+   Both parameters are OUT params.
+   Returns -1 on error, or the number of configured node groups on success.
+*/
 int
 NdbRestarter::getNodeGroups(Vector<int>& node_groups, int * max_alive_replicas_ptr)
 {
@@ -215,6 +220,7 @@ NdbRestarter::getNodeGroups(Vector<int>& node_groups, int * max_alive_replicas_p
     return -1;
   }
 
+  int n_groups = 0;
   Vector<int> node_group_replicas;
   for (unsigned i = 0; i < ndbNodes.size(); i++)
   {
@@ -234,12 +240,13 @@ NdbRestarter::getNodeGroups(Vector<int>& node_groups, int * max_alive_replicas_p
     if (node_group_replicas[node_group] == 0)
     {
       node_groups.push_back(node_group);
+      n_groups++;
     }
 
     node_group_replicas[node_group]++;
   }
 
-  if (max_alive_replicas_ptr != NULL)
+  if (max_alive_replicas_ptr != nullptr)
   {
     int max_alive_replicas = 0;
     for (unsigned i = 0; i < node_group_replicas.size(); i++)
@@ -252,7 +259,37 @@ NdbRestarter::getNodeGroups(Vector<int>& node_groups, int * max_alive_replicas_p
     }
     *max_alive_replicas_ptr = max_alive_replicas;
   }
-  return 0;
+  return n_groups;
+}
+
+int NdbRestarter::getNumNodeGroups() {
+  Vector<int> node_group_list;
+  return getNodeGroups(node_group_list);
+}
+
+int NdbRestarter::getNumReplicas() {
+  Vector<int> node_group_list;
+  int replicas;
+  (void) getNodeGroups(node_group_list, &replicas);
+  return replicas;
+}
+
+/* Calculate the number of data nodes that can fail at the same time,
+   which is half the total number of data nodes (rounded down) if
+   there are two or more replicas of the data.
+*/
+int NdbRestarter::getMaxConcurrentNodeFailures() {
+  return (getNumReplicas() < 2) ? 0 : getNumDbNodes() / 2;
+}
+
+/* Calculate the total number of data nodes that can eventually fail.
+   In each replica set, one node must remain running.
+*/
+int NdbRestarter::getMaxFailedNodes() {
+  Vector<int> node_group_list;
+  int replicas;
+  int ngroups = getNodeGroups(node_group_list, &replicas);
+  return (replicas-1) * ngroups;
 }
 
 int
@@ -323,6 +360,8 @@ NdbRestarter::getRandomNodeOtherNodeGroup(int nodeId, int rand){
     return -1;
   
   int node_group = -1;
+
+  // find nodegroup corresponding to nodeId
   for (unsigned i = 0; i < ndbNodes.size(); i++)
   {
     if (ndbNodes[i].node_id == nodeId &&
@@ -338,6 +377,8 @@ NdbRestarter::getRandomNodeOtherNodeGroup(int nodeId, int rand){
 
   Uint32 counter = 0;
   rand = rand % ndbNodes.size();
+
+  // find random node not belonging to node_group
   while(counter++ < ndbNodes.size() && ndbNodes[rand].node_group == node_group)
     rand = (rand + 1) % ndbNodes.size();
   
@@ -356,6 +397,7 @@ NdbRestarter::getRandomNodeSameNodeGroup(int nodeId, int rand){
     return -1;
   
   int node_group = -1;
+  // find nodegroup corresponding to nodeId
   for(unsigned i = 0; i < ndbNodes.size(); i++){
     if(ndbNodes[i].node_id == nodeId){
       node_group = ndbNodes[i].node_group;
@@ -368,6 +410,8 @@ NdbRestarter::getRandomNodeSameNodeGroup(int nodeId, int rand){
 
   Uint32 counter = 0;
   rand = rand % ndbNodes.size();
+
+  // find random node which is not nodeId, belonging to node_group
   while(counter++ < ndbNodes.size() && 
 	(ndbNodes[rand].node_id == nodeId || 
 	 ndbNodes[rand].node_group != node_group))
@@ -378,6 +422,13 @@ NdbRestarter::getRandomNodeSameNodeGroup(int nodeId, int rand){
     return ndbNodes[rand].node_id;
   
   return -1;
+}
+
+int
+NdbRestarter::getRandomNodePreferOtherNodeGroup(int nodeId, int rand) {
+  int n = getRandomNodeOtherNodeGroup(nodeId, rand);
+  if(n == -1) n = getRandomNodeSameNodeGroup(nodeId, rand);
+  return n;
 }
 
 
@@ -1235,38 +1286,66 @@ NdbRestarter::getNodeStatus(int nodeid)
   return -1;
 }
 
+
+static uint
+urandom(uint m)
+{
+  require(m != 0);
+  uint n = (uint)ndb_rand();
+  return n % m;
+}
+
 Vector<Vector<int> >
 NdbRestarter::splitNodes()
 {
-  Vector<int> part0;
-  Vector<int> part1;
-  Bitmask<255> ngmask;
+  // Vector of parts. Each part has the NodeIds of nodes belonging to it.
+  Vector<Vector<int>> parts;
+
+  // Vector of node group masks
+  Vector<Bitmask<255>>ngMasks;
+
   for (int i = 0; i < getNumDbNodes(); i++)
   {
     int nodeId = getDbNodeId(i);
     int ng = getNodeGroup(nodeId);
-    if (ngmask.get(ng))
+    unsigned numOfNGKnown = ngMasks.size();
+    unsigned j = 0;
+    for (j = 0; j < numOfNGKnown; j++)
     {
-      part1.push_back(nodeId);
+      if (ngMasks[j].get(ng) == false)
+      {
+        // parts[j] doesn't have node belonging to ng, add to parts[j]
+        parts[j].push_back(nodeId);
+
+        // set ng in ngMasks[j] so we know it's there in parts[j]
+        ngMasks[j].set(ng);
+        break;
+      }
     }
-    else
+    if (j == numOfNGKnown)
     {
-      ngmask.set(ng);
-      part0.push_back(nodeId);
+      /**
+       * It's the first node we're looping through, or;
+       * there's already one node in each part that has a nodeId belonging to
+       * ng. So, create new part and new ng bitmask
+       */
+
+      Vector<int> newPart;
+      Bitmask<255> newNGMask;
+
+      // add the nodeId to a new part
+      newPart.push_back(nodeId);
+      parts.push(newPart, urandom(numOfNGKnown + 1));
+
+      // set ng in a new bitmask, add to ngMasks
+      newNGMask.set(ng);
+      ngMasks.push_back(newNGMask);
     }
   }
-  Vector<Vector<int> > result;
-  if ((rand() % 100) > 50)
-  {
-    result.push_back(part0);
-    result.push_back(part1);
-  }
-  else
-  {
-    result.push_back(part1);
-    result.push_back(part0);
-  }
-  return result;
+
+  g_debug << "Number of parts: " << parts.size() << endl;
+  g_debug << "Number of masks: " << ngMasks.size() << endl;
+  return parts;
 }
 
 int

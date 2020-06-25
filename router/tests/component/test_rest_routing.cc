@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -173,51 +173,54 @@ TEST_P(RestRoutingApiTest, ensure_openapi) {
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"),
       &default_section)};
 
+  SCOPED_TRACE("// starting router");
   ProcessWrapper &http_server = launch_router({"-c", conf_file});
 
   // doesn't really matter which file we use here, we are not going to do any
   // queries
-  const std::string json_stmts =
-      get_data_dir().join("bootstrap_big_data.js").str();
+  const std::string json_stmts = get_data_dir().join("bootstrap_gr.js").str();
 
   SCOPED_TRACE("// launch the server mock");
   auto &server_mock =
       launch_mysql_server_mock(json_stmts, mock_port_, EXIT_SUCCESS, false);
 
+  SCOPED_TRACE("// checking port is ready");
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, mock_port_, 5000ms));
   // wait for route being available if we expect it to be and plan to do some
   // connections to it (which are routes: "ro" and "Aaz")
   for (size_t i = 3; i < kRoutesQty; ++i) {
     ASSERT_TRUE(wait_route_ready(5000ms, route_names[i], http_port_,
                                  "127.0.0.1", kRestApiUsername,
-                                 kRestApiPassword))
-        << http_server.get_full_output() << "\n"
-        << http_server.get_full_logfile();
+                                 kRestApiPassword));
   }
 
   // make 3 connections to route "ro"
   mysqlrouter::MySQLSession client_ro_1;
-  EXPECT_NO_THROW(client_ro_1.connect("127.0.0.1", routing_ports_[4],
-                                      "username", "password", "", ""));
+  EXPECT_NO_THROW(client_ro_1.connect("127.0.0.1", routing_ports_[4], "root",
+                                      "fake-pass", "", ""));
   mysqlrouter::MySQLSession client_ro_2;
-  EXPECT_NO_THROW(client_ro_2.connect("127.0.0.1", routing_ports_[4],
-                                      "username", "password", "", ""));
+  EXPECT_NO_THROW(client_ro_2.connect("127.0.0.1", routing_ports_[4], "root",
+                                      "fake-pass", "", ""));
   mysqlrouter::MySQLSession client_ro_3;
-  EXPECT_NO_THROW(client_ro_3.connect("127.0.0.1", routing_ports_[4],
-                                      "username", "password", "", ""));
+  EXPECT_NO_THROW(client_ro_3.connect("127.0.0.1", routing_ports_[4], "root",
+                                      "fake-pass", "", ""));
 
   // make 1 connection to route "Aaz"
   mysqlrouter::MySQLSession client_Aaz_1;
-  EXPECT_NO_THROW(client_Aaz_1.connect("127.0.0.1", routing_ports_[3],
-                                       "username", "password", "", ""));
+  EXPECT_NO_THROW(client_Aaz_1.connect("127.0.0.1", routing_ports_[3], "root",
+                                       "fake-pass", "", ""));
 
   // call wait_port_ready a few times on "123" to trigger blocked client
   // on that route (we set max_connect_errors to 2)
   for (size_t i = 0; i < 3; ++i) {
-    ASSERT_TRUE(wait_for_port_ready(routing_ports_[2], 500ms))
-        << http_server.get_full_output() << "\n"
-        << http_server.get_full_logfile();
+    ASSERT_TRUE(wait_for_port_ready(routing_ports_[2], 500ms));
   }
+
+  // wait a bit until the routing plugin really closed the sockets
+  //
+  // the routing plugin has a server-greeting-timeout of 100ms
+  // add a few more on top for our close-and-forget in wait_for_port_ready()
+  std::this_thread::sleep_for(200ms);
 
   EXPECT_NO_FATAL_FAILURE(
       fetch_and_validate_schema_and_resource(GetParam(), http_server));
@@ -974,11 +977,10 @@ TEST_F(RestRoutingApiTest, invalid_realm) {
   check_exit_code(router, EXIT_FAILURE, wait_for_process_exit_timeout);
 
   const std::string router_output = router.get_full_logfile();
-  EXPECT_NE(
-      router_output.find("Configuration error: unknown authentication "
-                         "realm for [rest_routing] '': invalidrealm, known "
-                         "realm(s): somerealm"),
-      router_output.npos)
+  EXPECT_NE(router_output.find(
+                "Configuration error: The option 'require_realm=invalidrealm' "
+                "in [rest_routing] does not match any http_auth_realm."),
+            router_output.npos)
       << router_output;
 }
 
@@ -1109,9 +1111,8 @@ TEST_P(RestRoutingApiTestCluster, ensure_openapi_cluster) {
     ASSERT_NO_FATAL_FAILURE(check_port_ready(*nodes[i], node_classic_ports[i]));
   }
 
-  ASSERT_TRUE(
-      MockServerRestClient(first_node_http_port).wait_for_rest_endpoint_ready())
-      << nodes[0]->get_full_output();
+  ASSERT_TRUE(MockServerRestClient(first_node_http_port)
+                  .wait_for_rest_endpoint_ready());
   set_mock_metadata(first_node_http_port, "", node_classic_ports);
 
   SCOPED_TRACE("// start the router with rest_routing enabled");
@@ -1173,23 +1174,21 @@ TEST_P(RestRoutingApiTestCluster, ensure_openapi_cluster) {
   for (size_t i = 0; i < 2; ++i) {
     ASSERT_TRUE(wait_route_ready(std::chrono::milliseconds(5000),
                                  route_names[i], http_port_, "127.0.0.1",
-                                 kRestApiUsername, kRestApiPassword))
-        << http_server.get_full_output() << "\n"
-        << http_server.get_full_logfile();
+                                 kRestApiUsername, kRestApiPassword));
   }
 
   // make 1 connection to route "rw"
   mysqlrouter::MySQLSession client_ro_1;
-  EXPECT_NO_THROW(client_ro_1.connect("127.0.0.1", routing_ports_[0],
-                                      "username", "password", "", ""));
+  EXPECT_NO_THROW(client_ro_1.connect("127.0.0.1", routing_ports_[0], "root",
+                                      "fake-pass", "", ""));
 
   // make 2 connection to route "ro"
   mysqlrouter::MySQLSession client_rw_1;
-  EXPECT_NO_THROW(client_rw_1.connect("127.0.0.1", routing_ports_[1],
-                                      "username", "password", "", ""));
+  EXPECT_NO_THROW(client_rw_1.connect("127.0.0.1", routing_ports_[1], "root",
+                                      "fake-pass", "", ""));
   mysqlrouter::MySQLSession client_rw_2;
-  EXPECT_NO_THROW(client_rw_2.connect("127.0.0.1", routing_ports_[1],
-                                      "username", "password", "", ""));
+  EXPECT_NO_THROW(client_rw_2.connect("127.0.0.1", routing_ports_[1], "root",
+                                      "fake-pass", "", ""));
 
   EXPECT_NO_FATAL_FAILURE(
       fetch_and_validate_schema_and_resource(GetParam(), http_server));

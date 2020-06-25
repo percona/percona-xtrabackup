@@ -467,6 +467,8 @@ that the proper size of the log buffer should be a power of two.
 @param[out]	log		redo log */
 static void log_calc_buf_size(log_t &log);
 
+uint32_t log_detected_format = UINT32_MAX;
+
 /**************************************************/ /**
 
  @name	Initialization and finalization of log_sys
@@ -497,7 +499,13 @@ bool log_sys_init(uint32_t n_files, uint64_t file_size, space_id_t space_id) {
   /* Initialize simple value fields. */
   log.dict_persist_margin.store(0);
   log.periodical_checkpoints_enabled = false;
-  log.format = LOG_HEADER_FORMAT_CURRENT;
+  if (log_detected_format != UINT32_MAX) {
+    ut_a(log_detected_format <= LOG_HEADER_FORMAT_CURRENT);
+    log.format = log_detected_format;
+  } else {
+    log.format = LOG_HEADER_FORMAT_CURRENT;
+  }
+
   log.files_space_id = space_id;
   log.state = log_state_t::OK;
   log.n_log_ios_old = log.n_log_ios;

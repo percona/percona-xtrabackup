@@ -77,48 +77,6 @@ Table_trigger_dispatcher *Table_trigger_dispatcher::create(
   return new (&subject_table->mem_root) Table_trigger_dispatcher(subject_table);
 }
 
-bool Table_trigger_dispatcher::check_n_load(THD *thd, const dd::Table &table,
-                                            const char *db_name,
-                                            const char *table_name) {
-  MEM_ROOT mem_root;
-  init_sql_alloc(key_memory_Table_trigger_dispatcher, &mem_root, 8192, 0);
-
-  // Load triggers from Data Dictionary.
-
-  List<Trigger> triggers;
-
-  if (dd::load_triggers(thd, &mem_root, db_name, table_name, table,
-                        &triggers)) {
-    free_root(&mem_root, MYF(0));
-    return true;
-  }
-
-  Table_trigger_dispatcher ttd(nullptr);
-  // 'false' flag for 'is_upgrade' as we read Trigger from DD.
-  ttd.parse_triggers(thd, &triggers, false);
-
-  // Create trigger chains and assigns triggers to chains.
-
-  Trigger_chain unparseable_triggers;
-  List_iterator_fast<Trigger> it(triggers);
-  Trigger *t;
-
-  while ((t = it++)) {
-    Trigger_chain *tc = t->has_parse_error() ? &unparseable_triggers
-                                             : ttd.create_trigger_chain(
-                                                   &mem_root, t->get_event(),
-                                                   t->get_action_time());
-
-    if (!tc || tc->add_trigger(&mem_root, t)) {
-      free_root(&mem_root, MYF(0));
-      return true;
-    }
-  }
-
-  free_root(&mem_root, MYF(0));
-  return ttd.check_for_broken_triggers();
-}
-
 /**
   Private form of Table_trigger_dispatcher constructor. In order to construct an
   instance of Table_trigger_dispatcher with a valid pointer to the subject
@@ -126,9 +84,9 @@ bool Table_trigger_dispatcher::check_n_load(THD *thd, const dd::Table &table,
 */
 Table_trigger_dispatcher::Table_trigger_dispatcher(TABLE *subject_table)
     : m_subject_table(subject_table),
-      m_record1_field(NULL),
-      m_new_field(NULL),
-      m_old_field(NULL),
+      m_record1_field(nullptr),
+      m_new_field(nullptr),
+      m_old_field(nullptr),
       m_has_unparseable_trigger(false) {
   memset(m_trigger_map, 0, sizeof(m_trigger_map));
   m_parse_error_message[0] = 0;
@@ -281,10 +239,10 @@ bool Table_trigger_dispatcher::create_trigger(
   m_old_field = m_subject_table->field;
   m_new_field = m_subject_table->field;
 
-  if (lex->sphead->setup_trigger_fields(thd, this, NULL, true)) return true;
+  if (lex->sphead->setup_trigger_fields(thd, this, nullptr, true)) return true;
 
-  m_old_field = NULL;
-  m_new_field = NULL;
+  m_old_field = nullptr;
+  m_new_field = nullptr;
 
   // Create new trigger.
 
@@ -338,12 +296,7 @@ bool Table_trigger_dispatcher::prepare_record1_accessors() {
 
   for (fld = m_subject_table->field, old_fld = m_record1_field; *fld;
        fld++, old_fld++) {
-    /*
-      QQ: it is supposed that it is ok to use this function for field
-      cloning...
-    */
-    *old_fld = (*fld)->new_field(&m_subject_table->mem_root, m_subject_table,
-                                 m_subject_table == (*fld)->table);
+    *old_fld = (*fld)->new_field(&m_subject_table->mem_root, m_subject_table);
 
     if (!(*old_fld)) return true;
 
@@ -351,7 +304,7 @@ bool Table_trigger_dispatcher::prepare_record1_accessors() {
         (ptrdiff_t)(m_subject_table->record[1] - m_subject_table->record[0]));
   }
 
-  *old_fld = 0;
+  *old_fld = nullptr;
 
   return false;
 }
@@ -600,8 +553,8 @@ bool Table_trigger_dispatcher::process_triggers(
 
   bool rc = tc->execute_triggers(thd);
 
-  m_new_field = NULL;
-  m_old_field = NULL;
+  m_new_field = nullptr;
+  m_old_field = nullptr;
 
   return rc;
 }

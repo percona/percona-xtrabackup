@@ -237,9 +237,7 @@ class RouterRoutingStrategyTest : public RouterComponentTest {
     return router;
   }
 
-  void kill_server(ProcessWrapper *server) {
-    EXPECT_NO_THROW(server->kill()) << server->get_full_output();
-  }
+  void kill_server(ProcessWrapper *server) { EXPECT_NO_THROW(server->kill()); }
 
   TcpPortPool port_pool_;
   unsigned wait_for_cache_ready_timeout{1000};
@@ -248,6 +246,7 @@ class RouterRoutingStrategyTest : public RouterComponentTest {
 };
 
 struct MetadataCacheTestParams {
+  std::string tracefile;
   std::string role;
   std::string routing_strategy;
   std::string mode;
@@ -256,12 +255,14 @@ struct MetadataCacheTestParams {
   std::vector<unsigned> expected_node_connections;
   bool round_robin;
 
-  MetadataCacheTestParams(const std::string &role_,
+  MetadataCacheTestParams(const std::string &tracefile_,
+                          const std::string &role_,
                           const std::string &routing_strategy_,
                           const std::string &mode_,
                           std::vector<unsigned> expected_node_connections_,
                           bool round_robin_ = false)
-      : role(role_),
+      : tracefile(tracefile_),
+        role(role_),
         routing_strategy(routing_strategy_),
         mode(mode_),
         expected_node_connections(expected_node_connections_),
@@ -288,6 +289,7 @@ class RouterRoutingStrategyMetadataCache
 
 TEST_P(RouterRoutingStrategyMetadataCache, MetadataCacheRoutingStrategy) {
   auto test_params = GetParam();
+  const std::string tracefile = test_params.tracefile;
 
   TempDirectory temp_test_dir;
 
@@ -303,8 +305,7 @@ TEST_P(RouterRoutingStrategyMetadataCache, MetadataCacheRoutingStrategy) {
   std::vector<ProcessWrapper *> cluster_nodes;
 
   // launch the primary node working also as metadata server
-  const auto json_file =
-      get_data_dir().join("metadata_3_secondaries_pass.js").str();
+  const auto json_file = get_data_dir().join(tracefile).str();
   const auto http_port = cluster_nodes_http_ports[0];
   auto &primary_node = launch_mysql_server_mock(
       json_file, cluster_nodes_ports[0], EXIT_SUCCESS, false, http_port);
@@ -328,8 +329,7 @@ TEST_P(RouterRoutingStrategyMetadataCache, MetadataCacheRoutingStrategy) {
   auto &router = launch_router(temp_test_dir.name(),
                                metadata_cache_section + monitoring_section,
                                routing_section);
-  ASSERT_NO_FATAL_FAILURE(check_port_ready(router, router_port))
-      << router.get_full_output();
+  ASSERT_NO_FATAL_FAILURE(check_port_ready(router, router_port));
 
   // launch the secondary cluster nodes
   for (unsigned port = 1; port < cluster_nodes_ports.size(); ++port) {
@@ -349,8 +349,8 @@ TEST_P(RouterRoutingStrategyMetadataCache, MetadataCacheRoutingStrategy) {
                                           kRestApiUsername, kRestApiPassword);
 
   ASSERT_NO_ERROR(rest_metadata_client.wait_for_cache_ready(
-      std::chrono::milliseconds(wait_for_cache_ready_timeout), metadata_status))
-      << router.get_full_logfile();
+      std::chrono::milliseconds(wait_for_cache_ready_timeout),
+      metadata_status));
 
   if (!test_params.round_robin) {
     // check if the server nodes are being used in the expected order
@@ -404,43 +404,84 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(
         // test round-robin on SECONDARY servers
         // we expect 1->2->3->1 for 4 consecutive connections
-        MetadataCacheTestParams("SECONDARY", "round-robin", "", {1, 2, 3},
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "SECONDARY", "round-robin", "", {1, 2, 3},
+                                /*round-robin=*/true),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js", "SECONDARY",
+                                "round-robin", "", {1, 2, 3},
                                 /*round-robin=*/true),
 
         // test first-available on SECONDARY servers
         // we expect 1->1->1 for 3 consecutive connections
-        MetadataCacheTestParams("SECONDARY", "first-available", "", {1, 1, 1}),
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "SECONDARY", "first-available", "", {1, 1, 1}),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js", "SECONDARY",
+                                "first-available", "", {1, 1, 1}),
 
         // *basic* test round-robin-with-fallback
         // we expect 1->2->3->1 for 4 consecutive connections
         // as there are SECONDARY servers available (PRIMARY id=0 should not be
         // used)
-        MetadataCacheTestParams("SECONDARY", "round-robin-with-fallback", "",
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "SECONDARY", "round-robin-with-fallback", "",
                                 {1, 2, 3},
+                                /*round-robin=*/true),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js", "SECONDARY",
+                                "round-robin-with-fallback", "", {1, 2, 3},
                                 /*round-robin=*/true),
 
         // test round-robin on PRIMARY_AND_SECONDARY
         // we expect the primary to participate in the round-robin from the
         // beginning we expect 0->1->2->3->0 for 5 consecutive connections
-        MetadataCacheTestParams("PRIMARY_AND_SECONDARY", "round-robin", "",
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "PRIMARY_AND_SECONDARY", "round-robin", "",
+                                {0, 1, 2, 3},
+                                /*round-robin=*/true),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js",
+                                "PRIMARY_AND_SECONDARY", "round-robin", "",
                                 {0, 1, 2, 3},
                                 /*round-robin=*/true),
 
         // test round-robin with allow-primary-reads=yes
         // this should work similar to PRIMARY_AND_SECONDARY
         // we expect 0->1->2->3->0 for 5 consecutive connections
-        MetadataCacheTestParams("SECONDARY&allow_primary_reads=yes", "",
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "SECONDARY&allow_primary_reads=yes", "",
+                                "read-only", {0, 1, 2, 3},
+                                /*round-robin=*/true),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js",
+                                "SECONDARY&allow_primary_reads=yes", "",
                                 "read-only", {0, 1, 2, 3},
                                 /*round-robin=*/true),
 
         // test first-available on PRIMARY
         // we expect 0->0->0 for 2 consecutive connections
-        MetadataCacheTestParams("PRIMARY", "first-available", "", {0, 0}),
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "PRIMARY", "first-available", "", {0, 0}),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js", "PRIMARY",
+                                "first-available", "", {0, 0}),
 
         // test round-robin on PRIMARY
         // there is single primary so we expect 0->0->0 for 2 consecutive
         // connections
-        MetadataCacheTestParams("PRIMARY", "round-robin", "", {0, 0})));
+        MetadataCacheTestParams("metadata_3_secondaries_pass_v2_gr.js",
+                                "PRIMARY", "round-robin", "", {0, 0}),
+
+        // the same for old metadata
+        MetadataCacheTestParams("metadata_3_secondaries_pass.js", "PRIMARY",
+                                "round-robin", "", {0, 0})));
 
 ////////////////////////////////////////
 /// STATIC ROUTING TESTS
@@ -672,8 +713,7 @@ TEST_F(RouterRoutingStrategyStatic, InvalidStrategyName) {
       router.expect_output("Configuration error: option routing_strategy in "
                            "[routing:test_default] is invalid; "
                            "valid are first-available, next-available, and "
-                           "round-robin (was 'round-robin-with-fallback'"))
-      << router.get_full_logfile();
+                           "round-robin (was 'round-robin-with-fallback'"));
 }
 
 TEST_F(RouterRoutingStrategyStatic, InvalidMode) {
@@ -689,8 +729,7 @@ TEST_F(RouterRoutingStrategyStatic, InvalidMode) {
   check_exit_code(router, EXIT_FAILURE);
   EXPECT_TRUE(router.expect_output(
       "option routing_strategy in [routing:test_default] is invalid; valid are "
-      "first-available, next-available, and round-robin (was 'invalid')"))
-      << router.get_full_logfile();
+      "first-available, next-available, and round-robin (was 'invalid')"));
 }
 
 TEST_F(RouterRoutingStrategyStatic, BothStrategyAndModeMissing) {
@@ -706,8 +745,7 @@ TEST_F(RouterRoutingStrategyStatic, BothStrategyAndModeMissing) {
   check_exit_code(router, EXIT_FAILURE);
   EXPECT_TRUE(
       router.expect_output("Configuration error: option routing_strategy in "
-                           "[routing:test_default] is required"))
-      << router.get_full_logfile();
+                           "[routing:test_default] is required"));
 }
 
 TEST_F(RouterRoutingStrategyStatic, RoutingSrtategyEmptyValue) {
@@ -723,8 +761,7 @@ TEST_F(RouterRoutingStrategyStatic, RoutingSrtategyEmptyValue) {
   check_exit_code(router, EXIT_FAILURE);
   EXPECT_TRUE(
       router.expect_output("Configuration error: option routing_strategy in "
-                           "[routing:test_default] needs a value"))
-      << router.get_full_logfile();
+                           "[routing:test_default] needs a value"));
 }
 
 TEST_F(RouterRoutingStrategyStatic, ModeEmptyValue) {
@@ -740,8 +777,7 @@ TEST_F(RouterRoutingStrategyStatic, ModeEmptyValue) {
   check_exit_code(router, EXIT_FAILURE);
   EXPECT_TRUE(
       router.expect_output("Configuration error: option mode in "
-                           "[routing:test_default] needs a value"))
-      << router.get_full_logfile();
+                           "[routing:test_default] needs a value"));
 }
 
 int main(int argc, char *argv[]) {

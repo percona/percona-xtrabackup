@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,6 +53,7 @@
 #include "my_io.h"
 #include "my_loglevel.h"
 #include "my_macros.h"
+#include "my_systime.h"
 #include "my_table_map.h"
 #include "my_time.h"  // MAX_DATE_STRING_REP_LENGTH
 #include "mysql.h"    // MYSQL_OPT_MAX_ALLOWED_PACKET
@@ -158,6 +159,9 @@ Error_log_throttle slave_ignored_err_throttle(
     " replicate-*-table rules\" got suppressed.");
 #endif /* MYSQL_SERVER */
 
+#include "libbinlogevents/include/codecs/binary.h"
+#include "libbinlogevents/include/codecs/factory.h"
+#include "libbinlogevents/include/compression/iterator.h"
 #include "sql/rpl_gtid.h"
 #include "sql/rpl_record.h"  // enum_row_image_type, Bit_reader
 #include "sql/rpl_utility.h"
@@ -510,7 +514,7 @@ static inline void pretty_print_identifier(IO_CACHE *cache, const char *str,
 #if defined(MYSQL_SERVER)
 
 static void clear_all_errors(THD *thd, Relay_log_info *rli) {
-  thd->is_slave_error = 0;
+  thd->is_slave_error = false;
   thd->clear_error();
   rli->clear_error();
   if (rli->workers_array_initialized) {
@@ -677,7 +681,7 @@ static char *slave_load_file_stem(char *buf, uint file_id, int event_server_id,
   buf = strend(buf);
   int appended_length = sprintf(buf, "%s-%d-", server_uuid, event_server_id);
   buf += appended_length;
-  res = int10_to_str(file_id, buf, 10);
+  res = longlong10_to_str(file_id, buf, 10);
   my_stpcpy(res, ext);  // Add extension last
   return res;           // Pointer to extension
 }
@@ -821,10 +825,67 @@ static void print_set_option(IO_CACHE *file, uint32 bits_changed, uint32 option,
   if (bits_changed & option) {
     if (*need_comma) my_b_printf(file, ", ");
     my_b_printf(file, "%s=%d", name, static_cast<bool>(flags & option));
-    *need_comma = 1;
+    *need_comma = true;
   }
 }
 #endif
+
+#ifdef MYSQL_SERVER
+Replicated_columns_view::Replicated_columns_view(
+    Replicated_columns_view::enum_replication_flow direction, THD const *thd)
+    : Replicated_columns_view{nullptr, direction, thd} {}
+
+Replicated_columns_view::Replicated_columns_view(
+    TABLE const *target,
+    Replicated_columns_view::enum_replication_flow direction, THD const *thd)
+    : Table_columns_view{} {
+  filter_fn_type filter{nullptr};
+
+  if (direction == Replicated_columns_view::OUTBOUND)
+    filter = [this](TABLE const *table, size_t column_index) -> bool {
+      return this->outbound_filtering(table, column_index);
+    };
+  else
+    filter = [this](TABLE const *table, size_t column_index) -> bool {
+      return this->inbound_filtering(table, column_index);
+    };
+
+  this->set_thd(thd)       //
+      .set_filter(filter)  //
+      .set_table(target);
+}
+
+Replicated_columns_view &Replicated_columns_view::set_thd(THD const *thd) {
+  this->m_thd = thd;
+  this->init_fields_bitmaps();
+  return (*this);
+}
+
+bool Replicated_columns_view::is_inbound_filtering_enabled() {
+  return (this->m_thd == nullptr ||
+          this->m_thd->variables.immediate_server_version ==
+              UNDEFINED_SERVER_VERSION ||
+          this->m_thd->variables.immediate_server_version >= 80018);
+}
+
+bool Replicated_columns_view::inbound_filtering(TABLE const *table,
+                                                size_t column_index) {
+  if (!this->is_inbound_filtering_enabled()) return false;
+  // If the set of filtered columns is changed, we need to replicate the change
+  // in other blocks that reproduce the behavior - Rapid binlog parser, for
+  // instance.
+  return bitmap_is_set(&table->fields_for_functional_indexes, column_index);
+}
+
+bool Replicated_columns_view::outbound_filtering(TABLE const *table,
+                                                 size_t column_index) {
+  // If the set of filtered columns is changed, we need to replicate the change
+  // in other blocks that reproduce the behavior - Rapid binlog parser, for
+  // instance.
+  return bitmap_is_set(&table->fields_for_functional_indexes, column_index);
+}
+#endif
+
 /**************************************************************************
         Log_event methods (= the parent class of all events)
 **************************************************************************/
@@ -912,6 +973,8 @@ const char *Log_event::get_type_str(Log_event_type type) {
       return "XA_prepare";
     case binary_log::PARTIAL_UPDATE_ROWS_EVENT:
       return "Update_rows_partial";
+    case binary_log::TRANSACTION_PAYLOAD_EVENT:
+      return "Transaction_payload";
     default:
       return "Unknown"; /* impossible */
   }
@@ -1221,7 +1284,7 @@ bool Log_event::write_footer(Basic_ostream *ostream) {
     int4store(buf, crc);
     return ostream->write((uchar *)buf, sizeof(buf));
   }
-  return 0;
+  return false;
 }
 
 uint32 Log_event::write_header_to_memory(uchar *buf) {
@@ -1492,7 +1555,7 @@ static const uchar *get_quote_table() {
   Control characters are displayed as hex sequence, e.g. \x00
 
   @param[in] file              IO cache
-  @param[in] prt               Pointer to string
+  @param[in] ptr               Pointer to string
   @param[in] length            String length
 
   @retval false Success
@@ -1555,8 +1618,8 @@ static size_t my_b_write_quoted_with_length(IO_CACHE *file, const uchar *ptr,
   Prints a 32-bit number in both signed and unsigned representation
 
   @param[in] file              IO cache
-  @param[in] sl                Signed number
-  @param[in] ul                Unsigned number
+  @param[in] si                Signed number
+  @param[in] ui                Unsigned number
 */
 static void my_b_write_sint32_and_uint32(IO_CACHE *file, int32 si, uint32 ui) {
   my_b_printf(file, "%d", si);
@@ -1864,9 +1927,9 @@ static size_t log_event_print_value(IO_CACHE *file, const uchar *ptr, uint type,
       my_decimal dec;
       binary2my_decimal(E_DEC_FATAL_ERROR, pointer_cast<const uchar *>(ptr),
                         &dec, precision, decimals);
-      int len = DECIMAL_MAX_STR_LENGTH;
       char buff[DECIMAL_MAX_STR_LENGTH + 1];
-      decimal2string(&dec, buff, &len, 0, 0, 0);
+      int len = sizeof(buff);
+      decimal2string(&dec, buff, &len);
       my_b_printf(file, "%s", buff);
       return bin_size;
     }
@@ -1874,8 +1937,7 @@ static size_t log_event_print_value(IO_CACHE *file, const uchar *ptr, uint type,
     case MYSQL_TYPE_FLOAT: {
       snprintf(typestr, typestr_length, "FLOAT");
       if (!ptr) return my_b_printf(file, "NULL");
-      float fl;
-      float4get(&fl, ptr);
+      float fl = float4get(ptr);
       char tmp[320];
       sprintf(tmp, "%-20g", (double)fl);
       my_b_printf(file, "%s", tmp); /* my_b_printf doesn't support %-20g */
@@ -1885,8 +1947,7 @@ static size_t log_event_print_value(IO_CACHE *file, const uchar *ptr, uint type,
     case MYSQL_TYPE_DOUBLE: {
       strcpy(typestr, "DOUBLE");
       if (!ptr) return my_b_printf(file, "NULL");
-      double dbl;
-      float8get(&dbl, ptr);
+      double dbl = float8get(ptr);
       char tmp[320];
       sprintf(tmp, "%-.20g", dbl); /* my_b_printf doesn't support %-20g */
       my_b_printf(file, "%s", tmp);
@@ -2471,6 +2532,7 @@ bool Log_event::contains_partition_info(bool end_group_sets_max_dbs) {
   switch (get_type_code()) {
     case binary_log::TABLE_MAP_EVENT:
     case binary_log::EXECUTE_LOAD_QUERY_EVENT:
+    case binary_log::TRANSACTION_PAYLOAD_EVENT:
       res = true;
 
       break;
@@ -2655,7 +2717,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
         }
 
         if (schedule_next_event(this, rli)) {
-          rli->abort_slave = 1;
+          rli->abort_slave = true;
           if (is_gtid_event(this)) {
             rli->clear_processing_trx();
           }
@@ -2677,7 +2739,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
       rli->curr_group_seen_begin = true;
       rli->mts_end_group_sets_max_dbs = true;
       if (!rli->curr_group_seen_gtid && schedule_next_event(this, rli)) {
-        rli->abort_slave = 1;
+        rli->abort_slave = true;
         return nullptr;
       }
 
@@ -2686,7 +2748,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
       return ret_worker;
     }
     if (schedule_next_event(this, rli)) {
-      rli->abort_slave = 1;
+      rli->abort_slave = true;
       return nullptr;
     }
   }
@@ -2736,6 +2798,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
            binary_log::DELETE_FILE_EVENT);
 
       DBUG_ASSERT((!ends_group() ||
+                   (get_type_code() == binary_log::TRANSACTION_PAYLOAD_EVENT) ||
                    (get_type_code() == binary_log::QUERY_EVENT &&
                     static_cast<Query_log_event *>(this)->is_query_prefix_match(
                         STRING_WITH_LEN("XA ROLLBACK")))) ||
@@ -2759,6 +2822,19 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
       */
       rli->curr_group_isolated = true;
     }
+#ifndef DBUG_OFF
+    {
+      std::ostringstream oss;
+      for (i = 0;
+           i < ((mts_dbs.num != OVER_MAX_DBS_IN_EVENT_MTS) ? mts_dbs.num : 1);
+           i++) {
+        if (mts_dbs.name[i] != 0) {
+          oss << mts_dbs.name[i] << ", ";
+        }
+      }
+      DBUG_PRINT("debug", ("ASSIGN %p %s", current_thd, oss.str().c_str()));
+    }
+#endif
 
     /* One run of the loop in the case of over-max-db:s */
     for (i = 0;
@@ -3322,7 +3398,7 @@ bool Query_log_event::write(Basic_ostream *ostream) {
   uchar *start, *start_of_status;
   size_t event_length;
 
-  if (!query) return 1;  // Something wrong with event
+  if (!query) return true;  // Something wrong with event
 
   /*
     We want to store the thread id:
@@ -3600,8 +3676,8 @@ bool Query_log_event::write(Basic_ostream *ostream) {
           wrapper_my_b_safe_write(ostream, pointer_cast<const uchar *>(query),
                                   q_len) ||
           write_footer(ostream))
-             ? 1
-             : 0;
+             ? true
+             : false;
 }
 
 /**
@@ -3767,7 +3843,7 @@ Query_log_event::Query_log_event(THD *thd_arg, const char *query_arg,
       data_buf(nullptr) {
   /* save the original thread id; we already know the server id */
   slave_proxy_id = thd_arg->variables.pseudo_thread_id;
-  common_header->set_is_valid(query != 0);
+  common_header->set_is_valid(query != nullptr);
 
   /*
   exec_time calculation has changed to use the same method that is used
@@ -4064,7 +4140,7 @@ Query_log_event::Query_log_event(
     return;
   }
 
-  common_header->set_is_valid(query != 0 && q_len > 0);
+  common_header->set_is_valid(query != nullptr && q_len > 0);
 }
 
 #ifndef MYSQL_SERVER
@@ -4126,15 +4202,16 @@ void Query_log_event::print_query_header(
       my_b_printf(file, "use %s%s\n", quoted_id, print_event_info->delimiter);
   }
 
-  end = int10_to_str((long)common_header->when.tv_sec,
-                     my_stpcpy(buff, "SET TIMESTAMP="), 10);
+  end = longlong10_to_str(common_header->when.tv_sec,
+                          my_stpcpy(buff, "SET TIMESTAMP="), 10);
   if (common_header->when.tv_usec)
     end += sprintf(end, ".%06d", (int)common_header->when.tv_usec);
   end = my_stpcpy(end, print_event_info->delimiter);
   *end++ = '\n';
   DBUG_ASSERT(end < buff + sizeof(buff));
   my_b_write(file, (uchar *)buff, (uint)(end - buff));
-  if ((!print_event_info->thread_id_printed ||
+  if (!print_event_info->require_row_format &&
+      (!print_event_info->thread_id_printed ||
        ((common_header->flags & LOG_EVENT_THREAD_SPECIFIC_F) &&
         thread_id != print_event_info->thread_id))) {
     // If --short-form, print deterministic value instead of pseudo_thread_id.
@@ -4142,7 +4219,7 @@ void Query_log_event::print_query_header(
                 short_form ? 999999999 : (ulong)thread_id,
                 print_event_info->delimiter);
     print_event_info->thread_id = thread_id;
-    print_event_info->thread_id_printed = 1;
+    print_event_info->thread_id_printed = true;
   }
 
   /*
@@ -4158,13 +4235,13 @@ void Query_log_event::print_query_header(
       tmp = (print_event_info->flags2) ^ flags2;
     else /* that's the first Query event we read */
     {
-      print_event_info->flags2_inited = 1;
+      print_event_info->flags2_inited = true;
       tmp = ~((uint32)0); /* all bits have changed */
     }
 
     if (unlikely(tmp)) /* some bits have changed */
     {
-      bool need_comma = 0;
+      bool need_comma = false;
       my_b_printf(file, "SET ");
       print_set_option(file, tmp, OPTION_NO_FOREIGN_KEY_CHECKS, ~flags2,
                        "@@session.foreign_key_checks", &need_comma);
@@ -4206,7 +4283,7 @@ void Query_log_event::print_query_header(
     my_b_printf(file, "SET @@session.sql_mode=%lu%s%s\n", (ulong)sql_mode, mask,
                 print_event_info->delimiter);
     print_event_info->sql_mode = sql_mode;
-    print_event_info->sql_mode_inited = 1;
+    print_event_info->sql_mode_inited = true;
   }
   if (print_event_info->auto_increment_increment != auto_increment_increment ||
       print_event_info->auto_increment_offset != auto_increment_offset) {
@@ -4240,7 +4317,7 @@ void Query_log_event::print_query_header(
                 uint2korr(charset_p), uint2korr(charset + 2),
                 uint2korr(charset + 4), print_event_info->delimiter);
     memcpy(print_event_info->charset, charset, 6);
-    print_event_info->charset_inited = 1;
+    print_event_info->charset_inited = true;
   }
   if (time_zone_len) {
     if (memcmp(print_event_info->time_zone_str, time_zone_str,
@@ -4313,7 +4390,8 @@ void Query_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
 */
 void Query_log_event::attach_temp_tables_worker(THD *thd_arg,
                                                 const Relay_log_info *rli) {
-  rli->current_mts_submode->attach_temp_tables(thd_arg, rli, this);
+  if (!is_skip_temp_tables_handling_by_worker())
+    rli->current_mts_submode->attach_temp_tables(thd_arg, rli, this);
 }
 
 /**
@@ -4326,7 +4404,8 @@ void Query_log_event::attach_temp_tables_worker(THD *thd_arg,
 */
 void Query_log_event::detach_temp_tables_worker(THD *thd_arg,
                                                 const Relay_log_info *rli) {
-  rli->current_mts_submode->detach_temp_tables(thd_arg, rli, this);
+  if (!is_skip_temp_tables_handling_by_worker())
+    rli->current_mts_submode->detach_temp_tables(thd_arg, rli, this);
 }
 
 /*
@@ -4439,7 +4518,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
   thd->variables.auto_increment_offset = auto_increment_offset;
   if (explicit_defaults_ts != TERNARY_UNSET)
     thd->variables.explicit_defaults_for_timestamp =
-        explicit_defaults_ts == TERNARY_OFF ? 0 : 1;
+        explicit_defaults_ts == TERNARY_OFF ? false : true;
 
   /*
     todo: such cleanup should not be specific to Query event and therefore
@@ -4478,21 +4557,24 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
 
   {
     Applier_security_context_guard security_context{rli, thd};
-    if (!security_context.skip_priv_checks() &&
-        !security_context.has_access({SUPER_ACL}) &&
-        !security_context.has_access({"SYSTEM_VARIABLES_ADMIN"}) &&
-        !security_context.has_access({"SESSION_VARIABLES_ADMIN"})) {
-      rli->report(ERROR_LEVEL, ER_SPECIFIC_ACCESS_DENIED_ERROR,
-                  ER_THD(thd, ER_SPECIFIC_ACCESS_DENIED_ERROR),
-                  "SUPER, SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN");
-      thd->is_slave_error = true;
-      goto end;
+    if (!thd->variables.require_row_format) {
+      if (!security_context.skip_priv_checks() &&
+          !security_context.has_access({SUPER_ACL}) &&
+          !security_context.has_access({"SYSTEM_VARIABLES_ADMIN"}) &&
+          !security_context.has_access({"SESSION_VARIABLES_ADMIN"})) {
+        rli->report(ERROR_LEVEL, ER_SPECIFIC_ACCESS_DENIED_ERROR,
+                    ER_THD(thd, ER_SPECIFIC_ACCESS_DENIED_ERROR),
+                    "SUPER, SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN");
+        thd->is_slave_error = true;
+        goto end;
+      }
+      thd->variables.pseudo_thread_id = thread_id;  // for temp tables
     }
+
     thd->set_time(&(common_header->when));
     thd->set_query(query_arg, q_len_arg);
     thd->set_query_for_display(query_arg, q_len_arg);
     thd->set_query_id(next_query_id());
-    thd->variables.pseudo_thread_id = thread_id;  // for temp tables
     attach_temp_tables_worker(thd, rli);
     DBUG_PRINT("query", ("%s", thd->query().str));
 
@@ -4609,7 +4691,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
         CHARSET_INFO *cs;
         if (!(cs = get_charset(charset_database_number, MYF(0)))) {
           char buf[20];
-          int10_to_str((int)charset_database_number, buf, -10);
+          longlong10_to_str(charset_database_number, buf, 10);
           my_error(ER_UNKNOWN_COLLATION, MYF(0), buf);
           goto compare_errors;
         }
@@ -4620,7 +4702,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
         CHARSET_INFO *cs;
         if (!(cs = get_charset(default_collation_for_utf8mb4_number, MYF(0)))) {
           char buf[20];
-          int10_to_str((int)default_collation_for_utf8mb4_number, buf, -10);
+          longlong10_to_str(default_collation_for_utf8mb4_number, buf, 10);
           my_error(ER_UNKNOWN_COLLATION, MYF(0), buf);
           goto compare_errors;
         }
@@ -4631,9 +4713,22 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
         thd->variables.default_collation_for_utf8mb4 =
             &my_charset_utf8mb4_general_ci;
 
-      if (sql_require_primary_key != 0xff) {
+      if (sql_require_primary_key != 0xff &&
+          Relay_log_info::PK_CHECK_STREAM ==
+              rli->get_require_table_primary_key_check()) {
         DBUG_ASSERT(sql_require_primary_key == 0 ||
                     sql_require_primary_key == 1);
+        if (!security_context.skip_priv_checks() &&
+            !security_context.has_access({SUPER_ACL}) &&
+            !security_context.has_access({"SYSTEM_VARIABLES_ADMIN"}) &&
+            !security_context.has_access({"SESSION_VARIABLES_ADMIN"})) {
+          rli->report(
+              ERROR_LEVEL, ER_SPECIFIC_ACCESS_DENIED_ERROR,
+              ER_THD(thd, ER_SPECIFIC_ACCESS_DENIED_ERROR),
+              "SUPER, SYSTEM_VARIABLES_ADMIN or SESSION_VARIABLES_ADMIN");
+          thd->is_slave_error = true;
+          goto end;
+        }
         thd->variables.sql_require_primary_key = sql_require_primary_key;
       }
 
@@ -4702,6 +4797,10 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
           query_start_status = thd->status_var;
         }
 
+        /*
+          Prevent "hanging" of previous rewritten query in SHOW PROCESSLIST.
+        */
+        thd->reset_rewritten_query();
         mysql_parse(thd, &parser_state);
 
         enum_sql_command command = thd->lex->sql_command;
@@ -4780,28 +4879,28 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
         rli->report(ERROR_LEVEL, ER_ERROR_ON_MASTER,
                     ER_THD(thd, ER_ERROR_ON_MASTER), expected_error,
                     thd->query().str);
-        thd->is_slave_error = 1;
+        thd->is_slave_error = true;
       }
       goto end;
     }
-
     /* If the query was not ignored, it is printed to the general log */
     if (!thd->is_error() ||
         thd->get_stmt_da()->mysql_errno() != ER_SLAVE_IGNORED_TABLE) {
-      /* log the rewritten query if the query was rewritten
-         and the option to log raw was not set.
+      /*
+        Log the rewritten query if the query was rewritten
+        and the option to log raw was not set.
 
-         There is an assumption here. We assume that query log
-         events can never have multi-statement queries, thus the
-         parsed statement is the same as the raw one.
-       */
-      if (opt_general_log_raw || thd->rewritten_query.length() == 0)
+        There is an assumption here. We assume that query log
+        events can never have multi-statement queries, thus the
+        parsed statement is the same as the raw one.
+      */
+      if (opt_general_log_raw || thd->rewritten_query().length() == 0)
         query_logger.general_log_write(thd, COM_QUERY, thd->query().str,
                                        thd->query().length);
       else
         query_logger.general_log_write(thd, COM_QUERY,
-                                       thd->rewritten_query.c_ptr_safe(),
-                                       thd->rewritten_query.length());
+                                       thd->rewritten_query().ptr(),
+                                       thd->rewritten_query().length());
     }
 
   compare_errors:
@@ -4865,7 +4964,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
             ER_THD_NONCONST(thd, expected_error), expected_error,
             (actual_error ? thd->get_stmt_da()->message_text() : "no error"),
             actual_error, print_slave_db_safe(db), query_arg);
-        thd->is_slave_error = 1;
+        thd->is_slave_error = true;
       } else {
         rli->report(INFORMATION_LEVEL, actual_error,
                     "The actual error and expected error on slave are"
@@ -4916,7 +5015,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
                                   : "unexpected success or fatal error"),
                     print_slave_db_safe(thd->db().str), query_arg);
       }
-      thd->is_slave_error = 1;
+      thd->is_slave_error = true;
     }
 
     /*
@@ -4994,7 +5093,7 @@ end:
   */
   thd->first_successful_insert_id_in_prev_stmt_for_binlog = 0;
   thd->first_successful_insert_id_in_prev_stmt = 0;
-  thd->stmt_depends_on_first_successful_insert_id_in_prev_stmt = 0;
+  thd->stmt_depends_on_first_successful_insert_id_in_prev_stmt = false;
   free_root(thd->mem_root, MYF(MY_KEEP_PREALLOC));
   return thd->is_slave_error;
 }
@@ -5226,7 +5325,7 @@ int Format_description_log_event::pack_info(Protocol *protocol) {
   pos = my_stpcpy(buf, "Server ver: ");
   pos = my_stpcpy(pos, server_version);
   pos = my_stpcpy(pos, ", Binlog ver: ");
-  pos = int10_to_str(binlog_version, pos, 10);
+  pos = longlong10_to_str(binlog_version, pos, 10);
   protocol->store_string(buf, (uint)(pos - buf), &my_charset_bin);
   return 0;
 }
@@ -5336,12 +5435,12 @@ int Format_description_log_event::do_apply_event(Relay_log_info const *rli) {
                 "or ROLLBACK in relay log). A probable cause is that "
                 "the master died while writing the transaction to "
                 "its binary log, thus rolled back too.");
-    const_cast<Relay_log_info *>(rli)->cleanup_context(thd, 1);
+    const_cast<Relay_log_info *>(rli)->cleanup_context(thd, true);
   }
 
   /* If this event comes from ourself, there is no cleaning task to perform. */
   if (server_id != (uint32)::server_id) {
-    if (created) {
+    if (created && !thd->variables.require_row_format) {
       ret = close_temporary_tables(thd);
       cleanup_load_tmpdir();
     } else {
@@ -5458,7 +5557,7 @@ Rotate_log_event::Rotate_log_event(const char *new_log_ident_arg,
   if (flags & DUP_NAME)
     new_log_ident = my_strndup(key_memory_log_event, new_log_ident_arg,
                                ident_len, MYF(MY_WME));
-  common_header->set_is_valid(new_log_ident != 0);
+  common_header->set_is_valid(new_log_ident != nullptr);
   if (flags & RELAY_LOG) set_relay_log_event();
 }
 #endif  // MYSQL_SERVER
@@ -5703,7 +5802,7 @@ bool Intvar_log_event::write(Basic_ostream *ostream) {
 
 #ifndef MYSQL_SERVER
 void Intvar_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
-  char llbuff[22];
+  char llbuff[22] = {0};
   const char *msg = nullptr;
   IO_CACHE *const head = &print_event_info->head_cache;
 
@@ -5781,9 +5880,9 @@ Log_event::enum_skip_reason Intvar_log_event::do_shall_skip(
 int Rand_log_event::pack_info(Protocol *protocol) {
   char buf1[256], *pos;
   pos = my_stpcpy(buf1, "rand_seed1=");
-  pos = int10_to_str((long)seed1, pos, 10);
+  pos = longlong10_to_str(seed1, pos, 10);
   pos = my_stpcpy(pos, ",rand_seed2=");
-  pos = int10_to_str((long)seed2, pos, 10);
+  pos = longlong10_to_str(seed2, pos, 10);
   protocol->store_string(buf1, (uint)(pos - buf1), &my_charset_bin);
   return 0;
 }
@@ -5974,6 +6073,7 @@ bool Xid_log_event::do_commit(THD *thd_arg) {
    @return zero as success or non-zero as an error
 */
 int Xid_apply_log_event::do_apply_event_worker(Slave_worker *w) {
+  DBUG_TRACE;
   int error = 0;
   bool skipped_commit_pos = true;
 
@@ -6289,9 +6389,6 @@ void XA_prepare_log_event::print(FILE *,
 */
 
 bool XA_prepare_log_event::do_commit(THD *thd_arg) {
-  bool error = false;
-  xid_t xid;
-
   enum_gtid_statement_status state = gtid_pre_statement_checks(thd_arg);
   if (state == GTID_STATEMENT_EXECUTE) {
     if (gtid_pre_statement_post_implicit_commit_checks(thd_arg))
@@ -6303,11 +6400,13 @@ bool XA_prepare_log_event::do_commit(THD *thd_arg) {
     thd_arg->rli_slave->report(ERROR_LEVEL, error,
                                "Error executing XA PREPARE event: '%s'",
                                thd_arg->get_stmt_da()->message_text());
-    thd_arg->is_slave_error = 1;
+    thd_arg->is_slave_error = true;
     return true;
   } else if (state == GTID_STATEMENT_SKIP)
     return false;
 
+  bool error = false;
+  xid_t xid;
   xid.set(my_xid.formatID, my_xid.data, my_xid.gtrid_length,
           my_xid.data + my_xid.gtrid_length, my_xid.bqual_length);
   if (!one_phase) {
@@ -6352,7 +6451,7 @@ int User_var_log_event::pack_info(Protocol *protocol) {
     switch (type) {
       case REAL_RESULT:
         double real_val;
-        float8get(&real_val, val);
+        real_val = float8get(val);
         if (!(buf = (char *)my_malloc(key_memory_log_event,
                                       val_offset + MY_GCVT_MAX_FIELD_WIDTH + 1,
                                       MYF(MY_WME))))
@@ -6380,7 +6479,7 @@ int User_var_log_event::pack_info(Protocol *protocol) {
         my_decimal dec;
         binary2my_decimal(E_DEC_FATAL_ERROR, (uchar *)(val + 2), &dec, val[0],
                           val[1]);
-        my_decimal2string(E_DEC_FATAL_ERROR, &dec, 0, 0, 0, &str);
+        my_decimal2string(E_DEC_FATAL_ERROR, &dec, &str);
         event_len = str.length() + val_offset;
         break;
       }
@@ -6435,7 +6534,7 @@ bool User_var_log_event::write(Basic_ostream *ostream) {
   char buf[UV_NAME_LEN_SIZE];
   char buf1[UV_VAL_IS_NULL + UV_VAL_TYPE_SIZE + UV_CHARSET_NUMBER_SIZE +
             UV_VAL_LEN_SIZE];
-  uchar buf2[MY_MAX(8, DECIMAL_MAX_FIELD_SIZE + 2)], *pos = buf2;
+  uchar buf2[std::max(8, DECIMAL_MAX_FIELD_SIZE + 2)], *pos = buf2;
   uint unsigned_len = 0;
   uint buf1_length;
   ulong event_length;
@@ -6472,7 +6571,7 @@ bool User_var_log_event::write(Basic_ostream *ostream) {
       case ROW_RESULT:
       default:
         DBUG_ASSERT(false);
-        return 0;
+        return false;
     }
     int4store(buf1 + 2 + UV_CHARSET_NUMBER_SIZE, val_len);
     buf1_length = 10;
@@ -6522,7 +6621,7 @@ void User_var_log_event::print(FILE *,
       case REAL_RESULT:
         double real_val;
         char real_buf[FMT_G_BUFSIZE(14)];
-        float8get(&real_val, val);
+        real_val = float8get(val);
         sprintf(real_buf, "%.14g", real_val);
         my_b_printf(head, ":=%s%s\n", real_buf, print_event_info->delimiter);
         break;
@@ -6534,8 +6633,8 @@ void User_var_log_event::print(FILE *,
         my_b_printf(head, ":=%s%s\n", int_buf, print_event_info->delimiter);
         break;
       case DECIMAL_RESULT: {
-        char str_buf[200];
-        int str_len = sizeof(str_buf) - 1;
+        char str_buf[DECIMAL_MAX_STR_LENGTH + 1];
+        int str_len = sizeof(str_buf);
         int precision = (int)val[0];
         int scale = (int)val[1];
         decimal_digit_t dec_buf[10];
@@ -6544,8 +6643,7 @@ void User_var_log_event::print(FILE *,
         dec.buf = dec_buf;
 
         bin2decimal((uchar *)val + 2, &dec, precision, scale);
-        decimal2string(&dec, str_buf, &str_len, 0, 0, 0);
-        str_buf[str_len] = 0;
+        decimal2string(&dec, str_buf, &str_len);
         my_b_printf(head, ":=%s%s\n", str_buf, print_event_info->delimiter);
         break;
       }
@@ -6644,7 +6742,7 @@ int User_var_log_event::do_apply_event(Relay_log_info const *rli) {
                       "Invalid variable length at User var event");
           return 1;
         }
-        float8get(&real_val, val);
+        real_val = float8get(val);
         it = new Item_float(real_val, 0);
         val = (char *)&real_val;  // Pointer to value in native format
         val_len = 8;
@@ -6693,7 +6791,7 @@ int User_var_log_event::do_apply_event(Relay_log_info const *rli) {
     crash the server, so if fix fields fails, we just return with an
     error.
   */
-  if (e->fix_fields(thd, 0)) return 1;
+  if (e->fix_fields(thd, nullptr)) return 1;
 
   /*
     A variable can just be considered as a table with
@@ -6811,7 +6909,7 @@ Append_block_log_event::Append_block_log_event(THD *thd_arg, const char *db_arg,
                 using_trans ? Log_event::EVENT_TRANSACTIONAL_CACHE
                             : Log_event::EVENT_STMT_CACHE,
                 Log_event::EVENT_NORMAL_LOGGING, header(), footer()) {
-  common_header->set_is_valid(block != 0);
+  common_header->set_is_valid(block != nullptr);
 }
 #endif  // MYSQL_SERVER
 
@@ -7163,7 +7261,7 @@ bool Execute_load_query_log_event::write_post_header_for_derived(
 #ifndef MYSQL_SERVER
 void Execute_load_query_log_event::print(
     FILE *file, PRINT_EVENT_INFO *print_event_info) const {
-  print(file, print_event_info, 0);
+  print(file, print_event_info, nullptr);
 }
 
 /**
@@ -7231,7 +7329,7 @@ int Execute_load_query_log_event::pack_info(Protocol *protocol) {
     pos += q_len;
   }
   pos = my_stpcpy(pos, " ;file_id=");
-  pos = int10_to_str((long)file_id, pos, 10);
+  pos = longlong10_to_str(file_id, pos, 10);
   protocol->store_string(buf, pos - buf, &my_charset_bin);
   my_free(buf);
   return 0;
@@ -7502,12 +7600,13 @@ Rows_log_event::Rows_log_event(THD *thd_arg, TABLE *tbl_arg,
       m_key(nullptr),
       m_key_info(nullptr),
       m_distinct_keys(Key_compare(&m_key_info)),
-      m_distinct_key_spare_buf(nullptr) {
+      m_distinct_key_spare_buf(nullptr),
+      m_fields{tbl_arg, Replicated_columns_view::OUTBOUND} {
   DBUG_TRACE;
   common_header->type_code = event_type;
   m_row_count = 0;
   m_table_id = tid;
-  m_width = tbl_arg ? tbl_arg->s->fields : 1;
+  m_width = tbl_arg ? this->m_fields.filtered_size() : 1;
   m_rows_buf = nullptr;
   m_rows_cur = nullptr;
   m_rows_end = nullptr;
@@ -7543,22 +7642,19 @@ Rows_log_event::Rows_log_event(THD *thd_arg, TABLE *tbl_arg,
   /* if bitmap_init fails, caught in is_valid() */
   if (likely(!bitmap_init(&m_cols,
                           m_width <= sizeof(m_bitbuf) * 8 ? m_bitbuf : nullptr,
-                          m_width, false))) {
+                          m_width))) {
     /* Cols can be zero if this is a dummy binrows event */
     if (likely(cols != nullptr)) {
       memcpy(m_cols.bitmap, cols->bitmap, no_bytes_in_map(cols));
       create_last_word_mask(&m_cols);
-
-      // Hidden generated columns should not be included in the binlog.
-      bitmap_subtract(&m_cols, &tbl_arg->fields_for_functional_indexes);
     }
   } else {
     // Needed because bitmap_init() does not set it to null on failure
-    m_cols.bitmap = 0;
+    m_cols.bitmap = nullptr;
   }
 
-  if (bitmap_init(&write_set_backup, nullptr, tbl_arg->s->fields, false)) {
-    write_set_backup.bitmap = 0; /* purecov: deadcode */
+  if (bitmap_init(&write_set_backup, nullptr, tbl_arg->s->fields)) {
+    write_set_backup.bitmap = nullptr; /* purecov: deadcode */
   }
 
   /*
@@ -7590,7 +7686,8 @@ Rows_log_event::Rows_log_event(
       m_key(nullptr),
       m_key_info(nullptr),
       m_distinct_keys(Key_compare(&m_key_info)),
-      m_distinct_key_spare_buf(nullptr)
+      m_distinct_key_spare_buf(nullptr),
+      m_fields(Replicated_columns_view::INBOUND)
 #endif
 {
   DBUG_TRACE;
@@ -7615,7 +7712,7 @@ Rows_log_event::Rows_log_event(
   /* if bitmap_init fails, is_valid will be set to false */
   if (likely(!bitmap_init(&m_cols,
                           m_width <= sizeof(m_bitbuf) * 8 ? m_bitbuf : nullptr,
-                          m_width, false))) {
+                          m_width))) {
     if (!columns_before_image.empty()) {
       memcpy(m_cols.bitmap, &columns_before_image[0], n_bits_len);
       create_last_word_mask(&m_cols);
@@ -7640,8 +7737,8 @@ Rows_log_event::Rows_log_event(
     /* if bitmap_init fails, is_valid will be set to false*/
     if (likely(!bitmap_init(
             &m_cols_ai,
-            m_width <= sizeof(m_bitbuf_ai) * 8 ? m_bitbuf_ai : nullptr, m_width,
-            false))) {
+            m_width <= sizeof(m_bitbuf_ai) * 8 ? m_bitbuf_ai : nullptr,
+            m_width))) {
       if (!columns_after_image.empty()) {
         memcpy(m_cols_ai.bitmap, &columns_after_image[0], n_bits_len);
         create_last_word_mask(&m_cols_ai);
@@ -7653,7 +7750,7 @@ Rows_log_event::Rows_log_event(
       }
     } else {
       // Needed because bitmap_init() does not set it to null on failure
-      m_cols_ai.bitmap = 0;
+      m_cols_ai.bitmap = nullptr;
       common_header->set_is_valid(false);
       return;
     }
@@ -7678,8 +7775,8 @@ Rows_log_event::Rows_log_event(
     m_rows_cur = m_rows_end;
   }
 
-  if (bitmap_init(&write_set_backup, nullptr, m_cols.n_bits, false)) {
-    write_set_backup.bitmap = 0; /* purecov: deadcode */
+  if (bitmap_init(&write_set_backup, nullptr, m_cols.n_bits)) {
+    write_set_backup.bitmap = nullptr; /* purecov: deadcode */
   }
 
   /*
@@ -7693,8 +7790,15 @@ Rows_log_event::Rows_log_event(
 Rows_log_event::~Rows_log_event() {
   if (m_cols.bitmap) {
     if (m_cols.bitmap == m_bitbuf)  // no my_malloc happened
-      m_cols.bitmap = 0;            // so no my_free in bitmap_free
+      m_cols.bitmap = nullptr;      // so no my_free in bitmap_free
     bitmap_free(&m_cols);           // To pair with bitmap_init().
+  }
+  if (this->m_local_cols_ai.bitmap != nullptr &&
+      this->m_local_cols_ai.bitmap != this->m_local_cols.bitmap) {
+    bitmap_free(&this->m_local_cols_ai);
+  }
+  if (this->m_local_cols.bitmap != nullptr) {
+    bitmap_free(&this->m_local_cols);
   }
 
   if (write_set_backup.bitmap) {
@@ -7740,7 +7844,7 @@ int Rows_log_event::unpack_current_row(const Relay_log_info *const rli,
     // the number of columns on the master.
     if (write_set_backup.n_bits != m_table->s->fields) {
       bitmap_free(&write_set_backup);
-      if (bitmap_init(&write_set_backup, nullptr, m_table->s->fields, false)) {
+      if (bitmap_init(&write_set_backup, nullptr, m_table->s->fields)) {
         return HA_ERR_OUT_OF_MEM; /* purecov: deadcode */
       }
     }
@@ -8262,7 +8366,8 @@ err:
 bool Rows_log_event::is_auto_inc_in_extra_columns() {
   DBUG_ASSERT(m_table);
   return (m_table->next_number_field &&
-          m_table->next_number_field->field_index >= m_width);
+          this->m_fields.translate_position(
+              m_table->next_number_field->field_index) >= m_width);
 }
 
 /*
@@ -8642,7 +8747,7 @@ int Rows_log_event::open_record_scan() {
 
     DBUG_DUMP("key data", m_key, m_key_info->key_length);
   } else {
-    if ((error = table->file->ha_rnd_init(1))) {
+    if ((error = table->file->ha_rnd_init(true))) {
       DBUG_PRINT("info", ("error initializing table scan"
                           " (ha_rnd_init returns %d)",
                           error));
@@ -8693,7 +8798,7 @@ int Rows_log_event::do_index_scan_and_update(Relay_log_info const *rli) {
     Todo: fix wl3228 hld that requires defaults for all types of events
   */
 
-  prepare_record(m_table, &m_cols, false);
+  prepare_record(m_table, &this->m_local_cols, false);
   if ((error = unpack_current_row(rli, &m_cols, false /*is not AI*/))) goto end;
 
   /*
@@ -8831,7 +8936,7 @@ INDEX_SCAN:
    */
   DBUG_PRINT("info", ("non-unique index, scanning it to find matching record"));
 
-  while (record_compare(m_table, &m_cols)) {
+  while (record_compare(m_table, &this->m_local_cols)) {
     while ((error = next_record_scan(false))) {
       /* We just skip records that has already been deleted */
       if (error == HA_ERR_RECORD_DELETED) continue;
@@ -8933,7 +9038,7 @@ int Rows_log_event::do_hash_row(Relay_log_info const *rli) {
 
   /* Prepare the record, unpack and save positions. */
   entry->positions->bi_start = m_curr_row;  // save the bi start pos
-  prepare_record(m_table, &m_cols, false);
+  prepare_record(m_table, &this->m_local_cols, false);
   if ((error = unpack_current_row(rli, &m_cols, false /*is not AI*/))) {
     hash_slave_rows_free_entry freer;
     freer(entry);
@@ -8946,7 +9051,7 @@ int Rows_log_event::do_hash_row(Relay_log_info const *rli) {
     to the hash table. Note that the put operation calculates the
     key based on record[0] contents (including BLOB fields).
    */
-  m_hash.put(m_table, &m_cols, entry);
+  m_hash.put(m_table, &this->m_local_cols, entry);
 
   if (m_key_index < MAX_KEY) add_key_to_distinct_keyset();
 
@@ -8971,7 +9076,7 @@ int Rows_log_event::do_hash_row(Relay_log_info const *rli) {
     m_curr_row = m_curr_row_end;
 
     /* We shouldn't need this, but lets not leave loose ends */
-    prepare_record(m_table, &m_cols, false);
+    prepare_record(m_table, &this->m_local_cols, false);
     error =
         unpack_current_row(rli, &m_cols_ai, true /*is AI*/, true /*only_seek*/);
 
@@ -9024,7 +9129,7 @@ int Rows_log_event::do_scan_and_update(Relay_log_info const *rli) {
     if (error) DBUG_PRINT("info", ("error: %s", HA_ERR(error)));
     switch (error) {
       case 0: {
-        entry = m_hash.get(table, &m_cols);
+        entry = m_hash.get(table, &this->m_local_cols);
         /**
           The do..while loop takes care of the scenario of same row being
           updated more than once within a single Update_rows_log_event by
@@ -9053,11 +9158,11 @@ int Rows_log_event::do_scan_and_update(Relay_log_info const *rli) {
             m_curr_row = entry->positions->bi_start;
             m_curr_row_end = entry->positions->bi_ends;
 
-            prepare_record(table, &m_cols, false);
+            prepare_record(table, &this->m_local_cols, false);
             if ((error = unpack_current_row(rli, &m_cols, false /*is not AI*/)))
               goto close_table;
 
-            if (record_compare(table, &m_cols))
+            if (record_compare(table, &this->m_local_cols))
               m_hash.next(&entry);
             else
               break;  // we found a match
@@ -9190,14 +9295,14 @@ int Rows_log_event::do_table_scan_and_update(Relay_log_info const *rli) {
   saved_m_curr_row = m_curr_row;
 
   /** unpack the before image */
-  prepare_record(table, &m_cols, false);
+  prepare_record(table, &this->m_local_cols, false);
   if (!(error = unpack_current_row(rli, &m_cols, false /*is not AI*/))) {
     /** save a copy so that we can compare against it later */
     store_record(m_table, record[1]);
 
     int restart_count = 0;  // Number of times scanning has restarted from top
 
-    if ((error = m_table->file->ha_rnd_init(1))) {
+    if ((error = m_table->file->ha_rnd_init(true))) {
       DBUG_PRINT("info", ("error initializing table scan"
                           " (ha_rnd_init returns %d)",
                           error));
@@ -9213,7 +9318,7 @@ int Rows_log_event::do_table_scan_and_update(Relay_log_info const *rli) {
         case HA_ERR_END_OF_FILE:
           // restart scan from top
           if (++restart_count < 2) {
-            if ((error = m_table->file->ha_rnd_init(1))) goto end;
+            if ((error = m_table->file->ha_rnd_init(true))) goto end;
             goto restart_ha_rnd_next;
           }
           break;
@@ -9229,7 +9334,7 @@ int Rows_log_event::do_table_scan_and_update(Relay_log_info const *rli) {
           // exception
           goto end;
       }
-    } while (restart_count < 2 && record_compare(m_table, &m_cols));
+    } while (restart_count < 2 && record_compare(m_table, &this->m_local_cols));
   }
 
 end:
@@ -9299,11 +9404,11 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
     }
 
     if (state == GTID_STATEMENT_CANCEL) {
-      uint error = thd->get_stmt_da()->mysql_errno();
-      DBUG_ASSERT(error != 0);
-      rli->report(ERROR_LEVEL, error, "Error executing row event: '%s'",
+      uint mysql_error = thd->get_stmt_da()->mysql_errno();
+      DBUG_ASSERT(mysql_error != 0);
+      rli->report(ERROR_LEVEL, mysql_error, "Error executing row event: '%s'",
                   thd->get_stmt_da()->message_text());
-      thd->is_slave_error = 1;
+      thd->is_slave_error = true;
       return -1;
     } else if (state == GTID_STATEMENT_SKIP)
       goto end;
@@ -9363,7 +9468,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
           rli->report(ERROR_LEVEL, actual_error,
                       "Error executing row event: '%s'",
                       thd->get_stmt_da()->message_text());
-          thd->is_slave_error = 1;
+          thd->is_slave_error = true;
         }
       }
       return 1;
@@ -9470,10 +9575,10 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
         RUN_HOOK(binlog_relay_io, applier_log_event, (thd, out_value));
     if (hook_error || out_value) {
       char buf[256];
-      uint error = ER_APPLIER_LOG_EVENT_VALIDATION_ERROR;
+      uint applier_error = ER_APPLIER_LOG_EVENT_VALIDATION_ERROR;
 
       if (hook_error) {
-        error = ER_RUN_HOOK_ERROR;
+        applier_error = ER_RUN_HOOK_ERROR;
         strcpy(buf, "applier_log_event");
       } else {
         if (!thd->owned_gtid_is_empty() && thd->owned_gtid.sidno > 0) {
@@ -9484,17 +9589,19 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
       }
 
       if (thd->slave_thread) {
-        rli->report(ERROR_LEVEL, error, ER_THD_NONCONST(thd, error), buf);
-        thd->is_slave_error = 1;
+        rli->report(ERROR_LEVEL, applier_error,
+                    ER_THD_NONCONST(thd, applier_error), buf);
+        thd->is_slave_error = true;
         const_cast<Relay_log_info *>(rli)->slave_close_thread_tables(thd);
       } else {
         /*
           For the cases in which a 'BINLOG' statement is set to
           execute in a user session
         */
-        my_printf_error(error, ER_THD_NONCONST(thd, error), MYF(0), buf);
+        my_printf_error(applier_error, ER_THD_NONCONST(thd, applier_error),
+                        MYF(0), buf);
       }
-      return error;
+      return applier_error;
     }
   }
 
@@ -9513,6 +9620,19 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
     table = nullptr;
 
   if (table) {
+    this->m_fields.set_thd(thd).set_table(table);
+
+    /*
+     Translate received replicated column bitmaps into local table column
+     bitmaps. This is needed when the table has columns that are to be excluded
+     from replication - hidden generated columns, for instance.
+    */
+    this->m_fields.translate_bitmap(this->m_cols, this->m_local_cols);
+    if (this->m_cols.bitmap != this->m_cols_ai.bitmap)
+      this->m_fields.translate_bitmap(this->m_cols_ai, this->m_local_cols_ai);
+    else
+      this->m_local_cols_ai.bitmap = this->m_local_cols.bitmap;
+
     /*
       table == NULL means that this table should not be replicated
       (this was set up by Table_map_log_event::do_apply_event()
@@ -9593,7 +9713,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
      */
     const_cast<Relay_log_info *>(rli)->set_flag(Relay_log_info::IN_STMT);
 
-    if (m_width == table->s->fields && bitmap_is_set_all(&m_cols))
+    if (m_width == this->m_fields.filtered_size() && bitmap_is_set_all(&m_cols))
       set_flags(COMPLETE_ROWS_F);
 
     /*
@@ -9627,17 +9747,17 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
     */
     switch (get_general_type_code()) {
       case binary_log::DELETE_ROWS_EVENT:
-        bitmap_intersect(table->read_set, &m_cols);
+        bitmap_intersect(table->read_set, &this->m_local_cols);
         stage = &stage_rpl_apply_row_evt_delete;
         if (m_table->vfield) m_table->mark_generated_columns(false);
         break;
       case binary_log::UPDATE_ROWS_EVENT:
-        bitmap_intersect(table->read_set, &m_cols);
-        bitmap_intersect(table->write_set, &m_cols_ai);
+        bitmap_intersect(table->read_set, &this->m_local_cols);
+        bitmap_intersect(table->write_set, &this->m_local_cols_ai);
         if (m_table->vfield) m_table->mark_generated_columns(true);
         /* Skip update rows events that don't have data for this server's table.
          */
-        if (!is_any_column_signaled_for_table(table, &m_cols_ai))
+        if (!is_any_column_signaled_for_table(table, &this->m_local_cols_ai))
           no_columns_to_update = true;
         stage = &stage_rpl_apply_row_evt_update;
         break;
@@ -9667,7 +9787,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
         */
         /* WRITE ROWS EVENTS store the bitmap in the m_cols bitmap */
         if (m_table->vfield) m_table->mark_generated_columns(false);
-        bitmap_intersect(table->write_set, &m_cols);
+        bitmap_intersect(table->write_set, &this->m_local_cols);
         stage = &stage_rpl_apply_row_evt_write;
         break;
       default:
@@ -9720,7 +9840,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
      */
 
     if ((m_rows_lookup_algorithm != ROW_LOOKUP_NOT_NEEDED) &&
-        !is_any_column_signaled_for_table(table, &m_cols)) {
+        !is_any_column_signaled_for_table(table, &this->m_local_cols)) {
       error = HA_ERR_END_OF_FILE;
       goto AFTER_MAIN_EXEC_ROW_LOOP;
     }
@@ -9841,7 +9961,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
       /Sven
     */
     thd->reset_current_stmt_binlog_format_row();
-    thd->is_slave_error = 1;
+    thd->is_slave_error = true;
     return error;
   }
 
@@ -9965,7 +10085,7 @@ static int rows_event_stmt_cleanup(Relay_log_info const *rli, THD *thd) {
     */
     thd->reset_current_stmt_binlog_format_row();
 
-    const_cast<Relay_log_info *>(rli)->cleanup_context(thd, 0);
+    const_cast<Relay_log_info *>(rli)->cleanup_context(thd, false);
 
     /*
       Clean sql_command value
@@ -10213,13 +10333,14 @@ void Rows_log_event::print_helper(FILE *,
 int Table_map_log_event::save_field_metadata() {
   DBUG_TRACE;
   int index = 0;
-  for (unsigned int i = 0; i < m_table->s->fields; i++) {
-    DBUG_PRINT("debug", ("field_type: %d", m_coltype[i]));
-    index +=
-        m_table->s->field[i]->save_field_metadata(&m_field_metadata[index]);
+  for (auto it = this->m_fields.begin(); it != this->m_fields.end(); ++it) {
+    Field *field = *it;
+    DBUG_PRINT("debug", ("field_type: %d", m_coltype[it.filtered_pos()]));
+    index += field->save_field_metadata(&m_field_metadata[index]);
 
     DBUG_EXECUTE_IF("inject_invalid_blob_size", {
-      if (m_coltype[i] == MYSQL_TYPE_BLOB) m_field_metadata[index - 1] = 5;
+      if (m_coltype[it.filtered_pos()] == MYSQL_TYPE_BLOB)
+        m_field_metadata[index - 1] = 5;
     });
   }
   return index;
@@ -10243,10 +10364,15 @@ Table_map_log_event::Table_map_log_event(THD *thd_arg, TABLE *tbl,
       Log_event(thd_arg, 0,
                 using_trans ? Log_event::EVENT_TRANSACTIONAL_CACHE
                             : Log_event::EVENT_STMT_CACHE,
-                Log_event::EVENT_NORMAL_LOGGING, header(), footer()) {
+                Log_event::EVENT_NORMAL_LOGGING, header(), footer()),
+      m_fields{tbl, Replicated_columns_view::OUTBOUND} {
   common_header->type_code = binary_log::TABLE_MAP_EVENT;
   m_table = tbl;
   m_flags = TM_BIT_LEN_EXACT_F;
+
+  this->m_colcnt =
+      this->m_fields.filtered_size() +
+      DBUG_EVALUATE_IF("binlog_omit_last_column_from_table_map_event", -1, 0);
 
   uchar cbuf[sizeof(m_colcnt) + 1];
   uchar *cbuf_end;
@@ -10257,7 +10383,7 @@ Table_map_log_event::Table_map_log_event(THD *thd_arg, TABLE *tbl,
       Use the fact the key is db/0/table_name/0
     As we rely on this let's assert it.
   */
-  DBUG_ASSERT((tbl->s->db.str == 0) ||
+  DBUG_ASSERT((tbl->s->db.str == nullptr) ||
               (tbl->s->db.str[tbl->s->db.length] == 0));
   DBUG_ASSERT(tbl->s->table_name.str[tbl->s->table_name.length] == 0);
 
@@ -10272,12 +10398,18 @@ Table_map_log_event::Table_map_log_event(THD *thd_arg, TABLE *tbl,
   m_coltype = (uchar *)my_malloc(key_memory_log_event, m_colcnt, MYF(MY_WME));
 
   DBUG_ASSERT(m_colcnt ==
-              m_table->s->fields +
+              this->m_fields.filtered_size() +
                   DBUG_EVALUATE_IF(
                       "binlog_omit_last_column_from_table_map_event", -1, 0));
-  for (unsigned int i = 0; i < m_colcnt; ++i)
-    m_coltype[i] = m_table->field[i]->binlog_type();
 
+  for (auto it = this->m_fields.begin();
+       it != this->m_fields.end() &&
+       DBUG_EVALUATE_IF("binlog_omit_last_column_from_table_map_event",
+                        it.filtered_pos() != this->m_colcnt, true);
+       ++it) {
+    Field *field = *it;
+    m_coltype[it.filtered_pos()] = field->binlog_type();
+  }
   DBUG_EXECUTE_IF("inject_invalid_column_type", m_coltype[1] = 230;);
 
   /*
@@ -10319,8 +10451,8 @@ Table_map_log_event::Table_map_log_event(THD *thd_arg, TABLE *tbl,
     m_data_size += m_field_metadata_size + 3;
 
   memset(m_null_bits, 0, num_null_bytes);
-  for (unsigned int i = 0; i < m_colcnt; ++i)
-    if (m_table->field[i]->maybe_null()) m_null_bits[(i / 8)] += 1 << (i % 8);
+  Bit_writer bit_writer{this->m_null_bits};
+  for (auto field : this->m_fields) bit_writer.set(field->is_nullable());
   /*
     Marking event to require sequential execution in MTS
     if the query might have updated FK-referenced db.
@@ -10349,7 +10481,8 @@ Table_map_log_event::Table_map_log_event(
       Log_event(header(), footer())
 #ifdef MYSQL_SERVER
       ,
-      m_table(nullptr)
+      m_table(nullptr),
+      m_fields(Replicated_columns_view::INBOUND)
 #endif
 {
   DBUG_TRACE;
@@ -10506,7 +10639,7 @@ int Table_map_log_event::do_apply_event(Relay_log_info const *rli) {
 
   table_list->table_id = DBUG_EVALUATE_IF(
       "inject_tblmap_same_id_maps_diff_table", 0, m_table_id.id());
-  table_list->updating = 1;
+  table_list->updating = true;
   table_list->required_type = dd::enum_table_type::BASE_TABLE;
   DBUG_PRINT("debug", ("table: %s is mapped to %llu", table_list->table_name,
                        table_list->table_id.id()));
@@ -10798,9 +10931,10 @@ bool Table_map_log_event::init_signedness_field() {
   unsigned char flag = 0;
   unsigned char mask = 0x80;
 
-  for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    if (is_numeric_field(m_table->field[i])) {
-      if (m_table->field[i]->unsigned_flag) flag |= mask;
+  for (auto field : this->m_fields) {
+    if (is_numeric_field(field)) {
+      Field_num *field_num = dynamic_cast<Field_num *>(field);
+      if (field_num->unsigned_flag) flag |= mask;
 
       mask >>= 1;
 
@@ -10833,11 +10967,11 @@ bool Table_map_log_event::init_charset_field(
   uint char_col_cnt = 0;
 
   /* Find the collation number used by most fields */
-  for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    if (include_type(m_table->field[i])) {
-      Field_str *field = dynamic_cast<Field_str *>(m_table->field[i]);
+  for (auto field : this->m_fields) {
+    if (include_type(field)) {
+      Field_str *field_str = dynamic_cast<Field_str *>(field);
 
-      collation_map[field->charset()->number]++;
+      collation_map[field_str->charset()->number]++;
       char_col_cnt++;
     }
   }
@@ -10876,11 +11010,11 @@ bool Table_map_log_event::init_charset_field(
       | Charset number | .... |Charset number |
       -----------------------------------------
     */
-    for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-      if (include_type(m_table->field[i])) {
-        Field_str *field = dynamic_cast<Field_str *>(m_table->field[i]);
+    for (auto field : this->m_fields) {
+      if (include_type(field)) {
+        Field_str *field_str = dynamic_cast<Field_str *>(field);
 
-        store_compressed_length(buf, field->charset()->number);
+        store_compressed_length(buf, field_str->charset()->number);
       }
     }
     return write_tlv_field(m_metadata_buf, column_charset_type, buf);
@@ -10901,13 +11035,13 @@ bool Table_map_log_event::init_charset_field(
     // Store the default collation number
     store_compressed_length(buf, default_collation);
 
-    for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-      if (include_type(m_table->field[i])) {
-        Field_str *field = dynamic_cast<Field_str *>(m_table->field[i]);
+    for (auto field : this->m_fields) {
+      if (include_type(field)) {
+        Field_str *field_str = dynamic_cast<Field_str *>(field);
 
-        if (field->charset()->number != default_collation) {
+        if (field_str->charset()->number != default_collation) {
           store_compressed_length(buf, char_column_index);
-          store_compressed_length(buf, field->charset()->number);
+          store_compressed_length(buf, field_str->charset()->number);
         }
         char_column_index++;
       }
@@ -10919,11 +11053,11 @@ bool Table_map_log_event::init_charset_field(
 bool Table_map_log_event::init_column_name_field() {
   StringBuffer<2048> buf;
 
-  for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    size_t len = strlen(m_table->field[i]->field_name);
+  for (auto field : this->m_fields) {
+    size_t len = strlen(field->field_name);
 
     store_compressed_length(buf, len);
-    buf.append(m_table->field[i]->field_name, len);
+    buf.append(field->field_name, len);
   }
   return write_tlv_field(m_metadata_buf, COLUMN_NAME, buf);
 }
@@ -10939,9 +11073,9 @@ bool Table_map_log_event::init_set_str_value_field() {
     | Value number | value1 len | value 1|  .... |  // second SET column
     ----------------------------------------------
    */
-  for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    if (is_set_field(m_table->field[i])) {
-      TYPELIB *typelib = dynamic_cast<Field_set *>(m_table->field[i])->typelib;
+  for (auto field : this->m_fields) {
+    if (is_set_field(field)) {
+      TYPELIB *typelib = dynamic_cast<Field_set *>(field)->typelib;
 
       store_compressed_length(buf, typelib->count);
       for (unsigned int i = 0; i < typelib->count; i++) {
@@ -10959,9 +11093,9 @@ bool Table_map_log_event::init_enum_str_value_field() {
   StringBuffer<1024> buf;
 
   /* ENUM is same to SET columns, see comment in init_set_str_value_field */
-  for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    if (is_enum_field(m_table->field[i])) {
-      TYPELIB *typelib = dynamic_cast<Field_enum *>(m_table->field[i])->typelib;
+  for (auto field : this->m_fields) {
+    if (is_enum_field(field)) {
+      TYPELIB *typelib = dynamic_cast<Field_enum *>(field)->typelib;
 
       store_compressed_length(buf, typelib->count);
       for (unsigned int i = 0; i < typelib->count; i++) {
@@ -10980,9 +11114,9 @@ bool Table_map_log_event::init_geometry_type_field() {
   StringBuffer<256> buf;
 
   /* Geometry type of geometry columns is stored one by one as packed length */
-  for (unsigned int i = 0; i < m_table->s->fields; ++i) {
-    if (is_geometry_field(m_table->field[i])) {
-      int type = dynamic_cast<Field_geom *>(m_table->field[i])->geom_type;
+  for (auto field : this->m_fields) {
+    if (is_geometry_field(field)) {
+      int type = dynamic_cast<Field_geom *>(field)->geom_type;
       DBUG_EXECUTE_IF("inject_invalid_geometry_type", type = 100;);
       store_compressed_length(buf, type);
     }
@@ -11082,7 +11216,7 @@ void Table_map_log_event::print(FILE *,
    return the string name of a type.
 
    @param[in] type  type of a column
-   @param[in|out] meta_ptr  the meta_ptr of the column. If the type doesn't have
+   @param[in,out] meta_ptr  the meta_ptr of the column. If the type doesn't have
                             metadata, it will not change  meta_ptr, otherwise
                             meta_ptr will be moved to the end of the column's
                             metadat.
@@ -11604,7 +11738,7 @@ int Write_rows_log_event::do_after_row_operations(
 
     if (get_flags(STMT_END_F)) m_table->file->ha_release_auto_increment();
   }
-  m_table->next_number_field = 0;
+  m_table->next_number_field = nullptr;
   m_table->autoinc_field_has_explicit_non_null_value = false;
   if ((local_error = m_table->file->ha_end_bulk_insert())) {
     m_table->file->print_error(local_error, MYF(0));
@@ -11669,7 +11803,7 @@ int Write_rows_log_event::write_row(const Relay_log_info *const rli,
   int keynum = 0;
   char *key = nullptr;
 
-  prepare_record(table, &m_cols,
+  prepare_record(table, &this->m_local_cols,
                  table->file->ht->db_type != DB_TYPE_NDBCLUSTER);
 
   /* unpack row into table->record[0] */
@@ -11859,7 +11993,7 @@ int Write_rows_log_event::write_row(const Relay_log_info *const rli,
        the correct row.
      */
     if (last_uniq_key(table, keynum) &&
-        !table->file->referenced_by_foreign_key()) {
+        !table->s->is_referenced_by_foreign_key()) {
       DBUG_PRINT("info", ("Updating row using ha_update_row()"));
       error = table->file->ha_update_row(table->record[1], table->record[0]);
       switch (error) {
@@ -12044,7 +12178,7 @@ Update_rows_log_event::Update_rows_log_event(
   DBUG_TRACE;
   DBUG_PRINT("info", ("update_rows event_type: %s", get_type_str()));
   common_header->type_code = m_type;
-  init(tbl_arg->write_set, tbl_arg->fields_for_functional_indexes);
+  init(tbl_arg->write_set);
   common_header->set_is_valid(Rows_log_event::is_valid() && m_cols_ai.bitmap);
 }
 
@@ -12055,18 +12189,16 @@ bool Update_rows_log_event::binlog_row_logging_function(
                                     after_record, nullptr);
 }
 
-void Update_rows_log_event::init(MY_BITMAP const *cols,
-                                 const MY_BITMAP &cols_to_subtract) {
+void Update_rows_log_event::init(MY_BITMAP const *cols) {
   /* if bitmap_init fails, caught in is_valid() */
   if (likely(!bitmap_init(
           &m_cols_ai,
-          m_width <= sizeof(m_bitbuf_ai) * 8 ? m_bitbuf_ai : nullptr, m_width,
-          false))) {
+          m_width <= sizeof(m_bitbuf_ai) * 8 ? m_bitbuf_ai : nullptr,
+          m_width))) {
     /* Cols can be zero if this is a dummy binrows event */
     if (likely(cols != nullptr)) {
       memcpy(m_cols_ai.bitmap, cols->bitmap, no_bytes_in_map(cols));
       create_last_word_mask(&m_cols_ai);
-      bitmap_subtract(&m_cols_ai, &cols_to_subtract);
     }
   }
 }
@@ -12075,7 +12207,7 @@ void Update_rows_log_event::init(MY_BITMAP const *cols,
 Update_rows_log_event::~Update_rows_log_event() {
   if (m_cols_ai.bitmap) {
     if (m_cols_ai.bitmap == m_bitbuf_ai)  // no my_malloc happened
-      m_cols_ai.bitmap = 0;               // so no my_free in bitmap_free
+      m_cols_ai.bitmap = nullptr;         // so no my_free in bitmap_free
     bitmap_free(&m_cols_ai);              // To pair with bitmap_init().
   }
 }
@@ -12249,7 +12381,7 @@ int Incident_log_event::do_apply_event(Relay_log_info const *rli) {
     DBUG_ASSERT(error != 0);
     rli->report(ERROR_LEVEL, error, "Error executing incident event: '%s'",
                 thd->get_stmt_da()->message_text());
-    thd->is_slave_error = 1;
+    thd->is_slave_error = true;
     return -1;
   } else if (state == GTID_STATEMENT_SKIP) {
     /*
@@ -12785,7 +12917,7 @@ int Gtid_log_event::do_apply_event(Relay_log_info const *rli) {
                   "or ROLLBACK in relay log). A probable cause is partial "
                   "transaction left on relay log because of restarting IO "
                   "thread with auto-positioning protocol.");
-      const_cast<Relay_log_info *>(rli)->cleanup_context(thd, 1);
+      const_cast<Relay_log_info *>(rli)->cleanup_context(thd, true);
     }
     gtid_state->update_on_rollback(thd);
   }
@@ -12890,6 +13022,7 @@ void Gtid_log_event::set_trx_length_by_cache_size(ulonglong cache_size,
   transaction_length += get_commit_timestamp_length();
   transaction_length += get_server_version_length();
   transaction_length += is_checksum_enabled ? BINLOG_CHECKSUM_LEN : 0;
+
   /*
     Notice that it is not possible to determine the transaction_length field
     size using pack.cc:net_length_size() since the length of the field itself
@@ -12961,7 +13094,7 @@ Previous_gtids_log_event::Previous_gtids_log_event(const Gtid_set *set)
   }
   buf = buffer;
   // if buf is empty, is_valid will be false
-  common_header->set_is_valid(buf != 0);
+  common_header->set_is_valid(buf != nullptr);
 }
 
 int Previous_gtids_log_event::pack_info(Protocol *protocol) {
@@ -13373,7 +13506,7 @@ int View_change_log_event::do_apply_event(Relay_log_info const *rli) {
     DBUG_ASSERT(error != 0);
     rli->report(ERROR_LEVEL, error, "Error executing View Change event: '%s'",
                 thd->get_stmt_da()->message_text());
-    thd->is_slave_error = 1;
+    thd->is_slave_error = true;
     return -1;
   }
 
@@ -13469,6 +13602,226 @@ void View_change_log_event::set_certification_info(
       certification_info.size();
 }
 
+size_t Transaction_payload_log_event::get_data_size() {
+  /* purecov: begin inspected */
+  DBUG_TRACE;
+  DBUG_ASSERT(false);
+  return 0;
+  /* purecov: end */
+}
+
+#ifdef MYSQL_SERVER
+uint8 Transaction_payload_log_event::get_mts_dbs(
+    Mts_db_names *arg, Rpl_filter *rpl_filter MY_ATTRIBUTE((unused))) {
+  Mts_db_names &mts_dbs = m_applier_ctx.get_mts_db_names();
+  if (mts_dbs.num == OVER_MAX_DBS_IN_EVENT_MTS) {
+    arg->name[0] = 0;
+    arg->num = OVER_MAX_DBS_IN_EVENT_MTS;
+  } else {
+    for (int i = 0; i < mts_dbs.num; i++) arg->name[i] = mts_dbs.name[i];
+    arg->num = mts_dbs.num;
+  }
+
+  return arg->num;
+}
+
+void Transaction_payload_log_event::set_mts_dbs(Mts_db_names &arg) {
+  m_applier_ctx.reset();
+  Mts_db_names &mts_dbs = m_applier_ctx.get_mts_db_names();
+  mts_dbs.num = arg.num;
+  if (mts_dbs.num < MAX_DBS_IN_EVENT_MTS) {
+    for (int i = 0; i < arg.num; i++)
+      // strndup already adds the string terminator
+      mts_dbs.name[i] = strndup(arg.name[i], NAME_LEN);
+  }
+#ifndef DBUG_OFF
+  else
+    DBUG_ASSERT(mts_dbs.num == OVER_MAX_DBS_IN_EVENT_MTS);
+#endif
+}
+
+uint8 Transaction_payload_log_event::mts_number_dbs() {
+  return m_applier_ctx.get_mts_db_names().num;
+}
+
+int Transaction_payload_log_event::do_apply_event(Relay_log_info const *rli) {
+  DBUG_TRACE;
+  int res = 0;
+  PSI_stage_info old_stage;
+
+  /* apply events in the payload */
+
+  binary_log::transaction::compression::Iterable_buffer it(
+      m_payload, m_payload_size, m_uncompressed_size, m_compression_type);
+
+  thd->enter_stage(&stage_binlog_transaction_decompress, &old_stage, __func__,
+                   __FILE__, __LINE__);
+  for (auto ptr : it) {
+    THD_STAGE_INFO(thd, old_stage);
+    if ((res = apply_payload_event(rli, (const uchar *)ptr))) break;
+    thd->enter_stage(&stage_binlog_transaction_decompress, &old_stage, __func__,
+                     __FILE__, __LINE__);
+  }
+  THD_STAGE_INFO(thd, old_stage);
+
+  return res;
+}
+
+static bool shall_delete_event_after_apply(Log_event *ev) {
+  bool res = false;
+  if (ev == nullptr) return res;
+  switch (ev->get_type_code()) {
+    case binary_log::FORMAT_DESCRIPTION_EVENT:
+      /*
+        Format_description_log_event should not be deleted because it will
+        be used to read info about the relay log's format; it will be
+        deleted when the SQL thread does not need it, i.e. when this
+        thread terminates.
+      */
+
+      /* fall through */
+    case binary_log::ROWS_QUERY_LOG_EVENT:
+      /*
+         ROWS_QUERY_LOG_EVENT is destroyed at the end of the current statement
+         clean-up routine.
+      */
+      res = false;
+      break;
+    default:
+      DBUG_PRINT("info", ("Deleting the event after it has been executed"));
+      res = true;
+      break;
+  }
+
+  return res;
+}
+
+bool Transaction_payload_log_event::apply_payload_event(
+    Relay_log_info const *rli, const uchar *event_buf) {
+  DBUG_TRACE;
+  bool res = false;
+  const uchar *ptr = event_buf;
+  Log_event *ev = nullptr;
+  bool copied_buffer = false;
+  uchar *copy_buffer = nullptr;
+
+  /*
+    disable checksums - there are no checksums for events inside the tple
+    otherwise, the last 4 bytes would be truncated.
+
+    We do this by copying the fdle from the rli. Then we disable the checksum
+    in the copy. Then we use it to decode the events in the payload instead
+    of the original fdle.
+
+    We allocate the fdle copy in the stack.
+
+    TODO: simplify this by breaking the binlog_event_deserialize API
+    and make it take a single boolean instead that states whether the
+    event has a checksum in it or not.
+  */
+  Format_description_event *fde = rli->get_rli_description_event();
+  Format_description_log_event fdle(fde->reader().buffer(), fde);
+  fdle.footer()->checksum_alg = binary_log::BINLOG_CHECKSUM_ALG_OFF;
+  fdle.register_temp_buf(const_cast<char *>(fde->reader().buffer()), false);
+  size_t event_len = uint4korr(ptr + EVENT_LEN_OFFSET);
+  if (binlog_event_deserialize(ptr, event_len, &fdle, true, &ev)) {
+    res = true;
+    goto end;
+  }
+
+  if (!shall_delete_event_after_apply(ev)) {
+    copy_buffer =
+        (uchar *)my_malloc(key_memory_log_event, event_len, MYF(MY_WME));
+    memcpy(copy_buffer, ptr, event_len);
+    copied_buffer = true;
+  } else {
+    copy_buffer = const_cast<uchar *>(ptr);
+    copied_buffer = false;
+  }
+
+  ev->register_temp_buf((char *)copy_buffer, copied_buffer);
+  ev->common_header->log_pos = header()->log_pos;
+
+  thd->server_id = ev->server_id;  // use the original server id for logging
+  thd->unmasked_server_id = ev->common_header->unmasked_server_id;
+  thd->set_time();  // time the query
+  thd->lex->set_current_select(0);
+  if (!ev->common_header->when.tv_sec)
+    my_micro_time_to_timeval(my_micro_time(), &ev->common_header->when);
+  ev->thd = thd;  // because up to this point, ev->thd == 0
+
+  // TODO: HATE THIS
+  if (is_mts_worker(thd)) {
+    auto worker =
+        static_cast<Slave_worker *>(const_cast<Relay_log_info *>(rli));
+    this->worker = worker;
+
+    // set in the event context
+    ev->future_event_relay_log_pos = this->future_event_relay_log_pos;
+    ev->mts_group_idx = mts_group_idx;
+    ev->worker = worker;
+
+    // set in the worker context
+    worker->set_future_event_relay_log_pos(ev->future_event_relay_log_pos);
+    worker->set_master_log_pos(static_cast<ulong>(ev->common_header->log_pos));
+    worker->set_gaq_index(ev->mts_group_idx);
+
+    if (ev->get_type_code() == binary_log::QUERY_EVENT)
+      static_cast<Query_log_event *>(ev)
+          ->set_skip_temp_tables_handling_by_worker();
+    res = ev->do_apply_event_worker(worker);
+  } else {
+    auto coord = const_cast<Relay_log_info *>(rli);
+    ev->future_event_relay_log_pos = coord->get_future_event_relay_log_pos();
+    res = ev->apply_event(coord);
+  }
+
+  if (shall_delete_event_after_apply(ev)) delete ev;
+
+end:
+  return res;
+}
+
+Log_event::enum_skip_reason Transaction_payload_log_event::do_shall_skip(
+    Relay_log_info *rli) {
+  return Log_event::continue_group(rli);
+}
+
+bool Transaction_payload_log_event::write(Basic_ostream *ostream) {
+  DBUG_TRACE;
+  auto codec = binary_log::codecs::Factory::build_codec(header()->type_code);
+  auto buffer_size = MAX_DATA_LENGTH + LOG_EVENT_HEADER_LEN;
+  unsigned char buffer[MAX_DATA_LENGTH + LOG_EVENT_HEADER_LEN];
+  auto result = codec->encode(*this, buffer, buffer_size);
+  size_t data_size = result.first + m_payload_size;
+
+  if (result.second == true) goto end;
+
+  return write_header(ostream, data_size) ||
+         wrapper_my_b_safe_write(ostream, (uchar *)buffer, result.first) ||
+         wrapper_my_b_safe_write(ostream,
+                                 reinterpret_cast<const uchar *>(m_payload),
+                                 m_payload_size) ||
+         write_footer(ostream);
+end:
+  return true;
+}
+
+int Transaction_payload_log_event::pack_info(Protocol *protocol) {
+  std::ostringstream oss;
+  oss << "compression='";
+  oss << binary_log::transaction::compression::type_to_string(
+      m_compression_type);
+  oss << "', decompressed_size=";
+  oss << m_uncompressed_size << " bytes";
+  protocol->store(oss.str().c_str(), &my_charset_bin);
+  return 0;
+}
+
+bool Transaction_payload_log_event::ends_group() const { return true; }
+
+#endif
+
 #ifndef MYSQL_SERVER
 /**
   The default values for these variables should be values that are
@@ -13476,12 +13829,12 @@ void View_change_log_event::set_certification_info(
   they will always be printed for the first event.
 */
 PRINT_EVENT_INFO::PRINT_EVENT_INFO()
-    : flags2_inited(0),
-      sql_mode_inited(0),
+    : flags2_inited(false),
+      sql_mode_inited(false),
       sql_mode(0),
       auto_increment_increment(0),
       auto_increment_offset(0),
-      charset_inited(0),
+      charset_inited(false),
       lc_time_names_number(~0),
       charset_database_number(ILLEGAL_CHARSET_INFO_NUMBER),
       default_collation_for_utf8mb4_number(ILLEGAL_CHARSET_INFO_NUMBER),
@@ -13568,4 +13921,56 @@ size_t my_strmov_quoted_identifier_helper(int q, char *buffer,
   }
   *buffer++ = quote_char;
   return ++written;
+}
+
+std::pair<bool, binary_log::Log_event_basic_info> extract_log_event_basic_info(
+    Log_event *log_event) {
+  DBUG_TRACE;
+
+  binary_log::Log_event_basic_info event_info;
+  event_info.query_length = 0;
+  event_info.event_type = log_event->get_type_code();
+
+  if (binary_log::QUERY_EVENT == event_info.event_type) {
+    Query_log_event *qlog_event = static_cast<Query_log_event *>(log_event);
+    event_info.query = qlog_event->query;
+    if (event_info.query != nullptr)
+      event_info.query_length = strlen(event_info.query);
+    if (event_info.query_length == 0) {
+      DBUG_ASSERT(event_info.query == nullptr); /* purecov: inspected */
+      return std::make_pair(true, event_info);  /* purecov: inspected */
+    }
+  }
+  event_info.ignorable_event = log_event->is_ignorable_event();
+  return std::make_pair(false, event_info);
+}
+
+std::pair<bool, binary_log::Log_event_basic_info> extract_log_event_basic_info(
+    const char *buf, size_t length,
+    const binary_log::Format_description_event *fd_event) {
+  DBUG_TRACE;
+
+  binary_log::Log_event_basic_info event_info;
+  event_info.query_length = 0;
+
+  uint header_size = fd_event->common_header_len;
+  const char *query = nullptr;
+
+  /* Error if the event content is smaller than header size for the format */
+  if (length < header_size) return std::make_pair(true, event_info);
+
+  event_info.event_type = (Log_event_type)buf[EVENT_TYPE_OFFSET];
+
+  if (binary_log::QUERY_EVENT == event_info.event_type) {
+    event_info.query_length =
+        Query_log_event::get_query(buf, length, fd_event, &query);
+    if (event_info.query_length == 0) {
+      DBUG_ASSERT(query == nullptr);           /* purecov: inspected */
+      return std::make_pair(true, event_info); /* purecov: inspected */
+    }
+    event_info.query = query;
+  }
+  event_info.ignorable_event =
+      uint2korr(buf + FLAGS_OFFSET) & LOG_EVENT_IGNORABLE_F;
+  return std::make_pair(false, event_info);
 }

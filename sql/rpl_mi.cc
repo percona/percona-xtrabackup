@@ -97,8 +97,11 @@ enum {
   /* line for master_zstd_compression_level */
   LINE_FOR_MASTER_ZSTD_COMPRESSION_LEVEL = 30,
 
+  /* line for tls_ciphersuites */
+  LINE_FOR_TLS_CIPHERSUITES = 31,
+
   /* Number of lines currently used when saving master info file */
-  LINES_IN_MASTER_INFO = LINE_FOR_MASTER_ZSTD_COMPRESSION_LEVEL
+  LINES_IN_MASTER_INFO = LINE_FOR_TLS_CIPHERSUITES
 
 };
 
@@ -136,7 +139,8 @@ const char *info_mi_fields[] = {"number_of_lines",
                                 "get_public_key",
                                 "network_namespace",
                                 "master_compression_algorithm",
-                                "master_zstd_compression_level"};
+                                "master_zstd_compression_level",
+                                "tls_ciphersuites"};
 
 const uint info_mi_table_pk_field_indexes[] = {
     LINE_FOR_CHANNEL - 1,
@@ -169,8 +173,8 @@ Master_info::Master_info(
       key_info_rotate_lock(param_key_info_rotate_lock),
       key_info_rotate_cond(param_key_info_rotate_cond),
 #endif
-      ssl(0),
-      ssl_verify_server_cert(0),
+      ssl(false),
+      ssl_verify_server_cert(false),
       get_public_key(false),
       port(MYSQL_PORT),
       connect_retry(DEFAULT_CONNECT_RETRY),
@@ -183,6 +187,8 @@ Master_info::Master_info(
       retry_count(master_retry_count),
       mi_description_event(nullptr),
       auto_position(false),
+      transaction_parser(
+          Transaction_boundary_parser::TRX_BOUNDARY_PARSER_RECEIVER),
       reset(false) {
   host[0] = 0;
   user[0] = 0;
@@ -327,7 +333,7 @@ void Master_info::end_info() {
 
   handler->end_info();
 
-  inited = 0;
+  inited = false;
   reset = true;
 }
 
@@ -408,7 +414,7 @@ int Master_info::mi_init_info() {
     if (read_info(handler)) goto err;
   }
 
-  inited = 1;
+  inited = true;
   reset = false;
   if (flush_info(true)) goto err;
 
@@ -416,7 +422,7 @@ int Master_info::mi_init_info() {
 
 err:
   handler->end_info();
-  inited = 0;
+  inited = false;
   LogErr(ERROR_LEVEL, ER_RPL_ERROR_READING_MASTER_CONFIGURATION);
   return 1;
 }
@@ -436,8 +442,10 @@ const uint *Master_info::get_table_pk_field_indexes() {
 
 void Master_info::set_nullable_fields(MY_BITMAP *nullable_fields) {
   bitmap_init(nullable_fields, nullptr,
-              Master_info::get_number_info_mi_fields(), false);
+              Master_info::get_number_info_mi_fields());
   bitmap_clear_all(nullable_fields);
+  /* Identify which fields can store a NULL value. */
+  bitmap_set_bit(nullable_fields, LINE_FOR_TLS_CIPHERSUITES - 1);
 }
 
 bool Master_info::read_info(Rpl_info_handler *from) {
@@ -485,9 +493,9 @@ bool Master_info::read_info(Rpl_info_handler *from) {
     lines = 7;
 
   if (!!from->get_info(&temp_master_log_pos, (ulong)BIN_LOG_HEADER_SIZE) ||
-      !!from->get_info(host, sizeof(host), (char *)0) ||
+      !!from->get_info(host, sizeof(host), (char *)nullptr) ||
       !!from->get_info(user, sizeof(user), "test") ||
-      !!from->get_info(password, sizeof(password), (char *)0) ||
+      !!from->get_info(password, sizeof(password), (char *)nullptr) ||
       !!from->get_info((int *)&port, (int)MYSQL_PORT) ||
       !!from->get_info((int *)&connect_retry, (int)DEFAULT_CONNECT_RETRY))
     return true;
@@ -500,11 +508,11 @@ bool Master_info::read_info(Rpl_info_handler *from) {
   */
   if (lines >= LINES_IN_MASTER_INFO_WITH_SSL) {
     if (!!from->get_info(&temp_ssl, 0) ||
-        !!from->get_info(ssl_ca, sizeof(ssl_ca), (char *)0) ||
-        !!from->get_info(ssl_capath, sizeof(ssl_capath), (char *)0) ||
-        !!from->get_info(ssl_cert, sizeof(ssl_cert), (char *)0) ||
-        !!from->get_info(ssl_cipher, sizeof(ssl_cipher), (char *)0) ||
-        !!from->get_info(ssl_key, sizeof(ssl_key), (char *)0))
+        !!from->get_info(ssl_ca, sizeof(ssl_ca), (char *)nullptr) ||
+        !!from->get_info(ssl_capath, sizeof(ssl_capath), (char *)nullptr) ||
+        !!from->get_info(ssl_cert, sizeof(ssl_cert), (char *)nullptr) ||
+        !!from->get_info(ssl_cipher, sizeof(ssl_cipher), (char *)nullptr) ||
+        !!from->get_info(ssl_key, sizeof(ssl_key), (char *)nullptr))
       return true;
   }
 
@@ -541,7 +549,7 @@ bool Master_info::read_info(Rpl_info_handler *from) {
 
   /* Starting from 5.5 the master_uuid may be in the repository. */
   if (lines >= LINE_FOR_MASTER_UUID) {
-    if (!!from->get_info(master_uuid, sizeof(master_uuid), (char *)0))
+    if (!!from->get_info(master_uuid, sizeof(master_uuid), (char *)nullptr))
       return true;
   }
 
@@ -552,8 +560,8 @@ bool Master_info::read_info(Rpl_info_handler *from) {
   }
 
   if (lines >= LINE_FOR_SSL_CRLPATH) {
-    if (!!from->get_info(ssl_crl, sizeof(ssl_crl), (char *)0) ||
-        !!from->get_info(ssl_crlpath, sizeof(ssl_crlpath), (char *)0))
+    if (!!from->get_info(ssl_crl, sizeof(ssl_crl), (char *)nullptr) ||
+        !!from->get_info(ssl_crlpath, sizeof(ssl_crlpath), (char *)nullptr))
       return true;
   }
 
@@ -562,16 +570,18 @@ bool Master_info::read_info(Rpl_info_handler *from) {
   }
 
   if (lines >= LINE_FOR_CHANNEL) {
-    if (!!from->get_info(channel, sizeof(channel), (char *)0)) return true;
+    if (!!from->get_info(channel, sizeof(channel), (char *)nullptr))
+      return true;
   }
 
   if (lines >= LINE_FOR_TLS_VERSION) {
-    if (!!from->get_info(tls_version, sizeof(tls_version), (char *)0))
+    if (!!from->get_info(tls_version, sizeof(tls_version), (char *)nullptr))
       return true;
   }
 
   if (lines >= LINE_FOR_PUBLIC_KEY_PATH) {
-    if (!!from->get_info(public_key_path, sizeof(public_key_path), (char *)0))
+    if (!!from->get_info(public_key_path, sizeof(public_key_path),
+                         (char *)nullptr))
       return true;
   }
 
@@ -581,7 +591,7 @@ bool Master_info::read_info(Rpl_info_handler *from) {
 
   if (lines >= LINE_FOR_NETWORK_NAMESPACE) {
     if (!!from->get_info(network_namespace, sizeof(network_namespace),
-                         (char *)0))
+                         (char *)nullptr))
       return true;
   }
 
@@ -590,10 +600,6 @@ bool Master_info::read_info(Rpl_info_handler *from) {
   master_log_pos = (my_off_t)temp_master_log_pos;
   auto_position = temp_auto_position;
   get_public_key = (bool)temp_get_public_key;
-
-#ifndef HAVE_OPENSSL
-  if (ssl) LogErr(WARNING_LEVEL, ER_RPL_SSL_INFO_IN_MASTER_INFO_IGNORED);
-#endif /* HAVE_OPENSSL */
 
   if (lines >= LINE_FOR_MASTER_COMPRESSION_ALGORITHM) {
     char algorithm_name[COMPRESSION_ALGORITHM_NAME_BUFFER_SIZE];
@@ -623,6 +629,28 @@ bool Master_info::read_info(Rpl_info_handler *from) {
       zstd_compression_level = default_level;
     }
   }
+
+  if (lines >= LINE_FOR_TLS_CIPHERSUITES) {
+    char buffer[FN_REFLEN_SE] = {0};
+
+    Rpl_info_handler::enum_field_get_status status =
+        from->get_info(buffer, sizeof(buffer), nullptr);
+
+    if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
+
+    if (status ==
+        Rpl_info_handler::enum_field_get_status::FIELD_VALUE_IS_NULL) {
+      tls_ciphersuites.first = true;
+      tls_ciphersuites.second.clear();
+    } else {
+      DBUG_ASSERT(
+          status ==
+          Rpl_info_handler::enum_field_get_status::FIELD_VALUE_NOT_NULL);
+      tls_ciphersuites.first = false;
+      tls_ciphersuites.second.assign(buffer);
+    }
+  }
+
   return false;
 }
 
@@ -659,7 +687,9 @@ bool Master_info::write_info(Rpl_info_handler *to) {
       to->set_info(channel) || to->set_info(tls_version) ||
       to->set_info(public_key_path) || to->set_info(get_public_key) ||
       to->set_info(network_namespace) || to->set_info(compression_algorithm) ||
-      to->set_info((int)zstd_compression_level))
+      to->set_info((int)zstd_compression_level) ||
+      to->set_info(tls_ciphersuites.first ? nullptr
+                                          : tls_ciphersuites.second.c_str()))
     return true;
 
   return false;

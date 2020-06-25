@@ -24,8 +24,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 class Item;
-class Item_in_subselect;
-class SELECT_LEX;
 class THD;
 struct TABLE;
 struct TABLE_LIST;
@@ -38,12 +36,15 @@ typedef Bounds_checked_array<Item *> Ref_item_array;
 template <class T>
 class List;
 
+template <class T>
+class mem_root_deque;
+
 /**
   @file sql/sql_resolver.h
   Name resolution functions.
 */
 
-void propagate_nullability(List<TABLE_LIST> *tables, bool nullable);
+void propagate_nullability(mem_root_deque<TABLE_LIST *> *tables, bool nullable);
 
 bool setup_order(THD *thd, Ref_item_array ref_item_array, TABLE_LIST *tables,
                  List<Item> &fields, List<Item> &all_fields, ORDER *order);

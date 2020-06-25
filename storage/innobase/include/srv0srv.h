@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2019, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1995, 2020, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2008, 2009, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -139,6 +139,24 @@ struct srv_stats_t {
 
   /** Number of rows inserted */
   ulint_ctr_64_t n_rows_inserted;
+
+  /** Number of system rows read. */
+  ulint_ctr_64_t n_system_rows_read;
+
+  /** Number of system rows updated */
+  ulint_ctr_64_t n_system_rows_updated;
+
+  /** Number of system rows deleted */
+  ulint_ctr_64_t n_system_rows_deleted;
+
+  /** Number of system rows inserted */
+  ulint_ctr_64_t n_system_rows_inserted;
+
+  /** Number of sampled pages read */
+  ulint_ctr_64_t n_sampled_pages_read;
+
+  /** Number of sampled pages skipped */
+  ulint_ctr_64_t n_sampled_pages_skipped;
 };
 
 /** Structure which keeps shared future objects for InnoDB background
@@ -268,6 +286,8 @@ extern bool srv_downgrade_logs;
 extern bool srv_upgrade_old_undo_found;
 #endif /* INNODB_DD_TABLE */
 
+extern bool srv_downgrade_partition_files;
+
 extern const char *srv_main_thread_op_info;
 
 /* The monitor thread waits on this event. */
@@ -306,12 +326,6 @@ extern ib_mutex_t page_zip_stat_per_index_mutex;
 extern ib_mutex_t srv_monitor_file_mutex;
 /* Temporary file for innodb monitor output */
 extern FILE *srv_monitor_file;
-/* Mutex for locking srv_dict_tmpfile. Only created if !srv_read_only_mode.
-This mutex has a very high rank; threads reserving it should not
-be holding any InnoDB latches. */
-extern ib_mutex_t srv_dict_tmpfile_mutex;
-/* Temporary file for output from the data dictionary */
-extern FILE *srv_dict_tmpfile;
 /* Mutex for locking srv_misc_tmpfile. Only created if !srv_read_only_mode.
 This mutex has a very low rank; threads reserving it should not
 acquire any further latches or sleep before releasing this one. */
@@ -323,6 +337,9 @@ extern FILE *srv_misc_tmpfile;
 /* Server parameters which are read from the initfile */
 
 extern char *srv_data_home;
+
+/** Number of pages per doublewrite thread/segment */
+extern ulong srv_dblwr_pages;
 
 /** Set if InnoDB must operate in read-only mode. We don't do any
 recovery and open all tables in RO mode instead of RW mode. We don't
@@ -354,6 +371,10 @@ use simulated aio we build below with threads.
 Currently we support native aio on windows and linux */
 extern bool srv_use_native_aio;
 extern bool srv_numa_interleave;
+
+/* The innodb_directories variable value. This a list of directories
+deliminated by ';', i.e the FIL_PATH_SEPARATOR. */
+extern char *srv_innodb_directories;
 
 /** Server undo tablespaces directory, can be absolute path. */
 extern char *srv_undo_dir;
@@ -637,8 +658,6 @@ extern unsigned long long srv_stats_persistent_sample_pages;
 extern bool srv_stats_auto_recalc;
 extern bool srv_stats_include_delete_marked;
 
-extern ibool srv_use_doublewrite_buf;
-extern ulong srv_doublewrite_batch_size;
 extern ulong srv_checksum_algorithm;
 
 extern double srv_max_buf_pool_modified_pct;
@@ -1110,22 +1129,28 @@ struct export_var_t {
   ulint innodb_os_log_pending_writes;          /*!< srv_os_log_pending_writes */
   ulint innodb_os_log_pending_fsyncs;          /*!< fil_n_pending_log_flushes */
   ulint innodb_page_size;                      /*!< UNIV_PAGE_SIZE */
-  ulint innodb_pages_created;             /*!< buf_pool->stat.n_pages_created */
-  ulint innodb_pages_read;                /*!< buf_pool->stat.n_pages_read */
-  ulint innodb_pages_written;             /*!< buf_pool->stat.n_pages_written */
-  ulint innodb_row_lock_waits;            /*!< srv_n_lock_wait_count */
-  ulint innodb_row_lock_current_waits;    /*!< srv_n_lock_wait_current_count */
-  int64_t innodb_row_lock_time;           /*!< srv_n_lock_wait_time
-                                          / 1000 */
-  ulint innodb_row_lock_time_avg;         /*!< srv_n_lock_wait_time
-                                          / 1000
-                                          / srv_n_lock_wait_count */
-  ulint innodb_row_lock_time_max;         /*!< srv_n_lock_max_wait_time
-                                          / 1000 */
-  ulint innodb_rows_read;                 /*!< srv_n_rows_read */
-  ulint innodb_rows_inserted;             /*!< srv_n_rows_inserted */
-  ulint innodb_rows_updated;              /*!< srv_n_rows_updated */
-  ulint innodb_rows_deleted;              /*!< srv_n_rows_deleted */
+  ulint innodb_pages_created;          /*!< buf_pool->stat.n_pages_created */
+  ulint innodb_pages_read;             /*!< buf_pool->stat.n_pages_read */
+  ulint innodb_pages_written;          /*!< buf_pool->stat.n_pages_written */
+  ulint innodb_row_lock_waits;         /*!< srv_n_lock_wait_count */
+  ulint innodb_row_lock_current_waits; /*!< srv_n_lock_wait_current_count */
+  int64_t innodb_row_lock_time;        /*!< srv_n_lock_wait_time
+                                       / 1000 */
+  ulint innodb_row_lock_time_avg;      /*!< srv_n_lock_wait_time
+                                       / 1000
+                                       / srv_n_lock_wait_count */
+  ulint innodb_row_lock_time_max;      /*!< srv_n_lock_max_wait_time
+                                       / 1000 */
+  ulint innodb_rows_read;              /*!< srv_n_rows_read */
+  ulint innodb_rows_inserted;          /*!< srv_n_rows_inserted */
+  ulint innodb_rows_updated;           /*!< srv_n_rows_updated */
+  ulint innodb_rows_deleted;           /*!< srv_n_rows_deleted */
+  ulint innodb_system_rows_read;       /*!< srv_n_system_rows_read */
+  ulint innodb_system_rows_inserted;   /*!< srv_n_system_rows_inserted */
+  ulint innodb_system_rows_updated;    /*!< srv_n_system_rows_updated */
+  ulint innodb_system_rows_deleted;    /*!< srv_n_system_rows_deleted*/
+  ulint innodb_sampled_pages_read;
+  ulint innodb_sampled_pages_skipped;
   ulint innodb_num_open_files;            /*!< fil_n_file_opened */
   ulint innodb_truncated_status_writes;   /*!< srv_truncated_status_writes */
   ulint innodb_undo_tablespaces_total;    /*!< total number of undo tablespaces
@@ -1165,6 +1190,10 @@ struct srv_slot_t {
   /** Stores the current value of lock_wait_table_reservations, when
   lock_wait_table_reserve_slot is called.
   This can be used as a version number to avoid ABA problems.
+  The difference lock_wait_table_reservations - reservation_no tells us how many
+  other threads got suspended while our thr was sleeping.
+  This can be used to determine if the wait was unfairly long, and it is time to
+  boost trx->lock.schedule_weight.
   Protected by lock->wait_mutex. */
   uint64_t reservation_no;
 

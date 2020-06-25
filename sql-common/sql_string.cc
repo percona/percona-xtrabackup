@@ -421,7 +421,7 @@ bool String::copy(const char *str, size_t arg_length,
 bool String::set_ascii(const char *str, size_t arg_length) {
   if (m_charset->mbminlen == 1) {
     set(str, arg_length, m_charset);
-    return 0;
+    return false;
   }
   uint dummy_errors;
   return copy(str, arg_length, &my_charset_latin1, m_charset, &dummy_errors);
@@ -438,10 +438,6 @@ bool String::fill(size_t max_length, char fill_char) {
     m_length = max_length;
   }
   return false;
-}
-
-void String::strip_sp() {
-  while (m_length && my_isspace(m_charset, m_ptr[m_length - 1])) m_length--;
 }
 
 bool String::append(const String &s) {
@@ -545,30 +541,14 @@ bool String::append(const char *s, size_t arg_length, const CHARSET_INFO *cs) {
   return false;
 }
 
-bool String::append(IO_CACHE *file, size_t arg_length) {
-  if (mem_realloc(m_length + arg_length)) return true;
-  if (my_b_read(file, reinterpret_cast<uchar *>(m_ptr) + m_length,
-                arg_length)) {
-    shrink(m_length);
-    return true;
-  }
-  m_length += arg_length;
-  return false;
-}
-
 /**
   Append a parenthesized number to String.
   Used in various pieces of SHOW related code.
 
   @param nr     Number
-  @param radix  Radix, optional parameter, 10 by default.
 */
-bool String::append_parenthesized(long nr, int radix) {
-  char buff[64], *end;
-  buff[0] = '(';
-  end = int10_to_str(nr, buff + 1, radix);
-  *end++ = ')';
-  return append(buff, (uint)(end - buff));
+bool String::append_parenthesized(int64_t nr) {
+  return append('(') || append_longlong(nr) || append(')');
 }
 
 bool String::append_with_prefill(const char *s, size_t arg_length,
@@ -703,20 +683,18 @@ void qs_append(const char *str_in, size_t len, String *str) {
 
 void qs_append(double d, size_t len, String *str) {
   char *buff = &((*str)[str->length()]);
-  int written = my_gcvt(d, MY_GCVT_ARG_DOUBLE, len, buff, NULL);
+  int written = my_gcvt(d, MY_GCVT_ARG_DOUBLE, len, buff, nullptr);
   str->length(str->length() + written);
 }
 
 void qs_append(int i, String *str) {
-  char *buff = &((*str)[str->length()]);
-  char *end = int10_to_str(i, buff, -10);
-  str->length(str->length() + (int)(end - buff));
+  char *end = longlong10_to_str(i, str->ptr() + str->length(), -10);
+  str->length(end - str->ptr());
 }
 
 void qs_append(uint i, String *str) {
-  char *buff = &((*str)[str->length()]);
-  char *end = int10_to_str(i, buff, 10);
-  str->length(str->length() + (int)(end - buff));
+  char *end = longlong10_to_str(i, str->ptr() + str->length(), 10);
+  str->length(end - str->ptr());
 }
 
 /*
@@ -851,8 +829,8 @@ size_t well_formed_copy_nchars(const CHARSET_INFO *to_cs, char *to,
       (to_cs == from_cs) || my_charset_same(from_cs, to_cs)) {
     if (to_length < to_cs->mbminlen || !nchars) {
       *from_end_pos = from;
-      *cannot_convert_error_pos = NULL;
-      *well_formed_error_pos = NULL;
+      *cannot_convert_error_pos = nullptr;
+      *well_formed_error_pos = nullptr;
       return 0;
     }
 
@@ -860,8 +838,8 @@ size_t well_formed_copy_nchars(const CHARSET_INFO *to_cs, char *to,
       res = min(min(nchars, to_length), from_length);
       memmove(to, from, res);
       *from_end_pos = from + res;
-      *well_formed_error_pos = NULL;
-      *cannot_convert_error_pos = NULL;
+      *well_formed_error_pos = nullptr;
+      *cannot_convert_error_pos = nullptr;
     } else {
       int well_formed_error;
       uint from_offset;
@@ -889,7 +867,7 @@ size_t well_formed_copy_nchars(const CHARSET_INFO *to_cs, char *to,
                                          &well_formed_error) !=
             to_cs->mbminlen) {
           *from_end_pos = *well_formed_error_pos = from;
-          *cannot_convert_error_pos = NULL;
+          *cannot_convert_error_pos = nullptr;
           return 0;
         }
         nchars--;
@@ -957,8 +935,8 @@ size_t well_formed_copy_nchars(const CHARSET_INFO *to_cs, char *to,
     const uchar *from_end = (const uchar *)from + from_length;
     uchar *to_end = (uchar *)to + to_length;
     char *to_start = to;
-    *well_formed_error_pos = NULL;
-    *cannot_convert_error_pos = NULL;
+    *well_formed_error_pos = nullptr;
+    *cannot_convert_error_pos = nullptr;
 
     for (; nchars; nchars--) {
       const char *from_prev = from;

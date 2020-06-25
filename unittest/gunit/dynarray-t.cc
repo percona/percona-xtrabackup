@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <algorithm>
 #include <functional>
+#include <random>
 #include <vector>
 
 #include "my_inttypes.h"
@@ -51,19 +52,21 @@ void generate_test_data(Key_use *keys, TABLE_LIST *tables, int n) {
   for (ix = 0; ix < n; ++ix) {
     tables[ix].set_tableno(ix % 3);
     keys[ix] = Key_use(&tables[ix],
-                       NULL,    // Item      *val
-                       0,       // table_map  used_tables
-                       ix % 4,  // uint       key
-                       ix % 2,  // uint       keypart
-                       0,       // uint       optimize
-                       0,       //            keypart_map
-                       0,       // ha_rows    ref_table_rows
-                       true,    // bool       null_rejecting
-                       NULL,    // bool      *cond_guard
-                       0        // uint       sj_pred_no
+                       nullptr,  // Item      *val
+                       0,        // table_map  used_tables
+                       ix % 4,   // uint       key
+                       ix % 2,   // uint       keypart
+                       0,        // uint       optimize
+                       0,        //            keypart_map
+                       0,        // ha_rows    ref_table_rows
+                       true,     // bool       null_rejecting
+                       nullptr,  // bool      *cond_guard
+                       0         // uint       sj_pred_no
     );
   }
-  std::random_shuffle(&keys[0], &keys[n]);
+  std::random_device rng;
+  std::mt19937 urng(rng());
+  std::shuffle(&keys[0], &keys[n], urng);
 }
 
 constexpr int num_elements = 200;
@@ -126,17 +129,6 @@ TEST_F(MemRootTest, Reserve) {
   EXPECT_EQ(sizeof(uint), intarr.element_size());
   EXPECT_EQ(num_pushes, intarr.size());
   EXPECT_LE(num_pushes, intarr.capacity());
-}
-
-// Verify that we can move MEM_ROOT without any leaks.
-// Run with
-// valgrind --leak-check=full <executable> --gtest_filter='-*DeathTest*' > foo
-TEST_F(MemRootTest, MoveMemRoot) {
-  Mem_root_array<uint> intarr(m_mem_root_p);
-  MEM_ROOT own_root = std::move(*m_mem_root_p);
-  intarr.set_mem_root(&own_root);
-  intarr.push_back(42);
-  *m_mem_root_p = std::move(own_root);
 }
 
 class DestroyCounter {

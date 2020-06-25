@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,21 @@
 #include "plugin/x/protocol/encoders/encoding_primitives.h"
 
 namespace protocol {
+
+class Delayed_fixed_varuint32 {
+ public:
+  Delayed_fixed_varuint32() : m_out(nullptr) {}
+  explicit Delayed_fixed_varuint32(uint8_t *&out) : m_out(out) { out += 5; }
+
+  void encode(const uint32_t value) const {
+    DBUG_ASSERT(m_out);
+    uint8_t *out = m_out;
+    primitives::base::Varint_length<5>::encode(out, value);
+  }
+
+ private:
+  uint8_t *m_out;
+};
 
 /**
   Class responsible for protobuf message serialization
@@ -77,7 +92,7 @@ class Protobuf_encoder : public Primitives_encoder {
       If the current buffer page has less data the needed,
       then next page should be acquired.
 
-      @param size   required number of bytes
+      @tparam size   required number of bytes
     */
   template <uint32_t size>
   void ensure_buffer_size() {
@@ -345,6 +360,20 @@ class Protobuf_encoder : public Primitives_encoder {
   void encode_field_string(const char *value, const uint32_t length) {
     encode_field_delimited_raw<field_id>(
         reinterpret_cast<const uint8_t *>(value), length);
+  }
+
+  /**
+    Function serializes that reserves space for integer varint with fixed size
+
+    Thus function is going to validated the buffer size on its own,
+    user doesn't need to call `ensure_buffer_size`.
+  */
+  template <uint32_t field_id>
+  Delayed_fixed_varuint32 encode_field_fixed_uint32() {
+    encode_const_var_uint<Helper::encode_field_tag(
+        field_id, Helper::WireType::WIRETYPE_VARINT)>();
+
+    return Delayed_fixed_varuint32(m_page->m_current_data);
   }
 };
 

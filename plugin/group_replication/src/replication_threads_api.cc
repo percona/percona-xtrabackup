@@ -26,6 +26,7 @@
 
 #include <mysql/components/services/log_builtins.h>
 #include "my_dbug.h"
+#include "mysqld_error.h"
 
 using std::string;
 
@@ -35,7 +36,8 @@ int Replication_thread_api::initialize_channel(
     char *ssl_key, char *ssl_crl, char *ssl_crlpath,
     bool ssl_verify_server_cert, int priority, int retry_count,
     bool preserve_logs, char *public_key_path, bool get_public_key,
-    char *compression_algorithm, uint zstd_compression_level) {
+    char *compression_algorithm, uint zstd_compression_level, char *tls_version,
+    char *tls_ciphersuites) {
   DBUG_TRACE;
   int error = 0;
 
@@ -60,16 +62,17 @@ int Replication_thread_api::initialize_channel(
 
   info.preserve_relay_logs = preserve_logs;
 
-  if (public_key_path != NULL) info.public_key_path = public_key_path;
+  if (public_key_path != nullptr) info.public_key_path = public_key_path;
 
   info.get_public_key = get_public_key;
 
   info.compression_algorithm = compression_algorithm;
   info.zstd_compression_level = zstd_compression_level;
 
-  if (use_ssl || ssl_ca != NULL || ssl_capath != NULL || ssl_cert != NULL ||
-      ssl_cipher != NULL || ssl_key != NULL || ssl_crl != NULL ||
-      ssl_crlpath != NULL || ssl_verify_server_cert) {
+  if (use_ssl || ssl_ca != nullptr || ssl_capath != nullptr ||
+      ssl_cert != nullptr || ssl_cipher != nullptr || ssl_key != nullptr ||
+      ssl_crl != nullptr || ssl_crlpath != nullptr || ssl_verify_server_cert ||
+      tls_version != nullptr || tls_ciphersuites != nullptr) {
     ssl_info.use_ssl = use_ssl;
     ssl_info.ssl_ca_file_name = ssl_ca;
     ssl_info.ssl_ca_directory = ssl_capath;
@@ -79,6 +82,8 @@ int Replication_thread_api::initialize_channel(
     ssl_info.ssl_crl_file_name = ssl_crl;
     ssl_info.ssl_crl_directory = ssl_crlpath;
     ssl_info.ssl_verify_server_cert = ssl_verify_server_cert;
+    ssl_info.tls_version = tls_version;
+    ssl_info.tls_ciphersuites = tls_ciphersuites;
     info.ssl_info = &ssl_info;
   }
 
@@ -100,7 +105,7 @@ int Replication_thread_api::start_threads(bool start_receiver,
   Channel_connection_info info;
   initialize_channel_connection_info(&info);
 
-  char *cview_id = NULL;
+  char *cview_id = nullptr;
 
   if (view_id) {
     cview_id = new char[view_id->size() + 1];
@@ -235,7 +240,7 @@ bool Replication_thread_api::is_own_event_applier(my_thread_id id,
   DBUG_TRACE;
 
   bool result = false;
-  unsigned long *thread_ids = NULL;
+  unsigned long *thread_ids = nullptr;
   const char *name = channel_name ? channel_name : interface_channel;
 
   // Fetch all applier thread ids for this channel.
@@ -273,7 +278,7 @@ bool Replication_thread_api::is_own_event_receiver(my_thread_id id) {
   DBUG_TRACE;
 
   bool result = false;
-  unsigned long *thread_id = NULL;
+  unsigned long *thread_id = nullptr;
 
   // Fetch the receiver thread id for this channel
   int number_receivers = channel_get_thread_id(
@@ -294,7 +299,7 @@ bool Replication_thread_api::get_retrieved_gtid_set(std::string &retrieved_set,
   DBUG_TRACE;
 
   const char *name = channel_name ? channel_name : interface_channel;
-  char *receiver_retrieved_gtid_set = NULL;
+  char *receiver_retrieved_gtid_set = nullptr;
   int error;
 
   error = channel_get_retrieved_gtid_set(name, &receiver_retrieved_gtid_set);
@@ -311,7 +316,7 @@ bool Replication_thread_api::get_channel_credentials(std::string &username,
   DBUG_ENTER("Replication_thread_api::get_channel_credentials");
 
   const char *name = channel_name ? channel_name : interface_channel;
-  const char *user_arg = NULL;
+  const char *user_arg = nullptr;
   char user_pass[MAX_PASSWORD_LENGTH + 1];
   char *user_pass_pointer = user_pass;
   size_t password_size = sizeof(user_pass);
@@ -348,4 +353,9 @@ int Replication_thread_api::rpl_channel_stop_all(int threads_to_stop,
     }
   }
   return error;
+}
+
+int Replication_thread_api::rpl_binlog_dump_thread_kill() {
+  DBUG_TRACE;
+  return binlog_dump_thread_kill();
 }

@@ -65,6 +65,7 @@ struct TYPELIB;
 #include "sql/rpl_slave.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
+#include "sql/sql_lex.h"  // LEX
 #include "sql/sql_list.h"
 #include "sql/sql_plugin_ref.h"
 #include "sql/sql_tmp_table.h"  // create_tmp_table_from_fields
@@ -483,17 +484,20 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
   /*
     We only check the initial columns for the tables.
   */
-  uint const cols_to_check = min<ulong>(table->s->fields, size());
+  Replicated_columns_view fields{table, Replicated_columns_view::INBOUND, thd};
+  uint const cols_to_check = min<ulong>(fields.filtered_size(), size());
   TABLE *tmp_table = nullptr;
 
-  for (uint col = 0; col < cols_to_check; ++col) {
-    Field *const field = table->field[col];
+  for (auto it = fields.begin(); it.filtered_pos() < cols_to_check; ++it) {
+    Field *const field = *it;
+    size_t col = it.filtered_pos();
     int order;
     if (can_convert_field_to(field, type(col), field_metadata(col),
                              is_array(col), rli, m_flags, &order)) {
-      DBUG_PRINT("debug", ("Checking column %d -"
+      DBUG_PRINT("debug", ("Checking column %lu -"
                            " field '%s' can be converted - order: %d",
-                           col, field->field_name, order));
+                           static_cast<long unsigned int>(col),
+                           field->field_name, order));
       DBUG_ASSERT(order >= -1 && order <= 1);
 
       /*
@@ -515,9 +519,10 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
 
       if (order == 0 && tmp_table != nullptr) tmp_table->field[col] = nullptr;
     } else {
-      DBUG_PRINT("debug", ("Checking column %d -"
-                           " field '%s' can not be converted",
-                           col, field->field_name));
+      DBUG_PRINT("debug",
+                 ("Checking column %lu -"
+                  " field '%s' can not be converted",
+                  static_cast<long unsigned int>(col), field->field_name));
       DBUG_ASSERT(col < size() && col < table->s->fields);
       DBUG_ASSERT(table->s->db.str && table->s->table_name.str);
       const char *db_name = table->s->db.str;
@@ -533,7 +538,7 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
       field->sql_type(target_type);
       if (!ignored_error_code(ER_SERVER_SLAVE_CONVERSION_FAILED)) {
         report_level = ERROR_LEVEL;
-        thd->is_slave_error = 1;
+        thd->is_slave_error = true;
       } else if (log_error_verbosity >= 2)
         report_level = WARNING_LEVEL;
 
@@ -697,7 +702,7 @@ err:
     enum loglevel report_level = INFORMATION_LEVEL;
     if (!ignored_error_code(ER_SLAVE_CANT_CREATE_CONVERSION)) {
       report_level = ERROR_LEVEL;
-      thd->is_slave_error = 1;
+      thd->is_slave_error = true;
     } else if (log_error_verbosity >= 2)
       report_level = WARNING_LEVEL;
 
@@ -855,7 +860,7 @@ table_def::table_def(unsigned char *types, ulong size, uchar *field_metadata,
 table_def::~table_def() {
   my_free(m_memory);
 #ifndef DBUG_OFF
-  m_type = 0;
+  m_type = nullptr;
   m_size = 0;
 #endif
 }
@@ -891,7 +896,7 @@ bool Hash_slave_rows::init(void) { return false; }
 bool Hash_slave_rows::deinit(void) {
   DBUG_TRACE;
   m_hash.clear();
-  return 0;
+  return false;
 }
 
 int Hash_slave_rows::size() { return m_hash.size(); }
@@ -1078,7 +1083,7 @@ uint Hash_slave_rows::make_hash_key(TABLE *table, MY_BITMAP *cols) {
     @c record_compare, as it also skips null_flags if the read_set
     was not marked completely.
    */
-  if (bitmap_is_set_all(cols)) {
+  if (bitmap_is_set_all(cols) && cols->n_bits == table->s->fields) {
     crc = checksum_crc32(crc, table->null_flags, table->s->null_bytes);
     DBUG_PRINT("debug", ("make_hash_entry: hash after null_flags: %u", crc));
   }
@@ -1219,4 +1224,33 @@ THD_instance_guard::~THD_instance_guard() {
 }
 
 THD_instance_guard::operator THD *() { return this->m_target; }
+
+bool evaluate_command_row_only_restrictions(THD *thd) {
+  LEX *const lex = thd->lex;
+
+  switch (lex->sql_command) {
+    case SQLCOM_UPDATE:
+    case SQLCOM_INSERT:
+    case SQLCOM_INSERT_SELECT:
+    case SQLCOM_DELETE:
+    case SQLCOM_LOAD:
+    case SQLCOM_REPLACE:
+    case SQLCOM_REPLACE_SELECT:
+    case SQLCOM_DELETE_MULTI:
+    case SQLCOM_UPDATE_MULTI: {
+      return true;
+    }
+    case SQLCOM_CREATE_TABLE: {
+      return (lex->create_info->options & HA_LEX_CREATE_TMP_TABLE);
+    }
+    case SQLCOM_DROP_TABLE: {
+      return (lex->drop_temporary);
+    }
+    default:
+      break;
+  }
+
+  return false;
+}
+
 #endif  // MYSQL_SERVER

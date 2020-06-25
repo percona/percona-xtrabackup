@@ -111,6 +111,7 @@ struct gr_modules {
     GCS_EVENTS_HANDLER,
     REMOTE_CLONE_HANDLER,
     MESSAGE_SERVICE_HANDLER,
+    BINLOG_DUMP_THREAD_KILL,
     NUM_MODULES
   };
   using mask = std::bitset<NUM_MODULES>;
@@ -220,8 +221,8 @@ bool get_error_state_due_to_error_during_autorejoin();
 // Plugin public methods
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info);
 int plugin_group_replication_deinit(void *p);
-int plugin_group_replication_start(char **error_message = NULL);
-int plugin_group_replication_stop(char **error_message = NULL);
+int plugin_group_replication_start(char **error_message = nullptr);
+int plugin_group_replication_stop(char **error_message = nullptr);
 bool plugin_is_group_replication_running();
 bool plugin_is_group_replication_cloning();
 bool is_plugin_auto_starting_on_non_bootstrap_member();

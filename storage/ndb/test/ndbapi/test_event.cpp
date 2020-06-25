@@ -2711,18 +2711,30 @@ cleanup:
 
   return result;
 }
+
+int
+checkCanStopAllButOneNodeInGroup(NDBT_Context * ctx, NDBT_Step *step)
+{
+  NdbRestarter restarter;
+  Vector<int> node_groups;
+  int replicas;
+  restarter.getNodeGroups(node_groups, &replicas);
+
+  if(restarter.getMaxConcurrentNodeFailures() <= replicas - 1)
+  {
+    printf("SKIPPING - Cluster configuration not supported for this test.\n");
+    return NDBT_SKIPPED;
+  }
+  return NDBT_OK;
+}
+
+
 int 
 runBug33793(NDBT_Context* ctx, NDBT_Step* step)
 {
-  //int result = NDBT_OK;
   int loops = ctx->getNumLoops();
-
   NdbRestarter restarter;
-  
-  if (restarter.getNumDbNodes() < 2){
-    ctx->stopTest();
-    return NDBT_OK;
-  }
+
   // This should really wait for applier to start...10s is likely enough
   NdbSleep_SecSleep(10);
 
@@ -2745,7 +2757,6 @@ runBug33793(NDBT_Context* ctx, NDBT_Step* step)
         int val2[] = { DumpStateOrd::CmvmiSetRestartOnErrorInsert, 1 };
         if (restarter.dumpStateOneNode(id, val2, 2))
           return NDBT_FAILED;
-        break;
       }
     }
     printf("\n"); fflush(stdout);
@@ -5875,6 +5886,7 @@ TESTCASE("StallingSubscriber",
   STEP(errorInjectStalling);
 }
 TESTCASE("Bug33793", ""){
+  INITIALIZER(checkCanStopAllButOneNodeInGroup);
   INITIALIZER(runCreateEvent);
   STEP(runEventListenerUntilStopped);
   STEP(runBug33793);

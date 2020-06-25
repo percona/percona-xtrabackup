@@ -312,6 +312,8 @@ int Slave_worker::init_worker(Relay_log_info *rli, ulong i) {
   Slave_job_item empty = Slave_job_item();
 
   c_rli = rli;
+  this->set_require_row_format(rli->is_row_format_required());
+
   set_commit_order_manager(c_rli->get_commit_order_manager());
 
   if (rli_init_info(false) ||
@@ -369,7 +371,7 @@ int Slave_worker::init_worker(Relay_log_info *rli, ulong i) {
   DBUG_ASSERT(rli->current_mts_submode->get_type() ==
               current_mts_submode->get_type());
 
-  m_order_commit_deadlock = false;
+  reset_commit_order_deadlock();
   return 0;
 }
 
@@ -419,8 +421,8 @@ int Slave_worker::rli_init_info(bool is_gaps_collecting_phase) {
 
   if (handler->init_info()) goto err;
 
-  bitmap_init(&group_executed, nullptr, num_bits, false);
-  bitmap_init(&group_shifted, nullptr, num_bits, false);
+  bitmap_init(&group_executed, nullptr, num_bits);
+  bitmap_init(&group_shifted, nullptr, num_bits);
 
   if (is_gaps_collecting_phase &&
       (DBUG_EVALUATE_IF("mts_slave_worker_init_at_gaps_fails", true, false) ||
@@ -429,13 +431,13 @@ int Slave_worker::rli_init_info(bool is_gaps_collecting_phase) {
     bitmap_free(&group_shifted);
     goto err;
   }
-  inited = 1;
+  inited = true;
 
   return 0;
 
 err:
   // todo: handler->end_info(uidx, nidx);
-  inited = 0;
+  inited = false;
   LogErr(ERROR_LEVEL, ER_RPL_ERROR_READING_SLAVE_WORKER_CONFIGURATION);
   return 1;
 }
@@ -451,7 +453,7 @@ void Slave_worker::end_info() {
     bitmap_free(&group_executed);
     bitmap_free(&group_shifted);
   }
-  inited = 0;
+  inited = false;
 }
 
 int Slave_worker::flush_info(const bool force) {
@@ -467,15 +469,20 @@ int Slave_worker::flush_info(const bool force) {
   */
   handler->set_sync_period(sync_relayloginfo_period);
 
-  if (write_info(handler)) goto err;
+  /*
+    This only fails on out-of-memory errors, which are reported (using
+    the MY_WME flag to my_malloc).
+  */
+  if (write_info(handler)) return 1;
 
-  if (handler->flush_info(force)) goto err;
+  /*
+    This fails on errors committing the info, or when
+    slave_preserve_commit_order is enabled and a previous transaction
+    has failed.  In both cases, the error is reported already.
+  */
+  if (handler->flush_info(force)) return 1;
 
   return 0;
-
-err:
-  LogErr(ERROR_LEVEL, ER_RPL_ERROR_WRITING_SLAVE_WORKER_CONFIGURATION);
-  return 1;
 }
 
 bool Slave_worker::read_info(Rpl_info_handler *from) {
@@ -507,7 +514,7 @@ bool Slave_worker::read_info(Rpl_info_handler *from) {
       !!from->get_info(&temp_checkpoint_master_log_pos, 0UL) ||
       !!from->get_info(&temp_checkpoint_seqno, 0UL) ||
       !!from->get_info(&nbytes, 0UL) ||
-      !!from->get_info(buffer, (size_t)nbytes, (uchar *)0) ||
+      !!from->get_info(buffer, (size_t)nbytes, (uchar *)nullptr) ||
       /* default is empty string */
       !!from->get_info(channel, sizeof(channel), ""))
     return true;
@@ -598,7 +605,7 @@ size_t Slave_worker::get_number_worker_fields() {
 
 void Slave_worker::set_nullable_fields(MY_BITMAP *nullable_fields) {
   bitmap_init(nullable_fields, nullptr,
-              Slave_worker::get_number_worker_fields(), false);
+              Slave_worker::get_number_worker_fields());
   bitmap_clear_all(nullable_fields);
 }
 
@@ -761,10 +768,10 @@ TABLE *mts_move_temp_table_to_entry(TABLE *table, THD *thd,
     DBUG_ASSERT(table == thd->temporary_tables);
 
     thd->temporary_tables = table->next;
-    if (thd->temporary_tables) table->next->prev = 0;
+    if (thd->temporary_tables) table->next->prev = nullptr;
   }
   table->next = entry->temporary_tables;
-  table->prev = 0;
+  table->prev = nullptr;
   if (table->next) table->next->prev = table;
   entry->temporary_tables = table;
 
@@ -916,6 +923,7 @@ Slave_worker *map_db_to_worker(const char *dbname, Relay_log_info *rli,
   std::string key(dbname, dblength);
   entry = find_or_nullptr(rli->mapping_db_to_worker, key);
   if (!entry) {
+    DBUG_PRINT("debug", ("NO ENTRY found for: %s!", dbname));
     /*
       The database name was not found which means that a worker never
       processed events from that database. In such case, we need to
@@ -966,10 +974,10 @@ Slave_worker *map_db_to_worker(const char *dbname, Relay_log_info *rli,
         DBUG_ASSERT(!entry->temporary_tables || !entry->temporary_tables->prev);
         DBUG_ASSERT(!thd->temporary_tables || !thd->temporary_tables->prev);
 
-        db_worker_hash_entry *entry = it->second.get();
-        if (entry->usage == 0) {
-          mts_move_temp_tables_to_thd(thd, entry->temporary_tables);
-          entry->temporary_tables = nullptr;
+        db_worker_hash_entry *zero_entry = it->second.get();
+        if (zero_entry->usage == 0) {
+          mts_move_temp_tables_to_thd(thd, zero_entry->temporary_tables);
+          zero_entry->temporary_tables = nullptr;
           it = rli->mapping_db_to_worker.erase(it);
         } else
           ++it;
@@ -988,7 +996,11 @@ Slave_worker *map_db_to_worker(const char *dbname, Relay_log_info *rli,
       goto err;
     }
     DBUG_PRINT("info", ("Inserted %s, %zu", entry->db, strlen(entry->db)));
+    DBUG_PRINT("debug", ("worker=%lu, partition=%s, usage=%ld, wait=false!",
+                         entry->worker->id, entry->db,
+                         entry->worker->usage_partition++));
   } else {
+    DBUG_PRINT("debug", ("ENTRY found for: %s!", entry->db));
     /* There is a record. Either  */
     if (entry->usage == 0) {
       entry->worker = (!last_worker)
@@ -996,10 +1008,17 @@ Slave_worker *map_db_to_worker(const char *dbname, Relay_log_info *rli,
                           : last_worker;
       entry->worker->usage_partition++;
       entry->usage++;
+      DBUG_PRINT(
+          "debug",
+          ("worker=%lu, partition=%s, usage=%ld (was 0), wait=false!",
+           entry->worker->id, entry->db, entry->worker->usage_partition++));
     } else if (entry->worker == last_worker || !last_worker) {
       DBUG_ASSERT(entry->worker);
 
       entry->usage++;
+      DBUG_PRINT("debug", ("worker=%lu, partition=%s, usage=%ld, wait=false!",
+                           entry->worker->id, entry->db,
+                           entry->worker->usage_partition++));
     } else {
       // The case APH contains a W_d != W_c != NULL assigned to
       // D-partition represents
@@ -1011,6 +1030,9 @@ Slave_worker *map_db_to_worker(const char *dbname, Relay_log_info *rli,
 
       // future assignenment and marking at the same time
       entry->worker = last_worker;
+      DBUG_PRINT("debug", ("worker=%lu, partition=%s, usage=%ld, wait=true!",
+                           entry->worker->id, entry->db,
+                           entry->worker->usage_partition++));
       // loop while a user thread is stopping Coordinator gracefully
       do {
         thd->ENTER_COND(
@@ -1107,8 +1129,7 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
       its transaction doesn't binlog anything. It will break innodb group
       commit, but it should rarely happen.
     */
-    if (get_commit_order_manager())
-      get_commit_order_manager()->report_commit(this);
+    Commit_order_manager::wait_and_finish(info_thd, false);
 
     // first ever group must have relay log name
     DBUG_ASSERT(last_group_done_index != c_rli->gaq->size ||
@@ -1118,7 +1139,9 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
     /*
       DDL that has not yet updated the slave info repository does it now.
     */
-    if (ev->get_type_code() != binary_log::XID_EVENT && !is_committed_ddl(ev)) {
+    if (ev->get_type_code() != binary_log::XID_EVENT &&
+        ev->get_type_code() != binary_log::TRANSACTION_PAYLOAD_EVENT &&
+        !is_committed_ddl(ev)) {
       commit_positions(ev, ptr_g, true);
       DBUG_EXECUTE_IF(
           "crash_after_commit_and_update_pos",
@@ -1141,10 +1164,8 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
       running_status = ERROR_LEAVING;
       mysql_mutex_unlock(&jobs_lock);
 
-      /* Fatal error happens, it notifies the following transaction to rollback
-       */
-      if (get_commit_order_manager())
-        get_commit_order_manager()->report_rollback(this);
+      // Fatal error happens, it notifies the following transaction to rollback
+      Commit_order_manager::wait_and_finish(info_thd, true);
 
       // Killing Coordinator to indicate eventual consistency error
       mysql_mutex_lock(&c_rli->info_thd->LOCK_thd_data);
@@ -1157,6 +1178,17 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
     Cleanup relating to the last executed group regardless of error.
   */
   if (current_mts_submode->get_type() == MTS_PARALLEL_TYPE_DB_NAME) {
+#ifndef DBUG_OFF
+    {
+      std::stringstream ss;
+      for (size_t i = 0; i < curr_group_exec_parts.size(); i++) {
+        if (curr_group_exec_parts[i]->db_len) {
+          ss << curr_group_exec_parts[i]->db << ", ";
+        }
+      }
+      DBUG_PRINT("debug", ("UNASSIGN %p %s", current_thd, ss.str().c_str()));
+    }
+#endif
     for (size_t i = 0; i < curr_group_exec_parts.size(); i++) {
       db_worker_hash_entry *entry = curr_group_exec_parts[i];
 
@@ -1176,7 +1208,7 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
           from the hash, that is either due to stop or extra size of the hash.
         */
         DBUG_ASSERT(usage_partition >= 0);
-        DBUG_ASSERT(this->info_thd->temporary_tables == 0);
+        DBUG_ASSERT(this->info_thd->temporary_tables == nullptr);
         DBUG_ASSERT(!entry->temporary_tables || !entry->temporary_tables->prev);
 
         if (entry->worker != this)  // Coordinator is waiting
@@ -1650,7 +1682,7 @@ int Slave_worker::slave_worker_exec_event(Log_event *ev) {
 
   thd->server_id = ev->server_id;
   thd->set_time();
-  thd->lex->set_current_select(0);
+  thd->lex->set_current_select(nullptr);
   if (!ev->common_header->when.tv_sec)
     ev->common_header->when.tv_sec = static_cast<long>(my_time(0));
   ev->thd = thd;  // todo: assert because up to this point, ev->thd == 0
@@ -1755,22 +1787,88 @@ bool Slave_worker::worker_sleep(ulong seconds) {
   return ret;
 }
 
-/**
-  It is called after an error happens. It checks if that is an temporary
-  error and if the situation is allow to retry the transaction. Then it will
-  retry the transaction if it is allowed. Retry policy and logic is similar to
-  single-threaded slave.
+void Slave_worker::reset_commit_order_deadlock() {
+  m_commit_order_deadlock.store(false);
+}
 
-  @param[in] start_relay_number The extension number of the relay log which
-               includes the first event of the transaction.
-  @param[in] start_relay_pos The offset of the transaction's first event.
+bool Slave_worker::found_commit_order_deadlock() {
+  return m_commit_order_deadlock.load();
+}
 
-  @param[in] end_relay_number The extension number of the relay log which
-               includes the last event it should retry.
-  @param[in] end_relay_pos The offset of the last event it should retry.
+void Slave_worker::report_commit_order_deadlock() {
+  DBUG_TRACE;
+  DBUG_ASSERT(get_commit_order_manager() != nullptr);
+  m_commit_order_deadlock.store(true);
+}
 
-  @return false if succeeds, otherwise returns true.
-*/
+std::tuple<bool, bool, uint> Slave_worker::check_and_report_end_of_retries(
+    THD *thd) {
+  DBUG_TRACE;
+
+  bool silent = false;
+  uint error = 0;
+
+  if (found_commit_order_deadlock()) {
+    /*
+      This transaction was allowed to be executed in parallel with other that
+      happened earlier according to binary log order. It was asked to be
+      rolled back by the other transaction as it was holding a lock that is
+      needed by the other transaction to progress, according to binary log
+      order this configure a deadlock.
+
+      At this point, this transaction *should* have no non-temporary errors.
+
+      Having a non-temporary error may be a sign of:
+
+      a) Slave has diverged from the master;
+      b) There is an issue in the logical clock allowing a transaction to be
+         applied in parallel with its dependencies (the two transactions are
+         trying to change the same record in parallel).
+
+      For (a), a retry of this transaction will produce the same error. For
+      (b), this transaction might succeed upon retry, allowing the slave to
+      progress without manual intervention, but it is a sign of problems in LC
+      generation at the master.
+
+      So, we will make the worker to retry this transaction only if there is
+      no error or the error is a temporary error.
+    */
+    Diagnostics_area *da = thd->get_stmt_da();
+    if (!da->is_error() ||
+        has_temporary_error(thd, da->is_error() ? da->mysql_errno() : 0,
+                            &silent)) {
+      error = ER_LOCK_DEADLOCK;
+    }
+#ifndef DBUG_OFF
+    else {
+      /*
+        The non-debug binary will not retry this transactions, stopping the
+        SQL thread because of the non-temporary error. But, as this situation
+        is not supposed to happen as described in the comment above, we will
+        fail an assert to ease the issue investigation when it happens.
+      */
+      if (DBUG_EVALUATE_IF("rpl_fake_cod_deadlock", 0, 1)) DBUG_ASSERT(false);
+    }
+#endif
+  }
+
+  if (!has_temporary_error(thd, error, &silent) ||
+      thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::SESSION))
+    return std::make_tuple(true, silent, error);
+
+  if (trans_retries >= slave_trans_retries) {
+    thd->fatal_error();
+    c_rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
+                  "worker thread retried transaction %lu time(s) "
+                  "in vain, giving up. Consider raising the value of "
+                  "the slave_transaction_retries variable.",
+                  trans_retries);
+    return std::make_tuple(true, silent, error);
+  }
+
+  return std::make_tuple(false, silent, error);
+}
+
 bool Slave_worker::retry_transaction(uint start_relay_number,
                                      my_off_t start_relay_pos,
                                      uint end_relay_number,
@@ -1785,65 +1883,10 @@ bool Slave_worker::retry_transaction(uint start_relay_number,
   do {
     /* Simulate a lock deadlock error */
     uint error = 0;
+    bool ret;
 
-    if (found_order_commit_deadlock()) {
-      /*
-        This transaction was allowed to be executed in parallel with other that
-        happened earlier according to binary log order. It was asked to be
-        rolled back by the other transaction as it was holding a lock that is
-        needed by the other transaction to progress, according to binary log
-        order this configure a deadlock.
-
-        At this point, this transaction *should* have no non-temporary errors.
-
-        Having a non-temporary error may be a sign of:
-
-        a) Slave has diverged from the master;
-        b) There is an issue in the logical clock allowing a transaction to be
-           applied in parallel with its dependencies (the two transactions are
-           trying to change the same record in parallel).
-
-        For (a), a retry of this transaction will produce the same error. For
-        (b), this transaction might succeed upon retry, allowing the slave to
-        progress without manual intervention, but it is a sign of problems in LC
-        generation at the master.
-
-        So, we will make the worker to retry this transaction only if there is
-        no error or the error is a temporary error.
-      */
-      Diagnostics_area *da = thd->get_stmt_da();
-      if (!thd->get_stmt_da()->is_error() ||
-          has_temporary_error(thd, da->is_error() ? da->mysql_errno() : error,
-                              &silent)) {
-        error = ER_LOCK_DEADLOCK;
-      }
-#ifndef DBUG_OFF
-      else {
-        /*
-          The non-debug binary will not retry this transactions, stopping the
-          SQL thread because of the non-temporary error. But, as this situation
-          is not supposed to happen as described in the comment above, we will
-          fail an assert to ease the issue investigation when it happens.
-        */
-        if (DBUG_EVALUATE_IF("rpl_fake_cod_deadlock", 0, 1)) DBUG_ASSERT(false);
-      }
-#endif
-    }
-
-    if (!has_temporary_error(thd, error, &silent) ||
-        thd->get_transaction()->cannot_safely_rollback(
-            Transaction_ctx::SESSION))
-      return true;
-
-    if (trans_retries >= slave_trans_retries) {
-      thd->fatal_error();
-      c_rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
-                    "worker thread retried transaction %lu time(s) "
-                    "in vain, giving up. Consider raising the value of "
-                    "the slave_transaction_retries variable.",
-                    trans_retries);
-      return true;
-    }
+    std::tie(ret, silent, error) = check_and_report_end_of_retries(thd);
+    if (ret) return true;
 
     if (!silent) {
       trans_retries++;
@@ -1873,8 +1916,8 @@ bool Slave_worker::retry_transaction(uint start_relay_number,
     c_rli->retried_trans++;
     mysql_mutex_unlock(&c_rli->data_lock);
 
-    cleanup_context(thd, 1);
-    reset_order_commit_deadlock();
+    cleanup_context(thd, true);
+    reset_commit_order_deadlock();
     worker_sleep(min<ulong>(trans_retries, MAX_SLAVE_RETRY_PAUSE));
 
   } while (read_and_apply_events(start_relay_number, start_relay_pos,
@@ -1936,6 +1979,12 @@ bool Slave_worker::read_and_apply_events(uint start_relay_number,
         ev->future_event_relay_log_pos = relaylog_file_reader.position();
         ev->mts_group_idx = gaq_index;
 
+        // event was re-read again, thence context was lost, attach
+        // additional context needed, before re-executing (just like in
+        // the main loop before exec_relay_log_event)
+        rli->current_mts_submode->set_multi_threaded_applier_context(*rli, *ev);
+
+        // we re-assign partitions only on retries
         if (is_mts_db_partitioned(rli) && ev->contains_partition_info(true))
           assign_partition_db(ev);
 
@@ -2428,7 +2477,7 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
   /* Current event with Worker associator. */
   RLI_current_event_raii worker_curr_ev(worker, ev);
 
-  while (1) {
+  while (true) {
     Slave_job_group *ptr_g;
 
     if (unlikely(thd->killed ||
@@ -2473,7 +2522,7 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
     set_timespec_nsec(&worker->ts_exec[1], 0);  // pre-exec
     worker->stats_exec_time +=
         diff_timespec(&worker->ts_exec[1], &worker->ts_exec[0]);
-    if (error || worker->found_order_commit_deadlock()) {
+    if (error || worker->found_commit_order_deadlock()) {
       error = worker->retry_transaction(start_relay_number, start_relay_pos,
                                         job_item->relay_number,
                                         job_item->relay_pos);

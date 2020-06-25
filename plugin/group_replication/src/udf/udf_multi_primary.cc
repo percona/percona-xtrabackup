@@ -110,8 +110,9 @@ static bool group_replication_switch_to_multi_primary_mode_init(
     std::snprintf(message, MYSQL_ERRMSG_SIZE, unreachable_member_on_group_str);
     return true;
   }
+  if (Charset_service::set_return_value_charset(initid)) return true;
 
-  initid->maybe_null = 0;
+  initid->maybe_null = false;
   udf_counter.succeeded();
   return false;
 }

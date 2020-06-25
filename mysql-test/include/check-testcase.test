@@ -248,4 +248,5 @@ EOF
 }
 
 --enable_query_log
+
 CALL mtr.check_testcase();

@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -175,8 +175,7 @@ const char *dbug_decimal_as_string(char *buff, const my_decimal *val);
 #define dbug_decimal_as_string(A) NULL
 #endif
 
-bool str_set_decimal(uint mask, const my_decimal *val, uint fixed_prec,
-                     uint fixed_dec, char filler, String *str,
+bool str_set_decimal(uint mask, const my_decimal *val, String *str,
                      const CHARSET_INFO *cs);
 
 extern my_decimal decimal_zero;
@@ -236,7 +235,7 @@ inline uint32 my_decimal_precision_to_length(uint precision, uint8 scale,
     unsigned_flag is ignored in this case.
   */
   DBUG_ASSERT(precision || !scale);
-  set_if_smaller(precision, DECIMAL_MAX_PRECISION);
+  precision = std::min(precision, uint(DECIMAL_MAX_PRECISION));
   return my_decimal_precision_to_length_no_truncation(precision, scale,
                                                       unsigned_flag);
 }
@@ -310,13 +309,12 @@ inline int my_decimal_ceiling(uint mask, const my_decimal *from,
   return from->check_result(mask, decimal_round(from, to, 0, CEILING));
 }
 
-inline bool str_set_decimal(const my_decimal *val, String *str,
-                            const CHARSET_INFO *cs) {
-  return str_set_decimal(E_DEC_FATAL_ERROR, val, 0, 0, 0, str, cs);
-}
-
 int my_decimal2string(uint mask, const my_decimal *d, uint fixed_prec,
-                      uint fixed_dec, char filler, String *str);
+                      uint fixed_dec, String *str);
+
+inline int my_decimal2string(uint mask, const my_decimal *d, String *str) {
+  return my_decimal2string(mask, d, 0, 0, str);
+}
 
 inline int my_decimal2int(uint mask, const my_decimal *d, bool unsigned_flag,
                           longlong *l) {
@@ -363,7 +361,7 @@ inline int int2my_decimal(uint mask, longlong i, bool unsigned_flag,
 inline void my_decimal_neg(decimal_t *arg) {
   // Avoid returning negative zero, cfr. decimal_cmp()
   if (decimal_is_zero(arg)) {
-    arg->sign = 0;
+    arg->sign = false;
     return;
   }
   arg->sign ^= 1;
@@ -396,10 +394,9 @@ inline int my_decimal_mod(uint mask, my_decimal *res, const my_decimal *a,
 }
 
 /**
-  @return
-    @retval -1 if a @< b
-    @retval 1 if a @> b
-    @retval 0 if a == b
+  @retval -1 if a @< b
+  @retval 1 if a @> b
+  @retval 0 if a == b
 */
 inline int my_decimal_cmp(const my_decimal *a, const my_decimal *b) {
   return decimal_cmp(a, b);

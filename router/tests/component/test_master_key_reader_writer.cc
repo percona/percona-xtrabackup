@@ -189,7 +189,7 @@ TEST_F(MasterKeyReaderWriterTest,
        NoMasterKeyFileWhenBootstrapPassWithMasterKeyReader) {
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -213,7 +213,7 @@ TEST_F(MasterKeyReaderWriterTest,
   // check if the bootstraping was successful
   check_exit_code(router, EXIT_SUCCESS, 30000ms);
   EXPECT_TRUE(router.expect_output(
-      "MySQL Router configured for the InnoDB cluster 'mycluster'"))
+      "MySQL Router configured for the InnoDB Cluster 'mycluster'"))
       << router.get_full_output() << std::endl
       << "server: " << server_mock.get_full_output();
 
@@ -242,7 +242,7 @@ TEST_F(MasterKeyReaderWriterTest,
        CheckConfigFileWhenBootstrapPassWithMasterKeyReader) {
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -267,7 +267,7 @@ TEST_F(MasterKeyReaderWriterTest,
   check_exit_code(router, EXIT_SUCCESS, 30000ms);
   EXPECT_TRUE(
       router.expect_output("MySQL Router configured for the "
-                           "InnoDB cluster 'mycluster'"))
+                           "InnoDB Cluster 'mycluster'"))
       << router.get_full_output() << std::endl
       << "server: " << server_mock.get_full_output();
 
@@ -305,7 +305,7 @@ TEST_F(MasterKeyReaderWriterTest,
 TEST_F(MasterKeyReaderWriterTest, BootstrapFailsWhenCannotRunMasterKeyReader) {
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -345,7 +345,7 @@ TEST_F(MasterKeyReaderWriterTest, BootstrapFailsWhenCannotRunMasterKeyReader) {
 TEST_F(MasterKeyReaderWriterTest, BootstrapFailsWhenCannotRunMasterKeyWriter) {
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -390,7 +390,7 @@ TEST_F(MasterKeyReaderWriterTest, KeyringFileRestoredWhenBootstrapFails) {
 
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -465,7 +465,7 @@ TEST_F(MasterKeyReaderWriterTest,
 
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -490,7 +490,7 @@ TEST_F(MasterKeyReaderWriterTest,
   check_exit_code(router, EXIT_SUCCESS, 30000ms);
   EXPECT_TRUE(
       router.expect_output("MySQL Router configured for the "
-                           "InnoDB cluster 'mycluster'"))
+                           "InnoDB Cluster 'mycluster'"))
       << router.get_full_output() << std::endl
       << "server: " << server_mock.get_full_output();
 
@@ -511,7 +511,7 @@ TEST_F(MasterKeyReaderWriterTest,
 
   auto server_port = port_pool_.get_next_available();
   auto &server_mock = launch_mysql_server_mock(
-      get_data_dir().join("bootstrap.js").str(), server_port, false);
+      get_data_dir().join("bootstrap_gr.js").str(), server_port, false);
   ASSERT_NO_FATAL_FAILURE(check_port_ready(server_mock, server_port));
 
   ScriptGenerator script_generator(ProcessManager::get_origin(),
@@ -579,8 +579,7 @@ TEST_F(MasterKeyReaderWriterTest, ConnectToMetadataServerPass) {
   };
 
   EXPECT_TRUE(find_in_file(logging_folder + "/mysqlrouter.log", matcher,
-                           std::chrono::milliseconds(10000)))
-      << router.get_full_logfile("mysqlrouter.log", logging_folder);
+                           std::chrono::milliseconds(10000)));
 }
 
 /**
@@ -767,7 +766,7 @@ class MasterKeyReaderWriterSystemDeploymentTest : public RouterComponentTest {
   }
 
   auto &run_server_mock() {
-    const std::string json_stmts = get_data_dir().join("bootstrap.js").str();
+    const std::string json_stmts = get_data_dir().join("bootstrap_gr.js").str();
     server_port_ = port_pool_.get_next_available();
 
     // launch mock server and wait for it to start accepting connections
@@ -818,7 +817,7 @@ TEST_F(MasterKeyReaderWriterSystemDeploymentTest, BootstrapPass) {
 
   EXPECT_TRUE(
       router.expect_output("MySQL Router configured for the "
-                           "InnoDB cluster 'mycluster'"))
+                           "InnoDB Cluster 'mycluster'"))
       << router.get_full_output() << std::endl
       << "server: " << server_mock.get_full_output();
 

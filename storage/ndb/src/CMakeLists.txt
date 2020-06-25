@@ -135,6 +135,7 @@ TARGET_LINK_LIBRARIES(ndbclient_static PRIVATE ${SSL_LIBRARIES})
 
 # Build test program to check linking against ndclient_static
 ADD_EXECUTABLE(ndbclient_static_link_test ndbclient_link_test.cpp)
+SET_TARGET_PROPERTIES(ndbclient_static_link_test PROPERTIES ENABLE_EXPORTS TRUE)
 TARGET_LINK_LIBRARIES(ndbclient_static_link_test ndbclient_static)
 
 #
@@ -151,9 +152,14 @@ ADD_LIBRARY(ndbclient_so SHARED ndbclient_exports.cpp)
 # Collect all dynamic libraries in the same directory
 SET_TARGET_PROPERTIES(ndbclient_so PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
-IF(LINUX_INSTALL_RPATH_ORIGIN)
-  SET_PROPERTY(TARGET ndbclient_so PROPERTY INSTALL_RPATH "\$ORIGIN/")
+
+# This is needed for java-based unit tests.
+IF(MY_COMPILER_IS_CLANG AND WITH_UBSAN)
+  TARGET_LINK_LIBRARIES(ndbclient_so -lubsan)
 ENDIF()
+
+ADD_INSTALL_RPATH_FOR_OPENSSL(ndbclient_so)
+
 IF(WIN32_CLANG AND WITH_ASAN)
   TARGET_LINK_LIBRARIES(ndbclient_so
     "${ASAN_LIB_DIR}/clang_rt.asan_dll_thunk-x86_64.lib")
@@ -207,7 +213,7 @@ IF(MSVC)
 #                         ...
 #                         > ndbclient_exports.def
 #    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-#	
+#
 #  # Modify link flags to use the generated module definition file
 #  GET_TARGET_PROPERTY(ndbclient_so_link_flags ndbclient_so LINK_FLAGS)
 #  SET_TARGET_PROPERTIES(ndbclient_so PROPERTIES LINK_FLAGS
@@ -223,7 +229,7 @@ ELSE()
     SET(ignore_dep_lib)
 
       # The list of dependent libs contains keywords used for debug vs optimized
-      # builds, ignore them 
+      # builds, ignore them
       IF(dep_lib MATCHES "general" OR
          dep_lib MATCHES "debug" OR
          dep_lib MATCHES "optimized")
@@ -262,14 +268,12 @@ ELSE()
   SET(ndbclient_so_link_flags
     "${CMAKE_SHARED_LIBRARY_C_FLAGS} ${ndbclient_so_link_flags}")
   IF(LINK_FLAG_NO_UNDEFINED)
-    SET(ndbclient_so_link_flags
-      "${ndbclient_so_link_flags} ${LINK_FLAG_NO_UNDEFINED}")
-    SET(ndbclient_so_link_flags
-      "${ndbclient_so_link_flags} -Wl,--version-script=${CMAKE_CURRENT_BINARY_DIR}/libndbclient.ver")
+    STRING_APPEND(ndbclient_so_link_flags " ${LINK_FLAG_NO_UNDEFINED}")
+    STRING_APPEND(ndbclient_so_link_flags
+      " -Wl,--version-script=${CMAKE_CURRENT_BINARY_DIR}/libndbclient.ver")
   ENDIF()
   IF(SOLARIS)
-    SET(ndbclient_so_link_flags
-      "${ndbclient_so_link_flags} ${CMAKE_CXX_LINK_FLAGS}")
+    STRING_APPEND(ndbclient_so_link_flags " ${CMAKE_CXX_LINK_FLAGS}")
   ENDIF()
   SET_TARGET_PROPERTIES(ndbclient_so
     PROPERTIES LINK_FLAGS "${ndbclient_so_link_flags}")
@@ -284,4 +288,5 @@ MYSQL_INSTALL_TARGETS(ndbclient_so
   COMPONENT Development)
 # Build test program to check linking against ndclient_so
 ADD_EXECUTABLE(ndbclient_shared_link_test ndbclient_link_test.cpp)
+SET_TARGET_PROPERTIES(ndbclient_shared_link_test PROPERTIES ENABLE_EXPORTS TRUE)
 TARGET_LINK_LIBRARIES(ndbclient_shared_link_test ndbclient_so)

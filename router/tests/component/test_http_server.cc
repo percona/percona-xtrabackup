@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -21,6 +21,9 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+
+#include <system_error>
+#include <thread>
 
 #include <gmock/gmock.h>
 
@@ -118,6 +121,8 @@ struct HttpServerPlainParams {
   std::string test_name;
   std::string test_scenario_id;
 
+  std::string http_hostname;
+
   std::vector<std::pair<std::string, std::string>> http_section;
 
   bool expected_success;
@@ -197,7 +202,6 @@ class HttpServerPlainTest
  protected:
   TcpPortPool port_pool_;
   uint16_t http_port_;
-  std::string http_hostname_ = "127.0.0.1";
   TempDirectory conf_dir_;
   static TempDirectory http_base_dir_;
 };
@@ -243,16 +247,24 @@ TEST_P(HttpServerPlainTest, ensure) {
                     .str();
       }
     }
-    http_section.push_back({e.first, value});
+    http_section.emplace_back(e.first, value);
   }
 
   if (!has_port) {
     http_port = kHttpDefaultPort;
   }
 
+  // Add a DEBUG level to trigger the 'Running' message.
   std::string conf_file{create_config_file(
       conf_dir_.name(),
-      ConfigBuilder::build_section("http_server", http_section))};
+      mysql_harness::join(
+          std::vector<std::string>{
+              ConfigBuilder::build_section("http_server", http_section),
+              ConfigBuilder::build_section("logger",
+                                           {
+                                               {"level", "DEBUG"},
+                                           })},
+          "\n"))};
   ProcessWrapper &http_server{launch_router(
       {"-c", conf_file}, GetParam().expected_success ? 0 : EXIT_FAILURE)};
 
@@ -266,10 +278,32 @@ TEST_P(HttpServerPlainTest, ensure) {
     SCOPED_TRACE("// preparing client and connection object");
     IOContext io_ctx;
 
-    RestClient rest_client(io_ctx, http_hostname_, http_port);
+    RestClient rest_client(io_ctx, GetParam().http_hostname, http_port);
 
     SCOPED_TRACE("// wait http port connectable");
-    ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server, http_port));
+    try {
+      ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server, http_port,
+                                               kDefaultPortReadyTimeout,
+                                               GetParam().http_hostname))
+          << "http-server:\n"
+          << http_server.get_current_output();
+    } catch (const std::system_error &e) {
+      SCOPED_TRACE(
+          "// wait_for_port_ready() failed, waiting for process to startup "
+          "before we can kill it");
+      // if we tried to connect to an address we can't assign (like connect(::1)
+      // on a host IPv6 disabled), skip the test
+
+      ASSERT_EQ(e.code(),
+                make_error_condition(std::errc::address_not_available));
+
+      // wait a bit to let the process actually startup to not kill it too early
+      EXPECT_TRUE(wait_log_contains(http_server, "Running", 1000ms))
+          << "log: " << http_server.get_full_logfile();
+
+      // skip
+      return;
+    }
 
     SCOPED_TRACE("// requesting " + rel_uri);
     auto req = rest_client.request_sync(GetParam().http_method, rel_uri);
@@ -285,9 +319,13 @@ TEST_P(HttpServerPlainTest, ensure) {
   }
 }
 
+const std::string localhost_ipv4("127.0.0.1");
+const std::string localhost_ipv6("::1");
+
 static const HttpServerPlainParams http_server_static_files_params[]{
     {"bind-address-ipv4-any",
      "WL11891::TS-3",
+     localhost_ipv4,
      {
          {"bind_address", "0.0.0.0"},
          {"port", kPlaceholder},
@@ -300,8 +338,24 @@ static const HttpServerPlainParams http_server_static_files_params[]{
      "",
      404},
 
+    {"bind-address-ipv6-any",
+     "WL11891::TS-3",
+     localhost_ipv6,
+     {
+         {"bind_address", "::"},
+         {"port", kPlaceholder},
+     },
+     true,
+     "^$",
+     "^$",
+     HttpMethod::Get,
+     "/",
+     "",
+     404},
+
     {"bind-address-ipv4-localhost",
      "WL11891::TS-6",
+     localhost_ipv4,
      {
          {"bind_address", "127.0.0.1"},
          {"port", kPlaceholder},
@@ -316,6 +370,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"bind-address-ipv4-localhost-ws",
      "WL11891::TS-7",
+     localhost_ipv4,
      {
          {"bind_address", " 127.0.0.1"},
          {"port", kPlaceholder},
@@ -331,6 +386,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"bind-address-duplicated",
      "WL11891::TS-9",
+     localhost_ipv4,
      {
          {"bind_address", " 127.0.0.1"},
          {"bind_address", " 127.0.0.1"},
@@ -348,6 +404,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"port-non-default",
      "WL11891::TS-10",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
      },
@@ -361,6 +418,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"port-invalid",
      "WL11891::TS-12",
+     localhost_ipv4,
      {
          {"port", "-1"},
      },
@@ -374,6 +432,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"port-duplicated",
      "WL11891::TS-13",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"port", kPlaceholder},
@@ -388,6 +447,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"port",
      "WL11891::TS-14",
+     localhost_ipv4,
      {
          {"bind_address", "127.0.0.1"},
          {"port", kPlaceholder},
@@ -404,6 +464,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, static_folder does not exist",
      "WL11891::TS-16",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", "does-not-exist"},
@@ -418,6 +479,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, empty static_folder with trailing spaces",
      "WL11891::TS-18",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", " "},
@@ -432,6 +494,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, empty static_folder",
      "WL11891::TS-18",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", ""},
@@ -446,6 +509,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, static_folder dirname with spaces",
      "WL11891::TS-18",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir + "/" + kSubdirWithSpace},
@@ -462,6 +526,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"TRACE, file-exists",
      "WL11891::TS-20",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -476,6 +541,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"CONNECT, file-exists",
      "WL11891::TS-21",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -490,6 +556,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"POST, file-exists",
      "WL11891::TS-22",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -504,6 +571,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, file exists",
      "WL11891:TS-23,WL11891::TS-15",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -518,6 +586,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, file does not exists",
      "WL11891::TS-24",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -532,6 +601,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"PUT, file-exists",
      "WL11891::TS-25",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -546,6 +616,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"PATCH, file-exists",
      "WL11891::TS-26",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -560,6 +631,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"DELETE, file-exists",
      "WL11891::TS-27",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -576,6 +648,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"GET, escaping",
      "WL11891::TS-29",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -592,6 +665,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"dir, no index-file",
      "",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -606,6 +680,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"not leave root, ..",
      "WL11891::TS-31",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -620,6 +695,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"not leave root, ..%2f",
      "WL11891::TS-31",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -634,6 +710,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"long-uri",
      "WL11891::TS-32",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -648,6 +725,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"URI parser, double question-mark",
      "",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -662,6 +740,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"edge-case, special chars",
      "",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -678,6 +757,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"file exists, ssl=0, no ssl-params",
      "WL12524::TS_01",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -693,6 +773,7 @@ static const HttpServerPlainParams http_server_static_files_params[]{
 
     {"file exists, ssl=0, ssl-params ignored",
      "WL12524::TS_02",
+     localhost_ipv4,
      {
          {"port", kPlaceholder},
          {"static_folder", kHttpBasedir},
@@ -733,6 +814,7 @@ const HttpServerPlainParams http_server_static_files_unusable_params[]{
     // port is not in use by something else
     {"all defaults",
      "WL11891::TS-3",
+     localhost_ipv4,
      {},
      true,
      "^$",
@@ -743,6 +825,7 @@ const HttpServerPlainParams http_server_static_files_unusable_params[]{
      404},
     {"bind-any-port-default",
      "WL11891::TS-5",
+     localhost_ipv4,
      {
          {"bind_address", "0.0.0.0"},
      },
@@ -755,6 +838,7 @@ const HttpServerPlainParams http_server_static_files_unusable_params[]{
      404},
     {"bind-localhost-port-default",
      "WL11891::TS-6",
+     localhost_ipv4,
      {
          {"bind_address", "127.0.0.1"},
      },
@@ -768,6 +852,7 @@ const HttpServerPlainParams http_server_static_files_unusable_params[]{
 
     {"port",
      "WL11891::TS-11",
+     localhost_ipv4,
      {
          {"port", std::to_string(kHttpDefaultPort)},
      },
@@ -857,8 +942,7 @@ class HttpClientSecureTest
                     {"ssl_cert",
                      ssl_cert_data_dir_.join(kServerCertFile).str()},
                     {"ssl_key", ssl_cert_data_dir_.join(kServerKeyFile).str()},
-                }))},
-        http_server_{launch_router({"-c", conf_file_})} {}
+                }))} {}
 
  protected:
   TcpPortPool port_pool_;
@@ -867,8 +951,35 @@ class HttpClientSecureTest
   TempDirectory conf_dir_;
   mysql_harness::Path ssl_cert_data_dir_;
   std::string conf_file_;
-  ProcessWrapper &http_server_;
 };
+
+/**
+ * pretty printer for TlsVersion for gtest.
+ */
+std::ostream &operator<<(std::ostream &os, TlsVersion v) {
+  switch (v) {
+    case TlsVersion::AUTO:
+      os << "AUTO";
+      break;
+    case TlsVersion::SSL_3:
+      os << "SSL3";
+      break;
+    case TlsVersion::TLS_1_0:
+      os << "TLS1.0";
+      break;
+    case TlsVersion::TLS_1_1:
+      os << "TLS1.1";
+      break;
+    case TlsVersion::TLS_1_2:
+      os << "TLS1.2";
+      break;
+    case TlsVersion::TLS_1_3:
+      os << "TLS1.3";
+      break;
+  }
+
+  return os;
+}
 
 /**
  * ensure HTTPS requests work against a well configured server.
@@ -881,22 +992,35 @@ TEST_P(HttpClientSecureTest, ensure) {
   bool should_succeeed = GetParam().should_succeeed;
   std::string cipher_list = GetParam().cipher_list;
 
-  HttpUri u;
-  u.set_scheme("https");
-  u.set_port(http_port_);
-  u.set_host(http_hostname_);
-  u.set_path("/");
-
   SCOPED_TRACE("// preparing client and connection object");
-  IOContext io_ctx;
   TlsClientContext tls_ctx;
+
+  // get the libraries min-version
+  //
+  // ubuntu/debian disable SSLv3 all the time, which makes TLSv1.0 the
+  // min-version
+  //
+  // check if this test can succeed at all
+  tls_ctx.version_range(TlsVersion::AUTO, TlsVersion::AUTO);
+  auto library_min_version = tls_ctx.min_version();
+
+  if (GetParam().max_version != TlsVersion::AUTO &&
+      GetParam().max_version < library_min_version) {
+    // the library will not allow us to set that value, assume it will fail
+    ASSERT_FALSE(should_succeeed)
+        << "test's TLS.max_version " << GetParam().max_version
+        << " is less than " << library_min_version
+        << " which can't succeed, but test is expected not fail";
+
+    return;
+  }
 
   tls_ctx.version_range(GetParam().min_version, GetParam().max_version);
 
   // as min-version isn't set, it may either be "AUTO" aka the lowest supported
   // or SSL_3 ... which is the lowest supported (openssl 1.1.0 and before)
   std::set<TlsVersion> allowed{TlsVersion::AUTO, GetParam().min_version,
-                               TlsVersion::SSL_3};
+                               library_min_version};
   EXPECT_THAT(allowed, ::testing::Contains(tls_ctx.min_version()));
 
   tls_ctx.ssl_ca(ssl_cert_data_dir_.join(ca_cert).str(), "");
@@ -967,13 +1091,24 @@ TEST_P(HttpClientSecureTest, ensure) {
     }
   });
 
-  std::unique_ptr<HttpsClient> http_client(
-      new HttpsClient(io_ctx, std::move(tls_ctx), u.get_host(), u.get_port()));
+  HttpUri u;
+  u.set_scheme("https");
+  u.set_port(http_port_);
+  u.set_host(http_hostname_);
+  u.set_path("/");
+
+  IOContext io_ctx;
+
+  auto http_client = std::make_unique<HttpsClient>(io_ctx, std::move(tls_ctx),
+                                                   u.get_host(), u.get_port());
 
   RestClient rest_client(std::move(http_client));
 
   SCOPED_TRACE("// wait http port connectable");
-  ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server_, http_port_));
+
+  ProcessWrapper &http_server = launch_router({"-c", conf_file_});
+
+  ASSERT_NO_FATAL_FAILURE(check_port_ready(http_server, http_port_));
 
   SCOPED_TRACE("// GETing " + u.join());
   auto req = rest_client.request_sync(HttpMethod::Get, u.get_path());
@@ -1433,8 +1568,9 @@ class HttpServerAuthTest
                     ConfigBuilder::build_section(
                         "http_auth_backend:local",
                         {{"backend", "file"},
-                         {"filename",
-                          get_data_dir().join(passwd_filename_).str()}}),
+                         {"filename", mysql_harness::Path(conf_dir_.name())
+                                          .join(passwd_filename_)
+                                          .str()}}),
                     ConfigBuilder::build_section("http_auth_realm:secure",
                                                  {{"backend", "local"},
                                                   {"method", "basic"},
@@ -1442,9 +1578,13 @@ class HttpServerAuthTest
                                                   {"require", "valid-user"}})},
                 "\n"))},
         http_server_{launch_router({"-c", conf_file_})} {
-    std::fstream pwf{get_data_dir().join(passwd_filename_).str(), pwf.out};
+    std::string pwf_name(
+        mysql_harness::Path(conf_dir_.name()).join(passwd_filename_).str());
+    std::fstream pwf{pwf_name, pwf.out};
 
-    if (!pwf.is_open()) throw std::runtime_error("hmm");
+    if (!pwf.is_open())
+      throw std::runtime_error(pwf_name +
+                               " failed to open: " + std::to_string(errno));
     constexpr const char kPasswdUserTest[]{
         "user:$6$3ieWD5TQkakPm.iT$"  // sha512 and salt
         "4HI5XzmE4UCSOsu14jujlXYNYk2SB6gi2yVoAncaOzynEnTI0Rc9."
@@ -1604,6 +1744,16 @@ TEST_P(HttpServerAuthFailTest, ensure) {
 }
 
 const HttpServerAuthFailParams http_server_auth_fail_params[]{
+    {"backend_no_section",
+     "",
+     {
+         ConfigBuilder::build_section(
+             "http_auth_backend",
+             {{"backend", "file"}, {"filename", "does-not-exists"}}),
+     },
+     false,
+     "The config section [http_auth_backend] requires a name, like "
+     "[http_auth_backend:example]"},
     {"backend_file_filename_not_exists",
      "WL12503::TS_FR6_1",
      {ConfigBuilder::build_section("http_auth_backend:local",
@@ -1639,7 +1789,21 @@ const HttpServerAuthFailParams http_server_auth_fail_params[]{
                                        {"require", "valid-user"}}),
      },
      false,
-     "unknown authentication backend for"},
+     "The option 'backend=doesnotexist' in [http_auth_realm:secure] does not "
+     "match any http_auth_backend. No [http_auth_backend:doesnotexist] "
+     "section defined."},
+    {"realm_no_section",
+     "WL12503::TS_FR6_1",
+     {
+         ConfigBuilder::build_section("http_auth_realm",
+                                      {{"backend", "doesnotexist"},
+                                       {"method", "basic"},
+                                       {"name", "API"},
+                                       {"require", "valid-user"}}),
+     },
+     false,
+     "The config section [http_auth_realm] requires a name, like "
+     "[http_auth_realm:example]"},
     {"multiple_backends",
      "WL12503::TS_2_7",
      {

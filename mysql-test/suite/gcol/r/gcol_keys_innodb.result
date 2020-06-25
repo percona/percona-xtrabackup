@@ -10,53 +10,53 @@ create table t1 (a int, b int generated always as (a*2) virtual unique);
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) VIRTUAL,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) VIRTUAL,
   UNIQUE KEY `b` (`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
-b	int(11)	YES	UNI	NULL	VIRTUAL GENERATED
+a	int	YES		NULL	
+b	int	YES	UNI	NULL	VIRTUAL GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) stored unique);
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) STORED,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) STORED,
   UNIQUE KEY `b` (`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
-b	int(11)	YES	UNI	NULL	STORED GENERATED
+a	int	YES		NULL	
+b	int	YES	UNI	NULL	STORED GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) virtual, unique key (b));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) VIRTUAL,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) VIRTUAL,
   UNIQUE KEY `b` (`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
-b	int(11)	YES	UNI	NULL	VIRTUAL GENERATED
+a	int	YES		NULL	
+b	int	YES	UNI	NULL	VIRTUAL GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) stored, unique (b));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) STORED,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) STORED,
   UNIQUE KEY `b` (`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
-b	int(11)	YES	UNI	NULL	STORED GENERATED
+a	int	YES		NULL	
+b	int	YES	UNI	NULL	STORED GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) virtual);
 alter table t1 add unique key (b);
@@ -74,14 +74,14 @@ create table t1 (a int, b int generated always as (a*2) virtual, index (b));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) VIRTUAL,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) VIRTUAL,
   KEY `b` (`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
-b	int(11)	YES	MUL	NULL	VIRTUAL GENERATED
+a	int	YES		NULL	
+b	int	YES	MUL	NULL	VIRTUAL GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) virtual, index (a,b));
 drop table t1;
@@ -89,27 +89,27 @@ create table t1 (a int, b int generated always as (a*2) stored, index (b));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) STORED,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) STORED,
   KEY `b` (`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES		NULL	
-b	int(11)	YES	MUL	NULL	STORED GENERATED
+a	int	YES		NULL	
+b	int	YES	MUL	NULL	STORED GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) stored, index (a,b));
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `a` int(11) DEFAULT NULL,
-  `b` int(11) GENERATED ALWAYS AS ((`a` * 2)) STORED,
+  `a` int DEFAULT NULL,
+  `b` int GENERATED ALWAYS AS ((`a` * 2)) STORED,
   KEY `a` (`a`,`b`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 describe t1;
 Field	Type	Null	Key	Default	Extra
-a	int(11)	YES	MUL	NULL	
-b	int(11)	YES		NULL	STORED GENERATED
+a	int	YES	MUL	NULL	
+b	int	YES		NULL	STORED GENERATED
 drop table t1;
 create table t1 (a int, b int generated always as (a*2) virtual);
 alter table t1 add index (b);
@@ -313,9 +313,9 @@ Warning	1681	Integer display width is deprecated and will be removed in a future
 ALTER TABLE t1 add unique index idx(pk), algorithm=inplace;
 DESC t1;
 Field	Type	Null	Key	Default	Extra
-pk	int(11)	NO	PRI	NULL	
-col_int_nokey	int(11)	YES		NULL	
-col_int_key	int(11)	NO	UNI	NULL	VIRTUAL GENERATED
+pk	int	NO	PRI	NULL	
+col_int_nokey	int	YES		NULL	
+col_int_key	int	NO	UNI	NULL	VIRTUAL GENERATED
 DROP TABLE t1;
 #
 # Bug#21346132: WL8149:INNODB: FAILING ASSERTION:
@@ -715,9 +715,6 @@ EXPLAIN SELECT * FROM t1 ORDER BY f1 + 1	{
                   "considered_access_paths": [
                     {
                       "rows_to_scan": 10,
-                      "filtering_effect": [
-                      ] /* filtering_effect */,
-                      "final_filtering_effect": 1,
                       "access_type": "scan",
                       "resulting_rows": 10,
                       "cost": 1.25,
@@ -912,9 +909,6 @@ EXPLAIN SELECT f1 + 1, MAX(GC) FROM t1 GROUP BY f1 + 1	{
                   "considered_access_paths": [
                     {
                       "rows_to_scan": 10,
-                      "filtering_effect": [
-                      ] /* filtering_effect */,
-                      "final_filtering_effect": 1,
                       "access_type": "scan",
                       "resulting_rows": 10,
                       "cost": 1.25,
@@ -1589,7 +1583,7 @@ a1	a2
 EXPLAIN SELECT * FROM t1 STRAIGHT_JOIN t2 ON b WHERE (b AND b) = 1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
-1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where; Using join buffer (Block Nested Loop)
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where; Using join buffer (hash join)
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a1` AS `a1`,`test`.`t1`.`a2` AS `a2`,`test`.`t2`.`b` AS `b` from `test`.`t1` straight_join `test`.`t2` where ((((0 <> `test`.`t2`.`b`) and (0 <> `test`.`t2`.`b`)) = 1) and (0 <> `test`.`t2`.`b`))
 SELECT * FROM t1 STRAIGHT_JOIN t2 ON b WHERE (b AND b) = 1;

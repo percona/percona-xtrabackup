@@ -36,6 +36,8 @@
 # [--let $rpl_unconditional_change_master= 1]
 # [--let $rpl_privilege_checks_user= *:'user'@'host',1:'user'@'host',2:NULL]
 # [--let $rpl_privilege_checks_user_dont_create_user= 0]
+# [--let $rpl_privilege_checks_user_additional_grants= CREATE,INSERT,SELECT]
+# [--let $rpl_require_row_format= *:0,1:0,2:1]
 # --source include/rpl_change_topology.inc
 #
 # Parameters:
@@ -86,8 +88,9 @@
 #     on the check this parameter we execute change master or not in this
 #     inc file.
 #
-#   $rpl_privilege_checks_user By default, CHANGE MASTER is executed without
-#     specifying the `PRIVILEGE_CHECKS_USER` parameter. Instantiating
+#   $rpl_privilege_checks_user
+#     By default, CHANGE MASTER is executed without specifying the
+#     `PRIVILEGE_CHECKS_USER` parameter. Instantiating
 #     `$rpl_privilege_checks_user` sets the `PRIVILEGE_CHECKS_USER` option for
 #     the `CHANGE MASTER TO...` command, bounding the replication applier to
 #     execute within the security context of the given user. For example, to
@@ -106,6 +109,37 @@
 #     Force to not create the user provided in `$rpl_privilege_checks_user`. If
 #     set to 0, creates it if doesn't exists and, if created, assigns the
 #     `REPLICATION_APPLIER` privilege.
+#
+#   $rpl_privilege_checks_user_additional_grants
+#     Specify additional privileges to be granted to the
+#     $rpl_privilege_checks_user user.
+#
+#   $rpl_require_row_format
+#     Include `REQUIRE_ROW_FORMAT` option in the `CHANGE MASTER TO ...`
+#     statement to be executed. If `$rpl_privilege_checks_user` is specified,
+#     the `REQUIRE_ROW_FORMAT` will be, automatically, set to 1, overriding the
+#     value passed, if any.For example, to specify that server_1 should have the
+#     flag enabled and server_5 shouldn't, do:
+#
+#       --let $rpl_require_row_format= 1:1,5:0
+#
+#     To specify that all nodes have the flag enabled, do:
+#
+#       --let $rpl_require_row_format= *:1
+#
+#   $rpl_require_table_primary_key_check
+#     By default, CHANGE MASTER is executed without specifying the
+#     `REQUIRE_TABLE_PRIMARY_KEY_CHECK` parameter.
+#     Instantiating `$rpl_require_table_primary_key_check` sets
+#     `REQUIRE_TABLE_PRIMARY_KEY_CHECK` for the `CHANGE MASTER TO...` command.
+#     For example, to specify that server_1 should use STREAM as its policy
+#     for primary keys and server_5 shouldn't do the checks do:
+#
+#       --let $rpl_require_table_primary_key_check= 1:STREAM,5:OFF
+#
+#     To specify that all servers should have the same check policy, do:
+#
+#       --let $rpl_require_table_primary_key_check= *:ON
 #
 # ==== Internal variables configured by this file ====
 #
@@ -229,6 +263,18 @@ if ($rpl_debug)
 if ($_rpl_change_topology_privilege_checks_all_index)
 {
   --let $_rpl_change_topology_privilege_checks_all= `SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING("$rpl_privilege_checks_user", $_rpl_change_topology_privilege_checks_all_index), ',', 1), ':', -1)`
+}
+
+--let $_rpl_change_topology_require_row_all_index= `SELECT LOCATE('*:', "$rpl_require_row_format")`
+if ($_rpl_change_topology_require_row_all_index)
+{
+  --let $_rpl_change_topology_require_row_all= `SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING("$rpl_require_row_format", $_rpl_change_topology_require_row_all_index), ',', 1), ':', -1)`
+}
+
+--let $_rpl_require_table_primary_key_check_all_index= `SELECT LOCATE('*:', "$rpl_require_table_primary_key_check")`
+if ($_rpl_require_table_primary_key_check_all_index)
+{
+  --let $_rpl_require_table_primary_key_check_all= `SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING("$rpl_require_table_primary_key_check", $_rpl_require_table_primary_key_check_all_index), ',', 1), ':', -1)`
 }
 
 if (!$rpl_skip_change_master)

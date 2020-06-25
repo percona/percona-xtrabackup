@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -202,6 +202,7 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
 #define SET_ERROR_INSERT_VALUE(x) cerrorInsert = x
 #define SET_ERROR_INSERT_VALUE2(x,y) cerrorInsert = x; c_error_insert_extra = y
 #define CLEAR_ERROR_INSERT_VALUE cerrorInsert = 0
+#define CLEAR_ERROR_INSERT_EXTRA c_error_insert_extra = 0
 #else
 #define ERROR_INSERT_VARIABLE typedef void * cerrorInsert // Will generate compiler error if used
 #define ERROR_INSERTED(x) false
@@ -211,6 +212,7 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
 #define SET_ERROR_INSERT_VALUE(x) do { } while(0)
 #define SET_ERROR_INSERT_VALUE2(x,y) do { } while(0)
 #define CLEAR_ERROR_INSERT_VALUE do { } while(0)
+#define CLEAR_ERROR_INSERT_EXTRA do { } while(0)
 #endif
 
 #define DECLARE_DUMP0(BLOCK, CODE, DESC) if (arg == CODE)
@@ -226,6 +228,7 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
 #define ZCLOSE_FILE 2
 #define ZNIL 0xffff
 #define Z8NIL 255
+#define UINT28_MAX ((1 << 28) - 1)
 
 /* ------------------------------------------------------------------------- */
 // Number of fragments stored per node. Should be settable on a table basis
@@ -251,7 +254,7 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
 /* ------------------------------------------------------------------ */
 // We have these constants to ensure that we can easily change the
 // parallelism of node recovery and the amount of scan 
-// operations needed for node recoovery.
+// operations needed for node recovery.
 /* ------------------------------------------------------------------ */
 #define MAX_NO_WORDS_OUTSTANDING_COPY_FRAGMENT 6000
 #define MAGIC_CONSTANT 56
@@ -264,6 +267,12 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
 #define NO_GCP
 #endif
 #define ZUNDEFINED_GCI_LIMIT 1
+#define DEFAULT_SPIN_TIME 0
+#define MEASURE_SPIN_TIME 60
+#define MAX_SPIN_TIME 500
+#define MAX_SPIN_OVERHEAD 10000
+#define MIN_SPINTIME_PER_CALL 300
+#define MAX_SPINTIME_PER_CALL 8000
 
 /**
  * Ndb kernel blocks assertion handling
@@ -319,6 +328,11 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
     progError(__LINE__, NDBD_EXIT_ERROR_INSERT, __FILE__); \
   }
 
+#define CRASH_INSERTION3() \
+  { \
+    jamNoBlock(); \
+    progError(__LINE__, NDBD_EXIT_ERROR_INSERT, __FILE__); \
+  }
 #define MEMCOPY_PAGE(to, from, page_size_in_bytes) \
   memcpy((void*)(to), (void*)(from), (size_t)(page_size_in_bytes));
 #define MEMCOPY_NO_WORDS(to, from, no_of_words) \

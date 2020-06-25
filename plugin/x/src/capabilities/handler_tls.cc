@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,11 +24,11 @@
 
 #include "plugin/x/src/capabilities/handler_tls.h"
 
-#include "plugin/x/ngs/include/ngs/interface/client_interface.h"
-#include "plugin/x/ngs/include/ngs/interface/server_interface.h"
-#include "plugin/x/ngs/include/ngs/interface/ssl_context_interface.h"
 #include "plugin/x/ngs/include/ngs/mysqlx/getter_any.h"
 #include "plugin/x/ngs/include/ngs/mysqlx/setter_any.h"
+#include "plugin/x/src/interface/client.h"
+#include "plugin/x/src/interface/server.h"
+#include "plugin/x/src/interface/ssl_context.h"
 
 namespace xpl {
 

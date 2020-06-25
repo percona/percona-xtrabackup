@@ -202,6 +202,9 @@ Backup::Backup(Block_context& ctx, Uint32 instanceNumber) :
   m_lcp_timing_counter = Uint64(0);
   m_lcp_change_rate = Uint64(0);
   m_lcp_timing_factor = Uint64(100);
+  m_current_dd_time_us = Uint64(0);
+  m_last_lcp_dd_percentage = Uint32(0);
+  m_undo_log_level_percentage = Uint32(0);
 }
   
 Backup::~Backup()
@@ -341,7 +344,6 @@ Backup::execREAD_CONFIG_REQ(Signal* signal)
 
   jam();
 
-  Uint32 szLogBuf = BACKUP_DEFAULT_BUFFER_SIZE;
   Uint32 szWrite = BACKUP_DEFAULT_WRITE_SIZE;
   Uint32 szDataBuf = BACKUP_DEFAULT_BUFFER_SIZE;
   Uint32 maxWriteSize = szDataBuf;
@@ -382,6 +384,9 @@ Backup::execREAD_CONFIG_REQ(Signal* signal)
    * ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_WRITE_SIZE, &szWrite);
    * ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_MAX_WRITE_SIZE, &maxWriteSize);
    */
+
+  Uint32 szLogBuf = BACKUP_DEFAULT_LOGBUFFER_SIZE;
+  ndb_mgm_get_int_parameter(p, CFG_DB_BACKUP_LOG_BUFFER_MEM, &szLogBuf);
   if (maxWriteSize < szWrite)
   {
     /**

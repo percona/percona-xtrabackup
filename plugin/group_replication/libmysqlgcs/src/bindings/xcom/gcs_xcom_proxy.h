@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -77,9 +77,6 @@ class Gcs_xcom_proxy {
 
     @param n the length of the list
     @param na the list to delete
-
-    @return false on success, true otherwise. In case of an error, memory may
-    not have been completely freed.
   */
 
   virtual void delete_node_address(unsigned int n, node_address *na) = 0;
@@ -274,16 +271,12 @@ class Gcs_xcom_proxy {
     called when the XCOM thread was started but the node has not joined
     a group.
 
-    @param xcom_input_open indicates whether the input channel to the XCom
-                           thread has already been opened.
-    @returns true (false) on success (failure). Success means that XCom will
-             process our request, failure means it wont. There could be errors
-             later in the process of exiting XCom. Since this is basically an
-             asynchronous function, one needs to wait for the XCom thread to
-             to ensure that XCom terminated.
+    There could be errors later in the process of exiting XCom. Since this is
+    basically an asynchronous function, one needs to wait for the XCom thread to
+    to ensure that XCom terminated.
   */
 
-  virtual bool xcom_exit(bool xcom_input_open) = 0;
+  virtual void xcom_exit() = 0;
 
   /*
     Return the operation mode as an integer from an operation mode provided
@@ -884,7 +877,7 @@ class Gcs_xcom_proxy_impl : public Gcs_xcom_proxy_base {
   bool xcom_client_close_connection(connection_descriptor *fd);
   bool xcom_client_send_data(unsigned long long size, char *data);
   void xcom_init(xcom_port listen_port);
-  bool xcom_exit(bool xcom_input_open);
+  void xcom_exit();
   int xcom_get_ssl_mode(const char *mode);
   int xcom_get_ssl_fips_mode(const char *mode);
   int xcom_set_ssl_fips_mode(int mode);

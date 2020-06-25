@@ -357,7 +357,7 @@ void Gtid_set::remove_gno_interval(Interval_iterator *ivitp, rpl_gno start,
   cached_string_length = -1;
 
   // Skip intervals of 'this' that are completely before the removed interval.
-  while (1) {
+  while (true) {
     iv = ivit.get();
     if (iv == nullptr) goto ok;
     if (iv->end > start) break;
@@ -418,7 +418,7 @@ rpl_gno parse_gno(const char **s) {
 }
 
 int format_gno(char *s, rpl_gno gno) {
-  return (int)(ll2str(gno, s, 10, 1) - s);
+  return static_cast<int>(longlong10_to_str(gno, s, 10) - s);
 }
 
 enum_return_status Gtid_set::add_gtid_text(const char *text, bool *anonymous,
@@ -464,7 +464,7 @@ enum_return_status Gtid_set::add_gtid_text(const char *text, bool *anonymous,
     s = text;
   }
 
-  while (1) {
+  while (true) {
     // Skip commas (we allow empty SID:GNO specifications).
     while (*s == ',') {
       s++;
@@ -955,7 +955,7 @@ bool Gtid_set::equals(const Gtid_set *other) const {
   rpl_sidno other_map_max_sidno = other_sid_map->get_max_sidno();
 
   int sid_i = 0, other_sid_i = 0;
-  while (1) {
+  while (true) {
     rpl_sidno sidno = 0,
               other_sidno = 0;  // set to 0 to avoid compilation warning
     // find next sidno (in order of increasing sid) for this set
@@ -1285,12 +1285,12 @@ enum_return_status Gtid_set::add_gtid_encoding(const uchar *encoded,
   n_sids = uint8korr(encoded);
   pos += 8;
   // iterate over SIDs
-  for (uint i = 0; i < n_sids; i++) {
+  for (uint sid_counter = 0; sid_counter < n_sids; sid_counter++) {
     // read SID and number of intervals
     if (length - pos < 16 + 8) {
       DBUG_PRINT("error", ("(length=%lu) - (pos=%lu) < 16 + 8. "
                            "[n_sids=%" PRIu64 " i=%u]",
-                           (ulong)length, (ulong)pos, n_sids, i));
+                           (ulong)length, (ulong)pos, n_sids, sid_counter));
       goto report_error;
     }
     rpl_sid sid;

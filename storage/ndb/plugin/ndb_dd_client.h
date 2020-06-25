@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@
 #include "my_inttypes.h"
 #include "sql/dd/object_id.h"
 #include "sql/dd/string_type.h"
+#include "sql/mdl.h"
 
 namespace dd {
 typedef String_type sdi_t;
@@ -85,7 +86,11 @@ class Ndb_dd_client {
   class THD *const m_thd;
   dd::cache::Dictionary_client *m_client;
   void *m_auto_releaser;  // Opaque pointer
+  // List of MDL locks taken in EXPLICIT scope by Ndb_dd_client
   std::vector<class MDL_ticket *> m_acquired_mdl_tickets;
+  // MDL savepoint which allows releasing MDL locks taken by called
+  // functions in TRANSACTIONAL and STATEMENT scope
+  const MDL_savepoint m_save_mdl_locks;
   ulonglong m_save_option_bits{0};
   bool m_comitted{false};
   bool m_auto_rollback{true};
@@ -99,8 +104,17 @@ class Ndb_dd_client {
 
   ~Ndb_dd_client();
 
-  // Metadata lock functions
-  bool mdl_lock_schema(const char *schema_name, bool exclusive_lock = false);
+  /**
+    @brief Acquire IX MDL on the schema
+
+    @param schema_name Schema name
+
+    @return true if the MDL was acquired successfully, false if not
+  */
+  bool mdl_lock_schema(const char *schema_name);
+  bool mdl_lock_schema_exclusive(const char *schema_name,
+                                 bool custom_lock_wait = false,
+                                 ulong lock_wait_timeout = 0);
   bool mdl_lock_table(const char *schema_name, const char *table_name);
   bool mdl_locks_acquire_exclusive(const char *schema_name,
                                    const char *table_name,
@@ -140,6 +154,7 @@ class Ndb_dd_client {
                     Ndb_referenced_tables_invalidator *invalidator = nullptr);
   bool remove_table(const char *schema_name, const char *table_name,
                     Ndb_referenced_tables_invalidator *invalidator = nullptr);
+  bool deserialize_table(const dd::sdi_t &sdi, dd::Table *table_def);
   bool install_table(const char *schema_name, const char *table_name,
                      const dd::sdi_t &sdi, int ndb_table_id,
                      int ndb_table_version, size_t ndb_num_partitions,
@@ -158,6 +173,7 @@ class Ndb_dd_client {
   bool set_object_id_and_version_in_table(const char *schema_name,
                                           const char *table_name, int object_id,
                                           int object_version);
+  bool store_table(dd::Table *install_table) const;
 
   bool fetch_all_schemas(std::map<std::string, const dd::Schema *> &);
   bool fetch_schema_names(std::vector<std::string> *);
@@ -170,6 +186,7 @@ class Ndb_dd_client {
                                    bool *found_local_tables);
   bool is_local_table(const char *schema_name, const char *table_name,
                       bool &local_table);
+  bool get_schema(const char *schema_name, const dd::Schema **schema_def) const;
   bool schema_exists(const char *schema_name, bool *schema_exists);
   bool update_schema_version(const char *schema_name, unsigned int counter,
                              unsigned int node_id);
@@ -206,6 +223,8 @@ class Ndb_dd_client {
                          const char *undo_file_name);
   bool drop_logfile_group(const char *logfile_group_name,
                           bool fail_if_not_exists = true);
+  bool get_schema_uuid(dd::String_type *value) const;
+  bool update_schema_uuid(const char *value) const;
 };
 
 #endif

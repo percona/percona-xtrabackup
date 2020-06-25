@@ -550,7 +550,7 @@ class Item_func_trim : public Item_str_func {
       case TRIM_RTRIM:
         return "rtrim";
     }
-    return NULL;
+    return nullptr;
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
@@ -635,7 +635,7 @@ class Item_func_user : public Item_func_sysconst {
 
   String *val_str(String *) override {
     DBUG_ASSERT(fixed == 1);
-    return (null_value ? 0 : &str_value);
+    return (null_value ? nullptr : &str_value);
   }
   bool fix_fields(THD *thd, Item **ref) override;
   bool check_function_as_value_generator(uchar *checker_args) override {
@@ -854,6 +854,8 @@ class Item_func_is_uuid final : public Item_bool_func {
 
 class Item_func_conv final : public Item_str_func {
  public:
+  // 64 digits plus possible '-'.
+  static constexpr uint32_t CONV_MAX_LENGTH = 64U + 1U;
   Item_func_conv(const POS &pos, Item *a, Item *b, Item *c)
       : Item_str_func(pos, a, b, c) {}
   const char *func_name() const override { return "conv"; }
@@ -880,7 +882,7 @@ class Item_func_unhex final : public Item_str_func {
  public:
   Item_func_unhex(const POS &pos, Item *a) : Item_str_func(pos, a) {
     /* there can be bad hex strings */
-    maybe_null = 1;
+    maybe_null = true;
   }
   const char *func_name() const override { return "unhex"; }
   String *val_str(String *) override;
@@ -1028,7 +1030,7 @@ class Item_func_conv_charset final : public Item_str_func {
       String tmp, *str = args[0]->val_str(&tmp);
       if (!str || str_value.copy(str->ptr(), str->length(), str->charset(),
                                  conv_charset, &errors))
-        null_value = 1;
+        null_value = true;
       use_cached_value = true;
       str_value.mark_as_const();
       safe = (errors == 0);
@@ -1054,7 +1056,7 @@ class Item_func_set_collation final : public Item_str_func {
  public:
   Item_func_set_collation(const POS &pos, Item *a,
                           const LEX_STRING &collation_string_arg)
-      : super(pos, a, NULL), collation_string(collation_string_arg) {}
+      : super(pos, a, nullptr), collation_string(collation_string_arg) {}
 
   bool itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *) override;
@@ -1116,7 +1118,7 @@ class Item_func_weight_string final : public Item_str_func {
         flags(flags_arg),
         num_codepoints(num_codepoints_arg),
         result_length(result_length_arg),
-        field(NULL),
+        field(nullptr),
         as_binary(as_binary_arg) {}
 
   bool itemize(Parse_context *pc, Item **res) override;
@@ -1346,7 +1348,7 @@ class Item_func_internal_get_comment_or_error final : public Item_str_func {
       i.e., the mysql.tables.comment DD column.
     */
     set_data_type_string(2048, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1413,7 +1415,7 @@ class Item_func_get_partition_nodegroup final : public Item_str_func {
     // maximum string length of all options is expected
     // to be less than 256 characters.
     set_data_type_string(256, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1437,7 +1439,7 @@ class Item_func_internal_tablespace_type : public Item_str_func {
     // maximum string length of all options is expected
     // to be less than 256 characters.
     set_data_type_string(256, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1459,7 +1461,7 @@ class Item_func_internal_tablespace_logfile_group_name : public Item_str_func {
     // maximum string length of all options is expected
     // to be less than 256 characters.
     set_data_type_string(256, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1483,7 +1485,7 @@ class Item_func_internal_tablespace_status : public Item_str_func {
     // maximum string length of all options is expected
     // to be less than 256 characters.
     set_data_type_string(256, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1506,7 +1508,7 @@ class Item_func_internal_tablespace_row_format : public Item_str_func {
     // maximum string length of all options is expected
     // to be less than 256 characters.
     set_data_type_string(256, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1530,7 +1532,7 @@ class Item_func_internal_tablespace_extra : public Item_str_func {
     // maximum string length of all options is expected
     // to be less than 256 characters.
     set_data_type_string(256, system_charset_info);
-    maybe_null = 1;
+    maybe_null = true;
     null_on_null = false;
 
     return false;
@@ -1614,6 +1616,86 @@ class Item_func_convert_interval_to_user_interval final : public Item_str_func {
 
   const char *func_name() const override {
     return "convert_interval_to_user_interval";
+  }
+
+  String *val_str(String *) override;
+};
+
+class Item_func_internal_get_username final : public Item_str_func {
+ public:
+  Item_func_internal_get_username(const POS &pos, PT_item_list *list)
+      : Item_str_func(pos, list) {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    set_data_type_string(uint32(USERNAME_LENGTH + 1), system_charset_info);
+    maybe_null = true;
+    null_on_null = false;
+
+    return false;
+  }
+
+  const char *func_name() const override { return "internal_get_username"; }
+
+  String *val_str(String *) override;
+};
+
+class Item_func_internal_get_hostname final : public Item_str_func {
+ public:
+  Item_func_internal_get_hostname(const POS &pos, PT_item_list *list)
+      : Item_str_func(pos, list) {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    set_data_type_string(uint32(HOSTNAME_LENGTH + 1), system_charset_info);
+    maybe_null = true;
+    null_on_null = false;
+
+    return false;
+  }
+
+  const char *func_name() const override { return "internal_get_hostname"; }
+
+  String *val_str(String *) override;
+};
+
+class Item_func_internal_get_enabled_role_json final : public Item_str_func {
+ public:
+  explicit Item_func_internal_get_enabled_role_json(const POS &pos)
+      : Item_str_func(pos) {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    set_data_type_string(uint32(MAX_BLOB_WIDTH), system_charset_info);
+    maybe_null = true;
+    null_on_null = false;
+
+    return false;
+  }
+
+  const char *func_name() const override {
+    return "internal_get_enabled_role_json";
+  }
+
+  String *val_str(String *) override;
+};
+
+class Item_func_internal_get_mandatory_roles_json final : public Item_str_func {
+ public:
+  explicit Item_func_internal_get_mandatory_roles_json(const POS &pos)
+      : Item_str_func(pos) {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    set_data_type_string(uint32(MAX_BLOB_WIDTH), system_charset_info);
+    maybe_null = true;
+    null_on_null = false;
+
+    return false;
+  }
+
+  const char *func_name() const override {
+    return "internal_get_mandatory_roles_json";
   }
 
   String *val_str(String *) override;

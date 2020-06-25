@@ -569,6 +569,15 @@ SimulatedBlock::getSignalsInJBB()
 }
 
 void
+SimulatedBlock::startChangeNeighbourNode()
+{
+  /* We only treat neighbour nodes in a special manner in ndbmtd. */
+#ifdef NDBD_MULTITHREADED
+  mt_startChangeNeighbourNode();
+#endif
+}
+
+void
 SimulatedBlock::setNeighbourNode(NodeId node)
 {
   /* We only treat neighbour nodes in a special manner in ndbmtd. */
@@ -582,6 +591,15 @@ SimulatedBlock::setNoSend()
 {
 #ifdef NDBD_MULTITHREADED
   mt_setNoSend(m_threadId);
+#endif
+}
+
+void
+SimulatedBlock::endChangeNeighbourNode()
+{
+  /* We only treat neighbour nodes in a special manner in ndbmtd. */
+#ifdef NDBD_MULTITHREADED
+  mt_endChangeNeighbourNode();
 #endif
 }
 
@@ -618,12 +636,38 @@ SimulatedBlock::setSendNodeOverloadStatus(OverloadStatus new_status)
 }
 
 Uint32
-SimulatedBlock::getSpintime()
+SimulatedBlock::getConfiguredSpintime()
 {
 #ifdef NDBD_MULTITHREADED
-  return mt_getSpintime(m_threadId);
+  return mt_getConfiguredSpintime(m_threadId);
 #else
   return 0;
+#endif
+}
+
+void
+SimulatedBlock::setSpintime(Uint32 new_spintime)
+{
+#ifdef NDBD_MULTITHREADED
+  mt_setSpintime(m_threadId, new_spintime);
+#endif
+}
+
+Uint32
+SimulatedBlock::getWakeupLatency()
+{
+#ifdef NDBD_MULTITHREADED
+  return mt_getWakeupLatency();
+#else
+  return 25;
+#endif
+}
+
+void
+SimulatedBlock::setWakeupLatency(Uint32 latency)
+{
+#ifdef NDBD_MULTITHREADED
+  mt_setWakeupLatency(latency);
 #endif
 }
 
@@ -719,6 +763,60 @@ SimulatedBlock::getNumThreads()
 #endif
 }
 
+void
+SimulatedBlock::flush_send_buffers()
+{
+#ifdef NDBD_MULTITHREADED
+  mt_flush_send_buffers(m_threadId);
+#endif
+}
+
+void
+SimulatedBlock::set_watchdog_counter()
+{
+#ifdef NDBD_MULTITHREADED
+  mt_set_watchdog_counter(m_threadId);
+#endif
+}
+
+void
+SimulatedBlock::assign_recv_thread_new_trp(Uint32 trp_id)
+{
+#ifdef NDBD_MULTITHREADED
+  mt_assign_recv_thread_new_trp(trp_id);
+#endif
+}
+
+void
+SimulatedBlock::assign_multi_trps_to_send_threads()
+{
+#ifdef NDBD_MULTITHREADED
+  mt_assign_multi_trps_to_send_threads();
+#endif
+}
+
+bool
+SimulatedBlock::epoll_add_trp(NodeId node_id, TrpId trp_id)
+{
+#ifdef NDBD_MULTITHREADED
+  return mt_epoll_add_trp(m_threadId, node_id, trp_id);
+#else
+  require(false);
+  return false;
+#endif
+}
+
+bool
+SimulatedBlock::is_recv_thread_for_new_trp(NodeId node_id, TrpId trp_id)
+{
+#ifdef NDBD_MULTITHREADED
+  return mt_is_recv_thread_for_new_trp(m_threadId, node_id, trp_id);
+#else
+  require(false);
+  return false;
+#endif
+}
+
 void 
 SimulatedBlock::sendSignal(BlockReference ref, 
 			   GlobalSignalNumber gsn, 
@@ -732,7 +830,7 @@ SimulatedBlock::sendSignal(BlockReference ref,
   Uint32 recNode   = refToNode(ref);
   Uint32 ourProcessor         = globalData.ownId;
   
-ndbrequire(signal->header.m_noOfSections == 0);
+  ndbrequire(signal->header.m_noOfSections == 0);
   check_sections(signal, signal->header.m_noOfSections, 0);
 
   signal->header.theLength = length;
@@ -742,7 +840,8 @@ ndbrequire(signal->header.m_noOfSections == 0);
 
   Uint32 tSignalId = signal->header.theSignalId;
   
-  if ((length == 0) || length > 25 || (recBlock == 0)) {
+  if (unlikely((length == 0) || length > 25 || (recBlock == 0)))
+  {
     signal_error(gsn, length, recBlock, __FILE__, __LINE__);
     return;
   }//if
@@ -797,10 +896,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, 0);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        (LinearSectionPtr*)0);
 #endif
     
@@ -907,10 +1007,11 @@ ndbrequire(noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, 0);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer, 
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        (LinearSectionPtr*)0);
 #endif
 
@@ -1029,10 +1130,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, ptr);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        ptr);
 #endif
 
@@ -1162,10 +1264,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, ptr);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        ptr);
 #endif
 
@@ -1274,10 +1377,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, &g_sectionSegmentPool, sections->m_ptr);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        g_sectionSegmentPool, sections->m_ptr);
 #endif
 
@@ -1405,10 +1509,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, &g_sectionSegmentPool, sections->m_ptr);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        g_sectionSegmentPool, sections->m_ptr);
 #endif
 
@@ -1537,10 +1642,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, &g_sectionSegmentPool, sections->m_ptr);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        g_sectionSegmentPool, sections->m_ptr);
 #endif
 
@@ -1678,10 +1784,11 @@ ndbrequire(signal->header.m_noOfSections == 0);
     ss = mt_send_remote(m_threadId, &sh, jobBuffer, &signal->theData[0],
                         recNode, &g_sectionSegmentPool, sections->m_ptr);
 #else
+    TrpId trp_id = 0;
     ss = globalTransporterRegistry.
            prepareSend(getNonMTTransporterSendHandle(),
                        &sh, jobBuffer,
-                       &signal->theData[0], recNode,
+                       &signal->theData[0], recNode, trp_id,
                        g_sectionSegmentPool, sections->m_ptr);
 #endif
 
@@ -4303,7 +4410,7 @@ SimulatedBlock::cmp_attr(Uint32 attrDesc, const CHARSET_INFO* cs,
 			 const Uint32 *s2, Uint32 s2Len) const
 {
   const Uint32 typeId = AttributeDescriptor::getType(attrDesc);
-  const NdbSqlUtil::Cmp *cmp = NdbSqlUtil::getType(typeId).m_cmp;
+  NdbSqlUtil::Cmp *cmp = NdbSqlUtil::getType(typeId).m_cmp;
   return (*cmp)(cs, s1, s1Len, s2, s1Len);
 }
 
@@ -4955,29 +5062,90 @@ SimulatedBlock::checkNodeFailSequence(Signal* signal)
   /**
    * Make sure that a signal being part of node-failure handling
    *   from a remote node, does not get to us before we got the NODE_FAILREP
-   *   (this to avoid tricky state handling)
+   *   (this to avoid tricky state handling to some extent when receving
+   *    signals from old nodes)
    *
-   * To ensure this, we send the signal via QMGR (GSN_COMMIT_FAILREQ)
-   *   and NDBCNTR (which sends NODE_FAILREP)
+   * To ensure this, we send the signal via the transporter for the remote
+   * sender node via QMGR and NDBCNTR to DBDIH.  Although approximating
+   * synchronization between all threads and transporters with a single hop to
+   * DBLQH_REF to at least send via another thread for multi threaded data
+   * node.
    *
    * The extra time should be negilable
    *
    * Note, make an exception for signals sent by our self
    *       as they are only sent as a consequence of NODE_FAILREP
+   *
+   * Also note that this function no longer guarantee that signal arrives to
+   * its destination after corresponding NODE_FAILREP, as a complement caller
+   * need some further logic delaying the processing of the signal until
+   * NODE_FAILREP have been seen.
    */
   if (ref == reference() ||
       (refToNode(ref) == getOwnNodeId() &&
-       refToMain(ref) == NDBCNTR))
+       refToMain(ref) == DBDIH))
   {
     jam();
     return true;
   }
 
-  RoutePath path[2];
-  path[0].ref = QMGR_REF;
-  path[0].prio = JBB;
-  path[1].ref = NDBCNTR_REF;
-  path[1].prio = JBB;
+  Uint32 trpman_ref;
+  if (globalData.ndbMtReceiveThreads == 0)
+  {
+    jam();
+    ndbrequire(!isNdbMt());
+    trpman_ref = TRPMAN_REF;
+  }
+  else
+  {
+    jam();
+    ndbrequire(isNdbMt());
+    Uint32 sender_node = refToNode(ref);
+    Uint32 inst = (get_recv_thread_idx(sender_node) + /* proxy */ 1);
+    if (inst > NDBMT_MAX_BLOCK_INSTANCES)
+    {
+      jam();
+      trpman_ref = TRPMAN_REF;
+    }
+    else
+    {
+      jam();
+      trpman_ref = numberToRef(TRPMAN, inst, getOwnNodeId());
+    }
+  }
+
+  RoutePath path[5];
+  Uint32 path_idx = 0;
+
+  /* Start at TRPMAN for sending node */
+  path[path_idx].ref = trpman_ref;
+  path[path_idx].prio = JBA;
+  path_idx++;
+
+  /* Follow COMMIT_FAILREQ to QMGR */
+  path[path_idx].ref = QMGR_REF;
+  path[path_idx].prio = JBB;
+  path_idx++;
+
+  /*
+   * Should be sync_threads, but sends only to DBLQH_REF to at least send
+   * to another thread than main thread (if using a multi threaded data node)
+   */
+  path[path_idx].ref = DBLQH_REF;
+  path[path_idx].prio = JBB;
+  path_idx++;
+
+  /* Follow NODE_FAILREP to NDBCNT */
+  path[path_idx].ref = NDBCNTR_REF;
+  path[path_idx].prio = JBB;
+  path_idx++;
+
+  /* Follow NODE_FAILREP to DBDIH */
+  path[path_idx].ref = DBDIH_REF;
+  path[path_idx].prio = JBB;
+  path_idx++;
+
+  ndbrequire(path_idx <= NDB_ARRAY_SIZE(path));
 
   Uint32 dst[1];
   dst[0] = reference();
@@ -4986,7 +5154,7 @@ SimulatedBlock::checkNodeFailSequence(Signal* signal)
   Uint32 gsn = signal->header.theVerId_signalNumber;
   Uint32 len = signal->getLength();
 
-  sendRoutedSignal(path, 2, dst, 1, gsn, signal, len, JBB, &handle);
+  sendRoutedSignal(path, path_idx, dst, 1, gsn, signal, len, JBB, &handle);
   return false;
 }
 
@@ -5174,10 +5342,10 @@ SimulatedBlock::assertOwnThread()
 #endif
 
 Uint32
-SimulatedBlock::get_recv_thread_idx(NodeId nodeId)
+SimulatedBlock::get_recv_thread_idx(TrpId trp_id)
 {
 #ifdef NDBD_MULTITHREADED
-  return mt_get_recv_thread_idx(nodeId);
+  return mt_get_recv_thread_idx(trp_id);
 #else
   return 0;
 #endif

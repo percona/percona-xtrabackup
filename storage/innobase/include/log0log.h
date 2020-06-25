@@ -206,6 +206,7 @@ constexpr uint32_t LOG_HEADER_CREATOR_END = LOG_HEADER_CREATOR + 32;
 
 /** Contents of the LOG_HEADER_CREATOR field */
 #define LOG_HEADER_CREATOR_CURRENT "MySQL " INNODB_VERSION_STR
+#define LOG_HEADER_CREATOR_8018  "MySQL 8.0.18" // (v3 format)
 
 /** Header is created during DB clone */
 #define LOG_HEADER_CREATOR_CLONE "MySQL Clone"
@@ -368,6 +369,13 @@ extern log_t *log_sys;
 /** Pointer to the log checksum calculation function. Changes are protected
 by log_mutex_enter_all, which also stops the log background threads. */
 extern log_checksum_func_t log_checksum_algorithm_ptr;
+
+/** This version is used to recreate the log files in the same format that
+PXB read. i.e. if PXB is processing redo from 8.0.19 or below (v3), then
+it has to recreate log files with v3 header. If PXB is processing redo from
+8.0.20 above (v4), it has to recreate log files with v4 header.
+We cannot reuse log_sys->format for this purpose because it is dellocated and re-initialized during PXB prepare */
+extern uint32_t log_detected_format;
 
 #ifndef UNIV_HOTBACKUP
 /** Represents currently running test of redo log, nullptr otherwise. */

@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2014-2019 Percona LLC and/or its affiliates.
+Copyright (c) 2014-2020 Percona LLC and/or its affiliates.
 
 xbcloud utility. Manage backups on cloud storage services.
 
@@ -18,11 +18,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
+#include <my_alloc.h>
 #include <my_default.h>
 #include <my_dir.h>
 #include <my_getopt.h>
 #include <my_sys.h>
-#include <my_alloc.h>
 #include <mysql/service_mysql_alloc.h>
 #include <signal.h>
 #include <typelib.h>
@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <set>
 #include <string>
 #include <unordered_map>
+#include "template_utils.h"
 
 #include <curl/curl.h>
 
@@ -84,6 +85,7 @@ static char *opt_s3_region = nullptr;
 static char *opt_s3_endpoint = nullptr;
 static char *opt_s3_access_key = nullptr;
 static char *opt_s3_secret_key = nullptr;
+static char *opt_s3_session_token = nullptr;
 static char *opt_s3_bucket = nullptr;
 static ulong opt_s3_bucket_lookup;
 static ulong opt_s3_api_version = 0;
@@ -92,6 +94,7 @@ static char *opt_google_region = nullptr;
 static char *opt_google_endpoint = nullptr;
 static char *opt_google_access_key = nullptr;
 static char *opt_google_secret_key = nullptr;
+static char *opt_google_session_token = nullptr;
 static char *opt_google_bucket = nullptr;
 
 static std::string backup_name;
@@ -141,6 +144,7 @@ enum {
   OPT_S3_ENDPOINT,
   OPT_S3_ACCESS_KEY,
   OPT_S3_SECRET_KEY,
+  OPT_S3_SESSION_TOKEN,
   OPT_S3_BUCKET,
   OPT_S3_BUCKET_LOOKUP,
   OPT_S3_API_VERSION,
@@ -149,6 +153,7 @@ enum {
   OPT_GOOGLE_ENDPOINT,
   OPT_GOOGLE_ACCESS_KEY,
   OPT_GOOGLE_SECRET_KEY,
+  OPT_GOOGLE_SESSION_TOKEN,
   OPT_GOOGLE_BUCKET,
 
   OPT_PARALLEL,
@@ -260,6 +265,10 @@ static struct my_option my_long_options[] = {
     {"s3-secret-key", OPT_S3_SECRET_KEY, "S3 secret key.", &opt_s3_secret_key,
      &opt_s3_secret_key, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
+    {"s3-session-token", OPT_S3_SESSION_TOKEN, "S3 session token.",
+     &opt_s3_session_token, &opt_s3_session_token, 0, GET_STR_ALLOC,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
     {"s3-bucket", OPT_S3_BUCKET, "S3 bucket.", &opt_s3_bucket, &opt_s3_bucket,
      0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -286,6 +295,11 @@ static struct my_option my_long_options[] = {
     {"google-secret-key", OPT_GOOGLE_SECRET_KEY,
      "Goolge cloud storage secret key.", &opt_google_secret_key,
      &opt_google_secret_key, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"google-session-token", OPT_GOOGLE_SESSION_TOKEN,
+     "Goolge cloud storage session token.", &opt_google_session_token,
+     &opt_google_session_token, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
+     0},
 
     {"google-bucket", OPT_GOOGLE_BUCKET, "Goolge cloud storage bucket.",
      &opt_google_bucket, &opt_google_bucket, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
@@ -354,8 +368,10 @@ static bool get_one_option(int optid,
     case OPT_SWIFT_TENANT_ID:
     case OPT_S3_ACCESS_KEY:
     case OPT_S3_SECRET_KEY:
+    case OPT_S3_SESSION_TOKEN:
     case OPT_GOOGLE_ACCESS_KEY:
     case OPT_GOOGLE_SECRET_KEY:
+    case OPT_GOOGLE_SESSION_TOKEN:
       if (argument != nullptr) {
         while (*argument) *argument++ = 0;  // Destroy argument
       }
@@ -393,8 +409,19 @@ static void get_env_args() {
   get_env_value(opt_swift_storage_url, "OS_STORAGE_URL");
   get_env_value(opt_cacert, "OS_CACERT");
 
+  /* Below block should always be above AWS_* and should not be moved because
+  the order of prefrence are like S3_ACCESS_KEY_ID, AWS_ACCESS_KEY_ID and
+  ACCESS_KEY  */
+  get_env_value(opt_s3_access_key, "S3_ACCESS_KEY_ID");
+  get_env_value(opt_s3_secret_key, "S3_SECRET_ACCESS_KEY");
+  get_env_value(opt_s3_session_token, "S3_SESSION_TOKEN");
+  get_env_value(opt_s3_region, "S3_DEFAULT_REGION");
+  get_env_value(opt_cacert, "S3_CA_BUNDLE");
+  get_env_value(opt_s3_endpoint, "S3_ENDPOINT");
+
   get_env_value(opt_s3_access_key, "AWS_ACCESS_KEY_ID");
   get_env_value(opt_s3_secret_key, "AWS_SECRET_ACCESS_KEY");
+  get_env_value(opt_s3_session_token, "AWS_SESSION_TOKEN");
   get_env_value(opt_s3_region, "AWS_DEFAULT_REGION");
   get_env_value(opt_cacert, "AWS_CA_BUNDLE");
   get_env_value(opt_s3_endpoint, "AWS_ENDPOINT");
@@ -406,6 +433,7 @@ static void get_env_args() {
 
   get_env_value(opt_google_access_key, "ACCESS_KEY_ID");
   get_env_value(opt_google_secret_key, "SECRET_ACCESS_KEY");
+  get_env_value(opt_google_session_token, "SESSION_TOKEN");
   get_env_value(opt_google_region, "DEFAULT_REGION");
   get_env_value(opt_google_endpoint, "ENDPOINT");
 }
@@ -706,6 +734,11 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
            backup_name.c_str());
     return false;
   }
+  if (object_list.empty()) {
+    msg_ts("%s: error: backup named %s doesn't exists!\n", my_progname,
+           backup_name.c_str());
+    return false;
+  }
 
   Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
   if (!h.init()) {
@@ -758,7 +791,8 @@ bool xbcloud_download(Object_store *store, const std::string &container,
                       const std::string &backup_name) {
   std::vector<std::string> object_list;
 
-  if (!store->list_objects_in_directory(container, backup_name, object_list)) {
+  if (!store->list_objects_in_directory(container, backup_name, object_list) ||
+      object_list.size() == 0) {
     msg_ts("%s: Download failed. Cannot list %s.\n", my_progname,
            backup_name.c_str());
     return false;
@@ -1031,8 +1065,10 @@ int main(int argc, char **argv) {
         opt_s3_access_key != nullptr ? opt_s3_access_key : "";
     std::string secret_key =
         opt_s3_secret_key != nullptr ? opt_s3_secret_key : "";
+    std::string session_token =
+        opt_s3_session_token != nullptr ? opt_s3_session_token : "";
     object_store = std::unique_ptr<Object_store>(new S3_object_store(
-        &http_client, region, access_key, secret_key,
+        &http_client, region, access_key, secret_key, session_token,
         opt_s3_endpoint != nullptr ? opt_s3_endpoint : "",
         static_cast<s3_bucket_lookup_t>(opt_s3_bucket_lookup),
         static_cast<s3_api_version_t>(opt_s3_api_version)));
@@ -1058,8 +1094,10 @@ int main(int argc, char **argv) {
         opt_google_access_key != nullptr ? opt_google_access_key : "";
     std::string secret_key =
         opt_google_secret_key != nullptr ? opt_google_secret_key : "";
+    std::string session_token =
+        opt_google_session_token != nullptr ? opt_google_session_token : "";
     object_store = std::unique_ptr<Object_store>(new S3_object_store(
-        &http_client, region, access_key, secret_key,
+        &http_client, region, access_key, secret_key, session_token,
         opt_google_endpoint != nullptr ? opt_google_endpoint
                                        : "https://storage.googleapis.com/",
         LOOKUP_DNS, S3_V2));

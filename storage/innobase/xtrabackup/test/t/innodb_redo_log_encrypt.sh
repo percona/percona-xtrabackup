@@ -35,6 +35,14 @@ function test_do() {
 	job=$!
 
 	xtrabackup --backup --target-dir=$topdir/backup ${xtra_backup_args}
+
+	# for compressed backup xtrabackup_logfile should not be compressed since redo log is encrypted
+	if [[ $1 == *"compress"* ]]; then
+		test -f $topdir/backup/xtrabackup_logfile || die "xtrabackup_logfile file not found"
+		test -f $topdir/backup/undo_001 || die "undo_001 not found"
+		xtrabackup --decompress --target-dir=$topdir/backup
+	fi
+
 	xtrabackup --prepare --target-dir=$topdir/backup ${xtra_prepare_args}
 
 	record_db_state sakila
@@ -58,3 +66,4 @@ function test_do() {
 
 test_do "" "--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}" ""
 test_do "--transition-key=123_" "--transition-key=123_" "--transition-key=123_ --generate-new-key"
+test_do "--compress=lz4" "--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}" ""

@@ -286,10 +286,19 @@ static lsn_t log_update_available_for_checkpoint_lsn(log_t &log) {
 void log_files_header_fill(byte *buf, lsn_t start_lsn, const char *creator) {
   memset(buf, 0, OS_FILE_LOG_BLOCK_SIZE);
 
-  mach_write_to_4(buf + LOG_HEADER_FORMAT, LOG_HEADER_FORMAT_CURRENT);
+  if (log_detected_format != UINT32_MAX) {
+    ut_a(log_detected_format <= LOG_HEADER_FORMAT_CURRENT);
+    mach_write_to_4(buf + LOG_HEADER_FORMAT, log_detected_format);
+  } else {
+    mach_write_to_4(buf + LOG_HEADER_FORMAT, LOG_HEADER_FORMAT_CURRENT);
+  }
+
   mach_write_to_8(buf + LOG_HEADER_START_LSN, start_lsn);
 
-  strncpy(reinterpret_cast<char *>(buf) + LOG_HEADER_CREATOR, creator,
+  strncpy(reinterpret_cast<char *>(buf) + LOG_HEADER_CREATOR,
+          log_detected_format == LOG_HEADER_FORMAT_8_0_19
+              ? LOG_HEADER_CREATOR_CURRENT
+              : LOG_HEADER_CREATOR_8018,
           LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR);
 
   ut_ad(LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR >= strlen(creator));

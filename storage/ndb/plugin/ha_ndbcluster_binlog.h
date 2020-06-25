@@ -98,8 +98,10 @@ bool ndbcluster_binlog_check_logfile_group_async(const std::string &lfg_name);
 bool ndbcluster_binlog_check_tablespace_async(
     const std::string &tablespace_name);
 
-/*
-  Called as part of SHOW STATUS or performance_schema queries. Returns
-  information about the number of NDB metadata objects synched
+/**
+ @brief Queue up schema items which the ndb binlog thread needs to check for
+        changes
+ @param schema_name  The name of the schema to check. This cannot be empty
+ @return true if the workitem was accepted, false if not
 */
-int show_ndb_metadata_synced(THD *, SHOW_VAR *var, char *);
+bool ndbcluster_binlog_check_schema_async(const std::string &schema_name);

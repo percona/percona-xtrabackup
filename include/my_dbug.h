@@ -116,9 +116,11 @@ class AutoDebugTrace {
     const char *end = strchr(function, '(');
 
     if (end == nullptr) {
-      _db_enter_(function, strlen(function), filename, line, &m_stack_frame);
+      _db_enter_(function, static_cast<int>(strlen(function)), filename, line,
+                 &m_stack_frame);
     } else {
-      _db_enter_(function, end - function, filename, line, &m_stack_frame);
+      _db_enter_(function, static_cast<int>(end - function), filename, line,
+                 &m_stack_frame);
     }
   }
 
@@ -328,6 +330,24 @@ extern void _db_flush_gcov_();
   do {                       \
   } while (0)
 #endif /* DBUG_OFF */
-#endif /* __cplusplus */
 
+/**
+   A type-safe interface to DBUG_EXECUTE_IF, where the debug action to
+   activate when the keyword is provided is given as a callable object
+   (typically a lambda).
+
+   @note The body of the callable will be checked by the compiler even
+         in optimized mode.
+
+   @param keyword String literal which will enable this debug action.
+   @param clos    Callable object taking no arguments which will be
+                  called in debug mode if the keyword is enabled.
+ */
+template <class DBGCLOS>
+inline void dbug(const char *keyword MY_ATTRIBUTE((unused)),
+                 DBGCLOS &&clos MY_ATTRIBUTE((unused))) {
+  DBUG_EXECUTE_IF(keyword, clos(););
+}
+
+#endif /* __cplusplus */
 #endif /* MY_DBUG_INCLUDED */

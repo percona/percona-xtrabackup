@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,53 +48,28 @@ class FieldDatetimeTest : public ::testing::Test {
 };
 
 class Mock_field_datetime : public Field_datetime {
- private:
-  uchar buffer[PACK_LENGTH];
-  uchar null_byte;
-
-  void initialize() {
-    ptr = buffer;
-    memset(buffer, 0, PACK_LENGTH);
-    null_byte = '\0';
-    set_null_ptr(&null_byte, 1);
-  }
-
  public:
   Mock_field_datetime()
-      : Field_datetime(0,             // ptr_arg
-                       NULL,          // null_ptr_arg
-                       1,             // null_bit_arg
-                       Field::NONE,   // auto_flags_arg
-                       "field_name")  // field_name_arg
-  {
-    initialize();
-  }
+      : Field_datetime(nullptr,                    // ptr_arg
+                       &Field::dummy_null_buffer,  // null_ptr_arg
+                       1,                          // null_bit_arg
+                       Field::NONE,                // auto_flags_arg
+                       "field_name")               // field_name_arg
+  {}
 
   void make_writable() { bitmap_set_bit(table->write_set, field_index); }
   void make_readable() { bitmap_set_bit(table->read_set, field_index); }
 };
 
 class Mock_field_datetimef : public Field_datetimef {
-  uchar null_byte;
-
-  void initialize() {
-    ptr = buffer;
-    memset(buffer, 0, 8);
-    null_byte = '\0';
-    set_null_ptr(&null_byte, 1);
-  }
-
  public:
-  uchar buffer[8];
-  Mock_field_datetimef(uint scale)
-      : Field_datetimef(0,             // ptr_arg
-                        NULL,          // null_ptr_arg
-                        1,             // null_bit_arg
-                        Field::NONE,   // unireg_check_arg
-                        "field_name",  // field_name_arg
-                        scale) {
-    initialize();
-  }
+  explicit Mock_field_datetimef(uint scale)
+      : Field_datetimef(nullptr,                    // ptr_arg
+                        &Field::dummy_null_buffer,  // null_ptr_arg
+                        1,                          // null_bit_arg
+                        Field::NONE,                // unireg_check_arg
+                        "field_name",               // field_name_arg
+                        scale) {}
 
   void make_writable() { bitmap_set_bit(table->write_set, field_index); }
   void make_readable() { bitmap_set_bit(table->read_set, field_index); }

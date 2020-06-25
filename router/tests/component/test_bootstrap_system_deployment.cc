@@ -64,7 +64,7 @@ class RouterBootstrapSystemDeploymentTest : public RouterComponentTest,
   }
 
   auto &run_server_mock() {
-    const std::string json_stmts = get_data_dir().join("bootstrap.js").str();
+    const std::string json_stmts = get_data_dir().join("bootstrap_gr.js").str();
     server_port_ = port_pool_.get_next_available();
 
     // launch mock server and wait for it to start accepting connections
@@ -102,9 +102,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest, BootstrapPass) {
 
   EXPECT_TRUE(
       router.expect_output("MySQL Router configured for the "
-                           "InnoDB cluster 'mycluster'"))
-      << "router: " << router.get_full_output() << std::endl
-      << "server: " << server_mock.get_full_output();
+                           "InnoDB Cluster 'mycluster'"));
 }
 
 /*
@@ -139,9 +137,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
   check_exit_code(router, EXIT_FAILURE);
 
   EXPECT_TRUE(router.expect_output(
-      "Error: Could not save configuration file to final location", false))
-      << router.get_full_output() << std::endl
-      << "server: " << server_mock.get_full_output();
+      "Error: Could not save configuration file to final location", false));
 
   mysql_harness::Path mysqlrouter_conf_tmp_path(tmp_dir_ +
                                                 "/stage/mysqlrouter.conf.tmp");
@@ -180,9 +176,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
   check_exit_code(router, EXIT_FAILURE);
 
   EXPECT_TRUE(router.expect_output(
-      "Error: Could not save configuration file to final location", false))
-      << router.get_full_output() << std::endl
-      << "server: " << server_mock.get_full_output();
+      "Error: Could not save configuration file to final location", false));
 
   mysql_harness::Path mysqlrouter_key_path(tmp_dir_ + "/stage/mysqlrouter.key");
   EXPECT_FALSE(mysqlrouter_key_path.exists());
@@ -233,9 +227,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
   check_exit_code(router, EXIT_FAILURE);
 
   EXPECT_TRUE(router.expect_output(
-      "Error: Could not save configuration file to final location", false))
-      << router.get_full_output() << std::endl
-      << "server: " << server_mock.get_full_output();
+      "Error: Could not save configuration file to final location", false));
 
   mysql_harness::Path mysqlrouter_key_path(tmp_dir_ + "/stage/mysqlrouter.key");
   EXPECT_TRUE(mysqlrouter_key_path.exists());
@@ -281,9 +273,7 @@ TEST_F(RouterBootstrapSystemDeploymentTest,
   check_exit_code(router, EXIT_FAILURE);
 
   EXPECT_TRUE(router.expect_output(
-      "Error: Could not save configuration file to final location", false))
-      << router.get_full_output() << std::endl
-      << "server: " << server_mock.get_full_output();
+      "Error: Could not save configuration file to final location", false));
 
   mysql_harness::Path mysqlrouter_log_path(tmp_dir_ + "/stage/mysqlrouter.log");
   EXPECT_TRUE(mysqlrouter_log_path.exists());

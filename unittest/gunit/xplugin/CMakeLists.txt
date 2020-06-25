@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -72,6 +72,9 @@ SET(XPL_TEST_SRC
   xpl/account_verification_handler_t.cc
   xpl/admin_cmd_arguments_object_t.cc
   xpl/admin_cmd_index_t.cc
+  xpl/admin_create_collection_t.cc
+  xpl/admin_get_collection_options_t.cc
+  xpl/admin_modify_collection_options_t.cc
   xpl/broker_input_queue_task_t.cc
   xpl/callback_command_delegate_t.cc
   xpl/capabilities_configurator_t.cc
@@ -91,6 +94,7 @@ SET(XPL_TEST_SRC
   xpl/listener_tcp_t.cc
   xpl/listener_unix_socket_t.cc
   xpl/message_builder_t.cc
+  xpl/meta_schema_validator_t.cc
   xpl/prepared_statement_builder_t.cc
   xpl/prepare_param_handler_t.cc
   xpl/protocol_decoder_t.cc
@@ -101,6 +105,7 @@ SET(XPL_TEST_SRC
   xpl/sasl_plain_auth_t.cc
   xpl/scheduler_t.cc
   xpl/server_client_timeout_t.cc
+  xpl/set_variable_adaptor_t.cc
   xpl/sha256_cache_t.cc
   xpl/socket_acceptor_task_t.cc
   xpl/sql_statement_builder_t.cc
@@ -154,7 +159,7 @@ ENDIF()
 
 # assertion failed in function assert_with_dumps() @ ssa.c:621 when using -xO3
 # Segfault in the unit test, so lower optimization level there as well
-IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
+IF(MY_COMPILER_IS_SUNPRO)
   ADD_COMPILE_FLAGS(
     ${CMAKE_CURRENT_SOURCE_DIR}/xpl/callback_command_delegate_t.cc
     COMPILE_FLAGS "-xO2")
@@ -199,6 +204,7 @@ SET(XCL_SRC
   xcl/session_execute_t.cc
   xcl/session_general_t.cc
   xcl/session_options_t.cc
+  xcl/session_negotiation_t.cc
   xcl/sha256_scramble_t.cc
   xcl/ssl_config_t.cc
   xcl/xpriority_list_t.cc

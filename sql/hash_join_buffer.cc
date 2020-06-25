@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +32,7 @@
 #include "m_ctype.h"
 #include "my_alloc.h"
 #include "my_bitmap.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "sql/field.h"
@@ -40,7 +41,9 @@
 #include "sql/psi_memory_key.h"
 #include "sql/sql_executor.h"
 #include "sql/sql_join_buffer.h"
+#include "sql/sql_optimizer.h"
 #include "sql/table.h"
+#include "tables_contained_in.h"
 #include "template_utils.h"
 
 namespace hash_join_buffer {
@@ -51,35 +54,12 @@ Column::Column(Field *field) : field(field), field_type(field->real_type()) {}
 // query (determined by the read set of the table).
 Table::Table(QEP_TAB *qep_tab)
     : qep_tab(qep_tab), columns(PSI_NOT_INSTRUMENTED) {
-  MEM_ROOT tmp_mem_root;
-  memroot_unordered_map<const QEP_TAB *, MY_BITMAP *> saved_read_sets(
-      &tmp_mem_root);
-
-  // When a table contains a virtual column, the base columns that the computed
-  // value is derived from is also included in the read_set regardless whether
-  // the user explicitly asked for them or not:
-  //
-  // CREATE TABLE t1 (col1 INT, col2 INT AS (col1 + col1));
-  // SELECT col2 FROM t1; # col1 is also included in the read_set, since the
-  //                      # value of col2 depends on it.
-  //
-  // But when a virtual generated column is fetched from the storage engine
-  // using a covering index, the computed value of the virtual column is already
-  // available from the index. In this case, a row buffer does not need to (and
-  // should not) copy the value of the base column(s).
-  // filter_virtual_gcol_base_cols() will remove these base columns that are not
-  // needed from the read_set, and they will thus be excluded from the row
-  // buffer.
-  filter_virtual_gcol_base_cols(qep_tab, &tmp_mem_root, &saved_read_sets);
-
   const TABLE *table = qep_tab->table();
   for (uint i = 0; i < table->s->fields; ++i) {
     if (bitmap_is_set(table->read_set, i)) {
       columns.emplace_back(table->field[i]);
     }
   }
-
-  restore_virtual_gcol_base_cols(qep_tab, &saved_read_sets);
 
   // Cache the value of rowid_status, the value may be changed by other
   // iterators. See QEP_TAB::rowid_status for more details.
@@ -91,56 +71,57 @@ Table::Table(QEP_TAB *qep_tab)
 // with no columns, like t2 in the following query:
 //
 //   SELECT t1.col1 FROM t1, t2;  # t2 will be included without any columns.
-TableCollection::TableCollection(const std::vector<QEP_TAB *> &tables)
-    : m_tables_bitmap(0),
-      m_ref_and_null_bytes_size(0),
-      m_has_blob_column(false) {
-  for (QEP_TAB *qep_tab : tables) {
-    m_tables_bitmap |= qep_tab->table_ref->map();
-
-    // When constructing the iterator tree, we might end up adding a
-    // WeedoutIterator _after_ a HashJoinIterator has been constructed.
-    // When adding the WeedoutIterator, QEP_TAB::rowid_status will be changed
-    // indicate that a row ID is needed. A side effect of this is that
-    // rowid_status might say that no row ID is needed here, while it says
-    // otherwise while hash join is executing. As such, we may write outside of
-    // the allocated buffers since we did not take the size of the row ID into
-    // account here. To overcome this, we always assume that the row ID should
-    // be kept; reserving some extra bytes in a few buffers should not be an
-    // issue.
-    m_ref_and_null_bytes_size += qep_tab->table()->file->ref_length;
-
-    if (qep_tab->table()->is_nullable()) {
-      m_ref_and_null_bytes_size += sizeof(qep_tab->table()->null_row);
-    }
-
-    Table table(qep_tab);
-    for (const hash_join_buffer::Column &column : table.columns) {
-      // Field_typed_array will mask away the BLOB_FLAG for all types. Hence,
-      // we will treat all Field_typed_array as blob columns.
-      if ((column.field->flags & BLOB_FLAG) > 0 || column.field->is_array()) {
-        m_has_blob_column = true;
-      }
-
-      // If a column is marked as nullable, we need to copy the NULL flags.
-      if ((column.field->flags & NOT_NULL_FLAG) == 0) {
-        table.copy_null_flags = true;
-      }
-
-      // BIT fields stores some of its data in the NULL flags of the table. So
-      // if we have a BIT field, we must copy the NULL flags.
-      if (column.field->type() == MYSQL_TYPE_BIT &&
-          down_cast<const Field_bit *>(column.field)->bit_len > 0) {
-        table.copy_null_flags = true;
-      }
-    }
-
-    if (table.copy_null_flags) {
-      m_ref_and_null_bytes_size += qep_tab->table()->s->null_bytes;
-    }
-
-    m_tables.push_back(table);
+TableCollection::TableCollection(const JOIN *join, qep_tab_map tables) {
+  for (QEP_TAB *qep_tab : TablesContainedIn(join, tables)) {
+    AddTable(qep_tab);
   }
+}
+
+void TableCollection::AddTable(QEP_TAB *qep_tab) {
+  m_tables_bitmap |= qep_tab->table_ref->map();
+
+  // When constructing the iterator tree, we might end up adding a
+  // WeedoutIterator _after_ a HashJoinIterator has been constructed.
+  // When adding the WeedoutIterator, QEP_TAB::rowid_status will be changed
+  // indicate that a row ID is needed. A side effect of this is that
+  // rowid_status might say that no row ID is needed here, while it says
+  // otherwise while hash join is executing. As such, we may write outside of
+  // the allocated buffers since we did not take the size of the row ID into
+  // account here. To overcome this, we always assume that the row ID should
+  // be kept; reserving some extra bytes in a few buffers should not be an
+  // issue.
+  m_ref_and_null_bytes_size += qep_tab->table()->file->ref_length;
+
+  if (qep_tab->table()->is_nullable()) {
+    m_ref_and_null_bytes_size += sizeof(qep_tab->table()->null_row);
+  }
+
+  Table table(qep_tab);
+  for (const hash_join_buffer::Column &column : table.columns) {
+    // Field_typed_array will mask away the BLOB_FLAG for all types. Hence,
+    // we will treat all Field_typed_array as blob columns.
+    if ((column.field->flags & BLOB_FLAG) > 0 || column.field->is_array()) {
+      m_has_blob_column = true;
+    }
+
+    // If a column is marked as nullable, we need to copy the NULL flags.
+    if ((column.field->flags & NOT_NULL_FLAG) == 0) {
+      table.copy_null_flags = true;
+    }
+
+    // BIT fields stores some of its data in the NULL flags of the table. So
+    // if we have a BIT field, we must copy the NULL flags.
+    if (column.field->type() == MYSQL_TYPE_BIT &&
+        down_cast<const Field_bit *>(column.field)->bit_len > 0) {
+      table.copy_null_flags = true;
+    }
+  }
+
+  if (table.copy_null_flags) {
+    m_ref_and_null_bytes_size += qep_tab->table()->s->null_bytes;
+  }
+
+  m_tables.push_back(table);
 }
 
 // Calculate how many bytes the data in the column uses. We don't bother
@@ -293,11 +274,16 @@ bool StoreFromTableBuffers(const TableCollection &tables, String *buffer) {
 
 // Take the contents of this row and put it back in the tables' record buffers
 // (record[0]). The row ID and NULL flags will also be restored, if needed.
-void LoadIntoTableBuffers(const TableCollection &tables, BufferRow row) {
-  const uchar *ptr = row.data();
-
+// Returns a pointer to where we ended reading.
+const uchar *LoadIntoTableBuffers(const TableCollection &tables,
+                                  const uchar *ptr) {
   for (const Table &tbl : tables.tables()) {
     TABLE *table = tbl.qep_tab->table();
+
+    // If the NULL row flag is set, it may override the NULL flags for the
+    // columns. This may in turn cause columns not to be restored when they
+    // should, so clear the NULL row flag when restoring the row.
+    table->reset_null_row();
 
     if (tbl.copy_null_flags) {
       memcpy(table->null_flags, ptr, table->s->null_bytes);
@@ -322,8 +308,14 @@ void LoadIntoTableBuffers(const TableCollection &tables, BufferRow row) {
       }
     }
   }
+  return ptr;
+}
 
-  DBUG_ASSERT(ptr == row.data() + row.size());
+// A convenience form of the above that also verifies the end pointer for us.
+void LoadIntoTableBuffers(const TableCollection &tables, BufferRow row) {
+  const uchar *end MY_ATTRIBUTE((unused)) =
+      LoadIntoTableBuffers(tables, row.data());
+  DBUG_ASSERT(end == row.data() + row.size());
 }
 
 HashJoinRowBuffer::HashJoinRowBuffer(
@@ -338,6 +330,12 @@ HashJoinRowBuffer::HashJoinRowBuffer(
 
 bool HashJoinRowBuffer::Init(std::uint32_t hash_seed) {
   if (m_hash_map.get() != nullptr) {
+    // Reset the iterator before clearing the data it may point to. Some
+    // platforms (Windows in particular) will access the old data the iterator
+    // pointed to in the assignment operator. So if we do not clear the
+    // iterator state, the assignment operator may access uninitialized data.
+    m_last_row_stored = hash_map_iterator();
+
     // Reset the unique_ptr, so that the hash map destructors are called before
     // clearing the MEM_ROOT.
     m_hash_map.reset(nullptr);
@@ -361,23 +359,39 @@ bool HashJoinRowBuffer::Init(std::uint32_t hash_seed) {
     my_error(ER_OUTOFMEMORY, MYF(ME_FATALERROR), sizeof(hash_map_type));
     return true;
   }
+
+  m_last_row_stored = m_hash_map->end();
   return false;
 }
 
-StoreRowResult HashJoinRowBuffer::StoreRow(THD *thd) {
+StoreRowResult HashJoinRowBuffer::StoreRow(
+    THD *thd, bool reject_duplicate_keys,
+    bool store_rows_with_null_in_condition) {
   // Make the key from the join conditions.
   m_buffer.length(0);
   for (const HashJoinCondition &hash_join_condition : m_join_conditions) {
-    if (hash_join_condition.join_condition()->append_join_key_for_hash_join(
-            thd, m_tables.tables_bitmap(), hash_join_condition, &m_buffer)) {
-      // SQL NULL values will never match in an inner join, so skip the row.
+    bool null_in_join_condition =
+        hash_join_condition.join_condition()->append_join_key_for_hash_join(
+            thd, m_tables.tables_bitmap(), hash_join_condition, &m_buffer);
+
+    if (null_in_join_condition && !store_rows_with_null_in_condition) {
+      // SQL NULL values will never match in an inner join or semijoin, so skip
+      // the row.
       return StoreRowResult::ROW_STORED;
     }
   }
 
-  // Allocate the join key on the same MEM_ROOT that the hash table is allocated
-  // on, so it has the same lifetime as the rest of the contents in the hash map
-  // (until Clear() is called on the HashJoinBuffer).
+  // TODO(efroseth): We should probably use an unordered_map instead of multimap
+  // for these cases so we do not have to hash and lookup twice.
+  if (reject_duplicate_keys &&
+      contains(Key(pointer_cast<const uchar *>(m_buffer.ptr()),
+                   m_buffer.length()))) {
+    return StoreRowResult::ROW_STORED;
+  }
+
+  // Allocate the join key on the same MEM_ROOT that the hash table is
+  // allocated on, so it has the same lifetime as the rest of the contents in
+  // the hash map (until Clear() is called on the HashJoinBuffer).
   const size_t join_key_size = m_buffer.length();
   uchar *join_key_data = nullptr;
   if (join_key_size > 0) {
@@ -405,8 +419,8 @@ StoreRowResult HashJoinRowBuffer::StoreRow(THD *thd) {
     memcpy(row, m_buffer.ptr(), row_size);
   }
 
-  m_hash_map->emplace(Key(join_key_data, join_key_size),
-                      BufferRow(row, row_size));
+  m_last_row_stored = m_hash_map->emplace(Key(join_key_data, join_key_size),
+                                          BufferRow(row, row_size));
 
   if (m_mem_root.allocated_size() > m_max_mem_available) {
     return StoreRowResult::BUFFER_FULL;

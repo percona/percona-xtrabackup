@@ -113,12 +113,6 @@ flag in the table object we return. */
 dict_table_t *dict_load_table(const char *name, bool cached,
                               dict_err_ignore_t ignore_err);
 
-/** Loads a table object based on the table id.
- @return table; NULL if table does not exist */
-dict_table_t *dict_load_table_on_id(
-    table_id_t table_id,           /*!< in: table id */
-    dict_err_ignore_t ignore_err); /*!< in: errors to ignore
-                                   when loading the table */
 /** This function is called when the database is booted.
  Loads system table index definitions except for the clustered index which
  is added to the dictionary cache at booting before calling this function. */
@@ -200,7 +194,5 @@ So we maintain a std::set, which is later used to register the
 tablespaces to dictionary table mysql.tablespaces */
 using missing_sys_tblsp_t = std::set<fil_space_t *, space_compare>;
 extern missing_sys_tblsp_t missing_spaces;
-
-#include "dict0load.ic"
 
 #endif

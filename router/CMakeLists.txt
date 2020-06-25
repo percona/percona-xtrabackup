@@ -57,10 +57,15 @@ IF(SOLARIS)
 
   # Sun Studio 12.6 creates a bogus code when -x02 is used
   # that crashes whenever std::condition_variable::wait_for() is used
-  IF(SOLARIS_INTEL)
+  IF(SOLARIS_INTEL AND MY_COMPILER_IS_SUNPRO)
     STRING_APPEND(CMAKE_CXX_FLAGS_RELWITHDEBINFO " -xO1")
     STRING_APPEND(CMAKE_CXX_FLAGS_RELEASE " -xO1")
     STRING_APPEND(CMAKE_CXX_FLAGS_MINSIZEREL " -xO1")
+  ENDIF()
+
+  # MD5_Init() and others are deprecated.
+  IF(MY_COMPILER_IS_GNU_OR_CLANG)
+    ADD_COMPILE_OPTIONS("-Wno-deprecated-declarations")
   ENDIF()
 ENDIF()
 
@@ -76,6 +81,8 @@ IF(ENABLE_GCOV)
   STRING(REPLACE "-Wl,--gdb-index" ""
     CMAKE_CXX_LINK_FLAGS ${CMAKE_CXX_LINK_FLAGS})
 ENDIF()
+
+DISABLE_MISSING_PROFILE_WARNING()
 
 IF(WIN32)
   # Activate necessary dllexport/dllimport declarations.
@@ -118,10 +125,9 @@ INCLUDE_DIRECTORIES(${PROJECT_BINARY_DIR}/include)
 #
 # each target needs to add itself via
 #
-#   ADD_DEPENDENCIES(${MYSQL_ROUTER_BUILD_ALL_TARGET} ...)
+#   ADD_DEPENDENCIES(mysqlrouter_all ...)
 #
-SET(MYSQL_ROUTER_BUILD_ALL_TARGET mysqlrouter_all)
-ADD_CUSTOM_TARGET(${MYSQL_ROUTER_BUILD_ALL_TARGET})
+ADD_CUSTOM_TARGET(mysqlrouter_all)
 
 # Load all modules, including plugins
 ADD_SUBDIRECTORY(src)

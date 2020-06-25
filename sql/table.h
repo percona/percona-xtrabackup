@@ -1,7 +1,7 @@
 #ifndef TABLE_INCLUDED
 #define TABLE_INCLUDED
 
-/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +32,7 @@
 #include "libbinlogevents/include/table_id.h"  // Table_id
 #include "m_ctype.h"
 #include "map_helpers.h"
+#include "mem_root_deque.h"
 #include "my_alloc.h"
 #include "my_base.h"
 #include "my_bitmap.h"
@@ -119,11 +120,11 @@ class Common_table_expr;
 
 class Sql_table_check_constraint;
 using Sql_table_check_constraint_list =
-    Mem_root_array<Sql_table_check_constraint *>;
+    Mem_root_array<Sql_table_check_constraint>;
 
 class Sql_check_constraint_share;
 using Sql_check_constraint_share_list =
-    Mem_root_array<Sql_check_constraint_share *>;
+    Mem_root_array<Sql_check_constraint_share>;
 
 typedef Mem_root_array_YY<LEX_CSTRING> Create_col_name_list;
 
@@ -677,7 +678,7 @@ struct TABLE_SHARE {
     @retval nullptr if no histogram is found
     @retval a pointer to a histogram if one is found
   */
-  const histograms::Histogram *find_histogram(uint field_index);
+  const histograms::Histogram *find_histogram(uint field_index) const;
 
   /** Category of this table. */
   TABLE_CATEGORY table_category{TABLE_UNKNOWN_CATEGORY};
@@ -940,7 +941,8 @@ struct TABLE_SHARE {
   /**
     Arrays with descriptions of foreign keys in which this table participates
     as child or parent. We only cache in them information from dd::Table object
-    which is sufficient for use by prelocking algorithm.
+    which is sufficient for use by prelocking algorithm/to check if table is
+    referenced by a foreign key.
   */
   uint foreign_keys{0};
   TABLE_SHARE_FOREIGN_KEY_INFO *foreign_key{nullptr};
@@ -1153,6 +1155,9 @@ struct TABLE_SHARE {
   bool has_secondary_engine() const {
     return is_primary_engine() && secondary_engine.str != nullptr;
   }
+
+  /** Returns whether this table is referenced by a foreign key. */
+  bool is_referenced_by_foreign_key() const { return foreign_key_parents != 0; }
 
  private:
   /// How many TABLE objects use this TABLE_SHARE.
@@ -1421,7 +1426,20 @@ struct TABLE {
   */
   MY_BITMAP def_fields_set_during_insert;
 
-  MY_BITMAP *read_set{nullptr}, *write_set{nullptr}; /* Active column sets */
+  /**
+    Set over all columns that the optimizer intends to read. This is used
+    for two purposes: First, to tell the storage engine which ones it needs
+    to populate. (In particular, NDB can save a lot of bandwidth here.)
+    Second, functions that need to store and restore rows, such as hash join
+    or filesort, need to know which ones to keep.
+
+    Set during resolving; every field that gets resolved, sets its own bit
+    in the read set. In some cases, we switch the read set around during
+    various phases; note that it is a pointer.
+   */
+  MY_BITMAP *read_set{nullptr};
+
+  MY_BITMAP *write_set{nullptr};
 
   /**
     A pointer to the bitmap of table fields (columns), which are explicitly set
@@ -1644,6 +1662,7 @@ struct TABLE {
   uint tmp_table_seq_id{0};
 #endif
  public:
+  void reset();
   void init(THD *thd, TABLE_LIST *tl);
   bool init_tmp_table(THD *thd, TABLE_SHARE *share, MEM_ROOT *m_root,
                       CHARSET_INFO *charset, const char *alias, Field **fld,
@@ -1663,7 +1682,7 @@ struct TABLE {
   void mark_columns_needed_for_insert(THD *thd);
   void mark_columns_per_binlog_row_image(THD *thd);
   void mark_generated_columns(bool is_update);
-  void mark_gcol_in_maps(Field *field);
+  void mark_gcol_in_maps(const Field *field);
   void mark_check_constraint_columns(bool is_update);
   void column_bitmaps_set(MY_BITMAP *read_set_arg, MY_BITMAP *write_set_arg);
   inline void column_bitmaps_set_no_signal(MY_BITMAP *read_set_arg,
@@ -2176,19 +2195,6 @@ enum enum_schema_table_state : int {
   PROCESSED_BY_JOIN_EXEC
 };
 
-struct FOREIGN_KEY_INFO {
-  LEX_STRING *foreign_id;
-  LEX_STRING *foreign_db;
-  LEX_STRING *foreign_table;
-  LEX_STRING *referenced_db;
-  LEX_STRING *referenced_table;
-  LEX_STRING *update_method;
-  LEX_STRING *delete_method;
-  LEX_STRING *referenced_key_name;
-  List<LEX_STRING> foreign_fields;
-  List<LEX_STRING> referenced_fields;
-};
-
 #define MY_I_S_MAYBE_NULL 1
 #define MY_I_S_UNSIGNED 2
 
@@ -2227,21 +2233,20 @@ struct ST_FIELD_INFO {
 struct ST_SCHEMA_TABLE {
   const char *table_name;
   ST_FIELD_INFO *fields_info;
-  /* Create information_schema table */
-  TABLE *(*create_table)(THD *thd, TABLE_LIST *table_list);
   /* Fill table with data */
   int (*fill_table)(THD *thd, TABLE_LIST *tables, Item *cond);
   /* Handle fileds for old SHOW */
   int (*old_format)(THD *thd, ST_SCHEMA_TABLE *schema_table);
   int (*process_table)(THD *thd, TABLE_LIST *tables, TABLE *table, bool res,
                        LEX_CSTRING db_name, LEX_CSTRING table_name);
-  int idx_field1, idx_field2;
   bool hidden;
-  uint i_s_requested_object;  // Not used
 };
 
-#define JOIN_TYPE_LEFT 1
-#define JOIN_TYPE_RIGHT 2
+enum Outer_join_type {
+  JOIN_TYPE_INNER = 0,
+  JOIN_TYPE_LEFT = 1,
+  JOIN_TYPE_RIGHT = 2
+};
 
 /**
   Strategy for how to process a view or derived table (merge or materialization)
@@ -2341,6 +2346,10 @@ struct LEX_ALTER {
   uint32 password_reuse_interval;
   bool use_default_password_reuse_interval;
   bool update_password_reuse_interval;
+  uint failed_login_attempts;
+  bool update_failed_login_attempts;
+  int password_lock_time;
+  bool update_password_lock_time;
   /* Holds the specification of 'PASSWORD REQUIRE CURRENT' clause. */
   Lex_acl_attrib_udyn update_password_require_current;
   void cleanup() {
@@ -2357,6 +2366,10 @@ struct LEX_ALTER {
     update_password_require_current = Lex_acl_attrib_udyn::UNCHANGED;
     password_history_length = 0;
     password_reuse_interval = 0;
+    update_password_lock_time = false;
+    update_failed_login_attempts = false;
+    failed_login_attempts = 0;
+    password_lock_time = 0;
   }
 };
 
@@ -2480,22 +2493,46 @@ struct TABLE_LIST {
       : TABLE_LIST(db_name, strlen(db_name), table_name, strlen(table_name),
                    table_name, lock_type) {}
 
+  /**
+    Creates a TABLE_LIST object with pre-allocated strings for database, table
+    and alias.
+  */
+  TABLE_LIST(TABLE *table_arg, const char *db_name_arg, size_t db_length_arg,
+             const char *table_name_arg, size_t table_name_length_arg,
+             const char *alias_arg, enum thr_lock_type lock_type_arg)
+      : db(db_name_arg),
+        table_name(table_name_arg),
+        alias(alias_arg),
+        m_map(1),
+        table(table_arg),
+        m_lock_descriptor{lock_type_arg},
+        db_length(db_length_arg),
+        table_name_length(table_name_length_arg) {
+    MDL_REQUEST_INIT(&mdl_request, MDL_key::TABLE, db, table_name,
+                     mdl_type_for_dml(m_lock_descriptor.type), MDL_TRANSACTION);
+  }
+
   /// Constructor that can be used when the strings are null terminated.
   TABLE_LIST(const char *db_name, const char *table_name, const char *alias,
              enum thr_lock_type lock_type)
       : TABLE_LIST(db_name, strlen(db_name), table_name, strlen(table_name),
                    alias, lock_type) {}
 
-  TABLE_LIST(TABLE *table_arg, const char *alias_arg,
-             thr_lock_type lock_type_arg)
-      : db(table_arg->s->db.str),
-        table_name(table_arg->s->table_name.str),
+  /**
+    This constructor can be used when a TABLE_LIST is needed for an existing
+    temporary table. These typically have very long table names, since it is
+    a fully qualified path. For this reason, the table is set to the alias.
+    The database name is left blank. The lock descriptor is set to TL_READ.
+  */
+  TABLE_LIST(TABLE *table_arg, const char *alias_arg)
+      : db(""),
+        table_name(alias_arg),
         alias(alias_arg),
         m_map(1),
         table(table_arg),
-        m_lock_descriptor{lock_type_arg},
-        db_length(table_arg->s->db.length),
-        table_name_length(table_arg->s->table_name.length) {
+        m_lock_descriptor{TL_READ},
+        db_length(0),
+        table_name_length(strlen(alias_arg)) {
     MDL_REQUEST_INIT(&mdl_request, MDL_key::TABLE, db, table_name,
                      mdl_type_for_dml(m_lock_descriptor.type), MDL_TRANSACTION);
   }
@@ -2609,14 +2646,14 @@ struct TABLE_LIST {
   /// Create a TABLE_LIST object representing a nested join
   static TABLE_LIST *new_nested_join(MEM_ROOT *allocator, const char *alias,
                                      TABLE_LIST *embedding,
-                                     List<TABLE_LIST> *belongs_to,
+                                     mem_root_deque<TABLE_LIST *> *belongs_to,
                                      SELECT_LEX *select);
 
   Item **join_cond_ref() { return &m_join_cond; }
   Item *join_cond() const { return m_join_cond; }
   void set_join_cond(Item *val) {
     // If optimization has started, it's too late to change m_join_cond.
-    DBUG_ASSERT(m_join_cond_optim == NULL || m_join_cond_optim == (Item *)1);
+    DBUG_ASSERT(m_join_cond_optim == nullptr || m_join_cond_optim == (Item *)1);
     m_join_cond = val;
   }
   Item *join_cond_optim() const { return m_join_cond_optim; }
@@ -2625,7 +2662,7 @@ struct TABLE_LIST {
       Either we are setting to "empty", or there must pre-exist a
       permanent condition.
     */
-    DBUG_ASSERT(cond == NULL || cond == (Item *)1 || m_join_cond != NULL);
+    DBUG_ASSERT(cond == nullptr || cond == (Item *)1 || m_join_cond != nullptr);
     m_join_cond_optim = cond;
   }
   Item **join_cond_optim_ref() { return &m_join_cond_optim; }
@@ -2644,9 +2681,6 @@ struct TABLE_LIST {
 
   /// Merge tables from a query block into a nested join structure
   bool merge_underlying_tables(SELECT_LEX *select);
-
-  /// Reset table
-  void reset();
 
   /// Evaluate the check option of a view
   int view_check_option(THD *thd) const;
@@ -2687,16 +2721,16 @@ struct TABLE_LIST {
   bool prepare_replace_filter(THD *thd);
 
   /// Return true if this represents a named view
-  bool is_view() const { return view != NULL; }
+  bool is_view() const { return view != nullptr; }
 
   /// Return true if this represents a derived table (an unnamed view)
-  bool is_derived() const { return derived != NULL && view == NULL; }
+  bool is_derived() const { return derived != nullptr && view == nullptr; }
 
   /// Return true if this represents a named view or a derived table
-  bool is_view_or_derived() const { return derived != NULL; }
+  bool is_view_or_derived() const { return derived != nullptr; }
 
   /// Return true if this represents a table function
-  bool is_table_function() const { return table_function != NULL; }
+  bool is_table_function() const { return table_function != nullptr; }
   /**
      @returns true if this is a recursive reference inside the definition of a
      recursive CTE.
@@ -2801,7 +2835,7 @@ struct TABLE_LIST {
       DBUG_ASSERT(is_merged());  // Cannot be a materialized view
       return leaf_tables_count() > 1;
     } else {
-      DBUG_ASSERT(nested_join == NULL);  // Must be a base table
+      DBUG_ASSERT(nested_join == nullptr);  // Must be a base table
       return false;
     }
   }
@@ -2840,7 +2874,7 @@ struct TABLE_LIST {
 
   /// Return the valid LEX object for a view.
   LEX *view_query() const {
-    DBUG_ASSERT(view != NULL && view != (LEX *)1);
+    DBUG_ASSERT(view != nullptr && view != (LEX *)1);
     return view;
   }
 
@@ -2969,7 +3003,7 @@ struct TABLE_LIST {
      @brief Returns the name of the database that the referenced table belongs
      to.
   */
-  const char *get_db_name() const { return view != NULL ? view_db.str : db; }
+  const char *get_db_name() const { return view != nullptr ? view_db.str : db; }
 
   /**
      @brief Returns the name of the table that this TABLE_LIST represents.
@@ -2978,7 +3012,7 @@ struct TABLE_LIST {
      respectively.
    */
   const char *get_table_name() const {
-    return view != NULL ? view_name.str : table_name;
+    return view != nullptr ? view_name.str : table_name;
   }
   int fetch_number_of_rows();
   bool update_derived_keys(THD *, Field *, Item **, uint, bool *);
@@ -3012,7 +3046,7 @@ struct TABLE_LIST {
   */
 
   TABLE_LIST *outer_join_nest() const {
-    if (!embedding) return NULL;
+    if (!embedding) return nullptr;
     if (embedding->is_sj_nest()) return embedding->embedding;
     return embedding;
   }
@@ -3259,7 +3293,7 @@ struct TABLE_LIST {
     - in case of the view it is the list of all (not only underlying
     tables but also used in subquery ones) tables of the view.
   */
-  List<TABLE_LIST> *view_tables{nullptr};
+  mem_root_deque<TABLE_LIST *> *view_tables{nullptr};
   /* most upper view this table belongs to */
   TABLE_LIST *belong_to_view{nullptr};
   /*
@@ -3322,8 +3356,8 @@ struct TABLE_LIST {
   GRANT_INFO grant;
 
  public:
-  uint outer_join{0}; /* Which join type */
-  uint shared{0};     /* Used in multi-upd */
+  Outer_join_type outer_join{JOIN_TYPE_INNER}; /* Which join type */
+  uint shared{0};                              /* Used in multi-upd */
   size_t db_length{0};
   size_t table_name_length{0};
 
@@ -3360,7 +3394,7 @@ struct TABLE_LIST {
   /// The nested join containing this table reference.
   TABLE_LIST *embedding{nullptr};
   /// The join list immediately containing this table reference
-  List<TABLE_LIST> *join_list{nullptr};
+  mem_root_deque<TABLE_LIST *> *join_list{nullptr};
   /// stop PS caching
   bool cacheable_table{false};
   /**
@@ -3406,6 +3440,20 @@ struct TABLE_LIST {
       qualified name (@<db_name@>.@<table_name@>).
   */
   bool is_fqtn{false};
+  /**
+    If true, this table is a derived (materialized) table which was created
+    from a scalar subquery, cf.
+    SELECT_LEX::transform_scalar_subqueries_to_derived
+  */
+  bool m_was_scalar_subquery{false};
+  /**
+    If true, this is a derived table for grouping which was made for a query
+    block which also has one or more derived tables created from a scalar
+    subquery, cf.  m_was_scalar_subquery. m_is_grouped2derived implies
+    m_was_scalar_subquery holds for at least one other local table but not the
+    other way around.  See SELECT_LEX::transform_grouped_to_derived.
+  */
+  bool m_was_grouped2derived{false};
 
   /* View creation context. */
 
@@ -3533,8 +3581,7 @@ struct TABLE_LIST {
 
 class Field_iterator {
  public:
-  Field_iterator() {} /* Remove gcc warning */
-  virtual ~Field_iterator() {}
+  virtual ~Field_iterator() = default;
   virtual void set(TABLE_LIST *) = 0;
   virtual void next() = 0;
   virtual bool end_of_fields() = 0; /* Return 1 at end of list */
@@ -3552,11 +3599,11 @@ class Field_iterator_table : public Field_iterator {
   Field **ptr;
 
  public:
-  Field_iterator_table() : ptr(0) {}
+  Field_iterator_table() : ptr(nullptr) {}
   void set(TABLE_LIST *table) { ptr = table->table->field; }
   void set_table(TABLE *table) { ptr = table->field; }
   void next() { ptr++; }
-  bool end_of_fields() { return *ptr == 0; }
+  bool end_of_fields() { return *ptr == nullptr; }
   const char *name();
   Item *create_item(THD *thd);
   Field *field() { return *ptr; }
@@ -3571,14 +3618,14 @@ class Field_iterator_view : public Field_iterator {
   TABLE_LIST *view;
 
  public:
-  Field_iterator_view() : ptr(0), array_end(0) {}
+  Field_iterator_view() : ptr(nullptr), array_end(nullptr) {}
   void set(TABLE_LIST *table);
   void next() { ptr++; }
   bool end_of_fields() { return ptr == array_end; }
   const char *name();
   Item *create_item(THD *thd);
   Item **item_ptr() { return &ptr->item; }
-  Field *field() { return 0; }
+  Field *field() { return nullptr; }
   inline Item *item() { return ptr->item; }
   Field_translator *field_translator() { return ptr; }
 };
@@ -3593,7 +3640,7 @@ class Field_iterator_natural_join : public Field_iterator {
   Natural_join_column *cur_column_ref;
 
  public:
-  Field_iterator_natural_join() : cur_column_ref(NULL) {}
+  Field_iterator_natural_join() : cur_column_ref(nullptr) {}
   ~Field_iterator_natural_join() {}
   void set(TABLE_LIST *table);
   void next();
@@ -3627,7 +3674,7 @@ class Field_iterator_table_ref : public Field_iterator {
   void set_field_iterator();
 
  public:
-  Field_iterator_table_ref() : field_it(NULL) {}
+  Field_iterator_table_ref() : field_it(nullptr) {}
   void set(TABLE_LIST *table);
   void next();
   bool end_of_fields() {
@@ -3670,7 +3717,7 @@ static inline my_bitmap_map *dbug_tmp_use_all_columns(
 #ifndef DBUG_OFF
   return tmp_use_all_columns(table, bitmap);
 #else
-  return 0;
+  return nullptr;
 #endif
 }
 
@@ -3991,10 +4038,10 @@ inline bool can_call_position(const TABLE *table) {
 class FRM_context {
  public:
   FRM_context()
-      : default_part_db_type(NULL),
+      : default_part_db_type(nullptr),
         null_field_first(false),
         stored_fields(0),
-        view_def(NULL),
+        view_def(nullptr),
         frm_version(0),
         fieldnames() {}
 
@@ -4065,5 +4112,24 @@ bool create_table_share_for_upgrade(THD *thd, const char *path,
                                     const char *table,
                                     bool is_fix_view_cols_and_deps);
 //////////////////////////////////////////////////////////////////////////
+
+/**
+  Create a copy of the key_info from TABLE_SHARE object to TABLE object.
+
+  Wherever prefix key is present, allocate a new Field object, having its
+  field_length set to the prefix key length, and point the table's matching
+  key_part->field to this new Field object.
+
+  This ensures that unpack_partition_info() reads the correct prefix length of
+  partitioned fields
+
+  @param  table   Table for which key_info is to be allocated
+  @param  root    MEM_ROOT in which to allocate key_info
+
+  @retval false   Success
+  @retval true    Failed to allocate memory for table.key_info in root
+*/
+
+bool create_key_part_field_with_prefix_length(TABLE *table, MEM_ROOT *root);
 
 #endif /* TABLE_INCLUDED */
