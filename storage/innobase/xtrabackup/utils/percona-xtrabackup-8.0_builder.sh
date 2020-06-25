@@ -121,7 +121,7 @@ get_sources(){
     BRANCH_NAME="${BRANCH}"
     echo "BRANCH_NAME=$(echo ${BRANCH_NAME} | awk -F '/' '{print $(NF)}')" >> ../percona-xtrabackup-8.0.properties
     echo "PRODUCT=Percona-XtraBackup-8.0" >> ../percona-xtrabackup-8.0.properties
-    echo "PRODUCT_FULL=Percona-XtraBackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-${XB_VERSION_PATCH}${XB_VERSION_EXTRA}" >> ../percona-xtrabackup-8.0.properties
+    echo "PRODUCT_FULL=Percona-XtraBackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}.${XB_VERSION_PATCH}${XB_VERSION_EXTRA}" >> ../percona-xtrabackup-8.0.properties
     echo "PRODUCT_UL_DIR=Percona-XtraBackup-8.0" >> ../percona-xtrabackup-8.0.properties
     if [ -z "${DESTINATION}" ]; then
         export DESTINATION=experimental
