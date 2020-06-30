@@ -1,0 +1,3 @@
+.. Directory names, file names, and path like objects
+
+.. |dockerhub.percona-xtrabackup| replace:: :file:`perconalab/percona-xtrabackup`

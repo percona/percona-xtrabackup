@@ -25,7 +25,7 @@ Installing |Percona XtraBackup| from Repositories
 packages for *Ubuntu* and *Debian*) for software such as |Percona Server|,
 |Percona XtraBackup|, and *Percona Toolkit*. This makes it easy to install and
 update your software and its dependencies through your operating system's
-package manager. This is the recommend way of installing where possible.
+package manager. This is the recommended way of installing |Percona XtraBackup|.
 
 The following guides describe the installation process for using the official
 Percona repositories for :file:`.deb` and :file:`.rpm` packages.
@@ -45,14 +45,14 @@ Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
    .. seealso::
 
-      About the support of MySQL and Percona Server versions in |Percona XtraBackup| 2.4 and 8.0
+      Supported MySQL and Percona Server for MySQL versions in |Percona XtraBackup| 2.4 and 8.0
          :ref:`intro`
 
 Compiling and Installing from Source Code
 =========================================
 
 |Percona XtraBackup| is open source and the code is available on
-`Github <https://github.com/percona/percona-xtrabackup>`_. Following guide
+`Github <https://github.com/percona/percona-xtrabackup>`_. The following guide
 describes the compiling and installation process from source code.
 
 .. toctree::
@@ -61,3 +61,25 @@ describes the compiling and installation process from source code.
 
    installation/compiling_xtrabackup
 
+.. _pxb.installing/docker-container.running:
+
+Running |Percona XtraBackup| in a Docker container
+================================================================================
+
+Docker images of |Percona XtraBackup| |version| are hosted publicly on Docker
+Hub at https://hub.docker.com/r/percona/percona-xtradb-cluster/.
+
+For more information about how to use |docker|, see the `Docker Docs`_.
+
+.. _`Docker Docs`: https://docs.docker.com/
+
+.. note:: Make sure that you are using the latest version of Docker.
+   The ones provided via ``apt`` and ``yum``
+   may be outdated and cause errors.
+
+.. note:: By default, Docker will pull the image from Docker Hub
+   if it is not available locally.
+
+The following procedure describes ...
+
+.. include:: _res/replace/proper.txt
