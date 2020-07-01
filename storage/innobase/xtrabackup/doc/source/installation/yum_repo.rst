@@ -14,37 +14,7 @@ The easiest way to install the *Percona Yum* repository is to install an *RPM*
 that configures :program:`yum` and installs the `Percona GPG key
 <https://www.percona.com/downloads/RPM-GPG-KEY-percona>`_.
 
-Supported Releases:
-
- * *CentOS* 6 and *RHEL* 6 (Current Stable)
- * *CentOS* 7 and *RHEL* 7
- * *Amazon Linux AMI* (works the same as *CentOS* 6)
- * *Amazon Linux 2*
-
-.. note::
-
-   *Current Stable*: We support only the current stable RHEL6/CentOS6 release,
-   because there is no official (i.e. RedHat provided) method to support or
-   download the latest OpenSSL on RHEL/CentOS versions prior to 6.5.  Similarly,
-   and also as a result thereof, there is no official Percona way to support the
-   latest Percona XtraBackup builds on RHEL/CentOS versions prior to
-   6.5. Additionally, many users will need to upgrade to OpenSSL 1.0.1g or later
-   (due to the `Heartbleed vulnerability
-   <http://www.percona.com/resources/ceo-customer-advisory-heartbleed>`_), and
-   this OpenSSL version is not available for download from any official
-   RHEL/CentOS repository for versions 6.4 and prior. For any officially
-   unsupported system, src.rpm packages may be used to rebuild |Percona
-   XtraBackup| for any environment. Please contact our `support service
-   <http://www.percona.com/products/mysql-support>`_ if you require further
-   information on this.
-
-
-The *CentOS* repositories should work well with *Red Hat Enterprise Linux* too,
-provided that :program:`yum` is installed on the server.
-
-Supported architectures:
-
-* x86_64 (also known as ``amd64``)
+Specific information on the supported platforms, products, and versions is described in `Percona Software and Platform Lifecycle <https://www.percona.com/services/policies/percona-software-platform-lifecycle#mysql>`_.
 
 What's in each RPM package?
 ================================================================================
