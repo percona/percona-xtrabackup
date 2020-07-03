@@ -129,6 +129,12 @@ mkdir "$INSTALLDIR"
       $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m).tar.gz" \
             --owner=0 --group=0 -C "$INSTALLDIR/../" \
             "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"
+
+      rm -rf $INSTALLDIR/percona-xtrabackup-8.0-test 2> /dev/null
+      find $INSTALLDIR -type f -exec file '{}' \; | grep ': ELF ' | cut -d':' -f1 | xargs strip --strip-unneeded
+      $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)-minimal.tar.gz" \
+            --owner=0 --group=0 -C "$INSTALLDIR/../" \
+            "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)"
     fi
 
     # Clean up build dir
