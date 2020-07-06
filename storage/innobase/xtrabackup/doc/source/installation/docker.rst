@@ -58,14 +58,14 @@ intend to use with |percona-xtrabackup|.
 
    |percona-server-mysql| Documentation:
       - `Installing on a host machine
-	<https://www.percona.com/doc/percona-server/LATEST/installation.html>`_
+	<https://www.percona.com/doc/percona-server/5.7/installation.html>`_
       - `Running in a Docker container
-	<https://www.percona.com/doc/percona-server/LATEST/installation/docker.html>`_
+	<https://www.percona.com/doc/percona-server/5.7/installation/docker.html>`_
 
 .. code-block:: bash
 
-   $ sudo docker run -d --name percona-server-mysql \
-   -e MYSQL_ROOT_PASSWORD=root percona/percona-server:8.0
+   $ sudo docker run -d --name percona-server-mysql-5.7 \
+   -e MYSQL_ROOT_PASSWORD=root percona/percona-server:5.7
 
 As soon as |percona-server-mysql| runs, add some data to it. Now, you are
 ready to make backups with |percona-xtrabackup|.
@@ -82,8 +82,8 @@ is not the first time you use the selected image, |docker| uses the image availa
 
 .. code-block:: bash
 
-   $ sudo docker create --name percona-xtrabackup --volumes-from percona-server-mysql \
-   percona/percona-xtrabackpup  \
+   $ sudo docker create --name percona-xtrabackup-2.4 --volumes-from percona-server-mysql-5.7 \
+   percona/percona-xtrabackup:2.4  \
    xtrabackup --backup --datadir=/var/lib/mysql/ --target-dir=/backup \
    --user=root --password=mysql
 
@@ -97,7 +97,7 @@ Run the container with exactly the same parameters that were used when the conta
 
 .. code-block:: bash
 
-   $ sudo docker start -ai percona-xtrabackup
+   $ sudo docker start -ai percona-xtrabackup-2.4
 
 This command starts the *percona-xtrabackup* container, attaches to its
 input/output streams, and opens an interactive shell.
@@ -106,8 +106,8 @@ The |cmd.docker-run| is a shortcut command that creates a |docker| container and
 
 .. code-block:: bash
 
-   $ sudo docker run --name percona-xtrabackup --volumes-from percona-server-mysql \
-   percona/percona-xtrabackup
+   $ sudo docker run --name percona-xtrabackup-2.4 --volumes-from percona-server-mysql-5.7 \
+   percona/percona-xtrabackup:2.4
    xtrabackup --backup --data-dir=/var/lib/mysql --target-dir=/backup --user=root --password=mysql
 
 .. seealso::
