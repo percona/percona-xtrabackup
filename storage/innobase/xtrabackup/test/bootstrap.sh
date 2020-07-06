@@ -26,7 +26,7 @@ then
     usage
 fi
 
-arch="`uname -m`"
+arch=$(uname -m)
 if [ "$arch" = "i386" ]
 then
     arch="i686"
