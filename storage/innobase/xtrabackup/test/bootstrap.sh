@@ -27,35 +27,11 @@ then
     usage
 fi
 
-arch="`uname -m`"
+arch="$(uname -m)"
 if [ "$arch" = "i386" ]
 then
     arch="i686"
 fi
-
-function ssl_version()
-{
-    sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
-
-    case $sslv in
-        100|101|102)
-        ;;
-        *)
-            if ! test -r "$1"
-            then
-                >&2 echo "tarball for your openssl version ($sslv) is not available"
-                exit 1
-            fi
-            ;;
-    esac
-
-    if [ $sslv -eq '102' -a -f '/usr/bin/yum' ]; then
-        sslv="${sslv}.rpm"
-    elif [ $sslv -eq '102' ]; then
-        sslv="${sslv}.deb"
-    fi
-    echo $sslv
-}
 
 case "$1" in
     innodb80)
@@ -65,7 +41,7 @@ case "$1" in
 
     xtradb80)
         url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-8.0.18-9/binary/tarball"
-        tarball="Percona-Server-8.0.18-9-Linux.${arch}.ssl$(ssl_version).tar.gz"
+        tarball="Percona-Server-8.0.18-9-Linux.${arch}.glibc2.12.tar.gz"
         ;;
 
     *)

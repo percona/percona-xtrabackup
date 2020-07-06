@@ -173,15 +173,18 @@ get_sources(){
 
 get_system(){
     if [ -f /etc/redhat-release ]; then
+        GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
         export RHEL=$(rpm --eval %rhel)
         export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         export OS_NAME="el$RHEL"
         export OS="rpm"
     else
+        GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
         export ARCH=$(uname -m)
         export OS_NAME="$(lsb_release -sc)"
         export OS="deb"
     fi
+    export GLIBC_VER=".glibc${GLIBC_VER_TMP}"
     return
 }
 
@@ -214,13 +217,15 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         add_percona_yum_repo
+        percona-release enable tools testing
         yum -y install git wget 
         if [[ "${RHEL}" -eq 8 ]]; then         
             PKGLIST+=" binutils-devel python3-pip python3-setuptools python3-wheel"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
-            PKGLIST+=" vim-common rpmlint"
+            PKGLIST+=" vim-common rpmlint patchelf"
             until yum -y install ${PKGLIST}; do
                 echo "waiting"
                 sleep 1
@@ -242,7 +247,7 @@ install_deps() {
             PKGLIST+=" devtoolset-7-valgrind devtoolset-7-valgrind-devel"
             PKGLIST+=" wget libcurl-devel cmake cmake3 make gcc gcc-c++ libev-devel openssl-devel rpm-build"
             PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
-            PKGLIST+=" zlib-devel libgcrypt-devel bison"
+            PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
             PKGLIST+=" socat numactl"
             if [[ "${RHEL}" -eq 7 ]]; then
                 PKGLIST+=" numactl-libs perl-Digest-MD5  python3-pip python3-setuptools python3-wheel"
@@ -265,10 +270,14 @@ install_deps() {
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get -y install lsb-release gnupg git wget
 
+        wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb && dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
+        percona-release enable tools testing
+        apt-get update
+
         PKGLIST+=" bison cmake devscripts debconf debhelper automake bison ca-certificates libcurl4-openssl-dev"
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release"
-        PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev"
+        PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf"
 
         if [ "${OS_NAME}" == "focal" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
@@ -524,20 +533,12 @@ build_tarball(){
     SHORTVER=$(echo ${VERSION} | awk -F '.' '{print $1"."$2}')
     TMPREL=$(echo ${TARFILE}| awk -F '-' '{print $4}')
     RELEASE=${TMPREL%.tar.gz}
-    if [ "$OS" == "rpm" ]; then
-        GCRYPT_VER_TMP=$(yum list installed|grep -i libgcrypt | grep -v dev|head -n1|awk '{print $2}'|awk -F "-" '{print $1}'|sed 's/\.//g'|sed 's/[a-z]$//')
-        export GCRYPT_VER=".libgcrypt${GCRYPT_VER_TMP}"
-    elif [ "$OS" == "deb" ]; then
-        GCRYPT_VER_TMP=$(dpkg -l|grep -i libgcrypt | grep -v dev | awk '{print $2}' | awk -F':' '{print $1}')
-        export GCRYPT_VER=".${GCRYPT_VER_TMP}"
-    fi
 
     rm -fr TARGET && mkdir TARGET
     rm -fr ${TARFILE%.tar.gz}
     tar xzf ${TARFILE}
     cd ${TARFILE%.tar.gz}
     #
-    sed -i 's|.tar.gz|.${OS_NAME}${GCRYPT_VER}.tar.gz|' ./storage/innobase/xtrabackup/utils/build-binary.sh
     bash -x ./storage/innobase/xtrabackup/utils/build-binary.sh ${WORKDIR}/TARGET
 
     mkdir -p ${WORKDIR}/tarball
