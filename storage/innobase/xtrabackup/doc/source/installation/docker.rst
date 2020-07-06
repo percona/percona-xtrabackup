@@ -83,7 +83,7 @@ is not the first time you use the selected image, |docker| uses the image availa
 .. code-block:: bash
 
    $ sudo docker create --name percona-xtrabackup --volumes-from percona-server-mysql \
-   percona/percona-xtrabackpup  \
+   percona/percona-xtrabackup  \
    xtrabackup --backup --datadir=/var/lib/mysql/ --target-dir=/backup \
    --user=root --password=mysql
 
