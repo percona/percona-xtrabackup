@@ -36,6 +36,7 @@ Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
    installation/apt_repo
    installation/yum_repo
+   installation/docker
 
 .. note::
 

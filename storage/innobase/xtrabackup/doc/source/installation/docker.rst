@@ -13,7 +13,7 @@ configurations where each program runs in a separate container. You may run
 
 You create a new |docker| container based on a |docker| image, which works as a
 template for newly created containers. |docker| images for |percona-xtrabackup|
-are hosted publicly on |docker-hub| at |dockerhub.percona-xtrabackup|.
+are hosted publicly on |docker-hub| at :code:`percona/percona-xtrabackup`.
 
 .. code-block:: bash
 

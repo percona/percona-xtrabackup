@@ -116,7 +116,7 @@ be used to compile the source code).
 	 in your current directory.
 
       -B (--build)
-         |PXB| is configured to forbid generating the build pipeline for
+         |Percona XtraBackup| is configured to forbid generating the build pipeline for
 	 ``make`` in the same directory where you store your sources. The ``-B``
 	 parameter refers to the directory that contains the source code. In
 	 this example we use the relative path to the parent directory (..).
@@ -228,3 +228,4 @@ To view the documentation with ``man``, update the ``MANPATH`` variable.
 
 .. |percona-xtrabackup| replace:: :file:`percona-xtrabackup`
 .. |optional.python3-sphinx| replace:: To be able to install the man pages, install the ``python3-sphinx`` package
+
