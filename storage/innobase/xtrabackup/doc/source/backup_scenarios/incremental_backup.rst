@@ -31,14 +31,21 @@ finds the bitmap file. It is possible to specify
 :option:`--incremental-force-scan` to read all the pages even if the
 bitmap data is available.
 
-Incremental backups do not actually compare the data files to the previous
-backup's data files. In fact, you can use
-:option:`--incremental-lsn` to perform an incremental backup without
-even having the previous backup, if you know its :term:`LSN`. Incremental
-backups simply read the pages and compare their :term:`LSN` to the last
-backup's :term:`LSN`. You still need a full backup to recover the incremental
-changes, however; without a full backup to act as a base, the incremental
-backups are useless.
+.. important::
+
+   Incremental backups do not actually compare the data files to the previous
+   backup's data files. For this reason, running an incremental backup after a
+   *partial backup* may lead to inconsistent data.
+
+   Incremental backups simply read the pages and compare their :term:`LSN` to
+   the last backup's :term:`LSN`. You still need a full backup to recover the
+   incremental changes, however; without a full backup to act as a base, the
+   incremental backups are useless.
+
+   You can use the :option:`--incremental-lsn` option to perform an incremental
+   backup without even having the previous backup, if you know its :term:`LSN`.
+
+   .. seealso:: :ref:`pxb.partial-backup`
 
 Creating an Incremental Backup
 ==============================
