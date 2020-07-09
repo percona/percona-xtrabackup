@@ -1,3 +1,5 @@
+.. _pxb.partial-backup:
+
 ================================================================================
  Partial Backups
 ================================================================================
@@ -14,6 +16,15 @@ partial backups:
 
    If any of the matched or listed tables is deleted during the
    backup, |xtrabackup| will fail.
+
+   Do not copy back the prepared backup. Restoring partial backups
+   should be done by importing the tables, not by using the
+   :option:`--copy-back` option. It is not recommended to run
+   incremental backups after running a partial backup.
+
+   Although there are some scenarios where restoring can be done by
+   copying back the files, this may lead to database inconsistencies
+   in many cases and it is not a recommended way to do it.
 
 For the purposes of this manual page, we will assume that there is a database
 named ``test`` which contains tables named ``t1`` and ``t2``.
