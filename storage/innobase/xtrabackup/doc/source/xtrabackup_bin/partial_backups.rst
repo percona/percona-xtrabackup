@@ -1,3 +1,5 @@
+.. _pxb.partial-backup:
+
 ================================================================================
 Partial Backups
 ================================================================================
@@ -10,13 +12,18 @@ partial backups:
 2. providing a list of table names in a file
 3. providing a list of databases
 
-.. important::
+.. warning::
 
-   There is only one caveat about partial backups: do not copy back the prepared
-   backup. Restoring partial backups should be done by importing the tables, not
-   by using the :option:`--copy-back` option. Although there are some scenarios
-   where restoring can be done by copying back the files, this may be lead to
-   database inconsistencies in many cases and it is not the recommended way to
+   Do not copy back the prepared backup.
+
+   Restoring partial backups should be done by importing the tables,
+   not by using the :option:`--copy-back` option. It is not
+   recommended to run incremental backups after running a partial
+   backup.
+
+   Although there are some scenarios where restoring can be done by
+   copying back the files, this may be lead to database
+   inconsistencies in many cases and it is not the recommended way to
    do it.
 
 For the purposes of this manual page, we will assume that there is a database
