@@ -114,3 +114,6 @@ We can see that the slave has retrieved a new transaction with number 5, so
 transactions from 1 to 5 are already on this slave.
 
 That's all, we have created a new slave in our ``GTID`` based replication environment.
+
+.. |PXC| replace:: Percona XtraDB Cluster
+

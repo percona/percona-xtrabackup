@@ -12,7 +12,7 @@ for companies with large data sets and mission-critical applications that cannot
 long periods of downtime. Offered free as an open source solution, it drives down backup
 costs while providing unique features for MySQL backups.
 
-This release fixes security vulnerability `CVE-2020-10997
+This release fixes `security vulnerability CVE-2020-10997
 <https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-10997>`_
 
 .. seealso::

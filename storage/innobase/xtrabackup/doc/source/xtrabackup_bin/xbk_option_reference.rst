@@ -313,6 +313,19 @@ Options
    may be specified that will be placed with the history record for the backup
    being taken.
 
+.. option:: --incremental
+
+   This option tells xtrabackup to create an incremental backup. It is passed to
+   the xtrabackup child process. When this option is specified, either
+   :option:`xtrabackup --incremental-lsn` or :option:`xtrabackup
+   --incremental-basedir` can also be given. If neither option is given, option
+   :option:`xtrabackup --incremental-basedir` is passed to xtrabackup by
+   default, set to the first timestamped backup directory in the backup base
+   directory.
+
+   .. seealso:: :ref:`More information about incremental backups <xb_incremental>`
+
+
 .. option:: --incremental-basedir=DIRECTORY
 
    When creating an incremental backup, this is the directory containing the

@@ -34,10 +34,11 @@ The ``percona-xtrabackup`` package contains the older version of the
 Installing |Percona XtraBackup| from Percona ``yum`` repository
 ===============================================================
 
-1. Install the Percona repository
+1. Install the :command:`percona-release` configuration tool
 
-   You can install Percona yum repository by running the following command as a
-   ``root`` user or with :program:`sudo`:
+   You can install the yum repository for :command:`percona-release`
+   by running the following command as a ``root`` user or with
+   :command:`sudo`:
 
    .. code-block:: bash
 
@@ -53,14 +54,14 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
 
 .. note::
 
-  *RHEL*/*Centos* 5 doesn't support installing the packages directly from the
-  remote location so you'll need to download the package first and install it
-  manually with :program:`rpm`:
+   *RHEL*/*Centos* 5 doesn't support installing the packages directly from the
+   remote location so you'll need to download the package first and install it
+   manually with :program:`rpm`:
 
-  .. code-block:: bash
+   .. code-block:: bash
 
-    $ wget https://repo.percona.com/yum/percona-release-latest.noarch.rpm
-    $ rpm -ivH percona-release-latest.noarch.rpm
+      $ wget https://repo.percona.com/yum/percona-release-latest.noarch.rpm
+      $ rpm -ivH percona-release-latest.noarch.rpm
 
 2. Testing the repository
 
@@ -89,14 +90,10 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
      percona-xtrabackup-test-22.x86_64          2.2.13-1.el5                percona-release-x86_64
      ...
 
-3. Install the packages
-
-   You can now install |Percona XtraBackup| by running:
-
 #.
    .. include:: ../.res/contents/instruction.repository.enabling.txt
 	     
-#. Install |Percona XtraBackup| by running:  :bash:`yum install percona-xtrabackup-80`
+#. Install |Percona XtraBackup| by running:  :bash:`yum install percona-xtrabackup-24`
 
 .. warning::
 

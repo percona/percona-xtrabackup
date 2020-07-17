@@ -10,14 +10,14 @@ can be compressed or decompressed with |xbstream|.
 Creating Compressed Backups
 ===========================
 
-In order to make a compressed backup you'll need to use the :option:`--compress`
+In order to make a compressed backup you'll need to use the :option:`xtrabackup --compress`
 option:
 
 .. code-block:: bash
 
   $ xtrabackup --backup --compress --target-dir=/data/compressed/
 
-The :option:`--compress` uses the ``qpress`` tool that you can install via
+The :option:`xtrabackup --compress` uses the ``qpress`` tool that you can install via
 the ``percona-release`` package configuration tool as follows:
 
 .. code-block:: bash
