@@ -22,8 +22,8 @@ partial backups:
    backup.
 
    Although there are some scenarios where restoring can be done by
-   copying back the files, this may be lead to database
-   inconsistencies in many cases and it is not the recommended way to
+   copying back the files, this may lead to database
+   inconsistencies in many cases and it is not a recommended way to
    do it.
 
 For the purposes of this manual page, we will assume that there is a database
