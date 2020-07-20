@@ -99,8 +99,9 @@ if [ -f /etc/redhat-release ]; then
 fi
 
 # Create a temporary working directory
+PRODUCT_FULL="percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
-INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"   # Make it absolute
+INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
@@ -126,12 +127,8 @@ mkdir "$INSTALLDIR"
 
     if test "x$exit_value" = "x0"
     then
-        cd $INSTALLDIR
-        if [ ! -d lib/private ]; then
-            mkdir -p lib/private
-        fi
 
-        LIBLIST="libgcrypt.so libcrypto.so libssl.so libreadline.so libtinfo.so libsasl2.so libcurl.so libldap liblber libssh libbrotlidec.so libbrotlicommon.so libgssapi_krb5.so libkrb5.so libkrb5support.so libk5crypto.so librtmp.so libgssapi.so libcrypt.so libfreebl3.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so libssl3.so libplds4.so"
+        LIBLIST="libgcrypt.so libcrypto.so libssl.so libreadline.so libtinfo.so libsasl2.so libcurl.so libldap liblber libssh libbrotlidec.so libbrotlicommon.so libgssapi_krb5.so libkrb5.so libkrb5support.so libk5crypto.so librtmp.so libgssapi.so libfreebl3.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so libssl3.so libplds4.so"
         DIRLIST="bin lib lib/private lib/plugin"
 
         LIBPATH=""
@@ -181,39 +178,52 @@ mkdir "$INSTALLDIR"
                         echo "Replacing lib $(basename $(readlink -f $libpath_sorted)) for $elf"
                         patchelf --replace-needed $LDD $(basename $(readlink -f $libpath_sorted)) $elf
                     fi
-                    # Add if present in LDD to NEEDED
-                    if [[ ! -z $LDD ]] && [[ -z "$(readelf -d $elf | grep $(basename $libpath_sorted | awk -F'.' '{print $1}'))" ]]; then
-                        patchelf --add-needed $(basename $(readlink -f $libpath_sorted)) $elf
-                    fi
                 done
             done
         }
 
-        # Gather libs
-        for DIR in $DIRLIST; do
-            gather_libs $DIR
-        done
+        function link {
+            if [ ! -d lib/private ]; then
+                mkdir -p lib/private
+            fi
+            # Gather libs
+            for DIR in $DIRLIST; do
+                gather_libs $DIR
+            done
 
-        # Set proper runpath
-        set_runpath bin '$ORIGIN/../lib/private/'
-        set_runpath lib '$ORIGIN/private/'
-        set_runpath lib/plugin '$ORIGIN/../private/'
-        set_runpath lib/private '$ORIGIN'
+            # Set proper runpath
+            set_runpath bin '$ORIGIN/../lib/private/'
+            set_runpath lib '$ORIGIN/private/'
+            set_runpath lib/plugin '$ORIGIN/../private/'
+            set_runpath lib/private '$ORIGIN'
 
-        # Replace libs
-        for DIR in $DIRLIST; do
-            replace_libs $DIR
-        done
+            # Replace libs
+            for DIR in $DIRLIST; do
+                replace_libs $DIR
+            done
+        }
+
+        cd "$WORKDIR"
+
+        mkdir "$WORKDIR_ABS/$BASEINSTALLDIR/minimal"
+        cp -r "$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL" "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL"
+
+        # NORMAL TARBALL
+        cd "$INSTALLDIR"
+        link
+
+        cd "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL"
+        rm -rf percona-xtrabackup-8.0-test 2> /dev/null
+        find . -type f -exec file '{}' \; | grep ': ELF ' | cut -d':' -f1 | xargs strip --strip-unneeded
+        link
 
         cd "$WORKDIR"
         $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
                 --owner=0 --group=0 -C "$INSTALLDIR/../" \
                 "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
 
-        rm -rf $INSTALLDIR/percona-xtrabackup-8.0-test 2> /dev/null
-        find $INSTALLDIR -type f -exec file '{}' \; | grep ': ELF ' | cut -d':' -f1 | xargs strip --strip-unneeded
         $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal.tar.gz" \
-            --owner=0 --group=0 -C "$INSTALLDIR/../" \
+            --owner=0 --group=0 -C "$INSTALLDIR/../minimal/" \
             "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
     fi
 
