@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2020, Oracle and/or its affiliates.
  
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -210,6 +210,7 @@
 #cmakedefine HAVE_TSAN
 #cmakedefine ENABLED_LOCAL_INFILE 1
 #cmakedefine KERBEROS_LIB_CONFIGURED
+#cmakedefine SCRAM_LIB_CONFIGURED
 
 /* Lock Order */
 #cmakedefine WITH_LOCK_ORDER 1
@@ -237,6 +238,9 @@
 #cmakedefine USE_LIBEDIT_INTERFACE 1
 #cmakedefine HAVE_HIST_ENTRY 1
 #cmakedefine USE_NEW_EDITLINE_INTERFACE 1
+#cmakedefine EDITLINE_HAVE_COMPLETION_CHAR 1
+#cmakedefine EDITLINE_HAVE_COMPLETION_INT 1
+
 
 /*
  * Libedit
@@ -305,6 +309,7 @@
  * Other
  */
 #cmakedefine EXTRA_DEBUG 1
+#cmakedefine HANDLE_FATAL_SIGNALS 1
 
 /*
  * Hardcoded values needed by libevent/NDB/memcached
