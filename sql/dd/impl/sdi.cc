@@ -405,8 +405,8 @@ bool CheckDefaultCompatibility(const RJ_Document &doc) {
   DBUG_ASSERT(doc.HasMember("dd_version"));
   const RJ_Value &dd_version_val = doc["dd_version"];
   DBUG_ASSERT(dd_version_val.IsUint());
-  uint dd_version = dd_version_val.GetUint();
 #if !defined(XTRABACKUP)
+  uint dd_version = dd_version_val.GetUint();
   if (dd_version != Dictionary_impl::get_target_dd_version()) {
     // Incompatible change
     my_error(ER_IMP_INCOMPATIBLE_DD_VERSION, MYF(0), dd_version,
@@ -418,8 +418,8 @@ bool CheckDefaultCompatibility(const RJ_Document &doc) {
   DBUG_ASSERT(doc.HasMember("sdi_version"));
   const RJ_Value &sdi_version_val = doc["sdi_version"];
   DBUG_ASSERT(sdi_version_val.IsUint64());
-  std::uint64_t sdi_version_ = sdi_version_val.GetUint64();
 #if !defined(XTRABACKUP)
+  std::uint64_t sdi_version_ = sdi_version_val.GetUint64();
   if (sdi_version_ != SDI_VERSION) {
     // Incompatible change
     my_error(ER_IMP_INCOMPATIBLE_SDI_VERSION, MYF(0), sdi_version_,

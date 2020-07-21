@@ -2,11 +2,13 @@
 # Bug #1291299: xtrabackup_56 crashes with segfault during --prepare
 ########################################################################
 
+. inc/common.sh
 require_server_version_higher_than 5.6.0
 
-start_server
+remote_dir=$TEST_VAR_ROOT/var1/remote_dir
 
-mkdir $topdir/backup
+mkdir -p $remote_dir
+start_server --innodb_directories=$remote_dir
 
 xtrabackup --backup --target-dir=$topdir/backup \
            --debug-sync="data_copy_thread_func" &
@@ -28,10 +30,9 @@ xb_pid=`cat $pid_file`
 # Create a remote tablespace so that xtrabackup has to replay the corresponding
 # MLOG_FILE_CREATE2 on prepare
 
-mkdir $topdir/remote
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
-CREATE TABLE t1 (a INT) DATA DIRECTORY='$topdir/remote';
+CREATE TABLE t1 (a INT) DATA DIRECTORY='$remote_dir';
 INSERT INTO t1 VALUES (1), (2), (3);
 EOF
 

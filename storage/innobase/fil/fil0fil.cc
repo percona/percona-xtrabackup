@@ -10578,7 +10578,7 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
     fil_space_free(page_id.space(), false);
 
-    success = fil_system->erase(page_id.space());
+    success = fil_system->erase_path(page_id.space());
     ut_a(success);
 
     success = fil_system->insert(page_id.space(), to_name);
@@ -11049,7 +11049,7 @@ static bool fil_op_replay_rename(const page_id_t &page_id,
     if (err == DB_WRONG_FILE_NAME) {
       df.close();
       os_file_delete(innodb_data_file_key, df.filepath());
-      bool success = fil_system->erase(df.space_id());
+      bool success = fil_system->erase_path(df.space_id());
       ut_a(success);
     } else {
       df.close();

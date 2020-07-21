@@ -748,10 +748,10 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         charset_no);
     if (!is_virtual) {
       dict_mem_table_add_col(table, heap, dd_col->name().c_str(), mtype, prtype,
-                             col_len);
+                             col_len, true);
     } else {
       dict_mem_table_add_v_col(table, heap, dd_col->name().c_str(), mtype,
-                               prtype, col_len, i, 0);
+                               prtype, col_len, i, 0, true);
     }
 
     if (is_stored) {

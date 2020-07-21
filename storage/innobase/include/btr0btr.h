@@ -568,14 +568,6 @@ dberr_t btr_sdi_create_index(space_id_t space_id, bool dict_locked);
 #define BTR_N_LEAF_PAGES 1
 #define BTR_TOTAL_SIZE 2
 
-/** Returns the child page of a node pointer and sx-latches it.
- @return child page, sx-latched */
-buf_block_t *btr_node_ptr_get_child(
-    const rec_t *node_ptr, /*!< in: node pointer */
-    dict_index_t *index,   /*!< in: index */
-    const ulint *offsets,  /*!< in: array returned by rec_get_offsets() */
-    mtr_t *mtr);           /*!< in: mtr */
-
 #include "btr0btr.ic"
 
 #endif

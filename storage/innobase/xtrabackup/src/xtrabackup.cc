@@ -2822,9 +2822,6 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
   const char *const node_path = node->name;
 
   bool is_system = !fsp_is_ibd_tablespace(node->space->id);
-  bool is_undo = fsp_is_undo_tablespace(node->space->id);
-
-  ut_ad(!is_undo || is_system);
 
   if (!is_system && opt_lock_ddl_per_table) {
     mdl_lock_table(node->space->id);
@@ -3891,7 +3888,7 @@ void xtrabackup_backup_func(void) {
   }
 
   io_ticket = xtrabackup_throttle;
-  wait_throttle = os_event_create("wait_throttle");
+  wait_throttle = os_event_create();
   os_thread_create(PFS_NOT_INSTRUMENTED, io_watching_thread).start();
 
   if (!redo_mgr.start()) {
