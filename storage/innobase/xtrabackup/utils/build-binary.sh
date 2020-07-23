@@ -206,13 +206,13 @@ mkdir "$INSTALLDIR"
         cd "$WORKDIR"
 
         mkdir "$WORKDIR_ABS/$BASEINSTALLDIR/minimal"
-        cp -r "$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL" "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL"
+        cp -r "$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL" "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL-minimal"
 
         # NORMAL TARBALL
         cd "$INSTALLDIR"
         link
 
-        cd "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL"
+        cd "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL-minimal"
         rm -rf percona-xtrabackup-8.0-test 2> /dev/null
         find . -type f -exec file '{}' \; | grep ': ELF ' | cut -d':' -f1 | xargs strip --strip-unneeded
         link
@@ -224,7 +224,7 @@ mkdir "$INSTALLDIR"
 
         $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal.tar.gz" \
             --owner=0 --group=0 -C "$INSTALLDIR/../minimal/" \
-            "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+            "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal"
     fi
 
     # Clean up build dir
