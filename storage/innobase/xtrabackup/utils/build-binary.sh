@@ -174,6 +174,15 @@ mkdir "$INSTALLDIR"
         done
     }
 
+    function check_libs {
+        local elf_path=$1
+        for elf in $(find $elf_path -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
+            if ! ldd $elf; then
+                exit 1
+            fi
+        done
+    }
+
     function link {
         if [ ! -d lib/private ]; then
             mkdir -p lib/private
@@ -192,6 +201,11 @@ mkdir "$INSTALLDIR"
         # Replace libs
         for DIR in $DIRLIST; do
             replace_libs $DIR
+        done
+
+        # Make final check in order to determine any error after linkage
+        for DIR in $DIRLIST; do
+            check_libs $DIR
         done
     }
     
