@@ -2844,7 +2844,7 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-    strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
+  strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
 
   /* Setup the page write filter */
   if (xtrabackup_incremental) {
@@ -4674,9 +4674,9 @@ retry:
     if (log_block_get_checksum(log_buf + field) ==
             log_block_calc_checksum_crc32(log_buf + field) &&
         (mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-            LOG_HEADER_FORMAT_CURRENT ||
-	 mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-            LOG_HEADER_FORMAT_8_0_3)) {
+             LOG_HEADER_FORMAT_CURRENT ||
+         mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
+             LOG_HEADER_FORMAT_8_0_3)) {
       if (!innodb_checksum_algorithm_specified) {
         srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_CRC32;
       }
@@ -5006,6 +5006,41 @@ static bool xb_space_create_file(
   return (true);
 }
 
+/* Retreive space_id from page 0 of tablespace
+@param[in] file_name tablespace file path
+@return space_id or SPACE_UNKOWN */
+static space_id_t get_space_id_from_page_0(const char *file_name) {
+  bool ok;
+  space_id_t space_id = SPACE_UNKNOWN;
+
+  auto buf = static_cast<byte *>(ut_malloc_nokey(2 * srv_page_size));
+
+  auto file = os_file_create_simple_no_error_handling(
+      0, file_name, OS_FILE_OPEN, OS_FILE_READ_ONLY, srv_read_only_mode, &ok);
+
+  if (ok) {
+    auto *page = static_cast<buf_frame_t *>(ut_align(buf, srv_page_size));
+
+    IORequest request(IORequest::READ);
+    dberr_t err =
+        os_file_read_first_page(request, file_name, file, page, UNIV_PAGE_SIZE);
+
+    if (err == DB_SUCCESS) {
+      space_id = fsp_header_get_space_id(page);
+    } else {
+      msg("xtrabackup: error reading first page on file %s\n", file_name);
+    }
+    os_file_close(file);
+
+  } else {
+    msg("xtrabackup: Cannot open file to read first page %s\n", file_name);
+  }
+
+  ut_free(buf);
+
+  return (space_id);
+}
+
 /***********************************************************************
 Searches for matching tablespace file for given .delta file and space_id
 in given directory. When matching tablespace found, renames it to match the
@@ -5059,22 +5094,8 @@ static pfs_os_file_t xb_delta_open_matching_space(
     return file;
   }
 
-  if (space_id != SPACE_UNKNOWN && !fsp_is_ibd_tablespace(space_id)) {
-    /* since undo tablespaces cannot be renamed, we must either open existing
-    with the same name or create new one */
-    if (fsp_is_undo_tablespace(space_id)) {
-      bool exists;
-      os_file_type_t type;
-
-      os_file_status(real_name, &exists, &type);
-      if (!exists) {
-        create_option = OS_FILE_CREATE;
-      }
-    }
-    goto found;
-  }
-
-  /* remember space name for further reference */
+  /* remember space name used by incremental prepare. This hash is later used to
+  detect the dropped tablespaces and remove them. Check rm_if_not_found() */
   table = static_cast<xb_filter_entry_t *>(
       ut_malloc_nokey(sizeof(xb_filter_entry_t) + strlen(dest_space_name) + 1));
 
@@ -5082,6 +5103,63 @@ static pfs_os_file_t xb_delta_open_matching_space(
   strcpy(table->name, dest_space_name);
   HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
               ut_fold_string(table->name), table);
+
+  if (space_id != SPACE_UNKNOWN && !fsp_is_ibd_tablespace(space_id)) {
+    /* since undo tablespaces cannot be renamed, we must either open existing
+    with the same name or create new one */
+    if (fsp_is_undo_tablespace(space_id)) {
+      bool exists;
+      os_file_type_t type;
+      os_file_status(real_name, &exists, &type);
+
+      if (exists) {
+        f_space_id = get_space_id_from_page_0(real_name);
+
+        if (f_space_id == SPACE_UNKNOWN) {
+          msg("could not find space id from file %s", real_name);
+          goto exit;
+        }
+
+        if (space_id == f_space_id) {
+          goto found;
+        }
+
+        /* space_id of undo tablespace from incremental is different from the
+        full backup. Rename the existing undo tablespace to a temporary name and
+        create undo tablespace file with new space_id */
+        char tmpname[FN_REFLEN];
+        snprintf(tmpname, FN_REFLEN, "./xtrabackup_tmp_#" SPACE_ID_PF ".ibu",
+                 f_space_id);
+
+        char *oldpath, *space_name;
+        bool res =
+            fil_space_read_name_and_filepath(f_space_id, &space_name, &oldpath);
+        ut_a(res);
+        msg("xtrabackup: Renaming %s to %s.ibu\n", dest_space_name, tmpname);
+
+        ut_a(os_file_status(oldpath, &exists, &type));
+
+        if (!fil_rename_tablespace(f_space_id, oldpath, tmpname, tmpname)) {
+          msg("xtrabackup: Cannot rename %s to %s\n", dest_space_name, tmpname);
+          ut_free(oldpath);
+          ut_free(space_name);
+          goto exit;
+        }
+        ut_free(oldpath);
+        ut_free(space_name);
+      }
+
+      /* either file doesn't exist or it has been renamed above */
+      if (!fil_space_create(dest_space_name, space_id, space_flags,
+                            FIL_TYPE_TABLESPACE)) {
+        msg("xtrabackup: Cannot create tablespace %s\n", dest_space_name);
+        goto exit;
+      }
+      *success = xb_space_create_file(real_name, space_id, space_flags, &file);
+      goto exit;
+    }
+    goto found;
+  }
 
   f_space_id = fil_space_get_id_by_name(dest_space_name);
 
@@ -6361,6 +6439,7 @@ skip_check:
     incremental backups */
 
     xb_process_datadir("./", ".ibd", rm_if_not_found, NULL);
+    xb_process_datadir("./", ".ibu", rm_if_not_found, NULL);
 
     xb_filter_hash_free(inc_dir_tables_hash);
   }
