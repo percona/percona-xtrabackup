@@ -52,9 +52,9 @@ done, the backup of the files will begin. It will backup :term:`.frm`,
 
 After that |xtrabackup| will use ``LOCK BINLOG FOR BACKUP`` to block all
 operations that might change either binary log position or
-``Exec_Master_Log_Pos`` or ``Exec_Gtid_Set`` (i.e. master binary log
+``Exec_Master_Log_Pos`` or ``Exec_Gtid_Set`` (i.e. source binary log
 coordinates corresponding to the current SQL thread state on a replication
-slave) as reported by ``SHOW MASTER/SLAVE STATUS``. |xtrabackup| will then
+replica) as reported by ``SHOW MASTER/SLAVE STATUS``. |xtrabackup| will then
 finish copying the REDO log files and fetch the binary log coordinates. After
 this is completed |xtrabackup| will unlock the binary log and tables.
 

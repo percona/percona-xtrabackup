@@ -360,7 +360,7 @@ Options
    you are considering to use :option:`innobackupex --no-lock` because your backups are
    failing to acquire the lock, this could be because of incoming replication
    events preventing the lock from succeeding. Please try using
-   :option:`innobackupex --safe-slave-backup` to momentarily stop the replication slave
+   :option:`innobackupex --safe-slave-backup` to momentarily stop the replication replica
    thread, this may help the backup to succeed and you then don't need to resort
    to using this option.  :file:`xtrabackup_binlog_info` is not created
    when --no-lock option is used (because ``SHOW MASTER STATUS`` may be
@@ -439,13 +439,13 @@ Options
 
 .. option:: --safe-slave-backup
 
-   When specified, innobackupex will stop the slave SQL thread just before
+   When specified, innobackupex will stop the replica SQL thread just before
    running ``FLUSH TABLES WITH READ LOCK`` and wait to start backup until
    ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open
    temporary tables, the backup will take place, otherwise the SQL thread will
    be started and stopped until there are no open temporary tables. The backup
    will fail if ``Slave_open_temp_tables`` does not become zero after
-   :option:`innobackupex --safe-slave-backup-timeout` seconds. The slave SQL
+   :option:`innobackupex --safe-slave-backup-timeout` seconds. The replica SQL
    thread will be restarted when the backup finishes.
 
 .. option:: --safe-slave-backup-timeout=SECONDS
@@ -455,10 +455,10 @@ Options
 
 .. option:: --slave-info
 
-   This option is useful when backing up a replication slave server. It prints
-   the binary log position and name of the master server. It also writes this
+   This option is useful when backing up a replication replica server. It prints
+   the binary log position and name of the source server. It also writes this
    information to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER``
-   command. A new slave for this master can be set up by starting a slave server
+   command. A new replica for this source can be set up by starting a replica server
    on this backup and issuing a ``CHANGE MASTER`` command with the binary log
    position saved in the :file:`xtrabackup_slave_info` file.
 

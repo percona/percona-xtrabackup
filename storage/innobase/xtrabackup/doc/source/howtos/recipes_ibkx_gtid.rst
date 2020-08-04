@@ -10,10 +10,10 @@ support in replication. |Percona XtraBackup| automatically
 stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the
 backup of |MySQL| and |Percona Server| 5.7 with the ``GTID`` mode enabled. This
 information can be used to create a new (or repair a broken) ``GTID`` based
-slave.
+replica.
 
 
-STEP 1: Take a backup from any server on the replication environment, master or slave
+STEP 1: Take a backup from any server on the replication environment, source or replica.
 =========================================================================================
 
 The following command takes a backup and saves it in the :file:`/data/backups/$TIMESTAMP` folder:
@@ -54,7 +54,7 @@ STEP 3: Move the backup to the destination server
 --------------------------------------------------------------------------------
 
 Use :command:`rsync` or :command:`scp` to copy the data to the destination
-server. If you are synchronizing the data directly to the already running slave's data
+server. If you are synchronizing the data directly to the already running replica's data
 directory it is advised to stop the |MySQL| server there.
 
 .. code-block:: bash
@@ -72,7 +72,7 @@ STEP 4: Configure and start replication
 
 Set the gtid_purged variable to the ``GTID`` from
 :file:`xtrabackup_binlog_info`. Then, update the information about the
-master node and, finally, start the slave.
+source node and, finally, start the replica.
 
 .. code-block:: guess
 
@@ -91,14 +91,14 @@ master node and, finally, start the slave.
 .. note::
 
    The example above is applicable to |PXC|. The ``wsrep_on`` variable
-   is set to `0` before resetting the master (``RESET MASTER``). The
-   reason is that |PXC| will not allow resetting the master if
+   is set to `0` before resetting the source (``RESET MASTER``). The
+   reason is that |PXC| will not allow resetting the source if
    ``wsrep_on=1``.
 
 STEP 5: Check the replication status
 --------------------------------------------------------------------------------
 
-Following command will show the slave status:
+Following command will show the replica status:
 
 .. code-block:: guess
 
@@ -110,10 +110,10 @@ Following command will show the slave status:
             Retrieved_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:5
             Executed_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:1-5
 
-We can see that the slave has retrieved a new transaction with number 5, so
-transactions from 1 to 5 are already on this slave.
+We can see that the replica has retrieved a new transaction with number 5, so
+transactions from 1 to 5 are already on this replica.
 
-That's all, we have created a new slave in our ``GTID`` based replication environment.
+That's all, we have created a new replica in our ``GTID`` based replication environment.
 
 .. |PXC| replace:: Percona XtraDB Cluster
 

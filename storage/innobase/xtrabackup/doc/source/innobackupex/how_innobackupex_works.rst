@@ -36,7 +36,7 @@ supported by server. Special interest are backup locks, changed page bitmaps,
 GTID mode, etc. If everything goes well, the binary is started as a child
 process.
 
-|innobackupex| will wait for slaves in a replication setup if the option
+|innobackupex| will wait for replicas in a replication setup if the option
 :option:`innobackupex --safe-slave-backup` is set and will flush all tables with
 **READ LOCK**, preventing all |MyISAM| tables from writing (unless option
 :option:`innobackupex --no-lock` is specified).
@@ -58,7 +58,7 @@ and :term:`.opt` files.
 
 When all the files are backed up, it resumes :program:`ibbackup` and wait until
 it finishes copying the transactions done while the backup was done. Then, the
-tables are unlocked, the slave is started (if the option :option:`innobackupex --safe-slave-backup`
+tables are unlocked, the replica is started (if the option :option:`innobackupex --safe-slave-backup`
 was used) and the connection with the server is
 closed. Then, it removes the :file:`xtrabackup_suspended_2` file and permits
 :program:`xtrabackup` to exit.
@@ -75,7 +75,7 @@ It will also create the following files in the directory of the backup:
    containing the position of the binary log at the moment of backing up relative to |InnoDB| transactions;
 
 :file:`xtrabackup_slave_info`
-   containing the MySQL binlog position of the master server in a replication setup via ``SHOW SLAVE STATUS`` if the :option:`innobackupex --slave-info` option is passed;
+   containing the MySQL binlog position of the source server in a replication setup via ``SHOW SLAVE STATUS`` if the :option:`innobackupex --slave-info` option is passed;
 
 :file:`backup-my.cnf`
    containing only the :file:`my.cnf` options required for the backup. For example, innodb_data_file_path, innodb_log_files_in_group, innodb_log_file_size, innodb_fast_checksum, innodb_page_size, innodb_log_block_size;

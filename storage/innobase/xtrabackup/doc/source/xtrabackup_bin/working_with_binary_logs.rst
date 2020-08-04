@@ -6,7 +6,7 @@ Working with Binary Logs
 The ``xtrabackup`` binary integrates with information that |InnoDB| stores in
 its transaction log about the corresponding binary log position for committed
 transactions. This enables it to print out the binary log position to which a
-backup corresponds, so you can use it to set up new replication slaves or
+backup corresponds, so you can use it to set up new replication replicas or
 perform point-in-time recovery.
 
 Finding the Binary Log Position
@@ -50,11 +50,11 @@ A more detailed procedure is found :doc:`here
 <../innobackupex/pit_recovery_ibk>` (with |innobackupex|).
 
 
-Setting Up a New Replication Slave
+Setting Up a New Replication Replica
 --------------------------------------------------------------------------------
 
 To set up a new replica, you should prepare the backup, and restore it to the
-data directory of your new replication slave. Then in your ``CHANGE MASTER TO``
+data directory of your new replication replica. Then in your ``CHANGE MASTER TO``
 command, use the binary log filename and position shown in the
 :file:`xtrabackup_binlog_info` file to start replication.
 

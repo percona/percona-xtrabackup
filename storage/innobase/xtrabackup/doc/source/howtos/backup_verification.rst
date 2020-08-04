@@ -11,12 +11,12 @@ Setting up the replication
 
 :ref:`replication_howto` guide provides a detailed instructions on how to take the backup and set up the replication. 
 
-For checking the backup consistency you can use either the original server where the backup was taken, or another test server created by using a different backup method (such as cold backup, mysqldump or LVM snapshots) as the master server in the replication setup.
+For checking the backup consistency you can use either the original server where the backup was taken, or another test server created by using a different backup method (such as cold backup, mysqldump or LVM snapshots) as the source server in the replication setup.
 
 Using pt-table-checksum
 =========================
 
-This tool is part of the |Percona Toolkit|. It performs an online replication consistency check by executing checksum queries on the master, which produces different results on replicas that are inconsistent with the master.
+This tool is part of the |Percona Toolkit|. It performs an online replication consistency check by executing checksum queries on the source, which produces different results on replicas that are inconsistent with the source.
 
 After you confirmed that replication has been set up successfully, you can `install <http://www.percona.com/doc/percona-toolkit/installation.html>`_ or download *pt-table-checksum*. This example shows downloading the latest version of *pt-table-checksum*: :: 
 
@@ -28,7 +28,7 @@ After you confirmed that replication has been set up successfully, you can `inst
  
 After this command has been run, *pt-table-checksum* will be downloaded to your current working directory.
 
-Running the *pt-table-checksum* on the master will create ``percona`` database with the ``checksums`` table which will be replicated to the slaves as well. Example of the *pt-table-checksum* will look like this: ::
+Running the *pt-table-checksum* on the source will create ``percona`` database with the ``checksums`` table which will be replicated to the replicas as well. Example of the *pt-table-checksum* will look like this: ::
  
     $ ./pt-table-checksum 
 	TS ERRORS  DIFFS     ROWS  CHUNKS SKIPPED    TIME TABLE
@@ -47,7 +47,7 @@ Running the *pt-table-checksum* on the master will create ``percona`` database w
 
 If all the values in the ``DIFFS`` column are 0 that means that backup is consistent with the current setup.
 
-In case backup wasn't consistent  *pt-table-checksum* should spot the difference and point to the table that doesn't match. Following example shows adding new user on the backed up slave in order to simulate the inconsistent backup: ::
+In case backup wasn't consistent  *pt-table-checksum* should spot the difference and point to the table that doesn't match. Following example shows adding new user on the backed up replica in order to simulate the inconsistent backup: ::
 
   mysql> grant usage on exampledb.* to exampledb@localhost identified by 'thisisnewpassword';
 
@@ -68,6 +68,6 @@ If we run the *pt-table-checksum* now difference should be spotted ::
     04-30T11:38:09      0      0        0       1       0   0.054 mysql.time_zone_transition_type
     04-30T11:38:09      1      0        8       1       0   0.064 mysql.user
 
-This output shows that slave and the replica aren't in consistent state and that the difference is in the ``mysql.user`` table.
+This output shows that source and the replica are not in a consistent state and that the difference is in the ``mysql.user`` table.
 
 More information on different options that pt-table-checksum provides can be found in the *pt-table-checksum* `documentation <http://www.percona.com/doc/percona-toolkit/2.2/pt-table-checksum.html>`_.
