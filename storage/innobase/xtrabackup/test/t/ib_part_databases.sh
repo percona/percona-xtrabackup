@@ -9,13 +9,13 @@
 . inc/common.sh
 . inc/ib_part.sh
 
-start_server
+start_server --innodb_directories=$TEST_VAR_ROOT/remote
 
 require_partitioning
 
 # Create InnoDB partitioned table with some partitions in
 # different location
-ib_part_init $topdir InnoDB
+ib_part_init $TEST_VAR_ROOT/remote InnoDB
 
 # Saving the checksum of original table
 checksum_a=`checksum_table test test`
@@ -33,7 +33,7 @@ vlog "Backup taken"
 stop_server
 
 # Restore partial backup
-ib_part_restore $topdir $mysql_datadir
+ib_part_restore $TEST_VAR_ROOT/remote $mysql_datadir
 
 start_server
 
