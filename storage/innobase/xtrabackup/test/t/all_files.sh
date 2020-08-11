@@ -29,7 +29,9 @@ diff -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
 ./xtrabackup_tablespaces
 EOF
 
-if is_xtradb ; then
+if is_server_version_higher_than 8.0.19; then
+    XTRA_DOUBLEWRITE=""
+elif is_xtradb ; then
     XTRA_DOUBLEWRITE="./xb_doublewrite"
 else
     XTRA_DOUBLEWRITE=""

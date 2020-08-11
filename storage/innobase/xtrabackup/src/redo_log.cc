@@ -571,7 +571,7 @@ lsn_t Archived_Redo_Log_Reader::get_contiguous_lsn() const {
 }
 
 Archived_Redo_Log_Monitor::Archived_Redo_Log_Monitor() {
-  event = os_event_create("archived_redo_log_monitor");
+  event = os_event_create();
 }
 
 Archived_Redo_Log_Monitor::~Archived_Redo_Log_Monitor() {}
@@ -863,7 +863,7 @@ static dberr_t open_or_create_log_file(bool *log_file_created, ulint i,
 
 bool Redo_Log_Data_Manager::init() {
   error = true;
-  event = os_event_create("log_copying_stop");
+  event = os_event_create();
 
   thread = os_thread_create(PFS_NOT_INSTRUMENTED, [this] { copy_func(); });
 
