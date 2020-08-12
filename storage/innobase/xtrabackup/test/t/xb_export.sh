@@ -113,7 +113,8 @@ insert_data incremental_sample test2 $indices_count $rows_count
 mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
 col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
 col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
-col17 mediumtext, col18 enum("01","2"),col19 SET("0","1","2") )' incremental_sample;
+col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
+col20 varchar(255) character set latin1 )' incremental_sample;
 
 checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
@@ -135,7 +136,8 @@ init_schema incremental_sample test3 $indices_count "y"
 mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
 col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
 col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
-col17 mediumtext, col18 enum("01","2"),col19 SET("0","1","2") )' incremental_sample;
+col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
+col20 varchar(255) character set latin1 )' incremental_sample;
 vlog "Database was re-initialized"
 
 mysql -e "alter table test discard tablespace;" incremental_sample

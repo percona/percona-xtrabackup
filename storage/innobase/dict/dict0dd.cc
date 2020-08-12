@@ -679,9 +679,10 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
     long_true_varchar = 0;
     if (field_type == MYSQL_TYPE_VARCHAR) {
-      col_len -= HA_VARCHAR_PACKLENGTH(field_length);
+      byte pack_length = HA_VARCHAR_PACKLENGTH(dd_col->char_length());
+      col_len -= pack_length;
 
-      if (HA_VARCHAR_PACKLENGTH(field_length) == 2) {
+      if (pack_length == 2) {
         long_true_varchar = DATA_LONG_TRUE_VARCHAR;
       }
     }
