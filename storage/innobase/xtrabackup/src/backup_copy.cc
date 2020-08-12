@@ -2540,6 +2540,11 @@ bool decrypt_decompress() {
 
 #ifdef HAVE_VERSION_CHECK
 void version_check() {
+  if (system("which perl > /dev/null 2>&1")) {
+    msg("xtrabackup: perl binary not found. Skipping the version check\n");
+    return;
+  }
+
   if (opt_password != NULL) {
     setenv("option_mysql_password", opt_password, 1);
   }
