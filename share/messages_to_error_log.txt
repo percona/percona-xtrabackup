@@ -10867,7 +10867,7 @@ ER_XPLUGIN_FAILED_TO_BIND_INTERFACE_ADDRESS
   eng "Value '%s' set to `Mysqlx_bind_address`, X Plugin can't bind to it. Skipping this value."
 
 ER_IB_ERR_RECOVERY_REDO_DISABLED
-  eng "Server was killed when InnoDB redo logging was disabled. Data files could be corrupt. You can try to restart the database with innodb_force_recovery=6"
+  eng "Redo logging is disabled, cannot take consistent backup"
 
 ER_IB_WRN_FAST_SHUTDOWN_REDO_DISABLED
   eng "InnoDB cannot do cold shutdown 'innodb_fast_shutdown = 2' and is forcing 'innodb_fast_shutdown = 1' as redo logging is disabled. InnoDB would flush all dirty pages to ensure physical data consistency."

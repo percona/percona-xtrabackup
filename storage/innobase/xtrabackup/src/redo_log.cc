@@ -1110,7 +1110,8 @@ bool Redo_Log_Data_Manager::is_error() const { return (error); }
 Redo_Log_Data_Manager::~Redo_Log_Data_Manager() { os_event_destroy(event); }
 
 bool Redo_Log_Data_Manager::stop_at(lsn_t lsn) {
-  if (reader.find_last_checkpoint_lsn(&last_checkpoint_lsn)) {
+  bool last_checkpoint = reader.find_last_checkpoint_lsn(&last_checkpoint_lsn);
+  if (last_checkpoint) {
     msg("xtrabackup: The latest check point (for incremental): '" LSN_PF "'\n",
         last_checkpoint_lsn);
   }
@@ -1135,7 +1136,7 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn) {
     return (false);
   }
 
-  return (true);
+  return last_checkpoint;
 }
 
 void Redo_Log_Data_Manager::close() {
