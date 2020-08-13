@@ -326,6 +326,7 @@ ibool srv_compact_backup = FALSE;
 ibool srv_rebuild_indexes = FALSE;
 
 static char *xtrabackup_debug_sync = NULL;
+static const char* dbug_setting = NULL;
 
 my_bool xtrabackup_compact = FALSE;
 my_bool xtrabackup_rebuild_indexes = FALSE;
@@ -1360,6 +1361,13 @@ Disable with --skip-innodb-doublewrite.", (G_PTR*) &innobase_use_doublewrite,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
 
+#ifndef DBUG_OFF
+  {"debug", '#', "Output debug log. Default all ib_log output to stderr."
+   " To redirect all ib_log output to separate file, use "
+   "--debug=d,ib_log:o,/tmp/xtrabackup.trace", &dbug_setting,
+   &dbug_setting, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+#endif /* !DBUG_OFF */
+
   {"innodb_checksum_algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,
   "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
    "INNODB, STRICT_INNODB, NONE, STRICT_NONE]", &srv_checksum_algorithm,
@@ -1555,6 +1563,11 @@ xb_get_one_option(int optid,
   }
   param_str << " ";
   switch(optid) {
+  case '#':
+    dbug_setting = argument ? argument : "d,ib_log";
+    DBUG_SET_INITIAL(dbug_setting);
+    break;
+
   case 'h':
     strmake(mysql_real_data_home,argument, FN_REFLEN - 1);
     mysql_data_home= mysql_real_data_home;

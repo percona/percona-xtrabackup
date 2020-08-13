@@ -2427,6 +2427,8 @@ recv_recover_page_func(
 #endif /* !UNIV_HOTBACKUP */
 	buf_block_t*	block)	/*!< in/out: buffer block */
 {
+	DBUG_ENTER("recv_recover_page_func");
+
 	page_t*		page;
 	page_zip_des_t*	page_zip;
 	recv_addr_t*	recv_addr;
@@ -2447,7 +2449,7 @@ recv_recover_page_func(
 
 		mutex_exit(&(recv_sys->mutex));
 
-		return;
+		DBUG_VOID_RETURN;
 	}
 
 	recv_addr = recv_get_fil_addr_struct(block->page.id.space(),
@@ -2462,7 +2464,7 @@ recv_recover_page_func(
 
 		mutex_exit(&(recv_sys->mutex));
 
-		return;
+		DBUG_VOID_RETURN;
 	}
 
 #ifndef UNIV_HOTBACKUP
@@ -2671,7 +2673,7 @@ recv_recover_page_func(
 	recv_sys->n_addrs--;
 
 	mutex_exit(&(recv_sys->mutex));
-
+	DBUG_VOID_RETURN;
 }
 
 #ifndef UNIV_HOTBACKUP
