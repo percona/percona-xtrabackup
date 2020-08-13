@@ -331,6 +331,7 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 ulong innobase_active_counter = 0;
 
 static char *xtrabackup_debug_sync = NULL;
+static const char *dbug_setting = nullptr;
 
 bool xtrabackup_incremental_force_scan = FALSE;
 
@@ -1406,6 +1407,14 @@ Disable with --skip-innodb-checksums.",
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
 
+#ifndef DBUG_OFF
+    {"debug", '#',
+     "Output debug log. See " REFMAN "dbug-package.html"
+     " Default all ib_log output to stderr. To redirect all ib_log output"
+     " to separate file, use --debug=d,ib_log:o,/tmp/xtrabackup.trace",
+     &dbug_setting, &dbug_setting, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr,
+     0, nullptr},
+#endif /* !DBUG_OFF */
     {"innodb_checksum_algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,
      "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
      "INNODB, STRICT_INNODB, NONE, STRICT_NONE]",
@@ -1603,6 +1612,11 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
   param_str << " ";
   param_set.insert(opt->name);
   switch (optid) {
+    case '#':
+      dbug_setting = argument ? argument : "d,ib_log";
+      DBUG_SET_INITIAL(dbug_setting);
+      break;
+
     case 'h':
       strmake(mysql_real_data_home, argument, FN_REFLEN - 1);
       mysql_data_home = mysql_real_data_home;
