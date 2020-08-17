@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xbstream.h"
 #include "changed_page_bitmap.h"
 #include "xtrabackup_config.h"
+#include "xb_regex.h"
 
 #ifdef __WIN__
 #define XB_FILE_UNDEFINED { NULL };
@@ -205,6 +206,11 @@ enum binlog_info_enum { BINLOG_INFO_OFF, BINLOG_INFO_LOCKLESS, BINLOG_INFO_ON,
 			BINLOG_INFO_AUTO};
 
 extern ulong opt_binlog_info;
+extern
+bool compile_regex(
+	const char* regex_string,
+	const char* error_context,
+	xb_regex_t* compiled_re);
 
 void xtrabackup_io_throttling(void);
 my_bool xb_write_delta_metadata(const char *filename,

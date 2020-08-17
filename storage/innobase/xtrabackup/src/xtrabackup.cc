@@ -471,6 +471,7 @@ ulint redo_log_version = REDO_LOG_V1;
 ulint opt_encrypt_server_id = 0;
 bool opt_encrypt_for_server_id_specified = false;
 
+bool mdl_taken = false;
 #define CLIENT_WARN_DEPRECATED(opt, new_opt) \
   msg("WARNING: " opt \
       " is deprecated and will be removed in a future version. " \
@@ -929,7 +930,7 @@ struct my_option xb_client_options[] =
    REQUIRED_ARG, 31536000, 1, 31536000, 0, 1, 0},
 
   {"lock-ddl-per-table", OPT_LOCK_DDL_PER_TABLE, "Lock DDL for each table "
-   "before xtrabackup starts to copy it and until the backup is completed.",
+   "before xtrabackup starts the copy phase and until the backup is completed.",
    (uchar*) &opt_lock_ddl_per_table, (uchar*) &opt_lock_ddl_per_table, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -2786,10 +2787,6 @@ xtrabackup_copy_datafile(fil_node_t* node, uint thread_n)
 
 	is_system = !fil_is_user_tablespace_id(node->space->id);
 
-	if (!is_system && opt_lock_ddl_per_table) {
-		mdl_lock_table(node->space->id);
-	}
-
 	if (!is_system && check_if_skip_table(node_name)) {
 		msg("[%02u] Skipping %s.\n", thread_n, node_name);
 		return(FALSE);
@@ -4183,7 +4180,6 @@ xb_register_table(
 	xb_register_include_filter_entry(name);
 }
 
-static
 bool compile_regex(
 	const char* regex_string,
 	const char* error_context,
@@ -4917,10 +4913,20 @@ reread_log_header:
 	xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
 	mutex_exit(&log_sys->mutex);
 
+	if (opt_lock_ddl_per_table) {
+		mdl_lock_tables();
+	}
+
 	/* copy log file by current position */
 	if(xtrabackup_copy_logfile(checkpoint_lsn_start, FALSE))
 		exit(EXIT_FAILURE);
 
+	/*
+	* From this point forward, recv_parse_or_apply_log_rec_body should fail if
+	* MLOG_INDEX_LOAD event is parsed as its not safe to continue the backup
+	* in any situation (with or without --lock-ddl-per-table).
+	*/
+	mdl_taken = true;
 
 	log_copying_stop = os_event_create("log_copying_stop");
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
@@ -4959,10 +4965,6 @@ reread_log_header:
 	if (xtrabackup_parallel > 1) {
 		msg("xtrabackup: Starting %u threads for parallel data "
 		    "files transfer\n", xtrabackup_parallel);
-	}
-
-	if (opt_lock_ddl_per_table) {
-		mdl_lock_init();
 	}
 
 	it = datafiles_iter_new(f_system);
@@ -5015,7 +5017,11 @@ reread_log_header:
 	if (!backup_start()) {
 		exit(EXIT_FAILURE);
 	}
-
+	if(opt_lock_ddl_per_table && opt_debug_sleep_before_unlock){
+		msg_ts("Debug sleep for %u seconds\n",
+		       opt_debug_sleep_before_unlock);
+		os_thread_sleep(opt_debug_sleep_before_unlock * 1000000);
+	}
 	/* read the latest checkpoint lsn */
 	latest_cp = 0;
 	{
@@ -8329,6 +8335,11 @@ xb_init()
 
 		if (!get_mysql_vars(mysql_connection)) {
 			return(false);
+		}
+
+		if (opt_lock_ddl_per_table && have_backup_locks) {
+			msg_ts("You are taking your backup with --lock-ddl-per-table."
+							" Please consider moving to a more safe option --lock-ddl.\n");
 		}
 
 		if (opt_check_privileges) {
