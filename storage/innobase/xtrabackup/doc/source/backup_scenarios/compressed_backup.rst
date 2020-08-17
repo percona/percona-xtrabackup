@@ -28,7 +28,7 @@ the ``percona-release`` package configuration tool as follows:
 
 .. note::
 
-   .. include:: ../.res/contents/instruction.repository.enabling.txt
+   .. include:: ../_res/text/instruction.repository.enabling.txt
 
    .. seealso:: :ref:`installing_from_binaries`
 

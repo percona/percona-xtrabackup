@@ -1,5 +1,6 @@
 .. Parameters, options, and configuration variables
 
-.. |param.name| replace:: ``--name``
-.. |param.volumes-from| replace:: ``--volumes-from``
-
+.. |param.name| replace:: `--name`
+.. |param.volumes-from| replace:: `--volumes-from`
+.. |param.target-dir| replace:: :option:`--target-dir`
+.. |param.log-bin| replace:: :option:`--log-bin`

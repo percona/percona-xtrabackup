@@ -1,0 +1,5 @@
+
+.. |sql.change-master| replace:: :mysql:`CHANGE MASTER`
+.. |sql.reset-master| replace:: :mysql:`RESET MASTER`
+.. |sql.show-slave-status| replace:: :mysql:`SHOW SLAVE STATUS`
+.. |sql.show-status| replace:: :mysql:`SHOW STATUS`

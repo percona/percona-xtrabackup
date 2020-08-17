@@ -45,7 +45,7 @@ via the |percona-release| package configuration tool.
    :file:`/etc/apt/sources.list.d/percona-release.list` file.
 
 #.
-   .. include:: ../.res/contents/instruction.repository.enabling.txt
+   .. include:: ../_res/text/instruction.repository.enabling.txt
 
 #. Remember to update the local cache: :bash:`apt-get update`
 

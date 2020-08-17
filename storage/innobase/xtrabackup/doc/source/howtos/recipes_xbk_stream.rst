@@ -13,7 +13,7 @@ utility: ``xbstream -x <  backup.xbstream``.
 
 .. rubric:: Examples of Using ``xbstream``
 
-.. include:: ../.res/contents/example.xbstream.txt
+.. include:: ../_res/text/example.xbstream.txt
 
 .. seealso::
 

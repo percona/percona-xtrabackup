@@ -45,31 +45,38 @@ and ::
   | mysql-bin.000004 |      497 |              |                  |
   +------------------+----------+--------------+------------------+
 
-The first query will tell you which files contain the binary log and the second
-one which file is currently being used to record changes, and the current
-position within it. Those files are stored usually in the :term:`datadir`
-(unless other location is specified when the server is started with the
-``--log-bin=`` option).
+The first query will tell you which files contain the binary log and
+the second query informs which file is currently being used to record
+changes as well as the current position in this file. Those binary log
+files are usually stored in the :term:`datadir` (unless another
+location is specified using the |param.log-bin| parameter when the
+server is started).
 
-To find out the position of the snapshot taken, see the
-:file:`xtrabackup_binlog_info` at the backup's directory: ::
+To determine the position of the snapshot taken, see the
+:file:`xtrabackup_binlog_info` at the backup's directory:
 
-  $ cat /path/to/backup/xtrabackup_binlog_info
-  mysql-bin.000003	57
+.. code-block:: bash
 
-This will tell you which file was used at moment of the backup for the binary
+   $ cat /path/to/backup/xtrabackup_binlog_info
+   mysql-bin.000003	57
+
+This will tell you which file was used at the moment of the backup for the binary
 log and its position. That position will be the effective one when you restore
-the backup: ::
+the backup:
 
-  $ xtrabackup --copy-back --target-dir=/path/to/backup
+.. code-block:: bash
+
+   $ xtrabackup --copy-back --target-dir=/path/to/backup
 
 As the restoration will not affect the binary log files (you may need to adjust
 file permissions, see :ref:`restoring_a_backup`), the next step is
 extracting the queries from the binary log with :command:`mysqlbinlog` starting
-from the position of the snapshot and redirecting it to a file ::
+from the position of the snapshot and redirecting it to a file:
 
-  $ mysqlbinlog /path/to/datadir/mysql-bin.000003 /path/to/datadir/mysql-bin.000004 \ 
-      --start-position=57 > mybinlog.sql
+.. code-block:: bash
+
+   $ mysqlbinlog /path/to/datadir/mysql-bin.000003 /path/to/datadir/mysql-bin.000004 \ 
+   --start-position=57 > mybinlog.sql
 
 Note that if you have multiple files for the binary log, as in the example, you
 have to extract the queries with one process, as shown above.
@@ -82,3 +89,5 @@ server. Assuming the point is ``11-12-25 01:00:00``::
       --start-position=57 --stop-datetime="11-12-25 01:00:00" | mysql -u root -p
 
 and the database will be rolled forward up to that Point-In-Time.
+
+.. include:: ../_res/replace/parameter.txt

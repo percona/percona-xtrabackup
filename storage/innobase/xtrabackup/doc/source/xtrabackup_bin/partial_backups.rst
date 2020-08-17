@@ -43,7 +43,7 @@ of databases (:option:`--databases`).
 
 The :option:`--tables` Option
 ================================================================================
-The first method involves the :option:`xtrabackup --tables` option. The option's
+The first method involves the :option:`--tables` option. The option's
 value is a regular expression that is matched against the fully qualified
 tablename, including the database name, in the form ``databasename.tablename``.
 
@@ -75,17 +75,17 @@ regular expression matching. The table names must be fully qualified, in
 The :option:`--databases` and :option:`--databases-file` options
 ================================================================================
 
-:option:`xtrabackup --databases` accepts a space-separated list of the databases
+:option:`--databases` accepts a space-separated list of the databases
 and tables to backup in the format ``databasename[.tablename]``. In addition to
 this list make sure to specify the ``mysql``, ``sys``, and
 ``performance_schema`` databases. These databases are required when restoring
-the databases using :option:`xtrabackup --copy-back`.
+the databases using :option:`--copy-back`.
 
 .. code-block:: bash
 
    $ xtrabackup --databases='mysql sys performance_schema ...'
 
-:option:`xtrabackup --databases-file` specifies a file that can contain multiple
+:option:`--databases-file` specifies a file that can contain multiple
 databases and tables in the ``databasename[.tablename]`` form, one element name
 per line in the file. Only named databases and tables will be backed up. Names
 are matched exactly, case-sensitive, with no pattern or regular expression
@@ -103,7 +103,7 @@ The procedure is analogous to :ref:`restoring individual tables
    $ xtrabackup --prepare --export --target-dir=/path/to/partial/backup
 
 
-When you use the :option:`xtrabackup --prepare` option on a partial backup, you
+When you use the :option:`--prepare` option on a partial backup, you
 will see warnings about tables that don't exist. This is because these tables
 exist in the data dictionary inside InnoDB, but the corresponding :term:`.ibd`
 files don't exist. They were not copied into the backup directory. These tables

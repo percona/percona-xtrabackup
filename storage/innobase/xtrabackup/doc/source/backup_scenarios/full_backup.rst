@@ -4,20 +4,25 @@
 The Backup Cycle - Full Backups
 ================================================================================
 
+.. contents::
+   :local:
+
 .. _creating_a_backup:
 
-Creating a backup
+Creating a backup with |cmd.~backup|
 ================================================================================
 
 To create a backup, run :program:`xtrabackup` with the :option:`--backup`
-option. You also need to specify the :option:`--target-dir` option, which is where
+option. You also need to pass the |param.target-dir| parameter to specify where
 the backup will be stored, if the |InnoDB| data or log files are not stored in
 the same directory, you might need to specify the location of those, too. If the
-target directory does not exist, |xtrabackup| creates it. If the directory does
-exist and is empty, |xtrabackup| will succeed.
+target directory does not exist, |xtrabackup| creates it. If the target directory
+exists and is empty, |cmd.~backup| will succeed.
 
-|xtrabackup| will not overwrite existing files, it will fail with operating
-system error 17, ``file exists``.
+.. warning::
+
+   |xtrabackup| will not overwrite existing files, it will fail with operating
+   system error 17: ``file exists``.
 
 To start the backup process run:
 
@@ -25,10 +30,11 @@ To start the backup process run:
 
    $ xtrabackup --backup --target-dir=/data/backups/
 
-This will store the backup at :file:`/data/backups/`. If you specify a
-relative path, the target directory will be relative to the current directory.
+When |cmd.~backup| completes, the created backup is available from the
+path that you have provided as the value of the |param.target-dir|
+(|file.data.backups|). A relative path is allowed.
 
-During the backup process, you should see a lot of output showing the data
+During the backup process, you see a lot of output showing the progress of data
 files being copied, as well as the log file thread repeatedly scanning the log
 files and copying from it. Here is an example that shows the log thread
 scanning the log in the background, and a file copying thread working on the
@@ -87,52 +93,56 @@ are using MySQL's :term:`innodb_file_per_table` option:
    -rw-r-----  1 root root  433 Sep  6 10:19 xtrabackup_info
    -rw-r-----  1 root root 106M Sep  6 10:19 xtrabackup_logfile
 
-The backup can take a long time, depending on how large the database is. It is
-safe to cancel at any time, because |xtrabackup| does not modify the database.
+For larger databases, the backup can take a long time. You may cancel
+the backup process at any time since |xtrabackup| does not modify 
+the data on the source database.
 
 The next step is getting your backup ready to be restored.
 
 .. _preparing_a_backup:
 
-Preparing a backup
+Preparing a backup using |cmd.~prepare|
 ================================================================================
-After making a backup with the :option:`--backup` option, you need need to
-prepare it in order to restore it. Data files are not point-in-time consistent
-until they are *prepared*, because they were copied at different times as the
-program ran, and they might have been changed while this was happening.
 
-If you try to start InnoDB with these data files, it will detect corruption and
-stop working to avoid running on damaged data.  The :option:`--prepare` step
-makes the files perfectly consistent at a single instant in time, so you can run
-|InnoDB| on them.
+As data on the server could change while the backup was being made, data files
+may be not point-in-time consistent after you run |cmd.~backup|.
 
-You can run the *prepare* operation on any machine; it does not need to be on the
-originating server or the server to which you intend to restore. You can copy
-the backup to a utility server and prepare it there.
+If you try to start the server without the |cmd.~prepare| step, |innodb| will
+detect the data corruption and stop working in order to avoid running on damaged
+data. |cmd.~prepare| makes the files consistent, so that you can run |innodb| on
+them.
 
-Note that |Percona XtraBackup| 8.0 can only prepare backups of |MySQL|
-8.0, |Percona Server| 8.0, and |Percona XtraDB Cluster| 8.0
-databases. Releases prior to 8.0 are not supported.
+.. important::
 
-During the *prepare* operation, |xtrabackup| boots up a kind of modified
-embedded InnoDB (the libraries |xtrabackup| was linked against). The
-modifications are necessary to disable InnoDB standard safety checks, such as
-complaining about the log file not being the right size. This warning is not
-appropriate for working with backups. These modifications are only for the
-xtrabackup binary; you do not need a modified |InnoDB| to use |xtrabackup| for
-your backups.
+   |percona-xtrabackup| 8.0 can only *prepare* backups of |MySQL| 8.0,
+   |percona-server| 8.0, and |percona-xtradb-cluster| 8.0 databases. Releases
+   prior to 8.0 are not supported.
 
-The *prepare* step uses this "embedded InnoDB" to perform crash recovery on the
-copied data files, using the copied log file. The ``prepare`` step is very
-simple to use: you simply run |xtrabackup| with the :option:`--prepare` option
-and tell it which directory to prepare, for example, to prepare the previously
-taken backup run:
+You may run |cmd.~prepare| either on the instance where the backup has been made
+or the target server where you intend to restore the backup. You can copy the
+backup to a utility server and prepare it there, too.
+
+.. admonition:: Implementation detail: Imbedded InnoDB
+
+   During the *prepare* operation, |xtrabackup| boots up a modified
+   embedded InnoDB (the libraries |xtrabackup| was linked against). The
+   modifications are necessary to disable InnoDB standard safety checks, such as
+   complaining about the log file not being the right size. This warning is not
+   appropriate for working with backups. These modifications are only for the
+   xtrabackup binary; you do not need a modified |InnoDB| to use |xtrabackup| for
+   your backups.
+
+   The *prepare* step uses this "embedded InnoDB" to perform crash recovery on the
+   copied data files, using the copied log file.
+
+Running the *prepare* step is easy: you simply run |cmd.~prepare| passing the
+directory that contains the backup to prepare as the value of the |param.target-dir| parameter:
 
 .. code-block:: bash
 
-  $ xtrabackup --prepare --target-dir=/data/backups/
+   $ xtrabackup --prepare --target-dir=/data/backups/
 
-When this finishes, you should see an ``InnoDB shutdown`` with a message such
+When |cmd.~prepare| finishes, you should see an ``InnoDB shutdown`` with a message such
 as the following, where again the value of :term:`LSN` will depend on your
 system:
 
@@ -141,29 +151,31 @@ system:
   InnoDB: Shutdown completed; log sequence number 137345046
   160906 11:21:01 completed OK!
 
-All following prepares will not change the already prepared data files, you'll
-see that output says:
+.. warning::
+
+   The validity of the backup is not guaranteed and data corruption may incur if
+   |cmd.~prepare| is interrupted.
+
+Running |cmd.~prepare| again on the already prepared backup has no
+effect. |xtrabackup| recognizes that backup is already prepared and informs you
+so:
 
 .. code-block:: console
 
-  xtrabackup: This target seems to be already prepared.
-  xtrabackup: notice: xtrabackup_logfile was already used to '--prepare'.
+   xtrabackup: This target seems to be already prepared.
+   xtrabackup: notice: xtrabackup_logfile was already used to '--prepare'.
 
-It is not recommended to interrupt xtrabackup process while preparing backup
-because it may cause data files corruption and backup will become unusable.
-Backup validity is not guaranteed if prepare process was interrupted.
+.. tip::
 
-.. note::
-
-  If you intend the backup to be the basis for further incremental backups, you
-  should use the :option:`--apply-log-only` option when preparing
-  the backup,  or you will not be able to apply incremental backups to it. See
-  the documentation on preparing :ref:`incremental backups
-  <incremental_backup>` for more details.
+   If you intend to use the backup as the basis for further incremental backups,
+   you should use the :option:`--apply-log-only` option when preparing the
+   backup, or you will not be able to apply incremental backups to it. See the
+   documentation on preparing :ref:`incremental backups <incremental_backup>`
+   for more details.
 
 .. _restoring_a_backup:
 
-Restoring a Backup
+Restoring a backup using |cmd.~copy-back|
 ================================================================================
 
 .. warning::
@@ -212,4 +224,9 @@ will be owned by the user who created the backup:
 
 Data is now restored and you can start the server.
 
+.. Replacements ================================================================
 
+.. include:: ../_res/replace/command.txt
+.. include:: ../_res/replace/file.txt
+.. include:: ../_res/replace/parameter.txt
+.. include:: ../_res/replace/proper.txt

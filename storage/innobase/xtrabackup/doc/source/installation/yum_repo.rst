@@ -41,7 +41,7 @@ Installing |Percona XtraBackup| from Percona ``yum`` repository
    ``root`` user or with :program:`sudo`: :bash:`yum install https://repo.percona.com/yum/percona-release-latest.noarch.rpm`
 
 #.
-   .. include:: ../.res/contents/instruction.repository.enabling.txt
+   .. include:: ../_res/text/instruction.repository.enabling.txt
 	     
 #. Install |Percona XtraBackup| by running:  :bash:`yum install percona-xtrabackup-80`
 

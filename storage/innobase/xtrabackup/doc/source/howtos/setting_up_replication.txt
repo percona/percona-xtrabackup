@@ -44,11 +44,11 @@ things you need to follow the steps without hassles:
 ``Percona XtraBackup``
   The backup tool we will use. It should be installed in both computers for convenience.
 
-.. note::
+.. important::
 
    It is not recommended to mix MySQL variants (Percona Server, MySQL) in your
-   replication setup.  This may produce incorrect :file:`xtrabackup_slave_info`
-   file when adding a new slave.
+   replication setup.  This may produce an incorrect :file:`xtrabackup_slave_info`
+   file when adding a new replica.
 
 STEP 1: Make a backup on ``TheMaster`` and prepare it
 =====================================================
@@ -77,32 +77,41 @@ In order for snapshot to be consistent you need to prepare the data:
 .. code-block:: console
 
    TheMaster$ xtrabackup --user=yourDBuser --password=MaGiCdB1 \
-                --prepare --target-dir=/path/to/backupdir
+   --prepare --target-dir=/path/to/backupdir
 
-You need to select path where your snapshot has been taken.
-If everything is ok you should get the same OK message.
-Now the transaction logs are applied to the data files,
-and new ones are created:
-your data files are ready to be used by the MySQL server.
+For the |param.target-dir|, select the path where your snapshot has been taken.
+If everything is ok you should get the same OK message.  Now the transaction
+logs are applied to the data files, and new ones are created: your data files
+are ready to be used by the MySQL server.
 
 |Percona XtraBackup| knows where your data is by reading your :term:`my.cnf`.
 If you have your configuration file in a non-standard place,
-you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
+use the :option:`--defaults-file` option:
+
+.. code-block:: bash
+
+   TheMaster$ xtrabackup --user=yourDBuser --password=MaGiCdB1 \
+   --prepare --target-dir=/path/to/backupdir \
+   --defaults-file=/location/of/my.cnf
 
 If you want to skip writing the user name and password
 every time you want to access |MySQL|,
-you can set it up in :file:`.mylogin.cnf` as follows::
+you can set it up in :file:`.mylogin.cnf` as follows:
 
- mysql_config_editor set --login-path=client --host=localhost --user=root --password
+.. code-block:: bash
 
-For more information, see `MySQL Configuration Utility <https://dev.mysql.com/doc/refman/8.0/en/mysql-config-editor.html>`.
+   $ mysql_config_editor set --login-path=client --host=localhost \
+   --user=root --password
 
-This is will give you root access to MySQL. 
+For more information, see `MySQL Configuration Utility <https://dev.mysql.com/doc/refman/8.0/en/mysql-config-editor.html>`_.
 
-STEP 2:  Copy backed up data to TheSlave
-========================================
+This will give you the root access to MySQL. 
 
-Use rsync or scp to copy the data from Master to Slave. If you're syncing the data directly to slave's data directory it's advised to stop the mysqld there. 
+STEP 2: Copy backed up data to replica
+================================================================================
+
+Use |cmd.rsync| or |cmd.scp| to copy the data from the source to a replica. If you are syncing the
+data directly to slave's the data directory of a replica it's advised to stop the mysqld there.
 
 .. code-block:: console
 
@@ -131,25 +140,29 @@ In case the ibdata and iblog files are located in different directories outside 
 STEP 3: Configure The Master's MySQL server
 ===========================================
 
-Add the appropriate grant in order for slave to be able to connect to master: 
+Add the appropriate grant in order for the replica to be able to connect to the replication source: 
 
 .. code-block:: guess
 
    TheMaster|mysql> GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$slaveip'
     IDENTIFIED BY '$slavepass';
 
-Also make sure that firewall rules are correct and that ``TheSlave`` can connect to ``TheMaster``. Test that you can run the mysql client on ``TheSlave``, connect to ``TheMaster``, and authenticate. ::
+Also make sure that firewall rules are correct and that ``TheSlave`` can connect to ``TheMaster``. Test that you can run the mysql client on ``TheSlave``, connect to ``TheMaster``, and authenticate.
 
-  TheSlave$ mysql --host=TheMaster --user=repl --password=$slavepass
+.. code-block:: bash
 
-Verify the privileges. ::  
+   Replica$ mysql --host=TheMaster --user=repl --password=$slavepass
 
-  mysql> SHOW GRANTS;
+Verify the privileges using the ``SHOW GRANTS`` command
 
-STEP 4: Configure The Slave's MySQL server
+.. code-block:: sql
+
+   mysql> SHOW GRANTS;
+
+STEP 4: Configure the secondary server
 ==========================================
 
-First copy the :term:`my.cnf` file from ``TheMaster`` to ``TheSlave``:
+Start by copying the :term:`my.cnf` file from ``TheMaster`` to ``TheSlave``:
 
 .. code-block:: console
 
@@ -161,7 +174,7 @@ then change the following options in /etc/mysql/my.cnf:
 
    server-id=2
 
-and start/restart :command:`mysqld` on ``TheSlave``.
+and start/restart :command:`mysqld` on `Replica`.
 
 In case you're using init script on Debian based system to start mysqld, be sure that the password for ``debian-sys-maint`` user has been updated and it's the same as that user's password on the ``TheMaster``. Password can be seen and updated in :file:`/etc/mysql/debian.cnf`.
 
@@ -208,12 +221,19 @@ You should check that everything went OK with:
             Seconds_Behind_Master: 13
             ...
 
-Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`` means the ``SQL`` currently being executed has a ``current_timestamp`` of 13 seconds ago. It is an estimation of the lag between ``TheMaster`` and ``TheSlave``. Note that at the beginning, a high value could be shown because ``TheSlave`` has to "catch up" with ``TheMaster``.
+Both ``IO`` and ``SQL`` threads need to be running. The
+``Seconds_Behind_Master`` means the ``SQL`` currently being executed has a
+``current_timestamp`` of 13 seconds ago. It is an estimation of the lag between
+``TheMaster`` and ``TheSlave``. Note that at the beginning, a high value could
+be shown because ``TheSlave`` has to "catch up" with ``TheMaster``.
 
 Adding more slaves to The Master
 ================================
 
-You can use this procedure with slight variation to add new slaves to a master. We will use |Percona XtraBackup| to clone an already configured slave. We will continue using the previous scenario for convenience but we will add ``TheNewSlave`` to the plot.
+You can use this procedure with slight variation to add new slaves to a
+master. We will use |Percona XtraBackup| to clone an already configured
+slave. We will continue using the previous scenario for convenience but we will
+add ``TheNewSlave`` to the plot.
 
 At ``TheSlave``, do a full backup:
 
@@ -222,7 +242,8 @@ At ``TheSlave``, do a full backup:
    TheSlave$ xtrabackup --user=yourDBuser --password=MaGiCiGaM \
                --backup --slave-info --target-dir=/path/to/backupdir
 
-By using the :option:`--slave-info` |Percona XtraBackup| creates additional file called :file:`xtrabackup_slave_info`.
+By using the :option:`--slave-info` |Percona XtraBackup| creates additional file
+called :file:`xtrabackup_slave_info`.
 
 Apply the logs:
 
@@ -230,7 +251,9 @@ Apply the logs:
 
    TheSlave$ xtrabackup --prepare --use-memory=2G --target-dir=/path/to/backupdir/
 
-Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure mysqld is shut down on ``TheNewSlave`` before you copy the contents the snapshot into its :term:`datadir`.): 
+Copy the directory from the ``TheSlave`` to ``TheNewSlave`` (**NOTE**: Make sure
+mysqld is shut down on ``TheNewSlave`` before you copy the contents the snapshot
+into its :term:`datadir`.):
 
 .. code-block:: console
 
@@ -240,8 +263,8 @@ Add additional grant on the master:
 
 .. code-block:: guess
 
-	TheMaster|mysql> GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$newslaveip'
-                     IDENTIFIED BY '$slavepass';
+   TheMaster|mysql> GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$newslaveip'
+   IDENTIFIED BY '$slavepass';
 
 Copy the configuration file from ``TheSlave``:
 
@@ -256,7 +279,7 @@ Make sure you change the server-id variable in :file:`/etc/mysql/my.cnf` to 3 an
    skip-slave-start
    server-id=3
 
-After setting ``server_id``, start :command:`mysqld`.
+After setting ``server_id``, start |cmd.mysqld|.
 
 Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_slave_info`, execute the statement for setting up the master and the log file for ``The NEW Slave``:
 
@@ -276,3 +299,8 @@ and start the slave:
    TheNEWSlave|mysql> START SLAVE;
 
 If both IO and SQL threads are running when you check the ``TheNewSlave``, server is replicating ``TheMaster``.
+
+.. Replacements ================================================================
+
+.. include:: ../_res/replace/command.txt
+.. include:: ../_res/replace/parameter.txt

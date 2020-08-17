@@ -606,7 +606,15 @@ Options
 
 .. option:: --log-bin
 
-   The base name for the log sequence.
+   The base name for binary log files. Use an absolute path as the value of this
+   parameter to specify a custom location for binary log files.
+
+   .. seealso::
+
+      |mysql| Documentation:
+
+         - `--bin-log option
+	   <https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#option_mysqld_log-bin>`_
 
 .. option:: --log-bin-index=name 
 
@@ -659,7 +667,7 @@ Options
    conditions :file:`xtrabackup_binlog_pos_innodb` can be used instead to get
    consistent binlog coordinates as described in :ref:`working_with_binlogs`.
 
-.. include:: ../.res/contents/option.no-version-check.txt
+.. include:: ../_res/text/option.no-version-check.txt
 
 .. option:: --open-files-limit=# 
 
@@ -761,7 +769,7 @@ Options
 
 .. option:: --safe-slave-backup
 
-   When specified, xtrabackup will stop the slave SQL thread just before
+   When specified, xtrabackup will stop the replication SQL thread just before
    running ``FLUSH TABLES WITH READ LOCK`` and wait to start backup until
    ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open
    temporary tables, the backup will take place, otherwise the SQL thread will

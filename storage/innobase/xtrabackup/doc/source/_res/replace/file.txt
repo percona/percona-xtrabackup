@@ -1,3 +1,9 @@
 .. Directory names, file names, and path like objects
 
 .. |dockerhub.percona-xtrabackup| replace:: :file:`perconalab/percona-xtrabackup`
+.. |xtrabackup-binlog-info| replace:: :file:`xtrabackup_binlog_info`
+.. |file.xtrabackup-binlog-info| replace:: :file:`xtrabackup_binlog_info`
+.. |file.binlog-info| replace:: :file:`xtrabackup_binlog_info`
+.. |file.data.backups| replace:: :dir:`/data/backups`
+.. |dir.data.backups| replace:: :dir:`/data/backups`
+.. |file.xtrabackup-slave-info| replace:: :file:`xtrabackup_slave_info`

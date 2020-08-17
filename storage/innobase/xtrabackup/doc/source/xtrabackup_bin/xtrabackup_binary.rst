@@ -49,7 +49,6 @@ Advanced Features
    flush-tables-with-read-lock
    backup.accelerating
    point-in-time-recovery
-   replication
    backup.history
    
 Implementation
