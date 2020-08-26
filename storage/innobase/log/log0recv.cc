@@ -1612,6 +1612,22 @@ static byte *recv_parse_or_apply_log_rec_body(
   switch (type) {
 #ifndef UNIV_HOTBACKUP
     case MLOG_FILE_DELETE:
+      /* error out backup if undo truncation happens during backup */
+      if (srv_backup_mode && fsp_is_undo_tablespace(space_id) &&
+          backup_redo_log_flushed_lsn < recv_sys->recovered_lsn) {
+        ib::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
+                   << " undo_delete lsn " << recv_sys->recovered_lsn;
+
+        ib::error(ER_IB_MSG_716)
+            << "An undo ddl truncation (could be automatic)"
+            << " operation has been"
+            << " performed. \n"
+            << " PXB will not be able to"
+            << " take a consistent backup."
+            << " Retry the backup"
+            << " operation later or with --lock-ddl";
+        exit(EXIT_FAILURE);
+      }
 
       return (fil_tablespace_redo_delete(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
