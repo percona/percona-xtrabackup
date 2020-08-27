@@ -7,10 +7,10 @@ The ``xtrabackup`` binary integrates with information that |InnoDB|
 stores in its transaction log about the corresponding binary log
 position for committed transactions. This enables it to print out the
 binary log position to which a backup corresponds, so you can use it
-to set up new replication slaves or perform point-in-time recovery.
+to set up new replication replicas or perform point-in-time recovery.
 
 Finding the Binary Log Position
--------------------------------
+--------------------------------
 
 You can find the binary log position corresponding to a backup once
 the backup has been prepared. This can be done by either running the
@@ -37,16 +37,16 @@ If other storage engines are used (i.e. |MyISAM|), you should use the :file:`xtr
 The message about hacking group commit refers to an early implementation of emulated group commit in |Percona Server|.
 
 Point-In-Time Recovery
-----------------------
+-----------------------
 
 To perform a point-in-time recovery from an ``xtrabackup`` backup, you should prepare and restore the backup, and then replay binary logs from the point shown in the :file:`xtrabackup_binlog_info` file. 
 
 A more detailed procedure is found :ref:`here <pxb.xtrabackup.point-in-time-recovery>`.
 
 
-Setting Up a New Replication Slave
-----------------------------------
+Setting Up a New Replication Replica
+-------------------------------------
 
-To set up a new replica, you should prepare the backup, and restore it to the data directory of your new replication slave. Then in your ``CHANGE MASTER TO`` command, use the binary log filename and position shown in the :file:`xtrabackup_binlog_info` file to start replication.
+To set up a new replica, you should prepare the backup, and restore it to the data directory of your new replication replica. Then in your ``CHANGE MASTER TO`` command, use the binary log filename and position shown in the :file:`xtrabackup_binlog_info` file to start replication.
 
 A more detailed procedure is found in  :doc:`../howtos/setting_up_replication`.

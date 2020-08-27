@@ -101,7 +101,7 @@ backed up:
   mandatory), and optionally to see all threads which are running on the
   server (see :ref:`pxb.xtrabackup.flush-tables-with-read-lock`),
 
-* ``SUPER`` in order to start/stop the slave threads in a replication
+* ``SUPER`` in order to start/stop the replication threads in a replication
   environment, use `XtraDB Changed Page Tracking
   <https://www.percona.com/doc/percona-server/8.0/management/changed_page_tracking.html>`_
   for :ref:`xb_incremental` and for :ref:`handling FLUSH TABLES WITH READ LOCK <pxb.xtrabackup.flush-tables-with-read-lock>`,
