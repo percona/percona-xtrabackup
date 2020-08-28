@@ -11,6 +11,14 @@
 %endif
 %global mysqldatadir /var/lib/mysql
 
+%if 0%{?rhel} == 7
+%global __python %{__python3}
+%endif
+
+%if 0%{?rhel} == 6
+%global __python /opt/rh/rh-python36/root/usr/bin/python3
+%endif
+
 #####################################
 Name:           percona-xtrabackup-%{xb_version_major}%{xb_version_minor}
 Version:        %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}
@@ -64,12 +72,10 @@ export CXX=${CXX-"g++"}
 export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 #
-%if 0%{?rhel} == 8
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/subunit2junitxml
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-two-script.py
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-script.py
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/run.py
-%endif
 #
 %{cmake_bin} . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \

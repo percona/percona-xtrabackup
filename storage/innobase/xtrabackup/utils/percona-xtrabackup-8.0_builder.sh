@@ -194,6 +194,7 @@ enable_venv(){
             export PATH="/usr/local/bin:$PATH"
         elif [ "${RHEL}" -eq 7 ]; then
             source /opt/rh/devtoolset-7/enable
+            export PATH="/usr/local/bin:$PATH"
             export CMAKE_BIN="cmake3"
         elif [ "${RHEL}" -eq 6 ]; then
             source /opt/rh/devtoolset-7/enable
