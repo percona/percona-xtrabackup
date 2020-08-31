@@ -78,7 +78,7 @@ Index of files created by Percona XtraBackup
   :option:`--slave-info` option):
 
     * :file:`xtrabackup_slave_info`
-       The ``CHANGE MASTER`` statement needed for setting up a slave.
+       The ``CHANGE MASTER`` statement needed for setting up a replica.
 
 * Information related to the *Galera* and *Percona XtraDB Cluster* (if using
   the :option:`--galera-info` option):

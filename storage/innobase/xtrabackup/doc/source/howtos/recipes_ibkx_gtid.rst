@@ -1,7 +1,7 @@
 .. _recipes_ibkx_gtid:
 
 ================================================================================
-How to create a new (or repair a broken) GTID based slave
+How to create a new (or repair a broken) GTID-based Replica
 ================================================================================
 
 |MySQL| 5.6 introduced the new Global Transaction ID (`GTID
@@ -9,11 +9,11 @@ How to create a new (or repair a broken) GTID based slave
 support in replication. |Percona XtraBackup| automatically
 stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the
 backup of |MySQL| and |Percona Server| 5.7 with the ``GTID`` mode enabled. This
-information can be used to create a new (or repair a broken) ``GTID`` based
-slave.
+information can be used to create a new (or repair a broken) ``GTID``-based
+replica.
 
 
-STEP 1: Take a backup from any server on the replication environment, master or slave
+STEP 1: Take a backup from any server on the replication environment, source or replica
 =========================================================================================
 
 The following command takes a backup and saves it in the :file:`/data/backups/$TIMESTAMP` folder:
@@ -39,11 +39,11 @@ That information is also printed by innobackupex after taking the backup:
 STEP 2: Prepare the backup
 ================================================================================
 
-The backup will be prepared with the following command:  
+The backup will be prepared with the following command on the Source:  
 
 .. code-block:: console
 
-   TheMaster$ xtrabackup --prepare --target-dir=/data/backup
+    $ xtrabackup --prepare --target-dir=/data/backup
 
 You need to select the path where your snapshot has been taken, for example
 ``/data/backups/2013-05-07_08-33-33``. If everything is ok you should get the
@@ -54,7 +54,7 @@ STEP 3: Move the backup to the destination server
 ================================================================================
 
 Use :command:`rsync` or :command:`scp` to copy the data to the destination
-server. If you are synchronizing the data directly to the already running slave's data
+server. If you are synchronizing the data directly to the already running replica's data
 directory it is advised to stop the |MySQL| server there.
 
 .. code-block:: bash
@@ -72,37 +72,37 @@ STEP 4: Configure and start replication
 
 Set the gtid_purged variable to the ``GTID`` from
 :file:`xtrabackup_binlog_info`. Then, update the information about the
-master node and, finally, start the slave.
+source node and, finally, start the replica. Run the following commands on the replica:
 
 .. code-block:: guess
 
    # Using the mysql shell
-   NewSlave > SET SESSION wsrep_on = 0;
-   NewSlave > RESET MASTER;
-   NewSlave > SET SESSION wsrep_on = 1;
-   NewSlave > SET GLOBAL gtid_purged='<gtid_string_found_in_xtrabackup_binlog_info>';
-   NewSlave > CHANGE MASTER TO 
+    > SET SESSION wsrep_on = 0;
+    > RESET MASTER;
+    > SET SESSION wsrep_on = 1;
+    > SET GLOBAL gtid_purged='<gtid_string_found_in_xtrabackup_binlog_info>';
+    > CHANGE MASTER TO 
                 MASTER_HOST="$masterip", 
                 MASTER_USER="repl",
                 MASTER_PASSWORD="$slavepass",
                 MASTER_AUTO_POSITION = 1;
-   NewSlave > START SLAVE;
+    > START SLAVE;
 
 .. note::
 
    The example above is applicable to |PXC|. The ``wsrep_on`` variable
-   is set to `0` before resetting the master (``RESET MASTER``). The
-   reason is that |PXC| will not allow resetting the master if
+   is set to `0` before resetting the source (``RESET MASTER``). The
+   reason is that |PXC| will not allow resetting the source if
    ``wsrep_on=1``.
 
 STEP 5: Check the replication status
 ================================================================================
 
-The following command will show the slave status:
+The following command will show the replica status:
 
 .. code-block:: guess
 
-   NewSlave > SHOW SLAVE STATUS\G
+    > SHOW SLAVE STATUS\G
             [..]
             Slave_IO_Running: Yes
             Slave_SQL_Running: Yes
@@ -110,8 +110,8 @@ The following command will show the slave status:
             Retrieved_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:5
             Executed_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:1-5
 
-We can see that the slave has retrieved a new transaction with number 5, so
+We can see that the replica has retrieved a new transaction with number 5, so
 transactions from 1 to 5 are already on this slave.
 
-We have created a new slave in our ``GTID`` based replication
+We have created a new replica in our ``GTID`` based replication
 environment.
