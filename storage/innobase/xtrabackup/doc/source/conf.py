@@ -152,7 +152,7 @@ extlinks = {'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s', '#'),
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'percona-theme'
+html_theme = 'percona-theme-1-4'
 
 
 # Theme options are theme-specific and customize the look and feel of a theme
