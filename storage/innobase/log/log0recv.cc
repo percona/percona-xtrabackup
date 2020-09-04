@@ -1793,7 +1793,7 @@ recv_parse_or_apply_log_rec_body(
 		of offline backup and continue.
 		*/
 		if (!recv_recovery_on) {
-			if (!opt_lock_ddl_per_table) {
+			if (mdl_taken) {
 				if (backup_redo_log_flushed_lsn
 				    < recv_sys->recovered_lsn) {
 					ib::info() << "Last flushed lsn: "

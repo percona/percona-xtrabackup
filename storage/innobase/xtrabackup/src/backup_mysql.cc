@@ -54,6 +54,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "mysqld.h"
+#include "xb_regex.h"
 
 
 char *tool_name;
@@ -1197,12 +1198,6 @@ the locking strategy being used */
 void
 unlock_all(MYSQL *connection)
 {
-	if (opt_debug_sleep_before_unlock) {
-		msg_ts("Debug sleep for %u seconds\n",
-		       opt_debug_sleep_before_unlock);
-		os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
-	}
-
 	if (binlog_locked) {
 		msg_ts("Executing UNLOCK BINLOG\n");
 		xb_mysql_query(connection, "UNLOCK BINLOG", false);
@@ -2163,69 +2158,102 @@ backup_cleanup()
 	}
 }
 
-static ib_mutex_t mdl_lock_con_mutex;
 static MYSQL *mdl_con = NULL;
-
 void
-mdl_lock_init()
+mdl_lock_tables()
 {
-	mutex_create(LATCH_ID_XTRA_DATAFILES_ITER_MUTEX, &mdl_lock_con_mutex);
-
-	mdl_con = xb_mysql_connect();
-
-	if (mdl_con != NULL) {
-		xb_mysql_query(mdl_con, "BEGIN", false, true);
-	}
-}
-
-
-void
-mdl_lock_table(ulint space_id)
-{
+	msg_ts("Initializing MDL on all current tables.\n");
 	MYSQL_RES *mysql_result = NULL;
 	MYSQL_ROW row;
-	char *query;
+	mdl_con = xb_mysql_connect();
+	if (mdl_con != NULL) {
+		xb_mysql_query(mdl_con, "BEGIN", false, true);
+		mysql_result = xb_mysql_query(mdl_con, "SELECT NAME, SPACE FROM "
+									"INFORMATION_SCHEMA.INNODB_SYS_TABLES", true, true);
+		while ((row = mysql_fetch_row(mysql_result))) {
+			if (fil_is_user_tablespace_id(atoi(row[1]))) {
+				char full_table_name[MAX_FULL_NAME_LEN + 1];
+				innobase_format_name(full_table_name, sizeof(full_table_name), row[0]);
+				if (is_fts_index(full_table_name)) {
+					// We will eventually get to the row to lock the main table
+					msg_ts("%s is a Full-Text Index. Skipping\n", full_table_name);
+					continue;
+				} else if (is_tmp_table(full_table_name)) {
+					// We cannot run SELECT ... #sql-; Skipped to avoid invalid query.
+					msg_ts("%s is a temporary table. Skipping\n", full_table_name);
+					continue;
+				}
 
-	mutex_enter(&mdl_lock_con_mutex);
+				msg_ts("Locking MDL for %s\n", full_table_name);
+				char *lock_query;
+				xb_a(asprintf(&lock_query,
+						"SELECT 1 FROM %s LIMIT 0", full_table_name));
 
-	xb_a(asprintf(&query,
-		"SELECT NAME FROM INFORMATION_SCHEMA.INNODB_SYS_TABLES "
-		"WHERE SPACE = %lu", space_id));
+				xb_mysql_query(mdl_con, lock_query, false, false);
 
-	mysql_result = xb_mysql_query(mdl_con, query, true);
-
-	while ((row = mysql_fetch_row(mysql_result))) {
-		char *lock_query;
-		char table_name[MAX_FULL_NAME_LEN + 1];
-
-		innobase_format_name(table_name, sizeof(table_name), row[0]);
-
-		msg_ts("Locking MDL for %s\n", table_name);
-
-		xb_a(asprintf(&lock_query,
-			"SELECT * FROM %s LIMIT 1",
-			table_name));
-
-		xb_mysql_query(mdl_con, lock_query, false, false);
-
-		free(lock_query);
+				free(lock_query);
+			}
+		}
+		mysql_free_result(mysql_result);
 	}
-
-	mysql_free_result(mysql_result);
-	free(query);
-
-	mutex_exit(&mdl_lock_con_mutex);
 }
-
 
 void
 mdl_unlock_all()
 {
-	msg_ts("Unlocking MDL for all tables");
+	msg_ts("Unlocking MDL for all tables\n");
+	if (mdl_con != NULL) {
+		xb_mysql_query(mdl_con, "COMMIT", false, true);
+		mysql_close(mdl_con);
+	}
+}
+bool
+is_fts_index(const std::string &tablespace)
+{
+	const char *pattern =
+			"^(FTS|fts)_[0-9a-fA-f]{16}_(([0-9a-fA-]{16}_(INDEX|index)_[1-6])|"
+			"DELETED_CACHE|deleted_cache|DELETED|deleted|CONFIG|config|BEING_DELETED|"
+			"being_deleted|BEING_DELETED_CACHE|beign_deleted_cache)$";
+	const char *error_context = "is_fts_index";
+	return check_regexp_table_name(tablespace, error_context, pattern);
+}
 
-	xb_mysql_query(mdl_con, "COMMIT", false, true);
+bool
+is_tmp_table(const std::string &tablespace)
+{
+	const char* pattern = "^#sql-";
+	const char* error_context = "is_tmp_table";
+	return check_regexp_table_name(tablespace, error_context, pattern);
+}
 
-	mutex_free(&mdl_lock_con_mutex);
+bool
+check_regexp_table_name(
+	std::string tablespace,
+	const char* error_context,
+	const char* pattern
+)
+{
+	bool result = false;
+	get_table_name_from_tablespace(tablespace);
+	xb_regex_t preg;
+	size_t nmatch = 1;
+	xb_regmatch_t pmatch[1];
+	compile_regex(pattern, error_context, &preg);
+
+	if (xb_regexec(&preg, tablespace.c_str(), nmatch, pmatch, 0) != REG_NOMATCH) {
+		result = true;
+	}
+	xb_regfree(&preg);
+	return result;
+}
+void
+get_table_name_from_tablespace(std::string &tablespace)
+{
+	std::size_t pos = tablespace.find("`.`"); //`db`.`table` separator
+	if (pos != std::string::npos) {
+		tablespace = tablespace.substr(pos+3);
+		tablespace.erase(tablespace.size()-1); //remove leading `
+	}
 }
 
 bool
