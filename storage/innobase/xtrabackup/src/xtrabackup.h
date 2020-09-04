@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_getopt.h>
 #include "changed_page_bitmap.h"
 #include "datasink.h"
+#include "xb_regex.h"
 #include "xbstream.h"
 #include "xtrabackup_config.h"
 
@@ -196,6 +197,8 @@ extern bool opt_generate_new_master_key;
 extern uint opt_dump_innodb_buffer_pool_timeout;
 extern uint opt_dump_innodb_buffer_pool_pct;
 extern bool opt_dump_innodb_buffer_pool;
+extern bool compile_regex(const char *regex_string, const char *error_context,
+                          xb_regex_t *compiled_re);
 
 enum binlog_info_enum {
   BINLOG_INFO_OFF,

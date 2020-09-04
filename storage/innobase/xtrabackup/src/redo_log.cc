@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "backup_mysql.h"
 #include "common.h"
 #include "os0event.h"
+#include "xb0xb.h"
 #include "xtrabackup.h"
 
 extern ds_ctxt_t *ds_redo;
@@ -944,12 +945,23 @@ bool Redo_Log_Data_Manager::start() {
   last_checkpoint_lsn = start_checkpoint_lsn;
   stop_lsn = 0;
 
+  if (opt_lock_ddl_per_table) {
+    mdl_lock_tables();
+  }
+
   bool finished = false;
   while (!finished) {
     if (!copy_once(false, &finished)) {
       return (false);
     }
   }
+
+  /*
+   * From this point forward, recv_parse_or_apply_log_rec_body should fail if
+   * MLOG_INDEX_LOAD event is parsed as its not safe to continue the backup
+   * in any situation (with or without --lock-ddl-per-table).
+   */
+  mdl_taken = true;
 
   thread.start();
 

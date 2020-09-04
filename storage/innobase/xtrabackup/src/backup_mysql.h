@@ -220,9 +220,32 @@ bool write_slave_info(MYSQL *connection);
 
 void parse_show_engine_innodb_status(MYSQL *connection);
 
-void mdl_lock_init();
+/** Acquires MDL lock on all tables */
+void mdl_lock_tables();
 
-void mdl_lock_table(ulint space_id);
+/** Identifies if tablespace is a Full Text Index.
+@param[in]	tablespace		tablespace
+@return true if tablespace is FTS. */
+bool is_fts_index(const std::string &tablespace);
+
+/** Identifies if tablespace is a temporary table (#sql-)
+@param[in]	tablespace		tablespace
+@return true if tablespace is temporary table. */
+bool is_tmp_table(const std::string &tablespace);
+
+/** Runs a regexp against a table name
+@param[in]	tablespace		tablespace
+@param[in]	error_context		error to be return in case of errors
+@param[in]	pattern		regexp pattern to try a match
+@return true if there is a match, or false otherwise */
+bool check_regexp_table_name(std::string tablespace, const char *error_context,
+                             const char *pattern);
+
+/** Extract the table name from a full qualified `db`.`table` string
+removing escape string. Replace the name inplace
+@param[in/out]	tablespace		tablespace
+ */
+void get_table_name_from_tablespace(std::string &tablespace);
 
 void mdl_unlock_all();
 

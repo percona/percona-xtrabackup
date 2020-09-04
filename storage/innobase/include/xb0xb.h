@@ -25,6 +25,7 @@ extern bool innodb_log_checksums_specified;
 extern bool innodb_checksum_algorithm_specified;
 
 extern bool opt_lock_ddl_per_table;
+extern bool mdl_taken;
 
 extern bool use_dumped_tablespace_keys;
 
