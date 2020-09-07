@@ -51,11 +51,11 @@ via the |percona-release| package configuration tool.
 #.
    .. include:: ../.res/contents/instruction.repository.enabling.txt
 
-#. After that you can install the ``percona-xtrabackup-80`` package:
+#. After that you can install the ``percona-xtrabackup-24`` package:
 
    .. code-block:: bash
 		   
-      $ sudo apt-get install percona-xtrabackup-80
+      $ sudo apt-get install percona-xtrabackup-24
 
 #. In order to make compressed backups, install the ``qpress`` package:
 
@@ -118,6 +118,6 @@ packages.
 
    .. code-block:: bash
 
-      $ sudo apt-get remove percona-xtrabackup-80
+      $ sudo apt-get remove percona-xtrabackup-24
 
 .. |percona-release| replace:: ``percona-release``
