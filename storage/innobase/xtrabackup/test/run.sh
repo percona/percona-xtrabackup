@@ -42,7 +42,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -f          Continue running tests after failures
 -d path     Server installation directory. Default is './server'.
 -g          Debug mode
--t path     Run only a single named test
+-t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
 -s suite    Select a test suite to run. Possible values: experimental, t. 
             Default is 't'.
@@ -757,10 +757,10 @@ while getopts "fgh?:t:s:d:c:j:T:x:X:i:r:" options; do
             f ) force="yes";;
             t )
 
-                tname="$OPTARG";
-                if ! [ -r "$tname" ]
+                tname="${tname} $OPTARG";
+                if ! [ -r "$OPTARG" ]
                 then
-                    echo "Cannot find test $tname."
+                    echo "Cannot find test $OPTARG."
                     exit -1
                 fi
                 ;;
