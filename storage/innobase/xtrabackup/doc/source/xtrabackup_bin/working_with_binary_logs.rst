@@ -49,4 +49,4 @@ Setting Up a New Replication Replica
 
 To set up a new replica, you should prepare the backup, and restore it to the data directory of your new replication replica. Then in your ``CHANGE MASTER TO`` command, use the binary log filename and position shown in the :file:`xtrabackup_binlog_info` file to start replication.
 
-A more detailed procedure is found in  :doc:`../howtos/setting_up_replication`.
+A more detailed procedure is found in  :doc:`../howtos/replication`.

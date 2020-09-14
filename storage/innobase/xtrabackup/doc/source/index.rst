@@ -21,9 +21,9 @@ environment. `Commercial support contracts are available
 |MyISAM|, and MyRocks tables on |MySQL| 8.0 servers as well as |Percona Server|
 with |XtraDB|, |Percona Server| 8.0, and |Percona XtraDB Cluster| 8.0.
 
-.. include:: .res/contents/important.storage-engine.txt
+.. include:: _res/text/important.storage-engine.txt
 
-.. include:: .res/contents/text.pxb.8-0.txt	     
+.. include:: _res/text/text.pxb.8-0.txt	     
 
 For a high-level overview of many of its advanced features, including
 a feature comparison, please see :doc:`intro`.
@@ -60,6 +60,7 @@ Prerequisites
    using_xtrabackup/privileges
    using_xtrabackup/configuring
 
+
 Backup Scenarios
 ================
 
@@ -70,6 +71,8 @@ Backup Scenarios
    backup_scenarios/full_backup
    backup_scenarios/incremental_backup
    backup_scenarios/compressed_backup
+
+..   xtrabackup_bin/replication
 
 User's Manual
 =============
@@ -94,8 +97,6 @@ Advanced Features
 
 Tutorials, Recipes, How-tos
 ===========================
-
-.. * :ref:`recipes-ibk`
 
 .. toctree::
    :maxdepth: 2
@@ -135,5 +136,3 @@ Indices and tables
 * :ref:`search`
 
 .. rubric:: Footnotes
-
-

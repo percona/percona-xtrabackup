@@ -1,12 +1,13 @@
 .. _intro:
 
-==========================
+================================================================================
  About Percona XtraBackup
-==========================
+================================================================================
 
-*Percona XtraBackup* is the world's only open-source, free |MySQL| hot backup
-software that performs non-blocking backups for |InnoDB| and |XtraDB|
-databases. With *Percona XtraBackup*, you can achieve the following benefits:
+*Percona XtraBackup* is the world's only open-source, free |MySQL| hot
+backup software that performs non-blocking backups for |InnoDB| and
+|XtraDB| databases. With *Percona XtraBackup*, you can achieve the
+following benefits:
 
 * Backups that complete quickly and reliably
 * Uninterrupted transaction processing during backups
@@ -39,10 +40,10 @@ pausing writes at the end of the backup: |MyISAM|, :term:`Merge <.MRG>`, and
 :term:`Archive <.ARM>`, including partitioned tables, triggers, and database
 options.
 
-.. include:: .res/contents/important.storage-engine.txt   
+.. include:: _res/text/important.storage-engine.txt   
 
 What are the features of Percona XtraBackup?
-============================================
+================================================================================
 
 Here is a short list of |Percona XtraBackup| features. See the documentation
 for more.

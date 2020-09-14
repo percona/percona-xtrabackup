@@ -42,7 +42,7 @@ parallel which can significantly speed up the backup process. In case backups
 were both compressed and encrypted, they'll need to decrypted first in order to
 be uncompressed.
 
-.. include:: ../.res/contents/example.xbstream.txt
+.. include:: ../_res/text/example.xbstream.txt
 
 Note that the streamed backup will need to be prepared before
 restoration. Streaming mode does not prepare the backup.

@@ -1,7 +1,8 @@
 .. _pxc.installing/docker.running:
 
+================================================================================
 Running |percona-xtrabackup| in a |docker| container
-********************************************************************************
+================================================================================
 
 You may run |percona-xtrabackup| in a |docker| container without
 having to install it. All required libraries come already installed in
@@ -13,7 +14,8 @@ configurations where each program runs in a separate container. You may run
 
 You create a new |docker| container based on a |docker| image, which works as a
 template for newly created containers. |docker| images for |percona-xtrabackup|
-are hosted publicly on |docker-hub| at |dockerhub.percona-xtrabackup|.
+are hosted publicly on |docker-hub| at
+https://hub.docker.com/r/percona/percona-xtradb-cluster/.
 
 .. code-block:: bash
 
@@ -117,6 +119,8 @@ The |cmd.docker-run| is a shortcut command that creates a |docker| container and
 	<https://docs.docker.com/storage/volumes/>`_
       - `More information about containers
 	<https://docs.docker.com/config/containers/start-containers-automatically/>`_
+
+.. Replacements ================================================================
 
 .. include:: ../_res/replace/proper.txt
 .. include:: ../_res/replace/command.txt

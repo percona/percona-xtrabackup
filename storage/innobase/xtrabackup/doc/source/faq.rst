@@ -2,17 +2,17 @@
 Frequently Asked Questions
 ================================================================================
 
-Does |Percona XtraBackup| 8.0 support making backups of databases in versions prior to 8.0?
+Does |percona-xtrabackup| 8.0 support making backups of databases in versions prior to 8.0?
 ====================================================================================================
 
-.. include:: .res/contents/text.pxb.8-0.txt
+.. include:: _res/text/text.pxb.8-0.txt
 
 .. _pxb.faq.innobackupex.8-0:
 
 Why will ``innobackupex`` not run in |Percona Xtrabackup| 8.0?
 ================================================================================
 
-:program:`innobackupex` has been removed from |Percona XtraBackup|
+:program:`innobackupex` has been removed from |percona-xtrabackup|
 |version| in favor of :program:`xtrabackup`.
 
 What's the difference between :program:`innobackupex` and :program:`xtrabackup`?
@@ -20,18 +20,18 @@ What's the difference between :program:`innobackupex` and :program:`xtrabackup`?
 
 See :ref:`pxb.faq.innobackupex.8-0`
 
-Are you aware of any web-based backup management tools (commercial or not) built around |Percona XtraBackup|?
+Are you aware of any web-based backup management tools (commercial or not) built around |percona-xtrabackup|?
 ========================================================================================================================
 
 `Zmanda Recovery Manager <http://www.zmanda.com/zrm-mysql-enterprise.html>`_ is
-a commercial tool that uses |Percona XtraBackup| for Non-Blocking Backups:
+a commercial tool that uses |percona-xtrabackup| for Non-Blocking Backups:
 
- *"ZRM provides support for non-blocking backups of MySQL using |Percona
- XtraBackup|. ZRM with |Percona XtraBackup| provides resource utilization
- management by providing throttling based on the number of IO operations per
- second. |Percona XtraBackup| based backups also allow for table level recovery
- even though the backup was done at the database level (needs the recovery
- database server to be |Percona Server| with XtraDB)."*
+   ZRM provides support for non-blocking backups of MySQL using |pxb|. ZRM with
+   |percona-xtrabackup| provides resource utilization management by providing
+   throttling based on the number of IO operations per second. |Percona
+   XtraBackup| based backups also allow for table level recovery even though the
+   backup was done at the database level (needs the recovery database server to
+   be |Percona Server| with XtraDB).
 
 |xtrabackup| binary fails with a floating point exception
 ================================================================================
@@ -52,9 +52,9 @@ Backup fails with Error 24: 'Too many open files'
 =================================================
 
 This usually happens when database being backed up contains large amount of
-files and |Percona XtraBackup| can't open all of them to create a successful
+files and |percona-xtrabackup| can't open all of them to create a successful
 backup. In order to avoid this error the operating system should be configured
-appropriately so that |Percona XtraBackup| can open all its files. On Linux,
+appropriately so that |percona-xtrabackup| can open all its files. On Linux,
 this can be done with the ``ulimit`` command for specific backup session or by
 editing the :file:`/etc/security/limits.conf` to change it globally (**NOTE**:
 the maximum possible value that can be set up is ``1048576`` which is a
@@ -86,3 +86,5 @@ Percona XtraBackup can use metadata locks on tables while they are copied:
   using the :option:`--lock-ddl-per-table` option.
 
 .. |version| replace:: '8.0'
+
+.. include:: _res/replace/proper.txt

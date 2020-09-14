@@ -1,13 +1,15 @@
 .. Company names (e.g. Percona, Oracle), product names (e.g. MySQL, Ubuntu)
 
-.. |percona| replace:: Percona
-.. |percona-xtrabackup| replace:: Percona XtraBackup
-.. |percona-server| replace:: Percona Server for MySQL
-.. |percona-server-mysql| replace:: Percona Server for MySQL
-.. |oracle| replace:: Oracle
-.. |mysql| replace:: MySQL
-.. |ubuntu| replace:: Ubuntu
-.. |debian| replace:: Debian
 .. |centos| replace:: CentOS
-.. |docker| replace:: Docker
+.. |debian| replace:: Debian
 .. |docker-hub| replace:: Docker Hub
+.. |docker| replace:: Docker
+.. |mysql| replace:: MySQL
+.. |oracle| replace:: Oracle
+.. |percona-server-mysql| replace:: Percona Server for MySQL
+.. |percona-server| replace:: Percona Server for MySQL
+.. |percona-xtrabackup| replace:: Percona XtraBackup
+.. |percona-xtradb-cluster| replace:: Percona XtraDB Cluster
+.. |percona| replace:: Percona
+.. |pxc| replace:: Percona XtraDB Cluster
+.. |ubuntu| replace:: Ubuntu

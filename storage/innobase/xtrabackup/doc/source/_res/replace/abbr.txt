@@ -2,3 +2,4 @@
 
 .. |abbr.yum| replace:: :abbr:`YUM (Yellowdog Updater, Modified)`
 .. |abbr.apt| replace:: :abbr:`APT (Advanced Package Tool)`
+.. |abbr.gtid| replace:: :abbr:`GTID (Global Transaction Identifier)`

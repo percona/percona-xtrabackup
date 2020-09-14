@@ -23,9 +23,13 @@ How-Tos
 .. toctree::
    :maxdepth: 1
 
-   howtos/setting_up_replication
+   howtos/replication
    howtos/backup_verification
-   howtos/recipes_ibkx_gtid
+
+.. toctree::
+   :hidden:
+
+   howtos/replication.setting-up
 
 .. _aux-guides:
 

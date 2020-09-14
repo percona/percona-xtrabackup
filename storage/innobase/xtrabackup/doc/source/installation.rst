@@ -29,7 +29,8 @@ update your software and its dependencies through your operating system's
 package manager. This is the recommended way of installing |Percona XtraBackup|.
 
 The following guides describe the installation process for using the official
-Percona repositories for :file:`.deb` and :file:`.rpm` packages.
+Percona repositories for :file:`.deb` and :file:`.rpm` packages. You can also
+install |Percona XtraBackup| using a docker image.
 
 .. toctree::
    :maxdepth: 1
@@ -37,6 +38,7 @@ Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
    installation/apt_repo
    installation/yum_repo
+   installation/docker
 
 .. note::
 
