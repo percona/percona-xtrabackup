@@ -1603,6 +1603,9 @@ backup_finish()
 		if (file_exists("ib_lru_dump")) {
 			copy_file(ds_data, "ib_lru_dump", "ib_lru_dump", 0);
 		}
+		if (file_exists("ddl_log.log")) {
+			copy_file(ds_data, "ddl_log.log", "ddl_log.log", 0);
+		}
 	}
 
 	msg_ts("Backup created in directory '%s'\n", xtrabackup_target_dir);
@@ -1639,6 +1642,7 @@ ibx_copy_incremental_over_full()
 				   "xtrabackup_info",
 				   "xtrabackup_keys",
 				   "ib_lru_dump",
+				   "ddl_log.log",
 				   NULL};
 	datadir_iter_t *it = NULL;
 	datadir_node_t node;
@@ -1731,9 +1735,19 @@ bool
 ibx_cleanup_full_backup()
 {
 	const char *ext_list[] = {"delta", "meta", "ibd", NULL};
+	/* supplementary files to delete. NOTE: those files will be deleted from base
+	 * backup regardless of its existence on incremental backup. ddl_log.log for
+	 * example, if it exists on base backup but doesnt on incremental, we cannot
+	 * start mysql having the base backup file in place, otherwise wrong DDL
+	 * recovery will be performed. For files that need to be replaced only if they
+	 * exist on incremental, use sup_files from ibx_copy_incremental_over_full */
+	const char *sup_files[] = {"ddl_log.log",
+				   NULL};
 	datadir_iter_t *it = NULL;
 	datadir_node_t node;
 	bool ret = true;
+	char path[FN_REFLEN];
+	int i;
 
 	datadir_node_init(&node);
 
@@ -1758,6 +1772,20 @@ ibx_cleanup_full_backup()
 	datadir_iter_free(it);
 
 	datadir_node_free(&node);
+
+	if (!xtrabackup_incremental)
+		return(ret);
+
+	/* delete supplementary files */
+	for (i = 0; sup_files[i]; i++) {
+		snprintf(path, sizeof(path), "%s/%s",
+			xtrabackup_target_dir,
+			sup_files[i]);
+
+		if (file_exists(path)) {
+			unlink(path);
+		}
+	}
 
 	return(ret);
 }
