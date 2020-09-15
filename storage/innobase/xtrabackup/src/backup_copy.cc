@@ -1377,12 +1377,6 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
 @return true if success. */
 bool backup_start(Backup_context &context) {
   if (!opt_no_lock) {
-    if (opt_safe_slave_backup) {
-      if (!wait_for_safe_slave(mysql_connection)) {
-        return (false);
-      }
-    }
-
     if (!backup_files(MySQL_datadir_path.path().c_str(), true)) {
       return (false);
     }

@@ -23,5 +23,5 @@ PARTITION BY HASH (uid)
 PARTITIONS 3000;
 EOF
 
-xtrabackup --backup --target-dir=$topdir/backup
+xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
