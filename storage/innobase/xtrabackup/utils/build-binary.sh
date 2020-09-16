@@ -128,63 +128,75 @@ mkdir "$INSTALLDIR"
     if test "x$exit_value" = "x0"
     then
 
-        LIBLIST="libgcrypt.so libcrypto.so libssl.so libreadline.so libtinfo.so libsasl2.so libcurl.so libldap liblber libssh libbrotlidec.so libbrotlicommon.so libgssapi_krb5.so libkrb5.so libkrb5support.so libk5crypto.so librtmp.so libgssapi.so libfreebl3.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so libssl3.so libplds4.so"
+        LIBLIST="libgcrypt.so libcrypto.so libssl.so libreadline.so libtinfo.so libsasl2.so libgssapi_krb5.so libkrb5.so libkrb5support.so libk5crypto.so librtmp.so libgssapi.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so"
         DIRLIST="bin lib lib/private lib/plugin"
 
         LIBPATH=""
 
-        function gather_libs {
-            local elf_path=$1
-            for lib in $LIBLIST; do
-                for elf in $(find $elf_path -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
-                    IFS=$'\n'
-                    for libfromelf in $(ldd $elf | grep $lib | awk '{print $3}'); do
-                        if [ ! -f lib/private/$(basename $(readlink -f $libfromelf)) ] && [ ! -L lib/$(basename $(readlink -f $libfromelf)) ]; then
-                            echo "Copying lib $(basename $(readlink -f $libfromelf))"
-                            cp $(readlink -f $libfromelf) lib/private
+    function gather_libs {
+        local elf_path=$1
+        for lib in ${LIBLIST}; do
+            for elf in $(find ${elf_path} -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
+                IFS=$'\n'
+                for libfromelf in $(ldd ${elf} | grep ${lib} | awk '{print $3}'); do
+                    lib_realpath="$(readlink -f ${libfromelf})"
+                    lib_realpath_basename="$(basename $(readlink -f ${libfromelf}))"
+                    lib_without_version_suffix=$(echo ${lib_realpath_basename} | awk -F"." 'BEGIN { OFS = "." }{ print $1, $2}')
 
-                            echo "Symlinking lib $(basename $(readlink -f $libfromelf))"
-                            cd lib
-                            ln -s private/$(basename $(readlink -f $libfromelf)) $(basename $(readlink -f $libfromelf))
+                    if [ ! -f "lib/private/${lib_realpath_basename}" ] && [ ! -L "lib/private/${lib_realpath_basename}" ]; then
+                    
+                        echo "Copying lib ${lib_realpath_basename}"
+                        cp ${lib_realpath} lib/private
+
+                        if [ ${lib_realpath_basename} != ${lib_without_version_suffix} ]; then
+                            echo "Symlinking lib from ${lib_realpath_basename} to ${lib_without_version_suffix}"
+                            cd lib/private
+                            ln -s ${lib_realpath_basename} ${lib_without_version_suffix}
                             cd -
-                            
-                            LIBPATH+=" $(echo $libfromelf | grep -v $(pwd))"
                         fi
-                    done
-                    unset IFS
+
+                        patchelf --set-soname ${lib_without_version_suffix} lib/private/${lib_realpath_basename}
+
+                        LIBPATH+=" $(echo ${libfromelf} | grep -v $(pwd))"
+                    fi
                 done
+                unset IFS
             done
+        done
         }
 
         function set_runpath {
             # Set proper runpath for bins but check before doing anything
             local elf_path=$1
             local r_path=$2
-            for elf in $(find $elf_path -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
-                echo "Checking LD_RUNPATH for $elf"
-                if [ -z $(patchelf --print-rpath $elf) ]; then
-                    echo "Changing RUNPATH for $elf"
-                    patchelf --set-rpath $r_path $elf
+            for elf in $(find ${elf_path} -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
+                echo "Checking LD_RUNPATH for ${elf}"
+                if [ -z $(patchelf --print-rpath ${elf}) ]; then
+                    echo "Changing RUNPATH for ${elf}"
+                    patchelf --set-rpath ${r_path} ${elf}
                 fi
             done
         }
 
         function replace_libs {
             local elf_path=$1
-            for libpath_sorted in $LIBPATH; do
-                for elf in $(find $elf_path -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
-                    LDD=$(ldd $elf | grep $libpath_sorted|head -n1|awk '{print $1}')
+            for libpath_sorted in ${LIBPATH}; do
+                for elf in $(find ${elf_path} -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
+                    LDD=$(ldd ${elf} | grep ${libpath_sorted}|head -n1|awk '{print $1}')
+                    lib_realpath_basename="$(basename $(readlink -f ${libpath_sorted}))"
+                    lib_without_version_suffix="$(echo ${lib_realpath_basename} | awk -F"." 'BEGIN { OFS = "." }{ print $1, $2}')"
                     if [[ ! -z $LDD  ]]; then
-                        echo "Replacing lib $(basename $(readlink -f $libpath_sorted)) for $elf"
-                        patchelf --replace-needed $LDD $(basename $(readlink -f $libpath_sorted)) $elf
+                        echo "Replacing lib ${lib_realpath_basename} to ${lib_without_version_suffix} for ${elf}"
+                        patchelf --replace-needed ${LDD} ${lib_without_version_suffix} ${elf}
                     fi
                 done
             done
         }
+
         function check_libs {
             local elf_path=$1
-            for elf in $(find $elf_path -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
-                if ! ldd $elf; then
+            for elf in $(find ${elf_path} -maxdepth 1 -exec file {} \; | grep 'ELF ' | cut -d':' -f1); do
+                if ! ldd ${elf}; then
                     exit 1
                 fi
             done
@@ -195,8 +207,8 @@ mkdir "$INSTALLDIR"
                 mkdir -p lib/private
             fi
             # Gather libs
-            for DIR in $DIRLIST; do
-                gather_libs $DIR
+            for DIR in ${DIRLIST}; do
+                gather_libs ${DIR}
             done
 
             # Set proper runpath
@@ -206,13 +218,13 @@ mkdir "$INSTALLDIR"
             set_runpath lib/private '$ORIGIN'
 
             # Replace libs
-            for DIR in $DIRLIST; do
-                replace_libs $DIR
+            for DIR in ${DIRLIST}; do
+                replace_libs ${DIR}
             done
 
             # Make final check in order to determine any error after linkage
-            for DIR in $DIRLIST; do
-                check_libs $DIR
+            for DIR in ${DIRLIST}; do
+                check_libs ${DIR}
             done
         }
 
