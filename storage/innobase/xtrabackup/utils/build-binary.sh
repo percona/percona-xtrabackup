@@ -148,7 +148,7 @@ mkdir "$INSTALLDIR"
                         echo "Copying lib ${lib_realpath_basename}"
                         cp ${lib_realpath} lib/private
 
-                        if [ ${lib_realpath_basename} != ${lib_without_version_suffix} ]; then
+                        if [ ${lib_realpath_basename} != ${lib_without_version_suffix} ] && [ ! -L lib/private/${lib_without_version_suffix} ]; then
                             echo "Symlinking lib from ${lib_realpath_basename} to ${lib_without_version_suffix}"
                             cd lib/private
                             ln -s ${lib_realpath_basename} ${lib_without_version_suffix}
