@@ -31,9 +31,9 @@ function prepare {
 function install_deps {
     if [ -f /etc/redhat-release ]; then 
         yum install -y epel-release
-        yum install -y perl-Time-HiRes perl numactl numactl-libs libaio libev libatomic libidn || true
+        yum install -y perl-Time-HiRes perl numactl numactl-libs libaio libev libatomic libidn libcurl-devel || true
     else
-        apt-get install -y perl numactl libaio-dev libev4 libatomic1 libidn11 || true
+        apt-get install -y perl numactl libaio-dev libev4 libatomic1 libidn11 libcurl4-openssl-dev || true
 
     fi
 }
