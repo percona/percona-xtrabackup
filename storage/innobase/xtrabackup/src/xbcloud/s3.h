@@ -126,6 +126,7 @@ class S3_client {
   std::string access_key;
   std::string secret_key;
   std::string session_token;
+  std::string storage_class;
 
   s3_bucket_lookup_t bucket_lookup{LOOKUP_AUTO};
 
@@ -194,6 +195,8 @@ class S3_client {
 
   void set_api_version(s3_api_version_t version) { api_version = version; }
 
+  void set_storage_class(const std::string &sc) { storage_class = sc; }
+
   bool probe_api_version_and_lookup(const std::string &bucket);
 
   bool delete_object(const std::string &bucket, const std::string &name);
@@ -239,10 +242,12 @@ class S3_object_store : public Object_store {
                   const std::string &session_token,
                   const std::string &endpoint = std::string(),
                   s3_bucket_lookup_t bucket_lookup = LOOKUP_DNS,
-                  s3_api_version_t api_version = S3_V_AUTO)
+                  s3_api_version_t api_version = S3_V_AUTO,
+                  const std::string &storage_class = std::string())
       : s3_client{client, region, access_key, secret_key} {
     if (!session_token.empty()) s3_client.set_session_token(session_token);
     if (!endpoint.empty()) s3_client.set_endpoint(endpoint);
+    if (!storage_class.empty()) s3_client.set_storage_class(storage_class);
     s3_client.set_bucket_lookup(bucket_lookup);
     s3_client.set_api_version(api_version);
   }

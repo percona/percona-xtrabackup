@@ -35,6 +35,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define AWS_DATE_HEADER "X-Amz-Date"
 #define AWS_CONTENT_SHA256_HEADER "X-Amz-Content-SHA256"
 #define AWS_SESSION_TOKEN_HEADER "X-Amz-Security-Token"
+#define AWS_STORAGE_CLASS_HEADER "X-Amz-Storage-Class"
 #define AWS_SIGNATURE_ALGORITHM "AWS4-HMAC-SHA256"
 
 namespace xbcloud {
@@ -594,6 +595,9 @@ bool S3_client::async_upload_object(
     return false;
   }
   req->add_header("Content-Type", "application/octet-stream");
+  if (!storage_class.empty()) {
+    req->add_header(AWS_STORAGE_CLASS_HEADER, storage_class);
+  }
   for (const auto &h : extra_http_headers) {
     req->add_header(h.first, h.second);
   }

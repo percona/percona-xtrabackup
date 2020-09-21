@@ -101,9 +101,13 @@ The following options are available when using |s3|:
    * - --s3-bucket-lookup = <AUTO|PATH|DNS>
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
        style requests. The default value is AUTO. In this case, |xbcloud| will probe.
+   * - --s3-storage-class = <STANDARD|STANDARD_IA|GLACIER|...>
+     - Specify the S3 storage class to use when uploading objects. By default,
+       the storage class not specified by the client, so on Amazon S3 it
+       defaults to STANDARD.
 
 Creating a full backup with |minio|
-	    
+
 .. code-block:: bash
 
    $ xtrabackup --backup --stream=xbstream --extra-lsndir=/tmp --target-dir=/tmp | \
@@ -128,7 +132,7 @@ compatible with |s3|.
       https://cloud.google.com/storage/docs/interoperability
 
 .. code-block:: bash
-		
+
    $ xtrabackup --backup --stream=xbstream --extra-lsndir=/tmp --target-dir=/tmp | \
    xbcloud put --storage=google \
    --google-endpoint=`storage.googleapis.com` \
@@ -381,9 +385,9 @@ database you can specify only the tables you want to restore:
    --swift-auth-url=http://127.0.0.1:35357/ full_backup \
    ibdata1 sakila/payment.ibd \
    > /storage/partial/partial.xbs
- 
+
    $ xbstream -xv -C /storage/partial < /storage/partial/partial.xbs
- 
+
 This command will download just ``ibdata1`` and ``sakila/payment.ibd`` table
 from the full backup.
 

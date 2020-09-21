@@ -87,6 +87,7 @@ static char *opt_s3_access_key = nullptr;
 static char *opt_s3_secret_key = nullptr;
 static char *opt_s3_session_token = nullptr;
 static char *opt_s3_bucket = nullptr;
+static char *opt_s3_storage_class = nullptr;
 static ulong opt_s3_bucket_lookup;
 static ulong opt_s3_api_version = 0;
 
@@ -148,6 +149,7 @@ enum {
   OPT_S3_BUCKET,
   OPT_S3_BUCKET_LOOKUP,
   OPT_S3_API_VERSION,
+  OPT_S3_STORAGE_CLASS,
 
   OPT_GOOGLE_REGION,
   OPT_GOOGLE_ENDPOINT,
@@ -279,6 +281,10 @@ static struct my_option my_long_options[] = {
     {"s3-api-version", OPT_S3_API_VERSION, "S3 API version.",
      &opt_s3_api_version, &opt_s3_api_version, &s3_api_version_typelib,
      GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"s3-storage-class", OPT_S3_STORAGE_CLASS, "S3 storage class.",
+     &opt_s3_storage_class, &opt_s3_storage_class, 0, GET_STR_ALLOC,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"google-region", OPT_GOOGLE_REGION, "Google cloud storage region.",
      &opt_google_region, &opt_google_region, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
@@ -418,6 +424,7 @@ static void get_env_args() {
   get_env_value(opt_s3_region, "S3_DEFAULT_REGION");
   get_env_value(opt_cacert, "S3_CA_BUNDLE");
   get_env_value(opt_s3_endpoint, "S3_ENDPOINT");
+  get_env_value(opt_s3_storage_class, "S3_STORAGE_CLASS");
 
   get_env_value(opt_s3_access_key, "AWS_ACCESS_KEY_ID");
   get_env_value(opt_s3_secret_key, "AWS_SECRET_ACCESS_KEY");
@@ -425,11 +432,13 @@ static void get_env_args() {
   get_env_value(opt_s3_region, "AWS_DEFAULT_REGION");
   get_env_value(opt_cacert, "AWS_CA_BUNDLE");
   get_env_value(opt_s3_endpoint, "AWS_ENDPOINT");
+  get_env_value(opt_s3_storage_class, "AWS_STORAGE_CLASS");
 
   get_env_value(opt_s3_access_key, "ACCESS_KEY_ID");
   get_env_value(opt_s3_secret_key, "SECRET_ACCESS_KEY");
   get_env_value(opt_s3_region, "DEFAULT_REGION");
   get_env_value(opt_s3_endpoint, "ENDPOINT");
+  get_env_value(opt_s3_storage_class, "STORAGE_CLASS");
 
   get_env_value(opt_google_access_key, "ACCESS_KEY_ID");
   get_env_value(opt_google_secret_key, "SECRET_ACCESS_KEY");
@@ -1083,7 +1092,8 @@ int main(int argc, char **argv) {
         &http_client, region, access_key, secret_key, session_token,
         opt_s3_endpoint != nullptr ? opt_s3_endpoint : "",
         static_cast<s3_bucket_lookup_t>(opt_s3_bucket_lookup),
-        static_cast<s3_api_version_t>(opt_s3_api_version)));
+        static_cast<s3_api_version_t>(opt_s3_api_version),
+        opt_s3_storage_class != nullptr ? opt_s3_storage_class : ""));
 
     if (opt_s3_bucket == nullptr) {
       msg_ts("%s: S3 bucket is not specified.\n", my_progname);
