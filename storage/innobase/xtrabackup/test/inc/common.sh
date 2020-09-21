@@ -792,6 +792,16 @@ function require_server_version_higher_than()
         skip_test "Requires server version higher than $1"
 }
 
+#########################################################################
+# Requires debug pxb version
+########################################################################
+function require_debug_pxb_version()
+{
+    if ! $XB_BIN --help 2>&1 | grep -q debug.=name; then
+        skip_test "Requires debug build"
+    fi
+}
+
 ########################################################################
 # Return 0 if the server version is lower than the first argument
 #########################################################################

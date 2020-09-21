@@ -390,6 +390,7 @@ bool opt_force_non_empty_dirs = FALSE;
 #ifdef HAVE_VERSION_CHECK
 bool opt_noversioncheck = FALSE;
 #endif
+bool opt_no_server_version_check = FALSE;
 bool opt_no_backup_locks = FALSE;
 bool opt_decompress = FALSE;
 bool opt_remove_original = FALSE;
@@ -650,6 +651,7 @@ enum options_xtrabackup {
   OPT_FORCE_NON_EMPTY_DIRS,
 #ifdef HAVE_VERSION_CHECK
   OPT_NO_VERSION_CHECK,
+  OPT_NO_SERVER_VERSION_CHECK,
 #endif
   OPT_NO_BACKUP_LOCKS,
   OPT_ROLLBACK_PREPARED_TRX,
@@ -1019,6 +1021,13 @@ struct my_option xb_client_options[] = {
      "directory, it will still fail with an error.",
      (uchar *)&opt_force_non_empty_dirs, (uchar *)&opt_force_non_empty_dirs, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"no-server-version-check", OPT_NO_SERVER_VERSION_CHECK,
+     "This option allow backup to proceed"
+     "when server version is greater (newer) than the PXB version",
+     (uchar *)&opt_no_server_version_check,
+     (uchar *)&opt_no_server_version_check, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
+     0},
 
 #ifdef HAVE_VERSION_CHECK
     {"no-version-check", OPT_NO_VERSION_CHECK,
