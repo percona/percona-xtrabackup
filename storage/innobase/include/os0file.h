@@ -321,6 +321,9 @@ static const char ENCRYPTION_KEY_MAGIC_V2[] = "lCB";
 information version. */
 static const char ENCRYPTION_KEY_MAGIC_V3[] = "lCC";
 
+/** Encryption magic bytes for not yet flushed page */
+static const char ENCRYPTION_KEY_MAGIC_EMPTY[] = "\0\0\0";
+
 /** Encryption master key prifix */
 static const char ENCRYPTION_MASTER_KEY_PRIFIX[] = "INNODBKey";
 

@@ -1219,8 +1219,16 @@ fsp_header_decode_encryption_info(
 	} else if (memcmp(ptr, ENCRYPTION_KEY_MAGIC_V2,
 			    ENCRYPTION_MAGIC_SIZE) == 0) {
 		version = Encryption::ENCRYPTION_VERSION_2;
-	} else {
+	} else if (memcmp(ptr, ENCRYPTION_KEY_MAGIC_V3,
+			    ENCRYPTION_MAGIC_SIZE) == 0) {
 		version = Encryption::ENCRYPTION_VERSION_3;
+	} else if (memcmp(ptr, ENCRYPTION_KEY_MAGIC_EMPTY,
+			    ENCRYPTION_MAGIC_SIZE) == 0) {
+		return (true);
+	} else {
+		ib::error() << "Failed to decrypt encryption information,"
+			<< " read unknown ENCRYPTION_KEY_MAGIC.";
+		return(false);
 	}
 
 	/* check maximum supported version */
