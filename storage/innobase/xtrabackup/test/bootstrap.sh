@@ -2,143 +2,143 @@
 
 set -e
 
-function usage()
-{
+function usage() {
     cat <<EOF
-Usage:
-$0 xtrabackup_target [installation_directory]
-$0 path_to_server_tarball [installation_directory]
-
-Prepares a server binary directory to be used by run.sh when running XtraBackup
-tests.
-
-If the argument is one of the build targets passed to build.sh
-(i.e. innodb51 innodb55 innodb56 xtradb51 xtradb55) then the
-appropriate Linux tarball is downloaded from a pre-defined location and
-unpacked into the specified installation  directory ('./server' by default).
-
-Otherwise the argument is assumed to be a path to a server binary tarball.
+Usage: $0 [OPTIONS]
+    The following options may be given :
+        --type=             Supported types are: innodb56 innodb57 xtradb56 xtradb57 as DB type(default=xtradb57)
+        --version=          Version of tarball
+        --destdir=          OPTIONAL: Destination directory where the tarball will be extracted(default=\"./server\")
+        --help) usage ;;
 EOF
+    exit 1
 }
 
-if [ -z "$1" ]
-then
-    usage
-fi
+function ssl_version() {
+    sslv=$(readlink -f $(ldconfig -p | grep libssl.so | head -n1 | awk -F "=>" '{ print $2 }') | sed 's/.*[.]so//; s/[^0-9]//g')
 
-arch=$(uname -m)
-if [ "$arch" = "i386" ]
-then
-    arch="i686"
-fi
+    case ${sslv} in
+        100|101|102|11) ;;
+        *)
+            if ! test -r "${1}"; then
+                >&2 echo "tarball for your openssl version (${sslv}) is not available"
+                exit 1
+            fi
+            ;;
+    esac
+    echo ${sslv}
+}
 
-if [ "$arch" = "i686" ]
-then
-    maria_arch_path=x86
-else
-    maria_arch_path=amd64
-fi
+append_arg_to_args () {
+    args="${args} "$(shell_quote_string "${1}")
+}
 
-case "$1" in
-    innodb51)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.1.73-linux-$arch-glibc23.tar.gz"
-        ;;
+parse_arguments() {
+    pick_args=
+    if test "${1}" = PICK-ARGS-FROM-ARGV
+    then
+        pick_args=1
+        shift
+    fi
 
-    innodb55)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.5.42-linux2.6-$arch.tar.gz"
-        ;;
+    for arg do
+        val=$(echo "${arg}" | sed -e 's;^--[^=]*=;;')
+        case "${arg}" in
+            # these get passed explicitly to mysqld
+            --type=*) TYPE="${val}" ;;
+            --version=*) VERSION="${val}" ;;
+            --destdir=*) DESTDIR="${val}" ;;
+            --help) usage ;;
+            *)
+            if test -n "${pick_args}"
+            then
+                append_arg_to_args "${arg}"
+            fi
+            ;;
+        esac
+    done
+}
 
-    innodb56)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.6.23-linux-glibc2.5-$arch.tar.gz"
-        ;;
+main () {
+    if [ -f /etc/redhat-release ]; then
+        OS="rpm"
+    else
+        OS="deb"
+    fi
+    
+    arch=$(uname -m)
+    if [ "${arch}" == "i386" ]; then
+        arch="i686"
+    fi
 
-    innodb57)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mysql-5.7.21-linux-glibc2.12-$arch.tar.gz"
-        ;;
+    if [[ -d "${DESTDIR}" ]]; then
+        rm -rf "${DESTDIR}"
+    fi
 
-    xtradb51)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.1.73-rel14.12-625.Linux.$arch.tar.gz"
-        ;;
+    mkdir "${DESTDIR}"
 
-    xtradb55)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.5.41-rel37.0-727.Linux.$arch.tar.gz"
-        ;;
-
-    xtradb56)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.6.22-rel72.0-.Linux.$arch.tar.gz"
-        ;;
-
-    xtradb57)
-        url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
-        tarball="Percona-Server-5.7.21-20-Linux.$arch.tar.gz"
-        ;;
-
-    mariadb51)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.1.67-Linux-$arch.tar.gz"
-        ;;
-
-    mariadb52)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.2.14-Linux-$arch.tar.gz"
-        ;;
-
-    mariadb53)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.3.12-Linux-$arch.tar.gz"
-        ;;
-
-    mariadb55)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-5.5.40-linux-$arch.tar.gz"
-        ;;
-
-    mariadb100)
-        url="http://s3.amazonaws.com/percona.com/downloads/community"
-        tarball="mariadb-10.0.14-linux-$arch.tar.gz"
-        ;;
-
-    *)
-        if ! test -r "$1"
-        then
-            echo "$1 does not exist"
+    case "${TYPE}" in
+        innodb56)
+            url="https://dev.mysql.com/get/Downloads/MySQL-5.6/"
+            tarball="mysql-${VERSION}-linux-glibc2.12-x86_64.tar.gz"
+            ;;
+        innodb57)
+            url="https://dev.mysql.com/get/Downloads/MySQL-5.7/" 
+            tarball="mysql-${VERSION}-linux-glibc2.12-x86_64.tar.gz"
+            ;;
+        xtradb56)
+            url="https://www.percona.com/downloads/Percona-XtraDB-Cluster-56/Percona-XtraDB-Cluster-${VERSION}/binary/tarball/"
+            vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
+            vertmp_suffix=$(echo ${VERSION} | awk -F '-' '{print $NF}')
+            tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9].[0-9]-${vertmp_suffix}.[0-9].Linux.x86_64.ssl$(ssl_version).tar.gz | head -n1)"
+            ;;
+        xtradb57) 
+            url="https://www.percona.com/downloads/Percona-XtraDB-Cluster-57/Percona-XtraDB-Cluster-${VERSION}/binary/tarball/"
+            if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -le "30" ]]; then
+                vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
+                vertmp_suffix=$(echo ${VERSION} | awk -F '.' '{print $NF}')
+                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.x86_64.ssl$(ssl_version).tar.gz | head -n1)"
+            elif [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -ge "31" ]]; then
+                vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
+                vertmp_suffix=$(echo ${VERSION} | awk -F '.' '{print $NF}')
+                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.x86_64.glibc2.12.tar.gz | head -n1)"
+            fi
+            ;;
+        *)
+            echo "Err: Specified unsupported ${TYPE}."
+            echo "Supported types are: innodb80, xtradb80."
+            echo "Example: $0 --type=xtradb57 --version=5.7.30-31.43"
             exit 1
-        fi
-        tarball="$1"
-        ;;
-esac
+            ;;
+    esac
 
-if test -n "$2"
-then
-    destdir="$2"
-else
-    destdir="./server"
-fi
+    if [[ ${TYPE} == *xtra* ]] && [[ -z ${tarball} ]]; then
+        echo "Err: the following ${VERSION}"
+        echo "Can not be found at percona.com/downloads"
+        echo "Please re-check and re-run the script"
+        exit 1
+    fi
 
-if test -d "$destdir"
-then
-    rm -rf "$destdir"
-fi
-mkdir "$destdir"
+    # Check if tarball exist before any download
+    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+        echo "Version you specified(${VERSION}) is not exist on ${url}/${tarball}"
+        exit 1
+    else
+        echo "Downloading ${tarball}"
+        wget -qc "${url}/${tarball}"
+    fi
 
-if test -n "$url"
-then
-    echo "Downloading $tarball"
-    wget -qc "$url/$tarball"
-fi
+    echo "Unpacking ${tarball} into ${DESTDIR}"
+    tar xf "${tarball}" -C "${DESTDIR}"
+    sourcedir="${DESTDIR}/$(ls ${DESTDIR})"
+    if test -n "${sourcedir}"; then
+        mv "${sourcedir}"/* "${DESTDIR}"
+        rm -rf "${sourcedir}"
+    fi
+}
 
-echo "Unpacking $tarball into $destdir"
-tar zxf $tarball -C $destdir
-sourcedir="$destdir/`ls $destdir`"
-if test -n "$sourcedir"
-then
-    mv $sourcedir/* $destdir
-    rm -rf $sourcedir
-fi
+TYPE="xtradb57"
+VERSION="5.7.31-31.45"
+DESTDIR="./server"
+parse_arguments PICK-ARGS-FROM-ARGV "$@"
+main
