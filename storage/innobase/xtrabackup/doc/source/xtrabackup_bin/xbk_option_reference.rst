@@ -589,6 +589,14 @@ Options
    Issue ``LOCK TABLES FOR BACKUP`` if it is supported by server (otherwise use
    ``LOCK INSTANCE FOR BACKUP``) at the beginning of the backup to block all DDL
    operations.
+   
+   .. note::
+   
+       Prior to |PXB| 8.0.22-15.0, using a `safe-slave-backup` stops the SQL replica thread
+       after the InnoDB tables and before the non-InnoDB tables are backed up.
+       
+       As of |PXB| 8.0.22-15.0, using a `safe-slave-backup` option stops the SQL
+       replica thread before copying the InnoDB files.
 
 .. option:: --lock-ddl-per-table
 
