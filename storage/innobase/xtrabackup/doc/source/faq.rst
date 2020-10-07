@@ -84,5 +84,10 @@ Percona XtraBackup can use metadata locks on tables while they are copied:
   before XtraBackup starts to copy it
   and until the backup is completed
   using the :option:`--lock-ddl-per-table` option.
+  
+  .. note::
+  
+      As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated.
+      Use the `--lock-ddl` option. 
 
 .. |version| replace:: '8.0'
