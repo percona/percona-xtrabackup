@@ -6,7 +6,7 @@ function usage() {
     cat <<EOF
 Usage: $0 [OPTIONS]
     The following options may be given :
-        --type=             Supported types are: innodb56 innodb57 xtradb56 xtradb57 as DB type(default=xtradb57)
+        --type=             Supported types are: innodb56 innodb57 xtradb56 xtradb57 mariadb100 mariadb101 as DB type(default=xtradb57)
         --version=          Version of tarball
         --destdir=          OPTIONAL: Destination directory where the tarball will be extracted(default=\"./server\")
         --help) usage ;;
@@ -59,13 +59,7 @@ parse_arguments() {
     done
 }
 
-main () {
-    if [ -f /etc/redhat-release ]; then
-        OS="rpm"
-    else
-        OS="deb"
-    fi
-    
+main () {    
     arch=$(uname -m)
     if [ "${arch}" == "i386" ]; then
         arch="i686"
@@ -80,47 +74,48 @@ main () {
     case "${TYPE}" in
         innodb56)
             url="https://dev.mysql.com/get/Downloads/MySQL-5.6/"
-            tarball="mysql-${VERSION}-linux-glibc2.12-x86_64.tar.gz"
+            tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.gz"
             ;;
         innodb57)
             url="https://dev.mysql.com/get/Downloads/MySQL-5.7/" 
-            tarball="mysql-${VERSION}-linux-glibc2.12-x86_64.tar.gz"
+            tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.gz"
+            ;;
+        mariadb100)
+            url="http://s3.amazonaws.com/percona.com/downloads/community"
+            tarball="mariadb-10.0.14-linux-${arch}.tar.gz"
+            ;;
+        mariadb101)
+            url="https://downloads.mariadb.org/f/mariadb-${VERSION}/bintar-linux-glibc_214-${arch}/"
+            tarball="mariadb-${VERSION}-linux-glibc_214-${arch}.tar.gz"
             ;;
         xtradb56)
             url="https://www.percona.com/downloads/Percona-XtraDB-Cluster-56/Percona-XtraDB-Cluster-${VERSION}/binary/tarball/"
             vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
             vertmp_suffix=$(echo ${VERSION} | awk -F '-' '{print $NF}')
-            tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9].[0-9]-${vertmp_suffix}.[0-9].Linux.x86_64.ssl$(ssl_version).tar.gz | head -n1)"
+            tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9].[0-9]-${vertmp_suffix}.[0-9].Linux.${arch}.ssl$(ssl_version).tar.gz | head -n1)"
             ;;
         xtradb57) 
             url="https://www.percona.com/downloads/Percona-XtraDB-Cluster-57/Percona-XtraDB-Cluster-${VERSION}/binary/tarball/"
             if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -le "30" ]]; then
                 vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
                 vertmp_suffix=$(echo ${VERSION} | awk -F '.' '{print $NF}')
-                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.x86_64.ssl$(ssl_version).tar.gz | head -n1)"
+                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.${arch}.ssl$(ssl_version).tar.gz | head -n1)"
             elif [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -ge "31" ]]; then
                 vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
                 vertmp_suffix=$(echo ${VERSION} | awk -F '.' '{print $NF}')
-                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.x86_64.glibc2.12.tar.gz | head -n1)"
+                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.${arch}.glibc2.12.tar.gz | head -n1)"
             fi
             ;;
         *)
             echo "Err: Specified unsupported ${TYPE}."
-            echo "Supported types are: innodb80, xtradb80."
+            echo "Supported types are: innodb56 innodb57 xtradb56 xtradb57 mariadb100 mariadb101."
             echo "Example: $0 --type=xtradb57 --version=5.7.30-31.43"
             exit 1
             ;;
     esac
 
-    if [[ ${TYPE} == *xtra* ]] && [[ -z ${tarball} ]]; then
-        echo "Err: the following ${VERSION}"
-        echo "Can not be found at percona.com/downloads"
-        echo "Please re-check and re-run the script"
-        exit 1
-    fi
-
     # Check if tarball exist before any download
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+    if ! wget --spider "${url}/${tarball}" 2>/dev/null || [[ -z ${tarball} ]]; then
         echo "Version you specified(${VERSION}) is not exist on ${url}/${tarball}"
         exit 1
     else
