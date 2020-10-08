@@ -139,6 +139,33 @@ if ! grep -q "Upload failed" $topdir/pxb-2202.log ; then
     die 'xbcloud did not exit with error on upload'
 fi
 
+#PXB-2279 Xbcloud: Upload failed: backup is incomplete
+vlog "take full backup to test compression"
+run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
+	${full_backup_name} --parallel=4
+rm -r $full_backup_dir
+xtrabackup --backup --stream=xbstream --compress --extra-lsndir=$full_backup_dir \
+	   --target-dir=$full_backup_dir | \
+    run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
+	    --parallel=4 \
+	    ${full_backup_name} 2> $topdir/pxb-2279.log
+if  grep -q "Upload failed" $topdir/pxb-2279.log ; then
+    die 'xbcloud exit with error on upload'
+fi
+vlog "take full backup to test encryption"
+run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
+	${full_backup_name} --parallel=4
+rm -r $full_backup_dir
+xtrabackup --backup --stream=xbstream  --encrypt=AES256 \
+          --encrypt-key="percona_xtrabackup_is_awesome___" --extra-lsndir=$full_backup_dir \
+	   --target-dir=$full_backup_dir | \
+    run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
+	    --parallel=4 \
+	    ${full_backup_name} 2> $topdir/pxb-2279.log
+if  grep -q "Upload failed" $topdir/pxb-2279.log ; then
+    die 'xbcloud exit with error on upload'
+fi
+
 # cleanup
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
 	${full_backup_name} --parallel=4
