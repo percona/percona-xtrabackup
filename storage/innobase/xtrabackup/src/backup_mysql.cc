@@ -1867,7 +1867,7 @@ write_xtrabackup_info(MYSQL *connection)
 		"start_time TIMESTAMP NULL DEFAULT NULL,"
 		"end_time TIMESTAMP NULL DEFAULT NULL,"
 		"lock_time BIGINT UNSIGNED DEFAULT NULL,"
-		"binlog_pos VARCHAR(128) DEFAULT NULL,"
+		"binlog_pos TEXT DEFAULT NULL,"
 		"innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,"
 		"innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,"
 		"partial ENUM('Y', 'N') DEFAULT NULL,"

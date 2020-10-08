@@ -220,3 +220,28 @@ run_cmd_expect_failure $IB_BIN $IB_ARGS --incremental \
 vlog "Testing bad --incremental-history-uuid"
 run_cmd_expect_failure $IB_BIN $IB_ARGS --incremental \
 --incremental-history-uuid=foo --stream=tar $backup_dir > /dev/null
+
+
+
+###############################################################################
+# PXB-1462 - long gtid_executed breaks --history functionality
+. inc/common.sh
+if is_server_version_higher_than 5.6.0
+then
+  vlog "Testing PXB-1462"
+  stop_server
+  start_server --server-id=1 --enforce-gtid-consistency --gtid-mode=ON --log-bin --log-slave-updates
+  ${MYSQL} ${MYSQL_ARGS} -Ns -e "RESET MASTER"
+  ${MYSQL} ${MYSQL_ARGS} -Ns -e "SET GLOBAL gtid_purged='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaac:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaad:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaae:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaf:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa0:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa6:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa7:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa8:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa9:1'"
+  ${MYSQL} ${MYSQL_ARGS} -Ns -e "DROP TABLE IF EXISTS PERCONA_SCHEMA.xtrabackup_history"
+  xtrabackup --backup --history --target-dir=$topdir/backup0
+  val=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM PERCONA_SCHEMA.xtrabackup_history"`
+  if [ -z "$val" ] || [ "$val" != "1" ]
+  then
+      vlog "Error inserting data into xtrabackup_history table"
+      vlog "val returned: ${val}"
+      exit 1
+  fi
+else
+  vlog "Server does not support GTID"
+fi
