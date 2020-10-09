@@ -30,6 +30,10 @@ function ssl_version() {
     echo ${sslv}
 }
 
+shell_quote_string() {
+  echo "$1" | sed -e 's,\([^a-zA-Z0-9/_.=-]\),\\\1,g'
+}
+
 append_arg_to_args () {
     args="${args} "$(shell_quote_string "${1}")
 }
@@ -86,7 +90,7 @@ main () {
             if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -lt "20" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             elif [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -ge "20" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.x86_64.glibc2.12.tar.gz"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12.tar.gz"
             fi
             ;;
         *) 
