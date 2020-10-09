@@ -214,6 +214,28 @@ TEST(s3v4_signer, sessionToken) {
                "e");
 }
 
+TEST(s3v4_signer, storageClass) {
+  Http_request req(Http_request::GET, Http_request::HTTPS, "hyhost",
+                   "mybucket/myobject/");
+  req.add_header("Content-Length", "4");
+  req.add_header("Content-Type", "application/octet-stream");
+  req.append_payload("test", 4);
+
+  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key",
+                     "session_token", "storage_class");
+
+  signer.sign_request("myhost", "mybucket", req, 1555892546);
+
+  ASSERT_STREQ(req.headers().at("Authorization").c_str(),
+               "AWS4-HMAC-SHA256 "
+               "Credential=access_key/20190422/example-region/s3/aws4_request, "
+               "SignedHeaders=content-length;content-type;host;x-amz-content-"
+               "sha256;x-amz-date;x-amz-security-token;x-amz-storage-class, "
+               "Signature="
+               "891034a3bd13729689a54d363380ad1849b26bf2b9e461d4c2bdeeca32e0c1c"
+               "e");
+}
+
 TEST(s3v2_signer, basicDNS) {
   Http_request req(Http_request::GET, Http_request::HTTPS, "mybucket.hyhost",
                    "myobject/");
