@@ -83,7 +83,12 @@ main () {
     case "${TYPE}" in
         innodb80)
             url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
+            fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.xz"
+                if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+                    unset $url
+                    url=${fallback_url}
+                fi
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
@@ -102,7 +107,7 @@ main () {
     esac
 
     # Check if tarball exist before any download
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then            
         echo "Version you specified(${VERSION}) is not exist on ${url}/${tarball}"
         exit 1
     else
