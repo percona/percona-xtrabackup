@@ -1,3 +1,7 @@
+if is_server_version_lower_than 5.6.0
+then
+    skip_test "Requires server version 5.6"
+fi
 #
 # PXB-2239 - Partitioned table is not restored correctly when partitions are changed during backup
 #
