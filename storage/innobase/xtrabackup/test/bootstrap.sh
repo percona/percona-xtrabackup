@@ -29,6 +29,10 @@ function ssl_version() {
     echo ${sslv}
 }
 
+shell_quote_string() {
+  echo "$1" | sed -e 's,\([^a-zA-Z0-9/_.=-]\),\\\1,g'
+}
+
 append_arg_to_args () {
     args="${args} "$(shell_quote_string "${1}")
 }
@@ -72,13 +76,31 @@ main () {
     mkdir "${DESTDIR}"
 
     case "${TYPE}" in
+        innodb55)
+            url="http://s3.amazonaws.com/percona.com/downloads/community"
+            tarball="mysql-5.5.42-linux2.6-$arch.tar.gz"
+            ;;
         innodb56)
             url="https://dev.mysql.com/get/Downloads/MySQL-5.6/"
+            fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.gz"
+                if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+                    unset $url
+                    url=${fallback_url}
+                fi
             ;;
         innodb57)
-            url="https://dev.mysql.com/get/Downloads/MySQL-5.7/" 
+            url="https://dev.mysql.com/get/Downloads/MySQL-5.7/"
+            fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.gz"
+                if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+                    unset $url
+                    url=${fallback_url}
+                fi
+            ;;
+        mariadb55)
+            url="http://s3.amazonaws.com/percona.com/downloads/community"
+            tarball="mariadb-5.5.40-linux-$arch.tar.gz"
             ;;
         mariadb100)
             url="http://s3.amazonaws.com/percona.com/downloads/community"
@@ -88,28 +110,28 @@ main () {
             url="https://downloads.mariadb.org/f/mariadb-${VERSION}/bintar-linux-glibc_214-${arch}/"
             tarball="mariadb-${VERSION}-linux-glibc_214-${arch}.tar.gz"
             ;;
-        xtradb56)
-            url="https://www.percona.com/downloads/Percona-XtraDB-Cluster-56/Percona-XtraDB-Cluster-${VERSION}/binary/tarball/"
-            vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
-            vertmp_suffix=$(echo ${VERSION} | awk -F '-' '{print $NF}')
-            tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9].[0-9]-${vertmp_suffix}.[0-9].Linux.${arch}.ssl$(ssl_version).tar.gz | head -n1)"
+        xtradb55)
+            url="http://s3.amazonaws.com/percona.com/downloads/community/yassl"
+            tarball="Percona-Server-5.5.41-rel37.0-727.Linux.$arch.tar.gz"
             ;;
-        xtradb57) 
-            url="https://www.percona.com/downloads/Percona-XtraDB-Cluster-57/Percona-XtraDB-Cluster-${VERSION}/binary/tarball/"
-            if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -le "30" ]]; then
-                vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
-                vertmp_suffix=$(echo ${VERSION} | awk -F '.' '{print $NF}')
-                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.${arch}.ssl$(ssl_version).tar.gz | head -n1)"
+        xtradb56)
+            url="https://www.percona.com/downloads/Percona-Server-5.6/Percona-Server-${VERSION}/binary/tarball/"
+            VERSION_PREFIX=$(echo ${VERSION} | awk -F '-' '{ print $1 }')
+            VERSION_SUFFIX=$(echo ${VERSION} | awk -F '-' '{ print $2 }')
+            tarball="Percona-Server-${VERSION_PREFIX}-rel${VERSION_SUFFIX}-Linux.${arch}.ssl$(ssl_version).tar.gz"
+            ;;
+        xtradb57)
+            url="https://www.percona.com/downloads/Percona-Server-5.7/Percona-Server-${VERSION}/binary/tarball/"
+            if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -lt "31" ]]; then
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             elif [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -ge "31" ]]; then
-                vertmp_first=$(echo ${VERSION} | awk -F '-' '{print $1}')
-                vertmp_suffix=$(echo ${VERSION} | awk -F '.' '{print $NF}')
-                tarball="$(curl -s ${url} | grep -Eo Percona-XtraDB-Cluster-${vertmp_first}-rel[1-9][1-9]-${vertmp_suffix}.[0-9].Linux.${arch}.glibc2.12.tar.gz | head -n1)"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12.tar.gz"
             fi
             ;;
         *)
             echo "Err: Specified unsupported ${TYPE}."
-            echo "Supported types are: innodb56 innodb57 xtradb56 xtradb57 mariadb100 mariadb101."
-            echo "Example: $0 --type=xtradb57 --version=5.7.30-31.43"
+            echo "Supported types are: innodb56 innodb57 xtradb56 xtradb57 mariadb100 mariadb101"
+            echo "Example: $0 --type=xtradb57 --version=5.7.31-34"
             exit 1
             ;;
     esac
@@ -133,7 +155,7 @@ main () {
 }
 
 TYPE="xtradb57"
-VERSION="5.7.31-31.45"
+VERSION="5.7.31-34"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
