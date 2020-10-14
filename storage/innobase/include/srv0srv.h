@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2008, 2009, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -17,13 +17,21 @@ documentation. The contributions by Percona Inc. are incorporated with
 their permission, and subject to the conditions contained in the file
 COPYING.Percona.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -443,7 +451,7 @@ extern my_bool	srv_purge_view_update_only_debug;
 extern my_bool	srv_master_thread_disabled_debug;
 #endif /* UNIV_DEBUG */
 
-extern ulint	srv_fatal_semaphore_wait_threshold;
+extern ulong	srv_fatal_semaphore_wait_threshold;
 #define SRV_SEMAPHORE_WAIT_EXTENSION	7200
 extern ulint	srv_dml_needed_delay;
 
@@ -959,7 +967,7 @@ struct srv_slot_t{
 	ibool		suspended;		/*!< TRUE if the thread is
 						waiting for the event of this
 						slot */
-	ib_time_t	suspend_time;		/*!< time when the thread was
+	ib_time_monotonic_t	suspend_time;	/*!< time when the thread was
 						suspended. Initialized by
 						lock_wait_table_reserve_slot()
 						for lock wait */

@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -3044,6 +3051,14 @@ bool open_table(THD *thd, TABLE_LIST *table_list, Open_table_context *ot_ctx)
     DBUG_RETURN(true);
   }
 
+  /*
+    P_S table access should be allowed while in LTM, the ignore flush flag is
+    set to avoid the infinite reopening of the table due to version number
+    mismatch.
+  */
+  if (BELONGS_TO_P_S_UNDER_LTM(thd, table_list))
+    flags|= MYSQL_OPEN_IGNORE_FLUSH;
+
   key_length= get_table_def_key(table_list, &key);
 
   /*
@@ -3224,6 +3239,12 @@ bool open_table(THD *thd, TABLE_LIST *table_list, Open_table_context *ot_ctx)
 
       bool result= thd->mdl_context.acquire_lock(&protection_request,
                                                  ot_ctx->get_timeout());
+
+      /*
+        Unlike in other places where we acquire protection against global read
+        lock, the read_only state is not checked here since we check its state
+        later in mysql_lock_tables()
+      */
 
       thd->mdl_context.set_force_dml_deadlock_weight(false);
       thd->pop_internal_handler();
@@ -3447,6 +3468,14 @@ retry_share:
 
       if (view_open_result)
         DBUG_RETURN(true);
+
+      if (table_list->is_view())
+      {
+        // See comments in tdc_open_view() for explanation.
+        if (!table_list->prelocking_placeholder &&
+            table_list->prepare_security(thd))
+          DBUG_RETURN(true);
+      }
 
       if (parse_view_definition(thd, table_list))
         DBUG_RETURN(true);
@@ -4365,6 +4394,29 @@ bool tdc_open_view(THD *thd, TABLE_LIST *table_list, const char *alias,
     if (view_open_result)
       return true;
 
+    if (table_list->is_view())
+    {
+      /*
+        It's an execution of a PS/SP and the view has already been unfolded
+        into a list of used tables. Now we only need to update the information
+        about granted privileges in the view tables with the actual data
+        stored in MySQL privilege system.  We don't need to restore the
+        required privileges (by calling register_want_access) because they has
+        not changed since PREPARE or the previous execution: the only case
+        when this information is changed is execution of UPDATE on a view, but
+        the original want_access is restored in its end.
+
+        Optimizer trace: because tables have been unfolded already, they are
+        in LEX::query_tables of the statement using the view. So privileges on
+        them are checked as done for explicitely listed tables, in constructor
+        of Opt_trace_start. Security context change is checked in
+        prepare_security() below.
+      */
+      if (!table_list->prelocking_placeholder &&
+          table_list->prepare_security(thd))
+        return true;
+    }
+
     bool view_parse_result= false;
     if (!(flags & OPEN_VIEW_NO_PARSE))
       view_parse_result= parse_view_definition(thd, table_list);
@@ -4409,17 +4461,15 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share, TABLE *entry)
     entry->file->implicit_emptied= 0;
     if (mysql_bin_log.is_open())
     {
-      bool error= false;
+      bool result= false;
       String temp_buf;
-      error= temp_buf.append("DELETE FROM ");
+      result= temp_buf.append("DELETE FROM ");
       append_identifier(thd, &temp_buf, share->db.str, strlen(share->db.str));
-      error= temp_buf.append(".");
+      result= temp_buf.append(".");
       append_identifier(thd, &temp_buf, share->table_name.str,
                         strlen(share->table_name.str));
-      if (mysql_bin_log.write_dml_directly(thd, temp_buf.c_ptr_safe(),
-                                           temp_buf.length()))
-        return TRUE;
-      if (error)
+      result= temp_buf.append(" /* generated by server, implicitly emptying in-memory table */");
+      if (result)
       {
         /*
           As replication is maybe going to be corrupted, we need to warn the
@@ -4432,6 +4482,21 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share, TABLE *entry)
         delete entry->triggers;
         return TRUE;
       }
+      /*
+        Create a new THD object for binary logging the statement which implicitly
+        empties the in-memory table.
+      */
+      THD new_thd;
+      new_thd.thread_stack= (char *) &thd;
+      new_thd.set_new_thread_id();
+      new_thd.store_globals();
+      new_thd.set_db(thd->db());
+      new_thd.variables.gtid_next.set_automatic();
+      result= mysql_bin_log.write_dml_directly(&new_thd, temp_buf.c_ptr_safe(),
+                                               temp_buf.length(), SQLCOM_DELETE);
+      new_thd.restore_globals();
+      thd->store_globals();
+      return result;
     }
   }
   return FALSE;
@@ -5565,6 +5630,20 @@ lock_table_names(THD *thd,
 
   // Phase 3: Acquire the locks which have been requested so far.
   if (thd->mdl_context.acquire_locks(&mdl_requests, lock_wait_timeout))
+    return true;
+
+
+  /*
+    Now when we have protection against concurrent change of read_only
+    option we can safely re-check its value.
+    Skip the check for FLUSH TABLES ... WITH READ LOCK and
+    FLUSH TABLES ... FOR EXPORT as they are not supposed to be affected
+    by read_only modes.
+  */
+  if (need_global_read_lock_protection &&
+      !(flags & MYSQL_OPEN_SKIP_SCOPED_MDL_LOCK) &&
+      !(flags & MYSQL_LOCK_IGNORE_GLOBAL_READ_ONLY) &&
+      check_readonly(thd, true))
     return true;
 
   /*

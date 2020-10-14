@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -36,12 +43,12 @@
 #include <vector>                       /* std::vector */
 #include <stdint.h>
 
-#if defined(HAVE_OPENSSL) && !defined(HAVE_YASSL)
+#if defined(HAVE_OPENSSL)
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
-#endif /* HAVE OPENSSL && !HAVE_YASSL */
+#endif /* HAVE OPENSSL */
 
 #include "auth_internal.h"
 #include "sql_auth_cache.h"
@@ -82,7 +89,6 @@ my_bool disconnect_on_expired_password= TRUE;
 #if defined(HAVE_OPENSSL)
 #define MAX_CIPHER_LENGTH 1024
 #define SHA256_PASSWORD_MAX_PASSWORD_LENGTH MAX_PLAINTEXT_LENGTH
-#if !defined(HAVE_YASSL)
 #define AUTH_DEFAULT_RSA_PRIVATE_KEY "private_key.pem"
 #define AUTH_DEFAULT_RSA_PUBLIC_KEY "public_key.pem"
 
@@ -100,7 +106,6 @@ my_bool auth_rsa_auto_generate_rsa_keys= TRUE;
 static bool do_auto_rsa_keys_generation();
 static Rsa_authentication_keys g_rsa_keys;
 
-#endif /* HAVE_YASSL */
 #endif /* HAVE_OPENSSL */
 
 bool
@@ -120,7 +125,6 @@ Thd_charset_adapter::charset()
 }
 
 #if defined(HAVE_OPENSSL)
-#ifndef HAVE_YASSL
 
 /**
   @brief Set key file path
@@ -356,7 +360,6 @@ Rsa_authentication_keys::read_rsa_keys()
   return false;
 }
 
-#endif /* HAVE_YASSL */
 #endif /* HAVE_OPENSSL */
 
 /**
@@ -615,6 +618,7 @@ static bool send_server_handshake_packet(MPVIO_EXT *mpvio,
   int2store(end + 5, protocol->get_client_capabilities() >> 16);
   end[7]= data_len;
   DBUG_EXECUTE_IF("poison_srv_handshake_scramble_len", end[7]= -100;);
+  DBUG_EXECUTE_IF("increase_srv_handshake_scramble_len", end[7]= 50;);
   memset(end + 8, 0, 10);
   end+= 18;
   /* write scramble tail */
@@ -655,11 +659,18 @@ static bool send_plugin_request_packet(MPVIO_EXT *mpvio,
   DBUG_ENTER("send_plugin_request_packet");
   mpvio->status= MPVIO_EXT::FAILURE; // the status is no longer RESTART
 
-  const char *client_auth_plugin=
-    ((st_mysql_auth *) (plugin_decl(mpvio->plugin)->info))->client_auth_plugin;
+  std::string client_auth_plugin(
+      ((st_mysql_auth *)(plugin_decl(mpvio->plugin)->info))
+          ->client_auth_plugin);
 
-  DBUG_ASSERT(client_auth_plugin);
+  DBUG_ASSERT(client_auth_plugin.c_str());
 
+  DBUG_EXECUTE_IF("invalidate_client_auth_plugin", {
+    client_auth_plugin.clear();
+    client_auth_plugin = std::string("..") + std::string(FN_DIRSEP) +
+                         std::string("..") + std::string(FN_DIRSEP) +
+                         std::string("mysql_native_password");
+  });
   /*
     If we're dealing with an older client we can't just send a change plugin
     packet to re-initiate the authentication handshake, because the client 
@@ -679,11 +690,11 @@ static bool send_plugin_request_packet(MPVIO_EXT *mpvio,
   }
 
   DBUG_PRINT("info", ("requesting client to use the %s plugin", 
-                      client_auth_plugin));
+                      client_auth_plugin.c_str()));
   DBUG_RETURN(net_write_command(mpvio->protocol->get_net(),
                                 switch_plugin_request_buf[0],
-                                (uchar*) client_auth_plugin,
-                                strlen(client_auth_plugin) + 1,
+                                (uchar*) client_auth_plugin.c_str(),
+                                client_auth_plugin.size() + 1,
                                 (uchar*) data, data_len));
 }
 
@@ -997,11 +1008,11 @@ static bool acl_check_ssl(THD *thd, const ACL_USER *acl_user)
 */
 bool rsa_auth_status()
 {
-#if !defined(HAVE_OPENSSL) || defined(HAVE_YASSL)
+#if !defined(HAVE_OPENSSL)
   return false;
 #else
   return (!g_rsa_keys.get_private_key() || !g_rsa_keys.get_public_key());
-#endif /* !HAVE_OPENSSL || HAVE_YASSL */
+#endif /* !HAVE_OPENSSL */
 }
 
 
@@ -1878,7 +1889,7 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf)
     protocol->read_packet();
     pkt_len= protocol->get_packet_length();
   }
-
+  DBUG_EXECUTE_IF("simulate_packet_error", pkt_len = packet_error;);
   if (pkt_len == packet_error)
     goto err;
 
@@ -2186,7 +2197,7 @@ acl_authenticate(THD *thd, enum_server_command command)
   /* acl_authenticate() takes the data from net->read_pos */
   thd->get_protocol_classic()->get_net()->read_pos=
     thd->get_protocol_classic()->get_raw_packet();
-  DBUG_PRINT("info", ("com_change_user_pkt_len=%u",
+  DBUG_PRINT("info", ("com_change_user_pkt_len=%lu",
     mpvio.protocol->get_packet_length()));
 
   if (command == COM_CHANGE_USER)
@@ -2805,7 +2816,6 @@ int my_vio_is_encrypted(MYSQL_PLUGIN_VIO *vio)
 }
 
 #if defined(HAVE_OPENSSL)
-#ifndef HAVE_YASSL
 
 int show_rsa_public_key(THD *thd, SHOW_VAR *var, char *buff)
 { 
@@ -2848,7 +2858,6 @@ bool init_rsa_keys(void)
   return ((do_auto_rsa_keys_generation() == false) ||
           g_rsa_keys.read_rsa_keys());
 }
-#endif /* HAVE_YASSL */
 
 static MYSQL_PLUGIN plugin_info_ptr;
 
@@ -2904,12 +2913,10 @@ static int sha256_password_authenticate(MYSQL_PLUGIN_VIO *vio,
   char scramble[SCRAMBLE_LENGTH + 1];
   char stage2[CRYPT_MAX_PASSWORD_SIZE + 1];
   String scramble_response_packet;
-#if !defined(HAVE_YASSL)
   int cipher_length= 0;
   unsigned char plain_text[MAX_CIPHER_LENGTH + 1];
   RSA *private_key= NULL;
   RSA *public_key= NULL;
-#endif /* HAVE_YASSL */
 
   DBUG_ENTER("sha256_password_authenticate");
 
@@ -2971,7 +2978,6 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
 
   if (!my_vio_is_encrypted(vio))
   {
- #if !defined(HAVE_YASSL)
     /*
       Since a password is being used it must be encrypted by RSA since no
       other encryption is being active.
@@ -3038,9 +3044,6 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
 
     if (pkt_len == 1)
       DBUG_RETURN(CR_ERROR);
-#else
-    DBUG_RETURN(CR_ERROR);
-#endif /* HAVE_YASSL */
   } // if(!my_vio_is_encrypter())
 
   /* Don't process the password if it is longer than maximum limit */
@@ -3092,7 +3095,6 @@ http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Proto
   DBUG_RETURN(CR_ERROR);
 }
 
-#if !defined(HAVE_YASSL)
 static MYSQL_SYSVAR_STR(private_key_path, auth_rsa_private_key_path,
         PLUGIN_VAR_READONLY,
         "A fully qualified path to the private RSA key used for authentication",
@@ -4130,7 +4132,6 @@ static bool do_auto_rsa_keys_generation()
     return true;
   }
 }
-#endif /* HAVE_YASSL */
 #endif /* HAVE_OPENSSL */
 
 bool MPVIO_EXT::can_authenticate()
@@ -4192,11 +4193,7 @@ mysql_declare_plugin(mysql_password)
   NULL,                                         /* Deinit function  */
   0x0101,                                       /* Version (1.0)    */
   NULL,                                         /* status variables */
-#if !defined(HAVE_YASSL)
   sha256_password_sysvars,                      /* system variables */
-#else
-  NULL,
-#endif /* HAVE_YASSL */
   NULL,                                         /* config options   */
   0                                             /* flags            */
 }

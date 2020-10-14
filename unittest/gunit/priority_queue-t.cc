@@ -1,13 +1,20 @@
-/* Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1033,5 +1040,25 @@ TEST_F(PriorityQueueTest, RandomIntegerGenerator)
   test_min_k_elements(many_keys.begin(), many_keys.end(), 20);
 }
 
+/**
+  Bug#30301356 - SOME EVENTS ARE DELAYED AFTER DROPPING EVENT
+
+  Test that ensures heap property is not violated if we remove an
+  element from an interior node. In the below test, we remove the
+  element 90 at index 6 in the array. After 90 is removed, the
+  parent node's of the deleted node violates the heap property.
+  In order to restore the heap property, we need to move up the
+  heap until we reach a node which satisfies the heap property or
+  the root. Without the fix, we adjust the heap downwards.
+*/
+
+TEST_F(PriorityQueueTest, TestElementRemove) {
+  Priority_queue<int, std::vector<int>, My_greater> pq;
+
+  int keys[11] = {60, 65, 84, 75, 80, 85, 90, 95, 100, 105, 82};
+  pq = Priority_queue<int, std::vector<int>, My_greater>(keys, keys + 11);
+  pq.remove(6);
+  EXPECT_TRUE(pq.is_valid());
+}
 
 }

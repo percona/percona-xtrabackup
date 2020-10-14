@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -11,6 +11,11 @@
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
    separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,41 +41,6 @@
 #include "my_dbug.h"      /* DBUG instrumentation */
 #include "my_global.h"
 #include "i_sha2_password_common.h"
-
-#ifdef HAVE_YASSL
-void * EVP_sha256()
-{
-  return NULL;
-}
-
-#define EVP_MD_CTX_create \
-new DIGEST_CTX
-
-int EVP_DigestInit_ex(DIGEST_CTX *ctx,
-               void *a MY_ATTRIBUTE((unused)),
-               void *b MY_ATTRIBUTE((unused)))
-{
-  ctx->Init();
-  return 1;
-}
-
-int EVP_DigestUpdate(DIGEST_CTX *ctx, const void *plaintext, int len)
-{
-  ctx->Update((const TaoCrypt::byte *)plaintext, len);
-  return 1;
-}
-
-int EVP_DigestFinal_ex(DIGEST_CTX *ctx, void *txt,
-                unsigned int *unused MY_ATTRIBUTE((unused)))
-{
-  ctx->Final((TaoCrypt::byte *)txt);
-  return 1;
-}
-
-#define EVP_MD_CTX_cleanup(CTX) CTX->Init()
-#define EVP_MD_CTX_destroy delete
-
-#endif /* !HAVE_YASSL */
 
 namespace sha2_password {
 /**

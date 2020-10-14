@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2005, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -8909,9 +8917,14 @@ foreign_fail:
 			bool update_own_prebuilt =
 				(m_prebuilt == ctx->prebuilt);
 			trx_t* const	user_trx = m_prebuilt->trx;
-			mem_heap_t* const	temp_blob_heap
-				= ctx->prebuilt->blob_heap;
 			if (dict_table_is_partition(ctx->new_table)) {
+			/* Set blob_heap to NULL for partitioned
+			tables to avoid row_prebuilt_free() from
+			freeing them. We do this to avoid double free
+			of blob_heap since all partitions point to
+			the same blob_heap in prebuilt. Blob heaps of
+			all the partitions will be freed later in the
+			ha_innopart::clear_blob_heaps() */
 				ctx->prebuilt->blob_heap = NULL;
 			}
 			row_prebuilt_free(ctx->prebuilt, TRUE);
@@ -8934,7 +8947,6 @@ foreign_fail:
 			trx_start_if_not_started(user_trx, true);
 			user_trx->will_lock++;
 			m_prebuilt->trx = user_trx;
-			m_prebuilt->blob_heap = temp_blob_heap;
 		}
 		DBUG_INJECT_CRASH("ib_commit_inplace_crash",
 				  crash_inject_count++);

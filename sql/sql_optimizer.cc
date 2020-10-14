@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1398,6 +1405,36 @@ static Item_func_match *test_if_ft_index_order(ORDER *order)
   return NULL;
 }
 
+/**
+  Test if this is a prefix index.
+
+  @param   table     table
+  @param   idx       index to check
+
+  @return TRUE if this is a prefix index
+*/
+bool is_prefix_index(TABLE* table, uint idx)
+{
+  if (!table || !table->key_info)
+  {
+    return false;
+  }
+  KEY* key_info = table->key_info;
+  uint key_parts = key_info[idx].user_defined_key_parts;
+  KEY_PART_INFO* key_part = key_info[idx].key_part;
+
+  for (uint i = 0; i < key_parts; i++, key_part++)
+  {
+    if (key_part->field &&
+      (key_part->length !=
+        table->field[key_part->fieldnr - 1]->key_length() &&
+        !(key_info->flags & (HA_FULLTEXT | HA_SPATIAL))))
+    {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
   Test if one can use the key to resolve ordering. 
@@ -1456,6 +1493,11 @@ int test_if_order_by_key(ORDER *order, TABLE *table, uint idx,
     for (; const_key_parts & 1 && key_part < key_part_end ;
          const_key_parts>>= 1)
       key_part++;
+
+    /* Avoid usage of prefix index for sorting a partition table */
+    if (table->part_info && key_part != table->key_info[idx].key_part &&
+        key_part != key_part_end && is_prefix_index(table, idx))
+     DBUG_RETURN(0);
 
     if (key_part == key_part_end)
     {
@@ -4945,7 +4987,13 @@ void JOIN::set_prefix_tables()
 
       if (!(sjm_inner_tables & ~current_tables_map))
       {
-        // At the end of a semi-join materialization nest, restore previous map
+        /*
+          At the end of a semi-join materialization nest,
+          add non-deterministic expressions to the last table of the nest:
+        */
+        tab->add_prefix_tables(RAND_TABLE_BIT);
+
+        // Restore the previous map:
         current_tables_map= saved_tables_map;
         prev_tables_map= last_non_sjm_tab ?
                          last_non_sjm_tab->prefix_tables() : (table_map) 0;
@@ -4960,7 +5008,7 @@ void JOIN::set_prefix_tables()
     }
   }
   /*
-    Random expressions must be added to the last table's condition.
+    Non-deterministic expressions must be added to the last table's condition.
     It solves problem with queries like SELECT * FROM t1 WHERE rand() > 0.5
   */
   if (last_non_sjm_tab != NULL)
@@ -10679,7 +10727,7 @@ void JOIN::optimize_keyuse()
     */
     keyuse->ref_table_rows= ~(ha_rows) 0;	// If no ref
     if (keyuse->used_tables &
-	(map= (keyuse->used_tables & ~const_table_map & ~OUTER_REF_TABLE_BIT)))
+       (map= (keyuse->used_tables & ~const_table_map & ~PSEUDO_TABLE_BITS)))
     {
       uint tableno;
       for (tableno= 0; ! (map & 1) ; map>>=1, tableno++)

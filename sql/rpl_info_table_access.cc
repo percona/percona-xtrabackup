@@ -1,13 +1,20 @@
-/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -63,14 +70,18 @@ void Rpl_info_table_access::before_open(THD *thd)
   committed. In this case, the changes were not done on behalf of
   any user transaction and if not finished, there would be pending
   changes.
+
+  @return
+    @retval false Success
+    @retval true  Failure
 */
-void Rpl_info_table_access::close_table(THD *thd, TABLE* table,
+bool Rpl_info_table_access::close_table(THD *thd, TABLE* table,
                                         Open_tables_backup *backup,
                                         bool error)
 {
   DBUG_ENTER("Rpl_info_table_access::close_table");
-  System_table_access::close_table(thd, table, backup, error, thd_created);
-  DBUG_VOID_RETURN;
+  bool res= System_table_access::close_table(thd, table, backup, error, thd_created);
+  DBUG_RETURN(res);
 }
 
 /**
@@ -331,6 +342,11 @@ THD *Rpl_info_table_access::create_thd()
   {
     thd= System_table_access::create_thd();
     thd->system_thread= SYSTEM_THREAD_INFO_REPOSITORY;
+    /*
+       Set the skip_readonly_check flag as this thread should not be
+       blocked by super_read_only check during ha_commit_trans.
+    */
+    thd->set_skip_readonly_check();
     thd_created= true;
   }
 
@@ -349,6 +365,7 @@ void Rpl_info_table_access::drop_thd(THD *thd)
 
   if (thd_created)
   {
+    thd->reset_skip_readonly_check();
     System_table_access::drop_thd(thd);
     thd_created= false;
   }

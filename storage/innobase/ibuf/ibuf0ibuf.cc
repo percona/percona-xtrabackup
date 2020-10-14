@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -4250,10 +4258,11 @@ ibuf_restore_pos(
 		return(TRUE);
 	}
 
-	if (fil_space_get_flags(space) == ULINT_UNDEFINED) {
-		/* The tablespace has been dropped.  It is possible
-		that another thread has deleted the insert buffer
-		entry.  Do not complain. */
+	if (fil_space_get_flags(space) == ULINT_UNDEFINED ||
+		fil_space_is_being_truncated(space)) {
+		/* The tablespace has been dropped. Or the tablespace is being
+		truncated. It is possible that another thread has deleted
+		the insert buffer entry.  Do not complain. */
 		ibuf_btr_pcur_commit_specify_mtr(pcur, mtr);
 	} else {
 		ib::error() << "ibuf cursor restoration fails!."

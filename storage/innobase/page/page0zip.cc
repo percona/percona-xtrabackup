@@ -1,15 +1,23 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2005, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -1289,7 +1297,7 @@ page_zip_compress(
 						columns */
 	index_id_t		ind_id;
 #ifndef UNIV_HOTBACKUP
-	uintmax_t		usec = ut_time_us(NULL);
+	ib_time_monotonic_us_t usec = ut_time_monotonic_us();
 #endif /* !UNIV_HOTBACKUP */
 #ifdef PAGE_ZIP_COMPRESS_DBG
 	FILE*			logfile = NULL;
@@ -1553,7 +1561,7 @@ err_exit:
 			dict_index_zip_failure(index);
 		}
 
-		uintmax_t	time_diff = ut_time_us(NULL) - usec;
+		uint64_t time_diff = ut_time_monotonic_us() - usec;
 		page_zip_stat[page_zip->ssize - 1].compressed_usec
 			+= time_diff;
 		if (cmp_per_index_enabled) {
@@ -1623,7 +1631,7 @@ err_exit:
 	}
 #endif /* PAGE_ZIP_COMPRESS_DBG */
 #ifndef UNIV_HOTBACKUP
-	uintmax_t	time_diff = ut_time_us(NULL) - usec;
+	uint64_t time_diff = ut_time_monotonic_us() - usec;
 	page_zip_stat[page_zip->ssize - 1].compressed_ok++;
 	page_zip_stat[page_zip->ssize - 1].compressed_usec += time_diff;
 	if (cmp_per_index_enabled) {
@@ -3248,7 +3256,7 @@ page_zip_decompress(
 				after page creation */
 {
 #ifndef UNIV_HOTBACKUP
-	uintmax_t	usec = ut_time_us(NULL);
+	ib_time_monotonic_us_t	usec = ut_time_monotonic_ms();
 #endif /* !UNIV_HOTBACKUP */
 
 	if (!page_zip_decompress_low(page_zip, page, all)) {
@@ -3256,7 +3264,7 @@ page_zip_decompress(
 	}
 
 #ifndef UNIV_HOTBACKUP
-	uintmax_t	time_diff = ut_time_us(NULL) - usec;
+	uint64_t time_diff = ut_time_monotonic_us() - usec;
 	page_zip_stat[page_zip->ssize - 1].decompressed++;
 	page_zip_stat[page_zip->ssize - 1].decompressed_usec += time_diff;
 

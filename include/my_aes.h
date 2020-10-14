@@ -1,16 +1,23 @@
 #ifndef MY_AES_INCLUDED
 #define MY_AES_INCLUDED
 
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
  This program is free software; you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation; version 2 of the License.
+ it under the terms of the GNU General Public License, version 2.0,
+ as published by the Free Software Foundation.
+
+ This program is also distributed with certain software (including
+ but not limited to OpenSSL) that is licensed under separate terms,
+ as designated in a particular file or component or in included license
+ documentation.  The authors of MySQL hereby grant you an additional
+ permission to link the program and your derivative works with the
+ separately licensed software that they have included with MySQL.
 
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
+ GNU General Public License, version 2.0, for more details.
 
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
@@ -38,7 +45,6 @@ enum my_aes_opmode
    my_aes_128_cbc,
    my_aes_192_cbc,
    my_aes_256_cbc
-#ifndef HAVE_YASSL
    ,my_aes_128_cfb1,
    my_aes_192_cfb1,
    my_aes_256_cfb1,
@@ -51,15 +57,10 @@ enum my_aes_opmode
    my_aes_128_ofb,
    my_aes_192_ofb,
    my_aes_256_ofb
-#endif
 };
 
 #define MY_AES_BEGIN my_aes_128_ecb
-#ifdef HAVE_YASSL
-#define MY_AES_END my_aes_256_cbc
-#else
 #define MY_AES_END my_aes_256_ofb
-#endif
 
 /* If bad data discovered during decoding */
 #define MY_AES_BAD_DATA  -1

@@ -1,15 +1,23 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -2327,6 +2335,21 @@ func_exit:
 }
 
 /***************************************************************//**
+This function checks if the page in which record is present is a
+non-leaf node of a spatial index.
+param[in]	rec	Btree record
+param[in]	index	index
+@return TRUE if ok */
+bool
+page_is_spatial_non_leaf(
+/*====================*/
+	const rec_t*	rec,
+	dict_index_t*	index)
+{
+     return (dict_index_is_spatial(index) && !page_is_leaf(page_align(rec)));
+}
+
+/***************************************************************//**
 This function checks the consistency of an index page.
 @return TRUE if ok */
 ibool
@@ -2447,7 +2470,8 @@ page_validate(
 		    && !page_rec_is_supremum(rec)) {
 
 			int	ret = cmp_rec_rec(
-				rec, old_rec, offsets, old_offsets, index);
+				rec, old_rec, offsets, old_offsets, index,
+				page_is_spatial_non_leaf(rec, index));
 
 			/* For spatial index, on nonleaf leavel, we
 			allow recs to be equal. */

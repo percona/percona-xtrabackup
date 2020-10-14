@@ -1,14 +1,21 @@
 /*
-  Copyright (c) 2015, 2018 Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2020 Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -19,6 +26,7 @@
 #include "mysql_function.h"
 #include "stored_procedure.h"
 #include "table_definition_dump_task.h"
+#include "mysqldump_tool_chain_maker_options.h"
 #include "table_rows_dump_task.h"
 #include "table_deferred_indexes_dump_task.h"
 #include "event_scheduler_event.h"
@@ -114,7 +122,9 @@ void Mysql_crawler::enumerate_objects()
   m_dump_end_task->add_dependency(m_tables_definition_ready_dump_task);
   this->process_dump_task(m_tables_definition_ready_dump_task);
 
-  this->enumerate_users();
+  /* SHOW CREATE USER is introduced in 5.7.6 */
+  if (use_show_create_user)
+    this->enumerate_users();
 
   std::vector<Database* >::iterator it;
   std::vector<Database_end_dump_task* >::iterator it_end;
@@ -267,13 +277,6 @@ void Mysql_crawler::enumerate_views(const Database& db)
       const Mysql::Tools::Base::Mysql_query_runner::Row& is_view= **view_it;
       if (is_view[0] == "1")
       {
-        /* Check if view dependent objects exists */
-        if (runner->run_query(std::string("LOCK TABLES ")
-              + this->get_quoted_object_full_name(db.get_name(), table_name)
-              + " READ") != 0)
-          return;
-        else
-          runner->run_query(std::string("UNLOCK TABLES"));
         View* view= new View(this->generate_new_object_id(),
                               table_name,
                               db.get_name(),

@@ -1,14 +1,20 @@
-# Copyright (c) 2005, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2005, 2020, Oracle and/or its affiliates. All rights reserved.
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; version 2
-# of the License.
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Library General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
@@ -1179,6 +1185,109 @@
    obj:*
    obj:*
    obj:*
+}
+
+{
+   OpenSSL leak 1 static SSL
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:CRYPTO_malloc
+   ...
+   fun:pthread_once
+}
+
+{
+   OpenSSL leak 2 static SSL
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:realloc
+   fun:CRYPTO_realloc
+   ...
+   fun:pthread_once
+}
+
+{
+   OpenSSL leak 1 static SSL pthread_once_slow
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:CRYPTO_malloc
+   ...
+   fun:__pthread_once_slow
+}
+
+{
+   OpenSSL leak 2 static SSL pthread_once_slow
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:realloc
+   fun:CRYPTO_realloc
+   ...
+   fun:__pthread_once_slow
+}
+
+{
+   OpenSSL leak 3 static SSL
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:CRYPTO_malloc
+   ...
+   fun:RAND_priv_bytes
+}
+
+{
+   OpenSSL leak 4 static SSL
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:CRYPTO_malloc
+   ...
+   fun:RAND_bytes
+}
+
+# http://www.openldap.org/its/index.cgi/Software%20Bugs?id=9081;page=23
+# Memory leak in ldap_initialize/ldap_unbind
+# Version: 2.4.48
+# Fixed in RE24 (2.4.49)
+{
+   OpenLDAP bug 9081
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:calloc
+   fun:ber_memcalloc_x
+   fun:ber_memcalloc
+   fun:ber_sockbuf_alloc
+   fun:ldap_create
+   fun:ldap_initialize
+}
+
+{
+   cyrus libsasl2 still reachable one
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:sasl_client_init
+}
+
+{
+   cyrus libsasl2 still reachable two
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:calloc
+   ...
+   fun:sasl_client_init
+}
+
+{
+   cyrus libsasl2 still reachable three
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:sasl_set_path
 }
 
 {

@@ -1,14 +1,21 @@
 /*
-  Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2020 Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -24,6 +31,8 @@
 #include "sql_formatter.h"
 #include "mysqldump_tool_chain_maker_options.h"
 #include <boost/algorithm/string.hpp>
+#include "view.h"
+#include "m_ctype.h"
 
 using namespace Mysql::Tools::Dump;
 
@@ -45,12 +54,35 @@ I_object_reader* Mysqldump_tool_chain_maker::create_chain(
   {
     return NULL;
   }
-  if (!m_options->is_object_included_in_dump(
-    dynamic_cast<Abstract_data_object*>(
-    dump_task->get_related_db_object())))
+
+  Abstract_data_object* object= dynamic_cast<Abstract_data_object*>(
+    dump_task->get_related_db_object());
+  if (!m_options->is_object_included_in_dump(object))
   {
     return NULL;
   }
+  /*
+    View dependency check is moved post filteration. This will ensure that
+    only filtered out views will be checked for their dependecies. This
+    allows mysqlpump to dump a database even when there exsits an invalid
+    view in another database which user is not interested to dump. I_S views
+    are skipped from this check.
+  */
+  if (object && (dynamic_cast<View*>(object) != NULL) &&
+      my_strcasecmp(&my_charset_latin1, object->get_schema().c_str(),
+                    INFORMATION_SCHEMA_DB_NAME))
+  {
+     Mysql::Tools::Base::Mysql_query_runner* runner= this->get_runner();
+     /* Check if view dependent objects exists */
+     if (runner->run_query(std::string("LOCK TABLES ")
+           + this->get_quoted_object_full_name(object->get_schema(),
+             object->get_name()) + " READ") != 0)
+       return NULL;
+     else
+       runner->run_query(std::string("UNLOCK TABLES"));
+     delete runner;
+  }
+
   if (m_main_object_reader == NULL)
   {
     I_output_writer* writer;

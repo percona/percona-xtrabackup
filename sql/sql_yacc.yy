@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2020, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -28,6 +35,7 @@ Note: YYTHD is passed as an argument to yyparse(), and subsequently to yylex().
 #define YYLIP (& YYTHD->m_parser_state->m_lip)
 #define YYPS (& YYTHD->m_parser_state->m_yacc)
 #define YYCSCL (YYLIP->query_charset)
+#define YYCLIENT_NO_SCHEMA (YYTHD->get_protocol()->has_client_capability(CLIENT_NO_SCHEMA))
 
 #define YYINITDEPTH 100
 #define YYMAXDEPTH 3200                        /* Because of 64K stack */
@@ -9209,9 +9217,9 @@ select_item_list:
           }
         | '*'
           {
-            Item *item= NEW_PTN Item_field(@$, NULL, NULL, "*");
+            Item *item = NEW_PTN Item_asterisk(@$, NULL, NULL);
             $$= NEW_PTN PT_select_item_list;
-            if ($$ == NULL || $$->push_back(item))
+            if ($$ == NULL || item == NULL || $$->push_back(item))
               MYSQL_YYABORT;
           }
         ;
@@ -12839,6 +12847,7 @@ param_marker:
           {
             $$= NEW_PTN Item_param(@$,
                                    (uint) (@1.raw.start - YYLIP->get_buf()));
+            Lex->param_list.push_back($$);
           }
         ;
 
@@ -12952,11 +12961,12 @@ insert_ident:
 table_wild:
           ident '.' '*'
           {
-            $$= NEW_PTN PTI_table_wild(@$, NULL, $1.str);
+            $$= NEW_PTN Item_asterisk(@$, NULL, $1.str);
           }
         | ident '.' ident '.' '*'
           {
-            $$= NEW_PTN PTI_table_wild(@$, $1.str, $3.str);
+            const char *schema_name = YYCLIENT_NO_SCHEMA ? NULL : $1.str;
+            $$= NEW_PTN Item_asterisk(@$, schema_name, $3.str);
           }
         ;
 
@@ -13057,11 +13067,9 @@ table_ident:
           }
         | ident '.' ident
           {
-            if (YYTHD->get_protocol()->has_client_capability(CLIENT_NO_SCHEMA))
-              $$= NEW_PTN Table_ident(to_lex_cstring($3));
-            else {
-              $$= NEW_PTN Table_ident(to_lex_cstring($1), to_lex_cstring($3));
-            }
+            LEX_CSTRING schema_name= YYCLIENT_NO_SCHEMA ? LEX_CSTRING()
+                                                        : to_lex_cstring($1);
+            $$= NEW_PTN Table_ident(schema_name, to_lex_cstring($3));
             if ($$ == NULL)
               MYSQL_YYABORT;
           }

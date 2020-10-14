@@ -1,14 +1,20 @@
-/*  Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+/*  Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 
-    This program is free software; you can redistribute it and/or
-    modify it under the terms of the GNU General Public License as
-    published by the Free Software Foundation; version 2 of the
-    License.
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License, version 2.0,
+    as published by the Free Software Foundation.
+
+    This program is also distributed with certain software (including
+    but not limited to OpenSSL) that is licensed under separate terms,
+    as designated in a particular file or component or in included license
+    documentation.  The authors of MySQL hereby grant you an additional
+    permission to link the program and your derivative works with the
+    separately licensed software that they have included with MySQL.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-    GNU General Public License for more details.
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License, version 2.0, for more details.
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
@@ -23,9 +29,6 @@
 #include <my_global.h>
 #include "mysql/service_rules_table.h"
 #include "openssl/ssl.h"
-#if defined(HAVE_YASSL)
-using namespace yaSSL;
-#endif // defined(HAVE_YASSL)
 #include "mysql/service_ssl_wrapper.h"
 
 #ifndef EMBEDDED_LIBRARY
@@ -40,18 +43,6 @@ dummy_function_to_ensure_we_are_linked_into_the_server() { return 1; }
 
 extern "C"
 {
-
-#ifdef HAVE_YASSL
-
-static char *
-my_asn1_time_to_string(ASN1_TIME *time, char *buf, size_t len)
-{
-  if (!time)
-      return NULL;
-  return yaSSL_ASN1_TIME_to_string(time, buf, len);
-}
-
-#else /* openssl */
 
 static char *
 my_asn1_time_to_string(ASN1_TIME *time, char *buf, size_t len)
@@ -78,8 +69,6 @@ end:
   BIO_free(bio);
   return res;
 }
-
-#endif
 
 /**
   Return version of SSL used in current connection
@@ -322,12 +311,10 @@ long ssl_wrapper_sess_accept_good(struct st_VioSSLFd *vio_ssl)
 */
 void ssl_wrapper_thread_cleanup()
 {
-#if !defined(HAVE_YASSL)
   ERR_clear_error();
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
   ERR_remove_thread_state(0);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-#endif // !defined(HAVE_YASSL)
 }
 
 } /* extern "C" */

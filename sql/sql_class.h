@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1528,8 +1535,6 @@ private:
   */
   LEX_CSTRING m_db;
 
-public:
-
   /**
     In some cases, we may want to modify the query (i.e. replace
     passwords with their hashes before logging the statement etc.).
@@ -1544,8 +1549,17 @@ public:
     may follow at a later date, both pre- and post parsing of the query.
     Rewriting of binloggable statements must preserve all pertinent
     information.
+
+    Similar restrictions as for m_query_string (see there) hold for locking:
+    - Value may only be (re)set from owning thread (current_thd)
+    - Value must be modified using (reset|swap)_rewritten_query().
+      Doing so will protect the update with LOCK_thd_query.
+    - The owner (current_thd) may read the value without holding the lock.
+    - Other threads may read the value, but must hold LOCK_thd_query to do so.
   */
-  String      rewritten_query;
+  String      m_rewritten_query;
+
+public:
 
   /* Used to execute base64 coded binlog events in MySQL server */
   Relay_log_info* rli_fake;
@@ -4363,6 +4377,21 @@ public:
   }
 
   /**
+    Set query to be displayed in performance schema (threads table etc.).
+  */
+  void set_query_for_display(const char *query_arg, size_t query_length_arg) {
+    // Set in pfs events statements table
+    MYSQL_SET_STATEMENT_TEXT(m_statement_psi, query_arg, query_length_arg);
+#ifdef HAVE_PSI_THREAD_INTERFACE
+    // Set in pfs threads table
+    PSI_THREAD_CALL(set_thread_info)(query_arg, query_length_arg);
+#endif
+  }
+  void reset_query_for_display(void) {
+    set_query_for_display(NULL, 0);
+  }
+
+  /**
     Assign a new value to thd->m_query_string.
     Protected with the LOCK_thd_query mutex.
   */
@@ -4372,7 +4401,50 @@ public:
     set_query(tmp);
   }
   void set_query(const LEX_CSTRING& query_arg);
-  void reset_query() { set_query(LEX_CSTRING()); }
+  void reset_query() {
+    set_query(LEX_CSTRING());
+  }
+
+  /**
+    Set the rewritten query (with passwords obfuscated etc.) on the THD.
+    Wraps this in the LOCK_thd_query mutex to protect against race conditions
+    with SHOW PROCESSLIST inspecting that string.
+
+    This uses swap() and therefore "steals" the argument from the caller;
+    the caller MUST take care not to try to use its own string after calling
+    this function! This is an optimization for mysql_rewrite_query() so we
+    don't copy its temporary string (which may get very long, up to
+    @@max_allowed_packet).
+
+    Using this outside of mysql_rewrite_query() is almost certainly wrong;
+    please check with the runtime team!
+
+    @param query_arg  The rewritten query to use for slow/bin/general logging.
+                      The value will be released in the caller and MUST NOT
+                      be used there after calling this function.
+  */
+  void swap_rewritten_query(String& query_arg);
+
+  /**
+    Get the rewritten query (with passwords obfuscated etc.) from the THD.
+    If done from a different thread (from the one that the rewritten_query
+    is set on), the caller must hold LOCK_thd_query while calling this!
+  */
+  const String &rewritten_query() const {
+#ifndef DBUG_OFF
+    if (current_thd != this)
+      mysql_mutex_assert_owner(&LOCK_thd_query);
+#endif
+    return m_rewritten_query;
+  }
+
+  /**
+    Reset thd->rewritten_query. Protected with the LOCK_thd_query mutex.
+  */
+  void reset_rewritten_query() {
+    String empty;
+    swap_rewritten_query(empty);
+  }
 
   /**
     Assign a new value to thd->query_id.

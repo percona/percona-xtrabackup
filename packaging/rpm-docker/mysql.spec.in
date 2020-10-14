@@ -1,16 +1,23 @@
-# Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2000, 2020, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program; see the file COPYING. If not, write to the
+# along with this program. If not, write to the
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston
 # MA  02110-1301  USA.
 
@@ -32,11 +39,11 @@
 
 %global src_dir               %{src_base}-%{version}
 
+%global license_files_server  %{src_dir}/LICENSE %{src_dir}/README
+
 %if 0%{?commercial}
-%global license_files_server  %{src_dir}/LICENSE.mysql %{src_dir}/README
 %global license_type          Commercial
 %else
-%global license_files_server  %{src_dir}/COPYING %{src_dir}/README
 %global license_type          GPLv2
 %endif
 
@@ -60,6 +67,7 @@ BuildRequires:  cyrus-sasl-devel
 BuildRequires:  libaio-devel
 BuildRequires:  ncurses-devel
 BuildRequires:  numactl-devel
+BuildRequires:  openldap-devel
 BuildRequires:  openssl-devel
 BuildRequires:  zlib-devel
 BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
@@ -192,8 +200,8 @@ for f in innochecksum myisamchk myisam_ftdump myisamlog myisampack \
 done
 
 #  Remove test plugins
-for p in auth.so auth_test_plugin.so authentication_ldap_sasl.so \
-    authentication_ldap_simple.so daemon_example.ini libdaemon_example.so \
+for p in auth.so auth_test_plugin.so \
+    daemon_example.ini libdaemon_example.so \
     qa_auth_client.so qa_auth_interface.so qa_auth_server.so \
     replication_observers_example_plugin.so ha_example.so \
     test_udf_services.so test_security_context.so udf_example.so ; do
@@ -235,9 +243,7 @@ rm -r $(readlink var) var
     -c "MySQL Server" -u 27 mysql >/dev/null 2>&1 || :
 
 %post -n mysql-%{product_suffix}-server-minimal
-/bin/touch /var/log/mysqld.log >/dev/null 2>&1 || :
-/bin/chmod 0640 /var/log/mysqld.log >/dev/null 2>&1 || :
-/bin/chown mysql:mysql /var/log/mysqld.log >/dev/null 2>&1 || :
+[ -e /var/log/mysqld.log ] || install /dev/null -m0640 -omysql -gmysql /var/log/mysqld.log || :
 
 %files -n mysql-%{product_suffix}-server-minimal
 %defattr(-, root, root, -)
@@ -323,6 +329,8 @@ rm -r $(readlink var) var
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/audit_log.so
 %attr(644, root, root) %{_datadir}/mysql/audit_log_filter_linux_install.sql
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_simple.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_pam.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/data_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_encrypted_file.so
@@ -339,6 +347,9 @@ rm -r $(readlink var) var
 %dir %attr(750, mysql, mysql) /var/lib/mysql-keyring
 
 %changelog
+* Thu Sep 05 2019 Bjorn Munch <bjorn.munch@oracle.com> - 5.7.28-1
+- Add License Book, remove COPYING
+
 * Tue Sep 13 2016 Balasubramanian Kandasamy <balasubramanian.kandasamy@oracle.com> - 5.7.16-1
 - Add connection_control.so to server subpackage
 
@@ -702,8 +713,7 @@ rm -r $(readlink var) var
 
 * Mon Nov 16 2009 Joerg Bruehe <joerg.bruehe@sun.com>
 
-- Fix some problems with the directives around "tcmalloc" (experimental),
-  remove erroneous traces of the InnoDB plugin (that is 5.1 only).
+- remove erroneous traces of the InnoDB plugin (that is 5.1 only).
 
 * Tue Oct 06 2009 Magnus Blaudd <mvensson@mysql.com>
 

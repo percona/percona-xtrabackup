@@ -1,14 +1,21 @@
-# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
@@ -33,9 +40,6 @@ INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 ADD_SUBDIRECTORY(base)
 ## Subdirectory for mysqlpump code.
 ADD_SUBDIRECTORY(dump)
-
-## We will need libeay32.dll and ssleay32.dll when running client executables.
-COPY_OPENSSL_DLLS(copy_openssl_client)
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
@@ -96,7 +100,7 @@ SET_SOURCE_FILES_PROPERTIES(mysqlslap.cc PROPERTIES COMPILE_FLAGS "-DTHREADS")
 TARGET_LINK_LIBRARIES(mysqlslap mysqlclient)
 
 MYSQL_ADD_EXECUTABLE(mysql_config_editor mysql_config_editor.cc)
-TARGET_LINK_LIBRARIES(mysql_config_editor mysqlclient)
+TARGET_LINK_LIBRARIES(mysql_config_editor ${FORCE_SSL_SOLARIS} mysqlclient)
 
 MYSQL_ADD_EXECUTABLE(mysql_secure_installation mysql_secure_installation.cc)
 TARGET_LINK_LIBRARIES(mysql_secure_installation mysqlclient)
@@ -104,7 +108,7 @@ TARGET_LINK_LIBRARIES(mysql_secure_installation mysqlclient)
 IF(UNIX AND NOT WITHOUT_SERVER)
   MYSQL_ADD_EXECUTABLE(mysql_install_db
     mysql_install_db.cc auth_utils.cc path.cc logger.cc)
-  TARGET_LINK_LIBRARIES(mysql_install_db mysqlclient)
+  TARGET_LINK_LIBRARIES(mysql_install_db ${FORCE_SSL_SOLARIS} mysqlclient)
   ADD_COMPILE_FLAGS(
     auth_utils.cc mysql_install_db.cc
     COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/sql/auth"

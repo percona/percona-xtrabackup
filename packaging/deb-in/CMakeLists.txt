@@ -1,13 +1,20 @@
 # Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
@@ -54,7 +61,8 @@ IF (DEB_PRODUCT STREQUAL "commercial")
   SET (DEB_PRODUCTNAMEC "${DEB_BASE_PRODUCTC}Commercial")
   SET (DEB_NOTPRODUCTNAME "${DEB_BASE_PRODUCT}community")
   SET (DEB_LICENSENAME "Advanced")
-  SET (DEB_INSTALL_LICENSEFILE "LICENSE.mysql")
+  SET (DEB_CMAKE_EXTRAS "${DEB_CMAKE_EXTRAS} -DWITH_LDAP=${WITH_LDAP}")
+  SET (DEB_CMAKE_EXTRAS "${DEB_CMAKE_EXTRAS} -DWITH_SASL=${WITH_SASL}")
   SET (DEB_SERVERVERSION "${DEB_BASE_VERSION}+commercial-1")
   # List of plugins that are only in commercial packages
   # Plugins that are in both community and commercial should NOT be added here
@@ -125,10 +133,10 @@ ELSE()
   SET (DEB_PRODUCTNAMEC "${DEB_BASE_PRODUCTC}Community")
   SET (DEB_NOTPRODUCTNAME "${DEB_BASE_PRODUCT}commercial")
   SET (DEB_LICENSENAME "GPL")
-  SET (DEB_INSTALL_LICENSEFILE "COPYING")
   SET (DEB_SERVERVERSION "${DEB_BASE_VERSION}-1")
   SET (DEB_REMOVEPATTERN "com.in")
 ENDIF()
+SET (DEB_INSTALL_LICENSEFILE "LICENSE")
 
 # Generate debug symbol packages (this is done automatically in Debian9+)
 SET (DEB_RULES_STRIP_DEFAULT
@@ -238,6 +246,10 @@ ELSEIF(DEB_CODENAME STREQUAL "buster")
   SET (DEB_INIT_APPARMOR "")
   SET (DEB_CONTROL_DBGSYM "")
   SET (DEB_RULES_STRIP "")
+  IF (DEFINED WITH_NDBCLUSTER_STORAGE_ENGINE)
+    # Cluster code triggers a lot of new warnings with GCC 7.2
+    SET (DEB_DEBUG_MAINTAINER "-DMYSQL_MAINTAINER_MODE=0")
+  ENDIF()
 ELSEIF(DEB_CODENAME STREQUAL "sid")
   IF (DEFINED DEB_GCC_SNAPSHOT)
     SET (DEB_CMAKE_EXTRAS "${DEB_CMAKE_EXTRAS} -DCMAKE_C_COMPILER=/usr/lib/gcc-snapshot/bin/gcc -DCMAKE_CXX_COMPILER=/usr/lib/gcc-snapshot/bin/g++ -DMYSQL_MAINTAINER_MODE=0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
@@ -393,6 +405,10 @@ ELSEIF(DEB_CODENAME STREQUAL "disco")
   SET (DEB_INIT_APPARMOR "/lib/apparmor/profile-load usr.sbin.mysqld")
   SET (DEB_CONTROL_DBGSYM "")
   SET (DEB_RULES_STRIP "")
+  IF (DEFINED WITH_NDBCLUSTER_STORAGE_ENGINE)
+    # Cluster code triggers a lot of new warnings with GCC 7.2
+    SET (DEB_DEBUG_MAINTAINER "-DMYSQL_MAINTAINER_MODE=0")
+  ENDIF()
 ELSE()
   MESSAGE(STATUS
     "Skipping deb packaging on unsupported platform ${DEB_CODENAME}.")

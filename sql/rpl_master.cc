@@ -1,13 +1,20 @@
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -29,7 +36,7 @@
 #include "rpl_handler.h"                        // RUN_HOOK
 #include "sql_class.h"                          // THD
 #include "rpl_group_replication.h"              // is_group_replication_running
-
+#include "mutex_lock.h"                         // Mutex_lock
 #include "pfs_file_provider.h"
 #include "mysql/psi/mysql_file.h"
 
@@ -180,7 +187,7 @@ err2:
 
 void unregister_slave(THD* thd, bool only_mine, bool need_lock_slave_list)
 {
-  if (thd->server_id)
+  if (thd->server_id && my_hash_inited(&slave_list))
   {
     if (need_lock_slave_list)
       mysql_mutex_lock(&LOCK_slave_list);
@@ -430,18 +437,15 @@ String *get_slave_uuid(THD *thd, String *value)
     return NULL;
 
   /* Protects thd->user_vars. */
-  mysql_mutex_lock(&thd->LOCK_thd_data);
+  Mutex_lock lock_guard(&thd->LOCK_thd_data);
 
   user_var_entry *entry=
     (user_var_entry*) my_hash_search(&thd->user_vars, name, sizeof(name)-1);
   if (entry && entry->length() > 0)
   {
     value->copy(entry->ptr(), entry->length(), NULL);
-    mysql_mutex_unlock(&thd->LOCK_thd_data);
     return value;
   }
-
-  mysql_mutex_unlock(&thd->LOCK_thd_data);
   return NULL;
 }
 

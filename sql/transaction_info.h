@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -111,6 +118,25 @@ public:
     return m_flags & (int) TRX_READ_WRITE;
   }
 
+  /**
+    Set the transaction flag to noop_read_write
+    If the transaction has no operation dml statement.
+  */
+  void set_trx_noop_read_write()
+  {
+    DBUG_ASSERT(is_started());
+    m_flags|= (int) TRX_NOOP_READ_WRITE;
+  }
+
+  /**
+    Check if the stmt transaction has noop_read_write flag set.
+  */
+  bool is_trx_noop_read_write() const
+  {
+    DBUG_ASSERT(is_started());
+    return m_flags & (int) TRX_NOOP_READ_WRITE;
+  }
+
   bool is_started() const
   {
     return m_ht != NULL;
@@ -131,6 +157,8 @@ public:
     DBUG_ASSERT(is_started());
     if (stmt_trx->is_trx_read_write())
       set_trx_read_write();
+    if (stmt_trx->is_trx_noop_read_write())
+      set_trx_noop_read_write();
   }
 
   Ha_trx_info *next() const
@@ -146,7 +174,7 @@ public:
   }
 
 private:
-  enum { TRX_READ_ONLY= 0, TRX_READ_WRITE= 1 };
+  enum { TRX_READ_ONLY= 0, TRX_READ_WRITE= 1, TRX_NOOP_READ_WRITE= 2 };
   /**
     Auxiliary, used for ha_list management
   */

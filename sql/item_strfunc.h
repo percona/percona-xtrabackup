@@ -1,16 +1,23 @@
 #ifndef ITEM_STRFUNC_INCLUDED
 #define ITEM_STRFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -229,11 +236,11 @@ class Item_func_concat :public Item_str_func
   String tmp_value;
 public:
   Item_func_concat(const POS &pos, PT_item_list *opt_list)
-    :Item_str_func(pos, opt_list)
-  {}
-
-  Item_func_concat(Item *a,Item *b) :Item_str_func(a,b) {}
-  Item_func_concat(const POS &pos, Item *a,Item *b) :Item_str_func(pos, a,b) {}
+      : Item_str_func(pos, opt_list), tmp_value("", 0, collation.collation) {}
+  Item_func_concat(Item *a, Item *b)
+      : Item_str_func(a, b), tmp_value("", 0, collation.collation) {}
+  Item_func_concat(const POS &pos, Item *a, Item *b)
+      : Item_str_func(pos, a, b), tmp_value("", 0, collation.collation) {}
 
   String *val_str(String *);
   void fix_length_and_dec();
@@ -244,10 +251,11 @@ class Item_func_concat_ws :public Item_str_func
 {
   String tmp_value;
 public:
-  Item_func_concat_ws(List<Item> &list) :Item_str_func(list) {}
+  Item_func_concat_ws(List<Item> &list)
+      : Item_str_func(list), tmp_value("", 0, collation.collation) {}
   Item_func_concat_ws(const POS &pos, PT_item_list *opt_list)
-    :Item_str_func(pos, opt_list)
-  {}
+      : Item_str_func(pos, opt_list), tmp_value("", 0, collation.collation) {}
+
   String *val_str(String *);
   void fix_length_and_dec();
   const char *func_name() const { return "concat_ws"; }
