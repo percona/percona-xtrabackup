@@ -10,6 +10,10 @@
 
 start_server
 
+#test server version check
+xtrabackup --backup --no-server-version-check --target-dir=$topdir/backup1
+rm -r $topdir/backup1
+
 # Override the directory where percona-version-check is created to make the test
 # stable
 

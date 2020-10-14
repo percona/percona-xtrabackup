@@ -70,6 +70,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xb_regex.h"
 
 extern uint opt_ssl_mode;
+extern bool opt_no_server_version_check;
 extern char *opt_ssl_ca;
 extern char *opt_ssl_capath;
 extern char *opt_ssl_cert;
@@ -363,6 +364,25 @@ void parse_show_engine_innodb_status(MYSQL *connection) {
   mysql_free_result(mysql_result);
 }
 
+/* find the pxb base version */
+static unsigned long pxb_base_version() {
+  std::string pxb_base = MYSQL_SERVER_VERSION;
+  unsigned long major = 0, minor = 0, version = 0;
+  std::size_t major_p = pxb_base.find(".");
+  if (major_p != std::string::npos) major = stoi(pxb_base.substr(0, major_p));
+
+  std::size_t minor_p = pxb_base.find(".", major_p + 1);
+  if (minor_p != std::string::npos)
+    minor = stoi(pxb_base.substr(major_p + 1, minor_p - major_p));
+
+  std::size_t version_p = pxb_base.find(".", minor_p + 1);
+  if (version_p != std::string::npos)
+    version = stoi(pxb_base.substr(minor_p + 1, version_p - minor_p));
+  else
+    version = stoi(pxb_base.substr(minor_p + 1));
+  return major * 10000 + minor * 100 + version;
+}
+
 static bool check_server_version(unsigned long version_number,
                                  const char *version_string,
                                  const char *version_comment,
@@ -392,6 +412,7 @@ static bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
 
+
   if (!version_supported) {
     msg("Error: Unsupported server version: '%s'.\n"
         "This version of Percona XtraBackup can only perform backups and "
@@ -405,6 +426,18 @@ static bool check_server_version(unsigned long version_number,
     if (pxb24) {
       msg("Please use Percona XtraBackup 2.4 for this database.\n");
     }
+  }
+
+
+  auto pxb_base_ver = pxb_base_version();
+
+  DBUG_EXECUTE_IF("simulate_lower_version", pxb_base_ver = 80014;);
+
+  if (!opt_no_server_version_check && pxb_base_ver < version_number) {
+    msg("Error: Unspported server version %lu, Use latest version of PXB "
+        "or to continue with risk, use --no-server-version-check",
+        version_number);
+    version_supported = false;
   }
 
   return (version_supported);
