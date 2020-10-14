@@ -521,11 +521,6 @@ IF(NOT WITHOUT_DYNAMIC_PLUGINS)
   ENDIF()
 ENDIF()
 
-<<<<<<< HEAD
-=======
-SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE) 
-TARGET_LINK_LIBRARIES(mysqld sql binlog rpl master slave sql mysys mysys_ssl binlogevents_static)
-
 # Plugins may need more symbols than the server does.
 IF(UNIX AND STATIC_SSL_LIBRARY)
   IF(APPLE)
@@ -540,7 +535,6 @@ IF(UNIX AND STATIC_SSL_LIBRARY)
   ENDIF()
 ENDIF()
 
->>>>>>> mysql-5.7.31
 # Provide plugins with minimal set of libraries
 SET(INTERFACE_LIBS ${LIBRT})
 IF(INTERFACE_LIBS)

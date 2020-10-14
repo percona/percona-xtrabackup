@@ -2082,6 +2082,7 @@ copy_back(int argc, char **argv)
 	srv_page_size_shift = 14;
 	srv_page_size = (1 << srv_page_size_shift);
 	srv_max_n_threads = 1000;
+	os_event_global_init();
 	sync_check_init();
 	os_thread_init();
 	ut_crc32_init();
@@ -2323,6 +2324,7 @@ decrypt_decompress()
 	datadir_iter_t *it = NULL;
 
 	srv_max_n_threads = 1000;
+	os_event_global_init();
 	sync_check_init();
 	os_thread_init();
 

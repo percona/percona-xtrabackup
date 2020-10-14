@@ -2139,6 +2139,7 @@ innodb_init(void)
 {
 	int	err;
 
+	os_event_global_init();
 	err = innobase_start_or_create_for_mysql();
 
 	if (err != DB_SUCCESS) {
@@ -4715,6 +4716,7 @@ xtrabackup_backup_func(void)
                                                 computers */
         }
 
+	os_event_global_init();
 	srv_general_init();
 	ut_crc32_init();
 	crc_init();
@@ -7714,6 +7716,7 @@ skip_check:
 	/* temporally dummy value to avoid crash */
 	srv_page_size_shift = 14;
 	srv_page_size = (1 << srv_page_size_shift);
+	os_event_global_init();
 	sync_check_init();
 #ifdef UNIV_DEBUG
 	sync_check_enable();
@@ -8095,6 +8098,7 @@ next_node:
         innodb_free_param();
 
 	/* re-init necessary components */
+	os_event_global_init();
 	sync_check_init();
 #ifdef UNIV_DEBUG
 	sync_check_enable();

@@ -1846,25 +1846,14 @@ void mysql_read_default_options(struct st_mysql_options *options,
           mysql_debug(opt_arg ? opt_arg : "d:t:o,/tmp/client.trace");
           break;
 #endif
-<<<<<<< HEAD
-	case OPT_return_found_rows:
-	  options->client_flag|=CLIENT_FOUND_ROWS;
-	  break;
-#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
-	case OPT_ssl_key:
-	  my_free(options->ssl_key);
-          options->ssl_key = my_strdup(key_memory_mysql_options,
-                                       opt_arg, MYF(MY_WME));
-=======
         case OPT_return_found_rows:
           options->client_flag |= CLIENT_FOUND_ROWS;
           break;
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
         case OPT_ssl_key:
           my_free(options->ssl_key);
           options->ssl_key =
               my_strdup(key_memory_mysql_options, opt_arg, MYF(MY_WME));
->>>>>>> mysql-5.7.31
           break;
         case OPT_ssl_cert:
           my_free(options->ssl_cert);
@@ -1906,35 +1895,9 @@ void mysql_read_default_options(struct st_mysql_options *options,
         case OPT_ssl_cipher:
         case OPT_ssl_crl:
         case OPT_ssl_crlpath:
-<<<<<<< HEAD
-        case OPT_tls_version :
-	  break;
-#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
-	case OPT_character_sets_dir:
-	  my_free(options->charset_dir);
-          options->charset_dir = my_strdup(key_memory_mysql_options,
-                                           opt_arg, MYF(MY_WME));
-	  break;
-	case OPT_default_character_set:
-	  my_free(options->charset_name);
-          options->charset_name = my_strdup(key_memory_mysql_options,
-                                            opt_arg, MYF(MY_WME));
-	  break;
-	case OPT_interactive_timeout:
-	  options->client_flag|= CLIENT_INTERACTIVE;
-	  break;
-	case OPT_local_infile:
-	  if (!opt_arg || atoi(opt_arg) != 0)
-	    options->client_flag|= CLIENT_LOCAL_FILES;
-	  else
-	    options->client_flag&= ~CLIENT_LOCAL_FILES;
-	  break;
-	case OPT_disable_local_infile:
-	  options->client_flag&= ~CLIENT_LOCAL_FILES;
-=======
         case OPT_tls_version:
           break;
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
         case OPT_character_sets_dir:
           my_free(options->charset_dir);
           options->charset_dir =
@@ -1956,7 +1919,6 @@ void mysql_read_default_options(struct st_mysql_options *options,
           break;
         case OPT_disable_local_infile:
           options->client_flag &= ~CLIENT_LOCAL_FILES;
->>>>>>> mysql-5.7.31
           break;
         case OPT_max_allowed_packet:
           if (opt_arg)
@@ -2552,17 +2514,7 @@ my_bool STDCALL mysql_ssl_set(MYSQL *mysql MY_ATTRIBUTE((unused)),
                               const char *cipher MY_ATTRIBUTE((unused))) {
   my_bool result = 0;
   DBUG_ENTER("mysql_ssl_set");
-<<<<<<< HEAD
 #if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
-  result=
-    mysql_options(mysql, MYSQL_OPT_SSL_KEY,    key)    +
-    mysql_options(mysql, MYSQL_OPT_SSL_CERT,   cert)   +
-    mysql_options(mysql, MYSQL_OPT_SSL_CA,     ca)     +
-    mysql_options(mysql, MYSQL_OPT_SSL_CAPATH, capath) +
-    mysql_options(mysql, MYSQL_OPT_SSL_CIPHER, cipher)
-    ? 1 : 0;
-=======
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
   result = mysql_options(mysql, MYSQL_OPT_SSL_KEY, key) +
                    mysql_options(mysql, MYSQL_OPT_SSL_CERT, cert) +
                    mysql_options(mysql, MYSQL_OPT_SSL_CA, ca) +
@@ -2570,7 +2522,6 @@ my_bool STDCALL mysql_ssl_set(MYSQL *mysql MY_ATTRIBUTE((unused)),
                    mysql_options(mysql, MYSQL_OPT_SSL_CIPHER, cipher)
                ? 1
                : 0;
->>>>>>> mysql-5.7.31
 #endif
   DBUG_RETURN(result);
 }
@@ -2631,13 +2582,8 @@ const char *STDCALL mysql_get_ssl_cipher(MYSQL *mysql MY_ATTRIBUTE((unused))) {
   DBUG_ENTER("mysql_get_ssl_cipher");
 #if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   if (mysql->net.vio && mysql->net.vio->ssl_arg)
-<<<<<<< HEAD
-    DBUG_RETURN(SSL_get_cipher_name((SSL*)mysql->net.vio->ssl_arg));
-#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
-=======
     DBUG_RETURN(SSL_get_cipher_name((SSL *)mysql->net.vio->ssl_arg));
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
->>>>>>> mysql-5.7.31
+#endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
   DBUG_RETURN(NULL);
 }
 
@@ -3480,24 +3426,13 @@ Establishes SSL if requested and supported.
 @retval 0       success
 @retval 1       failure
 */
-<<<<<<< HEAD
-static int
-cli_establish_ssl(MYSQL *mysql)
-{
-#ifdef HAVE_OPENSSL
-  NET *net= &mysql->net;
-=======
 static int cli_establish_ssl(MYSQL *mysql) {
->>>>>>> mysql-5.7.31
+#ifdef HAVE_OPENSSL
+  NET *net = &mysql->net;
 #ifdef EMBEDDED_LIBRARY
   if (embedded_ssl_check(mysql))
     return 1;
 #endif
-<<<<<<< HEAD
-=======
-#ifdef HAVE_OPENSSL
-  NET *net = &mysql->net;
->>>>>>> mysql-5.7.31
 
   /* Don't fallback on unencrypted connection if SSL required. */
   if (mysql->options.extension &&
@@ -4868,13 +4803,8 @@ void mysql_close_free_options(MYSQL *mysql) {
   }
 #if defined(HAVE_OPENSSL) && (!defined(EMBEDDED_LIBRARY) || defined(XTRABACKUP))
   mysql_ssl_free(mysql);
-<<<<<<< HEAD
 #endif /* HAVE_OPENSSL && (!EMBEDDED_LIBRARY || XTRABACKUP) */
-#if defined (_WIN32) && !defined (EMBEDDED_LIBRARY)
-=======
-#endif /* HAVE_OPENSSL && !EMBEDDED_LIBRARY */
 #if defined(_WIN32) && !defined(EMBEDDED_LIBRARY)
->>>>>>> mysql-5.7.31
   if (mysql->options.shared_memory_base_name != def_shared_memory_base_name)
     my_free(mysql->options.shared_memory_base_name);
 #endif /* _WIN32 && !EMBEDDED_LIBRARY */

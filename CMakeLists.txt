@@ -805,27 +805,6 @@ ENDIF()
 # RPM installs documentation directly from the source tree
 #
 IF(NOT INSTALL_LAYOUT MATCHES "RPM")
-<<<<<<< HEAD
-=======
-  INSTALL(FILES
-    README
-    LICENSE
-    DESTINATION ${INSTALL_DOCREADMEDIR} COMPONENT Readme)
-  INSTALL(FILES ${CMAKE_BINARY_DIR}/Docs/INFO_SRC ${CMAKE_BINARY_DIR}/Docs/INFO_BIN DESTINATION ${INSTALL_DOCDIR})
-
-  # MYSQL_DOCS_LOCATON is used in "make dist", points to the documentation directory
-  SET(MYSQL_DOCS_LOCATION "" CACHE PATH "Location from where documentation is copied")
-  MARK_AS_ADVANCED(MYSQL_DOCS_LOCATION)
-  INSTALL(DIRECTORY Docs/ DESTINATION ${INSTALL_DOCDIR}
-    COMPONENT Documentation
-    PATTERN "Makefile.*" EXCLUDE
-    PATTERN "glibc*" EXCLUDE
-    PATTERN "linuxthreads.txt" EXCLUDE
-    PATTERN "myisam.txt" EXCLUDE
-    PATTERN "mysql.info" EXCLUDE
-    PATTERN "sp-imp-spec.txt" EXCLUDE
-  )
->>>>>>> mysql-5.7.31
 ENDIF()
 
 INCLUDE(CPack)
