@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1374,6 +1381,7 @@ private:
   /// Merge derived table into query block
 public:
   bool merge_derived(THD *thd, TABLE_LIST *derived_table);
+  bool is_in_select_list(Item *cand);
 private:
   bool convert_subquery_to_semijoin(Item_exists_subselect *subq_pred);
   void remap_tables(THD *thd);
@@ -3534,16 +3542,22 @@ public:
 class Yacc_state
 {
 public:
-  Yacc_state()
-  {
-    reset();
-  }
+  Yacc_state() : yacc_yyss(NULL), yacc_yyvs(NULL), yacc_yyls(NULL) { reset(); }
 
   void reset()
   {
-    yacc_yyss= NULL;
-    yacc_yyvs= NULL;
-    yacc_yyls= NULL;
+    if (yacc_yyss != NULL) {
+      my_free(yacc_yyss);
+      yacc_yyss = NULL;
+    }
+    if (yacc_yyvs != NULL) {
+      my_free(yacc_yyvs);
+      yacc_yyvs = NULL;
+    }
+    if (yacc_yyls != NULL) {
+      my_free(yacc_yyls);
+      yacc_yyls = NULL;
+    }
     m_lock_type= TL_READ_DEFAULT;
     m_mdl_type= MDL_SHARED_READ;
     m_ha_rkey_mode= HA_READ_KEY_EXACT;

@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -2125,6 +2133,7 @@ row_update_inplace_for_intrinsic(const upd_node_t* node)
 		index, offsets, node->update);
 
 	if (size_changes) {
+		mtr_commit(&mtr);
 		return(DB_FAIL);
 	}
 
@@ -2319,8 +2328,7 @@ row_update_for_mysql_using_cursor(
 			if (!dict_index_is_auto_gen_clust(index)) {
 				err = row_ins_clust_index_entry(
 					index, entry, thr,
-					node->upd_ext
-					? node->upd_ext->n_ext : 0,
+					entry->get_n_ext(),
 					true);
 			}
 		} else {
@@ -2346,7 +2354,7 @@ row_update_for_mysql_using_cursor(
 
 			err = row_ins_clust_index_entry(
 				index, entry, thr,
-				node->upd_ext ? node->upd_ext->n_ext : 0,
+				entry->get_n_ext(),
 				false);
 			/* Commit the open mtr as we are processing UPDATE. */
 			if (index->last_ins_cur) {
@@ -3912,33 +3920,6 @@ row_discard_tablespace(
 
 	if (err != DB_SUCCESS) {
 		return(err);
-	}
-
-	/* For encrypted table, before we discard the tablespace,
-	we need save the encryption information into table, otherwise,
-	this information will be lost in fil_discard_tablespace along
-	with fil_space_free(). */
-	if (dict_table_is_encrypted(table)) {
-		ut_ad(table->encryption_key == NULL
-		      && table->encryption_iv == NULL);
-
-		table->encryption_key =
-			static_cast<byte*>(mem_heap_alloc(table->heap,
-							  ENCRYPTION_KEY_LEN));
-
-		table->encryption_iv =
-			static_cast<byte*>(mem_heap_alloc(table->heap,
-							  ENCRYPTION_KEY_LEN));
-
-		fil_space_t*	space = fil_space_get(table->space);
-		ut_ad(FSP_FLAGS_GET_ENCRYPTION(space->flags));
-
-		memcpy(table->encryption_key,
-		       space->encryption_key,
-		       ENCRYPTION_KEY_LEN);
-		memcpy(table->encryption_iv,
-		       space->encryption_iv,
-		       ENCRYPTION_KEY_LEN);
 	}
 
 	/* Discard the physical file that is used for the tablespace. */

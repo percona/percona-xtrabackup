@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1010,7 +1017,7 @@ bool do_command(THD *thd)
                      command_name[command].str));
 
   DBUG_PRINT("info", ("packet: '%*.s'; command: %d",
-             thd->get_protocol_classic()->get_packet_length(),
+             (int)thd->get_protocol_classic()->get_packet_length(),
              thd->get_protocol_classic()->get_raw_packet(), command));
   if (thd->get_protocol_classic()->bad_packet)
     DBUG_ASSERT(0);                // Should be caught earlier
@@ -1283,7 +1290,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
     }
   }
   thd->set_query_id(next_query_id());
-  thd->rewritten_query.mem_free();
+  thd->reset_rewritten_query();
   thd_manager->inc_thread_running();
 
   if (!(server_command_flags[command] & CF_SKIP_QUESTIONS))
@@ -1932,6 +1939,9 @@ done:
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
   thd->m_statement_psi= NULL;
   thd->m_digest= NULL;
+
+  /* Prevent rewritten query from getting "stuck" in SHOW PROCESSLIST. */
+  thd->reset_rewritten_query();
 
   thd_manager->dec_thread_running();
   free_root(thd->mem_root,MYF(MY_KEEP_PREALLOC));
@@ -4991,6 +5001,7 @@ finish:
         thd->killed == THD::KILL_BAD_DATA)
     {
       thd->killed= THD::NOT_KILLED;
+      thd->reset_query_for_display();
     }
   }
 
@@ -5465,50 +5476,53 @@ void mysql_parse(THD *thd, Parser_state *parser_state)
     if (!err)
     {
       /*
-        Rewrite the query for logging and for the Performance Schema statement
-        tables. Raw logging happened earlier.
-      
+        Rewrite the query for logging and for the Performance Schema
+        statement tables. (Raw logging happened earlier.)
+
         Query-cache only handles SELECT, which we don't rewrite, so it's no
         concern of ours.
 
         Sub-routines of mysql_rewrite_query() should try to only rewrite when
         necessary (e.g. not do password obfuscation when query contains no
         password).
-      
-        If rewriting does not happen here, thd->rewritten_query is still empty
-        from being reset in alloc_query().
+
+        If rewriting does not happen here, thd->m_rewritten_query is still
+        empty from being reset in alloc_query().
       */
-      // bool general= !(opt_general_log_raw || thd->slave_thread);
 
-      mysql_rewrite_query(thd);
+      if (thd->rewritten_query().length() == 0)
+        mysql_rewrite_query(thd);
 
-      if (thd->rewritten_query.length())
+      if (thd->rewritten_query().length())
       {
         lex->safe_to_cache_query= false; // see comments below
 
-        MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi,
-                                 thd->rewritten_query.c_ptr_safe(),
-                                 thd->rewritten_query.length());
-      }
-      else
-      {
+        thd->set_query_for_display(thd->rewritten_query().ptr(),
+                                   thd->rewritten_query().length());
+      } else if (thd->slave_thread) {
+        /*
+          In the slave, we add the information to pfs.events_statements_history,
+          but not to pfs.threads, as that is what the test suite expects.
+        */
         MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi,
                                  thd->query().str,
                                  thd->query().length);
+      } else {
+        thd->set_query_for_display(thd->query().str, thd->query().length);
       }
 
       if (!(opt_general_log_raw || thd->slave_thread))
       {
-        if (thd->rewritten_query.length())
+        if (thd->rewritten_query().length())
           query_logger.general_log_write(thd, COM_QUERY,
-                                         thd->rewritten_query.c_ptr_safe(),
-                                         thd->rewritten_query.length());
+                                         thd->rewritten_query().ptr(),
+                                         thd->rewritten_query().length());
         else
         {
           size_t qlen= found_semicolon
             ? (found_semicolon - thd->query().str)
             : thd->query().length;
-          
+
           query_logger.general_log_write(thd, COM_QUERY,
                                          thd->query().str, qlen);
         }
@@ -5593,9 +5607,7 @@ void mysql_parse(THD *thd, Parser_state *parser_state)
         SQL injection, finding the source of the SQL injection is critical, so the
         design choice is to log the query text of broken queries (a).
       */
-      MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi,
-                               thd->query().str,
-                               thd->query().length);
+      thd->set_query_for_display(thd->query().str, thd->query().length);
 
       /* Instrument this broken statement as "statement/sql/error" */
       thd->m_statement_psi= MYSQL_REFINE_STATEMENT(thd->m_statement_psi,
@@ -5632,6 +5644,8 @@ void mysql_parse(THD *thd, Parser_state *parser_state)
                                      thd->query().length);
     parser_state->m_lip.found_semicolon= NULL;
   }
+
+  DEBUG_SYNC(thd, "query_rewritten");
 
   DBUG_VOID_RETURN;
 }

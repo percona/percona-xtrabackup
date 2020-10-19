@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -313,7 +321,7 @@ btr_pcur_restore_position_func(
 
 				ut_ad(!cmp_rec_rec(cursor->old_rec,
 						   rec, offsets1, offsets2,
-						   index));
+						   index,page_is_spatial_non_leaf(rec, index)));
 				mem_heap_free(heap);
 #endif /* UNIV_DEBUG */
 				return(TRUE);
@@ -449,9 +457,23 @@ btr_pcur_move_to_next_page(
 
 	next_page = buf_block_get_frame(next_block);
 #ifdef UNIV_BTR_DEBUG
-	ut_a(page_is_comp(next_page) == page_is_comp(page));
-	ut_a(btr_page_get_prev(next_page, mtr)
-	     == btr_pcur_get_block(cursor)->page.id.page_no());
+	if (!cursor->import_ctx) {
+		ut_a(page_is_comp(next_page) == page_is_comp(page));
+		ut_a(btr_page_get_prev(next_page, mtr)
+			== btr_pcur_get_block(cursor)->page.id.page_no());
+	}
+	else {
+		if (page_is_comp(next_page) != page_is_comp(page)
+			|| btr_page_get_prev(next_page, mtr) !=
+			btr_pcur_get_block(cursor)->page.id.page_no()) {
+			/* next page does not contain valid previous page
+			number, next page is corrupted, can't move cursor
+			to the next page */
+			cursor->import_ctx->is_error = true;
+		}
+		DBUG_EXECUTE_IF("ib_import_page_corrupt",
+				cursor->import_ctx->is_error = true;);
+	}
 #endif /* UNIV_BTR_DEBUG */
 
 	btr_leaf_page_release(btr_pcur_get_block(cursor), mode, mtr);

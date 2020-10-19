@@ -1,16 +1,22 @@
 #!/bin/sh
 
-# Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; version 2
-# of the License.
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Library General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU Library General Public
 # License along with this library; if not, write to the Free
@@ -100,11 +106,8 @@ path=`dirname $0`
 export AM_MAKEFLAGS
 AM_MAKEFLAGS="-j 6"
 
-# SSL library to use.--with-ssl will select our bundled yaSSL
-# implementation of SSL. To use openSSl you will nee too point out
-# the location of openSSL headers and lbs on your system.
-# Ex --with-ssl=/usr
-SSL_LIBRARY=--with-ssl
+# SSL library to use.
+SSL_LIBRARY=--with-ssl=system
 
 if [ "x$warning_mode" = "xpedantic" ]; then
   warnings="-W -Wall -ansi -pedantic -Wno-long-long -Wno-unused -D_POSIX_SOURCE"
@@ -232,11 +235,9 @@ fi
 
 # The  -fprofile-arcs and -ftest-coverage options cause GCC to instrument the
 # code with profiling information used by gcov.
-# The -DDISABLE_TAO_ASM is needed to avoid build failures in Yassl.
 # The -DHAVE_gcov enables code to write out coverage info even when crashing.
 
 gcov_compile_flags="-fprofile-arcs -ftest-coverage"
-gcov_compile_flags="$gcov_compile_flags -DDISABLE_TAO_ASM"
 gcov_compile_flags="$gcov_compile_flags -DMYSQL_SERVER_SUFFIX=-gcov -DHAVE_gcov"
 
 # GCC4 needs -fprofile-arcs -ftest-coverage on the linker command line (as well

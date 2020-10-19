@@ -1,14 +1,21 @@
-# Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
@@ -81,45 +88,6 @@ int main()
 #endif
 }" HAVE_LLVM_LIBCPP)
 
-MACRO(DIRNAME IN OUT)
-  GET_FILENAME_COMPONENT(${OUT} ${IN} PATH)
-ENDMACRO()
-
-
-# We assume that developer studio runtime libraries are installed.
-IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
-   CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
-  DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
-
-  SET(LIBRARY_SUFFIX "lib/compilers/CC-gcc/lib")
-  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
-    SET(LIBRARY_SUFFIX "${LIBRARY_SUFFIX}/sparcv9")
-  ENDIF()
-  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
-    SET(LIBRARY_SUFFIX "${LIBRARY_SUFFIX}/amd64")
-  ENDIF()
-  FIND_LIBRARY(STL_LIBRARY_NAME
-    NAMES "stdc++"
-    PATHS ${CXX_PATH}/../${LIBRARY_SUFFIX}
-    NO_DEFAULT_PATH
-  )
-  MESSAGE(STATUS "STL_LIBRARY_NAME ${STL_LIBRARY_NAME}")
-  IF(STL_LIBRARY_NAME)
-    DIRNAME(${STL_LIBRARY_NAME} STL_LIBRARY_PATH)
-    SET(QUOTED_CMAKE_CXX_LINK_FLAGS
-      "${CMAKE_CXX_LINK_FLAGS} -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
-    SET(CMAKE_CXX_LINK_FLAGS
-      "${CMAKE_CXX_LINK_FLAGS} -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
-    SET(CMAKE_C_LINK_FLAGS
-      "${CMAKE_C_LINK_FLAGS} -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
-  ENDIF()
-  SET(CMAKE_C_LINK_FLAGS
-    "${CMAKE_C_LINK_FLAGS} -lc")
-  SET(CMAKE_CXX_LINK_FLAGS
-    "${CMAKE_CXX_LINK_FLAGS} -lstdc++ -lgcc_s -lCrunG3 -lc")
-  SET(QUOTED_CMAKE_CXX_LINK_FLAGS
-    "${QUOTED_CMAKE_CXX_LINK_FLAGS} -lstdc++ -lgcc_s -lCrunG3 -lc ")
-ENDIF()
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
   IF (CMAKE_EXE_LINKER_FLAGS MATCHES " -static " 
@@ -265,7 +233,6 @@ CHECK_INCLUDE_FILES (netinet/in.h HAVE_NETINET_IN_H)
 CHECK_INCLUDE_FILES (poll.h HAVE_POLL_H)
 CHECK_INCLUDE_FILES (pwd.h HAVE_PWD_H)
 CHECK_INCLUDE_FILES (strings.h HAVE_STRINGS_H) # Used by NDB
-CHECK_INCLUDE_FILES (sys/cdefs.h HAVE_SYS_CDEFS_H) # Used by libedit
 CHECK_INCLUDE_FILES (sys/ioctl.h HAVE_SYS_IOCTL_H)
 CHECK_INCLUDE_FILES (sys/mman.h HAVE_SYS_MMAN_H)
 CHECK_INCLUDE_FILES (sys/resource.h HAVE_SYS_RESOURCE_H)
@@ -279,8 +246,6 @@ CHECK_INCLUDE_FILES (sys/wait.h HAVE_SYS_WAIT_H)
 CHECK_INCLUDE_FILES (sys/param.h HAVE_SYS_PARAM_H) # Used by NDB/libevent
 CHECK_INCLUDE_FILES (fnmatch.h HAVE_FNMATCH_H)
 CHECK_INCLUDE_FILES (sys/un.h HAVE_SYS_UN_H)
-CHECK_INCLUDE_FILES (vis.h HAVE_VIS_H) # Used by libedit
-CHECK_INCLUDE_FILES (sasl/sasl.h HAVE_SASL_SASL_H) # Used by memcached
 
 # For libevent
 CHECK_INCLUDE_FILES(sys/devpoll.h HAVE_DEVPOLL)
@@ -443,9 +408,16 @@ TEST_BIG_ENDIAN(WORDS_BIGENDIAN)
 #
 INCLUDE (CheckTypeSize)
 
-set(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS}
-        -D_LARGEFILE_SOURCE -D_LARGE_FILES -D_FILE_OFFSET_BITS=64
-        -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS)
+LIST(APPEND CMAKE_REQUIRED_DEFINITIONS
+  -D_LARGEFILE_SOURCE -D_LARGE_FILES -D_FILE_OFFSET_BITS=64
+  -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS
+  )
+
+IF(SOLARIS)
+  LIST(APPEND CMAKE_REQUIRED_DEFINITIONS
+    -D_POSIX_PTHREAD_SEMANTICS -D_REENTRANT -D_PTHREADS
+    )
+ENDIF()
 
 SET(CMAKE_EXTRA_INCLUDE_FILES stdint.h stdio.h sys/types.h time.h)
 

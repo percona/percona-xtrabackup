@@ -1,13 +1,20 @@
-# Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU General Public License, version 2.0, for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
@@ -17,6 +24,14 @@ INCLUDE(CheckSymbolExists)
 INCLUDE(CheckCSourceRuns)
 INCLUDE(CheckCSourceCompiles) 
 INCLUDE(CheckCXXSourceCompiles)
+
+SET(SOLARIS 1)
+IF(CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
+  SET(SOLARIS_SPARC 1)
+ENDIF()
+
+INCLUDE(CheckTypeSize)
+CHECK_TYPE_SIZE("void *" SIZEOF_VOIDP)
 
 # We require at least GCC 7.3 or SunStudio 12.2 (CC 5.14)
 IF(NOT FORCE_UNSUPPORTED_COMPILER)
@@ -175,6 +190,48 @@ IF(CMAKE_COMPILER_IS_GNUCC AND CMAKE_SIZEOF_VOID_P EQUAL 4
 ENDIF()
 
 # This is used for the version_compile_machine variable.
-IF(CMAKE_SIZEOF_VOID_P MATCHES 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
+IF(SIZEOF_VOIDP MATCHES 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
   SET(MYSQL_MACHINE_TYPE "x86_64")
+ENDIF()
+
+
+MACRO(DIRNAME IN OUT)
+  GET_FILENAME_COMPONENT(${OUT} ${IN} PATH)
+ENDMACRO()
+
+# We assume that developer studio runtime libraries are installed.
+IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND
+   CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
+  DIRNAME(${CMAKE_CXX_COMPILER} CXX_PATH)
+
+  SET(LIBRARY_SUFFIX "lib/compilers/CC-gcc/lib")
+  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "sparc")
+    SET(LIBRARY_SUFFIX "${LIBRARY_SUFFIX}/sparcv9")
+  ENDIF()
+  IF(SIZEOF_VOIDP EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
+    SET(LIBRARY_SUFFIX "${LIBRARY_SUFFIX}/amd64")
+  ENDIF()
+  FIND_LIBRARY(STL_LIBRARY_NAME
+    NAMES "stdc++"
+    PATHS ${CXX_PATH}/../${LIBRARY_SUFFIX}
+    NO_DEFAULT_PATH
+  )
+  MESSAGE(STATUS "STL_LIBRARY_NAME ${STL_LIBRARY_NAME}")
+  IF(STL_LIBRARY_NAME)
+    DIRNAME(${STL_LIBRARY_NAME} STL_LIBRARY_PATH)
+    SET(LRFLAGS " -L${STL_LIBRARY_PATH} -R${STL_LIBRARY_PATH}")
+    SET(QUOTED_CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}")
+
+    STRING_APPEND(CMAKE_C_LINK_FLAGS          "${LRFLAGS}")
+    STRING_APPEND(CMAKE_CXX_LINK_FLAGS        "${LRFLAGS}")
+    STRING_APPEND(CMAKE_MODULE_LINKER_FLAGS   "${LRFLAGS}")
+    STRING_APPEND(CMAKE_SHARED_LINKER_FLAGS   "${LRFLAGS}")
+    STRING_APPEND(QUOTED_CMAKE_CXX_LINK_FLAGS "${LRFLAGS}")
+  ENDIF()
+
+  STRING_APPEND(CMAKE_C_LINK_FLAGS          " -lc")
+  STRING_APPEND(CMAKE_CXX_LINK_FLAGS        " -lstdc++ -lgcc_s -lCrunG3 -lc")
+  STRING_APPEND(CMAKE_MODULE_LINKER_FLAGS   " -lstdc++ -lgcc_s -lCrunG3 -lc")
+  STRING_APPEND(CMAKE_SHARED_LINKER_FLAGS   " -lstdc++ -lgcc_s -lCrunG3 -lc")
+  STRING_APPEND(QUOTED_CMAKE_CXX_LINK_FLAGS " -lstdc++ -lgcc_s -lCrunG3 -lc ")
 ENDIF()

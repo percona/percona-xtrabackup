@@ -1,13 +1,20 @@
-/* Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -45,7 +52,7 @@ class Cmp_splocal_locations :
 public:
   bool operator()(const Item_splocal *a, const Item_splocal *b)
   {
-    DBUG_ASSERT(a->pos_in_query != b->pos_in_query);
+    DBUG_ASSERT(a == b || a->pos_in_query != b->pos_in_query);
     return a->pos_in_query < b->pos_in_query;
   }
 };
@@ -859,7 +866,7 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp)
 
   DBUG_PRINT("info", ("query: '%.*s'", (int) m_query.length, m_query.str));
 
-  MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi, m_query.str, m_query.length);
+  thd->set_query_for_display(m_query.str, m_query.length);
 
   const LEX_CSTRING query_backup= thd->query();
 
@@ -960,7 +967,7 @@ bool sp_instr_stmt::execute(THD *thd, uint *nextp)
       problem.
     */
     DBUG_ASSERT((thd->query_name_consts == 0) ||
-                (thd->rewritten_query.length() == 0));
+                (thd->rewritten_query().length() == 0));
   }
   else
     *nextp= get_ip() + 1;

@@ -309,3 +309,139 @@ CHECK TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	check	status	OK
 DROP TABLE t1;
+#
+# Bug#28834208 ROW_LOG_TABLE_APPLY_UPDATE*INPLACE_ALTER_TABLE
+#
+CREATE TABLE t1 (
+pkey INT(11) PRIMARY KEY,
+a VARCHAR(100),
+v VARCHAR(100) GENERATED ALWAYS AS (SUBSTRING(a,2,2)) VIRTUAL,
+c varchar(100),
+UNIQUE KEY k (v)
+);
+INSERT INTO t1 ( pkey,a,c) VALUES (149,'bata','test');
+SELECT pkey,a,v FROM t1;
+pkey	a	v
+149	bata	at
+SET DEBUG_SYNC = 'row_log_table_apply1_before SIGNAL index_built WAIT_FOR S2';
+OPTIMIZE TABLE t1;
+# Connect to con1
+SET DEBUG_SYNC = 'now WAIT_FOR index_built';
+UPDATE t1 SET a='tata' WHERE pkey=149;
+SET DEBUG_SYNC ='now signal S2';
+SELECT pkey,a,v FROM t1;
+pkey	a	v
+149	tata	at
+# Connect to Default
+Table	Op	Msg_type	Msg_text
+test.t1	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t1	optimize	status	OK
+SELECT * FROM t1;
+pkey	a	v	c
+149	tata	at	test
+DROP TABLE t1;
+CREATE TABLE t1 (
+pkey INT(11) PRIMARY KEY,
+a VARCHAR(100),
+v VARCHAR(100) GENERATED ALWAYS AS (SUBSTRING(a,2,2)) VIRTUAL,
+c varchar(100),
+v1 VARCHAR(100) GENERATED ALWAYS AS (SUBSTRING(c,2,2)) VIRTUAL,
+KEY k (v),
+KEY v (v1)
+);
+INSERT INTO t1 (pkey, a, c) VALUES (149, 'bata', 'test');
+INSERT INTO t1 (pkey, a, c) VALUES (150, 'bata', 'test');
+INSERT INTO t1 (pkey, a, c) VALUES (160, 'bata', 'test');
+SELECT pkey, a, v, c, v1 FROM t1;
+pkey	a	v	c	v1
+149	bata	at	test	es
+150	bata	at	test	es
+160	bata	at	test	es
+SET DEBUG_SYNC = 'row_log_table_apply1_before SIGNAL index_built WAIT_FOR S2';
+OPTIMIZE TABLE t1;
+# Connect to con1
+SET DEBUG_SYNC = 'now WAIT_FOR index_built';
+UPDATE t1 SET c = 'best' WHERE pkey = 149;
+UPDATE t1 SET a = 'tata' WHERE pkey = 150;
+UPDATE t1 SET a = 'tata', c = 'best' WHERE pkey = 160;
+SET DEBUG_SYNC ='now signal S2';
+SELECT pkey, a, v, c, v1 FROM t1;
+pkey	a	v	c	v1
+149	bata	at	best	es
+150	tata	at	test	es
+160	tata	at	best	es
+# Connect to Default
+Table	Op	Msg_type	Msg_text
+test.t1	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t1	optimize	status	OK
+SELECT * FROM t1;
+pkey	a	v	c	v1
+149	bata	at	best	es
+150	tata	at	test	es
+160	tata	at	best	es
+DROP TABLE t1;
+CREATE TABLE t1(
+j SERIAL PRIMARY KEY,
+a VARCHAR(36),
+isa BOOLEAN,
+ab VARCHAR(36) AS (IF(`isa`,`a`,NULL )),
+KEY k(ab)
+);
+INSERT INTO t1 (a, isa) VALUES ('test', 1);
+SET DEBUG_SYNC = 'row_log_table_apply1_before SIGNAL index_built WAIT_FOR S2';
+OPTIMIZE TABLE t1;
+# Connect to con1
+SET DEBUG_SYNC = 'now WAIT_FOR index_built';
+UPDATE t1 SET isa=0 ;
+SET DEBUG_SYNC ='now signal S2';
+SELECT j,a,isa,ab FROM t1;
+j	a	isa	ab
+1	test	0	NULL
+# Connect to Default
+Table	Op	Msg_type	Msg_text
+test.t1	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t1	optimize	status	OK
+SELECT j,a,isa,ab FROM t1;
+j	a	isa	ab
+1	test	0	NULL
+UPDATE t1 SET isa = 1 WHERE a = 'test' AND isa = 0;
+SELECT j,a,isa,ab FROM t1;
+j	a	isa	ab
+1	test	1	test
+DROP TABLE t1;
+#
+# Bug#29451999: CRASH WITH RANGE QUERIES
+#
+CREATE TABLE t1 (c1 JSON, c2 TINYTEXT, c3 TIMESTAMP(4), c4 JSON, c5 DOUBLE, c6 TIME(4), c7 LONGTEXT GENERATED ALWAYS AS ('20:30:44') VIRTUAL NOT NULL, KEY k1 (c7(12))) ENGINE=INNODB;
+INSERT INTO t1 (c1, c2, c3, c4) VALUES('{}', 1, '1991-05-27', '{}');
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+INSERT INTO t1 (c1, c2, c3, c4) SELECT c1, c2, c3, c4 FROM t1;
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+128
+SET GLOBAL innodb_purge_stop_now= ON;
+DELETE FROM t1;
+SELECT c4 FROM t1 WHERE c7 BETWEEN '16383' AND '2015-01-01';
+c4
+SET GLOBAL innodb_purge_run_now = ON;
+DROP TABLE t1;
+CREATE TABLE t2 (
+i INT NOT NULL,
+gc INT GENERATED ALWAYS AS (i) VIRTUAL NOT NULL,
+KEY (gc)
+);
+INSERT INTO t2 (i) VALUES (-1), (0), (1), (2);
+BEGIN;
+SELECT i FROM t2 FORCE INDEX (gc) WHERE gc <= -1;
+i
+-1
+SELECT gc FROM t2 FORCE INDEX (gc) WHERE gc <= -1;
+gc
+-1
+COMMIT;
+DROP TABLE t2;

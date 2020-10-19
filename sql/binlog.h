@@ -1,14 +1,21 @@
 #ifndef BINLOG_H_INCLUDED
-/* Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -665,7 +672,8 @@ private:
   int process_flush_stage_queue(my_off_t *total_bytes_var, bool *rotate_var,
                                 THD **out_queue_var);
   int ordered_commit(THD *thd, bool all, bool skip_commit = false);
-  void handle_binlog_flush_or_sync_error(THD *thd, bool need_lock_log);
+  void handle_binlog_flush_or_sync_error(THD *thd, bool need_lock_log,
+                                         const char *message);
 public:
   int open_binlog(const char *opt_name);
   void close();
@@ -782,12 +790,14 @@ public:
      normal statement.
 
      @param[IN] thd  the THD object of current thread.
-     @param[IN] stmt the DELETE statement.
-     @param[IN] stmt_len the length of DELETE statement.
+     @param[IN] stmt the DML statement.
+     @param[IN] stmt_len the length of the DML statement.
+     @param[IN] sql_command the type of SQL command.
 
      @return Returns false if succeeds, otherwise true is returned.
   */
-  bool write_dml_directly(THD* thd, const char *stmt, size_t stmt_len);
+  bool write_dml_directly(THD* thd, const char *stmt, size_t stmt_len,
+                          enum enum_sql_command sql_command);
 
   void set_write_error(THD *thd, bool is_transactional);
   bool check_write_error(THD *thd);
@@ -875,6 +885,55 @@ public:
   inline void unlock_index() { mysql_mutex_unlock(&LOCK_index);}
   inline IO_CACHE *get_index_file() { return &index_file;}
   inline uint32 get_open_count() { return open_count; }
+
+  /**
+    Function to report the missing GTIDs.
+
+    This function logs the missing transactions on master to its error log
+    as a warning. If the missing GTIDs are too long to print in a message,
+    it suggests the steps to extract the missing transactions.
+
+    This function also informs slave about the GTID set sent by the slave,
+    transactions missing on the master and few suggestions to recover from
+    the error. This message shall be wrapped by
+    ER_MASTER_FATAL_ERROR_READING_BINLOG on slave and will be logged as an
+    error.
+
+    This function will be called from mysql_binlog_send() function.
+
+    @param slave_executed_gtid_set     GTID set executed by slave
+    @param errmsg                      Pointer to the error message
+
+    @return void
+  */
+  void report_missing_purged_gtids(const Gtid_set* slave_executed_gtid_set,
+                                   const char** errmsg);
+
+  /**
+    Function to report the missing GTIDs.
+
+    This function logs the missing transactions on master to its error log
+    as a warning. If the missing GTIDs are too long to print in a message,
+    it suggests the steps to extract the missing transactions.
+
+    This function also informs slave about the GTID set sent by the slave,
+    transactions missing on the master and few suggestions to recover from
+    the error. This message shall be wrapped by
+    ER_MASTER_FATAL_ERROR_READING_BINLOG on slave and will be logged as an
+    error.
+
+    This function will be called from find_first_log_not_in_gtid_set()
+    function.
+
+    @param previous_gtid_set           Previous GTID set found
+    @param slave_executed_gtid_set     GTID set executed by slave
+    @param errmsg                      Pointer to the error message
+
+    @return void
+  */
+  void report_missing_gtids(const Gtid_set* previous_gtid_set,
+                            const Gtid_set* slave_executed_gtid_set,
+                            const char** errmsg);
   static const int MAX_RETRIES_FOR_DELETE_RENAME_FAILURE = 5;
   /*
     It is called by the threads(e.g. dump thread) which want to read
@@ -957,6 +1016,14 @@ int check_trx_rw_engines(THD *thd, Transaction_ctx::enum_trx_scope trx_scope);
 bool is_empty_transaction_in_binlog_cache(const THD* thd);
 bool trans_has_updated_trans_table(const THD* thd);
 bool stmt_has_updated_trans_table(Ha_trx_info* ha_list);
+/**
+  This function checks if the transaction has no operation dml.
+
+  @param ha_list Registered storage engine handler list.
+  @return true  if the transaction has no operation dml.
+          false otherwise.
+*/
+bool trans_has_noop_dml(Ha_trx_info* ha_list);
 bool ending_trans(THD* thd, const bool all);
 bool ending_single_stmt_trans(THD* thd, const bool all);
 bool trans_cannot_safely_rollback(const THD* thd);

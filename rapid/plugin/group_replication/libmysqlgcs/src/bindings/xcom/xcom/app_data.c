@@ -1,13 +1,20 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -129,13 +136,18 @@ static char *dbg_app_data_single(app_data_ptr a)
 
 app_data_ptr clone_app_data(app_data_ptr a)
 {
-  app_data_ptr retval = 0;
+  app_data_ptr retval = NULL;
   app_data_list p = &retval; /* Initialize p with empty list */
 
-  while(0 != a){
-    follow(p, clone_app_data_single(a));
+  while(a != NULL){
+    app_data_ptr clone = clone_app_data_single(a);
+    follow(p, clone);
     a = a->next;
     p = nextp(p);
+    if (clone == NULL && retval != NULL) {
+      XCOM_XDR_FREE(xdr_app_data, retval);
+      break;
+    }
   }
   return retval;
 }
@@ -182,7 +194,8 @@ app_data_ptr clone_app_data_single(app_data_ptr a)
       {
         p->body.app_u_u.data.data_len = 0;
         G_ERROR("Memory allocation failed.");
-        break;
+        free(p);
+        return NULL;
       }
       p->body.app_u_u.data.data_len = a->body.app_u_u.data.data_len;
       memcpy(p->body.app_u_u.data.data_val, a->body.app_u_u.data.data_val, a->body.app_u_u.data.data_len);

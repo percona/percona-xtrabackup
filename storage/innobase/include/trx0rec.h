@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -39,15 +47,18 @@ Created 3/26/1996 Heikki Tuuri
 #ifndef UNIV_HOTBACKUP
 # include "que0types.h"
 
-/***********************************************************************//**
-Copies the undo record to the heap.
-@return own: copy of undo log record */
+/** Copies the undo record to the heap.
+@param[in]	undo_page	Undo Page
+@param[in]	undo_offset     Offset of the undo record in the page
+@param[in]	heap		Heap where undo record is copied
+@return copy of undo log record */
 UNIV_INLINE
 trx_undo_rec_t*
 trx_undo_rec_copy(
-/*==============*/
-	const trx_undo_rec_t*	undo_rec,	/*!< in: undo log record */
-	mem_heap_t*		heap);		/*!< in: heap where copied */
+	const page_t*		undo_page,
+	ulint			undo_offset,
+	mem_heap_t*		heap);
+
 /**********************************************************************//**
 Reads the undo log record type.
 @return record type */

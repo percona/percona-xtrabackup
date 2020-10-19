@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1029,9 +1036,10 @@ bool SELECT_LEX::resolve_subquery(THD *thd)
       a single table UPDATE/DELETE (TODO: We should handle this at some
       point by switching to multi-table UPDATE/DELETE)
       7. We're not in a confluent table-less subquery, like "SELECT 1".
-      8. No execution method was already chosen (by a prepared statement)
-      9. Parent select is not a confluent table-less select
-      10. Neither parent nor child select have STRAIGHT_JOIN option.
+      8. No execution method was already chosen (by a prepared statement).
+      9. Parent query block is not a confluent table-less query block.
+      10. Neither parent nor child query block has straight join.
+      11. Parent query block does not prohibit semi-join.
   */
   if (semijoin_enabled(thd) &&
       in_predicate &&                                                   // 1
@@ -1042,12 +1050,13 @@ bool SELECT_LEX::resolve_subquery(THD *thd)
        outer->resolve_place == st_select_lex::RESOLVE_JOIN_NEST) &&     // 5a
       !outer->semijoin_disallowed &&                                    // 5b
       outer->sj_candidates &&                                           // 6
-      leaf_table_count &&                                               // 7
+      leaf_table_count > 0 &&                                           // 7
       in_predicate->exec_method ==
                            Item_exists_subselect::EXEC_UNSPECIFIED &&   // 8
       outer->leaf_table_count &&                                        // 9
       !((active_options() | outer->active_options()) &
-       SELECT_STRAIGHT_JOIN))                                           //10
+        SELECT_STRAIGHT_JOIN) &&                                        //10
+      !(outer->active_options() & SELECT_NO_SEMI_JOIN))                 //11
   {
     DBUG_PRINT("info", ("Subquery is semi-join conversion candidate"));
 
@@ -1102,11 +1111,10 @@ bool SELECT_LEX::setup_wild(THD *thd)
   {
     Item_field *item_field;
     if (item->type() == Item::FIELD_ITEM &&
-        (item_field= (Item_field *) item) &&
-        item_field->field_name &&
-        item_field->field_name[0] == '*' &&
-        !item_field->field)
+        (item_field= down_cast<Item_field *>(item)) &&
+        item_field->is_asterisk())
     {
+      DBUG_ASSERT(item_field->field == NULL);
       const uint elem= fields_list.elements;
       const bool any_privileges= item_field->any_privileges;
       Item_subselect *subsel= master_unit()->item;
@@ -2452,7 +2460,22 @@ bool SELECT_LEX::merge_derived(THD *thd, TABLE_LIST *derived_table)
           is_distinct() ||
           is_ordered() ||
           get_table_list()->next_local != NULL))
+    {
       order_list.push_back(&derived_select->order_list);
+      /*
+        If at outer-most level (not within another derived table), ensure
+        the ordering columns are marked in read_set, since columns selected
+        from derived tables are not marked in initial resolving.
+      */
+      if (!thd->derived_tables_processing)
+      {
+        Mark_field mf(thd->mark_used_columns);
+        for (ORDER *o = derived_select->order_list.first; o != NULL;
+             o = o->next)
+          o->item[0]->walk(&Item::mark_field_in_map, Item::WALK_POSTFIX,
+                           pointer_cast<uchar *>(&mf));
+      }
+    }
     else
     {
       derived_select->empty_order_list(this);
@@ -2722,6 +2745,19 @@ bool SELECT_LEX::flatten_subqueries()
 
   sj_candidates->clear();
   DBUG_RETURN(FALSE);
+}
+
+bool SELECT_LEX::is_in_select_list(Item *cand) {
+  List_iterator<Item> li(fields_list);
+  Item *item;
+  while ((item = li++)) {
+    // Use a walker to detect if cand is present in this select item
+
+    if (item->walk(&Item::find_item_processor, Item::WALK_SUBQUERY_POSTFIX,
+                   pointer_cast<uchar *>(cand)))
+      return true;
+  }
+  return false;
 }
 
 /**

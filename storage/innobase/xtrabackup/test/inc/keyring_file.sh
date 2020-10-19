@@ -5,7 +5,13 @@
 . inc/common.sh
 
 plugin_load=keyring_file.so
-plugin_dir=${XTRABACKUP_BASEDIR}/keyring
+if test -d ${XTRABACKUP_BASEDIR}/keyring
+then
+  plugin_dir=${XTRABACKUP_BASEDIR}/keyring
+else
+  plugin_dir=${XTRABACKUP_BASEDIR}/lib/plugin
+fi
+
 keyring_file=${TEST_VAR_ROOT}/keyring_file
 keyring_args="--keyring-file-data=${keyring_file}"
 

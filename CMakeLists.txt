@@ -1,14 +1,21 @@
-# Copyright (c) 2006, 2018, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2020, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; version 2 of the License.
-# 
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is also distributed with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have included with MySQL.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-# 
+# GNU General Public License, version 2.0, for more details.
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
@@ -40,6 +47,19 @@ IF(CMAKE_VERSION VERSION_EQUAL "3.0.0" OR
    CMAKE_VERSION VERSION_GREATER "3.0.0")
  CMAKE_POLICY(SET CMP0045 OLD)
  CMAKE_POLICY(SET CMP0042 OLD)
+ENDIF()
+
+# In CMake 3.12 and above, the
+#
+# * ``check_include_file`` macro in the ``CheckIncludeFile`` module, the
+# * ``check_include_file_cxx`` macro in the
+#   ``CheckIncludeFileCXX`` module, and the
+# * ``check_include_files`` macro in the ``CheckIncludeFiles`` module
+#
+# now prefer to link the check executable to the libraries listed in the
+# ``CMAKE_REQUIRED_LIBRARIES`` variable.
+IF(POLICY CMP0075)
+  CMAKE_POLICY(SET CMP0075 OLD)
 ENDIF()
 
 MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
@@ -125,6 +145,15 @@ ENDIF()
 
 PROJECT(${MYSQL_PROJECT_NAME})
 
+# STRING(APPEND ...) from cmake VERSION 3.4
+MACRO(STRING_APPEND STRING_VAR INPUT)
+  SET(${STRING_VAR} "${${STRING_VAR}}${INPUT}")
+ENDMACRO()
+
+MACRO(STRING_PREPEND STRING_VAR INPUT)
+  SET(${STRING_VAR} "${INPUT}${${STRING_VAR}}")
+ENDMACRO()
+
 SET(BUILD_IS_SINGLE_CONFIG TRUE)
 MESSAGE(STATUS "CMAKE_GENERATOR: ${CMAKE_GENERATOR}")
 IF(CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_GENERATOR STREQUAL "Xcode")
@@ -189,6 +218,10 @@ ENDIF()
 INCLUDE(CheckTypeSize)
 CHECK_TYPE_SIZE("void *" SIZEOF_VOIDP)
 MESSAGE(STATUS "SIZEOF_VOIDP ${SIZEOF_VOIDP}")
+# On some platforms, cmake may think that CMAKE_SIZEOF_VOID_P == 4
+# even if we have configured for 64bit build....
+SET(CMAKE_SIZEOF_VOID_P ${SIZEOF_VOIDP})
+
 IF(WITH_DEFAULT_COMPILER_OPTIONS)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/compiler_options.cmake)
 ENDIF()
@@ -196,14 +229,18 @@ IF(WITH_DEFAULT_FEATURE_SET)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/feature_set.cmake)
 ENDIF()
 
+INCLUDE(CMakePushCheckState)
+
 # Add macros
 INCLUDE(character_sets)
+INCLUDE(compile_flags)
 INCLUDE(cpu_info)
 INCLUDE(zlib)
 INCLUDE(lz4)
 INCLUDE(libevent)
 INCLUDE(ssl)
 INCLUDE(sasl)
+INCLUDE(ldap)
 INCLUDE(rpc)
 INCLUDE(readline)
 INCLUDE(protobuf)
@@ -240,6 +277,9 @@ ENDIF()
 IF(NOT WITHOUT_SERVER)
   OPTION (WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
 ENDIF()
+OPTION(WITH_AUTHENTICATION_LDAP
+  "Report error if the LDAP authentication plugin cannot be built." OFF)
+
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
 MARK_AS_ADVANCED(WITHOUT_SERVER DISABLE_SHARED FORCE_UNSUPPORTED_COMPILER)
 
@@ -551,7 +591,7 @@ IF(BUILD_BUNDLED_ZLIB)
     ${CMAKE_CURRENT_BINARY_DIR}/zlib
     )
 ENDIF()
-# Add bundled yassl/taocrypt or system openssl.
+# Add openssl.
 MYSQL_CHECK_SSL()
 # Add system/bundled editline.
 MYSQL_CHECK_EDITLINE()
@@ -561,6 +601,8 @@ MYSQL_CHECK_LIBEVENT()
 MYSQL_CHECK_LZ4()
 # Add SASL library
 MYSQL_CHECK_SASL()
+# Add LDAP library
+MYSQL_CHECK_LDAP()
 # Add protoc and libprotobuf
 IF(NOT WITHOUT_SERVER)
   MYSQL_CHECK_PROTOBUF()
@@ -655,6 +697,12 @@ ADD_SUBDIRECTORY(mysys_ssl)
 ADD_SUBDIRECTORY(libmysql)
 ADD_SUBDIRECTORY(libbinlogevents)
 ADD_SUBDIRECTORY(libbinlogstandalone)
+
+# gcc9 will not allow CTORs to do memset(this, 0, sizeof(*this));
+IF(CMAKE_COMPILER_IS_GNUCXX AND NOT GXX_VERSION VERSION_LESS 9)
+  STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG          " -Wno-class-memaccess")
+  STRING_APPEND(CMAKE_CXX_FLAGS_RELWITHDEBINFO " -Wno-class-memaccess")
+ENDIF()
 
 IF(NOT WITHOUT_SERVER)
   SET (MYSQLD_STATIC_PLUGIN_LIBS "" CACHE INTERNAL "")

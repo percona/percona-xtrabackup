@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -4036,16 +4043,19 @@ static void dump_table(char *table, char *db)
               if (!(field->flags & NUM_FLAG))
               {
                 /*
-                  "length * 2 + 2" is OK for both HEX and non-HEX modes:
+                  "length * 2 + 2" is OK for HEX mode:
                   - In HEX mode we need exactly 2 bytes per character
                   plus 2 bytes for '0x' prefix.
                   - In non-HEX mode we need up to 2 bytes per character,
-                  plus 2 bytes for leading and trailing '\'' characters.
-                  Also we need to reserve 1 byte for terminating '\0'.
+                  plus 2 bytes for leading and trailing '\'' characters
+                  and reserve 1 byte for terminating '\0'.
+                  In addition to this, for the blob type, we need to
+                  reserve for the "_binary " string that gets added in
+                  front of the string in the dump.
                 */
-                dynstr_realloc_checked(&extended_row,length * 2 + 2 + 1);
                 if (opt_hex_blob && is_blob)
                 {
+                  dynstr_realloc_checked(&extended_row,length * 2 + 2 + 1);
                   dynstr_append_checked(&extended_row, "0x");
                   extended_row.length+= mysql_hex_string(extended_row.str +
                                                          extended_row.length,
@@ -4056,6 +4066,8 @@ static void dump_table(char *table, char *db)
                 }
                 else
                 {
+                  dynstr_realloc_checked(&extended_row,length * 2 + 2 + 1 +
+                                         (is_blob? strlen("_binary ") : 0));
                   if (is_blob)
                   {
                     /*

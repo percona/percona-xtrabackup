@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -699,13 +706,21 @@ find_files(THD *thd, List<LEX_STRING> *files, const char *db,
     }
 
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
+    char tname[NAME_LEN + 1];
     /* Don't show tables where we don't have any privileges */
     if (db && !(col_access & TABLE_ACLS))
     {
       table_list.db= (char*) db;
       table_list.db_length= strlen(db);
-      table_list.table_name= uname;
       table_list.table_name_length= file_name_len;
+      if (lower_case_table_names == 2)
+      {
+        strcpy(tname, uname);
+        my_casedn_str(files_charset_info, tname);
+        table_list.table_name= tname;
+      }
+      else
+        table_list.table_name= uname;
       table_list.grant.privilege=col_access;
       if (check_grant(thd, TABLE_ACLS, &table_list, TRUE, 1, TRUE))
         continue;
@@ -2299,9 +2314,24 @@ public:
     /* INFO */
     mysql_mutex_lock(&inspect_thd->LOCK_thd_query);
     {
-      const char *query_str= inspect_thd->query().str;
-      size_t query_length= inspect_thd->query().length;
+      const char *query_str= NULL;
+      size_t query_length= 0;
+
+      /* If a rewritten query exists, use that. */
+      if (inspect_thd->rewritten_query().length() > 0) {
+        query_length = inspect_thd->rewritten_query().length();
+        query_str = inspect_thd->rewritten_query().ptr();
+      }
+      /*
+        Otherwise, use the original query.
+      */
+      else {
+        query_length = inspect_thd->query().length;
+        query_str = inspect_thd->query().str;
+      }
+
 #ifndef EMBEDDED_LIBRARY
+      /* In the stand-alone server, add "PLUGIN" as needed. */
       String buf;
       if (inspect_thd->is_a_srv_session())
       {
@@ -2315,6 +2345,7 @@ public:
       }
       /* No else. We need fall-through */
 #endif
+      /* If we managed to create query info, set a copy on thd_info. */
       if (query_str)
       {
         const size_t width= min<size_t>(m_max_query_length, query_length);
@@ -2504,9 +2535,24 @@ public:
     /* INFO */
     mysql_mutex_lock(&inspect_thd->LOCK_thd_query);
     {
-      const char *query_str= inspect_thd->query().str;
-      size_t query_length= inspect_thd->query().length;
+      const char *query_str= NULL;
+      size_t query_length= 0;
+
+      /* If a rewritten query exists, use that. */
+      if (inspect_thd->rewritten_query().length() > 0) {
+        query_length = inspect_thd->rewritten_query().length();
+        query_str = inspect_thd->rewritten_query().ptr();
+      }
+      /*
+        Otherwise, use the original query.
+      */
+      else {
+        query_length = inspect_thd->query().length;
+        query_str = inspect_thd->query().str;
+      }
+
 #ifndef EMBEDDED_LIBRARY
+      /* In the stand-alone server, add "PLUGIN" as needed. */
       String buf;
       if (inspect_thd->is_a_srv_session())
       {
@@ -2520,6 +2566,7 @@ public:
       }
       /* No else. We need fall-through */
 #endif
+      /* If we managed to create query info, set a copy on thd_info. */
       if (query_str)
       {
         const size_t width= min<size_t>(PROCESS_LIST_INFO_WIDTH, query_length);
@@ -4385,6 +4432,13 @@ static int fill_schema_table_from_frm(THD *thd, TABLE_LIST *tables,
 
     if (!view_open_result)
     {
+      if (table_list.is_view())
+      {
+        // See comments in tdc_open_view() for explanation.
+        if (!table_list.prelocking_placeholder &&
+            table_list.prepare_security(thd))
+          goto end;
+      }
       // Actual view query is not needed, just indicate that this is a view:
       table_list.set_view_query((LEX *) 1);
       res= schema_table->process_table(thd, &table_list, table,
@@ -8316,6 +8370,9 @@ int hton_fill_schema_table(THD *thd, TABLE_LIST *tables, Item *cond)
   struct run_hton_fill_schema_table_args args;
   args.tables= tables;
   args.cond= cond;
+
+  if (check_global_access(thd, PROCESS_ACL))
+    DBUG_RETURN(1);
 
   plugin_foreach(thd, run_hton_fill_schema_table,
                  MYSQL_STORAGE_ENGINE_PLUGIN, &args);

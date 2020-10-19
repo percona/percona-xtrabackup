@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2012, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -1318,6 +1326,19 @@ row_import::match_schema(
 				 " and the meta-data file has %s",
 				(const char*)dict_tf_to_row_format_string(m_table->flags),
 				(const char*)dict_tf_to_row_format_string(m_flags));
+		} else if (DICT_TF_HAS_DATA_DIR(m_flags) !=
+				DICT_TF_HAS_DATA_DIR(m_table->flags)) {
+			/* If the meta-data flag is set for data_dir,
+			but table flag is not set for data_dir or vice versa
+			then return error. */
+			ib_errf(thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
+				"Table location flags do not match. "
+				"The source table %s a DATA DIRECTORY "
+				"but the destination table %s.",
+				(DICT_TF_HAS_DATA_DIR(m_flags) ? "uses"
+				: "does not use"),
+				(DICT_TF_HAS_DATA_DIR(m_table->flags) ? "does"
+				: "does not"));
 		} else {
 			ib_errf(thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
 				"Table flags don't match");
@@ -1477,6 +1498,8 @@ IndexPurge::garbage_collect() UNIV_NOTHROW
 	/* Open the persistent cursor and start the mini-transaction. */
 
 	open();
+	import_ctx_t import_ctx = {false};
+	m_pcur.import_ctx = &import_ctx;
 
 	while ((err = next()) == DB_SUCCESS) {
 
@@ -1493,6 +1516,12 @@ IndexPurge::garbage_collect() UNIV_NOTHROW
 	/* Close the persistent cursor and commit the mini-transaction. */
 
 	close();
+	if (m_pcur.import_ctx->is_error == true) {
+		m_pcur.import_ctx = NULL;
+		return DB_TABLE_CORRUPT;
+	}
+
+	m_pcur.import_ctx = NULL;
 
 	return(err == DB_END_OF_INDEX ? DB_SUCCESS : err);
 }
@@ -1553,7 +1582,7 @@ IndexPurge::next() UNIV_NOTHROW
 		return(DB_END_OF_INDEX);
 	}
 
-	return(DB_SUCCESS);
+	return (DB_SUCCESS);
 }
 
 /**
@@ -3173,8 +3202,7 @@ dberr_t
 row_import_read_encryption_data(
 	dict_table_t*	table,
 	FILE*		file,
-	THD*		thd,
-	row_import&	import)
+	THD*		thd)
 {
 	byte		row[sizeof(ib_uint32_t)];
 	ulint		key_size;
@@ -3304,8 +3332,6 @@ row_import_read_cfp(
 	FILE*	file = fopen(name, "rb");
 
 	if (file == NULL) {
-		import.m_cfp_missing = true;
-
 		/* If there's no cfp file, we assume it's not an
 		encrpyted table. return directly. */
 
@@ -3317,7 +3343,7 @@ row_import_read_cfp(
 		import.m_cfp_missing = false;
 
 		err = row_import_read_encryption_data(table, file,
-						      thd, import);
+						      thd);
 		fclose(file);
 	}
 
@@ -3624,6 +3650,37 @@ row_import_for_mysql(
 	row_import	cfg;
 	ulint		space_flags = 0;
 
+	/* Read CFP file */
+	if (dict_table_is_encrypted(table)) {
+		/* First try to read CFP file here. */
+		err = row_import_read_cfp(table, trx->mysql_thd, cfg);
+		ut_ad(cfg.m_cfp_missing || err == DB_SUCCESS);
+
+		if (err != DB_SUCCESS) {
+			rw_lock_s_unlock_gen(dict_operation_lock, 0);
+			return (row_import_error(prebuilt, trx, err));
+		}
+
+		/* If table is encrypted, but can't find cfp file,
+                return error. */
+		if (cfg.m_cfp_missing) {
+			ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
+				ER_TABLE_SCHEMA_MISMATCH,
+				"Table is in an encrypted tablespace, but the"
+				" encryption meta-data file cannot be found"
+				" while importing.");
+			err = DB_ERROR;
+			rw_lock_s_unlock_gen(dict_operation_lock, 0);
+			return (row_import_error(prebuilt, trx, err));
+		} else {
+			/* If CFP file is read, encryption_key must have been
+			populted. */
+			ut_ad(table->encryption_key != NULL &&
+				table->encryption_iv != NULL);
+		}
+	}
+
+	/* Read CFG file */
 	err = row_import_read_cfg(table, trx->mysql_thd, cfg);
 
 	/* Check if the table column definitions match the contents
@@ -3685,46 +3742,40 @@ row_import_for_mysql(
 
 		space_flags = fetchIndexRootPages.get_space_flags();
 
+		/* If the fsp flag is set for data_dir, but table flag is not
+		set for data_dir or vice versa then return error. */
+		if (err == DB_SUCCESS
+			&& FSP_FLAGS_HAS_DATA_DIR(space_flags) !=
+			DICT_TF_HAS_DATA_DIR(table->flags)) {
+			ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
+				ER_TABLE_SCHEMA_MISMATCH,
+				"Table location flags do not match. "
+				"The source table %s a DATA DIRECTORY "
+				"but the destination table %s.",
+				(FSP_FLAGS_HAS_DATA_DIR(space_flags) ? "uses"
+				: "does not use"),
+				(DICT_TF_HAS_DATA_DIR(table->flags) ? "does"
+				: "does not"));
+			err = DB_ERROR;
+			return(row_import_error(prebuilt, trx, err));
+		}
+
 	} else {
 		rw_lock_s_unlock_gen(dict_operation_lock, 0);
 	}
 
-	/* Try to read encryption information. */
-	if (err == DB_SUCCESS) {
-		err = row_import_read_cfp(table, trx->mysql_thd, cfg);
-
-		/* If table is not set to encrypted, but the fsp flag
-		is not, then return error. */
-		if (!dict_table_is_encrypted(table)
-		    && space_flags != 0
-		    && FSP_FLAGS_GET_ENCRYPTION(space_flags)) {
-
+	if (err != DB_SUCCESS) {
+		if (err == DB_IO_NO_ENCRYPT_TABLESPACE) {
 			ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
-				 ER_TABLE_SCHEMA_MISMATCH,
-				 "Table is not marked as encrypted, but"
-				 " the tablespace is marked as encrypted");
-
-			err = DB_ERROR;
-			return(row_import_error(prebuilt, trx, err));
+				ER_TABLE_SCHEMA_MISMATCH,
+				"Encryption attribute in the file does not"
+				" match the dictionary.");
 		}
-
-		/* If table is set to encrypted, but can't find
-		cfp file, then return error. */
-		if (cfg.m_cfp_missing== true
-		    && ((space_flags != 0
-			 && FSP_FLAGS_GET_ENCRYPTION(space_flags))
-			|| dict_table_is_encrypted(table))) {
-			ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
-				 ER_TABLE_SCHEMA_MISMATCH,
-				 "Table is in an encrypted tablespace, but"
-				 " can't find the encryption meta-data file"
-				 " in importing");
-			err = DB_ERROR;
-			return(row_import_error(prebuilt, trx, err));
-		}
-	} else {
 		return(row_import_error(prebuilt, trx, err));
 	}
+
+	/* At this point, all required information has been collected for
+	IMPORT. */
 
 	prebuilt->trx->op_info = "importing tablespace";
 
@@ -3746,15 +3797,10 @@ row_import_for_mysql(
 			err = DB_TOO_MANY_CONCURRENT_TRXS;);
 
 	if (err == DB_IO_NO_ENCRYPT_TABLESPACE) {
-		char	table_name[MAX_FULL_NAME_LEN + 1];
-
-		innobase_format_name(
-			table_name, sizeof(table_name),
-			table->name.m_name);
-
 		ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
 			ER_TABLE_SCHEMA_MISMATCH,
-			"Encryption attribute is no matched");
+			"Encryption attribute in the file does not match the"
+			" dictionary.");
 
 		return(row_import_cleanup(prebuilt, trx, err));
 	}
@@ -3873,7 +3919,9 @@ row_import_for_mysql(
 	if (err != DB_SUCCESS) {
 		return(row_import_error(prebuilt, trx, err));
 	}
-
+	DBUG_EXECUTE_IF("ib_import_page_corrupt",
+			row_index_t* i_index = cfg.get_index(index->name);
+			++i_index->m_stats.m_n_purge_failed;);
 	if (err != DB_SUCCESS) {
 		return(row_import_error(prebuilt, trx, err));
 	} else if (cfg.requires_purge(index->name)) {

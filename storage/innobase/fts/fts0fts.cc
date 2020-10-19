@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2011, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2011, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -76,7 +84,7 @@ ulong	fts_min_token_size;
 
 
 // FIXME: testing
-ib_time_t elapsed_time = 0;
+ib_time_monotonic_t elapsed_time = 0;
 ulint n_nodes = 0;
 
 #ifdef FTS_CACHE_SIZE_DEBUG
@@ -93,7 +101,6 @@ static const ulint FTS_DEADLOCK_RETRY_WAIT = 100000;
 /** variable to record innodb_fts_internal_tbl_name for information
 schema table INNODB_FTS_INSERTED etc. */
 char* fts_internal_tbl_name		= NULL;
-char* fts_internal_tbl_name2		= NULL;
 
 /** InnoDB default stopword list:
 There are different versions of stopwords, the stop words listed
@@ -1775,9 +1782,10 @@ ulint
 fts_get_table_flags2_for_aux_tables(
 	ulint	flags2)
 {
-	/* Extract the file_per_table flag & temporary file flag
-	from the main FTS table flags2 */
+	/* Extract the file_per_table flag, temporary file flag and
+	encryption flag from the main FTS table flags2 */
 	return((flags2 & DICT_TF2_USE_FILE_PER_TABLE) |
+               (flags2 & DICT_TF2_ENCRYPTION) |
 	       (flags2 & DICT_TF2_TEMPORARY));
 }
 
@@ -3636,6 +3644,7 @@ fts_add_doc_by_id(
 				btr_pcur_store_position(doc_pcur, &mtr);
 				mtr_commit(&mtr);
 
+				DEBUG_SYNC_C("fts_instrument_sync_cache_wait");
 				rw_lock_x_lock(&table->fts->cache->lock);
 
 				if (table->fts->cache->stopword_info.status
@@ -3657,6 +3666,13 @@ fts_add_doc_by_id(
 				}
 
 				rw_lock_x_unlock(&table->fts->cache->lock);
+
+				DBUG_EXECUTE_IF(
+                                        "fts_instrument_sync_cache_wait",
+					srv_fatal_semaphore_wait_threshold = 25;
+					fts_max_cache_size = 100;
+                                        fts_sync(cache->sync, true, true, false);
+                                );
 
 				DBUG_EXECUTE_IF(
 					"fts_instrument_sync",
@@ -3942,7 +3958,7 @@ fts_write_node(
 	pars_info_t*	info;
 	dberr_t		error;
 	ib_uint32_t	doc_count;
-	ib_time_t	start_time;
+	ib_time_monotonic_t	start_time;
 	doc_id_t	last_doc_id;
 	doc_id_t	first_doc_id;
 	char		table_name[MAX_FULL_NAME_LEN];
@@ -3991,9 +4007,9 @@ fts_write_node(
 			"  :last_doc_id, :doc_count, :ilist);");
 	}
 
-	start_time = ut_time();
+	start_time = ut_time_monotonic();
 	error = fts_eval_sql(trx, *graph);
-	elapsed_time += ut_time() - start_time;
+	elapsed_time += ut_time_monotonic() - start_time;
 	++n_nodes;
 
 	return(error);
@@ -4059,13 +4075,18 @@ fts_sync_add_deleted_cache(
 @param[in,out]	trx		transaction
 @param[in]	index_cache	index cache
 @param[in]	unlock_cache	whether unlock cache when write node
+				Also set this to true if sync takes
+				very long
+@param[in]	sync_start_time	Holds the timestamp of start of sync
+				for deducing the length of sync time
 @return DB_SUCCESS if all went well else error code */
 static MY_ATTRIBUTE((nonnull, warn_unused_result))
 dberr_t
 fts_sync_write_words(
 	trx_t*			trx,
 	fts_index_cache_t*	index_cache,
-	bool			unlock_cache)
+	bool			unlock_cache,
+	ib_time_t		sync_start_time)
 {
 	fts_table_t	fts_table;
 	ulint		n_nodes = 0;
@@ -4074,6 +4095,13 @@ fts_sync_write_words(
 	dberr_t		error = DB_SUCCESS;
 	ibool		print_error = FALSE;
 	dict_table_t*	table = index_cache->index->table;
+	/* We use this to deduce threshold value of time
+	that we can let sync to go on holding cache lock */
+	const float cutoff = 0.98;
+	ulint		lock_threshold =
+			(srv_fatal_semaphore_wait_threshold % SRV_SEMAPHORE_WAIT_EXTENSION)
+			* cutoff;
+	bool		timeout_extended = false;
 #ifdef FTS_DOC_STATS_DEBUG
 	ulint		n_new_words = 0;
 #endif /* FTS_DOC_STATS_DEBUG */
@@ -4137,6 +4165,30 @@ fts_sync_write_words(
 
 			/*FIXME: we need to handle the error properly. */
 			if (error == DB_SUCCESS) {
+				DEBUG_SYNC_C("fts_instrument_sync");
+				DBUG_EXECUTE_IF("fts_instrument_sync",
+			                        os_thread_sleep(10000000););
+				if (!unlock_cache) {
+					ulint cache_lock_time = ut_time_monotonic() - sync_start_time;
+					if (cache_lock_time > lock_threshold) {
+						if (!timeout_extended) {
+							os_atomic_increment_ulint(
+							&srv_fatal_semaphore_wait_threshold,
+							SRV_SEMAPHORE_WAIT_EXTENSION);
+							timeout_extended = true;
+							lock_threshold +=
+							SRV_SEMAPHORE_WAIT_EXTENSION;
+						} else {
+							unlock_cache = true;
+							os_atomic_decrement_ulint(
+							&srv_fatal_semaphore_wait_threshold,
+							SRV_SEMAPHORE_WAIT_EXTENSION);
+							timeout_extended = false;
+
+						}
+					}
+				}
+
 				if (unlock_cache) {
 					rw_lock_x_unlock(
 						&table->fts->cache->lock);
@@ -4146,6 +4198,8 @@ fts_sync_write_words(
 					trx,
 					&index_cache->ins_graph[selected],
 					&fts_table, &word->text, fts_node);
+				DBUG_EXECUTE_IF("fts_instrument_sync",
+                                                os_thread_sleep(15000000););
 
 				DEBUG_SYNC_C("fts_write_node");
 				DBUG_EXECUTE_IF("fts_write_node_crash",
@@ -4435,7 +4489,7 @@ fts_sync_begin(
 	n_nodes = 0;
 	elapsed_time = 0;
 
-	sync->start_time = ut_time();
+	sync->start_time = ut_time_monotonic();
 
 	sync->trx = trx_allocate_for_background();
 
@@ -4469,7 +4523,8 @@ fts_sync_index(
 
 	ut_ad(rbt_validate(index_cache->words));
 
-	error = fts_sync_write_words(trx, index_cache, sync->unlock_cache);
+	error = fts_sync_write_words(trx, index_cache, sync->unlock_cache,
+				     sync->start_time);
 
 #ifdef FTS_DOC_STATS_DEBUG
 	/* FTS_RESOLVE: the word counter info in auxiliary table "DOC_ID"
@@ -4587,7 +4642,7 @@ fts_sync_commit(
 	if (fts_enable_diag_print && elapsed_time) {
 		ib::info() << "SYNC for table " << sync->table->name
 			<< ": SYNC time: "
-			<< (ut_time() - sync->start_time)
+			<< (ut_time_monotonic() - sync->start_time)
 			<< " secs: elapsed "
 			<< (double) n_nodes / elapsed_time
 			<< " ins/sec";
@@ -4782,6 +4837,7 @@ fts_sync(
 	rw_lock_x_lock(&cache->lock);
 	/* Clear fts syncing flags of any indexes in case sync is
 	interrupted */
+	DEBUG_SYNC_C("fts_instrument_sync");
 	for (i = 0; i < ib_vector_size(cache->indexes); ++i) {
 		fts_index_cache_t*      index_cache;
 		index_cache = static_cast<fts_index_cache_t*>(

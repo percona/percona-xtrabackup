@@ -1,14 +1,21 @@
 /*
-   Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2020, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -2816,14 +2823,12 @@ C_MODE_END
   if not.
 */
 
-#if defined(USE_NEW_EDITLINE_INTERFACE)
-static int fake_magic_space(int, int);
-extern "C" char *no_completion(const char*,int)
-#elif defined(USE_LIBEDIT_INTERFACE)
-static int fake_magic_space(const char *, int);
-extern "C" int no_completion(const char*,int)
+#if defined(EDITLINE_HAVE_COMPLETION_CHAR)
+char *no_completion(const char *, int)
+#elif defined(EDITLINE_HAVE_COMPLETION_INT)
+int no_completion(const char *, int)
 #else
-extern "C" char *no_completion()
+char *no_completion()
 #endif
 {
   return 0;					/* No filename completion */
@@ -2862,16 +2867,16 @@ static void initialize_readline (char *name)
   rl_readline_name = name;
 
   /* Tell the completer that we want a crack first. */
-#if defined(USE_NEW_EDITLINE_INTERFACE)
-  rl_attempted_completion_function= (rl_completion_func_t*)&new_mysql_completion;
-  rl_completion_entry_function= (rl_compentry_func_t*)&no_completion;
-
-  rl_add_defun("magic-space", (rl_command_func_t *)&fake_magic_space, -1);
-#elif defined(USE_LIBEDIT_INTERFACE)
-  setlocale(LC_ALL,""); /* so as libedit use isprint */
-  rl_attempted_completion_function= (CPPFunction*)&new_mysql_completion;
+#if defined(EDITLINE_HAVE_COMPLETION_CHAR)
+  rl_attempted_completion_function= &new_mysql_completion;
   rl_completion_entry_function= &no_completion;
-  rl_add_defun("magic-space", (Function*)&fake_magic_space, -1);
+
+  rl_add_defun("magic-space", &fake_magic_space, -1);
+#elif defined(EDITLINE_HAVE_COMPLETION_INT)
+  setlocale(LC_ALL,""); /* so as libedit use isprint */
+  rl_attempted_completion_function= &new_mysql_completion;
+  rl_completion_entry_function= &no_completion;
+  rl_add_defun("magic-space", &fake_magic_space, -1);
 #else
   rl_attempted_completion_function= (CPPFunction*)&new_mysql_completion;
   rl_completion_entry_function= &no_completion;
@@ -2893,7 +2898,7 @@ static char **new_mysql_completion(const char *text,
 #if defined(USE_NEW_EDITLINE_INTERFACE)
     return rl_completion_matches(text, new_command_generator);
 #else
-    return completion_matches((char *)text, (CPFunction *)new_command_generator);
+    return completion_matches(const_cast<char*>(text), new_command_generator);
 #endif
   else
     return (char**) 0;
