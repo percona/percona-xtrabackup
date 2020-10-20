@@ -15,7 +15,7 @@ EOF
 }
 
 function ssl_version() {
-    sslv=$(readlink -f $(ldconfig -p | grep libssl.so | head -n1 | awk -F "=>" '{ print $2 }') | sed 's/.*[.]so//; s/[^0-9]//g')
+    sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
 
     case ${sslv} in
         100|101|102|11) ;;
@@ -137,7 +137,10 @@ main () {
     esac
 
     # Check if tarball exist before any download
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null || [[ -z ${tarball} ]]; then
+    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+        echo "Version you specified(${VERSION}) is not exist on ${url}/${tarball}"
+        exit 1
+    elif [[ -z ${tarball} ]]; then
         echo "Version you specified(${VERSION}) is not exist on ${url}/${tarball}"
         exit 1
     else
