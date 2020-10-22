@@ -128,7 +128,7 @@ mkdir "$INSTALLDIR"
     if test "x$exit_value" = "x0"
     then
 
-        LIBLIST="libgcrypt.so libcrypto.so libssl.so libreadline.so libtinfo.so libsasl2.so libgssapi_krb5.so libkrb5.so libkrb5support.so libk5crypto.so librtmp.so libgssapi.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so"
+        LIBLIST="libgcrypt.so libcrypto.so libssl.so libreadline.so libtinfo.so libsasl2.so librtmp.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so"
         DIRLIST="bin lib lib/private lib/plugin"
 
         LIBPATH=""
@@ -143,7 +143,7 @@ mkdir "$INSTALLDIR"
                     lib_realpath_basename="$(basename $(readlink -f ${libfromelf}))"
                     lib_without_version_suffix=$(echo ${lib_realpath_basename} | awk -F"." 'BEGIN { OFS = "." }{ print $1, $2}')
 
-                    if [ ! -f "lib/private/${lib_realpath_basename}" ] && [ ! -L "lib/private/${lib_realpath_basename}" ]; then
+                    if [ ! -f "lib/private/${lib_realpath_basename}" ] && [ ! -L "lib/private/${lib_without_version_suffix}" ]; then
                     
                         echo "Copying lib ${lib_realpath_basename}"
                         cp ${lib_realpath} lib/private
