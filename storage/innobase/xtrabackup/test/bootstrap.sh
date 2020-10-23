@@ -86,7 +86,7 @@ main () {
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.xz"
                 if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
-                    unset $url
+                    unset url
                     url=${fallback_url}
                 fi
             ;;
