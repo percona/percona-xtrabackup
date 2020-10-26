@@ -15,7 +15,7 @@ EOF
 }
 
 function ssl_version() {
-    sslv=$(readlink -f $(ldconfig -p | grep libssl.so | head -n1 | awk -F "=>" '{ print $2 }') | sed 's/.*[.]so//; s/[^0-9]//g')
+    sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
 
     case ${sslv} in
         100|101) ;;
