@@ -18,7 +18,8 @@ function ssl_version() {
     sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
 
     case ${sslv} in
-        100|101|102|11) ;;
+        100|101|11) ;;
+        102) unset sslv; sslv="102.$OS" ;;
         *)
             if ! test -r "${1}"; then
                 >&2 echo "tarball for your openssl version (${sslv}) is not available"
@@ -63,7 +64,13 @@ parse_arguments() {
     done
 }
 
-main () {    
+main () {
+    if [ -f /etc/redhat-release ]; then
+        OS="rpm"
+    else
+        OS="deb"
+    fi
+
     arch=$(uname -m)
     if [ "${arch}" == "i386" ]; then
         arch="i686"
