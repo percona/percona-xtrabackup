@@ -29,6 +29,8 @@ extern bool mdl_taken;
 
 extern bool use_dumped_tablespace_keys;
 
+extern std::vector<ulint> invalid_encrypted_tablespace_ids;
+
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key

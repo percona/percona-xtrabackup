@@ -457,6 +457,10 @@ extern TYPELIB innodb_checksum_algorithm_typelib;
 /** Names of allowed values of innodb_flush_method */
 extern const char *innodb_flush_method_names[];
 
+/** List of tablespaces missing encryption data when we validated its first
+page. We test again in the end of backup. */
+std::vector<ulint> invalid_encrypted_tablespace_ids;
+
 /** Enumeration of innodb_flush_method */
 extern TYPELIB innodb_flush_method_typelib;
 
@@ -3026,6 +3030,36 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
 }
 
 /************************************************************************
+Validate by the end of the backup if we have parsed required encryption data
+for tablespaces that had an empty page0 */
+bool validate_missing_encryption_tablespaces() {
+  bool ret = true;
+  bool found = false;
+  if (invalid_encrypted_tablespace_ids.size() > 0) {
+    for (auto m_space_id : invalid_encrypted_tablespace_ids) {
+      found = false;
+      mutex_enter(&recv_sys->mutex);
+      if (recv_sys->keys != nullptr) {
+        for (const auto &recv_key : *recv_sys->keys) {
+          if (recv_key.space_id == m_space_id) {
+            found = true;
+          }
+        }
+      }
+      mutex_exit(&recv_sys->mutex);
+      if (!found) {
+        msg_ts(
+            "xtrabackup: Error: Space ID %lu is missing encryption "
+            "information.\n",
+            m_space_id);
+        ret = false;
+      }
+    }
+  }
+  return ret;
+}
+
+/************************************************************************
 Initialize the appropriate datasink(s). Both local backups and streaming in the
 'xbstream' format allow parallel writes so we can write directly.
 
@@ -4026,6 +4060,10 @@ void xtrabackup_backup_func(void) {
   msg("\n");
 
   io_watching_thread_stop = true;
+
+  if (!validate_missing_encryption_tablespaces()) {
+    exit(EXIT_FAILURE);
+  }
 
   if (!xtrabackup_incremental) {
     strcpy(metadata_type_str, "full-backuped");
