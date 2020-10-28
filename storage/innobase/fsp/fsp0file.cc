@@ -683,11 +683,13 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
 
       if (srv_backup_mode) {
         mutex_enter(&recv_sys->mutex);
-        for (const auto &recv_key : *recv_sys->keys) {
-          if (recv_key.space_id == m_space_id) {
-            memcpy(m_encryption_key, recv_key.ptr, Encryption::KEY_LEN);
-            memcpy(m_encryption_iv, recv_key.iv, Encryption::KEY_LEN);
-            found = true;
+        if (recv_sys->keys != nullptr) {
+          for (const auto &recv_key : *recv_sys->keys) {
+            if (recv_key.space_id == m_space_id) {
+              memcpy(m_encryption_key, recv_key.ptr, Encryption::KEY_LEN);
+              memcpy(m_encryption_iv, recv_key.iv, Encryption::KEY_LEN);
+              found = true;
+            }
           }
         }
         mutex_exit(&recv_sys->mutex);
@@ -700,6 +702,11 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
         ut_free(m_encryption_iv);
         m_encryption_key = nullptr;
         m_encryption_iv = nullptr;
+        ib::info() << "Failed to decrypt table " << m_filepath << " with space"
+                   << " id " << m_space_id
+                   << ". Will check if encrytion key has been"
+                   << " parsed at the end of backup.";
+        invalid_encrypted_tablespace_ids.push_back(m_space_id);
         return (DB_INVALID_ENCRYPTION_META);
       }
     } else {
