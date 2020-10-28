@@ -301,6 +301,12 @@ function set_vars()
         PATH="$PWD/../bin:$PATH"
     fi
 
+    # 8.0 branch run test at xtrabackup-test/test folder
+    if test -d $PWD/../../bin
+    then
+        PATH="$PWD/../../bin:$PATH"
+    fi
+
     PATH="${MYSQL_BASEDIR}/bin:$PATH"
 
     if [ -z "${LD_LIBRARY_PATH:-}" ]; then
