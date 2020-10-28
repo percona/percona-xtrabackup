@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -523,6 +523,7 @@ LatchDebug::LatchDebug()
 	LEVEL_MAP_INSERT(SYNC_TREE_NODE);
 	LEVEL_MAP_INSERT(SYNC_TREE_NODE_FROM_HASH);
 	LEVEL_MAP_INSERT(SYNC_TREE_NODE_NEW);
+	LEVEL_MAP_INSERT(SYNC_ANALYZE_INDEX);
 	LEVEL_MAP_INSERT(SYNC_INDEX_TREE);
 	LEVEL_MAP_INSERT(SYNC_IBUF_PESS_INSERT_MUTEX);
 	LEVEL_MAP_INSERT(SYNC_IBUF_HEADER);
@@ -957,6 +958,11 @@ LatchDebug::check_order(
 	case SYNC_INDEX_TREE:
 
 		basic_check(latches, level, SYNC_TREE_NODE - 1);
+		break;
+
+	case SYNC_ANALYZE_INDEX:
+
+		basic_check(latches, level, SYNC_ANALYZE_INDEX - 1);
 		break;
 
 	case SYNC_IBUF_TREE_NODE:
@@ -1592,6 +1598,7 @@ sync_latch_meta_init()
 	LATCH_ADD_MUTEX(MASTER_KEY_ID_MUTEX, SYNC_NO_ORDER_CHECK,
 			master_key_id_mutex_key);
 
+<<<<<<< HEAD
 	// xtrabackup
 
 	LATCH_ADD_MUTEX(XTRA_DATAFILES_ITER_MUTEX, SYNC_MUTEX, PFS_NOT_INSTRUMENTED);
@@ -1599,6 +1606,10 @@ sync_latch_meta_init()
 	LATCH_ADD_MUTEX(XTRA_COUNT_MUTEX, SYNC_MUTEX, PFS_NOT_INSTRUMENTED);
 
 	LATCH_ADD_MUTEX(XTRA_DATADIR_ITER_T_MUTEX, SYNC_MUTEX, PFS_NOT_INSTRUMENTED);
+=======
+	LATCH_ADD_MUTEX(ANALYZE_INDEX_MUTEX, SYNC_ANALYZE_INDEX,
+			analyze_index_mutex_key);
+>>>>>>> mysql-5.7.32
 
 	latch_id_t	id = LATCH_ID_NONE;
 
