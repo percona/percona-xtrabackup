@@ -19,7 +19,15 @@ function ssl_version() {
 
     case ${sslv} in
         100|101|11) ;;
-        102) unset sslv; sslv="102.$OS" ;;
+        102) 
+            if [[ ${RHVER} -eq 7 ]] && [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -lt "50" ]]; then
+                unset sslv; sslv=101
+            elif [[ ${DEBVER} == "stretch" ]] && [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -lt "50" ]]; then
+                unset sslv; sslv=102
+            else
+                unset sslv; sslv="102.$OS"
+            fi
+            ;;
         *)
             if ! test -r "${1}"; then
                 >&2 echo "tarball for your openssl version (${sslv}) is not available"
@@ -67,7 +75,9 @@ parse_arguments() {
 main () {
     if [ -f /etc/redhat-release ]; then
         OS="rpm"
+        RHVER=$(rpm --eval %rhel)
     else
+        DEBVER=$(lsb_release -sc)
         OS="deb"
     fi
 
