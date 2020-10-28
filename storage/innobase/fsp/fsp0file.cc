@@ -697,10 +697,12 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 				ut_free(m_encryption_iv);
 				m_encryption_key = NULL;
 				m_encryption_iv = NULL;
-				ib::info() << "Failed to decrypt table " << m_filepath << " with space"
-					<< " id " << m_space_id << ". Will check if encrytion key has been"
-					<< " parsed at the end of backup.";
-				invalid_encrypted_tablespace_ids.push_back(m_space_id);
+				if (!recv_recovery_is_on()) {
+					ib::info() << "Failed to decrypt table " << m_filepath << " with space"
+						<< " id " << m_space_id << ". Will check if encrytion key has been"
+						<< " parsed at the end of backup.";
+					invalid_encrypted_tablespace_ids.push_back(m_space_id);
+				}
 				return(DB_PAGE_IS_BLANK);
                         }
 

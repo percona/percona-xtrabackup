@@ -1232,10 +1232,12 @@ fsp_header_decode_encryption_info(
 		version = Encryption::ENCRYPTION_VERSION_3;
 	} else if (memcmp(ptr, ENCRYPTION_KEY_MAGIC_EMPTY,
 			    ENCRYPTION_MAGIC_SIZE) == 0) {
-		return (true);
+		/* We ignore report error for recovery, into datafile when
+		the table is newly created. */
+		return(recv_recovery_is_on() ? true : false);
 	} else {
 		ib::error() << "Failed to decrypt encryption information,"
-			<< " read unknown ENCRYPTION_KEY_MAGIC.";
+		  << " read unknown ENCRYPTION_KEY_MAGIC.";
 		return(false);
 	}
 
@@ -1245,20 +1247,6 @@ fsp_header_decode_encryption_info(
 		ut_a(version <= Encryption::ENCRYPTION_VERSION_3);
 	}
 
-	/* Check magic. */
-	if (version >= Encryption::ENCRYPTION_VERSION_2
-	    && memcmp(ptr, ENCRYPTION_KEY_MAGIC_V2, ENCRYPTION_MAGIC_SIZE) != 0
-	    && memcmp(ptr, ENCRYPTION_KEY_MAGIC_V3,
-		      ENCRYPTION_MAGIC_SIZE) != 0) {
-		/* We ignore report error for recovery,
-		since the encryption info maybe hasn't writen
-		into datafile when the table is newly created. */
-		if (!recv_recovery_is_on()) {
-			return(false);
-		} else {
-			return(true);
-		}
-	}
 	ptr += ENCRYPTION_MAGIC_SIZE;
 
 	/* Get master key id. */
