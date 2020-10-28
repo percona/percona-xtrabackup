@@ -39,6 +39,7 @@ extern bool mdl_taken;
 
 extern bool use_dumped_tablespace_keys;
 
+extern std::vector<ulint> invalid_encrypted_tablespace_ids;
 /******************************************************************************
 Callback used in buf_page_io_complete() to detect compacted pages.
 @return TRUE if the page is marked as compacted, FALSE otherwise. */

@@ -462,6 +462,8 @@ char *opt_server_public_key = NULL;
 static void
 check_all_privileges();
 
+std::vector<ulint> invalid_encrypted_tablespace_ids;
+
 /* Whether xtrabackup_binlog_info should be created on recovery */
 static bool recover_binlog_info;
 
@@ -3609,6 +3611,41 @@ Datafile *xb_new_datafile(
 	}
 }
 
+bool
+validate_missing_encryption_tablespaces()
+{
+	bool ret=true;
+	bool found = false;
+	if (invalid_encrypted_tablespace_ids.size() > 0)
+	{
+		std::vector<ulint>::iterator it;
+		for (it = invalid_encrypted_tablespace_ids.begin();
+		    it != invalid_encrypted_tablespace_ids.end();
+		    it++) {
+			found = false;
+			mutex_enter(&recv_sys->mutex);
+			if (recv_sys->encryption_list != NULL) {
+				encryption_list_t::iterator	it_enc;
+				for (it_enc = recv_sys->encryption_list->begin();
+				     it_enc != recv_sys->encryption_list->end();
+				     it_enc++) {
+					if (it_enc->space_id == (*it)) {
+						found = true;
+						break;
+					}
+				}
+			}
+			mutex_exit(&recv_sys->mutex);
+			if (!found)
+			{
+				msg_ts("xtrabackup: Error: Space ID %lu is missing encryption information.\n", (*it));
+				ret=false;
+			}
+		}
+	}
+	return ret;
+}
+
 void
 xb_load_single_table_tablespace(
 	const char *dirname,
@@ -3706,6 +3743,7 @@ xb_load_single_table_tablespace(
 	} else {
 		/* allow corrupted first page for xtrabackup, it could be just
 		zero-filled page, which we'll restore from redo log later */
+
 		if (xtrabackup_backup && err != DB_PAGE_IS_BLANK) {
 			exit(EXIT_FAILURE);
 		}
@@ -4944,6 +4982,7 @@ reread_log_header:
 	mdl_taken = true;
 
 	log_copying_stop = os_event_create("log_copying_stop");
+	debug_sync_point("xtrabackup_pause_after_redo_catchup");
 	os_thread_create(log_copying_thread, NULL, &log_copying_thread_id);
 
 	/* Populate fil_system with tablespaces to copy */
@@ -5081,6 +5120,11 @@ skip_last_cp:
 	if (ds_close(dst_log_file)) {
 		exit(EXIT_FAILURE);
 	}
+
+	if (!validate_missing_encryption_tablespaces()) {
+		exit(EXIT_FAILURE);
+	}
+
 
 	if(!xtrabackup_incremental) {
 		strcpy(metadata_type, "full-backuped");
