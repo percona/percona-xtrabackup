@@ -5,7 +5,7 @@ Installing |Percona XtraBackup| on *Debian* and *Ubuntu*
 ========================================================
 
 Ready-to-use packages are available from the |Percona XtraBackup| software
-repositories and the `download page
+repositories and the `Percona download page
 <https://www.percona.com/downloads/XtraBackup/>`_.
 
 Specific information on the supported platforms, products, and versions is described in `Percona Software and Platform Lifecycle <https://www.percona.com/services/policies/percona-software-platform-lifecycle#mysql>`_.
@@ -51,11 +51,11 @@ via the |percona-release| package configuration tool.
 #.
    .. include:: ../.res/contents/instruction.repository.enabling.txt
 
-#. After that you can install the ``percona-xtrabackup-80`` package:
+#. After that you can install the ``percona-xtrabackup-24`` package:
 
    .. code-block:: bash
 		   
-      $ sudo apt-get install percona-xtrabackup-80
+      $ sudo apt-get install percona-xtrabackup-24
 
 #. In order to make compressed backups, install the ``qpress`` package:
 
@@ -89,27 +89,27 @@ Installing |Percona XtraBackup| using downloaded deb packages
 
 Download the packages of the desired series for your architecture from the
 `download page <https://www.percona.com/downloads/XtraBackup/>`_. Following
-example will download |Percona XtraBackup| 2.4.4 release package for *Debian*
-8.0:
+example downloads the |Percona XtraBackup| 2.4.20 release package for *Debian*
+9.0:
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.4/\
-  binary/debian/jessie/x86_64/percona-xtrabackup-24_2.4.4-1.jessie_amd64.deb
+  $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.20/\
+  binary/debian/stretch/x86_64/percona-xtrabackup-24_2.4.20-1.stretch_amd64.deb
 
 Now you can install |Percona XtraBackup| by running:
 
 .. code-block:: bash
 
-  $ sudo dpkg -i percona-xtrabackup-24_2.4.4-1.jessie_amd64.deb
+  $ sudo dpkg -i percona-xtrabackup-24_2.4.20-1.stretch_amd64.deb
 
 .. note::
 
-  When installing packages manually like this, you'll need to make sure to
-  resolve all the dependencies and install missing packages yourself.
+  Installing the packages manually like this, you must
+  resolve all dependencies and install the missing packages yourself.
 
 Uninstalling |Percona XtraBackup|
-=================================
+==================================
 
 To uninstall |Percona XtraBackup| you'll need to remove all the installed
 packages.
@@ -118,6 +118,6 @@ packages.
 
    .. code-block:: bash
 
-      $ sudo apt-get remove percona-xtrabackup-80
+      $ sudo apt-get remove percona-xtrabackup-24
 
 .. |percona-release| replace:: ``percona-release``
