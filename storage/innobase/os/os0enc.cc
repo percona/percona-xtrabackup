@@ -46,6 +46,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 constexpr char Encryption::KEY_MAGIC_V1[];
 constexpr char Encryption::KEY_MAGIC_V2[];
 constexpr char Encryption::KEY_MAGIC_V3[];
+constexpr char Encryption::KEY_MAGIC_EMPTY[];
 constexpr char Encryption::MASTER_KEY_PREFIX[];
 constexpr char Encryption::DEFAULT_MASTER_KEY[];
 
@@ -476,14 +477,12 @@ bool Encryption::decode_encryption_info(byte *key, byte *iv,
     version = VERSION_2;
   } else if (memcmp(ptr, KEY_MAGIC_V3, MAGIC_SIZE) == 0) {
     version = VERSION_3;
-  } else {
+  } else if (memcmp(ptr, KEY_MAGIC_EMPTY, MAGIC_SIZE) == 0) {
     /* We don't report an error during recovery, since the
     encryption info maybe hasn't writen into datafile when
     the table is newly created. */
-    if (recv_recovery_is_on()) {
-      return (true);
-    }
-
+    return (recv_recovery_is_on() ? true : false);
+  } else {
     ib::error(ER_IB_MSG_837) << "Failed to decrypt encryption information,"
                              << " found unexpected version of it!";
     return (false);
