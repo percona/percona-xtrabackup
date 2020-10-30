@@ -5,7 +5,12 @@
 . inc/common.sh
 
 plugin_load=keyring_file.so
-plugin_dir=$PWD/../../../../plugin_output_directory
+if test -d $PWD/../../../../plugin_output_directory
+then
+  plugin_dir=$PWD/../../../../plugin_output_directory
+else
+  plugin_dir=$PWD/../../lib/plugin/
+fi
 keyring_file=${TEST_VAR_ROOT}/keyring_file
 keyring_args="--keyring-file-data=${keyring_file}"
 
