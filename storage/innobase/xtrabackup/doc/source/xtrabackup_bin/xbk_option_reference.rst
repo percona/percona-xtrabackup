@@ -594,6 +594,11 @@ Options
 
    Lock DDL for each table before xtrabackup starts to copy
    it and until the backup is completed.
+   
+   .. note::
+   
+   As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the
+   `--lock-ddl` option instead.
 
 .. option:: --lock-ddl-timeout
 
