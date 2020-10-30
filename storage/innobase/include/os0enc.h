@@ -73,6 +73,9 @@ class Encryption {
   information version. */
   static constexpr char KEY_MAGIC_V3[] = "lCC";
 
+  /** Encryption magic bytes for not yet flushed page */
+  static constexpr char KEY_MAGIC_EMPTY[] = "\0\0\0";
+
   /** Encryption master key prifix */
   static constexpr char MASTER_KEY_PREFIX[] = "INNODBKey";
 
