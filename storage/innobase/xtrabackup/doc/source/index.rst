@@ -59,6 +59,7 @@ Prerequisites
 
    using_xtrabackup/privileges
    using_xtrabackup/configuring
+   using_xtrabackup/comparison
 
 Backup Scenarios
 ================
