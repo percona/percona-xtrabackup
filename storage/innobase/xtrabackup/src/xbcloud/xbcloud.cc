@@ -715,7 +715,7 @@ bool xbcloud_put(Object_store *store, const std::string &container,
     for (auto cur_file : object_list) {
       if (cur_file.size() >= last_file_size &&
 	  cur_file.substr(0, last_file_size).compare(last_file_prefix) == 0) {
-	file_found = true;
+	  file_found = true;
         break;
       }
     }
