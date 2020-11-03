@@ -22,7 +22,7 @@ ifeq "$(DEB_DUMMY)" ""
 	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 \
 	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
-	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1
+	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled
 else
 	# Dummy binaries that avoid compilation
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
