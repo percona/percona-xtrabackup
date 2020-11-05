@@ -22,6 +22,7 @@
 #include "vault_keys_list.h"
 #include "logger.h"
 #include "secure_string.h"
+#include "vault_credentials.h"
 
 namespace keyring {
 class IVault_parser {
@@ -43,6 +44,10 @@ class IVault_parser {
                                    KeyParameters *      key_parameters)= 0;
   virtual bool parse_errors(const Secure_string &payload,
                             Secure_string *      errors)= 0;
+  virtual bool get_vault_version(const Vault_credentials &vault_credentials,
+                                 const Secure_string &mount_points_payload,
+                                 int &                vault_version)= 0;
+
   virtual ~IVault_parser() {}
 };
 }  // namespace keyring

@@ -22,9 +22,28 @@
 #include "secure_string.h"
 
 namespace keyring {
-typedef std::map<Secure_string, Secure_string> Vault_credentials;
-const Secure_string &get_credential(const Vault_credentials &credentials,
-                                    const Secure_string &    key);
+class Vault_credentials {
+ public:
+  typedef std::map<Secure_string, Secure_string> Map;
+
+  Vault_credentials() {}
+  Vault_credentials(const Map &vault_credentials_map)
+  {
+    init(vault_credentials_map);
+  }
+
+  void init(const Map &vault_credentials)
+  {
+    this->vault_credentials= vault_credentials;
+  }
+
+  const Secure_string &get_credential(const Secure_string &key) const;
+  Secure_string        get_raw_secret_mount_point() const;
+  Secure_string        get_raw_directory() const;
+
+ private:
+  Vault_credentials::Map vault_credentials;
+};
 }  // namespace keyring
 
 #endif  // MYSQL_VAULT_CREDENTIALS
