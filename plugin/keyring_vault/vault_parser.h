@@ -35,6 +35,16 @@ class Vault_parser final : public IVault_parser {
   virtual bool parse_errors(const Secure_string &payload,
                             Secure_string *errors) override;
 
+  /** Retrieve kv version from list mount points payload
+  @param[in]  vault_credentials credentials used to access vault server
+  @param[in]  mount_points_payload payload being a result of listing mount
+  points on a Vault server
+  @param[out] vault_version version of the vault server, either 1 or 2
+  @return true on error, false on success */
+  bool get_vault_version(const Vault_credentials &vault_credentials,
+                         const Secure_string &mount_points_payload,
+                         int &vault_version) override;
+
  private:
   typedef std::vector<Secure_string> Tokens;
 
@@ -48,6 +58,9 @@ class Vault_parser final : public IVault_parser {
   bool retrieve_tokens_from_list(const Secure_string &list, Tokens *tokens);
   bool retrieve_value_from_map(const Secure_string &map,
                                const Secure_string &key, Secure_string *value);
+
+  bool is_null_tag(const Secure_string &tag) const;
+  bool is_empty_map(const Secure_string &map) const;
 
   ILogger *logger;
   const static size_t start_tag_length;

@@ -39,7 +39,7 @@ class Vault_io final : public IVault_io, private boost::noncopyable {
  private:
   bool write_key(const Vault_key &key);
   bool delete_key(const Vault_key &key);
-
+  bool adjust_vault_version(const Vault_credentials &vault_credentials);
   Secure_string get_errors_from_response(const Secure_string &json_response);
 
   ILogger *logger;

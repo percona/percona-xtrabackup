@@ -32,22 +32,21 @@ namespace keyring {
 class Vault_curl final : public IVault_curl, private boost::noncopyable {
  public:
   Vault_curl(ILogger *logger, uint timeout) noexcept
-      : logger(logger), list(nullptr), timeout(timeout) {}
+      : logger(logger), list(nullptr), timeout(timeout), is_kv_v2(false) {}
 
   ~Vault_curl() {
     if (list != nullptr) curl_slist_free_all(list);
   }
 
-  virtual bool init(const Vault_credentials &vault_credentials) override;
-  virtual bool list_keys(Secure_string *response) override;
-  virtual bool write_key(const Vault_key &key,
-                         Secure_string *response) override;
-  virtual bool read_key(const Vault_key &key, Secure_string *response) override;
-  virtual bool delete_key(const Vault_key &key,
-                          Secure_string *response) override;
-  virtual void set_timeout(uint timeout) noexcept override {
-    this->timeout = timeout;
-  }
+  bool init(const Vault_credentials &vault_credentials) override;
+  bool list_keys(Secure_string *response) override;
+  bool list_mount_points(Secure_string *response) override;
+  bool write_key(const Vault_key &key, Secure_string *response) override;
+  bool read_key(const Vault_key &key, Secure_string *response) override;
+  bool delete_key(const Vault_key &key, Secure_string *response) override;
+  void set_timeout(uint timeout) noexcept override { this->timeout = timeout; }
+
+  void set_vault_version_2() override;
 
  private:
   bool setup_curl_session(CURL *curl);
@@ -55,6 +54,13 @@ class Vault_curl final : public IVault_curl, private boost::noncopyable {
   bool encode_key_signature(const Vault_key &key,
                             Secure_string *encoded_key_signature);
   bool get_key_url(const Vault_key &key, Secure_string *key_url);
+  bool do_list(const Secure_string &url_to_list, Secure_string *response);
+
+  Secure_string get_secret_url_metadata();
+  Secure_string get_secret_url_data();
+  Secure_string get_secret_url(const Secure_string &type_of_data);
+  Secure_string get_write_key_postdata(const Vault_key &key,
+                                       Secure_string &encoded_key_data);
 
   ILogger *logger;
   Secure_string token_header;
@@ -64,6 +70,9 @@ class Vault_curl final : public IVault_curl, private boost::noncopyable {
   struct curl_slist *list;
   Secure_string vault_ca;
   uint timeout;
+  bool is_kv_v2;
+
+  Vault_credentials vault_credentials;
 };
 
 }  // namespace keyring

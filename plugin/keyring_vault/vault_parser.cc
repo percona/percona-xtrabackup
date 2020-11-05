@@ -85,16 +85,18 @@ bool Vault_parser::retrieve_value_from_map(const Secure_string &map,
                                            Secure_string *value) {
   size_t key_tag_pos = Secure_string::npos,
          value_start_pos = Secure_string::npos,
-         value_end_pos = Secure_string::npos;
+         value_end_pos = Secure_string::npos,
+         start_tag_pos = Secure_string::npos;
   bool was_error = false;
-  const size_t start_tag_length = strlen(":\"");
 
   if ((key_tag_pos = map.find(key)) != Secure_string::npos &&
-      (value_start_pos = map.find(":\"", key_tag_pos)) != Secure_string::npos &&
-      (value_end_pos = map.find("\"", value_start_pos + start_tag_length)) !=
+      (start_tag_pos = map.find(':', key_tag_pos)) != Secure_string::npos &&
+      (value_start_pos = map.find("\"", start_tag_pos)) !=
+          Secure_string::npos &&
+      (value_end_pos = map.find("\"", value_start_pos + 1)) !=
           Secure_string::npos) {
-    value_start_pos += start_tag_length;
-    assert(value_end_pos > 0);
+    ++value_start_pos;  // skip starting "
+    DBUG_ASSERT(value_end_pos > 0);
     value_end_pos--;  // due to closing "
     *value = map.substr(value_start_pos, (value_end_pos - value_start_pos + 1));
   } else
@@ -107,6 +109,62 @@ bool Vault_parser::retrieve_value_from_map(const Secure_string &map,
     return true;
   }
   return false;
+}
+
+bool Vault_parser::is_null_tag(const Secure_string &tag) const {
+  size_t tag_start_pos = tag.find_first_not_of(" ");
+  return tag.find("null", tag_start_pos) == 0;
+}
+
+bool Vault_parser::is_empty_map(const Secure_string &map) const {
+  size_t map_start_pos = map.find_first_not_of(" ");
+  return map.find("{}", map_start_pos) == 0;
+}
+
+bool Vault_parser::get_vault_version(const Vault_credentials &vault_credentials,
+                                     const Secure_string &mount_points_payload,
+                                     int &vault_version) {
+  Secure_string raw_secret_mount_point(
+      vault_credentials.get_raw_secret_mount_point());
+  size_t secret_mount_point_pos(
+      mount_points_payload.find(raw_secret_mount_point + '/'));
+
+  if (raw_secret_mount_point.empty() ||
+      secret_mount_point_pos == Secure_string::npos)
+    return true;
+
+  Secure_string secret_mount_point_payload(mount_points_payload.substr(
+      secret_mount_point_pos,
+      mount_points_payload.length() - secret_mount_point_pos));
+  DBUG_ASSERT(secret_mount_point_payload.length() > 0);
+
+  static std::string options_tag("\"options\"");
+  size_t options_pos(secret_mount_point_payload.find(options_tag.c_str()));
+  if (options_pos == std::string::npos) {
+    vault_version = 1;  // no "options" sections means we are using version 1
+    return false;
+  }
+
+  size_t options_value_start = secret_mount_point_payload.find_first_not_of(
+      ": ", options_pos + options_tag.length());
+
+  Secure_string options(secret_mount_point_payload.substr(
+      options_value_start,
+      secret_mount_point_payload.length() - options_value_start));
+  //(options_pos + options_tag.length())));
+
+  if (is_null_tag(options) || is_empty_map(options)) {
+    vault_version =
+        1;  // version == null or empty map means we are using version 1
+    return false;
+  }
+
+  Secure_string value;
+  if (retrieve_value_from_map(options, "version", &value)) return true;
+
+  vault_version = atoi(value.c_str());
+
+  return vault_version <= 0 || vault_version > 2;
 }
 
 bool Vault_parser::parse_errors(const Secure_string &payload,

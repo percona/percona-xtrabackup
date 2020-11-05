@@ -140,12 +140,42 @@ std::string Vault_curl::get_error_from_curl(CURLcode curl_code) {
   return ss.str();
 }
 
+static const char *const metadata_key = "metadata";
+static const char *const data_key = "data";
+
+Secure_string Vault_curl::get_secret_url(const Secure_string &type_of_data) {
+  Secure_ostringstream oss_data;
+
+  if (is_kv_v2) {
+    DBUG_ASSERT(!vault_url.empty());
+    oss_data << vault_url << "/v1/"
+             << vault_credentials.get_raw_secret_mount_point() << '/'
+             << type_of_data;
+    if (!vault_credentials.get_raw_directory().empty()) {
+      oss_data << '/' << vault_credentials.get_raw_directory();
+    }
+  } else {
+    oss_data << vault_credentials.get_credential("vault_url") << "/v1/"
+             << vault_credentials.get_credential("secret_mount_point");
+  }
+
+  return oss_data.str();
+}
+
+Secure_string Vault_curl::get_secret_url_metadata() {
+  return get_secret_url(metadata_key);
+}
+
+Secure_string Vault_curl::get_secret_url_data() {
+  return get_secret_url(data_key) + '/';
+}
+
 bool Vault_curl::init(const Vault_credentials &vault_credentials) {
   this->token_header =
-      "X-Vault-Token:" + get_credential(vault_credentials, "token");
-  this->vault_url = get_credential(vault_credentials, "vault_url") + "/v1/" +
-                    get_credential(vault_credentials, "secret_mount_point");
-  this->vault_ca = get_credential(vault_credentials, "vault_ca");
+      "X-Vault-Token:" + vault_credentials.get_credential("token");
+  this->vault_url = vault_credentials.get_credential("vault_url");
+  this->vault_credentials = vault_credentials;
+  this->vault_ca = vault_credentials.get_credential("vault_ca");
   if (this->vault_ca.empty()) {
     logger->log(
         MY_WARNING_LEVEL,
@@ -157,6 +187,8 @@ bool Vault_curl::init(const Vault_credentials &vault_credentials) {
   my_timer_init(&curl_timer_info);
   return false;
 }
+
+void Vault_curl::set_vault_version_2() { is_kv_v2 = true; }
 
 bool Vault_curl::setup_curl_session(CURL *curl) {
   CURLcode curl_res = CURLE_OK;
@@ -204,7 +236,8 @@ bool Vault_curl::setup_curl_session(CURL *curl) {
   return false;
 }
 
-bool Vault_curl::list_keys(Secure_string *response) {
+bool Vault_curl::do_list(const Secure_string &url_to_list,
+                         Secure_string *response) {
   CURLcode curl_res = CURLE_OK;
   long http_code = 0;
 
@@ -219,8 +252,7 @@ bool Vault_curl::list_keys(Secure_string *response) {
   Curl_session_guard curl_session_guard(curl);
 
   if (setup_curl_session(curl) ||
-      (curl_res = curl_easy_setopt(curl, CURLOPT_URL,
-                                   (vault_url + "?list=true").c_str())) !=
+      (curl_res = curl_easy_setopt(curl, CURLOPT_URL, url_to_list.c_str())) !=
           CURLE_OK ||
       (curl_res = curl_easy_perform(curl)) != CURLE_OK ||
       (curl_res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE,
@@ -229,11 +261,19 @@ bool Vault_curl::list_keys(Secure_string *response) {
     return true;
   }
   if (http_code == 404) {
-    *response = "";  // no keys found
+    *response = "";  // list returned empty list
     return false;
   }
   *response = read_data_ss.str();
   return http_code / 100 != 2;  // 2** are success return codes
+}
+
+bool Vault_curl::list_mount_points(Secure_string *response) {
+  return do_list(vault_url + "/v1/sys/mounts", response);
+}
+
+bool Vault_curl::list_keys(Secure_string *response) {
+  return do_list(get_secret_url_metadata() + "?list=true", response);
 }
 
 bool Vault_curl::encode_key_signature(const Vault_key &key,
@@ -250,8 +290,22 @@ bool Vault_curl::encode_key_signature(const Vault_key &key,
 bool Vault_curl::get_key_url(const Vault_key &key, Secure_string *key_url) {
   Secure_string encoded_key_signature;
   if (encode_key_signature(key, &encoded_key_signature)) return true;
-  *key_url = vault_url + '/' + encoded_key_signature.c_str();
+  *key_url = get_secret_url_data() + encoded_key_signature;
   return false;
+}
+
+Secure_string Vault_curl::get_write_key_postdata(
+    const Vault_key &key, Secure_string &encoded_key_data) {
+  Secure_ostringstream postdata;
+  if (is_kv_v2) {
+    postdata << "{\"data\":";
+  }
+  postdata << "{\"type\":\"" << key.get_key_type_as_string()->c_str() << "\",\""
+           << "value\":\"" + encoded_key_data << "\"}";
+  if (is_kv_v2) {
+    postdata << "}";
+  }
+  return postdata.str();
 }
 
 bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
@@ -263,11 +317,7 @@ bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
     return true;
   }
   CURLcode curl_res = CURLE_OK;
-  Secure_string postdata = "{\"type\":\"";
-  postdata += key.get_key_type_as_string()->c_str();
-  postdata += "\",\"";
-  postdata += "value\":\"" + encoded_key_data + "\"}";
-
+  Secure_string postdata = get_write_key_postdata(key, encoded_key_data);
   Secure_string key_url;
   if (get_key_url(key, &key_url)) return true;
 

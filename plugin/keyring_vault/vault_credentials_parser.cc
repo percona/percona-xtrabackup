@@ -1,6 +1,8 @@
 #include "vault_credentials_parser.h"
 #include <algorithm>
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/optional/optional_io.hpp>
 #include <boost/scope_exit.hpp>
 #include <fstream>
 #include <functional>
@@ -13,10 +15,8 @@ namespace keyring {
 const size_t Vault_credentials_parser::max_file_size = 10000;
 
 void Vault_credentials_parser::reset_vault_credentials(
-    Vault_credentials *vault_credentials) noexcept {
-  for (Vault_credentials::iterator iter = vault_credentials->begin();
-       iter != vault_credentials->end(); ++iter)
-    iter->second.clear();
+    Vault_credentials::Map *vault_credentials) noexcept {
+  for (auto &creds_pair : *vault_credentials) creds_pair.second.clear();
 }
 
 bool Vault_credentials_parser::is_valid_option(
@@ -26,7 +26,7 @@ bool Vault_credentials_parser::is_valid_option(
 
 bool Vault_credentials_parser::parse_line(
     uint line_number, const Secure_string &line,
-    Vault_credentials *vault_credentials) {
+    Vault_credentials::Map *vault_credentials) {
   if (line.empty()) return false;
 
   size_t eq_sign_pos = line.find('=');
@@ -69,6 +69,59 @@ bool Vault_credentials_parser::parse_line(
 
     logger->log(MY_ERROR_LEVEL, err_ss.str().c_str());
     return true;
+  }
+  return false;
+}
+
+bool Vault_credentials_parser::Value_options::process_value_options(
+    const Secure_string &option_name, Secure_string &value, ILogger *logger) {
+  if (value.empty()) {
+    if (!is_optional) {
+      std::ostringstream err_ss;
+      err_ss << "Could not read " << option_name
+             << " from the configuration file.";
+      logger->log(MY_ERROR_LEVEL, err_ss.str().c_str());
+      return true;
+    }
+    if (default_value) {
+      value = *default_value;
+    }
+  }
+  return false;
+}
+
+bool Vault_credentials_parser::Value_int_options::process_value_options(
+    const Secure_string &option_name, Secure_string &value, ILogger *logger) {
+  if (Value_options::process_value_options(option_name, value, logger))
+    return true;
+
+  if (value == "AUTO") return false;
+
+  if (min_value || max_value) {
+    int int_value = -1;
+    try {
+      int_value = boost::lexical_cast<int>(value);
+    } catch (const boost::bad_lexical_cast &) {
+      std::ostringstream err_ss;
+      err_ss << "Could not parse value for " << option_name
+             << " from the configuration file.";
+      logger->log(MY_ERROR_LEVEL, err_ss.str().c_str());
+      return true;
+    }
+    if (int_value < min_value) {
+      std::ostringstream err_ss;
+      err_ss << "Incorrect value for " << option_name
+             << ". It is smaller than min value =" << min_value << '.';
+      logger->log(MY_ERROR_LEVEL, err_ss.str().c_str());
+      return true;
+    }
+    if (int_value > max_value) {
+      std::ostringstream err_ss;
+      err_ss << "Incorrect value for " << option_name
+             << ". It is greater than max value =" << max_value << '.';
+      logger->log(MY_ERROR_LEVEL, err_ss.str().c_str());
+      return true;
+    }
   }
   return false;
 }
@@ -117,18 +170,14 @@ bool Vault_credentials_parser::parse(const std::string &file_url,
       return true;
     }
 
-  for (Vault_credentials::const_iterator iter =
-           vault_credentials_in_progress.begin();
-       iter != vault_credentials_in_progress.end(); ++iter) {
-    if (iter->second.empty() && optional_value.count(iter->first) == 0) {
-      std::ostringstream err_ss;
-      err_ss << "Could not read " << iter->first
-             << " from the configuration file.";
-      logger->log(MY_ERROR_LEVEL, err_ss.str().c_str());
+  for (auto &creds_pair : vault_credentials_in_progress) {
+    DBUG_ASSERT(value_options.count(creds_pair.first) != 0);
+
+    if (value_options[creds_pair.first]->process_value_options(
+            creds_pair.first, creds_pair.second, logger))
       return true;
-    }
   }
-  *vault_credentials = vault_credentials_in_progress;
+  vault_credentials->init(vault_credentials_in_progress);
   return false;
 }
 }  // namespace keyring

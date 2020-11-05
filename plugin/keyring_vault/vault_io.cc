@@ -1,6 +1,7 @@
 #include "vault_io.h"
 #include <curl/curl.h>
 #include <sstream>
+#include "boost/lexical_cast.hpp"
 #include "vault_credentials_parser.h"
 #include "vault_keys_list.h"
 
@@ -11,12 +12,46 @@ bool Vault_io::init(std::string *keyring_storage_url) {
   Vault_credentials vault_credentials;
   return vault_credentials_parser.parse(*keyring_storage_url,
                                         &vault_credentials) ||
-         vault_curl->init(vault_credentials);
+         vault_curl->init(vault_credentials) ||
+         adjust_vault_version(vault_credentials);
 }
 
 Vault_io::~Vault_io() {
   delete vault_curl;
   delete vault_parser;
+}
+
+bool Vault_io::adjust_vault_version(
+    const Vault_credentials &vault_credentials) {
+  int vault_version = 0;
+  if (vault_credentials.get_credential("secret_mount_point_version") ==
+      "AUTO") {
+    static Secure_string err_msg(
+        "Could not determine version of Vault Server.");
+    Secure_string json_response;
+    vault_curl->list_mount_points(&json_response);
+    if (vault_parser->get_vault_version(vault_credentials, json_response,
+                                        vault_version)) {
+      logger->log(MY_ERROR_LEVEL,
+                  (err_msg + get_errors_from_response(json_response)).c_str());
+      return true;
+    }
+  } else {
+    try {
+      vault_version = boost::lexical_cast<int>(
+          vault_credentials.get_credential("secret_mount_point_version"));
+      DBUG_ASSERT(vault_version == 1 || vault_version == 2);
+    } catch (const boost::bad_lexical_cast &) {
+      // should have never happened as secret_mount_point_version was previosly
+      // validated
+      logger->log(MY_ERROR_LEVEL, "Failed to read secret_mount_point_version");
+      return true;
+    }
+  }
+
+  if (vault_version != 1 && vault_version != 2) return true;
+  if (vault_version == 2) vault_curl->set_vault_version_2();
+  return false;
 }
 
 Secure_string Vault_io::get_errors_from_response(
