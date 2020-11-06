@@ -118,7 +118,7 @@ mkdir "$INSTALLDIR"
         $CMAKE_BIN -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
           -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test -DINSTALL_MANDIR=${INSTALLDIR}/man \
           -DDOWNLOAD_BOOST=1 -DWITH_BOOST=${WORKDIR_ABS}/libboost \
-          -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DFORCE_INSOURCE_BUILD=1 .
+          -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled .
         make $MAKE_JFLAG
         make install
 

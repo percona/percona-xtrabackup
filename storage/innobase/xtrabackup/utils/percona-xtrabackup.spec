@@ -81,7 +81,7 @@ sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrab
   -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
   -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
-  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1
+  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled
 #
 make %{?_smp_mflags}
 #
