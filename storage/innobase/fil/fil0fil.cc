@@ -11316,7 +11316,9 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
 
     dberr_t err = fil_open_for_xtrabackup(
         phy_filename, filename.substr(0, filename.length() - 4));
-    if (err != DB_SUCCESS) {
+    /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the end
+     * of the backup */
+    if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
       result = false;
     }
   }
@@ -11708,10 +11710,10 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
 
   if (err == DB_SUCCESS && populate_fil_cache) {
     bool result = true;
-    std::function<void(const Const_iter &, const Const_iter &, size_t)> open =
-        std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, result);
+    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
+        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4);
 
-    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open);
+    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result);
 
     if (!result) err = DB_FAIL;
   }

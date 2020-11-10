@@ -2259,7 +2259,9 @@ static void xb_scan_for_tablespaces() {
 
   msg("xtrabackup: Generating a list of tablespaces\n");
 
-  fil_scan_for_tablespaces(true);
+  if (fil_scan_for_tablespaces(true) != DB_SUCCESS) {
+    exit(EXIT_FAILURE);
+  }
 }
 
 static void dict_load_from_spaces_sdi() {
