@@ -1,0 +1,48 @@
+.. _PXB-2.4.21:
+
+================================================================================
+*Percona XtraBackup* 2.4.21
+================================================================================
+
+:Date: November 12, 2020
+:Installation: `Installing Percona XtraBackup <https://www.percona.com/doc/percona-xtrabackup/2.4/installation.html>`_
+
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot tolerate
+long periods of downtime. Offered free as an open source solution, it drives down backup
+costs while providing unique features for MySQL backups.
+
+New Features
+================================================================================
+
+* :jirabug:`PXB-2112`: xbcloud: support storage_class option with --storage=s3 (Thanks to user rluisr for reporting this issue)
+
+
+
+Improvements
+================================================================================
+
+* :jirabug:`PXB-2254`: Redesign --lock-ddl-per-table
+* :jirabug:`PXB-2252`: Introduce debug option to print the redo log records scanned and applied
+
+
+
+Bugs Fixed
+================================================================================
+
+* :jirabug:`PXB-793`: Fix syntax error when executing --lock-ddl-per-table queries
+* :jirabug:`PXB-2165`: Modify xbcloud to store backups using s3 access key parameters if AWS access key env variables are set
+* :jirabug:`PXB-2164`: Modify xbcloud to return the error when the backup doesn't exist in s3 bucket
+* :jirabug:`PXB-953`: Improve stdout for the end of usage of --lock-ddl-per-table
+* :jirabug:`PXB-2279`: Xbcloud: Upload failed: backup is incomplete (Thanks to user mrmainnet for reporting this issue)
+* :jirabug:`PXB-2127`: Modify xbcloud to upload backups with empty database to min.io storage (Thanks to user hartland for reporting this issue)
+* :jirabug:`PXB-2275`: Modify backup processing to add validations if an encrypted table is created
+* :jirabug:`PXB-2272`: Fixed Regexp from is_tmp_table doesn't account for all temporary tables
+* :jirabug:`PXB-2257`: fixed --lock-ddl-per-table to properly close database connection
+* :jirabug:`PXB-2249`: Verify perl binary exists before completing version check
+* :jirabug:`PXB-2239`: Partitioned table is not restored correctly when partitions are changed during backup
+* :jirabug:`PXB-2238`: Provide binary tarball with shared libs and glibc suffix & minimal tarballs
+* :jirabug:`PXB-2216`: Verify encryption version when opening tables to avoid changing encryption version
+* :jirabug:`PXB-2202`: Modify Xbcloud to display an error when xtrabackup fails to create a backup
+* :jirabug:`PXB-2198`: Modify xbcloud delete to return the error when the backup doesn't exist in s3 bucket
+
