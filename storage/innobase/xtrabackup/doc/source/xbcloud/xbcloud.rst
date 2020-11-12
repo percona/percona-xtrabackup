@@ -5,7 +5,7 @@ The xbcloud Binary
 ================================================================================
 
 The purpose of |xbcloud| is to download and upload full or part of |xbstream|
-archive from/to cloud. |xbcloud| will not overwrite the backup with the same
+archive from/to the cloud. |xbcloud| will not overwrite the backup with the same
 name. |xbcloud| accepts input via a pipe from |xbstream| so that it can be
 invoked as a pipeline with |xtrabackup| to stream directly to the cloud without
 needing a local storage.
@@ -101,6 +101,18 @@ The following options are available when using |s3|:
    * - --s3-bucket-lookup = <AUTO|PATH|DNS>
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
        style requests. The default value is AUTO. In this case, |xbcloud| will probe.
+   * - --s3-storage-class=<name>
+     - Specify the `S3 storage class <https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html>`_. The default storage class depends on the provider. The name options are the following: 
+     
+       * STANDARD
+       * STANDARD_IA
+       * GLACIER
+       
+       .. note:: 
+
+           If you use the GLACIER storage class, the object must be `restored to S3 <https://docs.aws.amazon.com/AmazonS3/latest/dev/restoring-objects.html>`_ before restoring the backup.
+
+       Also supports using custom S3 implementations such as MinIO or CephRadosGW.
 
 Creating a full backup with |minio|
 	    
@@ -143,7 +155,22 @@ The following options are available when using |gcs|:
 - --google-access-key = <ACCESS KEY ID>
 - --google-secret-key = <SECRET ACCESS KEY>
 - --google-bucket = <BUCKET NAME>
+- --google-storage-class=name
 
+.. note::
+
+    The Google storage class name options are the following:
+    
+    * STANDARD
+    * NEARLINE
+    * COLDLINE
+    * ARCHIVE
+    
+    .. seealso::
+    
+     `Google storage classes <https://cloud.google.com/storage/docs/storage-classes>`_
+     `The default Google storage class depends on the storage class of the bucket <https://cloud.google.com/storage/docs/changing-default-storage-class>`_
+    
 Supplying parameters
 ================================================================================
 
