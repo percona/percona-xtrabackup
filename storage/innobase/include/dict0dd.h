@@ -947,8 +947,7 @@ int acquire_uncached_table(THD *thd, dd::cache::Dictionary_client *client,
 void release_uncached_table(TABLE_SHARE *ts, TABLE *td);
 
 /** Instantiate an InnoDB in-memory table metadata (dict_table_t)
-<<<<<<< HEAD
-based on a Global DD object.
+based on a Global DD object or MYSQL table definition.
 @param[in,out]  client    data dictionary client
 @param[in]  space_id  ID of the tablespace where the table residing
 @param[in]  dd_table  Global DD table object
@@ -968,11 +967,8 @@ int dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
                             const dd::String_type *schema_name, bool implicit);
 
 /** Instantiate an InnoDB in-memory table metadata (dict_table_t)
-based on a Global DD object.
-=======
 based on a Global DD object or MYSQL table definition.
 @param[in]	thd		thread THD
->>>>>>> mysql-server/8.0
 @param[in,out]	client		data dictionary client
 @param[in]	dd_table	Global DD table object
 @param[in]	dd_part		Global DD partition or subpartition, or NULL

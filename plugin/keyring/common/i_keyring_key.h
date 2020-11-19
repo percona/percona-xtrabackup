@@ -62,6 +62,7 @@ struct IKey : public Keyring_alloc {
   virtual bool is_key_length_valid() = 0;
 
   virtual ~IKey() {}
+
 };
 
 }  // namespace keyring

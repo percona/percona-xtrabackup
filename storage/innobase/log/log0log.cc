@@ -462,9 +462,8 @@ that the proper size of the log buffer should be a power of two.
 @param[out]	log		redo log */
 static void log_calc_buf_size(log_t &log);
 
-<<<<<<< HEAD
 uint32_t log_detected_format = UINT32_MAX;
-=======
+
 /** Pauses writer, flusher and notifiers and switches user threads
 to write log as former version.
 NOTE: These pause/resume functions should be protected by mutex while serving.
@@ -477,7 +476,6 @@ static void log_pause_writer_threads(log_t &log);
 not to write log.
 @param[out]	log	redo log */
 static void log_resume_writer_threads(log_t &log);
->>>>>>> mysql-server/8.0
 
 /**************************************************/ /**
 
@@ -799,12 +797,9 @@ void log_start_background_threads(log_t &log) {
 
   log_background_threads_active_validate(log);
 
-<<<<<<< HEAD
-#ifndef XTRABACKUP
-=======
   log_control_writer_threads(log);
 
->>>>>>> mysql-server/8.0
+#ifndef XTRABACKUP
   meb::redo_log_archive_init();
 #endif
 }

@@ -1162,7 +1162,6 @@ class Fil_shard {
                 const page_size_t &page_size, ulint byte_offset, ulint len,
                 void *buf, void *message) MY_ATTRIBUTE((warn_unused_result));
 
-<<<<<<< HEAD
   /** Iterate through all tablespaces
   @param[in]  include_log Include redo log space, if true
   @param[in]  f   Callback
@@ -1170,14 +1169,9 @@ class Fil_shard {
   dberr_t iterate_spaces(bool include_log, Fil_space_iterator::Function &f)
       MY_ATTRIBUTE((warn_unused_result));
 
-  /** Iterate through all persistent tablespace files
-  (FIL_TYPE_TABLESPACE) returning the nodes via callback function cbk.
-  @param[in]	include_log	include log files, if true
-=======
   /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
   returning the nodes via callback function cbk.
   @param[in]	include_log	Include log files, if true
->>>>>>> mysql-server/8.0
   @param[in]	f		Callback
   @return any error returned by the callback function. */
   dberr_t iterate(bool include_log, Fil_iterator::Function &f)
@@ -4027,7 +4021,6 @@ dberr_t Fil_shard::iterate(bool include_log, Fil_iterator::Function &f) {
   return (DB_SUCCESS);
 }
 
-<<<<<<< HEAD
 /** Iterate through all tablespaces
 @param[in]  include_log Include redo log space, if true
 @param[in]  f   Callback
@@ -4049,12 +4042,6 @@ dberr_t Fil_system::iterate_spaces(bool include_log,
 returning the nodes via callback function cbk.
 @param[in]	include_log	include log files, if true
 @param[in]	f		callback function
-=======
-/** Iterate through all persistent tablespace files
-(FIL_TYPE_TABLESPACE) returning the nodes via callback function cbk.
-@param[in]	include_log	Include log files, if true
-@param[in]	f		Callback
->>>>>>> mysql-server/8.0
 @return any error returned by the callback function. */
 dberr_t Fil_system::iterate(bool include_log, Fil_iterator::Function &f) {
   for (auto shard : m_shards) {
@@ -4607,17 +4594,9 @@ static void fil_op_write_log(mlog_id_t type, space_id_t space_id,
   }
 }
 
-<<<<<<< HEAD
 #endif /* !XTRABACKUP */
 
-/** Fetch the file name opened for a space_id during recovery
-from the file map.
-@param[in]	space_id	Undo tablespace ID
-@return file name that was opened, empty string if space ID not found. */
-std::string fil_system_open_fetch(space_id_t space_id) {
-=======
 bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name) {
->>>>>>> mysql-server/8.0
   ut_a(dict_sys_t::is_reserved(space_id) || srv_is_upgrade_mode);
 
   return (fil_system->get_file_by_space_id(space_id, name));
@@ -9550,36 +9529,10 @@ size_t Fil_shard::encryption_rotate(size_t *rotate_count) {
       continue;
     }
 
-<<<<<<< HEAD
-    /* Rotate the encrypted tablespaces. */
-    if (space->encryption_type != Encryption::NONE) {
-      memset(encrypt_info, 0, Encryption::INFO_SIZE);
-
-      MDL_ticket *mdl_ticket = nullptr;
-#if !defined(XTRABACKUP)
-      /* Take MDL on UNDO tablespace to make it mutually exclusive with
-      UNDO tablespace truncation. For other tablespaces MDL is not required
-      here. */
-      if (fsp_is_undo_tablespace(space->id)) {
-        THD *thd = current_thd;
-        while (
-            acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout)) {
-          os_thread_sleep(20);
-        }
-
-        while (dd::acquire_exclusive_tablespace_mdl(thd, space->name, false,
-                                                    &mdl_ticket, false)) {
-          os_thread_sleep(20);
-        }
-        ut_ad(mdl_ticket != nullptr);
-      }
-#endif
-=======
     spaces2rotate.push_back(space);
   }
 
   mutex_release();
->>>>>>> mysql-server/8.0
 
   /* We can now be assured that each fil_space_t collected above will not be
   deleted below (outside the shard mutex protection) because:
@@ -10673,8 +10626,8 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
 
 #else  /* !UNIV_HOTBACKUP */
 
-<<<<<<< HEAD
-  const auto files = fil_system->get_scanned_files(page_id.space());
+  const auto files =
+      fil_system->get_scanned_filename_by_space_id(page_id.space());
 
   std::string abs_file_path;
   std::string tablespace_name;
@@ -10714,11 +10667,8 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
     xb_tablespace_map_add(abs_file_path.c_str(), tablespace_name.c_str());
   }
 
-  const auto result = fil_system->get_scanned_files(page_id.space());
-=======
   const auto result =
       fil_system->get_scanned_filename_by_space_id(page_id.space());
->>>>>>> mysql-server/8.0
 
   if (result.second == nullptr) {
     /* No file maps to this tablespace ID. It's possible that
@@ -11126,7 +11076,6 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
 
 #else  /* !UNIV_HOTBACKUP */
 
-<<<<<<< HEAD
   if (!srv_backup_mode) {
     bool success;
 
@@ -11149,11 +11098,8 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
     }
   }
 
-  const auto result = fil_system->get_scanned_files(page_id.space());
-=======
   const auto result =
       fil_system->get_scanned_filename_by_space_id(page_id.space());
->>>>>>> mysql-server/8.0
 
   recv_sys->deleted.insert(page_id.space());
   recv_sys->missing_ids.erase(page_id.space());

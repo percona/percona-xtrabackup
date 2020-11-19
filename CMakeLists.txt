@@ -549,10 +549,6 @@ ENDIF()
 IF(WITHOUT_SERVER)
   MESSAGE(FATAL_ERROR "This branch does not support -DWITHOUT_SERVER=ON configuration.")
 ENDIF()
-# Disallow WITH_EMBEDDED_SERVER=OFF builds
-IF(NOT WITH_EMBEDDED_SERVER)
-  MESSAGE(FATAL_ERROR "This branch does not support -DWITH_EMBEDDED_SERVER=OFF configuration.")
-ENDIF()
 
 # Add macros
 INCLUDE(pkg-config)

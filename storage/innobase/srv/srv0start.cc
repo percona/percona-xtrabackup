@@ -2830,19 +2830,13 @@ files_checked:
   didn't complete key rotation. Here, we will resume the
   rotation. */
   if (!srv_read_only_mode && !create_new_db &&
-<<<<<<< HEAD
       srv_force_recovery < SRV_FORCE_NO_LOG_REDO &&
       !use_dumped_tablespace_keys) {
-    if (!fil_encryption_rotate()) {
-      ib::info(ER_IB_MSG_1146) << "fil_encryption_rotate() failed!";
-=======
-      srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
     size_t fail_count = fil_encryption_rotate();
     if (fail_count > 0) {
       ib::info(ER_IB_MSG_1146)
           << "During recovery, fil_encryption_rotate() failed for "
           << fail_count << " tablespace(s).";
->>>>>>> mysql-server/8.0
     }
   }
 

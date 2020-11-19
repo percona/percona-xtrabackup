@@ -86,14 +86,9 @@ class SysTablespace : public Tablespace {
   bool get_sanity_check_status() { return (m_sanity_checks_done); }
 
   /** Parse the input params and populate member variables.
-<<<<<<< HEAD
-  @param	filepath_spec	path to data files
-  @param	supports_raw	true if it supports raw devices
-  @param	filenames_only	true to parse only file names
-=======
   @param[in]	filepath_spec	path to data files
   @param[in]	supports_raw	true if the tablespace supports raw devices
->>>>>>> mysql-server/8.0
+  @param[in]	filenames_only	true to parse only file names
   @return true on success parse */
   bool parse_params(const char *filepath_spec, bool supports_raw,
                     bool filenames_only);

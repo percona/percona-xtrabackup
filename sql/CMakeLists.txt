@@ -566,11 +566,8 @@ SET(SQL_SHARED_SOURCES
   tztime.cc
   uniques.cc
   xa.cc
-<<<<<<< HEAD
-  ../libmysql/libmysql.cc
-=======
   join_optimizer/hypergraph.cc
->>>>>>> mysql-server/8.0
+  ../libmysql/libmysql.cc
 )
 
 # BISON_TARGET(<Name> <YaccInput> <CodeOutput>
@@ -967,143 +964,6 @@ ENDIF()
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
-<<<<<<< HEAD
-=======
-IF(DEBUG_EXTNAME)
-  SET_TARGET_PROPERTIES(mysqld PROPERTIES DEBUG_OUTPUT_NAME "mysqld-debug")
-ENDIF()
-
-# macOS has problems with enabling LTO for shared libs, so we only set it
-# as target property for mysqld.
-IF(APPLE AND WITH_LTO)
-  SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
-ENDIF()
-
-IF(APPLE)
-  # Add CoreServices framework since some dloadable plugins may need it 
-  FIND_LIBRARY(CORESERVICES NAMES CoreServices) 
-  IF(CORESERVICES) 
-    TARGET_LINK_LIBRARIES(mysqld ${CORESERVICES}) 
-  ENDIF() 
-  IF(NOT BUILD_IS_SINGLE_CONFIG)
-    ADD_COMPILE_DEFINITIONS(mysqld.cc COMPILE_DEFINITIONS APPLE_XCODE)
-  ENDIF()
-ENDIF() 
-
-SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
-
-IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
-  # We get ODR violations because of multiple bison parsers.
-  MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
-  IF(HAS_WARN_FLAG)
-    MY_TARGET_LINK_OPTIONS(mysqld "${HAS_WARN_FLAG}")
-  ENDIF()
-ENDIF()
-
-GET_TARGET_PROPERTY(mysqld_link_flags mysqld LINK_FLAGS)
-IF(NOT mysqld_link_flags)
-  SET(mysqld_link_flags)
-ENDIF()
-
-IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR OR LINUX_INSTALL_RPATH_ORIGIN)
-  # Because of INSTALL_DEBUG_TARGET which does INSTALL(FILES ...)
-  IF(UNIX AND NOT APPLE AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
-    STRING_APPEND(mysqld_link_flags
-      " -Wl,-rpath,'\$ORIGIN/../${INSTALL_PRIV_LIBDIR}'")
-    SET_TARGET_PROPERTIES(mysqld
-      PROPERTIES LINK_FLAGS "${mysqld_link_flags}")
-    MESSAGE(STATUS "LINK_FLAGS for mysqld ${mysqld_link_flags}")
-  ENDIF()
-
-  # Insert absolute INSTALL_RPATH before $ORIGIN values.
-  # This is done in order to support setuid executables, needed by:
-  # https://dev.mysql.com/doc/refman/8.0/en/resource-groups.html
-  IF(INSTALL_LAYOUT STREQUAL "DEB" OR INSTALL_LAYOUT STREQUAL "RPM")
-    GET_TARGET_PROPERTY(CURRENT_RPATH_mysqld mysqld INSTALL_RPATH)
-    LIST(INSERT CURRENT_RPATH_mysqld 0
-      "${CMAKE_INSTALL_PREFIX}/${INSTALL_PRIV_LIBDIR}")
-    SET_TARGET_PROPERTIES(mysqld
-      PROPERTIES INSTALL_RPATH "${CURRENT_RPATH_mysqld}")
-  ENDIF()
-ENDIF()
-
-IF(MSVC)
-  # Set module definition file.
-  SET_TARGET_PROPERTIES(mysqld
-    PROPERTIES LINK_FLAGS
-    "${mysqld_link_flags} /DEF:${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def")
-
-  SET(_PLATFORM  x64)
-
-  MYSQL_ADD_EXECUTABLE(create_def create_def.cc SKIP_INSTALL)
-
-  # Build mysql_fix_privilege_tables.h
-  ADD_CUSTOM_COMMAND(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def
-    COMMAND create_def
-    "$<TARGET_FILE:binlog>"
-    "$<TARGET_FILE:binlogevents_static>"
-    "$<TARGET_FILE:mysys>"
-    "$<TARGET_FILE:mytime>"
-    "$<TARGET_FILE:rpl>"
-    "$<TARGET_FILE:slave>"
-    "$<TARGET_FILE:sql_main>"
-    "$<TARGET_FILE:strings>"
-    "$<TARGET_FILE:vio>"
-    > mysqld.def
-    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}"
-    DEPENDS create_def binlog binlogevents_static mysys mytime rpl slave sql_main strings vio
-  )
-  ADD_CUSTOM_TARGET(GenMysqldDef ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def)
-
-  ADD_DEPENDENCIES(sql_main GenError)
-  ADD_DEPENDENCIES(mysqld GenMysqldDef)
-ENDIF()
-
-SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE) 
-TARGET_LINK_LIBRARIES(mysqld
-  sql_main sql_gis binlog rpl master slave sql_dd mysys
-  minchassis binlogevents_static ${ICU_LIBRARIES})
-
-# Add dependency on ldap library, to ensure it is not unloaded
-# when we shutdown the authentication plugin.
-# For Valgrind, we need it to enable our suppressions.
-# For OpenSSL in the 1.0.x series, we need it for clean shutdown.
-IF(WITH_VALGRIND)
-  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
-ENDIF()
-IF(WITH_SSL STREQUAL "system" AND
-    "${OPENSSL_MAJOR_VERSION}.${OPENSSL_MINOR_VERSION}" VERSION_LESS "1.1")
-  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
-ENDIF()
-IF(WITH_AUTHENTICATION_LDAP AND LINK_MYSQLD_LDAP_LIBRARY)
-  TARGET_LINK_LIBRARIES(mysqld ${LDAP_LIBRARY})
-ENDIF()
-
-# Remove transitive link dependencies when linking plugins
-SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERFACE_LINK_LIBRARIES "")
-
-SET(WITH_MYSQLD_LDFLAGS "" CACHE STRING "Additional linker flags for mysqld")
-MARK_AS_ADVANCED(WITH_MYSQLD_LDFLAGS)
-IF(WITH_MYSQLD_LDFLAGS)
-  GET_TARGET_PROPERTY(MYSQLD_LINK_FLAGS mysqld LINK_FLAGS)
-  IF(NOT MYSQLD_LINK_FLAGS)
-    SET(MYSQLD_LINK_FLAGS) 
-  ENDIF() 
-  SET_TARGET_PROPERTIES(mysqld PROPERTIES LINK_FLAGS 
-     "${MYSQLD_LINK_FLAGS} ${WITH_MYSQLD_LDFLAGS}")
-ENDIF()
-
-# See DEBUG_EXTNAME above: mysqld may already have name mysqld-debug,
-# and the rename is a no-op. If it is called 'mysqld' we rename it.
-INSTALL_DEBUG_TARGET(mysqld
-  DESTINATION ${INSTALL_SBINDIR}
-  RENAME mysqld-debug${CMAKE_EXECUTABLE_SUFFIX}
-)
-
-# Check BISON_VERSION and set BISON_FLAGS_WARNINGS
->>>>>>> mysql-server/8.0
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/bison.cmake)
 
 IF(BISON_FOUND)
@@ -1194,29 +1054,6 @@ ADD_CUSTOM_TARGET(
   DEPENDS ${GEN_KEYWORD_LIST_SOURCES}
 )
 
-<<<<<<< HEAD
-=======
-MYSQL_ADD_PLUGIN(udf_example udf_example.cc
-  MODULE_ONLY TEST_ONLY MODULE_OUTPUT_NAME "udf_example"
-  )
-# MYSQL_ADD_PLUGIN may have decided not to build it.
-IF(WIN32 AND TARGET udf_example)
-  SET_TARGET_PROPERTIES(udf_example
-    PROPERTIES LINK_FLAGS
-    "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/udf_example.def")
-ENDIF()
-
-MYSQL_ADD_PLUGIN(locking_service locking_service_udf.cc
-  MODULE_ONLY MODULE_OUTPUT_NAME "locking_service"
-  )
-# MYSQL_ADD_PLUGIN may have decided not to build it.
-IF(WIN32 AND TARGET locking_service)
-  SET_TARGET_PROPERTIES(locking_service
-    PROPERTIES LINK_FLAGS
-    "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/locking_service.def")
-ENDIF()
-
->>>>>>> mysql-server/8.0
 FOREACH(tool gtar tar git)
   STRING(TOUPPER ${tool}  TOOL)
   FIND_PROGRAM(${TOOL}_EXECUTABLE ${tool} DOC "path to the executable")

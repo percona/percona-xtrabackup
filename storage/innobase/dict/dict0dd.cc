@@ -265,7 +265,6 @@ bool dd_mdl_for_undo(const trx_t *trx) {
           ((trx->in_innodb & TRX_FORCE_ROLLBACK) == 0));
 }
 
-<<<<<<< HEAD
 /** Determine if a table contains a fulltext index.
 @param[in]      table   dd::Table
 @return whether the table contains any fulltext index */
@@ -1196,18 +1195,6 @@ int dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
   }
 }
 
-/** Instantiate an InnoDB in-memory table metadata (dict_table_t)
-based on a Global DD object.
-@param[in,out]	client		data dictionary client
-@param[in]	dd_table	Global DD table object
-@param[in]	dd_part		Global DD partition or subpartition, or NULL
-@param[in]	tbl_name	table name, or NULL if not known
-@param[out]	table		InnoDB table (NULL if not found or loadable)
-@param[in]	thd		Thread THD
-@return error code
-@retval 0 on success (DD_SUCCESS) */
-int dd_table_open_on_dd_obj(dd::cache::Dictionary_client *client,
-=======
 int acquire_uncached_table(THD *thd, dd::cache::Dictionary_client *client,
                            const dd::Table *dd_table, const char *name,
                            TABLE_SHARE *ts, TABLE *td) {
@@ -1251,7 +1238,6 @@ void release_uncached_table(TABLE_SHARE *ts, TABLE *td) {
 }
 
 int dd_table_open_on_dd_obj(THD *thd, dd::cache::Dictionary_client *client,
->>>>>>> mysql-server/8.0
                             const dd::Table &dd_table,
                             const dd::Partition *dd_part, const char *tbl_name,
                             dict_table_t *&table, const TABLE *td) {

@@ -111,20 +111,6 @@ MYSQL_ADD_PLUGIN(myisam ha_myisam.cc
   LINK_LIBRARIES myisam_library
 )
 
-<<<<<<< HEAD
-MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.cc SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(myisam_ftdump myisam_library)
-
-MYSQL_ADD_EXECUTABLE(myisamchk myisamchk.cc SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(myisamchk myisam_library)
-
-MYSQL_ADD_EXECUTABLE(myisamlog myisamlog.cc SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(myisamlog myisam_library ${LIBSOCKET})
-
-MYSQL_ADD_EXECUTABLE(myisampack myisampack.cc SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(myisampack myisam_library)
-=======
-DISABLE_MISSING_PROFILE_WARNING()
 
 MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.cc
   LINK_LIBRARIES myisam_library)
@@ -137,7 +123,6 @@ MYSQL_ADD_EXECUTABLE(myisamlog myisamlog.cc
 
 MYSQL_ADD_EXECUTABLE(myisampack myisampack.cc
   LINK_LIBRARIES myisam_library)
->>>>>>> mysql-server/8.0
 
 IF (WIN32)
   MY_TARGET_LINK_OPTIONS(myisamchk  "setargv.obj")

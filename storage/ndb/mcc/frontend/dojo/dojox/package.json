@@ -6,13 +6,8 @@
 	},
 	"main": "main",
 	"dependencies": {
-<<<<<<< HEAD
 		"dojo":"1.16.2",
 		"dijit":"1.16.3"
-=======
-		"dojo": "1.15.4",
-		"dijit": "1.15.4"
->>>>>>> mysql-server/8.0
 	},
 	"description": "Dojo eXtensions, a rollup of many useful sub-projects and varying states of maturity – from very stable and robust, to alpha and experimental. See individual projects contain README files for details.",
 	"license" : "BSD-3-Clause OR AFL-2.1",

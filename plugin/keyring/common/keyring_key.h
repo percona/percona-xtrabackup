@@ -61,7 +61,7 @@ struct Key : IKey {
   bool is_key_length_valid() override;
 
  protected:
-  void set_key_type_enum(const std::string *key_type) override;
+  void set_key_type_enum(const std::string *key_type);
 
  private:
   void init(const char *a_key_id, const char *a_key_type, const char *a_user_id,
