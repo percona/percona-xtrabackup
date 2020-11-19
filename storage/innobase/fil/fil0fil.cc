@@ -2803,22 +2803,23 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   }
 
   if (file->size == 0) {
+#ifndef XTRABACKUP
+
     ulint extent_size;
 
     extent_size = page_size.physical() * FSP_EXTENT_SIZE;
 
-#ifndef UNIV_HOTBACKUP
     /* Truncate the size to a multiple of extent size. */
     if (size_bytes >= extent_size) {
       size_bytes = ut_2pow_round(size_bytes, extent_size);
     }
-#else /* !UNIV_HOTBACKUP */
+#else /* !XTRABACKUP */
 
     /* After apply-incremental, tablespaces are not
     extended to a whole megabyte. Do not cut off
     valid data. */
 
-#endif /* !UNIV_HOTBACKUP */
+#endif /* !XTRABACKUP */
 
     file->size = static_cast<page_no_t>(size_bytes / page_size.physical());
 
@@ -10870,7 +10871,7 @@ byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
   }
 
   /* Offset within the file to start writing zeros */
-  os_offset_t offset = mach_read_from_8(ptr);
+  // os_offset_t offset = mach_read_from_8(ptr);
   ptr += 8;
 
   /* Size of the space which needs to be initialized by
@@ -10890,7 +10891,7 @@ byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
     return ptr;
   }
 
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   const auto result =
       fil_system->get_scanned_filename_by_space_id(page_id.space());
 
@@ -11006,7 +11007,7 @@ byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
   fil_flush(space->id);
 
   fil_space_close(space->id);
-#endif /* !UNIV_HOTBACKUP */
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
   return ptr;
 }
