@@ -265,6 +265,7 @@ enum latch_level_t {
   SYNC_LOG_CLOSER,
   SYNC_LOG_CHECKPOINTER,
   SYNC_LOG_SN,
+  SYNC_LOG_SN_MUTEX,
   SYNC_PAGE_ARCH,
   SYNC_PAGE_ARCH_CLIENT,
   SYNC_LOG_ARCH,
@@ -382,6 +383,7 @@ enum latch_id_t {
   LATCH_ID_LOCK_SYS_TABLE,
   LATCH_ID_LOCK_SYS_WAIT,
   LATCH_ID_LOG_SN,
+  LATCH_ID_LOG_SN_MUTEX,
   LATCH_ID_LOG_CHECKPOINTER,
   LATCH_ID_LOG_CLOSER,
   LATCH_ID_LOG_WRITER,
@@ -649,10 +651,7 @@ class LatchCounter {
   ~LatchCounter() UNIV_NOTHROW {
     m_mutex.destroy();
 
-    for (Counters::iterator it = m_counters.begin(); it != m_counters.end();
-         ++it) {
-      Count *count = *it;
-
+    for (Count *count : m_counters) {
       UT_DELETE(count);
     }
   }
@@ -664,10 +663,8 @@ class LatchCounter {
   void reset() UNIV_NOTHROW {
     m_mutex.enter();
 
-    Counters::iterator end = m_counters.end();
-
-    for (Counters::iterator it = m_counters.begin(); it != end; ++it) {
-      (*it)->reset();
+    for (Count *count : m_counters) {
+      count->reset();
     }
 
     m_mutex.exit();
@@ -694,7 +691,7 @@ class LatchCounter {
 
   /** Deregister the count. We don't do anything
   @param[in]	count		The count instance to deregister */
-  void sum_deregister(Count *count) UNIV_NOTHROW { /* Do nothing */
+  void sum_deregister(Count *count) const UNIV_NOTHROW { /* Do nothing */
   }
 
   /** Register a single instance counter */
@@ -719,22 +716,20 @@ class LatchCounter {
 
   /** Iterate over the counters */
   template <typename Callback>
-  void iterate(Callback &callback) const UNIV_NOTHROW {
-    Counters::const_iterator end = m_counters.end();
-
-    for (Counters::const_iterator it = m_counters.begin(); it != end; ++it) {
-      callback(*it);
+  void iterate(Callback &&callback) const UNIV_NOTHROW {
+    m_mutex.enter();
+    for (const Count *count : m_counters) {
+      std::forward<Callback>(callback)(count);
     }
+    m_mutex.exit();
   }
 
   /** Disable the monitoring */
   void enable() UNIV_NOTHROW {
     m_mutex.enter();
 
-    Counters::const_iterator end = m_counters.end();
-
-    for (Counters::const_iterator it = m_counters.begin(); it != end; ++it) {
-      (*it)->m_enabled = true;
+    for (Count *count : m_counters) {
+      count->m_enabled = true;
     }
 
     m_active = true;
@@ -746,10 +741,8 @@ class LatchCounter {
   void disable() UNIV_NOTHROW {
     m_mutex.enter();
 
-    Counters::const_iterator end = m_counters.end();
-
-    for (Counters::const_iterator it = m_counters.begin(); it != end; ++it) {
-      (*it)->m_enabled = false;
+    for (Count *count : m_counters) {
+      count->m_enabled = false;
     }
 
     m_active = false;
@@ -770,7 +763,7 @@ class LatchCounter {
   typedef std::vector<Count *> Counters;
 
   /** Mutex protecting m_counters */
-  Mutex m_mutex;
+  mutable Mutex m_mutex;
 
   /** Counters for the latches */
   Counters m_counters;
@@ -945,7 +938,7 @@ std::string sync_mutex_to_string(latch_id_t id, const std::string &created);
 
 /** Get the latch name from a sync level
 @param[in]	level		Latch level to lookup
-@return 0 if not found. */
+@return nullptr if not found. */
 const char *sync_latch_get_name(latch_level_t level);
 
 /** Print the filename "basename"
@@ -1074,7 +1067,7 @@ struct btrsea_sync_check : public sync_check_functor_t {
   /** Called for every latch owned by the calling thread.
   @param[in]	level		Level of the existing latch
   @return true if the predicate check fails */
-  virtual bool operator()(const latch_level_t level) {
+  bool operator()(const latch_level_t level) override {
     /* If calling thread doesn't hold search latch then
     check if there are latch level exception provided.
 
@@ -1113,7 +1106,7 @@ struct btrsea_sync_check : public sync_check_functor_t {
   }
 
   /** @return result from the check */
-  virtual bool result() const { return (m_result); }
+  bool result() const override { return (m_result); }
 
  private:
   /** True if all OK */
@@ -1136,7 +1129,7 @@ struct dict_sync_check : public sync_check_functor_t {
 
   /** Check the latching constraints
   @param[in]	level		The level held by the thread */
-  virtual bool operator()(const latch_level_t level) {
+  bool operator()(const latch_level_t level) override {
     if (!m_dict_mutex_allowed ||
         (level != SYNC_DICT && level != SYNC_UNDO_SPACES &&
          level != SYNC_FTS_CACHE && level != SYNC_DICT_OPERATION &&
@@ -1158,7 +1151,7 @@ struct dict_sync_check : public sync_check_functor_t {
   }
 
   /** @return the result of the check */
-  virtual bool result() const { return (m_result); }
+  virtual bool result() const override { return (m_result); }
 
  private:
   /** True if all OK */
@@ -1183,10 +1176,9 @@ struct sync_allowed_latches : public sync_check_functor_t {
 
   @param[in]	level	The latch level to check
   @return true if there is a latch ordering violation */
-  virtual bool operator()(const latch_level_t level) {
-    for (latches_t::const_iterator it = m_latches.begin();
-         it != m_latches.end(); ++it) {
-      if (level == *it) {
+  virtual bool operator()(const latch_level_t level) override {
+    for (latch_level_t allowed_level : m_latches) {
+      if (level == allowed_level) {
         m_result = false;
 
         /* No violation */
@@ -1205,7 +1197,7 @@ struct sync_allowed_latches : public sync_check_functor_t {
   }
 
   /** @return the result of the check */
-  virtual bool result() const { return (m_result); }
+  virtual bool result() const override { return (m_result); }
 
  private:
   /** Save the result of validation check here
@@ -1220,7 +1212,7 @@ struct sync_allowed_latches : public sync_check_functor_t {
 
 /** Get the latch id from a latch name.
 @param[in]	name	Latch name
-@return LATCH_ID_NONE. */
+@return latch id if found else LATCH_ID_NONE. */
 latch_id_t sync_latch_get_id(const char *name);
 
 typedef ulint rw_lock_flags_t;

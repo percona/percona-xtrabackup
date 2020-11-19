@@ -24,13 +24,7 @@ INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
 MY_INCLUDE_SYSTEM_DIRECTORIES(ICU)
 
-IF(MYSQL_MAINTAINER_MODE)
-  IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-    ADD_COMPILE_OPTIONS("-Wshadow=local")
-  ELSEIF(MY_COMPILER_IS_CLANG)
-    ADD_COMPILE_OPTIONS("-Wshadow-uncaptured-local")
-  ENDIF()
-ENDIF()
+ADD_WSHADOW_WARNING()
 
 # Array indexing with pland_idx == int8 gives warnings.
 IF(SOLARIS AND MY_COMPILER_IS_GNU)
@@ -176,6 +170,7 @@ SET(DD_SOURCES
   dd/impl/system_views/role_table_grants.cc
   dd/impl/system_views/routines.cc
   dd/impl/system_views/schemata.cc
+  dd/impl/system_views/schemata_extensions.cc
   dd/impl/system_views/statistics.cc
   dd/impl/system_views/st_spatial_reference_systems.cc
   dd/impl/system_views/st_units_of_measure.cc
@@ -394,6 +389,8 @@ SET(SQL_SHARED_SOURCES
   item_timefunc.cc 
   item_xmlfunc.cc 
   item_inetfunc.cc
+  join_optimizer/access_path.cc
+  join_optimizer/explain_access_path.cc
   json_binary.cc
   json_diff.cc
   json_dom.cc
@@ -434,6 +431,7 @@ SET(SQL_SHARED_SOURCES
   parse_tree_node_base.cc
   parse_tree_nodes.cc
   parse_tree_partitions.cc
+  parse_tree_window.cc
   select_lex_visitor.cc
   parser_service.cc
   partition_info.cc
@@ -528,6 +526,7 @@ SET(SQL_SHARED_SOURCES
   sql_servers.cc
   sql_show.cc
   sql_show_status.cc
+  sql_show_processlist.cc
   sql_signal.cc
   sql_state.cc
   sql_table.cc
@@ -567,7 +566,11 @@ SET(SQL_SHARED_SOURCES
   tztime.cc
   uniques.cc
   xa.cc
+<<<<<<< HEAD
   ../libmysql/libmysql.cc
+=======
+  join_optimizer/hypergraph.cc
+>>>>>>> mysql-server/8.0
 )
 
 # BISON_TARGET(<Name> <YaccInput> <CodeOutput>
@@ -745,9 +748,8 @@ IF(WIN32)
     COMPILE_FLAGS "/bigobj")
 ENDIF()
 
-# Downgrade -Werror to warning for gcc <= 8.2.x
-IF(MY_COMPILER_IS_GNU
-    AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.3)
+# Downgrade -Werror to warning for gcc
+IF(MY_COMPILER_IS_GNU)
   MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
   IF(HAS_WARN_FLAG)
     ADD_COMPILE_FLAGS(
@@ -801,6 +803,14 @@ ADD_DEPENDENCIES(sql_gis GenSysSchema)
 ADD_DEPENDENCIES(sql_gis GenError)
 TARGET_LINK_LIBRARIES(sql_gis sql_dd sql_main)
 SET_TARGET_PROPERTIES(sql_gis PROPERTIES LINK_INTERFACE_MULTIPLICITY 3)
+
+# This typically saves a few hundred megabytes of disk space.
+IF(COMPRESS_DEBUG_SECTIONS)
+  MY_CHECK_CXX_COMPILER_FLAG("-gz" HAVE_COMPRESS_GZ_OPTION)
+  IF(HAVE_COMPRESS_GZ_OPTION)
+    TARGET_COMPILE_OPTIONS(sql_gis PRIVATE -gz)
+  ENDIF()
+ENDIF()
 
 # A class with a reference member lacks a user-defined constructor,
 # which can lead to errors.
@@ -908,6 +918,10 @@ TARGET_LINK_LIBRARIES(master binlog sql_main)
 SET (SLAVE_SOURCE
   dynamic_ids.cc
   rpl_applier_reader.cc
+  rpl_async_conn_failover.cc
+  rpl_async_conn_failover_table_operations.cc
+  rpl_async_conn_failover_add_source_udf.cc
+  rpl_async_conn_failover_delete_source_udf.cc
   rpl_channel_service_interface.cc
   rpl_channel_credentials.cc
   rpl_info.cc
@@ -927,7 +941,11 @@ SET (SLAVE_SOURCE
   rpl_slave.cc
   rpl_slave_commit_order_manager.cc
   rpl_slave_until_options.cc
+  rpl_sys_key_access.cc
+  rpl_sys_table_access.cc
   rpl_trx_boundary_parser.cc
+  udf_service_impl.cc
+  udf_service_util.cc
   )
 ADD_LIBRARY(slave STATIC ${SLAVE_SOURCE})
 ADD_DEPENDENCIES(slave GenError)
@@ -949,6 +967,143 @@ ENDIF()
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
+<<<<<<< HEAD
+=======
+IF(DEBUG_EXTNAME)
+  SET_TARGET_PROPERTIES(mysqld PROPERTIES DEBUG_OUTPUT_NAME "mysqld-debug")
+ENDIF()
+
+# macOS has problems with enabling LTO for shared libs, so we only set it
+# as target property for mysqld.
+IF(APPLE AND WITH_LTO)
+  SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+ENDIF()
+
+IF(APPLE)
+  # Add CoreServices framework since some dloadable plugins may need it 
+  FIND_LIBRARY(CORESERVICES NAMES CoreServices) 
+  IF(CORESERVICES) 
+    TARGET_LINK_LIBRARIES(mysqld ${CORESERVICES}) 
+  ENDIF() 
+  IF(NOT BUILD_IS_SINGLE_CONFIG)
+    ADD_COMPILE_DEFINITIONS(mysqld.cc COMPILE_DEFINITIONS APPLE_XCODE)
+  ENDIF()
+ENDIF() 
+
+SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
+
+IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+  # We get ODR violations because of multiple bison parsers.
+  MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    MY_TARGET_LINK_OPTIONS(mysqld "${HAS_WARN_FLAG}")
+  ENDIF()
+ENDIF()
+
+GET_TARGET_PROPERTY(mysqld_link_flags mysqld LINK_FLAGS)
+IF(NOT mysqld_link_flags)
+  SET(mysqld_link_flags)
+ENDIF()
+
+IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR OR LINUX_INSTALL_RPATH_ORIGIN)
+  # Because of INSTALL_DEBUG_TARGET which does INSTALL(FILES ...)
+  IF(UNIX AND NOT APPLE AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
+    STRING_APPEND(mysqld_link_flags
+      " -Wl,-rpath,'\$ORIGIN/../${INSTALL_PRIV_LIBDIR}'")
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES LINK_FLAGS "${mysqld_link_flags}")
+    MESSAGE(STATUS "LINK_FLAGS for mysqld ${mysqld_link_flags}")
+  ENDIF()
+
+  # Insert absolute INSTALL_RPATH before $ORIGIN values.
+  # This is done in order to support setuid executables, needed by:
+  # https://dev.mysql.com/doc/refman/8.0/en/resource-groups.html
+  IF(INSTALL_LAYOUT STREQUAL "DEB" OR INSTALL_LAYOUT STREQUAL "RPM")
+    GET_TARGET_PROPERTY(CURRENT_RPATH_mysqld mysqld INSTALL_RPATH)
+    LIST(INSERT CURRENT_RPATH_mysqld 0
+      "${CMAKE_INSTALL_PREFIX}/${INSTALL_PRIV_LIBDIR}")
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES INSTALL_RPATH "${CURRENT_RPATH_mysqld}")
+  ENDIF()
+ENDIF()
+
+IF(MSVC)
+  # Set module definition file.
+  SET_TARGET_PROPERTIES(mysqld
+    PROPERTIES LINK_FLAGS
+    "${mysqld_link_flags} /DEF:${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def")
+
+  SET(_PLATFORM  x64)
+
+  MYSQL_ADD_EXECUTABLE(create_def create_def.cc SKIP_INSTALL)
+
+  # Build mysql_fix_privilege_tables.h
+  ADD_CUSTOM_COMMAND(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def
+    COMMAND create_def
+    "$<TARGET_FILE:binlog>"
+    "$<TARGET_FILE:binlogevents_static>"
+    "$<TARGET_FILE:mysys>"
+    "$<TARGET_FILE:mytime>"
+    "$<TARGET_FILE:rpl>"
+    "$<TARGET_FILE:slave>"
+    "$<TARGET_FILE:sql_main>"
+    "$<TARGET_FILE:strings>"
+    "$<TARGET_FILE:vio>"
+    > mysqld.def
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}"
+    DEPENDS create_def binlog binlogevents_static mysys mytime rpl slave sql_main strings vio
+  )
+  ADD_CUSTOM_TARGET(GenMysqldDef ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def)
+
+  ADD_DEPENDENCIES(sql_main GenError)
+  ADD_DEPENDENCIES(mysqld GenMysqldDef)
+ENDIF()
+
+SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE) 
+TARGET_LINK_LIBRARIES(mysqld
+  sql_main sql_gis binlog rpl master slave sql_dd mysys
+  minchassis binlogevents_static ${ICU_LIBRARIES})
+
+# Add dependency on ldap library, to ensure it is not unloaded
+# when we shutdown the authentication plugin.
+# For Valgrind, we need it to enable our suppressions.
+# For OpenSSL in the 1.0.x series, we need it for clean shutdown.
+IF(WITH_VALGRIND)
+  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
+ENDIF()
+IF(WITH_SSL STREQUAL "system" AND
+    "${OPENSSL_MAJOR_VERSION}.${OPENSSL_MINOR_VERSION}" VERSION_LESS "1.1")
+  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
+ENDIF()
+IF(WITH_AUTHENTICATION_LDAP AND LINK_MYSQLD_LDAP_LIBRARY)
+  TARGET_LINK_LIBRARIES(mysqld ${LDAP_LIBRARY})
+ENDIF()
+
+# Remove transitive link dependencies when linking plugins
+SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERFACE_LINK_LIBRARIES "")
+
+SET(WITH_MYSQLD_LDFLAGS "" CACHE STRING "Additional linker flags for mysqld")
+MARK_AS_ADVANCED(WITH_MYSQLD_LDFLAGS)
+IF(WITH_MYSQLD_LDFLAGS)
+  GET_TARGET_PROPERTY(MYSQLD_LINK_FLAGS mysqld LINK_FLAGS)
+  IF(NOT MYSQLD_LINK_FLAGS)
+    SET(MYSQLD_LINK_FLAGS) 
+  ENDIF() 
+  SET_TARGET_PROPERTIES(mysqld PROPERTIES LINK_FLAGS 
+     "${MYSQLD_LINK_FLAGS} ${WITH_MYSQLD_LDFLAGS}")
+ENDIF()
+
+# See DEBUG_EXTNAME above: mysqld may already have name mysqld-debug,
+# and the rename is a no-op. If it is called 'mysqld' we rename it.
+INSTALL_DEBUG_TARGET(mysqld
+  DESTINATION ${INSTALL_SBINDIR}
+  RENAME mysqld-debug${CMAKE_EXECUTABLE_SUFFIX}
+)
+
+# Check BISON_VERSION and set BISON_FLAGS_WARNINGS
+>>>>>>> mysql-server/8.0
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/bison.cmake)
 
 IF(BISON_FOUND)
@@ -1039,6 +1194,29 @@ ADD_CUSTOM_TARGET(
   DEPENDS ${GEN_KEYWORD_LIST_SOURCES}
 )
 
+<<<<<<< HEAD
+=======
+MYSQL_ADD_PLUGIN(udf_example udf_example.cc
+  MODULE_ONLY TEST_ONLY MODULE_OUTPUT_NAME "udf_example"
+  )
+# MYSQL_ADD_PLUGIN may have decided not to build it.
+IF(WIN32 AND TARGET udf_example)
+  SET_TARGET_PROPERTIES(udf_example
+    PROPERTIES LINK_FLAGS
+    "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/udf_example.def")
+ENDIF()
+
+MYSQL_ADD_PLUGIN(locking_service locking_service_udf.cc
+  MODULE_ONLY MODULE_OUTPUT_NAME "locking_service"
+  )
+# MYSQL_ADD_PLUGIN may have decided not to build it.
+IF(WIN32 AND TARGET locking_service)
+  SET_TARGET_PROPERTIES(locking_service
+    PROPERTIES LINK_FLAGS
+    "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/locking_service.def")
+ENDIF()
+
+>>>>>>> mysql-server/8.0
 FOREACH(tool gtar tar git)
   STRING(TOUPPER ${tool}  TOOL)
   FIND_PROGRAM(${TOOL}_EXECUTABLE ${tool} DOC "path to the executable")
