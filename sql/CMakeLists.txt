@@ -567,7 +567,6 @@ SET(SQL_SHARED_SOURCES
   uniques.cc
   xa.cc
   join_optimizer/hypergraph.cc
-  ../libmysql/libmysql.cc
 )
 
 # BISON_TARGET(<Name> <YaccInput> <CodeOutput>
