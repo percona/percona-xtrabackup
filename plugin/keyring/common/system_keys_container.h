@@ -48,13 +48,14 @@ class System_keys_container : public ISystem_keys_container {
 
     @return latest key version on success and NULL on failure
   */
-  virtual IKey *get_latest_key_if_system_key_without_version(IKey *key);
+  virtual IKey *get_latest_key_if_system_key_without_version(
+      IKey *key) override;
 
   /**
     Only system keys with already assigned version can be stored inside
     system_keys_container for instance : percona_binlog:0
   */
-  virtual void store_or_update_if_system_key_with_version(IKey *key);
+  virtual void store_or_update_if_system_key_with_version(IKey *key) override;
 
   /**
     Pass key with system_key id (for instance percona_binlog) to get next
@@ -62,13 +63,13 @@ class System_keys_container : public ISystem_keys_container {
     percona_binlog key with version 12 : percona_binlog:12 Calling this function
     will assing percona_binlog:13 as key_id to key passed as argument
   */
-  virtual bool rotate_key_id_if_system_key_without_version(IKey *key);
+  virtual bool rotate_key_id_if_system_key_without_version(IKey *key) override;
 
   /**
     Returns true if key id of key argument is either system_key or system_key:x
     For instance percona_binlog or percona_binlog:12
   */
-  virtual bool is_system_key(IKey *key);
+  virtual bool is_system_key(IKey *key) override;
 
  private:
   static bool parse_system_key_id_with_version(std::string &key_id,

@@ -114,9 +114,11 @@ class Partition_impl : public Entity_object_impl, public Partition {
   // Parent partition.
   /////////////////////////////////////////////////////////////////////////
 
-  virtual const Partition *parent_partition() const { return m_parent; }
+  virtual const Partition *parent_partition() const override {
+    return m_parent;
+  }
 
-  virtual Partition *parent_partition() {
+  virtual Partition *parent_partition() override {
     return const_cast<dd::Partition *>(m_parent);
   }
 

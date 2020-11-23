@@ -10,8 +10,8 @@ namespace keyring {
 class Vault_keys_list final : public ISerialized_object,
                               private boost::noncopyable {
  public:
-  virtual bool get_next_key(IKey **key);
-  virtual bool has_next_key();
+  virtual bool get_next_key(IKey **key) override;
+  virtual bool has_next_key() override;
   void push_back(IKey *key);
   size_t size() const;
 

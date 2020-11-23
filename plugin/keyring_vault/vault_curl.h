@@ -38,12 +38,16 @@ class Vault_curl final : public IVault_curl, private boost::noncopyable {
     if (list != nullptr) curl_slist_free_all(list);
   }
 
-  virtual bool init(const Vault_credentials &vault_credentials);
-  virtual bool list_keys(Secure_string *response);
-  virtual bool write_key(const Vault_key &key, Secure_string *response);
-  virtual bool read_key(const Vault_key &key, Secure_string *response);
-  virtual bool delete_key(const Vault_key &key, Secure_string *response);
-  virtual void set_timeout(uint timeout) noexcept { this->timeout = timeout; }
+  virtual bool init(const Vault_credentials &vault_credentials) override;
+  virtual bool list_keys(Secure_string *response) override;
+  virtual bool write_key(const Vault_key &key,
+                         Secure_string *response) override;
+  virtual bool read_key(const Vault_key &key, Secure_string *response) override;
+  virtual bool delete_key(const Vault_key &key,
+                          Secure_string *response) override;
+  virtual void set_timeout(uint timeout) noexcept override {
+    this->timeout = timeout;
+  }
 
  private:
   bool setup_curl_session(CURL *curl);
