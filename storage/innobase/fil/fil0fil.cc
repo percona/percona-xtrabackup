@@ -2803,7 +2803,7 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   }
 
   if (file->size == 0) {
-#ifndef XTRABACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
 
     ulint extent_size;
 
@@ -2813,13 +2813,13 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
     if (size_bytes >= extent_size) {
       size_bytes = ut_2pow_round(size_bytes, extent_size);
     }
-#else /* !XTRABACKUP */
+#else /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
     /* After apply-incremental, tablespaces are not
     extended to a whole megabyte. Do not cut off
     valid data. */
 
-#endif /* !XTRABACKUP */
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
     file->size = static_cast<page_no_t>(size_bytes / page_size.physical());
 
