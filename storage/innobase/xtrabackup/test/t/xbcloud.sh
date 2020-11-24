@@ -40,6 +40,7 @@ pwdpart=($(pwd | md5sum))
 
 full_backup_name=${now}-${pwdpart}-full_backup
 inc_backup_name=${now}-${pwdpart}-inc_backup
+storage_class_folder=${now}-${pwdpart}-storage_class
 
 full_backup_dir=$topdir/${full_backup_name}
 inc_backup_dir=$topdir/${inc_backup_name}
@@ -165,6 +166,42 @@ xtrabackup --backup --stream=xbstream  --encrypt=AES256 \
 if  grep -q "Upload failed" $topdir/pxb-2279.log ; then
     die 'xbcloud exit with error on upload'
 fi
+
+# PXB-2112 - Support for storage class
+test_storage_class=false
+
+if grep -q "storage=s3" $topdir/xbcloud.cnf ; then
+  vlog "Testing S3 storage class"
+  test_storage_class=true
+  storage_class_parameter="--s3-storage-class=GLACIER"
+elif grep -q "storage=google" $topdir/xbcloud.cnf ; then
+  vlog "Testing GC storage class"
+  test_storage_class=true
+  storage_class_parameter="--google-storage-class=COLDLINE"
+fi
+
+if [ "$test_storage_class" = true ]; then
+  run_cmd touch $topdir/xtrabackup_tablespaces
+  cd $topdir/
+  xbstream -c xtrabackup_tablespaces | \
+  xbcloud --defaults-file=$topdir/xbcloud.cnf ${storage_class_parameter} \
+   put ${storage_class_folder} 2> $topdir/storage_class.log
+
+ if  grep -q "expected objects using storage class" $topdir/storage_class.log ; then
+    xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
+     ${storage_class_folder}
+     die 'xbcloud did not upload using correct storage class'
+ fi
+ if  grep -q "Upload failed" $topdir/storage_class.log ; then
+   xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
+     ${storage_class_folder}
+     die 'xbcloud exit with error on upload'
+ fi
+ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \
+  ${storage_class_folder}
+fi
+
+
 
 # cleanup
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf delete \

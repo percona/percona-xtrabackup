@@ -36,6 +36,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define AWS_CONTENT_SHA256_HEADER "X-Amz-Content-SHA256"
 #define AWS_SESSION_TOKEN_HEADER "X-Amz-Security-Token"
 #define AWS_SIGNATURE_ALGORITHM "AWS4-HMAC-SHA256"
+#define AWS_STORAGE_CLASS_HEADER "X-Amz-Storage-Class"
 
 namespace xbcloud {
 
@@ -186,6 +187,9 @@ void S3_signerV4::sign_request(const std::string &hostname,
     req.add_header(AWS_SESSION_TOKEN_HEADER, session_token);
   }
 
+  if (!storage_class.empty()) {
+    req.add_header(AWS_STORAGE_CLASS_HEADER, storage_class);
+  }
   std::string signed_headers;
   auto string_to_sign = build_string_to_sign(req, signed_headers);
 
@@ -441,8 +445,9 @@ bool S3_client::probe_api_version_and_lookup(const std::string &bucket) {
         signer = std::unique_ptr<S3_signer>(
             new S3_signerV2(lookup, region, access_key, secret_key));
       } else {
-        signer = std::unique_ptr<S3_signer>(new S3_signerV4(
-            lookup, region, access_key, secret_key, session_token));
+        signer = std::unique_ptr<S3_signer>(
+            new S3_signerV4(lookup, region, access_key, secret_key,
+                            session_token, storage_class));
       }
       auto tmp_lookup = bucket_lookup;
       auto tmp_version = api_version;
@@ -746,6 +751,7 @@ bool S3_client::list_objects_with_prefix(const std::string &bucket,
     }
 
     auto node = root->first_node("Contents");
+    bool storage_class_message_sent = false;
     while (node != nullptr) {
       auto key = node->first_node("Key");
       if (key == nullptr) {
@@ -754,6 +760,17 @@ bool S3_client::list_objects_with_prefix(const std::string &bucket,
             "name.\n",
             my_progname);
         return false;
+      }
+      if (storage_class != "" && !storage_class_message_sent) {
+        auto obj_storage_class = node->first_node("StorageClass");
+        if (obj_storage_class != nullptr &&
+            storage_class != obj_storage_class->value()) {
+          storage_class_message_sent = true;
+          msg_ts(
+              "%s: Warning: expected objects using storage class %s but found "
+              "%s\n",
+              my_progname, storage_class.c_str(), obj_storage_class->value());
+        }
       }
       objects.push_back(key->value());
       node = node->next_sibling("Contents");
