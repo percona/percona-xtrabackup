@@ -61,6 +61,7 @@ class S3_signerV4 : public S3_signer {
   std::string access_key;
   std::string secret_key;
   std::string session_token;
+  std::string storage_class;
 
   static std::string aws_date_format(time_t t);
 
@@ -73,12 +74,14 @@ class S3_signerV4 : public S3_signer {
  public:
   S3_signerV4(s3_bucket_lookup_t lookup, const std::string &region,
               const std::string &access_key, const std::string &secret_key,
-              const std::string &session_token = std::string())
+              const std::string &session_token = std::string(),
+              const std::string &storage_class = std::string())
       : lookup(lookup),
         region(region),
         access_key(access_key),
         secret_key(secret_key),
-        session_token(session_token) {}
+        session_token(session_token),
+        storage_class(storage_class) {}
 
   void sign_request(const std::string &hostname, const std::string &bucket,
                     Http_request &req, time_t t) override;
@@ -126,6 +129,7 @@ class S3_client {
   std::string access_key;
   std::string secret_key;
   std::string session_token;
+  std::string storage_class;
 
   s3_bucket_lookup_t bucket_lookup{LOOKUP_AUTO};
 
@@ -171,6 +175,7 @@ class S3_client {
     protocol = Http_request::HTTPS;
     rtrim_slashes(host);
     session_token = "";
+    storage_class = "";
   }
 
   void set_endpoint(const std::string &ep) {
@@ -189,6 +194,8 @@ class S3_client {
   }
 
   void set_session_token(const std::string &st) { session_token = st; }
+
+  void set_storage_class(const std::string &sc) { storage_class = sc; }
 
   void set_bucket_lookup(s3_bucket_lookup_t val) { bucket_lookup = val; }
 
@@ -237,11 +244,13 @@ class S3_object_store : public Object_store {
   S3_object_store(const Http_client *client, std::string &region,
                   const std::string &access_key, const std::string &secret_key,
                   const std::string &session_token,
+                  const std::string &storage_class,
                   const std::string &endpoint = std::string(),
                   s3_bucket_lookup_t bucket_lookup = LOOKUP_DNS,
                   s3_api_version_t api_version = S3_V_AUTO)
       : s3_client{client, region, access_key, secret_key} {
     if (!session_token.empty()) s3_client.set_session_token(session_token);
+    if (!storage_class.empty()) s3_client.set_storage_class(storage_class);
     if (!endpoint.empty()) s3_client.set_endpoint(endpoint);
     s3_client.set_bucket_lookup(bucket_lookup);
     s3_client.set_api_version(api_version);
