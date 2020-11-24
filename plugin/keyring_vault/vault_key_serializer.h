@@ -12,7 +12,7 @@ class Vault_key_serializer final : public ISerializer {
   virtual ISerialized_object *serialize(
       const collation_unordered_map<std::string, std::unique_ptr<IKey>>
           &keys_hash MY_ATTRIBUTE((unused)),
-      IKey *key, const Key_operation operation) {
+      IKey *key, const Key_operation operation) override {
     Vault_key *vault_key = dynamic_cast<Vault_key *>(key);
     DBUG_ASSERT(vault_key != nullptr);
     vault_key->set_key_operation(operation);

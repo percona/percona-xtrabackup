@@ -2126,7 +2126,7 @@ bool copy_back(int argc, char **argv) {
       return (false);
     }
     auto key = Encryption::get_master_key_id();
-    int ret = fscanf(f, "%lu", &key);
+    int ret = fscanf(f, "%u", &key);
     ut_a(ret == 1);
     fclose(f);
 
@@ -2153,7 +2153,7 @@ bool copy_back(int argc, char **argv) {
 
     my_free(master_key);
 
-    ulint master_key_id;
+    uint32_t master_key_id;
     Encryption::get_master_key(&master_key_id, &master_key);
 
     msg_ts("Generated new master key");

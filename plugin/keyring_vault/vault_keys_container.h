@@ -12,15 +12,15 @@ class Vault_keys_container final : public Keys_container,
  public:
   Vault_keys_container(ILogger *logger) noexcept : Keys_container(logger) {}
 
-  bool init(IKeyring_io *keyring_io, std::string keyring_storage_url);
-  virtual IKey *fetch_key(IKey *key);
+  bool init(IKeyring_io *keyring_io, std::string keyring_storage_url) override;
+  virtual IKey *fetch_key(IKey *key) override;
   virtual void set_curl_timeout(uint timeout) noexcept {
     DBUG_ASSERT(vault_io != NULL);
     vault_io->set_curl_timeout(timeout);
   }
 
  private:
-  virtual bool flush_to_backup();
+  virtual bool flush_to_backup() override;
   IVault_io *vault_io;
 };
 

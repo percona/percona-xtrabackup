@@ -24,13 +24,7 @@ INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
 MY_INCLUDE_SYSTEM_DIRECTORIES(ICU)
 
-IF(MYSQL_MAINTAINER_MODE)
-  IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-    ADD_COMPILE_OPTIONS("-Wshadow=local")
-  ELSEIF(MY_COMPILER_IS_CLANG)
-    ADD_COMPILE_OPTIONS("-Wshadow-uncaptured-local")
-  ENDIF()
-ENDIF()
+ADD_WSHADOW_WARNING()
 
 # Array indexing with pland_idx == int8 gives warnings.
 IF(SOLARIS AND MY_COMPILER_IS_GNU)
@@ -176,6 +170,7 @@ SET(DD_SOURCES
   dd/impl/system_views/role_table_grants.cc
   dd/impl/system_views/routines.cc
   dd/impl/system_views/schemata.cc
+  dd/impl/system_views/schemata_extensions.cc
   dd/impl/system_views/statistics.cc
   dd/impl/system_views/st_spatial_reference_systems.cc
   dd/impl/system_views/st_units_of_measure.cc
@@ -394,6 +389,8 @@ SET(SQL_SHARED_SOURCES
   item_timefunc.cc 
   item_xmlfunc.cc 
   item_inetfunc.cc
+  join_optimizer/access_path.cc
+  join_optimizer/explain_access_path.cc
   json_binary.cc
   json_diff.cc
   json_dom.cc
@@ -434,6 +431,7 @@ SET(SQL_SHARED_SOURCES
   parse_tree_node_base.cc
   parse_tree_nodes.cc
   parse_tree_partitions.cc
+  parse_tree_window.cc
   select_lex_visitor.cc
   parser_service.cc
   partition_info.cc
@@ -528,6 +526,7 @@ SET(SQL_SHARED_SOURCES
   sql_servers.cc
   sql_show.cc
   sql_show_status.cc
+  sql_show_processlist.cc
   sql_signal.cc
   sql_state.cc
   sql_table.cc
@@ -567,7 +566,7 @@ SET(SQL_SHARED_SOURCES
   tztime.cc
   uniques.cc
   xa.cc
-  ../libmysql/libmysql.cc
+  join_optimizer/hypergraph.cc
 )
 
 # BISON_TARGET(<Name> <YaccInput> <CodeOutput>
@@ -745,9 +744,8 @@ IF(WIN32)
     COMPILE_FLAGS "/bigobj")
 ENDIF()
 
-# Downgrade -Werror to warning for gcc <= 8.2.x
-IF(MY_COMPILER_IS_GNU
-    AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.3)
+# Downgrade -Werror to warning for gcc
+IF(MY_COMPILER_IS_GNU)
   MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
   IF(HAS_WARN_FLAG)
     ADD_COMPILE_FLAGS(
@@ -801,6 +799,14 @@ ADD_DEPENDENCIES(sql_gis GenSysSchema)
 ADD_DEPENDENCIES(sql_gis GenError)
 TARGET_LINK_LIBRARIES(sql_gis sql_dd sql_main)
 SET_TARGET_PROPERTIES(sql_gis PROPERTIES LINK_INTERFACE_MULTIPLICITY 3)
+
+# This typically saves a few hundred megabytes of disk space.
+IF(COMPRESS_DEBUG_SECTIONS)
+  MY_CHECK_CXX_COMPILER_FLAG("-gz" HAVE_COMPRESS_GZ_OPTION)
+  IF(HAVE_COMPRESS_GZ_OPTION)
+    TARGET_COMPILE_OPTIONS(sql_gis PRIVATE -gz)
+  ENDIF()
+ENDIF()
 
 # A class with a reference member lacks a user-defined constructor,
 # which can lead to errors.
@@ -908,6 +914,10 @@ TARGET_LINK_LIBRARIES(master binlog sql_main)
 SET (SLAVE_SOURCE
   dynamic_ids.cc
   rpl_applier_reader.cc
+  rpl_async_conn_failover.cc
+  rpl_async_conn_failover_table_operations.cc
+  rpl_async_conn_failover_add_source_udf.cc
+  rpl_async_conn_failover_delete_source_udf.cc
   rpl_channel_service_interface.cc
   rpl_channel_credentials.cc
   rpl_info.cc
@@ -927,7 +937,11 @@ SET (SLAVE_SOURCE
   rpl_slave.cc
   rpl_slave_commit_order_manager.cc
   rpl_slave_until_options.cc
+  rpl_sys_key_access.cc
+  rpl_sys_table_access.cc
   rpl_trx_boundary_parser.cc
+  udf_service_impl.cc
+  udf_service_util.cc
   )
 ADD_LIBRARY(slave STATIC ${SLAVE_SOURCE})
 ADD_DEPENDENCIES(slave GenError)

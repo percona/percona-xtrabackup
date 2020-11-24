@@ -6344,7 +6344,7 @@ static bool store_master_key_id(
     return (false);
   }
 
-  fprintf(fp, "%lu", Encryption::get_master_key_id());
+  fprintf(fp, "%u", Encryption::get_master_key_id());
   fclose(fp);
 
   return (true);

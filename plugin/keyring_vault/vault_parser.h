@@ -27,12 +27,13 @@ class Vault_parser final : public IVault_parser {
  public:
   Vault_parser(ILogger *logger) : logger(logger) {}
 
-  virtual bool parse_keys(const Secure_string &payload, Vault_keys_list *keys);
-  virtual bool parse_key_data(const Secure_string &payload, IKey *key);
+  virtual bool parse_keys(const Secure_string &payload,
+                          Vault_keys_list *keys) override;
+  virtual bool parse_key_data(const Secure_string &payload, IKey *key) override;
   virtual bool parse_key_signature(const Secure_string &base64_key_signature,
-                                   KeyParameters *key_parameters);
+                                   KeyParameters *key_parameters) override;
   virtual bool parse_errors(const Secure_string &payload,
-                            Secure_string *errors);
+                            Secure_string *errors) override;
 
  private:
   typedef std::vector<Secure_string> Tokens;

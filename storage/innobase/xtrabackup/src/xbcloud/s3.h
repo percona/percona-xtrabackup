@@ -81,7 +81,7 @@ class S3_signerV4 : public S3_signer {
         session_token(session_token) {}
 
   void sign_request(const std::string &hostname, const std::string &bucket,
-                    Http_request &req, time_t t);
+                    Http_request &req, time_t t) override;
 };
 
 class S3_signerV2 : public S3_signer {
@@ -105,7 +105,7 @@ class S3_signerV2 : public S3_signer {
         secret_key(secret_key) {}
 
   void sign_request(const std::string &hostname, const std::string &bucket,
-                    Http_request &req, time_t t);
+                    Http_request &req, time_t t) override;
 };
 
 class S3_client {
