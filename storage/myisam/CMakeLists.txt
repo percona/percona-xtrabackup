@@ -112,16 +112,16 @@ MYSQL_ADD_PLUGIN(myisam ha_myisam.cc
 )
 
 
-MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.cc
+MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.cc SKIP_INSTALL
   LINK_LIBRARIES myisam_library)
 
-MYSQL_ADD_EXECUTABLE(myisamchk myisamchk.cc
+MYSQL_ADD_EXECUTABLE(myisamchk myisamchk.cc SKIP_INSTALL
   LINK_LIBRARIES myisam_library)
 
-MYSQL_ADD_EXECUTABLE(myisamlog myisamlog.cc
+MYSQL_ADD_EXECUTABLE(myisamlog myisamlog.cc SKIP_INSTALL
   LINK_LIBRARIES myisam_library ${LIBSOCKET})
 
-MYSQL_ADD_EXECUTABLE(myisampack myisampack.cc
+MYSQL_ADD_EXECUTABLE(myisampack myisampack.cc SKIP_INSTALL
   LINK_LIBRARIES myisam_library)
 
 IF (WIN32)
