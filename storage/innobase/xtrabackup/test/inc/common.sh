@@ -1113,6 +1113,11 @@ function innodb_wait_for_flush_all()
     while ! innodb_n_dirty_pages ; do
         sleep 1
     done
+
+    flushed_lsn=`innodb_flushed_lsn`
+    while [ `innodb_checkpoint_lsn` -lt "$flushed_lsn" ] ; do
+      sleep 1
+    done
 }
 
 # Return current LSN
