@@ -55,7 +55,7 @@ Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 Installing |Percona XtraBackup| from a Binary Tarball
 =====================================================
 
-Binary tarballs are available for download and installation.
+Binary tarballs are available for `download <https://www.percona.com/downloads>`_ and installation. The following table lists the tarballs available in ``Linux - Generic``. Select the |Percona XtraBackup| 2.4 version number and the type of tarball for your installation. Both binary tarballs support all distributions.
 
 .. tabularcolumns:: |p{5cm}|p{5cm}|p{11cm}|
 
@@ -72,13 +72,13 @@ Binary tarballs are available for download and installation.
      - percona-xtrabackup-<version number>-Linux.x86_64.glibc2.12-minimal.tar.gz
      - Contains binaries, and libraries but does not include test files, or debug symbols
 
-Select the |Percona XtraBackup| 2.4 version number and the type of tarball for your installation. Both binary tarballs support all distributions.
-
-Fetch and extract the correct binary tarball. For example, the following downloads the full tarball:
+Fetch and extract the correct binary tarball. For example, the following downloads the full tarball for version 2.4.21:
 
 .. code-block:: bash
 
-  $ wget https://www.percona.com/downloads/Percona-XtraBackup-2.4/LATEST/percona-xtrabackup-2.4.20-Linux.x86_64.glibc2.12.tar.gz
+  $ wget https://downloads.percona.com/downloads/Percona-XtraBackup-2.4/Percona-XtraBackup-2.4.21/binary/tarball/percona-xtrabackup-2.4.21-Linux-x86_64.glibc2.12.tar.gz
+
+  $ tar xvf percona-xtrabackup-2.4.21-Linux-x86_64.glibc2.12.tar.gz
 
 Compiling and Installing from Source Code
 =========================================
