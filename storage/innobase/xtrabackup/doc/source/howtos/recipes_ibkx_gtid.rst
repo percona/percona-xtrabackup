@@ -20,7 +20,7 @@ The following command takes a backup and saves it in the :file:`/data/backups/$T
 
 .. code-block:: bash
 
-   $ innobackupex /data/backups/
+   $ xtrabackup --backup --target-dirs=/data/backups/
 
 In the destination folder, there will be a file with the name
 :file:`xtrabackup_binlog_info`. This file contains both binary log coordinates and the ``GTID`` information.
@@ -30,11 +30,11 @@ In the destination folder, there will be a file with the name
    $ cat xtrabackup_binlog_info
    mysql-bin.000002    1232        c777888a-b6df-11e2-a604-080027635ef5:1-4
 
-That information is also printed by innobackupex after taking the backup: 
+That information is also printed by xtrabackup after taking the backup: 
 
 .. code-block:: text
 
-   innobackupex: MySQL binlog position: filename 'mysql-bin.000002', position 1232, GTID of the last change 'c777888a-b6df-11e2-a604-080027635ef5:1-4'
+   xtrabackup: MySQL binlog position: filename 'mysql-bin.000002', position 1232, GTID of the last change 'c777888a-b6df-11e2-a604-080027635ef5:1-4'
 
 STEP 2: Prepare the backup
 ================================================================================
