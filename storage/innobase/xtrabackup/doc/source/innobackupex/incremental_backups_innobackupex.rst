@@ -234,6 +234,6 @@ feature, you need to take a BASE backup as well.
 
 .. code-block:: bash	    
 
-   $ innobackupex  --incremental --incremental-lsn=LSN-number --stream=xbstream ./ | /
+   $ innobackupex  --incremental --incremental-lsn=LSN-number --stream=xbstream ./ | \
    ssh user@hostname " cat - | xbstream -x -C > /backup-dir/"
  
