@@ -74,15 +74,25 @@ this list make sure to specify the ``mysql``, ``sys``, and
 ``performance_schema`` databases. These databases are required when restoring
 the databases using :option:`xtrabackup --copy-back`.
 
+.. note::
+
+    Tables processed during the --prepare step may also be added to the backup
+    even if they are not explicitly listed by the parameter if they were created
+    after the backup started.
+
 .. code-block:: bash
 
    $ xtrabackup --databases='mysql sys performance_schema ...'
 
 :option:`xtrabackup --databases-file` specifies a file that can contain multiple
 databases and tables in the ``databasename[.tablename]`` form, one element name
-per line in the file. Only named databases and tables will be backed up. Names
-are matched exactly, case-sensitive, with no pattern or regular expression
-matching.
+per line in the file. Names are matched exactly, case-sensitive, with no pattern or regular expression matching.
+
+.. note::
+
+    Tables processed during the --prepare step may also be added to the backup
+    even if they are not explicitly listed by the parameter if they were created
+    after the backup started.
 
 Preparing the Backup
 ================================================================================
