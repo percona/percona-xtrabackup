@@ -231,7 +231,7 @@ class Archived_Redo_Log_Monitor {
   uint32_t get_first_log_block_checksum() const;
 
   /** Read archived log until the given log block. */
-  void skip_for_block(lsn_t lsn, uint32_t no, uint32_t checksum);
+  void skip_for_block(lsn_t lsn, const byte *redo_buf);
 
  private:
   /** Parse the value of innodb_redo_log_archive_dirs. */
