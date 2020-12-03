@@ -35,6 +35,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup.h"
 
 extern ds_ctxt_t *ds_redo;
+/* first block of redo archive file which is all zero in 8.0.22  */
+constexpr size_t HEADER_BLOCK_SIZE = 4096;
+static bool archive_first_block_zero = false;
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.create(LOG_FILE_HDR_SIZE);
@@ -516,7 +519,7 @@ ssize_t Archived_Redo_Log_Reader::read_logfile(bool *finished) {
   }
 
   if (srv_redo_log_encrypt) {
-    IORequest req_type(IORequestLogWrite);
+    IORequest req_type(IORequestLogRead);
     fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
     fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
     Encryption encryption(req_type.encryption_algorithm());
@@ -540,6 +543,7 @@ bool Archived_Redo_Log_Reader::seek_logfile(lsn_t lsn) {
   }
 
   auto pos = lsn - archive_start_lsn;
+  if (archive_first_block_zero) pos += HEADER_BLOCK_SIZE;
 
   my_seek(file, 0, MY_SEEK_END, MYF(MY_FAE));
   auto file_size = my_tell(file, MYF(MY_FAE));
@@ -582,6 +586,8 @@ void Archived_Redo_Log_Monitor::close() { os_event_destroy(event); }
 void Archived_Redo_Log_Monitor::start() {
   thread = os_thread_create(PFS_NOT_INSTRUMENTED, [this] { thread_func(); });
   thread.start();
+  os_event_wait_time_low(event, 100 * 1000, 0);
+  debug_sync_point("stop_before_redo_archive");
 }
 
 void Archived_Redo_Log_Monitor::stop() {
@@ -774,6 +780,53 @@ void Archived_Redo_Log_Monitor::thread_func() {
       os_event_wait_time_low(event, 100 * 1000, 0);
       os_event_reset(event);
       hdr_len -= n_read;
+    }
+
+    /* from 8.0.22 onwards, the first block of redo archive file is all zeros */
+    if (log_block_get_checksum(buf) == 0) {
+      archive_first_block_zero = true;
+      hdr_len = HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE;
+      aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> buf2;
+      buf2.create(HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE);
+      /* Read remaining header of length (4096 - 512) bytes */
+      while (hdr_len > 0 && !stopped) {
+        size_t n_read = my_read(file, buf2, hdr_len, MYF(MY_WME));
+        if (n_read == MY_FILE_ERROR) {
+          msg("xtrabackup: cannot read from '%s'\n", archive.filename.c_str());
+          mysql_close(mysql);
+          my_thread_end();
+          return;
+        }
+        os_event_wait_time_low(event, 100 * 1000, 0);
+        os_event_reset(event);
+        hdr_len -= n_read;
+      }
+
+      hdr_len = OS_FILE_LOG_BLOCK_SIZE;
+      /* Read the actual data in the archive file */
+      while (hdr_len > 0 && !stopped) {
+        size_t n_read = my_read(file, buf, hdr_len, MYF(MY_WME));
+        if (n_read == MY_FILE_ERROR) {
+          msg("xtrabackup: cannot read from '%s'\n", archive.filename.c_str());
+          mysql_close(mysql);
+          my_thread_end();
+          return;
+        }
+        os_event_wait_time_low(event, 100 * 1000, 0);
+        os_event_reset(event);
+        hdr_len -= n_read;
+      }
+      if (srv_redo_log_encrypt) {
+        aligned_array_pointer<byte, OS_FILE_LOG_BLOCK_SIZE> scratch_buf;
+        scratch_buf.create(OS_FILE_LOG_BLOCK_SIZE);
+        IORequest req_type(IORequestLogRead);
+        fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+        fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
+        Encryption encryption(req_type.encryption_algorithm());
+        auto err = encryption.decrypt_log(req_type, buf, hdr_len, scratch_buf,
+                                          OS_FILE_LOG_BLOCK_SIZE);
+        ut_a(err == DB_SUCCESS);
+      }
     }
 
     first_log_block_no = log_block_get_hdr_no(buf);
