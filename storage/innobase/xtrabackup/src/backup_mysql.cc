@@ -434,9 +434,11 @@ static bool check_server_version(unsigned long version_number,
   DBUG_EXECUTE_IF("simulate_lower_version", pxb_base_ver = 80014;);
 
   if (!opt_no_server_version_check && pxb_base_ver < version_number) {
-    msg("Error: Unspported server version %lu, Use latest version of PXB "
-        "or to continue with risk, use --no-server-version-check",
-        version_number);
+    msg("Error: Unsupported server version %s.\n"
+        "Please upgrade PXB, if a new "
+        "version is available. To continue with risk, use the option "
+        "--no-server-version-check.\n",
+        mysql_connection->server_version);
     version_supported = false;
   }
 
