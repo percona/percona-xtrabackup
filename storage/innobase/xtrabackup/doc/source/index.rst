@@ -91,6 +91,7 @@ Advanced Features
 
    advanced/throttling_backups
    advanced/encrypted_innodb_tablespace_backups
+   advanced/locks
 
 Tutorials, Recipes, How-tos
 ===========================
