@@ -1027,8 +1027,8 @@ struct my_option xb_client_options[] = {
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
     {"no-server-version-check", OPT_NO_SERVER_VERSION_CHECK,
-     "This option allows backup to proceed"
-     "when server version is greater (newer) than the PXB version",
+     "This option allows backup to proceed when the server version is greater "
+     "(newer) than the PXB supported version",
      (uchar *)&opt_no_server_version_check,
      (uchar *)&opt_no_server_version_check, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
      0},
