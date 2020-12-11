@@ -449,7 +449,7 @@ build_source_deb(){
 
     TARFILE=$(basename $(find . -name 'percona-xtrabackup-*.tar.gz' | sort | tail -n1))
     NAME=$(echo ${TARFILE}| awk -F '-' '{print $1"-"$2}')
-    VERSION=$(echo ${TARFILE%.tar.gz} | awk -F '-' '{print $3}')
+    VERSION=$(echo ${TARFILE%.tar.gz} | awk -F '-' '{print $3"-"$4}')
     SHORTVER=$(echo ${VERSION} | awk -F '.' '{print $1"."$2}')
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
@@ -498,8 +498,8 @@ build_deb(){
 
 
     DSC=$(basename $(find . -name '*.dsc' | sort | tail -n 1))
-    DIRNAME=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $1"-"$2"-"$3"-"$4}')
-    VERSION=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $4}')
+    DIRNAME=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $1"-"$2"-"$3"-"$4"-"$5}')
+    VERSION=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $4"-"$5}')
     #
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
     echo "DEBIAN_VERSION=${OS_NAME}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
@@ -528,11 +528,11 @@ build_tarball(){
     TARFILE=$(basename $(find . -name 'percona-xtrabackup-*.tar.gz' | sort | tail -n1))
     enable_venv
     #
-    NAME=$(echo ${TARFILE}| awk -F '-' '{print $1"-"$2}')
-    VERSION=$(echo ${TARFILE}| awk -F '-' '{print $3}')
+    NAME=$(echo ${TARFILE%.tar.gz}| awk -F '-' '{print $1"-"$2}')
+    VERSION=$(echo ${TARFILE%.tar.gz}| awk -F '-' '{print $3"-"$4}')
     #
     SHORTVER=$(echo ${VERSION} | awk -F '.' '{print $1"."$2}')
-    TMPREL=$(echo ${TARFILE}| awk -F '-' '{print $4}')
+    TMPREL=$(echo ${TARFILE%.tar.gz}| awk -F '-' '{print $5}')
     RELEASE=${TMPREL%.tar.gz}
 
     rm -fr TARGET && mkdir TARGET
