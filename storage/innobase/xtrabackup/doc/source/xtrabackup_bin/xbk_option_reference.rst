@@ -21,22 +21,30 @@ Options
 
    Make a backup and place it in :option:`xtrabackup --target-dir`. See
    :ref:`Creating a backup <creating_a_backup>`.
+   
+.. option:: --backup-lock-retry-count=#
+
+   The number of attempts to acquire metadata locks.
+   
+.. option:: --backup-lock-timeout=#
+
+   The timeout in seconds for attempts to acquire metadata locks.
 
 .. option:: --binlog-info
 
-   This option controls how |Percona XtraBackup| should retrieve server's
+   This option controls how |Percona XtraBackup| should retrieve the server's
    binary log coordinates corresponding to the backup. Possible values are
    ``OFF``, ``ON``, ``LOCKLESS`` and ``AUTO``. See the |Percona XtraBackup|
    :ref:`lockless_bin-log`  manual page for more information.
 
 .. option:: --check-privileges
 
-   This option checks if |Percona XtraBackup| has all required privileges.
+   This option checks if |Percona XtraBackup| has all the required privileges.
    If a missing privilege is required for the current operation,
    it will terminate and print out an error message.
-   If a missing privilege is not required for the current operation,
+   If a missing privilege is not required for the current operation
    but may be necessary for some other XtraBackup operation,
-   the process is not aborted and a warning is printed.
+   the process is not aborted, and a warning is printed.
 
    .. code-block:: bash
 
@@ -45,19 +53,25 @@ Options
 
 .. option:: --close-files
 
-   Do not keep files opened. When |xtrabackup| opens tablespace it normally
-   doesn't close its file handle in order to handle the DDL operations
-   correctly. However, if the number of tablespaces is really huge and can not
+   Do not keep files open. When |xtrabackup| opens a tablespace, it normally
+   does not close its file handle to manage the DDL operations
+   correctly. However, if the number of tablespaces is huge and can not
    fit into any limit, there is an option to close file handles once they are
    no longer accessed. |Percona XtraBackup| can produce inconsistent backups
-   with this option enabled. Use at your own risk.
+   with this option enabled. Use the option at your own risk.
 
+.. option:: --compact
+
+   Create a compact backup by skipping secondary index pages.
+   
 .. option:: --compress
 
    This option tells |xtrabackup| to compress all output data, including the
-   transaction log file and meta data files, using the specified compression
+   transaction log file and metadata files, using the specified compression
    algorithm. The only currently supported algorithm is ``quicklz``. The
-   resulting files have the qpress archive format, i.e. every ``*.qp`` file
+   resulting files have the qpress archive format.
+   
+   Every ``*.qp`` file
    produced by xtrabackup is essentially a one-file qpress archive and can be
    extracted and uncompressed by the `qpress <http://www.quicklz.com/>`_  file
    archiver.
@@ -83,6 +97,10 @@ Options
    unless :option:`xtrabackup --force-non-empty-directories` option is
    specified.
 
+.. option:: --core-file
+
+   Write core on fatal signals.
+   
 .. option:: --databases=#
 
    This option specifies the list of databases and tables that should be backed
@@ -91,8 +109,8 @@ Options
 
 .. option::  --databases-exclude=name
 
-   Excluding databases based on name, Operates the same way
-   as :option:`xtrabackup --databases`, but matched names are excluded from
+   Excluding databases based on name. This option operates the same way
+   as :option:`xtrabackup --databases`, but matched names are excluded from the
    backup. Note that this option has a higher priority than
    :option:`xtrabackup --databases`.
 
@@ -104,28 +122,31 @@ Options
 
 .. option:: --datadir=DIRECTORY
 
-   The source directory for the backup. This should be the same as the datadir
-   for your |MySQL| server, so it should be read from :file:`my.cnf` if that
-   exists; otherwise you must specify it on the command line.
+   The source directory for the backup. This directory should be the same as the datadir
+   for your |MySQL| server, and it should be read from :file:`my.cnf` if that
+   exists; otherwise, you must specify it on the command line.
 
    When combined with the :option:`xtrabackup --copy-back` or
    :option:`xtrabackup --move-back` option, :option:`xtrabackup --datadir`
    refers to the destination directory.
 
-   Once connected to the server, in order to perform a backup you will need
+   Once connected to the server, to perform a backup, you will need
    ``READ`` and ``EXECUTE`` permissions at a filesystem level in the
    server's :term:`datadir`.
 
+.. option:: --debug-sleep-before-unlock=#
 
+   A debug-only option that is used by the Xtrabackup test suite.
+   
 .. option:: --decompress
 
-   Decompresses all files with the :file:`.qp` extension in a backup previously
+   This option decompresses all files with the :file:`.qp` extension in a backup previously
    made with the :option:`xtrabackup --compress` option. The
    :option:`xtrabackup --parallel` option will allow multiple files to be
-   decrypted simultaneously. In order to decompress, the qpress utility MUST be
+   decrypted simultaneously. To decompress, the qpress utility MUST be
    installed and accessible within the path. |Percona XtraBackup| doesn't
-   automatically remove the compressed files. In order to clean up the backup
-   directory users should use :option:`xtrabackup --remove-original` option.
+   automatically remove the compressed files. To clean up the backup
+   directory, users should use the :option:`xtrabackup --remove-original` option.
 
 .. option:: --decrypt=ENCRYPTION-ALGORITHM
 
@@ -133,26 +154,29 @@ Options
    previously made with :option:`xtrabackup --encrypt` option. The
    :option:`xtrabackup --parallel` option will allow multiple files to be
    decrypted simultaneously. |Percona XtraBackup| doesn't
-   automatically remove the encrypted files. In order to clean up the backup
-   directory users should use :option:`xtrabackup --remove-original` option.
+   automatically remove the encrypted files. To clean up the backup
+   directory, users should use :option:`xtrabackup --remove-original` option.
 
 .. option:: --defaults-extra-file=[MY.CNF]
 
-   Read this file after the global files are read. Must be given as the first
+   Read this file after the global files are read. This file must be the first
    option on the command-line.
 
 .. option:: --defaults-file=[MY.CNF]
 
-   Only read default options from the given file. Must be given as the first
-   option on the command-line. Must be a real file; it cannot be a symbolic
+   Only read default options from the given file. This file must be the first
+   option on the command-line and be a real file and cannot be a symbolic
    link.
 
 .. option:: --defaults-group=GROUP-NAME
 
-   This option is to set the group which should be read from the configuration
-   file. This is used by |innobackupex| if you use the
-   :option:`xtrabackup --defaults-group` option. It is needed for
+   This option sets up the group which should be read from the configuration
+   file. The option is used by the :option:`--default-group` and is required for
    ``mysqld_multi`` deployments.
+   
+.. option:: --defaults-group-suffix=#
+
+   Read the usual options groups and also groups with concat(group, suffix).
 
 .. option::  --dump-innodb-buffer-pool
 
@@ -173,7 +197,7 @@ Options
    By default, this option is set to `OFF`.
 
    If ``innodb_buffer_pool_dump_status`` reports that there is running
-   dump of buffer pool, |xtrabackup| waits for the dump to complete
+   dump of the buffer pool, |xtrabackup| waits for the dump to complete
    using the value of :option:`--dump-innodb-buffer-pool-timeout`
 
    The file :file:`ib_buffer_pool` stores tablespace ID and page ID
@@ -273,7 +297,7 @@ Options
    This option specifies time in seconds that xtrabackup should wait for
    queries that would block ``FLUSH TABLES WITH READ LOCK`` before running it.
    If there are still such queries when the timeout expires, xtrabackup
-   terminates with an error. Default is ``0``, in which case it does not wait
+   terminates with an error. The default is ``0``, in which case it does not wait
    for queries to complete and starts ``FLUSH TABLES WITH READ LOCK``
    immediately. Where supported (Percona Server 5.6+) xtrabackup will
    automatically use `Backup Locks
@@ -287,7 +311,7 @@ Options
    xtrabackup to detect long-running queries with a non-zero value of
    :option:`xtrabackup --ftwrl-wait-timeout`. ``FLUSH TABLES WITH READ LOCK``
    is not started until such long-running queries exist. This option has no
-   effect if :option:`xtrabackup --ftwrl-wait-timeout` is ``0``. Default value
+   effect if :option:`xtrabackup --ftwrl-wait-timeout` is ``0``. The default value
    is ``60`` seconds. Where supported (Percona Server 5.6+) xtrabackup will
    automatically use `Backup Locks
    <https://www.percona.com/doc/percona-server/5.6/management/backup_locks.html#backup-locks>`_
@@ -297,7 +321,7 @@ Options
 .. option:: --ftwrl-wait-query-type=all|update
 
    This option specifies which types of queries are allowed to complete before
-   xtrabackup will issue the global lock. Default is ``all``.
+   xtrabackup will issue the global lock. The default is ``all``.
 
 .. option:: --galera-info
 
@@ -306,6 +330,10 @@ Options
    performing the backup of |Percona XtraDB Cluster|. It has no effect when
    backup locks are used to create the backup.
 
+.. option:: --generate-new-master-key
+
+   Generates a new master key when doing a copy-back operation.
+   
 .. option:: --history=name
 
    This option enables the tracking of the backup history in the
@@ -328,8 +356,7 @@ Options
 
 .. option:: --incremental-basedir=DIRECTORY
 
-   When creating an incremental backup, this is the directory containing the
-   full backup that is the base dataset for the incremental backups.
+   This directory contains the full backup, which is the base dataset used for the incremental backups.
 
 .. option:: --incremental-dir=DIRECTORY
 
@@ -340,7 +367,7 @@ Options
 .. option:: --incremental-force-scan
 
    When creating an incremental backup, force a full scan of the data pages in
-   the instance being backuped even if the complete changed page bitmap data is
+   the instance to be used in the backup even if the complete changed page bitmap data is
    available.
 
 .. option:: --incremental-history-name=name
@@ -357,6 +384,12 @@ Options
    returns an error. It is used with the :option:`xtrabackup --incremental`
    option.
 
+.. option:: --innodb-checksum-algorithm=name
+
+   The algorithm InnoDB uses to calculate a page checksum. The available
+   algorithms are CRC32, INNODB, NONE, STRICT_CRC32, STRICT_INNODB,
+   and STRICT_NONE
+   
 .. option:: --incremental-history-uuid=UUID
 
    This option specifies the :term:`UUID` of the specific history record stored
@@ -373,8 +406,7 @@ Options
    (:term:`LSN`) instead of specifying
    :option:`xtrabackup --incremental-basedir`. For databases created in 5.1 and
    later, specify the :term:`LSN` as a single 64-bit integer. **ATTENTION**: If
-   a wrong LSN value is specified (a user  error which |Percona XtraBackup| is
-   unable to detect), the backup will be unusable. Be careful!
+   a wrong LSN value is specified (a user  error that |Percona XtraBackup| cannot detect), the backup will be unusable. Be careful!
 
 .. option:: --innodb-log-arch-dir=DIRECTORY
 
@@ -383,7 +415,7 @@ Options
 
 .. option:: --innodb-miscellaneous
 
-   There is a large group of InnoDB options that are normally read from the
+   A large group of InnoDB options are normally read from the
    :file:`my.cnf` configuration file, so that |xtrabackup| boots up its
    embedded InnoDB in the same configuration as your current server. You
    normally do not need to specify these explicitly. These options have the
@@ -417,11 +449,26 @@ Options
     --innodb-read-io-threads
     --innodb-write-io-threads
 
+.. option:: --innodb-undo-directory=name
+
+   The directory location for the undo tablespace. The path is absolute.
+
+.. option:: --innodb-undo-tablespace=#
+
+   The number of undo tablespaces to use.
+   
 .. option:: --keyring-file-data=FILENAME
 
    The path to the keyring file. Combine this option with
    :option:`xtrabackup --xtrabackup-plugin-dir`.
 
+.. option:: --kill-long-queries-timeout=#
+
+   This options specifies the number of seconds |program| waits between
+   starting FLUSH TABLES WITH READ LOCK and killing those queries that block
+   it. The default is ``0`` (zero) seconds, which means the |program| does not
+   attempt to kill any queries.
+   
 .. option:: --lock-ddl
 
    Issue ``LOCK TABLES FOR BACKUP`` if it is supported by server
@@ -437,24 +484,68 @@ Options
    If ``LOCK TABLES FOR BACKUP`` does not return within given
    timeout, abort the backup.
 
+.. option:: --log-bin[=name]
+
+   The base name for the log sequence.
+   
 .. option:: --log-copy-interval=#
 
-   This option specifies time interval between checks done by log copying
-   thread in milliseconds (default is 1 second).
+   This option specifies time interval between log copying
+   thread checks in milliseconds (default is 1 second).
 
+.. option:: --login-path=#
+
+   Read this path from the login file.
+   
 .. option:: --move-back
 
    Move all the files in a previously made backup from the backup directory to
    their original locations. As this option removes backup files, it must be
    used with caution.
 
+.. option:: --no-backup-locks
+
+   This options controls if backup locks are used instead of ``FLUSH TABLES
+   WITH READ LOCK`` during the backup stage. The backup locks are must be supported on the server for the option to have an affect.
+   
+   This option is enabled by default. Disable the option
+   with :option:`--no-backup-locks`.
+   
 .. option:: --no-defaults
 
-   Don't read default options from any option file. Must be given as the first
+   Do not read the default options from any option file. Must be given as the first
    option on the command-line.
 
-.. include:: ../.res/contents/option.no-version-check.txt
+.. option:: --no-lock
 
+   This option automatically uses Backup Locks, and disables table locks, as a
+   lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
+   non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.
+   
+   Only use this option if *all* tables are InnoDB and you *do not care* about
+   the binary log position of the backup.
+   
+   Do not use this option if any DDL statements will be executed or if any
+   non-InnoDB tables are being updated (this includes the MyISAM tables in the
+   mysql database). Using this option in these conditions could cause an
+   inconsistent backup.
+   
+   If your backups fail to acquire a lock and you are planning to use this
+   option, the failure may be caused by incoming replication events that
+   prevent the lock from succeeding. Try the :option:``--safe-slave-backup`
+   to momentarily stop the replication slave thread.
+   
+   The `xtrabackup-binlog-info` is not created when the :option:`--no-lock`
+   is used because ``SHOW MASTER STATUS`` may be inconsistent. In certain
+   conditions, ``xtrabackup_binlog_pos_innodb`` can be used instead to get
+   consistent binlog coordinates as described in :ref:`working_with_binlogs`.
+   
+.. include:: ../.res/contents/option.no-version-check.txt
+   
+.. option:: --open-files-limit=#
+
+   The maximum number of file descriptors to reserve with setrlimit().
+   
 .. option:: --parallel=#
 
    This option specifies the number of threads to use to copy multiple data
@@ -467,7 +558,7 @@ Options
 .. option:: --password=PASSWORD
 
    This option specifies the password to use when connecting to the database.
-   It accepts a string argument. See mysql --help for details.
+   It accepts a string argument. See ``mysql --help`` for details.
 
 .. option:: --prepare
 
@@ -482,18 +573,36 @@ Options
 
 .. option:: --print-param
 
-   Makes :program:`xtrabackup` print out parameters that can be used for
-   copying the data files back to their original locations to restore them. See
+   Makes :program:`xtrabackup` print out parameters that to copy the data files back to their original locations to restore them. See
    :ref:`scripting-xtrabackup`.
 
+.. option:: --read-buffer-size[=#]
+
+   Set datafile read buffer size. The given value is scaled up to page size. The
+   default is 10MB.
+   
+.. option:: --rebuild-indexes
+
+   Rebuild secondary indexes in InnoDB tables after applying the log. Only use
+   with :option:`--prepare`.
+   
+.. option:: --rebuild-threads=#
+
+   This option defines the number of threads to rebuild indexes in a compact
+   backup. Only use with :option:`--prepare` and :option:`--rebuild-indexes`.
+   
+.. option:: --redo-log-version=#
+
+   The redo log version of the backup. Use only with :option:`--prepare`.
+   
 .. option:: --reencrypt-for-server-id=<new_server_id>
 
    Use this option to start the server instance with different server_id from
    the one the encrypted backup was taken from, like a replication replica or a
-   galera node. When this option is used, xtrabackup will, as a prepare step,
+   Galera node. When this option is used, xtrabackup will, as a prepare step,
    generate a new master key with ID based on the new server_id, store it into
-   keyring file and re-encrypt the tablespace keys inside of tablespace
-   headers. Option should be passed for :option:`--prepare` (final step).
+   keyring file, and re-encrypt the tablespace keys inside of tablespace
+   headers. The option should be passed for :option:`--prepare` (final step).
 
 .. option:: --remove-original
 
@@ -501,33 +610,53 @@ Options
    remove :file:`.qp`, :file:`.xbcrypt` and :file:`.qp.xbcrypt` files after
    decryption and decompression.
 
+.. option:: --rsync
+
+   Use the ``rsync`` utility to optimize local file transfers.
+   
+   When this option is specified, |program| uses ``rsync`` to copy all
+   non-InnoDB files instead of spawning a separate copy command for each file.
+   This option is faster for servers with a large number of databases or tables.
+   
+   This option cannot be used with :option:`--stream`.
+   
 .. option:: --safe-slave-backup
 
    When specified, xtrabackup will stop the replica SQL thread just before
    running ``FLUSH TABLES WITH READ LOCK`` and wait to start backup until
    ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open
-   temporary tables, the backup will take place, otherwise the SQL thread will
+   temporary tables, the backup will occur; otherwise the SQL thread will
    be started and stopped until there are no open temporary tables. The backup
    will fail if ``Slave_open_temp_tables`` does not become zero after
    :option:`xtrabackup --safe-slave-backup-timeout` seconds. The replica SQL
    thread will be restarted when the backup finishes. This option is
-   implemented in order to deal with `replicating temporary tables
+   implemented to deal with `replicating temporary tables
    <https://dev.mysql.com/doc/refman/5.7/en/replication-features-temptables.html>`_
    and isn't neccessary with Row-Based-Replication.
 
 .. option:: --safe-slave-backup-timeout=SECONDS
 
    How many seconds :option:`xtrabackup --safe-slave-backup` should wait for
-   ``Slave_open_temp_tables`` to become zero. Defaults to 300 seconds.
+   ``Slave_open_temp_tables`` to become zero. The default is 300 seconds.
 
 .. option:: --secure-auth
 
-   Refuse client connecting to server if it uses old (pre-4.1.1) protocol.
+   Refuse client connecting to the server if it uses old (pre-4.1.1) protocol.
    (Enabled by default; use --skip-secure-auth to disable.)
 
 .. option:: --server-id=#
 
    The server instance being backed up.
+   
+.. option:: --server-public-key-path=name
+
+   File path the server's public RSA key in PEM format.
+   
+.. option:: --skip-tables-compatibility-check
+
+   This option disables the engine compatibility warning.
+   
+   .. seealso:: :option:`--tables-compatibility-check`
 
 .. option:: --slave-info
 
@@ -546,14 +675,14 @@ Options
 
 .. option:: --ssl-ca
 
-   Path of the file which contains list of trusted SSL CAs. More information
+   Path of the file, which contains a list of trusted SSL CAs. More information
    can be found in `--ssl-ca
    <https://dev.mysql.com/doc/refman/5.7/en/secure-connection-options.html#option_general_ssl-ca>`_
    MySQL server documentation.
 
 .. option:: --ssl-capath
 
-   Directory path that contains trusted SSL CA certificates in PEM format. More
+   The directory path that contains trusted SSL CA certificates in the PEM format. More
    information can be found in `--ssl-capath
    <https://dev.mysql.com/doc/refman/5.7/en/secure-connection-options.html#option_general_ssl-capath>`_
    MySQL server documentation.
@@ -581,21 +710,21 @@ Options
 
 .. option:: --ssl-crlpath
 
-   Path of directory that contains certificate revocation list files. More
+   Path of the directory that contains certificate revocation list files. More
    information can be found in `--ssl-crlpath
    <https://dev.mysql.com/doc/refman/5.7/en/secure-connection-options.html#option_general_ssl-crlpath>`_
    MySQL server documentation.
 
 .. option:: --ssl-key
 
-   Path of file that contains X509 key in PEM format. More information can be
+   Path of the file that contains X509 key in PEM format. More information can be
    found in `--ssl-key
    <https://dev.mysql.com/doc/refman/5.7/en/secure-connection-options.html#option_general_ssl-key>`_
    MySQL server documentation.
 
 .. option:: --ssl-mode
 
-   Security state of connection to server. More information can be found in
+   The security state of connection to server. More information can be found in
    `--ssl-mode
    <https://dev.mysql.com/doc/refman/5.7/en/secure-connection-options.html#option_general_ssl-mode>`_
    MySQL server documentation.
@@ -623,6 +752,13 @@ Options
    A regular expression against which the full tablename, in
    ``databasename.tablename`` format, is matched. If the name matches, the
    table is backed up. See :doc:`partial backups <partial_backups>`.
+   
+.. option:: --tables-compatibility-check
+
+   This option enables the engine compatibility warning.
+   
+   The default value is ``ON``. Use :option:`--skip-tables-compatibility-check`
+   to disable.
 
 .. option:: --tables-exclude=name
 
@@ -642,7 +778,7 @@ Options
    This option specifies the destination directory for the backup. If the
    directory does not exist, :program:`xtrabackup` creates it. If the directory
    does exist and is empty, :program:`xtrabackup` will succeed.
-   :program:`xtrabackup` will not overwrite existing files, however; it will
+   :program:`xtrabackup` will not overwrite existing files; however it will
    fail with operating system error 17, ``file exists``.
 
    If this option is a relative path, it is interpreted as being relative to
@@ -662,6 +798,14 @@ Options
 
       More information about how to throttle a backup
          :ref:`throttling_backups`
+         
+.. option:: --tls-version=name
+
+   The TLS version to use. The allowed values are the following:
+   
+   * TLSv1
+   * TLSv1.1
+   * TLSv1.2
 
 .. option:: --tmpdir=name
 
