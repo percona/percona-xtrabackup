@@ -1,13 +1,20 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -31,12 +38,13 @@ unsigned int plugin_version= 0;
 
 //The plugin running flag and lock
 static mysql_mutex_t plugin_running_mutex;
-static bool group_replication_running;
+bool group_replication_running= false;
+bool group_replication_stopping= false;
 bool wait_on_engine_initialization= false;
 bool server_shutdown_status= false;
 bool plugin_is_auto_starting= false;
-static bool plugin_is_waiting_to_set_server_read_mode= false;
-static bool plugin_is_being_uninstalled= false;
+bool plugin_is_waiting_to_set_server_read_mode= false;
+bool plugin_is_being_uninstalled= false;
 
 /* Plugin modules */
 //The plugin applier
@@ -264,6 +272,11 @@ mysql_mutex_t* get_plugin_running_lock()
 bool plugin_is_group_replication_running()
 {
   return group_replication_running;
+}
+
+bool get_plugin_is_stopping()
+{
+  return group_replication_stopping;
 }
 
 int plugin_group_replication_set_retrieved_certification_info(void* info)
@@ -526,15 +539,19 @@ int initialize_plugin_and_join(enum_plugin_con_isolation sql_api_isolation,
   }
 
   configure_compatibility_manager();
-  DBUG_EXECUTE_IF("group_replication_compatibility_rule_error",
+  DBUG_EXECUTE_IF("group_replication_compatibility_rule_error_major",
                   {
-                    //Mark this member as being another version
-                    Member_version other_version= plugin_version + (0x000001);
-                    compatibility_mgr->set_local_version(other_version);
-                    Member_version local_member_version(plugin_version);
-                    //Add an incomparability with the real plugin version
-                    compatibility_mgr->add_incompatibility(other_version,
-                                                           local_member_version);
+                    Member_version other_version= plugin_version + (0x010000);
+                    Member_version current_version= plugin_version;
+                    compatibility_mgr->add_incompatibility(current_version,
+                                                           other_version);
+                  };);
+  DBUG_EXECUTE_IF("group_replication_compatibility_rule_error_minor",
+                  {
+                    Member_version other_version= plugin_version;
+                    Member_version current_version= plugin_version + (0x000100);
+                    compatibility_mgr->add_incompatibility(current_version,
+                                                           other_version);
                   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_minor_version",
                   {
@@ -594,6 +611,7 @@ int initialize_plugin_and_join(enum_plugin_con_isolation sql_api_isolation,
     goto err;
   }
   group_replication_running= true;
+  group_replication_stopping= false;
   log_primary_member_details();
 
 err:
@@ -822,6 +840,7 @@ int plugin_group_replication_stop()
   DBUG_ENTER("plugin_group_replication_stop");
 
   Mutex_autolock auto_lock_mutex(&plugin_running_mutex);
+  group_replication_stopping= true;
 
   DBUG_EXECUTE_IF("group_replication_wait_on_stop",
                  {
@@ -976,6 +995,12 @@ int terminate_plugin_modules(bool flag_stop_async_channel)
 
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info)
 {
+  // Reset plugin local variables.
+  group_replication_running= false;
+  group_replication_stopping= false;
+  plugin_is_being_uninstalled= false;
+  plugin_is_waiting_to_set_server_read_mode= false;
+
   // Register all PSI keys at the time plugin init
 #ifdef HAVE_PSI_INTERFACE
   register_all_group_replication_psi_keys();
@@ -1336,13 +1361,10 @@ int configure_group_communication(st_server_ssl_variables *ssl_variables)
       gcs_module_parameters.add_parameter("cipher", ssl_cipher);
       gcs_module_parameters.add_parameter("tls_version", tls_version);
 
-#if !defined(HAVE_YASSL)
-      // YaSSL does not support CRL.
       if (!ssl_crl.empty())
         gcs_module_parameters.add_parameter("crl_file", ssl_crl); /* purecov: inspected */
       if (!ssl_crlpath.empty())
         gcs_module_parameters.add_parameter("crl_path", ssl_crlpath); /* purecov: inspected */
-#endif
 
       log_message(MY_INFORMATION_LEVEL,
                   "Group communication SSL configuration: "

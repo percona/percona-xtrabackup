@@ -114,8 +114,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbcloud_osenv
 %{_libdir}/xtrabackup/plugin/keyring_file.so
 %{_libdir}/xtrabackup/plugin/keyring_vault.so
-%doc COPYING
 %doc %{_mandir}/man1/*.1.gz
+%doc LICENSE
 
 %files -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 %defattr(-,root,root,-)

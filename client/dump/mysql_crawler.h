@@ -1,14 +1,21 @@
 /*
-  Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2020 Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; version 2 of the License.
+  it under the terms of the GNU General Public License, version 2.0,
+  as published by the Free Software Foundation.
+
+  This program is also distributed with certain software (including
+  but not limited to OpenSSL) that is licensed under separate terms,
+  as designated in a particular file or component or in included license
+  documentation.  The authors of MySQL hereby grant you an additional
+  permission to link the program and your derivative works with the
+  separately licensed software that they have included with MySQL.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Public License, version 2.0, for more details.
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
@@ -28,6 +35,7 @@
 #include "table.h"
 #include "dump_end_dump_task.h"
 #include "mysql_chain_element_options.h"
+#include "mysqldump_tool_chain_maker_options.h"
 #include "database_start_dump_task.h"
 #include "database_end_dump_task.h"
 #include "tables_definition_ready_dump_task.h"
@@ -51,6 +59,7 @@ public:
     Mysql::I_callable<bool, const Mysql::Tools::Base::Message_data&>*
       message_handler, Simple_id_generator* object_id_generator,
       Mysql_chain_element_options* options,
+      Mysqldump_tool_chain_maker_options* m_mysqldump_tool_cmaker_options,
       Mysql::Tools::Base::Abstract_program* program);
   /**
     Enumerates all objects it can access, gets chains from all registered
@@ -74,6 +83,8 @@ private:
   void enumerate_event_scheduler_events(const Database& db);
 
   void enumerate_users();
+
+  Mysqldump_tool_chain_maker_options* m_mysqldump_tool_cmaker_options;
 
   /**
     Rewrite statement, enclosing it with version specific comment and with

@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1997, 2019, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -124,6 +132,10 @@ row_undo_mod_clust_low(
 		*rebuilt_old_pk = NULL;
 	}
 
+	/* Update would release the implicit lock. Must convert to
+	explicit lock before applying update undo.*/
+	row_convert_impl_to_expl_if_needed(btr_cur, node);
+
 	if (mode != BTR_MODIFY_TREE) {
 		ut_ad((mode & ~BTR_ALREADY_S_LATCHED) == BTR_MODIFY_LEAF);
 
@@ -218,7 +230,6 @@ row_undo_mod_remove_clust_low(
 	than the rolling-back one. */
 	ut_ad(rec_get_deleted_flag(btr_cur_get_rec(btr_cur),
 				   dict_table_is_comp(node->table)));
-	row_convert_impl_to_expl_if_needed(btr_cur, node);
 
 	if (mode == BTR_MODIFY_LEAF) {
 		err = btr_cur_optimistic_delete(btr_cur, 0, mtr)
@@ -352,6 +363,8 @@ row_undo_mod_clust(
 
 	btr_pcur_commit_specify_mtr(pcur, &mtr);
 
+	DEBUG_SYNC_C("ib_undo_mod_before_remove_clust");
+
 	if (err == DB_SUCCESS && node->rec_type == TRX_UNDO_UPD_DEL_REC) {
 
 		mtr_start(&mtr);
@@ -416,6 +429,7 @@ row_undo_mod_del_mark_or_remove_sec_low(
 	mtr_t			mtr_vers;
 	row_search_result	search_result;
 	ibool			modify_leaf = false;
+	ulint			rec_deleted;
 
 	log_free_check();
 	mtr_start(&mtr);
@@ -497,6 +511,18 @@ row_undo_mod_del_mark_or_remove_sec_low(
 					       btr_pcur_get_rec(&(node->pcur)),
 					       &mtr_vers, index, entry,
 					       0, 0);
+
+	/* If the key is delete marked then the statement could not modify the
+	key yet and the transaction has no implicit lock on it. We must convert
+	to explicit lock if and only if we are the transaction which has implicit
+	lock on it.Note that it is still ok to purge the delete mark key if it is
+	purgeable.*/
+	rec_deleted = rec_get_deleted_flag(btr_pcur_get_rec(&pcur),
+                                                 dict_table_is_comp(index->table));
+	if (rec_deleted == 0) {
+		row_convert_impl_to_expl_if_needed(btr_cur, node);
+	}
+
 	if (old_has) {
 		err = btr_cur_del_mark_set_sec_rec(BTR_NO_LOCKING_FLAG,
 						   btr_cur, TRUE, thr, &mtr);
@@ -504,16 +530,13 @@ row_undo_mod_del_mark_or_remove_sec_low(
 	} else {
 		/* Remove the index record */
 		if (dict_index_is_spatial(index)) {
-			rec_t*	rec = btr_pcur_get_rec(&pcur);
-			if (rec_get_deleted_flag(rec,
-						 dict_table_is_comp(index->table))) {
+			if (rec_deleted) {
 				ib::error() << "Record found in index "
 					<< index->name << " is deleted marked"
 					" on rollback update.";
 			}
 		}
 
-		row_convert_impl_to_expl_if_needed(btr_cur, node);
 
 		if (modify_leaf) {
 			success = btr_cur_optimistic_delete(btr_cur, 0, &mtr);

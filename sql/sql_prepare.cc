@@ -1,13 +1,20 @@
-/* Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -234,8 +241,19 @@ static inline void rewrite_query_if_needed(THD *thd)
                  !(opt_general_log_raw || thd->slave_thread));
 
   if ((thd->sp_runtime_ctx == NULL) &&
-      (general || opt_slow_log || opt_bin_log))
+      (general || opt_slow_log || opt_bin_log)) {
+    /*
+      thd->m_rewritten_query may already contain "PREPARE stmt FROM ..."
+      at this point, so we reset it here so mysql_rewrite_query()
+      won't complain.
+    */
+    thd->reset_rewritten_query();
+    /*
+      Now replace the "PREPARE ..." with the obfuscated version of the
+      actual query were prepare.
+    */
     mysql_rewrite_query(thd);
+  }
 }
 
 /**
@@ -258,10 +276,10 @@ static inline void log_execute_line(THD *thd)
   if (thd->sp_runtime_ctx != NULL)
     return;
 
-  if (thd->rewritten_query.length())
+  if (thd->rewritten_query().length())
     query_logger.general_log_write(thd, COM_STMT_EXECUTE,
-                                   thd->rewritten_query.c_ptr_safe(),
-                                   thd->rewritten_query.length());
+                                   thd->rewritten_query().ptr(),
+                                   thd->rewritten_query().length());
   else
     query_logger.general_log_write(thd, COM_STMT_EXECUTE,
                                    thd->query().str, thd->query().length);
@@ -1141,6 +1159,7 @@ bool Prepared_statement::insert_params_from_vars(List<LEX_STRING>& varnames,
       if (param->convert_str_value(thd))
         goto error;
 
+     DBUG_ASSERT(param->pos_in_query > length);
      size_t num_bytes = param->pos_in_query - length;
      if (query->length() + num_bytes + val->length() >
           std::numeric_limits<uint32>::max())
@@ -3373,18 +3392,18 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
 
   rewrite_query_if_needed(thd);
 
-  if (thd->rewritten_query.length())
+  if (thd->rewritten_query().length())
   {
     MYSQL_SET_PS_TEXT(m_prepared_stmt,
-                      thd->rewritten_query.c_ptr_safe(),
-                      thd->rewritten_query.length());
+                      thd->rewritten_query().ptr(),
+                      thd->rewritten_query().length());
   }
   else
   {
     MYSQL_SET_PS_TEXT(m_prepared_stmt,
                       thd->query().str,
                       thd->query().length);
-  }  
+  }
 
   cleanup_stmt();
   stmt_backup.restore_thd(thd, this);
@@ -3426,10 +3445,10 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
     */
     if (thd->sp_runtime_ctx == NULL)
     {
-      if (thd->rewritten_query.length())
+      if (thd->rewritten_query().length())
         query_logger.general_log_write(thd, COM_STMT_PREPARE,
-                                       thd->rewritten_query.c_ptr_safe(),
-                                       thd->rewritten_query.length());
+                                       thd->rewritten_query().ptr(),
+                                       thd->rewritten_query().length());
       else
         query_logger.general_log_write(thd, COM_STMT_PREPARE,
                                        m_query_string.str,
@@ -4173,6 +4192,14 @@ bool Ed_connection::execute_direct(Server_runnable *server_runnable)
     Reset it to point to the first result set instead.
   */
   m_current_rset= m_rsets;
+
+  /*
+    Reset rewritten (for password obfuscation etc.) query after
+    internal call from NDB etc.  Without this, a rewritten query
+    would get "stuck" in SHOW PROCESSLIST.
+  */
+  m_thd->reset_rewritten_query();
+  m_thd->reset_query_for_display();
 
   DBUG_RETURN(rc);
 }

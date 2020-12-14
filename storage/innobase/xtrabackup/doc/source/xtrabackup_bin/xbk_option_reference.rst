@@ -598,7 +598,7 @@ Options
 .. option:: --reencrypt-for-server-id=<new_server_id>
 
    Use this option to start the server instance with different server_id from
-   the one the encrypted backup was taken from, like a replication slave or a
+   the one the encrypted backup was taken from, like a replication replica or a
    Galera node. When this option is used, xtrabackup will, as a prepare step,
    generate a new master key with ID based on the new server_id, store it into
    keyring file, and re-encrypt the tablespace keys inside of tablespace
@@ -622,13 +622,13 @@ Options
    
 .. option:: --safe-slave-backup
 
-   When specified, xtrabackup will stop the slave SQL thread just before
+   When specified, xtrabackup will stop the replica SQL thread just before
    running ``FLUSH TABLES WITH READ LOCK`` and wait to start backup until
    ``Slave_open_temp_tables`` in ``SHOW STATUS`` is zero. If there are no open
    temporary tables, the backup will occur; otherwise the SQL thread will
    be started and stopped until there are no open temporary tables. The backup
    will fail if ``Slave_open_temp_tables`` does not become zero after
-   :option:`xtrabackup --safe-slave-backup-timeout` seconds. The slave SQL
+   :option:`xtrabackup --safe-slave-backup-timeout` seconds. The replica SQL
    thread will be restarted when the backup finishes. This option is
    implemented to deal with `replicating temporary tables
    <https://dev.mysql.com/doc/refman/5.7/en/replication-features-temptables.html>`_
@@ -660,10 +660,10 @@ Options
 
 .. option:: --slave-info
 
-   This option is useful when backing up a replication slave server. It prints
-   the binary log position of the master server. It also writes the binary log
+   This option is useful when backing up a replication replica server. It prints
+   the binary log position of the source server. It also writes the binary log
    coordinates to the :file:`xtrabackup_slave_info` file as a ``CHANGE MASTER``
-   command. A new slave for this master can be set up by starting a slave server
+   command. A new replica for this source can be set up by starting a replica server
    on this backup and issuing a ``CHANGE MASTER`` command with the binary log
    position saved in the :file:`xtrabackup_slave_info` file.
 

@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -1320,10 +1327,21 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
       continue;
     }
 
+    ACL_USER *acl_user= find_acl_user(Str->host.str, Str->user.str, TRUE);
+
     /* Create user if needed */
     error= replace_user_table(thd, tables[0].table, Str,
                               0, revoke_grant, create_new_users,
                               what_to_set);
+    /*
+      If the user did not exist and replace_user_table() succeeded and if this
+      is a GRANT statement, then it means that a new user is created.
+
+      So, set the is_partial_execution flag to true.
+    */
+    if (!error)
+      is_partial_execution= (!acl_user && !revoke_grant) || is_partial_execution;
+
     if (error > 0)
     {
       result= TRUE;                             // Remember error
@@ -1463,17 +1481,21 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
   }
   else
   {
-    if (!revoke_grant)
-    {
-      String *rlb= &thd->rewritten_query;
-      rlb->mem_free();
-      mysql_rewrite_grant(thd, rlb);
+    /*
+      Rewrite (table) GRANT statements to use password hashes
+      instead of <secret> style obfuscation so it can be used
+      in binlog.
+    */
+    if (!revoke_grant) {
+      String rlb;
+      mysql_rewrite_grant(thd, &rlb);
+      thd->swap_rewritten_query(rlb);
     }
-    if (thd->rewritten_query.length())
+
+    if (thd->rewritten_query().length() > 0)
       result= result |
-          write_bin_log(thd, FALSE,
-                        thd->rewritten_query.c_ptr_safe(),
-                        thd->rewritten_query.length(),
+          write_bin_log(thd, FALSE, thd->rewritten_query().ptr(),
+                        thd->rewritten_query().length(),
                         transactional_tables);
     else
       result= result |
@@ -1636,10 +1658,21 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
       continue;
     }
 
+    ACL_USER *acl_user= find_acl_user(Str->host.str, Str->user.str, TRUE);
+
     /* Create user if needed */
     error= replace_user_table(thd, tables[0].table, Str,
                               0, revoke_grant, create_new_users,
                               what_to_set);
+    /*
+      If the user did not exist and replace_user_table() succeeded and if this
+      is a GRANT statement, then it means that a new user is created.
+
+      So, set the is_partial_execution flag to true.
+    */
+    if (!error)
+      is_partial_execution= (!acl_user && !revoke_grant) || is_partial_execution;
+
     if (error > 0)
     {
       result= TRUE;                             // Remember error
@@ -1720,17 +1753,22 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
     }
     else
     {
-      if (!revoke_grant)
-      {
-        String *rlb= &thd->rewritten_query;
-        rlb->mem_free();
-        mysql_rewrite_grant(thd, rlb);
+      /*
+        Rewrite (routine) GRANT statements to use password hashes
+        instead of <secret> style obfuscation so it can be used
+        in binlog.
+      */
+      if (!revoke_grant) {
+        String rlb;
+        mysql_rewrite_grant(thd, &rlb);
+        thd->swap_rewritten_query(rlb);
       }
+
       /*
         For performance reasons, we don't rewrite the query if we don't have to.
         If that was the case, write the original query.
       */
-      if (!thd->rewritten_query.length())
+      if (thd->rewritten_query().length() == 0)
       {
         if (write_bin_log(thd, false, thd->query().str, thd->query().length,
                           transactional_tables))
@@ -1738,9 +1776,8 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
       }
       else
       {
-        if (write_bin_log(thd, false,
-                          thd->rewritten_query.c_ptr_safe(),
-                          thd->rewritten_query.length(),
+        if (write_bin_log(thd, false, thd->rewritten_query().ptr(),
+                          thd->rewritten_query().length(),
                           transactional_tables))
           result= TRUE;
       }
@@ -1888,10 +1925,22 @@ bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &list,
       continue;
     }
 
+    ACL_USER *acl_user= find_acl_user(Str->host.str, Str->user.str, TRUE);
     int ret= replace_user_table(thd, tables[0].table, Str,
                                 (!db ? rights : 0), revoke_grant,
                                 create_new_users,
                                 (what_to_set | ACCESS_RIGHTS_ATTR));
+    /*
+      If the user did not exist and replace_user_table() succeeded and if
+      this is a GRANT statement, then it means that a new user is created.
+      So, set the is_partial_execution flag to true.
+    */
+    if (!ret)
+    {
+      /* In case of GRANT, user creation is partial execution */
+      is_partial_execution= (!acl_user && !revoke_grant) || is_partial_execution;
+    }
+
     if (ret)
     {
       result= -1;
@@ -1986,18 +2035,22 @@ bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &list,
   }
   else
   {
-    if (!revoke_grant)
-    {
-      String *rlb= &thd->rewritten_query;
-      rlb->mem_free();
-      mysql_rewrite_grant(thd, rlb);
+    /*
+      Rewrite GRANT statements to use password hashes instead of
+      <secret> style obfuscation so it can be used in binlog.
+    */
+    if (!revoke_grant) {
+      String rlb;
+      mysql_rewrite_grant(thd, &rlb);
+      thd->swap_rewritten_query(rlb);
     }
-    if (thd->rewritten_query.length())
+
+    if (thd->rewritten_query().length() > 0) {
       result= result |
-          write_bin_log(thd, FALSE,
-                        thd->rewritten_query.c_ptr_safe(),
-                        thd->rewritten_query.length(),
+          write_bin_log(thd, FALSE, thd->rewritten_query().ptr(),
+                        thd->rewritten_query().length(),
                         transactional_tables);
+    }
     else
       result= result |
         write_bin_log(thd, FALSE, thd->query().str, thd->query().length,
@@ -4436,4 +4489,108 @@ bool check_fk_parent_table_access(THD *thd,
   }
 
   return false;
+}
+
+
+/**
+  For LOCK TABLES on a view checks if user in which context view is executed
+  or user that has initiated this operation has SELECT and LOCK TABLES
+  privileges on one of its underlying tables.
+
+  @param [in]   thd                   Thread context.
+  @param [in]   tbl                   Table list element for underlying table
+                                      on which we check privilege.
+  @param [out]  fake_lock_tables_acl  Set to true if table in question is one
+                                      of special I_S or P_S tables on which
+                                      nobody can get LOCK TABLES privilege.
+                                      So to preserve compatibility with dump
+                                      tools we need to fake this privilege.
+                                      Set to false otherwise.
+
+  @retval false   Success.
+  @retval true    Access denied. Error has been reported.
+*/
+bool check_lock_view_underlying_table_access(THD *thd, TABLE_LIST *tbl,
+                                             bool *fake_lock_tables_acl)
+{
+  ulong want_access= SELECT_ACL | LOCK_TABLES_ACL;
+  *fake_lock_tables_acl= false;
+
+  /*
+    I_S and P_S tables require special handling of LOCK TABLES privilege
+    in this case.
+    On the one hand we don't grant this privileges on I_S and read-only/
+    truncatable-only P_S tables to anyone. So normally you can't lock
+    them directly using LOCK TABLES.
+    On the other hand we allow creation of views which reference these
+    tables. And mysqldump/pump tools routinely lock views using LOCK
+    TABLES just to dump their definition in default mode. So refusing
+    locking of such views will break mysqldump/pump. It will also break
+    user scenarios in when views on top of I_S/P_S tables are locked along
+    with other tables by LOCK TABLES, so they are accessible under LOCK
+    TABLES mode. So we simply skip LOCK TABLES privilege check for I_S and
+    read-only/ truncatable-only P_S tables. However, we report the fact to
+    the caller, so it won't acquire strong metadata locks in this case,
+    which can be considered privilege escalation.
+  */
+  const ACL_internal_schema_access *schema_access=
+      get_cached_schema_access(&tbl->grant.m_internal, tbl->db);
+  if (schema_access)
+  {
+    ulong dummy= 0;
+    switch (schema_access->check(LOCK_TABLES_ACL, &dummy))
+    {
+    case ACL_INTERNAL_ACCESS_DENIED:
+      *fake_lock_tables_acl= true;
+      // Fall through.
+    case ACL_INTERNAL_ACCESS_GRANTED:
+      want_access&= ~LOCK_TABLES_ACL;
+      break;
+    case ACL_INTERNAL_ACCESS_CHECK_GRANT:
+      const ACL_internal_table_access *table_access= get_cached_table_access(
+          &tbl->grant.m_internal, tbl->db, tbl->table_name);
+      if (table_access)
+      {
+        switch (table_access->check(LOCK_TABLES_ACL, &dummy))
+        {
+        case ACL_INTERNAL_ACCESS_DENIED:
+          *fake_lock_tables_acl= true;
+          // Fall through.
+        case ACL_INTERNAL_ACCESS_GRANTED:
+          want_access&= ~LOCK_TABLES_ACL;
+          break;
+        case ACL_INTERNAL_ACCESS_CHECK_GRANT:
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  if (!check_single_table_access(thd, want_access, tbl, true))
+    return false;
+
+  /*
+    As it was mentioned earlier mysqldump/pump tools routinely lock
+    views just to dump their definition. This is supposed to work even
+    for views with (temporarily) invalid definer. To avoid breaking
+    this scenario we allow locking of view not only when user which
+    security context will be used for its execution has LOCK TABLES
+    and SELECT privileges on its underlying tbales, but also when
+    the user which originally requested LOCK TABLES has the similar
+    privileges on its underlying tables (which is likely to be the
+    case for users invoking mysqldump/pump).
+  */
+  Security_context *save_security_ctx= tbl->security_ctx;
+  tbl->security_ctx= NULL;
+  bool top_user_has_privs=
+      !check_single_table_access(thd, want_access, tbl, true);
+  tbl->security_ctx= save_security_ctx;
+
+  if (top_user_has_privs)
+    return false;
+
+  my_error(ER_VIEW_INVALID, MYF(0), tbl->belong_to_view->get_db_name(),
+           tbl->belong_to_view->get_table_name());
+  return true;
 }

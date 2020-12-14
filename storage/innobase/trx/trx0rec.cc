@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -1965,9 +1973,7 @@ trx_undo_report_row_operation(
 
 	undo_block = buf_page_get_gen(
 		page_id_t(undo->space, page_no), undo->page_size, RW_X_LATCH,
-		buf_pool_is_obsolete(undo->withdraw_clock)
-		? NULL : undo->guess_block, BUF_GET, __FILE__, __LINE__,
-		&mtr);
+		undo->guess_block, BUF_GET, __FILE__, __LINE__,&mtr);
 
 	buf_block_dbg_add_level(undo_block, SYNC_TRX_UNDO_PAGE);
 
@@ -2027,14 +2033,13 @@ trx_undo_report_row_operation(
 			mtr_commit(&mtr);
 		} else {
 			/* Success */
-			undo->withdraw_clock = buf_withdraw_clock;
+			undo->guess_block = undo_block;
 			mtr_commit(&mtr);
 
 			undo->empty = FALSE;
 			undo->top_page_no = page_no;
 			undo->top_offset  = offset;
 			undo->top_undo_no = trx->undo_no;
-			undo->guess_block = undo_block;
 
 			trx->undo_no++;
 			trx->undo_rseg_space = undo_ptr->rseg->space;
@@ -2121,7 +2126,7 @@ trx_undo_get_undo_rec_low(
 		page_id_t(rseg->space, page_no), rseg->page_size,
 		&mtr);
 
-	undo_rec = trx_undo_rec_copy(undo_page + offset, heap);
+	undo_rec = trx_undo_rec_copy(undo_page, offset, heap);
 
 	mtr_commit(&mtr);
 
@@ -2350,11 +2355,13 @@ trx_undo_prev_version_build(
 
 		entry = row_rec_to_index_entry(
 			rec, index, offsets, &n_ext, heap);
-		n_ext += btr_push_update_extern_fields(entry, update, heap);
 		/* The page containing the clustered index record
 		corresponding to entry is latched in mtr.  Thus the
 		following call is safe. */
 		row_upd_index_replace_new_col_vals(entry, index, update, heap);
+
+		/* Get number of externally stored columns in updated record */
+		n_ext = entry->get_n_ext();
 
 		buf = static_cast<byte*>(mem_heap_alloc(
 			heap, rec_get_converted_size(index, entry, n_ext)));

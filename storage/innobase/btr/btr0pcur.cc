@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -179,11 +187,10 @@ btr_pcur_store_position(
 		index, rec, &cursor->old_n_fields,
 		&cursor->old_rec_buf, &cursor->buf_size);
 
-	cursor->block_when_stored = block;
+	cursor->block_when_stored.store(block);
 
 	/* Function try to check if block is S/X latch. */
 	cursor->modify_clock = buf_block_get_modify_clock(block);
-	cursor->withdraw_clock = buf_withdraw_clock;
 }
 
 /**************************************************************//**
@@ -212,6 +219,26 @@ btr_pcur_copy_stored_position(
 
 	pcur_receive->old_n_fields = pcur_donate->old_n_fields;
 }
+
+/** This is a backported version of a lambda expression:
+  [&](buf_block_t *hint) {
+     return hint != nullptr && btr_cur_optimistic_latch_leaves(hint...);
+  }
+for compilers which do not support lambda expressions, nor passing local types
+as template arguments. */
+struct Btr_cur_optimistic_latch_leaves_functor_t{
+	btr_pcur_t * &cursor;
+	ulint &latch_mode;
+	const char * &file;
+	ulint &line;
+	mtr_t * &mtr;
+	bool operator() (buf_block_t *hint) const {
+		return hint != NULL && btr_cur_optimistic_latch_leaves(
+			hint, cursor->modify_clock, &latch_mode,
+			btr_pcur_get_btr_cur(cursor), file, line, mtr
+		);
+	}
+};
 
 /**************************************************************//**
 Restores the stored position of a persistent cursor bufferfixing the page and
@@ -265,7 +292,7 @@ btr_pcur_restore_position_func(
 		cursor->latch_mode =
 			BTR_LATCH_MODE_WITHOUT_INTENTION(latch_mode);
 		cursor->pos_state = BTR_PCUR_IS_POSITIONED;
-		cursor->block_when_stored = btr_pcur_get_block(cursor);
+		cursor->block_when_stored.clear();
 
 		return(FALSE);
 	}
@@ -282,11 +309,8 @@ btr_pcur_restore_position_func(
             && !dict_table_is_intrinsic(cursor->btr_cur.index->table)) {
 		/* Try optimistic restoration. */
 
-		if (!buf_pool_is_obsolete(cursor->withdraw_clock)
-		    && btr_cur_optimistic_latch_leaves(
-			cursor->block_when_stored, cursor->modify_clock,
-			&latch_mode, btr_pcur_get_btr_cur(cursor),
-			file, line, mtr)) {
+		Btr_cur_optimistic_latch_leaves_functor_t functor={cursor,latch_mode,file,line,mtr};
+		if (cursor->block_when_stored.run_with_hint(functor)) {
 
 			cursor->pos_state = BTR_PCUR_IS_POSITIONED;
 			cursor->latch_mode = latch_mode;
@@ -313,7 +337,7 @@ btr_pcur_restore_position_func(
 
 				ut_ad(!cmp_rec_rec(cursor->old_rec,
 						   rec, offsets1, offsets2,
-						   index));
+						   index,page_is_spatial_non_leaf(rec, index)));
 				mem_heap_free(heap);
 #endif /* UNIV_DEBUG */
 				return(TRUE);
@@ -373,11 +397,10 @@ btr_pcur_restore_position_func(
 		since the cursor can now be on a different page!
 		But we can retain the value of old_rec */
 
-		cursor->block_when_stored = btr_pcur_get_block(cursor);
-		cursor->modify_clock = buf_block_get_modify_clock(
-						cursor->block_when_stored);
+		buf_block_t * block = btr_pcur_get_block(cursor);
+		cursor->block_when_stored.store(block);
+		cursor->modify_clock = buf_block_get_modify_clock(block);
 		cursor->old_stored = true;
-		cursor->withdraw_clock = buf_withdraw_clock;
 
 		mem_heap_free(heap);
 
@@ -449,9 +472,23 @@ btr_pcur_move_to_next_page(
 
 	next_page = buf_block_get_frame(next_block);
 #ifdef UNIV_BTR_DEBUG
-	ut_a(page_is_comp(next_page) == page_is_comp(page));
-	ut_a(btr_page_get_prev(next_page, mtr)
-	     == btr_pcur_get_block(cursor)->page.id.page_no());
+	if (!cursor->import_ctx) {
+		ut_a(page_is_comp(next_page) == page_is_comp(page));
+		ut_a(btr_page_get_prev(next_page, mtr)
+			== btr_pcur_get_block(cursor)->page.id.page_no());
+	}
+	else {
+		if (page_is_comp(next_page) != page_is_comp(page)
+			|| btr_page_get_prev(next_page, mtr) !=
+			btr_pcur_get_block(cursor)->page.id.page_no()) {
+			/* next page does not contain valid previous page
+			number, next page is corrupted, can't move cursor
+			to the next page */
+			cursor->import_ctx->is_error = true;
+		}
+		DBUG_EXECUTE_IF("ib_import_page_corrupt",
+				cursor->import_ctx->is_error = true;);
+	}
 #endif /* UNIV_BTR_DEBUG */
 
 	btr_leaf_page_release(btr_pcur_get_block(cursor), mode, mtr);

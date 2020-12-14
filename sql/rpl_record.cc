@@ -1,13 +1,20 @@
-/* Copyright (c) 2007, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -422,6 +429,26 @@ unpack_row(Relay_log_info const *rli,
     }
 #endif
     i++;
+  }
+
+  /*
+    Re-evaluating generated columns since their values must be
+    recalculated prior to change.
+  */
+  if (table->has_gcol())
+  {
+    for (Field **vfield_ptr= table->vfield; *vfield_ptr; ++vfield_ptr)
+    {
+      Field *vfield= *vfield_ptr;
+      if ((vfield->is_virtual_gcol() && vfield->m_indexed) ||
+          bitmap_is_overlapping(table->write_set,
+                                &vfield->gcol_info->base_columns_map))
+      {
+        if ((vfield->flags & BLOB_FLAG) != 0 && vfield->is_virtual_gcol())
+          (down_cast<Field_blob*>(vfield))->keep_old_value();
+        vfield->gcol_info->expr_item->save_in_field(vfield, 0);
+      }
+    }
   }
 
   /*

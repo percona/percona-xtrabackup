@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -10,6 +10,11 @@
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
    separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,10 +29,8 @@
 #define I_SHA2_PASSWORD_COMMON_INCLUDED
 
 #include <openssl/evp.h>
-#if !defined(HAVE_YASSL)
 #include <openssl/ossl_typ.h>
-#endif /* !HAVE_YASSL */
-#include "sha2.h" /* SHA256_DIGEST_LENGTH */
+#include <openssl/sha.h>
 
 #include <string>
 
@@ -67,11 +70,7 @@ class Generate_digest
   virtual ~Generate_digest() {}
 };
 
-#ifndef HAVE_YASSL
 #define DIGEST_CTX EVP_MD_CTX
-#else
-#define DIGEST_CTX TaoCrypt::SHA256
-#endif /* !HAVE_YASSL */
 
 /**
   SHA256 digest generator

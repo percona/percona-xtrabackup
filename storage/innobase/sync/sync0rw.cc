@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2019, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -9,13 +9,21 @@ briefly in the InnoDB documentation. The contributions by Google are
 incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -568,15 +576,18 @@ rw_lock_x_lock_low(
 	} else {
 		os_thread_id_t	thread_id = os_thread_get_curr_id();
 
+		bool recursive;
+		os_thread_id_t writer_thread;
+
 		if (!pass) {
+			recursive = lock->recursive;
 			os_rmb;
+			writer_thread = lock->writer_thread;
 		}
 
 		/* Decrement failed: An X or SX lock is held by either
 		this thread or another. Try to relock. */
-		if (!pass
-		    && lock->recursive
-		    && os_thread_eq(lock->writer_thread, thread_id)) {
+		if (!pass && recursive && os_thread_eq(writer_thread, thread_id)) {
 			/* Other s-locks can be allowed. If it is request x
 			recursively while holding sx lock, this x lock should
 			be along with the latching-order. */
@@ -647,15 +658,19 @@ rw_lock_sx_lock_low(
 	} else {
 		os_thread_id_t	thread_id = os_thread_get_curr_id();
 
+		bool recursive;
+		os_thread_id_t writer_thread;
+
 		if (!pass) {
+			recursive = lock->recursive;
 			os_rmb;
+			writer_thread = lock->writer_thread;
 		}
 
 		/* Decrement failed: It already has an X or SX lock by this
 		thread or another thread. If it is this thread, relock,
 		else fail. */
-		if (!pass && lock->recursive
-		    && os_thread_eq(lock->writer_thread, thread_id)) {
+		if (!pass && recursive && os_thread_eq(writer_thread, thread_id)) {
 			/* This thread owns an X or SX lock */
 			if (lock->sx_recursive++ == 0) {
 				/* This thread is making first SX-lock request

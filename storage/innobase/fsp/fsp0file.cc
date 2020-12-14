@@ -2,13 +2,21 @@
 
 Copyright (c) 2013, 2018, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -664,17 +672,19 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 
                         if (srv_backup_mode) {
 				mutex_enter(&recv_sys->mutex);
-				encryption_list_t::iterator	it;
-				for (it = recv_sys->encryption_list->begin();
-				     it != recv_sys->encryption_list->end();
-				     it++) {
-					if (it->space_id == m_space_id) {
-						memcpy(m_encryption_key,
-						       it->key,
-						       ENCRYPTION_KEY_LEN);
-						memcpy(m_encryption_iv, it->iv,
-						       ENCRYPTION_KEY_LEN);
-						found = true;
+				if (recv_sys->encryption_list != NULL) {
+					encryption_list_t::iterator	it;
+					for (it = recv_sys->encryption_list->begin();
+					     it != recv_sys->encryption_list->end();
+					     it++) {
+						if (it->space_id == m_space_id) {
+							memcpy(m_encryption_key,
+							       it->key,
+							       ENCRYPTION_KEY_LEN);
+							memcpy(m_encryption_iv, it->iv,
+							       ENCRYPTION_KEY_LEN);
+							found = true;
+						}
 					}
 				}
 				mutex_exit(&recv_sys->mutex);
@@ -687,7 +697,13 @@ Datafile::validate_first_page(lsn_t*	flush_lsn,
 				ut_free(m_encryption_iv);
 				m_encryption_key = NULL;
 				m_encryption_iv = NULL;
-				return(DB_CORRUPTION);
+				if (!recv_recovery_is_on()) {
+					ib::info() << "Failed to decrypt table " << m_filepath << " with space"
+						<< " id " << m_space_id << ". Will check if encrytion key has been"
+						<< " parsed at the end of backup.";
+					invalid_encrypted_tablespace_ids.push_back(m_space_id);
+				}
+				return(DB_PAGE_IS_BLANK);
                         }
 
 		}

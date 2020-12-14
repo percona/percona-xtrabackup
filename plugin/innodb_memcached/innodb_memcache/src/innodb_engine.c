@@ -1,15 +1,22 @@
 /***********************************************************************
 
-Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
-This program is free software; you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but
-WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
-Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along
 with this program; if not, write to the Free Software Foundation, Inc.,
@@ -1689,6 +1696,8 @@ convert_to_char(
 			int8_t		int_val = *(int8_t*)value;
 			snprintf(buf, buf_len, "%" PRIi8, int_val);
 		}
+	} else {
+		return 0;
 	}
 
 	return(strlen(buf));
@@ -1842,6 +1851,8 @@ search_done:
 
 		result->col_value[MCI_COL_VALUE].value_str = conn_data->row_buf;
 		result->col_value[MCI_COL_VALUE].value_len = strlen(table_name);
+		result->col_value[MCI_COL_VALUE].is_str = true;
+		result->col_value[MCI_COL_VALUE].is_valid = true;
 	}
 
 	result->col_value[MCI_COL_KEY].value_str = (char*)key;
@@ -1954,6 +1965,8 @@ search_done:
 
 		result->col_value[MCI_COL_VALUE].value_str = conn_data->mul_col_buf;
 		result->col_value[MCI_COL_VALUE].value_len = total_len;
+		result->col_value[MCI_COL_VALUE].is_str = true;
+		result->col_value[MCI_COL_VALUE].is_valid = true;
 		((char*)result->col_value[MCI_COL_VALUE].value_str)[total_len] = 0;
 
 		free(result->extra_col_value);
@@ -1962,6 +1975,7 @@ search_done:
 		unsigned int	int_len;
 		char		int_buf[MAX_INT_CHAR_LEN];
 
+		memset(int_buf, 0, sizeof int_buf);
 		int_len = convert_to_char(
 			int_buf, sizeof int_buf,
 			&result->col_value[MCI_COL_VALUE].value_int,
@@ -1982,6 +1996,8 @@ search_done:
 			 conn_data->mul_col_buf;
 
 		result->col_value[MCI_COL_VALUE].value_len = int_len;
+		result->col_value[MCI_COL_VALUE].is_str = true;
+		result->col_value[MCI_COL_VALUE].is_valid = true;
 	}
 
         *item = result;

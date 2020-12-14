@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -9,13 +9,21 @@ briefly in the InnoDB documentation. The contributions by Google are
 incorporated with their permission, and subject to the conditions contained in
 the file COPYING.Google.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -191,12 +199,12 @@ buf_page_peek_if_too_old(
 
 		/* It is possible that the below comparison returns an
 		unexpected result. 2^32 milliseconds pass in about 50 days,
-		so if the difference between ut_time_ms() and access_time
-		is e.g. 50 days + 15 ms, then the below will behave as if
-		it is 15 ms. This is known and fixing it would require to
+		so if the difference between ut_time_monotonic_ms() and
+		access_time is e.g. 50 days + 15 ms, then the below will behave
+		as if it is 15 ms. This is known and fixing it would require to
 		increase buf_page_t::access_time from 32 to 64 bits. */
 		if (access_time > 0
-		    && ((ib_uint32_t) (ut_time_ms() - access_time))
+		    && ((ib_uint32_t) (ut_time_monotonic_ms() - access_time))
 		    >= buf_LRU_old_threshold_ms) {
 			return(TRUE);
 		}
@@ -612,7 +620,8 @@ buf_page_set_old(
 
 /*********************************************************************//**
 Determine the time of first access of a block in the buffer pool.
-@return ut_time_ms() at the time of first access, 0 if not accessed */
+@return ut_time_monotonic_ms() at the time of first access, 0 if not accessed
+*/
 UNIV_INLINE
 unsigned
 buf_page_is_accessed(
@@ -642,7 +651,7 @@ buf_page_set_accessed(
 
 	if (bpage->access_time == 0) {
 		/* Make this the time of the first access. */
-		bpage->access_time = static_cast<uint>(ut_time_ms());
+		bpage->access_time = static_cast<uint>(ut_time_monotonic_ms());
 	}
 }
 
@@ -985,8 +994,6 @@ buf_block_buf_fix_dec(
 /*==================*/
 	buf_block_t*	block)	/*!< in/out: block to bufferunfix */
 {
-	buf_block_unfix(block);
-
 #ifdef UNIV_DEBUG
 	/* No debug latch is acquired if block belongs to system temporary.
 	Debug latch is not of much help if access to block is single
@@ -995,6 +1002,8 @@ buf_block_buf_fix_dec(
 		rw_lock_s_unlock(&block->debug_latch);
 	}
 #endif /* UNIV_DEBUG */
+
+	buf_block_unfix(block);
 }
 
 /** Returns the buffer pool instance given a page id.
@@ -1354,18 +1363,6 @@ buf_get_nth_chunk_block(
 	chunk = buf_pool->chunks + n;
 	*chunk_size = chunk->size;
 	return(chunk->blocks);
-}
-
-/** Verify the possibility that a stored page is not in buffer pool.
-@param[in]	withdraw_clock	withdraw clock when stored the page
-@retval true	if the page might be relocated */
-UNIV_INLINE
-bool
-buf_pool_is_obsolete(
-	ulint	withdraw_clock)
-{
-	return(buf_pool_withdrawing
-	       || buf_withdraw_clock != withdraw_clock);
 }
 
 /** Calculate aligned buffer pool size based on srv_buf_pool_chunk_unit,

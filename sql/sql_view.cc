@@ -1,13 +1,20 @@
-/* Copyright (c) 2004, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2020, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -1170,24 +1177,8 @@ bool open_and_read_view(THD *thd, TABLE_SHARE *share,
   {
     /*
       It's an execution of a PS/SP and the view has already been unfolded
-      into a list of used tables. Now we only need to update the information
-      about granted privileges in the view tables with the actual data
-      stored in MySQL privilege system.  We don't need to restore the
-      required privileges (by calling register_want_access) because they has
-      not changed since PREPARE or the previous execution: the only case
-      when this information is changed is execution of UPDATE on a view, but
-      the original want_access is restored in its end.
-
-      Optimizer trace: because tables have been unfolded already, they are
-      in LEX::query_tables of the statement using the view. So privileges on
-      them are checked as done for explicitely listed tables, in constructor
-      of Opt_trace_start. Security context change is checked in
-      prepare_security() below.
+      into a list of used tables.
     */
-    if (!view_ref->prelocking_placeholder &&
-        view_ref->prepare_security(thd))
-      DBUG_RETURN(true);
-
     DBUG_PRINT("info",
                ("VIEW %s.%s is already processed on previous PS/SP execution",
                 view_ref->view_db.str, view_ref->view_name.str));
@@ -1719,8 +1710,54 @@ bool parse_view_definition(THD *thd, TABLE_LIST *view_ref)
 
   DBUG_ASSERT(view_lex == thd->lex);
   thd->lex= old_lex;                            // Needed for prepare_security
-  result= !view_ref->prelocking_placeholder &&
-          view_ref->prepare_security(thd);
+
+  result= view_ref->prepare_security(thd);
+
+  if (!result && old_lex->sql_command == SQLCOM_LOCK_TABLES && view_tables)
+  {
+    /*
+      For LOCK TABLES we need to check if user which security context is used
+      for view execution has necessary privileges for acquiring strong locks
+      on its underlying tables. These are LOCK TABLES and SELECT privileges.
+      Note that we only require SELECT and not LOCK TABLES on underlying
+      tables at view creation time. And these privileges might have been
+      revoked from user since then in any case.
+    */
+    DBUG_ASSERT(view_tables_tail);
+    for (TABLE_LIST *tbl= view_tables; tbl != view_tables_tail->next_global;
+         tbl= tbl->next_global)
+    {
+      bool fake_lock_tables_acl;
+      if (check_lock_view_underlying_table_access(thd, tbl,
+                                                  &fake_lock_tables_acl))
+      {
+        result= true;
+        break;
+      }
+
+      if (fake_lock_tables_acl)
+      {
+        /*
+          Do not acquire strong metadata locks for I_S and read-only/
+          truncatable-only P_S tables (i.e. for cases when we override
+          refused LOCK_TABLES_ACL). It is safe to do this since:
+          1) For read-only/truncatable-only P_S tables under LOCK TABLES
+             we do not look at locked tables, and open them separately.
+          2) Before 8.0 all I_S tables are implemented as temporary tables
+             populated by special hook, so we do not acquire metadata
+             locks or do normal open for them at all.
+        */
+        DBUG_ASSERT(belongs_to_p_s(tbl) || tbl->schema_table);
+        tbl->mdl_request.set_type(MDL_SHARED_READ);
+        /*
+          We must override thr_lock_type (which can be a write type) as
+          well. This is necessary to keep consistency with MDL and to allow
+          concurrent access to read-only and truncatable-only P_S tables.
+        */
+        tbl->lock_type= TL_READ_DEFAULT;
+      }
+    }
+  }
 
   lex_end(view_lex);
 

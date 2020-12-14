@@ -8,7 +8,7 @@ In server versions prior to 5.6, it is not possible to copy tables between
 servers by copying the files, even with :term:`innodb_file_per_table`. However,
 with |Percona XtraBackup|, you can export individual tables from any |InnoDB|
 database, and import them into |Percona Server| with |XtraDB| or |MySQL| 5.6.
-(The source doesn't have to be |XtraDB| or or |MySQL| 5.6, but the destination
+(The source doesn't have to be |XtraDB| or |MySQL| 5.6, but the destination
 does.) This only works on individual :term:`.ibd` files, and cannot export a
 table that is not contained in its own :term:`.ibd` file.
 

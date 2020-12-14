@@ -84,6 +84,7 @@ static char *opt_s3_endpoint = nullptr;
 static char *opt_s3_access_key = nullptr;
 static char *opt_s3_secret_key = nullptr;
 static char *opt_s3_session_token = nullptr;
+static char *opt_s3_storage_class = nullptr;
 static char *opt_s3_bucket = nullptr;
 static ulong opt_s3_bucket_lookup;
 static ulong opt_s3_api_version = 0;
@@ -93,6 +94,7 @@ static char *opt_google_endpoint = nullptr;
 static char *opt_google_access_key = nullptr;
 static char *opt_google_secret_key = nullptr;
 static char *opt_google_session_token = nullptr;
+static char *opt_google_storage_class = nullptr;
 static char *opt_google_bucket = nullptr;
 
 static std::string backup_name;
@@ -143,6 +145,7 @@ enum {
   OPT_S3_ACCESS_KEY,
   OPT_S3_SECRET_KEY,
   OPT_S3_SESSION_TOKEN,
+  OPT_S3_STORAGE_CLASS,
   OPT_S3_BUCKET,
   OPT_S3_BUCKET_LOOKUP,
   OPT_S3_API_VERSION,
@@ -152,6 +155,7 @@ enum {
   OPT_GOOGLE_ACCESS_KEY,
   OPT_GOOGLE_SECRET_KEY,
   OPT_GOOGLE_SESSION_TOKEN,
+  OPT_GOOGLE_STORAGE_CLASS,
   OPT_GOOGLE_BUCKET,
 
   OPT_PARALLEL,
@@ -267,6 +271,14 @@ static struct my_option my_long_options[] = {
      &opt_s3_session_token, &opt_s3_session_token, 0, GET_STR_ALLOC,
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
+    {"s3-storage-class", OPT_S3_STORAGE_CLASS,
+     "S3 storage class. STANDARD|STANDARD_IA|GLACIER|...     "
+     "... is meant for passing "
+     "custom storage class names provided by other S3 implementations such as "
+     "MinIO CephRadosGW, etc.",
+     &opt_s3_storage_class, &opt_s3_storage_class, 0, GET_STR_ALLOC,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
     {"s3-bucket", OPT_S3_BUCKET, "S3 bucket.", &opt_s3_bucket, &opt_s3_bucket,
      0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -298,6 +310,11 @@ static struct my_option my_long_options[] = {
      "Goolge cloud storage session token.", &opt_google_session_token,
      &opt_google_session_token, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
      0},
+
+    {"google-storage-class", OPT_GOOGLE_STORAGE_CLASS,
+     "Goolge cloud storage class. STANDARD|NEARLINE|COLDLINE|ARCHIVE",
+     &opt_google_storage_class, &opt_google_storage_class, 0, GET_STR_ALLOC,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"google-bucket", OPT_GOOGLE_BUCKET, "Goolge cloud storage bucket.",
      &opt_google_bucket, &opt_google_bucket, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
@@ -414,6 +431,7 @@ static void get_env_args() {
   get_env_value(opt_s3_access_key, "S3_ACCESS_KEY_ID");
   get_env_value(opt_s3_secret_key, "S3_SECRET_ACCESS_KEY");
   get_env_value(opt_s3_session_token, "S3_SESSION_TOKEN");
+  get_env_value(opt_s3_storage_class, "S3_STORAGE_CLASS");
   get_env_value(opt_s3_region, "S3_DEFAULT_REGION");
   get_env_value(opt_cacert, "S3_CA_BUNDLE");
   get_env_value(opt_s3_endpoint, "S3_ENDPOINT");
@@ -421,6 +439,7 @@ static void get_env_args() {
   get_env_value(opt_s3_access_key, "AWS_ACCESS_KEY_ID");
   get_env_value(opt_s3_secret_key, "AWS_SECRET_ACCESS_KEY");
   get_env_value(opt_s3_session_token, "AWS_SESSION_TOKEN");
+  get_env_value(opt_s3_storage_class, "AWS_STORAGE_CLASS");
   get_env_value(opt_s3_region, "AWS_DEFAULT_REGION");
   get_env_value(opt_cacert, "AWS_CA_BUNDLE");
   get_env_value(opt_s3_endpoint, "AWS_ENDPOINT");
@@ -705,9 +724,22 @@ bool xbcloud_put(Object_store *store, const std::string &container,
     return false;
   }
 
-  // check if xtrabackup_info, almost the last file exists in backup
-  if (std::count(object_list.begin(), object_list.end(),
-                 backup_name + "/xtrabackup_info.00000000000000000000") == 0) {
+  /* check if the xtrabackup_info.gz.00000000000 or
+  xtrabackup_info.00000000000000000000 is uploaded to cloud storage to
+  determine successful xbcloud "put" operation. */
+  bool file_found = false;
+  if (!object_list.empty()) {
+    std::string last_file_prefix = backup_name + "/xtrabackup_info";
+    auto last_file_size = last_file_prefix.size();
+    for (auto cur_file : object_list) {
+      if (cur_file.size() >= last_file_size &&
+	  cur_file.substr(0, last_file_size).compare(last_file_prefix) == 0) {
+	  file_found = true;
+        break;
+      }
+    }
+  }
+  if (!file_found) {
     msg_ts("%s: Upload failed: backup is incomplete.\n", my_progname);
     return false;
   }
@@ -1080,9 +1112,11 @@ int main(int argc, char **argv) {
         opt_s3_secret_key != nullptr ? opt_s3_secret_key : "";
     std::string session_token =
         opt_s3_session_token != nullptr ? opt_s3_session_token : "";
+    std::string storage_class =
+        opt_s3_storage_class != nullptr ? opt_s3_storage_class : "";
     object_store = std::unique_ptr<Object_store>(new S3_object_store(
         &http_client, region, access_key, secret_key, session_token,
-        opt_s3_endpoint != nullptr ? opt_s3_endpoint : "",
+        storage_class, opt_s3_endpoint != nullptr ? opt_s3_endpoint : "",
         static_cast<s3_bucket_lookup_t>(opt_s3_bucket_lookup),
         static_cast<s3_api_version_t>(opt_s3_api_version)));
 
@@ -1109,11 +1143,15 @@ int main(int argc, char **argv) {
         opt_google_secret_key != nullptr ? opt_google_secret_key : "";
     std::string session_token =
         opt_google_session_token != nullptr ? opt_google_session_token : "";
+    std::string storage_class =
+        opt_google_storage_class != nullptr ? opt_google_storage_class : "";
+
     object_store = std::unique_ptr<Object_store>(new S3_object_store(
         &http_client, region, access_key, secret_key, session_token,
+        storage_class,
         opt_google_endpoint != nullptr ? opt_google_endpoint
                                        : "https://storage.googleapis.com/",
-        LOOKUP_DNS, S3_V2));
+        LOOKUP_DNS, S3_V4));
 
     if (opt_google_bucket == nullptr) {
       msg_ts("%s: Google bucket is not specified.\n", my_progname);

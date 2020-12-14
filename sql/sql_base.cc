@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -1550,10 +1557,7 @@ close_all_tables_for_name(THD *thd, TABLE_SHARE *share,
 
 /* Check if the table belongs to the P_S, excluding setup and threads tables. */
 #define BELONGS_TO_P_S_UNDER_LTM(thd, tl) \
-   (UNDER_LTM(thd) && \
-    (!strcmp("performance_schema", tl->db) && \
-     strcmp(tl->table_name, "threads") && \
-     strstr(tl->table_name, "setup_") == NULL))
+   (UNDER_LTM(thd) && belongs_to_p_s(tl))
 
 /*
   Close all tables used by the current substatement, or all tables
@@ -2954,6 +2958,35 @@ tdc_wait_for_old_version(THD *thd, const char *db, const char *table_name,
   return res;
 }
 
+/**
+  Add a dummy LEX object for a view.
+
+  @param  thd         Thread context
+  @param  table_list  The list of tables in the view
+
+  @retval  true   error occurred
+  @retval  false  view place holder successfully added
+*/
+
+bool add_view_place_holder(THD *thd, TABLE_LIST *table_list) {
+  Prepared_stmt_arena_holder ps_arena_holder(thd);
+  LEX *lex_obj = new (thd->mem_root) st_lex_local;
+  if (lex_obj == NULL)
+    return true;
+  table_list->set_view_query(lex_obj);
+  assert(table_list->is_view());
+
+  // Create empty list of view_tables.
+  table_list->view_tables = new (thd->mem_root) List<TABLE_LIST>;
+  if (table_list->view_tables == NULL)
+    return true;
+
+  table_list->view_db.str= table_list->db;
+  table_list->view_db.length= table_list->db_length;
+  table_list->view_name.str= table_list->table_name;
+  table_list->view_name.length= table_list->table_name_length;
+  return false;
+}
 
 /**
   Open a base table.
@@ -3043,6 +3076,14 @@ bool open_table(THD *thd, TABLE_LIST *table_list, Open_table_context *ot_ctx)
     my_error(ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION, MYF(0));
     DBUG_RETURN(true);
   }
+
+  /*
+    P_S table access should be allowed while in LTM, the ignore flush flag is
+    set to avoid the infinite reopening of the table due to version number
+    mismatch.
+  */
+  if (BELONGS_TO_P_S_UNDER_LTM(thd, table_list))
+    flags|= MYSQL_OPEN_IGNORE_FLUSH;
 
   key_length= get_table_def_key(table_list, &key);
 
@@ -3147,6 +3188,18 @@ bool open_table(THD *thd, TABLE_LIST *table_list, Open_table_context *ot_ctx)
           DBUG_RETURN(true);
         }
 
+        if (table_list->open_strategy == TABLE_LIST::OPEN_FOR_CREATE) {
+          /*
+            In the case of a CREATE, add a dummy LEX object to
+            indicate the presence of a view amd skip processing the
+            existing view.
+          */
+          if (add_view_place_holder(thd, table_list))
+            DBUG_RETURN(true);
+          else
+            DBUG_RETURN(false);
+        }
+
         if (!tdc_open_view(thd, table_list, alias, key, key_length,
                            CHECK_METADATA_VERSION))
         {
@@ -3224,6 +3277,12 @@ bool open_table(THD *thd, TABLE_LIST *table_list, Open_table_context *ot_ctx)
 
       bool result= thd->mdl_context.acquire_lock(&protection_request,
                                                  ot_ctx->get_timeout());
+
+      /*
+        Unlike in other places where we acquire protection against global read
+        lock, the read_only state is not checked here since we check its state
+        later in mysql_lock_tables()
+      */
 
       thd->mdl_context.set_force_dml_deadlock_weight(false);
       thd->pop_internal_handler();
@@ -3350,7 +3409,7 @@ retry_share:
       /* Call rebind_psi outside of the critical section. */
       DBUG_ASSERT(table->file != NULL);
       table->file->rebind_psi();
-
+      table->file->extra(HA_EXTRA_RESET_STATE);
       thd->status_var.table_open_cache_hits++;
       goto table_found;
     }
@@ -3448,6 +3507,14 @@ retry_share:
       if (view_open_result)
         DBUG_RETURN(true);
 
+      if (table_list->is_view())
+      {
+        // See comments in tdc_open_view() for explanation.
+        if (!table_list->prelocking_placeholder &&
+            table_list->prepare_security(thd))
+          DBUG_RETURN(true);
+      }
+
       if (parse_view_definition(thd, table_list))
         DBUG_RETURN(true);
     }
@@ -3455,35 +3522,19 @@ retry_share:
     {
       release_table_share(share);
       mysql_mutex_unlock(&LOCK_open);
-
       /*
-        For SP and PS, LEX objects are created at the time of statement prepare.
-        And open_table() is called for every execute after that. Skip creation
-        of LEX objects if it is already present.
+        The LEX object is used by the executor and other parts of the
+        code to detect the presence of a view. We have skipped the
+        call to parse_view_definition(), which creates the LEX
+        object. Create a dummy LEX object as this is OPEN_FOR_CREATE.
+
+        For SP and PS, LEX objects are created at the time of
+        statement prepare and open_table() is called for every execute
+        after that. Skip creation of LEX objects if it is already
+        present.
       */
-      if (!table_list->is_view())
-      {
-        Prepared_stmt_arena_holder ps_arena_holder(thd);
-
-        /*
-          Since we are skipping parse_view_definition(), which creates view LEX
-          object used by the executor and other parts of the code to detect the
-          presence of a view, a dummy LEX object needs to be created.
-        */
-        table_list->set_view_query((LEX *) new(thd->mem_root) st_lex_local);
-        if (!table_list->is_view())
-          DBUG_RETURN(true);
-
-        // Create empty list of view_tables.
-        table_list->view_tables = new (thd->mem_root) List<TABLE_LIST>;
-        if (table_list->view_tables == NULL)
-          DBUG_RETURN(true);
-
-        table_list->view_db.str= table_list->db;
-        table_list->view_db.length= table_list->db_length;
-        table_list->view_name.str= table_list->table_name;
-        table_list->view_name.length= table_list->table_name_length;
-      }
+      if (!table_list->is_view() && add_view_place_holder(thd, table_list))
+        DBUG_RETURN(true);
     }
 
     DBUG_ASSERT(table_list->is_view());
@@ -4365,6 +4416,29 @@ bool tdc_open_view(THD *thd, TABLE_LIST *table_list, const char *alias,
     if (view_open_result)
       return true;
 
+    if (table_list->is_view())
+    {
+      /*
+        It's an execution of a PS/SP and the view has already been unfolded
+        into a list of used tables. Now we only need to update the information
+        about granted privileges in the view tables with the actual data
+        stored in MySQL privilege system.  We don't need to restore the
+        required privileges (by calling register_want_access) because they has
+        not changed since PREPARE or the previous execution: the only case
+        when this information is changed is execution of UPDATE on a view, but
+        the original want_access is restored in its end.
+
+        Optimizer trace: because tables have been unfolded already, they are
+        in LEX::query_tables of the statement using the view. So privileges on
+        them are checked as done for explicitely listed tables, in constructor
+        of Opt_trace_start. Security context change is checked in
+        prepare_security() below.
+      */
+      if (!table_list->prelocking_placeholder &&
+          table_list->prepare_security(thd))
+        return true;
+    }
+
     bool view_parse_result= false;
     if (!(flags & OPEN_VIEW_NO_PARSE))
       view_parse_result= parse_view_definition(thd, table_list);
@@ -4409,17 +4483,15 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share, TABLE *entry)
     entry->file->implicit_emptied= 0;
     if (mysql_bin_log.is_open())
     {
-      bool error= false;
+      bool result= false;
       String temp_buf;
-      error= temp_buf.append("DELETE FROM ");
+      result= temp_buf.append("TRUNCATE TABLE ");
       append_identifier(thd, &temp_buf, share->db.str, strlen(share->db.str));
-      error= temp_buf.append(".");
+      result= temp_buf.append(".");
       append_identifier(thd, &temp_buf, share->table_name.str,
                         strlen(share->table_name.str));
-      if (mysql_bin_log.write_dml_directly(thd, temp_buf.c_ptr_safe(),
-                                           temp_buf.length()))
-        return TRUE;
-      if (error)
+      result= temp_buf.append(" /* generated by server, implicitly emptying in-memory table */");
+      if (result)
       {
         /*
           As replication is maybe going to be corrupted, we need to warn the
@@ -4427,11 +4499,26 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share, TABLE *entry)
           because of MYF(MY_WME) in my_malloc() above).
         */
         sql_print_error("When opening HEAP table, could not allocate memory "
-                        "to write 'DELETE FROM `%s`.`%s`' to the binary log",
+                        "to write 'TRUNCATE TABLE `%s`.`%s`' to the binary log",
                         share->db.str, share->table_name.str);
         delete entry->triggers;
         return TRUE;
       }
+      /*
+        Create a new THD object for binary logging the statement which implicitly
+        empties the in-memory table.
+      */
+      THD new_thd;
+      new_thd.thread_stack= (char *) &thd;
+      new_thd.set_new_thread_id();
+      new_thd.store_globals();
+      new_thd.set_db(thd->db());
+      new_thd.variables.gtid_next.set_automatic();
+      result= mysql_bin_log.write_stmt_directly(&new_thd, temp_buf.c_ptr_safe(),
+                                               temp_buf.length(), SQLCOM_TRUNCATE);
+      new_thd.restore_globals();
+      thd->store_globals();
+      return result;
     }
   }
   return FALSE;
@@ -5567,6 +5654,20 @@ lock_table_names(THD *thd,
   if (thd->mdl_context.acquire_locks(&mdl_requests, lock_wait_timeout))
     return true;
 
+
+  /*
+    Now when we have protection against concurrent change of read_only
+    option we can safely re-check its value.
+    Skip the check for FLUSH TABLES ... WITH READ LOCK and
+    FLUSH TABLES ... FOR EXPORT as they are not supposed to be affected
+    by read_only modes.
+  */
+  if (need_global_read_lock_protection &&
+      !(flags & MYSQL_OPEN_SKIP_SCOPED_MDL_LOCK) &&
+      !(flags & MYSQL_LOCK_IGNORE_GLOBAL_READ_ONLY) &&
+      check_readonly(thd, true))
+    return true;
+
   /*
     Phase 4: Lock tablespace names. This cannot be done as part
     of the previous phases, because we need to read the
@@ -6686,8 +6787,45 @@ bool lock_tables(THD *thd, TABLE_LIST *tables, uint count,
       DBUG_RETURN(TRUE);
     for (table= tables; table; table= table->next_global)
     {
-      if (!table->is_placeholder())
-	*(ptr++)= table->table;
+      if (!table->is_placeholder() &&
+          /*
+            Do not call handler::store_lock()/external_lock() for temporary
+            tables from prelocking list.
+
+            Prelocking algorithm does not add element for a table to the
+            prelocking list if it finds that the routine that uses the table can
+            create it as a temporary during its execution. Note that such
+            routine actually can use existing temporary table if its CREATE
+            TEMPORARY TABLE has IF NOT EXISTS clause. For such tables we rely on
+            calls to handler::start_stmt() done by routine's substatement when
+            it accesses the table to inform storage engine about table
+            participation in transaction and type of operation carried out,
+            instead of calls to handler::store_lock()/external_lock() done at
+            prelocking stage.
+
+            In cases when statement uses two routines one of which can create
+            temporary table and modifies it, while another only reads from this
+            table, storage engine might be confused about real operation type
+            performed by the whole statement. Calls to
+            handler::store_lock()/external_lock() done at prelocking stage will
+            inform SE only about read part, while information about modification
+            will be delayed until handler::start_stmt() call during execution of
+            the routine doing modification. InnoDB considers this breaking of
+            promise about operation type and fails on assertion.
+
+            To avoid this problem we try to handle both the cases when temporary
+            table can be created by routine and the case when it is created
+            outside of routine and only accessed by it, uniformly. We don't call
+            handler::store_lock()/external_lock() for temporary tables used by
+            routines at prelocking stage and rely on calls to
+            handler::start_stmt(), which happen during substatement execution,
+            to pass correct information about operation type instead.
+          */
+          !(table->prelocking_placeholder &&
+            table->table->s->tmp_table != NO_TMP_TABLE))
+      {
+        *(ptr++)= table->table;
+      }
     }
 
     DEBUG_SYNC(thd, "before_lock_tables_takes_lock");

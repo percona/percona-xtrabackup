@@ -1,13 +1,20 @@
 /* Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software Foundation,
@@ -341,14 +348,21 @@ inline
 void thd_get_audit_query(THD *thd, MYSQL_LEX_CSTRING *query,
                          const struct charset_info_st **charset)
 {
-  if (!thd->rewritten_query.length())
+  /*
+    If we haven't tried to rewrite the query to obfuscate passwords
+    etc. yet, do so now.
+  */
+  if (thd->rewritten_query().length() == 0)
     mysql_rewrite_query(thd);
 
-  if (thd->rewritten_query.length())
-  {
-    query->str= thd->rewritten_query.ptr();
-    query->length= thd->rewritten_query.length();
-    *charset= thd->rewritten_query.charset();
+  /*
+    If there was something to rewrite, use the rewritten query;
+    otherwise, just use the original as submitted by the client.
+  */
+  if (thd->rewritten_query().length() > 0) {
+    query->str= thd->rewritten_query().ptr();
+    query->length= thd->rewritten_query().length();
+    *charset= thd->rewritten_query().charset();
   }
   else
   {
@@ -686,6 +700,7 @@ int mysql_audit_table_access_notify(THD *thd, TABLE_LIST *table)
       break;
     case SQLCOM_SELECT:
     case SQLCOM_HA_READ:
+    case SQLCOM_ANALYZE:
       set_table_access_subclass(&subclass, &subclass_name,
                                 AUDIT_EVENT(MYSQL_AUDIT_TABLE_ACCESS_READ));
       break;

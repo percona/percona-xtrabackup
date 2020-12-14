@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -33,6 +41,7 @@ Created 2/23/1996 Heikki Tuuri
 #include "page0cur.h"
 #include "btr0cur.h"
 #include "btr0btr.h"
+#include "buf0block_hint.h"
 #include "btr0types.h"
 #include "gis0rtree.h"
 
@@ -493,6 +502,12 @@ enum pcur_pos_t {
 	BTR_PCUR_IS_POSITIONED
 };
 
+/* Import tablespace context for persistent B-tree cursor. */
+struct import_ctx_t{
+	/* true if cursor fails to move to the next page during import. */
+	bool	is_error;
+};
+
 /* The persistent B-tree cursor structure. This is used mainly for SQL
 selects, updates, and deletes. */
 
@@ -520,13 +535,11 @@ struct btr_pcur_t{
 	whether cursor was on, before, or after the old_rec record */
 	enum btr_pcur_pos_t	rel_pos;
 	/** buffer block when the position was stored */
-	buf_block_t*	block_when_stored;
+	buf::Block_hint	block_when_stored;
 	/** the modify clock value of the buffer block when the cursor position
 	was stored */
 	ib_uint64_t	modify_clock;
-	/** the withdraw clock value of the buffer pool when the cursor
-	position was stored */
-	ulint		withdraw_clock;
+
 	/** btr_pcur_store_position() and btr_pcur_restore_position() state. */
 	enum pcur_pos_t	pos_state;
 	/** PAGE_CUR_G, ... */
@@ -542,6 +555,10 @@ struct btr_pcur_t{
 	byte*		old_rec_buf;
 	/** old_rec_buf size if old_rec_buf is not NULL */
 	ulint		buf_size;
+
+	/* NOTE that the following field is initialized only during import
+	tablespace, otherwise undefined */
+	import_ctx_t*	import_ctx;
 
 	/** Return the index of this persistent cursor */
 	dict_index_t*	index() const { return(btr_cur.index); }

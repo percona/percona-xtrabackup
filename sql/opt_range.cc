@@ -1,13 +1,20 @@
-/* Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -8130,7 +8137,14 @@ key_and(RANGE_OPT_PARAM *param, SEL_ARG *key1, SEL_ARG *key2, uint clone_flag)
     }
     // key1->part < key2->part
     key1->use_count--;
-    if (key1->use_count > 0)
+
+   /*
+     Clone key1 if the use_count is greater than 0 otherwise use the
+     "clone_flag" to determine if a key needs to be cloned.
+     "clone_flag" is set to true if the conditions which need to be
+     ANDed (in tree_and) are not simple (has many OR conditions within).
+   */
+    if (key1->use_count > 0 || (clone_flag & CLONE_KEY2_MAYBE))
       if (!(key1= key1->clone_tree(param)))
 	return 0;				// OOM
     return and_all_keys(param, key1, key2, clone_flag);

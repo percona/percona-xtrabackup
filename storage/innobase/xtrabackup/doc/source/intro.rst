@@ -43,7 +43,7 @@ for more.
 * Make incremental backups of |MySQL|
 * Stream compressed |MySQL| backups to another server
 * Move tables between |MySQL| servers on-line
-* Create new |MySQL| replication slaves easily
+* Create new |MySQL| replication replicas easily
 * Backup |MySQL| without adding load to the server
 
 

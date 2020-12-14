@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2007, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -160,6 +168,9 @@ struct fts_query_t {
 	/** number of docs fetched by query. This is to restrict the
 	result with limit value */
 	ulonglong		n_docs;
+
+	ulint		nested_exp_count; /*!< number of nested sub expression
+					  limit */
 };
 
 /** For phrase matching, first we collect the documents and the positions
@@ -3084,6 +3095,17 @@ fts_ast_visit_sub_exp(
 
 	DBUG_ENTER("fts_ast_visit_sub_exp");
 
+	/* sub-expression list may contains sub-expressions.
+	So we increase sub-expression depth counter.
+	If this counter reaches to the threshold then
+	we abort the search opertion and reports an error */
+	if (query->nested_exp_count > FTS_MAX_NESTED_EXP) {
+		query->error = DB_FTS_TOO_MANY_NESTED_EXP;
+		DBUG_RETURN(query->error);
+	}
+	query->nested_exp_count++;
+
+
 	ut_a(node->type == FTS_AST_SUBEXP_LIST);
 
 	cur_oper = query->oper;
@@ -3956,7 +3978,7 @@ fts_query(
 	bool		boolean_mode;
 	trx_t*		query_trx;
 	CHARSET_INFO*	charset;
-	ulint		start_time_ms;
+	ib_time_monotonic_ms_t		start_time_ms;
 	bool		will_be_ignored = false;
 
 	boolean_mode = flags & FTS_BOOL;
@@ -3966,7 +3988,7 @@ fts_query(
 	query_trx = trx_allocate_for_background();
 	query_trx->op_info = "FTS query";
 
-	start_time_ms = ut_time_ms();
+	start_time_ms = ut_time_monotonic_ms();
 
 	query.trx = query_trx;
 	query.index = index;
@@ -4155,7 +4177,7 @@ fts_query(
 	ut_free(lc_query_str);
 
 	if (fts_enable_diag_print && (*result)) {
-		ulint	diff_time = ut_time_ms() - start_time_ms;
+		uint64_t diff_time = ut_time_monotonic_ms() - start_time_ms;
 
 		ib::info() << "FTS Search Processing time: "
 			<< diff_time / 1000 << " secs: " << diff_time % 1000
@@ -4464,24 +4486,27 @@ fts_phrase_or_proximity_search(
 			if (k == ib_vector_size(query->match_array[j])) {
 				end_list = TRUE;
 
-				if (match[j]->doc_id != match[0]->doc_id) {
-					/* no match */
-					if (query->flags & FTS_PHRASE) {
-						ulint	s;
-
-						match[0]->doc_id = 0;
-
-						for (s = i + 1; s < n_matched;
-						     s++) {
-							match[0] = static_cast<
-							fts_match_t*>(
-							ib_vector_get(
-							query->match_array[0],
-							s));
-							match[0]->doc_id = 0;
-						}
+				if (query->flags & FTS_PHRASE) {
+					ulint	s;
+					/* Since i is the last doc id in the
+					match_array[j], remove all doc ids > i
+					from the match_array[0]. */
+					fts_match_t*    match_temp;
+					for (s = i + 1; s < n_matched; s++) {
+						match_temp = static_cast<
+						fts_match_t*>(ib_vector_get(
+						query->match_array[0], s));
+						match_temp->doc_id = 0;
 					}
 
+					if (match[j]->doc_id !=
+						match[0]->doc_id) {
+						/* no match */
+						match[0]->doc_id = 0;
+					}
+				}
+
+				if (match[j]->doc_id != match[0]->doc_id) {
 					goto func_exit;
 				}
 			}

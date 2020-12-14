@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2017, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -1257,7 +1265,23 @@ rtr_check_discard_page(
 	lock_prdt_page_free_from_discard(block, lock_sys->prdt_page_hash);
 	lock_mutex_exit();
 }
-
+/** This is a backported version of a lambda expression:
+  [&](buf_block_t *hint) {
+     return hint != nullptr && buf_page_optimistic_get(...hint...);
+  }
+for compilers which do not support lambda expressions, nor passing local types
+as template arguments. */
+struct Buf_page_optimistic_get_functor_t{
+	btr_pcur_t * &r_cursor;
+	const char * &file;
+	ulint &line;
+	mtr_t * &mtr;
+	bool operator()(buf_block_t *hint) const {
+		return hint != NULL && buf_page_optimistic_get(
+			RW_X_LATCH, hint, r_cursor->modify_clock, file, line, mtr
+		);
+	}
+};
 /**************************************************************//**
 Restores the stored position of a persistent cursor bufferfixing the page */
 bool
@@ -1293,11 +1317,8 @@ rtr_cur_restore_position_func(
 	);
 
 	ut_ad(latch_mode == BTR_CONT_MODIFY_TREE);
-
-	if (!buf_pool_is_obsolete(r_cursor->withdraw_clock)
-	    && buf_page_optimistic_get(RW_X_LATCH,
-				    r_cursor->block_when_stored,
-				    r_cursor->modify_clock, file, line, mtr)) {
+	Buf_page_optimistic_get_functor_t functor={r_cursor,file,line,mtr};
+	if (r_cursor->block_when_stored.run_with_hint(functor)){
 		ut_ad(r_cursor->pos_state == BTR_PCUR_IS_POSITIONED);
 
 		ut_ad(r_cursor->rel_pos == BTR_PCUR_ON);
@@ -1328,7 +1349,7 @@ rtr_cur_restore_position_func(
 
 				ut_ad(!cmp_rec_rec(r_cursor->old_rec,
 						   rec, offsets1, offsets2,
-						   index));
+						   index,page_is_spatial_non_leaf(rec, index)));
 			}
 
 			mem_heap_free(heap);
@@ -1398,7 +1419,7 @@ search_again:
 			r_cursor->pos_state = BTR_PCUR_IS_POSITIONED;
 			ret = true;
 		} else if (!cmp_rec_rec(r_cursor->old_rec, rec, offsets1, offsets2,
-				 index)) {
+				 index,page_is_spatial_non_leaf(rec, index))) {
 			r_cursor->pos_state = BTR_PCUR_IS_POSITIONED;
 			ret = true;
 		}
@@ -1965,7 +1986,7 @@ rtr_cur_search_with_match(
 						  &heap);
 
 			ut_ad(cmp_rec_rec(test_rec.r_rec, last_match_rec,
-					  offsets2, offsets, index) == 0);
+					  offsets2, offsets, index, false) == 0);
 #endif /* UNIV_DEBUG */
 			/* Pop the last match record and position on it */
 			match_rec->matched_recs->pop_back();

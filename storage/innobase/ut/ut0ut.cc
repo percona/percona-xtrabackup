@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -137,85 +145,53 @@ ut_time(void)
 }
 
 #ifndef UNIV_HOTBACKUP
-/**********************************************************//**
-Returns system time.
-Upon successful completion, the value 0 is returned; otherwise the
-value -1 is returned and the global variable errno is set to indicate the
-error.
-@return 0 on success, -1 otherwise */
-int
-ut_usectime(
-/*========*/
-	ulint*	sec,	/*!< out: seconds since the Epoch */
-	ulint*	ms)	/*!< out: microseconds since the Epoch+*sec */
-{
-	struct timeval	tv;
-	int		ret;
-	int		errno_gettimeofday;
-	int		i;
 
-	for (i = 0; i < 10; i++) {
-
-		ret = ut_gettimeofday(&tv, NULL);
-
-		if (ret == -1) {
-			errno_gettimeofday = errno;
-			ib::error() << "gettimeofday(): "
-				<< strerror(errno_gettimeofday);
-			os_thread_sleep(100000);  /* 0.1 sec */
-			errno = errno_gettimeofday;
-		} else {
-			break;
-		}
-	}
-
-	if (ret != -1) {
-		*sec = (ulint) tv.tv_sec;
-		*ms  = (ulint) tv.tv_usec;
-	}
-
-	return(ret);
-}
-
-/**********************************************************//**
-Returns the number of microseconds since epoch. Similar to
-time(3), the return value is also stored in *tloc, provided
-that tloc is non-NULL.
-@return us since epoch */
-uintmax_t
-ut_time_us(
-/*=======*/
-	uintmax_t*	tloc)	/*!< out: us since epoch, if non-NULL */
-{
-	struct timeval	tv;
+/** Returns the number of microseconds since epoch. Uses the monotonic clock.
+ For windows it return normal time.
+ @return us since epoch or 0 if failed to retrieve */
+ib_time_monotonic_us_t ut_time_monotonic_us(void) {
 	uintmax_t	us;
-
+#ifdef HAVE_CLOCK_GETTIME
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC,&tp);
+	us = static_cast<uintmax_t>(tp.tv_sec) *1000000 + tp.tv_nsec / 1000;
+#else
+	struct timeval	tv;
 	ut_gettimeofday(&tv, NULL);
-
 	us = static_cast<uintmax_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
-
-	if (tloc != NULL) {
-		*tloc = us;
-	}
-
+#endif /* HAVE_CLOCK_GETTIME */
 	return(us);
 }
 
-/**********************************************************//**
-Returns the number of milliseconds since some epoch.  The
-value may wrap around.  It should only be used for heuristic
-purposes.
-@return ms since epoch */
-ulint
-ut_time_ms(void)
-/*============*/
-{
+/** Returns the number of milliseconds since epoch. Uses the monotonic clock.
+ For windows,MacOS it return normal time.
+ @return us since epoch or 0 if failed to retrieve */
+ib_time_monotonic_ms_t ut_time_monotonic_ms(void) {
+#ifdef HAVE_CLOCK_GETTIME
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC,&tp);
+	return ((ulint) tp.tv_sec * 1000 + tp.tv_nsec / 1000 / 1000);
+#else
 	struct timeval	tv;
-
 	ut_gettimeofday(&tv, NULL);
-
 	return((ulint) tv.tv_sec * 1000 + tv.tv_usec / 1000);
+#endif /* HAVE_CLOCK_GETTIME */
 }
+
+/** Returns the number of seconds since epoch. Uses the monotonic clock.
+ For windows it return normal time.
+ @return us since epoch or 0 if failed to retrieve */
+ib_time_monotonic_us_t ut_time_monotonic(void) {
+#ifdef HAVE_CLOCK_GETTIME
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC,&tp);
+	return tp.tv_sec;
+#else
+	return(time(NULL));
+#endif /* HAVE_CLOCK_GETTIME */
+
+}
+
 #endif /* !UNIV_HOTBACKUP */
 
 /**********************************************************//**
@@ -852,6 +828,9 @@ ut_strerr(
 		       "of stored column");
 	case DB_COMPUTE_VALUE_FAILED:
 		return("Compute generated column failed");
+
+	case DB_FTS_TOO_MANY_NESTED_EXP:
+		return("Too many nested sub-expressions in a full-text search");
 
 	/* do not add default: in order to produce a warning if new code
 	is added to the enum but not added here */

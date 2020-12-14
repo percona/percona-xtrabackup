@@ -1,14 +1,22 @@
 /*****************************************************************************
 
-Copyright (c) 2009, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2009, 2020, Oracle and/or its affiliates. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; version 2 of the License.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.0,
+as published by the Free Software Foundation.
 
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is also distributed with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have included with MySQL.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License, version 2.0, for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
@@ -877,6 +885,8 @@ dict_stats_update_transient(
 	dict_index_t*	index;
 	ulint		sum_of_index_sizes	= 0;
 
+	dict_table_analyze_index_lock(table);
+
 	/* Find out the sizes of the indexes and how many different values
 	for the key they approximately have */
 
@@ -885,6 +895,7 @@ dict_stats_update_transient(
 	if (dict_table_is_discarded(table)) {
 		/* Nothing to do. */
 		dict_stats_empty_table(table);
+		dict_table_analyze_index_unlock(table);
 		return;
 	} else if (index == NULL) {
 		/* Table definition is corrupt */
@@ -892,6 +903,7 @@ dict_stats_update_transient(
 		ib::warn() << "Table " << table->name
 			<< " has no indexes. Cannot calculate statistics.";
 		dict_stats_empty_table(table);
+		dict_table_analyze_index_unlock(table);
 		return;
 	}
 
@@ -914,6 +926,8 @@ dict_stats_update_transient(
 		sum_of_index_sizes += index->stat_index_size;
 	}
 
+	dict_table_stats_lock(table, RW_X_LATCH);
+
 	index = dict_table_get_first_index(table);
 
 	table->stat_n_rows = index->stat_n_diff_key_vals[
@@ -924,11 +938,16 @@ dict_stats_update_transient(
 	table->stat_sum_of_other_index_sizes = sum_of_index_sizes
 		- index->stat_index_size;
 
-	table->stats_last_recalc = ut_time();
+	table->stats_last_recalc = ut_time_monotonic();
 
 	table->stat_modified_counter = 0;
 
 	table->stat_initialized = TRUE;
+
+	dict_table_stats_unlock(table, RW_X_LATCH);
+
+	dict_table_analyze_index_unlock(table);
+
 }
 
 /* @{ Pseudo code about the relation between the following functions
@@ -1131,7 +1150,8 @@ dict_stats_analyze_index_level(
 					       rec_offsets,
 					       prev_rec_offsets,
 					       index,
-					       FALSE,
+					       false,
+					       false,
 					       &matched_fields);
 
 			for (i = matched_fields; i < n_uniq; i++) {
@@ -1371,7 +1391,7 @@ dict_stats_scan_page(
 		the first n_prefix fields */
 		cmp_rec_rec_with_match(rec, next_rec,
 				       offsets_rec, offsets_next_rec,
-				       index, FALSE, &matched_fields);
+				       index, false, false, &matched_fields);
 
 		if (matched_fields < n_prefix) {
 			/* rec != next_rec, => rec is non-boring */
@@ -1890,6 +1910,10 @@ dict_stats_analyze_index(
 	ulint		size;
 	DBUG_ENTER("dict_stats_analyze_index");
 
+	/* stats_latch is created on 1st lock. */
+	ut_ad(!(index->table->stats_latch_created) ||
+		!rw_lock_own(index->table->stats_latch, RW_X_LATCH));
+
 	DBUG_PRINT("info", ("index: %s, online status: %d", index->name(),
 			    dict_index_get_online_status(index)));
 
@@ -2188,7 +2212,9 @@ dict_stats_update_persistent(
 
 	DEBUG_PRINTF("%s(table=%s)\n", __func__, table->name);
 
-	dict_table_stats_lock(table, RW_X_LATCH);
+	dict_table_analyze_index_lock(table);
+
+	DEBUG_SYNC_C("innodb_dict_stats_update_persistent");
 
 	/* analyze the clustered index first */
 
@@ -2199,8 +2225,8 @@ dict_stats_update_persistent(
 	    || (index->type | DICT_UNIQUE) != (DICT_CLUSTERED | DICT_UNIQUE)) {
 
 		/* Table definition is corrupt */
-		dict_table_stats_unlock(table, RW_X_LATCH);
 		dict_stats_empty_table(table);
+		dict_table_analyze_index_unlock(table);
 
 		return(DB_CORRUPTION);
 	}
@@ -2211,13 +2237,13 @@ dict_stats_update_persistent(
 
 	ulint	n_unique = dict_index_get_n_unique(index);
 
-	table->stat_n_rows = index->stat_n_diff_key_vals[n_unique - 1];
+	ib_uint64_t stat_n_rows_tmp = index->stat_n_diff_key_vals[n_unique - 1];
 
-	table->stat_clustered_index_size = index->stat_index_size;
+	ib_uint64_t stat_clustered_index_size_tmp = index->stat_index_size;
 
 	/* analyze other indexes from the table, if any */
 
-	table->stat_sum_of_other_index_sizes = 0;
+	ib_uint64_t stat_sum_of_other_index_sizes_tmp = 0;
 
 	for (index = dict_table_get_next_index(index);
 	     index != NULL;
@@ -2239,11 +2265,19 @@ dict_stats_update_persistent(
 			dict_stats_analyze_index(index);
 		}
 
-		table->stat_sum_of_other_index_sizes
+		stat_sum_of_other_index_sizes_tmp
 			+= index->stat_index_size;
 	}
 
-	table->stats_last_recalc = ut_time();
+	dict_table_stats_lock(table, RW_X_LATCH);
+
+	table->stat_n_rows = stat_n_rows_tmp;
+
+	table->stat_clustered_index_size = stat_clustered_index_size_tmp;
+
+	table->stat_sum_of_other_index_sizes = stat_sum_of_other_index_sizes_tmp;
+
+	table->stats_last_recalc = ut_time_monotonic();
 
 	table->stat_modified_counter = 0;
 
@@ -2252,6 +2286,8 @@ dict_stats_update_persistent(
 	dict_stats_assert_initialized(table);
 
 	dict_table_stats_unlock(table, RW_X_LATCH);
+
+	dict_table_analyze_index_unlock(table);
 
 	return(DB_SUCCESS);
 }
@@ -3019,10 +3055,13 @@ dict_stats_update_for_index(
 	if (dict_stats_is_persistent_enabled(index->table)) {
 
 		if (dict_stats_persistent_storage_check(false)) {
-			dict_table_stats_lock(index->table, RW_X_LATCH);
+			dict_table_analyze_index_lock(index->table);
 			dict_stats_analyze_index(index);
-			index->table->stat_sum_of_other_index_sizes += index->stat_index_size;
+			ulint stat_sum_of_other_index_sizes_tmp = index->stat_index_size;
+			dict_table_stats_lock(index->table, RW_X_LATCH);
+			index->table->stat_sum_of_other_index_sizes += stat_sum_of_other_index_sizes_tmp;
 			dict_table_stats_unlock(index->table, RW_X_LATCH);
+			dict_table_analyze_index_unlock(index->table);
 			dict_stats_save(index->table, &index->id);
 			DBUG_VOID_RETURN;
 		}
@@ -3084,6 +3123,11 @@ dict_stats_update(
 
 		if (srv_read_only_mode) {
 			goto transient;
+		}
+
+		/* wakes the last purge batch for exact recalculation */
+		if (trx_sys->rseg_history_len > 0) {
+			srv_wake_purge_thread_if_not_active();
 		}
 
 		/* Persistent recalculation requested, called from
@@ -3251,11 +3295,7 @@ dict_stats_update(
 
 transient:
 
-	dict_table_stats_lock(table, RW_X_LATCH);
-
 	dict_stats_update_transient(table);
-
-	dict_table_stats_unlock(table, RW_X_LATCH);
 
 	return(DB_SUCCESS);
 }

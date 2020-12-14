@@ -1,13 +1,25 @@
-/* Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; version 2 of the License.
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
+
+   This program is also distributed with certain software (including
+   but not limited to OpenSSL) that is licensed under separate terms,
+   as designated in a particular file or component or in included license
+   documentation.  The authors of MySQL hereby grant you an additional
+   permission to link the program and your derivative works with the
+   separately licensed software that they have included with MySQL.
+
+   Without limiting anything contained in the foregoing, this file,
+   which is part of C Driver for MySQL (Connector/C), is also subject to the
+   Universal FOSS Exception, version 1.0, a copy of which can be found at
+   http://oss.oracle.com/licenses/universal-foss-exception.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+   GNU General Public License, version 2.0, for more details.
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
@@ -26,43 +38,34 @@
 
 #include <string.h>
 #include <stdarg.h>
-#if !defined(HAVE_YASSL)
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <openssl/sha.h>
 #if defined(_WIN32) && !defined(_OPENSSL_Applink) && defined(HAVE_OPENSSL_APPLINK_C)
 #include <openssl/applink.c>
 #endif
-#endif
 #include "mysql/plugin.h"
-#include "sha2.h"
 
 #define MAX_CIPHER_LENGTH 1024
 
 #define SHA2_SCRAMBLE_LENGTH SHA256_DIGEST_LENGTH
 
-#if !defined(HAVE_YASSL)
 mysql_mutex_t g_public_key_mutex;
-#endif
 
 int sha256_password_init(char *a, size_t b, int c, va_list d)
 {
-#if !defined(HAVE_YASSL)
   mysql_mutex_init(0,&g_public_key_mutex, MY_MUTEX_INIT_SLOW);
-#endif
   return 0;
 }
 
 int sha256_password_deinit(void)
 {
-#if !defined(HAVE_YASSL)
   mysql_mutex_destroy(&g_public_key_mutex);
-#endif
   return 0;
 }
 
 
-#if !defined(HAVE_YASSL)
 /**
   Reads and parse RSA public key data from a file.
 
@@ -122,7 +125,6 @@ RSA *rsa_init(MYSQL *mysql)
 
   return key;
 }
-#endif // !defined(HAVE_YASSL)
 
 /**
   Authenticate the client using the RSA or TLS and a SHA256 salted password.
@@ -139,12 +141,10 @@ extern "C"
 int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
 {
   bool uses_password= mysql->passwd[0] != 0;
-#if !defined(HAVE_YASSL)
   unsigned char encrypted_password[MAX_CIPHER_LENGTH];
   static char request_public_key= '\1';
   RSA *public_key= NULL;
   bool got_public_key_from_server= false;
-#endif
   bool connection_is_secure= false;
   unsigned char scramble_pkt[20];
   unsigned char *pkt;
@@ -178,9 +178,7 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
   /* If connection isn't secure attempt to get the RSA public key file */
   if (!connection_is_secure)
   {
- #if !defined(HAVE_YASSL)
     public_key= rsa_init(mysql);
-#endif
   }
 
   if (!uses_password)
@@ -196,7 +194,6 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
     unsigned int passwd_len= static_cast<unsigned int>(strlen(mysql->passwd) + 1);
     if (!connection_is_secure)
     {
-#if !defined(HAVE_YASSL)
       /*
         If no public key; request one from the server.
       */
@@ -264,12 +261,6 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
 
       if (vio->write_packet(vio, (uchar*) encrypted_password, cipher_length))
         DBUG_RETURN(CR_ERROR);
-#else
-      set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_ERR, unknown_sqlstate,
-                                ER(CR_AUTH_PLUGIN_ERR), "sha256_password",
-                                "Authentication requires SSL encryption");
-      DBUG_RETURN(CR_ERROR); // If no openssl support
-#endif
     }
     else
     {
@@ -327,20 +318,16 @@ static bool is_secure_transport(MYSQL *mysql)
     @retval CR_OK Authentication succeeded.
 */
 
-#if !defined(HAVE_YASSL)
 static char request_public_key= '\2';
-#endif /* !HAVE_YASSL */
 static char fast_auth_success= '\3';
 static char perform_full_authentication= '\4';
 
 int caching_sha2_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
 {
   bool uses_password= mysql->passwd[0] != 0;
-#if !defined(HAVE_YASSL)
   unsigned char encrypted_password[MAX_CIPHER_LENGTH];
   RSA *public_key= NULL;
   bool got_public_key_from_server= false;
-#endif /* !HAVE_YASSL */
   bool connection_is_secure= false;
   unsigned char scramble_pkt[20];
   unsigned char *pkt;
@@ -419,7 +406,6 @@ int caching_sha2_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
 
     if (!connection_is_secure)
     {
-#ifndef HAVE_YASSL
       /* If connection isn't secure attempt to get the RSA public key file */
       public_key= rsa_init(mysql);
 
@@ -495,15 +481,12 @@ int caching_sha2_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
       }
       else
       {
-#endif /* !HAVE_YASSL */
         set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_ERR, unknown_sqlstate,
                                  ER(CR_AUTH_PLUGIN_ERR),
                                  "caching_sha2_password",
                                  "Authentication requires secure connection.");
         DBUG_RETURN(CR_ERROR);
-#ifndef HAVE_YASSL
       }
-#endif /* !HAVE_YASSL */
     }
     else
     {
