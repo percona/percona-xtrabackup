@@ -26,6 +26,23 @@
 #include "sql/sql_error.h"
 #include "vault_base64.h"
 
+#ifdef RAPIDJSON_NO_SIZETYPEDEFINE
+// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
+// globally and require to include my_rapidjson_size_t.h
+#include "my_rapidjson_size_t.h"
+#endif
+
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
+namespace {
+const char data_key[] = "data";
+const char metadata_key[] = "metadata";
+const char type_key[] = "type";
+const char value_key[] = "value";
+}  // anonymous namespace
+
 namespace keyring {
 
 static const constexpr size_t max_response_size = 32000000;
@@ -140,13 +157,10 @@ std::string Vault_curl::get_error_from_curl(CURLcode curl_code) {
   return ss.str();
 }
 
-static const char *const metadata_key = "metadata";
-static const char *const data_key = "data";
-
 Secure_string Vault_curl::get_secret_url(const Secure_string &type_of_data) {
   Secure_ostringstream oss_data;
 
-  if (is_kv_v2) {
+  if (get_vault_version() == Vault_version_v2) {
     DBUG_ASSERT(!vault_url.empty());
     oss_data << vault_url << "/v1/"
              << vault_credentials.get_raw_secret_mount_point() << '/'
@@ -188,7 +202,13 @@ bool Vault_curl::init(const Vault_credentials &vault_credentials) {
   return false;
 }
 
-void Vault_curl::set_vault_version_2() { is_kv_v2 = true; }
+void Vault_curl::set_vault_version(Vault_version_type version) {
+  if (version != Vault_version_unknown) vault_version = version;
+}
+
+Vault_version_type Vault_curl::get_vault_version() const {
+  return vault_version;
+}
 
 bool Vault_curl::setup_curl_session(CURL *curl) {
   CURLcode curl_res = CURLE_OK;
@@ -296,16 +316,31 @@ bool Vault_curl::get_key_url(const Vault_key &key, Secure_string *key_url) {
 
 Secure_string Vault_curl::get_write_key_postdata(
     const Vault_key &key, Secure_string &encoded_key_data) {
-  Secure_ostringstream postdata;
-  if (is_kv_v2) {
-    postdata << "{\"data\":";
-  }
-  postdata << "{\"type\":\"" << key.get_key_type_as_string()->c_str() << "\",\""
-           << "value\":\"" + encoded_key_data << "\"}";
-  if (is_kv_v2) {
-    postdata << "}";
-  }
-  return postdata.str();
+  rapidjson::Document doc;
+  auto &alloc = doc.GetAllocator();
+  auto &root = doc.SetObject();
+
+  rapidjson::Value kv_node(rapidjson::kObjectType);
+  kv_node.MemberReserve(2, alloc);
+  kv_node.AddMember(type_key,
+                    rapidjson::StringRef(key.get_key_type_as_string()->c_str(),
+                                         key.get_key_type_as_string()->size()),
+                    alloc);
+  kv_node.AddMember(
+      value_key,
+      rapidjson::StringRef(encoded_key_data.c_str(), encoded_key_data.size()),
+      alloc);
+
+  if (get_vault_version() == Vault_version_v2)
+    root.AddMember(rapidjson::Value::StringRefType(data_key), kv_node, alloc);
+  else
+    root.Swap(kv_node);
+
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  doc.Accept(writer);
+
+  return buffer.GetString();
 }
 
 bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {

@@ -33,7 +33,8 @@ class IVault_curl : public Keyring_alloc {
   virtual bool write_key(const Vault_key &key, Secure_string *response) = 0;
   virtual bool read_key(const Vault_key &key, Secure_string *response) = 0;
   virtual bool delete_key(const Vault_key &key, Secure_string *response) = 0;
-  virtual void set_vault_version_2() = 0;
+  virtual void set_vault_version(Vault_version_type version) = 0;
+  virtual Vault_version_type get_vault_version() const = 0;
   virtual void set_timeout(uint timeout) noexcept = 0;
 
   virtual ~IVault_curl() {}

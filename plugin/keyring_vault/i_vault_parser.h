@@ -37,14 +37,15 @@ class IVault_parser {
 
   virtual bool parse_keys(const Secure_string &payload,
                           Vault_keys_list *keys) = 0;
-  virtual bool parse_key_data(const Secure_string &payload, IKey *key) = 0;
+  virtual bool parse_key_data(const Secure_string &payload, IKey *key,
+                              Vault_version_type vault_version) = 0;
   virtual bool parse_key_signature(const Secure_string &key_signature,
                                    KeyParameters *key_parameters) = 0;
   virtual bool parse_errors(const Secure_string &payload,
                             Secure_string *errors) = 0;
   virtual bool get_vault_version(const Vault_credentials &vault_credentials,
                                  const Secure_string &mount_points_payload,
-                                 int &vault_version) = 0;
+                                 Vault_version_type &vault_version) = 0;
   virtual ~IVault_parser() = default;
 };
 }  // namespace keyring

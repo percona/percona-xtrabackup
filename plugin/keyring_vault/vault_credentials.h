@@ -21,6 +21,12 @@
 #include "plugin/keyring/common/secure_string.h"
 
 namespace keyring {
+enum Vault_version_type {
+  Vault_version_unknown,
+  Vault_version_v1,
+  Vault_version_v2
+};
+
 class Vault_credentials {
  public:
   using Map = std::map<Secure_string, Secure_string>;
