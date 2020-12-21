@@ -33,7 +33,10 @@ namespace keyring {
 class Vault_curl : public IVault_curl, private boost::noncopyable {
  public:
   Vault_curl(ILogger *logger, uint timeout)
-      : logger(logger), list(NULL), timeout(timeout), is_kv_v2(false)
+      : logger(logger),
+        list(NULL),
+        timeout(timeout),
+        vault_version(Vault_version_v1)
   {
   }
 
@@ -51,7 +54,8 @@ class Vault_curl : public IVault_curl, private boost::noncopyable {
   virtual bool delete_key(const Vault_key &key, Secure_string *response);
   virtual void set_timeout(uint timeout) { this->timeout= timeout; }
 
-  virtual void set_vault_version_2();
+  virtual void               set_vault_version(Vault_version_type version);
+  virtual Vault_version_type get_vault_version() const;
 
  private:
   bool        setup_curl_session(CURL *curl);
@@ -75,7 +79,7 @@ class Vault_curl : public IVault_curl, private boost::noncopyable {
   struct curl_slist *  list;
   Secure_string        vault_ca;
   uint                 timeout;
-  bool                 is_kv_v2;
+  Vault_version_type   vault_version;
 
   Vault_credentials vault_credentials;
 };

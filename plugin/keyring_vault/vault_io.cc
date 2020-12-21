@@ -2,9 +2,12 @@
 #include "vault_io.h"
 #include "vault_keys_list.h"
 #include "vault_credentials_parser.h"
-#include "boost/lexical_cast.hpp"
-#include <curl/curl.h>
+
 #include <sstream>
+
+#include <boost/lexical_cast/try_lexical_convert.hpp>
+
+#include <curl/curl.h>
 
 namespace keyring {
 
@@ -27,7 +30,7 @@ Vault_io::~Vault_io()
 bool Vault_io::adjust_vault_version(
     const Vault_credentials &vault_credentials)
 {
-  int vault_version= 0;
+  Vault_version_type vault_version= Vault_version_unknown;
   if (vault_credentials.get_credential("secret_mount_point_version") ==
       "AUTO")
   {
@@ -46,25 +49,28 @@ bool Vault_io::adjust_vault_version(
   }
   else
   {
-    try
+    boost::uint32_t extracted_version= 0;
+    if (!boost::conversion::try_lexical_convert(
+            vault_credentials.get_credential("secret_mount_point_version"),
+            extracted_version))
     {
-      vault_version= boost::lexical_cast<int>(
-          vault_credentials.get_credential("secret_mount_point_version"));
-      DBUG_ASSERT(vault_version == 1 || vault_version == 2);
-    } catch (const boost::bad_lexical_cast &)
-    {
-      // should have never happened as secret_mount_point_version was previosly
+      // should have never happened as secret_mount_point_version was previously
       // validated
       logger->log(MY_ERROR_LEVEL,
                   "Failed to read secret_mount_point_version");
       return true;
     }
+
+    switch (extracted_version)
+    {
+      case 1: vault_version= Vault_version_v1; break;
+      case 2: vault_version= Vault_version_v2; break;
+    }
   }
 
-  if (vault_version != 1 && vault_version != 2)
+  if (vault_version != Vault_version_v1 && vault_version != Vault_version_v2)
     return true;
-  if (vault_version == 2)
-    vault_curl->set_vault_version_2();
+  vault_curl->set_vault_version(vault_version);
   return false;
 }
 
@@ -120,7 +126,8 @@ my_bool Vault_io::retrieve_key_type_and_data(IKey *key)
   Secure_string json_response;
   if (vault_curl->read_key(static_cast<const Vault_key &>(*key),
                            &json_response) ||
-      vault_parser->parse_key_data(json_response, key))
+      vault_parser->parse_key_data(json_response, key,
+                                   vault_curl->get_vault_version()))
   {
     logger->log(MY_ERROR_LEVEL, ("Could not read key from Vault." +
                                  get_errors_from_response(json_response))
