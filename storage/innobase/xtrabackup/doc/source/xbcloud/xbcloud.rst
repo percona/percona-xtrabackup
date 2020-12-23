@@ -93,7 +93,7 @@ Creating a full backup with |s3|
    --s3-secret-key='YOUR-SECRETACCESSKEY' \
    --s3-bucket='mysql_backups'
    --parallel=10 \
-   ${date -I}-full_backup
+   $(date -I)-full_backup
 
 The following options are available when using |s3|:
 
@@ -141,7 +141,7 @@ Creating a full backup with |minio|
    --s3-secret-key='YOUR-SECRETACCESSKEY' \
    --s3-bucket='mysql_backups'
    --parallel=10 \
-   ${date -I}-full_backup
+   $(date -I)-full_backup
 
 Creating a full backup with |gcs|
 ================================================================================
@@ -164,7 +164,7 @@ compatible with |s3|.
    --google-secret-key='YOUR-SECRETACCESSKEY' \
    --google-bucket='mysql_backups'
    --parallel=10 \
-   ${date -I}-full_backup
+   $(date -I)-full_backup
 
 The following options are available when using |gcs|:
 
