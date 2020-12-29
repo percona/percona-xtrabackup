@@ -15,7 +15,12 @@ EOF
 }
 
 function ssl_version() {
-    sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
+    if [[ $(uname -m) == 'i686' ]]; then
+        sslv=$(ls -la {/,/usr/}{lib,lib/i386-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
+    else
+        sslv=$(ls -la {/,/usr/}{lib64,lib,lib/x86_64-linux-gnu}/libssl.so.1.* 2>/dev/null | sed 's/.*[.]so//; s/[^0-9]//g' | head -1)
+    fi
+
 
     case ${sslv} in
         100|101) ;;
