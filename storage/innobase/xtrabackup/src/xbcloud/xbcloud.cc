@@ -299,24 +299,24 @@ static struct my_option my_long_options[] = {
      0, 0, 0, 0, 0, 0},
 
     {"google-access-key", OPT_GOOGLE_ACCESS_KEY,
-     "Goolge cloud storage access key.", &opt_google_access_key,
+     "Google cloud storage access key.", &opt_google_access_key,
      &opt_google_access_key, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"google-secret-key", OPT_GOOGLE_SECRET_KEY,
-     "Goolge cloud storage secret key.", &opt_google_secret_key,
+     "Google cloud storage secret key.", &opt_google_secret_key,
      &opt_google_secret_key, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"google-session-token", OPT_GOOGLE_SESSION_TOKEN,
-     "Goolge cloud storage session token.", &opt_google_session_token,
+     "Google cloud storage session token.", &opt_google_session_token,
      &opt_google_session_token, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
      0},
 
     {"google-storage-class", OPT_GOOGLE_STORAGE_CLASS,
-     "Goolge cloud storage class. STANDARD|NEARLINE|COLDLINE|ARCHIVE",
+     "Google cloud storage class. STANDARD|NEARLINE|COLDLINE|ARCHIVE",
      &opt_google_storage_class, &opt_google_storage_class, 0, GET_STR_ALLOC,
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-    {"google-bucket", OPT_GOOGLE_BUCKET, "Goolge cloud storage bucket.",
+    {"google-bucket", OPT_GOOGLE_BUCKET, "Google cloud storage bucket.",
      &opt_google_bucket, &opt_google_bucket, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
      0, 0, 0, 0, 0},
 
