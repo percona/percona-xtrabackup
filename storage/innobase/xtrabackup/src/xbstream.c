@@ -26,12 +26,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "xbstream.h"
 #include "xbcrypt_common.h"
+#include "xtrabackup_version.h"
 #include "datasink.h"
 #include "ds_decrypt.h"
 #include "crc_glue.h"
 #include <gcrypt.h>
 
-#define XBSTREAM_VERSION "1.0"
+#define XBSTREAM_VERSION XTRABACKUP_VERSION
+#define XBSTREAM_REVISION XTRABACKUP_REVISION
 #define XBSTREAM_BUFFER_SIZE (10 * 1024 * 1024UL)
 
 #define START_FILE_HASH_SIZE 16
@@ -73,6 +75,8 @@ enum {
 static struct my_option my_long_options[] =
 {
 	{"help", '?', "Display this help and exit.",
+	 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+	{"version", 'V', "Display version and exit.",
 	 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
 	{"create", 'c', "Stream the specified files to the standard output.",
 	 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -187,8 +191,8 @@ static
 void
 print_version(void)
 {
-	printf("%s  Ver %s for %s (%s)\n", my_progname, XBSTREAM_VERSION,
-	       SYSTEM_TYPE, MACHINE_TYPE);
+	printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname, XBSTREAM_VERSION,
+	       SYSTEM_TYPE, MACHINE_TYPE, XBSTREAM_REVISION);
 }
 
 static
@@ -246,6 +250,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	case 'k':
 		hide_option(argument, &opt_encrypt_key);
 		break;
+	case 'V':
+		print_version();
+		exit(0);
 	case '?':
 		usage();
 		exit(0);

@@ -47,6 +47,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 using namespace xbcloud;
 
 #define XBCLOUD_VERSION XTRABACKUP_VERSION
+#define XBCLOUD_REVISION XTRABACKUP_REVISION
 
 /*****************************************************************************/
 
@@ -170,6 +171,9 @@ static struct my_option my_long_options[] = {
 
     {"help", '?', "Display this help and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
      0, 0, 0, 0, 0},
+
+     {"version", 'V', "Display version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
+      0, 0, 0, 0, 0},
 
     {"storage", OPT_STORAGE, "Specify storage type S3/SWIFT.", &opt_storage,
      &opt_storage, &storage_typelib, GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -321,8 +325,8 @@ static struct my_option my_long_options[] = {
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 static void print_version() {
-  printf("%s  Ver %s for %s (%s)\n", my_progname, XBCLOUD_VERSION, SYSTEM_TYPE,
-         MACHINE_TYPE);
+  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname, XBCLOUD_VERSION, SYSTEM_TYPE,
+         MACHINE_TYPE, XBCLOUD_REVISION);
 }
 
 static void usage() {
@@ -360,6 +364,9 @@ static my_bool get_one_option(int optid,
   switch (optid) {
     case '?':
       usage();
+      exit(0);
+    case 'V':
+      print_version();
       exit(0);
     case OPT_SWIFT_PASSWORD:
     case OPT_SWIFT_KEY:
