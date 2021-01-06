@@ -4094,9 +4094,23 @@ static void dict_table_persist_to_dd_table_buffer_low(dict_table_t *table) {
 
   size = dict_persist->persisters->write(metadata, buffer);
 
-  dberr_t error =
-      table_buffer->replace(table->id, table->version, buffer, size);
-  ut_a(error == DB_SUCCESS);
+  /*
+   * PXB process MLOG_TABLE_DYNAMIC_META log events as part of prepare. This
+   * will make table->dirty_status = METADATA_DIRTY. As part of the shutdown
+   * procedure, we will persist those changes to mysql.ibd. MySQL server that
+   * originated the backup will continue processing data and merging them into
+   * memory DDBuffer. Lather when a checkpoint happens on MySQL, it persist
+   * those changes to mysql.ibd and generate proper redo logs for those changes.
+   * However, since we have already persisted the changes we had until that
+   * point the layout of our mysql.ibd might not match the layout of the redo
+   * log we try to apply and a crash can happen. Thus we only persist DDBuffer
+   * if we're applying the last incremental backup (not using --apply-log-only).
+   */
+  if (!srv_apply_log_only) {
+    dberr_t error =
+        table_buffer->replace(table->id, table->version, buffer, size);
+    ut_a(error == DB_SUCCESS);
+  }
 
   ut_ad(dict_persist->num_dirty_tables > 0);
   --dict_persist->num_dirty_tables;

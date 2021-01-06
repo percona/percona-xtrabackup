@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <vector>
 #include "backup_copy.h"
 #include "common.h"
+#include "dict0dict.h"
 #include "fil_cur.h"
 #include "xtrabackup.h"
 
@@ -107,12 +108,22 @@ static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
   ulint page_size = cursor->page_size;
   byte *page;
   xb_wf_incremental_ctxt_t *cp = &(ctxt->wf_incremental_ctxt);
-
   for (i = 0, page = cursor->buf; i < cursor->buf_npages;
        i++, page += page_size) {
-    if (incremental_lsn > mach_read_from_8(page + FIL_PAGE_LSN)) {
+    /*
+     * We use metadata_from_lsn for mysql.ibd because we skip applying logical
+     * redos (MLOG_TABLE_DYNAMIC_META) during the incremental prepare (except
+     * the last prepare). These logical redos are converted to regular redo and
+     * flushed to pages in mysql.ibd when the server process a checkpoint. So
+     * we directly take the physical changes made to innodb_dynamic_metadata
+     * since the last backup. Hence we copy all changes to mysql.ibd since last
+     * backup start_lsn instead of last backup end_lsn.
+     */
+    if (cursor->space_id == dict_sys_t::s_space_id &&
+        metadata_from_lsn > mach_read_from_8(page + FIL_PAGE_LSN))
       continue;
-    }
+    else if (incremental_lsn > mach_read_from_8(page + FIL_PAGE_LSN))
+      continue;
 
     /* updated page */
     if (cp->npages == page_size / 4) {
