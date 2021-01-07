@@ -279,17 +279,12 @@ function set_vars()
 
     # Check if we are running from a source tree and, if so, set PATH 
     # appropriately
-    if test -d $PWD/../src
-    then
+    if [[ -d $PWD/../src ]]; then
         PATH="$PWD/..:$PWD/../src:$PWD/../src/xbcloud:$PATH"
         XTRABACKUP_BASEDIR="$PWD/../src"
-    else
-      XTRABACKUP_BASEDIR="$PWD/../"
-    fi
-
-    if test -d $PWD/../bin
-    then
+    elif [[ -d $PWD/../bin ]]; then
         PATH="$PWD/../bin:$PATH"
+        XTRABACKUP_BASEDIR="$PWD/../"
     fi
 
     PATH="${MYSQL_BASEDIR}/bin:$PATH"
