@@ -1444,6 +1444,8 @@ bool backup_start(Backup_context &context) {
 
   context.log_status = log_status_get(mysql_connection);
 
+  debug_sync_point("xtrabackup_after_query_log_status");
+
   if (!write_current_binlog_file(mysql_connection)) {
     return (false);
   }

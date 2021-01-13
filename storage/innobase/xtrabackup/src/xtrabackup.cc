@@ -4052,7 +4052,8 @@ void xtrabackup_backup_func(void) {
     os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
   }
 
-  if (!redo_mgr.stop_at(backup_ctxt.log_status.lsn)) {
+  if (!redo_mgr.stop_at(backup_ctxt.log_status.lsn,
+                        backup_ctxt.log_status.lsn_checkpoint)) {
     exit(EXIT_FAILURE);
   }
   if (redo_mgr.is_error()) {

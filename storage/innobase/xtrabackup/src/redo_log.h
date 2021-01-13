@@ -43,10 +43,9 @@ class Redo_Log_Reader {
   @return true if success. */
   bool find_start_checkpoint_lsn();
 
-  /** Find last checkpoint lsn.
-  @param[out] lsn               last checkpoint lsn
-  @return true if success. */
-  bool find_last_checkpoint_lsn(lsn_t *lsn);
+  /** Check if redo logs are disabled during the backup.
+  @return true if redo logs are disabled */
+  bool validate_redo_log_file();
 
   /** Get log header. */
   byte *get_header() const;
@@ -278,7 +277,7 @@ class Redo_Log_Data_Manager {
   void abort();
 
   /** Stop log copying at specific lsn. */
-  bool stop_at(lsn_t lsn);
+  bool stop_at(lsn_t lsn, lsn_t checkpoint_lsn);
 
   /** Close log file. */
   void close();
