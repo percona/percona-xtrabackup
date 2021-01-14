@@ -605,10 +605,14 @@ uint32_t Archived_Redo_Log_Monitor::get_first_log_block_checksum() const {
   return first_log_block_checksum;
 }
 
-void Archived_Redo_Log_Monitor::skip_for_block(lsn_t lsn, uint32_t no,
-                                               uint32_t checksum) {
+void Archived_Redo_Log_Monitor::skip_for_block(lsn_t lsn,
+                                               const byte *redo_buf) {
   bool finished = false;
   lsn_t bytes_read = OS_FILE_LOG_BLOCK_SIZE;
+
+  auto redo_block_no = log_block_get_hdr_no(redo_buf);
+  auto redo_block_checksum = log_block_get_checksum(redo_buf);
+  auto redo_block_len = log_block_get_data_len(redo_buf);
 
   while (true) {
     auto len = reader.read_logfile(&finished);
@@ -616,7 +620,14 @@ void Archived_Redo_Log_Monitor::skip_for_block(lsn_t lsn, uint32_t no,
          ptr += OS_FILE_LOG_BLOCK_SIZE, bytes_read += OS_FILE_LOG_BLOCK_SIZE) {
       auto arch_block_no = log_block_get_hdr_no(ptr);
       auto arch_block_checksum = log_block_get_checksum(ptr);
-      if (no == arch_block_no && checksum == arch_block_checksum) {
+      auto arch_block_len = log_block_get_data_len(ptr);
+      /* When checksum of redo and archive blocks are different, allow PXB to
+      switch to archive if the data length of blocks is different. This can
+      happen when the last block is partially filled in redolog and when it
+      reaches the archive file, the same block could be filled more */
+      if (redo_block_no == arch_block_no &&
+          (redo_block_checksum == arch_block_checksum ||
+           redo_block_len != arch_block_len)) {
         msg("xtrabackup: Archived redo log has caught up\n");
         reader.set_start_lsn(lsn - bytes_read);
         return;
@@ -1029,9 +1040,8 @@ void Redo_Log_Data_Manager::track_archived_log(lsn_t start_lsn, const byte *buf,
 
   if (archived_log_state == ARCHIVED_LOG_NONE) {
     auto no = log_block_get_hdr_no(buf);
-    auto checksum = log_block_get_checksum(buf);
     if (no > archived_log_monitor.get_first_log_block_no()) {
-      archived_log_monitor.skip_for_block(start_lsn, no, checksum);
+      archived_log_monitor.skip_for_block(start_lsn, buf);
       archived_log_state = ARCHIVED_LOG_MATCHED;
     }
   }
