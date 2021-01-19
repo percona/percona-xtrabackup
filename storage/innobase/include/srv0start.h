@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2020, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -115,13 +115,6 @@ void srv_start_threads(bool bootstrap);
 complete DD recovery(post the DDL recovery) */
 void srv_start_threads_after_ddl_recovery();
 
-/** Shut down all InnoDB background tasks that may look up objects in
-the data dictionary. */
-void srv_pre_dd_shutdown();
-
-/** Shut down the InnoDB database. */
-void srv_shutdown();
-
 /** Start purge threads. During upgrade we start
 purge threads early to apply purge. */
 void srv_start_purge_threads();
@@ -160,6 +153,7 @@ extern bool srv_startup_is_before_trx_rollback_phase;
 /** TRUE if a raw partition is in use */
 extern ibool srv_start_raw_disk_in_use;
 
+<<<<<<< HEAD
 /** Shutdown state */
 enum srv_shutdown_t {
   /** Database running normally. */
@@ -270,4 +264,6 @@ dberr_t srv_undo_tablespaces_init(bool create_new_db, bool backup_mode);
 called once during thread de-initialization. */
 void undo_spaces_deinit();
 
+=======
+>>>>>>> mysql-8.0.23
 #endif

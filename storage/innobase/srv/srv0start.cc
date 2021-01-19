@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 1996, 2020, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -605,17 +605,14 @@ static dberr_t srv_undo_tablespace_create(undo::Tablespace &undo_space) {
 
     ib::info(ER_IB_MSG_1071, file_name);
 
-    ulint size_mb =
-        SRV_UNDO_TABLESPACE_SIZE_IN_PAGES << UNIV_PAGE_SIZE_SHIFT >> 20;
+    ulint size_mb = INITIAL_UNDO_SPACE_SIZE >> 20;
 
     ib::info(ER_IB_MSG_1072, file_name, ulonglong{size_mb});
 
     ib::info(ER_IB_MSG_1073);
 
-    ret = os_file_set_size(
-        file_name, fh, 0,
-        SRV_UNDO_TABLESPACE_SIZE_IN_PAGES << UNIV_PAGE_SIZE_SHIFT,
-        srv_read_only_mode, true);
+    ret = os_file_set_size(file_name, fh, 0, INITIAL_UNDO_SPACE_SIZE,
+                           srv_read_only_mode, true);
 
     DBUG_EXECUTE_IF("ib_undo_tablespace_create_fail", ret = false;);
 
@@ -1292,7 +1289,7 @@ static dberr_t srv_undo_tablespaces_construct(bool create_new_db) {
 
     mtr_x_lock(fil_space_get_latch(space_id), &mtr);
 
-    if (!fsp_header_init(space_id, SRV_UNDO_TABLESPACE_SIZE_IN_PAGES, &mtr,
+    if (!fsp_header_init(space_id, INITIAL_UNDO_SPACE_SIZE_IN_PAGES, &mtr,
                          create_new_db)) {
       ib::error(ER_IB_MSG_1093, ulong{undo::id2num(space_id)});
 
@@ -1371,6 +1368,11 @@ dberr_t srv_undo_tablespaces_upgrade() {
       ib::warn(ER_IB_MSG_57_UNDO_SPACE_DELETE_FAIL, undo_space.space_name());
     }
   }
+
+  /* All pages should be removed from the spaces we deleted. We just collect
+  them now, so that the space_id -> shard mapping is correct - it will be
+  changed the second the trx_sys_undo_spaces is cleared.*/
+  fil_purge();
 
   /* Remove the tracking of these undo tablespaces from TRX_SYS page and
   trx_sys->rsegs. */
@@ -1965,7 +1967,6 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
   ib::info(ER_IB_MSG_1117) << "Compiler hints enabled.";
 #endif /* defined(COMPILER_HINTS_ENABLED) */
 
-  ib::info(ER_IB_MSG_1118) << IB_ATOMICS_STARTUP_MSG;
   ib::info(ER_IB_MSG_1119) << MUTEX_TYPE;
   ib::info(ER_IB_MSG_1120) << IB_MEMORY_BARRIER_STARTUP_MSG;
 
@@ -2005,9 +2006,11 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
 
   srv_is_being_started = true;
 
+#ifdef HAVE_PSI_STAGE_INTERFACE
   /* Register performance schema stages before any real work has been
   started which may need to be instrumented. */
   mysql_stage_register("innodb", srv_stages, UT_ARR_SIZE(srv_stages));
+#endif /* HAVE_PSI_STAGE_INTERFACE */
 
   /* Switch latching order checks on in sync0debug.cc, if
   --innodb-sync-debug=false (default) */
@@ -3037,11 +3040,10 @@ void srv_start_threads_after_ddl_recovery() {
         os_thread_create(srv_ts_alter_encrypt_thread_key,
                          fsp_init_resume_alter_encrypt_tablespace);
 
+    mysql_mutex_lock(&resume_encryption_cond_m);
     srv_threads.m_ts_alter_encrypt.start();
-
     /* Wait till shared MDL is taken by background thread for all tablespaces,
     for which (un)encryption is to be rolled forward. */
-    mysql_mutex_lock(&resume_encryption_cond_m);
     mysql_cond_wait(&resume_encryption_cond, &resume_encryption_cond_m);
     mysql_mutex_unlock(&resume_encryption_cond_m);
   }
@@ -3656,7 +3658,7 @@ void srv_shutdown() {
   pars_lexer_close();
   buf_pool_free_all();
 
-  /* 6. Free the thread management resoruces. */
+  /* 6. Free the thread management resources. */
   clone_free();
   arch_free();
 
