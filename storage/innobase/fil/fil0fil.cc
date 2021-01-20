@@ -1766,7 +1766,6 @@ class Fil_system {
 
   /** Scan the directories to build the tablespace ID to file name
   mapping table. */
-<<<<<<< HEAD
   dberr_t scan(bool populate_fil_cache) {
     return (m_dirs.scan(populate_fil_cache));
   }
@@ -1782,9 +1781,6 @@ class Fil_system {
       MY_ATTRIBUTE((warn_unused_result)) {
     return (m_dirs.insert(space_id, filename));
   }
-=======
-  dberr_t scan() { return m_dirs.scan(); }
->>>>>>> mysql-8.0.23
 
   /** Get the tablespace ID from an .ibd and/or an undo tablespace. If the ID is
   0 on the first page then try finding the ID with Datafile::find_space_id().
@@ -6328,11 +6324,7 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
   if (err == DB_INVALID_ENCRYPTION_META) {
     bool success = fil_system->erase_path(space_id);
     ut_a(success);
-<<<<<<< HEAD
     return (FIL_LOAD_INVALID_ENCRYPTION_META);
-=======
-    return FIL_LOAD_NOT_FOUND;
->>>>>>> mysql-8.0.23
   }
 
   ut_a(df.space_id() == space_id);
@@ -6480,7 +6472,6 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
     }
   }
 
-<<<<<<< HEAD
   if (FSP_FLAGS_GET_ENCRYPTION(space->flags) && !srv_backup_mode &&
       use_dumped_tablespace_keys) {
     err = xb_set_encryption(space);
@@ -6492,9 +6483,6 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
   }
 
   /* Set unencryption in progress flag */
-=======
-  /* Set encryption operation in progress */
->>>>>>> mysql-8.0.23
   space->encryption_op_in_progress = df.m_encryption_op_in_progress;
   space->m_header_page_flush_lsn = df.get_flush_lsn();
 
@@ -7949,34 +7937,8 @@ AIO_mode Fil_shard::get_AIO_mode(const IORequest &req_type, bool sync) {
 dberr_t Fil_shard::get_file_for_io(const IORequest &req_type,
                                    fil_space_t *space, page_no_t *page_no,
                                    fil_node_t *&file) {
-<<<<<<< HEAD
-  if (space->files.size() > 1) {
-    ut_a(space->id == TRX_SYS_SPACE || space->purpose == FIL_TYPE_TEMPORARY ||
-         space->id == dict_sys_t::s_log_space_first_id);
-
-    for (auto &f : space->files) {
-      if (f.size > *page_no) {
-        file = &f;
-        return (DB_SUCCESS);
-      }
-
-      *page_no -= f.size;
-    }
-
-  } else if (!space->files.empty()) {
-    fil_node_t &f = space->files.front();
-
-    file = &f;
-
-    return (DB_SUCCESS);
-  }
-
-  file = nullptr;
-  return (DB_ERROR);
-=======
   file = space->get_file_node(page_no);
   return (file == nullptr) ? DB_ERROR : DB_SUCCESS;
->>>>>>> mysql-8.0.23
 }
 
 /** Read or write log file data synchronously.
@@ -9599,15 +9561,6 @@ dberr_t fil_set_autoextend_size(space_id_t space_id, uint64_t autoextend_size) {
 @return DB_SUCCESS or error code */
 dberr_t fil_set_encryption(space_id_t space_id, Encryption::Type algorithm,
                            byte *key, byte *iv) {
-<<<<<<< HEAD
-=======
-  ut_ad(space_id != TRX_SYS_SPACE);
-
-  if (fsp_is_system_or_temp_tablespace(space_id)) {
-    return DB_IO_NO_ENCRYPT_TABLESPACE;
-  }
-
->>>>>>> mysql-8.0.23
   auto shard = fil_system->shard_by_id(space_id);
 
   shard->mutex_acquire();
@@ -10486,14 +10439,10 @@ bool Fil_system::open_for_recovery(space_id_t space_id) {
                                      << space->name << " ID: " << space->id;
     }
 
-<<<<<<< HEAD
     return (true);
   } else if (status == FIL_LOAD_INVALID_ENCRYPTION_META) {
     ib::error() << "Invalid encryption metadata in tablespace header.";
     exit(EXIT_FAILURE);
-=======
-    return true;
->>>>>>> mysql-8.0.23
   }
 
   return false;
@@ -11028,7 +10977,6 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
 #endif /* UNIV_HOTBACKUP */
 
-<<<<<<< HEAD
   if (!srv_backup_mode) {
     bool success;
 
@@ -11070,9 +11018,6 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
   }
 
   return (ptr);
-=======
-  return ptr;
->>>>>>> mysql-8.0.23
 }
 
 byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
@@ -11371,44 +11316,15 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
   ptr += 2;
 
   if (end < ptr + len) {
-    if (is_new) {
-      ut_free(key);
-      ut_free(iv);
-    }
     return (nullptr);
   }
 
   if (offset >= UNIV_PAGE_SIZE || len + offset > UNIV_PAGE_SIZE ||
       len != Encryption::INFO_SIZE) {
     recv_sys->found_corrupt_log = true;
-    if (is_new) {
-      ut_free(key);
-      ut_free(iv);
-    }
     return (nullptr);
   }
 
-<<<<<<< HEAD
-  if (srv_backup_mode || !use_dumped_tablespace_keys) {
-    if (!Encryption::decode_encryption_info(key, iv, ptr, true)) {
-      if (is_new) {
-        ut_free(key);
-        ut_free(iv);
-      }
-      if (!srv_backup_mode) {
-        ib::error() << "Cannot decode encryption information in the redo log.";
-        exit(EXIT_FAILURE);
-      }
-      return (ptr + len);
-    }
-  } else {
-    ulint master_key_id = mach_read_from_4(ptr + Encryption::MAGIC_SIZE);
-    if (Encryption::get_master_key_id() < master_key_id) {
-      Encryption::set_master_key(master_key_id);
-    }
-    bool found = xb_fetch_tablespace_key(space_id, key, iv);
-    ut_a(found);
-=======
   byte *encryption_ptr = ptr;
   ptr += len;
 
@@ -11433,15 +11349,22 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
   byte iv[Encryption::KEY_LEN] = {0};
   byte key[Encryption::KEY_LEN] = {0};
 
-  if (!Encryption::decode_encryption_info(key, iv, encryption_ptr, true)) {
-    recv_sys->found_corrupt_log = true;
+  if (srv_backup_mode || !use_dumped_tablespace_keys) {
+    if (!Encryption::decode_encryption_info(key, iv, encryption_ptr, true)) {
+      if (!srv_backup_mode) {
+        ib::error() << "Cannot decode encryption information in the redo log.";
+        exit(EXIT_FAILURE);
+      }
+      return (ptr + len);
 
-    ib::warn(ER_IB_MSG_364)
-        << "Encryption information"
-        << " in the redo log of space " << space_id << " is invalid";
-
-    return (nullptr);
->>>>>>> mysql-8.0.23
+    } else {
+      ulint master_key_id = mach_read_from_4(ptr + Encryption::MAGIC_SIZE);
+      if (Encryption::get_master_key_id() < master_key_id) {
+        Encryption::set_master_key(master_key_id);
+      }
+      bool found = xb_fetch_tablespace_key(space_id, key, iv);
+      ut_a(found);
+    }
   }
 
   ut_ad(len == Encryption::INFO_SIZE);
@@ -12341,7 +12264,6 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
     err = DB_SUCCESS;
   }
 
-<<<<<<< HEAD
   if (err == DB_SUCCESS && populate_fil_cache) {
     bool result = true;
     std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
@@ -12353,9 +12275,6 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
   }
 
   return (err);
-=======
-  return err;
->>>>>>> mysql-8.0.23
 }
 
 void fil_set_scan_dir(const std::string &directory, bool is_undo_dir) {
@@ -12369,16 +12288,12 @@ void fil_set_scan_dirs(const std::string &directories) {
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in]  populate_fil_cache Whether to load tablespaces into fil cache
 @return DB_SUCCESS if all goes well */
-<<<<<<< HEAD
 dberr_t fil_scan_for_tablespaces(bool populate_fil_cache) {
   return (fil_system->scan(populate_fil_cache));
 }
 
 /** Open all known tablespaces. */
 void fil_open_ibds() { fil_system->open_ibds(); }
-=======
-dberr_t fil_scan_for_tablespaces() { return fil_system->scan(); }
->>>>>>> mysql-8.0.23
 
 /** Check if a path is known to InnoDB meaning that it is in or under
 one of the four path settings scanned at startup for file discovery.
@@ -12675,16 +12590,7 @@ fil_node_t *fil_space_t::get_file_node(page_no_t *page_no) noexcept {
   } else if (!files.empty()) {
     fil_node_t &f = files.front();
 
-    if ((fsp_is_ibd_tablespace(id) && f.size == 0) || f.size > *page_no) {
-      /* We do not know the size of a single-table tablespace
-      before we open the file */
-      return &f;
-    }
-
-    /* The page is outside the current bounds of the file.
-    Return DB_ERROR.  This should not occur for undo tablespaces
-    since each truncation assigns a new space ID. */
-    ut_ad(!fsp_is_undo_tablespace(id));
+    return &f;
   }
 
   return nullptr;

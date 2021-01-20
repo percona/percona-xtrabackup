@@ -3587,21 +3587,6 @@ inline int dd_fill_dict_index(const dd::Table &dd_table, const TABLE *m_form,
   return error;
 }
 
-<<<<<<< HEAD
-=======
-/** Determine if a table contains a fulltext index.
-@param[in]      table		dd::Table
-@return whether the table contains any fulltext index */
-inline bool dd_table_contains_fulltext(const dd::Table &table) {
-  for (const dd::Index *index : table.indexes()) {
-    if (index->type() == dd::Index::IT_FULLTEXT) {
-      return true;
-    }
-  }
-  return false;
-}
-
->>>>>>> mysql-8.0.23
 /** Read the metadata of default values for all columns added instantly
 @param[in]	dd_table	dd::Table
 @param[in,out]	table		InnoDB table object */

@@ -130,35 +130,12 @@ ENDMACRO()
 
 
 MACRO(MYSQL_CHECK_CURL)
-<<<<<<< HEAD
-  IF(WITH_CURL STREQUAL "system")
-    #  FindCURL.cmake will set
-    #  CURL_INCLUDE_DIRS   - where to find curl/curl.h, etc.
-    #  CURL_LIBRARIES      - List of libraries when using curl.
-    #  CURL_FOUND          - True if curl found.
-    #  CURL_VERSION_STRING - the version of curl found (since CMake 2.8.8)
-    FIND_PACKAGE(CURL REQUIRED)
-    IF(CURL_FOUND AND
-        CURL_LIBRARIES AND
-        NOT CURL_LIBRARIES MATCHES "CURL_LIBRARY-NOTFOUND" AND
-        NOT CURL_INCLUDE_DIRS MATCHES "CURL_INCLUDE_DIR-NOTFOUND")
-      SET(CURL_LIBRARY ${CURL_LIBRARIES} CACHE FILEPATH "Curl library")
-      SET(CURL_INCLUDE_DIR ${CURL_INCLUDE_DIRS} CACHE PATH "Curl include")
-      GET_CURL_VERSION()
-    ELSE()
-      SET(CURL_LIBRARY "")
-      SET(CURL_INCLUDE_DIR "")
-    ENDIF()
-    MESSAGE(STATUS "CURL_LIBRARY = ${CURL_LIBRARY}")
-    MESSAGE(STATUS "CURL_INCLUDE_DIR = ${CURL_INCLUDE_DIR}")
-=======
   # Map 0 | no | off to "none".
   IF(DEFINED WITH_CURL AND NOT WITH_CURL)
     SET(WITH_CURL "none")
     SET(WITH_CURL "none" CACHE STRING "${WITH_CURL_DOC_STRING}" FORCE)
     RESET_CURL_VARIABLES()
   ENDIF()
->>>>>>> mysql-8.0.23
 
   # Use "none" by default on win, "system" on other platforms.
   IF(NOT DEFINED WITH_CURL)

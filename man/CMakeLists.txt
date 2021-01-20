@@ -28,54 +28,6 @@ FILE(GLOB MAN8_NDB ndb*.8)
 IF(MAN1_NDB AND NOT WITH_NDBCLUSTER)
   LIST(REMOVE_ITEM MAN1 ${MAN1_NDB})
 ENDIF()
-<<<<<<< HEAD
-=======
-
-SET(MAN1_NDB
-  ndb-common-options.1
-  ndb_blob_tool.1
-  ndb_config.1
-  ndb_cpcd.1
-  ndb_delete_all.1
-  ndb_desc.1
-  ndb_drop_index.1
-  ndb_drop_table.1
-  ndb_error_reporter.1
-  ndb_import.1
-  ndb_index_stat.1
-  ndb_mgm.1
-  ndb_move_data.1
-  ndb_perror.1
-  ndb_print_backup_file.1
-  ndb_print_file.1
-  ndb_print_frag_file.1
-  ndb_print_schema_file.1
-  ndb_print_sys_file.1
-  ndb_redo_log_reader.1
-  ndb_restore.1
-  ndb_select_all.1
-  ndb_select_count.1
-  ndb_show_tables.1
-  ndb_size.pl.1
-  ndb_top.1
-  ndb_waiter.1
-  ndbinfo_select_all.1
-)
-SET(MAN1_ROUTER
-  mysqlrouter.1
-  mysqlrouter_passwd.1
-  mysqlrouter_plugin_info.1
-)
-SET(MAN8
-  mysqld.8
-  )
-SET(MAN8_NDB
-  ndb_mgmd.8
-  ndbd.8
-  ndbmtd.8
-)
-
->>>>>>> mysql-8.0.23
 INSTALL(FILES ${MAN1} DESTINATION ${INSTALL_MANDIR}/man1 COMPONENT ManPages)
 INSTALL(FILES ${MAN8} DESTINATION ${INSTALL_MANDIR}/man8 COMPONENT ManPages)
 
