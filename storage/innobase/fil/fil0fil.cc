@@ -11344,15 +11344,14 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
         exit(EXIT_FAILURE);
       }
       return (ptr + len);
-
-    } else {
-      ulint master_key_id = mach_read_from_4(ptr + Encryption::MAGIC_SIZE);
-      if (Encryption::get_master_key_id() < master_key_id) {
-        Encryption::set_master_key(master_key_id);
-      }
-      bool found = xb_fetch_tablespace_key(space_id, key, iv);
-      ut_a(found);
     }
+  } else {
+    ulint master_key_id = mach_read_from_4(ptr + Encryption::MAGIC_SIZE);
+    if (Encryption::get_master_key_id() < master_key_id) {
+      Encryption::set_master_key(master_key_id);
+    }
+    bool found = xb_fetch_tablespace_key(space_id, key, iv);
+    ut_a(found);
   }
 
   ut_ad(len == Encryption::INFO_SIZE);
