@@ -14,13 +14,11 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#include "vault_parser.h"
 #include <algorithm>
 #include <sstream>
 #include <vector>
-#include "vault_base64.h"
-#include "vault_key.h"
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/lexical_cast/try_lexical_convert.hpp>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
@@ -33,6 +31,10 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include "plugin/keyring/common/logger.h"
+#include "vault_base64.h"
+#include "vault_parser_composer.h"
+
 namespace {
 const char options_key[] = "options";
 const char version_key[] = "version";
@@ -41,24 +43,50 @@ const char data_key[] = "data";
 const char keys_key[] = "keys";
 const char type_key[] = "type";
 const char value_key[] = "value";
+const char mount_point_path_delimiter = '/';
+
 }  // anonymous namespace
 
 namespace keyring {
 
-bool Vault_parser::get_vault_version(const Vault_credentials &vault_credentials,
-                                     const Secure_string &mount_points_payload,
-                                     Vault_version_type &vault_version) {
+bool Vault_parser_composer::parse_mount_point_version(
+    const Secure_string &secret_mount_point,
+    const Secure_string &mount_points_payload,
+    Vault_version_type &vault_version, Secure_string &mount_point_path,
+    Secure_string &directory_path) {
   rapidjson::Document doc;
   doc.Parse(mount_points_payload.c_str());
   const rapidjson::Document &cdoc = doc;
   if (cdoc.HasParseError()) return true;
   if (!cdoc.IsObject()) return true;
 
-  Secure_string mp_key(vault_credentials.get_raw_secret_mount_point());
-  mp_key += '/';
+  Secure_string mp_key(secret_mount_point);
+  mp_key += mount_point_path_delimiter;
 
-  rapidjson::Document::ConstMemberIterator it = cdoc.FindMember(mp_key.c_str());
+  rapidjson::Document::ConstMemberIterator it = cdoc.MemberBegin();
+
+  Secure_string current_mp_name;
+  for (; it != cdoc.MemberEnd(); ++it) {
+    current_mp_name = it->name.GetString();
+    // we expect all mount points in the payload to never start
+    // with '/' and always end with '/'
+    if (!current_mp_name.empty() &&
+        current_mp_name[0] != mount_point_path_delimiter &&
+        current_mp_name[current_mp_name.size() - 1] ==
+            mount_point_path_delimiter &&
+        boost::starts_with(mp_key, current_mp_name))
+      break;
+  }
+
   if (it == cdoc.MemberEnd()) return true;
+
+  mount_point_path = it->name.GetString();
+  directory_path = mp_key.substr(mount_point_path.size());
+
+  if (!mount_point_path.empty())
+    mount_point_path.resize(mount_point_path.size() - 1);
+
+  if (!directory_path.empty()) directory_path.resize(directory_path.size() - 1);
 
   const rapidjson::Value &mp_node = it->value;
   if (!mp_node.IsObject()) return true;
@@ -127,8 +155,8 @@ bool Vault_parser::get_vault_version(const Vault_credentials &vault_credentials,
   return true;
 }
 
-bool Vault_parser::parse_errors(const Secure_string &payload,
-                                Secure_string *errors) {
+bool Vault_parser_composer::parse_errors(const Secure_string &payload,
+                                         Secure_string *errors) {
   rapidjson::Document doc;
   doc.Parse(payload.c_str());
   const rapidjson::Document &cdoc = doc;
@@ -159,8 +187,8 @@ bool Vault_parser::parse_errors(const Secure_string &payload,
   return false;
 }
 
-bool Vault_parser::parse_keys(const Secure_string &payload,
-                              Vault_keys_list *keys) {
+bool Vault_parser_composer::parse_keys(const Secure_string &payload,
+                                       Vault_keys_list *keys) {
   /* payload is built as follows:
    * (...)"data":{"keys":["keysignature","keysignature"]}(...)
    * We need to retrieve keys signatures from it
@@ -230,7 +258,7 @@ bool Vault_parser::parse_keys(const Secure_string &payload,
 }
 
 static const char *const digits = "0123456789";
-bool Vault_parser::parse_key_signature(
+bool Vault_parser_composer::parse_key_signature(
     const Secure_string &base64_key_signature, KeyParameters *key_parameters) {
   // key_signature = lengthof(key_id)||_||key_id||lengthof(user_id)||_||user_id
   Secure_string key_signature;
@@ -256,8 +284,9 @@ bool Vault_parser::parse_key_signature(
   return false;
 }
 
-bool Vault_parser::parse_key_data(const Secure_string &payload, IKey *key,
-                                  Vault_version_type vault_version) {
+bool Vault_parser_composer::parse_key_data(const Secure_string &payload,
+                                           IKey *key,
+                                           Vault_version_type vault_version) {
   rapidjson::Document doc;
   doc.Parse(payload.c_str());
   const rapidjson::Document &cdoc = doc;
@@ -346,6 +375,37 @@ bool Vault_parser::parse_key_data(const Secure_string &payload, IKey *key,
   std::string key_type(type.c_str(), type.length());
   key->set_key_type(&key_type);
 
+  return false;
+}
+
+bool Vault_parser_composer::compose_write_key_postdata(
+    const Vault_key &key, const Secure_string &encoded_key_data,
+    Vault_version_type vault_version, Secure_string &postdata) {
+  rapidjson::Document doc;
+  rapidjson::Document::AllocatorType &alloc = doc.GetAllocator();
+  rapidjson::Value &root = doc.SetObject();
+
+  rapidjson::Value kv_node(rapidjson::kObjectType);
+  kv_node.MemberReserve(2, alloc);
+  kv_node.AddMember(type_key,
+                    rapidjson::StringRef(key.get_key_type_as_string()->c_str(),
+                                         key.get_key_type_as_string()->size()),
+                    alloc);
+  kv_node.AddMember(
+      value_key,
+      rapidjson::StringRef(encoded_key_data.c_str(), encoded_key_data.size()),
+      alloc);
+
+  if (vault_version == Vault_version_v2)
+    root.AddMember(rapidjson::Value::StringRefType(data_key), kv_node, alloc);
+  else
+    root.Swap(kv_node);
+
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  doc.Accept(writer);
+
+  postdata.assign(buffer.GetString());
   return false;
 }
 

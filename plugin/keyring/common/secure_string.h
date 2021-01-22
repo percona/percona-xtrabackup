@@ -29,6 +29,9 @@ typedef std::basic_ostringstream<char, std::char_traits<char>,
 typedef std::basic_istringstream<char, std::char_traits<char>,
                                  Secure_allocator<char>>
     Secure_istringstream;
+typedef std::basic_stringstream<char, std::char_traits<char>,
+                                Secure_allocator<char>>
+    Secure_stringstream;
 }  // namespace keyring
 
 #endif  // MYSQL_KEYRING_SECURE_STRING

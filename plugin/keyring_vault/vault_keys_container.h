@@ -2,10 +2,11 @@
 #define MYSQL_VAULT_KEYS_CONTAINER_H
 
 #include <boost/core/noncopyable.hpp>
-#include "i_vault_io.h"
 #include "plugin/keyring/common/keys_container.h"
 
 namespace keyring {
+
+class IVault_io;
 
 class Vault_keys_container final : public Keys_container,
                                    private boost::noncopyable {
@@ -13,11 +14,8 @@ class Vault_keys_container final : public Keys_container,
   Vault_keys_container(ILogger *logger) noexcept : Keys_container(logger) {}
 
   bool init(IKeyring_io *keyring_io, std::string keyring_storage_url) override;
-  virtual IKey *fetch_key(IKey *key) override;
-  virtual void set_curl_timeout(uint timeout) noexcept {
-    assert(vault_io != NULL);
-    vault_io->set_curl_timeout(timeout);
-  }
+  IKey *fetch_key(IKey *key) override;
+  virtual void set_curl_timeout(uint timeout);
 
  private:
   virtual bool flush_to_backup() override;

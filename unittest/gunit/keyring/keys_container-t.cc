@@ -25,6 +25,8 @@
 #include <mysql/plugin_keyring.h>
 #include <fstream>
 
+#include "mock_serialized_object.h"
+#include "mock_serializer.h"
 #include "my_inttypes.h"
 #include "plugin/keyring/buffered_file_io.h"
 #include "plugin/keyring/common/i_serialized_object.h"
@@ -823,30 +825,13 @@ TEST_F(
 
 class Mock_keyring_io : public IKeyring_io {
  public:
-  MOCK_METHOD1(init, bool(std::string *keyring_filename));
+  MOCK_METHOD1(init, bool(const std::string *keyring_filename));
   MOCK_METHOD1(flush_to_backup, bool(ISerialized_object *serialized_object));
   MOCK_METHOD1(flush_to_storage, bool(ISerialized_object *serialized_object));
   MOCK_METHOD0(get_serializer, ISerializer *());
   MOCK_METHOD1(get_serialized_object,
                bool(ISerialized_object **serialized_object));
   MOCK_METHOD0(has_next_serialized_object, bool());
-};
-
-class Mock_serialized_object : public ISerialized_object {
- public:
-  MOCK_METHOD1(get_next_key, bool(IKey **key));
-  MOCK_METHOD0(has_next_key, bool());
-  MOCK_METHOD0(get_key_operation, Key_operation());
-  MOCK_METHOD1(set_key_operation, void(Key_operation));
-};
-
-class Mock_serializer : public ISerializer {
- public:
-  MOCK_METHOD3(
-      serialize,
-      ISerialized_object *(
-          const collation_unordered_map<std::string, std::unique_ptr<IKey>> &,
-          IKey *, Key_operation));
 };
 
 class Keys_container_with_mocked_io_test : public ::testing::Test {

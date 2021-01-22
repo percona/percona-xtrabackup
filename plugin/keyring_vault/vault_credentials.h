@@ -17,36 +17,59 @@
 #ifndef MYSQL_VAULT_CREDENTIALS
 #define MYSQL_VAULT_CREDENTIALS
 
-#include <map>
 #include "plugin/keyring/common/secure_string.h"
 
 namespace keyring {
 enum Vault_version_type {
   Vault_version_unknown,
   Vault_version_v1,
-  Vault_version_v2
+  Vault_version_v2,
+  Vault_version_auto
 };
 
 class Vault_credentials {
+  friend class Vault_credentials_parser;
+
  public:
-  using Map = std::map<Secure_string, Secure_string>;
+  Vault_credentials()
+      : vault_url_(),
+        secret_mount_point_(),
+        vault_ca_(),
+        token_(),
+        secret_mount_point_version_(Vault_version_unknown) {}
 
-  Vault_credentials() = default;
-  explicit Vault_credentials(const Map &vault_credentials_map) {
-    init(vault_credentials_map);
+  bool is_initialized() const { return !vault_url_.empty(); }
+
+  const Secure_string &get_vault_url() const { return vault_url_; }
+  const Secure_string &get_secret_mount_point() const {
+    return secret_mount_point_;
+  }
+  const Secure_string &get_vault_ca() const { return vault_ca_; }
+  const Secure_string &get_token() const { return token_; }
+  Vault_version_type get_secret_mount_point_version() const {
+    return secret_mount_point_version_;
   }
 
-  void init(const Map &_vault_credentials) {
-    this->vault_credentials = _vault_credentials;
-  }
-
-  const Secure_string &get_credential(const Secure_string &key) const;
-  Secure_string get_raw_secret_mount_point() const;
-  Secure_string get_raw_directory() const;
+  void swap(Vault_credentials &obj);
 
  private:
-  Vault_credentials::Map vault_credentials;
+  Vault_credentials(const Secure_string &vault_url,
+                    const Secure_string &secret_mount_point,
+                    const Secure_string &vault_ca, const Secure_string &token,
+                    Vault_version_type secret_mount_point_version)
+      : vault_url_(vault_url),
+        secret_mount_point_(secret_mount_point),
+        vault_ca_(vault_ca),
+        token_(token),
+        secret_mount_point_version_(secret_mount_point_version) {}
+
+  Secure_string vault_url_;
+  Secure_string secret_mount_point_;
+  Secure_string vault_ca_;
+  Secure_string token_;
+  Vault_version_type secret_mount_point_version_;
 };
+
 }  // namespace keyring
 
 #endif  // MYSQL_VAULT_CREDENTIALS

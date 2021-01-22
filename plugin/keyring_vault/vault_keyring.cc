@@ -1,21 +1,24 @@
+#include <curl/curl.h>
+#include <my_rnd.h>
 #include <memory>
-#include "my_config.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/plugin_keyring.h"
 #include "plugin/keyring/common/keyring.h"
 #include "sql/sql_class.h"
+#include "sql/sys_vars_shared.h"
+#include "vault_curl.h"
 #include "vault_io.h"
 #include "vault_keys_container.h"
-#include "vault_parser.h"
+#include "vault_parser_composer.h"
 
 using keyring::IVault_curl;
-using keyring::IVault_parser;
+using keyring::IVault_parser_composer;
 using keyring::Keys_iterator;
 using keyring::Logger;
 using keyring::Vault_curl;
 using keyring::Vault_io;
 using keyring::Vault_keys_container;
-using keyring::Vault_parser;
+using keyring::Vault_parser_composer;
 
 mysql_rwlock_t LOCK_keyring;
 
@@ -62,9 +65,10 @@ int check_keyring_file_data(MYSQL_THD thd MY_ATTRIBUTE((unused)),
       logger->log(MY_ERROR_LEVEL, "Cannot set keyring_vault_config_file");
       return 1;
     }
-    std::unique_ptr<IVault_curl> vault_curl(
-        new Vault_curl(logger.get(), keyring_vault_timeout));
-    std::unique_ptr<IVault_parser> vault_parser(new Vault_parser(logger.get()));
+    std::unique_ptr<IVault_parser_composer> vault_parser(
+        new Vault_parser_composer(logger.get()));
+    std::unique_ptr<IVault_curl> vault_curl(new Vault_curl(
+        logger.get(), vault_parser.get(), keyring_vault_timeout));
     IKeyring_io *keyring_io(
         new Vault_io(logger.get(), vault_curl.get(), vault_parser.get()));
     vault_curl.release();
@@ -132,9 +136,10 @@ static int keyring_vault_init(MYSQL_PLUGIN plugin_info MY_ATTRIBUTE((unused))) {
 
     logger.reset(new Logger());
     keys.reset(new Vault_keys_container(logger.get()));
-    std::unique_ptr<IVault_curl> vault_curl(
-        new Vault_curl(logger.get(), keyring_vault_timeout));
-    std::unique_ptr<IVault_parser> vault_parser(new Vault_parser(logger.get()));
+    std::unique_ptr<IVault_parser_composer> vault_parser(
+        new Vault_parser_composer(logger.get()));
+    std::unique_ptr<IVault_curl> vault_curl(new Vault_curl(
+        logger.get(), vault_parser.get(), keyring_vault_timeout));
     IKeyring_io *keyring_io =
         new Vault_io(logger.get(), vault_curl.get(), vault_parser.get());
     vault_curl.release();

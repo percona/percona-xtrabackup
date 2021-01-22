@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -20,40 +20,21 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#ifndef LOGGER_H
-#define LOGGER_H
+#ifndef MOCK_SERIALIZED_OBJECT_H
+#define MOCK_SERIALIZED_OBJECT_H
 
-#include <stdarg.h>
+#include <gmock/gmock.h>
 
-#include <mysql/components/services/log_builtins.h>
-#include <mysql/plugin.h>
-#include <mysql/service_my_plugin_log.h>
-#include <mysqld_error.h>
+#include "plugin/keyring/common/i_serialized_object.h"
 
 namespace keyring {
-
-class ILogger {
+class Mock_serialized_object : public ISerialized_object {
  public:
-  virtual void log(longlong level, const char *message) = 0;
-  virtual void log(longlong level, longlong errcode, ...) = 0;
-  virtual ~ILogger() = default;
+  MOCK_METHOD1(get_next_key, bool(IKey **key));
+  MOCK_METHOD0(has_next_key, bool());
+  MOCK_METHOD0(get_key_operation, Key_operation());
+  MOCK_METHOD1(set_key_operation, void(Key_operation));
 };
-
-class Logger : public ILogger {
- public:
-  ~Logger() override = default;
-  void log(longlong level, const char *message) override {
-    LogPluginErr(level, ER_KEYRING_LOGGER_ERROR_MSG, message);
-  }
-
-  void log(longlong level, longlong errcode, ...) override {
-    va_list vl;
-    va_start(vl, errcode);
-    LogPluginErrV(level, errcode, vl);
-    va_end(vl);
-  }
-};
-
 }  // namespace keyring
 
-#endif  // LOGGER_H
+#endif  // MOCK_SERIALIZED_OBJECT_H

@@ -1,5 +1,7 @@
 #include "vault_keys_container.h"
 
+#include "i_vault_io.h"
+
 namespace keyring {
 bool Vault_keys_container::init(IKeyring_io *keyring_io,
                                 std::string keyring_storage_url) {
@@ -22,6 +24,11 @@ IKey *Vault_keys_container::fetch_key(IKey *key) {
     return nullptr;
 
   return Keys_container::fetch_key(key);
+}
+
+void Vault_keys_container::set_curl_timeout(uint timeout) {
+  DBUG_ASSERT(vault_io != nullptr);
+  vault_io->set_curl_timeout(timeout);
 }
 
 bool Vault_keys_container::flush_to_backup() { return false; }

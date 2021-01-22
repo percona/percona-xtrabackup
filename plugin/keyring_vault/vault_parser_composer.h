@@ -17,15 +17,16 @@
 #ifndef MYSQL_VAULT_PARSER_H
 #define MYSQL_VAULT_PARSER_H
 
-#include "i_vault_parser.h"
-#include "plugin/keyring/common/logger.h"
+#include "i_vault_parser_composer.h"
 #include "plugin/keyring/common/secure_string.h"
 
 namespace keyring {
 
-class Vault_parser final : public IVault_parser {
+class ILogger;
+
+class Vault_parser_composer final : public IVault_parser_composer {
  public:
-  Vault_parser(ILogger *logger) : logger(logger) {}
+  explicit Vault_parser_composer(ILogger *logger) : logger(logger) {}
 
   bool parse_keys(const Secure_string &payload, Vault_keys_list *keys) override;
   bool parse_key_data(const Secure_string &payload, IKey *key,
@@ -35,16 +36,15 @@ class Vault_parser final : public IVault_parser {
   bool parse_errors(const Secure_string &payload,
                     Secure_string *errors) override;
 
-  /** Retrieve kv version from list mount points payload
-  @param[in]  vault_credentials credentials used to access vault server
-  @param[in]  mount_points_payload payload being a result of listing mount
-  points on a Vault server
-  @param[out] vault_version version of the vault server, either Vault_version_v1
-  or Vault_version_v2
-  @return true on error, false on success */
-  bool get_vault_version(const Vault_credentials &vault_credentials,
-                         const Secure_string &mount_points_payload,
-                         Vault_version_type &vault_version) override;
+  bool parse_mount_point_version(const Secure_string &secret_mount_point,
+                                 const Secure_string &mount_points_payload,
+                                 Vault_version_type &vault_version,
+                                 Secure_string &mount_point_path,
+                                 Secure_string &directory_path) override;
+  bool compose_write_key_postdata(const Vault_key &key,
+                                  const Secure_string &encoded_key_data,
+                                  Vault_version_type vault_version,
+                                  Secure_string &postdata) override;
 
  private:
   ILogger *logger;

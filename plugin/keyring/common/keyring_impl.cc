@@ -28,6 +28,7 @@
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "mysql/psi/mysql_memory.h"
+#include "mysql/psi/mysql_rwlock.h"
 #include "mysql/psi/mysql_socket.h"
 #include "mysqld_error.h"
 #include "plugin/keyring/common/keyring.h"

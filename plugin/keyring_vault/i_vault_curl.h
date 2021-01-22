@@ -20,10 +20,10 @@
 #include "plugin/keyring/common/i_keyring_key.h"
 #include "plugin/keyring/common/secure_string.h"
 #include "vault_credentials.h"
-#include "vault_key.h"
 
 namespace keyring {
 
+class Vault_key;
 class IVault_curl : public Keyring_alloc {
  public:
   virtual bool init(const Vault_credentials &vault_credentials) = 0;
@@ -33,8 +33,8 @@ class IVault_curl : public Keyring_alloc {
   virtual bool write_key(const Vault_key &key, Secure_string *response) = 0;
   virtual bool read_key(const Vault_key &key, Secure_string *response) = 0;
   virtual bool delete_key(const Vault_key &key, Secure_string *response) = 0;
-  virtual void set_vault_version(Vault_version_type version) = 0;
-  virtual Vault_version_type get_vault_version() const = 0;
+  virtual Vault_version_type get_resolved_secret_mount_point_version()
+      const = 0;
   virtual void set_timeout(uint timeout) noexcept = 0;
 
   virtual ~IVault_curl() {}

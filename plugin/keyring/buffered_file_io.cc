@@ -295,7 +295,7 @@ bool Buffered_file_io::check_if_keyring_file_can_be_opened_or_created() {
   @retval true      - there was an error with initializing keyring file
   @retval false     - keyring file has been initialized successfully
 */
-bool Buffered_file_io::init(std::string *keyring_filename) {
+bool Buffered_file_io::init(const std::string *keyring_filename) {
   // file name can't be empty
   assert(keyring_filename->empty() == false);
 

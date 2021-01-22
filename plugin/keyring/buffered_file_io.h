@@ -50,7 +50,7 @@ class Buffered_file_io : public IKeyring_io {
 
   // ================= IKeyring_io implementation ================= //
 
-  bool init(std::string *keyring_filename) override;
+  bool init(const std::string *keyring_filename) override;
   bool flush_to_backup(ISerialized_object *serialized_object) override;
   bool flush_to_storage(ISerialized_object *serialized_object) override;
   ISerializer *get_serializer() override;

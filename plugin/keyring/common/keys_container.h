@@ -36,7 +36,6 @@
 #include "plugin/keyring/common/keyring_key.h"
 #include "plugin/keyring/common/keyring_memory.h"
 #include "plugin/keyring/common/logger.h"
-#include "sql/sys_vars_shared.h"  //For PolyLock, AutoWLock, AutoRLock
 
 namespace keyring {
 

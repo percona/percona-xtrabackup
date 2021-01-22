@@ -1,11 +1,20 @@
-#include <sql_plugin_ref.h>
-#include <time.h>
+#include <ctime>
 #include <iostream>
 #include <memory>
 #include <set>
+
+#include <boost/scope_exit.hpp>
+
+#include <my_atomic.h>
+#include <my_global.h>
+#include <my_rnd.h>
+
+#include "sql_plugin_ref.h"
+
 #include "../vault_keyring.cc"
 #include "generate_credential_file.h"
 #include "vault_keys_container_ex.h"
+#include "vault_mount.h"
 
 static bool random_keys = false;
 static bool verbose;
@@ -221,19 +230,14 @@ static bool keyring_vault_init_for_test() {
 #endif
   if (init_keyring_locks()) return true;
 
-  if (init_curl()) return true;
-
-  st_plugin_int plugin_info;
-  plugin_info.name.str = const_cast<char *>("keyring_vault");
-  plugin_info.name.length = strlen("keyring_vault");
-
-  logger.reset(new keyring::Logger(&plugin_info));
   // We are using Vault_keys_container_ex which allows removing all keys created
   // in keyring
   // Its behaviour is exactly the same as Vault_keys_container
   keys.reset(new keyring::Vault_keys_container_ex(logger.get()));
-  std::unique_ptr<IVault_curl> vault_curl(new Vault_curl(logger.get(), curl));
-  std::unique_ptr<IVault_parser> vault_parser(new Vault_parser(logger.get()));
+  std::unique_ptr<IVault_parser_composer> vault_parser(
+      new Vault_parser_composer(logger.get()));
+  std::unique_ptr<IVault_curl> vault_curl(
+      new Vault_curl(logger.get(), vault_parser.get(), 15));
   IKeyring_io *keyring_io =
       new Vault_io(logger.get(), vault_curl.release(), vault_parser.release());
   is_keys_container_initialized =
@@ -241,25 +245,38 @@ static bool keyring_vault_init_for_test() {
   return !is_keys_container_initialized;
 }
 
-int main(int argc, char **argv) {
-  my_thread_global_init();
-  mysql_mutex_init(0, &LOCK_verbose, MY_MUTEX_INIT_FAST);
-  mysql_mutex_init(0, &LOCK_keys_in_keyring, MY_MUTEX_INIT_FAST);
+static char fake_plugin_name[] = "keyring_vault";
 
-  keyring::system_charset_info = &my_charset_utf8_general_ci;
-  srand(time(NULL));
-  my_thread_handle *otid;
-  unsigned long long i;
+int main(int argc, char **argv) {
+  if (!is_vault_environment_configured()) {
+    std::cout << "[WARNING] Vault environment variables are not set. "
+                 "Skipping the test."
+              << std::endl;
+    return 0;
+  }
+
+  typedef std::vector<my_thread_handle> my_thread_handle_container;
+  my_thread_handle_container otid;
+  std::size_t i;
   void *tret;
 
-  std::string credential_file_url = "./keyring_vault.conf";
-  if (generate_credential_file(credential_file_url)) {
+  std::string uuid = generate_uuid();
+  std::string credential_file_name = "./keyring_vault" + uuid + ".conf";
+  std::string mount_point = "mtr/" + uuid;
+  if (generate_credential_file(
+          credential_file_name, mount_point,
+          mount_point_version_type::mount_point_version_v1,
+          credentials_validity_type::credentials_validity_correct)) {
     std::cerr << "Could not generate default keyring configuration file"
               << std::endl;
     return 1;
   }
+  BOOST_SCOPE_EXIT(&credential_file_name) {
+    std::remove(credential_file_name.c_str());
+  }
+  BOOST_SCOPE_EXIT_END
 
-  const char *default_args[] = {credential_file_url.c_str(),
+  const char *default_args[] = {credential_file_name.c_str(),
                                 "100",
                                 "10",
                                 "30",
@@ -284,12 +301,29 @@ int main(int argc, char **argv) {
   }
 
   my_init();
+  BOOST_SCOPE_EXIT(void) { my_end(0); }
+  BOOST_SCOPE_EXIT_END
 
-  keyring_vault_config_file = static_cast<char *>(my_malloc(
-      PSI_NOT_INSTRUMENTED,
-      strlen(argument_passed ? argv[1] : default_args[0]) + 1, MYF(0)));
-  strcpy(keyring_vault_config_file,
-         (argument_passed ? argv[1] : default_args[0]));
+  mysql_mutex_init(0, &LOCK_verbose, MY_MUTEX_INIT_FAST);
+  BOOST_SCOPE_EXIT(void) { mysql_mutex_destroy(&LOCK_verbose); }
+  BOOST_SCOPE_EXIT_END
+
+  mysql_mutex_init(0, &LOCK_keys_in_keyring, MY_MUTEX_INIT_FAST);
+  BOOST_SCOPE_EXIT(void) { mysql_mutex_destroy(&LOCK_keys_in_keyring); }
+  BOOST_SCOPE_EXIT_END
+
+  system_charset_info = &my_charset_utf8_general_ci;
+  srand(time(nullptr));
+
+  typedef std::vector<char> char_container;
+  char_container keyring_vault_config_file_storage;
+  const char *credentials_file_name_raw =
+      argument_passed ? argv[1] : default_args[0];
+  keyring_vault_config_file_storage.assign(
+      credentials_file_name_raw,
+      credentials_file_name_raw + std::strlen(credentials_file_name_raw) + 1);
+
+  keyring_vault_config_file = keyring_vault_config_file_storage.data();
   const unsigned long long threads_store_number =
       atoll(argument_passed ? argv[2] : default_args[1]);
   const unsigned long long threads_remove_number =
@@ -310,63 +344,92 @@ int main(int argc, char **argv) {
   const int number_of_keys_to_remove =
       number_of_keys_to_store + number_of_keys_to_generate;
 
+  st_plugin_int plugin_info;
+  plugin_info.name.str = fake_plugin_name;
+  plugin_info.name.length = sizeof(fake_plugin_name) - 1;
+  logger.reset(new keyring::Logger(&plugin_info));
+
+  curl_global_init(CURL_GLOBAL_DEFAULT);
+  BOOST_SCOPE_EXIT(void) { curl_global_cleanup(); }
+  BOOST_SCOPE_EXIT_END
+
+  CURL *curl = curl_easy_init();
+  if (curl == nullptr) {
+    std::cerr << "Could not initialize CURL session" << std::endl;
+    return 1;
+  }
+  BOOST_SCOPE_EXIT(&curl) { curl_easy_cleanup(curl); }
+  BOOST_SCOPE_EXIT_END
+
+  // create unique secret mount point for this test suite
+  keyring::Vault_mount vault_mount(curl, logger.get());
+  if (vault_mount.init(credential_file_name, mount_point)) {
+    std::cout << "Could not initialize Vault_mount" << std::endl;
+    return 2;
+  }
+  if (vault_mount.mount_secret_backend()) {
+    std::cout << "Could not mount secret backend" << std::endl;
+    return 3;
+  }
+  BOOST_SCOPE_EXIT(&vault_mount) { vault_mount.unmount_secret_backend(); }
+  BOOST_SCOPE_EXIT_END
+
+  if (keyring_vault_init_for_test()) {
+    std::cerr << "Could not initialize keyring_vault." << std::endl;
+    return 4;
+  }
+  BOOST_SCOPE_EXIT(void) { keyring_vault_deinit(NULL); }
+  BOOST_SCOPE_EXIT_END
+
   unsigned long long threads_number =
       threads_store_number + threads_fetch_number + threads_remove_number +
       threads_generate_key_number;
 
-  if (!(otid = static_cast<my_thread_handle *>(my_malloc(
-            PSI_NOT_INSTRUMENTED, threads_number * sizeof(*otid), MYF(0)))))
-    return 7;
-
-  if (keyring_vault_init_for_test()) {
-    fprintf(stderr, "Could not initialize keyring_vault.");
-    return 1;
+  BOOST_SCOPE_EXIT(void) {
+    // To be sure that all keys added in this test are removed - we try to
+    // remove all keys for which store/generate functions returned success
+    // keys_in_keyring is growing only set - as we do not want to add
+    // synchronization over keyring service calls.
+    for (auto &key : keys_in_keyring)
+      mysql_key_remove(key.key_id.c_str(), key.user_id.c_str());
   }
+  BOOST_SCOPE_EXIT_END
+
+  my_thread_handle current_thread_handle;
+  current_thread_handle.thread = my_thread_self();
+  otid.resize(threads_number, current_thread_handle);
+  BOOST_SCOPE_EXIT((&otid)(&threads_number)(&tret)(&current_thread_handle)) {
+    for (std::size_t u = 0; u < threads_number; ++u)
+      if (!my_thread_equal(otid[u].thread, current_thread_handle.thread))
+        my_thread_join(&otid[u], &tret);
+  }
+  BOOST_SCOPE_EXIT_END
 
   for (i = 0; i < threads_store_number; i++)
     if (mysql_thread_create(PSI_NOT_INSTRUMENTED, &otid[i], NULL, store,
                             const_cast<int *>(&number_of_keys_to_store)))
-      return 2;
+      return 5;
 
   for (i = 0; i < threads_fetch_number; i++)
     if (mysql_thread_create(PSI_NOT_INSTRUMENTED,
                             &otid[threads_store_number + i], NULL, fetch,
                             const_cast<int *>(&number_of_keys_to_fetch)))
-      return 3;
+      return 6;
 
   for (i = 0; i < threads_remove_number; i++)
     if (mysql_thread_create(
             PSI_NOT_INSTRUMENTED,
             &otid[threads_store_number + threads_fetch_number + i], NULL,
             remove, const_cast<int *>(&number_of_keys_to_remove)))
-      return 4;
+      return 7;
 
   for (i = 0; i < threads_generate_key_number; i++)
     if (mysql_thread_create(PSI_NOT_INSTRUMENTED,
                             &otid[threads_store_number + threads_fetch_number +
                                   threads_remove_number + i],
-                            NULL, generate,
+                            nullptr, generate,
                             static_cast<void *>(&number_of_keys_to_generate)))
-      return 6;
-
-  for (i = 0; i < threads_number; i++) my_thread_join(&otid[i], &tret);
-
-  // To be sure that all keys added in this test are removed - we try to remove
-  // all keys for which
-  // store/generate functions returned success
-  // keys_in_keyring is growing only set - as we do not want to add
-  // synchronization over keyring service calls.
-  for (std::set<Key_in_keyring>::const_iterator iter = keys_in_keyring.begin();
-       iter != keys_in_keyring.end(); ++iter)
-    mysql_key_remove(iter->key_id.c_str(), iter->user_id.c_str());
-
-  my_free(keyring_vault_config_file);
-  my_free(otid);
-  mysql_mutex_destroy(&LOCK_verbose);
-  mysql_mutex_destroy(&LOCK_keys_in_keyring);
-
-  keyring_vault_deinit(NULL);
-  my_end(0);
+      return 8;
 
   return 0;
 }
