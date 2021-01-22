@@ -3267,7 +3267,7 @@ void Fil_shard::space_detach(fil_space_t *space) {
 There must not be any pending I/O's or flushes on the files.
 @param[in,out]	space		tablespace */
 void Fil_shard::space_free_low(fil_space_t *&space) {
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   {
     /* Temporary and undo tablespaces IDs are assigned from a large but
     fixed size pool of reserved IDs. Therefore we must ensure that a
@@ -3277,7 +3277,7 @@ void Fil_shard::space_free_low(fil_space_t *&space) {
     ut_a(srv_shutdown_state.load() == SRV_SHUTDOWN_LAST_PHASE ||
          space->has_no_references());
   }
-#endif /* !UNIV_HOTBACKUP */
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
   for (auto &file : space->files) {
     ut_d(space->size -= file.size);
