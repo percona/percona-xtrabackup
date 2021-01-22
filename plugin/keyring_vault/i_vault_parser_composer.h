@@ -14,23 +14,29 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#ifndef MYSQL_I_VAULT_PARSER_H
-#define MYSQL_I_VAULT_PARSER_H
+#ifndef MYSQL_I_VAULT_PARSER_COMPOSER_H
+#define MYSQL_I_VAULT_PARSER_COMPOSER_H
 
-#include "my_global.h"
+#include <my_global.h>
+
 #include "i_keyring_key.h"
+#include "vault_key.h"
 #include "vault_keys_list.h"
-#include "logger.h"
 #include "secure_string.h"
 #include "vault_credentials.h"
 
 namespace keyring {
-class IVault_parser {
+class IVault_parser_composer {
  public:
   struct KeyParameters {
     Secure_string  key_id;
     Secure_string  user_id;
-    Secure_string &operator[](uint i)
+    Secure_string &operator[](std::size_t i)
+    {
+      DBUG_ASSERT(i <= 1);
+      return i == 0 ? key_id : user_id;
+    }
+    const Secure_string &operator[](std::size_t i) const
     {
       DBUG_ASSERT(i <= 1);
       return i == 0 ? key_id : user_id;
@@ -45,12 +51,17 @@ class IVault_parser {
                                    KeyParameters *      key_parameters)= 0;
   virtual bool parse_errors(const Secure_string &payload,
                             Secure_string *      errors)= 0;
-  virtual bool get_vault_version(const Vault_credentials &vault_credentials,
-                                 const Secure_string &mount_points_payload,
-                                 Vault_version_type & vault_version)= 0;
+  virtual bool parse_mount_point_version(
+      const Secure_string &secret_mount_point,
+      const Secure_string &mount_points_payload,
+      Vault_version_type &vault_version, Secure_string &mount_point_path,
+      Secure_string &directory_path)= 0;
+  virtual bool compose_write_key_postdata(
+      const Vault_key &key, const Secure_string &encoded_key_data,
+      Vault_version_type vault_version, Secure_string &postdata)= 0;
 
-  virtual ~IVault_parser() {}
+  virtual ~IVault_parser_composer() {}
 };
 }  // namespace keyring
 
-#endif  // MYSQL_I_VAULT_PARSER_H
+#endif  // MYSQL_I_VAULT_PARSER_COMPOSER_H

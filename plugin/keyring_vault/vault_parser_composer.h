@@ -17,16 +17,18 @@
 #ifndef MYSQL_VAULT_PARSER_H
 #define MYSQL_VAULT_PARSER_H
 
-#include "my_global.h"
-#include "i_vault_parser.h"
-#include "logger.h"
+#include <my_global.h>
+
+#include "i_vault_parser_composer.h"
 #include "secure_string.h"
 
 namespace keyring {
 
-class Vault_parser : public IVault_parser {
+class ILogger;
+
+class Vault_parser_composer : public IVault_parser_composer {
  public:
-  Vault_parser(ILogger *logger) : logger(logger) {}
+  Vault_parser_composer(ILogger *logger) : logger(logger) {}
 
   virtual bool parse_keys(const Secure_string &payload,
                           Vault_keys_list *    keys);
@@ -37,14 +39,14 @@ class Vault_parser : public IVault_parser {
   virtual bool parse_errors(const Secure_string &payload,
                             Secure_string *      errors);
 
-  /** Retrieve kv version from list mount points payload
-  @param[in]  vault_credentials credentials used to access vault server
-  @param[in]  mount_points_payload payload being a result of listing mount points on a Vault server
-  @param[out] vault_version version of the vault server, either Vault_version_v1 or Vault_version_v2
-  @return true on error, false on success */
-  virtual bool get_vault_version(const Vault_credentials &vault_credentials,
-                                 const Secure_string &mount_points_payload,
-                                 Vault_version_type & vault_version);
+  virtual bool parse_mount_point_version(
+      const Secure_string &secret_mount_point,
+      const Secure_string &mount_points_payload,
+      Vault_version_type &vault_version, Secure_string &mount_point_path,
+      Secure_string &directory_path);
+  virtual bool compose_write_key_postdata(
+      const Vault_key &key, const Secure_string &encoded_key_data,
+      Vault_version_type vault_version, Secure_string &postdata);
 
  private:
   ILogger *logger;

@@ -1,3 +1,2 @@
-call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open credentials file.'");
 call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
-call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '../bad_dir/../../bad_keyring' not found");

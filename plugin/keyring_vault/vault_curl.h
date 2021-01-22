@@ -18,25 +18,34 @@
 #define MYSQL_VAULT_CURL_H
 
 #include <my_global.h>
-#include <boost/core/noncopyable.hpp>
-#include <curl/curl.h>
+
 #include <sstream>
-#include "vault_key.h"
+
+#include <boost/core/noncopyable.hpp>
+
+#include <curl/curl.h>
+
 #include "i_vault_curl.h"
-#include "logger.h"
-#include "vault_credentials.h"
 #include "secure_string.h"
-#include "i_keyring_key.h"
+#include "vault_credentials.h"
+#include "vault_key.h"
 
 namespace keyring {
 
+class ILogger;
+class IVault_parser_composer;
+
 class Vault_curl : public IVault_curl, private boost::noncopyable {
  public:
-  Vault_curl(ILogger *logger, uint timeout)
-      : logger(logger),
+  Vault_curl(ILogger *logger, IVault_parser_composer *parser, uint timeout)
+      : logger_(logger),
+        parser_(parser),
         list(NULL),
         timeout(timeout),
-        vault_version(Vault_version_v1)
+        vault_credentials_(),
+        mount_point_path_(),
+        directory_path_(),
+        resolved_secret_mount_point_version_(Vault_version_unknown)
   {
   }
 
@@ -54,8 +63,19 @@ class Vault_curl : public IVault_curl, private boost::noncopyable {
   virtual bool delete_key(const Vault_key &key, Secure_string *response);
   virtual void set_timeout(uint timeout) { this->timeout= timeout; }
 
-  virtual void               set_vault_version(Vault_version_type version);
-  virtual Vault_version_type get_vault_version() const;
+  const Vault_credentials &get_vault_credentials() const
+  {
+    return vault_credentials_;
+  }
+  const Secure_string &get_mount_point_path() const
+  {
+    return mount_point_path_;
+  }
+  const Secure_string &get_directory_path() const { return directory_path_; }
+  virtual Vault_version_type get_resolved_secret_mount_point_version() const
+  {
+    return resolved_secret_mount_point_version_;
+  }
 
  private:
   bool        setup_curl_session(CURL *curl);
@@ -68,20 +88,18 @@ class Vault_curl : public IVault_curl, private boost::noncopyable {
   Secure_string get_secret_url_metadata();
   Secure_string get_secret_url_data();
   Secure_string get_secret_url(const Secure_string &type_of_data);
-  Secure_string get_write_key_postdata(const Vault_key &key,
-                                       Secure_string &  encoded_key_data);
 
-  ILogger *            logger;
-  Secure_string        token_header;
-  Secure_string        vault_url;
-  char                 curl_errbuf[CURL_ERROR_SIZE];  //error from CURL
-  Secure_ostringstream read_data_ss;
-  struct curl_slist *  list;
-  Secure_string        vault_ca;
-  uint                 timeout;
-  Vault_version_type   vault_version;
+  ILogger *               logger_;
+  IVault_parser_composer *parser_;
+  char                    curl_errbuf[CURL_ERROR_SIZE];  //error from CURL
+  Secure_ostringstream    read_data_ss;
+  struct curl_slist *     list;
+  uint                    timeout;
 
-  Vault_credentials vault_credentials;
+  Vault_credentials  vault_credentials_;
+  Secure_string      mount_point_path_;
+  Secure_string      directory_path_;
+  Vault_version_type resolved_secret_mount_point_version_;
 };
 
 }  //namespace keyring

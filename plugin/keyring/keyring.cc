@@ -22,6 +22,7 @@
 
 #include <my_global.h>
 #include <mysql/plugin_keyring.h>
+#include <my_rnd.h>
 #include "keyring.h"
 #include "buffered_file_io.h"
 

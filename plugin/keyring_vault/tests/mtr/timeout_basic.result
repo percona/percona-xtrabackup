@@ -1,6 +1,5 @@
 call mtr.add_suppression("\\[Error\\] Plugin keyring_vault reported: 'keyring_vault initialization failure.");
-call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open file with credentials.'");
-call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '' not found");
+call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not open credentials file.'");
 SET @start_global_value = @@GLOBAL.keyring_vault_timeout;
 SET @@GLOBAL.keyring_vault_timeout = 100;
 SET @@GLOBAL.keyring_vault_timeout = DEFAULT;

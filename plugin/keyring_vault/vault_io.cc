@@ -1,7 +1,4 @@
-#include <my_global.h>
 #include "vault_io.h"
-#include "vault_keys_list.h"
-#include "vault_credentials_parser.h"
 
 #include <sstream>
 
@@ -9,69 +6,30 @@
 
 #include <curl/curl.h>
 
+#include <my_global.h>
+
+#include "i_vault_parser_composer.h"
+#include "logger.h"
+#include "vault_curl.h"
+#include "vault_keys_list.h"
+#include "vault_credentials.h"
+#include "vault_credentials_parser.h"
+
 namespace keyring {
 
-my_bool Vault_io::init(std::string *keyring_storage_url)
+my_bool Vault_io::init(const std::string *keyring_storage_url)
 {
   Vault_credentials_parser vault_credentials_parser(logger);
   Vault_credentials        vault_credentials;
   return vault_credentials_parser.parse(*keyring_storage_url,
-                                        &vault_credentials) ||
-         vault_curl->init(vault_credentials) ||
-         adjust_vault_version(vault_credentials);
+                                        vault_credentials) ||
+         vault_curl->init(vault_credentials);
 }
 
 Vault_io::~Vault_io()
 {
   delete vault_curl;
   delete vault_parser;
-}
-
-bool Vault_io::adjust_vault_version(
-    const Vault_credentials &vault_credentials)
-{
-  Vault_version_type vault_version= Vault_version_unknown;
-  if (vault_credentials.get_credential("secret_mount_point_version") ==
-      "AUTO")
-  {
-    static Secure_string err_msg(
-        "Could not determine version of Vault Server.");
-    Secure_string json_response;
-    vault_curl->list_mount_points(&json_response);
-    if (vault_parser->get_vault_version(vault_credentials, json_response,
-                                        vault_version))
-    {
-      logger->log(
-          MY_ERROR_LEVEL,
-          (err_msg + get_errors_from_response(json_response)).c_str());
-      return true;
-    }
-  }
-  else
-  {
-    boost::uint32_t extracted_version= 0;
-    if (!boost::conversion::try_lexical_convert(
-            vault_credentials.get_credential("secret_mount_point_version"),
-            extracted_version))
-    {
-      // should have never happened as secret_mount_point_version was previously
-      // validated
-      logger->log(MY_ERROR_LEVEL,
-                  "Failed to read secret_mount_point_version");
-      return true;
-    }
-
-    switch (extracted_version)
-    {
-      case 1: vault_version= Vault_version_v1; break;
-      case 2: vault_version= Vault_version_v2; break;
-    }
-  }
-
-  if (vault_version != Vault_version_v1 && vault_version != Vault_version_v2)
-    return true;
-  vault_curl->set_vault_version(vault_version);
-  return false;
 }
 
 Secure_string Vault_io::get_errors_from_response(
@@ -121,13 +79,20 @@ my_bool Vault_io::get_serialized_object(
   return FALSE;
 }
 
+void Vault_io::set_curl_timeout(uint timeout)
+{
+  DBUG_ASSERT(vault_curl != NULL);
+  vault_curl->set_timeout(timeout);
+}
+
 my_bool Vault_io::retrieve_key_type_and_data(IKey *key)
 {
   Secure_string json_response;
   if (vault_curl->read_key(static_cast<const Vault_key &>(*key),
                            &json_response) ||
-      vault_parser->parse_key_data(json_response, key,
-                                   vault_curl->get_vault_version()))
+      vault_parser->parse_key_data(
+          json_response, key,
+          vault_curl->get_resolved_secret_mount_point_version()))
   {
     logger->log(MY_ERROR_LEVEL, ("Could not read key from Vault." +
                                  get_errors_from_response(json_response))

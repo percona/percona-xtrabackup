@@ -1,5 +1,8 @@
-#include <my_global.h>
 #include "vault_keys_container.h"
+
+#include <my_global.h>
+
+#include "i_vault_io.h"
 
 namespace keyring {
 my_bool Vault_keys_container::init(IKeyring_io *keyring_io,
@@ -27,6 +30,13 @@ IKey *Vault_keys_container::fetch_key(IKey *key)
 
   return Keys_container::fetch_key(key);
 }
+
+void Vault_keys_container::set_curl_timeout(uint timeout)
+{
+  DBUG_ASSERT(vault_io != NULL);
+  vault_io->set_curl_timeout(timeout);
+}
+
 
 my_bool Vault_keys_container::flush_to_backup() { return FALSE; }
 }  // namespace keyring

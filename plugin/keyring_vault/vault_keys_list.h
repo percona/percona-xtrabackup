@@ -2,9 +2,12 @@
 #define MYSQL_VAULT_KEYS_H
 
 #include <my_global.h>
-#include <boost/core/noncopyable.hpp>
-#include "i_serialized_object.h"
+
 #include <list>
+
+#include <boost/core/noncopyable.hpp>
+
+#include "i_serialized_object.h"
 
 namespace keyring {
 

@@ -18,6 +18,7 @@
 #define I_VAULTIO_INCLUDED
 
 #include <my_global.h>
+
 #include "i_keyring_io.h"
 
 namespace keyring {
