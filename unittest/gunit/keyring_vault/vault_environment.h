@@ -37,6 +37,9 @@ class Vault_environment : public ::testing::Environment {
     return mount_point_path_;
   }
 
+  const std::string &get_admin_token() const { return admin_token_; }
+
+
   static Vault_environment *create_instance()
   {
     if (instance_ != NULL)
@@ -76,6 +79,7 @@ class Vault_environment : public ::testing::Environment {
   std::string non_existing_conf_file_name_;
 
   std::string mount_point_path_;
+  std::string admin_token_;
 
   std::string get_conf_file_name(const std::string &base) const
   {

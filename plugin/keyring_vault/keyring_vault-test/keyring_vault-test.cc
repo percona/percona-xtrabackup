@@ -394,7 +394,8 @@ int main(int argc, char **argv)
 
   //create unique secret mount point for this test suite
   keyring::Vault_mount vault_mount(curl, logger.get());
-  if (vault_mount.init(credential_file_name, mount_point))
+  if (vault_mount.init(credential_file_name, mount_point,
+                       extract_admin_token()))
   {
     std::cout << "Could not initialize Vault_mount" << std::endl;
     return 2;
