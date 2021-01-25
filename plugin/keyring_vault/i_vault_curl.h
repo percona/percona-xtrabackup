@@ -23,7 +23,7 @@
 
 namespace keyring {
 
-class Vault_key;
+struct Vault_key;
 class IVault_curl : public Keyring_alloc {
  public:
   virtual bool init(const Vault_credentials &vault_credentials) = 0;
