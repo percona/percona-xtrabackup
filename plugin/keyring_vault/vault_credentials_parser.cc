@@ -34,11 +34,11 @@ enum option_type { X_MACRO_SEQ() };
 #undef X_MACRO
 #undef X_MACRO_SEQ
 
-
 bool is_valid_option(const std::string &option)
 {
   const std::string *bg= option_labels;
-  const std::string *en= bg + sizeof(option_labels);
+  const std::string *en=
+      bg + sizeof(option_labels) / sizeof(option_labels[0]);
   return std::find(bg, en, option) != en;
 }
 
@@ -310,4 +310,5 @@ bool Vault_credentials_parser::parse(
   vault_credentials.swap(local_vault_credentials);
   return false;
 }
+
 }  // namespace keyring
