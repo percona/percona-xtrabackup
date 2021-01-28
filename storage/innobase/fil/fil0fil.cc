@@ -3922,6 +3922,18 @@ void Fil_shard::close_all_files() {
 
 /** Close all open files. */
 void Fil_system::close_all_files() {
+#if (defined UNIV_DEBUG || defined UNIV_BUF_DEBUG) && !defined(XTRABACKUP)
+  bool should_validate_space_reference_count = srv_fast_shutdown == 0;
+  DBUG_EXECUTE_IF("buf_disable_space_reference_count_check",
+                  should_validate_space_reference_count = false;);
+
+  if (should_validate_space_reference_count) {
+    auto buffer_pool_references = buf_LRU_count_space_references();
+    for (auto shard : m_shards) {
+      shard->validate_space_reference_count(buffer_pool_references);
+    }
+  }
+#endif /* (UNIV_DEBUG || UNIV_BUF_DEBUG) && !defined(XTRABACKUP) */
 
   for (auto shard : m_shards) {
     shard->mutex_acquire();
