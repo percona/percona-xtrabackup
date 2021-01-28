@@ -1,0 +1,77 @@
+#include <tunables/global>
+
+/usr/bin/xtrabackup {
+  #include <abstractions/base>
+  #include <abstractions/mysql>
+
+  capability dac_override,
+  capability dac_read_search,
+  capability sys_nice,
+
+  /etc/ssl/openssl.cnf r,
+  /etc/nsswitch.conf r,
+  /etc/services r,
+  /etc/mysql/** r,
+  /usr/bin/dash ix,
+  /bin/sh ix,
+
+  # allowed by abstractions/mysql
+  # /run/mysqld/mysqld.sock wr,
+
+  /var/lib/mysql/** rw,
+  /var/lib/mysql/ rw,
+  /tmp/** wr,
+
+  # enable storing backups only in /backups directory
+  # /backups/** rwk,
+
+  # enable storing backups anywhere in caller user home directory
+  /@{HOME}/** rwk,
+
+  /usr/bin/cat ix,
+  /usr/bin/xbcrypt ix,
+
+
+  # xbcloud
+  /usr/bin/which ixr,
+  /usr/bin/perl ix,
+  /usr/share/perl/** r,
+  /usr/share/mysql/** r,
+}
+
+/usr/bin/xbcloud {
+  #include <abstractions/base>
+ 
+  /etc/host.conf r,
+  /run/systemd/resolve/stub-resolv.conf r,
+  /etc/nsswitch.conf r,
+  /etc/ssl/openssl.cnf r,
+  /etc/hosts r,
+  /etc/mysql/mysql.cnf r,
+  /etc/ssl/certs/ca-certificates.crt r,
+  /etc/mysql/** r,
+
+  network inet,
+  network inet6,
+}
+
+/usr/bin/xbcrypt {
+  #include <abstractions/base>
+
+  # enable storing backups only in /backups directory
+  # /backups/** rwk,
+
+  # enable storing backups anywhere in caller user home directory
+  /@{HOME}/** rwk,
+}
+
+/usr/bin/xbstream {
+  #include <abstractions/base>
+  
+  # enable storing backups only in /backups directory
+  # /backups/** rwk,
+
+  # enable storing backups anywhere in caller user home directory
+  /@{HOME}/** rwk,
+}
+
