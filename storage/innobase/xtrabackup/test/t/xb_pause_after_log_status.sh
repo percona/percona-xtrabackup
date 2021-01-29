@@ -6,9 +6,7 @@
 # 5. check data
 #
 
-if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
-    skip_test "Requires --debug-sync support"
-fi
+require_debug_pxb_version
 
 start_server
 
@@ -46,7 +44,6 @@ EOF
 
   checksum1=`checksum_table sakila t`
   $MYSQL $MYSQL_ARGS -Ns -e "INSERT INTO t (a) VALUES (10), (20), (30);" sakila
-  $MYSQL $MYSQL_ARGS -Ns -e "DROP DATABASE sakila"
 
   innodb_wait_for_flush_all
 
