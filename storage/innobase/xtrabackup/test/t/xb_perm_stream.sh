@@ -4,6 +4,7 @@
 binlog=$topdir/xb-perm-stream-log-bin
 
 start_server --log-bin=$binlog
+innodb_wait_for_flush_all
 
 # Take backup
 chmod -R 500 $mysql_datadir

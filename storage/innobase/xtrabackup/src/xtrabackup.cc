@@ -5034,7 +5034,7 @@ static bool xb_space_create_file(
 #ifdef UNIV_DEBUG
     page_zip.m_start =
 #endif /* UNIV_DEBUG */
-        page_zip.m_end = page_zip.m_nonempty = page_zip.n_blobs = 0;
+        page_zip.m_end = (page_zip.m_nonempty = (page_zip.n_blobs = 0));
 
     buf_flush_init_for_writing(NULL, page, &page_zip, 0,
                                fsp_is_checksum_disabled(space_id), true);
