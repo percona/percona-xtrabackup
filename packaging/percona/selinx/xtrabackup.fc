@@ -1,0 +1,8 @@
+/usr/bin/xtrabackup		--	gen_context(system_u:object_r:xtrabackup_exec_t,s0)
+/usr/bin/xbcrypt		--	gen_context(system_u:object_r:xtrabackup_exec_t,s0)
+/usr/bin/xbstream		--	gen_context(system_u:object_r:xtrabackup_exec_t,s0)
+/usr/bin/xbcloud		--	gen_context(system_u:object_r:xtrabackup_exec_t,s0)
+
+# This file context is needed only if if backups are to be stored in /backups directory. If they will be stored in the user's home directory, this line should be omitted. See xtrabackup.te file for more details
+# /backups(/.*)?			system_u:object_r:xtrabackup_data_t:s0
+
