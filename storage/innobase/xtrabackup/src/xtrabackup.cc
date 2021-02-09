@@ -925,7 +925,7 @@ struct my_option xb_client_options[] = {
      0, 0, 0, 0, 0},
 
     {"no-lock", OPT_NO_LOCK,
-     "Use this option to disable table lock "
+     "Use this option to disable lock-ddl and table lock "
      "with \"FLUSH TABLES WITH READ LOCK\". Use it only if ALL your "
      "tables are InnoDB and you DO NOT CARE about the binary log "
      "position of the backup. This option shouldn't be used if there "
@@ -943,10 +943,10 @@ struct my_option xb_client_options[] = {
      0, 0, 0},
 
     {"lock-ddl", OPT_LOCK_DDL,
-     "Issue LOCK TABLES FOR BACKUP if it is "
+     "Issue LOCK TABLES/LOCK INSTANCE FOR BACKUP if it is "
      "supported by server at the beginning of the backup to block all DDL "
      "operations.",
-     (uchar *)&opt_lock_ddl, (uchar *)&opt_lock_ddl, 0, GET_BOOL, NO_ARG, 0, 0,
+     (uchar *)&opt_lock_ddl, (uchar *)&opt_lock_ddl, 0, GET_BOOL, NO_ARG, 1, 0,
      0, 0, 0, 0},
 
     {"lock-ddl-timeout", OPT_LOCK_DDL_TIMEOUT,
@@ -995,8 +995,8 @@ struct my_option xb_client_options[] = {
      100, 0, 1, 0},
 
     {"safe-slave-backup", OPT_SAFE_SLAVE_BACKUP,
-     "Stop slave SQL thread "
-     "and wait to start backup until Slave_open_temp_tables in "
+     "This option stops slave SQL thread at the start of the backup and waits "
+     "to start backup until Slave_open_temp_tables in "
      "\"SHOW STATUS\" is zero. If there are no open temporary tables, "
      "the backup will take place, otherwise the SQL thread will be "
      "started and stopped until there are no open temporary tables. "
@@ -1050,8 +1050,9 @@ struct my_option xb_client_options[] = {
     {"no-backup-locks", OPT_NO_BACKUP_LOCKS,
      "This option controls if "
      "backup locks should be used instead of FLUSH TABLES WITH READ LOCK "
-     "on the backup stage. The option has no effect when backup locks are "
-     "not supported by the server. This option is enabled by default, "
+     "on the backup stage. It will disable lock-ddl. The option has no effect "
+     "when backup locks are "
+     "not supported by the server. This option is disabled by default, "
      "disable with --no-backup-locks.",
      (uchar *)&opt_no_backup_locks, (uchar *)&opt_no_backup_locks, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -6838,6 +6839,8 @@ bool xb_init() {
   const char *mixed_options[4] = {NULL, NULL, NULL, NULL};
   int n_mixed_options;
 
+  if (opt_no_lock || opt_no_backup_locks) opt_lock_ddl = false;
+
   /* sanity checks */
   if (opt_lock_ddl && opt_lock_ddl_per_table) {
     msg("Error: %s and %s are mutually exclusive\n", "--lock-ddl",
@@ -6915,6 +6918,13 @@ bool xb_init() {
     }
 
     history_start_time = time(NULL);
+
+    /* stop slave before taking backup up locks */
+    if (!opt_no_lock && opt_safe_slave_backup) {
+      if (!wait_for_safe_slave(mysql_connection)) {
+        return (false);
+      }
+    }
 
     if (opt_lock_ddl &&
         !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout, 0)) {

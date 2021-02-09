@@ -16,7 +16,7 @@ load_dbase_data sakila
 mkdir $topdir/backup
 
 # Test 1 - should fail since we don't have any entry on keyring file yet
-run_cmd_expect_failure $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --backup \
+run_cmd_expect_failure $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
 --target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" &
 
 job_pid=$!
@@ -68,7 +68,7 @@ $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE tmp1" sakila
 
 
 # Test 2 - Should pass as keyring file alwady have encryption information
-run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --backup \
+run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
 --target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" &
 
 job_pid=$!
