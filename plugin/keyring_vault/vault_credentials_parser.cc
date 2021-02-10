@@ -99,7 +99,10 @@ bool Vault_credentials_parser::parse(
     Vault_credentials &vault_credentials) const {
   std::ifstream ifs(conf_file_path.c_str());
   if (!ifs.is_open()) {
-    logger_->log(MY_ERROR_LEVEL, "Could not open credentials file.");
+    std::string err_msg = "Could not open credentials file '";
+    err_msg += conf_file_path;
+    err_msg += "\'.";
+    logger_->log(MY_ERROR_LEVEL, err_msg.c_str());
     return true;
   }
   const char *const cannot_identify_msg =

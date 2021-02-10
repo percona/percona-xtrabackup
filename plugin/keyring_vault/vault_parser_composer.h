@@ -14,8 +14,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#ifndef MYSQL_VAULT_PARSER_H
-#define MYSQL_VAULT_PARSER_H
+#ifndef MYSQL_VAULT_PARSER_COMPOSER_H
+#define MYSQL_VAULT_PARSER_COMPOSER_H
 
 #include "i_vault_parser_composer.h"
 #include "plugin/keyring/common/secure_string.h"
@@ -50,4 +50,4 @@ class Vault_parser_composer final : public IVault_parser_composer {
 
 }  // namespace keyring
 
-#endif  // MYSQL_VAULT_PARSER_H
+#endif  // MYSQL_VAULT_PARSER_COMPOSER_H

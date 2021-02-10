@@ -44,7 +44,6 @@ const char value_key[] = "value";
 const char max_versions_key[] = "max_versions";
 const char cas_required_key[] = "cas_required";
 const char delete_version_after_key[] = "delete_version_after";
-const char mount_point_path_delimiter = '/';
 
 }  // anonymous namespace
 
