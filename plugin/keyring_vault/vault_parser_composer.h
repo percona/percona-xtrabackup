@@ -36,11 +36,6 @@ class Vault_parser_composer final : public IVault_parser_composer {
   bool parse_errors(const Secure_string &payload,
                     Secure_string *errors) override;
 
-  bool parse_mount_point_version(const Secure_string &secret_mount_point,
-                                 const Secure_string &mount_points_payload,
-                                 Vault_version_type &vault_version,
-                                 Secure_string &mount_point_path,
-                                 Secure_string &directory_path) override;
   bool parse_mount_point_config(const Secure_string &config_payload,
                                 std::size_t &max_versions, bool &cas_required,
                                 Secure_string &delete_version_after) override;

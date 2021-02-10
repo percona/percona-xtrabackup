@@ -36,8 +36,6 @@
 #include "vault_parser_composer.h"
 
 namespace {
-const char options_key[] = "options";
-const char version_key[] = "version";
 const char errors_key[] = "errors";
 const char data_key[] = "data";
 const char keys_key[] = "keys";
@@ -51,112 +49,6 @@ const char mount_point_path_delimiter = '/';
 }  // anonymous namespace
 
 namespace keyring {
-
-bool Vault_parser_composer::parse_mount_point_version(
-    const Secure_string &secret_mount_point,
-    const Secure_string &mount_points_payload,
-    Vault_version_type &vault_version, Secure_string &mount_point_path,
-    Secure_string &directory_path) {
-  rapidjson::Document doc;
-  doc.Parse(mount_points_payload.c_str());
-  const rapidjson::Document &cdoc = doc;
-  if (cdoc.HasParseError()) return true;
-  if (!cdoc.IsObject()) return true;
-
-  Secure_string mp_key(secret_mount_point);
-  mp_key += mount_point_path_delimiter;
-
-  rapidjson::Document::ConstMemberIterator it = cdoc.MemberBegin();
-
-  Secure_string current_mp_name;
-  for (; it != cdoc.MemberEnd(); ++it) {
-    current_mp_name = it->name.GetString();
-    // we expect all mount points in the payload to never start
-    // with '/' and always end with '/'
-    if (!current_mp_name.empty() &&
-        current_mp_name[0] != mount_point_path_delimiter &&
-        current_mp_name[current_mp_name.size() - 1] ==
-            mount_point_path_delimiter &&
-        boost::starts_with(mp_key, current_mp_name))
-      break;
-  }
-
-  if (it == cdoc.MemberEnd()) return true;
-
-  mount_point_path = it->name.GetString();
-  directory_path = mp_key.substr(mount_point_path.size());
-
-  if (!mount_point_path.empty())
-    mount_point_path.resize(mount_point_path.size() - 1);
-
-  if (!directory_path.empty()) directory_path.resize(directory_path.size() - 1);
-
-  const rapidjson::Value &mp_node = it->value;
-  if (!mp_node.IsObject()) return true;
-
-  it = mp_node.FindMember(options_key);
-  if (it == mp_node.MemberEnd()) {
-    // no "options" sections means we are using v1 server with only v1 MP
-    // available
-    vault_version = Vault_version_v1;
-    return false;
-  }
-
-  const rapidjson::Value &options_node = it->value;
-  if (options_node.IsNull()) {
-    // '"options" : null' means we are using v2 server and this MP is v1
-    vault_version = Vault_version_v1;
-    return false;
-  }
-
-  // otherwise, "options" must be an Object
-  if (!options_node.IsObject()) return true;
-
-  it = options_node.FindMember(version_key);
-  if (it == options_node.MemberEnd()) {
-    vault_version = Vault_version_v1;
-    return false;
-  }
-
-  const rapidjson::Value &version_node = it->value;
-  if (version_node.IsInt()) {
-    // if "version" is an Integer, it must be either 1 or 2
-    switch (version_node.GetInt()) {
-      case 1:
-        vault_version = Vault_version_v1;
-        break;
-      case 2:
-        vault_version = Vault_version_v2;
-        break;
-      default:
-        return true;
-    }
-    return false;
-  }
-  if (version_node.IsString()) {
-    // if "version" is a String, we try to convert it to an unsigned integer and
-    // check the converted value to be 1 or 2
-    boost::uint32_t extracted_version = 0;
-    if (!boost::conversion::try_lexical_convert(version_node.GetString(),
-                                                extracted_version))
-      return true;
-
-    switch (extracted_version) {
-      case 1:
-        vault_version = Vault_version_v1;
-        break;
-      case 2:
-        vault_version = Vault_version_v2;
-        break;
-      default:
-        return true;
-    }
-    return false;
-  }
-  // otherwise, when "version" is neither an Integer nor a String, report an
-  // error
-  return true;
-}
 
 bool Vault_parser_composer::parse_mount_point_config(
     const Secure_string &config_payload, std::size_t &max_versions,
