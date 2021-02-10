@@ -43,6 +43,9 @@ const char data_key[] = "data";
 const char keys_key[] = "keys";
 const char type_key[] = "type";
 const char value_key[] = "value";
+const char max_versions_key[] = "max_versions";
+const char cas_required_key[] = "cas_required";
+const char delete_version_after_key[] = "delete_version_after";
 const char mount_point_path_delimiter = '/';
 
 }  // anonymous namespace
@@ -153,6 +156,114 @@ bool Vault_parser_composer::parse_mount_point_version(
   // otherwise, when "version" is neither an Integer nor a String, report an
   // error
   return true;
+}
+
+bool Vault_parser_composer::parse_mount_point_config(
+    const Secure_string &config_payload, std::size_t &max_versions,
+    bool &cas_required, Secure_string &delete_version_after) {
+  /*
+  {
+    "request_id": "a2c9306a-7f82-6a59-ebfa-bc6142d66c39",
+    "lease_id": "",
+    "renewable": false,
+    "lease_duration": 0,
+    "data": {
+      "max_versions": 0,
+      "cas_required": false,
+      "delete_version_after": "0s"
+    },
+    "wrap_info": null,
+    "warnings": null,
+    "auth": null
+  }
+  */
+  rapidjson::Document doc;
+  doc.Parse(config_payload.c_str());
+  const rapidjson::Document &cdoc = doc;
+  if (cdoc.HasParseError()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Could not parse Vault Server mount config response.");
+    return true;
+  }
+  if (!cdoc.IsObject()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config response is not an Object");
+    return true;
+  }
+
+  rapidjson::Document::ConstMemberIterator it = cdoc.FindMember(data_key);
+  if (it == cdoc.MemberEnd()) {
+    logger->log(
+        MY_ERROR_LEVEL,
+        "Vault Server mount config response does not have \"data\" member");
+    return true;
+  }
+
+  const rapidjson::Value &data_node = it->value;
+  if (!data_node.IsObject()) {
+    logger->log(
+        MY_ERROR_LEVEL,
+        "Vault Server mount config response[\"data\"] is not an Object");
+    return true;
+  }
+
+  it = data_node.FindMember(max_versions_key);
+  if (it == data_node.MemberEnd()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config response[\"data\"] does not have "
+                "\"max_versions\" member");
+    return true;
+  }
+
+  const rapidjson::Value &max_versions_node = it->value;
+  if (!max_versions_node.IsUint()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config "
+                "response[\"data\"][\"max_versions\"] is not an Unsigned "
+                "Integer");
+    return true;
+  }
+  std::size_t local_max_versions = max_versions_node.GetUint();
+
+  it = data_node.FindMember(cas_required_key);
+  if (it == data_node.MemberEnd()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config response[\"data\"] does not have "
+                "\"cas_required\" member");
+    return true;
+  }
+
+  const rapidjson::Value &cas_required_node = it->value;
+  if (!cas_required_node.IsBool()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config "
+                "response[\"data\"][\"cas_required\"] is not a Boolean");
+    return true;
+  }
+  bool local_cas_required = cas_required_node.GetBool();
+
+  it = data_node.FindMember(delete_version_after_key);
+  if (it == data_node.MemberEnd()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config response[\"data\"] does not have "
+                "\"delete_version_after\" member");
+    return true;
+  }
+
+  const rapidjson::Value &delete_version_after_node = it->value;
+  if (!delete_version_after_node.IsString()) {
+    logger->log(MY_ERROR_LEVEL,
+                "Vault Server mount config "
+                "response[\"data\"][\"delete_version_after\"] is not a String");
+    return true;
+  }
+  Secure_string local_delete_version_after(
+      delete_version_after_node.GetString());
+
+  max_versions = local_max_versions;
+  cas_required = local_cas_required;
+  delete_version_after.swap(local_delete_version_after);
+  return false;
 }
 
 bool Vault_parser_composer::parse_errors(const Secure_string &payload,
@@ -295,7 +406,7 @@ bool Vault_parser_composer::parse_key_data(const Secure_string &payload,
     return true;
   }
   if (!cdoc.IsObject()) {
-    logger->log(MY_ERROR_LEVEL, "Vault Server response iss not an Object");
+    logger->log(MY_ERROR_LEVEL, "Vault Server response is not an Object");
     return true;
   }
 

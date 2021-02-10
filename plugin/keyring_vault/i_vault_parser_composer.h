@@ -53,6 +53,9 @@ class IVault_parser_composer {
       const Secure_string &mount_points_payload,
       Vault_version_type &vault_version, Secure_string &mount_point_path,
       Secure_string &directory_path) = 0;
+  virtual bool parse_mount_point_config(
+      const Secure_string &config_payload, std::size_t &max_versions,
+      bool &cas_required, Secure_string &delete_version_after) = 0;
   virtual bool compose_write_key_postdata(const Vault_key &key,
                                           const Secure_string &encoded_key_data,
                                           Vault_version_type vault_version,

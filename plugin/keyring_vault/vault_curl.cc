@@ -40,6 +40,9 @@ namespace {
 
 const char data_subpath[] = "data";
 const char metadata_subpath[] = "metadata";
+const char config_subpath[] = "config";
+
+const char mount_point_path_delimiter = '/';
 
 }  // anonymous namespace
 
@@ -120,39 +123,69 @@ bool Vault_curl::init(const Vault_credentials &vault_credentials) {
   if (vault_credentials.get_secret_mount_point_version() == Vault_version_v1) {
     resolved_secret_mount_point_version_ =
         vault_credentials_.get_secret_mount_point_version();
-  } else {
-    Secure_string json_response;
-    list_mount_points(&json_response);
-    Vault_version_type mp_version = Vault_version_unknown;
-    Secure_string mount_point_path;
-    Secure_string directory_path;
-
-    if (parser_->parse_mount_point_version(
-            vault_credentials_.get_secret_mount_point(), json_response,
-            mp_version, mount_point_path, directory_path)) {
-      Secure_string err_msg =
-          "Could not determine the version of the Vault Server mount point.";
-      Secure_string parsed_errors;
-      parser_->parse_errors(json_response, &parsed_errors);
-      if (!parsed_errors.empty()) {
-        err_msg += ' ';
-        err_msg += parsed_errors;
-      }
-      logger_->log(MY_ERROR_LEVEL, err_msg.c_str());
-      return true;
-    }
-    if (vault_credentials.get_secret_mount_point_version() ==
-            Vault_version_v2 &&
-        mp_version != Vault_version_v2) {
-      logger_->log(MY_ERROR_LEVEL,
-                   "Auto-detected mount point version is not the same "
-                   "as specified in 'secret_mount_point_version'.");
-      return true;
-    }
-    resolved_secret_mount_point_version_ = mp_version;
-    mount_point_path_.swap(mount_point_path);
-    directory_path_.swap(directory_path);
+    return false;
   }
+
+  std::size_t max_versions;
+  bool cas_required;
+  Secure_string delete_version_after;
+
+  Secure_string::const_iterator bg =
+      vault_credentials_.get_secret_mount_point().begin();
+  Secure_string::const_iterator en =
+      vault_credentials_.get_secret_mount_point().end();
+  Secure_string::const_iterator delimiter_it = bg;
+  Secure_string::const_iterator from_it;
+  Secure_string json_response;
+
+  Vault_version_type mp_version = Vault_version_v1;
+  Secure_string partial_path;
+
+  while (delimiter_it != en && mp_version == Vault_version_v1) {
+    from_it = delimiter_it;
+    ++from_it;
+    delimiter_it = std::find(from_it, en, mount_point_path_delimiter);
+    partial_path.assign(bg, delimiter_it);
+    Secure_string err_msg = "Probing ";
+    err_msg += partial_path;
+    err_msg += " for being a mount point";
+
+    if (probe_mount_point_config(partial_path, json_response)) {
+      err_msg += " unsuccessful - skipped.";
+      logger_->log(MY_INFORMATION_LEVEL, err_msg.c_str());
+    } else if (parser_->parse_mount_point_config(json_response, max_versions,
+                                                 cas_required,
+                                                 delete_version_after)) {
+      err_msg += " successful but response has unexpected format - skipped.";
+      logger_->log(MY_WARNING_LEVEL, err_msg.c_str());
+    } else {
+      err_msg += " successful - identified kv-v2 secret engine.";
+      logger_->log(MY_INFORMATION_LEVEL, err_msg.c_str());
+      mp_version = Vault_version_v2;
+    }
+  }
+
+  if (vault_credentials.get_secret_mount_point_version() == Vault_version_v2 &&
+      mp_version != Vault_version_v2) {
+    logger_->log(MY_ERROR_LEVEL,
+                 "Auto-detected mount point version is not the same as "
+                 "specified in 'secret_mount_point_version'.");
+    return true;
+  }
+  Secure_string mount_point_path;
+  Secure_string directory_path;
+  if (mp_version == Vault_version_v2) {
+    mount_point_path.swap(partial_path);
+    if (delimiter_it != en) {
+      ++delimiter_it;
+      directory_path.assign(delimiter_it, en);
+    }
+  }
+
+  resolved_secret_mount_point_version_ = mp_version;
+  mount_point_path_.swap(mount_point_path);
+  directory_path_.swap(directory_path);
+
   return false;
 }
 
@@ -204,8 +237,8 @@ bool Vault_curl::setup_curl_session(CURL *curl) {
   return false;
 }
 
-bool Vault_curl::do_list(const Secure_string &url_to_list,
-                         Secure_string *response) {
+bool Vault_curl::list_keys(Secure_string *response) {
+  Secure_string url_to_list = get_secret_url_metadata() + "?list=true";
   CURLcode curl_res = CURLE_OK;
   long http_code = 0;
 
@@ -233,15 +266,6 @@ bool Vault_curl::do_list(const Secure_string &url_to_list,
   return http_code / 100 != 2;  // 2** are success return codes
 }
 
-bool Vault_curl::list_mount_points(Secure_string *response) {
-  return do_list(vault_credentials_.get_vault_url() + "/v1/sys/mounts",
-                 response);
-}
-
-bool Vault_curl::list_keys(Secure_string *response) {
-  return do_list(get_secret_url_metadata() + "?list=true", response);
-}
-
 bool Vault_curl::encode_key_signature(const Vault_key &key,
                                       Secure_string *encoded_key_signature) {
   if (Vault_base64::encode(
@@ -258,6 +282,37 @@ bool Vault_curl::get_key_url(const Vault_key &key, Secure_string *key_url) {
   if (encode_key_signature(key, &encoded_key_signature)) return true;
   *key_url = get_secret_url_data() + encoded_key_signature;
   return false;
+}
+
+bool Vault_curl::probe_mount_point_config(const Secure_string &partial_path,
+                                          Secure_string &response) {
+  Secure_string config_url = vault_credentials_.get_vault_url();
+  config_url += "/v1/";
+  config_url += partial_path;
+  config_url += '/';
+  config_url += config_subpath;
+
+  CURLcode curl_res = CURLE_OK;
+  long http_code = 0;
+
+  CURL *curl = curl_easy_init();
+  if (curl == nullptr) {
+    logger_->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
+    return true;
+  }
+  Curl_session_guard curl_session_guard(curl);
+
+  if (setup_curl_session(curl) ||
+      (curl_res = curl_easy_setopt(curl, CURLOPT_URL, config_url.c_str())) !=
+          CURLE_OK ||
+      (curl_res = curl_easy_perform(curl)) != CURLE_OK ||
+      (curl_res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE,
+                                    &http_code)) != CURLE_OK) {
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+    return true;
+  }
+  response = read_data_ss.str();
+  return http_code / 100 != 2;
 }
 
 bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
