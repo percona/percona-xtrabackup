@@ -43,7 +43,7 @@ class Vault_environment : public ::testing::Environment {
   static Vault_environment *create_instance()
   {
     if (instance_ != NULL)
-      return NULL;
+      return instance_;
 
     instance_= new Vault_environment();
     return instance_;
