@@ -57,7 +57,6 @@ class Vault_curl : public IVault_curl, private boost::noncopyable {
 
   virtual bool init(const Vault_credentials &vault_credentials);
   virtual bool list_keys(Secure_string *response);
-  virtual bool list_mount_points(Secure_string *response);
   virtual bool write_key(const Vault_key &key, Secure_string *response);
   virtual bool read_key(const Vault_key &key, Secure_string *response);
   virtual bool delete_key(const Vault_key &key, Secure_string *response);
@@ -83,7 +82,8 @@ class Vault_curl : public IVault_curl, private boost::noncopyable {
   bool        encode_key_signature(const Vault_key &key,
                                    Secure_string *  encoded_key_signature);
   bool        get_key_url(const Vault_key &key, Secure_string *key_url);
-  bool do_list(const Secure_string &url_to_list, Secure_string *response);
+  bool        probe_mount_point_config(const Secure_string &partial_path,
+                                       Secure_string &      response);
 
   Secure_string get_secret_url_metadata();
   Secure_string get_secret_url_data();
