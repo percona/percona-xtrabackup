@@ -12,6 +12,7 @@ for companies with large data sets and mission-critical applications that cannot
 long periods of downtime. Offered free as an open source solution, it drives down backup
 costs while providing unique features for MySQL backups.
 
+.. note:: The naming structure for the releases has changed. See the `aligning Percona XtraBackup versions with Percona Server for MySQL <https://www.percona.com/blog/2020/08/18/aligning-percona-xtrabackup-versions-with-percona-server-for-mysql/>`_ blog post for more information.
 
 New Features
 ================================================================================
