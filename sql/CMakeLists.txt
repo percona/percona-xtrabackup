@@ -804,7 +804,7 @@ TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS}
 # sql/immutable_string.h uses
 # google::protobuf::io::CodedOutputStream::WriteVarint64ToArray
 # which may or may not be inlined.
-TARGET_LINK_LIBRARIES(sql_main ${PROTOBUF_LITE_LIBRARY})
+#TARGET_LINK_LIBRARIES(sql_main ${PROTOBUF_LITE_LIBRARY}) have been removed because PXB doesn't directly use immutable string and we don't want a protobuf.so dependency to use PXB
 
 ADD_LIBRARY(sql_gis STATIC ${SQL_GIS_SOURCES})
 ADD_DEPENDENCIES(sql_gis GenServerSource)
