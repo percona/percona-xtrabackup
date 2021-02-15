@@ -6,24 +6,23 @@
 #include "i_serialized_object.h"
 #include <list>
 
-namespace keyring
-{
+namespace keyring {
 
-class Vault_keys_list : public ISerialized_object, private boost::noncopyable
-{
-public:
+class Vault_keys_list : public ISerialized_object,
+                        private boost::noncopyable {
+ public:
   virtual my_bool get_next_key(IKey **key);
   virtual my_bool has_next_key();
-  void push_back(IKey* key);
-  size_t size() const;
+  void            push_back(IKey *key);
+  size_t          size() const;
 
   ~Vault_keys_list();
 
-private:
-  typedef std::list<IKey*> Keys_list;
-  Keys_list keys;
+ private:
+  typedef std::list<IKey *> Keys_list;
+  Keys_list                 keys;
 };
 
-} // namespace keyring
+}  // namespace keyring
 
-#endif // MYSQL_VAULT_KEYS_H
+#endif  // MYSQL_VAULT_KEYS_H

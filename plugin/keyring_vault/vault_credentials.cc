@@ -16,19 +16,18 @@
 
 #include "vault_credentials.h"
 
-namespace keyring
-{
+namespace keyring {
 
 static Secure_string empty_value;
 
-const Secure_string& get_credential(const Vault_credentials &credentials, const Secure_string &key)
+const Secure_string &get_credential(const Vault_credentials &credentials,
+                                    const Secure_string &    key)
 {
-  Vault_credentials::const_iterator it = credentials.find(key);
+  Vault_credentials::const_iterator it= credentials.find(key);
   if (it == credentials.end())
     return empty_value;
-  else 
+  else
     return it->second;
 }
 
-}
-
+}  // namespace keyring

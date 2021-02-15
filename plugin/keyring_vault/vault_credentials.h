@@ -21,10 +21,10 @@
 #include <map>
 #include "secure_string.h"
 
-namespace keyring
-{
-  typedef std::map<Secure_string, Secure_string> Vault_credentials;
-  const Secure_string& get_credential(const Vault_credentials &credentials, const Secure_string &key);
-} // namespace keyring
+namespace keyring {
+typedef std::map<Secure_string, Secure_string> Vault_credentials;
+const Secure_string &get_credential(const Vault_credentials &credentials,
+                                    const Secure_string &    key);
+}  // namespace keyring
 
-#endif // MYSQL_VAULT_CREDENTIALS
+#endif  // MYSQL_VAULT_CREDENTIALS

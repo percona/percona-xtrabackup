@@ -11,15 +11,13 @@
 
 namespace keyring {
 
-class Vault_io : public IVault_io, private boost::noncopyable
-{
-public:
+class Vault_io : public IVault_io, private boost::noncopyable {
+ public:
   Vault_io(ILogger *logger, IVault_curl *vault_curl,
            IVault_parser *vault_parser)
-    : logger(logger)
-    , vault_curl(vault_curl)
-    , vault_parser(vault_parser)
-  {}
+      : logger(logger), vault_curl(vault_curl), vault_parser(vault_parser)
+  {
+  }
 
   ~Vault_io();
 
@@ -28,34 +26,32 @@ public:
   virtual my_bool init(std::string *keyring_storage_url);
   virtual my_bool flush_to_backup(ISerialized_object *serialized_object)
   {
-    return FALSE; // we do not have backup storage in vault
+    return FALSE;  // we do not have backup storage in vault
   }
   virtual my_bool flush_to_storage(ISerialized_object *serialized_object);
 
   virtual ISerializer *get_serializer();
-  virtual my_bool get_serialized_object(ISerialized_object **serialized_object);
-  virtual my_bool has_next_serialized_object()
-  {
-    return FALSE;
-  }
-  virtual void set_curl_timeout(uint timeout)
+  virtual my_bool      get_serialized_object(
+           ISerialized_object **serialized_object);
+  virtual my_bool has_next_serialized_object() { return FALSE; }
+  virtual void    set_curl_timeout(uint timeout)
   {
     assert(vault_curl != NULL);
     vault_curl->set_timeout(timeout);
   }
 
-private:
+ private:
   bool write_key(const Vault_key &key);
   bool delete_key(const Vault_key &key);
 
   Secure_string get_errors_from_response(const Secure_string &json_response);
 
-  ILogger *logger;
-  IVault_curl *vault_curl;
-  IVault_parser *vault_parser;
+  ILogger *            logger;
+  IVault_curl *        vault_curl;
+  IVault_parser *      vault_parser;
   Vault_key_serializer vault_key_serializer;
 };
 
-} // namespace keyring
+}  // namespace keyring
 
-#endif // MYSQL_VAULT_IO_H
+#endif  // MYSQL_VAULT_IO_H
