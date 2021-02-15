@@ -15,8 +15,11 @@ Build-Depends: automake,
                libz-dev,
                libgcrypt-dev,
                libev-dev,
-               libcurl-dev,
+               libcurl-dev | libcurl4-openssl-dev,
                lsb-release,
+               fakeroot,
+               libsasl2-dev,
+               vim-common,
                python-sphinx (>= 1.0.1) | python3-sphinx (>= 1.8.5),
                python-docutils (>= 0.6) | python3-docutils (>= 0.16)
 Standards-Version: 3.9.5
