@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup_version.h"
 
 #define XBSTREAM_VERSION XTRABACKUP_VERSION
+#define XBSTREAM_REVISION XTRABACKUP_REVISION
 #define XBSTREAM_BUFFER_SIZE (10 * 1024 * 1024UL)
 
 typedef enum { RUN_MODE_NONE, RUN_MODE_CREATE, RUN_MODE_EXTRACT } run_mode_t;
@@ -74,6 +75,8 @@ enum { OPT_DECOMPRESS = 256, OPT_DECOMPRESS_THREADS, OPT_ENCRYPT_THREADS };
 static struct my_option my_long_options[] = {
     {"help", '?', "Display this help and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
      0, 0, 0, 0, 0},
+    {"version", 'V', "Display version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG,
+     0, 0, 0, 0, 0, 0},
     {"create", 'c', "Stream the specified files to the standard output.", 0, 0,
      0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"decompress", OPT_DECOMPRESS, "Decompress individual backup files.",
@@ -194,8 +197,8 @@ static int get_options(int *argc, char ***argv) {
 }
 
 static void print_version(void) {
-  printf("%s  Ver %s for %s (%s)\n", my_progname, XBSTREAM_VERSION, SYSTEM_TYPE,
-         MACHINE_TYPE);
+  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname,
+         XBSTREAM_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBSTREAM_REVISION);
 }
 
 static void usage(void) {
@@ -250,6 +253,9 @@ static bool get_one_option(int optid,
     case 'k':
       hide_option(argument, &opt_encrypt_key);
       break;
+    case 'V':
+      print_version();
+      exit(0);
     case '?':
       usage();
       exit(0);
