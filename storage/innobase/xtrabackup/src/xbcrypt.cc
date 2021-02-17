@@ -33,6 +33,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup_version.h"
 
 #define XBCRYPT_VERSION XTRABACKUP_VERSION
+#define XBCRYPT_REVISION XTRABACKUP_REVISION
+
 
 typedef enum { RUN_MODE_NONE, RUN_MODE_ENCRYPT, RUN_MODE_DECRYPT } run_mode_t;
 
@@ -56,6 +58,9 @@ static uint opt_read_buffer_size = 0;
 static struct my_option my_long_options[] = {
     {"help", '?', "Display this help and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
      0, 0, 0, 0, 0},
+
+    {"version", 'V', "Display version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG,
+     0, 0, 0, 0, 0, 0},
 
     {"decrypt", 'd', "Decrypt data input to output.", 0, 0, 0, GET_NO_ARG,
      NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -306,6 +311,9 @@ static bool get_one_option(int optid,
     case 'k':
       hide_option(argument, &opt_encrypt_key);
       break;
+    case 'V':
+      print_version();
+      exit(0);
     case '?':
       usage();
       exit(0);
@@ -315,8 +323,8 @@ static bool get_one_option(int optid,
 }
 
 static void print_version(void) {
-  printf("%s  Ver %s for %s (%s)\n", my_progname, XBCRYPT_VERSION, SYSTEM_TYPE,
-         MACHINE_TYPE);
+  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname,
+         XBCRYPT_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBCRYPT_REVISION);
 }
 
 static void usage(void) {
