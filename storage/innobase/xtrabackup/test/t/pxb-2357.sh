@@ -1,8 +1,6 @@
 # PXB-2357: hang in backup with redo log archive#
 
-if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
-    skip_test "Requires --debug-sync support"
-fi
+require_debug_pxb_version
 
 require_server_version_higher_than 8.0.16
 
