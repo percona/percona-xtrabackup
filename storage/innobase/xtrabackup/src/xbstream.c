@@ -66,7 +66,7 @@ static ulong 		opt_encrypt_algo;
 static char 		*opt_encrypt_key_file = NULL;
 static char 		*opt_encrypt_key = NULL;
 static int		opt_encrypt_threads = 1;
-static int			opt_absolute_names = 0;
+static int		opt_absolute_names = 0;
 
 enum {
 	OPT_ENCRYPT_THREADS = 256
@@ -102,8 +102,8 @@ static struct my_option my_long_options[] =
 	 "The default value is 1.",
 	 &opt_encrypt_threads, &opt_encrypt_threads,
 	 0, GET_INT, REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
-    {"absolute-names", 'P', "Don't strip leading slashes from file names when creating archives.",
-      &opt_absolute_names, &opt_absolute_names, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+	{"absolute-names", 'P', "Don't strip leading slashes from file names when creating archives.",
+	 &opt_absolute_names, &opt_absolute_names, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
 	{0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -317,7 +317,7 @@ mode_create(int argc, char **argv)
 	for (i = 0; i < argc; i++) {
 		char			*filepath = argv[i];
 		const char		*filepath_dst;
-		int				filepath_prefix_len;
+		int			filepath_prefix_len;
 		File			src_file;
 		xb_wstream_file_t	*file;
 
