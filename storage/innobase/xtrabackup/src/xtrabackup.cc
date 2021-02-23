@@ -6843,8 +6843,8 @@ bool xb_init() {
 
   /* sanity checks */
   if (opt_lock_ddl && opt_lock_ddl_per_table) {
-    msg("Error: %s and %s are mutually exclusive\n", "--lock-ddl",
-        "--lock-ddl-per-table");
+    msg("Error: --lock-ddl and --lock-ddl-per-table are mutually exclusive. "
+        "Please specify --lock-ddl=false to use --lock-ddl-per-table.\n");
     return (false);
   }
 
