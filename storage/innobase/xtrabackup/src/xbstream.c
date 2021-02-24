@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xbcrypt_common.h"
 #include "datasink.h"
 #include "ds_decrypt.h"
+#include "file_utils.h"
 #include "crc_glue.h"
 #include <gcrypt.h>
 
@@ -65,6 +66,7 @@ static ulong 		opt_encrypt_algo;
 static char 		*opt_encrypt_key_file = NULL;
 static char 		*opt_encrypt_key = NULL;
 static int		opt_encrypt_threads = 1;
+static int		opt_absolute_names = 0;
 
 enum {
 	OPT_ENCRYPT_THREADS = 256
@@ -100,6 +102,8 @@ static struct my_option my_long_options[] =
 	 "The default value is 1.",
 	 &opt_encrypt_threads, &opt_encrypt_threads,
 	 0, GET_INT, REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
+	{"absolute-names", 'P', "Don't strip leading slashes from file names when creating archives.",
+	 &opt_absolute_names, &opt_absolute_names, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
 	{0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -206,7 +210,7 @@ usage(void)
 	puts("Usage: ");
 	printf("  %s -c [OPTIONS...] FILES...	# stream specified files to "
 	       "standard output.\n", my_progname);
-	printf("  %s -x [OPTIONS...]		# extract files from the stream"
+	printf("  %s -x [OPTIONS...]		# extract files from the stream "
 	       "on the standard input.\n", my_progname);
 
 	puts("\nOptions:");
@@ -312,6 +316,8 @@ mode_create(int argc, char **argv)
 
 	for (i = 0; i < argc; i++) {
 		char			*filepath = argv[i];
+		const char		*filepath_dst;
+		int			filepath_prefix_len;
 		File			src_file;
 		xb_wstream_file_t	*file;
 
@@ -329,7 +335,8 @@ mode_create(int argc, char **argv)
 			goto err;
 		}
 
-		file = xb_stream_write_open(stream, filepath, &mystat, NULL, NULL);
+		filepath_dst = opt_absolute_names ? filepath : safer_name_suffix(filepath, &filepath_prefix_len);
+		file = xb_stream_write_open(stream, filepath_dst, &mystat, NULL, NULL);
 		if (file == NULL) {
 			goto err;
 		}
@@ -465,6 +472,17 @@ extract_worker_thread_func(void *arg)
 		    !(chunk.flags & XB_STREAM_FLAG_IGNORABLE)) {
 			pthread_mutex_unlock(ctxt->mutex);
 			continue;
+		}
+
+		if (!opt_absolute_names) {
+			int filepath_prefix_len;
+			safer_name_suffix(chunk.path, &filepath_prefix_len);
+			if (filepath_prefix_len != 0) {
+				msg("%s: absolute path not allowed: %.*s.\n", my_progname, chunk.pathlen, chunk.path);
+				res = XB_STREAM_READ_ERROR;
+				pthread_mutex_unlock(ctxt->mutex);
+				break;
+			}
 		}
 
 		/* See if we already have this file open */
