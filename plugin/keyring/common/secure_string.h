@@ -18,7 +18,10 @@
 #define MYSQL_KEYRING_SECURE_STRING
 
 #include "keyring_memory.h"
+
 #include <sstream>
+
+#include <boost/optional/optional_fwd.hpp>
 
 namespace keyring
 {
@@ -28,6 +31,8 @@ namespace keyring
   typedef std::basic_stringstream<char, std::char_traits<char>,
                                   Secure_allocator<char> >
       Secure_stringstream;
+
+  typedef boost::optional<Secure_string> Optional_secure_string;
 }
 
 #endif // MYSQL_KEYRING_SECURE_STRING
