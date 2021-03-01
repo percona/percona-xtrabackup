@@ -21,6 +21,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/lexical_cast/try_lexical_convert.hpp>
+#include <boost/optional.hpp>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 // if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
@@ -52,7 +53,7 @@ namespace keyring {
 
 bool Vault_parser_composer::parse_mount_point_config(
     const Secure_string &config_payload, std::size_t &max_versions,
-    bool &cas_required, Secure_string &delete_version_after) {
+    bool &cas_required, Optional_secure_string &delete_version_after) {
   /*
   {
     "request_id": "a2c9306a-7f82-6a59-ebfa-bc6142d66c39",
@@ -134,23 +135,19 @@ bool Vault_parser_composer::parse_mount_point_config(
   }
   bool local_cas_required = cas_required_node.GetBool();
 
+  Optional_secure_string local_delete_version_after;
   it = data_node.FindMember(delete_version_after_key);
-  if (it == data_node.MemberEnd()) {
-    logger->log(MY_ERROR_LEVEL,
-                "Vault Server mount config response[\"data\"] does not have "
-                "\"delete_version_after\" member");
-    return true;
+  if (it != data_node.MemberEnd()) {
+    const rapidjson::Value &delete_version_after_node = it->value;
+    if (!delete_version_after_node.IsString()) {
+      logger->log(MY_ERROR_LEVEL,
+                  "Vault Server mount config "
+                  "response[\"data\"][\"delete_version_after\"] is not a "
+                  "String");
+      return true;
+    }
+    local_delete_version_after = delete_version_after_node.GetString();
   }
-
-  const rapidjson::Value &delete_version_after_node = it->value;
-  if (!delete_version_after_node.IsString()) {
-    logger->log(MY_ERROR_LEVEL,
-                "Vault Server mount config "
-                "response[\"data\"][\"delete_version_after\"] is not a String");
-    return true;
-  }
-  Secure_string local_delete_version_after(
-      delete_version_after_node.GetString());
 
   max_versions = local_max_versions;
   cas_required = local_cas_required;
