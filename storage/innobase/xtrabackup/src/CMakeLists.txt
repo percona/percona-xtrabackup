@@ -88,6 +88,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   ds_tmpfile.cc
   ds_xbstream.cc
   fil_cur.cc
+  file_utils.cc
   quicklz/quicklz.c
   read_filt.cc
   write_filt.cc
@@ -147,6 +148,7 @@ MYSQL_ADD_EXECUTABLE(xbstream
   ds_decrypt.cc
   ds_decompress_lz4.cc
   datasink.cc
+  file_utils.cc
   quicklz/quicklz.c
   xbstream.cc
   xbstream_read.cc
