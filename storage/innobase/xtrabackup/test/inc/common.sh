@@ -783,6 +783,13 @@ $MYSQL_VERSION_MINOR $MYSQL_VERSION_PATCH`
     [[ $server_str > $version_str ]]
 }
 
+function is_debug_server()
+{
+
+[[ $MYSQL_VERSION =~ .*debug ]]
+
+}
+
 #########################################################################
 # Require a server version higher than the first argument
 ########################################################################
