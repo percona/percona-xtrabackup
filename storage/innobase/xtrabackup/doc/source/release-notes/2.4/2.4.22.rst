@@ -1,0 +1,24 @@
+.. _PXB-2.4.22:
+
+================================================================================
+*Percona XtraBackup* 2.4.22
+================================================================================
+
+:Date: March 22, 2021
+:Installation: `Installing Percona XtraBackup <https://www.percona.com/doc/percona-xtrabackup/2.4/installation.html>`_
+
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot tolerate
+long periods of downtime. Offered free as an open source solution, it drives down backup
+costs while providing unique features for MySQL backups.
+
+This release fixes the security vulnerability `CVE-2020-29488 <https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-29488>`_ 
+
+Bugs Fixed
+================================================================================
+
+* :jirabug:`PXB-2171`: Add missing PXB help options to the xtrabackup options reference
+* :jirabug:`PXB-2395`: Update versions for xbstream and xbcrypt
+* :jirabug:`PXB-2394`: Correct spellings in xbcloud help
+
+
