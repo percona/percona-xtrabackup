@@ -541,7 +541,7 @@ void S3_client::upload_callback(
     S3_client *client, std::string bucket, std::string name, Http_request *req,
     Http_response *resp, const Http_client *http_client, Event_handler *h,
     S3_client::async_upload_callback_t callback, CURLcode rc,
-    const Http_connection *conn, int count) {
+    const Http_connection *conn, int count, int retry_sleep_ms) {
   bool retry_error = false;
   if (retriable_curl_error(rc) ||
       retriable_http_error(conn->response().http_code())) {
@@ -566,6 +566,8 @@ void S3_client::upload_callback(
   }
 
   if (retry_error && count <= 3) {
+    msg_ts("%s: Retrying %s in %d milliseconds\n", my_progname, name.c_str(), retry_sleep_ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(retry_sleep_ms));
     msg_ts("%s: Retrying %s [%d]\n", my_progname, name.c_str(), count);
     resp->reset_body();
     client->signer->sign_request(client->hostname(bucket), bucket, *req,
@@ -574,7 +576,7 @@ void S3_client::upload_callback(
         *req, *resp, h,
         std::bind(S3_client::upload_callback, client, bucket, name, req, resp,
                   http_client, h, callback, std::placeholders::_1,
-                  std::placeholders::_2, count + 1),
+                  std::placeholders::_2, count + 1, retry_sleep_ms * 2),
         true);
     return;
   }
@@ -617,7 +619,7 @@ bool S3_client::async_upload_object(
       *req, *resp, h,
       std::bind(S3_client::upload_callback, this, bucket, name, req, resp,
                 http_client, h, callback, std::placeholders::_1,
-                std::placeholders::_2, 1));
+                std::placeholders::_2, 1, 1000));
 
   return true;
 }

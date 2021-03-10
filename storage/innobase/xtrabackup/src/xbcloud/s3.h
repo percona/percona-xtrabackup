@@ -161,7 +161,7 @@ class S3_client {
                               const Http_client *http_client, Event_handler *h,
                               S3_client::async_upload_callback_t callback,
                               CURLcode rc, const Http_connection *conn,
-                              int count);
+                              int count, int retry_sleep_ms);
 
  public:
   S3_client(const Http_client *client, const std::string &region,
