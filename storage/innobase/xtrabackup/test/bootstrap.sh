@@ -7,6 +7,7 @@ function usage() {
 Usage: $0 [OPTIONS]
     The following options may be given :
         --type=             Pass innodb80 or xtradb80 for DB type(default=xtradb80)
+        --pxb-type=         Specify release or debug build of PXB used for tests(default=release)
         --version=          Version of tarball
         --destdir=          OPTIONAL: Destination directory where the tarball will be extracted(default=\"./server\")
         --help) usage ;;
@@ -50,6 +51,7 @@ parse_arguments() {
         case "${arg}" in
             # these get passed explicitly to mysqld
             --type=*) TYPE="${val}" ;;
+            --pxb-type=*) PXB_TYPE="${val}" ;;
             --version=*) VERSION="${val}" ;;
             --destdir=*) DESTDIR="${val}" ;;
             --help) usage ;;
@@ -92,13 +94,18 @@ main () {
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
-	    short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
+            short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
+            if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
+                SUFFIX="-debug"
+                # Temporal workaround until PS 8.0.23 releases
+                url="https://jenkins.percona.com/downloads/ps-8.0.22-debug/"
+            fi
             if [[ ${short_version} -lt "20" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             elif [[ ${short_version} -ge "20" && ${short_version} -lt "22" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12.tar.gz"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
             elif [[ ${short_version} -ge "22" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.17.tar.gz"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.17${SUFFIX}.tar.gz"
             fi
             ;;
         *) 
@@ -128,6 +135,7 @@ main () {
 }
 
 TYPE="xtradb80"
+PXB_TYPE="release"
 VERSION="8.0.18-9"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
