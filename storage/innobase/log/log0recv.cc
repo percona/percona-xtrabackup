@@ -2236,7 +2236,8 @@ static byte *recv_parse_or_apply_log_rec_body(
 #ifndef UNIV_HOTBACKUP
       /* Reset in-mem encryption information for the tablespace here if this
       is "resetting encryprion info" log. */
-      if (page_no == 0 && !fsp_is_system_or_temp_tablespace(space_id)) {
+      if (page_no == 0 && !fsp_is_system_or_temp_tablespace(space_id) &&
+          applying_redo) {
         byte buf[Encryption::INFO_SIZE] = {0};
 
         if (memcmp(ptr + 4, buf, Encryption::INFO_SIZE - 4) == 0) {
