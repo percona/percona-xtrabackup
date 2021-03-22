@@ -49,7 +49,6 @@ Installation
 
    installation
 
-
 Prerequisites
 =============
 
@@ -93,6 +92,16 @@ Advanced Features
    advanced/throttling_backups
    advanced/encrypted_innodb_tablespace_backups
    advanced/locks
+
+Security
+===============
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   security/pxb-selinux
+   security/pxb-apparmor
 
 Tutorials, Recipes, How-tos
 ===========================
