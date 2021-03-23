@@ -1,4 +1,4 @@
-policy_module(xtrabackup, 1.0.0)
+policy_module(xtrabackup, 1.0.1)
 
 require {
   type bin_t;
@@ -26,6 +26,14 @@ require {
   type shell_exec_t;
   type system_dbusd_t;
   type setroubleshootd_t;
+  type net_conf_t;
+  type etc_runtime_t;
+  type devlog_t;
+  type http_port_t;
+  type init_var_run_t;
+  type kernel_t;
+  type syslogd_var_run_t;
+  type user_tmp_t;
 
   class chr_file { append getattr read write };
   class file { create execute execute_no_trans getattr lock map open read rename unlink write };
@@ -34,8 +42,10 @@ require {
   class sock_file { getattr write };
   class unix_stream_socket connectto;
   class capability { dac_override dac_read_search sys_nice };
-  class tcp_socket { connect create name_connect read setopt shutdown write };
+  class tcp_socket { connect create name_connect read setopt shutdown write getattr };
   class process { setsched transition };
+  class udp_socket { connect create getattr setopt write read };
+  class unix_dgram_socket { connect create sendto write };
 
   role unconfined_r;
 }
@@ -73,7 +83,7 @@ allow xtrabackup_t mysqld_etc_t:file { getattr read open };
 
 allow xtrabackup_t mysqld_var_run_t:sock_file { write getattr };
 allow xtrabackup_t mysqld_t:unix_stream_socket connectto;
-allow xtrabackup_t self:tcp_socket { create connect shutdown setopt getopt read write };
+allow xtrabackup_t self:tcp_socket { create connect shutdown setopt getopt read write getattr };
 allow xtrabackup_t mysqld_port_t:tcp_socket name_connect;
 allow xtrabackup_t unreserved_port_t:tcp_socket name_connect;
 
@@ -101,9 +111,9 @@ allow xtrabackup_t bin_t:file { execute execute_no_trans map };
 # allow xtrabackup_t xtrabackup_data_t:file { create open write getattr read lock rename unlink };
 
 # Use these rules to allow backups to be stored in regular user's home directory
+filetrans_pattern(xtrabackup_t, user_home_dir_t, user_home_t, dir);
 allow xtrabackup_t user_home_t:dir { create write add_name remove_name read rmdir getattr search open };
 allow xtrabackup_t user_home_t:file { create open write getattr read lock rename unlink };
-allow xtrabackup_t user_home_dir_t:dir { read getattr search open };
 
 # Use these rules to allow backups to be stored in root's home directory
 # allow xtrabackup_t admin_home_t:dir { create write add_name remove_name read rmdir getattr search open };
@@ -113,6 +123,8 @@ allow xtrabackup_t user_home_dir_t:dir { read getattr search open };
 # tmp directory
 allow xtrabackup_t tmp_t:dir { write read add_name };
 allow xtrabackup_t tmp_t:file write;
+allow xtrabackup_t user_tmp_t:dir { add_name create search write };
+allow xtrabackup_t user_tmp_t:file { create write};
 
 # restore
 allow xtrabackup_t var_lib_t:dir { add_name create read write };
@@ -126,3 +138,18 @@ allow xtrabackup_t cert_t:lnk_file read;
 allow system_dbusd_t self:capability net_admin;
 allow system_dbusd_t setroubleshootd_t:process { noatsecure rlimitinh siginh };
 
+# xbcloud
+allow xtrabackup_t devlog_t:lnk_file read;
+allow xtrabackup_t devlog_t:sock_file write;
+
+allow xtrabackup_t etc_runtime_t:file write;
+allow xtrabackup_t http_port_t:tcp_socket name_connect;
+allow xtrabackup_t init_var_run_t:dir search;
+allow xtrabackup_t kernel_t:unix_dgram_socket sendto;
+
+allow xtrabackup_t net_conf_t:file { getattr open read };
+
+allow xtrabackup_t self:udp_socket { create connect getattr setopt write read };
+
+allow xtrabackup_t self:unix_dgram_socket { create connect write };
+allow xtrabackup_t syslogd_var_run_t:dir search;
