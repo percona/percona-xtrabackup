@@ -5,6 +5,7 @@
 #                       changed page bitmap output.
 #    ib_inc_extra_args: extra args to be passed to innobackup incremental 
 #                       backup invocations.
+#    ib_full_backup_extra_args: extra args to be passed to xtrabackup backup invocations.
 #    ib_inc_use_lsn:    if 1, use --incremental-lsn instead of
 #                       --incremental-basedir
 
@@ -14,8 +15,15 @@ MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
 innodb_file_per_table"
 
 ib_inc_use_lsn=${ib_inc_use_lsn:-""}
+ib_full_backup_extra_args=${ib_full_backup_extra_args:-""}
 
 start_server
+
+
+if [[ $ib_full_backup_extra_args =~ 'page-tracking' ]]; then
+  run_cmd ${MYSQL} ${MYSQL_ARGS} -e "INSTALL COMPONENT \"file://component_mysqlbackup\""
+fi
+
 load_dbase_schema incremental_sample
 
 # Adding initial rows
@@ -23,7 +31,7 @@ multi_row_insert incremental_sample.test \({1..100},100\)
 
 vlog "Starting backup"
 full_backup_dir=$topdir/full_backup
-xtrabackup --backup --target-dir=$full_backup_dir
+xtrabackup --backup $ib_full_backup_extra_args  --target-dir=$full_backup_dir
 
 # Changing data
 

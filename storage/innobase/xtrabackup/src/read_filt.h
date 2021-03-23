@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2012 Percona Inc.
+(c) 2009, 2021 Percona Inc.
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -26,14 +26,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XB_READ_FILT_H
 
 #include "changed_page_bitmap.h"
+#include "changed_page_tracking.h"
 
 struct xb_fil_cur_t;
 
 /* The read filter context */
 struct xb_read_filt_ctxt_t {
-  ib_uint64_t offset;          /*!< current file offset */
-  ib_uint64_t data_file_size;  /*!< data file size */
-  ib_uint64_t buffer_capacity; /*!< read buffer capacity */
+  uint64_t offset;             /*!< current file offset */
+  uint64_t data_file_size;     /*!< data file size */
+  uint64_t buffer_capacity;    /*!< read buffer capacity */
   ulint space_id;              /*!< space id */
   /* The following fields used only in bitmap filter */
   /* Move these to union if any other filters are added in future */
@@ -49,15 +50,15 @@ struct xb_read_filt_ctxt_t {
 struct xb_read_filt_t {
   void (*init)(xb_read_filt_ctxt_t *ctxt, const xb_fil_cur_t *cursor,
                ulint space_id);
-  void (*get_next_batch)(xb_read_filt_ctxt_t *ctxt,
-                         ib_uint64_t *read_batch_start,
-                         ib_uint64_t *read_batch_len);
+  void (*get_next_batch)(xb_fil_cur_t *ctxt, uint64_t *read_batch_start,
+                         uint64_t *read_batch_len);
   void (*deinit)(xb_read_filt_ctxt_t *ctxt);
-  void (*update)(xb_read_filt_ctxt_t *ctxt, ib_uint64_t len,
+  void (*update)(xb_read_filt_ctxt_t *ctxt, uint64_t len,
                  const xb_fil_cur_t *cursor);
 };
 
 extern xb_read_filt_t rf_pass_through;
 extern xb_read_filt_t rf_bitmap;
+extern xb_read_filt_t rf_page_tracking;
 
 #endif

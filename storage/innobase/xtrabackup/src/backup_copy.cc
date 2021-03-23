@@ -1535,6 +1535,7 @@ bool backup_start(Backup_context &context) {
     }
   }
 
+
   if (!backup_files(MySQL_datadir_path.path().c_str(), false)) {
     return (false);
   }
@@ -1582,7 +1583,32 @@ bool backup_start(Backup_context &context) {
   xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS",
                  false);
 
-  context.log_status = log_status_get(mysql_connection);
+  auto log_status = log_status_get(mysql_connection);
+  /* Wait until we have checkpoint LSN greater than the page tracking start LSN.
+  Page tracking start LSN is system LSN (lets say 105) and Backup End LSN is
+  checkpoint LSN (say 100). Next incremental backup will request changes pages
+  from last backup end LSN which is also the checkpoint LSN (i.e 100). Since
+  page-tracking LSN is 105, if we request pages from 100, page-tracking will
+  return error. Hence, we have to ensure that checkpoint LSN is greater page
+  tracking LSN */
+
+  while (opt_page_tracking && page_tracking_start_lsn > 0) {
+    if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
+      msg("xtrabackup: pagetracking: Checkpoint lsn is " LSN_PF
+          " and page_tracking lsn is " LSN_PF "\n",
+          log_status.lsn_checkpoint, page_tracking_start_lsn);
+      break;
+    } else {
+      msg("xtrabackup: pagetracking: Sleeping for 1 second, waiting for "
+          "checkpoint lsn " LSN_PF " to reach to page tracking " LSN_PF
+          " lsn\n",
+          log_status.lsn_checkpoint, page_tracking_start_lsn);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      log_status = log_status_get(mysql_connection);
+    }
+  }
+
+  context.log_status = log_status;
 
   debug_sync_point("xtrabackup_after_query_log_status");
 

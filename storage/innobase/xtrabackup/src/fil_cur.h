@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2013 Percona LLC and/or its affiliates.
+(c) 2009-2021 Percona LLC and/or its affiliates.
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -131,4 +131,14 @@ const char *xb_get_relative_path(
     const char *path);  /*!< in: tablespace path (either
                         relative or absolute) */
 
+/** Reads and verifies the next block of pages from the source
+file. Positions the cursor after the last read non-corrupted page.
+@param[in/out]	cursor	 	source file cursor
+@param[in]	offset	 	offset of file to read from
+@param[in]	to_read		bytest to read
+@return XB_FIL_CUR_SUCCESS if some have been read successfully, XB_FIL_CUR_EOF
+if there are no more pages to read and XB_FIL_CUR_ERROR on error */
+xb_fil_cur_result_t xb_fil_cur_read_from_offset(xb_fil_cur_t *cursor,
+                                                ib_uint64_t offset,
+                                                ib_uint64_t to_read);
 #endif
