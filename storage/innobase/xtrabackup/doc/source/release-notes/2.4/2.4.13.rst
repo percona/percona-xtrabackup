@@ -34,4 +34,4 @@ Bus Fixed
 Other bugs fixed: :jirabug:`PXB-1570`, :jirabug:`PXB-1609`, :jirabug:`PXB-1632`
 
 .. |release| replace:: 2.4.13
-.. |date| replace:: January 18, 2018
+.. |date| replace:: January 18, 2019
