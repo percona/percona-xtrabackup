@@ -817,7 +817,8 @@ struct my_option xb_client_options[] = {
 
     {"stream", OPT_XTRA_STREAM,
      "Stream all backup files to the standard output "
-     "in the specified format. Currently the only supported format is 'tar'.",
+     "in the specified format. Currently supported formats are 'tar' and "
+     "'xbstream'.",
      (G_PTR *)&xtrabackup_stream_str, (G_PTR *)&xtrabackup_stream_str, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
