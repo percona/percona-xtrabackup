@@ -199,6 +199,21 @@ function init_server_variables()
 }
 
 ########################################################################
+# Initialize group replication variables such as datadir, tmpdir, etc. and store
+# them with the specified index in SRV_MYSQLD_* arrays to be used by
+# switch_server() later
+########################################################################
+function bulk_init_gr_variables()
+{
+  local number_of_servers=$1
+  for ((i=1; i<=number_of_servers; i++))
+  do
+    init_server_variables $i
+    SRV_MYSQLD_GR_PORT[$i]=`get_free_port $i`
+  done
+}
+
+########################################################################
 # Reset server variables
 ########################################################################
 function reset_server_variables()
@@ -219,6 +234,11 @@ function reset_server_variables()
     SRV_MYSQLD_ERRFILE[$id]=
     SRV_MYSQLD_PORT[$id]=
     SRV_MYSQLD_SOCKET[$id]=
+    # Group Replication
+    if [[ ${SRV_MYSQLD_GR_PORT:-x} != "x" ]];
+    then
+      SRV_MYSQLD_GR_PORT[$id]=
+    fi
 }
 
 ##########################################################################
@@ -252,6 +272,12 @@ function switch_server()
     mysql_datadir="$MYSQLD_DATADIR"
     mysql_tmpdir="$MYSQLD_TMPDIR"
     mysql_socket="$MYSQLD_SOCKET"
+
+    # Group Replication
+    if [[ ${SRV_MYSQLD_GR_PORT:-x} != "x" ]];
+    then
+      MYSQLD_GR_PORT=${SRV_MYSQLD_GR_PORT[$id]}
+    fi
 }
 
 ########################################################################
@@ -260,15 +286,30 @@ function switch_server()
 function start_server_with_id()
 {
     local id=$1
+    shift
+    if [[ "$#" -ge 1 ]];
+    then
+      if [[ "$1" = "gr" ]] || [[ "$1" = "standalone" ]];
+      then
+        local type=$1
+        shift
+      fi
+    fi
+    if [[ ${type:-x} = "x" ]];
+    then
+      type="standalone"
+    fi
     local attempts=0
     local max_attempts=5
-    shift
 
     vlog "Starting server with id=$id..."
 
     while true
     do
-        init_server_variables $id
+        if [[ "${type}" = "standalone" ]];
+        then
+          init_server_variables $id
+        fi
         switch_server $id
 
         if [ ! -d "$MYSQLD_VARDIR" ]
@@ -365,7 +406,7 @@ EOF
     vlog "Server with id=$id has been started on port $MYSQLD_PORT, \
 socket $MYSQLD_SOCKET"
 
-    if [ $new_instance = yes ] ; then
+    if [ $new_instance = yes ] && [ "${type}" = "standalone" ] ; then
         ${MYSQL} ${MYSQL_ARGS} -e "CREATE DATABASE IF NOT EXISTS test"
     fi
 }
@@ -403,7 +444,7 @@ function stop_server_with_id()
 ########################################################################
 function start_server()
 {
-    start_server_with_id 1 $*
+    start_server_with_id 1 'standalone' $*
 }
 
 ########################################################################
@@ -446,6 +487,93 @@ function shutdown_server()
 }
 
 ########################################################################
+# Start GR cluster
+########################################################################
+function start_group_replication_cluster()
+{
+  local number_of_nodes=$1
+  shift
+  if [[ -z  $number_of_nodes ]];
+  then
+    number_of_nodes=2
+  fi
+  bulk_init_gr_variables ${number_of_nodes}
+  for ((i=1; i<=number_of_nodes; i++))
+  do
+    switch_server ${i}
+    GR_CLUSTER_ADDRESS=""
+    for SRV in "${SRV_MYSQLD_GR_PORT[@]}"
+    do
+      GR_CLUSTER_ADDRESS="${GR_CLUSTER_ADDRESS}127.0.0.1:${SRV},"
+    done
+    MYSQLD_EXTRA_MY_CNF_OPTS="
+gtid_mode=ON
+enforce_gtid_consistency=ON
+plugin_load_add='group_replication.so'
+loose-group_replication_group_name=\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"
+loose-group_replication_start_on_boot=off
+loose-group_replication_bootstrap_group= off
+loose-group_replication_recovery_use_ssl=ON
+loose-group_replication_recovery_get_public_key=ON
+loose-group_replication_local_address=\"127.0.0.1:${SRV_MYSQLD_GR_PORT[$i]}\"
+loose-group_replication_group_seeds= \"${GR_CLUSTER_ADDRESS%?}\""
+    start_server_with_id ${i} 'gr' $*
+
+    # config GR User
+    ${MYSQL} ${MYSQL_ARGS} -e "SET SQL_LOG_BIN=0;
+    CREATE USER rpl_user@'localhost' IDENTIFIED BY 'password' REQUIRE SSL;
+    GRANT REPLICATION SLAVE ON *.* TO rpl_user@'localhost';
+    GRANT BACKUP_ADMIN ON *.* TO rpl_user@'localhost';
+    CREATE USER rpl_user@'%' IDENTIFIED BY 'password' REQUIRE SSL;
+    GRANT REPLICATION SLAVE ON *.* TO rpl_user@'%';
+    GRANT BACKUP_ADMIN ON *.* TO rpl_user@'%';
+    FLUSH PRIVILEGES;
+    SET SQL_LOG_BIN=1;
+    CHANGE MASTER TO MASTER_USER='rpl_user', MASTER_PASSWORD='password' FOR CHANNEL 'group_replication_recovery';"
+
+    # Start/Bootstrap cluster
+    if [[ ${i} -eq 1 ]];
+    then
+      $MYSQL ${MYSQL_ARGS} -e "SET GLOBAL group_replication_bootstrap_group=ON;
+        START GROUP_REPLICATION USER='rpl_user', PASSWORD='password';
+        SET GLOBAL group_replication_bootstrap_group=OFF;"
+    else
+      $MYSQL ${MYSQL_ARGS} -e "START GROUP_REPLICATION USER='rpl_user', PASSWORD='password';"
+    fi
+  done
+  check_gr_health $number_of_nodes
+  switch_server 1
+  $MYSQL ${MYSQL_ARGS} -e "CREATE DATABASE IF NOT EXISTS test"
+}
+
+########################################################################
+# Check health of GR cluster
+########################################################################
+function check_gr_health()
+{
+  local number_of_nodes=$1
+  switch_server 1
+  for ((i=1; i<=30; i++))
+  do
+    ONLINE_NODES=$($MYSQL ${MYSQL_ARGS} -NBe "SELECT COUNT(*) FROM performance_schema.replication_group_members WHERE MEMBER_STATE='ONLINE'")
+    if [[ ${ONLINE_NODES} = ${number_of_nodes} ]];
+    then
+      return 0;
+    fi
+    sleep 2;
+  done
+  $MYSQL ${MYSQL_ARGS} -NBe "SELECT * FROM performance_schema.replication_group_members WHERE MEMBER_STATE='ONLINE'"
+  for ((i=1; i <=${number_of_nodes}; i++))
+  {
+    echo "======= Error log from node ${i}"
+    cat ${SRV_MYSQLD_ERRFILE[$i]}
+    echo "================================"
+  }
+
+  die "Not all GR members are online. Aborting"
+}
+
+########################################################################
 # Force a checkpoint for a server specified with the first argument
 ########################################################################
 function force_checkpoint_with_server_id()
@@ -458,7 +586,7 @@ function force_checkpoint_with_server_id()
     vlog "Forcing a checkpoint for server #$id"
 
     shutdown_server_with_id $id
-    start_server_with_id $id $*
+    start_server_with_id $id 'standalone' $*
 }
 
 ########################################################################
