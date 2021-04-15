@@ -29,10 +29,8 @@ class Vault_keys_container_ex : public Vault_keys_container {
   Vault_keys_container_ex(ILogger *logger) : Vault_keys_container(logger) {}
 
   void remove_all_keys() {
-    for (ulong idx = 0; idx < keys_hash->records; idx++) {
-      IKey *key = reinterpret_cast<IKey *>(my_hash_element(keys_hash, idx));
-      remove_key(key);
-    }
+    std::for_each(keys_hash->begin(), keys_hash->end(),
+                  [this](const auto &pair) { remove_key(pair.second.get()); });
   }
 };
 

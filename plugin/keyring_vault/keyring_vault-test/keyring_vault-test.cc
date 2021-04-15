@@ -15,6 +15,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
+#include <atomic>
 #include <ctime>
 #include <iostream>
 #include <memory>
@@ -23,9 +24,9 @@
 #include <boost/scope_exit.hpp>
 
 #include <my_atomic.h>
-#include <my_global.h>
 #include <my_rnd.h>
 
+#include "mysql/components/services/log_builtins.h"
 #include "sql_plugin_ref.h"
 
 #include "../vault_keyring.cc"
@@ -36,12 +37,12 @@
 static bool random_keys = false;
 static bool verbose;
 static bool generate_random_keys_data = false;
-static int number_of_keys_added = 0;
-static int number_of_keys_fetched = 0;
-static int number_of_keys_removed = 0;
-static int number_of_keys_generated = 0;
-static int max_generated_key_length = 0;
-static int number_of_keys_to_generate = 0;
+static std::atomic<int> number_of_keys_added{0};
+static std::atomic<int> number_of_keys_fetched{0};
+static std::atomic<int> number_of_keys_removed{0};
+static std::atomic<int> number_of_keys_generated{0};
+static std::atomic<int> max_generated_key_length{0};
+static std::atomic<int> number_of_keys_to_generate{0};
 
 static mysql_mutex_t LOCK_verbose;
 static mysql_mutex_t LOCK_keys_in_keyring;
@@ -68,8 +69,7 @@ static void *generate(void *arg) {
 
   int number_of_keys_to_generate = *static_cast<int *>(arg);
 
-  for (uint i = 0;
-       my_atomic_load32(&number_of_keys_generated) < number_of_keys_to_generate;
+  for (uint i = 0; number_of_keys_generated.load() < number_of_keys_to_generate;
        i = (i + 1) % number_of_keys_to_generate) {
     char key_id[12];    // Key#1000000\0
     char key_type[16];  // KeyType#1000000\0
@@ -88,7 +88,7 @@ static void *generate(void *arg) {
                                       reinterpret_cast<const char *>(key_type),
                                       reinterpret_cast<const char *>(user),
                                       key_len))) {
-      my_atomic_add32(&number_of_keys_generated, 1);
+      number_of_keys_generated++;
       mysql_mutex_lock(&LOCK_keys_in_keyring);
       keys_in_keyring.insert(key_in_keyring);
       mysql_mutex_unlock(&LOCK_keys_in_keyring);
@@ -110,8 +110,7 @@ static void *store(void *arg) {
   my_thread_init();
   int number_of_keys_to_store = *static_cast<int *>(arg);
 
-  for (uint i = 0;
-       my_atomic_load32(&number_of_keys_added) < number_of_keys_to_store;
+  for (uint i = 0; number_of_keys_added.load() < number_of_keys_to_store;
        i = (i + 1) % number_of_keys_to_store) {
     char key_id[12];    // Key#1000000\0
     char key_type[16];  // KeyType#1000000\0
@@ -142,7 +141,7 @@ static void *store(void *arg) {
                                    reinterpret_cast<const char *>(key_type),
                                    reinterpret_cast<const char *>(user), key,
                                    key_len))) {
-      my_atomic_add32(&number_of_keys_added, 1);
+      number_of_keys_added++;
       mysql_mutex_lock(&LOCK_keys_in_keyring);
       keys_in_keyring.insert(key_in_keyring);
       mysql_mutex_unlock(&LOCK_keys_in_keyring);
@@ -165,8 +164,7 @@ static void *fetch(void *arg) {
   my_thread_init();
   int number_of_keys_to_fetch = *(static_cast<int *>(arg));
 
-  for (uint i = 0;
-       my_atomic_load32(&number_of_keys_fetched) < number_of_keys_to_fetch;
+  for (uint i = 0; number_of_keys_fetched.load() < number_of_keys_to_fetch;
        i = (i + 1) % number_of_keys_to_fetch) {
     char key_id[12];  // Key#1000000\0
     char *key_type = NULL;
@@ -186,7 +184,7 @@ static void *fetch(void *arg) {
              reinterpret_cast<const char *>(key_id), &key_type,
              reinterpret_cast<const char *>(user), &key_data, &key_len)) &&
         key_data != NULL) {
-      my_atomic_add32(&number_of_keys_fetched, 1);
+      number_of_keys_fetched++;
       if (!generate_random_keys_data && number_of_keys_to_generate == 0) {
         assert(key_len == strlen(key) + 1);
         assert(strcmp(reinterpret_cast<const char *>(
@@ -214,8 +212,7 @@ static void *remove(void *arg) {
   my_thread_init();
   int number_of_keys_to_remove = *(static_cast<int *>(arg));
 
-  for (uint i = 0;
-       my_atomic_load32(&number_of_keys_removed) < number_of_keys_to_remove;
+  for (uint i = 0; number_of_keys_removed.load() < number_of_keys_to_remove;
        i = (i + 1) % number_of_keys_to_remove) {
     char key_id[12];  // Key#1000000\0
     char user[13];    // User#1000000\0
@@ -228,7 +225,7 @@ static void *remove(void *arg) {
 
     if ((result = !mysql_key_remove(reinterpret_cast<const char *>(key_id),
                                     reinterpret_cast<const char *>(user))))
-      my_atomic_add32(&number_of_keys_removed, 1);
+      number_of_keys_removed++;
 
     if (verbose) {
       mysql_mutex_lock(&LOCK_verbose);
@@ -261,8 +258,6 @@ static bool keyring_vault_init_for_test() {
       !keys->init(keyring_io, keyring_vault_config_file);
   return !is_keys_container_initialized;
 }
-
-static char fake_plugin_name[] = "keyring_vault";
 
 int main(int argc, char **argv) {
   if (!is_vault_environment_configured()) {
@@ -360,11 +355,6 @@ int main(int argc, char **argv) {
   verbose = atoi(argument_passed ? argv[11] : default_args[10]);
   const int number_of_keys_to_remove =
       number_of_keys_to_store + number_of_keys_to_generate;
-
-  st_plugin_int plugin_info;
-  plugin_info.name.str = fake_plugin_name;
-  plugin_info.name.length = sizeof(fake_plugin_name) - 1;
-  logger.reset(new keyring::Logger(&plugin_info));
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
   BOOST_SCOPE_EXIT(void) { curl_global_cleanup(); }

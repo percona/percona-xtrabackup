@@ -25,8 +25,7 @@ namespace keyring {
 
 class IVault_io;
 
-class Vault_keys_container final : public Keys_container,
-                                   private boost::noncopyable {
+class Vault_keys_container : public Keys_container, private boost::noncopyable {
  public:
   Vault_keys_container(ILogger *logger) noexcept : Keys_container(logger) {}
 
