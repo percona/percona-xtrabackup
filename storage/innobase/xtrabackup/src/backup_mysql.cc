@@ -1862,7 +1862,7 @@ write_xtrabackup_info(MYSQL *connection)
 		"start_time TIMESTAMP NULL DEFAULT NULL,"
 		"end_time TIMESTAMP NULL DEFAULT NULL,"
 		"lock_time BIGINT UNSIGNED DEFAULT NULL,"
-		"binlog_pos VARCHAR(128) DEFAULT NULL,"
+		"binlog_pos TEXT DEFAULT NULL,"
 		"innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,"
 		"innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,"
 		"partial ENUM('Y', 'N') DEFAULT NULL,"
@@ -1872,6 +1872,11 @@ write_xtrabackup_info(MYSQL *connection)
 		"compressed ENUM('Y', 'N') DEFAULT NULL,"
 		"encrypted ENUM('Y', 'N') DEFAULT NULL"
 		") CHARACTER SET utf8 ENGINE=innodb", false);
+
+	/* Upgrade from previous versions */
+	xb_mysql_query(connection,
+		"ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
+		"binlog_pos TEXT DEFAULT NULL", false);
 
 	stmt = mysql_stmt_init(connection);
 
