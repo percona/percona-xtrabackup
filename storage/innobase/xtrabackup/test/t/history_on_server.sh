@@ -42,6 +42,18 @@ function check_for_value()
     fi
 }
 
+###############################################################################
+# Checks the number of records to see if is a specific value.
+function check_count()
+{
+  local expected=$1
+  local val=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM PERCONA_SCHEMA.xtrabackup_history"`
+  if [ -z "$val" ] || [ "$val" != "$expected" ];
+  then
+      vlog "Error: count in history is invalid, got \"$val\" expected \"$expected\""
+      exit 1
+  fi
+}
 
 ###############################################################################
 vlog "Prepping server"
@@ -211,3 +223,66 @@ vlog "Testing bad --incremental-history-uuid"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --backup \
 --incremental-history-uuid=foo --stream=xbstream \
 --target-dir=$backup_dir/`date +%s` > /dev/null
+
+###############################################################################
+# PXB-1462 - long gtid_executed breaks --history functionality
+. inc/common.sh
+vlog "Testing PXB-1462"
+# make sure we don't have dirty pages before enabling GTID
+innodb_wait_for_flush_all
+stop_server
+start_server --server-id=1 --enforce-gtid-consistency --gtid-mode=ON --log-bin --log-slave-updates
+${MYSQL} ${MYSQL_ARGS} -Ns -e "RESET MASTER"
+${MYSQL} ${MYSQL_ARGS} -Ns -e "SET GLOBAL gtid_purged='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaac:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaad:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaae:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaf:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa0:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa6:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa7:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa8:1,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa9:1,ffffffff-ffff-ffff-ffff-ffffffffffff:1'"
+vlog "Testing upgrade"
+${MYSQL} ${MYSQL_ARGS} -Ns -e "DROP TABLE IF EXISTS PERCONA_SCHEMA.xtrabackup_history"
+${MYSQL} ${MYSQL_ARGS} -Ns -e "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history(
+uuid VARCHAR(40) NOT NULL PRIMARY KEY,
+name VARCHAR(255) DEFAULT NULL,
+tool_name VARCHAR(255) DEFAULT NULL,
+tool_command TEXT DEFAULT NULL,
+tool_version VARCHAR(255) DEFAULT NULL,
+ibbackup_version VARCHAR(255) DEFAULT NULL,
+server_version VARCHAR(255) DEFAULT NULL,
+start_time TIMESTAMP NULL DEFAULT NULL,
+end_time TIMESTAMP NULL DEFAULT NULL,
+lock_time BIGINT UNSIGNED DEFAULT NULL,
+binlog_pos varchar(128) DEFAULT NULL,
+innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,
+innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,
+partial ENUM('Y', 'N') DEFAULT NULL,
+incremental ENUM('Y', 'N') DEFAULT NULL,
+format ENUM('file', 'tar', 'xbstream') DEFAULT NULL,
+compact ENUM('Y', 'N') DEFAULT NULL,
+compressed ENUM('Y', 'N') DEFAULT NULL,
+encrypted ENUM('Y', 'N') DEFAULT NULL
+) CHARACTER SET utf8 ENGINE=innodb"
+${MYSQL} ${MYSQL_ARGS} -Ns -e "INSERT INTO \`PERCONA_SCHEMA\`.\`xtrabackup_history\` VALUES ('1bc0b0cb-9dec-11eb-bfc3-d45d64347a19',NULL,'xtrabackup','--defaults-file=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/my.cnf --no-version-check --backup --history --target-dir=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/backup0','2.4.21','2.4.21','5.7.31-34-debug-log','2021-04-15 10:11:34','2021-04-15 10:11:36',0,'filename \'mysql-bin.000001\', position \'1424\', GTID of the last change \'12c397b9-9dec-11eb-abcb-d45d64347a19:1-2\'',0,2789167,'N','N','file','N','N','N')"
+xtrabackup --backup --history --target-dir=$topdir/backup0
+check_count 2
+check_for_value "SUBSTRING(binlog_pos, -39)" "ffffffff-ffff-ffff-ffff-ffffffffffff:1'"
+get_one_value "char_length(binlog_pos)"
+if [ -z "$val" ] || [ "$val" -le "128" ]
+then
+  vlog "Data truncated at binlog_pos"
+  vlog "len returned: ${val}"
+  exit 1
+fi
+# Delete newly created record to check record inserted previous update
+${MYSQL} ${MYSQL_ARGS} -Ns -e "DELETE FROM \`PERCONA_SCHEMA\`.\`xtrabackup_history\` ORDER BY start_time DESC LIMIT 1"
+check_for_value "SUBSTRING(binlog_pos, -41)" "12c397b9-9dec-11eb-abcb-d45d64347a19:1-2'"
+
+vlog "Testing new table"
+${MYSQL} ${MYSQL_ARGS} -Ns -e "DROP TABLE IF EXISTS PERCONA_SCHEMA.xtrabackup_history"
+xtrabackup --backup --history --target-dir=$topdir/backup1
+check_count 1
+get_one_value "char_length(binlog_pos)"
+if [ -z "$val" ] || [ "$val" -le "128" ]
+then
+  vlog "Data truncated at binlog_pos"
+  vlog "len returned: ${val}"
+  exit 1
+fi
+
+#clean-up
+rm -rf $topdir/backup0 $topdir/backup1
