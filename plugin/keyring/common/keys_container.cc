@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,12 +22,16 @@
 
 #include "plugin/keyring/common/keys_container.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <algorithm>
 
 #include <mysqld_error.h>
+<<<<<<< HEAD
 #include "my_dbug.h"
 #include "plugin/keyring/common/system_keys_container.h"
+=======
+>>>>>>> mysql-8.0.24
 
 using std::string;
 using std::unique_ptr;
@@ -116,8 +120,8 @@ void Keys_container::allocate_and_set_data_for_key(
 }
 
 IKey *Keys_container::fetch_key(IKey *key) {
-  DBUG_ASSERT(key->get_key_data() == nullptr);
-  DBUG_ASSERT(key->get_key_type_as_string()->empty());
+  assert(key->get_key_data() == nullptr);
+  assert(key->get_key_type_as_string()->empty());
 
   IKey *fetched_key = get_key_from_hash(key);
 
