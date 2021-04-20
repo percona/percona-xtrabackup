@@ -27,11 +27,7 @@
 #include <algorithm>
 
 #include <mysqld_error.h>
-<<<<<<< HEAD
-#include "my_dbug.h"
 #include "plugin/keyring/common/system_keys_container.h"
-=======
->>>>>>> mysql-8.0.24
 
 using std::string;
 using std::unique_ptr;

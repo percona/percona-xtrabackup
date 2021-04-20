@@ -3945,12 +3945,7 @@ void Fil_shard::close_all_files() {
 
 /** Close all open files. */
 void Fil_system::close_all_files() {
-<<<<<<< HEAD
 #if (defined UNIV_DEBUG || defined UNIV_BUF_DEBUG) && !defined(XTRABACKUP)
-=======
-#ifndef UNIV_HOTBACKUP
-#if defined UNIV_DEBUG || defined UNIV_BUF_DEBUG
->>>>>>> mysql-8.0.24
   bool should_validate_space_reference_count = srv_fast_shutdown == 0;
   DBUG_EXECUTE_IF("buf_disable_space_reference_count_check",
                   should_validate_space_reference_count = false;);
@@ -3961,12 +3956,7 @@ void Fil_system::close_all_files() {
       shard->validate_space_reference_count(buffer_pool_references);
     }
   }
-<<<<<<< HEAD
 #endif /* (UNIV_DEBUG || UNIV_BUF_DEBUG) && !defined(XTRABACKUP) */
-=======
-#endif /* UNIV_DEBUG || UNIV_BUF_DEBUG */
-#endif /* !UNIV_HOTBACKUP */
->>>>>>> mysql-8.0.24
 
   for (auto shard : m_shards) {
     shard->mutex_acquire();
@@ -11834,7 +11824,7 @@ void Tablespace_dirs::open_ibds() const {
 }
 
 void Fil_system::rename_partition_files(bool revert) {
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   /* If revert, then we are downgrading after upgrade failure from 5.7 */
   ut_ad(!revert || srv_downgrade_partition_files);
 
@@ -11842,10 +11832,6 @@ void Fil_system::rename_partition_files(bool revert) {
     return;
   }
 
-<<<<<<< HEAD
-#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
-=======
->>>>>>> mysql-8.0.24
   ut_ad(!lower_case_file_system);
 
   for (auto &old_path : m_old_paths) {

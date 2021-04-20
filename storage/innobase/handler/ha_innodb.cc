@@ -5052,16 +5052,12 @@ static int innodb_init(void *p) {
   /* After this point, error handling has to use
   innodb_init_abort(). */
 
-<<<<<<< HEAD
-  if (!srv_sys_space.parse_params(innobase_data_file_path, true, false)) {
-=======
   /* Initialize component service handles */
   if (innobase::component_services::intitialize_service_handles() == false) {
     return innodb_init_abort();
   }
 
-  if (!srv_sys_space.parse_params(innobase_data_file_path, true)) {
->>>>>>> mysql-8.0.24
+  if (!srv_sys_space.parse_params(innobase_data_file_path, true, false)) {
     ib::error(ER_IB_MSG_545)
         << "Unable to parse innodb_data_file_path=" << innobase_data_file_path;
     return innodb_init_abort();

@@ -1833,13 +1833,8 @@ void end_server(MYSQL *mysql) {
     char desc[VIO_DESCRIPTION_SIZE];
     vio_description(mysql->net.vio, desc);
     DBUG_PRINT("info", ("Net: %s", desc));
-<<<<<<< HEAD
-#endif  // DBUG_OFF
-#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
-=======
 #endif  // NDEBUG
-#ifdef MYSQL_SERVER
->>>>>>> mysql-8.0.24
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
     slave_io_thread_detach_vio();
 #endif
     vio_delete(mysql->net.vio);

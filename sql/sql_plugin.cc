@@ -1616,14 +1616,9 @@ bool plugin_register_builtin_and_init_core_se(int *argc, char **argv) {
     /* Xtrabackup does not initialize storage engine plugins */
 #if !defined(XTRABACKUP)
   /* Should now be set to MyISAM storage engine */
-<<<<<<< HEAD
-  DBUG_ASSERT(global_system_variables.table_plugin);
-  DBUG_ASSERT(global_system_variables.temp_table_plugin);
-#endif
-=======
   assert(global_system_variables.table_plugin);
   assert(global_system_variables.temp_table_plugin);
->>>>>>> mysql-8.0.24
+#endif
 
   mysql_mutex_unlock(&LOCK_plugin);
 

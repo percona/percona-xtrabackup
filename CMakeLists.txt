@@ -605,18 +605,13 @@ IF(WIN32)
   OPTION(WITH_MSCRT_DEBUG "MS Visual Studio Debug CRT instrumentation" OFF)
 ENDIF()
 IF(NOT WITHOUT_SERVER)
-<<<<<<< HEAD
-  OPTION(WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
-  OPTION(WITH_ROUTER "Build MySQL Router" OFF)
-=======
   IF(FPROFILE_GENERATE OR FPROFILE_USE)
     # Do not use data from unit testing when optimizing.
     OPTION(WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
   ELSE()
-    OPTION(WITH_UNIT_TESTS "Compile MySQL with unit tests" ON)
+    OPTION(WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
   ENDIF()
-  OPTION(WITH_ROUTER "Build MySQL Router" ON)
->>>>>>> mysql-8.0.24
+  OPTION(WITH_ROUTER "Build MySQL Router" OFF)
 ENDIF()
 
 IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
