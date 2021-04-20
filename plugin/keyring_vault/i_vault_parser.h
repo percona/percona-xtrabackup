@@ -29,7 +29,7 @@ class IVault_parser {
     Secure_string key_id;
     Secure_string user_id;
     Secure_string &operator[](uint i) {
-      DBUG_ASSERT(i <= 1);
+      assert(i <= 1);
       return i == 0 ? key_id : user_id;
     }
   };

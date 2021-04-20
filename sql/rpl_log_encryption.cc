@@ -435,7 +435,7 @@ bool Rpl_encryption::enable(THD *thd) {
 
 bool Rpl_encryption::enable_for_xtrabackup() {
   DBUG_ENTER("Rpl_encryption::enable_for_xtrabackup");
-  DBUG_ASSERT(m_initialized);
+  assert(m_initialized);
 
   m_enabled = true;
   m_skip_logs_rotation = true;

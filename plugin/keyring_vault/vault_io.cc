@@ -100,7 +100,7 @@ bool Vault_io::delete_key(const Vault_key &key) {
 }
 
 bool Vault_io::flush_to_storage(ISerialized_object *serialized_object) {
-  DBUG_ASSERT(serialized_object->has_next_key());
+  assert(serialized_object->has_next_key());
   IKey *vault_key_raw = nullptr;
 
   if (serialized_object->get_next_key(&vault_key_raw) ||

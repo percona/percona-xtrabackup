@@ -367,7 +367,7 @@ ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
       return DATA_GEOMETRY;
 
     default:
-      DBUG_ASSERT(!"Should not hit here"); /* purecov: deadcode */
+      assert(!"Should not hit here"); /* purecov: deadcode */
   }
 
   return MYSQL_TYPE_LONG;

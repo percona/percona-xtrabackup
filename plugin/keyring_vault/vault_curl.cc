@@ -40,7 +40,7 @@ class Thd_wait_end_guard {
  public:
   ~Thd_wait_end_guard() {
     DBUG_EXECUTE_IF("vault_network_lag", { was_thd_wait_started = false; });
-    DBUG_ASSERT(!was_thd_wait_started);
+    assert(!was_thd_wait_started);
     if (was_thd_wait_started) {
       // This should never be called as thd_wait_end should be called at the end
       // of CURL I/O operation. However, in production the call to thd_wait_end
