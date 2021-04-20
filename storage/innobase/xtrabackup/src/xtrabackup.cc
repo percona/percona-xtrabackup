@@ -533,7 +533,7 @@ typedef struct {
   uint *count;
   ib_mutex_t *count_mutex;
   bool *error;
-  os_thread_id_t id;
+  std::thread::id id;
 } data_thread_ctxt_t;
 
 /* ======== for option and variables ======== */
@@ -2987,7 +2987,7 @@ void io_watching_thread() {
   io_watching_thread_running = true;
 
   while (!io_watching_thread_stop) {
-    os_thread_sleep(1000000); /*1 sec*/
+    std::this_thread::sleep_for(std::chrono::seconds(1)); /*1 sec*/
     io_ticket = xtrabackup_throttle;
     os_event_set(wait_throttle);
   }
@@ -3242,7 +3242,7 @@ static dberr_t xb_load_tablespaces(void)
     os_thread_create(PFS_NOT_INSTRUMENTED, io_handler_thread, i).start();
   }
 
-  os_thread_sleep(200000); /*0.2 sec*/
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   err = srv_sys_space.check_file_spec(false, 0);
 
@@ -3328,7 +3328,7 @@ void xb_data_files_close(void)
 
     bool active = os_thread_any_active();
 
-    os_thread_sleep(100000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     if (!active) {
       break;
@@ -4028,7 +4028,7 @@ void xtrabackup_backup_func(void) {
 
   /* Wait for threads to exit */
   while (1) {
-    os_thread_sleep(1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     mutex_enter(&count_mutex);
     if (count == 0) {
       mutex_exit(&count_mutex);
@@ -4060,7 +4060,7 @@ void xtrabackup_backup_func(void) {
 
   if (opt_debug_sleep_before_unlock) {
     msg_ts("Debug sleep for %u seconds\n", opt_debug_sleep_before_unlock);
-    os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
+    std::this_thread::sleep_for(std::chrono::seconds(opt_debug_sleep_before_unlock));
   }
 
   if (!redo_mgr.stop_at(backup_ctxt.log_status.lsn,
@@ -4137,7 +4137,7 @@ void xtrabackup_backup_func(void) {
   if (wait_throttle) {
     /* wait for io_watching_thread completion */
     while (io_watching_thread_running) {
-      os_thread_sleep(1000000);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     os_event_destroy(wait_throttle);
     wait_throttle = NULL;

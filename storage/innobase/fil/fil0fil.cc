@@ -3157,7 +3157,7 @@ bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
         /* in order to break the loop, lets wake aio handler threads */
         os_aio_simulated_wake_handler_threads();
 
-        os_thread_yield();
+        std::this_thread::yield();
 
         /* and flush the changes so that files with no pending IOs can be
         closed */

@@ -116,7 +116,7 @@ bool have_rocksdb = false;
 bool slave_auto_position = false;
 
 /* Kill long selects */
-os_thread_id_t kill_query_thread_id;
+std::thread::id kill_query_thread_id;
 os_event_t kill_query_thread_started;
 os_event_t kill_query_thread_stopped;
 os_event_t kill_query_thread_stop;
@@ -975,7 +975,7 @@ static bool wait_for_no_updates(MYSQL *connection, uint timeout,
     if (!have_queries_to_wait_for(connection, threshold)) {
       return (true);
     }
-    os_thread_sleep(1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   msg_ts("Unable to obtain lock. Please try again later.");
@@ -1056,7 +1056,7 @@ static bool execute_query_with_timeout(MYSQL *mysql, const char *query,
     xb_mysql_query(mysql, query, true);
     uint err = mysql_errno(mysql);
     if (err == ER_LOCK_WAIT_TIMEOUT) {
-      os_thread_sleep(1000000);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
       continue;
     }
     if (err == 0) {
@@ -1279,7 +1279,7 @@ retry:
     curr_slave_coordinates = NULL;
 
     xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
-    os_thread_sleep(sleep_time * 1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
 
     curr_slave_coordinates = get_slave_coordinates(connection);
     msg_ts("Slave pos:\n\tprev: %s\n\tcurr: %s\n", prev_slave_coordinates,
@@ -2375,7 +2375,7 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
                          "SHOW STATUS LIKE 'Innodb_buffer_pool_dump_status'",
                          status, true);
 
-    os_thread_sleep(1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   free_mysql_variables(status);

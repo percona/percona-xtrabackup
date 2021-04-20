@@ -152,7 +152,7 @@ struct datadir_thread_ctxt_t {
   uint n_thread;
   uint *count;
   ib_mutex_t *count_mutex;
-  os_thread_id_t id;
+  std::thread::id id;
   bool ret;
 };
 
@@ -598,7 +598,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
 
   /* Wait for threads to exit */
   while (1) {
-    os_thread_sleep(100000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     mutex_enter(&count_mutex);
     if (count == 0) {
       mutex_exit(&count_mutex);
