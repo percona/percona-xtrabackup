@@ -2601,7 +2601,8 @@ files_checked:
     objects are not fully initialized at this point, the usual mechanism to
     persist dynamic metadata at checkpoint wouldn't work. */
 
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
+    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty() &&
+        !srv_apply_log_only) {
       /* Open this table in case srv_dict_metadata should be applied to this
       table before checkpoint. And because DD is not fully up yet, the table
       can be opened by internal APIs. */
