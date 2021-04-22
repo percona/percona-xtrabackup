@@ -6849,7 +6849,7 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
 
     ut_ad(len > 0);
 
-#if !defined(UNIV_HOTBACKUP) && defined(UNIV_LINUX)
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP) && defined(UNIV_LINUX)
     /* Do not write redo log record for temporary tablespace
     and the system tablespace as they don't need to be recreated.
     Temporary tablespaces are reinitialized during startup and
@@ -6894,7 +6894,7 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
       duplicate extending is allowed. And log_write_up_to() here helps
       nothing for fallocate() inconsistency. */
     }
-#endif /* !UNIV_HOTBACKUP && UNIV_LINUX */
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP && UNIV_LINUX */
 
 #if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
     /* This is required by FusionIO HW/Firmware */
