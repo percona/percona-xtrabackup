@@ -64,17 +64,18 @@ Using :option:`innobackupex --databases`
 --------------------------------------------------------------------------------
 
 This option accepts either a space-separated list of the databases and tables to
-backup - in the ``databasename[.tablename]`` form - or a file containing the
-list at one element per line.
+backup - in the ``databasename[.tablename]`` form.
 
 For example, ::
 
   $ innobackupex --databases="mydatabase.mytable mysql" /path/to/backup
 
 The command above will create a timestamped directory with the usual files that
-|innobackupex| creates, but only containing the data-files related to
+|innobackupex| creates, but only containing the datafiles related to
 ``mytable`` in the ``mydatabase`` directory and the ``mysql`` directory with the
 entire ``mysql`` database.
+
+The `--databases-file` option specifies the path to a text file which contains a case-sensitive list of databases and tables to be backed up. The file can contain the names of multiple databases and tables in a ``databasename[.tablename]`` format with one element for each line. Only the named databases and tables are backed up. The names must match exactly. There is no pattern matching or regular expression matching. 
 
 Preparing Partial Backups
 ================================================================================
