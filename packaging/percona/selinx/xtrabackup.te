@@ -1,11 +1,11 @@
-policy_module(xtrabackup, 1.0.1)
+policy_module(xtrabackup, 1.0.2)
 
 require {
   type bin_t;
   type sssd_var_lib_t;
 
   # See 'write to destination directory' below section for details
-  # type admin_home_t;
+  type admin_home_t;
   type user_home_t;
   type user_home_dir_t;
 
@@ -34,6 +34,9 @@ require {
   type kernel_t;
   type syslogd_var_run_t;
   type user_tmp_t;
+  type etc_t;
+  type commplex_main_port_t;
+  type http_cache_port_t;
 
   class chr_file { append getattr read write };
   class file { create execute execute_no_trans getattr lock map open read rename unlink write };
@@ -79,11 +82,12 @@ allow xtrabackup_t user_devpts_t:chr_file { append read write };
 
 allow xtrabackup_t mysqld_db_t:dir { open read write search getattr };
 allow xtrabackup_t mysqld_db_t:file { open read write create getattr };
+allow xtrabackup_t mysqld_etc_t:dir { search };
 allow xtrabackup_t mysqld_etc_t:file { getattr read open };
 
 allow xtrabackup_t mysqld_var_run_t:sock_file { write getattr };
 allow xtrabackup_t mysqld_t:unix_stream_socket connectto;
-allow xtrabackup_t self:tcp_socket { create connect shutdown setopt getopt read write getattr };
+allow xtrabackup_t self:tcp_socket { create connect shutdown setopt getopt read write getattr ioctl };
 allow xtrabackup_t mysqld_port_t:tcp_socket name_connect;
 allow xtrabackup_t unreserved_port_t:tcp_socket name_connect;
 
@@ -97,27 +101,34 @@ allow xtrabackup_t sssd_var_lib_t:dir search;
 allow xtrabackup_t sssd_var_lib_t:sock_file write;
 allow xtrabackup_t sssd_t:unix_stream_socket connectto;
 
-allow xtrabackup_t cert_t:dir { search read };
-allow xtrabackup_t cert_t:file { open read getattr };
+allow xtrabackup_t cert_t:dir { open search read getattr };
+allow xtrabackup_t cert_t:file { open read getattr ioctl };
 allow xtrabackup_t user_devpts_t:chr_file { ioctl getattr };
 
 # which
 allow xtrabackup_t bin_t:file { execute execute_no_trans map };
 
+# percona-toolkit percona-version-check
+allow xtrabackup_t etc_t:dir { write add_name };
+allow xtrabackup_t etc_t:file { create write };
+
 # ------------------- write to destination directory -------------------
 # Use these rules if corresponding tagging rules are present in xtrabackup.fc file.
 # This way it is possible to specify the exact directory where backups can be stored.
 # allow xtrabackup_t xtrabackup_data_t:dir { create write add_name remove_name read rmdir getattr search open };
-# allow xtrabackup_t xtrabackup_data_t:file { create open write getattr read lock rename unlink };
+# allow xtrabackup_t xtrabackup_data_t:file { create open write getattr read lock rename unlink ioctl append };
 
 # Use these rules to allow backups to be stored in regular user's home directory
 filetrans_pattern(xtrabackup_t, user_home_dir_t, user_home_t, dir);
 allow xtrabackup_t user_home_t:dir { create write add_name remove_name read rmdir getattr search open };
-allow xtrabackup_t user_home_t:file { create open write getattr read lock rename unlink };
+allow xtrabackup_t user_home_t:file { create open write getattr read lock rename unlink ioctl append };
 
 # Use these rules to allow backups to be stored in root's home directory
-# allow xtrabackup_t admin_home_t:dir { create write add_name remove_name read rmdir getattr search open };
-# allow xtrabackup_t admin_home_t:file { create open write getattr read lock rename unlink };
+# Most probably XtraBackup will we used as 'sudo xtrabackup ...'. If percona-toolkit is also installed
+# it will try to create /root/.percona-toolkit.uuid file. Without following rules, SELinux will deny this action.
+# It is not critical, however will result in autid log 'denied' entry, so let's keep these rules enabled by default.
+allow xtrabackup_t admin_home_t:dir { create write add_name remove_name read rmdir getattr search open };
+allow xtrabackup_t admin_home_t:file { create open write getattr read lock rename unlink ioctl append };
 # ----------------------------------------------------------------------
 
 # tmp directory
@@ -139,6 +150,9 @@ allow system_dbusd_t self:capability net_admin;
 allow system_dbusd_t setroubleshootd_t:process { noatsecure rlimitinh siginh };
 
 # xbcloud
+allow xtrabackup_t commplex_main_port_t:tcp_socket name_connect;
+allow xtrabackup_t http_cache_port_t:tcp_socket name_connect;
+
 allow xtrabackup_t devlog_t:lnk_file read;
 allow xtrabackup_t devlog_t:sock_file write;
 
