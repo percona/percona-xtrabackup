@@ -122,6 +122,7 @@ allow xtrabackup_t etc_t:file { create write };
 filetrans_pattern(xtrabackup_t, user_home_dir_t, user_home_t, dir);
 allow xtrabackup_t user_home_t:dir { create write add_name remove_name read rmdir getattr search open };
 allow xtrabackup_t user_home_t:file { create open write getattr read lock rename unlink ioctl append };
+allow xtrabackup_t user_home_dir_t:file { create open write getattr read lock rename unlink ioctl append };
 
 # Use these rules to allow backups to be stored in root's home directory
 # Most probably XtraBackup will we used as 'sudo xtrabackup ...'. If percona-toolkit is also installed
