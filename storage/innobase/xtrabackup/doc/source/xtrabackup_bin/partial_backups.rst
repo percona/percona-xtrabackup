@@ -37,14 +37,14 @@ value is a regular expression that is matched against the fully qualified
 tablename, including the database name, in the form ``databasename.tablename``.
 
 To back up only tables in the ``test`` database, you can use the
-following command: ::
+following command: 
 
 .. code-block:: bash
 
   $ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
   --tables="^test[.].*"
 
-To back up only the table ``test.t1``, you can use the following command: ::
+To back up only the table ``test.t1``, you can use the following command: 
 
 .. code-block:: bash
 
