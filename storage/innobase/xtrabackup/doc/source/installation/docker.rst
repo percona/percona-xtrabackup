@@ -1,4 +1,4 @@
-.. _pxc.installing/docker.running:
+.. _docker:
 
 Running |percona-xtrabackup| in a |docker| container
 ********************************************************************************
@@ -12,8 +12,8 @@ configurations where each program runs in a separate container. You may run
 |percona-server| in one container and |percona-xtrabackup| in another.
 
 You create a new |docker| container based on a |docker| image, which works as a
-template for newly created containers. |docker| images for |percona-xtrabackup|
-are hosted publicly on |docker-hub| at |dockerhub.percona-xtrabackup|.
+template for newly created containers. |docker| images 
+are hosted publicly on |docker-hub| at `percona/percona-xtrabackup <https://hub.docker.com/r/percona/percona-xtrabackup>`__.
 
 .. code-block:: bash
 
