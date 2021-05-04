@@ -49,6 +49,7 @@ require {
   class process { setsched transition };
   class udp_socket { connect create getattr setopt write read };
   class unix_dgram_socket { connect create sendto write };
+  class netlink_route_socket { create bind getattr nlmsg_read};
 
   role unconfined_r;
 }
@@ -165,6 +166,7 @@ allow xtrabackup_t kernel_t:unix_dgram_socket sendto;
 allow xtrabackup_t net_conf_t:file { getattr open read };
 
 allow xtrabackup_t self:udp_socket { create connect getattr setopt write read };
-
 allow xtrabackup_t self:unix_dgram_socket { create connect write };
+allow xtrabackup_t self:netlink_route_socket { create bind getattr nlmsg_read };
+
 allow xtrabackup_t syslogd_var_run_t:dir search;
