@@ -34,7 +34,6 @@
   /{usr/,}bin/cat ix,
   /{usr/,}bin/xbcrypt ix,
 
-
   # xbcloud
   /{usr/,}bin/which ixr,
   /{usr/,}bin/perl ix,
@@ -45,6 +44,7 @@
   #include <abstractions/nameservice>
   /etc/percona-toolkit/* rw,
   /{usr/,}bin/uname ix,
+  /{usr/,}bin/lsb_release PUx,
 }
 
 /usr/bin/xbcloud {
