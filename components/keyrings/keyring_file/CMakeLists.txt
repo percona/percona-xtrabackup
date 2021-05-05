@@ -70,9 +70,16 @@ SET(KEYRING_FILE_SOURCE
   component_callbacks.cc
 )
 
+# MacOS linker cannot find reference to xtrabackup::components::new_config_pod
+SET(XTRABACKUP_UNDEFINED_SYMBOLS "")
+IF(APPLE)
+  SET(XTRABACKUP_UNDEFINED_SYMBOLS "-undefined dynamic_lookup")
+ENDIF()
+
 SET(KEYRING_FILE_LIBRARIES
   keyring_common
   ${SSL_LIBRARIES}
+  ${XTRABACKUP_UNDEFINED_SYMBOLS}
 )
 
 MYSQL_ADD_COMPONENT(keyring_file

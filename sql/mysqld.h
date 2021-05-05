@@ -127,6 +127,9 @@ bool is_secure_file_path(const char *path);
 ulong sql_rnd_with_mutex();
 
 struct System_status_var *get_thd_status_var(THD *thd, bool *aggregated);
+#ifdef XTRABACKUP
+int setup_error_log_components();
+#endif /* XTRABACKUP */
 
 bool component_infrastructure_deinit();
 bool component_infrastructure_init();

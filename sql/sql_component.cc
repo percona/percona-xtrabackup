@@ -121,6 +121,23 @@ Deployed_components::Deployed_components(const std::string program_name)
     components_.clear();
   }
 }
+#ifdef XTRABACKUP
+Deployed_components::Deployed_components(const std::string program_name,
+                                         std::string component_names)
+    : program_name_(program_name),
+      components_(component_names),
+      last_error_(),
+      valid_(false),
+      loaded_(false) {
+  valid_ = load_from_memory();
+  if (valid_ == false) {
+    LogErr(ERROR_LEVEL, ER_COMPONENTS_INFRASTRUCTURE_MANIFEST_INIT,
+           last_error_.c_str());
+    last_error_.clear();
+    components_.clear();
+  }
+}
+#endif
 
 Deployed_components::~Deployed_components() {
   if (unload() == false)
@@ -233,6 +250,34 @@ bool Deployed_components::load() {
   }
   return true;
 }
+
+#ifdef XTRABACKUP
+bool Deployed_components::load_from_memory()
+{
+  std::vector<const char *> urns;
+  auto free_memory = [&urns]() {
+    for (auto element : urns)
+      if (element != nullptr) my_free(const_cast<char *>(element));
+  };
+
+  if (make_urns(urns) == false) {
+    free_memory();
+    return false;
+  }
+  if (urns.size() > 0) {
+    /* Load components */
+    bool load_status = dynamic_loader_srv->load(urns.data(), urns.size());
+    if (load_status) {
+      free_memory();
+      last_error_.assign("Failed to load components from manifest file");
+      return false;
+    }
+    loaded_ = true;
+    free_memory();
+  }
+  return true;
+}
+#endif
 
 bool Deployed_components::unload() {
   if (components_.length() == 0) return true;

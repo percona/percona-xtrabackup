@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2020 Percona LLC and/or its affiliates
+(c) 2009-2021 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -69,6 +69,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "keyring_plugins.h"
+#include "keyring_components.h"
 #include "xtrabackup.h"
 #include "xtrabackup_config.h"
 #include "xtrabackup_version.h"
@@ -434,8 +435,20 @@ comparing its name to the list of known data file types and checking
 if passes the rules for partial backup.
 @return true if file backed up or skipped successfully. */
 static bool datafile_copy_backup(const char *filepath, uint thread_n) {
-  const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
-                            "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
+  const char *ext_list[] = {"MYD",
+                            "MYI",
+                            "MAD",
+                            "MAI",
+                            "MRG",
+                            "ARM",
+                            "ARZ",
+                            "CSM",
+                            "CSV",
+                            "opt",
+                            "sdi",
+                            "mysqld.my",
+                            "mysqld-debug.my",
+                            "component_keyring_file.cnf", NULL};
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
@@ -1514,7 +1527,11 @@ bool backup_finish(Backup_context &context) {
   if (!mysql_slave_position.empty() && opt_slave_info) {
     msg("MySQL slave binlog position: %s\n", mysql_slave_position.c_str());
   }
-
+  if (xtrabackup::components::keyring_component_initialized &&
+      !xtrabackup::components::write_component_config_file()) {
+    msg("xtrabackup: write_component_config_file failed\n");
+    return (false);
+  }
   if (!write_backup_config_file()) {
     return (false);
   }
@@ -1691,6 +1708,7 @@ bool copy_incremental_over_full() {
                              "xtrabackup_info",
                              "xtrabackup_keys",
                              "xtrabackup_tablespaces",
+                             "xtrabackup_component_keyring_file.cnf",
                              "ib_lru_dump",
                              nullptr};
   bool ret = true;
@@ -1898,6 +1916,7 @@ bool should_skip_file_on_copy_back(const char *filepath) {
                             "xtrabackup_binlog_info",
                             "xtrabackup_checkpoints",
                             "xtrabackup_tablespaces",
+                            "xtrabackup_component_keyring_file.cnf",
                             ".qp",
                             ".lz4",
                             ".pmap",
@@ -2125,7 +2144,6 @@ bool copy_back(int argc, char **argv) {
     int ret = fscanf(f, "%u", &key);
     ut_a(ret == 1);
     fclose(f);
-
     if (!xb_keyring_init_for_copy_back(argc, argv)) {
       msg("xtrabackup: Error: failed to init keyring plugin\n");
       return (false);

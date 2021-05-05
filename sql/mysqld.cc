@@ -5500,7 +5500,11 @@ static void setup_error_log() {
   @retval  0  Success
   @retval  1  Log pipeline not set up as requested. Caller should abort.
 */
+#ifndef XTRABACKUP
 static int setup_error_log_components() {
+#else
+int setup_error_log_components() {
+#endif /* XTRABACKUP */
   /*
     Activate loadable error logging components, if any.
     First, check configuration value -- is it well-formed, and do

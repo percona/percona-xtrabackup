@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2015 Percona LLC and/or its affiliates
+(c) 2009-2021 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -112,6 +112,7 @@ bool have_multi_threaded_slave = false;
 bool have_gtid_slave = false;
 bool have_unsafe_ddl_tables = false;
 bool have_rocksdb = false;
+bool have_keyring_component = false;
 
 bool slave_auto_position = false;
 
@@ -717,6 +718,10 @@ bool get_mysql_vars(MYSQL *connection) {
       free_mysql_variables(vars);
     }
     mysql_free_result(res);
+  }
+
+  if (server_version >= 80024) {
+    have_keyring_component = true;
   }
 
 out:

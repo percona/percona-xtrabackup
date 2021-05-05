@@ -91,6 +91,10 @@ class Sql_cmd_uninstall_component : public Sql_cmd {
 class Deployed_components final {
  public:
   explicit Deployed_components(const std::string program_name);
+#ifdef XTRABACKUP
+  explicit Deployed_components(const std::string program_name,
+                               std::string component_names);
+#endif
   ~Deployed_components();
   bool valid() const { return valid_; }
   bool components_loaded() const { return loaded_; }
@@ -99,6 +103,9 @@ class Deployed_components final {
   void get_next_component(std::string &components_list,
                           std::string &one_component);
   bool load();
+#ifdef XTRABACKUP
+  bool load_from_memory();
+#endif
   bool unload();
   bool make_urns(std::vector<const char *> &urns);
 
