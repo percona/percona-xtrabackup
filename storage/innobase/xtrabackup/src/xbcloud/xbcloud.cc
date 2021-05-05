@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <string>
 #include <unordered_map>
 #include "template_utils.h"
+#include "xbcrypt_common.h"
 
 #include <curl/curl.h>
 
@@ -981,6 +982,7 @@ int main(int argc, char **argv) {
 #ifndef NO_SIGPIPE
   signal(SIGPIPE, SIG_IGN);
 #endif
+  xb_libgcrypt_init();
 
   http_init();
   crc_init();
