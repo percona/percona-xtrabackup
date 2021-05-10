@@ -72,9 +72,9 @@ STEP 4: Configure and start replication
 
 Set the gtid_purged variable to the ``GTID`` from
 :file:`xtrabackup_binlog_info`. Then, update the information about the
-source node and, finally, start the replica. Run the following commands on the replica:
+source node and, finally, start the replica. Run the following commands on the replica if you are using a version before 8.0.22:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    # Using the mysql shell
     > SET SESSION wsrep_on = 0;
@@ -87,6 +87,28 @@ source node and, finally, start the replica. Run the following commands on the r
                 MASTER_PASSWORD="$slavepass",
                 MASTER_AUTO_POSITION = 1;
     > START SLAVE;
+
+If you are using version 8.0.22 or later, use ``START REPLICA`` instead of ``START SLAVE``. ``START SLAVE`` is deprecated as of that release. If you are using version 8.0.21 or earlier, use ``START SLAVE``.
+
+
+If you are using a version 8.0.23 or later, run the following commands:
+
+.. code-block:: mysql
+
+   # Using the mysql shell
+    > SET SESSION wsrep_on = 0;
+    > RESET MASTER;
+    > SET SESSION wsrep_on = 1;
+    > SET GLOBAL gtid_purged='<gtid_string_found_in_xtrabackup_binlog_info>';
+    > CHANGE REPLICATION SOURCE TO 
+                SOURCE_HOST="$masterip", 
+                SOURCE_USER="repl",
+                SOURCE_PASSWORD="$slavepass",
+                SOURCE_AUTO_POSITION = 1;
+    > START REPLICA;
+
+
+If you are using version 8.0.23 or later, use `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__. ``CHANGE_MASTER_TO`` is deprecated as of that release. 
 
 .. note::
 
