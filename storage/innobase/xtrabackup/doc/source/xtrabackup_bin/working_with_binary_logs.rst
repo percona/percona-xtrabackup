@@ -47,6 +47,8 @@ A more detailed procedure is found :ref:`here <pxb.xtrabackup.point-in-time-reco
 Setting Up a New Replication Replica
 -------------------------------------
 
-To set up a new replica, you should prepare the backup, and restore it to the data directory of your new replication replica. Then in your ``CHANGE MASTER TO`` command, use the binary log filename and position shown in the :file:`xtrabackup_binlog_info` file to start replication.
+To set up a new replica, you should prepare the backup, and restore it to the data directory of your new replication replica. If you are using version 8.0.22 or earlier, in your ``CHANGE MASTER TO`` command, use the binary log filename and position shown in the :file:`xtrabackup_binlog_info` file to start replication. 
+
+If you are using 8.0.23 or later, use the `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__. ``CHANGE_MASTER_TO`` is deprecated. 
 
 A more detailed procedure is found in  :doc:`../howtos/setting_up_replication`.

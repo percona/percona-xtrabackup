@@ -133,7 +133,7 @@ STEP 3: Configure the Source's MySQL server
 
 On the source, run the following command to add the appropriate grant. This grant allows the replica to be able to connect to source: 
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$replicaip'
     IDENTIFIED BY '$replicapass';
@@ -176,9 +176,11 @@ On the ``Replica``, review the content of the file :file:`xtrabackup_binlog_info
     $ cat /var/lib/mysql/xtrabackup_binlog_info
    Source-bin.000001     481
 
-On the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
+If you are using version 8.0.23 or later, on the ``Replica``, execute the `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__ on a MySQL console. ``CHANGE_MASTER_TO`` is deprecated as of that release. Use the user name and password you created in STEP 3. 
 
-.. code-block:: guess
+If you are using a version before 8.0.23, on the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
+
+.. code-block:: mysql
 
     > CHANGE MASTER TO 
          MASTER_HOST='$sourceip',	
@@ -187,18 +189,22 @@ On the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console a
          MASTER_LOG_FILE='Source-bin.000001', 
          MASTER_LOG_POS=481;
 
+
+
 and start the replica:
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > START SLAVE;
+
+If you are using version 8.0.22 or later, use ``START REPLICA`` instead of ``START SLAVE``. ``START SLAVE`` is deprecated as of that release. If you are using a version before 8.0.22, use ``START SLAVE``.
 
 STEP 6: Check
 =============
 
 On the ``Replica``, check that everything went OK with:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    > SHOW SLAVE STATUS \G
       ...
@@ -238,7 +244,7 @@ Copy the directory from the ``Replica`` to the ``NewReplica`` (**NOTE**: Make su
 
 For example, to set up a new user, ``user2``, you add an additional grant on the Source:
 
-.. code-block:: guess
+.. code-block:: mysql
 
 	> GRANT REPLICATION SLAVE ON *.*  TO 'user2'@'$newreplicaip'
          IDENTIFIED BY '$replicapass';
@@ -260,7 +266,7 @@ After setting ``server_id``, start :command:`mysqld`.
 
 Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_slave_info`, execute the statement for setting up the source and the log file for the `NewReplica`:
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > CHANGE MASTER TO 
          MASTER_HOST='$Sourceip',
@@ -269,10 +275,14 @@ Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_sla
          MASTER_LOG_FILE='Source-bin.000001', 
          MASTER_LOG_POS=481;
 
+If you are using version 8.0.23 or later, use `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__. ``CHANGE_MASTER_TO`` is deprecated as of that version. In versions before 8.0.23, use ``CHANGE MASTER TO``.
+
 and start the replica:
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > START SLAVE;
+
+If you are using version 8.0.22 or later, use ``START REPLICA`` instead of ``START SLAVE``. ``START SLAVE`` is deprecated as of that release. If you are using a version before 8.0.22 use ``START SLAVE``.
 
 If both IO and SQL threads are running when you check the ``NewReplica``, server is replicating the ``Source``.
