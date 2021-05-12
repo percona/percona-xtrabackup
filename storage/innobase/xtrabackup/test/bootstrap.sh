@@ -98,7 +98,9 @@ main () {
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
                 # Temporal workaround until PS 8.0.23 releases
-                url="https://jenkins.percona.com/downloads/ps-8.0.22-debug/"
+		if [[ ${short_version} -lt "23" ]]; then
+                  url="https://jenkins.percona.com/downloads/ps-8.0.22-debug/"
+		fi
             fi
             if [[ ${short_version} -lt "20" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
