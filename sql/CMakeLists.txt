@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2020, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,15 @@ INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 MY_INCLUDE_SYSTEM_DIRECTORIES(ICU)
 
 ADD_WSHADOW_WARNING()
+
+# Lots of warnings about -Walloc-size-larger-than= from my_malloc.cc
+# but it is basically impossible to trace the actual origin.
+IF(FPROFILE_GENERATE OR FPROFILE_USE)
+  IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
+    # -Walloc-size-larger-than=PTRDIFF_MAX is enabled by default.
+    STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -Wno-alloc-size-larger-than")
+  ENDIF()
+ENDIF()
 
 # Array indexing with pland_idx == int8 gives warnings.
 IF(SOLARIS AND MY_COMPILER_IS_GNU)
@@ -294,6 +303,7 @@ SET(SQL_GIS_SOURCES
   gis/is_simple.cc
   gis/is_valid.cc
   gis/length.cc
+  gis/line_interpolate.cc
   gis/mbr_utils.cc
   gis/overlaps.cc
   gis/ring_flip_visitor.cc
@@ -576,6 +586,7 @@ SET(SQL_SHARED_SOURCES
   tztime.cc
   uniques.cc
   xa.cc
+  daemon_proxy_keyring/daemon_proxy_keyring.cc
 )
 
 # BISON_TARGET(<Name> <YaccInput> <CodeOutput>
@@ -610,8 +621,12 @@ IF(WITH_LOCK_ORDER)
   MESSAGE(STATUS "FLEX outputs ${FLEX_debug_lo_scanner_OUTPUTS}")
 
   # Some targets, for easier debugging.
-  ADD_CUSTOM_TARGET(GenBison_lo DEPENDS ${BISON_debug_lo_parser_OUTPUTS})
-  ADD_CUSTOM_TARGET(GenFlex_lo DEPENDS ${FLEX_debug_lo_scanner_OUTPUTS})
+  # The new Xcode build system does not support multiple targets that
+  # DEPEND on the same outputs.
+  IF(NOT APPLE_XCODE)
+    ADD_CUSTOM_TARGET(GenBison_lo DEPENDS ${BISON_debug_lo_parser_OUTPUTS})
+    ADD_CUSTOM_TARGET(GenFlex_lo DEPENDS ${FLEX_debug_lo_scanner_OUTPUTS})
+  ENDIF()
 
   LIST(APPEND SQL_SHARED_SOURCES
     ${BISON_debug_lo_parser_OUTPUTS}
@@ -1033,8 +1048,12 @@ ELSE()
   MESSAGE(STATUS "BISON outputs ${BISON_hints_parser_OUTPUTS}")
 
   # Some targets, for easier debugging.
-  ADD_CUSTOM_TARGET(GenBison_mysql DEPENDS ${BISON_mysql_parser_OUTPUTS})
-  ADD_CUSTOM_TARGET(GenBison_hints DEPENDS ${BISON_hints_parser_OUTPUTS})
+  # The new Xcode build system does not support multiple targets that
+  # DEPEND on the same outputs.
+  IF(NOT APPLE_XCODE)
+    ADD_CUSTOM_TARGET(GenBison_mysql DEPENDS ${BISON_mysql_parser_OUTPUTS})
+    ADD_CUSTOM_TARGET(GenBison_hints DEPENDS ${BISON_hints_parser_OUTPUTS})
+  ENDIF()
 
 ENDIF()
 

@@ -4,7 +4,7 @@
 
 . inc/keyring_common.sh
 . inc/keyring_vault.sh
-
+KEYRING_TYPE="plugin"
 is_xtradb || skip_test "Keyring vault requires Percona Server"
 keyring_vault_ping || skip_test "Keyring vault server is not avaliable"
 # cleanup environment variables
@@ -25,8 +25,8 @@ function cleanup_keyring() {
 
 trap "keyring_vault_unmount" EXIT
 
-test_do "ENCRYPTION='y'" "top-secret"
-test_do "ENCRYPTION='y' COMPRESSION='zlib'" "generate"
+test_do "ENCRYPTION='y'" "top-secret" ${KEYRING_TYPE}
+test_do "ENCRYPTION='y' COMPRESSION='zlib'" "generate" ${KEYRING_TYPE}
 
 keyring_vault_unmount
 trap "" EXIT

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -296,7 +296,7 @@ ulint fil_n_pending_log_flushes = 0;
 ulint fil_n_pending_tablespace_flushes = 0;
 
 /** Number of files currently open */
-ulint fil_n_file_opened = 0;
+std::atomic_size_t fil_n_files_open{0};
 
 enum fil_load_status {
   /** The tablespace file(s) were found and valid. */
@@ -1142,16 +1142,12 @@ class Fil_shard {
   @param[in]	space_id	Tablespace ID
   @param[in]	name		Tablespace name used in fil_space_create().
   @param[in]	print_err	Print detailed error information to the
-                                  error log if a matching tablespace is
-                                  not found from memory.
+                                error log if a matching tablespace is
+                                not found from memory.
   @param[in]	adjust_space	Whether to adjust space id on mismatch
-  @param[in]	heap			Heap memory
-  @param[in]	table_id		table id
   @return true if a matching tablespace exists in the memory cache */
   bool space_check_exists(space_id_t space_id, const char *name, bool print_err,
-                          bool adjust_space, mem_heap_t *heap,
-                          table_id_t table_id)
-      MY_ATTRIBUTE((warn_unused_result));
+                          bool adjust_space) MY_ATTRIBUTE((warn_unused_result));
 
   /** Read or write log file data synchronously.
   @param[in]	type		IO context
@@ -1268,7 +1264,7 @@ class Fil_shard {
       MY_ATTRIBUTE((warn_unused_result));
 
   /** Release the slot reserved for opening a file.
-  @param[in]	shard_id	ID of shard relasing the slot */
+  @param[in]	shard_id	ID of shard releasing the slot */
   static void release_open_slot(size_t shard_id);
 
   /** We are going to do a rename file and want to stop new I/O
@@ -1393,8 +1389,7 @@ class Fil_shard {
   int64_t m_modification_counter;
 
   /** Number of files currently open */
-
-  static std::atomic_size_t s_n_open;
+  static std::atomic_size_t s_n_spaces_in_lru;
 
   /** ID of shard that has reserved the open slot. */
 
@@ -1956,8 +1951,9 @@ class Fil_system {
 initialized. */
 static Fil_system *fil_system = nullptr;
 
-/** Total number of open files. */
-std::atomic_size_t Fil_shard::s_n_open;
+/** Number of files currently in LRU. Unlike m_LRU, this
+can be accessed without acquiring the shard mutex. */
+std::atomic_size_t Fil_shard::s_n_spaces_in_lru;
 
 /** Slot reserved for opening a file. */
 std::atomic_size_t Fil_shard::s_open_slot;
@@ -2155,8 +2151,6 @@ bool Fil_shard::reserve_open_slot(size_t shard_id) {
   return s_open_slot.compare_exchange_weak(expected, shard_id);
 }
 
-/** Release the slot reserved for opening a file.
-@param[in]	shard_id	ID of shard releasing the slot */
 void Fil_shard::release_open_slot(size_t shard_id) {
   size_t expected = shard_id;
 
@@ -2192,13 +2186,15 @@ void Fil_shard::file_opened(fil_node_t *file) {
   if (Fil_system::space_belongs_in_LRU(file->space)) {
     /* Put the file to the LRU list */
     UT_LIST_ADD_FIRST(m_LRU, file);
-  }
 
-  ++s_n_open;
+    /* Safe to assign the length of the LRU to s_n_spaces_in_lru as
+    the thread owns the mutex. */
+    s_n_spaces_in_lru++;
+  }
 
   file->is_open = true;
 
-  fil_n_file_opened = s_n_open;
+  fil_n_files_open++;
 }
 
 /** Remove the file node from the LRU list.
@@ -2213,6 +2209,10 @@ void Fil_shard::remove_from_LRU(fil_node_t *file) {
 
     /* The file is in the LRU list, remove it */
     UT_LIST_REMOVE(m_LRU, file);
+
+    /* Safe to assign the length of the LRU to s_n_spaces_in_lru as
+    the thread owns the mutex. */
+    s_n_spaces_in_lru--;
   }
 }
 
@@ -2234,7 +2234,7 @@ bool Fil_shard::close_file(space_id_t space_id) {
     while (file.in_use > 0) {
       mutex_release();
 
-      os_thread_sleep(10000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
       mutex_acquire();
     }
@@ -2447,12 +2447,6 @@ fil_type_t fil_space_get_type(space_id_t space_id) {
 
 #endif /* UNIV_DEBUG */
 
-/** Note that a tablespace has been imported.
-It is initially marked as FIL_TYPE_IMPORT so that no logging is
-done during the import process when the space ID is stamped to each page.
-Now we change it to FIL_TYPE_TABLESPACE to start redo and undo logging.
-NOTE: temporary tablespaces are never imported.
-@param[in]	space_id	Tablespace ID */
 void fil_space_set_imported(space_id_t space_id) {
   auto shard = fil_system->shard_by_id(space_id);
 
@@ -2552,7 +2546,7 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
 
   file.space = space;
 
-  os_file_stat_t stat_info;
+  os_file_stat_t stat_info = os_file_stat_t();
 
 #ifdef UNIV_DEBUG
   dberr_t err =
@@ -2861,7 +2855,7 @@ bool Fil_shard::open_file(fil_node_t *file, bool extend) {
 
     mutex_release();
 
-    os_thread_sleep(100000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     mutex_acquire();
   }
@@ -2941,11 +2935,9 @@ void Fil_shard::close_file(fil_node_t *file, bool LRU_close) {
 
   file->is_open = false;
 
-  ut_a(s_n_open > 0);
+  ut_a(fil_n_files_open > 0);
 
-  --s_n_open;
-
-  fil_n_file_opened = s_n_open;
+  fil_n_files_open--;
 
   remove_from_LRU(file);
 }
@@ -3049,7 +3041,7 @@ void Fil_shard::wait_for_io_to_stop(const fil_space_t *space) {
 #endif /* UNIV_HOTBACKUP */
 
     /* Give the IO threads some time to work. */
-    os_thread_yield();
+    std::this_thread::yield();
   }
 }
 
@@ -3126,7 +3118,7 @@ bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
   be released after the file is opened. */
 
   while (!reserve_open_slot(m_id)) {
-    os_thread_yield();
+    std::this_thread::yield();
   }
 
   auto begin_time = ut_time_monotonic();
@@ -3141,12 +3133,12 @@ bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
 
     fil_system->flush_file_spaces(type);
 
-    os_thread_yield();
+    std::this_thread::yield();
 
     /* Reserve an open slot for this shard. So that this
     shard's open file succeeds. */
 
-    while (fil_system->m_max_n_open <= s_n_open &&
+    while (fil_system->m_max_n_open <= s_n_spaces_in_lru &&
            !fil_system->close_file_in_all_LRU(i > 1)) {
       if (ut_time_monotonic() - start_time >= PRINT_INTERVAL_SECS) {
         start_time = ut_time_monotonic();
@@ -3165,7 +3157,7 @@ bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
         /* in order to break the loop, lets wake aio handler threads */
         os_aio_simulated_wake_handler_threads();
 
-        os_thread_yield();
+        std::this_thread::yield();
 
         /* and flush the changes so that files with no pending IOs can be
         closed */
@@ -3175,7 +3167,7 @@ bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
       }
     }
 
-    if (fil_system->m_max_n_open > s_n_open) {
+    if (fil_system->m_max_n_open > s_n_spaces_in_lru) {
       break;
     }
 
@@ -3184,7 +3176,7 @@ bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
     performed */
     os_aio_simulated_wake_handler_threads();
 
-    os_thread_yield();
+    std::this_thread::yield();
 #endif /* !UNIV_HOTBACKUP */
   }
 
@@ -3411,7 +3403,6 @@ fil_space_t *Fil_shard::space_create(const char *name, space_id_t space_id,
   space->initialize();
 
   space->id = space_id;
-
   space->name = mem_strdup(name);
 
 #ifndef UNIV_HOTBACKUP
@@ -3673,6 +3664,38 @@ page_no_t fil_space_get_size(space_id_t space_id) {
   shard->mutex_release();
 
   return size;
+}
+
+page_no_t fil_space_get_undo_initial_size(space_id_t space_id) {
+  auto shard = fil_system->shard_by_id(space_id);
+
+  shard->mutex_acquire();
+
+  fil_space_t *space = shard->space_load(space_id);
+
+  page_no_t size = space ? space->m_undo_initial : 0;
+
+  shard->mutex_release();
+
+  return size;
+}
+
+void fil_space_set_undo_size(space_id_t space_id, bool use_current) {
+  ut_ad(fsp_is_undo_tablespace(space_id));
+
+  auto shard = fil_system->shard_by_id(space_id);
+
+  shard->mutex_acquire();
+
+  fil_space_t *space = shard->space_load(space_id);
+
+  if (space != nullptr) {
+    space->m_undo_initial =
+        (use_current ? space->size : UNDO_INITIAL_SIZE_IN_PAGES);
+    space->m_undo_extend = UNDO_INITIAL_SIZE_IN_PAGES;
+  }
+
+  shard->mutex_release();
 }
 
 /** Returns the flags of the space. The tablespace must be cached
@@ -4360,7 +4383,7 @@ dberr_t Fil_shard::wait_for_pending_operations(space_id_t space_id,
     mutex_release();
 
     if (count > 0) {
-      os_thread_sleep(20000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
   } while (count > 0);
@@ -4391,7 +4414,7 @@ dberr_t Fil_shard::wait_for_pending_operations(space_id_t space_id,
     mutex_release();
 
     if (count > 0) {
-      os_thread_sleep(20000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
   } while (count > 0);
@@ -4812,7 +4835,7 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
       /* Release and reacquire the mutex because we want the IO to complete. */
       mutex_release();
 
-      os_thread_yield();
+      std::this_thread::yield();
 
       mutex_acquire();
     }
@@ -5374,7 +5397,7 @@ dberr_t Fil_shard::space_rename(space_id_t space_id, const char *old_path,
         start_time = ut_time_monotonic();
       }
 
-      os_thread_sleep(1000000);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
 
       continue;
 
@@ -5486,7 +5509,7 @@ dberr_t Fil_shard::space_rename(space_id_t space_id, const char *old_path,
       break;
     }
 
-    os_thread_sleep(100000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     if (flush) {
       mutex_acquire();
@@ -5656,11 +5679,6 @@ dberr_t Fil_system::rename_tablespace_name(space_id_t space_id,
   return DB_SUCCESS;
 }
 
-/** Rename a tablespace.  Use the space_id to find the shard.
-@param[in]	space_id	tablespace ID
-@param[in]	old_name	old tablespace name
-@param[in]	new_name	new tablespace name
-@return DB_SUCCESS on success */
 dberr_t fil_rename_tablespace_by_id(space_id_t space_id, const char *old_name,
                                     const char *new_name) {
   return fil_system->rename_tablespace_name(space_id, old_name, new_name);
@@ -5924,16 +5942,6 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
   return err;
 }
 
-/** Create an IBD tablespace file.
-@param[in]	space_id	Tablespace ID
-@param[in]	name		Tablespace name in dbname/tablename format.
-                                For general tablespaces, the 'dbname/' part
-                                may be missing.
-@param[in]	path		Path and filename of the datafile to create.
-@param[in]	flags		Tablespace flags
-@param[in]	size		Initial size of the tablespace file in pages,
-                                must be >= FIL_IBD_FILE_INITIAL_SIZE
-@return DB_SUCCESS or error code */
 dberr_t fil_ibd_create(space_id_t space_id, const char *name, const char *path,
                        uint32_t flags, page_no_t size) {
   ut_a(size >= FIL_IBD_FILE_INITIAL_SIZE);
@@ -5942,14 +5950,6 @@ dberr_t fil_ibd_create(space_id_t space_id, const char *name, const char *path,
                                FIL_TYPE_TABLESPACE);
 }
 
-/** Create a session temporary tablespace (IBT) file.
-@param[in]	space_id	Tablespace ID
-@param[in]	name		Tablespace name
-@param[in]	path		Path and filename of the datafile to create.
-@param[in]	flags		Tablespace flags
-@param[in]	size		Initial size of the tablespace file in pages,
-                                must be >= FIL_IBT_FILE_INITIAL_SIZE
-@return DB_SUCCESS or error code */
 dberr_t fil_ibt_create(space_id_t space_id, const char *name, const char *path,
                        uint32_t flags, page_no_t size) {
   ut_a(size >= FIL_IBT_FILE_INITIAL_SIZE);
@@ -5957,62 +5957,10 @@ dberr_t fil_ibt_create(space_id_t space_id, const char *name, const char *path,
                                FIL_TYPE_TEMPORARY);
 }
 
-bool fil_replace_tablespace(space_id_t old_space_id, space_id_t new_space_id,
-                            page_no_t size_in_pages) {
-  auto space = fil_space_get(old_space_id);
-  std::string space_name(space->name);
-  std::string file_name(space->files.front().name);
-
-  /* Mark the old tablespace to be deleted. We defer the actual deletion
-  to avoid concurrency bottleneck.  Leave the pages in the buffer pool
-  and increment the space version number. */
-  auto err = fil_delete_tablespace(old_space_id, BUF_REMOVE_NONE);
-
-  if (err != DB_SUCCESS) {
-    return false;
-  }
-
-  ulint flags = fsp_flags_init(univ_page_size, false, false, false, false);
-
-  /* Create the new UNDO tablespace. */
-  err =
-      fil_create_tablespace(new_space_id, space_name.c_str(), file_name.c_str(),
-                            flags, size_in_pages, FIL_TYPE_TABLESPACE);
-
-  return (err == DB_SUCCESS);
-}
-
 #ifndef UNIV_HOTBACKUP
-/** Open a single-table tablespace and optionally check the space id is
-right in it. If not successful, print an error message to the error log. This
-function is used to open a tablespace when we start up mysqld, and also in
-IMPORT TABLESPACE.
-NOTE that we assume this operation is used either at the database startup
-or under the protection of the dictionary mutex, so that two users cannot
-race here.
-
-The fil_node_t::handle will not be left open.
-
-@param[in]	validate	whether we should validate the tablespace
-                                (read the first page of the file and
-                                check that the space id in it matches id)
-@param[in]	purpose		FIL_TYPE_TABLESPACE or FIL_TYPE_TEMPORARY
-@param[in]	space_id	Tablespace ID
-@param[in]	flags		tablespace flags
-@param[in]	space_name	tablespace name of the datafile
-                                If file-per-table, it is the table name in the
-                                databasename/tablename format
-@param[in]	table_name	table name in case need to build filename
-from it
-@param[in]	path_in		expected filepath, usually read from dictionary
-@param[in]	strict		whether to report error when open ibd failed
-@param[in]	old_space	whether it is a 5.7 tablespace opening
-                                by upgrade
-@return DB_SUCCESS or error code */
 dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
                      uint32_t flags, const char *space_name,
-                     const char *table_name, const char *path_in, bool strict,
-                     bool old_space) {
+                     const char *path_in, bool strict, bool old_space) {
   Datafile df;
   bool is_encrypted = FSP_FLAGS_GET_ENCRYPTION(flags);
   bool for_import = (purpose == FIL_TYPE_IMPORT);
@@ -6576,20 +6524,8 @@ bool Fil_shard::adjust_space_name(fil_space_t *space,
   return (replace_general || replace_undo);
 }
 
-/** Returns true if a matching tablespace exists in the InnoDB
-tablespace memory cache.
-@param[in]	space_id	Tablespace ID
-@param[in]	name		Tablespace name used in fil_space_create().
-@param[in]	print_err	Print detailed error information to the
-                                error log if a matching tablespace is
-                                not found from memory.
-@param[in]	adjust_space	Whether to adjust space id on mismatch
-@param[in]	heap			Heap memory
-@param[in]	table_id		table id
-@return true if a matching tablespace exists in the memory cache */
 bool Fil_shard::space_check_exists(space_id_t space_id, const char *name,
-                                   bool print_err, bool adjust_space,
-                                   mem_heap_t *heap, table_id_t table_id) {
+                                   bool print_err, bool adjust_space) {
   fil_space_t *fnamespace = nullptr;
 
   mutex_acquire();
@@ -6695,24 +6631,11 @@ bool Fil_shard::space_check_exists(space_id_t space_id, const char *name,
   return false;
 }
 
-/** Returns true if a matching tablespace exists in the InnoDB tablespace
-memory cache.
-@param[in]	space_id	Tablespace ID
-@param[in]	name		Tablespace name used in space_create().
-@param[in]	print_err	Print detailed error information to the
-                                error log if a matching tablespace is
-                                not found from memory.
-@param[in]	adjust_space	Whether to adjust space id on mismatch
-@param[in]	heap		Heap memory
-@param[in]	table_id	table ID
-@return true if a matching tablespace exists in the memory cache */
 bool fil_space_exists_in_mem(space_id_t space_id, const char *name,
-                             bool print_err, bool adjust_space,
-                             mem_heap_t *heap, table_id_t table_id) {
+                             bool print_err, bool adjust_space) {
   auto shard = fil_system->shard_by_id(space_id);
 
-  return shard->space_check_exists(space_id, name, print_err, adjust_space,
-                                   heap, table_id);
+  return shard->space_check_exists(space_id, name, print_err, adjust_space);
 }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -6856,9 +6779,9 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
     mutex_release();
 
     if (!tbsp_extend_and_initialize) {
-      os_thread_sleep(20);
+      std::this_thread::sleep_for(std::chrono::microseconds(20));
     } else {
-      os_thread_sleep(100000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 
@@ -6926,7 +6849,7 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
 
     ut_ad(len > 0);
 
-#if !defined(UNIV_HOTBACKUP) && defined(UNIV_LINUX)
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP) && defined(UNIV_LINUX)
     /* Do not write redo log record for temporary tablespace
     and the system tablespace as they don't need to be recreated.
     Temporary tablespaces are reinitialized during startup and
@@ -6966,13 +6889,12 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
 
       DBUG_INJECT_CRASH_WITH_LOG_FLUSH("ib_crash_after_writing_redo_extend", 1);
 
-      /* Even if we got killed shortly after extending the
-      tablespace file, the record must have already been
-      written to the redo log, because we didn't possibly
-      zeroed the extended region yet. */
-      log_write_up_to(*log_sys, mtr.commit_lsn(), true);
+      /* NOTE: Though against for the Write-Ahead-Log principal,
+      log_write_up_to() is not needed here, because no file shrinks and
+      duplicate extending is allowed. And log_write_up_to() here helps
+      nothing for fallocate() inconsistency. */
     }
-#endif /* !UNIV_HOTBACKUP && UNIV_LINUX */
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP && UNIV_LINUX */
 
 #if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
     /* This is required by FusionIO HW/Firmware */
@@ -7073,7 +6995,7 @@ bool Fil_shard::space_extend(fil_space_t *space, page_no_t size) {
 #else  /* !UNIV_HOTBACKUP */
   ib::trace_2() << "Extended space : " << space->name << " from " << prev_size
                 << " pages to " << space->size << " pages "
-                << ", desired space size : " << size << " pages.";
+                << ", desired space size : " << size << " pages";
 #endif /* !UNIV_HOTBACKUP */
 
   space_flush(space->id);
@@ -7723,7 +7645,7 @@ bool Fil_shard::prepare_file_for_io(fil_node_t *file, bool extend) {
 
   fil_space_t *space = file->space;
 
-  if (s_n_open > fil_system->m_max_n_open + 5) {
+  if (s_n_spaces_in_lru > fil_system->m_max_n_open + 5) {
     static ulint prev_time;
     auto curr_time = ut_time_monotonic();
 
@@ -7731,7 +7653,7 @@ bool Fil_shard::prepare_file_for_io(fil_node_t *file, bool extend) {
 
     if ((curr_time - prev_time) > 60) {
       ib::warn(ER_IB_MSG_327)
-          << "Open files " << s_n_open.load() << " exceeds the limit "
+          << "Open files " << s_n_spaces_in_lru.load() << " exceeds the limit "
           << fil_system->m_max_n_open;
 
       prev_time = curr_time;
@@ -7756,6 +7678,7 @@ bool Fil_shard::prepare_file_for_io(fil_node_t *file, bool extend) {
     ut_a(UT_LIST_GET_LEN(m_LRU) > 0);
 
     UT_LIST_REMOVE(m_LRU, file);
+    s_n_spaces_in_lru--;
   }
 
   ++file->n_pending;
@@ -7820,6 +7743,7 @@ void Fil_shard::complete_io(fil_node_t *file, const IORequest &type) {
   if (file->n_pending == 0 && Fil_system::space_belongs_in_LRU(file->space)) {
     /* The file must be put back to the LRU list */
     UT_LIST_ADD_FIRST(m_LRU, file);
+    s_n_spaces_in_lru++;
   }
 }
 
@@ -8446,7 +8370,9 @@ void fil_aio_wait(ulint segment) {
       /* async single page writes from the dblwr buffer don't have
       access to the page */
       if (m2 != nullptr) {
-        buf_page_io_complete(static_cast<buf_page_t *>(m2), false);
+        auto bpage = static_cast<buf_page_t *>(m2);
+        ut_d(bpage->take_io_responsibility());
+        buf_page_io_complete(bpage, false);
       }
       return;
     case FIL_TYPE_LOG:
@@ -8478,9 +8404,24 @@ dberr_t fil_io(const IORequest &type, bool sync, const page_id_t &page_id,
                const page_size_t &page_size, ulint byte_offset, ulint len,
                void *buf, void *message) {
   auto shard = fil_system->shard_by_id(page_id.space());
+#ifdef UNIV_DEBUG
+  if (!sync) {
+    /* In case of async io we transfer the io responsibility to the thread which
+    will perform the io completion routine. */
+    static_cast<buf_page_t *>(message)->release_io_responsibility();
+  }
+#endif
 
-  return shard->do_io(type, sync, page_id, page_size, byte_offset, len, buf,
-                      message);
+  auto const err = shard->do_io(type, sync, page_id, page_size, byte_offset,
+                                len, buf, message);
+#ifdef UNIV_DEBUG
+  /* If the error prevented async io, then we haven't actually transfered the
+  io responsibility at all, so we revert the debug io responsibility info. */
+  if (err != DB_SUCCESS && !sync) {
+    static_cast<buf_page_t *>(message)->take_io_responsibility();
+  }
+#endif
+  return err;
 }
 
 /** If the tablespace is on the unflushed list and there are no pending
@@ -8872,7 +8813,7 @@ void fil_close() {
 }
 
 #ifndef UNIV_HOTBACKUP
-/** Initializes a buffer control block when the buf_pool is created.
+/** Initializes the buffer control block used by fil_tablespace_iterate.
 @param[in]	block		Pointer to the control block
 @param[in]	frame		Pointer to buffer frame */
 static void fil_buf_block_init(buf_block_t *block, byte *frame) {
@@ -8880,7 +8821,7 @@ static void fil_buf_block_init(buf_block_t *block, byte *frame) {
 
   block->frame = frame;
 
-  block->page.io_fix = BUF_IO_NONE;
+  block->page.init_io_fix();
   /* There are assertions that check for this. */
   block->page.buf_fix_count.store(1);
   block->page.state = BUF_BLOCK_READY_FOR_USE;
@@ -10448,10 +10389,6 @@ bool Fil_system::open_for_recovery(space_id_t space_id) {
   return false;
 }
 
-/** Open the tabelspace and also get the tablespace filenames, space_id must
-already be known.
-@param[in]	space_id	Tablespace ID to lookup
-@return true if open was successful */
 bool fil_tablespace_open_for_recovery(space_id_t space_id) {
   return fil_system->open_for_recovery(space_id);
 }
@@ -11887,6 +11824,7 @@ void Tablespace_dirs::open_ibds() const {
 }
 
 void Fil_system::rename_partition_files(bool revert) {
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   /* If revert, then we are downgrading after upgrade failure from 5.7 */
   ut_ad(!revert || srv_downgrade_partition_files);
 
@@ -11894,7 +11832,6 @@ void Fil_system::rename_partition_files(bool revert) {
     return;
   }
 
-#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   ut_ad(!lower_case_file_system);
 
   for (auto &old_path : m_old_paths) {
@@ -12517,39 +12454,14 @@ const char *fil_get_page_type_str(page_type_t type) noexcept {
 }
 
 bool fil_is_page_type_valid(page_type_t type) noexcept {
-  switch (type) {
-    case FIL_PAGE_INDEX:
-    case FIL_PAGE_RTREE:
-    case FIL_PAGE_SDI:
-    case FIL_PAGE_UNDO_LOG:
-    case FIL_PAGE_INODE:
-    case FIL_PAGE_IBUF_FREE_LIST:
-    case FIL_PAGE_TYPE_ALLOCATED:
-    case FIL_PAGE_IBUF_BITMAP:
-    case FIL_PAGE_TYPE_SYS:
-    case FIL_PAGE_TYPE_TRX_SYS:
-    case FIL_PAGE_TYPE_FSP_HDR:
-    case FIL_PAGE_TYPE_XDES:
-    case FIL_PAGE_TYPE_BLOB:
-    case FIL_PAGE_TYPE_ZBLOB:
-    case FIL_PAGE_TYPE_ZBLOB2:
-    case FIL_PAGE_TYPE_UNKNOWN:
-    case FIL_PAGE_COMPRESSED:
-    case FIL_PAGE_ENCRYPTED:
-    case FIL_PAGE_COMPRESSED_AND_ENCRYPTED:
-    case FIL_PAGE_ENCRYPTED_RTREE:
-    case FIL_PAGE_SDI_BLOB:
-    case FIL_PAGE_SDI_ZBLOB:
-    case FIL_PAGE_TYPE_LOB_INDEX:
-    case FIL_PAGE_TYPE_LOB_DATA:
-    case FIL_PAGE_TYPE_LOB_FIRST:
-    case FIL_PAGE_TYPE_ZLOB_FIRST:
-    case FIL_PAGE_TYPE_ZLOB_DATA:
-    case FIL_PAGE_TYPE_ZLOB_INDEX:
-    case FIL_PAGE_TYPE_ZLOB_FRAG:
-    case FIL_PAGE_TYPE_ZLOB_FRAG_ENTRY:
-      return true;
+  if (fil_page_type_is_index(type)) {
+    return true;
   }
+
+  if (type <= FIL_PAGE_TYPE_LAST && type != FIL_PAGE_TYPE_UNUSED) {
+    return true;
+  }
+
   ut_ad(0);
   return false;
 }

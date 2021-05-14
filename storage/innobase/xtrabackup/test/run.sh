@@ -329,6 +329,20 @@ XTRABACKUP_BASEDIR
     export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com
 }
 
+# Configure mysql to read local component files if created by test cases.
+function config_local_components()
+{
+  cat <<EOF > "${MYSQLD}.my"
+{
+  "read_local_manifest": true
+}
+EOF
+ cat <<EOF > "$MYSQL_BASEDIR/lib/plugin/component_keyring_file.cnf"
+{
+  "read_local_config": true
+}
+EOF
+}
 
 # Fix innodb51 test failures on Centos5-32 Jenkins slaves due to SELinux
 # preventing shared symbol relocations in ha_innodb_plugin.so.0.0.0
@@ -872,6 +886,11 @@ if ! get_version_info
 then
     echo "get_version_info failed. See $OUTFILE for details."
     exit -1
+fi
+
+if is_server_version_higher_than 8.0.23
+then
+  config_local_components
 fi
 
 echo "Running against $MYSQL_FLAVOR $MYSQL_VERSION ($INNODB_FLAVOR $INNODB_VERSION)" |

@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2016, 2018 Percona LLC and/or its affiliates.
+Copyright (c) 2016, 2021 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,12 +28,15 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql/basic_ostream.h>
 #include <sql/log_event.h>
 #include <sql/rpl_log_encryption.h>
+#include <sql/server_component/mysql_server_keyring_lockable_imp.h>
 #include <sql/sql_list.h>
 #include <sql/sql_plugin.h>
 #include <sql_plugin.h>
 #include <ut0crc32.h>
 #include "common.h"
 #include "kdf.h"
+#include "keyring_components.h"
+#include "keyring_operations_helper.h"
 
 #include "backup_mysql.h"
 #include "keyring_plugins.h"
@@ -71,13 +74,17 @@ static void init_plugins(int argc, char **argv) {
   memcpy(t_argv, argv, sizeof(char *) * t_argc);
 
   mysql_optional_plugins[0] = 0;
-  mysql_mandatory_plugins[0] = 0;
 
-  if (opt_xtra_plugin_dir != NULL) {
-    strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
-  } else {
-    strcpy(opt_plugin_dir, PLUGINDIR);
-  }
+    /* initialize only daemon_keyring_proxy_plugin */
+    set_srv_keyring_implementation_as_default();
+    for (st_mysql_plugin **plugin = mysql_mandatory_plugins; *plugin;
+         plugin++) {
+      if (strcmp((*plugin)->name, "daemon_keyring_proxy_plugin") == 0) {
+        mysql_mandatory_plugins[0] = *plugin;
+        mysql_mandatory_plugins[1] = 0;
+        break;
+      }
+    }
 
   plugin_register_early_plugins(&t_argc, t_argv, 0);
   plugin_register_builtin_and_init_core_se(&t_argc, t_argv);
@@ -143,13 +150,13 @@ const size_t TRANSITION_KEY_NAME_MAX_LEN = Encryption::SERVER_UUID_LEN + 2 + 45;
 static bool xb_fetch_key(char *key_name, char *key) {
   char *key_type = NULL;
   size_t key_len;
-  char *tmp_key = NULL;
+  unsigned char *tmp_key = NULL;
   int ret;
 
-  ret = my_key_fetch(key_name, &key_type, NULL,
-                     reinterpret_cast<void **>(&tmp_key), &key_len);
-
-  if (ret || tmp_key == NULL) {
+  ret = keyring_operations_helper::read_secret(
+      srv_keyring_reader, key_name, nullptr,
+      &tmp_key, &key_len, &key_type, PSI_INSTRUMENT_ME);
+  if (ret == -1 || tmp_key == NULL) {
     msg("xtrabackup: Error: Can't fetch the key, please "
         "check the keyring plugin is loaded.\n");
     return (false);
@@ -194,7 +201,8 @@ static bool xb_create_transition_key(char *key_name, char *key) {
            TRANSITION_KEY_PRIFIX, server_uuid, rand64);
 
   /* Let keyring generate key for us. */
-  ret = my_key_generate(key_name, "AES", NULL, Encryption::KEY_LEN);
+  ret = srv_keyring_generator->generate(key_name, nullptr, "AES",
+                                          Encryption::KEY_LEN);
   if (ret) {
     msg("xtrabackup: Error: Can't generate the key, please "
         "check the keyring plugin is loaded.\n");
@@ -375,89 +383,89 @@ from my.cnf.
 @param[in, out]	argv	Command line options (values)
 @return true if success */
 bool xb_keyring_init_for_copy_back(int argc, char **argv) {
-  mysql_optional_plugins[0] = 0;
-  mysql_mandatory_plugins[0] = 0;
-
-  if (opt_xtra_plugin_dir != NULL) {
-    strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
-  } else {
-    strcpy(opt_plugin_dir, PLUGINDIR);
-  }
-
-  char *uuid = NULL;
-  const char *groups[] = {"mysqld", NULL};
-
-  my_option keyring_options[] = {
-      {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
-       0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-
-  char *exename = (char *)"xtrabackup";
-  char **backup_my_argv = &exename;
-  int backup_my_argc = 1;
-  char fname[FN_REFLEN];
-
-  /* we need full name so that only backup-my.cnf will be read */
-  if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
-                MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
+  if(!xtrabackup::components::keyring_init_offline())
+  {
+    msg("xtrabackup: Error: failed to init keyring component\n");
     return (false);
   }
+  if (!xtrabackup::components::keyring_component_initialized) {
+    mysql_optional_plugins[0] = 0;
 
-  if (my_load_defaults(fname, groups, &backup_my_argc, &backup_my_argv,
-                       &argv_alloc, NULL)) {
-    return (false);
-  }
+    char *uuid = NULL;
+    const char *groups[] = {"mysqld", NULL};
 
-  if (handle_options(&backup_my_argc, &backup_my_argv, keyring_options,
-                     get_one_option)) {
-    return (false);
-  }
+    my_option keyring_options[] = {
+        {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+         0, 0, 0},
+        {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
-  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
-  if (uuid != NULL) {
-    strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
-  }
+    char *exename = (char *)"xtrabackup";
+    char **backup_my_argv = &exename;
+    int backup_my_argc = 1;
+    char fname[FN_REFLEN];
 
-  /* copy argc, argv because handle_options will destroy them */
-
-  int t_argc = argc + 1;
-  char **t_argv = new char *[t_argc + 1];
-
-  memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
-  t_argv[0] = exename;
-  memcpy(t_argv + 1, argv, sizeof(char *) * argc);
-
-  my_option plugin_load_options[] = {
-      {"early-plugin-load", 1, "", 0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
-       0, 0},
-      {"plugin-load", 2, "", 0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-      {"plugin-load-add", 3, "", 0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
-       0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-
-  char **old_t_argv = t_argv;
-  if (handle_options(&t_argc, &t_argv, plugin_load_options,
-                     get_plugin_load_option)) {
-    delete[] old_t_argv;
-    return (false);
-  }
-
-  /* pick only plugins starting with keyring_ */
-  for (std::vector<std::string>::iterator i = plugin_load_list.begin();
-       i != plugin_load_list.end(); i++) {
-    const size_t prefix_len = sizeof("keyring_") - 1;
-    const char *plugin_name = i->c_str();
-    if (strlen(plugin_name) > prefix_len &&
-        strncmp(plugin_name, "keyring_", prefix_len) == 0) {
-      opt_plugin_load_list_ptr->push_back(new i_string(
-          my_strdup(PSI_NOT_INSTRUMENTED, plugin_name, MYF(MY_FAE))));
+    /* we need full name so that only backup-my.cnf will be read */
+    if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
+                  MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
+      return (false);
     }
+
+    if (my_load_defaults(fname, groups, &backup_my_argc, &backup_my_argv,
+                         &argv_alloc, NULL)) {
+      return (false);
+    }
+
+    if (handle_options(&backup_my_argc, &backup_my_argv, keyring_options,
+                       get_one_option)) {
+      return (false);
+    }
+
+    memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
+    if (uuid != NULL) {
+      strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
+    }
+
+    /* copy argc, argv because handle_options will destroy them */
+
+    int t_argc = argc + 1;
+    char **t_argv = new char *[t_argc + 1];
+
+    memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
+    t_argv[0] = exename;
+    memcpy(t_argv + 1, argv, sizeof(char *) * argc);
+
+    my_option plugin_load_options[] = {
+        {"early-plugin-load", 1, "", 0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
+         0, 0},
+        {"plugin-load", 2, "", 0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0,
+         0},
+        {"plugin-load-add", 3, "", 0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
+         0, 0},
+        {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
+
+    char **old_t_argv = t_argv;
+    if (handle_options(&t_argc, &t_argv, plugin_load_options,
+                       get_plugin_load_option)) {
+      delete[] old_t_argv;
+      return (false);
+    }
+
+    /* pick only plugins starting with keyring_ */
+    for (std::vector<std::string>::iterator i = plugin_load_list.begin();
+         i != plugin_load_list.end(); i++) {
+      const size_t prefix_len = sizeof("keyring_") - 1;
+      const char *plugin_name = i->c_str();
+      if (strlen(plugin_name) > prefix_len &&
+          strncmp(plugin_name, "keyring_", prefix_len) == 0) {
+        opt_plugin_load_list_ptr->push_back(new i_string(
+            my_strdup(PSI_NOT_INSTRUMENTED, plugin_name, MYF(MY_FAE))));
+      }
+    }
+    init_plugins(argc, argv);
+
+    delete[] old_t_argv;
   }
-
-  init_plugins(argc, argv);
-
-  delete[] old_t_argv;
-
+  xtrabackup::components::inititialize_service_handles();
   return (true);
 }
 
@@ -874,6 +882,7 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
 
 /** Shutdown keyring plugins. */
 void xb_keyring_shutdown() {
+  release_keyring_handles();
   plugin_shutdown();
 
   I_List_iterator<i_string> iter(*opt_plugin_load_list_ptr);
@@ -883,4 +892,5 @@ void xb_keyring_shutdown() {
   }
 
   free_list(opt_plugin_load_list_ptr);
+  xtrabackup::components::deinitialize_service_handles();
 }

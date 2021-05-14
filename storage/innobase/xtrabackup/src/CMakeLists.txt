@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2018 Percona LLC and/or its affiliates.
+# Copyright (c) 2013, 2021 Percona LLC and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -99,6 +99,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   backup_mysql.cc
   backup_copy.cc
   keyring_plugins.cc
+  keyring_components.cc
   kdf.cc
   space_map.cc
   redo_log.cc
@@ -120,6 +121,7 @@ TARGET_LINK_LIBRARIES(xtrabackup
   mysqlclient
   master
   minchassis
+  keyring_common
   ${GCRYPT_LIBS}
   ${ICU_LIBRARIES}
   crc

@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2015 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2021 Percona LLC and/or its affiliates.
 
 Declarations for xtrabackup.cc
 
@@ -66,6 +66,7 @@ enum xtrabackup_compress_t {
 extern lsn_t incremental_lsn;
 
 extern char *xtrabackup_target_dir;
+extern char xtrabackup_real_target_dir[FN_REFLEN];
 extern char *xtrabackup_incremental_dir;
 extern char *xtrabackup_incremental_basedir;
 extern char *innobase_data_home_dir;
@@ -100,6 +101,7 @@ extern bool xtrabackup_encrypt;
 
 extern bool xtrabackup_backup;
 extern bool xtrabackup_prepare;
+extern bool xtrabackup_stats;
 extern bool xtrabackup_apply_log_only;
 extern bool xtrabackup_copy_back;
 extern bool xtrabackup_move_back;
@@ -191,6 +193,7 @@ extern uint opt_read_buffer_size;
 
 extern char *opt_xtra_plugin_dir;
 extern char *opt_transition_key;
+extern char *opt_keyring_file_data;
 extern bool opt_generate_transition_key;
 extern bool opt_generate_new_master_key;
 

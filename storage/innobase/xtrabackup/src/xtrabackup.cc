@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2020 Percona LLC and/or its affiliates
+(c) 2009-2021 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -103,6 +103,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ds_encrypt.h"
 #include "ds_tmpfile.h"
 #include "fil_cur.h"
+#include "keyring_components.h"
 #include "keyring_plugins.h"
 #include "read_filt.h"
 #include "redo_log.h"
@@ -316,6 +317,7 @@ static char *internal_innobase_data_file_path = NULL;
 char *opt_transition_key = NULL;
 char *opt_xtra_plugin_dir = NULL;
 char *opt_xtra_plugin_load = NULL;
+char *opt_keyring_file_data = nullptr;
 
 bool opt_generate_new_master_key = FALSE;
 bool opt_generate_transition_key = FALSE;
@@ -533,7 +535,7 @@ typedef struct {
   uint *count;
   ib_mutex_t *count_mutex;
   bool *error;
-  os_thread_id_t id;
+  std::thread::id id;
 } data_thread_ctxt_t;
 
 /* ======== for option and variables ======== */
@@ -674,6 +676,7 @@ enum options_xtrabackup {
   OPT_SAFE_SLAVE_BACKUP_TIMEOUT,
   OPT_XB_SECURE_AUTH,
   OPT_TRANSITION_KEY,
+  OPT_KEYRING_FILE_DATA,
   OPT_GENERATE_TRANSITION_KEY,
   OPT_XTRA_PLUGIN_DIR,
   OPT_XTRA_PLUGIN_LOAD,
@@ -1244,6 +1247,11 @@ struct my_option xb_client_options[] = {
      "Generate transition key and store it into keyring.",
      &opt_generate_transition_key, &opt_generate_transition_key, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
+
+     {"keyring-file-data", OPT_KEYRING_FILE_DATA,
+      "Path to keyring file.",
+      &opt_keyring_file_data, &opt_keyring_file_data, 0, GET_STR,
+      OPT_ARG, 0, 0, 0, 0, 0, 0},
 
     {"parallel", OPT_XTRA_PARALLEL,
      "Number of threads to use for parallel datafiles transfer. "
@@ -2331,10 +2339,12 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
 
   if (init_dd) {
     dict_load_from_spaces_sdi();
-    dict_sys->dynamic_metadata =
-        dd_table_open_on_name(NULL, NULL, "mysql/innodb_dynamic_metadata",
-                              false, DICT_ERR_IGNORE_NONE);
-    dict_persist->table_buffer = UT_NEW_NOKEY(DDTableBuffer());
+    if (dict_sys->dynamic_metadata == nullptr)
+      dict_sys->dynamic_metadata =
+          dd_table_open_on_name(NULL, NULL, "mysql/innodb_dynamic_metadata",
+                                false, DICT_ERR_IGNORE_NONE);
+    if (dict_persist->table_buffer == nullptr)
+      dict_persist->table_buffer = UT_NEW_NOKEY(DDTableBuffer());
     srv_dict_recover_on_restart();
   }
 
@@ -2987,7 +2997,7 @@ void io_watching_thread() {
   io_watching_thread_running = true;
 
   while (!io_watching_thread_stop) {
-    os_thread_sleep(1000000); /*1 sec*/
+    std::this_thread::sleep_for(std::chrono::seconds(1)); /*1 sec*/
     io_ticket = xtrabackup_throttle;
     os_event_set(wait_throttle);
   }
@@ -3242,7 +3252,7 @@ static dberr_t xb_load_tablespaces(void)
     os_thread_create(PFS_NOT_INSTRUMENTED, io_handler_thread, i).start();
   }
 
-  os_thread_sleep(200000); /*0.2 sec*/
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   err = srv_sys_space.check_file_spec(false, 0);
 
@@ -3328,7 +3338,7 @@ void xb_data_files_close(void)
 
     bool active = os_thread_any_active();
 
-    os_thread_sleep(100000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     if (!active) {
       break;
@@ -3896,14 +3906,17 @@ void xtrabackup_backup_func(void) {
 
   xb_filters_init();
 
-  if (!xb_keyring_init_for_backup(mysql_connection)) {
+  if (have_keyring_component &&
+      !xtrabackup::components::keyring_init_online(mysql_connection)) {
+    msg("xtrabackup: Error: failed to init keyring component\n");
+    exit(EXIT_FAILURE);
+  }
+  if (!xtrabackup::components::keyring_component_initialized &&
+      !xb_keyring_init_for_backup(mysql_connection)) {
     msg("xtrabackup: Error: failed to init keyring plugin\n");
     exit(EXIT_FAILURE);
   }
-
-  if (!validate_options("my", orig_argc, orig_argv)) {
-    exit(EXIT_FAILURE);
-  }
+  xtrabackup::components::inititialize_service_handles();
 
   if (opt_tables_compatibility_check) {
     xb_tables_compatibility_check();
@@ -3933,6 +3946,9 @@ void xtrabackup_backup_func(void) {
 
   debug_sync_point("after_redo_log_manager_init");
 
+  if (!validate_options("my", orig_argc, orig_argv)) {
+    exit(EXIT_FAILURE);
+  }
   /* create extra LSN dir if it does not exist. */
   if (xtrabackup_extra_lsndir &&
       !my_stat(xtrabackup_extra_lsndir, &stat_info, MYF(0)) &&
@@ -4028,7 +4044,7 @@ void xtrabackup_backup_func(void) {
 
   /* Wait for threads to exit */
   while (1) {
-    os_thread_sleep(1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     mutex_enter(&count_mutex);
     if (count == 0) {
       mutex_exit(&count_mutex);
@@ -4060,7 +4076,7 @@ void xtrabackup_backup_func(void) {
 
   if (opt_debug_sleep_before_unlock) {
     msg_ts("Debug sleep for %u seconds\n", opt_debug_sleep_before_unlock);
-    os_thread_sleep(opt_debug_sleep_before_unlock * 1000);
+    std::this_thread::sleep_for(std::chrono::seconds(opt_debug_sleep_before_unlock));
   }
 
   if (!redo_mgr.stop_at(backup_ctxt.log_status.lsn,
@@ -4137,7 +4153,7 @@ void xtrabackup_backup_func(void) {
   if (wait_throttle) {
     /* wait for io_watching_thread completion */
     while (io_watching_thread_running) {
-      os_thread_sleep(1000000);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     os_event_destroy(wait_throttle);
     wait_throttle = NULL;
@@ -4448,12 +4464,17 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   srv_read_only_mode = TRUE;
 
   init_mysql_environment();
-
-  if (!xb_keyring_init_for_stats(argc, argv)) {
+  if(!xtrabackup::components::keyring_init_offline())
+  {
+    msg("xtrabackup: Error: failed to init keyring component\n");
+    exit(EXIT_FAILURE);
+  }
+  if (!xtrabackup::components::keyring_component_initialized &&
+      !xb_keyring_init_for_stats(argc, argv)) {
     msg("xtrabackup: error: failed to init keyring plugin.\n");
     exit(EXIT_FAILURE);
   }
-
+  xtrabackup::components::inititialize_service_handles();
   if (!validate_options("my", orig_argc, orig_argv)) {
     exit(EXIT_FAILURE);
   }
@@ -6469,10 +6490,17 @@ skip_check:
       goto error_cleanup;
     }
   } else {
-    if (!xb_keyring_init_for_prepare(argc, argv)) {
+    if(!xtrabackup::components::keyring_init_offline())
+    {
+      msg("xtrabackup: Error: failed to init keyring component\n");
+      goto error_cleanup;
+    }
+    if (!xtrabackup::components::keyring_component_initialized &&
+        !xb_keyring_init_for_prepare(argc, argv)) {
       msg("xtrabackup: Error: failed to init keyring plugin\n");
       goto error_cleanup;
     }
+    xtrabackup::components::inititialize_service_handles();
     if (xb_tablespace_keys_exist()) {
       use_dumped_tablespace_keys = true;
       if (!xb_tablespace_keys_load(xtrabackup_incremental, NULL, 0)) {
@@ -7399,6 +7427,15 @@ void setup_error_messages() {
   my_default_lc_messages->errmsgs->read_texts();
 }
 
+void xb_set_plugin_dir()
+{
+  if (opt_xtra_plugin_dir != NULL) {
+    strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
+  } else {
+    strcpy(opt_plugin_dir, PLUGINDIR);
+  }
+}
+
 /* ================= main =================== */
 
 int main(int argc, char **argv) {
@@ -7448,7 +7485,7 @@ int main(int argc, char **argv) {
   my_load_path(xtrabackup_real_target_dir, xtrabackup_target_dir, cwd);
   unpack_dirname(xtrabackup_real_target_dir, xtrabackup_real_target_dir);
   xtrabackup_target_dir = xtrabackup_real_target_dir;
-
+  xb_set_plugin_dir();
   if (xtrabackup_incremental_basedir) {
     my_load_path(xtrabackup_real_incremental_basedir,
                  xtrabackup_incremental_basedir, cwd);
@@ -7601,6 +7638,7 @@ int main(int argc, char **argv) {
   setup_error_messages();
 
   init_error_log();
+  setup_error_log_components();
   atexit(destroy_error_log);
 
   /* --backup */
