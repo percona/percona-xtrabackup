@@ -45,6 +45,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xbcloud/s3.h"
 #include "xbcloud/swift.h"
 #include "xbcloud/util.h"
+#include "xbcrypt_common.h"
 
 using namespace xbcloud;
 
@@ -981,6 +982,7 @@ int main(int argc, char **argv) {
 #ifndef NO_SIGPIPE
   signal(SIGPIPE, SIG_IGN);
 #endif
+  xb_libgcrypt_init();
 
   http_init();
   crc_init();

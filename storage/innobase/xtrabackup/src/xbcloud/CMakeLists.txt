@@ -48,6 +48,7 @@ MYSQL_ADD_EXECUTABLE(xbcloud
   ../xbstream_read.cc
   http.cc
   s3.cc
+  ../xbcrypt_common.cc
   swift.cc)
 
 SET_TARGET_PROPERTIES(xbcloud
