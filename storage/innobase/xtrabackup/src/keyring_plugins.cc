@@ -65,6 +65,34 @@ constexpr size_t BINLOG_KEY_MAGIC_SIZE = sizeof("MYSQL-BINARY-LOG");
 
 static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 
+/* adjust mysql_mandatory_plugins to load keyring proxy only */
+static bool set_keyring_proxy_plugin() {
+  I_List_iterator<i_string> iter(*opt_plugin_load_list_ptr);
+  i_string *item;
+  while (nullptr != (item = iter++)) {
+    const size_t prefix_len = strlen("keyring_");
+    const char *plugin_name = item->ptr;
+    if (strlen(plugin_name) > prefix_len &&
+        strncmp(plugin_name, "keyring_", prefix_len) == 0) {
+      /* initialize only daemon_keyring_proxy_plugin */
+      set_srv_keyring_implementation_as_default();
+      for (st_mysql_plugin **plugin = mysql_mandatory_plugins; *plugin;
+           plugin++) {
+        if (strcmp((*plugin)->name, "daemon_keyring_proxy_plugin") == 0) {
+          mysql_mandatory_plugins[0] = *plugin;
+          mysql_mandatory_plugins[1] = 0;
+          return true;
+        }
+      }
+    }
+  }
+
+  if (strcmp(mysql_mandatory_plugins[0]->name, "daemon_keyring_proxy_plugin") !=
+      0)
+    mysql_mandatory_plugins[0] = 0;
+  return false;
+}
+
 /** Load plugins and keep argc and argv untouched */
 static void init_plugins(int argc, char **argv) {
   int t_argc = argc;
@@ -74,17 +102,7 @@ static void init_plugins(int argc, char **argv) {
   memcpy(t_argv, argv, sizeof(char *) * t_argc);
 
   mysql_optional_plugins[0] = 0;
-
-    /* initialize only daemon_keyring_proxy_plugin */
-    set_srv_keyring_implementation_as_default();
-    for (st_mysql_plugin **plugin = mysql_mandatory_plugins; *plugin;
-         plugin++) {
-      if (strcmp((*plugin)->name, "daemon_keyring_proxy_plugin") == 0) {
-        mysql_mandatory_plugins[0] = *plugin;
-        mysql_mandatory_plugins[1] = 0;
-        break;
-      }
-    }
+  set_keyring_proxy_plugin();
 
   plugin_register_early_plugins(&t_argc, t_argv, 0);
   plugin_register_builtin_and_init_core_se(&t_argc, t_argv);
