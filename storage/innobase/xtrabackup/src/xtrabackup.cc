@@ -3399,6 +3399,9 @@ data_copy_thread_func(
 	my_thread_init();
 
 	debug_sync_point("data_copy_thread_func");
+	DBUG_EXECUTE_IF("simulate_compress_error", {
+		DBUG_SET("+d,compress_error");
+	});
 
 	while ((node = datafiles_iter_next(ctxt->it)) != NULL &&
 		!*(ctxt->error)) {
