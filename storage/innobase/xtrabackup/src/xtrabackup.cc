@@ -1432,14 +1432,14 @@ Disable with --skip-innodb-checksums.",
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
     {"debug", '#',
      "Output debug log. See " REFMAN "dbug-package.html"
      " Default all ib_log output to stderr. To redirect all ib_log output"
      " to separate file, use --debug=d,ib_log:o,/tmp/xtrabackup.trace",
      &dbug_setting, &dbug_setting, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr,
      0, nullptr},
-#endif /* !DBUG_OFF */
+#endif /* !NDEBUG */
     {"innodb_checksum_algorithm", OPT_INNODB_CHECKSUM_ALGORITHM,
      "The algorithm InnoDB uses for page checksumming. [CRC32, STRICT_CRC32, "
      "INNODB, STRICT_INNODB, NONE, STRICT_NONE]",
