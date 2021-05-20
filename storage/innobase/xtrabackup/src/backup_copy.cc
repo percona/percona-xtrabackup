@@ -41,7 +41,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <fil0fil.h>
 #include <fsp0sysspace.h>
-#include <my_default.h>
 #include <my_dir.h>
 #include <my_sys.h>
 #include <my_systime.h>
@@ -64,6 +63,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fil_cur.h"
 #include "os0event.h"
 #include "space_map.h"
+#include "utils.h"
 #include "xb0xb.h"
 
 #include "backup_copy.h"
@@ -2040,47 +2040,6 @@ cleanup:
   ctx->ret = ret;
 }
 
-static bool get_one_option(int optid MY_ATTRIBUTE((unused)),
-                           const struct my_option *opt MY_ATTRIBUTE((unused)),
-                           char *argument MY_ATTRIBUTE((unused))) {
-  return 0;
-}
-
-static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
-
-static bool load_backup_my_cnf() {
-  const char *groups[] = {"mysqld", NULL};
-
-  my_option bakcup_options[] = {
-      {"innodb_checksum_algorithm", 0, "", &srv_checksum_algorithm,
-       &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
-       REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-
-  char *exename = (char *)"xtrabackup";
-  char **backup_my_argv = &exename;
-  int backup_my_argc = 1;
-  char fname[FN_REFLEN];
-
-  /* we need full name so that only backup-my.cnf will be read */
-  if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
-                MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
-    return (false);
-  }
-
-  if (my_load_defaults(fname, groups, &backup_my_argc, &backup_my_argv,
-                       &argv_alloc, NULL)) {
-    return (false);
-  }
-
-  if (handle_options(&backup_my_argc, &backup_my_argv, bakcup_options,
-                     get_one_option)) {
-    return (false);
-  }
-
-  return (true);
-}
-
 bool copy_back(int argc, char **argv) {
   char *innobase_data_file_path_copy;
   bool ret = true, err;
@@ -2116,7 +2075,14 @@ bool copy_back(int argc, char **argv) {
     return (false);
   }
 
-  if (!load_backup_my_cnf()) {
+  my_option backup_options[] = {
+      {"innodb_checksum_algorithm", 0, "", &srv_checksum_algorithm,
+       &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
+       REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
+
+  if (!xtrabackup::utils::load_backup_my_cnf(backup_options,
+                                             xtrabackup_target_dir)) {
     msg("xtrabackup: Error: failed to load backup-my.cnf\n");
     return (false);
   }

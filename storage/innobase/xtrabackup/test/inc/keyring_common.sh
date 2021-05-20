@@ -139,7 +139,10 @@ EOF
     xtrabackup --copy-back --generate-new-master-key \
          $copyback_options \
          --target-dir=$topdir/backup
-
+    if grep -q "Could not find the data corresponding to Data ID: 'MySQLReplicationKey__1'" $OUTFILE
+    then
+      die "Cannot read uuid from backup-my.cnf file"
+    fi
     start_server
 
     verify_db_state test

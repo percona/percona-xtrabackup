@@ -100,6 +100,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   backup_copy.cc
   keyring_plugins.cc
   keyring_components.cc
+  utils.cc
   kdf.cc
   space_map.cc
   redo_log.cc
