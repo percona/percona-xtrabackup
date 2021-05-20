@@ -160,7 +160,9 @@ bool keyring_init_online(MYSQL *connection) {
 
 bool keyring_init_offline() {
   char fname[FN_REFLEN];
-  if (xtrabackup_stats) {
+  if (opt_component_keyring_file_config != nullptr) {
+    strncpy(fname, opt_component_keyring_file_config, FN_REFLEN);
+  } else if (xtrabackup_stats) {
     if (fn_format(fname, XTRABACKUP_KEYRING_FILE_CONFIG, mysql_real_data_home,
                   "", MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
       return (false);
@@ -185,12 +187,32 @@ bool keyring_init_offline() {
   std::string config;
   File_reader component_config(fname, false, config);
   std::string component_name = "file://component_keyring_file";
-  if (!component_config.valid()) return true;
-  if (config.length() == 0) return false;
+  if (!component_config.valid()) {
+    if (opt_component_keyring_file_config != nullptr) {
+      msg("xtrabackup: Error: Component configuration file is not readable or "
+          "not found.\n");
+      return false;
+    }
+    /* XTRABACKUP_KEYRING_FILE_CONFIG not found. Attempt to init plugin. */
+    return true;
+  }
+  if (config.length() == 0) {
+    msg("xtrabackup: Error: Component configuration file is empty.\n");
+    return false;
+  }
 
   rapidjson::Document config_json;
   config_json.Parse(config);
-  if (!config_json.HasMember("path")) return false;
+  if (config_json.HasParseError()) {
+    msg("xtrabackup: Error: Component configuration file is not a valid "
+        "JSON.\n");
+    return false;
+  }
+  if (!config_json.HasMember("path")) {
+    msg("xtrabackup: Error: Component configuration does not have path "
+        "member.\n");
+    return false;
+  }
 
   std::string path;
   if (opt_keyring_file_data != nullptr) {

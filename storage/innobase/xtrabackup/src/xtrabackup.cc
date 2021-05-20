@@ -318,6 +318,7 @@ char *opt_transition_key = NULL;
 char *opt_xtra_plugin_dir = NULL;
 char *opt_xtra_plugin_load = NULL;
 char *opt_keyring_file_data = nullptr;
+char *opt_component_keyring_file_config = nullptr;
 
 bool opt_generate_new_master_key = FALSE;
 bool opt_generate_transition_key = FALSE;
@@ -677,6 +678,7 @@ enum options_xtrabackup {
   OPT_XB_SECURE_AUTH,
   OPT_TRANSITION_KEY,
   OPT_KEYRING_FILE_DATA,
+  OPT_COMPONENT_KEYRING_FILE_CONFIG,
   OPT_GENERATE_TRANSITION_KEY,
   OPT_XTRA_PLUGIN_DIR,
   OPT_XTRA_PLUGIN_LOAD,
@@ -1252,6 +1254,12 @@ struct my_option xb_client_options[] = {
       "Path to keyring file.",
       &opt_keyring_file_data, &opt_keyring_file_data, 0, GET_STR,
       OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"component-keyring-file-config", OPT_COMPONENT_KEYRING_FILE_CONFIG,
+     "Path to load keyring component config. Used for --prepare, --move-back,"
+     " --copy-back and --stats.",
+     &opt_component_keyring_file_config, &opt_component_keyring_file_config, 0,
+     GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
     {"parallel", OPT_XTRA_PARALLEL,
      "Number of threads to use for parallel datafiles transfer. "
@@ -3905,6 +3913,10 @@ void xtrabackup_backup_func(void) {
   crc_init();
 
   xb_filters_init();
+  if (opt_component_keyring_file_config != nullptr) {
+    msg("xtrabackup: Warning: --component-keyring-file-config will be ignored "
+        "for --backup operation\n");
+  }
 
   if (have_keyring_component &&
       !xtrabackup::components::keyring_init_online(mysql_connection)) {
