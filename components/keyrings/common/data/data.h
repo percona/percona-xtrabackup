@@ -23,14 +23,72 @@
 #ifndef DATA_INCLUDED
 #define DATA_INCLUDED
 
+#include <functional>
 #include <string>
+#include "global_default_mr.h"
 
 namespace keyring_common {
 namespace data {
 
 /** Data types */
-using Type = std::string;
-using Sensitive_data = std::string;
+using Type = pmr_string;
+// using Sensitive_data = pmr_string;
+
+struct Sensitive_data {
+  Sensitive_data() {}
+
+  Sensitive_data(pmr_string const &str) : data(str) { encode(); }
+
+  Sensitive_data(const char *str) : data(str) { encode(); }
+
+  Sensitive_data(const char *str, std::size_t len) : data(str, len) {
+    encode();
+  }
+
+  Sensitive_data(Sensitive_data &&o) : data(o.decode()) { encode(); }
+
+  Sensitive_data(Sensitive_data const &o) : data(o.decode()) { encode(); }
+
+  Sensitive_data &operator=(Sensitive_data &&o) {
+    data = o.decode();
+    encode();
+    return *this;
+  }
+
+  Sensitive_data &operator=(Sensitive_data const &o) {
+    data = o.decode();
+    encode();
+    return *this;
+  }
+
+  std::size_t size() const { return data.size(); }
+  std::size_t length() const { return data.size(); }
+
+  pmr_string decode() const {
+    auto ret = data;
+    const auto key =
+        std::hash<std::uintptr_t>{}(reinterpret_cast<std::uintptr_t>(this));
+    for (auto &c : ret) {
+      c ^= key;
+    }
+    return ret;
+  }
+
+  friend bool operator==(Sensitive_data const &a, Sensitive_data const &b) {
+    return a.data == b.data;
+  }
+
+ private:
+  void encode() {
+    for (auto &c : data) {
+      const auto key =
+          std::hash<std::uintptr_t>{}(reinterpret_cast<std::uintptr_t>(this));
+      c ^= key;
+    }
+  }
+
+  pmr_string data;
+};
 
 /**
   Sensitive data storage

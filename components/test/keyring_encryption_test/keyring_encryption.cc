@@ -45,6 +45,10 @@ using components::Keyring_encryption_test;
 using options::Options;
 using options::process_options;
 
+class THD;
+thread_local THD *current_thd = nullptr;            // dummy
+PSI_thread *thd_get_psi(THD *) { return nullptr; }  // dummy
+
 class Keyring_encryption_test_setup {
  public:
   Keyring_encryption_test_setup(char *progname) {

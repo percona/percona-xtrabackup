@@ -23,19 +23,33 @@
 #include <fstream> /* std::ifstream */
 #include <memory>
 
-#include "config_reader.h"
+#include <components/keyrings/common/component_helpers/include/service_requirements.h>
+#include <mysql/components/services/log_builtins.h> /* LogComponentErr */
 
+#include <mysqld_error.h>
+#include <rapidjson/error/en.h>
 #include <rapidjson/istreamwrapper.h> /* IStreamWrapper */
+#include <iostream>
 
 namespace keyring_common {
 namespace config {
 
-Config_reader::Config_reader(const std::string config_file_path)
+inline Config_reader::Config_reader(const std::string config_file_path)
     : config_file_path_(config_file_path), data_(), valid_(false) {
   std::ifstream file_stream(config_file_path_);
-  if (!file_stream.is_open()) return;
+  if (!file_stream.is_open()) {
+    LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NO_CONFIG,
+                    config_file_path_.c_str());
+    return;
+  }
   rapidjson::IStreamWrapper json_fstream_reader(file_stream);
-  valid_ = !data_.ParseStream(json_fstream_reader).HasParseError();
+  data_.ParseStream(json_fstream_reader);
+  valid_ = !data_.HasParseError();
+  if (!valid_) {
+    LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED,
+                    rapidjson::GetParseError_En(data_.GetParseError()),
+                    data_.GetErrorOffset());
+  }
   file_stream.close();
 }
 

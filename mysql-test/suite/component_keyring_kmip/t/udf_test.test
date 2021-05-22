@@ -1,0 +1,8 @@
+--source include/have_component_keyring_kmip.inc
+# Keyring UDF tests with component_keyring_kmip
+#
+--let $skip_secret_tests = 1
+
+--source ../inc/setup_component.inc
+--source include/keyring_tests/mats/keyring_udf_test.inc
+--source ../inc/teardown_component.inc

@@ -157,7 +157,7 @@ bool fetch_length_template(
       return true;
     }
 
-    Data data;
+    Data_extension data;
     Metadata metadata;
     if (keyring_operations.get_iterator_data(it, metadata, data) == true) {
       return true;
@@ -203,7 +203,7 @@ bool fetch_template(
       return true;
     }
 
-    Data data;
+    Data_extension data;
     Metadata metadata;
     if (keyring_operations.get_iterator_data(it, metadata, data) == true) {
       return true;
@@ -223,7 +223,7 @@ bool fetch_template(
     memset(data_buffer, 0, data_buffer_length);
     memset(data_type_buffer, 0, data_type_buffer_length);
 
-    memcpy(data_buffer, data.data().c_str(), data.data().length());
+    memcpy(data_buffer, data.data().decode().c_str(), data.data().length());
     *data_size = data.data().length();
 
     memcpy(data_type_buffer, data.type().c_str(), data.type().length());
