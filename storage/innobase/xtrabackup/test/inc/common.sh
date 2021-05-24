@@ -815,6 +815,23 @@ function egrep()
     return ${PIPESTATUS[0]}
 }
 
+########################################################################
+# Run grep against a file using a pattern and exit in case occurencies
+# don't match
+########################################################################
+function grep_count()
+{
+  local pattern=$1
+  local file=$2
+  local expect=$3
+  local occurencies=$(grep -c "${pattern}" ${file})
+  if [[ $occurencies -ne $expect ]];
+  then
+    vlog "grep_count expected ${expect} for pattern ${pattern} but found ${occurencies}"
+    exit -1
+  fi
+}
+
 ####################################################
 # Helper functions for testing incremental backups #
 ####################################################
