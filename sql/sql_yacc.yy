@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -176,7 +176,7 @@ int yylex(void *yylval, void *yythd);
   } while(0)
 
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 #define YYDEBUG 1
 #else
 #define YYDEBUG 0
@@ -219,7 +219,7 @@ void MYSQLerror(YYLTYPE *, THD *thd, const char *s)
 }
 
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 void turn_parser_debug_on()
 {
   /*
@@ -1832,7 +1832,7 @@ change:
               Clear LEX_MASTER_INFO struct. repl_ignore_server_ids is cleared
               in THD::cleanup_after_query. So it is guaranteed to be empty here.
             */
-            DBUG_ASSERT(Lex->mi.repl_ignore_server_ids.empty());
+            assert(Lex->mi.repl_ignore_server_ids.empty());
             lex->mi.set_unspecified();
           }
           master_defs opt_channel
@@ -1841,7 +1841,7 @@ change:
           {
             THD *thd= YYTHD;
             LEX* lex= thd->lex;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->sql_command = SQLCOM_CHANGE_REPLICATION_FILTER;
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_change_repl_filter();
             if (lex->m_sql_cmd == NULL)
@@ -1860,42 +1860,42 @@ filter_def:
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
             filter_sql_cmd->set_filter_value($3, OPT_REPLICATE_DO_DB);
           }
         | REPLICATE_IGNORE_DB EQ opt_filter_db_list
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
             filter_sql_cmd->set_filter_value($3, OPT_REPLICATE_IGNORE_DB);
           }
         | REPLICATE_DO_TABLE EQ opt_filter_table_list
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
            filter_sql_cmd->set_filter_value($3, OPT_REPLICATE_DO_TABLE);
           }
         | REPLICATE_IGNORE_TABLE EQ opt_filter_table_list
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
             filter_sql_cmd->set_filter_value($3, OPT_REPLICATE_IGNORE_TABLE);
           }
         | REPLICATE_WILD_DO_TABLE EQ opt_filter_string_list
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
             filter_sql_cmd->set_filter_value($3, OPT_REPLICATE_WILD_DO_TABLE);
           }
         | REPLICATE_WILD_IGNORE_TABLE EQ opt_filter_string_list
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
             filter_sql_cmd->set_filter_value($3,
                                              OPT_REPLICATE_WILD_IGNORE_TABLE);
           }
@@ -1903,7 +1903,7 @@ filter_def:
           {
             Sql_cmd_change_repl_filter * filter_sql_cmd=
               (Sql_cmd_change_repl_filter*) Lex->m_sql_cmd;
-            DBUG_ASSERT(filter_sql_cmd);
+              assert(filter_sql_cmd);
             filter_sql_cmd->set_filter_value($3, OPT_REPLICATE_REWRITE_DB);
           }
         ;
@@ -2949,10 +2949,22 @@ sp_decl:
             uint num_vars= pctx->context_var_count();
             enum enum_field_types var_type= (enum enum_field_types) $4;
             Item *dflt_value_item= $5;
+            const bool has_default_clause = (dflt_value_item != NULL);
+            bool is_const_item = false;
+
             LEX_STRING dflt_value_query= EMPTY_STR;
 
-            if (dflt_value_item)
-            {
+            if (has_default_clause) {
+              // Handling a NEG_FUNC wrapping a constant.
+              if (dflt_value_item->type() == Item::FUNC_ITEM) {
+                Item_func *func_item = down_cast<Item_func *>(dflt_value_item);
+                if (func_item->functype() == Item_func::NEG_FUNC) {
+                  is_const_item = true;
+                }
+              } else if (dflt_value_item->const_item()) {
+                is_const_item = true;
+              }
+
               // sp_opt_default only pushes start ptr for DEFAULT clause.
               const char *expr_start_ptr=
                 sp->m_parser_data.pop_expr_start_ptr();
@@ -2972,10 +2984,13 @@ sp_decl:
                 MYSQL_YYABORT;
             }
 
+            sp_variable *first_spvar = NULL;
+            const uint first_var_num = num_vars - $2;
+
             // We can have several variables in DECLARE statement.
             // We need to create an sp_instr_set instruction for each variable.
 
-            for (uint i = num_vars-$2 ; i < num_vars ; i++)
+            for (uint i = first_var_num; i < num_vars; i++)
             {
               uint var_idx= pctx->var_context2runtime(i);
               sp_variable *spvar= pctx->find_variable(var_idx);
@@ -2984,7 +2999,32 @@ sp_decl:
                 MYSQL_YYABORT;
 
               spvar->type= var_type;
+
+              // Transforming the following declare statements having non-const
+              // expressions:
+              // DECLARE a, b, c type DEFAULT expr;
+              //              to
+              // DECLARE a type DEFAULT expr, b type DEFAULT a,
+              //         c type DEFAULT a;
+
+              if (i == first_var_num) {
+                first_spvar = spvar;
+              } else if (has_default_clause && !is_const_item) {
+                Item_splocal *item =
+                  NEW_PTN Item_splocal(first_spvar->name, first_spvar->offset,
+                                       first_spvar->type, 0, 0);
+                if (item == NULL)
+                  MYSQL_YYABORT; // OOM
+#ifndef NDEBUG
+                item->m_sp = lex->sphead;
+#endif
+                dflt_value_item = item;
+              }
               spvar->default_value= dflt_value_item;
+
+              if (has_default_clause && !is_const_item && (i > first_var_num)) {
+                dflt_value_query = first_spvar->name;
+              }
 
               if (fill_field_definition(thd, sp, var_type, &spvar->field_def))
                 MYSQL_YYABORT;
@@ -3126,7 +3166,7 @@ sp_decl:
             LEX *cursor_lex= Lex;
             sp_head *sp= cursor_lex->sphead;
 
-            DBUG_ASSERT(cursor_lex->sql_command == SQLCOM_SELECT);
+assert(cursor_lex->sql_command == SQLCOM_SELECT);
 
             if (cursor_lex->result)
             {
@@ -3721,8 +3761,8 @@ sp_proc_stmt_statement:
               instructions for them were already added during processing
               of "set" rule.
             */
-            DBUG_ASSERT(lex->sql_command != SQLCOM_SET_OPTION ||
-                        lex->var_list.is_empty());
+            assert(lex->sql_command != SQLCOM_SET_OPTION ||
+            lex->var_list.is_empty());
             if (lex->sql_command != SQLCOM_SET_OPTION)
             {
               /* Extract the query statement from the tokenizer. */
@@ -6084,8 +6124,8 @@ create_table_option:
               table being created/altered and parent tables.
             */
             TABLE_LIST *last_non_sel_table= lex->create_last_non_select_table;
-            DBUG_ASSERT(last_non_sel_table->next_global ==
-                        lex->create_info.merge_list.first);
+            assert(last_non_sel_table->next_global ==
+            lex->create_info.merge_list.first);
             last_non_sel_table->next_global= 0;
             Lex->query_tables_last= &last_non_sel_table->next_global;
 
@@ -7519,7 +7559,7 @@ alter:
             lex->no_write_to_binlog= 0;
             lex->create_info.storage_media= HA_SM_DEFAULT;
             lex->create_last_non_select_table= lex->last_table();
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
           }
           alter_commands
           {
@@ -7908,7 +7948,7 @@ standalone_alter_commands:
             LEX *lex= thd->lex;
             lex->no_write_to_binlog= $3;
             lex->check_opt.init();
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root)
                               Sql_cmd_alter_table_optimize_partition();
             if (lex->m_sql_cmd == NULL)
@@ -7922,7 +7962,7 @@ standalone_alter_commands:
             LEX *lex= thd->lex;
             lex->no_write_to_binlog= $3;
             lex->check_opt.init();
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root)
                               Sql_cmd_alter_table_analyze_partition();
             if (lex->m_sql_cmd == NULL)
@@ -7933,7 +7973,7 @@ standalone_alter_commands:
             THD *thd= YYTHD;
             LEX *lex= thd->lex;
             lex->check_opt.init();
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root)
                               Sql_cmd_alter_table_check_partition();
             if (lex->m_sql_cmd == NULL)
@@ -7947,7 +7987,7 @@ standalone_alter_commands:
             LEX *lex= thd->lex;
             lex->no_write_to_binlog= $3;
             lex->check_opt.init();
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root)
                               Sql_cmd_alter_table_repair_partition();
             if (lex->m_sql_cmd == NULL)
@@ -7966,7 +8006,7 @@ standalone_alter_commands:
             THD *thd= YYTHD;
             LEX *lex= thd->lex;
             lex->check_opt.init();
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root)
                               Sql_cmd_alter_table_truncate_partition();
             if (lex->m_sql_cmd == NULL)
@@ -7993,7 +8033,7 @@ standalone_alter_commands:
                                                     TL_READ_NO_INSERT,
                                                     MDL_SHARED_NO_WRITE))
               MYSQL_YYABORT;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+              assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root)
                                Sql_cmd_alter_table_exchange_partition();
             if (lex->m_sql_cmd == NULL)
@@ -8713,7 +8753,7 @@ repair:
           {
             THD *thd= YYTHD;
             LEX* lex= thd->lex;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_repair_table();
             if (lex->m_sql_cmd == NULL)
               MYSQL_YYABORT;
@@ -8751,7 +8791,7 @@ analyze:
           {
             THD *thd= YYTHD;
             LEX* lex= thd->lex;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_analyze_table();
             if (lex->m_sql_cmd == NULL)
               MYSQL_YYABORT;
@@ -8786,7 +8826,7 @@ check:
           {
             THD *thd= YYTHD;
             LEX* lex= thd->lex;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_check_table();
             if (lex->m_sql_cmd == NULL)
               MYSQL_YYABORT;
@@ -8827,7 +8867,7 @@ optimize:
           {
             THD *thd= YYTHD;
             LEX* lex= thd->lex;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_optimize_table();
             if (lex->m_sql_cmd == NULL)
               MYSQL_YYABORT;
@@ -11739,7 +11779,7 @@ truncate:
           {
             THD *thd= YYTHD;
             LEX* lex= thd->lex;
-            DBUG_ASSERT(!lex->m_sql_cmd);
+            assert(!lex->m_sql_cmd);
             lex->m_sql_cmd= new (thd->mem_root) Sql_cmd_truncate_table();
             if (lex->m_sql_cmd == NULL)
               MYSQL_YYABORT;
@@ -12289,7 +12329,7 @@ describe:
           opt_describe_column
           {
             // Ensure we're resetting parsing context of the right select
-            DBUG_ASSERT(Select->parsing_place == CTX_SELECT_LIST);
+            assert(Select->parsing_place == CTX_SELECT_LIST);
             Select->parsing_place= CTX_NONE;
           }
         | describe_command opt_extended_describe
@@ -12727,7 +12767,7 @@ opt_ignore_lines:
           /* empty */
         | IGNORE_SYM NUM lines_or_rows
           {
-            DBUG_ASSERT(Lex->exchange != 0);
+          assert(Lex->exchange != 0);
             Lex->exchange->skip_lines= atol($2.str);
           }
         ;

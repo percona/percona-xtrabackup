@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -97,14 +97,16 @@ struct set_numa_interleave_t
 
 			ib::info() << "Setting NUMA memory policy to"
 				" MPOL_INTERLEAVE";
+			struct bitmask* numa_nodes = numa_get_mems_allowed();
 			if (set_mempolicy(MPOL_INTERLEAVE,
-					  numa_all_nodes_ptr->maskp,
-					  numa_all_nodes_ptr->size) != 0) {
+					  numa_nodes->maskp,
+					  numa_nodes->size) != 0) {
 
 				ib::warn() << "Failed to set NUMA memory"
 					" policy to MPOL_INTERLEAVE: "
 					<< strerror(errno);
 			}
+			numa_bitmask_free(numa_nodes);
 		}
 	}
 
@@ -1587,16 +1589,18 @@ buf_chunk_init(
 
 #ifdef HAVE_LIBNUMA
 	if (srv_numa_interleave) {
+		struct 	bitmask* numa_nodes = numa_get_mems_allowed();
 		int	st = mbind(chunk->mem, chunk->mem_size(),
 				   MPOL_INTERLEAVE,
-				   numa_all_nodes_ptr->maskp,
-				   numa_all_nodes_ptr->size,
+				   numa_nodes->maskp,
+				   numa_nodes->size,
 				   MPOL_MF_MOVE);
 		if (st != 0) {
 			ib::warn() << "Failed to set NUMA memory policy of"
 				" buffer pool page frames to MPOL_INTERLEAVE"
 				" (error: " << strerror(errno) << ").";
 		}
+		numa_bitmask_free(numa_nodes);
 	}
 #endif /* HAVE_LIBNUMA */
 
@@ -2584,7 +2588,7 @@ buf_pool_resize_hash(
 	buf_pool->zip_hash = new_hash_table;
 }
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 /** This is a debug routine to inject an memory allocation failure error. */
 static
 void
@@ -2599,7 +2603,7 @@ buf_pool_resize_chunk_make_null(buf_chunk_t** new_chunks)
 
 	count++;
 }
-#endif // DBUG_OFF
+#endif // NDEBUG
 
 /** Resize the buffer pool based on srv_buf_pool_size from
 srv_buf_pool_old_size. */
@@ -2764,7 +2768,7 @@ withdraw_retry:
 
 	buf_resize_status("Latching whole of buffer pool.");
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 	{
 		bool	should_wait = true;
 
@@ -2775,7 +2779,7 @@ withdraw_retry:
 				should_wait = true; os_thread_sleep(10000););
 		}
 	}
-#endif /* !DBUG_OFF */
+#endif /* !NDEBUG */
 
 	if (srv_shutdown_state != SRV_SHUTDOWN_NONE) {
 		return;

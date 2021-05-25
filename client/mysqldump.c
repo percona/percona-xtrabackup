@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -290,7 +290,7 @@ static struct my_option my_long_options[] =
    "Dump several databases. Note the difference in usage; in this case no tables are given. All name arguments are regarded as database names. 'USE db_name;' will be included in the output.",
    &opt_databases, &opt_databases, 0, GET_BOOL, NO_ARG, 0, 0,
    0, 0, 0, 0},
-#ifdef DBUG_OFF
+#ifdef NDEBUG
   {"debug", '#', "This is a non-debug version. Catch this and exit.",
    0,0, 0, GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"debug-check", OPT_DEBUG_CHECK, "This is a non-debug version. Catch this and exit.",
@@ -935,14 +935,14 @@ get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
         fprintf(stderr, "Invalid mode to --compatible: %s\n", buff);
         exit(1);
       }
-#if !defined(DBUG_OFF)
+#if !defined(NDEBUG)
       {
         size_t size_for_sql_mode= 0;
         const char **ptr;
         for (ptr= compatible_mode_names; *ptr; ptr++)
           size_for_sql_mode+= strlen(*ptr);
         size_for_sql_mode+= sizeof(compatible_mode_names)-1;
-        DBUG_ASSERT(sizeof(compatible_mode_normal_str)>=size_for_sql_mode);
+        assert(sizeof(compatible_mode_normal_str)>=size_for_sql_mode);
       }
 #endif
       mode= opt_compatible_mode;
@@ -1976,7 +1976,7 @@ static void print_xml_tag(FILE * xml_file, const char* sbeg,
   while (attribute_name != NullS)
   {
     attribute_value= va_arg(arg_list, char *);
-    DBUG_ASSERT(attribute_value != NullS);
+    assert(attribute_value != NullS);
 
     fputc(' ', xml_file);
     fputs(attribute_name, xml_file);    
@@ -4060,9 +4060,9 @@ static void dump_table(char *table, char *db)
                   extended_row.length+= mysql_hex_string(extended_row.str +
                                                          extended_row.length,
                                                          row[i], length);
-                  DBUG_ASSERT(extended_row.length+1 <= extended_row.max_length);
+                  assert(extended_row.length+1 <= extended_row.max_length);
                   /* mysql_hex_string() already terminated string by '\0' */
-                  DBUG_ASSERT(extended_row.str[extended_row.length] == '\0');
+                  assert(extended_row.str[extended_row.length] == '\0');
                 }
                 else
                 {
@@ -4609,8 +4609,18 @@ static int dump_all_databases()
   MYSQL_RES *tableres;
   int result=0;
 
+  my_ulonglong total_databases= 0;
+  char **database_list;
+  uint db_cnt = 0, cnt = 0;
+  uint mysql_db_found = 0;
+
   if (mysql_query_with_error_report(mysql, &tableres, "SHOW DATABASES"))
     return 1;
+
+  total_databases= mysql_num_rows(tableres);
+  database_list = (char **) my_malloc(PSI_NOT_INSTRUMENTED,
+    (sizeof(char *) * total_databases), MYF(MY_WME));
+
   while ((row= mysql_fetch_row(tableres)))
   {
     if (mysql_get_server_version(mysql) >= FIRST_INFORMATION_SCHEMA_VERSION &&
@@ -4628,9 +4638,37 @@ static int dump_all_databases()
     if (is_ndbinfo(mysql, row[0]))
       continue;
 
-    if (dump_all_tables_in_db(row[0]))
-      result=1;
+    if (mysql_db_found || (!my_strcasecmp(charset_info, row[0], "mysql")))
+    {
+      if (dump_all_tables_in_db(row[0]))
+        result=1;
+      mysql_db_found = 1;
+      /*
+        once mysql database is found dump all dbs saved as part
+        of database_list
+      */
+      for (; cnt < db_cnt; cnt++)
+      {
+        if (dump_all_tables_in_db(database_list[cnt]))
+          result=1;
+        my_free(database_list[cnt]);
+      }
+    }
+    else
+    {
+      /*
+        till mysql database is not found save database names to
+        database_list
+      */
+      database_list[db_cnt] = my_strdup(PSI_NOT_INSTRUMENTED, row[0],
+                                        MYF(MY_WME | MY_ZEROFILL));
+      db_cnt++;
+    }
   }
+  assert(mysql_db_found);
+  memset(database_list, 0, sizeof(*database_list));
+  my_free(database_list);
+
   mysql_free_result(tableres);
   if (seen_views)
   {
@@ -5069,7 +5107,7 @@ static char *get_actual_table_name(const char *old_table_name, MEM_ROOT *root)
   DBUG_ENTER("get_actual_table_name");
 
   /* Check memory for quote_for_like() */
-  DBUG_ASSERT(2*sizeof(old_table_name) < sizeof(show_name_buff));
+  assert(2*sizeof(old_table_name) < sizeof(show_name_buff));
   my_snprintf(query, sizeof(query), "SHOW TABLES LIKE %s",
               quote_for_like(old_table_name, show_name_buff));
 
@@ -5632,7 +5670,7 @@ char check_if_ignore_table(const char *table_name, char *table_type)
   DBUG_ENTER("check_if_ignore_table");
 
   /* Check memory for quote_for_like() */
-  DBUG_ASSERT(2*sizeof(table_name) < sizeof(show_name_buff));
+  assert(2*sizeof(table_name) < sizeof(show_name_buff));
   my_snprintf(buff, sizeof(buff), "show table status like %s",
               quote_for_like(table_name, show_name_buff));
   if (mysql_query_with_error_report(mysql, &res, buff))

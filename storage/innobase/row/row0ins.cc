@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -956,12 +956,12 @@ row_ins_foreign_fill_virtual(
 	row_ext_t*	ext;
 	THD*		thd = current_thd;
 	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
+	mem_heap_t*	v_heap = NULL;
+	upd_t*		update = cascade->update;
 	rec_offs_init(offsets_);
 	const ulint*	offsets =
 		rec_get_offsets(rec, index, offsets_,
-				ULINT_UNDEFINED, &cascade->heap);
-	mem_heap_t*	v_heap = NULL;
-	upd_t*		update = cascade->update;
+				ULINT_UNDEFINED, &update->heap);
 	ulint		n_v_fld = index->table->n_v_def;
 	ulint		n_diff;
 	upd_field_t*	upd_field;
@@ -970,7 +970,7 @@ row_ins_foreign_fill_virtual(
 	update->old_vrow = row_build(
 		ROW_COPY_POINTERS, index, rec,
 		offsets, index->table, NULL, NULL,
-		&ext, cascade->heap);
+		&ext, update->heap);
 
 	n_diff = update->n_fields;
 
@@ -1006,7 +1006,7 @@ row_ins_foreign_fill_virtual(
 		upd_field = upd_get_nth_field(update, n_diff);
 
 		upd_field->old_v_val = static_cast<dfield_t*>(
-				mem_heap_alloc(cascade->heap,
+				mem_heap_alloc(update->heap,
 					sizeof *upd_field->old_v_val));
 
 		dfield_copy(upd_field->old_v_val, vfield);
@@ -3197,9 +3197,9 @@ row_ins_index_entry_big_rec_func(
 	mem_heap_t**		heap,	/*!< in/out: memory heap */
 	dict_index_t*		index,	/*!< in: index */
 	const char*		file,	/*!< in: file name of caller */
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 	const void*		thd,    /*!< in: connection, or NULL */
-#endif /* DBUG_OFF */
+#endif /* NDEBUG */
 	ulint			line)	/*!< in: line number of caller */
 {
 	mtr_t		mtr;

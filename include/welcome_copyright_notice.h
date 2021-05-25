@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 #ifndef _welcome_copyright_notice_h_
 #define _welcome_copyright_notice_h_
 
-#define COPYRIGHT_NOTICE_CURRENT_YEAR "2020"
+#define COPYRIGHT_NOTICE_CURRENT_YEAR "2021"
 
 /*
   This define specifies copyright notice which is displayed by every MySQL
@@ -32,11 +32,11 @@
 #define ORACLE_WELCOME_COPYRIGHT_NOTICE(first_year) \
   (strcmp(first_year, COPYRIGHT_NOTICE_CURRENT_YEAR) ? \
    "Copyright (c) " first_year ", " COPYRIGHT_NOTICE_CURRENT_YEAR ", " \
-   "Oracle and/or its affiliates. All rights reserved.\n\nOracle is a " \
+   "Oracle and/or its affiliates.\n\nOracle is a " \
    "registered trademark of Oracle Corporation and/or its\naffiliates. " \
    "Other names may be trademarks of their respective\nowners.\n" : \
    "Copyright (c) " first_year ", Oracle and/or its affiliates. " \
-   "All rights reserved.\n\nOracle is a registered trademark of " \
+   "\n\nOracle is a registered trademark of " \
    "Oracle Corporation and/or its\naffiliates. Other names may be " \
    "trademarks of their respective\nowners.\n")
 
