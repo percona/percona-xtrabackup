@@ -19,7 +19,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <base64.h>
 #include <dict0dict.h>
 #include <my_aes.h>
-#include <my_default.h>
 #include <my_rnd.h>
 #include <mysql/components/services/log_builtins.h>
 #include <mysql/service_mysql_keyring.h>
@@ -41,6 +40,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "keyring_plugins.h"
 #include "rpl_log_encryption.h"
+#include "utils.h"
 #include "xb0xb.h"
 #include "xtrabackup.h"
 
@@ -295,12 +295,6 @@ bool xb_keyring_init_for_backup(MYSQL *connection) {
   return (true);
 }
 
-static bool get_one_option(int optid MY_ATTRIBUTE((unused)),
-                           const struct my_option *opt MY_ATTRIBUTE((unused)),
-                           char *argument MY_ATTRIBUTE((unused))) {
-  return (FALSE);
-}
-
 /** Initialize keyring plugin for stats mode. Configuration is read from
 argc and argv.
 @param[in, out]	argc	Command line options (count)
@@ -314,7 +308,7 @@ bool xb_keyring_init_for_stats(int argc, char **argv) {
        REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
       {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
-  if (handle_options(&argc, &argv, keyring_options, get_one_option)) {
+  if (handle_options(&argc, &argv, keyring_options, NULL)) {
     return (false);
   }
 
@@ -336,7 +330,6 @@ argc and argv, server uuid and plugin name is read from backup-my.cnf.
 bool xb_keyring_init_for_prepare(int argc, char **argv) {
   char *uuid = NULL;
   char *plugin_load = NULL;
-  const char *groups[] = {"mysqld", NULL};
 
   my_option keyring_options[] = {
       {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
@@ -345,24 +338,8 @@ bool xb_keyring_init_for_prepare(int argc, char **argv) {
        REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
       {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
-  char *exename = (char *)"xtrabackup";
-  char **backup_my_argv = &exename;
-  int backup_my_argc = 1;
-  char fname[FN_REFLEN];
-
-  /* we need full name so that only backup-my.cnf will be read */
-  if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
-                MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
-    return (false);
-  }
-
-  if (my_load_defaults(fname, groups, &backup_my_argc, &backup_my_argv,
-                       &argv_alloc, NULL)) {
-    return (false);
-  }
-
-  if (handle_options(&backup_my_argc, &backup_my_argv, keyring_options,
-                     get_one_option)) {
+  if (!xtrabackup::utils::load_backup_my_cnf(keyring_options,
+                                             xtrabackup_target_dir)) {
     return (false);
   }
 
@@ -410,31 +387,14 @@ bool xb_keyring_init_for_copy_back(int argc, char **argv) {
     mysql_optional_plugins[0] = 0;
 
     char *uuid = NULL;
-    const char *groups[] = {"mysqld", NULL};
 
     my_option keyring_options[] = {
         {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
          0, 0, 0},
         {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
-    char *exename = (char *)"xtrabackup";
-    char **backup_my_argv = &exename;
-    int backup_my_argc = 1;
-    char fname[FN_REFLEN];
-
-    /* we need full name so that only backup-my.cnf will be read */
-    if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
-                  MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
-      return (false);
-    }
-
-    if (my_load_defaults(fname, groups, &backup_my_argc, &backup_my_argv,
-                         &argv_alloc, NULL)) {
-      return (false);
-    }
-
-    if (handle_options(&backup_my_argc, &backup_my_argv, keyring_options,
-                       get_one_option)) {
+    if (!xtrabackup::utils::load_backup_my_cnf(keyring_options,
+                                               xtrabackup_target_dir)) {
       return (false);
     }
 
@@ -449,7 +409,7 @@ bool xb_keyring_init_for_copy_back(int argc, char **argv) {
     char **t_argv = new char *[t_argc + 1];
 
     memset(t_argv, 0, sizeof(char *) * (t_argc + 1));
-    t_argv[0] = exename;
+    t_argv[0] = (char *)"xtrabackup";
     memcpy(t_argv + 1, argv, sizeof(char *) * argc);
 
     my_option plugin_load_options[] = {
