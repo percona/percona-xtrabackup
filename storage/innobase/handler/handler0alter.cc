@@ -8501,12 +8501,8 @@ rollback_trx:
 			ha_innobase_inplace_ctx*	ctx
 				= static_cast<ha_innobase_inplace_ctx*>(*pctx);
 
-<<<<<<< HEAD
-			DBUG_ASSERT(ctx->need_rebuild());
-#if 0
-=======
 			assert(ctx->need_rebuild());
->>>>>>> mysql-5.7.34
+#if 0
 			/* Check for any possible problems for any
 			file operations that will be performed in
 			commit_cache_rebuild(), and if none, generate

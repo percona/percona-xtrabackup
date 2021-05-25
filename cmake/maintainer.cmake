@@ -68,14 +68,9 @@ ENDIF()
 
 # Turn on Werror (warning => error) when using maintainer mode.
 IF(MYSQL_MAINTAINER_MODE)
-<<<<<<< HEAD
-  SET(MY_C_WARNING_FLAGS "${MY_C_WARNING_FLAGS} -Werror")
-  SET(MY_CXX_WARNING_FLAGS "${MY_CXX_WARNING_FLAGS} -Werror")
-  MY_ADD_CXX_WARNING_FLAG("Wno-error=class-memaccess")
-=======
   STRING_APPEND(MY_C_WARNING_FLAGS   " -Werror")
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Werror")
->>>>>>> mysql-5.7.34
+  MY_ADD_CXX_WARNING_FLAG("Wno-error=class-memaccess")
 ENDIF()
 
 # Set warning flags for GCC/Clang

@@ -1615,14 +1615,9 @@ bool plugin_register_builtin_and_init_core_se(int *argc, char **argv)
 
 #if 0
   /* Should now be set to MyISAM storage engine */
-<<<<<<< HEAD
-  DBUG_ASSERT(global_system_variables.table_plugin);
-  DBUG_ASSERT(global_system_variables.temp_table_plugin);
-#endif
-=======
   assert(global_system_variables.table_plugin);
   assert(global_system_variables.temp_table_plugin);
->>>>>>> mysql-5.7.34
+#endif
 
   mysql_mutex_unlock(&LOCK_plugin);
 

@@ -6,14 +6,14 @@ namespace keyring
   my_bool Vault_keys_container::init(IKeyring_io* keyring_io, std::string keyring_storage_url)
   {
     vault_io = dynamic_cast<IVault_io*>(keyring_io);
-    DBUG_ASSERT(vault_io != NULL);
+    assert(vault_io != NULL);
     return Keys_container::init(keyring_io, keyring_storage_url);
   }
 
   IKey* Vault_keys_container::fetch_key(IKey *key)
   {
-    DBUG_ASSERT(key->get_key_data() == NULL);
-    DBUG_ASSERT(key->get_key_type()->empty());
+    assert(key->get_key_data() == NULL);
+    assert(key->get_key_type()->empty());
 
     IKey *fetched_key= get_key_from_hash(key);
 

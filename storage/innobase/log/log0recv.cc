@@ -3962,11 +3962,7 @@ recv_group_scan_log_recs(
 	bool		last_phase)
 {
 	DBUG_ENTER("recv_group_scan_log_recs");
-<<<<<<< HEAD
-//	DBUG_ASSERT(!last_phase || recv_sys->mlog_checkpoint_lsn > 0);
-=======
-	assert(!last_phase || recv_sys->mlog_checkpoint_lsn > 0);
->>>>>>> mysql-5.7.34
+//	assert(!last_phase || recv_sys->mlog_checkpoint_lsn > 0);
 
 	mutex_enter(&recv_sys->mutex);
 	recv_sys->len = 0;

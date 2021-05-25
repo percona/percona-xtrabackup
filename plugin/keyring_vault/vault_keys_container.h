@@ -20,7 +20,7 @@ public:
   virtual IKey* fetch_key(IKey *key);
   virtual void set_curl_timeout(uint timeout)
   {
-    DBUG_ASSERT(vault_io != NULL);
+    assert(vault_io != NULL);
     vault_io->set_curl_timeout(timeout);
   }
 

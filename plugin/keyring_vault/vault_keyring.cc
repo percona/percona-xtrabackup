@@ -26,7 +26,7 @@ static bool reset_curl()
 
 static void handle_std_bad_alloc_exception(const std::string &message_prefix)
 {
-  DBUG_ASSERT(0);
+  assert(0);
   std::string error_message = message_prefix + " due to memory allocation failure";
   if (logger != NULL)
     logger->log(MY_ERROR_LEVEL, error_message.c_str());
@@ -34,7 +34,7 @@ static void handle_std_bad_alloc_exception(const std::string &message_prefix)
 
 static void handle_unknown_exception(const std::string &message_prefix)
 {
-  DBUG_ASSERT(0);
+  assert(0);
   std::string error_message = message_prefix + " due to internal "
                                 "exception inside the keyring_vault plugin";
   if (logger != NULL)
@@ -104,7 +104,7 @@ static void update_keyring_vault_timeout(MYSQL_THD thd,
                                          void *ptr,
                                          const void *val)
 {
-  DBUG_ASSERT(dynamic_cast<Vault_keys_container*>(keys.get()) != NULL);
+  assert(dynamic_cast<Vault_keys_container*>(keys.get()) != NULL);
   *reinterpret_cast<uint*>(ptr)= *reinterpret_cast<const uint*>(val);
   dynamic_cast<Vault_keys_container*>(keys.get())->set_curl_timeout(*static_cast<const uint*>(val));
 }
