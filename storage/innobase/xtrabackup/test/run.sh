@@ -51,6 +51,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -x options  Extra options to pass to xtrabackup
 -i options  Extra options to pass to innobackupex
 -r path     Use specified path as root directory for test workers.
+-D          Use mysqld-debug for debug test run.
 EOF
 }
 
@@ -272,7 +273,11 @@ function set_vars()
 
     find_program MYSQL_INSTALL_DB mysql_install_db $MYSQL_BASEDIR/bin \
 	$MYSQL_BASEDIR/scripts
-    find_program MYSQLD mysqld $MYSQL_BASEDIR/bin/ $MYSQL_BASEDIR/libexec
+    if [ "$MYSQL_DEBUG_MODE" = "on" ]; then
+        find_program MYSQLD mysqld-debug $MYSQL_BASEDIR/bin/ $MYSQL_BASEDIR/libexec
+    else
+        find_program MYSQLD mysqld $MYSQL_BASEDIR/bin/ $MYSQL_BASEDIR/libexec
+    fi
     find_program MYSQL mysql $MYSQL_BASEDIR/bin
     find_program MYSQLADMIN mysqladmin $MYSQL_BASEDIR/bin
     find_program MYSQLDUMP mysqldump $MYSQL_BASEDIR/bin
@@ -753,8 +758,9 @@ force=""
 SUBUNIT_OUT=test_results.subunit
 NWORKERS=
 DEBUG_WORKER=""
+MYSQL_DEBUG_MODE=off
 
-while getopts "fgh?:t:s:d:c:j:T:x:i:r:" options; do
+while getopts "fghD?:t:s:d:c:j:T:x:i:r:" options; do
         case $options in
             f ) force="yes";;
             t )
@@ -771,6 +777,7 @@ while getopts "fgh?:t:s:d:c:j:T:x:i:r:" options; do
             h ) usage; exit;;
             s ) tname="$OPTARG/*.sh";;
             d ) export MYSQL_BASEDIR="$OPTARG";;
+            D ) MYSQL_DEBUG_MODE=on ;;
             c ) echo "Warning: -c does not have any effect and is only \
 recognized for compatibility";;
             j )

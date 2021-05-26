@@ -7,6 +7,7 @@ function usage() {
 Usage: $0 [OPTIONS]
     The following options may be given :
         --type=             Supported types are: innodb56 innodb57 xtradb56 xtradb57 mariadb100 mariadb101 as DB type(default=xtradb57)
+        --pxb-type=         Specify release or debug build of PXB used for tests(default=release)
         --version=          Version of tarball
         --destdir=          OPTIONAL: Destination directory where the tarball will be extracted(default=\"./server\")
         --help) usage ;;
@@ -64,6 +65,7 @@ parse_arguments() {
         case "${arg}" in
             # these get passed explicitly to mysqld
             --type=*) TYPE="${val}" ;;
+            --pxb-type=*) PXB_TYPE="${val}" ;;
             --version=*) VERSION="${val}" ;;
             --destdir=*) DESTDIR="${val}" ;;
             --help) usage ;;
@@ -143,11 +145,14 @@ main () {
             tarball="Percona-Server-${VERSION_PREFIX}-rel${VERSION_SUFFIX}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             ;;
         xtradb57)
+            if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
+                SUFFIX="-debug"
+            fi
             url="https://www.percona.com/downloads/Percona-Server-5.7/Percona-Server-${VERSION}/binary/tarball/"
             if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -lt "31" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             elif [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -ge "31" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12.tar.gz"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
             fi
             ;;
         *)
@@ -180,6 +185,7 @@ main () {
 }
 
 TYPE="xtradb57"
+PXB_TYPE="release"
 VERSION="5.7.31-34"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
