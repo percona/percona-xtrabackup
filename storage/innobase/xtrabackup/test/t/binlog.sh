@@ -1,3 +1,4 @@
+. inc/common.sh
 
 function backup() {
   mkdir $topdir/binlog-dir1
@@ -29,11 +30,27 @@ function restore() {
   xtrabackup --copy-back --target-dir=$topdir/backup $*
 
   cd $mysql_datadir
+
+  # Verify that all the required files exist
   for file in $FILES ; do
     if ! [ -f $file ] ; then
       die "File $file is not found!"
     fi
   done
+
+  # Verify that the binlog index file is correct
+  if [[ -n $INDEX_FILE ]]; then
+    if ! [[ -r $INDEX_FILE ]]; then
+      die "Missing binlog index file: $INDEX_FILE"
+    fi
+    while read file
+    do
+      if ! [[ -r $file ]]; then
+        die "File $file in $INDEX_FILE cannot be found!"
+      fi
+    done < ${INDEX_FILE}
+  fi
+
   cd -
 
   start_server $*
@@ -55,45 +72,61 @@ function backup_restore() {
 }
 
 vlog "------- TEST 1 -------"
+INDEX_FILE=""
 FILES=""
 backup_restore --skip-log-bin
 
 vlog "------- TEST 2 -------"
-FILES="mysql-bin.index mysql-bin.000004"
+INDEX_FILE="mysql-bin.index"
+FILES="mysql-bin.000004"
 backup_restore --log-bin
 
 vlog "------- TEST 3 -------"
-FILES="binlog123.index binlog123.000003"
+INDEX_FILE="binlog123.index"
+FILES="binlog123.000003"
 backup_restore --log-bin=binlog123
 
 vlog "------- TEST 4 -------"
-FILES="binlog898.index binlog123.000003"
+INDEX_FILE="binlog898.index"
+FILES="binlog123.000003"
 backup_restore --log-bin=binlog123 --log-bin-index=binlog898
 
 vlog "------- TEST 5 -------"
-FILES="binlog898.index binlog123.000003"
+INDEX_FILE="binlog898.index"
+FILES="binlog123.000003"
 backup_restore --log-bin=binlog123 --log-bin-index=binlog898.index
 
 vlog "------- TEST 6 -------"
-FILES="log.index $topdir/binlog-dir1/bin.000003"
+INDEX_FILE="log.index"
+FILES="$topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=log
 
 vlog "------- TEST 7 -------"
-FILES="$topdir/binlog-dir1/idx.index binlog-abcd.000003"
+INDEX_FILE="$topdir/binlog-dir1/idx.index"
+FILES="binlog-abcd.000003"
 backup_restore --log-bin=binlog-abcd --log-bin-index=$topdir/binlog-dir1/idx
 
 vlog "------- TEST 8 -------"
-FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000003"
+INDEX_FILE="$topdir/binlog-dir2/idx.index"
+FILES="$topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=$topdir/binlog-dir2/idx
 
 vlog "------- TEST 9 -------"
-FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000003"
+INDEX_FILE="$topdir/binlog-dir2/idx.index"
+FILES="$topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin --log-bin-index=$topdir/binlog-dir2/idx.index
 
 vlog "------- TEST 10 -------"
-FILES="$topdir/binlog-dir1/bin.index $topdir/binlog-dir1/bin.000003"
+INDEX_FILE="$topdir/binlog-dir1/bin.index"
+FILES="$topdir/binlog-dir1/bin.000003"
 backup_restore --log-bin=$topdir/binlog-dir1/bin
 
+vlog "------- TEST 11 -------"
+# PXB-2106 : we have an absolute path for the log-bin and it
+# is within the datadir
+INDEX_FILE="idx.index"
+FILES="$mysql_datadir/bin.000003"
+backup_restore --log-bin=$mysql_datadir/bin --log-bin-index=idx
 
 # do the same, but with updating my.cnf
 
@@ -101,6 +134,7 @@ vlog "------- TEST 101 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 skip-log-bin
 "
+INDEX_FILE=""
 FILES=""
 backup_restore
 
@@ -108,14 +142,16 @@ vlog "------- TEST 102 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin
 "
-FILES="mysql-bin.index mysql-bin.000004"
+INDEX_FILE="mysql-bin.index"
+FILES="mysql-bin.000004"
 backup_restore
 
 vlog "------- TEST 103 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog123
 "
-FILES="binlog123.index binlog123.000004"
+INDEX_FILE="binlog123.index"
+FILES="binlog123.000004"
 backup_restore
 
 vlog "------- TEST 104 -------"
@@ -123,7 +159,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog123
 log-bin-index=binlog898
 "
-FILES="binlog898.index binlog123.000004"
+INDEX_FILE="binlog898.index"
+FILES="binlog123.000004"
 backup_restore
 
 vlog "------- TEST 105 -------"
@@ -131,7 +168,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog123
 log-bin-index=binlog898.index
 "
-FILES="binlog898.index binlog123.000004"
+INDEX_FILE="binlog898.index"
+FILES="binlog123.000004"
 backup_restore
 
 vlog "------- TEST 106 -------"
@@ -139,7 +177,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=log
 "
-FILES="log.index $topdir/binlog-dir1/bin.000004"
+INDEX_FILE="log.index"
+FILES="$topdir/binlog-dir1/bin.000004"
 backup_restore
 
 vlog "------- TEST 107 -------"
@@ -147,7 +186,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=binlog-abcd
 log-bin-index=$topdir/binlog-dir1/idx
 "
-FILES="$topdir/binlog-dir1/idx.index binlog-abcd.000004"
+INDEX_FILE="$topdir/binlog-dir1/idx.index"
+FILES="binlog-abcd.000004"
 backup_restore
 
 vlog "------- TEST 108 -------"
@@ -155,7 +195,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=$topdir/binlog-dir2/idx
 "
-FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000004"
+INDEX_FILE="$topdir/binlog-dir2/idx.index"
+FILES="$topdir/binlog-dir1/bin.000004"
 backup_restore
 
 vlog "------- TEST 109 -------"
@@ -163,16 +204,28 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=$topdir/binlog-dir2/idx.index
 "
-FILES="$topdir/binlog-dir2/idx.index $topdir/binlog-dir1/bin.000004"
+INDEX_FILE="$topdir/binlog-dir2/idx.index"
+FILES="$topdir/binlog-dir1/bin.000004"
 backup_restore
 
 vlog "------- TEST 110 -------"
 MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 "
-FILES="$topdir/binlog-dir1/bin.index $topdir/binlog-dir1/bin.000004"
+INDEX_FILE="$topdir/binlog-dir1/bin.index"
+FILES="$topdir/binlog-dir1/bin.000004"
 backup_restore --log-bin=$topdir/binlog-dir1/bin
 
+vlog "------- TEST 111 -------"
+# PXB-2106 : we have an absolute path for the log-bin and it
+# is within the datadir
+MYSQLD_EXTRA_MY_CNF_OPTS="
+log-bin=$mysql_datadir/bin
+log-bin-index=idx
+"
+INDEX_FILE="idx.index"
+FILES="$mysql_datadir/bin.000004"
+backup_restore
 
 # PXB-1810 - restore binlog to the different location
 
@@ -181,7 +234,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=$topdir/binlog-dir1/idx
 "
-FILES="idx.index bin.000004"
+INDEX_FILE="idx.index"
+FILES="bin.000004"
 backup
 restore --log-bin=bin --log-bin-index=idx
 
@@ -190,7 +244,8 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=bin
 log-bin-index=idx
 "
-FILES="logidx.index logbin.000004"
+INDEX_FILE="logidx.index"
+FILES="logbin.000004"
 backup
 restore --log-bin=logbin --log-bin-index=logidx
 
@@ -199,6 +254,25 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 log-bin=$topdir/binlog-dir1/bin
 log-bin-index=$topdir/binlog-dir1/bin
 "
-FILES="$topdir/binlog-dir2/bin.index $topdir/binlog-dir1/logbin.000004"
+INDEX_FILE="$topdir/binlog-dir2/bin.index"
+FILES="$topdir/binlog-dir1/logbin.000004"
 backup
 restore --log-bin=$topdir/binlog-dir1/logbin --log-bin-index=$topdir/binlog-dir2/bin.index
+
+# Cleanup
+MYSQLD_EXTRA_MY_CNF_OPTS=""
+
+
+# Test for binlog name with a single period
+vlog "------- TEST 301 -------"
+INDEX_FILE="my.index"
+FILES="my.000003"
+backup_restore --log-bin=my.bin
+
+# Test for binlog name with two periods
+# Entered as a MySQL bug : https://bugs.mysql.com/bug.php?id=103404
+# MySQL creates a single unnumbered binlog file
+vlog "------- TEST 302 -------"
+INDEX_FILE="my.index"
+FILES="my.log"
+backup_restore --log-bin=my.log.bin
