@@ -1564,7 +1564,7 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
 }
 
 struct binlog_file_location {
-  /* binlog file path */
+  /* binlog file path (full path including filename) */
   std::string path;
 
   /* binlog file name */
@@ -1602,19 +1602,21 @@ struct binlog_file_location {
     binlog_file_location r;
 
     if (!name.empty()) {
-      std::string suffix = fn_ext(name.c_str());
-
       if (opt_log_bin != nullptr) {
+        std::string suffix = fn_ext(name.c_str());
+        r.name = std::string(opt_log_bin).substr(dirname_length(opt_log_bin));
+
+        /* Truncate at the first '.' like MySQL */
+        r.name = r.name.substr(0, r.name.find(FN_EXTCHAR)) + suffix;
+
         if (Fil_path::is_absolute_path(opt_log_bin)) {
-          r.name =
+          r.path =
               std::string(opt_log_bin).substr(0, dirname_length(opt_log_bin)) +
-              suffix;
-          r.path = opt_log_bin + suffix;
+              r.name;
         } else {
           char buf[FN_REFLEN];
           fn_format(buf, opt_log_bin, datadir.c_str(), "", MY_UNPACK_FILENAME);
-          r.name = opt_log_bin + suffix;
-          r.path = buf + suffix;
+          r.path = std::string(buf).substr(0, dirname_length(buf)) + r.name;
         }
       } else {
         char buf[FN_REFLEN];
