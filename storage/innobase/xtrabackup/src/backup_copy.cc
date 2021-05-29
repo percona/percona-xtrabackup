@@ -1156,7 +1156,11 @@ bool backup_files(const char *from, bool prep_mode) {
       rsync_list.insert("ib_lru_dump");
     }
 
-    fclose(rsync_tmpfile);
+    fflush(rsync_tmpfile);
+    if (fclose(rsync_tmpfile) != 0) {
+      xb::error() << "can't close file " << rsync_tmpfile_name;
+      return (false);
+    }
     rsync_tmpfile = NULL;
 
     cmd << "rsync -t . --files-from=" << rsync_tmpfile_name << " "
