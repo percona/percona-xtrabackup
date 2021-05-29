@@ -1035,6 +1035,7 @@ cleanup:
 
 bool backup_files(const char *from, bool prep_mode) {
   char rsync_tmpfile_name[FN_REFLEN];
+  char errbuf[MYSYS_STRERROR_SIZE];
   FILE *rsync_tmpfile = NULL;
   bool ret = true;
 
@@ -1079,7 +1080,11 @@ bool backup_files(const char *from, bool prep_mode) {
       rsync_list.insert("ib_lru_dump");
     }
 
-    fclose(rsync_tmpfile);
+    if (fclose(rsync_tmpfile) != 0) {
+      msg("Error: can't close file %s: %s\n", rsync_tmpfile_name,
+          my_strerror(errbuf, sizeof(errbuf), my_errno()));
+      return (false);
+    }
     rsync_tmpfile = NULL;
 
     cmd << "rsync -t . --files-from=" << rsync_tmpfile_name << " "
