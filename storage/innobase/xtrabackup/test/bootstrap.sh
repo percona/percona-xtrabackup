@@ -145,13 +145,18 @@ main () {
             tarball="Percona-Server-${VERSION_PREFIX}-rel${VERSION_SUFFIX}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             ;;
         xtradb57)
+            short_version="$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)"
+            url="https://www.percona.com/downloads/Percona-Server-5.7/Percona-Server-${VERSION}/binary/tarball/"
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
+                # Temporal workaround until PS 5.7.35 releases
+		        if [[ ${short_version} -lt "35" ]]; then
+                    url="https://jenkins.percona.com/downloads/ps-5.7.34-debug/"
+                fi
             fi
-            url="https://www.percona.com/downloads/Percona-Server-5.7/Percona-Server-${VERSION}/binary/tarball/"
-            if [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -lt "31" ]]; then
+            if [[ ${short_version} -lt "31" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
-            elif [[ $(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1) -ge "31" ]]; then
+            elif [[ ${short_version} -ge "31" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
             fi
             ;;
