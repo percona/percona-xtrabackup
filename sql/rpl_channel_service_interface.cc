@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +84,10 @@ void set_mi_settings(Master_info *mi, Channel_creation_info* channel_info)
 
   mi->rli->set_thd_tx_priority(channel_info->thd_tx_priority);
 
+  mi->rli->set_ignore_write_set_memory_limit(
+      channel_info->m_ignore_write_set_memory_limit);
+  mi->rli->set_allow_drop_write_set(channel_info->m_allow_drop_write_set);
+
   mi->rli->replicate_same_server_id=
     (channel_info->replicate_same_server_id == RPL_SERVICE_SERVER_DEFAULT) ?
      replicate_same_server_id : channel_info->replicate_same_server_id;
@@ -163,6 +167,8 @@ initialize_channel_creation_info(Channel_creation_info* channel_info)
   channel_info->preserve_relay_logs= false;
   channel_info->retry_count= 0;
   channel_info->connect_retry= 0;
+  channel_info->m_ignore_write_set_memory_limit = false;
+  channel_info->m_allow_drop_write_set = false;
 }
 
 void initialize_channel_ssl_info(Channel_ssl_info* channel_ssl_info)
@@ -412,11 +418,11 @@ int channel_start(const char* channel,
         lex_mi.until_after_gaps= true;
         break;
       case CHANNEL_UNTIL_VIEW_ID:
-        DBUG_ASSERT((thread_mask & SLAVE_SQL) && connection_info->view_id);
+        assert((thread_mask & SLAVE_SQL) && connection_info->view_id);
         lex_mi.view_id= connection_info->view_id;
         break;
       default:
-        DBUG_ASSERT(0);
+        assert(0);
     }
   }
 
@@ -637,7 +643,7 @@ bool channel_is_active(const char* channel, enum_channel_thread_types thd_type)
     case CHANNEL_APPLIER_THREAD:
       DBUG_RETURN(thread_mask & SLAVE_SQL);
     default:
-      DBUG_ASSERT(0);
+      assert(0);
   }
   DBUG_RETURN(false);
 }
@@ -771,7 +777,7 @@ long long channel_get_last_delivered_gno(const char* channel, int sidno)
   last_gno= mi->rli->get_gtid_set()->get_last_gno(sidno);
   global_sid_lock->unlock();
 
-#if !defined(DBUG_OFF)
+#if !defined(NDEBUG)
   const Gtid_set *retrieved_gtid_set= mi->rli->get_gtid_set();
   char *retrieved_gtid_set_string= NULL;
   global_sid_lock->wrlock();
@@ -1020,7 +1026,7 @@ bool channel_is_stopping(const char* channel,
       is_stopping= likely(mi->rli->is_stopping.atomic_get());
       break;
     default:
-      DBUG_ASSERT(0);
+      assert(0);
   }
 
   channel_map.unlock();

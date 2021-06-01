@@ -40,7 +40,7 @@ public:
   }
   virtual void set_curl_timeout(uint timeout)
   {
-    DBUG_ASSERT(vault_curl != NULL);
+    assert(vault_curl != NULL);
     vault_curl->set_timeout(timeout);
   }
 

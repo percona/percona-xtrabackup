@@ -6698,7 +6698,7 @@ ER_MALFORMED_GTID_SPECIFICATION
   eng "Malformed GTID specification '%.200s'."
 
 ER_GNO_EXHAUSTED
-  eng "Impossible to generate Global Transaction Identifier: the integer component reached the maximal value. Restart the server with a new server_uuid."
+  eng "Impossible to generate GTID: the integer component reached the maximum value. Restart the server with a new server_uuid."
 
 ER_BAD_SLAVE_AUTO_POSITION
   eng "Parameters MASTER_LOG_FILE, MASTER_LOG_POS, RELAY_LOG_FILE and RELAY_LOG_POS cannot be set when MASTER_AUTO_POSITION is active."
@@ -7786,6 +7786,9 @@ ER_GROUPING_ON_TIMESTAMP_IN_DST
 
 ER_CANT_START_SERVER_NAMED_PIPE
   eng "Can't start server : Named Pipe \"%s\" already in use."
+
+ER_WRITE_SET_EXCEEDS_LIMIT
+  eng "The size of writeset data for the current transaction exceeds a limit imposed by an external component. If using Group Replication check 'group_replication_transaction_size_limit'."
 
 #
 #  End of 5.7 error messages.

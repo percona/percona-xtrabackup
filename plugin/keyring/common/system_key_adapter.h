@@ -46,28 +46,28 @@ public:
 
   virtual std::string* get_key_signature() const
   {
-    DBUG_ASSERT(keyring_key != NULL);
+    assert(keyring_key != NULL);
     return keyring_key->get_key_signature();
   }
 
   virtual std::string* get_key_type()
   {
-    DBUG_ASSERT(keyring_key != NULL);
+    assert(keyring_key != NULL);
     return keyring_key->get_key_type();
   }
   virtual std::string* get_key_id()
   {
-    DBUG_ASSERT(keyring_key != NULL);
+    assert(keyring_key != NULL);
     return keyring_key->get_key_id();
   }
   virtual std::string* get_user_id()
   {
-    DBUG_ASSERT(keyring_key != NULL);
+    assert(keyring_key != NULL);
     return keyring_key->get_user_id();
   }
   virtual uchar* get_key_data()
   {
-    DBUG_ASSERT(keyring_key != NULL);
+    assert(keyring_key != NULL);
 
     if (system_key_data.get_key_data() == NULL)
       construct_system_key_data();
@@ -76,7 +76,7 @@ public:
   }
   virtual size_t get_key_data_size()
   {
-    DBUG_ASSERT(keyring_key != NULL);
+    assert(keyring_key != NULL);
 
     if (system_key_data.get_key_data() == NULL)
       construct_system_key_data();
@@ -85,17 +85,17 @@ public:
   }
   virtual size_t get_key_pod_size() const
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return 0;
   }
   virtual uchar* release_key_data()
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return NULL;
   }
   virtual void xor_data()
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
   }
   virtual void set_key_data(uchar *key_data, size_t key_data_size)
   {
@@ -108,32 +108,32 @@ public:
   virtual my_bool load_from_buffer(uchar* buffer MY_ATTRIBUTE((unused)), size_t *buffer_position MY_ATTRIBUTE((unused)),
                                    size_t input_buffer_size MY_ATTRIBUTE((unused)))
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return FALSE;
   }
   virtual void store_in_buffer(uchar* buffer MY_ATTRIBUTE((unused)),
                                size_t *buffer_position MY_ATTRIBUTE((unused))) const
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
   }
   virtual my_bool is_key_type_valid()
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return FALSE;
   }
   virtual my_bool is_key_id_valid()
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return FALSE;
   }
   virtual my_bool is_key_valid()
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return FALSE;
   }
   virtual my_bool is_key_length_valid()
   {
-    DBUG_ASSERT(FALSE);
+    assert(FALSE);
     return FALSE;
   }
 

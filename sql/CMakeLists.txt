@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -123,6 +123,7 @@ SET(SQL_SHARED_SOURCES
   keycaches.cc
   lock.cc
   locking_service.cc
+  locks/shared_spin_lock.cc
   log.cc
   mdl.cc
   migrate_keyring.cc
@@ -349,7 +350,7 @@ ENDIF()
 # Segfault in boost::geometry code at high optimization levels
 IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
   STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
-  IF(CMAKEBT MATCHES "^REL")
+  IF(CMAKEBT MATCHES "REL")
     ADD_COMPILE_FLAGS(item_geofunc_buffer.cc COMPILE_FLAGS "-xO2")
   ENDIF()
 ENDIF()
@@ -458,6 +459,7 @@ SET(SQL_GUNIT_LIB_SOURCE
   sql_list.cc 
   ../sql-common/sql_string.cc
   thr_malloc.cc
+  locks/shared_spin_lock.cc
   )
 
 ADD_CONVENIENCE_LIBRARY(sqlgunitlib ${SQL_GUNIT_LIB_SOURCE})

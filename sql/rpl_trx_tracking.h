@@ -1,5 +1,5 @@
 #ifndef RPL_TRX_TRACKING_INCLUDED
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -63,7 +63,7 @@ public:
   */
   void update_offset(int64 new_offset)
   {
-    DBUG_ASSERT(offset <= new_offset);
+    assert(offset <= new_offset);
 
     offset= new_offset;
   }
@@ -126,8 +126,18 @@ public:
 
   void rotate(int64 start);
 
+   /* option opt_binlog_transaction_dependency_history_size - atomic var */
+  int64 m_opt_max_history_size;
   /* option opt_binlog_transaction_dependency_history_size */
-  ulong m_opt_max_history_size;
+  ulong m_opt_max_history_size_base_var;
+
+  /**
+    Returns the value for the max history size with an atomic read to the var
+    @return the value of opt_max_history_size
+  */
+  ulong get_opt_max_history_size(){
+    return static_cast<ulong>(my_atomic_load64(&m_opt_max_history_size));
+  }
 
 private:
   /*

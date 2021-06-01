@@ -93,7 +93,7 @@ bool Vault_parser::retrieve_value_from_map(const Secure_string &map, const Secur
       (value_end_pos = map.find("\"", value_start_pos + start_tag_length)) != Secure_string::npos)
   {
     value_start_pos += start_tag_length;
-    DBUG_ASSERT(value_end_pos > 0);
+    assert(value_end_pos > 0);
     value_end_pos--; // due to closing "
     *value = map.substr(value_start_pos, (value_end_pos-value_start_pos+1));
   }
