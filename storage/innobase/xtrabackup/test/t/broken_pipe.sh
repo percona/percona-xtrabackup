@@ -24,3 +24,27 @@ xtrabackup --backup --stream=xbstream \
 if [ ${PIPESTATUS[0]} -eq 0 ] ; then
 	die "xtrabackup completed OK when it was expected to fail"
 fi
+
+# PXB-2486: PXB hangs in case of broken pipe, --parallel
+# and --encryption or --compress
+
+timeout 20 $XB_BIN $XB_ARGS --backup --stream=xbstream \
+	--target-dir=$topdir/backup1 --parallel=10 --encrypt=AES256 \
+	--encrypt-key=2222233333232323 | dd bs=1024 count=100 of=/dev/null
+
+if [ ${PIPESTATUS[0]} -eq 124 ] ; then
+	die "xtrabackup timeout after 20 seconds when it was expected to fail"
+fi
+
+if [[ is_debug_pxb_version ]]; then
+	# let the command fail and capture the output
+	set +e
+	timeout 20 $XB_BIN $XB_ARGS --backup --stream=xbstream \
+	--target-dir=$topdir/backup2 --parallel=10  --compress \
+	--debug='+d,simulate_compress_error' > /dev/null
+
+	if [ $? -eq 124 ] ; then
+		die "xtrabackup timeout after 20 seconds when it was expected to fail"
+	fi
+	set -e
+fi

@@ -190,6 +190,7 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 	uint			i;
 	const char		*ptr;
 	ds_file_t		*dest_file;
+	my_bool simulate_compress_error = FALSE;
 
 	comp_file = (ds_compress_file_t *) file->ptr;
 	comp_ctxt = comp_file->comp_ctxt;
@@ -240,13 +241,14 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 			}
 
 			xb_a(threads[i].to_len > 0);
+			DBUG_EXECUTE_IF("compress_error", simulate_compress_error = TRUE;);
 
 			if (ds_write(dest_file, "NEWBNEWB", 8) ||
 			    write_uint64_le(dest_file,
-					    comp_file->bytes_processed)) {
+					    comp_file->bytes_processed) || simulate_compress_error ) {
 				msg("compress: write to the destination stream "
 				    "failed.\n");
-				return 1;
+				goto err;
 			}
 
 			comp_file->bytes_processed += threads[i].from_len;
@@ -256,7 +258,7 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 					   threads[i].to_len)) {
 				msg("compress: write to the destination stream "
 				    "failed.\n");
-				return 1;
+				goto err;
 			}
 
 			pthread_mutex_unlock(&threads[i].data_mutex);
@@ -265,6 +267,11 @@ compress_write(ds_file_t *file, const void *buf, size_t len)
 	}
 
 	return 0;
+
+err:
+	pthread_mutex_unlock(&threads[i].data_mutex);
+	pthread_mutex_unlock(&threads[i].ctrl_mutex);
+	return 1;
 }
 
 static

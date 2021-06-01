@@ -276,6 +276,8 @@ encrypt_write(ds_file_t *file, const void *buf, size_t len)
 						 encrypt_iv_len)) {
 				msg("encrypt: write to the destination file "
 				    "failed.\n");
+				pthread_mutex_unlock(&thd->data_mutex);
+				pthread_mutex_unlock(&thd->ctrl_mutex);
 				return 1;
 			}
 
