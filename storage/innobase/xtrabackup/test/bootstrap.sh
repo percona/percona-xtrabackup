@@ -147,10 +147,10 @@ main () {
         xtradb57)
             short_version="$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)"
             url="https://www.percona.com/downloads/Percona-Server-5.7/Percona-Server-${VERSION}/binary/tarball/"
-            if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
+            if [[ $(echo ${PXB_TYPE} | tr '[:upper:]' '[:lower:]') == "debug" ]]; then 
                 SUFFIX="-debug"
                 # Temporal workaround until PS 5.7.35 releases
-		        if [[ ${short_version} -lt "35" ]]; then
+		if [[ ${short_version} -lt "35" ]]; then
                     url="https://jenkins.percona.com/downloads/ps-5.7.34-debug/"
                 fi
             fi
