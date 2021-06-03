@@ -13,6 +13,7 @@ Following options are available:
 * Installing |Percona XtraBackup| from Downloaded
   :ref:`rpm <standalone_rpm>` or :ref:`apt <standalone_deb>` packages
 * :ref:`compiling_xtrabackup`
+* :ref:`docker`
 
 Before installing, you might want to read the :doc:`release-notes`.
 
@@ -94,7 +95,7 @@ describes the compiling and installation process from source code.
 
    installation/compiling_xtrabackup
 
-.. _pxb.installing/docker-container.running:
+
 
 Running |Percona XtraBackup| in a Docker container
 ================================================================================
@@ -107,12 +108,14 @@ For more information about how to use |docker|, see the `Docker Docs`_.
 .. _`Docker Docs`: https://docs.docker.com/
 
 .. note:: Make sure that you are using the latest version of Docker.
-   The ones provided via ``apt`` and ``yum``
-   may be outdated and cause errors.
+   The ones provided by the operating system package manager
+   may be outdated and may cause errors.
 
-.. note:: By default, Docker will pull the image from Docker Hub
-   if it is not available locally.
+.. toctree::
+   :maxdepth: 1
+   :titlesonly:
 
-The following procedure describes ...
+   installation/docker
+
 
 .. include:: _res/replace/proper.txt
