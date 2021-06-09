@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 HTTP client implementation using cURL.
 
@@ -28,6 +28,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <my_sys.h>
 #include "common.h"
+#include "s3.h"
+#include "swift.h"
 
 namespace xbcloud {
 
@@ -419,27 +421,27 @@ void Event_handler::stop() {
   }
 }
 
-bool retriable_curl_error(CURLcode rc) {
-  if (rc == CURLE_GOT_NOTHING || rc == CURLE_OPERATION_TIMEDOUT ||
-      rc == CURLE_RECV_ERROR || rc == CURLE_SEND_ERROR ||
-      rc == CURLE_SEND_FAIL_REWIND) {
-    return true;
+bool Http_client::retriable_curl_error(const CURLcode &rc) const {
+  for (std::vector<CURLcode>::const_iterator it = curl_retriable_errors.begin();
+       it != curl_retriable_errors.end(); ++it) {
+    if (rc == *it) return true;
   }
   return false;
 }
 
-bool retriable_http_error(long code) {
-  if (code == 503 || code == 500 || code == 504 || code == 408) {
-    return true;
+bool Http_client::retriable_http_error(const long &code) const {
+  for (std::vector<long>::const_iterator it = http_retriable_errors.begin();
+       it != http_retriable_errors.end(); ++it) {
+    if (code == *it) return true;
   }
   return false;
 }
 
 void Http_client::async_result_callback(async_callback_t user_callback,
-                                        const char *action, Event_handler *h,
-                                        CURLcode rc, Http_connection *conn) {
+                                        Event_handler *h, CURLcode rc,
+                                        Http_connection *conn) {
   if (rc != CURLE_OK) {
-    msg_ts("%s: Failed to %s. Error: %s\n", my_progname, action,
+    msg_ts("%s: Operation failed. Error: %s\n", my_progname,
            curl_easy_strerror(rc));
   }
   if (user_callback) {
@@ -583,8 +585,7 @@ bool Http_client::make_async_request(const Http_request &request,
   using std::placeholders::_1;
   using std::placeholders::_2;
 
-  auto cb =
-      std::bind(async_result_callback, callback, "upload object", h, _1, _2);
+  auto cb = std::bind(async_result_callback, callback, h, _1, _2);
 
   auto conn = new Http_connection(std::move(curl), request, response, cb);
   setup_request(conn->curl_easy(), request, response, headers,
@@ -596,4 +597,77 @@ bool Http_client::make_async_request(const Http_request &request,
   return true;
 }
 
+template <typename CLIENT, typename CALLBACK>
+void Http_client::callback(CLIENT *client, std::string container,
+                           std::string name, Http_request *req,
+                           Http_response *resp, const Http_client *http_client,
+                           Event_handler *h, CALLBACK callback, CURLcode rc,
+                           const Http_connection *conn, ulong count) const {
+  bool retry_error = false;
+
+  if (http_client->retriable_curl_error(rc)) {
+    retry_error = true;
+  } else if (!retry_error && rc != CURLE_OK && http_client->get_verbose()) {
+    msg_ts(
+        "%s: Curl error (%d) %s is not configured as retriable. You can allow "
+        "it by "
+        "adding --curl-retriable-errors=%d parameter\n",
+        my_progname, rc, curl_easy_strerror(rc), rc);
+  }
+  if (http_client->retriable_http_error(conn->response().http_code())) {
+    retry_error = true;
+  } else if (!retry_error && rc != CURLE_OK && http_client->get_verbose()) {
+    msg_ts(
+        "%s: http error (%lu) is not configured as retriable. You can allow it "
+        "by "
+        "adding --http-retriable-errors=%lu parameter\n",
+        my_progname, conn->response().http_code(),
+        conn->response().http_code());
+  }
+  if (rc == CURLE_OK && !resp->ok()) {
+    client->retry_error(resp, &retry_error);
+  }
+
+  if (retry_error && count <= client->get_max_retries()) {
+    ulong delay = get_exponential_backoff(count, client->get_max_backoff());
+    msg_ts("%s: Sleeping for %lu ms before retrying %s [%lu]\n", my_progname,
+           delay, name.c_str(), count);
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+    resp->reset_body();
+    client->signer->sign_request(client->hostname(container), container, *req,
+                                 time(0));
+    http_client->make_async_request(
+        *req, *resp, h,
+        std::bind(&Http_client::callback<CLIENT, CALLBACK>, this, client,
+                  container, name, req, resp, http_client, h, callback,
+                  std::placeholders::_1, std::placeholders::_2, count + 1),
+        true);
+    return;
+  } else if (count > client->get_max_retries())
+    msg_ts("%s: No more retries for %s\n", my_progname, name.c_str());
+
+  if (callback) {
+    callback(rc == CURLE_OK && resp->ok(), resp->body());
+  }
+  delete req;
+  delete resp;
+}
+
+/* async_download_callback_t and async_upload_callback_t are been resolved as
+ * the same function by the compiler, thus no need to re-declare the function
+ * signature here */
+
+template void
+Http_client::callback<Swift_client, Swift_client::async_download_callback_t>(
+    Swift_client *client, std::string container, std::string name,
+    Http_request *req, Http_response *resp, const Http_client *http_client,
+    Event_handler *h, Swift_client::async_download_callback_t callback,
+    CURLcode rc, const Http_connection *conn, ulong count) const;
+
+template void
+Http_client::callback<S3_client, S3_client::async_download_callback_t>(
+    S3_client *client, std::string container, std::string name,
+    Http_request *req, Http_response *resp, const Http_client *http_client,
+    Event_handler *h, S3_client::async_download_callback_t callback,
+    CURLcode rc, const Http_connection *conn, ulong count) const;
 }  // namespace xbcloud

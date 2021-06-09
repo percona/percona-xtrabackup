@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 HTTP client implementation using cURL.
 
@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include <curl/curl.h>
 #include <ev.h>
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <memory>
@@ -332,24 +333,23 @@ class Event_handler {
   void stop();
 };
 
-bool retriable_curl_error(CURLcode rc);
-
-bool retriable_http_error(long code);
-
 class Http_client {
  public:
   using async_callback_t = std::function<void(CURLcode, Http_connection *)>;
-
  private:
   bool insecure{false};
   bool verbose{false};
   std::string cacert;
-
+  std::vector<CURLcode> curl_retriable_errors{
+      CURLcode::CURLE_GOT_NOTHING,      CURLcode::CURLE_OPERATION_TIMEDOUT,
+      CURLcode::CURLE_RECV_ERROR,       CURLcode::CURLE_SEND_ERROR,
+      CURLcode::CURLE_SEND_FAIL_REWIND, CURLcode::CURLE_PARTIAL_FILE};
+  std::vector<long> http_retriable_errors{503, 500, 504, 408};
   mutable curl_easy_unique_ptr curl{nullptr, curl_easy_cleanup};
 
   static void async_result_callback(async_callback_t user_callback,
-                                    const char *action, Event_handler *h,
-                                    CURLcode rc, Http_connection *conn);
+                                    Event_handler *h, CURLcode rc,
+                                    Http_connection *conn);
 
   void setup_request(CURL *curl, const Http_request &request,
                      Http_response &response, curl_slist *&headers,
@@ -368,10 +368,33 @@ class Http_client {
                                   Http_response &response, Event_handler *h,
                                   async_callback_t callback = {},
                                   bool nowait = false) const;
+  template <typename CLIENT, typename CALLBACK>
+  void callback(CLIENT *client, std::string container, std::string name,
+                Http_request *req, Http_response *resp,
+                const Http_client *http_client, Event_handler *h,
+                CALLBACK callback, CURLcode rc, const Http_connection *conn,
+                ulong count) const;
   void set_verbose(bool val) { verbose = val; };
   void set_insecure(bool val) { insecure = val; };
   void set_cacaert(const std::string &val) { cacert = val; };
+  void set_curl_retriable_errors(CURLcode code) {
+    if (code < CURLcode::CURL_LAST) {
+      if (std::find(curl_retriable_errors.begin(), curl_retriable_errors.end(),
+                    code) == curl_retriable_errors.end()) {
+        curl_retriable_errors.push_back(code);
+      }
+    }
+  }
+  void set_http_retriable_errors(long error) {
+    if (std::find(http_retriable_errors.begin(), http_retriable_errors.end(),
+                  error) == http_retriable_errors.end()) {
+      http_retriable_errors.push_back(error);
+    }
+  }
+  bool retriable_curl_error(const CURLcode &rc) const;
+  bool retriable_http_error(const long &code) const;
   void reset() const { curl = nullptr; }
+  virtual bool get_verbose() const { return verbose; }
 };
 
 }  // namespace xbcloud
