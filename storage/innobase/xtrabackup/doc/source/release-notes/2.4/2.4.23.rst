@@ -1,0 +1,30 @@
+.. _PXB-2.4.23:
+
+================================================================================
+*Percona XtraBackup* 2.4.23
+================================================================================
+
+:Date: June 22, 2021
+:Installation: `Installing Percona XtraBackup <https://www.percona.com/doc/percona-xtrabackup/2.4/installation.html>`_
+
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot tolerate
+long periods of downtime. Offered free as an open source solution, it drives down backup
+costs while providing unique features for MySQL backups.
+
+Improvements
+================================================================================
+
+* :jirabug:`PXB-2487`: Problems with the typesetting in the Partial Backups document (Thanks to user qing for reporting this issue).
+
+
+
+Bugs Fixed
+================================================================================
+
+* :jirabug:`PXB-1462`: Long `gtid_executed` breaks --history functionality.
+* :jirabug:`PXB-2486`: When the `--encrypt` and `--parallel` parameters are used, XtraBackup does not handle a broken pipe correctly.
+* :jirabug:`PXB-1855`: Format correction for the `xtrabackup --databases` options.
+* :jirabug:`PXB-2427`: Update the XtraBackup Help description for the parameter `--stream`.
+
+
