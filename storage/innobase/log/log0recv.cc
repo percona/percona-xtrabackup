@@ -1747,8 +1747,29 @@ static byte *recv_parse_or_apply_log_rec_body(
             /* For cloned db header page has the encryption information. */
             !recv_sys->is_cloned_db) {
           ut_ad(LSN_MAX != start_lsn);
-          if (fil_tablespace_redo_encryption(ptr, end_ptr, space_id,
-                                             start_lsn) == nullptr)
+
+          byte *ptr_copy = ptr;
+          ptr_copy += 2;  // skip offset
+          ulint len = mach_read_from_2(ptr_copy);
+          ptr_copy += 2;
+          if (end_ptr < ptr_copy + len) return nullptr;
+
+          /* With Percona Server, Tables created with ENCRYPTION='N' have
+          crypt_data (CRYPT_SCHEME_UNENCRYPTED) in Page 0 */
+          if (memcmp(ptr_copy, Encryption::KEY_MAGIC_PS_V3,
+                     Encryption::MAGIC_SIZE) == 0) {
+            ptr_copy += Encryption::MAGIC_SIZE;
+            uint type = mach_read_from_1(ptr_copy);
+            if (type != Encryption::CRYPT_SCHEME_UNENCRYPTED) {
+              ib::error(ER_IB_MSG_716)
+                  << "Can't take backup of tablespace encrypted with KEYRING "
+                  << "encryption";
+              exit(EXIT_FAILURE);
+            }
+            ut_ad(len == Encryption::KEYRING_INFO_MAX_SIZE);
+            ptr += Encryption::KEYRING_INFO_MAX_SIZE;
+          } else if (fil_tablespace_redo_encryption(ptr, end_ptr, space_id,
+                                                    start_lsn) == nullptr)
             return (nullptr);
         }
 #ifdef UNIV_HOTBACKUP

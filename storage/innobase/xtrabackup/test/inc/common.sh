@@ -928,11 +928,24 @@ $MYSQL_VERSION_MINOR $MYSQL_VERSION_PATCH`
     [[ $server_str > $version_str ]]
 }
 
+#########################################################################
+# Return 0 if server is debug version
+########################################################################
 function is_debug_server()
 {
 
-[[ $MYSQL_VERSION =~ .*debug ]]
+  [[ $MYSQL_VERSION =~ .*debug ]]
 
+}
+
+#########################################################################
+# Requires server debug version
+########################################################################
+function require_debug_server()
+{
+    if ! is_debug_server; then
+        skip_test "Requires debug server version"
+    fi
 }
 
 #########################################################################

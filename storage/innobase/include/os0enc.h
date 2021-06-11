@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #define os0enc_h
 
 #include <mysql/components/my_service.h>
+#include "my_aes.h"
 #include "univ.i"
 
 namespace innobase {
@@ -97,6 +98,27 @@ class Encryption {
 
   /** Encryption magic bytes size */
   static constexpr size_t MAGIC_SIZE = 3;
+
+  static const size_t SERVER_UUID_HEX_LEN = 16;
+  static constexpr char KEY_MAGIC_PS_V3[] = "PSC";
+
+  /* CRYPT_DATA in ENCRYPTION='N' tablespaces always have unencrypted scheme */
+  static const uint CRYPT_SCHEME_UNENCRYPTED = 0;
+  /* KEYRING ENCRYPTION header size. aka crypt_data. Also present in
+  ENCRYPTION=N Tablespaces */
+  static const uint CRYPT_SCHEME_1_IV_LEN = 16;
+  static const size_t KEYRING_VALIDATION_TAG_SIZE = MY_AES_BLOCK_SIZE;
+  static constexpr uint KEYRING_INFO_MAX_SIZE =
+      MAGIC_SIZE + 1                  // type
+      + 4                             // min_key_version
+      + 4                             // max_key_version
+      + 4                             // key_id
+      + 1                             // encryption
+      + CRYPT_SCHEME_1_IV_LEN         // iv (16 bytes)
+      + 1                             // encryption rotation type
+      + KEY_LEN                       // tablespace key
+      + SERVER_UUID_HEX_LEN           // server's UUID written in hex
+      + KEYRING_VALIDATION_TAG_SIZE;  // validation tag
 
   /** Encryption master key prifix size */
   static constexpr size_t MASTER_KEY_PRIFIX_LEN = 9;
