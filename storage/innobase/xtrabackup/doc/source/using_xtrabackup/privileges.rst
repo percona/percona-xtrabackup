@@ -89,27 +89,31 @@ backed up:
     copying the files, and  ``LOCK TABLES FOR BACKUP`` and ``LOCK BINLOG FOR
     BACKUP`` require this privilege when `Backup Locks
     <http://www.percona.com/doc/percona-server/5.6/management/backup_locks.html>`_
-    are used,
+    are used.
 
-  * ``REPLICATION CLIENT`` in order to obtain the binary log position,
+  * ``REPLICATION CLIENT`` in order to obtain the binary log position.
 
-  * ``CREATE TABLESPACE`` in order to import tables (see :ref:`imp_exp_ibk`),
+  * ``CREATE TABLESPACE`` in order to import tables (see :ref:`imp_exp_ibk`).
 
   * ``PROCESS`` in order to run ``SHOW ENGINE INNODB STATUS`` (which is
     mandatory), and optionally to see all threads which are running on the
-    server (see :ref:`improved_ftwrl`),
+    server (see :ref:`improved_ftwrl`).
 
   * ``SUPER`` in order to start/stop the replica threads in a replication
     environment, use `XtraDB Changed Page Tracking
     <https://www.percona.com/doc/percona-server/5.6/management/changed_page_tracking.html>`_
-    for :ref:`xb_incremental` and for :ref:`improved_ftwrl`,
+    for :ref:`xb_incremental` and for :ref:`improved_ftwrl`.
 
   * ``CREATE`` privilege in order to create the
     :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
-    table,
+    table.
+    
+  * ``ALTER`` privilege in order to upgrade the
+    :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
+    table.
 
   * ``INSERT`` privilege in order to add history records to the
-    :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` table,
+    :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` table.
 
   * ``SELECT`` privilege in order to use
     :option:`innobackupex --incremental-history-name` or
