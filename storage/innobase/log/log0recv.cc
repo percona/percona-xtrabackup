@@ -1625,6 +1625,22 @@ recv_scan_log_seg_for_backup(
 }
 #endif /* UNIV_HOTBACKUP */
 
+#define CRYPT_SCHEME_1_IV_LEN 16
+static uint fil_get_encrypt_info_size(const uint iv_len) {
+        return ENCRYPTION_MAGIC_SIZE
+                + 2     //length of iv
+                + 4     //space id
+                + 2     //offset
+                + 1     //type
+                + 4     //min_key_version
+                + 4     //key_id
+                + 1     //encryption
+                + iv_len        //iv
+                + 4     //encryption rotation type
+                + ENCRYPTION_KEY_LEN    //tablespace key
+                + ENCRYPTION_KEY_LEN;   //tablespace iv
+}
+
 /** Parse or process a write encryption info record.
 @param[in]	ptr		redo log record
 @param[in]	end		end of the redo log buffer
@@ -1852,7 +1868,38 @@ recv_parse_or_apply_log_rec_body(
 	        Otherwise, redo will not find the key to decrypt
 		the data pages. */
 		if (page_no == 0 && !is_system_tablespace(space_id)) {
-			if (fil_write_encryption_parse(ptr, end_ptr,
+			byte* ptr_copy = ptr;
+			ptr_copy += 2; // skip offset
+			ulint len = mach_read_from_2(ptr_copy);
+			ptr_copy += 2;
+			if (end_ptr < ptr_copy + len) {
+				return NULL;
+			}
+
+			/* With Percona Server, Tables created with
+			ENCRYPTION='N' have crypt_data
+			(CRYPT_SCHEME_UNENCRYPTED) in Page 0 */
+			if (memcmp(ptr_copy, ENCRYPTION_KEY_MAGIC_PS_V1,
+                                   ENCRYPTION_MAGIC_SIZE) == 0) {
+				ptr_copy += ENCRYPTION_MAGIC_SIZE;
+
+				uint iv_len = mach_read_from_2(ptr_copy);
+				ut_a(iv_len == CRYPT_SCHEME_1_IV_LEN); // only supported
+				uint encrypt_info_size = fil_get_encrypt_info_size(iv_len);
+				ut_ad(len == encrypt_info_size);
+				ptr_copy += 2;
+
+				// skip space_id, offset to read the type in crypt data
+				ptr_copy += 4 + 2;
+				uint type = mach_read_from_1(ptr_copy);
+				if (type != CRYPT_SCHEME_UNENCRYPTED) {
+					ib::error() << "Can't take backup of "
+						<< "tablespace encrypted with "
+						<< "KEYRING encrypion";
+					exit(EXIT_FAILURE);
+				}
+				ptr += len;
+			} else if (fil_write_encryption_parse(ptr, end_ptr,
 						       space_id) == NULL) {
 				return(NULL);
 			}

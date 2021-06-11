@@ -343,6 +343,10 @@ static const char ENCRYPTION_KEY_MAGIC_V2[] = "lCB";
 information version. */
 static const char ENCRYPTION_KEY_MAGIC_V3[] = "lCC";
 
+/* CRYPT_DATA in ENCRYPTION='N' tablespaces always have unencrypted scheme */
+static const uint CRYPT_SCHEME_UNENCRYPTED = 0;
+static const char ENCRYPTION_KEY_MAGIC_PS_V1[] = "PSA";
+
 /** Encryption magic bytes for not yet flushed page */
 static const char ENCRYPTION_KEY_MAGIC_EMPTY[] = "\0\0\0";
 
