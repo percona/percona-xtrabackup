@@ -132,7 +132,7 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
   const uchar *ptr = static_cast<const uchar *>(buf);
 
   for (size_t i = 0; i < sparse_map_size; ++i) {
-    size_t rc;
+    my_off_t rc;
 
     rc = my_seek(fd, sparse_map[i].skip, MY_SEEK_CUR, MYF(MY_WME));
     if (rc == MY_FILEPOS_ERROR) {
@@ -162,7 +162,7 @@ static int local_close(ds_file_t *file) {
   /* Write the last page complete in full size. We achieve this by writing the
    * last byte of page as zero, this can only happen in case of sparse file */
   if (local_file->last_seek > 0) {
-    size_t rc;
+    my_off_t rc;
     rc = my_seek(fd, -1, MY_SEEK_CUR, MYF(MY_WME));
     if (rc == MY_FILEPOS_ERROR) {
       return 1;
