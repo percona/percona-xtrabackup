@@ -62,7 +62,7 @@ typedef unsigned short int ui16;
 
 // Detect if pointer size is 64-bit. It's not fatal if some 64-bit target is not
 // detected because this is only for adding an optional 64-bit optimization.
-#if defined _LP64 || defined __LP64__ || defined __64BIT__ || _ADDR64 || \
+#if defined _LP64 || defined __LP64__ || defined __64BIT__ || defined _ADDR64 || \
     defined _WIN64 || defined __arch64__ || __WORDSIZE == 64 ||          \
     (defined __sparc && defined __sparcv9) || defined __x86_64 ||        \
     defined __amd64 || defined __x86_64__ || defined _M_X64 ||           \

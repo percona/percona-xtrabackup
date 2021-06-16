@@ -116,7 +116,7 @@ main () {
 
     # Check if tarball exist before any download
     if ! wget --spider "${url}/${tarball}" 2>/dev/null; then            
-        echo "Version you specified(${VERSION}) is not exist on ${url}/${tarball}"
+        echo "Version you specified(${VERSION}) does not exist on ${url}/${tarball}"
         exit 1
     else
         echo "Downloading ${tarball}"
@@ -124,7 +124,21 @@ main () {
     fi
 
     echo "Unpacking ${tarball} into ${DESTDIR}"
-    tar xf "${tarball}" -C "${DESTDIR}"
+    # Separate the gunzip from the tar
+    tar_file=${tarball}
+    if [[ ${tar_file} =~ .*\.gz$ ]]; then
+        gunzip "${tar_file}"
+        tar_file=${tar_file%.gz}
+    fi
+
+    if [[ -x ${tar_file} ]]; then
+        echo "Err: Cannot find the tar file : ${tar_file}"
+        exit 1
+    fi
+    tar xf "${tar_file}" -C "${DESTDIR}"
+    echo "Removing tar file ${tar_file}"
+    rm "${tar_file}"
+
     sourcedir="${DESTDIR}/$(ls ${DESTDIR})"
     if test -n "${sourcedir}"; then
         mv "${sourcedir}"/* "${DESTDIR}"
