@@ -127,12 +127,12 @@ References
    :maxdepth: 1
    :glob:
 
+   release-notes
    xtrabackup_bin/xbk_option_reference
    xbcloud/xbcloud
    xbcrypt/xbcrypt
    xbstream/xbstream
    faq
-   release-notes
    glossary
    xtrabackup-files
    trademark-policy
