@@ -109,6 +109,10 @@ The database user needs the following privileges on the tables or databases to b
   :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
   table,
 
+* ``ALTER`` privilege in order to upgrade the
+  :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
+  table,
+
 * ``INSERT`` privilege in order to add history records to the
   :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` table,
 
