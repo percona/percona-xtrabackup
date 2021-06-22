@@ -450,7 +450,7 @@ Command-line options
 
 .. option:: --parallel=N
 
-   Maximum number of concurrent upload/download threads. Default is ``1``.
+   Maximum number of concurrent upload/download requests. Default is ``1``.
 
 .. option:: --cacert
 
