@@ -143,6 +143,9 @@ main () {
             VERSION_PREFIX=$(echo ${VERSION} | awk -F '-' '{ print $1 }')
             VERSION_SUFFIX=$(echo ${VERSION} | awk -F '-' '{ print $2 }')
             tarball="Percona-Server-${VERSION_PREFIX}-rel${VERSION_SUFFIX}-Linux.${arch}.ssl$(ssl_version).tar.gz"
+            if [[ ${arch} == "i686" ]] && [[ $VERSION_PREFIX == "5.6.51" ]]; then
+                url="https://jenkins.percona.com/downloads/ps-5.6.51-pxb/"     
+            fi
             ;;
         xtradb57)
             short_version="$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)"
@@ -181,25 +184,35 @@ main () {
     fi
 
     echo "Unpacking ${tarball} into ${DESTDIR}"
-    # Separate the gunzip from the tar
-    tar_file=${tarball}
-    if [[ ${tar_file} =~ .*\.gz$ ]]; then
-        gunzip "${tar_file}"
-        tar_file=${tar_file%.gz}
-    fi
+    # Check if it's a gzip archive before
+    if $(file -b ${tarball} | grep -q "gzip"); then
+        # Separate the gunzip from the tar
+        tar_file=${tarball}
+        if [[ ${tar_file} =~ .*\.gz$ ]]; then
+            gunzip "${tar_file}"
+            tar_file=${tar_file%.gz}
+        fi
 
-    if [[ -x ${tar_file} ]]; then
-        echo "Err: Cannot find the tar file : ${tar_file}"
-        exit 1
-    fi
-    tar xf "${tar_file}" -C "${DESTDIR}"
-    echo "Removing tar file ${tar_file}"
-    rm "${tar_file}"
+        if [[ -x ${tar_file} ]]; then
+            echo "Err: Cannot find the tar file : ${tar_file}"
+            exit 1
+        fi
+        tar xf "${tar_file}" -C "${DESTDIR}"
+        echo "Removing tar file ${tar_file}"
+        rm "${tar_file}"
 
-    sourcedir="${DESTDIR}/$(ls ${DESTDIR})"
-    if test -n "${sourcedir}"; then
-        mv "${sourcedir}"/* "${DESTDIR}"
-        rm -rf "${sourcedir}"
+        sourcedir="${DESTDIR}/$(ls ${DESTDIR})"
+        if test -n "${sourcedir}"; then
+            mv "${sourcedir}"/* "${DESTDIR}"
+            rm -rf "${sourcedir}"
+        fi
+    else
+        tar xf "${tarball}" -C "${DESTDIR}"
+        sourcedir="${DESTDIR}/$(ls ${DESTDIR})"
+        if test -n "${sourcedir}"; then
+            mv "${sourcedir}"/* "${DESTDIR}"
+            rm -rf "${sourcedir}"
+        fi
     fi
 }
 
