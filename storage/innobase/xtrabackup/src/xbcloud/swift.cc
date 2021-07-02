@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 Openstack Swift client implementation.
 
@@ -38,11 +38,11 @@ namespace xbcloud {
 const rapidjson::Value &json_get_member(const rapidjson::Document &doc,
                                         const char *name) {
   if (!doc.IsObject()) {
-    msg_ts("%s: cannot get member '%s' of non object", my_progname, name);
+    msg_ts("%s: cannot get member '%s' of non object\n", my_progname, name);
   }
   auto member = doc.FindMember(name);
   if (member == doc.MemberEnd()) {
-    msg_ts("%s: cannot find member '%s' of an object", my_progname, name);
+    msg_ts("%s: cannot find member '%s' of an object\n", my_progname, name);
   }
   return member->value;
 }
@@ -50,11 +50,11 @@ const rapidjson::Value &json_get_member(const rapidjson::Document &doc,
 const rapidjson::Value &json_get_member(const rapidjson::Value &obj,
                                         const char *name) {
   if (!obj.IsObject()) {
-    msg_ts("%s: cannot get member '%s' of non object", my_progname, name);
+    msg_ts("%s: cannot get member '%s' of non object\n", my_progname, name);
   }
   auto member = obj.FindMember(name);
   if (member == obj.MemberEnd()) {
-    msg_ts("%s: cannot find member '%s' of an object", my_progname, name);
+    msg_ts("%s: cannot find member '%s' of an object\n", my_progname, name);
   }
   return member->value;
 }
@@ -670,6 +670,15 @@ Http_buffer Swift_client::download_object(const std::string &container,
   return resp.move_body();
 }
 
+void Swift_client::download_callback(
+    Swift_client *client, std::string container, std::string name,
+    Http_request *req, Http_response *resp, const Http_client *http_client,
+    Event_handler *h, Swift_client::async_download_callback_t callback,
+    CURLcode rc, const Http_connection *conn, ulong count) {
+  http_client->callback(client, container, name, req, resp, http_client, h,
+                        callback, rc, conn, count);
+}
+
 bool Swift_client::create_container(const std::string &name) {
   Http_request req(Http_request::PUT, protocol, host, path + name);
   req.add_header("X-Auth-Token", token);
@@ -746,6 +755,15 @@ bool Swift_client::upload_object(const std::string &container,
   return false;
 }
 
+void Swift_client::upload_callback(
+    Swift_client *client, std::string container, std::string name,
+    Http_request *req, Http_response *resp, const Http_client *http_client,
+    Event_handler *h, Swift_client::async_upload_callback_t callback,
+    CURLcode rc, const Http_connection *conn, ulong count) {
+  http_client->callback(client, container, name, req, resp, http_client, h,
+                        callback, rc, conn, count);
+}
+
 bool Swift_client::async_upload_object(const std::string &container,
                                        const std::string &name,
                                        const Http_buffer &contents,
@@ -772,21 +790,11 @@ bool Swift_client::async_upload_object(const std::string &container,
     return false;
   }
 
-  auto f = [callback, container, name, req, resp](
-               CURLcode rc, const Http_connection *conn) mutable -> void {
-    if (rc == CURLE_OK && !resp->ok()) {
-      msg_ts("%s: Failed to upload object. Http error code: %lu\n", my_progname,
-             resp->http_code());
-    }
-    bool valid = rc == CURLE_OK && validate_response(*req, *resp);
-    if (callback) {
-      callback(rc == CURLE_OK && valid && resp->ok());
-    }
-    delete req;
-    delete resp;
-  };
-
-  http_client->make_async_request(*req, *resp, h, f);
+  http_client->make_async_request(
+      *req, *resp, h,
+      std::bind(Swift_client::upload_callback, this, container, name, req, resp,
+                http_client, h, callback, std::placeholders::_1,
+                std::placeholders::_2, 1));
 
   return true;
 }
@@ -812,20 +820,11 @@ bool Swift_client::async_download_object(const std::string &container,
     return false;
   }
 
-  auto f = [callback, container, name, req, resp](
-               CURLcode rc, const Http_connection *conn) mutable -> void {
-    if (rc == CURLE_OK && !resp->ok()) {
-      msg_ts("%s: Failed to download object. Http error code: %lu\n",
-             my_progname, resp->http_code());
-    }
-    if (callback) {
-      callback(rc == CURLE_OK && resp->ok(), resp->body());
-    }
-    delete req;
-    delete resp;
-  };
-
-  http_client->make_async_request(*req, *resp, h, f);
+  http_client->make_async_request(
+      *req, *resp, h,
+      std::bind(Swift_client::download_callback, this, container, name, req,
+                resp, http_client, h, callback, std::placeholders::_1,
+                std::placeholders::_2, 1));
 
   return true;
 }

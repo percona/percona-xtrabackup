@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2014-2020 Percona LLC and/or its affiliates.
+Copyright (c) 2014, 2021 Percona LLC and/or its affiliates.
 
 xbcloud utility. Manage backups on cloud storage services.
 
@@ -104,6 +104,9 @@ static char *opt_google_bucket = nullptr;
 static std::string backup_name;
 static char *opt_cacert = nullptr;
 static ulong opt_parallel = 1;
+static ulong opt_max_retries = 10;
+static u_int32_t opt_max_backoff = 300000;
+
 static bool opt_insecure = false;
 static bool opt_md5 = false;
 static enum { MODE_GET, MODE_PUT, MODE_DELETE } opt_mode;
@@ -122,6 +125,8 @@ TYPELIB s3_bucket_lookup_typelib = {array_elements(s3_bucket_lookup_names) - 1,
 
 TYPELIB s3_api_version_typelib = {array_elements(s3_api_version_names) - 1, "",
                                   s3_api_version_names, nullptr};
+
+Http_client http_client;
 
 enum {
   OPT_STORAGE = 256,
@@ -163,11 +168,15 @@ enum {
   OPT_GOOGLE_BUCKET,
 
   OPT_PARALLEL,
+  OPT_MAX_RETRIES,
+  OPT_MAX_BACKOFF,
   OPT_CACERT,
   OPT_HEADER,
   OPT_INSECURE,
   OPT_MD5,
-  OPT_VERBOSE
+  OPT_VERBOSE,
+  OPT_CURL_RETRIABLE_ERRORS,
+  OPT_HTTP_RETRIABLE_ERRORS
 };
 
 static struct my_option my_long_options[] = {
@@ -179,8 +188,8 @@ static struct my_option my_long_options[] = {
     {"help", '?', "Display this help and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
      0, 0, 0, 0, 0},
 
-     {"version", 'V', "Display version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
-      0, 0, 0, 0, 0},
+    {"version", 'V', "Display version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG,
+     0, 0, 0, 0, 0, 0},
 
     {"storage", OPT_STORAGE, "Specify storage type S3/SWIFT.", &opt_storage,
      &opt_storage, &storage_typelib, GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -262,6 +271,19 @@ static struct my_option my_long_options[] = {
      &opt_parallel, &opt_parallel, 0, GET_ULONG, REQUIRED_ARG, 1, 1, ULONG_MAX,
      0, 0, 0},
 
+    {"max-retries", OPT_MAX_RETRIES,
+     "Number of retries of chunk uploads/downloads after a failure (Default "
+     "10).",
+     &opt_max_retries, &opt_max_retries, 0, GET_ULONG, REQUIRED_ARG, 10, 1,
+     ULONG_MAX, 0, 0, 0},
+
+    {"max-backoff", OPT_MAX_BACKOFF,
+     "Maximum backoff delay in milliseconds in between chunk uploads/downloads "
+     "retries "
+     "(Default 300000).",
+     &opt_max_backoff, &opt_max_backoff, 0, GET_UINT32, REQUIRED_ARG, 300000, 1,
+     UINT_MAX32, 0, 0, 0},
+
     {"s3-region", OPT_S3_REGION, "S3 region.", &opt_s3_region, &opt_s3_region,
      0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -342,6 +364,16 @@ static struct my_option my_long_options[] = {
     {"verbose", OPT_VERBOSE, "Turn ON cURL tracing.", &opt_verbose,
      &opt_verbose, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+    {"curl-retriable-errors", OPT_CURL_RETRIABLE_ERRORS,
+     "Add a new curl error code as retriable. For multiple codes, use a comma "
+     "separated list of codes.",
+     0, 0, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"http-retriable-errors", OPT_HTTP_RETRIABLE_ERRORS,
+     "Add a new http error code as retriable. For multiple codes, use a comma "
+     "separated list of codes.",
+     0, 0, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 static void print_version() {
@@ -351,7 +383,7 @@ static void print_version() {
 
 static void usage() {
   print_version();
-  puts("Copyright (C) 2015-2019 Percona LLC and/or its affiliates.");
+  puts("Copyright (C) 2015, 2021 Percona LLC and/or its affiliates.");
   puts(
       "This software comes with ABSOLUTELY NO WARRANTY. "
       "This is free software,\nand you are welcome to modify and "
@@ -404,6 +436,31 @@ static bool get_one_option(int optid,
     case OPT_HEADER:
       if (argument != nullptr) {
         extra_http_headers.insert(parse_http_header(argument));
+      }
+      break;
+    case OPT_CURL_RETRIABLE_ERRORS:
+      if (argument != nullptr) {
+        std::istringstream iss(argument);
+        for (std::string val; std::getline(iss, val, ',');) {
+          char *ptr;
+          long int code = strtol(val.c_str(), &ptr, 10);
+          if (!*ptr) {
+            http_client.set_curl_retriable_errors(
+                std::move(static_cast<CURLcode>(code)));
+          }
+        }
+      }
+      break;
+    case OPT_HTTP_RETRIABLE_ERRORS:
+      if (argument != nullptr) {
+        std::istringstream iss(argument);
+        for (std::string val; std::getline(iss, val, ',');) {
+          char *ptr;
+          long int code = strtol(val.c_str(), &ptr, 10);
+          if (!*ptr) {
+            http_client.set_http_retriable_errors(std::move(code));
+          }
+        }
       }
       break;
   }
@@ -995,7 +1052,6 @@ int main(int argc, char **argv) {
   }
 
   std::unique_ptr<Object_store> object_store = nullptr;
-  Http_client http_client;
   if (opt_verbose) {
     http_client.set_verbose(true);
   }
@@ -1106,7 +1162,8 @@ int main(int argc, char **argv) {
     msg_ts("Object store URL: %s\n", auth_info.url.c_str());
 
     object_store = std::unique_ptr<Object_store>(
-        new Swift_object_store(&http_client, auth_info.url, auth_info.token));
+        new Swift_object_store(&http_client, auth_info.url, auth_info.token,
+                               opt_max_retries, opt_max_backoff));
 
     container_name = opt_swift_container;
 
@@ -1122,7 +1179,8 @@ int main(int argc, char **argv) {
         opt_s3_storage_class != nullptr ? opt_s3_storage_class : "";
     object_store = std::unique_ptr<Object_store>(new S3_object_store(
         &http_client, region, access_key, secret_key, session_token,
-        storage_class, opt_s3_endpoint != nullptr ? opt_s3_endpoint : "",
+        storage_class, opt_max_retries, opt_max_backoff,
+        opt_s3_endpoint != nullptr ? opt_s3_endpoint : "",
         static_cast<s3_bucket_lookup_t>(opt_s3_bucket_lookup),
         static_cast<s3_api_version_t>(opt_s3_api_version)));
 
@@ -1154,7 +1212,7 @@ int main(int argc, char **argv) {
 
     object_store = std::unique_ptr<Object_store>(new S3_object_store(
         &http_client, region, access_key, secret_key, session_token,
-        storage_class,
+        storage_class, opt_max_retries, opt_max_backoff,
         opt_google_endpoint != nullptr ? opt_google_endpoint
                                        : "https://storage.googleapis.com/",
         LOOKUP_DNS, S3_V4));

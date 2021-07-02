@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019, 2020 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 AWS S3 client implementation.
 
@@ -113,10 +113,13 @@ class S3_signerV2 : public S3_signer {
 
 class S3_client {
  public:
-  using async_upload_callback_t = std::function<void(bool)>;
+  using async_upload_callback_t =
+      std::function<void(bool, const Http_buffer &)>;
   using async_download_callback_t =
       std::function<void(bool, const Http_buffer &)>;
   using async_delete_callback_t = std::function<void(bool)>;
+
+  std::unique_ptr<S3_signer> signer;
 
  private:
   const Http_client *http_client;
@@ -133,19 +136,12 @@ class S3_client {
 
   s3_bucket_lookup_t bucket_lookup{LOOKUP_AUTO};
 
-  std::unique_ptr<S3_signer> signer;
-
   std::string base_url;
 
   Http_request::protocol_t protocol;
 
-  std::string hostname(const std::string &bucket) const {
-    if (bucket_lookup == LOOKUP_DNS) {
-      return bucket + "." + host;
-    } else {
-      return host;
-    }
-  }
+  ulong max_retries;
+  ulong max_backoff;
 
   std::string bucketname(const std::string &bucket) const {
     if (bucket_lookup == LOOKUP_PATH) {
@@ -161,15 +157,24 @@ class S3_client {
                               const Http_client *http_client, Event_handler *h,
                               S3_client::async_upload_callback_t callback,
                               CURLcode rc, const Http_connection *conn,
-                              int count);
+                              ulong count);
+
+  static void download_callback(
+      S3_client *client, std::string bucket, std::string name,
+      Http_request *req, Http_response *resp, const Http_client *http_client,
+      Event_handler *h, S3_client::async_download_callback_t callback,
+      CURLcode rc, const Http_connection *conn, ulong count);
 
  public:
   S3_client(const Http_client *client, const std::string &region,
-            const std::string &access_key, const std::string &secret_key)
+            const std::string &access_key, const std::string &secret_key,
+            const ulong max_retries, const ulong max_backoff)
       : http_client(client),
         region(region),
         access_key(access_key),
-        secret_key(secret_key) {
+        secret_key(secret_key),
+        max_retries(max_retries),
+        max_backoff(max_backoff) {
     host = "s3." + region + ".amazonaws.com";
     endpoint = "https://" + host;
     protocol = Http_request::HTTPS;
@@ -233,6 +238,20 @@ class S3_client {
   bool list_objects_with_prefix(const std::string &bucket,
                                 const std::string &prefix,
                                 std::vector<std::string> &objects);
+
+  ulong get_max_retries() { return max_retries; }
+
+  ulong get_max_backoff() { return max_backoff; }
+
+  void retry_error(Http_response *resp, bool *retry);
+
+  std::string hostname(const std::string &bucket) const {
+    if (bucket_lookup == LOOKUP_DNS) {
+      return bucket + "." + host;
+    } else {
+      return host;
+    }
+  }
 };
 
 class S3_object_store : public Object_store {
@@ -244,11 +263,13 @@ class S3_object_store : public Object_store {
   S3_object_store(const Http_client *client, std::string &region,
                   const std::string &access_key, const std::string &secret_key,
                   const std::string &session_token,
-                  const std::string &storage_class,
+                  const std::string &storage_class, const ulong max_retries,
+                  const ulong max_backoff,
                   const std::string &endpoint = std::string(),
                   s3_bucket_lookup_t bucket_lookup = LOOKUP_DNS,
                   s3_api_version_t api_version = S3_V_AUTO)
-      : s3_client{client, region, access_key, secret_key} {
+      : s3_client{client,     region,      access_key,
+                  secret_key, max_retries, max_backoff} {
     if (!session_token.empty()) s3_client.set_session_token(session_token);
     if (!storage_class.empty()) s3_client.set_storage_class(storage_class);
     if (!endpoint.empty()) s3_client.set_endpoint(endpoint);
@@ -279,15 +300,14 @@ class S3_object_store : public Object_store {
                              const Http_buffer &contents) override {
     return s3_client.upload_object(container, object, contents);
   }
-  virtual bool async_upload_object(const std::string &container,
-                                   const std::string &object,
-                                   const Http_buffer &contents,
-                                   Event_handler *h,
-                                   std::function<void(bool)> f = {}) override {
+  virtual bool async_upload_object(
+      const std::string &container, const std::string &object,
+      const Http_buffer &contents, Event_handler *h,
+      std::function<void(bool, const Http_buffer &contents)> f = {}) override {
     return s3_client.async_upload_object(
         container, object, contents, h,
-        [f](bool success) {
-          if (f) f(success);
+        [f](bool success, const Http_buffer &contents) {
+          if (f) f(success, contents);
         },
         extra_http_headers);
   }
