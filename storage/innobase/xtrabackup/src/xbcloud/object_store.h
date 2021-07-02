@@ -41,11 +41,10 @@ class Object_store {
   virtual bool upload_object(const std::string &container,
                              const std::string &object,
                              const Http_buffer &contents) = 0;
-  virtual bool async_upload_object(const std::string &container,
-                                   const std::string &object,
-                                   const Http_buffer &contents,
-                                   Event_handler *h,
-                                   std::function<void(bool)> f = {}) = 0;
+  virtual bool async_upload_object(
+      const std::string &container, const std::string &object,
+      const Http_buffer &contents, Event_handler *h,
+      std::function<void(bool, const Http_buffer &contents)> f = {}) = 0;
   virtual bool async_download_object(
       const std::string &container, const std::string &object, Event_handler *h,
       std::function<void(bool, const Http_buffer &contents)> f = {}) = 0;

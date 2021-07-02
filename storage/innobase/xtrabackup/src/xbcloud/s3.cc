@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019, 2020 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 AWS S3 client implementation.
 
@@ -541,48 +541,9 @@ void S3_client::upload_callback(
     S3_client *client, std::string bucket, std::string name, Http_request *req,
     Http_response *resp, const Http_client *http_client, Event_handler *h,
     S3_client::async_upload_callback_t callback, CURLcode rc,
-    const Http_connection *conn, int count) {
-  bool retry_error = false;
-  if (retriable_curl_error(rc) ||
-      retriable_http_error(conn->response().http_code())) {
-    retry_error = true;
-  }
-
-  if (rc == CURLE_OK && !resp->ok()) {
-    S3_response s3_resp;
-    if (!s3_resp.parse_http_response(*resp)) {
-      msg_ts(
-          "%s: Failed to upload object %s/%s. Failed to parse XML "
-          "response.\n",
-          my_progname, bucket.c_str(), name.c_str());
-    } else if (s3_resp.error()) {
-      msg_ts("%s: Failed to upload object %s/%s. Error message: %s\n",
-             my_progname, bucket.c_str(), name.c_str(),
-             s3_resp.error_message().c_str());
-      if (s3_resp.error_code() == "RequestTimeout") {
-        retry_error = true;
-      }
-    }
-  }
-
-  if (retry_error && count <= 3) {
-    msg_ts("%s: Retrying %s [%d]\n", my_progname, name.c_str(), count);
-    resp->reset_body();
-    client->signer->sign_request(client->hostname(bucket), bucket, *req,
-                                 time(0));
-    http_client->make_async_request(
-        *req, *resp, h,
-        std::bind(S3_client::upload_callback, client, bucket, name, req, resp,
-                  http_client, h, callback, std::placeholders::_1,
-                  std::placeholders::_2, count + 1),
-        true);
-    return;
-  }
-  if (callback) {
-    callback(rc == CURLE_OK && resp->ok());
-  }
-  delete req;
-  delete resp;
+    const Http_connection *conn, ulong count) {
+  http_client->callback(client, bucket, name, req, resp, http_client, h,
+                        callback, rc, conn, count);
 }
 
 bool S3_client::async_upload_object(
@@ -622,6 +583,15 @@ bool S3_client::async_upload_object(
   return true;
 }
 
+void S3_client::download_callback(
+    S3_client *client, std::string bucket, std::string name, Http_request *req,
+    Http_response *resp, const Http_client *http_client, Event_handler *h,
+    S3_client::async_download_callback_t callback, CURLcode rc,
+    const Http_connection *conn, ulong count) {
+  http_client->callback(client, bucket, name, req, resp, http_client, h,
+                        callback, rc, conn, count);
+}
+
 bool S3_client::async_download_object(
     const std::string &bucket, const std::string &name, Event_handler *h,
     const async_download_callback_t callback,
@@ -647,29 +617,11 @@ bool S3_client::async_download_object(
     return false;
   }
 
-  auto f = [callback, bucket, name, req, resp](
-               CURLcode rc, const Http_connection *conn) mutable -> void {
-    if (rc == CURLE_OK && !resp->ok()) {
-      S3_response s3_resp;
-      if (!s3_resp.parse_http_response(*resp)) {
-        msg_ts(
-            "%s: Failed to download object %s/%s. Failed to parse XML "
-            "response.\n",
-            my_progname, bucket.c_str(), name.c_str());
-      } else if (s3_resp.error()) {
-        msg_ts("%s: Failed to download object %s/%s. Error message: %s\n",
-               my_progname, bucket.c_str(), name.c_str(),
-               s3_resp.error_message().c_str());
-      }
-    }
-    if (callback) {
-      callback(rc == CURLE_OK && resp->ok(), resp->body());
-    }
-    delete req;
-    delete resp;
-  };
-
-  http_client->make_async_request(*req, *resp, h, f);
+  http_client->make_async_request(
+      *req, *resp, h,
+      std::bind(S3_client::download_callback, this, bucket, name, req, resp,
+                http_client, h, callback, std::placeholders::_1,
+                std::placeholders::_2, 1));
 
   return true;
 }
@@ -782,6 +734,19 @@ bool S3_client::list_objects_with_prefix(const std::string &bucket,
   }
 
   return true;
+}
+
+void S3_client::retry_error(Http_response *resp, bool *retry) {
+  S3_response s3_resp;
+  if (!s3_resp.parse_http_response(*resp)) {
+    msg_ts("%s: Failed to parse XML response.\n", my_progname);
+  } else if (s3_resp.error()) {
+    msg_ts("%s: S3 error message: %s\n", my_progname,
+           s3_resp.error_message().c_str());
+    if (s3_resp.error_code() == "RequestTimeout") {
+      *retry = true;
+    }
+  }
 }
 
 }  // namespace xbcloud
