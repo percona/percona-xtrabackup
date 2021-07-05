@@ -44,8 +44,8 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -g          Debug mode
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: experimental, gr, main.
-            Default is 'main and gr'.
+-s suite    Select a test suite to run. Possible values: experimental, gr, keyring, main.
+            Default is 'main, gr and keyring'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
@@ -865,8 +865,8 @@ if [ -n "$tname" ]
 then
    tests="$tname"
 else
-   tests="t/*.sh suites/gr/*.sh"
-   suites=" main gr"
+   tests="t/*.sh suites/gr/*.sh suites/keyring/*.sh"
+   suites=" main gr keyring"
 fi
 
 export OUTFILE="$PWD/results/setup"
@@ -958,6 +958,15 @@ do
    TOTAL_COUNT=$((TOTAL_COUNT+1))
 
    name=`basename $t .sh`
+   suite=`dirname $t | awk -F'/' '{print $NF}'`
+   if [[ "${suite}" = "t" ]];
+   then
+     suite="main"
+   fi
+   if [[ $NOFSUITES -ge 1 ]];
+   then
+     name="${suite}.${name}"
+   fi
    worker_names[$worker]=$t
    worker_outfiles[$worker]="$PWD/results/$name"
    worker_skip_files[$worker]="$PWD/results/$name.skipped"
