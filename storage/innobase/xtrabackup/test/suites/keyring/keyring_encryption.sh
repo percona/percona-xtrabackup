@@ -18,7 +18,7 @@ SET GLOBAL innodb_checkpoint_disabled = 1;
 CREATE TABLE t1(a INT) ENGINE=INNODB ENCRYPTION='N';
 INSERT INTO t1 VALUES(100);
 EOF
-backup_and_restore test
+run_cmd backup_and_restore test
 
 vlog "case#2 check if table can be altered with encryption='n'"
 mysql test <<EOF
@@ -30,7 +30,7 @@ ALTER TABLE t1 ENCRYPTION='N';
 INSERT INTO t1 VALUES(100);
 EOF
 innodb_wait_for_flush_all
-backup_and_restore test
+run_cmd backup_and_restore test
 
 #for the remaining test need PS server
 require_xtradb

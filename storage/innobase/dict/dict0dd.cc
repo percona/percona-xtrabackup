@@ -5550,6 +5550,73 @@ const rec_t *dd_startscan_system(THD *thd, MDL_ticket **mdl, btr_pcur_t *pcur,
 */
 static const int DD_FIELD_OFFSET = 2;
 
+/** Process one mysql.metadata record and extract schema name and id
+@param[in]	heap		temp memory heap
+@param[in]	rec		mysql.tables record
+@param[in]	dd_tables	dict_table_t obj of dd system table
+@param[in]	mtr		mini-transaction
+@param[out]	name 		name of table database/name
+@param[out]	id		schema_id */
+void dd_process_schema_rec(mem_heap_t *heap, const rec_t *rec,
+                           dict_table_t *dd_tables, mtr_t *mtr,
+                           std::string *name, uint64 *id) {
+  ulint len;
+  const byte *field;
+
+  ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_tables)));
+
+  ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
+                                   ULINT_UNDEFINED, &heap);
+
+  field = (const byte *)rec_get_nth_field(rec, offsets,
+                                          dd_tables->field_number("id"), &len);
+
+  *id = mach_read_from_8(field);
+
+  field = rec_get_nth_field(
+      rec, offsets, dd_tables->field_number("name") + DD_FIELD_OFFSET, &len);
+  auto name_csr = (const char *)field;
+
+  name->assign(name_csr, name_csr + len);
+  mtr_commit(mtr);
+}
+
+/** Process one mysql.tables record and get the dd id, table name, schema name
+@param[in]	heap		temp memory heap
+@param[in]	rec		mysql.tables record
+@param[in]	dd_tables	dict_table_t obj of dd system table
+@param[in]	mtr		mini-transaction
+@param[out]	schema_id 	schema id of table
+@param[out]	name 		name of table
+@param[out]	id 		primary key of table */
+void dd_process_dd_tables_rec(mem_heap_t *heap, const rec_t *rec,
+                              dict_table_t *dd_tables, mtr_t *mtr,
+                              uint64 *schema_id, std::string *name,
+                              uint64 *id) {
+  ulint len;
+  const byte *field;
+
+  ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_tables)));
+
+  ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
+                                   ULINT_UNDEFINED, &heap);
+
+  field = rec_get_nth_field(
+      rec, offsets, dd_tables->field_number("name") + DD_FIELD_OFFSET, &len);
+  auto name_csr = (const char *)field;
+  name->assign(name_csr, name_csr + len);
+
+  field = (const byte *)rec_get_nth_field(rec, offsets,
+                                          dd_tables->field_number("id"), &len);
+  *id = mach_read_from_8(field);
+
+  field = (const byte *)rec_get_nth_field(
+      rec, offsets, dd_tables->field_number("schema_id") + DD_FIELD_OFFSET,
+      &len);
+  *schema_id = mach_read_from_8(field);
+  mtr_commit(mtr);
+}
+
 /** Process one mysql.tables record and get the dict_table_t
 @param[in]	heap		Temp memory heap
 @param[in,out]	rec		mysql.tables record

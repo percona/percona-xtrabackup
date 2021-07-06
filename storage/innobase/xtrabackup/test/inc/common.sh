@@ -1336,6 +1336,52 @@ function innodb_checkpoint_lsn()
         grep "Last checkpoint at" | awk '{ print $4 }'
 }
 
+#check row count in a database/table
+#@in database
+#@in table
+#@in expected row count
+########################################################################
+function check_count() {
+  local db=$1
+  local table=$2
+  local expected_row_count=$3
+  local row_count=`$MYSQL $MYSQL_ARGS -Ns -e "select count(1) from $table" $db | awk {'print $1'}`
+  vlog "row count in table $table is $row_count"
+
+  if [ "$row_count" != $expected_row_count ]; then
+   vlog "rows in table t1 is $row_count when it should be $expected_row_count"
+   exit -1
+  fi
+}
+
+#general method to restore
+########################################################################
+function backup_and_restore() {
+  local db=$1
+  record_db_state $db
+  rm -rf $topdir/backup
+  mkdir -p $topdir/backup
+
+  ## backup and prepare based on if keyring is used
+  if [ -z ${plugin_dir+x} ]
+  then
+    xtrabackup --backup --target-dir=$topdir/backup
+    run_cmd $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
+  else
+    xtrabackup --backup --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir}
+    run_cmd $XB_BIN $XB_ARGS --xtrabackup-plugin-dir=${plugin_dir} --prepare \
+      --target-dir=$topdir/backup ${keyring_args}
+  fi
+
+  # Restore
+  stop_server
+  rm -rf $mysql_datadir
+  xtrabackup --copy-back --target-dir=$topdir/backup
+  start_server
+  # Verify backup
+  run_cmd verify_db_state $db
+}
+
 # Grep mysql.general_log for statements executed by xtrabackup
 #######################################################################
 function grep_general_log()
