@@ -42,8 +42,6 @@ done
 
 xtrabackup --backup --target-dir=$topdir/backup
 
-cp -av $topdir/backup /dev/shm/bak11
-
 stop_server
 
 rm -rf $mysql_datadir
