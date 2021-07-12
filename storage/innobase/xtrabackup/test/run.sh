@@ -44,7 +44,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -g          Debug mode
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: experimental, gr, keyring, main.
+-s suite    Select a test suite to run. Possible values: bitmap, experimental, gr, keyring, main.
             Default is 'main, gr and keyring'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
