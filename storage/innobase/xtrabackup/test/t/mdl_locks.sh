@@ -6,7 +6,7 @@ start_server
 
 load_sakila
 
-mysql -e 'CREATE TABLE t_hello_你好(id INT, PRIMARY KEY(id)) ENGINE=InnoDB' test
+mysql -e 'SET NAMES utf8; CREATE TABLE t_hello_你好(id INT, PRIMARY KEY(id)) ENGINE=InnoDB' test
 mysql test <<EOF
 CREATE TABLE R8EC8BBNEGLU37BCU93XW157W6NGEBL7I23VMK8YSTAVHFO0K8L3HD6K9L8N9CJ2 (
   a int(11) DEFAULT NULL
