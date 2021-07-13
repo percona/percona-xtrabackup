@@ -6341,39 +6341,6 @@ static void innodb_free_param() {
 }
 
 /**************************************************************************
-Store the current binary log coordinates in a specified file and print them
-out to the stderr.
-@param[in]  filename   output file name
-@return 'false' on error. */
-static bool store_binlog_info(const char *filename) {
-  FILE *fp;
-  char binlog_file[TRX_SYS_MYSQL_LOG_NAME_LEN + 1];
-  uint64_t binlog_offset;
-
-  trx_sys_read_binlog_position(&binlog_file[0], binlog_offset);
-
-  if (binlog_file[0] == '\0') {
-    return (true);
-  }
-
-  msg("xtrabackup: Last MySQL binlog file position " UINT64PF
-      ", file name %s\n",
-      binlog_offset, binlog_file);
-
-  fp = fopen(filename, "w");
-
-  if (!fp) {
-    msg("xtrabackup: failed to open '%s'\n", filename);
-    return (false);
-  }
-
-  fprintf(fp, "%s\t" UINT64PF "\n", binlog_file, binlog_offset);
-  fclose(fp);
-
-  return (true);
-}
-
-/**************************************************************************
 Store current master key ID.
 @return 'false' on error. */
 static bool store_master_key_id(
@@ -6691,14 +6658,6 @@ skip_check:
 
     destroy_thd(thd);
     my_thread_end();
-  }
-
-  /* output to xtrabackup_binlog_pos_innodb and (if
-  backup_safe_binlog_info was available on the server) to
-  xtrabackup_binlog_info. In the latter case xtrabackup_binlog_pos_innodb
-  becomes redundant and is created only for compatibility. */
-  if (!store_binlog_info("xtrabackup_binlog_pos_innodb")) {
-    exit(EXIT_FAILURE);
   }
 
   if (!store_master_key_id("xtrabackup_master_key_id")) {

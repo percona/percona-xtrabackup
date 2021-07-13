@@ -8,8 +8,6 @@ function test_binlog_info() {
 
     start_server $@
 
-    has_backup_locks && bl_avail=1 || bl_avail=0
-    has_backup_safe_binlog_info && bsbi_avail=1 || bsbi_avail=0
     is_gtid_mode && gtid=1 || gtid=0
 
     # Generate some InnoDB entries in the binary log
@@ -17,10 +15,6 @@ function test_binlog_info() {
     CREATE TABLE p (a INT) ENGINE=InnoDB;
     INSERT INTO p VALUES (1), (2), (3);
 EOF
-
-    binlog_file_innodb=`get_binlog_file`
-    binlog_pos_innodb=`get_binlog_pos`
-    binlog_info_innodb="$binlog_file_innodb	$binlog_pos_innodb"
 
     # Generate some non-InnoDB entries in the binary log
     run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -33,7 +27,6 @@ EOF
     fi
 
     xb_binlog_info=$topdir/backup/xtrabackup_binlog_info
-    xb_binlog_info_innodb=$topdir/backup/xtrabackup_binlog_pos_innodb
 
     xtrabackup --backup --target-dir=$topdir/backup
 
@@ -69,26 +62,7 @@ EOF
 $binlog_file	$binlog_pos
 EOF
 	fi
-    xtrabackup --prepare --target-dir=$topdir/backup
 
-    if ! [ -f $xb_binlog_info_innodb ] ; then
-        return
-    fi
-
-    normalize_path $xb_binlog_info_innodb
-
-    if [ $bsbi_avail = 1 ]
-    then
-        # Real coordinates in xtrabackup_binlog_pos_innodb
-        run_cmd diff -u $xb_binlog_info_innodb - <<EOF
-$binlog_file	$binlog_pos
-EOF
-    else
-        # Stale coordinates in xtrabackup_binlog_pos_innodb
-        run_cmd diff -u $xb_binlog_info_innodb - <<EOF
-$binlog_file_innodb	$binlog_pos_innodb
-EOF
-    fi
 }
 
 test_binlog_info
