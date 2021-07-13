@@ -491,6 +491,14 @@ function shutdown_server()
 ########################################################################
 function start_group_replication_cluster()
 {
+  # PXB-2551 - Upstram MySQL Debug version doesn't work with GR
+  # https://bugs.mysql.com/bug.php?id=103316
+  if is_debug_server; then
+    if [[ $INNODB_FLAVOR = "InnoDB" ]];
+    then
+      require_server_version_higher_than 8.0.25
+    fi
+  fi
   local number_of_nodes=$1
   shift
   if [[ -z  $number_of_nodes ]];
