@@ -2,12 +2,9 @@
 # Bug #766305: Use MySQL Code to get stack trace
 ########################################################################
 
-start_server --innodb_file_per_table
+skip_if_asan
 
-if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
-then
-    skip_test "Incompatible with AddressSanitizer"
-fi
+start_server --innodb_file_per_table
 
 mkdir $topdir/backup
 
