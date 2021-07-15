@@ -83,8 +83,6 @@ User's Manual
 Advanced Features
 =================
 
-..    advanced/lockless_bin-log
-
 .. toctree::
    :maxdepth: 1
    :glob:

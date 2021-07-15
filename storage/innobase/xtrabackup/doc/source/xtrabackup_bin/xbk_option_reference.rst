@@ -667,11 +667,6 @@ Options
    momentarily stop the replication replica thread, this may help the backup to
    succeed and you do not need to use this option.
 
-   :file:`xtrabackup_binlog_info` is not created when --no-lock option is used
-   (because ``SHOW MASTER STATUS`` may be inconsistent), but under certain
-   conditions :file:`xtrabackup_binlog_pos_innodb` can be used instead to get
-   consistent binlog coordinates as described in :ref:`working_with_binlogs`.
-
 .. include:: ../.res/contents/option.no-version-check.txt
 
 .. option:: --open-files-limit=# 

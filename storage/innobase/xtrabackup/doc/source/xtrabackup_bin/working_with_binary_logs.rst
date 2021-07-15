@@ -3,38 +3,25 @@
 Working with Binary Logs
 ========================
 
-The ``xtrabackup`` binary integrates with information that |InnoDB|
-stores in its transaction log about the corresponding binary log
-position for committed transactions. This enables it to print out the
-binary log position to which a backup corresponds, so you can use it
-to set up new replication replicas or perform point-in-time recovery.
+The ``xtrabackup`` binary integrates with the ``log_status table``. This integration enables ``xtrabackup`` to print out the backup's corresponding binary log position, so that you can use this binary log position to provision a new replica or perform point-in-time recovery.
 
 Finding the Binary Log Position
 --------------------------------
 
-You can find the binary log position corresponding to a backup once
-the backup has been prepared. This can be done by either running the
-|xtrabackup| with the :option:`--prepare` or
-:option:`--apply-log-only` option. If your backup is from a server
-with binary logging enabled, |xtrabackup| will create a file named
-:file:`xtrabackup_binlog_info` in the target directory. This file
-contains the binary log file name and position of the exact point in
-the binary log to which the prepared backup corresponds.
+You can find the binary log position corresponding to a backup after the backup has been taken. If your backup is from a server with binary logging enabled, ``xtrabackup`` creates a file named ``xtrabackup_binlog_info`` in the target directory. This file contains the binary log file name and position of the exact point when the backup was taken.
 
-You will also see output similar to the following during the prepare stage: ::
+The output is similar to the following during the backup stage:
 
-  InnoDB: Last MySQL binlog file position 0 3252710, file name ./mysql-bin.000001
-  ... snip ...
-  [notice (again)]
-    If you use binary log and don't use any hack of group commit, 
-    the binary log position seems to be:
-  InnoDB: Last MySQL binlog file position 0 3252710, file name ./mysql-bin.000001
+.. sourcecode:: text
 
-This output can also be found in the :file:`xtrabackup_binlog_pos_innodb` file, but **it is only correct** when no other than |XtraDB| or |InnoDB| are used as storage engines.
+    210715 14:14:59 Backup created in directory '/backup/'
+    MySQL binlog position: filename 'binlog.000002', position '156'
+    . . .
+    210715 14:15:00 completed OK!
+ 
+.. note::
 
-If other storage engines are used (i.e. |MyISAM|), you should use the :file:`xtrabackup_binlog_info` file to retrieve the position.
-
-The message about hacking group commit refers to an early implementation of emulated group commit in |Percona Server|.
+  As of Percona XtraBackup 8.0.26-18.0, xtrabackup no longer creates the ``xtrabackup_binlog_pos_innodb`` file. This change is because MySQL and Percona Server no longer update the binary log information on global transaction system section of ``ibdata``. You should rely on ``xtrabackup_binlog_info`` regardless of the storage engine in use.
 
 Point-In-Time Recovery
 -----------------------
