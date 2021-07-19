@@ -37,23 +37,32 @@ named ``test`` which contains tables named ``t1`` and ``t2``.
 Creating Partial Backups
 ================================================================================
 
-There are two ways of specifying which part of the whole data will be backed up:
-enumerating the tables in a file (:option:`--tables-file`) or providing a list
-of databases (:option:`--databases`).
+There are multiple ways of specifying which part of the whole data is backed up:
+
+* Use the :option:`--tables` option to list the table names
+
+* Use the :option:`--tables-file` option to list the tables in a file
+
+* Use the :option:`--databases` option to list the databases
+
+* Use the :option:`--databases-file` option to list the databases
 
 The :option:`--tables` Option
 ================================================================================
-The first method involves the :option:`xtrabackup --tables` option. The option's
-value is a regular expression that is matched against the fully qualified
+This method involves the :option:`--tables` option. The value is a regular expression that is matched against a fully-qualified
 tablename, including the database name, in the form ``databasename.tablename``.
 
-To back up only tables in the ``test`` database, you can use the following
-command: ::
+To back up only tables in the ``test`` database, use the following
+command:
+
+.. code-block:: bash
 
   $ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
   --tables="^test[.].*"
+  
+To back up only the ``test.t1`` table, use the following command:
 
-To back up only the table ``test.t1``, you can use the following command: ::
+.. code-block:: bash
 
   $ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
   --tables="^test[.]t1"
@@ -64,7 +73,7 @@ The :option:`--tables-file` Option
 The ``--tables-file`` option specifies a file that can contain multiple table
 names, one table name per line in the file. Only the tables named in the file
 will be backed up. Names are matched exactly, case-sensitive, with no pattern or
-regular expression matching. The table names must be fully qualified, in
+regular expression matching. The table names must be fully-qualified in
 ``databasename.tablename`` format.
 
 .. code-block:: bash
@@ -72,34 +81,25 @@ regular expression matching. The table names must be fully qualified, in
   $ echo "mydatabase.mytable" > /tmp/tables.txt
   $ xtrabackup --backup --tables-file=/tmp/tables.txt 
 
-The :option:`--databases` and :option:`--databases-file` options
+The :option:`--databases` Option
 ================================================================================
 
-:option:`xtrabackup --databases` accepts a space-separated list of the databases
+The :option:`--databases` option accepts a space-separated list of the databases
 and tables to backup in the format ``databasename[.tablename]``. In addition to
-this list make sure to specify the ``mysql``, ``sys``, and
+the listed databases, add the ``mysql``, ``sys``, and
 ``performance_schema`` databases. These databases are required when restoring
-the databases using :option:`xtrabackup --copy-back`.
-
-.. note::
-
-    Tables processed during the --prepare step may also be added to the backup
-    even if they are not explicitly listed by the parameter if they were created
-    after the backup started.
+the databases using the :option:`--copy-back` option.
 
 .. code-block:: bash
 
-   $ xtrabackup --databases='mysql sys performance_schema ...'
+   $ xtrabackup --databases='mysql sys performance_schema test ...'
+   
+The :option:`--databases-file` Option
+======================================================
 
-:option:`xtrabackup --databases-file` specifies a file that can contain multiple
+The :option:`--databases-file` option specifies a file that can contain multiple
 databases and tables in the ``databasename[.tablename]`` form, one element name
-per line in the file. Names are matched exactly, case-sensitive, with no pattern or regular expression matching.
-
-.. note::
-
-    Tables processed during the --prepare step may also be added to the backup
-    even if they are not explicitly listed by the parameter if they were created
-    after the backup started.
+for each line in the file. Only the named databases and tables are backed up. These names are matched exactly and must be case-sensitive. This list does not match by  pattern or regular expression.
 
 Preparing Partial Backups
 ================================================================================
@@ -113,20 +113,16 @@ The procedure is analogous to :ref:`restoring individual tables
    $ xtrabackup --prepare --export --target-dir=/path/to/partial/backup
 
 
-When you use the :option:`xtrabackup --prepare` option on a partial backup, you
-will see warnings about tables that don't exist. This is because these tables
-exist in the data dictionary inside InnoDB, but the corresponding :term:`.ibd`
-files don't exist. They were not copied into the backup directory. These tables
-will be removed from the data dictionary, and when you restore the backup and
-start InnoDB, they will no longer exist and will not cause any errors or
-warnings to be printed to the log file.
+If you use the :option:`--prepare` option on a partial backup, and you see warnings for tables that do not exist. These tables exist in the data dictionary inside InnoDB, but their corresponding :term:`.ibd` files do not exist. hese files were not copied into the backup directory but the tables exist in the data dictionary. The tables are removed from the data dictionary during the process and do not cause errors or warning in subsequent backups and restores.
 
-An example of the error message you will see during the prepare phase follows. ::
+An example of an error message during the prepare phase follows. ::
 
-  InnoDB: Reading tablespace information from the .ibd files...
-  101107 22:31:30  InnoDB: Error: table 'test1/t'
-  InnoDB: in InnoDB data dictionary has tablespace id 6,
-  InnoDB: but tablespace with that id or name does not exist. It will be removed from data dictionary.
+  Could not find any file associated with the tablespace ID: 4
+
+  Could not find any file associated with the tablespace ID: 5
+
+  Use --innodb-directories to find the tablespace files. If that fails then use --innodb-force-recovery=1 to ignore this and to permanently lose all changes to the missing tablespace(s).
+
 
 Restoring Partial Backups
 ================================================================================
@@ -136,8 +132,32 @@ Restoring should be done by :ref:`restoring individual tables
 
 It can also be done by copying back the prepared backup to a "clean"
 :term:`datadir` (in that case, make sure to include the ``mysql``
-database). System database can be created with:
+database) to the datadir you are moving the backup to. A system database can be created with the following:
 
 .. code-block:: bash
 
-   $ sudo mysql_install_db --user=mysql
+   $ sudo mysql --initialize --user=mysql
+
+Once you start the server, you may see mysql complaining about missing tablespaces:
+
+.. sourcecode:: mysql
+
+      2021-07-19T12:42:11.077200Z 1 [Warning] [MY-012351] [InnoDB] Tablespace 4, name 'test1/t1', file './d2/test1.ibd' is missing!
+      2021-07-19T12:42:11.077300Z 1 [Warning] [MY-012351] [InnoDB] Tablespace 4, name 'test1/t1', file './d2/test1.ibd' is missing!
+
+In order to clean the orphan database from the data dictionary, you must manually create the missing database directory and then ``DROP`` this database from the server. 
+
+Example of creating the missing database:
+
+.. sourcecode:: bash
+
+      $ mkdir /var/lib/mysql/test1/d2
+
+Example of dropping the database from the server:
+
+.. sourcecode:: mysql
+
+      mysql> DROP DATABASE d2;
+      Query OK, 2 rows affected (0.5 sec)
+
+
