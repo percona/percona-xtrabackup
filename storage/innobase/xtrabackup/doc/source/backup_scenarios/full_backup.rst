@@ -214,3 +214,16 @@ will be owned by the user who created the backup:
    $ chown -R mysql:mysql /var/lib/mysql
 
 Data is now restored and you can start the server.
+
+.. note::
+
+    When ``relay-log-info-repository=TABLE`` is enabled, the instance recovered from the backup has errors in the error log, like the following:
+    
+    .. code-block:: bash
+    
+        2019-08-09 12:40:02 69297 [ERROR] Failed to open the relay log '/data/mysql-relay-bin.004349' (relay_log_pos 5534092)
+    
+    To avoid these types of issues, enable ``relay_log_recovery`` or execute ``RESET SLAVE`` prior to ``CHANGE MASTER TO``.
+    
+    The relay log information was backed up, but a new relay log has been created, which creates a mismatch during the restore.
+   
