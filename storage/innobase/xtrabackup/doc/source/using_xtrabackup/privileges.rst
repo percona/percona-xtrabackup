@@ -72,6 +72,8 @@ alteration, see ``mysql --help`` for details.
    (port, socket, host) must be specified in order for |xtrabackup| to talk to
    the correct server.
 
+.. _pxb.privilege:
+
 Permissions and Privileges Needed
 ================================================================================
 

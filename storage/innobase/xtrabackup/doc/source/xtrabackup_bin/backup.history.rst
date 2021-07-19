@@ -43,20 +43,7 @@ some catastrophic event, you will need to either perform a ``mysqldump``,
 partial backup or ``SELECT`` * on the history table after |xtrabackup|
 completes and store the results with you backup set.
 
-Privileges
-================================================================================
-
-User performing the backup will need following privileges: 
-
-* ``CREATE`` privilege in order to create the
-  :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
-  table.
-* ``INSERT`` privilege in order to add history records to the
-  :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` table.
-* ``SELECT`` privilege in order to use :option:`--incremental-history-name` or
-  :option:`--incremental-history-uuid` in order for the feature to look up the
-  ``innodb_to_lsn`` values in the :ref:`PERCONA_SCHEMA.xtrabackup_history
-  <xtrabackup_history>` table.
+For the necessary privileges, see :ref:`pxb.privilege`.
 
 .. _xtrabackup_history:
 
