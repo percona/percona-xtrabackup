@@ -19,7 +19,7 @@ MACRO (FIND_GCRYPT)
     SET(GCRYPT_INCLUDE_PATH /usr/include /usr/local/include /opt/local/include)
   ENDIF()
 
-  FIND_PATH(GCRYPT_INCLUDE_DIR gcrypt.h PATHS ${GCRYPT_INDCLUDE_PATH})
+  FIND_PATH(GCRYPT_INCLUDE_DIR gcrypt.h PATHS ${GCRYPT_INCLUDE_PATH})
 
   IF (NOT GCRYPT_INCLUDE_DIR)
     MESSAGE(SEND_ERROR "Cannot find gcrypt.h in ${GCRYPT_INCLUDE_PATH}. You can use libgcrypt-config --cflags to get the necessary path and pass it to CMake with -DGCRYPT_INCLUDE_PATH=<path>")
