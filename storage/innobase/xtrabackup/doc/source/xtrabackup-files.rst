@@ -47,12 +47,10 @@ Index of files created by Percona XtraBackup
          last_lsn = 15189350111
 
     * :file:`xtrabackup_binlog_info`
-       The binary log file used by the server and its position at the moment of
-       the backup. Result of the :command:`SHOW MASTER STATUS`.
+       The binary log file used by the server and its position at the moment of the backup. A result of the following query: 
+         .. sourcecode:: mysql 
 
-    * :file:`xtrabackup_binlog_pos_innodb`
-       The binary log file and its current position for |InnoDB| or |XtraDB|
-       tables.
+               SELECT server_uuid, local, replication, storage_engines FROM performance_schema.log_status;
 
     * :file:`xtrabackup_binary`
        The |xtrabackup| binary used in the process.
