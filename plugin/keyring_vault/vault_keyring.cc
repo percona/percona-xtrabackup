@@ -173,7 +173,7 @@ static int keyring_vault_init(MYSQL_PLUGIN plugin_info MY_ATTRIBUTE((unused))) {
 int keyring_vault_deinit(void *arg MY_ATTRIBUTE((unused))) noexcept {
   keys.reset();
   logger.reset();
-  keyring_file_data.reset();
+  delete_keyring_file_data();
   mysql_rwlock_destroy(&LOCK_keyring);
   deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
 

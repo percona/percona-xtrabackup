@@ -798,19 +798,14 @@ static trx_t *trx_resurrect_insert(
                                << " was in the XA prepared state.";
 
       if (srv_force_recovery == 0) {
-<<<<<<< HEAD
         if (!srv_rollback_prepared_trx) {
-          trx->state = TRX_STATE_PREPARED;
+          trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
           ++trx_sys->n_prepared_trx;
         } else {
           /* XtraBackup is asked to rollback prepared XA
           transactions */
-          trx->state = TRX_STATE_ACTIVE;
+          trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
         }
-=======
-        trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
-        ++trx_sys->n_prepared_trx;
->>>>>>> mysql-8.0.26
       } else {
         ib::info(ER_IB_MSG_1205) << "Since innodb_force_recovery"
                                     " > 0, we will force a rollback.";
@@ -883,20 +878,15 @@ static void trx_resurrect_update_in_prepared_state(
         ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
       }
 
-      trx->state = TRX_STATE_PREPARED;
+      trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
     } else {
       if (!trx_state_eq(trx, TRX_STATE_NOT_STARTED)) {
         ut_ad(trx_state_eq(trx, TRX_STATE_PREPARED));
       }
       /* XtraBackup is asked to rollback prepared XA
       transactions */
-      trx->state = TRX_STATE_ACTIVE;
+      trx->state.store(TRX_STATE_ACTIVE, std::memory_order_relaxed);
     }
-<<<<<<< HEAD
-=======
-
-    trx->state.store(TRX_STATE_PREPARED, std::memory_order_relaxed);
->>>>>>> mysql-8.0.26
   } else {
     trx->state.store(TRX_STATE_COMMITTED_IN_MEMORY, std::memory_order_relaxed);
   }

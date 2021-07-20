@@ -2428,12 +2428,12 @@ static dberr_t dict_load_from_spaces_sdi() {
   /* Load mysql tablespace to open mysql/tables and mysql/schemata which is
   need to find the right key for tablespace in case of duplicate sdi */
   dberr_t err =
-      dict_load_tables_from_space_id(dict_sys_t::s_space_id, thd, trx);
+      dict_load_tables_from_space_id(dict_sys_t::s_dict_space_id, thd, trx);
 
   if (err == DB_SUCCESS) {
     for (auto space_id : space_ids) {
       if (!fsp_is_ibd_tablespace(space_id) ||
-          space_id == dict_sys_t::s_space_id) {
+          space_id == dict_sys_t::s_dict_space_id) {
         continue;
       }
       err = dict_load_tables_from_space_id(space_id, thd, trx);

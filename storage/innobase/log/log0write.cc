@@ -2826,7 +2826,7 @@ bool log_read_encryption() {
   if (memcmp(log_block_buf + LOG_HEADER_CREATOR_END, Encryption::KEY_MAGIC_V3,
              Encryption::MAGIC_SIZE) == 0) {
     if (use_dumped_tablespace_keys && !srv_backup_mode) {
-      ut_free(log_block_buf_ptr);
+      ut::aligned_free(log_block_buf);
       fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
       err = xb_set_encryption(space);
       if (err != DB_SUCCESS) {

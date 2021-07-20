@@ -119,7 +119,7 @@ static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
      * since the last backup. Hence we copy all changes to mysql.ibd since last
      * backup start_lsn instead of last backup end_lsn.
      */
-    if (cursor->space_id == dict_sys_t::s_space_id &&
+    if (cursor->space_id == dict_sys_t::s_dict_space_id &&
         metadata_from_lsn > mach_read_from_8(page + FIL_PAGE_LSN))
       continue;
     else if (incremental_lsn > mach_read_from_8(page + FIL_PAGE_LSN))

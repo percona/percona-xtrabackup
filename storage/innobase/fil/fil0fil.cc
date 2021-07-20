@@ -11331,9 +11331,10 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
   byte iv[Encryption::KEY_LEN] = {0};
   byte key[Encryption::KEY_LEN] = {0};
 
-<<<<<<< HEAD
   if (srv_backup_mode || !use_dumped_tablespace_keys) {
-    if (!Encryption::decode_encryption_info(key, iv, encryption_ptr, true)) {
+    Encryption_key e_key{key, iv};
+    if (!Encryption::decode_encryption_info(space_id, e_key, encryption_ptr,
+                                            true)) {
       if (!srv_backup_mode) {
         ib::error() << "Cannot decode encryption information in the redo log.";
         exit(EXIT_FAILURE);
@@ -11347,18 +11348,6 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
     }
     bool found = xb_fetch_tablespace_key(space_id, key, iv);
     ut_a(found);
-=======
-  Encryption_key e_key{key, iv};
-  if (!Encryption::decode_encryption_info(space_id, e_key, encryption_ptr,
-                                          true)) {
-    recv_sys->found_corrupt_log = true;
-
-    ib::warn(ER_IB_MSG_364)
-        << "Encryption information"
-        << " in the redo log of space " << space_id << " is invalid";
-
-    return (nullptr);
->>>>>>> mysql-8.0.26
   }
 
   ut_ad(len == Encryption::INFO_SIZE);

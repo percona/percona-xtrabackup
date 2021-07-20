@@ -115,6 +115,9 @@ class System_key_adapter : public IKey {
     return false;
   }
 
+ protected:
+  void set_key_type_enum(const std::string *key_type) override;
+
  private:
   class System_key_data {
    public:

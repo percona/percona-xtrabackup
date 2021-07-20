@@ -74,10 +74,10 @@ class Redo_Log_Reader {
 
  private:
   /** log header buffer. */
-  aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_hdr_buf;
+  ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_hdr_buf;
 
   /** log read buffer. */
-  aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_buf;
+  ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_buf;
 
   /** Read specified log segment into a buffer.
   @param[in,out] buf            buffer where to read
@@ -154,7 +154,7 @@ class Redo_Log_Writer {
   ds_file_t *log_file;
 
   /** Temporary buffer used for encryption. */
-  aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> scratch_buf;
+  ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> scratch_buf;
 };
 
 /** Archived redo log reader. */
@@ -190,10 +190,10 @@ class Archived_Redo_Log_Reader {
   File file;
 
   /** log read buffer. */
-  aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_buf;
+  ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_buf;
 
   /** temporary buffer used for encryption. */
-  aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> scratch_buf;
+  ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> scratch_buf;
 
   /** start lsn of archived redo log. */
   lsn_t archive_start_lsn;

@@ -158,13 +158,19 @@ MYSQL_ADD_EXECUTABLE(xbstream
   xbstream_write.cc
   xbcrypt_common.cc
   xbcrypt_write.cc
-  ${CMAKE_SOURCE_DIR}/extra/lz4/xxhash.c
+  ${BUNDLED_LZ4_PATH}/xxhash.c
   )
 
 ADD_COMPILE_DEFINITIONS(
-  ${CMAKE_SOURCE_DIR}/extra/lz4/xxhash.c
+  ${BUNDLED_LZ4_PATH}/xxhash.c
   COMPILE_DEFINITIONS XXH_NAMESPACE=MY_
   )
+ADD_COMPILE_FLAGS(
+    ${BUNDLED_LZ4_PATH}/xxhash.c
+    ds_decompress_lz4.cc
+    ds_compress_lz4.cc
+    COMPILE_FLAGS -I${CMAKE_SOURCE_DIR}/extra/lz4 -I${BUNDLED_LZ4_PATH}
+)
 
 SET_TARGET_PROPERTIES(xbstream
         PROPERTIES LINKER_LANGUAGE CXX

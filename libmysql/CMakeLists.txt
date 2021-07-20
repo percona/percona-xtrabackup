@@ -270,11 +270,6 @@ IF(WIN32)
   LIST(APPEND LIBS_TO_MERGE auth_win_client)
 ENDIF()
 
-<<<<<<< HEAD
-# Merge several convenience libraries into one big mysqlclient
-MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS_TO_MERGE} COMPONENT Development SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(mysqlclient PRIVATE ${LIBS_TO_LINK})
-=======
 # LDAP authentication SASL client plug-in
 ADD_SUBDIRECTORY(authentication_ldap)
 
@@ -284,9 +279,8 @@ ADD_SUBDIRECTORY(authentication_kerberos)
 # Merge several convenience libraries into one big mysqlclient
 MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS_TO_MERGE}
   COMPONENT Development
-  LINK_LIBRARIES ${LIBS_TO_LINK}
+  LINK_LIBRARIES ${LIBS_TO_LINK} SKIP_INSTALL
   )
->>>>>>> mysql-8.0.26
 
 # Visual Studio users need debug  static library for debug projects
 IF(MSVC)
@@ -338,17 +332,13 @@ MERGE_LIBRARIES_SHARED(libmysql ${LIBS_TO_MERGE}
   ${CLIENT_API_FUNCTIONS}
   ${CLIENT_API_FUNCTIONS_UNDOCUMENTED}
   ${CLIENT_API_NONBLOCKING_FUNCTIONS}
-<<<<<<< HEAD
-  COMPONENT SharedLibraries SKIP_INSTALL)
-TARGET_LINK_LIBRARIES(libmysql PRIVATE ${LIBS_TO_LINK})
-=======
   COMPONENT SharedLibraries
   LINK_LIBRARIES ${LIBS_TO_LINK}
   ${UNIX_OUTPUT_NAME}
   ${UNIX_SOVERSION}
   ${UNIX_VERSION}
+  SKIP_INSTALL
   )
->>>>>>> mysql-8.0.26
 
 IF(LINUX_STANDALONE AND KERBEROS_CUSTOM_LIBRARY)
   ADD_DEPENDENCIES(libmysql ${kerberos_target})

@@ -154,9 +154,7 @@ else the storage is 5-byte.
 @param[in]	b	pointer to memory where to store
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
-<<<<<<< HEAD
-UNIV_INLINE
-ulint mach_write_compressed_v3(byte *b, ulint n) {
+static inline ulint mach_write_compressed_v3(byte *b, ulint n) {
   ut_ad(b);
 
   if (n < 0x80) {
@@ -192,11 +190,7 @@ else the storage is 5-byte.
 @param[in]	b	pointer to memory where to store
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
-UNIV_INLINE
-ulint mach_write_compressed_v4(byte *b, ulint n) {
-=======
-static inline ulint mach_write_compressed(byte *b, ulint n) {
->>>>>>> mysql-8.0.26
+static inline ulint mach_write_compressed_v4(byte *b, ulint n) {
   ut_ad(b);
 
   if (n < 0x80) {
@@ -244,8 +238,7 @@ else the storage is 5-byte.
 @param[in]	b	pointer to memory where to store
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
-UNIV_INLINE
-ulint mach_write_compressed(byte *b, ulint n) {
+static inline ulint mach_write_compressed(byte *b, ulint n) {
   switch (log_detected_format) {
     case LOG_HEADER_FORMAT_5_7_9:
       ut_a(0);
@@ -264,8 +257,7 @@ ulint mach_write_compressed(byte *b, ulint n) {
 /** Return the size of an ulint when written in the compressed form.
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
-UNIV_INLINE
-uint32_t mach_get_compressed_size_v3(ulint n) {
+static inline uint32_t mach_get_compressed_size_v3(ulint n) {
   if (n < 0x80) {
     /* 0nnnnnnn (7 bits) */
     return (1);
@@ -287,12 +279,7 @@ uint32_t mach_get_compressed_size_v3(ulint n) {
 /** Return the size of an ulint when written in the compressed form.
 @param[in]	n	uint32_t integer (< 2^32) to be stored
 @return compressed size in bytes */
-<<<<<<< HEAD
-UNIV_INLINE
-uint32_t mach_get_compressed_size_v4(ulint n) {
-=======
-static inline uint32_t mach_get_compressed_size(ulint n) {
->>>>>>> mysql-8.0.26
+static inline uint32_t mach_get_compressed_size_v4(ulint n) {
   if (n < 0x80) {
     /* 0nnnnnnn (7 bits) */
     return (1);
@@ -323,8 +310,7 @@ static inline uint32_t mach_get_compressed_size(ulint n) {
 /** Return the size of an ulint when written in the compressed form.
 @param[in]	n	uint32_t integer (< 2^32) to be stored
 @return compressed size in bytes */
-UNIV_INLINE
-uint32_t mach_get_compressed_size(ulint n) {
+static inline uint32_t mach_get_compressed_size(ulint n) {
   switch (log_detected_format) {
     case LOG_HEADER_FORMAT_5_7_9:
       ut_a(0);
@@ -343,9 +329,7 @@ uint32_t mach_get_compressed_size(ulint n) {
 /** Read a ulint in a compressed form.
 @param[in]	b	pointer to memory from where to read
 @return read integer (< 2^32) */
-<<<<<<< HEAD
-UNIV_INLINE
-ulint mach_read_compressed_v3(const byte *b) {
+static inline ulint mach_read_compressed_v3(const byte *b) {
   ulint val;
 
   ut_ad(b);
@@ -378,11 +362,8 @@ ulint mach_read_compressed_v3(const byte *b) {
 /** Read a ulint in a compressed form.
 @param[in]	b	pointer to memory from where to read
 @return read integer (< 2^32) */
-UNIV_INLINE
+static inline
 ulint mach_read_compressed_v4(const byte *b) {
-=======
-static inline ulint mach_read_compressed(const byte *b) {
->>>>>>> mysql-8.0.26
   ulint val;
 
   ut_ad(b);
@@ -429,8 +410,7 @@ static inline ulint mach_read_compressed(const byte *b) {
 /** Read a ulint in a compressed form.
 @param[in]	b	pointer to memory from where to read
 @return read integer (< 2^32) */
-UNIV_INLINE
-ulint mach_read_compressed(const byte *b) {
+static inline ulint mach_read_compressed(const byte *b) {
   switch (log_detected_format) {
     case LOG_HEADER_FORMAT_5_7_9:
       ut_a(0);
@@ -450,9 +430,7 @@ ulint mach_read_compressed(const byte *b) {
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
-<<<<<<< HEAD
-UNIV_INLINE
-ib_uint32_t mach_read_next_compressed_v3(const byte **b) {
+static inline ib_uint32_t mach_read_next_compressed_v3(const byte **b) {
   ulint val = mach_read_from_1(*b);
 
   if (val < 0x80) {
@@ -488,11 +466,7 @@ ib_uint32_t mach_read_next_compressed_v3(const byte **b) {
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
-UNIV_INLINE
-ib_uint32_t mach_read_next_compressed_v4(const byte **b) {
-=======
-static inline ib_uint32_t mach_read_next_compressed(const byte **b) {
->>>>>>> mysql-8.0.26
+static inline ib_uint32_t mach_read_next_compressed_v4(const byte **b) {
   ulint val = mach_read_from_1(*b);
 
   if (val < 0x80) {
@@ -544,8 +518,7 @@ static inline ib_uint32_t mach_read_next_compressed(const byte **b) {
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
-UNIV_INLINE
-ib_uint32_t mach_read_next_compressed(const byte **b) {
+static inline ib_uint32_t mach_read_next_compressed(const byte **b) {
   switch (log_detected_format) {
     case LOG_HEADER_FORMAT_5_7_9:
       ut_a(0);
@@ -705,9 +678,7 @@ static inline ib_uint64_t mach_u64_read_much_compressed(
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
-<<<<<<< HEAD
-UNIV_INLINE
-ib_uint64_t mach_read_next_much_compressed_v3(const byte **b) {
+static inline ib_uint64_t mach_read_next_much_compressed_v3(const byte **b) {
   ib_uint64_t val = mach_read_from_1(*b);
 
   if (val < 0x80) {
@@ -749,11 +720,7 @@ ib_uint64_t mach_read_next_much_compressed_v3(const byte **b) {
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
-UNIV_INLINE
-ib_uint64_t mach_read_next_much_compressed_v4(const byte **b) {
-=======
-static inline ib_uint64_t mach_read_next_much_compressed(const byte **b) {
->>>>>>> mysql-8.0.26
+static inline ib_uint64_t mach_read_next_much_compressed_v4(const byte **b) {
   ib_uint64_t val = mach_read_from_1(*b);
 
   if (val < 0x80) {
@@ -813,8 +780,7 @@ static inline ib_uint64_t mach_read_next_much_compressed(const byte **b) {
 @param[in,out]	b	pointer to memory where to read;
 advanced by the number of bytes consumed
 @return unsigned value */
-UNIV_INLINE
-ib_uint64_t mach_read_next_much_compressed(const byte **b) {
+static inline ib_uint64_t mach_read_next_much_compressed(const byte **b) {
   switch (log_detected_format) {
     case LOG_HEADER_FORMAT_5_7_9:
       ut_a(0);

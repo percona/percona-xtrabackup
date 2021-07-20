@@ -8538,12 +8538,8 @@ struct my_option my_long_options[] = {
      "Option used by mysql-test for debugging and testing of replication.",
      &opt_sporadic_binlog_dump_fail, &opt_sporadic_binlog_dump_fail, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-<<<<<<< HEAD
 #ifndef XTRABACKUP
-    {"ssl", 0,
-=======
     {"ssl", OPT_USE_SSL,
->>>>>>> mysql-8.0.26
      "Enable SSL for connection (automatically enabled with other flags).",
      &opt_use_ssl, &opt_use_ssl, nullptr, GET_BOOL, OPT_ARG, 1, 0, 0, nullptr,
      0, nullptr},

@@ -61,14 +61,10 @@ struct IKey : public Keyring_alloc {
   virtual bool is_key_valid() = 0;
   virtual bool is_key_length_valid() = 0;
 
-<<<<<<< HEAD
-  virtual ~IKey() {}
-=======
   virtual ~IKey() = default;
 
  protected:
   virtual void set_key_type_enum(const std::string *key_type) = 0;
->>>>>>> mysql-8.0.26
 };
 
 }  // namespace keyring

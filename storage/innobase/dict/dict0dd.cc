@@ -1007,8 +1007,8 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     uint64 trx_id = 0;
     dd::Object_id index_space_id = dd_index->tablespace_id();
 
-    if (dd_table->tablespace_id() == dict_sys_t::s_dd_space_id) {
-      sid = dict_sys_t::s_space_id;
+    if (dd_table->tablespace_id() == dict_sys_t::s_dd_dict_space_id) {
+      sid = dict_sys_t::s_dd_dict_space_id;
     } else if (dd_table->tablespace_id() == dict_sys_t::s_dd_temp_space_id) {
       sid = dict_sys_t::s_temp_space_id;
     } else {
@@ -1594,17 +1594,8 @@ reopen:
         dict_sys_mutex_exit();
       }
     } else {
-<<<<<<< HEAD
       if (!dict_locked) {
         mutex_exit(&dict_sys->mutex);
-=======
-      dict_sys_mutex_exit();
-
-      ib_table = dd_table_open_on_id_low(thd, mdl, table_id);
-
-      if (dict_locked) {
-        dict_sys_mutex_enter();
->>>>>>> mysql-8.0.26
       }
       ib_table = nullptr;
     }
