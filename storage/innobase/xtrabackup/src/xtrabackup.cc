@@ -3928,6 +3928,8 @@ static void init_mysql_environment() {
   mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_sql_rand, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_keyring_operations,
                    MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_replica_list,
+                   MY_MUTEX_INIT_FAST);
 
   Srv_session::module_init();
 
@@ -3962,6 +3964,7 @@ static void cleanup_mysql_environment() {
   mysql_mutex_destroy(&LOCK_global_system_variables);
   mysql_mutex_destroy(&LOCK_sql_rand);
   mysql_mutex_destroy(&LOCK_keyring_operations);
+  mysql_mutex_destroy(&LOCK_replica_list);
 }
 
 void xtrabackup_backup_func(void) {
