@@ -1081,6 +1081,25 @@ function require_tokudb()
     fi
 }
 
+########################################################################
+# Return 0 if the xtrabackup has AddressSanitizer support
+########################################################################
+function is_asan()
+{
+    ldd $XB_BIN | grep -q libasan
+    return $?
+}
+
+#########################################################################
+# Skip test if xtrabackup has AddressSanitizer support
+########################################################################
+function skip_if_asan()
+{
+    if is_asan; then
+        skip_test "Incompatible with AddressSanitizer"
+    fi
+}
+
 ##############################################################################
 # Start a server with TokuDB plugins loaded and enabled.
 # Server id is 1, any arguments are passsed to the mysqld.
