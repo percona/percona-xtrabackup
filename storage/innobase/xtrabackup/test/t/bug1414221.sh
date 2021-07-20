@@ -4,10 +4,7 @@
 ############################################################################
 . inc/common.sh
 
-if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
-then
-    skip_test "Incompatible with AddressSanitizer"
-fi
+skip_if_asan
 
 start_server --innodb_file_per_table
 load_sakila
