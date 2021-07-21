@@ -42,6 +42,10 @@ ext:
 	@echo "Downloading Percona documentation utils from repository..."
 	@mkdir -p $(BUILDDIR) && wget -O - $(UTILS_REPO) | tar xz -C $(BUILDDIR) && cp -r $(BUILDDIR)/$(UTILS_DIR)/sphinx/ext source
 
+netlify:
+	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) -c source/conf-netlify $(BUILDDIR)/html
+	@echo
+	@echo "Netlify build finished. The HTML pages are in $(BUILDDIR)/html."
 
 html: ext
 	@echo "Downloading percona-theme ..."
