@@ -116,7 +116,10 @@ class System_key_adapter : public IKey {
   }
 
  protected:
-  void set_key_type_enum(const std::string *key_type) override;
+  void set_key_type_enum(const std::string *key_type) override {
+    assert(keyring_key != nullptr);
+    keyring_key->set_key_type(key_type);
+  }
 
  private:
   class System_key_data {
