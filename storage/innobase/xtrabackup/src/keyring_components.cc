@@ -48,8 +48,6 @@ bool service_handler_initialized = false;
 bool keyring_component_initialized = false;
 std::string component_config_data;
 
-static bool read_server_uuid();
-
 bool inititialize_service_handles() {
   DBUG_TRACE;
   if (service_handler_initialized) return true;
@@ -120,6 +118,33 @@ void create_component_config_data() {
   json.Accept(string_writer);
   component_config_data =
       std::string(string_buffer.GetString(), string_buffer.GetSize());
+}
+
+bool read_server_uuid() {
+  if (xtrabackup_stats) return true;
+
+  char *uuid = NULL;
+  bool ret;
+  my_option config_options[] = {
+      {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
+       0, 0},
+      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
+  if (xtrabackup_incremental_dir != nullptr) {
+    ret = xtrabackup::utils::load_backup_my_cnf(config_options,
+                                                xtrabackup_incremental_dir);
+  } else {
+    ret = xtrabackup::utils::load_backup_my_cnf(config_options,
+                                                xtrabackup_real_target_dir);
+  }
+  if (!ret) {
+    msg("xtrabackup: Error: failed to load backup-my.cnf\n");
+    return (false);
+  }
+  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
+  if (uuid != NULL) {
+    strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
+  }
+  return (true);
 }
 
 bool keyring_init_online(MYSQL *connection) {
@@ -243,31 +268,5 @@ bool keyring_init_offline() {
   return true;
 }
 
-static bool read_server_uuid() {
-  if (xtrabackup_stats) return true;
-
-  char *uuid = NULL;
-  bool ret;
-  my_option config_options[] = {
-      {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
-       0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-  if (xtrabackup_incremental_dir != nullptr) {
-    ret = xtrabackup::utils::load_backup_my_cnf(config_options,
-                                                xtrabackup_incremental_dir);
-  } else {
-    ret = xtrabackup::utils::load_backup_my_cnf(config_options,
-                                                xtrabackup_real_target_dir);
-  }
-  if (!ret) {
-    msg("xtrabackup: Error: failed to load backup-my.cnf\n");
-    return (false);
-  }
-  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
-  if (uuid != NULL) {
-    strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
-  }
-  return (true);
-}
 }  // namespace components
 }  // namespace xtrabackup

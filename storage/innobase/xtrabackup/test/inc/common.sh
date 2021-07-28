@@ -5,6 +5,11 @@ function xtrabackup()
     run_cmd $XB_BIN $XB_ARGS "$@"
 }
 
+function rr_xtrabackup()
+{
+  run_cmd rr $XB_BIN $XB_ARGS "$@"
+}
+
 function mysql()
 {
     run_cmd $MYSQL $MYSQL_ARGS "$@"

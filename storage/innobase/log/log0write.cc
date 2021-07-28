@@ -2911,7 +2911,10 @@ bool log_write_encryption(byte *key, byte *iv, bool is_boot) {
     iv = space->encryption_iv;
   }
 
-  if (!log_file_header_fill_encryption(log_block_buf, key, iv, is_boot, true)) {
+  bool encrypt = true;
+  if (use_dumped_tablespace_keys && !srv_backup_mode) encrypt = false;
+  if (!log_file_header_fill_encryption(log_block_buf, key, iv, is_boot,
+                                       encrypt)) {
     ut::aligned_free(log_block_buf);
     return (false);
   }

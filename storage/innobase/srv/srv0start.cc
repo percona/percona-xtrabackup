@@ -419,12 +419,18 @@ static dberr_t create_log_files(char *logfilename, size_t dirnamelen, lsn_t lsn,
 #endif
 
     fsp_flags_set_encryption(log_space->flags);
-    err = fil_set_encryption(log_space->id, Encryption::AES, nullptr, nullptr);
-    ut_ad(err == DB_SUCCESS);
     if (use_dumped_tablespace_keys && !srv_backup_mode) {
-      xb_insert_tablespace_key(log_space->id, log_space->encryption_key,
-                               log_space->encryption_iv);
+      byte key[Encryption::KEY_LEN];
+      byte iv[Encryption::KEY_LEN];
+
+      bool found = xb_fetch_tablespace_key(log_space->id, key, iv);
+      ut_a(found);
+      err = fil_set_encryption(log_space->id, Encryption::AES, key, iv);
+    } else {
+      err =
+          fil_set_encryption(log_space->id, Encryption::AES, nullptr, nullptr);
     }
+    ut_ad(err == DB_SUCCESS);
   }
 
   const ulonglong file_pages = srv_log_file_size / UNIV_PAGE_SIZE;
