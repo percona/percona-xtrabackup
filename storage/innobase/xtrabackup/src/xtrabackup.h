@@ -157,6 +157,8 @@ extern char		*opt_socket;
 extern uint		opt_port;
 extern char		*opt_login_path;
 extern char		*opt_log_bin;
+extern char 	*opt_binlog_index_name;
+extern bool  	opt_skip_log_bin;
 
 extern const char 	*query_type_names[];
 

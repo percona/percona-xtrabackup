@@ -53,6 +53,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <string>
 #include <mysqld.h>
 #include <my_default.h>
+#include <fstream>
 #include <sstream>
 #include <algorithm>
 #include "fil_cur.h"
@@ -74,12 +75,16 @@ using std::min;
 static std::set<std::string> rsync_list;
 /* locations of tablespaces read from .isl files */
 static std::map<std::string, std::string> tablespace_locations;
+/* skip these files on copy-back */
+static std::set<std::string> skip_copy_back_list;
+
 
 /* the purpose of file copied */
 enum file_purpose_t {
 	FILE_PURPOSE_DATAFILE,
 	FILE_PURPOSE_REDO_LOG,
 	FILE_PURPOSE_UNDO_LOG,
+	FILE_PURPOSE_BINLOG,
 	FILE_PURPOSE_OTHER
 };
 
@@ -573,15 +578,18 @@ datafile_read(datafile_cur_t *cursor)
 Check to see if a file exists.
 Takes name of the file to check.
 @return true if file exists. */
-static
 bool
-file_exists(const char *filename)
+file_exists(const char *filename, bool check_if_file)
 {
 	MY_STAT stat_arg;
 
 	if (!my_stat(filename, &stat_arg, MYF(0))) {
 
 		return(false);
+	}
+
+	if (check_if_file && !MY_S_ISREG(stat_arg.st_mode)) {
+		return (false);
 	}
 
 	return(true);
@@ -1295,10 +1303,8 @@ copy_or_move_file(const char *src_file_path,
 		read_link_file(ibd_filepath, src_file_path);
 
 		free(ibd_filepath);
-	}
-
-	/* check if there is .isl file */
-	if (ends_with(src_file_path, ".ibd")) {
+	} else if (ends_with(src_file_path, ".ibd")) {
+		/* check if there is .isl file */
 		char *link_filepath;
 		const char *filepath;
 
@@ -1324,6 +1330,22 @@ copy_or_move_file(const char *src_file_path,
 		}
 
 		free(link_filepath);
+	} else if (is_absolute_path(dst_file_path)) {
+		/* File is located outsude of the datadir */
+		char external_dir[FN_REFLEN];
+
+		/* Make sure that the destination directory exists */
+		size_t dirname_length;
+		dirname_part(external_dir, dst_file_path, &dirname_length);
+		if (!directory_exists(external_dir, true)) {
+			ret = false;
+			goto cleanup;
+		}
+
+		datasink = ds_create(external_dir, DS_TYPE_LOCAL);
+
+		dst_file_path = dst_file_path + dirname_length;
+		dst_dir = external_dir;
 	}
 
 	ret = (xtrabackup_copy_back ?
@@ -1552,7 +1574,10 @@ backup_start()
 		if (!write_galera_info(mysql_connection)) {
 			return(false);
 		}
-		write_current_binlog_file(mysql_connection);
+	}
+
+	if (!write_current_binlog_file(mysql_connection)) {
+		return (false);
 	}
 
 	if (opt_binlog_info == BINLOG_INFO_ON) {
@@ -1629,6 +1654,48 @@ backup_finish()
 
 	return(true);
 }
+
+
+struct binlog_file_location {
+  /* binlog file path (full path including filename) */
+  std::string path;
+
+  /* binlog file name */
+  std::string name;
+
+  /* binlog index path */
+  std::string index_path;
+
+  /* binlog index name */
+  std::string index_name;
+
+  /* true if the file exists and can be moved/copied */
+  bool index_file_exists;
+
+  /**
+    Find binary log file and index in the backup directory
+
+    @param[in]  dir     backup directory
+    @param[out] binlog  binlog location
+    @param[out] error   true if error
+    @return     true if found
+  */
+  static bool find_binlog(const std::string &dir, binlog_file_location &binlog,
+                          bool &error);
+
+  std::vector<std::string> files() const {
+    std::vector<std::string> result;
+    if (!name.empty()) {
+      result.push_back(name);
+    }
+    if (!index_name.empty()) {
+      result.push_back(index_name);
+    }
+    return (result);
+  }
+
+	binlog_file_location target_location(const std::string &datadir) const;
+};
 
 bool
 ibx_copy_incremental_over_full()
@@ -1839,6 +1906,10 @@ bool should_skip_file_on_copy_back(const char *filepath) {
 		}
 	}
 
+	if (skip_copy_back_list.count(filename) > 0) {
+		return true;
+	}
+
 	return false;
 }
 
@@ -1928,7 +1999,7 @@ load_backup_my_cnf()
 {
 	const char *groups[] = {"mysqld", NULL};
 
-	my_option bakcup_options[] = {
+	my_option backup_options[] = {
 		{"innodb_checksum_algorithm", 0, "", &srv_checksum_algorithm,
 		&srv_checksum_algorithm, &innodb_checksum_algorithm_typelib,
 		GET_ENUM, REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB,
@@ -1953,7 +2024,7 @@ load_backup_my_cnf()
 	}
 
 	char **old_argv = backup_my_argv;
-	if (handle_options(&backup_my_argc, &backup_my_argv, bakcup_options,
+	if (handle_options(&backup_my_argc, &backup_my_argv, backup_options,
 			   get_one_option)) {
 		return(false);
 	}
@@ -1968,9 +2039,10 @@ copy_back(int argc, char **argv)
 {
 	char *innobase_data_file_path_copy;
 	ulint i;
-	bool ret;
+	bool ret, err;
 	datadir_iter_t *it = NULL;
 	char *dst_dir;
+	binlog_file_location binlog;
 
 	ut_crc32_init();
 
@@ -2157,6 +2229,73 @@ copy_back(int argc, char **argv)
 
 	/* copy the rest of tablespaces */
 	ds_data = ds_create(mysql_data_home, DS_TYPE_LOCAL);
+
+
+	/* copy binary log and .index files */
+	if (!opt_skip_log_bin) {
+		if (binlog_file_location::find_binlog(".", binlog, err)) {
+			const binlog_file_location target = binlog.target_location(mysql_data_home);
+
+			if (!target.name.empty()) {
+				if (!(ret = copy_or_move_file(binlog.name.c_str(), target.path.c_str(),
+											  mysql_data_home, 1, FILE_PURPOSE_BINLOG))) {
+					goto cleanup;
+				}
+
+				/* make sure we don't copy binary log and .index files twice */
+				skip_copy_back_list.insert(binlog.name.c_str());
+			}
+			if (!target.index_name.empty()) {
+				if (target.index_file_exists) {
+					if (!(ret = copy_or_move_file(binlog.index_name.c_str(),
+									target.index_path.c_str(), mysql_data_home,
+									1, FILE_PURPOSE_BINLOG))) {
+						goto cleanup;
+					}
+				} else {
+					/* We have to create the index file ourselves */
+					FILE * 	index_file;
+					std::string dir;
+
+					dir = target.index_path.substr(0, dirname_length(target.index_path.c_str()));
+					if (!directory_exists(dir.c_str(), true)) {
+						msg("Error: can't create the directory %s\n", dir.c_str());
+						ret = false;
+						goto cleanup;
+					}
+
+					index_file = fopen(target.index_path.c_str(), "w");
+					if (index_file == NULL) {
+						msg("Error: can't create file %s\n", target.index_path.c_str());
+						ret = false;
+						goto cleanup;
+					}
+					fclose(index_file);
+					msg("Created binlog index file : %s\n", target.index_path.c_str());
+				}
+
+				/* make sure we don't copy binary log and .index files twice */
+				skip_copy_back_list.insert(target.index_name.c_str());
+
+				/* fixup binlog index */
+				if (equal_paths(target.path.c_str(), mysql_data_home)) {
+					/* path is in the datadir, assume relative paths were used */
+					std::ofstream f_index(target.index_path.c_str());
+					f_index << target.name.c_str() << std::endl;
+				} else {
+					/* path is not in the datadir, use the absolute path */
+					std::ofstream f_index(target.index_path.c_str());
+					f_index << target.path.c_str() << std::endl;
+				}
+			}
+		} else {
+			msg("Error: Could not find a binlog index file or any binlog files\n"
+				"This could be due to the restore using a different binlog name\n"
+				"from the backup.\n");
+			ret = false;
+			goto cleanup;
+		}
+	}
 
 	it = datadir_iter_new(".", false);
 
@@ -2401,3 +2540,268 @@ version_check()
 	pclose(pipe);
 }
 #endif
+
+
+/**
+  Find binary log file and index in the backup directory
+
+  @param[in]  dir     backup directory
+  @param[out] binlog  binlog location
+  @param[out] error   true if error
+  @return     true if found
+*/
+bool binlog_file_location::find_binlog(const std::string &dir,
+                                       binlog_file_location &binlog,
+                                       bool &error) {
+	std::string index_path;
+	binlog = binlog_file_location();
+	binlog.index_file_exists = false;
+	error = false;
+
+	/* Look for a .index file, otherwise use the exact
+	filename from the config file. */
+	datadir_iter_t *it;
+	datadir_node_t node;
+
+	datadir_node_init(&node);
+	it = datadir_iter_new(dir.c_str(), false);
+
+	while (datadir_iter_next(it, &node)) {
+		if (ends_with(node.filepath, ".index")) {
+			std::ifstream f_index(node.filepath);
+			if (f_index.fail()) {
+				msg("xtrabackup %d: Error cannot read from '%s'\n", __LINE__,  node.filepath);
+				error = true;
+				datadir_iter_free(it);
+				datadir_node_free(&node);
+				return (false);
+			}
+			index_path = node.filepath;
+			break;
+		}
+	}
+
+	datadir_iter_free(it);
+	datadir_node_free(&node);
+
+	if (index_path.empty() && opt_binlog_index_name != NULL) {
+		std::string path;
+		char * filename_pos = strrchr(opt_binlog_index_name, FN_LIBCHAR);
+		if (filename_pos != NULL)
+			path = filename_pos + 1;
+		else
+			path = opt_binlog_index_name;
+
+		/* Construct the filename (using dir, not the path in the config file) */
+		char filename[FN_REFLEN];
+		snprintf(filename, sizeof(filename), "%s%c%s", dir.c_str(), FN_LIBCHAR, path.c_str());
+
+		if (!is_absolute_path(filename)) {
+			char buf[FN_REFLEN];
+			fn_format(buf, filename, mysql_data_home, "", MY_UNPACK_FILENAME | MY_RETURN_REAL_PATH);
+			strncpy(filename, buf, FN_REFLEN-1);
+			filename[sizeof(filename)-1] = '\0';
+		}
+
+		std::ifstream f_index(filename);
+		if (!f_index.fail()) {
+			index_path = filename;
+		}
+	}
+
+	if (index_path.empty() && opt_log_bin != NULL) {
+		/* At this point, there is no ".index" file and there is no direct
+		   match to the binlog index file.  Thus, there are two possibilities:
+		   (1) We are restoring from a previous version of 2.4 that did not
+		       include the index file
+		   (2) We are restoring from a config that used multiple periods in
+		       the binlog index name and we are restoring to a system that
+		       uses a different name.
+
+		   So for case (1), we look for a binlog file.
+		   If we find a binlog file, we'll return true but mark that the
+		   binlog index file does not exist and will need to be created.
+		*/
+
+		/* Generate the basename of the binlogs */
+		std::string log_bin = opt_log_bin;
+		std::string basename = std::string(opt_log_bin).substr(dirname_length(opt_log_bin));
+		std::string unique_basename;
+		size_t 	first_period = basename.find_first_of(FN_EXTCHAR);
+
+		if (first_period == std::string::npos) {
+			/* There are no periods in the name */
+			basename += ".";
+		} else {
+			/* There is at least one period
+			   Truncate at the first '.' like MySQL */
+			size_t 	last_period = basename.find_last_of(FN_EXTCHAR);
+
+			if (first_period != last_period) {
+				/* this means there is more than one period
+				   in this case, MySQL (5.7+) creates a single unnumbered
+				   binary log file.  Keep only the first suffix
+				   if log_bin is 'a.b.c', only accept 'a.b' */
+				unique_basename = basename.substr(0,
+					basename.find_first_of(FN_EXTCHAR, first_period+1));
+			}
+			basename = basename.substr(0, basename.find(FN_EXTCHAR)) + ".";
+		}
+
+		/* Iterate through the datadir and look for binlog files.
+		   We expect them to be of the form <basename>.<digits>
+		   or it a unique binlog name.
+		   For the first case, we check to see if they match the basename
+		   and then we check if the suffix contains only digits.
+		*/
+		datadir_node_init(&node);
+		it = datadir_iter_new(dir.c_str(), false);
+
+		while (datadir_iter_next(it, &node)) {
+			std::string file_basename = std::string(node.filepath).substr(dirname_length(node.filepath));
+
+			if (!unique_basename.empty() && unique_basename == file_basename) {
+				binlog.path = node.filepath;
+				binlog.name = file_basename;
+				break;
+			} else if (strncmp(basename.c_str(), file_basename.c_str(), basename.length()) == 0) {
+				/* We have a prefix match, now check the suffix */
+				size_t first_pos = file_basename.find_first_of(FN_EXTCHAR);
+				size_t last_pos = file_basename.find_last_of(FN_EXTCHAR);
+
+				if (first_pos != std::string::npos && first_pos == last_pos) {
+					/* single period case, check for numeric suffix */
+					size_t non_decimal_pos = file_basename.substr(first_pos+1).find_first_not_of("01233456789");
+					if (non_decimal_pos != std::string::npos) {
+						/* we found a non-decimal character in the suffix, skip */
+						continue;
+					}
+				} else {
+					/* all other cases, just skip */
+					continue;
+				}
+				binlog.path = node.filepath;
+				binlog.name = file_basename;
+				break;
+			}
+		}
+
+		datadir_iter_free(it);
+		datadir_node_free(&node);
+
+		binlog.index_file_exists = false;
+	} else if (!index_path.empty()) {
+		/* get the last binlog entry in the index file */
+		char dirname[FN_REFLEN];
+		size_t dirname_length;
+		std::string binlog_dir;
+
+		std::ifstream f_index(index_path.c_str());
+		for (std::string line; std::getline(f_index, line);) {
+			dirname_part(dirname, line.c_str(), &dirname_length);
+			binlog.name = line.substr(dirname_length, std::string::npos);
+			binlog_dir = dirname;
+			binlog.path = line;
+		}
+
+		binlog.index_path = index_path;
+
+		dirname_part(dirname, binlog.index_path.c_str(), &dirname_length);
+		binlog.index_name =
+			binlog.index_path.substr(dirname_length, std::string::npos);
+		binlog.index_file_exists = true;
+	}
+
+	return (!binlog.name.empty());
+}
+
+
+struct binlog_file_location binlog_file_location::target_location(const std::string &datadir) const {
+	binlog_file_location r;
+	r.index_file_exists = index_file_exists;
+
+	if (!name.empty()) {
+		if (opt_log_bin != NULL) {
+			std::string suffix = fn_ext(name.c_str());
+			r.name = std::string(opt_log_bin).substr(dirname_length(opt_log_bin));
+
+			/* Truncate at the first '.' like MySQL */
+			r.name = r.name.substr(0, r.name.find(FN_EXTCHAR)) + suffix;
+
+			if (is_absolute_path(opt_log_bin)) {
+				r.path =
+					std::string(opt_log_bin).substr(0, dirname_length(opt_log_bin)) +
+					r.name;
+			} else {
+				char buf[FN_REFLEN];
+				fn_format(buf, opt_log_bin, datadir.c_str(), "", MY_UNPACK_FILENAME);
+				r.path = std::string(buf).substr(0, dirname_length(buf)) + r.name;
+			}
+		} else {
+			char buf[FN_REFLEN];
+			fn_format(buf, name.c_str(), datadir.c_str(), "", MY_UNPACK_FILENAME);
+			r.name = name;
+			r.path = buf;
+		}
+	}
+
+	if (!index_name.empty() || !index_file_exists) {
+		if (opt_binlog_index_name != NULL || opt_log_bin != NULL) {
+			std::string path;
+			std::string dir;
+			std::string name;
+
+			if (opt_binlog_index_name != NULL) {
+				path = opt_binlog_index_name;
+			} else {
+				path = opt_log_bin;
+			}
+
+			/* Now we have a path, we have to pull the components apart
+			   and rebuild. */
+
+			if (!is_absolute_path(path.c_str())) {
+				char buf[FN_REFLEN];
+				fn_format(buf, path.c_str(), datadir.c_str(), "", MY_UNPACK_FILENAME);
+				path = buf;
+			}
+
+			dir = path.substr(0, dirname_length(path.c_str()));
+			name = path.substr(dirname_length(path.c_str()));
+
+			size_t first_period = name.find_first_of(FN_EXTCHAR);
+			size_t last_period = name.find_last_of(FN_EXTCHAR);
+
+			if (first_period == std::string::npos) {
+				/* There is no period, append ".index" */
+				name.append(".index");
+			} else if (first_period == last_period) {
+				/* There is a single period, truncate at first_period,
+				   and append ".index" */
+				name = name.substr(0, first_period);
+				name.append(".index");
+			} else if (opt_binlog_index_name == NULL) {
+				/* There are multiple periods.  We are
+				   using opt_log_bin as the base, then
+				   append ".index" after the first period */
+				name = name.substr(0, first_period);
+				name.append(".index");
+			}
+			/* Otherwise, the 'else' case is that we are
+			   using opt_binlog_index_name. For this case, we
+			   use the UNMODIFIED option value */
+			r.index_path = dir + name;
+			r.index_name = name;
+		} else if (!index_name.empty()) {
+			/* No explicit name specified, use the default index_name */
+			r.index_name = name;
+
+			char buf[FN_REFLEN];
+			fn_format(buf, name.c_str(), datadir.c_str(), "",
+				MY_UNPACK_FILENAME);
+			r.index_path = buf;
+		}
+	}
+
+  return (r);
+}

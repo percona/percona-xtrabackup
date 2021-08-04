@@ -26,6 +26,9 @@ $MYSQL $MYSQL_ARGS -Ns -e \
 
 binlog_stmts=$lock_binlog_used
 
+# Binlog backups are now always performed
+((binlog_stmts+=1))
+
 run_cmd diff -u $topdir/status1 - <<EOF
 Com_lock_tables	0
 Com_lock_tables_for_backup	1
@@ -46,6 +49,9 @@ $MYSQL $MYSQL_ARGS -Ns -e \
        > $topdir/status2
 
 ((binlog_stmts+=lock_binlog_used)) || true
+
+# Binlog backups are now always performed
+((binlog_stmts+=1))
 
 run_cmd diff -u $topdir/status2 - <<EOF
 Com_lock_tables	0

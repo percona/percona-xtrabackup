@@ -1577,18 +1577,18 @@ if GTID is enabled */
 bool
 write_current_binlog_file(MYSQL *connection)
 {
-	char *executed_gtid_set = NULL;
-	char *gtid_binlog_state = NULL;
 	char *log_bin_file = NULL;
 	char *log_bin_dir = NULL;
-	bool gtid_exists;
+	char *log_bin_index = NULL;
+	char *log_bin = NULL;
 	bool result = true;
 	char filepath[FN_REFLEN];
 
-	mysql_variable status[] = {
-		{"Executed_Gtid_Set", &executed_gtid_set},
-		{NULL, NULL}
-	};
+	std::string index_path;
+	std::string index_filename;
+	std::string binlog_path;
+	std::string binlog_dir;
+	size_t last_sep = 0;
 
 	mysql_variable status_after_flush[] = {
 		{"File", &log_bin_file},
@@ -1596,44 +1596,57 @@ write_current_binlog_file(MYSQL *connection)
 	};
 
 	mysql_variable vars[] = {
-		{"gtid_binlog_state", &gtid_binlog_state},
+		{"log_bin", &log_bin},
 		{"log_bin_basename", &log_bin_dir},
+        {"log_bin_index", &log_bin_index},
 		{NULL, NULL}
 	};
 
-	read_mysql_variables(connection, "SHOW MASTER STATUS", status, false);
 	read_mysql_variables(connection, "SHOW VARIABLES", vars, true);
 
-	gtid_exists = (executed_gtid_set && *executed_gtid_set)
-			|| (gtid_binlog_state && *gtid_binlog_state);
-
-	if (gtid_exists) {
+	if (strcmp(log_bin, "OFF") != 0) {
 		size_t log_bin_dir_length;
 
 		lock_binlog_maybe(connection, opt_backup_lock_timeout,
 				  opt_backup_lock_retry_count);
 
-		xb_mysql_query(connection, "FLUSH BINARY LOGS", false);
+		if (!binlog_locked && !srv_read_only_mode) {
+			xb_mysql_query(connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS", false);
+		}
 
 		read_mysql_variables(connection, "SHOW MASTER STATUS",
 			status_after_flush, false);
 
-		if (opt_log_bin != NULL && strchr(opt_log_bin, FN_LIBCHAR)) {
-			/* If log_bin is set, it has priority */
-			if (log_bin_dir) {
-				free(log_bin_dir);
-			}
-			log_bin_dir = strdup(opt_log_bin);
-		} else if (log_bin_dir == NULL) {
-			/* Default location is MySQL datadir */
-			log_bin_dir = strdup("./");
+		/* Find the binlog index file */
+		/* Check with the running server */
+		if (log_bin_index != NULL && file_exists(log_bin_index, true)) {
+			index_path = log_bin_index;
+		} else if (opt_binlog_index_name != NULL && file_exists(opt_binlog_index_name, true)) {
+			/* If the running server has the wrong location, use
+			   the UNMODIFIED binlog index option (this is due to a MySQL bug) */
+			index_path = opt_binlog_index_name;
+		} else {
+			msg("xtrabackup: Error cannot find the binlog index file.\n");
+			result = false;
+			goto cleanup;
 		}
 
+		/* Now look for the binlog directory and path */
+		if (log_bin_dir != NULL) {
+			binlog_path = log_bin_dir;
+		} else if (binlog_path.empty() && opt_log_bin != NULL &&
+				   strchr(opt_log_bin, FN_LIBCHAR)) {
+			binlog_path = opt_log_bin;
+		} else if (binlog_path.empty()) {
+			binlog_path = "./";
+		}
+
+		log_bin_dir = strdup(binlog_path.c_str());
 		dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
 
 		/* strip final slash if it is not the only path component */
 		if (log_bin_dir_length > 1 &&
-		    log_bin_dir[log_bin_dir_length - 1] == FN_LIBCHAR) {
+			log_bin_dir[log_bin_dir_length - 1] == FN_LIBCHAR) {
 			log_bin_dir[log_bin_dir_length - 1] = 0;
 		}
 
@@ -1644,14 +1657,48 @@ write_current_binlog_file(MYSQL *connection)
 			goto cleanup;
 		}
 
-		ut_snprintf(filepath, sizeof(filepath), "%s%c%s",
-				log_bin_dir, FN_LIBCHAR, log_bin_file);
+		/* copy only the last binlog file */
+		ut_snprintf(filepath, sizeof(filepath), "%s%c%s", log_bin_dir, FN_LIBCHAR,
+			log_bin_file);
+
 		result = copy_file(ds_data, filepath, log_bin_file, 0);
+
+		/* Now copy the binlog index
+		Find the filename of the binlog index
+		During backup, we copy the binlog index into the datadir
+		so we don't need the directory portion */
+		last_sep = index_path.find_last_of(FN_LIBCHAR);
+		if (last_sep == std::string::npos) {
+			index_filename = index_path;
+		} else {
+			index_filename = index_path.substr(last_sep+1);
+		}
+
+		FILE *f_index = fopen(index_path.c_str(), "r");
+		if (f_index == NULL) {
+			msg("xtrabackup: Error cannot open binlog index file '%s'\n",
+				index_path.c_str());
+			result = false;
+			goto cleanup;
+		}
+
+		/* only write current log file into .index in the backup directory */
+		result = false;
+		while (!feof(f_index)) {
+			char line[FN_REFLEN];
+			if (fgets(line, sizeof(line), f_index) != NULL) {
+				if (strstr(line, log_bin_file) != NULL) {
+					backup_file_print(index_filename.c_str(), line, strlen(line));
+					result = true;
+					break;
+				}
+			}
+		}
+		fclose(f_index);
 	}
 
 cleanup:
 	free_mysql_variables(status_after_flush);
-	free_mysql_variables(status);
 	free_mysql_variables(vars);
 
 	return(result);

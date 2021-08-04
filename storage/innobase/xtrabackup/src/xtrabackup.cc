@@ -410,6 +410,7 @@ char *opt_socket = NULL;
 uint opt_port = 0;
 char *opt_login_path = NULL;
 char *opt_log_bin = NULL;
+bool opt_skip_log_bin = false;
 
 bool tty_password = false;
 bool tty_transition_key = false;
@@ -603,6 +604,8 @@ enum options_xtrabackup
   OPT_XTRA_SERVER_ID,
   OPT_XTRA_ENCRYPT_FOR_SERVER_ID,
   OPT_LOG,
+  OPT_LOG_BIN_INDEX,
+  OPT_SKIP_LOG_BIN,
   OPT_INNODB,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
@@ -1226,6 +1229,13 @@ struct my_option xb_server_options[] =
 
    {"log_bin", OPT_LOG, "Base name for the log sequence",
    &opt_log_bin, &opt_log_bin, 0, GET_STR_ALLOC, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+   {"skip_log_bin", OPT_SKIP_LOG_BIN, "Disables use of the binlog",
+   &opt_skip_log_bin, &opt_skip_log_bin, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"log_bin_index", OPT_LOG_BIN_INDEX,
+     "File that holds the names for binary log files.", &opt_binlog_index_name,
+     &opt_binlog_index_name, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
    {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
    (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,

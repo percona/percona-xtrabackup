@@ -49,6 +49,8 @@ version_check();
 bool
 is_path_separator(char);
 bool
+file_exists(const char *filename, bool check_if_file=false);
+bool
 directory_exists(const char *dir, bool create);
 
 #endif
