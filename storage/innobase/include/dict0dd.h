@@ -756,6 +756,29 @@ const rec_t *dd_startscan_system(THD *thd, MDL_ticket **mdl, btr_pcur_t *pcur,
                                  mtr_t *mtr, const char *system_table_name,
                                  dict_table_t **table);
 
+/** Process one mysql.metadata record and extract schema name and id
+@param[in]	heap		temp memory heap
+@param[in]	rec		mysql.tables record
+@param[in]	dd_tables	dict_table_t obj of dd system table
+@param[in]	mtr		mini-transaction
+@param[out]	name 		name of schema
+@param[out]	id		schema_id */
+void dd_process_schema_rec(mem_heap_t *heap, const rec_t *rec,
+                           dict_table_t *dd_tables, mtr_t *mtr,
+                           std::string *name, uint64 *id);
+
+/** Process one mysql.tables record and get the table id, name and schema_id
+@param[in]	heap		temp memory heap
+@param[in]	rec		mysql.tables record
+@param[in]	dd_tables	dict_table_t obj of dd system table
+@param[in]	mtr		mini-transaction
+@param[out]	schema_id 	schema id of table
+@param[out]	name 		name of table
+@param[out]	id 		primary key of table */
+void dd_process_dd_tables_rec(mem_heap_t *heap, const rec_t *rec,
+                              dict_table_t *dd_tables, mtr_t *mtr,
+                              uint64 *schema_id, std::string *name, uint64 *id);
+
 /** Process one mysql.tables record and get the dict_table_t
 @param[in]	heap		Temp memory heap
 @param[in,out]	rec		mysql.tables record

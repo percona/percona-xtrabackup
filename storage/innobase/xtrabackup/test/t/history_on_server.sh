@@ -43,19 +43,6 @@ function check_for_value()
 }
 
 ###############################################################################
-# Checks the number of records to see if is a specific value.
-function check_count()
-{
-  local expected=$1
-  local val=`${MYSQL} ${MYSQL_ARGS} -Ns -e "SELECT COUNT(*) FROM PERCONA_SCHEMA.xtrabackup_history"`
-  if [ -z "$val" ] || [ "$val" != "$expected" ];
-  then
-      vlog "Error: count in history is invalid, got \"$val\" expected \"$expected\""
-      exit 1
-  fi
-}
-
-###############################################################################
 vlog "Prepping server"
 start_server
 load_dbase_schema incremental_sample
@@ -259,7 +246,7 @@ encrypted ENUM('Y', 'N') DEFAULT NULL
 ) CHARACTER SET utf8 ENGINE=innodb"
 ${MYSQL} ${MYSQL_ARGS} -Ns -e "INSERT INTO \`PERCONA_SCHEMA\`.\`xtrabackup_history\` VALUES ('1bc0b0cb-9dec-11eb-bfc3-d45d64347a19',NULL,'xtrabackup','--defaults-file=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/my.cnf --no-version-check --backup --history --target-dir=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/backup0','2.4.21','2.4.21','5.7.31-34-debug-log','2021-04-15 10:11:34','2021-04-15 10:11:36',0,'filename \'mysql-bin.000001\', position \'1424\', GTID of the last change \'12c397b9-9dec-11eb-abcb-d45d64347a19:1-2\'',0,2789167,'N','N','file','N','N','N')"
 xtrabackup --backup --history --target-dir=$topdir/backup0
-check_count 2
+check_count PERCONA_SCHEMA xtrabackup_history 2
 check_for_value "SUBSTRING(binlog_pos, -39)" "ffffffff-ffff-ffff-ffff-ffffffffffff:1'"
 get_one_value "char_length(binlog_pos)"
 if [ -z "$val" ] || [ "$val" -le "128" ]
@@ -275,7 +262,7 @@ check_for_value "SUBSTRING(binlog_pos, -41)" "12c397b9-9dec-11eb-abcb-d45d64347a
 vlog "Testing new table"
 ${MYSQL} ${MYSQL_ARGS} -Ns -e "DROP TABLE IF EXISTS PERCONA_SCHEMA.xtrabackup_history"
 xtrabackup --backup --history --target-dir=$topdir/backup1
-check_count 1
+check_count PERCONA_SCHEMA xtrabackup_history 1
 get_one_value "char_length(binlog_pos)"
 if [ -z "$val" ] || [ "$val" -le "128" ]
 then
