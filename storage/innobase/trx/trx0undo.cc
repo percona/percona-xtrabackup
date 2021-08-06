@@ -323,10 +323,10 @@ trx_undo_rec_t *trx_undo_get_first_rec(trx_id_t *modifier_trx_id,
 /*============== UNDO LOG FILE COPY CREATION AND FREEING ==================*/
 
 /** Writes the mtr log entry of an undo log page initialization. */
-UNIV_INLINE
-void trx_undo_page_init_log(page_t *undo_page, /*!< in: undo log page */
-                            ulint type,        /*!< in: undo log type */
-                            mtr_t *mtr)        /*!< in: mtr */
+static inline void trx_undo_page_init_log(
+    page_t *undo_page, /*!< in: undo log page */
+    ulint type,        /*!< in: undo log type */
+    mtr_t *mtr)        /*!< in: mtr */
 {
   mlog_write_initial_log_record(undo_page, MLOG_UNDO_INIT, mtr);
 
@@ -472,8 +472,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t trx_undo_seg_create(
 }
 
 /** Writes the mtr log entry of an undo log header initialization. */
-UNIV_INLINE
-void trx_undo_header_create_log(
+static inline void trx_undo_header_create_log(
     const page_t *undo_page, /*!< in: undo log header page */
     trx_id_t trx_id,         /*!< in: transaction id */
     mtr_t *mtr)              /*!< in: mtr */
@@ -686,9 +685,9 @@ void trx_undo_gtid_read_and_persist(trx_ulogf_t *undo_header) {
 
     /* No concurrency is involved during recovery but satisfy
     the interface requirement. */
-    trx_sys_mutex_enter();
+    trx_sys_serialisation_mutex_enter();
     gtid_persistor.add(gtid_desc);
-    trx_sys_mutex_exit();
+    trx_sys_serialisation_mutex_exit();
   }
 
   if ((flag & TRX_UNDO_FLAG_GTID) == 0) {
@@ -707,9 +706,9 @@ void trx_undo_gtid_read_and_persist(trx_ulogf_t *undo_header) {
 
   /* No concurrency is involved during recovery but satisfy
   the interface requirement. */
-  trx_sys_mutex_enter();
+  trx_sys_serialisation_mutex_enter();
   gtid_persistor.add(gtid_desc);
-  trx_sys_mutex_exit();
+  trx_sys_serialisation_mutex_exit();
 }
 
 void trx_undo_gtid_write(trx_t *trx, trx_ulogf_t *undo_header, trx_undo_t *undo,
@@ -814,8 +813,7 @@ static void trx_undo_header_add_space_for_xid(
 }
 
 /** Writes the mtr log entry of an undo log header reuse. */
-UNIV_INLINE
-void trx_undo_insert_header_reuse_log(
+static inline void trx_undo_insert_header_reuse_log(
     const page_t *undo_page, /*!< in: undo log header page */
     trx_id_t trx_id,         /*!< in: transaction id */
     mtr_t *mtr)              /*!< in: mtr */
@@ -2142,28 +2140,22 @@ bool trx_undo_truncate_tablespace(undo::Tablespace *marked_space) {
     ut_a(UT_LIST_GET_LEN(rseg->update_undo_list) == 0);
     ut_a(UT_LIST_GET_LEN(rseg->insert_undo_list) == 0);
 
-    trx_undo_t *next_undo;
-
-    for (trx_undo_t *undo = UT_LIST_GET_FIRST(rseg->update_undo_cached);
-         undo != nullptr; undo = next_undo) {
-      next_undo = UT_LIST_GET_NEXT(undo_list, undo);
+    for (auto undo : rseg->update_undo_cached.removable()) {
       UT_LIST_REMOVE(rseg->update_undo_cached, undo);
       MONITOR_DEC(MONITOR_NUM_UNDO_SLOT_CACHED);
       trx_undo_mem_free(undo);
     }
 
-    for (trx_undo_t *undo = UT_LIST_GET_FIRST(rseg->insert_undo_cached);
-         undo != nullptr; undo = next_undo) {
-      next_undo = UT_LIST_GET_NEXT(undo_list, undo);
+    for (auto undo : rseg->insert_undo_cached.removable()) {
       UT_LIST_REMOVE(rseg->insert_undo_cached, undo);
       MONITOR_DEC(MONITOR_NUM_UNDO_SLOT_CACHED);
       trx_undo_mem_free(undo);
     }
 
-    UT_LIST_INIT(rseg->update_undo_list, &trx_undo_t::undo_list);
-    UT_LIST_INIT(rseg->update_undo_cached, &trx_undo_t::undo_list);
-    UT_LIST_INIT(rseg->insert_undo_list, &trx_undo_t::undo_list);
-    UT_LIST_INIT(rseg->insert_undo_cached, &trx_undo_t::undo_list);
+    rseg->update_undo_list.clear();
+    rseg->update_undo_cached.clear();
+    rseg->insert_undo_list.clear();
+    rseg->insert_undo_cached.clear();
 
     rseg->max_size =
         mtr_read_ulint(rseg_header + TRX_RSEG_MAX_SIZE, MLOG_4BYTES, &mtr);

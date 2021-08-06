@@ -25,6 +25,7 @@
 #include "Sysfile.hpp"
 
 #include <cstring>
+#include <EventLogger.hpp>
 
 #define JAM_FILE_ID 512
 
@@ -175,7 +176,7 @@ Sysfile::pack_sysfile_format_v2(Uint32 cdata[], Uint32* cdata_size_ptr) const
       case NS_NotActive_TakenOver:
       case NS_TakeOver:
       {
-        ndbout_c("active_status = %u", active_status);
+        g_eventLogger->info("active_status = %u", active_status);
         assert(false);
         bits = NODE_ACTIVE_NODE_DOWN;
         diff = 1;
@@ -201,7 +202,7 @@ Sysfile::pack_sysfile_format_v2(Uint32 cdata[], Uint32* cdata_size_ptr) const
       }
       default:
       {
-        ndbout_c("active_status = %u", active_status);
+        g_eventLogger->info("active_status = %u", active_status);
         return -1;
       }
     }

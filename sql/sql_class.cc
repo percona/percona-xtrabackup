@@ -54,7 +54,7 @@
 #include "mysql/service_mysql_alloc.h"
 #include "mysys_err.h"  // EE_OUTOFMEMORY
 #include "pfs_statement_provider.h"
-#include "rpl_master.h"  // unregister_slave
+#include "rpl_source.h"  // unregister_slave
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/binlog.h"
 #include "sql/check_stack.h"
@@ -81,8 +81,8 @@
 #include "sql/protocol_classic.h"
 #include "sql/psi_memory_key.h"
 #include "sql/query_result.h"
-#include "sql/rpl_rli.h"    // Relay_log_info
-#include "sql/rpl_slave.h"  // rpl_master_erroneous_autoinc
+#include "sql/rpl_replica.h"  // rpl_master_erroneous_autoinc
+#include "sql/rpl_rli.h"      // Relay_log_info
 #include "sql/rpl_transaction_write_set_ctx.h"
 #include "sql/sp_cache.h"         // sp_cache_clear
 #include "sql/sp_head.h"          // sp_head
@@ -105,6 +105,8 @@
 #include "sql/transaction.h"  // trans_rollback
 #include "sql/transaction_info.h"
 #include "sql/xa.h"
+#include "storage/perfschema/pfs_instr_class.h"  // PFS_CLASS_STAGE
+#include "storage/perfschema/terminology_use_previous.h"
 #include "template_utils.h"
 #include "thr_mutex.h"
 
@@ -315,7 +317,7 @@ void THD::enter_stage(const PSI_stage_info *new_stage,
 
   if (old_stage != nullptr) {
     old_stage->m_key = m_current_stage_key;
-    old_stage->m_name = proc_info;
+    old_stage->m_name = proc_info();
   }
 
   if (new_stage != nullptr) {
@@ -326,7 +328,7 @@ void THD::enter_stage(const PSI_stage_info *new_stage,
 #endif
 
     m_current_stage_key = new_stage->m_key;
-    proc_info = msg;
+    set_proc_info(msg);
 
     m_stage_progress_psi =
         MYSQL_SET_STAGE(m_current_stage_key, calling_file, calling_line);
@@ -335,6 +337,35 @@ void THD::enter_stage(const PSI_stage_info *new_stage,
   }
 
   return;
+}
+
+const char *THD::proc_info(const System_variables &sysvars) const {
+  DBUG_TRACE;
+  const char *ret = proc_info();
+  terminology_use_previous::enum_compatibility_version version =
+      static_cast<terminology_use_previous::enum_compatibility_version>(
+          sysvars.terminology_use_previous);
+  DBUG_PRINT("info", ("session.terminology_use_previous=%d", (int)version));
+  if (version != terminology_use_previous::NONE) {
+    auto compatible_name_info =
+        terminology_use_previous::lookup(PFS_CLASS_STAGE, ret, false);
+#ifndef NDEBUG
+    if (compatible_name_info.version)
+      DBUG_PRINT(
+          "info",
+          ("old name found for proc info (aka stage) <%s>; "
+           "old name is <%s>; "
+           "old version is %d; "
+           "returning %s name",
+           ret, compatible_name_info.old_name, compatible_name_info.version,
+           version <= compatible_name_info.version ? "old" : "new"));
+    else
+      DBUG_PRINT("info", ("no old name for proc info (aka stage) <%s>", ret));
+#endif  // ifndef NDEBUG
+    if (version <= compatible_name_info.version)
+      ret = compatible_name_info.old_name;
+  }
+  return ret;
 }
 
 void Open_tables_state::set_open_tables_state(Open_tables_state *state) {
@@ -520,7 +551,7 @@ THD::THD(bool enable_plugins)
   mysql_cond_init(key_COND_thr_lock, &COND_thr_lock);
 
   /* Variables with default values */
-  proc_info = "login";
+  set_proc_info("login");
   where = THD::DEFAULT_WHERE;
   server_id = ::server_id;
   unmasked_server_id = server_id;
@@ -572,6 +603,13 @@ THD::THD(bool enable_plugins)
   debug_binlog_xid_last.reset();
 #endif
   set_system_user(false);
+}
+
+void THD::copy_table_access_properties(THD *thd) {
+  thread_stack = thd->thread_stack;
+  variables.option_bits = thd->variables.option_bits & OPTION_BIN_LOG;
+  skip_readonly_check = thd->skip_readonly_check;
+  tx_isolation = thd->tx_isolation;
 }
 
 void THD::set_transaction(Transaction_ctx *transaction_ctx) {
@@ -2479,7 +2517,7 @@ void THD::vsyntax_error_at(const char *pos_in_lexer_raw_buffer,
           ? m_parser_state->m_lip.get_lineno(pos_in_lexer_raw_buffer)
           : 1;
   const char *pos = pos_in_lexer_raw_buffer ? pos_in_lexer_raw_buffer : "";
-  ErrConvString err(pos, variables.character_set_client);
+  ErrConvString err(pos, strlen(pos), variables.character_set_client);
   (void)vsnprintf(buff, sizeof(buff), format, args);
   my_printf_error(ER_PARSE_ERROR, ER_THD(this, ER_PARSE_ERROR), MYF(0), buff,
                   err.ptr(), lineno);
@@ -2641,8 +2679,8 @@ bool THD::is_current_stmt_binlog_disabled() const {
           !mysql_bin_log.is_open());
 }
 
-bool THD::is_current_stmt_binlog_log_slave_updates_disabled() const {
-  return ((!opt_bin_log || (slave_thread && !opt_log_slave_updates)) ||
+bool THD::is_current_stmt_binlog_log_replica_updates_disabled() const {
+  return ((!opt_bin_log || (slave_thread && !opt_log_replica_updates)) ||
           !mysql_bin_log.is_open());
 }
 
@@ -2727,12 +2765,30 @@ bool THD::is_one_phase_commit() {
   return (xa_op == XA_ONE_PHASE);
 }
 
-bool THD::secondary_storage_engine_eligible() const {
-  return secondary_engine_optimization() !=
-             Secondary_engine_optimization::PRIMARY_ONLY &&
-         variables.use_secondary_engine != SECONDARY_ENGINE_OFF &&
-         locked_tables_mode == LTM_NONE && !in_multi_stmt_transaction_mode() &&
-         sp_runtime_ctx == nullptr;
+bool THD::is_secondary_storage_engine_eligible() const {
+  // STATEMENT based replication is enabled and the statement is CTAS or
+  // INSERT INTO SELECT
+  if (variables.binlog_format == BINLOG_FORMAT_STMT &&
+      (lex->sql_command == SQLCOM_CREATE_TABLE ||
+       lex->sql_command == SQLCOM_INSERT_SELECT))
+    return false;
+  // Secondary engines had been disabled in the session
+  if (secondary_engine_optimization() ==
+      Secondary_engine_optimization::PRIMARY_ONLY)
+    return false;
+  // The user has explicitly disabled secondary engines
+  if (variables.use_secondary_engine == SECONDARY_ENGINE_OFF) return false;
+  // LOCK TABLES mode is active
+  if (locked_tables_mode != LTM_NONE) return false;
+  // Multi-statement transaction mode is active and the statement is not a
+  // CREATE TABLE AS SELECT (these are safe due to COMMIT being run before
+  // and after the statement is executed)
+  if ((in_multi_stmt_transaction_mode() &&
+       lex->sql_command != SQLCOM_CREATE_TABLE))
+    return false;
+  //  It is a sub-statement of a stored procedure
+  if (sp_runtime_ctx != nullptr) return false;
+  return true;
 }
 
 void THD::swap_rewritten_query(String &query_arg) {

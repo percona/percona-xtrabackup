@@ -29,7 +29,7 @@
 #include "sql/protocol_classic.h"
 #include "sql/rpl_async_conn_failover.h"  // reset_pos
 #include "sql/rpl_msr.h"                  /* Multisource replication */
-#include "sql/rpl_slave.h"
+#include "sql/rpl_replica.h"
 #include "sql/rpl_sys_key_access.h"
 #include "sql/rpl_sys_table_access.h"
 #include "sql/sql_class.h"  // THD
@@ -52,8 +52,6 @@
 */
 static bool restart_io_thread(THD *thd, const std::string &channel_name,
                               bool force_sender_with_highest_weight);
-
-bool Source_IO_monitor::m_monitor_thd_initiated = false;
 
 /*
   The SQL_QUERIES array contains three queries. The enum_sql_query_tag index/tag
@@ -163,9 +161,7 @@ std::string Source_IO_monitor::get_query(enum_sql_query_tag qtag) {
   return query;
 }
 
-Source_IO_monitor::Source_IO_monitor() { init_mutex(); }
-
-void Source_IO_monitor::init_mutex() {
+Source_IO_monitor::Source_IO_monitor() {
 #ifdef HAVE_PSI_INTERFACE
   mysql_mutex_init(key_monitor_info_run_lock, &m_run_lock, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_monitor_info_run_cond, &m_run_cond);
@@ -173,15 +169,12 @@ void Source_IO_monitor::init_mutex() {
   mysql_mutex_init(nullptr, &m_run_lock, MY_MUTEX_INIT_FAST);
   mysql_cond_init(nullptr, &m_run_cond);
 #endif
-  m_monitor_thd_initiated = true;
 }
 
-void Source_IO_monitor::cleanup_mutex() {
-  if (m_monitor_thd_initiated) {
-    mysql_mutex_destroy(&m_run_lock);
-    mysql_cond_destroy(&m_run_cond);
-    m_monitor_thd_initiated = false;
-  }
+Source_IO_monitor::~Source_IO_monitor() {
+  terminate_monitoring_process();
+  mysql_mutex_destroy(&m_run_lock);
+  mysql_cond_destroy(&m_run_cond);
 }
 
 bool Source_IO_monitor::is_monitor_killed(THD *thd, Master_info *) {
@@ -194,7 +187,6 @@ bool Source_IO_monitor::is_monitor_killed(THD *thd, Master_info *) {
 bool Source_IO_monitor::launch_monitoring_process(PSI_thread_key thread_key) {
   DBUG_TRACE;
 
-  if (!m_monitor_thd_initiated) init_mutex();
   mysql_mutex_lock(&m_run_lock);
 
   // Callers should ensure the process is terminated
@@ -240,7 +232,7 @@ void Source_IO_monitor::source_monitor_handler() {
 #endif
   thd->thread_stack = (char *)&thd;  // remember where our stack is
 
-  if (init_slave_thread(thd, SLAVE_THD_IO)) {
+  if (init_replica_thread(thd, SLAVE_THD_IO)) {
     my_error(ER_SLAVE_FATAL_ERROR, MYF(0),
              "Failed during Replica IO Monitor thread initialization ");
     goto err;
@@ -431,7 +423,7 @@ int Source_IO_monitor::connect_senders(THD *thd,
     uint mi_port = mi->port;
     const std::string mi_network_namespace(mi->network_namespace_str());
 
-    THD_STAGE_INFO(thd, stage_connecting_to_master);
+    THD_STAGE_INFO(thd, stage_connecting_to_source);
     Mysql_connection *conn =
         new Mysql_connection(thd, mi, host, port, mi_network_namespace);
     if (!conn->is_connected()) {
@@ -976,8 +968,6 @@ Source_IO_monitor::get_senders_details(const std::string &channel_name) {
 }
 
 int Source_IO_monitor::terminate_monitoring_process() {
-  if (!m_monitor_thd_initiated) return 0;
-
   mysql_mutex_lock(&m_run_lock);
 
   if (m_monitor_thd_state.is_thread_dead()) {
@@ -988,7 +978,7 @@ int Source_IO_monitor::terminate_monitoring_process() {
   // Awake up possible stuck conditions
   mysql_cond_broadcast(&m_run_cond);
 
-  ulong stop_wait_timeout = rpl_stop_slave_timeout;
+  ulong stop_wait_timeout = rpl_stop_replica_timeout;
   while (m_monitor_thd_state.is_thread_alive()) {
     DBUG_PRINT("sleep",
                ("Waiting for the Monitoring IO process thread to finish"));
@@ -1022,7 +1012,6 @@ int Source_IO_monitor::terminate_monitoring_process() {
   assert(m_monitor_thd_state.is_thread_dead());
 
   mysql_mutex_unlock(&m_run_lock);
-  cleanup_mutex();
   return 0;
 }
 
@@ -1036,9 +1025,8 @@ bool Source_IO_monitor::is_monitoring_process_running() {
   return m_monitor_thd_state.is_thread_alive();
 }
 
-Source_IO_monitor &Source_IO_monitor::get_instance() {
-  static Source_IO_monitor shared_instance;
-  return shared_instance;
+Source_IO_monitor *Source_IO_monitor::get_instance() {
+  return rpl_source_io_monitor;
 }
 
 static bool restart_io_thread(THD *thd, const std::string &channel_name,
@@ -1078,7 +1066,7 @@ static bool restart_io_thread(THD *thd, const std::string &channel_name,
   thread_mask |= SLAVE_IO;
   thd->set_skip_readonly_check();
 
-  if (terminate_slave_threads(mi, thread_mask, rpl_stop_slave_timeout,
+  if (terminate_slave_threads(mi, thread_mask, rpl_stop_replica_timeout,
                               false /*need_lock_term=false*/)) {
     LogErr(WARNING_LEVEL, ER_RPL_REPLICA_MONITOR_IO_THREAD_RECONNECT_CHANNEL,
            "stopping", channel_name.c_str());

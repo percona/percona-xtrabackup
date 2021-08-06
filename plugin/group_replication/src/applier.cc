@@ -57,7 +57,6 @@ Applier_module::Applier_module()
       applier_error(0),
       suspended(false),
       waiting_for_applier_suspension(false),
-      shared_stop_write_lock(nullptr),
       incoming(nullptr),
       pipeline(nullptr),
       stop_wait_timeout(LONG_TIMEOUT),
@@ -93,8 +92,7 @@ Applier_module::~Applier_module() {
 int Applier_module::setup_applier_module(Handler_pipeline_type pipeline_type,
                                          bool reset_logs, ulong stop_timeout,
                                          rpl_sidno group_sidno,
-                                         ulonglong gtid_assignment_block_size,
-                                         Shared_writelock *shared_stop_lock) {
+                                         ulonglong gtid_assignment_block_size) {
   DBUG_TRACE;
 
   int error = 0;
@@ -113,8 +111,6 @@ int Applier_module::setup_applier_module(Handler_pipeline_type pipeline_type,
   reset_applier_logs = reset_logs;
   group_replication_sidno = group_sidno;
   this->gtid_assignment_block_size = gtid_assignment_block_size;
-
-  shared_stop_write_lock = shared_stop_lock;
 
   return error;
 }
@@ -316,11 +312,13 @@ int Applier_module::apply_view_change_packet(
                         "prepared transactions",
                         view_change_packet->view_id.c_str()));
     transaction_consistency_manager->schedule_view_change_event(pevent);
-    return error;
+    pevent->set_delayed_view_change_waiting_for_consistent_transactions();
   }
 
   error = inject_event_into_pipeline(pevent, cont);
-  if (!cont->is_transaction_discarded()) delete pevent;
+  if (!cont->is_transaction_discarded() &&
+      !pevent->is_delayed_view_change_waiting_for_consistent_transactions())
+    delete pevent;
 
   return error;
 }

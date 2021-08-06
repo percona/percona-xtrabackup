@@ -2196,7 +2196,7 @@ bool Query_result_update::optimize() {
     group->item = &temp_fields.front();
 
     tmp_param->allow_group_via_temp_table = true;
-    tmp_param->field_count = temp_fields.size();
+    tmp_param->func_count = temp_fields.size();
     tmp_param->group_parts = 1;
     tmp_param->group_length = table->file->ref_length;
     tmp_tables[cnt] =
@@ -2564,7 +2564,7 @@ bool Query_result_update::do_updates(THD *thd) {
     Copy_field *copy_field_ptr = copy_field, *copy_field_end;
     for (; *field; field++) {
       Item_field *item = down_cast<Item_field *>(*field_it++);
-      (copy_field_ptr++)->set(item->field, *field, false);
+      (copy_field_ptr++)->set(item->field, *field);
     }
     copy_field_end = copy_field_ptr;
 

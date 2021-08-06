@@ -714,6 +714,13 @@ bool Events::lock_schema_events(THD *thd, const dd::Schema &schema) {
     schema_name = schema_name_buf;
   }
 
+  /*
+    Ensure that we don't hold memory used by MDL_requests after locks have
+    been acquired. This reduces memory usage in cases when we have DROP
+    DATABASE tha needs to drop lots of different objects.
+  */
+  MEM_ROOT mdl_reqs_root(key_memory_rm_db_mdl_reqs_root, MEM_ROOT_BLOCK_SIZE);
+
   MDL_request_list mdl_requests;
   for (std::vector<dd::String_type>::const_iterator name = event_names.begin();
        name != event_names.end(); ++name) {
@@ -721,7 +728,7 @@ bool Events::lock_schema_events(THD *thd, const dd::Schema &schema) {
     dd::Event::create_mdl_key(dd::String_type(schema_name), *name, &mdl_key);
 
     // Add MDL_request for routine to mdl_requests list.
-    MDL_request *mdl_request = new (thd->mem_root) MDL_request;
+    MDL_request *mdl_request = new (&mdl_reqs_root) MDL_request;
     MDL_REQUEST_INIT_BY_KEY(mdl_request, &mdl_key, MDL_EXCLUSIVE,
                             MDL_TRANSACTION);
     mdl_requests.push_front(mdl_request);
@@ -809,9 +816,9 @@ static bool send_show_create_event(THD *thd, Event_timed *et,
                          system_charset_info);
   protocol->store_string(show_str.c_ptr(), show_str.length(),
                          et->m_creation_ctx->get_client_cs());
-  protocol->store_string(et->m_creation_ctx->get_client_cs()->csname,
-                         strlen(et->m_creation_ctx->get_client_cs()->csname),
-                         system_charset_info);
+  const char *csname =
+      replace_utf8_utf8mb3(et->m_creation_ctx->get_client_cs()->csname);
+  protocol->store_string(csname, strlen(csname), system_charset_info);
   protocol->store_string(et->m_creation_ctx->get_connection_cl()->name,
                          strlen(et->m_creation_ctx->get_connection_cl()->name),
                          system_charset_info);

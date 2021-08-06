@@ -35,8 +35,10 @@
 #include "plugin/group_replication/include/observer_server_actions.h"
 #include "plugin/group_replication/include/observer_server_state.h"
 #include "plugin/group_replication/include/observer_trans.h"
+#include "plugin/group_replication/include/perfschema/pfs.h"
 #include "plugin/group_replication/include/pipeline_stats.h"
 #include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_handlers/member_actions_handler.h"
 #include "plugin/group_replication/include/plugin_variables.h"
 #include "plugin/group_replication/include/plugin_variables/recovery_endpoints.h"
 #include "plugin/group_replication/include/services/message_service/message_service.h"
@@ -117,6 +119,7 @@ Remote_clone_handler *remote_clone_handler = nullptr;
 Message_service_handler *message_service_handler = nullptr;
 /** Handle validation of advertised recovery endpoints */
 Advertised_recovery_endpoints *advertised_recovery_endpoints = nullptr;
+Member_actions_handler *member_actions_handler = nullptr;
 
 Plugin_gcs_events_handler *events_handler = nullptr;
 Plugin_gcs_view_modification_notifier *view_change_notifier = nullptr;
@@ -132,10 +135,15 @@ Compatibility_module *compatibility_mgr = nullptr;
 SERVICE_TYPE_NO_CONST(mysql_runtime_error) *mysql_runtime_error_service =
     nullptr;
 
+/* Performance schema module */
+static gr::perfschema::Perfschema_module *perfschema_module = nullptr;
+static bool initialize_perfschema_module();
+static void finalize_perfschema_module();
+
 /*
   Internal auxiliary functions signatures.
 */
-static bool check_group_name_against_rpl_channel_settings(const char *str);
+static bool check_uuid_against_rpl_channel_settings(const char *str);
 
 static int check_group_name_string(const char *str, bool is_var_update = false);
 
@@ -161,6 +169,9 @@ static int check_flow_control_min_recovery_quota_long(
 static int check_flow_control_max_quota_long(longlong value,
                                              bool is_var_update = false);
 
+static int check_view_change_uuid_string(const char *str,
+                                         bool is_var_update = false);
+
 int configure_group_communication();
 int build_gcs_parameters(Gcs_interface_parameters &params);
 int configure_group_member_manager();
@@ -171,7 +182,6 @@ int configure_and_start_applier_module();
 void initialize_asynchronous_channels_observer();
 void initialize_group_partition_handler();
 int start_group_communication();
-void declare_plugin_running();
 int leave_group_and_terminate_plugin_modules(
     gr_modules::mask modules_to_terminate, char **error_message);
 int leave_group();
@@ -240,6 +250,11 @@ rpl_sidno get_group_sidno() {
   return lv.group_sidno;
 }
 
+rpl_sidno get_view_change_sidno() {
+  assert(lv.view_change_sidno > 0);
+  return lv.view_change_sidno;
+}
+
 bool get_plugin_is_stopping() { return lv.plugin_is_stopping; }
 
 bool get_wait_on_engine_initialization() {
@@ -259,6 +274,8 @@ bool get_plugin_is_setting_read_mode() {
 }
 
 const char *get_group_name_var() { return ov.group_name_var; }
+
+const char *get_view_change_uuid_var() { return ov.view_change_uuid_var; }
 
 ulong get_exit_state_action_var() { return ov.exit_state_action_var; }
 
@@ -346,6 +363,34 @@ void terminate_wait_on_start_process(bool abort) {
   lv.abort_wait_on_start_process = abort;
   // unblocked waiting threads
   lv.online_wait_mutex->end_wait_lock();
+}
+
+static void finalize_perfschema_module() {
+  if (nullptr != perfschema_module) {
+    perfschema_module->finalize();
+    delete perfschema_module;
+    perfschema_module = nullptr;
+  }
+}
+
+static bool initialize_perfschema_module() {
+  if (nullptr != perfschema_module) {
+    return true; /* purecov: inspected */
+  }
+
+  perfschema_module = new gr::perfschema::Perfschema_module{};
+  if (nullptr == perfschema_module) {
+    return true; /* purecov: inspected */
+  }
+
+  if (perfschema_module->initialize()) {
+    /* purecov: begin inspected */
+    finalize_perfschema_module();
+    return true;
+    /* purecov: end */
+  }
+
+  return false;
 }
 
 static bool initialize_registry_module() {
@@ -453,6 +498,11 @@ int plugin_group_replication_start(char **error_message) {
   }
 
   if (check_group_name_string(ov.group_name_var)) {
+    error = GROUP_REPLICATION_CONFIGURATION_ERROR;
+    goto err;
+  }
+
+  if (check_view_change_uuid_string(ov.view_change_uuid_var)) {
     error = GROUP_REPLICATION_CONFIGURATION_ERROR;
     goto err;
   }
@@ -600,13 +650,23 @@ int initialize_plugin_and_join(
     now the information about channels and the
     assign_gtids_to_anonymous_transactions is available.
   */
-  if (lv.plugin_is_auto_starting_on_boot &&
-      check_group_name_against_rpl_channel_settings(ov.group_name_var)) {
-    LogPluginErr(ERROR_LEVEL,
-                 ER_GRP_RPL_GRP_NAME_IS_SAME_AS_ANONYMOUS_TO_GTID_UUID,
-                 ov.group_name_var);
-    error = GROUP_REPLICATION_CONFIGURATION_ERROR;
-    goto err;
+  if (lv.plugin_is_auto_starting_on_boot) {
+    if (check_uuid_against_rpl_channel_settings(ov.group_name_var)) {
+      LogPluginErr(ERROR_LEVEL,
+                   ER_GRP_RPL_GRP_NAME_IS_SAME_AS_ANONYMOUS_TO_GTID_UUID,
+                   ov.group_name_var);
+      error = GROUP_REPLICATION_CONFIGURATION_ERROR;
+      goto err;
+    }
+
+    if (check_uuid_against_rpl_channel_settings(ov.view_change_uuid_var)) {
+      LogPluginErr(
+          ERROR_LEVEL,
+          ER_GRP_RPL_VIEW_CHANGE_UUID_IS_SAME_AS_ANONYMOUS_TO_GTID_UUID,
+          ov.group_name_var);
+      error = GROUP_REPLICATION_CONFIGURATION_ERROR;
+      goto err;
+    }
   }
 
   // GCS interface.
@@ -705,6 +765,13 @@ int initialize_plugin_and_join(
     /* purecov: end */
   }
 
+  if (member_actions_handler->acquire_send_service()) {
+    /* purecov: begin inspected */
+    error = GROUP_REPLICATION_CONFIGURATION_ERROR;
+    goto err;
+    /* purecov: end */
+  }
+
   lv.group_replication_running = true;
   lv.plugin_is_stopping = false;
   log_primary_member_details();
@@ -724,6 +791,9 @@ err:
           "wait_for signal.continue_leave_process";
       assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
     });
+
+    member_actions_handler->release_send_service();
+    unregister_gr_message_service_send();
 
     auto modules_to_terminate = gr_modules::all_modules;
     modules_to_terminate.reset(gr_modules::ASYNC_REPL_CHANNELS);
@@ -788,6 +858,14 @@ int configure_group_member_manager() {
                  ov.group_name_var);
     return GROUP_REPLICATION_CONFIGURATION_ERROR;
   }
+
+  if (!strcmp(uuid, ov.view_change_uuid_var)) {
+    LogPluginErr(
+        ERROR_LEVEL,
+        ER_GRP_RPL_GRP_VIEW_CHANGE_UUID_IS_INCOMPATIBLE_WITH_SERVER_UUID,
+        ov.view_change_uuid_var, uuid);
+    return GROUP_REPLICATION_CONFIGURATION_ERROR;
+  }
   // Configure Group Member Manager
   lv.plugin_version = server_version;
 
@@ -824,7 +902,7 @@ int configure_group_member_manager() {
         Group_member_info::MEMBER_ROLE_SECONDARY, ov.single_primary_mode_var,
         ov.enforce_update_everywhere_checks_var, ov.member_weight_var,
         lv.gr_lower_case_table_names, lv.gr_default_table_encryption,
-        ov.advertise_recovery_endpoints_var);
+        ov.advertise_recovery_endpoints_var, ov.view_change_uuid_var);
   } else {
     local_member_info = new Group_member_info(
         hostname, port, uuid, lv.write_set_extraction_algorithm,
@@ -833,12 +911,16 @@ int configure_group_member_manager() {
         Group_member_info::MEMBER_ROLE_SECONDARY, ov.single_primary_mode_var,
         ov.enforce_update_everywhere_checks_var, ov.member_weight_var,
         lv.gr_lower_case_table_names, lv.gr_default_table_encryption,
-        ov.advertise_recovery_endpoints_var);
+        ov.advertise_recovery_endpoints_var, ov.view_change_uuid_var);
   }
 
 #ifndef NDEBUG
   DBUG_EXECUTE_IF("group_replication_skip_encode_default_table_encryption", {
     local_member_info->skip_encode_default_table_encryption = true;
+  });
+
+  DBUG_EXECUTE_IF("group_replication_skip_encode_view_change_uuid", {
+    local_member_info->m_skip_encode_view_change_uuid = true;
   });
 #endif
 
@@ -852,7 +934,7 @@ int configure_group_member_manager() {
   LogPluginErr(INFORMATION_LEVEL, ER_GRP_RPL_MEMBER_CONF_INFO, get_server_id(),
                local_member_info->get_uuid().c_str(),
                ov.single_primary_mode_var ? "true" : "false",
-               ov.auto_increment_increment_var);
+               ov.auto_increment_increment_var, ov.view_change_uuid_var);
 
   return 0;
 }
@@ -1049,8 +1131,6 @@ int plugin_group_replication_stop(char **error_message) {
     assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
 
-  lv.plugin_is_stopping = true;
-
   /*
     We delete the delayed initialization object here because:
 
@@ -1070,11 +1150,13 @@ int plugin_group_replication_stop(char **error_message) {
     delayed_initialization_thread = nullptr;
   }
 
-  shared_plugin_stop_lock->grab_write_lock();
   if (!plugin_is_group_replication_running()) {
-    shared_plugin_stop_lock->release_write_lock();
     return 0;
   }
+
+  lv.plugin_is_stopping = true;
+
+  shared_plugin_stop_lock->grab_write_lock();
   LogPluginErr(INFORMATION_LEVEL, ER_GRP_RPL_IS_STOPPING);
 
   lv.plugin_is_waiting_to_set_server_read_mode = true;
@@ -1096,11 +1178,18 @@ int plugin_group_replication_stop(char **error_message) {
     blocked_transaction_handler->unblock_waiting_transactions();
   }
 
-  unregister_gr_message_service_send();
-
   lv.recovery_timeout_issue_on_stop = false;
   int error = leave_group_and_terminate_plugin_modules(gr_modules::all_modules,
                                                        error_message);
+
+  /*
+    We do terminate these services after call `terminate_plugin_modules()`,
+    despite that is after leaving the group, to ensure that these services
+    are terminated after cancelled auto-rejoin attempts.
+  */
+  member_actions_handler->release_send_service();
+  unregister_gr_message_service_send();
+
   /* Delete of credentials is safe now from recovery thread. */
   Replication_thread_api::delete_credential("group_replication_recovery");
 
@@ -1272,6 +1361,15 @@ int initialize_plugin_modules(gr_modules::mask modules_to_init) {
   }
 
   /*
+    Member actions handler.
+  */
+  if (modules_to_init[gr_modules::MEMBER_ACTIONS_HANDLER]) {
+    if (member_actions_handler->init()) {
+      return GROUP_REPLICATION_CONFIGURATION_ERROR;
+    }
+  }
+
+  /*
     The GCS events handler module.
   */
   if (modules_to_init[gr_modules::GCS_EVENTS_HANDLER]) {
@@ -1375,6 +1473,13 @@ int terminate_plugin_modules(gr_modules::mask modules_to_terminate,
   */
   if (modules_to_terminate[gr_modules::AUTO_INCREMENT_HANDLER])
     reset_auto_increment_handler_values();
+
+  /*
+    Member actions handler.
+  */
+  if (modules_to_terminate[gr_modules::MEMBER_ACTIONS_HANDLER]) {
+    member_actions_handler->deinit();
+  }
 
   /*
     The service message handler.
@@ -1513,9 +1618,18 @@ bool attempt_rejoin() {
   modules_mask.set(gr_modules::GROUP_ACTION_COORDINATOR, true);
   modules_mask.set(gr_modules::GCS_EVENTS_HANDLER, true);
   modules_mask.set(gr_modules::REMOTE_CLONE_HANDLER, true);
+  modules_mask.set(gr_modules::MEMBER_ACTIONS_HANDLER, true);
   modules_mask.set(gr_modules::MESSAGE_SERVICE_HANDLER, true);
   modules_mask.set(gr_modules::BINLOG_DUMP_THREAD_KILL, true);
   modules_mask.set(gr_modules::RECOVERY_MODULE, true);
+
+  /*
+    Before leaving the group we need to terminate services that
+    do depend on GCS.
+  */
+  member_actions_handler->release_send_service();
+  unregister_gr_message_service_send();
+
   /*
     The first step is to issue a GCS leave() operation. This is done because
     the join() operation will assume that the GCS layer is not initiated and
@@ -1616,8 +1730,33 @@ bool attempt_rejoin() {
         LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_TIMEOUT_RECEIVED_VC_ON_REJOIN);
       }
     } else {
-      ret = false;
-      lv.error_state_due_to_error_during_autorejoin = false;
+      /*
+        Restart services that do depend on GCS.
+      */
+      if (register_gr_message_service_send() ||
+          member_actions_handler->acquire_send_service()) {
+        /* purecov: begin inspected */
+        member_actions_handler->release_send_service();
+        unregister_gr_message_service_send();
+
+        Notification_context ctx;
+        group_member_mgr->update_member_status(local_member_info->get_uuid(),
+                                               Group_member_info::MEMBER_ERROR,
+                                               ctx);
+        notify_and_reset_ctx(ctx);
+
+        view_change_notifier->start_view_modification();
+        Gcs_operations::enum_leave_state state =
+            gcs_module->leave(view_change_notifier);
+        if (state != Gcs_operations::ERROR_WHEN_LEAVING &&
+            state != Gcs_operations::ALREADY_LEFT) {
+          view_change_notifier->wait_for_view_modification();
+          /* purecov: end */
+        }
+      } else {
+        ret = false;
+        lv.error_state_due_to_error_during_autorejoin = false;
+      }
     }
   }
 
@@ -1696,6 +1835,15 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   mysql_mutex_init(key_GR_LOCK_plugin_modules_termination,
                    &lv.plugin_modules_termination_mutex, MY_MUTEX_INIT_FAST);
 
+  // Initialize performance_schema tables
+  if (initialize_perfschema_module()) {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_ERROR_MSG,
+                 "Failed to initialize Performance Schema tables.");
+    return 1;
+    /* purecov: end */
+  }
+
   if (group_replication_init()) {
     /* purecov: begin inspected */
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_INIT_HANDLER);
@@ -1735,6 +1883,7 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   group_action_coordinator =
       new Group_action_coordinator(ov.components_stop_timeout_var);
   group_action_coordinator->register_coordinator_observers();
+  member_actions_handler = new Member_actions_handler();
 
   bool const error = register_udfs();
   if (error) return 1;
@@ -1789,7 +1938,14 @@ int plugin_group_replication_deinit(void *p) {
   if (lv.plugin_info_ptr == nullptr) return 0;
 
   lv.plugin_is_being_uninstalled = true;
+  lv.plugin_is_stopping = true;
   int observer_unregister_error = 0;
+
+  /*
+    We make this call early because perfschema tables may rely on
+    `group_member_mgr`.
+  */
+  finalize_perfschema_module();
 
   if (plugin_group_replication_stop())
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FAILED_TO_STOP_ON_PLUGIN_UNINSTALL);
@@ -1873,6 +2029,9 @@ int plugin_group_replication_deinit(void *p) {
   unregister_udfs();
   sql_service_interface_deinit();
 
+  delete member_actions_handler;
+  member_actions_handler = nullptr;
+
   if (advertised_recovery_endpoints) delete advertised_recovery_endpoints;
   delete transaction_consistency_manager;
   transaction_consistency_manager = nullptr;
@@ -1909,8 +2068,6 @@ int plugin_group_replication_deinit(void *p) {
 static int plugin_group_replication_check_uninstall(void *) {
   DBUG_TRACE;
 
-  int result = 0;
-
   /*
     Uninstall fails
     1. Plugin is setting the read mode so uninstall would deadlock
@@ -1919,14 +2076,16 @@ static int plugin_group_replication_check_uninstall(void *) {
   if (lv.plugin_is_setting_read_mode ||
       (plugin_is_group_replication_running() &&
        group_member_mgr->is_majority_unreachable())) {
-    result = 1;
     my_error(ER_PLUGIN_CANNOT_BE_UNINSTALLED, MYF(0), "group_replication",
              "Plugin is busy, it cannot be uninstalled. To"
              " force a stop run STOP GROUP_REPLICATION and then UNINSTALL"
              " PLUGIN group_replication.");
+    return 1;
   }
 
-  return result;
+  finalize_perfschema_module();
+
+  return 0;
 }
 
 static bool init_group_sidno() {
@@ -1949,10 +2108,31 @@ static bool init_group_sidno() {
     /* purecov: end */
   }
 
+  if (strcmp(ov.view_change_uuid_var, "AUTOMATIC")) {
+    rpl_sid view_change_sid;
+
+    if (view_change_sid.parse(ov.view_change_uuid_var,
+                              strlen(ov.view_change_uuid_var)) !=
+        RETURN_STATUS_OK) {
+      /* purecov: begin inspected */
+      LogPluginErr(ERROR_LEVEL,
+                   ER_GRP_RPL_FAILED_TO_PARSE_THE_VIEW_CHANGE_UUID);
+      return true;
+      /* purecov: end */
+    }
+
+    lv.view_change_sidno = get_sidno_from_global_sid_map(view_change_sid);
+    if (lv.view_change_sidno <= 0) {
+      /* purecov: begin inspected */
+      LogPluginErr(ERROR_LEVEL,
+                   ER_GRP_RPL_FAILED_TO_GENERATE_SIDNO_FOR_VIEW_CHANGE_UUID);
+      return true;
+      /* purecov: end */
+    }
+  }
+
   return false;
 }
-
-void declare_plugin_running() { lv.group_replication_running = true; }
 
 void declare_plugin_cloning(bool is_running) {
   lv.group_replication_cloning = is_running;
@@ -1994,7 +2174,7 @@ int configure_and_start_applier_module() {
   error = applier_module->setup_applier_module(
       STANDARD_GROUP_REPLICATION_PIPELINE, lv.known_server_reset,
       ov.components_stop_timeout_var, lv.group_sidno,
-      ov.gtid_assignment_block_size_var, shared_plugin_stop_lock);
+      ov.gtid_assignment_block_size_var);
   if (error) {
     // Delete the possible existing pipeline
     applier_module->terminate_applier_pipeline();
@@ -2019,8 +2199,8 @@ int configure_and_start_applier_module() {
 }
 
 void initialize_group_partition_handler() {
-  group_partition_handler = new Group_partition_handling(
-      shared_plugin_stop_lock, ov.timeout_on_unreachable_var);
+  group_partition_handler =
+      new Group_partition_handling(ov.timeout_on_unreachable_var);
 }
 
 void set_auto_increment_handler_values() {
@@ -2363,7 +2543,7 @@ SERVICE_TYPE(registry) * get_plugin_registry() { return lv.reg_srv; }
   - Binlog enabled
   - Binlog format
   - Gtid mode
-  - LOG_SLAVE_UPDATES
+  - LOG_REPLICA_UPDATES
   - Single primary mode configuration
 
   @return If the operation succeed or failed
@@ -2393,8 +2573,8 @@ static int check_if_server_properly_configured() {
     return 1;
   }
 
-  if (startup_pre_reqs.log_slave_updates != true) {
-    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_LOG_SLAVE_UPDATES_NOT_SET);
+  if (startup_pre_reqs.log_replica_updates != true) {
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_LOG_REPLICA_UPDATES_NOT_SET);
     return 1;
   }
 
@@ -2429,7 +2609,7 @@ static int check_if_server_properly_configured() {
 
     if (!startup_pre_reqs.parallel_applier_preserve_commit_order) {
       LogPluginErr(WARNING_LEVEL,
-                   ER_GRP_RPL_SLAVE_PRESERVE_COMMIT_ORDER_NOT_SET);
+                   ER_GRP_RPL_REPLICA_PRESERVE_COMMIT_ORDER_NOT_SET);
       return 1;
     }
   }
@@ -2475,7 +2655,7 @@ static int plugin_running_mutex_trylock() {
 
   return res;
 }
-static bool check_group_name_against_rpl_channel_settings(const char *str) {
+static bool check_uuid_against_rpl_channel_settings(const char *str) {
   DBUG_TRACE;
   Replication_thread_api replication_api_lookup;
   if (replication_api_lookup
@@ -2522,7 +2702,7 @@ static int check_group_name_string(const char *str, bool is_var_update) {
                  MYF(0));
     return 1;
   }
-  if (check_group_name_against_rpl_channel_settings(str)) {
+  if (check_uuid_against_rpl_channel_settings(str)) {
     if (!is_var_update) {
       LogPluginErr(ERROR_LEVEL,
                    ER_GRP_RPL_GRP_NAME_IS_SAME_AS_ANONYMOUS_TO_GTID_UUID, str);
@@ -2531,6 +2711,21 @@ static int check_group_name_string(const char *str, bool is_var_update) {
                  "The group_replication_group_name is already used for "
                  "ASSIGN_GTIDS_TO_ANOYMOUS_TRANSACTIONS in a server channel",
                  MYF(0));
+    }
+    return 1;
+  }
+
+  if (strcmp(str, ov.view_change_uuid_var) == 0) {
+    if (!is_var_update) {
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_GROUP_NAME_SAME_AS_VIEW_CHANGE_UUID,
+                   str);
+    } else {
+      mysql_error_service_emit_printf(
+          mysql_runtime_error_service,
+          ER_WRONG_VALUE_FOR_VAR_PLUS_ACTIONABLE_PART, 0,
+          "group_replication_group_name", str,
+          "The value is the same as group_replication_view_change_uuid. Please "
+          "change group_replication_view_change_uuid to AUTOMATIC");
     }
     return 1;
   }
@@ -3738,12 +3933,12 @@ static int check_clone_threshold(MYSQL_THD, SYS_VAR *var, void *save,
     is_negative = true;
   }
 
-  if (is_negative || in_val > MAX_GNO || in_val < 1) {
+  if (is_negative || in_val > GNO_END || in_val < 1) {
     std::stringstream ss;
     ss << "The value "
        << (is_negative ? std::to_string(orig) : std::to_string(in_val))
        << " is not within the range of accepted values for the option "
-       << var->name << ". The value must be between 1 and " << MAX_GNO
+       << var->name << ". The value must be between 1 and " << GNO_END
        << " inclusive.";
     my_message(ER_WRONG_VALUE_FOR_VAR, ss.str().c_str(), MYF(0));
     mysql_mutex_unlock(&lv.plugin_running_mutex);
@@ -3836,7 +4031,7 @@ static MYSQL_SYSVAR_STR(
     force_members,        /* name */
     ov.force_members_var, /* var */
     PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_MEMALLOC |
-        PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var | malloc string*/
+        PLUGIN_VAR_NOPERSIST, /* optional var | malloc string*/
     "The list of members, comma separated. E.g., host1:port1,host2:port2. "
     "This option is used to force a new group membership, on which the "
     "excluded "
@@ -4503,9 +4698,9 @@ static MYSQL_SYSVAR_ULONGLONG(
     "the clone procedure.",
     check_clone_threshold,  /* check func. */
     update_clone_threshold, /* update func. */
-    MAX_GNO,                /* default */
+    GNO_END,                /* default */
     1,                      /* min */
-    MAX_GNO,                /* max */
+    GNO_END,                /* max */
     0                       /* block */
 );
 
@@ -4593,6 +4788,113 @@ static MYSQL_SYSVAR_ENUM(
     &ov.tls_source_values_typelib_t         /* type lib */
 );
 
+static int check_view_change_uuid_string(const char *str, bool is_var_update) {
+  DBUG_TRACE;
+
+  if (strcmp(str, "AUTOMATIC") == 0) return 0;
+
+  size_t length = strlen(str);
+  if (!binary_log::Uuid::is_valid(str, length)) {
+    if (!is_var_update) {
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_VIEW_CHANGE_UUID_INVALID, str);
+    } else
+      my_message(ER_WRONG_VALUE_FOR_VAR,
+                 "The group_replication_view_change_uuid is "
+                 "not a valid UUID",
+                 MYF(0));
+    return 1;
+  }
+
+  if (ov.group_name_var != nullptr && strcmp(str, ov.group_name_var) == 0) {
+    if (!is_var_update) {
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_VIEW_CHANGE_UUID_SAME_AS_GROUP_NAME,
+                   str);
+    } else {
+      mysql_error_service_emit_printf(
+          mysql_runtime_error_service,
+          ER_WRONG_VALUE_FOR_VAR_PLUS_ACTIONABLE_PART, 0,
+          "group_replication_view_change_uuid", str,
+          "If you want to use the UUID of 'group_replication_group_name' for "
+          "the UUID of View_change_log_events, please set "
+          "'group_replication_view_change_uuid' to AUTOMATIC.");
+    }
+    return 1;
+  }
+
+  if (check_uuid_against_rpl_channel_settings(str)) {
+    if (!is_var_update) {
+      LogPluginErr(
+          ERROR_LEVEL,
+          ER_GRP_RPL_VIEW_CHANGE_UUID_IS_SAME_AS_ANONYMOUS_TO_GTID_UUID, str);
+    } else {
+      mysql_error_service_emit_printf(
+          mysql_runtime_error_service,
+          ER_WRONG_VALUE_FOR_VAR_PLUS_ACTIONABLE_PART, 0,
+          "group_replication_view_change_uuid", str,
+          "The value is already used for ASSIGN_GTIDS_TO_ANOYMOUS_TRANSACTIONS "
+          "in a server channel");
+    }
+    return 1;
+  }
+  return 0;
+}
+
+static int check_view_change_uuid(MYSQL_THD thd, SYS_VAR *, void *save,
+                                  struct st_mysql_value *value) {
+  DBUG_TRACE;
+
+  char buff[NAME_CHAR_LEN];
+  const char *str;
+
+  if (plugin_running_mutex_trylock()) return 1;
+
+  if (plugin_is_group_replication_running()) {
+    mysql_mutex_unlock(&lv.plugin_running_mutex);
+    my_message(
+        ER_GROUP_REPLICATION_RUNNING,
+        "The group_replication_view_change_uuid cannot be changed when Group "
+        "Replication is running",
+        MYF(0));
+    return 1;
+  }
+
+  (*(const char **)save) = nullptr;
+
+  int length = sizeof(buff);
+  if ((str = value->val_str(value, buff, &length)))
+    str = thd->strmake(str, length);
+  else {
+    mysql_mutex_unlock(&lv.plugin_running_mutex); /* purecov: inspected */
+    return 1;                                     /* purecov: inspected */
+  }
+
+  if (check_view_change_uuid_string(str, true)) {
+    mysql_mutex_unlock(&lv.plugin_running_mutex);
+    return 1;
+  }
+
+  *(const char **)save = str;
+
+  if (local_member_info != nullptr) {
+    local_member_info->set_view_change_uuid(str);
+  }
+
+  mysql_mutex_unlock(&lv.plugin_running_mutex);
+  return 0;
+}
+
+static MYSQL_SYSVAR_STR(
+    view_change_uuid,        /* name */
+    ov.view_change_uuid_var, /* var */
+    /* optional var | malloc string */
+    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_MEMALLOC | PLUGIN_VAR_PERSIST_AS_READ_ONLY,
+    "The UUID used to identify view changes in the group, "
+    "but also used in the associated GTID events whenever a "
+    "View Change is logged.",
+    check_view_change_uuid, /* check func*/
+    nullptr,                /* update func*/
+    "AUTOMATIC");           /* default*/
+
 static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(group_name),
     MYSQL_SYSVAR(start_on_boot),
@@ -4651,6 +4953,7 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(recovery_tls_ciphersuites),
     MYSQL_SYSVAR(advertise_recovery_endpoints),
     MYSQL_SYSVAR(tls_source),
+    MYSQL_SYSVAR(view_change_uuid),
     nullptr,
 };
 

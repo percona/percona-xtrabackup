@@ -681,7 +681,7 @@ DECLARE_TEST(LifecycleTest, ThreeInstances_Start2Fails);
 DECLARE_TEST(LifecycleTest, ThreeInstances_Start3Fails);
 DECLARE_TEST(LifecycleTest, ThreeInstances_2StartsFail);
 DECLARE_TEST(LifecycleTest, ThreeInstances_StopFails);
-DECLARE_TEST(LifecycleTest, ThreeInstances_DeinintFails);
+DECLARE_TEST(LifecycleTest, ThreeInstances_DeinitFails);
 DECLARE_TEST(LifecycleTest, ThreeInstances_StartStopDeinitFail);
 DECLARE_TEST(LifecycleTest, NoInstances);
 DECLARE_TEST(LifecycleTest, EmptyErrorMessage);
@@ -1034,7 +1034,7 @@ class HARNESS_EXPORT Loader {
   FRIEND_TEST(::LifecycleTest, ThreeInstances_Start3Fails);
   FRIEND_TEST(::LifecycleTest, ThreeInstances_2StartsFail);
   FRIEND_TEST(::LifecycleTest, ThreeInstances_StopFails);
-  FRIEND_TEST(::LifecycleTest, ThreeInstances_DeinintFails);
+  FRIEND_TEST(::LifecycleTest, ThreeInstances_DeinitFails);
   FRIEND_TEST(::LifecycleTest, ThreeInstances_StartStopDeinitFail);
   FRIEND_TEST(::LifecycleTest, NoInstances);
   FRIEND_TEST(::LifecycleTest, EmptyErrorMessage);
@@ -1095,7 +1095,7 @@ class LogReopenThread {
    */
   static void log_reopen_thread_function(LogReopenThread *t);
 
-  /*
+  /**
    * request reopen
    *
    * @note Empty dst will cause reopen only, and the old content will not be
@@ -1108,7 +1108,7 @@ class LogReopenThread {
    * @param dst filename to use for old log file during reopen
    * @throws std::system_error same as std::unique_lock::lock does
    */
-  void request_reopen(const std::string dst = "");
+  void request_reopen(const std::string &dst = "");
 
   /* Log reopen state triplet */
   enum LogReopenState { REOPEN_NONE, REOPEN_REQUESTED, REOPEN_ACTIVE };
@@ -1181,7 +1181,7 @@ void request_application_shutdown(
  * @throws std::system_error same as std::unique_lock::lock does
  */
 HARNESS_EXPORT
-void request_log_reopen(const std::string dst = "");
+void request_log_reopen(const std::string &dst = "");
 
 /**
  * check reopen completed

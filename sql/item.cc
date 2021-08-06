@@ -632,7 +632,7 @@ uint Item::decimal_precision() const {
   if ((restype == DECIMAL_RESULT) || (restype == INT_RESULT)) {
     uint prec = my_decimal_length_to_precision(max_char_length(), decimals,
                                                unsigned_flag);
-    return min<uint>(prec, DECIMAL_MAX_PRECISION);
+    return max<uint>(1, min<uint>(prec, DECIMAL_MAX_PRECISION));
   }
   switch (data_type()) {
     case MYSQL_TYPE_TIME:
@@ -983,7 +983,10 @@ Item *Item_field::replace_with_derived_expr(uchar *arg) {
   // is being pushed down). There is no need to do anything in such a case.
   return (dt == table_ref)
              ? dt->get_clone_for_derived_expr(
-                   current_thd, dt->get_derived_expr(field->field_index()))
+                   current_thd, dt->get_derived_expr(field->field_index()),
+                   &dt->derived_query_expression()
+                        ->first_query_block()
+                        ->context)
              : this;
 }
 
@@ -2153,7 +2156,7 @@ void Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
       Indeed, a subquery of another type is wrapped in Item_in_optimizer at this
       stage, so when splitting Item_in_optimizer, if we added the underlying
       Item_subselect to "fields" below it would be later evaluated by
-      copy_fields() (in tmp table processing), which would be incorrect as the
+      copy_funcs() (in tmp table processing), which would be incorrect as the
       Item_subselect cannot be evaluated - as it must always be evaluated
       through its parent Item_in_optimizer.
 
@@ -3116,7 +3119,7 @@ void Item_int::init(const char *str_arg, uint length) {
   const char *end_ptr = str_arg + length;
   int error;
   value = my_strtoll10(str_arg, &end_ptr, &error);
-  max_length = (uint)(end_ptr - str_arg);
+  set_max_size(static_cast<uint>(end_ptr - str_arg));
   item_name.copy(str_arg, max_length);
   fixed = true;
 }
@@ -5813,7 +5816,8 @@ String *Item::check_well_formed_result(String *str, bool send_error,
     size_t diff = min(size_t(str_end - print_byte), size_t(3));
     octet2hex(hexbuf, print_byte, diff);
     if (send_error && length_error) {
-      my_error(ER_INVALID_CHARACTER_STRING, MYF(0), cs->csname, hexbuf);
+      my_error(ER_INVALID_CHARACTER_STRING, MYF(0),
+               replace_utf8_utf8mb3(cs->csname), hexbuf);
       return nullptr;
     }
     if (truncate && length_error) {
@@ -5824,9 +5828,10 @@ String *Item::check_well_formed_result(String *str, bool send_error,
         str->length(valid_length);
       }
     }
-    push_warning_printf(
-        thd, Sql_condition::SL_WARNING, ER_INVALID_CHARACTER_STRING,
-        ER_THD(thd, ER_INVALID_CHARACTER_STRING), cs->csname, hexbuf);
+    push_warning_printf(thd, Sql_condition::SL_WARNING,
+                        ER_INVALID_CHARACTER_STRING,
+                        ER_THD(thd, ER_INVALID_CHARACTER_STRING),
+                        replace_utf8_utf8mb3(cs->csname), hexbuf);
   }
   return str;
 }
@@ -6040,23 +6045,54 @@ void Item_field::make_field(Send_field *tmp_field) {
 }
 
 /**
+  Copies/converts data from “from” to “to”, but is faster on repeated execution
+  with the same “to” field, as it caches the fields_are_memcpyable() and
+  pack_length() calls. These are not terribly expensive in themselves, but it
+  adds up to 5–10% in DBT-3 Q1 due to the repeated calls.
+
+  The “from” field _must_ correspond to the same last_to / to_is_memcpyable pair
+  as earlier calls, unless last_to is cleared to nullptr.
+ */
+static inline type_conversion_status field_conv_with_cache(
+    Field *to, Field *from, Field **last_to, uint32_t *to_is_memcpyable) {
+  assert(to->field_ptr() != from->field_ptr());
+  if (to != *last_to) {
+    *last_to = to;
+    if (fields_are_memcpyable(to, from)) {
+      *to_is_memcpyable = to->pack_length();
+    } else {
+      *to_is_memcpyable = -1;
+    }
+  }
+  if (*to_is_memcpyable != static_cast<uint32_t>(-1)) {
+    memcpy(to->field_ptr(), from->field_ptr(), *to_is_memcpyable);
+    return TYPE_OK;
+  } else {
+    return field_conv_slow(to, from);
+  }
+}
+
+/**
   Set a field's value from a item.
 */
 
 void Item_field::save_org_in_field(Field *to) {
-  if (field->is_null()) {
+  if (field == to) {
+    assert(null_value == field->is_null());
+    return;
+  } else if (field->is_null()) {
     null_value = true;
     set_field_to_null_with_conversions(to, true);
   } else {
     to->set_notnull();
-    field_conv(to, field);
+    field_conv_with_cache(to, field, &last_org_destination_field,
+                          &last_org_destination_field_memcpyable);
     null_value = false;
   }
 }
 
 type_conversion_status Item_field::save_in_field_inner(Field *to,
                                                        bool no_conversions) {
-  type_conversion_status res;
   DBUG_TRACE;
   if (field->is_null()) {
     null_value = true;
@@ -6065,19 +6101,17 @@ type_conversion_status Item_field::save_in_field_inner(Field *to,
     return status;
   }
   to->set_notnull();
+  null_value = false;
 
   /*
     If we're setting the same field as the one we're reading from there's
     nothing to do. This can happen in 'SET x = x' type of scenarios.
   */
   if (to == field) {
-    null_value = false;
     return TYPE_OK;
   }
-
-  res = field_conv(to, field);
-  null_value = false;
-  return res;
+  return field_conv_with_cache(to, field, &last_destination_field,
+                               &last_destination_field_memcpyable);
 }
 
 /**
@@ -7337,7 +7371,7 @@ bool Item_field::send(Protocol *protocol, String *) {
     belongs to the SELECT part in the INSERT .. SELECT .. ON DUPLICATE KEY
     UPDATE statement.
 
-  @retval NULL          if error occured
+  @retval nullptr       if an error occurred
   @retval ref           if all conditions are met
   @retval this field    otherwise
 */
@@ -8262,6 +8296,28 @@ Item *Item_view_ref::replace_item_view_ref(uchar *arg) {
   return this;
 }
 
+Item *Item_view_ref::replace_view_refs_with_clone(uchar *arg) {
+  TABLE_LIST *dt = pointer_cast<TABLE_LIST *>(arg);
+  // Replace the view ref with a clone to the referenced item.
+  // We use a different context to resolve the clone from that of
+  // the derived table conetext.
+  // For Ex:
+  // SELECT * FROM
+  // (SELECT f1 FROM (SELECT f1 FROM t1 GROUP BY f1) AS dt1) AS dt2
+  // WHERE f1 > 3 GROUP BY f1;
+  // Here dt2 gets merged with the outer query block. As a result, "f1"
+  // in the outer query block (in select list, where clause and group by)
+  // will be a view reference. The underlying field for all three
+  // view references is shared. Therefore, when "f1>3" needs to be
+  // pushed down to dt1, we need to clone the referenced item (dt2.f1).
+  // Since the query block having dt2 is merged with the outer query
+  // block, the context to resolve the field will be different than
+  // the derived table context (dt1).
+  Name_resolution_context *context_to_use =
+      m_merged_derived_context ? m_merged_derived_context : context;
+  return dt->get_clone_for_derived_expr(current_thd, *ref, context_to_use);
+}
+
 bool Item_default_value::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::itemize(pc, res)) return true;
@@ -8875,7 +8931,15 @@ int stored_field_cmp_to_item(THD *thd, Field *field, Item *item) {
       MYSQL_TIME field_time, item_time;
       get_mysql_time_from_str(thd, field_result, type, field_name, &field_time);
       get_mysql_time_from_str(thd, item_result, type, field_name, &item_time);
+      /*
+        If the string represents a UTC timestamp (with timezone
+        offset), convert it to a datetime in the current time zone.
+      */
+      if (item_time.time_type == MYSQL_TIMESTAMP_DATETIME_TZ)
+        convert_time_zone_displacement(current_thd->time_zone(), &item_time);
 
+      assert(field_time.time_type != MYSQL_TIMESTAMP_DATETIME_TZ &&
+             item_time.time_type != MYSQL_TIMESTAMP_DATETIME_TZ);
       return my_time_compare(field_time, item_time);
     }
     return sortcmp(field_result, item_result, field->charset());
@@ -10268,4 +10332,29 @@ bool Item_asterisk::itemize(Parse_context *pc, Item **res) {
   }
   pc->select->with_wild++;
   return false;
+}
+
+bool ItemsAreEqual(const Item *a, const Item *b, bool binary_cmp) {
+  const Item *real_a = const_cast<Item *>(a)->real_item();
+  const Item *real_b = const_cast<Item *>(b)->real_item();
+
+  // Unwrap caches, as they may not be added consistently
+  // to both sides.
+  if (real_a->type() == Item::CACHE_ITEM) {
+    real_a = down_cast<const Item_cache *>(real_a)->get_example();
+  }
+  if (real_b->type() == Item::CACHE_ITEM) {
+    real_b = down_cast<const Item_cache *>(real_b)->get_example();
+  }
+  return real_a->eq(real_b, binary_cmp);
+}
+
+bool AllItemsAreEqual(const Item *const *a, const Item *const *b, int num_items,
+                      bool binary_cmp) {
+  for (int i = 0; i < num_items; ++i) {
+    if (!ItemsAreEqual(a[i], b[i], binary_cmp)) {
+      return false;
+    }
+  }
+  return true;
 }

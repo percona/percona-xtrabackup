@@ -26,6 +26,8 @@
 #ifndef NdbQueryBuilderImpl_H
 #define NdbQueryBuilderImpl_H
 
+#include <cstring>
+
 /* Query-related error codes. */
 #define QRY_REQ_ARG_IS_NULL 4800
 #define QRY_TOO_FEW_KEY_VALUES 4801
@@ -104,9 +106,9 @@ public:
 //#define TEST_Uint32Buffer
 
 #if defined(TEST_Uint32Buffer)
-  STATIC_CONST(initSize = 1);  // Small size to force test of buffer expand.
+  static constexpr Uint32 initSize = 1;  // Small size to force test of buffer expand.
 #else
-  STATIC_CONST(initSize = 32); // Initial buffer size, extend on demand but probably sufficent
+  static constexpr Uint32 initSize = 32; // Initial buffer size, extend on demand but probably sufficent
 #endif
 
   explicit Uint32Buffer():
@@ -222,7 +224,7 @@ public:
         memcpy(start, src, len);
         m_bytesLeft = (m_bytesLeft - len) % sizeof(Uint32);
         // Make sure that any trailing bytes in the last word are zero.
-        bzero(start + len, m_bytesLeft);
+        std::memset(start + len, 0, m_bytesLeft);
       }
     }
   }
@@ -966,7 +968,7 @@ protected:
       return dst;
     }
 
-    STATIC_CONST(maxShortChar = 32);
+    static constexpr Uint32 maxShortChar = 32;
 
     union
     {

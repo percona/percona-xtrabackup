@@ -421,7 +421,7 @@ SET @cmd= "CREATE TABLE IF NOT EXISTS gtid_executed (
     source_uuid CHAR(36) NOT NULL COMMENT 'uuid of the source where the transaction was originally executed.',
     interval_start BIGINT NOT NULL COMMENT 'First number of interval.',
     interval_end BIGINT NOT NULL COMMENT 'Last number of interval.',
-    PRIMARY KEY(source_uuid, interval_start))";
+    PRIMARY KEY(source_uuid, interval_start)) STATS_PERSISTENT=0";
 
 SET @str=IF(@have_innodb <> 0, CONCAT(@cmd, ' ENGINE= INNODB ROW_FORMAT=DYNAMIC TABLESPACE=mysql ENCRYPTION=\'', @is_mysql_encrypted,'\''), CONCAT(@cmd, ' ENGINE= MYISAM'));
 PREPARE stmt FROM @str;
@@ -450,6 +450,32 @@ SET @cmd= "CREATE TABLE IF NOT EXISTS replication_asynchronous_connection_failov
     Managed_type CHAR(64) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT '' COMMENT 'Determines the managed type.',
     Configuration JSON DEFAULT NULL COMMENT 'The data to help manage group. For Managed_type = GroupReplication, Configuration value should contain {\"Primary_weight\": 80, \"Secondary_weight\": 60}, so that it assigns weight=80 to PRIMARY of the group, and weight=60 for rest of the members in mysql.replication_asynchronous_connection_failover table.',
     PRIMARY KEY(Channel_name, Managed_name)) DEFAULT CHARSET=utf8 STATS_PERSISTENT=0 COMMENT 'The managed source configuration details'";
+
+SET @str=IF(@have_innodb <> 0, CONCAT(@cmd, ' ENGINE= INNODB ROW_FORMAT=DYNAMIC TABLESPACE=mysql ENCRYPTION=\'', @is_mysql_encrypted,'\''), CONCAT(@cmd, ' ENGINE= MYISAM'));
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+-- replication_group_member_actions
+SET @cmd= "CREATE TABLE IF NOT EXISTS replication_group_member_actions (
+    name CHAR(255) CHARACTER SET ASCII NOT NULL COMMENT 'The action name.',
+    event CHAR(64) CHARACTER SET ASCII NOT NULL COMMENT 'The event that will trigger the action.',
+    enabled BOOLEAN NOT NULL COMMENT 'Whether the action is enabled.',
+    type CHAR(64) CHARACTER SET ASCII NOT NULL COMMENT 'The action type.',
+    priority TINYINT UNSIGNED NOT NULL COMMENT 'The order on which the action will be run, value between 1 and 100, lower values first.',
+    error_handling CHAR(64) CHARACTER SET ASCII NOT NULL COMMENT 'On errors during the action will be handled: IGNORE, CRITICAL.',
+    PRIMARY KEY(name, event), KEY(event)) DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 COMMENT 'The member actions configuration.'";
+
+SET @str=IF(@have_innodb <> 0, CONCAT(@cmd, ' ENGINE= INNODB ROW_FORMAT=DYNAMIC TABLESPACE=mysql ENCRYPTION=\'', @is_mysql_encrypted,'\''), CONCAT(@cmd, ' ENGINE= MYISAM'));
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+-- replication_group_configuration_version
+SET @cmd= "CREATE TABLE IF NOT EXISTS replication_group_configuration_version (
+    name CHAR(255) CHARACTER SET ASCII NOT NULL COMMENT 'The configuration name.',
+    version BIGINT UNSIGNED NOT NULL COMMENT 'The version of the configuration name.',
+    PRIMARY KEY(name)) DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 COMMENT 'The group configuration version.'";
 
 SET @str=IF(@have_innodb <> 0, CONCAT(@cmd, ' ENGINE= INNODB ROW_FORMAT=DYNAMIC TABLESPACE=mysql ENCRYPTION=\'', @is_mysql_encrypted,'\''), CONCAT(@cmd, ' ENGINE= MYISAM'));
 PREPARE stmt FROM @str;

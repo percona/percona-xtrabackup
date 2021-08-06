@@ -78,10 +78,12 @@
 %endif
 
 %if 0%{?rhel} == 7
-%global compatver             5.6.45
+%global compatver             5.6.51
 %global compatlib             18
 %global compatsrc             https://cdn.mysql.com/Downloads/MySQL-5.6/mysql-%{compatver}.tar.gz
 %endif
+
+%global cmake3                cmake%{?el6:3}%{?el7:3}
 
 # multiarch
 %global multiarchs            ppc %{power64} %{ix86} x86_64 %{sparc}
@@ -307,12 +309,19 @@ to run and administer a MySQL server.
 %if 0%{?with_debuginfo}
 %package        server-debug
 Summary:        The debug version of MySQL server
+Requires:       %{name}-server = %{version}-%{release}
 %if 0%{?commercial}
-Requires:       mysql-commercial-server = %{version}-%{release}
 Obsoletes:      mysql-community-server-debug < %{version}-%{release}
+%if 0%{?cluster}
+Obsoletes:      mysql-commercial-server-debug < %{version}-%{release}
+Obsoletes:      mysql-cluster-community-server-debug < %{version}-%{release}
+%endif # cluster
 %else
-Requires:       mysql-community-server = %{version}-%{release}
-%endif
+%if 0%{?cluster}
+Obsoletes:      mysql-community-server-debug < %{version}-%{release}
+%endif # cluster
+%endif # commercial
+
 %description    server-debug
 This packages contains the special debug build of MySQL server.
 %endif # with_debuginfo
@@ -752,7 +761,7 @@ fi
 (
   pushd mysql-%{compatver}
   mkdir build && pushd build
-  cmake3 .. \
+  %{cmake3} .. \
     -DBUILD_CONFIG=mysql_release \
     -DINSTALL_LAYOUT=RPM \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -785,7 +794,7 @@ mkdir debug
   cd debug
   # Attempt to remove any optimisation flags from the debug build
   optflags=$(echo "%{optflags}" | sed -e 's/-O2 / /' -e 's/-Wp,-D_FORTIFY_SOURCE=2/ /')
-  cmake3 ../%{src_dir} \
+  %{cmake3} ../%{src_dir} \
            -DBUILD_CONFIG=mysql_release \
            -DINSTALL_LAYOUT=RPM \
            -DCMAKE_BUILD_TYPE=Debug \
@@ -828,7 +837,7 @@ mkdir debug
 mkdir release
 (
   cd release
-  cmake3 ../%{src_dir} \
+  %{cmake3} ../%{src_dir} \
            -DBUILD_CONFIG=mysql_release \
            -DINSTALL_LAYOUT=RPM \
            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -1117,6 +1126,8 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/rewriter.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/semisync_master.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/semisync_slave.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/semisync_source.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/semisync_replica.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/version_token.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_file.so
@@ -1132,6 +1143,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_pam.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_simple.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/data_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_okv.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_encrypted_file.so
@@ -1142,6 +1154,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/firewall.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_encrypted_file.so
 %attr(644, root, root) %{_datadir}/mysql-*/linux_install_firewall.sql
+%attr(644, root, root) %{_datadir}/mysql-*/firewall_profile_migration.sql
 %if 0%{?aws_sdk}
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_aws.so
 %endif # aws_sdk
@@ -1197,6 +1210,8 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/rewriter.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_master.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_slave.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_source.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_replica.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/version_token.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_file.so
@@ -1210,6 +1225,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_pam.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_simple.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_kerberos.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/data_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_okv.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_encrypted_file.so
@@ -1311,7 +1327,6 @@ fi
 %attr(755, root, root) %{_bindir}/ndbinfo_select_all
 %attr(755, root, root) %{_bindir}/ndbxfrm
 
-%attr(644, root, root) %{_mandir}/man1/ndb-common-options.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_blob_tool.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_config.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_cpcd.1*
@@ -1376,6 +1391,7 @@ fi
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos_client.so
 
 %if 0%{?compatlib}
 %files libs-compat
@@ -1426,6 +1442,8 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_current_thread_reader.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_runtime_error.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_system_variable_set.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_table_access.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_deinit.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_3_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_avg_func.so
@@ -1488,6 +1506,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_test_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_kerberos_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_example_component1.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_example_component2.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_example_component3.so
@@ -1508,6 +1527,8 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_current_thread_reader.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_runtime_error.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_system_variable_set.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_table_access.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_deinit.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_3_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_avg_func.so
@@ -2442,7 +2463,7 @@ lenz@mysql.com>
 * Wed Apr 13 2005 Lenz Grimmer <lenz@mysql.com>
 
 - removed the MySQL manual files (html/ps/texi) - they have been removed
-  from the MySQL sources and are now available seperately.
+  from the MySQL sources and are now available separately.
 
 * Mon Apr 4 2005 Petr Chardin <petr@mysql.com>
 

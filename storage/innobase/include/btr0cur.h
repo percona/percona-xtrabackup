@@ -79,30 +79,29 @@ struct btr_latch_leaves_t {
 #ifdef UNIV_DEBUG
 /** Returns the page cursor component of a tree cursor.
  @return pointer to page cursor component */
-UNIV_INLINE
-page_cur_t *btr_cur_get_page_cur(
+static inline page_cur_t *btr_cur_get_page_cur(
     const btr_cur_t *cursor); /*!< in: tree cursor */
 /** Returns the buffer block on which the tree cursor is positioned.
  @return pointer to buffer block */
-UNIV_INLINE
-buf_block_t *btr_cur_get_block(const btr_cur_t *cursor); /*!< in: tree cursor */
+static inline buf_block_t *btr_cur_get_block(
+    const btr_cur_t *cursor); /*!< in: tree cursor */
 /** Returns the record pointer of a tree cursor.
  @return pointer to record */
-UNIV_INLINE
-rec_t *btr_cur_get_rec(const btr_cur_t *cursor); /*!< in: tree cursor */
-#else                                            /* UNIV_DEBUG */
+static inline rec_t *btr_cur_get_rec(
+    const btr_cur_t *cursor); /*!< in: tree cursor */
+#else                         /* UNIV_DEBUG */
 #define btr_cur_get_page_cur(cursor) (&(cursor)->page_cur)
 #define btr_cur_get_block(cursor) ((cursor)->page_cur.block)
 #define btr_cur_get_rec(cursor) ((cursor)->page_cur.rec)
 #endif /* UNIV_DEBUG */
 /** Returns the compressed page on which the tree cursor is positioned.
  @return pointer to compressed page, or NULL if the page is not compressed */
-UNIV_INLINE
-page_zip_des_t *btr_cur_get_page_zip(btr_cur_t *cursor); /*!< in: tree cursor */
+static inline page_zip_des_t *btr_cur_get_page_zip(
+    btr_cur_t *cursor); /*!< in: tree cursor */
 /** Returns the page of a tree cursor.
  @return pointer to page */
-UNIV_INLINE
-page_t *btr_cur_get_page(btr_cur_t *cursor); /*!< in: tree cursor */
+static inline page_t *btr_cur_get_page(
+    btr_cur_t *cursor); /*!< in: tree cursor */
 /** Returns the index of a cursor.
  @param cursor b-tree cursor
  @return index */
@@ -113,9 +112,8 @@ page_t *btr_cur_get_page(btr_cur_t *cursor); /*!< in: tree cursor */
 @param[in]	rec	record in tree
 @param[in]	block	buffer block of rec
 @param[in]	cursor	cursor */
-UNIV_INLINE
-void btr_cur_position(dict_index_t *index, rec_t *rec, buf_block_t *block,
-                      btr_cur_t *cursor);
+static inline void btr_cur_position(dict_index_t *index, rec_t *rec,
+                                    buf_block_t *block, btr_cur_t *cursor);
 
 /** Optimistically latches the leaf page or pages requested.
 @param[in]	block		Guessed buffer block
@@ -512,19 +510,20 @@ ibool btr_cur_optimistic_delete_func(
                   occur, the cursor stays valid: it points to successor of
                   deleted record on function exit
 @param[in] flags  BTR_CREATE_FLAG or 0
-@param[in] rollback True if performing rollback, false otherwise.
-@param[in] trx_id The current transaction id.
-@param[in] undo_no Undo number of the transaction. This is needed for
-rollback to savepoint of partially updated LOB.
-@param[in] rec_type Undo record type.
-@param[in] mtr Mini-transaction
-@param[in] pcur   Persistent cursor on the record to delete.
+@param[in] rollback     True if performing rollback, false otherwise.
+@param[in] trx_id       The current transaction id.
+@param[in] undo_no      Undo number of the transaction. This is needed for
+                        rollback to savepoint of partially updated LOB.
+@param[in] rec_type     Undo record type.
+@param[in] mtr          The mini transaction
+@param[in] pcur         Persistent cursor on the record to delete.
+@param[in,out] node     purge node or nullptr
 @return true if compression occurred */
 ibool btr_cur_pessimistic_delete(dberr_t *err, ibool has_reserved_extents,
                                  btr_cur_t *cursor, uint32_t flags,
                                  bool rollback, trx_id_t trx_id,
                                  undo_no_t undo_no, ulint rec_type, mtr_t *mtr,
-                                 btr_pcur_t *pcur = nullptr);
+                                 btr_pcur_t *pcur, purge_node_t *node);
 
 /** Parses a redo log record of updating a record in-place.
  @return end of log record or NULL */
@@ -618,8 +617,9 @@ void btr_cur_set_deleted_flag_for_ibuf(
 @param[in,out]	rec		physical record
 @param[in,out]	page_zip	compressed page (or NULL)
 @param[in]	flag		nonzero if delete marked */
-UNIV_INLINE
-void btr_rec_set_deleted_flag(rec_t *rec, page_zip_des_t *page_zip, ulint flag);
+static inline void btr_rec_set_deleted_flag(rec_t *rec,
+                                            page_zip_des_t *page_zip,
+                                            ulint flag);
 
 /** Latches the leaf page or pages requested.
 @param[in]	block		Leaf page where the search converged
@@ -773,8 +773,9 @@ struct btr_cur_t {
 @param[in,out]	rec		physical record
 @param[in,out]	page_zip	compressed page (or NULL)
 @param[in]	flag		nonzero if delete marked */
-UNIV_INLINE
-void btr_rec_set_deleted_flag(rec_t *rec, page_zip_des_t *page_zip, ulint flag);
+static inline void btr_rec_set_deleted_flag(rec_t *rec,
+                                            page_zip_des_t *page_zip,
+                                            ulint flag);
 
 /** If pessimistic delete fails because of lack of file space, there
 is still a good change of success a little later.  Try this many

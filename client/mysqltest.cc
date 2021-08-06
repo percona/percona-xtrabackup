@@ -2788,12 +2788,19 @@ static void alloc_var(VAR *var, size_t length) {
 }
 
 /**
-  Process a "let $variable = escape(CHARACTER,TEXT)" command.
+  Process a "let $variable = escape(CHARACTERS,TEXT)" command.
 
   This will parse the text starting after 'escape'.  If parsing is
-  successful, it inserts a backslash character before each occurrence
-  of 'CHARACTER' in 'TEXT' and stores the result to $variable.  If
-  parsing fails, it prints an error message and aborts the progrma.
+  successful, it inserts a backslash character before each character
+  in 'TEXT' that occurs in 'CHARACTERS' and stores the result in
+  $variable.  If parsing fails, it prints an error message and aborts
+  the program.
+
+  CHARACTERS is a string of at least one character, where ',' must not
+  occur except as the first character.  Newlines are not allowed.
+  Backslashes are not treated as escape characters when parsing
+  CHARACTERS, so escape(\',$x) will replace both backslashes and
+  single quotes in $x.
 
   @param command The st_command structure, where the 'first_argument'
   member points to the character just after 'escape'.
@@ -2801,33 +2808,100 @@ static void alloc_var(VAR *var, size_t length) {
   @param dst VAR object representing $variable
 */
 static void var_set_escape(struct st_command *command, VAR *dst) {
-  // command->query contains the statement escape(character,text)
-  static const std::regex arg_re("^\\(([^\\r\\n]),((?:.|[\\r\\n])*)\\)$",
-                                 std::regex::optimize);
-  // Parse arguments.
-  std::cmatch arg_match;
-  if (std::regex_search(command->first_argument, arg_match, arg_re)) {
-    std::string character_str = arg_match[1];
-    char character = character_str[0];
-    std::string src = arg_match[2];
-    // Compute length of escaped string
-    auto dst_len = src.length();
-    for (char c : src)
-      if (c == character) dst_len++;
-    // Allocate space for escaped string
-    alloc_var(dst, dst_len);
-    auto dst_char = dst->str_val;
-    // Compute escaped string
-    for (char c : src) {
-      if (c == character) *dst_char++ = '\\';
-      *dst_char++ = c;
+  /*
+    Parse and return the arguments.
+
+    This expects the format:
+
+    ^\([^\n\r][^,\n\r]*,.*\)$
+
+    I.e., an opening parenthesis, followed by a newline-free string of
+    at least one character which does not have commas except possibly
+    in the first character, followed by a comma, followed by an
+    arbitrary string, followed by a closing parenthesis.
+
+    Returns a triple containing:
+    - The first string,
+    - the second string,
+    - a bool that is false if the parsing succeeded; true if it failed.
+  */
+  auto parse_args = [&]() -> auto {
+    // command->first_argument contains '(characters,text)'
+    char *p = command->first_argument;
+    // Find (
+    if (*p == '(') {
+      ++p;
+      // Find [^\n\r][^,\n\r]*
+      char *char_start = p;
+      if (*p != '\0' && *p != '\n' && *p != '\r') {
+        ++p;
+        while (*p != '\0' && *p != ',' && *p != '\n' && *p != '\r') ++p;
+        // Find ,
+        if (*p == ',') {
+          size_t char_len = p - char_start;
+          ++p;
+          // Find .*$
+          char *text_start = p;
+          while (*p != '\0') ++p;
+          // Find )
+          --p;
+          if (*p == ')') {
+            size_t text_len = p - text_start;
+            return std::make_tuple(std::string(char_start, char_len),
+                                   std::string(text_start, text_len), false);
+          }
+        }
+      }
     }
-    dst->str_val_len = dst_len;
-  } else {
+    return std::make_tuple(std::string(), std::string(), true);
+  };
+
+  std::string chars;
+  std::string src;
+  bool error;
+  std::tie(chars, src, error) = parse_args();
+  /*
+  // This is the same, implemented with a regular expression.
+  // Unfortunately it crashes on windows. Not sure but maybe a bug in
+  // the regex library on windows?
+  auto parse_args_regex = [&]() -> auto {
+    // command->first_argument contains '(characters,text)'
+    static const std::regex arg_re("^\\((.[^\\r\\n,]*),((?:.|[\\r\\n])*)\\)$",
+                                   std::regex::optimize);
+    // Parse arguments.
+    std::cmatch arg_match;
+    if (std::regex_search(command->first_argument, arg_match, arg_re))
+      return std::make_tuple(std::string(arg_match[1]),
+                             std::string(arg_match[2]),
+                             false);
+    return std::make_tuple(std::string(), std::string(), true);
+  };
+  std::string character_str2, src2;
+  bool error2;
+  std::tie(character_str2, src2, error2) = parse_args_regex();
+  assert(character_str == character_str2);
+  assert(src == src2);
+  assert(error == error2);
+  */
+  if (error)
     die("Invalid format of 'escape' arguments: <%.100s>",
         command->first_argument);
-    return;
+
+  auto begin = chars.begin();
+  auto end = chars.end();
+  // Compute length of escaped string
+  auto dst_len = src.length();
+  for (char c : src)
+    if (std::find(begin, end, c) != end) dst_len++;
+  // Allocate space for escaped string
+  alloc_var(dst, dst_len);
+  auto dst_char = dst->str_val;
+  // Compute escaped string
+  for (char c : src) {
+    if (std::find(begin, end, c) != end) *dst_char++ = '\\';
+    *dst_char++ = c;
   }
+  dst->str_val_len = dst_len;
 }
 
 /*
@@ -4893,7 +4967,7 @@ static void do_sync_with_master2(struct st_command *command, long offset) {
   if (!master_pos.file[0])
     die("Calling 'sync_with_master' without calling 'save_master_pos'");
 
-  sprintf(query_buf, "select master_pos_wait('%s', %ld, %d)", master_pos.file,
+  sprintf(query_buf, "select source_pos_wait('%s', %ld, %d)", master_pos.file,
           master_pos.pos + offset, timeout);
 
   if (mysql_query_wrapper(mysql, query_buf))
@@ -4914,7 +4988,7 @@ static void do_sync_with_master2(struct st_command *command, long offset) {
   mysql_free_result_wrapper(res);
 
   if (!result_str || result < 0) {
-    /* master_pos_wait returned NULL or < 0 */
+    /* source_pos_wait returned NULL or < 0 */
     show_query(mysql, "SHOW MASTER STATUS");
     show_query(mysql, "SHOW SLAVE STATUS");
     show_query(mysql, "SHOW PROCESSLIST");
@@ -4922,7 +4996,7 @@ static void do_sync_with_master2(struct st_command *command, long offset) {
 
     if (!result_str) {
       /*
-        master_pos_wait returned NULL. This indicates that
+        source_pos_wait returned NULL. This indicates that
         slave SQL thread is not started, the slave's master
         information is not initialized, the arguments are
         incorrect, or an error has occurred
@@ -7614,7 +7688,7 @@ static struct my_option my_long_options[] = {
     {"no-skip", OPT_NO_SKIP, "Force the test to run without skip.", &no_skip,
      &no_skip, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"no-skip-exclude-list", 'n',
-     "Contains comma seperated list of to be excluded inc files.",
+     "Contains comma-separated list of to be excluded inc files.",
      &excluded_string, &excluded_string, nullptr, GET_STR, REQUIRED_ARG, 0, 0,
      0, nullptr, 0, nullptr},
     {"offload-count-file", OPT_OFFLOAD_COUNT_FILE, "Offload count report file",

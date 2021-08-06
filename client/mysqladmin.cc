@@ -145,9 +145,11 @@ enum commands {
   ADMIN_EXTENDED_STATUS,
   ADMIN_FLUSH_STATUS,
   ADMIN_FLUSH_PRIVILEGES,
+  ADMIN_START_REPLICA,
+  ADMIN_STOP_REPLICA,
+  ADMIN_FLUSH_THREADS,
   ADMIN_START_SLAVE,
-  ADMIN_STOP_SLAVE,
-  ADMIN_FLUSH_THREADS
+  ADMIN_STOP_SLAVE
 };
 static const char *command_names[] = {"create",
                                       "drop",
@@ -168,9 +170,11 @@ static const char *command_names[] = {"create",
                                       "extended-status",
                                       "flush-status",
                                       "flush-privileges",
+                                      "start-replica",
+                                      "stop-replica",
+                                      "flush-threads",
                                       "start-slave",
                                       "stop-slave",
-                                      "flush-threads",
                                       NullS};
 
 static TYPELIB command_typelib = {array_elements(command_names) - 1, "commands",
@@ -1113,20 +1117,27 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
       }
 
       case ADMIN_START_SLAVE:
-        if (mysql_query(mysql, "START SLAVE")) {
-          my_printf_error(0, "Error starting slave: %s", error_flags,
+        CLIENT_WARN_DEPRECATED("start-slave", "start-replica");
+        // FALLTHROUGH
+      case ADMIN_START_REPLICA:
+        if (mysql_query(mysql, "START REPLICA")) {
+          my_printf_error(0, "Error starting replication: %s", error_flags,
                           mysql_error(mysql));
           return -1;
         } else
-          puts("Slave started");
+          puts("Replication started");
         break;
+
       case ADMIN_STOP_SLAVE:
-        if (mysql_query(mysql, "STOP SLAVE")) {
-          my_printf_error(0, "Error stopping slave: %s", error_flags,
+        CLIENT_WARN_DEPRECATED("stop-slave", "stop-replica");
+        // FALLTHROUGH
+      case ADMIN_STOP_REPLICA:
+        if (mysql_query(mysql, "STOP REPLICA")) {
+          my_printf_error(0, "Error stopping replication: %s", error_flags,
                           mysql_error(mysql));
           return -1;
         } else
-          puts("Slave stopped");
+          puts("Replication stopped");
         break;
 
       case ADMIN_PING:
@@ -1227,8 +1238,10 @@ static void usage(void) {
   refresh		Flush all tables and close and open logfiles\n\
   shutdown		Take server down\n\
   status		Gives a short status message from the server\n\
-  start-slave		Start slave\n\
-  stop-slave		Stop slave\n\
+  start-replica		Start replication\n\
+  start-slave		Deprecated: use start-replica instead\n\
+  stop-replica		Stop replication\n\
+  stop-slave		Deprecated: use stop-replica instead\n\
   variables             Prints variables available\n\
   version		Get version info from server");
 }

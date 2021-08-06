@@ -127,6 +127,7 @@
 #include "sql/sql_cmd.h"
 #include "sql/sql_error.h"
 #include "sql/sql_exchange.h"  // sql_exchange
+#include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_load.h"       // Sql_cmd_load_table
@@ -168,6 +169,117 @@ void report_conversion_error(const CHARSET_INFO *to_cs, const char *from,
   const char *to_name = replace_utf8_utf8mb3(to_cs->csname);
   my_error(ER_CANNOT_CONVERT_STRING, MYF(0), printable_buff, from_name,
            to_name);
+}
+
+/**
+  Simplify the string arguments to a function, if possible.
+
+  Currently used to substitute const values with character strings
+  in the desired character set. Only used during resolving.
+
+  @param thd      thread handler
+  @param c        Desired character set and collation
+  @param args     Pointer to argument array
+  @param nargs    Number of arguments to process
+
+  @returns false if success, true if error
+*/
+bool simplify_string_args(THD *thd, const DTCollation &c, Item **args,
+                          uint nargs) {
+  // Only used during resolving
+  assert(!thd->lex->is_exec_started());
+
+  if (thd->lex->is_view_context_analysis()) return false;
+
+  uint i;
+  Item **arg;
+  for (i = 0, arg = args; i < nargs; i++, arg++) {
+    size_t dummy_offset;
+    // Only convert const values.
+    if (!(*arg)->const_item()) continue;
+    if (!String::needs_conversion(1, (*arg)->collation.collation, c.collation,
+                                  &dummy_offset))
+      continue;
+
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> original;
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> converted;
+    String *ostr = (*arg)->val_str(&original);
+    if (ostr == nullptr) {
+      if (thd->is_error()) return true;
+      *arg = new (thd->mem_root) Item_null;
+      if (*arg == nullptr) return true;
+      continue;
+    }
+    uint conv_status;
+    converted.copy(ostr->ptr(), ostr->length(), ostr->charset(), c.collation,
+                   &conv_status);
+    if (conv_status != 0) {
+      report_conversion_error(c.collation, ostr->ptr(), ostr->length(),
+                              ostr->charset());
+      return true;
+    }
+
+    char *ptr = thd->strmake(converted.ptr(), converted.length());
+    if (ptr == nullptr) return true;
+    Item *conv = new (thd->mem_root)
+        Item_string(ptr, converted.length(), converted.charset(), c.derivation);
+    if (conv == nullptr) return true;
+
+    *arg = conv;
+
+    assert(conv->fixed);
+  }
+  return false;
+}
+
+/**
+  Evaluate an argument string and return it in the desired character set.
+  Perform character set conversion if needed.
+  Perform character set validation (from a binary string) if needed.
+
+  @param to_cs  The desired character set
+  @param arg    Argument to evaluate as a string value
+  @param buffer String buffer where argument is evaluated, if necessary
+
+  @returns string pointer if success, NULL if error or NULL value
+*/
+
+String *eval_string_arg(const CHARSET_INFO *to_cs, Item *arg, String *buffer) {
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> local_string(nullptr);
+
+  size_t offset;
+  const bool convert =
+      String::needs_conversion(0, arg->collation.collation, to_cs, &offset);
+  String *res = arg->val_str(convert ? &local_string : buffer);
+
+  // Return immediately if argument is a NULL value, or there was an error
+  if (res == nullptr) {
+    return nullptr;
+  }
+  if (convert) {
+    /*
+      String must be converted from source character set. It has been built
+      in the "local_string" buffer and will be copied with conversion into the
+      caller provided buffer.
+    */
+    uint errors = 0;
+    buffer->length(0);
+    buffer->copy(res->ptr(), res->length(), res->charset(), to_cs, &errors);
+    if (errors) {
+      report_conversion_error(to_cs, res->ptr(), res->length(), res->charset());
+      return nullptr;
+    }
+    return buffer;
+  }
+  // If source is a binary string, the string may have to be validated:
+  if (to_cs != &my_charset_bin && arg->collation.collation == &my_charset_bin &&
+      !res->is_valid_string(to_cs)) {
+    report_conversion_error(to_cs, res->ptr(), res->length(), res->charset());
+    return nullptr;
+  }
+  // Adjust target character set to the desired value
+  res->set_charset(to_cs);
+  return res;
 }
 
 /**
@@ -640,9 +752,7 @@ bool Item_func::eq(const Item *item, bool binary_cmp) const {
       (func_type == Item_func::FUNC_SP &&
        my_strcasecmp(system_charset_info, func_name(), item_func->func_name())))
     return false;
-  for (uint i = 0; i < arg_count; i++)
-    if (!args[i]->eq(item_func->args[i], binary_cmp)) return false;
-  return true;
+  return AllItemsAreEqual(args, item_func->args, arg_count, binary_cmp);
 }
 
 Field *Item_func::tmp_table_field(TABLE *table) {
@@ -2054,7 +2164,7 @@ longlong Item_func_minus::int_op() {
     if (args[1]->unsigned_flag) {
       if ((ulonglong)(val0 - LLONG_MIN) < (ulonglong)val1) goto err;
     } else {
-      if (val0 > 0 && val1 < 0)
+      if (val0 >= 0 && val1 < 0)
         res_unsigned = true;
       else if (val0 < 0 && val1 > 0 && res >= 0)
         goto err;
@@ -2501,8 +2611,7 @@ my_decimal *Item_func_neg::decimal_op(my_decimal *decimal_value) {
 
 void Item_func_neg::fix_num_length_and_dec() {
   decimals = args[0]->decimals;
-  /* 1 add because sign can appear */
-  max_length = args[0]->max_length + 1;
+  max_length = args[0]->max_length + (args[0]->unsigned_flag ? 1 : 0);
 }
 
 bool Item_func_neg::resolve_type(THD *thd) {
@@ -3885,17 +3994,22 @@ bool Item_func_locate::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 2)) return true;
   if (param_type_is_default(thd, 2, 3, MYSQL_TYPE_LONGLONG)) return true;
   max_length = MY_INT32_NUM_DECIMAL_DIGITS;
-  return agg_arg_charsets_for_comparison(cmp_collation, args, 2);
+  if (agg_arg_charsets_for_string_result(collation, args, 1)) return true;
+  if (simplify_string_args(thd, collation, args + 1, 1)) return true;
+  return false;
 }
 
 longlong Item_func_locate::val_int() {
-  assert(fixed == 1);
-  String *a = args[0]->val_str(&value1);
-  String *b = args[1]->val_str(&value2);
-  if (!a || !b) {
-    null_value = true;
-    return 0; /* purecov: inspected */
-  }
+  assert(fixed);
+  // Evaluate the string argument first
+  const CHARSET_INFO *cs = collation.collation;
+  String *a = eval_string_arg(cs, args[0], &value1);
+  if (a == nullptr) return error_int();
+
+  // Evaluate substring argument in same character set as string argument
+  String *b = eval_string_arg(cs, args[1], &value2);
+  if (b == nullptr) return error_int();
+
   null_value = false;
   /* must be longlong to avoid truncation */
   longlong start = 0;
@@ -3918,11 +4032,11 @@ longlong Item_func_locate::val_int() {
   if (!b->length())  // Found empty string at start
     return start + 1;
 
-  if (!cmp_collation.collation->coll->strstr(
-          cmp_collation.collation, a->ptr() + start,
-          (uint)(a->length() - start), b->ptr(), b->length(), &match, 1))
+  if (!cs->coll->strstr(cs, a->ptr() + start,
+                        static_cast<uint>(a->length() - start), b->ptr(),
+                        b->length(), &match, 1))
     return 0;
-  return (longlong)match.mb_len + start0 + 1;
+  return static_cast<longlong>(match.mb_len) + start0 + 1;
 }
 
 void Item_func_locate::print(const THD *thd, String *str,
@@ -3947,22 +4061,25 @@ longlong Item_func_validate_password_strength::val_int() {
 }
 
 longlong Item_func_field::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
 
   if (cmp_type == STRING_RESULT) {
-    String *field;
-    if (!(field = args[0]->val_str(&value))) return 0;
+    const CHARSET_INFO *cs = collation.collation;
+    String *field = eval_string_arg(cs, args[0], &value);
+    if (field == nullptr) return 0;
     for (uint i = 1; i < arg_count; i++) {
-      String *tmp_value = args[i]->val_str(&tmp);
-      if (tmp_value && !sortcmp(field, tmp_value, cmp_collation.collation))
-        return (longlong)(i);
+      String *tmp_value = eval_string_arg(cs, args[i], &tmp);
+      if (tmp_value != nullptr && !sortcmp(field, tmp_value, cs)) {
+        return i;
+      }
     }
   } else if (cmp_type == INT_RESULT) {
     longlong val = args[0]->val_int();
     if (args[0]->null_value) return 0;
     for (uint i = 1; i < arg_count; i++) {
-      if (val == args[i]->val_int() && !args[i]->null_value)
-        return (longlong)(i);
+      if (val == args[i]->val_int() && !args[i]->null_value) {
+        return i;
+      }
     }
   } else if (cmp_type == DECIMAL_RESULT) {
     my_decimal dec_arg_buf, *dec_arg, dec_buf,
@@ -3970,15 +4087,17 @@ longlong Item_func_field::val_int() {
     if (args[0]->null_value) return 0;
     for (uint i = 1; i < arg_count; i++) {
       dec_arg = args[i]->val_decimal(&dec_arg_buf);
-      if (!args[i]->null_value && !my_decimal_cmp(dec_arg, dec))
-        return (longlong)(i);
+      if (!args[i]->null_value && !my_decimal_cmp(dec_arg, dec)) {
+        return i;
+      }
     }
   } else {
     double val = args[0]->val_real();
     if (args[0]->null_value) return 0;
     for (uint i = 1; i < arg_count; i++) {
-      if (val == args[i]->val_real() && !args[i]->null_value)
-        return (longlong)(i);
+      if (val == args[i]->val_real() && !args[i]->null_value) {
+        return i;
+      }
     }
   }
   return 0;
@@ -3991,8 +4110,11 @@ bool Item_func_field::resolve_type(THD *thd) {
   cmp_type = args[0]->result_type();
   for (uint i = 1; i < arg_count; i++)
     cmp_type = item_cmp_type(cmp_type, args[i]->result_type());
-  if (cmp_type == STRING_RESULT)
-    return agg_arg_charsets_for_comparison(cmp_collation, args, arg_count);
+  if (cmp_type == STRING_RESULT) {
+    if (agg_arg_charsets_for_string_result(collation, args, 1)) return true;
+    if (simplify_string_args(thd, collation, args + 1, arg_count - 1))
+      return true;
+  }
   return false;
 }
 
@@ -4732,7 +4854,7 @@ String *Item_func_udf_str::val_str(String *str) {
   return res;
 }
 
-bool Item_master_pos_wait::itemize(Parse_context *pc, Item **res) {
+bool Item_source_pos_wait::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::itemize(pc, res)) return true;
   pc->thd->lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
@@ -4745,7 +4867,7 @@ bool Item_master_pos_wait::itemize(Parse_context *pc, Item **res) {
   on the slave.
 */
 
-longlong Item_master_pos_wait::val_int() {
+longlong Item_source_pos_wait::val_int() {
   assert(fixed == 1);
   THD *thd = current_thd;
   String *log_name = args[0]->val_str(&value);
@@ -4761,10 +4883,10 @@ longlong Item_master_pos_wait::val_int() {
   double timeout = (arg_count >= 3) ? args[2]->val_real() : 0;
   if (timeout < 0) {
     if (thd->is_strict_mode()) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "MASTER_POS_WAIT.");
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), "SOURCE_POS_WAIT.");
     } else {
       push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                          ER_THD(thd, ER_WRONG_ARGUMENTS), "MASTER_POS_WAIT.");
+                          ER_THD(thd, ER_WRONG_ARGUMENTS), "SOURCE_POS_WAIT.");
       null_value = true;
     }
     return 0;
@@ -4801,6 +4923,11 @@ longlong Item_master_pos_wait::val_int() {
 
   if (mi != nullptr) mi->dec_reference();
   return event_count;
+}
+
+longlong Item_master_pos_wait::val_int() {
+  push_deprecated_warn(current_thd, "MASTER_POS_WAIT", "SOURCE_POS_WAIT");
+  return Item_source_pos_wait::val_int();
 }
 
 bool Item_wait_for_executed_gtid_set::itemize(Parse_context *pc, Item **res) {
@@ -5056,7 +5183,7 @@ class Interruptible_wait {
  public:
   Interruptible_wait(THD *thd) : m_thd(thd) {}
 
-  ~Interruptible_wait() {}
+  ~Interruptible_wait() = default;
 
  public:
   /**
@@ -6467,8 +6594,8 @@ String *Item_func_get_user_var::val_str(String *str) {
       char tmp[32];
       convert_to_printable(tmp, sizeof(tmp), res->ptr(), res->length(),
                            res->charset(), 6);
-      my_error(ER_INVALID_CHARACTER_STRING, MYF(0), collation.collation->csname,
-               tmp);
+      my_error(ER_INVALID_CHARACTER_STRING, MYF(0),
+               replace_utf8_utf8mb3(collation.collation->csname), tmp);
       return error_str();
     }
     if (str->copy(tmpstr)) return error_str();
@@ -7396,13 +7523,14 @@ bool Item_func_match::init_search(THD *thd) {
   TABLE *const table = table_ref->table;
   /* Check if init_search() has been called before */
   if (ft_handler && !master) {
-    /*
-      We should reset ft_handler (necessary in case of re-execution of
-      subquery), as it is cleaned up when initializing the
-      SortBufferIndirectIterator / SortFileIndirectIterator.
-      TODO: Those iterators should not clean up ft_handler.
-    */
-    if (join_key) table->file->ft_handler = ft_handler;
+    // Update handler::ft_handler even if the search is already initialized.
+    // If the first call to init_search() was done before we had decided if
+    // an index scan should be used, and we later decide that we will use
+    // one, ft_handler is not set. For example, the optimizer calls
+    // init_search() early if it needs to call Item_func_match::get_count()
+    // to perform COUNT(*) optimization or decide if a LIMIT clause can be
+    // satisfied by an index scan.
+    if (score_from_index_scan) table->file->ft_handler = ft_handler;
     return false;
   }
 
@@ -7452,7 +7580,7 @@ bool Item_func_match::init_search(THD *thd) {
   ft_handler = table->file->ft_init_ext_with_hints(key, ft_tmp, get_hints());
   if (thd->is_error()) return true;
 
-  if (join_key) table->file->ft_handler = ft_handler;
+  if (score_from_index_scan) table->file->ft_handler = ft_handler;
 
   return false;
 }
@@ -7603,7 +7731,6 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref) {
 }
 
 bool Item_func_match::fix_index(const THD *thd) {
-  Item_field *item;
   TABLE *table;
   uint ft_to_key[MAX_KEY], ft_cnt[MAX_KEY], fts = 0, keynr;
   uint max_cnt = 0, mkeys = 0, i;
@@ -7638,7 +7765,8 @@ bool Item_func_match::fix_index(const THD *thd) {
   if (!fts) goto err;
 
   for (i = 0; i < arg_count; i++) {
-    item = (Item_field *)(args[i]->real_item());
+    Item_field *item =
+        down_cast<Item_field *>(unwrap_rollup_group(args[i])->real_item());
     for (keynr = 0; keynr < fts; keynr++) {
       KEY *ft_key = &table->key_info[ft_to_key[keynr]];
       uint key_parts = ft_key->user_defined_key_parts;
@@ -7688,8 +7816,6 @@ err:
 bool Item_func_match::eq(const Item *item, bool binary_cmp) const {
   /* We ignore FT_SORTED flag when checking for equality since result is
      equvialent regardless of sorting */
-  assert(item->type() != FUNC_ITEM ||
-         down_cast<const Item_func *>(item)->functype() != MATCH_FUNC);
   if (item->type() != FUNC_ITEM ||
       down_cast<const Item_func *>(item)->functype() != FT_FUNC ||
       (flags | FT_SORTED) !=
@@ -7714,12 +7840,9 @@ double Item_func_match::val_real() {
   if (key != NO_SUCH_KEY && table->has_null_row())  // NULL row from outer join
     return 0.0;
 
-  if (get_master()->join_key) {
-    if (table->file->ft_handler) {
-      double val = ft_handler->please->get_relevance(ft_handler);
-      return val;
-    }
-    get_master()->join_key = false;
+  if (get_master()->score_from_index_scan) {
+    assert(table->file->ft_handler == ft_handler);
+    return ft_handler->please->get_relevance(ft_handler);
   }
 
   if (key == NO_SUCH_KEY) {

@@ -202,7 +202,7 @@ Validates a read view list. */
 bool MVCC::validate() const {
   ViewCheck check;
 
-  ut_ad(mutex_own(&trx_sys->mutex));
+  ut_ad(trx_sys_mutex_own());
 
   ut_list_map(m_views, check);
 
@@ -328,10 +328,7 @@ ReadView::~ReadView() {
 
 /** Constructor
 @param size		Number of views to pre-allocate */
-MVCC::MVCC(ulint size) {
-  UT_LIST_INIT(m_free, &ReadView::m_view_list);
-  UT_LIST_INIT(m_views, &ReadView::m_view_list);
-
+MVCC::MVCC(ulint size) : m_free(), m_views() {
   for (ulint i = 0; i < size; ++i) {
     ReadView *view = UT_NEW_NOKEY(ReadView());
 
@@ -340,8 +337,7 @@ MVCC::MVCC(ulint size) {
 }
 
 MVCC::~MVCC() {
-  for (ReadView *view = UT_LIST_GET_FIRST(m_free); view != nullptr;
-       view = UT_LIST_GET_FIRST(m_free)) {
+  while (ReadView *view = UT_LIST_GET_FIRST(m_free)) {
     UT_LIST_REMOVE(m_free, view);
 
     UT_DELETE(view);
@@ -354,6 +350,8 @@ MVCC::~MVCC() {
 Copy the transaction ids from the source vector */
 
 void ReadView::copy_trx_ids(const trx_ids_t &trx_ids) {
+  ut_ad(trx_sys_mutex_own());
+
   ulint size = trx_ids.size();
 
   if (m_creator_trx_id > 0) {
@@ -408,12 +406,31 @@ void ReadView::copy_trx_ids(const trx_ids_t &trx_ids) {
   m_up_limit_id = m_ids.front();
 
 #ifdef UNIV_DEBUG
-  /* Assert that all transaction ids in list are active. */
-  for (trx_ids_t::const_iterator it = trx_ids.begin(); it != trx_ids.end();
-       ++it) {
-    trx_t *trx = trx_get_rw_trx_by_id(*it);
-    ut_ad(trx != nullptr);
-    ut_ad(trx->state == TRX_STATE_ACTIVE || trx->state == TRX_STATE_PREPARED);
+  /* The check is done randomly from time to time, because the check adds
+  a kind of extra synchronization which itself could hide existing bugs. */
+  if (ut_rnd_interval(0, 99) == 0) {
+    /* Assert that all transaction ids in list are active. */
+    for (auto trx_id : trx_ids) {
+      while (true) {
+        {
+          Trx_shard_latch_guard guard{trx_id, UT_LOCATION_HERE};
+          trx_t *trx = trx_get_rw_trx_by_id_low(trx_id);
+          if (trx != nullptr) {
+            const auto trx_state = trx->state.load(std::memory_order_relaxed);
+            /* Transaction in rw_trx_ids might only be ACTIVE or PREPARED,
+            before it becomes COMMITTED it is removed from rw_trx_ids. */
+            ut_ad(trx_state == TRX_STATE_ACTIVE ||
+                  trx_state == TRX_STATE_PREPARED);
+            break;
+          }
+        }
+        /* It might happen that transaction became added to rw_trx_ids,
+        then trx_sys mutex has been released and thread become scheduled
+        out before the call to trx_sys_rw_trx_add(trx). We need to wait,
+        it will come (if we hang forever in this loop - it's a bug). */
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+      }
+    }
   }
 #endif /* UNIV_DEBUG */
 }
@@ -424,11 +441,15 @@ point in time are seen in the view.
 @param id		Creator transaction id */
 
 void ReadView::prepare(trx_id_t id) {
-  ut_ad(mutex_own(&trx_sys->mutex));
+  ut_ad(trx_sys_mutex_own());
 
   m_creator_trx_id = id;
 
-  m_low_limit_no = m_low_limit_id = m_up_limit_id = trx_sys->max_trx_id;
+  m_low_limit_no = trx_get_serialisation_min_trx_no();
+
+  m_low_limit_id = trx_sys_get_next_trx_id_or_no();
+
+  ut_a(m_low_limit_no <= m_low_limit_id);
 
   if (!trx_sys->rw_trx_ids.empty()) {
     copy_trx_ids(trx_sys->rw_trx_ids);
@@ -436,17 +457,10 @@ void ReadView::prepare(trx_id_t id) {
     m_ids.clear();
   }
 
-  ut_ad(m_up_limit_id <= m_low_limit_id);
+  /* The first active transaction has the smallest id. */
+  m_up_limit_id = !m_ids.empty() ? m_ids.front() : m_low_limit_id;
 
-  if (UT_LIST_GET_LEN(trx_sys->serialisation_list) > 0) {
-    const trx_t *trx;
-
-    trx = UT_LIST_GET_FIRST(trx_sys->serialisation_list);
-
-    if (trx->no < m_low_limit_no) {
-      m_low_limit_no = trx->no;
-    }
-  }
+  ut_a(m_up_limit_id <= m_low_limit_id);
 
   ut_d(m_view_low_limit_no = m_low_limit_no);
   m_closed = false;
@@ -458,7 +472,7 @@ a new view.
 @return a view to use */
 
 ReadView *MVCC::get_view() {
-  ut_ad(mutex_own(&trx_sys->mutex));
+  ut_ad(trx_sys_mutex_own());
 
   ReadView *view;
 
@@ -531,20 +545,20 @@ void MVCC::view_open(ReadView *&view, trx_t *trx) {
     if (trx_is_autocommit_non_locking(trx) && view->empty()) {
       view->m_closed = false;
 
-      if (view->m_low_limit_id == trx_sys_get_max_trx_id()) {
+      if (view->m_low_limit_id == trx_sys_get_next_trx_id_or_no()) {
         return;
       } else {
         view->m_closed = true;
       }
     }
+  }
 
-    mutex_enter(&trx_sys->mutex);
+  trx_sys_mutex_enter();
 
+  if (view != nullptr) {
     UT_LIST_REMOVE(m_views, view);
 
   } else {
-    mutex_enter(&trx_sys->mutex);
-
     view = get_view();
   }
 
@@ -564,7 +578,7 @@ void MVCC::view_open(ReadView *&view, trx_t *trx) {
 ReadView *MVCC::get_view_created_by_trx_id(trx_id_t trx_id) const {
   ReadView *view;
 
-  ut_ad(mutex_own(&trx_sys->mutex));
+  ut_ad(trx_sys_mutex_own());
 
   for (view = UT_LIST_GET_LAST(m_views); view != nullptr;
        view = UT_LIST_GET_PREV(m_view_list, view)) {
@@ -587,7 +601,7 @@ Get the oldest (active) view in the system.
 ReadView *MVCC::get_oldest_view() const {
   ReadView *view;
 
-  ut_ad(mutex_own(&trx_sys->mutex));
+  ut_ad(trx_sys_mutex_own());
 
   for (view = UT_LIST_GET_LAST(m_views); view != nullptr;
        view = UT_LIST_GET_PREV(m_view_list, view)) {
@@ -654,7 +668,7 @@ m_free list. This function is called by Purge to determine whether it should
 purge the delete marked record or not.
 @param view		Preallocated view, owned by the caller */
 void MVCC::clone_oldest_view(ReadView *view) {
-  mutex_enter(&trx_sys->mutex);
+  trx_sys_mutex_enter();
 
   ReadView *oldest_view = get_oldest_view();
 
@@ -684,8 +698,7 @@ ulint MVCC::size() const {
 
   ulint size = 0;
 
-  for (const ReadView *view = UT_LIST_GET_FIRST(m_views); view != nullptr;
-       view = UT_LIST_GET_NEXT(m_view_list, view)) {
+  for (const ReadView *view : m_views) {
     if (!view->is_closed()) {
       ++size;
     }
@@ -728,17 +741,4 @@ void MVCC::view_close(ReadView *&view, bool own_mutex) {
 
     view = nullptr;
   }
-}
-
-/**
-Set the view creator transaction id. Note: This shouldbe set only
-for views created by RW transactions.
-@param view		Set the creator trx id for this view
-@param id		Transaction id to set */
-
-void MVCC::set_view_creator_trx_id(ReadView *view, trx_id_t id) {
-  ut_ad(id > 0);
-  ut_ad(mutex_own(&trx_sys->mutex));
-
-  view->creator_trx_id(id);
 }

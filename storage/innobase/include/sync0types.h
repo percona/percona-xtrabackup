@@ -271,12 +271,14 @@ enum latch_level_t {
   SYNC_LOG_ARCH,
 
   SYNC_PAGE_CLEANER,
-  SYNC_PURGE_QUEUE,
   SYNC_TRX_SYS_HEADER,
+  SYNC_TRX_SYS_SERIALISATION,
+  SYNC_PURGE_QUEUE,
   SYNC_THREADS,
   SYNC_TRX,
   SYNC_POOL,
   SYNC_POOL_MANAGER,
+  SYNC_TRX_SYS_SHARD,
   SYNC_TRX_SYS,
   SYNC_LOCK_SYS_SHARDED,
   SYNC_LOCK_SYS_GLOBAL,
@@ -425,6 +427,8 @@ enum latch_id_t {
   LATCH_ID_TEMP_POOL_MANAGER,
   LATCH_ID_TRX,
   LATCH_ID_TRX_SYS,
+  LATCH_ID_TRX_SYS_SHARD,
+  LATCH_ID_TRX_SYS_SERIALISATION,
   LATCH_ID_SRV_SYS,
   LATCH_ID_SRV_SYS_TASKS,
   LATCH_ID_PAGE_ZIP_STAT_PER_INDEX,
@@ -500,7 +504,7 @@ struct OSMutex {
   }
 
   /** Destructor */
-  ~OSMutex() {}
+  ~OSMutex() = default;
 
   /** Destroy the mutex */
   void destroy() UNIV_NOTHROW {
@@ -796,7 +800,7 @@ class LatchMeta {
   }
 
   /** Destructor */
-  ~LatchMeta() {}
+  ~LatchMeta() = default;
 
   /** Constructor
   @param[in]	id		Latch id
@@ -977,7 +981,7 @@ struct latch_t {
   latch_t &operator=(const latch_t &) = default;
 
   /** Destructor */
-  virtual ~latch_t() UNIV_NOTHROW {}
+  virtual ~latch_t() UNIV_NOTHROW = default;
 
   /** @return the latch ID */
   latch_id_t get_id() const { return (m_id); }
@@ -1049,7 +1053,7 @@ struct latch_t {
 
 /** Subclass this to iterate over a thread's acquired latch levels. */
 struct sync_check_functor_t {
-  virtual ~sync_check_functor_t() {}
+  virtual ~sync_check_functor_t() = default;
   virtual bool operator()(const latch_level_t) = 0;
   virtual bool result() const = 0;
 };
@@ -1062,7 +1066,7 @@ struct btrsea_sync_check : public sync_check_functor_t {
       : m_result(), m_has_search_latch(has_search_latch) {}
 
   /** Destructor */
-  ~btrsea_sync_check() override {}
+  ~btrsea_sync_check() override = default;
 
   /** Called for every latch owned by the calling thread.
   @param[in]	level		Level of the existing latch
@@ -1125,7 +1129,7 @@ struct dict_sync_check : public sync_check_functor_t {
       : m_result(), m_dict_mutex_allowed(dict_mutex_allowed) {}
 
   /** Destructor */
-  ~dict_sync_check() override {}
+  ~dict_sync_check() override = default;
 
   /** Check the latching constraints
   @param[in]	level		The level held by the thread */

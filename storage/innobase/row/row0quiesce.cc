@@ -206,8 +206,6 @@ static MY_ATTRIBUTE((nonnull, warn_unused_result)) dberr_t
     return (DB_IO_ERROR);
   }
 
-  dberr_t err = DB_SUCCESS;
-
   /* Write SDI Index */
   if (has_sdi) {
     dict_mutex_enter_for_mysql();
@@ -217,21 +215,21 @@ static MY_ATTRIBUTE((nonnull, warn_unused_result)) dberr_t
     dict_mutex_exit_for_mysql();
 
     ut_ad(index != nullptr);
-    err = row_quiesce_write_one_index(index, file, thd);
+    const auto err = row_quiesce_write_one_index(index, file, thd);
+    if (err != DB_SUCCESS) {
+      return err;
+    }
   }
 
   /* Write the table indexes meta data. */
-  for (const dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-       index != nullptr && err == DB_SUCCESS;
-       index = UT_LIST_GET_NEXT(indexes, index)) {
-    err = row_quiesce_write_one_index(index, file, thd);
+  for (const dict_index_t *index : table->indexes) {
+    const auto err = row_quiesce_write_one_index(index, file, thd);
+    if (err != DB_SUCCESS) {
+      return err;
+    }
   }
 
-  if (err != DB_SUCCESS) {
-    return (err);
-  }
-
-  return (err);
+  return DB_SUCCESS;
 }
 
 /** Write the metadata (table columns) config file. Serialise the contents
@@ -484,14 +482,14 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   }
 
   if (cfg_version >= IB_EXPORT_CFG_VERSION_V6) {
-    /* Write compression info */
+    /* Write compression type info. */
     uint8_t compression_type =
         static_cast<uint8_t>(fil_get_compression(table->space));
     mach_write_to_1(value, compression_type);
 
     if (fwrite(&value, 1, sizeof(uint8_t), file) != sizeof(uint8_t)) {
       ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing space_flags.");
+                  strerror(errno), "while writing compression type info.");
 
       return DB_IO_ERROR;
     }
@@ -652,7 +650,7 @@ static MY_ATTRIBUTE((nonnull, warn_unused_result)) dberr_t
 
   /* Get the encryption key and iv from space */
   /* For encrypted table, before we discard the tablespace,
-  we need save the encryption information into table, otherwise,
+  we need to save the encryption information into table, otherwise,
   this information will be lost in fil_discard_tablespace along
   with fil_space_free(). */
   if (table->encryption_key == nullptr) {
@@ -727,8 +725,7 @@ static bool row_quiesce_table_has_fts_index(
 
   dict_mutex_enter_for_mysql();
 
-  for (const dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-       index != nullptr; index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (const dict_index_t *index : table->indexes) {
     if (index->type & DICT_FTS) {
       exists = true;
       break;

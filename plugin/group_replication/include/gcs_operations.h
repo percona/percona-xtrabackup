@@ -24,6 +24,7 @@
 #define GCS_OPERATIONS_INCLUDE
 
 #include <mysql/group_replication_priv.h>
+#include <atomic>
 #include <future>
 #include <string>
 #include <utility>
@@ -33,6 +34,8 @@
 #include "plugin/group_replication/include/gcs_view_modification_notifier.h"
 #include "plugin/group_replication/include/mysql_version_gcs_protocol_map.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_interface.h"
+
+class Transaction_message_interface;
 
 /**
   @class Gcs_operations
@@ -222,6 +225,18 @@ class Gcs_operations {
                                    bool skip_if_not_initialized = false);
 
   /**
+    Send a transaction message to the group.
+
+    @param[in] message  The message to send
+
+    @return the operation status
+      @retval 0      OK
+      @retval !=0    Error
+  */
+  enum enum_gcs_error send_transaction_message(
+      Transaction_message_interface &message);
+
+  /**
     Forces a new group membership, on which the excluded members
     will not receive a new view and will be blocked.
 
@@ -339,11 +354,9 @@ class Gcs_operations {
   /** Was this view change injected */
   bool injected_view_modification;
   /** Is the member leaving*/
-  bool leave_coordination_leaving;
+  std::atomic<bool> leave_coordination_leaving;
   /** Did the member already left*/
-  bool leave_coordination_left;
-  /** Is finalize ongoing*/
-  bool finalize_ongoing;
+  std::atomic<bool> leave_coordination_left;
 
   /** List of associated view change notifiers waiting */
   std::list<Plugin_gcs_view_modification_notifier *> view_change_notifier_list;
@@ -351,7 +364,6 @@ class Gcs_operations {
   Checkable_rwlock *gcs_operations_lock;
   /** Lock for the list of waiters on a view change */
   Checkable_rwlock *view_observers_lock;
-  Checkable_rwlock *finalize_ongoing_lock;
 };
 
 #endif /* GCS_OPERATIONS_INCLUDE */

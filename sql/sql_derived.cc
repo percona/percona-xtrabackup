@@ -201,6 +201,7 @@ TABLE *Common_table_expr::clone_tmp_table(THD *thd, TABLE_LIST *tl) {
     return nullptr; /* purecov: inspected */
   assert(t->s == first->s && t != first && t->file != first->file);
   t->s->increment_ref_count();
+  t->s->tmp_handler_count++;
 
   // In case this clone is used to fill the materialized table:
   bitmap_set_all(t->write_set);
@@ -513,14 +514,16 @@ static void swap_column_names_of_unit_and_tmp_table(
   (i+10) need to be different so as to be able to replace them with
   some other expressions later.
 
-  @param[in] thd  Current thread
-  @param[in] item Item for which clone is requested
+  @param[in] thd      Current thread
+  @param[in] item     Item for which clone is requested
+  @param[in] context  Context used for resolving the cloned item.
 
   @returns
   Cloned object for the item.
 */
 
-Item *TABLE_LIST::get_clone_for_derived_expr(THD *thd, Item *item) {
+Item *TABLE_LIST::get_clone_for_derived_expr(THD *thd, Item *item,
+                                             Name_resolution_context *context) {
   assert(derived->is_prepared());
 
   // Set up for parsing item
@@ -559,6 +562,11 @@ Item *TABLE_LIST::get_clone_for_derived_expr(THD *thd, Item *item) {
   bool parsing_system_view_saved = thd->parsing_system_view;
   thd->parsing_system_view = is_system_view;
 
+  // Set the correct query block to parse the item. In some cases, like
+  // fulltext functions, parser needs to add them to ftfunc_list of the
+  // query block.
+  thd->lex->unit = context->query_block->master_query_expression();
+  thd->lex->set_current_query_block(context->query_block);
   bool result = parse_sql(thd, &parser_state, nullptr);
 
   // End of parsing.
@@ -569,15 +577,12 @@ Item *TABLE_LIST::get_clone_for_derived_expr(THD *thd, Item *item) {
   // Prepare for resolving the item.
   Item *cloned_item = parser_state.result;
 
-  // Resolve the expression with derived table's context
-  Item_ident::Change_context ctx(
-      &derived_query_expression()->first_query_block()->context);
+  Item_ident::Change_context ctx(context);
   cloned_item->walk(&Item::change_context_processor, enum_walk::POSTFIX,
                     reinterpret_cast<uchar *>(&ctx));
 
   Query_block *saved_current_query_block = thd->lex->current_query_block();
-  thd->lex->set_current_query_block(
-      derived_query_expression()->first_query_block());
+  thd->lex->set_current_query_block(context->query_block);
   nesting_map save_allow_sum_func = thd->lex->allow_sum_func;
   thd->lex->allow_sum_func |= static_cast<nesting_map>(1)
                               << thd->lex->current_query_block()->nest_level;
@@ -885,11 +890,16 @@ bool Condition_pushdown::make_cond_for_derived() {
   trace_cond.add("condition_not_pushed_to_derived", m_remainder_cond);
 
   // If this condition has a semi-join condition, remove expressions from
-  // semi-join expression lists.
-  if (m_having_cond) check_and_remove_sj_exprs(m_having_cond);
-  if (m_where_cond) check_and_remove_sj_exprs(m_where_cond);
-  // Replace columns in the condition with derived table expressions.
-  if (replace_columns_in_cond()) return true;
+  // semi-join expression lists. Replace columns in the condition with
+  // derived table expressions.
+  if (m_having_cond != nullptr) {
+    check_and_remove_sj_exprs(m_having_cond);
+    if (replace_columns_in_cond(&m_having_cond, true)) return true;
+  }
+  if (m_where_cond != nullptr) {
+    check_and_remove_sj_exprs(m_where_cond);
+    if (replace_columns_in_cond(&m_where_cond, false)) return true;
+  }
 
   Query_block *derived_query_block =
       m_derived_table->derived_query_expression()->first_query_block();
@@ -1128,23 +1138,32 @@ Item *Condition_pushdown::make_remainder_cond(Item *cond) {
  expressions.
 */
 
-bool Condition_pushdown::replace_columns_in_cond() {
-  if (m_having_cond) {
-    Item *new_cond =
-        m_having_cond->transform(&Item::replace_with_derived_expr_ref,
+bool Condition_pushdown::replace_columns_in_cond(Item **cond, bool is_having) {
+  // For a view reference, the underlying expression could be shared if the
+  // expression is referenced elsewhere in the query. So we clone the expression
+  // before replacing it with derived table expression.
+  bool view_ref = false;
+  WalkItem((*cond), enum_walk::PREFIX, [&view_ref](Item *inner_item) {
+    if (inner_item->type() == Item::REF_ITEM &&
+        down_cast<Item_ref *>(inner_item)->ref_type() == Item_ref::VIEW_REF) {
+      view_ref = true;
+      return true;
+    }
+    return false;
+  });
+  if (view_ref) {
+    (*cond) = (*cond)->transform(&Item::replace_view_refs_with_clone,
                                  pointer_cast<uchar *>(m_derived_table));
-    if (new_cond == nullptr) return true;
-    new_cond->update_used_tables();  // as it's using different tables now
-    m_having_cond = new_cond;
+    if (cond == nullptr) return true;
   }
-  if (m_where_cond) {
-    Item *new_cond =
-        m_where_cond->transform(&Item::replace_with_derived_expr,
-                                pointer_cast<uchar *>(m_derived_table));
-    if (new_cond == nullptr) return true;
-    new_cond->update_used_tables();
-    m_where_cond = new_cond;
-  }
+  Item *new_cond =
+      is_having ? (*cond)->transform(&Item::replace_with_derived_expr_ref,
+                                     pointer_cast<uchar *>(m_derived_table))
+                : (*cond)->transform(&Item::replace_with_derived_expr,
+                                     pointer_cast<uchar *>(m_derived_table));
+  if (new_cond == nullptr) return true;
+  new_cond->update_used_tables();
+  (*cond) = new_cond;
   return false;
 }
 

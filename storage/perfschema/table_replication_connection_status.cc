@@ -39,8 +39,8 @@
 #include "sql/rpl_info.h"
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h" /* Multi source replication */
+#include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
-#include "sql/rpl_slave.h"
 #include "sql/sql_parse.h"
 #include "sql/table.h"
 #include "storage/perfschema/pfs_instr.h"
@@ -183,7 +183,8 @@ PFS_engine_table *table_replication_connection_status::create(
 table_replication_connection_status::table_replication_connection_status()
     : PFS_engine_table(&m_share, &m_pos), m_pos(0), m_next_pos(0) {}
 
-table_replication_connection_status::~table_replication_connection_status() {}
+table_replication_connection_status::~table_replication_connection_status() =
+    default;
 
 void table_replication_connection_status::reset_position(void) {
   m_pos.m_index = 0;

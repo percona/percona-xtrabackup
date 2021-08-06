@@ -52,7 +52,6 @@
 #include <mgmapi/mgmapi_debug.h>
 
 #include <EventLogger.hpp>
-extern EventLogger * g_eventLogger;
 
 #if 0
 #define DEBUG_FPRINTF(arglist) do { fprintf arglist ; } while (0)
@@ -209,7 +208,7 @@ TransporterReceiveData::epoll_add(Transporter *t)
     int ret_val, error;
 
     if (!ndb_socket_valid(sock_fd))
-      return FALSE;
+      return false;
 
     event_poll.data.u32 = t->getTransporterIndex();
     event_poll.events = EPOLLIN;
@@ -232,19 +231,16 @@ TransporterReceiveData::epoll_add(Transporter *t)
        * have permission problems or the socket doesn't support
        * epoll!!
        */
-      ndbout_c("Failed to %s epollfd: %u fd " MY_SOCKET_FORMAT
-               " node %u to epoll-set,"
-               " errno: %u %s",
-               add ? "ADD" : "DEL",
-               m_epoll_fd,
-               MY_SOCKET_FORMAT_VALUE(sock_fd),
-               node_id,
-               error,
-               strerror(error));
+      g_eventLogger->info("Failed to %s epollfd: %u fd " MY_SOCKET_FORMAT
+                          " node %u to epoll-set,"
+                          " errno: %u %s",
+                          add ? "ADD" : "DEL", m_epoll_fd,
+                          MY_SOCKET_FORMAT_VALUE(sock_fd), node_id, error,
+                          strerror(error));
       abort();
     }
-    ndbout << "We lacked memory to add the socket for node id ";
-    ndbout << node_id << endl;
+    g_eventLogger->info("We lacked memory to add the socket for node id %u",
+                        node_id);
     return false;
   }
 
@@ -1006,6 +1002,7 @@ TransporterRegistry::createSHMTransporter(TransporterConfiguration *config)
 
   DBUG_RETURN(true);
 #else
+  ndbout_c("Shared memory transporters not supported on Windows");
   return false;
 #endif
 }
@@ -1284,9 +1281,8 @@ TransporterRegistry::setup_wakeup_socket(TransporterReceiveHandle& recvdata)
     if (ret_val != 0)
     {
       int error= errno;
-      fprintf(stderr, "Failed to add extra sock %u to epoll-set: %u\n",
-              sock, error);
-      fflush(stderr);
+      g_eventLogger->info("Failed to add extra sock %u to epoll-set: %u", sock,
+                          error);
       goto err;
     }
   }
@@ -2320,7 +2316,7 @@ TransporterRegistry::setMixologyLevel(Uint32 l)
   
   if (m_mixology_level & MIXOLOGY_MIX_INCOMING_SIGNALS)
   {
-    ndbout_c("MIXOLOGY_MIX_INCOMING_SIGNALS on");
+    g_eventLogger->info("MIXOLOGY_MIX_INCOMING_SIGNALS on");
     /* Max one signal per transporter */
     MAX_RECEIVED_SIGNALS = 1;
   }
@@ -3124,10 +3120,9 @@ TransporterRegistry::update_connections(TransporterReceiveHandle& recvdata,
     {
       if (performStates[nodeId] == CONNECTING)
       {
-        fprintf(stderr,
-                "update_connections while CONNECTING, nodeId:%d, error:%d\n",
-                nodeId,
-                code);
+        g_eventLogger->info(
+            "update_connections while CONNECTING, nodeId:%d, error:%d", nodeId,
+            code);
         /* Failed during CONNECTING -> we are still DISCONNECTED */
         assert(!t->isConnected());
         assert(false);

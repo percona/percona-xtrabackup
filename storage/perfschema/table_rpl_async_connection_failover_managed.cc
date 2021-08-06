@@ -37,8 +37,8 @@
 #include "sql/rpl_info.h"
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h" /* Multisource replciation */
+#include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
-#include "sql/rpl_slave.h"
 #include "sql/sql_parse.h"
 #include "sql/table.h"
 #include "storage/perfschema/pfs_instr.h"
@@ -127,7 +127,7 @@ table_rpl_async_connection_failover_managed::
       read_error{false} {}
 
 table_rpl_async_connection_failover_managed::
-    ~table_rpl_async_connection_failover_managed() {}
+    ~table_rpl_async_connection_failover_managed() = default;
 
 void table_rpl_async_connection_failover_managed::reset_position(void) {
   DBUG_TRACE;

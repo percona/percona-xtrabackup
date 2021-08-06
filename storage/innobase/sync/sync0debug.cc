@@ -442,6 +442,8 @@ LatchDebug::LatchDebug() {
   LEVEL_MAP_INSERT(SYNC_THREADS);
   LEVEL_MAP_INSERT(SYNC_TRX);
   LEVEL_MAP_INSERT(SYNC_TRX_SYS);
+  LEVEL_MAP_INSERT(SYNC_TRX_SYS_SHARD);
+  LEVEL_MAP_INSERT(SYNC_TRX_SYS_SERIALISATION);
   LEVEL_MAP_INSERT(SYNC_LOCK_SYS_GLOBAL);
   LEVEL_MAP_INSERT(SYNC_LOCK_SYS_SHARDED);
   LEVEL_MAP_INSERT(SYNC_LOCK_WAIT_SYS);
@@ -700,6 +702,8 @@ Latches *LatchDebug::check_order(const latch_t *latch,
     case SYNC_LOCK_SYS_GLOBAL:
     case SYNC_LOCK_WAIT_SYS:
     case SYNC_TRX_SYS:
+    case SYNC_TRX_SYS_SHARD:
+    case SYNC_TRX_SYS_SERIALISATION:
     case SYNC_IBUF_BITMAP_MUTEX:
     case SYNC_TEMP_SPACE_RSEG:
     case SYNC_UNDO_SPACE_RSEG:
@@ -1375,6 +1379,11 @@ static void sync_latch_meta_init() UNIV_NOTHROW {
 
   LATCH_ADD_MUTEX(TRX_SYS, SYNC_TRX_SYS, trx_sys_mutex_key);
 
+  LATCH_ADD_MUTEX(TRX_SYS_SHARD, SYNC_TRX_SYS_SHARD, trx_sys_shard_mutex_key);
+
+  LATCH_ADD_MUTEX(TRX_SYS_SERIALISATION, SYNC_TRX_SYS_SERIALISATION,
+                  trx_sys_serialisation_mutex_key);
+
   LATCH_ADD_MUTEX(SRV_SYS, SYNC_THREADS, srv_sys_mutex_key);
 
   LATCH_ADD_MUTEX(SRV_SYS_TASKS, SYNC_ANY_LATCH, srv_threads_mutex_key);
@@ -1677,9 +1686,7 @@ void sync_check_init(size_t max_threads) {
 
   sync_latch_meta_init();
 
-  /* Init the rw-lock & mutex list and create the mutex to protect it. */
-
-  UT_LIST_INIT(rw_lock_list, &rw_lock_t::list);
+  /* Init the mutex list and create the mutex to protect it. */
 
   mutex_create(LATCH_ID_RW_LOCK_LIST, &rw_lock_list_mutex);
 

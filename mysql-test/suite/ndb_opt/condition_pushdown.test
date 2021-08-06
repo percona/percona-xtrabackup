@@ -2684,6 +2684,96 @@ select @count:=count(*) from t1 where not b not like 'five';
 eval $verify_row_count;
 
 --echo #
+--echo # WL#14476 Introduce NdbScanFilter option for NULL-compare according to SQL semantics
+--echo #
+--echo # Test case for checking the pre-WL behaviour. Disable NULL semantics added
+--echo # by WL -> force old behaviour of still needing explicit NULL check.
+--echo #
+--echo # Test cases are the same as added for Bug#28643463 above.
+--echo #
+
+let $have_debug = `SELECT VERSION() LIKE '%debug%'`;
+if ($have_debug)
+{
+  SET DEBUG='+d,disable_sql_null_cmp';
+}
+
+--disable_result_log
+eval $prepare;
+--echo Testing: '= 'five''
+select @count:=count(*) from t1 where b = 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: '<> 'five''
+select @count:=count(*) from t1 where b <> 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: '< 'five''
+select @count:=count(*) from t1 where b < 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: '> 'five''
+select @count:=count(*) from t1 where b > 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: '<= 'five''
+select @count:=count(*) from t1 where b <= 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: '>= 'five''
+select @count:=count(*) from t1 where b >= 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: 'like 'five''
+select @count:=count(*) from t1 where b like 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: 'not like 'five''
+select @count:=count(*) from t1 where b not like 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: 'not <column> like 'five''
+select @count:=count(*) from t1 where not b like 'five';
+--enable_result_log
+eval $verify_row_count;
+
+--disable_result_log
+eval $prepare;
+--echo Testing: 'not <column> not like 'five''
+select @count:=count(*) from t1 where not b not like 'five';
+--enable_result_log
+eval $verify_row_count;
+
+if ($have_debug)
+{
+  SET DEBUG='-d,disable_sql_null_cmp';
+}
+
+--echo #
 --echo # Bug#29231709 NULL VALUES (still) NOT FILTERED OUT BY PUSHED CONDITIONS
 --echo #
 
@@ -3860,3 +3950,66 @@ DROP FUNCTION get_column;
 DROP TABLE t1;
 
 --enable_query_log
+
+
+--echo #
+--echo # Bug#32924533 Conditions not pushed down to tables inside views and table-subqueries
+--echo #
+
+create table t1 (
+  a int not null,
+  b int not null,
+  c int not null,
+  d int not null
+) engine=ndbcluster;
+
+insert into t1 values
+(1,1,1,1), (2,2,2,2), (3,3,3,3), (4,4,4,4),
+(1,2,5,1), (1,3,1,2), (1,4,2,3),
+(2,1,3,4), (2,3,4,5), (2,4,5,1),
+(3,1,1,2), (3,2,2,3), (3,4,3,4),
+(4,1,4,5), (4,2,5,1), (4,3,1,2);
+
+create view v1(a,b,c,d) as
+  select a,b,c,d from t1;
+
+# The condition refering the view should be pushed down to t1
+# referred by the view as a pushed condition - NOT end up as
+# a server side FILTER on the full t1 table scan.
+
+--replace_regex /  \(cost=.*//
+explain format=tree
+  select * from v1
+  where v1.d < 5;
+
+--replace_regex /  \(cost=.*//
+explain format=tree
+  select * from v1
+  where v1.d < v1.c;
+
+--replace_regex /  \(cost=.*//
+explain format=tree
+  select * from t1,v1
+  where v1.d < 5;
+
+# Similar query where the view is replaced with its equivalent table subquery:
+--replace_regex /  \(cost=.*//
+explain format=tree
+  select * from
+    (select a,b,c,d from t1) as v1(a,b,c,d)
+  where v1.d < 5;
+
+--replace_regex /  \(cost=.*//
+explain format=tree
+  select * from
+    (select a,b,c,d from t1) as v1(a,b,c,d)
+  where v1.d < v1.c;
+
+--replace_regex /  \(cost=.*//
+explain format=tree
+  select * from t1,
+    (select a,b,c,d from t1) as v1(a,b,c,d)
+  where v1.d < 5;
+
+drop view v1;
+drop table t1;

@@ -223,7 +223,7 @@ class MySQL_check {
     return res;
   }
 
-  void comma_seperated_join(std::vector<dd::String_type> &list,
+  void comma_separated_join(std::vector<dd::String_type> &list,
                             dd::String_type &dest) {
     dest = list[0];
     for (auto it = list.begin() + 1; it != list.end(); it++) dest += "," + *it;
@@ -351,7 +351,7 @@ class MySQL_check {
 
     if (repairs.size() == 0) return false;
     dd::String_type tables;
-    comma_seperated_join(repairs, tables);
+    comma_separated_join(repairs, tables);
 
     Ed_connection con(thd);
     LEX_STRING str;
@@ -830,18 +830,23 @@ bool upgrade_system_schemas(THD *thd) {
 
   bootstrap_error_handler.set_log_error(false);
   bool err =
-      fix_mysql_tables(thd) || fix_sys_schema(thd) ||
-      upgrade_help_tables(thd) ||
-      (DBUG_EVALUATE_IF(
-           "force_fix_user_schemas", true,
-           dd::bootstrap::DD_bootstrap_ctx::instance()
-               .is_server_upgrade_from_before(bootstrap::SERVER_VERSION_80011))
-           ? check.check_all_schemas(thd)
-           : check.check_system_schemas(thd)) ||
-      check.repair_tables(thd) ||
-      dd::tables::DD_properties::instance().set(thd, "MYSQLD_VERSION_UPGRADED",
-                                                MYSQL_VERSION_ID);
-
+      fix_mysql_tables(thd) || fix_sys_schema(thd) || upgrade_help_tables(thd);
+  if (!err) {
+    /*
+      Initialize structures necessary for federated server from mysql.servers
+      table.
+    */
+    servers_init(thd);
+    err = (DBUG_EVALUATE_IF("force_fix_user_schemas", true,
+                            dd::bootstrap::DD_bootstrap_ctx::instance()
+                                .is_server_upgrade_from_before(
+                                    bootstrap::SERVER_VERSION_80011))
+               ? check.check_all_schemas(thd)
+               : check.check_system_schemas(thd)) ||
+          check.repair_tables(thd) ||
+          dd::tables::DD_properties::instance().set(
+              thd, "MYSQLD_VERSION_UPGRADED", MYSQL_VERSION_ID);
+  }
   create_upgrade_file();
   bootstrap_error_handler.set_log_error(true);
 

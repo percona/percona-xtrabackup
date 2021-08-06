@@ -1036,7 +1036,7 @@ class Ha_clone_cbk {
   virtual int apply_buffer_cbk(uchar *&to_buffer, uint &len) = 0;
 
   /** virtual destructor. */
-  virtual ~Ha_clone_cbk() {}
+  virtual ~Ha_clone_cbk() = default;
 
   /** Set current storage engine handlerton.
   @param[in]  hton  SE handlerton */
@@ -2201,6 +2201,7 @@ using compare_secondary_engine_cost_t = bool (*)(THD *thd, const JOIN &join,
   better match the costs of the access path in the secondary engine. It can
   change any of the following AccessPath members:
 
+  - init_once_cost
   - init_cost
   - cost
   - cost_before_filter
@@ -2234,6 +2235,30 @@ using compare_secondary_engine_cost_t = bool (*)(THD *thd, const JOIN &join,
 */
 using secondary_engine_modify_access_path_cost_t = bool (*)(
     THD *thd, const JoinHypergraph &hypergraph, AccessPath *access_path);
+
+// Capabilities (bit flags) for secondary engines.
+using SecondaryEngineFlags = uint64_t;
+enum class SecondaryEngineFlag : SecondaryEngineFlags {
+  SUPPORTS_HASH_JOIN = 0,
+  SUPPORTS_NESTED_LOOP_JOIN = 1,
+
+  // If this flag is set, aggregation (GROUP BY and DISTINCT) do not require
+  // ordered inputs and create unordered outputs. This is typically the case
+  // if they are implemented using hash-based techniques.
+  AGGREGATION_IS_UNORDERED = 2
+};
+
+/// Creates an empty bitmap of access path types. This is the base
+/// case for the function template with the same name below.
+inline constexpr SecondaryEngineFlags MakeSecondaryEngineFlags() { return 0; }
+
+/// Creates a bitmap representing a set of access path types.
+template <typename... Args>
+constexpr SecondaryEngineFlags MakeSecondaryEngineFlags(
+    SecondaryEngineFlag flag1, Args... rest) {
+  return (uint64_t{1} << static_cast<int>(flag1)) |
+         MakeSecondaryEngineFlags(rest...);
+}
 
 // FIXME: Temporary workaround to enable storage engine plugins to use the
 // before_commit hook. Remove after WL#11320 has been completed.
@@ -2559,15 +2584,11 @@ struct handlerton {
   */
   compare_secondary_engine_cost_t compare_secondary_engine_cost;
 
-  /// Bitmap which contains the supported access path types for a
-  /// secondary storage engine when used with the hypergraph join
+  /// Bitmap which contains the supported join types and other flags
+  /// for a secondary storage engine when used with the hypergraph join
   /// optimizer. If it is empty, it means that the secondary engine
   /// does not support the hypergraph join optimizer.
-  ///
-  /// It is currently only used to limit which join types the join
-  /// optimizer can choose from. Bits that represent access path types
-  /// that are not joins, are currently ignored.
-  uint64_t secondary_engine_supported_access_paths;
+  SecondaryEngineFlags secondary_engine_flags;
 
   /// Pointer to a function that evaluates the cost of executing an access path
   /// in a secondary storage engine.
@@ -2874,11 +2895,11 @@ struct KEY_PAIR {
 
 class inplace_alter_handler_ctx {
  public:
-  inplace_alter_handler_ctx() {}
+  inplace_alter_handler_ctx() = default;
 
   virtual void set_shared_data(
       const inplace_alter_handler_ctx *ctx MY_ATTRIBUTE((unused))) {}
-  virtual ~inplace_alter_handler_ctx() {}
+  virtual ~inplace_alter_handler_ctx() = default;
 };
 
 /**
@@ -3391,19 +3412,6 @@ struct RANGE_SEQ_IF {
       0 - The record shall be left in the stream
   */
   bool (*skip_record)(range_seq_t seq, char *range_info, uchar *rowid);
-
-  /*
-    Check if the record combination matches the index condition
-    SYNOPSIS
-      skip_index_tuple()
-        seq         The value returned by RANGE_SEQ_IF::init()
-        range_info  Information about the next range
-
-    RETURN
-      0 - The record combination satisfies the index condition
-      1 - Otherwise
-  */
-  bool (*skip_index_tuple)(range_seq_t seq, char *range_info);
 };
 
 /**
@@ -3664,8 +3672,8 @@ uint calculate_key_len(TABLE *table, uint key, key_part_map keypart_map);
 /** Base class to be used by handlers different shares */
 class Handler_share {
  public:
-  Handler_share() {}
-  virtual ~Handler_share() {}
+  Handler_share() = default;
+  virtual ~Handler_share() = default;
 };
 
 /**
@@ -4802,11 +4810,13 @@ class handler {
     use
     @param[in]  sampling_method     sampling method to be used; currently only
     SYSTEM sampling is supported
+    @param[in]  tablesample         true if the sampling is for tablesample
 
     @return 0 for success, else one of the HA_xxx values in case of error.
   */
   int ha_sample_init(void *&scan_ctx, double sampling_percentage,
-                     int sampling_seed, enum_sampling_method sampling_method);
+                     int sampling_seed, enum_sampling_method sampling_method,
+                     const bool tablesample);
 
   /**
     Get the next record for sampling.
@@ -5129,7 +5139,6 @@ class handler {
   int compare_key_icp(const key_range *range) const;
   int compare_key_in_buffer(const uchar *buf) const;
   virtual int ft_init() { return HA_ERR_WRONG_COMMAND; }
-  void ft_end() { ft_handler = nullptr; }
   virtual FT_INFO *ft_init_ext(uint flags MY_ATTRIBUTE((unused)),
                                uint inx MY_ATTRIBUTE((unused)),
                                String *key MY_ATTRIBUTE((unused))) {
@@ -6275,10 +6284,12 @@ class handler {
   @param[in]  sampling_seed       random seed
   @param[in]  sampling_method     sampling method to be used; currently only
   SYSTEM sampling is supported
+  @param[in]  tablesample         true if the sampling is for tablesample
   @return 0 for success, else failure. */
   virtual int sample_init(void *&scan_ctx, double sampling_percentage,
                           int sampling_seed,
-                          enum_sampling_method sampling_method);
+                          enum_sampling_method sampling_method,
+                          const bool tablesample);
 
   /** Get the next record for sampling.
   @param[in] scan_ctx   Scan context of the sampling

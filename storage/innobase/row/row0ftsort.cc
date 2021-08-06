@@ -253,7 +253,7 @@ dberr_t row_fts_psort_info_init(trx_t *trx, row_merge_dup_t *dup,
   each parallel sort thread. Each "sort bucket" holds records for
   a particular "FTS index partition" */
   for (j = 0; j < fts_sort_pll_degree; j++) {
-    UT_LIST_INIT(psort_info[j].fts_doc_list, &fts_doc_item_t::doc_list);
+    UT_LIST_INIT(psort_info[j].fts_doc_list);
 
     for (i = 0; i < FTS_NUM_AUX_INDEX; i++) {
       psort_info[j].merge_file[i] =
@@ -272,11 +272,8 @@ dberr_t row_fts_psort_info_init(trx_t *trx, row_merge_dup_t *dup,
       }
 
       /* Need to align memory for O_DIRECT write */
-      psort_info[j].block_alloc[i] =
-          static_cast<row_merge_block_t *>(ut_malloc_nokey(block_size + 1024));
-
-      psort_info[j].merge_block[i] = static_cast<row_merge_block_t *>(
-          ut_align(psort_info[j].block_alloc[i], 1024));
+      psort_info[j].merge_block[i] =
+          static_cast<row_merge_block_t *>(ut::aligned_alloc(block_size, 1024));
 
       if (!psort_info[j].merge_block[i]) {
         error = DB_OUT_OF_MEMORY;
@@ -318,7 +315,7 @@ void row_fts_psort_info_destroy(
           row_merge_file_destroy(psort_info[j].merge_file[i]);
         }
 
-        ut_free(psort_info[j].block_alloc[i]);
+        ut::aligned_free(psort_info[j].merge_block[i]);
         ut_free(psort_info[j].merge_file[i]);
       }
 
@@ -476,8 +473,6 @@ static ibool row_merge_fts_doc_tokenize(
 
     if (parser != nullptr) {
       if (t_ctx->processed_len == 0) {
-        UT_LIST_INIT(t_ctx->fts_token_list, &row_fts_token_t::token_list);
-
         /* Parse the whole doc and cache tokens */
         row_merge_fts_doc_tokenize_by_parser(doc, parser, t_ctx);
 
@@ -670,8 +665,7 @@ static ibool row_merge_fts_doc_tokenize(
 }
 
 /** Get next doc item from fts_doc_list */
-UNIV_INLINE
-void row_merge_fts_get_next_doc_item(
+static inline void row_merge_fts_get_next_doc_item(
     fts_psort_t *psort_info,   /*!< in: psort_info */
     fts_doc_item_t **doc_item) /*!< in/out: doc item */
 {

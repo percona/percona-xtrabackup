@@ -270,9 +270,23 @@ IF(WIN32)
   LIST(APPEND LIBS_TO_MERGE auth_win_client)
 ENDIF()
 
+<<<<<<< HEAD
 # Merge several convenience libraries into one big mysqlclient
 MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS_TO_MERGE} COMPONENT Development SKIP_INSTALL)
 TARGET_LINK_LIBRARIES(mysqlclient PRIVATE ${LIBS_TO_LINK})
+=======
+# LDAP authentication SASL client plug-in
+ADD_SUBDIRECTORY(authentication_ldap)
+
+# authentication kerberos client plug-in
+ADD_SUBDIRECTORY(authentication_kerberos)
+
+# Merge several convenience libraries into one big mysqlclient
+MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS_TO_MERGE}
+  COMPONENT Development
+  LINK_LIBRARIES ${LIBS_TO_LINK}
+  )
+>>>>>>> mysql-8.0.26
 
 # Visual Studio users need debug  static library for debug projects
 IF(MSVC)
@@ -305,6 +319,18 @@ IF(UNIX)
   ENDMACRO()
 ENDIF()
 
+IF(UNIX)
+  SET(OS_SHARED_LIB_VERSION "${SHARED_LIB_MAJOR_VERSION}")
+  IF(NOT FREEBSD AND NOT APPLE)
+    STRING_APPEND(OS_SHARED_LIB_VERSION
+      ".${SHARED_LIB_MINOR_VERSION}.${SHARED_LIB_PATCH_VERSION}")
+  ENDIF()
+  # Name of shared library is libmysqlclient on Unix
+  SET(UNIX_OUTPUT_NAME OUTPUT_NAME mysqlclient)
+  SET(UNIX_VERSION     VERSION     "${OS_SHARED_LIB_VERSION}")
+  SET(UNIX_SOVERSION   SOVERSION   "${SHARED_LIB_MAJOR_VERSION}")
+ENDIF()
+
 # Merge several convenience libraries into one big mysqlclient
 # and link them together into shared library.
 MERGE_LIBRARIES_SHARED(libmysql ${LIBS_TO_MERGE}
@@ -312,59 +338,38 @@ MERGE_LIBRARIES_SHARED(libmysql ${LIBS_TO_MERGE}
   ${CLIENT_API_FUNCTIONS}
   ${CLIENT_API_FUNCTIONS_UNDOCUMENTED}
   ${CLIENT_API_NONBLOCKING_FUNCTIONS}
+<<<<<<< HEAD
   COMPONENT SharedLibraries SKIP_INSTALL)
 TARGET_LINK_LIBRARIES(libmysql PRIVATE ${LIBS_TO_LINK})
+=======
+  COMPONENT SharedLibraries
+  LINK_LIBRARIES ${LIBS_TO_LINK}
+  ${UNIX_OUTPUT_NAME}
+  ${UNIX_SOVERSION}
+  ${UNIX_VERSION}
+  )
+>>>>>>> mysql-8.0.26
 
 IF(LINUX_STANDALONE AND KERBEROS_CUSTOM_LIBRARY)
   ADD_DEPENDENCIES(libmysql ${kerberos_target})
   ADD_DEPENDENCIES(mysqlclient ${kerberos_target})
 ENDIF()
 
-IF(WIN32)
-  # So that libmysql_api_test below can find the .dll
-  ADD_CUSTOM_COMMAND(TARGET libmysql POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_BINARY_DIR}/library_output_directory/${CMAKE_CFG_INTDIR}/libmysql.dll"
-    "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/libmysql.dll"
-    )
-ENDIF()
-
 IF(UNIX)
-  # libtool compatability
-  IF(FREEBSD OR APPLE)
-    SET(OS_SHARED_LIB_VERSION "${SHARED_LIB_MAJOR_VERSION}")
-  ELSE()
-    SET(OS_SHARED_LIB_VERSION
-      "${SHARED_LIB_MAJOR_VERSION}.${SHARED_LIB_MINOR_VERSION}.${SHARED_LIB_PATCH_VERSION}")
-  ENDIF()
-  # Name of shared library is mysqlclient on Unix
-  SET_TARGET_PROPERTIES(libmysql PROPERTIES 
-    OUTPUT_NAME mysqlclient 
-    VERSION "${OS_SHARED_LIB_VERSION}" 
-    SOVERSION "${SHARED_LIB_MAJOR_VERSION}")
-  CONFIGURE_FILE(libmysql.ver.in ${CMAKE_CURRENT_BINARY_DIR}/libmysql.ver)
-
-  IF(APPLE)
-    SET_TARGET_PROPERTIES(libmysql PROPERTIES
-      MACOSX_RPATH ON 
-      )
-  ENDIF()
-
-  ADD_INSTALL_RPATH_FOR_OPENSSL(libmysql)
-
   IF(LINK_FLAG_Z_DEFS)
     MY_TARGET_LINK_OPTIONS(libmysql "LINKER:${LINK_FLAG_Z_DEFS}")
   ENDIF()
 
   IF(LINUX)
+    CONFIGURE_FILE(libmysql.ver.in ${CMAKE_CURRENT_BINARY_DIR}/libmysql.ver)
     MY_TARGET_LINK_OPTIONS(libmysql
       "LINKER:--version-script=${CMAKE_CURRENT_BINARY_DIR}/libmysql.ver")
   ENDIF() 
+
   # clean direct output needs to be set several targets have the same name
   #(mysqlclient in this case)
   SET_TARGET_PROPERTIES(mysqlclient PROPERTIES CLEAN_DIRECT_OUTPUT 1)
   SET_TARGET_PROPERTIES(libmysql PROPERTIES CLEAN_DIRECT_OUTPUT 1)
-
 ENDIF()
 
 #

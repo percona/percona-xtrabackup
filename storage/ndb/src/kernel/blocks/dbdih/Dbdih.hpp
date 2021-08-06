@@ -48,8 +48,6 @@
 /*###################*/
 /* FILE SYSTEM FLAGS */
 /*###################*/
-#define ZLIST_OF_PAIRS 0
-#define ZLIST_OF_PAIRS_SYNCH 16
 #define ZOPEN_READ_WRITE 2
 #define ZCREATE_READ_WRITE 0x302
 #define ZCLOSE_NO_DELETE 0
@@ -2263,7 +2261,7 @@ private:
     /*       GLOBAL CHECKPOINTS. WE CAN HOWEVER ONLY HANDLE TWO SUCH COPY AT  */
     /*       THE TIME. THUS WE HAVE TO KEEP WAIT INFORMATION IN THIS VARIABLE.*/
     /*------------------------------------------------------------------------*/
-    STATIC_CONST( WAIT_CNT = 2 );
+    static constexpr Uint32 WAIT_CNT = 2;
     CopyGCIReq::CopyReason m_waiting[WAIT_CNT];
   } c_copyGCIMaster;
   

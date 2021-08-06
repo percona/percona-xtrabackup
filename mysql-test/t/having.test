@@ -757,6 +757,7 @@ SELECT * FROM series, seq_calls;
 # and send() both evaluate next_seq_value() instead
 # of sharing the result between them. See the comment in
 # JOIN::create_access_path_for_join() for more details.
+--skip_if_hypergraph  # Depends on the query plan, no guarantees about side effects in HAVING aliases.
 SELECT t, next_seq_value() r FROM t1 FORCE INDEX(t)
        GROUP BY t HAVING r = 1  ORDER BY t1.u;
 
@@ -939,4 +940,11 @@ CREATE VIEW v AS SELECT a FROM t HAVING 0<>1;
 DELETE FROM v LIMIT 1;
 DROP VIEW v;
 DROP TABLE t;
+
+--echo # Bug#32239484: Item_sum_json::val_json: assertion `!m_wrapper->empty()'
+
+SELECT 1 HAVING COUNT(*) = 1;
+SELECT 1 WHERE TRUE HAVING COUNT(*) = 1;
+SELECT 1 WHERE FALSE HAVING COUNT(*) = 0;
+SELECT 1 HAVING json_objectagg(utc_date(), 1416) <> 0;
 

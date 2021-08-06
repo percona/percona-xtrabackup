@@ -210,6 +210,7 @@ IF(UNIX)
       )
     EXEC_PROGRAM(${MY_UNAME} ARGS -r OUTPUT_VARIABLE MY_HOST_SYSTEM_VERSION)
   ENDIF()
+  FIND_PROGRAM(MY_DPKG_BUILDFLAGS dpkg-buildflags /bin /usr/bin)
   FIND_PROGRAM(MY_RPM rpm /bin /usr/bin)
   IF(MY_RPM)
     EXECUTE_PROCESS(COMMAND ${MY_RPM} -qf /
@@ -230,7 +231,7 @@ ENDIF()
 # Add all policies *after* CMAKE_MINIMUM_REQUIRED
 # Repeating CMAKE_MINIMUM_REQUIRED here will load defaults for 3.5.1
 CMAKE_MINIMUM_REQUIRED(VERSION 3.5.1)
-INCLUDE(cmake_policies)
+INCLUDE(cmake_policies NO_POLICY_SCOPE)
 
 IF(MY_HOST_SYSTEM_NAME MATCHES "Linux")
   # Trust 'rpm -qf /' rather than 'uname -s'
@@ -240,6 +241,38 @@ IF(MY_HOST_SYSTEM_NAME MATCHES "Linux")
   IF(CMAKE_MATCH_1)
     SET(LINUX_RHEL 1)
     SET(LINUX_RHEL${CMAKE_MATCH_1} 1)
+  ENDIF()
+ENDIF()
+
+IF(NOT LINUX_RHEL AND MY_HOST_SYSTEM_NAME MATCHES "Linux")
+  IF(EXISTS "/etc/os-release")
+    FILE(READ "/etc/os-release" MY_OS_RELEASE)
+    IF(MY_OS_RELEASE MATCHES "Debian")
+      SET(LINUX_DEBIAN 1)
+    ELSEIF(MY_OS_RELEASE MATCHES "Ubuntu")
+      SET(LINUX_UBUNTU 1)
+      IF(MY_OS_RELEASE MATCHES "16.04")
+        SET(LINUX_UBUNTU_16_04 1)
+      ELSEIF(MY_OS_RELEASE MATCHES "18.04")
+        SET(LINUX_UBUNTU_18_04 1)
+      ENDIF()
+    ENDIF()
+  ENDIF()
+ENDIF()
+
+IF(EXISTS "/etc/SuSE-release")
+  SET(LINUX_SUSE 1)
+ENDIF()
+
+IF(LINUX_SUSE)
+  FILE(READ "/etc/SuSE-release" MY_OS_RELEASE)
+  IF(MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 12")
+    SET(LINUX_SUSE_12 1)
+  ELSEIF(MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 15" OR
+      MY_OS_RELEASE MATCHES "openSUSE .* 15")
+    SET(LINUX_SUSE_15 1)
+  ELSE()
+    MESSAGE(WARNING "Unknown SUSE version.")
   ENDIF()
 ENDIF()
 
@@ -277,33 +310,68 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
       ELSE()
-        MESSAGE(WARNING "Could not find devtoolset compiler in ${ALTERNATIVE_PATHS}")
-        MESSAGE(FATAL_ERROR "Please set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
+        MESSAGE(WARNING
+          "Could not find devtoolset compiler in ${ALTERNATIVE_PATHS}")
+        MESSAGE(FATAL_ERROR
+          "Please set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
       ENDIF()
 
-    ELSEIF(MY_HOST_SYSTEM_NAME MATCHES "Linux" AND
-        EXISTS "/etc/os-release")
-      FILE(READ "/etc/os-release" MY_OS_RELEASE)
-      IF (MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 12")
-        MESSAGE(STATUS "We need to look for a newer GCC on SLES 12")
+    ELSEIF(LINUX_UBUNTU_18_04)
+      MESSAGE(STATUS "Looking for gcc-8 on Ubuntu 18.04")
+      FIND_PROGRAM(ALTERNATIVE_GCC gcc-8
+        NO_DEFAULT_PATH
+        PATHS "/usr/bin")
+      FIND_PROGRAM(ALTERNATIVE_GPP g++-8
+        NO_DEFAULT_PATH
+        PATHS "/usr/bin")
+      IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
+        SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
+        SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
+        MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
+        MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
+      ELSE()
+        MESSAGE(WARNING "Could not find gcc-8")
+        MESSAGE(FATAL_ERROR
+          "Please do 'apt install gcc-8 g++-8'\n"
+          "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
+      ENDIF()
 
-        FIND_PROGRAM(ALTERNATIVE_GCC gcc-7
+    ELSEIF(LINUX_SUSE_12 OR LINUX_SUSE_15)
+      MESSAGE(STATUS "We need to look for a newer GCC on SUSE Linux.")
+      IF(LINUX_SUSE_12)
+        FIND_PROGRAM(ALTERNATIVE_GCC gcc-10
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(ALTERNATIVE_GPP g++-7
+        FIND_PROGRAM(ALTERNATIVE_GPP g++-10
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
-          SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
-          SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
-          MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
-          MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
-          # Use the new ABI so that std::string can be used with allocators
-          # that are not default-constructible (e.g. Memroot_allocator)
+      ELSEIF(LINUX_SUSE_15)
+        FIND_PROGRAM(ALTERNATIVE_GCC gcc-9
+          NO_DEFAULT_PATH
+          PATHS "/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_GPP g++-9
+          NO_DEFAULT_PATH
+          PATHS "/usr/bin")
+      ENDIF()
+      IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
+        SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
+        SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
+        MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
+        MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
+        # Use the new ABI so that std::string can be used with allocators
+        # that are not default-constructible (e.g. Memroot_allocator)
+        IF(LINUX_SUSE_12)
           ADD_DEFINITIONS(-D_GLIBCXX_USE_CXX11_ABI=1)
+        ENDIF()
+      ELSE()
+        MESSAGE(WARNING "Could not find newer gcc.")
+        IF(LINUX_SUSE_12)
+          MESSAGE(FATAL_ERROR "Please do zypper install gcc10 gcc10-c++\n"
+            "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
         ELSE()
-          MESSAGE(WARNING "Could not find newer gcc")
-	ENDIF()
+          MESSAGE(FATAL_ERROR "Please do zypper install gcc9 gcc9-c++\n"
+            "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
+        ENDIF()
       ENDIF()
     ENDIF()
   ENDIF()
@@ -439,6 +507,10 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   SET(MY_COMPILER_IS_CLANG 1)
 ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   SET(MY_COMPILER_IS_GNU 1)
+  IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9 AND
+      NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
+    SET(MY_COMPILER_IS_GNU_8 1)
+  ENDIF()
 ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
   SET(MY_COMPILER_IS_SUNPRO 1)
 ENDIF()
@@ -469,6 +541,7 @@ OPTION(INSTALL_STATIC_LIBRARIES "Install static libraries" ON)
 SET(MYSQL_MACHINE_TYPE ${CMAKE_SYSTEM_PROCESSOR})
 
 SET(KNOWN_64BIT_ARCHITECTURES
+  arm64
   aarch64
   ppc64
   ppc64le
@@ -515,6 +588,42 @@ MESSAGE(STATUS "SIZEOF_VOIDP ${SIZEOF_VOIDP}")
 # even if we have configured for 64bit build....
 SET(CMAKE_SIZEOF_VOID_P ${SIZEOF_VOIDP})
 
+INCLUDE(compile_flags)
+INCLUDE(install_layout)
+
+# Add RPM or DEB platform flags for STANDALONE build.
+# Not for DEBUG builds, since both platforms use -O2 and _FORTIFY_SOURCE.
+IF(LINUX_STANDALONE AND (LINUX_DEB_PLATFORM OR LINUX_RPM_PLATFORM))
+  IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
+    SET(WITH_PACKAGE_FLAGS_DEFAULT OFF)
+  ELSE()
+    SET(WITH_PACKAGE_FLAGS_DEFAULT ON)
+  ENDIF()
+  OPTION(WITH_PACKAGE_FLAGS
+    "Use DEB/RPM compiler flags" ${WITH_PACKAGE_FLAGS_DEFAULT})
+ENDIF()
+
+# Do not set package specific flags if language flags already provided
+# in environment or on command line.
+# And only for gcc (not clang).
+IF(MY_COMPILER_IS_GNU AND WITH_PACKAGE_FLAGS AND
+    NOT CMAKE_C_FLAGS AND NOT CMAKE_CXX_FLAGS)
+  IF(LINUX_RPM_PLATFORM)
+    IF(MY_RPM)
+      ADD_LINUX_RPM_FLAGS()
+    ELSE()
+      MESSAGE(WARNING "rpm executable not found")
+    ENDIF()
+  ELSEIF(LINUX_DEB_PLATFORM)
+    IF(MY_DPKG_BUILDFLAGS)
+      ADD_LINUX_DEB_FLAGS()
+    ELSE()
+      MESSAGE(WARNING "dpkg-buildflags executable not found")
+      MESSAGE(WARNING "Please do 'apt install dpkg-dev'")
+    ENDIF()
+  ENDIF()
+ENDIF()
+
 IF(WITH_DEFAULT_COMPILER_OPTIONS)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/compiler_options.cmake)
 ENDIF()
@@ -537,7 +646,6 @@ ENDIF()
 INCLUDE(pkg-config)
 INCLUDE(character_sets)
 INCLUDE(cmake_parse_arguments)
-INCLUDE(compile_flags)
 INCLUDE(link_options)
 INCLUDE(malloc_utils)
 INCLUDE(cpu_info)
@@ -559,7 +667,6 @@ INCLUDE(libutils)
 INCLUDE(plugin)
 INCLUDE(component)
 INCLUDE(install_macros)
-INCLUDE(install_layout)
 INCLUDE(mysql_add_executable)
 INCLUDE(curl)
 INCLUDE(rapidjson)
@@ -634,6 +741,36 @@ ENDIF()
 OPTION(WITH_AUTHENTICATION_LDAP
   "Report error if the LDAP authentication plugin cannot be built."
   ${WITH_AUTHENTICATION_LDAP_DEFAULT})
+
+# Currently only supported on Linux
+IF(WITH_INTERNAL AND LINUX)
+  SET(WITH_AUTHENTICATION_KERBEROS_DEFAULT ON)
+ELSE()
+  SET(WITH_AUTHENTICATION_KERBEROS_DEFAULT OFF)
+ENDIF()
+
+OPTION(WITH_AUTHENTICATION_KERBEROS
+  "Report error if the Kerberos authentication plugin cannot be built."
+  ${WITH_AUTHENTICATION_KERBEROS_DEFAULT})
+
+# Default ON if we are building server-side plugins.
+# Also default ON in pushbuild, for our community builds.
+IF(WITH_AUTHENTICATION_KERBEROS OR
+    WITH_AUTHENTICATION_LDAP OR
+    DEFINED ENV{PB2WORKDIR})
+  SET(WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT ON)
+ELSE()
+  SET(WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT OFF)
+ENDIF()
+
+# Enable building of
+# The KERBEROS client authentication plugin
+#   authentication_kerberos_client.so
+# The LDAP client authentication plugin
+#   authentication_ldap_sasl_client.so
+OPTION(WITH_AUTHENTICATION_CLIENT_PLUGINS
+  "Build client-side authentication plugins, even if server-side are disabled"
+  ${WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT})
 
 # On windows we need a non-standard package for CURL.
 IF(WITH_INTERNAL AND UNIX)
@@ -1438,6 +1575,15 @@ IF(WITH_AUTHENTICATION_LDAP)
   ENDIF()
 ENDIF()
 
+IF(WITH_AUTHENTICATION_KERBEROS)
+  SET(KERBEROS_GSSAPI_WARN_GIVEN)
+  WARN_MISSING_SYSTEM_KERBEROS_GSSAPI(KERBEROS_GSSAPI_WARN_GIVEN)
+  IF(KERBEROS_GSSAPI_WARN_GIVEN)
+    MESSAGE(WARNING
+      "-DWITH_AUTHENTICATION_KERBEROS=ON, but missing system libraries")
+  ENDIF()
+ENDIF()
+
 # Add system/bundled editline.
 MYSQL_CHECK_EDITLINE()
 # Add libevent
@@ -1548,6 +1694,13 @@ INCLUDE(maintainer)
 IF(WITH_UNIT_TESTS)
   ENABLE_TESTING()
   INCLUDE(googletest)
+ELSE()
+  # In case we switch from ON to OFF, we do not want ctest
+  # to pick up any obsolete test executables.
+  IF(EXISTS "${CMAKE_BINARY_DIR}/CTestTestfile.cmake")
+    FILE(GLOB_RECURSE CTEST_TESTFILES "${CMAKE_BINARY_DIR}/CTestTestfile.cmake")
+    FILE(REMOVE ${CTEST_TESTFILES})
+  ENDIF()
 ENDIF()
 
 # The hypergraph optimizer is default on only for debug builds.
@@ -1645,6 +1798,13 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS)
       )
     IF(HAVE_LIBNUMA)
       TARGET_LINK_LIBRARIES(server_unittest_library PUBLIC numa)
+    ENDIF()
+    IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+      # We get ODR violations because of multiple bison parsers.
+      MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
+      IF(HAS_WARN_FLAG)
+        MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
+      ENDIF()
     ENDIF()
   ELSE()
     SET(DUMMY_SOURCE_FILE ${CMAKE_BINARY_DIR}/server_unittest_library.c)

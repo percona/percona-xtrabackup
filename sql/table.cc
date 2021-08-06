@@ -157,7 +157,8 @@ LEX_CSTRING PARSE_GCOL_KEYWORD = {STRING_WITH_LEN("parse_gcol_expr")};
 
 static Item *create_view_field(THD *thd, TABLE_LIST *view, Item **field_ref,
                                const char *name,
-                               Name_resolution_context *context);
+                               Name_resolution_context *context,
+                               Name_resolution_context *merged_derived_context);
 static void open_table_error(THD *thd, TABLE_SHARE *share, int error,
                              int db_errno);
 
@@ -1406,7 +1407,7 @@ static int open_binary_frm(THD *thd, TABLE_SHARE *share,
   int error, errarg = 0;
   uint new_frm_ver, field_pack_length, new_field_pack_flag;
   uint interval_count, interval_parts, read_length, int_length;
-  uint db_create_options, keys, key_parts, n_length;
+  uint db_create_options, keys, key_parts;
   uint key_info_length, com_length, null_bit_pos, gcol_screen_length;
   uint extra_rec_buf_length;
   uint i, j;
@@ -1525,21 +1526,21 @@ static int open_binary_frm(THD *thd, TABLE_SHARE *share,
     total_key_parts = key_parts + primary_key_parts * (keys - 1);
   } else
     total_key_parts = key_parts;
-  n_length = keys * sizeof(KEY) + total_key_parts * sizeof(KEY_PART_INFO);
 
   /*
     Allocate memory for the KEY object, the key part array, and the
     two rec_per_key arrays.
   */
-  if (!multi_alloc_root(&share->mem_root, &keyinfo,
-                        n_length + uint2korr(disk_buff + 4), &rec_per_key,
+  if (!multi_alloc_root(&share->mem_root, &rec_per_key,
                         sizeof(ulong) * total_key_parts, &rec_per_key_float,
                         sizeof(rec_per_key_t) * total_key_parts, NULL))
     goto err; /* purecov: inspected */
 
-  memset(keyinfo, 0, n_length);
-  share->key_info = keyinfo;
-  key_part = reinterpret_cast<KEY_PART_INFO *>(keyinfo + keys);
+  keyinfo = share->key_info = share->mem_root.ArrayAlloc<KEY>(keys);
+  if (keyinfo == nullptr) goto err;
+
+  key_part = share->mem_root.ArrayAlloc<KEY_PART_INFO>(total_key_parts);
+  if (key_part == nullptr) goto err;
 
   for (i = 0; i < keys; i++, keyinfo++) {
     keyinfo->table = nullptr;  // Updated in open_frm
@@ -1604,7 +1605,9 @@ static int open_binary_frm(THD *thd, TABLE_SHARE *share,
       share->key_parts += primary_key_parts;
     }
   }
-  keynames = (char *)key_part;
+
+  keynames = share->mem_root.ArrayAlloc<char>(uint2korr(disk_buff + 4));
+  if (keynames == nullptr) goto err;
   strpos += (my_stpcpy(keynames, (char *)strpos) - keynames) + 1;
 
   // reading index comments
@@ -1627,6 +1630,7 @@ static int open_binary_frm(THD *thd, TABLE_SHARE *share,
                                                       ? uint4korr(head + 47)
                                                       : uint2korr(head + 14))));
 
+  uint n_length;
   if ((n_length = uint4korr(head + 55))) {
     /* Read extra data segment */
     uchar *next_chunk, *buff_end;
@@ -4394,8 +4398,8 @@ void TABLE_LIST::reset() {
   // Reset connection to TABLE
   if (is_base_table()) table = nullptr;
 
-  // Reset is_schema_table_processed value(needed for I_S tables
-  schema_table_state = NOT_PROCESSED;
+  // Needed for I_S tables.
+  schema_table_filled = false;
 
   mdl_request.ticket = nullptr;
 
@@ -4575,6 +4579,10 @@ bool TABLE_LIST::create_field_translation(THD *thd) {
   field_translation = transl;
   field_translation_end = transl + field_count;
 
+  // We capture the context used to resolve the fields of the merged
+  // derived table. This context is used when the field needs to be cloned
+  // to facilitate condition pushdown (replace_view_refs_with_clone()).
+  m_merged_derived_context = &select->context;
   return false;
 }
 
@@ -5024,7 +5032,8 @@ Item *Natural_join_column::create_item(THD *thd) {
     assert(table_field == nullptr);
     Query_block *select = thd->lex->current_query_block();
     return create_view_field(thd, table_ref, &view_field->item,
-                             view_field->name, &select->context);
+                             view_field->name, &select->context,
+                             /*merged_derived_context=*/nullptr);
   }
   return table_field;
 }
@@ -5087,12 +5096,14 @@ const char *Field_iterator_view::name() { return ptr->name; }
 
 Item *Field_iterator_view::create_item(THD *thd) {
   Query_block *select = thd->lex->current_query_block();
-  return create_view_field(thd, view, &ptr->item, ptr->name, &select->context);
+  return create_view_field(thd, view, &ptr->item, ptr->name, &select->context,
+                           view->m_merged_derived_context);
 }
 
-static Item *create_view_field(THD *, TABLE_LIST *view, Item **field_ref,
-                               const char *name,
-                               Name_resolution_context *context) {
+static Item *create_view_field(
+    THD *, TABLE_LIST *view, Item **field_ref, const char *name,
+    Name_resolution_context *context,
+    Name_resolution_context *merged_derived_context) {
   DBUG_TRACE;
 
   Item *field = *field_ref;
@@ -5137,8 +5148,9 @@ static Item *create_view_field(THD *, TABLE_LIST *view, Item **field_ref,
           mistakes, such as forgetting to mark the use of a field in both
           read_set and write_set (may happen e.g in an UPDATE statement).
   */
-  Item *item = new Item_view_ref(context, field_ref, db_name, view->alias,
-                                 table_name, name, view);
+  Item *item =
+      new Item_view_ref(context, field_ref, db_name, view->alias, table_name,
+                        name, view, merged_derived_context);
   return item;
 }
 
@@ -5816,9 +5828,6 @@ void TABLE::mark_columns_per_binlog_row_image(THD *thd) {
 
 bool TABLE::alloc_tmp_keys(uint new_key_count, uint new_key_part_count,
                            bool modify_share) {
-  const size_t key_info_size = sizeof(KEY) * new_key_count;
-  const size_t key_part_size = sizeof(KEY_PART_INFO) * new_key_part_count;
-
   const uint old_key_count = s->keys;
   const uint old_key_part_count = s->key_parts;
 
@@ -5836,9 +5845,8 @@ bool TABLE::alloc_tmp_keys(uint new_key_count, uint new_key_part_count,
     if (old_key_count > 0 && old_key_names == nullptr)
       memcpy(&s->key_names->name, s->key_info->name, strlen(s->key_info->name));
 
-    s->key_info = static_cast<KEY *>(s->mem_root.Alloc(key_info_size));
+    s->key_info = s->mem_root.ArrayAlloc<KEY>(new_key_count);
     if (s->key_info == nullptr) return true; /* purecov: inspected */
-    memset(s->key_info, 0, key_info_size);
 
     ulong *old_rec_per_key = s->base_rec_per_key;
     rec_per_key_t *old_rec_per_key_float = s->base_rec_per_key_float;
@@ -5873,16 +5881,14 @@ bool TABLE::alloc_tmp_keys(uint new_key_count, uint new_key_part_count,
 
   // Allocate key info objects for TABLE
   KEY *old_key_info = key_info;
-  key_info = static_cast<KEY *>(s->mem_root.Alloc(key_info_size));
+  key_info = s->mem_root.ArrayAlloc<KEY>(new_key_count);
   if (key_info == nullptr) return true;
-  memset(key_info, 0, key_info_size);
 
   /*
     Allocate only key parts; key names and rec_per_key are shared
     with TABLE_SHARE object.
   */
-  base_key_parts =
-      static_cast<KEY_PART_INFO *>(s->mem_root.Alloc(key_part_size));
+  base_key_parts = s->mem_root.ArrayAlloc<KEY_PART_INFO>(new_key_part_count);
   if (base_key_parts == nullptr) return true; /* purecov: inspected */
 
   KEY_PART_INFO *key_part = base_key_parts;

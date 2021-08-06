@@ -522,6 +522,10 @@ struct force_constexpr {
 
 #endif /* __GNUG__ == 5 */
 
+#else
+
+#define UT_NEW_THIS_FILE_PSI_KEY PSI_NOT_INSTRUMENTED
+
 #endif /* UNIV_PFS_MEMORY */
 
 /** A structure that holds the necessary data for performance schema
@@ -585,38 +589,27 @@ class ut_allocator {
   static_assert(alignof(T) <= alignof(std::max_align_t),
                 "ut_allocator does not support over-aligned types. Use "
                 "aligned_memory or another similar allocator for this type.");
+
   /** Default constructor.
   @param[in] key  performance schema key. */
-  explicit ut_allocator(PSI_memory_key key = PSI_NOT_INSTRUMENTED)
-      :
 #ifdef UNIV_PFS_MEMORY
-        m_key(key),
+  explicit ut_allocator(PSI_memory_key key = UT_NEW_THIS_FILE_PSI_KEY)
+      : m_key(key)
+#else
+  explicit ut_allocator(PSI_memory_key key = PSI_NOT_INSTRUMENTED)
 #endif /* UNIV_PFS_MEMORY */
-        m_oom_fatal(true) {
+  {
   }
 
   /** Constructor from allocator of another type.
   @param[in] other  the allocator to copy. */
   template <class U>
   ut_allocator(const ut_allocator<U> &other)
-      :
 #ifdef UNIV_PFS_MEMORY
-        m_key(other.get_mem_key()),
+      : m_key(other.get_mem_key())
 #endif /* UNIV_PFS_MEMORY */
-        m_oom_fatal(other.is_oom_fatal()) {
+  {
   }
-
-  /** When out of memory (OOM) happens, report error and do not
-  make it fatal.
-  @return a reference to the allocator. */
-  ut_allocator &set_oom_not_fatal() {
-    m_oom_fatal = false;
-    return (*this);
-  }
-
-  /** Check if allocation failure is a fatal error.
-  @return true if allocation failure is fatal, false otherwise. */
-  bool is_oom_fatal() const { return (m_oom_fatal); }
 
 #ifdef UNIV_PFS_MEMORY
   /** Get the performance schema key to use for tracing allocations.
@@ -641,7 +634,7 @@ class ut_allocator {
 
   /** Allocate a chunk of memory that can hold 'n_elements' objects of
   type 'T' and trace the allocation.
-  If the allocation fails this method may throw an exception. This
+  If the allocation fails this method will throw an exception. This
   is mandated by the standard and if it returns NULL instead, then
   STL containers that use it (e.g. std::vector) may get confused.
   After successful allocation the returned pointer must be passed
@@ -652,22 +645,12 @@ class ut_allocator {
   @param[in]  key             performance schema key
   @param[in]  set_to_zero     if true, then the returned memory is
                               initialized with 0x0 bytes.
-  @param[in]  throw_on_error  if true, then exception is throw on
-                              allocation failure
   @return pointer to the allocated memory */
   pointer allocate(size_type n_elements, const_pointer hint = nullptr,
                    PSI_memory_key key = PSI_NOT_INSTRUMENTED,
-                   bool set_to_zero = false, bool throw_on_error = true) {
-    if (n_elements == 0) {
-      return (nullptr);
-    }
-
+                   bool set_to_zero = false) {
     if (n_elements > max_size()) {
-      if (throw_on_error) {
-        throw(std::bad_alloc());
-      } else {
-        return (nullptr);
-      }
+      throw std::bad_array_new_length();
     }
 
     void *ptr;
@@ -692,16 +675,7 @@ class ut_allocator {
     }
 
     if (ptr == nullptr) {
-      ib::fatal_or_error(m_oom_fatal)
-          << "Cannot allocate " << total_bytes << " bytes of memory after "
-          << alloc_max_retries << " retries over " << alloc_max_retries
-          << " seconds. OS error: " << strerror(errno) << " (" << errno << "). "
-          << OUT_OF_MEMORY_MSG;
-      if (throw_on_error) {
-        throw(std::bad_alloc());
-      } else {
-        return (nullptr);
-      }
+      throw std::bad_alloc();
     }
 
 #ifdef UNIV_PFS_MEMORY
@@ -731,10 +705,6 @@ class ut_allocator {
     free(ptr);
 #endif /* UNIV_PFS_MEMORY */
   }
-
-  /** Create an object of type 'T' using the value 'val' over the
-  memory pointed by 'p'. */
-  void construct(pointer p, const T &val) { new (p) T(val); }
 
   /** Destroy an object pointed by 'p'. */
   void destroy(pointer p) { p->~T(); }
@@ -769,7 +739,7 @@ class ut_allocator {
     }
 
     if (ptr == nullptr) {
-      return (allocate(n_elements, nullptr, key, false, false));
+      return (allocate(n_elements, nullptr, key, false));
     }
 
     if (n_elements > max_size()) {
@@ -795,13 +765,7 @@ class ut_allocator {
     }
 
     if (pfx_new == nullptr) {
-      ib::fatal_or_error(m_oom_fatal)
-          << "Cannot reallocate " << total_bytes << " bytes of memory after "
-          << alloc_max_retries << " retries over " << alloc_max_retries
-          << " seconds. OS error: " << strerror(errno) << " (" << errno << "). "
-          << OUT_OF_MEMORY_MSG;
-      /* not reached */
-      return (nullptr);
+      return nullptr;
     }
 
     /* pfx_new still contains the description of the old block
@@ -826,11 +790,7 @@ class ut_allocator {
     static_assert(std::is_default_constructible<T>::value,
                   "Array element type must be default-constructible");
 
-    T *p = allocate(n_elements, nullptr, key, false, false);
-
-    if (p == nullptr) {
-      return (nullptr);
-    }
+    T *p = allocate(n_elements, nullptr, key, false);
 
     T *first = p;
     size_type i;
@@ -879,42 +839,60 @@ class ut_allocator {
   /** Allocate a large chunk of memory that can hold 'n_elements'
   objects of type 'T' and trace the allocation.
   @param[in]	n_elements	number of elements
-  @param[out]	pfx		storage for the description of the
-  allocated memory. The caller must provide space for this one and keep
-  it until the memory is no longer needed and then pass it to
-  deallocate_large().
   @return pointer to the allocated memory or NULL */
-  pointer allocate_large(size_type n_elements, ut_new_pfx_t *pfx) {
+  pointer allocate_large(size_type n_elements) {
     if (n_elements == 0 || n_elements > max_size()) {
       return (nullptr);
     }
 
-    ulint n_bytes = n_elements * sizeof(T);
+    ulint n_bytes = n_elements * sizeof(T) + CPU_PAGE_SIZE;
 
-    pointer ptr = reinterpret_cast<pointer>(os_mem_alloc_large(&n_bytes));
+    auto ptr = os_mem_alloc_large(&n_bytes);
+    if (unlikely(!ptr)) return nullptr;
 
 #ifdef UNIV_PFS_MEMORY
-    if (ptr != nullptr) {
-      allocate_trace(n_bytes, PSI_NOT_INSTRUMENTED, pfx);
-    }
+    ut_new_pfx_t *pfx = reinterpret_cast<ut_new_pfx_t *>(ptr);
+    allocate_trace(n_bytes, PSI_NOT_INSTRUMENTED, pfx);
 #else
-    pfx->m_size = n_bytes;
+    *reinterpret_cast<size_t *>(ptr) = n_bytes;
 #endif /* UNIV_PFS_MEMORY */
-
-    return (ptr);
+    return reinterpret_cast<pointer>(static_cast<uint8_t *>(ptr) +
+                                     CPU_PAGE_SIZE);
   }
 
   /** Free a memory allocated by allocate_large() and trace the
   deallocation.
   @param[in,out]	ptr	pointer to memory to free
-  @param[in]	pfx	descriptor of the memory, as returned by
-  allocate_large(). */
-  void deallocate_large(pointer ptr, const ut_new_pfx_t *pfx) {
+  */
+  void deallocate_large(pointer ptr) {
+    if (unlikely(!ptr)) return;
+
+    auto deduced_alloc_large_ptr = static_cast<uint8_t *>(ptr) - CPU_PAGE_SIZE;
+
 #ifdef UNIV_PFS_MEMORY
+    ut_new_pfx_t *pfx =
+        reinterpret_cast<ut_new_pfx_t *>(deduced_alloc_large_ptr);
+    size_t dealloc_size = pfx->m_size;
     deallocate_trace(pfx);
+#else
+    size_t dealloc_size = *reinterpret_cast<size_t *>(deduced_alloc_large_ptr);
 #endif /* UNIV_PFS_MEMORY */
 
-    os_mem_free_large(ptr, pfx->m_size);
+    os_mem_free_large(deduced_alloc_large_ptr, dealloc_size);
+  }
+
+  /** Find out the size of large allocation given the pointer to it.
+  @param[in,out] ptr pointer to memory returned by allocate_large()
+  @return Size of the large page that has been allocated. */
+  static size_t large_page_size(pointer ptr) {
+    auto deduced_alloc_large_ptr = static_cast<uint8_t *>(ptr) - CPU_PAGE_SIZE;
+#ifdef UNIV_PFS_MEMORY
+    ut_new_pfx_t *pfx =
+        reinterpret_cast<ut_new_pfx_t *>(deduced_alloc_large_ptr);
+    return pfx->m_size - CPU_PAGE_SIZE;
+#else
+    return *reinterpret_cast<size_t *>(deduced_alloc_large_ptr) - CPU_PAGE_SIZE;
+#endif
   }
 
  private:
@@ -961,12 +939,8 @@ class ut_allocator {
 
 #ifdef UNIV_PFS_MEMORY
   /** Performance schema key. */
-  PSI_memory_key m_key;
+  const PSI_memory_key m_key;
 #endif /* UNIV_PFS_MEMORY */
-
-  /** A flag to indicate whether out of memory (OOM) error is considered
-  fatal.  If true, it is fatal. */
-  bool m_oom_fatal;
 };
 
 /** Compare two allocators of the same type.
@@ -997,12 +971,11 @@ pointer must be passed to UT_DELETE() when no longer needed.
 @param[in]	expr	any expression that could follow "new"
 @param[in]	key	performance schema memory tracing key
 @return pointer to the created object or NULL */
-#define UT_NEW(expr, key)                                                \
-  /* Placement new will return NULL and not attempt to construct an      \
-  object if the passed in pointer is NULL, e.g. if allocate() has        \
-  failed to allocate memory and has returned NULL. */                    \
-  ::new (ut_allocator<decltype(expr)>(key).allocate(1, NULL, key, false, \
-                                                    false)) expr
+#define UT_NEW(expr, key)                                           \
+  /* Placement new will return NULL and not attempt to construct an \
+  object if the passed in pointer is NULL, e.g. if allocate() has   \
+  failed to allocate memory and has returned NULL. */               \
+  ::new (ut_allocator<decltype(expr)>(key).allocate(1, NULL, key, false)) expr
 
 /** Allocate, trace the allocation and construct an object.
 Use this macro instead of 'new' within InnoDB and instead of UT_NEW()
@@ -1073,50 +1046,43 @@ inline void ut_delete_array(T *ptr) {
 
 /**
 Do not use ut_malloc, ut_zalloc, ut_malloc_nokey, ut_zalloc_nokey,
-ut_zalloc_nokey_nofatal and ut_realloc when allocating memory for
-over-aligned types. We have to use aligned_pointer instead, analogously to how
-we have to use aligned_alloc when working with the standard library to handle
-dynamic allocation for over-aligned types. These macros use ut_allocator to
-allocate raw memory (no type information is passed). This is why ut_allocator
-needs to be instantiated with the byte type. This has implications on the max
-alignment of the objects that are allocated using this API. ut_allocator returns
-memory aligned to alignof(std::max_align_t), similarly to library allocation
-functions. This value is 16 bytes on most x64 machines. A static_assert enforces
-this when using UT_NEW, however, since the ut_allocator template is instantiated
-with byte here the assert will not be hit if using alignment >=
-alignof(std::max_align_t). Not meeting the alignment requirements for a type
-causes undefined behaviour.
-One should avoid using the macros below when writing new code in general,
-and try to remove them when refactoring existing code (in favor of using the
-UT_NEW). The reason behind this lies both in the undefined behaviour problem
-described above, and in the fact that standard C-like malloc use is discouraged
-in c++ (see CppCoreGuidelines - R.10: Avoid malloc() and free()). Using
-ut_malloc has the same problems as the standard library malloc.
+and ut_realloc when allocating memory for over-aligned types. We have to use
+aligned_pointer instead, analogously to how we have to use aligned_alloc when
+working with the standard library to handle dynamic allocation for over-aligned
+types. These macros use ut_allocator to allocate raw memory (no type information
+is passed). This is why ut_allocator needs to be instantiated with the byte
+type. This has implications on the max alignment of the objects that are
+allocated using this API. ut_allocator returns memory aligned to
+alignof(std::max_align_t), similarly to library allocation functions. This value
+is 16 bytes on most x64 machines. A static_assert enforces this when using
+UT_NEW, however, since the ut_allocator template is instantiated with byte here
+the assert will not be hit if using alignment >= alignof(std::max_align_t). Not
+meeting the alignment requirements for a type causes undefined behaviour. One
+should avoid using the macros below when writing new code in general, and try to
+remove them when refactoring existing code (in favor of using the UT_NEW). The
+reason behind this lies both in the undefined behaviour problem described above,
+and in the fact that standard C-like malloc use is discouraged in c++ (see
+CppCoreGuidelines - R.10: Avoid malloc() and free()). Using ut_malloc has the
+same problems as the standard library malloc.
 */
 
 #define ut_malloc(n_bytes, key)                         \
   static_cast<void *>(ut_allocator<byte>(key).allocate( \
-      n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, false, false))
+      n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, false))
 
 #define ut_zalloc(n_bytes, key)                         \
   static_cast<void *>(ut_allocator<byte>(key).allocate( \
-      n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, true, false))
+      n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, true))
 
 #define ut_malloc_nokey(n_bytes)               \
   static_cast<void *>(                         \
       ut_allocator<byte>(PSI_NOT_INSTRUMENTED) \
-          .allocate(n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, false, false))
+          .allocate(n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, false))
 
 #define ut_zalloc_nokey(n_bytes)               \
   static_cast<void *>(                         \
       ut_allocator<byte>(PSI_NOT_INSTRUMENTED) \
-          .allocate(n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, true, false))
-
-#define ut_zalloc_nokey_nofatal(n_bytes)       \
-  static_cast<void *>(                         \
-      ut_allocator<byte>(PSI_NOT_INSTRUMENTED) \
-          .set_oom_not_fatal()                 \
-          .allocate(n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, true, false))
+          .allocate(n_bytes, NULL, UT_NEW_THIS_FILE_PSI_KEY, true))
 
 #define ut_realloc(ptr, n_bytes)                               \
   static_cast<void *>(ut_allocator<byte>(PSI_NOT_INSTRUMENTED) \
@@ -1150,152 +1116,68 @@ ut_malloc has the same problems as the standard library malloc.
 
 #define ut_zalloc_nokey(n_bytes) ::calloc(1, n_bytes)
 
-#define ut_zalloc_nokey_nofatal(n_bytes) ::calloc(1, n_bytes)
-
 #define ut_realloc(ptr, n_bytes) ::realloc(ptr, n_bytes)
 
 #define ut_free(ptr) ::free(ptr)
 
 #endif /* UNIV_PFS_MEMORY */
 
-/** This is a forward declaration, which is because of the circular dependency
-between ut0new.h and ut0byte.h (going through univ.i and sync0types.h).
-I've managed to observe problem when building MEB and this helps then. */
-UNIV_INLINE
-void *ut_align(const void *ptr, ulint align_no);
-
-/** Abstract class to manage an object that is aligned to specified number of
-bytes.
-@tparam	T_Type		type of the object that is going to be managed
-@tparam T_Align_to	number of bytes to align to */
-template <typename T_Type, size_t T_Align_to>
-class aligned_memory {
- public:
-  virtual ~aligned_memory() {
-    if (!this->is_object_empty()) {
-      this->free_memory();
-    }
-  }
-
-  virtual void destroy() = 0;
-
-  /** Allows casting to managed objects type to use it directly */
-  operator T_Type *() const {
-    ut_a(m_object != nullptr);
-    return m_object;
-  }
-
-  /** Allows referencing the managed object as this was a normal
-  pointer. */
-  T_Type *operator->() const {
-    ut_a(m_object != nullptr);
-    return m_object;
-  }
-
- protected:
-  /** Checks if no object is currently being managed. */
-  bool is_object_empty() const { return m_object == nullptr; }
-
-  /** Allocates memory for a new object and prepares aligned address for
-  the object.
-  @param[in]	size	Number of bytes to be delivered for the aligned
-  object. Number of bytes actually allocated will be higher. */
-  T_Type *allocate(size_t size) {
-    static_assert(T_Align_to > 0, "Incorrect alignment parameter");
-    ut_a(m_memory == nullptr);
-    ut_a(m_object == nullptr);
-
-    m_memory = ut_zalloc_nokey(size + T_Align_to - 1);
-    m_object = static_cast<T_Type *>(::ut_align(m_memory, T_Align_to));
-    return m_object;
-  }
-
-  /** Releases memory used to store the object. */
-  void free_memory() {
-    ut_a(m_memory != nullptr);
-    ut_a(m_object != nullptr);
-
-    ut_free(m_memory);
-
-    m_memory = nullptr;
-    m_object = nullptr;
-  }
-
- private:
-  /** Stores pointer to aligned object memory. */
-  T_Type *m_object = nullptr;
-
-  /** Stores pointer to memory used to allocate the object. */
-  void *m_memory = nullptr;
-};
-
-/** Manages an object that is aligned to specified number of bytes.
-@tparam	T_Type		type of the object that is going to be managed
-@tparam T_Align_to	number of bytes to align to */
-template <typename T_Type, size_t T_Align_to = ut::INNODB_CACHE_LINE_SIZE>
-class aligned_pointer : public aligned_memory<T_Type, T_Align_to> {
- public:
-  ~aligned_pointer() override {
-    if (!this->is_object_empty()) {
-      this->destroy();
-    }
-  }
-
-  /** Allocates aligned memory for new object and constructs it there.
-  @param[in]	args	arguments to be passed to object constructor */
-  template <typename... T_Args>
-  void create(T_Args... args) {
-    new (this->allocate(sizeof(T_Type))) T_Type(std::forward(args)...);
-  }
-
-  /** Destroys the managed object and releases its memory. */
-  void destroy() override {
-    (*this)->~T_Type();
-    this->free_memory();
-  }
-};
-
-/** Manages an array of objects. The first element is aligned to specified
-number of bytes.
-@tparam	T_Type		type of the object that is going to be managed
-@tparam T_Align_to	number of bytes to align to */
-template <typename T_Type, size_t T_Align_to = ut::INNODB_CACHE_LINE_SIZE>
-class aligned_array_pointer : public aligned_memory<T_Type, T_Align_to> {
- public:
-  /** Allocates aligned memory for new objects. Objects must be trivially
-  constructible and destructible.
-  @param[in]	size	Number of elements to allocate. */
-  void create(size_t size) {
-#if !(defined __GNUC__ && __GNUC__ <= 4)
-    static_assert(std::is_trivially_default_constructible<T_Type>::value,
-                  "Aligned array element type must be "
-                  "trivially default-constructible");
-#endif
-    m_size = size;
-    this->allocate(sizeof(T_Type) * m_size);
-  }
-
-  /** Deallocates memory of array created earlier. */
-  void destroy() override {
-    static_assert(std::is_trivially_destructible<T_Type>::value,
-                  "Aligned array element type must be "
-                  "trivially destructible");
-    this->free_memory();
-  }
-
-  /** Accesses specified index in the allocated array.
-  @param[in]	index	index of element in array to get reference to */
-  T_Type &operator[](size_t index) const {
-    ut_a(index < m_size);
-    return ((T_Type *)*this)[index];
-  }
-
- private:
-  /** Size of the allocated array. */
-  size_t m_size;
-};
-
 namespace ut {
+
+/** Light-weight and type-safe wrapper around the PSI_memory_key
+    that eliminates the possibility of introducing silent bugs
+    through the course of implicit conversions and makes them
+    show up as compile-time errors.
+
+    Without this wrapper it was possible to say:
+      aligned_alloc_withkey(10*sizeof(int), key, 64))
+    Which would unfortunately compile just fine but it would silently
+    introduce a bug because it confuses the order of 10*sizeof(int) and
+    key input arguments. Both of them are unsigned types.
+
+    With the wrapper, aligned_alloc_withkey(10*sizeof(int), key, 64)) now
+    results with a compile-time error and the only proper way to accomplish
+    the original intent is to use PSI_memory_key_t wrapper like so:
+      aligned_alloc_withkey(PSI_memory_key_t(key), 10*sizeof(int), 64))
+
+    Or by making use of the convenience function to create one:
+      aligned_alloc_withkey(make_psi_memory_key(key), 10*sizeof(int), 64))
+ */
+struct PSI_memory_key_t {
+  explicit PSI_memory_key_t(PSI_memory_key key) : m_key(key) {}
+  PSI_memory_key operator()() const { return m_key; }
+  PSI_memory_key m_key;
+};
+
+/** Convenience helper function to create type-safe representation of
+    PSI_memory_key.
+
+    @param[in] key PSI memory key to be held in type-safe PSI_memory_key_t.
+    @return PSI_memory_key_t which wraps the given PSI_memory_key
+ */
+inline PSI_memory_key_t make_psi_memory_key(PSI_memory_key key) {
+  return PSI_memory_key_t(key);
+}
+
+/** Dynamically allocates storage of given size and at the address aligned to
+    the requested alignment. Instruments the memory with given PSI memory key
+    in case PFS memory support is enabled (-DDISABLE_PSI_MEMORY=OFF).
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] size Size of storage (in bytes) requested to be allocated.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @return Pointer to the allocated storage. nullptr if dynamic storage
+    allocation failed.
+
+    Example:
+     int* x = static_cast<int*>(aligned_alloc_withkey(key, 10*sizeof(int), 64));
+ */
+inline void *aligned_alloc_withkey(PSI_memory_key_t key, std::size_t size,
+                                   std::size_t alignment) noexcept {
+  using impl = detail::select_alloc_impl_t<detail::WITH_PFS_MEMORY>;
+  using aligned_alloc_impl = detail::Aligned_alloc_<impl>;
+  return aligned_alloc_impl::alloc<false>(size, alignment, key());
+}
 
 /** Dynamically allocates storage of given size and at the address aligned to
     the requested alignment.
@@ -1306,22 +1188,97 @@ namespace ut {
     allocation failed.
 
     Example:
-     int* x = static_cast<int*>(aligned_alloc(10*sizeof(int), 2));
+     int* x = static_cast<int*>(aligned_alloc(10*sizeof(int), 64));
  */
 inline void *aligned_alloc(std::size_t size, std::size_t alignment) noexcept {
-  return ut::detail::Aligned_alloc::alloc(size, alignment);
+  return aligned_alloc_withkey(make_psi_memory_key(PSI_NOT_INSTRUMENTED), size,
+                               alignment);
 }
 
-/** Releases storage which has been dynamically allocated through
-    aligned_alloc().
+/** Dynamically allocates zero-initialized storage of given size and at the
+    address aligned to the requested alignment. Instruments the memory with
+    given PSI memory key in case PFS memory support is enabled
+    (-DDISABLE_PSI_MEMORY=OFF).
 
-    @param[in] ptr Pointer which has been obtained through aligned_alloc()
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] size Size of storage (in bytes) requested to be allocated.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @return Pointer to the zero-initialized allocated storage. nullptr if
+    dynamic storage allocation failed.
 
     Example:
-     aligned_free(ptr); // ptr must be obtained through aligned_alloc()
+     int* x =
+       static_cast<int*>(aligned_zalloc_withkey(key, 10*sizeof(int), 64));
+ */
+inline void *aligned_zalloc_withkey(PSI_memory_key_t key, std::size_t size,
+                                    std::size_t alignment) noexcept {
+  using impl = detail::select_alloc_impl_t<detail::WITH_PFS_MEMORY>;
+  using aligned_alloc_impl = detail::Aligned_alloc_<impl>;
+  return aligned_alloc_impl::alloc<true>(size, alignment, key());
+}
+
+/** Dynamically allocates zero-initialized storage of given size and at the
+    address aligned to the requested alignment.
+
+    @param[in] size Size of storage (in bytes) requested to be allocated.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @return Pointer to the zero-initialized allocated storage. nullptr if
+    dynamic storage allocation failed.
+
+    Example:
+     int* x = static_cast<int*>(aligned_zalloc(10*sizeof(int), 64));
+ */
+inline void *aligned_zalloc(std::size_t size, std::size_t alignment) noexcept {
+  return aligned_zalloc_withkey(make_psi_memory_key(PSI_NOT_INSTRUMENTED), size,
+                                alignment);
+}
+
+/** Releases storage which has been dynamically allocated through any of
+    the aligned_alloc_*() or aligned_zalloc_*() variants.
+
+    @param[in] ptr Pointer which has been obtained through any of the
+    aligned_alloc_*() or aligned_zalloc_*() variants.
+
+    Example:
+     aligned_free(ptr);
  */
 inline void aligned_free(void *ptr) noexcept {
-  ut::detail::Aligned_alloc::free(ptr);
+  using impl = detail::select_alloc_impl_t<detail::WITH_PFS_MEMORY>;
+  using aligned_alloc_impl = detail::Aligned_alloc_<impl>;
+  aligned_alloc_impl::free(ptr);
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned
+    to the requested alignment. Constructs the object of type T with provided
+    Args. Instruments the memory with given PSI memory key in case PFS memory
+    support is enabled (-DDISABLE_PSI_MEMORY=OFF).
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] args Arguments one wishes to pass over to T constructor(s)
+    @return Pointer to the allocated storage. Throws std::bad_alloc exception
+    if dynamic storage allocation could not be fulfilled.
+
+    Example 1:
+     int *ptr = aligned_new_withkey<int>(key, 2);
+
+    Example 2:
+     int *ptr = aligned_new_withkey<int>(key, 2, 10);
+     assert(*ptr == 10);
+
+    Example 3:
+     struct A { A(int x, int y) : _x(x), _y(y) {} int x, y; }
+     A *ptr = aligned_new_withkey<A>(key, 2, 1, 2);
+     assert(ptr->x == 1);
+     assert(ptr->y == 2);
+ */
+template <typename T, typename... Args>
+inline T *aligned_new_withkey(PSI_memory_key_t key, std::size_t alignment,
+                              Args &&... args) {
+  auto mem = aligned_alloc_withkey(key, sizeof(T), alignment);
+  if (unlikely(!mem)) throw std::bad_alloc();
+  new (mem) T(std::forward<Args>(args)...);
+  return static_cast<T *>(mem);
 }
 
 /** Dynamically allocates storage for an object of type T at address aligned
@@ -1348,24 +1305,119 @@ inline void aligned_free(void *ptr) noexcept {
  */
 template <typename T, typename... Args>
 inline T *aligned_new(std::size_t alignment, Args &&... args) {
-  auto mem = ut::aligned_alloc(sizeof(T), alignment);
-  if (mem == nullptr) throw std::bad_alloc();
-  new (mem) T(std::forward<Args>(args)...);
-  return static_cast<T *>(mem);
+  return aligned_new_withkey<T>(make_psi_memory_key(PSI_NOT_INSTRUMENTED),
+                                alignment, std::forward<Args>(args)...);
 }
 
-/** Releases storage which has been dynamically allocated through
-    aligned_new(). Destructs the object of type T.
+/** Releases storage which has been dynamically allocated through any of
+    the aligned_new_*() variants. Destructs the object of type T.
 
-    @param[in] ptr Pointer which has been obtained through aligned_new()
+    @param[in] ptr Pointer which has been obtained through any of the
+    aligned_new_*() variants
 
     Example:
-     aligned_delete(ptr); // ptr must be obtained through aligned_new()
+     aligned_delete(ptr);
  */
 template <typename T>
 inline void aligned_delete(T *ptr) noexcept {
   ptr->~T();
-  ut::aligned_free(ptr);
+  aligned_free(ptr);
+}
+
+/** Dynamically allocates storage for an array of T's at address aligned to
+    the requested alignment. Constructs objects of type T with provided Args.
+    Instruments the memory with given PSI memory key in case PFS memory support
+    is enabled (-DDISABLE_PSI_MEMORY=OFF).
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] args Arguments one wishes to pass over to T constructor(s)
+    @return Pointer to the first element of allocated storage. Throws
+    std::bad_alloc exception if dynamic storage allocation could not be
+    fulfilled.
+
+    Example 1:
+     int *ptr = aligned_new_arr_withkey<int, 5>(key, 2);
+     ptr[0] ... ptr[4]
+
+    Example 2:
+     int *ptr = aligned_new_arr_withkey<int, 5>(key, 2, 1, 2, 3, 4, 5);
+     assert(*ptr[0] == 1);
+     assert(*ptr[1] == 2);
+     ...
+     assert(*ptr[4] == 5);
+
+    Example 3:
+     struct A { A(int x, int y) : _x(x), _y(y) {} int x, y; }
+     A *ptr =
+       aligned_new_arr_withkey<A, 5>(key, 2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+     assert(ptr[0]->x == 1); assert(ptr[0]->y == 2); assert(ptr[1]->x == 3);
+     assert(ptr[1]->y == 4);
+     ...
+     assert(ptr[4]->x == 9);
+     assert(ptr[4]->y == 10);
+ */
+template <typename T, size_t Count, typename... Args>
+inline T *aligned_new_arr_withkey(PSI_memory_key_t key, std::size_t alignment,
+                                  Args &&... args) {
+  static_assert(
+      sizeof...(args) % Count == 0,
+      "Instantiating Count instances of T and invoking their respective "
+      "constructors with possibly different kind and/or different number "
+      "of input arguments is currently not supported.");
+  constexpr auto n_args_per_T = sizeof...(args) / Count;
+  auto tuple = std::make_tuple(args...);
+
+  auto mem = aligned_alloc_withkey(key, sizeof(T) * Count, alignment);
+  if (unlikely(!mem)) throw std::bad_alloc();
+  ut::detail::Loop<0, Count, T, 0, n_args_per_T, 0, decltype(tuple)>::run(
+      mem, std::forward<decltype(tuple)>(tuple));
+  return static_cast<T *>(mem);
+}
+
+/** Dynamically allocates storage for an array of T's at address aligned to
+    the requested alignment. Constructs objects of type T using default
+    constructor. Instruments the memory with given PSI memory key in case PFS
+    memory support is enabled (-DDISABLE_PSI_MEMORY=OFF).
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] count Number of T elements in an array.
+    @return Pointer to the first element of allocated storage. Throws
+    std::bad_alloc exception if dynamic storage allocation could not be
+    fulfilled.
+
+    Example 1:
+     int *ptr = aligned_new_arr_withkey<int>(key, 2, 5);
+     assert(*ptr[0] == 0);
+     assert(*ptr[1] == 0);
+     ...
+     assert(*ptr[4] == 0);
+
+    Example 2:
+     struct A { A) : x(1), y(2) {} int x, y; }
+     A *ptr = aligned_new_arr_withkey<A>(key, 2, 5);
+     assert(ptr[0].x == 1);
+     assert(ptr[0].y == 2);
+     ...
+     assert(ptr[4].x == 1);
+     assert(ptr[4].y == 2);
+
+    Example 3:
+     struct A { A(int x, int y) : _x(x), _y(y) {} int x, y; }
+     A *ptr = aligned_new_arr_withkey<A>(key, 2, 5);
+     // will not compile, no default constructor
+ */
+template <typename T>
+inline T *aligned_new_arr_withkey(PSI_memory_key_t key, std::size_t alignment,
+                                  size_t count) {
+  auto mem = aligned_alloc_withkey(key, sizeof(T) * count, alignment);
+  if (unlikely(!mem)) throw std::bad_alloc();
+  for (size_t offset = 0; offset < sizeof(T) * count; offset += sizeof(T)) {
+    new (reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(mem) +
+                                  offset)) T();
+  }
+  return static_cast<T *>(mem);
 }
 
 /** Dynamically allocates storage for an array of T's at address aligned to
@@ -1401,19 +1453,9 @@ inline void aligned_delete(T *ptr) noexcept {
  */
 template <typename T, size_t Count, typename... Args>
 inline T *aligned_new_arr(std::size_t alignment, Args &&... args) {
-  static_assert(
-      sizeof...(args) % Count == 0,
-      "Instantiating Count instances of T and invoking their respective "
-      "constructors with possibly different kind and/or different number "
-      "of input arguments is currently not supported.");
-  constexpr auto n_args_per_T = sizeof...(args) / Count;
-  auto tuple = std::make_tuple(args...);
-
-  auto mem = ut::detail::Aligned_alloc_arr::alloc(sizeof(T), Count, alignment);
-  if (mem == nullptr) throw std::bad_alloc();
-  ut::detail::Loop<0, Count, T, 0, n_args_per_T, 0, decltype(tuple)>::run(
-      mem, std::forward<decltype(tuple)>(tuple));
-  return static_cast<T *>(mem);
+  return aligned_new_arr_withkey<T, Count>(
+      make_psi_memory_key(PSI_NOT_INSTRUMENTED), alignment,
+      std::forward<Args>(args)...);
 }
 
 /** Dynamically allocates storage for an array of T's at address aligned to
@@ -1449,31 +1491,28 @@ inline T *aligned_new_arr(std::size_t alignment, Args &&... args) {
  */
 template <typename T>
 inline T *aligned_new_arr(std::size_t alignment, size_t count) {
-  auto mem = ut::detail::Aligned_alloc_arr::alloc(sizeof(T), count, alignment);
-  if (mem == nullptr) throw std::bad_alloc();
-  for (size_t offset = 0; offset < sizeof(T) * count; offset += sizeof(T)) {
-    new (reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(mem) +
-                                  offset)) T();
-  }
-  return static_cast<T *>(mem);
+  return aligned_new_arr_withkey<T>(make_psi_memory_key(PSI_NOT_INSTRUMENTED),
+                                    alignment, count);
 }
 
-/** Releases storage which has been dynamically allocated through
-    aligned_new_arr(). Destructs all objects of type T.
+/** Releases storage which has been dynamically allocated through any of the
+    aligned_new_arr_*() variants. Destructs all objects of type T.
 
-    @param[in] ptr Pointer which has been obtained through aligned_new_arr()
+    @param[in] ptr Pointer which has been obtained through any of the
+    aligned_new_arr_*() variants.
 
     Example:
-     aligned_delete_arr(ptr); // ptr must be obtained through aligned_new_arr()
+     aligned_delete_arr(ptr);
  */
 template <typename T>
 inline void aligned_delete_arr(T *ptr) noexcept {
-  const auto n_elements = ut::detail::Aligned_alloc_arr::n_elements(ptr);
-  for (size_t offset = 0; offset < sizeof(T) * n_elements;
-       offset += sizeof(T)) {
+  using impl = detail::select_alloc_impl_t<detail::WITH_PFS_MEMORY>;
+  using aligned_alloc_impl = detail::Aligned_alloc_<impl>;
+  const auto data_len = aligned_alloc_impl::datalen(ptr);
+  for (size_t offset = 0; offset < data_len; offset += sizeof(T)) {
     reinterpret_cast<T *>(reinterpret_cast<std::uintptr_t>(ptr) + offset)->~T();
   }
-  ut::detail::Aligned_alloc_arr::free(ptr);
+  aligned_free(ptr);
 }
 
 /** Lightweight convenience wrapper which manages dynamically allocated
@@ -1519,6 +1558,25 @@ class aligned_pointer {
   void alloc(Args &&... args) {
     ut_ad(ptr == nullptr);
     ptr = ut::aligned_new<T>(Alignment, args...);
+  }
+
+  /** Allocates sufficiently large memory of dynamic storage duration to fit
+      the instance of type T at the address which is aligned to Alignment bytes.
+      Constructs the instance of type T with given Args. Instruments the memory
+      with given PSI memory key in case PFS memory support is enabled
+      (-DDISABLE_PSI_MEMORY=OFF).
+
+      Underlying instance of type T is accessed through the conversion operator.
+
+      @param[in] key PSI memory key to be used for PFS memory instrumentation.
+      @param[in] args Any number and type of arguments that type T can be
+      constructed with.
+    */
+  template <typename... Args>
+  void alloc_withkey(PSI_memory_key_t key, Args &&... args) {
+    ut_ad(ptr == nullptr);
+    ptr =
+        ut::aligned_new_withkey<T>(key, Alignment, std::forward<Args>(args)...);
   }
 
   /** Invokes the destructor of instance of type T, if applicable.
@@ -1613,6 +1671,45 @@ class aligned_array_pointer {
   void alloc(Args &&... args) {
     ut_ad(ptr == nullptr);
     ptr = ut::aligned_new_arr<T, Size>(Alignment, args...);
+  }
+
+  /** Allocates sufficiently large memory of dynamic storage duration to fit
+      the array of size number of elements of type T at the address which is
+      aligned to Alignment bytes. Constructs the size number of instances of
+      type T, each being initialized through the means of default constructor.
+      Instruments the memory with given PSI memory key in case PFS memory
+      support is enabled (-DDISABLE_PSI_MEMORY=OFF).
+
+      Underlying instances of type T are accessed through the conversion
+      operator.
+
+      @param[in] key PSI memory key to be used for PFS memory instrumentation.
+      @param[in] size Number of T elements in an array.
+    */
+  void alloc_withkey(PSI_memory_key_t key, size_t size) {
+    ut_ad(ptr == nullptr);
+    ptr = ut::aligned_new_arr_withkey<T>(key, Alignment, size);
+  }
+
+  /** Allocates sufficiently large memory of dynamic storage duration to fit
+      the array of size number of elements of type T at the address which is
+      aligned to Alignment bytes. Constructs the size number of instances of
+      type T, each being initialized through the means of provided Args and
+      corresponding constructors. Instruments the memory with given PSI memory
+      key in case PFS memory support is enabled (-DDISABLE_PSI_MEMORY=OFF).
+
+      Underlying instances of type T are accessed through the conversion
+      operator.
+
+      @param[in] key PSI memory key to be used for PFS memory instrumentation.
+      @param[in] args Any number and type of arguments that type T can be
+      constructed with.
+    */
+  template <size_t Size, typename... Args>
+  void alloc_withkey(PSI_memory_key_t key, Args &&... args) {
+    ut_ad(ptr == nullptr);
+    ptr = ut::aligned_new_arr_withkey<T, Size>(key, Alignment,
+                                               std::forward<Args>(args)...);
   }
 
   /** Invokes destructors of instances of type T, if applicable.

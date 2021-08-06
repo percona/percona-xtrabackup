@@ -734,13 +734,10 @@ struct os_file_stat_t {
 };
 
 #ifndef UNIV_HOTBACKUP
-/** Create a temporary file. This function is like tmpfile(3), but
-the temporary file is created in the given parameter path. If the path
-is NULL then it will create the file in the MySQL server configuration
-parameter (--tmpdir).
-@param[in]	path	location for creating temporary file
+/** Create a temporary file. This function is like tmpfile(3). It will create
+the file in the MySQL server configuration parameter (--tmpdir).
 @return temporary file handle, or NULL on error */
-FILE *os_file_create_tmpfile(const char *path);
+FILE *os_file_create_tmpfile();
 #endif /* !UNIV_HOTBACKUP */
 
 /** This function attempts to create a directory named pathname. The new
@@ -1045,8 +1042,7 @@ os_file_create_simple() which opens or creates a file.
 @param[in]	src_line	line where the func invoked
 @return own: handle to the file, not defined if error, error number
         can be retrieved with os_file_get_last_error */
-UNIV_INLINE
-pfs_os_file_t pfs_os_file_create_simple_func(
+static inline pfs_os_file_t pfs_os_file_create_simple_func(
     mysql_pfs_key_t key, const char *name, ulint create_mode, ulint access_type,
     bool read_only, bool *success, const char *src_file, uint src_line)
     MY_ATTRIBUTE((warn_unused_result));
@@ -1069,8 +1065,7 @@ monitor file creation/open.
 @param[in]	src_line	line where the func invoked
 @return own: handle to the file, not defined if error, error number
         can be retrieved with os_file_get_last_error */
-UNIV_INLINE
-pfs_os_file_t pfs_os_file_create_simple_no_error_handling_func(
+static inline pfs_os_file_t pfs_os_file_create_simple_no_error_handling_func(
     mysql_pfs_key_t key, const char *name, ulint create_mode, ulint access_type,
     bool read_only, bool *success, const char *src_file, uint src_line)
     MY_ATTRIBUTE((warn_unused_result));
@@ -1096,12 +1091,10 @@ Add instrumentation to monitor file creation/open.
 @param[in]	src_line	line where the func invoked
 @return own: handle to the file, not defined if error, error number
         can be retrieved with os_file_get_last_error */
-UNIV_INLINE
-pfs_os_file_t pfs_os_file_create_func(mysql_pfs_key_t key, const char *name,
-                                      ulint create_mode, ulint purpose,
-                                      ulint type, bool read_only, bool *success,
-                                      const char *src_file, uint src_line)
-    MY_ATTRIBUTE((warn_unused_result));
+static inline pfs_os_file_t pfs_os_file_create_func(
+    mysql_pfs_key_t key, const char *name, ulint create_mode, ulint purpose,
+    ulint type, bool read_only, bool *success, const char *src_file,
+    uint src_line) MY_ATTRIBUTE((warn_unused_result));
 
 /** NOTE! Please use the corresponding macro os_file_close(), not directly
 this function!
@@ -1110,9 +1103,8 @@ A performance schema instrumented wrapper function for os_file_close().
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return true if success */
-UNIV_INLINE
-bool pfs_os_file_close_func(pfs_os_file_t file, const char *src_file,
-                            uint src_line);
+static inline bool pfs_os_file_close_func(pfs_os_file_t file,
+                                          const char *src_file, uint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_read(), not directly
 this function!
@@ -1127,10 +1119,9 @@ os_file_read() which requests a synchronous read operation.
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return DB_SUCCESS if request was successful */
-UNIV_INLINE
-dberr_t pfs_os_file_read_func(IORequest &type, const char *file_name,
-                              pfs_os_file_t file, void *buf, os_offset_t offset,
-                              ulint n, const char *src_file, uint src_line);
+static inline dberr_t pfs_os_file_read_func(
+    IORequest &type, const char *file_name, pfs_os_file_t file, void *buf,
+    os_offset_t offset, ulint n, const char *src_file, uint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_read_first_page(),
 not directly this function!
@@ -1145,10 +1136,9 @@ of page 0 of IBD file
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return DB_SUCCESS if request was successful */
-UNIV_INLINE
-dberr_t pfs_os_file_read_first_page_func(IORequest &type, const char *file_name,
-                                         pfs_os_file_t file, void *buf, ulint n,
-                                         const char *src_file, uint src_line);
+static inline dberr_t pfs_os_file_read_first_page_func(
+    IORequest &type, const char *file_name, pfs_os_file_t file, void *buf,
+    ulint n, const char *src_file, uint src_line);
 
 /** copy data from one file to another file. Data is read/written
 at current file offset.
@@ -1160,10 +1150,9 @@ at current file offset.
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return DB_SUCCESS if successful */
-UNIV_INLINE
-dberr_t pfs_os_file_copy_func(pfs_os_file_t src, os_offset_t src_offset,
-                              pfs_os_file_t dest, os_offset_t dest_offset,
-                              uint size, const char *src_file, uint src_line);
+static inline dberr_t pfs_os_file_copy_func(
+    pfs_os_file_t src, os_offset_t src_offset, pfs_os_file_t dest,
+    os_offset_t dest_offset, uint size, const char *src_file, uint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_read_no_error_handling(),
 not directly this function!
@@ -1180,8 +1169,7 @@ read operation.
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return DB_SUCCESS if request was successful */
-UNIV_INLINE
-dberr_t pfs_os_file_read_no_error_handling_func(
+static inline dberr_t pfs_os_file_read_no_error_handling_func(
     IORequest &type, const char *file_name, pfs_os_file_t file, void *buf,
     os_offset_t offset, ulint n, ulint *o, const char *src_file, uint src_line);
 
@@ -1201,8 +1189,7 @@ synchronous read operation on files with int type descriptors.
 @param[in]      src_line        line where the func invoked
 @return DB_SUCCESS if request was successful */
 
-UNIV_INLINE
-dberr_t pfs_os_file_read_no_error_handling_int_fd_func(
+static inline dberr_t pfs_os_file_read_no_error_handling_int_fd_func(
     IORequest &type, const char *file_name, int file, void *buf,
     os_offset_t offset, ulint n, ulint *o, const char *src_file,
     ulint src_line);
@@ -1229,11 +1216,11 @@ an asynchronous I/O operation.
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return DB_SUCCESS if request was queued successfully, false if fail */
-UNIV_INLINE
-dberr_t pfs_os_aio_func(IORequest &type, AIO_mode mode, const char *name,
-                        pfs_os_file_t file, void *buf, os_offset_t offset,
-                        ulint n, bool read_only, fil_node_t *m1, void *m2,
-                        const char *src_file, uint src_line);
+static inline dberr_t pfs_os_aio_func(IORequest &type, AIO_mode mode,
+                                      const char *name, pfs_os_file_t file,
+                                      void *buf, os_offset_t offset, ulint n,
+                                      bool read_only, fil_node_t *m1, void *m2,
+                                      const char *src_file, uint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_write(), not directly
 this function!
@@ -1249,11 +1236,9 @@ os_file_write() which requests a synchronous write operation.
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return DB_SUCCESS if request was successful */
-UNIV_INLINE
-dberr_t pfs_os_file_write_func(IORequest &type, const char *name,
-                               pfs_os_file_t file, const void *buf,
-                               os_offset_t offset, ulint n,
-                               const char *src_file, uint src_line);
+static inline dberr_t pfs_os_file_write_func(
+    IORequest &type, const char *name, pfs_os_file_t file, const void *buf,
+    os_offset_t offset, ulint n, const char *src_file, uint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_write(), not
 directly this function!
@@ -1270,11 +1255,9 @@ on files with int type descriptors.
 @param[in]      src_file        file name where func invoked
 @param[in]      src_line        line where the func invoked
 @return DB_SUCCESS if request was successful */
-UNIV_INLINE
-dberr_t pfs_os_file_write_int_fd_func(IORequest &type, const char *name,
-                                      int file, const void *buf,
-                                      os_offset_t offset, ulint n,
-                                      const char *src_file, ulint src_line);
+static inline dberr_t pfs_os_file_write_int_fd_func(
+    IORequest &type, const char *name, int file, const void *buf,
+    os_offset_t offset, ulint n, const char *src_file, ulint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_flush(), not directly
 this function!
@@ -1285,9 +1268,8 @@ Flushes the write buffers of a given file to the disk.
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return true if success */
-UNIV_INLINE
-bool pfs_os_file_flush_func(pfs_os_file_t file, const char *src_file,
-                            uint src_line);
+static inline bool pfs_os_file_flush_func(pfs_os_file_t file,
+                                          const char *src_file, uint src_line);
 
 /** NOTE! Please use the corresponding macro os_file_rename(), not directly
 this function!
@@ -1299,10 +1281,10 @@ os_file_rename()
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return true if success */
-UNIV_INLINE
-bool pfs_os_file_rename_func(mysql_pfs_key_t key, const char *oldpath,
-                             const char *newpath, const char *src_file,
-                             uint src_line);
+static inline bool pfs_os_file_rename_func(mysql_pfs_key_t key,
+                                           const char *oldpath,
+                                           const char *newpath,
+                                           const char *src_file, uint src_line);
 
 /**
 NOTE! Please use the corresponding macro os_file_delete(), not directly
@@ -1314,9 +1296,9 @@ os_file_delete()
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return true if success */
-UNIV_INLINE
-bool pfs_os_file_delete_func(mysql_pfs_key_t key, const char *name,
-                             const char *src_file, uint src_line);
+static inline bool pfs_os_file_delete_func(mysql_pfs_key_t key,
+                                           const char *name,
+                                           const char *src_file, uint src_line);
 
 /**
 NOTE! Please use the corresponding macro os_file_delete_if_exists(), not
@@ -1329,10 +1311,11 @@ os_file_delete_if_exists()
 @param[in]	src_file	file name where func invoked
 @param[in]	src_line	line where the func invoked
 @return true if success */
-UNIV_INLINE
-bool pfs_os_file_delete_if_exists_func(mysql_pfs_key_t key, const char *name,
-                                       bool *exist, const char *src_file,
-                                       uint src_line);
+static inline bool pfs_os_file_delete_if_exists_func(mysql_pfs_key_t key,
+                                                     const char *name,
+                                                     bool *exist,
+                                                     const char *src_file,
+                                                     uint src_line);
 
 #else /* UNIV_PFS_IO */
 
@@ -1458,7 +1441,7 @@ bool os_file_close_no_error_handling(os_file_t file);
 /** Gets a file size.
 @param[in]	filename	Full path to the filename to check
 @return file size if OK, else set m_total_size to ~0 and m_alloc_size to
-        errno */
+        errno. */
 os_file_size_t os_file_get_size(const char *filename)
     MY_ATTRIBUTE((warn_unused_result));
 

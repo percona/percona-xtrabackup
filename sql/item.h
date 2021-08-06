@@ -661,8 +661,8 @@ class sp_rcontext;
 
 class Settable_routine_parameter {
  public:
-  Settable_routine_parameter() {}
-  virtual ~Settable_routine_parameter() {}
+  Settable_routine_parameter() = default;
+  virtual ~Settable_routine_parameter() = default;
   /**
     Set required privileges for accessing the parameter.
 
@@ -773,6 +773,31 @@ class Item_tree_walker {
   const Item *stopped_at_item;
 };
 
+/**
+  Base class that is used to represent any kind of expression in a
+  relational query. The class provides subclasses for simple components, like
+  literal (constant) values, column references and variable references,
+  as well as more complex expressions like comparison predicates,
+  arithmetic and string functions, row objects, function references and
+  subqueries.
+
+  The lifetime of an Item class object is often the same as a relational
+  statement, which may be used for several executions, but in some cases
+  it may also be generated for an optimized statement and thus be valid
+  only for one execution.
+
+  For Item objects with longer lifespan than one execution, we must take
+  special precautions when referencing objects with shorter lifespan.
+  For example, TABLE and Field objects against most tables are valid only for
+  one execution. For such objects, Item classes should rather reference
+  TABLE_LIST and Item_field objects instead of TABLE and Field, because
+  these classes support dynamic rebinding of objects before each execution.
+  See Item::bind_fields() which binds new objects per execution and
+  Item::cleanup() that deletes references to such objects.
+
+  These mechanisms can also be used to handle other objects with shorter
+  lifespan, such as function references and variable references.
+*/
 class Item : public Parse_tree_node {
   typedef Parse_tree_node super;
 
@@ -1023,11 +1048,11 @@ class Item : public Parse_tree_node {
   */
   explicit Item(const POS &);
 
-  ~Item() override {
 #ifdef EXTRA_DEBUG
-    item_name.set(0);
+  ~Item() override { item_name.set(0); }
+#else
+  ~Item() override = default;
 #endif
-  } /*lint -e1509 */
 
  private:
   /*
@@ -1221,6 +1246,17 @@ class Item : public Parse_tree_node {
       @retval != TYPE_OK there were errors or warnings when saving the item
   */
   type_conversion_status save_in_field(Field *field, bool no_conversions);
+
+  /**
+    A slightly faster value of save_in_field() that returns no error value
+    (you will need to check thd->is_error() yourself), and does not support
+    saving into hidden fields for functional indexes. Used by copy_funcs(),
+    to avoid the functional call overhead and RAII setup of save_in_field().
+   */
+  void save_in_field_no_error_check(Field *field, bool no_conversions) {
+    assert(!field->is_field_for_functional_index());
+    save_in_field_inner(field, no_conversions);
+  }
 
   virtual void save_org_in_field(Field *field) { save_in_field(field, true); }
 
@@ -2653,7 +2689,7 @@ class Item : public Parse_tree_node {
     int8 m_location{0};
     Item *m_join_condition_context{nullptr};
     bool m_collect_unconditionally{false};
-    Collect_scalar_subquery_info() {}
+    Collect_scalar_subquery_info() = default;
     friend class Item_sum;
     friend class Item_singlerow_subselect;
   };
@@ -2673,7 +2709,7 @@ class Item : public Parse_tree_node {
   */
   virtual bool has_aggregate_ref_in_group_by(uchar *) { return false; }
 
-  virtual bool visit_all_analyzer(uchar **) { return true; }
+  bool visit_all_analyzer(uchar **) { return true; }
   virtual bool cache_const_expr_analyzer(uchar **cache_item);
   Item *cache_const_expr_transformer(uchar *item);
 
@@ -2822,6 +2858,17 @@ class Item : public Parse_tree_node {
       uchar *arg MY_ATTRIBUTE((unused))) {
     return this;
   }
+  /**
+    Assuming this expression is part of a condition that would be pushed to a
+    materialized derived table, replace, in this expression, each view reference
+    with a clone of the expression in merged derived table's definition.
+    We replace with a clone, because the referenced item in a view reference
+    is shared by all the view references to that expression.
+  */
+  virtual Item *replace_view_refs_with_clone(
+      uchar *arg MY_ATTRIBUTE((unused))) {
+    return this;
+  }
   /*
     For SP local variable returns pointer to Item representing its
     current value and pointer to current Item otherwise.
@@ -2868,15 +2915,10 @@ class Item : public Parse_tree_node {
         : m_trans_block(transformed_block), m_curr_block(current_block) {}
   };
   struct Item_field_replacement : Item_replacement {
-    Field *m_target;           ///< The field to be replaced
-    Item_field *m_item;        ///< The replacement field
-    bool m_keep_alias{false};  ///< Needed for SELECT list alias preservation
-    Item_field_replacement(Field *target, Item_field *item, Query_block *select,
-                           bool keep)
-        : Item_replacement(select, select),
-          m_target(target),
-          m_item(item),
-          m_keep_alias(keep) {}
+    Field *m_target;     ///< The field to be replaced
+    Item_field *m_item;  ///< The replacement field
+    Item_field_replacement(Field *target, Item_field *item, Query_block *select)
+        : Item_replacement(select, select), m_target(target), m_item(item) {}
   };
 
   struct Item_view_ref_replacement : Item_replacement {
@@ -3974,6 +4016,21 @@ class Item_field : public Item_ident {
   /// Result field
   Field *result_field{nullptr};
 
+  // save_in_field() and save_org_in_field() are often called repeatedly
+  // with the same destination field (although the destination for the
+  // two are distinct, thus two distinct caches). We detect this case by
+  // storing the last destination, and whether it was of a compatible type
+  // that we can memcpy into (see fields_are_memcpyable()). This saves time
+  // doing the same type checking over and over again.
+  //
+  // The _memcpyable fields are uint32_t(-1) if the fields are not memcpyable,
+  // and pack_length() (ie., the amount of bytes to copy) if they are.
+  // See field_conv_with_cache(), where this logic is encapsulated.
+  Field *last_org_destination_field{nullptr};
+  Field *last_destination_field{nullptr};
+  uint32_t last_org_destination_field_memcpyable = -1;
+  uint32_t last_destination_field_memcpyable = -1;
+
   /**
     If this field is derived from another field, e.g. it is reading a column
     from a temporary table which is populated from a base table, this member
@@ -4642,26 +4699,26 @@ class Item_int : public Item_num {
   Item_int(int32 i, uint length = MY_INT32_NUM_DECIMAL_DIGITS)
       : value((longlong)i) {
     set_data_type(MYSQL_TYPE_LONGLONG);
-    max_length = length;
+    set_max_size(length);
     fixed = true;
   }
   Item_int(const POS &pos, int32 i, uint length = MY_INT32_NUM_DECIMAL_DIGITS)
       : super(pos), value((longlong)i) {
     set_data_type(MYSQL_TYPE_LONGLONG);
-    max_length = length;
+    set_max_size(length);
     fixed = true;
   }
   Item_int(longlong i, uint length = MY_INT64_NUM_DECIMAL_DIGITS) : value(i) {
     set_data_type(MYSQL_TYPE_LONGLONG);
-    max_length = length;
+    set_max_size(length);
     fixed = true;
   }
   Item_int(ulonglong i, uint length = MY_INT64_NUM_DECIMAL_DIGITS)
       : value((longlong)i) {
     set_data_type(MYSQL_TYPE_LONGLONG);
-    max_length = length;
-    fixed = true;
     unsigned_flag = true;
+    set_max_size(length);
+    fixed = true;
   }
   Item_int(const Item_int *item_arg) {
     set_data_type(item_arg->data_type());
@@ -4672,14 +4729,14 @@ class Item_int : public Item_num {
   }
   Item_int(const Name_string &name_arg, longlong i, uint length) : value(i) {
     set_data_type(MYSQL_TYPE_LONGLONG);
-    max_length = length;
+    set_max_size(length);
     item_name = name_arg;
     fixed = true;
   }
   Item_int(const POS &pos, const Name_string &name_arg, longlong i, uint length)
       : super(pos), value(i) {
     set_data_type(MYSQL_TYPE_LONGLONG);
-    max_length = length;
+    set_max_size(length);
     item_name = name_arg;
     fixed = true;
   }
@@ -4698,6 +4755,10 @@ class Item_int : public Item_num {
 
  private:
   void init(const char *str_arg, uint length);
+  void set_max_size(uint length) {
+    max_length = length;
+    if (!unsigned_flag && value >= 0) max_length++;
+  }
 
  protected:
   type_conversion_status save_in_field_inner(Field *field,
@@ -4728,7 +4789,7 @@ class Item_int : public Item_num {
     return this;
   }
   uint decimal_precision() const override {
-    return (uint)(max_length - (value < 0));
+    return static_cast<uint>(max_length - 1);
   }
   bool eq(const Item *, bool) const override;
   bool check_partition_func_processor(uchar *) override { return false; }
@@ -5536,6 +5597,13 @@ class Item_ref : public Item_ident {
   Item *transform(Item_transformer, uchar *arg) override;
   Item *compile(Item_analyzer analyzer, uchar **arg_p,
                 Item_transformer transformer, uchar *arg_t) override;
+  void traverse_cond(Cond_traverser traverser, void *arg,
+                     traverse_order order) override {
+    assert((*ref) != nullptr);
+    if (order == PREFIX) (*traverser)(this, arg);
+    (*ref)->traverse_cond(traverser, arg, order);
+    if (order == POSTFIX) (*traverser)(this, arg);
+  }
   bool explain_subquery_checker(uchar **) override {
     /*
       Always return false: we don't need to go deeper into referenced
@@ -5631,10 +5699,11 @@ class Item_view_ref final : public Item_ref {
   Item_view_ref(Name_resolution_context *context_arg, Item **item,
                 const char *db_name_arg, const char *alias_name_arg,
                 const char *table_name_arg, const char *field_name_arg,
-                TABLE_LIST *tl)
+                TABLE_LIST *tl, Name_resolution_context *merged_derived_context)
       : Item_ref(context_arg, item, db_name_arg, alias_name_arg,
                  field_name_arg),
-        first_inner_table(nullptr) {
+        first_inner_table(nullptr),
+        m_merged_derived_context(merged_derived_context) {
     if (tl->is_view()) {
       m_orig_db_name = db_name_arg;
       m_orig_table_name = table_name_arg;
@@ -5721,6 +5790,7 @@ class Item_view_ref final : public Item_ref {
   bool send(Protocol *prot, String *tmp) override;
   bool collect_item_field_or_view_ref_processor(uchar *arg) override;
   Item *replace_item_view_ref(uchar *arg) override;
+  Item *replace_view_refs_with_clone(uchar *arg) override;
 
  protected:
   type_conversion_status save_in_field_inner(Field *field,
@@ -5737,6 +5807,11 @@ class Item_view_ref final : public Item_ref {
     then this field points to the first leaf table of the view, otherwise NULL.
   */
   TABLE_LIST *first_inner_table;
+  /**
+    Original Context of the underlying field in case of a merged derived
+    table.
+  */
+  Name_resolution_context *m_merged_derived_context;
 };
 
 /*
@@ -6339,6 +6414,8 @@ class Item_cache : public Item_basic_constant {
   bool value_cached{false};
 
   friend bool has_rollup_result(Item *item);
+  friend bool replace_contents_of_rollup_wrappers_with_tmp_fields(
+      THD *thd, Query_block *select, Item *item_arg);
 
  public:
   Item_cache() {
@@ -6449,6 +6526,7 @@ class Item_cache : public Item_basic_constant {
     if (!example) return INT_RESULT;
     return Field::result_merge_type(example->data_type());
   }
+  Item *get_example() const { return example; }
 };
 
 class Item_cache_int final : public Item_cache {
@@ -6851,5 +6929,18 @@ inline Item *GetNthVisibleField(const mem_root_deque<Item *> &fields,
   assert(false);
   return nullptr;
 }
+
+/**
+  Returns true iff the two items are equal, as in a->eq(b),
+  after unwrapping refs and Item_cache objects.
+ */
+bool ItemsAreEqual(const Item *a, const Item *b, bool binary_cmp);
+
+/**
+  Returns true iff all items in the two arrays (which must be of the same size)
+  are equal, as in a->eq(b), after unwrapping refs and Item_cache objects.
+ */
+bool AllItemsAreEqual(const Item *const *a, const Item *const *b, int num_items,
+                      bool binary_cmp);
 
 #endif /* ITEM_INCLUDED */

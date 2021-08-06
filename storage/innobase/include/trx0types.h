@@ -62,11 +62,6 @@ static const ulint TRX_MAGIC_N = 91118598;
 asynchronously. */
 static const ib_uint32_t TRX_FORCE_ROLLBACK_DISABLE = 1 << 29;
 
-/** Was the transaction rolled back asynchronously or by the
-owning thread. This flag is relevant only if TRX_FORCE_ROLLBACK
-is set.  */
-static const ib_uint32_t TRX_FORCE_ROLLBACK_ASYNC = 1 << 30;
-
 /** Mark the transaction for forced rollback */
 static const ib_uint32_t TRX_FORCE_ROLLBACK = 1 << 31;
 
@@ -148,7 +143,7 @@ typedef ib_id_t roll_ptr_t;
 typedef ib_id_t undo_no_t;
 
 /** Maximum transaction identifier */
-#define TRX_ID_MAX IB_ID_MAX
+constexpr trx_id_t TRX_ID_MAX = IB_ID_MAX;
 
 /** Transaction savepoint */
 struct trx_savept_t {
@@ -246,21 +241,22 @@ struct trx_rseg_t {
   page_no_t curr_size{};
 
  public:
+  using Undo_list = UT_LIST_BASE_NODE_T_EXTERN(trx_undo_t, undo_list);
   /*--------------------------------------------------------*/
   /* Fields for update undo logs */
   /** List of update undo logs */
-  UT_LIST_BASE_NODE_T(trx_undo_t) update_undo_list;
+  Undo_list update_undo_list;
 
   /** List of update undo log segments cached for fast reuse */
-  UT_LIST_BASE_NODE_T(trx_undo_t) update_undo_cached;
+  Undo_list update_undo_cached;
 
   /*--------------------------------------------------------*/
   /* Fields for insert undo logs */
   /** List of insert undo logs */
-  UT_LIST_BASE_NODE_T(trx_undo_t) insert_undo_list;
+  Undo_list insert_undo_list;
 
   /** List of insert undo log segments cached for fast reuse */
-  UT_LIST_BASE_NODE_T(trx_undo_t) insert_undo_cached;
+  Undo_list insert_undo_cached;
 
   /*--------------------------------------------------------*/
 
@@ -359,16 +355,16 @@ class Rsegs {
         [](trx_rseg_t *lhs, trx_rseg_t *rhs) { return (rhs->id > lhs->id); });
   }
 
-  /** Get a shared lock on m_rsegs. */
+  /** Acquire the shared lock on m_rsegs. */
   void s_lock() { rw_lock_s_lock(m_latch); }
 
-  /** Get a shared lock on m_rsegs. */
+  /** Release the shared lock on m_rsegs. */
   void s_unlock() { rw_lock_s_unlock(m_latch); }
 
-  /** Get a shared lock on m_rsegs. */
+  /** Acquire the exclusive lock on m_rsegs. */
   void x_lock() { rw_lock_x_lock(m_latch); }
 
-  /** Get a shared lock on m_rsegs. */
+  /** Release the exclusive lock on m_rsegs. */
   void x_unlock() { rw_lock_x_unlock(m_latch); }
 
   /** Return whether the undo tablespace is active.
@@ -514,16 +510,23 @@ class Rsegs {
   undo_space_states m_state;
 };
 
+template <size_t N>
+using Rsegs_array = std::array<trx_rseg_t *, N>;
+
 /** Rollback segements from a given transaction with trx-no
 scheduled for purge. */
 class TrxUndoRsegs {
  public:
-  /** Default constructor */
-  TrxUndoRsegs() : m_trx_no() {}
-
   explicit TrxUndoRsegs(trx_id_t trx_no) : m_trx_no(trx_no) {
-    // Do nothing
+    for (auto &rseg : m_rsegs) {
+      rseg = nullptr;
+    }
   }
+
+  /** Default constructor */
+  TrxUndoRsegs() : TrxUndoRsegs(0) {}
+
+  void set_trx_no(trx_id_t trx_no) { m_trx_no = trx_no; }
 
   /** Get transaction number
   @return trx_id_t - get transaction number. */
@@ -531,31 +534,37 @@ class TrxUndoRsegs {
 
   /** Add rollback segment.
   @param rseg rollback segment to add. */
-  void push_back(trx_rseg_t *rseg) { m_rsegs.push_back(rseg); }
-
-  /** Erase the element pointed by given iterator.
-  @param[in]	it	iterator */
-  void erase(Rseg_Iterator &it) { m_rsegs.erase(it); }
+  void insert(trx_rseg_t *rseg) {
+    for (size_t i = 0; i < m_rsegs_n; ++i) {
+      if (m_rsegs[i] == rseg) {
+        return;
+      }
+    }
+    ut_a(m_rsegs_n < 2);
+    m_rsegs[m_rsegs_n++] = rseg;
+  }
 
   /** Number of registered rsegs.
   @return size of rseg list. */
-  ulint size() const { return (m_rsegs.size()); }
+  size_t size() const { return (m_rsegs_n); }
 
   /**
   @return an iterator to the first element */
-  Rseg_Iterator begin() { return (m_rsegs.begin()); }
+  typename Rsegs_array<2>::iterator begin() { return m_rsegs.begin(); }
 
   /**
   @return an iterator to the end */
-  Rseg_Iterator end() { return (m_rsegs.end()); }
+  typename Rsegs_array<2>::iterator end() {
+    return m_rsegs.begin() + m_rsegs_n;
+  }
 
   /** Append rollback segments from referred instance to current
   instance. */
-  void append(const TrxUndoRsegs &append_from) {
+  void insert(const TrxUndoRsegs &append_from) {
     ut_ad(get_trx_no() == append_from.get_trx_no());
-
-    m_rsegs.insert(m_rsegs.end(), append_from.m_rsegs.begin(),
-                   append_from.m_rsegs.end());
+    for (size_t i = 0; i < append_from.m_rsegs_n; ++i) {
+      insert(append_from.m_rsegs[i]);
+    }
   }
 
   /** Compare two TrxUndoRsegs based on trx_no.
@@ -574,8 +583,10 @@ class TrxUndoRsegs {
   /** The rollback segments transaction number. */
   trx_id_t m_trx_no;
 
+  size_t m_rsegs_n{};
+
   /** Rollback segments of a transaction, scheduled for purge. */
-  Rsegs_Vector m_rsegs;
+  Rsegs_array<2> m_rsegs;
 };
 
 typedef std::priority_queue<
@@ -596,8 +607,13 @@ struct TrxTrack {
   trx_t *m_trx;
 };
 
+/** Number of shards created for transactions. */
+constexpr size_t TRX_SHARDS_N = 256;
+
 struct TrxTrackHash {
-  size_t operator()(const TrxTrack &key) const { return (size_t(key.m_id)); }
+  size_t operator()(const TrxTrack &key) const {
+    return static_cast<size_t>(key.m_id / TRX_SHARDS_N);
+  }
 };
 
 /**
@@ -608,16 +624,7 @@ struct TrxTrackHashCmp {
   }
 };
 
-/**
-Comparator for TrxMap */
-struct TrxTrackCmp {
-  bool operator()(const TrxTrack &lhs, const TrxTrack &rhs) const {
-    return (lhs.m_id < rhs.m_id);
-  }
-};
-
-// typedef std::unordered_set<TrxTrack, TrxTrackHash, TrxTrackHashCmp> TrxIdSet;
-typedef std::set<TrxTrack, TrxTrackCmp, ut_allocator<TrxTrack>> TrxIdSet;
+typedef std::unordered_set<TrxTrack, TrxTrackHash, TrxTrackHashCmp> TrxIdSet;
 
 struct TrxVersion {
   TrxVersion(trx_t *trx);

@@ -78,8 +78,8 @@
 #include "sql/partition_info.h"  // partition_info
 #include "sql/protocol.h"
 #include "sql/query_options.h"
-#include "sql/rpl_rli.h"    // Relay_log_info
-#include "sql/rpl_slave.h"  // rpl_master_has_bug
+#include "sql/rpl_replica.h"  // rpl_master_has_bug
+#include "sql/rpl_rli.h"      // Relay_log_info
 #include "sql/sql_alter.h"
 #include "sql/sql_array.h"
 #include "sql/sql_base.h"  // setup_fields
@@ -1287,9 +1287,15 @@ bool Sql_cmd_insert_base::prepare_inner(THD *thd) {
   } else {
     ulong added_options = SELECT_NO_UNLOCK;
 
-    // Is inserted table used somewhere in other parts of query
-    if (unique_table(lex->insert_table_leaf, table_list->next_global, false)) {
-      // Using same table for INSERT and SELECT, buffer the selection
+    // The result needs to be buffered if the target table is used somewhere
+    // in other parts of query.
+    // This is not an issue if a secondary engine is involved, as the target
+    // table will always be in the primary engine, and the source table will
+    // be in the secondary engine, so they are always different for this
+    // particular case.
+    if (unique_table(lex->insert_table_leaf, table_list->next_global, false) &&
+        thd->secondary_engine_optimization() !=
+            Secondary_engine_optimization::SECONDARY) {
       added_options |= OPTION_BUFFER_RESULT;
     }
     /*
@@ -1692,21 +1698,24 @@ bool Sql_cmd_insert_base::resolve_update_expressions(THD *thd) {
 
   lex->in_update_value_clause = false;
 
-  if (select_insert) {
+  if (select_insert && !lex->using_hypergraph_optimizer) {
     /*
       Traverse the update values list and substitute fields from the
       select for references (Item_ref objects) to them. This is done in
       order to get correct values from those fields when the select
       employs a temporary table.
+
+      This is not necessary for the hypergraph optimizer, since it changes the
+      Item_field objects to point directly to the fields in the temporary table
+      when the temporary table is created.
     */
     Query_block *const select = lex->query_block;
 
-    for (auto it = update_value_list.begin(); it != update_value_list.end();
-         ++it) {
-      Item *new_item = (*it)->transform(&Item::update_value_transformer,
-                                        pointer_cast<uchar *>(select));
+    for (Item *&it : update_value_list) {
+      Item *new_item = it->transform(&Item::update_value_transformer,
+                                     pointer_cast<uchar *>(select));
       if (new_item == nullptr) return true;
-      *it = new_item;
+      it = new_item;
     }
   }
 

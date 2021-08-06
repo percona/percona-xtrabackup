@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <atomic>
 
+#include <mysql/components/services/component_sys_var_service.h>
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -45,14 +46,17 @@
 #include "sql/replication.h"         // Trans_context_info
 #include "sql/rpl_channel_credentials.h"
 #include "sql/rpl_channel_service_interface.h"
-#include "sql/rpl_gtid.h"   // Gtid_mode::lock
-#include "sql/rpl_slave.h"  // report_host
-#include "sql/sql_class.h"  // THD
+#include "sql/rpl_gtid.h"     // Gtid_mode::lock
+#include "sql/rpl_replica.h"  // report_host
+#include "sql/sql_class.h"    // THD
 #include "sql/sql_lex.h"
 #include "sql/sql_plugin.h"  // plugin_unlock
 #include "sql/sql_plugin_ref.h"
 #include "sql/ssl_init_callback.h"
 #include "sql/system_variables.h"  // System_variables
+
+REQUIRES_SERVICE_PLACEHOLDER(component_sys_variable_register);
+REQUIRES_SERVICE_PLACEHOLDER(component_sys_variable_unregister);
 
 class THD;
 
@@ -480,15 +484,15 @@ void get_server_startup_prerequirements(Trans_context_info &requirements) {
   requirements.binlog_format = global_system_variables.binlog_format;
   requirements.binlog_checksum_options = binlog_checksum_options;
   requirements.gtid_mode = global_gtid_mode.get();
-  requirements.log_slave_updates = opt_log_slave_updates;
+  requirements.log_replica_updates = opt_log_replica_updates;
   requirements.transaction_write_set_extraction =
       global_system_variables.transaction_write_set_extraction;
   requirements.mi_repository_type = opt_mi_repository_id;
   requirements.rli_repository_type = opt_rli_repository_id;
   requirements.parallel_applier_type = mts_parallel_option;
-  requirements.parallel_applier_workers = opt_mts_slave_parallel_workers;
+  requirements.parallel_applier_workers = opt_mts_replica_parallel_workers;
   requirements.parallel_applier_preserve_commit_order =
-      opt_slave_preserve_commit_order;
+      opt_replica_preserve_commit_order;
   requirements.lower_case_table_names = lower_case_table_names;
   requirements.default_table_encryption =
       global_system_variables.default_table_encryption;
@@ -545,11 +549,11 @@ bool is_gtid_committed(const Gtid &gtid) {
   return result;
 }
 
-unsigned long get_slave_max_allowed_packet() {
-  return slave_max_allowed_packet;
+unsigned long get_replica_max_allowed_packet() {
+  return replica_max_allowed_packet;
 }
 
-unsigned long get_max_slave_max_allowed_packet() {
+unsigned long get_max_replica_max_allowed_packet() {
   return MAX_MAX_ALLOWED_PACKET;
 }
 
@@ -583,4 +587,43 @@ std::string get_group_replication_group_name() {
     DBUG_PRINT("info", ("Group Replication stats not available!"));
   }
   return group_name;
+}
+
+bool get_group_replication_view_change_uuid(std::string &uuid) {
+  my_h_service component_sys_variable_register_service_handler = nullptr;
+  SERVICE_TYPE(component_sys_variable_register)
+  *component_sys_variable_register_service = nullptr;
+  srv_registry->acquire("component_sys_variable_register",
+                        &component_sys_variable_register_service_handler);
+
+  char *var_value = nullptr;
+  size_t var_len = 36;  // uuid length
+  bool error = false;
+
+  if (nullptr == component_sys_variable_register_service_handler) {
+    error = true; /* purecov: inspected */
+    goto end;     /* purecov: inspected */
+  }
+
+  component_sys_variable_register_service =
+      reinterpret_cast<SERVICE_TYPE(component_sys_variable_register) *>(
+          component_sys_variable_register_service_handler);
+
+  if ((var_value = new char[var_len + 1]) == nullptr) {
+    error = true; /* purecov: inspected */
+    goto end;     /* purecov: inspected */
+  }
+
+  // The variable may not exist, thence we use its default value.
+  uuid.assign("AUTOMATIC");
+  if (!component_sys_variable_register_service->get_variable(
+          "mysql_server", "group_replication_view_change_uuid",
+          reinterpret_cast<void **>(&var_value), &var_len)) {
+    uuid.assign(var_value, var_len);
+  }
+
+end:
+  srv_registry->release(component_sys_variable_register_service_handler);
+  delete[] var_value;
+  return error;
 }

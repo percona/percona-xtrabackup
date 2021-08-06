@@ -1302,7 +1302,7 @@ bool Query_logger::slow_log_write(
   if (!(*slow_log_handler_list)) return false;
 
   /* do not log slow queries from replication threads */
-  if (thd->slave_thread && !opt_log_slow_slave_statements) return false;
+  if (thd->slave_thread && !opt_log_slow_replica_statements) return false;
 
   /* fill in user_host value: the format is "%s[%s] @ %s [%s]" */
   char user_host_buff[MAX_USER_HOST_SIZE + 1];
@@ -1329,8 +1329,9 @@ bool Query_logger::slow_log_write(
   bool is_command = false;
   if (!query) {
     is_command = true;
-    query = command_name[thd->get_command()].str;
-    query_length = command_name[thd->get_command()].length;
+    const std::string &cn = Command_names::str_global(thd->get_command());
+    query = cn.c_str();
+    query_length = cn.length();
   }
 
   mysql_rwlock_rdlock(&LOCK_logger);
@@ -1377,8 +1378,8 @@ static bool log_command(THD *thd, enum_server_command command) {
 bool Query_logger::general_log_write(THD *thd, enum_server_command command,
                                      const char *query, size_t query_length) {
   /* Send a general log message to the audit API. */
-  mysql_audit_general_log(thd, command_name[(uint)command].str,
-                          command_name[(uint)command].length);
+  const std::string &cn = Command_names::str_global(command);
+  mysql_audit_general_log(thd, cn.c_str(), cn.length());
 
   /*
     Do we want to log this kind of command?
@@ -1402,8 +1403,7 @@ bool Query_logger::general_log_write(THD *thd, enum_server_command command,
     error |=
         (*current_handler++)
             ->log_general(thd, current_utime, user_host_buff, user_host_len,
-                          thd->thread_id(), command_name[(uint)command].str,
-                          command_name[(uint)command].length, query,
+                          thd->thread_id(), cn.c_str(), cn.length(), query,
                           query_length, thd->variables.character_set_client);
   }
   mysql_rwlock_unlock(&LOCK_logger);
@@ -1421,8 +1421,8 @@ bool Query_logger::general_log_print(THD *thd, enum_server_command command,
   if (!log_command(thd, command) || !opt_general_log ||
       !(*general_log_handler_list)) {
     /* Send a general log message to the audit API. */
-    mysql_audit_general_log(thd, command_name[(uint)command].str,
-                            command_name[(uint)command].length);
+    const std::string &cn = Command_names::str_global(command);
+    mysql_audit_general_log(thd, cn.c_str(), cn.length());
     return false;
   }
 
@@ -1603,6 +1603,8 @@ bool log_slow_applicable(THD *thd) {
     statement in a trigger or stored function
   */
   if (unlikely(thd->in_sub_stmt)) return false;  // Don't set time for sub stmt
+
+  if (unlikely(thd->killed == THD::KILL_CONNECTION)) return false;
 
   /*
     Do not log administrative statements unless the appropriate option is
@@ -1960,18 +1962,37 @@ void destroy_error_log() {
 }
 
 bool reopen_error_log() {
+  int component_failures;
   bool result = false;
 
   assert(error_log_initialized);
 
-  // reload all error logging services
-  log_builtins_error_stack_flush();
+  // call flush function in all logging services
+  if ((component_failures = log_builtins_error_stack_flush()) < 0) {
+    // If flushing failed and there is a user session, alert the user.
+    if (current_thd)
+      push_warning_printf(
+          current_thd, Sql_condition::SL_WARNING,
+          ER_DA_ERROR_LOG_COMPONENT_FLUSH_FAILED,
+          ER_THD(current_thd, ER_DA_ERROR_LOG_COMPONENT_FLUSH_FAILED),
+          -component_failures);
+
+    // Log failure to error-log.
+    LogErr(ERROR_LEVEL, ER_LOG_COMPONENT_FLUSH_FAILED, -component_failures);
+  }
 
   if (error_log_file) {
     mysql_mutex_lock(&LOCK_error_log);
     result = open_error_log(error_log_file, true);
     mysql_mutex_unlock(&LOCK_error_log);
 
+    /*
+      This may in theory get bounced to the error log if no session
+      is attached to this thread (e.g. when flush/reload is called
+      by SIGHUP). That's OK though as we don't hold an X-lock on
+      THR_LOCK_log_stack here the way we did during
+      log_builtins_error_stack_flush() above.
+    */
     if (result)
       my_error(ER_DA_CANT_OPEN_ERROR_LOG, MYF(0), error_log_file, ".",
                ""); /* purecov: inspected */

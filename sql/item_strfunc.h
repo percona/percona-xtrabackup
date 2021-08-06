@@ -109,8 +109,6 @@ class Item_str_func : public Item_func {
   Item_str_func(const POS &pos, PT_item_list *opt_list)
       : Item_func(pos, opt_list) {}
 
-  String *eval_string_arg(Item *arg, String *buffer);
-
   longlong val_int() override { return val_int_from_string(); }
   double val_real() override { return val_real_from_string(); }
   my_decimal *val_decimal(my_decimal *) override;
@@ -1112,7 +1110,7 @@ class Item_func_weight_string final : public Item_str_func {
   uint flags;
   const uint num_codepoints;
   const uint result_length;
-  Field *field;
+  Item_field *m_field_ref{nullptr};
   const bool as_binary;
 
  public:
@@ -1123,7 +1121,6 @@ class Item_func_weight_string final : public Item_str_func {
         flags(flags_arg),
         num_codepoints(num_codepoints_arg),
         result_length(result_length_arg),
-        field(nullptr),
         as_binary(as_binary_arg) {}
 
   bool itemize(Parse_context *pc, Item **res) override;

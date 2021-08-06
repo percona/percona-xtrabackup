@@ -57,10 +57,7 @@ using JsonDocument =
 using JsonValue =
     rapidjson::GenericValue<rapidjson::UTF8<>, rapidjson::CrtAllocator>;
 
-class RestMockServerTest : public RouterComponentTest {
- protected:
-  TcpPortPool port_pool_;
-};
+class RestMockServerTest : public RouterComponentTest {};
 
 /**
  * base class.
@@ -553,7 +550,11 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(HttpMethod::Connect, kMockServerConnectionsRestUri,
                         HttpStatusCode::MethodNotAllowed),
         std::make_tuple(HttpMethod::Head, kMockServerConnectionsRestUri,
-                        HttpStatusCode::MethodNotAllowed)));
+                        HttpStatusCode::MethodNotAllowed)),
+    [](const auto &info) {
+      return http_method_to_string(std::get<0>(info.param)) + "_" +
+             std::to_string(std::get<2>(info.param));
+    });
 
 /**
  * test storing globals in mock_server via REST bridge.

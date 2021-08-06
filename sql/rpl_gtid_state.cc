@@ -80,7 +80,7 @@ enum_return_status Gtid_state::acquire_ownership(THD *thd, const Gtid &gtid) {
   global_sid_lock->assert_some_lock();
   gtid_state->assert_sidno_lock_owner(gtid.sidno);
   assert(!executed_gtids.contains_gtid(gtid));
-  DBUG_PRINT("info", ("gtid=%d:%lld", gtid.sidno, gtid.gno));
+  DBUG_PRINT("info", ("gtid=%d:%" PRId64, gtid.sidno, gtid.gno));
   assert(thd->owned_gtid.sidno == 0);
   if (owned_gtids.add_gtid_owner(gtid, thd->thread_id()) != RETURN_STATUS_OK)
     goto err;
@@ -280,8 +280,8 @@ bool Gtid_state::wait_for_sidno(THD *thd, rpl_sidno sidno,
 bool Gtid_state::wait_for_gtid(THD *thd, const Gtid &gtid,
                                struct timespec *abstime) {
   DBUG_TRACE;
-  DBUG_PRINT("info", ("SIDNO=%d GNO=%lld thread_id=%u", gtid.sidno, gtid.gno,
-                      thd->thread_id()));
+  DBUG_PRINT("info", ("SIDNO=%d GNO=%" PRId64 " thread_id=%u", gtid.sidno,
+                      gtid.gno, thd->thread_id()));
   assert(!owned_gtids.is_owned_by(gtid, thd->thread_id()));
   assert(!owned_gtids.is_owned_by(gtid, 0));
 
@@ -432,11 +432,11 @@ rpl_gno Gtid_state::get_automatic_gno(rpl_sidno sidno) const {
                          sidno == get_server_sidno() ? next_free_gno : 1};
   while (true) {
     const Gtid_set::Interval *iv = ivit.get();
-    rpl_gno next_interval_start = iv != nullptr ? iv->start : MAX_GNO;
+    rpl_gno next_interval_start = iv != nullptr ? iv->start : GNO_END;
     while (next_candidate.gno < next_interval_start &&
            DBUG_EVALUATE_IF("simulate_gno_exhausted", false, true)) {
-      DBUG_PRINT("debug",
-                 ("Checking availability of gno= %llu", next_candidate.gno));
+      DBUG_PRINT("debug", ("Checking availability of gno= %" PRId64,
+                           next_candidate.gno));
       if (owned_gtids.is_owned_by(next_candidate, 0)) return next_candidate.gno;
       next_candidate.gno++;
     }
@@ -445,7 +445,7 @@ rpl_gno Gtid_state::get_automatic_gno(rpl_sidno sidno) const {
       my_error(ER_GNO_EXHAUSTED, MYF(0));
       return -1;
     }
-    if (next_candidate.gno <= iv->end) next_candidate.gno = iv->end;
+    if (next_candidate.gno < iv->end) next_candidate.gno = iv->end;
     ivit.next();
   }
 }
@@ -653,7 +653,7 @@ int Gtid_state::init() {
 
   global_sid_lock->assert_some_wrlock();
 
-  rpl_sid server_sid;
+  rpl_sid server_sid{};
   if (server_sid.parse(server_uuid, binary_log::Uuid::TEXT_LENGTH) != 0)
     return 1;
   rpl_sidno sidno = sid_map->add_sid(server_sid);
@@ -864,13 +864,13 @@ void Gtid_state::update_gtids_impl_own_gtid(THD *thd, bool is_commit) {
       are always same, so we did not save gtid into lost_gtids for every
       transaction for improving performance.
 
-      If binlog is enabled and log_slave_updates is disabled, slave
+      If binlog is enabled and log_replica_updates is disabled, slave
       SQL thread or slave worker thread adds transaction owned GTID
       into global executed_gtids, lost_gtids and gtids_only_in_table.
     */
     executed_gtids._add_gtid(thd->owned_gtid);
     thd->rpl_thd_ctx.session_gtids_ctx().notify_after_gtid_executed_update(thd);
-    if (thd->slave_thread && opt_bin_log && !opt_log_slave_updates) {
+    if (thd->slave_thread && opt_bin_log && !opt_log_replica_updates) {
       lost_gtids._add_gtid(thd->owned_gtid);
       gtids_only_in_table._add_gtid(thd->owned_gtid);
     }

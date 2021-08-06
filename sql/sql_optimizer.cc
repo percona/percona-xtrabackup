@@ -170,7 +170,6 @@ JOIN::JOIN(THD *thd_arg, Query_block *select)
       implicit_grouping(select->is_implicitly_grouped()),
       select_distinct(select->is_distinct()),
       keyuse_array(thd->mem_root),
-      query_block_fields(&select->fields),
       order(select->order_list.first, ESC_ORDER_BY),
       group_list(select->group_list.first, ESC_GROUP_BY),
       m_windows(select->m_windows),
@@ -205,17 +204,25 @@ bool JOIN::alloc_ref_item_slice(THD *thd_arg, int sliceno) {
 }
 
 bool JOIN::alloc_indirection_slices() {
-  const uint card = REF_SLICE_WIN_1 + m_windows.elements * 2;
+  const int num_slices = REF_SLICE_WIN_1 + m_windows.elements;
 
   assert(ref_items == nullptr);
-  ref_items = (*THR_MALLOC)->ArrayAlloc<Ref_item_array>(card);
+  ref_items = (*THR_MALLOC)->ArrayAlloc<Ref_item_array>(num_slices);
   if (ref_items == nullptr) return true;
 
   tmp_fields =
-      (*THR_MALLOC)->ArrayAlloc<mem_root_deque<Item *>>(card, *THR_MALLOC);
+      (*THR_MALLOC)
+          ->ArrayAlloc<mem_root_deque<Item *>>(num_slices, *THR_MALLOC);
   if (tmp_fields == nullptr) return true;
 
   return false;
+}
+
+static bool HasFullTextFunction(Item *item) {
+  return WalkItem(item, enum_walk::PREFIX, [](Item *inner_item) {
+    return inner_item->type() == Item::FUNC_ITEM &&
+           down_cast<Item_func *>(inner_item)->functype() == Item_func::FT_FUNC;
+  });
 }
 
 /**
@@ -317,6 +324,7 @@ bool JOIN::optimize() {
   // if (query_block->materialized_derived_table_count) {
   {  // WL#6570
     for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
+      tl->access_path_for_derived = nullptr;
       if (tl->is_view_or_derived()) {
         if (tl->optimize_derived(thd)) return true;
       } else if (tl->is_table_function()) {
@@ -330,6 +338,19 @@ bool JOIN::optimize() {
 
         table->file->stats.records = 2;
       }
+    }
+  }
+
+  if (thd->lex->using_hypergraph_optimizer) {
+    // The hypergraph optimizer also wants all subselect items to be optimized,
+    // so that it has cost information to attach to filter nodes.
+    for (Query_expression *unit = query_block->first_inner_query_expression();
+         unit; unit = unit->next_query_expression()) {
+      // Derived tables and const subqueries are already optimized
+      if (!unit->is_optimized() &&
+          unit->optimize(thd, /*materialize_destination=*/nullptr,
+                         /*create_iterators=*/false))
+        return true;
     }
   }
 
@@ -502,9 +523,47 @@ bool JOIN::optimize() {
   if (thd->is_error()) return true;
 
   if (thd->lex->using_hypergraph_optimizer) {
-    if (thd->opt_trace.is_started()) {
-      std::string trace_str;
-      m_root_access_path = FindBestQueryPlan(thd, query_block, &trace_str);
+    Item *where_cond_no_in2exists = remove_in2exists_conds(thd, where_cond);
+    Item *having_cond_no_in2exists = remove_in2exists_conds(thd, having_cond);
+
+    std::string trace_str;
+    std::string *trace_ptr = thd->opt_trace.is_started() ? &trace_str : nullptr;
+
+    m_root_access_path = FindBestQueryPlan(thd, query_block, trace_ptr);
+
+    // If this query block was modified by IN-to-EXISTS conversion,
+    // the outer query block may want to undo that conversion and materialize
+    // us instead, depending on cost. (Materialization has high initial cost,
+    // but looking up in the materialized table is typically cheaper than
+    // running the entire query.) If so, we will need to plan the query again,
+    // but with all extra conditions added by IN-to-EXISTS removed, as those
+    // are specific to the values referred to by the outer query.
+    //
+    // Thus, we detect this here, and plan a second query plan. There are
+    // computations that could be shared between the two plans (e.g. join order
+    // between tables for which there is no IN-to-EXISTS-related condition),
+    // so it is somewhat wasteful, but experiments have shown that planning
+    // both at the same time quickly clutters the code with such handling;
+    // there are so many places such filters could be added (base table filters,
+    // filters after various types of joins, join conditions, post-join filters,
+    // HAVING, possibly others) that trying to plan paths both with and without
+    // them incurs complexity that is not justified by the small computational
+    // gain it would bring.
+    if (where_cond != where_cond_no_in2exists ||
+        having_cond != having_cond_no_in2exists) {
+      if (trace_ptr != nullptr) {
+        *trace_ptr +=
+            "\nPlanning an alternative with in2exists conditions removed:\n";
+      }
+      where_cond = where_cond_no_in2exists;
+      having_cond = having_cond_no_in2exists;
+      m_root_access_path_no_in2exists =
+          FindBestQueryPlan(thd, query_block, trace_ptr);
+    } else {
+      m_root_access_path_no_in2exists = nullptr;
+    }
+
+    if (trace != nullptr) {
       Opt_trace_object trace_wrapper2(&thd->opt_trace);
       Opt_trace_array join_optimizer(&thd->opt_trace, "join_optimizer");
 
@@ -514,9 +573,6 @@ bool JOIN::optimize() {
         join_optimizer.add_utf8(trace_str.data() + pos, len);
         pos += len + 1;
       }
-    } else {
-      m_root_access_path =
-          FindBestQueryPlan(thd, query_block, /*trace=*/nullptr);
     }
     if (m_root_access_path == nullptr) {
       return true;
@@ -737,7 +793,7 @@ bool JOIN::optimize() {
     }
 
     bool simple_sort = true;
-    Deps_of_remaining_lateral_derived_tables deps_lateral(this, all_table_map);
+    Table_map_restorer deps_lateral(&deps_of_remaining_lateral_derived_tables);
     // Check whether join cache could be used
     for (uint i = const_tables; i < tables; i++) {
       JOIN_TAB *const tab = best_ref[i];
@@ -746,7 +802,11 @@ bool JOIN::optimize() {
       if (tab->use_join_cache() != JOIN_CACHE::ALG_NONE) simple_sort = false;
       assert(tab->type() != JT_FT ||
              tab->use_join_cache() == JOIN_CACHE::ALG_NONE);
-      deps_lateral.recalculate(tab, i + 1);
+      if (has_lateral && get_lateral_deps(*best_ref[i]) != 0) {
+        deps_of_remaining_lateral_derived_tables =
+            calculate_deps_of_remaining_lateral_derived_tables(all_table_map,
+                                                               i + 1);
+      }
     }
     if (!simple_sort) {
       /*
@@ -807,7 +867,7 @@ bool JOIN::optimize() {
     windowing creates one anyway, and so does the materialization of a derived
     table.
 
-    See also the computation of Temp_table_param::m_window_short_circuit,
+    See also the computation of Window::m_short_circuit,
     where we make sure to create a tmp table if the clauses above want one.
 
     (8) If the first windowing step needs sorting, filesort() will be used; it
@@ -819,6 +879,25 @@ bool JOIN::optimize() {
   if (rollup_state != RollupState::NONE &&  // (1)
       (select_distinct || has_windows || !order.empty()))
     need_tmp_before_win = true;
+
+  /*
+    If we have full-text columns involved in aggregation, we need to
+    materialize it, as the saving and loading of rows in AggregateIterator
+    does not include FTS information. If we have multiple tables, we'll
+    have a materialization (either because we're aggregating into a temporary
+    table, or because we always materialize before further operations),
+    and if we have a GROUP BY, we'll either have an aggregate-to-table
+    or a sort, which also fixes the issue. However, in the case of a single
+    table and implicit grouping, we need to force the temporary table here.
+   */
+  if (!need_tmp_before_win && implicit_grouping &&
+      primary_tables - const_tables == 1 && order.empty() &&
+      best_ref[const_tables]->table_ref->is_fulltext_searched()) {
+    for (Item *item : VisibleFields(*fields)) {
+      need_tmp_before_win |= HasFullTextFunction(item);
+      if (need_tmp_before_win) break;
+    }
+  }
 
   if (!plan_is_const())  // (2)
   {
@@ -927,6 +1006,12 @@ setup_subq_exit:
 
   set_plan_state(ZERO_RESULT);
   return false;
+}
+
+void JOIN::change_to_access_path_without_in2exists() {
+  if (m_root_access_path_no_in2exists != nullptr) {
+    m_root_access_path = m_root_access_path_no_in2exists;
+  }
 }
 
 void JOIN::create_access_paths_for_zero_rows() {
@@ -2060,7 +2145,7 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
 
         /* Setup FT handler */
         ft_func->set_hints(join, FT_SORTED, select_limit, true);
-        ft_func->join_key = true;
+        ft_func->score_from_index_scan = true;
         table->file->ft_handler = ft_func->ft_handler;
         return true;
       }
@@ -3041,9 +3126,9 @@ table_map JOIN::calculate_deps_of_remaining_lateral_derived_tables(
   table_map deps = 0;
   auto last = best_ref + tables;
   for (auto **pos = best_ref + idx; pos < last; pos++) {
-    if ((*pos)->table_ref && (*pos)->table_ref->is_derived() &&
-        ((*pos)->table_ref->map() & plan_tables))
-      deps |= (*pos)->table_ref->derived_query_expression()->m_lateral_deps;
+    if ((*pos)->table_ref && ((*pos)->table_ref->map() & plan_tables)) {
+      deps |= get_lateral_deps(**pos);
+    }
   }
   return deps;
 }
@@ -3172,7 +3257,7 @@ static bool setup_join_buffering(JOIN_TAB *tab, JOIN *join,
   Cost_estimate cost;
   ha_rows rows;
   uint bufsz = 4096;
-  uint join_cache_flags = HA_MRR_NO_NULL_ENDPOINTS;
+  uint join_cache_flags = 0;
   const bool bnl_on = hint_table_state(join->thd, tab->table_ref, BNL_HINT_ENUM,
                                        OPTIMIZER_SWITCH_BNL);
   const bool bka_on = hint_table_state(join->thd, tab->table_ref, BKA_HINT_ENUM,
@@ -3180,6 +3265,16 @@ static bool setup_join_buffering(JOIN_TAB *tab, JOIN *join,
 
   const uint tableno = tab->idx();
   const uint tab_sj_strategy = tab->get_sj_strategy();
+
+  /*
+    If all key_parts are null_rejecting, the MultiRangeRowIterator will
+    eliminate all NULL values in the key set, such that
+    HA_MRR_NO_NULL_ENDPOINTS can be promised.
+  */
+  const key_part_map keypart_map = make_prev_keypart_map(tab->ref().key_parts);
+  if (tab->ref().null_rejecting == keypart_map) {
+    join_cache_flags |= HA_MRR_NO_NULL_ENDPOINTS;
+  }
 
   // Set preliminary join cache setting based on decision from greedy search
   if (!join->select_count)
@@ -7913,7 +8008,7 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
                                 Query_block *query_block,
                                 SARGABLE_PARAM **sargables) {
   assert(cond == nullptr || cond->is_bool_func());
-  uint and_level, i, found_eq_constant;
+  uint and_level, i;
   Key_field *key_fields, *end, *field;
   size_t sz;
   uint m = max(query_block->max_equal_elems, 1U);
@@ -8034,10 +8129,11 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
 
     use = save_pos = keyuse->begin();
     const Key_use *prev = &key_end;
-    found_eq_constant = 0;
+    bool found_eq_constant = false;
     for (i = 0; i < keyuse->size() - 1; i++, use++) {
       TABLE *const table = use->table_ref->table;
-      if (!use->used_tables && use->optimize != KEY_OPTIMIZE_REF_OR_NULL)
+      if (use->val->const_for_execution() &&
+          use->optimize != KEY_OPTIMIZE_REF_OR_NULL)
         table->const_key_parts[use->key] |= use->keypart_map;
       if (use->keypart != FT_KEYPART) {
         if (use->key == prev->key && use->table_ref == prev->table_ref) {
@@ -8055,7 +8151,7 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
        */
       if (save_pos != use) *save_pos = *use;
       prev = use;
-      found_eq_constant = !use->used_tables;
+      found_eq_constant = use->val->const_for_execution();
       /* Save ptr to first use */
       if (!table->reginfo.join_tab->keyuse())
         table->reginfo.join_tab->set_keyuse(save_pos);
