@@ -953,6 +953,7 @@ static bool reencrypt_redo_header(const char *dir, const char *filepath,
   size_t len = my_read(fd, log_buf, UNIV_PAGE_SIZE_MAX, MYF(MY_WME));
 
   if (len < UNIV_PAGE_SIZE_MIN) {
+    ut_free(log_buf);
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
@@ -960,6 +961,7 @@ static bool reencrypt_redo_header(const char *dir, const char *filepath,
   ulint offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
   if (memcmp(log_buf + offset, Encryption::KEY_MAGIC_V3,
              Encryption::MAGIC_SIZE) != 0) {
+    ut_free(log_buf);
     my_close(fd, MYF(MY_FAE));
     return (true);
   }

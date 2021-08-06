@@ -136,14 +136,14 @@ void trx_rseg_mem_free(trx_rseg_t *rseg) {
     ut_a(UT_LIST_GET_LEN(rseg->update_undo_list) == 0);
     ut_a(UT_LIST_GET_LEN(rseg->insert_undo_list) == 0);
   } else {
-    for (auto undo : rseg->update_undo_list) {
+    for (auto undo : rseg->update_undo_list.removable()) {
       UT_LIST_REMOVE(rseg->update_undo_list, undo);
 
       MONITOR_DEC(MONITOR_NUM_UNDO_SLOT_CACHED);
 
       trx_undo_mem_free(undo);
     }
-    for (auto undo : rseg->insert_undo_list) {
+    for (auto undo : rseg->insert_undo_list.removable()) {
       UT_LIST_REMOVE(rseg->insert_undo_list, undo);
 
       MONITOR_DEC(MONITOR_NUM_UNDO_SLOT_CACHED);
