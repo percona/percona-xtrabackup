@@ -1746,4 +1746,36 @@ using unordered_set = std::unordered_set<Key, std::hash<Key>,
                                          std::equal_to<Key>, ut_allocator<Key>>;
 
 }  // namespace ut
+
+#ifdef XTRABACKUP
+inline void ut_free_func(byte *buf) { ut_free(buf); }
+
+using ut_unique_ptr = std::unique_ptr<byte, std::function<void(byte *)>>;
+
+inline ut_unique_ptr ut_make_unique_ptr_null() {
+  return ut_unique_ptr(nullptr, ut_free_func);
+}
+
+inline ut_unique_ptr ut_make_unique_ptr_nokey(const size_t size) {
+  return ut_unique_ptr(static_cast<byte *>(ut_malloc_nokey(size)),
+                       ut_free_func);
+}
+
+inline ut_unique_ptr ut_make_unique_ptr(const size_t size,
+                                        PSI_memory_key memory_key) {
+  return ut_unique_ptr(static_cast<byte *>(ut_malloc(size, memory_key)),
+                       ut_free_func);
+}
+
+inline ut_unique_ptr ut_make_unique_ptr_zalloc(const size_t size,
+                                               PSI_memory_key memory_key) {
+  return ut_unique_ptr(static_cast<byte *>(ut_zalloc(size, memory_key)),
+                       ut_free_func);
+}
+
+inline ut_unique_ptr ut_make_unique_ptr_zalloc_nokey(const size_t size) {
+  return ut_unique_ptr(static_cast<byte *>(ut_zalloc_nokey(size)),
+                       ut_free_func);
+}
+#endif /* XTRABACKUP */
 #endif /* ut0new_h */

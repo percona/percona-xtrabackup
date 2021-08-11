@@ -866,11 +866,10 @@ bool copy_redo_encryption_info() {
   pfs_os_file_t dst_file = XB_FILE_UNDEFINED;
   char src_path[FN_REFLEN];
   char dst_path[FN_REFLEN];
-  byte *log_buf;
+  auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
   bool success = FALSE;
-  log_buf = static_cast<byte *>(ut_malloc_nokey(UNIV_PAGE_SIZE_MAX * 128));
   if (log_buf == NULL) {
     return false;
   }
@@ -893,9 +892,6 @@ bool copy_redo_encryption_info() {
     os_file_get_last_error(TRUE);
     msg_ts("xtrabackup: Fatal error: cannot find %s.\n", src_path);
 
-    if (log_buf != NULL) {
-      ut_free(log_buf);
-    }
     return false;
   }
 
@@ -906,17 +902,14 @@ bool copy_redo_encryption_info() {
     os_file_get_last_error(TRUE);
     msg_ts("xtrabackup: Fatal error: cannot find %s.\n", dst_path);
 
-    if (log_buf != NULL) {
-      ut_free(log_buf);
-    }
     return false;
   }
-  success = os_file_read(read_request, src_path, src_file, log_buf, 0,
+  success = os_file_read(read_request, src_path, src_file, log_buf.get(), 0,
                          LOG_FILE_HDR_SIZE);
 
   ulint encryption_offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
   success = os_file_write(write_request, dst_path, dst_file,
-                          log_buf + encryption_offset, encryption_offset,
+                          log_buf.get() + encryption_offset, encryption_offset,
                           Encryption::INFO_SIZE);
   if (!success) {
     msg_ts(
@@ -927,9 +920,6 @@ bool copy_redo_encryption_info() {
   }
   os_file_close(src_file);
   os_file_close(dst_file);
-  if (log_buf != NULL) {
-    ut_free(log_buf);
-  }
   return true;
 }
 
@@ -946,30 +936,26 @@ bool copy_redo_encryption_info() {
 static bool reencrypt_redo_header(const char *dir, const char *filename,
                                   uint thread_n) {
   char fullpath[FN_REFLEN];
-  byte *log_buf;
+  auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
   byte encrypt_info[Encryption::INFO_SIZE];
   fil_space_t space;
 
   fn_format(fullpath, filename, dir, "", MYF(MY_RELATIVE_PATH));
 
-  log_buf = static_cast<byte *>(ut_malloc_nokey(UNIV_PAGE_SIZE_MAX * 128));
-
   File fd = my_open(fullpath, O_RDWR, MYF(MY_FAE));
 
   my_seek(fd, 0L, SEEK_SET, MYF(MY_WME));
 
-  size_t len = my_read(fd, log_buf, UNIV_PAGE_SIZE_MAX, MYF(MY_WME));
+  size_t len = my_read(fd, log_buf.get(), UNIV_PAGE_SIZE_MAX, MYF(MY_WME));
 
   if (len < UNIV_PAGE_SIZE_MIN) {
-    ut_free(log_buf);
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
 
   ulint offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
-  if (memcmp(log_buf + offset, Encryption::KEY_MAGIC_V3,
+  if (memcmp(log_buf.get() + offset, Encryption::KEY_MAGIC_V3,
              Encryption::MAGIC_SIZE) != 0) {
-    ut_free(log_buf);
     my_close(fd, MYF(MY_FAE));
     return (true);
   }
@@ -990,11 +976,11 @@ static bool reencrypt_redo_header(const char *dir, const char *filename,
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
-  memcpy(log_buf + offset, encrypt_info, Encryption::INFO_SIZE);
+  memcpy(log_buf.get() + offset, encrypt_info, Encryption::INFO_SIZE);
   my_seek(fd, offset, SEEK_SET, MYF(MY_WME));
-  my_write(fd, log_buf + offset, Encryption::INFO_SIZE, MYF(MY_FAE | MY_NABP));
+  my_write(fd, log_buf.get() + offset, Encryption::INFO_SIZE,
+           MYF(MY_FAE | MY_NABP));
   my_close(fd, MYF(MY_FAE));
-  ut_free(log_buf);
   return true;
 }
 
