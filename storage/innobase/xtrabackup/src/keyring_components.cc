@@ -120,32 +120,6 @@ void create_component_config_data() {
       std::string(string_buffer.GetString(), string_buffer.GetSize());
 }
 
-bool read_server_uuid() {
-  if (xtrabackup_stats) return true;
-
-  char *uuid = NULL;
-  bool ret;
-  my_option config_options[] = {
-      {"server-uuid", 0, "", &uuid, &uuid, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0,
-       0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-  if (xtrabackup_incremental_dir != nullptr) {
-    ret = xtrabackup::utils::load_backup_my_cnf(config_options,
-                                                xtrabackup_incremental_dir);
-  } else {
-    ret = xtrabackup::utils::load_backup_my_cnf(config_options,
-                                                xtrabackup_real_target_dir);
-  }
-  if (!ret) {
-    msg("xtrabackup: Error: failed to load backup-my.cnf\n");
-    return (false);
-  }
-  memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
-  if (uuid != NULL) {
-    strncpy(server_uuid, uuid, Encryption::SERVER_UUID_LEN);
-  }
-  return (true);
-}
 
 bool keyring_init_online(MYSQL *connection) {
   bool init_components = false;
@@ -188,7 +162,7 @@ bool keyring_init_online(MYSQL *connection) {
 }
 
 bool keyring_init_offline() {
-  if (!read_server_uuid()) return (false);
+  if (!xtrabackup::utils::read_server_uuid()) return (false);
 
   char fname[FN_REFLEN];
   if (opt_component_keyring_file_config != nullptr) {

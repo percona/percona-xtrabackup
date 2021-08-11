@@ -34,13 +34,6 @@ extern bool keyring_component_initialized;
 bool write_component_config_file();
 
 /**
-  Read server_uuid from backup-my.cnf
-
-  @return false in case of error, true otherwise
-*/
-bool read_server_uuid();
-
-/**
   Initialize Keyring component by querying config from a running server
   This is used at --backup
 
