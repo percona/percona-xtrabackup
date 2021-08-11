@@ -1008,7 +1008,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     dd::Object_id index_space_id = dd_index->tablespace_id();
 
     if (dd_table->tablespace_id() == dict_sys_t::s_dd_dict_space_id) {
-      sid = dict_sys_t::s_dd_dict_space_id;
+      sid = dict_sys_t::s_dict_space_id;
     } else if (dd_table->tablespace_id() == dict_sys_t::s_dd_temp_space_id) {
       sid = dict_sys_t::s_temp_space_id;
     } else {
