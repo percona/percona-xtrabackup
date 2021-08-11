@@ -69,7 +69,7 @@ bool backup_start(Backup_context &context);
 bool backup_finish(Backup_context &context);
 
 /**
-  Copies redo log encrypted info from xtraback_logfile to ib_lofile0
+  Copies redo log encrypted info from xtraback_logfile to ib_logfile0
   This is used at --prepare
 
   @return false in case of error, true otherwise

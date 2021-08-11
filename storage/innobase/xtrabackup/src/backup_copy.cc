@@ -891,7 +891,7 @@ bool copy_redo_encryption_info() {
       &success);
   if (!success) {
     os_file_get_last_error(TRUE);
-    msg("  xtrabackup: Fatal error: cannot find %s.\n", src_path);
+    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", src_path);
 
     if (log_buf != NULL) {
       ut_free(log_buf);
@@ -904,7 +904,7 @@ bool copy_redo_encryption_info() {
       &success);
   if (!success) {
     os_file_get_last_error(TRUE);
-    msg("  xtrabackup: Fatal error: cannot find %s.\n", dst_path);
+    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", dst_path);
 
     if (log_buf != NULL) {
       ut_free(log_buf);
@@ -919,7 +919,8 @@ bool copy_redo_encryption_info() {
                           log_buf + encryption_offset, encryption_offset,
                           Encryption::INFO_SIZE);
   if (!success) {
-    msg("  xtrabackup: Fatal error: cannot write encryption to redo log "
+    msg_ts(
+        "xtrabackup: Fatal error: cannot write encryption to redo log "
         "%s.\n",
         dst_path);
     return false;
@@ -932,17 +933,24 @@ bool copy_redo_encryption_info() {
   return true;
 }
 
-/************************************************************************
-Reencrypt redo header with new master key for copy-back.
-@return true in case of success. */
-static bool reencrypt_redo_header(const char *dir, const char *filepath,
+/**
+  Reencrypt redo header with new master key for copy-back.
+
+  @param [in]  dir       directory where redolog is located
+  @param [in]  filename  filename of redo log
+  @param [in]  thread_n  id of thread performing the operation
+
+  @return false in case of error, true otherwise
+*/
+
+static bool reencrypt_redo_header(const char *dir, const char *filename,
                                   uint thread_n) {
   char fullpath[FN_REFLEN];
   byte *log_buf;
   byte encrypt_info[Encryption::INFO_SIZE];
   fil_space_t space;
 
-  fn_format(fullpath, filepath, dir, "", MYF(MY_RELATIVE_PATH));
+  fn_format(fullpath, filename, dir, "", MYF(MY_RELATIVE_PATH));
 
   log_buf = static_cast<byte *>(ut_malloc_nokey(UNIV_PAGE_SIZE_MAX * 128));
 
