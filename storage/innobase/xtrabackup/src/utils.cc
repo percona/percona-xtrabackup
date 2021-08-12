@@ -53,6 +53,7 @@ bool load_backup_my_cnf(my_option *options, char *path) {
 }
 
 bool read_server_uuid() {
+  /* for --stats we not always have a backup-my.cnf */
   if (xtrabackup_stats) return true;
 
   char *uuid = NULL;

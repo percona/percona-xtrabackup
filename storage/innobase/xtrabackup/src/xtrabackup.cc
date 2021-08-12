@@ -6921,7 +6921,8 @@ skip_check:
     /*
      * we cannot generate encrypted redo log without keyring access.
      * For redo log, we only have un-encrypted key/iv but don't have original
-     * encrypted version. Copy it from xtrabackup_logfile.
+     * encrypted version. Copy it from xtrabackup_logfile to the newly created
+     * redo log file header.
      */
     if (use_dumped_tablespace_keys && srv_redo_log_encrypt) {
       if (!copy_redo_encryption_info()) goto error_cleanup;
