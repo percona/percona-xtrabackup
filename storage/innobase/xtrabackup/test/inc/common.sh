@@ -501,7 +501,7 @@ function start_group_replication_cluster()
   if is_debug_server; then
     if [[ $INNODB_FLAVOR = "InnoDB" ]];
     then
-      require_server_version_higher_than 8.0.25
+      require_server_version_higher_than 8.0.26
     fi
   fi
   local number_of_nodes=$1
