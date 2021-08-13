@@ -66,7 +66,7 @@ function call_mysql_install_db()
 function mysql_ping()
 {
     local pid=$1
-    local attempts=200
+    local attempts=${MYSQLD_START_TIMEOUT:-200}
     local i
 
     for ((i=1; i<=attempts; i++))
