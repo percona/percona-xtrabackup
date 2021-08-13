@@ -3424,15 +3424,10 @@ int warn_self_signed_ca()
   return ret_val;
 }
 
-<<<<<<< HEAD
-#endif /* !EMBEDDED_LIBRARY || XTRABACKUP */
-=======
 static void push_deprecated_tls_option_no_replacement(const char *tls_version) {
   sql_print_warning(ER_DEFAULT(ER_WARN_DEPRECATED_TLS_VERSION), tls_version);
 }
-
-#endif /* EMBEDDED_LIBRARY */
->>>>>>> mysql-5.7.35
+#endif /* !EMBEDDED_LIBRARY || XTRABACKUP */
 
 static int init_ssl()
 {
