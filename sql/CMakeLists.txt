@@ -36,7 +36,7 @@ IF(FPROFILE_GENERATE OR FPROFILE_USE)
 ENDIF()
 
 # Array indexing with pland_idx == int8 gives warnings.
-IF(SOLARIS AND MY_COMPILER_IS_GNU)
+IF(SOLARIS AND MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_OPTIONS("-Wno-char-subscripts")
 ENDIF()
 
@@ -91,6 +91,10 @@ MYSQL_ADD_EXECUTABLE(gen_keyword_list
   LINK_LIBRARIES ${ICU_LIBRARIES} ${CMAKE_DL_LIBS}
   SKIP_INSTALL
   )
+
+IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+  TARGET_COMPILE_OPTIONS(gen_keyword_list PRIVATE "-fno-lto")
+ENDIF()
 
 IF(HAS_MISSING_PROFILE)
   ADD_COMPILE_FLAGS(gen_keyword_list.cc COMPILE_FLAGS ${HAS_MISSING_PROFILE})
@@ -287,9 +291,11 @@ SET(DD_SOURCES
 SET(SQL_GIS_SOURCES
   geometry_rtree.cc
   gis/area.cc
+  gis/buffer.cc
   gis/covered_by.cc
   gis/crosses.cc
   gis/difference.cc
+  gis/difference_functor.cc
   gis/disjoint.cc
   gis/distance.cc
   gis/distance_functor.cc
@@ -309,12 +315,14 @@ SET(SQL_GIS_SOURCES
   gis/ring_flip_visitor.cc
   gis/rtree_support.cc
   gis/simplify.cc
+  gis/so_utils.cc
   gis/srs/srs.cc
   gis/srs/wkt_parser.cc
   gis/st_units_of_measure.cc
   gis/touches.cc
   gis/transform.cc
   gis/union.cc
+  gis/union_functor.cc
   gis/within.cc
   gis/wkb.cc
   gis/wkb_size_visitor.cc
@@ -405,6 +413,7 @@ SET(SQL_SHARED_SOURCES
   join_optimizer/estimate_selectivity.cc
   join_optimizer/explain_access_path.cc
   join_optimizer/hypergraph.cc
+  join_optimizer/interesting_orders.cc
   join_optimizer/join_optimizer.cc
   join_optimizer/make_join_hypergraph.cc
   join_optimizer/print_utils.cc
@@ -585,6 +594,7 @@ SET(SQL_SHARED_SOURCES
   trigger_chain.cc
   tztime.cc
   uniques.cc
+  window_iterators.cc
   xa.cc
   daemon_proxy_keyring/daemon_proxy_keyring.cc
 )
@@ -698,7 +708,7 @@ SET(SQL_SOURCE
   ${CONF_SOURCES}
   ${SQL_SHARED_SOURCES}
   ${SQL_HEADERS}
-  ../extra/lz4/xxhash.c
+  ${BUNDLED_LZ4_PATH}/xxhash.c
   ../libmysql/errmsg.cc
   ../sql-common/client.cc
   ../sql-common/client_plugin.cc
@@ -752,16 +762,26 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
 ENDIF()
 
 ADD_COMPILE_DEFINITIONS(
-  ../extra/lz4/xxhash.c
+  ${BUNDLED_LZ4_PATH}/xxhash.c
   COMPILE_DEFINITIONS XXH_NAMESPACE=MY_
-)
+  )
+
+ADD_COMPILE_FLAGS(
+  ${BUNDLED_LZ4_PATH}/xxhash.c
+  hash_join_iterator.cc
+  rpl_write_set_handler.cc
+  COMPILE_FLAGS -I${CMAKE_SOURCE_DIR}/extra/lz4 -I${BUNDLED_LZ4_PATH}
+  )
 
 # Fixes "C1128: number of sections exceeded object file format limit" in MSVC
 IF(WIN32)
   ADD_COMPILE_FLAGS(
     gis/difference.cc
+    gis/difference_functor.cc
+    gis/intersection_functor.cc
     gis/touches.cc
     gis/union.cc
+    gis/union_functor.cc
     gis/within.cc
     item_geofunc.cc
     item_geofunc_relchecks.cc
@@ -794,7 +814,13 @@ IF(MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
                     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
                     COMPILE_FLAGS "-Wno-undef")
-
+  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98753
+  IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
+    ADD_COMPILE_FLAGS(
+      ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+      ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+      COMPILE_FLAGS "-Wno-free-nonheap-object")
+  ENDIF()
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_FLAG("-fno-builtin-memcmp" HAVE_NO_BUILTIN_MEMCMP)
@@ -814,7 +840,7 @@ ADD_DEPENDENCIES(sql_main GenBootstrapPriv)
 ADD_DEPENDENCIES(sql_main GenSysSchema)
 TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS}
   mysql_server_component_services mysys strings vio
-  binlogevents_static ${LIBWRAP} ${LIBCRYPT} ${LIBDL} ${SSL_LIBRARIES})
+  binlogevents_static ${LIBWRAP} ${LIBDL} ${SSL_LIBRARIES})
 
 # sql/immutable_string.h uses
 # google::protobuf::io::CodedOutputStream::WriteVarint64ToArray
@@ -858,15 +884,6 @@ IF(MY_COMPILER_IS_SUNPRO)
     ${SQL_GIS_SOURCES}
     sql_exception_handler.cc
     COMPILE_FLAGS " -g0 -xdebuginfo=no%decl")
-ENDIF()
-
-# segfault in boost geometry ....
-IF(SOLARIS AND MY_COMPILER_IS_GNU AND
-    CMAKE_BUILD_TYPE_UPPER MATCHES "REL")
-  ADD_COMPILE_FLAGS(
-    ${SQL_GIS_SOURCES}
-    COMPILE_FLAGS "-O0"
-    )
 ENDIF()
 
 ADD_LIBRARY(sql_dd STATIC ${DD_SOURCES})
@@ -935,7 +952,7 @@ ADD_DEPENDENCIES(binlog GenError)
 ADD_LIBRARY(rpl STATIC ${RPL_SOURCE})
 TARGET_LINK_LIBRARIES(rpl sql_main)
 
-SET (MASTER_SOURCE rpl_master.cc rpl_binlog_sender.cc binlog_reader.cc)
+SET (MASTER_SOURCE rpl_source.cc rpl_binlog_sender.cc binlog_reader.cc)
 ADD_DEPENDENCIES(rpl GenError)
 ADD_LIBRARY(master STATIC ${MASTER_SOURCE})
 ADD_DEPENDENCIES(master GenError)
@@ -964,14 +981,14 @@ SET (SLAVE_SOURCE
   rpl_io_monitor.cc
   rpl_mi.cc
   rpl_msr.cc
-  rpl_mts_submode.cc
+  rpl_mta_submode.cc
   rpl_mysql_connect.cc
   rpl_reporting.cc
   rpl_rli.cc
   rpl_rli_pdb.cc
-  rpl_slave.cc
-  rpl_slave_commit_order_manager.cc
-  rpl_slave_until_options.cc
+  rpl_replica.cc
+  rpl_replica_commit_order_manager.cc
+  rpl_replica_until_options.cc
   rpl_sys_key_access.cc
   rpl_sys_table_access.cc
   rpl_trx_boundary_parser.cc

@@ -897,9 +897,9 @@ void PFS_dynamic_table_shares::remove_share(PFS_engine_table_share *share) {
 /** Implementation of internal ACL checks, for the performance schema. */
 class PFS_internal_schema_access : public ACL_internal_schema_access {
  public:
-  PFS_internal_schema_access() {}
+  PFS_internal_schema_access() = default;
 
-  ~PFS_internal_schema_access() override {}
+  ~PFS_internal_schema_access() override = default;
 
   ACL_internal_access_result check(ulong want_access,
                                    ulong *save_priv) const override;

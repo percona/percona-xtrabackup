@@ -25,6 +25,10 @@ XA END 'xatrx';
 XA PREPARE 'xatrx';
 EOF
 
+# Let the client complete the above set of statements
+vlog "waiting for 3 seconds to ensure transaction on XA prepared state"
+sleep 3
+
 xtrabackup --backup --target-dir=$topdir/full
 
 # Terminate the background client

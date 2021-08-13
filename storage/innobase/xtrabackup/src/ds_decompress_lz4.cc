@@ -25,10 +25,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #define XXH_STATIC_LINKING_ONLY
-#include "../extra/lz4/my_xxhash.h"
 #include "common.h"
 #include "datasink.h"
 #include "ds_istream.h"
+#include "my_xxhash.h"
 #include "thread_pool.h"
 
 #define LZ4F_MAGICNUMBER 0x184d2204U

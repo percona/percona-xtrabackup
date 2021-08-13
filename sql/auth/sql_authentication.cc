@@ -25,20 +25,20 @@
 #include "sql/auth/sql_authentication.h"
 
 #include <fcntl.h>
+#include <mysql/components/my_service.h>
+#include <sql/ssl_acceptor_context_operator.h>
+#include <sql/ssl_init_callback.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
 #include <string> /* std::string */
 #include <utility>
 #include <vector> /* std::vector */
 
-#include "include/compression.h"
-
-#include <mysql/components/my_service.h>
-#include <sql/ssl_acceptor_context_operator.h>
-#include <sql/ssl_init_callback.h>
 #include "crypt_genhash_impl.h"  // generate_user_salt
+#include "include/compression.h"
 #include "m_string.h"
 #include "map_helpers.h"
 #include "mutex_lock.h"  // Mutex_lock
@@ -808,6 +808,10 @@ const uint MAX_UNKNOWN_ACCOUNTS = 1000;
 */
 Map_with_rw_lock<Auth_id, uint> *unknown_accounts = nullptr;
 
+inline const char *client_plugin_name(plugin_ref ref) {
+  return ((st_mysql_auth *)(plugin_decl(ref)->info))->client_auth_plugin;
+}
+
 LEX_CSTRING validate_password_plugin_name = {
     STRING_WITH_LEN("validate_password")};
 
@@ -1456,8 +1460,8 @@ static bool send_server_handshake_packet(MPVIO_EXT *mpvio, const char *data,
   end = (char *)memcpy(end, data + AUTH_PLUGIN_DATA_PART_1_LENGTH,
                        data_len - AUTH_PLUGIN_DATA_PART_1_LENGTH);
   end += data_len - AUTH_PLUGIN_DATA_PART_1_LENGTH;
-  end = strmake(end, plugin_name(mpvio->plugin)->str,
-                plugin_name(mpvio->plugin)->length);
+  end = strmake(end, client_plugin_name(mpvio->plugin),
+                strlen(client_plugin_name(mpvio->plugin)));
 
   int res = protocol->write((uchar *)buff, (size_t)(end - buff + 1)) ||
             protocol->flush();
@@ -1639,6 +1643,7 @@ static bool send_plugin_request_packet(MPVIO_EXT *mpvio, const uchar *data,
   if (initialized)
     mpvio->status = MPVIO_EXT::FAILURE;  // the status is no longer RESTART
 
+  /* Send the client side authentication plugin name */
   std::string client_auth_plugin(
       ((st_mysql_auth *)(plugin_decl(mpvio->plugin)->info))
           ->client_auth_plugin);
@@ -2152,6 +2157,8 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
   if (ptr + 1 < end) {
     if (mpvio->charset_adapter->init_client_charset(uint2korr(ptr)))
       return true;
+    // skip over the charset's 2 bytes
+    ptr += 2;
   }
 
   /* Convert database and user names to utf8 */
@@ -2189,12 +2196,12 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
 
   const char *client_plugin;
   if (protocol->has_client_capability(CLIENT_PLUGIN_AUTH)) {
-    client_plugin = ptr + 2;
+    client_plugin = ptr;
     /*
       ptr needs to be updated to point to correct position so that
       connection attributes are read properly.
     */
-    ptr = ptr + 2 + strlen(client_plugin) + 1;
+    ptr = ptr + strlen(client_plugin) + 1;
 
     if (client_plugin >= end) {
       my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
@@ -2204,6 +2211,10 @@ static bool parse_com_change_user_packet(THD *thd, MPVIO_EXT *mpvio,
     client_plugin = Cached_authentication_plugins::get_plugin_name(
         PLUGIN_MYSQL_NATIVE_PASSWORD);
 
+  if (ptr > end) {
+    my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
+    return true;
+  }
   size_t bytes_remaining_in_packet = end - ptr;
 
   if (protocol->has_client_capability(CLIENT_CONNECT_ATTRS) &&
@@ -2745,9 +2756,9 @@ skip_to_ssl:
   }
 
   /*
-    if the acl_user needs a different plugin to authenticate
-    (specified in GRANT ... AUTHENTICATED VIA plugin_name ..)
-    we need to restart the authentication in the server.
+    If the acl_user needs a different plugin to authenticate then
+    the server default plugin we need to restart the authentication
+    in the server.
     But perhaps the client has already used the correct plugin -
     in that case the authentication on the client may not need to be
     restarted and a server auth plugin will read the data that the client
@@ -2755,6 +2766,7 @@ skip_to_ssl:
   */
   if (my_strcasecmp(system_charset_info, mpvio->acl_user_plugin.str,
                     plugin_name(mpvio->plugin)->str) != 0) {
+    /* Server default plugin didn't match user plugin */
     mpvio->cached_client_reply.pkt = passwd;
     mpvio->cached_client_reply.pkt_len = passwd_len;
     mpvio->cached_client_reply.plugin = client_plugin;
@@ -2768,12 +2780,25 @@ skip_to_ssl:
     the authentication on the client. Do it here, the server plugin
     doesn't need to know.
   */
-  const char *client_auth_plugin =
-      ((st_mysql_auth *)(plugin_decl(mpvio->plugin)->info))->client_auth_plugin;
-
-  if (client_auth_plugin &&
-      my_strcasecmp(system_charset_info, client_plugin, client_auth_plugin)) {
+  plugin_ref user_plugin =
+      g_cached_authentication_plugins->get_cached_plugin_ref(
+          &mpvio->acl_user_plugin);
+  if (user_plugin == nullptr) return packet_error;
+  auto user_client_plugin_name = client_plugin_name(user_plugin);
+  if (my_strcasecmp(system_charset_info, client_plugin,
+                    user_client_plugin_name)) {
+    /*
+      Client plugins don't match - send request to client to use a
+      different plugin and restart authentication process.
+    */
     mpvio->cached_client_reply.plugin = client_plugin;
+    /*
+      Inject error here for testing purpose.
+      See auth_sec.server_send_client_plugin
+    */
+    DBUG_EXECUTE_IF("assert_authentication_roundtrips",
+                    { return packet_error; });
+
     if (send_plugin_request_packet(mpvio,
                                    (uchar *)mpvio->cached_server_packet.pkt,
                                    mpvio->cached_server_packet.pkt_len))
@@ -2851,9 +2876,16 @@ static int server_mpvio_write_packet(MYSQL_PLUGIN_VIO *param,
   if (mpvio->packets_written == 0)
     res = send_server_handshake_packet(
         mpvio, pointer_cast<const char *>(packet), packet_len);
-  else if (mpvio->status == MPVIO_EXT::RESTART)
+  else if (mpvio->status == MPVIO_EXT::RESTART) {
+    /*
+      Inject error here for testing purpose.
+      See auth_sec.server_send_client_plugin
+    */
+    DBUG_EXECUTE_IF("assert_authentication_roundtrips", {
+      return -1;  // Crash here.
+    });
     res = send_plugin_request_packet(mpvio, packet, packet_len);
-  else
+  } else
     res = wrap_plguin_data_into_proper_command(protocol->get_net(), packet,
                                                packet_len);
   mpvio->packets_written++;
@@ -2895,17 +2927,14 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
     assert(mpvio->status == MPVIO_EXT::RESTART);
     assert(mpvio->packets_read > 0);
     /*
-      if the have the data cached from the last server_mpvio_read_packet
-      (which can be the case if it's a restarted authentication)
+      If the data cached from the last server_mpvio_read_packet
       and a client has used the correct plugin, then we can return the
       cached data straight away and avoid one round trip.
     */
-    const char *client_auth_plugin =
-        ((st_mysql_auth *)(plugin_decl(mpvio->plugin)->info))
-            ->client_auth_plugin;
-    if (client_auth_plugin == nullptr ||
+    auto client_auth_plugin_name = client_plugin_name(mpvio->plugin);
+    if (client_auth_plugin_name == nullptr ||
         my_strcasecmp(system_charset_info, mpvio->cached_client_reply.plugin,
-                      client_auth_plugin) == 0) {
+                      client_auth_plugin_name) == 0) {
       mpvio->status = MPVIO_EXT::FAILURE;
       *buf = const_cast<uchar *>(
           pointer_cast<const uchar *>(mpvio->cached_client_reply.pkt));
@@ -4466,7 +4495,7 @@ class File_IO {
   File_IO &operator<<(const Sql_string_t &output_string);
 
  protected:
-  File_IO() {}
+  File_IO() = default;
   File_IO(const Sql_string_t filename, bool read)
       : m_file_name(filename), m_read(read), m_error_state(false), m_file(-1) {
     file_open();
@@ -4554,7 +4583,7 @@ File_IO &File_IO::operator<<(const Sql_string_t &output_string) {
 */
 class File_creator {
  public:
-  File_creator() {}
+  File_creator() = default;
 
   ~File_creator() {
     for (std::vector<File_IO *>::iterator it = m_file_vector.begin();
@@ -4598,7 +4627,7 @@ class RSA_gen {
   RSA_gen(uint32_t key_size = 2048, uint32_t exponent = RSA_F4)
       : m_key_size(key_size), m_exponent(exponent) {}
 
-  ~RSA_gen() {}
+  ~RSA_gen() = default;
 
   /**
     Passing key type is a violation against the principle of generic

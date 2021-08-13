@@ -70,8 +70,8 @@
 #include "sql/mysqld.h"  // log_10
 #include "sql/protocol.h"
 #include "sql/psi_memory_key.h"
+#include "sql/rpl_replica.h"            // rpl_master_has_bug
 #include "sql/rpl_rli.h"                // Relay_log_info
-#include "sql/rpl_slave.h"              // rpl_master_has_bug
 #include "sql/spatial.h"                // Geometry
 #include "sql/sql_class.h"              // THD
 #include "sql/sql_exception_handler.h"  // handle_std_exception
@@ -213,7 +213,7 @@ bool charset_prevents_inplace(const Field_str &from, const Create_field &to) {
     return false;
   }
   return (0 != strcmp(to.charset->csname, MY_UTF8MB4) ||
-          0 != strcmp(from.charset()->csname, MY_UTF8MB3));
+          0 != strcmp(replace_utf8_utf8mb3(from.charset()->csname), "utf8mb3"));
 }
 
 /**
@@ -4371,7 +4371,9 @@ String *Field_double::val_str(String *val_buffer, String *) const {
   size_t len;
 
   if (dec >= DECIMAL_NOT_SPECIFIED)
-    len = my_gcvt(nr, MY_GCVT_ARG_DOUBLE, MAX_DOUBLE_STR_LENGTH, to, nullptr);
+    // +2 to avoid rounding errors when converting back to double.
+    len =
+        my_gcvt(nr, MY_GCVT_ARG_DOUBLE, MAX_DOUBLE_STR_LENGTH + 2, to, nullptr);
   else
     len = my_fcvt(nr, dec, to, nullptr);
 
@@ -4595,8 +4597,24 @@ type_conversion_status Field_temporal::store(const char *str, size_t len,
       error = TYPE_ERR_BAD_VALUE;
   } else {
     if (ltime.time_type == MYSQL_TIMESTAMP_DATETIME_TZ) {
-      if (convert_time_zone_displacement(current_thd->time_zone(), &ltime))
+      /*
+        Convert the timestamp with timezone to without timezone. This is a
+        lossy conversion for edge cases like for the repeat hour of the
+        DST switch, but useful for the boundary conditions check.
+      */
+      MYSQL_TIME tmp_ltime = ltime;
+      if (convert_time_zone_displacement(current_thd->time_zone(), &tmp_ltime))
         return TYPE_ERR_BAD_VALUE;
+      // check for boundary conditions by converting to a timeval
+      struct timeval tm_not_used;
+      if (datetime_with_no_zero_in_date_to_timeval(
+              &tmp_ltime, *current_thd->time_zone(), &tm_not_used,
+              &status.warnings)) {
+        if (status.warnings &&
+            set_warnings(ErrConvString(str, len, cs), status.warnings))
+          return TYPE_WARN_OUT_OF_RANGE;
+        return TYPE_WARN_OUT_OF_RANGE;
+      }
     }
     error = time_warning_to_type_conversion_status(status.warnings);
     const type_conversion_status tmp_error =

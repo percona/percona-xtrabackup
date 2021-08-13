@@ -150,7 +150,7 @@ class Semijoin_mat_exec {
         inner_table_index(inner_table_index),
         table_param(),
         table(nullptr) {}
-  ~Semijoin_mat_exec() {}
+  ~Semijoin_mat_exec() = default;
   TABLE_LIST *const sj_nest;     ///< Semi-join nest for this materialization
   const bool is_scan;            ///< true if executing a scan, false if lookup
   const uint table_count;        ///< Number of tables in the sj-nest
@@ -166,7 +166,7 @@ MY_ATTRIBUTE((warn_unused_result))
 bool copy_fields(Temp_table_param *param, const THD *thd,
                  bool reverse_copy = false);
 
-enum Copy_func_type {
+enum Copy_func_type : int {
   /**
     In non-windowing step, copies functions
   */
@@ -187,7 +187,7 @@ enum Copy_func_type {
     that is we need to read all rows of a partition before we can compute the
     wf's value for the the first row in the partition.
   */
-  CFT_WF_NEEDS_CARD,
+  CFT_WF_NEEDS_PARTITION_CARDINALITY,
   /**
     In windowing step, copies framing window functions that read only one row
     per frame.
@@ -208,14 +208,15 @@ enum Copy_func_type {
     Copies all window functions.
   */
   CFT_WF,
+  /**
+    Copies Item_field only (typically because other functions might depend
+    on those fields).
+  */
+  CFT_FIELDS,
 };
 
 bool copy_funcs(Temp_table_param *, const THD *thd,
                 Copy_func_type type = CFT_ALL);
-
-// Combines copy_fields() and copy_funcs().
-bool copy_fields_and_funcs(Temp_table_param *param, const THD *thd,
-                           Copy_func_type type = CFT_ALL);
 
 /**
   Copy the lookup key into the table ref's key buffer.
@@ -268,7 +269,6 @@ class QEP_TAB : public QEP_shared_owner {
         match_tab(NO_PLAN_IDX),
         rematerialize(false),
         not_used_in_distinct(false),
-        cache_idx_cond(nullptr),
         having(nullptr),
         tmp_table_param(nullptr),
         filesort(nullptr),
@@ -413,9 +413,6 @@ class QEP_TAB : public QEP_shared_owner {
   // in older versions of MySQL.
   bool not_used_in_distinct;
 
-  /// Index condition for BKA access join
-  Item *cache_idx_cond;
-
   /** HAVING condition for checking prior saving a record into tmp table*/
   Item *having;
 
@@ -554,15 +551,6 @@ void SplitConditions(Item *condition, QEP_TAB *current_table,
                      std::vector<Item *> *predicates_below_join,
                      std::vector<PendingCondition> *predicates_above_join,
                      std::vector<PendingCondition> *join_conditions);
-
-bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
-                                       const bool new_partition_or_eof,
-                                       bool *output_row_ready);
-bool buffer_windowing_record(THD *thd, Temp_table_param *param,
-                             bool *new_partition);
-bool bring_back_frame_row(THD *thd, Window *w, Temp_table_param *out_param,
-                          int64 rowno, Window_retrieve_cached_row_reason reason,
-                          int fno = 0);
 
 AccessPath *GetAccessPathForDerivedTable(THD *thd, QEP_TAB *qep_tab,
                                          AccessPath *table_path);

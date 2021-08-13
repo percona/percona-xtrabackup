@@ -30,7 +30,6 @@
 /* Libraries */
 #cmakedefine HAVE_LIBM 1
 #cmakedefine HAVE_LIBNSL 1
-#cmakedefine HAVE_LIBCRYPT 1
 #cmakedefine HAVE_LIBSOCKET 1
 #cmakedefine HAVE_LIBDL 1
 #cmakedefine HAVE_LIBRT 1
@@ -110,6 +109,7 @@
 #cmakedefine HAVE_STPNCPY 1
 #cmakedefine HAVE_STRLCPY 1
 #cmakedefine HAVE_STRLCAT 1
+#cmakedefine HAVE_STRPTIME 1
 #cmakedefine HAVE_STRSIGNAL 1
 #cmakedefine HAVE_TELL 1
 #cmakedefine HAVE_VASPRINTF 1
@@ -299,6 +299,7 @@
  * CPU info
  */
 #cmakedefine CPU_LEVEL1_DCACHE_LINESIZE @CPU_LEVEL1_DCACHE_LINESIZE@
+#cmakedefine CPU_PAGE_SIZE @CPU_PAGE_SIZE@
 
 /*
  * NDB

@@ -182,7 +182,7 @@ class Ha_innopart_share : public Partition_share {
 
  private:
   /** Disable default constructor. */
-  Ha_innopart_share() {}
+  Ha_innopart_share() = default;
 
   /** Open one partition
   @param[in,out]	client		Data dictionary client
@@ -225,7 +225,7 @@ class ha_innopart : public ha_innobase,
  public:
   ha_innopart(handlerton *hton, TABLE_SHARE *table_arg);
 
-  ~ha_innopart() override;
+  ~ha_innopart() override = default;
 
   /** Clone this handler, used when needing more than one cursor
   to the same table.
@@ -867,10 +867,11 @@ class ha_innopart : public ha_innobase,
   use
   @param[in]  sampling_method     sampling method to be used; currently only
   SYSTEM sampling is supported
+  @param[in]  tablesample         true if the sampling is for tablesample
   @return 0 for success, else one of the HA_xxx values in case of error. */
   int sample_init(void *&scan_ctx, double sampling_percentage,
-                  int sampling_seed,
-                  enum_sampling_method sampling_method) override;
+                  int sampling_seed, enum_sampling_method sampling_method,
+                  const bool tablesample) override;
 
   /** Get the next record for sampling.
   @param[in]  scan_ctx  Scan context of the sampling

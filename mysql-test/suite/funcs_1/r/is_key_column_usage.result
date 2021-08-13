@@ -64,6 +64,8 @@ WHERE (constraint_catalog IS NOT NULL OR table_catalog IS NOT NULL) AND
 table_name != 'ndb_binlog_index'
 ORDER BY constraint_schema, constraint_name, table_schema, table_name, column_name;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME
+def	mtr	PRIMARY	def	mtr	asserted_test_suppressions	message
+def	mtr	PRIMARY	def	mtr	test_ignored_global_suppressions	pattern
 def	mysql	name	def	mysql	help_category	name
 def	mysql	name	def	mysql	help_keyword	name
 def	mysql	name	def	mysql	help_topic	name
@@ -120,6 +122,9 @@ def	mysql	PRIMARY	def	mysql	replication_asynchronous_connection_failover	Network
 def	mysql	PRIMARY	def	mysql	replication_asynchronous_connection_failover	Port
 def	mysql	PRIMARY	def	mysql	replication_asynchronous_connection_failover_managed	Channel_name
 def	mysql	PRIMARY	def	mysql	replication_asynchronous_connection_failover_managed	Managed_name
+def	mysql	PRIMARY	def	mysql	replication_group_configuration_version	name
+def	mysql	PRIMARY	def	mysql	replication_group_member_actions	event
+def	mysql	PRIMARY	def	mysql	replication_group_member_actions	name
 def	mysql	PRIMARY	def	mysql	role_edges	FROM_HOST
 def	mysql	PRIMARY	def	mysql	role_edges	FROM_USER
 def	mysql	PRIMARY	def	mysql	role_edges	TO_HOST

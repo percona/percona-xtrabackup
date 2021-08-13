@@ -64,8 +64,8 @@ static const uint MAX_TABLE_COLUMNS = sizeof(int) * 8;
 */
 class Fake_TABLE_LIST : public TABLE_LIST {
  public:
-  Fake_TABLE_LIST() {}
-  ~Fake_TABLE_LIST() {}
+  Fake_TABLE_LIST() = default;
+  ~Fake_TABLE_LIST() = default;
 };
 
 /*
@@ -94,7 +94,7 @@ class Fake_TABLE_SHARE : public TABLE_SHARE {
     EXPECT_EQ(0, bitmap_init(&all_set, &all_set_buf, fields));
     bitmap_set_above(&all_set, 0, true);
   }
-  ~Fake_TABLE_SHARE() {}
+  ~Fake_TABLE_SHARE() = default;
 };
 
 /*
@@ -260,12 +260,15 @@ class Fake_TABLE : public TABLE {
   // Defines an index over (column1, column2) and generates a unique id.
   int create_index(Field *column1, Field *column2, bool unique = false) {
     column1->set_flag(PART_KEY_FLAG);
-    column2->set_flag(PART_KEY_FLAG);
     int index_id = highest_index_id++;
     column1->key_start.set_bit(index_id);
     keys_in_use_for_query.set_bit(index_id);
     column1->part_of_key.set_bit(index_id);
-    column2->part_of_key.set_bit(index_id);
+
+    if (column2 != nullptr) {
+      column2->set_flag(PART_KEY_FLAG);
+      column2->part_of_key.set_bit(index_id);
+    }
 
     KEY *key = &m_keys[index_id];
     key->table = this;
@@ -274,11 +277,14 @@ class Fake_TABLE : public TABLE {
     } else {
       key->flags = key->actual_flags = 0;
     }
-    key->actual_key_parts = key->user_defined_key_parts = 2;
+    key->actual_key_parts = key->user_defined_key_parts = 1;
     key->key_part[0].field = column1;
     key->key_part[0].store_length = 8;
-    key->key_part[1].field = column2;
-    key->key_part[1].store_length = 8;
+    if (column2 != nullptr) {
+      key->actual_key_parts = key->user_defined_key_parts = 2;
+      key->key_part[1].field = column2;
+      key->key_part[1].store_length = 8;
+    }
     key->name = "unittest_index";
 
     ++s->keys;
@@ -287,6 +293,8 @@ class Fake_TABLE : public TABLE {
 
   void set_handler(handler *h) { file = h; }
   TABLE_SHARE *get_share() { return &table_share; }
+
+  static void reset_highest_table_id() { highest_table_id = 0; }
 
  private:
   void add(Field *new_field, int pos) {

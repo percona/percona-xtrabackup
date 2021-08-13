@@ -25,6 +25,7 @@
 #define QMGR_C
 #include "Qmgr.hpp"
 #include <pc.hpp>
+#include <NdbSleep.h>
 #include <NdbTick.h>
 #include <signaldata/NodeRecoveryStatusRep.hpp>
 #include <signaldata/EventReport.hpp>
@@ -68,7 +69,6 @@
 
 #include "../dbdih/Dbdih.hpp"
 #include <EventLogger.hpp>
-extern EventLogger * g_eventLogger;
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
 //#define DEBUG_MULTI_TRP 1
@@ -787,7 +787,7 @@ void Qmgr::execCONNECT_REP(Signal* signal)
   if (ERROR_INSERTED(931))
   {
     jam();
-    ndbout_c("Discarding CONNECT_REP(%d)", connectedNodeId);
+    g_eventLogger->info("Discarding CONNECT_REP(%d)", connectedNodeId);
     infoEvent("Discarding CONNECT_REP(%d)", connectedNodeId);
     return;
   }
@@ -797,7 +797,7 @@ void Qmgr::execCONNECT_REP(Signal* signal)
   {
     jam();
     CLEAR_ERROR_INSERT_VALUE;
-    ndbout_c("Discarding one API CONNECT_REP(%d)", connectedNodeId);
+    g_eventLogger->info("Discarding one API CONNECT_REP(%d)", connectedNodeId);
     infoEvent("Discarding one API CONNECT_REP(%d)", connectedNodeId);
     return;
   }
@@ -1797,7 +1797,7 @@ retry:
 		       "I think president is: %d",
 		       nodeId, president, cpresident);
 
-  ndbout_c("%s", buf);
+  g_eventLogger->info("%s", buf);
   CRASH_INSERTION(933);
 
   if (getNodeState().startLevel == NodeState::SL_STARTED)
@@ -2514,7 +2514,7 @@ incomplete_log:
     {
       if (c_start.m_node_gci[i] != 0)
       {
-        g_eventLogger->info("Node group GCI = %u for NG %u",
+        g_eventLogger->info("Node GCI = %u for node %u",
                             c_start.m_node_gci[i],
                             i);
       }
@@ -3584,7 +3584,7 @@ void Qmgr::sendHeartbeat(Signal* signal)
 
   if(ERROR_INSERTED(946))
   {
-    sleep(180);
+    NdbSleep_SecSleep(180);
     return;
   }
 
@@ -3940,15 +3940,15 @@ void Qmgr::execAPI_FAILCONF(Signal* signal)
       !remove_failconf_block(failedNodePtr, block))
   {
     jam();
-    ndbout << "execAPI_FAILCONF from " << block
-           << " failedNodePtr.p->failState = "
-	   << (Uint32)(failedNodePtr.p->failState)
-           << " blocks: ";
+    char logbuf[512] = "";
     for (Uint32 i = 0;i<NDB_ARRAY_SIZE(failedNodePtr.p->m_failconf_blocks);i++)
     {
-      printf("%u ", failedNodePtr.p->m_failconf_blocks[i]);
+      BaseString::snappend(logbuf, 512, "%u ",
+                           failedNodePtr.p->m_failconf_blocks[i]);
     }
-    ndbout << endl;
+    g_eventLogger->info(
+        "execAPI_FAILCONF from %u failedNodePtr.p->failState = %d blocks: %s",
+        block, (Uint32)(failedNodePtr.p->failState), logbuf);
     systemErrorLab(signal, __LINE__);
   }//if
 
@@ -4279,8 +4279,9 @@ void Qmgr::execDISCONNECT_REP(Signal* signal)
 
   if (ERROR_INSERTED(939) && ERROR_INSERT_EXTRA == nodeId)
   {
-    ndbout_c("Ignoring DISCONNECT_REP for node %u that was force disconnected",
-             nodeId);
+    g_eventLogger->info(
+        "Ignoring DISCONNECT_REP for node %u that was force disconnected",
+        nodeId);
     CLEAR_ERROR_INSERT_VALUE;
     return;
   }
@@ -4475,7 +4476,7 @@ void Qmgr::execAPI_REGREQ(Signal* signal)
   }
 
 #if 0
-  ndbout_c("Qmgr::execAPI_REGREQ: Recd API_REGREQ (NodeId=%d)", apiNodePtr.i);
+  g_eventLogger->info("Qmgr::execAPI_REGREQ: Recd API_REGREQ (NodeId=%d)", apiNodePtr.i);
 #endif
 
   bool compatability_check;
@@ -5471,7 +5472,7 @@ Qmgr::sendCommitFailReq(Signal* signal)
 #ifdef ERROR_INSERT    
     if (false && ERROR_INSERTED(935) && nodePtr.i == c_error_insert_extra)
     {
-      ndbout_c("skipping node %d", c_error_insert_extra);
+      g_eventLogger->info("skipping node %d", c_error_insert_extra);
       CLEAR_ERROR_INSERT_VALUE;
       signal->theData[0] = 9999;
       sendSignalWithDelay(CMVMI_REF, GSN_NDB_TAMPER, signal, 1000, 1);
@@ -5955,9 +5956,10 @@ void Qmgr::failReport(Signal* signal,
     if (ERROR_INSERTED(938))
     {
       nodeFailCount++;
-      ndbout_c("QMGR : execFAIL_REP(Failed : %u Source : %u  Cause : %u) : "
-               "%u nodes have failed", 
-               aFailedNode, sourceNode, aFailCause, nodeFailCount);
+      g_eventLogger->info(
+          "QMGR : execFAIL_REP(Failed : %u Source : %u  Cause : %u) : "
+          "%u nodes have failed",
+          aFailedNode, sourceNode, aFailCause, nodeFailCount);
       /* Count DB nodes */
       Uint32 nodeCount = 0;
       for (Uint32 i = 1; i < MAX_NDB_NODES; i++)
@@ -5969,7 +5971,8 @@ void Qmgr::failReport(Signal* signal,
       /* When > 25% of cluster has failed, resume communications */
       if (nodeFailCount > (nodeCount / 4))
       {
-        ndbout_c("QMGR : execFAIL_REP > 25%% nodes failed, resuming comms");
+        g_eventLogger->info(
+            "QMGR : execFAIL_REP > 25%% nodes failed, resuming comms");
         Signal save = *signal;
         signal->theData[0] = 9991;
         sendSignal(CMVMI_REF, GSN_DUMP_STATE_ORD, signal, 1, JBB);
@@ -7539,7 +7542,7 @@ Qmgr::execDUMP_STATE_ORD(Signal* signal)
 
   if (signal->theData[0] == 900 && signal->getLength() == 2)
   {
-    ndbout_c("disconnecting %u", signal->theData[1]);
+    g_eventLogger->info("disconnecting %u", signal->theData[1]);
     api_failed(signal, signal->theData[1]);
   }
 
@@ -7611,8 +7614,9 @@ Qmgr::execDUMP_STATE_ORD(Signal* signal)
           break;
         }
         }
-        ndbout_c("QMGR : Mapping request on node id %u to node id %u (%s)",
-                 nodeId, newNodeId, type);
+        g_eventLogger->info(
+            "QMGR : Mapping request on node id %u to node id %u (%s)", nodeId,
+            newNodeId, type);
         if (newNodeId != nodeId)
         {
           sendSignal(CMVMI_REF, GSN_DUMP_STATE_ORD, signal, length, JBB);
@@ -7623,7 +7627,7 @@ Qmgr::execDUMP_STATE_ORD(Signal* signal)
 
   if (dumpCode == 9994)
   {
-    ndbout_c("setCCDelay(%u)", signal->theData[1]);
+    g_eventLogger->info("setCCDelay(%u)", signal->theData[1]);
     setCCDelay(signal->theData[1]);
     m_connectivity_check.m_enabled = true;
   }
@@ -7633,7 +7637,7 @@ Qmgr::execDUMP_STATE_ORD(Signal* signal)
   {
     jam();
     Uint32 nodeId = signal->theData[1];
-    ndbout_c("Force close communication to %u", nodeId);
+    g_eventLogger->info("Force close communication to %u", nodeId);
     SET_ERROR_INSERT_VALUE2(939, nodeId);
     CloseComReqConf * closeCom = CAST_PTR(CloseComReqConf,
                                           signal->getDataPtrSend());
@@ -8516,8 +8520,8 @@ Qmgr::execNODE_PINGCONF(Signal* signal)
 
   if (ERROR_INSERTED(938))
   {
-    ndbout_c("QMGR : execNODE_PING_CONF() from %u in tick %u",
-             sendersNodeId, m_connectivity_check.m_tick);
+    g_eventLogger->info("QMGR : execNODE_PING_CONF() from %u in tick %u",
+                        sendersNodeId, m_connectivity_check.m_tick);
   }
 
   /* Node must have been pinged, we must be waiting for the response,

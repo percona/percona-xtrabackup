@@ -2544,7 +2544,7 @@ static MY_ATTRIBUTE((warn_unused_result)) rec_t *btr_cur_insert_if_possible(
 
 /** For an insert, checks the locks and does the undo logging if desired.
  @return DB_SUCCESS, DB_WAIT_LOCK, DB_FAIL, or error number */
-UNIV_INLINE MY_ATTRIBUTE((warn_unused_result)) dberr_t
+static inline MY_ATTRIBUTE((warn_unused_result)) dberr_t
     btr_cur_ins_lock_and_undo(
         ulint flags,       /*!< in: undo logging and locking flags: if
                            not zero, the parameters index and thr
@@ -2802,9 +2802,8 @@ dberr_t btr_cur_optimistic_insert(
     const rec_t *page_cursor_rec = page_cur_get_rec(page_cursor);
 
     if (index->table->is_intrinsic()) {
-      index->rec_cache.rec_size = rec_size;
-
-      *rec = page_cur_tuple_direct_insert(page_cursor, entry, index, mtr);
+      *rec = page_cur_tuple_direct_insert(page_cursor, entry, index, mtr,
+                                          rec_size);
     } else {
       /* Check locks and write to the undo log,
       if specified */
@@ -3070,7 +3069,7 @@ dberr_t btr_cur_pessimistic_insert(
 
 /** For an update, checks the locks and does the undo logging.
  @return DB_SUCCESS, DB_WAIT_LOCK, or error number */
-UNIV_INLINE MY_ATTRIBUTE((warn_unused_result)) dberr_t
+static inline MY_ATTRIBUTE((warn_unused_result)) dberr_t
     btr_cur_upd_lock_and_undo(
         ulint flags,          /*!< in: undo logging and locking flags */
         btr_cur_t *cursor,    /*!< in: cursor on record to update */
@@ -4157,8 +4156,7 @@ return_after_reservations:
 
 /** Writes the redo log record for delete marking or unmarking of an index
  record. */
-UNIV_INLINE
-void btr_cur_del_mark_set_clust_rec_log(
+static inline void btr_cur_del_mark_set_clust_rec_log(
     rec_t *rec,          /*!< in: record */
     dict_index_t *index, /*!< in: index of the record */
     trx_id_t trx_id,     /*!< in: transaction id */
@@ -4350,10 +4348,10 @@ dberr_t btr_cur_del_mark_set_clust_rec(
 
 /** Writes the redo log record for a delete mark setting of a secondary
  index record. */
-UNIV_INLINE
-void btr_cur_del_mark_set_sec_rec_log(rec_t *rec, /*!< in: record */
-                                      ibool val,  /*!< in: value to set */
-                                      mtr_t *mtr) /*!< in: mtr */
+static inline void btr_cur_del_mark_set_sec_rec_log(
+    rec_t *rec, /*!< in: record */
+    ibool val,  /*!< in: value to set */
+    mtr_t *mtr) /*!< in: mtr */
 {
   byte *log_ptr = nullptr;
   ut_ad(val <= 1);
@@ -4626,7 +4624,7 @@ ibool btr_cur_pessimistic_delete(dberr_t *err, ibool has_reserved_extents,
                                  btr_cur_t *cursor, uint32_t flags,
                                  bool rollback, trx_id_t trx_id,
                                  undo_no_t undo_no, ulint rec_type, mtr_t *mtr,
-                                 btr_pcur_t *pcur) {
+                                 btr_pcur_t *pcur, purge_node_t *node) {
   DBUG_TRACE;
 
   buf_block_t *block;
@@ -4671,7 +4669,8 @@ ibool btr_cur_pessimistic_delete(dberr_t *err, ibool has_reserved_extents,
 
     /* The following call will restart the btr_mtr, which could change the
     cursor position. */
-    btr_ctx.free_externally_stored_fields(trx_id, undo_no, rollback, rec_type);
+    btr_ctx.free_externally_stored_fields(trx_id, undo_no, rollback, rec_type,
+                                          node);
 
     /* The cursor position could have changed now. */
     if (pcur != nullptr) {
@@ -4695,7 +4694,7 @@ ibool btr_cur_pessimistic_delete(dberr_t *err, ibool has_reserved_extents,
     if (!rollback && rec_type != 0 &&
         !rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {
       /* This is the purge thread.  For the purge thread, rec_type will have a
-       * valid value. */
+      valid value. */
       *err = DB_SUCCESS;
       return TRUE;
     }

@@ -132,7 +132,7 @@ bool Ha_innopart_share::open_one_table_part(
   dict_table_t *part_table = nullptr;
   bool cached = false;
 
-  mutex_enter(&dict_sys->mutex);
+  dict_sys_mutex_enter();
   part_table = dict_table_check_if_in_cache_low(part_name);
   if (part_table != nullptr) {
     cached = true;
@@ -159,7 +159,7 @@ bool Ha_innopart_share::open_one_table_part(
       dict_table_ddl_release(part_table);
     }
   }
-  mutex_exit(&dict_sys->mutex);
+  dict_sys_mutex_exit();
 
   if (!cached) {
     part_table = dd_open_table(client, table, part_name, dd_part, thd);
@@ -203,7 +203,7 @@ all m_table_parts[]->vc_templ to it.
 @param[in]	name		Table name (db/table_name) */
 void Ha_innopart_share::set_v_templ(TABLE *table, dict_table_t *ib_table,
                                     const char *name) {
-  ut_ad(mutex_own(&dict_sys->mutex));
+  ut_ad(dict_sys_mutex_own());
 
   if (ib_table->n_v_cols > 0) {
     for (ulint i = 0; i < m_tot_parts; i++) {
@@ -239,13 +239,13 @@ void Ha_innopart_share::increment_ref_counts() {
   m_ref_count++;
 
   /* Increment dict_table_t reference count for all partitions */
-  mutex_enter(&dict_sys->mutex);
+  dict_sys_mutex_enter();
   for (uint i = 0; i < m_tot_parts; i++) {
     dict_table_t *table = m_table_parts[i];
     table->acquire();
     ut_ad(table->get_ref_count() >= m_ref_count);
   }
-  mutex_exit(&dict_sys->mutex);
+  dict_sys_mutex_exit();
 }
 
 /** Open InnoDB tables for partitions and return them as array.
@@ -616,9 +616,6 @@ ha_innopart::ha_innopart(handlerton *hton, TABLE_SHARE *table_arg)
   m_share = nullptr;
 }
 
-/** Destruct ha_innopart handler. */
-ha_innopart::~ha_innopart() {}
-
 /** Returned supported alter table flags.
 @param[in]	flags	Flags to support.
 @return	Supported flags. */
@@ -909,14 +906,16 @@ int ha_innopart::open(const char *name, int, uint, const dd::Table *table_def) {
   /* TODO: Should we do this check for every partition during ::open()? */
   /* TODO: refactor this in ha_innobase so it can increase code reuse. */
   if (dict_table_is_discarded(ib_table)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_TABLESPACE_DISCARDED,
-                table->s->table_name.str);
+    /* If the op is an IMPORT, open the space without this warning. */
+    if (thd_tablespace_op(thd) != Alter_info::ALTER_IMPORT_TABLESPACE) {
+      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_TABLESPACE_DISCARDED,
+                  table->s->table_name.str);
+    }
 
     /* Allow an open because a proper DISCARD should have set
     all the flags and index root page numbers to FIL_NULL that
     should prevent any DML from running but it should allow DDL
     operations. */
-
     no_tablespace = false;
 
   } else if (ib_table->ibd_file_missing) {
@@ -946,9 +945,9 @@ int ha_innopart::open(const char *name, int, uint, const dd::Table *table_def) {
   m_prebuilt->m_mysql_handler = this;
 
   if (ib_table->n_v_cols > 0) {
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
     m_part_share->set_v_templ(table, ib_table, name);
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
   }
 
   key_used_on_scan = table_share->primary_key;
@@ -2019,7 +2018,8 @@ int ha_innopart::read_range_next_in_part(uint part, uchar *record) {
 
 int ha_innopart::sample_init(void *&scan_ctx, double sampling_percentage,
                              int sampling_seed,
-                             enum_sampling_method sampling_method) {
+                             enum_sampling_method sampling_method,
+                             const bool tablesample) {
   assert(table_share->is_missing_primary_key() ==
          m_prebuilt->clust_index_was_generated);
 
@@ -2029,21 +2029,34 @@ int ha_innopart::sample_init(void *&scan_ctx, double sampling_percentage,
 
   if (sampling_percentage <= 0.0 || sampling_percentage > 100.0 ||
       sampling_method != enum_sampling_method::SYSTEM) {
-    return (0);
+    return 0;
+  }
+
+  trx_t *trx{nullptr};
+
+  if (tablesample) {
+    update_thd(ha_thd());
+
+    trx = m_prebuilt->trx;
+    trx_start_if_not_started_xa(trx, false);
+
+    if (trx->isolation_level > TRX_ISO_READ_UNCOMMITTED) {
+      trx_assign_read_view(trx);
+    }
   }
 
   /* Parallel read is not currently supported for sampling. */
-  size_t n_threads = Parallel_reader::available_threads(1);
+  size_t max_threads = Parallel_reader::available_threads(1);
 
-  if (n_threads == 0) {
+  if (max_threads == 0) {
     return HA_ERR_SAMPLING_INIT_FAILED;
   }
 
   Histogram_sampler *sampler = UT_NEW_NOKEY(Histogram_sampler(
-      n_threads, sampling_seed, sampling_percentage, sampling_method));
+      max_threads, sampling_seed, sampling_percentage, sampling_method));
 
   if (sampler == nullptr) {
-    Parallel_reader::release_threads(n_threads);
+    Parallel_reader::release_threads(max_threads);
     return HA_ERR_OUT_OF_MEM;
   }
 
@@ -2066,7 +2079,7 @@ int ha_innopart::sample_init(void *&scan_ctx, double sampling_percentage,
 
     auto index = m_prebuilt->table->first_index();
 
-    auto success = sampler->init(nullptr, index, m_prebuilt);
+    auto success = sampler->init(trx, index, m_prebuilt);
 
     if (!success) {
       return (HA_ERR_SAMPLING_INIT_FAILED);
@@ -2789,44 +2802,17 @@ int ha_innopart::set_dd_discard_attribute(dd::Table *table_def, bool discard) {
 
     dd_part->set_se_private_id(table->id);
 
-    /* Set discard flag. */
+    /* Set the discard flag in the partition. */
     dd_set_discarded(*dd_part, discard);
 
-    /* Get Tablespace object */
-    dd::Tablespace *dd_space = nullptr;
+    /* Set the discarded state in the dd::Tablespace */
     THD *thd = ha_thd();
-    dd::cache::Dictionary_client *client = dd::get_dd_client(thd);
-    dd::cache::Dictionary_client::Auto_releaser releaser(client);
-
     dd::Object_id dd_space_id = (*dd_part->indexes()->begin())->tablespace_id();
-
     std::string space_name(table->name.m_name);
     dict_name::convert_to_space(space_name);
-
-    if (dd_tablespace_get_mdl(space_name.c_str())) {
-      /* purecov: begin inspected */
-      ut_ad(false);
-      return (HA_ERR_INTERNAL_ERROR);
-      /* purecov: end */
-    }
-
-    if (client->acquire_for_modification(dd_space_id, &dd_space) ||
-        dd_space == nullptr) {
-      /* purecov: begin inspected */
-      ut_ad(false);
-      return (HA_ERR_INTERNAL_ERROR);
-      /* purecov: end */
-    }
-
-    dd_tablespace_set_state(
-        dd_space, (discard ? DD_SPACE_STATE_DISCARDED : DD_SPACE_STATE_NORMAL));
-
-    if (client->update(dd_space)) {
-      /* purecov: begin inspected */
-      ut_ad(false);
-      return (HA_ERR_INTERNAL_ERROR);
-      /* purecov: end */
-    }
+    dd_space_states dd_state =
+        (discard ? DD_SPACE_STATE_DISCARDED : DD_SPACE_STATE_NORMAL);
+    dd_tablespace_set_state(thd, dd_space_id, space_name, dd_state);
 
     for (auto dd_index : *dd_part->indexes()) {
       const dict_index_t *index = dd_find_index(table, dd_index);
@@ -3472,7 +3458,7 @@ static int update_table_stats(dict_table_t *table, bool is_analyze) {
     opt = DICT_STATS_RECALC_TRANSIENT;
   }
 
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
   ret = dict_stats_update(table, opt);
 
   if (ret != DB_SUCCESS) {
@@ -3701,8 +3687,7 @@ int ha_innopart::info_low(uint flag, bool is_analyze) {
       created, because MySQL will only consider
       the fully built indexes here. */
 
-      for (const dict_index_t *index = UT_LIST_GET_FIRST(ib_table->indexes);
-           index != nullptr; index = UT_LIST_GET_NEXT(indexes, index)) {
+      for (const dict_index_t *index : ib_table->indexes) {
         /* First, online index creation is
         completed inside InnoDB, and then
         MySQL attempts to upgrade the

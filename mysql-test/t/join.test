@@ -1510,3 +1510,182 @@ LEFT JOIN t AS t2 ON t2.c < 70
 WHERE t2.a - from_unixtime(0) > 0;
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug #32424884: MRR OR BATCHED KEY ACCESS WITH JOINS AND TIMESTAMPS PRODUCE WRONG RESULTS
+--echo #
+
+CREATE TABLE t1 (
+ ts datetime,
+ x integer,
+ y integer
+);
+INSERT INTO t1 VALUES ('2020-11-20 10:38:31',1,2);
+
+CREATE TABLE t2 (
+ x integer,
+ ts datetime,
+ KEY i1 (x)
+);
+INSERT INTO t2 VALUES (1,'2020-11-16 14:18:55');
+
+CREATE TABLE t3 (
+ ts datetime,
+ y integer,
+ z INTEGER,
+ KEY i2 (y,ts)
+);
+INSERT INTO t3 VALUES ('2020-12-29 18:23:02',2,100);
+
+CREATE TABLE t4 (
+  z INTEGER
+);
+
+SET optimizer_switch='mrr=on,batched_key_access=on,mrr_cost_based=off';
+
+SELECT COUNT(*)
+FROM
+    t1
+    LEFT JOIN t2 ON t1.x = t2.x AND t2.ts <= t1.ts
+    JOIN t3 ON t1.y = t3.y AND t3.ts <= t1.ts
+    LEFT JOIN t4 ON t3.z = t4.z;
+
+SET optimizer_switch=DEFAULT;
+
+DROP TABLE t1, t2, t3, t4;
+
+--echo #
+--echo # Bug #32623894: RESULT MISMATCH SEEN WITH HYPERGRAPH OPTIMIZER
+--echo #
+
+CREATE TABLE t1 ( a INTEGER );
+INSERT INTO t1 VALUES (0), (0), (0), (1), (1), (0), (1), (0);
+ANALYZE TABLE t1;
+
+--sorted_result
+SELECT * FROM
+  t1, t1 AS t2, t1 AS t3
+  WHERE ((t1.a = 5 AND t3.a < t1.a) OR t1.a > 0) AND t3.a <= t2.a;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32637680: RESULT MISMATCH SEEN WITH HYPERGRAPH OPTIMIZER IN QUERIES WITH LEFT JOIN
+--echo #
+
+CREATE TABLE t1 ( a VARCHAR(10) );
+CREATE TABLE t2 ( a VARCHAR(10) );
+INSERT INTO t1 VALUES ('x');
+ANALYZE TABLE t1, t2;
+
+SELECT *
+  FROM t1
+  LEFT JOIN t2 ON TRUE
+  LEFT JOIN ( t1 AS t1i JOIN t2 AS t2i ON t1i.a = t2i.a ) ON t2.a = t2i.a
+  WHERE t1i.a = '' OR t2i.a = '';
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug #32599784: WL#14325: ASSERTION `FD_SET == IT_AND_INSERTED.FIRST->SECOND.ACTIVE_FUNCTIONAL_D
+--echo #
+
+CREATE TABLE t1 (
+  a INTEGER NOT NULL,
+  KEY (a)
+);
+
+# Stick in some values so that the ref access is not immediately
+# thrown away.
+INSERT INTO t1 VALUES (1), (2);
+ANALYZE TABLE t1;
+
+# Due to a pass ordering issue, the t1.a IS NULL is removed,
+# but the join is left as an outer join, and t1.a = t2.a
+# is kept as a sargable WHERE condition.Verify that we don't crash
+# nevertheless.
+SELECT *
+FROM t1 LEFT JOIN t1 AS t2 ON TRUE
+WHERE t1.a IS NULL OR t1.a = t2.a
+ORDER BY t2.a;
+
+SELECT t1.a
+FROM t1 LEFT JOIN t1 AS t2 ON t1.a = t2.a
+WHERE t1.a IS NULL OR t1.a = t2.a
+GROUP BY t1.a;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#32508878 - MYSQL SERVER CRASH - ASSERTION FAILURE IN
+--echo # DEPS_OF_REMAINING_LATERAL_DERIVED_TABLES::RECALCULATE
+--echo #
+
+CREATE TABLE t1(a INT NOT NULL, b INT, PRIMARY KEY(a));
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+ANALYZE TABLE t1;
+
+EXPLAIN SELECT * FROM t1 AS x3 WHERE EXISTS
+  (SELECT * FROM t1 AS x1 JOIN t1 AS x2 ON x1.b=x2.b
+    JOIN LATERAL (SELECT COUNT(a) AS c FROM t1
+    WHERE t1.b=x1.b) AS d3 ON x1.b=c);
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#32915307- RECENT REGRESSION: ASSERTION
+--echo # `JOIN->DEPS_OF_REMAINING_LATERAL_DERIVED_TABLES
+--echo # == CALCULATE_LATERAL_DEPS_OF_FINAL_PLAN(FIRST_TAB_NO)' FAILED.
+--echo #
+
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES(1);
+CREATE TABLE t2(x INT);
+INSERT INTO t2 VALUES(2),(3);
+
+EXPLAIN SELECT 6 FROM t1 WHERE EXISTS
+  (SELECT 7 FROM (SELECT a) d1 WHERE EXISTS (SELECT 8 FROM t2));
+
+DROP TABLE t1,t2;
+
+--echo # Bug#32065606: Inconsistent results when running the same query
+
+CREATE TABLE t1(
+ k INTEGER PRIMARY KEY,
+ t2ref INTEGER
+);
+
+INSERT INTO t1 VALUES(1,1), (2,NULL), (3,3);
+
+CREATE TABLE t2(
+ k INTEGER PRIMARY KEY,
+ d INTEGER,
+ t3ref INTEGER NOT NULL
+);
+
+INSERT INTO t2 VALUES(1,11,1), (3,33,3);
+
+CREATE TABLE t3(
+ k INTEGER UNIQUE,
+ e INTEGER
+);
+
+INSERT INTO t3 VALUES(1,111), (3,333);
+
+SET optimizer_switch='block_nested_loop=off';
+
+let $query =
+SELECT t1.k, dt.d, t3.e
+FROM t1
+     LEFT JOIN (SELECT t2.*
+                FROM t2
+               ) AS dt
+     ON t1.t2ref = dt.k
+     LEFT JOIN t3
+     ON dt.t3ref = t3.k
+;
+
+eval $query;
+eval explain $query;
+
+DROP TABLE t1, t2, t3;

@@ -86,14 +86,7 @@ class SortingIterator final : public RowIterator {
 
   int Read() override { return m_result_iterator->Read(); }
 
-  void SetNullRowFlag(bool is_null_row) override {
-    if (m_result_iterator == nullptr) {
-      // If we don't have a result yet, it will come up with the flag unset.
-      assert(is_null_row == false);
-      return;
-    }
-    m_result_iterator->SetNullRowFlag(is_null_row);
-  }
+  void SetNullRowFlag(bool is_null_row) override;
 
   void UnlockRow() override { m_result_iterator->UnlockRow(); }
 
@@ -143,8 +136,8 @@ class SortingIterator final : public RowIterator {
   // TODO: If we need to add TimingIterator directly on this iterator,
   // switch to allocating it on the MEM_ROOT.
   union IteratorHolder {
-    IteratorHolder() {}
-    ~IteratorHolder() {}
+    IteratorHolder() {}   // NOLINT(modernize-use-equals-default)
+    ~IteratorHolder() {}  // NOLINT(modernize-use-equals-default)
 
     SortBufferIterator<true> sort_buffer_packed_addons;
     SortBufferIterator<false> sort_buffer;

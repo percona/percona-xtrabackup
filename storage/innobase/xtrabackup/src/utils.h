@@ -31,6 +31,13 @@ namespace utils {
   @return false in case of error, true otherwise
 */
 extern bool load_backup_my_cnf(my_option *options, char *path);
+
+/**
+  Read server_uuid from backup-my.cnf
+
+  @return false in case of error, true otherwise
+*/
+bool read_server_uuid();
 }  // namespace utils
 }  // namespace xtrabackup
 #endif  // XTRABACKUP_UTILS_H

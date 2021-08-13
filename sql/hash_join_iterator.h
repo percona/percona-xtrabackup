@@ -259,7 +259,7 @@ class HashJoinIterator final : public RowIterator {
   /// @param build_input
   ///   the iterator for the build input
   /// @param build_input_tables
-  ///   a bitmap of all the tables in the build input. The tables are needed for
+  ///   a list of all the tables in the build input. The tables are needed for
   ///   two things:
   ///   1) Accessing the columns when creating the join key during creation of
   ///   the hash table,
@@ -292,8 +292,6 @@ class HashJoinIterator final : public RowIterator {
   ///   cases where we have a LIMIT in the query
   /// @param join_type
   ///   The join type.
-  /// @param join
-  ///   The join we are a part of.
   /// @param extra_conditions
   ///   A list of extra conditions that the iterator will evaluate after a
   ///   lookup in the hash table is done, but before the row is returned. The
@@ -302,17 +300,24 @@ class HashJoinIterator final : public RowIterator {
   ///   Whether we need to enable batch mode on the probe input table.
   ///   Only make sense if it is a single table, and we are not on the
   ///   outer side of any nested loop join.
+  /// @param hash_table_generation
+  ///   If this is non-nullptr, it is a counter of how many times the query
+  ///   block the iterator is a part of has been asked to clear hash tables,
+  ///   since outer references may have changed value. It is used to know when
+  ///   we need to drop our hash table; when the value changes, we need to drop
+  ///   it. If it is nullptr, we _always_ drop it on Init().
   HashJoinIterator(THD *thd, unique_ptr_destroy_only<RowIterator> build_input,
-                   table_map build_input_tables, double estimated_build_rows,
+                   const Prealloced_array<TABLE *, 4> &build_input_tables,
+                   double estimated_build_rows,
                    unique_ptr_destroy_only<RowIterator> probe_input,
-                   table_map probe_input_tables, bool store_rowids,
-                   table_map tables_to_get_rowid_for,
+                   const Prealloced_array<TABLE *, 4> &probe_input_tables,
+                   bool store_rowids, table_map tables_to_get_rowid_for,
                    size_t max_memory_available,
                    const std::vector<HashJoinCondition> &join_conditions,
                    bool allow_spill_to_disk, JoinType join_type,
-                   const JOIN *join,
                    const Mem_root_array<Item *> &extra_conditions,
-                   bool probe_input_batch_mode);
+                   bool probe_input_batch_mode,
+                   uint64_t *hash_table_generation);
 
   bool Init() override;
 
@@ -491,6 +496,8 @@ class HashJoinIterator final : public RowIterator {
   };
 
   State m_state;
+  uint64_t *m_hash_table_generation;
+  uint64_t m_last_hash_table_generation;
 
   const unique_ptr_destroy_only<RowIterator> m_build_input;
   const unique_ptr_destroy_only<RowIterator> m_probe_input;

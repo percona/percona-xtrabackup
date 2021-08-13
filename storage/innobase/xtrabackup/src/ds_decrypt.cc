@@ -89,7 +89,7 @@ class Xbcrypt_stream {
 
   xb_rcrypt_result_t next_chunk(decrypt_thread_ctxt_t *thd);
 
-  bool empty() const { return stream.empty(); };
+  bool empty() const { return stream.empty(); }
 
  private:
   Datasink_istream stream;

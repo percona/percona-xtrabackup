@@ -853,7 +853,7 @@ Query_expression::setup_materialization(THD *thd, TABLE *dst_table,
     query_block.join = join;
     query_block.disable_deduplication_by_hash_field =
         (mixed_union_operators() && !activate_deduplication);
-    query_block.copy_fields_and_items = true;
+    query_block.copy_items = true;
     query_block.temp_table_param = &join->tmp_table_param;
     query_block.is_recursive_reference = select->recursive_reference;
     query_blocks.push_back(move(query_block));
@@ -968,7 +968,7 @@ void Query_expression::create_access_paths(THD *thd) {
                                           &join->tmp_table_param, tmp_table,
                                           /*ref_slice=*/-1);
       param.join = join;
-      CopyCosts(*join->root_access_path(), param.path);
+      CopyBasicProperties(*join->root_access_path(), param.path);
       union_all_sub_paths->push_back(param);
     }
   }
@@ -1077,6 +1077,7 @@ bool Query_expression::clear_correlated_query_blocks() {
   for (Query_block *sl = first_query_block(); sl; sl = sl->next_query_block()) {
     sl->join->clear_corr_derived_tmp_tables();
     sl->join->clear_sj_tmp_tables();
+    sl->join->clear_hash_tables();
   }
   if (!m_with_clause) return false;
   for (auto el : m_with_clause->m_list->elements()) {
@@ -1461,6 +1462,14 @@ bool Query_expression::walk(Item_processor processor, enum_walk walk,
   if (fake_query_block && fake_query_block->walk(processor, walk, arg))
     return true;
   return false;
+}
+
+void Query_expression::change_to_access_path_without_in2exists(THD *thd) {
+  for (Query_block *select = first_query_block(); select != nullptr;
+       select = select->next_query_block()) {
+    select->join->change_to_access_path_without_in2exists();
+  }
+  create_access_paths(thd);
 }
 
 /**

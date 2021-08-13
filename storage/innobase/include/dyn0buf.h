@@ -51,7 +51,7 @@ class dyn_buf_t {
   class block_t;
 
   typedef UT_LIST_NODE_T(block_t) block_node_t;
-  typedef UT_LIST_BASE_NODE_T(block_t) block_list_t;
+  typedef UT_LIST_BASE_NODE_T(block_t, m_node) block_list_t;
 
   class block_t {
    public:
@@ -60,7 +60,7 @@ class dyn_buf_t {
       init();
     }
 
-    ~block_t() {}
+    ~block_t() = default;
 
     /**
     Gets the number of used bytes in a block.
@@ -159,10 +159,7 @@ class dyn_buf_t {
   static constexpr auto MAX_DATA_SIZE = block_t::MAX_DATA_SIZE;
 
   /** Default constructor */
-  dyn_buf_t() : m_heap(), m_size() {
-    UT_LIST_INIT(m_list, &block_t::m_node);
-    push_back(&m_first_block);
-  }
+  dyn_buf_t() : m_heap(), m_list(), m_size() { push_back(&m_first_block); }
 
   /** Destructor */
   ~dyn_buf_t() { erase(); }
@@ -174,7 +171,7 @@ class dyn_buf_t {
       m_heap = nullptr;
 
       /* Initialise the list and add the first block. */
-      UT_LIST_INIT(m_list, &block_t::m_node);
+      m_list.clear();
       push_back(&m_first_block);
     } else {
       m_first_block.init();
@@ -289,8 +286,7 @@ class dyn_buf_t {
 #ifdef UNIV_DEBUG
     ulint total_size = 0;
 
-    for (const block_t *block = UT_LIST_GET_FIRST(m_list); block != nullptr;
-         block = UT_LIST_GET_NEXT(m_node, block)) {
+    for (const block_t *block : m_list) {
       total_size += block->used();
     }
 
@@ -304,8 +300,7 @@ class dyn_buf_t {
   @return	false if iteration was terminated. */
   template <typename Functor>
   bool for_each_block(Functor &functor) const {
-    for (const block_t *block = UT_LIST_GET_FIRST(m_list); block != nullptr;
-         block = UT_LIST_GET_NEXT(m_node, block)) {
+    for (const block_t *block : m_list) {
       if (!functor(block)) {
         return (false);
       }
@@ -377,23 +372,18 @@ class dyn_buf_t {
                   to the block
   @return the block containing the pos. */
   block_t *find(ulint &pos) {
-    block_t *block;
-
     ut_ad(UT_LIST_GET_LEN(m_list) > 0);
 
-    for (block = UT_LIST_GET_FIRST(m_list); block != nullptr;
-         block = UT_LIST_GET_NEXT(m_node, block)) {
+    for (auto block : m_list) {
       if (pos < block->used()) {
-        break;
+        return block;
       }
 
       pos -= block->used();
     }
 
-    ut_ad(block != nullptr);
-    ut_ad(block->used() >= pos);
-
-    return (block);
+    ut_ad(false);
+    return nullptr;
   }
 
   /**

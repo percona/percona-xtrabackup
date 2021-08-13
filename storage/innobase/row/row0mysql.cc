@@ -103,7 +103,8 @@ struct row_mysql_drop_t {
 ALTER TABLE in MySQL requires that the table handler can drop the
 table in background when there are no queries to it any
 more.  Protected by row_drop_list_mutex. */
-static UT_LIST_BASE_NODE_T(row_mysql_drop_t) row_mysql_drop_list;
+static UT_LIST_BASE_NODE_T(row_mysql_drop_t,
+                           row_mysql_drop_list) row_mysql_drop_list;
 
 /** Mutex protecting the background table drop list. */
 static ib_mutex_t row_drop_list_mutex;
@@ -123,13 +124,13 @@ static ibool row_add_table_to_background_drop_list(
 #ifdef UNIV_DEBUG
 /** Wait for the background drop list to become empty. */
 void row_wait_for_background_drop_list_empty() {
-  bool empty = false;
-  while (!empty) {
-    mutex_enter(&row_drop_list_mutex);
-    empty = (UT_LIST_GET_LEN(row_mysql_drop_list) == 0);
-    mutex_exit(&row_drop_list_mutex);
+  while (UT_LIST_GET_LEN(row_mysql_drop_list) > 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
+  /* At this point we know the drops were already processed without a need for
+  the mutex. The length is acquiring memory released in
+  row_drop_tables_for_mysql_in_background on UT_LIST_REMOVE, which is after
+  the drop processing is done. */
 }
 #endif /* UNIV_DEBUG */
 
@@ -1092,8 +1093,8 @@ static dtuple_t *row_get_prebuilt_insert_row(
 
 /** Updates the table modification counter and calculates new estimates
  for table and index statistics if necessary. */
-UNIV_INLINE
-void row_update_statistics_if_needed(dict_table_t *table) /*!< in: table */
+static inline void row_update_statistics_if_needed(
+    dict_table_t *table) /*!< in: table */
 {
   ib_uint64_t counter;
   ib_uint64_t n_rows;
@@ -1124,7 +1125,7 @@ void row_update_statistics_if_needed(dict_table_t *table) /*!< in: table */
   a counter table which is very small and updated very often. */
 
   if (counter > 16 + n_rows / 16 /* 6.25% */) {
-    ut_ad(!mutex_own(&dict_sys->mutex));
+    ut_ad(!dict_sys_mutex_own());
     /* this will reset table->stat_modified_counter to 0 */
     dict_stats_update(table, DICT_STATS_RECALC_TRANSIENT);
   }
@@ -1759,7 +1760,7 @@ upd_node_t *row_create_update_node_for_mysql(
 
   node->update_n_fields = table->get_n_cols();
 
-  UT_LIST_INIT(node->columns, &sym_node_t::col_var_list);
+  UT_LIST_INIT(node->columns);
 
   node->has_clust_rec_x_lock = TRUE;
   node->cmpl_info = 0;
@@ -1892,7 +1893,7 @@ static void init_fts_doc_id_for_ref(
 /* A functor for decrementing counters. */
 class ib_dec_counter {
  public:
-  ib_dec_counter() {}
+  ib_dec_counter() = default;
 
   void operator()(upd_node_t *node) {
     ut_ad(node->table->n_foreign_key_checks_running > 0);
@@ -1967,7 +1968,7 @@ just in case update action following delete fails.
 @return error code or DB_SUCCESS */
 static dberr_t row_delete_for_mysql_using_cursor(const upd_node_t *node,
                                                  cursors_t &delete_entries,
-                                                 bool restore_delete) {
+                                                 const bool restore_delete) {
   mtr_t mtr;
   dict_table_t *table = node->table;
   mem_heap_t *heap = node->heap;
@@ -1977,9 +1978,10 @@ static dberr_t row_delete_for_mysql_using_cursor(const upd_node_t *node,
   mtr_start(&mtr);
   dict_disable_redo_if_temporary(table, &mtr);
 
-  for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-       index != nullptr && err == DB_SUCCESS && !restore_delete;
-       index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : table->indexes) {
+    if (err != DB_SUCCESS || restore_delete) {
+      break;
+    }
     entry = row_build_index_entry(node->row, node->ext, index, heap);
 
     btr_pcur_t pcur;
@@ -2095,9 +2097,10 @@ static dberr_t row_update_for_mysql_using_cursor(const upd_node_t *node,
   /* Step-3: Check if UPDATE can lead to DUPLICATE key violation.
   If yes, then avoid executing it and return error. Only after ensuring
   that UPDATE is safe execute it as we can't rollback. */
-  for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-       index != nullptr && err == DB_SUCCESS;
-       index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : table->indexes) {
+    if (err != DB_SUCCESS) {
+      break;
+    }
     entry = row_build_index_entry(node->upd_row, node->upd_ext, index, heap);
 
     if (index->is_clustered()) {
@@ -2116,9 +2119,10 @@ static dberr_t row_update_for_mysql_using_cursor(const upd_node_t *node,
   }
 
   /* Step-4: It is now safe to execute update if there is no error */
-  for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-       index != nullptr && err == DB_SUCCESS;
-       index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : table->indexes) {
+    if (err != DB_SUCCESS) {
+      break;
+    }
     entry = row_build_index_entry(node->upd_row, node->upd_ext, index, heap);
 
     if (index->is_clustered()) {
@@ -2189,8 +2193,7 @@ static dberr_t row_del_upd_for_mysql_using_cursor(const byte *mysql_rec,
 
     dict_table_t *table = prebuilt->table;
 
-    for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-         index != nullptr; index = UT_LIST_GET_NEXT(indexes, index)) {
+    for (auto index : table->indexes) {
       key_changed = row_upd_changes_ord_field_binary(
           index, node->update, thr, node->upd_row, node->upd_ext, nullptr);
 
@@ -2464,8 +2467,7 @@ void row_delete_all_rows(dict_table_t *table) {
   /* Step-1: Now truncate all the indexes and re-create them.
   Note: This is ddl action even though delete all rows is
   DML action. Any error during this action is ir-reversible. */
-  for (index = UT_LIST_GET_FIRST(table->indexes); index != nullptr;
-       index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : table->indexes) {
     ut_ad(index->space == table->space);
     const page_id_t root(index->space, index->page);
     btr_free(root, page_size);
@@ -2735,7 +2737,7 @@ void row_mysql_lock_data_dictionary_func(trx_t *trx, const char *file,
   rw_lock_x_lock_inline(dict_operation_lock, 0, file, line);
   trx->dict_operation_lock_mode = RW_X_LATCH;
 
-  mutex_enter(&dict_sys->mutex);
+  dict_sys_mutex_enter();
 }
 
 /** Unlocks the data dictionary exclusive lock. */
@@ -2746,7 +2748,7 @@ void row_mysql_unlock_data_dictionary(trx_t *trx) /*!< in/out: transaction */
   /* Serialize data dictionary operations with dictionary mutex:
   no deadlocks can occur then in these operations */
 
-  mutex_exit(&dict_sys->mutex);
+  dict_sys_mutex_exit();
   rw_lock_x_unlock(dict_operation_lock);
 
   trx->dict_operation_lock_mode = 0;
@@ -2758,7 +2760,7 @@ dberr_t row_create_table_for_mysql(dict_table_t *table, const char *compression,
   mem_heap_t *heap;
   dberr_t err;
 
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
 
   DBUG_EXECUTE_IF("ib_create_table_fail_at_start_of_row_create_table_for_mysql",
                   {
@@ -2794,9 +2796,9 @@ dberr_t row_create_table_for_mysql(dict_table_t *table, const char *compression,
 
     dict_table_add_system_columns(table, heap);
 
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
     dict_table_add_to_cache(table, false, heap);
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
 
     /* During upgrade, etc., the log_ddl may haven't been
     initialized and we don't need to write DDL logs too.
@@ -2861,13 +2863,13 @@ error_handling:
 
       /* Still do it here so that the table can always be freed */
       if (dd_table_open_on_name_in_mem(table->name.m_name, false)) {
-        mutex_enter(&dict_sys->mutex);
+        dict_sys_mutex_enter();
 
         dd_table_close(table, nullptr, nullptr, true);
 
         dict_table_remove_from_cache(table);
 
-        mutex_exit(&dict_sys->mutex);
+        dict_sys_mutex_exit();
       } else {
         dict_mem_table_free(table);
       }
@@ -3016,9 +3018,9 @@ dberr_t row_create_index_for_mysql(
     err = dict_create_index_tree_in_mem(index, trx);
 
     if (err != DB_SUCCESS && !table->is_intrinsic()) {
-      mutex_enter(&dict_sys->mutex);
+      dict_sys_mutex_enter();
       dict_index_remove_from_cache(table, index);
-      mutex_exit(&dict_sys->mutex);
+      dict_sys_mutex_exit();
     }
   }
 
@@ -3060,7 +3062,7 @@ dberr_t row_table_load_foreign_constraints(trx_t *trx, const char *name,
 
   DBUG_TRACE;
 
-  ut_ad(mutex_own(&dict_sys->mutex));
+  ut_ad(dict_sys_mutex_own());
 
   trx->op_info = "adding foreign keys";
 
@@ -3238,6 +3240,9 @@ loop:
 already_dropped:
   mutex_enter(&row_drop_list_mutex);
 
+  /* This can't be moved earlier, as row_wait_for_background_drop_list_empty()
+  expects the item be removed from list only after the drop processing is
+  completed.*/
   UT_LIST_REMOVE(row_mysql_drop_list, drop);
 
   MONITOR_DEC(MONITOR_BACKGROUND_DROP_TABLE);
@@ -3255,23 +3260,6 @@ already_dropped:
   goto loop;
 }
 
-/** Get the background drop list length. NOTE: the caller must own the
- drop list mutex!
- @return how many tables in list */
-ulint row_get_background_drop_list_len_low(void) {
-  ulint len;
-
-  mutex_enter(&row_drop_list_mutex);
-
-  ut_a(row_mysql_drop_list_inited);
-
-  len = UT_LIST_GET_LEN(row_mysql_drop_list);
-
-  mutex_exit(&row_drop_list_mutex);
-
-  return (len);
-}
-
 /** If a table is not yet in the drop list, adds the table to the list of tables
  which the master thread drops in background. We need this on Unix because in
  ALTER TABLE MySQL may call drop table even if the table has running queries on
@@ -3284,15 +3272,12 @@ static ibool row_add_table_to_background_drop_list(
   /* WL6049, remove after WL6049. */
   ut_ad(0);
 
-  row_mysql_drop_t *drop;
-
   mutex_enter(&row_drop_list_mutex);
 
   ut_a(row_mysql_drop_list_inited);
 
   /* Look if the table already is in the drop list */
-  for (drop = UT_LIST_GET_FIRST(row_mysql_drop_list); drop != nullptr;
-       drop = UT_LIST_GET_NEXT(row_mysql_drop_list, drop)) {
+  for (auto drop : row_mysql_drop_list) {
     if (strcmp(drop->table_name, name) == 0) {
       /* Already in the list */
 
@@ -3302,7 +3287,7 @@ static ibool row_add_table_to_background_drop_list(
     }
   }
 
-  drop = static_cast<row_mysql_drop_t *>(
+  auto drop = static_cast<row_mysql_drop_t *>(
       ut_malloc_nokey(sizeof(row_mysql_drop_t)));
 
   drop->table_name = mem_strdup(name);
@@ -3480,13 +3465,13 @@ static dberr_t row_discard_tablespace(trx_t *trx, dict_table_t *table,
   /* For SDI tables, acquire exclusive MDL and set sdi_table->ibd_file_missing
   to true. Purge on SDI table acquire shared MDL & also check for missing
   flag. */
-  mutex_exit(&dict_sys->mutex);
+  dict_sys_mutex_exit();
   MDL_ticket *sdi_mdl = nullptr;
   err = dd_sdi_acquire_exclusive_mdl(trx->mysql_thd, table->space, &sdi_mdl);
   if (err != DB_SUCCESS) {
     return (err);
   }
-  mutex_enter(&dict_sys->mutex);
+  dict_sys_mutex_enter();
 
   /* Play safe and remove all insert buffer entries, though we should
   have removed them already when DISCARD TABLESPACE was called */
@@ -3528,8 +3513,7 @@ static dberr_t row_discard_tablespace(trx_t *trx, dict_table_t *table,
 
       /* Reset the root page numbers. */
 
-      for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-           index != nullptr; index = UT_LIST_GET_NEXT(indexes, index)) {
+      for (auto index : table->indexes) {
         index->page = FIL_NULL;
         index->space = FIL_NULL;
       }
@@ -3683,9 +3667,9 @@ run_again:
 @param[in,out]	aux_vec		Fts aux table name vector
 @param[in,out]	trx		Transaction handle
 @return error code or DB_SUCCESS */
-UNIV_INLINE
-dberr_t row_drop_ancillary_fts_tables(dict_table_t *table,
-                                      aux_name_vec_t *aux_vec, trx_t *trx) {
+static inline dberr_t row_drop_ancillary_fts_tables(dict_table_t *table,
+                                                    aux_name_vec_t *aux_vec,
+                                                    trx_t *trx) {
   /* Drop ancillary FTS tables */
   if (dict_table_has_fts_index(table) ||
       DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS_HAS_DOC_ID)) {
@@ -3718,8 +3702,8 @@ dberr_t row_drop_ancillary_fts_tables(dict_table_t *table,
 @param[in,out]	table		Table cache entry
 @param[in,out]	trx		Transaction handle
 @return error code or DB_SUCCESS */
-UNIV_INLINE
-dberr_t row_drop_table_from_cache(dict_table_t *table, trx_t *trx) {
+static inline dberr_t row_drop_table_from_cache(dict_table_t *table,
+                                                trx_t *trx) {
   /* Remove the pointer to this table object from the list
   of modified tables by the transaction because the object
   is going to be destroyed below. */
@@ -3729,8 +3713,7 @@ dberr_t row_drop_table_from_cache(dict_table_t *table, trx_t *trx) {
     btr_drop_ahi_for_table(table);
     dict_table_remove_from_cache(table);
   } else {
-    for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-         index != nullptr; index = UT_LIST_GET_FIRST(table->indexes)) {
+    while (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes)) {
       rw_lock_free(&index->lock);
 
       UT_LIST_REMOVE(table->indexes, index);
@@ -3757,7 +3740,8 @@ dberr_t row_drop_tablespace(space_id_t space_id, const char *filepath) {
   if (!fil_space_exists_in_mem(space_id, nullptr, true, false)) {
     /* Force a delete of any discarded or temporary files. */
     if (fil_delete_file(filepath)) {
-      ib::info(ER_IB_MSG_989) << "Removed datafile " << filepath;
+      ib::info(ER_IB_MSG_989)
+          << "Removed datafile=" << filepath << ", space_id=" << space_id;
 
     } else {
       ib::info(ER_IB_MSG_990)
@@ -3769,8 +3753,8 @@ dberr_t row_drop_tablespace(space_id_t space_id, const char *filepath) {
 
     if (err != DB_SUCCESS && err != DB_TABLESPACE_NOT_FOUND) {
       ib::error(ER_IB_MSG_991)
-          << "Failed to delete the datafile of"
-          << " tablespace " << space_id << ", file '" << filepath << "'!";
+          << "Failed to delete the datafile of tablespace ID=" << space_id
+          << ", file '" << filepath << "'!";
     }
   }
 
@@ -3822,7 +3806,7 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
       nonatomic = true;
     }
 
-    ut_ad(mutex_own(&dict_sys->mutex));
+    ut_ad(dict_sys_mutex_own());
     ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
 
     table = dict_table_check_if_in_cache_low(name);
@@ -3843,9 +3827,9 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
 
     /* Need to exclusive lock all AUX tables for drop table */
     if (table && table->fts) {
-      mutex_exit(&dict_sys->mutex);
+      dict_sys_mutex_exit();
       err = fts_lock_all_aux_tables(thd, table);
-      mutex_enter(&dict_sys->mutex);
+      dict_sys_mutex_enter();
 
       if (err != DB_SUCCESS) {
         dd_table_close(table, nullptr, nullptr, true);
@@ -3868,9 +3852,9 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
   concurrent DROP while purge is happening on SDI table */
   if (file_per_table) {
     MDL_ticket *sdi_mdl = nullptr;
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
     err = dd_sdi_acquire_exclusive_mdl(thd, table->space, &sdi_mdl);
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
 
     if (err != DB_SUCCESS) {
       dd_table_close(table, nullptr, nullptr, true);
@@ -4045,12 +4029,12 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
   }
 
   if (!table->is_temporary() && !file_per_table) {
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
     for (dict_index_t *index = table->first_index();
          err == DB_SUCCESS && index != nullptr; index = index->next()) {
       err = log_ddl->write_free_tree_log(trx, index, true);
     }
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
     if (err != DB_SUCCESS) {
       goto funct_exit;
     }
@@ -4158,7 +4142,7 @@ funct_exit:
 
   if (aux_vec.aux_name.size() > 0) {
     if (trx->dict_operation_lock_mode == RW_X_LATCH) {
-      mutex_exit(&dict_sys->mutex);
+      dict_sys_mutex_exit();
     }
 
     if (!fts_drop_dd_tables(&aux_vec, file_per_table)) {
@@ -4166,7 +4150,7 @@ funct_exit:
     }
 
     if (trx->dict_operation_lock_mode == RW_X_LATCH) {
-      mutex_enter(&dict_sys->mutex);
+      dict_sys_mutex_enter();
     }
 
     fts_free_aux_names(&aux_vec);
@@ -4198,7 +4182,8 @@ dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
 
   ut_a(old_name != nullptr);
   ut_a(new_name != nullptr);
-  ut_ad(trx->state == TRX_STATE_ACTIVE);
+  ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
+  ut_ad(trx->state.load(std::memory_order_relaxed) == TRX_STATE_ACTIVE);
 
   if (srv_force_recovery) {
     ib::info(ER_IB_MSG_995) << MODIFICATIONS_NOT_ALLOWED_MSG_FORCE_RECOVERY;
@@ -4319,8 +4304,8 @@ dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
        table is opened. */
     if (is_rename || !table->refresh_fk) {
       if (dict_locked) {
-        ut_ad(mutex_own(&dict_sys->mutex));
-        mutex_exit(&dict_sys->mutex);
+        ut_ad(dict_sys_mutex_own());
+        dict_sys_mutex_exit();
       }
 
       err = dd_table_load_fk(client, new_name, nullptr, table, dd_table, thd,
@@ -4328,7 +4313,7 @@ dberr_t row_rename_table_for_mysql(const char *old_name, const char *new_name,
                              &fk_tables);
 
       if (dict_locked) {
-        mutex_enter(&dict_sys->mutex);
+        dict_sys_mutex_enter();
       }
 
       if (is_rename) {
@@ -4636,7 +4621,7 @@ static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
 }
 
 dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
-                                 size_t n_threads, bool check_keys,
+                                 size_t max_threads, bool check_keys,
                                  ulint *n_rows) {
   *n_rows = 0;
 
@@ -4665,9 +4650,9 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
       (check_keys || prebuilt->trx->mysql_n_tables_locked == 0) &&
       !prebuilt->ins_sel_stmt) {
 
-    n_threads = Parallel_reader::available_threads(n_threads);
+    max_threads = Parallel_reader::available_threads(max_threads);
 
-    if (n_threads > 0) {
+    if (max_threads > 0) {
       /* No INSERT INTO  ... SELECT  and non-locking selects only. */
       trx_start_if_not_started_xa(prebuilt->trx, false);
 
@@ -4682,11 +4667,11 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
       indexes.push_back(index);
 
       if (!check_keys) {
-        return (row_mysql_parallel_select_count_star(trx, indexes, n_threads,
+        return (row_mysql_parallel_select_count_star(trx, indexes, max_threads,
                                                      n_rows));
       }
 
-      return (parallel_check_table(trx, index, n_threads, n_rows));
+      return (parallel_check_table(trx, index, max_threads, n_rows));
     }
   }
 
@@ -4830,8 +4815,6 @@ next_rec:
 /** Initialize this module */
 void row_mysql_init(void) {
   mutex_create(LATCH_ID_ROW_DROP_LIST, &row_drop_list_mutex);
-
-  UT_LIST_INIT(row_mysql_drop_list, &row_mysql_drop_t::row_mysql_drop_list);
 
   row_mysql_drop_list_inited = TRUE;
 }

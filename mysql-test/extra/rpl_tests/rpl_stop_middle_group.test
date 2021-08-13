@@ -7,7 +7,7 @@
 
 # Test group sematics and thereby failing in such group is bound to 
 # the Single-Threaded Slave. 
--- source include/not_mts_slave_parallel_workers.inc
+-- source include/not_mts_replica_parallel_workers.inc
 -- source include/have_myisam.inc
 
 connection master;
@@ -18,7 +18,7 @@ create table tm (a int auto_increment primary key) engine=myisam;
 create table ti (a int auto_increment primary key) engine=innodb;
 
 sync_slave_with_master;
-set @@global.debug="+d,stop_slave_middle_group";
+set @@global.debug="+d,stop_replica_middle_group";
 
 connection master;
 
@@ -77,7 +77,7 @@ truncate table ti;
 #connection slave;
 sync_slave_with_master;
 
-set @@global.debug="+d,stop_slave_middle_group";
+set @@global.debug="+d,stop_replica_middle_group";
 set @@global.debug="+d,incomplete_group_in_relay_log";
 
 connection master;
@@ -126,7 +126,7 @@ connection master;
 
 #connection slave;
 sync_slave_with_master;
-set @@global.debug="+d,stop_slave_middle_group";
+set @@global.debug="+d,stop_replica_middle_group";
 set @@global.debug="+d,incomplete_group_in_relay_log";
 
 connection master;

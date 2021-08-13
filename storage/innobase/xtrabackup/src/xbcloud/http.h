@@ -196,7 +196,7 @@ class Http_response {
   std::map<std::string, std::string> headers_;
 
  public:
-  Http_response(){};
+  Http_response() {}
   const Http_buffer &body() const { return body_; }
   Http_buffer move_body() { return std::move(body_); }
   const std::map<std::string, std::string> &headers() const { return headers_; }
@@ -216,7 +216,7 @@ class Http_response {
     response->body_.append(reinterpret_cast<char *>(ptr), size * nmemb);
     return size * nmemb;
   }
-  void reset_body() { body_.clear(); };
+  void reset_body() { body_.clear(); }
 };
 
 class Http_connection {
@@ -242,11 +242,11 @@ class Http_connection {
       : curl_(std::move(curl)), response_(response), callback_(callback) {
     curl_easy_setopt(curl_.get(), CURLOPT_PRIVATE, this);
     curl_easy_setopt(curl_.get(), CURLOPT_ERRORBUFFER, error_);
-  };
+  }
 
   ~Http_connection() { curl_slist_free_all(headers_); }
 
-  CURL *curl_easy() const { return curl_.get(); };
+  CURL *curl_easy() const { return curl_.get(); }
 
   const char *error() const { return error_; }
 
@@ -358,7 +358,7 @@ class Http_client {
   static int upload_callback(char *ptr, size_t size, size_t nmemb, void *data);
 
  public:
-  Http_client(){};
+  Http_client() {}
   Http_client(const Http_client &) = delete;
 
   virtual bool make_request(const Http_request &request,
@@ -374,9 +374,9 @@ class Http_client {
                 const Http_client *http_client, Event_handler *h,
                 CALLBACK callback, CURLcode rc, const Http_connection *conn,
                 ulong count) const;
-  void set_verbose(bool val) { verbose = val; };
-  void set_insecure(bool val) { insecure = val; };
-  void set_cacaert(const std::string &val) { cacert = val; };
+  void set_verbose(bool val) { verbose = val; }
+  void set_insecure(bool val) { insecure = val; }
+  void set_cacaert(const std::string &val) { cacert = val; }
   void set_curl_retriable_errors(CURLcode code) {
     if (code < CURLcode::CURL_LAST) {
       if (std::find(curl_retriable_errors.begin(), curl_retriable_errors.end(),

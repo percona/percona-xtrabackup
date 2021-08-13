@@ -556,20 +556,6 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
       recurses into subqueries.
      */
     if (apply_local_transforms(thd, true)) return true;
-    /*
-      Pushing conditions down to derived tables must be done after validity
-      checks of grouped queries done by apply_local_transforms(); indeed, by
-      replacing columns with expressions, inside equalities of WHERE, pushdown
-      makes the checks impossible.
-      The said validity checks must be done after simplify_joins() has been
-      done on all query blocks. While pushdown must be done on the top query
-      block first, then on subqueries.
-      These circular dependencies explain why:
-      - pushdown is not part of apply_local_transforms
-      - a pushed-down condition cannot help to convert LEFT JOIN to inner join
-      inside a derived table's definition.
-    */
-    if (push_conditions_to_derived_tables(thd)) return true;
   }
 
   // Eliminate unused window definitions, redundant sorts etc.
@@ -711,6 +697,9 @@ bool Query_block::prepare_values(THD *thd) {
   that each transformation happens on one single query block.
   Also perform partition pruning, which is most effective after transformations
   have been done.
+  This function also does condition pushdown to derived tables after all
+  the local transformations are applied although condition pushdown is
+  strictly not a local transform.
 
   @param thd      thread handler
   @param prune    if true, then prune partitions based on const conditions
@@ -798,6 +787,21 @@ bool Query_block::apply_local_transforms(THD *thd, bool prune) {
         set_empty_query();
     }
   }
+  /*
+     Pushing conditions down to derived tables must be done after validity
+     checks of grouped queries done above; indeed, by replacing columns
+     with expressions, inside equalities of WHERE, pushdown makes the checks
+     impossible.
+     The said validity checks must be done after simplify_joins() has been
+     done on all query blocks. While pushdown must be done on the outer
+     most query block first, then on subqueries.
+     These circular dependencies explain why:
+     - pushdown is done after all local transformations have been applied.
+     - a pushed-down condition cannot help to convert LEFT JOIN to inner join
+     inside a derived table's definition.
+   */
+  if (outer_query_block() == nullptr && push_conditions_to_derived_tables(thd))
+    return true;
 
   return false;
 }
@@ -4608,10 +4612,17 @@ bool Query_block::setup_group(THD *thd) {
 
 ORDER *Query_block::find_in_group_list(Item *item, int *rollup_level) const {
   Item *real_item = item->real_item();
+  if (real_item->type() == Item::CACHE_ITEM) {
+    // Unwrap the cache, if any. NOTE: There should never be any caches
+    // in the GROUP BY list, so we don't need to unwrap any from there.
+    real_item = down_cast<const Item_cache *>(real_item)->get_example();
+  }
+
   ORDER *best_candidate = nullptr;
   int idx = 0;
   for (ORDER *group = group_list.first; group; group = group->next, ++idx) {
     Item *group_item = *group->item;
+    assert(group_item->real_item()->type() != Item::CACHE_ITEM);
     if (real_item->eq(group_item->real_item(), /*binary_cmp=*/false)) {
       if (item->item_name.ptr() != nullptr &&
           group_item->item_name.ptr() != nullptr &&
@@ -4696,11 +4707,28 @@ bool WalkAndReplace(
       if (result.action == ReplaceResult::ERROR) {
         return true;
       } else if (result.action == ReplaceResult::REPLACE) {
-        Item *new_arg = result.replacement;
-        func_item->arguments()[argument_idx] = new_arg;
+        if (thd->lex->is_exec_started()) {
+          thd->change_item_tree(&func_item->arguments()[argument_idx],
+                                result.replacement);
+        } else {
+          func_item->arguments()[argument_idx] = result.replacement;
+        }
       } else if (WalkAndReplace(thd, arg, get_new_item)) {
         return true;
       }
+    }
+    switch (down_cast<Item_func *>(item)->functype()) {
+      case Item_func::GE_FUNC:
+      case Item_func::GT_FUNC:
+      case Item_func::LT_FUNC:
+      case Item_func::LE_FUNC:
+      case Item_func::EQ_FUNC:
+      case Item_func::NE_FUNC:
+      case Item_func::EQUAL_FUNC:
+        down_cast<Item_bool_func2 *>(item)->set_cmp_func();
+        break;
+      default:
+        break;
     }
   } else if (item->type() == Item::COND_ITEM) {
     Item_cond *cond_item = down_cast<Item_cond *>(item);
@@ -4711,9 +4739,11 @@ bool WalkAndReplace(
       if (result.action == ReplaceResult::ERROR) {
         return true;
       } else if (result.action == ReplaceResult::REPLACE) {
-        Item *new_arg = result.replacement;
-        assert(item != new_arg);
-        *li.ref() = new_arg;
+        if (thd->lex->is_exec_started()) {
+          thd->change_item_tree(li.ref(), result.replacement);
+        } else {
+          *li.ref() = result.replacement;
+        }
       } else if (WalkAndReplace(thd, arg, get_new_item)) {
         return true;
       }
@@ -6276,8 +6306,7 @@ bool Query_block::transform_grouped_to_derived(THD *thd, bool *break_off) {
       pair.second->context = &new_derived->context;
 
       for (auto expr : contrib_exprs) {
-        Item::Item_field_replacement info(pair.first, replaces_field, this,
-                                          (*expr)->type() == Item::FIELD_ITEM);
+        Item::Item_field_replacement info(pair.first, replaces_field, this);
         Item *new_item = (*expr)->transform(&Item::replace_item_field,
                                             pointer_cast<uchar *>(&info));
         if (new_item == nullptr) return true;
@@ -6554,6 +6583,13 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
   const uint first_non_hidden = hidden_fields;
   assert((fields.size() - hidden_fields) == 1);  // scalar subquery
 
+#ifndef NDEBUG
+  // Hidden fields should come before non-hidden.
+  for (uint i = 0; i < fields.size(); i++) {
+    assert((fields[i]->hidden) != (i >= hidden_fields));
+  }
+#endif
+
   Item_field *selected_field = nullptr;
   if (fields[first_non_hidden]->type() == Item::FIELD_ITEM) {
     selected_field = down_cast<Item_field *>(fields[first_non_hidden]);
@@ -6576,34 +6612,44 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
   List_iterator<Item> li(lifted_fields->m_fields);
 
   while ((field_or_ref = li++)) {
-    Item_field *f = down_cast<Item_field *>(field_or_ref->real_item());
+    Item_field *const f = down_cast<Item_field *>(field_or_ref->real_item());
     if (!field_or_ref->is_outer_reference()) {
       // Add non-correlated fields in WHERE clause to select_list if not
       // already present
       if (selected_field == nullptr || f->field != selected_field->field) {
         m_added_non_hidden_fields++;
-        // Mark the field as visible field. An earlier transformation could
-        // have added this as a hidden item to the fields list.
-        f->hidden = false;
+
+        // If f->hidden, f should be among the hidden fields in 'fields'.
+        assert(std::any_of(fields.cbegin(), fields.cbegin() + first_non_hidden,
+                           [&f](const Item *item) { return f == item; }) ==
+               f->hidden);
+
+        Item_field *inner_field;
+
+        if (f->hidden) {
+          // Make a new Item_field to avoid changing the set of hidden
+          // Item_fields.
+          inner_field = new (thd->mem_root) Item_field(thd, f);
+          assert(!inner_field->hidden);
+        } else {
+          inner_field = f;
+        }
 
         // select_n_where_fields is counted, so safe to add to base_ref_items
-        base_ref_items[fields.size()] = f;
+        base_ref_items[fields.size()] = inner_field;
 
         // Compute position in resulting derived table (TABLE::fields)
-        // We are adding visible fields after hidden fields, which breaks
-        // an earlier invariant. Hard to avoid here.
         // Note the corresponding slice position calculation performed in
-        //     - change_to_use_tmp_fields_except_sums  (example figure expanded)
-        //     - setup_copy_fields
+        //     - change_to_use_tmp_fields_except_sums  (example figure
+        //     expanded)
         //     - change_to_use_tmp_fields
         // takes this new situation into account.
         lifted_fields->m_field_positions.push_back(fields.size() -
                                                    hidden_fields);
-        fields.push_back(f);
-
+        fields.push_back(inner_field);
         // We have added to fields; master_query_expression->types must
         // always be equal to it;
-        master_query_expression()->types.push_back(f);
+        master_query_expression()->types.push_back(inner_field);
       } else {
         // This is the field present in the scalar subquery initially, so it
         // will be first in the derived table's set of fields.
@@ -6721,8 +6767,9 @@ bool Query_block::decorrelate_derived_scalar_subquery_post(
       Field *field_in_derived = derived->table->field[pos_in_fields];
       auto replaces_field = new (thd->mem_root) Item_field(field_in_derived);
       if (replaces_field == nullptr) return true;
+      assert(replaces_field->data_type() == f->data_type());
 
-      Item::Item_field_replacement info(f->field, replaces_field, this, false);
+      Item::Item_field_replacement info(f->field, replaces_field, this);
       Item *new_item = derived->join_cond()->transform(
           &Item::replace_item_field, pointer_cast<uchar *>(&info));
       if (new_item == nullptr) return true;

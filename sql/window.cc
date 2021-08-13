@@ -149,9 +149,9 @@ bool Window::check_window_functions1(THD *thd, Query_block *select) {
       assert(wfs->framing());
       m_needs_last_peer_in_frame = true;
     }
-    if (wfs->needs_card()) {
+    if (wfs->needs_partition_cardinality()) {
       assert(!wfs->framing());
-      m_needs_card = true;
+      m_needs_partition_cardinality = true;
     }
     m_opt_first_row |= reqs.opt_first_row;
     m_opt_last_row |= reqs.opt_last_row;
@@ -244,7 +244,7 @@ bool Window::setup_range_expressions(THD *thd) {
     }
   }
 
-  for (auto border : {m_frame->m_from, m_frame->m_to}) {
+  for (PT_border *border : {m_frame->m_from, m_frame->m_to}) {
     Item_func *cmp = nullptr, **cmp_ptr = nullptr /* to silence warning */;
     Item_func *inv_cmp = nullptr,
               **inv_cmp_ptr = nullptr /* to silence warning */;
@@ -824,7 +824,7 @@ bool Window::check_constant_bound(THD *thd, PT_border *border) {
 bool Window::check_border_sanity1(THD *thd) {
   const PT_frame &fr = *m_frame;
 
-  for (auto border : {fr.m_from, fr.m_to}) {
+  for (PT_border *border : {fr.m_from, fr.m_to}) {
     enum_window_border_type border_t = border->m_border_type;
     switch (fr.m_query_expression) {
       case WFU_ROWS:
@@ -898,9 +898,9 @@ bool Window::check_border_sanity2(THD *thd) {
   const PT_frame &fr = *m_frame;
 
   PT_border *ba[] = {fr.m_from, fr.m_to};
-  auto constexpr siz = sizeof(ba) / sizeof(PT_border *);
+  constexpr size_t siz = sizeof(ba) / sizeof(PT_border *);
 
-  for (auto border : Bounds_checked_array<PT_border *>(ba, siz)) {
+  for (PT_border *border : Bounds_checked_array<PT_border *>(ba, siz)) {
     enum_window_border_type border_t = border->m_border_type;
     switch (fr.m_query_expression) {
       case WFU_ROWS:
@@ -963,8 +963,8 @@ class AdjacencyList {
  public:
   static constexpr uint UNUSED = std::numeric_limits<uint>::max();
   uint *const m_list;
-  const uint m_card;
-  AdjacencyList(uint elements) : m_list(new uint[elements]), m_card(elements) {
+  const uint m_size;
+  AdjacencyList(uint elements) : m_list(new uint[elements]), m_size(elements) {
     for (auto &i : Bounds_checked_array<uint>(m_list, elements)) {
       i = UNUSED;
     }
@@ -977,7 +977,7 @@ class AdjacencyList {
     @param depends_on the window referenced
   */
   void add(uint wno, uint depends_on) {
-    assert(wno <= m_card && depends_on <= m_card);
+    assert(wno <= m_size && depends_on <= m_size);
     assert(m_list[wno] == UNUSED);
     m_list[wno] = depends_on;
   }
@@ -989,7 +989,7 @@ class AdjacencyList {
     @returns the out degree
   */
   uint out_degree(uint wno) {
-    assert(wno <= m_card);
+    assert(wno <= m_size);
     return m_list[wno] == UNUSED ? 0 : 1;
   }
 
@@ -1000,10 +1000,10 @@ class AdjacencyList {
     @returns the in degree
   */
   uint in_degree(uint wno) {
-    assert(wno <= m_card);
+    assert(wno <= m_size);
     uint degree = 0;  // a priori
 
-    for (auto i : Bounds_checked_array<uint>(m_list, m_card)) {
+    for (uint i : Bounds_checked_array<uint>(m_list, m_size)) {
       degree += i == wno ? 1 : 0;
     }
     return degree;
@@ -1013,7 +1013,7 @@ class AdjacencyList {
     Return true of there is a circularity in the graph
   */
   bool check_circularity() {
-    if (m_card == 1)
+    if (m_size == 1)
       return m_list[0] != UNUSED;  // could have been resolved to itself
 
     /*
@@ -1022,7 +1022,7 @@ class AdjacencyList {
     */
     std::unordered_set<uint> completed;
 
-    for (uint i = 0; i < m_card; i++) {
+    for (uint i = 0; i < m_size; i++) {
       // Look for loop in the chain which starts at node #i
 
       if (completed.count(i) != 0) continue;  // Chain already checked.
@@ -1033,7 +1033,7 @@ class AdjacencyList {
       completed.insert(i);
 
       for (uint dep = m_list[i]; dep != UNUSED; dep = m_list[dep]) {
-        assert(dep <= m_card);
+        assert(dep <= m_size);
         if (visited.count(dep) != 0) return true;  // found circularity
         visited.insert(dep);
         completed.insert(dep);
@@ -1077,19 +1077,25 @@ void Window::eliminate_unused_objects(List<Window> &windows) {
           }
         }
         if (window_used) break;
+        // We check if partition by or order by of this window has subqueries.
+        // If so, we cannot remove this window. Removing subqueries would need
+        // removal of their entries in ref_item_array (added when setting up
+        // order by/partition by fields in find_order_in_list).
+        for (PT_order_list *it : {w1->m_partition_by, w1->m_order_by}) {
+          if (it != nullptr) {
+            for (ORDER *o = it->value.first; o != nullptr; o = o->next) {
+              if ((*o->item)->has_subquery()) {
+                window_used = true;
+                break;
+              }
+            }
+          }
+          if (window_used) break;
+        }
       }
       if (!window_used) {
         w1->cleanup();
         w1->destroy();
-        for (auto it : {w1->m_partition_by, w1->m_order_by}) {
-          if (it != nullptr) {
-            for (ORDER *o = it->value.first; o != nullptr; o = o->next) {
-              Item *item = *o->item;
-              item->walk(&Item::clean_up_after_removal,
-                         enum_walk::SUBQUERY_POSTFIX, nullptr);
-            }
-          }
-        }
         wi1.remove();
       }
     }
@@ -1357,7 +1363,6 @@ void Window::cleanup() {
   m_special_rows_cache_max_length = 0;
 
   m_frame_buffer_param = nullptr;
-  m_outtable_param = nullptr;
   m_frame_buffer = nullptr;
 }
 
@@ -1405,7 +1410,7 @@ void Window::reset_execution_state(Reset_level level) {
         partition.
       */
       if (!m_frame_buffer_positions.empty()) {
-        for (auto &it : m_frame_buffer_positions) {
+        for (Frame_buffer_position &it : m_frame_buffer_positions) {
           it.m_rowno = -1;
         }
       }  // else not allocated, empty result set
@@ -1530,7 +1535,7 @@ void Window::reset_all_wf_state() {
   List_iterator<Item_sum> ls(m_functions);
   Item_sum *sum;
   while ((sum = ls++)) {
-    for (auto f : {false, true}) {
+    for (bool f : {false, true}) {
       (void)sum->walk(&Item::reset_wf_state, enum_walk::POSTFIX, (uchar *)&f);
     }
   }

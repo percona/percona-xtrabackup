@@ -5,6 +5,11 @@ function xtrabackup()
     run_cmd $XB_BIN $XB_ARGS "$@"
 }
 
+function rr_xtrabackup()
+{
+  run_cmd rr $XB_BIN $XB_ARGS "$@"
+}
+
 function mysql()
 {
     run_cmd $MYSQL $MYSQL_ARGS "$@"
@@ -496,7 +501,7 @@ function start_group_replication_cluster()
   if is_debug_server; then
     if [[ $INNODB_FLAVOR = "InnoDB" ]];
     then
-      require_server_version_higher_than 8.0.25
+      require_server_version_higher_than 8.0.26
     fi
   fi
   local number_of_nodes=$1

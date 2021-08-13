@@ -200,6 +200,7 @@ mysql_pfs_key_t srv_purge_thread_key;
 mysql_pfs_key_t srv_worker_thread_key;
 mysql_pfs_key_t trx_recovery_rollback_thread_key;
 mysql_pfs_key_t srv_ts_alter_encrypt_thread_key;
+mysql_pfs_key_t parallel_rseg_init_thread_key;
 #endif /* UNIV_PFS_THREAD */
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
@@ -418,12 +419,18 @@ static dberr_t create_log_files(char *logfilename, size_t dirnamelen, lsn_t lsn,
 #endif
 
     fsp_flags_set_encryption(log_space->flags);
-    err = fil_set_encryption(log_space->id, Encryption::AES, nullptr, nullptr);
-    ut_ad(err == DB_SUCCESS);
     if (use_dumped_tablespace_keys && !srv_backup_mode) {
-      xb_insert_tablespace_key(log_space->id, log_space->encryption_key,
-                               log_space->encryption_iv);
+      byte key[Encryption::KEY_LEN];
+      byte iv[Encryption::KEY_LEN];
+
+      bool found = xb_fetch_tablespace_key(log_space->id, key, iv);
+      ut_a(found);
+      err = fil_set_encryption(log_space->id, Encryption::AES, key, iv);
+    } else {
+      err =
+          fil_set_encryption(log_space->id, Encryption::AES, nullptr, nullptr);
     }
+    ut_ad(err == DB_SUCCESS);
   }
 
   const ulonglong file_pages = srv_log_file_size / UNIV_PAGE_SIZE;
@@ -671,11 +678,9 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
   size_t page_size = UNIV_PAGE_SIZE_MAX;
   dberr_t err = DB_ERROR;
 
-  byte *first_page_buf =
-      static_cast<byte *>(ut_malloc_nokey(2 * UNIV_PAGE_SIZE_MAX));
   /* Align the memory for a possible read from a raw device */
-  byte *first_page =
-      static_cast<byte *>(ut_align(first_page_buf, UNIV_PAGE_SIZE));
+  byte *first_page = static_cast<byte *>(
+      ut::aligned_alloc(UNIV_PAGE_SIZE_MAX, UNIV_PAGE_SIZE));
 
   /* Don't want unnecessary complaints about partial reads. */
   request.disable_partial_io_warnings();
@@ -685,7 +690,7 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
 
   if (err != DB_SUCCESS) {
     ib::info(ER_IB_MSG_1076, space->name, ut_strerr(err));
-    ut_free(first_page_buf);
+    ut::aligned_free(first_page);
     return (err);
   }
 
@@ -698,30 +703,31 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
   /* Return if the encryption metadata is empty. */
   if (memcmp(first_page + offset, Encryption::KEY_MAGIC_V3,
              Encryption::MAGIC_SIZE) != 0) {
-    ut_free(first_page_buf);
+    ut::aligned_free(first_page);
     return (DB_SUCCESS);
   }
 
   if (!use_dumped_tablespace_keys || srv_backup_mode) {
     byte key[Encryption::KEY_LEN];
     byte iv[Encryption::KEY_LEN];
-    if (fsp_header_get_encryption_key(space->flags, key, iv, first_page)) {
+    Encryption_key e_key{key, iv};
+    if (fsp_header_get_encryption_key(space->flags, e_key, first_page)) {
       fsp_flags_set_encryption(space->flags);
       err = fil_set_encryption(space->id, Encryption::AES, key, iv);
       ut_ad(err == DB_SUCCESS);
     } else {
-      ut_free(first_page_buf);
+      ut::aligned_free(first_page);
       return (DB_FAIL);
     }
   } else {
     err = xb_set_encryption(space);
     if (err != DB_SUCCESS) {
-      ut_free(first_page_buf);
+      ut::aligned_free(first_page);
       return (DB_FAIL);
     }
   }
 
-  ut_free(first_page_buf);
+  ut::aligned_free(first_page);
 
   return (DB_SUCCESS);
 }
@@ -1658,17 +1664,16 @@ static void srv_create_sdi_indexes() {
 }
 
 /** Set state to indicate start of particular group of threads in InnoDB. */
-UNIV_INLINE
-void srv_start_state_set(srv_start_state_t state) /*!< in: indicate current
-                                                  state of thread startup */
+static inline void srv_start_state_set(
+    srv_start_state_t state) /*!< in: indicate current
+                             state of thread startup */
 {
   srv_start_state |= state;
 }
 
 /** Check if following group of threads is started.
  @return true if started */
-UNIV_INLINE
-bool srv_start_state_is_set(
+static inline bool srv_start_state_is_set(
     srv_start_state_t state) /*!< in: state to check for */
 {
   return (srv_start_state & state);
@@ -2094,7 +2099,7 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
       }
     } else {
       srv_monitor_file_name = nullptr;
-      srv_monitor_file = os_file_create_tmpfile(nullptr);
+      srv_monitor_file = os_file_create_tmpfile();
 
       if (!srv_monitor_file) {
         return (srv_init_abort(DB_ERROR));
@@ -2103,7 +2108,7 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
 
     mutex_create(LATCH_ID_SRV_MISC_TMPFILE, &srv_misc_tmpfile_mutex);
 
-    srv_misc_tmpfile = os_file_create_tmpfile(nullptr);
+    srv_misc_tmpfile = os_file_create_tmpfile();
 
     if (!srv_misc_tmpfile) {
       return (srv_init_abort(DB_ERROR));
@@ -2444,12 +2449,14 @@ files_checked:
     after the double write buffers haves been created. */
     trx_sys_create_sys_pages();
 
+    trx_purge_sys_mem_create();
+
     purge_queue = trx_sys_init_at_db_start();
 
     /* The purge system needs to create the purge view and
     therefore requires that the trx_sys is inited. */
 
-    trx_purge_sys_create(srv_threads.m_purge_workers_n, purge_queue);
+    trx_purge_sys_initialize(srv_threads.m_purge_workers_n, purge_queue);
 
     err = dict_create();
 
@@ -2607,10 +2614,11 @@ files_checked:
       table before checkpoint. And because DD is not fully up yet, the table
       can be opened by internal APIs. */
 
-      fil_space_t *space = fil_space_acquire_silent(dict_sys_t::s_space_id);
+      fil_space_t *space =
+          fil_space_acquire_silent(dict_sys_t::s_dict_space_id);
       if (space == nullptr) {
         dberr_t error =
-            fil_ibd_open(true, FIL_TYPE_TABLESPACE, dict_sys_t::s_space_id,
+            fil_ibd_open(true, FIL_TYPE_TABLESPACE, dict_sys_t::s_dict_space_id,
                          predefined_flags, dict_sys_t::s_dd_space_name,
                          dict_sys_t::s_dd_space_file_name, true, false);
         if (error != DB_SUCCESS) {
@@ -2629,6 +2637,8 @@ files_checked:
       /* Flush logs to persist the changes. */
       log_buffer_flush_to_disk(*log_sys);
     }
+
+    log_sys->m_allow_checkpoints.store(true, std::memory_order_release);
 
     if (!srv_force_recovery && !recv_sys->found_corrupt_log &&
         (srv_log_file_size_requested != srv_log_file_size ||
@@ -2735,6 +2745,10 @@ files_checked:
       return (srv_init_abort(err));
     }
 
+    trx_purge_sys_mem_create();
+
+    /* The purge system needs to create the purge view and
+    therefore requires that the trx_sys is inited. */
     purge_queue = trx_sys_init_at_db_start();
 
     if (srv_is_upgrade_mode) {
@@ -2757,7 +2771,7 @@ files_checked:
     /* The purge system needs to create the purge view and
     therefore requires that the trx_sys and trx lists were
     initialized in trx_sys_init_at_db_start(). */
-    trx_purge_sys_create(srv_threads.m_purge_workers_n, purge_queue);
+    trx_purge_sys_initialize(srv_threads.m_purge_workers_n, purge_queue);
   }
 
   /* Open temp-tablespace and keep it open until shutdown. */
@@ -2876,7 +2890,7 @@ files_checked:
 /** Applier of dynamic metadata */
 struct metadata_applier {
   /** Default constructor */
-  metadata_applier() {}
+  metadata_applier() = default;
   /** Visitor.
   @param[in]      table   table to visit */
   void operator()(dict_table_t *table) const {
@@ -2925,13 +2939,6 @@ void srv_dict_recover_on_restart() {
   if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
     srv_sys_tablespaces_open = true;
   }
-}
-
-/* If early redo/undo log encryption processing is done. */
-bool is_early_redo_undo_encryption_done() {
-  /* Early redo/undo encryption is done during post recovery before purge
-  thread is started. */
-  return (srv_start_state_is_set(SRV_START_STATE_PURGE));
 }
 
 /** Start purge threads. During upgrade we start
@@ -3074,35 +3081,6 @@ void srv_start_threads_after_ddl_recovery() {
   /* If recovered, should do write back the dynamic metadata. */
   dict_persist_to_dd_table_buffer();
 }
-
-#if 0
-/********************************************************************
-Sync all FTS cache before shutdown */
-static
-void
-srv_fts_close(void)
-{
-	dict_table_t*	table;
-
-	for (table = UT_LIST_GET_FIRST(dict_sys->table_LRU);
-	     table; table = UT_LIST_GET_NEXT(table_LRU, table)) {
-		fts_t*	fts = table->fts;
-
-		if (fts != NULL) {
-			fts_sync_table(table);
-		}
-	}
-
-	for (table = UT_LIST_GET_FIRST(dict_sys->table_non_LRU);
-	     table; table = UT_LIST_GET_NEXT(table_LRU, table)) {
-		fts_t*	fts = table->fts;
-
-		if (fts != NULL) {
-			fts_sync_table(table);
-		}
-	}
-}
-#endif
 
 /** Set srv_shutdown_state to a given state and validate change is proper.
 @remarks This function is used only from the main thread, and only during

@@ -1083,13 +1083,14 @@ err_report_with_rollback:
 bool lock_db_routines(THD *thd, const dd::Schema &schema) {
   DBUG_TRACE;
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  // Vectors for names of stored functions and procedures of the schema.
+  std::vector<dd::String_type> func_names, proc_names;
 
-  // Vector for the stored routines of the schema.
-  std::vector<const dd::Routine *> routines;
-
-  // Fetch stored routines of the schema.
-  if (thd->dd_client()->fetch_schema_components(&schema, &routines))
+  // Fetch names of stored functions and procedures of the schema.
+  if (thd->dd_client()->fetch_schema_component_names<dd::Function>(
+          &schema, &func_names) ||
+      thd->dd_client()->fetch_schema_component_names<dd::Procedure>(
+          &schema, &proc_names))
     return true;
 
   /*
@@ -1103,24 +1104,31 @@ bool lock_db_routines(THD *thd, const dd::Schema &schema) {
     my_casedn_str(system_charset_info, schema_name_buf);
     schema_name = schema_name_buf;
   }
+  const dd::String_type schema_name_str(schema_name);
+
+  /*
+    Ensure that we don't hold memory used by MDL_requests after locks have
+    been acquired. This reduces memory usage in cases when we have DROP
+    DATABASE tha needs to drop lots of different objects.
+  */
+  MEM_ROOT mdl_reqs_root(key_memory_rm_db_mdl_reqs_root, MEM_ROOT_BLOCK_SIZE);
 
   MDL_request_list mdl_requests;
-  for (const dd::Routine *routine : routines) {
-    MDL_key mdl_key;
 
-    if (is_dd_routine_type_function(routine))
-      dd::Function::create_mdl_key(dd::String_type(schema_name),
-                                   routine->name(), &mdl_key);
-    else
-      dd::Procedure::create_mdl_key(dd::String_type(schema_name),
-                                    routine->name(), &mdl_key);
+  auto add_requests_for_names = [&](dd::Routine::enum_routine_type type,
+                                    const std::vector<dd::String_type> &names) {
+    for (const dd::String_type &name : names) {
+      MDL_key mdl_key;
+      dd::Routine::create_mdl_key(type, schema_name_str, name, &mdl_key);
+      MDL_request *mdl_request = new (&mdl_reqs_root) MDL_request;
+      MDL_REQUEST_INIT_BY_KEY(mdl_request, &mdl_key, MDL_EXCLUSIVE,
+                              MDL_TRANSACTION);
+      mdl_requests.push_front(mdl_request);
+    }
+  };
 
-    // Add MDL_request for routine to mdl_requests list.
-    MDL_request *mdl_request = new (thd->mem_root) MDL_request;
-    MDL_REQUEST_INIT_BY_KEY(mdl_request, &mdl_key, MDL_EXCLUSIVE,
-                            MDL_TRANSACTION);
-    mdl_requests.push_front(mdl_request);
-  }
+  add_requests_for_names(dd::Routine::RT_FUNCTION, func_names);
+  add_requests_for_names(dd::Routine::RT_PROCEDURE, proc_names);
 
   return thd->mdl_context.acquire_locks(&mdl_requests,
                                         thd->variables.lock_wait_timeout);
@@ -1132,64 +1140,89 @@ bool lock_db_routines(THD *thd, const dd::Schema &schema) {
   @param   thd         Thread context.
   @param   schema      Schema object.
 
-  @retval  SP_OK       Success
-  @retval  non-SP_OK   Error (Other constants are used to indicate errors)
+  @retval  false       Success
+  @retval  true        Error
 */
 
-enum_sp_return_code sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
+bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
   DBUG_TRACE;
 
   bool is_routine_dropped = false;
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  // Vectors for names of stored functions and procedures of the schema.
+  std::vector<dd::String_type> func_names, proc_names;
 
-  // Vector for the stored routines of the schema.
-  std::vector<const dd::Routine *> routines;
+  // Fetch names of stored functions and procedures of the schema.
+  if (thd->dd_client()->fetch_schema_component_names<dd::Function>(
+          &schema, &func_names) ||
+      thd->dd_client()->fetch_schema_component_names<dd::Procedure>(
+          &schema, &proc_names))
+    return true;
 
-  // Fetch stored routines of the schema.
-  if (thd->dd_client()->fetch_schema_components(&schema, &routines))
-    return SP_INTERNAL_ERROR;
+  MEM_ROOT foreach_fn_root(key_memory_rm_table_foreach_root,
+                           MEM_ROOT_BLOCK_SIZE);
 
-  enum_sp_return_code ret_code = SP_OK;
-  for (const dd::Routine *routine : routines) {
-    sp_name name(
-        {schema.name().c_str(), schema.name().length()},
-        {const_cast<char *>(routine->name().c_str()), routine->name().length()},
-        false);
-    enum_sp_type type = is_dd_routine_type_function(routine)
-                            ? enum_sp_type::FUNCTION
-                            : enum_sp_type::PROCEDURE;
+  auto drop_routines_by_names = [&](enum_sp_type type,
+                                    const std::vector<dd::String_type> &names) {
+    for (const dd::String_type &name : names) {
+      dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+      const dd::Routine *routine = nullptr;
 
-    DBUG_EXECUTE_IF("fail_drop_db_routines", {
-      my_error(ER_SP_DROP_FAILED, MYF(0), "ROUTINE", "");
-      return SP_DROP_FAILED;
-    });
+      if (type == enum_sp_type::FUNCTION) {
+        if (thd->dd_client()->acquire<dd::Function>(schema.name().c_str(),
+                                                    name.c_str(), &routine))
+          return true;
+      } else {
+        if (thd->dd_client()->acquire<dd::Procedure>(schema.name().c_str(),
+                                                     name.c_str(), &routine))
+          return true;
+      }
 
-    if (thd->dd_client()->drop(routine)) {
-      ret_code = SP_DROP_FAILED;
-      my_error(ER_SP_DROP_FAILED, MYF(0),
-               is_dd_routine_type_function(routine) ? "FUNCTION" : "PROCEDURE",
-               routine->name().c_str());
-      break;
-    }
+      DBUG_EXECUTE_IF("fail_drop_db_routines", {
+        my_error(ER_SP_DROP_FAILED, MYF(0), "ROUTINE", "");
+        return true;
+      });
 
-    if (type == enum_sp_type::FUNCTION &&
-        update_referencing_views_metadata(thd, &name))
-      return SP_INTERNAL_ERROR;
+      if (routine == nullptr || thd->dd_client()->drop(routine)) {
+        assert(routine != nullptr);
+        my_error(ER_SP_DROP_FAILED, MYF(0),
+                 type == enum_sp_type::FUNCTION ? "FUNCTION" : "PROCEDURE",
+                 name.c_str());
+        return true;
+      }
 
-    is_routine_dropped = true;
+      if (type == enum_sp_type::FUNCTION) {
+        sp_name fn_name({schema.name().c_str(), schema.name().length()},
+                        {const_cast<char *>(name.c_str()), name.length()},
+                        false);
+
+        if (mark_referencing_views_invalid(thd, &fn_name, &foreach_fn_root))
+          return true;
+
+        free_root(&foreach_fn_root, MYF(MY_MARK_BLOCKS_FREE));
+      }
+
+      is_routine_dropped = true;
 
 #ifdef HAVE_PSI_SP_INTERFACE
-    /* Drop statistics for this stored routine from performance schema. */
-    MYSQL_DROP_SP(to_uint(type), schema.name().c_str(), schema.name().length(),
-                  routine->name().c_str(), routine->name().length());
+      /* Drop statistics for this stored routine from performance schema. */
+      MYSQL_DROP_SP(to_uint(type), schema.name().c_str(),
+                    schema.name().length(), name.c_str(), name.length());
 #endif
+    }
+
+    return false;
+  };
+
+  if (drop_routines_by_names(enum_sp_type::FUNCTION, func_names) ||
+      drop_routines_by_names(enum_sp_type::PROCEDURE, proc_names)) {
+    return true;
   }
 
   // Invalidate the sp cache.
   if (is_routine_dropped) sp_cache_invalidate();
 
-  return ret_code;
+  return false;
 }
 
 /**
@@ -1311,7 +1344,7 @@ static bool show_create_routine_from_dd_routine(THD *thd, enum_sp_type type,
     protocol->store_null();
 
   // character_set_client
-  protocol->store(cs_info->csname, system_charset_info);
+  protocol->store(replace_utf8_utf8mb3(cs_info->csname), system_charset_info);
   // connection_collation
   cs_info = dd_get_mysql_charset(routine->connection_collation_id());
   protocol->store(cs_info->name, system_charset_info);
@@ -2520,7 +2553,7 @@ String *sp_get_item_value(THD *thd, Item *item, String *str) {
         buf.length(0);
 
         buf.append('_');
-        buf.append(result->charset()->csname);
+        buf.append(replace_utf8_utf8mb3(result->charset()->csname));
         if (cs->escape_with_backslash_is_dangerous) buf.append(' ');
         append_query_string(thd, cs, result, &buf);
         buf.append(" COLLATE '");

@@ -91,6 +91,7 @@ purge_node_t *row_purge_node_create(que_thr_t *parent, mem_heap_t *heap) {
   node->heap = mem_heap_create(256);
 
   node->recs = nullptr;
+  node->init();
 
   return (node);
 }
@@ -201,7 +202,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_remove_clust_if_poss_lo
 
     btr_cur_pessimistic_delete(&err, FALSE, btr_pcur_get_btr_cur(&node->pcur),
                                0, false, node->trx_id, node->undo_no,
-                               node->rec_type, &mtr, &node->pcur);
+                               node->rec_type, &mtr, &node->pcur, node);
 
     switch (err) {
       case DB_SUCCESS:
@@ -386,7 +387,7 @@ static MY_ATTRIBUTE((warn_unused_result)) ibool
     }
 
     btr_cur_pessimistic_delete(&err, FALSE, btr_cur, 0, false, 0, node->undo_no,
-                               node->rec_type, &mtr);
+                               node->rec_type, &mtr, &pcur, node);
     switch (UNIV_EXPECT(err, DB_SUCCESS)) {
       case DB_SUCCESS:
         break;
@@ -570,10 +571,10 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_remove_sec_if_poss_leaf
 }
 
 /** Removes a secondary index entry if possible. */
-UNIV_INLINE
-void row_purge_remove_sec_if_poss(purge_node_t *node, /*!< in: row purge node */
-                                  dict_index_t *index,   /*!< in: index */
-                                  const dtuple_t *entry) /*!< in: index entry */
+static inline void row_purge_remove_sec_if_poss(
+    purge_node_t *node,    /*!< in: row purge node */
+    dict_index_t *index,   /*!< in: index */
+    const dtuple_t *entry) /*!< in: index entry */
 {
   ibool success;
   ulint n_tries = 0;
@@ -805,12 +806,13 @@ skip_secondaries:
       byte *field_ref = data_field + dfield_get_len(&ufield->new_val) -
                         BTR_EXTERN_FIELD_REF_SIZE;
 
-      lob::BtrContext btr_ctx(&mtr, nullptr, index, nullptr, nullptr, block);
+      lob::BtrContext btr_ctx(&mtr, index, block);
 
       lob::DeleteContext ctx(btr_ctx, field_ref, ufield->field_no, false);
 
       lob::purge(&ctx, index, node->modifier_trx_id,
-                 trx_undo_rec_get_undo_no(undo_rec), node->rec_type, ufield);
+                 trx_undo_rec_get_undo_no(undo_rec), node->rec_type, ufield,
+                 node);
 
       mtr_commit(&mtr);
     }
@@ -910,18 +912,18 @@ try_again:
       const auto no_mdl = nullptr;
       node->mdl = no_mdl;
 
-      mutex_enter(&dict_sys->mutex);
+      dict_sys_mutex_enter();
       node->table = dd_table_open_on_id(table_id, thd, &node->mdl, true, true);
 
       if (node->table && node->table->is_temporary()) {
         /* Temp table does not do purge */
         ut_ad(node->mdl == nullptr);
         dd_table_close(node->table, nullptr, nullptr, true);
-        mutex_exit(&dict_sys->mutex);
+        dict_sys_mutex_exit();
         goto err_exit;
       }
 
-      mutex_exit(&dict_sys->mutex);
+      dict_sys_mutex_exit();
 
       if (node->table != nullptr) {
         if (node->table->is_fts_aux()) {
@@ -1105,6 +1107,8 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_record_func(
       }
       /* fall through */
     case TRX_UNDO_UPD_EXIST_REC:
+      DBUG_EXECUTE_IF("innodb_purge_sleep_12",
+                      std::this_thread::sleep_for(std::chrono::seconds(5)););
       row_purge_upd_exist_or_extern(thr, node, undo_rec);
       MONITOR_INC(MONITOR_N_UPD_EXIST_EXTERN);
       break;
@@ -1338,3 +1342,55 @@ bool purge_node_t::check_duplicate_undo_no() const {
   return (true);
 }
 #endif /* UNIV_DEBUG */
+
+void purge_node_t::add_lob_page(dict_index_t *index, const page_id_t &page_id) {
+  const index_id_t id(page_id.space(), index->id);
+  const auto tup = std::make_tuple(id, page_id, index->table->id);
+  ut_ad(m_lob_pages.find(tup) == m_lob_pages.end());
+  m_lob_pages.insert(tup);
+}
+
+void purge_node_t::free_lob_pages() {
+  mtr_t local_mtr;
+
+  for (const auto &tup : m_lob_pages) {
+    const index_id_t index_id = std::get<0>(tup);
+    const page_id_t &page_id = std::get<1>(tup);
+    const table_id_t table_id = std::get<2>(tup);
+    const space_id_t space_id = page_id.space();
+
+    dict_sys_mutex_enter();
+    const dict_index_t *idx = dict_index_find(index_id);
+
+    if (idx == nullptr || idx->space != space_id ||
+        idx->table->id != table_id) {
+      dict_sys_mutex_exit();
+      continue;
+    }
+
+    dict_index_t *index = const_cast<dict_index_t *>(idx);
+    const page_size_t page_size = dict_table_page_size(index->table);
+    dict_sys_mutex_exit();
+
+    fil_space_t *space = fil_space_acquire_silent(space_id);
+
+    if (space != nullptr) {
+      mtr_start(&local_mtr);
+      buf_block_t *block =
+          buf_page_get(page_id, page_size, RW_X_LATCH, &local_mtr);
+
+#ifdef UNIV_DEBUG
+      const page_type_t page_type = block->get_page_type();
+      ut_ad(page_type == FIL_PAGE_TYPE_LOB_FIRST ||
+            page_type == FIL_PAGE_TYPE_ZLOB_FIRST);
+#endif /* UNIV_DEBUG */
+
+      btr_page_free_low(index, block, ULINT_UNDEFINED, &local_mtr);
+      mtr_commit(&local_mtr);
+
+      fil_space_release(space);
+    }
+  }
+
+  m_lob_pages.clear();
+}

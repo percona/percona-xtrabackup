@@ -108,6 +108,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "read_filt.h"
 #include "redo_log.h"
 #include "space_map.h"
+#include "utils.h"
 #include "write_filt.h"
 #include "wsrep.h"
 #include "xb0xb.h"
@@ -2428,12 +2429,12 @@ static dberr_t dict_load_from_spaces_sdi() {
   /* Load mysql tablespace to open mysql/tables and mysql/schemata which is
   need to find the right key for tablespace in case of duplicate sdi */
   dberr_t err =
-      dict_load_tables_from_space_id(dict_sys_t::s_space_id, thd, trx);
+      dict_load_tables_from_space_id(dict_sys_t::s_dict_space_id, thd, trx);
 
   if (err == DB_SUCCESS) {
     for (auto space_id : space_ids) {
       if (!fsp_is_ibd_tablespace(space_id) ||
-          space_id == dict_sys_t::s_space_id) {
+          space_id == dict_sys_t::s_dict_space_id) {
         continue;
       }
       err = dict_load_tables_from_space_id(space_id, thd, trx);
@@ -3928,6 +3929,8 @@ static void init_mysql_environment() {
   mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_sql_rand, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_keyring_operations,
                    MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_replica_list,
+                   MY_MUTEX_INIT_FAST);
 
   Srv_session::module_init();
 
@@ -3962,6 +3965,7 @@ static void cleanup_mysql_environment() {
   mysql_mutex_destroy(&LOCK_global_system_variables);
   mysql_mutex_destroy(&LOCK_sql_rand);
   mysql_mutex_destroy(&LOCK_keyring_operations);
+  mysql_mutex_destroy(&LOCK_replica_list);
 }
 
 void xtrabackup_backup_func(void) {
@@ -6606,6 +6610,8 @@ skip_check:
     goto error_cleanup;
   }
 
+  if (!xtrabackup::utils::read_server_uuid()) goto error_cleanup;
+
   if (opt_transition_key) {
     if (!xb_tablespace_keys_load(xtrabackup_incremental, opt_transition_key,
                                  strlen(opt_transition_key))) {
@@ -6614,8 +6620,8 @@ skip_check:
       goto error_cleanup;
     }
   } else {
-    if(!xtrabackup::components::keyring_init_offline())
-    {
+    /* Initialize keyrings */
+    if (!xtrabackup::components::keyring_init_offline()) {
       msg("xtrabackup: Error: failed to init keyring component\n");
       goto error_cleanup;
     }
@@ -6912,6 +6918,15 @@ skip_check:
     if (innodb_init(false, false)) goto error;
 
     if (innodb_end()) goto error;
+    /*
+     * we cannot generate encrypted redo log without keyring access.
+     * For redo log, we only have un-encrypted key/iv but don't have original
+     * encrypted version. Copy it from xtrabackup_logfile to the newly created
+     * redo log file header.
+     */
+    if (use_dumped_tablespace_keys && srv_redo_log_encrypt) {
+      if (!copy_redo_encryption_info()) goto error_cleanup;
+    }
 
     innodb_free_param();
   }

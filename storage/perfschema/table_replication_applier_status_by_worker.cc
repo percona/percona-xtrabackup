@@ -39,9 +39,9 @@
 #include "sql/rpl_info.h"
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h" /*Multi source replication */
+#include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
 #include "sql/rpl_rli_pdb.h"
-#include "sql/rpl_slave.h"
 #include "sql/sql_parse.h"
 #include "sql/table.h"
 #include "storage/perfschema/pfs_instr.h"
@@ -227,7 +227,7 @@ table_replication_applier_status_by_worker::
     : PFS_engine_table(&m_share, &m_pos), m_pos(), m_next_pos() {}
 
 table_replication_applier_status_by_worker::
-    ~table_replication_applier_status_by_worker() {}
+    ~table_replication_applier_status_by_worker() = default;
 
 void table_replication_applier_status_by_worker::reset_position(void) {
   m_pos.reset();

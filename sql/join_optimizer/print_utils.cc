@@ -30,7 +30,7 @@
 #include <vector>
 
 #include "sql/item_cmpfunc.h"
-#include "sql/join_optimizer/access_path.h"
+#include "sql/join_optimizer/relational_expression.h"
 #include "sql/mem_root_array.h"
 
 using std::string;
@@ -71,10 +71,8 @@ std::string GenerateExpressionLabel(const RelationalExpression *expr) {
   switch (expr->type) {
     case RelationalExpression::TABLE:
       assert(false);
-    case RelationalExpression::CARTESIAN_PRODUCT:
-      label = "[cartesian product]";
-      break;
     case RelationalExpression::INNER_JOIN:
+    case RelationalExpression::STRAIGHT_INNER_JOIN:
       break;
     case RelationalExpression::LEFT_JOIN:
       label = "[left] " + label;
@@ -84,6 +82,9 @@ std::string GenerateExpressionLabel(const RelationalExpression *expr) {
       break;
     case RelationalExpression::ANTIJOIN:
       label = "[anti] " + label;
+      break;
+    case RelationalExpression::FULL_OUTER_JOIN:
+      label = "[full] " + label;
       break;
   }
   return label;

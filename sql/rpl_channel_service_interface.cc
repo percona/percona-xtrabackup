@@ -50,7 +50,7 @@
 #include "sql/current_thd.h"
 #include "sql/log.h"
 #include "sql/log_event.h"
-#include "sql/mysqld.h"              // opt_mts_slave_parallel_workers
+#include "sql/mysqld.h"              // opt_mts_replica_parallel_workers
 #include "sql/mysqld_thd_manager.h"  // Global_THD_manager
 #include "sql/protocol_classic.h"
 #include "sql/raii/sentry.h"
@@ -60,10 +60,10 @@
 #include "sql/rpl_info_handler.h"
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h" /* Multisource replication */
-#include "sql/rpl_mts_submode.h"
+#include "sql/rpl_mta_submode.h"
+#include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
 #include "sql/rpl_rli_pdb.h"
-#include "sql/rpl_slave.h"
 #include "sql/rpl_trx_boundary_parser.h"
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
@@ -120,9 +120,9 @@ static void set_mi_settings(Master_info *mi,
           ? replicate_same_server_id
           : channel_info->replicate_same_server_id;
 
-  mi->rli->opt_slave_parallel_workers =
+  mi->rli->opt_replica_parallel_workers =
       (channel_info->channel_mts_parallel_workers == RPL_SERVICE_SERVER_DEFAULT)
-          ? opt_mts_slave_parallel_workers
+          ? opt_mts_replica_parallel_workers
           : channel_info->channel_mts_parallel_workers;
 
   if (channel_info->channel_mts_parallel_type == RPL_SERVICE_SERVER_DEFAULT) {
@@ -139,9 +139,9 @@ static void set_mi_settings(Master_info *mi,
   }
 
   mi->rli->checkpoint_group =
-      (channel_info->channel_mts_checkpoint_group == RPL_SERVICE_SERVER_DEFAULT)
-          ? opt_mts_checkpoint_group
-          : channel_info->channel_mts_checkpoint_group;
+      (channel_info->channel_mta_checkpoint_group == RPL_SERVICE_SERVER_DEFAULT)
+          ? opt_mta_checkpoint_group
+          : channel_info->channel_mta_checkpoint_group;
 
   Format_description_log_event *fde = new Format_description_log_event();
   /*
@@ -195,7 +195,7 @@ void initialize_channel_creation_info(Channel_creation_info *channel_info) {
   channel_info->auto_position = RPL_SERVICE_SERVER_DEFAULT;
   channel_info->channel_mts_parallel_type = RPL_SERVICE_SERVER_DEFAULT;
   channel_info->channel_mts_parallel_workers = RPL_SERVICE_SERVER_DEFAULT;
-  channel_info->channel_mts_checkpoint_group = RPL_SERVICE_SERVER_DEFAULT;
+  channel_info->channel_mta_checkpoint_group = RPL_SERVICE_SERVER_DEFAULT;
   channel_info->replicate_same_server_id = RPL_SERVICE_SERVER_DEFAULT;
   channel_info->thd_tx_priority = 0;
   channel_info->sql_delay = RPL_SERVICE_SERVER_DEFAULT;
@@ -293,11 +293,11 @@ int channel_create(const char *channel, Channel_creation_info *channel_info) {
   if (!strcmp(channel_map.get_default_channel(), channel))
     return RPL_CHANNEL_SERVICE_DEFAULT_CHANNEL_CREATION_ERROR;
 
-  /* Service channels are not supposed to use sql_slave_skip_counter */
-  mysql_mutex_lock(&LOCK_sql_slave_skip_counter);
-  if (sql_slave_skip_counter > 0)
+  /* Service channels are not supposed to use sql_replica_skip_counter */
+  mysql_mutex_lock(&LOCK_sql_replica_skip_counter);
+  if (sql_replica_skip_counter > 0)
     error = RPL_CHANNEL_SERVICE_SLAVE_SKIP_COUNTER_ACTIVE;
-  mysql_mutex_unlock(&LOCK_sql_slave_skip_counter);
+  mysql_mutex_unlock(&LOCK_sql_replica_skip_counter);
   if (error) return error;
 
   channel_map.wrlock();
@@ -395,9 +395,9 @@ int channel_create(const char *channel, Channel_creation_info *channel_info) {
   set_mi_settings(mi, channel_info);
 
   if (channel_map.is_group_replication_channel_name(mi->get_channel())) {
-    thd->variables.max_allowed_packet = slave_max_allowed_packet;
-    thd->get_protocol_classic()->set_max_packet_size(slave_max_allowed_packet +
-                                                     MAX_LOG_EVENT_HEADER);
+    thd->variables.max_allowed_packet = replica_max_allowed_packet;
+    thd->get_protocol_classic()->set_max_packet_size(
+        replica_max_allowed_packet + MAX_LOG_EVENT_HEADER);
   }
 
 err:
@@ -423,11 +423,11 @@ int channel_start(const char *channel, Channel_connection_info *connection_info,
   THD *thd = current_thd;
   String_set user, pass, auth;
 
-  /* Service channels are not supposed to use sql_slave_skip_counter */
-  mysql_mutex_lock(&LOCK_sql_slave_skip_counter);
-  if (sql_slave_skip_counter > 0)
+  /* Service channels are not supposed to use sql_replica_skip_counter */
+  mysql_mutex_lock(&LOCK_sql_replica_skip_counter);
+  if (sql_replica_skip_counter > 0)
     error = RPL_CHANNEL_SERVICE_SLAVE_SKIP_COUNTER_ACTIVE;
-  mysql_mutex_unlock(&LOCK_sql_slave_skip_counter);
+  mysql_mutex_unlock(&LOCK_sql_replica_skip_counter);
   if (error) return error;
 
   channel_map.wrlock();
@@ -640,7 +640,7 @@ int channel_stop_all(int threads_to_stop, long timeout,
 
 class Kill_binlog_dump : public Do_THD_Impl {
  public:
-  Kill_binlog_dump() {}
+  Kill_binlog_dump() = default;
 
   void operator()(THD *thd_to_kill) override {
     if (thd_to_kill->get_command() == COM_BINLOG_DUMP ||
@@ -748,7 +748,7 @@ int channel_get_thread_id(const char *channel,
       if (mi->rli != nullptr) {
         mysql_mutex_lock(&mi->rli->run_lock);
 
-        if (mi->rli->slave_parallel_workers > 0) {
+        if (mi->rli->replica_parallel_workers > 0) {
           // Parallel applier.
           size_t num_workers = mi->rli->get_worker_count();
           number_threads = 1 + num_workers;
@@ -1007,16 +1007,13 @@ int channel_is_applier_thread_waiting(unsigned long thread_id, bool worker) {
   Find_thd_with_id find_thd_with_id(thread_id);
   THD *thd = Global_THD_manager::get_instance()->find_thd(&find_thd_with_id);
   if (thd) {
-    result = 0;
-
-    const char *proc_info = thd->get_proc_info();
-    if (proc_info) {
-      const char *stage_name = stage_slave_has_read_all_relay_log.m_name;
-      if (worker)
-        stage_name = stage_slave_waiting_event_from_coordinator.m_name;
-
-      if (!strcmp(proc_info, stage_name)) result = 1;
-    }
+    if (thd->get_current_stage_key() ==
+        (worker ? stage_replica_waiting_event_from_coordinator
+                : stage_replica_has_read_all_relay_log)
+            .m_key)
+      result = 1;
+    else
+      result = 0;
     mysql_mutex_unlock(&thd->LOCK_thd_data);
   }
 

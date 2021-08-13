@@ -198,11 +198,19 @@ class thd_scheduler {
 
   thd_scheduler() : data(nullptr) {}
 
-  ~thd_scheduler() {}
+  ~thd_scheduler() = default;
 };
 
 PSI_thread *thd_get_psi(THD *thd);
 void thd_set_psi(THD *thd, PSI_thread *psi);
+
+/**
+  Return @@session.terminology_use_previous for the current THD.
+
+  @return the integer value of one of the enumeration values in
+  terminology_use_previous::enum_compatibility_version.
+*/
+extern "C" unsigned int thd_get_current_thd_terminology_use_previous();
 
 /**
   the struct aggregates two paramenters that identify an event
@@ -413,7 +421,7 @@ class Prepared_statement_map {
 class Item_change_record : public ilink<Item_change_record> {
  private:
   // not used
-  Item_change_record() {}
+  Item_change_record() = default;
 
  public:
   Item_change_record(Item **place, Item *new_value)
@@ -950,7 +958,7 @@ class THD : public MDL_context_owner,
     @return true  when the thread is a binlog applier
   */
   bool is_binlog_applier() const {
-    return rli_fake && variables.pseudo_slave_mode;
+    return rli_fake && variables.pseudo_replica_mode;
   }
 
   /**
@@ -1140,20 +1148,6 @@ class THD : public MDL_context_owner,
   */
   bool m_disable_password_validation;
 
-  /*
-    Points to info-string that we show in SHOW PROCESSLIST
-    You are supposed to update thd->proc_info only if you have coded
-    a time-consuming piece that MySQL can get stuck in for a long time.
-
-    Set it using the  thd_proc_info(THD *thread, const char *message)
-    macro/function.
-
-    This member is accessed and assigned without any synchronization.
-    Therefore, it may point only to constant (statically
-    allocated) strings, which memory won't go away over time.
-  */
-  const char *proc_info;
-
   std::unique_ptr<Protocol_text> protocol_text;      // Normal protocol
   std::unique_ptr<Protocol_binary> protocol_binary;  // Binary protocol
 
@@ -1278,14 +1272,54 @@ class THD : public MDL_context_owner,
   void set_catalog(const LEX_CSTRING &catalog) { m_catalog = catalog; }
 
  private:
-  unsigned int m_current_stage_key;
+  PSI_stage_key m_current_stage_key;
+
+  /*
+    Points to info-string that we show in SHOW PROCESSLIST
+    You are supposed to update thd->proc_info only if you have coded
+    a time-consuming piece that MySQL can get stuck in for a long time.
+
+    Set it using the  thd_proc_info(THD *thread, const char *message)
+    macro/function.
+
+    This member is accessed and assigned without any synchronization.
+    Therefore, it may point only to constant (statically
+    allocated) strings, which memory won't go away over time.
+  */
+  const char *m_proc_info;
+  /**
+    Return the m_proc_info, possibly using the string of an older
+    server release, according to @@terminology_use_previous.
+
+    @param sysvars Use the value of
+    @@terminology_use_previous stored in this
+    System_variables object.
+
+    @return The "proc_info", also known as "stage", of this thread.
+  */
+  const char *proc_info(const System_variables &sysvars) const;
 
  public:
   // See comment in THD::enter_cond about why SUPPRESS_TSAN is needed.
   void enter_stage(const PSI_stage_info *stage, PSI_stage_info *old_stage,
                    const char *calling_func, const char *calling_file,
                    const unsigned int calling_line) SUPPRESS_TSAN;
-  const char *get_proc_info() const { return proc_info; }
+  const char *proc_info() const { return m_proc_info; }
+  /**
+    Return the m_proc_info, possibly using the string of an older
+    server release, according to
+    @@session.terminology_use_previous.
+
+    @param invoking_thd Use
+    @@session.terminology_use_previous of this session.
+
+    @return The "proc_info", also known as "stage", of this thread.
+  */
+  const char *proc_info_session(THD *invoking_thd) const {
+    return proc_info(invoking_thd->variables);
+  }
+  void set_proc_info(const char *proc_info) { m_proc_info = proc_info; }
+  PSI_stage_key get_current_stage_key() const { return m_current_stage_key; }
 
   /*
     Used in error messages to tell user in what part of MySQL we found an
@@ -1520,14 +1554,14 @@ class THD : public MDL_context_owner,
   /**
     Determine if binlogging is currently disabled for this session.
     If the binary log is disabled for this thread (either by log_bin=0 or
-    sql_log_bin=0 or by log_slave_updates=0 for a slave thread), then the
+    sql_log_bin=0 or by log_replica_updates=0 for a slave thread), then the
     statement will not be written to the binary log.
 
     @retval true The binary log is currently disabled for the statement.
 
     @retval false The binary log is currently enabled for the statement.
   */
-  bool is_current_stmt_binlog_log_slave_updates_disabled() const;
+  bool is_current_stmt_binlog_log_replica_updates_disabled() const;
 
   /**
     Determine if binloging is enabled in row format and write set extraction is
@@ -2036,7 +2070,7 @@ class THD : public MDL_context_owner,
     When it is true, the applier will not save the transaction owned
     gtid into mysql.gtid_executed table before transaction prepare, as
     it does when binlog is disabled, or binlog is enabled and
-    log_slave_updates is disabled.
+    log_replica_updates is disabled.
     Also the flag is made to defer updates to the slave info table from
     intermediate commits by non-atomic DDL.
     Rpl_info_table::do_flush_info(), rpl_rli.h::is_atomic_ddl_commit_on_slave()
@@ -4315,19 +4349,12 @@ class THD : public MDL_context_owner,
 
   /**
     Checks if queries in this session can use a secondary storage engine for
-    execution. A secondary engine cannot be used if any of the following
-    conditions is true:
-
-    - Secondary engines are disabled in the session
-    - The user has disabled secondary engines
-    - LOCK TABLES mode is active
-    - Multi-statement transaction mode is active
-    - It is a sub-statement of a stored procedure
+    execution.
 
     @return true if secondary storage engines can be used in this
     session, or false otherwise
   */
-  bool secondary_storage_engine_eligible() const;
+  bool is_secondary_storage_engine_eligible() const;
 
  private:
   /**
@@ -4371,6 +4398,25 @@ class THD : public MDL_context_owner,
   PS_PARAM *bind_parameter_values;
   /** the number of elements in parameters */
   unsigned long bind_parameter_values_count;
+
+ public:
+  /**
+    Copy session properties that affect table access
+    from the parent session to the current session.
+
+    The following properties:
+    - the OPTION_BIN_LOG flag,
+    - the skip_readonly_check flag,
+    - the transaction isolation (tx_isolation)
+    are copied from the parent to the current THD.
+
+    This is useful to execute an isolated, internal THD session
+    to access tables, while leaving tables in the parent session
+    unchanged.
+
+    @param thd parent session
+  */
+  void copy_table_access_properties(THD *thd);
 };
 
 /**

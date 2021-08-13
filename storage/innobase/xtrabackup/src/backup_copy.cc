@@ -861,6 +861,129 @@ static void page_checksum_fix(byte *page, const page_size_t &page_size) {
   ut_a(!reporter.is_corrupted());
 }
 
+bool copy_redo_encryption_info() {
+  pfs_os_file_t src_file = XB_FILE_UNDEFINED;
+  pfs_os_file_t dst_file = XB_FILE_UNDEFINED;
+  char src_path[FN_REFLEN];
+  char dst_path[FN_REFLEN];
+  auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
+  IORequest read_request(IORequest::READ);
+  IORequest write_request(IORequest::WRITE);
+  bool success = FALSE;
+  if (log_buf == NULL) {
+    return false;
+  }
+
+  if (!xtrabackup_incremental_dir) {
+    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
+    sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
+  } else {
+    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_incremental_dir);
+    sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
+  }
+
+  Fil_path::normalize(src_path);
+  Fil_path::normalize(dst_path);
+
+  src_file = os_file_create_simple_no_error_handling(
+      0, src_path, OS_FILE_OPEN, OS_FILE_READ_ONLY, srv_read_only_mode,
+      &success);
+  if (!success) {
+    os_file_get_last_error(TRUE);
+    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", src_path);
+
+    return false;
+  }
+
+  dst_file = os_file_create_simple_no_error_handling(
+      0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
+      &success);
+  if (!success) {
+    os_file_get_last_error(TRUE);
+    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", dst_path);
+
+    return false;
+  }
+  success = os_file_read(read_request, src_path, src_file, log_buf.get(), 0,
+                         LOG_FILE_HDR_SIZE);
+
+  ulint encryption_offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
+  success = os_file_write(write_request, dst_path, dst_file,
+                          log_buf.get() + encryption_offset, encryption_offset,
+                          Encryption::INFO_SIZE);
+  if (!success) {
+    msg_ts(
+        "xtrabackup: Fatal error: cannot write encryption to redo log "
+        "%s.\n",
+        dst_path);
+    return false;
+  }
+  os_file_close(src_file);
+  os_file_close(dst_file);
+  return true;
+}
+
+/**
+  Reencrypt redo header with new master key for copy-back.
+
+  @param [in]  dir       directory where redolog is located
+  @param [in]  filename  filename of redo log
+  @param [in]  thread_n  id of thread performing the operation
+
+  @return false in case of error, true otherwise
+*/
+
+static bool reencrypt_redo_header(const char *dir, const char *filename,
+                                  uint thread_n) {
+  char fullpath[FN_REFLEN];
+  auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
+  byte encrypt_info[Encryption::INFO_SIZE];
+  fil_space_t space;
+
+  fn_format(fullpath, filename, dir, "", MYF(MY_RELATIVE_PATH));
+
+  File fd = my_open(fullpath, O_RDWR, MYF(MY_FAE));
+
+  my_seek(fd, 0L, SEEK_SET, MYF(MY_WME));
+
+  size_t len = my_read(fd, log_buf.get(), UNIV_PAGE_SIZE_MAX, MYF(MY_WME));
+
+  if (len < UNIV_PAGE_SIZE_MIN) {
+    my_close(fd, MYF(MY_FAE));
+    return (false);
+  }
+
+  ulint offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
+  if (memcmp(log_buf.get() + offset, Encryption::KEY_MAGIC_V3,
+             Encryption::MAGIC_SIZE) != 0) {
+    my_close(fd, MYF(MY_FAE));
+    return (true);
+  }
+  msg_ts("[%02u] Encrypting %s header with new master key.\n", thread_n,
+         fullpath);
+
+  memset(encrypt_info, 0, Encryption::INFO_SIZE);
+  space.id = dict_sys_t::s_log_space_first_id;
+  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
+                                       space.encryption_iv);
+  ut_a(found);
+  space.encryption_type = Encryption::AES;
+  space.encryption_klen = Encryption::KEY_LEN;
+
+  if (!Encryption::fill_encryption_info(space.encryption_key,
+                                        space.encryption_iv, encrypt_info,
+                                        false, true)) {
+    my_close(fd, MYF(MY_FAE));
+    return (false);
+  }
+  memcpy(log_buf.get() + offset, encrypt_info, Encryption::INFO_SIZE);
+  my_seek(fd, offset, SEEK_SET, MYF(MY_WME));
+  my_write(fd, log_buf.get() + offset, Encryption::INFO_SIZE,
+           MYF(MY_FAE | MY_NABP));
+  my_close(fd, MYF(MY_FAE));
+  return true;
+}
+
 /************************************************************************
 Reencrypt datafile header with new master key for copy-back.
 @return true in case of success. */
@@ -962,9 +1085,13 @@ static bool copy_or_move_file(const char *src_file_path,
                             : move_file(datasink, src_file_path, dst_file_path,
                                         dst_dir, thread_n, file_purpose));
 
-  if (opt_generate_new_master_key && (file_purpose == FILE_PURPOSE_DATAFILE ||
-                                      file_purpose == FILE_PURPOSE_UNDO_LOG)) {
-    reencrypt_datafile_header(dst_dir, dst_file_path, thread_n);
+  if (opt_generate_new_master_key) {
+    if (file_purpose == FILE_PURPOSE_DATAFILE ||
+        file_purpose == FILE_PURPOSE_UNDO_LOG) {
+      reencrypt_datafile_header(dst_dir, dst_file_path, thread_n);
+    } else if (file_purpose == FILE_PURPOSE_REDO_LOG) {
+      reencrypt_redo_header(dst_dir, dst_file_path, thread_n);
+    }
   }
 
   if (datasink != ds_data) {

@@ -20,8 +20,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-// First include (the generated) my_config.h, to get correct platform defines.
-#include "my_config.h"
 #include "univ.i"
 
 #include <atomic>
@@ -679,7 +677,7 @@ static void test_single(const std::string &group) {
 
 class Log_test_disturber {
  public:
-  virtual ~Log_test_disturber() {}
+  virtual ~Log_test_disturber() = default;
 
   virtual void disturb() = 0;
 };

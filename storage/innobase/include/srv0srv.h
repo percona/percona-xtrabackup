@@ -355,6 +355,9 @@ extern FILE *srv_misc_tmpfile;
 
 extern char *srv_data_home;
 
+/* Number of threads used for initializing rollback segments */
+extern uint32_t srv_rseg_init_threads;
+
 /** Number of pages per doublewrite thread/segment */
 extern ulong srv_dblwr_pages;
 
@@ -589,6 +592,8 @@ extern const ulong srv_buf_pool_instances_default;
 extern ulong srv_n_page_hash_locks;
 /** Whether to validate InnoDB tablespace paths on startup */
 extern bool srv_validate_tablespace_paths;
+/** Use fdatasync() instead of fsync(). */
+extern bool srv_use_fdatasync;
 /** Scan depth for LRU flush batch i.e.: number of blocks scanned*/
 extern ulong srv_LRU_scan_depth;
 /** Whether or not to flush neighbors of a block */
@@ -791,6 +796,7 @@ extern mysql_pfs_key_t srv_worker_thread_key;
 extern mysql_pfs_key_t trx_recovery_rollback_thread_key;
 extern mysql_pfs_key_t srv_ts_alter_encrypt_thread_key;
 extern mysql_pfs_key_t parallel_read_thread_key;
+extern mysql_pfs_key_t parallel_rseg_init_thread_key;
 #endif /* UNIV_PFS_THREAD */
 #endif /* !UNIV_HOTBACKUP */
 
@@ -1016,9 +1022,6 @@ void srv_purge_coordinator_thread();
 
 /** Worker thread that reads tasks from the work queue and executes them. */
 void srv_worker_thread();
-
-/** Rotate default master key for UNDO tablespace. */
-void undo_rotate_default_master_key();
 
 /** Set encryption for UNDO tablespace with given space id.
 @param[in] space_id     Undo tablespace id

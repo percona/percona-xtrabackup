@@ -132,11 +132,11 @@ class HashJoinCondition {
 class Arg_comparator {
   Item **left{nullptr};
   Item **right{nullptr};
-  arg_cmp_func func;
+  arg_cmp_func func{nullptr};
   Item_result_field *owner;
   Arg_comparator *comparators{nullptr};  // used only for compare_row()
   uint16 comparator_count{0};
-  double precision;
+  double precision{0.0};
   /* Fields used in DATE/DATETIME comparison. */
   Item *left_cache{nullptr};  // Cached values of "left" and "right" items
   Item *right_cache{nullptr};
@@ -512,7 +512,7 @@ class Item_in_optimizer final : public Item_bool_func {
 /// Abstract factory interface for creating comparison predicates.
 class Comp_creator {
  public:
-  virtual ~Comp_creator() {}
+  virtual ~Comp_creator() = default;
   virtual Item_bool_func *create(Item *a, Item *b) const = 0;
 
   /// This interface is only used by Item_allany_subselect.
@@ -1405,7 +1405,6 @@ class Item_func_ifnull final : public Item_func_coalesce {
   bool val_json(Json_wrapper *result) override;
   const char *func_name() const override { return "ifnull"; }
   Field *tmp_table_field(TABLE *table) override;
-  uint decimal_precision() const override;
 };
 
 /**
@@ -1452,7 +1451,6 @@ class Item_func_if final : public Item_func {
   void fix_after_pullout(Query_block *parent_query_block,
                          Query_block *removed_query_block) override;
   TYPELIB *get_typelib() const override;
-  uint decimal_precision() const override;
   const char *func_name() const override { return "if"; }
   enum Functype functype() const override { return IF_FUNC; }
   void update_used_tables() override;
@@ -1483,11 +1481,11 @@ class Item_func_nullif final : public Item_bool_func2 {
   }
   bool resolve_type(THD *thd) override;
   bool resolve_type_inner(THD *thd) override;
-  uint decimal_precision() const override {
-    return args[0]->decimal_precision();
-  }
   const char *func_name() const override { return "nullif"; }
   enum Functype functype() const override { return NULLIF_FUNC; }
+
+  // No, we should NOT inherit from Item_bool_func2
+  uint decimal_precision() const override { return Item::decimal_precision(); }
 
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override {
@@ -1518,7 +1516,7 @@ class in_vector {
    */
   explicit in_vector(uint elements) : count(elements), used_count(elements) {}
 
-  virtual ~in_vector() {}
+  virtual ~in_vector() = default;
 
   /**
     Calls item->val_int() or item->val_str() etc.
@@ -1724,8 +1722,8 @@ class in_decimal final : public in_vector {
 
 class cmp_item {
  public:
-  cmp_item() {}
-  virtual ~cmp_item() {}
+  cmp_item() = default;
+  virtual ~cmp_item() = default;
   virtual void store_value(Item *item) = 0;
   /**
      @returns result (true, false or UNKNOWN) of
@@ -1775,7 +1773,7 @@ class cmp_item_string final : public cmp_item_scalar {
   }
 
   void store_value(Item *item) override {
-    String *res = item->val_str(&value);
+    String *res = eval_string_arg(cmp_charset, item, &value);
     if (res && (res != &value || !res->is_alloced())) {
       // 'res' may point in item's transient internal data, so make a copy
       value.copy(*res);
@@ -1784,17 +1782,7 @@ class cmp_item_string final : public cmp_item_scalar {
     set_null_value(item->null_value);
   }
 
-  int cmp(Item *arg) override {
-    StringBuffer<STRING_BUFFER_USUAL_SIZE> tmp(cmp_charset);
-    String *res = arg->val_str(&tmp);
-    if (m_null_value || arg->null_value) return UNKNOWN;
-    if (value_res && res)
-      return sortcmp(value_res, res, cmp_charset) != 0;
-    else if (!value_res && !res)
-      return false;
-    else
-      return true;
-  }
+  int cmp(Item *arg) override;
   cmp_item *make_same() override;
 };
 
@@ -1961,7 +1949,6 @@ class Item_func_case final : public Item_func {
   bool resolve_type(THD *thd) override;
   bool resolve_type_inner(THD *thd) override;
   TYPELIB *get_typelib() const override;
-  uint decimal_precision() const override;
   enum Item_result result_type() const override { return cached_result_type; }
   const char *func_name() const override { return "case"; }
   void print(const THD *thd, String *str,

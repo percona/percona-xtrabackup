@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <memory>
 
 #include "my_byteorder.h"
 #include "my_compiler.h"
@@ -7078,7 +7079,7 @@ static void test_explain_bug() {
   no = 0;
 
   verify_prepare_field(result, no++, "id", "", MYSQL_TYPE_LONGLONG, "", "", "",
-                       3, 0);
+                       4, 0);
 
   verify_prepare_field(result, no++, "select_type", "", MYSQL_TYPE_VAR_STRING,
                        "", "", "", 19, 0);
@@ -7109,7 +7110,7 @@ static void test_explain_bug() {
                        "", NAME_CHAR_LEN * 16, 0);
 
   verify_prepare_field(result, no++, "rows", "", MYSQL_TYPE_LONGLONG, "", "",
-                       "", 10, 0);
+                       "", 11, 0);
 
   if (mysql_get_server_version(mysql) > 50702) no++;
 
@@ -20340,6 +20341,61 @@ static void test_bug27443252() {
   myquery(rc);
 }
 
+static void test_bug32391415() {
+  MYSQL *lmysql;
+  MYSQL_ROW row;
+  MYSQL_RES *res;
+  int rc;
+
+  myheader("test_bug32391415");
+
+  lmysql = mysql_client_init(NULL);
+  DIE_UNLESS(lmysql != NULL);
+
+  lmysql = mysql_real_connect(lmysql, opt_host, opt_user, opt_password,
+                              current_db, opt_port, opt_unix_socket, 0);
+  DIE_UNLESS(lmysql != 0);
+  if (!opt_silent) fprintf(stdout, "Established a test connection\n");
+
+  rc = mysql_query(lmysql, "CREATE USER b32391415@localhost");
+  myquery2(lmysql, rc);
+  rc =
+      mysql_query(lmysql, "GRANT ALL PRIVILEGES ON *.* TO b32391415@localhost");
+  myquery2(lmysql, rc);
+
+  if (!opt_silent) fprintf(stdout, "Created the user\n");
+
+  /* put in an attr */
+  rc = mysql_options4(lmysql, MYSQL_OPT_CONNECT_ATTR_ADD, "key1", "value1");
+  DIE_UNLESS(rc == 0);
+
+  rc = mysql_change_user(lmysql, "b32391415", NULL, NULL);
+  myquery2(lmysql, rc);
+
+  /* success: the query attribute should be present */
+  rc = mysql_query(lmysql,
+                   "SELECT ATTR_NAME, ATTR_VALUE "
+                   " FROM performance_schema.session_account_connect_attrs"
+                   " WHERE ATTR_NAME IN ('key1') AND"
+                   "  PROCESSLIST_ID = CONNECTION_ID() ORDER BY ATTR_NAME");
+  myquery2(lmysql, rc);
+  res = mysql_use_result(lmysql);
+  DIE_UNLESS(res);
+
+  row = mysql_fetch_row(res);
+  DIE_UNLESS(row);
+  DIE_UNLESS(0 == strcmp(row[0], "key1"));
+  DIE_UNLESS(0 == strcmp(row[1], "value1"));
+  if (!opt_silent) fprintf(stdout, "Checked the query attribute\n");
+
+  mysql_free_result(res);
+
+  mysql_close(lmysql);
+
+  rc = mysql_query(mysql, "DROP USER b32391415@localhost");
+  myquery2(mysql, rc);
+}
+
 void perform_arithmatic() { fprintf(stdout, "\n Do some other stuff.\n"); }
 
 /* test mysql_fetch_row_nonblocking */
@@ -22035,6 +22091,107 @@ static void test_bug31691060_2() {
   rc = mysql_stmt_close(stmt);
 }
 
+static void test_bug32372038() {
+  myheader("bug32372038");
+#ifndef NDEBUG
+  MYSQL *mysql_local;
+  DBUG_SET("+d,bug32372038");
+
+  if (!(mysql_local = mysql_client_init(NULL))) {
+    fprintf(stderr, "\n mysql_client_init() failed");
+    exit(1);
+  }
+
+  net_async_status status;
+  bool exit_loop = false;
+  do {
+    status = mysql_real_connect_nonblocking(
+        mysql_local, opt_host, opt_user, opt_password, current_db, opt_port,
+        opt_unix_socket, CLIENT_MULTI_STATEMENTS);
+    DBUG_EXECUTE_IF("bug32372038_ssl_started", { exit_loop = true; });
+  } while (status == NET_ASYNC_NOT_READY && !exit_loop);
+
+  mysql_close(mysql_local);
+  DBUG_SET("-d,bug32372038");
+  DBUG_SET("-d,bug32372038_ssl_started");
+#endif
+}
+
+static void test_bug32558782() {
+  myheader("test_bug32558782");
+  int rc;
+
+  rc = mysql_query(mysql, "DROP TABLE IF EXISTS test_tab");
+  myquery(rc);
+
+  rc = mysql_query(mysql,
+                   "CREATE TABLE test_tab("
+                   "col1 MEDIUMBLOB NOT NULL,"
+                   "col2 TINYINT DEFAULT NULL"
+                   ") Engine=InnoDB;");
+  myquery(rc);
+
+  MYSQL_STMT *stmt = mysql_stmt_init(mysql);
+  const char *query = "INSERT INTO test_tab (col1, col2) VALUES (?,?)";
+  rc = mysql_stmt_prepare(stmt, query, (ulong)strlen(query));
+  check_execute(stmt, rc);
+
+  MYSQL_BIND bind[2];
+  memset(bind, 0, sizeof(bind));
+
+  long int_data = 0;
+  bool is_null = true;
+  /* should be longer than initial NET buffer size of 8k */
+  unsigned long buflen = 20000;
+  unsigned long len = buflen;
+  auto data_buf = std::make_unique<char[]>(buflen);
+  memset(data_buf.get(), 'A', buflen);
+
+  /* BLOB COLUMN */
+  bind[0].buffer_type = MYSQL_TYPE_BLOB;  // Same thing with MYSQL_TYPE_STRING
+  bind[0].buffer = data_buf.get();
+  bind[0].buffer_length = buflen;
+  bind[0].is_null = 0;
+  bind[0].length = &len;
+
+  /* INT COLUMN */
+  bind[1].buffer_type = MYSQL_TYPE_LONG;
+  bind[1].buffer = (char *)&int_data;
+  bind[1].is_null = &is_null;
+
+  rc = mysql_stmt_bind_param(stmt, bind);
+  check_execute(stmt, rc);
+
+  /* success criteria: should complete */
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  /* cleanup */
+  mysql_stmt_close(stmt);
+  rc = mysql_query(mysql, "DROP TABLE test_tab");
+  myquery(rc);
+}
+
+static void test_bug32847269() {
+  myheader("test_bug32847269");
+
+  /* init phase */
+  myquery(mysql_query(mysql,
+                      "INSTALL COMPONENT 'file://component_query_attributes'"));
+
+  MYSQL_BIND p1;
+  const char *name = "param1";
+  MYSQL_ROW row;
+  MYSQL_RES *res;
+  bool is_null_arg = false;
+  wl12542_test_numeric_type(MYSQL_TYPE_LONGLONG, long long int,
+                            9223372036854775807L, atoll, is_null_arg);
+
+  /* cleanup phase */
+  myquery(mysql_query(
+      mysql, "UNINSTALL COMPONENT 'file://component_query_attributes'"));
+}
+
 static struct my_tests_st my_tests[] = {
     {"test_bug5194", test_bug5194},
     {"disable_query_logs", disable_query_logs},
@@ -22318,6 +22475,7 @@ static struct my_tests_st my_tests[] = {
     {"test_skip_metadata", test_skip_metadata},
     {"test_bug25701141", test_bug25701141},
     {"test_bug27443252", test_bug27443252},
+    {"test_bug32391415", test_bug32391415},
     {"test_wl11381", test_wl11381},
     {"test_wl11381_qa", test_wl11381_qa},
     {"test_wl11772", test_wl11772},
@@ -22335,6 +22493,9 @@ static struct my_tests_st my_tests[] = {
     {"test_wl12542", test_wl12542},
     {"test_bug31691060_1", test_bug31691060_1},
     {"test_bug31691060_2", test_bug31691060_2},
+    {"test_bug32372038", test_bug32372038},
+    {"test_bug32558782", test_bug32558782},
+    {"test_bug32847269", test_bug32847269},
     {nullptr, nullptr}};
 
 static struct my_tests_st *get_my_tests() { return my_tests; }

@@ -37,6 +37,7 @@
 #include "plugin/group_replication/include/observer_trans.h"
 #include "plugin/group_replication/include/pipeline_stats.h"
 #include "plugin/group_replication/include/plugin.h"
+#include "plugin/group_replication/include/plugin_handlers/member_actions_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/primary_election_invocation_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/remote_clone_handler.h"
 #include "plugin/group_replication/include/plugin_messages/group_action_message.h"
@@ -714,17 +715,11 @@ void Plugin_gcs_events_handler::on_view_changed(
   }
 
   if (!is_leaving) {
-    std::string view_id_representation = "";
-    Gcs_view *view = gcs_module->get_current_view();
-    if (view != nullptr) {
-      view_id_representation = view->get_view_id().get_representation();
-      delete view;
-    }
     disable_read_mode_for_compatible_members();
     LogPluginErr(
         SYSTEM_LEVEL, ER_GRP_RPL_MEMBER_CHANGE,
         group_member_mgr->get_string_current_view_active_hosts().c_str(),
-        view_id_representation.c_str());
+        new_view.get_view_id().get_representation().c_str());
   } else {
     LogPluginErr(SYSTEM_LEVEL, ER_GRP_RPL_MEMBER_LEFT_GRP);
   }
@@ -829,6 +824,19 @@ int Plugin_gcs_events_handler::update_group_info_manager(
   temporary_states->clear();
 
 err:
+  if (error) {
+    // Clean up temporary states.
+    std::set<Group_member_info *,
+             Group_member_info_pointer_comparator>::iterator
+        temporary_states_it;
+    for (temporary_states_it = temporary_states->begin();
+         temporary_states_it != temporary_states->end();
+         temporary_states_it++) {
+      delete (*temporary_states_it);
+    }
+    temporary_states->clear();
+  }
+
   assert(temporary_states->size() == 0);
   return error;
 }
@@ -1102,7 +1110,9 @@ bool Plugin_gcs_events_handler::is_member_on_vector(
 
 int Plugin_gcs_events_handler::process_local_exchanged_data(
     const Exchanged_data &exchanged_data, bool is_joining) const {
+  int error = 0;
   uint local_uuid_found = 0;
+  std::vector<std::string> exchanged_members_actions_serialized_configuration;
 
   /*
   For now, we are only carrying Group Member Info on Exchangeable data
@@ -1178,9 +1188,51 @@ int Plugin_gcs_events_handler::process_local_exchanged_data(
 
       return 1;
     }
+
+    /*
+      Group wide configuration.
+    */
+    if (is_joining && local_member_info->in_primary_mode()) {
+      const unsigned char *member_actions_serialized_configuration = nullptr;
+      size_t member_actions_serialized_configuration_length = 0;
+      Group_member_info_manager_message message;
+      bool error_get_member_actions =
+          message.get_member_actions_serialized_configuration(
+              data, length, &member_actions_serialized_configuration,
+              &member_actions_serialized_configuration_length);
+
+      /*
+        Members from versions lower than 8.0.25 do not support member
+        actions, as such exchanged data will not contain configuration
+        from them.
+      */
+      if (!error_get_member_actions) {
+        exchanged_members_actions_serialized_configuration.push_back(
+            std::string(pointer_cast<const char *>(
+                            member_actions_serialized_configuration),
+                        member_actions_serialized_configuration_length));
+      }
+    }
   }
 
-  return 0;
+  if (is_joining && local_member_info->in_primary_mode()) {
+    /*
+      A member that bootstraps a group is joining the group, thence it
+      does not add its configuration to the state exchange. In this
+      case there is nothing to do, the member configuration will be
+      preserved.
+      When the number of members is higher than one, then the existent
+      members will add their configuration on the state exchange.
+    */
+    if (exchanged_data.size() > 1) {
+      my_thread_init();
+      error = member_actions_handler->replace_all_actions(
+          exchanged_members_actions_serialized_configuration);
+      my_thread_end();
+    }
+  }
+
+  return error;
 }
 
 Gcs_message_data *Plugin_gcs_events_handler::get_exchangeable_data() const {
@@ -1253,6 +1305,53 @@ sending:
   Group_member_info_manager_message *group_info_message =
       new Group_member_info_manager_message(local_member_copy);
   group_info_message->encode(&data);
+
+  /*
+    Group wide configuration.
+
+    All members except the joining ones, need to send its local
+    configuration.
+  */
+  bool joining = (!plugin_is_group_replication_running() ||
+                  autorejoin_module->is_autorejoin_ongoing());
+
+#if !defined(NDEBUG)
+  /*
+    Simulate a member version lower than 8.0.25 which does not support
+    member actions, thence does not include its configuration on the
+    exchangeable data.
+  */
+  if (!joining && local_member_info->in_primary_mode()) {
+    my_thread_init();
+    DBUG_EXECUTE_IF(
+        "group_replication_skip_add_member_actions_to_exchangeable_data",
+        joining = true;);
+    my_thread_end();
+  }
+#endif
+
+  if (!joining && local_member_info->in_primary_mode()) {
+    std::string member_actions_serialized_configuration;
+
+    my_thread_init();
+    bool error_reading_member_actions = member_actions_handler->get_all_actions(
+        member_actions_serialized_configuration);
+    my_thread_end();
+
+    if (error_reading_member_actions) {
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MEMBER_ACTION_GET_EXCHANGEABLE_DATA);
+    }
+
+    /*
+      Even if there was a error reading the member actions, we send
+      a empty serialized configuration to allow the joining member
+      to distinguish between a invalid configuration and lower version
+      members that do not have configuration.
+    */
+    group_info_message->add_member_actions_serialized_configuration(
+        &data, member_actions_serialized_configuration);
+  }
+
   delete group_info_message;
 
   Gcs_message_data *msg_data = new Gcs_message_data(0, data.size());
@@ -1611,6 +1710,15 @@ int Plugin_gcs_events_handler::compare_member_option_compatibility() const {
                    (*all_members_it)->get_default_table_encryption());
       goto cleaning;
     }
+
+    if (local_member_info->get_view_change_uuid() !=
+        (*all_members_it)->get_view_change_uuid()) {
+      result = 1;
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_VIEW_CHANGE_UUID_DIFF_FROM_GRP,
+                   local_member_info->get_view_change_uuid().c_str(),
+                   (*all_members_it)->get_view_change_uuid().c_str());
+      goto cleaning;
+    }
   }
 
 cleaning:
@@ -1673,11 +1781,8 @@ void Plugin_gcs_events_handler::disable_read_mode_for_compatible_members(
             local_member_info->get_member_version(), lowest_version);
     /* Some lower version left the group, now this member is new lowest
      * version. */
-    if ((!local_member_info->in_primary_mode() &&
-         *joiner_compatibility_status == COMPATIBLE) ||
-        (local_member_info->in_primary_mode() &&
-         local_member_info->get_role() ==
-             Group_member_info::MEMBER_ROLE_PRIMARY)) {
+    if (!local_member_info->in_primary_mode() &&
+        *joiner_compatibility_status == COMPATIBLE) {
       if (disable_server_read_mode(PSESSION_DEDICATED_THREAD)) {
         LogPluginErr(WARNING_LEVEL,
                      ER_GRP_RPL_DISABLE_SRV_READ_MODE_RESTRICTED);
