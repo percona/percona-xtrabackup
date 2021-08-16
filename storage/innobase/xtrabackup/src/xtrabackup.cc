@@ -2369,10 +2369,19 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
     ut_a(space != nullptr);
 
     bool implicit = fsp_is_file_per_table(space_id, space->flags);
-    if (dd_table_load_on_dd_obj(dc, space_id, *dd_table.get(), ib_table, thd,
-                                &schema_name, implicit) != 0) {
-      err = DB_ERROR;
-      goto error;
+    bool is_partitioned_table = dd_table->partition_type() != dd::Table::PT_NONE;
+    bool is_partitioned_space =
+        strstr(space->name, dict_name::PART_SEPARATOR) != nullptr;
+    bool is_dangling_table = is_partitioned_space && !is_partitioned_table;
+    if (is_dangling_table) {
+      msg("xtrabackup: Skipping dangling table %s/%s in partitioned space %s\n",
+          schema_name.c_str(), dd_table->name().c_str(), space->name);
+    } else {
+      if (dd_table_load_on_dd_obj(dc, space_id, *dd_table.get(), ib_table, thd,
+                                  &schema_name, implicit) != 0) {
+        err = DB_ERROR;
+        goto error;
+      }
     }
   }
 
