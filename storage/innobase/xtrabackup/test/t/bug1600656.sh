@@ -17,8 +17,10 @@ vlog "Taking a backup and stream stuff, saving extra stuff into lsndir"
 xtrabackup --backup \
     --stream=tar \
     --extra-lsndir=$topdir/lsndir \
+    --target-dir=$topdir/backup_tmp \
     > $topdir/backup/stream.tar
 
+rm -rf $topdir/backup_tmp
 tar -xf $topdir/backup/stream.tar -C $topdir/backup
 
 vlog "#########################################################################"

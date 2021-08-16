@@ -45,7 +45,8 @@ mkdir $topdir/tar_backup $topdir/xbstream_backup
 
 vlog "Full backup of the slave server to a tar stream"
 xtrabackup --backup --no-timestamp --slave-info --binlog-info=on --stream=tar \
-    | tar -x -C $topdir/tar_backup
+  --target-dir=$topdir/backup_tmp  | tar -x -C $topdir/tar_backup
+rm -rf $topdir/backup_tmp/
 
 vlog "Verifying that untared xtrabackup_slave_info is not corrupted"
 run_cmd egrep -q "$binlog_slave_info_pattern" \
@@ -53,7 +54,8 @@ run_cmd egrep -q "$binlog_slave_info_pattern" \
 
 vlog "Full backup of the slave server to a xbstream stream"
 xtrabackup --backup --no-timestamp --slave-info --binlog-info=on --stream=xbstream \
-    | xbstream -xv -C $topdir/xbstream_backup
+  --target-dir=$topdir/backup_tmp  | xbstream -xv -C $topdir/xbstream_backup
+rm -rf $topdir/backup_tmp/
 
 vlog "Verifying that xtrabackup_slave_info is not corrupted"
 run_cmd egrep -q "$binlog_slave_info_pattern" \
