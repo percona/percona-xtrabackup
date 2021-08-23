@@ -343,7 +343,8 @@ class Http_client {
   std::vector<CURLcode> curl_retriable_errors{
       CURLcode::CURLE_GOT_NOTHING,      CURLcode::CURLE_OPERATION_TIMEDOUT,
       CURLcode::CURLE_RECV_ERROR,       CURLcode::CURLE_SEND_ERROR,
-      CURLcode::CURLE_SEND_FAIL_REWIND, CURLcode::CURLE_PARTIAL_FILE};
+      CURLcode::CURLE_SEND_FAIL_REWIND, CURLcode::CURLE_PARTIAL_FILE,
+      CURLcode::CURLE_SSL_CONNECT_ERROR};
   std::vector<long> http_retriable_errors{503, 500, 504, 408};
   mutable curl_easy_unique_ptr curl{nullptr, curl_easy_cleanup};
 
