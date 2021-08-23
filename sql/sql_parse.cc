@@ -4957,6 +4957,12 @@ error:
 finish:
   THD_STAGE_INFO(thd, stage_query_end);
 
+  if (res && thd->get_reprepare_observer() != NULL &&
+      thd->get_reprepare_observer()->is_invalidated() &&
+      thd->get_reprepare_observer()->can_retry()) {
+    thd->skip_gtid_rollback = true;
+  }
+
   // Cleanup EXPLAIN info
   if (!thd->in_sub_stmt)
   {
@@ -5103,6 +5109,8 @@ finish:
     gtid_state->end_gtid_violating_transaction(thd);  // just roll it back
     DEBUG_SYNC(thd, "restore_previous_state_after_statement_failed");
   }
+
+  thd->skip_gtid_rollback = false;
 
   DBUG_RETURN(res || thd->is_error());
 }

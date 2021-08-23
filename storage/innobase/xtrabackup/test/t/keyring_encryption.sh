@@ -33,17 +33,18 @@ innodb_wait_for_flush_all
 backup_and_restore test
 
 #for the remaining test need PS server
-require_xtradb
-
-vlog "case#3 try to restore encryption='keyring'"
-mysql test <<EOF
+if is_xtradb
+then
+  vlog "case#3 try to restore encryption='keyring'"
+  mysql test <<EOF
 SET GLOBAL innodb_log_checkpoint_now = 1;
 SET GLOBAL innodb_page_cleaner_disabled_debug = 1;
 SET GLOBAL innodb_master_thread_disabled_debug = 1;
 CREATE TABLE t2(a INT) ENGINE=INNODB ENCRYPTION='keyring';
 INSERT INTO t2 VALUES(100);
 EOF
-rm -rf $topdir/backup
-mkdir -p $topdir/backup
-run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir}
+  rm -rf $topdir/backup
+  mkdir -p $topdir/backup
+  run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir}
+fi
 stop_server

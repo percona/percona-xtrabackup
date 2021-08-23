@@ -22,7 +22,9 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 stop_server
 
-run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
+touch $topdir/empty_keyring
+run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup \
+--keyring-file-data=$topdir/empty_keyring
 
 rm -rf $mysql_datadir
 rm -rf $topdir/backup
@@ -45,4 +47,6 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 stop_server
 
-run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
+run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup \
+--keyring-file-data=$topdir/empty_keyring
+
