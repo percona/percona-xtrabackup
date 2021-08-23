@@ -44,8 +44,8 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -g          Debug mode
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, main.
-            Default is 'binlog, main, gr and keyring'.
+-s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, rocksdb, main.
+            Default is 'binlog, main, gr, rocksdb and keyring'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
@@ -865,8 +865,8 @@ if [ -n "$tname" ]
 then
    tests="$tname"
 else
-   tests="suites/binlog/* suites/gr/*.sh suites/keyring/*.sh t/*.sh"
-   suites=" binlog gr keyring main"
+   tests="suites/binlog/* suites/gr/*.sh suites/keyring/*.sh suites/rocksdb/*.sh t/*.sh"
+   suites=" binlog gr keyring rocksdb main"
 fi
 
 export OUTFILE="$PWD/results/setup"

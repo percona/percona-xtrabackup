@@ -1127,7 +1127,7 @@ tokudb_background_job_status=ha_tokudb.so"
 
 function require_rocksdb()
 {
-   if ! test -a $(dirname ${MYSQLD})/../lib/mysql/plugin/ha_rocksdb.so ; then
+   if ! test -a $(dirname ${MYSQLD})/../lib/plugin/ha_rocksdb.so ; then
         skip_test "Requires RocksDB"
    fi
 }
