@@ -75,6 +75,7 @@ xtrabackup --prepare --target-dir=$topdir/backup
 [[ -d $mysql_datadir ]] && rm -rf $mysql_datadir && mkdir -p $mysql_datadir
 xtrabackup --copy-back --target-dir=$topdir/backup
 
+MYSQLD_START_TIMEOUT=1200
 start_server
 run_cmd check_count test t1 5 
 run_cmd check_count test pt1 4

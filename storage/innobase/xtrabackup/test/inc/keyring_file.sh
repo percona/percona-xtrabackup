@@ -48,5 +48,8 @@ EOF
   "read_only": false
 }
 EOF
- #rm -rf ${MYSQLD_DATADIR}/undo* ${MYSQLD_DATADIR}/ib_logfile* ${MYSQLD_DATADIR}/*000* ${MYSQLD_DATADIR}/*.index
+}
+
+function cleanup_keyring() {
+	rm -rf $keyring_file
 }
