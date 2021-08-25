@@ -1384,6 +1384,9 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::wal_files(
   file_list wal_files;
 
   for (const auto &f : log_status.rocksdb_wal_files) {
+    if (strncmp(f.path_name.c_str(), "/archive", 8) == 0 ||
+        strncmp(f.path_name.c_str(), "archive", 7) == 0)
+      continue;
     char path[FN_REFLEN];
     fn_format(path, f.path_name.c_str() + 1,
               rocksdb_wal_dir.empty() ? rocksdb_datadir.c_str()
