@@ -1021,11 +1021,11 @@ static void kill_query_thread() {
   mysql_close(mysql);
 
 stop_thread:
-  msg_ts("Kill query thread stopped\n");
-
   my_thread_end();
 
   os_event_set(kill_query_thread_stopped);
+
+  msg_ts("Kill query thread stopped\n");
 }
 
 static void start_query_killer() {
@@ -1040,7 +1040,7 @@ static void start_query_killer() {
 
 static void stop_query_killer() {
   os_event_set(kill_query_thread_stop);
-  os_event_wait_time(kill_query_thread_stopped, 60000);
+  os_event_wait(kill_query_thread_stopped);
 
   os_event_destroy(kill_query_thread_stop);
   os_event_destroy(kill_query_thread_started);
