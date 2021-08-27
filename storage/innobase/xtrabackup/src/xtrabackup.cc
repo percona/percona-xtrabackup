@@ -1161,7 +1161,7 @@ struct my_option xb_client_options[] = {
 
     {"kill-long-query-type", OPT_KILL_LONG_QUERY_TYPE,
      "This option specifies which types of queries should be killed to "
-     "unblock the global lock. Default is \"all\".",
+     "unblock the global lock. Default is \"SELECT\".",
      (uchar *)&opt_kill_long_query_type, (uchar *)&opt_kill_long_query_type,
      &query_type_typelib, GET_ENUM, REQUIRED_ARG, QUERY_TYPE_SELECT, 0, 0, 0, 0,
      0},
