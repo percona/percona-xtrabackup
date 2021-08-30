@@ -128,6 +128,11 @@ References
    release-notes
    xtrabackup_bin/xbk_option_reference
    xbcloud/xbcloud
+   xbcloud/xbcloud_swift
+   xbcloud/xbcloud_s3
+   xbcloud/xbcloud_minio
+   xbcloud/xbcloud_gcs
+   xbcloud/xbcloud_exbackoff
    xbcrypt/xbcrypt
    xbstream/xbstream
    faq
