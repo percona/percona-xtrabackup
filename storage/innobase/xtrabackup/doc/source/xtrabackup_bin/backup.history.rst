@@ -91,7 +91,7 @@ taken with :option:`--history` option.
    * - incremental
      - Is this an incremental backup
    * - format
-     - Description of result format (``file``, ``tar``, ``xbstream``) 
+     - Description of result format (``xbstream``)
    * - compact
      - Is this a compact backup
    * - compressed
