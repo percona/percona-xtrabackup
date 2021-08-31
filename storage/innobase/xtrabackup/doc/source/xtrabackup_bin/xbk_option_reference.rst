@@ -582,7 +582,7 @@ Options
 .. option:: --kill-long-query-type=all|select
 
    This option specifies which types of queries should be killed to unblock the
-   global lock. Default is "all".
+   global lock. Default is "select".
 
 .. option:: --lock-ddl
 
