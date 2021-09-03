@@ -2,12 +2,12 @@
  Backing Up and Restoring Individual Partitions
 ================================================================================
 
-|Percona XtraBackup| lets you backup
+Percona XtraBackup lets you backup
 individual partitions because partitions are regular tables with specially formatted names. The only
-requirement for this feature is having the :term:`innodb_file_per_table` option
+requirement for this feature is having the `innodb_file_per_table` option
 enabled in the server.
 
-There is only one caveat about using this kind of backup: you can not copy back
+There is one caveat about using this kind of backup: you can not copy back
 the prepared backup. Restoring partial backups should be done by importing the
 tables. 
 
@@ -15,15 +15,15 @@ Creating the backup
 ================================================================================
 
 There are three ways of specifying which part of the whole data will be backed
-up: regular expressions (:option: --tables`), enumerating the
-tables in a file (:option:`--tables`) or providing a list of
-databases (:option:` --databases`).
+up: regular expressions ( --tables), enumerating the
+tables in a file (--tables) or providing a list of
+databases (--databases).
 
 The regular expression provided to this option will be matched against the fully
 qualified database name and table name, in the form of
 ``database-name.table-name``.
 
-If the partition 0 is not backed up, |xtrabackup| cannot generate a .cfg file. MySQL 8.0 stores the table metadata in partition 0.
+If the partition 0 is not backed up, Percona XtraBackup cannot generate a .cfg file. MySQL 8.0 stores the table metadata in partition 0.
 
 For example, this operation takes a back up of the partition ``p4`` from the table ``name`` located in the database ``imdb``::
 
@@ -35,20 +35,19 @@ If partition 0 is not backed up, the following errors may occur: ::
    xtrabackup: error: cannot find dictionary record of table imdb/name#p#p4
     
 
-Note that this option is passed to :option:`xtrabackup --tables` and is matched
+Note that this option is passed to ``xtrabackup --tables`` and is matched
 against each table of each database, the directories of each database will be
 created even if they are empty.
 
 Preparing the backup
 ================================================================================
 
-For preparing partial backups, the procedure is analogous to :doc:`restoring
-individual tables <..restoring_individual_tables>` : apply the
-logs and use :option:`xtrabackup --export`:
+For preparing partial backups, the procedure is analogous to restoring
+individual tables apply the logs and use `xtrabackup --export`:
 
 .. code-block:: bash
 
-   $ xtrabackup --apply-log --export /mnt/backup/2012-08-28_10-29-09
+     xtrabackup --apply-log --export /mnt/backup/2012-08-28_10-29-09
 
 You may see warnings in the output about tables that do not exist. This is
 because |InnoDB|-based engines stores its data dictionary inside the tablespace
@@ -58,17 +57,14 @@ backup) from the data dictionary in order to avoid future warnings or errors.
 Restoring from the backups
 ================================================================================
 
-Restoring should be done by :doc:`importing the tables
-<restoring_individual_tables>` in the partial backup to the
+Restoring should be done by importing the tables in the partial backup to the
 server.
 
+First step is to create new table in which data will be restored.
 
+.. code-block:: mysql
 
-First step is to create new table in which data will be restored :: 
-
-::
-
-   mysql> CREATE TABLE `name_p4` (
+   CREATE TABLE `name_p4` (
    `id` int(11) NOT NULL AUTO_INCREMENT,
    `name` text NOT NULL,
    `imdb_index` varchar(12) DEFAULT NULL,
@@ -86,27 +82,27 @@ First step is to create new table in which data will be restored ::
    The file is located in the table schema directory and is used for schema verification when importing the tablespace.
 
 To restore the partition from the backup, the tablespace must be discarded for
-that table: ::
+that table: 
 
-   mysql>  ALTER TABLE name_p4 DISCARD TABLESPACE;
+.. code-block:: mysql
 
-The next step is to copy the :term:`.exp` and `ibd` files from the backup to |MySQL|
-data directory:
+      ALTER TABLE name_p4 DISCARD TABLESPACE;
+
+The next step is to copy the :term:`.exp` and `ibd` files from the backup to the MySQL data directory:
 
 .. code-block:: bash
 
-   $ cp /mnt/backup/2012-08-28_10-29-09/imdb/name#p#p4.exp /var/lib/mysql/imdb/name_p4.exp
-   $ cp /mnt/backup/2012-08-28_10-29-09/imdb/name#P#p4.ibd /var/lib/mysql/imdb/name_p4.ibd
+     cp /mnt/backup/2012-08-28_10-29-09/imdb/name#p#p4.exp /var/lib/mysql/imdb/name_p4.exp
+     cp /mnt/backup/2012-08-28_10-29-09/imdb/name#P#p4.ibd /var/lib/mysql/imdb/name_p4.ibd
  
 .. note::
 
-   Make sure that the copied files can be accessed by the user running the |MySQL|.
-
+   Make sure that the copied files can be accessed by the user running MySQL.
 
 The last step is to import the tablespace:
 
-.. code-block:: guess
+.. code-block:: mysql
 
-   mysql>  ALTER TABLE name_p4 IMPORT TABLESPACE;
+     ALTER TABLE name_p4 IMPORT TABLESPACE;
 
 

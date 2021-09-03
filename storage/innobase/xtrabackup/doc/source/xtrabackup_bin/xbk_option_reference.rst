@@ -605,8 +605,7 @@ Options
    
    .. note::
    
-   As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the
-   `--lock-ddl` option instead.
+         As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the `--lock-ddl` option instead.
 
 .. option:: --lock-ddl-timeout
 
