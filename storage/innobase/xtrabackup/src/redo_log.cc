@@ -633,6 +633,12 @@ void Archived_Redo_Log_Monitor::skip_for_block(lsn_t lsn,
         return;
       }
     }
+    if (finished) {
+      msg_ts(
+          "xtrabackup: Finished reading archive, did not find a matching "
+          "block\n");
+      return;
+    }
   }
 }
 
