@@ -20,26 +20,22 @@ The following example shows how to make a full backup and upload it to Swift.
    --parallel=10 \
    full_backup
 
-OpenStack environment variables are also recognized and mapped automatically to
-corresponding **swift** parameters (``--storage=swift``).
+The following OpenStack environment variables are also recognized and mapped automatically to the corresponding **swift** parameters (``--storage=swift``):
 
-.. hlist::
-   :columns: 2
+   * OS_AUTH_URL
+   * OS_TENANT_NAME
+   * OS_TENANT_ID
+   * OS_USERNAME
+   * OS_PASSWORD
+   * OS_USER_DOMAIN
+   * OS_USER_DOMAIN_ID
+   * OS_PROJECT_DOMAIN
+   * OS_PROJECT_DOMAIN_ID
+   * OS_REGION_NAME
+   * OS_STORAGE_URL
+   * OS_CACERT
 
-   - OS_AUTH_URL
-   - OS_TENANT_NAME
-   - OS_TENANT_ID
-   - OS_USERNAME
-   - OS_PASSWORD
-   - OS_USER_DOMAIN
-   - OS_USER_DOMAIN_ID
-   - OS_PROJECT_DOMAIN
-   - OS_PROJECT_DOMAIN_ID
-   - OS_REGION_NAME
-   - OS_STORAGE_URL
-   - OS_CACERT
-
-   Restoring with Swift
+Restoring with Swift
 ================================================================================
 
 .. code-block:: bash
