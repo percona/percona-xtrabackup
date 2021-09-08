@@ -410,7 +410,9 @@ char *opt_socket = NULL;
 uint opt_port = 0;
 char *opt_login_path = NULL;
 char *opt_log_bin = NULL;
+char *srv_log_bin = NULL;
 bool opt_skip_log_bin = false;
+bool srv_skip_log_bin = false;
 
 bool tty_password = false;
 bool tty_transition_key = false;

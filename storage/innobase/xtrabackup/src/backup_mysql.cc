@@ -685,6 +685,11 @@ get_mysql_vars(MYSQL *connection)
 	  have_changed_page_bitmaps = true;
 	}
 
+	if (log_bin_var != NULL) {
+		srv_log_bin =
+			my_strdup(PSI_NOT_INSTRUMENTED, log_bin_var, MYF(MY_FAE));
+	}
+
 out:
 	free_mysql_variables(mysql_vars);
 
@@ -1598,7 +1603,7 @@ write_current_binlog_file(MYSQL *connection)
 	mysql_variable vars[] = {
 		{"log_bin", &log_bin},
 		{"log_bin_basename", &log_bin_dir},
-        {"log_bin_index", &log_bin_index},
+		{"log_bin_index", &log_bin_index},
 		{NULL, NULL}
 	};
 
@@ -1641,6 +1646,9 @@ write_current_binlog_file(MYSQL *connection)
 			binlog_path = "./";
 		}
 
+		if (log_bin_dir) {
+			free(log_bin_dir);
+		}
 		log_bin_dir = strdup(binlog_path.c_str());
 		dirname_part(log_bin_dir, log_bin_dir, &log_bin_dir_length);
 
@@ -2116,6 +2124,11 @@ write_backup_config_file()
 		s << "server_uuid=" << server_uuid << "\n";
 	}
 	s << "master_key_id=" << Encryption::master_key_id << "\n";
+
+	if (opt_skip_log_bin ||
+		(srv_log_bin != NULL && strcmp(srv_log_bin, "OFF") == 0)) {
+		s << "skip-log-bin" << "\n";
+	}
 
 	return backup_file_print("backup-my.cnf", s.str().c_str(), s.tellp());
 }

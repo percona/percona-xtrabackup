@@ -2004,6 +2004,8 @@ load_backup_my_cnf()
 		&srv_checksum_algorithm, &innodb_checksum_algorithm_typelib,
 		GET_ENUM, REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB,
 		0, 0, 0, 0, 0},
+		{"skip_log_bin", 0, "", &srv_skip_log_bin,
+		&srv_skip_log_bin, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 		{0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 	};
 
@@ -2039,7 +2041,7 @@ copy_back(int argc, char **argv)
 {
 	char *innobase_data_file_path_copy;
 	ulint i;
-	bool ret, err;
+	bool ret = true, err = false;
 	datadir_iter_t *it = NULL;
 	char *dst_dir;
 	binlog_file_location binlog;
@@ -2232,7 +2234,7 @@ copy_back(int argc, char **argv)
 
 
 	/* copy binary log and .index files */
-	if (!opt_skip_log_bin) {
+	if (!opt_skip_log_bin && !srv_skip_log_bin) {
 		if (binlog_file_location::find_binlog(".", binlog, err)) {
 			const binlog_file_location target = binlog.target_location(mysql_data_home);
 
@@ -2672,17 +2674,13 @@ bool binlog_file_location::find_binlog(const std::string &dir,
 				if (first_pos != std::string::npos && first_pos == last_pos) {
 					/* single period case, check for numeric suffix */
 					size_t non_decimal_pos = file_basename.substr(first_pos+1).find_first_not_of("01233456789");
-					if (non_decimal_pos != std::string::npos) {
-						/* we found a non-decimal character in the suffix, skip */
-						continue;
+					if (non_decimal_pos == std::string::npos) {
+						/* no non-decimal characters in the suffix, accept */
+						binlog.path = node.filepath;
+						binlog.name = file_basename;
+						break;
 					}
-				} else {
-					/* all other cases, just skip */
-					continue;
 				}
-				binlog.path = node.filepath;
-				binlog.name = file_basename;
-				break;
 			}
 		}
 
@@ -2794,10 +2792,10 @@ struct binlog_file_location binlog_file_location::target_location(const std::str
 			r.index_name = name;
 		} else if (!index_name.empty()) {
 			/* No explicit name specified, use the default index_name */
-			r.index_name = name;
+			r.index_name = index_name;
 
 			char buf[FN_REFLEN];
-			fn_format(buf, name.c_str(), datadir.c_str(), "",
+			fn_format(buf, index_name.c_str(), datadir.c_str(), "",
 				MY_UNPACK_FILENAME);
 			r.index_path = buf;
 		}
