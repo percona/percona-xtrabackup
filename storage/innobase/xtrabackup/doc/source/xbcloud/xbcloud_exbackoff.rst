@@ -4,7 +4,7 @@
 Exponential Backoff 
 ==========================================
 
-This feature was implemented in Percona XtraBackup 8.0.26-18 in the xbcloud binary.
+This feature was implemented in :ref:`PXB-8.0.26-18.0` in the xbcloud binary.
 
 Exponential backoff increases the chances for the completion of a backup or a restore operation. For example, a chunk upload or download may fail if you have an unstable network connection or other network issues. This feature adds an exponential backoff, or sleep, time and then retries the upload or download.
 
@@ -71,7 +71,7 @@ The following example adjusts the maximum number of retries and the maximum time
 
 .. sourcecode:: bash
 
-    xtrabackup --backup --stream=xbstream --target-dir=/tmp --max-retries=5 --max-backoff=10000
+     xbcloud [options] --max-retries=5 --max-backoff=10000
 
 The following text is an example of the exponential backoff used with the command:
 
@@ -93,13 +93,13 @@ The following text is an example of the exponential backoff used with the comman
 
 The following list details the example output:
 
-    [1.] Chunk ``xtrabackup_logfile.00000000000000000006`` fails to upload the first time and slept for 2384 milliseconds.
+    [1.] Chunk ``xtrabackup_logfile.00000000000000000006`` fails to upload _ the first time and slept for 2384 milliseconds.
 
     [2.] The same chunk fails for the second time and the time is increased to 4387 milliseconds. 
 
     [3.] The same chunk fails for the third time and the time is increased to 8691 milliseconds.
 
-    [4.] The same chunk fails for the fourth time. The ``max-backoff``=10000, which defines the maximum sleep time as 10000. Any retry sleeps the same amount of time after reaching the parameter.
+    [4.] The same chunk fails for the fourth time. The ``max-backoff`` parameter has been reached. All retries sleep the same amount of time after reaching the parameter.
 
     [5.] The same chunk is successfully uploaded.
 

@@ -1,7 +1,7 @@
 .. _xbcloud_s3:
 
 ====================================================
-Using xbcloud Binary with Amazon Simple Storage
+Using xbcloud Binary with Amazon S3
 ====================================================
 
 Creating a full backup with Amazon S3
@@ -40,7 +40,7 @@ The following options are available when using Amazon S3:
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
        style requests. The default value is AUTO. In this case, |xbcloud| will probe.
    * - --s3-storage-class=<name>
-     - Specify the `S3 storage class <https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html>`_. The default storage class depends on the provider. The name options are the following: 
+     - Specify the `S3 storage class <https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html>`__. The default storage class depends on the provider. The name options are the following: 
      
        * STANDARD
        * STANDARD_IA
@@ -48,15 +48,13 @@ The following options are available when using Amazon S3:
        
        .. note:: 
 
-           If you use the GLACIER storage class, the object must be `restored to S3 <https://docs.aws.amazon.com/AmazonS3/latest/dev/restoring-objects.html>`_ before restoring the backup.
-
-       Also supports using custom S3 implementations such as MinIO or CephRadosGW.
+           If you use the GLACIER storage class, the object must be `restored to S3 <https://docs.aws.amazon.com/AmazonS3/latest/dev/restoring-objects.html>`__ before restoring the backup. Also supports using custom S3 implementations such as MinIO or CephRadosGW.
 
 
 Environment variables
 =========================
 
-The following environment variables are recognized. |xbcloud| maps them
+The following environment variables are recognized. xbcloud maps them
 automatically to corresponding parameters applicable to the selected storage.
 
 - AWS_ACCESS_KEY_ID (or ACCESS_KEY_ID)
@@ -65,7 +63,7 @@ automatically to corresponding parameters applicable to the selected storage.
 - AWS_ENDPOINT (or ENDPOINT)
 - AWS_CA_BUNDLE
 
-Restoring with |s3|
+Restoring with S3
 ================================================================================
 
 .. code-block:: bash
