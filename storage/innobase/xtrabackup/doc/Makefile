@@ -55,7 +55,6 @@ html: ext
 	@tar -mzxf percona-theme-1-4.tar.gz
 	@rm -rf source/percona-theme
 	@mv percona-theme-1-4 source/percona-theme
-	@rm percona-theme.tar.gz
 	@echo "Building html doc"
 
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
@@ -154,7 +153,7 @@ doctest:
 	$(SPHINXBUILD) -b doctest $(ALLSPHINXOPTS) $(BUILDDIR)/doctest
 	@echo "Testing of doctests in the sources finished, look at the " \
 	      "results in $(BUILDDIR)/doctest/output.txt."
-		  
+
 thtml:
 	@echo "Building themed html doc"
 	$(SPHINXBUILD) -D html_theme=alabaster -D html_theme_path='' -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
@@ -165,4 +164,5 @@ livehtml:
 	sphinx-autobuild $(ALLSPHINXOPTS) $(BUILDDIR) $(O)
 
 livethtml:
-	sphinx-autobuild -D html_theme=alabaster -D html_theme_path='' $(ALLSPHINXOPTS) $(BUILDDIR) $(O) 
+	sphinx-autobuild -D html_theme=alabaster -D html_theme_path='' $(ALLSPHINXOPTS) $(BUILDDIR) $(O)
+

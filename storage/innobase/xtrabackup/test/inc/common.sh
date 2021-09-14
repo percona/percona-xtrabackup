@@ -761,6 +761,26 @@ $MYSQL_VERSION_MINOR $MYSQL_VERSION_PATCH`
 }
 
 #########################################################################
+# Return 0 if server is debug version
+########################################################################
+function is_debug_server()
+{
+
+  [[ $MYSQL_VERSION =~ .*debug ]]
+
+}
+
+#########################################################################
+# Requires server debug version
+########################################################################
+function require_debug_server()
+{
+    if ! is_debug_server; then
+        skip_test "Requires debug server version"
+    fi
+}
+
+#########################################################################
 # Require a server version higher than the first argument
 ########################################################################
 function require_server_version_higher_than()
@@ -882,6 +902,25 @@ function require_tokudb()
       skip_test "Requires jemalloc for TokuDB"
     else
       vlog "INFO: Using jemalloc library from $LIBJEMALLOC_LOCATION\n\n";
+    fi
+}
+
+########################################################################
+# Return 0 if the xtrabackup has AddressSanitizer support
+########################################################################
+function is_asan()
+{
+    ldd $XB_BIN | grep -q libasan
+    return $?
+}
+
+#########################################################################
+# Skip test if xtrabackup has AddressSanitizer support
+########################################################################
+function skip_if_asan()
+{
+    if is_asan; then
+        skip_test "Incompatible with AddressSanitizer"
     fi
 }
 
@@ -1081,6 +1120,34 @@ function innodb_checkpoint_lsn()
 {
     ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
         grep "Last checkpoint at" | awk '{ print $4 }'
+}
+
+#general method to restore
+########################################################################
+function backup_and_restore() {
+  local db=$1;
+  record_db_state $db
+  rm -rf $topdir/backup
+  mkdir -p $topdir/backup
+
+  ## backup and prepare based on if keyring is used
+  if [ -z ${plugin_dir+x} ]
+  then
+    run_cmd xtrabackup --backup --target-dir=$topdir/backup
+    run_cmd $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
+  else
+    run_cmd xtrabackup --backup --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir}
+    run_cmd $XB_BIN $XB_ARGS --xtrabackup-plugin-dir=${plugin_dir} --prepare \
+      --target-dir=$topdir/backup ${keyring_args}
+  fi
+
+  # Restore
+  stop_server
+  rm -rf $mysql_datadir
+  run_cmd xtrabackup --copy-back --target-dir=$topdir/backup
+  start_server
+  # Verify backup
+  verify_db_state $db
 }
 
 # To avoid unbound variable error when no server have been started

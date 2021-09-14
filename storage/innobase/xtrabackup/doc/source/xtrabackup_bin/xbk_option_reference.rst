@@ -469,6 +469,10 @@ Options
    it. The default is ``0`` (zero) seconds, which means the |program| does not
    attempt to kill any queries.
    
+.. option:: --kill-long-query-type=select|all
+
+   This option specifies which types of queries should be killed to unblock the global lock. The default value is ``select``. 
+   
 .. option:: --lock-ddl
 
    Issue ``LOCK TABLES FOR BACKUP`` if it is supported by server

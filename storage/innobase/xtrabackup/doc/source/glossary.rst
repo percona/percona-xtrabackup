@@ -54,9 +54,7 @@
      page's LSN shows how recently it was changed.
 
    innodb_file_per_table
-     By default, all InnoDB tables and indexes are stored in the system
-     tablespace on one file. This option causes the server to create one
-     tablespace file per table. To enable it, set it on your configuration file,
+     By default, InnoDB creates tables and indexes in a `file-per-tablespace <https://dev.mysql.com/doc/refman/8.0/en/innodb-file-per-table-tablespaces.html>`__. If the ``innodb_file_per_table`` variable is disabled, you can enable the variable in your configuration file:
 
       .. code-block:: text
 

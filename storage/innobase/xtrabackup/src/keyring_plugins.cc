@@ -155,12 +155,15 @@ xb_create_transition_key(char *key_name, char* key)
 		    "%s-%s-%s", TRANSITION_KEY_PRIFIX, server_uuid, rand64);
 
 	/* Let keyring generate key for us. */
+	mysql_mutex_init(key_LOCK_keyring_operations,
+				 &LOCK_keyring_operations, MY_MUTEX_INIT_FAST);
 	ret = my_key_generate(key_name, "AES", NULL, ENCRYPTION_KEY_LEN);
 	if (ret) {
 		msg("xtrabackup: Error: Can't generate the key, please "
 		    "check the keyring plugin is loaded.\n");
 		return(false);
 	}
+	mysql_mutex_destroy(&LOCK_keyring_operations);
 
 	/* Fetch the key and return. */
 	return xb_fetch_key(key_name, key);

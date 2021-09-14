@@ -4,10 +4,10 @@
 
 start_server
 
-run_cmd_expect_failure $XB_BIN $XB_ARGS --backup foo
+run_cmd_expect_failure $XB_BIN $XB_ARGS --backup foo --target-dir=$topdir/backup
 
-test -d xtrabackup_backupfiles && die "Default backup directory found" || true
+test -d $topdir/backup && die "Backup directory found" || true
 
-run_cmd_expect_failure $XB_BIN $XB_ARGS foo --backup
+run_cmd_expect_failure $XB_BIN $XB_ARGS foo --backup --target-dir=$topdir/backup
 
-test -d xtrabackup_backupfiles && die "Default backup directory found" || true
+test -d $topdir/backup && die "Backup directory found" || true

@@ -117,14 +117,15 @@ References
    :maxdepth: 1
    :glob:
 
+   release-notes
    xtrabackup_bin/xbk_option_reference
    innobackupex/innobackupex_option_reference
    xbcloud/xbcloud
+   xbcloud/xbcloud_exbackoff
    xbcrypt/xbcrypt
    xbstream/xbstream
    known_issues
    faq
-   release-notes
    glossary
    xtrabackup-files
    trademark-policy

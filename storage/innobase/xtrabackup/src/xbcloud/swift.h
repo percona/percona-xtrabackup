@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 Openstack Swift client implementation.
 
@@ -109,12 +109,21 @@ class Keystone_client {
   }
 };
 
+/* Not used */
+class Swift_signer {
+ public:
+  void sign_request(std::string, std::string &, Http_request &, time_t){};
+  ~Swift_signer(){};
+};
+
 class Swift_client {
  public:
-  using async_upload_callback_t = std::function<void(bool)>;
+  using async_upload_callback_t =
+      std::function<void(bool, const Http_buffer &)>;
   using async_download_callback_t =
       std::function<void(bool, const Http_buffer &)>;
   using async_delete_callback_t = std::function<void(bool)>;
+  std::unique_ptr<Swift_signer> signer; /* Not used */
 
  private:
   const Http_client *http_client;
@@ -126,13 +135,34 @@ class Swift_client {
   std::string host;
   std::string path;
 
+  ulong max_retries;
+  ulong max_backoff;
   static bool validate_response(const Http_request &req,
                                 const Http_response &resp);
 
+  static void upload_callback(Swift_client *client, std::string container,
+                              std::string name, Http_request *req,
+                              Http_response *resp,
+                              const Http_client *http_client, Event_handler *h,
+                              Swift_client::async_upload_callback_t callback,
+                              CURLcode rc, const Http_connection *conn,
+                              ulong count);
+
+  static void download_callback(
+      Swift_client *client, std::string container, std::string name,
+      Http_request *req, Http_response *resp, const Http_client *http_client,
+      Event_handler *h, Swift_client::async_download_callback_t callback,
+      CURLcode rc, const Http_connection *conn, ulong count);
+
  public:
   Swift_client(const Http_client *client, const std::string &url,
-               const std::string &token)
-      : http_client(client), url(url), token(token) {
+               const std::string &token, const ulong max_retries,
+               const ulong max_backoff)
+      : http_client(client),
+        url(url),
+        token(token),
+        max_retries(max_retries),
+        max_backoff(max_backoff) {
     split_url(url, protocol, host, path);
   }
 
@@ -164,6 +194,14 @@ class Swift_client {
   bool list_objects_with_prefix(const std::string &container,
                                 const std::string &prefix,
                                 std::vector<std::string> &objects);
+  ulong get_max_retries() { return max_retries; }
+
+  ulong get_max_backoff() { return max_backoff; }
+
+  void retry_error(Http_response *resp, bool *retry){};
+
+  /* Not used */
+  std::string hostname(const std::string &not_used) const { return host; }
 };
 
 class Swift_object_store : public Object_store {
@@ -172,8 +210,9 @@ class Swift_object_store : public Object_store {
 
  public:
   Swift_object_store(const Http_client *http_client, const std::string &url,
-                     const std::string &token)
-      : swift_client{http_client, url, token} {}
+                     const std::string &token, const ulong max_retries,
+                     const ulong max_backoff)
+      : swift_client{http_client, url, token, max_retries, max_backoff} {}
   virtual bool create_container(const std::string &name) override {
     return swift_client.create_container(name);
   }
@@ -192,15 +231,15 @@ class Swift_object_store : public Object_store {
                              const Http_buffer &contents) override {
     return swift_client.upload_object(container, object, contents);
   }
-  virtual bool async_upload_object(const std::string &container,
-                                   const std::string &object,
-                                   const Http_buffer &contents,
-                                   Event_handler *h,
-                                   std::function<void(bool)> f = {}) override {
-    return swift_client.async_upload_object(container, object, contents, h,
-                                            [f](bool success) {
-                                              if (f) f(success);
-                                            });
+  virtual bool async_upload_object(
+      const std::string &container, const std::string &object,
+      const Http_buffer &contents, Event_handler *h,
+      std::function<void(bool, const Http_buffer &contents)> f = {}) override {
+    return swift_client.async_upload_object(
+        container, object, contents, h,
+        [f](bool success, const Http_buffer &contents) {
+          if (f) f(success, contents);
+        });
   }
   virtual bool async_download_object(
       const std::string &container, const std::string &object, Event_handler *h,
