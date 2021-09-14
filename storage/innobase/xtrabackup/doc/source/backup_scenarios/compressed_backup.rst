@@ -5,7 +5,7 @@ Compressed Backup
 =================
 
 |Percona XtraBackup| supports compressed backups: a local or streaming backup
-can be compressed or decompressed with |xbstream|.
+can be compressed or decompressed with xtrabackup.
 
 Creating Compressed Backups
 ===========================
