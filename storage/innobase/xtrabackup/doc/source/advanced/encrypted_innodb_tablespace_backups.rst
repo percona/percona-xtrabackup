@@ -392,8 +392,8 @@ Backup
 
 .. code-block:: bash
 
-   $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
-   --generate-transition-key
+   $ xtrabackup --backup --target-dir=/data/backup \
+   --transition-key=MySecretKey
 
 Prepare
 --------------------------------------------------------------------------------
