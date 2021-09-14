@@ -121,7 +121,7 @@ References
    xtrabackup_bin/xbk_option_reference
    innobackupex/innobackupex_option_reference
    xbcloud/xbcloud
-   xbcloud/_xbcloud_exbackoff
+   xbcloud/xbcloud_exbackoff
    xbcrypt/xbcrypt
    xbstream/xbstream
    known_issues
