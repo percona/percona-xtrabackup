@@ -8,6 +8,7 @@ PAPER         =
 BUILDDIR      = build
 UTILS_REPO    = https://github.com/Percona-Lab/percona-doc-utils/archive/master.tar.gz
 UTILS_DIR     = percona-doc-utils-master
+
 # Internal variables.
 PAPEROPT_a4     = -D latex_paper_size=a4
 PAPEROPT_letter = -D latex_paper_size=letter
@@ -42,6 +43,10 @@ ext:
 	@echo "Downloading Percona documentation utils from repository..."
 	@mkdir -p $(BUILDDIR) && wget -O - $(UTILS_REPO) | tar xz -C $(BUILDDIR) && cp -r $(BUILDDIR)/$(UTILS_DIR)/sphinx/ext source
 
+netlify:
+	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) -c source/conf-netlify $(BUILDDIR)/html
+	@echo
+	@echo "Netlify build finished. The HTML pages are in $(BUILDDIR)/html."
 
 html: ext
 	@echo "Downloading percona-theme ..."
@@ -138,7 +143,7 @@ changes:
 	@echo
 	@echo "The overview file is in $(BUILDDIR)/changes."
 
-linkcheck:
+linkcheck: ext
 	$(SPHINXBUILD) -b linkcheck $(ALLSPHINXOPTS) $(BUILDDIR)/linkcheck
 	@echo
 	@echo "Link check complete; look for any errors in the above output " \
@@ -160,3 +165,4 @@ livehtml:
 
 livethtml:
 	sphinx-autobuild -D html_theme=alabaster -D html_theme_path='' $(ALLSPHINXOPTS) $(BUILDDIR) $(O)
+
