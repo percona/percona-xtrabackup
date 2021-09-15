@@ -78,7 +78,7 @@ class Archive_share : public Handler_share {
 /*
   Version for file format.
   1 - Initial Version (Never Released)
-  2 - Stream Compression, seperate blobs, no packing
+  2 - Stream Compression, separate blobs, no packing
   3 - One steam (row and blobs), with packing
 */
 #define ARCHIVE_VERSION 3
@@ -105,7 +105,7 @@ class ha_archive : public handler {
 
  public:
   ha_archive(handlerton *hton, TABLE_SHARE *table_arg);
-  ~ha_archive() override {}
+  ~ha_archive() override = default;
   const char *table_type() const override { return "ARCHIVE"; }
   ulonglong table_flags() const override {
     return (HA_NO_TRANSACTIONS | HA_CAN_BIT_FIELD | HA_BINLOG_ROW_CAPABLE |

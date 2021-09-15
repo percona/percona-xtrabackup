@@ -206,7 +206,6 @@ class Key_use {
         read_cost(0.0) {}
 
   TABLE_LIST *table_ref;  ///< table owning the index
-
   /**
     Value used for lookup into @c key. It may be an Item_field, a
     constant or any other expression. If @c val contains a field from
@@ -214,11 +213,14 @@ class Key_use {
     the field(s) in @c val should be before @c table in the join plan.
   */
   Item *val;
-
   /**
     All tables used in @c val, that is all tables that provide bindings
     for the expression @c val. These tables must be in the plan before
     executing the equi-join described by a Key_use.
+    For all expressions except for the MATCH function, this is the same
+    as val->used_tables().
+    For the MATCH function, val is the actual MATCH function, and used_tables
+    is the set of tables used in the AGAINST argument.
   */
   table_map used_tables;
   uint key;                  ///< number of index
@@ -566,6 +568,17 @@ struct POSITION {
     }
     prefix_rowcount *= filter_effect;
   }
+
+  void set_suffix_lateral_deps(table_map deps) { m_suffix_lateral_deps = deps; }
+
+  table_map get_suffix_lateral_deps() const { return m_suffix_lateral_deps; }
+
+ private:
+  /**
+     The lateral dependendencies of 'table' and all subsequent JOIN_TABs
+     in the join plan.
+   */
+  table_map m_suffix_lateral_deps;
 };
 
 /**
@@ -761,7 +774,7 @@ void count_field_types(const Query_block *query_block, Temp_table_param *param,
 uint find_shortest_key(TABLE *table, const Key_map *usable_keys);
 
 /* functions from opt_sum.cc */
-bool simple_pred(Item_func *func_item, Item **args, bool *inv_order);
+bool is_simple_predicate(Item_func *func_item, Item **args, bool *inv_order);
 
 enum aggregate_evaluated {
   AGGR_COMPLETE,  // All aggregates were evaluated
@@ -778,7 +791,7 @@ bool optimize_aggregated_query(THD *thd, Query_block *select,
 extern "C" int refpos_order_cmp(const void *arg, const void *a, const void *b);
 
 /// The name of store_key instances that represent constant items.
-constexpr const char *STORE_KEY_CONST_NAME = "const";
+extern const char *STORE_KEY_CONST_NAME;
 
 /// Check privileges for all columns referenced from join expression
 bool check_privileges_for_join(THD *thd, mem_root_deque<TABLE_LIST *> *tables);
@@ -989,5 +1002,63 @@ SJ_TMP_TABLE *create_sj_tmp_table(THD *thd, JOIN *join,
   @return key flags.
  */
 uint actual_key_flags(const KEY *key_info);
+
+/**
+  Check if equality can be used to remove sub-clause of GROUP BY/ORDER BY
+
+  @param func   comparison operator (= or <=>)
+  @param v      variable comparison operand (validated to be equal to
+                                             ordering expression)
+  @param c      other comparison operand (likely to be a constant)
+
+  @returns whether equality determines uniqueness
+
+    Checks if an equality predicate can be used to remove a GROUP BY/ORDER BY
+    sub-clause when it is known to be true for exactly one distinct value
+    (e.g. "expr" == "const").
+    Arguments must be of the same type because e.g. "string_field" = "int_const"
+     may match more than one distinct value from the column.
+ */
+bool equality_determines_uniqueness(const Item_func_comparison *func,
+                                    const Item *v, const Item *c);
+
+/**
+  Check whether equality between two items is exact, ie., there are no implicit
+  casts involved. This is especially important for GROUP BY/ORDER BY, as it
+  means they can be treated interchangeably. The primary difference between this
+  and equality_determines_uniqueness() is that item2 does not need to be
+  a constant (which makes it stricter in other aspects).
+ */
+bool equality_has_no_implicit_casts(const Item_func_comparison *func,
+                                    const Item *item1, const Item *item2);
+
+/**
+  Validates a query that uses the secondary engine
+
+  No validations are done if query has not been prepared against the secondary
+  engine.
+
+  @param lex Parse tree descriptor.
+
+  @return True if error, false otherwise.
+*/
+bool validate_use_secondary_engine(const LEX *lex);
+
+/**
+  Perform query optimizations that are specific to a secondary storage
+  engine.
+
+  @param thd      the current session
+  @return true on error, false on success
+*/
+bool optimize_secondary_engine(THD *thd);
+
+/**
+  Calculates the cost of executing a statement, including all its
+  subqueries and stores it in thd->m_current_query_cost.
+
+  @param lex the statement
+*/
+void accumulate_statement_cost(const LEX *lex);
 
 #endif /* SQL_SELECT_INCLUDED */

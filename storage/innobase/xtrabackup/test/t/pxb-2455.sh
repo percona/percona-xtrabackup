@@ -32,6 +32,8 @@ function restore() {
 
 function do_test() {
 
+  MYSQLD_START_TIMEOUT=1200
+
   mkdir -p $topdir
 
   tar -xf inc/pxb-2455-back.tar.gz  -C $topdir

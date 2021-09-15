@@ -85,3 +85,13 @@ xtrabackup --move-back --target-dir=$topdir/backup1
 
 start_server
 run_cmd verify_db_state test
+
+stop_server
+rm -rf $topdir
+vlog "-- Starting main test with ${KEYRING_TYPE} --"
+test_do "ENCRYPTION='y'" "top-secret" ${KEYRING_TYPE}
+test_do "ENCRYPTION='y' ROW_FORMAT=COMPRESSED" "none"  ${KEYRING_TYPE}
+test_do "ENCRYPTION='y' COMPRESSION='lz4'" "none"  ${KEYRING_TYPE}
+keyring_extra_tests
+
+vlog "-- Finished main test with ${KEYRING_TYPE} --"

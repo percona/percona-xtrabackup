@@ -582,7 +582,7 @@ Options
 .. option:: --kill-long-query-type=all|select
 
    This option specifies which types of queries should be killed to unblock the
-   global lock. Default is "all".
+   global lock. Default is "select".
 
 .. option:: --lock-ddl
 
@@ -605,8 +605,7 @@ Options
    
    .. note::
    
-   As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the
-   `--lock-ddl` option instead.
+         As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the `--lock-ddl` option instead.
 
 .. option:: --lock-ddl-timeout
 

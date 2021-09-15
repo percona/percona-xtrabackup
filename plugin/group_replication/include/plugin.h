@@ -54,6 +54,7 @@
 // Forward declarations
 class Autorejoin_thread;
 class Transaction_consistency_manager;
+class Member_actions_handler;
 
 // Definition of system var structures
 
@@ -112,6 +113,7 @@ struct gr_modules {
     REMOTE_CLONE_HANDLER,
     MESSAGE_SERVICE_HANDLER,
     BINLOG_DUMP_THREAD_KILL,
+    MEMBER_ACTIONS_HANDLER,
     NUM_MODULES
   };
   using mask = std::bitset<NUM_MODULES>;
@@ -155,6 +157,7 @@ extern Group_action_coordinator *group_action_coordinator;
 extern Primary_election_handler *primary_election_handler;
 extern Autorejoin_thread *autorejoin_module;
 extern Message_service_handler *message_service_handler;
+extern Member_actions_handler *member_actions_handler;
 
 // Auxiliary Functionality
 extern Plugin_gcs_events_handler *events_handler;
@@ -190,6 +193,7 @@ void set_auto_increment_handler_values();
 void reset_auto_increment_handler_values(bool force_reset = false);
 SERVICE_TYPE(registry) * get_plugin_registry();
 rpl_sidno get_group_sidno();
+rpl_sidno get_view_change_sidno();
 bool is_autorejoin_enabled();
 uint get_number_of_autorejoin_tries();
 ulonglong get_rejoin_timeout();
@@ -213,6 +217,7 @@ bool get_server_shutdown_status();
 void set_plugin_is_setting_read_mode(bool value);
 bool get_plugin_is_setting_read_mode();
 const char *get_group_name_var();
+const char *get_view_change_uuid_var();
 ulong get_exit_state_action_var();
 ulong get_flow_control_mode_var();
 long get_flow_control_certifier_threshold_var();

@@ -63,6 +63,8 @@
 #include "strings/uca_data.h"
 #include "template_utils.h"
 
+#define MY_UTF8MB3 "utf8"
+
 MY_UCA_INFO my_uca_v400 = {
     UCA_V400,
 
@@ -4081,7 +4083,10 @@ static void copy_ja_han_pages(const CHARSET_INFO *cs, MY_UCA_INFO *dst) {
     return;
   for (int page = MIN_JA_HAN_PAGE; page <= MAX_JA_HAN_PAGE; page++) {
     // In DUCET, weight is not assigned to code points in [U+4E00, U+9FFF].
-    assert(dst->weights[page] == nullptr);
+    // When re-initializing (after my_coll_uninit_uca), the weights
+    // may already be set.
+    assert(dst->weights[page] == nullptr ||
+           dst->weights[page] == ja_han_pages[page - MIN_JA_HAN_PAGE]);
     dst->weights[page] = ja_han_pages[page - MIN_JA_HAN_PAGE];
   }
 }
@@ -4633,7 +4638,7 @@ static int my_prepare_reorder(CHARSET_INFO *cs) {
     return 0;
   /*
     For each group of character, for example, latin characters,
-    their weights are in a seperate range. The default sequence
+    their weights are in a separate range. The default sequence
     of these groups is: Latin, Greek, Coptic, Cyrillic, and so
     on. Some languages want to change the default sequence. For
     example, Croatian wants to put Cyrillic to just behind Latin.

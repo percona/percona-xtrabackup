@@ -100,11 +100,11 @@
 #include "sql/record_buffer.h"  // Record_buffer
 #include "sql/rpl_filter.h"
 #include "sql/rpl_gtid.h"
-#include "sql/rpl_handler.h"  // RUN_HOOK
-#include "sql/rpl_rli.h"      // is_atomic_ddl_commit_on_slave
-#include "sql/rpl_slave_commit_order_manager.h"  // Commit_order_manager
-#include "sql/rpl_write_set_handler.h"           // add_pke
-#include "sql/sdi_utils.h"                       // import_serialized_meta_data
+#include "sql/rpl_handler.h"                       // RUN_HOOK
+#include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
+#include "sql/rpl_rli.h"                // is_atomic_ddl_commit_on_slave
+#include "sql/rpl_write_set_handler.h"  // add_pke
+#include "sql/sdi_utils.h"              // import_serialized_meta_data
 #include "sql/session_tracker.h"
 #include "sql/sql_base.h"  // free_io_cache
 #include "sql/sql_bitmap.h"
@@ -1522,15 +1522,15 @@ std::pair<int, bool> commit_owned_gtids(THD *thd, bool all) {
 
   /*
     If the binary log is disabled for this thread (either by
-    log_bin=0 or sql_log_bin=0 or by log_slave_updates=0 for a
+    log_bin=0 or sql_log_bin=0 or by log_replica_updates=0 for a
     slave thread), then the statement will not be written to
     the binary log. In this case, we should save its GTID into
     mysql.gtid_executed table and @@GLOBAL.GTID_EXECUTED as it
     did when binlog is enabled.
 
     We also skip saving GTID into mysql.gtid_executed table and
-    @@GLOBAL.GTID_EXECUTED when slave-preserve-commit-order is enabled. We skip
-    as GTID will be saved in
+    @@GLOBAL.GTID_EXECUTED when replica-preserve-commit-order is enabled. We
+    skip as GTID will be saved in
     Commit_order_manager::flush_engine_and_signal_threads (invoked from
     Commit_order_manager::wait_and_finish). In particular, there is the
     following call stack under ha_commit_low which save GTID in case its skipped
@@ -1545,7 +1545,7 @@ std::pair<int, bool> commit_owned_gtids(THD *thd, bool all) {
     We also skip saving GTID for intermediate commits i.e. when
     thd->is_operating_substatement_implicitly is enabled.
   */
-  if (thd->is_current_stmt_binlog_log_slave_updates_disabled() &&
+  if (thd->is_current_stmt_binlog_log_replica_updates_disabled() &&
       ending_trans(thd, all) && !thd->is_operating_gtid_table_implicitly &&
       !thd->is_operating_substatement_implicitly) {
     if (!has_commit_order_manager(thd) &&
@@ -1596,7 +1596,7 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
   bool need_clear_owned_gtid = false;
   /*
     Save transaction owned gtid into table before transaction prepare
-    if binlog is disabled, or binlog is enabled and log_slave_updates
+    if binlog is disabled, or binlog is enabled and log_replica_updates
     is disabled with slave SQL thread or slave worker thread.
   */
   std::tie(error, need_clear_owned_gtid) = commit_owned_gtids(thd, all);
@@ -1663,7 +1663,7 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock) {
       error = true;
       my_error(ER_UNKNOWN_ERROR, MYF(0));
     });
-    DBUG_EXECUTE_IF("slave_crash_before_commit", {
+    DBUG_EXECUTE_IF("replica_crash_before_commit", {
       /* This pre-commit crash aims solely at atomic DDL */
       DBUG_SUICIDE();
     });
@@ -1796,7 +1796,7 @@ end:
     thd->server_status &= ~SERVER_STATUS_IN_TRANS;
     /*
       Release the owned GTID when binlog is disabled, or binlog is
-      enabled and log_slave_updates is disabled with slave SQL thread
+      enabled and log_replica_updates is disabled with slave SQL thread
       or slave worker thread.
     */
     if (error)
@@ -1809,7 +1809,7 @@ end:
     }
   }
   if (run_slave_post_commit) {
-    DBUG_EXECUTE_IF("slave_crash_after_commit", DBUG_SUICIDE(););
+    DBUG_EXECUTE_IF("replica_crash_after_commit", DBUG_SUICIDE(););
 
     thd->rli_slave->post_commit(error != 0);
     /*
@@ -1822,7 +1822,7 @@ end:
     */
     thd->server_status &= ~SERVER_STATUS_IN_TRANS;
   } else {
-    DBUG_EXECUTE_IF("slave_crash_after_commit", {
+    DBUG_EXECUTE_IF("replica_crash_after_commit", {
       if (thd->slave_thread && thd->rli_slave &&
           thd->rli_slave->current_event &&
           thd->rli_slave->current_event->get_type_code() ==
@@ -1919,7 +1919,7 @@ int ha_commit_low(THD *thd, bool all, bool run_after_commit) {
     */
     if ((!thd->is_operating_substatement_implicitly &&
          !thd->is_operating_gtid_table_implicitly &&
-         thd->is_current_stmt_binlog_log_slave_updates_disabled() &&
+         thd->is_current_stmt_binlog_log_replica_updates_disabled() &&
          ending_trans(thd, all)) ||
         Commit_order_manager::get_rollback_status(thd)) {
       if (Commit_order_manager::wait(thd)) {
@@ -3048,7 +3048,8 @@ int handler::ha_ft_read(uchar *buf) {
 
 int handler::ha_sample_init(void *&scan_ctx, double sampling_percentage,
                             int sampling_seed,
-                            enum_sampling_method sampling_method) {
+                            enum_sampling_method sampling_method,
+                            const bool tablesample) {
   DBUG_TRACE;
   assert(sampling_percentage >= 0.0);
   assert(sampling_percentage <= 100.0);
@@ -3059,7 +3060,7 @@ int handler::ha_sample_init(void *&scan_ctx, double sampling_percentage,
   m_sampling_percentage = sampling_percentage;
 
   int result = sample_init(scan_ctx, sampling_percentage, sampling_seed,
-                           sampling_method);
+                           sampling_method, tablesample);
   inited = (result != 0) ? NONE : SAMPLING;
   return result;
 }
@@ -3094,7 +3095,7 @@ int handler::ha_sample_next(void *scan_ctx, uchar *buf) {
 }
 
 int handler::sample_init(void *&scan_ctx MY_ATTRIBUTE((unused)), double, int,
-                         enum_sampling_method) {
+                         enum_sampling_method, const bool) {
   return rnd_init(true);
 }
 
@@ -6686,11 +6687,6 @@ int DsMrr_impl::dsmrr_fill_buffer() {
   */
   while ((rowids_buf_cur < rowids_buf_end) &&
          !(res = h2->handler::multi_range_read_next(&range_info))) {
-    KEY_MULTI_RANGE *curr_range = &h2->handler::mrr_cur_range;
-    if (h2->mrr_funcs.skip_index_tuple &&
-        h2->mrr_funcs.skip_index_tuple(h2->mrr_iter, curr_range->ptr))
-      continue;
-
     /* Put rowid, or {rowid, range_id} pair into the buffer */
     h2->position(table->record[0]);
     memcpy(rowids_buf_cur, h2->ref, h2->ref_length);
@@ -7697,6 +7693,53 @@ static int write_locked_table_maps(THD *thd) {
   return 0;
 }
 
+/**
+  The purpose of an instance of this class is to :
+
+  1) Given a TABLE instance, backup the given TABLE::read_set, TABLE::write_set
+     and restore those members upon this instance disposal.
+
+  2) Store a reference to a dynamically allocated buffer and dispose of it upon
+     this instance disposal.
+ */
+
+class Binlog_log_row_cleanup {
+ public:
+  /**
+    This constructor aims to create temporary copies of readset and writeset.
+
+    @param table                 A pointer to TABLE object
+    @param temp_read_bitmap      Temporary BITMAP to store read_set.
+    @param temp_write_bitmap     Temporary BITMAP to store write_set.
+    */
+  Binlog_log_row_cleanup(TABLE &table, MY_BITMAP &temp_read_bitmap,
+
+                         MY_BITMAP &temp_write_bitmap)
+
+      : m_cleanup_table(table),
+        m_cleanup_read_bitmap(temp_read_bitmap),
+        m_cleanup_write_bitmap(temp_write_bitmap) {
+    bitmap_copy(&this->m_cleanup_read_bitmap, this->m_cleanup_table.read_set);
+    bitmap_copy(&this->m_cleanup_write_bitmap, this->m_cleanup_table.write_set);
+  }
+
+  /**
+    This destructor aims to restore the original readset and writeset and
+    delete the temporary copies.
+   */
+  virtual ~Binlog_log_row_cleanup() {
+    bitmap_copy(this->m_cleanup_table.read_set, &this->m_cleanup_read_bitmap);
+    bitmap_copy(this->m_cleanup_table.write_set, &this->m_cleanup_write_bitmap);
+    bitmap_free(&this->m_cleanup_read_bitmap);
+    bitmap_free(&this->m_cleanup_write_bitmap);
+  }
+
+ private:
+  TABLE &m_cleanup_table;  // Creating a TABLE to get access to its members.
+  MY_BITMAP &m_cleanup_read_bitmap;   // Temporary bitmap to store read_set.
+  MY_BITMAP &m_cleanup_write_bitmap;  // Temporary bitmap to store write_set.
+};
+
 int binlog_log_row(TABLE *table, const uchar *before_record,
                    const uchar *after_record, Log_func *log_func) {
   bool error = false;
@@ -7705,15 +7748,34 @@ int binlog_log_row(TABLE *table, const uchar *before_record,
   if (check_table_binlog_row_based(thd, table)) {
     if (thd->variables.transaction_write_set_extraction != HASH_ALGORITHM_OFF) {
       try {
-        if (before_record && after_record) {
-          /* capture both images pke */
-          if (add_pke(table, thd, table->record[0]) ||
-              add_pke(table, thd, table->record[1])) {
-            return HA_ERR_RBR_LOGGING_FAILED;
+        MY_BITMAP save_read_set;
+        MY_BITMAP save_write_set;
+        if (bitmap_init(&save_read_set, NULL, table->s->fields) ||
+            bitmap_init(&save_write_set, NULL, table->s->fields)) {
+          my_error(ER_OUT_OF_RESOURCES, MYF(0));
+          return HA_ERR_RBR_LOGGING_FAILED;
+        }
+
+        Binlog_log_row_cleanup cleanup_sentry(*table, save_read_set,
+                                              save_write_set);
+
+        if (thd->variables.binlog_row_image == 0) {
+          for (uint key_number = 0; key_number < table->s->keys; ++key_number) {
+            if (((table->key_info[key_number].flags & (HA_NOSAME)) ==
+                 HA_NOSAME)) {
+              table->mark_columns_used_by_index_no_reset(key_number,
+                                                         table->read_set);
+              table->mark_columns_used_by_index_no_reset(key_number,
+                                                         table->write_set);
+            }
           }
-        } else {
-          if (add_pke(table, thd, table->record[0])) {
-            return HA_ERR_RBR_LOGGING_FAILED;
+        }
+        std::array<const uchar *, 2> records{after_record, before_record};
+        for (auto rec : records) {
+          if (rec != nullptr) {
+            assert(rec == table->record[0] || rec == table->record[1]);
+            bool res = add_pke(table, thd, rec);
+            if (res) return HA_ERR_RBR_LOGGING_FAILED;
           }
         }
       } catch (const std::bad_alloc &) {

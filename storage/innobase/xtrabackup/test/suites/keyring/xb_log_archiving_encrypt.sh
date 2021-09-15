@@ -4,10 +4,7 @@
 
 require_server_version_higher_than 8.0.16
 
-if [ ${ASAN_OPTIONS:-undefined} != "undefined" ]
-then
-    skip_test "Incompatible with AddressSanitizer"
-fi
+skip_if_asan
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_redo_log_encrypt

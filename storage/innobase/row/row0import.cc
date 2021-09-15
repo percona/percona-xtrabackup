@@ -276,7 +276,7 @@ struct row_import {
 class RecIterator {
  public:
   /** Default constructor */
-  RecIterator() UNIV_NOTHROW {}
+  RecIterator() UNIV_NOTHROW = default;
 
   /** Position the cursor on the first user record. */
   void open(buf_block_t *block) UNIV_NOTHROW {
@@ -333,7 +333,7 @@ class IndexPurge {
   }
 
   /** Descructor */
-  ~IndexPurge() UNIV_NOTHROW {}
+  ~IndexPurge() UNIV_NOTHROW = default;
 
   /** Purge delete marked records.
   @return DB_SUCCESS or error code. */
@@ -600,7 +600,7 @@ struct FetchIndexRootPages : public AbstractCallback {
       : AbstractCallback(trx), m_table(table) UNIV_NOTHROW {}
 
   /** Destructor */
-  ~FetchIndexRootPages() UNIV_NOTHROW override {}
+  ~FetchIndexRootPages() UNIV_NOTHROW override = default;
 
   /**
   @retval the space id of the tablespace being iterated over */
@@ -1367,9 +1367,9 @@ dberr_t row_import::match_schema(THD *thd,
   }
 
   /* Check if the SDI index definitions match */
-  const dict_index_t *index;
 
   if (m_has_sdi) {
+    const dict_index_t *index;
     dict_mutex_enter_for_mysql();
 
     index = dict_sdi_get_index(m_table->space);
@@ -1397,8 +1397,7 @@ dberr_t row_import::match_schema(THD *thd,
   }
 
   /* Check if the index definitions match. */
-  for (index = UT_LIST_GET_FIRST(m_table->indexes); index != nullptr;
-       index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : m_table->indexes) {
     dberr_t index_err;
 
     index_err = match_index_columns(thd, index);
@@ -1500,8 +1499,7 @@ dberr_t row_import::set_root_by_heuristic() UNIV_NOTHROW {
     ++i;
   }
 
-  for (dict_index_t *index = UT_LIST_GET_FIRST(m_table->indexes);
-       index != nullptr; index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : m_table->indexes) {
     if (index->type & DICT_FTS) {
       dict_set_corrupted(index);
       ib::warn(ER_IB_MSG_940) << "Skipping FTS index: " << index->name;
@@ -1615,9 +1613,9 @@ dberr_t row_import::set_instant_info(THD *thd) UNIV_NOTHROW {
 
   new_size = mem_heap_get_size(m_table->heap);
   if (new_size > old_size) {
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
     dict_sys->size += new_size - old_size;
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
   }
 
   if (error == DB_SUCCESS && instants != m_n_instant_cols) {
@@ -1636,8 +1634,11 @@ dberr_t row_import::set_instant_info(THD *thd) UNIV_NOTHROW {
 
   m_table->set_instant_cols(m_table->get_n_user_cols() - m_n_instant_cols);
   ut_ad(m_table->has_instant_cols());
-  m_table->first_index()->instant_cols = true;
-  m_table->first_index()->n_instant_nullable = m_n_instant_nullable;
+  dict_index_t &first_index = *m_table->first_index();
+  first_index.instant_cols = true;
+  first_index.rec_cache.offsets = nullptr;
+  first_index.rec_cache.nullable_cols = 0;
+  first_index.n_instant_nullable = m_n_instant_nullable;
   /* FIXME: Force to discard the table, in case of any rollback later. */
   //	m_table->discard_after_ddl = true;
 
@@ -1745,7 +1746,7 @@ void IndexPurge::purge_pessimistic_delete() UNIV_NOTHROW {
                              dict_table_is_comp(m_index->table)));
 
   btr_cur_pessimistic_delete(&err, FALSE, btr_pcur_get_btr_cur(&m_pcur), 0,
-                             false, 0, 0, 0, &m_mtr);
+                             false, 0, 0, 0, &m_mtr, &m_pcur, nullptr);
 
   ut_a(err == DB_SUCCESS);
 
@@ -2319,8 +2320,7 @@ static void row_import_discard_changes(
   However, we need to ensure that the in memory root page numbers
   are reset to "NULL". */
 
-  for (dict_index_t *index = UT_LIST_GET_FIRST(table->indexes);
-       index != nullptr; index = UT_LIST_GET_NEXT(indexes, index)) {
+  for (auto index : table->indexes) {
     index->page = FIL_NULL;
     index->space = FIL_NULL;
   }
@@ -2559,14 +2559,14 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_import_set_sys_max_row_id(
     /* Update the system row id if the imported index row id is
     greater than the max system row id. */
 
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
 
     if (row_id >= dict_sys->row_id) {
       dict_sys->row_id = row_id + 1;
       dict_hdr_flush_row_id();
     }
 
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
   }
 
   return (DB_SUCCESS);
@@ -3271,7 +3271,8 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
   return (err);
 }
 
-/** Read tablespace flags from @<tablespace@>.cfg file
+/** Read tablespace flags and compression type info from @<tablespace@>.cfg
+file.
 @param[in]	file	File to read from
 @param[in]	thd	session
 @param[in,out]	cfg	meta data
@@ -3293,10 +3294,10 @@ static MY_ATTRIBUTE((nonnull, warn_unused_result)) dberr_t
   cfg->m_has_sdi = FSP_FLAGS_HAS_SDI(space_flags);
 
   if (cfg->m_version >= IB_EXPORT_CFG_VERSION_V6) {
-    /* Read the tablespace flags */
+    /* Read the compression type info. */
     if (fread(value, 1, sizeof(uint8_t), file) != sizeof(uint8_t)) {
       ib_senderrf(thd, IB_LOG_LEVEL_ERROR, ER_IO_READ_ERROR, errno,
-                  strerror(errno), "while reading meta-data tablespace flags.");
+                  strerror(errno), "while reading compression type info.");
 
       return DB_IO_ERROR;
     }

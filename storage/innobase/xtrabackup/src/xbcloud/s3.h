@@ -51,7 +51,7 @@ class S3_signer {
   virtual void sign_request(const std::string &hostname,
                             const std::string &bucket, Http_request &req,
                             time_t t) = 0;
-  virtual ~S3_signer(){};
+  virtual ~S3_signer() {}
 };
 
 class S3_signerV4 : public S3_signer {
@@ -281,7 +281,7 @@ class S3_object_store : public Object_store {
   }
   bool probe_api_version_and_lookup(const std::string &bucket) {
     return s3_client.probe_api_version_and_lookup(bucket);
-  };
+  }
   virtual bool create_container(const std::string &name) override {
     return s3_client.create_bucket(name);
   }

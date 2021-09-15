@@ -45,7 +45,6 @@
 #include <LogBuffer.hpp>
 #include <OutputStream.hpp>
 
-extern EventLogger * g_eventLogger;
 
 #if defined VM_TRACE || defined ERROR_INSERT
 extern int g_errorInsert;
@@ -348,6 +347,13 @@ static int mgmd_main(int argc, char** argv)
 
   if ((ho_error=ndb_opts.handle_options()))
     mgmd_exit(ho_error);
+
+  /**
+    config_filename is set to nullptr when --skip-config-file is specified
+   */
+  if (opts.config_filename == disabled_my_option) {
+    opts.config_filename = nullptr;
+  }
 
   if (opts.interactive ||
       opts.non_interactive ||

@@ -21,6 +21,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 
+#include <time.h>
+
 #include "ConfigManager.hpp"
 #include "MgmtSrvr.hpp"
 #include <NdbDir.hpp>
@@ -36,7 +38,6 @@
 #include <ndb_version.h>
 
 #include <EventLogger.hpp>
-extern EventLogger * g_eventLogger;
 
 extern "C" const char* opt_ndb_connectstring;
 extern "C" int opt_ndb_nodeid;
@@ -707,9 +708,11 @@ ConfigManager::config_ok(const Config* conf)
    * Validation of Port number for management nodes happens only if its not
    * started. validate_port is set to true when node is not started and set
    * to false when node is started.
+   * Validation is also skipped when printing full config.
    */
   bool validate_port = false;
-  if (!m_started.get(m_node_id)) validate_port = true;
+  if (!(m_started.get(m_node_id) || m_opts.print_full_config))
+    validate_port = true;
   if (!m_config_retriever.verifyConfig(conf->m_configuration, m_node_id,
                                        validate_port))
   {

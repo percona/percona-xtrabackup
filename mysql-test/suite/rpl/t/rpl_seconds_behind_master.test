@@ -6,7 +6,7 @@
 
 # this test logics requires adaption to MTS policies for SBM
 # (see rpl_parallel_seconds_behind_master.test)
---source include/not_mts_slave_parallel_workers.inc
+--source include/not_mts_replica_parallel_workers.inc
 
 --source include/master-slave.inc
 
@@ -152,7 +152,7 @@ CREATE TABLE t1 (a INT);
 let $wait_timeout= 60; # Override default of 30 seconds with 60.
 let $show_statement= SHOW PROCESSLIST;
 let $field= State;
-let $condition= = 'Slave has read all relay log; waiting for more updates';
+let $condition= = 'Replica has read all relay log; waiting for more updates';
 -- source include/wait_show_condition.inc
 
 -- let $sbm= query_get_value("SHOW SLAVE STATUS", Seconds_Behind_Master, 1)

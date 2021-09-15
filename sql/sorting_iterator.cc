@@ -65,6 +65,24 @@
 using std::string;
 using std::vector;
 
+// If the table is scanned with a FullTextSearchIterator, tell the
+// corresponding full-text function that it is no longer using an
+// index scan. Used by the sorting iterators when switching the
+// underlying scans to random access mode after the sorting is done
+// and before the iterator above it starts reading the sorted rows.
+static void EndFullTextIndexScan(TABLE *table) {
+  if (table->file->ft_handler != nullptr) {
+    for (Item_func_match &ft_func :
+         *table->pos_in_table_list->query_block->ftfunc_list) {
+      if (ft_func.master == nullptr &&
+          ft_func.ft_handler == table->file->ft_handler) {
+        ft_func.score_from_index_scan = false;
+        break;
+      }
+    }
+  }
+}
+
 SortFileIndirectIterator::SortFileIndirectIterator(
     THD *thd, Mem_root_array<TABLE *> tables, IO_CACHE *tempfile,
     bool ignore_not_found_rows, bool has_null_flags, ha_rows *examined_rows)
@@ -95,12 +113,12 @@ bool SortFileIndirectIterator::Init() {
     // to reset it here.
     table->file->ha_index_or_rnd_end();
 
-    // Item_func_match::val_real() seemingly uses the existence of
-    // table->file->ft_handler as check for whether the match score
-    // is already present (which is the case when scanning the base
-    // table, but not when running this iterator), so we need to
-    // clear it out.
-    table->file->ft_end();
+    // Item_func_match::val_real() needs to know whether the match
+    // score is already present (which is the case when scanning the
+    // base table using a FullTextSearchIterator, but not when
+    // running this iterator), so we need to tell it that it needs
+    // to fetch the score when it's called.
+    EndFullTextIndexScan(table);
 
     int error = table->file->ha_rnd_init(false);
     if (error) {
@@ -118,16 +136,6 @@ bool SortFileIndirectIterator::Init() {
   }
 
   return false;
-}
-
-void SortFileIndirectIterator::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
-  }
 }
 
 static int HandleError(THD *thd, TABLE *table, int error) {
@@ -244,17 +252,6 @@ int SortFileIterator<Packed_addon_fields>::Read() {
 }
 
 template <bool Packed_addon_fields>
-void SortFileIterator<Packed_addon_fields>::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
-  }
-}
-
-template <bool Packed_addon_fields>
 SortBufferIterator<Packed_addon_fields>::SortBufferIterator(
     THD *thd, Mem_root_array<TABLE *> tables, Filesort_info *sort,
     Sort_result *sort_result, ha_rows *examined_rows)
@@ -309,17 +306,6 @@ int SortBufferIterator<Packed_addon_fields>::Read() {
   return 0;
 }
 
-template <bool Packed_addon_fields>
-void SortBufferIterator<Packed_addon_fields>::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
-  }
-}
-
 SortBufferIndirectIterator::SortBufferIndirectIterator(
     THD *thd, Mem_root_array<TABLE *> tables, Sort_result *sort_result,
     bool ignore_not_found_rows, bool has_null_flags, ha_rows *examined_rows)
@@ -350,12 +336,12 @@ bool SortBufferIndirectIterator::Init() {
     // to reset it here.
     table->file->ha_index_or_rnd_end();
 
-    // Item_func_match::val_real() seemingly uses the existence of
-    // table->file->ft_handler as check for whether the match score
-    // is already present (which is the case when scanning the base
-    // table, but not when running this iterator), so we need to
-    // clear it out.
-    table->file->ft_end();
+    // Item_func_match::val_real() needs to know whether the match
+    // score is already present (which is the case when scanning the
+    // base table using a FullTextSearchIterator, but not when
+    // running this iterator), so we need to tell it that it needs
+    // to fetch the score when it's called.
+    EndFullTextIndexScan(table);
 
     int error = table->file->ha_rnd_init(false);
     if (error) {
@@ -408,16 +394,6 @@ int SortBufferIndirectIterator::Read() {
       ++*m_examined_rows;
     }
     return 0;
-  }
-}
-
-void SortBufferIndirectIterator::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
   }
 }
 
@@ -522,6 +498,16 @@ bool SortingIterator::Init() {
   }
 
   return m_result_iterator->Init();
+}
+
+void SortingIterator::SetNullRowFlag(bool is_null_row) {
+  for (TABLE *table : m_filesort->tables) {
+    if (is_null_row) {
+      table->set_null_row();
+    } else {
+      table->reset_null_row();
+    }
+  }
 }
 
 /*

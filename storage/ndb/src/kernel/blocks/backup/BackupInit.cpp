@@ -34,7 +34,6 @@
 #include <Configuration.hpp>
 #include <signaldata/RedoStateRep.hpp>
 #include <EventLogger.hpp>
-extern EventLogger * g_eventLogger;
 
 #define JAM_FILE_ID 472
 
@@ -59,6 +58,7 @@ Backup::Backup(Block_context& ctx,
     addRecSignal(GSN_STTOR, &Backup::execSTTOR);
     addRecSignal(GSN_DUMP_STATE_ORD, &Backup::execDUMP_STATE_ORD);
     addRecSignal(GSN_READ_NODESCONF, &Backup::execREAD_NODESCONF);
+    addRecSignal(GSN_NODE_START_REP, &Backup::execNODE_START_REP, true);
     addRecSignal(GSN_NODE_FAILREP, &Backup::execNODE_FAILREP);
     addRecSignal(GSN_INCL_NODEREQ, &Backup::execINCL_NODEREQ);
     addRecSignal(GSN_CONTINUEB, &Backup::execCONTINUEB);
@@ -561,8 +561,8 @@ void Backup::calculate_real_disk_write_speed_parameters(void)
      * we will remove the adaptiveness of the LCP speed.
      */
     jam();
-    ndbout << "Setting MaxDiskWriteSpeed to MinDiskWriteSpeed since max < min"
-           << endl;
+    g_eventLogger->info(
+        "Setting MaxDiskWriteSpeed to MinDiskWriteSpeed since max < min");
     c_defaults.m_disk_write_speed_max = c_defaults.m_disk_write_speed_min;
   }
 
@@ -575,8 +575,9 @@ void Backup::calculate_real_disk_write_speed_parameters(void)
      * at other nodes restarts.
      */
     jam();
-    ndbout << "MaxDiskWriteSpeed larger than MaxDiskWriteSpeedOtherNodeRestart"
-           << " setting both to MaxDiskWriteSpeed" << endl;
+    g_eventLogger->info(
+        "MaxDiskWriteSpeed larger than MaxDiskWriteSpeedOtherNodeRestart"
+        " setting both to MaxDiskWriteSpeed");
     c_defaults.m_disk_write_speed_max_other_node_restart =
       c_defaults.m_disk_write_speed_max;
   }
@@ -590,9 +591,9 @@ void Backup::calculate_real_disk_write_speed_parameters(void)
      * LCP speed at other nodes restarts.
      */
     jam();
-    ndbout << "Setting MaxDiskWriteSpeedOwnRestart to "
-           << " MaxDiskWriteSpeedOtherNodeRestart since it was smaller"
-           << endl;
+    g_eventLogger->info(
+        "Setting MaxDiskWriteSpeedOwnRestart to "
+        "MaxDiskWriteSpeedOtherNodeRestart since it was smaller");
     c_defaults.m_disk_write_speed_max_own_restart =
       c_defaults.m_disk_write_speed_max_other_node_restart;
   }

@@ -327,7 +327,7 @@ void MetadataRecover::apply() {
       continue;
     }
 
-    mutex_enter(&dict_sys->mutex);
+    dict_sys_mutex_enter();
 
     /* At this time, the metadata in DDTableBuffer has
     already been applied to table object, we can apply
@@ -353,8 +353,9 @@ void MetadataRecover::apply() {
       the list */
       if (!buffered) {
         ut_ad(!table->in_dirty_dict_tables_list);
-
+#ifndef UNIV_HOTBACKUP
         UT_LIST_ADD_LAST(dict_persist->dirty_dict_tables, table);
+#endif
       }
 
       table->dirty_status.store(METADATA_DIRTY);
@@ -372,7 +373,7 @@ void MetadataRecover::apply() {
     }
 
     mutex_exit(&dict_persist->mutex);
-    mutex_exit(&dict_sys->mutex);
+    dict_sys_mutex_exit();
 
     dd_table_close(table, nullptr, nullptr, false);
   }
@@ -452,13 +453,13 @@ static void recv_sys_finish() {
   }
 
   ut_free(recv_sys->buf);
-  ut_free(recv_sys->last_block_buf_start);
+  ut::aligned_free(recv_sys->last_block);
   UT_DELETE(recv_sys->metadata_recover);
 
   recv_sys->buf = nullptr;
   recv_sys->spaces = nullptr;
   recv_sys->metadata_recover = nullptr;
-  recv_sys->last_block_buf_start = nullptr;
+  recv_sys->last_block = nullptr;
 }
 
 /** Release recovery system mutexes. */
@@ -619,11 +620,8 @@ void recv_sys_init(ulint max_mem) {
   recv_sys->apply_batch_on = false;
   recv_sys->is_cloned_db = false;
 
-  recv_sys->last_block_buf_start =
-      static_cast<byte *>(ut_malloc_nokey(2 * OS_FILE_LOG_BLOCK_SIZE));
-
   recv_sys->last_block = static_cast<byte *>(
-      ut_align(recv_sys->last_block_buf_start, OS_FILE_LOG_BLOCK_SIZE));
+      ut::aligned_alloc(OS_FILE_LOG_BLOCK_SIZE, OS_FILE_LOG_BLOCK_SIZE));
 
   recv_sys->found_corrupt_log = false;
   recv_sys->found_corrupt_fs = false;
@@ -2409,7 +2407,7 @@ static void recv_add_to_hash_table(mlog_id_t type, space_id_t space_id,
     recv_addr->page_no = page_no;
     recv_addr->state = RECV_NOT_PROCESSED;
 
-    UT_LIST_INIT(recv_addr->rec_list, &recv_t::rec_list);
+    UT_LIST_INIT(recv_addr->rec_list);
 
     using Value = recv_sys_t::Pages::value_type;
 
@@ -2642,8 +2640,7 @@ void recv_recover_page_func(
   lsn_t start_lsn = 0;
   bool modification_to_page = false;
 
-  for (auto recv = UT_LIST_GET_FIRST(recv_addr->rec_list); recv != nullptr;
-       recv = UT_LIST_GET_NEXT(rec_list, recv)) {
+  for (auto recv : recv_addr->rec_list) {
 #ifndef UNIV_HOTBACKUP
     end_lsn = recv->end_lsn;
 
@@ -3584,18 +3581,14 @@ bool meb_read_log_encryption(IORequest &encryption_request,
                              byte *encryption_info) {
   space_id_t log_space_id = dict_sys_t::s_log_space_first_id;
   const page_id_t page_id(log_space_id, 0);
-  byte *log_block_buf_ptr;
   byte *log_block_buf;
   byte key[Encryption::KEY_LEN];
   byte iv[Encryption::KEY_LEN];
   fil_space_t *space = fil_space_get(log_space_id);
   dberr_t err;
 
-  log_block_buf_ptr =
-      static_cast<byte *>(ut_malloc_nokey(2 * OS_FILE_LOG_BLOCK_SIZE));
-  memset(log_block_buf_ptr, 0, 2 * OS_FILE_LOG_BLOCK_SIZE);
-  log_block_buf =
-      static_cast<byte *>(ut_align(log_block_buf_ptr, OS_FILE_LOG_BLOCK_SIZE));
+  log_block_buf = static_cast<byte *>(
+      ut::aligned_zalloc(OS_FILE_LOG_BLOCK_SIZE, OS_FILE_LOG_BLOCK_SIZE));
 
   if (encryption_info != nullptr) {
     /* encryption info was given as a parameter */
@@ -3615,8 +3608,10 @@ bool meb_read_log_encryption(IORequest &encryption_request,
              Encryption::MAGIC_SIZE) == 0) {
     encryption_request = IORequestLogRead;
 
+    Encryption_key e_key{key, iv};
     if (Encryption::decode_encryption_info(
-            key, iv, log_block_buf + LOG_HEADER_CREATOR_END, true)) {
+            log_space_id, e_key, log_block_buf + LOG_HEADER_CREATOR_END,
+            true)) {
       /* If redo log encryption is enabled, set the
       space flag. Otherwise, we just fill the encryption
       information to space object for decrypting old
@@ -3628,7 +3623,7 @@ bool meb_read_log_encryption(IORequest &encryption_request,
         ib::info(ER_IB_MSG_1239) << "Read redo log encryption"
                                  << " metadata successful.";
       } else {
-        ut_free(log_block_buf_ptr);
+        ut::aligned_free(log_block_buf);
         ib::error(ER_IB_MSG_1240) << "Can't set redo log tablespace"
                                   << " encryption metadata.";
         return (false);
@@ -3639,7 +3634,7 @@ bool meb_read_log_encryption(IORequest &encryption_request,
 
       encryption_request.encryption_algorithm(Encryption::AES);
     } else {
-      ut_free(log_block_buf_ptr);
+      ut::aligned_free(log_block_buf);
       ib::error(ER_IB_MSG_1241) << "Cannot read the encryption"
                                    " information in log file header, please"
                                    " check if keyring is loaded.";
@@ -3647,7 +3642,7 @@ bool meb_read_log_encryption(IORequest &encryption_request,
     }
   }
 
-  ut_free(log_block_buf_ptr);
+  ut::aligned_free(log_block_buf);
   return (true);
 }
 #endif /* UNIV_HOTBACKUP */
@@ -4069,7 +4064,11 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
 
   ut_d(log.first_block_is_correct_for_lsn = recovered_lsn);
 
-  log_start(log, checkpoint_no + 1, checkpoint_lsn, recovered_lsn);
+  /* Disallow checkpoints until recovery is finished, and changes gathered
+  in recv_sys->recovered_metadata (srv_dict_metadata) are transferred to
+  dict_table_t objects (happens in srv0start.cc). */
+
+  log_start(log, checkpoint_no + 1, checkpoint_lsn, recovered_lsn, false);
 
   /* Copy the checkpoint info to the log; remember that we have
   incremented checkpoint_no by one, and the info will not be written
@@ -4102,6 +4101,9 @@ MetadataRecover *recv_recovery_from_checkpoint_finish(log_t &log,
   ensure that when we enable sync_order_checks there is no
   mutex currently held by any thread. */
   mutex_enter(&recv_sys->writer_mutex);
+
+  /* Restore state. */
+  if (recv_sys->is_meb_recovery) dblwr::enabled = recv_sys->dblwr_state;
 
   /* Free the resources of the recovery system */
   recv_recovery_on = false;

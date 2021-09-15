@@ -62,7 +62,7 @@ class Temp_table_param;
   accesses, cf. #Window::m_frame_buffer_positions.
 */
 enum class Window_retrieve_cached_row_reason {
-  WONT_UPDATE_HINT = -1,  // special value when using restore_special_record
+  WONT_UPDATE_HINT = -1,  // special value when using restore_special_row
   FIRST_IN_PARTITION = 0,
   CURRENT = 1,
   FIRST_IN_FRAME = 2,
@@ -140,7 +140,7 @@ class Window {
     (At least) one window function needs the cardinality of the partition of
     the current row to evaluate the wf for the current row
   */
-  bool m_needs_card;
+  bool m_needs_partition_cardinality;
 
   /**
     The functions are optimizable with ROW unit. For example SUM is, MAX is
@@ -345,7 +345,12 @@ class Window {
 
   /**
      Keys for m_frame_buffer_cache and m_special_rows_cache, for special
-     rows.
+     rows (see the comment on m_special_row_cache). Note that they are negative,
+     so that they will never collide with actual row numbers in the frame.
+     This allows us to treat them interchangeably with real row numbers
+     as function arguments; e.g., bring_back_frame_row() can restore either
+     a “normal” row from the frame, or one of the special rows, and does not
+     need to take in separate flags for the two.
   */
   enum Special_keys {
     /**
@@ -371,9 +376,10 @@ class Window {
   Temp_table_param *m_frame_buffer_param;
 
   /**
-    Execution state: Holds the temporary output table (for next step) parameters
+    Holds whether this window should be “short-circuit”, ie., goes directly
+    to the query output instead of to a temporary table.
   */
-  Temp_table_param *m_outtable_param;
+  bool m_short_circuit = false;
 
   /**
     Execution state: used iff m_needs_frame_buffering. Holds the TABLE
@@ -410,7 +416,10 @@ class Window {
 
   /**
     Holds a fixed number of copies of special rows; each copy can use up to
-    #m_special_rows_cache_max_length bytes.
+    #m_special_rows_cache_max_length bytes. Special rows are those that are
+    not part of our frame, but that we need to store away nevertheless, because
+    they might be in the table's buffers, which we need for our own purposes
+    during window processing.
     cf. the Special_keys enumeration.
   */
   uchar *m_special_rows_cache;
@@ -605,7 +614,7 @@ class Window {
         m_needs_frame_buffering(false),
         m_needs_peerset(false),
         m_needs_last_peer_in_frame(false),
-        m_needs_card(false),
+        m_needs_partition_cardinality(false),
         m_row_optimizable(true),
         m_range_optimizable(true),
         m_static_aggregates(false),
@@ -616,7 +625,6 @@ class Window {
         m_ancestor(nullptr),
         m_tmp_pos(nullptr, -1),
         m_frame_buffer_param(nullptr),
-        m_outtable_param(nullptr),
         m_frame_buffer(nullptr),
         m_frame_buffer_total_rows(0),
         m_frame_buffer_partition_offset(0),
@@ -859,8 +867,8 @@ class Window {
   */
   bool at_partition_border() const { return m_partition_border; }
 
-  void save_special_record(uint64 special_rowno, TABLE *t);
-  void restore_special_record(uint64 special_rowno, uchar *record);
+  void save_special_row(uint64 special_rowno, TABLE *t);
+  void restore_special_row(uint64 special_rowno, uchar *record);
 
   /**
     Resolve any named window to its definition
@@ -1002,7 +1010,9 @@ class Window {
     some window function(s) on this window,
     @returns true if that is the case, else false
   */
-  bool needs_card() const { return m_needs_card; }
+  bool needs_partition_cardinality() const {
+    return m_needs_partition_cardinality;
+  }
 
   /**
     Return true if the set of window functions are all ROW unit optimizable.
@@ -1077,15 +1087,10 @@ class Window {
   */
   void set_frame_buffer(TABLE *tab) { m_frame_buffer = tab; }
 
-  /**
-   Getter for m_outtable_param, q.v.
-   */
-  Temp_table_param *outtable_param() const { return m_outtable_param; }
-
-  /**
-   Setter for m_outtable_param, q.v.
-   */
-  void set_outtable_param(Temp_table_param *p) { m_outtable_param = p; }
+  bool short_circuit() const { return m_short_circuit; }
+  void set_short_circuit(bool short_circuit) {
+    m_short_circuit = short_circuit;
+  }
 
   /**
     Getter for m_part_row_number, q.v., the current row number within the

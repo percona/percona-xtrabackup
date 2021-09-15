@@ -112,8 +112,8 @@ class Keystone_client {
 /* Not used */
 class Swift_signer {
  public:
-  void sign_request(std::string, std::string &, Http_request &, time_t){};
-  ~Swift_signer(){};
+  void sign_request(std::string, std::string &, Http_request &, time_t) {}
+  ~Swift_signer() {}
 };
 
 class Swift_client {
@@ -198,7 +198,7 @@ class Swift_client {
 
   ulong get_max_backoff() { return max_backoff; }
 
-  void retry_error(Http_response *resp, bool *retry){};
+  void retry_error(Http_response *resp, bool *retry) {}
 
   /* Not used */
   std::string hostname(const std::string &not_used) const { return host; }

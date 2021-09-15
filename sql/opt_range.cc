@@ -2073,7 +2073,7 @@ class TRP_SKIP_SCAN : public TABLE_READ_PLAN {
     records = read_records;
   }
 
-  ~TRP_SKIP_SCAN() override {}
+  ~TRP_SKIP_SCAN() override = default;
 
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc) override;
@@ -9110,7 +9110,7 @@ static ha_rows check_quick_select(PARAM *param, uint idx, bool index_only,
                                   Cost_estimate *cost) {
   Sel_arg_range_sequence seq(param);
   RANGE_SEQ_IF seq_if = {sel_arg_range_seq_init, sel_arg_range_seq_next,
-                         nullptr, nullptr};
+                         nullptr};
   handler *file = param->table->file;
   ha_rows rows;
   uint keynr = param->real_keynr[idx];
@@ -9985,7 +9985,7 @@ int QUICK_RANGE_SELECT::reset() {
     empty_buf.buffer = empty_buf.buffer_end = empty_buf.end_of_used_area =
         nullptr;
 
-  RANGE_SEQ_IF seq_funcs = {quick_range_seq_init, quick_range_seq_next, nullptr,
+  RANGE_SEQ_IF seq_funcs = {quick_range_seq_init, quick_range_seq_next,
                             nullptr};
   error =
       file->multi_range_read_init(&seq_funcs, this, ranges.size(), mrr_flags,
@@ -11458,7 +11458,7 @@ static bool check_group_min_max_predicates(Item *cond,
         memset(args, 0, 3 * sizeof(Item *));
         bool inv;
         /* Test if this is a comparison of a field and a constant. */
-        if (!simple_pred(pred, args, &inv)) return false;
+        if (!is_simple_predicate(pred, args, &inv)) return false;
 
         /* Check for compatible string comparisons - similar to get_mm_leaf. */
         if (args[0] && args[1] && !args[2] &&  // this is a binary function

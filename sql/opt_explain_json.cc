@@ -223,7 +223,7 @@ class context : public Explain_context {
           context *parent_arg)
       : Explain_context(type_arg), name(name_arg), parent(parent_arg) {}
 
-  virtual ~context() {}
+  virtual ~context() = default;
 
   /**
     Pass the node with its child nodes to a JSON formatter
@@ -1216,8 +1216,7 @@ class window_ctx : public join_ctx {
         // Make him notice the top-to-bottom order of execution of windows:
         if (w->is_last()) to.add(K_WINDOW_LAST_EXECUTED, true);
       }
-      if (!w->outtable_param()->m_window_short_circuit)
-        to.add(K_USING_TMP_TABLE, true);
+      if (!w->short_circuit()) to.add(K_USING_TMP_TABLE, true);
       if (w->needs_sorting()) {
         obj->add(K_USING_FILESORT, true);
         Opt_trace_array sort_order(json, K_FILESORT_KEY);

@@ -46,13 +46,9 @@ The following procedure reorders the steps:
 
 * The MDL lock acquired at the beginning of the backup
 
-* Scan the redo logs. An ``MLOG_INDEX_LOAD`` event may be recorded if
-a ``CREATE INDEX`` statement has occurred before the backup starts. At this
-time, the backup process is safe and can parse and accept the event.
+* Scan the redo logs. An ``MLOG_INDEX_LOAD`` event may be recorded if a ``CREATE INDEX`` statement has occurred before the backup starts. At this time, the backup process is safe and can parse and accept the event.
 
-* After the first scan has completed, the follow redo log thread is
-initiated. This thread stops the backup process if an ``MLOG_INDEX_LOAD``
-event is found.
+* After the first scan has completed, the follow redo log thread is initiated. This thread stops the backup process if an ``MLOG_INDEX_LOAD`` event is found.
 
 * Gather the tablespace list to copy
 
@@ -63,8 +59,7 @@ Other Improvements
 
 The following improvements have been added:
 
-* If the ``.ibd`` file belongs to a temporary table, the ``SELECT`` query
-is skipped.
+* If the ``.ibd`` file belongs to a temporary table, the ``SELECT`` query is skipped.
 
 * For a FullText Index, an MDL is acquired on the base table.
 

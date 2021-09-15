@@ -108,6 +108,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "read_filt.h"
 #include "redo_log.h"
 #include "space_map.h"
+#include "utils.h"
 #include "write_filt.h"
 #include "wsrep.h"
 #include "xb0xb.h"
@@ -190,6 +191,12 @@ static regex_list_t regex_exclude_list;
 
 static hash_table_t *tables_include_hash = NULL;
 static hash_table_t *tables_exclude_hash = NULL;
+
+/* map of schema name and schema id */
+static std::map<std::string, uint64> dd_schema_map;
+
+/* map of <schema id, name> and SDI id*/
+static std::map<std::pair<int, std::string>, uint64> dd_table_map;
 
 char *xtrabackup_databases = NULL;
 char *xtrabackup_databases_file = NULL;
@@ -1154,7 +1161,7 @@ struct my_option xb_client_options[] = {
 
     {"kill-long-query-type", OPT_KILL_LONG_QUERY_TYPE,
      "This option specifies which types of queries should be killed to "
-     "unblock the global lock. Default is \"all\".",
+     "unblock the global lock. Default is \"SELECT\".",
      (uchar *)&opt_kill_long_query_type, (uchar *)&opt_kill_long_query_type,
      &query_type_typelib, GET_ENUM, REQUIRED_ARG, QUERY_TYPE_SELECT, 0, 0, 0, 0,
      0},
@@ -2156,11 +2163,110 @@ error:
   return (TRUE);
 }
 
+/** Scan the SDI id from DD table "mysql.tables"
+@param[in]  name       tablespace name database/name
+@param[out] sdi_id     id of table
+@param[out] table_name name of the table
+@param[in]  thd        THD */
+static dberr_t get_id_from_dd_scan(const std::string &name, uint64 *id,
+                                   std::string &table_name, THD *thd) {
+  std::string db_name;
+  uint64 schema_id = 0;
+
+  /* get the database and table_name from space name */
+  dict_name::get_table(name, db_name, table_name);
+
+  ut_ad(db_name.compare("mysql") != 0);
+
+  /* map of schema name and id built from scanning mysql/schemata and map of
+  <schema id, name> and SDI id built from scanning mysql/tables */
+  if (dd_schema_map.size() == 0 && dd_table_map.size() == 0) {
+    dict_table_t *sys_tables = nullptr;
+    btr_pcur_t pcur;
+    const rec_t *rec = nullptr;
+    mtr_t mtr;
+    MDL_ticket *mdl = nullptr;
+    mem_heap_t *heap = mem_heap_create(1000);
+    mutex_enter(&(dict_sys->mutex));
+
+    mtr_start(&mtr);
+    rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/schemata",
+                              &sys_tables);
+    while (rec) {
+      uint64 rec_schema_id;
+      std::string rec_name;
+
+      dd_process_schema_rec(heap, rec, sys_tables, &mtr, &rec_name,
+                            &rec_schema_id);
+      dd_schema_map.insert(std::make_pair(rec_name, rec_schema_id));
+      mem_heap_empty(heap);
+
+      mtr_start(&mtr);
+      rec = (rec_t *)dd_getnext_system_rec(&pcur, &mtr);
+    }
+
+    mtr_commit(&mtr);
+    dd_table_close(sys_tables, thd, &mdl, true);
+    mem_heap_empty(heap);
+
+    mtr_start(&mtr);
+
+    rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/tables",
+                              &sys_tables);
+
+    while (rec) {
+      uint64 rec_schema_id;
+      std::string rec_name;
+      uint64 rec_id;
+
+      dd_process_dd_tables_rec(heap, rec, sys_tables, &mtr, &rec_schema_id,
+                               &rec_name, &rec_id);
+      mem_heap_empty(heap);
+
+      auto rec_table_id = std::make_pair(rec_schema_id, rec_name);
+
+      dd_table_map.insert(
+          std::make_pair(std::make_pair(rec_schema_id, rec_name), rec_id));
+
+      mtr_start(&mtr);
+      rec = (rec_t *)dd_getnext_system_rec(&pcur, &mtr);
+    }
+
+    mtr_commit(&mtr);
+    dd_table_close(sys_tables, thd, &mdl, true);
+    mem_heap_free(heap);
+
+    mutex_exit(&(dict_sys->mutex));
+  }
+
+  schema_id = dd_schema_map[db_name];
+
+  ut_ad(schema_id != 0);
+  if (schema_id == 0) {
+    msg("xtrabackup: can't find %s entry in mysql/schemata for tablespace %s\n",
+        db_name.c_str(), name.c_str());
+    return (DB_NOT_FOUND);
+  }
+
+  *id = dd_table_map[std::make_pair(schema_id, table_name)];
+
+  ut_ad(*id != 0);
+  if (id == 0) {
+    msg("xtrabackup: can't find %s entry in mysql/tables for tablespace %s\n",
+        table_name.c_str(), name.c_str());
+    return (DB_NOT_FOUND);
+  }
+  return (DB_SUCCESS);
+}
+
 dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
                                        ib_trx_t trx) {
   sdi_vector_t sdi_vector;
   ib_sdi_vector_t ib_vector;
   ib_vector.sdi_vector = &sdi_vector;
+  uint64 sdi_id = 0;
+
+  fil_space_t *space = fil_space_get(space_id);
 
   if (!fsp_has_sdi(space_id)) {
     return (DB_SUCCESS);
@@ -2178,6 +2284,23 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
     goto error;
   }
 
+  /* Before 8.0.24 if the table is used in EXCHANGE PARTITION or IMPORT. Even
+  after upgrade to the latest version 8.0.25 (which fixed the duplicate SDI
+  issue), such tables continue to contain duplicate SDI. PXB will scan the DD
+  table "mysql.tables" to determine the correct SDI */
+  if (ib_vector.sdi_vector->m_vec.size() > 2 &&
+      strcmp(space->name, "mysql") != 0 &&
+      fsp_is_file_per_table(space_id, space->flags)) {
+    std::string table_name;
+    err = get_id_from_dd_scan(space->name, &sdi_id, table_name, thd);
+    msg("duplicate SDI found for tablespace %s. To remove duplicate SDI, "
+        "please execute OPTIMIZE TABLE on %s\n",
+        space->name, table_name.c_str());
+    if (err != DB_SUCCESS) {
+      goto error;
+    }
+  }
+
   for (sdi_container::iterator it = ib_vector.sdi_vector->m_vec.begin();
        it != ib_vector.sdi_vector->m_vec.end(); it++) {
     ib_sdi_key_t ib_key;
@@ -2185,6 +2308,16 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
     uint32_t compressed_sdi_len = compressed_buf_len;
     uint32_t uncompressed_sdi_len = uncompressed_buf_len;
+
+    if (ib_key.sdi_key->type != 1 /* dd::Sdi_type::TABLE */) {
+      continue;
+    }
+
+    /* In case of duplicate SDIs, sdi_id is the latest id according to DD, so we
+    skip other dd::Table SDIs in the IBD file */
+    if (sdi_id != 0 && ib_key.sdi_key->id != sdi_id) {
+      continue;
+    }
 
     while (true) {
       err = ib_sdi_get(space_id, &ib_key, compressed_sdi, &compressed_sdi_len,
@@ -2212,10 +2345,6 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
                                   compressed_sdi_len);
     decompressor.decompress();
 
-    if (ib_key.sdi_key->type != 1 /* dd::Sdi_type::TABLE */) {
-      continue;
-    }
-
     using Table_Ptr = std::unique_ptr<dd::Table>;
 
     Table_Ptr dd_table{dd::create_object<dd::Table>()};
@@ -2238,7 +2367,6 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
     dict_table_t *ib_table = nullptr;
 
-    fil_space_t *space = fil_space_get(space_id);
     ut_a(space != nullptr);
 
     bool implicit = fsp_is_file_per_table(space_id, space->flags);
@@ -2282,7 +2410,7 @@ static void xb_scan_for_tablespaces() {
   }
 }
 
-static void dict_load_from_spaces_sdi() {
+static dberr_t dict_load_from_spaces_sdi() {
   fil_open_ibds();
 
   my_thread_init();
@@ -2298,10 +2426,26 @@ static void dict_load_from_spaces_sdi() {
     return (DB_SUCCESS);
   });
 
-  for (auto space_id : space_ids) {
-    if (!fsp_is_ibd_tablespace(space_id)) continue;
-    dict_load_tables_from_space_id(space_id, thd, trx);
+  /* Load mysql tablespace to open mysql/tables and mysql/schemata which is
+  need to find the right key for tablespace in case of duplicate sdi */
+  dberr_t err =
+      dict_load_tables_from_space_id(dict_sys_t::s_dict_space_id, thd, trx);
+
+  if (err == DB_SUCCESS) {
+    for (auto space_id : space_ids) {
+      if (!fsp_is_ibd_tablespace(space_id) ||
+          space_id == dict_sys_t::s_dict_space_id) {
+        continue;
+      }
+      err = dict_load_tables_from_space_id(space_id, thd, trx);
+      if (err != DB_SUCCESS) {
+        break;
+      }
+    }
   }
+
+  dd_schema_map.clear();
+  dd_table_map.clear();
 
   ib_trx_commit(trx);
   ib_trx_release(trx);
@@ -2309,6 +2453,7 @@ static void dict_load_from_spaces_sdi() {
   destroy_thd(thd);
 
   my_thread_end();
+  return err;
 }
 
 static bool innodb_init(bool init_dd, bool for_apply_log) {
@@ -2334,7 +2479,6 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
       to_lsn = incremental_last_lsn < incremental_to_lsn ? incremental_to_lsn
                                                          : incremental_last_lsn;
     }
-
   }
 
   err = srv_start(false, to_lsn);
@@ -2346,7 +2490,10 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
   }
 
   if (init_dd) {
-    dict_load_from_spaces_sdi();
+    err = dict_load_from_spaces_sdi();
+    if (err != DB_SUCCESS) {
+      goto error;
+    }
     if (dict_sys->dynamic_metadata == nullptr)
       dict_sys->dynamic_metadata =
           dd_table_open_on_name(NULL, NULL, "mysql/innodb_dynamic_metadata",
@@ -2882,7 +3029,6 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
   const char *const node_path = node->name;
 
   bool is_system = !fsp_is_ibd_tablespace(node->space->id);
-
 
   if (!is_system && check_if_skip_table(node_name)) {
     msg("[%02u] Skipping %s.\n", thread_n, node_name);
@@ -3783,6 +3929,8 @@ static void init_mysql_environment() {
   mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_sql_rand, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_keyring_operations,
                    MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(PSI_NOT_INSTRUMENTED, &LOCK_replica_list,
+                   MY_MUTEX_INIT_FAST);
 
   Srv_session::module_init();
 
@@ -3817,6 +3965,7 @@ static void cleanup_mysql_environment() {
   mysql_mutex_destroy(&LOCK_global_system_variables);
   mysql_mutex_destroy(&LOCK_sql_rand);
   mysql_mutex_destroy(&LOCK_keyring_operations);
+  mysql_mutex_destroy(&LOCK_replica_list);
 }
 
 void xtrabackup_backup_func(void) {
@@ -6461,6 +6610,8 @@ skip_check:
     goto error_cleanup;
   }
 
+  if (!xtrabackup::utils::read_server_uuid()) goto error_cleanup;
+
   if (opt_transition_key) {
     if (!xb_tablespace_keys_load(xtrabackup_incremental, opt_transition_key,
                                  strlen(opt_transition_key))) {
@@ -6469,8 +6620,8 @@ skip_check:
       goto error_cleanup;
     }
   } else {
-    if(!xtrabackup::components::keyring_init_offline())
-    {
+    /* Initialize keyrings */
+    if (!xtrabackup::components::keyring_init_offline()) {
       msg("xtrabackup: Error: failed to init keyring component\n");
       goto error_cleanup;
     }
@@ -6767,6 +6918,15 @@ skip_check:
     if (innodb_init(false, false)) goto error;
 
     if (innodb_end()) goto error;
+    /*
+     * we cannot generate encrypted redo log without keyring access.
+     * For redo log, we only have un-encrypted key/iv but don't have original
+     * encrypted version. Copy it from xtrabackup_logfile to the newly created
+     * redo log file header.
+     */
+    if (use_dumped_tablespace_keys && srv_redo_log_encrypt) {
+      if (!copy_redo_encryption_info()) goto error_cleanup;
+    }
 
     innodb_free_param();
   }

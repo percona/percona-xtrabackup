@@ -178,7 +178,7 @@ ConfigGenerator::ConfigGenerator(std::ostream &out_stream,
 {
 }
 
-ConfigGenerator::~ConfigGenerator() {}
+ConfigGenerator::~ConfigGenerator() = default;
 
 // throws std::logic_error, std::runtime_error, Error(runtime_error)
 /*static*/
@@ -2823,7 +2823,7 @@ uint16_t get_x_protocol_port(const mysql_harness::Config &conf,
 
     try {
       return get_tcp_port(bind_port_str);
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
       log_warning("get_x_protocol_port: invalid x port = '%s' in section '%s'",
                   bind_port_str.c_str(), section->get_section_name().c_str());
       continue;

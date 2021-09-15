@@ -128,8 +128,8 @@
 #include "sql/records.h"  // unique_ptr_destroy_only<RowIterator>
 #include "sql/row_iterator.h"
 #include "sql/rpl_gtid.h"
-#include "sql/rpl_rli.h"                         // rli_slave etc
-#include "sql/rpl_slave_commit_order_manager.h"  // Commit_order_manager
+#include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
+#include "sql/rpl_rli.h"                           // rli_slave etc
 #include "sql/session_tracker.h"
 #include "sql/sorting_iterator.h"
 #include "sql/sql_alter.h"
@@ -1378,6 +1378,7 @@ static bool collect_fk_names(THD *thd, const char *db,
 }
 
 bool rm_table_do_discovery_and_lock_fk_tables(THD *thd, TABLE_LIST *tables) {
+  MEM_ROOT mdl_reqs_root(key_memory_rm_db_mdl_reqs_root, MEM_ROOT_BLOCK_SIZE);
   MDL_request_list mdl_requests;
 
   for (TABLE_LIST *table = tables; table; table = table->next_local) {
@@ -1418,6 +1419,16 @@ bool rm_table_do_discovery_and_lock_fk_tables(THD *thd, TABLE_LIST *tables) {
 
     const dd::Table *table_def =
         dynamic_cast<const dd::Table *>(abstract_table_def);
+
+    /*
+      Ensure that we don't hold memory used by MDL_requests after locks
+      have been acquired. This reduces memory usage in cases when we have
+      DROP DATABASE tha needs to drop lots of different objects.
+    */
+    MEM_ROOT *save_thd_mem_root = thd->mem_root;
+    auto restore_thd_mem_root =
+        create_scope_guard([&]() { thd->mem_root = save_thd_mem_root; });
+    thd->mem_root = &mdl_reqs_root;
 
     if (collect_fk_parents_for_all_fks(thd, table_def, nullptr, MDL_EXCLUSIVE,
                                        &mdl_requests, nullptr))
@@ -2722,6 +2733,9 @@ static bool secondary_engine_unload_table(THD *thd, const char *db_name,
   @param[in,out] safe_to_release_mdl  Under LOCK TABLES set of metadata locks
                                       on tables dropped which is safe to
                                       release after DROP operation.
+  @param        foreach_table_root MEM_ROOT which can be used for allocating
+                                   objects which lifetime is limited to dropping
+                                   of single table.
 
   @sa mysql_rm_table_no_locks().
 
@@ -2733,7 +2747,8 @@ static bool drop_base_table(THD *thd, const Drop_tables_ctx &drop_ctx,
                             TABLE_LIST *table, bool atomic,
                             std::set<handlerton *> *post_ddl_htons,
                             Foreign_key_parents_invalidator *fk_invalidator,
-                            std::vector<MDL_ticket *> *safe_to_release_mdl) {
+                            std::vector<MDL_ticket *> *safe_to_release_mdl,
+                            MEM_ROOT *foreach_table_root) {
   char path[FN_REFLEN + 1];
 
   /* Check that we have an exclusive lock on the table to be dropped. */
@@ -2888,8 +2903,18 @@ static bool drop_base_table(THD *thd, const Drop_tables_ctx &drop_ctx,
                              table->table_name, "",
                              table->internal_tmp_table ? FN_IS_TMP : 0);
 
+  /*
+    Use memory root that is freed right after table processing for allocating
+    dummy handler object for calling handler::delete_table() in order to avoid
+    gobbling up memory when lots of tables are deleted.
+  */
+  MEM_ROOT *save_thd_mem_root = thd->mem_root;
+  thd->mem_root = foreach_table_root;
+
   int error = ha_delete_table(thd, hton, path, table->db, table->table_name,
                               table_def, !drop_ctx.drop_database);
+
+  thd->mem_root = save_thd_mem_root;
 
   /*
     Table was present in data-dictionary but is missing in storage engine.
@@ -2982,7 +3007,15 @@ static bool drop_base_table(THD *thd, const Drop_tables_ctx &drop_ctx,
   bool result = dd::drop_table(thd, table->db, table->table_name, *table_def);
 
   if (!atomic) result = trans_intermediate_ddl_commit(thd, result);
-  result |= update_referencing_views_metadata(thd, table, !atomic, nullptr);
+
+  /*
+    In DROP DATABASE we can safely skip updating dependent views belonging
+    to the same database if we know that they will be dropped atomically
+    with our table.
+  */
+  result |= mark_referencing_views_invalid(thd, table,
+                                           (drop_ctx.drop_database && atomic),
+                                           !atomic, foreach_table_root);
 
   return result;
 }
@@ -3112,6 +3145,9 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
     default_db_doesnt_exist = !exists;
   }
 
+  MEM_ROOT foreach_table_root(key_memory_rm_table_foreach_root,
+                              MEM_ROOT_BLOCK_SIZE);
+
   if (drop_ctx.has_base_non_atomic_tables()) {
     /*
       Handle base tables in storage engines which don't support atomic DDL.
@@ -3132,7 +3168,7 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
     */
     for (TABLE_LIST *table : drop_ctx.base_non_atomic_tables) {
       if (drop_base_table(thd, drop_ctx, table, false /* non-atomic */, nullptr,
-                          nullptr, safe_to_release_mdl))
+                          nullptr, safe_to_release_mdl, &foreach_table_root))
         goto err_with_rollback;
 
       *dropped_non_atomic_flag = true;
@@ -3220,6 +3256,7 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
           committed earlier.
         */
       }
+      free_root(&foreach_table_root, MYF(MY_MARK_BLOCKS_FREE));
     }
   }
 
@@ -3244,9 +3281,10 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
     for (TABLE_LIST *table : drop_ctx.base_atomic_tables) {
       if (drop_base_table(thd, drop_ctx, table, true /* atomic */,
                           post_ddl_htons, fk_invalidator,
-                          &safe_to_release_mdl_atomic)) {
+                          &safe_to_release_mdl_atomic, &foreach_table_root)) {
         goto err_with_rollback;
       }
+      free_root(&foreach_table_root, MYF(MY_MARK_BLOCKS_FREE));
     }
 
     DBUG_EXECUTE_IF("rm_table_no_locks_abort_after_atomic_tables", {
@@ -3266,15 +3304,20 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
       if (thd->dd_client()->acquire(table->db, table->table_name, &view))
         goto err_with_rollback;
 
-      if (thd->dd_client()->drop(view) ||
-          update_referencing_views_metadata(thd, table, false, nullptr))
-        goto err_with_rollback;
-
       /*
-        No need to log anything since we drop views here only if called by
-        DROP DATABASE implementation.
+        Since we drop views here only if called by DROP DATABASE:
+        - We can safely skip marking depending views as invalid if they
+          belong to the same database.
+        - No need to log anything.
       */
       assert(drop_ctx.drop_database);
+
+      if (thd->dd_client()->drop(view) ||
+          mark_referencing_views_invalid(thd, table, true, false,
+                                         &foreach_table_root))
+        goto err_with_rollback;
+
+      free_root(&foreach_table_root, MYF(MY_MARK_BLOCKS_FREE));
     }
 
 #ifndef NDEBUG
@@ -10128,7 +10171,7 @@ static bool alter_table_drop_histograms(THD *thd, TABLE_LIST *table,
       res = histograms::drop_all_histograms(thd, *table, *original_table_def,
                                             results);
     else
-      res = histograms::drop_histograms(thd, *table, columns, results);
+      res = histograms::drop_histograms(thd, *table, columns, false, results);
 
     DBUG_EXECUTE_IF("fail_after_drop_histograms", {
       my_error(ER_UNABLE_TO_DROP_COLUMN_STATISTICS, MYF(0), "dummy_column",
@@ -11581,7 +11624,8 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
         Note: strcmp branch is to be removed in future when we fix it
         in InnoDB.
       */
-      if (ha_alter_info->create_info->db_type->db_type == DB_TYPE_INNODB)
+      if (ha_alter_info->create_info->db_type->db_type == DB_TYPE_INNODB ||
+          ha_alter_info->create_info->db_type->db_type == DB_TYPE_NDBCLUSTER)
         field_renamed = strcmp(field->field_name, new_field->field_name);
       else
         field_renamed = my_strcasecmp(system_charset_info, field->field_name,
@@ -13027,6 +13071,15 @@ static bool mysql_inplace_alter_table(
       goto rollback;
     }
 
+    // Upgrade to EXCLUSIVE before commit.
+    if (wait_while_table_is_used(thd, table, HA_EXTRA_PREPARE_FOR_RENAME))
+      goto rollback;
+
+    if (collect_and_lock_fk_tables_for_complex_alter_table(
+            thd, table_list, table_def, alter_ctx, alter_info, db_type, db_type,
+            fk_invalidator))
+      goto rollback;
+
     /*
       Check if this is an ALTER command that will cause histogram statistics to
       become invalid. If that is the case; remove the histogram statistics.
@@ -13036,15 +13089,6 @@ static bool mysql_inplace_alter_table(
     if (alter_table_drop_histograms(thd, table_list, ha_alter_info->alter_info,
                                     ha_alter_info->create_info, columns,
                                     table_def, altered_table_def))
-      goto rollback;
-
-    // Upgrade to EXCLUSIVE before commit.
-    if (wait_while_table_is_used(thd, table, HA_EXTRA_PREPARE_FOR_RENAME))
-      goto rollback;
-
-    if (collect_and_lock_fk_tables_for_complex_alter_table(
-            thd, table_list, table_def, alter_ctx, alter_info, db_type, db_type,
-            fk_invalidator))
       goto rollback;
 
     /*
@@ -13259,7 +13303,7 @@ static bool mysql_inplace_alter_table(
 
     /*
       It allows saving GTID and invoking commit order, except when
-      slave-preserve-commit-order is enabled and OPTIMIZE TABLE command
+      replica-preserve-commit-order is enabled and OPTIMIZE TABLE command
       is getting executed. The exception for OPTIMIZE TABLE command is
       because if it does enter commit order here and at the same time
       any operation on the table which is getting optimized is done,
@@ -16193,6 +16237,8 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
                                        thd->variables.lock_wait_timeout))
       return true;
 
+    DEBUG_SYNC(thd, "alter_table_after_mdl_lock_fk");
+
     /*
       If we are executing ALTER TABLE RENAME under LOCK TABLES we also need
       to check that all previously orphan tables which reference new table
@@ -17928,7 +17974,7 @@ static int copy_data_between_tables(
         if (def->field == from->found_next_number_field)
           thd->variables.sql_mode |= MODE_NO_AUTO_VALUE_ON_ZERO;
       }
-      (copy_end++)->set(*ptr, def->field, false);
+      (copy_end++)->set(*ptr, def->field);
     } else {
       /*
         New column. Add it to the array of columns requiring value
@@ -19231,6 +19277,7 @@ bool lock_check_constraint_names_for_rename(THD *thd, const char *db,
 
 bool lock_check_constraint_names(THD *thd, TABLE_LIST *tables) {
   DBUG_TRACE;
+  MEM_ROOT mdl_reqs_root(key_memory_rm_db_mdl_reqs_root, MEM_ROOT_BLOCK_SIZE);
   MDL_request_list mdl_requests;
 
   for (TABLE_LIST *table = tables; table != nullptr;
@@ -19251,6 +19298,16 @@ bool lock_check_constraint_names(THD *thd, TABLE_LIST *tables) {
     const dd::Table *table_def =
         dynamic_cast<const dd::Table *>(abstract_table_def);
     assert(table_def != nullptr);
+
+    /*
+      Ensure that we don't hold memory used by MDL_requests after locks
+      have been acquired. This reduces memory usage in cases when we have
+      DROP DATABASE tha needs to drop lots of different objects.
+    */
+    MEM_ROOT *save_thd_mem_root = thd->mem_root;
+    auto restore_thd_mem_root =
+        create_scope_guard([&]() { thd->mem_root = save_thd_mem_root; });
+    thd->mem_root = &mdl_reqs_root;
 
     for (auto &cc : table_def->check_constraints()) {
       if (push_check_constraint_mdl_request_to_list(

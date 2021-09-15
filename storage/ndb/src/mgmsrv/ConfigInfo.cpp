@@ -23,6 +23,9 @@
 */
 
 #include <ndb_global.h>
+#include <cstring>
+
+#include <time.h>
 
 #include "ConfigInfo.hpp"
 #include <mgmapi_config_parameters.h>
@@ -401,7 +404,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_SUBSCRIBERS,
     "MaxNoOfSubscribers",
     DB_TOKEN,
-    "Max no of subscribers (default 0 == 2 * MaxNoOfTables)",
+    "Max no of subscribers "
+    "(default 0 == 2 * MaxNoOfTables + 2 * 'number of API nodes')",
     ConfigInfo::CI_USED,
     false,
     ConfigInfo::CI_INT,
@@ -3561,6 +3565,17 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      "false", "true"
    },
 
+  {
+      CFG_CONNECTION_PREFER_IP_VER,
+      "PreferIPVersion",
+      "TCP",
+      "Indicate DNS resolver preference for IP version 4 or 6 ",
+      ConfigInfo::CI_USED,
+      false,
+      ConfigInfo::CI_INT,
+      "4", "4", "6"   // default=4, min=4, max=6
+  },
+
   /****************************************************************************
    * SHM
    ***************************************************************************/
@@ -6476,11 +6491,27 @@ check_node_vs_replicas(Vector<ConfigInfo::ConfigRuleSection>&sections,
   ctx.m_userProperties.get("NoOfReplicas", &replicas);
 
   /**
+   * For replicas=1, Number of Datanodes allowed < Maximum Nodegroups
+   */
+  if (replicas == 1)
+  {
+    Uint32 n_db_nodes;
+    require(ctx.m_userProperties.get("DB", &n_db_nodes));
+    if (n_db_nodes > MAX_NDB_NODE_GROUPS)
+    {
+      ctx.reportError(
+          "Too many Datanodes(%d) for replicas=1, Max Nodes allowed: %d",
+          n_db_nodes, MAX_NDB_NODE_GROUPS);
+      return false;
+    }
+  }
+
+  /**
    * Register user supplied values
    */
-  Uint8 ng_cnt[MAX_NDB_NODES];
+  Uint8 ng_cnt[MAX_NDB_NODE_GROUPS];
   Bitmask<(MAX_NDB_NODES+31)/32> nodes_wo_ng;
-  bzero(ng_cnt, sizeof(ng_cnt));
+  std::memset(ng_cnt, 0, sizeof(ng_cnt));
 
   for (i= 0, n= 0; n < n_nodes; i++)
   {
@@ -6503,10 +6534,11 @@ check_node_vs_replicas(Vector<ConfigInfo::ConfigRuleSection>&sections,
         {
           continue;
         }
-        else if (ng >= MAX_NDB_NODES)
+        else if (ng >= MAX_NDB_NODE_GROUPS)
         {
-          ctx.reportError("Invalid nodegroup %u for node %u",
-                          ng, id);
+          ctx.reportError(
+              "Invalid nodegroup %u for node %u, Max nodegroups allowed: %d",
+              ng, id, MAX_NDB_NODE_GROUPS);
           return false;
         }
         ng_cnt[ng]++;
@@ -6544,7 +6576,7 @@ check_node_vs_replicas(Vector<ConfigInfo::ConfigRuleSection>&sections,
   /**
    * Check node vs replicas
    */
-  for (i = 0; i<MAX_NDB_NODES; i++)
+  for (i = 0; i<MAX_NDB_NODE_GROUPS; i++)
   {
     if (ng_cnt[i] != 0 && ng_cnt[i] != (Uint8)replicas)
     {

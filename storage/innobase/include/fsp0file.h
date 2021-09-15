@@ -85,7 +85,6 @@ class Datafile {
         m_flags(),
         m_exists(),
         m_is_valid(),
-        m_first_page_buf(),
         m_first_page(),
         m_atomic_write(),
         m_filepath(),
@@ -93,7 +92,8 @@ class Datafile {
         m_file_info(),
         m_encryption_key(),
         m_encryption_iv(),
-        m_encryption_op_in_progress(NONE) {
+        m_encryption_op_in_progress(NONE),
+        m_encryption_master_key_id(0) {
     m_handle.m_file = OS_FILE_CLOSED;
   }
 
@@ -108,7 +108,6 @@ class Datafile {
         m_flags(flags),
         m_exists(),
         m_is_valid(),
-        m_first_page_buf(),
         m_first_page(),
         m_atomic_write(),
         m_filepath(),
@@ -116,7 +115,8 @@ class Datafile {
         m_file_info(),
         m_encryption_key(),
         m_encryption_iv(),
-        m_encryption_op_in_progress(NONE) {
+        m_encryption_op_in_progress(NONE),
+        m_encryption_master_key_id(0) {
     ut_ad(m_name != nullptr);
     m_handle.m_file = OS_FILE_CLOSED;
     /* No op */
@@ -132,14 +132,14 @@ class Datafile {
         m_flags(file.m_flags),
         m_exists(file.m_exists),
         m_is_valid(file.m_is_valid),
-        m_first_page_buf(),
         m_first_page(),
         m_atomic_write(file.m_atomic_write),
         m_last_os_error(),
         m_file_info(),
         m_encryption_key(),
         m_encryption_iv(),
-        m_encryption_op_in_progress(NONE) {
+        m_encryption_op_in_progress(NONE),
+        m_encryption_master_key_id(0) {
     m_name = mem_strdup(file.m_name);
     ut_ad(m_name != nullptr);
 
@@ -190,11 +190,11 @@ class Datafile {
 
     /* Do not make a copy of the first page,
     it should be reread if needed */
-    m_first_page_buf = nullptr;
     m_first_page = nullptr;
     m_encryption_key = nullptr;
     m_encryption_iv = nullptr;
     m_encryption_op_in_progress = NONE;
+    m_encryption_master_key_id = 0;
 
     m_atomic_write = file.m_atomic_write;
 
@@ -478,9 +478,6 @@ class Datafile {
   bool m_is_valid;
 
   /** Buffer to hold first page */
-  byte *m_first_page_buf;
-
-  /** Pointer to the first page held in the buffer above */
   byte *m_first_page;
 
   /** true if atomic writes enabled for this file */
@@ -513,5 +510,8 @@ class Datafile {
 
   /** Encryption operation in progress */
   encryption_op_type m_encryption_op_in_progress;
+
+  /** Master key id read from first page */
+  uint32_t m_encryption_master_key_id;
 };
 #endif /* fsp0file_h */

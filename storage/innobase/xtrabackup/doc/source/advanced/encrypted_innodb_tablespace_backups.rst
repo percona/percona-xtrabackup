@@ -127,17 +127,19 @@ Using the ``keyring_file`` component
 
 A component is not loaded with the ``--early_plugin_load`` option. The server uses a manifest to load the component and the component has its own configuration file. See `component installation <https://dev.mysql.com/doc/refman/8.0/en/keyring-component-installation.html>`__ for more information.
 
-The following is an example of a manifest and a configuration file:
+An example of a manifest and a configuration file follows:
 
-.. sourcecode:: JSON
+./bin/mysqld.my:
 
-   ./bin/mysqld.my:
+.. code-block:: json
 
    { 
       "components": "file://component_keyring_file" 
    }
 
-   /lib/plugin/component_keyring_file.cnf:
+/lib/plugin/component_keyring_file.cnf:
+
+.. code-block:: json
 
    { 
       "path": "/var/lib/mysql-keyring/keyring_file", "read_only": false 

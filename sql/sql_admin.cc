@@ -74,9 +74,9 @@
 #include "sql/protocol_classic.h"
 #include "sql/rpl_group_replication.h"  // is_group_replication_running
 #include "sql/rpl_gtid.h"
-#include "sql/rpl_slave_commit_order_manager.h"  // Commit_order_manager
-#include "sql/sp.h"                              // Sroutine_hash_entry
-#include "sql/sp_rcontext.h"                     // sp_rcontext
+#include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
+#include "sql/sp.h"                                // Sroutine_hash_entry
+#include "sql/sp_rcontext.h"                       // sp_rcontext
 #include "sql/sql_alter.h"
 #include "sql/sql_alter_instance.h"  // Alter_instance
 #include "sql/sql_backup_lock.h"     // acquire_shared_backup_lock
@@ -303,7 +303,8 @@ bool Sql_cmd_analyze_table::drop_histogram(THD *thd, TABLE_LIST *table,
 
   for (const auto column : get_histogram_fields())
     fields.emplace(column->ptr(), column->length());
-  return histograms::drop_histograms(thd, *table, fields, results);
+
+  return histograms::drop_histograms(thd, *table, fields, true, results);
 }
 
 /**
@@ -1342,7 +1343,7 @@ static bool mysql_admin_table(
       /*
         It allows saving GTID and invoking commit order i.e. set
         thd->is_operating_substatement_implicitly = false, when
-        slave-preserve-commit-order is enabled and any of OPTIMIZE TABLE,
+        replica-preserve-commit-order is enabled and any of OPTIMIZE TABLE,
         ANALYZE TABLE and REPAIR TABLE command is getting executed,
         otherwise saving GTID and invoking commit order is disabled.
       */
@@ -1711,7 +1712,7 @@ class Alter_instance_reload_tls : public Alter_instance {
     if (!res) my_ok(m_thd);
     return res;
   }
-  ~Alter_instance_reload_tls() override {}
+  ~Alter_instance_reload_tls() override = default;
 
  protected:
   bool match_channel_name() {

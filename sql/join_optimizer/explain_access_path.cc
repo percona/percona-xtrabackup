@@ -28,6 +28,7 @@
 #include "sql/filesort.h"
 #include "sql/hash_join_iterator.h"
 #include "sql/item_sum.h"
+#include "sql/join_optimizer/relational_expression.h"
 #include "sql/opt_range.h"
 #include "sql/ref_row_iterators.h"
 #include "sql/sorting_iterator.h"
@@ -96,6 +97,7 @@ static string JoinTypeToString(JoinType join_type) {
 static string HashJoinTypeToString(RelationalExpression::Type join_type) {
   switch (join_type) {
     case RelationalExpression::INNER_JOIN:
+    case RelationalExpression::STRAIGHT_INNER_JOIN:
       return "Inner hash join";
     case RelationalExpression::LEFT_JOIN:
       return "Left hash join";
@@ -103,8 +105,6 @@ static string HashJoinTypeToString(RelationalExpression::Type join_type) {
       return "Hash antijoin";
     case RelationalExpression::SEMIJOIN:
       return "Hash semijoin";
-    case RelationalExpression::CARTESIAN_PRODUCT:
-      return "Hash cartesian product";
     default:
       assert(false);
       return "<error>";
@@ -446,10 +446,6 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
         str += ", with index condition: " +
                ItemToString(table->file->pushed_idx_cond);
       }
-      if (path->mrr().cache_idx_cond != nullptr) {
-        str += ", with dependent index condition: " +
-               ItemToString(path->mrr().cache_idx_cond);
-      }
       str += table->file->explain_extra();
       description.push_back(move(str));
       AddChildrenFromPushedCondition(table, &children);
@@ -538,7 +534,10 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       break;
     case AccessPath::HASH_JOIN: {
       const JoinPredicate *predicate = path->hash_join().join_predicate;
-      string ret = HashJoinTypeToString(predicate->expr->type);
+      RelationalExpression::Type type = path->hash_join().rewrite_semi_to_inner
+                                            ? RelationalExpression::INNER_JOIN
+                                            : predicate->expr->type;
+      string ret = HashJoinTypeToString(type);
 
       if (predicate->expr->equijoin_conditions.empty()) {
         ret.append(" (no condition)");
@@ -701,10 +700,10 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
         children.push_back({child.path, "", child.join});
       }
       break;
-    case AccessPath::WINDOWING: {
+    case AccessPath::WINDOW: {
       string buf;
-      if (path->windowing().needs_buffering) {
-        Window *window = path->windowing().temp_table_param->m_window;
+      if (path->window().needs_buffering) {
+        Window *window = path->window().temp_table_param->m_window;
         if (window->optimizable_row_aggregates() ||
             window->optimizable_range_aggregates() ||
             window->static_aggregates()) {
@@ -718,7 +717,7 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
 
       bool first = true;
       for (const Func_ptr &func :
-           *(path->windowing().temp_table_param->items_to_copy)) {
+           *(path->window().temp_table_param->items_to_copy)) {
         if (func.func()->m_is_window_function) {
           if (!first) {
             buf += ", ";
@@ -728,7 +727,7 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
         }
       }
       description.push_back(move(buf));
-      children.push_back({path->windowing().child});
+      children.push_back({path->window().child});
       break;
     }
     case AccessPath::WEEDOUT: {
@@ -752,10 +751,22 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       children.push_back({path->weedout().child});
       break;
     }
-    case AccessPath::REMOVE_DUPLICATES:
-      description.push_back(string("Remove duplicates from input sorted on ") +
-                            path->remove_duplicates().key->name);
+    case AccessPath::REMOVE_DUPLICATES: {
+      string ret = "Remove duplicates from input grouped on ";
+      for (int i = 0; i < path->remove_duplicates().group_items_size; ++i) {
+        if (i != 0) {
+          ret += ", ";
+        }
+        ret += ItemToString(path->remove_duplicates().group_items[i]);
+      }
+      description.push_back(std::move(ret));
       children.push_back({path->remove_duplicates().child});
+      break;
+    }
+    case AccessPath::REMOVE_DUPLICATES_ON_INDEX:
+      description.push_back(string("Remove duplicates from input sorted on ") +
+                            path->remove_duplicates_on_index().key->name);
+      children.push_back({path->remove_duplicates_on_index().child});
       break;
     case AccessPath::ALTERNATIVE: {
       const TABLE *table =

@@ -103,8 +103,7 @@ typedef ib_uint64_t bitmap_word_t;
  Calculate a bitmap block checksum.  Algorithm borrowed from
  log_block_calc_checksum.
  @return checksum */
-UNIV_INLINE
-ulint log_online_calc_checksum(
+static inline ulint log_online_calc_checksum(
     /*=====================*/
     const byte *block); /*!<in: bitmap block */
 
@@ -138,8 +137,7 @@ static int log_online_compare_bmp_keys(
  Calculate a bitmap block checksum.  Algorithm borrowed from
  log_block_calc_checksum.
  @return checksum */
-UNIV_INLINE
-ulint log_online_calc_checksum(
+static inline ulint log_online_calc_checksum(
     /*=====================*/
     const byte *block) /*!<in: bitmap block */
 {

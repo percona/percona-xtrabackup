@@ -113,7 +113,7 @@ class Aggregator {
 
  public:
   Aggregator(Item_sum *arg) : item_sum(arg) {}
-  virtual ~Aggregator() {}
+  virtual ~Aggregator() = default;
 
   enum Aggregator_type { SIMPLE_AGGREGATOR, DISTINCT_AGGREGATOR };
   virtual Aggregator_type Aggrtype() = 0;
@@ -739,7 +739,7 @@ class Item_sum : public Item_func {
     we may need the last row in the partition in the frame buffer to be able
     to evaluate LEAD.
   */
-  virtual bool needs_card() const { return false; }
+  virtual bool needs_partition_cardinality() const { return false; }
 
   /**
     Common initial actions for window functions. For non-buffered processing
@@ -1111,6 +1111,10 @@ class Item_sum_hybrid_field : public Item_result_field {
         pointer_cast<Check_function_as_value_generator_parameters *>(args);
     func_arg->banned_function_name = func_name();
     return true;
+  }
+  void cleanup() override {
+    field = nullptr;
+    Item_result_field::cleanup();
   }
 };
 
@@ -1910,7 +1914,7 @@ class Item_udf_sum : public Item_sum {
     udf.m_original = false;
   }
   ~Item_udf_sum() override {
-    if (udf.is_initialized()) udf.free_handler();
+    if (udf.m_original && udf.is_initialized()) udf.free_handler();
   }
 
   bool itemize(Parse_context *pc, Item **res) override;
@@ -2182,7 +2186,7 @@ class Item_func_group_concat final : public Item_sum {
   The subclasses can be divided in two disjoint sub-categories:
      - one-pass
      - two-pass (requires partition cardinality to be evaluated)
-  cf. method needs_card.
+  cf. method needs_partition_cardinality.
 */
 class Item_non_framing_wf : public Item_sum {
   typedef Item_sum super;
@@ -2323,7 +2327,7 @@ class Item_cume_dist : public Item_non_framing_wf {
   bool check_wf_semantics1(THD *thd, Query_block *select,
                            Window_evaluation_requirements *reqs) override;
 
-  bool needs_card() const override { return true; }
+  bool needs_partition_cardinality() const override { return true; }
   void clear() override {}
   longlong val_int() override;
   double val_real() override;
@@ -2363,7 +2367,7 @@ class Item_percent_rank : public Item_non_framing_wf {
 
   bool check_wf_semantics1(THD *thd, Query_block *select,
                            Window_evaluation_requirements *reqs) override;
-  bool needs_card() const override { return true; }
+  bool needs_partition_cardinality() const override { return true; }
 
   void clear() override;
   longlong val_int() override;
@@ -2407,7 +2411,7 @@ class Item_ntile : public Item_non_framing_wf {
   bool check_wf_semantics2(Window_evaluation_requirements *reqs) override;
   Item_result result_type() const override { return INT_RESULT; }
   void clear() override {}
-  bool needs_card() const override { return true; }
+  bool needs_partition_cardinality() const override { return true; }
 };
 
 /**
@@ -2469,7 +2473,7 @@ class Item_lead_lag : public Item_non_framing_wf {
   bool get_time(MYSQL_TIME *ltime) override;
   bool val_json(Json_wrapper *wr) override;
 
-  bool needs_card() const override {
+  bool needs_partition_cardinality() const override {
     /*
       A possible optimization here: if LAG, we are only interested in rows we
       have already seen, so we might compute the result without reading the

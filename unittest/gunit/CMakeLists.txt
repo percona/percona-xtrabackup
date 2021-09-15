@@ -20,7 +20,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-IF(NOT GMOCK_FOUND OR NOT WITH_UNIT_TESTS)
+IF(NOT WITH_UNIT_TESTS)
   RETURN()
 ENDIF()
 
@@ -83,6 +83,9 @@ SET_TARGET_PROPERTIES(gunit_small
 )
 IF(MY_COMPILER_IS_SUNPRO)
   TARGET_COMPILE_OPTIONS(gunit_small PRIVATE $<$<CONFIG:RelWithDebInfo>:-xO4>)
+  # Segfaults in EXPECT_EQ(TYPE_OK, set_field_to_null(field));
+  # unless we switch off optimization.
+  ADD_COMPILE_FLAGS(item_json_func-t.cc COMPILE_FLAGS "-xO0")
 ENDIF()
 
 # Several "small" unit tests got 'missing symbol client_errors'
@@ -122,14 +125,17 @@ ADD_DEFINITIONS(-DDATA_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 # Add tests (link them with gunit/gmock libraries)
 SET(TESTS
   alignment
-  bounds_checked_array
   bitmap
-  charset_bug28956360
+  bounds_checked_array
   byteorder
   calloc
+  charset_bug28956360
+  charset_bug32788301
+  collation_loader
   cost_estimate
   dbug
   decimal
+  dns_srv_data
   dphyp
   dynarray
   filesort_buffer
@@ -144,11 +150,15 @@ SET(TESTS
   m_string
   mdl
   mem_root_deque
+  my_alloc
   my_bitmap
   my_error
   my_fileutils
+  my_gcvt
   my_murmur3
+  my_rcu_lock
   my_thread
+  my_timer
   mysys_base64
   mysys_lf
   mysys_my_b_vprintf
@@ -159,10 +169,10 @@ SET(TESTS
   mysys_my_malloc
   mysys_my_pwrite
   mysys_my_rdtsc
+  mysys_my_read
   mysys_my_symlink
   mysys_my_time
   mysys_my_write
-  mysys_my_read
   mysys_pathfuncs
   nullable
   opt_recperkey
@@ -170,30 +180,26 @@ SET(TESTS
   pattern_matcher
   prealloced_array
   priority_queue
+  pump_object_filter
   record_buffer
-  stream_cipher
   sql_class_header
   sql_list
   sql_plist
   sql_string
   stl_alloc
+  stream_cipher
   strings_skip_trailing
   strings_strnxfrm
   strings_utf8
   strings_valid_check
+  strtod
   strtoll
-  thread_utils
-  my_timer
   template_utils
+  thread_utils
   timespec
-  my_alloc
-  pump_object_filter
+  unhex
   val_int_compare
   varlen_sort
-  collation_loader
-  my_rcu_lock
-  unhex
-  dns_srv_data
   )
 
 SET(ALL_SMALL_TESTS)
@@ -216,11 +222,14 @@ SET(SERVER_TESTS
   dd_string_type
   dd_table
   debug_sync
+  decoy_user
   explain_filename
   field
   get_diagnostics
   gis_algos
   gis_area
+  gis_buffer
+  gis_difference
   gis_distance
   gis_frechet_distance
   gis_geometries
@@ -230,7 +239,9 @@ SET(SERVER_TESTS
   gis_line_interpolate_point
   gis_relops
   gis_rtree_support
+  gis_setops
   gis_srs
+  gis_union
   gis_wkb_parser
   gis_wkb_writer
   handler
@@ -239,13 +250,14 @@ SET(SERVER_TESTS
   hypergraph_optimizer
   initialize_password
   insert_delayed
+  interesting_orders
   into_syntax
   item
   item_filter
   item_func_case
   item_func_now_local
-  item_json_func
   item_func_regexp
+  item_json_func
   item_like
   item_timefunc
   join_syntax
@@ -255,8 +267,8 @@ SET(SERVER_TESTS
   json_path
   locking_clause_syntax
   locking_service
-  log_timestamp
   log_throttle
+  log_timestamp
   make_sortkey
   mdl_sync
   my_decimal
@@ -273,11 +285,12 @@ SET(SERVER_TESTS
   security_context
   segfault
   select_lex_visitor
+  sha2_password
   sql_table
   subquery_syntax
   table_cache
-  table_list
   table_factor_syntax
+  table_list
   tc_log_mmap
   temptable_allocator
   temptable_storage
@@ -286,8 +299,6 @@ SET(SERVER_TESTS
   unique
   value_map
   wild_case_compare
-  sha2_password
-  decoy_user
 )
 
 IF(WIN32)
@@ -361,6 +372,11 @@ IF(HAVE_NO_BUILTIN_MEMCMP)
     COMPILE_FLAGS "-fno-builtin-memcmp"
     )
 ENDIF()
+
+ADD_COMPILE_FLAGS(
+  hash_join-t.cc
+  COMPILE_FLAGS -I${CMAKE_SOURCE_DIR}/extra/lz4 -I${BUNDLED_LZ4_PATH}
+  )
 
 FOREACH(test ${SERVER_TESTS})
   SET(SRC_FILES ${test}-t.cc)

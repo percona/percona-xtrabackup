@@ -261,8 +261,8 @@ void lock_sys_resize(ulint n_cells);
 void lock_sys_close(void);
 /** Gets the heap_no of the smallest user record on a page.
  @return heap_no of smallest user record, or PAGE_HEAP_NO_SUPREMUM */
-UNIV_INLINE
-ulint lock_get_min_heap_no(const buf_block_t *block); /*!< in: buffer block */
+static inline ulint lock_get_min_heap_no(
+    const buf_block_t *block); /*!< in: buffer block */
 /** Updates the lock table when we have reorganized a page. NOTE: we copy
  also the locks set on the infimum of the page; the infimum may carry
  locks if an update of a record is occurring on the page, and its locks
@@ -647,19 +647,16 @@ void lock_remove_all_on_table(
  searching for a lock in the hash table.
  @param  page_id    specifies the page
  @return folded value */
-UNIV_INLINE
-ulint lock_rec_fold(const page_id_t page_id);
+static inline ulint lock_rec_fold(const page_id_t page_id);
 
 /** Calculates the hash value of a page file address: used in inserting or
 searching for a lock in the hash table.
 @param  page_id    specifies the page
 @return hashed value */
-UNIV_INLINE
-ulint lock_rec_hash(const page_id_t &page_id);
+static inline ulint lock_rec_hash(const page_id_t &page_id);
 
 /** Get the lock hash table */
-UNIV_INLINE
-hash_table_t *lock_hash_get(ulint mode); /*!< in: lock mode */
+static inline hash_table_t *lock_hash_get(ulint mode); /*!< in: lock mode */
 
 /** Looks for a set bit in a record lock bitmap. Returns ULINT_UNDEFINED,
  if none found.
@@ -688,10 +685,10 @@ bool lock_has_to_wait(const lock_t *lock1,  /*!< in: waiting lock */
 @param[in] rec User record
 @param[in] index Index
 @param[in] offsets Rec_get_offsets(rec, index)
-@param[in] max_trx_id Trx_sys_get_max_trx_id() */
+@param[in] next_trx_id value received from trx_sys_get_next_trx_id_or_no() */
 void lock_report_trx_id_insanity(trx_id_t trx_id, const rec_t *rec,
                                  const dict_index_t *index,
-                                 const ulint *offsets, trx_id_t max_trx_id);
+                                 const ulint *offsets, trx_id_t next_trx_id);
 
 /** Prints info of locks for all transactions.
 @param[in]  file   file where to print */
@@ -828,9 +825,6 @@ void lock_unlock_table_autoinc(trx_t *trx); /*!< in/out: transaction */
  the wait lock.
  @return DB_DEADLOCK, DB_LOCK_WAIT or DB_SUCCESS */
 dberr_t lock_trx_handle_wait(trx_t *trx); /*!< in/out: trx lock state */
-/** Initialise the trx lock list. */
-void lock_trx_lock_list_init(
-    trx_lock_list_t *lock_list); /*!< List to initialise */
 
 /** Set the lock system timeout event. */
 void lock_set_timeout_event();

@@ -104,7 +104,11 @@ class Schema;
     column. In case the name that was created this way already exists, we
     add a numeric postfix to its end (i.e. "1") and increase the number
     until the name becomes unique. If the generated name is longer than
-    NAME_LEN, it is truncated.
+    NAME_CHAR_LEN code points, it is truncated.
+
+    We truncate to the nearest code point, which means that in rare
+    cases we may truncate in the middle of some grapheme cluster, but
+    the result is still treated as a valid name by the data dictionary.
 */
 
 static void make_unique_view_field_name(Item *target,
@@ -117,7 +121,6 @@ static void make_unique_view_field_name(Item *target,
   char buff[NAME_LEN + 1];
 
   for (attempt = 0;; attempt++) {
-    Item *check;
     bool ok = true;
 
     if (attempt)
@@ -126,14 +129,23 @@ static void make_unique_view_field_name(Item *target,
     else
       name_len = snprintf(buff, NAME_LEN, SYNTHETIC_FIELD_NAME "%s", name);
 
-    auto itc = item_list.begin();
-    do {
-      check = *itc++;
-      if (check != target && check->item_name.eq(buff)) {
+    size_t name_len_mb = system_charset_info->cset->numchars(
+        system_charset_info, buff, buff + name_len);
+    if (name_len_mb > NAME_CHAR_LEN) {
+      size_t num_bytes = system_charset_info->cset->charpos(
+          system_charset_info, buff, buff + name_len, NAME_CHAR_LEN);
+      buff[num_bytes] = '\0';
+      name_len = num_bytes;
+    }
+
+    for (Item *itc : VisibleFields(item_list)) {
+      if (itc != target && itc->item_name.eq(buff)) {
         ok = false;
         break;
       }
-    } while (check != last_element);
+      if (itc == last_element) break;
+    }
+
     if (ok) break;
   }
 
@@ -1151,7 +1163,7 @@ bool open_and_read_view(THD *thd, TABLE_SHARE *share, TABLE_LIST *view_ref) {
 */
 class DD_table_access_error_handler : public Internal_error_handler {
  public:
-  DD_table_access_error_handler() {}
+  DD_table_access_error_handler() = default;
 
   bool handle_condition(THD *, uint sql_errno, const char *,
                         Sql_condition::enum_severity_level *,

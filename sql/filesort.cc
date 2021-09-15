@@ -121,8 +121,7 @@ namespace {
 struct Mem_compare_queue_key {
   Mem_compare_queue_key() : m_compare_length(0), m_param(nullptr) {}
 
-  Mem_compare_queue_key(const Mem_compare_queue_key &that)
-      : m_compare_length(that.m_compare_length), m_param(that.m_param) {}
+  Mem_compare_queue_key(const Mem_compare_queue_key &that) = default;
 
   bool operator()(const uchar *s1, const uchar *s2) const {
     if (m_param)
@@ -190,14 +189,7 @@ void Sort_param::decide_addon_fields(Filesort *file_sort,
   for (TABLE *table : tables) {
     if (table->pos_in_table_list &&
         table->pos_in_table_list->is_fulltext_searched()) {
-      // MATCH() (except in “boolean mode”) doesn't use the actual value,
-      // it just goes and asks the handler directly for the current row.
-      // Thus, we need row IDs, so that the row is positioned correctly.
-      //
-      // When sorting a join, table->fulltext_searched will be false,
-      // but items (like Item_func_match) are materialized
-      // (by StreamingIterator or MaterializeIterator) before the sort,
-      // so this is moot.
+      // See comment in SortWillBeOnRowId().
       m_addon_fields_status = Addon_fields_status::fulltext_searched;
       return;
     }
@@ -1545,7 +1537,13 @@ uint Sort_param::make_sortkey(Bounds_checked_array<uchar> dst,
       if (table->is_nullable()) {
         *to++ = table->has_null_row();
       }
-      memcpy(to, table->file->ref, table->file->ref_length);
+      if (table->is_nullable() && table->has_null_row()) {
+        // The contents are not used, but it's nice to have them
+        // defined when writing them to disk nevertheless.
+        memset(to, 0, table->file->ref_length);
+      } else {
+        memcpy(to, table->file->ref, table->file->ref_length);
+      }
       to += table->file->ref_length;
     }
   }
@@ -2101,6 +2099,19 @@ uint sortlength(THD *thd, st_sort_field *sortorder, uint s_length) {
 }
 
 bool SortWillBeOnRowId(TABLE *table) {
+  if (table->pos_in_table_list &&
+      table->pos_in_table_list->is_fulltext_searched()) {
+    // MATCH() (except in “boolean mode”) doesn't use the actual value,
+    // it just goes and asks the handler directly for the current row.
+    // Thus, we need row IDs, so that the row is positioned correctly.
+    //
+    // When sorting a join, table->fulltext_searched will be false,
+    // but items (like Item_func_match) are materialized
+    // (by StreamingIterator or MaterializeIterator) before the sort,
+    // so this is moot.
+    return true;
+  }
+
   for (Field **pfield = table->field; *pfield != nullptr; ++pfield) {
     Field *field = *pfield;
     if (!bitmap_is_set(table->read_set, field->field_index())) continue;
@@ -2183,6 +2194,9 @@ Addon_fields *Filesort::get_addon_fields(
     }
     if (SortWillBeOnRowId(table)) {
       assert(m_sort_param.addon_fields == nullptr);
+      // If the reason was FTS and not that the table contained blobs, we would
+      // already have made that decision earlier in decide_addon_fields(),
+      // so the only possible reason is due to a blob.
       *addon_fields_status = Addon_fields_status::row_contains_blob;
       return nullptr;
     }

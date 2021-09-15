@@ -848,6 +848,12 @@ class Query_expression {
     return move(m_root_iterator);
   }
   AccessPath *root_access_path() const { return m_root_access_path; }
+
+  // Asks each query block to switch to an access path with in2exists
+  // conditions removed (if they were ever added).
+  // See JOIN::change_to_access_path_without_in2exists().
+  void change_to_access_path_without_in2exists(THD *thd);
+
   void clear_root_access_path() {
     m_root_access_path = nullptr;
     m_root_iterator.reset();
@@ -2511,8 +2517,8 @@ class Query_tables_list {
     These constructor and destructor serve for creation/destruction
     of Query_tables_list instances which are used as backup storage.
   */
-  Query_tables_list() {}
-  ~Query_tables_list() {}
+  Query_tables_list() = default;
+  ~Query_tables_list() = default;
 
   /* Initializes (or resets) Query_tables_list object for "real" use. */
   void reset_query_tables_list(bool init);

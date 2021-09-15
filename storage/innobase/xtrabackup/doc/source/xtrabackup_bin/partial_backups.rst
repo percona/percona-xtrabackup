@@ -47,10 +47,11 @@ There are multiple ways of specifying which part of the whole data is backed up:
 
 * Use the :option:`--databases-file` option to list the databases
 
-The :option:`--tables` Option
+The `--tables` Option
 ================================================================================
-This method involves the :option:`--tables` option. The value is a regular expression that is matched against a fully-qualified
-tablename, including the database name, in the form ``databasename.tablename``.
+
+The first method involves the xtrabackup `--tables` option. The option's
+value is a regular expression that is matched against the fully-qualified database name and table name using the ``databasename.tablename`` format.
 
 To back up only tables in the ``test`` database, use the following
 command:
@@ -81,14 +82,21 @@ regular expression matching. The table names must be fully-qualified in
   $ echo "mydatabase.mytable" > /tmp/tables.txt
   $ xtrabackup --backup --tables-file=/tmp/tables.txt 
 
-The :option:`--databases` Option
+
+The `--databases` and `--databases-file` options
 ================================================================================
 
-The :option:`--databases` option accepts a space-separated list of the databases
-and tables to backup in the format ``databasename[.tablename]``. In addition to
-the listed databases, add the ``mysql``, ``sys``, and
+The ` --databases` option accepts a space-separated list of the databases
+and tables to backup in the ``databasename[.tablename]`` format. In addition to
+this list, make sure to specify the ``mysql``, ``sys``, and
 ``performance_schema`` databases. These databases are required when restoring
-the databases using the :option:`--copy-back` option.
+the databases using `xtrabackup --copy-back`.
+
+.. note::
+
+    Tables processed during the --prepare step may also be added to the backup
+    even if they are not explicitly listed by the parameter if they were created
+    after the backup started.
 
 .. code-block:: bash
 
@@ -97,9 +105,15 @@ the databases using the :option:`--copy-back` option.
 The :option:`--databases-file` Option
 ======================================================
 
-The :option:`--databases-file` option specifies a file that can contain multiple
-databases and tables in the ``databasename[.tablename]`` form, one element name
-for each line in the file. Only the named databases and tables are backed up. These names are matched exactly and must be case-sensitive. This list does not match by  pattern or regular expression.
+
+The `--databases-file` option specifies a file that can contain multiple
+databases and tables in the ``databasename[.tablename]`` format, one element name per line in the file. Names are matched exactly, case-sensitive, with no pattern or regular expression matching.
+
+.. note::
+
+    Tables processed during the --prepare step may also be added to the backup
+    even if they are not explicitly listed by the parameter if they were created
+    after the backup started.
 
 Preparing Partial Backups
 ================================================================================
@@ -112,12 +126,14 @@ The procedure is analogous to :ref:`restoring individual tables
 
    $ xtrabackup --prepare --export --target-dir=/path/to/partial/backup
 
+When you use the `--prepare` option on a partial backup, you
+will see warnings about tables that don't exist. This is because these tables
+exist in the data dictionary inside InnoDB, but the corresponding :term:`.ibd`
+files don't exist. They were not copied into the backup directory. These tables
+will be removed from the data dictionary, and when you restore the backup and
+start InnoDB, they will no longer exist and will not cause any errors or
+warnings to be printed to the log file.
 
-If you use the :option:`--prepare` option on a partial backup, and you see warnings for tables that do not exist. These tables exist in the data dictionary inside InnoDB, but their corresponding :term:`.ibd` files do not exist. hese files were not copied into the backup directory but the tables exist in the data dictionary. The tables are removed from the data dictionary during the process and do not cause errors or warning in subsequent backups and restores.
-
-An example of an error message during the prepare phase follows. ::
-
-  Could not find any file associated with the tablespace ID: 4
 
   Could not find any file associated with the tablespace ID: 5
 

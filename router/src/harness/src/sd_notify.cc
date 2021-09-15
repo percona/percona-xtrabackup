@@ -138,7 +138,7 @@ static stdx::expected<void, std::error_code> notify(
 
   const auto write_res = net::write(sock, net::buffer(msg));
   if (!write_res) {
-    return connect_res.get_unexpected();
+    return write_res.get_unexpected();
   }
 
   return {};
@@ -164,6 +164,8 @@ static bool notify(const std::string &msg) {
 
   return true;
 }
+
+bool notify_status(const std::string &msg) { return notify("STATUS=" + msg); }
 
 bool notify_ready() { return notify("READY=1"); }
 

@@ -377,10 +377,6 @@ dberr_t row_table_load_foreign_constraints(trx_t *trx, const char *name,
  dropping of tables is needed in ALTER TABLE on Unix.
  @return how many tables dropped + remaining tables in list */
 ulint row_drop_tables_for_mysql_in_background(void);
-/** Get the background drop list length. NOTE: the caller must own the kernel
- mutex!
- @return how many tables in list */
-ulint row_get_background_drop_list_len_low(void);
 
 /** Sets an exclusive lock on a table.
  @return error code or DB_SUCCESS */
@@ -936,7 +932,7 @@ struct row_prebuilt_t {
 
 /** Callback for row_mysql_sys_index_iterate() */
 struct SysIndexCallback {
-  virtual ~SysIndexCallback() {}
+  virtual ~SysIndexCallback() = default;
 
   /** Callback method
   @param mtr current mini-transaction

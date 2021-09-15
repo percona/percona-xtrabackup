@@ -8,4 +8,4 @@ start_server
 
 touch $mysql_datadir/keyring
 
-xtrabackup --backup --keyring-file-data=$mysql_datadir/keyring
+xtrabackup --backup --keyring-file-data=$mysql_datadir/keyring --target-dir=$topdir/backup

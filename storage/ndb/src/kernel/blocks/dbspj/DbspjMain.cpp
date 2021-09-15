@@ -25,6 +25,7 @@
 #define DBSPJ_C
 #include "Dbspj.hpp"
 
+#include <cstring>
 #include <ndb_version.h>
 #include <SectionReader.hpp>
 #include <signaldata/LqhKey.hpp>
@@ -56,7 +57,6 @@
 
 #define JAM_FILE_ID 479
 
-extern EventLogger* g_eventLogger;
 extern Uint32 ErrorSignalReceive;
 extern Uint32 ErrorMaxSegmentsToSeize;
 
@@ -574,18 +574,18 @@ void Dbspj::execSTTOR(Signal* signal)
 #ifdef UNIT_TEST_DATABUFFER2
   if (tphase == 120)
   {
-    ndbout_c("basic test of ArenaPool / DataBuffer");
+    g_eventLogger->info("basic test of ArenaPool / DataBuffer");
 
     for (Uint32 i = 0; i<100; i++)
     {
       ArenaHead ah;
       if (!m_arenaAllocator.seize(ah))
       {
-        ndbout_c("Failed to allocate arena");
+        g_eventLogger->info("Failed to allocate arena");
         break;
       }
 
-      ndbout_c("*** LOOP %u", i);
+      g_eventLogger->info("*** LOOP %u", i);
       Uint32 sum = 0;
       Dependency_map::Head head;
       LocalArenaPool<DataBufferSegment<14> > pool(ah, m_dependency_map_pool);
@@ -593,7 +593,7 @@ void Dbspj::execSTTOR(Signal* signal)
       {
         Uint32 sz = rand() % 1000;
         if (0)
-          ndbout_c("adding %u", sz);
+          g_eventLogger->info("adding %u", sz);
         Local_dependency_map list(pool, head);
         for (Uint32 i = 0; i<sz; i++)
           signal->theData[i] = sum + i;
@@ -618,19 +618,19 @@ void Dbspj::execSTTOR(Signal* signal)
       Resource_limit rl;
       if (m_ctx.m_mm.get_resource_limit(7, rl))
       {
-        ndbout_c("Resource %d min: %d max: %d curr: %d",
-                 7, rl.m_min, rl.m_max, rl.m_curr);
+        g_eventLogger->info("Resource %d min: %d max: %d curr: %d", 7, rl.m_min,
+                            rl.m_max, rl.m_curr);
       }
 
       {
-        ndbout_c("release map");
+        g_eventLogger->info("release map");
         Local_dependency_map list(pool, head);
         list.release();
       }
 
-      ndbout_c("release all");
+      g_eventLogger->info("release all");
       m_arenaAllocator.release(ah);
-      ndbout_c("*** LOOP %u sum: %u", i, sum);
+      g_eventLogger->info("*** LOOP %u sum: %u", i, sum);
     }
   }
 #endif
@@ -953,8 +953,9 @@ void Dbspj::execLQHKEYREQ(Signal* signal)
     if (ERROR_INSERTED_CLEAR(17001))
     {
       jam();
-      ndbout_c("Injecting OutOfQueryMem error 17001 at line %d file %s",
-                __LINE__,  __FILE__);
+      g_eventLogger->info(
+          "Injecting OutOfQueryMem error 17001 at line %d file %s", __LINE__,
+          __FILE__);
       break;
     }
     if (unlikely(!m_request_pool.seize(ah, requestPtr)))
@@ -1058,7 +1059,7 @@ Dbspj::do_init(Request* requestP, const LqhKeyReq* req, Uint32 senderRef)
   requestP->m_transId[1] = req->transId2;
   requestP->m_rootFragId = LqhKeyReq::getFragmentId(req->fragmentData);
   requestP->m_rootFragCnt = 1;
-  bzero(requestP->m_lookup_node_data, sizeof(requestP->m_lookup_node_data));
+  std::memset(requestP->m_lookup_node_data, 0, sizeof(requestP->m_lookup_node_data));
 #ifdef SPJ_TRACE_TIME
   requestP->m_cnt_batches = 0;
   requestP->m_sum_rows = 0;
@@ -1244,7 +1245,7 @@ Dbspj::execSCAN_FRAGREQ(Signal* signal)
   const ScanFragReq * req = (ScanFragReq *)&signal->theData[0];
 
 #ifdef DEBUG_SCAN_FRAGREQ
-  ndbout_c("Incoming SCAN_FRAGREQ ");
+  g_eventLogger->info("Incoming SCAN_FRAGREQ ");
   printSCAN_FRAGREQ(stdout, signal->getDataPtrSend(),
                     ScanFragReq::SignalLength + 2,
                     DBLQH);
@@ -1272,8 +1273,9 @@ Dbspj::execSCAN_FRAGREQ(Signal* signal)
 
     if (ERROR_INSERTED_CLEAR(17002))
     {
-      ndbout_c("Injecting OutOfQueryMem error 17002 at line %d file %s",
-                __LINE__,  __FILE__);
+      g_eventLogger->info(
+          "Injecting OutOfQueryMem error 17002 at line %d file %s", __LINE__,
+          __FILE__);
       jam();
       break;
     }
@@ -1403,7 +1405,7 @@ Dbspj::do_init(Request* requestP, const ScanFragReq* req, Uint32 senderRef)
   requestP->m_rootResultData = req->resultData;
   requestP->m_rootFragId = req->fragmentNoKeyLen;
   requestP->m_rootFragCnt = 0; //Filled in later
-  bzero(requestP->m_lookup_node_data, sizeof(requestP->m_lookup_node_data));
+  std::memset(requestP->m_lookup_node_data, 0, sizeof(requestP->m_lookup_node_data));
 #ifdef SPJ_TRACE_TIME
   requestP->m_cnt_batches = 0;
   requestP->m_sum_rows = 0;
@@ -1527,8 +1529,9 @@ Dbspj::build(Build_context& ctx,
     }
     if (ERROR_INSERTED_CLEAR(17006))
     {
-      ndbout_c("Injecting UnknowQueryOperation error 17006 at line %d file %s",
-                __LINE__,  __FILE__);
+      g_eventLogger->info(
+          "Injecting UnknowQueryOperation error 17006 at line %d file %s",
+          __LINE__, __FILE__);
       jam();
       goto error;
     }
@@ -1588,7 +1591,7 @@ Dbspj::build(Build_context& ctx,
        * Convert the deprecated SCAN_INDEX_v1 node+param to new SCAN_FRAG:
        *  - The 'node' formats are identical, no conversion needed.
        *  - The QN_ScanIndexParameters has split the single batchSize into
-       *    two seperate 'batch_size' members and introduced an additional
+       *    two separate 'batch_size' members and introduced an additional
        *    three unused Uint32 members for future use. (Total 4)
        *    Extend entire param block to make room for it,
        *    fill in from old batchSize argument.
@@ -2329,8 +2332,9 @@ Dbspj::createNode(Build_context& ctx, Ptr<Request> requestPtr,
    */
   if (ERROR_INSERTED_CLEAR(17005))
   {
-    ndbout_c("Injecting OutOfOperations error 17005 at line %d file %s",
-             __LINE__,  __FILE__);
+    g_eventLogger->info(
+        "Injecting OutOfOperations error 17005 at line %d file %s", __LINE__,
+        __FILE__);
     jam();
     return DbspjErr::OutOfOperations;
   }
@@ -2764,11 +2768,11 @@ Dbspj::sendConf(Signal* signal, Ptr<Request> requestPtr, bool is_complete)
       if (is_complete)
       {
         Uint32 cnt = requestPtr.p->m_cnt_batches;
-        ndbout_c("batches: %u avg_rows: %u avg_running: %u avg_wait: %u",
-                 cnt,
-                 (requestPtr.p->m_sum_rows / cnt),
-                 (requestPtr.p->m_sum_running / cnt),
-                 cnt == 1 ? 0 : requestPtr.p->m_sum_waiting / (cnt - 1));
+        g_eventLogger->info(
+            "batches: %u avg_rows: %u avg_running: %u avg_wait: %u", cnt,
+            (requestPtr.p->m_sum_rows / cnt),
+            (requestPtr.p->m_sum_running / cnt),
+            cnt == 1 ? 0 : requestPtr.p->m_sum_waiting / (cnt - 1));
       }
 #endif
 
@@ -2782,7 +2786,7 @@ Dbspj::sendConf(Signal* signal, Ptr<Request> requestPtr, bool is_complete)
         requestPtr.p->m_state |= Request::RS_WAITING;
       }
 #ifdef DEBUG_SCAN_FRAGREQ
-      ndbout_c("Dbspj::sendConf() sending SCAN_FRAGCONF ");
+      g_eventLogger->info("Dbspj::sendConf() sending SCAN_FRAGCONF ");
       printSCAN_FRAGCONF(stdout, signal->getDataPtrSend(),
                          conf->total_len,
                          DBLQH);
@@ -3474,7 +3478,7 @@ Dbspj::execSCAN_FRAGCONF(Signal* signal)
     reinterpret_cast<const ScanFragConf*>(signal->getDataPtr());
 
 #ifdef DEBUG_SCAN_FRAGREQ
-  ndbout_c("Dbspj::execSCAN_FRAGCONF() receiving SCAN_FRAGCONF ");
+  g_eventLogger->info("Dbspj::execSCAN_FRAGCONF() receiving SCAN_FRAGCONF ");
   printSCAN_FRAGCONF(stdout, signal->getDataPtrSend(),
                      conf->total_len,
                      DBLQH);
@@ -4229,8 +4233,9 @@ Dbspj::allocPage(Ptr<RowPage> & ptr)
     if (ERROR_INSERTED_CLEAR(17003))
     {
       jam();
-      ndbout_c("Injecting failed '::allocPage', error 17003 at line %d file %s",
-               __LINE__,  __FILE__);
+      g_eventLogger->info(
+          "Injecting failed '::allocPage', error 17003 at line %d file %s",
+          __LINE__, __FILE__);
       return false;
     }
     ptr.p = (RowPage*)m_ctx.m_mm.alloc_page(RT_SPJ_DATABUFFER,
@@ -4332,8 +4337,9 @@ Dbspj::checkTableError(Ptr<TreeNode> treeNodePtr) const
   {
     jam();
     CLEAR_ERROR_INSERT_VALUE;
-    ndbout_c("::checkTableError, injecting NoSuchTable error at line %d file %s",
-              __LINE__,  __FILE__);
+    g_eventLogger->info(
+        "::checkTableError, injecting NoSuchTable error at line %d file %s",
+        __LINE__, __FILE__);
     return DbspjErr::NoSuchTable;
   }
   return err;
@@ -4795,7 +4801,7 @@ Dbspj::lookup_build(Build_context& ctx,
 
     Uint32 treeBits = node->requestInfo;
     Uint32 paramBits = param->requestInfo;
-    //ndbout_c("Dbspj::lookup_build() treeBits=%.8x paramBits=%.8x",
+    // g_eventLogger->info("Dbspj::lookup_build() treeBits=%.8x paramBits=%.8x",
     //         treeBits, paramBits);
     LqhKeyReq* dst = (LqhKeyReq*)treeNodePtr.p->m_lookup_data.m_lqhKeyReq;
     {
@@ -5076,8 +5082,9 @@ Dbspj::lookup_send(Signal* signal,
         {
           jam();
           CLEAR_ERROR_INSERT_VALUE;
-          ndbout_c("Injecting OutOfSectionMemory error at line %d file %s",
-                   __LINE__,  __FILE__);
+          g_eventLogger->info(
+              "Injecting OutOfSectionMemory error at line %d file %s", __LINE__,
+              __FILE__);
           releaseSection(keyInfoPtrI);
           err = DbspjErr::OutOfSectionMemory;
           break;
@@ -5124,7 +5131,7 @@ Dbspj::lookup_send(Signal* signal,
     }
 
 #if defined DEBUG_LQHKEYREQ
-    ndbout_c("LQHKEYREQ to %x", ref);
+    g_eventLogger->info("LQHKEYREQ to %x", ref);
     printLQHKEYREQ(stdout, signal->getDataPtrSend(),
                    NDB_ARRAY_SIZE(treeNodePtr.p->m_lookup_data.m_lqhKeyReq),
                    DBLQH);
@@ -5635,8 +5642,9 @@ Dbspj::lookup_parent_row(Signal* signal,
       {
         jam();
         CLEAR_ERROR_INSERT_VALUE;
-        ndbout_c("Injecting OutOfSectionMemory error at line %d file %s",
-                 __LINE__,  __FILE__);
+        g_eventLogger->info(
+            "Injecting OutOfSectionMemory error at line %d file %s", __LINE__,
+            __FILE__);
         err = DbspjErr::OutOfSectionMemory;
         break;
       }
@@ -7108,8 +7116,9 @@ Dbspj::scanFrag_parent_row(Signal* signal,
       {
         jam();
         CLEAR_ERROR_INSERT_VALUE;
-        ndbout_c("Injecting OutOfSectionMemory error at line %d file %s",
-                 __LINE__,  __FILE__);
+        g_eventLogger->info(
+            "Injecting OutOfSectionMemory error at line %d file %s", __LINE__,
+            __FILE__);
         err = DbspjErr::OutOfSectionMemory;
         break;
       }
@@ -7536,7 +7545,7 @@ Dbspj::scanFrag_send(Signal* signal,
        * - Only the rootNode is ONE_SHOT.
        * - keyInfo comes from either m_send.m_keyInfoPtrI or
        *   fragPtr.p->m_rangePtrI (not both! - 'XOR').
-       * - If the child scan is pruned, a seperate 'rangePtr' is
+       * - If the child scan is pruned, a separate 'rangePtr' is
        *   build for each frag - Non-pruned scan store the 'rangePtr'
        *   in the first frag, which is reused for all the frags.
        * - Child nodes can possibly be 'repeatable', which implies
@@ -7619,8 +7628,9 @@ Dbspj::scanFrag_send(Signal* signal,
           {
             jam();
             CLEAR_ERROR_INSERT_VALUE;
-            ndbout_c("Injecting OutOfSectionMemory error at line %d file %s",
-                     __LINE__,  __FILE__);
+            g_eventLogger->info(
+                "Injecting OutOfSectionMemory error at line %d file %s",
+                __LINE__, __FILE__);
             err = DbspjErr::OutOfSectionMemory;
             break;
           }
@@ -7650,7 +7660,7 @@ Dbspj::scanFrag_send(Signal* signal,
       }
 
 #if defined DEBUG_SCAN_FRAGREQ
-      ndbout_c("SCAN_FRAGREQ to %x", fragPtr.p->m_ref);
+      g_eventLogger->info("SCAN_FRAGREQ to %x", fragPtr.p->m_ref);
       printSCAN_FRAGREQ(stdout, signal->getDataPtrSend(),
                         NDB_ARRAY_SIZE(treeNodePtr.p->m_scanFrag_data.m_scanFragReq),
                         DBLQH);
@@ -7690,8 +7700,9 @@ Dbspj::scanFrag_send(Signal* signal,
       {
         jam();
         CLEAR_ERROR_INSERT_VALUE;
-        ndbout_c("Injecting invalid schema version error at line %d file %s",
-                 __LINE__,  __FILE__);
+        g_eventLogger->info(
+            "Injecting invalid schema version error at line %d file %s",
+            __LINE__, __FILE__);
         // Provoke 'Invalid schema version' in order to receive SCAN_FRAGREF
         req->schemaVersion++;
       }
@@ -8953,8 +8964,9 @@ Dbspj::appendToPattern(Local_pattern_store & pattern,
 
   if (ERROR_INSERTED_CLEAR(17008))
   {
-    ndbout_c("Injecting OutOfQueryMemory error 17008 at line %d file %s",
-             __LINE__,  __FILE__);
+    g_eventLogger->info(
+        "Injecting OutOfQueryMemory error 17008 at line %d file %s", __LINE__,
+        __FILE__);
     jam();
     return DbspjErr::OutOfQueryMemory;
   }
@@ -8978,8 +8990,9 @@ Dbspj::appendParamToPattern(Local_pattern_store &dst,
 
   if (ERROR_INSERTED_CLEAR(17009))
   {
-    ndbout_c("Injecting OutOfQueryMemory error 17009 at line %d file %s",
-             __LINE__,  __FILE__);
+    g_eventLogger->info(
+        "Injecting OutOfQueryMemory error 17009 at line %d file %s", __LINE__,
+        __FILE__);
     jam();
     return DbspjErr::OutOfQueryMemory;
   }
@@ -8996,8 +9009,9 @@ Dbspj::appendToSection(Uint32& firstSegmentIVal,
   if (ERROR_INSERTED(17510) && fi_cnt++ % 13 == 0)
   {
     jam();
-    ndbout_c("Injecting appendToSection error 17510 at line %d file %s",
-             __LINE__,  __FILE__);
+    g_eventLogger->info(
+        "Injecting appendToSection error 17510 at line %d file %s", __LINE__,
+        __FILE__);
     return false;
   }
   else
@@ -9020,8 +9034,9 @@ Dbspj::appendParamHeadToPattern(Local_pattern_store &dst,
 
   if (ERROR_INSERTED_CLEAR(17010))
   {
-    ndbout_c("Injecting OutOfQueryMemory error 17010 at line %d file %s",
-             __LINE__,  __FILE__);
+    g_eventLogger->info(
+        "Injecting OutOfQueryMemory error 17010 at line %d file %s", __LINE__,
+        __FILE__);
     jam();
     return DbspjErr::OutOfQueryMemory;
   }
@@ -9526,8 +9541,9 @@ Dbspj::parseDA(Build_context& ctx,
     {
       jam();
       CLEAR_ERROR_INSERT_VALUE;
-      ndbout_c("Injecting OutOfSectionMemory error at line %d file %s",
-                __LINE__,  __FILE__);
+      g_eventLogger->info(
+          "Injecting OutOfSectionMemory error at line %d file %s", __LINE__,
+          __FILE__);
       err = DbspjErr::OutOfSectionMemory;
       break;
     }
