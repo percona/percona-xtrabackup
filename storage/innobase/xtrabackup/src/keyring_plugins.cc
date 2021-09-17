@@ -90,8 +90,10 @@ xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv)
 	memcpy(iv, it->second.iv, ENCRYPTION_KEY_LEN);
 }
 
-const char *TRANSITION_KEY_PRIFIX = "XBKey";
-const size_t TRANSITION_KEY_NAME_MAX_LEN = ENCRYPTION_SERVER_UUID_LEN + 2 + 45;
+const char *TRANSITION_KEY_PREFIX = "XBKey";
+const size_t TRANSITION_KEY_PREFIX_LEN = sizeof(TRANSITION_KEY_PREFIX) / sizeof(char);
+const size_t TRANSITION_KEY_RANDOM_DATA_LEN = 32;
+const size_t TRANSITION_KEY_NAME_MAX_LEN = TRANSITION_KEY_PREFIX_LEN + ENCRYPTION_SERVER_UUID_LEN + TRANSITION_KEY_RANDOM_DATA_LEN + 1;
 
 /** Fetch the key from keyring.
 @param[in]	key_name	key name
@@ -136,23 +138,23 @@ xb_fetch_key(char *key_name, char *key) {
 static bool
 xb_create_transition_key(char *key_name, char* key)
 {
-	byte	rand32[32];
-	char	rand64[45];
+	byte	rand32[20];
+	char	rand64[TRANSITION_KEY_RANDOM_DATA_LEN];
 	int	ret;
 
 	msg_ts("Creating transition key.\n");
 
-	ut_ad(base64_needed_encoded_length(32) <= 45);
+	ut_ad(base64_needed_encoded_length(20) <= TRANSITION_KEY_RANDOM_DATA_LEN);
 
 	if (my_rand_buffer(rand32, sizeof(rand32)) != 0) {
 		return(false);
 	}
 
-	base64_encode(rand32, 32, rand64);
+	base64_encode(rand32, 20, rand64);
 
 	/* Trasnsition key name is composed of server uuid and random suffix. */
 	ut_snprintf(key_name, TRANSITION_KEY_NAME_MAX_LEN,
-		    "%s-%s-%s", TRANSITION_KEY_PRIFIX, server_uuid, rand64);
+		    "%s-%s-%s", TRANSITION_KEY_PREFIX, server_uuid, rand64);
 
 	/* Let keyring generate key for us. */
 	mysql_mutex_init(key_LOCK_keyring_operations,

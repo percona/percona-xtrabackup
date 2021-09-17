@@ -28,7 +28,7 @@ class Vault_key_serializer : public ISerializer {
                                 const Key_operation operation)
   {
     Vault_key *vault_key= dynamic_cast<Vault_key *>(key);
-    DBUG_ASSERT(vault_key != NULL);
+    assert(vault_key != NULL);
     vault_key->set_key_operation(operation);
 
     return new Vault_key(*vault_key);

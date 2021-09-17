@@ -98,7 +98,7 @@ Secure_string Vault_curl::get_secret_url(const Secure_string &type_of_data)
 {
   Secure_ostringstream oss_data;
 
-  DBUG_ASSERT(!vault_credentials_.get_vault_url().empty());
+  assert(!vault_credentials_.get_vault_url().empty());
   oss_data << vault_credentials_.get_vault_url() << "/v1/";
   if (resolved_secret_mount_point_version_ == Vault_version_v2)
   {
