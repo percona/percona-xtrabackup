@@ -19,7 +19,7 @@ partial backups:
 
    Do not copy back the prepared backup. Restoring partial backups
    should be done by importing the tables, not by using the
-   :option:`--copy-back` option. It is not recommended to run
+   :option:`xtrabackup --copy-back` option. It is not recommended to run
    incremental backups after running a partial backup.
 
    Although there are some scenarios where restoring can be done by

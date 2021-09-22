@@ -111,7 +111,7 @@ server.
 
 First step is to create new table in which data will be restored :: 
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql> CREATE TABLE `name_p4` (
    `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -127,7 +127,7 @@ First step is to create new table in which data will be restored ::
 To restore the partition from the backup tablespace needs to be discarded for
 that table:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql>  ALTER TABLE name_p4 DISCARD TABLESPACE;
 
@@ -145,13 +145,13 @@ data directory:
 
 If you are running the |Percona Server| make sure that variable `innodb_import_table_from_xtrabackup` is enabled:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql> SET GLOBAL innodb_import_table_from_xtrabackup=1;
 
 The last step is to import the tablespace:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql>  ALTER TABLE name_p4 IMPORT TABLESPACE;
 
@@ -174,7 +174,7 @@ tables through ``ALTER TABLE`` ... ``EXCHANGE PARTITION`` command.
 When importing an entire partitioned table, first import all (sub)partitions as
 independent tables:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql> CREATE TABLE `name_p4` (
    `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -190,7 +190,7 @@ independent tables:
 To restore the partition from the backup tablespace needs to be discarded for
 that table:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql>  ALTER TABLE name_p4 DISCARD TABLESPACE;
 
@@ -203,14 +203,14 @@ The next step is to copy the ``.cfg`` and ``.ibd`` files from the backup to |MyS
 
 The last step is to import the tablespace:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql>  ALTER TABLE name_p4 IMPORT TABLESPACE;
 
 We can now create the empty partitioned table with exactly the same schema as
 the table being imported:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql> CREATE TABLE name2 LIKE name;
 
@@ -218,7 +218,7 @@ Then swap empty partitions from the newly created table with individual tables
 corresponding to partitions that have been exported/imported on the previous
 steps:
 
-.. code-block:: guess
+.. code-block:: mysql
 
    mysql> ALTER TABLE name2 EXCHANGE PARTITION p4 WITH TABLE name_p4;
 
