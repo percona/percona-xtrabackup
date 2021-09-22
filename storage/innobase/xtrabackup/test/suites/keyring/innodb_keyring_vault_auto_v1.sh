@@ -17,7 +17,7 @@ log-bin
 XB_EXTRA_MY_CNF_OPTS=
 
 . inc/keyring_vault.sh
-keyring_vault_mount
+keyring_vault_mount "AUTO" "1"
 
 function cleanup_keyring() {
 	keyring_vault_remove_all_keys

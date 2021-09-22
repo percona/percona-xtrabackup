@@ -44,7 +44,7 @@ IKey *Vault_keys_container::fetch_key(IKey *key) {
 }
 
 void Vault_keys_container::set_curl_timeout(uint timeout) {
-  DBUG_ASSERT(vault_io != nullptr);
+  assert(vault_io != nullptr);
   vault_io->set_curl_timeout(timeout);
 }
 

@@ -86,7 +86,7 @@ bool Vault_io::get_serialized_object(ISerialized_object **serialized_object) {
 }
 
 void Vault_io::set_curl_timeout(uint timeout) noexcept {
-  DBUG_ASSERT(vault_curl != nullptr);
+  assert(vault_curl != nullptr);
   vault_curl->set_timeout(timeout);
 }
 
