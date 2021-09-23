@@ -80,5 +80,24 @@ bool read_server_uuid() {
   return (true);
 }
 
+/* find the pxb base version */
+unsigned long get_version_number(std::string version_str) {
+  unsigned long major = 0, minor = 0, version = 0;
+  std::size_t major_p = version_str.find(".");
+  if (major_p != std::string::npos)
+    major = stoi(version_str.substr(0, major_p));
+
+  std::size_t minor_p = version_str.find(".", major_p + 1);
+  if (minor_p != std::string::npos)
+    minor = stoi(version_str.substr(major_p + 1, minor_p - major_p));
+
+  std::size_t version_p = version_str.find(".", minor_p + 1);
+  if (version_p != std::string::npos)
+    version = stoi(version_str.substr(minor_p + 1, version_p - minor_p));
+  else
+    version = stoi(version_str.substr(minor_p + 1));
+  return major * 10000 + minor * 100 + version;
+}
+
 }  // namespace utils
 }  // namespace xtrabackup

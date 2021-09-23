@@ -61,6 +61,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "rpl_log_encryption.h"
 #include "space_map.h"
 #include "typelib.h"
+#include "utils.h"
 #include "xb0xb.h"
 #include "xtrabackup.h"
 #include "xtrabackup_version.h"
@@ -365,24 +366,6 @@ void parse_show_engine_innodb_status(MYSQL *connection) {
   mysql_free_result(mysql_result);
 }
 
-/* find the pxb base version */
-static unsigned long pxb_base_version() {
-  std::string pxb_base = MYSQL_SERVER_VERSION;
-  unsigned long major = 0, minor = 0, version = 0;
-  std::size_t major_p = pxb_base.find(".");
-  if (major_p != std::string::npos) major = stoi(pxb_base.substr(0, major_p));
-
-  std::size_t minor_p = pxb_base.find(".", major_p + 1);
-  if (minor_p != std::string::npos)
-    minor = stoi(pxb_base.substr(major_p + 1, minor_p - major_p));
-
-  std::size_t version_p = pxb_base.find(".", minor_p + 1);
-  if (version_p != std::string::npos)
-    version = stoi(pxb_base.substr(minor_p + 1, version_p - minor_p));
-  else
-    version = stoi(pxb_base.substr(minor_p + 1));
-  return major * 10000 + minor * 100 + version;
-}
 
 static bool check_server_version(unsigned long version_number,
                                  const char *version_string,
@@ -429,8 +412,8 @@ static bool check_server_version(unsigned long version_number,
     }
   }
 
-
-  auto pxb_base_ver = pxb_base_version();
+  auto pxb_base_ver =
+      xtrabackup::utils::get_version_number(MYSQL_SERVER_VERSION);
 
   DBUG_EXECUTE_IF("simulate_lower_version", pxb_base_ver = 80014;);
 

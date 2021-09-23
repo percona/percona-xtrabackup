@@ -679,6 +679,13 @@ template <typename Index>
 const dict_index_t *dd_find_index(const dict_table_t *table, Index *dd_index);
 MY_COMPILER_DIAGNOSTIC_POP()
 
+#ifdef XTRABACKUP
+/** Read the metadata of default values for all columns added instantly
+@param[in]	dd_table	dd::Table
+@param[in,out]	table		InnoDB table object */
+void dd_fill_instant_columns(const dd::Table &dd_table, dict_table_t *table);
+#endif /*XTRABACKUP */
+
 /** Acquire a shared metadata lock.
 @param[in,out]	thd	current thread
 @param[out]	mdl	metadata lock

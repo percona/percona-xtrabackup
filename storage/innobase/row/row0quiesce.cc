@@ -237,7 +237,12 @@ of dict_col_t default value part if exists.
 @param[in]	col	column to which the default value belongs
 @param[in]	file	file to write to
 @return DB_SUCCESS or DB_IO_ERROR. */
+#ifdef XTRABACKUP
+MY_ATTRIBUTE((warn_unused_result))
+dberr_t
+#else
 static MY_ATTRIBUTE((warn_unused_result)) dberr_t
+#endif
     row_quiesce_write_default_value(const dict_col_t *col, FILE *file) {
   byte row[6];
 

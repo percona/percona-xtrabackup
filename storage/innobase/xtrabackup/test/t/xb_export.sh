@@ -116,6 +116,13 @@ col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
 col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
 col20 varchar(255) character set latin1 )' incremental_sample;
 
+mysql -e 'CREATE TABLE test5(a int, b int, PRIMARY KEY (a), KEY (b DESC))' incremental_sample
+mysql -e 'CREATE TABLE test6(a int)' incremental_sample
+mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incremental_sample
+mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
+mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
+mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
+
 checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
 vlog "rowsnum_1 is $rowsnum_1"
@@ -138,22 +145,32 @@ col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
 col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
 col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
 col20 varchar(255) character set latin1 )' incremental_sample;
+mysql -e 'CREATE TABLE test5(a int, b int, PRIMARY KEY (a), KEY (b DESC))' incremental_sample
+mysql -e 'CREATE TABLE test6(a int)' incremental_sample
+mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incremental_sample
+mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
+mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
+mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
 vlog "Database was re-initialized"
 
 mysql -e "alter table test discard tablespace;" incremental_sample
 mysql -e "alter table test2 discard tablespace;" incremental_sample
 mysql -e "alter table test3 discard tablespace;" incremental_sample
 mysql -e "alter table test4 discard tablespace;" incremental_sample
+mysql -e "alter table test5 discard tablespace;" incremental_sample
+mysql -e "alter table test6 discard tablespace;" incremental_sample
+mysql -e "alter table test7 discard tablespace;" incremental_sample
+mysql -e "alter table test8 discard tablespace;" incremental_sample
 
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
 
 ls -tlr $backup_dir/incremental_sample/*cfg
 cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
-vlog "Verifying .cfg files in backup, expecting 6."
-if [ $cfg_count -ne 6 ]
+vlog "Verifying .cfg files in backup, expecting 10."
+if [ $cfg_count -ne 10 ]
 then
-   vlog "Expecting 6 cfg files. Found only $cfg_count"
+   vlog "Expecting 10 cfg files. Found only $cfg_count"
    exit -1
 fi
 
@@ -162,6 +179,10 @@ mysql -e "alter table test import tablespace" incremental_sample
 mysql -e "alter table test2 import tablespace" incremental_sample
 mysql -e "alter table test3 import tablespace" incremental_sample
 mysql -e "alter table test4 import tablespace" incremental_sample
+mysql -e "alter table test5 import tablespace" incremental_sample
+mysql -e "alter table test6 import tablespace" incremental_sample
+mysql -e "alter table test7 import tablespace" incremental_sample
+mysql -e "alter table test8 import tablespace" incremental_sample
 vlog "Table has been imported"
 
 vlog "Cheking checksums"
