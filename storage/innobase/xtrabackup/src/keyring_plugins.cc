@@ -57,7 +57,8 @@ extern st_mysql_plugin *mysql_optional_plugins[];
 extern st_mysql_plugin *mysql_mandatory_plugins[];
 
 const char *XTRABACKUP_KEYS_FILE = "xtrabackup_keys";
-const char *XTRABACKUP_KEYS_MAGIC = "KEYSV01";
+const char *XTRABACKUP_KEYS_MAGIC_V1 = "KEYSV01";
+const char *XTRABACKUP_KEYS_MAGIC_V2 = "KEYSV02";
 constexpr size_t XTRABACKUP_KEYS_MAGIC_SIZE = 7;
 
 const char *BINLOG_KEY_MAGIC = "MYSQL-BINARY-LOG";
@@ -162,9 +163,11 @@ const char *TRANSITION_KEY_PREFIX = "XBKey";
 const size_t TRANSITION_KEY_PREFIX_LEN =
     sizeof(TRANSITION_KEY_PREFIX) / sizeof(char);
 const size_t TRANSITION_KEY_RANDOM_DATA_LEN = 32;
-const size_t TRANSITION_KEY_NAME_MAX_LEN = TRANSITION_KEY_PREFIX_LEN +
-                                           Encryption::SERVER_UUID_LEN +
-                                           TRANSITION_KEY_RANDOM_DATA_LEN + 1;
+const size_t TRANSITION_KEY_NAME_MAX_LEN_V1 =
+    Encryption::SERVER_UUID_LEN + 2 + 45;
+const size_t TRANSITION_KEY_NAME_MAX_LEN_V2 =
+    TRANSITION_KEY_PREFIX_LEN + Encryption::SERVER_UUID_LEN +
+    TRANSITION_KEY_RANDOM_DATA_LEN + 1;
 
 /** Fetch the key from keyring.
 @param[in]	key_name	key name
@@ -220,7 +223,7 @@ static bool xb_create_transition_key(char *key_name, char *key) {
   base64_encode(rand32, 20, rand64);
 
   /* Trasnsition key name is composed of server uuid and random suffix. */
-  snprintf(key_name, TRANSITION_KEY_NAME_MAX_LEN, "%s-%s-%s",
+  snprintf(key_name, TRANSITION_KEY_NAME_MAX_LEN_V2, "%s-%s-%s",
            TRANSITION_KEY_PREFIX, server_uuid, rand64);
 
   /* Let keyring generate key for us. */
@@ -471,7 +474,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
   byte read_buf[Encryption::KEY_LEN * 2 + 8];
   byte tmp[Encryption::KEY_LEN * 2];
   char magic[XTRABACKUP_KEYS_MAGIC_SIZE];
-  char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN];
+  uint8_t transition_key_name_size = 0;
+  char *transition_key_name;
   char transition_key_buf[Encryption::KEY_LEN];
   bool ret;
 
@@ -499,7 +503,14 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     goto error;
   }
 
-  if (memcmp(magic, XTRABACKUP_KEYS_MAGIC, XTRABACKUP_KEYS_MAGIC_SIZE) != 0) {
+  if (memcmp(magic, XTRABACKUP_KEYS_MAGIC_V1, XTRABACKUP_KEYS_MAGIC_SIZE) ==
+      0) {
+    transition_key_name_size = TRANSITION_KEY_NAME_MAX_LEN_V1;
+
+  } else if (memcmp(magic, XTRABACKUP_KEYS_MAGIC_V2,
+                    XTRABACKUP_KEYS_MAGIC_SIZE) == 0) {
+    transition_key_name_size = TRANSITION_KEY_NAME_MAX_LEN_V2;
+  } else {
     msg_ts("Error reading %s: wrong magic.\n", XTRABACKUP_KEYS_FILE);
     goto error;
   }
@@ -508,17 +519,19 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     msg_ts("Error reading %s: failed to read salt.\n", XTRABACKUP_KEYS_FILE);
     goto error;
   }
-
-  if (fread(transition_key_name, 1, sizeof(transition_key_name), f) !=
-      sizeof(transition_key_name)) {
+  transition_key_name =
+      (char *)my_malloc(PSI_NOT_INSTRUMENTED, transition_key_name_size,
+                        MYF(MY_FAE | MY_ZEROFILL));
+  if (fread(transition_key_name, 1, transition_key_name_size, f) !=
+      transition_key_name_size) {
     msg_ts("Error reading %s: failed to read transition key name.\n",
            XTRABACKUP_KEYS_FILE);
-    goto error;
+    goto cleanup;
   }
 
   if (transition_key == NULL && transition_key_name[0] != 0) {
     if (!xb_fetch_key(transition_key_name, transition_key_buf)) {
-      goto error;
+      goto cleanup;
     }
     transition_key = transition_key_buf;
     transition_key_len = Encryption::KEY_LEN;
@@ -530,7 +543,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
   if (!ret) {
     msg_ts("Error reading %s: failed to derive encryption key.\n",
            XTRABACKUP_KEYS_FILE);
-    goto error;
+    goto cleanup;
   }
 
   while (fread(read_buf, 1, record_len, f) == record_len) {
@@ -545,7 +558,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     if (olen == MY_AES_BAD_DATA) {
       msg_ts("Error reading %s: failed to decrypt key for tablespace %lu.\n",
              XTRABACKUP_KEYS_FILE, space_id);
-      goto error;
+      goto cleanup;
     }
 
     olen = my_aes_decrypt(read_buf + Encryption::KEY_LEN + 4,
@@ -555,7 +568,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     if (olen == MY_AES_BAD_DATA) {
       msg_ts("Error reading %s: failed to decrypt iv for tablespace %lu.\n",
              XTRABACKUP_KEYS_FILE, space_id);
-      goto error;
+      goto cleanup;
     }
 
     memcpy(tmp, info.key, Encryption::KEY_LEN);
@@ -568,14 +581,18 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
           "Error reading %s: failed to decrypt key and iv for tablespace %lu. "
           "Wrong transition key?\n",
           XTRABACKUP_KEYS_FILE, space_id);
-      goto error;
+      goto cleanup;
     }
 
     encryption_info[space_id] = info;
   }
 
+  my_free(transition_key_name);
   fclose(f);
   return (true);
+
+cleanup:
+  my_free(transition_key_name);
 
 error:
   fclose(f);
@@ -655,7 +672,7 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
                              size_t transition_key_len) {
   byte derived_key[Encryption::KEY_LEN];
   byte salt[XB_KDF_SALT_SIZE];
-  char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN];
+  char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN_V2];
   char transition_key_buf[Encryption::KEY_LEN];
 
   msg_ts("Saving %s.\n", XTRABACKUP_KEYS_FILE);
@@ -693,7 +710,7 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     return (false);
   }
 
-  if (ds_write(stream, XTRABACKUP_KEYS_MAGIC, XTRABACKUP_KEYS_MAGIC_SIZE)) {
+  if (ds_write(stream, XTRABACKUP_KEYS_MAGIC_V2, XTRABACKUP_KEYS_MAGIC_SIZE)) {
     msg_ts("Error writing %s: failed to write magic.\n", XTRABACKUP_KEYS_FILE);
     goto error;
   }

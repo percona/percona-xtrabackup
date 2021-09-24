@@ -45,6 +45,7 @@ function keyring_vault_mount()
 	cat > ${keyring_vault_config} <<EOF
 vault_url = ${VAULT_URL}
 secret_mount_point = ${VAULT_MOUNT_POINT}
+secret_mount_point_version = ${VAULT_MOUNT_VERSION}
 token = ${VAULT_TOKEN}
 vault_ca = ${VAULT_CA}
 EOF
