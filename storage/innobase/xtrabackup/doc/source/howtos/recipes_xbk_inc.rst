@@ -13,7 +13,7 @@ Making an incremental backup requires a full backup as a base::
 
   xtrabackup --backup --target-dir=/data/backups/mysql/
 
-It is important that you **do not run** the :option:`xtrabackup --prepare` command yet.
+It is important that you **do not run** the `xtrabackup --prepare` command yet.
 
 Create two incremental backups
 ================================================================================
@@ -61,7 +61,7 @@ Create the new logs by preparing it::
 Notes
 ================================================================================
 
-* You might want to set the :option:`xtrabackup --use-memory` to speed up the
+* You might want to set the `xtrabackup --use-memory` to speed up the
   process if you are on a dedicated server that has enough free memory. More
   details :doc:`here <../xtrabackup_bin/xbk_option_reference>`.
 * A more detailed explanation is :doc:`here

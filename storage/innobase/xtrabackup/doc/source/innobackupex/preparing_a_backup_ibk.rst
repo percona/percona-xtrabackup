@@ -1,15 +1,11 @@
 ================================================================================
- Preparing a Full Backup with |innobackupex|
+ Preparing a Full Backup with *innobackupex*
 ================================================================================
 
-After creating a backup, the data is not ready to be restored. There might be
-uncommitted transactions to be undone or transactions in the logs to be
-replayed. Doing those pending operations will make the data files consistent and
-it is the purpose of the **prepare stage**. Once this has been done, the data is
-ready to be used.
+The purpose of the **prepare stage** is to perform any pending operations and make the data consistent. After creating a backup, for example, uncommitted transactions must be undone or log transactions must be replayed. After this stage has finished, the data is ready.
 
-To prepare a backup with |innobackupex| you have to use the
-:option:`innobackupex --apply-log` and full path to the backup directory as an
+To prepare a backup with *innobackupex* you have to use the
+`innobackupex --apply-log` option and full path to the backup directory as an
 argument::
 
   $ innobackupex --apply-log /path/to/BACKUP-DIR
@@ -19,21 +15,21 @@ and check the last line of the output for a confirmation on the process::
   150806 01:01:57  InnoDB: Shutdown completed; log sequence number 1609228
   150806 01:01:57  innobackupex: completed OK!
 
-If it succeeded, |innobackupex| performed all operations needed, leaving the
+If it succeeded, *innobackupex* performed all operations needed, leaving the
 data ready to use immediately.
 
 Under the hood
 ================================================================================
 
-|innobackupex| started the prepare process by reading the configuration from the
-:file:`backup-my.cnf` file in the backup directory.
+*innobackupex* started the prepare process by reading the configuration from the
+`backup-my.cnf` file in the backup directory.
 
-After that, |innobackupex| replayed the committed transactions in the log files
+After that, *innobackupex* replayed the committed transactions in the log files
 (some transactions could have been done while the backup was being done) and
 rolled back the uncommitted ones. Once this is done, all the information lay in
 the tablespace (the InnoDB files), and the log files are re-created.
 
-This implies calling :option:`innobackupex --apply-log` twice. More details of
+This implies calling `innobackupex --apply-log` twice. More details of
 this process are shown in the :ref:`xtrabackup section
 <xtrabackup-binary>`.
 
@@ -44,7 +40,7 @@ increments. See :doc:`incremental_backups_innobackupex`.
 Other options to consider
 ================================================================================
 
-.. rubric:: :option:`innobackupex --use-memory`
+.. rubric:: `innobackupex --use-memory`
 
 The preparing process can be sped up by using more memory in it. It depends on
 the free or available ``RAM`` on your system, it defaults to ``100MB``. In

@@ -8,13 +8,13 @@ Every incremental backup starts with a full one, which we will call the *base ba
 
 Note that the full backup will be in a timestamped subdirectory of ``/path/to/backup/dir/`` (e.g. ``/path/to/backup/dir/2011-12-24_23-01-00/``).
 
-Assuming that variable ``$FULLBACKUP`` contains :file:`/path/to/backup/dir/2011-5-23_23-01-18`, let's do an incremental backup an hour later: ::
+Assuming that variable ``$FULLBACKUP`` contains `/path/to/backup/dir/2011-5-23_23-01-18`, let's do an incremental backup an hour later: ::
 
   innobackupex --incremental /path/to/inc/dir \
     --incremental-basedir=$FULLBACKUP --user=USER --password=PASSWORD
 
 Now, the incremental backup should be in
-:file:`/path/to/inc/dir/2011-12-25_00-01-00/`. Let's call
+`/path/to/inc/dir/2011-12-25_00-01-00/`. Let's call
 ``$INCREMENTALBACKUP=2011-5-23_23-50-10``.
 
 Preparing incremental backups is a bit different than full ones:
@@ -24,7 +24,7 @@ First you have to replay the committed transactions on each backup, ::
   innobackupex --apply-log --redo-only $FULLBACKUP \
    --use-memory=1G --user=USER --password=PASSWORD
 
-The :option:`innobackupex --use-memory` option is not necessary, it will speed
+The `innobackupex --use-memory` option is not necessary, it will speed
 up the process if it is used (provided that the amount of RAM given is
 available).
 

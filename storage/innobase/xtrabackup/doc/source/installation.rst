@@ -2,15 +2,15 @@
 .. _install:
 
 ===================================
-Installing |Percona XtraBackup| 2.4
+Installing *Percona XtraBackup* 2.4
 ===================================
 
-This page provides the information on how to install |Percona XtraBackup|.
+This page provides the information on how to install *Percona XtraBackup*.
 Following options are available:
 
 * :ref:`installing_from_binaries` (recommended)
 * :ref:`installing_from_tarball`
-* Installing |Percona XtraBackup| from Downloaded
+* Installing *Percona XtraBackup* from Downloaded
   :ref:`rpm <standalone_rpm>` or :ref:`apt <standalone_deb>` packages
 * :ref:`compiling_xtrabackup`
 
@@ -18,18 +18,18 @@ Before installing, you might want to read the :doc:`release-notes`.
 
 .. _installing_from_binaries:
 
-Installing |Percona XtraBackup| from Repositories
+Installing *Percona XtraBackup* from Repositories
 =================================================
 
-|Percona| provides repositories for :program:`yum` (``RPM`` packages for
-*Red Hat*, *CentOS* and *Amazon Linux AMI*) and :program:`apt` (:file:`.deb`
-packages for *Ubuntu* and *Debian*) for software such as |Percona Server|,
-|Percona XtraBackup|, and *Percona Toolkit*. This makes it easy to install and
+Percona provides repositories for `yum` (``RPM`` packages for
+*Red Hat*, *CentOS* and *Amazon Linux AMI*) and `apt` (`.deb`
+packages for *Ubuntu* and *Debian*) for software such as *Percona Server for MySQL*,
+*Percona XtraBackup*, and *Percona Toolkit*. This makes it easy to install and
 update your software and its dependencies through your operating system's
-package manager. This is the recommended way of installing |Percona XtraBackup|.
+package manager. This is the recommended way of installing *Percona XtraBackup*.
 
 The following guides describe the installation process for using the official
-Percona repositories for :file:`.deb` and :file:`.rpm` packages.
+Percona repositories for `.deb` and `.rpm` packages.
 
 .. toctree::
    :maxdepth: 1
@@ -47,15 +47,15 @@ Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
    .. seealso::
 
-      Supported MySQL and Percona Server for MySQL versions in |Percona XtraBackup| 2.4 and 8.0
+      Supported MySQL and Percona Server for MySQL versions in *Percona XtraBackup* 2.4 and 8.0
          :ref:`intro`
 
 .. _installing_from_tarball:
 
-Installing |Percona XtraBackup| from a Binary Tarball
+Installing *Percona XtraBackup* from a Binary Tarball
 =====================================================
 
-Binary tarballs are available for `download <https://www.percona.com/downloads>`_ and installation. The following table lists the tarballs available in ``Linux - Generic``. Select the |Percona XtraBackup| 2.4 version number and the type of tarball for your installation. Both binary tarballs support all distributions.
+Binary tarballs are available for `download <https://www.percona.com/downloads>`_ and installation. The following table lists the tarballs available in ``Linux - Generic``. Select the *Percona XtraBackup* 2.4 version number and the type of tarball for your installation. Both binary tarballs support all distributions.
 
 .. tabularcolumns:: |p{5cm}|p{5cm}|p{11cm}|
 
@@ -83,7 +83,7 @@ Fetch and extract the correct binary tarball. For example, the following downloa
 Compiling and Installing from Source Code
 =========================================
 
-|Percona XtraBackup| is open source and the code is available on
+*Percona XtraBackup* is open source and the code is available on
 `Github <https://github.com/percona/percona-xtrabackup>`_. The following guide
 describes the compiling and installation process from source code.
 
@@ -95,13 +95,13 @@ describes the compiling and installation process from source code.
 
 .. _pxb.installing/docker-container.running:
 
-Running |Percona XtraBackup| in a Docker container
+Running *Percona XtraBackup* in a Docker container
 ================================================================================
 
-Docker images of |Percona XtraBackup| |version| are hosted publicly on Docker
+Docker images of *Percona XtraBackup* |version| are hosted publicly on Docker
 Hub at https://hub.docker.com/r/percona/percona-xtradb-cluster/.
 
-For more information about how to use |docker|, see the `Docker Docs`_.
+For more information about how to use Docker, see the `Docker Docs`_.
 
 .. _`Docker Docs`: https://docs.docker.com/
 

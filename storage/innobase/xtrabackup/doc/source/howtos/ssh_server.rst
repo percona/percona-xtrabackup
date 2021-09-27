@@ -2,15 +2,12 @@
  Installing and configuring a SSH server
 =========================================
 
-Many Linux distributions only install the ssh client by default. If you don't have the ssh server installed already, the easiest way of doing it is by using your distribution's packaging system: ::
+Many Linux distributions only install the ssh client by default. If you don't have the ssh server, install the server by using your distribution's packaging system.
 
-     ubuntu$ sudo apt-get install openssh-server
-  archlinux$ sudo pacman -S openssh
-
-You may need to take a look at your distribution's documentation or search for a tutorial on the internet to configure it if you haven't done it before.
+You may need to review your distribution's documentation or search for a tutorial on the Internet for configuration information.
 
 
-Some links of them are:
+Distribution links for the SSH server are:
 
 *  Debian - http://wiki.debian.org/SSH
 

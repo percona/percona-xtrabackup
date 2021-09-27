@@ -4,20 +4,20 @@
 Compressed Backup
 =================
 
-|Percona XtraBackup| supports compressed backups: a local or streaming backup
-can be compressed or decompressed with |xbstream|.
+*Percona XtraBackup* supports compressed backups: a local or streaming backup
+can be compressed or decompressed with xbstream.
 
 Creating Compressed Backups
 ===========================
 
-In order to make a compressed backup you'll need to use the :option:`xtrabackup --compress`
+In order to make a compressed backup you'll need to use the `xtrabackup --compress`
 option:
 
 .. code-block:: bash
 
   $ xtrabackup --backup --compress --target-dir=/data/compressed/
 
-The :option:`xtrabackup --compress` uses the ``qpress`` tool that you can install via
+The `xtrabackup --compress` uses the ``qpress`` tool that you can install via
 the ``percona-release`` package configuration tool as follows:
 
 .. code-block:: bash
@@ -28,12 +28,14 @@ the ``percona-release`` package configuration tool as follows:
 
 .. note::
 
-   .. include:: ../.res/contents/instruction.repository.enabling.txt
+      Enable the repository: :bash:`percona-release enable-only tools release`
 
-   .. seealso:: :ref:`installing_from_binaries`
+      If you intend to use Percona XtraBackup in combination with
+      the upstream MySQL Server, you only need to enable the ``tools``
+      repository: :bash:`percona-release enable-only tools`.
 
 If you want to speed up the compression you can use the parallel compression,
-which can be enabled with :option:`xtrabackup --compress-threads` option.
+which can be enabled with `xtrabackup --compress-threads` option.
 Following example will use four threads for compression:
 
 .. code-block:: bash
@@ -57,8 +59,8 @@ Output should look like this ::
 Preparing the backup
 --------------------
 
-Before you can prepare the backup you'll need to uncompress all the files.
-|Percona XtraBackup| has implemented :option:`xtrabackup --decompress` option
+Before you can prepare the backup you must uncompress all the files.
+*Percona XtraBackup* has implemented `xtrabackup --decompress` option
 that can be used to decompress the backup.
 
 
@@ -68,53 +70,52 @@ that can be used to decompress the backup.
 
 .. note::
 
-  :option:`xtrabackup --parallel` can be used with
-  :option:`xtrabackup --decompress` option to decompress multiple files
+  `xtrabackup --parallel` can be used with
+  `xtrabackup --decompress` option to decompress multiple files
   simultaneously.
 
-|Percona XtraBackup| doesn't automatically remove the compressed files. In
-order to clean up the backup directory you should use
-:option:`xtrabackup --remove-original` option. Even if they're not removed
-these files will not be copied/moved over to the datadir if
-:option:`xtrabackup --copy-back` or :option:`xtrabackup --move-back` are used.
+*Percona XtraBackup* does not automatically remove the compressed files. In
+order to clean up the backup directory, use the
+`xtrabackup --remove-original` option. If the files not removed
+they are not copied or moved to the datadir if
+`xtrabackup --copy-back` or `xtrabackup --move-back` are used.
 
 When the files are uncompressed you can prepare the backup with the
-:option:`xtrabackup --prepare` option:
+`xtrabackup --prepare` option:
 
 .. code-block:: bash
 
   $ xtrabackup --prepare --target-dir=/data/compressed/
 
-You should check for a confirmation message: ::
+Check for a confirmation message: ::
 
   InnoDB: Starting shutdown...
   InnoDB: Shutdown completed; log sequence number 9293846
   170223 13:39:31 completed OK!
 
-Now the files in :file:`/data/compressed/` are ready to be used by the server.
+Now the files in `/data/compressed/` are ready to be used by the server.
 
 Restoring the backup
 --------------------
 
-|xtrabackup| has a :option:`xtrabackup --copy-back` option, which performs the
-restoration of a backup to the server's :term:`datadir`:
+xtrabackup has a `xtrabackup --copy-back` option, which performs the
+restoration of a backup to the server's `datadir`:
 
 .. code-block:: bash
 
   $ xtrabackup --copy-back --target-dir=/data/backups/
 
-It will copy all the data-related files back to the server's :term:`datadir`,
-determined by the server's :file:`my.cnf` configuration file. You should check
-the last line of the output for a success message::
+The option copies all the data-related files back to the server's `datadir`,
+determined by the server's `my.cnf` configuration file. Check the last line of the output for a success message::
 
   170223 13:49:13 completed OK!
 
-You should check the file permissions after copying the data back. You may need
-to adjust them with something like:
+Verify the file permissions after copying the data back. You may need
+to adjust the permissions. For example, the following command changes the owner of the file location:
 
 .. code-block:: bash
 
   $ chown -R mysql:mysql /var/lib/mysql
 
-Now that the :term:`datadir` contains the restored data. You are ready to start
+Now that the `datadir` contains the restored data. You are ready to start
 the server.
