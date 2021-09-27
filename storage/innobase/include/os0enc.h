@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 2019, 2020 Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -30,10 +30,22 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #ifndef os0enc_h
 #define os0enc_h
 
+#include <mysql/components/my_service.h>
+#include "my_aes.h"
 #include "univ.i"
+
+namespace innobase {
+namespace encryption {
+
+bool init_keyring_services(SERVICE_TYPE(registry) * reg_srv);
+
+void deinit_keyring_services(SERVICE_TYPE(registry) * reg_srv);
+}  // namespace encryption
+}  // namespace innobase
 
 // Forward declaration.
 class IORequest;
+struct Encryption_key;
 
 /** Encryption algorithm. */
 class Encryption {
@@ -79,14 +91,35 @@ class Encryption {
   /** Encryption master key prifix */
   static constexpr char MASTER_KEY_PREFIX[] = "INNODBKey";
 
-  /** Default master key for bootstrap */
-  static constexpr char DEFAULT_MASTER_KEY[] = "DefaultMasterKey";
-
   /** Encryption key length */
   static constexpr size_t KEY_LEN = 32;
 
+  /** Default master key for bootstrap */
+  static constexpr char DEFAULT_MASTER_KEY[] = "DefaultMasterKey";
+
   /** Encryption magic bytes size */
   static constexpr size_t MAGIC_SIZE = 3;
+
+  static const size_t SERVER_UUID_HEX_LEN = 16;
+  static constexpr char KEY_MAGIC_PS_V3[] = "PSC";
+
+  /* CRYPT_DATA in ENCRYPTION='N' tablespaces always have unencrypted scheme */
+  static const uint CRYPT_SCHEME_UNENCRYPTED = 0;
+  /* KEYRING ENCRYPTION header size. aka crypt_data. Also present in
+  ENCRYPTION=N Tablespaces */
+  static const uint CRYPT_SCHEME_1_IV_LEN = 16;
+  static const size_t KEYRING_VALIDATION_TAG_SIZE = MY_AES_BLOCK_SIZE;
+  static constexpr uint KEYRING_INFO_MAX_SIZE =
+      MAGIC_SIZE + 1                  // type
+      + 4                             // min_key_version
+      + 4                             // max_key_version
+      + 4                             // key_id
+      + 1                             // encryption
+      + CRYPT_SCHEME_1_IV_LEN         // iv (16 bytes)
+      + 1                             // encryption rotation type
+      + KEY_LEN                       // tablespace key
+      + SERVER_UUID_HEX_LEN           // server's UUID written in hex
+      + KEYRING_VALIDATION_TAG_SIZE;  // validation tag
 
   /** Encryption master key prifix size */
   static constexpr size_t MASTER_KEY_PRIFIX_LEN = 9;
@@ -122,6 +155,9 @@ class Encryption {
   /** Decryption in progress. */
   static constexpr size_t DECRYPT_IN_PROGRESS = 1 << 1;
 
+  /** Tablespaces whose key needs to be reencrypted */
+  static std::vector<space_id_t> s_tablespaces_to_reencrypt;
+
   /** Default constructor */
   Encryption() noexcept : m_type(NONE) {}
 
@@ -140,11 +176,7 @@ class Encryption {
   }
 
   /** Copy constructor */
-  Encryption(const Encryption &other) noexcept
-      : m_type(other.m_type),
-        m_key(other.m_key),
-        m_klen(other.m_klen),
-        m_iv(other.m_iv) {}
+  Encryption(const Encryption &other) noexcept = default;
 
   Encryption &operator=(const Encryption &) = default;
 
@@ -231,12 +263,13 @@ class Encryption {
                                         byte **master_key) noexcept;
 
   /** Decoding the encryption info from the first page of a tablespace.
-  @param[in,out]  key             key
-  @param[in,out]  iv              iv
+  @param[in]      space_id        Tablespace id
+  @param[in,out]  e_key           key, iv
   @param[in]      encryption_info encryption info
   @param[in]      decrypt_key     decrypt key using master key
   @return true if success */
-  static bool decode_encryption_info(byte *key, byte *iv, byte *encryption_info,
+  static bool decode_encryption_info(space_id_t space_id, Encryption_key &e_key,
+                                     byte *encryption_info,
                                      bool decrypt_key) noexcept;
 
   /** Encrypt the redo log block.
@@ -379,4 +412,14 @@ class Encryption {
   static char s_uuid[SERVER_UUID_LEN + 1];
 };
 
+struct Encryption_key {
+  /** Encrypt key */
+  byte *m_key;
+
+  /** Encrypt initial vector */
+  byte *m_iv;
+
+  /** Master key id */
+  uint32_t m_master_key_id{Encryption::DEFAULT_MASTER_KEY_ID};
+};
 #endif /* os0enc_h */

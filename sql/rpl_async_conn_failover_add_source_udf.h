@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,8 +33,8 @@ class Rpl_async_conn_failover_add_source : public Udf_service_impl {
   bool m_initialized{false};
 
  public:
-  Rpl_async_conn_failover_add_source() {}
-  ~Rpl_async_conn_failover_add_source() override {}
+  Rpl_async_conn_failover_add_source() = default;
+  ~Rpl_async_conn_failover_add_source() override = default;
 
   /**
     Initialize variables, acquires the mysql_service_mysql_udf_metadata from the

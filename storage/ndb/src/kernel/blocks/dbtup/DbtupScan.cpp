@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -789,9 +789,12 @@ Dbtup::execACCKEYCONF(Signal* signal)
        *   so rescan this position.
        *   Which is implemented by using execACCKEYREF...
        */
-      ndbout << "execACCKEYCONF "
-             << scan.m_scanPos.m_key_mm
-             << " != " << tmp << " ";
+      char key_str1[MAX_LOG_MESSAGE_SIZE];
+      printLocal_Key(key_str1, sizeof(key_str1), scan.m_scanPos.m_key_mm);
+      char key_str2[MAX_LOG_MESSAGE_SIZE];
+      printLocal_Key(key_str2, sizeof(key_str2), tmp);
+      g_eventLogger->info("execACCKEYCONF %s != %s ", key_str1, key_str2);
+
       scan.m_bits |= ScanOp::SCAN_LOCK_WAIT;
       execACCKEYREF(signal);
       return;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@
 
   This can also be used to dump weight table of Japanese Han characters.
   How to use:
-    1. Copy the line of Han characters in CLDR file ja.xml to a seperate file,
+    1. Copy the line of Han characters in CLDR file ja.xml to a separate file,
        e.g. ja_han.txt.
     2. Make sure the file is saved in UTF-8 (use 'file' command to check), or
        use iconv to convert.
@@ -41,7 +41,7 @@
     1. Make sure you have uca900_weights and all the weight tables in strings/
        uca900_data.h. If no, please refer to above comments about how to
        generate those tables.
-    2. Copy the lines of Han characters in CLDR file zh.xml to a seperate
+    2. Copy the lines of Han characters in CLDR file zh.xml to a separate
        file, e.g. zh_han.txt.
     3. Make sure the file is saved in UTF-8 (use 'file' command to check), or
        use iconv to convert.

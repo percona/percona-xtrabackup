@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2115,8 +2115,7 @@ extern void NdbOut_Init();
 static int
 testmain()
 {
-  my_init();
-  NdbOut_Init();
+  ndb_init();
   signal(SIGABRT, SIG_DFL);
   { const char* p = NdbEnv_GetEnv("TEST_NDB_PACK_VERBOSE", (char*)0, 0);
     if (p != 0)
@@ -2140,6 +2139,7 @@ testmain()
   }
   // do not print "ok" in TAPTEST
   ndbout << "passed" << endl;
+  ndb_end(0);
   return 0;
 }
 

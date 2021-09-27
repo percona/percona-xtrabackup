@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2020 Oracle and/or its affiliates.
+   Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,7 +60,6 @@ static bool g_freeze_wakeup = 0;
 
 //define HIGH_DEBUG_CPU_USAGE 1
 //#define DEBUG_CPU_USAGE 1
-extern EventLogger * g_eventLogger;
 
 Thrman::Thrman(Block_context & ctx, Uint32 instanceno) :
   SimulatedBlock(THRMAN, ctx, instanceno),
@@ -332,7 +331,7 @@ void Thrman::execREAD_CONFIG_REQ(Signal *signal)
     if (!ndb_mgm_get_string_parameter(p, CFG_DB_SPIN_METHOD, &conf))
     {
       jam();
-      if (native_strcasecmp(conf, "staticspinning"))
+      if (native_strcasecmp(conf, "staticspinning") == 0)
       {
         if (instance() == m_main_thrman_instance)
         {
@@ -340,7 +339,7 @@ void Thrman::execREAD_CONFIG_REQ(Signal *signal)
                               " configuration");
         }
       }
-      else if (native_strcasecmp(conf, "costbasedspinning"))
+      else if (native_strcasecmp(conf, "costbasedspinning") == 0)
       {
         if (instance() == m_main_thrman_instance)
         {
@@ -351,7 +350,7 @@ void Thrman::execREAD_CONFIG_REQ(Signal *signal)
         m_enable_adaptive_spinning = true;
         m_configured_spintime = 100;
       }
-      else if (native_strcasecmp(conf, "latencyoptimisedspinning"))
+      else if (native_strcasecmp(conf, "latencyoptimisedspinning") == 0)
       {
         if (instance() == m_main_thrman_instance)
         {
@@ -363,7 +362,7 @@ void Thrman::execREAD_CONFIG_REQ(Signal *signal)
         m_enable_adaptive_spinning = true;
         m_configured_spintime = 200;
       }
-      else if (native_strcasecmp(conf, "databasemachinespinning"))
+      else if (native_strcasecmp(conf, "databasemachinespinning") == 0)
       {
         if (instance() == m_main_thrman_instance)
         {

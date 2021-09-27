@@ -5,7 +5,12 @@
 . inc/common.sh
 
 plugin_load=keyring_vault.so
-plugin_dir=$PWD/../../../../plugin_output_directory
+if test -d $PWD/../../../../plugin_output_directory
+then
+  plugin_dir=$PWD/../../../../plugin_output_directory
+else
+  plugin_dir=$PWD/../../lib/plugin/
+fi
 keyring_vault_config=${TEST_VAR_ROOT}/keyring_vault_config
 keyring_args="--keyring-vault-config=${keyring_vault_config}"
 

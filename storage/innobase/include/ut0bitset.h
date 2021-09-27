@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -41,7 +41,7 @@ class Bitset {
   Bitset() : m_bitset(nullptr), m_size(0) {}
 
   /** Destructor */
-  ~Bitset() {}
+  ~Bitset() = default;
 
   /** Initialize the bitset with a byte array and size
   @param[in]    bitset  byte array for this bitset

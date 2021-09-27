@@ -1,7 +1,7 @@
 #ifndef SESSION_TRACKER_INCLUDED
 #define SESSION_TRACKER_INCLUDED
 
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -83,7 +83,7 @@ class State_tracker {
   State_tracker() : m_enabled(false), m_changed(false) {}
 
   /** Destructor */
-  virtual ~State_tracker() {}
+  virtual ~State_tracker() = default;
 
   /** Getters */
   bool is_enabled() const { return m_enabled; }
@@ -126,10 +126,10 @@ class Session_tracker {
   Session_tracker &operator=(Session_tracker const &) = delete;
 
   /** Constructor */
-  Session_tracker() {}
+  Session_tracker() = default;
 
   /** Destructor */
-  ~Session_tracker() {}
+  ~Session_tracker() = default;
   /**
     Initialize Session_tracker objects and enable them based on the
     tracker_xxx variables' value that the session inherit from global

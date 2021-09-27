@@ -136,7 +136,7 @@ insert into t1 values(1,1),(0,0);
 select f1, f2, if(f1, 40.0, 5.00) from t1 group by f1 order by f2;
 f1	f2	if(f1, 40.0, 5.00)
 0	0	5.00
-1	1	40.00
+1	1	40.0
 drop table t1;
 select if(0, 18446744073709551610, 18446744073709551610);
 if(0, 18446744073709551610, 18446744073709551610)
@@ -319,3 +319,5 @@ JSON_ARRAYAGG(NULLIF(true,false))
 SELECT JSON_ARRAYAGG(CASE WHEN true = false THEN NULL ELSE true END);
 JSON_ARRAYAGG(CASE WHEN true = false THEN NULL ELSE true END)
 [1]
+# Bug#32231557: Field_blob::store_to_mem: assertion `field_charset == cs' failed.
+DO GROUP_CONCAT(NULLIF(ELT(1, @e), POINT(250,41)) ORDER BY 1);

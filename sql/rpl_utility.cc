@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,10 +60,10 @@ struct TYPELIB;
 #include "sql/log.h"
 #include "sql/log_event.h"  // Log_event
 #include "sql/my_decimal.h"
-#include "sql/mysqld.h"  // slave_type_conversions_options
+#include "sql/mysqld.h"  // replica_type_conversions_options
 #include "sql/psi_memory_key.h"
-#include "sql/rpl_rli.h"  // Relay_log_info
-#include "sql/rpl_slave.h"
+#include "sql/rpl_replica.h"
+#include "sql/rpl_rli.h"    // Relay_log_info
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
 #include "sql/sql_lex.h"  // LEX
@@ -144,10 +144,10 @@ static bool is_conversion_ok(int order) {
   DBUG_TRACE;
   bool allow_non_lossy, allow_lossy;
 
-  allow_non_lossy = slave_type_conversions_options &
-                    (1ULL << SLAVE_TYPE_CONVERSIONS_ALL_NON_LOSSY);
-  allow_lossy = slave_type_conversions_options &
-                (1ULL << SLAVE_TYPE_CONVERSIONS_ALL_LOSSY);
+  allow_non_lossy = replica_type_conversions_options &
+                    (1ULL << REPLICA_TYPE_CONVERSIONS_ALL_NON_LOSSY);
+  allow_lossy = replica_type_conversions_options &
+                (1ULL << REPLICA_TYPE_CONVERSIONS_ALL_LOSSY);
 
   DBUG_PRINT("enter", ("order: %d, flags:%s%s", order,
                        allow_non_lossy ? " ALL_NON_LOSSY" : "",
@@ -233,7 +233,7 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
                                  Relay_log_info *rli, uint16 mflags,
                                  int *order_var) {
   DBUG_TRACE;
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   char field_type_buf[MAX_FIELD_WIDTH];
   String field_type(field_type_buf, sizeof(field_type_buf), &my_charset_latin1);
   field->sql_type(field_type);
@@ -301,7 +301,7 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
     */
     *order_var = -1;
     return true;
-  } else if (!slave_type_conversions_options)
+  } else if (!replica_type_conversions_options)
     return false;
 
   /*
@@ -334,7 +334,7 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
             *order_var = 1;  // Always require lossy conversions
           else
             *order_var = compare_lengths(field, source_type, metadata);
-          DBUG_ASSERT(*order_var != 0);
+          assert(*order_var != 0);
           return is_conversion_ok(*order_var);
         }
 
@@ -361,7 +361,7 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
         case MYSQL_TYPE_LONG:
         case MYSQL_TYPE_LONGLONG:
           *order_var = compare_lengths(field, source_type, metadata);
-          DBUG_ASSERT(*order_var != 0);
+          assert(*order_var != 0);
           return is_conversion_ok(*order_var);
 
         default:
@@ -440,7 +440,7 @@ static bool can_convert_field_to(Field *field, enum_field_types source_type,
   This function first finds out whether the table belongs to the data
   dictionary. When not, it will compare the master table with an existing
   table on the slave and see if they are compatible with respect to the
-  current settings of @c SLAVE_TYPE_CONVERSIONS.
+  current settings of @c REPLICA_TYPE_CONVERSIONS.
 
   If the tables are compatible and conversions are required, @c
   *tmp_table_var will be set to a virtual temporary table with field
@@ -469,7 +469,7 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
     corresponding check for SQL statements), thus 'false' in the call below.
     Also sserting that this is not a DD system thread.
   */
-  DBUG_ASSERT(!thd->is_dd_system_thread());
+  assert(!thd->is_dd_system_thread());
   const dd::Dictionary *dictionary = dd::get_dictionary();
   if (dictionary && !dictionary->is_dd_table_access_allowed(
                         false, false, table->s->db.str, table->s->db.length,
@@ -502,7 +502,7 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
                            " field '%s' can be converted - order: %d",
                            static_cast<long unsigned int>(col),
                            field->field_name, order));
-      DBUG_ASSERT(order >= -1 && order <= 1);
+      assert(order >= -1 && order <= 1);
 
       /*
         If order is not 0, a conversion is required, so we need to set
@@ -527,8 +527,8 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
                  ("Checking column %lu -"
                   " field '%s' can not be converted",
                   static_cast<long unsigned int>(col), field->field_name));
-      DBUG_ASSERT(col < size() && col < table->s->fields);
-      DBUG_ASSERT(table->s->db.str && table->s->table_name.str);
+      assert(col < size() && col < table->s->fields);
+      assert(table->s->db.str && table->s->table_name.str);
       const char *db_name = table->s->db.str;
       const char *tbl_name = table->s->table_name.str;
       char source_buf[MAX_FIELD_WIDTH];
@@ -568,7 +568,7 @@ bool table_def::compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
     }
   }
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   if (tmp_table) {
     for (unsigned int col = 0; col < tmp_table->s->fields; ++col)
       if (tmp_table->field[col]) {
@@ -617,14 +617,14 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli,
   // Default value : treat all values signed
   bool unsigned_flag = false;
 
-  // Check if slave_type_conversions contains ALL_UNSIGNED
-  unsigned_flag = slave_type_conversions_options &
-                  (1ULL << SLAVE_TYPE_CONVERSIONS_ALL_UNSIGNED);
+  // Check if replica_type_conversions contains ALL_UNSIGNED
+  unsigned_flag = replica_type_conversions_options &
+                  (1ULL << REPLICA_TYPE_CONVERSIONS_ALL_UNSIGNED);
 
-  // Check if slave_type_conversions contains ALL_SIGNED
+  // Check if replica_type_conversions contains ALL_SIGNED
   unsigned_flag =
-      unsigned_flag && !(slave_type_conversions_options &
-                         (1ULL << SLAVE_TYPE_CONVERSIONS_ALL_SIGNED));
+      unsigned_flag && !(replica_type_conversions_options &
+                         (1ULL << REPLICA_TYPE_CONVERSIONS_ALL_SIGNED));
 
   for (uint col = 0; col < cols_to_create; ++col) {
     Create_field *field_def = new (thd->mem_root) Create_field();
@@ -855,7 +855,7 @@ table_def::table_def(unsigned char *types, ulong size, uchar *field_metadata,
       m_field_metadata[i] = pack.second.first;
       m_is_array[i] = pack.second.second;
       index += pack.first;
-      DBUG_ASSERT(index <= metadata_size);
+      assert(index <= metadata_size);
     }
   }
   if (m_size && null_bitmap) memcpy(m_null_bits, null_bitmap, (m_size + 7) / 8);
@@ -863,7 +863,7 @@ table_def::table_def(unsigned char *types, ulong size, uchar *field_metadata,
 
 table_def::~table_def() {
   my_free(m_memory);
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   m_type = nullptr;
   m_size = 0;
 #endif
@@ -1003,7 +1003,7 @@ HASH_ROW_ENTRY *Hash_slave_rows::get(TABLE *table, MY_BITMAP *cols) {
 
 bool Hash_slave_rows::next(HASH_ROW_ENTRY **entry) {
   DBUG_TRACE;
-  DBUG_ASSERT(*entry);
+  assert(*entry);
 
   if (*entry == nullptr) return true;
 
@@ -1044,7 +1044,7 @@ bool Hash_slave_rows::next(HASH_ROW_ENTRY **entry) {
 
 bool Hash_slave_rows::del(HASH_ROW_ENTRY *entry) {
   DBUG_TRACE;
-  DBUG_ASSERT(entry);
+  assert(entry);
 
   erase_specific_element(&m_hash, entry->preamble->hash_value, entry);
   return false;
@@ -1123,7 +1123,7 @@ uint Hash_slave_rows::make_hash_key(TABLE *table, MY_BITMAP *cols) {
           crc = checksum_crc32(crc, f->field_ptr(), f->data_length());
           break;
       }
-#ifndef DBUG_OFF
+#ifndef NDEBUG
       String tmp;
       f->val_str(&tmp);
       DBUG_PRINT("debug", ("make_hash_entry: hash after field %s=%s: %u",
@@ -1170,7 +1170,7 @@ bool Deferred_log_events::is_empty() { return m_array.empty(); }
 bool Deferred_log_events::execute(Relay_log_info *rli) {
   bool res = false;
 
-  DBUG_ASSERT(rli->deferred_events_collecting);
+  assert(rli->deferred_events_collecting);
 
   rli->deferred_events_collecting = false;
   for (Log_event **it = m_array.begin(); !res && it != m_array.end(); ++it) {

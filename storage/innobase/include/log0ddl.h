@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -407,7 +407,7 @@ class Log_DDL {
   Log_DDL();
 
   /** Deconstructor */
-  ~Log_DDL() {}
+  ~Log_DDL() = default;
 
   /** Write DDL log for freeing B-tree
   @param[in,out]	trx		transaction

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,7 +62,7 @@ bool Gcs_xcom_node_address::is_valid() const {
   return !m_member_ip.empty() && m_member_port != 0;
 }
 
-Gcs_xcom_node_address::~Gcs_xcom_node_address() {}
+Gcs_xcom_node_address::~Gcs_xcom_node_address() = default;
 
 Gcs_xcom_node_information::Gcs_xcom_node_information(
     const std::string &member_id, bool alive)

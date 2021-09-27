@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,10 +49,10 @@
 #include "sql/item.h"    // Item
 #include "sql/mysqld.h"  // table_alias_charset
 #include "sql/psi_memory_key.h"
-#include "sql/rpl_mi.h"     // Master_info
-#include "sql/rpl_msr.h"    // channel_map
-#include "sql/rpl_rli.h"    // Relay_log_info
-#include "sql/rpl_slave.h"  // SLAVE_SQL
+#include "sql/rpl_mi.h"       // Master_info
+#include "sql/rpl_msr.h"      // channel_map
+#include "sql/rpl_replica.h"  // SLAVE_SQL
+#include "sql/rpl_rli.h"      // Relay_log_info
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
 #include "sql/table.h"  // TABLE_LIST
@@ -85,11 +85,11 @@ Rpl_pfs_filter::Rpl_pfs_filter(const Rpl_pfs_filter &other) {
   if (!other.m_filter_rule.is_empty()) m_filter_rule.copy(other.m_filter_rule);
 }
 
-Rpl_pfs_filter::~Rpl_pfs_filter() {}
+Rpl_pfs_filter::~Rpl_pfs_filter() = default;
 
 Rpl_filter_statistics::Rpl_filter_statistics() { reset(); }
 
-Rpl_filter_statistics::~Rpl_filter_statistics() {}
+Rpl_filter_statistics::~Rpl_filter_statistics() = default;
 
 void Rpl_filter_statistics::reset() {
   m_configured_by = CONFIGURED_BY_STARTUP_OPTIONS;
@@ -191,7 +191,7 @@ int Rpl_filter::copy_global_replication_filters() {
   bool need_unlock = false;
 
   /* Assert that it is not self copy. */
-  DBUG_ASSERT(this != &rpl_global_filter);
+  assert(this != &rpl_global_filter);
 
   /* Check if the source is empty. */
   if (rpl_global_filter.is_empty()) return 0;
@@ -275,7 +275,7 @@ int Rpl_filter::copy_global_replication_filters() {
                                         rpl_global_filter.wild_do_table_inited);
     if (res != 0) goto err;
 
-    DBUG_ASSERT(!wild_do_table.empty());
+    assert(!wild_do_table.empty());
 
     wild_do_table_inited = true;
     table_rules_on = true;
@@ -292,7 +292,7 @@ int Rpl_filter::copy_global_replication_filters() {
                     res = 1;);
     if (res != 0) goto err;
 
-    DBUG_ASSERT(!wild_ignore_table.empty());
+    assert(!wild_ignore_table.empty());
 
     wild_ignore_table_inited = true;
     table_rules_on = true;
@@ -1341,7 +1341,7 @@ void Sql_cmd_change_repl_filter::set_filter_value(
       break;
     default:
       /* purecov: begin deadcode */
-      DBUG_ASSERT(0);
+      assert(0);
       break;
       /* purecov: end */
   }

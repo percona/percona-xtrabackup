@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -825,6 +825,8 @@ is the global server default. */
 #define HA_ERR_RECORD_CHANGED 123
 /** Wrong index given to function */
 #define HA_ERR_WRONG_INDEX 124
+/** Transaction has been rolled back */
+#define HA_ERR_ROLLED_BACK 125
 /** Indexfile is crashed */
 #define HA_ERR_CRASHED 126
 /** Record-file is crashed */

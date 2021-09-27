@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,7 @@
 class OldNdbApiSectionIterator: public GenericSectionIterator
 {
 private :
-  STATIC_CONST(KeyAndAttrInfoHeaderLength = 3);
+  static constexpr Uint32 KeyAndAttrInfoHeaderLength = 3;
 
   const Uint32 firstSigDataLen; // Num words in first signal
   Uint32* firstDataPtr;         // Ptr to start of data in first signal

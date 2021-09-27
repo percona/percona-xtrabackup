@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +38,7 @@
 #include "mysql/components/services/psi_thread_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/service_thd_engine_lock.h"
 #include "mysql_com.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/sql_security_ctx.h"
@@ -48,8 +49,8 @@
 #include "sql/protocol_classic.h"
 #include "sql/query_options.h"
 #include "sql/resourcegroups/platform/thread_attrs_api.h"  // num_vcpus
-#include "sql/rpl_rli.h"                                   // is_mts_worker
-#include "sql/rpl_slave_commit_order_manager.h"  // check_and_report_deadlock
+#include "sql/rpl_replica_commit_order_manager.h"  // check_and_report_deadlock
+#include "sql/rpl_rli.h"                           // is_mts_worker
 #include "sql/sql_alter.h"
 #include "sql/sql_callback.h"  // MYSQL_CALLBACK
 #include "sql/sql_class.h"     // THD
@@ -309,13 +310,18 @@ int thd_tablespace_op(const MYSQL_THD thd) {
     statement, so this function must check both the SQL command
     code and the Alter_info::flags.
   */
-  if (thd->lex->sql_command != SQLCOM_ALTER_TABLE) return 0;
-  DBUG_ASSERT(thd->lex->alter_info != nullptr);
+  int ret = 0;
 
-  return (thd->lex->alter_info->flags & (Alter_info::ALTER_DISCARD_TABLESPACE |
-                                         Alter_info::ALTER_IMPORT_TABLESPACE))
-             ? 1
-             : 0;
+  if (thd->lex->sql_command == SQLCOM_ALTER_TABLE) {
+    if (thd->lex->alter_info->flags & Alter_info::ALTER_DISCARD_TABLESPACE) {
+      ret = Alter_info::ALTER_DISCARD_TABLESPACE;
+    }
+    if (thd->lex->alter_info->flags & Alter_info::ALTER_IMPORT_TABLESPACE) {
+      ret = Alter_info::ALTER_IMPORT_TABLESPACE;
+    }
+  }
+
+  return (ret);
 }
 
 static void set_thd_stage_info(MYSQL_THD thd, const PSI_stage_info *new_stage,
@@ -392,7 +398,7 @@ int thd_tx_priority(const MYSQL_THD thd) {
 
 MYSQL_THD thd_tx_arbitrate(MYSQL_THD requestor, MYSQL_THD holder) {
   /* Should be different sessions. */
-  DBUG_ASSERT(holder != requestor);
+  assert(holder != requestor);
 
   return (thd_tx_priority(requestor) == thd_tx_priority(holder)
               ? requestor
@@ -436,7 +442,7 @@ char *thd_security_context(MYSQL_THD thd, char *buffer, size_t length,
     and has to be protected by LOCK_thd_query or risk pointing to
     uninitialized memory.
   */
-  const char *proc_info = thd->proc_info;
+  const char *proc_info = thd->proc_info();
 
   len = snprintf(header, sizeof(header),
                  "MySQL thread id %u, OS thread handle %lu, query id %lu",
@@ -483,7 +489,7 @@ char *thd_security_context(MYSQL_THD thd, char *buffer, size_t length,
     We have to copy the new string to the destination buffer because the string
     was reallocated to a larger buffer to be able to fit.
   */
-  DBUG_ASSERT(buffer != nullptr);
+  assert(buffer != nullptr);
   length = min(str.length(), length - 1);
   memcpy(buffer, str.c_ptr_quick(), length);
   /* Make sure that the new string is null terminated */
@@ -495,13 +501,6 @@ void thd_get_xid(const MYSQL_THD thd, MYSQL_XID *xid) {
   *xid = *pointer_cast<const MYSQL_XID *>(
       thd->get_transaction()->xid_state()->get_xid());
 }
-
-/**
-  Check the killed state of a user thread
-  @param v_thd  user thread
-  @retval 0 the user thread is active
-  @retval 1 the user thread has been killed
-*/
 
 int thd_killed(const void *v_thd) {
   const THD *thd = static_cast<const THD *>(v_thd);
@@ -518,12 +517,6 @@ int thd_killed(const void *v_thd) {
 
 void thd_set_kill_status(const MYSQL_THD thd) { thd->send_kill_message(); }
 
-/**
-  Return the thread id of a user thread
-  @param thd user thread
-  @return thread id
-*/
-
 unsigned long thd_get_thread_id(const MYSQL_THD thd) {
   return ((unsigned long)thd->thread_id());
 }
@@ -537,14 +530,14 @@ unsigned long thd_get_thread_id(const MYSQL_THD thd) {
 
 int thd_allow_batch(MYSQL_THD thd) {
   if ((thd->variables.option_bits & OPTION_ALLOW_BATCH) ||
-      (thd->slave_thread && opt_slave_allow_batching))
+      (thd->slave_thread && opt_replica_allow_batching))
     return 1;
   return 0;
 }
 
 void thd_mark_transaction_to_rollback(MYSQL_THD thd, int all) {
   DBUG_TRACE;
-  DBUG_ASSERT(thd);
+  assert(thd);
   /*
     The parameter "all" has type int since the function is defined
     in plugin.h. The corresponding parameter in the call below has
@@ -635,13 +628,15 @@ void thd_wait_end(MYSQL_THD thd) {
 //
 //////////////////////////////////////////////////////////
 
-/**
-   Interface for Engine to report row lock conflict.
-   The caller should guarantee thd_wait_for does not be freed, when it is
-   called.
-*/
 void thd_report_row_lock_wait(THD *self, THD *wait_for) {
   DBUG_TRACE;
+  thd_report_lock_wait(self, wait_for, true);
+}
+
+void thd_report_lock_wait(THD *self, THD *wait_for,
+                          bool /* may_survive_prepare*/) {
+  DBUG_TRACE;
+  CONDITIONAL_SYNC_POINT("report_lock_collision");
 
   if (self != nullptr && wait_for != nullptr && is_mts_worker(self) &&
       is_mts_worker(wait_for))
@@ -666,4 +661,9 @@ bool thd_check_connection_admin_privilege(MYSQL_THD thd) {
   Security_context *sctx = thd->security_context();
   return (!(sctx->check_access(SUPER_ACL) ||
             sctx->has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN")).first));
+}
+
+unsigned int thd_get_current_thd_terminology_use_previous() {
+  if (!current_thd) return 0;
+  return current_thd->variables.terminology_use_previous;
 }

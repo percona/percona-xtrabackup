@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@ struct TABLE;
 class JOIN;
 class Temp_table_param;
 class Common_table_expr;
-class SELECT_LEX_UNIT;
+class Query_expression;
 
 struct MaterializePathParameters {
   // Corresponds to MaterializeIterator::QueryBlock; see it for documentation.
@@ -43,7 +43,7 @@ struct MaterializePathParameters {
     int select_number;
     JOIN *join;
     bool disable_deduplication_by_hash_field;
-    bool copy_fields_and_items;
+    bool copy_items;
     Temp_table_param *temp_table_param;
     bool is_recursive_reference;
   };
@@ -51,7 +51,7 @@ struct MaterializePathParameters {
   Mem_root_array<const AccessPath *> *invalidators;
   TABLE *table;
   Common_table_expr *cte;
-  SELECT_LEX_UNIT *unit;
+  Query_expression *unit;
   int ref_slice;
   bool rematerialize;
   ha_rows limit_rows;

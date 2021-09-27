@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2015 Percona LLC and/or its affiliates
+(c) 2009-2021 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -112,11 +112,12 @@ bool have_multi_threaded_slave = false;
 bool have_gtid_slave = false;
 bool have_unsafe_ddl_tables = false;
 bool have_rocksdb = false;
+bool have_keyring_component = false;
 
 bool slave_auto_position = false;
 
 /* Kill long selects */
-os_thread_id_t kill_query_thread_id;
+std::thread::id kill_query_thread_id;
 os_event_t kill_query_thread_started;
 os_event_t kill_query_thread_stopped;
 os_event_t kill_query_thread_stop;
@@ -719,6 +720,10 @@ bool get_mysql_vars(MYSQL *connection) {
     mysql_free_result(res);
   }
 
+  if (server_version >= 80024) {
+    have_keyring_component = true;
+  }
+
 out:
   free_mysql_variables(mysql_vars);
 
@@ -975,7 +980,7 @@ static bool wait_for_no_updates(MYSQL *connection, uint timeout,
     if (!have_queries_to_wait_for(connection, threshold)) {
       return (true);
     }
-    os_thread_sleep(1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   msg_ts("Unable to obtain lock. Please try again later.");
@@ -1016,11 +1021,11 @@ static void kill_query_thread() {
   mysql_close(mysql);
 
 stop_thread:
-  msg_ts("Kill query thread stopped\n");
-
   my_thread_end();
 
   os_event_set(kill_query_thread_stopped);
+
+  msg_ts("Kill query thread stopped\n");
 }
 
 static void start_query_killer() {
@@ -1035,7 +1040,7 @@ static void start_query_killer() {
 
 static void stop_query_killer() {
   os_event_set(kill_query_thread_stop);
-  os_event_wait_time(kill_query_thread_stopped, 60000);
+  os_event_wait(kill_query_thread_stopped);
 
   os_event_destroy(kill_query_thread_stop);
   os_event_destroy(kill_query_thread_started);
@@ -1056,7 +1061,7 @@ static bool execute_query_with_timeout(MYSQL *mysql, const char *query,
     xb_mysql_query(mysql, query, true);
     uint err = mysql_errno(mysql);
     if (err == ER_LOCK_WAIT_TIMEOUT) {
-      os_thread_sleep(1000000);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
       continue;
     }
     if (err == 0) {
@@ -1279,7 +1284,7 @@ retry:
     curr_slave_coordinates = NULL;
 
     xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
-    os_thread_sleep(sleep_time * 1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
 
     curr_slave_coordinates = get_slave_coordinates(connection);
     msg_ts("Slave pos:\n\tprev: %s\n\tcurr: %s\n", prev_slave_coordinates,
@@ -1389,6 +1394,9 @@ bool write_slave_info(MYSQL *connection) {
   int channel_idx = 0;
   for (auto &channel : log_status.channels) {
     auto ch = channels.find(channel.channel_name);
+    if (channel.channel_name == "group_replication_applier" ||
+        channel.channel_name == "group_replication_recovery")
+      continue;
     std::string for_channel;
 
     if (!channel.channel_name.empty()) {
@@ -1916,7 +1924,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  "start_time TIMESTAMP NULL DEFAULT NULL,"
                  "end_time TIMESTAMP NULL DEFAULT NULL,"
                  "lock_time BIGINT UNSIGNED DEFAULT NULL,"
-                 "binlog_pos VARCHAR(128) DEFAULT NULL,"
+                 "binlog_pos TEXT DEFAULT NULL,"
                  "innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,"
                  "innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,"
                  "partial ENUM('Y', 'N') DEFAULT NULL,"
@@ -1926,6 +1934,12 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  "compressed ENUM('Y', 'N') DEFAULT NULL,"
                  "encrypted ENUM('Y', 'N') DEFAULT NULL"
                  ") CHARACTER SET utf8 ENGINE=innodb",
+                 false);
+
+  /* Upgrade from previous versions */
+  xb_mysql_query(connection,
+                 "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
+                 "binlog_pos TEXT DEFAULT NULL",
                  false);
 
   stmt = mysql_stmt_init(connection);
@@ -2375,7 +2389,7 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
                          "SHOW STATUS LIKE 'Innodb_buffer_pool_dump_status'",
                          status, true);
 
-    os_thread_sleep(1000000);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   free_mysql_variables(status);

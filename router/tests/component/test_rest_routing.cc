@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -215,11 +215,8 @@ TEST_P(RestRoutingApiTest, ensure_openapi) {
     ASSERT_TRUE(wait_for_port_ready(routing_ports_[2], 500ms));
   }
 
-  // wait a bit until the routing plugin really closed the sockets
-  //
-  // the routing plugin has a server-greeting-timeout of 100ms
-  // add a few more on top for our close-and-forget in wait_for_port_ready()
-  std::this_thread::sleep_for(200ms);
+  // wait until we see that the Router has blocked the host
+  EXPECT_TRUE(wait_log_contains(http_server, "blocking client host", 5s));
 
   EXPECT_NO_FATAL_FAILURE(
       fetch_and_validate_schema_and_resource(GetParam(), http_server));
@@ -947,7 +944,7 @@ TEST_F(RestRoutingApiTest, routing_api_no_auth) {
 
   const std::string router_output = router.get_full_logfile();
   EXPECT_THAT(router_output, ::testing::HasSubstr(
-                                 "plugin 'rest_routing' init failed: option "
+                                 "  init 'rest_routing' failed: option "
                                  "require_realm in [rest_routing] is required"))
       << router_output;
 }
@@ -1038,10 +1035,9 @@ TEST_F(RestRoutingApiTest, rest_routing_section_has_key) {
   check_exit_code(router, EXIT_FAILURE, 10000ms);
 
   const std::string router_output = router.get_full_logfile();
-  EXPECT_THAT(
-      router_output,
-      ::testing::HasSubstr("plugin 'rest_routing' init failed: [rest_routing] "
-                           "section does not expect a key, found 'A'"))
+  EXPECT_THAT(router_output, ::testing::HasSubstr(
+                                 "  init 'rest_routing' failed: [rest_routing] "
+                                 "section does not expect a key, found 'A'"))
       << router_output;
 }
 

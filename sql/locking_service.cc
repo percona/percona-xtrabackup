@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,7 +85,7 @@ static inline bool check_lock_name(const char *name) {
 
 class Release_all_locking_service_locks : public MDL_release_locks_visitor {
  public:
-  Release_all_locking_service_locks() {}
+  Release_all_locking_service_locks() = default;
 
   bool release(MDL_ticket *ticket) override {
     return ticket->get_key()->mdl_namespace() == MDL_key::LOCKING_SERVICE;

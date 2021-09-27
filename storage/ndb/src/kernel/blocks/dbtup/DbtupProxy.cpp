@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,6 @@
 
 #define JAM_FILE_ID 413
 
-extern EventLogger * g_eventLogger;
 
 #ifdef VM_TRACE
 //#define DEBUG_TUP_RESTART_ 1

@@ -1,6 +1,6 @@
 #ifndef SQL_PREPARE_H
 #define SQL_PREPARE_H
-/* Copyright (c) 2009, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include <assert.h>
 #include <stddef.h>
 #include <sys/types.h>
 #include <new>
@@ -29,7 +30,7 @@
 #include "lex_string.h"
 #include "my_alloc.h"
 #include "my_command.h"
-#include "my_dbug.h"
+
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "mysql/components/services/psi_statement_bits.h"
@@ -85,11 +86,30 @@ class Reprepare_observer final {
     simple, we only need the THD to report an error.
   */
   bool report_error(THD *thd);
+  /**
+    @returns true if some table metadata is changed and statement should be
+                  re-prepared.
+  */
   bool is_invalidated() const { return m_invalidated; }
   void reset_reprepare_observer() { m_invalidated = false; }
+  /// @returns true if prepared statement can (and will) be retried
+  bool can_retry() const {
+    // Only call for a statement that is invalidated
+    assert(is_invalidated());
+    return m_attempt <= MAX_REPREPARE_ATTEMPTS &&
+           DBUG_EVALUATE_IF("simulate_max_reprepare_attempts_hit_case", false,
+                            true);
+  }
 
  private:
-  bool m_invalidated;
+  bool m_invalidated{false};
+  int m_attempt{0};
+
+  /*
+    We take only 3 attempts to reprepare the query, otherwise we might end up
+    in endless loop.
+  */
+  static constexpr int MAX_REPREPARE_ATTEMPTS = 3;
 };
 
 bool ask_to_reprepare(THD *thd);
@@ -148,9 +168,14 @@ class Ed_result_set final {
                 MEM_ROOT *mem_root_arg);
 
   /** We don't call member destructors, they all are POD types. */
-  ~Ed_result_set() {}
+  ~Ed_result_set() = default;
 
   size_t get_field_count() const { return m_column_count; }
+
+  static void *operator new(size_t size, MEM_ROOT *mem_root,
+                            const std::nothrow_t & = std::nothrow) noexcept {
+    return mem_root->Alloc(size);
+  }
 
   static void operator delete(void *, size_t) noexcept {
     // Does nothing because m_mem_root is deallocated in the destructor
@@ -298,7 +323,7 @@ class Ed_row final {
     return *get_column(column_index);
   }
   const Ed_column *get_column(const unsigned int column_index) const {
-    DBUG_ASSERT(column_index < size());
+    assert(column_index < size());
     return m_column_array + column_index;
   }
   size_t size() const { return m_column_count; }
@@ -369,7 +394,7 @@ class Prepared_statement final {
 
   /**
     The memory root to allocate parsed tree elements (instances of Item,
-    SELECT_LEX and other classes).
+    Query_block and other classes).
   */
   MEM_ROOT main_mem_root;
 

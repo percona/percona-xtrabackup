@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -125,12 +125,14 @@ class Latches {
    public:
     Unique_sharded_rw_lock();
     ~Unique_sharded_rw_lock();
-    bool try_x_lock() { return rw_lock.try_x_lock(); }
-    void x_lock() { rw_lock.x_lock(); }
+    bool try_x_lock(ut::Location location) {
+      return rw_lock.try_x_lock(location);
+    }
+    void x_lock(ut::Location location) { rw_lock.x_lock(location); }
     void x_unlock() { rw_lock.x_unlock(); }
-    void s_lock() {
+    void s_lock(ut::Location location) {
       ut_ad(m_shard_id == NOT_IN_USE);
-      m_shard_id = rw_lock.s_lock();
+      m_shard_id = rw_lock.s_lock(location);
     }
     void s_unlock() {
       ut_ad(m_shard_id != NOT_IN_USE);
@@ -264,7 +266,11 @@ class Latches {
      https://reviews.llvm.org/D45898
   So, this declaration is just to make clang 6.0.0 and 7.0.0 happy.
   */
-  ~Latches() {}
+#if defined(__clang__) && (__clang_major__ < 8)
+  ~Latches() {}  // NOLINT(modernize-use-equals-default)
+#else
+  ~Latches() = default;
+#endif
 
 #ifdef UNIV_DEBUG
   /**

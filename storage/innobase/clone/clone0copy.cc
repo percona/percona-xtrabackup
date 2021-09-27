@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -323,14 +323,14 @@ int Clone_Snapshot::update_binlog_position() {
 }
 
 int Clone_Snapshot::wait_trx_end(THD *thd, trx_id_t trx_id) {
-  auto trx = trx_rw_is_active(trx_id, nullptr, false);
+  auto trx = trx_rw_is_active(trx_id, false);
   if (trx == nullptr) {
     return (0);
   }
 
   auto wait_cond = [&](bool alert, bool &result) {
     /* Check if transaction is still active. */
-    auto trx = trx_rw_is_active(trx_id, nullptr, false);
+    auto trx = trx_rw_is_active(trx_id, false);
     if (trx == nullptr) {
       result = false;
       return (0);

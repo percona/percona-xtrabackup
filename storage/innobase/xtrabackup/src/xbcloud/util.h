@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
 
 Aux functions used by xbcloud.
 
@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <string>
 
 #include <base64.h>
+#include <math.h>
 
 namespace xbcloud {
 
@@ -94,6 +95,12 @@ static inline std::pair<std::string, std::string> parse_http_header(
   auto r = header;
   trim(r);
   return std::make_pair(r, std::string());
+}
+
+inline ulong get_exponential_backoff(int count, uint64_t max_backoff) {
+  uint64_t delay = pow(2, count) * 1000;
+  int random = (rand() % 1000) + 1;
+  return std::min(delay + random, max_backoff);
 }
 
 template <typename T>

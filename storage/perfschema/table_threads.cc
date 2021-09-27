@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,9 +27,10 @@
 
 #include "storage/perfschema/table_threads.h"
 
+#include <assert.h>
 #include "lex_string.h"
 #include "my_compiler.h"
-#include "my_dbug.h"
+
 #include "my_thread.h"
 #include "sql/field.h"
 #include "sql/plugin_table.h"
@@ -201,7 +202,7 @@ int table_threads::index_init(uint idx, bool) {
       result = PFS_NEW(PFS_index_threads_by_resource_group);
       break;
     default:
-      DBUG_ASSERT(false);
+      assert(false);
   }
 
   m_opened_index = result;
@@ -228,8 +229,8 @@ int table_threads::make_row(PFS_thread *pfs) {
   m_row.m_parent_thread_internal_id = pfs->m_parent_thread_internal_id;
   m_row.m_processlist_id = pfs->m_processlist_id;
   m_row.m_thread_os_id = pfs->m_thread_os_id;
-  m_row.m_name = safe_class->m_name;
-  m_row.m_name_length = safe_class->m_name_length;
+  m_row.m_name = safe_class->m_name.str();
+  m_row.m_name_length = safe_class->m_name.length();
 
   /* Protect this reader against session attribute changes */
   pfs->m_session_lock.begin_optimistic_lock(&session_lock);
@@ -315,9 +316,9 @@ int table_threads::make_row(PFS_thread *pfs) {
   stage_class = find_stage_class(pfs->m_stage);
   if (stage_class != nullptr) {
     m_row.m_processlist_state_ptr =
-        stage_class->m_name + stage_class->m_prefix_length;
+        stage_class->m_name.str() + stage_class->m_prefix_length;
     m_row.m_processlist_state_length =
-        stage_class->m_name_length - stage_class->m_prefix_length;
+        stage_class->m_name.length() - stage_class->m_prefix_length;
     if (m_row.m_processlist_state_length > 64) {
       /*
         Column PROCESSLIST_STATE is VARCHAR(64)
@@ -352,7 +353,7 @@ int table_threads::read_row_values(TABLE *table, unsigned char *buf,
   int len = 0;
 
   /* Set the null bits */
-  DBUG_ASSERT(table->s->null_bytes == 2);
+  assert(table->s->null_bytes == 2);
   buf[0] = 0;
   buf[1] = 0;
 
@@ -403,10 +404,10 @@ int table_threads::read_row_values(TABLE *table, unsigned char *buf,
           }
           break;
         case 7: /* PROCESSLIST_COMMAND */
-          if (m_row.m_processlist_id != 0)
-            set_field_varchar_utf8(f, command_name[m_row.m_command].str,
-                                   (uint)command_name[m_row.m_command].length);
-          else {
+          if (m_row.m_processlist_id != 0) {
+            const std::string &cn = Command_names::str_session(m_row.m_command);
+            set_field_varchar_utf8(f, cn.c_str(), cn.length());
+          } else {
             f->set_null();
           }
           break;
@@ -476,7 +477,7 @@ int table_threads::read_row_values(TABLE *table, unsigned char *buf,
           }
           break;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }
@@ -519,7 +520,7 @@ int table_threads::update_row_values(TABLE *table, const unsigned char *,
         case 17: /* RESOURCE_GROUP */
           return HA_ERR_WRONG_COMMAND;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }

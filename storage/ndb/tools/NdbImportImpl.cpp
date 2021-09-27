@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -639,6 +639,7 @@ void
 NdbImportImpl::Job::start_resume()
 {
   log_debug(1, "start_resume jobno=" << m_jobno);
+  if(m_util.c_opt.m_stats)
   // verify old stats counts against old rowmap
   {
     uint64 old_rows;
@@ -3589,6 +3590,7 @@ NdbImportImpl::DiagTeam::read_old_diags()
     log_debug(1, "old rowmap:" << rowmap_in);
   }
   // old counts
+  if (opt.m_stats)
   {
     const char* path = opt.m_stats_file;
     const Table& table = m_util.c_stats_table;

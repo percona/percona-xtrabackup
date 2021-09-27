@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include <cstring>
 #include <NDBT.hpp>
 #include <NDBT_Test.hpp>
 #include <HugoTransactions.hpp>
@@ -30,6 +31,7 @@
 #include <NdbRestarts.hpp>
 #include <Vector.hpp>
 #include <random.h>
+#include <NdbSleep.h>
 #include <NdbTick.h>
 #include <my_sys.h>
 #include "../../src/ndbapi/SignalSender.hpp"
@@ -356,7 +358,7 @@ int runTestMaxOperations(NDBT_Context* ctx, NDBT_Step* step){
   }
 
   maxOpsLimit = 100;
-  Uint32 coolDownLoops = 25;
+  Uint32 coolDownLoops = 250;
   while (coolDownLoops-- > 0){
     int errors = 0;
     const int maxErrors = 5;
@@ -2295,8 +2297,8 @@ testNdbRecordPkAmbiguity(NDBT_Context* ctx, NDBT_Step* step)
   const Uint32 sizeOfTabRec= NdbDictionary::getRecordRowLength(tabRec);
   char keyRowBuf[ NDB_MAX_TUPLE_SIZE_IN_WORDS << 2 ];
   char attrRowBuf[ NDB_MAX_TUPLE_SIZE_IN_WORDS << 2 ];
-  bzero(keyRowBuf, sizeof(keyRowBuf));
-  bzero(attrRowBuf, sizeof(attrRowBuf));
+  std::memset(keyRowBuf, 0, sizeof(keyRowBuf));
+  std::memset(attrRowBuf, 0, sizeof(attrRowBuf));
 
   HugoCalculator calc(*pTab);
 
@@ -2389,7 +2391,7 @@ testNdbRecordPkAmbiguity(NDBT_Context* ctx, NDBT_Step* step)
       trans->close();
       
       /* Now read back */
-      memset(attrRowBuf, 0, sizeOfTabRec);
+      std::memset(attrRowBuf, 0, sizeOfTabRec);
       
       Uint32 pkVal= 0;
       memcpy(&pkVal, NdbDictionary::getValuePtr(tabRec,
@@ -2787,7 +2789,7 @@ testNdbRecordCICharPKUpdate(NDBT_Context* ctx, NDBT_Step* step)
     CHECK(memcmp(ucPkPtr, readPkPtr, ucPkPtr[0]) == 0);
     CHECK(memcmp(ucDataPtr, readDataPtr, sizeof(int)) == 0);
     
-    memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
+    std::memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
 
     /* Read with lower case */
     trans=pNdb->startTransaction();
@@ -2804,7 +2806,7 @@ testNdbRecordCICharPKUpdate(NDBT_Context* ctx, NDBT_Step* step)
     CHECK(memcmp(ucPkPtr, readPkPtr, ucPkPtr[0]) == 0);
     CHECK(memcmp(ucDataPtr, readDataPtr, sizeof(int)) == 0);
     
-    memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
+    std::memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
 
     /* Now update just the PK column to lower case */
     trans= pNdb->startTransaction();
@@ -2821,7 +2823,7 @@ testNdbRecordCICharPKUpdate(NDBT_Context* ctx, NDBT_Step* step)
     trans->close();
 
     /* Now check that we can read with the upper case key */
-    memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
+    std::memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
     
     trans=pNdb->startTransaction();
     CHECK(trans != 0);
@@ -2838,7 +2840,7 @@ testNdbRecordCICharPKUpdate(NDBT_Context* ctx, NDBT_Step* step)
     CHECK(memcmp(lcDataPtr, readDataPtr, sizeof(int)) == 0);
 
     /* Now check that we can read with the lower case key */
-    memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
+    std::memset(readBuf, 0, NDB_MAX_TUPLE_SIZE_IN_WORDS << 2);
     
     trans=pNdb->startTransaction();
     CHECK(trans != 0);
@@ -3231,7 +3233,7 @@ int testApiFailReqImpl(NDBT_Context* ctx, NDBT_Step* step)
   ctx->setProperty(ApiFailTestRun, (Uint32)0);
 
   /* Wait a little */
-  sleep(1);
+  NdbSleep_SecSleep(1);
 
   /* Active more stringent checking of behaviour after
    * API_FAILREQ
@@ -3245,7 +3247,7 @@ int testApiFailReqImpl(NDBT_Context* ctx, NDBT_Step* step)
   restarter.insertErrorInAllNodes(8078);
   
   /* Wait a little longer */
-  sleep(1);
+  NdbSleep_SecSleep(1);
   
   /* Now cause our connection to disconnect
    * This results in TC receiving an API_FAILREQ
@@ -3755,7 +3757,7 @@ int testFragmentedApiFailImpl(NDBT_Context* ctx, NDBT_Step* step)
   ctx->setProperty(ApiFailTestRun, (Uint32)0);
 
   /* Wait a little */
-  sleep(1);
+  NdbSleep_SecSleep(1);
 
   /* Now cause our connection to disconnect
    * This results in NDBD running API failure
@@ -4912,7 +4914,7 @@ public:
   }
 
   NodeIdReservations() {
-    bzero(m_ids, sizeof(m_ids));
+    std::memset(m_ids, 0, sizeof(m_ids));
     NdbMutex_Init(&m_mutex);
   }
 
@@ -6090,8 +6092,8 @@ testNdbRecordSpecificationCompatibility(NDBT_Context* ctx, NDBT_Step* step)
 
   char keyRowBuf[ NDB_MAX_TUPLE_SIZE_IN_WORDS << 2 ];
   char attrRowBuf[ NDB_MAX_TUPLE_SIZE_IN_WORDS << 2 ];
-  bzero(keyRowBuf, sizeof(keyRowBuf));
-  bzero(attrRowBuf, sizeof(attrRowBuf));
+  std::memset(keyRowBuf, 0, sizeof(keyRowBuf));
+  std::memset(attrRowBuf, 0, sizeof(attrRowBuf));
 
   HugoCalculator calc(*pTab);
 
@@ -7333,7 +7335,7 @@ runTestOldApiScanFinalise(NDBT_Context* ctx, NDBT_Step* step)
   }
 
 /* Test requires DBUG error injection */
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   /**
    * Test behaviour of 'old api' scan finalisation
    * failure
@@ -7702,6 +7704,83 @@ int runPkRead2(NDBT_Context* ctx, NDBT_Step* step)
                              true) == 0);
   CHECK(hugoOps.execute_NoCommit(ndb) == 0);
   CHECK(hugoOps.closeTransaction(ndb) == 0);
+  return NDBT_OK;
+}
+
+int runDatabaseAndSchemaName(NDBT_Context* ctx, NDBT_Step*)
+{
+  Ndb_cluster_connection* con = &ctx->m_cluster_connection;
+
+  // Create new Ndb object
+  std::unique_ptr<Ndb> ndb(new Ndb(con));
+  C2(ndb->init() == 0);
+
+  // Check that default schema name is "def"
+  C2(strcmp(ndb->getSchemaName(), "def") == 0);
+
+  // Check that default database is empty string
+  C2(strcmp(ndb->getDatabaseName(), "") == 0);
+
+  // nullptr argument to database or catalog should return error
+  C2(ndb->setDatabaseName(nullptr) != 0);
+  C2(ndb->getNdbError().code == 4118);
+
+  C2(ndb->setSchemaName(nullptr) != 0);
+  C2(ndb->getNdbError().code == 4118);
+
+  // Database or catalog name containing slash (/) is illegal and should return
+  // error (the slash is protected as separator for the internal name format)
+  const char* illegal_name_with_slash = "illegal_name/with_slash";
+  C2(ndb->setDatabaseName(illegal_name_with_slash) != 0);
+  C2(ndb->getNdbError().code == 4118);
+
+  C2(ndb->setSchemaName(illegal_name_with_slash) != 0);
+  C2(ndb->getNdbError().code == 4118);
+
+  // Create, alter, drop or open table should return an error
+  // unless database and schema name is set. These functions
+  // depends on those values to properly generate the internal name
+  NdbDictionary::Dictionary* dict = ndb->getDictionary();
+
+  NdbDictionary::Table ndbtab(*ctx->getTab());
+  C2(dict->createTable(ndbtab) == -1);
+  C2(dict->getNdbError().code == 4377);
+
+  NdbDictionary::Table new_ndbtab = ndbtab;
+  new_ndbtab.setName("new_name");
+  C2(dict->alterTable(ndbtab, new_ndbtab) != 0);
+  C2(dict->getNdbError().code == 4377);
+
+  C2(dict->dropTable(ndbtab.getName()) != 0);
+  C2(dict->getNdbError().code == 4377);
+
+  C2(dict->getTable(ndbtab.getName()) == nullptr);
+  C2(dict->getNdbError().code == 4377);
+
+  C2(dict->getTableGlobal(ndbtab.getName()) == nullptr);
+  C2(dict->getNdbError().code == 4377);
+
+  // Check autoincrement functions which depend on database and schema
+  Uint64 value;
+  C2(ndb->getAutoIncrementValue("tablename", value, 32) != 0);
+  C2(dict->getNdbError().code == 4377);
+
+  C2(ndb->setAutoIncrementValue("tablename", value, true) != 0);
+  C2(dict->getNdbError().code == 4377);
+
+  C2(ndb->readAutoIncrementValue("tablename", value) != 0);
+  C2(dict->getNdbError().code == 4377);
+
+
+  // Check that it's possible to set both database and schema name
+  const char* new_schema_name = "new_schema";
+  C2(ndb->setSchemaName(new_schema_name) == 0);
+  C2(strcmp(ndb->getSchemaName(), new_schema_name) == 0);
+
+  const char* new_db_name = "new_database";
+  C2(ndb->setDatabaseName(new_db_name) == 0);
+  C2(strcmp(ndb->getDatabaseName(), new_db_name) == 0);
+
   return NDBT_OK;
 }
 
@@ -8126,6 +8205,11 @@ TESTCASE("PkLockingReadNoWait",
   STEP(runPkRead1);
   STEP(runPkRead2);
   FINALIZER(runClearTable);
+}
+TESTCASE("DatabaseAndSchemaName",
+         "Test functions depending on database and schema name")
+{
+  STEP(runDatabaseAndSchemaName);
 }
 
 

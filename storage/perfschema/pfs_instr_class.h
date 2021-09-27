@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,12 +25,13 @@
 
 #include "my_config.h"
 
+#include <assert.h>
 #include <sys/types.h>
 #include <atomic>
 
 #include "lf.h"
 #include "my_compiler.h"
-#include "my_dbug.h"
+
 #include "my_inttypes.h"
 #include "mysql_com.h" /* NAME_LEN */
 #include "mysqld_error.h"
@@ -39,6 +40,7 @@
 #include "storage/perfschema/pfs_global.h"
 #include "storage/perfschema/pfs_lock.h"
 #include "storage/perfschema/pfs_stat.h"
+#include "storage/perfschema/terminology_use_previous_enum.h"
 
 struct TABLE_SHARE;
 
@@ -140,6 +142,56 @@ extern uint file_class_start;
 extern uint socket_class_start;
 extern uint wait_class_max;
 
+/**
+  Encapsulates the name of an instrumented entity.
+*/
+class PFS_instr_name {
+ public:
+  static constexpr uint max_length = PFS_MAX_INFO_NAME_LENGTH - 1;
+  /*
+    DO NOT ACCESS THE DATA MEMBERS DIRECTLY.  USE THE GETTERS AND
+    SETTTERS INSTEAD.
+
+    The data members should really have been private, but having both
+    private and public members would make the class a non-POD.  We
+    need to call memset on PFS_instr_class (in init_instr_class), and
+    the behavior of memset is undefined on non-POD objects.  Therefore
+    we keep the data members public, with an underscore prefix, and
+    this warning text.
+  */
+ public /*private*/:
+  /** Instrument name. */
+  char m_private_name[max_length + 1];
+  /** Length in bytes of @c m_name. */
+  uint m_private_name_length;
+  /** Old instrument name, if any. */
+  const char *m_private_old_name;
+  /** Length in bytes of old instrument name len, if any. */
+  uint m_private_old_name_length;
+  /** The oldest version that uses the new name. */
+  terminology_use_previous::enum_compatibility_version m_private_version;
+
+ public:
+  /** Return the name as a string. */
+  const char *str() const;
+  /** Return the length of the string. */
+  uint length() const;
+  /**
+    Copy the specified name to this name.
+
+    @param class_type The class type of this name, i.e., whether it is
+    the name of a mutex, thread, etc.
+
+    @param name The buffer to read from.
+
+    @param max_length_arg If is given, at most that many chars are
+    copied, plus the terminating '\0'. Otherwise, up to buffer_size-1
+    characters are copied, plus the terminating '\0'.
+  */
+  void set(PFS_class_type class_type, const char *name,
+           uint max_length_arg = max_length);
+};
+
 /** Information for all instrumentation. */
 struct PFS_instr_class {
   /** Class type */
@@ -162,9 +214,7 @@ struct PFS_instr_class {
   */
   uint m_event_name_index;
   /** Instrument name. */
-  char m_name[PFS_MAX_INFO_NAME_LENGTH];
-  /** Length in bytes of @c m_name. */
-  uint m_name_length;
+  PFS_instr_name m_name;
   /** Documentation. */
   char *m_documentation;
 
@@ -196,7 +246,7 @@ struct PFS_instr_class {
       flags that are not supported for this instrument.
       To fix it, clean up the instrumented code.
     */
-    DBUG_ASSERT(valid_flags == m_flags);
+    assert(valid_flags == m_flags);
     m_flags = valid_flags;
   }
 

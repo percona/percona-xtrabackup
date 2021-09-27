@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@
 #include <NdbTick.h>
 #include "ndb_socket.h"
 #include <OwnProcessInfo.hpp>
+#include <EventLogger.hpp>
 
 #if 0
 #define DEBUG_FPRINTF(arglist) do { fprintf arglist ; } while (0)
@@ -64,9 +65,8 @@ SocketServer::~SocketServer() {
   }
 }
 
-
-bool
-SocketServer::tryBind(unsigned short port, const char * intface) {
+bool SocketServer::tryBind(unsigned short port, const char* intface,
+                           char* error, size_t error_size) {
   struct sockaddr_in6 servaddr;
   memset(&servaddr, 0, sizeof(servaddr));
   servaddr.sin6_family = AF_INET6;
@@ -86,13 +86,18 @@ SocketServer::tryBind(unsigned short port, const char * intface) {
   DBUG_PRINT("info",("NDB_SOCKET: " MY_SOCKET_FORMAT,
                      MY_SOCKET_FORMAT_VALUE(sock)));
 
-  if (ndb_socket_reuseaddr(sock, true) == -1)
+  if (ndb_socket_configure_reuseaddr(sock, true) == -1)
   {
     ndb_socket_close(sock);
     return false;
   }
 
   if (ndb_bind_inet(sock, &servaddr) == -1) {
+    if (error != NULL) {
+      int err_code = ndb_socket_errno();
+      snprintf(error, error_size, "%d '%s'", err_code,
+               ndb_socket_err_message(err_code).c_str());
+    }
     ndb_socket_close(sock);
     return false;
   }
@@ -151,9 +156,10 @@ SocketServer::setup(SocketServer::Service * service,
   ndb_socket_len_t addr_len = sizeof(serv_addr);
   if(ndb_getsockname(sock, (struct sockaddr *) &serv_addr, &addr_len))
   {
-    ndbout_c("An error occurred while trying to find out what"
-       " port we bound to. Error: %d - %s",
-             ndb_socket_errno(), strerror(ndb_socket_errno()));
+    g_eventLogger->info(
+        "An error occurred while trying to find out what port we bound to."
+        " Error: %d - %s",
+        ndb_socket_errno(), strerror(ndb_socket_errno()));
     ndb_socket_close(sock);
     DBUG_RETURN(false);
   }

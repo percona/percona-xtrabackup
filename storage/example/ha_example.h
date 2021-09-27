@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -67,7 +67,7 @@ class ha_example : public handler {
 
  public:
   ha_example(handlerton *hton, TABLE_SHARE *table_arg);
-  ~ha_example() override {}
+  ~ha_example() override = default;
 
   /** @brief
     The name that will be used for display purposes.

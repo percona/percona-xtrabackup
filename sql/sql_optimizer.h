@@ -1,7 +1,7 @@
 #ifndef SQL_OPTIMIZER_INCLUDED
 #define SQL_OPTIMIZER_INCLUDED
 
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,14 +26,6 @@
 /**
   @file sql/sql_optimizer.h
   Classes used for query optimizations.
-*/
-
-/*
-   This structure is used to collect info on potentially sargable
-   predicates in order to check whether they become sargable after
-   reading const tables.
-   We form a bitmap of indexes that can be used for sargable predicates.
-   Only such indexes are involved in range analysis.
 */
 
 #include <sys/types.h>
@@ -79,6 +71,14 @@ typedef Mem_root_array<Key_use> Key_use_array;
 
 class Cost_model_server;
 
+/*
+   This structure is used to collect info on potentially sargable
+   predicates in order to check whether they become sargable after
+   reading const tables.
+   We form a bitmap of indexes that can be used for sargable predicates.
+   Only such indexes are involved in range analysis.
+*/
+
 struct SARGABLE_PARAM {
   Field *field;     /* field against which to check sargability */
   Item **arg_value; /* values of potential keys for lookups     */
@@ -117,23 +117,24 @@ class ORDER_with_src {
   }
 
   int get_flags() const {
-    DBUG_ASSERT(order);
+    assert(order);
     return flags;
   }
 };
 
 class JOIN {
  public:
-  JOIN(THD *thd_arg, SELECT_LEX *select);
+  JOIN(THD *thd_arg, Query_block *select);
   JOIN(const JOIN &rhs) = delete;
   JOIN &operator=(const JOIN &rhs) = delete;
 
-  ~JOIN() {}
+  /// Query expression referring this query block
+  Query_expression *query_expression() const {
+    return query_block->master_query_expression();
+  }
 
   /// Query block that is optimized and executed using this JOIN
-  SELECT_LEX *const select_lex;
-  /// Query expression referring this query block
-  SELECT_LEX_UNIT *const unit;
+  Query_block *const query_block;
   /// Thread handler
   THD *const thd;
 
@@ -177,9 +178,9 @@ class JOIN {
   Prealloced_array<TemporaryTableToCleanup, 1> temp_tables{
       PSI_NOT_INSTRUMENTED};
 
-  // Similarly, sorting iterators that need to be cleaned up after the query.
+  // Similarly, filesorts that need to be cleaned up after the query.
   // Only used for the hypergraph optimizer, for the same reason as above.
-  Prealloced_array<AccessPath *, 1> sorting_paths{PSI_NOT_INSTRUMENTED};
+  Prealloced_array<Filesort *, 1> filesorts_to_cleanup{PSI_NOT_INSTRUMENTED};
 
   /**
     Before plan has been created, "tables" denote number of input tables in the
@@ -241,9 +242,41 @@ class JOIN {
   */
   table_map found_const_table_map;
   /**
-     Used in some loops which scan the JOIN's tables: it is the bitmap of all
-     tables which are dependencies of lateral derived tables which the loop
-     has not yet processed.
+     This is the bitmap of all tables which are dependencies of
+     lateral derived tables which are not (yet) part of the partial
+     plan.  (The value is a logical 'or' of zero or more
+     TABLE_LIST.map() values.)
+
+     When we are building the join order, there is a partial plan (an
+     ordered sequence of JOIN_TABs), and an unordered set of JOIN_TABs
+     not yet added to the plan. Due to backtracking, the partial plan
+     may both grow and shrink. When we add a new table to the plan, we
+     may wish to set up join buffering, so that rows from the preceding
+     table are buffered. If any of the remaining tables are derived
+     tables that depends on any of the predecessors of the table we
+     are adding (i.e. a lateral dependency), join buffering would be
+     inefficient. (@see setup_join_buffering() for a detailed
+     explanation of why this is so.)
+
+     For this reason we need to maintain this table_map of lateral
+     dependencies of tables not yet in the plan. Whenever we add a new
+     table to the plan, we update the map by calling
+     Optimize_table_order::recalculate_lateral_deps_incrementally().
+     And when we remove a table, we restore the previous map value
+     using a Tabel_map_restorer object.
+
+     As an example, assume that we join four tables, t1, t2, t3 and
+     d1, where d1 is a derived table that depends on t1:
+
+     SELECT * FROM t1 JOIN t2 ON t1.a=t2.b JOIN t3 ON t2.c=t3.d
+       JOIN LATERAL (SELECT DISTINCT e AS x FROM t4 WHERE t4.f=t1.c)
+       AS d1 ON t3.e=d1.x;
+
+     Now, if our partial plan is t1->t2, the map (of lateral
+     dependencies of the remaining tables) will contain t1.
+     This tells us that we should not use join buffering when joining t1
+     with t2. But if the partial plan is t1->d2->t2, the map will be
+     empty. We may thus use join buffering when joining d2 with t2.
   */
   table_map deps_of_remaining_lateral_derived_tables{0};
 
@@ -283,7 +316,7 @@ class JOIN {
 
   /// A hook that secondary storage engines can use to override the executor
   /// completely.
-  using Override_executor_func = bool (*)(JOIN *);
+  using Override_executor_func = bool (*)(JOIN *, Query_result *);
   Override_executor_func override_executor_func = nullptr;
 
   /**
@@ -303,6 +336,10 @@ class JOIN {
   mem_root_deque<Item *> *fields;
   List<Cached_item> group_fields{};
   List<Cached_item> group_fields_cache{};
+
+  // For destroying fields otherwise owned by RemoveDuplicatesIterator.
+  List<Cached_item> semijoin_deduplication_fields{};
+
   Item_sum **sum_funcs{nullptr};
   /**
      Describes a temporary table.
@@ -372,9 +409,6 @@ class JOIN {
   /// Used and updated by JOIN::make_join_plan() and optimize_keyuse()
   Key_use_array keyuse_array;
 
-  /// List storing all expressions used in query block
-  mem_root_deque<Item *> *query_block_fields;
-
   /**
     Array of pointers to lists of expressions.
     Each list represents the SELECT list at a certain stage of execution,
@@ -393,6 +427,13 @@ class JOIN {
   mem_root_deque<Item *> *tmp_fields = nullptr;
 
   int error{0};  ///< set in optimize(), exec(), prepare_result()
+
+  /**
+    Incremented each time clear_hash_tables() is run, signaling to
+    HashJoinIterators that they cannot keep their hash tables anymore
+    (since outer references may have changed).
+   */
+  uint64_t hash_table_generation{0};
 
   /**
     ORDER BY and GROUP BY lists, to transform with prepare,optimize and exec
@@ -426,10 +467,10 @@ class JOIN {
   Explain_format_flags explain_flags{};
 
   /**
-    JOIN::having_cond is initially equal to select_lex->having_cond, but may
+    JOIN::having_cond is initially equal to query_block->having_cond, but may
     later be changed by optimizations performed by JOIN.
     The relationship between the JOIN::having_cond condition and the
-    associated variable select_lex->having_value is so that
+    associated variable query_block->having_value is so that
     having_value can be:
      - COND_UNDEF if a having clause was not specified in the query or
        if it has not been optimized yet
@@ -439,7 +480,7 @@ class JOIN {
        JOIN::having_cond is set to NULL
      - COND_OK otherwise, meaning that the having clause needs to be
        further evaluated
-    All of the above also applies to the where_cond/select_lex->cond_value
+    All of the above also applies to the where_cond/query_block->cond_value
     pair.
   */
   /**
@@ -447,7 +488,7 @@ class JOIN {
     Used in JOIN execution if no tables. Otherwise, attached in pieces to
     JOIN_TABs and then not used in JOIN execution.
     Printed by EXPLAIN EXTENDED.
-    Initialized by SELECT_LEX::get_optimizable_conditions().
+    Initialized by Query_block::get_optimizable_conditions().
   */
   Item *where_cond;
   /**
@@ -457,12 +498,12 @@ class JOIN {
     GROUP BY (see JOIN::make_tmp_tables_info()); in that case having_cond is
     set to NULL, but is first saved to having_for_explain so that EXPLAIN
     EXTENDED can still print it.
-    Initialized by SELECT_LEX::get_optimizable_conditions().
+    Initialized by Query_block::get_optimizable_conditions().
   */
   Item *having_cond;
   Item *having_for_explain;  ///< Saved optimized HAVING for EXPLAIN
   /**
-    Pointer set to select_lex->get_table_list() at the start of
+    Pointer set to query_block->get_table_list() at the start of
     optimization. May be changed (to NULL) only if optimize_aggregated_query()
     optimizes tables away.
   */
@@ -480,7 +521,7 @@ class JOIN {
   /**
     ref_items is an array of 4+ slices, each containing an array of Item
     pointers. ref_items is used in different phases of query execution.
-    - slice 0 is initially the same as SELECT_LEX::base_ref_items, ie it is
+    - slice 0 is initially the same as Query_block::base_ref_items, ie it is
       the set of items referencing fields from base tables. During optimization
       and execution it may be temporarily overwritten by slice 1-3.
     - slice 1 is a representation of the used items when being read from
@@ -490,18 +531,11 @@ class JOIN {
     - slice 3 is a copy of the original slice 0. It is created if
       slice overwriting is necessary, and it is used to restore
       original values in slice 0 after having been overwritten.
-    - slices 4 -> N are used by windowing:
-      first are all the window's out tmp tables,
-      the next indexes are reserved for the windows' frame buffers (in the same
-      order), if any, e.g.
-
-      One window:      4: window 1's out table
-                       5: window 1's FB
+    - slices 4 -> N are used by windowing: all the window's out tmp tables,
 
       Two windows:     4: window 1's out table
                        5: window 2's out table
-                       6: window 1's FB
-                       7: window 2's FB
+
       and so on.
 
     Slice 0 is allocated for the lifetime of a statement, whereas slices 1-3
@@ -531,7 +565,7 @@ class JOIN {
     result is empty. Implicitly grouped queries may still produce an
     aggregation row.
     @todo - suggest to set to "Preparation determined that query is empty"
-            when SELECT_LEX::is_empty_query() is true.
+            when Query_block::is_empty_query() is true.
   */
   const char *zero_result_cause{nullptr};
 
@@ -594,7 +628,7 @@ class JOIN {
     copy_ref_item_slice(ref_items[dst_slice], ref_items[src_slice]);
   }
   void copy_ref_item_slice(Ref_item_array dst_arr, Ref_item_array src_arr) {
-    DBUG_ASSERT(dst_arr.size() >= src_arr.size());
+    assert(dst_arr.size() >= src_arr.size());
     void *dest = dst_arr.array();
     const void *src = src_arr.array();
     if (!src_arr.is_null())
@@ -618,7 +652,7 @@ class JOIN {
            4 + windowno.
   */
   void set_ref_item_slice(uint sliceno) {
-    DBUG_ASSERT((int)sliceno >= 1);
+    assert((int)sliceno >= 1);
     if (current_ref_item_slice != sliceno) {
       copy_ref_item_slice(REF_SLICE_ACTIVE, sliceno);
       DBUG_PRINT("info", ("JOIN %p ref slice %u -> %u", this,
@@ -665,7 +699,7 @@ class JOIN {
   bool send_row_on_empty_set() const {
     return (do_send_rows && tmp_table_param.sum_func_count != 0 &&
             group_list.empty() && !group_optimized_away &&
-            select_lex->having_value != Item::COND_FALSE);
+            query_block->having_value != Item::COND_FALSE);
   }
 
   bool generate_derived_keys();
@@ -683,10 +717,11 @@ class JOIN {
                             bool force_stable_sort, bool sort_before_group);
   bool decide_subquery_strategy();
   void refine_best_rowcount();
-  void recalculate_deps_of_remaining_lateral_derived_tables(
-      table_map plan_tables, uint idx);
+  table_map calculate_deps_of_remaining_lateral_derived_tables(
+      table_map plan_tables, uint idx) const;
   bool clear_sj_tmp_tables();
   bool clear_corr_derived_tmp_tables();
+  void clear_hash_tables() { ++hash_table_generation; }
 
   void mark_const_table(JOIN_TAB *table, Key_use *key);
   /// State of execution plan. Currently used only for EXPLAIN
@@ -733,6 +768,25 @@ class JOIN {
   bool push_to_engines();
 
   AccessPath *root_access_path() const { return m_root_access_path; }
+
+  /**
+    If this query block was planned twice, once with and once without conditions
+    added by in2exists, changes the root access path to the one without
+    in2exists. If not (ie., there were never any such conditions in the first
+    place), does nothing.
+   */
+  void change_to_access_path_without_in2exists();
+
+  /**
+    In the case of rollup (only): After the base slice list was made, we may
+    have modified the field list to add rollup group items and sum switchers,
+    but there may be Items with refs that refer to the base slice. This function
+    refreshes the base slice (and its copy, REF_SLICE_SAVED_BASE) with a fresh
+    copy of the list from “fields”.
+
+    When we get rid of slices entirely, we can get rid of this, too.
+   */
+  void refresh_base_slice();
 
  private:
   bool optimized{false};  ///< flag to avoid double optimization in EXPLAIN
@@ -956,6 +1010,13 @@ class JOIN {
     (after you create an iterator from it).
    */
   AccessPath *m_root_access_path = nullptr;
+
+  /**
+    If this query block contains conditions synthesized during IN-to-EXISTS
+    conversion: A second query plan with all such conditions removed.
+    See comments in JOIN::optimize().
+   */
+  AccessPath *m_root_access_path_no_in2exists = nullptr;
 };
 
 /**
@@ -963,10 +1024,9 @@ class JOIN {
   final join order. If 'tables==0', one is not expected to consult best_ref
   cells, and best_ref may not even have been allocated.
 */
-#define ASSERT_BEST_REF_IN_JOIN_ORDER(join)               \
-  do {                                                    \
-    DBUG_ASSERT((join)->tables == 0 ||                    \
-                ((join)->best_ref && !(join)->join_tab)); \
+#define ASSERT_BEST_REF_IN_JOIN_ORDER(join)                                 \
+  do {                                                                      \
+    assert((join)->tables == 0 || ((join)->best_ref && !(join)->join_tab)); \
   } while (0)
 
 /**
@@ -1013,13 +1073,16 @@ uint build_bitmap_for_nested_joins(mem_root_deque<TABLE_LIST *> *join_list,
 /**
   Create an order list that consists of all non-const fields and items.
   This is usable for e.g. converting DISTINCT into GROUP or ORDER BY.
+  Is ref_item_array is non-null (is_null() returns false), the items
+  will point into the slice given by it. Otherwise, it points directly
+  into *fields (this is the only reason why fields is not const).
 
   Try to put the items in "order_list" first, to allow one to optimize away
   a later ORDER BY.
  */
 ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
                                   ORDER *order_list,
-                                  const mem_root_deque<Item *> &fields,
+                                  mem_root_deque<Item *> *fields,
                                   bool skip_aggregates,
                                   bool convert_bit_fields_to_long,
                                   bool *all_order_by_fields_used);
@@ -1036,60 +1099,34 @@ inline bool field_time_cmp_date(const Field *f, const Item *v) {
          v->is_temporal_with_date();
 }
 
-bool substitute_gc(THD *thd, SELECT_LEX *select_lex, Item *where_cond,
+bool substitute_gc(THD *thd, Query_block *query_block, Item *where_cond,
                    ORDER *group_list, ORDER *order);
 
-/// RAII class to manage JOIN::deps_of_remaining_lateral_derived_tables
-class Deps_of_remaining_lateral_derived_tables {
-  JOIN *join;
-  table_map saved;
-  /// All lateral tables not part of this map should be ignored
-  table_map plan_tables;
+/**
+   This class restores a table_map object to its original value
+   when '*this' is destroyed.
+ */
+class Table_map_restorer final {
+  /** The location to be restored.*/
+  table_map *const m_location;
+  /** The original value to restore.*/
+  const table_map m_saved_value;
 
  public:
   /**
      Constructor.
-     @param j                the JOIN
-     @param plan_tables_arg  table_map of derived tables @see
-     JOIN::deps_of_remaining_lateral_derived_tables
+     @param map The table map that we wish to restore.
   */
-  Deps_of_remaining_lateral_derived_tables(JOIN *j, table_map plan_tables_arg)
-      : join(j),
-        saved(join->deps_of_remaining_lateral_derived_tables),
-        plan_tables(plan_tables_arg) {}
-  ~Deps_of_remaining_lateral_derived_tables() { restore(); }
-  void restore() { join->deps_of_remaining_lateral_derived_tables = saved; }
-  void assert_unchanged() {
-    DBUG_ASSERT(join->deps_of_remaining_lateral_derived_tables == saved);
-  }
-  void recalculate(uint next_idx) {
-    if (join->has_lateral)
-      /*
-        No cur_tab given, so assume we start from a place in the plan which
-        may be backward or forward compared to where we were before:
-        recalculate.
-      */
-      join->recalculate_deps_of_remaining_lateral_derived_tables(plan_tables,
-                                                                 next_idx);
-  }
+  explicit Table_map_restorer(table_map *map)
+      : m_location(map), m_saved_value(*map) {}
 
-  void recalculate(JOIN_TAB *cur_tab, uint next_idx) {
-    /*
-      We have just added cur_tab to the plan; if it's not lateral, the map
-      doesn't change, no need to recalculate it.
-    */
-    if (join->has_lateral && cur_tab->table_ref->is_derived() &&
-        cur_tab->table_ref->derived_unit()->m_lateral_deps)
-      recalculate(next_idx);
-  }
-  void init() {
-    // Normally done once in a run of JOIN::optimize().
-    if (join->has_lateral) {
-      recalculate(join->const_tables);
-      // Forget stale value:
-      saved = join->deps_of_remaining_lateral_derived_tables;
-    }
-  }
+  // This class is not intended to be copied.
+  Table_map_restorer(const Table_map_restorer &) = delete;
+  Table_map_restorer &operator=(const Table_map_restorer &) = delete;
+
+  ~Table_map_restorer() { restore(); }
+  void restore() { *m_location = m_saved_value; }
+  void assert_unchanged() const { assert(*m_location == m_saved_value); }
 };
 
 /**
@@ -1117,7 +1154,7 @@ extern const char *antijoin_null_cond;
   @return false if this Item contains a subquery and subqueries cannot be
   evaluated during optimization, or true otherwise
 */
-bool evaluate_during_optimization(const Item *item, const SELECT_LEX *select);
+bool evaluate_during_optimization(const Item *item, const Query_block *select);
 
 /**
   Find the multiple equality predicate containing a field.
@@ -1139,5 +1176,22 @@ bool evaluate_during_optimization(const Item *item, const SELECT_LEX *select);
 */
 Item_equal *find_item_equal(COND_EQUAL *cond_equal,
                             const Item_field *item_field, bool *inherited_fl);
+
+/**
+  Find an artificial cap for ref access. This is mostly a crutch to mitigate
+  that we don't estimate the cache effects of ref accesses properly
+  (ie., normally, if we do many, they will hit cache instead of being
+  separate seeks). Given to find_cost_for_ref().
+ */
+double find_worst_seeks(const Cost_model_table *cost_model, double num_rows,
+                        double table_scan_cost);
+
+/**
+  Whether a ref lookup of “right_item” on “field” will give an exact
+  comparison in all cases, ie., one can remove any further checks on
+  field = right_item. If not, there may be false positives, and one
+  needs to keep the comparison after the ref lookup.
+ */
+bool ref_lookup_subsumes_comparison(Field *field, Item *right_item);
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

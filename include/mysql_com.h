@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -178,9 +178,7 @@
 #define EXPLICIT_NULL_FLAG                        \
   (1 << 27) /**< Field is explicitly specified as \
                NULL by the user */
-#define FIELD_IS_MARKED                   \
-  (1 << 28) /**< Intern: field is marked, \
-                 general purpose */
+/* 1 << 28 is unused. */
 
 /** Field will not be loaded in secondary engine. */
 #define NOT_SECONDARY_FLAG (1 << 29)
@@ -876,6 +874,12 @@ struct Vio;
 /// Default width for blob in bytes @todo - align this with sizes from field.h
 #define MAX_BLOB_WIDTH 16777216
 
+#define NET_ERROR_UNSET 0               /**< No error has occurred yet */
+#define NET_ERROR_SOCKET_RECOVERABLE 1  /**< Socket still usable */
+#define NET_ERROR_SOCKET_UNUSABLE 2     /**< Do not use the socket */
+#define NET_ERROR_SOCKET_NOT_READABLE 3 /**< Try write and close socket */
+#define NET_ERROR_SOCKET_NOT_WRITABLE 4 /**< Try read and close socket */
+
 typedef struct NET {
   MYSQL_VIO vio;
   unsigned char *buff, *buff_end, *write_pos, *read_pos;
@@ -993,11 +997,20 @@ enum enum_resultset_metadata {
   RESULTSET_METADATA_FULL = 1
 };
 
+/**
+  The flags used in COM_STMT_EXECUTE.
+  @sa @ref Protocol_classic::parse_packet, @ref mysql_int_serialize_param_data
+*/
 enum enum_cursor_type {
   CURSOR_TYPE_NO_CURSOR = 0,
   CURSOR_TYPE_READ_ONLY = 1,
   CURSOR_TYPE_FOR_UPDATE = 2,
-  CURSOR_TYPE_SCROLLABLE = 4
+  CURSOR_TYPE_SCROLLABLE = 4,
+  /**
+    On when the client will send the parameter count
+    even for 0 parameters.
+  */
+  PARAMETER_COUNT_AVAILABLE = 8
 };
 
 /** options for ::mysql_options() */

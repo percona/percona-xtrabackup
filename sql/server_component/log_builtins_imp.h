@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -153,6 +153,9 @@ class log_builtins_imp {
 
   static DEFINE_METHOD(log_service_error, close_errstream,
                        (void **my_errstream));
+
+  static DEFINE_METHOD(log_service_error, reopen_errstream,
+                       (const char *file, void **my_errstream));
 };
 
 /**

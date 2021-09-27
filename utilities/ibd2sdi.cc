@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -193,11 +193,11 @@ static struct my_option ibd2sdi_options[] = {
      GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"version", 'v', "Display version information and exit.", nullptr, nullptr,
      nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-#ifndef DBUG_OFF
+#ifndef NDEBUG
     {"debug", '#', "Output debug log. See " REFMAN "dbug-package.html",
      &opts.dbug_setting, &opts.dbug_setting, nullptr, GET_STR, OPT_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
-#endif /* !DBUG_OFF */
+#endif /* !NDEBUG */
     {"dump-file", 'd',
      "Dump the tablespace SDI into the file passed by user."
      " Without the filename, it will default to stdout",
@@ -297,11 +297,11 @@ static FILE *create_tmp_file(char *temp_file_buf, const char *dir,
 
 /** Print the ibd2sdi tool usage. */
 static void usage() {
-#ifdef DBUG_OFF
+#ifdef NDEBUG
   print_version();
 #else
   print_version_debug();
-#endif /* DBUG_OFF */
+#endif /* NDEBUG */
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2015"));
   printf(
       "Usage: %s [-v] [-c <strict-check>] [-d <dump file name>] [-n]"
@@ -317,16 +317,16 @@ extern "C" bool ibd2sdi_get_one_option(
     int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
     char *argument MY_ATTRIBUTE((unused))) {
   switch (optid) {
-#ifndef DBUG_OFF
+#ifndef NDEBUG
     case '#':
       opts.dbug_setting =
           argument ? argument
                    : IF_WIN("d:O,ibd2sdi.trace", "d:o,/tmp/ibd2sdi.trace");
       DBUG_PUSH(opts.dbug_setting);
       break;
-#endif /* !DBUG_OFF */
+#endif /* !NDEBUG */
     case 'v':
-#ifdef DBUG_OFF
+#ifdef NDEBUG
       print_version();
 #else
       print_version_debug();
@@ -390,7 +390,7 @@ static bool get_options(int *argc, char ***argv) {
 /** Error logging classes. */
 namespace ib {
 
-logger::~logger() {}
+logger::~logger() = default;
 
 info::~info() {
   std::cerr << "[INFO] ibd2sdi: " << m_oss.str() << "." << std::endl;
@@ -409,7 +409,7 @@ fatal::~fatal() {
   ut_error;
 }
 
-/* TODO: Improve Object creation & destruction on DBUG_OFF */
+/* TODO: Improve Object creation & destruction on NDEBUG */
 class dbug : public logger {
  public:
   ~dbug() override { DBUG_PRINT("ibd2sdi", ("%s", m_oss.str().c_str())); }
@@ -514,14 +514,7 @@ class ib_tablespace {
 
   /** Copy Constructor.
   @param[in]	copy	another object of ib_tablespace */
-  ib_tablespace(const ib_tablespace &copy)
-      : m_space_id(copy.m_space_id),
-        m_page_size(copy.m_page_size),
-        m_file_vec(copy.m_file_vec),
-        m_page_num_recs(copy.m_page_num_recs),
-        m_max_recs_per_page(copy.m_max_recs_per_page),
-        m_sdi_root(copy.m_sdi_root),
-        m_tot_pages(copy.m_tot_pages) {}
+  ib_tablespace(const ib_tablespace &copy) = default;
 
   /** Add Datafile to vector of datafiles. Also
   resize of vector of pages.

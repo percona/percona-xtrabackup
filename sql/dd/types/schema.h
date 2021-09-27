@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -156,6 +156,14 @@ class Schema : virtual public Entity_object {
     @return pointer to dynamically allocated copy
   */
   virtual Schema *clone() const = 0;
+
+  /**
+    Allocate a new object which can serve as a placeholder for the original
+    object in the Dictionary_client's dropped registry. Such object has the
+    same keys as the original but has no other info and as result occupies
+    less memory.
+  */
+  virtual Schema *clone_dropped_object_placeholder() const = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////

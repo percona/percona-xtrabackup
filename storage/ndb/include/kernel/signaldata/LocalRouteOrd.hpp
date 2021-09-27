@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2009, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@
 
 struct LocalRouteOrd
 {
-  STATIC_CONST( StaticLen = 3 );
+  static constexpr Uint32 StaticLen = 3;
 
   Uint32 cnt; // 16-bit path, 16-bit destination
   Uint32 gsn; // Final gsn

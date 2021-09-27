@@ -582,7 +582,7 @@ Options
 .. option:: --kill-long-query-type=all|select
 
    This option specifies which types of queries should be killed to unblock the
-   global lock. Default is "all".
+   global lock. Default is "select".
 
 .. option:: --lock-ddl
 
@@ -605,7 +605,9 @@ Options
    
    .. note::
    
-      As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the `--lock-ddl` option instead.
+
+         As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the `--lock-ddl` option instead.
+
 
 .. option:: --lock-ddl-timeout
 
@@ -665,11 +667,6 @@ Options
    the lock from succeeding. Please try using :option:`--safe-slave-backup` to
    momentarily stop the replication replica thread, this may help the backup to
    succeed and you do not need to use this option.
-
-   :file:`xtrabackup_binlog_info` is not created when --no-lock option is used
-   (because ``SHOW MASTER STATUS`` may be inconsistent), but under certain
-   conditions :file:`xtrabackup_binlog_pos_innodb` can be used instead to get
-   consistent binlog coordinates as described in :ref:`working_with_binlogs`.
 
 .. include:: ../.res/contents/option.no-version-check.txt
 

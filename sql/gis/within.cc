@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -62,7 +62,7 @@ bool Within::operator()(const Geometry *g1, const Geometry *g2) const {
 }
 
 bool Within::operator()(const Box *b1, const Box *b2) const {
-  DBUG_ASSERT(b1->coordinate_system() == b2->coordinate_system());
+  assert(b1->coordinate_system() == b2->coordinate_system());
   switch (b1->coordinate_system()) {
     case Coordinate_system::kCartesian:
       return eval(down_cast<const Cartesian_box *>(b1),
@@ -72,13 +72,13 @@ bool Within::operator()(const Box *b1, const Box *b2) const {
                   down_cast<const Geographic_box *>(b2));
   }
 
-  DBUG_ASSERT(false);
+  assert(false);
   return false;
 }
 
 bool Within::eval(const Geometry *g1, const Geometry *g2) const {
   // All parameter type combinations have been implemented.
-  DBUG_ASSERT(false);
+  assert(false);
   throw not_implemented_exception::for_non_projected(*g1, *g2);
 }
 
@@ -154,15 +154,12 @@ bool Within::eval(const Cartesian_linestring *g1,
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
   Difference difference(m_semi_major, m_semi_minor);
-  std::unique_ptr<Multilinestring> g1_diff_g2(new Cartesian_multilinestring());
-  g1_diff_g2.reset(down_cast<Cartesian_multilinestring *>(
-      difference(g1, down_cast<Cartesian_multilinestring *>(g2_mls.get()))));
-  g1_diff_g2.reset(down_cast<Cartesian_multilinestring *>(
-      difference(down_cast<Cartesian_multilinestring *>(g1_diff_g2.get()),
-                 down_cast<Cartesian_multipolygon *>(g2_mpy.get()))));
+  std::unique_ptr<Geometry> g1_diff_g2;
+  g1_diff_g2 = difference(g1, g2_mls.get());
+  g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
   boost::geometry::de9im::mask mask("T********");
-  return g1_diff_g2->empty() &&
+  return g1_diff_g2->is_empty() &&
          (bg::relate(*g1, *down_cast<Cartesian_multilinestring *>(g2_mls.get()),
                      mask) ||
           bg::relate(*g1, *down_cast<Cartesian_multipolygon *>(g2_mpy.get()),
@@ -322,35 +319,20 @@ bool Within::eval(const Cartesian_geometrycollection *g1,
 
   // Check that no part of g1 is in the exterior of g2.
   Difference difference(m_semi_major, m_semi_minor);
-  std::unique_ptr<Cartesian_multipoint> g1_mpt_diff_g2(
-      new Cartesian_multipoint());
-  g1_mpt_diff_g2.reset(down_cast<Cartesian_multipoint *>(
-      difference(down_cast<Cartesian_multipoint *>(g1_mpt.get()),
-                 down_cast<Cartesian_multipoint *>(g2_mpt.get()))));
-  g1_mpt_diff_g2.reset(down_cast<Cartesian_multipoint *>(
-      difference(g1_mpt_diff_g2.get(),
-                 down_cast<Cartesian_multilinestring *>(g2_mls.get()))));
-  g1_mpt_diff_g2.reset(down_cast<Cartesian_multipoint *>(
-      difference(g1_mpt_diff_g2.get(),
-                 down_cast<Cartesian_multipolygon *>(g2_mpy.get()))));
-  if (!g1_mpt_diff_g2->empty()) return false;
+  std::unique_ptr<Geometry> g1_mpt_diff_g2;
+  g1_mpt_diff_g2 = difference(g1_mpt.get(), g2_mpt.get());
+  g1_mpt_diff_g2 = difference(g1_mpt_diff_g2.get(), g2_mls.get());
+  g1_mpt_diff_g2 = difference(g1_mpt_diff_g2.get(), g2_mpy.get());
+  if (!g1_mpt_diff_g2->is_empty()) return false;
 
-  std::unique_ptr<Cartesian_multilinestring> g1_mls_diff_g2(
-      new Cartesian_multilinestring());
-  g1_mls_diff_g2.reset(down_cast<Cartesian_multilinestring *>(
-      difference(down_cast<Cartesian_multilinestring *>(g1_mls.get()),
-                 down_cast<Cartesian_multilinestring *>(g2_mls.get()))));
-  g1_mls_diff_g2.reset(down_cast<Cartesian_multilinestring *>(
-      difference(g1_mls_diff_g2.get(),
-                 down_cast<Cartesian_multipolygon *>(g2_mpy.get()))));
-  if (!g1_mls_diff_g2->empty()) return false;
+  std::unique_ptr<Geometry> g1_mls_diff_g2;
+  g1_mls_diff_g2 = difference(g1_mls.get(), g2_mls.get());
+  g1_mls_diff_g2 = difference(g1_mls_diff_g2.get(), g2_mpy.get());
+  if (!g1_mls_diff_g2->is_empty()) return false;
 
-  std::unique_ptr<Cartesian_multipolygon> g1_mpy_diff_g2(
-      new Cartesian_multipolygon());
-  g1_mpy_diff_g2.reset(down_cast<Cartesian_multipolygon *>(
-      difference(down_cast<Cartesian_multipolygon *>(g1_mpy.get()),
-                 down_cast<Cartesian_multipolygon *>(g2_mpy.get()))));
-  if (!g1_mpy_diff_g2->empty()) return false;
+  std::unique_ptr<Geometry> g1_mpy_diff_g2;
+  g1_mpy_diff_g2 = difference(g1_mpy.get(), g2_mpy.get());
+  if (!g1_mpy_diff_g2->is_empty()) return false;
 
   // Check that the interiors of g1 and g2 have at least one point in common.
   boost::geometry::de9im::mask mask("T********");
@@ -585,15 +567,12 @@ bool Within::eval(const Cartesian_multilinestring *g1,
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
   Difference difference(m_semi_major, m_semi_minor);
-  std::unique_ptr<Cartesian_multilinestring> g1_diff_g2(
-      new Cartesian_multilinestring());
-  g1_diff_g2.reset(down_cast<Cartesian_multilinestring *>(
-      difference(g1, down_cast<Cartesian_multilinestring *>(g2_mls.get()))));
-  g1_diff_g2.reset(down_cast<Cartesian_multilinestring *>(difference(
-      g1_diff_g2.get(), down_cast<Cartesian_multipolygon *>(g2_mpy.get()))));
+  std::unique_ptr<Geometry> g1_diff_g2;
+  g1_diff_g2 = difference(g1, g2_mls.get());
+  g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
   boost::geometry::de9im::mask mask("T********");
-  return g1_diff_g2->empty() &&
+  return g1_diff_g2->is_empty() &&
          (bg::relate(*g1, *down_cast<Cartesian_multilinestring *>(g2_mls.get()),
                      mask) ||
           bg::relate(*g1, *down_cast<Cartesian_multipolygon *>(g2_mpy.get()),
@@ -745,15 +724,12 @@ bool Within::eval(const Geographic_linestring *g1,
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
   Difference difference(m_semi_major, m_semi_minor);
-  std::unique_ptr<Multilinestring> g1_diff_g2(new Geographic_multilinestring());
-  g1_diff_g2.reset(down_cast<Geographic_multilinestring *>(
-      difference(g1, down_cast<Geographic_multilinestring *>(g2_mls.get()))));
-  g1_diff_g2.reset(down_cast<Geographic_multilinestring *>(
-      difference(down_cast<Geographic_multilinestring *>(g1_diff_g2.get()),
-                 down_cast<Geographic_multipolygon *>(g2_mpy.get()))));
+  std::unique_ptr<Geometry> g1_diff_g2;
+  g1_diff_g2 = difference(g1, g2_mls.get());
+  g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
   boost::geometry::de9im::mask mask("T********");
-  return g1_diff_g2->empty() &&
+  return g1_diff_g2->is_empty() &&
          (bg::relate(*g1,
                      *down_cast<Geographic_multilinestring *>(g2_mls.get()),
                      mask, m_geographic_ll_la_aa_strategy) ||
@@ -917,35 +893,20 @@ bool Within::eval(const Geographic_geometrycollection *g1,
 
   // Check that no part of g1 is in the exterior of g2.
   Difference difference(m_semi_major, m_semi_minor);
-  std::unique_ptr<Geographic_multipoint> g1_mpt_diff_g2(
-      new Geographic_multipoint());
-  g1_mpt_diff_g2.reset(down_cast<Geographic_multipoint *>(
-      difference(down_cast<Geographic_multipoint *>(g1_mpt.get()),
-                 down_cast<Geographic_multipoint *>(g2_mpt.get()))));
-  g1_mpt_diff_g2.reset(down_cast<Geographic_multipoint *>(
-      difference(g1_mpt_diff_g2.get(),
-                 down_cast<Geographic_multilinestring *>(g2_mls.get()))));
-  g1_mpt_diff_g2.reset(down_cast<Geographic_multipoint *>(
-      difference(g1_mpt_diff_g2.get(),
-                 down_cast<Geographic_multipolygon *>(g2_mpy.get()))));
-  if (!g1_mpt_diff_g2->empty()) return false;
+  std::unique_ptr<Geometry> g1_mpt_diff_g2;
+  g1_mpt_diff_g2 = difference(g1_mpt.get(), g2_mpt.get());
+  g1_mpt_diff_g2 = difference(g1_mpt_diff_g2.get(), g2_mls.get());
+  g1_mpt_diff_g2 = difference(g1_mpt_diff_g2.get(), g2_mpy.get());
+  if (!g1_mpt_diff_g2->is_empty()) return false;
 
-  std::unique_ptr<Geographic_multilinestring> g1_mls_diff_g2(
-      new Geographic_multilinestring());
-  g1_mls_diff_g2.reset(down_cast<Geographic_multilinestring *>(
-      difference(down_cast<Geographic_multilinestring *>(g1_mls.get()),
-                 down_cast<Geographic_multilinestring *>(g2_mls.get()))));
-  g1_mls_diff_g2.reset(down_cast<Geographic_multilinestring *>(
-      difference(g1_mls_diff_g2.get(),
-                 down_cast<Geographic_multipolygon *>(g2_mpy.get()))));
-  if (!g1_mls_diff_g2->empty()) return false;
+  std::unique_ptr<Geometry> g1_mls_diff_g2;
+  g1_mls_diff_g2 = difference(g1_mls.get(), g2_mls.get());
+  g1_mls_diff_g2 = difference(g1_mls_diff_g2.get(), g2_mpy.get());
+  if (!g1_mls_diff_g2->is_empty()) return false;
 
-  std::unique_ptr<Geographic_multipolygon> g1_mpy_diff_g2(
-      new Geographic_multipolygon());
-  g1_mpy_diff_g2.reset(down_cast<Geographic_multipolygon *>(
-      difference(down_cast<Geographic_multipolygon *>(g1_mpy.get()),
-                 down_cast<Geographic_multipolygon *>(g2_mpy.get()))));
-  if (!g1_mpy_diff_g2->empty()) return false;
+  std::unique_ptr<Geometry> g1_mpy_diff_g2;
+  g1_mpy_diff_g2 = difference(g1_mpy.get(), g2_mpy.get());
+  if (!g1_mpy_diff_g2->is_empty()) return false;
 
   // Check that the interiors of g1 and g2 have at least one point in common.
   boost::geometry::de9im::mask mask("T********");
@@ -1187,15 +1148,12 @@ bool Within::eval(const Geographic_multilinestring *g1,
   gc_union(m_semi_major, m_semi_minor, &g2_mpt, &g2_mls, &g2_mpy);
 
   Difference difference(m_semi_major, m_semi_minor);
-  std::unique_ptr<Geographic_multilinestring> g1_diff_g2(
-      new Geographic_multilinestring());
-  g1_diff_g2.reset(down_cast<Geographic_multilinestring *>(
-      difference(g1, down_cast<Geographic_multilinestring *>(g2_mls.get()))));
-  g1_diff_g2.reset(down_cast<Geographic_multilinestring *>(difference(
-      g1_diff_g2.get(), down_cast<Geographic_multipolygon *>(g2_mpy.get()))));
+  std::unique_ptr<Geometry> g1_diff_g2;
+  g1_diff_g2 = difference(g1, g2_mls.get());
+  g1_diff_g2 = difference(g1_diff_g2.get(), g2_mpy.get());
 
   boost::geometry::de9im::mask mask("T********");
-  return g1_diff_g2->empty() &&
+  return g1_diff_g2->is_empty() &&
          (bg::relate(*g1,
                      *down_cast<Geographic_multilinestring *>(g2_mls.get()),
                      mask, m_geographic_ll_la_aa_strategy) ||
@@ -1389,12 +1347,12 @@ bool within(const dd::Spatial_reference_system *srs, const Geometry *g1,
             const Geometry *g2, const char *func_name, bool *within,
             bool *null) noexcept {
   try {
-    DBUG_ASSERT(g1->coordinate_system() == g2->coordinate_system());
-    DBUG_ASSERT(srs == nullptr ||
-                ((srs->is_cartesian() &&
-                  g1->coordinate_system() == Coordinate_system::kCartesian) ||
-                 (srs->is_geographic() &&
-                  g1->coordinate_system() == Coordinate_system::kGeographic)));
+    assert(g1->coordinate_system() == g2->coordinate_system());
+    assert(srs == nullptr ||
+           ((srs->is_cartesian() &&
+             g1->coordinate_system() == Coordinate_system::kCartesian) ||
+            (srs->is_geographic() &&
+             g1->coordinate_system() == Coordinate_system::kGeographic)));
 
     if ((*null = (g1->is_empty() || g2->is_empty()))) return false;
 
@@ -1413,12 +1371,12 @@ bool mbr_within(const dd::Spatial_reference_system *srs, const Geometry *g1,
                 const Geometry *g2, const char *func_name, bool *within,
                 bool *null) noexcept {
   try {
-    DBUG_ASSERT(g1->coordinate_system() == g2->coordinate_system());
-    DBUG_ASSERT(srs == nullptr ||
-                ((srs->is_cartesian() &&
-                  g1->coordinate_system() == Coordinate_system::kCartesian) ||
-                 (srs->is_geographic() &&
-                  g1->coordinate_system() == Coordinate_system::kGeographic)));
+    assert(g1->coordinate_system() == g2->coordinate_system());
+    assert(srs == nullptr ||
+           ((srs->is_cartesian() &&
+             g1->coordinate_system() == Coordinate_system::kCartesian) ||
+            (srs->is_geographic() &&
+             g1->coordinate_system() == Coordinate_system::kGeographic)));
 
     if ((*null = (g1->is_empty() || g2->is_empty()))) return false;
 

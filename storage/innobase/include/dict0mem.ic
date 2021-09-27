@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -36,8 +36,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /** This function poplulates a dict_index_t index memory structure with
  supplied information. */
-UNIV_INLINE
-void dict_mem_fill_index_struct(
+static inline void dict_mem_fill_index_struct(
     dict_index_t *index,    /*!< out: index to be filled */
     mem_heap_t *heap,       /*!< in: memory heap */
     const char *table_name, /*!< in: table name */

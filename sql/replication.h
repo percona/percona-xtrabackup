@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -98,7 +98,7 @@ typedef struct Trans_table_info {
 typedef struct Trans_context_info {
   bool binlog_enabled;
   ulong gtid_mode;  // enum values in Gtid_mode::value_type
-  bool log_slave_updates;
+  bool log_replica_updates;
   ulong binlog_checksum_options;  // enum values in enum
                                   // enum_binlog_checksum_alg
   ulong binlog_format;            // enum values in enum enum_binlog_format
@@ -194,7 +194,7 @@ typedef struct Trans_param {
   /*
     Flag to identify a 'CREATE TABLE ... AS SELECT'.
   */
-  bool is_create_table_as_select;
+  bool is_create_table_as_query_block;
 } Trans_param;
 
 /**

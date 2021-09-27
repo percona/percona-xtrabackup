@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2020, Oracle and/or its affiliates.
+Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -295,8 +295,6 @@ class MetadataHttpAuthTest : public RouterComponentTest {
   uint16_t router_port;
 
   std::string uri;
-
-  TcpPortPool port_pool_;
 };
 
 const std::chrono::milliseconds MetadataHttpAuthTest::kTTL = 200ms;

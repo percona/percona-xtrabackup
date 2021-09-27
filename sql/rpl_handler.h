@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -395,6 +395,10 @@ class Binlog_relay_IO_delegate : public Delegate {
 };
 
 int delegates_init();
+/**
+  Verify that the replication plugins are ready and OK to be unloaded.
+ */
+void delegates_shutdown();
 void delegates_destroy();
 /**
   Invokes `write_lock()` for all the observer delegate objects.

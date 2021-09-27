@@ -68,7 +68,7 @@ bool System_key_adapter::System_key_data::allocate(size_t key_data_size) {
 
 void System_key_adapter::System_key_data::free() {
   if (key_data) {
-    DBUG_ASSERT(key_data_size <= 512);
+    assert(key_data_size <= 512);
     memset_s(key_data, 512, 0, key_data_size);
     delete[] key_data;
     key_data = NULL;

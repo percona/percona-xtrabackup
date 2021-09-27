@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2020 Percona LLC and/or its affiliates
+(c) 2009-2021 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -41,7 +41,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <fil0fil.h>
 #include <fsp0sysspace.h>
-#include <my_default.h>
 #include <my_dir.h>
 #include <my_sys.h>
 #include <my_systime.h>
@@ -64,11 +63,13 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fil_cur.h"
 #include "os0event.h"
 #include "space_map.h"
+#include "utils.h"
 #include "xb0xb.h"
 
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "keyring_plugins.h"
+#include "keyring_components.h"
 #include "xtrabackup.h"
 #include "xtrabackup_config.h"
 #include "xtrabackup_version.h"
@@ -152,7 +153,7 @@ struct datadir_thread_ctxt_t {
   uint n_thread;
   uint *count;
   ib_mutex_t *count_mutex;
-  os_thread_id_t id;
+  std::thread::id id;
   bool ret;
 };
 
@@ -434,8 +435,20 @@ comparing its name to the list of known data file types and checking
 if passes the rules for partial backup.
 @return true if file backed up or skipped successfully. */
 static bool datafile_copy_backup(const char *filepath, uint thread_n) {
-  const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
-                            "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
+  const char *ext_list[] = {"MYD",
+                            "MYI",
+                            "MAD",
+                            "MAI",
+                            "MRG",
+                            "ARM",
+                            "ARZ",
+                            "CSM",
+                            "CSV",
+                            "opt",
+                            "sdi",
+                            "mysqld.my",
+                            "mysqld-debug.my",
+                            "component_keyring_file.cnf", NULL};
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
@@ -598,7 +611,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
 
   /* Wait for threads to exit */
   while (1) {
-    os_thread_sleep(100000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     mutex_enter(&count_mutex);
     if (count == 0) {
       mutex_exit(&count_mutex);
@@ -848,6 +861,129 @@ static void page_checksum_fix(byte *page, const page_size_t &page_size) {
   ut_a(!reporter.is_corrupted());
 }
 
+bool copy_redo_encryption_info() {
+  pfs_os_file_t src_file = XB_FILE_UNDEFINED;
+  pfs_os_file_t dst_file = XB_FILE_UNDEFINED;
+  char src_path[FN_REFLEN];
+  char dst_path[FN_REFLEN];
+  auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
+  IORequest read_request(IORequest::READ);
+  IORequest write_request(IORequest::WRITE);
+  bool success = FALSE;
+  if (log_buf == NULL) {
+    return false;
+  }
+
+  if (!xtrabackup_incremental_dir) {
+    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
+    sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
+  } else {
+    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_incremental_dir);
+    sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
+  }
+
+  Fil_path::normalize(src_path);
+  Fil_path::normalize(dst_path);
+
+  src_file = os_file_create_simple_no_error_handling(
+      0, src_path, OS_FILE_OPEN, OS_FILE_READ_ONLY, srv_read_only_mode,
+      &success);
+  if (!success) {
+    os_file_get_last_error(TRUE);
+    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", src_path);
+
+    return false;
+  }
+
+  dst_file = os_file_create_simple_no_error_handling(
+      0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
+      &success);
+  if (!success) {
+    os_file_get_last_error(TRUE);
+    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", dst_path);
+
+    return false;
+  }
+  success = os_file_read(read_request, src_path, src_file, log_buf.get(), 0,
+                         LOG_FILE_HDR_SIZE);
+
+  ulint encryption_offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
+  success = os_file_write(write_request, dst_path, dst_file,
+                          log_buf.get() + encryption_offset, encryption_offset,
+                          Encryption::INFO_SIZE);
+  if (!success) {
+    msg_ts(
+        "xtrabackup: Fatal error: cannot write encryption to redo log "
+        "%s.\n",
+        dst_path);
+    return false;
+  }
+  os_file_close(src_file);
+  os_file_close(dst_file);
+  return true;
+}
+
+/**
+  Reencrypt redo header with new master key for copy-back.
+
+  @param [in]  dir       directory where redolog is located
+  @param [in]  filename  filename of redo log
+  @param [in]  thread_n  id of thread performing the operation
+
+  @return false in case of error, true otherwise
+*/
+
+static bool reencrypt_redo_header(const char *dir, const char *filename,
+                                  uint thread_n) {
+  char fullpath[FN_REFLEN];
+  auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
+  byte encrypt_info[Encryption::INFO_SIZE];
+  fil_space_t space;
+
+  fn_format(fullpath, filename, dir, "", MYF(MY_RELATIVE_PATH));
+
+  File fd = my_open(fullpath, O_RDWR, MYF(MY_FAE));
+
+  my_seek(fd, 0L, SEEK_SET, MYF(MY_WME));
+
+  size_t len = my_read(fd, log_buf.get(), UNIV_PAGE_SIZE_MAX, MYF(MY_WME));
+
+  if (len < UNIV_PAGE_SIZE_MIN) {
+    my_close(fd, MYF(MY_FAE));
+    return (false);
+  }
+
+  ulint offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
+  if (memcmp(log_buf.get() + offset, Encryption::KEY_MAGIC_V3,
+             Encryption::MAGIC_SIZE) != 0) {
+    my_close(fd, MYF(MY_FAE));
+    return (true);
+  }
+  msg_ts("[%02u] Encrypting %s header with new master key.\n", thread_n,
+         fullpath);
+
+  memset(encrypt_info, 0, Encryption::INFO_SIZE);
+  space.id = dict_sys_t::s_log_space_first_id;
+  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
+                                       space.encryption_iv);
+  ut_a(found);
+  space.encryption_type = Encryption::AES;
+  space.encryption_klen = Encryption::KEY_LEN;
+
+  if (!Encryption::fill_encryption_info(space.encryption_key,
+                                        space.encryption_iv, encrypt_info,
+                                        false, true)) {
+    my_close(fd, MYF(MY_FAE));
+    return (false);
+  }
+  memcpy(log_buf.get() + offset, encrypt_info, Encryption::INFO_SIZE);
+  my_seek(fd, offset, SEEK_SET, MYF(MY_WME));
+  my_write(fd, log_buf.get() + offset, Encryption::INFO_SIZE,
+           MYF(MY_FAE | MY_NABP));
+  my_close(fd, MYF(MY_FAE));
+  return true;
+}
+
 /************************************************************************
 Reencrypt datafile header with new master key for copy-back.
 @return true in case of success. */
@@ -949,9 +1085,13 @@ static bool copy_or_move_file(const char *src_file_path,
                             : move_file(datasink, src_file_path, dst_file_path,
                                         dst_dir, thread_n, file_purpose));
 
-  if (opt_generate_new_master_key && (file_purpose == FILE_PURPOSE_DATAFILE ||
-                                      file_purpose == FILE_PURPOSE_UNDO_LOG)) {
-    reencrypt_datafile_header(dst_dir, dst_file_path, thread_n);
+  if (opt_generate_new_master_key) {
+    if (file_purpose == FILE_PURPOSE_DATAFILE ||
+        file_purpose == FILE_PURPOSE_UNDO_LOG) {
+      reencrypt_datafile_header(dst_dir, dst_file_path, thread_n);
+    } else if (file_purpose == FILE_PURPOSE_REDO_LOG) {
+      reencrypt_redo_header(dst_dir, dst_file_path, thread_n);
+    }
   }
 
   if (datasink != ds_data) {
@@ -1244,6 +1384,9 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::wal_files(
   file_list wal_files;
 
   for (const auto &f : log_status.rocksdb_wal_files) {
+    if (strncmp(f.path_name.c_str(), "/archive", 8) == 0 ||
+        strncmp(f.path_name.c_str(), "archive", 7) == 0)
+      continue;
     char path[FN_REFLEN];
     fn_format(path, f.path_name.c_str() + 1,
               rocksdb_wal_dir.empty() ? rocksdb_datadir.c_str()
@@ -1514,7 +1657,11 @@ bool backup_finish(Backup_context &context) {
   if (!mysql_slave_position.empty() && opt_slave_info) {
     msg("MySQL slave binlog position: %s\n", mysql_slave_position.c_str());
   }
-
+  if (xtrabackup::components::keyring_component_initialized &&
+      !xtrabackup::components::write_component_config_file()) {
+    msg("xtrabackup: write_component_config_file failed\n");
+    return (false);
+  }
   if (!write_backup_config_file()) {
     return (false);
   }
@@ -1547,7 +1694,7 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
 }
 
 struct binlog_file_location {
-  /* binlog file path */
+  /* binlog file path (full path including filename) */
   std::string path;
 
   /* binlog file name */
@@ -1585,19 +1732,21 @@ struct binlog_file_location {
     binlog_file_location r;
 
     if (!name.empty()) {
-      std::string suffix = fn_ext(name.c_str());
-
       if (opt_log_bin != nullptr) {
+        std::string suffix = fn_ext(name.c_str());
+        r.name = std::string(opt_log_bin).substr(dirname_length(opt_log_bin));
+
+        /* Truncate at the first '.' like MySQL */
+        r.name = r.name.substr(0, r.name.find(FN_EXTCHAR)) + suffix;
+
         if (Fil_path::is_absolute_path(opt_log_bin)) {
-          r.name =
+          r.path =
               std::string(opt_log_bin).substr(0, dirname_length(opt_log_bin)) +
-              suffix;
-          r.path = opt_log_bin + suffix;
+              r.name;
         } else {
           char buf[FN_REFLEN];
           fn_format(buf, opt_log_bin, datadir.c_str(), "", MY_UNPACK_FILENAME);
-          r.name = opt_log_bin + suffix;
-          r.path = buf + suffix;
+          r.path = std::string(buf).substr(0, dirname_length(buf)) + r.name;
         }
       } else {
         char buf[FN_REFLEN];
@@ -1691,6 +1840,7 @@ bool copy_incremental_over_full() {
                              "xtrabackup_info",
                              "xtrabackup_keys",
                              "xtrabackup_tablespaces",
+                             "xtrabackup_component_keyring_file.cnf",
                              "ib_lru_dump",
                              nullptr};
   bool ret = true;
@@ -1898,6 +2048,7 @@ bool should_skip_file_on_copy_back(const char *filepath) {
                             "xtrabackup_binlog_info",
                             "xtrabackup_checkpoints",
                             "xtrabackup_tablespaces",
+                            "xtrabackup_component_keyring_file.cnf",
                             ".qp",
                             ".lz4",
                             ".pmap",
@@ -2021,47 +2172,6 @@ cleanup:
   ctx->ret = ret;
 }
 
-static bool get_one_option(int optid MY_ATTRIBUTE((unused)),
-                           const struct my_option *opt MY_ATTRIBUTE((unused)),
-                           char *argument MY_ATTRIBUTE((unused))) {
-  return 0;
-}
-
-static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
-
-static bool load_backup_my_cnf() {
-  const char *groups[] = {"mysqld", NULL};
-
-  my_option bakcup_options[] = {
-      {"innodb_checksum_algorithm", 0, "", &srv_checksum_algorithm,
-       &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
-       REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-
-  char *exename = (char *)"xtrabackup";
-  char **backup_my_argv = &exename;
-  int backup_my_argc = 1;
-  char fname[FN_REFLEN];
-
-  /* we need full name so that only backup-my.cnf will be read */
-  if (fn_format(fname, "backup-my.cnf", xtrabackup_target_dir, "",
-                MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
-    return (false);
-  }
-
-  if (my_load_defaults(fname, groups, &backup_my_argc, &backup_my_argv,
-                       &argv_alloc, NULL)) {
-    return (false);
-  }
-
-  if (handle_options(&backup_my_argc, &backup_my_argv, bakcup_options,
-                     get_one_option)) {
-    return (false);
-  }
-
-  return (true);
-}
-
 bool copy_back(int argc, char **argv) {
   char *innobase_data_file_path_copy;
   bool ret = true, err;
@@ -2097,7 +2207,14 @@ bool copy_back(int argc, char **argv) {
     return (false);
   }
 
-  if (!load_backup_my_cnf()) {
+  my_option backup_options[] = {
+      {"innodb_checksum_algorithm", 0, "", &srv_checksum_algorithm,
+       &srv_checksum_algorithm, &innodb_checksum_algorithm_typelib, GET_ENUM,
+       REQUIRED_ARG, SRV_CHECKSUM_ALGORITHM_INNODB, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
+
+  if (!xtrabackup::utils::load_backup_my_cnf(backup_options,
+                                             xtrabackup_target_dir)) {
     msg("xtrabackup: Error: failed to load backup-my.cnf\n");
     return (false);
   }
@@ -2125,7 +2242,6 @@ bool copy_back(int argc, char **argv) {
     int ret = fscanf(f, "%u", &key);
     ut_a(ret == 1);
     fclose(f);
-
     if (!xb_keyring_init_for_copy_back(argc, argv)) {
       msg("xtrabackup: Error: failed to init keyring plugin\n");
       return (false);

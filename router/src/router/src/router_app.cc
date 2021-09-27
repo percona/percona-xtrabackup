@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -422,6 +422,9 @@ std::map<std::string, std::string> MySQLRouter::get_default_paths(
   std::map<std::string, std::string> params = {
       {"program", kProgramName},
       {"origin", origin.str()},
+#ifdef _WIN32
+      {"event_source_name", MYSQL_ROUTER_PACKAGE_NAME},
+#endif
       {"logging_folder",
        ensure_absolute_path(MYSQL_ROUTER_LOGGING_FOLDER, basedir)},
       {"plugin_folder",
@@ -653,6 +656,7 @@ void MySQLRouter::start() {
     auto pid = getpid();
     std::ofstream pidfile(pid_file_path_);
     if (pidfile.good()) {
+      pid_file_created_ = true;
       pidfile << pid << std::endl;
       pidfile.close();
       log_info("PID %d written to '%s'", pid, pid_file_path_.c_str());
@@ -711,8 +715,8 @@ void MySQLRouter::start() {
 }
 
 void MySQLRouter::stop() {
-  // Remove the pidfile if present
-  if (!pid_file_path_.empty()) {
+  // Remove the pidfile if present and was created by us.
+  if (!pid_file_path_.empty() && pid_file_created_) {
     mysql_harness::Path pid_file_path(pid_file_path_);
     if (pid_file_path.is_regular()) {
       log_debug("Removing pidfile %s", pid_file_path.c_str());

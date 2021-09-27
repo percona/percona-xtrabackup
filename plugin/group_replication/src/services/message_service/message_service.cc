@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -172,7 +172,7 @@ void Message_service_handler::dispatcher() {
 
     DBUG_EXECUTE_IF("group_replication_message_service_hold_messages", {
       const char act[] = "now wait_for signal.notification_continue";
-      DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+      assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
     });
 
     if (pop_failed || service_message == nullptr) break;
@@ -248,7 +248,7 @@ bool Message_service_handler::notify_message_service_recv(
 
   const char *service_name = "group_replication_message_service_recv";
   bool error = false;
-  std::string previous_service_name;
+  bool is_service_default_implementation = true;
   my_h_service_iterator iterator;
 
   my_service<SERVICE_TYPE(registry_query)> reg_query("registry_query",
@@ -266,22 +266,22 @@ bool Message_service_handler::notify_message_service_recv(
       goto end;
     }
 
-    /*
-      The iterator currently contains more service implementations than
-      those named after the given service name. The spec says that the
-      name given is used to position the iterator start on the first
-      registered service implementation prefixed with that name. We need
-      to iterate until the next element in the iterator (service implementation)
-      has a different service name.
-    */
     std::string s(name);
     if (s.find(service_name) == std::string::npos) break;
 
-    /* Do not notify the default service implementation twice. */
-    if (previous_service_name == s)
+    /*
+      The iterator currently contains more service implementations than
+      those named after the given service name, the first registered
+      service will be listed twice: 1) default service, 2) regular service.
+      The spec says that the name given is used to position the iterator
+      start on the first registered service implementation prefixed with
+      that name. We need to skip the first service since it will be listed
+      twice.
+    */
+    if (is_service_default_implementation) {
+      is_service_default_implementation = false;
       continue;
-    else
-      previous_service_name = s;
+    }
 
     my_service<SERVICE_TYPE(group_replication_message_service_recv)> svc(
         name, get_plugin_registry());

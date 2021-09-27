@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -20,15 +20,13 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-// First include (the generated) my_config.h, to get correct platform defines.
-#include "my_config.h"
-
 #include <gtest/gtest.h>
 #include <stddef.h>
 #include <sys/types.h>
 
 #include "sql/parse_tree_helpers.h"
-#include "sql/sql_optimizer.cc"
+#include "sql/sql_optimizer.h"
+#include "sql/sql_optimizer_internal.h"
 #include "unittest/gunit/fake_table.h"
 #include "unittest/gunit/mock_field_long.h"
 #include "unittest/gunit/test_utils.h"
@@ -153,7 +151,7 @@ TEST_F(OptRefTest, addKeyFieldsFromInOneRow) {
   all_args->push_front(make_item_row(item_zero, item_zero));
   all_args->push_front(make_item_row(item_field_t1_a, item_field_t1_b));
   Item *cond = new Item_func_in(POS(), all_args, false);
-  Parse_context pc(thd(), thd()->lex->current_select());
+  Parse_context pc(thd(), thd()->lex->current_query_block());
   EXPECT_FALSE(cond->itemize(&pc, &cond));
 
   call_add_key_fields(cond);
@@ -174,7 +172,7 @@ TEST_F(OptRefTest, addKeyFieldsFromInTwoRows) {
   all_args->push_front(make_item_row(item_zero, item_zero));
   all_args->push_front(make_item_row(item_field_t1_a, item_field_t1_b));
   Item *cond = new Item_func_in(POS(), all_args, false);
-  Parse_context pc(thd(), thd()->lex->current_select());
+  Parse_context pc(thd(), thd()->lex->current_query_block());
   EXPECT_FALSE(cond->itemize(&pc, &cond));
 
   call_add_key_fields(cond);
@@ -192,7 +190,7 @@ TEST_F(OptRefTest, addKeyFieldsFromInOneRowWithCols) {
   all_args->push_front(make_item_row(item_field_t2_a, item_field_t2_b));
   all_args->push_front(make_item_row(item_field_t1_a, item_field_t1_b));
   Item *cond = new Item_func_in(POS(), all_args, false);
-  Parse_context pc(thd(), thd()->lex->current_select());
+  Parse_context pc(thd(), thd()->lex->current_query_block());
   EXPECT_FALSE(cond->itemize(&pc, &cond));
 
   call_add_key_fields(cond);

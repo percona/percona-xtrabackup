@@ -1,7 +1,7 @@
 #ifndef SQL_COMPOSITE_ITERATORS_INCLUDED
 #define SQL_COMPOSITE_ITERATORS_INCLUDED
 
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,36 +34,39 @@
   a MEM_ROOT>). This means that in the end, you'll end up with a single root
   iterator which then owns everything else recursively.
 
-  SortingIterator is also a composite iterator, but is defined in its own file.
+  SortingIterator and the two window iterators are also composite iterators,
+  but are defined in their own files.
  */
 
+#include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
-
-#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "my_alloc.h"
 #include "my_base.h"
-#include "my_dbug.h"
+#include "my_inttypes.h"
 #include "my_table_map.h"
-#include "prealloced_array.h"
-#include "sql/hash_join_buffer.h"
-#include "sql/item.h"
 #include "sql/join_type.h"
+#include "sql/mem_root_array.h"
+#include "sql/pack_rows.h"
 #include "sql/row_iterator.h"
 #include "sql/table.h"
+#include "sql_string.h"
 
+class Cached_item;
 class FollowTailIterator;
-template <class T>
-class List;
+class Item;
 class JOIN;
-class SELECT_LEX;
+class KEY;
+class Query_expression;
 class SJ_TMP_TABLE;
 class THD;
+class Table_function;
 class Temp_table_param;
-class Window;
 
 /**
   An iterator that takes in a stream of rows and passes through only those that
@@ -126,7 +129,7 @@ class LimitOffsetIterator final : public RowIterator {
         m_reject_multiple_rows(reject_multiple_rows),
         m_skipped_rows(skipped_rows) {
     if (count_all_rows) {
-      DBUG_ASSERT(m_skipped_rows != nullptr);
+      assert(m_skipped_rows != nullptr);
     }
   }
 
@@ -320,13 +323,13 @@ class NestedLoopIterator final : public RowIterator {
         m_source_inner(move(source_inner)),
         m_join_type(join_type),
         m_pfs_batch_mode(pfs_batch_mode) {
-    DBUG_ASSERT(m_source_outer != nullptr);
-    DBUG_ASSERT(m_source_inner != nullptr);
+    assert(m_source_outer != nullptr);
+    assert(m_source_inner != nullptr);
 
     // Batch mode makes no sense for anti- or semijoins, since they should only
     // be reading one row.
     if (join_type == JoinType::ANTI || join_type == JoinType::SEMI) {
-      DBUG_ASSERT(!pfs_batch_mode);
+      assert(!pfs_batch_mode);
     }
   }
 
@@ -434,7 +437,7 @@ class CacheInvalidatorIterator final : public RowIterator {
   actually write to the table; see StreamingIterator for details.
 
   MaterializeIterator conceptually materializes iterators, not JOINs or
-  SELECT_LEX_UNITs. However, there are many details that leak out
+  Query_expressions. However, there are many details that leak out
   (e.g., setting performance schema batch mode, slices, reusing CTEs,
   etc.), so we need to send them in anyway.
  */
@@ -470,9 +473,9 @@ class MaterializeIterator final : public TableRowIterator {
     /// If set to false, the Field objects in the output row are
     /// presumed already to be filled out. This is the case iff
     /// there's a windowing iterator earlier in the chain.
-    bool copy_fields_and_items;
+    bool copy_items;
 
-    /// If copy_fields_and_items is true, used for copying the Field objects
+    /// If copy_items is true, used for copying the Field objects
     /// into the temporary table row. Otherwise unused.
     Temp_table_param *temp_table_param;
 
@@ -496,7 +499,8 @@ class MaterializeIterator final : public TableRowIterator {
       after materialization.
     @param cte If materializing a CTE, points to it (see m_cte), otherwise
       nullptr.
-    @param unit The query expression we are materializing (see m_unit).
+    @param unit The query expression we are materializing (see
+    m_query_expression).
     @param join
       When materializing within the same JOIN (e.g., into a temporary table
       before sorting), as opposed to a derived table or a CTE, we may need
@@ -526,9 +530,9 @@ class MaterializeIterator final : public TableRowIterator {
                       Mem_root_array<QueryBlock> query_blocks_to_materialize,
                       TABLE *table,
                       unique_ptr_destroy_only<RowIterator> table_iterator,
-                      Common_table_expr *cte, SELECT_LEX_UNIT *unit, JOIN *join,
-                      int ref_slice, bool rematerialize, ha_rows limit_rows,
-                      bool reject_multiple_rows);
+                      Common_table_expr *cte, Query_expression *unit,
+                      JOIN *join, int ref_slice, bool rematerialize,
+                      ha_rows limit_rows, bool reject_multiple_rows);
 
   bool Init() override;
   int Read() override;
@@ -551,6 +555,11 @@ class MaterializeIterator final : public TableRowIterator {
    */
   void AddInvalidator(const CacheInvalidatorIterator *invalidator);
 
+  // Signal to TimingIterator that num_init_calls() and num_rows() exists.
+  using keeps_own_timing = void;
+  uint64_t num_init_calls() const { return m_num_materializations; }
+  uint64_t num_rows() const { return m_num_materialized_rows; }
+
  private:
   Mem_root_array<QueryBlock> m_query_blocks_to_materialize;
   unique_ptr_destroy_only<RowIterator> m_table_iterator;
@@ -567,7 +576,7 @@ class MaterializeIterator final : public TableRowIterator {
   /// the unit when we rematerialize, since they depend on values from
   /// outside the query expression, and those values may have changed
   /// since last materialization.
-  SELECT_LEX_UNIT *m_unit;
+  Query_expression *m_query_expression;
 
   /// See constructor.
   JOIN *const m_join;
@@ -592,6 +601,11 @@ class MaterializeIterator final : public TableRowIterator {
     int64_t generation_at_last_materialize;
   };
   Mem_root_array<Invalidator> m_invalidators;
+
+  // How many times we've actually materialized, and how many rows we
+  // materialized then. Used when we're wrapped in TimingIterator.
+  uint64_t m_num_materializations = 0;
+  uint64_t m_num_materialized_rows = 0;
 
   /// Whether we are deduplicating using a hash field on the temporary
   /// table. (This condition mirrors check_unique_constraint().)
@@ -794,7 +808,7 @@ class WeedoutIterator final : public RowIterator {
 
 /**
   An iterator that removes consecutive rows that are the same according to
-  a given index (or more accurately, its keypart), so-called “loose scan”
+  a set of items (typically the join key), so-called “loose scan”
   (not to be confused with “loose index scan”, which is a QUICK_SELECT_I).
   This is similar in spirit to WeedoutIterator above (removing duplicates
   allows us to treat the semijoin as a normal join), but is much cheaper
@@ -805,7 +819,39 @@ class RemoveDuplicatesIterator final : public RowIterator {
  public:
   RemoveDuplicatesIterator(THD *thd,
                            unique_ptr_destroy_only<RowIterator> source,
-                           const TABLE *table, KEY *key, size_t key_len);
+                           JOIN *join, Item **group_items,
+                           int group_items_size);
+
+  bool Init() override;
+  int Read() override;
+
+  void SetNullRowFlag(bool is_null_row) override {
+    m_source->SetNullRowFlag(is_null_row);
+  }
+
+  void StartPSIBatchMode() override { m_source->StartPSIBatchMode(); }
+  void EndPSIBatchModeIfStarted() override {
+    m_source->EndPSIBatchModeIfStarted();
+  }
+  void UnlockRow() override { m_source->UnlockRow(); }
+
+ private:
+  unique_ptr_destroy_only<RowIterator> m_source;
+  Bounds_checked_array<Cached_item *> m_caches;
+  bool m_first_row;
+};
+
+/**
+  Much like RemoveDuplicatesIterator, but works on the basis of a given index
+  (or more accurately, its keypart), not an arbitrary list of grouped fields.
+  This is only used in the non-hypergraph optimizer; the hypergraph optimizer
+  can deal with groupings that come from e.g. sorts.
+ */
+class RemoveDuplicatesOnIndexIterator final : public RowIterator {
+ public:
+  RemoveDuplicatesOnIndexIterator(THD *thd,
+                                  unique_ptr_destroy_only<RowIterator> source,
+                                  const TABLE *table, KEY *key, size_t key_len);
 
   bool Init() override;
   int Read() override;
@@ -831,9 +877,9 @@ class RemoveDuplicatesIterator final : public RowIterator {
 
 /**
   An iterator that is semantically equivalent to a semijoin NestedLoopIterator
-  immediately followed by a RemoveDuplicatesIterator. It is used to implement
-  the “loose scan” strategy in queries with multiple tables on the inside of a
-  semijoin, like
+  immediately followed by a RemoveDuplicatesOnIndexIterator. It is used to
+  implement the “loose scan” strategy in queries with multiple tables on the
+  inside of a semijoin, like
 
     ... FROM t1 WHERE ... IN ( SELECT ... FROM t2 JOIN t3 ... )
 
@@ -896,123 +942,6 @@ class NestedLoopSemiJoinWithDuplicateRemovalIterator final
   uchar *m_key_buf;  // Owned by the THD's MEM_ROOT.
   const size_t m_key_len;
   bool m_deduplicate_against_previous_row;
-};
-
-/**
-  WindowingIterator is similar to AggregateIterator, but deals with windowed
-  aggregates (i.e., OVER expressions). It deals specifically with aggregates
-  that don't need to buffer rows.
-
-  If we are outputting to a temporary table -- we take over responsibility
-  for storing the fields from MaterializeIterator, which would otherwise do it.
-  Otherwise, we do a fair amount of slice switching back and forth to be sure
-  to present the right output row to the user. Longer-term, we should probably
-  do as AggregateIterator does -- it used to do the same, but now instead saves
-  and restores rows, making for a more uniform data flow.
- */
-class WindowingIterator final : public RowIterator {
- public:
-  WindowingIterator(THD *thd, unique_ptr_destroy_only<RowIterator> source,
-                    Temp_table_param *temp_table_param,  // Includes the window.
-                    JOIN *join, int output_slice);
-
-  bool Init() override;
-
-  int Read() override;
-
-  void SetNullRowFlag(bool is_null_row) override {
-    m_source->SetNullRowFlag(is_null_row);
-  }
-
-  void StartPSIBatchMode() override { m_source->StartPSIBatchMode(); }
-  void EndPSIBatchModeIfStarted() override {
-    m_source->EndPSIBatchModeIfStarted();
-  }
-
-  void UnlockRow() override {
-    // There's nothing we can do here.
-  }
-
- private:
-  /// The iterator we are reading from.
-  unique_ptr_destroy_only<RowIterator> const m_source;
-
-  /// Parameters for the temporary table we are outputting to.
-  Temp_table_param *m_temp_table_param;
-
-  /// The window function itself.
-  Window *m_window;
-
-  /// The join we are a part of.
-  JOIN *m_join;
-
-  /// The slice we will be using when reading rows.
-  int m_input_slice;
-
-  /// The slice we will be using when outputting rows.
-  int m_output_slice;
-};
-
-/**
-  BufferingWindowingIterator is like WindowingIterator, but deals with window
-  functions that need to buffer rows.
- */
-class BufferingWindowingIterator final : public RowIterator {
- public:
-  BufferingWindowingIterator(
-      THD *thd, unique_ptr_destroy_only<RowIterator> source,
-      Temp_table_param *temp_table_param,  // Includes the window.
-      JOIN *join, int output_slice);
-
-  bool Init() override;
-
-  int Read() override;
-
-  void SetNullRowFlag(bool is_null_row) override {
-    m_source->SetNullRowFlag(is_null_row);
-  }
-
-  void StartPSIBatchMode() override { m_source->StartPSIBatchMode(); }
-  void EndPSIBatchModeIfStarted() override {
-    m_source->EndPSIBatchModeIfStarted();
-  }
-
-  void UnlockRow() override {
-    // There's nothing we can do here.
-  }
-
- private:
-  int ReadBufferedRow(bool new_partition_or_eof);
-
-  /// The iterator we are reading from.
-  unique_ptr_destroy_only<RowIterator> const m_source;
-
-  /// Parameters for the temporary table we are outputting to.
-  Temp_table_param *m_temp_table_param;
-
-  /// The window function itself.
-  Window *m_window;
-
-  /// The join we are a part of.
-  JOIN *m_join;
-
-  /// The slice we will be using when reading rows.
-  int m_input_slice;
-
-  /// The slice we will be using when outputting rows.
-  int m_output_slice;
-
-  /// If true, we may have more buffered rows to process that need to be
-  /// checked for before reading more rows from the source.
-  bool m_possibly_buffered_rows;
-
-  /// Whether the last input row started a new partition, and was tucked away
-  /// to finalize the previous partition; if so, we need to bring it back
-  /// for processing before we read more rows.
-  bool m_last_input_row_started_new_partition;
-
-  /// Whether we have seen the last input row.
-  bool m_eof;
 };
 
 /**

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@ namespace gcs_parameters_unittest {
 
 class GcsNodeAddressTest : public GcsBaseTest {
  protected:
-  GcsNodeAddressTest() {}
+  GcsNodeAddressTest() = default;
 
   static void SetUpTestCase() {}
 };
@@ -257,7 +257,7 @@ TEST_F(GcsNodeAddressTest, TestNodeAddressV6) {
 
 class GcsUUIDTest : public GcsBaseTest {
  protected:
-  GcsUUIDTest() {}
+  GcsUUIDTest() = default;
 
   static void SetUpTestCase() {}
 };
@@ -307,7 +307,7 @@ TEST_F(GcsUUIDTest, TestGcsUUID) {
 
 class GcsNodeInformationTest : public GcsBaseTest {
  protected:
-  GcsNodeInformationTest() {}
+  GcsNodeInformationTest() = default;
 
   static void SetUpTestCase() {}
 };
@@ -394,7 +394,7 @@ TEST_F(GcsNodeInformationTest, TestGcsNodeInformation) {
 
 class GcsNodesTest : public GcsBaseTest {
  protected:
-  GcsNodesTest() {}
+  GcsNodesTest() = default;
 
   static void SetUpTestCase() {}
 };

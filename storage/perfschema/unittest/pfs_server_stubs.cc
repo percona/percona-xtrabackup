@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -43,6 +43,10 @@ volatile bool ready_to_exit = false;
 uint lower_case_table_names = 0;
 CHARSET_INFO *files_charset_info = nullptr;
 CHARSET_INFO *system_charset_info = nullptr;
+
+extern "C" unsigned int thd_get_current_thd_terminology_use_previous() {
+  return 0;
+}
 
 void compute_digest_hash(const sql_digest_storage *, unsigned char *) {}
 

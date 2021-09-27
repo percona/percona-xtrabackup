@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -271,7 +271,7 @@ void Ndb_metadata::create_columns(dd::Table *table_def) const {
         break;
       default:
         ndb_log_error("Type = %d", ndb_column->getType());
-        DBUG_ASSERT(false);
+        assert(false);
         break;
     }
 
@@ -358,7 +358,7 @@ bool Ndb_metadata::create_indexes(const NdbDictionary::Dictionary *dict,
         break;
       default:
         // Unexpected object type
-        DBUG_ASSERT(false);
+        assert(false);
         return false;
     }
   }
@@ -421,7 +421,7 @@ bool Ndb_metadata::create_indexes(const NdbDictionary::Dictionary *dict,
       }
     } else {
       // Unexpected object type
-      DBUG_ASSERT(false);
+      assert(false);
       dict->removeIndexGlobal(*ndb_index, 0);
       return false;
     }
@@ -433,7 +433,7 @@ bool Ndb_metadata::create_indexes(const NdbDictionary::Dictionary *dict,
     for (unsigned int j = 0; j < ndb_index->getNoOfColumns(); j++) {
       const dd::Column *column =
           table_def->get_column(ndb_index->getColumn(j)->getName());
-      DBUG_ASSERT(column != nullptr);
+      assert(column != nullptr);
       (void)dd_index->add_element(const_cast<dd::Column *>(column));
     }
     dict->removeIndexGlobal(*ndb_index, 0);
@@ -472,7 +472,7 @@ bool Ndb_metadata::create_foreign_keys(Ndb *ndb, dd::Table *table_def) const {
     char child_db[FN_LEN + 1];
     const char *child_name = fk_split_name(child_db, ndb_fk.getChildTable());
     // Skip creating FKs for parent tables if it's not a self referential FK
-    if (strcmp(child_db, ndb->getDatabaseName()) != 0 ||
+    if (strcmp(child_db, m_dbname) != 0 ||
         strcmp(child_name, m_ndbtab->getName()) != 0)
       continue;
 
@@ -499,7 +499,7 @@ bool Ndb_metadata::create_foreign_keys(Ndb *ndb, dd::Table *table_def) const {
           fk_split_name(index_name_buffer, ndb_fk.getParentIndex(), true);
       // Extract the actual index name by dropping the $unique suffix
       const std::string::size_type n = constraint_name.rfind("$unique");
-      DBUG_ASSERT(n != std::string::npos);
+      assert(n != std::string::npos);
       const std::string real_constraint_name = constraint_name.substr(0, n);
       dd_fk->set_unique_constraint_name(real_constraint_name.c_str());
     }
@@ -521,7 +521,7 @@ bool Ndb_metadata::create_foreign_keys(Ndb *ndb, dd::Table *table_def) const {
         dd_fk->set_update_rule(dd::Foreign_key::RULE_SET_DEFAULT);
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
         return false;
     }
 
@@ -542,7 +542,7 @@ bool Ndb_metadata::create_foreign_keys(Ndb *ndb, dd::Table *table_def) const {
         dd_fk->set_delete_rule(dd::Foreign_key::RULE_SET_DEFAULT);
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
         return false;
     }
 
@@ -552,12 +552,20 @@ bool Ndb_metadata::create_foreign_keys(Ndb *ndb, dd::Table *table_def) const {
 
     Ndb_table_guard ndb_table_guard(ndb, parent_db, parent_name);
     const NdbDictionary::Table *parent_table = ndb_table_guard.get_table();
+    if (!parent_table) {
+      // Failed to open the table from NDB
+      ndb_log_error("Got error '%d: %s' from NDB",
+                    ndb_table_guard.getNdbError().code,
+                    ndb_table_guard.getNdbError().message);
+      ndb_log_error("Failed to open table '%s.%s'", parent_db, parent_name);
+      return false;
+    }
     for (unsigned int j = 0; j < ndb_fk.getChildColumnCount(); j++) {
       // Create FK element(s) for child columns
       dd::Foreign_key_element *fk_element = dd_fk->add_element();
       const dd::Column *column = table_def->get_column(
           m_ndbtab->getColumn(ndb_fk.getChildColumnNo(j))->getName());
-      DBUG_ASSERT(column != nullptr);
+      assert(column != nullptr);
       fk_element->set_column(column);
 
       // Set referenced column which is in the parent table
@@ -642,7 +650,7 @@ bool Ndb_metadata::create_table_def(Ndb *ndb, dd::Table *table_def) const {
         break;
       default:
         // ndbcluster uses only two different FragmentType's
-        DBUG_ASSERT(false);
+        assert(false);
         break;
     }
     table_def->set_partition_type(partition_type);
@@ -726,7 +734,7 @@ bool Ndb_metadata::lookup_tablespace_id(THD *thd, dd::Table *table_def) {
   }
 
   // Table had tablespace but neither name or id was available -> fail
-  DBUG_ASSERT(false);
+  assert(false);
   return false;
 }
 
@@ -762,7 +770,7 @@ class Compare_context {
         object_type_string = "foreign key '";
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
         object_type_string = "";
     }
     std::string diff;
@@ -837,7 +845,7 @@ bool Ndb_metadata::compare_table_def(const dd::Table *t1,
   } else {
     // It's known that table has tablespace but it could not be
     // looked up(yet), just check that DD definition have tablespace_id
-    DBUG_ASSERT(t2->tablespace_id());
+    assert(t2->tablespace_id());
   }
 
   // Check magic flag "options.explicit_tablespace"
@@ -937,15 +945,8 @@ bool Ndb_metadata::compare_table_def(const dd::Table *t1,
     const dd::Column *column2 = t2->get_column(column1->name());
     if (column2 == nullptr) continue;
 
-    /*
-      Diff in 'column_name' detected, 'D' != 'd'
-
-      ALTER TABLE t8 CHANGE D d INT UNSIGNED causes the above. Only an issue
-      with the same character with different case. For example,
-      ALTER TABLE t8 CHANGE D c INT UNSIGNED works perfectly well.
-      Bug#31958327 has been filed
-    */
-    // ctx.compare("column_name", column1->name(), column2->name());
+    // column name
+    ctx.compare("column_name", column1->name(), column2->name());
 
     const char *column_name = column1->name().c_str();
 
@@ -1802,7 +1803,7 @@ bool Ndb_metadata::check_index_count(const NdbDictionary::Dictionary *dict,
                                      const NdbDictionary::Table *ndbtab,
                                      const dd::Table *dd_table_def) {
   DBUG_TRACE;
-  DBUG_ASSERT(dict != nullptr);
+  assert(dict != nullptr);
   unsigned int ndb_index_count;
   if (!ndb_table_index_count(dict, ndbtab, ndb_index_count)) {
     ndb_log_error("Failed to get the number of indexes for %s",
@@ -1831,10 +1832,10 @@ bool Ndb_metadata::check_index_count(const NdbDictionary::Dictionary *dict,
   return ndb_index_count == dd_index_count;
 }
 
-bool Ndb_metadata::compare(THD *thd, Ndb *ndb,
+bool Ndb_metadata::compare(THD *thd, Ndb *ndb, const char *dbname,
                            const NdbDictionary::Table *ndbtab,
                            const dd::Table *dd_table_def) {
-  Ndb_metadata ndb_metadata(ndbtab);
+  Ndb_metadata ndb_metadata(dbname, ndbtab);
 
   // Allow DBUG keyword to disable the comparison
   if (DBUG_EVALUATE_IF("ndb_metadata_compare_skip", true, false)) {

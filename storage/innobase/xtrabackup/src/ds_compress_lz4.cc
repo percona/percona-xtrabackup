@@ -24,9 +24,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_io.h>
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
-#include "../extra/lz4/my_xxhash.h"
 #include "common.h"
 #include "datasink.h"
+#include "my_xxhash.h"
 #include "thread_pool.h"
 
 #define COMPRESS_CHUNK_SIZE ((size_t)(xtrabackup_compress_chunk_size))

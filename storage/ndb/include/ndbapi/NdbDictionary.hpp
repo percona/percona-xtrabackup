@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1239,7 +1239,7 @@ public:
     Uint32 getPartitionId(Uint32 hashvalue) const ;
 
     /*
-     * Return TRUE if any of the columns in the table have a 
+     * Return true if any of the columns in the table have a
      * non NULL default value defined
      */ 
     bool hasDefaultValues() const;
@@ -2355,14 +2355,17 @@ public:
      * @param type   Restrict returned list to only contain objects of
      *               this type
      *
+     * @note Calling function with fullyQualified set to false will
+     *       return fully qualified names i.e reversed logic
+     *
      * @return       -1 if error.
      *
      */
 #ifndef DOXYGEN_SHOULD_SKIP_DEPRECATED
     int listObjects(List & list, Object::Type type = Object::TypeUndefined);
 #endif
-    int listObjects(List & list,
-		    Object::Type type = Object::TypeUndefined) const;
+    int listObjects(List &list,
+                    Object::Type type = Object::TypeUndefined) const;
     int listObjects(List & list,
                     Object::Type type,
                     bool fullyQualified) const;
@@ -2424,6 +2427,8 @@ public:
      * Fetch list of indexes of given table.
      * @param list  Reference to list where to store the listed indexes
      * @param tableName  Name of table that index belongs to.
+     * @note Calling function with fullyQualified set to false will
+     *       return fully qualified names i.e reversed logic
      * @return  0 if successful, otherwise -1
      */
 #ifndef DOXYGEN_SHOULD_SKIP_DEPRECATED
@@ -2552,8 +2557,8 @@ public:
      * Table instance to new definition is supported
      * @param f Table to alter
      * @param t New definition of table
-     * @return  TRUE supported      <br>
-     *          FALSE not supported <br>
+     * @return  true supported      <br>
+     *          false not supported <br>
      */
     bool supportedAlterTable(const Table & f, const Table & t);
 
@@ -2857,13 +2862,10 @@ public:
   private:
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
     friend class NdbDictionaryImpl;
-    friend class UtilTransactions;
     friend class NdbBlob;
 #endif
     class NdbDictionaryImpl & m_impl;
     Dictionary(NdbDictionaryImpl&);
-    const Table * getIndexTable(const char * indexName,
-                                const char * tableName) const;
   public:
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
     const Table * getTable(const char * name, void **data) const;

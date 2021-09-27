@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -90,10 +90,10 @@ private:
 class TransientPagePool::MapPage
 {
 public:
-  STATIC_CONST( PAGE_WORDS = 8192 - 8 );
-  STATIC_CONST( VALUE_INDEX_BITS = 13 );
-  STATIC_CONST( VALUE_INDEX_MASK = (1U << VALUE_INDEX_BITS) - 1 );
-  STATIC_CONST( NO_VALUE = 0 );
+  static constexpr Uint32 PAGE_WORDS = 8192 - 8;
+  static constexpr Uint32 VALUE_INDEX_BITS = 13;
+  static constexpr Uint32 VALUE_INDEX_MASK = (1U << VALUE_INDEX_BITS) - 1;
+  static constexpr Uint32 NO_VALUE = 0;
 
   MapPage(Uint32 magic);
   Uint32 get(Uint32 i) const;

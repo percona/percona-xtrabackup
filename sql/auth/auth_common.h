@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,7 @@
 #ifndef AUTH_COMMON_INCLUDED
 #define AUTH_COMMON_INCLUDED
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -35,7 +36,7 @@
 
 #include "lex_string.h"
 #include "my_command.h"
-#include "my_dbug.h"
+
 #include "my_hostname.h"  // HOSTNAME_LENGTH
 #include "my_inttypes.h"
 #include "mysql_com.h"  // USERNAME_LENGTH
@@ -100,9 +101,9 @@ enum ACL_internal_access_result {
 */
 class ACL_internal_table_access {
  public:
-  ACL_internal_table_access() {}
+  ACL_internal_table_access() = default;
 
-  virtual ~ACL_internal_table_access() {}
+  virtual ~ACL_internal_table_access() = default;
 
   /**
     Check access to an internal table.
@@ -135,9 +136,9 @@ class ACL_internal_table_access {
 */
 class ACL_internal_schema_access {
  public:
-  ACL_internal_schema_access() {}
+  ACL_internal_schema_access() = default;
 
-  virtual ~ACL_internal_schema_access() {}
+  virtual ~ACL_internal_schema_access() = default;
 
   /**
     Check access to an internal schema.
@@ -180,9 +181,9 @@ class ACL_internal_schema_registry {
 */
 class IS_internal_schema_access : public ACL_internal_schema_access {
  public:
-  IS_internal_schema_access() {}
+  IS_internal_schema_access() = default;
 
-  ~IS_internal_schema_access() override {}
+  ~IS_internal_schema_access() override = default;
 
   ACL_internal_access_result check(ulong want_access,
                                    ulong *save_priv) const override;
@@ -417,7 +418,7 @@ class User_table_schema {
   // Added in 8.0.14
   virtual uint user_attributes_idx() = 0;
 
-  virtual ~User_table_schema() {}
+  virtual ~User_table_schema() = default;
 };
 
 /*
@@ -429,7 +430,7 @@ class User_table_current_schema : public User_table_schema {
   uint user_idx() override { return MYSQL_USER_FIELD_USER; }
   // not available
   uint password_idx() override {
-    DBUG_ASSERT(0);
+    assert(0);
     return MYSQL_USER_FIELD_COUNT;
   }
   uint select_priv_idx() override { return MYSQL_USER_FIELD_SELECT_PRIV; }
@@ -683,7 +684,7 @@ class User_table_schema_factory {
   }
 
   virtual bool is_old_user_table_schema(TABLE *table);
-  virtual ~User_table_schema_factory() {}
+  virtual ~User_table_schema_factory() = default;
 };
 
 extern bool mysql_user_table_is_in_short_password_format;
@@ -873,7 +874,7 @@ bool check_global_access(THD *thd, ulong want_access);
 /* sql_user_table */
 void commit_and_close_mysql_tables(THD *thd);
 bool is_acl_table_name(const char *name);
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 bool is_acl_table(const TABLE *table);
 #endif
 

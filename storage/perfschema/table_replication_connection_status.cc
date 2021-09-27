@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +39,8 @@
 #include "sql/rpl_info.h"
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h" /* Multi source replication */
+#include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
-#include "sql/rpl_slave.h"
 #include "sql/sql_parse.h"
 #include "sql/table.h"
 #include "storage/perfschema/pfs_instr.h"
@@ -183,7 +183,8 @@ PFS_engine_table *table_replication_connection_status::create(
 table_replication_connection_status::table_replication_connection_status()
     : PFS_engine_table(&m_share, &m_pos), m_pos(0), m_next_pos(0) {}
 
-table_replication_connection_status::~table_replication_connection_status() {}
+table_replication_connection_status::~table_replication_connection_status() =
+    default;
 
 void table_replication_connection_status::reset_position(void) {
   m_pos.m_index = 0;
@@ -243,7 +244,7 @@ int table_replication_connection_status::index_init(uint idx, bool) {
       result = PFS_NEW(PFS_index_rpl_connection_status_by_thread);
       break;
     default:
-      DBUG_ASSERT(false);
+      assert(false);
       break;
   }
   m_opened_index = result;
@@ -288,8 +289,8 @@ int table_replication_connection_status::make_row(Master_info *mi) {
   m_row.thread_id_is_null = true;
   m_row.service_state = PS_RPL_CONNECT_SERVICE_STATE_NO;
 
-  DBUG_ASSERT(mi != nullptr);
-  DBUG_ASSERT(mi->rli != nullptr);
+  assert(mi != nullptr);
+  assert(mi->rli != nullptr);
 
   mysql_mutex_lock(&mi->data_lock);
 
@@ -411,7 +412,7 @@ int table_replication_connection_status::read_row_values(TABLE *table,
                                                          bool read_all) {
   Field *f;
 
-  DBUG_ASSERT(table->s->null_bytes == 1);
+  assert(table->s->null_bytes == 1);
   buf[0] = 0;
 
   for (; (f = *fields); fields++) {
@@ -495,7 +496,7 @@ int table_replication_connection_status::read_row_values(TABLE *table,
           set_field_timestamp(f, m_row.queueing_trx_start_queue_timestamp);
           break;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }

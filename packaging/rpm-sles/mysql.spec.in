@@ -1,4 +1,4 @@
-# Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+# Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -138,7 +138,8 @@ BuildRequires:  libnuma-devel
 BuildRequires:  ncurses-devel
 BuildRequires:  openssl-devel
 BuildRequires:  zlib-devel
-%{?sles12:BuildRequires: gcc7 gcc7-c++}
+%{?sles12:BuildRequires: gcc10 gcc10-c++}
+%{?sles15:BuildRequires: gcc9 gcc9-c++}
 %{?sles16:BuildRequires: rpcgen pkgconfig(libtirpc)}
 BuildRequires:  systemd
 BuildRequires:  pkgconfig(systemd)
@@ -853,8 +854,11 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/rewriter.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/semisync_master.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/semisync_slave.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/semisync_source.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/semisync_replica.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/version_token.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_file.so
 %dir %{_libdir}/mysql/plugin/debug
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/adt_null.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_socket.so
@@ -883,8 +887,11 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/rewriter.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_master.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_slave.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_source.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_replica.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/version_token.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_file.so
 %if 0%{?mecab}
 %{_libdir}/mysql/mecab
 %attr(755, root, root) %{_libdir}/mysql/plugin/libpluginmecab.so
@@ -895,6 +902,7 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_datadir}/mysql-*/audit_log_filter_linux_install.sql
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_pam.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_simple.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/data_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_okv.so
@@ -905,9 +913,12 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/openssl_udf.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/firewall.so
 %attr(644, root, root) %{_datadir}/mysql-*/linux_install_firewall.sql
+%attr(644, root, root) %{_datadir}/mysql-*/firewall_profile_migration.sql
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_encrypted_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/audit_log.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_pam.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_kerberos.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_simple.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/data_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_okv.so
@@ -917,6 +928,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/thread_pool.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/openssl_udf.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/firewall.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_encrypted_file.so
 %if 0%{?aws_sdk}
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_aws.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_aws.so
@@ -981,6 +993,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_bindir}/mysqlshow
 %attr(755, root, root) %{_bindir}/mysqlslap
 %attr(755, root, root) %{_bindir}/mysql_config_editor
+%attr(755, root, root) %{_bindir}/mysql_migrate_keyring
 
 %attr(644, root, root) %{_mandir}/man1/mysql.1*
 %attr(644, root, root) %{_mandir}/man1/mysqladmin.1*
@@ -1023,7 +1036,6 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_bindir}/ndbinfo_select_all
 %attr(755, root, root) %{_bindir}/ndbxfrm
 
-%attr(644, root, root) %{_mandir}/man1/ndb-common-options.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_blob_tool.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_config.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_cpcd.1*
@@ -1079,6 +1091,7 @@ rm -r $(readlink var) var
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos_client.so
 
 %if 0%{?compatlib}
 %files libs-compat
@@ -1102,6 +1115,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_bindir}/mysqltest
 %attr(755, root, root) %{_bindir}/mysqltest_safe_process
 %attr(755, root, root) %{_bindir}/mysqlxtest
+%attr(755, root, root) %{_bindir}/mysql_keyring_encryption_test
 %attr(644, root, root) %{_mandir}/man1/comp_err.1*
 
 %attr(755, root, root) %{_libdir}/mysql/plugin/auth.so
@@ -1126,6 +1140,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_current_thread_reader.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_runtime_error.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_system_variable_set.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_table_access.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_deinit.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_3_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_avg_func.so
@@ -1188,6 +1204,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_test_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_kerberos_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_example_component1.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_example_component2.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_example_component3.so
@@ -1208,6 +1225,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_current_thread_reader.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_runtime_error.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_system_variable_set.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_table_access.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_deinit.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_3_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_avg_func.so
@@ -1356,6 +1375,9 @@ rm -r $(readlink var) var
 
 * Sun Jul 12 2020 Sreedhar S <sreedhar.sreedhargadda@oracle.com> - 8.0.22-1
 - Add a new subpackage client-plugins
+- Added component_keyring_file component
+- Added component_keyring_encrypted_file component
+- Added mysql_migrate_keyring
 
 * Mon May 11 2020 Murthy Sidagam <venkata.sidagam@oracle.com> - 8.0.15-1
 - Added component_test_component_deinit.so test component
@@ -2088,7 +2110,7 @@ lenz@mysql.com>
 * Wed Apr 13 2005 Lenz Grimmer <lenz@mysql.com>
 
 - removed the MySQL manual files (html/ps/texi) - they have been removed
-  from the MySQL sources and are now available seperately.
+  from the MySQL sources and are now available separately.
 
 * Mon Apr 4 2005 Petr Chardin <petr@mysql.com>
 

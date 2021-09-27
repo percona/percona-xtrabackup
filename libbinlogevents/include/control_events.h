@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1102,8 +1102,8 @@ class Gtid_event : public Binary_log_event {
 
   /* Minimum GNO expected in a serialized GTID event */
   static const int64_t MIN_GNO = 1;
-  /* Maximum GNO expected in a serialized GTID event */
-  static const int64_t MAX_GNO = LLONG_MAX;
+  /// One-past-the-max value of GNO
+  static const std::int64_t GNO_END = INT64_MAX;
 
  public:
   /// Total length of post header

@@ -46,6 +46,10 @@ vlog "Creating user 'pxb'"
 mysql -e "CREATE USER pxb@'localhost' IDENTIFIED BY 'password1' REQUIRE SSL"
 mysql -e "GRANT BACKUP_ADMIN, PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO pxb@'localhost'"
 mysql -e "GRANT SELECT ON performance_schema.log_status TO pxb@'localhost'"
+if is_server_version_higher_than 8.0.23
+then
+  mysql -e "GRANT SELECT ON performance_schema.keyring_component_status TO pxb@'localhost'"
+fi
 mysql -e "FLUSH PRIVILEGES"
 
 vlog 'connecting with MYSQL cli'
@@ -98,6 +102,10 @@ start_server
 mysql -e "CREATE USER pbx@'localhost' IDENTIFIED BY 'password1'"
 mysql -e "GRANT BACKUP_ADMIN, PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO pbx@'localhost'"
 mysql -e "GRANT SELECT ON performance_schema.log_status TO pbx@'localhost'"
+if is_server_version_higher_than 8.0.23
+then
+  mysql -e "GRANT SELECT ON performance_schema.keyring_component_status TO pbx@'localhost'"
+fi
 mysql -e "FLUSH PRIVILEGES"
 
 vlog 'connecting with MYSQL cli'

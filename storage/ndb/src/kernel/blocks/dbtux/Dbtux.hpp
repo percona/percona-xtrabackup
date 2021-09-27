@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -95,25 +95,25 @@ class Dbtux : public SimulatedBlock {
   Dblqh* c_lqh;
   Dbacc* c_acc;
   void execTUX_BOUND_INFO(Signal* signal);
-  void execREAD_PSEUDO_REQ(Signal* signal);
+  void execREAD_PSEUDO_REQ(Uint32 scanPtrI, Uint32 attrId, Uint32* out, Uint32 out_words);
 
 private:
   // sizes are in words (Uint32)
-  STATIC_CONST( MaxIndexFragments = MAX_FRAG_PER_LQH );
-  STATIC_CONST( MaxIndexAttributes = MAX_ATTRIBUTES_IN_INDEX );
-  STATIC_CONST( MaxAttrDataSize = 2 * MAX_ATTRIBUTES_IN_INDEX + MAX_KEY_SIZE_IN_WORDS );
-  STATIC_CONST( MaxXfrmDataSize = MaxAttrDataSize * MAX_XFRM_MULTIPLY);
+  static constexpr Uint32 MaxIndexFragments = MAX_FRAG_PER_LQH;
+  static constexpr Uint32 MaxIndexAttributes = MAX_ATTRIBUTES_IN_INDEX;
+  static constexpr Uint32 MaxAttrDataSize = 2 * MAX_ATTRIBUTES_IN_INDEX + MAX_KEY_SIZE_IN_WORDS;
+  static constexpr Uint32 MaxXfrmDataSize = MaxAttrDataSize * MAX_XFRM_MULTIPLY;
 public:
-  STATIC_CONST( DescPageSize = 512 );
+  static constexpr Uint32 DescPageSize = 512;
 private:
-  STATIC_CONST( MaxTreeNodeSize = MAX_TTREE_NODE_SIZE );
-  STATIC_CONST( MaxPrefSize = MAX_TTREE_PREF_SIZE );
-  STATIC_CONST( ScanBoundSegmentSize = 7 );
-  STATIC_CONST( MaxAccLockOps = MAX_PARALLEL_OP_PER_SCAN );
-  STATIC_CONST( MaxTreeDepth = 32 );    // strict
+  static constexpr Uint32 MaxTreeNodeSize = MAX_TTREE_NODE_SIZE;
+  static constexpr Uint32 MaxPrefSize = MAX_TTREE_PREF_SIZE;
+  static constexpr Uint32 ScanBoundSegmentSize = 7;
+  static constexpr Uint32 MaxAccLockOps = MAX_PARALLEL_OP_PER_SCAN;
+  static constexpr Uint32 MaxTreeDepth = 32;    // strict
 #ifdef VM_TRACE
   // for TuxCtx::c_debugBuffer
-  STATIC_CONST( DebugBufferBytes = (MaxAttrDataSize << 2) );
+  static constexpr Uint32 DebugBufferBytes = (MaxAttrDataSize << 2);
 #endif
   BLOCK_DEFINES(Dbtux);
 
@@ -121,13 +121,13 @@ private:
   struct TuxCtx;
 
   // AttributeHeader size is assumed to be 1 word
-  STATIC_CONST( AttributeHeaderSize = 1 );
+  static constexpr Uint32 AttributeHeaderSize = 1;
 
   /*
    * Logical tuple address, "local key".  Identifies table tuples.
    */
   typedef Uint32 TupAddr;
-  STATIC_CONST( NullTupAddr = (Uint32)-1 );
+  static constexpr Uint32 NullTupAddr = (Uint32)-1;
 
   /*
    * Physical tuple address in TUP.  Provides fast access to table tuple
@@ -178,7 +178,7 @@ private:
     bool eq(const TreeEnt ent) const;
     int cmp(const TreeEnt ent) const;
   };
-  STATIC_CONST( TreeEntSize = sizeof(TreeEnt) >> 2 );
+  static constexpr Uint32 TreeEntSize = sizeof(TreeEnt) >> 2;
   static const TreeEnt NullTreeEnt;
 
   /*
@@ -204,7 +204,7 @@ private:
     Uint32 m_nodeScanInstance;
     TreeNode();
   };
-  STATIC_CONST( NodeHeadSize = sizeof(TreeNode) >> 2 );
+  static constexpr Uint32 NodeHeadSize = sizeof(TreeNode) >> 2;
 
   /*
    * Tree header.  There is one in each fragment.  Contains tree
@@ -274,11 +274,11 @@ private:
     Uint16 m_magic;
     enum { Magic = 0xDE5C };
   };
-  STATIC_CONST( DescHeadSize = sizeof(DescHead) >> 2 );
+  static constexpr Uint32 DescHeadSize = sizeof(DescHead) >> 2;
 
   typedef NdbPack::Type KeyType;
   typedef NdbPack::Spec KeySpec;
-  STATIC_CONST( KeyTypeSize = sizeof(KeyType) >> 2 );
+  static constexpr Uint32 KeyTypeSize = sizeof(KeyType) >> 2;
 
   typedef NdbPack::DataC KeyDataC;
   typedef NdbPack::Data KeyData;
@@ -296,7 +296,7 @@ private:
   typedef DataBufferSegment<ScanBoundSegmentSize, RT_DBTUX_SCAN_BOUND>
             ScanBoundSegment;
   typedef TransientPool<ScanBoundSegment> ScanBoundBuffer_pool;
-  STATIC_CONST(DBTUX_SCAN_BOUND_TRANSIENT_POOL_INDEX = 2);
+  static constexpr Uint32 DBTUX_SCAN_BOUND_TRANSIENT_POOL_INDEX = 2;
   typedef DataBuffer<ScanBoundSegmentSize,
                      ScanBoundBuffer_pool,
                      RT_DBTUX_SCAN_BOUND> ScanBoundBuffer;
@@ -313,7 +313,7 @@ private:
 
   // ScanLock
   struct ScanLock {
-    STATIC_CONST( TYPE_ID = RT_DBTUX_SCAN_LOCK);
+    static constexpr Uint32 TYPE_ID = RT_DBTUX_SCAN_LOCK;
     Uint32 m_magic;
 
     ScanLock() :
@@ -330,7 +330,7 @@ private:
     };
     Uint32 prevList;
   };
-  STATIC_CONST(DBTUX_SCAN_LOCK_TRANSIENT_POOL_INDEX = 1);
+  static constexpr Uint32 DBTUX_SCAN_LOCK_TRANSIENT_POOL_INDEX = 1;
   typedef Ptr<ScanLock> ScanLockPtr;
   typedef TransientPool<ScanLock> ScanLock_pool;
   typedef DLFifoList<ScanLock_pool> ScanLock_fifo;
@@ -361,7 +361,7 @@ private:
    * protocol is still followed until scan close.
    */
   struct ScanOp {
-    STATIC_CONST( TYPE_ID = RT_DBTUX_SCAN_OPERATION);
+    static constexpr Uint32 TYPE_ID = RT_DBTUX_SCAN_OPERATION;
     Uint32 m_magic;
 
     ~ScanOp()
@@ -413,7 +413,7 @@ private:
     Uint32 prevList;
     ScanOp();
   };
-  STATIC_CONST(DBTUX_SCAN_OPERATION_TRANSIENT_POOL_INDEX = 0);
+  static constexpr Uint32 DBTUX_SCAN_OPERATION_TRANSIENT_POOL_INDEX = 0;
   typedef Ptr<ScanOp> ScanOpPtr;
   typedef TransientPool<ScanOp> ScanOp_pool;
   typedef DLList<ScanOp_pool> ScanOp_list;
@@ -840,14 +840,14 @@ private:
    * DbtuxStat.cpp
    */
   // one-round-trip tree-dive records in range
-  void statRecordsInRange(ScanOpPtr scanPtr, Uint32* out);
+  void statRecordsInRange(ScanOpPtr scanPtr, Uint32* out, Uint32 out_words);
   Uint32 getEntriesBeforeOrAfter(Frag& frag, TreePos pos, unsigned idir);
   unsigned getPathToNode(NodeHandle node, Uint16* path);
   // stats scan
   int statScanInit(StatOpPtr, const Uint32* data, Uint32 len, Uint32* usedLen);
   int statScanAddRow(StatOpPtr, TreeEnt ent);
-  void statScanReadKey(StatOpPtr, Uint32* out);
-  void statScanReadValue(StatOpPtr, Uint32* out);
+  void statScanReadKey(StatOpPtr, Uint32* out, Uint32 out_words);
+  void statScanReadValue(StatOpPtr, Uint32* out, Uint32 out_words);
   void execINDEX_STAT_REP(Signal*); // from TRIX
   // stats monitor request
   void execINDEX_STAT_IMPL_REQ(Signal*);
@@ -901,8 +901,8 @@ private:
     DebugLock = 16,             // log ACC locks
     DebugStat = 32              // log stats collection
   };
-  STATIC_CONST( DataFillByte = 0xa2 );
-  STATIC_CONST( NodeFillByte = 0xa4 );
+  static constexpr Uint32 DataFillByte = 0xa2;
+  static constexpr Uint32 NodeFillByte = 0xa4;
 #endif
 
   void execDBINFO_SCANREQ(Signal* signal);

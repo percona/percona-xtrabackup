@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -105,7 +105,7 @@ class Lock_and_access_ssl_acceptor_context {
  public:
   Lock_and_access_ssl_acceptor_context(Ssl_acceptor_context_container *context)
       : read_lock_(context->lock_) {}
-  ~Lock_and_access_ssl_acceptor_context() {}
+  ~Lock_and_access_ssl_acceptor_context() = default;
 
   /** Access protected @ref Ssl_acceptor_context_data */
   operator const Ssl_acceptor_context_data *() {

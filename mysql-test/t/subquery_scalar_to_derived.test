@@ -331,7 +331,7 @@ ANALYZE TABLE t1, t2;
 let $query =
 SELECT (WITH RECURSIVE dt AS (SELECT t1.a AS a UNION
                               SELECT a+1 FROM dt WHERE a<10)
-        SELECT t1.a * CONCAT(COUNT(*), ' - ', AVG(dt.a))
+        SELECT t1.a * CONCAT(COUNT(*), '.', FLOOR(AVG(dt.a)))
         FROM dt) AS subq
 FROM t1;
 eval $query;
@@ -345,7 +345,7 @@ FROM t1
      LEFT JOIN LATERAL (WITH RECURSIVE dt AS (SELECT t1.a AS a UNION
                                               SELECT (dt.a + 1)
                                               FROM dt WHERE dt.a < 10)
-                        SELECT t1.a * CONCAT(COUNT(0), ' - ', AVG(dt.a)) AS cnct
+                        SELECT t1.a * CONCAT(COUNT(0), '.', FLOOR(AVG(dt.a))) AS cnct
                         FROM dt) derived0
      ON TRUE;
 --sorted_result
@@ -674,10 +674,11 @@ GROUP BY i;
 eval $query;
 eval EXPLAIN $query;
 
-eval PREPARE stmt FROM "$query";
-EXECUTE stmt;
-
-DROP PREPARE stmt;
+#Remove commented out code FIXME.
+#eval PREPARE stmt FROM "$query";
+#EXECUTE stmt;
+#
+#DROP PREPARE stmt;
 DROP TABLE cc;
 
 --echo # Test: detect correlated aggregates deep inside scalar subquery (was
@@ -2191,6 +2192,20 @@ INSERT INTO t1 VALUES(1),(2),(3),(4),(5);
 ANALYZE TABLE t1;
 --echo # Used to return NULL
 SELECT SUM(pk) FROM t1 WHERE ( pk >= ANY ( SELECT MAX(1) FROM DUAL) );
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32859025: MYSQLD CRASH - ASSERTION `N < M_SIZE' FAILED|SQL/SQL_ARRAY.H
+--echo #
+
+CREATE TABLE t1 ( pk INTEGER );
+
+SELECT
+  (SELECT COUNT(*) FROM t1) AS f1,
+  (SELECT COUNT(*) FROM t1) AS f2
+FROM t1
+GROUP BY f1, f2 WITH ROLLUP;
+
 DROP TABLE t1;
 
 SET optimizer_switch='subquery_to_derived=default';

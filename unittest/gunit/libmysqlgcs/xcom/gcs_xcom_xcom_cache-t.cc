@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,7 @@ class GcsXComXComCache : public GcsBaseTest {
         m_sd(nullptr),
         m_thread(nullptr),
         m_run(false) {}
-  ~GcsXComXComCache() override {}
+  ~GcsXComXComCache() override = default;
 
   void SetUp() override {
     m_synode = {1, 1, 0};

@@ -7400,7 +7400,7 @@ ERROR 22007: Incorrect datetime value: '1999-00-00 00:00:00' for column 'a' at r
 INSERT INTO t1 VALUES (NULL, '1999-00-00 00:00:00');
 ERROR 22007: Incorrect datetime value: '1999-00-00 00:00:00' for column 'b' at row 1
 INSERT INTO t1 VALUES (NULL, TIMESTAMP('0000-00-00 10:00:00'));
-ERROR 22007: Incorrect datetime value: '0000-00-00 10:00:00.000000' for column 'b' at row 1
+ERROR 22007: Incorrect datetime value: '0000-00-00 10:00:00'
 INSERT INTO t1 VALUES (NULL, 199991231000000);
 ERROR 22007: Incorrect datetime value: '199991231000000' for column 'b' at row 1
 INSERT INTO t1 VALUES (NULL, -0.1);
@@ -15931,17 +15931,6 @@ OR
 col_datetime_5 = CURRENT_DATE()
 ORDER BY 1;
 c1	c2
-Warnings:
-Warning	1411	Incorrect datetime value: '03:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '08:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '08:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '12:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '08:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '12:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '12:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '12:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '12:07' for function str_to_date
-Warning	1411	Incorrect datetime value: '12:07' for function str_to_date
 DROP TABLE t1;
 SET timestamp=DEFAULT;
 #

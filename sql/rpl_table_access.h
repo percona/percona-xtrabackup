@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ struct TABLE;
 
 class System_table_access {
  public:
-  virtual ~System_table_access() {}
+  virtual ~System_table_access() = default;
 
   /**
     Opens and locks a system table.

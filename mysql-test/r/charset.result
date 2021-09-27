@@ -98,7 +98,7 @@ SELECT '🐬';
 🐬
 🐬
 Warnings:
-Warning	1300	Invalid utf8 character string: 'F09F90'
+Warning	1300	Invalid utf8mb3 character string: 'F09F90'
 CREATE TABLE 🐬(a INT);
 ERROR HY000: Invalid utf8 character string: '\xF0\x9F\x90\xAC'
 CREATE TABLE t1(🐬 INT);
@@ -138,3 +138,8 @@ CREATE TABLE t1 (
 PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 DROP TABLE t1;
+# Bug#32244631: Illegal mix of collations (ascii_general_ci,implicit)
+SELECT member_role
+FROM performance_schema.replication_group_members
+WHERE member_host = @@hostname AND member_role='PRIMARY';
+member_role

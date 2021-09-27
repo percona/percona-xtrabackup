@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,6 @@
 #include <netdb.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/uio.h>
@@ -33,6 +32,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <EventLogger.hpp>
 
 typedef socklen_t ndb_socket_len_t;
 
@@ -77,8 +77,7 @@ int ndb_socket_close(ndb_socket_t s)
   {
     if ((sb.st_mode & S_IFMT) != S_IFSOCK)
     {
-      fprintf(stderr, "fd=%d: not socket: mode=%o",
-              s.fd, sb.st_mode);
+      g_eventLogger->info("fd=%d: not socket: mode=%o", s.fd, sb.st_mode);
       abort();
     }
   }
@@ -120,9 +119,14 @@ ndb_socket_t ndb_socket_create_dual_stack(int type, int protocol)
   int on = 0;
 
   s.fd= socket(AF_INET6, type, protocol);
+
+  if (s.fd == -1)
+    return s;
+
   if (ndb_setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY,
                      (char *)&on, sizeof(on)) == -1)
   {
+    ndb_socket_close(s);
     ndb_socket_invalidate(&s);
   }
   return s;

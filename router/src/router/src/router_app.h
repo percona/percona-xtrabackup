@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -526,6 +526,7 @@ class MySQLRouter {
   std::vector<std::string> config_files_;
   /** @brief PID file location **/
   std::string pid_file_path_;
+  bool pid_file_created_{false};
 
   /** @brief CmdArgHandler object handling command line arguments **/
   CmdArgHandler arg_handler_;

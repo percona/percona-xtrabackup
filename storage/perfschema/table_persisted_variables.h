@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -51,22 +51,12 @@ class PFS_index_persisted_variables : public PFS_engine_index {
   PFS_index_persisted_variables()
       : PFS_engine_index(&m_key), m_key("VARIABLE_NAME") {}
 
-  ~PFS_index_persisted_variables() override {}
+  ~PFS_index_persisted_variables() override = default;
 
   virtual bool match(const System_variable *pfs);
 
  private:
   PFS_key_variable_name m_key;
-};
-
-/**
-  Store and retrieve table state information during queries that reinstantiate
-  the table object.
-*/
-class table_persisted_variables_context : public PFS_table_context {
- public:
-  table_persisted_variables_context(ulonglong hash_version, bool restore)
-      : PFS_table_context(hash_version, restore, THR_PFS_SV) {}
 };
 
 /**
@@ -105,7 +95,7 @@ class table_persisted_variables : public PFS_engine_table {
   table_persisted_variables();
 
  public:
-  ~table_persisted_variables() override {}
+  ~table_persisted_variables() override = default;
 
  protected:
   int make_row(const System_variable *system_var);
@@ -124,9 +114,6 @@ class table_persisted_variables : public PFS_engine_table {
   pos_t m_pos;
   /** Next position. */
   pos_t m_next_pos;
-
-  /** Table context with system variable hash version. */
-  table_persisted_variables_context *m_context;
 
   PFS_index_persisted_variables *m_opened_index;
 };

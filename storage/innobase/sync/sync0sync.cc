@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -127,6 +127,8 @@ mysql_pfs_key_t lock_sys_table_mutex_key;
 mysql_pfs_key_t lock_sys_page_mutex_key;
 mysql_pfs_key_t lock_wait_mutex_key;
 mysql_pfs_key_t trx_sys_mutex_key;
+mysql_pfs_key_t trx_sys_shard_mutex_key;
+mysql_pfs_key_t trx_sys_serialisation_mutex_key;
 mysql_pfs_key_t srv_sys_mutex_key;
 mysql_pfs_key_t srv_threads_mutex_key;
 #ifndef PFS_SKIP_EVENT_MUTEX
@@ -180,40 +182,18 @@ MutexMonitor *mutex_monitor;
 
 /**
 Prints wait info of the sync system.
+Note: The instrumental counters are deprecated
+      and prints all 0 for compatibility.
 @param file - where to print */
 static void sync_print_wait_info(FILE *file) {
   fprintf(file,
-          "RW-shared spins " UINT64PF ", rounds " UINT64PF
-          ","
-          " OS waits " UINT64PF
-          "\n"
-          "RW-excl spins " UINT64PF ", rounds " UINT64PF
-          ","
-          " OS waits " UINT64PF
-          "\n"
-          "RW-sx spins " UINT64PF ", rounds " UINT64PF
-          ","
-          " OS waits " UINT64PF "\n",
-          (uint64_t)rw_lock_stats.rw_s_spin_wait_count,
-          (uint64_t)rw_lock_stats.rw_s_spin_round_count,
-          (uint64_t)rw_lock_stats.rw_s_os_wait_count,
-          (uint64_t)rw_lock_stats.rw_x_spin_wait_count,
-          (uint64_t)rw_lock_stats.rw_x_spin_round_count,
-          (uint64_t)rw_lock_stats.rw_x_os_wait_count,
-          (uint64_t)rw_lock_stats.rw_sx_spin_wait_count,
-          (uint64_t)rw_lock_stats.rw_sx_spin_round_count,
-          (uint64_t)rw_lock_stats.rw_sx_os_wait_count);
+          "RW-shared spins 0, rounds 0, OS waits 0\n"
+          "RW-excl spins 0, rounds 0, OS waits 0\n"
+          "RW-sx spins 0, rounds 0, OS waits 0\n");
 
-  fprintf(
-      file,
-      "Spin rounds per wait: %.2f RW-shared,"
-      " %.2f RW-excl, %.2f RW-sx\n",
-      (double)rw_lock_stats.rw_s_spin_round_count /
-          std::max(uint64_t(1), (uint64_t)rw_lock_stats.rw_s_spin_wait_count),
-      (double)rw_lock_stats.rw_x_spin_round_count /
-          std::max(uint64_t(1), (uint64_t)rw_lock_stats.rw_x_spin_wait_count),
-      (double)rw_lock_stats.rw_sx_spin_round_count /
-          std::max(uint64_t(1), (uint64_t)rw_lock_stats.rw_sx_spin_wait_count));
+  fprintf(file,
+          "Spin rounds per wait: 0.00 RW-shared,"
+          " 0.00 RW-excl, 0.00 RW-sx\n");
 }
 
 /** Prints info of the sync system.
@@ -300,8 +280,7 @@ void MutexMonitor::reset() {
 
   mutex_enter(&rw_lock_list_mutex);
 
-  for (rw_lock_t *rw_lock = UT_LIST_GET_FIRST(rw_lock_list); rw_lock != nullptr;
-       rw_lock = UT_LIST_GET_NEXT(list, rw_lock)) {
+  for (auto rw_lock : rw_lock_list) {
     rw_lock->count_os_wait = 0;
   }
 

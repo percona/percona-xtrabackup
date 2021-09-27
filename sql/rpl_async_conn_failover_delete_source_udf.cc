@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -159,7 +159,7 @@ bool Rpl_async_conn_failover_delete_source::delete_source_init(
       Udf_charset_service::set_args_charset(args))
     return true;
 
-  init_id->maybe_null = 0;
+  init_id->maybe_null = false;
   return false;
 }
 

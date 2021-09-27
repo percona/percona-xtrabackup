@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,7 +51,7 @@ class Rpl_sys_key_access {
   /**
     Construction.
   */
-  Rpl_sys_key_access() {}
+  Rpl_sys_key_access() = default;
 
   /**
     Destruction.

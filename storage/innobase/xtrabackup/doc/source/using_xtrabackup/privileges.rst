@@ -72,6 +72,8 @@ alteration, see ``mysql --help`` for details.
    (port, socket, host) must be specified in order for |xtrabackup| to talk to
    the correct server.
 
+.. _pxb.privilege:
+
 Permissions and Privileges Needed
 ================================================================================
 
@@ -79,8 +81,7 @@ Once connected to the server, in order to perform a backup you will need
 ``READ`` and ``EXECUTE`` permissions at a filesystem level in the
 server's :term:`datadir`.
 
-The database user needs the following privileges on the tables/databases to be
-backed up:
+The database user needs the following privileges on the tables or databases to be backed up:
 
 * ``RELOAD`` and ``LOCK TABLES`` (unless the :option:`--no-lock <--no-lock>`
   option is specified) in order to run :mysql:`FLUSH TABLES WITH READ LOCK` and
@@ -110,6 +111,10 @@ backed up:
   :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
   table,
 
+* ``ALTER`` privilege in order to upgrade the
+  :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` database and
+  table,
+
 * ``INSERT`` privilege in order to add history records to the
   :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` table,
 
@@ -118,6 +123,8 @@ backed up:
   :option:`--incremental-history-uuid` in order for the feature
   to look up the ``innodb_to_lsn`` values in the
   :ref:`PERCONA_SCHEMA.xtrabackup_history <xtrabackup_history>` table.
+
+* ``SELECT`` privilege on the `keyring_component_status table <https://dev.mysql.com/doc/refman/8.0/en/performance-schema-keyring-component-status-table.html>`__  to view the attributes and status of the installed keyring component when in use.
 
 The explanation of when these are used can be found in
 :ref:`how_xtrabackup_works`.
@@ -130,4 +137,11 @@ to full backups would be:
    mysql> CREATE USER 'bkpuser'@'localhost' IDENTIFIED BY 's3cr%T'; 
    mysql> GRANT BACKUP_ADMIN, PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'bkpuser'@'localhost';
    mysql> GRANT SELECT ON performance_schema.log_status TO 'bkpuser'@'localhost';
+   mysql> GRANT SELECT ON performance_schema.keyring_component_status TO bkpuser@'localhost' 
    mysql> FLUSH PRIVILEGES;
+
+
+
+
+   
+

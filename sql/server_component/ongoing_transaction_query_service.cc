@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,7 @@
 
 class Get_running_transactions : public Do_THD_Impl {
  public:
-  Get_running_transactions() {}
+  Get_running_transactions() = default;
 
   /*
    This method relies on the assumption that a thread running query will either
@@ -44,8 +44,8 @@ class Get_running_transactions : public Do_THD_Impl {
       Show we're at least as restrictive detecting transactions as the
       original code for BUG#28327838 that we're replacing!!
     */
-    DBUG_ASSERT(((tst->get_trx_state() & TX_EXPLICIT) > 0) >=
-                (thd->in_active_multi_stmt_transaction() > 0));
+    assert(((tst->get_trx_state() & TX_EXPLICIT) > 0) >=
+           (thd->in_active_multi_stmt_transaction() > 0));
 
     /*
       Show we're detecting DML at least in all cases the original code does.

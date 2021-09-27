@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,7 +55,7 @@ class Ndb_index_stat_thread : public Ndb_component {
   void wakeup();
 
   /* are we setup */
-  bool is_setup_complete();
+  static bool is_setup_complete();
 
  private:
   int do_init() override;

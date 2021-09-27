@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,9 +27,9 @@
 
 #include "storage/perfschema/table_setup_instruments.h"
 
+#include <assert.h>
 #include <stddef.h>
 
-#include "my_dbug.h"
 #include "my_thread.h"
 #include "sql/field.h"
 #include "sql/plugin_table.h"
@@ -258,7 +258,7 @@ int table_setup_instruments::rnd_pos(const void *pos) {
 int table_setup_instruments::index_init(uint idx MY_ATTRIBUTE((unused)), bool) {
   PFS_index_setup_instruments *result;
 
-  DBUG_ASSERT(idx == 0);
+  assert(idx == 0);
   result = PFS_NEW(PFS_index_setup_instruments);
 
   m_opened_index = result;
@@ -366,7 +366,7 @@ int table_setup_instruments::read_row_values(TABLE *table, unsigned char *buf,
   uint properties;
 
   /* Set the null bits */
-  DBUG_ASSERT(table->s->null_bytes == 1);
+  assert(table->s->null_bytes == 1);
   buf[0] = 0;
 
   /*
@@ -378,8 +378,8 @@ int table_setup_instruments::read_row_values(TABLE *table, unsigned char *buf,
     if (read_all || bitmap_is_set(table->read_set, f->field_index())) {
       switch (f->field_index()) {
         case 0: /* NAME */
-          set_field_varchar_utf8(f, m_row.m_instr_class->m_name,
-                                 m_row.m_instr_class->m_name_length);
+          set_field_varchar_utf8(f, m_row.m_instr_class->m_name.str(),
+                                 m_row.m_instr_class->m_name.length());
           break;
         case 1: /* ENABLED */
           set_field_enum(f,
@@ -424,7 +424,7 @@ int table_setup_instruments::read_row_values(TABLE *table, unsigned char *buf,
           }
           break;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }
@@ -464,7 +464,7 @@ int table_setup_instruments::update_row_values(TABLE *table,
         case 5: /* DOCUMENTATION */
           return HA_ERR_WRONG_COMMAND;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }
@@ -507,7 +507,7 @@ int table_setup_instruments::update_row_values(TABLE *table,
       /* No flag to update. */
       break;
     default:
-      DBUG_ASSERT(false);
+      assert(false);
       break;
   }
 

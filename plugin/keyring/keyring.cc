@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -161,7 +161,7 @@ static int keyring_deinit(void *arg MY_ATTRIBUTE((unused))) {
   CRYPTO_cleanup_all_ex_data();
   keys.reset();
   logger.reset();
-  keyring_file_data.reset();
+  delete_keyring_file_data();
   mysql_rwlock_destroy(&LOCK_keyring);
 
   deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);

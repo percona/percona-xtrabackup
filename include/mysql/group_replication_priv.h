@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -134,7 +134,7 @@ void get_server_startup_prerequirements(Trans_context_info &requirements);
 bool get_server_encoded_gtid_executed(uchar **encoded_gtid_executed,
                                       size_t *length);
 
-#if !defined(DBUG_OFF)
+#if !defined(NDEBUG)
 /**
   Returns a text representation of a encoded GTID set.
 
@@ -200,16 +200,16 @@ const char *get_write_set_algorithm_string(unsigned int algorithm);
 bool is_gtid_committed(const Gtid &gtid);
 
 /**
-  Returns the value of slave_max_allowed_packet.
+  Returns the value of replica_max_allowed_packet.
 
-  @return slave_max_allowed_packet
+  @return replica_max_allowed_packet
 */
-unsigned long get_slave_max_allowed_packet();
+unsigned long get_replica_max_allowed_packet();
 
 /**
-  @returns the maximum value of slave_max_allowed_packet.
+  @returns the maximum value of replica_max_allowed_packet.
  */
-unsigned long get_max_slave_max_allowed_packet();
+unsigned long get_max_replica_max_allowed_packet();
 
 /**
   @returns if the server is restarting after a clone

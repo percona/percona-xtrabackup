@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +61,7 @@ struct Key : IKey {
   bool is_key_length_valid() override;
 
  protected:
-  void set_key_type_enum(const std::string *key_type);
+  void set_key_type_enum(const std::string *key_type) override;
 
  private:
   void init(const char *a_key_id, const char *a_key_type, const char *a_user_id,

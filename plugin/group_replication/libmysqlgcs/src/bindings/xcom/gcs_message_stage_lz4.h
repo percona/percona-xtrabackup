@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,7 @@ class Gcs_message_stage_lz4 : public Gcs_message_stage {
                                  unsigned long long compress_threshold)
       : Gcs_message_stage(enabled), m_threshold(compress_threshold) {}
 
-  ~Gcs_message_stage_lz4() override {}
+  ~Gcs_message_stage_lz4() override = default;
 
   /*
    Return the stage code.
@@ -130,7 +130,7 @@ class Gcs_message_stage_lz4_v2 : public Gcs_message_stage_lz4 {
                                     unsigned long long compress_threshold)
       : Gcs_message_stage_lz4(enabled, compress_threshold) {}
 
-  ~Gcs_message_stage_lz4_v2() override {}
+  ~Gcs_message_stage_lz4_v2() override = default;
 
   /*
    Return the stage code.

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,10 +23,11 @@
 #ifndef PLUGIN_GR_INCLUDE_UDF_UTILS_H
 #define PLUGIN_GR_INCLUDE_UDF_UTILS_H
 
+#include <assert.h>
 #include <mysql/components/services/registry.h>
 #include <mysql/components/services/udf_metadata.h>
 #include <mysql/udf_registration_types.h>
-#include "my_dbug.h"
+
 #include "plugin/group_replication/include/group_actions/group_action.h"
 #include "plugin/group_replication/include/member_version.h"
 
@@ -59,13 +60,13 @@ class privilege_result {
  public:
   privilege_status status;
   char const *get_user() const {
-    DBUG_ASSERT(status == privilege_status::no_privilege &&
-                "get_user() can only be called if status == no_privilege");
+    assert(status == privilege_status::no_privilege &&
+           "get_user() can only be called if status == no_privilege");
     return user;
   }
   char const *get_host() const {
-    DBUG_ASSERT(status == privilege_status::no_privilege &&
-                "get_host() can only be called if status == no_privilege");
+    assert(status == privilege_status::no_privilege &&
+           "get_host() can only be called if status == no_privilege");
     return host;
   }
   static privilege_result success() {
@@ -83,9 +84,9 @@ class privilege_result {
   char const *host;
   privilege_result(privilege_status status)
       : status(status), user(nullptr), host(nullptr) {
-    DBUG_ASSERT(status != privilege_status::no_privilege &&
-                "privilege_result(status) can only be called if status != "
-                "no_privilege");
+    assert(status != privilege_status::no_privilege &&
+           "privilege_result(status) can only be called if status != "
+           "no_privilege");
   }
   privilege_result(char const *user, char const *host)
       : status(privilege_status::no_privilege), user(user), host(host) {}
@@ -137,6 +138,17 @@ privilege_result user_has_gr_admin_privilege();
  */
 void log_privilege_status_result(privilege_result const &privilege,
                                  char *message);
+/**
+ * Checks that `super_read_only` is disabled on the server.
+ *
+ * @returns std::pair<bool, std::string> where each element has the
+ *          following meaning:
+ *            first element of the pair is the function error value:
+ *              false  Successful
+ *              true   Error
+ *            second element of the pair is the error message.
+ */
+std::pair<bool, std::string> check_super_read_only_is_disabled();
 
 /**
  * Checks whether the server is ONLINE and belongs to the majority partition.

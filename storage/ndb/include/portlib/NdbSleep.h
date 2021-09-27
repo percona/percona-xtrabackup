@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ void NdbSleep_MicroSleep(int microseconds)
   LARGE_INTEGER liDueTime;
   liDueTime.QuadPart = -10LL * microseconds;
 
-  HANDLE hTimer = CreateWaitableTimer(NULL, TRUE, NULL);
+  HANDLE hTimer = CreateWaitableTimer(NULL, true, NULL);
   if (NULL == hTimer ||
       !SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, 0) ||
       WaitForSingleObject(hTimer, INFINITE) != WAIT_OBJECT_0)

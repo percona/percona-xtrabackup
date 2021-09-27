@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -134,11 +134,11 @@
 #include "sql/mysqld_thd_manager.h"
 
 #define PFS_VAR
+#include <assert.h>
 #include <stddef.h>
 #include <sys/types.h>
 #include <string>
 
-#include "my_dbug.h"
 #include "sql/set_var.h"
 #include "storage/perfschema/pfs_account.h"
 #include "storage/perfschema/pfs_host.h"
@@ -452,7 +452,7 @@ class PFS_variable_cache {
   Destructor.
 */
 template <class Var_type>
-PFS_variable_cache<Var_type>::~PFS_variable_cache() {}
+PFS_variable_cache<Var_type>::~PFS_variable_cache() = default;
 
 /**
   Get a validated THD from the thread manager. Execute callback function while
@@ -476,7 +476,7 @@ THD *PFS_variable_cache<Var_type>::get_THD(THD *unsafe_thd) {
 
 template <class Var_type>
 THD *PFS_variable_cache<Var_type>::get_THD(PFS_thread *pfs_thread) {
-  DBUG_ASSERT(pfs_thread != nullptr);
+  assert(pfs_thread != nullptr);
   return get_THD(pfs_thread->m_thd);
 }
 
@@ -646,7 +646,7 @@ class PFS_system_variable_info_cache : public PFS_system_variable_cache {
  public:
   PFS_system_variable_info_cache(bool external_init)
       : PFS_system_variable_cache(external_init) {}
-  ~PFS_system_variable_info_cache() override {}
+  ~PFS_system_variable_info_cache() override = default;
 
  private:
   /* Global and Session - THD */
@@ -660,7 +660,7 @@ class PFS_system_persisted_variables_cache : public PFS_system_variable_cache {
  public:
   PFS_system_persisted_variables_cache(bool external_init)
       : PFS_system_variable_cache(external_init) {}
-  ~PFS_system_persisted_variables_cache() override {}
+  ~PFS_system_persisted_variables_cache() override = default;
 
  private:
   /* Global and Session - THD */

@@ -41,7 +41,6 @@
 # include/assert_command_output.inc doesn't work for mysqld on windows
 --source include/not_windows.inc
 --source include/not_group_replication_plugin.inc
---source include/not_hypergraph.inc  # Gets confused by the extra logging.
 --let $rpl_gtid_utils= 1
 --source include/master-slave.inc
 
@@ -500,6 +499,7 @@ DROP TABLE t5;
 RESET MASTER;
 
 --source include/rpl_connection_slave.inc
+DROP TABLE t5;
 RESET SLAVE;
 
 --let $rpl_skip_sync=0
@@ -659,7 +659,7 @@ RESET MASTER;
 --connection slave
 --source include/stop_slave.inc
 RESET SLAVE;
-SET @@GLOBAL.DEBUG= 'd,simulate_master_has_unknown_gtid_mode';
+SET @@GLOBAL.DEBUG= 'd,simulate_source_has_unknown_gtid_mode';
 START SLAVE IO_THREAD;
 --let $slave_io_errno= convert_error(ER_SLAVE_FATAL_ERROR)
 --let $show_slave_io_error= 1

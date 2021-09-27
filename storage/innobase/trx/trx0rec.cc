@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -38,6 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mach0data.h"
 #include "mtr0log.h"
 #include "trx0undo.h"
+#include "ut0dbg.h"
 #ifndef UNIV_HOTBACKUP
 #include "dict0dict.h"
 #include "fsp0sysspace.h"
@@ -64,8 +65,7 @@ class Spatial_reference_system;
 
 /** Writes the mtr log entry of the inserted undo log record on the undo log
  page. */
-UNIV_INLINE
-void trx_undof_page_add_undo_rec_log(
+static inline void trx_undof_page_add_undo_rec_log(
     page_t *undo_page, /*!< in: undo log page */
     ulint old_free,    /*!< in: start offset of the inserted entry */
     ulint new_free,    /*!< in: end offset of the entry */
@@ -138,9 +138,8 @@ byte *trx_undo_parse_add_undo_rec(byte *ptr,     /*!< in: buffer */
 #ifndef UNIV_HOTBACKUP
 /** Calculates the free space left for extending an undo log record.
  @return bytes left */
-UNIV_INLINE
-ulint trx_undo_left(const page_t *page, /*!< in: undo log page */
-                    const byte *ptr)    /*!< in: pointer to page */
+static inline ulint trx_undo_left(const page_t *page, /*!< in: undo log page */
+                                  const byte *ptr) /*!< in: pointer to page */
 {
   /* The '- 10' is a safety margin, in case we have some small
   calculation error below */
@@ -2107,9 +2106,6 @@ byte *trx_undo_parse_erase_page_end(
     page_t *page,                         /*!< in: page or NULL */
     mtr_t *mtr)                           /*!< in: mtr or NULL */
 {
-  ut_ad(ptr != nullptr);
-  ut_ad(end_ptr != nullptr);
-
   if (page == nullptr) {
     return (ptr);
   }

@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2020, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -168,6 +168,13 @@ TARGET_COMPILE_DEFINITIONS(innochecksum PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY)
 IF(MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_FLAGS(innochecksum.cc
     COMPILE_FLAGS "-Wno-unused-parameter -Wno-cast-qual")
+ENDIF()
+
+# This compiler says -Werror=stringop-overflow= for:
+# memcmp(&space_id, buf.begin() + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, 4)
+IF(MY_COMPILER_IS_GNU_8)
+  ADD_COMPILE_FLAGS(innochecksum.cc COMPILE_FLAGS "-Wno-stringop-overflow")
+  MY_TARGET_LINK_OPTIONS(innochecksum "-Wno-stringop-overflow")
 ENDIF()
 
 MYSQL_ADD_EXECUTABLE(ibd2sdi

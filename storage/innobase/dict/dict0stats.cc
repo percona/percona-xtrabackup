@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2009, 2020, Oracle and/or its affiliates.
+Copyright (c) 2009, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -154,12 +154,12 @@ typedef std::map<const char *, dict_index_t *, ut_strcmp_functor,
     index_map_t;
 
 /** Checks whether an index should be ignored in stats manipulations:
- * stats fetch
- * stats recalc
- * stats save
+ - stats fetch
+ - stats recalc
+ - stats save
  @return true if exists and all tables are ok */
-UNIV_INLINE
-bool dict_stats_should_ignore_index(const dict_index_t *index) /*!< in: index */
+static inline bool dict_stats_should_ignore_index(
+    const dict_index_t *index) /*!< in: index */
 {
   return ((index->type & DICT_FTS) || index->is_corrupted() ||
           dict_index_is_spatial(index) || index->to_be_dropped ||
@@ -181,7 +181,7 @@ static dberr_t dict_stats_exec_sql(pars_info_t *pinfo, const char *sql,
   bool trx_started = false;
 
   ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
 
   if (trx == nullptr) {
     trx = trx_allocate_for_background();
@@ -306,7 +306,7 @@ static dict_table_t *dict_stats_table_clone_create(
   dict_table_stats_lock()/unlock() routines will do nothing. */
   dict_table_stats_latch_create(t, false);
 
-  UT_LIST_INIT(t->indexes, &dict_index_t::indexes);
+  UT_LIST_INIT(t->indexes);
 
   for (index = table->first_index(); index != nullptr; index = index->next()) {
     if (dict_stats_should_ignore_index(index)) {
@@ -584,7 +584,7 @@ when no longer needed.
 @param[in]	table	table whose stats to copy
 @return incomplete table object */
 static dict_table_t *dict_stats_snapshot_create(dict_table_t *table) {
-  mutex_enter(&dict_sys->mutex);
+  dict_sys_mutex_enter();
 
   dict_table_stats_lock(table, RW_S_LATCH);
 
@@ -603,7 +603,7 @@ static dict_table_t *dict_stats_snapshot_create(dict_table_t *table) {
 
   dict_table_stats_unlock(table, RW_S_LATCH);
 
-  mutex_exit(&dict_sys->mutex);
+  dict_sys_mutex_exit();
 
   return (t);
 }
@@ -1122,12 +1122,13 @@ be big enough)
 to the number of externally stored pages which were encountered
 @return offsets1 or offsets2 (the offsets of *out_rec),
 or NULL if the page is empty and does not contain user records. */
-UNIV_INLINE
-ulint *dict_stats_scan_page(const rec_t **out_rec, ulint *offsets1,
-                            ulint *offsets2, const dict_index_t *index,
-                            const page_t *page, ulint n_prefix,
-                            page_scan_method_t scan_method, ib_uint64_t *n_diff,
-                            ib_uint64_t *n_external_pages) {
+static inline ulint *dict_stats_scan_page(const rec_t **out_rec,
+                                          ulint *offsets1, ulint *offsets2,
+                                          const dict_index_t *index,
+                                          const page_t *page, ulint n_prefix,
+                                          page_scan_method_t scan_method,
+                                          ib_uint64_t *n_diff,
+                                          ib_uint64_t *n_external_pages) {
   ulint *offsets_rec = offsets1;
   ulint *offsets_next_rec = offsets2;
   const rec_t *rec;
@@ -1603,9 +1604,8 @@ static bool dict_stats_analyze_index_for_n_prefix(
 /** Set dict_index_t::stat_n_diff_key_vals[] and stat_n_sample_sizes[].
 @param[in]	n_diff_data	input data to use to derive the results
 @param[in,out]	index		index whose stat_n_diff_key_vals[] to set */
-UNIV_INLINE
-void dict_stats_index_set_n_diff(const n_diff_data_t *n_diff_data,
-                                 dict_index_t *index) {
+static inline void dict_stats_index_set_n_diff(const n_diff_data_t *n_diff_data,
+                                               dict_index_t *index) {
   for (ulint n_prefix = dict_index_get_n_unique(index); n_prefix >= 1;
        n_prefix--) {
     /* n_diff_all_analyzed_pages can be 0 here if
@@ -1999,7 +1999,7 @@ static void dict_stats_analyze_index(
         << n_sample_pages << ".";
 
     /* Certain delay is needed for waiters to lock the index next. */
-    os_thread_sleep(100000); /* 100 ms */
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 }
 
@@ -2683,7 +2683,7 @@ static dberr_t dict_stats_fetch_from_ps(
   char db_utf8[dict_name::MAX_DB_UTF8_LEN];
   char table_utf8[dict_name::MAX_TABLE_UTF8_LEN];
 
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
 
   /* Initialize all stats to dummy values before fetching because if
   the persistent storage contains incomplete stats (e.g. missing stats
@@ -2797,7 +2797,7 @@ void dict_stats_update_for_index(dict_index_t *index) /*!< in/out: index */
 {
   DBUG_TRACE;
 
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
 
   if (dict_stats_is_persistent_enabled(index->table)) {
     dict_table_stats_lock(index->table, RW_X_LATCH);
@@ -2823,13 +2823,14 @@ the stats or to fetch them from
 the persistent statistics
 storage */
 {
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
 
   if (table->ibd_file_missing) {
-    ib::warn(ER_IB_MSG_224)
-        << "Cannot calculate statistics for table " << table->name
-        << " because the .ibd file is missing. " << TROUBLESHOOTING_MSG;
-
+    if (!dict_table_is_discarded(table)) {
+      ib::warn(ER_IB_MSG_224)
+          << "Cannot calculate statistics for table " << table->name
+          << " because the .ibd file is missing. " << TROUBLESHOOTING_MSG;
+    }
     dict_stats_empty_table(table);
     return (DB_TABLESPACE_DELETED);
   } else if (!srv_apply_log_only &&
@@ -3002,7 +3003,7 @@ dberr_t dict_stats_drop_index(
   pars_info_t *pinfo;
   dberr_t ret;
 
-  ut_ad(!mutex_own(&dict_sys->mutex));
+  ut_ad(!dict_sys_mutex_own());
 
   /* skip indexes whose table names do not contain a database name
   e.g. if we are dropping an index from SYS_TABLES */
@@ -3065,8 +3066,7 @@ dberr_t dict_stats_drop_index(
  WHERE database_name = '...' AND table_name = '...';
  Creates its own transaction and commits it.
  @return DB_SUCCESS or error code */
-UNIV_INLINE
-dberr_t dict_stats_delete_from_table_stats(
+static inline dberr_t dict_stats_delete_from_table_stats(
     const char *database_name, /*!< in: database name, e.g. 'db' */
     const char *table_name)    /*!< in: table name, e.g. 'table' */
 {
@@ -3098,8 +3098,7 @@ dberr_t dict_stats_delete_from_table_stats(
  WHERE database_name = '...' AND table_name = '...';
  Creates its own transaction and commits it.
  @return DB_SUCCESS or error code */
-UNIV_INLINE
-dberr_t dict_stats_delete_from_index_stats(
+static inline dberr_t dict_stats_delete_from_index_stats(
     const char *database_name, /*!< in: database name, e.g. 'db' */
     const char *table_name)    /*!< in: table name, e.g. 'table' */
 {
@@ -3143,7 +3142,7 @@ dberr_t dict_stats_drop_table(
   ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
   /* WL#9536 TODO: Once caller don't hold dict sys mutex, clean
   this and following(exit&enter) up */
-  ut_ad(mutex_own(&dict_sys->mutex));
+  ut_ad(dict_sys_mutex_own());
 
   /* skip tables that do not contain a database name
   e.g. if we are dropping SYS_TABLES */
@@ -3160,7 +3159,7 @@ dberr_t dict_stats_drop_table(
   dict_fs2utf8(db_and_table, db_utf8, sizeof(db_utf8), table_utf8,
                sizeof(table_utf8));
 
-  mutex_exit(&dict_sys->mutex);
+  dict_sys_mutex_exit();
 
   ret = dict_stats_delete_from_table_stats(db_utf8, table_utf8);
 
@@ -3168,7 +3167,7 @@ dberr_t dict_stats_drop_table(
     ret = dict_stats_delete_from_index_stats(db_utf8, table_utf8);
   }
 
-  mutex_enter(&dict_sys->mutex);
+  dict_sys_mutex_enter();
 
   if (ret == DB_STATS_DO_NOT_EXIST) {
     ret = DB_SUCCESS;
@@ -3203,8 +3202,7 @@ dberr_t dict_stats_drop_table(
  WHERE database_name = '...' AND table_name = '...';
  Creates its own transaction and commits it.
  @return DB_SUCCESS or error code */
-UNIV_INLINE
-dberr_t dict_stats_rename_table_in_table_stats(
+static inline dberr_t dict_stats_rename_table_in_table_stats(
     const char *old_dbname_utf8,    /*!< in: database name, e.g. 'olddb' */
     const char *old_tablename_utf8, /*!< in: table name, e.g. 'oldtable' */
     const char *new_dbname_utf8,    /*!< in: database name, e.g. 'newdb' */
@@ -3244,8 +3242,7 @@ dberr_t dict_stats_rename_table_in_table_stats(
  WHERE database_name = '...' AND table_name = '...';
  Creates its own transaction and commits it.
  @return DB_SUCCESS or error code */
-UNIV_INLINE
-dberr_t dict_stats_rename_table_in_index_stats(
+static inline dberr_t dict_stats_rename_table_in_index_stats(
     const char *old_dbname_utf8,    /*!< in: database name, e.g. 'olddb' */
     const char *old_tablename_utf8, /*!< in: table name, e.g. 'oldtable' */
     const char *new_dbname_utf8,    /*!< in: database name, e.g. 'newdb' */
@@ -3330,7 +3327,7 @@ dberr_t dict_stats_rename_table(
 
     if (ret != DB_SUCCESS) {
       rw_lock_x_unlock(dict_operation_lock);
-      os_thread_sleep(200000 /* 0.2 sec */);
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
       rw_lock_x_lock(dict_operation_lock);
     }
   } while ((ret == DB_DEADLOCK || ret == DB_DUPLICATE_KEY ||
@@ -3377,7 +3374,7 @@ dberr_t dict_stats_rename_table(
 
     if (ret != DB_SUCCESS) {
       rw_lock_x_unlock(dict_operation_lock);
-      os_thread_sleep(200000 /* 0.2 sec */);
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
       rw_lock_x_lock(dict_operation_lock);
     }
   } while ((ret == DB_DEADLOCK || ret == DB_DUPLICATE_KEY ||
@@ -3638,7 +3635,7 @@ void test_dict_stats_save() {
   table.stat_n_rows = TEST_N_ROWS;
   table.stat_clustered_index_size = TEST_CLUSTERED_INDEX_SIZE;
   table.stat_sum_of_other_index_sizes = TEST_SUM_OF_OTHER_INDEX_SIZES;
-  UT_LIST_INIT(table.indexes, &dict_index_t::indexes);
+  UT_LIST_INIT(table.indexes);
   UT_LIST_ADD_LAST(table.indexes, &index1);
   UT_LIST_ADD_LAST(table.indexes, &index2);
   ut_d(table.magic_n = DICT_TABLE_MAGIC_N);
@@ -3768,7 +3765,7 @@ void test_dict_stats_fetch_from_ps() {
 
   /* craft a dummy dict_table_t */
   table.name.m_name = (char *)(TEST_DATABASE_NAME "/" TEST_TABLE_NAME);
-  UT_LIST_INIT(table.indexes, &dict_index_t::indexes);
+  UT_LIST_INIT(table.indexes);
   UT_LIST_ADD_LAST(table.indexes, &index1);
   UT_LIST_ADD_LAST(table.indexes, &index2);
   ut_d(table.magic_n = DICT_TABLE_MAGIC_N);

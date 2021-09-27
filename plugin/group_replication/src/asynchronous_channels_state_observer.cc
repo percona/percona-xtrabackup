@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,8 @@
 #include "plugin/group_replication/include/member_info.h"
 #include "plugin/group_replication/include/plugin.h"
 
-Asynchronous_channels_state_observer::Asynchronous_channels_state_observer() {}
+Asynchronous_channels_state_observer::Asynchronous_channels_state_observer() =
+    default;
 
 int Asynchronous_channels_state_observer::thread_start(
     Binlog_relay_IO_param *param) {

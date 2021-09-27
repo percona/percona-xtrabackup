@@ -1,7 +1,7 @@
 #ifndef SQL_RESOLVER_INCLUDED
 #define SQL_RESOLVER_INCLUDED
 
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,6 +76,10 @@ struct ReplaceResult {
 /**
   Walk through the conditions and functions below the given item, and allows the
   given functor to replace it with new items. See ReplaceResult.
+
+  Note that this must not be used for permanent changes during optimization,
+  as all changes done during optimization will be rolled back if a prepared
+  statement is re-executed.
 
   @return true on error.
  */

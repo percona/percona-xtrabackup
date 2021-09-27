@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 
 #include <ndb_rand.h>
 #include <NdbHost.h>
+#include <NdbSleep.h>
 
 // version >= 5.1 required
 
@@ -1267,7 +1268,7 @@ waitgci(uint ngci)
       break;
     }
     i = 1;
-    sleep(1);
+    NdbSleep_SecSleep(1);
   }
   return 0;
 }

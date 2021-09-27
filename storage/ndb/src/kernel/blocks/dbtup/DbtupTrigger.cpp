@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -520,8 +520,6 @@ Dbtup::dropTrigger(Tablerec* table, const DropTrigImplReq* req, BlockNumber rece
   TriggerType::Value ttype = TriggerInfo::getTriggerType(tinfo);
   TriggerActionTime::Value ttime = TriggerInfo::getTriggerActionTime(tinfo);
   TriggerEvent::Value tevent = TriggerInfo::getTriggerEvent(tinfo);
-
-  //  ndbout_c("Drop TupTrigger %u = %u %u %u %u by %u", triggerId, table, ttype, ttime, tevent, sender);
 
   int cnt;
   struct {

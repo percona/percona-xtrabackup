@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,17 +31,17 @@
 #endif
 
 #include <rapidjson/document.h>
+
 #include "dim.h"
 #include "gmock/gmock.h"
 #include "mock_server_rest_client.h"
 #include "mysql/harness/logging/registry.h"
 #include "mysql_session.h"
+#include "mysqlrouter/rest_client.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
 #include "router_component_testutils.h"
 #include "tcp_port_pool.h"
-
-#include "mysqlrouter/rest_client.h"
 
 Path g_origin_path;
 
@@ -57,10 +57,7 @@ using JsonDocument =
 using JsonValue =
     rapidjson::GenericValue<rapidjson::UTF8<>, rapidjson::CrtAllocator>;
 
-class RestMockServerTest : public RouterComponentTest {
- protected:
-  TcpPortPool port_pool_;
-};
+class RestMockServerTest : public RouterComponentTest {};
 
 /**
  * base class.
@@ -553,7 +550,11 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(HttpMethod::Connect, kMockServerConnectionsRestUri,
                         HttpStatusCode::MethodNotAllowed),
         std::make_tuple(HttpMethod::Head, kMockServerConnectionsRestUri,
-                        HttpStatusCode::MethodNotAllowed)));
+                        HttpStatusCode::MethodNotAllowed)),
+    [](const auto &info) {
+      return http_method_to_string(std::get<0>(info.param)) + "_" +
+             std::to_string(std::get<2>(info.param));
+    });
 
 /**
  * test storing globals in mock_server via REST bridge.
@@ -1185,8 +1186,7 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("js_test_stmts_result_has_repeat.js",
                         "repeat is not supported"),  // WL11861 TS-1_5
         std::make_tuple("js_test_stmts_is_empty.js",
-                        "executing statement failed: Unsupported command in "
-                        "handle_statement()")),
+                        "Unknown statement. (end of stmts)")),
     [](const ::testing::TestParamInfo<std::tuple<const char *, const char *>>
            &info) -> std::string {
       return sanitize_param_name(std::get<0>(info.param));

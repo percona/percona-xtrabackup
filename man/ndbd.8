@@ -1,13 +1,13 @@
 '\" t
-.\"     Title: \fBndbd\fR
+.\"     Title: ndbd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 11/26/2020
+.\"      Date: 06/04/2021
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "\FBNDBD\FR" "8" "11/26/2020" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDBD" "8" "06/04/2021" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -41,16 +41,15 @@ In an NDB Cluster, a set of
 \fBndbd\fR
 processes cooperate in handling data\&. These processes can execute on the same computer (host) or on different computers\&. The correspondences between data nodes and Cluster hosts is completely configurable\&.
 .PP
-The following table includes command options specific to the NDB Cluster data node program
-\fBndbd\fR\&. Additional descriptions follow the table\&. For options common to most NDB Cluster programs (including
-\fBndbd\fR), see
-Options Common to NDB Cluster Programs(1)\&.
+Options that can be used with
+\fBndbd\fR
+are shown in the following table\&. Additional descriptions follow the table\&.
 .sp
 .it 1 an-trap
 .nr an-no-space-flag 1
 .nr an-break-flag 1
 .br
-.B Table\ \&23.23.\ \&Command\-line options for the ndbd program
+.B Table\ \&23.24.\ \&Command\-line options used with the program ndbd
 .TS
 allbox tab(:);
 lB lB lB.
@@ -76,6 +75,22 @@ lB l l
 lB l l
 lB l l
 lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
+lB l l
 lB l l.
 T{
 .PP
@@ -84,7 +99,16 @@ T}:T{
 Local bind address
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--character-sets-dir=path\fR\fB \fR
+T}:T{
+Directory containing character sets
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -94,7 +118,7 @@ Time to wait between attempts to contact a management server, in
               seconds; 0 means do not wait between attempts
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -104,7 +128,7 @@ Set the number of times to retry a connection before giving up; 0 means
               1 attempt only (and no retries)
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -114,7 +138,27 @@ Time to wait between attempts to contact a management server, in
               seconds; 0 means do not wait between attempts
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB--connect-string=connection-string\fR,
+.PP
+\fB \fR\fB-c\fR\fB \fR
+T}:T{
+Same as --ndb-connectstring
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--core-file\fR\fB \fR
+T}:T{
+Write core file on error; used in debugging
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -125,7 +169,34 @@ T}:T{
 Start ndbd as daemon (default); override with --nodaemon
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--defaults-extra-file=path\fR\fB \fR
+T}:T{
+Read given file after global files are read
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--defaults-file=path\fR\fB \fR
+T}:T{
+Read default options from given file only
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--defaults-group-suffix=string\fR\fB \fR
+T}:T{
+Also read groups with concat(group, suffix)
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -135,7 +206,18 @@ Run ndbd in foreground, provided for debugging purposes (implies
               --nodaemon)
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB--help\fR,
+.PP
+\fB \fR\fB-?\fR\fB \fR
+T}:T{
+Display help text and exit
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -145,7 +227,7 @@ Perform initial start of ndbd, including file system cleanup; consult
               documentation before using this option
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -154,7 +236,7 @@ T}:T{
 Perform partial initial start (requires --nowait-nodes)
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -164,7 +246,7 @@ Used to install data node process as Windows service; does not apply on
               other platforms
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -175,7 +257,49 @@ Control size of log buffer; for use when debugging with many log
               operations
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--login-path=path\fR\fB \fR
+T}:T{
+Read given path from login file
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB--ndb-connectstring=connection-string\fR,
+.PP
+\fB \fR\fB-c\fR\fB \fR
+T}:T{
+Set connect string for connecting to ndb_mgmd. Syntax:
+              "[nodeid=id;][host=]hostname[:port]". Overrides entries in
+              NDB_CONNECTSTRING and my.cnf
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB--ndb-mgmd-host=connection-string\fR,
+.PP
+\fB \fR\fB-c\fR\fB \fR
+T}:T{
+Same as --ndb-connectstring
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--ndb-nodeid=#\fR\fB \fR
+T}:T{
+Set node ID for this node, overriding any ID set by --ndb-connectstring
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -184,7 +308,16 @@ T}:T{
 Do not start ndbd as daemon; provided for testing purposes
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--no-defaults\fR\fB \fR
+T}:T{
+Do not read default options from any option file other than login file
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -196,7 +329,7 @@ Do not start ndbd immediately; ndbd waits for command to start from
               ndb_mgm
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -206,7 +339,27 @@ Do not wait for these data nodes to start (takes comma-separated list of
               node IDs); requires --ndb-nodeid
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--ndb-optimized-node-selection\fR\fB \fR
+T}:T{
+Enable optimizations for selection of nodes for transactions. Enabled by
+              default; use --skip-ndb-optimized-node-selection to
+              disable
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB \fR\fB--print-defaults\fR\fB \fR
+T}:T{
+Print program argument list and exit
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -216,7 +369,18 @@ Used to remove data node process that was previously installed as
               Windows service; does not apply on other platforms
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB--usage\fR,
+.PP
+\fB \fR\fB-?\fR\fB \fR
+T}:T{
+Display help text and exit; same as --help
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 T{
 .PP
@@ -227,7 +391,18 @@ T}:T{
 Write extra debugging information to node log
 T}:T{
 .PP
-(Supported in all MySQL 8.0 based releases)
+(Supported in all NDB releases based on MySQL 8.0)
+T}
+T{
+.PP
+\fB--version\fR,
+.PP
+\fB \fR\fB-V\fR\fB \fR
+T}:T{
+Display version information and exit
+T}:T{
+.PP
+(Supported in all NDB releases based on MySQL 8.0)
 T}
 .TE
 .sp 1
@@ -285,6 +460,28 @@ T}
 Causes
 \fBndbd\fR
 to bind to a specific network interface (host name or IP address)\&. This option has no default value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-character\-sets\-dir\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--character-sets-dir=path
+T}
+.TE
+.sp 1
+Directory containing character sets\&.
 .RE
 .sp
 .RS 4
@@ -453,6 +650,63 @@ option, which is now deprecated and subject to removal in a future release of ND
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-connect\-string\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--connect-string=connection-string
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Same as
+\fB\-\-ndb\-connectstring\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-core\-file\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--core-file
+T}
+.TE
+.sp 1
+Write core file on error; used in debugging\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-daemon\fR,
 \fB\-d\fR
 .TS
@@ -500,6 +754,108 @@ on Windows platforms\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-defaults\-extra\-file\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--defaults-extra-file=path
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Read given file after global files are read\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-defaults\-file\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--defaults-file=path
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Read default options from given file only\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-defaults\-group\-suffix\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--defaults-group-suffix=string
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Also read groups with concat(group, suffix)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-foreground\fR
 .TS
 allbox tab(:);
@@ -536,6 +892,28 @@ This option has no effect when running
 or
 \fBndbmtd\fR
 on Windows platforms\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-help\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--help
+T}
+.TE
+.sp 1
+Display help text and exit\&.
 .RE
 .sp
 .RS 4
@@ -870,6 +1248,167 @@ Sets the size of the data node log buffer\&. When debugging with high amounts of
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-login\-path\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--login-path=path
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Read given path from login file\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-ndb\-connectstring\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--ndb-connectstring=connection-string
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Set connect string for connecting to ndb_mgmd\&. Syntax: "[nodeid=id;][host=]hostname[:port]"\&. Overrides entries in NDB_CONNECTSTRING and my\&.cnf\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-ndb\-mgmd\-host\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--ndb-mgmd-host=connection-string
+T}
+T{
+Type
+T}:T{
+String
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Same as
+\fB\-\-ndb\-connectstring\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-ndb\-nodeid\fR
+.TS
+allbox tab(:);
+lB l
+lB l
+lB l.
+T{
+Command-Line Format
+T}:T{
+--ndb-nodeid=#
+T}
+T{
+Type
+T}:T{
+Integer
+T}
+T{
+Default Value
+T}:T{
+[none]
+T}
+.TE
+.sp 1
+Set node ID for this node, overriding any ID set by \-\-ndb\-connectstring\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-ndb\-optimized\-node\-selection\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--ndb-optimized-node-selection
+T}
+.TE
+.sp 1
+Enable optimizations for selection of nodes for transactions\&. Enabled by default; use
+\fB\-\-skip\-ndb\-optimized\-node\-selection\fR
+to disable\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-nodaemon\fR
 .TS
 allbox tab(:);
@@ -906,6 +1445,28 @@ The default behavior for
 and
 \fBndbmtd\fR
 on Windows is to run in the foreground, making this option unnecessary on Windows platforms, where it has no effect\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-no\-defaults\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--no-defaults
+T}
+.TE
+.sp 1
+Do not read default options from any option file other than login file\&.
 .RE
 .sp
 .RS 4
@@ -1005,6 +1566,28 @@ If you wanted to start up the same cluster as in the previous example without on
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-print\-defaults\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--print-defaults
+T}
+.TE
+.sp 1
+Print program argument list and exit\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-remove[=\fR\fB\fIname\fR\fR\fB]\fR
 .TS
 allbox tab(:);
@@ -1052,6 +1635,28 @@ option has no effect on non\-Windows platforms\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+\fB\-\-usage\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--usage
+T}
+.TE
+.sp 1
+Display help text and exit; same as \-\-help\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 \fB\-\-verbose\fR,
 \fB\-v\fR
 Causes extra debug output to be written to the node log\&.
@@ -1061,6 +1666,28 @@ NODELOG DEBUG ON
 and
 NODELOG DEBUG OFF
 to enable and disable this extra logging while the data node is running\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-version\fR
+.TS
+allbox tab(:);
+lB l.
+T{
+Command-Line Format
+T}:T{
+--version
+T}
+.TE
+.sp 1
+Display version information and exit\&.
 .RE
 .PP
 \fBndbd\fR
@@ -1226,9 +1853,7 @@ shell> \fBndbd \-\-connect\-string="nodeid=2;host=ndb_mgmd\&.mysql\&.com:1186"\f
 .\}
 .PP
 See
-Section\ \&23.3.3.3, \(lqNDB Cluster Connection Strings\(rq, for additional information about this issue\&.
-Options Common to NDB Cluster Programs(1), describes other command\-line options which can be used with
-\fBndbd\fR\&. For information about data node configuration parameters, see
+Section\ \&23.3.3.3, \(lqNDB Cluster Connection Strings\(rq, for additional information about this issue\&. For more information about data node configuration parameters, see
 Section\ \&23.3.3.6, \(lqDefining NDB Cluster Data Nodes\(rq\&.
 .PP
 When
@@ -1257,7 +1882,7 @@ Section\ \&23.1.7, \(lqKnown Limitations of NDB Cluster\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2020, Oracle and/or its affiliates.
+Copyright \(co 1997, 2021, Oracle and/or its affiliates.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

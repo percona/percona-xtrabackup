@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,14 +39,12 @@ static void *launch_handler_thread(void *arg) {
   return nullptr;
 }
 
-Group_partition_handling::Group_partition_handling(
-    Shared_writelock *shared_stop_lock, ulong unreachable_timeout)
+Group_partition_handling::Group_partition_handling(ulong unreachable_timeout)
     : member_in_partition(false),
       group_partition_thd_state(),
       partition_handling_aborted(false),
       partition_handling_terminated(false),
-      timeout_on_unreachable(unreachable_timeout),
-      shared_stop_write_lock(shared_stop_lock) {
+      timeout_on_unreachable(unreachable_timeout) {
   mysql_mutex_init(key_GR_LOCK_group_part_handler_run, &run_lock,
                    MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_GR_LOCK_group_part_handler_abort,
@@ -156,7 +154,7 @@ int Group_partition_handling::terminate_partition_handler_thread() {
 
     struct timespec abstime;
     set_timespec(&abstime, (stop_wait_timeout == 1 ? 1 : 2));
-#ifndef DBUG_OFF
+#ifndef NDEBUG
     int error =
 #endif
         mysql_cond_timedwait(&run_cond, &run_lock, &abstime);
@@ -171,10 +169,10 @@ int Group_partition_handling::terminate_partition_handler_thread() {
       return 1;
     }
     /* purecov: inspected */
-    DBUG_ASSERT(error == ETIMEDOUT || error == 0);
+    assert(error == ETIMEDOUT || error == 0);
   }
 
-  DBUG_ASSERT(!group_partition_thd_state.is_running());
+  assert(!group_partition_thd_state.is_running());
 
   mysql_mutex_unlock(&run_lock);
 

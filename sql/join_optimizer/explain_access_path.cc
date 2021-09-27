@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include "sql/filesort.h"
 #include "sql/hash_join_iterator.h"
 #include "sql/item_sum.h"
+#include "sql/join_optimizer/relational_expression.h"
 #include "sql/opt_range.h"
 #include "sql/ref_row_iterators.h"
 #include "sql/sorting_iterator.h"
@@ -96,6 +97,7 @@ static string JoinTypeToString(JoinType join_type) {
 static string HashJoinTypeToString(RelationalExpression::Type join_type) {
   switch (join_type) {
     case RelationalExpression::INNER_JOIN:
+    case RelationalExpression::STRAIGHT_INNER_JOIN:
       return "Inner hash join";
     case RelationalExpression::LEFT_JOIN:
       return "Left hash join";
@@ -103,8 +105,6 @@ static string HashJoinTypeToString(RelationalExpression::Type join_type) {
       return "Hash antijoin";
     case RelationalExpression::SEMIJOIN:
       return "Hash semijoin";
-    case RelationalExpression::CARTESIAN_PRODUCT:
-      return "Hash cartesian product";
     default:
       assert(false);
       return "<error>";
@@ -119,20 +119,20 @@ static void GetAccessPathsFromItem(Item *item_arg, const char *source_text,
     }
 
     Item_subselect *subselect = down_cast<Item_subselect *>(item);
-    SELECT_LEX *select_lex = subselect->unit->first_select();
+    Query_block *query_block = subselect->unit->first_query_block();
     char description[256];
-    if (select_lex->is_dependent()) {
+    if (query_block->is_dependent()) {
       snprintf(description, sizeof(description),
                "Select #%d (subquery in %s; dependent)",
-               select_lex->select_number, source_text);
-    } else if (!select_lex->is_cacheable()) {
+               query_block->select_number, source_text);
+    } else if (!query_block->is_cacheable()) {
       snprintf(description, sizeof(description),
                "Select #%d (subquery in %s; uncacheable)",
-               select_lex->select_number, source_text);
+               query_block->select_number, source_text);
     } else {
       snprintf(description, sizeof(description),
                "Select #%d (subquery in %s; run only once)",
-               select_lex->select_number, source_text);
+               query_block->select_number, source_text);
     }
     AccessPath *path;
     if (subselect->unit->root_access_path() != nullptr) {
@@ -140,7 +140,7 @@ static void GetAccessPathsFromItem(Item *item_arg, const char *source_text,
     } else {
       path = subselect->unit->item->root_access_path();
     }
-    children->push_back({path, description, select_lex->join});
+    children->push_back({path, description, query_block->join});
     return false;
   });
 }
@@ -401,7 +401,7 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
     }
     case AccessPath::PUSHED_JOIN_REF: {
       TABLE *table = path->pushed_join_ref().table;
-      DBUG_ASSERT(table->file->pushed_idx_cond == nullptr);
+      assert(table->file->pushed_idx_cond == nullptr);
       const KEY *key = &table->key_info[path->pushed_join_ref().ref->key];
       string str;
       if (path->pushed_join_ref().is_unique) {
@@ -419,7 +419,7 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
     }
     case AccessPath::FULL_TEXT_SEARCH: {
       TABLE *table = path->full_text_search().table;
-      DBUG_ASSERT(table->file->pushed_idx_cond == nullptr);
+      assert(table->file->pushed_idx_cond == nullptr);
       const KEY *key = &table->key_info[path->full_text_search().ref->key];
       description.push_back(string("Indexed full text search on ") +
                             table->alias + " using " + key->name + " (" +
@@ -445,10 +445,6 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       if (table->file->pushed_idx_cond != nullptr) {
         str += ", with index condition: " +
                ItemToString(table->file->pushed_idx_cond);
-      }
-      if (path->mrr().cache_idx_cond != nullptr) {
-        str += ", with dependent index condition: " +
-               ItemToString(path->mrr().cache_idx_cond);
       }
       str += table->file->explain_extra();
       description.push_back(move(str));
@@ -538,7 +534,10 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       break;
     case AccessPath::HASH_JOIN: {
       const JoinPredicate *predicate = path->hash_join().join_predicate;
-      string ret = HashJoinTypeToString(predicate->expr->type);
+      RelationalExpression::Type type = path->hash_join().rewrite_semi_to_inner
+                                            ? RelationalExpression::INNER_JOIN
+                                            : predicate->expr->type;
+      string ret = HashJoinTypeToString(type);
 
       if (predicate->expr->equijoin_conditions.empty()) {
         ret.append(" (no condition)");
@@ -701,10 +700,10 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
         children.push_back({child.path, "", child.join});
       }
       break;
-    case AccessPath::WINDOWING: {
+    case AccessPath::WINDOW: {
       string buf;
-      if (path->windowing().needs_buffering) {
-        Window *window = path->windowing().temp_table_param->m_window;
+      if (path->window().needs_buffering) {
+        Window *window = path->window().temp_table_param->m_window;
         if (window->optimizable_row_aggregates() ||
             window->optimizable_range_aggregates() ||
             window->static_aggregates()) {
@@ -718,7 +717,7 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
 
       bool first = true;
       for (const Func_ptr &func :
-           *(path->windowing().temp_table_param->items_to_copy)) {
+           *(path->window().temp_table_param->items_to_copy)) {
         if (func.func()->m_is_window_function) {
           if (!first) {
             buf += ", ";
@@ -728,7 +727,7 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
         }
       }
       description.push_back(move(buf));
-      children.push_back({path->windowing().child});
+      children.push_back({path->window().child});
       break;
     }
     case AccessPath::WEEDOUT: {
@@ -752,10 +751,22 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       children.push_back({path->weedout().child});
       break;
     }
-    case AccessPath::REMOVE_DUPLICATES:
-      description.push_back(string("Remove duplicates from input sorted on ") +
-                            path->remove_duplicates().key->name);
+    case AccessPath::REMOVE_DUPLICATES: {
+      string ret = "Remove duplicates from input grouped on ";
+      for (int i = 0; i < path->remove_duplicates().group_items_size; ++i) {
+        if (i != 0) {
+          ret += ", ";
+        }
+        ret += ItemToString(path->remove_duplicates().group_items[i]);
+      }
+      description.push_back(std::move(ret));
       children.push_back({path->remove_duplicates().child});
+      break;
+    }
+    case AccessPath::REMOVE_DUPLICATES_ON_INDEX:
+      description.push_back(string("Remove duplicates from input sorted on ") +
+                            path->remove_duplicates_on_index().key->name);
+      children.push_back({path->remove_duplicates_on_index().child});
       break;
     case AccessPath::ALTERNATIVE: {
       const TABLE *table =
@@ -803,14 +814,30 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       break;
   }
   if (path->num_output_rows >= 0.0) {
+    double first_row_cost;
+    if (path->num_output_rows <= 1.0) {
+      first_row_cost = path->cost;
+    } else {
+      first_row_cost = path->init_cost +
+                       (path->cost - path->init_cost) / path->num_output_rows;
+    }
+
     // NOTE: We cannot use %f, since MSVC and GCC round 0.5 in different
     // directions, so tests would not be reproducible between platforms.
     // Format/round using my_gcvt() and llrint() instead.
+    char first_row_cost_as_string[FLOATING_POINT_BUFFER];
     char cost_as_string[FLOATING_POINT_BUFFER];
+    my_fcvt(first_row_cost, 2, first_row_cost_as_string, /*error=*/nullptr);
     my_fcvt(path->cost, 2, cost_as_string, /*error=*/nullptr);
-    char str[512];
-    snprintf(str, sizeof(str), "  (cost=%s rows=%lld)", cost_as_string,
-             llrint(path->num_output_rows));
+    char str[1024];
+    if (path->init_cost >= 0.0) {
+      snprintf(str, sizeof(str), "  (cost=%s..%s rows=%lld)",
+               first_row_cost_as_string, cost_as_string,
+               llrint(path->num_output_rows));
+    } else {
+      snprintf(str, sizeof(str), "  (cost=%s rows=%lld)", cost_as_string,
+               llrint(path->num_output_rows));
+    }
     description.back() += str;
   }
   if (current_thd->lex->is_explain_analyze && path->iterator != nullptr) {
@@ -862,7 +889,7 @@ string PrintQueryPlan(int level, AccessPath *path, JOIN *join,
   if (is_root_of_join) {
     // If we know that the join will return zero rows, we don't bother
     // optimizing any subqueries in the SELECT list, but end optimization
-    // early (see SELECT_LEX::optimize()). If so, don't attempt to print
+    // early (see Query_block::optimize()). If so, don't attempt to print
     // them either, as they have no query plan.
     if (path->type == AccessPath::ZERO_ROWS) {
       return ret;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -233,8 +233,8 @@ static const unsigned int EXTRA_ALLOC = 1024;
 */
 class Session_gtids_ctx_encoder {
  public:
-  Session_gtids_ctx_encoder() {}
-  virtual ~Session_gtids_ctx_encoder() {}
+  Session_gtids_ctx_encoder() = default;
+  virtual ~Session_gtids_ctx_encoder() = default;
 
   /*
    This function SHALL encode the collected GTIDs into the buffer.
@@ -263,8 +263,8 @@ class Session_gtids_ctx_encoder {
 
 class Session_gtids_ctx_encoder_string : public Session_gtids_ctx_encoder {
  public:
-  Session_gtids_ctx_encoder_string() {}
-  ~Session_gtids_ctx_encoder_string() override {}
+  Session_gtids_ctx_encoder_string() = default;
+  ~Session_gtids_ctx_encoder_string() override = default;
 
   ulonglong encoding_specification() override { return 0; }
 
@@ -511,7 +511,7 @@ bool Session_sysvars_tracker::vars_list::parse_var_list(
       }
 
       else if (throw_error) {
-        DBUG_ASSERT(thd);
+        assert(thd);
         push_warning_printf(
             thd, Sql_condition::SL_WARNING, ER_WRONG_VALUE_FOR_VAR,
             "%s is not a valid system variable and will be ignored.", token);
@@ -716,7 +716,7 @@ bool Session_sysvars_tracker::store(THD *thd, String &buf) {
 
 void Session_sysvars_tracker::mark_as_changed(THD *thd,
                                               LEX_CSTRING *tracked_item_name) {
-  DBUG_ASSERT(tracked_item_name->str);
+  assert(tracked_item_name->str);
   sysvar_node_st *node = nullptr;
   LEX_CSTRING tmp;
   tmp.str = tracked_item_name->str;

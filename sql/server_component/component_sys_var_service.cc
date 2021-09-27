@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -158,7 +158,7 @@ DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::register_variable,
     opts->arg_source->m_path_name[0] = 0;
     opts->arg_source->m_source = enum_variable_source::COMPILED;
 
-    switch (flags & PLUGIN_VAR_TYPEMASK) {
+    switch (flags & PLUGIN_VAR_WITH_SIGN_TYPEMASK) {
       case PLUGIN_VAR_BOOL:
         SYSVAR_BOOL_TYPE(bool) * sysvar_bool;
 

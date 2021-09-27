@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -237,6 +237,12 @@ public:
     ATTRIBUTE_FORMAT(printf, 3, 4);
   static int vsnprintf(char *str, size_t size, const char *format, va_list ap)
     ATTRIBUTE_FORMAT(printf, 3, 0);
+
+  /**
+   * Append to a character buf
+   */
+  static int snappend(char *str, size_t size, const char *format, ...)
+      ATTRIBUTE_FORMAT(printf, 3, 4);
 
   template<unsigned size>
   static BaseString getText(const Bitmask<size>& mask) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -623,7 +623,7 @@ ngs::Error_code Sql_data_context::execute_prep_stmt(
 }
 
 ngs::Error_code Sql_data_context::reset() {
-  COM_DATA data;
+  COM_DATA data{};
   Empty_resultset rset;
   return execute_server_command(COM_RESET_CONNECTION, data, &rset);
 }

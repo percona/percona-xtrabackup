@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -93,7 +93,7 @@ struct Channel_creation_info {
   int auto_position;
   int channel_mts_parallel_type;
   int channel_mts_parallel_workers;
-  int channel_mts_checkpoint_group;
+  int channel_mta_checkpoint_group;
   int replicate_same_server_id;
   int thd_tx_priority;  // The applier thread priority
   int sql_delay;

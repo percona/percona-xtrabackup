@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -189,7 +189,7 @@ class Gcs_interface {
   */
   virtual enum_gcs_error set_logger(Logger_interface *logger) = 0;
 
-  virtual ~Gcs_interface() {}
+  virtual ~Gcs_interface() = default;
 };
 
 /**

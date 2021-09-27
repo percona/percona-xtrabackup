@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,26 +25,44 @@
 
 #include "sql/join_optimizer/access_path.h"
 
+enum class WalkAccessPathPolicy {
+  // Stop on _any_ MATERIALIZE or STREAM path, even if they do not cross query
+  // blocks.
+  // Also stops on APPEND paths, which always cross query blocks.
+  STOP_AT_MATERIALIZATION,
+
+  // Stop on MATERIALIZE, STREAM or APPEND paths that cross query blocks.
+  ENTIRE_QUERY_BLOCK,
+
+  // Do not stop at any kind of access path, unless func() returns true.
+  ENTIRE_TREE
+};
+
 /**
   Traverse every access path below `path` (limited to the current query block
   if cross_query_blocks is false), calling func() for each one with pre-
   or post-order traversal. If func() returns true, traversal is stopped early.
 
-  The `join` parameter, signifying what query block `path` is part of, is only
-  used if you set cross_query_blocks = false. It is used to know whether a
-  MATERIALIZE or STREAM access path is part of the same query block or not.
-  If you give join == nullptr and cross_query_blocks == false, the walk will
-  always stop at such access paths.
+  The `join` parameter signifies what query block `path` is part of, since that
+  is not implicit from the path itself. The function will track this as it
+  changes throughout the tree (in MATERIALIZE or STREAM access paths), and
+  will give the correct value to the func() callback. It is only used by
+  WalkAccesspath() itself if the policy is ENTIRE_QUERY_BLOCK; if not, it is
+  only used for the func() callback, and you can set it to nullptr if you wish.
+  func() must have signature func(AccessPath *, const JOIN *).
 
   Nothing currently uses post-order traversal, but it has been requested for
   future use.
  */
 template <class Func>
 void WalkAccessPaths(AccessPath *path, const JOIN *join,
-                     bool cross_query_blocks, Func &&func,
+                     WalkAccessPathPolicy cross_query_blocks, Func &&func,
                      bool post_order_traversal = false) {
+  if (cross_query_blocks == WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK) {
+    assert(join != nullptr);
+  }
   if (!post_order_traversal) {
-    if (func(path)) {
+    if (func(path, join)) {
       // Stop recursing in this branch.
       return;
     }
@@ -121,9 +139,12 @@ void WalkAccessPaths(AccessPath *path, const JOIN *join,
                       std::forward<Func &&>(func), post_order_traversal);
       break;
     case AccessPath::STREAM:
-      if (cross_query_blocks || path->stream().join == join) {
-        WalkAccessPaths(path->stream().child, join, cross_query_blocks,
-                        std::forward<Func &&>(func), post_order_traversal);
+      if (cross_query_blocks == WalkAccessPathPolicy::ENTIRE_TREE ||
+          (cross_query_blocks == WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK &&
+           path->stream().join == join)) {
+        WalkAccessPaths(path->stream().child, path->stream().join,
+                        cross_query_blocks, std::forward<Func &&>(func),
+                        post_order_traversal);
       }
       break;
     case AccessPath::MATERIALIZE:
@@ -131,9 +152,12 @@ void WalkAccessPaths(AccessPath *path, const JOIN *join,
                       std::forward<Func &&>(func), post_order_traversal);
       for (const MaterializePathParameters::QueryBlock &query_block :
            path->materialize().param->query_blocks) {
-        if (cross_query_blocks || query_block.join == join) {
-          WalkAccessPaths(query_block.subquery_path, join, cross_query_blocks,
-                          std::forward<Func &&>(func), post_order_traversal);
+        if (cross_query_blocks == WalkAccessPathPolicy::ENTIRE_TREE ||
+            (cross_query_blocks == WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK &&
+             query_block.join == join)) {
+          WalkAccessPaths(query_block.subquery_path, query_block.join,
+                          cross_query_blocks, std::forward<Func &&>(func),
+                          post_order_traversal);
         }
       }
       break;
@@ -143,15 +167,15 @@ void WalkAccessPaths(AccessPath *path, const JOIN *join,
                       post_order_traversal);
       break;
     case AccessPath::APPEND:
-      if (cross_query_blocks) {
+      if (cross_query_blocks != WalkAccessPathPolicy::ENTIRE_TREE) {
         for (const AppendPathParameters &child : *path->append().children) {
-          WalkAccessPaths(child.path, join, cross_query_blocks,
+          WalkAccessPaths(child.path, child.join, cross_query_blocks,
                           std::forward<Func &&>(func), post_order_traversal);
         }
       }
       break;
-    case AccessPath::WINDOWING:
-      WalkAccessPaths(path->windowing().child, join, cross_query_blocks,
+    case AccessPath::WINDOW:
+      WalkAccessPaths(path->window().child, join, cross_query_blocks,
                       std::forward<Func &&>(func), post_order_traversal);
       break;
     case AccessPath::WEEDOUT:
@@ -161,6 +185,11 @@ void WalkAccessPaths(AccessPath *path, const JOIN *join,
     case AccessPath::REMOVE_DUPLICATES:
       WalkAccessPaths(path->remove_duplicates().child, join, cross_query_blocks,
                       std::forward<Func &&>(func), post_order_traversal);
+      break;
+    case AccessPath::REMOVE_DUPLICATES_ON_INDEX:
+      WalkAccessPaths(path->remove_duplicates_on_index().child, join,
+                      cross_query_blocks, std::forward<Func &&>(func),
+                      post_order_traversal);
       break;
     case AccessPath::ALTERNATIVE:
       WalkAccessPaths(path->alternative().child, join, cross_query_blocks,
@@ -172,11 +201,90 @@ void WalkAccessPaths(AccessPath *path, const JOIN *join,
       break;
   }
   if (post_order_traversal) {
-    if (func(path)) {
+    if (func(path, join)) {
       // Stop recursing in this branch.
       return;
     }
   }
+}
+
+/**
+  A wrapper around WalkAccessPaths() that collects all tables under
+  “root_path” and calls the given functor, stopping at materializations.
+  This is typically used to know which tables to sort or the like.
+
+  func() must have signature func(TABLE *), and return true upon error.
+ */
+template <class Func>
+void WalkTablesUnderAccessPath(AccessPath *root_path, Func &&func) {
+  WalkAccessPaths(
+      root_path, /*join=*/nullptr,
+      WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
+      [&](AccessPath *path, const JOIN *) {
+        switch (path->type) {
+          case AccessPath::TABLE_SCAN:
+            return func(path->table_scan().table);
+          case AccessPath::INDEX_SCAN:
+            return func(path->index_scan().table);
+          case AccessPath::REF:
+            return func(path->ref().table);
+          case AccessPath::REF_OR_NULL:
+            return func(path->ref_or_null().table);
+          case AccessPath::EQ_REF:
+            return func(path->eq_ref().table);
+          case AccessPath::PUSHED_JOIN_REF:
+            return func(path->pushed_join_ref().table);
+          case AccessPath::FULL_TEXT_SEARCH:
+            return func(path->full_text_search().table);
+          case AccessPath::CONST_TABLE:
+            return func(path->const_table().table);
+          case AccessPath::MRR:
+            return func(path->mrr().table);
+          case AccessPath::FOLLOW_TAIL:
+            return func(path->follow_tail().table);
+          case AccessPath::INDEX_RANGE_SCAN:
+            return func(path->index_range_scan().table);
+          case AccessPath::DYNAMIC_INDEX_RANGE_SCAN:
+            return func(path->dynamic_index_range_scan().table);
+          case AccessPath::STREAM:
+            return func(path->stream().table);
+          case AccessPath::MATERIALIZE:
+            return func(path->materialize().param->table);
+          case AccessPath::MATERIALIZED_TABLE_FUNCTION:
+            return func(path->materialized_table_function().table);
+          case AccessPath::ALTERNATIVE:
+            return func(
+                path->alternative().table_scan_path->table_scan().table);
+          case AccessPath::UNQUALIFIED_COUNT:
+            // Should never be below anything that needs
+            // WalkTablesUnderAccessPath().
+            assert(false);
+            return true;
+          case AccessPath::AGGREGATE:
+          case AccessPath::APPEND:
+          case AccessPath::BKA_JOIN:
+          case AccessPath::CACHE_INVALIDATOR:
+          case AccessPath::FAKE_SINGLE_ROW:
+          case AccessPath::FILTER:
+          case AccessPath::HASH_JOIN:
+          case AccessPath::LIMIT_OFFSET:
+          case AccessPath::MATERIALIZE_INFORMATION_SCHEMA_TABLE:
+          case AccessPath::NESTED_LOOP_JOIN:
+          case AccessPath::NESTED_LOOP_SEMIJOIN_WITH_DUPLICATE_REMOVAL:
+          case AccessPath::REMOVE_DUPLICATES:
+          case AccessPath::REMOVE_DUPLICATES_ON_INDEX:
+          case AccessPath::SORT:
+          case AccessPath::TABLE_VALUE_CONSTRUCTOR:
+          case AccessPath::TEMPTABLE_AGGREGATE:
+          case AccessPath::WEEDOUT:
+          case AccessPath::WINDOW:
+          case AccessPath::ZERO_ROWS:
+          case AccessPath::ZERO_ROWS_AGGREGATED:
+            return false;
+        }
+        assert(false);
+        return true;
+      });
 }
 
 #endif  // SQL_JOIN_OPTIMIZER_WALK_ACCESS_PATHS_H

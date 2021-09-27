@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,6 @@ Uint32 MAX_RECEIVED_SIGNALS = 1024;
 #define MAX_RECEIVED_SIGNALS 1024
 #endif
 
-extern EventLogger* g_eventLogger;
 
 void
 TransporterRegistry::dump_and_report_bad_message(const char file[], unsigned line,

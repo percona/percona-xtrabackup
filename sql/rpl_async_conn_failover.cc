@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,7 @@
 #include "sql/rpl_async_conn_failover_table_operations.h"
 #include "sql/rpl_io_monitor.h"
 #include "sql/rpl_msr.h"  // channel_map
-#include "sql/rpl_slave.h"
+#include "sql/rpl_replica.h"
 
 #include <algorithm>
 
@@ -158,22 +158,22 @@ Async_conn_failover_manager::do_auto_conn_failover(Master_info *mi,
     mi->reset_failover_list_position();
   }
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   if (mi->get_failover_list_position() == 0) {
     DBUG_EXECUTE_IF("async_conn_failover_wait_new_sender", {
       const char act[] =
           "now SIGNAL wait_for_new_sender_selection "
           "WAIT_FOR continue_connect_new_sender";
-      DBUG_ASSERT(source_conn_detail_list.size() == 3UL);
-      DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+      assert(source_conn_detail_list.size() == 3UL);
+      assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
     });
 
     DBUG_EXECUTE_IF("async_conn_failover_wait_new_4sender", {
       const char act[] =
           "now SIGNAL wait_for_new_4sender_selection "
           "WAIT_FOR continue_connect_new_4sender";
-      DBUG_ASSERT(source_conn_detail_list.size() == 4UL);
-      DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+      assert(source_conn_detail_list.size() == 4UL);
+      assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
     });
   }
 #endif
@@ -228,10 +228,10 @@ bool Async_conn_failover_manager::set_channel_conn_details(
   */
   lock_slave_threads(mi);
 
-  DBUG_ASSERT(!host.empty());
+  assert(!host.empty());
   strmake(mi->host, host.c_str(), sizeof(mi->host) - 1);
 
-  DBUG_ASSERT(port);
+  assert(port);
   mi->port = port;
 
   if (!network_namespace.empty())
@@ -281,7 +281,7 @@ int Async_conn_failover_manager::get_source_quorum_status(MYSQL *mysql,
     replication_asynchronous_connection_failover table.
   */
   std::tie(error, source_conn_merged_list) =
-      Source_IO_monitor::get_instance().get_senders_details(mi->get_channel());
+      Source_IO_monitor::get_instance()->get_senders_details(mi->get_channel());
   if (error) {
     return 2;
   }
@@ -301,7 +301,7 @@ int Async_conn_failover_manager::get_source_quorum_status(MYSQL *mysql,
 
   if (!connected_source_in_sender_list) return 0;
 
-  std::string query = Source_IO_monitor::get_instance().get_query(
+  std::string query = Source_IO_monitor::get_instance()->get_query(
       enum_sql_query_tag::CONFIG_MODE_QUORUM_IO);
 
   if (!mysql_real_query(mysql, query.c_str(), query.length()) &&

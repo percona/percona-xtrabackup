@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -225,8 +225,8 @@ class Database_rewrite {
     Rewrite_result rewrite_transaction_payload(
         unsigned char *buffer, std::size_t buffer_capacity,
         binary_log::Format_description_event const &fde) {
-      DBUG_ASSERT(buffer[EVENT_TYPE_OFFSET] ==
-                  binary_log::TRANSACTION_PAYLOAD_EVENT);
+      assert(buffer[EVENT_TYPE_OFFSET] ==
+             binary_log::TRANSACTION_PAYLOAD_EVENT);
       binary_log::Transaction_payload_event tpe((const char *)buffer, &fde);
 
       auto orig_payload{tpe.get_payload()};
@@ -504,7 +504,7 @@ class Database_rewrite {
     dbname_ptr = the_buffer + offset_dbname;
     memcpy(dbname_ptr, to.c_str(), to.size());
 
-    DBUG_ASSERT(to.size() < UINT8_MAX);
+    assert(to.size() < UINT8_MAX);
     dbname_len_ptr = the_buffer + offset_dbname_len;
     *dbname_len_ptr = (char)to.size();
 
@@ -602,7 +602,7 @@ class Database_rewrite {
                              size_t data_size,
                              binary_log::Format_description_event const &fde,
                              bool skip_transaction_payload_event = false) {
-    DBUG_ASSERT(buffer_capacity >= data_size);
+    assert(buffer_capacity >= data_size);
     auto event_type = (Log_event_type)buffer[EVENT_TYPE_OFFSET];
     if (m_dict.empty() || !is_rewrite_needed_for_event(event_type))
       return Rewrite_result{buffer, buffer_capacity, data_size, false};
@@ -698,7 +698,7 @@ static uint opt_protocol = 0;
 static uint opt_compress = 0;
 static FILE *result_file;
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
 static const char *default_dbug_option = "d:t:o,/tmp/mysqlbinlog.trace";
 #endif
 static const char *load_default_groups[] = {"mysqlbinlog", "client", nullptr};
@@ -852,7 +852,7 @@ class Load_log_processor {
 
  public:
   Load_log_processor() : file_names() {}
-  ~Load_log_processor() {}
+  ~Load_log_processor() = default;
 
   void init_by_dir_name(const char *dir) {
     target_dir_name_len =
@@ -1814,7 +1814,7 @@ static struct my_option my_long_options[] = {
      "it can be applied to a new database",
      &rewrite, &rewrite, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, nullptr,
      0, nullptr},
-#ifdef DBUG_OFF
+#ifdef NDEBUG
     {"debug", '#', "This is a non-debug version. Catch this and exit.", 0, 0, 0,
      GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
     {"debug-check", OPT_DEBUG_CHECK,
@@ -1889,16 +1889,21 @@ static struct my_option my_long_options[] = {
      nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"read-from-remote-server", 'R',
      "Read binary logs from a MySQL server. "
-     "This is an alias for read-from-remote-master=BINLOG-DUMP-NON-GTIDS.",
+     "This is an alias for read-from-remote-source=BINLOG-DUMP-NON-GTIDS.",
      &opt_remote_alias, &opt_remote_alias, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
-    {"read-from-remote-master", OPT_REMOTE_PROTO,
+    {"read-from-remote-master", OPT_READ_FROM_REMOTE_MASTER_DEPRECATED,
+     "This option is deprecated and will be removed in a future version. "
+     "Use read-from-remote-source instead.",
+     &opt_remote_proto_str, &opt_remote_proto_str, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+    {"read-from-remote-source", OPT_REMOTE_PROTO,
      "Read binary logs from a MySQL server through the COM_BINLOG_DUMP or "
      "COM_BINLOG_DUMP_GTID commands by setting the option to either "
      "BINLOG-DUMP-NON-GTIDS or BINLOG-DUMP-GTIDS, respectively. If "
-     "--read-from-remote-master=BINLOG-DUMP-GTIDS is combined with "
-     "--exclude-gtids, transactions can be filtered out on the master "
-     "avoiding unnecessary network traffic.",
+     "--read-from-remote-source=BINLOG-DUMP-GTIDS is combined with "
+     "--exclude-gtids, transactions are filtered out on the source, to "
+     "avoid unnecessary network traffic.",
      &opt_remote_proto_str, &opt_remote_proto_str, nullptr, GET_STR,
      REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"raw", OPT_RAW_OUTPUT,
@@ -1970,13 +1975,16 @@ static struct my_option my_long_options[] = {
      &stop_never, &stop_never, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
     {"stop-never-slave-server-id", OPT_WAIT_SERVER_ID,
-     "The slave server_id used for --read-from-remote-server --stop-never."
-     " This option cannot be used together with connection-server-id.",
+     "The server_id that is reported when connecting to a source server "
+     "when using --read-from-remote-server --stop-never. "
+     "This option is deprecated and will be removed in a future version. "
+     "Use connection-server-id instead.",
      &stop_never_slave_server_id, &stop_never_slave_server_id, nullptr, GET_LL,
      REQUIRED_ARG, -1, -1, 0xFFFFFFFFLL, nullptr, 0, nullptr},
     {"connection-server-id", OPT_CONNECTION_SERVER_ID,
-     "The slave server_id used for --read-from-remote-server."
-     " This option cannot be used together with stop-never-slave-server-id.",
+     "The server_id that will be reported when connecting to a source server "
+     "when using --read-from-remote-server. "
+     "This option cannot be used together with stop-never-slave-server-id.",
      &connection_server_id, &connection_server_id, nullptr, GET_LL,
      REQUIRED_ARG, -1, -1, 0xFFFFFFFFLL, nullptr, 0, nullptr},
     {"stop-position", OPT_STOP_POSITION,
@@ -2174,7 +2182,7 @@ extern "C" bool get_one_option(int optid, const struct my_option *opt,
                                char *argument) {
   bool tty_password = false;
   switch (optid) {
-#ifndef DBUG_OFF
+#ifndef NDEBUG
     case '#':
       DBUG_PUSH(argument ? argument : default_dbug_option);
       break;
@@ -2213,8 +2221,8 @@ extern "C" bool get_one_option(int optid, const struct my_option *opt,
       if (argument == disabled_my_option) {
         // Don't require password
         static char empty_password[] = {'\0'};
-        DBUG_ASSERT(empty_password[0] ==
-                    '\0');  // Check that it has not been overwritten
+        assert(empty_password[0] ==
+               '\0');  // Check that it has not been overwritten
         argument = empty_password;
       }
       if (argument) {
@@ -2230,6 +2238,10 @@ extern "C" bool get_one_option(int optid, const struct my_option *opt,
       opt_remote_alias = true;
       opt_remote_proto = BINLOG_DUMP_NON_GTID;
       break;
+    case OPT_READ_FROM_REMOTE_MASTER_DEPRECATED:
+      warning(CLIENT_WARN_DEPRECATED_MSG("--read-from-remote-master",
+                                         "--read-from-remote-source"));
+      /* FALLTHROUGH */
     case OPT_REMOTE_PROTO:
       opt_remote_proto = (enum_remote_proto)(
           find_type_or_exit(argument, &remote_proto_typelib, opt->name) - 1);
@@ -2383,7 +2395,7 @@ static Exit_status dump_single_log(PRINT_EVENT_INFO *print_event_info,
       rc = dump_remote_log_entries(print_event_info, logname);
       break;
     default:
-      DBUG_ASSERT(0);
+      assert(0);
       break;
   }
   return rc;
@@ -2475,23 +2487,21 @@ static Exit_status check_master_version() {
 
   if (mysql_query(mysql, "SELECT VERSION()") ||
       !(res = mysql_store_result(mysql))) {
-    error(
-        "Could not find server version: "
-        "Query failed when checking master version: %s",
-        mysql_error(mysql));
+    error("Could not find server version: Query failed: %s",
+          mysql_error(mysql));
     return ERROR_STOP;
   }
   if (!(row = mysql_fetch_row(res))) {
     error(
         "Could not find server version: "
-        "Master returned no rows for SELECT VERSION().");
+        "Server returned no rows for SELECT VERSION().");
     goto err;
   }
 
   if (!(version = row[0])) {
     error(
         "Could not find server version: "
-        "Master reported NULL for the version.");
+        "Server reported NULL for the version.");
     goto err;
   }
   /*
@@ -2500,10 +2510,12 @@ static Exit_status check_master_version() {
      necessary checksummed.
      That preference is specified below.
   */
-  if (mysql_query(mysql, "SET @master_binlog_checksum='NONE'")) {
+  if (mysql_query(mysql,
+                  "SET @master_binlog_checksum = 'NONE', "
+                  "@source_binlog_checksum = 'NONE'")) {
     error(
-        "Could not notify master about checksum awareness."
-        "Master returned '%s'",
+        "Could not notify source server about checksum awareness."
+        "Server returned '%s'",
         mysql_error(mysql));
     goto err;
   }
@@ -2519,7 +2531,7 @@ static Exit_status check_master_version() {
     default:
       error(
           "Could not find server version: "
-          "Master reported unrecognized MySQL version '%s'.",
+          "Server reported unrecognized MySQL version '%s'.",
           version);
       goto err;
   }
@@ -2624,7 +2636,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
     running with:
 
       --read-from-remote-server
-      --read-from-remote-master=BINLOG-DUMP-GTIDS'
+      --read-from-remote-source=BINLOG-DUMP-GTIDS'
       --stop-never
       --stop-never-slave-server-id
 
@@ -2925,7 +2937,7 @@ class Stdin_binlog_istream : public Basic_seekable_istream,
   }
 
   bool seek(my_off_t position) override {
-    DBUG_ASSERT(position > m_position);
+    assert(position > m_position);
     if (Stdin_istream::skip(position - m_position)) {
       error("Failed to skip %llu bytes from stdin", position - m_position);
       return true;
@@ -2937,7 +2949,7 @@ class Stdin_binlog_istream : public Basic_seekable_istream,
   /* purecov: begin inspected */
   /** Stdin has no length. It should never be called. */
   my_off_t length() override {
-    DBUG_ASSERT(0);
+    assert(0);
     return 0;
   }
   /* purecov: end */
@@ -3089,7 +3101,7 @@ static int args_post_process(void) {
   if (opt_remote_alias && opt_remote_proto != BINLOG_DUMP_NON_GTID) {
     error(
         "The option read-from-remote-server cannot be used when "
-        "read-from-remote-master is defined and is not equal to "
+        "read-from-remote-source is defined and is not equal to "
         "BINLOG-DUMP-NON-GTIDS");
     return ERROR_STOP;
   }
@@ -3100,7 +3112,7 @@ static int args_post_process(void) {
 
     if (opt_remote_proto == BINLOG_LOCAL) {
       error(
-          "The --raw flag requires one of --read-from-remote-master or "
+          "The --raw flag requires one of --read-from-remote-source or "
           "--read-from-remote-server");
       return ERROR_STOP;
     }
@@ -3115,7 +3127,7 @@ static int args_post_process(void) {
       error(
           "You cannot use both of --exclude-gtids and --raw together "
           "with one of --read-from-remote-server or "
-          "--read-from-remote-master=BINLOG-DUMP-NON-GTID.");
+          "--read-from-remote-source=BINLOG-DUMP-NON-GTID.");
       return ERROR_STOP;
     }
 
@@ -3263,7 +3275,12 @@ int main(int argc, char **argv) {
     load_processor.init_by_cur_dir();
 
   if (!raw_mode) {
-    fprintf(result_file, "/*!50530 SET @@SESSION.PSEUDO_SLAVE_MODE=1*/;\n");
+    fprintf(
+        result_file,
+        "# The proper term is pseudo_replica_mode, but we use this "
+        "compatibility alias\n"
+        "# to make the statement usable on server versions 8.0.24 and older.\n"
+        "/*!50530 SET @@SESSION.PSEUDO_SLAVE_MODE=1*/;\n");
 
     if (disable_log_bin)
       fprintf(

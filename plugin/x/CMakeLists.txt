@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,12 +33,6 @@ ADD_DEFINITIONS(-DPROTOBUF_INLINE_NOT_IN_HEADERS=0)
 IF(WIN32)
   # Activate necessary dllexport/dllimport declarations.
   ADD_DEFINITIONS(-DPROTOBUF_USE_DLLS)
-ENDIF()
-
-# --yplg_out: protoc-gen-yplg: Plugin killed by signal 11.
-IF(SOLARIS_SPARC AND MY_COMPILER_IS_GNU AND
-    CMAKE_BUILD_TYPE_UPPER MATCHES "REL")
-  ADD_COMPILE_OPTIONS("-O0")
 ENDIF()
 
 ADD_DEFINITIONS(-DLOG_COMPONENT_TAG="mysqlx")

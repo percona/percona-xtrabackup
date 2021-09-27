@@ -1,7 +1,7 @@
 #ifndef SQL_SORTING_ITERATOR_H_
 #define SQL_SORTING_ITERATOR_H_
 
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -86,14 +86,7 @@ class SortingIterator final : public RowIterator {
 
   int Read() override { return m_result_iterator->Read(); }
 
-  void SetNullRowFlag(bool is_null_row) override {
-    if (m_result_iterator == nullptr) {
-      // If we don't have a result yet, it will come up with the flag unset.
-      DBUG_ASSERT(is_null_row == false);
-      return;
-    }
-    m_result_iterator->SetNullRowFlag(is_null_row);
-  }
+  void SetNullRowFlag(bool is_null_row) override;
 
   void UnlockRow() override { m_result_iterator->UnlockRow(); }
 
@@ -143,8 +136,8 @@ class SortingIterator final : public RowIterator {
   // TODO: If we need to add TimingIterator directly on this iterator,
   // switch to allocating it on the MEM_ROOT.
   union IteratorHolder {
-    IteratorHolder() {}
-    ~IteratorHolder() {}
+    IteratorHolder() {}   // NOLINT(modernize-use-equals-default)
+    ~IteratorHolder() {}  // NOLINT(modernize-use-equals-default)
 
     SortBufferIterator<true> sort_buffer_packed_addons;
     SortBufferIterator<false> sort_buffer;

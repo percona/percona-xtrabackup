@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2007, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -386,9 +386,8 @@ fts_query_terms_in_document(
 /********************************************************************
 Compare two fts_doc_freq_t doc_ids.
 @return < 0 if n1 < n2, 0 if n1 == n2, > 0 if n1 > n2 */
-UNIV_INLINE
-int fts_freq_doc_id_cmp(const void *p1, /*!< in: id1 */
-                        const void *p2) /*!< in: id2 */
+static inline int fts_freq_doc_id_cmp(const void *p1, /*!< in: id1 */
+                                      const void *p2) /*!< in: id2 */
 {
   const fts_doc_freq_t *fq1 = (const fts_doc_freq_t *)p1;
   const fts_doc_freq_t *fq2 = (const fts_doc_freq_t *)p2;
@@ -1445,9 +1444,9 @@ static dberr_t fts_merge_doc_ids(
 
 /** Skip non-whitespace in a string. Move ptr to the next word boundary.
  @return pointer to first whitespace character or end */
-UNIV_INLINE
-byte *fts_query_skip_word(byte *ptr,       /*!< in: start of scan */
-                          const byte *end) /*!< in: pointer to end of string */
+static inline byte *fts_query_skip_word(
+    byte *ptr,       /*!< in: start of scan */
+    const byte *end) /*!< in: pointer to end of string */
 {
   /* TODO: Does this have to be UTF-8 too ? */
   while (ptr < end && !(ispunct(*ptr) || isspace(*ptr))) {
@@ -1885,7 +1884,7 @@ static ibool fts_query_fetch_document(void *row,      /*!< in:  sel_node_t* */
 Callback function to check whether a record was found or not. */
 static
 ibool
-fts_query_select(
+fts_query_query_block(
 	void*		row,		/*!< in:  sel_node_t* */
 	void*		user_arg)	/*!< in:  fts_doc_t* */
 {
@@ -1973,7 +1972,7 @@ fts_query_find_term(
 	select.min_pos = *min_pos;
 	select.word_freq = fts_query_add_word_freq(query, word->f_str);
 
-	pars_info_bind_function(info, "my_func", fts_query_select, &select);
+	pars_info_bind_function(info, "my_func", fts_query_query_block, &select);
 	pars_info_bind_varchar_literal(info, "word", word->f_str, word->f_len);
 
 	/* Convert to "storage" byte order. */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -74,7 +74,7 @@ class PFS_index_setup_actors : public PFS_engine_index {
         m_key_2("USER"),
         m_key_3("ROLE") {}
 
-  ~PFS_index_setup_actors() override {}
+  ~PFS_index_setup_actors() override = default;
 
   virtual bool match(PFS_setup_actor *pfs);
 
@@ -117,7 +117,7 @@ class table_setup_actors : public PFS_engine_table {
   table_setup_actors();
 
  public:
-  ~table_setup_actors() override {}
+  ~table_setup_actors() override = default;
 
  private:
   int make_row(PFS_setup_actor *actor);

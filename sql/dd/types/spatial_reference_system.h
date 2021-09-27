@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -74,7 +74,7 @@ class Spatial_reference_system : virtual public Entity_object {
   virtual bool update_aux_key(Aux_key *) const { return true; }
 
  public:
-  ~Spatial_reference_system() override {}
+  ~Spatial_reference_system() override = default;
 
   /////////////////////////////////////////////////////////////////////////
   // created
@@ -235,6 +235,15 @@ class Spatial_reference_system : virtual public Entity_object {
     @return pointer to dynamically allocated copy
   */
   virtual Spatial_reference_system *clone() const = 0;
+
+  /**
+    Allocate a new object which can serve as a placeholder for the original
+    object in the Dictionary_client's dropped registry. Such object has the
+    same keys as the original but has no other info and as result occupies
+    less memory.
+  */
+  virtual Spatial_reference_system *clone_dropped_object_placeholder()
+      const = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////

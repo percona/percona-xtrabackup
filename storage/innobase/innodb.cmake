@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2020, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +26,8 @@ INCLUDE(CheckFunctionExists)
 INCLUDE(CheckCSourceCompiles)
 INCLUDE(CheckCSourceRuns)
 
-IF(LZ4_INCLUDE_DIR AND LZ4_LIBRARY)
+IF(LZ4_LIBRARY)
   ADD_DEFINITIONS(-DHAVE_LZ4=1)
-  INCLUDE_DIRECTORIES(${LZ4_INCLUDE_DIR})
 ENDIF()
 
 # OS tests

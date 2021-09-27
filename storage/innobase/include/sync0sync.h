@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2012, Facebook Inc.
 
@@ -160,6 +160,8 @@ extern mysql_pfs_key_t lock_sys_page_mutex_key;
 extern mysql_pfs_key_t lock_sys_table_mutex_key;
 extern mysql_pfs_key_t lock_wait_mutex_key;
 extern mysql_pfs_key_t trx_sys_mutex_key;
+extern mysql_pfs_key_t trx_sys_shard_mutex_key;
+extern mysql_pfs_key_t trx_sys_serialisation_mutex_key;
 extern mysql_pfs_key_t srv_sys_mutex_key;
 extern mysql_pfs_key_t srv_threads_mutex_key;
 #ifndef PFS_SKIP_EVENT_MUTEX

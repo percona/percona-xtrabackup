@@ -14,6 +14,7 @@ Recipes for |xtrabackup|
    howtos/recipes_xbk_inc
    howtos/recipes_xbk_stream
    howtos/recipes_xbk_compressed
+   howtos/recipes_xbk_partition
 
 .. _howtos:
 

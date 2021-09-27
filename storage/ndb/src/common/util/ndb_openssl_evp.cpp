@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -1025,6 +1025,7 @@ int main(int argc, char*argv[])
   using byte = unsigned char;
   const char* pwd = "Not so secret";
 
+  ndb_init();
   ndb_openssl_evp enc;
   ndb_openssl_evp::operation op(&enc);
 
@@ -1079,6 +1080,7 @@ int main(int argc, char*argv[])
   }
 
   enc.reset();
+  ndb_end(0);
   return 0;
 }
 

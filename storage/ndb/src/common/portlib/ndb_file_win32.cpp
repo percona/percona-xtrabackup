@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,8 +37,8 @@ static inline void require_fn(bool cond)
 {
   if (cond)
     return;
-  std::fprintf(stderr,"YYY: FATAL ERROR: %s: %s: %d: REQUIRE FAILED: %s\n",
-    file,func,line,cond_str);
+  g_eventLogger->info("YYY: FATAL ERROR: %s: %s: %d: REQUIRE FAILED: %s", file,
+                      func, line, cond_str);
   std::abort();
 }
 #define require(cc) require_fn<#cc,__FILE__,__func__,__LINE__>((cc))
@@ -426,6 +426,11 @@ void ndb_file::invalidate()
 }
 
 bool ndb_file::have_direct_io_support() const
+{
+  return false;
+}
+
+bool ndb_file::avoid_direct_io_on_append() const
 {
   return false;
 }

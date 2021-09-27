@@ -25,7 +25,7 @@ XtraBackup| from source. These might vary from system to system.
 
 .. important::
 
-   In order to build |Percona XtraBackup| v8.0 from source, you need to use
+   In order to build |Percona XtraBackup| v8.0 from source, you must use
    `cmake` version 3. In your distribution, it may be available either as a
    separate package ``cmake3`` or as ``cmake``. To check which version is
    installed, run ``cmake --version`` and if it does report a version 3, install
@@ -37,9 +37,13 @@ XtraBackup| from source. These might vary from system to system.
 
 .. code-block:: bash
 
-   $ sudo apt install build-essential flex bison automake autoconf \
-   libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
-   libgcrypt11-dev libev-dev libcurl4-gnutls-dev vim-common
+      sudo apt install bison pkg-config cmake devscripts debconf \
+      debhelper automake bison ca-certificates \
+      libcurl4-openssl-dev cmake debhelper libaio-dev \
+      libncurses-devlibssl-dev libtool libz-dev libgcrypt-dev libev-dev \
+      lsb-release python-docutils build-essential rsync \
+      libdbd-mysql-perl libnuma1 socat librtmp-dev libtinfo5 \ 
+      qpress liblz4-tool liblz4-1 liblz4-dev vim-common
 
 |optional.python3-sphinx|:
 

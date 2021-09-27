@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -95,7 +95,7 @@ DynamicState::DynamicState(const std::string &file_name)
   pimpl_->json_state_doc_.SetObject();
 }
 
-DynamicState::~DynamicState() {}
+DynamicState::~DynamicState() = default;
 
 std::ifstream DynamicState::open_for_read() {
   std::ifstream input_file(file_name_);

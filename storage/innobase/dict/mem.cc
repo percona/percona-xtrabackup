@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -206,11 +206,11 @@ dict_table_t *dict_mem_table_create(
 
 #ifndef UNIV_HOTBACKUP
 #ifndef UNIV_LIBRARY
-  lock_table_lock_list_init(&table->locks);
+  UT_LIST_INIT(table->locks);
 #endif /* !UNIV_LIBRARY */
 #endif /* !UNIV_HOTBACKUP */
 
-  UT_LIST_INIT(table->indexes, &dict_index_t::indexes);
+  UT_LIST_INIT(table->indexes);
 
   table->heap = heap;
 

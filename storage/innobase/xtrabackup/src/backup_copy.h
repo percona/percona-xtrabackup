@@ -68,6 +68,14 @@ bool backup_start(Backup_context &context);
 @return true if success. */
 bool backup_finish(Backup_context &context);
 
+/**
+  Copies redo log encrypted info from xtraback_logfile to ib_logfile0
+  This is used at --prepare
+
+  @return false in case of error, true otherwise
+*/
+bool copy_redo_encryption_info();
+
 bool apply_log_finish();
 bool copy_back(int argc, char **argv);
 bool decrypt_decompress();

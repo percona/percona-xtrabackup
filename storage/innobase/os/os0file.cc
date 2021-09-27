@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 Copyright (c) 2009, Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
@@ -794,10 +794,10 @@ AIO *AIO::s_sync;
 
 #if defined(LINUX_NATIVE_AIO)
 /** timeout for each io_getevents() call = 500ms. */
-static const ulint OS_AIO_REAP_TIMEOUT = 500000000UL;
+static constexpr uint64_t OS_AIO_REAP_TIMEOUT = 500000000UL;
 
-/** time to sleep, in microseconds if io_setup() returns EAGAIN. */
-static const ulint OS_AIO_IO_SETUP_RETRY_SLEEP = 500000UL;
+/** time to sleep, in milliseconds if io_setup() returns EAGAIN. */
+static constexpr uint64_t OS_AIO_IO_SETUP_RETRY_SLEEP_MS = 500UL;
 
 /** number of attempts before giving up on io_setup(). */
 static const int OS_AIO_IO_SETUP_RETRY_ATTEMPTS = 5;
@@ -1008,7 +1008,7 @@ file::Block *os_alloc_block() noexcept {
       break;
     }
 
-    os_thread_yield();
+    std::this_thread::yield();
 
     ++retry;
   }
@@ -1511,7 +1511,7 @@ static bool os_aio_validate_skip() {
 #define USE_FILE_LOCK
 #if defined(UNIV_HOTBACKUP) || defined(_WIN32)
 /* InnoDB Hot Backup does not lock the data files.
- * On Windows, mandatory locking is used.
+ On Windows, mandatory locking is used.
  */
 #undef USE_FILE_LOCK
 #endif /* UNIV_HOTBACKUP || _WIN32 */
@@ -1635,23 +1635,17 @@ void AIO::release_with_mutex(Slot *slot) {
 }
 
 #ifndef UNIV_HOTBACKUP
-/** Create a temporary file. This function is like tmpfile(3), but
-the temporary file is created in the given parameter path. If the path
-is NULL then it will create the file in the MySQL server configuration
-parameter (--tmpdir).
-@param[in]	path	location for creating temporary file
-@return temporary file handle, or NULL on error */
-FILE *os_file_create_tmpfile(const char *path) {
+FILE *os_file_create_tmpfile() {
   FILE *file = nullptr;
-  int fd = innobase_mysql_tmpfile(path);
+  int fd = innobase_mysql_tmpfile(mysql_tmpdir);
 
   if (fd >= 0) {
     file = fdopen(fd, "w+b");
   }
 
   if (file == nullptr) {
-    ib::error(ER_IB_MSG_751)
-        << "Unable to create temporary file; errno: " << errno;
+    ib::error(ER_IB_MSG_751) << "Unable to create temporary file inside \""
+                             << mysql_tmpdir << "\"; errno: " << errno;
 
     if (fd >= 0) {
       close(fd);
@@ -1706,6 +1700,7 @@ static dberr_t os_file_io_complete(const IORequest &type, os_file_t fh,
 
     return (ret);
   } else if (type.is_read()) {
+    ut_ad(!type.is_row_log());
     Encryption encryption(type.encryption_algorithm());
 
     ret = encryption.decrypt(type, buf, src_len, scratch, len);
@@ -1755,8 +1750,7 @@ to the last directory separator that the caller has fixed.
 @param[in]	path		path name
 @param[in]	last_slash	last directory separator in the path
 @return true if this path is a drive root, false if not */
-UNIV_INLINE
-bool os_file_is_root(const char *path, const char *last_slash) {
+static inline bool os_file_is_root(const char *path, const char *last_slash) {
   return (
 #ifdef _WIN32
       (last_slash == path + 2 && path[1] == ':') ||
@@ -2049,14 +2043,14 @@ static file::Block *os_file_encrypt_log(const IORequest &type, void *&buf,
 
   if (*n <= BUFFER_BLOCK_SIZE - os_io_ptr_align) {
     block = os_alloc_block();
-    buf_ptr = block->m_ptr;
+    buf_ptr = static_cast<byte *>(ut_align(block->m_ptr, os_io_ptr_align));
     scratch = nullptr;
   } else {
-    buf_ptr = static_cast<byte *>(ut_malloc_nokey(*n + os_io_ptr_align));
+    buf_ptr = static_cast<byte *>(ut::aligned_alloc(*n, os_io_ptr_align));
     scratch = buf_ptr;
   }
 
-  encrypted_log = static_cast<byte *>(ut_align(buf_ptr, os_io_ptr_align));
+  encrypted_log = buf_ptr;
 
   encrypted_log = encryption.encrypt_log(type, reinterpret_cast<byte *>(buf),
                                          *n, encrypted_log, &encrypted_len);
@@ -2631,7 +2625,8 @@ bool AIO::linux_create_io_ctx(ulint max_events, io_context_t *io_ctx) {
 
           ib::warn(ER_IB_MSG_758) << "io_setup() attempt " << n_retries << ".";
 
-          os_thread_sleep(OS_AIO_IO_SETUP_RETRY_SLEEP);
+          std::this_thread::sleep_for(
+              std::chrono::milliseconds(OS_AIO_IO_SETUP_RETRY_SLEEP_MS));
 
           continue;
         }
@@ -2719,23 +2714,22 @@ bool AIO::is_linux_native_aio_supported() {
 
   memset(&io_event, 0x0, sizeof(io_event));
 
-  byte *buf = static_cast<byte *>(ut_malloc_nokey(UNIV_PAGE_SIZE * 2));
-  byte *ptr = static_cast<byte *>(ut_align(buf, UNIV_PAGE_SIZE));
+  byte *buf =
+      static_cast<byte *>(ut::aligned_zalloc(UNIV_PAGE_SIZE, UNIV_PAGE_SIZE));
 
   struct iocb iocb;
 
   /* Suppress valgrind warning. */
-  memset(buf, 0x00, UNIV_PAGE_SIZE * 2);
   memset(&iocb, 0x0, sizeof(iocb));
 
   struct iocb *p_iocb = &iocb;
 
   if (!srv_read_only_mode) {
-    io_prep_pwrite(p_iocb, fd, ptr, UNIV_PAGE_SIZE, 0);
+    io_prep_pwrite(p_iocb, fd, buf, UNIV_PAGE_SIZE, 0);
 
   } else {
     ut_a(UNIV_PAGE_SIZE >= 512);
-    io_prep_pread(p_iocb, fd, ptr, 512, 0);
+    io_prep_pread(p_iocb, fd, buf, 512, 0);
   }
 
   int err = io_submit(io_ctx, 1, &p_iocb);
@@ -2745,7 +2739,7 @@ bool AIO::is_linux_native_aio_supported() {
     err = io_getevents(io_ctx, 1, 1, &io_event, nullptr);
   }
 
-  ut_free(buf);
+  ut::aligned_free(buf);
   close(fd);
 
   switch (err) {
@@ -2851,9 +2845,10 @@ static ulint os_file_get_last_error_low(bool report_all_errors,
   return (OS_FILE_ERROR_MAX + err);
 }
 
-/** Wrapper to fsync(2) that retries the call on some errors.
+/** Wrapper to fsync(2)/fdatasync(2) that retries the call on some errors.
 Returns the value 0 if successful; otherwise the value -1 is returned and
-the global variable errno is set to indicate the error.
+the global variable errno is set to indicate the error. srv_use_fdatasync
+determines whether fsync or fdatasync will be used. (true -> fdatasync)
 @param[in]	file		open file handle
 @return 0 if success, -1 otherwise */
 static int os_file_fsync_posix(os_file_t file) {
@@ -2871,7 +2866,11 @@ static int os_file_fsync_posix(os_file_t file) {
     meb_mutex.unlock();
 #endif /* UNIV_HOTBACKUP */
 
-    int ret = fsync(file);
+#if defined(HAVE_FDATASYNC) && defined(HAVE_DECL_FDATASYNC)
+    const auto ret = srv_use_fdatasync ? fdatasync(file) : fsync(file);
+#else
+    const auto ret = fsync(file);
+#endif
 
     if (ret == 0) {
       return (ret);
@@ -2889,7 +2888,7 @@ static int os_file_fsync_posix(os_file_t file) {
         }
 
         /* 0.2 sec */
-        os_thread_sleep(200000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         break;
 
       case EIO:
@@ -3309,7 +3308,7 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
       ib::info(ER_IB_MSG_780) << "Retrying to lock the first data file";
 
       for (int i = 0; i < 100; i++) {
-        os_thread_sleep(1000000);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
         if (!os_file_lock(file.m_file, name)) {
           *success = true;
@@ -3502,10 +3501,6 @@ os_offset_t os_file_get_size(pfs_os_file_t file) {
   return (file_size);
 }
 
-/** Gets a file size.
-@param[in]	filename	Full path to the filename to check
-@return file size if OK, else set m_total_size to ~0 and m_alloc_size to
-        errno */
 os_file_size_t os_file_get_size(const char *filename) {
   struct stat s;
   os_file_size_t file_size;
@@ -3798,13 +3793,17 @@ static bool os_is_sparse_file_supported_win32(const char *filename) {
         << "Failed to get the volume path name for: " << filename
         << "- OS error number " << GetLastError();
 
-    return (false);
+    return false;
   }
 
   DWORD flags;
 
-  GetVolumeInformation(volname, NULL, MAX_PATH, NULL, NULL, &flags, NULL,
-                       MAX_PATH);
+  result = GetVolumeInformation(volname, NULL, MAX_PATH, NULL, NULL, &flags,
+                                NULL, MAX_PATH);
+
+  if (!result) {
+    return false;
+  }
 
   return (flags & FILE_SUPPORTS_SPARSE_FILES) ? true : false;
 }
@@ -4487,13 +4486,36 @@ bool os_file_delete_if_exists_func(const char *name, bool *exist) {
     *exist = true;
   }
 
-  ulint count = 0;
+  char name_to_delete[MAX_PATH + 8];
 
+  uint32_t count = 0;
+  /* On Windows, deleting a file may fail if some other process uses it.
+  However, the file might have been opened with FILE_SHARE_DELETE mode, in
+  which case the delete will succeed, but the file will not be deleted,
+  only marked for deletion when all handles are closed. To work around this, we
+  first move the file to new randomized name, which will not collide with a real
+  name. */
+  for (DWORD random_id = GetTickCount(); count < 1000; ++count, ++random_id) {
+    random_id &= 0xFFFF;
+    sprintf(name_to_delete, "%s.%04X.d", name, random_id);
+    if (MoveFile(name, name_to_delete)) break;
+    auto err = GetLastError();
+    /* We have chosen the "random" value that is already being used. Try another
+    one. */
+    if (err == ERROR_ALREADY_EXISTS) continue;
+
+    if (err == ERROR_ACCESS_DENIED) continue;
+
+    /* We just failed to move the file. It may be being used without
+    FILE_SHARE_DELETE mode. We just try to delete the original filename.*/
+    sprintf(name_to_delete, "%s", name);
+
+    break;
+  }
+
+  count = 0;
   for (;;) {
-    /* In Windows, deleting an .ibd file may fail if mysqlbackup
-    is copying it */
-
-    bool ret = DeleteFile((LPCTSTR)name);
+    bool ret = DeleteFile((LPCTSTR)name_to_delete);
 
     if (ret) {
       return (true);
@@ -4512,17 +4534,26 @@ bool os_file_delete_if_exists_func(const char *name, bool *exist) {
 
     ++count;
 
-    if (count > 100 && 0 == (count % 10)) {
+    if (count % 10 == 0) {
       /* Print error information */
       os_file_get_last_error(true);
 
-      ib::warn(ER_IB_MSG_803) << "Delete of file '" << name << "' failed.";
+      if (strcmp(name, name_to_delete) == 0) {
+        ib::warn(ER_IB_MSG_803)
+            << "Failed to delete file '" << name_to_delete
+            << "'. Please check if any other process is using it.";
+      } else {
+        ib::warn(ER_IB_MSG_803)
+            << "Failed to delete file '" << name_to_delete
+            << "', which was renamed from '" << name
+            << "'. Please check if any other process is using it.";
+      }
     }
 
-    /* Sleep for a second */
-    os_thread_sleep(1000000);
+    /* Sleep for a 0.1 second */
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    if (count > 2000) {
+    if (count > 20) {
       return (false);
     }
   }
@@ -4532,46 +4563,13 @@ bool os_file_delete_if_exists_func(const char *name, bool *exist) {
 @param[in]	name		File path as NUL terminated string
 @return true if success */
 bool os_file_delete_func(const char *name) {
-  ulint count = 0;
-
-  for (;;) {
-    /* In Windows, deleting an .ibd file may fail if mysqlbackup
-    is copying it */
-
-    BOOL ret = DeleteFile((LPCTSTR)name);
-
-    if (ret) {
-      return (true);
-    }
-
-    if (GetLastError() == ERROR_FILE_NOT_FOUND) {
-      /* If the file does not exist, we classify this as
-      a 'mild' error and return */
-
-      return (false);
-    }
-
-    ++count;
-
-    if (count > 100 && 0 == (count % 10)) {
-      /* print error information */
-      os_file_get_last_error(true);
-
-      ib::warn(ER_IB_MSG_804)
-          << "Cannot delete file '" << name << "'. Are you running mysqlbackup"
-          << " to back up the file?";
-    }
-
-    /* sleep for a second */
-    os_thread_sleep(1000000);
-
-    if (count > 2000) {
-      return (false);
-    }
+  bool existed;
+  if (os_file_delete_if_exists_func(name, &existed)) {
+    /* File did not exist already, this is an error. */
+    return existed;
+  } else {
+    return false;
   }
-
-  ut_error;
-  return (false);
 }
 
 /** NOTE! Use the corresponding macro os_file_rename(), not directly this
@@ -4635,10 +4633,6 @@ os_offset_t os_file_get_size(pfs_os_file_t file) {
   return (os_offset_t(low | (os_offset_t(high) << 32)));
 }
 
-/** Gets a file size.
-@param[in]	filename	Full path to the filename to check
-@return file size if OK, else set m_total_size to ~0 and m_alloc_size to
-        errno */
 os_file_size_t os_file_get_size(const char *filename) {
   struct __stat64 s;
   os_file_size_t file_size;
@@ -4653,16 +4647,13 @@ os_file_size_t os_file_get_size(const char *filename) {
 
     low_size = GetCompressedFileSize(filename, &high_size);
 
-    if (low_size != INVALID_FILE_SIZE) {
+    if (low_size != INVALID_FILE_SIZE || GetLastError() == NO_ERROR) {
       file_size.m_alloc_size = high_size;
       file_size.m_alloc_size <<= 32;
       file_size.m_alloc_size |= low_size;
-
     } else {
-      ib::error(ER_IB_MSG_805)
-          << "GetCompressedFileSize(" << filename << ", ..) failed.";
-
-      file_size.m_alloc_size = (os_offset_t)-1;
+      file_size.m_total_size = ~0;
+      file_size.m_alloc_size = (os_offset_t)errno;
     }
   } else {
     file_size.m_total_size = ~0;
@@ -4995,7 +4986,7 @@ void Dir_Walker::walk_win32(const Path &basedir, bool recursive, Function &&f) {
 }
 #endif /* !_WIN32*/
 
-/** Does a syncronous read or write depending upon the type specified
+/** Does a synchronous read or write depending upon the type specified
 In case of partial reads/writes the function tries
 NUM_RETRIES_ON_PARTIAL_IO times to read/write the complete data.
 @param[in]	in_type		IO flags
@@ -5401,13 +5392,13 @@ static MY_ATTRIBUTE((warn_unused_result)) bool os_file_handle_error_cond_exit(
 
     case OS_FILE_SHARING_VIOLATION:
 
-      os_thread_sleep(10000000); /* 10 sec */
+      std::this_thread::sleep_for(std::chrono::seconds(10));
       return (true);
 
     case OS_FILE_OPERATION_ABORTED:
     case OS_FILE_INSUFFICIENT_RESOURCE:
 
-      os_thread_sleep(100000); /* 100 ms */
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       return (true);
 
     case OS_FILE_NAME_TOO_LONG:
@@ -5564,14 +5555,7 @@ bool os_file_set_size(const char *name, pfs_os_file_t file, os_offset_t offset,
   buf_size *= UNIV_PAGE_SIZE;
 
   /* Align the buffer for possible raw i/o */
-  byte *buf2;
-
-  buf2 = static_cast<byte *>(ut_malloc_nokey(buf_size + UNIV_PAGE_SIZE));
-
-  byte *buf = static_cast<byte *>(ut_align(buf2, UNIV_PAGE_SIZE));
-
-  /* Write buffer full of zeros */
-  memset(buf, 0, buf_size);
+  byte *buf = static_cast<byte *>(ut::aligned_zalloc(buf_size, UNIV_PAGE_SIZE));
 
   os_offset_t current_size = offset;
 
@@ -5603,7 +5587,7 @@ bool os_file_set_size(const char *name, pfs_os_file_t file, os_offset_t offset,
 #endif /* UNIV_HOTBACKUP */
 
     if (err != DB_SUCCESS) {
-      ut_free(buf2);
+      ut::aligned_free(buf);
       return (false);
     }
 
@@ -5619,7 +5603,7 @@ bool os_file_set_size(const char *name, pfs_os_file_t file, os_offset_t offset,
         bool ret = os_file_flush(file);
 
         if (!ret) {
-          ut_free(buf2);
+          ut::aligned_free(buf);
           return (false);
         }
       }
@@ -5639,7 +5623,7 @@ bool os_file_set_size(const char *name, pfs_os_file_t file, os_offset_t offset,
     current_size += n_bytes;
   }
 
-  ut_free(buf2);
+  ut::aligned_free(buf);
 
   if (flush) {
     return (os_file_flush(file));
@@ -5764,10 +5748,7 @@ static dberr_t os_file_copy_read_write(os_file_t src_file,
   uint request_size;
   const uint BUF_SIZE = 4 * UNIV_SECTOR_SIZE;
 
-  char buf[BUF_SIZE + UNIV_SECTOR_SIZE];
-  char *buf_ptr;
-
-  buf_ptr = static_cast<char *>(ut_align(buf, UNIV_SECTOR_SIZE));
+  alignas(UNIV_SECTOR_SIZE) char buf[BUF_SIZE];
 
   IORequest read_request(IORequest::READ);
   read_request.disable_compression();
@@ -5784,15 +5765,15 @@ static dberr_t os_file_copy_read_write(os_file_t src_file,
       request_size = size;
     }
 
-    err = os_file_read_func(read_request, nullptr, src_file, buf_ptr,
-                            src_offset, request_size);
+    err = os_file_read_func(read_request, nullptr, src_file, &buf, src_offset,
+                            request_size);
 
     if (err != DB_SUCCESS) {
       return (err);
     }
     src_offset += request_size;
 
-    err = os_file_write_func(write_request, "file copy", dest_file, buf_ptr,
+    err = os_file_write_func(write_request, "file copy", dest_file, &buf,
                              dest_offset, request_size);
 
     if (err != DB_SUCCESS) {
@@ -6054,9 +6035,7 @@ dberr_t os_file_write_zeros(pfs_os_file_t file, const char *name,
   /* Extend at most 1M at a time */
   ulint n_bytes = ut_min(static_cast<ulint>(1024 * 1024), len);
 
-  byte *ptr = reinterpret_cast<byte *>(ut_zalloc_nokey(n_bytes + page_size));
-
-  byte *buf = reinterpret_cast<byte *>(ut_align(ptr, page_size));
+  byte *buf = reinterpret_cast<byte *>(ut::aligned_zalloc(n_bytes, page_size));
 
   os_offset_t offset = start;
   dberr_t err = DB_SUCCESS;
@@ -6082,7 +6061,7 @@ dberr_t os_file_write_zeros(pfs_os_file_t file, const char *name,
     DBUG_EXECUTE_IF("ib_crash_during_tablespace_extension", DBUG_SUICIDE(););
   }
 
-  ut_free(ptr);
+  ut::aligned_free(buf);
 
   return (err);
 }
@@ -6466,7 +6445,6 @@ void os_fusionio_get_sector_size() {
     ulint sector_size = UNIV_SECTOR_SIZE;
     char *path = srv_data_home;
     os_file_t check_file;
-    byte *ptr;
     byte *block_ptr;
     char current_dir[3];
     char *dir_end;
@@ -6513,10 +6491,10 @@ void os_fusionio_get_sector_size() {
 
     /* Try to write the file with different sector size
     alignment. */
-    ptr = static_cast<byte *>(ut_zalloc_nokey(2 * MAX_SECTOR_SIZE));
+    alignas(MAX_SECTOR_SIZE) byte data[MAX_SECTOR_SIZE];
 
     while (sector_size <= MAX_SECTOR_SIZE) {
-      block_ptr = static_cast<byte *>(ut_align(ptr, sector_size));
+      block_ptr = static_cast<byte *>(ut_align(&data, sector_size));
       ret = pwrite(check_file, block_ptr, sector_size, 0);
       if (ret > 0 && (ulint)ret == sector_size) {
         break;
@@ -6531,7 +6509,6 @@ void os_fusionio_get_sector_size() {
     unlink(check_file_name);
 
     ut_free(check_file_name);
-    ut_free(ptr);
     errno = 0;
 
     os_io_ptr_align = sector_size;
@@ -6558,7 +6535,7 @@ void os_create_block_cache() {
     ut_a(it->m_ptr == nullptr);
 
     /* Allocate double of max page size memory, since
-    compress could generate more bytes than orgininal
+    compress could generate more bytes than original
     data. */
     it->m_ptr = static_cast<byte *>(ut_malloc_nokey(BUFFER_BLOCK_SIZE));
 
@@ -7368,7 +7345,6 @@ class SimulatedAIOHandler {
         m_array(array),
         m_n_slots(),
         m_segment(segment),
-        m_ptr(),
         m_buf() {
     ut_ad(m_segment < 100);
 
@@ -7376,11 +7352,7 @@ class SimulatedAIOHandler {
   }
 
   /** Destructor */
-  ~SimulatedAIOHandler() {
-    if (m_ptr != nullptr) {
-      ut_free(m_ptr);
-    }
-  }
+  ~SimulatedAIOHandler() { ut::aligned_free(m_buf); }
 
   /** Reset the state of the handler
   @param[in]	n_slots	Number of pending AIO operations supported */
@@ -7390,10 +7362,8 @@ class SimulatedAIOHandler {
     m_n_slots = n_slots;
     m_lowest_offset = IB_UINT64_MAX;
 
-    if (m_ptr != nullptr) {
-      ut_free(m_ptr);
-      m_ptr = m_buf = nullptr;
-    }
+    ut::aligned_free(m_buf);
+    m_buf = nullptr;
 
     m_slots[0] = nullptr;
   }
@@ -7460,7 +7430,7 @@ class SimulatedAIOHandler {
     ulint len;
     Slot *slot = first_slot();
 
-    ut_ad(m_ptr == nullptr);
+    ut_ad(m_buf == nullptr);
 
     if (slot->type.is_read() && m_n_elems > 1) {
       len = 0;
@@ -7469,10 +7439,7 @@ class SimulatedAIOHandler {
         len += m_slots[i]->len;
       }
 
-      m_ptr = static_cast<byte *>(ut_malloc_nokey(len + UNIV_PAGE_SIZE));
-
-      m_buf = static_cast<byte *>(ut_align(m_ptr, UNIV_PAGE_SIZE));
-
+      m_buf = static_cast<byte *>(ut::aligned_alloc(len, UNIV_PAGE_SIZE));
     } else {
       len = first_slot()->len;
       m_buf = first_slot()->buf;
@@ -7672,7 +7639,6 @@ class SimulatedAIOHandler {
 
   slots_t m_slots;
 
-  byte *m_ptr;
   byte *m_buf;
 };
 

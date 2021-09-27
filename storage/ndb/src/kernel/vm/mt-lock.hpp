@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2012, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -87,8 +87,8 @@ loop:
     Uint32 freq = (count > 10000 ? 5000 : (count > 20 ? 200 : 1));
 
     if ((count % freq) == 0)
-      printf("%s waiting for lock, contentions: %u spins: %u\n",
-             s->m_name, count, s->m_spin_count);
+      g_eventLogger->info("%s waiting for lock, contentions: %u spins: %u",
+                          s->m_name, count, s->m_spin_count);
   }
 }
 

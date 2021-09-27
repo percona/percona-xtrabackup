@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -37,8 +37,6 @@ class RouterConfigTest : public RouterComponentTest {
     return ProcessManager::launch_router(params, expected_exit_code, true,
                                          false, wait_ready);
   }
-
-  TcpPortPool port_pool_;
 };
 
 // Bug #25800863 WRONG ERRORMSG IF DIRECTORY IS PROVIDED AS CONFIGFILE

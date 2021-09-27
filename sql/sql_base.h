@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,7 @@ class Open_table_context;
 class Open_tables_backup;
 class Prelocking_strategy;
 class Query_tables_list;
-class SELECT_LEX;
+class Query_block;
 class Sroutine_hash_entry;
 class THD;
 class sp_head;
@@ -100,7 +100,8 @@ enum enum_tdc_remove_table_type {
   TDC_RT_REMOVE_ALL,
   TDC_RT_REMOVE_NOT_OWN,
   TDC_RT_REMOVE_UNUSED,
-  TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE
+  TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE,
+  TDC_RT_MARK_FOR_REOPEN
 };
 
 extern mysql_mutex_t LOCK_open;
@@ -211,7 +212,7 @@ bool fill_record_n_invoke_before_triggers(THD *thd, Field **field,
                                           enum enum_trigger_event_type event,
                                           int num_fields);
 bool resolve_var_assignments(THD *thd, LEX *lex);
-bool insert_fields(THD *thd, SELECT_LEX *select_lex, const char *db_name,
+bool insert_fields(THD *thd, Query_block *query_block, const char *db_name,
                    const char *table_name, mem_root_deque<Item *> *fields,
                    mem_root_deque<Item *>::iterator *it, bool any_privileges);
 bool setup_fields(THD *thd, ulong want_privilege, bool allow_sum_func,
@@ -268,8 +269,8 @@ bool wait_while_table_is_used(THD *thd, TABLE *table,
 
 void update_non_unique_table_error(TABLE_LIST *update, const char *operation,
                                    TABLE_LIST *duplicate);
-int setup_ftfuncs(const THD *thd, SELECT_LEX *select);
-bool init_ftfuncs(THD *thd, SELECT_LEX *select);
+int setup_ftfuncs(const THD *thd, Query_block *select);
+bool init_ftfuncs(THD *thd, Query_block *select);
 int run_before_dml_hook(THD *thd);
 bool get_and_lock_tablespace_names(THD *thd, TABLE_LIST *tables_start,
                                    TABLE_LIST *tables_end,
@@ -289,6 +290,8 @@ TABLE *open_n_lock_single_table(THD *thd, TABLE_LIST *table_l,
                                 Prelocking_strategy *prelocking_strategy);
 bool open_tables_for_query(THD *thd, TABLE_LIST *tables, uint flags);
 bool lock_tables(THD *thd, TABLE_LIST *tables, uint counter, uint flags);
+bool lock_dictionary_tables(THD *thd, TABLE_LIST *tables, uint count,
+                            uint flags);
 void free_io_cache(TABLE *entry);
 void intern_close_table(TABLE *entry);
 void close_thread_table(THD *thd, TABLE **table_ptr);
@@ -386,7 +389,7 @@ TABLE_LIST *find_table_in_global_list(TABLE_LIST *table, const char *db_name,
 
 class Prelocking_strategy {
  public:
-  virtual ~Prelocking_strategy() {}
+  virtual ~Prelocking_strategy() = default;
 
   virtual bool handle_routine(THD *thd, Query_tables_list *prelocking_ctx,
                               Sroutine_hash_entry *rt, sp_head *sp,

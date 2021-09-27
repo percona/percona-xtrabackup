@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -70,16 +70,16 @@ bool RouterComponentTest::wait_log_contains(const ProcessWrapper &router,
 
   const auto MSEC_STEP = 50ms;
   bool found = false;
-  const auto started = std::chrono::steady_clock::now();
+  using clock_type = std::chrono::steady_clock;
+  const auto end = clock_type::now() + timeout;
   do {
     const std::string log_content = router.get_full_logfile();
     found = pattern_found(log_content, pattern);
     if (!found) {
       auto step = std::min(timeout, MSEC_STEP);
       RouterComponentTest::sleep_for(step);
-      timeout -= step;
     }
-  } while (!found && timeout > std::chrono::steady_clock::now() - started);
+  } while (!found && clock_type::now() < end);
 
   return found;
 }

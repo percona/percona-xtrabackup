@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2009, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -67,7 +67,7 @@ MACRO(FATAL_SSL_NOT_FOUND_ERROR string)
   ENDIF()
   IF(APPLE)
     MESSAGE(FATAL_ERROR
-      "Please see http://brewformulas.org/Openssl\n")
+      "Please see https://formulae.brew.sh/formula/openssl@1.1\n")
   ENDIF()
 ENDMACRO()
 
@@ -123,7 +123,11 @@ MACRO (MYSQL_CHECK_SSL)
         SET(OPENSSL_MSVC_STATIC_RT ON)
       ENDIF()
       IF(APPLE AND NOT OPENSSL_ROOT_DIR)
-        SET(OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+        IF(APPLE_ARM)
+          SET(OPENSSL_ROOT_DIR "/opt/homebrew/opt/openssl")
+        ELSE()
+          SET(OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+        ENDIF()
       ENDIF()
       IF(WIN32 AND NOT OPENSSL_ROOT_DIR)
         # We want to be able to support 32bit client-only builds

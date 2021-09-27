@@ -268,16 +268,16 @@ fld1	fld3
 select distinct companynr from t2;
 companynr
 00
-37
-36
-50
-58
 29
-40
-53
-65
-41
 34
+36
+37
+40
+41
+50
+53
+58
+65
 68
 select distinct companynr from t2 order by companynr;
 companynr
@@ -2118,7 +2118,7 @@ Table	Op	Msg_type	Msg_text
 test.t2	analyze	status	OK
 explain format=tree select min(fld1),max(fld1),count(*) from t2 where rand() > 0.5;
 EXPLAIN
--> Aggregate: min(t2.fld1), max(t2.fld1), count(0)
+-> Aggregate: min(t2.fld1), max(t2.fld1), count(0)  (cost=243.55 rows=1199)
     -> Filter: (rand() > 0.5)  (cost=123.65 rows=1199)
         -> Index scan on t2 using fld1  (cost=123.65 rows=1199)
 
@@ -3325,7 +3325,6 @@ hakan%
 hakank
 SELECT * FROM BUG_12595 WHERE a LIKE 'hakan\%' ESCAPE '';
 a
-hakan%
 SELECT * FROM BUG_12595 WHERE a LIKE 'ha\%an' ESCAPE 0x5c;
 a
 ha%an

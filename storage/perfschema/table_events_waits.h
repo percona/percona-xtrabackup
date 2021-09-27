@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -137,7 +137,7 @@ class PFS_index_events_waits : public PFS_engine_index {
         m_key_1("THREAD_ID"),
         m_key_2("EVENT_ID") {}
 
-  ~PFS_index_events_waits() override {}
+  ~PFS_index_events_waits() override = default;
 
   bool match(PFS_thread *pfs);
   bool match(PFS_events_waits *pfs);
@@ -158,7 +158,7 @@ class table_events_waits_common : public PFS_engine_table {
 
   table_events_waits_common(const PFS_engine_table_share *share, void *pos);
 
-  ~table_events_waits_common() override {}
+  ~table_events_waits_common() override = default;
 
   void clear_object_columns();
   int make_table_object_columns(PFS_events_waits *wait);
@@ -192,7 +192,7 @@ class table_events_waits_current : public table_events_waits_common {
   table_events_waits_current();
 
  public:
-  ~table_events_waits_current() override {}
+  ~table_events_waits_current() override = default;
 
  private:
   friend class table_events_waits_history;
@@ -235,7 +235,7 @@ class table_events_waits_history : public table_events_waits_common {
   table_events_waits_history();
 
  public:
-  ~table_events_waits_history() override {}
+  ~table_events_waits_history() override = default;
 
  private:
   /** Table share lock. */
@@ -271,7 +271,7 @@ class table_events_waits_history_long : public table_events_waits_common {
   table_events_waits_history_long();
 
  public:
-  ~table_events_waits_history_long() override {}
+  ~table_events_waits_history_long() override = default;
 
  private:
   /** Table share lock. */

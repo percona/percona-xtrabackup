@@ -1,4 +1,4 @@
-.. _pxc.installing/docker.running:
+.. _docker:
 
 Running Percona XtraBackup in a `Docker` container
 ********************************************************************************

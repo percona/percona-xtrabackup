@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,13 +51,13 @@ void Ndb_create_helper::check_warnings_and_error() const {
       case Sql_condition::SL_WARNING:
         DBUG_PRINT("info", ("Found warning"));
         // Warnings should come before errors
-        DBUG_ASSERT(!have_error);
+        assert(!have_error);
         have_warning = true;
         break;
       case Sql_condition::SL_ERROR:
         DBUG_PRINT("info", ("Found error"));
         // There should not be more than one error
-        DBUG_ASSERT(!have_error);
+        assert(!have_error);
         have_error = true;
         error_code = cond->mysql_errno();
         break;
@@ -67,13 +67,13 @@ void Ndb_create_helper::check_warnings_and_error() const {
         break;
       default:
         // There are no other severities
-        DBUG_ASSERT(false);
+        assert(false);
         break;
     }
   }
 
   // Check that an error has been set
-  if (!have_error) DBUG_ASSERT(have_error);
+  if (!have_error) assert(have_error);
 
   // Check that a warning which describes the failure has been set
   // in addition to the error message
@@ -86,7 +86,7 @@ void Ndb_create_helper::check_warnings_and_error() const {
         DBUG_PRINT("info", ("Allowing error %u without warning", error_code));
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
         break;
     }
   }
@@ -103,17 +103,22 @@ bool Ndb_create_helper::have_warning() const {
 }
 
 int Ndb_create_helper::set_create_table_error() const {
+  const char *append_warning_text = "";
+  if (have_warning()) {
+    append_warning_text = " (use SHOW WARNINGS for more info).";
+  }
   if (thd_sql_command(m_thd) == SQLCOM_ALTER_TABLE ||
       thd_sql_command(m_thd) == SQLCOM_CREATE_INDEX) {
     // Error occurred while creating the destination table for a copying
     // alter table, print error message describing the problem
     my_printf_error(ER_CANT_CREATE_TABLE,
-                    "Can\'t create destination table for copying alter table",
-                    MYF(0));
+                    "Can\'t create destination table for copying alter "
+                    "table%s",
+                    MYF(0), append_warning_text);
   } else {
     // Print error saying that table couldn't be created
-    my_printf_error(ER_CANT_CREATE_TABLE, "Can\'t create table \'%-.200s\'",
-                    MYF(0), m_table_name);
+    my_printf_error(ER_CANT_CREATE_TABLE, "Can\'t create table \'%-.200s\'%s",
+                    MYF(0), m_table_name, append_warning_text);
   }
   check_warnings_and_error();
 
@@ -126,7 +131,7 @@ int Ndb_create_helper::failed_warning_already_pushed() const {
   // Check that warning describing the problem has already been pushed
   if (!have_warning()) {
     // Crash in debug compile
-    DBUG_ASSERT(false);
+    assert(false);
   }
 
   return set_create_table_error();
@@ -157,7 +162,7 @@ int Ndb_create_helper::failed_missing_create_option(
 
 int Ndb_create_helper::failed_illegal_create_option(const char *reason) const {
   // The format string does not allow the reason to be longer than 64 bytes
-  DBUG_ASSERT(strlen(reason) < 64);
+  assert(strlen(reason) < 64);
   my_error(ER_ILLEGAL_HA_CREATE_OPTION, MYF(0), "ndbcluster", reason);
   check_warnings_and_error();
   // The error has now been reported, return an error code which

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2020, Oracle and/or its affiliates.
+Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -506,7 +506,7 @@ struct TTASEventMutex {
 
       ++n_waits;
 
-      os_thread_yield();
+      std::this_thread::yield();
 
       /* The 4 below is a heuristic that has existed for a
       very long time now. It is unclear if changing this
@@ -574,7 +574,7 @@ struct PolicyMutex {
 #endif /* UNIV_PFS_MUTEX */
   }
 
-  ~PolicyMutex() {}
+  ~PolicyMutex() = default;
 
   /** @return non-const version of the policy */
   Policy &policy() UNIV_NOTHROW { return (m_impl.policy()); }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -69,7 +69,7 @@ class PFS_index_file_summary_by_instance : public PFS_engine_index {
   PFS_index_file_summary_by_instance(PFS_engine_key *key_1)
       : PFS_engine_index(key_1) {}
 
-  ~PFS_index_file_summary_by_instance() override {}
+  ~PFS_index_file_summary_by_instance() override = default;
 
   virtual bool match(const PFS_file *pfs) = 0;
 };
@@ -81,7 +81,7 @@ class PFS_index_file_summary_by_instance_by_instance
       : PFS_index_file_summary_by_instance(&m_key),
         m_key("OBJECT_INSTANCE_BEGIN") {}
 
-  ~PFS_index_file_summary_by_instance_by_instance() override {}
+  ~PFS_index_file_summary_by_instance_by_instance() override = default;
 
   bool match(const PFS_file *pfs) override;
 
@@ -95,7 +95,7 @@ class PFS_index_file_summary_by_instance_by_file_name
   PFS_index_file_summary_by_instance_by_file_name()
       : PFS_index_file_summary_by_instance(&m_key), m_key("FILE_NAME") {}
 
-  ~PFS_index_file_summary_by_instance_by_file_name() override {}
+  ~PFS_index_file_summary_by_instance_by_file_name() override = default;
 
   bool match(const PFS_file *pfs) override;
 
@@ -109,7 +109,7 @@ class PFS_index_file_summary_by_instance_by_event_name
   PFS_index_file_summary_by_instance_by_event_name()
       : PFS_index_file_summary_by_instance(&m_key), m_key("EVENT_NAME") {}
 
-  ~PFS_index_file_summary_by_instance_by_event_name() override {}
+  ~PFS_index_file_summary_by_instance_by_event_name() override = default;
 
   bool match(const PFS_file *pfs) override;
 
@@ -141,7 +141,7 @@ class table_file_summary_by_instance : public PFS_engine_table {
   table_file_summary_by_instance();
 
  public:
-  ~table_file_summary_by_instance() override {}
+  ~table_file_summary_by_instance() override = default;
 
  private:
   int make_row(PFS_file *pfs);

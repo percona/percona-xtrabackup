@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -132,7 +132,7 @@ class ha_federated : public handler {
 
  public:
   ha_federated(handlerton *hton, TABLE_SHARE *table_arg);
-  ~ha_federated() override {}
+  ~ha_federated() override = default;
   /* The name that will be used for display purposes */
   const char *table_type() const override { return "FEDERATED"; }
   /*

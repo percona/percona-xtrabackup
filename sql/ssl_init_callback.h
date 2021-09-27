@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ class OptionalString {
  public:
   OptionalString() : value_(), empty_(true) {}
   OptionalString(const char *s) : value_(s ? s : ""), empty_(!s) {}
-  ~OptionalString() {}
+  ~OptionalString() = default;
   OptionalString(const OptionalString &) = default;
 
   const char *c_str() const { return empty_ ? nullptr : value_.c_str(); }
@@ -67,7 +67,7 @@ class Ssl_init_callback {
 
   virtual bool warn_self_signed_ca() = 0;
 
-  virtual ~Ssl_init_callback() {}
+  virtual ~Ssl_init_callback() = default;
 };
 
 /**
@@ -86,7 +86,7 @@ class Ssl_init_callback_server_main final : public Ssl_init_callback {
 
   bool warn_self_signed_ca() override;
 
-  ~Ssl_init_callback_server_main() override {}
+  ~Ssl_init_callback_server_main() override = default;
 
  private:
   ssl_artifacts_status auto_detect_ssl();
@@ -114,7 +114,7 @@ class Ssl_init_callback_server_admin final : public Ssl_init_callback {
 
   bool warn_self_signed_ca() override;
 
-  ~Ssl_init_callback_server_admin() override {}
+  ~Ssl_init_callback_server_admin() override = default;
 };
 
 extern Ssl_init_callback_server_main server_main_callback;

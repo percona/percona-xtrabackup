@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -38,6 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fil0fil.h"
 #include "mtr0mtr.h"
 
+#ifndef UNIV_HOTBACKUP
 /** Gets a pointer to a file address and latches the page.
 @param[in]	space		Space id
 @param[in]	page_size	Page size
@@ -47,13 +48,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 @param[in,out]	mtr		Mini-transaction
 @return pointer to a byte in (*ptr_block)->frame; the *ptr_block is
 bufferfixed and latched */
-UNIV_INLINE
-byte *fut_get_ptr(space_id_t space, const page_size_t &page_size,
-                  fil_addr_t addr, rw_lock_type_t rw_latch, mtr_t *mtr,
-                  buf_block_t **ptr_block = nullptr)
+static inline byte *fut_get_ptr(space_id_t space, const page_size_t &page_size,
+                                fil_addr_t addr, rw_lock_type_t rw_latch,
+                                mtr_t *mtr, buf_block_t **ptr_block = nullptr)
     MY_ATTRIBUTE((warn_unused_result));
 
-#ifndef UNIV_HOTBACKUP
 #include "fut0fut.ic"
 #endif /* !UNIV_HOTBACKUP */
 

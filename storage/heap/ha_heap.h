@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@ class ha_heap : public handler {
 
  public:
   ha_heap(handlerton *hton, TABLE_SHARE *table);
-  ~ha_heap() override {}
+  ~ha_heap() override = default;
   handler *clone(const char *name, MEM_ROOT *mem_root) override;
   const char *table_type() const override;
   enum ha_key_alg get_default_index_algorithm() const override {

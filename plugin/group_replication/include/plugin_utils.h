@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -118,7 +118,7 @@ class Blocked_transaction_handler {
 template <typename T>
 class Synchronized_queue_interface {
  public:
-  virtual ~Synchronized_queue_interface() {}
+  virtual ~Synchronized_queue_interface() = default;
 
   /**
     Checks if the queue is empty
@@ -257,7 +257,7 @@ class Abortable_synchronized_queue : public Synchronized_queue<T> {
  public:
   Abortable_synchronized_queue() : Synchronized_queue<T>(), m_abort(false) {}
 
-  ~Abortable_synchronized_queue() override {}
+  ~Abortable_synchronized_queue() override = default;
 
   /**
     Inserts an element in the queue.
@@ -499,8 +499,8 @@ class Wait_ticket {
 
   void clear() {
     mysql_mutex_lock(&lock);
-    DBUG_ASSERT(false == blocked);
-    DBUG_ASSERT(false == waiting);
+    assert(false == blocked);
+    assert(false == waiting);
 
     for (typename std::map<K, CountDownLatch *>::iterator it = map.begin();
          it != map.end(); ++it)
@@ -666,11 +666,11 @@ class Wait_ticket {
     while (!map.empty()) {
       struct timespec abstime;
       set_timespec(&abstime, 1);
-#ifndef DBUG_OFF
+#ifndef NDEBUG
       int error =
 #endif
           mysql_cond_timedwait(&cond, &lock, &abstime);
-      DBUG_ASSERT(error == ETIMEDOUT || error == 0);
+      assert(error == ETIMEDOUT || error == 0);
       if (timeout >= 1) {
         timeout = timeout - 1;
       } else if (!map.empty()) {
@@ -699,7 +699,7 @@ class Shared_writelock {
       : shared_write_lock(arg), write_lock_in_use(false) {
     DBUG_TRACE;
 
-    DBUG_ASSERT(arg != nullptr);
+    assert(arg != nullptr);
 
     mysql_mutex_init(key_GR_LOCK_write_lock_protection, &write_lock,
                      MY_MUTEX_INIT_FAST);
@@ -732,7 +732,7 @@ class Shared_writelock {
     mysql_mutex_lock(&write_lock);
     DBUG_EXECUTE_IF("group_replication_continue_kill_pending_transaction", {
       const char act[] = "now SIGNAL signal.gr_applier_early_failure";
-      DBUG_ASSERT(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+      assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
     };);
     while (write_lock_in_use == true)
       mysql_cond_wait(&write_lock_protection, &write_lock);

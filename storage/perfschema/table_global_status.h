@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -62,22 +62,12 @@ class PFS_index_global_status : public PFS_engine_index {
   PFS_index_global_status()
       : PFS_engine_index(&m_key), m_key("VARIABLE_NAME") {}
 
-  ~PFS_index_global_status() override {}
+  ~PFS_index_global_status() override = default;
 
   virtual bool match(const Status_variable *pfs);
 
  private:
   PFS_key_variable_name m_key;
-};
-
-/**
-  Store and retrieve table state information for queries that reinstantiate
-  the table object.
-*/
-class table_global_status_context : public PFS_table_context {
- public:
-  table_global_status_context(ulonglong current_version, bool restore)
-      : PFS_table_context(current_version, restore, THR_PFS_SG) {}
 };
 
 /** Table PERFORMANCE_SCHEMA.GLOBAL_STATUS. */
@@ -106,7 +96,7 @@ class table_global_status : public PFS_engine_table {
   table_global_status();
 
  public:
-  ~table_global_status() override {}
+  ~table_global_status() override = default;
 
  protected:
   int make_row(const Status_variable *system_var);
@@ -125,9 +115,6 @@ class table_global_status : public PFS_engine_table {
   pos_t m_pos;
   /** Next position. */
   pos_t m_next_pos;
-
-  /** Table context with global status array version. */
-  table_global_status_context *m_context;
 
   PFS_index_global_status *m_opened_index;
 };

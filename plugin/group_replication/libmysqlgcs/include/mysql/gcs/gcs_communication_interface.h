@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -169,7 +169,7 @@ class Gcs_communication_interface {
   virtual Gcs_protocol_version get_maximum_supported_protocol_version()
       const = 0;
 
-  virtual ~Gcs_communication_interface() {}
+  virtual ~Gcs_communication_interface() = default;
 };
 
 #endif  // GCS_COMMUNICATION_INTERFACE_H

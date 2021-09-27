@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1218,8 +1218,8 @@ public:
   /**
    * Set/get maximum memory size for event buffer
    */
-  void set_eventbuf_max_alloc(unsigned sz);
-  unsigned get_eventbuf_max_alloc();
+  void set_eventbuf_max_alloc(Uint64 sz);
+  Uint64 get_eventbuf_max_alloc();
 
   /**
    * Set/get free_percent- the % of event buffer memory
@@ -1237,8 +1237,8 @@ public:
       usage_percent(0)
     {}
 
-    Uint32 allocated_bytes;
-    Uint32 used_bytes;
+    Uint64 allocated_bytes;
+    Uint64 used_bytes;
     Uint32 usage_percent; // (used_bytes)*100/eventbuf_max_alloc
   };
   /**
@@ -2188,17 +2188,11 @@ private:
   static
   const char * externalizeTableName(const char * internalTableName,
                                     bool fullyQualifiedNames);
-  const char * externalizeTableName(const char * internalTableName);
   const BaseString internalize_table_name(const char * external_name) const;
 
   static
   const char * externalizeIndexName(const char * internalIndexName,
                                     bool fullyQualifiedNames);
-  const char * externalizeIndexName(const char * internalIndexName);
-  const BaseString old_internalize_index_name(const NdbTableImpl * table,
-					      const char * external_name) const;
-  const BaseString internalize_index_name(const NdbTableImpl * table,
-                                          const char * external_name) const;
 
   static
   const BaseString getDatabaseFromInternalName(const char * internalName);
@@ -2223,7 +2217,7 @@ private:
 
   Uint32                theNextConnectNode;
 
-  bool fullyQualifiedNames;
+  bool deleted_v8_0_24;
 
 
 

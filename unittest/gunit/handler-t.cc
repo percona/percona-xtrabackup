@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -238,7 +238,7 @@ TEST_F(HandlerTest, SamplingInterfaceAllRows) {
   // rnd_init should be called exactly one time by ha_sample_init.
   EXPECT_CALL(mock_handler, rnd_init(true)).Times(1);
   EXPECT_EQ(mock_handler.ha_sample_init(scan_ctx, 100.0, 0,
-                                        enum_sampling_method::SYSTEM),
+                                        enum_sampling_method::SYSTEM, false),
             0);
   EXPECT_EQ(mock_handler.inited, handler::SAMPLING);
 
@@ -271,7 +271,7 @@ TEST_F(HandlerTest, SamplingInterfaceNoRows) {
   // rnd_init should be called exactly one time by ha_sample_init.
   EXPECT_CALL(mock_handler, rnd_init(true)).Times(1);
   EXPECT_EQ(mock_handler.ha_sample_init(scan_ctx, 0.0, 0,
-                                        enum_sampling_method::SYSTEM),
+                                        enum_sampling_method::SYSTEM, false),
             0);
   EXPECT_EQ(mock_handler.inited, handler::SAMPLING);
 

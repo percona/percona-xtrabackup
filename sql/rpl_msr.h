@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -65,8 +65,8 @@ typedef std::map<std::string, Rpl_filter *> filter_map;
   to a slave.
 
   The important objects for a slave are the following:
-  i) Master_info and Relay_log_info (slave_parallel_workers == 0)
-  ii) Master_info, Relay_log_info and Slave_worker(slave_parallel_workers >0 )
+  i) Master_info and Relay_log_info (replica_parallel_workers == 0)
+  ii) Master_info, Relay_log_info and Slave_worker(replica_parallel_workers >0 )
 
   Master_info is always assosiated with a Relay_log_info per channel.
   So, it is enough to store Master_infos and call the corresponding
@@ -156,10 +156,10 @@ class Multisource_info {
       This class should be a singleton.
       The assert below is to prevent it to be instantiated more than once.
     */
-#ifndef DBUG_OFF
+#ifndef NDEBUG
     static int instance_count = 0;
     instance_count++;
-    DBUG_ASSERT(instance_count == 1);
+    assert(instance_count == 1);
 #endif
     current_mi_count = 0;
     default_channel_mi = nullptr;
@@ -287,9 +287,9 @@ class Multisource_info {
       }
     }
 
-#ifndef DBUG_OFF
-    if (Source_IO_monitor::get_instance().is_monitoring_process_running()) {
-      DBUG_ASSERT(count > 0);
+#ifndef NDEBUG
+    if (Source_IO_monitor::get_instance()->is_monitoring_process_running()) {
+      assert(count > 0);
     }
 #endif
 

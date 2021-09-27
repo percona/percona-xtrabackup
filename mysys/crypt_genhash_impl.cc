@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -418,7 +418,7 @@ char *my_crypt_genhash(char *ctbuffer, size_t ctbufflen, const char *plaintext,
 }
 
 /**
-  Generate a random string using ASCII characters but avoid seperator character.
+  Generate a random string using ASCII characters but avoid separator character.
   Stdlib rand and srand are used to produce pseudo random numbers between
   with about 7 bit worth of entropty between 1-127.
 */

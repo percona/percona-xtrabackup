@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,6 @@
 #include <map>
 #include <utility>
 
-#include "my_dbug.h"
 #include "plugin/group_replication/include/hold_transactions.h"
 #include "plugin/group_replication/include/member_info.h"
 #include "plugin/group_replication/include/pipeline_interfaces.h"
@@ -467,7 +466,9 @@ class Transaction_consistency_manager : public Group_transaction_listener {
   std::list<Transaction_consistency_manager_key>
       m_prepared_transactions_on_my_applier;
   std::list<my_thread_id> m_new_transactions_waiting;
-  std::list<Pipeline_event *> m_delayed_view_change_events;
+  std::list<std::pair<Pipeline_event *, Transaction_consistency_manager_key>>
+      m_delayed_view_change_events;
+  Transaction_consistency_manager_key m_last_local_transaction;
 
   std::atomic<bool> m_plugin_stopping;
   std::atomic<bool> m_primary_election_active;

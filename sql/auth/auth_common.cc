@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +57,7 @@ void Auth_id::create_key() {
   m_key.append(m_host.length() ? m_host : "");
 }
 
-Auth_id::Auth_id() {}
+Auth_id::Auth_id() = default;
 
 Auth_id::Auth_id(const char *user, size_t user_len, const char *host,
                  size_t host_len) {
@@ -93,7 +93,7 @@ Auth_id::Auth_id(const Auth_id &id) : m_user(id.m_user), m_host(id.m_host) {
   create_key();
 }
 
-Auth_id::~Auth_id() {}
+Auth_id::~Auth_id() = default;
 
 bool Auth_id::operator<(const Auth_id &id) const { return m_key < id.m_key; }
 
@@ -162,7 +162,7 @@ std::string get_one_priv(ulong &revoke_privs) {
 */
 void set_system_user_flag(THD *thd,
                           bool check_for_main_security_ctx /*= false*/) {
-  DBUG_ASSERT(thd);
+  assert(thd);
   Security_context *sctx = thd->security_context();
   if (check_for_main_security_ctx == false || sctx == &thd->m_main_security_ctx)
     thd->set_system_user(sctx->has_global_grant(consts::system_user.c_str(),

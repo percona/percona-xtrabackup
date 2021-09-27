@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -72,7 +72,7 @@ class PFS_index_session_connect : public PFS_engine_index {
         m_key_1("PROCESSLIST_ID"),
         m_key_2("ATTR_NAME") {}
 
-  ~PFS_index_session_connect() override {}
+  ~PFS_index_session_connect() override = default;
 
   virtual bool match(PFS_thread *pfs);
   virtual bool match(row_session_connect_attrs *row);

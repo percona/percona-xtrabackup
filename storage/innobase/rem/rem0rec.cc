@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2020, Oracle and/or its affiliates.
+Copyright (c) 1994, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -290,7 +290,7 @@ ulint rec_get_nth_field_offs_old(const rec_t *rec, /*!< in: record */
 
 /** Determines the size of a data tuple prefix in ROW_FORMAT=COMPACT.
  @return total size */
-UNIV_INLINE MY_ATTRIBUTE((warn_unused_result)) ulint
+static inline MY_ATTRIBUTE((warn_unused_result)) ulint
     rec_get_converted_size_comp_prefix_low(
         const dict_index_t *index, /*!< in: record descriptor;
                                    dict_table_is_comp() is
@@ -691,11 +691,9 @@ static rec_t *rec_convert_dtuple_to_rec_old(
                                 files in index creation
 @return	true	if this record is an instant record on leaf page
 @retval	false	if not an instant record */
-UNIV_INLINE
-bool rec_convert_dtuple_to_rec_comp(rec_t *rec, const dict_index_t *index,
-                                    const dfield_t *fields, ulint n_fields,
-                                    const dtuple_t *v_entry, ulint status,
-                                    bool temp) {
+static inline bool rec_convert_dtuple_to_rec_comp(
+    rec_t *rec, const dict_index_t *index, const dfield_t *fields,
+    ulint n_fields, const dtuple_t *v_entry, ulint status, bool temp) {
   const dfield_t *field;
   const dtype_t *type;
   byte *end;

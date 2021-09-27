@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,8 @@
 
 #ifndef atrt_config_hpp
 #define atrt_config_hpp
+
+#include <time.h>
 
 #include <NDBT_ReturnCodes.h>
 #include <mgmapi.h>
@@ -82,6 +84,12 @@ enum RestartMode : long {
   After,
   Both,
 };
+
+namespace coverage {
+enum Coverage : long { None, Testcase, Testsuite };
+};
+
+enum CoverageTools : long { Lcov, Fastcov };
 
 struct atrt_host {
   unsigned m_index;
@@ -156,9 +164,9 @@ struct atrt_config {
 };
 
 struct atrt_coverage_config {
-  int m_coverage_prefix_strip;
-  BaseString m_lcov_files_dir;
-  bool m_coverage;
+  int m_prefix_strip;
+  coverage::Coverage m_analysis;
+  CoverageTools m_tool;
 };
 
 struct atrt_testcase {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -236,7 +236,7 @@ static void append_wild(char *to, char *end, const char *wild) {
 **************************************************************************/
 
 void STDCALL mysql_debug(const char *debug MY_ATTRIBUTE((unused))) {
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   char *env;
   if (debug) {
     DBUG_PUSH(debug);
@@ -963,14 +963,14 @@ ulong STDCALL mysql_thread_id(MYSQL *mysql) {
 }
 
 const char *STDCALL mysql_character_set_name(MYSQL *mysql) {
-  return mysql->charset->csname;
+  return replace_utf8_utf8mb3(mysql->charset->csname);
 }
 
 void STDCALL mysql_get_character_set_info(MYSQL *mysql,
                                           MY_CHARSET_INFO *csinfo) {
   csinfo->number = mysql->charset->number;
   csinfo->state = mysql->charset->state;
-  csinfo->csname = mysql->charset->csname;
+  csinfo->csname = replace_utf8_utf8mb3(mysql->charset->csname);
   csinfo->name = mysql->charset->name;
   csinfo->comment = mysql->charset->comment;
   csinfo->mbminlen = mysql->charset->mbminlen;
@@ -1230,7 +1230,7 @@ void set_stmt_error(MYSQL_STMT *stmt, int errcode, const char *sqlstate,
                     const char *err) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("error: %d '%s'", errcode, ER_CLIENT(errcode)));
-  DBUG_ASSERT(stmt != nullptr);
+  assert(stmt != nullptr);
 
   if (err == nullptr) err = ER_CLIENT(errcode);
 
@@ -1250,7 +1250,7 @@ void set_stmt_errmsg(MYSQL_STMT *stmt, NET *net) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("error: %d/%s '%s'", net->last_errno, net->sqlstate,
                        net->last_error));
-  DBUG_ASSERT(stmt != nullptr);
+  assert(stmt != nullptr);
 
   stmt->last_errno = net->last_errno;
   if (net->last_error[0] != '\0') my_stpcpy(stmt->last_error, net->last_error);
@@ -1525,7 +1525,7 @@ static void alloc_stmt_fields(MYSQL_STMT *stmt) {
   MEM_ROOT *fields_mem_root = &stmt->extension->fields_mem_root;
   MYSQL *mysql = stmt->mysql;
 
-  DBUG_ASSERT(stmt->field_count);
+  assert(stmt->field_count);
 
   free_root(fields_mem_root, MYF(0));
 
@@ -1728,12 +1728,22 @@ static inline int add_binary_row(NET *net, MYSQL_STMT *stmt, ulong pkt_len,
   return 0;
 }
 
-/*
+/**
   Auxilary function to send COM_STMT_EXECUTE packet to server and read reply.
-  Used from cli_stmt_execute, which is in turn used by mysql_stmt_execute.
-*/
 
-static bool execute(MYSQL_STMT *stmt, char *packet, ulong length) {
+  Used from @ref cli_stmt_execute, which is in turn used by
+  @ref mysql_stmt_execute.
+
+  @param stmt the stmt to execute
+  @param packet the data for the parameters
+  @param length number of bytes in the buffer "data"
+  @param send_param_count ON if the server properly processes the
+     PARAMETER_COUNT_AVAILABLE flag, so we can send it.
+  @retval false success
+  @retval true failure. error set
+*/
+static bool execute(MYSQL_STMT *stmt, char *packet, ulong length,
+                    bool send_param_count) {
   MYSQL *mysql = stmt->mysql;
   NET *net = &mysql->net;
   uchar buff[4 /* size of stmt id */ + 5 /* execution flags */];
@@ -1745,7 +1755,22 @@ static bool execute(MYSQL_STMT *stmt, char *packet, ulong length) {
   DBUG_DUMP("packet", (uchar *)packet, length);
 
   int4store(buff, stmt->stmt_id); /* Send stmt id to server */
-  buff[4] = (char)stmt->flags;
+  uchar flags = (uchar)stmt->flags;
+
+  /*
+    If the server supports query attributes raise the flag that we
+    are going to be sending the parameter block.
+    Unfortunately there's a bug in processing the flags in servers
+    earlier than 8.0.26 that conflates all the flags into a single
+    boolean. Thus we need to cut off sending PARAMETER_COUNT_AVAILABLE
+    for these
+  */
+  if ((mysql->server_capabilities & CLIENT_QUERY_ATTRIBUTES) != 0 &&
+      send_param_count) {
+    DBUG_PRINT("prep_stmt_exec", ("Setting PARAMETER_COUNT_AVAILABLE"));
+    flags |= PARAMETER_COUNT_AVAILABLE;
+  }
+  buff[4] = (char)(flags);
   int4store(buff + 5, 1); /* iteration count */
 
   res = (cli_advanced_command(mysql, COM_STMT_EXECUTE, buff, sizeof(buff),
@@ -1783,7 +1808,7 @@ static bool execute(MYSQL_STMT *stmt, char *packet, ulong length) {
         return true;
 
       if (is_data_packet) {
-        DBUG_ASSERT(stmt->result.rows == 0);
+        assert(stmt->result.rows == 0);
         prev_ptr = &stmt->result.data;
         if (add_binary_row(net, stmt, pkt_len, &prev_ptr)) return true;
       } else {
@@ -1822,16 +1847,24 @@ static bool execute(MYSQL_STMT *stmt, char *packet, ulong length) {
 
 int cli_stmt_execute(MYSQL_STMT *stmt) {
   DBUG_TRACE;
-
-  if (stmt->param_count) {
-    MYSQL *mysql = stmt->mysql;
+  MYSQL *mysql = stmt->mysql;
+  bool send_named_params =
+      (mysql->server_capabilities & CLIENT_QUERY_ATTRIBUTES) != 0;
+  bool can_deal_with_flags =
+      mysql->server_version && mysql_get_server_version(mysql) >= 80026;
+  /*
+    When the server can deal with flags properly we should send the 0 param
+    count even when there's no parameters when the server supports named
+    parameters to signify there's no query attributes either. We are setting the
+    PARAMETER_COUNT_AVAILABLE later on the same condition in execute()
+  */
+  if (stmt->param_count || send_named_params) {
     uchar *param_data = nullptr;
     bool result;
     unsigned long param_length = 0;
-    bool send_named_params =
-        (mysql->server_capabilities & CLIENT_QUERY_ATTRIBUTES) != 0;
 
-    if (!stmt->bind_param_done) {
+    if (!stmt->bind_param_done &&
+        (!send_named_params || stmt->param_count != 0)) {
       set_stmt_error(stmt, CR_PARAMS_NOT_BOUND, unknown_sqlstate, nullptr);
       return 1;
     }
@@ -1850,18 +1883,19 @@ int cli_stmt_execute(MYSQL_STMT *stmt) {
 
     if (mysql_int_serialize_param_data(
             &mysql->net, stmt->param_count, stmt->params, NULL, 1, &param_data,
-            &param_length, stmt->send_types_to_server, send_named_params,
-            false)) {
+            &param_length, stmt->send_types_to_server, send_named_params, false,
+            can_deal_with_flags)) {
       set_stmt_errmsg(stmt, &mysql->net);
       return 1;
     }
 
-    result = execute(stmt, pointer_cast<char *>(param_data), param_length);
+    result = execute(stmt, pointer_cast<char *>(param_data), param_length,
+                     can_deal_with_flags);
     stmt->send_types_to_server = false;
     my_free(param_data);
     return result;
   }
-  return (int)execute(stmt, nullptr, 0);
+  return (int)execute(stmt, nullptr, 0, can_deal_with_flags);
 }
 
 /*
@@ -2538,7 +2572,7 @@ bool STDCALL mysql_stmt_send_long_data(MYSQL_STMT *stmt, uint param_number,
                                        const char *data, ulong length) {
   MYSQL_BIND *param;
   DBUG_TRACE;
-  DBUG_ASSERT(stmt != nullptr);
+  assert(stmt != nullptr);
   DBUG_PRINT("enter", ("param no: %d  data: %p, length : %ld", param_number,
                        data, length));
 
@@ -3495,7 +3529,7 @@ static bool setup_one_fetch_function(MYSQL_BIND *param, MYSQL_FIELD *field) {
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
     case MYSQL_TYPE_BIT:
-      DBUG_ASSERT(param->buffer_length != 0);
+      assert(param->buffer_length != 0);
       param->fetch_result = fetch_result_bin;
       break;
     case MYSQL_TYPE_VAR_STRING:
@@ -3504,7 +3538,7 @@ static bool setup_one_fetch_function(MYSQL_BIND *param, MYSQL_FIELD *field) {
     case MYSQL_TYPE_NEWDECIMAL:
     case MYSQL_TYPE_NEWDATE:
     case MYSQL_TYPE_JSON:
-      DBUG_ASSERT(param->buffer_length != 0);
+      assert(param->buffer_length != 0);
       param->fetch_result = fetch_result_str;
       break;
     default:
@@ -3664,8 +3698,8 @@ static int stmt_fetch_row(MYSQL_STMT *stmt, uchar *row) {
     Precondition: if stmt->field_count is zero or row is NULL, read_row_*
     function must return no data.
   */
-  DBUG_ASSERT(stmt->field_count);
-  DBUG_ASSERT(row);
+  assert(stmt->field_count);
+  assert(row);
 
   if (!stmt->bind_result_done) {
     /* If output parameters were not bound we should just return success */
@@ -3822,7 +3856,7 @@ int cli_read_binary_rows(MYSQL_STMT *stmt) {
    We could have read one row in execute() due to the lack of a cursor,
    but one at most.
   */
-  DBUG_ASSERT(result->rows <= 1);
+  assert(result->rows <= 1);
   if (result->rows == 1) prev_ptr = &result->data->next;
 
   while ((pkt_len = cli_safe_read(mysql, &is_data_packet)) != packet_error) {
@@ -3890,7 +3924,7 @@ static void stmt_update_metadata(MYSQL_STMT *stmt, MYSQL_ROWS *data) {
   MYSQL_FIELD *field;
   uchar *null_ptr, bit;
   uchar *row = (uchar *)data->data;
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   uchar *row_end = row + data->length;
 #endif
 
@@ -3903,7 +3937,7 @@ static void stmt_update_metadata(MYSQL_STMT *stmt, MYSQL_ROWS *data) {
       field = stmt->fields;
        my_bind < end; my_bind++, field++) {
     if (!(*null_ptr & bit)) (*my_bind->skip_result)(my_bind, field, &row);
-    DBUG_ASSERT(row <= row_end);
+    assert(row <= row_end);
     if (!((bit <<= 1) & 255)) {
       bit = 1; /* To next uchar */
       null_ptr++;
@@ -3992,8 +4026,8 @@ int STDCALL mysql_stmt_store_result(MYSQL_STMT *stmt) {
   }
 
   /* Assert that if there was a cursor, all rows have been fetched */
-  DBUG_ASSERT(mysql->status != MYSQL_STATUS_READY ||
-              (mysql->server_status & SERVER_STATUS_LAST_ROW_SENT));
+  assert(mysql->status != MYSQL_STATUS_READY ||
+         (mysql->server_status & SERVER_STATUS_LAST_ROW_SENT));
 
   if (stmt->update_max_length) {
     MYSQL_ROWS *cur = result->data;
@@ -4204,7 +4238,7 @@ bool STDCALL mysql_stmt_close(MYSQL_STMT *stmt) {
 
 bool STDCALL mysql_stmt_reset(MYSQL_STMT *stmt) {
   DBUG_TRACE;
-  DBUG_ASSERT(stmt != nullptr);
+  assert(stmt != nullptr);
   if (!stmt->mysql) {
     /* mysql can be reset in mysql_close called from mysql_reconnect */
     set_stmt_error(stmt, CR_SERVER_LOST, unknown_sqlstate, nullptr);

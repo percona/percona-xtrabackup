@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -242,7 +242,6 @@ class RestApiComponentTest : public RouterComponentTest {
       kProblemJsonMethodNotAllowed;
 
  protected:
-  TcpPortPool port_pool_;
   const uint16_t http_port_{port_pool_.get_next_available()};
   TempDirectory conf_dir_;
 };

@@ -408,7 +408,7 @@ read_retry:
             "retrying...\n",
             cursor->thread_n, page_no);
 
-        os_thread_sleep(100000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         goto read_retry;
       }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -207,7 +207,7 @@ static void check_locks(THR_LOCK *lock, const char *where,
       for (data = lock->read.data; data; data = data->next) {
         if ((int)data->type == (int)TL_READ_NO_INSERT) count++;
         /* Protect against infinite loop. */
-        DBUG_ASSERT(count <= lock->read_no_write_count);
+        assert(count <= lock->read_no_write_count);
       }
       if (count != lock->read_no_write_count) {
         found_errors++;
@@ -615,10 +615,10 @@ enum enum_thr_lock_result thr_lock(THR_LOCK_DATA *data, THR_LOCK_INFO *owner,
         tries to update t1, is an example of statement which requests two
         different types of write lock on the same table).
       */
-      DBUG_ASSERT(!has_old_lock(lock->write.data, data->owner) ||
-                  ((lock_type <= lock->write.data->type ||
-                    (lock_type == TL_WRITE &&
-                     lock->write.data->type == TL_WRITE_LOW_PRIORITY))));
+      assert(!has_old_lock(lock->write.data, data->owner) ||
+             ((lock_type <= lock->write.data->type ||
+               (lock_type == TL_WRITE &&
+                lock->write.data->type == TL_WRITE_LOW_PRIORITY))));
 
       if ((lock_type == TL_WRITE_ALLOW_WRITE && !lock->write_wait.data &&
            lock->write.data->type == TL_WRITE_ALLOW_WRITE) ||
@@ -1192,7 +1192,7 @@ static void *test_thread(void *arg) {
   THR_LOCK_INFO lock_info;
   THR_LOCK_DATA *multi_locks[MAX_LOCK_COUNT];
   my_thread_id id;
-  mysql_cond_t COND_thr_lock;
+  mysql_cond_t COND_thr_lock{};
 
   id = param + 1; /* Main thread uses value 0. */
   mysql_cond_init(0, &COND_thr_lock);

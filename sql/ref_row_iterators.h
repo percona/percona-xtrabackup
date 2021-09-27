@@ -1,7 +1,7 @@
 #ifndef SQL_REF_ROW_ITERATORS_H
 #define SQL_REF_ROW_ITERATORS_H
 
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "sql/row_iterator.h"
 #include "sql/sql_sort.h"
 
+class Item_func_match;
 class QEP_TAB;
 class THD;
 struct TABLE;
@@ -106,7 +107,7 @@ class EQRefIterator final : public TableRowIterator {
   // since it (by definition) can never scan more than one row. Normally,
   // we should not get this (for nested loop joins, PFS batch mode is not
   // enabled if the innermost iterator is an EQRefIterator); however,
-  // we cannot DBUG_ASSERT(false), since it could happen if we only have
+  // we cannot assert(false), since it could happen if we only have
   // a single table. Thus, just ignore the call should it happen.
   void StartPSIBatchMode() override {}
 
@@ -147,7 +148,8 @@ class ConstIterator final : public TableRowIterator {
 class FullTextSearchIterator final : public TableRowIterator {
  public:
   // "examined_rows", if not nullptr, is incremented for each successful Read().
-  FullTextSearchIterator(THD *thd, TABLE *table, TABLE_REF *ref, bool use_order,
+  FullTextSearchIterator(THD *thd, TABLE *table, TABLE_REF *ref,
+                         Item_func_match *ft_func, bool use_order,
                          ha_rows *examined_rows);
   ~FullTextSearchIterator() override;
 
@@ -156,6 +158,7 @@ class FullTextSearchIterator final : public TableRowIterator {
 
  private:
   TABLE_REF *const m_ref;
+  Item_func_match *const m_ft_func;
   const bool m_use_order;
   ha_rows *const m_examined_rows;
 };

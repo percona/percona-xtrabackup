@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -96,6 +96,10 @@ SET(XCOM_SOURCES
   ${XCOM_SUNRPC_SOURCES}
   ${XCOM_RPCGEN_SOURCES})
 
+IF(SOLARIS AND (MY_COMPILER_IS_GNU_OR_CLANG))
+  ADD_COMPILE_FLAGS(${XCOM_RPCGEN_SOURCES} COMPILE_FLAGS "-Wno-switch")
+ENDIF()
+
 SET(GCS_INTERFACE_SOURCES
   src/interface/gcs_logging.cc
   src/interface/gcs_logging_system.cc
@@ -132,7 +136,7 @@ SET(GCS_SOURCES
   src/bindings/xcom/gcs_xcom_statistics_interface.cc
   src/bindings/xcom/gcs_xcom_proxy.cc
   src/bindings/xcom/gcs_xcom_communication_protocol_changer.cc
-  ../../../extra/lz4/xxhash.c # required by gcs_message_stage_split
+  ${BUNDLED_LZ4_PATH}/xxhash.c # required by gcs_message_stage_split
   src/bindings/xcom/gcs_message_stage_split.cc
   src/bindings/xcom/gcs_xcom_synode.cc
   src/bindings/xcom/gcs_xcom_expels_in_progress.cc)
@@ -169,8 +173,13 @@ ELSEIF(MY_COMPILER_IS_GNU_OR_CLANG)
     "-Wno-unused-function")
   ADD_COMPILE_FLAGS(${XCOM_SUNRPC_SOURCES} ${XCOM_RPCGEN_SOURCES}
     COMPILE_FLAGS
-    "-Wno-unused-variable -Wno-unused-function -Wno-unused-parameter -Wno-incompatible-pointer-types -Wno-unused-local-typedef")
-  IF(SOLARIS)
+    -Wno-incompatible-pointer-types
+    -Wno-unused-function
+    -Wno-unused-local-typedefs
+    -Wno-unused-parameter
+    -Wno-unused-variable
+    )
+  IF(SOLARIS AND MY_COMPILER_IS_GNU)
     # rpcgen generates 'void bzero();'
     ADD_COMPILE_FLAGS(${XCOM_RPCGEN_SOURCES}
       COMPILE_FLAGS
@@ -184,7 +193,9 @@ ADD_COMPILE_DEFINITIONS(
   ${GCS_SOURCES}
   COMPILE_DEFINITIONS MYSQL_DYNAMIC_PLUGIN)
 
-ADD_COMPILE_DEFINITIONS(../../../extra/lz4/xxhash.c
+INCLUDE_DIRECTORIES(${BUNDLED_LZ4_PATH})
+
+ADD_COMPILE_DEFINITIONS(${BUNDLED_LZ4_PATH}/xxhash.c
   COMPILE_DEFINITIONS "XXH_NAMESPACE=GCS_")
 
 # Warn about variable shadowing

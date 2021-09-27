@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2019 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2021 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -146,6 +146,7 @@ extern bool have_flush_engine_logs;
 extern bool have_multi_threaded_slave;
 extern bool have_gtid_slave;
 extern bool have_rocksdb;
+extern bool have_keyring_component;
 
 /* History on server */
 extern time_t history_start_time;

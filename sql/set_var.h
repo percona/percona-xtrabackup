@@ -1,6 +1,6 @@
 #ifndef SET_VAR_INCLUDED
 #define SET_VAR_INCLUDED
-/* Copyright (c) 2002, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -103,6 +103,23 @@ class sys_var {
  public:
   sys_var *next;
   LEX_CSTRING name;
+  /**
+    If the variable has an alias in the persisted variables file, this
+    should point to it.  This has the following consequences:
+    - A SET PERSIST statement that sets either of the variables will
+      persist both variables in the file.
+    - When loading persisted variables, an occurrence of any one of
+      the variables will initialize both variables.
+  */
+  sys_var *m_persisted_alias;
+  /**
+    If m_persist_alias is set, and the current variable is deprecated
+    and m_persist_alias is the recommended substitute, then this flag
+    should be set to true.  This has the consequence that the code
+    that loads persisted variables will generate a warning if it
+    encounters this variable but does not encounter the alias.
+  */
+  bool m_is_persisted_deprecated;
   enum flag_enum {
     GLOBAL = 0x0001,
     SESSION = 0x0002,
@@ -138,6 +155,7 @@ class sys_var {
 
  protected:
   typedef bool (*on_check_function)(sys_var *self, THD *thd, set_var *var);
+  typedef bool (*pre_update_function)(sys_var *self, THD *thd, set_var *var);
   typedef bool (*on_update_function)(sys_var *self, THD *thd,
                                      enum_var_type type);
 
@@ -148,6 +166,11 @@ class sys_var {
   PolyLock *guard;                ///< *second* lock that protects the variable
   ptrdiff_t offset;  ///< offset to the value from global_system_variables
   on_check_function on_check;
+  /**
+    Pointer to function to be invoked before updating system variable (but
+    after calling on_check hook), while we do not hold any locks yet.
+  */
+  pre_update_function pre_update;
   on_update_function on_update;
   const char *const deprecation_substitute;
   bool is_os_charset;  ///< true if the value is in character_set_filesystem
@@ -163,10 +186,13 @@ class sys_var {
           longlong def_val, PolyLock *lock,
           enum binlog_status_enum binlog_status_arg,
           on_check_function on_check_func, on_update_function on_update_func,
-          const char *substitute, int parse_flag);
+          const char *substitute, int parse_flag,
+          sys_var *persisted_alias = nullptr,
+          bool is_persisted_deprecated = false);
 
-  virtual ~sys_var() {}
+  virtual ~sys_var() = default;
 
+  const char *get_deprecation_substitute() { return deprecation_substitute; }
   /**
     All the cleanup procedures should be performed here
   */
@@ -184,7 +210,7 @@ class sys_var {
   virtual void update_default(longlong new_def_value) {
     option.def_value = new_def_value;
   }
-  longlong get_default() { return option.def_value; }
+  virtual longlong get_default() { return option.def_value; }
   virtual longlong get_min_value() { return option.min_value; }
   virtual ulonglong get_max_value() { return option.max_value; }
   /**
@@ -195,33 +221,28 @@ class sys_var {
   virtual ulong get_var_type() { return (option.var_type & GET_TYPE_MASK); }
   virtual void set_arg_source(get_opt_arg_source *) {}
   virtual void set_is_plugin(bool) {}
-  enum_variable_source get_source() { return source.m_source; }
-  const char *get_source_name() { return source.m_path_name; }
-  void set_source(enum_variable_source src) {
+  virtual enum_variable_source get_source() { return source.m_source; }
+  virtual const char *get_source_name() { return source.m_path_name; }
+  virtual void set_source(enum_variable_source src) {
     option.arg_source->m_source = src;
   }
-  bool set_source_name(const char *path) {
+  virtual bool set_source_name(const char *path) {
     return set_and_truncate(option.arg_source->m_path_name, path,
                             sizeof(option.arg_source->m_path_name));
   }
-  bool set_user(const char *usr) {
+  virtual bool set_user(const char *usr) {
     return set_and_truncate(user, usr, sizeof(user));
   }
-  const char *get_user() { return user; }
-  const char *get_host() { return host; }
-  bool set_host(const char *hst) {
+  virtual const char *get_user() { return user; }
+  virtual const char *get_host() { return host; }
+  virtual bool set_host(const char *hst) {
     return set_and_truncate(host, hst, sizeof(host));
   }
-  ulonglong get_timestamp() const { return timestamp; }
-  void set_user_host(THD *thd);
+  virtual ulonglong get_timestamp() const { return timestamp; }
+  virtual void set_user_host(THD *thd);
   my_option *get_option() { return &option; }
-  void set_timestamp() { timestamp = my_micro_time(); }
-  void set_timestamp(ulonglong ts) { timestamp = ts; }
-  void clear_user_host_timestamp() {
-    user[0] = '\0';
-    host[0] = '\0';
-    timestamp = 0;
-  }
+  virtual void set_timestamp() { timestamp = my_micro_time(); }
+  virtual void set_timestamp(ulonglong ts) { timestamp = ts; }
   virtual bool is_non_persistent() { return flags & NOTPERSIST; }
 
   /**
@@ -258,6 +279,14 @@ class sys_var {
     that support the syntax @@keycache_name.variable_name
   */
   bool is_struct() { return option.var_type & GET_ASK_ADDR; }
+  /*
+    Indicates whether this system variable is written to the binlog or not.
+
+    Variables are written to the binlog as part of "status_vars" in
+    Query_log_event, as an Intvar_log_event, or a Rand_log_event.
+
+    @return true if the variable is written to the binlog, false otherwise.
+  */
   bool is_written_to_binlog(enum_var_type type) {
     return type != OPT_GLOBAL && binlog_status == SESSION_VARIABLE_IN_BINLOG;
   }
@@ -309,14 +338,29 @@ class sys_var {
   void save_default(THD *thd, set_var *var) { global_save_default(thd, var); }
 
  private:
+  /**
+    Like strncpy, but ensures the destination is '\0'-terminated.  Is
+    also safe to call if dst==string (but not if they overlap in any
+    other way).
+
+    @param dst Target string
+    @param string Source string
+    @param sizeof_dst Size of the dst buffer
+    @retval false The entire string was copied to dst
+    @retval true strlen(string) was bigger than or equal to sizeof_dst, so
+    dst contains only the sizeof_dst-1 first characters of string.
+  */
   inline static bool set_and_truncate(char *dst, const char *string,
                                       size_t sizeof_dst) {
+    if (dst == string) return false;
     size_t string_length = strlen(string), length;
     length = std::min(sizeof_dst - 1, string_length);
     memcpy(dst, string, length);
     dst[length] = 0;
     return length < string_length;  // truncated
   }
+
+ private:
   virtual bool do_check(THD *thd, set_var *var) = 0;
   /**
     save the session default value of the variable in var
@@ -347,6 +391,29 @@ class sys_var {
   uchar *session_var_ptr(THD *thd);
 
   uchar *global_var_ptr();
+
+  friend class Sys_var_alias;
+};
+
+class Sys_var_tracker {
+ public:
+  Sys_var_tracker(sys_var *var);
+
+  sys_var *bind_system_variable(THD *thd);
+
+  bool operator==(const Sys_var_tracker &x) const {
+    return m_var && m_var == x.m_var;
+  }
+
+  LEX_CSTRING get_var_name() const { return m_name; }
+  bool is_sys_var(sys_var *x) const { return m_var == x; }
+  bool is_plugin_var() const { return m_is_dynamic; }
+
+ private:
+  const bool m_is_dynamic;   ///< true if dynamic variable
+  const LEX_CSTRING m_name;  ///< variable name
+
+  sys_var *m_var;  ///< variable pointer
 };
 
 /****************************************************************************
@@ -360,8 +427,8 @@ class sys_var {
 */
 class set_var_base {
  public:
-  set_var_base() {}
-  virtual ~set_var_base() {}
+  set_var_base() = default;
+  virtual ~set_var_base() = default;
   virtual int resolve(THD *thd) = 0;  ///< Check privileges & fix_fields
   virtual int check(THD *thd) = 0;    ///< Evaluate the expression
   virtual int update(THD *thd) = 0;   ///< Set the value
@@ -371,6 +438,7 @@ class set_var_base {
     @returns whether this variable is @@@@optimizer_trace.
   */
   virtual bool is_var_optimizer_trace() const { return false; }
+  virtual void cleanup() {}
 
   /**
     Used only by prepared statements to resolve and check. No locking of tables
@@ -399,6 +467,10 @@ class set_var : public set_var_base {
   LEX_CSTRING
   base; /**< for structured variables, like keycache_name.variable_name */
 
+ private:
+  Sys_var_tracker var_tracker;
+
+ public:
   set_var(enum_var_type type_arg, sys_var *var_arg, LEX_CSTRING base_name_arg,
           Item *value_arg);
 
@@ -421,8 +493,9 @@ class set_var : public set_var_base {
   }
   bool is_var_optimizer_trace() const override {
     extern sys_var *Sys_optimizer_trace_ptr;
-    return var == Sys_optimizer_trace_ptr;
+    return var_tracker.is_sys_var(Sys_optimizer_trace_ptr);
   }
+  void cleanup() override { var = nullptr; }
 };
 
 /* User variables like @my_own_variable */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -115,6 +115,9 @@ log_service_error make_log_path(char *result, const char *name_or_ext);
 
 /**
   Acquire an exclusive lock on the error logger core.
+
+  Used e.g. to pause all logging while the previous run's
+  log is read to performance_schema.error_log.
 */
 void log_builtins_error_stack_wrlock();
 

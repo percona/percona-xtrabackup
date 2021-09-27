@@ -1,7 +1,7 @@
 #ifndef HISTOGRAMS_VALUE_MAP_INCLUDED
 #define HISTOGRAMS_VALUE_MAP_INCLUDED
 
-/* Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -131,7 +131,7 @@ class Value_map_base {
   Value_map_base(const CHARSET_INFO *charset, double sampling_rate,
                  Value_map_type data_type);
 
-  virtual ~Value_map_base() {}
+  virtual ~Value_map_base() = default;
 
   /**
     Returns the number of [value, count] pairs in the Value_map.

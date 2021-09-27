@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,7 @@ class PFS_index_threads : public PFS_engine_index {
   PFS_index_threads(PFS_engine_key *key_1, PFS_engine_key *key_2)
       : PFS_engine_index(key_1, key_2) {}
 
-  ~PFS_index_threads() override {}
+  ~PFS_index_threads() override = default;
 
   virtual bool match(PFS_thread *pfs) = 0;
 };
@@ -66,7 +66,7 @@ class cursor_by_thread : public PFS_engine_table {
   cursor_by_thread(const PFS_engine_table_share *share);
 
  public:
-  ~cursor_by_thread() override {}
+  ~cursor_by_thread() override = default;
 
  protected:
   virtual int make_row(PFS_thread *thread) = 0;

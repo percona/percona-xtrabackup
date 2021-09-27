@@ -1,7 +1,7 @@
 #ifndef ITEM_CMPFUNC_INCLUDED
 #define ITEM_CMPFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 
 /* compare and test functions */
 
+#include <assert.h>
 #include <sys/types.h>
 
 #include <cstring>
@@ -33,7 +34,7 @@
 #include "field_types.h"
 #include "my_alloc.h"
 #include "my_compiler.h"
-#include "my_dbug.h"
+
 #include "my_inttypes.h"
 #include "my_table_map.h"
 #include "my_time.h"
@@ -61,7 +62,7 @@ class Item_sum_hybrid;
 class Json_scalar_holder;
 class Json_wrapper;
 class PT_item_list;
-class SELECT_LEX;
+class Query_block;
 class THD;
 struct CHARSET_INFO;
 struct MY_BITMAP;
@@ -131,11 +132,11 @@ class HashJoinCondition {
 class Arg_comparator {
   Item **left{nullptr};
   Item **right{nullptr};
-  arg_cmp_func func;
+  arg_cmp_func func{nullptr};
   Item_result_field *owner;
   Arg_comparator *comparators{nullptr};  // used only for compare_row()
   uint16 comparator_count{0};
-  double precision;
+  double precision{0.0};
   /* Fields used in DATE/DATETIME comparison. */
   Item *left_cache{nullptr};  // Cached values of "left" and "right" items
   Item *right_cache{nullptr};
@@ -236,7 +237,7 @@ class Arg_comparator {
     Set correct cmp_context if items would be compared as INTs.
   */
   inline void set_cmp_context_for_datetime() {
-    DBUG_ASSERT(func == &Arg_comparator::compare_datetime);
+    assert(func == &Arg_comparator::compare_datetime);
     if ((*left)->is_temporal()) (*left)->cmp_context = INT_RESULT;
     if ((*right)->is_temporal()) (*right)->cmp_context = INT_RESULT;
   }
@@ -289,23 +290,24 @@ class Arg_comparator {
 };
 
 class Item_bool_func : public Item_int_func {
- public:
-  Item_bool_func() : Item_int_func(), m_created_by_in2exists(false) {}
-  explicit Item_bool_func(const POS &pos)
-      : Item_int_func(pos), m_created_by_in2exists(false) {}
+ protected:
+  Item_bool_func() : Item_int_func() {}
+  explicit Item_bool_func(const POS &pos) : Item_int_func(pos) {}
 
-  Item_bool_func(Item *a) : Item_int_func(a), m_created_by_in2exists(false) {}
-  Item_bool_func(const POS &pos, Item *a)
-      : Item_int_func(pos, a), m_created_by_in2exists(false) {}
+  explicit Item_bool_func(Item *a) : Item_int_func(a) {}
+  Item_bool_func(const POS &pos, Item *a) : Item_int_func(pos, a) {}
 
-  Item_bool_func(Item *a, Item *b)
-      : Item_int_func(a, b), m_created_by_in2exists(false) {}
-  Item_bool_func(const POS &pos, Item *a, Item *b)
-      : Item_int_func(pos, a, b), m_created_by_in2exists(false) {}
+  Item_bool_func(Item *a, Item *b, Item *c) : Item_int_func(a, b, c) {}
+  Item_bool_func(Item *a, Item *b) : Item_int_func(a, b) {}
+  Item_bool_func(const POS &pos, Item *a, Item *b) : Item_int_func(pos, a, b) {}
+  Item_bool_func(const POS &pos, Item *a, Item *b, Item *c)
+      : Item_int_func(pos, a, b, c) {}
 
   Item_bool_func(THD *thd, Item_bool_func *item)
       : Item_int_func(thd, item),
         m_created_by_in2exists(item->m_created_by_in2exists) {}
+
+ public:
   bool is_bool_func() const override { return true; }
   bool resolve_type(THD *thd) override {
     max_length = 1;
@@ -327,7 +329,7 @@ class Item_bool_func : public Item_int_func {
     True <=> this item was added by IN->EXISTS subquery transformation, and
     should thus be deleted if we switch to materialization.
   */
-  bool m_created_by_in2exists;
+  bool m_created_by_in2exists{false};
 };
 
 /**
@@ -415,7 +417,7 @@ class Item_func_truth final : public Item_bool_func {
       case BOOL_NOT_FALSE:
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
     }
   }
   Item_func_truth(Item *a, Bool_test truth_test)
@@ -428,7 +430,7 @@ class Item_func_truth final : public Item_bool_func {
       case BOOL_NOT_FALSE:
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
     }
   }
   void apply_is_true() override {
@@ -492,8 +494,8 @@ class Item_in_optimizer final : public Item_bool_func {
   }
   bool fix_fields(THD *, Item **) override;
   bool fix_left(THD *thd, Item **ref);
-  void fix_after_pullout(SELECT_LEX *parent_select,
-                         SELECT_LEX *removed_select) override;
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block) override;
   bool is_null() override;
   longlong val_int() override;
   void cleanup() override;
@@ -510,7 +512,7 @@ class Item_in_optimizer final : public Item_bool_func {
 /// Abstract factory interface for creating comparison predicates.
 class Comp_creator {
  public:
-  virtual ~Comp_creator() {}
+  virtual ~Comp_creator() = default;
   virtual Item_bool_func *create(Item *a, Item *b) const = 0;
 
   /// This interface is only used by Item_allany_subselect.
@@ -551,7 +553,7 @@ class Equal_creator : public Linear_comp_creator {
  public:
   const char *symbol(bool invert MY_ATTRIBUTE((unused))) const override {
     // This will never be called with true.
-    DBUG_ASSERT(!invert);
+    assert(!invert);
     return "<=>";
   }
 
@@ -601,31 +603,36 @@ class Le_creator : public Comp_creator {
   bool l_op() const override { return true; }
 };
 
-class Item_bool_func2 : public Item_bool_func { /* Bool with 2 string args */
+/// Base class for functions that usually take two arguments, which are possibly
+/// strings, and perform some kind of comparison on the two arguments and return
+/// a boolean. The functions may take more than two arguments (for example, LIKE
+/// takes an optional third argument in the ESCAPE clause), but all of the
+/// functions perform a comparison between the first two arguments, and extra
+/// arguments are modifiers that affect how the comparison is performed.
+class Item_bool_func2 : public Item_bool_func {
  private:
   bool convert_constant_arg(THD *thd, Item *field, Item **item,
                             bool *converted);
 
  protected:
   Arg_comparator cmp;
-  bool abort_on_null;
+  bool abort_on_null{false};
 
- public:
   Item_bool_func2(Item *a, Item *b)
-      : Item_bool_func(a, b),
-        cmp(m_embedded_arguments, m_embedded_arguments + 1),
-        abort_on_null(false) {}
+      : Item_bool_func(a, b), cmp(args, args + 1) {}
+
+  Item_bool_func2(Item *a, Item *b, Item *c)
+      : Item_bool_func(a, b, c), cmp(args, args + 1) {}
 
   Item_bool_func2(const POS &pos, Item *a, Item *b)
-      : Item_bool_func(pos, a, b),
-        cmp(m_embedded_arguments, m_embedded_arguments + 1),
-        abort_on_null(false) {}
+      : Item_bool_func(pos, a, b), cmp(args, args + 1) {}
 
+  Item_bool_func2(const POS &pos, Item *a, Item *b, Item *c)
+      : Item_bool_func(pos, a, b, c), cmp(args, args + 1) {}
+
+ public:
   bool resolve_type(THD *) override;
-  bool set_cmp_func() {
-    return cmp.set_cmp_func(this, m_embedded_arguments,
-                            m_embedded_arguments + 1, true);
-  }
+  bool set_cmp_func() { return cmp.set_cmp_func(this, args, args + 1, true); }
   /**
      When comparing strings, compare at most max_str_length bytes.
      @param max_str_length how much to compare
@@ -865,7 +872,7 @@ class Item_func_trig_cond final : public Item_bool_func {
   }
   void add_trig_func_tables() {
     if (trig_type == IS_NOT_NULL_COMPL || trig_type == FOUND_MATCH) {
-      DBUG_ASSERT(m_join != nullptr);
+      assert(m_join != nullptr);
       // Make this function dependent on the inner tables
       used_tables_cache |= get_inner_tables();
     } else if (trig_type == OUTER_FIELD_IS_NOT_NULL) {
@@ -1134,6 +1141,28 @@ class Item_func_le final : public Item_func_comparison {
 };
 
 /**
+  Internal function used by subquery to derived tranformation to check
+  if a subquery is scalar. We model it to check if the count is greater than
+  1 using Item_func_gt.
+*/
+
+class Item_func_reject_if : public Item_bool_func {
+ public:
+  Item_func_reject_if(Item *a) : Item_bool_func(a) {}
+  longlong val_int() override;
+  const char *func_name() const override { return "reject_if"; }
+  /// Redefine to avoid pushing into derived table
+  bool check_column_from_derived_table(
+      uchar *arg MY_ATTRIBUTE((unused))) override {
+    return true;
+  }
+  float get_filtering_effect(THD *thd, table_map filter_for_table,
+                             table_map read_tables,
+                             const MY_BITMAP *fields_to_ignore,
+                             double rows_in_table) override;
+};
+
+/**
   Implements the comparison operator less than (<)
 */
 class Item_func_lt final : public Item_func_comparison {
@@ -1232,8 +1261,8 @@ class Item_func_between final : public Item_func_opt_neg {
   enum Functype functype() const override { return BETWEEN; }
   const char *func_name() const override { return "between"; }
   bool fix_fields(THD *, Item **) override;
-  void fix_after_pullout(SELECT_LEX *parent_select,
-                         SELECT_LEX *removed_select) override;
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block) override;
   bool resolve_type(THD *) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
@@ -1327,6 +1356,7 @@ class Item_func_coalesce : public Item_func_numhybrid {
   Item_func_coalesce(const POS &pos, Item *a) : Item_func_numhybrid(pos, a) {
     null_on_null = false;
   }
+  Item_func_coalesce(Item *a) : Item_func_numhybrid(a) { null_on_null = false; }
 
  public:
   Item_func_coalesce(const POS &pos, PT_item_list *list)
@@ -1336,6 +1366,10 @@ class Item_func_coalesce : public Item_func_numhybrid {
   enum_field_types default_data_type() const override {
     return MYSQL_TYPE_VARCHAR;
   }
+  Item_func_coalesce(Item *a, Item *b) : Item_func_numhybrid(a, b) {
+    null_on_null = false;
+  }
+  TYPELIB *get_typelib() const override;
   double real_op() override;
   longlong int_op() override;
   String *str_op(String *) override;
@@ -1371,7 +1405,6 @@ class Item_func_ifnull final : public Item_func_coalesce {
   bool val_json(Json_wrapper *result) override;
   const char *func_name() const override { return "ifnull"; }
   Field *tmp_table_field(TABLE *table) override;
-  uint decimal_precision() const override;
 };
 
 /**
@@ -1382,6 +1415,7 @@ class Item_func_ifnull final : public Item_func_coalesce {
 class Item_func_any_value final : public Item_func_coalesce {
  public:
   Item_func_any_value(const POS &pos, Item *a) : Item_func_coalesce(pos, a) {}
+  Item_func_any_value(Item *a) : Item_func_coalesce(a) {}
   const char *func_name() const override { return "any_value"; }
   bool aggregate_check_group(uchar *arg) override;
   bool aggregate_check_distinct(uchar *arg) override;
@@ -1414,9 +1448,9 @@ class Item_func_if final : public Item_func {
   }
   bool resolve_type(THD *thd) override;
   bool resolve_type_inner(THD *thd) override;
-  void fix_after_pullout(SELECT_LEX *parent_select,
-                         SELECT_LEX *removed_select) override;
-  uint decimal_precision() const override;
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block) override;
+  TYPELIB *get_typelib() const override;
   const char *func_name() const override { return "if"; }
   enum Functype functype() const override { return IF_FUNC; }
   void update_used_tables() override;
@@ -1447,11 +1481,11 @@ class Item_func_nullif final : public Item_bool_func2 {
   }
   bool resolve_type(THD *thd) override;
   bool resolve_type_inner(THD *thd) override;
-  uint decimal_precision() const override {
-    return args[0]->decimal_precision();
-  }
   const char *func_name() const override { return "nullif"; }
   enum Functype functype() const override { return NULLIF_FUNC; }
+
+  // No, we should NOT inherit from Item_bool_func2
+  uint decimal_precision() const override { return Item::decimal_precision(); }
 
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override {
@@ -1482,7 +1516,7 @@ class in_vector {
    */
   explicit in_vector(uint elements) : count(elements), used_count(elements) {}
 
-  virtual ~in_vector() {}
+  virtual ~in_vector() = default;
 
   /**
     Calls item->val_int() or item->val_str() etc.
@@ -1688,8 +1722,8 @@ class in_decimal final : public in_vector {
 
 class cmp_item {
  public:
-  cmp_item() {}
-  virtual ~cmp_item() {}
+  cmp_item() = default;
+  virtual ~cmp_item() = default;
   virtual void store_value(Item *item) = 0;
   /**
      @returns result (true, false or UNKNOWN) of
@@ -1739,7 +1773,7 @@ class cmp_item_string final : public cmp_item_scalar {
   }
 
   void store_value(Item *item) override {
-    String *res = item->val_str(&value);
+    String *res = eval_string_arg(cmp_charset, item, &value);
     if (res && (res != &value || !res->is_alloced())) {
       // 'res' may point in item's transient internal data, so make a copy
       value.copy(*res);
@@ -1748,17 +1782,7 @@ class cmp_item_string final : public cmp_item_scalar {
     set_null_value(item->null_value);
   }
 
-  int cmp(Item *arg) override {
-    StringBuffer<STRING_BUFFER_USUAL_SIZE> tmp(cmp_charset);
-    String *res = arg->val_str(&tmp);
-    if (m_null_value || arg->null_value) return UNKNOWN;
-    if (value_res && res)
-      return sortcmp(value_res, res, cmp_charset) != 0;
-    else if (!value_res && !res)
-      return false;
-    else
-      return true;
-  }
+  int cmp(Item *arg) override;
   cmp_item *make_same() override;
 };
 
@@ -1924,7 +1948,7 @@ class Item_func_case final : public Item_func {
   }
   bool resolve_type(THD *thd) override;
   bool resolve_type_inner(THD *thd) override;
-  uint decimal_precision() const override;
+  TYPELIB *get_typelib() const override;
   enum Item_result result_type() const override { return cached_result_type; }
   const char *func_name() const override { return "case"; }
   void print(const THD *thd, String *str,
@@ -1986,8 +2010,8 @@ class Item_func_in final : public Item_func_opt_neg {
   ~Item_func_in() override;
   longlong val_int() override;
   bool fix_fields(THD *, Item **) override;
-  void fix_after_pullout(SELECT_LEX *parent_select,
-                         SELECT_LEX *removed_select) override;
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block) override;
   bool resolve_type(THD *) override;
   void update_used_tables() override;
   uint decimal_precision() const override { return 1; }
@@ -2111,11 +2135,11 @@ class in_row final : public in_vector {
     tmp->set_comparator(col, comparator);
   }
   Item_basic_constant *create_item(MEM_ROOT *) const override {
-    DBUG_ASSERT(false);
+    assert(false);
     return nullptr;
   }
   void value_to_item(uint, Item_basic_constant *) const override {
-    DBUG_ASSERT(false);
+    assert(false);
   }
 
  private:
@@ -2128,9 +2152,8 @@ class in_row final : public in_vector {
 class Item_func_isnull : public Item_bool_func {
   typedef Item_bool_func super;
 
- protected:
   bool cache_used = false;
-  longlong cached_value;
+  bool cached_value;
 
  public:
   Item_func_isnull(Item *a) : super(a) { null_on_null = false; }
@@ -2174,6 +2197,7 @@ class Item_is_not_null_test final : public Item_func_isnull {
   enum Functype functype() const override { return ISNOTNULLTEST_FUNC; }
   longlong val_int() override;
   const char *func_name() const override { return "<is_not_null_test>"; }
+  bool resolve_type(THD *thd) override;
   void update_used_tables() override;
   /**
     We add RAND_TABLE_BIT to prevent moving this item from HAVING to WHERE.
@@ -2199,7 +2223,7 @@ class Item_func_isnotnull final : public Item_bool_func {
   longlong val_int() override;
   enum Functype functype() const override { return ISNOTNULL_FUNC; }
   bool resolve_type(THD *thd) override {
-    maybe_null = false;
+    set_nullable(false);
     return Item_bool_func::resolve_type(thd);
   }
   const char *func_name() const override { return "isnotnull"; }
@@ -2220,30 +2244,26 @@ class Item_func_isnotnull final : public Item_bool_func {
 };
 
 class Item_func_like final : public Item_bool_func2 {
-  typedef Item_bool_func2 super;
-
-  Item *escape_item;
-
-  bool escape_used_in_parsing;
   /// True if escape clause is const (a literal)
   bool escape_is_const = false;
   /// Tells if the escape clause has been evaluated.
   bool escape_evaluated = false;
   bool eval_escape_clause(THD *thd);
+  /// The escape character (0 if no escape character).
+  int m_escape;
 
  public:
-  int escape;
-
-  Item_func_like(Item *a, Item *b, Item *escape_arg, bool escape_used)
-      : Item_bool_func2(a, b),
-        escape_item(escape_arg),
-        escape_used_in_parsing(escape_used) {}
-  Item_func_like(const POS &pos, Item *a, Item *b, Item *opt_escape_arg)
-      : super(pos, a, b),
-        escape_item(opt_escape_arg),
-        escape_used_in_parsing(opt_escape_arg != nullptr) {}
-
-  bool itemize(Parse_context *pc, Item **res) override;
+  Item_func_like(Item *a, Item *b) : Item_bool_func2(a, b) {}
+  Item_func_like(Item *a, Item *b, Item *escape_arg)
+      : Item_bool_func2(a, b, escape_arg) {
+    assert(escape_arg != nullptr);
+  }
+  Item_func_like(const POS &pos, Item *a, Item *b, Item *escape_arg)
+      : Item_bool_func2(pos, a, b, escape_arg) {
+    assert(escape_arg != nullptr);
+  }
+  Item_func_like(const POS &pos, Item *a, Item *b)
+      : Item_bool_func2(pos, a, b) {}
 
   longlong val_int() override;
   enum Functype functype() const override { return LIKE_FUNC; }
@@ -2254,12 +2274,21 @@ class Item_func_like final : public Item_bool_func2 {
   bool resolve_type(THD *) override;
   void cleanup() override;
   Item *replace_scalar_subquery(uchar *) override;
-  void update_used_tables() override;
+  // Overridden because Item_bool_func2::print() doesn't print the ESCAPE
+  // clause.
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
   /**
     @retval true non default escape char specified
                  using "expr LIKE pat ESCAPE 'escape_char'" syntax
   */
-  bool escape_was_used_in_parsing() const { return escape_used_in_parsing; }
+  bool escape_was_used_in_parsing() const { return arg_count > 2; }
+
+  /// Returns the escape character.
+  int escape() const {
+    assert(escape_is_evaluated());
+    return m_escape;
+  }
 
   /**
     Has the escape clause been evaluated? It only needs to be evaluated
@@ -2311,23 +2340,23 @@ class Item_cond : public Item_bool_func {
   Item_cond(List<Item> &nlist)
       : Item_bool_func(), list(nlist), abort_on_null(false) {}
   bool add(Item *item) {
-    DBUG_ASSERT(item);
+    assert(item);
     return list.push_back(item);
   }
   bool add_at_head(Item *item) {
-    DBUG_ASSERT(item);
+    assert(item);
     return list.push_front(item);
   }
   void add_at_head(List<Item> *nlist) {
-    DBUG_ASSERT(nlist->elements);
+    assert(nlist->elements);
     list.prepend(nlist);
   }
 
   bool itemize(Parse_context *pc, Item **res) override;
 
   bool fix_fields(THD *, Item **ref) override;
-  void fix_after_pullout(SELECT_LEX *parent_select,
-                         SELECT_LEX *removed_select) override;
+  void fix_after_pullout(Query_block *parent_query_block,
+                         Query_block *removed_query_block) override;
 
   Type type() const override { return COND_ITEM; }
   List<Item> *argument_list() { return &list; }
@@ -2470,7 +2499,7 @@ class Item_equal final : public Item_bool_func {
     // Multiple equality nodes (Item_equal) should have been
     // converted back to simple equalities (Item_func_eq) by
     // substitute_for_best_equal_field before cast nodes are injected.
-    DBUG_ASSERT(false);
+    assert(false);
     return false;
   }
 
@@ -2609,7 +2638,7 @@ inline Item *and_conds(Item *a, Item *b) {
   return item;
 }
 
-longlong get_datetime_value(THD *thd, Item ***item_arg, Item **cache_arg,
+longlong get_datetime_value(THD *thd, Item ***item_arg, Item ** /* cache_arg */,
                             const Item *warn_item, bool *is_null);
 
 // TODO: the next two functions should be moved to sql_time.{h,cc}

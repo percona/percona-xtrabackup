@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -107,7 +107,7 @@ class PFS_ringbuffer_index {
     @param other  set our index to the position after the given one
   */
   void set_after(const PFS_ringbuffer_index *other) {
-    DBUG_ASSERT(other != nullptr);
+    assert(other != nullptr);
 
     // special case: ``other`` was reset or is otherwise at index start
     if ((other->m_index == 0) &&
@@ -241,7 +241,7 @@ class PFS_index_error_log : public PFS_engine_index {
  public:
   PFS_index_error_log(PFS_engine_key *key) : PFS_engine_index(key) {}
 
-  ~PFS_index_error_log() {}
+  ~PFS_index_error_log() = default;
 
   virtual bool match(log_sink_pfs_event *row) = 0;
 };
@@ -262,7 +262,7 @@ class cursor_by_error_log : public PFS_engine_table {
   cursor_by_error_log(const PFS_engine_table_share *share);
 
  public:
-  ~cursor_by_error_log() override {}
+  ~cursor_by_error_log() override = default;
 
  protected:
   virtual int make_row(log_sink_pfs_event *row) = 0;

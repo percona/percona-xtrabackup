@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include <NdbTick.h>
 #include <NdbCondition.h>
 #include <NdbSleep.h>
+#include <EventLogger.hpp>
 
 static NdbTableImpl * f_invalid_table = 0;
 static NdbTableImpl * f_altered_table = 0;
@@ -110,7 +111,7 @@ LocalDictCache::drop(const BaseString& name){
   assert(!is_ndb_blob_table(name.c_str()));
   Ndb_local_table_info *info=
       m_tableHash.deleteKey(name.c_str(), name.length());
-  DBUG_ASSERT(info != 0);
+  assert(info != 0);
   Ndb_local_table_info::destroy(info);
 }
 
@@ -477,9 +478,9 @@ GlobalDictCache::release(const NdbTableImpl * tab, int invalidate)
   
   for(i = 0; i<sz; i++){
     TableVersion & ver = (* vers)[i];
-    ndbout_c("%d: version: %d refCount: %d status: %d impl: %p",
-	     i, ver.m_version, ver.m_refCount,
-	     ver.m_status, ver.m_impl);
+    g_eventLogger->info("%d: version: %d refCount: %d status: %d impl: %p", i,
+                        ver.m_version, ver.m_refCount, ver.m_status,
+                        ver.m_impl);
   }
   
   abort();

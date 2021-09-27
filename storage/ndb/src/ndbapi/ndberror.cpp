@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -278,13 +278,13 @@ ErrorBundle ErrorCodes[] = {
   { 293,  DMEC, TR, "Out of attribute buffers in TC block, increase SharedGlobalMemory" },
   { 312,  DMEC, TR, "Out of LongMessageBuffer" },
   { 414,  DMEC, TR, "414" },
-  { 418,  DMEC, TR, "Out of transaction buffers in LQH, increase LongSignalMemory" },
-  { 419,  DMEC, TR, "Out of signal memory, increase LongSignalMemory" },
+  { 418,  DMEC, TR, "Out of transaction buffers in LQH, increase LongMessageBuffer" },
+  { 419,  DMEC, TR, "Out of signal memory, increase LongMessageBuffer" },
   { 245,  DMEC, TR, "Too many active scans, increase MaxNoOfConcurrentScans" },
   { 488,  DMEC, TR, "Too many active scans" },
   { 489,  DMEC, TR, "Out of scan records in LQH, increase SharedGlobalMemory" },
   { 490,  DMEC, TR, "Too many active scans" },
-  { 805,  DMEC, TR, "Out of attrinfo records in tuple manager, increase LongSignalMemory" },
+  { 805,  DMEC, TR, "Out of attrinfo records in tuple manager, increase LongMessageBuffer" },
   { 830,  DMEC, TR, "Out of add fragment operation records" },
   { 873,  DMEC, TR, "Out of transaction memory in local data manager, ordered index data (increase SharedGlobalMemory)" },
   { 899,  DMEC, TR, "Rowid already allocated" },
@@ -462,6 +462,7 @@ ErrorBundle ErrorCodes[] = {
   { 323,  DMEC, AE, "Invalid nodegroup id, nodegroup already existing" },
   { 324,  DMEC, AE, "Invalid node(s) specified for new nodegroup, no node in nodegroup is started" },
   { 325,  DMEC, AE, "Invalid node(s) specified for new nodegroup, node ID invalid or undefined" },
+  { 326,  DMEC, AE, "Same node(s) specified for new nodegroup" },
   { 417,  DMEC, AE, "Bad operation reference - double unlock" },
 
   /** 
@@ -618,6 +619,7 @@ ErrorBundle ErrorCodes[] = {
   { 796,  DMEC, SE, "Out of schema transaction memory" },
   { 798,  DMEC, AE, "A disk table must not be specified as no logging" },
   { 799,  HA_WRONG_CREATE_OPTION, SE, "Non default partitioning without partitions" },
+  { 4377, DMEC, AE, "Database and schema name must be set on Ndb object"},
 
   /**
    * FunctionNotImplemented

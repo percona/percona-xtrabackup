@@ -1,5 +1,5 @@
 /* 
-   Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2007, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,8 @@
 
 #include <ndb_global.h>
 
+#include "cstring"
+
 #include "Win32AsyncFile.hpp"
 
 #include <signaldata/FsRef.hpp>
@@ -33,7 +35,7 @@
 #define JAM_FILE_ID 399
 
 
-Win32AsyncFile::Win32AsyncFile(SimulatedBlock& fs) :
+Win32AsyncFile::Win32AsyncFile(Ndbfs& fs) :
   AsyncFile(fs)
 {
 }

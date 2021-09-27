@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "sql/malloc_allocator.h"  // Malloc_allocator
-#include "sql/psi_memory_key.h"    // key_memory_Recovered_xa_transactions
+#include "sql/psi_memory_key.h"    // key_memory_xa_recovered_transactions
 #include "sql/sql_cmd.h"           // Sql_cmd
 #include "sql/sql_list.h"          // List
 #include "sql/sql_plugin_ref.h"    // plugin_ref
@@ -259,7 +259,7 @@ typedef struct xid_t {
   const char *get_data() const { return data; }
 
   void set_data(const void *v, long l) {
-    DBUG_ASSERT(l <= XIDDATASIZE);
+    assert(l <= XIDDATASIZE);
     memcpy(data, v, l);
   }
 
@@ -315,7 +315,7 @@ typedef struct xid_t {
     return serialize_xid(buf, formatID, gtrid_length, bqual_length, data);
   }
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   /**
      Get printable XID value.
 
@@ -326,7 +326,14 @@ typedef struct xid_t {
   */
   char *xid_to_str(char *buf) const;
 #endif
+  /**
+    Check if equal to another xid.
 
+    @param[in]  xid   the id of another X/Open XA transaction
+
+    @return true iff formats, gtrid_length, bqual_length and the content of
+            gtrid_length+bqual_length bytes is exactly the same
+  */
   bool eq(const xid_t *xid) const {
     return xid->formatID == formatID && xid->gtrid_length == gtrid_length &&
            xid->bqual_length == bqual_length &&
@@ -451,7 +458,7 @@ class XID_STATE {
   }
 
   void start_normal_xa(const XID *xid) {
-    DBUG_ASSERT(m_xid.is_null());
+    assert(m_xid.is_null());
     xa_state = XA_ACTIVE;
     m_xid.set(xid);
     in_recovery = false;

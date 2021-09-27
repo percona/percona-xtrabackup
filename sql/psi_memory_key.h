@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,9 +59,11 @@ extern PSI_memory_key key_memory_string_service_iterator;
 /*
   These are defined in psi_memory_key.cc
  */
+extern PSI_memory_key key_memory_DD_cache_infrastructure;
 extern PSI_memory_key key_memory_DD_column_statistics;
 extern PSI_memory_key key_memory_DD_default_values;
 extern PSI_memory_key key_memory_DD_import;
+extern PSI_memory_key key_memory_DD_objects;
 extern PSI_memory_key key_memory_DD_String_type;
 extern PSI_memory_key key_memory_Event_queue_element_for_exec_names;
 extern PSI_memory_key key_memory_Event_scheduler_scheduler_param;
@@ -92,14 +94,14 @@ extern PSI_memory_key key_memory_QUICK_RANGE_SELECT_mrr_buf_desc;
 extern PSI_memory_key key_memory_Quick_ranges;
 extern PSI_memory_key key_memory_READ_INFO;
 extern PSI_memory_key key_memory_READ_RECORD_cache;
-extern PSI_memory_key key_memory_Recovered_xa_transactions;
+extern PSI_memory_key key_memory_xa_recovered_transactions;
 extern PSI_memory_key key_memory_Row_data_memory_memory;
 extern PSI_memory_key key_memory_Rpl_info_file_buffer;
 extern PSI_memory_key key_memory_Rpl_info_table;
-extern PSI_memory_key key_memory_SLAVE_INFO;
+extern PSI_memory_key key_memory_REPLICA_INFO;
 extern PSI_memory_key key_memory_ST_SCHEMA_TABLE;
 extern PSI_memory_key key_memory_Slave_applier_json_diff_vector;
-extern PSI_memory_key key_memory_Slave_job_group_group_relay_log_name;
+extern PSI_memory_key key_memory_Replica_job_group_group_relay_log_name;
 extern PSI_memory_key key_memory_Sys_var_charptr_value;
 extern PSI_memory_key key_memory_TABLE;
 extern PSI_memory_key key_memory_TABLE_RULE_ENT;
@@ -113,7 +115,7 @@ extern PSI_memory_key key_memory_THD_variables;
 extern PSI_memory_key key_memory_Unique_merge_buffer;
 extern PSI_memory_key key_memory_Unique_sort_buffer;
 extern PSI_memory_key key_memory_User_level_lock;
-extern PSI_memory_key key_memory_XID;
+extern PSI_memory_key key_memory_xa_transaction_contexts;
 extern PSI_memory_key key_memory_acl_mem;
 extern PSI_memory_key key_memory_acl_memex;
 extern PSI_memory_key key_memory_acl_cache;
@@ -126,10 +128,10 @@ extern PSI_memory_key key_memory_bison_stack;
 extern PSI_memory_key key_memory_blob_mem_storage;
 extern PSI_memory_key key_memory_db_worker_hash_entry;
 extern PSI_memory_key key_memory_delegate;
-extern PSI_memory_key key_memory_errmsgs;
+extern PSI_memory_key key_memory_errmsgs_server;
 extern PSI_memory_key key_memory_global_system_variables;
-extern PSI_memory_key key_memory_handler_errmsgs;
-extern PSI_memory_key key_memory_handlerton;
+extern PSI_memory_key key_memory_errmsgs_handler;
+extern PSI_memory_key key_memory_handlerton_objects;
 extern PSI_memory_key key_memory_hash_index_key_buffer;
 extern PSI_memory_key key_memory_hash_join;
 extern PSI_memory_key key_memory_help;
@@ -141,20 +143,22 @@ extern PSI_memory_key key_memory_my_bitmap_map;
 extern PSI_memory_key key_memory_my_str_malloc;
 extern PSI_memory_key key_memory_opt_bin_logname;
 extern PSI_memory_key key_memory_partition_syntax_buffer;
-extern PSI_memory_key key_memory_prepared_statement_map;
+extern PSI_memory_key key_memory_prepared_statement_infrastructure;
 extern PSI_memory_key key_memory_prepared_statement_main_mem_root;
-extern PSI_memory_key key_memory_prune_partitions_exec;
+extern PSI_memory_key key_memory_partitions_prune_exec;
 extern PSI_memory_key key_memory_queue_item;
 extern PSI_memory_key key_memory_quick_group_min_max_select_root;
 extern PSI_memory_key key_memory_quick_index_merge_root;
 extern PSI_memory_key key_memory_quick_range_select_root;
 extern PSI_memory_key key_memory_quick_ror_intersect_select_root;
 extern PSI_memory_key key_memory_quick_ror_union_select_root;
+extern PSI_memory_key key_memory_rm_db_mdl_reqs_root;
+extern PSI_memory_key key_memory_rm_table_foreach_root;
 extern PSI_memory_key key_memory_rpl_filter;
-extern PSI_memory_key key_memory_rpl_slave_check_temp_dir;
+extern PSI_memory_key key_memory_rpl_replica_check_temp_dir;
 extern PSI_memory_key key_memory_servers;
 extern PSI_memory_key key_memory_shared_memory_name;
-extern PSI_memory_key key_memory_show_slave_status_io_gtid_set;
+extern PSI_memory_key key_memory_show_replica_status_io_gtid_set;
 extern PSI_memory_key key_memory_sp_head_call_root;
 extern PSI_memory_key key_memory_sp_head_execute_root;
 extern PSI_memory_key key_memory_sp_head_main_root;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,13 +23,13 @@
 #ifndef DD__SPATIAL_REFERENCE_SYSTEM_IMPL_INCLUDED
 #define DD__SPATIAL_REFERENCE_SYSTEM_IMPL_INCLUDED
 
+#include <assert.h>
 #include <stdio.h>
 
 #include <cstddef>  // std::nullptr_t
 #include <memory>   // std::unique_ptr
 #include <new>
 
-#include "my_dbug.h"
 #include "my_inttypes.h"
 #include "nullable.h"
 #include "sql/dd/impl/types/entity_object_impl.h"  // dd::Entity_object_impl
@@ -182,7 +182,7 @@ class Spatial_reference_system_impl : public Entity_object_impl,
         return gis::Coordinate_system::kGeographic;
       default:
         /* purecov: begin deadcode */
-        DBUG_ASSERT(false);
+        assert(false);
         return gis::Coordinate_system::kCartesian;
         /* purecov: end */
     }
@@ -262,14 +262,14 @@ class Spatial_reference_system_impl : public Entity_object_impl,
   }
 
   double to_radians(double d) const override {
-    DBUG_ASSERT(is_geographic());
-    DBUG_ASSERT(angular_unit() > 0.0);
+    assert(is_geographic());
+    assert(angular_unit() > 0.0);
     return d * angular_unit();
   }
 
   double from_radians(double d) const override {
-    DBUG_ASSERT(is_geographic());
-    DBUG_ASSERT(angular_unit() > 0.0);
+    assert(is_geographic());
+    assert(angular_unit() > 0.0);
     return d / angular_unit();
   }
 
@@ -365,6 +365,18 @@ class Spatial_reference_system_impl : public Entity_object_impl,
 
   Spatial_reference_system *clone() const override {
     return new Spatial_reference_system_impl(*this);
+  }
+
+  Spatial_reference_system *clone_dropped_object_placeholder() const override {
+    /*
+      Even though we don't drop SRSes en masse we still create slimmed
+      down version for consistency sake.
+    */
+    Spatial_reference_system_impl *placeholder =
+        new Spatial_reference_system_impl();
+    placeholder->set_id(id());
+    placeholder->set_name(name());
+    return placeholder;
   }
 };
 

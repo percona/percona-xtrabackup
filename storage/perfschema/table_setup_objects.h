@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,7 @@ class PFS_index_setup_objects : public PFS_engine_index {
         m_key_2("OBJECT_SCHEMA"),
         m_key_3("OBJECT_NAME") {}
 
-  ~PFS_index_setup_objects() override {}
+  ~PFS_index_setup_objects() override = default;
 
   virtual bool match(PFS_setup_object *pfs);
   virtual bool match(row_setup_objects *row);
@@ -117,7 +117,7 @@ class table_setup_objects : public PFS_engine_table {
   table_setup_objects();
 
  public:
-  ~table_setup_objects() override {}
+  ~table_setup_objects() override = default;
 
  private:
   int make_row(PFS_setup_object *pfs);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -188,7 +188,7 @@ class Abstract_table_impl : public Entity_object_impl,
  protected:
   Abstract_table_impl();
 
-  ~Abstract_table_impl() override {}
+  ~Abstract_table_impl() override = default;
 
  private:
   // Fields.

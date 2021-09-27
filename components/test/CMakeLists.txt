@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -148,4 +148,9 @@ MYSQL_ADD_COMPONENT(test_component_deinit
   MODULE_ONLY
   TEST_ONLY
   LINK_LIBRARIES mysys
+  )
+MYSQL_ADD_COMPONENT(test_mysql_system_variable_set
+  test_mysql_system_variable_set.cc
+  MODULE_ONLY
+  TEST_ONLY
   )

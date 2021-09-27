@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,12 +27,14 @@
 
 #include "storage/perfschema/pfs_instr_class.h"
 
+#include <assert.h>
 #include <string.h>
 #include <algorithm>
 #include <atomic>
 
 #include "lex_string.h"
 #include "lf.h"
+
 #include "my_dbug.h"
 #include "my_macros.h"
 #include "my_sys.h"
@@ -49,6 +51,7 @@
 #include "storage/perfschema/pfs_program.h"
 #include "storage/perfschema/pfs_setup_object.h"
 #include "storage/perfschema/pfs_timer.h"
+#include "storage/perfschema/terminology_use_previous.h"
 
 /**
   @defgroup performance_schema_buffers Performance Schema Buffers
@@ -226,6 +229,61 @@ uint cond_class_start = 0;
 uint file_class_start = 0;
 uint wait_class_max = 0;
 uint socket_class_start = 0;
+
+const char *PFS_instr_name::str() const {
+  DBUG_TRACE;
+  if (m_private_old_name != nullptr &&
+      terminology_use_previous::is_older_required(m_private_version))
+    return m_private_old_name;
+  else
+    return m_private_name;
+}
+
+uint PFS_instr_name::length() const {
+  if (m_private_old_name != nullptr &&
+      terminology_use_previous::is_older_required(m_private_version))
+    return m_private_old_name_length;
+  else
+    return m_private_name_length;
+}
+
+/**
+  Like strlen (or POSIX strnlen), but don't read past the max_len'th
+  character.
+
+  This is useful when the string may be terminated without '\0' at the
+  end of the buffer.
+
+  @param s The string
+  @param max_len The maxmium length
+  @return The length of the string, or max_len if the string is longer
+  than that.
+*/
+static uint safe_strlen(const char *s, uint max_len) {
+  const char *end =
+      static_cast<const char *>(memchr(s, '\0', static_cast<size_t>(max_len)));
+  return end == nullptr ? max_len : static_cast<uint>(end - s);
+}
+
+constexpr uint PFS_instr_name::max_length;
+
+void PFS_instr_name::set(PFS_class_type class_type, const char *name,
+                         uint max_length_arg) {
+  // Copy the given name to the member.
+  uint length = safe_strlen(name, std::min(max_length, max_length_arg));
+  memcpy(m_private_name, name, length);
+  m_private_name[length] = '\0';
+  m_private_name_length = length;
+
+  // Check if there is an alternative name to use when
+  // @@terminology_use_previous is enabled.
+  auto compatible_name =
+      terminology_use_previous::lookup(class_type, std::string{name, length});
+  m_private_old_name = compatible_name.old_name;
+  m_private_old_name_length =
+      compatible_name.old_name ? strlen(compatible_name.old_name) : 0;
+  m_private_version = compatible_name.version;
+}
 
 void init_event_name_sizing(const PFS_global_param *param) {
   /* global table I/O, table lock, idle, metadata */
@@ -441,9 +499,9 @@ static const uchar *table_share_hash_get_key(const uchar *entry,
   const PFS_table_share *share;
   const void *result;
   typed_entry = reinterpret_cast<const PFS_table_share *const *>(entry);
-  DBUG_ASSERT(typed_entry != nullptr);
+  assert(typed_entry != nullptr);
   share = *typed_entry;
-  DBUG_ASSERT(share != nullptr);
+  assert(share != nullptr);
   *length = share->m_key.m_key_length;
   result = &share->m_key.m_hash_key[0];
   return reinterpret_cast<const uchar *>(result);
@@ -496,8 +554,8 @@ static void set_table_share_key(PFS_table_share_key *key, bool temporary,
                                 size_t schema_name_length,
                                 const char *table_name,
                                 size_t table_name_length) {
-  DBUG_ASSERT(schema_name_length <= NAME_LEN);
-  DBUG_ASSERT(table_name_length <= NAME_LEN);
+  assert(schema_name_length <= NAME_LEN);
+  assert(table_name_length <= NAME_LEN);
   char *saved_schema_name;
   char *saved_table_name;
 
@@ -574,7 +632,7 @@ void PFS_table_share::destroy_lock_stat() {
   @return a table share index
 */
 PFS_table_share_index *PFS_table_share::find_index_stat(uint index) const {
-  DBUG_ASSERT(index <= MAX_INDEXES);
+  assert(index <= MAX_INDEXES);
 
   return this->m_race_index_stat[index].load();
 }
@@ -587,7 +645,7 @@ PFS_table_share_index *PFS_table_share::find_index_stat(uint index) const {
 */
 PFS_table_share_index *PFS_table_share::find_or_create_index_stat(
     const TABLE_SHARE *server_share, uint index) {
-  DBUG_ASSERT(index <= MAX_INDEXES);
+  assert(index <= MAX_INDEXES);
 
   /* (1) Atomic Load */
   PFS_table_share_index *pfs = this->m_race_index_stat[index].load();
@@ -699,7 +757,7 @@ int init_table_share_index_stat(uint index_stat_sizing) {
 */
 PFS_table_share_index *create_table_share_index_stat(
     const TABLE_SHARE *server_share, uint server_index) {
-  DBUG_ASSERT((server_share != nullptr) || (server_index == MAX_INDEXES));
+  assert((server_share != nullptr) || (server_index == MAX_INDEXES));
 
   PFS_table_share_index *pfs = nullptr;
   pfs_dirty_state dirty_state;
@@ -953,10 +1011,9 @@ static void init_instr_class(PFS_instr_class *klass, const char *name,
                              uint name_length, int flags, int volatility,
                              const char *documentation,
                              PFS_class_type class_type) {
-  DBUG_ASSERT(name_length <= PFS_MAX_INFO_NAME_LENGTH);
+  assert(name_length <= PFS_MAX_INFO_NAME_LENGTH);
   memset(klass, 0, sizeof(PFS_instr_class));
-  strncpy(klass->m_name, name, name_length);
-  klass->m_name_length = name_length;
+  klass->m_name.set(class_type, name, name_length);
   klass->m_flags = flags;
   klass->m_volatility = volatility;
   klass->m_enabled = true;
@@ -995,8 +1052,8 @@ static void configure_instr_class(PFS_instr_class *entry) {
 
       Consecutive wildcards affect the count.
     */
-    if (!my_wildcmp(&my_charset_latin1, entry->m_name,
-                    entry->m_name + entry->m_name_length, e->m_name,
+    if (!my_wildcmp(&my_charset_latin1, entry->m_name.str(),
+                    entry->m_name.str() + entry->m_name.length(), e->m_name,
                     e->m_name + e->m_name_length, '\\', '?', '%')) {
       if (e->m_name_length >= match_length) {
         entry->m_enabled = e->m_enabled;
@@ -1008,11 +1065,11 @@ static void configure_instr_class(PFS_instr_class *entry) {
 }
 
 #define REGISTER_CLASS_BODY_PART(INDEX, ARRAY, MAX, NAME, NAME_LENGTH) \
-  for (INDEX = 0; INDEX < MAX; INDEX++) {                              \
+  for (INDEX = 0; INDEX < MAX; ++INDEX) {                              \
     entry = &ARRAY[INDEX];                                             \
-    if ((entry->m_name_length == NAME_LENGTH) &&                       \
-        (strncmp(entry->m_name, NAME, NAME_LENGTH) == 0)) {            \
-      DBUG_ASSERT(entry->m_flags == info->m_flags);                    \
+    if ((entry->m_name.length() == NAME_LENGTH) &&                     \
+        (strncmp(entry->m_name.str(), NAME, NAME_LENGTH) == 0)) {      \
+      assert(entry->m_flags == info->m_flags);                         \
       return (INDEX + 1);                                              \
     }                                                                  \
   }
@@ -1147,8 +1204,8 @@ PFS_sync_key register_rwlock_class(const char *name, uint name_length,
                                PSI_FLAG_RWLOCK_PR);
 
     /* One of rwlock, prlock, sxlock */
-    DBUG_ASSERT(((info->m_flags & PSI_FLAG_RWLOCK_SX) == 0) ||
-                ((info->m_flags & PSI_FLAG_RWLOCK_PR) == 0));
+    assert(((info->m_flags & PSI_FLAG_RWLOCK_SX) == 0) ||
+           ((info->m_flags & PSI_FLAG_RWLOCK_PR) == 0));
 
     /* Set user-defined configuration options for this instrument */
     configure_instr_class(entry);
@@ -1263,14 +1320,8 @@ PFS_thread_key register_thread_class(const char *name, uint name_length,
   uint32 index;
   PFS_thread_class *entry;
 
-  for (index = 0; index < thread_class_max; index++) {
-    entry = &thread_class_array[index];
-
-    if ((entry->m_name_length == name_length) &&
-        (strncmp(entry->m_name, name, name_length) == 0)) {
-      return (index + 1);
-    }
-  }
+  REGISTER_CLASS_BODY_PART(index, thread_class_array, thread_class_max, name,
+                           name_length);
 
   index = thread_class_dirty_count++;
 
@@ -1850,7 +1901,7 @@ void PFS_table_share::sum_io(PFS_single_stat *result, uint key_count) {
   uint index;
   PFS_table_share_index *stat;
 
-  DBUG_ASSERT(key_count <= MAX_INDEXES);
+  assert(key_count <= MAX_INDEXES);
 
   /* Sum stats for each index, if any */
   for (index = 0; index < key_count; index++) {
@@ -1891,7 +1942,7 @@ void PFS_table_share::aggregate_lock(void) {
 }
 
 void release_table_share(PFS_table_share *pfs) {
-  DBUG_ASSERT(pfs->get_refcount() > 0);
+  assert(pfs->get_refcount() > 0);
   pfs->dec_refcount();
 }
 

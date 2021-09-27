@@ -87,8 +87,6 @@ User's Manual
 Advanced Features
 =================
 
-..    advanced/lockless_bin-log
-
 .. toctree::
    :maxdepth: 1
    :glob:
@@ -106,6 +104,20 @@ Security
 
    security/pxb-selinux
    security/pxb-apparmor
+
+xbcloud Binary
+==================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   xbcloud/xbcloud
+   xbcloud/xbcloud_swift
+   xbcloud/xbcloud_s3
+   xbcloud/xbcloud_minio
+   xbcloud/xbcloud_gcs
+   xbcloud/xbcloud_exbackoff
 
 Tutorials, Recipes, How-tos
 ===========================
@@ -131,12 +143,12 @@ References
    :maxdepth: 1
    :glob:
 
+   release-notes
    xtrabackup_bin/xbk_option_reference
-   xbcloud/xbcloud
+   
    xbcrypt/xbcrypt
    xbstream/xbstream
    faq
-   release-notes
    glossary
    xtrabackup-files
    trademark-policy

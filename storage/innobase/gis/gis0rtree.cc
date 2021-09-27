@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1633,8 +1633,9 @@ void rtr_node_ptr_delete(dict_index_t *index, btr_cur_t *sea_cur,
   ibool compressed;
   dberr_t err;
 
-  compressed = btr_cur_pessimistic_delete(&err, TRUE, sea_cur, BTR_CREATE_FLAG,
-                                          false, 0, 0, 0, mtr);
+  compressed =
+      btr_cur_pessimistic_delete(&err, TRUE, sea_cur, BTR_CREATE_FLAG, false, 0,
+                                 0, 0, mtr, nullptr, nullptr);
   ut_a(err == DB_SUCCESS);
 
   if (!compressed) {

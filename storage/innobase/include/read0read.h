@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2020, Oracle and/or its affiliates.
+Copyright (c) 1997, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -90,8 +90,14 @@ class MVCC {
 
   /**
   Set the view creator transaction id. Note: This shouldbe set only
-  for views created by RW transactions. */
-  static void set_view_creator_trx_id(ReadView *view, trx_id_t id);
+  for views created by RW transactions.
+  @param view   Set the creator trx id for this view
+  @param id     Transaction id to set */
+  static void set_view_creator_trx_id(ReadView *view, trx_id_t id) {
+    ut_ad(id > 0);
+
+    view->creator_trx_id(id);
+  }
 
  private:
   /**
@@ -118,7 +124,7 @@ class MVCC {
   MVCC &operator=(const MVCC &);
 
  private:
-  typedef UT_LIST_BASE_NODE_T(ReadView) view_list_t;
+  typedef UT_LIST_BASE_NODE_T(ReadView, m_view_list) view_list_t;
 
   /** Free views ready for reuse. */
   view_list_t m_free;

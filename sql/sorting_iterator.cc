@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -65,6 +65,24 @@
 using std::string;
 using std::vector;
 
+// If the table is scanned with a FullTextSearchIterator, tell the
+// corresponding full-text function that it is no longer using an
+// index scan. Used by the sorting iterators when switching the
+// underlying scans to random access mode after the sorting is done
+// and before the iterator above it starts reading the sorted rows.
+static void EndFullTextIndexScan(TABLE *table) {
+  if (table->file->ft_handler != nullptr) {
+    for (Item_func_match &ft_func :
+         *table->pos_in_table_list->query_block->ftfunc_list) {
+      if (ft_func.master == nullptr &&
+          ft_func.ft_handler == table->file->ft_handler) {
+        ft_func.score_from_index_scan = false;
+        break;
+      }
+    }
+  }
+}
+
 SortFileIndirectIterator::SortFileIndirectIterator(
     THD *thd, Mem_root_array<TABLE *> tables, IO_CACHE *tempfile,
     bool ignore_not_found_rows, bool has_null_flags, ha_rows *examined_rows)
@@ -95,12 +113,12 @@ bool SortFileIndirectIterator::Init() {
     // to reset it here.
     table->file->ha_index_or_rnd_end();
 
-    // Item_func_match::val_real() seemingly uses the existence of
-    // table->file->ft_handler as check for whether the match score
-    // is already present (which is the case when scanning the base
-    // table, but not when running this iterator), so we need to
-    // clear it out.
-    table->file->ft_end();
+    // Item_func_match::val_real() needs to know whether the match
+    // score is already present (which is the case when scanning the
+    // base table using a FullTextSearchIterator, but not when
+    // running this iterator), so we need to tell it that it needs
+    // to fetch the score when it's called.
+    EndFullTextIndexScan(table);
 
     int error = table->file->ha_rnd_init(false);
     if (error) {
@@ -118,16 +136,6 @@ bool SortFileIndirectIterator::Init() {
   }
 
   return false;
-}
-
-void SortFileIndirectIterator::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
-  }
 }
 
 static int HandleError(THD *thd, TABLE *table, int error) {
@@ -225,8 +233,8 @@ int SortFileIterator<Packed_addon_fields>::Read() {
     // First read length of the record.
     if (my_b_read(m_io_cache, destination, len_sz)) return -1;
     uint res_length = Addon_fields::read_addon_length(destination);
-    DBUG_ASSERT(res_length > len_sz);
-    DBUG_ASSERT(m_sort->using_addon_fields());
+    assert(res_length > len_sz);
+    assert(m_sort->using_addon_fields());
 
     // Then read the rest of the record.
     if (my_b_read(m_io_cache, destination + len_sz, res_length - len_sz))
@@ -241,17 +249,6 @@ int SortFileIterator<Packed_addon_fields>::Read() {
     ++*m_examined_rows;
   }
   return 0;
-}
-
-template <bool Packed_addon_fields>
-void SortFileIterator<Packed_addon_fields>::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
-  }
 }
 
 template <bool Packed_addon_fields>
@@ -309,17 +306,6 @@ int SortBufferIterator<Packed_addon_fields>::Read() {
   return 0;
 }
 
-template <bool Packed_addon_fields>
-void SortBufferIterator<Packed_addon_fields>::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
-  }
-}
-
 SortBufferIndirectIterator::SortBufferIndirectIterator(
     THD *thd, Mem_root_array<TABLE *> tables, Sort_result *sort_result,
     bool ignore_not_found_rows, bool has_null_flags, ha_rows *examined_rows)
@@ -332,7 +318,7 @@ SortBufferIndirectIterator::SortBufferIndirectIterator(
 
 SortBufferIndirectIterator::~SortBufferIndirectIterator() {
   m_sort_result->sorted_result.reset();
-  DBUG_ASSERT(!m_sort_result->sorted_result_in_fsbuf);
+  assert(!m_sort_result->sorted_result_in_fsbuf);
   m_sort_result->sorted_result_in_fsbuf = false;
 
   for (TABLE *table : m_tables) {
@@ -350,12 +336,12 @@ bool SortBufferIndirectIterator::Init() {
     // to reset it here.
     table->file->ha_index_or_rnd_end();
 
-    // Item_func_match::val_real() seemingly uses the existence of
-    // table->file->ft_handler as check for whether the match score
-    // is already present (which is the case when scanning the base
-    // table, but not when running this iterator), so we need to
-    // clear it out.
-    table->file->ft_end();
+    // Item_func_match::val_real() needs to know whether the match
+    // score is already present (which is the case when scanning the
+    // base table using a FullTextSearchIterator, but not when
+    // running this iterator), so we need to tell it that it needs
+    // to fetch the score when it's called.
+    EndFullTextIndexScan(table);
 
     int error = table->file->ha_rnd_init(false);
     if (error) {
@@ -408,16 +394,6 @@ int SortBufferIndirectIterator::Read() {
       ++*m_examined_rows;
     }
     return 0;
-  }
-}
-
-void SortBufferIndirectIterator::SetNullRowFlag(bool is_null_row) {
-  for (TABLE *table : m_tables) {
-    if (is_null_row) {
-      table->set_null_row();
-    } else {
-      table->reset_null_row();
-    }
   }
 }
 
@@ -496,10 +472,10 @@ bool SortingIterator::Init() {
     m_sort_result.io_cache =
         nullptr;  // The result iterator has taken ownership.
   } else {
-    DBUG_ASSERT(m_sort_result.has_result_in_memory());
+    assert(m_sort_result.has_result_in_memory());
     if (m_fs_info.using_addon_fields()) {
       DBUG_PRINT("info", ("using SortBufferIterator"));
-      DBUG_ASSERT(m_sort_result.sorted_result_in_fsbuf);
+      assert(m_sort_result.sorted_result_in_fsbuf);
       if (m_fs_info.addon_fields->using_packed_addons())
         m_result_iterator.reset(
             new (&m_result_iterator_holder.sort_buffer_packed_addons)
@@ -524,6 +500,16 @@ bool SortingIterator::Init() {
   return m_result_iterator->Init();
 }
 
+void SortingIterator::SetNullRowFlag(bool is_null_row) {
+  for (TABLE *table : m_filesort->tables) {
+    if (is_null_row) {
+      table->set_null_row();
+    } else {
+      table->reset_null_row();
+    }
+  }
+}
+
 /*
   Do the actual sort, by calling filesort. The result will be left in one of
   several places depending on what sort strategy we chose; it is up to Init() to
@@ -536,7 +522,7 @@ bool SortingIterator::Init() {
 */
 
 int SortingIterator::DoSort() {
-  DBUG_ASSERT(m_sort_result.io_cache == nullptr);
+  assert(m_sort_result.io_cache == nullptr);
   m_sort_result.io_cache =
       (IO_CACHE *)my_malloc(key_memory_TABLE_sort_io_cache, sizeof(IO_CACHE),
                             MYF(MY_WME | MY_ZEROFILL));

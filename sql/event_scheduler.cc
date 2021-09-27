@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,7 +55,7 @@
 #include "sql/events.h"
 #include "sql/log.h"
 #include "sql/mdl.h"
-#include "sql/mysqld.h"              // my_localhost slave_net_timeout
+#include "sql/mysqld.h"              // my_localhost replica_net_timeout
 #include "sql/mysqld_thd_manager.h"  // Global_THD_manager
 #include "sql/protocol_classic.h"
 #include "sql/psi_memory_key.h"
@@ -143,7 +143,7 @@ void Event_worker_thread::print_warnings(THD *thd, Event_job_data *et) {
         break;
       default:
         ll = ERROR_LEVEL;
-        DBUG_ASSERT(false);
+        assert(false);
     }
     LogErr(ll, ER_EVENT_MESSAGE_STACK, static_cast<int>(err_msg.length()),
            err_msg.c_ptr());
@@ -185,7 +185,7 @@ bool post_init_event_thread(THD *thd) {
 void deinit_event_thread(THD *thd) {
   Global_THD_manager *thd_manager = Global_THD_manager::get_instance();
 
-  thd->proc_info = "Clearing";
+  thd->set_proc_info("Clearing");
   thd->get_protocol_classic()->end_net();
   DBUG_PRINT("exit", ("Event thread finishing"));
   thd->release_resources();
@@ -216,7 +216,7 @@ void pre_init_event_thread(THD *thd) {
                                               strlen(my_localhost));
   thd->get_protocol_classic()->init_net(nullptr);
   thd->security_context()->set_user_ptr(STRING_WITH_LEN("event_scheduler"));
-  thd->get_protocol_classic()->get_net()->read_timeout = slave_net_timeout;
+  thd->get_protocol_classic()->get_net()->read_timeout = replica_net_timeout;
   thd->slave_thread = false;
   thd->variables.option_bits |= OPTION_AUTO_IS_NULL;
   thd->get_protocol_classic()->set_client_capabilities(CLIENT_MULTI_RESULTS);
@@ -228,7 +228,7 @@ void pre_init_event_thread(THD *thd) {
     vio is NULL.
   */
 
-  thd->proc_info = "Initialized";
+  thd->set_proc_info("Initialized");
   thd->set_time();
 
   /* Do not use user-supplied timeout value for system threads. */
@@ -277,7 +277,7 @@ static void *event_scheduler_thread(void *arg) {
     if (!res)
       scheduler->run(thd);
     else {
-      thd->proc_info = "Clearing";
+      thd->set_proc_info("Clearing");
       thd->get_protocol_classic()->end_net();
       delete thd;
     }
@@ -345,7 +345,7 @@ void Event_worker_thread::run(THD *thd, Event_queue_element_for_exec *event) {
   Event_job_data job_data;
   bool res;
 
-  DBUG_ASSERT(thd->m_digest == nullptr);
+  assert(thd->m_digest == nullptr);
 
   thd->thread_stack = &my_stack;  // remember where our stack is
   res = post_init_event_thread(thd);
@@ -361,7 +361,7 @@ void Event_worker_thread::run(THD *thd, Event_queue_element_for_exec *event) {
 
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
   PSI_statement_locker_state state;
-  DBUG_ASSERT(thd->m_statement_psi == nullptr);
+  assert(thd->m_statement_psi == nullptr);
   thd->m_statement_psi = MYSQL_START_STATEMENT(
       &state, event->get_psi_info()->m_key, event->dbname.str,
       event->dbname.length, thd->charset(), nullptr);
@@ -413,7 +413,7 @@ end:
   thd->m_statement_psi = nullptr;
 #endif
 
-  DBUG_ASSERT(thd->m_digest == nullptr);
+  assert(thd->m_digest == nullptr);
 
   DBUG_PRINT("info",
              ("Done with Event %s.%s", event->dbname.str, event->name.str));
@@ -526,7 +526,7 @@ bool Event_scheduler::start(int *err_no) {
     LogErr(ERROR_LEVEL, ER_CANT_CREATE_SCHEDULER_THREAD, *err_no)
         .os_errno(*err_no);
 
-    new_thd->proc_info = "Clearing";
+    new_thd->set_proc_info("Clearing");
     new_thd->get_protocol_classic()->end_net();
 
     state = INITIALIZED;
@@ -601,7 +601,7 @@ bool Event_scheduler::run(THD *thd) {
     if (event_name) {
       if ((res = execute_top(event_name))) break;
     } else {
-      DBUG_ASSERT(thd->killed);
+      assert(thd->killed);
       DBUG_PRINT("info", ("job_data is NULL, the thread was killed"));
     }
     DBUG_PRINT("info", ("state=%s", scheduler_states_names[state].str));
@@ -668,7 +668,7 @@ bool Event_scheduler::execute_top(Event_queue_element_for_exec *event_name) {
 
     LogErr(ERROR_LEVEL, ER_SCHEDULER_STOPPING_FAILED_TO_CREATE_WORKER, res);
 
-    new_thd->proc_info = "Clearing";
+    new_thd->set_proc_info("Clearing");
     new_thd->get_protocol_classic()->end_net();
 
     goto error;

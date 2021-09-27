@@ -25,14 +25,14 @@ static bool reset_curl() noexcept {
 }
 
 static void handle_std_bad_alloc_exception(const std::string &message_prefix) {
-  DBUG_ASSERT(0);
+  assert(0);
   const std::string error_message =
       message_prefix + " due to memory allocation failure";
   if (logger != nullptr) logger->log(MY_ERROR_LEVEL, error_message.c_str());
 }
 
 static void handle_unknown_exception(const std::string &message_prefix) {
-  DBUG_ASSERT(0);
+  assert(0);
   const std::string error_message = message_prefix +
                                     " due to internal "
                                     "exception inside the keyring_vault plugin";
@@ -94,7 +94,7 @@ static MYSQL_SYSVAR_STR(
 static void update_keyring_vault_timeout(MYSQL_THD thd MY_ATTRIBUTE((unused)),
                                          SYS_VAR *var MY_ATTRIBUTE((unused)),
                                          void *ptr, const void *val) noexcept {
-  DBUG_ASSERT(dynamic_cast<Vault_keys_container *>(keys.get()) != nullptr);
+  assert(dynamic_cast<Vault_keys_container *>(keys.get()) != nullptr);
   *reinterpret_cast<uint *>(ptr) = *reinterpret_cast<const uint *>(val);
   dynamic_cast<Vault_keys_container *>(keys.get())
       ->set_curl_timeout(*static_cast<const uint *>(val));
@@ -173,7 +173,7 @@ static int keyring_vault_init(MYSQL_PLUGIN plugin_info MY_ATTRIBUTE((unused))) {
 int keyring_vault_deinit(void *arg MY_ATTRIBUTE((unused))) noexcept {
   keys.reset();
   logger.reset();
-  keyring_file_data.reset();
+  delete_keyring_file_data();
   mysql_rwlock_destroy(&LOCK_keyring);
   deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
 

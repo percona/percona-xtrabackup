@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -173,11 +173,11 @@ int Delegate::unlock() {
     if (m_spin_lock.is_exclusive_acquisition())
       m_spin_lock.release_exclusive();
     else {
-      DBUG_ASSERT(m_spin_lock.is_shared_acquisition());
+      assert(m_spin_lock.is_shared_acquisition());
       m_spin_lock.release_shared();
     }
   } else {
-    DBUG_ASSERT(m_acquired_locks.load() < 0);
+    assert(m_acquired_locks.load() < 0);
     m_acquired_locks -= DELEGATE_OS_LOCK;
     result = mysql_rwlock_unlock(&lock);
   }
@@ -205,11 +205,9 @@ void Delegate::update_plugin_ref_count() {
   int intern_value = m_configured_lock_type.load();
 
   if (intern_value == DELEGATE_SPIN_LOCK && opt_value == DELEGATE_OS_LOCK) {
-    for (std::map<plugin_ref, size_t>::iterator ref =
-             m_acquired_references.begin();
-         ref != m_acquired_references.end(); ++ref) {
-      for (size_t count = ref->second; count != 0; --count)
-        plugin_unlock(NULL, ref->first);
+    for (auto ref : m_acquired_references) {
+      for (size_t count = ref.second; count != 0; --count)
+        plugin_unlock(NULL, ref.first);
     }
     m_acquired_references.clear();
   } else if (intern_value == DELEGATE_OS_LOCK &&
@@ -392,6 +390,15 @@ int delegates_init() {
   return 0;
 }
 
+void delegates_shutdown() {
+  if (opt_replication_optimize_for_static_plugin_config) {
+    opt_replication_optimize_for_static_plugin_config = false;
+    delegates_acquire_locks();
+    delegates_update_lock_type();
+    delegates_release_locks();
+  }
+}
+
 void delegates_destroy() {
   if (transaction_delegate) transaction_delegate->~Trans_delegate();
   if (binlog_storage_delegate)
@@ -408,32 +415,26 @@ static void delegates_update_plugin_ref_count() {
   if (binlog_storage_delegate)
     binlog_storage_delegate->update_plugin_ref_count();
   if (server_state_delegate) server_state_delegate->update_plugin_ref_count();
-#ifdef HAVE_REPLICATION
   if (binlog_transmit_delegate)
     binlog_transmit_delegate->update_plugin_ref_count();
   if (binlog_relay_io_delegate)
     binlog_relay_io_delegate->update_plugin_ref_count();
-#endif /* HAVE_REPLICATION */
 }
 
 void delegates_acquire_locks() {
   if (transaction_delegate) transaction_delegate->write_lock();
   if (binlog_storage_delegate) binlog_storage_delegate->write_lock();
   if (server_state_delegate) server_state_delegate->write_lock();
-#ifdef HAVE_REPLICATION
   if (binlog_transmit_delegate) binlog_transmit_delegate->write_lock();
   if (binlog_relay_io_delegate) binlog_relay_io_delegate->write_lock();
-#endif /* HAVE_REPLICATION */
 }
 
 void delegates_release_locks() {
   if (transaction_delegate) transaction_delegate->unlock();
   if (binlog_storage_delegate) binlog_storage_delegate->unlock();
   if (server_state_delegate) server_state_delegate->unlock();
-#ifdef HAVE_REPLICATION
   if (binlog_transmit_delegate) binlog_transmit_delegate->unlock();
   if (binlog_relay_io_delegate) binlog_relay_io_delegate->unlock();
-#endif /* HAVE_REPLICATION */
 }
 
 void delegates_update_lock_type() {
@@ -442,10 +443,8 @@ void delegates_update_lock_type() {
   if (transaction_delegate) transaction_delegate->update_lock_type();
   if (binlog_storage_delegate) binlog_storage_delegate->update_lock_type();
   if (server_state_delegate) server_state_delegate->update_lock_type();
-#ifdef HAVE_REPLICATION
   if (binlog_transmit_delegate) binlog_transmit_delegate->update_lock_type();
   if (binlog_relay_io_delegate) binlog_relay_io_delegate->update_lock_type();
-#endif /* HAVE_REPLICATION */
 }
 
 /*
@@ -574,9 +573,9 @@ int Trans_delegate::before_commit(THD *thd, bool all,
       thd->variables.group_replication_consistency;
   param.original_server_version = &(thd->variables.original_server_version);
   param.immediate_server_version = &(thd->variables.immediate_server_version);
-  param.is_create_table_as_select =
+  param.is_create_table_as_query_block =
       (thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
-       !thd->lex->select_lex->field_list_is_empty());
+       !thd->lex->query_block->field_list_is_empty());
 
   bool is_real_trans =
       (all || !thd->get_transaction()->is_active(Transaction_ctx::SESSION));
@@ -957,7 +956,7 @@ int Binlog_storage_delegate::after_sync(THD *thd, const char *log_file,
   Binlog_storage_param param;
   param.server_id = thd->server_id;
 
-  DBUG_ASSERT(log_pos != 0);
+  assert(log_pos != 0);
   int ret = 0;
   FOREACH_OBSERVER(ret, after_sync, (&param, log_file, log_pos));
 
@@ -1298,7 +1297,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
                   (sql_command != SQLCOM_BINLOG_BASE64_EVENT)) ||
                  (sql_command == SQLCOM_SHOW_RELAYLOG_EVENTS);
   bool is_set = (sql_command == SQLCOM_SET_OPTION);
-  bool is_select = (sql_command == SQLCOM_SELECT);
+  bool is_query_block = (sql_command == SQLCOM_SELECT);
   bool is_do = (sql_command == SQLCOM_DO);
   bool is_empty = (sql_command == SQLCOM_EMPTY_QUERY);
   bool is_use = (sql_command == SQLCOM_CHANGE_DB);
@@ -1313,13 +1312,13 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
     return 0;
   }
 
-  if (is_select) {
+  if (is_query_block) {
     bool is_udf = false;
 
     // if select is an udf function
-    SELECT_LEX *select_lex_elem = lex->unit->first_select();
-    while (select_lex_elem != nullptr) {
-      for (Item *item : select_lex_elem->visible_fields()) {
+    Query_block *query_block_elem = lex->unit->first_query_block();
+    while (query_block_elem != nullptr) {
+      for (Item *item : query_block_elem->visible_fields()) {
         if (item->type() == Item::FUNC_ITEM) {
           Item_func *func_item = down_cast<Item_func *>(item);
           Item_func::Functype functype = func_item->functype();
@@ -1327,7 +1326,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
             is_udf = true;
         }
       }
-      select_lex_elem = select_lex_elem->next_select();
+      query_block_elem = query_block_elem->next_query_block();
     }
 
     if (!is_udf && all_tables == nullptr) {
@@ -1344,7 +1343,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
 
       for (TABLE_LIST *table = all_tables; table && !stop_db_check;
            table = table->next_global) {
-        DBUG_ASSERT(table->db && table->table_name);
+        assert(table->db && table->table_name);
 
         if (is_perfschema_db(table->db, table->db_length))
           is_perf_schema_table = true;
@@ -1370,8 +1369,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
   }
 
   if (hold_command) {
-    DBUG_EXECUTE_IF("launch_hook_trans_begin_assert_if_hold",
-                    { DBUG_ASSERT(0); };);
+    DBUG_EXECUTE_IF("launch_hook_trans_begin_assert_if_hold", { assert(0); };);
 
     PSI_stage_info old_stage;
     thd->enter_stage(&stage_hook_begin_trans, &old_stage, __func__, __FILE__,

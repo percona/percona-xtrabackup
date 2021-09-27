@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2019, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -47,7 +47,7 @@ struct Pool {
   typedef Type value_type;
 
   // FIXME: Add an assertion to check alignment and offset is
-  // as we expect it. Also, sizeof(void*) can be 8, can we impove on this.
+  // as we expect it. Also, sizeof(void*) can be 8, can we improve on this.
   struct Element {
     Pool *m_pool;
     value_type m_type;
@@ -232,7 +232,7 @@ struct PoolManager {
           except crash and burn, however lets
           be a little optimistic and wait for
           a resource to be freed. */
-          os_thread_sleep(delay * 1000000);
+          std::this_thread::sleep_for(std::chrono::seconds(delay));
 
           if (delay < 32) {
             delay <<= 1;

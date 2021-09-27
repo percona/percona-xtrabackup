@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -84,7 +84,7 @@
 #include "sql/mysqld.h"          // key_file_misc
 #include "sql/psi_memory_key.h"  // key_memory_THD_db
 #include "sql/rpl_gtid.h"
-#include "sql/rpl_slave_commit_order_manager.h"  // Commit_order_manager
+#include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
 #include "sql/session_tracker.h"
 #include "sql/sp.h"         // lock_db_routines
 #include "sql/sql_base.h"   // lock_table_names
@@ -229,7 +229,7 @@ bool check_schema_readonly(THD *thd, const char *schema_name,
     if (share->schema_read_only == TABLE_SHARE::Schema_read_only::RO_OFF) {
       return false;
     }
-    DBUG_ASSERT(false);
+    assert(false);
   }
 
   dd::Schema_MDL_locker mdl_handler(thd);
@@ -238,7 +238,7 @@ bool check_schema_readonly(THD *thd, const char *schema_name,
 
   if (mdl_handler.ensure_locked(schema_name) ||
       thd->dd_client()->acquire(schema_name, &sch_obj)) {
-    DBUG_ASSERT(thd->is_error() || thd->killed);
+    assert(thd->is_error() || thd->killed);
     return true;
   }
 
@@ -585,7 +585,7 @@ bool mysql_alter_db(THD *thd, const char *db, HA_CREATE_INFO *create_info) {
 
   // Set encryption type.
   if (create_info->used_fields & HA_CREATE_USED_DEFAULT_ENCRYPTION) {
-    DBUG_ASSERT(create_info->encrypt_type.length > 0);
+    assert(create_info->encrypt_type.length > 0);
     schema->set_default_encryption(dd::is_encrypted(create_info->encrypt_type));
   }
 
@@ -639,6 +639,7 @@ bool mysql_alter_db(THD *thd, const char *db, HA_CREATE_INFO *create_info) {
     exclusive MDL for each table.
   */
   if (create_info->used_fields & HA_CREATE_USED_READ_ONLY) {
+    mysql_ha_flush_tables(thd, tables);
     for (TABLE_LIST *table = tables; table != nullptr;
          table = table->next_global) {
       tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table->db, table->table_name,
@@ -837,7 +838,7 @@ bool mysql_rm_db(THD *thd, const LEX_CSTRING &db, bool if_exists) {
       thd->clear_error(); /* @todo Do not ignore errors */
       Disable_binlog_guard binlog_guard(thd);
       error = Events::drop_schema_events(thd, *schema);
-      error = (error || (sp_drop_db_routines(thd, *schema) != SP_OK));
+      error = (error || sp_drop_db_routines(thd, *schema));
     }
     thd->pop_internal_handler();
 
@@ -1489,7 +1490,7 @@ bool mysql_change_db(THD *thd, const LEX_CSTRING &new_db_name,
 
   if (get_default_db_collation(*schema, &db_default_cl)) {
     my_free(new_db_file_name.str);
-    DBUG_ASSERT(thd->is_error() || thd->killed);
+    assert(thd->is_error() || thd->killed);
     return true;
   }
 

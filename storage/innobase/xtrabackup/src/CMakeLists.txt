@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2018 Percona LLC and/or its affiliates.
+# Copyright (c) 2013, 2021 Percona LLC and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -99,6 +99,8 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   backup_mysql.cc
   backup_copy.cc
   keyring_plugins.cc
+  keyring_components.cc
+  utils.cc
   kdf.cc
   space_map.cc
   redo_log.cc
@@ -120,6 +122,7 @@ TARGET_LINK_LIBRARIES(xtrabackup
   mysqlclient
   master
   minchassis
+  keyring_common
   ${GCRYPT_LIBS}
   ${ICU_LIBRARIES}
   crc
@@ -155,13 +158,19 @@ MYSQL_ADD_EXECUTABLE(xbstream
   xbstream_write.cc
   xbcrypt_common.cc
   xbcrypt_write.cc
-  ${CMAKE_SOURCE_DIR}/extra/lz4/xxhash.c
+  ${BUNDLED_LZ4_PATH}/xxhash.c
   )
 
 ADD_COMPILE_DEFINITIONS(
-  ${CMAKE_SOURCE_DIR}/extra/lz4/xxhash.c
+  ${BUNDLED_LZ4_PATH}/xxhash.c
   COMPILE_DEFINITIONS XXH_NAMESPACE=MY_
   )
+ADD_COMPILE_FLAGS(
+    ${BUNDLED_LZ4_PATH}/xxhash.c
+    ds_decompress_lz4.cc
+    ds_compress_lz4.cc
+    COMPILE_FLAGS -I${CMAKE_SOURCE_DIR}/extra/lz4 -I${BUNDLED_LZ4_PATH}
+)
 
 SET_TARGET_PROPERTIES(xbstream
         PROPERTIES LINKER_LANGUAGE CXX

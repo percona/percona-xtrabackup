@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,13 +22,12 @@
 
 /* See http://code.google.com/p/googletest/wiki/Primer */
 
-// First include (the generated) my_config.h, to get correct platform defines.
-#include "my_config.h"
-
 #include <gtest/gtest.h>
 #include <stddef.h>
 
+#include "storage/innobase/include/detail/ut0new.h"
 #include "storage/innobase/include/univ.i"
+#include "storage/innobase/include/ut0new.h"
 
 namespace innodb_ut0new_unittest {
 
@@ -217,21 +216,22 @@ struct big_t {
 /* test edge cases */
 TEST(ut0new, edgecases) {
   ut_allocator<byte> alloc1(mem_key_buf_buf_pool);
-  ut_new_pfx_t pfx;
   void *ret;
   const void *null_ptr = nullptr;
 
-  ret = alloc1.allocate_large(0, &pfx);
+  ret = alloc1.allocate_large(0);
   EXPECT_EQ(null_ptr, ret);
 
 #ifdef UNIV_PFS_MEMORY
   ret = alloc1.allocate(16);
   ASSERT_TRUE(ret != nullptr);
+
   ret = alloc1.reallocate(ret, 0, UT_NEW_THIS_FILE_PSI_KEY);
   EXPECT_EQ(null_ptr, ret);
 
   ret = UT_NEW_ARRAY_NOKEY(byte, 0);
-  EXPECT_EQ(null_ptr, ret);
+  EXPECT_NE(null_ptr, ret);
+  UT_DELETE_ARRAY((byte *)ret);
 #endif /* UNIV_PFS_MEMORY */
 
   ut_allocator<big_t> alloc2(mem_key_buf_buf_pool);
@@ -253,7 +253,6 @@ TEST(ut0new, edgecases) {
 #endif /* UNIV_PFS_MEMORY */
 
   bool threw = false;
-
   try {
     ret = alloc2.allocate(too_many_elements);
   } catch (...) {
@@ -261,9 +260,14 @@ TEST(ut0new, edgecases) {
   }
   EXPECT_TRUE(threw);
 
-  ret = alloc2.allocate(too_many_elements, nullptr, PSI_NOT_INSTRUMENTED, false,
-                        false);
-  EXPECT_EQ(null_ptr, ret);
+  threw = false;
+  try {
+    ret = alloc2.allocate(too_many_elements, nullptr, PSI_NOT_INSTRUMENTED,
+                          false);
+  } catch (std::bad_array_new_length &e) {
+    threw = true;
+  }
+  EXPECT_TRUE(threw);
 
   threw = false;
   try {
@@ -275,6 +279,574 @@ TEST(ut0new, edgecases) {
     threw = true;
   }
   EXPECT_TRUE(threw);
+}
+
+struct Pod_type {
+  Pod_type(int _x, int _y) : x(_x), y(_y) {}
+  int x;
+  int y;
+};
+struct My_fancy_sum {
+  My_fancy_sum(int x, int y) : result(x + y) {}
+  int result;
+};
+struct Non_pod_type {
+  Non_pod_type(int _x, int _y, std::string _s)
+      : x(_x), y(_y), s(_s), sum(std::make_unique<My_fancy_sum>(x, y)) {}
+  int x;
+  int y;
+  std::string s;
+  std::unique_ptr<My_fancy_sum> sum;
+};
+struct Default_constructible_pod {
+  Default_constructible_pod() : x(0), y(1) {}
+  int x, y;
+};
+struct Default_constructible_non_pod {
+  Default_constructible_non_pod() : x(0), y(1), s("non-pod-string") {}
+  int x, y;
+  std::string s;
+};
+
+template <typename T, bool With_pfs>
+struct Wrap_aligned_test_param {
+  using type = T;
+  static constexpr bool with_pfs = With_pfs;
+};
+
+using all_fundamental_types = ::testing::Types<
+    // with PFS
+    Wrap_aligned_test_param<char, true>,
+    Wrap_aligned_test_param<unsigned char, true>,
+    Wrap_aligned_test_param<wchar_t, true>,
+    Wrap_aligned_test_param<short int, true>,
+    Wrap_aligned_test_param<unsigned short int, true>,
+    Wrap_aligned_test_param<int, true>,
+    Wrap_aligned_test_param<unsigned int, true>,
+    Wrap_aligned_test_param<long int, true>,
+    Wrap_aligned_test_param<unsigned long int, true>,
+    Wrap_aligned_test_param<long long int, true>,
+    Wrap_aligned_test_param<unsigned long long int, true>,
+    Wrap_aligned_test_param<float, true>, Wrap_aligned_test_param<double, true>,
+    Wrap_aligned_test_param<long double, true>,
+    // no PFS
+    Wrap_aligned_test_param<char, false>,
+    Wrap_aligned_test_param<unsigned char, false>,
+    Wrap_aligned_test_param<wchar_t, false>,
+    Wrap_aligned_test_param<short int, false>,
+    Wrap_aligned_test_param<unsigned short int, false>,
+    Wrap_aligned_test_param<int, false>,
+    Wrap_aligned_test_param<unsigned int, false>,
+    Wrap_aligned_test_param<long int, false>,
+    Wrap_aligned_test_param<unsigned long int, false>,
+    Wrap_aligned_test_param<long long int, false>,
+    Wrap_aligned_test_param<unsigned long long int, false>,
+    Wrap_aligned_test_param<float, false>,
+    Wrap_aligned_test_param<double, false>,
+    Wrap_aligned_test_param<long double, false>>;
+
+using all_pod_types = ::testing::Types<
+    // with PFS
+    Wrap_aligned_test_param<Pod_type, true>,
+    // no PFS
+    Wrap_aligned_test_param<Pod_type, false>>;
+
+using all_default_constructible_pod_types = ::testing::Types<
+    // with PFS
+    Wrap_aligned_test_param<Default_constructible_pod, true>,
+    // no PFS
+    Wrap_aligned_test_param<Default_constructible_pod, false>>;
+
+using all_non_pod_types = ::testing::Types<
+    // with PFS
+    Wrap_aligned_test_param<Non_pod_type, true>,
+    // no PFS
+    Wrap_aligned_test_param<Non_pod_type, false>>;
+
+using all_default_constructible_non_pod_types = ::testing::Types<
+    // with PFS
+    Wrap_aligned_test_param<Default_constructible_non_pod, true>,
+    // no PFS
+    Wrap_aligned_test_param<Default_constructible_non_pod, false>>;
+
+static auto pfs_key = 12345;
+
+// aligned alloc/free - fundamental types
+template <typename T>
+class aligned_alloc_free_fundamental_types : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_alloc_free_fundamental_types);
+TYPED_TEST_P(aligned_alloc_free_fundamental_types, fundamental_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr =
+        with_pfs
+            ? static_cast<type *>(ut::aligned_alloc_withkey(
+                  ut::make_psi_memory_key(pfs_key), sizeof(type), alignment))
+            : static_cast<type *>(ut::aligned_alloc(sizeof(type), alignment));
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+    ut::aligned_free(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_alloc_free_fundamental_types,
+                            fundamental_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(FundamentalTypes,
+                               aligned_alloc_free_fundamental_types,
+                               all_fundamental_types);
+
+// aligned alloc/free - pod types
+template <typename T>
+class aligned_alloc_free_pod_types : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_alloc_free_pod_types);
+TYPED_TEST_P(aligned_alloc_free_pod_types, pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  auto alignment = 4 * 1024;
+  type *ptr =
+      with_pfs
+          ? static_cast<type *>(ut::aligned_alloc_withkey(
+                ut::make_psi_memory_key(pfs_key), sizeof(type), alignment))
+          : static_cast<type *>(ut::aligned_alloc(sizeof(type), alignment));
+  EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+  ut::aligned_free(ptr);
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_alloc_free_pod_types, pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(PodTypes, aligned_alloc_free_pod_types,
+                               all_pod_types);
+
+// aligned alloc/free - non-pod types
+template <typename T>
+class aligned_alloc_free_non_pod_types : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_alloc_free_non_pod_types);
+TYPED_TEST_P(aligned_alloc_free_non_pod_types, non_pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  auto alignment = 4 * 1024;
+  type *ptr =
+      with_pfs
+          ? static_cast<type *>(ut::aligned_alloc_withkey(
+                ut::make_psi_memory_key(pfs_key), sizeof(type), alignment))
+          : static_cast<type *>(ut::aligned_alloc(sizeof(type), alignment));
+  EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+  // Referencing non-pod type members through returned pointer is UB.
+  // Solely releasing it is ok.
+  //
+  // Using it otherwise is UB because aligned_alloc_* functions are raw
+  // memory management functions which do not invoke constructors neither
+  // they know which type they are operating with. That is why we would be end
+  // up accessing memory of not yet instantiated object (UB).
+  ut::aligned_free(ptr);
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_alloc_free_non_pod_types, non_pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(PodTypes, aligned_alloc_free_non_pod_types,
+                               all_non_pod_types);
+
+// aligned new/delete - fundamental types
+template <typename T>
+class aligned_new_delete_fundamental_types : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_fundamental_types);
+TYPED_TEST_P(aligned_new_delete_fundamental_types, fundamental_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr = with_pfs ? ut::aligned_new_withkey<type>(
+                               ut::make_psi_memory_key(pfs_key), alignment, 1)
+                         : ut::aligned_new<type>(alignment, 1);
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+    EXPECT_EQ(*ptr, 1);
+    ut::aligned_delete(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_new_delete_fundamental_types,
+                            fundamental_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(My, aligned_new_delete_fundamental_types,
+                               all_fundamental_types);
+
+// aligned new/delete - pod types
+template <typename T>
+class aligned_new_delete_pod_types : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_pod_types);
+TYPED_TEST_P(aligned_new_delete_pod_types, pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr = with_pfs
+                    ? ut::aligned_new_withkey<type>(
+                          ut::make_psi_memory_key(pfs_key), alignment, 2, 5)
+                    : ut::aligned_new<type>(alignment, 2, 5);
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+    EXPECT_EQ(ptr->x, 2);
+    EXPECT_EQ(ptr->y, 5);
+    ut::aligned_delete(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_new_delete_pod_types, pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(My, aligned_new_delete_pod_types, all_pod_types);
+
+// aligned new/delete - non-pod types
+template <typename T>
+class aligned_new_delete_non_pod_types : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_non_pod_types);
+TYPED_TEST_P(aligned_new_delete_non_pod_types, non_pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr =
+        with_pfs
+            ? ut::aligned_new_withkey<type>(ut::make_psi_memory_key(pfs_key),
+                                            alignment, 2, 5,
+                                            std::string("non-pod"))
+            : ut::aligned_new<type>(alignment, 2, 5, std::string("non-pod"));
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+    EXPECT_EQ(ptr->x, 2);
+    EXPECT_EQ(ptr->y, 5);
+    EXPECT_EQ(ptr->sum->result, 7);
+    EXPECT_EQ(ptr->s, std::string("non-pod"));
+    ut::aligned_delete(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_new_delete_non_pod_types, non_pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(My, aligned_new_delete_non_pod_types,
+                               all_non_pod_types);
+
+// aligned new/delete - array specialization for fundamental types
+template <typename T>
+class aligned_new_delete_fundamental_types_arr : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_fundamental_types_arr);
+TYPED_TEST_P(aligned_new_delete_fundamental_types_arr, fundamental_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  constexpr size_t n_elements = 10;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr = with_pfs ? ut::aligned_new_arr_withkey<type, n_elements>(
+                               ut::make_psi_memory_key(pfs_key), alignment, 0,
+                               1, 2, 3, 4, 5, 6, 7, 8, 9)
+                         : ut::aligned_new_arr<type, n_elements>(
+                               alignment, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    for (size_t elem = 0; elem < n_elements; elem++) {
+      EXPECT_EQ(ptr[elem], elem);
+    }
+    ut::aligned_delete_arr(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_new_delete_fundamental_types_arr,
+                            fundamental_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(My, aligned_new_delete_fundamental_types_arr,
+                               all_fundamental_types);
+
+// aligned new/delete - array specialization for pod types
+template <typename T>
+class aligned_new_delete_pod_types_arr : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_pod_types_arr);
+TYPED_TEST_P(aligned_new_delete_pod_types_arr, pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  constexpr size_t n_elements = 5;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr = with_pfs ? ut::aligned_new_arr_withkey<type, n_elements>(
+                               ut::make_psi_memory_key(pfs_key), alignment, 0,
+                               1, 2, 3, 4, 5, 6, 7, 8, 9)
+                         : ut::aligned_new_arr<type, n_elements>(
+                               alignment, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    for (size_t elem = 0; elem < n_elements; elem++) {
+      EXPECT_EQ(ptr[elem].x, 2 * elem);
+      EXPECT_EQ(ptr[elem].y, 2 * elem + 1);
+    }
+    ut::aligned_delete_arr(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_new_delete_pod_types_arr, pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(My, aligned_new_delete_pod_types_arr,
+                               all_pod_types);
+
+// aligned new/delete - array specialization for non-pod types
+template <typename T>
+class aligned_new_delete_non_pod_types_arr : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_non_pod_types_arr);
+TYPED_TEST_P(aligned_new_delete_non_pod_types_arr, non_pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  constexpr size_t n_elements = 5;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr = with_pfs ? ut::aligned_new_arr_withkey<type, n_elements>(
+                               ut::make_psi_memory_key(pfs_key), alignment, 1,
+                               2, std::string("a"), 3, 4, std::string("b"), 5,
+                               6, std::string("c"), 7, 8, std::string("d"), 9,
+                               10, std::string("e"))
+                         : ut::aligned_new_arr<type, n_elements>(
+                               alignment, 1, 2, std::string("a"), 3, 4,
+                               std::string("b"), 5, 6, std::string("c"), 7, 8,
+                               std::string("d"), 9, 10, std::string("e"));
+
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    EXPECT_EQ(ptr[0].x, 1);
+    EXPECT_EQ(ptr[0].y, 2);
+    EXPECT_TRUE(ptr[0].s == std::string("a"));
+    EXPECT_EQ(ptr[0].sum->result, 3);
+
+    EXPECT_EQ(ptr[1].x, 3);
+    EXPECT_EQ(ptr[1].y, 4);
+    EXPECT_TRUE(ptr[1].s == std::string("b"));
+    EXPECT_EQ(ptr[1].sum->result, 7);
+
+    EXPECT_EQ(ptr[2].x, 5);
+    EXPECT_EQ(ptr[2].y, 6);
+    EXPECT_TRUE(ptr[2].s == std::string("c"));
+    EXPECT_EQ(ptr[2].sum->result, 11);
+
+    EXPECT_EQ(ptr[3].x, 7);
+    EXPECT_EQ(ptr[3].y, 8);
+    EXPECT_TRUE(ptr[3].s == std::string("d"));
+    EXPECT_EQ(ptr[3].sum->result, 15);
+
+    EXPECT_EQ(ptr[4].x, 9);
+    EXPECT_EQ(ptr[4].y, 10);
+    EXPECT_TRUE(ptr[4].s == std::string("e"));
+    EXPECT_EQ(ptr[4].sum->result, 19);
+
+    ut::aligned_delete_arr(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(aligned_new_delete_non_pod_types_arr,
+                            non_pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(My, aligned_new_delete_non_pod_types_arr,
+                               all_non_pod_types);
+
+// aligned new/delete - array specialization for default constructible
+// fundamental types
+template <typename T>
+class aligned_new_delete_default_constructible_fundamental_types_arr
+    : public ::testing::Test {};
+TYPED_TEST_SUITE_P(
+    aligned_new_delete_default_constructible_fundamental_types_arr);
+TYPED_TEST_P(aligned_new_delete_default_constructible_fundamental_types_arr,
+             fundamental_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  constexpr size_t n_elements = 5;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr =
+        with_pfs ? ut::aligned_new_arr_withkey<type>(
+                       ut::make_psi_memory_key(pfs_key), alignment, n_elements)
+                 : ut::aligned_new_arr<type>(alignment, n_elements);
+
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    for (size_t elem = 0; elem < n_elements; elem++) {
+      EXPECT_EQ(ptr[elem], type{});
+    }
+    ut::aligned_delete_arr(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(
+    aligned_new_delete_default_constructible_fundamental_types_arr,
+    fundamental_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(
+    My, aligned_new_delete_default_constructible_fundamental_types_arr,
+    all_fundamental_types);
+
+// aligned new/delete - array specialization for default constructible pod types
+template <typename T>
+class aligned_new_delete_default_constructible_pod_types_arr
+    : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_default_constructible_pod_types_arr);
+TYPED_TEST_P(aligned_new_delete_default_constructible_pod_types_arr,
+             pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  constexpr size_t n_elements = 5;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr =
+        with_pfs ? ut::aligned_new_arr_withkey<type>(
+                       ut::make_psi_memory_key(pfs_key), alignment, n_elements)
+                 : ut::aligned_new_arr<type>(alignment, n_elements);
+
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    for (size_t elem = 0; elem < n_elements; elem++) {
+      EXPECT_EQ(ptr[elem].x, 0);
+      EXPECT_EQ(ptr[elem].y, 1);
+    }
+    ut::aligned_delete_arr(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(
+    aligned_new_delete_default_constructible_pod_types_arr, pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(
+    My, aligned_new_delete_default_constructible_pod_types_arr,
+    all_default_constructible_pod_types);
+
+// aligned new/delete - array specialization for default constructible non-pod
+// types
+template <typename T>
+class aligned_new_delete_default_constructible_non_pod_types_arr
+    : public ::testing::Test {};
+TYPED_TEST_SUITE_P(aligned_new_delete_default_constructible_non_pod_types_arr);
+TYPED_TEST_P(aligned_new_delete_default_constructible_non_pod_types_arr,
+             pod_types) {
+  using type = typename TypeParam::type;
+  auto with_pfs = TypeParam::with_pfs;
+  constexpr size_t n_elements = 5;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr =
+        with_pfs ? ut::aligned_new_arr_withkey<type>(
+                       ut::make_psi_memory_key(pfs_key), alignment, n_elements)
+                 : ut::aligned_new_arr<type>(alignment, n_elements);
+
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    for (size_t elem = 0; elem < n_elements; elem++) {
+      EXPECT_EQ(ptr[elem].x, 0);
+      EXPECT_EQ(ptr[elem].y, 1);
+      EXPECT_TRUE(ptr[elem].s == std::string("non-pod-string"));
+    }
+    ut::aligned_delete_arr(ptr);
+  }
+}
+REGISTER_TYPED_TEST_SUITE_P(
+    aligned_new_delete_default_constructible_non_pod_types_arr, pod_types);
+INSTANTIATE_TYPED_TEST_SUITE_P(
+    My, aligned_new_delete_default_constructible_non_pod_types_arr,
+    all_default_constructible_non_pod_types);
+
+TEST(aligned_new_delete, unique_ptr_demo) {
+  constexpr auto alignment = 4 * 1024;
+  struct Aligned_int_deleter {
+    void operator()(int *p) {
+      std::cout << "Hello from custom deleter!\n";
+      ut::aligned_delete(p);
+    }
+  };
+  std::unique_ptr<int, Aligned_int_deleter> ptr(
+      ut::aligned_new<int>(alignment, 1), Aligned_int_deleter{});
+}
+
+TEST(aligned_new_delete_arr, unique_ptr_demo) {
+  constexpr auto n_elements = 5;
+  constexpr auto alignment = 4 * 1024;
+  struct Aligned_int_arr_deleter {
+    void operator()(int *p) {
+      std::cout << "Hello from custom deleter!\n";
+      ut::aligned_delete_arr(p);
+    }
+  };
+  std::unique_ptr<int, Aligned_int_arr_deleter> ptr(
+      ut::aligned_new_arr<int, n_elements>(alignment, 1, 2, 3, 4, 5),
+      Aligned_int_arr_deleter{});
+}
+
+TEST(aligned_new_delete_arr, distance_between_elements_in_arr) {
+  using type = Default_constructible_pod;
+  constexpr size_t n_elements = 5;
+  for (auto alignment = 2 * alignof(std::max_align_t);
+       alignment < 1024 * 1024 + 1; alignment *= 2) {
+    type *ptr = ut::aligned_new_arr<type>(alignment, n_elements);
+
+    EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(ptr) % alignment == 0);
+
+    for (size_t elem = 1; elem < n_elements; elem++) {
+      auto addr_curr = reinterpret_cast<std::uintptr_t>(&ptr[elem]);
+      auto addr_prev = reinterpret_cast<std::uintptr_t>(&ptr[elem - 1]);
+      auto distance = addr_curr - addr_prev;
+      EXPECT_EQ(distance, sizeof(type));
+    }
+    ut::aligned_delete_arr(ptr);
+  }
+}
+
+TEST(aligned_pointer, access_data_through_implicit_conversion_operator) {
+  constexpr auto alignment = 4 * 1024;
+  ut::aligned_pointer<int, alignment> ptr;
+  ptr.alloc();
+
+  int *data = ptr;
+  EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(data) % alignment == 0);
+  EXPECT_EQ(*data, int{});
+
+  ptr.dealloc();
+}
+
+TEST(aligned_array_pointer, access_data_through_subscript_operator) {
+  constexpr auto n_elements = 5;
+  constexpr auto alignment = 4 * 1024;
+  ut::aligned_array_pointer<Default_constructible_pod, alignment> ptr;
+  ptr.alloc(n_elements);
+
+  EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(&ptr[0]) % alignment == 0);
+  for (size_t elem = 0; elem < n_elements; elem++) {
+    EXPECT_EQ(ptr[elem].x, 0);
+    EXPECT_EQ(ptr[elem].y, 1);
+  }
+
+  ptr.dealloc();
+}
+
+TEST(aligned_array_pointer, initialize_an_array_of_non_pod_types) {
+  constexpr auto n_elements = 5;
+  constexpr auto alignment = 4 * 1024;
+  ut::aligned_array_pointer<Non_pod_type, alignment> ptr;
+  ptr.alloc<n_elements>(1, 2, std::string("a"), 3, 4, std::string("b"), 5, 6,
+                        std::string("c"), 7, 8, std::string("d"), 9, 10,
+                        std::string("e"));
+
+  EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(&ptr[0]) % alignment == 0);
+
+  EXPECT_EQ(ptr[0].x, 1);
+  EXPECT_EQ(ptr[0].y, 2);
+  EXPECT_TRUE(ptr[0].s == std::string("a"));
+
+  EXPECT_EQ(ptr[1].x, 3);
+  EXPECT_EQ(ptr[1].y, 4);
+  EXPECT_TRUE(ptr[1].s == std::string("b"));
+
+  EXPECT_EQ(ptr[2].x, 5);
+  EXPECT_EQ(ptr[2].y, 6);
+  EXPECT_TRUE(ptr[2].s == std::string("c"));
+
+  EXPECT_EQ(ptr[3].x, 7);
+  EXPECT_EQ(ptr[3].y, 8);
+  EXPECT_TRUE(ptr[3].s == std::string("d"));
+
+  EXPECT_EQ(ptr[4].x, 9);
+  EXPECT_EQ(ptr[4].y, 10);
+  EXPECT_TRUE(ptr[4].s == std::string("e"));
+
+  ptr.dealloc();
+}
+
+TEST(aligned_array_pointer, distance_between_elements_in_arr) {
+  constexpr auto n_elements = 5;
+  constexpr auto alignment = 4 * 1024;
+  ut::aligned_array_pointer<Default_constructible_pod, alignment> ptr;
+  ptr.alloc(n_elements);
+
+  EXPECT_TRUE(reinterpret_cast<std::uintptr_t>(&ptr[0]) % alignment == 0);
+
+  for (size_t elem = 1; elem < n_elements; elem++) {
+    auto addr_curr = reinterpret_cast<std::uintptr_t>(&ptr[elem]);
+    auto addr_prev = reinterpret_cast<std::uintptr_t>(&ptr[elem - 1]);
+    auto distance = addr_curr - addr_prev;
+    EXPECT_EQ(distance, sizeof(Default_constructible_pod));
+  }
+
+  ptr.dealloc();
 }
 
 }  // namespace innodb_ut0new_unittest

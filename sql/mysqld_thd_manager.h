@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,11 @@
 #ifndef MYSQLD_THD_MANAGER_INCLUDED
 #define MYSQLD_THD_MANAGER_INCLUDED
 
+#include <assert.h>
 #include <stddef.h>
 #include <sys/types.h>
 #include <atomic>
 
-#include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_thread_local.h"  // my_thread_id
 #include "mysql/components/services/mysql_cond_bits.h"
@@ -46,7 +46,7 @@ void thd_unlock_thread_count();
 
 class Do_THD_Impl {
  public:
-  virtual ~Do_THD_Impl() {}
+  virtual ~Do_THD_Impl() = default;
   virtual void operator()(THD *) = 0;
 };
 
@@ -58,7 +58,7 @@ class Do_THD_Impl {
 
 class Find_THD_Impl {
  public:
-  virtual ~Find_THD_Impl() {}
+  virtual ~Find_THD_Impl() = default;
   /**
     Override this operator to provide implementation to find specific thd.
 
@@ -110,7 +110,7 @@ class Global_THD_manager {
     Retrieves singleton instance
   */
   static Global_THD_manager *get_instance() {
-    DBUG_ASSERT(thd_manager != nullptr);
+    assert(thd_manager != nullptr);
     return thd_manager;
   }
 

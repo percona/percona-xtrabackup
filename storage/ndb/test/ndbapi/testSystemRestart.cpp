@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include <cstring>
 #include <NDBT.hpp>
 #include <NDBT_Test.hpp>
 #include <HugoTransactions.hpp>
@@ -33,6 +34,7 @@
 #include <Bitmask.hpp>
 #include <DbUtil.hpp>
 #include <NdbMgmd.hpp>
+#include <NdbSleep.h>
 
 #define CHK(b,e) \
   if (!(b)) { \
@@ -111,6 +113,9 @@ int
 clearOldBackups(NDBT_Context* ctx, NDBT_Step* step)
 {
   NdbBackup backup;
+  backup.set_default_encryption_password(ctx->getProperty("BACKUP_PASSWORD",
+                                                          (char*)NULL),
+                                         -1);
   backup.clearOldBackups();
   return NDBT_OK;
 }
@@ -2435,6 +2440,9 @@ int runSR_DD_1(NDBT_Context* ctx, NDBT_Step* step)
   Uint32 loops = ctx->getNumLoops();
   NdbRestarter restarter;
   NdbBackup backup;
+  backup.set_default_encryption_password(ctx->getProperty("BACKUP_PASSWORD",
+                                                          (char*)NULL),
+                                         -1);
   bool lcploop = ctx->getProperty("LCP", (unsigned)0);
   bool all = ctx->getProperty("ALL", (unsigned)0);
 
@@ -2557,6 +2565,9 @@ int runSR_DD_2(NDBT_Context* ctx, NDBT_Step* step)
   Uint32 rows = ctx->getNumRecords();
   NdbRestarter restarter;
   NdbBackup backup;
+  backup.set_default_encryption_password(ctx->getProperty("BACKUP_PASSWORD",
+                                                          (char*)NULL),
+                                         -1);
   bool lcploop = ctx->getProperty("LCP", (unsigned)0);
   bool all = ctx->getProperty("ALL", (unsigned)0);
   int error = (int)ctx->getProperty("ERROR", (unsigned)0);
@@ -2688,6 +2699,9 @@ int runSR_DD_3(NDBT_Context* ctx, NDBT_Step* step)
   Uint32 rows = ctx->getNumRecords();
   NdbRestarter restarter;
   NdbBackup backup;
+  backup.set_default_encryption_password(ctx->getProperty("BACKUP_PASSWORD",
+                                                          (char*)NULL),
+                                         -1);
   bool lcploop = ctx->getProperty("LCP", (unsigned)0);
   bool all = ctx->getProperty("ALL", (unsigned)0);
   int error = (int)ctx->getProperty("ERROR", (unsigned)0);
@@ -2994,10 +3008,10 @@ runTO(NDBT_Context* ctx, NDBT_Step* step)
     
     do 
     {
-      bzero(&event, sizeof(event));
+      std::memset(&event, 0, sizeof(event));
       while(ndb_logevent_get_next(handle, &event, 0) >= 0 &&
             event.type != NDB_LE_LocalCheckpointCompleted)
-        bzero(&event, sizeof(event));
+        std::memset(&event, 0, sizeof(event));
       
       if (event.type == NDB_LE_LocalCheckpointCompleted &&
           event.LocalCheckpointCompleted.lci < LCP + 3)
@@ -3314,7 +3328,7 @@ runBug46412(NDBT_Context* ctx, NDBT_Step* step)
   {
     printf("checking nodegroups of getNextMasterNodeId(): ");
     int nodes[256];
-    bzero(nodes, sizeof(nodes));
+    std::memset(nodes, 0, sizeof(nodes));
     nodes[0] = res.getMasterNodeId();
     printf("%d ", nodes[0]);
     for (Uint32 i = 1; i<nodeCount; i++)
@@ -3419,7 +3433,7 @@ runBug46412(NDBT_Context* ctx, NDBT_Step* step)
         }
       }
       ndbout_c("Wait for a while to allow the first set of nodes to stop");
-      sleep(6);
+      NdbSleep_SecSleep(6);
       ndbout_c("Cluster restart");
       res.restartAll(false, true, true, true);
       res.waitClusterNoStart();
@@ -3427,7 +3441,7 @@ runBug46412(NDBT_Context* ctx, NDBT_Step* step)
       {
         ndbout_c("Start node %u", nodes[i]);
         res.startNodes(&nodes[i], 1);
-        sleep(4);
+        NdbSleep_SecSleep(4);
       }
     }
     if (res.waitClusterStarted())
@@ -3494,7 +3508,7 @@ runBug48436(NDBT_Context* ctx, NDBT_Step* step)
         res.dumpStateOneNode(nodes[0], val2, 2);
         res.insertErrorInNode(nodes[0], 5054); // crash during restart
         res.startAll();
-        sleep(3);
+        NdbSleep_SecSleep(3);
         res.waitNodesNoStart(nodes+0,1);
         res.startAll();
         break;
@@ -3512,7 +3526,7 @@ runBug48436(NDBT_Context* ctx, NDBT_Step* step)
         res.dumpStateOneNode(nodes[1], val2, 2);
         res.insertErrorInNode(nodes[1], 5054); // crash during restart
         res.startAll();
-        sleep(3);
+        NdbSleep_SecSleep(3);
         res.waitNodesNoStart(nodes+1,1);
         res.startAll();
         break;
@@ -3707,7 +3721,7 @@ int runAlterTableAndOptimize(NDBT_Context* ctx, NDBT_Step* step)
     g_info << "Executing query : "<< query.c_str() << endl;
     if(!sql.doQuery(query.c_str(), resultSet)){
       if(nodesKilledDuringStep &&
-          sql.getErrorNumber() == 0)
+         resultSet.mysqlErrno() == 0)
       {
         /* query failed probably because of a node kill in another step.
            wait for the nodes to get into start phase before retrying */
@@ -3742,6 +3756,9 @@ int runAlterTableAndOptimize(NDBT_Context* ctx, NDBT_Step* step)
       return NDBT_FAILED;
     }
   }
+
+  DbUtil::thread_end();
+
   return NDBT_OK;
 }
 

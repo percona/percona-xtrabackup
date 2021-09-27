@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2020, Oracle and/or its affiliates.
+Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -501,7 +501,7 @@ struct node_page_t : public basic_page_t {
   }
 
   /** Default ctor */
-  node_page_t() {}
+  node_page_t() = default;
 
   node_page_t(buf_block_t *block, mtr_t *mtr) : basic_page_t(block, mtr) {}
 

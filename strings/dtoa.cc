@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2021, Oracle and/or its affiliates.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -50,6 +50,7 @@
 
 #include "my_config.h"
 
+#include <assert.h>
 #include <algorithm>
 #include <limits>
 
@@ -63,7 +64,6 @@
 #include <string.h>
 
 #include "m_string.h"
-#include "my_dbug.h"
 
 #ifndef EOVERFLOW
 #define EOVERFLOW 84
@@ -126,8 +126,7 @@ static size_t my_fcvt_internal(double x, int precision, bool shorten, char *to,
   int decpt, sign, len, i;
   char *res, *src, *end, *dst = to;
   char buf[DTOA_BUFF_SIZE];
-  DBUG_ASSERT(precision >= 0 && precision < DECIMAL_NOT_SPECIFIED &&
-              to != nullptr);
+  assert(precision >= 0 && precision < DECIMAL_NOT_SPECIFIED && to != nullptr);
 
   res = dtoa(x, 5, precision, &decpt, &sign, &end, buf, sizeof(buf));
 
@@ -306,7 +305,7 @@ size_t my_gcvt(double x, my_gcvt_arg_type type, int width, char *to,
   char *res, *src, *end, *dst = to, *dend = dst + width;
   char buf[DTOA_BUFF_SIZE];
   bool have_space, force_e_format;
-  DBUG_ASSERT(width > 0 && to != nullptr);
+  assert(width > 0 && to != nullptr);
 
   /* We want to remove '-' from equations early */
   if (x < 0.) width--;
@@ -516,19 +515,13 @@ end:
 double my_strtod(const char *str, const char **end, int *error) {
   char buf[DTOA_BUFF_SIZE];
   double res;
-  DBUG_ASSERT(end != nullptr &&
-              ((str != nullptr && *end != nullptr) ||
-               (str == nullptr && *end == nullptr)) &&
-              error != nullptr);
+  assert(end != nullptr &&
+         ((str != nullptr && *end != nullptr) ||
+          (str == nullptr && *end == nullptr)) &&
+         error != nullptr);
 
   res = my_strtod_int(str, end, error, buf, sizeof(buf));
   return (*error == 0) ? res : (res < 0 ? -DBL_MAX : DBL_MAX);
-}
-
-double my_atof(const char *nptr) {
-  int error;
-  const char *end = nptr + 65535; /* Should be enough */
-  return (my_strtod(nptr, &end, &error));
 }
 
 /****************************************************************
@@ -706,7 +699,7 @@ typedef struct Stack_alloc {
 
 static Bigint *Balloc(int k, Stack_alloc *alloc) {
   Bigint *rv;
-  DBUG_ASSERT(k <= Kmax);
+  assert(k <= Kmax);
   if (k <= Kmax && alloc->freelist[k]) {
     rv = alloc->freelist[k];
     alloc->freelist[k] = rv->p.next;
@@ -1319,6 +1312,7 @@ static double my_strtod_int(const char *s00, const char **se, int *error,
 break2:
   if (s >= end) goto ret0;
 
+  // Gobble up leading zeros.
   if (*s == '0') {
     nz0 = 1;
     while (++s < end && *s == '0')
@@ -1335,6 +1329,7 @@ break2:
   nd0 = nd;
   if (s < end && c == '.') {
     if (++s < end) c = *s;
+    // Only leading zeros, now count number of leading zeros after the '.'
     if (!nd) {
       for (; s < end; ++s) {
         c = *s;
@@ -1351,6 +1346,13 @@ break2:
     for (; s < end; ++s) {
       c = *s;
       if (c < '0' || c > '9') break;
+
+      // We have seen some digits, but not enough of them are non-zero.
+      // Gobble up all the rest of the digits, and look for exponent.
+      if (nd > 0 && nz > DBL_MAX_10_EXP) {
+        continue;
+      }
+
       /*
         Here we are parsing the fractional part.
         We can stop counting digits after a while: the extra digits

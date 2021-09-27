@@ -44,8 +44,8 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -g          Debug mode
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: experimental, t. 
-            Default is 't'.
+-s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, rocksdb, main.
+            Default is 'binlog, main, gr, rocksdb and keyring'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
@@ -329,6 +329,20 @@ XTRABACKUP_BASEDIR
     export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com
 }
 
+# Configure mysql to read local component files if created by test cases.
+function config_local_components()
+{
+  cat <<EOF > "${MYSQLD}.my"
+{
+  "read_local_manifest": true
+}
+EOF
+ cat <<EOF > "$MYSQL_BASEDIR/lib/plugin/component_keyring_file.cnf"
+{
+  "read_local_config": true
+}
+EOF
+}
 
 # Fix innodb51 test failures on Centos5-32 Jenkins slaves due to SELinux
 # preventing shared symbol relocations in ha_innodb_plugin.so.0.0.0
@@ -559,6 +573,15 @@ function reap_worker()
     local skip_file=${worker_skip_files[$worker]}
     local tpath=${worker_names[$worker]}
     local tname=`basename $tpath .sh`
+    local suite=`dirname $tpath | awk -F'/' '{print $NF}'`
+    if [[ "${suite}" = "t" ]];
+    then
+      suite="main"
+    fi
+    if [[ $NOFSUITES -ge 1 ]];
+    then
+      tname="${suite}.${tname}"
+    fi
     local test_time=$((`now` - worker_stime[$worker]))
     local status_file=${worker_status_files[$worker]}
     local rc
@@ -757,6 +780,8 @@ function cleanup_on_test_exit()
 TEST_START_TIME=`now`
 
 tname=""
+suites=""
+NOFSUITES=0
 XTRACE_OPTION=""
 force=""
 SUBUNIT_OUT=test_results.subunit
@@ -779,7 +804,15 @@ while getopts "fghD?:t:s:d:c:j:T:x:X:i:r:" options; do
 
             g ) DEBUG=on;;
             h ) usage; exit;;
-            s ) tname="$OPTARG/*.sh";;
+            s )
+                if [[ "$OPTARG" = "default" ]];
+                then
+                  tname="${tname} t/*.sh";
+                else
+                  tname="${tname} suites/$OPTARG/*.sh";
+                fi
+                suites="${suites} $OPTARG"
+                ;;
             d ) export MYSQL_BASEDIR="$OPTARG";;
             D ) MYSQL_DEBUG_MODE=on ;;
             c ) echo "Warning: -c does not have any effect and is only \
@@ -832,7 +865,8 @@ if [ -n "$tname" ]
 then
    tests="$tname"
 else
-   tests="t/*.sh"
+   tests="suites/binlog/* suites/gr/*.sh suites/keyring/*.sh suites/rocksdb/*.sh t/*.sh"
+   suites=" binlog gr keyring rocksdb main"
 fi
 
 export OUTFILE="$PWD/results/setup"
@@ -854,6 +888,11 @@ then
     exit -1
 fi
 
+if is_server_version_higher_than 8.0.23
+then
+  config_local_components
+fi
+
 echo "Running against $MYSQL_FLAVOR $MYSQL_VERSION ($INNODB_FLAVOR $INNODB_VERSION)" |
   tee -a $OUTFILE
 
@@ -864,6 +903,12 @@ echo "Using '`basename $XB_BIN`' as xtrabackup binary" | tee -a $OUTFILE
 if [ "$NWORKERS" -gt 1 ]
 then
     echo "Using $NWORKERS parallel workers" | tee -a $OUTFILE
+fi
+
+if [ -n  "$suites" ];
+then
+  echo "Running suite(s):${suites}"
+  NOFSUITES=$(echo ${suites}| tr -cd ' \t' | wc -c)
 fi
 echo | tee -a $OUTFILE
 
@@ -913,6 +958,15 @@ do
    TOTAL_COUNT=$((TOTAL_COUNT+1))
 
    name=`basename $t .sh`
+   suite=`dirname $t | awk -F'/' '{print $NF}'`
+   if [[ "${suite}" = "t" ]];
+   then
+     suite="main"
+   fi
+   if [[ $NOFSUITES -ge 1 ]];
+   then
+     name="${suite}.${name}"
+   fi
    worker_names[$worker]=$t
    worker_outfiles[$worker]="$PWD/results/$name"
    worker_skip_files[$worker]="$PWD/results/$name.skipped"

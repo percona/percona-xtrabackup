@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -19,9 +19,6 @@
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
-
-// First include (the generated) my_config.h, to get correct platform defines.
-#include "my_config.h"
 
 #include <gtest/gtest.h>
 #include <algorithm>
@@ -44,7 +41,7 @@ TEST_F(InplaceVectorTest, Empty) {
   EXPECT_EQ(0U, int_10.size());
 }
 
-#if !defined(DBUG_OFF)
+#if !defined(NDEBUG)
 // Google Test recommends DeathTest suffix for classes used in death tests.
 typedef InplaceVectorTest InplaceVectorDeathTest;
 
@@ -70,7 +67,7 @@ TEST_F(InplaceVectorDeathTest, EmptyBackWrite) {
   EXPECT_DEATH_IF_SUPPORTED(int_10.back() = 42, ".*Assertion .*size.*0.*");
 }
 
-#endif  // DBUG_OFF
+#endif  // NDEBUG
 
 TEST_F(InplaceVectorTest, Insert5) {
   for (int ix = 0; ix < 5; ++ix) int_10.push_back(ix);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 #include "plugin/group_replication/include/plugin_observers/group_event_observer.h"
 #include "plugin/group_replication/include/plugin_psi.h"
 
-Group_event_observer::~Group_event_observer() {}
+Group_event_observer::~Group_event_observer() = default;
 
 Group_events_observation_manager::Group_events_observation_manager() {
   observer_list_lock = new Checkable_rwlock(

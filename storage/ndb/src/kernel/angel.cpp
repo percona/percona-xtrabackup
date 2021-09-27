@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,7 +39,6 @@
 
 #include <EventLogger.hpp>
 #include <NdbTCP.h>
-extern EventLogger * g_eventLogger;
 
 static void
 angel_exit(int code)
@@ -91,7 +90,7 @@ reportShutdown(const ndb_mgm_configuration* config,
                      rep->getNodeId(), 0);
 
   // Log event to cluster log
-  ndb_mgm_configuration_iterator iter(*config, CFG_SECTION_NODE);
+  ndb_mgm_configuration_iterator iter(config, CFG_SECTION_NODE);
   for (iter.first(); iter.valid(); iter.next())
   {
     Uint32 type;
@@ -219,7 +218,7 @@ pid_t waitpid(pid_t pid, int *stat_loc, int options)
   assert(options == WNOHANG);
   assert(stat_loc);
 
-  HANDLE handle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+  HANDLE handle = OpenProcess(PROCESS_ALL_ACCESS, false, pid);
   if (handle == NULL)
   {
     g_eventLogger->error("waitpid: Could not open handle for pid %d, "
@@ -284,7 +283,7 @@ kill(pid_t pid, int sig)
   /* Open the event to signal */
   HANDLE shutdown_event;
   while ((shutdown_event =
-          OpenEvent(EVENT_MODIFY_STATE, FALSE, shutdown_event_name)) == NULL)
+          OpenEvent(EVENT_MODIFY_STATE, false, shutdown_event_name)) == NULL)
   {
      /*
       Check if the process is alive, otherwise there is really
@@ -292,7 +291,7 @@ kill(pid_t pid, int sig)
      */
     DWORD exit_code;
     HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION,
-                                  FALSE, pid);
+                                  false, pid);
     if (!process)
     {
       /* Already died */
@@ -315,7 +314,7 @@ kill(pid_t pid, int sig)
     }
 
     if (retry_open_event--)
-      Sleep(100);
+      NdbSleep_MilliSleep(100);
     else
     {
       g_eventLogger->error("Failed to open shutdown_event '%s', error: %d",
@@ -498,7 +497,7 @@ static bool
 configure(const ndb_mgm_configuration* conf, NodeId nodeid)
 {
   Uint32 generation = 0;
-  ndb_mgm_configuration_iterator sys_iter(*conf, CFG_SECTION_SYSTEM);
+  ndb_mgm_configuration_iterator sys_iter(conf, CFG_SECTION_SYSTEM);
   if (sys_iter.get(CFG_SYS_CONFIG_GENERATION, &generation))
   {
     g_eventLogger->warning("Configuration didn't contain generation "
@@ -506,7 +505,7 @@ configure(const ndb_mgm_configuration* conf, NodeId nodeid)
   }
   g_eventLogger->debug("Using configuration with generation %u", generation);
 
-  ndb_mgm_configuration_iterator iter(*conf, CFG_SECTION_NODE);
+  ndb_mgm_configuration_iterator iter(conf, CFG_SECTION_NODE);
   if (iter.find(CFG_NODE_ID, nodeid))
   {
     g_eventLogger->error("Invalid configuration fetched, could not "
@@ -605,11 +604,8 @@ angel_run(const char* progname,
   }
   g_eventLogger->info("Angel allocated nodeid: %u", nodeid);
 
-  std::unique_ptr<ndb_mgm_configuration, ConfigRetriever::ConfigDeleter>
-      config_autoptr{retriever.getConfig(nodeid)};
-  ndb_mgm_configuration* config{config_autoptr.get()};
-
-  if (config == 0)
+  ndb_mgm_config_unique_ptr config(retriever.getConfig(nodeid));
+  if (!config)
   {
     g_eventLogger->error("Could not fetch configuration/invalid "
                          "configuration, error: '%s'",
@@ -617,7 +613,7 @@ angel_run(const char* progname,
     angel_exit(1);
   }
 
-  if (!configure(config, nodeid))
+  if (!configure(config.get(), nodeid))
   {
     // Failed to configure, error already printed
     angel_exit(1);
@@ -741,7 +737,7 @@ angel_run(const char* progname,
       else if (sscanf(buf, "sphase=%d\n", &value) == 1)
         child_sphase = value;
       else if (strcmp(buf, "\n") != 0)
-        fprintf(stderr, "unknown info from child: '%s'\n", buf);
+        g_eventLogger->info("unknown info from child: '%s'", buf);
     }
     g_eventLogger->debug("error: %u, signal: %u, sphase: %u",
                          child_error, child_signal, child_sphase);
@@ -753,7 +749,7 @@ angel_run(const char* progname,
       switch (WEXITSTATUS(status)) {
       case NRT_Default:
         g_eventLogger->info("Angel shutting down");
-        reportShutdown(config, nodeid, 0, 0, false, false,
+        reportShutdown(config.get(), nodeid, 0, 0, false, false,
                        child_error, child_signal, child_sphase);
         angel_exit(0);
         break;
@@ -776,7 +772,7 @@ angel_run(const char* progname,
           /**
            * Error shutdown && stopOnError()
            */
-          reportShutdown(config, nodeid,
+          reportShutdown(config.get(), nodeid,
                          error_exit, 0, false, false,
                          child_error, child_signal, child_sphase);
           angel_exit(0);
@@ -805,7 +801,7 @@ angel_run(const char* progname,
         /**
          * Error shutdown && stopOnError()
          */
-        reportShutdown(config, nodeid,
+        reportShutdown(config.get(), nodeid,
                        error_exit, 0, false, false,
                        child_error, child_signal, child_sphase);
         angel_exit(0);
@@ -830,7 +826,7 @@ angel_run(const char* progname,
       {
         g_eventLogger->alert("Angel detected too many startup failures(%d), "
                              "not restarting again", failed_startups_counter);
-        reportShutdown(config, nodeid,
+        reportShutdown(config.get(), nodeid,
                        error_exit, 0, false, false,
                        child_error, child_signal, child_sphase);
         angel_exit(0);
@@ -846,7 +842,7 @@ angel_run(const char* progname,
       failed_startups_counter = 0;
     }
 
-    reportShutdown(config, nodeid,
+    reportShutdown(config.get(), nodeid,
                    error_exit, 1,
                    no_start,
                    initial,

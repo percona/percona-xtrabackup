@@ -15,7 +15,7 @@ class Vault_keys_container final : public Keys_container,
   bool init(IKeyring_io *keyring_io, std::string keyring_storage_url) override;
   virtual IKey *fetch_key(IKey *key) override;
   virtual void set_curl_timeout(uint timeout) noexcept {
-    DBUG_ASSERT(vault_io != NULL);
+    assert(vault_io != NULL);
     vault_io->set_curl_timeout(timeout);
   }
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,7 @@ static bool ack_command(AtrtClient& atrtdb, int command_id, const char* state) {
   return atrtdb.doQuery(sql);
 }
 
-BaseString set_env_var(const BaseString& existing, const BaseString& name,
+static BaseString set_env_var(const BaseString& existing, const BaseString& name,
                        const BaseString& value) {
   /* Split existing on space
    * (may have issues with env vars with spaces)

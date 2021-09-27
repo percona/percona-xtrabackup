@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #define QMGR_H
 
 
+#include <cstring>
 #include <pc.hpp>
 #include <NdbTick.h>
 #include <NdbGetRUsage.h>
@@ -251,7 +252,7 @@ public:
     NDB_TICKS m_alloc_timeout;
     Uint16 m_failconf_blocks[QMGR_MAX_FAIL_STATE_BLOCKS];
 
-    NodeRec() { bzero(m_failconf_blocks, sizeof(m_failconf_blocks)); }
+    NodeRec() { std::memset(m_failconf_blocks, 0, sizeof(m_failconf_blocks)); }
   }; /* p2c: size = 52 bytes */
   
   typedef Ptr<NodeRec> NodeRecPtr;

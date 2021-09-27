@@ -5293,9 +5293,12 @@
     </li>
 
     <li>
-      <tt>`--with-ndbcluster-only`</tt>
+      <tt>`--with-ndbcluster-only`, `--with-ndb-only`</tt>
 
-      Run only test cases that have <b>ndb</b> in their name.
+      Run only <b>ndb</b> tests. If no suites are explicitly given, this
+      option also skip all non <b>ndb</b> suites without checking
+      individual test names.
+
     </li>
 
     <li>
@@ -7140,6 +7143,29 @@
     </li>
 
     <li>
+      <tt>--let <b>$var</b> = escape(<b>characters</b>,<b>string</b>)</tt>
+
+      Insert a backslash character before every character in
+      <b>string</b> that occurs in <b>characters</b>, and assign the
+      result to <b>$var</b>.
+
+      <b>characters</b> must not contain newline. If it contains a
+      comma, it must be the first character.  All whitespace is
+      significant and preserved in both arguments, so you typically
+      want to omit the space after the comma for this command.
+
+      This can be useful when you need to include <b>string</b> in an
+      SQL string in a query, and <b>string</b> may contain quote
+      characters.
+
+      @verbatim
+      --let <b>$var</b> = escape(\',The 'path separator' in Windows is \.)
+      --echo $var
+      # Prints: The \'path separator\' in Windows is \\.
+      @endverbatim
+    </li>
+
+    <li>
       <tt>reap</tt>
 
       Receive the result of the statement sent with the <b>send</b>
@@ -8169,7 +8195,7 @@
 
   @section SECTION_WRITING_UNIT_TESTS Writing Unit Tests for Google Test
 
-  The Google Test unit test files are located in the
+  Most of The Google Test unit test files are located in the
   <b>unittest/gunit</b> directory. You can look at these files to
   see how tests are written. Here are some examples:
 
@@ -8184,11 +8210,6 @@
   Most MyTAP-based tests are likely easily converted to Google Test.
   However, there might be low-level tests that absolutely must be run
   on every platform, and thus require MyTAP.
-
-  As currently implemented, the Google Test unit-test programs produce
-  TAP output rather than the “plain” alternative. This can be disabled
-  by using the <b>`--disable-tap-output`</b> command-line option
-  when running a test executable.
 
   To see what options are available, run a test executable with the
   <b>`--help`</b> option.

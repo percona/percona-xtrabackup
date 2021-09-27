@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
 */
 
 #include <cstdint>
+#include <cstring>
 
 #define DBACC_C
 #include "Dbacc.hpp"
@@ -1391,7 +1392,7 @@ Dbacc::execACCKEY_ORD(Signal* signal,
   {
   }
 
-  ndbout_c("bits: %.8x state: %.8x", opbits, opstate);
+  g_eventLogger->info("bits: %.8x state: %.8x", opbits, opstate);
   ndbabort();
 }
 
@@ -3846,7 +3847,7 @@ Dbacc::readTablePk(Uint32 localkey1,
   int ret = -ZTUPLE_DELETED_ERROR;
 #if defined(VM_TRACE) || defined(ERROR_INSERT)
   const int xfrm_multiply = (xfrm) ? MAX_XFRM_MULTIPLY : 1;
-  memset(keys, 0x1f, (fragrecptr.p->keyLength * xfrm_multiply) << 2);
+  std::memset(keys, 0x1f, (fragrecptr.p->keyLength * xfrm_multiply) << 2);
 #endif
   bool invalid_local_key = true;
   if (likely(! Local_key::isInvalid(localkey1, localkey2)))
@@ -9082,8 +9083,9 @@ void Dbacc::initOverpage(Page8Ptr iopPageptr)
   // Setting word32[ALLOC_CONTAINERS] and word32[CHECK_SUM] to zero is essential
   Uint32 nextPage = iopPageptr.p->word32[Page8::NEXT_PAGE];
   Uint32 prevPage = iopPageptr.p->word32[Page8::PREV_PAGE];
-  bzero(iopPageptr.p->word32 + Page8::P32_WORD_COUNT,
-        sizeof(iopPageptr.p->word32) - Page8::P32_WORD_COUNT * sizeof(Uint32));
+  std::memset(iopPageptr.p->word32 + Page8::P32_WORD_COUNT,
+              0,
+              sizeof(iopPageptr.p->word32) - Page8::P32_WORD_COUNT * sizeof(Uint32));
   iopPageptr.p->word32[Page8::NEXT_PAGE] = nextPage;
   iopPageptr.p->word32[Page8::PREV_PAGE] = prevPage;
 
@@ -9657,7 +9659,6 @@ void Dbacc::execDBINFO_SCANREQ(Signal *signal)
       if (found &&
           opRecPtr.p->m_op_bits != Operationrec::OP_INITIAL)
       {
-        ndbout_c("ACC_OP(3): %u", opRecPtr.i);
         jam();
 
         FragmentrecPtr fp;
@@ -10182,12 +10183,10 @@ Dbacc::sendPoolShrink(const Uint32 pool_index)
   c_transient_pools_shrinking.set(pool_index);
   if (need_send)
   {
-    SignalT<2> signal2[1];
-    Signal* signal = new (&signal2[0]) Signal(0);
-    memset(signal2, 0, sizeof(signal2));
+    Signal25 signal[1] = {};
     signal->theData[0] = ZACC_SHRINK_TRANSIENT_POOLS;
     signal->theData[1] = pool_index;
-    sendSignal(reference(), GSN_CONTINUEB, (Signal*)signal, 2, JBB);
+    sendSignal(reference(), GSN_CONTINUEB, signal, 2, JBB);
   }
 }
 

@@ -72,7 +72,7 @@ STEP 4: Configure and start replication
 
 Set the gtid_purged variable to the ``GTID`` from
 :file:`xtrabackup_binlog_info`. Then, update the information about the
-source node and, finally, start the replica. Run the following commands on the replica:
+source node and, finally, start the replica. Run the following commands on the replica if you are using a version before 8.0.22:
 
 .. code-block:: mysql
 
@@ -88,6 +88,28 @@ source node and, finally, start the replica. Run the following commands on the r
                 MASTER_AUTO_POSITION = 1;
     > START SLAVE;
 
+If you are using version 8.0.22 or later, use ``START REPLICA`` instead of ``START SLAVE``. ``START SLAVE`` is deprecated as of that release. If you are using version 8.0.21 or earlier, use ``START SLAVE``.
+
+
+If you are using a version 8.0.23 or later, run the following commands:
+
+.. code-block:: mysql
+
+   # Using the mysql shell
+    > SET SESSION wsrep_on = 0;
+    > RESET MASTER;
+    > SET SESSION wsrep_on = 1;
+    > SET GLOBAL gtid_purged='<gtid_string_found_in_xtrabackup_binlog_info>';
+    > CHANGE REPLICATION SOURCE TO 
+                SOURCE_HOST="$masterip", 
+                SOURCE_USER="repl",
+                SOURCE_PASSWORD="$slavepass",
+                SOURCE_AUTO_POSITION = 1;
+    > START REPLICA;
+
+
+If you are using version 8.0.23 or later, use `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__. ``CHANGE_MASTER_TO`` is deprecated as of that release. 
+
 .. note::
 
    The example above is applicable to Percona XtraDB Cluster. The ``wsrep_on`` variable
@@ -98,17 +120,22 @@ source node and, finally, start the replica. Run the following commands on the r
 STEP 5: Check the replication status
 ================================================================================
 
-The following command will show the replica status:
+The following command returns the replica status:
 
-.. code-block:: text
+.. code-block:: text 
 
-    > SHOW SLAVE STATUS\G
-            [..]
-            Slave_IO_Running: Yes
-            Slave_SQL_Running: Yes
-            [...]
-            Retrieved_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:5
-            Executed_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:1-5
+      SHOW REPLICA STATUS\G
+      [..]
+      Slave_IO_Running: Yes
+      Slave_SQL_Running: Yes
+      [...]
+      Retrieved_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:5
+      Executed_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:1-5
+
+.. note::
+
+
+   The command `SHOW SLAVE STATUS <https://dev.mysql.com/doc/refman/8.0/en/show-slave-status.html>`__  is deprecated. Use `SHOW REPLICA STATUS <https://dev.mysql.com/doc/refman/8.0/en/show-replica-status.html>`__. 
 
 We can see that the replica has retrieved a new transaction with number 5, so
 transactions from 1 to 5 are already on this slave.

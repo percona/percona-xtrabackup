@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2018, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -132,8 +132,7 @@ class Parallel_reader {
 
     /** Copy constructor.
     @param[in] scan_range       Instance to copy from. */
-    Scan_range(const Scan_range &scan_range)
-        : m_start(scan_range.m_start), m_end(scan_range.m_end) {}
+    Scan_range(const Scan_range &scan_range) = default;
 
     /** Constructor.
     @param[in] start            Start key
@@ -172,12 +171,8 @@ class Parallel_reader {
     /** Copy constructor.
     @param[in] config           Instance to copy from. */
     Config(const Config &config)
-        : m_scan_range(config.m_scan_range),
-          m_index(config.m_index),
-          m_is_compact(config.m_is_compact),
-          m_page_size(config.m_page_size),
-          m_read_level(config.m_read_level),
-          m_partition_id(config.m_partition_id) {}
+
+        = default;
 
     /** Range to scan. */
     const Scan_range m_scan_range;
@@ -259,6 +254,13 @@ class Parallel_reader {
   @param[in]  sync        true if the read is synchronous */
   explicit Parallel_reader(size_t max_threads, bool sync = true);
 
+  /** Constructor.
+  @param[in]  max_threads Maximum number of threads to use.
+  @param[in]  n_threads   Number of threads to be spawned.
+  @param[in]  sync        true if the read is synchronous */
+  explicit Parallel_reader(size_t max_threads, size_t n_threads,
+                           bool sync = true);
+
   /** Destructor. */
   ~Parallel_reader();
 
@@ -281,6 +283,8 @@ class Parallel_reader {
   issue where extra threads cannot be spawned. */
   void fallback_to_single_threaded_mode() {
     m_single_threaded_mode = true;
+    release_unused_threads(m_n_threads);
+    m_n_threads = 0;
     reset_error_state();
   }
 
@@ -324,7 +328,9 @@ class Parallel_reader {
   dberr_t run() MY_ATTRIBUTE((warn_unused_result));
 
   /** @return the configured max threads size. */
-  size_t max_threads() const MY_ATTRIBUTE((warn_unused_result));
+  size_t max_threads() const MY_ATTRIBUTE((warn_unused_result)) {
+    return m_max_threads;
+  }
 
   /** @return true if in error state. */
   bool is_error_set() const MY_ATTRIBUTE((warn_unused_result)) {
@@ -335,6 +341,13 @@ class Parallel_reader {
   @param[in] err                Error state to set to. */
   void set_error_state(dberr_t err) {
     m_err.store(err, std::memory_order_relaxed);
+  }
+
+  /** Set the number of threads to be spawned.
+  @param[in]  n_threads number of threads to be spawned. */
+  void set_n_threads(size_t n_threads) {
+    ut_ad(n_threads <= m_max_threads);
+    m_n_threads = n_threads;
   }
 
   // Disable copying.
@@ -352,7 +365,6 @@ class Parallel_reader {
   void release_unused_threads(size_t unused_threads) {
     ut_a(m_max_threads >= unused_threads);
     release_threads(unused_threads);
-    m_max_threads -= unused_threads;
   }
 
   /** Add an execution context to the run queue.
@@ -392,7 +404,10 @@ class Parallel_reader {
   // clang-format on
 
   /** Maximum number of worker threads to use. */
-  size_t m_max_threads{};
+  const size_t m_max_threads;
+
+  /** Number of worker threads that will be spawned. */
+  size_t m_n_threads{0};
 
   /** Mutex protecting m_ctxs. */
   mutable ib_mutex_t m_mutex;
@@ -461,7 +476,7 @@ class Parallel_reader::Scan_ctx {
 
  public:
   /** Destructor. */
-  ~Scan_ctx();
+  ~Scan_ctx() = default;
 
  private:
   /** Boundary of the range to scan. */
@@ -608,7 +623,7 @@ class Parallel_reader::Scan_ctx {
 
   /** @return the maximum number of threads configured. */
   size_t max_threads() const MY_ATTRIBUTE((warn_unused_result)) {
-    return (m_reader->m_max_threads);
+    return m_reader->m_max_threads;
   }
 
   /** Release unused threads back to the pool.
@@ -678,7 +693,7 @@ class Parallel_reader::Ctx {
 
  public:
   /** Destructor. */
-  ~Ctx();
+  ~Ctx() = default;
 
  public:
   /** @return the context ID. */

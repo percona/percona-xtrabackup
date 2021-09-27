@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -31,8 +31,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   will receive this event.
 */
 
+#include <assert.h>
 #include <ctype.h>
-#include <my_dbug.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/service_implementation.h>
@@ -41,7 +41,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/services/udf_registration.h>
 #include <mysql/service_plugin_registry.h>
 #include <mysql_com.h>
-#include "template_utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,6 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <map>
 #include <memory>
 #include <string>
+#include "my_compiler.h"
 #include "template_utils.h"
 
 REQUIRES_SERVICE_PLACEHOLDER(mysql_udf_metadata);
@@ -68,7 +68,7 @@ class IError_handler {
   /**
     Virtual destructor.
   */
-  virtual ~IError_handler() {}
+  virtual ~IError_handler() = default;
   /**
     Error reporting method.
 
@@ -196,7 +196,8 @@ char *collation_name = const_cast<char *>(collation);
 */
 static bool set_args_charset_info(UDF_ARGS *args, IError_handler &handler) {
   for (size_t index = 0; index < args->arg_count; ++index) {
-    if (mysql_service_mysql_udf_metadata->argument_set(
+    if (args->arg_type[index] == STRING_RESULT &&
+        mysql_service_mysql_udf_metadata->argument_set(
             args, "collation", index, pointer_cast<void *>(collation_name))) {
       handler.error("Could not set the %s collation of argument '%d'.",
                     collation_name, index);
@@ -251,7 +252,7 @@ static int arg_check(IError_handler &handler, unsigned int arg_count,
   bool res[2];
   bool result = false;
 
-  DBUG_ASSERT(array_elements(res) >= arg_def_size);
+  assert(array_elements(res) >= arg_def_size);
 
   /*
     Check, whether provided argument count matches expected argument count.

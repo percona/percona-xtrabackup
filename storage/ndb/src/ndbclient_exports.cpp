@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2012, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,7 @@ extern "C" void ndb_usage(void);
 extern "C" void myRandom48Init(void);
 extern "C" void ndb_rand(void);
 
+extern "C"
 #ifdef _MSC_VER
 /*
   Make at least one symbol defined in ndbclient in order to force

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -46,10 +46,10 @@ const std::string Restrictions("Restrictions");
 /**
   Abstract restriction constructor
 */
-Abstract_restrictions::Abstract_restrictions() {}
+Abstract_restrictions::Abstract_restrictions() = default;
 
 /** Abstract restriction destructor */
-Abstract_restrictions::~Abstract_restrictions() {}
+Abstract_restrictions::~Abstract_restrictions() = default;
 
 /**
   DB Restrictions constructor
@@ -400,7 +400,7 @@ Restrictions_aggregator_factory::create(THD *thd, const ACL_USER *acl_user,
             std::move(security_context)));
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
         break;
     }
   } else {
@@ -424,11 +424,11 @@ Restrictions_aggregator_factory::create(THD *thd, const ACL_USER *acl_user,
             std::move(security_context)));
         break;
       default:
-        DBUG_ASSERT(false);
+        assert(false);
         break;
     }
   }
-  DBUG_ASSERT(aggregator);
+  assert(aggregator);
   return aggregator;
 }
 
@@ -445,7 +445,7 @@ Restrictions_aggregator_factory::create(
   aggregator.reset(new DB_restrictions_aggregator_set_role(
       grantor, grantee, grantor_access, grantee_access, grantor_db_restrictions,
       grantee_db_restrictions, required_access, db_map));
-  DBUG_ASSERT(aggregator);
+  assert(aggregator);
   return aggregator;
 }
 
@@ -532,7 +532,7 @@ void Restrictions_aggregator_factory::fetch_grantor_access(
 
 void Restrictions_aggregator_factory::fetch_grantee_access(
     const ACL_USER *grantee, ulong &global_access, Restrictions &restrictions) {
-  DBUG_ASSERT(assert_acl_cache_read_lock(current_thd));
+  assert(assert_acl_cache_read_lock(current_thd));
   global_access = grantee->access;
   restrictions = acl_restrictions->find_restrictions(grantee);
 }
@@ -558,11 +558,11 @@ Restrictions_aggregator::Restrictions_aggregator(
       m_requested_access(requested_access),
       m_status(Status::No_op) {
   // partial_revokes system variable is ON
-  DBUG_ASSERT(mysqld_partial_revokes());
+  assert(mysqld_partial_revokes());
 }
 
 /** Destructor */
-Restrictions_aggregator::~Restrictions_aggregator() {}
+Restrictions_aggregator::~Restrictions_aggregator() = default;
 
 /**
   Constructor for database level restrictions aggregator
@@ -612,7 +612,7 @@ DB_restrictions_aggregator::DB_restrictions_aggregator(
 bool DB_restrictions_aggregator::generate(Abstract_restrictions &restrictions) {
   DB_restrictions *db_restrictions =
       dynamic_cast<DB_restrictions *>(&restrictions);
-  DBUG_ASSERT(db_restrictions);
+  assert(db_restrictions);
   m_status = validate();
   if (m_status == Status::Validated) {
     aggregate(*db_restrictions);
@@ -941,7 +941,7 @@ DB_restrictions_aggregator_set_role::validate() {
 */
 void DB_restrictions_aggregator_set_role::aggregate(
     DB_restrictions &db_restrictions) {
-  DBUG_ASSERT(m_status == Status::Validated);
+  assert(m_status == Status::Validated);
 
   if (m_grantee_rl.is_not_empty()) {
     /*
@@ -1050,7 +1050,7 @@ DB_restrictions_aggregator_global_grant::validate() {
 */
 void DB_restrictions_aggregator_global_grant::aggregate(
     DB_restrictions &restrictions) {
-  DBUG_ASSERT(m_status == Status::Validated);
+  assert(m_status == Status::Validated);
   aggregate_restrictions(SQL_OP::GLOBAL_GRANT, nullptr, restrictions);
   m_status = Status::Aggregated;
 }
@@ -1127,7 +1127,7 @@ DB_restrictions_aggregator_global_revoke::validate() {
 */
 void DB_restrictions_aggregator_global_revoke::aggregate(
     DB_restrictions &restrictions) {
-  DBUG_ASSERT(m_status == Status::Validated);
+  assert(m_status == Status::Validated);
   restrictions = m_grantee_rl;
   if (test_all_bits(m_grantee_global_access, m_requested_access)) {
     restrictions.remove(m_requested_access);
@@ -1235,7 +1235,7 @@ DB_restrictions_aggregator_global_revoke_all::validate() {
 */
 void DB_restrictions_aggregator_global_revoke_all::aggregate(
     DB_restrictions &restrictions) {
-  DBUG_ASSERT(m_status == Status::Validated);
+  assert(m_status == Status::Validated);
   restrictions.clear();
   m_status = Status::Aggregated;
 }
@@ -1320,7 +1320,7 @@ void DB_restrictions_aggregator_db_grant::aggregate(
        should be recorded in mysql.db table. Hence, we call
        set_if_db_level_operation().
   */
-  DBUG_ASSERT(m_status == Status::Validated);
+  assert(m_status == Status::Validated);
   restrictions = m_grantee_rl;
   ulong grantee_db_revokes = 0;
 
@@ -1407,7 +1407,7 @@ DB_restrictions_aggregator_db_revoke::validate() {
 */
 void DB_restrictions_aggregator_db_revoke::aggregate(
     DB_restrictions &restrictions) {
-  DBUG_ASSERT(m_status == Status::Validated);
+  assert(m_status == Status::Validated);
   restrictions = m_grantee_rl;
   if ((test_all_bits(m_grantee_db_access, m_requested_access))) {
     /*
@@ -1441,14 +1441,6 @@ Restrictions::Restrictions() : m_db_restrictions() {}
 
 /** Destructor */
 Restrictions ::~Restrictions() { m_db_restrictions.clear(); }
-
-/**
-  Copy constructor for Restrictions
-
-  @param [in] restrictions Restrictions to be copied
-*/
-Restrictions::Restrictions(const Restrictions &restrictions)
-    : m_db_restrictions(restrictions.m_db_restrictions) {}
 
 /**
   Move constructor for Restrictions

@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -73,6 +73,7 @@ SET(TESTS
   test_string_utils.cc
   test_process_launcher.cc
   test_tcp_address.cc
+  test_config_builder.cc
 )
 
 FOREACH(TEST ${TESTS})

@@ -32,7 +32,7 @@ class Vault_io final : public IVault_io, private boost::noncopyable {
       ISerialized_object **serialized_object) override;
   virtual bool has_next_serialized_object() override { return false; }
   virtual void set_curl_timeout(uint timeout) noexcept override {
-    DBUG_ASSERT(vault_curl != nullptr);
+    assert(vault_curl != nullptr);
     vault_curl->set_timeout(timeout);
   }
 

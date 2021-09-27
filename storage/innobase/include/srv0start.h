@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -118,10 +118,6 @@ void srv_start_threads_after_ddl_recovery();
 /** Start purge threads. During upgrade we start
 purge threads early to apply purge. */
 void srv_start_purge_threads();
-
-/** If early redo/undo log encryption processing is done.
-@return true if it's done. */
-bool is_early_redo_undo_encryption_done();
 
 /** Copy the file path component of the physical file to parameter. It will
  copy up to and including the terminating path separator.

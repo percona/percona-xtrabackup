@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -70,7 +70,7 @@ static int get_option_tcp_port(const mysql_harness::ConfigSection *section,
   if (!value.empty()) {
     char *rest;
     errno = 0;
-    auto result = std::strtol(value.c_str(), &rest, 0);
+    auto result = std::strtol(value.c_str(), &rest, 10);
 
     if (errno > 0 || *rest != '\0' || result > UINT16_MAX || result < 1) {
       std::ostringstream os;
@@ -215,18 +215,7 @@ static std::string get_option_destinations(
     }
     return value;
   } catch (const mysqlrouter::URIError &) {
-    char delimiter = ',';
-
-    mysql_harness::trim(value);
-    if (value.back() == delimiter || value.front() == delimiter) {
-      throw std::invalid_argument(
-          get_log_prefix(section, option) +
-          ": empty address found in destination list (was '" + value + "')");
-    }
-
-    std::stringstream ss(value);
-    std::string part;
-    while (std::getline(ss, part, delimiter)) {
+    for (auto part : mysql_harness::split_string(value, ',')) {
       mysql_harness::trim(part);
       if (part.empty()) {
         throw std::invalid_argument(
@@ -328,29 +317,8 @@ static T get_uint_option(const mysql_harness::ConfigSection *section,
     throw std::invalid_argument(res.error().message());
   }
 
-  std::string value = std::move(res.value());
-  static_assert(
-      std::numeric_limits<T>::max() <= std::numeric_limits<long long>::max(),
-      "");
-
-  char *rest;
-  errno = 0;
-  long long tol = std::strtoll(value.c_str(), &rest, 0);
-  T result = static_cast<T>(tol);
-
-  if (tol < 0 || errno > 0 || *rest != '\0' || result > max_value ||
-      result < min_value ||
-      result != tol ||  // if casting lost high-order bytes
-      (max_value > 0 && result > max_value)) {
-    std::ostringstream os;
-    os << get_log_prefix(section, option) << " needs value between "
-       << min_value << " and " << std::to_string(max_value) << " inclusive";
-    if (!value.empty()) {
-      os << ", was '" << value << "'";
-    }
-    throw std::invalid_argument(os.str());
-  }
-  return result;
+  return mysql_harness::option_as_uint(
+      res.value(), get_log_prefix(section, option), min_value, max_value);
 }
 
 static SslMode get_option_ssl_mode(

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +36,7 @@
 #include "sql/sql_list.h"
 #include "sql/thr_malloc.h"
 #include "sql_string.h"
-#include "unittest/gunit/test_utils.h"
+#include "unittest/gunit/gunit_test_main.h"
 
 namespace sql_list_unittest {
 

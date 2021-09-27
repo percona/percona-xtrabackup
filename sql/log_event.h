@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -149,13 +149,13 @@ int ignored_error_code(int err_code);
    @param COND   Condition to check
    @param ERRNO  Error number to return in non-debug builds
 */
-#ifdef DBUG_OFF
+#ifdef NDEBUG
 #define ASSERT_OR_RETURN_ERROR(COND, ERRNO) \
   do {                                      \
     if (!(COND)) return ERRNO;              \
   } while (0)
 #else
-#define ASSERT_OR_RETURN_ERROR(COND, ERRNO) DBUG_ASSERT(COND)
+#define ASSERT_OR_RETURN_ERROR(COND, ERRNO) assert(COND)
 #endif
 
 #define LOG_EVENT_OFFSET 4
@@ -1135,8 +1135,8 @@ class Log_event {
     be the applier.
   */
   virtual void set_mts_isolate_group() {
-    DBUG_ASSERT(ends_group() || get_type_code() == binary_log::QUERY_EVENT ||
-                get_type_code() == binary_log::EXECUTE_LOAD_QUERY_EVENT);
+    assert(ends_group() || get_type_code() == binary_log::QUERY_EVENT ||
+           get_type_code() == binary_log::EXECUTE_LOAD_QUERY_EVENT);
     common_header->flags |= LOG_EVENT_MTS_ISOLATE_F;
   }
 
@@ -1700,7 +1700,7 @@ class Intvar_log_event : public binary_log::Intvar_event, public Log_event {
 
   Intvar_log_event(const char *buf,
                    const Format_description_event *description_event);
-  ~Intvar_log_event() override {}
+  ~Intvar_log_event() override = default;
   size_t get_data_size() override {
     return 9; /* sizeof(type) + sizeof(val) */
     ;
@@ -1762,7 +1762,7 @@ class Rand_log_event : public binary_log::Rand_event, public Log_event {
 
   Rand_log_event(const char *buf,
                  const Format_description_event *description_event);
-  ~Rand_log_event() override {}
+  ~Rand_log_event() override = default;
   size_t get_data_size() override { return 16; /* sizeof(ulonglong) * 2*/ }
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
@@ -1818,7 +1818,7 @@ class Xid_apply_log_event : public Log_event {
   Xid_apply_log_event(Log_event_header *header_arg,
                       Log_event_footer *footer_arg)
       : Log_event(header_arg, footer_arg) {}
-  ~Xid_apply_log_event() override {}
+  ~Xid_apply_log_event() override = default;
   bool ends_group() const override { return true; }
 #if defined(MYSQL_SERVER)
   enum_skip_reason do_shall_skip(Relay_log_info *rli) override;
@@ -1843,7 +1843,7 @@ class Xid_log_event : public binary_log::Xid_event, public Xid_apply_log_event {
 
   Xid_log_event(const char *buf,
                 const Format_description_event *description_event);
-  ~Xid_log_event() override {}
+  ~Xid_log_event() override = default;
   size_t get_data_size() override { return sizeof(xid); }
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
@@ -1947,7 +1947,7 @@ class User_var_log_event : public binary_log::User_var_event, public Log_event {
 
   User_var_log_event(const char *buf,
                      const Format_description_event *description_event);
-  ~User_var_log_event() override {}
+  ~User_var_log_event() override = default;
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
   /*
@@ -2001,7 +2001,7 @@ class Stop_log_event : public binary_log::Stop_event, public Log_event {
     return;
   }
 
-  ~Stop_log_event() override {}
+  ~Stop_log_event() override = default;
   Log_event_type get_type_code() { return binary_log::STOP_EVENT; }
 
  private:
@@ -2056,7 +2056,7 @@ class Rotate_log_event : public binary_log::Rotate_event, public Log_event {
 
   Rotate_log_event(const char *buf,
                    const Format_description_event *description_event);
-  ~Rotate_log_event() override {}
+  ~Rotate_log_event() override = default;
   size_t get_data_size() override {
     return ident_len + Binary_log_event::ROTATE_HEADER_LEN;
   }
@@ -2110,7 +2110,7 @@ class Append_block_log_event : public virtual binary_log::Append_block_event,
 
   Append_block_log_event(const char *buf,
                          const Format_description_event *description_event);
-  ~Append_block_log_event() override {}
+  ~Append_block_log_event() override = default;
   size_t get_data_size() override {
     return block_len + Binary_log_event::APPEND_BLOCK_HEADER_LEN;
   }
@@ -2169,7 +2169,7 @@ class Delete_file_log_event : public binary_log::Delete_file_event,
 
   Delete_file_log_event(const char *buf,
                         const Format_description_event *description_event);
-  ~Delete_file_log_event() override {}
+  ~Delete_file_log_event() override = default;
   size_t get_data_size() override {
     return Binary_log_event::DELETE_FILE_HEADER_LEN;
   }
@@ -2234,7 +2234,7 @@ class Begin_load_query_log_event : public Append_block_log_event,
 #endif
   Begin_load_query_log_event(const char *buf,
                              const Format_description_event *description_event);
-  ~Begin_load_query_log_event() override {}
+  ~Begin_load_query_log_event() override = default;
 
  private:
 #if defined(MYSQL_SERVER)
@@ -2297,7 +2297,7 @@ class Execute_load_query_log_event
 #endif
   Execute_load_query_log_event(
       const char *buf, const Format_description_event *description_event);
-  ~Execute_load_query_log_event() override {}
+  ~Execute_load_query_log_event() override = default;
 
   ulong get_post_header_size_for_derived() override;
 #ifdef MYSQL_SERVER
@@ -2359,7 +2359,7 @@ class Unknown_log_event : public binary_log::Unknown_event, public Log_event {
     return;
   }
 
-  ~Unknown_log_event() override {}
+  ~Unknown_log_event() override = default;
   void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const override;
   Log_event_type get_type_code() { return binary_log::UNKNOWN_EVENT; }
 };
@@ -2434,7 +2434,7 @@ class Table_map_log_event : public binary_log::Table_map_event,
 
 #ifndef MYSQL_SERVER
   table_def *create_table_def() {
-    DBUG_ASSERT(m_colcnt > 0);
+    assert(m_colcnt > 0);
     return new table_def(m_coltype, m_colcnt, m_field_metadata,
                          m_field_metadata_size, m_null_bits, m_flags);
   }
@@ -2629,7 +2629,7 @@ class Rows_applier_psi_stage {
 
     /* Estimate if need be. */
     if (estimated == 0) {
-      DBUG_ASSERT(cursor > begin);
+      assert(cursor > begin);
       ulonglong avg_row_change_size = (cursor - begin) / m_n_rows_applied;
       estimated = (end - begin) / avg_row_change_size;
       mysql_stage_set_work_estimated(m_progress, estimated);
@@ -2927,7 +2927,17 @@ class Rows_log_event : public virtual binary_log::Rows_event, public Log_event {
   */
   int unpack_current_row(const Relay_log_info *const rli, MY_BITMAP const *cols,
                          bool is_after_image, bool only_seek = false);
+  /**
+    Updates the generated columns of the `TABLE` object referenced by
+    `m_table`, that have an active bit in the parameter bitset
+    `fields_to_update`.
 
+    @param fields_to_update A bitset where the bit at the index of
+                            generated columns to update must be set to `1`
+
+    @return 0 if the operation terminated successfully, 1 otherwise.
+   */
+  int update_generated_columns(MY_BITMAP const &fields_to_update);
   /*
     This member function is called when deciding the algorithm to be used to
     find the rows to be updated on the slave during row based replication.
@@ -3486,7 +3496,7 @@ class Incident_log_event : public binary_log::Incident_event, public Log_event {
     DBUG_PRINT("enter", ("incident: %d", incident_arg));
     common_header->set_is_valid(incident_arg > INCIDENT_NONE &&
                                 incident_arg < INCIDENT_COUNT);
-    DBUG_ASSERT(message == nullptr && message_length == 0);
+    assert(message == nullptr && message_length == 0);
     return;
   }
 
@@ -3499,7 +3509,7 @@ class Incident_log_event : public binary_log::Incident_event, public Log_event {
     DBUG_PRINT("enter", ("incident: %d", incident_arg));
     common_header->set_is_valid(incident_arg > INCIDENT_NONE &&
                                 incident_arg < INCIDENT_COUNT);
-    DBUG_ASSERT(message == nullptr && message_length == 0);
+    assert(message == nullptr && message_length == 0);
     if (!(message = (char *)my_malloc(key_memory_Incident_log_event_message,
                                       msg.length + 1, MYF(MY_WME)))) {
       // The allocation failed. Mark this binlog event as invalid.
@@ -3718,7 +3728,7 @@ class Transaction_payload_log_event
     Mts_db_names m_mts_db_names;
 
    public:
-    Applier_context() {}
+    Applier_context() = default;
     virtual ~Applier_context() { reset(); }
     void reset() { m_mts_db_names.reset_and_dispose(); }
     Mts_db_names &get_mts_db_names() { return m_mts_db_names; }
@@ -3747,7 +3757,7 @@ class Transaction_payload_log_event
                                 const Format_description_event *fde)
       : Transaction_payload_event(buf, fde), Log_event(header(), footer()) {}
 
-  ~Transaction_payload_log_event() override {}
+  ~Transaction_payload_log_event() override = default;
 
 #ifndef MYSQL_SERVER
   void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const override;
@@ -3830,7 +3840,7 @@ class Gtid_log_event : public binary_log::Gtid_event, public Log_event {
   Gtid_log_event(const char *buffer,
                  const Format_description_event *description_event);
 
-  ~Gtid_log_event() override {}
+  ~Gtid_log_event() override = default;
 
   size_t get_data_size() override {
     DBUG_EXECUTE_IF("do_not_write_rpl_timestamps", return POST_HEADER_LENGTH;);
@@ -4021,7 +4031,7 @@ class Previous_gtids_log_event : public binary_log::Previous_gtids_event,
 
   Previous_gtids_log_event(const char *buf,
                            const Format_description_event *description_event);
-  ~Previous_gtids_log_event() override {}
+  ~Previous_gtids_log_event() override = default;
 
   size_t get_data_size() override { return buf_size; }
 
@@ -4155,6 +4165,8 @@ class Transaction_context_log_event
   ~Transaction_context_log_event() override;
 
   size_t get_data_size() override;
+
+  size_t get_event_length();
 
 #ifdef MYSQL_SERVER
   int pack_info(Protocol *protocol) override;

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2021, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -601,8 +601,7 @@ void btr_page_free(dict_index_t *index, /*!< in: index tree */
 }
 
 /** Sets the child node file address in a node pointer. */
-UNIV_INLINE
-void btr_node_ptr_set_child_page_no(
+static inline void btr_node_ptr_set_child_page_no(
     rec_t *rec,               /*!< in: node pointer record */
     page_zip_des_t *page_zip, /*!< in/out: compressed page whose uncompressed
                              part will be updated, or NULL */
@@ -1063,7 +1062,7 @@ void btr_truncate(const dict_index_t *index) {
 
   page_no_t root_page_no = index->page;
   space_id_t space_id = index->space;
-  fil_space_t *space = fil_space_acquire(space_id);
+  fil_space_t *space = fil_space_acquire_silent(space_id);
 
   if (space == nullptr) {
     return;
@@ -1119,7 +1118,7 @@ void btr_truncate_recover(const dict_index_t *index) {
 
   page_no_t root_page_no = index->page;
   space_id_t space_id = index->space;
-  fil_space_t *space = fil_space_acquire(space_id);
+  fil_space_t *space = fil_space_acquire_silent(space_id);
 
   if (space == nullptr) {
     return;
@@ -1418,8 +1417,6 @@ byte *btr_parse_page_reorganize(
 {
   ulint level;
 
-  ut_ad(ptr != nullptr);
-  ut_ad(end_ptr != nullptr);
   ut_ad(index != nullptr);
 
   /* If dealing with a compressed page the record has the
@@ -2271,7 +2268,8 @@ static rec_t *btr_insert_into_right_sibling(uint32_t flags, btr_cur_t *cursor,
   /* We have to change the parent node pointer */
 
   compressed = btr_cur_pessimistic_delete(&err, TRUE, &next_father_cursor,
-                                          BTR_CREATE_FLAG, false, 0, 0, 0, mtr);
+                                          BTR_CREATE_FLAG, false, 0, 0, 0, mtr,
+                                          nullptr, nullptr);
 
   ut_a(err == DB_SUCCESS);
 
@@ -2748,11 +2746,11 @@ static void btr_level_list_remove_func(space_id_t space,
 
 /** Writes the redo log record for setting an index record as the predefined
  minimum record. */
-UNIV_INLINE
-void btr_set_min_rec_mark_log(rec_t *rec,     /*!< in: record */
-                              mlog_id_t type, /*!< in: MLOG_COMP_REC_MIN_MARK or
-                                              MLOG_REC_MIN_MARK */
-                              mtr_t *mtr)     /*!< in: mtr */
+static inline void btr_set_min_rec_mark_log(
+    rec_t *rec,     /*!< in: record */
+    mlog_id_t type, /*!< in: MLOG_COMP_REC_MIN_MARK or
+                    MLOG_REC_MIN_MARK */
+    mtr_t *mtr)     /*!< in: mtr */
 {
   mlog_write_initial_log_record(rec, type, mtr);
 
@@ -2828,8 +2826,9 @@ void btr_node_ptr_delete(dict_index_t *index, buf_block_t *block, mtr_t *mtr) {
   /* Delete node pointer on father page */
   btr_page_get_father(index, block, mtr, &cursor);
 
-  compressed = btr_cur_pessimistic_delete(&err, TRUE, &cursor, BTR_CREATE_FLAG,
-                                          false, 0, 0, 0, mtr);
+  compressed =
+      btr_cur_pessimistic_delete(&err, TRUE, &cursor, BTR_CREATE_FLAG, false, 0,
+                                 0, 0, mtr, nullptr, nullptr);
   ut_a(err == DB_SUCCESS);
 
   if (!compressed) {
@@ -2970,7 +2969,7 @@ static buf_block_t *btr_lift_page_up(
   if (!dict_table_is_locking_disabled(index->table)) {
     /* Free predicate page locks on the block */
     if (dict_index_is_spatial(index)) {
-      locksys::Shard_latch_guard guard{block->get_page_id()};
+      locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
       lock_prdt_page_free_from_discard(block, lock_sys->prdt_page_hash);
     }
     lock_update_copy_and_discard(father_block, block);
@@ -3238,7 +3237,7 @@ retry:
       }
 
       /* No GAP lock needs to be worrying about */
-      locksys::Shard_latch_guard guard{block->get_page_id()};
+      locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
       lock_prdt_page_free_from_discard(block, lock_sys->prdt_page_hash);
       lock_rec_free_all_from_discard_page(block);
     } else {
@@ -3372,12 +3371,13 @@ retry:
         rtr_merge_and_update_mbr(&cursor2, &father_cursor, offsets2, offsets,
                                  merge_page, merge_block, block, index, mtr);
       }
-      locksys::Shard_latch_guard guard{block->get_page_id()};
+      locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
       lock_prdt_page_free_from_discard(block, lock_sys->prdt_page_hash);
       lock_rec_free_all_from_discard_page(block);
     } else {
-      compressed = btr_cur_pessimistic_delete(
-          &err, TRUE, &cursor2, BTR_CREATE_FLAG, false, 0, 0, 0, mtr);
+      compressed =
+          btr_cur_pessimistic_delete(&err, TRUE, &cursor2, BTR_CREATE_FLAG,
+                                     false, 0, 0, 0, mtr, nullptr, nullptr);
       ut_a(err == DB_SUCCESS);
 
       if (!compressed) {

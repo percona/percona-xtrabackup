@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -458,7 +458,15 @@ TEST_F(RoutingTests, bug_24841281) {
   routing.set_destinations_from_csv("127.0.0.1:" + std::to_string(server_port));
   mysql_harness::ConfigSection cs{"routing", "testroute", nullptr};
   mysql_harness::PluginFuncEnv env(nullptr, &cs, true);
+
   std::thread thd(&MySQLRouting::start, &routing, &env);
+
+  mysql_harness::ScopeGuard guard([&]() {
+    env.clear_running();  // shut down MySQLRouting
+    routing.stop_socket_acceptors();
+    server.stop();
+    thd.join();
+  });
 
   // set the number of accepts that the server should expect for before
   // stopping
@@ -579,9 +587,6 @@ TEST_F(RoutingTests, bug_24841281) {
   });
   EXPECT_EQ(0, routing.get_context().info_active_routes_.load());
 #endif
-  env.clear_running();  // shut down MySQLRouting
-  server.stop();
-  thd.join();
 }
 #endif  // #ifndef _WIN32 [_HERE_]
 

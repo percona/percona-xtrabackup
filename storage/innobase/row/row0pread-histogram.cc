@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2019, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -40,7 +40,7 @@ std::uniform_real_distribution<double> Histogram_sampler::m_distribution(0,
 Histogram_sampler::Histogram_sampler(size_t max_threads, int sampling_seed,
                                      double sampling_percentage,
                                      enum_sampling_method sampling_method)
-    : m_parallel_reader(max_threads, false),
+    : m_parallel_reader(max_threads, max_threads, false),
       m_random_generator(sampling_seed),
       m_sampling_method(sampling_method),
       m_sampling_percentage(sampling_percentage),
@@ -222,7 +222,7 @@ void Histogram_sampler::buffer_end() {
   return;
 }
 
-dberr_t Histogram_sampler::run() { return (m_parallel_reader.run()); }
+dberr_t Histogram_sampler::run() { return m_parallel_reader.run(); }
 
 dberr_t Histogram_sampler::sample_rec(const Parallel_reader::Ctx *reader_ctx,
                                       const rec_t *rec, ulint *offsets,

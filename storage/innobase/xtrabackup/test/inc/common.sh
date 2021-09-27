@@ -5,6 +5,11 @@ function xtrabackup()
     run_cmd $XB_BIN $XB_ARGS "$@"
 }
 
+function rr_xtrabackup()
+{
+  run_cmd rr $XB_BIN $XB_ARGS "$@"
+}
+
 function mysql()
 {
     run_cmd $MYSQL $MYSQL_ARGS "$@"
@@ -61,7 +66,7 @@ function call_mysql_install_db()
 function mysql_ping()
 {
     local pid=$1
-    local attempts=200
+    local attempts=${MYSQLD_START_TIMEOUT:-200}
     local i
 
     for ((i=1; i<=attempts; i++))
@@ -199,6 +204,21 @@ function init_server_variables()
 }
 
 ########################################################################
+# Initialize group replication variables such as datadir, tmpdir, etc. and store
+# them with the specified index in SRV_MYSQLD_* arrays to be used by
+# switch_server() later
+########################################################################
+function bulk_init_gr_variables()
+{
+  local number_of_servers=$1
+  for ((i=1; i<=number_of_servers; i++))
+  do
+    init_server_variables $i
+    SRV_MYSQLD_GR_PORT[$i]=`get_free_port $i`
+  done
+}
+
+########################################################################
 # Reset server variables
 ########################################################################
 function reset_server_variables()
@@ -219,6 +239,11 @@ function reset_server_variables()
     SRV_MYSQLD_ERRFILE[$id]=
     SRV_MYSQLD_PORT[$id]=
     SRV_MYSQLD_SOCKET[$id]=
+    # Group Replication
+    if [[ ${SRV_MYSQLD_GR_PORT:-x} != "x" ]];
+    then
+      SRV_MYSQLD_GR_PORT[$id]=
+    fi
 }
 
 ##########################################################################
@@ -239,6 +264,7 @@ function switch_server()
 
     MYSQL_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf "
     MYSQLD_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf ${MYSQLD_EXTRA_ARGS}"
+    MYSQLDUMP_ARGS=
     if [ "`whoami`" = "root" ]
     then
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
@@ -252,6 +278,12 @@ function switch_server()
     mysql_datadir="$MYSQLD_DATADIR"
     mysql_tmpdir="$MYSQLD_TMPDIR"
     mysql_socket="$MYSQLD_SOCKET"
+
+    # Group Replication
+    if [[ ${SRV_MYSQLD_GR_PORT:-x} != "x" ]];
+    then
+      MYSQLD_GR_PORT=${SRV_MYSQLD_GR_PORT[$id]}
+    fi
 }
 
 ########################################################################
@@ -260,15 +292,30 @@ function switch_server()
 function start_server_with_id()
 {
     local id=$1
+    shift
+    if [[ "$#" -ge 1 ]];
+    then
+      if [[ "$1" = "gr" ]] || [[ "$1" = "standalone" ]];
+      then
+        local type=$1
+        shift
+      fi
+    fi
+    if [[ ${type:-x} = "x" ]];
+    then
+      type="standalone"
+    fi
     local attempts=0
     local max_attempts=5
-    shift
 
     vlog "Starting server with id=$id..."
 
     while true
     do
-        init_server_variables $id
+        if [[ "${type}" = "standalone" ]];
+        then
+          init_server_variables $id
+        fi
         switch_server $id
 
         if [ ! -d "$MYSQLD_VARDIR" ]
@@ -365,7 +412,7 @@ EOF
     vlog "Server with id=$id has been started on port $MYSQLD_PORT, \
 socket $MYSQLD_SOCKET"
 
-    if [ $new_instance = yes ] ; then
+    if [ $new_instance = yes ] && [ "${type}" = "standalone" ] ; then
         ${MYSQL} ${MYSQL_ARGS} -e "CREATE DATABASE IF NOT EXISTS test"
     fi
 }
@@ -403,7 +450,7 @@ function stop_server_with_id()
 ########################################################################
 function start_server()
 {
-    start_server_with_id 1 $*
+    start_server_with_id 1 'standalone' $*
 }
 
 ########################################################################
@@ -446,6 +493,101 @@ function shutdown_server()
 }
 
 ########################################################################
+# Start GR cluster
+########################################################################
+function start_group_replication_cluster()
+{
+  # PXB-2551 - Upstram MySQL Debug version doesn't work with GR
+  # https://bugs.mysql.com/bug.php?id=103316
+  if is_debug_server; then
+    if [[ $INNODB_FLAVOR = "InnoDB" ]];
+    then
+      require_server_version_higher_than 8.0.26
+    fi
+  fi
+  local number_of_nodes=$1
+  shift
+  if [[ -z  $number_of_nodes ]];
+  then
+    number_of_nodes=2
+  fi
+  bulk_init_gr_variables ${number_of_nodes}
+  for ((i=1; i<=number_of_nodes; i++))
+  do
+    switch_server ${i}
+    GR_CLUSTER_ADDRESS=""
+    for SRV in "${SRV_MYSQLD_GR_PORT[@]}"
+    do
+      GR_CLUSTER_ADDRESS="${GR_CLUSTER_ADDRESS}127.0.0.1:${SRV},"
+    done
+    MYSQLD_EXTRA_MY_CNF_OPTS="
+gtid_mode=ON
+enforce_gtid_consistency=ON
+plugin_load_add='group_replication.so'
+loose-group_replication_group_name=\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"
+loose-group_replication_start_on_boot=off
+loose-group_replication_bootstrap_group= off
+loose-group_replication_recovery_use_ssl=ON
+loose-group_replication_recovery_get_public_key=ON
+loose-group_replication_local_address=\"127.0.0.1:${SRV_MYSQLD_GR_PORT[$i]}\"
+loose-group_replication_group_seeds= \"${GR_CLUSTER_ADDRESS%?}\""
+    start_server_with_id ${i} 'gr' $*
+
+    # config GR User
+    ${MYSQL} ${MYSQL_ARGS} -e "SET SQL_LOG_BIN=0;
+    CREATE USER IF NOT EXISTS rpl_user@'localhost' IDENTIFIED BY 'password' REQUIRE SSL;
+    GRANT REPLICATION SLAVE ON *.* TO rpl_user@'localhost';
+    GRANT BACKUP_ADMIN ON *.* TO rpl_user@'localhost';
+    CREATE USER IF NOT EXISTS rpl_user@'%' IDENTIFIED BY 'password' REQUIRE SSL;
+    GRANT REPLICATION SLAVE ON *.* TO rpl_user@'%';
+    GRANT BACKUP_ADMIN ON *.* TO rpl_user@'%';
+    FLUSH PRIVILEGES;
+    SET SQL_LOG_BIN=1;"
+    ${MYSQL} ${MYSQL_ARGS} -e "RESET SLAVE; CHANGE MASTER TO MASTER_USER='rpl_user', MASTER_PASSWORD='password' FOR CHANNEL 'group_replication_recovery';"
+
+    # Start/Bootstrap cluster
+    if [[ ${i} -eq 1 ]];
+    then
+      $MYSQL ${MYSQL_ARGS} -e "SET GLOBAL group_replication_bootstrap_group=ON;
+        START GROUP_REPLICATION USER='rpl_user', PASSWORD='password';
+        SET GLOBAL group_replication_bootstrap_group=OFF;"
+    else
+      $MYSQL ${MYSQL_ARGS} -e "START GROUP_REPLICATION USER='rpl_user', PASSWORD='password';"
+    fi
+  done
+  check_gr_health $number_of_nodes
+  switch_server 1
+  $MYSQL ${MYSQL_ARGS} -e "CREATE DATABASE IF NOT EXISTS test"
+}
+
+########################################################################
+# Check health of GR cluster
+########################################################################
+function check_gr_health()
+{
+  local number_of_nodes=$1
+  switch_server 1
+  for ((i=1; i<=30; i++))
+  do
+    ONLINE_NODES=$($MYSQL ${MYSQL_ARGS} -NBe "SELECT COUNT(*) FROM performance_schema.replication_group_members WHERE MEMBER_STATE='ONLINE'")
+    if [[ ${ONLINE_NODES} = ${number_of_nodes} ]];
+    then
+      return 0;
+    fi
+    sleep 2;
+  done
+  $MYSQL ${MYSQL_ARGS} -NBe "SELECT * FROM performance_schema.replication_group_members WHERE MEMBER_STATE='ONLINE'"
+  for ((i=1; i <=${number_of_nodes}; i++))
+  {
+    echo "======= Error log from node ${i}"
+    cat ${SRV_MYSQLD_ERRFILE[$i]}
+    echo "================================"
+  }
+
+  die "Not all GR members are online. Aborting"
+}
+
+########################################################################
 # Force a checkpoint for a server specified with the first argument
 ########################################################################
 function force_checkpoint_with_server_id()
@@ -458,7 +600,7 @@ function force_checkpoint_with_server_id()
     vlog "Forcing a checkpoint for server #$id"
 
     shutdown_server_with_id $id
-    start_server_with_id $id $*
+    start_server_with_id $id 'standalone' $*
 }
 
 ########################################################################
@@ -655,7 +797,7 @@ EOF
 ##########################################################################
 function record_db_state()
 {
-    $MYSQLDUMP $MYSQL_ARGS -t --compact --skip-extended-insert \
+    $MYSQLDUMP $MYSQL_ARGS $MYSQLDUMP_ARGS -t --compact --skip-extended-insert \
         $1 >"$topdir/tmp/$1_old.sql"
 }
 
@@ -666,7 +808,7 @@ function record_db_state()
 ##########################################################################
 function verify_db_state()
 {
-    $MYSQLDUMP $MYSQL_ARGS -t --compact --skip-extended-insert \
+    $MYSQLDUMP $MYSQL_ARGS $MYSQLDUMP_ARGS -t --compact --skip-extended-insert \
         $1 >"$topdir/tmp/$1_new.sql"
     diff -u "$topdir/tmp/$1_old.sql" "$topdir/tmp/$1_new.sql"
 }
@@ -685,6 +827,23 @@ function egrep()
 {
     command egrep "$@" | cat
     return ${PIPESTATUS[0]}
+}
+
+########################################################################
+# Run grep against a file using a pattern and exit in case occurencies
+# don't match
+########################################################################
+function grep_count()
+{
+  local pattern=$1
+  local file=$2
+  local expect=$3
+  local occurencies=$(grep -c "${pattern}" ${file})
+  if [[ $occurencies -ne $expect ]];
+  then
+    vlog "grep_count expected ${expect} for pattern ${pattern} but found ${occurencies}"
+    exit -1
+  fi
 }
 
 ####################################################
@@ -783,11 +942,24 @@ $MYSQL_VERSION_MINOR $MYSQL_VERSION_PATCH`
     [[ $server_str > $version_str ]]
 }
 
+#########################################################################
+# Return 0 if server is debug version
+########################################################################
 function is_debug_server()
 {
 
-[[ $MYSQL_VERSION =~ .*debug ]]
+  [[ $MYSQL_VERSION =~ .*debug ]]
 
+}
+
+#########################################################################
+# Requires server debug version
+########################################################################
+function require_debug_server()
+{
+    if ! is_debug_server; then
+        skip_test "Requires debug server version"
+    fi
 }
 
 #########################################################################
@@ -915,6 +1087,25 @@ function require_tokudb()
     fi
 }
 
+########################################################################
+# Return 0 if the xtrabackup has AddressSanitizer support
+########################################################################
+function is_asan()
+{
+    ldd $XB_BIN | grep -q libasan
+    return $?
+}
+
+#########################################################################
+# Skip test if xtrabackup has AddressSanitizer support
+########################################################################
+function skip_if_asan()
+{
+    if is_asan; then
+        skip_test "Incompatible with AddressSanitizer"
+    fi
+}
+
 ##############################################################################
 # Start a server with TokuDB plugins loaded and enabled.
 # Server id is 1, any arguments are passsed to the mysqld.
@@ -937,7 +1128,7 @@ tokudb_background_job_status=ha_tokudb.so"
 
 function require_rocksdb()
 {
-   if ! test -a $(dirname ${MYSQLD})/../lib/mysql/plugin/ha_rocksdb.so ; then
+   if ! test -a $(dirname ${MYSQLD})/../lib/plugin/ha_rocksdb.so ; then
         skip_test "Requires RocksDB"
    fi
 }
@@ -1149,6 +1340,52 @@ function innodb_checkpoint_lsn()
 {
     ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
         grep "Last checkpoint at" | awk '{ print $4 }'
+}
+
+#check row count in a database/table
+#@in database
+#@in table
+#@in expected row count
+########################################################################
+function check_count() {
+  local db=$1
+  local table=$2
+  local expected_row_count=$3
+  local row_count=`$MYSQL $MYSQL_ARGS -Ns -e "select count(1) from $table" $db | awk {'print $1'}`
+  vlog "row count in table $table is $row_count"
+
+  if [ "$row_count" != $expected_row_count ]; then
+   vlog "rows in table t1 is $row_count when it should be $expected_row_count"
+   exit -1
+  fi
+}
+
+#general method to restore
+########################################################################
+function backup_and_restore() {
+  local db=$1
+  record_db_state $db
+  rm -rf $topdir/backup
+  mkdir -p $topdir/backup
+
+  ## backup and prepare based on if keyring is used
+  if [ -z ${plugin_dir+x} ]
+  then
+    xtrabackup --backup --target-dir=$topdir/backup
+    run_cmd $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
+  else
+    xtrabackup --backup --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir}
+    run_cmd $XB_BIN $XB_ARGS --xtrabackup-plugin-dir=${plugin_dir} --prepare \
+      --target-dir=$topdir/backup ${keyring_args}
+  fi
+
+  # Restore
+  stop_server
+  rm -rf $mysql_datadir
+  xtrabackup --copy-back --target-dir=$topdir/backup
+  start_server
+  # Verify backup
+  run_cmd verify_db_state $db
 }
 
 # Grep mysql.general_log for statements executed by xtrabackup

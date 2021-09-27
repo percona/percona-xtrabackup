@@ -1,0 +1,33 @@
+.. _PXB-8.0.26-18.0:
+
+================================================================================
+*Percona XtraBackup* 8.0.26-18.0
+================================================================================
+
+:Date: September 2, 2021
+:Installation: `Installing Percona XtraBackup <https://www.percona.com/doc/percona-xtrabackup/8.0/installation.html>`_
+
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot tolerate
+long periods of downtime. Offered free as an open source solution, it drives down backup
+costs while providing unique features for MySQL backups.
+
+Improvements
+================================================================================
+
+* :jirabug:`PXB-2477`: The xbcloud should retry on error and utilize incremental backoff (Thanks to Baptiste Mille-Mathias for reporting this issue)
+* :jirabug:`PXB-2580`: With the xbcloud binary, a chunk-upload on an SSL connect error to S3 was not retried (Thanks to Tim Vaillancourt for providing the patch)
+* :jirabug:`PXB-2317`: Remove the obsolete LOCKLESS binary log functionality since the ``performance_schema.log_status`` table is now used to get the log information on all the storages without locking them
+
+
+
+Bugs Fixed
+================================================================================
+
+* :jirabug:`PXB-2101`: The Prepare step fails due to duplicate Serialized Dictionary Information (SDI) (Thanks to Fungo Wang for reporting this issue)
+* :jirabug:`PXB-1504`: The FIND_GCRYPT macro is broken (Thanks to Maxim Bublis for reporting this issue)
+* :jirabug:`PXB-1961`: The Prepare step of a full backup fails for encrypted tables with a generic error
+* :jirabug:`PXB-2585`: XtraBackup fails to backup archive RocksDB Write-Ahead Log (WAL) files
+
+
+

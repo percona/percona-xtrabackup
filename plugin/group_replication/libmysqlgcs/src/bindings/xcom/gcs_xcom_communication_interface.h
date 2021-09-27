@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -192,7 +192,7 @@ class Gcs_xcom_communication_interface : public Gcs_communication_interface {
   virtual void process_user_data_packet(
       Gcs_packet &&packet, std::unique_ptr<Gcs_xcom_nodes> &&xcom_nodes) = 0;
 
-  ~Gcs_xcom_communication_interface() override {}
+  ~Gcs_xcom_communication_interface() override = default;
 };
 
 /**

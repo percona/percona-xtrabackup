@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -49,8 +49,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /** Get a minimum bounding box from a Predicate
  @return	the minimum bounding box */
-UNIV_INLINE
-rtr_mbr_t *prdt_get_mbr_from_prdt(
+static inline rtr_mbr_t *prdt_get_mbr_from_prdt(
     const lock_prdt_t *prdt) /*!< in: the lock predicate */
 {
   rtr_mbr_t *mbr_loc = reinterpret_cast<rtr_mbr_t *>(prdt->data);
@@ -71,8 +70,8 @@ lock_prdt_t *lock_get_prdt_from_lock(const lock_t *lock) /*!< in: the lock */
 
 /** Get a minimum bounding box directly from a lock
  @return	the minimum bounding box*/
-UNIV_INLINE
-rtr_mbr_t *lock_prdt_get_mbr_from_lock(const lock_t *lock) /*!< in: the lock */
+static inline rtr_mbr_t *lock_prdt_get_mbr_from_lock(
+    const lock_t *lock) /*!< in: the lock */
 {
   ut_ad(lock->type_mode & LOCK_PREDICATE);
 
@@ -212,14 +211,14 @@ bool lock_prdt_has_to_wait(
 /** Checks if a transaction has a GRANTED stronger or equal predicate lock
  on the page
  @return	lock or NULL */
-UNIV_INLINE
-lock_t *lock_prdt_has_lock(ulint precise_mode, /*!< in: LOCK_S or LOCK_X */
-                           ulint type_mode,    /*!< in: LOCK_PREDICATE etc. */
-                           const buf_block_t *block, /*!< in: buffer block
-                                                     containing the record */
-                           lock_prdt_t *prdt, /*!< in: The predicate to be
-                                              attached to the new lock */
-                           const trx_t *trx)  /*!< in: transaction */
+static inline lock_t *lock_prdt_has_lock(
+    ulint precise_mode,       /*!< in: LOCK_S or LOCK_X */
+    ulint type_mode,          /*!< in: LOCK_PREDICATE etc. */
+    const buf_block_t *block, /*!< in: buffer block
+                              containing the record */
+    lock_prdt_t *prdt,        /*!< in: The predicate to be
+                              attached to the new lock */
+    const trx_t *trx)         /*!< in: transaction */
 {
   lock_t *lock;
 
@@ -453,7 +452,7 @@ dberr_t lock_prdt_insert_check_and_lock(
 
   dberr_t err = DB_SUCCESS;
   {
-    locksys::Shard_latch_guard guard{block->get_page_id()};
+    locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
 
     /* Because this code is invoked for a running transaction by
     the thread that is serving the transaction, it is not necessary
@@ -524,7 +523,7 @@ void lock_prdt_update_parent(buf_block_t *left_block, buf_block_t *right_block,
 
   /* We will operate on three blocks (left, right, parent). Latching their
   shards without deadlock is easiest using exclusive global latch. */
-  locksys::Global_exclusive_latch_guard guard{};
+  locksys::Global_exclusive_latch_guard guard{UT_LOCATION_HERE};
 
   /* Get all locks in parent */
   for (lock = lock_rec_get_first_on_page_addr(lock_sys->prdt_hash, page_id);
@@ -574,7 +573,7 @@ static void lock_prdt_update_split_low(buf_block_t *block,
                                        ulint type_mode) {
   lock_t *lock;
 
-  locksys::Shard_latches_guard guard{*block, *new_block};
+  locksys::Shard_latches_guard guard{UT_LOCATION_HERE, *block, *new_block};
   for (lock = lock_rec_get_first_on_page(lock_hash_get(type_mode), block);
        lock != nullptr; lock = lock_rec_get_next_on_page(lock)) {
     ut_ad(lock);
@@ -686,7 +685,7 @@ dberr_t lock_prdt_lock(buf_block_t *block,  /*!< in/out: buffer block of rec */
   index record, and this would not have been possible if another active
   transaction had modified this secondary index record. */
 
-  locksys::Shard_latch_guard guard{block->get_page_id()};
+  locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
 
   const ulint prdt_mode = mode | type_mode;
   lock_t *lock = lock_rec_get_first_on_page(hash, block);
@@ -759,7 +758,7 @@ dberr_t lock_place_prdt_page_lock(const page_id_t &page_id, dict_index_t *index,
   transaction had modified this secondary index record. */
 
   RecID rec_id(page_id, PRDT_HEAPNO);
-  locksys::Shard_latch_guard guard{page_id};
+  locksys::Shard_latch_guard guard{UT_LOCATION_HERE, page_id};
 
   const lock_t *lock =
       lock_rec_get_first_on_page_addr(lock_sys->prdt_page_hash, page_id);
@@ -798,7 +797,7 @@ dberr_t lock_place_prdt_page_lock(const page_id_t &page_id, dict_index_t *index,
 }
 
 bool lock_test_prdt_page_lock(const trx_t *trx, const page_id_t &page_id) {
-  locksys::Shard_latch_guard guard{page_id};
+  locksys::Shard_latch_guard guard{UT_LOCATION_HERE, page_id};
   /* Make sure that the only locks on this page (if any) are ours. */
   for (const lock_t *lock =
            lock_rec_get_first_on_page_addr(lock_sys->prdt_page_hash, page_id);
@@ -824,7 +823,7 @@ void lock_prdt_rec_move(
     return;
   }
 
-  locksys::Shard_latches_guard guard{*receiver, *donator};
+  locksys::Shard_latches_guard guard{UT_LOCATION_HERE, *receiver, *donator};
 
   for (lock = lock_rec_get_first(lock_sys->prdt_hash, donator, PRDT_HEAPNO);
        lock != nullptr; lock = lock_rec_get_next(PRDT_HEAPNO, lock)) {

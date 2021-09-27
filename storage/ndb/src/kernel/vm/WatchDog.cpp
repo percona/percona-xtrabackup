@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,8 @@
 
 #include <ndb_global.h>
 
+#include <time.h>
+
 #include "mt-asm.h"
 #include "WatchDog.hpp"
 #include "GlobalData.hpp"
@@ -36,7 +38,6 @@
 
 #include <NdbTick.h>
 
-extern EventLogger * g_eventLogger;
 
 extern "C" 
 void* 

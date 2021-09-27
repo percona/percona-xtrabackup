@@ -1729,7 +1729,7 @@ t5	CREATE TABLE `t5` (
 ) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t5 ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def	test	t5	t5	const01	const01	3	1	1	N	32769	0	63
+def	test	t5	t5	const01	const01	3	2	1	N	32769	0	63
 def	test	t5	t5	param01	param01	8	21	1	Y	32768	0	63
 def	test	t5	t5	const02	const02	246	4	3	N	32769	1	63
 def	test	t5	t5	param02	param02	246	67	32	Y	32768	30	63
@@ -3138,6 +3138,8 @@ select 'true' as found from t9
 where c1= 20 and c13= CAST(@arg00 AS DATE) and c14= @arg00 and c15= @arg00 and c16= CAST(@arg00 AS TIME) and c17= @arg00 ;
 found
 true
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '1991-01-01 01:01:01'
 prepare stmt1 from "select 'true' as found from t9 
 where c1= 20 and c13= CAST('1991-01-01 01:01:01' AS DATE) and c14= '1991-01-01 01:01:01' and
   c15= '1991-01-01 01:01:01' and c16= '1991-01-01 01:01:01' and
@@ -3167,6 +3169,8 @@ select 'true' as found from t9
 where c1= 20 and c13= CAST(@arg00 AS DATE) and c14= @arg00 and c15= @arg00 and c16= CAST(@arg00 AS TIME) and c17= @arg00 ;
 found
 true
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '1991-01-01 01:01:01'
 prepare stmt1 from "select 'true' as found from t9 
 where c1= 20 and c13= CAST('1991-01-01 00:00:00' as datetime) and
   c14= CAST('1991-01-01 01:01:01' as datetime) and
@@ -4911,7 +4915,7 @@ t5	CREATE TABLE `t5` (
 ) ENGINE=ENGINE DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 select * from t5 ;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def	test	t5	t5	const01	const01	3	1	1	N	32769	0	63
+def	test	t5	t5	const01	const01	3	2	1	N	32769	0	63
 def	test	t5	t5	param01	param01	8	21	1	Y	32768	0	63
 def	test	t5	t5	const02	const02	246	4	3	N	32769	1	63
 def	test	t5	t5	param02	param02	246	67	32	Y	32768	30	63
@@ -6320,6 +6324,8 @@ select 'true' as found from t9
 where c1= 20 and c13= CAST(@arg00 AS DATE) and c14= @arg00 and c15= @arg00 and c16= CAST(@arg00 AS TIME) and c17= @arg00 ;
 found
 true
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '1991-01-01 01:01:01'
 prepare stmt1 from "select 'true' as found from t9 
 where c1= 20 and c13= CAST('1991-01-01 01:01:01' AS DATE) and c14= '1991-01-01 01:01:01' and
   c15= '1991-01-01 01:01:01' and c16= '1991-01-01 01:01:01' and
@@ -6349,6 +6355,8 @@ select 'true' as found from t9
 where c1= 20 and c13= CAST(@arg00 AS DATE) and c14= @arg00 and c15= @arg00 and c16= CAST(@arg00 AS TIME) and c17= @arg00 ;
 found
 true
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '1991-01-01 01:01:01'
 prepare stmt1 from "select 'true' as found from t9 
 where c1= 20 and c13= CAST('1991-01-01 00:00:00' as datetime) and
   c14= CAST('1991-01-01 01:01:01' as datetime) and

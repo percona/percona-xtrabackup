@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -352,11 +352,9 @@ supplied information.
 the clustered type
 @param[in]	type		DICT_UNIQUE, DICT_CLUSTERED, ... ORed
 @param[in]	n_fields	number of fields */
-UNIV_INLINE void dict_mem_fill_index_struct(dict_index_t *index,
-                                            mem_heap_t *heap,
-                                            const char *table_name,
-                                            const char *index_name, ulint space,
-                                            ulint type, ulint n_fields);
+static inline void dict_mem_fill_index_struct(
+    dict_index_t *index, mem_heap_t *heap, const char *table_name,
+    const char *index_name, ulint space, ulint type, ulint n_fields);
 
 /** Frees an index memory object. */
 void dict_mem_index_free(dict_index_t *index); /*!< in: index */
@@ -795,38 +793,12 @@ struct zip_pad_info_t {
 /** If key is fixed length key then cache the record offsets on first
 computation. This will help save computation cycle that generate same
 redundant data. */
-class rec_cache_t {
- public:
-  /** Constructor */
-  rec_cache_t()
-      : rec_size(),
-        offsets(),
-        sz_of_offsets(),
-        fixed_len_key(),
-        offsets_cached(),
-        key_has_null_cols() {
-    /* Do Nothing. */
-  }
-
- public:
-  /** Record size. (for fixed length key record size is constant) */
-  ulint rec_size;
-
+struct rec_cache_t {
   /** Holds reference to cached offsets for record. */
-  ulint *offsets;
+  const ulint *offsets{nullptr};
 
-  /** Size of offset array */
-  uint32_t sz_of_offsets;
-
-  /** If true, then key is fixed length key. */
-  bool fixed_len_key;
-
-  /** If true, then offset has been cached for re-use. */
-  bool offsets_cached;
-
-  /** If true, then key part can have columns that can take
-  NULL values. */
-  bool key_has_null_cols;
+  /** Number of NULLable columns among those for which offsets are cached */
+  size_t nullable_cols{0};
 };
 
 /** Cache position of last inserted or selected record by caching record
@@ -1457,9 +1429,8 @@ std::ostream &operator<<(std::ostream &s, const table_name_t &table_name);
 /** List of locks that different transactions have acquired on a table. This
 list has a list node that is embedded in a nested union/structure. We have to
 generate a specific template for it. */
-
-typedef ut_list_base<lock_t, ut_list_node<lock_t> lock_table_t::*>
-    table_lock_list_t;
+struct TableLockGetNode;
+typedef ut_list_base<lock_t, TableLockGetNode> table_lock_list_t;
 #endif /* !UNIV_HOTBACKUP */
 
 /** mysql template structure defined in row0mysql.cc */
@@ -1715,14 +1686,7 @@ struct dict_table_t {
   dict_index_t *fts_doc_id_index;
 
   /** List of indexes of the table. */
-  UT_LIST_BASE_NODE_T(dict_index_t) indexes;
-
-  /** List of foreign key constraints in the table. These refer to
-  columns in other tables. */
-  UT_LIST_BASE_NODE_T(dict_foreign_t) foreign_list;
-
-  /** List of foreign key constraints which refer to this table. */
-  UT_LIST_BASE_NODE_T(dict_foreign_t) referenced_list;
+  UT_LIST_BASE_NODE_T(dict_index_t, indexes) indexes;
 
   /** Node of the LRU list of tables. */
   UT_LIST_NODE_T(dict_table_t) table_LRU;
@@ -2331,7 +2295,7 @@ class PersistentTableMetadata {
 class Persister {
  public:
   /** Virtual desctructor */
-  virtual ~Persister() {}
+  virtual ~Persister() = default;
 
   /** Write the dynamic metadata of a table, we can pre-calculate
   the size by calling get_write_size()
@@ -2490,10 +2454,6 @@ class Persisters {
 };
 
 #ifndef UNIV_HOTBACKUP
-
-/** Initialise the table lock list.
-@param[out] lock_list List to initialise */
-void lock_table_lock_list_init(table_lock_list_t *lock_list);
 
 /** A function object to add the foreign key constraint to the referenced set
 of the referenced table, if it exists in the dictionary cache. */

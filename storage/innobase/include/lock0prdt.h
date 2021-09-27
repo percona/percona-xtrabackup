@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -140,7 +140,7 @@ void lock_prdt_set_prdt(lock_t *lock, const lock_prdt_t *prdt);
 /*********************************************************************//**
 Get predicate lock's minimum bounding box
 @return the minimum bounding box*/
-UNIV_INLINE
+static inline
 rtr_mbr_t*
 prdt_get_mbr_from_prdt(
 	const lock_prdt_t*	prdt);	/*!< in: the lock predicate */

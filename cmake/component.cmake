@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -134,6 +134,8 @@ ENDMACRO()
 # Add all CMake projects under components
 MACRO(CONFIGURE_COMPONENTS)
   SET(dirs_components
+    ${CMAKE_SOURCE_DIR}/components/keyrings
+    ${CMAKE_SOURCE_DIR}/components/libminchassis
     ${CMAKE_SOURCE_DIR}/components/library_mysys
     ${CMAKE_SOURCE_DIR}/components/mysql_server)
   FOREACH(dir ${dirs_components})

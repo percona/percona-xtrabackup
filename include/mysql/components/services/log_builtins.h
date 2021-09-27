@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -605,10 +605,37 @@ DECLARE_METHOD(int, dedicated_errstream, (void *my_errstream));
 
   @param       my_stream  a handle describing the log file
 
-  @returns     LOG_SERVICE_SUCCESS          success
-  @returns     otherwise                    failure
+  @returns    LOG_SERVICE_SUCCESS on success
 */
 DECLARE_METHOD(log_service_error, close_errstream, (void **my_errstream));
+
+/**
+  re-open an error log file
+  (primarily to facilitate flush/log-rotation)
+
+  If the new file can be opened, update the my_errstream descriptor to
+  use it and close the old file. Otherwise, keep using the old file.
+
+  @param       name_or_ext   if beginning with '.':
+                               @@global.log_error, except with this extension
+                             otherwise:
+                               use this as file name in the same location as
+                               @@global.log_error
+
+                             Value may not contain folder separators!
+
+                             In the general case, the caller will be a
+                             log-writer, the log-writer will just pass
+                             its preferred file extension, and the resulting
+                             file name and path will therefore be the same
+                             as for the original log file.
+
+  @param[in,out]  my_errstream  an error log handle
+
+  @returns LOG_SERVICE_INVALID_ARGUMENT, or the result of open_errstream()
+*/
+DECLARE_METHOD(log_service_error, reopen_errstream,
+               (const char *file, void **my_errstream));
 
 END_SERVICE_DEFINITION(log_builtins)
 
@@ -748,6 +775,18 @@ void log_sink_buffer_check_timeout(void);
       .source_file(MY_BASENAME)      \
       .function(__FUNCTION__)        \
       .lookup(ecode, ##__VA_ARGS__)
+
+#define LogComponentErr(severity, ecode, ...)                           \
+  LogEvent()                                                            \
+      .prio(severity)                                                   \
+      .errcode(ecode)                                                   \
+      .subsys(LOG_SUBSYSTEM_TAG)                                        \
+      .component("component:" LOG_COMPONENT_TAG)                        \
+      .source_line(__LINE__)                                            \
+      .source_file(MY_BASENAME)                                         \
+      .function(__FUNCTION__)                                           \
+      .lookup_quoted(ecode, "Component " LOG_COMPONENT_TAG " reported", \
+                     ##__VA_ARGS__)
 
 #define LogPluginErr(severity, ecode, ...)                           \
   LogEvent()                                                         \

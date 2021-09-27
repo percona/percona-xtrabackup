@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -414,7 +414,7 @@ TEST_F(FieldTest, CopyFieldSet) {
   f_from->set_field_ptr(&from_fieldval);
 
   Copy_field *cf = new (thd()->mem_root) Copy_field;
-  cf->set(f_to, f_from, false);
+  cf->set(f_to, f_from);
   cf->invoke_do_copy();
 
   // Copy_field DTOR is not invoked in all contexts, so we may leak memory.

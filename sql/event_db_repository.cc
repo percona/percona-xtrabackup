@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +71,7 @@ bool Event_db_repository::create_event(THD *thd, Event_parse_data *parse_data,
                                        bool *event_already_exists) {
   DBUG_TRACE;
   sp_head *sp = thd->lex->sphead;
-  DBUG_ASSERT(sp);
+  assert(sp);
 
   const dd::Schema *schema = nullptr;
   const dd::Event *event = nullptr;
@@ -125,7 +125,7 @@ bool Event_db_repository::update_event(THD *thd, Event_parse_data *parse_data,
   sp_head *sp = thd->lex->sphead;
 
   /* None or both must be set */
-  DBUG_ASSERT((new_dbname && new_name) || new_dbname == new_name);
+  assert((new_dbname && new_name) || new_dbname == new_name);
 
   DBUG_PRINT("info", ("dbname: %s", parse_data->dbname.str));
   DBUG_PRINT("info", ("name: %s", parse_data->name.str));
@@ -166,7 +166,7 @@ bool Event_db_repository::update_event(THD *thd, Event_parse_data *parse_data,
     my_error(ER_EVENT_DOES_NOT_EXIST, MYF(0), parse_data->name.str);
     return true;
   }
-  DBUG_ASSERT(schema != nullptr);  // Must exist if event exists.
+  assert(schema != nullptr);  // Must exist if event exists.
 
   /*
     If definer has the SYSTEM_USER privilege then invoker can alter event
@@ -260,13 +260,19 @@ bool Event_db_repository::drop_schema_events(THD *thd,
                                              const dd::Schema &schema) {
   DBUG_TRACE;
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  std::vector<dd::String_type> event_names;
+  if (thd->dd_client()->fetch_schema_component_names<dd::Event>(&schema,
+                                                                &event_names))
+    return true;
 
-  std::vector<const dd::Event *> events;
-  if (thd->dd_client()->fetch_schema_components(&schema, &events)) return true;
+  for (const dd::String_type &name : event_names) {
+    dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+    const dd::Event *event_obj = nullptr;
 
-  for (const dd::Event *event_obj : events) {
-    if (thd->dd_client()->drop(event_obj)) {
+    if (thd->dd_client()->acquire(schema.name(), name, &event_obj)) return true;
+
+    if (event_obj == nullptr || thd->dd_client()->drop(event_obj)) {
+      assert(event_obj != nullptr);
       my_error(ER_SP_DROP_FAILED, MYF(0), "Drop failed for Event: %s",
                event_obj->name().c_str());
       return true;
@@ -332,7 +338,7 @@ bool Event_db_repository::update_timing_fields_for_event(
   */
   Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
-  DBUG_ASSERT(thd->security_context()->check_access(SUPER_ACL));
+  assert(thd->security_context()->check_access(SUPER_ACL));
 
   dd::Event *event = nullptr;
   dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());

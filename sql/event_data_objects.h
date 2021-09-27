@@ -1,6 +1,6 @@
 #ifndef _EVENT_DATA_OBJECTS_H_
 #define _EVENT_DATA_OBJECTS_H_
-/* Copyright (c) 2004, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,7 +51,7 @@ void init_scheduler_psi_keys(void);
 
 class Event_queue_element_for_exec {
  public:
-  Event_queue_element_for_exec() {}
+  Event_queue_element_for_exec() = default;
   ~Event_queue_element_for_exec();
 
   bool init(LEX_CSTRING dbname, LEX_CSTRING name);

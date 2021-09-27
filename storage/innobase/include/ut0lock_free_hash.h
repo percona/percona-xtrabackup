@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2015, 2020, Oracle and/or its affiliates.
+Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -53,7 +53,7 @@ class ut_hash_interface_t {
   static const int64_t NOT_FOUND = INT64_MAX;
 
   /** Destructor. */
-  virtual ~ut_hash_interface_t() {}
+  virtual ~ut_hash_interface_t() = default;
 
   /** Get the value mapped to a given key.
   @param[in]	key	key to look for

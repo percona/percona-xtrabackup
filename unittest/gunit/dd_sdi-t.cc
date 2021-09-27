@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -81,8 +81,7 @@ bool equal_prefix_chars_driver(const dd::String_type &a,
 
 static void mock_properties(dd::Properties &p, uint64 size) {
   for (uint64 i = 0; i < size; ++i) {
-    dd::String_type key =
-        (dynamic_cast<dd::Properties_impl &>(p)).valid_key_at(i);
+    dd::String_type key = (down_cast<dd::Properties_impl &>(p)).valid_key_at(i);
     p.set(key, i);
   }
 }
@@ -95,7 +94,9 @@ static void mock_dd_obj(dd::Column_type_element *cte) {
 
 static void mock_dd_obj(dd::Column *c) {
   static dd::Object_id curid = 10000;
-  dynamic_cast<dd::Entity_object_impl *>(c)->set_id(curid++);
+  dd::Entity_object_impl *object_impl =
+      dynamic_cast<dd::Entity_object_impl *>(c);
+  object_impl->set_id(curid++);
   c->set_type(dd::enum_column_types::ENUM);
   c->set_char_length(42);
   c->set_numeric_precision(42);
@@ -112,7 +113,7 @@ static void mock_dd_obj(dd::Column *c) {
     mock_dd_obj(c->add_element());
   }
   if (c->ordinal_position() == 0) {
-    dynamic_cast<dd::Column_impl *>(c)->set_ordinal_position(1);
+    down_cast<dd::Column_impl *>(c)->set_ordinal_position(1);
   }
 }
 
@@ -142,7 +143,9 @@ static void mock_dd_obj(dd::Index_element *ie) {
 
 static void mock_dd_obj(dd::Index *i, dd::Column *c = nullptr) {
   static dd::Object_id curid = 10000;
-  dynamic_cast<dd::Entity_object_impl *>(i)->set_id(curid++);
+  dd::Entity_object_impl *object_impl =
+      dynamic_cast<dd::Entity_object_impl *>(i);
+  object_impl->set_id(curid++);
   i->set_comment("mocked index comment");
   mock_properties(i->options(), FANOUT);
   mock_properties(i->se_private_data(), FANOUT);
@@ -153,7 +156,7 @@ static void mock_dd_obj(dd::Index *i, dd::Column *c = nullptr) {
   mock_dd_obj(i->add_element(c));
 
   if (i->ordinal_position() == 0) {
-    dynamic_cast<dd::Index_impl *>(i)->set_ordinal_position(1);
+    down_cast<dd::Index_impl *>(i)->set_ordinal_position(1);
   }
 }
 
@@ -243,7 +246,7 @@ class SdiTest : public ::testing::Test {
 
   void TearDown() override {}
 
-  SdiTest() {}
+  SdiTest() = default;
 
  private:
   GTEST_DISALLOW_COPY_AND_ASSIGN_(SdiTest);
@@ -394,7 +397,7 @@ TEST(SdiTest, Tablespace_API) {
   api_test(ts);
 }
 
-#ifdef DBUG_OFF
+#ifdef NDEBUG
 TEST(SdiTest, Serialization_perf) {
   std::unique_ptr<dd::Table> t(dd::create_object<dd::Table>());
   FANOUT = 20;
@@ -405,7 +408,7 @@ TEST(SdiTest, Serialization_perf) {
     EXPECT_GT(sdi.size(), 100000u);
   }
 }
-#endif /* DBUG_OFF */
+#endif /* NDEBUG */
 
 TEST(SdiTest, CharPromotion) {
   signed char x = 127;

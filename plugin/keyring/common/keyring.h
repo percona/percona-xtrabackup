@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,13 +49,14 @@ extern mysql_rwlock_t LOCK_keyring;
 extern std::unique_ptr<IKeys_container> keys;
 extern volatile bool is_keys_container_initialized;
 extern std::unique_ptr<ILogger> logger;
-extern std::unique_ptr<char[]> keyring_file_data;
+extern char *keyring_file_data;
 extern bool keyring_open_mode;
 
 #ifdef HAVE_PSI_INTERFACE
 void keyring_init_psi_keys(void);
 #endif  // HAVE_PSI_INTERFACE
 
+void delete_keyring_file_data();
 bool init_keyring_locks();
 bool create_keyring_dir_if_does_not_exist(const char *keyring_file_path);
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -60,7 +60,7 @@ class channel_imp : public Cache_malloced {
       : m_has_ignore_list(false), m_valid{true}, m_reference_count{0} {
     m_service_names = service_names;
   }
-  ~channel_imp() {}
+  ~channel_imp() = default;
 
   bool operator==(channel_imp &other) const {
     return m_service_names == other.m_service_names;

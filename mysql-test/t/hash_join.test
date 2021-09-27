@@ -175,6 +175,7 @@ TRUNCATE performance_schema.file_summary_by_event_name;
 
 eval $hash_join_file_operations;
 SELECT SUM(t1.col1), SUM(t2.col1) FROM t1, t2 WHERE t1.col1 = t2.col1;
+--skip_if_hypergraph  # Chooses different plan.
 eval $hash_join_file_operations;
 
 SET join_buffer_size = DEFAULT;
@@ -1255,6 +1256,7 @@ let $hash_join_file_operations =
 TRUNCATE performance_schema.file_summary_by_event_name;
 SELECT * FROM t1, t2 WHERE t1.col1 = t2.col1;
 --enable_result_log
+--skip_if_hypergraph  # Chooses different plan.
 eval $hash_join_file_operations;
 
 --echo # This should NOT spill to disk since we have a LIMIT.
@@ -1268,6 +1270,7 @@ eval $hash_join_file_operations;
 --echo # This should spill to disk since we have sorting.
 TRUNCATE performance_schema.file_summary_by_event_name;
 SELECT * FROM t1, t2 WHERE t1.col1 = t2.col1 ORDER BY t1.col1 LIMIT 1;
+--skip_if_hypergraph  # Chooses different plan.
 eval $hash_join_file_operations;
 
 --echo # This should spill to disk since we have (implicit) grouping.
@@ -2458,3 +2461,49 @@ SELECT * FROM t2 JOIN t13 WHERE t2.c1=t13.c1;
 SELECT /*+ NO_BNL(t2,t13) */ * FROM t2 JOIN t13 WHERE t2.c1=t13.c1;
 
 DROP TABLE t2, t13;
+
+--echo #
+--echo # Bug #32244974: SIG 6 IN HASHJOINITERATOR::READROWFROMPROBEITERATOR() AT HASH_JOIN_ITERATOR.CC
+--echo #
+
+CREATE TABLE t1 (
+  pk INTEGER,
+  col_int INTEGER,
+  PRIMARY KEY (pk)
+);
+
+CREATE TABLE t2 (
+  pk INTEGER,
+  col_int INTEGER
+);
+
+INSERT INTO t1 VALUES (2,6);
+INSERT INTO t1 VALUES (3,NULL);
+
+INSERT INTO t2 VALUES (1,6);
+
+ANALYZE TABLE t1, t2;
+
+--error ER_SUBQUERY_NO_1_ROW
+SELECT 1
+FROM
+  t1 AS alias1
+  JOIN t2 AS alias2 ON alias1.col_int = alias2.col_int
+  JOIN t1 AS alias3 ON 1
+  WHERE
+    ( SELECT 1 UNION SELECT MAX(alias1.pk) ) = alias3.pk;
+
+DROP TABLE t1, t2;
+
+--echo # Bug#32579184: Hash join: my_lengthsp_utf32: assertion (length % 4)
+
+CREATE TABLE t (
+  a TEXT CHARACTER SET ucs2 COLLATE ucs2_sinhala_ci,
+  b TEXT CHARACTER SET utf32 COLLATE utf32_german2_ci
+);
+INSERT INTO t(a, b) VALUES('h','k'), ('w','e');
+let $query =
+SELECT 1 FROM t AS a INNER JOIN t AS b ON a.a=b.b;
+eval explain $query;
+eval $query;
+DROP TABLE t;

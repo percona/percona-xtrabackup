@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2020, Oracle and/or its affiliates.
+Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -29,9 +29,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /* The InnoDB handler: the interface between MySQL and InnoDB. */
 
+#include <assert.h>
 #include <sys/types.h>
 #include "handler.h"
-#include "my_dbug.h"
+#include "mysql/components/services/clone_protocol_service.h"
+
 #include "row0pread-adapter.h"
 #include "row0pread-histogram.h"
 #include "trx0trx.h"
@@ -39,6 +41,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /** "GEN_CLUST_INDEX" is the name reserved for InnoDB default
 system clustered index when there is no primary key. */
 extern const char innobase_index_reserve_name[];
+
+/** Clone protocol service. */
+extern SERVICE_TYPE(clone_protocol) * clone_protocol_svc;
 
 /* Structure defines translation table between mysql index and InnoDB
 index structures */
@@ -79,7 +84,7 @@ class Dictionary_client;
 class ha_innobase : public handler {
  public:
   ha_innobase(handlerton *hton, TABLE_SHARE *table_arg);
-  ~ha_innobase() override;
+  ~ha_innobase() override = default;
 
   row_type get_real_row_type(const HA_CREATE_INFO *create_info) const override;
 
@@ -94,7 +99,7 @@ class ha_innobase : public handler {
     /* This method is never used for FULLTEXT or SPATIAL keys.
     We rely on handler::ha_table_flags() to check if such keys
     are supported. */
-    DBUG_ASSERT(key_alg != HA_KEY_ALG_FULLTEXT && key_alg != HA_KEY_ALG_RTREE);
+    assert(key_alg != HA_KEY_ALG_FULLTEXT && key_alg != HA_KEY_ALG_RTREE);
     return key_alg == HA_KEY_ALG_BTREE;
   }
 
@@ -209,10 +214,11 @@ class ha_innobase : public handler {
   @param[in]  sampling_seed       random seed that the random generator will use
   @param[in]  sampling_method     sampling method to be used; currently only
   SYSTEM sampling is supported
+  @param[in]  tablesample         true if the sampling is for tablesample
   @return 0 for success, else one of the HA_xxx values in case of error. */
   int sample_init(void *&scan_ctx, double sampling_percentage,
-                  int sampling_seed,
-                  enum_sampling_method sampling_method) override;
+                  int sampling_seed, enum_sampling_method sampling_method,
+                  const bool tablesample) override;
 
   /** Get the next record for sampling.
   @param[in]  scan_ctx  Scan context of the sampling
@@ -734,8 +740,8 @@ bool innobase_index_name_is_reserved(
 /** Check if the explicit tablespace targeted is file_per_table.
 @param[in]	create_info	Metadata for the table to create.
 @return true if the table is intended to use a file_per_table tablespace. */
-UNIV_INLINE
-bool tablespace_is_file_per_table(const HA_CREATE_INFO *create_info) {
+static inline bool tablespace_is_file_per_table(
+    const HA_CREATE_INFO *create_info) {
   return (create_info->tablespace != nullptr &&
           (0 ==
            strcmp(create_info->tablespace, dict_sys_t::s_file_per_table_name)));
@@ -745,8 +751,8 @@ bool tablespace_is_file_per_table(const HA_CREATE_INFO *create_info) {
 or system tablespace.
 @param[in]	create_info	Metadata for the table to create.
 @return true if the table will use a shared general or system tablespace. */
-UNIV_INLINE
-bool tablespace_is_shared_space(const HA_CREATE_INFO *create_info) {
+static inline bool tablespace_is_shared_space(
+    const HA_CREATE_INFO *create_info) {
   return (create_info->tablespace != nullptr &&
           create_info->tablespace[0] != '\0' &&
           (0 !=
@@ -756,8 +762,8 @@ bool tablespace_is_shared_space(const HA_CREATE_INFO *create_info) {
 /** Check if table will be explicitly put in a general tablespace.
 @param[in]	create_info	Metadata for the table to create.
 @return true if the table will use a general tablespace. */
-UNIV_INLINE
-bool tablespace_is_general_space(const HA_CREATE_INFO *create_info) {
+static inline bool tablespace_is_general_space(
+    const HA_CREATE_INFO *create_info) {
   return (
       create_info->tablespace != nullptr &&
       create_info->tablespace[0] != '\0' &&
@@ -770,8 +776,7 @@ bool tablespace_is_general_space(const HA_CREATE_INFO *create_info) {
 /** Check if tablespace is shared tablespace.
 @param[in]	tablespace_name	Name of the tablespace
 @return true if tablespace is a shared tablespace. */
-UNIV_INLINE
-bool is_shared_tablespace(const char *tablespace_name) {
+static inline bool is_shared_tablespace(const char *tablespace_name) {
   if (tablespace_name != nullptr && tablespace_name[0] != '\0' &&
       (strcmp(tablespace_name, dict_sys_t::s_file_per_table_name) != 0)) {
     return true;
@@ -784,17 +789,16 @@ bool is_shared_tablespace(const char *tablespace_name) {
 /** Validate AUTOEXTEND_SIZE attribute for a tablespace.
 @param[in]	ext_size	Value of autoextend_size attribute
 @return DB_SUCCESS if the value of AUTOEXTEND_SIZE is valid. */
-UNIV_INLINE
-int validate_autoextend_size_value(uint64_t ext_size) {
+static inline int validate_autoextend_size_value(uint64_t ext_size) {
   ut_ad(ext_size > 0);
 
-  page_no_t extent_size_pages =
-      fsp_get_extent_size_in_pages({static_cast<uint32_t>(srv_page_size),
-                                    static_cast<uint32_t>(srv_page_size), 0});
+  page_no_t extent_size_pages = fsp_get_extent_size_in_pages(
+      {static_cast<uint32_t>(srv_page_size),
+       static_cast<uint32_t>(srv_page_size), false});
 
   /* Validate following for the AUTOEXTEND_SIZE attribute
   1. The autoextend_size should be a multiple of size of 4 extents
-  2. The autoextend_size value should be between size of 4 extents and 64M */
+  2. The autoextend_size value should be between size of 4 extents and 4G */
   if (ext_size < (FSP_FREE_ADD * extent_size_pages * srv_page_size) ||
       ext_size > FSP_MAX_AUTOEXTEND_SIZE) {
     my_error(ER_INNODB_AUTOEXTEND_SIZE_OUT_OF_RANGE, MYF(0),

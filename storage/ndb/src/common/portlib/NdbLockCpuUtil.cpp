@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -66,7 +66,7 @@ remove_use_processor_set(Uint32 proc_set_id)
     free((void*)handler->cpu_ids);
     handler->num_cpu_ids = 0;
     handler->cpu_ids = NULL;
-    handler->is_exclusive = FALSE;
+    handler->is_exclusive = false;
   }
 }
 
@@ -89,7 +89,7 @@ init_handler(struct processor_set_handler *handler,
   handler->cpu_ids = NULL;
   handler->num_cpu_ids = 0;
   handler->index = i;
-  handler->is_exclusive = FALSE;
+  handler->is_exclusive = false;
 }
 
 static int

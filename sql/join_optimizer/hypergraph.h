@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,20 +37,13 @@
  */
 
 #include <stdint.h>
+
+#include <algorithm>
 #include <vector>
 
-#include "my_compiler.h"
+#include "sql/join_optimizer/node_map.h"
 
 namespace hypergraph {
-
-// Since our graphs can never have more than 61 tables, node sets and edge lists
-// are implemented using 64-bit bit sets. This allows for a compact
-// representation and very fast set manipulation; the algorithm does a fair
-// amount of intersections and unions. If we should need extensions to larger
-// graphs later (this will require additional heuristics for reducing the search
-// space), we can use dynamic bit sets, although at a performance cost (we'd
-// probably templatize off the NodeMap type).
-using NodeMap = uint64_t;
 
 struct Node {
   // List of edges (indexes into the hypergraph's “edges” array) that touch this
@@ -70,8 +63,16 @@ struct Node {
 
   // All nodes on the “right” side of an edge in simple_edges.
   NodeMap simple_neighborhood = 0;
-} MY_ATTRIBUTE(
-    (aligned(64)));  // Speeds up BM_HyperStar17_ManyHyperedges by 60%.
+
+ private:
+  // Speeds up BM_HyperStar17_ManyHyperedges by 5–10%.
+  // (MSVC with debug STL will get a dummy byte here, since the struct is
+  // already more than 64 bytes.)
+  static constexpr int Size =
+      sizeof(std::vector<unsigned>) * 2 + sizeof(NodeMap);
+  char padding[std::max<int>(1, 64 - Size)];
+};
+static_assert(sizeof(Node) >= 64, "");
 
 struct Hyperedge {
   // The endpoints (hypernodes) of this hyperedge. See the comment about

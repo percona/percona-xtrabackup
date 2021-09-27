@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -420,7 +420,7 @@ bool Test_udf_charset_base::set_udf_init(UDF_INIT *initid, UDF_ARGS *args) {
     return true;
   }
   initid->max_length = length;
-  initid->maybe_null = 1;
+  initid->maybe_null = true;
   return false;
 }
 /**

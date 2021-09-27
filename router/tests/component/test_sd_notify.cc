@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -51,6 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
 #include "router_component_testutils.h"
+#include "router_test_helpers.h"
 
 #define EXPECT_NO_ERROR(x) \
   EXPECT_THAT((x), ::testing::Truly([](auto const &v) { return bool(v); }))
@@ -64,7 +65,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 using mysql_harness::ConfigBuilder;
 using mysqlrouter::ClusterType;
 using mysqlrouter::MySQLSession;
-using ::testing::PrintToString;
 using namespace std::chrono_literals;
 
 Path g_origin_path;
@@ -99,7 +99,7 @@ class NotifyTest : public RestApiComponentTest {
     UNREFERENCED_PARAMETER(router);
     return true;
 #else
-    return wait_log_contains(router, "Service 'signal handler' ready", 5s);
+    return wait_log_contains(router, " ready 'signal_handler'", 5s);
 #endif
   }
 
@@ -116,15 +116,13 @@ class NotifyTest : public RestApiComponentTest {
         get_test_temp_dir_name(), config_file_content, &default_section);
   }
 
-  auto &launch_router(const std::vector<std::string> &config_file_sections,
+  auto &launch_router(const std::string &conf_file,
                       bool wait_for_ready_expected_result = true,
                       std::chrono::milliseconds wait_for_ready_timeout = 5s,
                       const std::string &notification_socket_node = "default",
                       bool do_create_notify_socket = true,
                       int expected_exit_code = EXIT_SUCCESS,
                       bool wait_on_notify_socket = true) {
-    const std::string conf_file = create_config_file(config_file_sections);
-
     std::vector<std::pair<std::string, std::string>> env_vars;
 
     std::string socket_node;
@@ -224,7 +222,7 @@ TEST_F(NotifyTest, NotifyReadyBasic) {
       ConfigBuilder::build_section("keepalive", {}),
   };
 
-  /*auto &router =*/launch_router(config_sections,
+  /*auto &router =*/launch_router(create_config_file(config_sections),
                                   /*wait_for_ready_expected_result*/ true);
 }
 
@@ -235,7 +233,7 @@ TEST_F(NotifyTest, NotifyReadyBasic) {
 TEST_F(NotifyTest, NotifyReadyNoPlugin) {
   SCOPED_TRACE("// Launch the Router with no plugin configured");
 
-  auto &router = launch_router({},
+  auto &router = launch_router(create_config_file({}),
                                /*wait_for_ready_expected_result*/ false,
                                /*wait_for_ready_timeout*/ 200ms, "default",
                                true, EXIT_FAILURE);
@@ -265,7 +263,7 @@ TEST_F(NotifyTest, NotifyReadyHttpBackend) {
                                    }),
   };
 
-  /*auto &router =*/launch_router(config_sections,
+  /*auto &router =*/launch_router(create_config_file(config_sections),
                                   /*wait_for_ready_expected_result*/ true);
 }
 
@@ -308,7 +306,7 @@ TEST_F(NotifyTest, NotifyReadyMetadataCache) {
                                    }),
   };
 
-  /*auto &router =*/launch_router(config_sections,
+  /*auto &router =*/launch_router(create_config_file(config_sections),
                                   /*wait_for_ready_expected_result*/ true);
 }
 
@@ -340,7 +338,7 @@ TEST_F(NotifyTest, NotifyReadyHttpPlugins) {
                                    }),
   };
 
-  /*auto &router =*/launch_router(config_sections,
+  /*auto &router =*/launch_router(create_config_file(config_sections),
                                   /*wait_for_ready_expected_result*/ true);
 }
 
@@ -411,7 +409,7 @@ TEST_F(NotifyTest, NotifyReadyManyPlugins) {
                                    {{"require_realm", "somerealm"}}),
   };
 
-  /*auto &router =*/launch_router(config_sections,
+  /*auto &router =*/launch_router(create_config_file(config_sections),
                                   /*wait_for_ready_expected_result*/ true);
 }
 
@@ -425,30 +423,38 @@ TEST_F(NotifyTest, NotifyReadyMetadataCacheNoServer) {
       "we pick a socket where on which there is noone accepting to mimic "
       "unavailable cluster");
 
-  std::string nodes =
+  const auto nodes =
       "mysql://localhost:" + std::to_string(port_pool_.get_next_available());
 
-  const std::vector<std::string> config_sections{
-      ConfigBuilder::build_section(
-          "routing:rw",
-          {{"bind_port", std::to_string(port_pool_.get_next_available())},
-           {"routing_strategy", "first-available"},
-           {"destinations", "metadata-cache://test/default?role=PRIMARY"},
-           {"protocol", "classic"}}),
-      ConfigBuilder::build_section("metadata_cache",
-                                   {
-                                       {"cluster_type", "gr"},
-                                       {"router_id", "1"},
-                                       {"bootstrap_server_addresses", nodes},
-                                       {"user", "mysql_router1_user"},
-                                       {"connect_timeout", "1"},
-                                       {"metadata_cluster", "test"},
-                                   }),
-  };
+  auto writer =
+      config_writer(get_test_temp_dir_name())
+          .section(
+              "routing:rw",
+              {{"bind_port", std::to_string(port_pool_.get_next_available())},
+               {"routing_strategy", "first-available"},
+               {"destinations", "metadata-cache://test/default?role=PRIMARY"},
+               {"protocol", "classic"}})
+          .section("metadata_cache", {
+                                         {"cluster_type", "gr"},
+                                         {"router_id", "1"},
+                                         {"bootstrap_server_addresses", nodes},
+                                         {"user", "mysql_router1_user"},
+                                         {"connect_timeout", "1"},
+                                         {"metadata_cluster", "test"},
+                                     });
 
-  /*auto &router =*/launch_router(config_sections,
+  // prepare keyring
+  init_keyring(writer.sections()["DEFAULT"], get_test_temp_dir_name());
+
+  // check that router never becomes READY (within a reasonable time) as
+  // metadata-cache fails to connect
+  //
+  // if we could wait for 'STATUS=running' and then for "not READY=1", the test
+  // could be faster. Until then the test needs a later timeout.
+
+  /*auto &router =*/launch_router(writer.write(),
                                   /*wait_for_ready_expected_result*/ false,
-                                  /*wait_for_ready_timeout*/ 500ms);
+                                  /*wait_for_ready_timeout*/ 5s);
 }
 
 /**
@@ -467,7 +473,7 @@ TEST_F(NotifyTest, NotifyReadySocketEmpty) {
   SCOPED_TRACE(
       "// Notification socket is empty so we should not get ready "
       "notification, still the Router should start and close successfully");
-  auto &router = launch_router(config_sections,
+  auto &router = launch_router(create_config_file(config_sections),
                                false,  // wait_for_ready_expected_result
                                500ms,  // wait_for_ready_timeout
                                "",     // notification_socket_node
@@ -497,7 +503,7 @@ TEST_F(NotifyTest, NotifyReadyNonExistingNotifySocket) {
       "// We set the notification socket to some nonexisting socket, error "
       "should get reported but the Router should still start and close as "
       "expected");
-  auto &router = launch_router(config_sections,
+  auto &router = launch_router(create_config_file(config_sections),
                                /*wait_for_ready_expected_result*/ false,
                                /*wait_for_ready_timeout*/ 500ms,
                                /*notifiication_socket_node*/ "default",
@@ -540,7 +546,7 @@ TEST_P(NotifyTestInvalidSocketNameTest, NotifyTestInvalidSocketName) {
       "// We set the notification socket to some nonexisting socket with some "
       "invalid name, error should get reported but the Router should still "
       "start and close as expected");
-  auto &router = launch_router(config_sections,
+  auto &router = launch_router(create_config_file(config_sections),
                                /*wait_for_ready_expected_result*/ false,
                                /*wait_for_ready_timeout*/ 500ms,
                                /*notifiication_socket_node*/ GetParam(),
@@ -600,7 +606,7 @@ TEST_F(NotifyTest, NotifyReadyNotRelatedSocket) {
   ASSERT_NO_ERROR(notify_socket.open());
   ASSERT_NO_ERROR(notify_socket.bind({socket_name}));
 
-  auto &router = launch_router(config_sections,
+  auto &router = launch_router(create_config_file(config_sections),
                                /*wait_for_ready_expected_result*/ false,
                                /*wait_for_ready_timeout*/ 500ms,
                                /*notification_socket_node*/ socket_name,
@@ -654,7 +660,7 @@ TYPED_TEST(NotifyReadyNotRelatedSocketNonDatagramTest, check) {
   ASSERT_NO_ERROR(notify_socket.open());
   ASSERT_NO_ERROR(notify_socket.bind({socket_name}));
 
-  auto &router = this->launch_router(config_sections,
+  auto &router = this->launch_router(this->create_config_file(config_sections),
                                      /*wait_for_ready_expected_result*/ false,
                                      /*wait_for_ready_timeout*/ 500ms,
                                      /*notifiication_socket_node*/ socket_name,
@@ -684,7 +690,7 @@ TEST_F(NotifyTest, NotifyTestSocketNameTooLong) {
   SCOPED_TRACE("// We use very long name for the notify socket name");
   const auto socket_name =
       generate_notify_socket_path(get_test_temp_dir_name(), 260);
-  auto &router = launch_router(config_sections,
+  auto &router = launch_router(create_config_file(config_sections),
                                /*wait_for_ready_expected_result*/ false,
                                /*wait_for_ready_timeout*/ 500ms,
                                /*notifiication_socket_node*/ socket_name,
@@ -719,7 +725,7 @@ TEST_F(NotifyTest, NotifyTestSocketDirNameTooLong) {
   socket_path.append(mysql_harness::RandomGenerator().generate_identifier(
       12, mysql_harness::RandomGenerator::AlphabetLowercase));
   auto &router =
-      launch_router(config_sections,
+      launch_router(create_config_file(config_sections),
                     /*wait_for_ready_expected_result*/ false,
                     /*wait_for_ready_timeout*/ 500ms,
                     /*notifiication_socket_node*/ socket_path.c_str(),
@@ -849,7 +855,7 @@ TEST_F(NotifyTest, NotifyStoppingBasic) {
   ASSERT_NO_ERROR(notify_socket.open());
   ASSERT_NO_ERROR(notify_socket.bind({socket_name}));
 
-  auto &router = launch_router(config_sections,
+  auto &router = launch_router(create_config_file(config_sections),
                                /*wait_for_ready_expected_result*/ false,
                                /*wait_for_ready_timeout*/ 5s,
                                /*notifiication_socket_node*/ socket_name,
@@ -957,7 +963,7 @@ TEST_F(NotifyTest, NotifyReadyMockServerPlugin) {
           }),
   };
 
-  /*auto &router =*/launch_router(config_sections,
+  /*auto &router =*/launch_router(create_config_file(config_sections),
                                   /*wait_for_ready_expected_result*/ true);
 }
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, Oracle and/or its affiliates.
+   Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,7 +72,7 @@ class PFS_index_rpl_async_conn_failover_managed : public PFS_engine_index {
         m_key_1("CHANNEL_NAME"),
         m_key_2("MANAGED_NAME") {}
 
-  ~PFS_index_rpl_async_conn_failover_managed() override {}
+  ~PFS_index_rpl_async_conn_failover_managed() override = default;
 
   /**
     Match fetched row with searched values.

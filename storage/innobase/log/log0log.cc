@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -68,6 +68,7 @@ log_checksum_func_t log_checksum_algorithm_ptr;
 #include "dict0boot.h"
 #include "ha_prototypes.h"
 #include "log0meb.h"
+#include "mtr0mtr.h"
 #include "os0thread-create.h"
 #include "trx0sys.h"
 
@@ -367,7 +368,7 @@ Read more about redo log details:
 *******************************************************/
 
 /** Redo log system. Singleton used to populate global pointer. */
-aligned_pointer<log_t> *log_sys_object;
+ut::aligned_pointer<log_t, ut::INNODB_CACHE_LINE_SIZE> *log_sys_object;
 
 /** Redo log system (singleton). */
 log_t *log_sys;
@@ -497,9 +498,10 @@ bool log_sys_init(uint32_t n_files, uint64_t file_size, space_id_t space_id) {
   exit without proper cleanup for redo log in some cases, we
   need to forbid dtor calls then. */
 
-  log_sys_object = UT_NEW_NOKEY(aligned_pointer<log_t>{});
+  using log_t_aligned_pointer = std::decay_t<decltype(*log_sys_object)>;
+  log_sys_object = UT_NEW_NOKEY(log_t_aligned_pointer{});
+  log_sys_object->alloc();
 
-  log_sys_object->create();
   log_sys = *log_sys_object;
 
   log_t &log = *log_sys;
@@ -602,7 +604,7 @@ bool log_sys_init(uint32_t n_files, uint64_t file_size, space_id_t space_id) {
 }
 
 void log_start(log_t &log, checkpoint_no_t checkpoint_no, lsn_t checkpoint_lsn,
-               lsn_t start_lsn) {
+               lsn_t start_lsn, bool allow_checkpoints) {
   ut_a(log_sys != nullptr);
   ut_a(checkpoint_lsn >= OS_FILE_LOG_BLOCK_SIZE);
   ut_a(checkpoint_lsn >= LOG_START_LSN);
@@ -615,6 +617,7 @@ void log_start(log_t &log, checkpoint_no_t checkpoint_no, lsn_t checkpoint_lsn,
   log.last_checkpoint_lsn = checkpoint_lsn;
   log.next_checkpoint_no = checkpoint_no;
   log.available_for_checkpoint_lsn = checkpoint_lsn;
+  log.m_allow_checkpoints.store(allow_checkpoints);
 
   ut_a((log.sn.load(std::memory_order_acquire) & SN_LOCKED) == 0);
   log.sn = log_translate_lsn_to_sn(log.recovered_lsn);
@@ -717,8 +720,7 @@ void log_sys_close() {
   os_event_destroy(log.writer_threads_resume_event);
   os_event_destroy(log.sn_lock_event);
 
-  log_sys_object->destroy();
-
+  log_sys_object->dealloc();
   UT_DELETE(log_sys_object);
   log_sys_object = nullptr;
 
@@ -830,23 +832,23 @@ void log_stop_background_threads(log_t &log) {
   /* Wait until threads are closed. */
   while (log_writer_is_active()) {
     os_event_set(log.writer_event);
-    os_thread_sleep(10);
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
   }
   while (log_write_notifier_is_active()) {
     os_event_set(log.write_notifier_event);
-    os_thread_sleep(10);
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
   }
   while (log_flusher_is_active()) {
     os_event_set(log.flusher_event);
-    os_thread_sleep(10);
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
   }
   while (log_flush_notifier_is_active()) {
     os_event_set(log.flush_notifier_event);
-    os_thread_sleep(10);
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
   }
   while (log_checkpointer_is_active()) {
     os_event_set(log.checkpointer_event);
-    os_thread_sleep(10);
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
   }
 
   log_background_threads_inactive_validate(log);
@@ -898,6 +900,14 @@ static void log_pause_writer_threads(log_t &log) {
     for (size_t i = 0; i < log.flush_events_size; ++i) {
       os_event_set(log.flush_events[i]);
     }
+
+    /* confirms *_notifier_thread accepted to pause */
+    while (log.write_notifier_resume_lsn.load(std::memory_order_acquire) == 0 ||
+           log.flush_notifier_resume_lsn.load(std::memory_order_acquire) == 0) {
+      ut_a(log_write_notifier_is_active());
+      ut_a(log_flush_notifier_is_active());
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 }
 
@@ -917,7 +927,7 @@ static void log_resume_writer_threads(log_t &log) {
     /* confirms *_notifier_resume_lsn have been accepted */
     while (log.write_notifier_resume_lsn.load(std::memory_order_acquire) != 0 ||
            log.flush_notifier_resume_lsn.load(std::memory_order_acquire) != 0) {
-      os_thread_sleep(1000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
       ut_a(log_write_notifier_is_active());
       ut_a(log_flush_notifier_is_active());
       os_event_set(log.writer_threads_resume_event);
@@ -1133,29 +1143,29 @@ static void log_allocate_buffer(log_t &log) {
   ut_a(srv_log_buffer_size <= INNODB_LOG_BUFFER_SIZE_MAX);
   ut_a(srv_log_buffer_size >= 4 * UNIV_PAGE_SIZE);
 
-  log.buf.create(srv_log_buffer_size);
+  log.buf.alloc(srv_log_buffer_size);
 }
 
-static void log_deallocate_buffer(log_t &log) { log.buf.destroy(); }
+static void log_deallocate_buffer(log_t &log) { log.buf.dealloc(); }
 
 static void log_allocate_write_ahead_buffer(log_t &log) {
   ut_a(srv_log_write_ahead_size >= INNODB_LOG_WRITE_AHEAD_SIZE_MIN);
   ut_a(srv_log_write_ahead_size <= INNODB_LOG_WRITE_AHEAD_SIZE_MAX);
 
   log.write_ahead_buf_size = srv_log_write_ahead_size;
-  log.write_ahead_buf.create(log.write_ahead_buf_size);
+  log.write_ahead_buf.alloc(log.write_ahead_buf_size);
 }
 
 static void log_deallocate_write_ahead_buffer(log_t &log) {
-  log.write_ahead_buf.destroy();
+  log.write_ahead_buf.dealloc();
 }
 
 static void log_allocate_checkpoint_buffer(log_t &log) {
-  log.checkpoint_buf.create(OS_FILE_LOG_BLOCK_SIZE);
+  log.checkpoint_buf.alloc(OS_FILE_LOG_BLOCK_SIZE);
 }
 
 static void log_deallocate_checkpoint_buffer(log_t &log) {
-  log.checkpoint_buf.destroy();
+  log.checkpoint_buf.dealloc();
 }
 
 static void log_allocate_flush_events(log_t &log) {
@@ -1230,12 +1240,11 @@ static void log_deallocate_recent_closed(log_t &log) {
 static void log_allocate_file_header_buffers(log_t &log) {
   const uint32_t n_files = log.n_files;
 
-  using Buf_ptr = aligned_array_pointer<byte, OS_FILE_LOG_BLOCK_SIZE>;
-
+  using Buf_ptr = ut::aligned_array_pointer<byte, OS_FILE_LOG_BLOCK_SIZE>;
   log.file_header_bufs = UT_NEW_ARRAY_NOKEY(Buf_ptr, n_files);
 
   for (uint32_t i = 0; i < n_files; i++) {
-    log.file_header_bufs[i].create(LOG_FILE_HDR_SIZE);
+    log.file_header_bufs[i].alloc(LOG_FILE_HDR_SIZE);
   }
 }
 
@@ -1287,5 +1296,38 @@ void log_position_collect_lsn_info(const log_t &log, lsn_t *current_lsn,
 }
 
 /** @} */
+
+#ifdef UNIV_DEBUG
+void log_free_check_validate() {
+  /* This function may be called while holding some latches. This is OK,
+  as long as we are not holding any latches on buffer blocks or file spaces.
+  The following latches are not held by any thread that frees up redo log
+  space. */
+  static const latch_level_t latches[] = {
+      SYNC_NO_ORDER_CHECK, /* used for non-labeled latches */
+      SYNC_RSEGS,          /* rsegs->x_lock in trx_rseg_create() */
+      SYNC_UNDO_DDL,       /* undo::ddl_mutex */
+      SYNC_UNDO_SPACES,    /* undo::spaces::m_latch */
+      SYNC_FTS_CACHE,      /* fts_cache_t::lock */
+      SYNC_DICT,           /* dict_sys->mutex in commit_try_rebuild() */
+      SYNC_DICT_OPERATION, /* X-latch in commit_try_rebuild() */
+      SYNC_INDEX_TREE      /* index->lock */
+  };
+
+  sync_allowed_latches check(latches,
+                             latches + sizeof(latches) / sizeof(*latches));
+
+  if (sync_check_iterate(check)) {
+#ifndef UNIV_NO_ERR_MSGS
+    ib::error(ER_IB_MSG_1381)
+#else
+    ib::error()
+#endif
+        << "log_free_check() was called while holding an un-listed latch.";
+    ut_error;
+  }
+  mtr_t::check_my_thread_mtrs_are_not_latching();
+}
+#endif /* !UNIV_DEBUG */
 
 #endif /* !UNIV_HOTBACKUP */

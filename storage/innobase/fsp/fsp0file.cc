@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2020, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -320,13 +320,9 @@ dberr_t Datafile::read_first_page(bool read_only_mode) {
     }
   }
 
-  m_first_page_buf =
-      static_cast<byte *>(ut_malloc_nokey(2 * UNIV_PAGE_SIZE_MAX));
-
   /* Align the memory for a possible read from a raw device */
-
-  m_first_page =
-      static_cast<byte *>(ut_align(m_first_page_buf, UNIV_PAGE_SIZE));
+  m_first_page = static_cast<byte *>(
+      ut::aligned_alloc(UNIV_PAGE_SIZE_MAX, UNIV_PAGE_SIZE));
 
   IORequest request;
   dberr_t err = DB_ERROR;
@@ -372,11 +368,8 @@ dberr_t Datafile::read_first_page(bool read_only_mode) {
 
 /** Free the first page from memory when it is no longer needed. */
 void Datafile::free_first_page() {
-  if (m_first_page_buf) {
-    ut_free(m_first_page_buf);
-    m_first_page_buf = nullptr;
-    m_first_page = nullptr;
-  }
+  ut::aligned_free(m_first_page);
+  m_first_page = nullptr;
 }
 
 /** Validates the datafile and checks that it conforms with the expected
@@ -427,11 +420,13 @@ dberr_t Datafile::validate_to_dd(space_id_t space_id, uint32_t flags,
   encryption flags for that scenario. */
   if ((FSP_FLAGS_GET_ENCRYPTION(flags) != FSP_FLAGS_GET_ENCRYPTION(m_flags)) &&
       fsp_is_shared_tablespace(flags)) {
+#ifndef UNIV_HOTBACKUP
 #ifdef UNIV_DEBUG
     /* Note this tablespace id down and assert that it is in the list of
     tablespaces for which encryption is being resumed. */
     flag_mismatch_spaces.push_back(space_id);
 #endif
+#endif /* !UNIV_HOTBACKUP */
 
     if (!((m_flags ^ flags) &
           ~(FSP_FLAGS_MASK_ENCRYPTION | FSP_FLAGS_MASK_DATA_DIR |
@@ -560,7 +555,6 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       read_first_page(srv_read_only_mode) != DB_SUCCESS) {
     error_txt = "Cannot read first page";
   } else {
-    ut_ad(m_first_page_buf);
     ut_ad(m_first_page);
 
     if (flush_lsn != nullptr) {
@@ -679,12 +673,12 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
     fprintf(stderr, "Got from file %u:", m_space_id);
 #endif
 
-    if (!fsp_header_get_encryption_key(m_flags, m_encryption_key,
-                                       m_encryption_iv, m_first_page)) {
+    Encryption_key e_key{m_encryption_key, m_encryption_iv};
+    if (!fsp_header_get_encryption_key(m_flags, e_key, m_first_page)) {
       ib::error(ER_IB_MSG_401)
           << "Encryption information in datafile: " << m_filepath
-          << " can't be decrypted, please confirm the "
-             "keyfile is match and keyring plugin is loaded.";
+          << " can't be decrypted, please confirm that"
+             " keyring is loaded.";
 
       bool found = false;
 
@@ -720,6 +714,7 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       ib::info(ER_IB_MSG_402) << "Read encryption metadata from " << m_filepath
                               << " successfully, encryption"
                               << " of this tablespace enabled.";
+      m_encryption_master_key_id = e_key.m_master_key_id;
     }
 
     if (recv_recovery_is_on() &&
@@ -816,9 +811,8 @@ dberr_t Datafile::find_space_id() {
     ib::info(ER_IB_MSG_405)
         << "Page size:" << page_size << ". Pages to analyze:" << page_count;
 
-    byte *buf = static_cast<byte *>(ut_malloc_nokey(2 * UNIV_PAGE_SIZE_MAX));
-
-    byte *page = static_cast<byte *>(ut_align(buf, UNIV_SECTOR_SIZE));
+    byte *page = static_cast<byte *>(
+        ut::aligned_alloc(UNIV_PAGE_SIZE_MAX, UNIV_SECTOR_SIZE));
 
     for (ulint j = 0; j < page_count; ++j) {
       dberr_t err;
@@ -904,7 +898,7 @@ dberr_t Datafile::find_space_id() {
       }
     }
 
-    ut_free(buf);
+    ut::aligned_free(page);
 
     ib::info(ER_IB_MSG_409) << "Page size: " << page_size
                             << ". Possible space_id count:" << verify.size();

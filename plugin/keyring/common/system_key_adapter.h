@@ -14,7 +14,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
-#include <my_dbug.h>
+#include <assert.h>
 #include "i_keyring_key.h"
 
 namespace keyring {
@@ -35,51 +35,51 @@ class System_key_adapter : public IKey {
   uint get_key_version() const noexcept { return key_version; }
 
   virtual std::string *get_key_signature() const noexcept override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
     return keyring_key->get_key_signature();
   }
 
   virtual Key_type get_key_type() const override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
     return keyring_key->get_key_type();
   }
 
   virtual std::string *get_key_type_as_string() override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
     return keyring_key->get_key_type_as_string();
   }
 
   virtual std::string *get_key_id() override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
     return keyring_key->get_key_id();
   }
   virtual std::string *get_user_id() override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
     return keyring_key->get_user_id();
   }
   virtual uchar *get_key_data() override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
 
     if (system_key_data.get_key_data() == nullptr) construct_system_key_data();
 
     return system_key_data.get_key_data();
   }
   virtual size_t get_key_data_size() override {
-    DBUG_ASSERT(keyring_key != nullptr);
+    assert(keyring_key != nullptr);
 
     if (system_key_data.get_key_data() == nullptr) construct_system_key_data();
 
     return system_key_data.get_key_data_size();
   }
   virtual size_t get_key_pod_size() const noexcept override {
-    DBUG_ASSERT(false);
+    assert(false);
     return 0;
   }
   virtual uchar *release_key_data() noexcept override {
-    DBUG_ASSERT(false);
+    assert(false);
     return nullptr;
   }
-  virtual void xor_data() noexcept override { DBUG_ASSERT(false); }
+  virtual void xor_data() noexcept override { assert(false); }
   virtual void set_key_data(uchar *key_data, size_t key_data_size) override {
     keyring_key->set_key_data(key_data, key_data_size);
   }
@@ -90,29 +90,35 @@ class System_key_adapter : public IKey {
                                 size_t *buffer_position MY_ATTRIBUTE((unused)),
                                 size_t input_buffer_size
                                     MY_ATTRIBUTE((unused))) noexcept override {
-    DBUG_ASSERT(false);
+    assert(false);
     return false;
   }
   virtual void store_in_buffer(
       uchar *buffer MY_ATTRIBUTE((unused)),
       size_t *buffer_position MY_ATTRIBUTE((unused))) const noexcept override {
-    DBUG_ASSERT(false);
+    assert(false);
   }
   virtual bool is_key_type_valid() override {
-    DBUG_ASSERT(false);
+    assert(false);
     return false;
   }
   virtual bool is_key_id_valid() override {
-    DBUG_ASSERT(false);
+    assert(false);
     return false;
   }
   virtual bool is_key_valid() override {
-    DBUG_ASSERT(false);
+    assert(false);
     return false;
   }
   virtual bool is_key_length_valid() override {
-    DBUG_ASSERT(false);
+    assert(false);
     return false;
+  }
+
+ protected:
+  void set_key_type_enum(const std::string *key_type) override {
+    assert(keyring_key != nullptr);
+    keyring_key->set_key_type(key_type);
   }
 
  private:

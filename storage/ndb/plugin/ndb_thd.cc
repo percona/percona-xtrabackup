@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2011, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ Ndb *check_ndb_in_thd(THD *thd, bool validate_ndb) {
     if (!thd_ndb->recycle_ndb()) return NULL;
   }
 
-  DBUG_ASSERT(thd_ndb->is_slave_thread() == thd->slave_thread);
+  assert(thd_ndb->is_slave_thread() == thd->slave_thread);
 
   return thd_ndb->ndb;
 }
@@ -61,9 +61,9 @@ bool applying_binlog(const THD *thd) {
 
   if (thd->rli_fake) {
     /*
-      Thread is in "pseudo_slave_mode" which is entered implicitly when the
+      Thread is in "pseudo_replica_mode" which is entered implicitly when the
       first BINLOG statement is executed (see 'mysql_client_binlog_statement')
-      and explicitly ended when SET @pseudo_slave_mode=0 is finally executed.
+      and explicitly ended when SET @pseudo_replica_mode=0 is finally executed.
     */
     DBUG_PRINT("info", ("THD is in pseduo slave mode"));
     return true;

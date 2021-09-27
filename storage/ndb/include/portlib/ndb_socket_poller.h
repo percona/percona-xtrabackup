@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2010, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -197,9 +197,9 @@ public:
     int fd = ndb_socket_get_native(sock);
     if (fd < 0 || fd >= FD_SETSIZE)
     {
-      fprintf(stderr, "Maximum value for FD_SETSIZE: %d exceeded when"
-        "trying to add fd: %d", FD_SETSIZE, fd);
-      fflush(stderr);
+      g_eventLogger->info(
+          "Maximum value for FD_SETSIZE: %d exceeded when trying to add fd: %d",
+          FD_SETSIZE, fd);
       abort();
     }
     if (read)
@@ -306,8 +306,8 @@ public:
         if (timeout <= 0)
           return 0; // Timeout occurred
 
-        //fprintf(stderr, "Got interrupted, retrying... timeout left: %d\n",
-        //        timeout_millis);
+        //g_eventLogger->info("Got interrupted, retrying... timeout left: %d",
+        //                    timeout_millis);
 
         continue; // Retry interrupted poll
       }

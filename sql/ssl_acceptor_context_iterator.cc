@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ using std::min;
 
 class Ssl_acceptor_context_iterator_data {
  public:
-  Ssl_acceptor_context_iterator_data() {}
+  Ssl_acceptor_context_iterator_data() = default;
   Ssl_acceptor_context_iterator_data(const std::string interface,
                                      const std::string property,
                                      const std::string value)

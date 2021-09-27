@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,12 +33,11 @@
 #include <array>
 
 #include "sql/partitioning/partition_handler.h"
-#include "sql/sql_base.h"
-#include "sql/table.h"
 #include "storage/ndb/include/kernel/ndb_limits.h"
 #include "storage/ndb/include/ndbapi/NdbApi.hpp"
 #include "storage/ndb/include/ndbapi/ndbapi_limits.h"
 #include "storage/ndb/plugin/ha_ndbcluster_cond.h"
+#include "storage/ndb/plugin/ndb_bitmap.h"
 #include "storage/ndb/plugin/ndb_conflict.h"
 #include "storage/ndb/plugin/ndb_table_map.h"
 
@@ -137,6 +136,7 @@ struct st_ndb_status {
   long cluster_node_id;
   const char *connected_host;
   long connected_port;
+  long config_generation;
   long number_of_data_nodes;
   long number_of_ready_data_nodes;
   long connect_count;
@@ -168,7 +168,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
 
   std::string explain_extra() const override;
 
-  int open(const char *name, int mode, uint test_if_locked,
+  int open(const char *path, int mode, uint test_if_locked,
            const dd::Table *table_def) override;
 
   int close(void) override;
@@ -281,8 +281,8 @@ class ha_ndbcluster : public handler, public Partition_handler {
   int rename_table(const char *from, const char *to,
                    const dd::Table *from_table_def,
                    dd::Table *to_table_def) override;
-  int delete_table(const char *name, const dd::Table *table_def) override;
-  bool upgrade_table(THD *thd, const char *, const char *table_name,
+  int delete_table(const char *path, const dd::Table *table_def) override;
+  bool upgrade_table(THD *thd, const char *db_name, const char *table_name,
                      dd::Table *dd_table) override;
 
   row_type get_real_row_type(const HA_CREATE_INFO *create_info) const override {
@@ -293,7 +293,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
     // All other values uses DYNAMIC
     return ROW_TYPE_DYNAMIC;
   }
-  int create(const char *name, TABLE *form, HA_CREATE_INFO *info,
+  int create(const char *path, TABLE *table, HA_CREATE_INFO *info,
              dd::Table *table_def) override;
   int truncate(dd::Table *table_def) override;
   bool is_ignorable_error(int error) override {
@@ -333,14 +333,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
                      int is_bulk_update);
 
  public:
-  static void set_dbname(const char *pathname, char *dbname);
-  static void set_tabname(const char *pathname, char *tabname);
-  /*
-    static member function as it needs to access private
-    NdbTransaction methods
-  */
-  static void release_completed_operations(NdbTransaction *);
-
   /*
     Condition pushdown
   */
@@ -449,7 +441,8 @@ class ha_ndbcluster : public handler, public Partition_handler {
   bool open_table_set_key_fields();
   void release_key_fields();
   void release_ndb_share();
-  NDB_SHARE *open_table_before_schema_sync(THD *, const char *);
+  NDB_SHARE *open_share_before_schema_sync(THD *thd, const char *dbname,
+                                           const char *tabname) const;
   void prepare_inplace__drop_index(uint index_num);
 
   enum_alter_inplace_result supported_inplace_field_change(Alter_inplace_info *,
@@ -493,23 +486,30 @@ class ha_ndbcluster : public handler, public Partition_handler {
   int open_indexes(NdbDictionary::Dictionary *dict);
   void release_indexes(NdbDictionary::Dictionary *dict, bool invalidate);
   int inplace__drop_index(NdbDictionary::Dictionary *dict, uint index_num);
-  int add_index_handle(NdbDictionary::Dictionary *dict, const KEY *key_info,
-                       const char *key_name, uint index_no);
+  int open_index(NdbDictionary::Dictionary *dict, const KEY *key_info,
+                 const char *key_name, uint index_no);
   int add_table_ndb_record(NdbDictionary::Dictionary *dict);
   int add_hidden_pk_ndb_record(NdbDictionary::Dictionary *dict);
-  int add_index_ndb_record(NdbDictionary::Dictionary *dict, const KEY *key_info,
-                           uint index_no);
-  int create_fks(THD *thd, Ndb *ndb);
-  int copy_fk_for_offline_alter(THD *thd, Ndb *, const char *tabname);
-  int inplace__drop_fks(THD *, Ndb *, NdbDictionary::Dictionary *,
-                        const NdbDictionary::Table *);
-  static int recreate_fk_for_truncate(THD *, Ndb *, const char *, const char *,
+  int open_index_ndb_record(NdbDictionary::Dictionary *dict,
+                            const KEY *key_info, uint index_no);
+  static int create_fks(THD *thd, Ndb *ndb, const char *dbname,
+                        const char *tabname);
+  static int copy_fk_for_offline_alter(THD *thd, Ndb *ndb, const char *dbname,
+                                       const char *tabname);
+  static int inplace__drop_fks(THD *thd, Ndb *ndb, const char *dbname,
+                               const char *tabname);
+  static int recreate_fk_for_truncate(THD *thd, Ndb *ndb, const char *dbname,
+                                      const char *tabname,
                                       std::vector<NdbDictionary::ForeignKey> *);
   bool has_fk_dependency(NdbDictionary::Dictionary *dict,
                          const NdbDictionary::Column *) const;
-  int check_default_values(const NdbDictionary::Table *ndbtab);
-  int get_metadata(THD *thd, const dd::Table *table_def);
-  void release_metadata(THD *thd);
+#ifndef NDEBUG
+  bool check_default_values() const;
+#endif
+  int get_metadata(Ndb *ndb, const char *dbname, const char *tabname,
+                   const dd::Table *table_def);
+  void release_metadata(NdbDictionary::Dictionary *dict,
+                        bool invalidate_objects);
   NDB_INDEX_TYPE get_index_type(uint idx_no) const;
   NDB_INDEX_TYPE get_index_type_from_table(uint index_num) const;
   NDB_INDEX_TYPE get_index_type_from_key(uint index_num, KEY *key_info,
@@ -557,8 +557,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
   int unpack_record(uchar *dst_row, const uchar *src_row);
   int unpack_record_and_set_generated_fields(uchar *dst_row,
                                              const uchar *src_row);
-  void set_dbname(const char *pathname);
-  void set_tabname(const char *pathname);
 
   const NdbDictionary::Column *get_hidden_key_column() {
     return m_table->getColumn(m_table_map->get_hidden_key_column());
@@ -659,10 +657,12 @@ class ha_ndbcluster : public handler, public Partition_handler {
   void set_part_info(partition_info *part_info, bool early) override;
   /* End of Partition_handler API */
 
-  Ndb_table_map *m_table_map;
   Thd_ndb *m_thd_ndb;
   NdbScanOperation *m_active_cursor;
-  const NdbDictionary::Table *m_table;
+  // NDB table definition
+  const NdbDictionary::Table *m_table{nullptr};
+  // Mapping from MySQL table to NDB table
+  Ndb_table_map *m_table_map{nullptr};
   /*
     Normal NdbRecord for accessing rows, with all fields including hidden
     fields (hidden primary key, user-defined partitioning function value).
@@ -673,24 +673,19 @@ class ha_ndbcluster : public handler, public Partition_handler {
 
   /* Bitmap used for NdbRecord operation column mask. */
   MY_BITMAP m_bitmap;
-  my_bitmap_map
-      m_bitmap_buf[(NDB_MAX_ATTRIBUTES_IN_TABLE + 8 * sizeof(my_bitmap_map) -
-                    1) /
-                   (8 * sizeof(my_bitmap_map))];  // Buffer for m_bitmap
-  /* Bitmap with bit set for all primary key columns. */
+  Ndb_bitmap_buf<NDB_MAX_ATTRIBUTES_IN_TABLE> m_bitmap_buf;
+
+  // Pointer to bitmap for the primary key columns (the actual bitmap is in
+  // m_key_fields array that have one bitmap for each index of the table)
   MY_BITMAP *m_pk_bitmap_p;
-  my_bitmap_map
-      m_pk_bitmap_buf[(NDB_MAX_ATTRIBUTES_IN_TABLE + 8 * sizeof(my_bitmap_map) -
-                       1) /
-                      (8 * sizeof(my_bitmap_map))];  // Buffer for m_pk_bitmap
+  // Since all NDB table have primary key, the bitmap buffer is preallocated
+  Ndb_bitmap_buf<NDB_MAX_ATTRIBUTES_IN_TABLE> m_pk_bitmap_buf;
+
   struct Ndb_local_table_statistics *m_table_info;
   struct Ndb_local_table_statistics m_table_info_instance;
-  char m_dbname[FN_HEADLEN];
-  // char m_schemaname[FN_HEADLEN];
-  char m_tabname[FN_HEADLEN];
   THR_LOCK_DATA m_lock;
   bool m_lock_tuple;
-  NDB_SHARE *m_share;
+  NDB_SHARE *m_share{nullptr};
 
   std::array<NDB_INDEX_DATA, MAX_INDEXES> m_index;
   // Cached metadata variable, indicating if the open table have any unique
@@ -726,7 +721,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
   ha_rows m_rows_deleted;
   ha_rows m_rows_to_insert;  // TODO: merge it with
                              // handler::estimation_rows_to_insert?
-  ha_rows m_rows_inserted;
   bool m_delete_cannot_batch;
   bool m_update_cannot_batch;
   uint m_bytes_per_write;

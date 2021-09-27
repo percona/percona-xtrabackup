@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -177,6 +177,8 @@ struct trx_named_savept_t {
   trx_savepoints; /*!< the list of savepoints of a
                   transaction */
 };
+
+UT_LIST_NODE_GETTER_DEFINITION(trx_named_savept_t, trx_savepoints)
 
 #include "trx0roll.ic"
 

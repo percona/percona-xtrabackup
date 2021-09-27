@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,8 +60,8 @@ public:
    * Max number of Ndb objects.  
    * (Ndb objects should not be shared by different threads.)
    */
-  STATIC_CONST( MAX_NO_THREADS = 4711 );
-  STATIC_CONST( MAX_LOCKED_CLIENTS = 256 );
+  static constexpr Uint32 MAX_NO_THREADS = 4711;
+  static constexpr Uint32 MAX_LOCKED_CLIENTS = 256;
   TransporterFacade(GlobalDictCache *cache);
   ~TransporterFacade() override;
 
@@ -113,9 +113,9 @@ private:
 
   /* Support routine to configure */
   void set_up_node_active_in_send_buffers(Uint32 nodeId,
-                           const ndb_mgm_configuration &conf);
+                                          const ndb_mgm_configuration *conf);
 
-public:
+ public:
 
   /**
    * These are functions used by ndb_mgmd
@@ -368,9 +368,9 @@ private:
 private:
 
   struct ThreadData {
-    STATIC_CONST( ACTIVE = (1 << 16) | 1 );
-    STATIC_CONST( INACTIVE = (1 << 16) );
-    STATIC_CONST( END_OF_LIST = MAX_NO_THREADS + 1 );
+    static constexpr Uint32 ACTIVE = (1 << 16) | 1;
+    static constexpr Uint32 INACTIVE = (1 << 16);
+    static constexpr Uint32 END_OF_LIST = MAX_NO_THREADS + 1;
     
     ThreadData(Uint32 initialSize = 32);
     

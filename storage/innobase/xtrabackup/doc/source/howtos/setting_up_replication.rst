@@ -8,10 +8,10 @@ Data is, by far, the most valuable part of a system. Having a backup done
 systematically and available for a rapid recovery in case of failure is
 admittedly essential to a system. However, it is not common practice because of
 its costs, infrastructure needed or even the boredom associated to the
-task. |Percona XtraBackup| is designed to solve this problem.
+task. Percona XtraBackup is designed to solve this problem.
 
 You can have almost real-time backups in 6 simple steps by setting up a
-replication environment with |Percona XtraBackup|.
+replication environment with Percona XtraBackup.
 
 All the things you will need
 =============================
@@ -161,7 +161,7 @@ and change the following options in /etc/mysql/my.cnf:
 
    server-id=2
 
-and start/restart :command:`mysqld` on the ``Replica``.
+and start/restart `mysqld` on the ``Replica``.
 
 In case you're using init script on Debian-based system to start mysqld, be sure that the password for ``debian-sys-maint`` user has been updated and it's the same as that user's password on the ``Source``. Password can be seen and updated in :file:`/etc/mysql/debian.cnf`.
 
@@ -176,37 +176,46 @@ On the ``Replica``, review the content of the file :file:`xtrabackup_binlog_info
     $ cat /var/lib/mysql/xtrabackup_binlog_info
    Source-bin.000001     481
 
-On the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
+If you are using version 8.0.23 or later, on the ``Replica``, execute the `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__ on a MySQL console. ``CHANGE_MASTER_TO`` is deprecated as of that release. Use the user name and password you created in STEP 3. 
+
+If you are using a version before 8.0.23, on the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
 
 .. code-block:: mysql
 
-    > CHANGE MASTER TO 
-         MASTER_HOST='$sourceip',	
-         MASTER_USER='repl',
-         MASTER_PASSWORD='$replicapass',
-         MASTER_LOG_FILE='Source-bin.000001', 
-         MASTER_LOG_POS=481;
+    CHANGE REPLICATION SOURCE TO 
+        SOURCE_HOST='$sourceip',	
+        SOURCE_USER='repl',
+        SOURCE_PASSWORD='$replicapass',
+        SOURCE_LOG_FILE='Source-bin.000001', 
+        SOURCE_LOG_POS=481;
 
-and start the replica:
+Start the replica:
 
 .. code-block:: mysql
 
-    > START SLAVE;
+    START REPLICA;
+
+If you are using version 8.0.22 or later, use ``START REPLICA`` instead of ``START SLAVE``. ``START SLAVE`` is deprecated as of that release. If you are using a version before 8.0.22, use ``START SLAVE``.
 
 STEP 6: Check
-=============
+==============
 
 On the ``Replica``, check that everything went OK with:
 
 .. code-block:: text
 
-   > SHOW SLAVE STATUS \G
-      ...
-      Slave_IO_Running: Yes
-      Slave_SQL_Running: Yes
-      ...
-      Seconds_Behind_Master: 13
-            ...
+   SHOW REPLICA STATUS\G
+
+The result shows the status:
+
+.. code-block:: text
+
+...
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+...
+Seconds_Behind_Master: 13
+...
 
 Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`` means the ``SQL`` currently being executed has a ``current_timestamp`` of 13 seconds ago. It is an estimation of the lag between the ``Source`` and the ``Replica``. Note that at the beginning, a high value could be shown because the ``Replica`` has to "catch up" with the ``Source``.
 
@@ -269,10 +278,14 @@ Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_sla
          MASTER_LOG_FILE='Source-bin.000001', 
          MASTER_LOG_POS=481;
 
+If you are using version 8.0.23 or later, use `CHANGE_REPLICATION_SOURCE_TO and the appropriate options <https://dev.mysql.com/doc/refman/8.0/en/change-replication-source-to.html>`__. ``CHANGE_MASTER_TO`` is deprecated as of that version. In versions before 8.0.23, use ``CHANGE MASTER TO``.
+
 and start the replica:
 
 .. code-block:: mysql
 
     > START SLAVE;
+
+If you are using version 8.0.22 or later, use ``START REPLICA`` instead of ``START SLAVE``. ``START SLAVE`` is deprecated as of that release. If you are using a version before 8.0.22 use ``START SLAVE``.
 
 If both IO and SQL threads are running when you check the ``NewReplica``, server is replicating the ``Source``.

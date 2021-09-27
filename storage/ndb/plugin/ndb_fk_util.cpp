@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -117,32 +117,25 @@ const char *fk_split_name(char dst[], const char *src, bool index) {
 bool fetch_referenced_tables_from_ndb_dictionary(
     THD *thd, const char *schema_name, const char *table_name,
     std::set<std::pair<std::string, std::string>> &referenced_tables) {
-  DBUG_ENTER("fetch_referenced_tables_from_ndb_dictionary");
+  DBUG_TRACE;
   Thd_ndb *thd_ndb = get_thd_ndb(thd);
   Ndb *ndb = thd_ndb->ndb;
 
-  // save db
-  Ndb_db_guard db_guard(ndb);
-  if (ndb->setDatabaseName(schema_name) != 0) {
-    DBUG_PRINT("error", ("Error setting database '%s'. Error : %s", schema_name,
-                         ndb->getNdbError().message));
-    DBUG_RETURN(false);
-  }
-
-  NdbDictionary::Dictionary *dict = ndb->getDictionary();
-  Ndb_table_guard tab_guard(dict, table_name);
+  Ndb_table_guard tab_guard(ndb, schema_name, table_name);
   const NdbDictionary::Table *table = tab_guard.get_table();
   if (table == NULL) {
-    DBUG_PRINT("error", ("Unable to load table '%s.%s' from ndb. Error : %s",
-                         schema_name, table_name, dict->getNdbError().message));
-    DBUG_RETURN(false);
+    DBUG_PRINT("error",
+               ("Unable to load table '%s.%s' from NDB. Error : %s",
+                schema_name, table_name, tab_guard.getNdbError().message));
+    return false;
   }
 
   NdbDictionary::Dictionary::List obj_list;
+  NdbDictionary::Dictionary *dict = ndb->getDictionary();
   if (dict->listDependentObjects(obj_list, *table) != 0) {
     DBUG_PRINT("error", ("Unable to list dependents of '%s.%s'. Error : %s",
                          schema_name, table_name, dict->getNdbError().message));
-    DBUG_RETURN(false);
+    return false;
   }
   DBUG_PRINT("info", ("found %u dependent objects", obj_list.count));
 
@@ -159,7 +152,7 @@ bool fetch_referenced_tables_from_ndb_dictionary(
     if (dict->getForeignKey(fk, element.name) != 0) {
       DBUG_PRINT("error", ("Unable to fetch foreign key '%s'. Error : %s",
                            element.name, dict->getNdbError().message));
-      DBUG_RETURN(false);
+      return false;
     }
 
     char parent_db[FN_LEN + 1];
@@ -178,7 +171,7 @@ bool fetch_referenced_tables_from_ndb_dictionary(
         std::pair<std::string, std::string>(parent_db, parent_name));
   }
 
-  DBUG_RETURN(true);
+  return true;
 }
 
 /**
@@ -209,7 +202,7 @@ bool retrieve_foreign_key_list_from_ndb(NdbDictionary::Dictionary *dict,
     NdbDictionary::ForeignKey fk;
     if (dict->getForeignKey(fk, element.name) != 0) {
       // Could not find the listed fk
-      DBUG_ASSERT(false);
+      assert(false);
       DBUG_PRINT("error",
                  ("Failed to retrieve the foreign key '%s'", element.name));
       return false;

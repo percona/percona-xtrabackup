@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -199,6 +199,8 @@ enum dberr_t {
   DB_OUT_OF_RESOURCES,
   /** Page was discarded, was not written to storage. */
   DB_PAGE_IS_STALE,
+  /** Failed to read as read was beyond file size. */
+  DB_FILE_READ_BEYOND_SIZE,
 
   /* The following are partial failure codes */
 

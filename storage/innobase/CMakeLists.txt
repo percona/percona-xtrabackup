@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2020, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -220,6 +220,13 @@ SET(INNOBASE_SOURCES
   ut/ut0vec.cc
   ut/ut0wqueue.cc)
 
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98753
+IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
+  ADD_COMPILE_FLAGS(
+    pars/pars0grm.cc
+    COMPILE_FLAGS "-Wno-free-nonheap-object")
+ENDIF()
+
 # There seems to be a bug in gcc for Oracle Linux 8 on ARM.
 # storage/innobase/ut/ut0test.cc:213:76:
 # warning: requested alignment 512 is larger than 16 [-Wattributes]
@@ -239,6 +246,12 @@ ADD_LIBRARY(innodb_zipdecompress STATIC ${INNOBASE_ZIP_DECOMPRESS_SOURCES})
 TARGET_COMPILE_DEFINITIONS(
   innodb_zipdecompress PRIVATE UNIV_LIBRARY UNIV_NO_ERR_MSGS)
 ADD_DEPENDENCIES(innodb_zipdecompress GenError)
+
+MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-profile" HAS_MISSING_PROFILE)
+IF(HAS_MISSING_PROFILE)
+  TARGET_COMPILE_OPTIONS(innodb_zipdecompress PRIVATE ${HAS_MISSING_PROFILE})
+ENDIF()
+
 
 UNSET(NUMA_LIBRARY)
 IF(HAVE_LIBNUMA)

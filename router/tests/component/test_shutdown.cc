@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2019, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,6 @@
 #include "mysqlrouter/rest_client.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
-#include "tcp_port_pool.h"
 
 using ::testing::Eq;
 using namespace std::chrono_literals;
@@ -146,7 +145,6 @@ class ShutdownTest : public RouterComponentTest {
     }
   }
 
-  TcpPortPool port_pool_;
   unsigned wait_for_cache_ready_timeout_ = 1000;
 };
 

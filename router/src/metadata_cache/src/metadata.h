@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2016, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -92,7 +92,7 @@ class METADATA_API MetaData {
   // must be explicitly defined though.
   explicit MetaData(const MetaData &) = delete;
   MetaData &operator=(const MetaData &) = delete;
-  virtual ~MetaData() {}
+  virtual ~MetaData() = default;
 };
 
 #endif  // METADATA_CACHE_METADATA_INTERFACE_INCLUDED

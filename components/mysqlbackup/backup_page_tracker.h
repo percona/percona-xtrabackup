@@ -1,6 +1,6 @@
 /************************************************************************
                       Mysql Enterprise Backup
- Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+ Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -74,6 +74,7 @@ class Backup_page_tracker {
 
  public:
   static bool m_receive_changed_page_data;
+  static char *m_changed_pages_file;
 
   // Page track UDF functions
   static mysql_service_status_t register_udfs();
@@ -112,6 +113,10 @@ class Backup_page_tracker {
 
   // method to act on a changed backup-id
   static bool backup_id_update();
+
+  /// Method to de-allocate the memory allocated for the buffer holding
+  /// path value for the page-track file, if not done before.
+  static void deinit();
 };
 
 #endif /* INC_PAGE_TRACKER_SERVICE_H */

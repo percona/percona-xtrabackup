@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,10 +23,8 @@
 #ifndef BASE_MOCK_FIELD_INCLUDED
 #define BASE_MOCK_FIELD_INCLUDED
 
-// First include (the generated) my_config.h, to get correct platform defines.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "my_config.h"
 
 #include "sql/field.h"
 #include "sql/json_dom.h"

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2018, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +61,7 @@ ClusterMetadataDynamicState::ClusterMetadataDynamicState(
   pimpl_->base_state_ = base_config;
 }
 
-ClusterMetadataDynamicState::~ClusterMetadataDynamicState() {}
+ClusterMetadataDynamicState::~ClusterMetadataDynamicState() = default;
 
 void ClusterMetadataDynamicState::save_section() {
   JsonValue section(rapidjson::kObjectType);

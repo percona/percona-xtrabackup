@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -269,9 +269,8 @@ node_address *new_node_address_uuid(u_int n, char *names[], blob uuids[]) {
     na[i].uuid.data.data_len = uuids[i].data.data_len;
     na[i].uuid.data.data_val =
         (char *)calloc(uuids[i].data.data_len, sizeof(char));
-    na[i].uuid.data.data_val =
-        strncpy(na[i].uuid.data.data_val, uuids[i].data.data_val,
-                uuids[i].data.data_len);
+    memcpy(na[i].uuid.data.data_val, uuids[i].data.data_val,
+           uuids[i].data.data_len);
   }
 
   return na;

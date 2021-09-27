@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2020, Oracle and/or its affiliates.
+Copyright (c) 1995, 2021, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -62,8 +62,9 @@ thread has locked the rw-lock in the specified mode.
 @param[in]	lock		pointer to rw-lock
 @param[in]	lock_type	lock type: RW_LOCK_S, RW_LOCK_X
 @return true if success */
-UNIV_INLINE
-bool rw_lock_own(rw_lock_t *lock, ulint lock_type) { return (lock != nullptr); }
+static inline bool rw_lock_own(rw_lock_t *lock, ulint lock_type) {
+  return (lock != nullptr);
+}
 
 #define sync_check_iterate(A) true
 #endif /* UNIV_DEBUG */
@@ -86,46 +87,6 @@ bool rw_lock_own(rw_lock_t *lock, ulint lock_type) { return (lock != nullptr); }
 #define rw_lock_own_flagged(A, B) true
 #endif /* UNIV_LIBRARY */
 
-/** Counters for RW locks. */
-struct rw_lock_stats_t {
-  typedef ib_counter_t<uint64_t, IB_N_SLOTS> uint64_counter_t;
-
-  /** number of spin waits on rw-latches,
-  resulted during shared (read) locks */
-  uint64_counter_t rw_s_spin_wait_count;
-
-  /** number of spin loop rounds on rw-latches,
-  resulted during shared (read) locks */
-  uint64_counter_t rw_s_spin_round_count;
-
-  /** number of OS waits on rw-latches,
-  resulted during shared (read) locks */
-  uint64_counter_t rw_s_os_wait_count;
-
-  /** number of spin waits on rw-latches,
-  resulted during exclusive (write) locks */
-  uint64_counter_t rw_x_spin_wait_count;
-
-  /** number of spin loop rounds on rw-latches,
-  resulted during exclusive (write) locks */
-  uint64_counter_t rw_x_spin_round_count;
-
-  /** number of OS waits on rw-latches,
-  resulted during exclusive (write) locks */
-  uint64_counter_t rw_x_os_wait_count;
-
-  /** number of spin waits on rw-latches,
-  resulted during sx locks */
-  uint64_counter_t rw_sx_spin_wait_count;
-
-  /** number of spin loop rounds on rw-latches,
-  resulted during sx locks */
-  uint64_counter_t rw_sx_spin_round_count;
-
-  /** number of OS waits on rw-latches,
-  resulted during sx locks */
-  uint64_counter_t rw_sx_os_wait_count;
-};
 #endif /* !UNIV_HOTBACKUP */
 
 /* Latch types; these are used also in btr0btr.h and mtr0mtr.h: keep the
@@ -150,15 +111,7 @@ of concurrent read locks before the rw_lock breaks. */
 struct rw_lock_debug_t;
 #endif /* UNIV_DEBUG */
 
-typedef UT_LIST_BASE_NODE_T(rw_lock_t) rw_lock_list_t;
-
-extern rw_lock_list_t rw_lock_list;
 extern ib_mutex_t rw_lock_list_mutex;
-
-#ifndef UNIV_HOTBACKUP
-/** Counters for RW locks. */
-extern rw_lock_stats_t rw_lock_stats;
-#endif /* !UNIV_HOTBACKUP */
 
 #ifndef UNIV_LIBRARY
 #ifndef UNIV_HOTBACKUP
@@ -344,9 +297,9 @@ spinning.
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested
 @return true if success */
-UNIV_INLINE
-bool rw_lock_s_lock_low(rw_lock_t *lock, ulint pass MY_ATTRIBUTE((unused)),
-                        const char *file_name, ulint line);
+static inline bool rw_lock_s_lock_low(rw_lock_t *lock,
+                                      ulint pass MY_ATTRIBUTE((unused)),
+                                      const char *file_name, ulint line);
 
 /** NOTE! Use the corresponding macro, not directly this function, except if
 you supply the file name and line number. Lock an rw-lock in shared mode for
@@ -358,9 +311,8 @@ by srv_n_spin_wait_rounds), waiting for the lock, before suspending the thread.
                                 to another thread to unlock
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested */
-UNIV_INLINE
-void rw_lock_s_lock_func(rw_lock_t *lock, ulint pass, const char *file_name,
-                         ulint line);
+static inline void rw_lock_s_lock_func(rw_lock_t *lock, ulint pass,
+                                       const char *file_name, ulint line);
 
 /** NOTE! Use the corresponding macro, not directly this function! Lock an
 rw-lock in exclusive mode for the current thread if the lock can be obtained
@@ -369,9 +321,9 @@ immediately.
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested
 @return true if success */
-UNIV_INLINE
-bool rw_lock_x_lock_func_nowait(rw_lock_t *lock, const char *file_name,
-                                ulint line);
+static inline bool rw_lock_x_lock_func_nowait(rw_lock_t *lock,
+                                              const char *file_name,
+                                              ulint line);
 
 /** Releases a shared mode lock. */
 #ifdef UNIV_DEBUG
@@ -379,8 +331,7 @@ bool rw_lock_x_lock_func_nowait(rw_lock_t *lock, const char *file_name,
                         to another thread to unlock */
 #endif
 /** @param[in,out]	lock	rw-lock */
-UNIV_INLINE
-void rw_lock_s_unlock_func(
+static inline void rw_lock_s_unlock_func(
 #ifdef UNIV_DEBUG
     ulint pass,
 #endif /* UNIV_DEBUG */
@@ -429,8 +380,7 @@ void rw_lock_sx_lock_func(
                         to another thread to unlock */
 #endif /* UNIV_DEBUG */
 /** @param[in,out]	lock	rw-lock */
-UNIV_INLINE
-void rw_lock_x_unlock_func(
+static inline void rw_lock_x_unlock_func(
 #ifdef UNIV_DEBUG
     ulint pass,
 #endif /* UNIV_DEBUG */
@@ -442,8 +392,7 @@ void rw_lock_x_unlock_func(
                         to another thread to unlock */
 #endif /* UNIV_DEBUG */
 /** @param[in,out]	lock	rw-lock */
-UNIV_INLINE
-void rw_lock_sx_unlock_func(
+static inline void rw_lock_sx_unlock_func(
 #ifdef UNIV_DEBUG
     ulint pass,
 #endif /* UNIV_DEBUG */
@@ -459,30 +408,29 @@ void rw_lock_sx_unlock_func(
 void rw_lock_x_lock_move_ownership(
     rw_lock_t *lock); /*!< in: lock which was x-locked in the
                       buffer read */
-#endif                /* !UNIV_HOTBACKUP */
 /** Returns the value of writer_count for the lock. Does not reserve the lock
  mutex, so the caller must be sure it is not changed during the call.
  @return value of writer_count */
-UNIV_INLINE
-ulint rw_lock_get_x_lock_count(const rw_lock_t *lock); /*!< in: rw-lock */
+static inline ulint rw_lock_get_x_lock_count(
+    const rw_lock_t *lock); /*!< in: rw-lock */
 /** Returns the number of sx-lock for the lock. Does not reserve the lock
  mutex, so the caller must be sure it is not changed during the call.
  @return value of writer_count */
-UNIV_INLINE
-ulint rw_lock_get_sx_lock_count(const rw_lock_t *lock); /*!< in: rw-lock */
+static inline ulint rw_lock_get_sx_lock_count(
+    const rw_lock_t *lock); /*!< in: rw-lock */
 /** Check if there are threads waiting for the rw-lock.
  @return true if waiters, false otherwise */
-UNIV_INLINE
-bool rw_lock_get_waiters(const rw_lock_t *lock); /*!< in: rw-lock */
+static inline bool rw_lock_get_waiters(
+    const rw_lock_t *lock); /*!< in: rw-lock */
 /** Returns the write-status of the lock - this function made more sense
  with the old rw_lock implementation.
  @return RW_LOCK_NOT_LOCKED, RW_LOCK_X, RW_LOCK_X_WAIT, RW_LOCK_SX */
-UNIV_INLINE
-ulint rw_lock_get_writer(const rw_lock_t *lock); /*!< in: rw-lock */
+static inline ulint rw_lock_get_writer(
+    const rw_lock_t *lock); /*!< in: rw-lock */
 /** Returns the number of readers (s-locks).
  @return number of readers */
-UNIV_INLINE
-ulint rw_lock_get_reader_count(const rw_lock_t *lock); /*!< in: rw-lock */
+static inline ulint rw_lock_get_reader_count(
+    const rw_lock_t *lock); /*!< in: rw-lock */
 
 /** Decrements lock_word the specified amount if it is greater than 0.
 This is used by both s_lock and x_lock operations.
@@ -490,15 +438,14 @@ This is used by both s_lock and x_lock operations.
 @param[in]	amount		amount to decrement
 @param[in]	threshold	threshold of judgement
 @return true if decr occurs */
-UNIV_INLINE
-bool rw_lock_lock_word_decr(rw_lock_t *lock, ulint amount, lint threshold);
+static inline bool rw_lock_lock_word_decr(rw_lock_t *lock, ulint amount,
+                                          lint threshold);
 
 /** Increments lock_word the specified amount and returns new value.
 @param[in,out]	lock		rw-lock
 @param[in]	amount		amount to decrement
 @return lock->lock_word after increment */
-UNIV_INLINE
-lint rw_lock_lock_word_incr(rw_lock_t *lock, ulint amount);
+static inline lint rw_lock_lock_word_incr(rw_lock_t *lock, ulint amount);
 
 /** This function sets the lock->writer_thread and lock->recursive fields. Sets
 lock->recursive field using atomic release after setting lock->writer thread to
@@ -509,16 +456,18 @@ point in time. The protocol is that lock->writer_thread MUST be updated BEFORE
 the lock->recursive flag is set.
 @param[in,out]	lock		lock to work on
 @param[in]	recursive	true if recursion allowed */
-UNIV_INLINE
-void rw_lock_set_writer_id_and_recursion_flag(rw_lock_t *lock, bool recursive);
+static inline void rw_lock_set_writer_id_and_recursion_flag(rw_lock_t *lock,
+                                                            bool recursive);
 
-#ifndef UNIV_HOTBACKUP
 #ifdef UNIV_DEBUG
 /** Checks if the thread has locked the rw-lock in the specified mode, with
- the pass value == 0. */
-ibool rw_lock_own(rw_lock_t *lock, /*!< in: rw-lock */
-                  ulint lock_type) /*!< in: lock type: RW_LOCK_S,
-                                   RW_LOCK_X */
+the pass value == 0. Note that the mode is checked exactly, so if the thread
+owns RW_LOCK_X only, the rw_lock_own(..,RW_LOCK_S) will return false.
+@param[in]  lock        the rw-lock
+@param[in]  lock_type   The exact lock type to check:
+                        RW_LOCK_S, RW_LOCK_SX or RW_LOCK_X
+ */
+bool rw_lock_own(const rw_lock_t *lock, ulint lock_type)
     MY_ATTRIBUTE((warn_unused_result));
 
 /** Checks if the thread has locked the rw-lock in the specified mode, with
@@ -550,6 +499,23 @@ void rw_lock_debug_print(FILE *f, const rw_lock_debug_t *info);
 
 #endif /* !UNIV_LIBRARY */
 
+#ifdef UNIV_DEBUG
+/** The structure for storing debug info of an rw-lock.  All access to this
+structure must be protected by rw_lock_debug_mutex_enter(). */
+struct rw_lock_debug_t {
+  std::thread::id thread_id; /*!< The thread id of the thread which
+                         locked the rw-lock */
+  ulint pass;                /*!< Pass value given in the lock operation */
+  ulint lock_type;           /*!< Type of the lock: RW_LOCK_X,
+                             RW_LOCK_S, RW_LOCK_X_WAIT */
+  const char *file_name;     /*!< File name where the lock was obtained */
+  ulint line;                /*!< Line where the rw-lock was locked */
+  UT_LIST_NODE_T(rw_lock_debug_t) list;
+  /*!< Debug structs are linked in a two-way
+  list */
+};
+#endif /* UNIV_DEBUG */
+
 /* NOTE! The structure appears here only for the compiler to know its size.
 Do not use its fields directly! */
 
@@ -567,7 +533,6 @@ struct rw_lock_t
 #endif /* UNIV_DEBUG */
 {
   rw_lock_t() = default;
-
   /** rw_lock_t is not a copyable object, the reasoning
   behind this is the same as the reasoning behind why
   std::mutex is not copyable. It is supposed to represent
@@ -603,9 +568,13 @@ struct rw_lock_t
   volatile ulint sx_recursive;
 
   /** Thread id of writer thread. Is only guaranteed to have non-stale value if
-  recursive flag is set, otherwise it may contain native thread handle of a
+  recursive flag is set, otherwise it may contain native thread ID of a
   thread which already released or passed the lock. */
-  std::atomic<os_thread_id_t> writer_thread;
+  std::atomic<std::thread::id> writer_thread;
+
+  /** XOR of reader threads' IDs. If there is exactly one reader it should allow
+   to retrieve the thread ID of that reader. */
+  Atomic_xor_of_thread_id reader_thread;
 
   /** Used by sync0arr.cc for thread queueing */
   os_event_t event;
@@ -661,28 +630,12 @@ struct rw_lock_t
   uint32_t magic_n = {MAGIC_N};
 
   /** In the debug version: pointer to the debug info list of the lock */
-  UT_LIST_BASE_NODE_T(rw_lock_debug_t) debug_list;
+  UT_LIST_BASE_NODE_T(rw_lock_debug_t, list) debug_list{};
 
   /** Level in the global latching order. */
   latch_level_t level;
 #endif /* UNIV_DEBUG */
 };
-#ifdef UNIV_DEBUG
-/** The structure for storing debug info of an rw-lock.  All access to this
-structure must be protected by rw_lock_debug_mutex_enter(). */
-struct rw_lock_debug_t {
-  os_thread_id_t thread_id; /*!< The thread id of the thread which
-                         locked the rw-lock */
-  ulint pass;               /*!< Pass value given in the lock operation */
-  ulint lock_type;          /*!< Type of the lock: RW_LOCK_X,
-                            RW_LOCK_S, RW_LOCK_X_WAIT */
-  const char *file_name;    /*!< File name where the lock was obtained */
-  ulint line;               /*!< Line where the rw-lock was locked */
-  UT_LIST_NODE_T(rw_lock_debug_t) list;
-  /*!< Debug structs are linked in a two-way
-  list */
-};
-#endif /* UNIV_DEBUG */
 
 #ifndef UNIV_LIBRARY
 #ifndef UNIV_HOTBACKUP
@@ -726,12 +679,12 @@ function!
 /**
 @param[in]	cline		file line where created
 @param[in]	cfile_name	file name where created */
-UNIV_INLINE
-void pfs_rw_lock_create_func(mysql_pfs_key_t key, rw_lock_t *lock,
+static inline void pfs_rw_lock_create_func(mysql_pfs_key_t key, rw_lock_t *lock,
 #ifdef UNIV_DEBUG
-                             latch_level_t level, const char *cmutex_name,
+                                           latch_level_t level,
+                                           const char *cmutex_name,
 #endif /* UNIV_DEBUG */
-                             const char *cfile_name, ulint cline);
+                                           const char *cfile_name, ulint cline);
 
 /** Performance schema instrumented wrap function for rw_lock_x_lock_func()
 NOTE! Please use the corresponding macro rw_lock_x_lock(), not directly this
@@ -741,9 +694,8 @@ function!
                                 to another thread to unlock
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested */
-UNIV_INLINE
-void pfs_rw_lock_x_lock_func(rw_lock_t *lock, ulint pass, const char *file_name,
-                             ulint line);
+static inline void pfs_rw_lock_x_lock_func(rw_lock_t *lock, ulint pass,
+                                           const char *file_name, ulint line);
 
 /** Performance schema instrumented wrap function for
 rw_lock_x_lock_func_nowait()
@@ -752,9 +704,9 @@ NOTE! Please use the corresponding macro, not directly this function!
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested
 @return true if success */
-UNIV_INLINE
-bool pfs_rw_lock_x_lock_func_nowait(rw_lock_t *lock, const char *file_name,
-                                    ulint line);
+static inline bool pfs_rw_lock_x_lock_func_nowait(rw_lock_t *lock,
+                                                  const char *file_name,
+                                                  ulint line);
 
 /** Performance schema instrumented wrap function for rw_lock_s_lock_func()
 NOTE! Please use the corresponding macro rw_lock_s_lock(), not directly this
@@ -764,9 +716,8 @@ function!
                                 to another thread to unlock
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested */
-UNIV_INLINE
-void pfs_rw_lock_s_lock_func(rw_lock_t *lock, ulint pass, const char *file_name,
-                             ulint line);
+static inline void pfs_rw_lock_s_lock_func(rw_lock_t *lock, ulint pass,
+                                           const char *file_name, ulint line);
 
 /** Performance schema instrumented wrap function for rw_lock_s_lock_func()
 NOTE! Please use the corresponding macro rw_lock_s_lock(), not directly this
@@ -777,9 +728,8 @@ function!
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested
 @return true if success */
-UNIV_INLINE
-ibool pfs_rw_lock_s_lock_low(rw_lock_t *lock, ulint pass, const char *file_name,
-                             ulint line);
+static inline ibool pfs_rw_lock_s_lock_low(rw_lock_t *lock, ulint pass,
+                                           const char *file_name, ulint line);
 
 /** Performance schema instrumented wrap function for rw_lock_x_lock_func()
 NOTE! Please use the corresponding macro rw_lock_x_lock(), not directly this
@@ -789,9 +739,8 @@ function!
                                 to another thread to unlock
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested */
-UNIV_INLINE
-void pfs_rw_lock_x_lock_func(rw_lock_t *lock, ulint pass, const char *file_name,
-                             ulint line);
+static inline void pfs_rw_lock_x_lock_func(rw_lock_t *lock, ulint pass,
+                                           const char *file_name, ulint line);
 
 /** Performance schema instrumented wrap function for rw_lock_s_unlock_func()
 NOTE! Please use the corresponding macro rw_lock_s_unlock(), not directly this
@@ -801,8 +750,7 @@ function! */
                         another thread to unlock */
 #endif /* UNIV_DEBUG */
 /** @param[in,out]	lock	rw-lock */
-UNIV_INLINE
-void pfs_rw_lock_s_unlock_func(
+static inline void pfs_rw_lock_s_unlock_func(
 #ifdef UNIV_DEBUG
     ulint pass,
 #endif /* UNIV_DEBUG */
@@ -816,8 +764,7 @@ function! */
                         another thread to unlock */
 #endif /* UNIV_DEBUG */
 /** @param[in,out]	lock	rw-lock */
-UNIV_INLINE
-void pfs_rw_lock_x_unlock_func(
+static inline void pfs_rw_lock_x_unlock_func(
 #ifdef UNIV_DEBUG
     ulint pass,
 #endif /* UNIV_DEBUG */
@@ -831,9 +778,8 @@ function!
                                 to another thread to unlock
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested */
-UNIV_INLINE
-void pfs_rw_lock_sx_lock_func(rw_lock_t *lock, ulint pass,
-                              const char *file_name, ulint line);
+static inline void pfs_rw_lock_sx_lock_func(rw_lock_t *lock, ulint pass,
+                                            const char *file_name, ulint line);
 
 /** Performance schema instrumented wrap function for rw_lock_sx_lock_nowait()
 NOTE! Please use the corresponding macro, not directly this function!
@@ -842,9 +788,8 @@ NOTE! Please use the corresponding macro, not directly this function!
                                 to another thread to unlock
 @param[in]	file_name	file name where lock requested
 @param[in]	line		line where requested */
-UNIV_INLINE
-bool pfs_rw_lock_sx_lock_low(rw_lock_t *lock, ulint pass, const char *file_name,
-                             ulint line);
+static inline bool pfs_rw_lock_sx_lock_low(rw_lock_t *lock, ulint pass,
+                                           const char *file_name, ulint line);
 
 /** Performance schema instrumented wrap function for rw_lock_sx_unlock_func()
 NOTE! Please use the corresponding macro rw_lock_sx_unlock(), not directly this
@@ -854,8 +799,7 @@ function!
 /** @param[in]	pass		pass value; != 0, if the lock will be passed
                                 to another thread to unlock */
 #endif /* UNIV_DEBUG */
-UNIV_INLINE
-void pfs_rw_lock_sx_unlock_func(
+static inline void pfs_rw_lock_sx_unlock_func(
 #ifdef UNIV_DEBUG
     ulint pass,
 #endif /* UNIV_DEBUG */
@@ -864,13 +808,16 @@ void pfs_rw_lock_sx_unlock_func(
 /** Performance schema instrumented wrap function for rw_lock_free_func()
  NOTE! Please use the corresponding macro rw_lock_free(), not directly
  this function! */
-UNIV_INLINE
-void pfs_rw_lock_free_func(rw_lock_t *lock); /*!< in: rw-lock */
-#endif                                       /* UNIV_PFS_RWLOCK */
+static inline void pfs_rw_lock_free_func(rw_lock_t *lock); /*!< in: rw-lock */
+#endif                                                     /* UNIV_PFS_RWLOCK */
 
 #include "sync0rw.ic"
 
 #endif /* !UNIV_HOTBACKUP */
 
 #endif /* !UNIV_LIBRARY */
+typedef UT_LIST_BASE_NODE_T(rw_lock_t, list) rw_lock_list_t;
+
+extern rw_lock_list_t rw_lock_list;
+
 #endif /* sync0rw.h */

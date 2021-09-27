@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,6 @@
 
 #define JAM_FILE_ID 420
 
-extern EventLogger * g_eventLogger;
 
 void Dbtup::initData() 
 {
@@ -1179,9 +1178,13 @@ void Dbtup::execTUPSEIZEREQ(Signal* signal)
   return;
 }//Dbtup::execTUPSEIZEREQ()
 
-#define printFragment(t){ for(Uint32 i = 0; i < NDB_ARRAY_SIZE(t.p->fragid);i++){ \
-  ndbout_c("table = %d fragid[%d] = %d fragrec[%d] = %d", \
-           t.i, t.p->fragid[i], i, t.p->fragrec[i]); }}
+#define printFragment(t)                                                      \
+  {                                                                           \
+    for (Uint32 i = 0; i < NDB_ARRAY_SIZE(t.p->fragid); i++) {                \
+      g_eventLogger->info("table = %d fragid[%d] = %d fragrec[%d] = %d", t.i, \
+                          t.p->fragid[i], i, t.p->fragrec[i]);                \
+    }                                                                         \
+  }
 
 Dbtup::Operationrec*
 Dbtup::get_operation_ptr(Uint32 i)
@@ -1268,12 +1271,10 @@ Dbtup::sendPoolShrink(const Uint32 pool_index)
   c_transient_pools_shrinking.set(pool_index);
   if (need_send)
   {
-    SignalT<2> signal2[1];
-    Signal* signal = new (&signal2[0]) Signal(0);
-    memset(signal2, 0, sizeof(signal2));
+    Signal25 signal[1] = {};
     signal->theData[0] = ZTUP_SHRINK_TRANSIENT_POOLS;
     signal->theData[1] = pool_index;
-    sendSignal(reference(), GSN_CONTINUEB, (Signal*)signal, 2, JBB);
+    sendSignal(reference(), GSN_CONTINUEB, signal, 2, JBB);
   }
 }
 

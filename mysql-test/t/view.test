@@ -6220,3 +6220,64 @@ CREATE VIEW v AS SELECT null AS 'c' UNION SELECT 'a' AS 'c';
 --echo # varchar(1). With fix type is listed correctly.
 SHOW FIELDS FROM v;
 DROP VIEW v;
+
+
+--echo #
+--echo # Bug#32050275 - can't create synonym of information_schema using create_synonym_db()
+--echo #
+# Without fix creating view with JSON_TABLE / recursive CTE fails using prepared
+# statement.
+PREPARE stmt FROM "CREATE VIEW v1 AS SELECT * FROM
+                   JSON_TABLE('[]', '$[*]' COLUMNS (c1 INT PATH '$.x')) AS jt";
+EXECUTE stmt;
+--error ER_TABLE_EXISTS_ERROR
+EXECUTE stmt;
+DROP VIEW v1;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+DROP VIEW v1;
+
+PREPARE stmt FROM "CREATE VIEW v1 AS WITH RECURSIVE cte (n) AS
+                    (
+                      SELECT 1
+                      UNION ALL
+                      SELECT n + 1 FROM cte WHERE n < 5
+                    )
+                    SELECT * FROM cte";
+EXECUTE stmt;
+--error ER_TABLE_EXISTS_ERROR
+EXECUTE stmt;
+DROP VIEW v1;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+DROP VIEW v1;
+
+--replace_regex /[0-9][0-9]/XX/
+call sys.create_synonym_db("INFORMATION_SCHEMA", "I_S");
+DROP DATABASE I_S;
+
+--echo # Bug#32694458: Assertion `thd->is_error()' failed|sql/sql_select.cc
+
+# No expression should be evaluated during resolving when creating a view,
+# so these commands should not cause any warnings.
+
+CREATE VIEW v AS SELECT INSERT('a', 1, 1, YEAR(UNHEX('w'))) AS c;
+SHOW CREATE VIEW v;
+SELECT * FROM v;
+DROP VIEW v;
+
+--echo #
+--echo # Bug #32854203: DUMP/RESTORE FAILS WITH NESTED VIEWS HAVING ROLLUP OVER DISTINCT GROUPS
+--echo #
+
+CREATE VIEW v2 AS SELECT 1 AS c;
+CREATE VIEW v1 AS SELECT 4711 AS a, COUNT(DISTINCT c) FROM v2 GROUP BY a WITH ROLLUP;
+
+# Recreate v2, forcing a dump and re-parse of v1.
+DROP VIEW v2;
+CREATE VIEW v2 AS SELECT 1 AS c;
+
+# This statement used to give a syntax error.
+SHOW CREATE VIEW v1;
+
+DROP VIEW v1, v2;

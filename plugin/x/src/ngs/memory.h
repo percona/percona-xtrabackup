@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@ namespace detail {
 template <class T>
 class PFS_allocator : public std::allocator<T> {
  public:
-  PFS_allocator() {}
+  PFS_allocator() = default;
 
   template <class U>
   PFS_allocator(PFS_allocator<U> const &) {}

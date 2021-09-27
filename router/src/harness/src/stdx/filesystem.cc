@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -92,7 +92,7 @@ stdx::expected<std::string, std::error_code> getcwd() {
     return stdx::make_unexpected(last_posix_error_code());
   }
 #else
-  std::array<char, PATH_MAX> cwd;
+  std::array<char, PATH_MAX> cwd{};
   if (nullptr == ::getcwd(cwd.data(), cwd.size())) {
     return stdx::make_unexpected(last_error_code());
   }

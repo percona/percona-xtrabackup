@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2013, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,8 +38,8 @@
 #include "sql/rpl_info.h"
 #include "sql/rpl_mi.h"
 #include "sql/rpl_msr.h" /* Multisource replication */
+#include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
-#include "sql/rpl_slave.h"
 #include "sql/sql_parse.h"
 #include "sql/table.h"
 #include "storage/perfschema/pfs_instr.h"
@@ -122,7 +122,7 @@ table_replication_applier_configuration::
     : PFS_engine_table(&m_share, &m_pos), m_pos(0), m_next_pos(0) {}
 
 table_replication_applier_configuration::
-    ~table_replication_applier_configuration() {}
+    ~table_replication_applier_configuration() = default;
 
 void table_replication_applier_configuration::reset_position(void) {
   m_pos.m_index = 0;
@@ -173,7 +173,7 @@ int table_replication_applier_configuration::rnd_pos(const void *pos) {
 int table_replication_applier_configuration::index_init(
     uint idx MY_ATTRIBUTE((unused)), bool) {
   PFS_index_rpl_applier_config *result = nullptr;
-  DBUG_ASSERT(idx == 0);
+  assert(idx == 0);
   result = PFS_NEW(PFS_index_rpl_applier_config);
   m_opened_index = result;
   m_index = result;
@@ -207,8 +207,8 @@ int table_replication_applier_configuration::index_next(void) {
 
 int table_replication_applier_configuration::make_row(Master_info *mi) {
   DBUG_TRACE;
-  DBUG_ASSERT(mi != nullptr);
-  DBUG_ASSERT(mi->rli != nullptr);
+  assert(mi != nullptr);
+  assert(mi->rli != nullptr);
 
   mysql_mutex_lock(&mi->data_lock);
   mysql_mutex_lock(&mi->rli->data_lock);
@@ -261,7 +261,7 @@ int table_replication_applier_configuration::read_row_values(TABLE *table,
                                                              bool read_all) {
   DBUG_TRACE;
   /* Set the null bits */
-  DBUG_ASSERT(table->s->null_bytes == 1);
+  assert(table->s->null_bytes == 1);
   buf[0] = 0;
 
   for (Field *f = nullptr; (f = *fields); fields++) {
@@ -302,7 +302,7 @@ int table_replication_applier_configuration::read_row_values(TABLE *table,
             f->set_null();
           break;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }

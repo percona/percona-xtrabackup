@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2020, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2004, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -663,5 +663,18 @@ bool
 ndbd_support_backup_file_encryption(Uint32 x)
 {
   return x >= NDBD_SUPPORT_BACKUP_FILE_ENCRYPTION;
+}
+
+/*
+ * NdbInterpreter may compare NULL values according to the semantic
+ * specified by the SQL standard, which is what MySQL expect. (WL#14476)
+ */
+#define NDBD_SUPPORT_SQL_COMPARE_SEMANTICS NDB_MAKE_VERSION(8,0,26)
+static
+inline
+int
+ndbd_support_sql_compare_semantics(Uint32 x)
+{
+  return x >= NDBD_SUPPORT_SQL_COMPARE_SEMANTICS;
 }
 #endif

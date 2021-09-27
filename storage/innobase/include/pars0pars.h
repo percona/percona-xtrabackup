@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2020, Oracle and/or its affiliates.
+Copyright (c) 1996, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -505,6 +505,10 @@ struct func_node_t {
   /*!< list of function nodes in a parsed
   query graph */
 };
+
+UT_LIST_NODE_GETTER_DEFINITION(func_node_t, cond_list)
+
+UT_LIST_NODE_GETTER_DEFINITION(func_node_t, func_node_list)
 
 /** An order-by node in a select */
 struct order_node_t {

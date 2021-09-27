@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,7 @@
  assert((value) >= (min) && (value) <= (max))
 #define ASSERT_MAX(value, max, message) assert((value) <= (max))
 
-#define SECTION(x) STATIC_CONST(x)
+#define SECTION(x) static constexpr Uint32 x
 
 template <typename T>
 inline

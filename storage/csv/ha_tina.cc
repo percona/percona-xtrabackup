@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2020, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -779,7 +779,7 @@ int ha_tina::find_current_row(uchar *buf) {
         Thus, for enums we silence the warning, as it doesn't really mean
         an invalid value.
       */
-      if ((*field)->store(buffer.ptr(), buffer.length(), buffer.charset(),
+      if ((*field)->store(buffer.ptr(), buffer.length(), (*field)->charset(),
                           is_enum ? CHECK_FIELD_IGNORE : CHECK_FIELD_WARN)) {
         if (!is_enum) goto err;
       }
@@ -1016,7 +1016,7 @@ int ha_tina::update_row(const uchar *, uchar *new_data) {
   rc = 0;
 
   /* UPDATE should never happen on the log tables */
-  DBUG_ASSERT(!share->is_log_table);
+  assert(!share->is_log_table);
 
 err:
   DBUG_PRINT("info", ("rc = %d", rc));
@@ -1040,13 +1040,13 @@ int ha_tina::delete_row(const uchar *) {
 
   stats.records--;
   /* Update shared info */
-  DBUG_ASSERT(share->rows_recorded);
+  assert(share->rows_recorded);
   mysql_mutex_lock(&share->mutex);
   share->rows_recorded--;
   mysql_mutex_unlock(&share->mutex);
 
   /* DELETE should never happen on the log table */
-  DBUG_ASSERT(!share->is_log_table);
+  assert(!share->is_log_table);
 
   return 0;
 }

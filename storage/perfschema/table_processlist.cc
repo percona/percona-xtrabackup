@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,9 +27,10 @@
 
 #include "storage/perfschema/table_processlist.h"
 
+#include <assert.h>
 #include "lex_string.h"
 #include "my_compiler.h"
-#include "my_dbug.h"
+
 #include "my_thread.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/current_thd.h"
@@ -139,7 +140,7 @@ int table_processlist::index_init(uint idx, bool) {
       result = PFS_NEW(PFS_index_processlist_by_processlist_id);
       break;
     default:
-      DBUG_ASSERT(false);
+      assert(false);
   }
   m_opened_index = result;
   m_index = result;
@@ -278,9 +279,9 @@ int table_processlist::make_row(PFS_thread *pfs) {
   stage_class = find_stage_class(pfs->m_stage);
   if (stage_class != nullptr) {
     m_row.m_processlist_state_ptr =
-        stage_class->m_name + stage_class->m_prefix_length;
+        stage_class->m_name.str() + stage_class->m_prefix_length;
     m_row.m_processlist_state_length =
-        stage_class->m_name_length - stage_class->m_prefix_length;
+        stage_class->m_name.length() - stage_class->m_prefix_length;
     if (m_row.m_processlist_state_length > 64) {
       /*
         Column STATE is VARCHAR(64)
@@ -319,7 +320,7 @@ int table_processlist::read_row_values(TABLE *table, unsigned char *buf,
   Field *f;
 
   /* Set the null bits */
-  DBUG_ASSERT(table->s->null_bytes == 1);
+  assert(table->s->null_bytes == 1);
   buf[0] = 0;
 
   for (; (f = *fields); fields++) {
@@ -356,10 +357,10 @@ int table_processlist::read_row_values(TABLE *table, unsigned char *buf,
           }
           break;
         case 4: /* COMMAND */
-          if (m_row.m_processlist_id != 0)
-            set_field_varchar_utf8(f, command_name[m_row.m_command].str,
-                                   (uint)command_name[m_row.m_command].length);
-          else {
+          if (m_row.m_processlist_id != 0) {
+            const std::string &cn = Command_names::str_session(m_row.m_command);
+            set_field_varchar_utf8(f, cn.c_str(), cn.length());
+          } else {
             f->set_null();
           }
           break;
@@ -387,7 +388,7 @@ int table_processlist::read_row_values(TABLE *table, unsigned char *buf,
           }
           break;
         default:
-          DBUG_ASSERT(false);
+          assert(false);
       }
     }
   }

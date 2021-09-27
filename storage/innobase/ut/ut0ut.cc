@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2020, Oracle and/or its affiliates.
+Copyright (c) 1994, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -525,6 +525,8 @@ const char *ut_strerr(dberr_t num) {
       return ("Too many nested sub-expressions in a full-text search");
     case DB_PAGE_IS_STALE:
       return "Page was discarded, was not written to storage.";
+    case DB_FILE_READ_BEYOND_SIZE:
+      return "File read failure because of the read being beyond file size.";
     case DB_ERROR_UNSET:;
       /* Fall through. */
 

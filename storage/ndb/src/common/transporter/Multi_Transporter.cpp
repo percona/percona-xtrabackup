@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2020, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,7 +22,6 @@
 #include <NdbSleep.h>
 
 #include <EventLogger.hpp>
-extern EventLogger * g_eventLogger;
 // End of stuff to be moved
 
 Multi_Transporter::Multi_Transporter(TransporterRegistry &t_reg,

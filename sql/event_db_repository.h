@@ -2,7 +2,7 @@
 #define _EVENT_DB_REPOSITORY_H_
 
 /*
-   Copyright (c) 2006, 2019, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2006, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -86,7 +86,7 @@ enum enum_events_table_field {
 */
 
 class Event_db_repository {
-  Event_db_repository() {}
+  Event_db_repository() = default;
 
  public:
   static bool create_event(THD *thd, Event_parse_data *parse_data,
