@@ -123,17 +123,32 @@ static int local_write(ds_file_t *file, const void *buf, size_t len) {
   return 1;
 }
 
+/**
+  Checks if punch hole via fallocate is supported
+
+  @return true if punch hole is supported
+*/
+static bool is_fallocate_punch_hole_supported() {
+#if defined(HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE)
+  return (true);
+#else
+  return (false);
+#endif /* HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE */
+}
+
 static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               size_t sparse_map_size,
                               const ds_sparse_chunk_t *sparse_map) {
   auto local_file = ((ds_local_file_t *)file->ptr);
   File fd = local_file->fd;
+  int seek = 0;
 
   const uchar *ptr = static_cast<const uchar *>(buf);
 
   for (size_t i = 0; i < sparse_map_size; ++i) {
     my_off_t rc;
 
+    seek = my_tell(fd, MYF(MY_WME));
     rc = my_seek(fd, sparse_map[i].skip, MY_SEEK_CUR, MYF(MY_WME));
     if (rc == MY_FILEPOS_ERROR) {
       return 1;
@@ -142,6 +157,11 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
     rc = my_write(fd, ptr, sparse_map[i].len, MYF(MY_WME | MY_NABP));
     if (rc != 0) {
       return 1;
+    }
+
+    if (is_fallocate_punch_hole_supported()) {
+      fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, seek,
+                sparse_map[i].skip);
     }
 
     ptr += sparse_map[i].len;
