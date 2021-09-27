@@ -4,7 +4,7 @@
 How to create a new (or repair a broken) GTID-based Replica
 ================================================================================
 
-|MySQL| 5.6 introduced the new Global Transaction ID (`GTID
+|MySQL| 5.6 introduced the Global Transaction ID (`GTID
 <http://dev.mysql.com/doc/refman/5.6/en/replication-gtids-concepts.html>`_)
 support in replication. |Percona XtraBackup| automatically
 stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the
@@ -112,8 +112,10 @@ If you are using version 8.0.23 or later, use `CHANGE_REPLICATION_SOURCE_TO and 
 
 .. note::
 
-   The example is applicable to Percona XtraDB Cluster. The ``wsrep_on`` variable
-   is set to `0` before resetting the source (``RESET MASTER``). Percona XtraDB Cluster does not allow resetting the source if ``wsrep_on=1``.
+   The example above is applicable to Percona XtraDB Cluster. The ``wsrep_on`` variable
+   is set to `0` before resetting the source (``RESET MASTER``). The
+   reason is that Percona XtraDB Cluster will not allow resetting the source if
+   ``wsrep_on=1``.
 
 STEP 5: Check the replication status
 ================================================================================
@@ -131,6 +133,7 @@ The following command returns the replica status:
       Executed_Gtid_Set: c777888a-b6df-11e2-a604-080027635ef5:1-5
 
 .. note::
+
 
    The command `SHOW SLAVE STATUS <https://dev.mysql.com/doc/refman/8.0/en/show-slave-status.html>`__  is deprecated. Use `SHOW REPLICA STATUS <https://dev.mysql.com/doc/refman/8.0/en/show-replica-status.html>`__. 
 

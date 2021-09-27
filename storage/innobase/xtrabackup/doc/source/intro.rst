@@ -77,14 +77,6 @@ for more.
 
 
 
+.. rubric:: Additional information
 
-
-
-
-
-
-
-
-
-	  
-	
+|InnoDB| tables are still locked while copying non-|InnoDB| data.

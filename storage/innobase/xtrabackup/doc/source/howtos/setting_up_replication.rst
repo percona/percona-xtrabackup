@@ -189,8 +189,6 @@ If you are using a version before 8.0.23, on the ``Replica``, execute the ``CHAN
         SOURCE_LOG_FILE='Source-bin.000001', 
         SOURCE_LOG_POS=481;
 
-
-
 Start the replica:
 
 .. code-block:: mysql
@@ -218,8 +216,6 @@ Slave_SQL_Running: Yes
 ...
 Seconds_Behind_Master: 13
 ...
-
-
 
 Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`` means the ``SQL`` currently being executed has a ``current_timestamp`` of 13 seconds ago. It is an estimation of the lag between the ``Source`` and the ``Replica``. Note that at the beginning, a high value could be shown because the ``Replica`` has to "catch up" with the ``Source``.
 

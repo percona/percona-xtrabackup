@@ -44,10 +44,14 @@ Installation
 ============
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :glob:
 
    installation
+   installation/apt_repo
+   installation/yum_repo
+   installation/compiling_xtrabackup 
+   installation/docker
 
 Prerequisites
 =============

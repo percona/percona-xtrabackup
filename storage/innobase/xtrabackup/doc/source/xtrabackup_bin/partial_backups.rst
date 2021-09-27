@@ -17,7 +17,7 @@ partial backups:
    Do not copy back the prepared backup.
 
    Restoring partial backups should be done by importing the tables,
-   not by using the :option:`--copy-back` option. It is not
+   not by using the `--copy-back` option. It is not
    recommended to run incremental backups after running a partial
    backup.
 
@@ -50,6 +50,7 @@ There are multiple ways of specifying which part of the whole data is backed up:
 The `--tables` Option
 ================================================================================
 
+
 The first method involves the xtrabackup `--tables` option. The option's
 value is a regular expression that is matched against the fully-qualified database name and table name using the ``databasename.tablename`` format.
 
@@ -68,7 +69,7 @@ To back up only the ``test.t1`` table, use the following command:
   $ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
   --tables="^test[.]t1"
 
-The :option:`--tables-file` Option
+The `--tables-file` Option
 ================================================================================
 
 The ``--tables-file`` option specifies a file that can contain multiple table
@@ -82,13 +83,13 @@ regular expression matching. The table names must be fully-qualified in
   $ echo "mydatabase.mytable" > /tmp/tables.txt
   $ xtrabackup --backup --tables-file=/tmp/tables.txt 
 
-
 The `--databases` and `--databases-file` options
 ================================================================================
 
 The ` --databases` option accepts a space-separated list of the databases
 and tables to backup in the ``databasename[.tablename]`` format. In addition to
 this list, make sure to specify the ``mysql``, ``sys``, and
+
 ``performance_schema`` databases. These databases are required when restoring
 the databases using `xtrabackup --copy-back`.
 
@@ -105,9 +106,9 @@ the databases using `xtrabackup --copy-back`.
 The :option:`--databases-file` Option
 ======================================================
 
-
 The `--databases-file` option specifies a file that can contain multiple
 databases and tables in the ``databasename[.tablename]`` format, one element name per line in the file. Names are matched exactly, case-sensitive, with no pattern or regular expression matching.
+
 
 .. note::
 
@@ -120,7 +121,7 @@ Preparing Partial Backups
 
 The procedure is analogous to :ref:`restoring individual tables
 <restoring_individual_tables>` : apply the logs and use the
-:option:`--export` option:
+`--export` option:
 
 .. code-block:: bash
 

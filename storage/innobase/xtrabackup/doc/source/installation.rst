@@ -9,11 +9,14 @@ This page provides the information on how to install |Percona XtraBackup|.
 Following options are available:
 
 * :ref:`installing_from_binaries` (recommended)
+* :ref:`apt_repo`
+* :ref:`yum_repo`
+* :ref:`standalone_rpm`
+* :ref:`standalone_deb`
 * :ref:`installing_from_tarball`
-* Installing |Percona XtraBackup| from Downloaded
-  :ref:`rpm <standalone_rpm>` or :ref:`apt <standalone_deb>` packages
 * :ref:`compiling_xtrabackup`
-* :ref:`docker`
+* :ref:`pxc.installing/docker.running`
+
 
 Before installing, you might want to read the :doc:`release-notes`.
 
@@ -32,12 +35,6 @@ package manager. This is the recommended way of installing |Percona XtraBackup|.
 The following guides describe the installation process for using the official
 Percona repositories for :file:`.deb` and :file:`.rpm` packages.
 
-.. toctree::
-   :maxdepth: 1
-   :titlesonly:
-
-   installation/apt_repo
-   installation/yum_repo
 
 .. note::
 

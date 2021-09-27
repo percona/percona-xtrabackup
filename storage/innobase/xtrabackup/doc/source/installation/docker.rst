@@ -1,19 +1,19 @@
 .. _docker:
 
-Running |percona-xtrabackup| in a |docker| container
+Running Percona XtraBackup in a `Docker` container
 ********************************************************************************
 
-You may run |percona-xtrabackup| in a |docker| container without
+You may run Percona XtraBackup in a `Docker` container without
 having to install it. All required libraries come already installed in
 the container.
 
-Being a lightweight execution environment, |docker| containers enable creating
+Being a lightweight execution environment, `Docker` containers enable creating
 configurations where each program runs in a separate container. You may run
-|percona-server| in one container and |percona-xtrabackup| in another.
+Percona Server for MySQL in one container and Percona XtraBackup in another.
 
-You create a new |docker| container based on a |docker| image, which works as a
-template for newly created containers. |docker| images 
-are hosted publicly on |docker-hub| at `percona/percona-xtrabackup <https://hub.docker.com/r/percona/percona-xtrabackup>`__.
+You create a new `Docker` container based on a `Docker` image, which works as a
+template for newly created containers. `Docker` images for Percona XtraBackup
+are hosted publicly on Docker Hub `here <https://hub.docker.com/r/percona/percona-xtrabackup>`__.
 
 .. code-block:: bash
 
@@ -21,42 +21,42 @@ are hosted publicly on |docker-hub| at `percona/percona-xtrabackup <https://hub.
 
 .. rubric:: Scope of this section
 
-|docker| containers offer a range of different options effectively allowing
+`Docker` containers offer a range of different options effectively allowing
 to create quite complex setup. This section demonstrates how to backup data
-on a |percona-server-mysql| running in another |docker| container.
+on a Percona Server for MySQL running in another `Docker` container.
 
-Installing |docker|
+Installing `Docker`
 ================================================================================
 
 Your operating system may already provide a package for |cmd.docker|. However,
-the versions of |docker| provided by your operating system are likely to be
+the versions of `Docker` provided by your operating system are likely to be
 outdated.
 
 Use the installation instructions for your operating system available from the
-|docker| site to set up the latest version of |cmd.docker|.
+`Docker` site to set up the latest version of |cmd.docker|.
 
 .. seealso::
 
-   |Docker| Documentation:
+   `Docker` Documentation:
       - `How to use Docker <https://docs.docker.com/>`_
       - `Installing <https://docs.docker.com/get-docker/>`_
       - `Getting started <https://docs.docker.com/get-started/>`_
 
-Connecting to a |percona-server| container
+Connecting to a Percona Server for MySQL container
 ================================================================================
 
-|percona-xtrabackup| works in combination with a database server. When
-running a |docker| container for |percona-xtrabackup|, you can make
+Percona XtraBackup works in combination with a database server. When
+running a `Docker` container for Percona XtraBackup, you can make
 backups for a database server either installed on the host machine or running
-in a separate |docker| container.
+in a separate `Docker` container.
 
-To set up a database server on a host machine or in |docker|
+To set up a database server on a host machine or in `Docker`
 container, follow the documentation of the supported product that you
-intend to use with |percona-xtrabackup|.
+intend to use with Percona XtraBackup.
 
 .. seealso::
 
-   |percona-server-mysql| Documentation:
+   Percona Server for MySQL Documentation:
       - `Installing on a host machine
 	<https://www.percona.com/doc/percona-server/LATEST/installation.html>`_
       - `Running in a Docker container
@@ -67,18 +67,18 @@ intend to use with |percona-xtrabackup|.
    $ sudo docker run -d --name percona-server-mysql \
    -e MYSQL_ROOT_PASSWORD=root percona/percona-server:8.0
 
-As soon as |percona-server-mysql| runs, add some data to it. Now, you are
-ready to make backups with |percona-xtrabackup|.
+As soon as Percona Server for MySQL runs, add some data to it. Now, you are
+ready to make backups with Percona XtraBackup.
 
-Creating a |docker| container from |percona-xtrabackup| image
+Creating a `Docker` container from Percona XtraBackup image
 ================================================================================
 
-You can create a |docker| container based on |percona-xtrabackup| image with
-either |cmd.docker-create| or |cmd.docker-run| command. |cmd.docker-create|
-creates a |docker| container and makes it available for starting later.
+You can create a `Docker` container based on Percona XtraBackup image with
+either ``docker create`` or the ``docker run`` command. ``docker create``
+creates a `Docker` container and makes it available for starting later.
 
-|docker| downloads the |percona-xtrabackup| image from the |docker-hub|. If it
-is not the first time you use the selected image, |docker| uses the image available locally.
+`Docker` downloads the Percona XtraBackup image from the Docker Hub. If it
+is not the first time you use the selected image, `Docker` uses the image available locally.
 
 .. code-block:: bash
 
@@ -87,11 +87,11 @@ is not the first time you use the selected image, |docker| uses the image availa
    xtrabackup --backup --datadir=/var/lib/mysql/ --target-dir=/backup \
    --user=root --password=mysql
 
-With |param.name| you give a meaningful name to your new |docker| container so
+With parameter name you give a meaningful name to your new `Docker` container so
 that you could easily locate it among your other containers.
 
-The |param.volumes-from| referring to *percona-server-mysql* indicates that you
-indend to use the same data as the *percona-server-mysql* container.
+The ``volumes-from`` flag refers to Percona Server for MySQL and indicates that you
+indend to use the same data as the Percona Server for MySQL container.
 
 Run the container with exactly the same parameters that were used when the container was created:
 
@@ -102,7 +102,7 @@ Run the container with exactly the same parameters that were used when the conta
 This command starts the *percona-xtrabackup* container, attaches to its
 input/output streams, and opens an interactive shell.
 
-The |cmd.docker-run| is a shortcut command that creates a |docker| container and then immediately runs it.
+The ``docker run`` is a shortcut command that creates a `Docker` container and then immediately runs it.
 
 .. code-block:: bash
 
@@ -112,7 +112,7 @@ The |cmd.docker-run| is a shortcut command that creates a |docker| container and
 
 .. seealso::
 
-   More in |docker| documentation
+   More in `Docker` documentation
       - `Docker volumes as persistent data storage for containers
 	<https://docs.docker.com/storage/volumes/>`_
       - `More information about containers
