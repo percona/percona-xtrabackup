@@ -54,35 +54,20 @@ for more.
 * Create new |MySQL| replication replicas easily
 * Backup |MySQL| without adding load to the server
 
+.. rubric:: Additional information
 
+|InnoDB| tables are still locked while copying non-|InnoDB| data.
 
-.. rubric:: Footnotes
+Fast incremental backups are supported for |Percona Server| with XtraDB changed page tracking enabled.
 
-.. [#n-1] |InnoDB| tables are still locked while copying non-|InnoDB| data.
+|Percona XtraBackup| supports encryption with any kinds of backups. *MySQL Enterprise Backup* only supports encryption for single-file backups.
 
-.. [#n-2] Fast incremental backups are supported for |Percona Server| with
-          XtraDB changed page tracking enabled.
+|Percona XtraBackup| performs throttling based on the number of IO operations per second. *MySQL Enterprise Backup* supports a configurable sleep time between operations.
 
-.. [#n-3] |Percona XtraBackup| supports encryption with any kinds of backups.
-          *MySQL Enterprise Backup* only supports encryption for single-file
-          backups.
+|Percona XtraBackup| skips secondary index pages and recreates them when a compact backup is prepared. *MySQL Enterprise Backup* skips unused pages and reinserts on the prepare stage.
 
-.. [#n-4] |Percona XtraBackup| performs throttling based on the number of IO
-          operations per second. *MySQL Enterprise Backup* supports a
-          configurable sleep time between operations.
+|Percona XtraBackup| can export individual tables even from a full backup, regardless of the InnoDB version. *MySQL Enterprise Backup* uses InnoDB 5.6 transportable tablespaces only when performing a partial backup.
 
-.. [#n-5] |Percona XtraBackup| skips secondary index pages and recreates them
-          when a compact backup is prepared. *MySQL Enterprise Backup* skips
-          unused pages and reinserts on the prepare stage.
-
-.. [#n-6] |Percona XtraBackup| can export individual tables even from a full
-          backup, regardless of the InnoDB version. *MySQL Enterprise Backup*
-          uses InnoDB 5.6 transportable tablespaces only when performing a
-          partial backup.
-
-.. [#n-8] Backup locks is a lightweight alternative to ``FLUSH TABLES WITH READ
-          LOCK`` available in |Percona Server|. |Percona XtraBackup| uses
-          them automatically to copy non-InnoDB data to avoid blocking DML
-          queries that modify |InnoDB| tables.
+Backup locks is a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` available in |Percona Server|. |Percona XtraBackup| uses them automatically to copy non-InnoDB data to avoid blocking DML queries that modify |InnoDB| tables.
 	  
-	  For more information see :ref:`how_xtrabackup_works`
+For more information see :ref:`how_xtrabackup_works`

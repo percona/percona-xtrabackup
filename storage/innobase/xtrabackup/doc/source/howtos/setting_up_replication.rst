@@ -133,7 +133,7 @@ STEP 3: Configure the Source's MySQL server
 
 On the source, run the following command to add the appropriate grant. This grant allows the replica to be able to connect to source: 
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > GRANT REPLICATION SLAVE ON *.*  TO 'repl'@'$replicaip'
     IDENTIFIED BY '$replicapass';
@@ -178,7 +178,7 @@ On the ``Replica``, review the content of the file :file:`xtrabackup_binlog_info
 
 On the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console and use the username and password you've set up in STEP 3: 
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > CHANGE MASTER TO 
          MASTER_HOST='$sourceip',	
@@ -189,7 +189,7 @@ On the ``Replica``, execute the ``CHANGE MASTER`` statement on a MySQL console a
 
 and start the replica:
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > START SLAVE;
 
@@ -198,7 +198,7 @@ STEP 6: Check
 
 On the ``Replica``, check that everything went OK with:
 
-.. code-block:: guess
+.. code-block:: text
 
    > SHOW SLAVE STATUS \G
       ...
@@ -238,7 +238,7 @@ Copy the directory from the ``Replica`` to the ``NewReplica`` (**NOTE**: Make su
 
 For example, to set up a new user, ``user2``, you add an additional grant on the Source:
 
-.. code-block:: guess
+.. code-block:: mysql
 
 	> GRANT REPLICATION SLAVE ON *.*  TO 'user2'@'$newreplicaip'
          IDENTIFIED BY '$replicapass';
@@ -260,7 +260,7 @@ After setting ``server_id``, start :command:`mysqld`.
 
 Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_slave_info`, execute the statement for setting up the source and the log file for the `NewReplica`:
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > CHANGE MASTER TO 
          MASTER_HOST='$Sourceip',
@@ -271,7 +271,7 @@ Fetch the master_log_file and master_log_pos from the file :file:`xtrabackup_sla
 
 and start the replica:
 
-.. code-block:: guess
+.. code-block:: mysql
 
     > START SLAVE;
 

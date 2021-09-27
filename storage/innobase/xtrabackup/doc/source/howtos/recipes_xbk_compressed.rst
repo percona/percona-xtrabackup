@@ -104,7 +104,7 @@ This will copy the prepared data back to its original location as defined by the
 After the confirmation message, you should check the file permissions after
 copying the data back.
 
-.. code-block:: guess
+.. code-block:: text
 
    130802 02:58:44  xtrabackup: completed OK!
 
