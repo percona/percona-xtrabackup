@@ -43,7 +43,7 @@ bitmap data is available.
    incremental changes, however; without a full backup to act as a base, the
    incremental backups are useless.
 
-   You can use the :option:`--incremental-lsn` option to perform an incremental
+   You can use the `--incremental-lsn` option to perform an incremental
    backup without even having the previous backup, if you know its :term:`LSN`.
 
    .. seealso:: :ref:`pxb.partial-backup`

@@ -171,7 +171,7 @@ Options
 .. option:: --defaults-group=GROUP-NAME
 
    This option sets up the group which should be read from the configuration
-   file. The option is used by the :option:`--default-group` and is required for
+   file. The option is used by the :option:`--defaults-group` and is required for
    ``mysqld_multi`` deployments.
    
 .. option:: --defaults-group-suffix=#
@@ -464,9 +464,9 @@ Options
 
 .. option:: --kill-long-queries-timeout=#
 
-   This options specifies the number of seconds |program| waits between
+   This options specifies the number of seconds xtrabackup waits between
    starting FLUSH TABLES WITH READ LOCK and killing those queries that block
-   it. The default is ``0`` (zero) seconds, which means the |program| does not
+   it. The default is ``0`` (zero) seconds, which means the xtrabackup does not
    attempt to kill any queries.
    
 .. option:: --kill-long-query-type=select|all
@@ -536,7 +536,7 @@ Options
    
    If your backups fail to acquire a lock and you are planning to use this
    option, the failure may be caused by incoming replication events that
-   prevent the lock from succeeding. Try the :option:``--safe-slave-backup`
+   prevent the lock from succeeding. Try the ``--safe-slave-backup``
    to momentarily stop the replication slave thread.
    
    The `xtrabackup-binlog-info` is not created when the :option:`--no-lock`
@@ -544,7 +544,26 @@ Options
    conditions, ``xtrabackup_binlog_pos_innodb`` can be used instead to get
    consistent binlog coordinates as described in :ref:`working_with_binlogs`.
    
-.. include:: ../.res/contents/option.no-version-check.txt
+.. option:: --no-version-check
+
+   This option disables the version check. If you do not pass this option, the
+   automatic version check is enabled implicitly when xtrabackup runs
+   in the ``--backup`` mode. To disable the version check, explicitly pass
+   the ``--no-version-check`` option when invoking xtrabackup.
+
+   When the automatic version check is enabled,xtrabackup performs a
+   version check against the server on the backup stage after creating a server
+   connection. xtrabackup sends the following information to the server:
+
+   - MySQL flavour and version
+   - Operating system name
+   - Percona Toolkit version
+   - Perl version
+
+   Each piece of information has a unique identifier which is an MD5 hash value
+   that Percona Toolkit uses to obtain statistics about how it is used. This value is
+   a random UUID; no client information is either collected or stored.
+
    
 .. option:: --open-files-limit=#
 
@@ -618,7 +637,7 @@ Options
 
    Use the ``rsync`` utility to optimize local file transfers.
    
-   When this option is specified, |program| uses ``rsync`` to copy all
+   When this option is specified, xtrabackup uses ``rsync`` to copy all
    non-InnoDB files instead of spawning a separate copy command for each file.
    This option is faster for servers with a large number of databases or tables.
    
@@ -861,8 +880,8 @@ Options
    .. seealso::
 
       |Percona Server| Documentation: keyring_vault plugin with Data at Rest Encryption
-         https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html#keyring-vault-plugin
+         https://www.percona.com/doc/percona-server/5.7/security/data-at-rest-encryption.html
       |MySQL| Documentation: Using the keyring_file File-Based Plugin
          https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html
 
-.. |program| replace:: :program:`xtrabackup`
+

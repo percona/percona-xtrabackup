@@ -74,7 +74,7 @@ Set the gtid_purged variable to the ``GTID`` from
 :file:`xtrabackup_binlog_info`. Then, update the information about the
 source node and, finally, start the replica.
 
-.. code-block:: guess
+.. code-block:: text
 
    # Using the mysql shell
    NewSlave > SET SESSION wsrep_on = 0;
@@ -90,9 +90,9 @@ source node and, finally, start the replica.
 
 .. note::
 
-   The example above is applicable to |PXC|. The ``wsrep_on`` variable
+   The example above is applicable to Percona XtraDB Cluster. The ``wsrep_on`` variable
    is set to `0` before resetting the source (``RESET MASTER``). The
-   reason is that |PXC| will not allow resetting the source if
+   reason is that Percona XtraDB Cluster will not allow resetting the source if
    ``wsrep_on=1``.
 
 STEP 5: Check the replication status
@@ -100,7 +100,7 @@ STEP 5: Check the replication status
 
 Following command will show the replica status:
 
-.. code-block:: guess
+.. code-block:: text
 
    NewSlave > SHOW SLAVE STATUS\G
             [..]
@@ -115,5 +115,5 @@ transactions from 1 to 5 are already on this replica.
 
 That's all, we have created a new replica in our ``GTID`` based replication environment.
 
-.. |PXC| replace:: Percona XtraDB Cluster
+
 
