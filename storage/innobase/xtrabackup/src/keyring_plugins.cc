@@ -475,7 +475,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
   byte tmp[Encryption::KEY_LEN * 2];
   char magic[XTRABACKUP_KEYS_MAGIC_SIZE];
   uint8_t transition_key_name_size = 0;
-  char *transition_key_name;
+  std::unique_ptr<char[]> transition_key_name;
   char transition_key_buf[Encryption::KEY_LEN];
   bool ret;
 
@@ -519,19 +519,18 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     msg_ts("Error reading %s: failed to read salt.\n", XTRABACKUP_KEYS_FILE);
     goto error;
   }
-  transition_key_name =
-      (char *)my_malloc(PSI_NOT_INSTRUMENTED, transition_key_name_size,
-                        MYF(MY_FAE | MY_ZEROFILL));
-  if (fread(transition_key_name, 1, transition_key_name_size, f) !=
+
+  transition_key_name = std::make_unique<char[]>(transition_key_name_size);
+  if (fread(transition_key_name.get(), 1, transition_key_name_size, f) !=
       transition_key_name_size) {
     msg_ts("Error reading %s: failed to read transition key name.\n",
            XTRABACKUP_KEYS_FILE);
-    goto cleanup;
+    goto error;
   }
 
-  if (transition_key == NULL && transition_key_name[0] != 0) {
-    if (!xb_fetch_key(transition_key_name, transition_key_buf)) {
-      goto cleanup;
+  if (transition_key == NULL && transition_key_name.get()[0] != 0) {
+    if (!xb_fetch_key(transition_key_name.get(), transition_key_buf)) {
+      goto error;
     }
     transition_key = transition_key_buf;
     transition_key_len = Encryption::KEY_LEN;
@@ -543,7 +542,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
   if (!ret) {
     msg_ts("Error reading %s: failed to derive encryption key.\n",
            XTRABACKUP_KEYS_FILE);
-    goto cleanup;
+    goto error;
   }
 
   while (fread(read_buf, 1, record_len, f) == record_len) {
@@ -558,7 +557,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     if (olen == MY_AES_BAD_DATA) {
       msg_ts("Error reading %s: failed to decrypt key for tablespace %lu.\n",
              XTRABACKUP_KEYS_FILE, space_id);
-      goto cleanup;
+      goto error;
     }
 
     olen = my_aes_decrypt(read_buf + Encryption::KEY_LEN + 4,
@@ -568,7 +567,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     if (olen == MY_AES_BAD_DATA) {
       msg_ts("Error reading %s: failed to decrypt iv for tablespace %lu.\n",
              XTRABACKUP_KEYS_FILE, space_id);
-      goto cleanup;
+      goto error;
     }
 
     memcpy(tmp, info.key, Encryption::KEY_LEN);
@@ -581,18 +580,14 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
           "Error reading %s: failed to decrypt key and iv for tablespace %lu. "
           "Wrong transition key?\n",
           XTRABACKUP_KEYS_FILE, space_id);
-      goto cleanup;
+      goto error;
     }
 
     encryption_info[space_id] = info;
   }
 
-  my_free(transition_key_name);
   fclose(f);
   return (true);
-
-cleanup:
-  my_free(transition_key_name);
 
 error:
   fclose(f);
