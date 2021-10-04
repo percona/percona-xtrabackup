@@ -23,8 +23,8 @@ the ``percona-release`` package configuration tool as follows:
 .. code-block:: bash
 
    $ sudo percona-release enable tools
-   $ sudo apt-get update
-   $ sudo apt-get install qpress
+   $ sudo apt update
+   $ sudo apt install qpress
 
 .. note::
 
