@@ -1,20 +1,21 @@
+Percona XtraBackup 8.0
 Copyright (c) 2000, 2021, Oracle and/or its affiliates.
 
-This is a release of MySQL, an SQL database server.
+Percona XtraBackup is an open-source hot backup utility for
+MySQL - based servers that doesn’t lock your database during the backup.
 
-License information can be found in the LICENSE file.
+https://www.percona.com/software/mysql-database/percona-xtrabackup
 
-In test packages where this file is renamed README-test, the license
-file is renamed LICENSE-test.
+Documentation: https://www.percona.com/doc/percona-xtrabackup/LATEST/index.html
 
-This distribution may include materials developed by third parties.
-For license and attribution notices for these materials,
-please refer to the LICENSE file.
+Contributing Guide for Documentation: https://github.com/percona/percona-xtrabackup/blob/8.0/storage/innobase/xtrabackup/doc/source/contributing.md
 
-For further information on MySQL or additional documentation, visit
-  http://dev.mysql.com/doc/
+Bug Tracker: https://jira.percona.com/projects/PXB
 
-For additional downloads and the source of MySQL, visit
-  http://dev.mysql.com/downloads/
+Sources: https://github.com/percona/percona-xtrabackup
 
-MySQL is brought to you by the MySQL team at Oracle.
+Get Technical Forum Help: https://forums.percona.com/c/mysql-mariadb/percona-xtrabackup
+
+Release Notes: https://www.percona.com/doc/percona-xtrabackup/LATEST/release-notes.html
+
+Release Announcements: https://forums.percona.com/c/percona-news/software-new-releases/40
