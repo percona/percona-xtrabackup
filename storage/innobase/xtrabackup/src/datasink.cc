@@ -124,11 +124,11 @@ int ds_is_sparse_write_supported(ds_file_t *file) {
 Write sparse chunk if supported.
 @return 0 on success, 1 on error. */
 int ds_write_sparse(ds_file_t *file, const void *buf, size_t len,
-                    size_t sparse_map_size,
-                    const ds_sparse_chunk_t *sparse_map) {
+                    size_t sparse_map_size, const ds_sparse_chunk_t *sparse_map,
+                    bool punch_hole_supported) {
   if (file->datasink->write_sparse != nullptr) {
     return file->datasink->write_sparse(file, buf, len, sparse_map_size,
-                                        sparse_map);
+                                        sparse_map, punch_hole_supported);
   }
   return 1;
 }

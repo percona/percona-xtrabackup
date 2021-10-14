@@ -202,7 +202,7 @@ Write the next batch of pages to the destination datasink.
 static bool wf_wt_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile) {
   const auto cursor = ctxt->cursor;
 
-  return write_ibd_buffer(dstfile, cursor->buf,
-                          cursor->buf_npages * cursor->page_size,
-                          cursor->page_size, cursor->block_size);
+  return write_ibd_buffer(
+      dstfile, cursor->buf, cursor->buf_npages * cursor->page_size,
+      cursor->page_size, cursor->block_size, punch_hole_supported);
 }

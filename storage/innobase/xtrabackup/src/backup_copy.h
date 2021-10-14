@@ -51,7 +51,8 @@ enum file_purpose_t {
 /************************************************************************
 Write buffer into .ibd file and preserve it's sparsiness. */
 bool write_ibd_buffer(ds_file_t *file, unsigned char *buf, size_t buf_len,
-                      size_t page_size, size_t block_size);
+                      size_t page_size, size_t block_size,
+                      bool punch_hole_supported);
 
 /************************************************************************
 Copy file for backup/restore.
