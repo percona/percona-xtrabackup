@@ -47,19 +47,19 @@ via the |percona-release| package configuration tool.
 #.
    .. include:: ../.res/contents/instruction.repository.enabling.txt
 
-#. Remember to update the local cache: :bash:`apt-get update`
+#. Remember to update the local cache: :bash:`apt update`
 
 #. After that you can install the ``percona-xtrabackup-80`` package:
 
    .. code-block:: bash
-		   
-      $ sudo apt-get install percona-xtrabackup-80
+
+      $ sudo apt install percona-xtrabackup-24
 
 #. In order to make compressed backups, install the ``qpress`` package:
 
    .. code-block:: bash
 
-      $ sudo apt-get install qpress
+      $ sudo apt install qpress
 
    .. seealso:: :ref:`compressed_backup`
 
@@ -76,7 +76,7 @@ it:
    Package: *
    Pin: release o=Percona Development Team
    Pin-Priority: 1001
-  
+
 For more information about the pinning you can check the official
 `debian wiki <http://wiki.debian.org/AptPreferences>`_.
 
@@ -91,7 +91,7 @@ example will download |Percona XtraBackup| 8.0.4-1 release package for *Debian*
 8.0:
 
 .. code-block:: bash
-         
+
   $ wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.4/binary/debian/stretch/x86_64/percona-xtrabackup-80_8.0.4-1.stretch_amd64.deb
 
 Now you can install |Percona XtraBackup| by running:
@@ -115,6 +115,6 @@ packages.
 
    .. code-block:: bash
 
-      $ sudo apt-get remove percona-xtrabackup-80
+      $ sudo apt remove percona-xtrabackup-24
 
 .. |percona-release| replace:: ``percona-release``
