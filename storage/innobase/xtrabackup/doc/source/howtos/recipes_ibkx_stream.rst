@@ -2,9 +2,9 @@
  Make a Streaming Backup
 =========================
 
-Stream mode sends the backup to ``STDOUT`` in the xbstream format instead of copying it to the directory named by the first argument. You can pipe the output to :command:`gzip`, or across the network, to another server.
+Stream mode sends the backup to ``STDOUT`` in the xbstream format instead of copying it to the directory named by the first argument. You can pipe the output to `gzip`, or across the network, to another server.
 
-To extract the resulting xbstream file, you **must** use the |xbstream| utility: ``xbstream -x <  backup.xbstream``.
+To extract the resulting xbstream file, you **must** use the xbstream utility: ``xbstream -x <  backup.xbstream``.
 
 Here are some examples of using the ``xbstream`` option for streaming:
 

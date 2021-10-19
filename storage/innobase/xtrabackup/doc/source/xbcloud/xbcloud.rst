@@ -4,42 +4,42 @@
 The xbcloud Binary
 ================================================================================
 
-The purpose of |xbcloud| is to download and upload full or part of |xbstream|
-archive from/to the cloud. |xbcloud| will not overwrite the backup with the same
-name. |xbcloud| accepts input via a pipe from |xbstream| so that it can be
-invoked as a pipeline with |xtrabackup| to stream directly to the cloud without
+The purpose of *xbcloud* is to download and upload full or part of xbstream
+archive from/to the cloud. *xbcloud* will not overwrite the backup with the same
+name. *xbcloud* accepts input via a pipe from xbstream so that it can be
+invoked as a pipeline with *xtrabackup* to stream directly to the cloud without
 needing a local storage.
 
-|xbcloud| stores each chunk as a separate object with a name
+*xbcloud* stores each chunk as a separate object with a name
 ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a
 0-padded serial number of chunk within file. Size of chunk produced by
-|xtrabackup| and |xbstream| changed to 10M.
+*xtrabackup* and xbstream changed to 10M.
 
-|xbcloud| has three essential operations: *put*, *get*, and *delete*. With these
+*xbcloud* has three essential operations: *put*, *get*, and *delete*. With these
 operations, backups are created, stored, retrieved, restored, and
-deleted. |xbcloud| operations clearly map to similar operations within the AWS
+deleted. *xbcloud* operations clearly map to similar operations within the AWS
 S3 API.
 
 Version specific information
 ================================================================================
 
 - 2.4.21 - Added s3-storage-class and google-storage-class
-- 2.4.14 - Added the support of |s3|, |minio| and |gcs| storage types.
+- 2.4.14 - Added the support of *Amazon S3*, MinIO and Google Cloud Storage storage types.
 - 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
-  :file:`.cnf` file
+  `.cnf` file
 - 2.3.1-beta1 - Implemented support different :ref:`authentication options
   <swift_auth>` for Swift
 - 2.3.1-beta1 - Implemented support for partial download of the cloud backups
-- 2.3.1-beta1 - :option:`xbcloud --swift-url` option has been renamed to
-  :option:`xbcloud --swift-auth-url`
+- 2.3.1-beta1 - `xbcloud --swift-url` option has been renamed to
+  `xbcloud --swift-auth-url`
 - 2.3.0-alpha1 - Initial implementation
 
 Supported Cloud Storage Types
 ================================================================================
 
 In addition to Swift, which has been the only option for storing backups in a
-cloud storage until |Percona XtraBackup| 2.4.14, |xbcloud| supports |s3|,
-|minio|, and |gcs|. Other |s3| compatible storages, such
+cloud storage until *Percona XtraBackup* 2.4.14, *xbcloud* supports *Amazon S3*,
+MinIO, and Google Cloud Storage. Other *Amazon S3* compatible storages, such
 as Wasabi or Digital Ocean Spaces, are also supported.
 
 .. seealso::
@@ -48,9 +48,9 @@ as Wasabi or Digital Ocean Spaces, are also supported.
       https://wiki.openstack.org/wiki/Swift
    Amazon Simple Storage Service
       https://aws.amazon.com/s3/
-   |minio|
+   MinIO
       https://min.io/
-   |gcs|
+   Google Cloud Storage
       https://cloud.google.com/storage/
    Wasabi
       https://wasabi.com/
@@ -81,7 +81,7 @@ The following example shows how to make a full backup and upload it to Swift.
    --parallel=10 \
    full_backup
 
-Creating a full backup with |s3|
+Creating a full backup with *Amazon S3*
 ================================================================================
 
 .. code-block:: bash
@@ -95,7 +95,7 @@ Creating a full backup with |s3|
    --parallel=10 \
    $(date -I)-full_backup
 
-The following options are available when using |s3|:
+The following options are available when using *Amazon S3*:
 
 .. list-table::
    :header-rows: 1
@@ -111,10 +111,10 @@ The following options are available when using |s3|:
    * - --s3-region
      - Use to specify the AWS region. The default value is **us-east-1**
    * - --s3-api-version = <AUTO|2|4>
-     - Select the signing algorithm. The default value is AUTO. In this case, |xbcloud| will probe.
+     - Select the signing algorithm. The default value is AUTO. In this case, *xbcloud* will probe.
    * - --s3-bucket-lookup = <AUTO|PATH|DNS>
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
-       style requests. The default value is AUTO. In this case, |xbcloud| will probe.
+       style requests. The default value is AUTO. In this case, *xbcloud* will probe.
    * - --s3-storage-class=<name>
      - Specify the `S3 storage class <https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html>`_. The name options are the following: 
      
@@ -129,7 +129,7 @@ The following options are available when using |s3|:
        Also supports using custom S3 implementations such as MinIO or CephRadosGW.
 
 
-Creating a full backup with |minio|
+Creating a full backup with MinIO
 ================================================================================
 
 .. code-block:: bash
@@ -143,12 +143,12 @@ Creating a full backup with |minio|
    --parallel=10 \
    $(date -I)-full_backup
 
-Creating a full backup with |gcs|
+Creating a full backup with Google Cloud Storage
 ================================================================================
 
-The support for |gcs| is implemented using the interoperability
+The support for Google Cloud Storage is implemented using the interoperability
 mode. This mode was especially designed to interact with cloud services
-compatible with |s3|.
+compatible with *Amazon S3*.
 
 .. seealso::
 
@@ -166,7 +166,7 @@ compatible with |s3|.
    --parallel=10 \
    $(date -I)-full_backup
 
-The following options are available when using |gcs|:
+The following options are available when using Google Cloud Storage:
 
 - --google-access-key = <ACCESS KEY ID>
 - --google-secret-key = <SECRET ACCESS KEY>
@@ -196,7 +196,7 @@ Configuration files
 --------------------------------------------------------------------------------
 
 The parameters the values of which do not change frequently can be stored in
-:file:`my.cnf` or in a custom configuration file. The following example is a
+`my.cnf` or in a custom configuration file. The following example is a
 template of configuration options under the ``[xbcloud]`` group:
 
 .. code-block:: text
@@ -213,12 +213,12 @@ template of configuration options under the ``[xbcloud]`` group:
 .. note::
 
    If you explicitly use a parameter on the command line and in a configuration
-   file, |xbcloud| uses the the value provided on the command line.
+   file, *xbcloud* uses the the value provided on the command line.
 
 Environment variables
 --------------------------------------------------------------------------------
 
-The following environment variables are recognized. |xbcloud| maps them
+The following environment variables are recognized. *xbcloud* maps them
 automatically to corresponding parameters applicable to the selected storage.
 
 - AWS_ACCESS_KEY_ID (or ACCESS_KEY_ID)
@@ -230,7 +230,7 @@ automatically to corresponding parameters applicable to the selected storage.
 .. note::
 
    If you explicitly use a parameter on the command line, in a configuration
-   file, and the corresponding environment variable contains a value, |xbcloud|
+   file, and the corresponding environment variable contains a value, *xbcloud*
    uses the the value provided on the command line or in the configuration file.
 
 OpenStack environment variables are also recognized and mapped automatically to
@@ -281,7 +281,7 @@ configuration files and environment variables.
 Additional parameters
 --------------------------------------------------------------------------------
 
-|xbcloud| accepts additional parameters that you can use with any storage
+*xbcloud* accepts additional parameters that you can use with any storage
 type. The ``--md5`` parameter computes the MD5 hash value of the backup
 chunks. The result is stored in files that following the ``backup_name.md5``
 pattern.
@@ -330,7 +330,7 @@ The following example shows how to fetch and restore the backup from Swift:
    $ xtrabackup --prepare --target-dir=/tmp/downloaded_full
    $ xtrabackup --copy-back --target-dir=/tmp/downloaded_full
 
-Restoring with |s3|
+Restoring with *Amazon S3*
 ================================================================================
 
 .. code-block:: bash
@@ -429,13 +429,13 @@ from the full backup.
 Command-line options
 ================================================================================
 
-|xbcloud| has the following command line options:
+*xbcloud* has the following command line options:
 
 .. program:: xbcloud
 
-.. option:: --storage=[swift|s3|google]
+.. option:: --storage=[swift*Amazon S3*google]
 
-   Cloud storage option. |xbcloud| supports Swift, MinIO, and AWS S3.
+   Cloud storage option. *xbcloud* supports Swift, MinIO, and AWS S3.
    The default value is ``swift``.
 
 .. option:: --swift-auth-url
@@ -444,7 +444,7 @@ Command-line options
 
 .. option:: --swift-url
 
-   Renamed to :option:`xbcloud --swift-auth-url`
+   Renamed to `xbcloud --swift-auth-url`
 
 .. option:: --swift-storage-url
 
@@ -482,7 +482,7 @@ Swift authentication options
 --------------------------------------------------------------------------------
 
 Swift specification describe several `authentication options
-<http://docs.openstack.org/developer/swift/overview_auth.html>`_. |xbcloud| can
+<http://docs.openstack.org/developer/swift/overview_auth.html>`_. *xbcloud* can
 authenticate against keystone with API version 2 and 3.
 
 .. option:: --swift-auth-version
@@ -531,6 +531,6 @@ For v3 additional options are:
 
    Swift domain ID.
 
-.. |gcs| replace:: Google Cloud Storage
-.. |s3| replace:: Amazon S3
-.. |minio| replace:: MinIO
+.. Google Cloud Storage replace:: Google Cloud Storage
+.. *Amazon S3* replace:: Amazon S3
+.. MinIO replace:: MinIO

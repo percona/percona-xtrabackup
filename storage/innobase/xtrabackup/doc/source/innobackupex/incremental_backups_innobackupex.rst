@@ -1,22 +1,22 @@
 =========================================
- Incremental Backups with |innobackupex|
+ Incremental Backups with *innobackupex*
 =========================================
 
 As not all information changes between each backup, the incremental backup
 strategy uses this to reduce the storage needs and the duration of making a
 backup.
 
-This can be done because each |InnoDB| page has a log sequence number, |LSN|,
+This can be done because each *InnoDB* page has a log sequence number, *LSN*,
 which acts as a version number of the entire database. Every time the database
 is modified, this number gets incremented.
 
-An incremental backup copies all pages since a specific |LSN|.
+An incremental backup copies all pages since a specific *LSN*.
 
 Once the pages have been put together in their respective order, applying the
 logs will recreate the process that affected the database, yielding the data at
 the moment of the most recently created backup.
 
-Creating an Incremental Backups with |innobackupex|
+Creating an Incremental Backups with *innobackupex*
 ===================================================
 
 First, you need to make a full backup as the BASE for subsequent incremental backups:
@@ -25,16 +25,16 @@ First, you need to make a full backup as the BASE for subsequent incremental bac
 
    $ innobackupex /data/backups
 
-This will create a timestamped directory in :file:`/data/backups`. Assuming that
+This will create a timestamped directory in `/data/backups`. Assuming that
 the backup is done last day of the month, ``BASEDIR`` would be
-:file:`/data/backups/2013-03-31_23-01-18`, for example.
+`/data/backups/2013-03-31_23-01-18`, for example.
 
 .. note::
 
-   You can use the :option:`innobackupex --no-timestamp` option to override this
+   You can use the `innobackupex --no-timestamp` option to override this
    behavior and the backup will be created in the given directory.
 
-If you check at the :file:`xtrabackup-checkpoints` file in ``BASE-DIR``, you
+If you check at the `xtrabackup-checkpoints` file in ``BASE-DIR``, you
 should see something like::
 
   backup_type = full-backuped
@@ -44,18 +44,18 @@ should see something like::
   compact = 0
   recover_binlog_info = 1
  
-To create an incremental backup the next day, use :option:`innobackupex
+To create an incremental backup the next day, use `innobackupex
 --incremental` and provide the BASEDIR:
 
 .. code-block:: bash
 
   $ innobackupex --incremental /data/backups --incremental-basedir=BASEDIR
 
-Another timestamped directory will be created in :file:`/data/backups`, in this
-example, :file:`/data/backups/2013-04-01_23-01-18` containing the incremental
+Another timestamped directory will be created in `/data/backups`, in this
+example, `/data/backups/2013-04-01_23-01-18` containing the incremental
 backup. We will call this ``INCREMENTAL-DIR-1``.
 
-If you check at the :file:`xtrabackup-checkpoints` file in
+If you check at the `xtrabackup-checkpoints` file in
 ``INCREMENTAL-DIR-1``, you should see something like::
 
   backup_type = incremental
@@ -70,10 +70,10 @@ time the previous incremental one will be base: ::
 
   $ innobackupex --incremental /data/backups --incremental-basedir=INCREMENTAL-DIR-1
 
-Yielding (in this example) :file:`/data/backups/2013-04-02_23-01-18`. We will
+Yielding (in this example) `/data/backups/2013-04-02_23-01-18`. We will
 use ``INCREMENTAL-DIR-2`` instead for simplicity.
 
-At this point, the :file:`xtrabackup-checkpoints` file in ``INCREMENTAL-DIR-2``
+At this point, the `xtrabackup-checkpoints` file in ``INCREMENTAL-DIR-2``
 should contain something like::
 
   backup_type = incremental
@@ -83,8 +83,8 @@ should contain something like::
   compact = 0
   recover_binlog_info = 1
 
-As it was said before, an incremental backup only copy pages with a |LSN|
-greater than a specific value. Providing the |LSN| would have produced
+As it was said before, an incremental backup only copy pages with a *LSN*
+greater than a specific value. Providing the *LSN* would have produced
 directories with the same data inside: ::
 
   innobackupex --incremental /data/backups --incremental-lsn=4124244
@@ -95,11 +95,11 @@ base or the last incremental will be available in the system.
 
 .. warning::
 
-   This procedure only affects |XtraDB| or |InnoDB|-based tables. Other tables
-   with a different storage engine, e.g. |MyISAM|, will be copied entirely each
+   This procedure only affects *XtraDB* or *InnoDB*-based tables. Other tables
+   with a different storage engine, e.g. *MyISAM*, will be copied entirely each
    time an incremental backup is performed.
 
-Preparing an Incremental Backup with |innobackupex|
+Preparing an Incremental Backup with *innobackupex*
 ===================================================
 
 Preparing incremental backups is a bit different than full backups. This is,
@@ -116,7 +116,7 @@ this on an incremental one, you won't be able to add data from that moment and
 the remaining increments.
 
 Having this in mind, the procedure is very straight-forward using the
-:option:`innobackupex --redo-only` option, starting with the base backup: ::
+`innobackupex --redo-only` option, starting with the base backup: ::
 
   innobackupex --apply-log --redo-only BASE-DIR
 
@@ -129,12 +129,12 @@ Then, the first incremental backup can be applied to the base backup, by issuing
 
   innobackupex --apply-log --redo-only BASE-DIR --incremental-dir=INCREMENTAL-DIR-1
 
-You should see an output similar to the previous one but with corresponding |LSN|: ::
+You should see an output similar to the previous one but with corresponding *LSN*: ::
 
   160103 22:08:43 InnoDB: Shutdown completed; log sequence number 6938371
   160103 22:08:43 innobackupex: completed OK!
 
-If no :option:`innobackupex --incremental-dir` is set, |innobackupex| will use the most
+If no `innobackupex --incremental-dir` is set, *innobackupex* will use the most
 recent subdirectory created in the basedir.
 
 At this moment, ``BASE-DIR`` contains the data up to the moment of the first
@@ -152,9 +152,9 @@ backup directory, ``BASE-DIR``.
 
 .. note::
  
-   :option:`innobackupex --redo-only` should be used when merging all incrementals
+   `innobackupex --redo-only` should be used when merging all incrementals
    except the last one. That's why the previous line doesn't contain the
-   :option:`innobackupex --redo-only` option. Even if the :option:`innobackupex --redo-only`
+   `innobackupex --redo-only` option. Even if the `innobackupex --redo-only`
    was used on the last step, backup would still be consistent but
    in that case server would perform the rollback phase.
 
@@ -162,7 +162,7 @@ You can use this procedure to add more increments to the base, as long as you do
 it in the chronological order that the backups were done. If you merge the
 incrementals in the wrong order, the backup will be useless. If you have doubts
 about the order that they must be applied, you can check the file
-:file:`xtrabackup_checkpoints` at the directory of each one, as shown in the
+`xtrabackup_checkpoints` at the directory of each one, as shown in the
 beginning of this section.
 
 Once you merge the base with all the increments, you can prepare it to roll back
@@ -178,24 +178,24 @@ the database server will begin to rollback uncommitted transactions, the same
 work it would do if a crash had occurred. This results in delay as the database
 server starts, and you can avoid the delay if you do the prepare.
 
-Note that the :file:`iblog*` files will not be created by |innobackupex|, if you
-want them to be created, use :command:`xtrabackup --prepare` on the
+Note that the `iblog*` files will not be created by *innobackupex*, if you
+want them to be created, use `xtrabackup --prepare` on the
 directory. Otherwise, the files will be created by the server once started.
 
-Restoring Incremental Backups with |innobackupex|
+Restoring Incremental Backups with *innobackupex*
 ================================================================================
 
 After preparing the incremental backups, the base directory contains the same
-data as the full backup. For restoring it, you can use the :option:`xtrabackup
+data as the full backup. For restoring it, you can use the `xtrabackup
 --copy-back` parameter:
 
 .. code-block:: bash
 
    $ xtrabackup --copy-back --target-dir=BASE-DIR
 
-If the incremental backup was created using the :option:`xtrabackup --compress`
-option, then you need to run :option:`xtrabackup --decompress` followed by
-:option:`xtrabackup --copy-back`.
+If the incremental backup was created using the `xtrabackup --compress`
+option, then you need to run `xtrabackup --decompress` followed by
+`xtrabackup --copy-back`.
 
 .. code-block:: bash
 
@@ -208,7 +208,7 @@ You may have to change the ownership as detailed on :doc:`restoring_a_backup_ibk
 Incremental Streaming Backups using xbstream and tar
 ====================================================
 
-Incremental streaming backups can be performed with the |xbstream| streaming
+Incremental streaming backups can be performed with the *xbstream* streaming
 option. Currently backups are packed in custom **xbstream** format. With this
 feature, you need to take a BASE backup as well.
 

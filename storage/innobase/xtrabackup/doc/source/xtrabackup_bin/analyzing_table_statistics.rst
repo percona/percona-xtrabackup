@@ -2,17 +2,17 @@
  Analyzing Table Statistics
 ================================================================================
 
-The |xtrabackup| binary can analyze InnoDB data files in read-only mode to give
-statistics about them. To do this, you should use the :option:`xtrabackup
---stats` option. You can combine this with the :option:`xtrabackup --tables`
-option to limit the files to examine. It also uses the :option:`xtrabackup
+The *xtrabackup* binary can analyze InnoDB data files in read-only mode to give
+statistics about them. To do this, you should use the `xtrabackup
+--stats` option. You can combine this with the `xtrabackup --tables`
+option to limit the files to examine. It also uses the `xtrabackup
 --use-memory` option.
 
 You can perform the analysis on a running server, with some chance of errors due
 to the data being changed during analysis. Or, you can analyze a backup copy of
 the database. Either way, to use the statistics feature, you need a clean copy
 of the database including correctly sized log files, so you need to execute with
-:option:`xtrabackup --prepare` twice to use this functionality on a backup.
+`xtrabackup --prepare` twice to use this functionality on a backup.
 
 The result of running on a backup might look like the following: ::
 
@@ -32,7 +32,7 @@ This can be interpreted as follows:
   table's clustered index, automatically created because you did not explicitly
   create a ``PRIMARY KEY``.
 - The estimated statistics in dictionary information is similar to the data
-  that's gathered through ``ANALYZE TABLE`` inside of |InnoDB| to be stored as
+  that's gathered through ``ANALYZE TABLE`` inside of *InnoDB* to be stored as
   estimated cardinality statistics and passed to the query optimizer.
 - The real statistics information is the result of scanning the data pages and
   computing exact information about the index.

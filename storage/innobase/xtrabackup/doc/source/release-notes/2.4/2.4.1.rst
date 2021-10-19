@@ -1,8 +1,8 @@
 ============================
- |Percona XtraBackup| 2.4.1
+ *Percona XtraBackup* 2.4.1
 ============================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.4.1 on
+Percona is glad to announce the release of *Percona XtraBackup* 2.4.1 on
 February 16th 2016. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt <apt_repo>`
 and :ref:`yum <yum_repo>` repositories.
@@ -16,21 +16,21 @@ This release contains all the features and bug fixes in Percona XtraBackup
 New features
 ------------
 
- |Percona XtraBackup| has implemented basic support for |MySQL| 5.7 and
- |Percona Server| 5.7.
+ *Percona XtraBackup* has implemented basic support for *MySQL* 5.7 and
+ *Percona Server for MySQL* 5.7.
 
 Bugs Fixed
 ----------
 
- |Percona XtraBackup| didn't respect ``innodb_log_file_size`` variable
- stored in :file:`backup-my.cnf`. Bug fixed :jirabug:`PXB-450`.
+ *Percona XtraBackup* didn't respect ``innodb_log_file_size`` variable
+ stored in `backup-my.cnf`. Bug fixed :jirabug:`PXB-450`.
 
  If server would run out of space while backups were taken with
- :option:`innobackupex --rsync` option backup process would fail but
- |innobackupex| would still complete with ``completed OK!`` message. Bug fixed
+ `innobackupex --rsync` option backup process would fail but
+ innobackupex would still complete with ``completed OK!`` message. Bug fixed
  :jirabug:`PXB-459`.
 
- |Percona XtraBackup| was silently skipping extra arguments. Bug fixed
+ *Percona XtraBackup* was silently skipping extra arguments. Bug fixed
  :jirabug:`PXB-747` (*Fungo Wang*).
 
 Other bugs fixed: :jirabug:`PXB-1368` and :jirabug:`1363`.

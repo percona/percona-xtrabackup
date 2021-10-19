@@ -25,7 +25,7 @@ Success Criterion
 ================================================================================
 
 * The exit status of xtrabackup is 0.
-* In the second :option:`xtrabackup --prepare` step, you should see InnoDB print messages
+* In the second `xtrabackup --prepare` step, you should see InnoDB print messages
   similar to ``Log file ./ib_logfile0 did not exist: new to be created``,
   followed by a line indicating the log file was created (creating new logs is
   the purpose of the second preparation).
@@ -33,7 +33,7 @@ Success Criterion
 Notes
 ================================================================================
 
-* You might want to set the :option:`xtrabackup --use-memory` option to
+* You might want to set the `xtrabackup --use-memory` option to
   something similar to the size of your buffer pool, if you are on a dedicated
   server that has enough free memory. More details :doc:`here
   <../xtrabackup_bin/xbk_option_reference>`.

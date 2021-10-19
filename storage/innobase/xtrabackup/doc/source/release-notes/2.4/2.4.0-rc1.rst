@@ -1,8 +1,8 @@
 ================================
- |Percona XtraBackup| 2.4.0-rc1
+ *Percona XtraBackup* 2.4.0-rc1
 ================================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.4.0-rc1 on
+Percona is glad to announce the release of *Percona XtraBackup* 2.4.0-rc1 on
 February 8th 2016. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt <apt_repo>`
 and :ref:`yum <yum_repo>` repositories.
@@ -15,8 +15,8 @@ time of writing).
 New features
 ------------
 
- |Percona XtraBackup| has implemented basic support for |MySQL| 5.7 and
- |Percona Server| 5.7.
+ *Percona XtraBackup* has implemented basic support for *MySQL* 5.7 and
+ *Percona Server for MySQL* 5.7.
 
 Known Issues
 ------------
