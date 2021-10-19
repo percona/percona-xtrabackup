@@ -1,0 +1,15 @@
+Sphinx==3.3.0
+sphinx-autobuild==2020.9.1
+sphinx-copybutton==0.3.1
+sphinx-gitstamp==0.3.1
+sphinx-markdown-builder==0.5.4
+sphinx-material @ git+https://github.com/bashtage/sphinx-material.git@3c3d1533a8ef09dad6987e06fc5375867c18c529
+sphinx-tabs==3.2.0
+sphinxcontrib-applehelp==1.0.2
+sphinxcontrib-contentui==0.2.5
+sphinxcontrib-devhelp==1.0.2
+sphinxcontrib-htmlhelp==1.0.3
+sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-osexample==0.1.1
+sphinxcontrib-qthelp==1.0.3
+sphinxcontrib-serializinghtml==1.1.4

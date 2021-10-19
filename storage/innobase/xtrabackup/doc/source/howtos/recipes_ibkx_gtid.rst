@@ -74,7 +74,7 @@ Set the gtid_purged variable to the ``GTID`` from
 `xtrabackup_binlog_info`. Then, update the information about the
 source node and, finally, start the replica.
 
-.. code-block:: guess
+.. code-block:: text
 
    # Using the mysql shell
    NewSlave > SET SESSION wsrep_on = 0;
@@ -100,7 +100,7 @@ STEP 5: Check the replication status
 
 Following command will show the replica status:
 
-.. code-block:: guess
+.. code-block:: text
 
    NewSlave > SHOW SLAVE STATUS\G
             [..]
@@ -114,3 +114,4 @@ We can see that the replica has retrieved a new transaction with number 5, so
 transactions from 1 to 5 are already on this replica.
 
 That's all, we have created a new replica in our ``GTID`` based replication environment.
+

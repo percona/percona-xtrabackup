@@ -4,13 +4,11 @@
  Restoring Individual Tables
 =============================
 
-In server versions prior to 5.6, it is not possible to copy tables between
-servers by copying the files, even with `innodb_file_per_table`. However,
-with *Percona XtraBackup*, you can export individual tables from any *InnoDB*
-database, and import them into *Percona Server for MySQL* with XtraDB or *MySQL* 5.6.
-(The source doesn't have to be XtraDB or *MySQL* 5.6, but the destination
-does.) This only works on individual `.ibd` files, and cannot export a
-table that is not contained in its own `.ibd` file.
+With *Percona XtraBackup*, you can export individual tables from any *InnoDB* database, and 
+import them into *Percona Server for MySQL* with *XtraDB* or *MySQL* 5.7. The source does not 
+need to be *XtraDB* or *MySQL* 5.7 but the destination must be. This operation only works on 
+individual `.ibd` files. A table that is not contained in its own `.ibd` file cannot be exported.
+
 
 Let's see how to export and import the following table:
 
@@ -19,12 +17,6 @@ Let's see how to export and import the following table:
   CREATE TABLE export_test (
     a int(11) DEFAULT NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
-.. note::
-
-   If you're running *Percona Server for MySQL* version older than 5.5.10-20.1, variable
-   `innodb_expand_import <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html#innodb_expand_import>`_
-   should be used instead of `innodb_import_table_from_xtrabackup <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html#innodb_import_table_from_xtrabackup>`_.
 
 Exporting the Table
 ===================
@@ -48,7 +40,7 @@ when you prepare the backup, add the extra parameter
 .. note::
 
   If you're trying to restore :ref:`encrypted InnoDB tablespace
-  <encrypted_innodb_tablespace_backups>` table you'll need to specify the
+  <encrypted_innodb_tablespace_backups>` table you must specify the
   keyring file as well:
 
   .. code-block:: bash
@@ -64,6 +56,7 @@ Now you should see a `.exp` file in the target directory:
   /data/backups/mysql/test/export_test.exp
   /data/backups/mysql/test/export_test.ibd
   /data/backups/mysql/test/export_test.cfg
+
 
 These three files are all you need to import the table into a server running
 *Percona Server for MySQL* with XtraDB or *MySQL* 5.7. In case server is using `InnoDB
@@ -84,16 +77,14 @@ additional `.cfp` file be listed for encrypted tables.
 Importing the Table
 ===================
 
-On the destination server running *Percona Server for MySQL* with XtraDB and
-`innodb_import_table_from_xtrabackup <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html#innodb_import_table_from_xtrabackup>`_
-option enabled, or *MySQL* 5.6, create a table with the same structure, and
-then perform the following steps:
+
+On the destination server, create a table with the same structure, and then perform the following steps:
 
 * Execute ``ALTER TABLE test.export_test DISCARD TABLESPACE;``
 
-  * If you see the following message, then you must enable
-    `innodb_file_per_table` and create the table again: ``ERROR 1030
-    (HY000): Got error -1 from storage engine``
+  * If you see the ``ERROR 1030
+    (HY000): Got error -1 from storage engine`` message, then enable
+    :term:`innodb_file_per_table` and create the table again: 
 
 * Copy the exported files to the ``test/`` subdirectory of the destination
   server's data directory
@@ -106,7 +97,7 @@ and see the imported data.
 .. note::
 
   Persistent statistics for imported tablespace will be empty until you run the
-  ``ANALYZE TABLE`` on the imported table. They will be empty because they are
+  ``ANALYZE TABLE`` on the imported table. They are empty because they are
   stored in the system tables ``mysql.innodb_table_stats`` and
-  ``mysql.innodb_index_stats`` and they aren't updated by server during the
+  ``mysql.innodb_index_stats`` and they are not updated by server during the
   import. This is due to upstream bug :mysqlbug:`72368`.
