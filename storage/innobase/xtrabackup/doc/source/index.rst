@@ -24,10 +24,11 @@ environment. `Commercial support contracts are available
 <http://www.percona.com/mysql-support/>`_.
 
 .. important::
-   
-   |Percona XtraBackup| |version| does not support making backups of databases
-   created in |MySQL| 8.0, |Percona Server| 8.0 or |Percona XtraDB Cluster|
-   8.0.
+
+   Percona XtraBackup 2.4 does not support making backups of databases
+   created in *MySQL 8.0*, *Percona Server for MySQL 8.0*, or *Percona XtraDB Cluster 8.0*.
+
+   Use `Percona XtraBackup 8.0 <https://www.percona.com/downloads/Percona-XtraBackup-LATEST/#>`__ for making backups of databases in *MySQL 8.0*, *Percona Server for MySQL 8.0*, and *Percona XtraDB Cluster 8.0*.
 
 Introduction
 ============
@@ -143,4 +144,3 @@ Indices and tables
 .. [#n-1]
 
   Support for InnoDB 5.1 builtin has been removed in |Percona XtraBackup| 2.1
-
