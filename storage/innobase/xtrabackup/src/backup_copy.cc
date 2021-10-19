@@ -638,7 +638,8 @@ static bool run_data_threads(const char *dir, F func, uint n,
 /************************************************************************
 Write buffer into .ibd file and preserve it's sparsiness. */
 bool write_ibd_buffer(ds_file_t *file, unsigned char *buf, size_t buf_len,
-                      size_t page_size, size_t block_size) {
+                      size_t page_size, size_t block_size,
+                      bool punch_hole_supported) {
   ut_a(buf_len % page_size == 0);
 
   if (ds_is_sparse_write_supported(file) && page_size > block_size) {
@@ -673,8 +674,8 @@ bool write_ibd_buffer(ds_file_t *file, unsigned char *buf, size_t buf_len,
         src_pos += sparse_map[i].len;
         dst_pos += sparse_map[i].len;
       }
-      if (ds_write_sparse(file, buf, dst_pos, sparse_map.size(),
-                          &sparse_map[0])) {
+      if (ds_write_sparse(file, buf, dst_pos, sparse_map.size(), &sparse_map[0],
+                          punch_hole_supported)) {
         return (false);
       }
       return (true);
@@ -737,7 +738,8 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
       if (cursor.buf_offset == cursor.buf_read)
         page_size.copy_from(fsp_header_get_page_size(cursor.buf));
       if (!write_ibd_buffer(dstfile, cursor.buf, cursor.buf_read,
-                            page_size.physical(), cursor.statinfo.st_blksize))
+                            page_size.physical(), cursor.statinfo.st_blksize,
+                            datasink->fs_support_punch_hole))
         goto error;
     } else {
       if (ds_write(dstfile, cursor.buf, cursor.buf_read)) goto error;

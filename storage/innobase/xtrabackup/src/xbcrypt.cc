@@ -177,9 +177,13 @@ int main(int argc, char **argv) {
 
   if (opt_output_file) {
     output_file = opt_output_file;
+    char dirpath[FN_REFLEN];
+    size_t dirpath_len;
+
     if (opt_verbose) msg("%s: output file \"%s\".\n", my_progname, output_file);
 
-    output_ds = ds_create(".", DS_TYPE_LOCAL);
+    dirname_part(dirpath, output_file, &dirpath_len);
+    output_ds = ds_create(dirpath, DS_TYPE_LOCAL);
   } else {
     if (opt_verbose) msg("%s: output to standard output.\n", my_progname);
     output_ds = ds_create(".", DS_TYPE_STDOUT);

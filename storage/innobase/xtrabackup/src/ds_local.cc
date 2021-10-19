@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "datasink.h"
 
+#define PUNCH_HOLE_PLACEHOLDER_FILE "xtrabackup_punch_hole"
 typedef struct {
   File fd;
   size_t last_seek;  // to track last page sparse_file
@@ -39,12 +40,38 @@ static ds_file_t *local_open(ds_ctxt_t *ctxt, const char *path,
 static int local_write(ds_file_t *file, const void *buf, size_t len);
 static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               size_t sparse_map_size,
-                              const ds_sparse_chunk_t *sparse_map);
+                              const ds_sparse_chunk_t *sparse_map,
+                              bool punch_hole_supported);
 static int local_close(ds_file_t *file);
 static void local_deinit(ds_ctxt_t *ctxt);
 
 datasink_t datasink_local = {&local_init,         &local_open,  &local_write,
                              &local_write_sparse, &local_close, &local_deinit};
+
+/**
+  Checks if punch hole via fallocate is supported
+
+  @return true if punch hole is supported
+*/
+static void is_fallocate_punch_hole_supported(ds_ctxt_t *ctxt) {
+  char fullpath[FN_REFLEN];
+  File fd;
+  int ret;
+  fn_format(fullpath, PUNCH_HOLE_PLACEHOLDER_FILE, ctxt->root, "",
+            MYF(MY_RELATIVE_PATH));
+  fd = my_create(fullpath, 0, O_WRONLY | O_EXCL | O_NOFOLLOW, MYF(MY_WME));
+  if (fd < 0) {
+    ctxt->fs_support_punch_hole = false;
+  } else {
+    ret = fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, 0, 1);
+    if (ret == 0)
+      ctxt->fs_support_punch_hole = true;
+    else
+      ctxt->fs_support_punch_hole = false;
+    my_close(fd, MYF(MY_WME));
+    my_delete(fullpath, MYF(MY_WME));
+  }
+}
 
 static ds_ctxt_t *local_init(const char *root) {
   ds_ctxt_t *ctxt;
@@ -61,6 +88,8 @@ static ds_ctxt_t *local_init(const char *root) {
       my_malloc(PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE)));
 
   ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
+
+  is_fallocate_punch_hole_supported(ctxt);
 
   return ctxt;
 }
@@ -125,15 +154,18 @@ static int local_write(ds_file_t *file, const void *buf, size_t len) {
 
 static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               size_t sparse_map_size,
-                              const ds_sparse_chunk_t *sparse_map) {
+                              const ds_sparse_chunk_t *sparse_map,
+                              bool punch_hole_supported) {
   auto local_file = ((ds_local_file_t *)file->ptr);
   File fd = local_file->fd;
+  int seek = 0;
 
   const uchar *ptr = static_cast<const uchar *>(buf);
 
   for (size_t i = 0; i < sparse_map_size; ++i) {
     my_off_t rc;
 
+    seek = my_tell(fd, MYF(MY_WME));
     rc = my_seek(fd, sparse_map[i].skip, MY_SEEK_CUR, MYF(MY_WME));
     if (rc == MY_FILEPOS_ERROR) {
       return 1;
@@ -142,6 +174,11 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
     rc = my_write(fd, ptr, sparse_map[i].len, MYF(MY_WME | MY_NABP));
     if (rc != 0) {
       return 1;
+    }
+
+    if (punch_hole_supported) {
+      fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, seek,
+                sparse_map[i].skip);
     }
 
     ptr += sparse_map[i].len;

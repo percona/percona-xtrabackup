@@ -35,6 +35,7 @@ typedef struct ds_ctxt {
   char *root;
   void *ptr;
   struct ds_ctxt *pipe_ctxt;
+  bool fs_support_punch_hole;
 } ds_ctxt_t;
 
 typedef struct {
@@ -54,7 +55,8 @@ struct datasink_struct {
   int (*write)(ds_file_t *file, const void *buf, size_t len);
   int (*write_sparse)(ds_file_t *file, const void *buf, size_t len,
                       size_t sparse_map_size,
-                      const ds_sparse_chunk_t *sparse_map);
+                      const ds_sparse_chunk_t *sparse_map,
+                      bool punch_hole_supported);
   int (*close)(ds_file_t *file);
   void (*deinit)(ds_ctxt_t *ctxt);
 };
@@ -96,8 +98,8 @@ int ds_is_sparse_write_supported(ds_file_t *file);
 Write sparse chunk if supported.
 @return 0 on success, 1 on error. */
 int ds_write_sparse(ds_file_t *file, const void *buf, size_t len,
-                    size_t sparse_map_size,
-                    const ds_sparse_chunk_t *sparse_map);
+                    size_t sparse_map_size, const ds_sparse_chunk_t *sparse_map,
+                    bool punch_hole_supported);
 
 /************************************************************************
 Close a datasink file.

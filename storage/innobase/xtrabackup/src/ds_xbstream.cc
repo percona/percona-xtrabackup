@@ -46,7 +46,8 @@ static ds_file_t *xbstream_open(ds_ctxt_t *ctxt, const char *path,
 static int xbstream_write(ds_file_t *file, const void *buf, size_t len);
 static int xbstream_write_sparse(ds_file_t *file, const void *buf, size_t len,
                                  size_t sparse_map_size,
-                                 const ds_sparse_chunk_t *sparse_map);
+                                 const ds_sparse_chunk_t *sparse_map,
+                                 bool punch_hole_supported);
 static int xbstream_close(ds_file_t *file);
 static void xbstream_deinit(ds_ctxt_t *ctxt);
 
@@ -176,7 +177,8 @@ static int xbstream_write(ds_file_t *file, const void *buf, size_t len) {
 
 static int xbstream_write_sparse(ds_file_t *file, const void *buf, size_t len,
                                  size_t sparse_map_size,
-                                 const ds_sparse_chunk_t *sparse_map) {
+                                 const ds_sparse_chunk_t *sparse_map,
+                                 bool punch_hole_supported) {
   ds_stream_file_t *stream_file;
   xb_wstream_file_t *xbstream_file;
 

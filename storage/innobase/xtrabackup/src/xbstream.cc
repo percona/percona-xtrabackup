@@ -531,7 +531,8 @@ static void *extract_worker_thread_func(void *arg) {
       entry->offset += chunk.length;
     } else if (chunk.type == XB_CHUNK_TYPE_SPARSE) {
       if (ds_write_sparse(entry->file, chunk.data, chunk.length,
-                          chunk.sparse_map_size, chunk.sparse_map)) {
+                          chunk.sparse_map_size, chunk.sparse_map,
+                          ctxt->ds_ctxt->fs_support_punch_hole)) {
         msg("%s: my_write() failed.\n", my_progname);
         pthread_mutex_unlock(&entry->mutex);
         res = XB_STREAM_READ_ERROR;
