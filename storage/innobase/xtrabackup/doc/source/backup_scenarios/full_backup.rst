@@ -9,13 +9,13 @@ The Backup Cycle - Full Backups
 Creating a backup
 ================================================================================
 
-To create a backup, run :program:`xtrabackup` with the :option:`xtrabackup
---backup` option. You also need to specify a :option:`xtrabackup --target-dir`
-option, which is where the backup will be stored, if the |InnoDB| data or log
+To create a backup, run `xtrabackup` with the `xtrabackup
+--backup` option. You also need to specify a `xtrabackup --target-dir`
+option, which is where the backup will be stored, if the *InnoDB* data or log
 files aren't stored in the same directory, you might need to specify the
-location of those, too. If the target directory does not exist, |xtrabackup|
-creates it. If the directory does exist and is empty, |xtrabackup| will
-succeed. |xtrabackup| will not overwrite existing files, it will fail with
+location of those, too. If the target directory does not exist, xtrabackup
+creates it. If the directory does exist and is empty, xtrabackup will
+succeed. xtrabackup will not overwrite existing files, it will fail with
 operating system error 17, ``file exists``.
 
 To start the backup process run:
@@ -24,13 +24,13 @@ To start the backup process run:
 
    $ xtrabackup --backup --target-dir=/data/backups/
 
-This will store the backup at :file:`/data/backups/`. If you specify a relative
+This will store the backup at `/data/backups/`. If you specify a relative
 path, the target directory will be relative to the current directory.
 
 During the backup process, you should see a lot of output showing the data files
 being copied, as well as the log file thread repeatedly scanning the log files
 and copying from it. Here is an example that shows the log thread scanning the
-log in the background, and a file copying thread working on the :file:`ibdata1`
+log in the background, and a file copying thread working on the `ibdata1`
 file:
 
 .. code-block:: text
@@ -66,8 +66,8 @@ of the ``<LSN>`` will be a number that depends on your system:
    when the log records are overwritten before they could be read.
 
 After the backup is finished, the target directory will contain files such as
-the following, assuming you have a single InnoDB table :file:`test.tbl1` and
-you are using MySQL's :term:`innodb_file_per_table` option:
+the following, assuming you have a single InnoDB table `test.tbl1` and
+you are using MySQL's `innodb_file_per_table` option:
 
 .. code-block:: bash
 
@@ -96,14 +96,14 @@ The next step is getting your backup ready to be restored.
 Preparing a backup
 ================================================================================
 
-After you made a backup with the :option:`xtrabackup --backup` option, you'll
+After you made a backup with the `xtrabackup --backup` option, you'll
 first need to prepare it in order to restore it. Data files are not
 point-in-time consistent until they've been prepared, because they were copied
 at different times as the program ran, and they might have been changed while
 this was happening. If you try to start InnoDB with these data files, it will
 detect corruption and crash itself to prevent you from running on damaged data.
-The :option:`xtrabackup --prepare` step makes the files perfectly consistent at
-a single instant in time, so you can run |InnoDB| on them.
+The `xtrabackup --prepare` step makes the files perfectly consistent at
+a single instant in time, so you can run *InnoDB* on them.
 
 You can run the prepare operation on any machine; it does not need to be on the
 originating server or the server to which you intend to restore. You can copy
@@ -111,25 +111,25 @@ the backup to a utility server and prepare it there.
 
 .. note::
 
-   You can prepare a backup created with older |Percona XtraBackup| version with
+   You can prepare a backup created with older *Percona XtraBackup* version with
    a newer one, but not vice versa. Preparing a backup on an unsupported server
-   version should be done with the latest |Percona XtraBackup| release which
+   version should be done with the latest *Percona XtraBackup* release which
    supports that server version. For example, if one has a backup of MySQL 5.0
-   created with |Percona XtraBackup| 1.6, then preparing the backup with
-   |Percona XtraBackup| 2.3 is not supported, because support for MySQL 5.0 was
-   removed in |Percona XtraBackup| 2.1. Instead, the latest release in the 2.0
+   created with *Percona XtraBackup* 1.6, then preparing the backup with
+   *Percona XtraBackup* 2.3 is not supported, because support for MySQL 5.0 was
+   removed in *Percona XtraBackup* 2.1. Instead, the latest release in the 2.0
    series should be used.
 
-During the ``prepare`` operation, |xtrabackup| boots up a kind of modified
+During the ``prepare`` operation, xtrabackup boots up a kind of modified
 InnoDB that's embedded inside it (the libraries it was linked against). The
 modifications are necessary to disable InnoDB's standard safety checks, such as
 complaining that the log file isn't the right size, which aren't appropriate for
 working with backups. These modifications are only for the xtrabackup binary;
-you don't need a modified |InnoDB| to use |xtrabackup| for your backups.
+you don't need a modified *InnoDB* to use xtrabackup for your backups.
 
 The prepare step uses this *embedded InnoDB* to perform crash recovery on the
 copied data files, using the copied log file. The ``prepare`` step is very
-simple to use: you simply run :option:`xtrabackup --prepare` option and tell it
+simple to use: you simply run `xtrabackup --prepare` option and tell it
 which directory to prepare, for example, to prepare the previously taken backup
 run:
 
@@ -138,7 +138,7 @@ run:
    $ xtrabackup --prepare --target-dir=/data/backups/
 
 When this finishes, you should see an ``InnoDB shutdown`` with a message such as
-the following, where again the value of :term:`LSN` will depend on your system:
+the following, where again the value of `LSN` will depend on your system:
 
 .. code-block:: text
 
@@ -160,7 +160,7 @@ Backup validity is not guaranteed if prepare process was interrupted.
 .. note::
 
    If you intend the backup to be the basis for further incremental backups, you
-   should use the :option:`xtrabackup --apply-log-only` option when preparing
+   should use the `xtrabackup --apply-log-only` option when preparing
    the backup, or you will not be able to apply incremental backups to it. See
    the documentation on preparing :ref:`incremental backups
    <incremental_backup>` for more details.
@@ -175,27 +175,27 @@ Restoring a Backup
    Backup needs to be :ref:`prepared <preparing_a_backup>` before it can be
    restored.
 
-For convenience |xtrabackup| binary has an :option:`xtrabackup --copy-back`
-option, which will copy the backup to the server's :term:`datadir`:
+For convenience xtrabackup binary has an `xtrabackup --copy-back`
+option, which will copy the backup to the server's `datadir`:
 
 .. code-block:: bash
 
    $ xtrabackup --copy-back --target-dir=/data/backups/
 
-If you don't want to save your backup, you can use the :option:`xtrabackup
---move-back` option which will move the backed up data to the :term:`datadir`.
+If you don't want to save your backup, you can use the `xtrabackup
+--move-back` option which will move the backed up data to the `datadir`.
 
 If you don't want to use any of the above options, you can additionally use
-:program:`rsync` or :program:`cp` to restore the files.
+`rsync` or `cp` to restore the files.
 
 .. note::
 
-   The :term:`datadir` must be empty before restoring the backup. Also it's
+   The `datadir` must be empty before restoring the backup. Also it's
    important to note that MySQL server needs to be shut down before restore is
-   performed. You can't restore to a :term:`datadir` of a running mysqld
+   performed. You can't restore to a `datadir` of a running mysqld
    instance (except when importing a partial backup).
 
-Example of the :program:`rsync` command that can be used to restore the backup
+Example of the `rsync` command that can be used to restore the backup
 can look like this:
 
 .. code-block:: bash
@@ -218,12 +218,11 @@ Data is now restored and you can start the server.
 .. note::
 
     When ``relay-log-info-repository=TABLE`` is enabled, the instance recovered from the backup has errors in the error log, like the following:
-    
+
     .. code-block:: bash
-    
+
         2019-08-09 12:40:02 69297 [ERROR] Failed to open the relay log '/data/mysql-relay-bin.004349' (relay_log_pos 5534092)
-    
+
     To avoid these types of issues, enable ``relay_log_recovery`` or execute ``RESET SLAVE`` prior to ``CHANGE MASTER TO``.
-    
+
     The relay log information was backed up, but a new relay log has been created, which creates a mismatch during the restore.
-   

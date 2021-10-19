@@ -2,17 +2,17 @@
  The innobackupex Program
 ================================================================================
 
-The |innobackupex| program is a symlink to the :ref:`xtrabackup
+The *innobackupex* program is a symlink to the :ref:`xtrabackup
 <xtrabackup-binary>` *C* program. It lets you perform
-point-in-time backups of |InnoDB| / |XtraDB| tables together with the schema
-definitions, |MyISAM| tables, and other portions of the server. In previous
-versions |innobackupex| was implemented as a *Perl* script.
+point-in-time backups of *InnoDB* / *XtraDB* tables together with the schema
+definitions, *MyISAM* tables, and other portions of the server. In previous
+versions *innobackupex* was implemented as a *Perl* script.
 
-This manual section explains how to use |innobackupex| in detail.
+This manual section explains how to use *innobackupex* in detail.
 
 .. warning::
    
-   The |innobackupex| program is deprecated. Please switch to |xtrabackup|.
+   The *innobackupex* program is deprecated. Please switch to *xtrabackup*.
 
 The Backup Cycle - Full Backups
 ================================================================================

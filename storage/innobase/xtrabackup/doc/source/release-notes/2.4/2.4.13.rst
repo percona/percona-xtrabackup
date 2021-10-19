@@ -1,9 +1,9 @@
 ================================================================================
-|Percona XtraBackup| |release|
+*Percona XtraBackup* 2.4.13
 ================================================================================
 
-Percona is glad to announce the release of |Percona XtraBackup| |release| on
-|date|. Downloads are available from our `download site
+Percona is glad to announce the release of *Percona XtraBackup* 2.4.13 on
+January 18, 2019. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.13/>`_ and
 from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
@@ -12,9 +12,9 @@ All Percona software is open-source and free.
 Improvements and New Features
 ================================================================================
 
-- :jirabug:`PXB-1548`: |Percona Xtrabackup| enables updating the
+- :jirabug:`PXB-1548`: Percona Xtrabackup enables updating the
   ib_buffer_pool file with the latest pages present in the buffer pool
-  by setting the :option:`xtrabackup --dump-innodb-buffer-pool` option to
+  by setting the `xtrabackup --dump-innodb-buffer-pool` option to
   `ON`. Thanks to Marcelo Altmann for contribution.
 
 Bus Fixed
@@ -25,7 +25,7 @@ Bus Fixed
 - ``xtrabackup`` could fail to backup encrypted tablespace when it was recently created or altered. Bug fixed :jirabug:`PXB-1648`.
 - When the ``--throttle`` option was used, the applied value was different from the one specified by the user (off by one error). Bug fixed :jirabug:`PXB-1668`.
 - It was not allowed for MTS (multi-threaded slaves)  without GTID to be backed up with ``--safe-slave-backup``. Bug fixed :jirabug:`PXB-1672`.
-- |Percona Xtrabackup| could crash when the ``ALTER TABLE … TRUNCATE PARTITION`` command was run during a backup without locking DDL. Bug fixed :jirabug:`PXB-1679`.
+- Percona Xtrabackup could crash when the ``ALTER TABLE … TRUNCATE PARTITION`` command was run during a backup without locking DDL. Bug fixed :jirabug:`PXB-1679`.
 - ``xbcrypt`` could display an assertion failure and generated core if the required parameters are missing. Bug fixed :jirabug:`PXB-1683`.
 - Using ``--lock-ddl-per-table`` caused the server to scan all records of partitioned tables which could lead to the "out of memory" error. Bugs fixed :jirabug:`PXB-1691` and :jirabug:`PXB-1698`.
 - `xtrabackup --prepare` could hang while performing insert buffer merge. Bug fixed :jirabug:`PXB-1704`.
@@ -33,5 +33,3 @@ Bus Fixed
 
 Other bugs fixed: :jirabug:`PXB-1570`, :jirabug:`PXB-1609`, :jirabug:`PXB-1632`
 
-.. |release| replace:: 2.4.13
-.. |date| replace:: January 18, 2019

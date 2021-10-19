@@ -1,8 +1,8 @@
 ============================
- |Percona XtraBackup| 2.4.4
+ *Percona XtraBackup* 2.4.4
 ============================
 
-Percona is glad to announce the release of |Percona XtraBackup| 2.4.4
+Percona is glad to announce the release of *Percona XtraBackup* 2.4.4
 on July 25th 2016. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt
 <apt_repo>` and :ref:`yum <yum_repo>` repositories.
@@ -13,27 +13,27 @@ series.
 New features
 ------------
 
- |Percona XtraBackup| has been rebased on |MySQL| 5.7.13.
+ *Percona XtraBackup* has been rebased on *MySQL* 5.7.13.
 
 Bugs Fixed
 ----------
 
- |Percona XtraBackup| reported the difference in the actual size of the system
+ *Percona XtraBackup* reported the difference in the actual size of the system
  tablespace and the size which was stored in the tablespace header. This check
  is now skipped for tablespaces with autoextend support. Bug fixed
  :jirabug:`PXB-462`.
 
- Because |Percona Server| 5.5 and |MySQL| 5.6 store the LSN offset for large
- log files at different places inside the redo log header, |Percona Xtrabackup|
+ Because *Percona Server for MySQL* 5.5 and *MySQL* 5.6 store the LSN offset for large
+ log files at different places inside the redo log header, Percona Xtrabackup
  was trying to guess which offset is better to use by trying to read from each
  one and compare the log block numbers and assert ``lsn_chosen == 1`` when both
  LSNs looked correct, but they were different. Fixed by improving the server
  detection. Bug fixed :jirabug:`PXB-473`.
 
- |Percona XtraBackup| didn't correctly detect when tables were both compressed
+ *Percona XtraBackup* didn't correctly detect when tables were both compressed
  and encrypted. Bug fixed :jirabug:`PXB-477`.
 
- |Percona XtraBackup| would crash if the keyring file was empty. Bug fixed
+ *Percona XtraBackup* would crash if the keyring file was empty. Bug fixed
  :jirabug:`PXB-479`.
 
  Backup couldn't be prepared when the size in cache didn't match the physical
@@ -43,9 +43,9 @@ Bugs Fixed
  :jirabug:`PXB-663`.
 
  Backup process would fail if the ``datadir`` specified on the command-line was
- not the same as one that is reported by the server. |Percona XtraBackup| now
- allows the ``datadir`` from :file:`my.cnf` override the one from ``SHOW
- VARIABLES``. |xtrabackup| will print a warning that they don't match, but
+ not the same as one that is reported by the server. *Percona XtraBackup* now
+ allows the ``datadir`` from `my.cnf` override the one from ``SHOW
+ VARIABLES``. *xtrabackup* will print a warning that they don't match, but
  continue. Bug fixed :jirabug:`PXB-741`.
 
  With upstream change of maximum page size from 16K to 64K, the size of
@@ -53,7 +53,7 @@ Bugs Fixed
  order to prepare the backup. While in fact there is no need to allocate such
  a large buffer for smaller pages. Bug fixed :jirabug:`PXB-753`.
 
- Backup process would fail on |MariaDB| Galera cluster operating in GTID mode
+ Backup process would fail on *MariaDB* Galera cluster operating in GTID mode
  if binary logs were in non-standard directory. Bug fixed :jirabug:`PXB-936`.
 
 Other bugs fixed: :jirabug:`PXB-755`, :jirabug:`PXB-756`, and :jirabug:`PXB-759`.

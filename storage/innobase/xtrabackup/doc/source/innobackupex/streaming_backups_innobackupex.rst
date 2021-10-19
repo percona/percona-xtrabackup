@@ -2,8 +2,8 @@
  Streaming and Compressing Backups
 ===================================
 
-Streaming mode, supported by |Percona XtraBackup|, sends backup to ``STDOUT`` in
-special ``tar`` or |xbstream| format instead of copying files to the backup
+Streaming mode, supported by *Percona XtraBackup*, sends backup to ``STDOUT`` in
+special ``tar`` or *xbstream* format instead of copying files to the backup
 directory.
 
 This allows you to use other programs to filter the output of the backup,
@@ -12,18 +12,18 @@ compression is achieved by piping the output to a compression utility. One of
 the benefits of streaming backups and using Unix pipes is that the backups can
 be automatically encrypted.
 
-To use the streaming feature, you must use the :option:`innobackupex --stream`,
+To use the streaming feature, you must use the `innobackupex --stream`,
 providing the format of the stream (``tar`` or ``xbstream`` ) and where to store
 the temporary files::
 
  $ innobackupex --stream=tar /tmp
 
-|innobackupex| uses |xbstream| to stream all of the data files to ``STDOUT``, in
+*innobackupex* uses *xbstream* to stream all of the data files to ``STDOUT``, in
 a special ``xbstream`` format. See :doc:`../xbstream/xbstream` for
 details. After it finishes streaming all of the data files to ``STDOUT``, it
 stops xtrabackup and streams the saved log file too.
 
-When compression is enabled, |xtrabackup| compresses all output data, except the
+When compression is enabled, *xtrabackup* compresses all output data, except the
 meta and non-InnoDB files which are not compressed, using the specified
 compression algorithm. The only currently supported algorithm is
 ``quicklz``. The resulting files have the qpress archive format, i.e. every
@@ -32,7 +32,7 @@ can be extracted and uncompressed by the `qpress file archiver
 <http://www.quicklz.com/>`_ which is available from :ref:`Percona Software
 repositories <installation>`.
 
-Using |xbstream| as a stream option, backups can be copied and compressed in
+Using *xbstream* as a stream option, backups can be copied and compressed in
 parallel which can significantly speed up the backup process. In case backups
 were both compressed and encrypted, they'll need to decrypted first in order to
 be uncompressed.
@@ -75,7 +75,7 @@ To send the tar archive to another host:
 
 .. warning::
 
-   To extract |Percona XtraBackup|'s archive you **must** use |tar| with ``-i`` option::
+   To extract *Percona XtraBackup*'s archive you **must** use tar with ``-i`` option::
 
    .. code-block:: bash
 

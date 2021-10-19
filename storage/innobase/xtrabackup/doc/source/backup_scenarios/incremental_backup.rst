@@ -4,47 +4,37 @@
 Incremental Backup
 ==================
 
-Both |xtrabackup| and |innobackupex| tools supports incremental backups,
-which means that they can copy only the data that has changed since the last
-backup.
+Both the xtrabackup tool and the innobackupex tool support incremental backups. An incremental backup backs up only data that has changed since the last backup.
 
-You can perform many incremental backups between each full backup, so you can
-set up a backup process such as a full backup once a week and an incremental
-backup every day, or full backups every day and incremental backups every hour.
+You can take multiple incremental backups between each full backup. For example, you can take a full backup once a week and an incremental backup every day, or a full backup every day and incremental backups each hour.
 
-Incremental backups work because each |InnoDB| page contains a log sequence
-number, or :term:`LSN`. The :term:`LSN` is the system version number for the
-entire database. Each page's :term:`LSN` shows how recently it was changed.
+Incremental backups work because each *InnoDB* page contains a log sequence
+number (`LSN`). The `LSN` is the system version number for the
+entire database. Each page's `LSN` shows how recently it was changed.
 
-An incremental backup copies each page whose :term:`LSN` is newer than the
-previous incremental or full backup's :term:`LSN`. There are two algorithms in
-use to find the set of such pages to be copied. The first one, available with
-all the server types and versions, is to check the page :term:`LSN` directly by
-reading all the data pages. The second one, available with |Percona Server|, is
-to enable the `changed page tracking
-<http://www.percona.com/doc/percona-server/5.6/management/changed_page_tracking.html>`_
+An incremental backup copies each page whose `LSN` is newer than the
+previous incremental or full backup's `LSN`. There are two algorithms in
+use to find the set of such pages to be copied. The first one, available with all the server types and versions, checks the page `LSN` directly by reading all the data pages. The second one, available with *Percona Server for MySQL*, enables the `changed page tracking
+<http://www.percona.com/doc/percona-server/5.7/management/changed_page_tracking.html>`_
 feature on the server, which will note the pages as they are being changed.
 This information will be then written out in a compact separate so-called
-bitmap file. The |xtrabackup| binary will use that file to read only the data
-pages it needs for the incremental backup, potentially saving many read
-requests. The latter algorithm is enabled by default if the |xtrabackup| binary
-finds the bitmap file. It is possible to specify
-:option:`xtrabackup --incremental-force-scan` to read all the pages even if the
+bitmap file. The xtrabackup binary uses that file to read only the data
+pages it needs for the incremental backup. This features potentially saves many read requests. The latter algorithm is enabled by default if the xtrabackup binary finds the bitmap file. It is possible to specify
+`xtrabackup --incremental-force-scan` to read all the pages even if the
 bitmap data is available.
 
 .. important::
 
-   Incremental backups do not actually compare the data files to the previous
-   backup's data files. For this reason, running an incremental backup after a
-   *partial backup* may lead to inconsistent data.
+   Incremental backups do not compare the data files to the previous
+   backup's data files. For this reason, running an incremental backup after a *partial backup* may lead to inconsistent data.
 
-   Incremental backups simply read the pages and compare their :term:`LSN` to
-   the last backup's :term:`LSN`. You still need a full backup to recover the
-   incremental changes, however; without a full backup to act as a base, the
+   Incremental backups read the pages and compare their `LSN` to
+   the last backup's `LSN`. You must have a full backup to recover the
+   incremental changes. Without a full backup to act as a base, the
    incremental backups are useless.
 
    You can use the `--incremental-lsn` option to perform an incremental
-   backup without even having the previous backup, if you know its :term:`LSN`.
+   backup without even having the previous backup, if you know its `LSN`.
 
    .. seealso:: :ref:`pxb.partial-backup`
 
@@ -52,16 +42,16 @@ Creating an Incremental Backup
 ==============================
 
 To make an incremental backup, begin with a full backup as usual. The
-|xtrabackup| binary writes a file called :file:`xtrabackup_checkpoints` into
+xtrabackup binary writes a file called `xtrabackup_checkpoints` into
 the backup's target directory. This file contains a line showing the
-``to_lsn``, which is the database's :term:`LSN` at the end of the backup.
+``to_lsn``, which is the database's `LSN` at the end of the backup.
 :ref:`Create the full backup <full_backup>` with a following command:
 
 .. code-block:: bash
 
   $ xtrabackup --backup --target-dir=/data/backups/base
 
-If you look at the :file:`xtrabackup_checkpoints` file, you should see similar
+If you look at the `xtrabackup_checkpoints` file, you should see similar
 content depending on your LSN nuber:
 
 .. code-block:: text
@@ -81,10 +71,10 @@ it. Use the following command:
   $ xtrabackup --backup --target-dir=/data/backups/inc1 \
   --incremental-basedir=/data/backups/base
 
-The :file:`/data/backups/inc1/` directory should now contain delta files, such
-as :file:`ibdata1.delta` and :file:`test/table1.ibd.delta`. These represent the
+The `/data/backups/inc1/` directory should now contain delta files, such
+as `ibdata1.delta` and `test/table1.ibd.delta`. These represent the
 changes since the ``LSN 1626007``. If you examine the
-:file:`xtrabackup_checkpoints` file in this directory, you should see similar
+`xtrabackup_checkpoints` file in this directory, you should see similar
 content to the following:
 
 .. code-block:: text
@@ -108,7 +98,7 @@ backup:
   $ xtrabackup --backup --target-dir=/data/backups/inc2 \
   --incremental-basedir=/data/backups/inc1
 
-This folder also contains the :file:`xtrabackup_checkpoints`:
+This folder also contains the `xtrabackup_checkpoints`:
 
 .. code-block:: text
 
@@ -130,25 +120,22 @@ This folder also contains the :file:`xtrabackup_checkpoints`:
 Preparing the Incremental Backups
 =================================
 
-The :option:`xtrabackup --prepare` step for incremental backups is not the same
+The `xtrabackup --prepare` step for incremental backups is not the same
 as for full backups. In full backups, two types of operations are performed to
 make the database consistent: committed transactions are replayed from the log
 file against the data files, and uncommitted transactions are rolled back. You
 must skip the rollback of uncommitted transactions when preparing an
 incremental backup, because transactions that were uncommitted at the time of
-your backup may be in progress, and it's likely that they will be committed in
-the next incremental backup. You should use the
-:option:`xtrabackup --apply-log-only` option to prevent the rollback phase.
+your backup may be in progress, and it's likely that they will be committed in the next incremental backup. You should use the
+`xtrabackup --apply-log-only` option to prevent the rollback phase.
 
 .. warning::
 
-  **If you do not use the** :option:`xtrabackup --apply-log-only` **option to
-  prevent the rollback phase, then your incremental backups will be useless**.
-  After transactions have been rolled back, further incremental backups cannot
-  be applied.
+  **If you do not use the** `xtrabackup --apply-log-only` **option to
+  prevent the rollback phase, then your incremental backup is useless**.
+  After the transactions have been rolled back, further incremental backups cannot be applied.
 
-Beginning with the full backup you created, you can prepare it, and then apply
-the incremental differences to it. Recall that you have the following backups:
+Beginning with the full backup you created, you can prepare it, and then apply the incremental differences to it. Recall that you have the following backups:
 
 .. code-block:: bash
 
@@ -156,7 +143,7 @@ the incremental differences to it. Recall that you have the following backups:
   /data/backups/inc1
   /data/backups/inc2
 
-To prepare the base backup, you need to run :option:`xtrabackup --prepare` as
+To prepare the base backup, you need to run `xtrabackup --prepare` as
 usual, but prevent the rollback phase:
 
 .. code-block:: bash
@@ -175,12 +162,8 @@ you saw previously.
 
 .. note::
 
-  This backup is actually safe to :ref:`restore <restoring_a_backup>` as-is
-  now, even though the rollback phase has been skipped. If you restore it and
-  start |MySQL|, |InnoDB| will detect that the rollback phase was not
-  performed, and it will do that in the background, as it usually does for a
-  crash recovery upon start. It will notify you that the database was not shut
-  down normally.
+  This backup is safe to :ref:`restore <restoring_a_backup>`, even though the operation skipped the rollback phase. If you restore it and start *MySQL*, *InnoDB* detects that the rollback phase was not
+  performed, and it will do that in the background. This operation is the same as a crash recovery upon start. In addition, MySQL notifies you that the database was not shut down normally.
 
 To apply the first incremental backup to the full backup, run the following
 command:
@@ -190,10 +173,10 @@ command:
   $ xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
   --incremental-dir=/data/backups/inc1
 
-This applies the delta files to the files in :file:`/data/backups/base`, which
+This applies the delta files to the files in `/data/backups/base`, which
 rolls them forward in time to the time of the incremental backup. It then
 applies the redo log as usual to the result. The final data is in
-:file:`/data/backups/base`, not in the incremental directory. You should see
+`/data/backups/base`, not in the incremental directory. You should see
 an output similar to:
 
 .. code-block:: bash
@@ -208,15 +191,15 @@ an output similar to:
   ...
   161011 12:45:56 completed OK!
 
-Again, the |LSN| should match what you saw from your earlier inspection of the
+Again, the LSN should match what you saw from your earlier inspection of the
 first incremental backup. If you restore the files from
-:file:`/data/backups/base`, you should see the state of the database as of the
+`/data/backups/base`, you should see the state of the database as of the
 first incremental backup.
 
 .. warning::
 
-   |PXB| does not support using the same incremental backup directory to
-   prepare two copies of backup. Do not run :option:`xtrabackup
+   Percona XtraBackup does not support using the same incremental backup directory to
+   prepare two copies of backup. Do not run `xtrabackup
    --prepare` with the same incremental backup directory (the value of
    `--incremental-dir`) more than once.
 
@@ -231,14 +214,12 @@ the point of the second incremental backup:
 
 .. note::
 
- :option:`xtrabackup --apply-log-only` should be used when merging all
+ `xtrabackup --apply-log-only` should be used when merging all
  incrementals except the last one. That's why the previous line doesn't contain
- the :option:`xtrabackup --apply-log-only` option. Even if the
- :option:`xtrabackup --apply-log-only` was used on the last step, backup would
+ the `xtrabackup --apply-log-only` option. Even if the
+ `xtrabackup --apply-log-only` was used on the last step, backup would
  still be consistent but in that case server would perform the rollback phase.
 
 Once prepared, incremental backups are the same as the :ref:`full backups
 <full_backup>` and they can be :ref:`restored <restoring_a_backup>` in the same
 way.
-
-.. |PXB| replace:: PXB
