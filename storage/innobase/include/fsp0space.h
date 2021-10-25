@@ -65,17 +65,6 @@ class Tablespace {
     shutdown();
     ut_ad(m_files.empty());
     ut_ad(m_space_id == SPACE_UNKNOWN);
-<<<<<<< HEAD
-=======
-    if (m_name != nullptr) {
-      ut::free(m_name);
-      m_name = nullptr;
-    }
-    if (m_path != nullptr) {
-      ut::free(m_path);
-      m_path = nullptr;
-    }
->>>>>>> mysql-8.0.27
   }
 
   files_t::iterator files_begin() { return m_files.begin(); }

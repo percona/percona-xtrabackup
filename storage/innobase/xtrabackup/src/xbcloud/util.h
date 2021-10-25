@@ -18,8 +18,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#ifndef __XBCLOUD_UTIL_H__
-#define __XBCLOUD_UTIL_H__
+#ifndef XBCLOUD_UTIL_H
+#define XBCLOUD_UTIL_H
 
 #include <algorithm>
 #include <iomanip>
@@ -127,4 +127,4 @@ std::string hex_encode(const T &s) {
 
 }  // namespace xbcloud
 
-#endif  // __XBCLOUD_UTIL_H__
+#endif  // XBCLOUD_UTIL_H

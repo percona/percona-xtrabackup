@@ -212,14 +212,9 @@ bool recv_page_is_brand_new(buf_block_t *block);
                                 of first system tablespace page
 @param[in]  to_lsn    LSN to store recovery at
 @return error code or DB_SUCCESS */
-<<<<<<< HEAD
-dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
-                                            lsn_t to_lsn)
-    MY_ATTRIBUTE((warn_unused_result));
-=======
 [[nodiscard]] dberr_t recv_recovery_from_checkpoint_start(log_t &log,
-                                                          lsn_t flush_lsn);
->>>>>>> mysql-8.0.27
+                                                          lsn_t flush_lsn,
+                                                          lsn_t to_lsn);
 
 /** Complete the recovery from the latest checkpoint.
 @param[in,out]	log		redo log

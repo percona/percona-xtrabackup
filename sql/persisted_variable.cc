@@ -231,13 +231,8 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
 
   my_getopt_skip_unknown = true;
   if (my_handle_options(&temp_argc, &res, persist_options, nullptr, nullptr,
-<<<<<<< HEAD
                         true, false)) {
-    free_root(&alloc, MYF(0));
-=======
-                        true)) {
     alloc.Clear();
->>>>>>> mysql-8.0.27
     return 1;
   }
   my_getopt_skip_unknown = false;

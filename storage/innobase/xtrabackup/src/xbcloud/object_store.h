@@ -18,8 +18,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#ifndef __XBCLOUD_OBJECT_STORE__
-#define __XBCLOUD_OBJECT_STORE__
+#ifndef XBCLOUD_OBJECT_STORE
+#define XBCLOUD_OBJECT_STORE
 
 #include <functional>
 #include <string>
@@ -61,4 +61,4 @@ class Object_store {
 
 }  // namespace xbcloud
 
-#endif
+#endif  // XBCLOUD_OBJECT_STORE

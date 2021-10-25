@@ -327,7 +327,8 @@ static bool log_online_setup_bitmap_file_range(
   /* 2nd pass: get the file names in the file_seq_num order */
 
   bitmap_files->files = static_cast<log_online_bitmap_file_range_t::files_t *>(
-      ut_malloc_nokey(bitmap_files->count * sizeof(bitmap_files->files[0])));
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                         bitmap_files->count * sizeof(bitmap_files->files[0])));
   memset(bitmap_files->files, 0,
          bitmap_files->count * sizeof(bitmap_files->files[0]));
 
@@ -360,7 +361,7 @@ static bool log_online_setup_bitmap_file_range(
         if (UNIV_UNLIKELY(array_pos >= bitmap_files->count)) {
           msg("InnoDB: Error: inconsistent bitmap file "
               "directory\n");
-          ut_free(bitmap_files->files);
+          ut::free(bitmap_files->files);
           error = true;
           return;
         }
@@ -606,7 +607,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
     /* The 1st file does not have the starting LSN data */
     xb_msg_missing_lsn_data(bmp_start_lsn, bitmap_files.files[bmp_i].start_lsn);
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     return NULL;
   }
 
@@ -622,7 +623,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
     /* TODO: this is not the exact missing range */
     xb_msg_missing_lsn_data(bmp_start_lsn, bmp_end_lsn);
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     return NULL;
   }
 
@@ -630,7 +631,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   if (UNIV_UNLIKELY(!log_online_open_bitmap_file_read_only(
           bitmap_files.files[bmp_i].name, &bitmap_file))) {
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     return NULL;
   }
 
@@ -640,7 +641,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   if (UNIV_UNLIKELY(bitmap_file.size < MODIFIED_PAGE_BLOCK_SIZE)) {
     xb_msg_missing_lsn_data(bmp_start_lsn, bmp_end_lsn);
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -652,7 +653,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
         "\'%s\' corrupted\n",
         bitmap_file.name);
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -662,7 +663,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   if (UNIV_UNLIKELY(
           !log_online_diagnose_bitmap_eof(&bitmap_file, last_page_in_run))) {
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -670,7 +671,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   if (UNIV_UNLIKELY(current_page_end_lsn < bmp_start_lsn)) {
     xb_msg_missing_lsn_data(current_page_end_lsn, bmp_start_lsn);
     rbt_free(result);
-    ut_free(bitmap_files.files);
+    ut::free(bitmap_files.files);
     os_file_close(bitmap_file.file);
     return NULL;
   }
@@ -692,7 +693,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
       if (UNIV_UNLIKELY(!log_online_diagnose_bitmap_eof(&bitmap_file,
                                                         last_page_in_run))) {
         rbt_free(result);
-        ut_free(bitmap_files.files);
+        ut::free(bitmap_files.files);
         return NULL;
       }
 
@@ -702,7 +703,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
                         (bitmap_files.files[bmp_i].seq_num == 0))) {
         xb_msg_missing_lsn_data(current_page_end_lsn, bmp_end_lsn);
         rbt_free(result);
-        ut_free(bitmap_files.files);
+        ut::free(bitmap_files.files);
         return NULL;
       }
 
@@ -712,14 +713,14 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
         xb_msg_missing_lsn_data(bitmap_files.files[bmp_i - 1].start_lsn,
                                 bmp_end_lsn);
         rbt_free(result);
-        ut_free(bitmap_files.files);
+        ut::free(bitmap_files.files);
         return NULL;
       }
 
       if (UNIV_UNLIKELY(!log_online_open_bitmap_file_read_only(
               bitmap_files.files[bmp_i].name, &bitmap_file))) {
         rbt_free(result);
-        ut_free(bitmap_files.files);
+        ut::free(bitmap_files.files);
         return NULL;
       }
     }
@@ -727,7 +728,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
     if (UNIV_UNLIKELY(
             !log_online_read_bitmap_page(&bitmap_file, page, &last_page_ok))) {
       rbt_free(result);
-      ut_free(bitmap_files.files);
+      ut::free(bitmap_files.files);
       os_file_close(bitmap_file.file);
       return NULL;
     }
@@ -737,7 +738,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
           "\'%s\' corrupted.\n",
           bitmap_file.name);
       rbt_free(result);
-      ut_free(bitmap_files.files);
+      ut::free(bitmap_files.files);
       os_file_close(bitmap_file.file);
       return NULL;
     }
@@ -769,7 +770,7 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
 
   xb_a(current_page_end_lsn >= bmp_end_lsn);
 
-  ut_free(bitmap_files.files);
+  ut::free(bitmap_files.files);
   os_file_close(bitmap_file.file);
 
   return result;
@@ -837,8 +838,8 @@ xb_page_bitmap_range *xb_page_bitmap_range_init(
     ulint space_id)         /*!< in: space id */
 {
   byte search_page[MODIFIED_PAGE_BLOCK_SIZE];
-  xb_page_bitmap_range *result =
-      static_cast<xb_page_bitmap_range *>(ut_malloc_nokey(sizeof(*result)));
+  xb_page_bitmap_range *result = static_cast<xb_page_bitmap_range *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*result)));
 
   memset(result, 0, sizeof(*result));
   result->bitmap = bitmap;
@@ -919,5 +920,5 @@ void xb_page_bitmap_range_deinit(
     /*========================*/
     xb_page_bitmap_range *bitmap_range) /*! in/out: bitmap range */
 {
-  ut_free(bitmap_range);
+  ut::free(bitmap_range);
 }

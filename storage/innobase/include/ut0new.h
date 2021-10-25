@@ -2168,9 +2168,8 @@ using unordered_set =
 
 }  // namespace ut
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
-inline void ut_free_func(byte *buf) { ut_free(buf); }
+inline void ut_free_func(byte *buf) { ut::free(buf); }
 
 using ut_unique_ptr = std::unique_ptr<byte, std::function<void(byte *)>>;
 
@@ -2179,27 +2178,29 @@ inline ut_unique_ptr ut_make_unique_ptr_null() {
 }
 
 inline ut_unique_ptr ut_make_unique_ptr_nokey(const size_t size) {
-  return ut_unique_ptr(static_cast<byte *>(ut_malloc_nokey(size)),
-                       ut_free_func);
+  return ut_unique_ptr(
+      static_cast<byte *>(ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, size)),
+      ut_free_func);
 }
 
 inline ut_unique_ptr ut_make_unique_ptr(const size_t size,
                                         PSI_memory_key memory_key) {
-  return ut_unique_ptr(static_cast<byte *>(ut_malloc(size, memory_key)),
+  return ut_unique_ptr(static_cast<byte *>(ut::malloc_withkey(
+                           ut::make_psi_memory_key(memory_key), size)),
                        ut_free_func);
 }
 
 inline ut_unique_ptr ut_make_unique_ptr_zalloc(const size_t size,
                                                PSI_memory_key memory_key) {
-  return ut_unique_ptr(static_cast<byte *>(ut_zalloc(size, memory_key)),
+  return ut_unique_ptr(static_cast<byte *>(ut::zalloc_withkey(
+                           ut::make_psi_memory_key(memory_key), size)),
                        ut_free_func);
 }
 
 inline ut_unique_ptr ut_make_unique_ptr_zalloc_nokey(const size_t size) {
-  return ut_unique_ptr(static_cast<byte *>(ut_zalloc_nokey(size)),
-                       ut_free_func);
+  return ut_unique_ptr(
+      static_cast<byte *>(ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, size)),
+      ut_free_func);
 }
 #endif /* XTRABACKUP */
-=======
->>>>>>> mysql-8.0.27
 #endif /* ut0new_h */

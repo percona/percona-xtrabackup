@@ -180,7 +180,7 @@ static void datafile_close(datafile_cur_t *cursor) {
   if (cursor->fd != -1) {
     my_close(cursor->fd, MYF(0));
   }
-  ut_free(cursor->buf);
+  ut::free(cursor->buf);
 }
 
 static bool datafile_open(const char *file, datafile_cur_t *cursor,
@@ -219,7 +219,8 @@ static bool datafile_open(const char *file, datafile_cur_t *cursor,
 
   ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
   cursor->buf_size = opt_read_buffer_size;
-  cursor->buf = static_cast<byte *>(ut_malloc_nokey(cursor->buf_size));
+  cursor->buf = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, cursor->buf_size));
 
   return (true);
 }
@@ -583,8 +584,8 @@ static bool run_data_threads(const char *dir, F func, uint n,
   bool ret;
 
   ut_a(thread_description);
-  data_threads = (datadir_thread_ctxt_t *)(ut_malloc_nokey(
-      sizeof(datadir_thread_ctxt_t) * n));
+  data_threads = (datadir_thread_ctxt_t *)(ut::malloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY, sizeof(datadir_thread_ctxt_t) * n));
 
   mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
   count = n;
@@ -596,7 +597,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
     data_threads[i].count = &count;
     data_threads[i].count_mutex = &count_mutex;
     data_threads[i].queue = &queue;
-    os_thread_create(PFS_NOT_INSTRUMENTED, func, &data_threads[i]).start();
+    os_thread_create(PFS_NOT_INSTRUMENTED, 0, func, &data_threads[i]).start();
   }
 
   xb_process_datadir(
@@ -630,7 +631,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
     }
   }
 
-  ut_free(data_threads);
+  ut::free(data_threads);
 
   return (ret);
 }

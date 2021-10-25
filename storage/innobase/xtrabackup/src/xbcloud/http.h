@@ -18,8 +18,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#ifndef __XBCLOUD_HTTP_H__
-#define __XBCLOUD_HTTP_H__
+#ifndef XBCLOUD_HTTP_H
+#define XBCLOUD_HTTP_H
 
 #include <curl/curl.h>
 #include <ev.h>
@@ -400,4 +400,4 @@ class Http_client {
 
 }  // namespace xbcloud
 
-#endif  // __XBCLOUD_HTTP_H__
+#endif  // XBCLOUD_HTTP_H

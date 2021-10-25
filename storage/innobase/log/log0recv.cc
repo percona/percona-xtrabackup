@@ -966,13 +966,7 @@ static dberr_t recv_log_recover_pre_8_0_4(log_t &log,
 @param[in,out]	log		redo log
 @param[out]	max_field	LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-<<<<<<< HEAD
-MY_ATTRIBUTE((warn_unused_result))
-dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field) {
-=======
-[[nodiscard]] static dberr_t recv_find_max_checkpoint(log_t &log,
-                                                      ulint *max_field) {
->>>>>>> mysql-8.0.27
+[[nodiscard]] dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field) {
   bool found_checkpoint = false;
 
   *max_field = 0;
@@ -2336,12 +2330,7 @@ static byte *recv_parse_or_apply_log_rec_body(
 #ifndef UNIV_HOTBACKUP
       /* Reset in-mem encryption information for the tablespace here if this
       is "resetting encryprion info" log. */
-<<<<<<< HEAD
-      if (page_no == 0 && !fsp_is_system_or_temp_tablespace(space_id) &&
-          applying_redo) {
-=======
-      if (is_encryption && !recv_sys->is_cloned_db) {
->>>>>>> mysql-8.0.27
+      if (is_encryption && !recv_sys->is_cloned_db && applying_redo) {
         byte buf[Encryption::INFO_SIZE] = {0};
 
         if (memcmp(ptr + 4, buf, Encryption::INFO_SIZE - 4) == 0) {

@@ -3181,17 +3181,11 @@ loop:
   if (drop == nullptr) {
     /* All tables dropped */
     if (thd != nullptr) {
-<<<<<<< HEAD
     /* All these kind of table should not be
     intrinsic ones, so this is no need later. */
     /* xtrabackup does not bind MySQL sessions to InnoDB ones */
 #ifndef XTRABACKUP
-      UT_DELETE(thd_to_innodb_session(thd));
-=======
-      /* All these kind of table should not be
-      intrinsic ones, so this is no need later. */
       ut::delete_(thd_to_innodb_session(thd));
->>>>>>> mysql-8.0.27
       thd_to_innodb_session(thd) = nullptr;
 #endif
     }

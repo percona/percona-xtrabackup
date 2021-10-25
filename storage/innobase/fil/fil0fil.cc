@@ -521,11 +521,7 @@ class Tablespace_dirs {
 
   /** Discover tablespaces by reading the header from .ibd files.
   @return DB_SUCCESS if all goes well */
-<<<<<<< HEAD
-  dberr_t scan(bool populate_fil_cache) MY_ATTRIBUTE((warn_unused_result));
-=======
-  [[nodiscard]] dberr_t scan();
->>>>>>> mysql-8.0.27
+  [[nodiscard]] dberr_t scan(bool populate_fil_cache);
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -4768,9 +4764,6 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
     buf_LRU_flush_or_remove_pages(space_id, buf_remove, nullptr);
   }
 
-<<<<<<< HEAD
-#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
-=======
   /* Ensure that we write redo log for the operation also within the Clone
   notifier block. This is needed because we don't have any mechanism today
   to avoid checkpoint crossing the redo log before the actual operation
@@ -4786,8 +4779,7 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
     return DB_ERROR;
     /* purecov: end */
   }
-#endif /* !UNIV_HOTBACKUP */
->>>>>>> mysql-8.0.27
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
   /* If it is a delete then also delete any generated files, otherwise
   when we drop the database the remove directory will fail. */
@@ -10238,17 +10230,6 @@ static void fil_tablespace_encryption_init(const fil_space_t *space) {
       ib::error(ER_IB_MSG_343) << "Can't set encryption information"
                                << " for tablespace" << space->name << "!";
     }
-<<<<<<< HEAD
-=======
-
-    ut::free(key.iv);
-    ut::free(key.ptr);
-
-    key.iv = nullptr;
-    key.ptr = nullptr;
-
-    key.space_id = std::numeric_limits<space_id_t>::max();
->>>>>>> mysql-8.0.27
   }
 }
 
@@ -10872,16 +10853,18 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
                                    FIL_IBD_FILE_INITIAL_SIZE);
 
       if (ret != DB_SUCCESS) {
-        ib::fatal() << "Could not create the tablespace : " << abs_file_path
-                    << " with space Id : " << page_id.space();
+        ib::fatal(UT_LOCATION_HERE)
+            << "Could not create the tablespace : " << abs_file_path
+            << " with space Id : " << page_id.space();
       }
 
       bool success = fil_system->insert(page_id.space(), abs_file_path);
 
       if (!success) {
-        ib::fatal() << "Could not insert the tablespace : " << abs_file_path
-                    << " with space Id : " << page_id.space() << " to "
-                    << "the list of known tablespaces";
+        ib::fatal(UT_LOCATION_HERE)
+            << "Could not insert the tablespace : " << abs_file_path
+            << " with space Id : " << page_id.space() << " to "
+            << "the list of known tablespaces";
       }
     }
   }
@@ -11068,9 +11051,10 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
     success = fil_system->insert(page_id.space(), to_name);
 
     if (!success) {
-      ib::fatal() << "Could not insert the tablespace : " << to_name
-                  << " with space Id : " << page_id.space() << " to "
-                  << "the list of known tablespaces";
+      ib::fatal(UT_LOCATION_HERE)
+          << "Could not insert the tablespace : " << to_name
+          << " with space Id : " << page_id.space() << " to "
+          << "the list of known tablespaces";
     }
   }
 
@@ -11671,19 +11655,6 @@ static bool fil_op_replay_rename(const page_id_t &page_id,
       }
       return (err == DB_SUCCESS);
     }
-<<<<<<< HEAD
-
-    if (err == DB_WRONG_FILE_NAME) {
-      df.close();
-      os_file_delete(innodb_data_file_key, df.filepath());
-      bool success = fil_system->erase_path(df.space_id());
-      ut_a(success);
-    } else {
-      df.close();
-      return (err == DB_SUCCESS);
-    }
-=======
->>>>>>> mysql-8.0.27
   }
 
   auto path_sep_pos = name.find_last_of(Fil_path::SEPARATOR);
@@ -11855,6 +11826,8 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
     return (err);
   }
 
+  os_offset_t node_size = os_file_get_size(file.handle());
+
   lsn_t flush_lsn;
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
@@ -11871,7 +11844,6 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
     return (DB_TABLESPACE_EXISTS);
   }
 
-  os_offset_t node_size = os_file_get_size(file.handle());
   bool is_tmp = FSP_FLAGS_GET_TEMPORARY(file.flags());
   os_offset_t n_pages;
 
@@ -12633,20 +12605,7 @@ fil_node_t *fil_space_t::get_file_node(page_no_t *page_no) noexcept {
   } else if (!files.empty()) {
     fil_node_t &f = files.front();
 
-<<<<<<< HEAD
     return &f;
-=======
-    if ((fsp_is_ibd_tablespace(id) && f.size == 0) || f.size > *page_no) {
-      /* We do not know the size of a single-table tablespace
-      before we open the file */
-      return &f;
-    }
-    /* The page is outside the current bounds of the file. We should not assert
-    here as we could be loading pages in buffer pool from dump file having pages
-    from dropped tablespaces. Specifically, for undo tablespace it is possible
-    to re-use the dropped space ID and the page could be out of bound. We need
-    to ignore such cases. */
->>>>>>> mysql-8.0.27
   }
 
   return nullptr;

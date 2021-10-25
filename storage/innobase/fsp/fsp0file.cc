@@ -645,24 +645,16 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
   /* For encrypted tablespace, check the encryption info in the
   first page can be decrypt by master key, otherwise, this table
   can't be open. And for importing, we skip checking it. */
-<<<<<<< HEAD
   if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !for_import &&
       (srv_backup_mode || !use_dumped_tablespace_keys)) {
     if (m_encryption_key == nullptr) {
-      m_encryption_key =
-          static_cast<byte *>(ut_zalloc_nokey(Encryption::KEY_LEN));
+      m_encryption_key = static_cast<byte *>(
+          ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
     }
     if (m_encryption_iv == nullptr) {
-      m_encryption_iv =
-          static_cast<byte *>(ut_zalloc_nokey(Encryption::KEY_LEN));
+      m_encryption_iv = static_cast<byte *>(
+          ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
     }
-=======
-  if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !for_import) {
-    m_encryption_key = static_cast<byte *>(
-        ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
-    m_encryption_iv = static_cast<byte *>(
-        ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
->>>>>>> mysql-8.0.27
 #ifdef UNIV_ENCRYPT_DEBUG
     fprintf(stderr, "Got from file %u:", m_space_id);
 #endif
@@ -674,7 +666,6 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
           << " can't be decrypted, please confirm that"
              " keyring is loaded.";
 
-<<<<<<< HEAD
       bool found = false;
 
       if (srv_backup_mode) {
@@ -694,8 +685,8 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       if (!found) {
         m_is_valid = false;
         free_first_page();
-        ut_free(m_encryption_key);
-        ut_free(m_encryption_iv);
+        ut::free(m_encryption_key);
+        ut::free(m_encryption_iv);
         m_encryption_key = nullptr;
         m_encryption_iv = nullptr;
         ib::info() << "Failed to decrypt table " << m_filepath << " with space"
@@ -705,15 +696,6 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
         invalid_encrypted_tablespace_ids.push_back(m_space_id);
         return (DB_INVALID_ENCRYPTION_META);
       }
-=======
-      m_is_valid = false;
-      free_first_page();
-      ut::free(m_encryption_key);
-      ut::free(m_encryption_iv);
-      m_encryption_key = nullptr;
-      m_encryption_iv = nullptr;
-      return (DB_INVALID_ENCRYPTION_META);
->>>>>>> mysql-8.0.27
     } else {
 #ifdef UNIV_DEBUG
       ib::info(ER_IB_MSG_402) << "Read encryption metadata from " << m_filepath
