@@ -54,6 +54,7 @@ datasink_t datasink_local = {&local_init,         &local_open,  &local_write,
   @return true if punch hole is supported
 */
 static void is_fallocate_punch_hole_supported(ds_ctxt_t *ctxt) {
+#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
   char fullpath[FN_REFLEN];
   File fd;
   int ret;
@@ -71,6 +72,9 @@ static void is_fallocate_punch_hole_supported(ds_ctxt_t *ctxt) {
     my_close(fd, MYF(MY_WME));
     my_delete(fullpath, MYF(MY_WME));
   }
+#else
+  ctxt->fs_support_punch_hole = false;
+#endif
 }
 
 static ds_ctxt_t *local_init(const char *root) {
@@ -155,7 +159,7 @@ static int local_write(ds_file_t *file, const void *buf, size_t len) {
 static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               size_t sparse_map_size,
                               const ds_sparse_chunk_t *sparse_map,
-                              bool punch_hole_supported) {
+                              [[maybe_unused]] bool punch_hole_supported) {
   auto local_file = ((ds_local_file_t *)file->ptr);
   File fd = local_file->fd;
   ulonglong seek = 0;
@@ -176,10 +180,12 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
       return 1;
     }
 
+#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
     if (punch_hole_supported) {
       fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, seek,
                 sparse_map[i].skip);
     }
+#endif
 
     ptr += sparse_map[i].len;
   }
