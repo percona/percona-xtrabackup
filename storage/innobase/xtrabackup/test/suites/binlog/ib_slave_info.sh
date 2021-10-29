@@ -2,6 +2,7 @@
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 relay_log_recovery=on
+skip-slave-start
 "
 
 master_id=1
@@ -59,11 +60,16 @@ function test_slave_info() {
 # Adding initial rows
 multi_row_insert incremental_sample.test \({1..100},100\)
 
-( MY="${MYSQL} ${MYSQL_ARGS}"
-  for i in {101..10000} ; do
-    $MY -e "INSERT INTO incremental_sample.test (a, number) VALUES ($1, $1)"
-    sleep 1
-  done ) &
+function add_rows_in_background()
+{
+  MY="${MYSQL} ${MYSQL_ARGS}"
+    for i in {101..10000} ; do
+      $MY -e "INSERT INTO incremental_sample.test (a, number) VALUES ($i, $i)"
+      sleep 1
+    done
+}
+add_rows_in_background &
+pid=$!
 
 switch_server $slave_id
 
@@ -74,7 +80,7 @@ run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --slave-info --no-lock \
   --target-dir=$topdir/backup
 
 vlog "Full backup of the slave server"
-xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup --slave-info 2>&1 | tee $topdir/pxb.log
+xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup --slave-info --safe-slave-backup 2>&1 | tee $topdir/pxb.log
 
 grep_general_log > $topdir/log1
 
@@ -108,8 +114,8 @@ mysql -e "TRUNCATE TABLE mysql.general_log;"
 mkdir $topdir/xbstream_backup
 
 vlog "Full backup of the slave server to a xbstream stream"
-xtrabackup --backup --lock-ddl=false --slave-info --stream=xbstream \
-    | xbstream -xv -C $topdir/xbstream_backup
+xtrabackup --backup --lock-ddl=false --slave-info --safe-slave-backup \
+--stream=xbstream | xbstream -xv -C $topdir/xbstream_backup
 
 cat $topdir/xbstream_backup/xtrabackup_slave_info
 vlog "Verifying that xtrabackup_slave_info is not corrupted"
@@ -135,15 +141,22 @@ fi
 
 rm -rf $topdir/backup
 
+# Setup a new slave and let it catchup with master data prior to GTID
+start_server_with_id $slave2_id
+setup_slave $slave2_id $master_id
+sync_slave_with_master $slave2_id $master_id
 stop_server_with_id $master_id
+stop_server_with_id $slave2_id
+
 MYSQLD_EXTRA_MY_CNF_OPTS="
 gtid_mode=on
 enforce_gtid_consistency=on
 relay_log_recovery=on
+skip-slave-start
 "
 start_server_with_id $master_id
-
 start_server_with_id $slave2_id
+vlog "Setup Slave GTID"
 setup_slave GTID $slave2_id $master_id
 
 mysql -e "SET GLOBAL general_log=1; SET GLOBAL log_output='TABLE';"
@@ -184,3 +197,8 @@ xtrabackup --backup --lock-ddl=false --slave-info --target-dir=$topdir/backup
 
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
+
+if kill -0 ${pid} >/dev/null 2>&1
+then
+  kill -SIGKILL ${pid} >/dev/null 2>&1 || true
+fi
