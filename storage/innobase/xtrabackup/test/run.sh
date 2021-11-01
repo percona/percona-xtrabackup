@@ -814,7 +814,7 @@ while getopts "fghD?:t:s:d:c:j:T:x:X:i:r:" options; do
                 suites="${suites} $OPTARG"
                 ;;
             d ) export MYSQL_BASEDIR="$OPTARG";;
-            D ) MYSQL_DEBUG_MODE=on ;;
+            D ) export MYSQL_DEBUG_MODE=on ;;
             c ) echo "Warning: -c does not have any effect and is only \
 recognized for compatibility";;
             j )
