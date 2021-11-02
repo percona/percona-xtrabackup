@@ -1636,6 +1636,18 @@ static inline bool check_encryption(page_no_t page_no, space_id_t space_id,
   information as of today. Ideally we should have a separate redo type. */
   if (offset == encryption_offset) {
     auto len = mach_read_from_2(start + 2);
+
+    /* With Percona Server, Tables created with ENCRYPTION='N' have
+    crypt_data (CRYPT_SCHEME_UNENCRYPTED) in Page 0 with type KEY_MAGIC_PS_V3
+    and size KERYING_ENCRYPTION_INFO_MAX_SIZE rather than INFO_SIZE */
+    if (memcmp(start + 2 + 2, Encryption::KEY_MAGIC_PS_V3,
+               Encryption::MAGIC_SIZE) == 0) {
+      ut_ad(len == Encryption::KERYING_ENCRYPTION_INFO_MAX_SIZE ||
+            len == Encryption::KERYING_ENCRYPTION_INFO_MAX_SIZE_V1 ||
+            len == Encryption::KERYING_ENCRYPTION_INFO_MAX_SIZE_V2);
+      return false;
+    }
+
     ut_ad(len == Encryption::INFO_SIZE);
 
     if (len != Encryption::INFO_SIZE) {

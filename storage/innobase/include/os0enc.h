@@ -152,6 +152,54 @@ class Encryption {
   /** UUID of server instance, it's needed for composing master key name */
   static constexpr size_t SERVER_UUID_LEN = 36;
 
+  /** BEGIN PS encryption specify */
+  static constexpr byte ENCRYPTION_KEYRING_VALIDATION_TAG[] = {
+      'E', 'N', 'C', '_', 'V', 'A', 'L', '_',
+      'T', 'A', 'G', '_', 'V', '1', '_', '1'};
+
+  static constexpr size_t ENCRYPTION_KEYRING_VALIDATION_TAG_SIZE =
+      MY_AES_BLOCK_SIZE;
+  static_assert(
+      sizeof(ENCRYPTION_KEYRING_VALIDATION_TAG) == MY_AES_BLOCK_SIZE,
+      "Size of ENCRYPTION_KEYRING_VALIDATION_TAG must be equal to size "
+      "of the output of AES crypto, i.e. MY_AES_BLOCK_SIZE");
+
+  static constexpr uint KERYING_ENCRYPTION_INFO_MAX_SIZE =
+      MAGIC_SIZE + 1                             // type
+      + 4                                        // min_key_version
+      + 4                                        // max_key_version
+      + 4                                        // key_id
+      + 1                                        // encryption
+      + CRYPT_SCHEME_1_IV_LEN                    // iv (16 bytes)
+      + 1                                        // encryption rotation type
+      + KEY_LEN                                  // tablespace key
+      + SERVER_UUID_HEX_LEN                      // server's UUID written in hex
+      + ENCRYPTION_KEYRING_VALIDATION_TAG_SIZE;  // validation tag
+
+  static constexpr uint KERYING_ENCRYPTION_INFO_MAX_SIZE_V2 =
+      MAGIC_SIZE + 1           // type
+      + 4                      // min_key_version
+      + 4                      // key_id
+      + 1                      // encryption
+      + CRYPT_SCHEME_1_IV_LEN  // iv (16 bytes)
+      + 1                      // encryption rotation type
+      + KEY_LEN                // tablespace key
+      + SERVER_UUID_LEN;       // server's UUID
+
+  static constexpr uint KERYING_ENCRYPTION_INFO_MAX_SIZE_V1 =
+      MAGIC_SIZE + 2           // length of iv
+      + 4                      // space id
+      + 2                      // offset
+      + 1                      // type
+      + 4                      // min_key_version
+      + 4                      // key_id
+      + 1                      // encryption
+      + CRYPT_SCHEME_1_IV_LEN  // iv (16 bytes)
+      + 4                      // encryption rotation type
+      + KEY_LEN                // tablespace key
+      + KEY_LEN;               // tablespace iv
+  /** END - PS encryption specify */
+
   /** Encryption information total size: magic number + master_key_id +
   key + iv + server_uuid + checksum */
   static constexpr size_t INFO_SIZE =
