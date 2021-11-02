@@ -771,6 +771,11 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   /* Add system columns to make adding index work */
   dict_table_add_system_columns(table, heap);
 
+  /* add instant column default value */
+  if (table->has_instant_cols()) {
+    dd_fill_instant_columns(*dd_table, table);
+  }
+
   /* It appears that index list for InnoDB table always starts with
   primary key */
   ut_ad(dd_table->indexes().size() > 0);
@@ -3568,8 +3573,12 @@ inline int dd_fill_dict_index(const dd::Table &dd_table, const TABLE *m_form,
 /** Read the metadata of default values for all columns added instantly
 @param[in]	dd_table	dd::Table
 @param[in,out]	table		InnoDB table object */
+#ifdef XTRABACKUP
+void dd_fill_instant_columns(const dd::Table &dd_table,
+#else
 static void dd_fill_instant_columns(const dd::Table &dd_table,
-                                    dict_table_t *table) {
+#endif /*XTRABACKUP */
+                             dict_table_t *table) {
   ut_ad(table->has_instant_cols());
   ut_ad(dd_table_has_instant_cols(dd_table));
 

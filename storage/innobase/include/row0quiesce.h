@@ -73,4 +73,9 @@ dberr_t row_quiesce_set_state(
 @param[in,out] trx Transaction/session */
 void row_quiesce_table_complete(dict_table_t *table, trx_t *trx);
 
+#ifdef XTRABACKUP
+MY_ATTRIBUTE((warn_unused_result))
+dberr_t row_quiesce_write_default_value(const dict_col_t *col, FILE *file);
+#endif
+
 #endif /* row0quiesce_h */

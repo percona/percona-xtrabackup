@@ -38,6 +38,12 @@ extern bool load_backup_my_cnf(my_option *options, char *path);
   @return false in case of error, true otherwise
 */
 bool read_server_uuid();
+
+/* convert the version_str to version
+@param[in] version_str version string like 8.0.22.debug
+@return version_number like 80022 */
+unsigned long get_version_number(std::string version_str);
+
 }  // namespace utils
 }  // namespace xtrabackup
 #endif  // XTRABACKUP_UTILS_H
