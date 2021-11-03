@@ -187,7 +187,8 @@ err:
   if (crypt_file->dest_file) {
     ds_close(crypt_file->dest_file);
   }
-  my_free(file);
+  delete file;
+  delete crypt_file;
   return NULL;
 }
 

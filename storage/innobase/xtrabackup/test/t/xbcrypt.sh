@@ -18,6 +18,13 @@ run_cmd xbcrypt -i inc/decrypt_v1_test_file.txt \
     -o ${test_file}.xbcrypt \
     -a ${encrypt_algo} -k ${encrypt_key}
 
+vlog "check double encryption should fail"
+run_cmd_expect_failure xbcrypt -i inc/decrypt_v1_test_file.txt \
+    -o ${test_file}.xbcrypt \
+    -a ${encrypt_algo} -k ${encrypt_key}
+
+grep -qi "assert" $OUTFILE && die "Unexpected assertion instead of graceful exit on double encryption"
+
 vlog "Verifying output file..."
 ls -l ${test_file}.xbcrypt
 
