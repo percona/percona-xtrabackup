@@ -346,7 +346,8 @@ The same passphrase should be specified for the ``prepare`` command:
 
 .. code-block:: bash
 
-   $ xtrabackup --prepare --target-dir=/data/backup
+   $ xtrabackup --prepare --target-dir=/data/backup \
+   --transition-key=MySecretKey
 
 There is no ``keyring-vault`` or ``keyring-file`` here, because xtrabackup
 does not talk to the keyring in this case.
@@ -392,8 +393,8 @@ Backup
 
 .. code-block:: bash
 
-   $ xtrabackup --backup --target-dir=/data/backup \
-   --transition-key=MySecretKey
+   $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
+   --generate-transition-key
 
 Prepare
 --------------------------------------------------------------------------------
