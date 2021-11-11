@@ -598,8 +598,7 @@ class Tablespace_dirs {
   @param[in]  space_id  Tablespace ID to insert
   @param[in]  filename  file name to insert
   @return true if successful */
-  bool insert(space_id_t space_id, const std::string &filename)
-      MY_ATTRIBUTE((warn_unused_result)) {
+  [[nodiscard]] bool insert(space_id_t space_id, const std::string &filename) {
     Fil_path file{filename};
 
     for (auto &dir : m_dirs) {
@@ -1175,8 +1174,8 @@ class Fil_shard {
   @param[in]  include_log Include redo log space, if true
   @param[in]  f   Callback
   @return any error returned by the callback function. */
-  dberr_t iterate_spaces(bool include_log, Fil_space_iterator::Function &f)
-      MY_ATTRIBUTE((warn_unused_result));
+  [[nodiscard]] dberr_t iterate_spaces(bool include_log,
+                                       Fil_space_iterator::Function &f);
 
   /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
   returning the nodes via callback function cbk.
@@ -1638,8 +1637,8 @@ class Fil_system {
   @param[in]  include_log Include redo log space, if true
   @param[in]  f   Callback
   @return any error returned by the callback function. */
-  dberr_t iterate_spaces(bool include_log, Fil_space_iterator::Function &f)
-      MY_ATTRIBUTE((warn_unused_result));
+  [[nodiscard]] dberr_t iterate_spaces(bool include_log,
+                                       Fil_space_iterator::Function &f);
 
   /** Iterate through all persistent tablespace files
   (FIL_TYPE_TABLESPACE) returning the nodes via callback function cbk.
@@ -1741,8 +1740,7 @@ class Fil_system {
   @param[in]  space_id  Tablespace ID to insert
   @param[in]  filename  file name to insert
   @return true if successful */
-  bool insert(space_id_t space_id, const std::string &filename)
-      MY_ATTRIBUTE((warn_unused_result)) {
+  [[nodiscard]] bool insert(space_id_t space_id, const std::string &filename) {
     return (m_dirs.insert(space_id, filename));
   }
 

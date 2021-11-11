@@ -6080,8 +6080,7 @@ static bool xb_export_cfg_write_index_fields(
 /*********************************************************************/ /**
  Write the meta data config file index information.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_one_index(
+[[nodiscard]] static bool xb_export_cfg_write_one_index(
     /*======================*/
     const dict_index_t *index, /*!< in: write metadata for this
                                index */
@@ -6145,8 +6144,7 @@ xb_export_cfg_write_one_index(
 /*********************************************************************/ /**
  Write the meta data config file index information.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_indexes(
+[[nodiscard]] static bool xb_export_cfg_write_indexes(
     /*======================*/
     const dict_table_t *table, /*!< in: write the meta data for
                                this table */
@@ -6196,8 +6194,7 @@ xb_export_cfg_write_indexes(
  dict_col_t structure, along with the column name. All fields are serialized
  as ib_uint32_t.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_table(
+[[nodiscard]] static bool xb_export_cfg_write_table(
     /*====================*/
     const dict_table_t *table, /*!< in: write the meta data for
                                this table */
@@ -6270,8 +6267,7 @@ xb_export_cfg_write_table(
 /*********************************************************************/ /**
  Write the meta data config file header.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_header(
+[[nodiscard]] static bool xb_export_cfg_write_header(
     /*=====================*/
     const dict_table_t *table, /*!< in: write the meta data for
                                this table */
@@ -6428,8 +6424,8 @@ static bool xb_export_cfg_write(
 @param[in]	table		write the data for this table
 @param[in]	file		file to write to
 @return DB_SUCCESS or error code. */
-static __attribute__((nonnull, warn_unused_result)) dberr_t
-xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
+[[nodiscard]] static dberr_t xb_export_write_transfer_key(
+    const dict_table_t *table, FILE *file) {
   byte key_size[sizeof(ib_uint32_t)];
   byte row[Encryption::KEY_LEN * 3];
   byte *ptr = row;
@@ -6507,8 +6503,7 @@ xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
 /** Write the encryption data after quiesce.
 @param[in]	table		write the data for this table
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result)) dberr_t xb_export_cfp_write(
-    dict_table_t *table) {
+[[nodiscard]] static dberr_t xb_export_cfp_write(dict_table_t *table) {
   dberr_t err;
   char name[OS_FILE_MAX_PATH];
 

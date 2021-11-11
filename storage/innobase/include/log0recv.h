@@ -709,8 +709,7 @@ bool log_block_checksum_is_ok(const byte *block);
 @param[in,out]  log   redo log
 @param[out] max_field LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-MY_ATTRIBUTE((warn_unused_result))
-dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field);
+[[nodiscard]] dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field);
 
 /** Reads a specified log segment to a buffer.
 @param[in,out]  log   redo log

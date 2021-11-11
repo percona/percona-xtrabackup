@@ -72,9 +72,11 @@ void row_quiesce_table_start(dict_table_t *table, trx_t *trx);
 @param[in,out] trx Transaction/session */
 void row_quiesce_table_complete(dict_table_t *table, trx_t *trx);
 
-#ifdef XTRABACKUP
-MY_ATTRIBUTE((warn_unused_result))
-dberr_t row_quiesce_write_default_value(const dict_col_t *col, FILE *file);
+[[nodiscard]]
+#ifndef XTRABACKUP
+static
 #endif
+    dberr_t
+    row_quiesce_write_default_value(const dict_col_t *col, FILE *file);
 
 #endif /* row0quiesce_h */

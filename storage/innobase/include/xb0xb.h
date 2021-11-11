@@ -35,8 +35,7 @@ extern std::vector<ulint> invalid_encrypted_tablespace_ids;
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
 @param[out]	key		fetched tablespace iv */
-bool xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv)
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] bool xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
 
 /** Save tablespace key for later use.
 @param[in]  space_id    tablespace id
@@ -48,8 +47,7 @@ void xb_insert_tablespace_key(ulint space_id, const byte *key, const byte *iv);
 type for the tablespace.
 @param[in]	space		tablespace
 @return DB_SUCCESS or error code */
-dberr_t xb_set_encryption(fil_space_t *space)
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] dberr_t xb_set_encryption(fil_space_t *space);
 
 /** Add file to tablespace map.
 @param[in]	file_name	file name
