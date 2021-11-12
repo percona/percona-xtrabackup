@@ -52,7 +52,7 @@ static inline ib_uint64_t ut_uint64_align_down(ib_uint64_t n, ulint align_no);
 @param[in]	n		number to be rounded
 @param[in]	align_no	align by this number
 @return rounded value */
-static inline ib_uint64_t ut_uint64_align_up(ib_uint64_t n, ulint align_no);
+static inline uint64_t ut_uint64_align_up(uint64_t n, ulint align_no);
 
 /** The following function rounds up a pointer to the nearest aligned address.
 @param[in]	ptr		pointer

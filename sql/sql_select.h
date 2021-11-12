@@ -45,6 +45,7 @@
 #include "sql/sql_const.h"
 #include "sql/sql_opt_exec_shared.h"  // join_type
 
+class Func_ptr;
 class Item;
 class Item_func;
 class JOIN_TAB;
@@ -64,8 +65,10 @@ struct ORDER;
 struct SJ_TMP_TABLE_TAB;
 struct TABLE;
 struct TABLE_LIST;
+class Window;
 
 typedef ulonglong nested_join_map;
+typedef Mem_root_array<Func_ptr> Func_ptr_array;
 
 class Sql_cmd_select : public Sql_cmd_dml {
  public:
@@ -791,7 +794,7 @@ bool optimize_aggregated_query(THD *thd, Query_block *select,
 extern "C" int refpos_order_cmp(const void *arg, const void *a, const void *b);
 
 /// The name of store_key instances that represent constant items.
-extern const char *STORE_KEY_CONST_NAME;
+constexpr const char *STORE_KEY_CONST_NAME = "const";
 
 /// Check privileges for all columns referenced from join expression
 bool check_privileges_for_join(THD *thd, mem_root_deque<TABLE_LIST *> *tables);
@@ -806,9 +809,17 @@ class store_key {
  public:
   bool null_key{false}; /* true <=> the value of the key has a null part */
   enum store_key_result { STORE_KEY_OK, STORE_KEY_FATAL, STORE_KEY_CONV };
-  store_key(THD *thd, Field *field_arg, uchar *ptr, uchar *null, uint length);
+  store_key(THD *thd, Field *to_field_arg, uchar *ptr, uchar *null_ptr_arg,
+            uint length, Item *item_arg);
   virtual ~store_key() = default;
-  virtual const char *name() const = 0;
+  virtual const char *name() const {
+    // Compatible with legacy behavior.
+    if (item->type() == Item::FIELD_ITEM) {
+      return item->full_name();
+    } else {
+      return "func";
+    }
+  }
 
   /**
     @brief sets ignore truncation warnings mode and calls the real copy method
@@ -820,55 +831,25 @@ class store_key {
 
  protected:
   Field *to_field;  // Store data here
-
-  virtual enum store_key_result copy_inner() = 0;
-};
-
-class store_key_field final : public store_key {
-  Copy_field m_copy_field;
-  const char *m_field_name;
-
- public:
-  store_key_field(THD *thd, Field *to_field_arg, uchar *ptr,
-                  uchar *null_ptr_arg, uint length, Field *from_field,
-                  const char *name_arg);
-
-  const char *name() const override { return m_field_name; }
-
-  // Change the source field to be another field. Used only by
-  // CreateBKAIterator, when rewriting multi-equalities used in ref access.
-  void replace_from_field(Field *from_field);
-
- protected:
-  enum store_key_result copy_inner() override;
-};
-class store_key_item : public store_key {
- protected:
   Item *item;
 
- public:
-  store_key_item(THD *thd, Field *to_field_arg, uchar *ptr, uchar *null_ptr_arg,
-                 uint length, Item *item_arg);
-  const char *name() const override { return "func"; }
-
- protected:
-  enum store_key_result copy_inner() override;
+  virtual enum store_key_result copy_inner();
 };
 
 /*
   Class used for unique constraint implementation by subselect_hash_sj_engine.
-  It uses store_key_item implementation to do actual copying, but after
+  It uses store_key implementation to do actual copying, but after
   that, copy_inner calculates hash of each key part for unique constraint.
 */
 
-class store_key_hash_item final : public store_key_item {
+class store_key_hash_item final : public store_key {
   ulonglong *hash;
 
  public:
   store_key_hash_item(THD *thd, Field *to_field_arg, uchar *ptr,
                       uchar *null_ptr_arg, uint length, Item *item_arg,
                       ulonglong *hash_arg)
-      : store_key_item(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg),
+      : store_key(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg),
         hash(hash_arg) {}
   const char *name() const override { return "func"; }
 
@@ -929,8 +910,9 @@ uint actual_key_parts(const KEY *key_info);
 
 class ORDER_with_src;
 
-uint get_index_for_order(ORDER_with_src *order, QEP_TAB *tab, ha_rows limit,
-                         bool *need_sort, bool *reverse);
+uint get_index_for_order(ORDER_with_src *order, TABLE *table, ha_rows limit,
+                         QUICK_SELECT_I **quick, bool *need_sort,
+                         bool *reverse);
 int test_if_order_by_key(ORDER_with_src *order, TABLE *table, uint idx,
                          uint *used_key_parts, bool *skip_quick);
 bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
@@ -1031,6 +1013,12 @@ bool equality_determines_uniqueness(const Item_func_comparison *func,
  */
 bool equality_has_no_implicit_casts(const Item_func_comparison *func,
                                     const Item *item1, const Item *item2);
+
+bool CreateFramebufferTable(
+    THD *thd, const Temp_table_param &tmp_table_param,
+    const Query_block &query_block, const mem_root_deque<Item *> &source_fields,
+    const mem_root_deque<Item *> &window_output_fields,
+    Func_ptr_array *mapping_from_source_to_window_output, Window *window);
 
 /**
   Validates a query that uses the secondary engine

@@ -117,16 +117,15 @@ static ulint btr_search_fold_index_id(const index_id_t &id) {
 @param[in]	n_fields	number of complete fields
 @param[in]	n_bytes		number of bytes in an incomplete last field
 @return	number of complete or incomplete fields */
-inline MY_ATTRIBUTE((warn_unused_result)) ulint
-    btr_search_get_n_fields(ulint n_fields, ulint n_bytes) {
+[[nodiscard]] inline ulint btr_search_get_n_fields(ulint n_fields,
+                                                   ulint n_bytes) {
   return (n_fields + (n_bytes > 0 ? 1 : 0));
 }
 
 /** Determine the number of accessed key fields.
 @param[in]	cursor		b-tree cursor
 @return	number of complete or incomplete fields */
-inline MY_ATTRIBUTE((warn_unused_result)) ulint
-    btr_search_get_n_fields(const btr_cur_t *cursor) {
+[[nodiscard]] inline ulint btr_search_get_n_fields(const btr_cur_t *cursor) {
   return (btr_search_get_n_fields(cursor->n_fields, cursor->n_bytes));
 }
 
@@ -192,22 +191,24 @@ void btr_search_sys_create(ulint hash_size) {
 
   /* Step-1: Allocate latches (1 per part). */
   btr_search_latches = reinterpret_cast<rw_lock_t **>(
-      ut_malloc(sizeof(rw_lock_t *) * btr_ahi_parts, mem_key_ahi));
+      ut::malloc_withkey(ut::make_psi_memory_key(mem_key_ahi),
+                         sizeof(rw_lock_t *) * btr_ahi_parts));
 
   for (ulint i = 0; i < btr_ahi_parts; ++i) {
-    btr_search_latches[i] = reinterpret_cast<rw_lock_t *>(
-        ut_malloc(sizeof(rw_lock_t), mem_key_ahi));
+    btr_search_latches[i] = reinterpret_cast<rw_lock_t *>(ut::malloc_withkey(
+        ut::make_psi_memory_key(mem_key_ahi), sizeof(rw_lock_t)));
 
     rw_lock_create(btr_search_latch_key, btr_search_latches[i],
                    SYNC_SEARCH_SYS);
   }
 
   /* Step-2: Allocate hash tablees. */
-  btr_search_sys = reinterpret_cast<btr_search_sys_t *>(
-      ut_malloc(sizeof(btr_search_sys_t), mem_key_ahi));
+  btr_search_sys = reinterpret_cast<btr_search_sys_t *>(ut::malloc_withkey(
+      ut::make_psi_memory_key(mem_key_ahi), sizeof(btr_search_sys_t)));
 
   btr_search_sys->hash_tables = reinterpret_cast<hash_table_t **>(
-      ut_malloc(sizeof(hash_table_t *) * btr_ahi_parts, mem_key_ahi));
+      ut::malloc_withkey(ut::make_psi_memory_key(mem_key_ahi),
+                         sizeof(hash_table_t *) * btr_ahi_parts));
 
   for (ulint i = 0; i < btr_ahi_parts; ++i) {
     btr_search_sys->hash_tables[i] =
@@ -268,17 +269,17 @@ void btr_search_sys_free() {
     hash_table_free(btr_search_sys->hash_tables[i]);
   }
 
-  ut_free(btr_search_sys->hash_tables);
-  ut_free(btr_search_sys);
+  ut::free(btr_search_sys->hash_tables);
+  ut::free(btr_search_sys);
   btr_search_sys = nullptr;
 
   /* Step-2: Release all allocates latches. */
   for (ulint i = 0; i < btr_ahi_parts; ++i) {
     rw_lock_free(btr_search_latches[i]);
-    ut_free(btr_search_latches[i]);
+    ut::free(btr_search_latches[i]);
   }
 
-  ut_free(btr_search_latches);
+  ut::free(btr_search_latches);
   btr_search_latches = nullptr;
 }
 
@@ -1151,7 +1152,8 @@ retry:
   /* Calculate and cache fold values into an array for fast deletion
   from the hash index */
 
-  folds = (ulint *)ut_malloc_nokey(n_recs * sizeof(ulint));
+  folds = (ulint *)ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                      n_recs * sizeof(ulint));
 
   n_cached = 0;
 
@@ -1205,7 +1207,7 @@ retry:
 
     rw_lock_x_unlock(latch);
 
-    ut_free(folds);
+    ut::free(folds);
     goto retry;
   }
 
@@ -1227,7 +1229,7 @@ cleanup:
   assert_block_ahi_valid(block);
   rw_lock_x_unlock(latch);
 
-  ut_free(folds);
+  ut::free(folds);
 }
 
 /** Drop any adaptive hash index entries that may point to an index
@@ -1459,8 +1461,10 @@ static void btr_search_build_page_hash_index(dict_index_t *index,
   /* Calculate and cache fold values and corresponding records into
   an array for fast insertion to the hash index */
 
-  folds = (ulint *)ut_malloc_nokey(n_recs * sizeof(ulint));
-  recs = (rec_t **)ut_malloc_nokey(n_recs * sizeof(rec_t *));
+  folds = (ulint *)ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                      n_recs * sizeof(ulint));
+  recs = (rec_t **)ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                      n_recs * sizeof(rec_t *));
 
   n_cached = 0;
 
@@ -1562,8 +1566,8 @@ exit_func:
   assert_block_ahi_valid(block);
   btr_search_x_unlock(index);
 
-  ut_free(folds);
-  ut_free(recs);
+  ut::free(folds);
+  ut::free(recs);
   if (UNIV_LIKELY_NULL(heap)) {
     mem_heap_free(heap);
   }

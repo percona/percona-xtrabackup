@@ -29,6 +29,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <algorithm>
+#include <optional>
 
 #include "field_types.h"
 #include "m_ctype.h"
@@ -43,7 +44,6 @@
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
-#include "nullable.h"
 #include "sql/current_thd.h"
 #include "sql/field.h"
 #include "sql/item_timefunc.h"  // Item_func_now_local
@@ -87,15 +87,6 @@ static void set_to_is_null(Field *to_field, bool is_null) {
     } else {
       to_field->set_notnull();
     }
-  } else {
-    // This is used in the case of window functions, where
-    // bring_back_frame_row() may want to set TABLE::null_row to be what it was
-    // when the row was buffered.
-    if (is_null) {
-      to_field->table->set_null_row();
-    } else {
-      to_field->table->reset_null_row();
-    }
   }
 }
 
@@ -129,7 +120,7 @@ type_conversion_status set_field_to_null(Field *field) {
   switch (current_thd->check_for_truncated_fields) {
     case CHECK_FIELD_WARN:
       field->set_warning(Sql_condition::SL_WARNING, WARN_DATA_TRUNCATED, 1);
-      /* fall through */
+      [[fallthrough]];
     case CHECK_FIELD_IGNORE:
       return TYPE_OK;
     case CHECK_FIELD_ERROR_FOR_NULL:
@@ -223,7 +214,7 @@ type_conversion_status set_field_to_null_with_conversions(Field *field,
   switch (thd->check_for_truncated_fields) {
     case CHECK_FIELD_WARN:
       field->set_warning(Sql_condition::SL_WARNING, ER_BAD_NULL_ERROR, 1);
-      /* fall through */
+      [[fallthrough]];
     case CHECK_FIELD_IGNORE:
       if (field->type() == MYSQL_TYPE_BLOB) {
         /*

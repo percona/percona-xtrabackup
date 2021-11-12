@@ -637,7 +637,7 @@ struct dict_v_idx_t {
 };
 
 /** Index list to put in dict_v_col_t */
-typedef std::list<dict_v_idx_t, ut_allocator<dict_v_idx_t>> dict_v_idx_list;
+typedef std::list<dict_v_idx_t, ut::allocator<dict_v_idx_t>> dict_v_idx_list;
 
 /** Data structure for a virtual column in a table */
 struct dict_v_col_t {
@@ -684,7 +684,7 @@ struct dict_s_col_t {
 };
 
 /** list to put stored column for dict_table_t */
-typedef std::list<dict_s_col_t, ut_allocator<dict_s_col_t>> dict_s_col_list;
+typedef std::list<dict_s_col_t, ut::allocator<dict_s_col_t>> dict_s_col_list;
 
 /** @brief DICT_ANTELOPE_MAX_INDEX_COL_LEN is measured in bytes and
 is the maximum indexed column length (or indexed prefix length) in
@@ -1258,7 +1258,7 @@ enum online_index_status {
 /** Set to store the virtual columns which are affected by Foreign
 key constraint. */
 typedef std::set<dict_v_col_t *, std::less<dict_v_col_t *>,
-                 ut_allocator<dict_v_col_t *>>
+                 ut::allocator<dict_v_col_t *>>
     dict_vcol_set;
 
 /** Data structure for a foreign key constraint; an example:
@@ -1344,7 +1344,7 @@ struct dict_foreign_different_tables {
 };
 
 typedef std::set<dict_foreign_t *, dict_foreign_compare,
-                 ut_allocator<dict_foreign_t *>>
+                 ut::allocator<dict_foreign_t *>>
     dict_foreign_set;
 
 std::ostream &operator<<(std::ostream &out, const dict_foreign_set &fk_set);
@@ -1380,7 +1380,7 @@ inline void dict_foreign_free(
     dict_foreign_t *foreign) /*!< in, own: foreign key struct */
 {
   if (foreign->v_cols != nullptr) {
-    UT_DELETE(foreign->v_cols);
+    ut::delete_(foreign->v_cols);
   }
 
   mem_heap_free(foreign->heap);
@@ -2223,7 +2223,7 @@ enum persistent_type_t {
   PM_BIGGEST_TYPE = 3
 };
 
-typedef std::vector<index_id_t, ut_allocator<index_id_t>> corrupted_ids_t;
+typedef std::vector<index_id_t, ut::allocator<index_id_t>> corrupted_ids_t;
 
 /** Persistent dynamic metadata for a table */
 class PersistentTableMetadata {
@@ -2416,7 +2416,7 @@ destroy it in the end. During the server running, we only get the persisters */
 class Persisters {
   typedef std::map<
       persistent_type_t, Persister *, std::less<persistent_type_t>,
-      ut_allocator<std::pair<const persistent_type_t, Persister *>>>
+      ut::allocator<std::pair<const persistent_type_t, Persister *>>>
       persisters_t;
 
  public:
@@ -2484,7 +2484,7 @@ inline void dict_table_mutex_destroy(dict_table_t *table) {
   if (table->mutex_created == os_once::DONE) {
     if (table->mutex != nullptr) {
       mutex_free(table->mutex);
-      UT_DELETE(table->mutex);
+      ut::delete_(table->mutex);
     }
   }
 }
@@ -2497,12 +2497,12 @@ inline void dict_table_autoinc_destroy(dict_table_t *table) {
   if (table->autoinc_mutex_created == os_once::DONE) {
     if (table->autoinc_mutex != nullptr) {
       mutex_free(table->autoinc_mutex);
-      UT_DELETE(table->autoinc_mutex);
+      ut::delete_(table->autoinc_mutex);
     }
 
     if (table->autoinc_persisted_mutex != nullptr) {
       mutex_free(table->autoinc_persisted_mutex);
-      UT_DELETE(table->autoinc_persisted_mutex);
+      ut::delete_(table->autoinc_persisted_mutex);
     }
   }
 }
@@ -2534,7 +2534,7 @@ inline void dict_index_zip_pad_mutex_destroy(dict_index_t *index) {
   if (index->zip_pad.mutex_created == os_once::DONE &&
       index->zip_pad.mutex != nullptr) {
     mutex_free(index->zip_pad.mutex);
-    UT_DELETE(index->zip_pad.mutex);
+    ut::delete_(index->zip_pad.mutex);
   }
 }
 #endif /* !UNIV_HOTBACKUP */

@@ -32,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include "my_compiler.h"
 #include "mysql/harness/net_ts/buffer.h"
 #include "mysql/harness/net_ts/executor.h"
 #include "mysql/harness/net_ts/io_context.h"
@@ -170,6 +171,11 @@ class ProtocolBase {
     }
   }
 
+  // TlsErrc to net::stream_errc if needed.
+  static std::error_code map_tls_error_code(std::error_code ec) {
+    return (ec == TlsErrc::kZeroReturn) ? net::stream_errc::eof : ec;
+  }
+
   template <class CompletionToken>
   void async_receive_tls(CompletionToken &&token) {
     net::async_completion<CompletionToken, void(std::error_code, size_t)> init{
@@ -207,9 +213,11 @@ class ProtocolBase {
       } else {
         // as we can't handle the error, forward the error to the
         // completion handler
-        net::defer(client_socket_.get_executor(),
-                   [compl_handler = std::move(init.completion_handler),
-                    ec = read_ec]() { compl_handler(ec, {}); });
+
+        net::defer(
+            client_socket_.get_executor(),
+            [compl_handler = std::move(init.completion_handler),
+             ec = map_tls_error_code(read_ec)]() { compl_handler(ec, {}); });
       }
     } else {
       // success, forward it to the completion handler
@@ -370,7 +378,10 @@ class StatementReaderBase {
 
   virtual void set_session_ssl_info(const SSL *ssl) = 0;
 
+  MY_COMPILER_DIAGNOSTIC_PUSH()
+  MY_COMPILER_CLANG_DIAGNOSTIC_IGNORE("-Wdeprecated")
   virtual ~StatementReaderBase() = default;
+  MY_COMPILER_DIAGNOSTIC_POP()
 };
 
 }  // namespace server_mock

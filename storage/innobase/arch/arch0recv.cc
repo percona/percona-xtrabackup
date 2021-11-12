@@ -83,13 +83,12 @@ dberr_t Arch_Dblwr_Ctx::init(const char *dblwr_path,
                              uint64_t dblwr_file_size) {
   m_file_size = dblwr_file_size;
 
-  m_buf = static_cast<byte *>(UT_NEW_ARRAY_NOKEY(byte, m_file_size));
+  m_buf = static_cast<byte *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, m_file_size));
 
   if (m_buf == nullptr) {
     return DB_OUT_OF_MEMORY;
   }
-
-  memset(m_buf, 0, m_file_size);
 
   auto err = m_file_ctx.init(ARCH_DIR, dblwr_path, dblwr_base_file,
                              dblwr_num_files, m_file_size);
@@ -395,10 +394,9 @@ dberr_t Arch_Page_Sys::Recovery::recover() {
        info != m_dir_group_info_map.end(); ++info) {
     auto &group_info = info->second;
 
-    auto group =
-        UT_NEW(Arch_Group(group_info.m_start_lsn, ARCH_PAGE_FILE_HDR_SIZE,
-                          m_page_sys->get_mutex()),
-               mem_key_archive);
+    Arch_Group *group = ut::new_withkey<Arch_Group>(
+        ut::make_psi_memory_key(mem_key_archive), group_info.m_start_lsn,
+        ARCH_PAGE_FILE_HDR_SIZE, m_page_sys->get_mutex());
 
     if (group == nullptr) {
       return DB_OUT_OF_MEMORY;
@@ -407,12 +405,12 @@ dberr_t Arch_Page_Sys::Recovery::recover() {
     err = group->recover(group_info, &m_dblwr_ctx);
 
     if (err != DB_SUCCESS) {
-      UT_DELETE(group);
+      ut::delete_(group);
       break;
     }
 
     if (group_info.m_num_files == 0) {
-      UT_DELETE(group);
+      ut::delete_(group);
       continue;
     }
 

@@ -381,7 +381,7 @@ struct LEX_MASTER_INFO {
   } ssl,
       ssl_verify_server_cert, heartbeat_opt, repl_ignore_server_ids_opt,
       retry_count_opt, auto_position, port_opt, get_public_key,
-      m_source_connection_auto_failover;
+      m_source_connection_auto_failover, m_gtid_only;
   char *ssl_key, *ssl_cert, *ssl_ca, *ssl_capath, *ssl_cipher;
   char *ssl_crl, *ssl_crlpath, *tls_version;
   /*
@@ -926,9 +926,25 @@ class Query_expression {
     @param create_iterators If false, only access paths are created,
       not iterators. Only top level query blocks (these that we are to call
       exec() on) should have iterators. See also force_create_iterators().
+
+    @param finalize_access_paths Relevant for the hypergraph optimizer only.
+      If false, the given access paths will _not_ be finalized, so you cannot
+      create iterators from it before finalize() is called (see
+      FinalizePlanForQueryBlock()), and create_iterators must also be false.
+      This is relevant only if you are potentially optimizing multiple times
+      (see change_to_access_path_without_in2exists()), since you are only
+      allowed to finalize a query block once. The fake_query_block, if any,
+      is always finalized.
    */
-  bool optimize(THD *thd, TABLE *materialize_destination,
-                bool create_iterators);
+  bool optimize(THD *thd, TABLE *materialize_destination, bool create_iterators,
+                bool finalize_access_paths);
+
+  /**
+    For any non-finalized query block, finalize it so that we are allowed to
+    create iterators. Must be called after the final access path is chosen
+    (ie., after any calls to change_to_access_path_without_in2exists()).
+   */
+  bool finalize(THD *thd);
 
   /**
     Do everything that would be needed before running Init() on the root
@@ -1796,7 +1812,7 @@ class Query_block {
 
   bool setup_conds(THD *thd);
   bool prepare(THD *thd, mem_root_deque<Item *> *insert_field_list);
-  bool optimize(THD *thd);
+  bool optimize(THD *thd, bool finalize_access_paths);
   void reset_nj_counters(mem_root_deque<TABLE_LIST *> *join_list = nullptr);
 
   bool change_group_ref_for_func(THD *thd, Item *func, bool *changed);
@@ -4416,9 +4432,24 @@ class Yacc_state {
   Input parameters to the parser.
 */
 struct Parser_input {
+  /**
+    True if the text parsed corresponds to an actual query,
+    and not another text artifact.
+    This flag is used to disable digest parsing of nested:
+    - view definitions
+    - table trigger definitions
+    - table partition definitions
+    - event scheduler event definitions
+  */
+  bool m_has_digest;
+  /**
+    True if the caller needs to compute a digest.
+    This flag is used to request explicitly a digest computation,
+    independently of the performance schema configuration.
+  */
   bool m_compute_digest;
 
-  Parser_input() : m_compute_digest(false) {}
+  Parser_input() : m_has_digest(false), m_compute_digest(false) {}
 };
 
 /**
@@ -4529,12 +4560,12 @@ struct st_lex_local : public LEX {
     return (*THR_MALLOC)->Alloc(size);
   }
   static void *operator new(size_t size, MEM_ROOT *mem_root,
-                            const std::nothrow_t &arg MY_ATTRIBUTE((unused)) =
-                                std::nothrow) noexcept {
+                            const std::nothrow_t &arg
+                            [[maybe_unused]] = std::nothrow) noexcept {
     return mem_root->Alloc(size);
   }
-  static void operator delete(void *ptr MY_ATTRIBUTE((unused)),
-                              size_t size MY_ATTRIBUTE((unused))) {
+  static void operator delete(void *ptr [[maybe_unused]],
+                              size_t size [[maybe_unused]]) {
     TRASH(ptr, size);
   }
   static void operator delete(
@@ -4596,9 +4627,10 @@ inline bool is_invalid_string(const LEX_CSTRING &string_val,
   with inconsistent hidden flags. Must be called before adding the item to
   fields.
  */
-inline void assert_consistent_hidden_flags(
-    const mem_root_deque<Item *> &fields MY_ATTRIBUTE((unused)),
-    Item *item MY_ATTRIBUTE((unused)), bool hidden MY_ATTRIBUTE((unused))) {
+inline void assert_consistent_hidden_flags(const mem_root_deque<Item *> &fields
+                                           [[maybe_unused]],
+                                           Item *item [[maybe_unused]],
+                                           bool hidden [[maybe_unused]]) {
 #ifndef NDEBUG
   if (std::find(fields.begin(), fields.end(), item) != fields.end()) {
     // The item is already in the list, so we can't add it

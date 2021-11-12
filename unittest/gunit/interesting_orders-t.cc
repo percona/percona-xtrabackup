@@ -184,18 +184,21 @@ class InterestingOrderingTableTest : public ::testing::Test {
     m_initializer.SetUp();
     m_orderings.reset(new LogicalOrderings(m_initializer.thd()));
 
-    m_table.reset(new Fake_TABLE(/*num_columns=*/5, /*nullable=*/true));
+    m_table.reset(new Fake_TABLE(/*num_columns=*/6, /*nullable=*/true));
     m_table->field[0]->field_name = "a";
     m_table->field[1]->field_name = "b";
     m_table->field[2]->field_name = "c";
     m_table->field[3]->field_name = "d";
     m_table->field[4]->field_name = "e";
+    m_table->field[5]->field_name = "f";
 
     a = m_orderings->GetHandle(new Item_field(m_table->field[0]));
     b = m_orderings->GetHandle(new Item_field(m_table->field[1]));
     c = m_orderings->GetHandle(new Item_field(m_table->field[2]));
     d = m_orderings->GetHandle(new Item_field(m_table->field[3]));
     e = m_orderings->GetHandle(new Item_field(m_table->field[4]));
+    // Don't add f; the tests can use it to get a higher handle
+    // than the others.
   }
 
  protected:
@@ -1177,4 +1180,99 @@ TEST_F(InterestingOrderingTableTest, GroupCover) {
   // (d).
   EXPECT_THAT(m_orderings->ordering(5),
               testing::ElementsAre(OrderElement{d, ORDER_ASC}));
+}
+
+TEST_F(InterestingOrderingTableTest, NoGroupCoverWithNondeterminism) {
+  THD *thd = m_initializer.thd();
+
+  Item_func *r_item =
+      new Item_func_plus(new Item_int(2),
+                         new Item_int(2));  // Guaranteed random.
+  r_item->set_used_tables(RAND_TABLE_BIT);  // Chosen by fair die roll.
+  ItemHandle r = m_orderings->GetHandle(r_item);
+
+  // Get a new field that's higher than r, so that the grouping below
+  // is valid.
+  ItemHandle f = m_orderings->GetHandle(new Item_field(m_table->field[5]));
+
+  // Interesting orders are {rf} and (f).
+  array<OrderElement, 2> group_rf{OrderElement{r, ORDER_NOT_RELEVANT},
+                                  OrderElement{f, ORDER_NOT_RELEVANT}};
+  array<OrderElement, 1> order_f{OrderElement{f, ORDER_ASC}};
+
+  int group_rf_idx =
+      AddOrdering(thd, group_rf, /*interesting=*/true, m_orderings.get());
+  int f_idx =
+      AddOrdering(thd, order_f, /*interesting=*/true, m_orderings.get());
+
+  string trace;
+  m_orderings->Build(thd, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+
+  // We will have covered {rf} with (fr), but that ordering should
+  // _not_ be used to satisfy (f). In this case, (rf) would also be
+  // an acceptable cover, but we don't constrain the cover logic;
+  // there's not really any need.
+  ASSERT_EQ(4, m_orderings->num_orderings());
+  EXPECT_THAT(m_orderings->ordering(3),
+              testing::ElementsAre(OrderElement{f, ORDER_ASC},
+                                   OrderElement{r, ORDER_ASC}));
+
+  int idx = m_orderings->SetOrder(3);
+  EXPECT_TRUE(m_orderings->DoesFollowOrder(idx, group_rf_idx));
+  EXPECT_FALSE(m_orderings->DoesFollowOrder(idx, f_idx));
+}
+
+TEST_F(InterestingOrderingTableTest, GroupReordering) {
+  THD *thd = m_initializer.thd();
+
+  // Interesting orders are (b) and {bc}.
+  array<OrderElement, 1> order_b{OrderElement{b, ORDER_ASC}};
+  array<OrderElement, 2> group_bc{OrderElement{b, ORDER_NOT_RELEVANT},
+                                  OrderElement{c, ORDER_NOT_RELEVANT}};
+
+  int b_idx =
+      AddOrdering(thd, order_b, /*interesting=*/true, m_orderings.get());
+  int bc_idx =
+      AddOrdering(thd, group_bc, /*interesting=*/true, m_orderings.get());
+
+  // Add a = c.
+  FunctionalDependency fd_equiv;
+  fd_equiv.type = FunctionalDependency::EQUIVALENCE;
+  fd_equiv.head = Bounds_checked_array<ItemHandle>(&a, 1);
+  fd_equiv.tail = c;
+  int fd_equiv_idx = m_orderings->AddFunctionalDependency(thd, fd_equiv);
+
+  // Add b → a.
+  FunctionalDependency fd_ba;
+  fd_ba.type = FunctionalDependency::FD;
+  fd_ba.head = Bounds_checked_array<ItemHandle>(&b, 1);
+  fd_ba.tail = a;
+  int fd_ba_idx = m_orderings->AddFunctionalDependency(thd, fd_ba);
+
+  string trace;
+  m_orderings->Build(thd, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+
+  b_idx = m_orderings->RemapOrderingIndex(b_idx);
+  bc_idx = m_orderings->RemapOrderingIndex(bc_idx);
+
+  // Start with (b).
+  int idx = m_orderings->SetOrder(b_idx);
+  EXPECT_TRUE(m_orderings->DoesFollowOrder(idx, b_idx));
+  EXPECT_FALSE(m_orderings->DoesFollowOrder(idx, bc_idx));
+
+  // Apply both FDs.
+  FunctionalDependencySet fds{0};
+  fds |= m_orderings->GetFDSet(fd_equiv_idx);
+  fds |= m_orderings->GetFDSet(fd_ba_idx);
+  idx = m_orderings->ApplyFDs(idx, fds);
+
+  // Now we should also follow {b,c}. Note that this requires us
+  // either to create {b,a}, which follows a counterintuitive group
+  // canonicalization (the intuitive would be {a,b}), or internally
+  // represent {b,c} as {c,b}. Otherwise, we would be pruning away
+  // the the {a,b} (or {b,a}) grouping before reaching {b,c}.
+  EXPECT_TRUE(m_orderings->DoesFollowOrder(idx, b_idx));
+  EXPECT_TRUE(m_orderings->DoesFollowOrder(idx, bc_idx));
 }

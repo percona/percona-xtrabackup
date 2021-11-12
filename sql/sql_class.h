@@ -2622,11 +2622,56 @@ class THD : public MDL_context_owner,
   ~THD() override;
 
   void release_resources();
-  bool release_resources_done() const { return m_release_resources_done; }
+  /**
+    @returns true if THD resources are released.
+  */
+  bool release_resources_done() const;
+  /**
+    Check if THD is being disposed (i.e. m_thd_life_cycle_stage >=
+    SCHEDULED_FOR_DISPOSAL)
+
+    Non-owner thread should acquire LOCK_thd_data to check THD state without
+    getting into races.
+
+    @returns true of THD is being disposed.
+  */
+  bool is_being_disposed() const;
 
  private:
-  bool m_release_resources_done;
-  bool cleanup_done;
+  /**
+    Represents life cycle stages of THD instance.
+    Stage transition in THD clean up:
+     1. ACTIVE -> ACTIVE_AND_CLEAN
+
+    Stage transition in THD disposal:
+     1. ACTIVE -> SCHEDULED_FOR_DISPOSAL -> CLEANED_UP -> RESOURCES_RELEASED
+                                                             -> DISPOSED.
+     2. ACTIVE_AND_CLEAN -> CLEANED_UP -> RESOURCES_RELEASED -> DISPOSED.
+  */
+  enum enum_thd_life_cycle_stages {
+    ACTIVE = 0,
+    ACTIVE_AND_CLEAN,
+    SCHEDULED_FOR_DISPOSAL,
+    CLEANED_UP,
+    RESOURCES_RELEASED,
+    DISPOSED
+  };
+  enum_thd_life_cycle_stages m_thd_life_cycle_stage{
+      enum_thd_life_cycle_stages::ACTIVE};
+
+  /**
+    Set THD in ACTIVE life stage to disposal stage.
+
+    To avoid race conditions with non-owner thread checking THD disposal state,
+    LOCK_thd_data should be acquired before changing THD stage to disposal
+    stage.
+  */
+  void start_disposal();
+
+  /**
+    @returns true if THD is cleaned up.
+  */
+  bool is_cleanup_done();
   void cleanup(void);
 
   void init(void);
@@ -3859,8 +3904,8 @@ class THD : public MDL_context_owner,
     Set query to be displayed in performance schema (threads table etc.). Also
     mark the query safe to display for information_schema.process_list.
   */
-  void set_query_for_display(const char *query_arg MY_ATTRIBUTE((unused)),
-                             size_t query_length_arg MY_ATTRIBUTE((unused))) {
+  void set_query_for_display(const char *query_arg [[maybe_unused]],
+                             size_t query_length_arg [[maybe_unused]]) {
     // Set in pfs events statements table
     MYSQL_SET_STATEMENT_TEXT(m_statement_psi, query_arg,
                              static_cast<uint>(query_length_arg));
@@ -4417,6 +4462,8 @@ class THD : public MDL_context_owner,
     @param thd parent session
   */
   void copy_table_access_properties(THD *thd);
+  mysql_mutex_t LOCK_group_replication_connection_mutex;
+  mysql_cond_t COND_group_replication_connection_cond_var;
 };
 
 /**

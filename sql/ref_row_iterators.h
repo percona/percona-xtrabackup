@@ -150,7 +150,7 @@ class FullTextSearchIterator final : public TableRowIterator {
   // "examined_rows", if not nullptr, is incremented for each successful Read().
   FullTextSearchIterator(THD *thd, TABLE *table, TABLE_REF *ref,
                          Item_func_match *ft_func, bool use_order,
-                         ha_rows *examined_rows);
+                         bool use_limit, ha_rows *examined_rows);
   ~FullTextSearchIterator() override;
 
   bool Init() override;
@@ -160,6 +160,7 @@ class FullTextSearchIterator final : public TableRowIterator {
   TABLE_REF *const m_ref;
   Item_func_match *const m_ft_func;
   const bool m_use_order;
+  const bool m_use_limit;
   ha_rows *const m_examined_rows;
 };
 
@@ -181,12 +182,17 @@ class DynamicRangeIterator final : public TableRowIterator {
   // "examined_rows", if not nullptr, is incremented for each successful Read().
   DynamicRangeIterator(THD *thd, TABLE *table, QEP_TAB *qep_tab,
                        ha_rows *examined_rows);
+  ~DynamicRangeIterator() override;
 
   bool Init() override;
   int Read() override;
 
  private:
   QEP_TAB *m_qep_tab;
+
+  // All quicks are allocated on this MEM_ROOT, which is cleared out
+  // between every invocation of the range optimizer.
+  MEM_ROOT m_mem_root;
 
   unique_ptr_destroy_only<RowIterator> m_iterator;
 

@@ -36,6 +36,7 @@
 #include "mysql.h"      // MYSQL
 #include "mysql/components/services/psi_thread_bits.h"
 #include "mysql_com.h"
+#include "sql/changestreams/apply/constants.h"
 #include "sql/current_thd.h"
 #include "sql/debug_sync.h"
 
@@ -419,6 +420,10 @@ int init_recovery(Master_info *mi);
   if (thread_mask&SLAVE_IO)!=0, then mi->init_info is called; if
   (thread_mask&SLAVE_SQL)!=0, then mi->rli->init_info is called.
 
+  @param force_load repositories will only read information if they
+  are not yet intialized. When true this flag forces the repositories
+  to load information from table or file.
+
   @param skip_received_gtid_set_recovery When true, skips the received GTID
                                          set recovery.
 
@@ -427,7 +432,7 @@ int init_recovery(Master_info *mi);
 */
 int load_mi_and_rli_from_repositories(
     Master_info *mi, bool ignore_if_no_info, int thread_mask,
-    bool skip_received_gtid_set_recovery = false);
+    bool skip_received_gtid_set_recovery = false, bool force_load = false);
 void end_info(Master_info *mi);
 /**
   Clear the information regarding the `Master_info` and `Relay_log_info` objects
@@ -451,8 +456,32 @@ int remove_info(Master_info *mi);
   @returns true if an error occurred and false otherwiser.
  */
 bool reset_info(Master_info *mi);
+
+/**
+  This method flushes the current configuration for the channel into the
+  connection metadata repository. It will also flush the current contents
+  of the relay log file if instructed to.
+
+  @param mi the `Master_info` reference that holds both `Master_info` and
+            `Relay_log_info` data.
+
+  @param force shall the method ignore the server settings that limit flushes
+               to this repository
+
+  @param need_lock shall the method take the associated data lock and log lock
+                   if false ownership is asserted
+
+  @param flush_relay_log should the method also flush the relay log file
+
+  @param skip_repo_persistence if this method shall skip the repository flush
+                               This wont skip the relay log flush if
+                               flush_relay_log = true
+
+  @returns 0 if no error ocurred, !=0 if an error ocurred
+*/
 int flush_master_info(Master_info *mi, bool force, bool need_lock = true,
-                      bool flush_relay_log = true);
+                      bool flush_relay_log = true,
+                      bool skip_repo_persistence = false);
 void add_replica_skip_errors(const char *arg);
 void set_replica_skip_errors(char **replica_skip_errors_ptr);
 int add_new_channel(Master_info **mi, const char *channel);
@@ -512,21 +541,6 @@ const char *print_slave_db_safe(const char *db);
 
 void end_slave();                 /* release slave threads */
 void delete_slave_info_objects(); /* clean up slave threads data */
-/**
-  This method locks both (in this order)
-    mi->run_lock
-    rli->run_lock
-
-  @param mi The associated master info object
-
-  @note this method shall be invoked while locking mi->m_channel_lock
-  for writes. This is due to the mixed order in which these locks are released
-  and acquired in such method as the slave threads start and stop methods.
-*/
-void lock_slave_threads(Master_info *mi);
-void unlock_slave_threads(Master_info *mi);
-void init_thread_mask(int *mask, Master_info *mi, bool inverse,
-                      bool ignore_monitor_thread = false);
 void set_slave_thread_options(THD *thd);
 void set_slave_thread_default_charset(THD *thd, Relay_log_info const *rli);
 int rotate_relay_log(Master_info *mi, bool log_master_fd = true,
@@ -603,12 +617,6 @@ bool sql_slave_killed(THD *thd, Relay_log_info *rli);
   false        not network error
 */
 bool is_network_error(uint errorno);
-
-/* masks for start/stop operations on io and sql slave threads */
-#define SLAVE_IO 1
-#define SLAVE_SQL 2
-// We also have SLAVE_FORCE_ALL 4
-#define SLAVE_MONITOR 8
 
 int init_replica_thread(THD *thd, SLAVE_THD_TYPE thd_type);
 

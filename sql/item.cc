@@ -33,6 +33,7 @@
 #endif
 #include <stddef.h>
 #include <algorithm>
+#include <optional>
 #include <utility>
 
 #include "decimal.h"
@@ -202,6 +203,10 @@ Item::Item(const POS &)
       m_is_window_function(false),
       derived_used(false),
       m_accum_properties(0) {}
+
+bool Item::may_eval_const_item(const THD *thd) const {
+  return !thd->lex->is_view_context_analysis() || basic_const_item();
+}
 
 /**
   @todo
@@ -2748,7 +2753,7 @@ inline static uint32 adjust_max_effective_column_length(Field *field_par,
         the column.
       */
       new_max_length += 1;
-      /* fall through */
+      [[fallthrough]];
     case MYSQL_TYPE_LONG:
     case MYSQL_TYPE_TINY:
     case MYSQL_TYPE_SHORT:
@@ -2794,7 +2799,7 @@ void Item_field::set_field(Field *field_par) {
     table_name = m_orig_table_name;
   }
 
-  field_name = field_par->field_name;
+  m_orig_field_name = field_par->field_name;
   collation.set(field_par->charset(), field_par->derivation(),
                 field_par->repertoire());
   set_data_type(field_par->type());
@@ -2825,22 +2830,25 @@ void Item_field::reset_field(Field *f) {
 }
 
 const char *Item_ident::full_name() const {
+  const char *f_name =
+      m_orig_field_name != nullptr ? m_orig_field_name : field_name;
   char *tmp;
-  if (!table_name || !field_name)
-    return field_name ? field_name
-                      : item_name.is_set() ? item_name.ptr() : "tmp_field";
+  if (table_name == nullptr || f_name == nullptr)
+    return f_name != nullptr
+               ? f_name
+               : item_name.is_set() ? item_name.ptr() : "tmp_field";
   if (db_name && db_name[0]) {
-    tmp = (char *)(*THR_MALLOC)
-              ->Alloc(strlen(db_name) + strlen(table_name) +
-                      strlen(field_name) + 3);
-    strxmov(tmp, db_name, ".", table_name, ".", field_name, NullS);
+    tmp = pointer_cast<char *>(
+        (*THR_MALLOC)
+            ->Alloc(strlen(db_name) + strlen(table_name) + strlen(f_name) + 3));
+    strxmov(tmp, db_name, ".", table_name, ".", f_name, NullS);
   } else {
     if (table_name[0]) {
-      tmp = (char *)(*THR_MALLOC)
-                ->Alloc(strlen(table_name) + strlen(field_name) + 2);
-      strxmov(tmp, table_name, ".", field_name, NullS);
+      tmp = pointer_cast<char *>(
+          (*THR_MALLOC)->Alloc(strlen(table_name) + strlen(f_name) + 2));
+      strxmov(tmp, table_name, ".", f_name, NullS);
     } else
-      return field_name;
+      return f_name;
   }
   return tmp;
 }
@@ -2849,7 +2857,10 @@ void Item_ident::print(const THD *thd, String *str, enum_query_type query_type,
                        const char *db_name_arg,
                        const char *table_name_arg) const {
   char d_name_buff[MAX_ALIAS_NAME], t_name_buff[MAX_ALIAS_NAME];
-  const char *d_name = db_name_arg, *t_name = table_name_arg;
+  const char *d_name = db_name_arg;
+  const char *t_name = table_name_arg;
+  const char *f_name =
+      m_orig_field_name != nullptr ? m_orig_field_name : field_name;
 
   if (lower_case_table_names == 1 ||
       // mode '2' does not apply to aliases:
@@ -2866,15 +2877,15 @@ void Item_ident::print(const THD *thd, String *str, enum_query_type query_type,
     }
   }
 
-  if (!table_name_arg || !field_name || !field_name[0]) {
-    const char *nm = (field_name && field_name[0])
-                         ? field_name
+  if (table_name_arg == nullptr || f_name == nullptr || !f_name[0]) {
+    const char *nm = (f_name != nullptr && f_name[0])
+                         ? f_name
                          : item_name.is_set() ? item_name.ptr() : "tmp_field";
     append_identifier(thd, str, nm, strlen(nm));
     return;
   }
 
-  if (db_name_arg && db_name_arg[0] && !(query_type & QT_NO_DB) &&
+  if (!(query_type & QT_NO_DB) && db_name_arg && db_name_arg[0] &&
       !alias_name_used()) {
     const size_t d_name_len = strlen(d_name);
     if (!((query_type & QT_NO_DEFAULT_DB) &&
@@ -2883,11 +2894,11 @@ void Item_ident::print(const THD *thd, String *str, enum_query_type query_type,
       str->append('.');
     }
   }
-  if (table_name_arg[0] && !(query_type & QT_NO_TABLE)) {
+  if (!(query_type & QT_NO_TABLE) && table_name_arg[0]) {
     append_identifier(thd, str, t_name, strlen(t_name));
     str->append('.');
   }
-  append_identifier(thd, str, field_name, strlen(field_name));
+  append_identifier(thd, str, f_name, strlen(f_name));
 }
 
 TYPELIB *Item_field::get_typelib() const {
@@ -2974,7 +2985,7 @@ bool Item_field::get_timeval(struct timeval *tm, int *warnings) {
 }
 
 bool Item_field::eq(const Item *item, bool) const {
-  const Item *real_item = const_cast<Item *>(item)->real_item();
+  const Item *real_item = item->real_item();
   if (real_item->type() != FIELD_ITEM) return false;
 
   const Item_field *item_field = down_cast<const Item_field *>(real_item);
@@ -3054,7 +3065,13 @@ void Item_ident::fix_after_pullout(Query_block *parent_query_block,
   assert(context->query_block != removed_query_block);
 
   if (context->query_block == parent_query_block) {
-    if (parent_query_block == depended_from) depended_from = nullptr;
+    if (parent_query_block == depended_from) {
+      depended_from = nullptr;
+      // Update the context of this field to that of the parent query
+      // block since the resolver place is now lifted from the abandoned
+      // query block to this one.
+      context = &parent_query_block->context;
+    }
   } else {
     /*
       The definition scope of this field item reference is inner to the removed
@@ -3497,8 +3514,8 @@ Item *Item_null::safe_charset_converter(THD *, const CHARSET_INFO *tocs) {
 */
 
 static void default_set_param_func(Item_param *param,
-                                   uchar **pos MY_ATTRIBUTE((unused)),
-                                   ulong len MY_ATTRIBUTE((unused))) {
+                                   uchar **pos [[maybe_unused]],
+                                   ulong len [[maybe_unused]]) {
   param->set_param_state(Item_param::NO_VALUE);
 }
 
@@ -5397,7 +5414,7 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
   } else if (thd->mark_used_columns != MARK_COLUMNS_NONE) {
     TABLE *table = field->table;
     MY_BITMAP *current_bitmap;
-    MY_BITMAP *other_bitmap MY_ATTRIBUTE((unused));
+    MY_BITMAP *other_bitmap [[maybe_unused]];
     if (thd->mark_used_columns == MARK_COLUMNS_READ) {
       current_bitmap = table->read_set;
       other_bitmap = table->write_set;
@@ -5463,10 +5480,9 @@ void Item_field::bind_fields() {
   if (table_ref != nullptr && table_ref->table == nullptr) return;
   if (field == nullptr) {
     field = result_field = table_ref->table->field[field_index];
+    m_orig_field_name = field->field_name;
   }
   if (table_name == nullptr) table_name = *field->table_name;
-  if (field_name == item_name.ptr() || field_name == nullptr)
-    field_name = field->field_name;
 }
 
 Item *Item_field::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
@@ -5480,12 +5496,16 @@ void Item_field::cleanup() {
 
   Item_ident::cleanup();
   /*
-    When TABLE is detached from TABLE_LIST, field pointers are invalid.
-    Unless field objects are created as part of statement (placeholder tables).
+    When TABLE is detached from TABLE_LIST, field pointers are invalid,
+    unless field objects are created as part of statement (placeholder tables).
+    Also invalidate the orginal field name, since it is usually determined
+    from the field name in the Field object.
   */
   if (table_ref != nullptr && !table_ref->is_view_or_derived() &&
-      !table_ref->is_recursive_reference())
+      !table_ref->is_recursive_reference()) {
     field = nullptr;
+    m_orig_field_name = nullptr;
+  }
 
   // Restore result field back to the initial value
   result_field = field;
@@ -5496,19 +5516,6 @@ void Item_field::cleanup() {
   */
   if (table_ref == nullptr) table_name = nullptr;
 
-  /*
-    Schema tables are created per execution, so field names must be reassigned.
-    Ordinary base tables have stable metadata as long as version is not bumped
-    (which causes a reprepare).
-    However, DD tables may have MYSQL_OPEN_IGNORE_FLUSH which means metadata
-    is still unstable.
-    To preserve as much of the plan as possible while not within execution,
-    set field_name to be the same as item name here. It is restored in
-    Item_field::bind_fields().
-  */
-  if (table_ref != nullptr) {
-    field_name = item_name.ptr();
-  }
   // Reset field before next optimization (multiple equality analysis)
   item_equal = nullptr;
   item_equal_all_join_nests = nullptr;
@@ -5521,12 +5528,12 @@ void Item_field::cleanup() {
   @todo refactor CREATE TABLE so this is no longer needed.
 */
 void Item_field::reset_field() {
+  assert(table_ref == nullptr);
   fixed = false;
   context = nullptr;
   db_name = m_orig_db_name;
   table_name = m_orig_table_name;
-  field_name = m_orig_field_name;
-  table_ref = nullptr;
+  m_orig_field_name = field_name;
   field = nullptr;
 }
 
@@ -5663,8 +5670,13 @@ Item *Item_field::equal_fields_propagator(uchar *arg) {
     e.g. <bin_col> = <int_col> AND <bin_col> = <hex_string>) since
     Items don't know the context they are in and there are functions like
     IF (<hex_string>, 'yes', 'no').
+
+    Also, disable const propagation if the constant is nullable and this item is
+    not. If we were to allow propagation in this case, we would also need to
+    propagate the new nullability up to the parents of this item.
   */
-  if (!item || !has_compatible_context(item))
+  if (item == nullptr || !has_compatible_context(item) ||
+      (item->is_nullable() && !is_nullable()))
     item = this;
   else if (field && field->is_flag_set(ZEROFILL_FLAG) &&
            IS_NUM(field->type())) {
@@ -5894,7 +5906,7 @@ Field *Item::make_string_field(TABLE *table) const {
   else if (data_type() == MYSQL_TYPE_GEOMETRY) {
     field = new (*THR_MALLOC)
         Field_geom(max_length, m_nullable, item_name.ptr(),
-                   Field::GEOM_GEOMETRY, Nullable<gis::srid_t>());
+                   Field::GEOM_GEOMETRY, std::optional<gis::srid_t>());
   } else if (max_length / collation.collation->mbmaxlen >
              CONVERT_IF_BIGGER_TO_BLOB)
     field = new (*THR_MALLOC) Field_blob(
@@ -6000,6 +6012,7 @@ Field *Item::tmp_table_field_from_field_type(TABLE *table,
         break;
       }
       /* Fall through to make_string_field() */
+      [[fallthrough]];
     case MYSQL_TYPE_ENUM:
     case MYSQL_TYPE_SET:
     case MYSQL_TYPE_VAR_STRING:
@@ -6255,6 +6268,7 @@ type_conversion_status Item::save_in_field_inner(Field *field,
     char buff[MAX_FIELD_WIDTH];  // Alloc buffer for small columns
     str_value.set_quick(buff, sizeof(buff), cs);
     result = val_str(&str_value);
+    if (current_thd->is_error()) return TYPE_ERR_BAD_VALUE;
     if (null_value) {
       str_value.set_quick(nullptr, 0, cs);
       return set_field_to_null_with_conversions(field, no_conversions);
@@ -6352,8 +6366,9 @@ static type_conversion_status save_int_value_in_field(Field *field, longlong nr,
   @retval !TYPE_OK  Warning/error as indicated by type_conversion_status enum
                     value
 */
-type_conversion_status Item_int::save_in_field_inner(
-    Field *field, bool no_conversions MY_ATTRIBUTE((unused))) {
+type_conversion_status Item_int::save_in_field_inner(Field *field,
+                                                     bool no_conversions
+                                                     [[maybe_unused]]) {
   return save_int_value_in_field(field, val_int(), null_value, unsigned_flag);
 }
 
@@ -6636,7 +6651,7 @@ longlong Item_hex_string::val_int() {
         push_warning_printf(
             thd, Sql_condition::SL_WARNING, ER_TRUNCATED_WRONG_VALUE,
             ER_THD(thd, ER_TRUNCATED_WRONG_VALUE), "BINARY", errbuff);
-        return -1;
+        return 0;
       }
   }
 
@@ -7020,7 +7035,8 @@ bool Item::cache_const_expr_analyzer(uchar **arg) {
     if (const_for_execution() &&
         !(basic_const_item() || item->basic_const_item() ||
           item->type() == Item::FIELD_ITEM || item->type() == SUBSELECT_ITEM ||
-          item->type() == ROW_ITEM || item->type() == CACHE_ITEM))
+          item->type() == ROW_ITEM || item->type() == CACHE_ITEM ||
+          item->type() == PARAM_ITEM))
       /*
         Note that we use cache_item as a flag (NULL vs non-NULL), but we
         are storing the pointer so that we can assert that we cache the
@@ -7074,7 +7090,7 @@ bool Item::cache_const_expr_analyzer(uchar **arg) {
 }
 
 bool Item::can_be_substituted_for_gc(bool array) const {
-  switch (type()) {
+  switch (real_item()->type()) {
     case FUNC_ITEM:
     case COND_ITEM:
       return true;
@@ -7356,7 +7372,7 @@ Item *Item::cache_const_expr_transformer(uchar *arg) {
 }
 
 bool Item_field::send(Protocol *protocol, String *) {
-  return protocol->store_field(result_field);
+  return protocol->store_field(field);
 }
 
 /**
@@ -7882,7 +7898,6 @@ void Item_ref::print(const THD *thd, String *str,
 }
 
 bool Item_ref::send(Protocol *prot, String *tmp) {
-  if (result_field != nullptr) return prot->store_field(result_field);
   return (*ref)->send(prot, tmp);
 }
 
@@ -7991,12 +8006,12 @@ Item *Item_ref::get_tmp_table_item(THD *thd) {
   Item_field *item = new Item_field(result_field);
   if (item == nullptr) return nullptr;
 
-  item->set_orig_db_name(m_orig_db_name);
+  item->set_orignal_db_name(m_orig_db_name);
   item->db_name = db_name;
   item->table_name = table_name;
   if (real_item()->type() == Item::FIELD_ITEM)
-    item->set_orig_table_name(
-        down_cast<Item_field *>(real_item())->orig_table_name());
+    item->set_original_table_name(
+        down_cast<Item_field *>(real_item())->original_table_name());
 
   return item;
 }
@@ -8246,11 +8261,11 @@ bool Item_view_ref::collect_item_field_or_view_ref_processor(uchar *arg) {
   auto *info = pointer_cast<Collect_item_fields_or_view_refs *>(arg);
   if (info->is_stopped(this)) return false;
   // We collect this view ref
-  // If it's qualifying table is in the transformed query block - (1)
-  // If it's underlying field's qualifying table is in the transformed
-  // query block - (2)
-  // If this view ref is an outer reference dependent on the
-  // transformed query block - (3)
+  // (1) If its qualifying table is in the transformed query block
+  // (2) If its underlying field's qualifying table is in the transformed
+  // query block
+  // (3) If this view ref is an outer reference dependent on the
+  // transformed query block
   Item *item = nullptr;
   item = (context->query_block == info->m_transformed_block)  // 1
              ? this
@@ -8379,11 +8394,15 @@ bool Item_default_value::fix_fields(THD *thd, Item **) {
   // Needs cached_table for some Item traversal functions:
   cached_table = table_ref;
 
+  // Use same field name as the underlying field:
+  assert(field_name == nullptr);
+  field_name = arg->item_name.ptr();
+
   return false;
 }
 
 void Item_default_value::bind_fields() {
-  if (arg == nullptr) return;
+  if (!fixed || arg == nullptr) return;
 
   field->move_field_offset(
       (ptrdiff_t)(field->table->s->default_values - m_rowbuffer_saved));
@@ -8511,6 +8530,10 @@ bool Item_insert_value::fix_fields(THD *thd, Item **reference) {
 
     set_field(def_field);
 
+    // Use same field name as the underlying field:
+    assert(field_name == nullptr);
+    field_name = arg->item_name.ptr();
+
     // The VALUES function is deprecated.
     if (m_is_values_function)
       push_deprecated_warn(
@@ -8605,7 +8628,7 @@ void Item_trigger_field::setup_field(
     set field_idx properly.
   */
   (void)find_field_in_table(table_triggers->get_subject_table(), field_name,
-                            strlen(field_name), false, &field_idx);
+                            false, &field_idx);
   triggers = table_triggers;
   table_grants = table_grant_info;
 }
@@ -9005,7 +9028,10 @@ Item_cache *Item_cache::get_cache(const Item *item, const Item_result type) {
 }
 
 void Item_cache::store(Item *item) {
-  example = item;
+  if (current_thd->lex->is_exec_started())
+    current_thd->change_item_tree(&example, item);
+  else
+    example = item;
   if (!item) {
     assert(is_nullable());
     null_value = true;
@@ -9625,8 +9651,8 @@ bool Item_cache_row::cache_value() {
   return true;
 }
 
-void Item_cache_row::illegal_method_call(
-    const char *method MY_ATTRIBUTE((unused))) const {
+void Item_cache_row::illegal_method_call(const char *method
+                                         [[maybe_unused]]) const {
   DBUG_TRACE;
   DBUG_PRINT("error", ("!!! %s method was called for row item", method));
   assert(0);
@@ -10003,7 +10029,7 @@ Item_values_column::Item_values_column(THD *thd, Item *ref) : super(thd, ref) {
 
 bool Item_values_column::eq(const Item *item, bool binary_cmp) const {
   assert(false);
-  const Item *it = const_cast<Item *>(item)->real_item();
+  const Item *it = item->real_item();
   return m_value_ref && m_value_ref->eq(it, binary_cmp);
 }
 
@@ -10301,19 +10327,16 @@ Item_field *FindEqualField(Item_field *item_field, table_map reachable_tables) {
   // fields in the multi-equality and find the first that is within our reach.
   // The table_map provided in 'reachable_tables' defines the tables within our
   // reach.
-  Item_equal_iterator item_equal_iterator(
-      *item_field->item_equal_all_join_nests);
-  Item_field *it;
-
-  while ((it = item_equal_iterator++)) {
-    if (it->field == item_field->field) {
+  for (Item_field &other_item_field :
+       item_field->item_equal_all_join_nests->get_fields()) {
+    if (other_item_field.field == item_field->field) {
       continue;
     }
 
-    table_map item_field_used_tables = it->used_tables();
+    table_map item_field_used_tables = other_item_field.used_tables();
     if ((item_field_used_tables & reachable_tables) == item_field_used_tables) {
       Item_field *new_item_field = new Item_field(current_thd, item_field);
-      new_item_field->reset_field(it->field);
+      new_item_field->reset_field(other_item_field.field);
       return new_item_field;
     }
   }
@@ -10335,8 +10358,8 @@ bool Item_asterisk::itemize(Parse_context *pc, Item **res) {
 }
 
 bool ItemsAreEqual(const Item *a, const Item *b, bool binary_cmp) {
-  const Item *real_a = const_cast<Item *>(a)->real_item();
-  const Item *real_b = const_cast<Item *>(b)->real_item();
+  const Item *real_a = a->real_item();
+  const Item *real_b = b->real_item();
 
   // Unwrap caches, as they may not be added consistently
   // to both sides.

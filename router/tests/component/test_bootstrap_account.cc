@@ -30,12 +30,10 @@
 #include <fstream>
 #include <string>
 
-#include <gmock/gmock.h>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
-// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
-// globally and require to include my_rapidjson_size_t.h
 #include "my_rapidjson_size_t.h"
 #endif
 #include <rapidjson/document.h>
@@ -55,6 +53,7 @@
 #include "random_generator.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
+#include "router_test_helpers.h"  // get_file_output
 #include "script_generator.h"
 #include "socket_operations.h"
 #include "utils.h"
@@ -651,10 +650,10 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
     // expected account name
     if (expect_exists) {
       ASSERT_TRUE(config_file.exists());
-      EXPECT_TRUE(
-          find_in_file(config_file.str(), [&](const std::string &line) -> bool {
-            return line.find("user=" + username) != line.npos;
-          }));
+      auto file_content = get_file_output(config_file.str());
+      auto lines = mysql_harness::split_string(file_content, '\n');
+      EXPECT_THAT(
+          lines, ::testing::Contains(::testing::HasSubstr("user=" + username)));
     } else {
       EXPECT_FALSE(config_file.exists());
     }
@@ -837,7 +836,7 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
         "FATAL ERROR ENCOUNTERED, attempting to undo new accounts that were created",
 
         "ERROR: As part of cleanup after bootstrap failure, we tried to erase account(s)",
-        "that we created.  Unfortuantely the cleanup failed with error:",
+        "that we created.  Unfortunately the cleanup failed with error:",
         "  Error executing MySQL query \"DROP USER IF EXISTS " + new_account_list + "\": " + du_err_msg + " (" + std::to_string(du_err_code) + ")",
         "You may want to clean up the accounts yourself, here is the full list of",
         "accounts that were created:",

@@ -194,9 +194,8 @@ void thd_set_lock_wait_time(THD *thd,     /*!< in/out: thread handle */
                             ulint value); /*!< in: time waited for the lock */
 
 /** Get the value of innodb_tmpdir.
-@param[in]	thd	thread handle, or NULL to query
-                        the global innodb_tmpdir.
-@retval NULL if innodb_tmpdir="" */
+@param[in] thd	thread handle, or nullptr to query the global innodb_tmpdir.
+@return nullptr if innodb_tmpdir="" */
 const char *thd_innodb_tmpdir(THD *thd);
 
 #ifdef UNIV_DEBUG
@@ -341,13 +340,12 @@ const char *innobase_get_err_msg(int error_code); /*!< in: MySQL error code */
  autoinc_lock_mode != TRADITIONAL because we want to reserve 3 values for
  the multi-value INSERT above.
  @return the next value */
-ulonglong innobase_next_autoinc(
-    ulonglong current,   /*!< in: Current value */
-    ulonglong need,      /*!< in: count of values needed */
-    ulonglong step,      /*!< in: AUTOINC increment step */
-    ulonglong offset,    /*!< in: AUTOINC offset */
-    ulonglong max_value) /*!< in: max value for type */
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] ulonglong innobase_next_autoinc(
+    ulonglong current,    /*!< in: Current value */
+    ulonglong need,       /*!< in: count of values needed */
+    ulonglong step,       /*!< in: AUTOINC increment step */
+    ulonglong offset,     /*!< in: AUTOINC offset */
+    ulonglong max_value); /*!< in: max value for type */
 
 /**********************************************************************
 Check if the length of the identifier exceeds the maximum allowed.
@@ -381,9 +379,8 @@ void ib_warn_row_too_big(const dict_table_t *table);
 
 #include <my_icp.h>
 
-ICP_RESULT
-innobase_index_cond(ha_innobase *h) /*!< in/out: pointer to ha_innobase */
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] ICP_RESULT innobase_index_cond(
+    ha_innobase *h); /*!< in/out: pointer to ha_innobase */
 
 /** Gets information on the durability property requested by thread.
  Used when writing either a prepare or commit record to the log
@@ -392,9 +389,8 @@ innobase_index_cond(ha_innobase *h) /*!< in/out: pointer to ha_innobase */
 
 #include <dur_prop.h>
 
-enum durability_properties thd_requested_durability(
-    const THD *thd) /*!< in: thread handle */
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] enum durability_properties thd_requested_durability(
+    const THD *thd); /*!< in: thread handle */
 
 /** Update the system variable with the given value of the InnoDB
 buffer pool size.
@@ -411,5 +407,22 @@ trx_t *check_trx_exists(THD *thd);
 /** Commits a transaction in an InnoDB database.
 @param[in]	trx	Transaction handle. */
 void innobase_commit_low(trx_t *trx);
+
+/** Return the number of read threads for this session.
+@param[in]      thd       Session instance, or nullptr to query the global
+                          innodb_parallel_read_threads value. */
+ulong thd_parallel_read_threads(THD *thd);
+
+/** Return the maximum buffer size to use for DDL.
+@param[in]      thd       Session instance, or nullptr to query the global
+                          innodb_parallel_read_threads value.
+@return memory upper limit in bytes. */
+[[nodiscard]] ulong thd_ddl_buffer_size(THD *thd);
+
+/** Whether this is a computed virtual column */
+#define innobase_is_v_fld(field) ((field)->gcol_info && !(field)->stored_in_db)
+
+/** @return the number of DDL threads to use (global/session). */
+[[nodiscard]] size_t thd_ddl_threads(THD *thd) noexcept;
 
 #endif /* HA_INNODB_PROTOTYPES_H */

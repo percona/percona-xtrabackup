@@ -54,7 +54,6 @@
 #include <signaldata/FsReadWriteReq.hpp>
 #include <signaldata/FsRef.hpp>
 #include <signaldata/GetTabInfo.hpp>
-#include <signaldata/GetTableId.hpp>
 #include <signaldata/NFCompleteRep.hpp>
 #include <signaldata/NodeFailRep.hpp>
 #include <signaldata/ReadNodesConf.hpp>
@@ -1440,7 +1439,7 @@ void Dbdict::execFSREADCONF(Signal* signal)
       execFSREADREF(signal);
       return;
     }//Testing how DICT behave if read of file 1 fails (Bug#28770)
-    // Fall through
+    [[fallthrough]];
   case FsConnectRecord::READ_TAB_FILE2:
     jam();
     readTableConf(signal ,fsPtr);
@@ -2335,7 +2334,6 @@ Dbdict::Dbdict(Block_context& ctx):
   // Transit signals
   addRecSignal(GSN_DUMP_STATE_ORD, &Dbdict::execDUMP_STATE_ORD);
   addRecSignal(GSN_GET_TABINFOREQ, &Dbdict::execGET_TABINFOREQ);
-  addRecSignal(GSN_GET_TABLEID_REQ, &Dbdict::execGET_TABLEDID_REQ);
   addRecSignal(GSN_GET_TABINFOREF, &Dbdict::execGET_TABINFOREF);
   addRecSignal(GSN_GET_TABINFO_CONF, &Dbdict::execGET_TABINFO_CONF);
   addRecSignal(GSN_CONTINUEB, &Dbdict::execCONTINUEB);
@@ -5836,7 +5834,7 @@ void Dbdict::handleTabInfoInit(Signal * signal, SchemaTransPtr & trans_ptr,
   {
     jam();
   }
-  // Fall through
+  [[fallthrough]];
   case DictTabInfo::AlterTableFromAPI:{
     jam();
     schemaFileId = RNIL;
@@ -12213,66 +12211,6 @@ Dbdict::execALTER_TABLE_REF(Signal* signal)
 /* ---------------------------------------------------------------- */
 /* **************************************************************** */
 
-void Dbdict::execGET_TABLEDID_REQ(Signal * signal)
-{
-  jamEntry();
-  ndbrequire(signal->getNoOfSections() == 1);
-  GetTableIdReq const * req = (GetTableIdReq *)signal->getDataPtr();
-  Uint32 senderData = req->senderData;
-  Uint32 senderRef = req->senderRef;
-  Uint32 len = req->len;
-
-  if(len>PATH_MAX)
-  {
-    jam();
-    sendGET_TABLEID_REF((Signal*)signal,
-			(GetTableIdReq *)req,
-			GetTableIdRef::TableNameTooLong);
-    return;
-  }
-
-  char tableName[PATH_MAX];
-  SectionHandle handle(this, signal);
-  SegmentedSectionPtr ssPtr;
-  handle.getSection(ssPtr,GetTableIdReq::TABLE_NAME);
-  copy((Uint32*)tableName, ssPtr);
-  releaseSections(handle);
-
-  DictObject * obj_ptr_p = get_object(tableName, len);
-  if(obj_ptr_p == 0 || !DictTabInfo::isTable(obj_ptr_p->m_type)){
-    jam();
-    sendGET_TABLEID_REF(signal,
-			(GetTableIdReq *)req,
-			GetTableIdRef::TableNotDefined);
-    return;
-  }
-
-  TableRecordPtr tablePtr;
-  c_tableRecordPool_.getPtr(tablePtr, obj_ptr_p->m_object_ptr_i);
-
-  GetTableIdConf * conf = (GetTableIdConf *)req;
-  conf->tableId = tablePtr.p->tableId;
-  conf->schemaVersion = tablePtr.p->tableVersion;
-  conf->senderData = senderData;
-  sendSignal(senderRef, GSN_GET_TABLEID_CONF, signal,
-	     GetTableIdConf::SignalLength, JBB);
-}
-
-
-void Dbdict::sendGET_TABLEID_REF(Signal* signal,
-				 GetTableIdReq * req,
-				 GetTableIdRef::ErrorCode errorCode)
-{
-  GetTableIdRef * const ref = (GetTableIdRef *)req;
-  /**
-   * The format of GetTabInfo Req/Ref is the same
-   */
-  BlockReference retRef = req->senderRef;
-  ref->err = errorCode;
-  sendSignal(retRef, GSN_GET_TABLEID_REF, signal,
-	     GetTableIdRef::SignalLength, JBB);
-}
-
 /* ---------------------------------------------------------------- */
 // Get a full table description.
 /* ---------------------------------------------------------------- */
@@ -14714,6 +14652,7 @@ Dbdict::alterIndex_parse(Signal* signal, bool master,
       break;
     }
     // Fall through - invalid request type
+    [[fallthrough]];
   default:
     ndbassert(false);
     setError(error, AlterIndxRef::BadRequestType, __LINE__);
@@ -14739,6 +14678,16 @@ Dbdict::alterIndex_parse(Signal* signal, bool master,
       D("skip index stats operations for system index");
       alterIndexPtr.p->m_sub_index_stat_dml = true;
       alterIndexPtr.p->m_sub_index_stat_mon = true;
+    }
+
+    // Disable stats if the __at_restart_skip_indexes option is enabled. Indexes
+    // are not created during system restart with this option. This includes the
+    // index belonging to the ndb_index_stat_sample table which leads to
+    // subsequent failures during index stat update
+    if (c_at_restart_skip_indexes) {
+      jam();
+      D("skip index stats ops since indexes have been skipped at restart");
+      alterIndexPtr.p->m_sub_index_stat_dml = true;
     }
 
     // disable update/delete if db not up
@@ -15907,7 +15856,7 @@ Dbdict::buildIndex_parse(Signal* signal, bool master,
       buildIndexPtr.p->m_attrMask.set(attrId);
       break;
     }
-    /*FALLTHRU*/
+    [[fallthrough]];
   default:
     jam();
     {
@@ -20413,7 +20362,7 @@ Dbdict::createTrigger_parse(Signal* signal, bool master,
     break;
   case CreateTrigImplReq::CreateTriggerOffline:
     jam();
-    // Fall through
+    [[fallthrough]];
   default:
     ndbassert(false);
     setError(error, CreateTrigRef::BadRequestType, __LINE__);
@@ -20446,7 +20395,7 @@ Dbdict::createTrigger_parse(Signal* signal, bool master,
     break;
   case CreateTrigReq::TriggerDst:
     jam();
-    // Fall through
+    [[fallthrough]];
   case CreateTrigReq::TriggerSrc:
     jam();
     if (handle.m_cnt)
@@ -20622,7 +20571,7 @@ Dbdict::createTrigger_parse(Signal* signal, bool master,
     case TriggerType::REORG_TRIGGER:
       jam();
       createTrigger_create_drop_trigger_operation(signal, op_ptr, error);
-      // Fall through
+      [[fallthrough]];
     case TriggerType::SECONDARY_INDEX:
     case TriggerType::FK_PARENT:
     case TriggerType::FK_CHILD:
@@ -23497,7 +23446,7 @@ Dbdict::dict_lock_unlock(Signal* signal, const DictLockReq* _req,
     {
       *type = (DictLockReq::LockType) lockReq.extra;
     }
-    /* Fall through */
+    [[fallthrough]];
   case UtilUnlockRef::NotLockOwner:
     break;
   case UtilUnlockRef::NotInLockQueue:
@@ -32231,10 +32180,10 @@ void Dbdict::trans_recover(Signal* signal, SchemaTransPtr trans_ptr)
   switch(trans_ptr.p->m_state) {
   case SchemaTrans::TS_INITIAL:
     jam();
-    // Fall through
+    [[fallthrough]];
   case SchemaTrans::TS_STARTING:
     jam();
-    // Fall through
+    [[fallthrough]];
   case SchemaTrans::TS_STARTED:
     jam();
     if (trans_ptr.p->m_rollback_op == 0)
@@ -32252,7 +32201,7 @@ void Dbdict::trans_recover(Signal* signal, SchemaTransPtr trans_ptr)
       trans_end_start(signal, trans_ptr);
       return;
     }
-    // Fall through
+    [[fallthrough]];
   case SchemaTrans::TS_PARSING:
     jam();
     setError(trans_ptr.p->m_error, SchemaTransEndRep::TransAborted, __LINE__);
@@ -32381,7 +32330,7 @@ void Dbdict::trans_recover(Signal* signal, SchemaTransPtr trans_ptr)
       return;
     }
   }
-  // Fall through
+  [[fallthrough]];
   case SchemaTrans::TS_ENDING:
     /*
       End any pending slaves
@@ -33980,7 +33929,7 @@ Dbdict::createHashMap_parse(Signal* signal, bool master,
        */
       jam();
       partitionBalance = NDB_PARTITION_BALANCE_FOR_RP_BY_LDM;
-      /* Fall through */
+      [[fallthrough]];
     case NDB_PARTITION_BALANCE_FOR_RP_BY_LDM:
     case NDB_PARTITION_BALANCE_FOR_RA_BY_LDM:
     case NDB_PARTITION_BALANCE_FOR_RA_BY_LDM_X_2:

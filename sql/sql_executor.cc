@@ -74,7 +74,7 @@
 #include "sql/item_sum.h"  // Item_sum
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
-#include "sql/join_optimizer/estimate_filter_cost.h"
+#include "sql/join_optimizer/cost_model.h"
 #include "sql/join_optimizer/join_optimizer.h"
 #include "sql/join_optimizer/materialize_path_parameters.h"
 #include "sql/join_optimizer/relational_expression.h"
@@ -88,11 +88,11 @@
 #include "sql/nested_join.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_explain_format.h"
-#include "sql/opt_range.h"  // QUICK_SELECT_I
 #include "sql/opt_trace.h"  // Opt_trace_object
 #include "sql/opt_trace_context.h"
 #include "sql/query_options.h"
-#include "sql/record_buffer.h"  // Record_buffer
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
+#include "sql/record_buffer.h"                    // Record_buffer
 #include "sql/records.h"
 #include "sql/ref_row_iterators.h"
 #include "sql/row_iterator.h"
@@ -252,7 +252,6 @@ bool JOIN::create_intermediate_table(
 
     if (m_ordered_index_usage != ORDERED_INDEX_GROUP_BY &&
         add_sorting_to_table(const_tables, &group_list,
-                             /*force_stable_sort=*/false,
                              /*sort_before_group=*/true))
       goto err;
 
@@ -282,7 +281,6 @@ bool JOIN::create_intermediate_table(
 
       if (m_ordered_index_usage != ORDERED_INDEX_ORDER_BY &&
           add_sorting_to_table(const_tables, &order,
-                               /*force_stable_sort=*/false,
                                /*sort_before_group=*/false))
         goto err;
       order.clean();
@@ -417,7 +415,7 @@ void init_tmptable_sum_functions(Item_sum **func_ptr) {
 /** Update record 0 in tmp_table from record 1. */
 
 void update_tmptable_sum_func(Item_sum **func_ptr,
-                              TABLE *tmp_table MY_ATTRIBUTE((unused))) {
+                              TABLE *tmp_table [[maybe_unused]]) {
   DBUG_TRACE;
   Item_sum *func;
   while ((func = *(func_ptr++))) func->update_field();
@@ -491,10 +489,8 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab) {
     if (item_equal->update_const(thd)) return true;
     if (!contained_const && item_equal->get_const()) {
       /* Update keys for range analysis */
-      Item_equal_iterator it(*item_equal);
-      Item_field *item_field;
-      while ((item_field = it++)) {
-        const Field *field = item_field->field;
+      for (Item_field &item_field : item_equal->get_fields()) {
+        const Field *field = item_field.field;
         JOIN_TAB *stat = field->table->reginfo.join_tab;
         Key_map possible_keys = field->key_start;
         possible_keys.intersect(field->table->keys_in_use_for_query);
@@ -509,7 +505,7 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab) {
         if (!possible_keys.is_clear_all()) {
           TABLE *const table = field->table;
           for (Key_use *use = stat->keyuse();
-               use && use->table_ref == item_field->table_ref; use++) {
+               use && use->table_ref == item_field.table_ref; use++) {
             if (possible_keys.is_set(use->key) &&
                 table->key_info[use->key].key_part[use->keypart].field == field)
               table->const_key_parts[use->key] |= use->keypart_map;
@@ -759,6 +755,20 @@ static bool ContainsAnyMRRPaths(AccessPath *path) {
   return any_mrr_paths;
 }
 
+Item *CreateConjunction(List<Item> *items) {
+  if (items->size() == 0) {
+    return nullptr;
+  } else if (items->size() == 1) {
+    return items->head();
+  } else {
+    Item *condition = new Item_cond_and(*items);
+    condition->quick_fix_field();
+    condition->update_used_tables();
+    condition->apply_is_true();
+    return condition;
+  }
+}
+
 /**
   Return a new iterator that wraps "iterator" and that tests all of the given
   conditions (if any), ANDed together. If there are no conditions, just return
@@ -791,16 +801,9 @@ AccessPath *PossiblyAttachFilter(AccessPath *path,
     }
   }
 
-  Item *condition = nullptr;
-  if (items.size() == 0) {
+  Item *condition = CreateConjunction(&items);
+  if (condition == nullptr) {
     return path;
-  } else if (items.size() == 1) {
-    condition = items.head();
-  } else {
-    condition = new Item_cond_and(items);
-    condition->quick_fix_field();
-    condition->update_used_tables();
-    condition->apply_is_true();
   }
   *conditions_depend_on_outer_tables |= condition->used_tables();
 
@@ -839,7 +842,7 @@ static AccessPath *NewInvalidatorAccessPathForTable(
   invalidator->num_output_rows = path->num_output_rows;
   invalidator->cost = path->cost;
 
-  QEP_TAB *tab2 = qep_tab->join()->map2qep_tab[table_index_to_invalidate];
+  QEP_TAB *tab2 = &qep_tab->join()->qep_tab[table_index_to_invalidate];
   if (tab2->invalidators == nullptr) {
     tab2->invalidators =
         new (thd->mem_root) Mem_root_array<const AccessPath *>(thd->mem_root);
@@ -879,12 +882,6 @@ AccessPath *CreateBKAAccessPath(THD *thd, JOIN *join, AccessPath *outer_path,
                                                          right_table_map);
       }
     } else if (item->type() == Item::FIELD_ITEM) {
-      if (ref->key_copy[part_no] == nullptr ||
-          ref->key_copy[part_no]->name() == STORE_KEY_CONST_NAME) {
-        // A constant, so no need to propagate.
-        continue;
-      }
-
       bool dummy;
       Item_equal *item_eq = find_item_equal(
           table_list->cond_equal, down_cast<Item_field *>(item), &dummy);
@@ -895,8 +892,6 @@ AccessPath *CreateBKAAccessPath(THD *thd, JOIN *join, AccessPath *outer_path,
 
       item->walk(&Item::ensure_multi_equality_fields_are_available_walker,
                  enum_walk::POSTFIX, pointer_cast<uchar *>(&left_table_map));
-      down_cast<store_key_field *>(ref->key_copy[part_no])
-          ->replace_from_field(down_cast<Item_field *>(item)->field);
     }
   }
 
@@ -1421,6 +1416,69 @@ AccessPath *GetAccessPathForDerivedTable(THD *thd, QEP_TAB *qep_tab,
       qep_tab->invalidators, /*need_rowid=*/false, table_path);
 }
 
+AccessPath *MoveCompositeIteratorsFromTablePath(AccessPath *path) {
+  AccessPath *table_path = path->materialize().table_path;
+  AccessPath *bottom_of_table_path = nullptr;
+  const auto scan_functor = [&bottom_of_table_path, path](AccessPath *sub_path,
+                                                          const JOIN *) {
+    switch (sub_path->type) {
+      case AccessPath::TABLE_SCAN:
+      case AccessPath::REF:
+      case AccessPath::REF_OR_NULL:
+      case AccessPath::EQ_REF:
+      case AccessPath::ALTERNATIVE:
+      case AccessPath::CONST_TABLE:
+        // We found our real bottom.
+        path->materialize().table_path = sub_path;
+        return true;
+      default:
+        // New possible bottom, so keep going.
+        bottom_of_table_path = sub_path;
+        return false;
+    }
+  };
+  WalkAccessPaths(table_path, /*join=*/nullptr,
+                  WalkAccessPathPolicy::ENTIRE_TREE, scan_functor);
+  if (bottom_of_table_path != nullptr) {
+    switch (bottom_of_table_path->type) {
+      case AccessPath::FILTER:
+        bottom_of_table_path->filter().child = path;
+        break;
+      case AccessPath::SORT:
+        bottom_of_table_path->sort().child = path;
+        break;
+      case AccessPath::LIMIT_OFFSET:
+        bottom_of_table_path->limit_offset().child = path;
+        break;
+
+      // It's a bit odd to have STREAM and MATERIALIZE nodes
+      // inside table_path, but it happens when we have UNION with
+      // with ORDER BY on nondeterminisic predicates, or INSERT
+      // which requires buffering. It should be safe move it
+      // out of table_path nevertheless.
+      case AccessPath::STREAM:
+        bottom_of_table_path->stream().child = path;
+        break;
+      case AccessPath::MATERIALIZE:
+        assert(bottom_of_table_path->materialize().param->query_blocks.size() ==
+               1);
+        bottom_of_table_path->materialize()
+            .param->query_blocks[0]
+            .subquery_path = path;
+        break;
+      default:
+        assert(false);
+    }
+
+    // This isn't strictly accurate, but helps propagate information
+    // better throughout the tree nevertheless.
+    CopyBasicProperties(*path, table_path);
+
+    path = table_path;
+  }
+  return path;
+}
+
 AccessPath *GetAccessPathForDerivedTable(
     THD *thd, TABLE_LIST *table_ref, TABLE *table, bool rematerialize,
     Mem_root_array<const AccessPath *> *invalidators, bool need_rowid,
@@ -1473,7 +1531,8 @@ AccessPath *GetAccessPathForDerivedTable(
         query_expression->offset_limit_cnt == 0
             ? query_expression->m_reject_multiple_rows
             : false);
-    EstimateMaterializeCost(path);
+    EstimateMaterializeCost(thd, path);
+    path = MoveCompositeIteratorsFromTablePath(path);
     if (query_expression->offset_limit_cnt != 0) {
       // LIMIT is handled inside MaterializeIterator, but OFFSET is not.
       // SQL_CALC_FOUND_ROWS cannot occur in a derived table's definition.
@@ -1514,7 +1573,8 @@ AccessPath *GetAccessPathForDerivedTable(
         query_expression,
         /*ref_slice=*/-1, rematerialize, tmp_table_param->end_write_records,
         query_expression->m_reject_multiple_rows);
-    EstimateMaterializeCost(path);
+    EstimateMaterializeCost(thd, path);
+    path = MoveCompositeIteratorsFromTablePath(path);
   }
 
   path->cost_before_filter = path->cost;
@@ -1609,7 +1669,7 @@ AccessPath *GetTableAccessPath(THD *thd, QEP_TAB *qep_tab, QEP_TAB *qep_tabs) {
         /*ref_slice=*/-1, qep_tab->rematerialize,
         sjm->table_param.end_write_records,
         /*reject_multiple_rows=*/false);
-    EstimateMaterializeCost(table_path);
+    EstimateMaterializeCost(thd, table_path);
 
 #ifndef NDEBUG
     // Make sure we clear this table out when the join is reset,
@@ -1941,8 +2001,10 @@ static AccessPath *CreateHashJoinAccessPath(
   // We also remove the join conditions, to avoid using time on extracting their
   // hash values. (Also, Item_func_eq::append_join_key_for_hash_join has an
   // assert that this case should never happen, so it would trigger.)
-  const table_map probe_used_tables = GetUsedTableMap(probe_path);
-  const table_map build_used_tables = GetUsedTableMap(build_path);
+  const table_map probe_used_tables =
+      GetUsedTableMap(probe_path, /*include_pruned_tables=*/false);
+  const table_map build_used_tables =
+      GetUsedTableMap(build_path, /*include_pruned_tables=*/false);
   for (const HashJoinCondition &condition : hash_join_conditions) {
     if ((!condition.left_uses_any_table(probe_used_tables) &&
          !condition.right_uses_any_table(probe_used_tables)) ||
@@ -2268,8 +2330,8 @@ static AccessPath *ConnectJoins(
     // into one invalidator.
     for (auto it = pending_invalidators->begin();
          it != pending_invalidators->end();) {
-      assert(path != nullptr);
       if (it->table_index_to_invalidate < last_idx) {
+        assert(path != nullptr);
         path = NewInvalidatorAccessPathForTable(thd, path, it->qep_tab,
                                                 it->table_index_to_invalidate);
         it = pending_invalidators->erase(it);
@@ -2817,7 +2879,8 @@ AccessPath *JOIN::create_root_access_path_for_join() {
       if (qep_tab->op_type == QEP_TAB::OT_MATERIALIZE) {
         qep_tab->table()->alias = "<temporary>";
         AccessPath *table_path =
-            create_table_access_path(thd, nullptr, qep_tab,
+            create_table_access_path(thd, qep_tab->table(), qep_tab->quick(),
+                                     qep_tab->table_ref, qep_tab->position(),
                                      /*count_examined_rows=*/false);
         path = NewMaterializeAccessPath(
             thd,
@@ -2828,7 +2891,7 @@ AccessPath *JOIN::create_root_access_path_for_join() {
             /*cte=*/nullptr, query_expression(), qep_tab->ref_item_slice,
             /*rematerialize=*/true, qep_tab->tmp_table_param->end_write_records,
             /*reject_multiple_rows=*/false);
-        EstimateMaterializeCost(path);
+        EstimateMaterializeCost(thd, path);
       }
     }
   } else {
@@ -2968,27 +3031,26 @@ AccessPath *JOIN::create_root_access_path_for_join() {
         // Switch to the right slice if applicable, so that we fetch out the
         // correct items from order_arg.
         Switch_ref_item_slice slice_switch(this, qep_tab->ref_item_slice);
-        dup_filesort = new (thd->mem_root)
-            Filesort(thd, {qep_tab->table()}, /*keep_buffers=*/false, order,
-                     HA_POS_ERROR, /*force_stable_sort=*/false,
-                     /*remove_duplicates=*/true, force_sort_positions,
-                     /*unwrap_rollup=*/false);
+        dup_filesort = new (thd->mem_root) Filesort(
+            thd, {qep_tab->table()}, /*keep_buffers=*/false, order,
+            HA_POS_ERROR, /*remove_duplicates=*/true, force_sort_positions,
+            /*unwrap_rollup=*/false);
 
         if (desired_order != nullptr && filesort == nullptr) {
           // We picked up the desired order from the first table, but we cannot
           // reuse its Filesort object, as it would get the wrong slice and
           // potentially addon fields. Create a new one.
-          filesort = new (thd->mem_root)
-              Filesort(thd, {qep_tab->table()}, /*keep_buffers=*/false,
-                       desired_order, HA_POS_ERROR, /*force_stable_sort=*/false,
-                       /*remove_duplicates=*/false, force_sort_positions,
-                       /*unwrap_rollup=*/false);
+          filesort = new (thd->mem_root) Filesort(
+              thd, {qep_tab->table()}, /*keep_buffers=*/false, desired_order,
+              HA_POS_ERROR, /*remove_duplicates=*/false, force_sort_positions,
+              /*unwrap_rollup=*/false);
         }
       }
     }
 
     AccessPath *table_path =
-        create_table_access_path(thd, nullptr, qep_tab,
+        create_table_access_path(thd, qep_tab->table(), qep_tab->quick(),
+                                 qep_tab->table_ref, qep_tab->position(),
                                  /*count_examined_rows=*/false);
     qep_tab->table()->alias = "<temporary>";
 
@@ -3007,7 +3069,7 @@ AccessPath *JOIN::create_root_access_path_for_join() {
             /*ref_slice=*/-1,
             /*rematerialize=*/true, tmp_table_param.end_write_records,
             /*reject_multiple_rows=*/false);
-        EstimateMaterializeCost(path);
+        EstimateMaterializeCost(thd, path);
       }
     } else if (qep_tab->op_type == QEP_TAB::OT_AGGREGATE_INTO_TMP_TABLE) {
       path = NewTemptableAggregateAccessPath(
@@ -3053,7 +3115,7 @@ AccessPath *JOIN::create_root_access_path_for_join() {
             /*cte=*/nullptr, query_expression(), qep_tab->ref_item_slice,
             /*rematerialize=*/true, qep_tab->tmp_table_param->end_write_records,
             /*reject_multiple_rows=*/false);
-        EstimateMaterializeCost(path);
+        EstimateMaterializeCost(thd, path);
       }
     }
 
@@ -3246,8 +3308,9 @@ int do_sj_dups_weedout(THD *thd, SJ_TMP_TABLE *sjtbl) {
       Other error than duplicate error: Attempt to create a temporary table.
     */
     bool is_duplicate;
-    if (create_ondisk_from_heap(thd, sjtbl->tmp_table, error, true,
-                                &is_duplicate))
+    if (create_ondisk_from_heap(thd, sjtbl->tmp_table, error,
+                                /*insert_last_record=*/true,
+                                /*ignore_last_dup=*/true, &is_duplicate))
       return -1;
     return is_duplicate ? 1 : 0;
   }
@@ -3297,16 +3360,6 @@ static bool init_index(TABLE *table, handler *file, uint idx, bool sorted) {
   }
 
   return false;
-}
-
-int safe_index_read(QEP_TAB *tab) {
-  int error;
-  TABLE *table = tab->table();
-  if ((error = table->file->ha_index_read_map(
-           table->record[0], tab->ref().key_buff,
-           make_prev_keypart_map(tab->ref().key_parts), HA_READ_KEY_EXACT)))
-    return report_handler_error(table, error);
-  return 0;
 }
 
 /**
@@ -3872,10 +3925,18 @@ DynamicRangeIterator::DynamicRangeIterator(THD *thd, TABLE *table,
                                            ha_rows *examined_rows)
     : TableRowIterator(thd, table),
       m_qep_tab(qep_tab),
+      m_mem_root(key_memory_test_quick_select_exec,
+                 thd->variables.range_alloc_block_size),
       m_examined_rows(examined_rows),
       m_read_set_without_base_columns(table->read_set) {
   add_virtual_gcol_base_cols(table, thd->mem_root,
                              &m_read_set_with_base_columns);
+}
+
+DynamicRangeIterator::~DynamicRangeIterator() {
+  // This is owned by our MEM_ROOT.
+  destroy(m_qep_tab->quick());
+  m_qep_tab->set_quick(nullptr);
 }
 
 bool DynamicRangeIterator::Init() {
@@ -3892,21 +3953,13 @@ bool DynamicRangeIterator::Init() {
   trace_table.add_utf8_table(m_qep_tab->table_ref);
 
   Key_map needed_reg_dummy;
-  QUICK_SELECT_I *old_qck = m_qep_tab->quick();
   QUICK_SELECT_I *qck;
+  // In execution, range estimation is done for each row,
+  // so we can access previous tables.
+  table_map const_tables = m_qep_tab->join()->found_const_table_map;
+  table_map read_tables =
+      m_qep_tab->prefix_tables() & ~m_qep_tab->added_tables();
   DEBUG_SYNC(thd(), "quick_not_created");
-  const int rc = test_quick_select(
-      thd(), m_qep_tab->keys(),
-      0,  // empty table map
-      HA_POS_ERROR,
-      false,  // don't force quick range
-      ORDER_NOT_RELEVANT, m_qep_tab, m_qep_tab->condition(), &needed_reg_dummy,
-      &qck, m_qep_tab->table()->force_index, m_qep_tab->join()->query_block);
-  if (thd()->is_error())  // @todo consolidate error reporting of
-                          // test_quick_select
-    return true;
-  assert(old_qck == nullptr || old_qck != qck);
-  m_qep_tab->set_quick(qck);
 
   /*
     EXPLAIN CONNECTION is used to understand why a query is currently taking
@@ -3918,12 +3971,40 @@ bool DynamicRangeIterator::Init() {
 
   DEBUG_SYNC(thd(), "quick_created_before_mutex");
 
+  // We're about to destroy the MEM_ROOT containing the old quick, below.
+  // But we cannot run test_quick_select() under the plan lock, since it might
+  // want to evaluate a subquery that in itself has a DynamicRangeIterator(),
+  // and the plan lock is not recursive. So we set a different plan temporarily
+  // while we are calculating the new one, so that EXPLAIN FOR CONNECTION
+  // does not read bad data.
   thd()->lock_query_plan();
-  m_qep_tab->set_type(qck ? calc_join_type(qck->get_type()) : JT_ALL);
-  m_qep_tab->set_quick_optim();
+  m_qep_tab->set_type(JT_UNKNOWN);
   thd()->unlock_query_plan();
 
-  delete old_qck;
+  QUICK_SELECT_I *old_qck = m_qep_tab->quick();
+  destroy(old_qck);
+  m_qep_tab->set_quick(nullptr);
+  m_mem_root.ClearForReuse();
+
+  const int rc = test_quick_select(
+      thd(), &m_mem_root, &m_mem_root, m_qep_tab->keys(), const_tables,
+      read_tables, HA_POS_ERROR,
+      false,  // don't force quick range
+      ORDER_NOT_RELEVANT, m_qep_tab->table(),
+      m_qep_tab->skip_records_in_range(), m_qep_tab->condition(),
+      &needed_reg_dummy, &qck, m_qep_tab->table()->force_index,
+      m_qep_tab->join()->query_block);
+  if (thd()->is_error())  // @todo consolidate error reporting of
+                          // test_quick_select
+  {
+    return true;
+  }
+
+  thd()->lock_query_plan();
+  m_qep_tab->set_quick(qck);
+  m_qep_tab->set_type(qck ? calc_join_type(qck->get_type()) : JT_ALL);
+  thd()->unlock_query_plan();
+
   DEBUG_SYNC(thd(), "quick_droped_after_mutex");
 
   // Clear out and destroy any old iterators before we start constructing
@@ -4003,16 +4084,56 @@ bool QEP_TAB::use_order() const {
 FullTextSearchIterator::FullTextSearchIterator(THD *thd, TABLE *table,
                                                TABLE_REF *ref,
                                                Item_func_match *ft_func,
-                                               bool use_order,
+                                               bool use_order, bool use_limit,
                                                ha_rows *examined_rows)
     : TableRowIterator(thd, table),
       m_ref(ref),
       m_ft_func(ft_func),
       m_use_order(use_order),
-      m_examined_rows(examined_rows) {}
+      m_use_limit(use_limit),
+      m_examined_rows(examined_rows) {
+  // Mark the full-text search function as used for index scan, if using the
+  // hypergraph optimizer. The old optimizer uses heuristics to determine if a
+  // full-text index scan should be used, and can set this flag the moment it
+  // decides it should use an index scan. The hypergraph optimizer, on the other
+  // hand, maintains alternative plans with and without index scans throughout
+  // the planning, and doesn't determine whether it should use the indexed or
+  // non-indexed plan until the full query plan has been constructed.
+  if (thd->lex->using_hypergraph_optimizer) {
+    // Should not already be enabled.
+    assert(!ft_func->score_from_index_scan);
+    // Should operate on the main object.
+    assert(ft_func->get_master() == ft_func);
+
+    // Mark the MATCH function as a source for a full-text index scan.
+    ft_func->score_from_index_scan = true;
+
+    if (table->covering_keys.is_set(ft_func->key) && !table->no_keyread) {
+      // The index is covering. Tell the storage engine that it can do an
+      // index-only scan.
+      table->set_keyread(true);
+    }
+
+    // Enable ordering of the results on relevance, if requested.
+    if (use_order) {
+      ft_func->get_hints()->set_hint_flag(FT_SORTED);
+    }
+
+    // Propagate the limit to the storage engine, if requested.
+    if (use_limit) {
+      ft_func->get_hints()->set_hint_limit(
+          ft_func->table_ref->query_block->join->m_select_limit);
+    }
+  }
+
+  assert(ft_func->score_from_index_scan);
+}
 
 FullTextSearchIterator::~FullTextSearchIterator() {
   table()->file->ha_index_or_rnd_end();
+  if (table()->key_read) {
+    table()->set_keyread(false);
+  }
 }
 
 bool FullTextSearchIterator::Init() {
@@ -4203,9 +4324,10 @@ AccessPath *QEP_TAB::access_path() {
       break;
 
     case JT_FT:
-      path = NewFullTextSearchAccessPath(join()->thd, table(), &ref(),
-                                         ft_func(), use_order(),
-                                         /*count_examined_rows=*/true);
+      path = NewFullTextSearchAccessPath(
+          join()->thd, table(), &ref(), ft_func(), use_order(),
+          ft_func()->get_hints()->get_limit() != HA_POS_ERROR,
+          /*count_examined_rows=*/true);
       used_ref = &ref();
       break;
 
@@ -4221,7 +4343,8 @@ AccessPath *QEP_TAB::access_path() {
         path = NewDynamicIndexRangeScanAccessPath(join()->thd, table(), this,
                                                   /*count_examined_rows=*/true);
       } else {
-        path = create_table_access_path(join()->thd, nullptr, this,
+        path = create_table_access_path(join()->thd, table(), quick(),
+                                        table_ref, position(),
                                         /*count_examined_rows=*/true);
       }
       break;
@@ -4680,7 +4803,7 @@ static size_t compute_ria_idx(const mem_root_deque<Item *> &fields, size_t i,
   @param param     Represents the current temporary file being produced
   @param thd       The current thread
   @param reverse_copy   If true, copies fields *back* from the frame buffer
-                        tmp table to the input table's buffer,
+                        tmp table to the output table's buffer,
                         cf. #bring_back_frame_row.
 
   @returns false if OK, true on error.
@@ -4803,22 +4926,13 @@ bool change_to_use_tmp_fields(mem_root_deque<Item *> *fields, THD *thd,
         Item_field *ifield = down_cast<Item_field *>(new_item);
         Item_ref *iref = down_cast<Item_ref *>(item);
         ifield->table_name = iref->table_name;
-        ifield->set_orig_db_name(iref->orig_db_name());
+        ifield->set_orignal_db_name(iref->original_db_name());
         ifield->db_name = iref->db_name;
       }
       if (orig_field != nullptr && item != new_item) {
-        down_cast<Item_field *>(new_item)->set_orig_table_name(
-            orig_field->orig_table_name());
+        down_cast<Item_field *>(new_item)->set_original_table_name(
+            orig_field->original_table_name());
       }
-#ifndef NDEBUG
-      if (!new_item->item_name.is_set()) {
-        char buff[256];
-        String str(buff, sizeof(buff), &my_charset_bin);
-        str.length(0);
-        item->print(thd, &str, QT_ORDINARY);
-        new_item->item_name.copy(str.ptr(), str.length());
-      }
-#endif
     } else {
       new_item = item;
       replace_embedded_rollup_references_with_tmp_fields(thd, item, fields);

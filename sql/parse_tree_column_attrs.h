@@ -26,6 +26,7 @@
 #include <assert.h>
 #include <sys/types.h>  // ulong, uint. TODO: replace with cstdint
 
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -40,7 +41,6 @@
 #include "my_sys.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "nullable.h"
 #include "sql/derror.h"
 #include "sql/field.h"
 #include "sql/gis/srid.h"
@@ -59,8 +59,6 @@
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"
 #include "sql/system_variables.h"
-
-using Mysql::Nullable;
 
 class String;
 
@@ -96,14 +94,15 @@ class PT_column_attr_base : public Parse_tree_node_tmpl<Column_parse_context> {
   virtual void apply_default_value(Item **) const {}
   virtual void apply_gen_default_value(Value_generator **) {}
   virtual void apply_on_update_value(Item **) const {}
-  virtual void apply_srid_modifier(Nullable<gis::srid_t> *) const {}
-  virtual bool apply_collation(
-      Column_parse_context *, const CHARSET_INFO **to MY_ATTRIBUTE((unused)),
-      bool *has_explicit_collation MY_ATTRIBUTE((unused))) const {
+  virtual void apply_srid_modifier(std::optional<gis::srid_t> *) const {}
+  virtual bool apply_collation(Column_parse_context *,
+                               const CHARSET_INFO **to [[maybe_unused]],
+                               bool *has_explicit_collation
+                               [[maybe_unused]]) const {
     return false;
   }
   virtual bool add_check_constraints(
-      Sql_check_constraint_spec_list *check_const_list MY_ATTRIBUTE((unused))) {
+      Sql_check_constraint_spec_list *check_const_list [[maybe_unused]]) {
     return false;
   }
 
@@ -133,8 +132,7 @@ class PT_column_attr_base : public Parse_tree_node_tmpl<Column_parse_context> {
     @returns false if success, true if error (e.g. if [NOT] ENFORCED follows
              something other than the CHECK clause.)
   */
-  virtual bool set_constraint_enforcement(
-      bool enforced MY_ATTRIBUTE((unused))) {
+  virtual bool set_constraint_enforcement(bool enforced [[maybe_unused]]) {
     return true;  // error
   }
 };
@@ -467,7 +465,7 @@ class PT_srid_column_attr : public PT_column_attr_base {
  public:
   explicit PT_srid_column_attr(gis::srid_t srid) : m_srid(srid) {}
 
-  void apply_srid_modifier(Nullable<gis::srid_t> *srid) const override {
+  void apply_srid_modifier(std::optional<gis::srid_t> *srid) const override {
     *srid = m_srid;
   }
 };
@@ -892,7 +890,7 @@ class PT_field_def_base : public Parse_tree_node {
   Value_generator *gcol_info;
   /// Holds the expression to generate default values
   Value_generator *default_val_info;
-  Nullable<gis::srid_t> m_srid;
+  std::optional<gis::srid_t> m_srid;
   // List of column check constraint's specification.
   Sql_check_constraint_spec_list *check_const_spec_list{nullptr};
 

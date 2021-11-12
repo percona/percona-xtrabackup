@@ -26,36 +26,51 @@
 
 #include "sql/sql_table.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
 #include <atomic>
-#include <cstring>
 #include <functional>
 #include <memory>
-#include <new>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
+/* HAVE_PSI_*_INTERFACE */
+#include "my_psi_config.h"  // IWYU pragma: keep
+
+/* drop_table_share with WITH_LOCK_ORDER */
+#include "mysql/psi/psi_table.h"  // IWYU pragma: keep
+
+/* PSI_TABLE_CALL() with WITH_LOCK_ORDER */
+#include "mysql/psi/mysql_table.h"  // IWYU pragma: keep
+
+#include "decimal.h"
 #include "field_types.h"  // enum_field_types
 #include "lex_string.h"
 #include "libbinlogevents/include/binlog_event.h"
 #include "m_ctype.h"
 #include "m_string.h"  // my_stpncpy
+#include "map_helpers.h"
+#include "mem_root_deque.h"
 #include "my_alloc.h"
 #include "my_base.h"
-#include "my_bit.h"
+#include "my_bitmap.h"
 #include "my_check_opt.h"  // T_EXTEND
+#include "my_checksum.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_io.h"
 #include "my_loglevel.h"
-#include "my_md5.h"
-#include "my_md5_size.h"
 #include "my_psi_config.h"
+#include "my_sqlcommand.h"
 #include "my_sys.h"
+#include "my_systime.h"
 #include "my_thread_local.h"
 #include "my_time.h"
 #include "mysql/components/services/bits/psi_bits.h"
@@ -65,18 +80,17 @@
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_stage.h"
-#include "mysql/psi/mysql_table.h"
-#include "mysql/psi/psi_table.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"  // ER_*
-#include "nullable.h"
+#include "pfs_table_provider.h"
 #include "prealloced_array.h"
 #include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_fk_parent_table_access
 #include "sql/binlog.h"            // mysql_bin_log
 #include "sql/create_field.h"
+#include "sql/current_thd.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
 #include "sql/dd/collection.h"
 #include "sql/dd/dd.h"          // dd::get_dictionary
@@ -101,8 +115,10 @@
 #include "sql/dd_table_share.h"  // open_table_def
 #include "sql/debug_sync.h"      // DEBUG_SYNC
 #include "sql/derror.h"          // ER_THD
-#include "sql/error_handler.h"   // Drop_table_error_handler
+#include "sql/enum_query_type.h"
+#include "sql/error_handler.h"  // Drop_table_error_handler
 #include "sql/field.h"
+#include "sql/field_common_properties.h"
 #include "sql/filesort.h"  // Filesort
 #include "sql/gis/srid.h"
 #include "sql/handler.h"
@@ -119,19 +135,19 @@
 #include "sql/log_event.h"  // Query_log_event
 #include "sql/mdl.h"
 #include "sql/mem_root_array.h"
+#include "sql/my_decimal.h"
 #include "sql/mysqld.h"  // lower_case_table_names
 #include "sql/partition_element.h"
 #include "sql/partition_info.h"                  // partition_info
 #include "sql/partitioning/partition_handler.h"  // Partition_handler
 #include "sql/protocol.h"
+#include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
 #include "sql/records.h"  // unique_ptr_destroy_only<RowIterator>
 #include "sql/row_iterator.h"
 #include "sql/rpl_gtid.h"
-#include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
-#include "sql/rpl_rli.h"                           // rli_slave etc
+#include "sql/rpl_rli.h"  // rli_slave etc
 #include "sql/session_tracker.h"
-#include "sql/sorting_iterator.h"
 #include "sql/sql_alter.h"
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
 #include "sql/sql_base.h"         // lock_table_names
@@ -142,26 +158,26 @@
 #include "sql/sql_constraint.h"  // Constraint_type_resolver
 #include "sql/sql_db.h"          // get_default_db_collation
 #include "sql/sql_error.h"
-#include "sql/sql_executor.h"  // QEP_TAB_standalone
 #include "sql/sql_handler.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"  // test_if_data_home_dir
 #include "sql/sql_partition.h"
 #include "sql/sql_plist.h"
+#include "sql/sql_plugin.h"
 #include "sql/sql_plugin_ref.h"
 #include "sql/sql_resolver.h"  // setup_order
 #include "sql/sql_show.h"
 #include "sql/sql_tablespace.h"  // validate_tablespace_name
 #include "sql/sql_time.h"        // make_truncated_value_warning
-#include "sql/sql_tmp_table.h"   // create_tmp_field
 #include "sql/sql_trigger.h"     // change_trigger_table_name
 #include "sql/srs_fetcher.h"
+#include "sql/stateless_allocator.h"
 #include "sql/strfunc.h"  // find_type2
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thd_raii.h"
-#include "sql/timing_iterator.h"
+#include "sql/thr_malloc.h"
 #include "sql/transaction.h"  // trans_commit_stmt
 #include "sql/transaction_info.h"
 #include "sql/trigger.h"
@@ -178,6 +194,8 @@ class View;
 using binary_log::checksum_crc32;
 using std::max;
 using std::min;
+using std::string;
+using std::to_string;
 
 #define ER_THD_OR_DEFAULT(thd, X) \
   ((thd) ? ER_THD_NONCONST(thd, X) : ER_DEFAULT_NONCONST(X))
@@ -1470,7 +1488,7 @@ void Foreign_key_parents_invalidator::invalidate(THD *thd) {
     */
     Dummy_error_handler error_handler;
     thd->push_internal_handler(&error_handler);
-    bool ignored MY_ATTRIBUTE((unused));
+    bool ignored [[maybe_unused]];
     ignored = thd->dd_client()->invalidate(parent_it.first.first.c_str(),
                                            parent_it.first.second.c_str());
     DBUG_EXECUTE_IF("fail_while_invalidating_fk_parents",
@@ -2486,8 +2504,7 @@ static bool rm_table_check_fks(THD *thd, Drop_tables_ctx *drop_ctx) {
 */
 static bool adjust_fk_children_for_parent_drop(
     THD *thd, const char *parent_table_db, const char *parent_table_name,
-    const dd::Table *parent_table_def,
-    handlerton *hton MY_ATTRIBUTE((unused))) {
+    const dd::Table *parent_table_def, handlerton *hton [[maybe_unused]]) {
   for (const dd::Foreign_key_parent *parent_fk :
        parent_table_def->foreign_key_parents()) {
     if (my_strcasecmp(table_alias_charset,
@@ -2598,9 +2615,9 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
 /**
  * Loads a table from its primary engine into its secondary engine.
  *
- * @note An MDL_EXCLUSIVE lock on the table must have been acquired prior to
- * calling this function to ensure that all currently running DML statements
- * commit before load begins.
+ * This call assumes that MDL_SHARED_NO_WRITE/SECLOAD_SCAN_START_MDL lock
+ * on the table have been acquired by caller. During its execution it may
+ * downgrade this lock to MDL_SHARED_UPGRADEABLE/SECLOAD_PAR_SCAN_MDL.
  *
  * @param thd              Thread handler.
  * @param table            Table in primary storage engine.
@@ -2609,7 +2626,8 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
  */
 static bool secondary_engine_load_table(THD *thd, const TABLE &table) {
   assert(thd->mdl_context.owns_equal_or_stronger_lock(
-      MDL_key::TABLE, table.s->db.str, table.s->table_name.str, MDL_EXCLUSIVE));
+      MDL_key::TABLE, table.s->db.str, table.s->table_name.str,
+      SECLOAD_SCAN_START_MDL));
   assert(table.s->has_secondary_engine());
 
   // At least one column must be loaded into the secondary engine.
@@ -3256,7 +3274,7 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
           committed earlier.
         */
       }
-      free_root(&foreach_table_root, MYF(MY_MARK_BLOCKS_FREE));
+      foreach_table_root.ClearForReuse();
     }
   }
 
@@ -3284,7 +3302,7 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
                           &safe_to_release_mdl_atomic, &foreach_table_root)) {
         goto err_with_rollback;
       }
-      free_root(&foreach_table_root, MYF(MY_MARK_BLOCKS_FREE));
+      foreach_table_root.ClearForReuse();
     }
 
     DBUG_EXECUTE_IF("rm_table_no_locks_abort_after_atomic_tables", {
@@ -3317,7 +3335,7 @@ bool mysql_rm_table_no_locks(THD *thd, TABLE_LIST *tables, bool if_exists,
                                          &foreach_table_root))
         goto err_with_rollback;
 
-      free_root(&foreach_table_root, MYF(MY_MARK_BLOCKS_FREE));
+      foreach_table_root.ClearForReuse();
     }
 
 #ifndef NDEBUG
@@ -3953,7 +3971,7 @@ bool prepare_pack_create_field(THD *thd, Create_field *sql_field,
         my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "GEOMETRY");
         return true;
       }
-      /* fall-through */
+      [[fallthrough]];
     case MYSQL_TYPE_BLOB:
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_TINY_BLOB:
@@ -4905,7 +4923,7 @@ static bool prepare_key_column(THD *thd, HA_CREATE_INFO *create_info,
           return true;
         }
         key_info->algorithm = HA_KEY_ALG_RTREE;
-        /* fall through */
+        [[fallthrough]];
       case MYSQL_TYPE_TINY_BLOB:
       case MYSQL_TYPE_MEDIUM_BLOB:
       case MYSQL_TYPE_LONG_BLOB:
@@ -7481,7 +7499,7 @@ bool Item_field::replace_field_processor(uchar *arg) {
 
 /**
   Check if the given key name exists in the array of keys. The lookup is
-  case sensitive.
+  case insensitive.
 
   @param keys the array to check for the key name in
   @param key_name the key name to look for.
@@ -7509,34 +7527,69 @@ static bool key_name_exists(const Mem_root_array<Key_spec *> &keys,
   return false;
 }
 
+/// Checks if a column with the given name exists in a list of fields.
+static bool column_name_exists(const List<Create_field> &fields,
+                               const string &column_name) {
+  for (const Create_field &field : fields) {
+    if (my_strcasecmp(system_charset_info, column_name.c_str(),
+                      field.field_name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
   Create a name for the hidden generated column that represents the functional
-  key part. The name is a hash of the index name and the key part number.
+  key part.
+
+  The name is a string on the form `!hidden!index_name!key_part!counter`. The
+  counter is usually 0, but is incremented until a unique name is found, in the
+  unlikely event that there is another column with the same name. The index_name
+  part may be truncated to make sure the column name does not exceed the maximum
+  column name length (NAME_CHAR_LEN).
 
   @param key_name the name of the index.
   @param key_part_number the key part number, starting from zero.
+  @param fields the other columns in the table
   @param mem_root the MEM_ROOT where the column name should be allocated.
 
   @returns the name for the hidden generated column, allocated on the supplied
            MEM_ROOT
 */
 static const char *make_functional_index_column_name(
-    const std::string &key_name, int key_part_number, MEM_ROOT *mem_root) {
-  std::string combined_name;
-  combined_name.append(key_name);
-  combined_name.append(std::to_string(key_part_number));
+    std::string_view key_name, unsigned key_part_number,
+    const List<Create_field> &fields, MEM_ROOT *mem_root) {
+  // Loop until we have found a unique name. We'll usually find one in the first
+  // iteration, but if there are user-defined columns using the same naming
+  // scheme, we might need to increment the counter to avoid collisions. We're
+  // guaranteed to find a unique name in at most fields.size() + 1 iterations.
+  for (unsigned count = 0;; ++count) {
+    assert(count <= fields.size());
 
-  uchar digest[MD5_HASH_SIZE];
-  compute_md5_hash(pointer_cast<char *>(digest), combined_name.c_str(),
-                   combined_name.size());
+    string name("!hidden!");
+    name += key_name;
 
-  // + 1 for the null terminator
-  char *output = new (mem_root) char[(MD5_HASH_SIZE * 2) + 1];
-  array_to_hex(output, digest, MD5_HASH_SIZE);
+    string suffix("!");
+    suffix += to_string(key_part_number);
+    suffix += '!';
+    suffix += to_string(count);
 
-  // Ensure that the null terminator is present
-  output[(MD5_HASH_SIZE * 2)] = '\0';
-  return output;
+    // If the name is so long that we hit the NAME_CHAR_LEN limit, truncate the
+    // index name part, so that there is enough room to add the suffix with the
+    // key part number and the counter. (If we had truncated the counter, we
+    // could loop forever because the generated name is the same in each
+    // iteration.)
+    name.resize(min(name.size(), NAME_CHAR_LEN - suffix.size()));
+    name.append(suffix);
+    assert(name.size() <= NAME_CHAR_LEN);
+
+    if (column_name_exists(fields, name)) {
+      continue;
+    }
+
+    return strmake_root(mem_root, name.data(), name.size());
+  }
 }
 
 /**
@@ -7602,22 +7655,6 @@ static Create_field *add_functional_index_to_create_list(
     key_spec->name.length = key_name.size();
     key_spec->name.str = strmake_root(thd->stmt_arena->mem_root,
                                       key_name.c_str(), key_name.size());
-  } else {
-    // Check that the key name isn't already in use. Normally we check for
-    // duplicate key names in prepare_key(), but for functional indexes we have
-    // to do it a bit earlier. The reason is that the name of the hidden
-    // generated column is a hash of the key name and the key part number. If we
-    // have the same index name twice, we will end up with two hidden columns
-    // with the same name. And, since prepare_create_field() is called before
-    // prepare_key(), we will get a "duplicate field name" error instead of the
-    // expected "duplicate key name" error. Thus, we do a pre-check for
-    // duplicate functional index names here.
-    if (key_name_exists(alter_info->key_list,
-                        {key_spec->name.str, key_spec->name.length},
-                        key_spec)) {
-      my_error(ER_DUP_KEYNAME, MYF(0), key_spec->name.str);
-      return nullptr;
-    }
   }
 
   // First we need to resolve the expression in the functional index so that we
@@ -7657,7 +7694,7 @@ static Create_field *add_functional_index_to_create_list(
 
   const char *field_name = make_functional_index_column_name(
       {key_spec->name.str, key_spec->name.length}, key_part_number,
-      thd->stmt_arena->mem_root);
+      alter_info->create_list, thd->stmt_arena->mem_root);
 
   Item *item = kp->get_expression();
 
@@ -7814,8 +7851,23 @@ bool mysql_prepare_create_table(
   */
 
   /* Fix this when we have new .frm files;  Current limit is 4G rows (QQ) */
-  if (create_info->max_rows > UINT_MAX32) create_info->max_rows = UINT_MAX32;
-  if (create_info->min_rows > UINT_MAX32) create_info->min_rows = UINT_MAX32;
+  constexpr ulonglong u32max = UINT_MAX32;
+  if (create_info->max_rows > UINT_MAX32) {
+    // Values larger than uint32_max are capped to uint32_max.
+    // Emit a warning about this.
+    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_VALUE_OUT_OF_RANGE,
+                        ER_THD(thd, ER_VALUE_OUT_OF_RANGE), "max_rows",
+                        create_info->max_rows, 0ULL, u32max, u32max);
+    create_info->max_rows = UINT_MAX32;
+  }
+  if (create_info->min_rows > UINT_MAX32) {
+    // Values larger than uint32_max are capped to uint32_max.
+    // Emit a warning about this.
+    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_VALUE_OUT_OF_RANGE,
+                        ER_THD(thd, ER_VALUE_OUT_OF_RANGE), "min_rows",
+                        create_info->min_rows, 0ULL, u32max, u32max);
+    create_info->min_rows = UINT_MAX32;
+  }
 
   if (create_info->row_type == ROW_TYPE_DYNAMIC)
     create_info->table_options |= HA_OPTION_PACK_RECORD;
@@ -10559,7 +10611,7 @@ bool mysql_create_like_table(THD *thd, TABLE_LIST *table, TABLE_LIST *src_table,
     over the names and acquire MDL lock for each of them.
   */
   if (lock_tablespace_names(thd, &tablespace_set,
-                            thd->variables.lock_wait_timeout)) {
+                            thd->variables.lock_wait_timeout, thd->mem_root)) {
     return true;
   }
 
@@ -10746,7 +10798,7 @@ bool mysql_create_like_table(THD *thd, TABLE_LIST *table, TABLE_LIST *src_table,
           */
           create_info->used_fields |= HA_CREATE_USED_ENGINE;
 
-          bool result MY_ATTRIBUTE((unused)) = store_create_info(
+          bool result [[maybe_unused]] = store_create_info(
               thd, table, &query, create_info, true /* show_database */);
 
           assert(result == 0);  // store_create_info() always return 0
@@ -11088,7 +11140,16 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
   assert(m_alter_info->requested_algorithm ==
          Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT);
 
-  table_list->mdl_request.set_type(MDL_EXCLUSIVE);
+  // Load if SECONDARY_LOAD, unload if SECONDARY_UNLOAD
+  const bool is_load = m_alter_info->flags & Alter_info::ALTER_SECONDARY_LOAD;
+
+  // SECONDARY_LOAD operation requires SNW MDL for its initial phase, which is
+  // downgraded to SU lock (by RAPID SE) and eventually upgraded to X lock (by
+  // SQL-layer) before updating Table Definition Cache.
+  const enum_mdl_type mdl_type =
+      is_load ? SECLOAD_SCAN_START_MDL : MDL_EXCLUSIVE;
+
+  table_list->mdl_request.set_type(mdl_type);
 
   // Always use isolation level READ_COMMITTED to ensure consistent view of
   // table data during entire load operation. Higher isolation levels provide no
@@ -11103,6 +11164,30 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
   table_list->required_type = dd::enum_table_type::BASE_TABLE;
   if (open_and_lock_tables(thd, table_list, 0, &alter_prelocking_strategy))
     return true;
+
+  // SECONDARY_LOAD/SECONDARY_UNLOAD requires a secondary engine.
+  if (!table_list->table->s->has_secondary_engine()) {
+    my_error(ER_SECONDARY_ENGINE, MYF(0), "No secondary engine defined");
+    return true;
+  }
+
+  if (!is_load && secondary_engine_lock_tables_mode(*thd)) {
+    if (thd->mdl_context.upgrade_shared_lock(table_list->table->mdl_ticket,
+                                             mdl_type,
+                                             thd->variables.lock_wait_timeout))
+      return true;
+  }
+  assert(thd->mdl_context.owns_equal_or_stronger_lock(
+      MDL_key::TABLE, table_list->db, table_list->table_name, mdl_type));
+
+  MDL_ticket *mdl_ticket = table_list->table->mdl_ticket;
+  auto downgrade_guard = create_scope_guard([mdl_ticket, thd] {
+    // Under LOCK TABLES, downgrade to MDL_SHARED_NO_READ_WRITE after all
+    // operations have completed.
+    if (secondary_engine_lock_tables_mode(*thd)) {
+      mdl_ticket->downgrade_lock(MDL_SHARED_NO_READ_WRITE);
+    }
+  });
 
   // Omit hidden generated columns and columns marked as NOT SECONDARY from
   // read_set. It is the responsibility of the secondary engine handler to load
@@ -11121,12 +11206,6 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
     table_list->table->mark_column_used(*field, MARK_COLUMNS_READ);
   }
 
-  // SECONDARY_LOAD/SECONDARY_UNLOAD requires a secondary engine.
-  if (!table_list->table->s->has_secondary_engine()) {
-    my_error(ER_SECONDARY_ENGINE, MYF(0), "No secondary engine defined");
-    return true;
-  }
-
   // It should not have been possible to define a temporary table with a
   // secondary engine.
   assert(table_list->table->s->tmp_table == NO_TMP_TABLE);
@@ -11142,22 +11221,13 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
                                 &table_def))
     return true;
 
-  MDL_ticket *mdl_ticket = table_list->table->mdl_ticket;
-
-  auto downgrade_guard = create_scope_guard([mdl_ticket, thd] {
-    // Under LOCK TABLES, downgrade to MDL_SHARED_NO_READ_WRITE after all
-    // operations have completed.
-    if (secondary_engine_lock_tables_mode(*thd)) {
-      mdl_ticket->downgrade_lock(MDL_SHARED_NO_READ_WRITE);
-    }
-  });
-  if (thd->mdl_context.upgrade_shared_lock(mdl_ticket, MDL_EXCLUSIVE,
-                                           thd->variables.lock_wait_timeout))
-    return true;
-
   // Cleanup that must be done regardless of commit or rollback.
   auto cleanup = [thd, hton]() {
     hton->post_ddl(thd);
+
+    // reopen_tables() will only affect tables which have been closed by
+    // close_all_tables_for_name(), which means it will do reopen only while we
+    // hold X lock on table.
     return thd->locked_tables_mode &&
            thd->locked_tables_list.reopen_tables(thd);
   };
@@ -11170,16 +11240,31 @@ bool Sql_cmd_secondary_load_unload::mysql_secondary_load_or_unload(
     cleanup();
   });
 
-  // Load if SECONDARY_LOAD, unload if SECONDARY_UNLOAD
-  const bool is_load = m_alter_info->flags & Alter_info::ALTER_SECONDARY_LOAD;
+  if (is_load) {
+    if (DBUG_EVALUATE_IF("sim_secload_fail",
+                         (my_error(ER_SECONDARY_ENGINE, MYF(0),
+                                   "Simulated failure of secondary_load()"),
+                          true),
+                         false) ||
+        secondary_engine_load_table(thd, *table_list->table))
+      return true;
+  } else {
+    if (DBUG_EVALUATE_IF("sim_secunload_fail",
+                         (my_error(ER_SECONDARY_ENGINE, MYF(0),
+                                   "Simulated failure of secondary_unload()"),
+                          true),
+                         false) ||
+        secondary_engine_unload_table(thd, table_list->db,
+                                      table_list->table_name, *table_def, true))
+      return true;
+  }
 
-  // Initiate loading into or unloading from secondary engine.
-  const bool error =
-      is_load
-          ? secondary_engine_load_table(thd, *table_list->table)
-          : secondary_engine_unload_table(
-                thd, table_list->db, table_list->table_name, *table_def, true);
-  if (error) return true;
+  // Need to upgrade to allow old table definition to be purged from TDC
+  // (this is no-op in case of SECONDARY_UNLOAD).
+  DEBUG_SYNC(thd, "secload_upgrade_mdl_x");
+  if (thd->mdl_context.upgrade_shared_lock(mdl_ticket, SECLOAD_TDC_EVICT_MDL,
+                                           thd->variables.lock_wait_timeout))
+    return true;
 
   // Close primary table.
   close_all_tables_for_name(thd, table_list->table->s, false, nullptr);
@@ -12261,6 +12346,7 @@ static bool alter_table_manage_keys(
     case Alter_info::LEAVE_AS_IS:
       if (!indexes_were_disabled) break;
       /* fall-through: disabled indexes */
+      [[fallthrough]];
     case Alter_info::DISABLE:
       error = table->file->ha_disable_indexes(HA_KEY_SWITCH_NONUNIQ_SAVE);
   }
@@ -13009,7 +13095,7 @@ static bool mysql_inplace_alter_table(
     case HA_ALTER_ERROR:
     case HA_ALTER_INPLACE_NOT_SUPPORTED:
       assert(0);
-      // fall through
+      [[fallthrough]];
     case HA_ALTER_INPLACE_NO_LOCK:
     case HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE:
       switch (alter_info->requested_lock) {
@@ -13768,7 +13854,8 @@ static bool transfer_preexisting_foreign_keys(
         Create_field *find;
         while ((find = find_it++)) {
           if (my_strcasecmp(system_charset_info, sql_fk->key_part[j].str,
-                            find->field_name) == 0) {
+                            find->field_name) == 0 &&
+              find->field != nullptr) {
             break;
           }
         }
@@ -13785,9 +13872,11 @@ static bool transfer_preexisting_foreign_keys(
         assert(!find->is_virtual_gcol());
         if (is_self_referencing) {
           find_it.rewind();
+
           while ((find = find_it++)) {
             if (my_strcasecmp(system_charset_info, sql_fk->fk_key_part[j].str,
-                              find->field_name) == 0) {
+                              find->field_name) == 0 &&
+                find->field != nullptr) {
               break;
             }
           }
@@ -14672,7 +14761,7 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
             */
             break;
           }
-          // Fall-through.
+          [[fallthrough]];
         case Alter_drop::KEY:
         case Alter_drop::COLUMN:
           my_error(ER_CANT_DROP_FIELD_OR_KEY, MYF(0), drop->name);
@@ -15677,7 +15766,7 @@ static bool handle_rename_functional_index(THD *thd, Alter_info *alter_info,
                 new_create_field->after = nullptr;
                 new_create_field->field_name =
                     make_functional_index_column_name(
-                        alter_rename_key->new_name, static_cast<int>(k),
+                        alter_rename_key->new_name, k, alter_info->create_list,
                         thd->mem_root);
 
                 alter_info->create_list.push_back(new_create_field);
@@ -17871,8 +17960,8 @@ bool mysql_trans_commit_alter_copy_data(THD *thd) {
 }
 
 static int copy_data_between_tables(
-    THD *thd, PSI_stage_progress *psi MY_ATTRIBUTE((unused)), TABLE *from,
-    TABLE *to, List<Create_field> &create, ha_rows *copied, ha_rows *deleted,
+    THD *thd, PSI_stage_progress *psi [[maybe_unused]], TABLE *from, TABLE *to,
+    List<Create_field> &create, ha_rows *copied, ha_rows *deleted,
     Alter_info::enum_enable_or_disable keys_onoff, Alter_table_ctx *alter_ctx) {
   DBUG_TRACE;
 
@@ -17888,9 +17977,6 @@ static int copy_data_between_tables(
   sql_mode_t save_sql_mode;
   Query_expression *const unit = thd->lex->unit;
   Query_block *const select = unit->first_query_block();
-
-  QEP_TAB_standalone qep_tab_st;
-  QEP_TAB &qep_tab = qep_tab_st.as_QEP_TAB();
 
   /*
     If target storage engine supports atomic DDL we should not commit
@@ -17994,8 +18080,9 @@ static int copy_data_between_tables(
 
   unique_ptr_destroy_only<Filesort> fsort;
   unique_ptr_destroy_only<RowIterator> iterator;
-  AccessPath *path = create_table_access_path(thd, from, nullptr,
-                                              /*count_examined_rows=*/false);
+  AccessPath *path =
+      create_table_access_path(thd, from, nullptr, nullptr, nullptr,
+                               /*count_examined_rows=*/false);
 
   if (order != nullptr && to->s->primary_key != MAX_KEY &&
       to->file->primary_key_is_clustered()) {
@@ -18007,7 +18094,6 @@ static int copy_data_between_tables(
     push_warning(thd, Sql_condition::SL_WARNING, ER_UNKNOWN_ERROR, warn_buff);
     order = nullptr;
   }
-  qep_tab.set_table(from);
   /* Tell handler that we have values for all columns in the to table */
   to->use_all_columns();
   if (order != nullptr) {
@@ -18028,8 +18114,8 @@ static int copy_data_between_tables(
     }
     fsort.reset(new (thd->mem_root) Filesort(
         thd, {from}, /*keep_buffers=*/false, order, HA_POS_ERROR,
-        /*force_stable_sort=*/false, /*remove_duplicates=*/false,
-        /*force_sort_positions=*/true, /*unwrap_rollup=*/false));
+        /*remove_duplicates=*/false, /*force_sort_positions=*/true,
+        /*unwrap_rollup=*/false));
     path = NewSortAccessPath(thd, path, fsort.get(),
                              /*count_examined_rows=*/false);
   }

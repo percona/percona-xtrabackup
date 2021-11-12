@@ -448,9 +448,8 @@ MY_COMPILER_CLANG_WORKAROUND_REF_DOCBUG()
 @see @ref sect_redo_log_add_dirty_pages */
 MY_COMPILER_DIAGNOSTIC_POP()
 
-MY_ATTRIBUTE((unused))
-static inline bool buf_flush_list_order_validate(lsn_t earlier_added_lsn,
-                                                 lsn_t new_added_lsn) {
+[[maybe_unused]] static inline bool buf_flush_list_order_validate(
+    lsn_t earlier_added_lsn, lsn_t new_added_lsn) {
   return (earlier_added_lsn <=
           new_added_lsn + log_buffer_flush_order_lag(*log_sys));
 }
@@ -690,7 +689,7 @@ bool buf_flush_ready_for_replace(buf_page_t *bpage) {
   ut_ad(bpage->in_LRU_list);
 
   if (!buf_page_in_file(bpage)) {
-    ib::fatal(ER_IB_MSG_123)
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_123)
         << "Buffer block " << bpage << " state "
         << static_cast<unsigned>(bpage->state) << " in the LRU list!";
   }
@@ -1033,7 +1032,7 @@ void buf_flush_init_for_writing(const buf_block_t *block, byte *page,
         if (page_zip->data != page) {
           memcpy(page_zip->data, page, size);
         }
-        /* fall through */
+        [[fallthrough]];
       case FIL_PAGE_TYPE_ZBLOB:
       case FIL_PAGE_TYPE_ZBLOB2:
       case FIL_PAGE_SDI_ZBLOB:
@@ -2825,8 +2824,8 @@ bool buf_flush_page_cleaner_is_active() {
 void buf_flush_page_cleaner_init(size_t n_page_cleaners) {
   ut_ad(page_cleaner == nullptr);
 
-  page_cleaner =
-      static_cast<page_cleaner_t *>(ut_zalloc_nokey(sizeof(*page_cleaner)));
+  page_cleaner = static_cast<page_cleaner_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*page_cleaner)));
 
   mutex_create(LATCH_ID_PAGE_CLEANER, &page_cleaner->mutex);
 
@@ -2836,14 +2835,15 @@ void buf_flush_page_cleaner_init(size_t n_page_cleaners) {
   page_cleaner->n_slots = static_cast<ulint>(srv_buf_pool_instances);
 
   page_cleaner->slots = static_cast<page_cleaner_slot_t *>(
-      ut_zalloc_nokey(page_cleaner->n_slots * sizeof(*page_cleaner->slots)));
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                         page_cleaner->n_slots * sizeof(*page_cleaner->slots)));
 
   ut_d(page_cleaner->n_disabled_debug = 0);
 
   page_cleaner->is_running = true;
 
   srv_threads.m_page_cleaner_coordinator =
-      os_thread_create(page_flush_coordinator_thread_key,
+      os_thread_create(page_flush_coordinator_thread_key, 0,
                        buf_flush_page_coordinator_thread, n_page_cleaners);
 
   srv_threads.m_page_cleaner_workers[0] =
@@ -2867,12 +2867,12 @@ static void buf_flush_page_cleaner_close(void) {
 
   mutex_destroy(&page_cleaner->mutex);
 
-  ut_free(page_cleaner->slots);
+  ut::free(page_cleaner->slots);
 
   os_event_destroy(page_cleaner->is_finished);
   os_event_destroy(page_cleaner->is_requested);
 
-  ut_free(page_cleaner);
+  ut::free(page_cleaner);
 
   page_cleaner = nullptr;
 }
@@ -3196,7 +3196,7 @@ static void buf_flush_page_coordinator_thread(size_t n_page_cleaners) {
   ulint last_activity = srv_get_activity_count();
   ulint last_pages = 0;
 
-  THD *thd = create_thd(false, true, true, 0);
+  THD *thd = create_internal_thd();
 
 #ifdef UNIV_LINUX
   /* linux might be able to set different setting for each thread.
@@ -3214,8 +3214,8 @@ static void buf_flush_page_coordinator_thread(size_t n_page_cleaners) {
   /* We start from 1 because the coordinator thread is part of the
   same set */
   for (size_t i = 1; i < srv_threads.m_page_cleaner_workers_n; ++i) {
-    srv_threads.m_page_cleaner_workers[i] =
-        os_thread_create(page_flush_thread_key, buf_flush_page_cleaner_thread);
+    srv_threads.m_page_cleaner_workers[i] = os_thread_create(
+        page_flush_thread_key, i, buf_flush_page_cleaner_thread);
 
     srv_threads.m_page_cleaner_workers[i].start();
   }
@@ -3572,7 +3572,7 @@ thread_exit:
 
   buf_flush_page_cleaner_close();
 
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 }
 
 /** Worker thread of page_cleaner. */
@@ -3703,9 +3703,9 @@ bool buf_flush_validate(buf_pool_t *buf_pool) {
  list in a particular buffer pool.
  @return number of dirty pages present in a single buffer pool */
 ulint buf_pool_get_dirty_pages_count(
-    buf_pool_t *buf_pool,    /*!< in: buffer pool */
-    space_id_t id,           /*!< in: space id to check */
-    FlushObserver *observer) /*!< in: flush observer to check */
+    buf_pool_t *buf_pool,     /*!< in: buffer pool */
+    space_id_t id,            /*!< in: space id to check */
+    Flush_observer *observer) /*!< in: flush observer to check */
 
 {
   ulint count = 0;
@@ -3733,8 +3733,8 @@ ulint buf_pool_get_dirty_pages_count(
  list.
  @return number of dirty pages present in all the buffer pools */
 static ulint buf_flush_get_dirty_pages_count(
-    space_id_t id,           /*!< in: space id to check */
-    FlushObserver *observer) /*!< in: flush observer to check */
+    space_id_t id,            /*!< in: space id to check */
+    Flush_observer *observer) /*!< in: flush observer to check */
 {
   ulint count = 0;
 
@@ -3749,32 +3749,32 @@ static ulint buf_flush_get_dirty_pages_count(
   return (count);
 }
 
-FlushObserver::FlushObserver(space_id_t space_id, trx_t *trx,
-                             ut_stage_alter_t *stage) noexcept
+Flush_observer::Flush_observer(space_id_t space_id, trx_t *trx,
+                               Alter_stage *stage) noexcept
     : m_space_id(space_id),
       m_trx(trx),
       m_stage(stage),
       m_flushed(srv_buf_pool_instances),
       m_removed(srv_buf_pool_instances) {
 #ifdef FLUSH_LIST_OBSERVER_DEBUG
-  ib::info(ER_IB_MSG_130) << "FlushObserver : ID= " << m_id
+  ib::info(ER_IB_MSG_130) << "Flush_observer : ID= " << m_id
                           << ", space_id=" << space_id << ", trx_id="
                           << (m_trx == nullptr ? TRX_ID_MAX : trx->id);
 #endif /* FLUSH_LIST_OBSERVER_DEBUG */
 }
 
-FlushObserver::~FlushObserver() noexcept {
+Flush_observer::~Flush_observer() noexcept {
   ut_a(m_n_ref_count.fetch_add(0, std::memory_order_relaxed) == 0);
   ut_ad(buf_flush_get_dirty_pages_count(m_space_id, this) == 0);
 
 #ifdef FLUSH_LIST_OBSERVER_DEBUG
-  ib::info(ER_IB_MSG_131) << "~FlushObserver : ID= " << m_id
+  ib::info(ER_IB_MSG_131) << "~Flush_observer : ID= " << m_id
                           << ", space_id=" << space_id << ", trx_id="
                           << (m_trx == nullptr ? TRX_ID_MAX : trx->id);
 #endif /* FLUSH_LIST_OBSERVER_DEBUG */
 }
 
-bool FlushObserver::check_interrupted() {
+bool Flush_observer::check_interrupted() {
   if (m_trx != nullptr && trx_is_interrupted(m_trx)) {
     interrupted();
 
@@ -3784,19 +3784,19 @@ bool FlushObserver::check_interrupted() {
   return false;
 }
 
-void FlushObserver::notify_flush(buf_pool_t *buf_pool, buf_page_t *bpage) {
+void Flush_observer::notify_flush(buf_pool_t *buf_pool, buf_page_t *bpage) {
   m_flushed.at(buf_pool->instance_no).fetch_add(1, std::memory_order_relaxed);
 
   if (m_stage != nullptr) {
-    m_stage->inc();
+    m_stage->inc(1);
   }
 }
 
-void FlushObserver::notify_remove(buf_pool_t *buf_pool, buf_page_t *bpage) {
+void Flush_observer::notify_remove(buf_pool_t *buf_pool, buf_page_t *bpage) {
   m_removed.at(buf_pool->instance_no).fetch_add(1, std::memory_order_relaxed);
 }
 
-void FlushObserver::flush() {
+void Flush_observer::flush() {
   buf_remove_t buf_remove;
 
   if (m_interrupted) {
@@ -3805,8 +3805,7 @@ void FlushObserver::flush() {
     buf_remove = BUF_REMOVE_FLUSH_WRITE;
 
     if (m_stage != nullptr) {
-      ulint pages_to_flush = buf_flush_get_dirty_pages_count(m_space_id, this);
-
+      auto pages_to_flush = buf_flush_get_dirty_pages_count(m_space_id, this);
       m_stage->begin_phase_flush(pages_to_flush);
     }
   }

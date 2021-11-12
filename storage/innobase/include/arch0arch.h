@@ -544,7 +544,7 @@ class Arch_File_Ctx {
     close();
 
     if (m_name_buf != nullptr) {
-      ut_free(m_name_buf);
+      ut::free(m_name_buf);
     }
   }
 
@@ -1039,14 +1039,15 @@ class Arch_Group {
 #ifdef UNIV_DEBUG
   /** Adjust end LSN to end of file. This is used in debug
   mode to test the case when LSN is at file boundary.
-  @param[in,out]        stop_lsn        stop lsn for client
-  @param[out]   blk_len         last block length */
+  @param[in,out]  stop_lsn  stop lsn for client
+  @param[out]     blk_len   last block length */
   void adjust_end_lsn(lsn_t &stop_lsn, uint32_t &blk_len);
 
   /** Adjust redo copy length to end of file. This is used
   in debug mode to archive only till end of file.
-  @param[in,out]        length  data to copy in bytes */
-  void adjust_copy_length(uint32_t &length);
+  @param[in]      arch_lsn  LSN up to which data is already archived
+  @param[in,out]  copy_len  length of data to copy in bytes */
+  void adjust_copy_length(lsn_t arch_lsn, uint32_t &copy_len);
 
   /** Check if the information maintained in the memory is the same
   as the information maintained in the files.
@@ -1248,7 +1249,7 @@ class Arch_Group {
 };
 
 /** A list of archive groups */
-using Arch_Grp_List = std::list<Arch_Group *, ut_allocator<Arch_Group *>>;
+using Arch_Grp_List = std::list<Arch_Group *, ut::allocator<Arch_Group *>>;
 
 /** An iterator for archive group */
 using Arch_Grp_List_Iter = Arch_Grp_List::iterator;
@@ -1365,9 +1366,11 @@ class Arch_Log_Sys {
 
   /** Update checkpoint LSN and related information in redo
   log header block.
-  @param[in,out]	header		redo log header buffer
+  @param[in]		group	archiving group
+  @param[in,out]	header	redo log header buffer
   @param[in]	checkpoint_lsn	checkpoint LSN for recovery */
-  void update_header(byte *header, lsn_t checkpoint_lsn);
+  void update_header(const Arch_Group *group, byte *header,
+                     lsn_t checkpoint_lsn);
 
   /** Check and set log archive system state and output the
   amount of redo log available for archiving.
@@ -1413,7 +1416,7 @@ class Arch_Log_Sys {
 };
 
 /** Vector of page archive in memory blocks */
-using Arch_Block_Vec = std::vector<Arch_Block *, ut_allocator<Arch_Block *>>;
+using Arch_Block_Vec = std::vector<Arch_Block *, ut::allocator<Arch_Block *>>;
 
 /** Page archiver in memory data */
 struct ArchPageData {

@@ -913,7 +913,7 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` bigint NOT NULL DEFAULT '0',
-  `b` int NOT NULL DEFAULT '0',
+  `b` int unsigned NOT NULL DEFAULT '0',
   `c` longtext CHARACTER SET latin1 NOT NULL,
   `d` varchar(1) CHARACTER SET latin1 DEFAULT NULL,
   `e` varchar(512) CHARACTER SET latin1 DEFAULT NULL,
@@ -1173,3 +1173,14 @@ DO INSERT(regexp_replace(1, '[', 42), 0, 1, '');
 ERROR HY000: The regular expression contains an unclosed bracket expression.
 SET NAMES DEFAULT;
 SET SQL_MODE=DEFAULT;
+#
+# Bug #33290245 Item_func_st_distance_sphere::val_real():
+#               Assertion `is_nullable()' failed.
+select ( _utf32', ,*') regexp 13946;
+ERROR HY000: Cannot convert string '\x2C\x20\x2C\x2A' from utf32 to utf16le
+select regexp_instr( ( _utf32', ,*'), 13946);
+ERROR HY000: Cannot convert string '\x2C\x20\x2C\x2A' from utf32 to utf16le
+select regexp_replace( ( _utf32', ,*'), 13946, 42);
+ERROR HY000: Cannot convert string '\x2C\x20\x2C\x2A' from utf32 to utf16le
+select regexp_substr( ( _utf32', ,*'), 13946);
+ERROR HY000: Cannot convert string '\x2C\x20\x2C\x2A' from utf32 to utf16le

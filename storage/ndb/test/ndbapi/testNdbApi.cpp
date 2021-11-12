@@ -281,16 +281,29 @@ int runTestMaxOperations(NDBT_Context* ctx, NDBT_Step* step){
         continue;
       }
 
+      const NdbError err = hugoOps.getNdbError();
+      require(execResult == 0 ||
+              execResult == err.code);
+
       switch(execResult){
       case NDBT_OK:
         break;
 
       default:
         result = NDBT_FAILED;
-        // Fall through - to '233' which also terminate test, but not 'FAILED'
-      case 233:  // Out of operation records in transaction coordinator  
+        //  261: //Increased beyond MaxDMLOperationsPerTransaction or MaxNoOfConcurrentOperations
+        ndbout_c("Got unexpected error %u %s for non DML transaction", err.code, err.message);
+        [[fallthrough]];
+      case 233:  // Out of operation records in transaction coordinator - SharedGlobalMemory
+      case 234:  // Out of operation records in transaction coordinator - MaxNoOfConcurrentOperations
       case 1217:  // Out of operation records in local data manager (increase MaxNoOfLocalOperations)
-      case 261: //Increased beyond MaxDMLOperationsPerTransaction or MaxNoOfConcurrentOperations
+
+        /* Ok, check that error is temporary */
+        if (err.status != NdbError::TemporaryError)
+        {
+          ndbout_c("Error : non temporary error %u %s returned", err.code, err.message);
+          result = NDBT_FAILED;
+        }
         // OK - end test
         endTest = true;
         break;
@@ -5536,7 +5549,7 @@ public:
         return -1;
       }
       case 2:
-        /* Fall through */
+        [[fallthrough]];
       case 3:
       {
         /* Body fragment */

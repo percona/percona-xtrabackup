@@ -55,6 +55,8 @@
 class Autorejoin_thread;
 class Transaction_consistency_manager;
 class Member_actions_handler;
+class Consensus_leaders_handler;
+class Mysql_thread;
 
 // Definition of system var structures
 
@@ -114,6 +116,7 @@ struct gr_modules {
     MESSAGE_SERVICE_HANDLER,
     BINLOG_DUMP_THREAD_KILL,
     MEMBER_ACTIONS_HANDLER,
+    MYSQL_THREAD_HANDLER,
     NUM_MODULES
   };
   using mask = std::bitset<NUM_MODULES>;
@@ -128,6 +131,17 @@ struct gr_modules {
 enum enum_tls_source_values {
   TLS_SOURCE_MYSQL_MAIN = 0,
   TLS_SOURCE_MYSQL_ADMIN
+};
+
+/**
+  @enum enum_wait_on_start_process_result
+  @brief Reasons why asynchronous channels start wait for Group
+  Replication status can be aborted.
+*/
+enum enum_wait_on_start_process_result {
+  WAIT_ON_START_PROCESS_SUCCESS = 0,
+  WAIT_ON_START_PROCESS_ABORT_ON_CLONE,
+  WAIT_ON_START_PROCESS_ABORT_SECONDARY_MEMBER
 };
 
 /**
@@ -158,6 +172,7 @@ extern Primary_election_handler *primary_election_handler;
 extern Autorejoin_thread *autorejoin_module;
 extern Message_service_handler *message_service_handler;
 extern Member_actions_handler *member_actions_handler;
+extern Mysql_thread *mysql_thread_handler;
 
 // Auxiliary Functionality
 extern Plugin_gcs_events_handler *events_handler;
@@ -166,6 +181,7 @@ extern Compatibility_module *compatibility_mgr;
 extern Group_partition_handling *group_partition_handler;
 extern Blocked_transaction_handler *blocked_transaction_handler;
 extern Remote_clone_handler *remote_clone_handler;
+extern Consensus_leaders_handler *consensus_leaders_handler;
 // Latch used as the control point of the event driven
 // management of the transactions.
 extern Wait_ticket<my_thread_id> *transactions_latch;
@@ -198,7 +214,7 @@ bool is_autorejoin_enabled();
 uint get_number_of_autorejoin_tries();
 ulonglong get_rejoin_timeout();
 void declare_plugin_cloning(bool is_running);
-
+bool get_allow_single_leader();
 /**
   Encapsulates the logic necessary to attempt a rejoin, i.e. gracefully leave
   the group, terminate GCS infrastructure, terminate auto-rejoin relevant plugin
@@ -230,6 +246,7 @@ int get_flow_control_period_var();
 int get_flow_control_hold_percent_var();
 int get_flow_control_release_percent_var();
 ulong get_components_stop_timeout_var();
+ulong get_communication_stack_var();
 void set_error_state_due_to_error_during_autorejoin();
 bool get_error_state_due_to_error_during_autorejoin();
 
@@ -242,8 +259,9 @@ bool plugin_is_group_replication_running();
 bool plugin_is_group_replication_cloning();
 bool is_plugin_auto_starting_on_non_bootstrap_member();
 bool is_plugin_configured_and_starting();
-bool initiate_wait_on_start_process();
-void terminate_wait_on_start_process(bool abort = false);
+enum_wait_on_start_process_result initiate_wait_on_start_process();
+void terminate_wait_on_start_process(
+    enum_wait_on_start_process_result abort = WAIT_ON_START_PROCESS_SUCCESS);
 void set_wait_on_start_process(bool cond);
 bool plugin_get_connection_status(
     const GROUP_REPLICATION_CONNECTION_STATUS_CALLBACKS &callbacks);
@@ -253,6 +271,7 @@ bool plugin_get_group_member_stats(
     uint index,
     const GROUP_REPLICATION_GROUP_MEMBER_STATS_CALLBACKS &callbacks);
 uint plugin_get_group_members_number();
+int plugin_group_replication_leave_group();
 
 /**
   Method to set retrieved certification info from a recovery channel extracted

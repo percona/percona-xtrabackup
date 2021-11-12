@@ -45,7 +45,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 Currently this can be the system tablespace or a temporary table tablespace */
 class Tablespace {
  public:
-  typedef std::vector<Datafile, ut_allocator<Datafile>> files_t;
+  typedef std::vector<Datafile, ut::allocator<Datafile>> files_t;
 
   /** Data file information - each Datafile can be accessed globally */
   files_t m_files;
@@ -65,6 +65,17 @@ class Tablespace {
     shutdown();
     ut_ad(m_files.empty());
     ut_ad(m_space_id == SPACE_UNKNOWN);
+<<<<<<< HEAD
+=======
+    if (m_name != nullptr) {
+      ut::free(m_name);
+      m_name = nullptr;
+    }
+    if (m_path != nullptr) {
+      ut::free(m_path);
+      m_path = nullptr;
+    }
+>>>>>>> mysql-8.0.27
   }
 
   files_t::iterator files_begin() { return m_files.begin(); }
@@ -152,7 +163,7 @@ class Tablespace {
   /** Open or Create the data files if they do not exist.
   @param[in]	is_temp	whether this is a temporary tablespace
   @return DB_SUCCESS or error code */
-  dberr_t open_or_create(bool is_temp) MY_ATTRIBUTE((warn_unused_result));
+  [[nodiscard]] dberr_t open_or_create(bool is_temp);
 
   /** Delete all the data files. */
   void delete_files();

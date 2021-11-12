@@ -378,7 +378,7 @@ only (NONE | ZLIB | LZ4). */
 */
 
 /* Note that inside MySQL 'byte' is defined as char on Linux! */
-#define byte unsigned char
+using byte = unsigned char;
 
 /* Another basic type we use is unsigned long integer which should be equal to
 the word size of the machine, that is on a 32-bit platform 32 bits, and on a
@@ -498,12 +498,8 @@ contains the sum of the following flag and the locally stored len. */
 
 #define UNIV_EXTERN_STORAGE_FIELD (UNIV_SQL_NULL - UNIV_PAGE_SIZE_DEF)
 
-#if defined(__GNUC__)
 /* Tell the compiler that variable/function is unused. */
-#define UNIV_UNUSED MY_ATTRIBUTE((unused))
-#else
-#define UNIV_UNUSED
-#endif /* CHECK FOR GCC VER_GT_2 */
+#define UNIV_UNUSED [[maybe_unused]]
 
 /* Some macros to improve branch prediction and reduce cache misses */
 #if defined(COMPILER_HINTS) && defined(__GNUC__)
@@ -518,23 +514,6 @@ it is read. */
 it is read or written. */
 #define UNIV_PREFETCH_RW(addr) __builtin_prefetch(addr, 1, 3)
 
-/* Sun Studio includes sun_prefetch.h as of version 5.9 */
-#elif (defined(__SUNPRO_C) || defined(__SUNPRO_CC))
-
-#include <sun_prefetch.h>
-
-#define UNIV_EXPECT(expr, value) (expr)
-#define UNIV_LIKELY_NULL(expr) (expr)
-
-#if defined(COMPILER_HINTS)
-//# define UNIV_PREFETCH_R(addr) sun_prefetch_read_many((void*) addr)
-#define UNIV_PREFETCH_R(addr) ((void)0)
-#define UNIV_PREFETCH_RW(addr) sun_prefetch_write_many(addr)
-#else
-#define UNIV_PREFETCH_R(addr) ((void)0)
-#define UNIV_PREFETCH_RW(addr) ((void)0)
-#endif /* COMPILER_HINTS */
-
 #elif defined __WIN__ && defined COMPILER_HINTS
 #include <xmmintrin.h>
 
@@ -546,8 +525,8 @@ it is read or written. */
 #define UNIV_PREFETCH_RW(addr) _mm_prefetch((char *)addr, _MM_HINT_T0)
 #else
 /* Dummy versions of the macros */
-#define UNIV_EXPECT(expr, value) (expr)
-#define UNIV_LIKELY_NULL(expr) (expr)
+#define UNIV_EXPECT(expr, value) expr
+#define UNIV_LIKELY_NULL(expr) expr
 #define UNIV_PREFETCH_R(addr) ((void)0)
 #define UNIV_PREFETCH_RW(addr) ((void)0)
 #endif
@@ -707,4 +686,25 @@ as a standalone library. */
 #define UNIV_NO_ERR_MSGS
 
 #endif /* UNIV_LIBRARY && !UNIV_NO_ERR_MSGS */
+
+#ifdef UNIV_DEBUG
+#define IF_DEBUG(...) __VA_ARGS__
+#define IF_ENABLED(s, ...)        \
+  if (Sync_point::enabled((s))) { \
+    __VA_ARGS__                   \
+  }
+#else
+
+/* Expand the macro if we are generating Doxygen documentation. */
+#ifdef DOXYGEN_IF_DEBUG
+#define IF_DEBUG(...) __VA_ARGS__
+#else
+#define IF_DEBUG(...)
+#endif /* DOXYGEN_IF_DEBUG */
+
+#define IF_ENABLED(s, ...)
+#endif /* UNIV_DEBUG */
+
+using Col_offsets_t = ulint;
+
 #endif /* univ_i */

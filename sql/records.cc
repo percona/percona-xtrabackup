@@ -42,10 +42,11 @@
 #include "sql/handler.h"
 #include "sql/item.h"
 #include "sql/join_optimizer/access_path.h"
+#include "sql/join_optimizer/bit_utils.h"
 #include "sql/key.h"
 #include "sql/opt_explain.h"
-#include "sql/opt_range.h"  // QUICK_SELECT_I
-#include "sql/sql_class.h"  // THD
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
+#include "sql/sql_class.h"                        // THD
 #include "sql/sql_const.h"
 #include "sql/sql_executor.h"
 #include "sql/sql_optimizer.h"
@@ -143,47 +144,39 @@ template class IndexScanIterator<false>;
   said iterator afterwards.
 
   @param thd      Thread handle
-  @param table    Table the data [originally] comes from; if nullptr,
-    `table` is inferred from `qep_tab`; if non-nullptr, `qep_tab` must
-   have the same table.
-  @param qep_tab  QEP_TAB for 'table', if there is one; we may use
-    qep_tab->quick() as data source
+  @param table    Table the data [originally] comes from
+  @param quick    QUICK_SELECT_I to scan the table with, or nullptr
+  @param table_ref
+                  Position for the table, must be non-nullptr for
+                  WITH RECURSIVE
+  @param position Place to get cost information from, or nullptr
   @param count_examined_rows
     See AccessPath::count_examined_rows.
  */
-AccessPath *create_table_access_path(THD *thd, TABLE *table, QEP_TAB *qep_tab,
+AccessPath *create_table_access_path(THD *thd, TABLE *table,
+                                     QUICK_SELECT_I *quick,
+                                     TABLE_LIST *table_ref, POSITION *position,
                                      bool count_examined_rows) {
-  // If only 'table' is given, assume no quick, no condition.
-  if (table != nullptr && qep_tab != nullptr) {
-    assert(table == qep_tab->table());
-  } else if (table == nullptr) {
-    table = qep_tab->table();
-  }
-
   AccessPath *path;
-  if (qep_tab != nullptr && qep_tab->quick() != nullptr) {
-    path = NewIndexRangeScanAccessPath(thd, table, qep_tab->quick(),
-                                       count_examined_rows);
-  } else if (qep_tab != nullptr && qep_tab->table_ref != nullptr &&
-             qep_tab->table_ref->is_recursive_reference()) {
+  if (quick != nullptr) {
+    path = NewIndexRangeScanAccessPath(thd, table, quick, count_examined_rows);
+  } else if (table_ref != nullptr && table_ref->is_recursive_reference()) {
     path = NewFollowTailAccessPath(thd, table, count_examined_rows);
   } else {
     path = NewTableScanAccessPath(thd, table, count_examined_rows);
   }
-  if (qep_tab != nullptr && qep_tab->position() != nullptr) {
-    SetCostOnTableAccessPath(*thd->cost_model(), qep_tab->position(),
+  if (position != nullptr) {
+    SetCostOnTableAccessPath(*thd->cost_model(), position,
                              /*is_after_filter=*/false, path);
   }
   return path;
 }
 
 unique_ptr_destroy_only<RowIterator> init_table_iterator(
-    THD *thd, TABLE *table, QEP_TAB *qep_tab, bool ignore_not_found_rows,
-    bool count_examined_rows) {
+    THD *thd, TABLE *table, QUICK_SELECT_I *quick, TABLE_LIST *table_ref,
+    POSITION *position, bool ignore_not_found_rows, bool count_examined_rows) {
   unique_ptr_destroy_only<RowIterator> iterator;
 
-  assert(!(table && qep_tab));
-  if (!table) table = qep_tab->table();
   empty_record(table);
 
   if (table->unique_result.io_cache &&
@@ -207,10 +200,10 @@ unique_ptr_destroy_only<RowIterator> init_table_iterator(
         ignore_not_found_rows, /*has_null_flags=*/false,
         /*examined_rows=*/nullptr);
   } else {
-    AccessPath *path =
-        create_table_access_path(thd, table, qep_tab, count_examined_rows);
+    AccessPath *path = create_table_access_path(thd, table, quick, table_ref,
+                                                position, count_examined_rows);
     iterator = CreateIteratorFromAccessPath(thd, path,
-                                            qep_tab ? qep_tab->join() : nullptr,
+                                            /*join=*/nullptr,
                                             /*eligible_for_batch_mode=*/false);
   }
   if (iterator->Init()) {
@@ -269,6 +262,54 @@ IndexRangeScanIterator::IndexRangeScanIterator(THD *thd, TABLE *table,
       m_expected_rows(expected_rows),
       m_examined_rows(examined_rows) {}
 
+/// Is this range scan a Rowid-Ordered Retrieval (ROR) index merge?
+static bool is_ror(const QUICK_SELECT_I *quick) {
+  switch (quick->get_type()) {
+    case QS_TYPE_ROR_INTERSECT:
+    case QS_TYPE_ROR_UNION:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// Does this TABLE have a primary key with a BLOB component?
+static bool has_blob_primary_key(const TABLE *table) {
+  if (table->s->is_missing_primary_key()) {
+    return false;
+  }
+
+  const KEY &key = table->key_info[table->s->primary_key];
+  return std::any_of(key.key_part, key.key_part + key.user_defined_key_parts,
+                     [](const KEY_PART_INFO &key_part) {
+                       return Overlaps(key_part.key_part_flag, HA_BLOB_PART);
+                     });
+}
+
+/// Should a record buffer be requested for this range scan?
+static bool should_request_record_buffer(const QUICK_SELECT_I *quick) {
+  // We don't try to set up record buffers for loose index scans, because they
+  // usually cannot read expected_rows_to_fetch rows in one go anyway.
+  if (quick->is_loose_index_scan()) {
+    return false;
+  }
+
+  // Rowid-ordered retrievals may add the primary key to the read_set at a later
+  // stage. If the primary key contains a BLOB component, a record buffer cannot
+  // be used, since BLOBs require storage space outside of the record. So don't
+  // request a buffer in this case, even though the current read_set gives the
+  // impression that using a record buffer would be fine.
+  if (is_ror(quick) &&
+      Overlaps(quick->m_table->file->ha_table_flags(),
+               HA_PRIMARY_KEY_REQUIRED_FOR_POSITION) &&
+      has_blob_primary_key(quick->m_table)) {
+    return false;
+  }
+
+  // Otherwise, request a row buffer.
+  return true;
+}
+
 bool IndexRangeScanIterator::Init() {
   empty_record(table());
 
@@ -285,10 +326,8 @@ bool IndexRangeScanIterator::Init() {
     return true;
   }
 
-  // NOTE: We don't try to set up record buffers for loose index scans,
-  // because they usually cannot read expected_rows_to_fetch rows in one go
-  // anyway.
-  if (first_init && table()->file->inited && !m_quick->is_loose_index_scan()) {
+  if (first_init && table()->file->inited &&
+      should_request_record_buffer(m_quick)) {
     if (set_record_buffer(table(), m_expected_rows)) {
       return true; /* purecov: inspected */
     }

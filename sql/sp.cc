@@ -1199,7 +1199,7 @@ bool sp_drop_db_routines(THD *thd, const dd::Schema &schema) {
         if (mark_referencing_views_invalid(thd, &fn_name, &foreach_fn_root))
           return true;
 
-        free_root(&foreach_fn_root, MYF(MY_MARK_BLOCKS_FREE));
+        foreach_fn_root.ClearForReuse();
       }
 
       is_routine_dropped = true;
@@ -2248,7 +2248,7 @@ uint sp_get_flags_for_command(LEX *lex) {
         flags = 0; /* This is a SELECT with INTO clause */
         break;
       }
-      /* fallthrough */
+      [[fallthrough]];
     case SQLCOM_ANALYZE:
     case SQLCOM_OPTIMIZE:
     case SQLCOM_PRELOAD_KEYS:
@@ -2538,7 +2538,7 @@ String *sp_get_item_value(THD *thd, Item *item, String *str) {
         return item->val_str(str);
       else { /* Bit type is handled as binary string */
       }
-      // Fall through
+      [[fallthrough]];
     case STRING_RESULT: {
       String *result = item->val_str(str);
 

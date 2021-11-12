@@ -84,7 +84,16 @@ std::string MetadataCachePluginConfig::get_cluster_type_specific_id() const {
   return "";
 }
 
-unsigned MetadataCachePluginConfig::get_view_id() const {
+std::string MetadataCachePluginConfig::get_clusterset_id() const {
+  if (metadata_cache_dynamic_state) {
+    metadata_cache_dynamic_state->load();
+    return metadata_cache_dynamic_state->get_clusterset_id();
+  }
+
+  return "";
+}
+
+uint64_t MetadataCachePluginConfig::get_view_id() const {
   if (metadata_cache_dynamic_state) {
     metadata_cache_dynamic_state->load();
     return metadata_cache_dynamic_state->get_view_id();

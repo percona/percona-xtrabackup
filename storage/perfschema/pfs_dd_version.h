@@ -173,8 +173,20 @@
   80024:
   performance_schema tables changed in MySQL 8.0.24
   - WL#13446 added performance_schema.keyring_component_status
+
+  80027:
+  performance_schema tables changed in MySQL 8.0.27
+  - WL#9852 added replication_group_members column
+    MEMBER_COMMUNICATION_PROTOCOL_STACK
+  - Bug#32701593:'SELECT FROM
+    PS.REPLICATION_ASYNCHRONOUS_CONNECTION_FAILOVER' DIDN'T RETURN A RE
+  - WL#7491 added the column to replication_connection_configuration
+    the column GTID_ONLY
+  - BUG#104643 Defaults in performance schema tables incompatible with sql_mode
+    fixed TIMESTAMP columns (removed default 0)
+    fixed DOUBLE columns (removed sign)
 */
 
-static const uint PFS_DD_VERSION = 80024;
+static const uint PFS_DD_VERSION = 80027;
 
 #endif /* PFS_DD_VERSION_H */

@@ -22,25 +22,19 @@
 
 INCLUDE(libutils)
 
+INCLUDE(ndb_downgrade_warnings)
+
 # Disable specific types of warnings for current directory
 # if the compiler supports the flag
 FOREACH(warning
-    "unused-but-set-variable"
-    "strict-aliasing"
-    "unused-parameter"
-    "cast-qual"
     # Downgrade -Werror=format-overflow to warning
     "error=format-overflow"
-    # Downgrade -Werror to warning for "may be used uninitialized"
-    "error=maybe-uninitialized"
-    # Downgrade -Werror=deprecated-copy to warning for gcc 9
-    "error=deprecated-copy"
     # Downgrade -Werror=stringop-truncation to warning for gcc 8/9
     "error=stringop-truncation"
     # Downgrade -Werror=stringop-overflow to warning
     "error=stringop-overflow"
-    # Downgrade -Werror=format-truncation to warning
-    "error=format-truncation"
+    # Downgrade -Werror=shadow-field
+    "error=shadow-field"
     )
   MY_CHECK_CXX_COMPILER_WARNING("${warning}" HAS_WARN_FLAG)
   IF(HAS_WARN_FLAG)
@@ -178,44 +172,24 @@ ELSE()
 ENDIF()
 
 IF(NOT WIN32)
-  # Turn off cmake's transitive link behaviour so that the shared
-  # ndbclient library contains everything except functions from
-  # system libs
   SET(NDBCLIENT_SYSTEM_LIBS)
   FOREACH(lib ${NDBCLIENT_SO_LIBS})
-    SET(deps ${${lib}_LIB_DEPENDS})
-    FOREACH(dep_lib ${deps})
-    SET(ignore_dep_lib)
-
-      # The list of dependent libs contains keywords used for debug vs optimized
-      # builds, ignore them
-      IF(dep_lib MATCHES "general" OR
-         dep_lib MATCHES "debug" OR
-         dep_lib MATCHES "optimized")
-        # MESSAGE(STATUS "Ignoring keyword ${dep_lib}")
-        SET(ignore_dep_lib 1)
-      ENDIF()
-
-      # Ignore libs where location is known(this means it's built locally)
-      LIST(FIND KNOWN_CONVENIENCE_LIBRARIES ${dep_lib} FOUNDIT)
-      IF(FOUNDIT GREATER -1)
-        # MESSAGE(STATUS "Ignoring ${dep_lib} since location is known")
-        SET(ignore_dep_lib 1)
-      ENDIF()
-
-      IF(NOT ignore_dep_lib)
-        LIST(APPEND NDBCLIENT_SYSTEM_LIBS ${dep_lib})
-      ENDIF()
-
-    ENDFOREACH()
+    LIST(FIND KNOWN_CONVENIENCE_LIBRARIES ${lib} FOUNDIT)
+    IF(FOUNDIT LESS 0)
+      MESSAGE(STATUS "Known libs : ${KNOWN_CONVENIENCE_LIBRARIES}")
+      MESSAGE(FATAL_ERROR "Unknown static library ${lib} FOUNDIT ${FOUNDIT}")
+    ENDIF()
+    GET_DEPENDEND_OS_LIBS(${lib} LIB_OSLIBS)
+    IF(LIB_OSLIBS)
+      LIST(APPEND NDBCLIENT_SYSTEM_LIBS ${LIB_OSLIBS})
+    ENDIF()
   ENDFOREACH()
+
   IF(NDBCLIENT_SYSTEM_LIBS)
     LIST(REMOVE_DUPLICATES NDBCLIENT_SYSTEM_LIBS)
     MESSAGE(STATUS "System libs used by ndbclient_so: ${NDBCLIENT_SYSTEM_LIBS}")
     TARGET_LINK_LIBRARIES(ndbclient_so INTERFACE
       ${NDBCLIENT_SYSTEM_LIBS})
-  ELSE()
-    MESSAGE(STATUS "System libs used by ndbclient_so: [none]")
   ENDIF()
 
   # Prepend any special linker flags(like -m64) for shared library

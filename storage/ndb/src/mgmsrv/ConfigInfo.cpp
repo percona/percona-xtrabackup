@@ -998,8 +998,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_UNDO_INDEX_BUFFER,
     "UndoIndexBuffer",
     DB_TOKEN,
-    "Number bytes on each " DB_TOKEN_PRINT " node allocated for writing UNDO logs for index part",
-    ConfigInfo::CI_USED,
+    "",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "2M",
@@ -1010,8 +1010,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_UNDO_DATA_BUFFER,
     "UndoDataBuffer",
     DB_TOKEN,
-    "Number bytes on each " DB_TOKEN_PRINT " node allocated for writing UNDO logs for data part",
-    ConfigInfo::CI_USED,
+    "",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "16M",
@@ -1128,6 +1128,18 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     "5000",
 #endif
     "10",
+    STR_VALUE(MAX_INT_RNIL) },
+
+  {
+    CFG_DB_TRP_KEEP_ALIVE_SEND_INTERVAL,
+    "KeepAliveSendInterval",
+    DB_TOKEN,
+    "Time between sending keep alive signals on " DB_TOKEN_PRINT "-" DB_TOKEN_PRINT " links",
+    ConfigInfo::CI_USED,
+    0,
+    ConfigInfo::CI_INT,
+    "60000",
+    "0",
     STR_VALUE(MAX_INT_RNIL) },
 
   {
@@ -1752,8 +1764,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     CFG_DB_MAX_ALLOCATE,
     "MaxAllocate",
     DB_TOKEN,
-    "Maximum size of allocation to use when allocating memory for tables",
-    ConfigInfo::CI_USED,
+    "",
+    ConfigInfo::CI_DEPRECATED,
     false,
     ConfigInfo::CI_INT,
     "32M",
@@ -2265,7 +2277,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     0,
     ConfigInfo::CI_INT,
-    "0",
+    "1",
     "0",
     "1"
   },
@@ -2279,7 +2291,7 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     ConfigInfo::CI_USED,
     0,
     ConfigInfo::CI_INT,
-    "0",
+    "1",
     "0",
     "1"
   },
@@ -4686,9 +4698,9 @@ public:
         fprintf(m_out, "MANDATORY (Legal values: Y, N)\n");
       else if (info.hasDefault(section, param_name))
       {
-        if (info.getDefault(section, param_name) == false)
+        if (info.getDefault(section, param_name) == 0)
           fprintf(m_out, "Default: N (Legal values: Y, N)\n");
-        else if (info.getDefault(section, param_name) == true)
+        else if (info.getDefault(section, param_name) == 1)
           fprintf(m_out, "Default: Y (Legal values: Y, N)\n");
         else
           fprintf(m_out, "UNKNOWN\n");
@@ -4845,9 +4857,9 @@ public:
         pairs.put("mandatory", "true");
       else if (info.hasDefault(section, param_name))
       {
-        if (info.getDefault(section, param_name) == false)
+        if (info.getDefault(section, param_name) == 0)
           pairs.put("default", "false");
-        else if (info.getDefault(section, param_name) == true)
+        else if (info.getDefault(section, param_name) == 1)
           pairs.put("default", "true");
       }
       break;

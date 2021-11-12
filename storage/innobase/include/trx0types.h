@@ -44,8 +44,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <set>
 #include <vector>
 
-//#include <unordered_set>
-
 /** printf(3) format used for printing DB_TRX_ID and other system fields */
 #define TRX_ID_FMT IB_ID_FMT
 
@@ -288,7 +286,7 @@ inline std::ostream &operator<<(std::ostream &out, const trx_rseg_t &rseg) {
   return (rseg.print(out));
 }
 
-using Rsegs_Vector = std::vector<trx_rseg_t *, ut_allocator<trx_rseg_t *>>;
+using Rsegs_Vector = std::vector<trx_rseg_t *, ut::allocator<trx_rseg_t *>>;
 using Rseg_Iterator = Rsegs_Vector::iterator;
 
 /** This is a wrapper for a std::vector of trx_rseg_t object pointers. */
@@ -590,41 +588,11 @@ class TrxUndoRsegs {
 };
 
 typedef std::priority_queue<
-    TrxUndoRsegs, std::vector<TrxUndoRsegs, ut_allocator<TrxUndoRsegs>>,
+    TrxUndoRsegs, std::vector<TrxUndoRsegs, ut::allocator<TrxUndoRsegs>>,
     TrxUndoRsegs>
     purge_pq_t;
 
-typedef std::vector<trx_id_t, ut_allocator<trx_id_t>> trx_ids_t;
-
-/** Mapping read-write transactions from id to transaction instance, for
-creating read views and during trx id lookup for MVCC and locking. */
-struct TrxTrack {
-  explicit TrxTrack(trx_id_t id, trx_t *trx = nullptr) : m_id(id), m_trx(trx) {
-    // Do nothing
-  }
-
-  trx_id_t m_id;
-  trx_t *m_trx;
-};
-
-/** Number of shards created for transactions. */
-constexpr size_t TRX_SHARDS_N = 256;
-
-struct TrxTrackHash {
-  size_t operator()(const TrxTrack &key) const {
-    return static_cast<size_t>(key.m_id / TRX_SHARDS_N);
-  }
-};
-
-/**
-Comparator for TrxMap */
-struct TrxTrackHashCmp {
-  bool operator()(const TrxTrack &lhs, const TrxTrack &rhs) const {
-    return (lhs.m_id == rhs.m_id);
-  }
-};
-
-typedef std::unordered_set<TrxTrack, TrxTrackHash, TrxTrackHashCmp> TrxIdSet;
+typedef std::vector<trx_id_t, ut::allocator<trx_id_t>> trx_ids_t;
 
 struct TrxVersion {
   TrxVersion(trx_t *trx);
@@ -633,5 +601,5 @@ struct TrxVersion {
   ulint m_version;
 };
 
-typedef std::vector<TrxVersion, ut_allocator<TrxVersion>> hit_list_t;
+typedef std::vector<TrxVersion, ut::allocator<TrxVersion>> hit_list_t;
 #endif /* trx0types_h */

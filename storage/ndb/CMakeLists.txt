@@ -101,21 +101,15 @@ SET(NDBCLUSTER_SOURCES
   plugin/ndb_dd_sync.cc
   plugin/ndb_upgrade_util.cc
   plugin/ndb_mysql_services.cc
+  plugin/ndb_blobs_buffer.cc
+  plugin/ndb_table_stats.cc
 )
 
 NDB_ADD_TEST("ndb_bitmap-t" "plugin/ndb_bitmap.cc" LIBS ndbgeneral)
+NDB_ADD_TEST("ndb_blobs_buffer-t" "plugin/ndb_blobs_buffer.cc" LIBS ndbgeneral)
 
 # Include directories used when building ha_ndbcluster
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/storage/ndb/include)
-
-IF(SOLARIS_INTEL)
-  # Sun Studio 12.6 on x86 machines creates a bogus code
-  # when -xO2 is used and crashes the executable whenever
-  # it calls std::condition_variable::wait_for()
-  STRING_APPEND(CMAKE_CXX_FLAGS_RELWITHDEBINFO " -xO1")
-  STRING_APPEND(CMAKE_CXX_FLAGS_RELEASE " -xO1")
-  STRING_APPEND(CMAKE_CXX_FLAGS_MINSIZEREL " -xO1")
-ENDIF()
 
 IF(NOT WITHOUT_SERVER)
   MYSQL_ADD_PLUGIN(ndbcluster ${NDBCLUSTER_SOURCES} STORAGE_ENGINE
@@ -133,6 +127,18 @@ IF(MY_COMPILER_IS_GNU_OR_CLANG)
   STRING_APPEND(CMAKE_C_FLAGS   " -fno-strict-aliasing")
   STRING_APPEND(CMAKE_CXX_FLAGS " -fno-strict-aliasing")
 ENDIF()
+
+# Disable specific types of warnings for current directory, and subdirectories,
+# if the compiler supports the flag
+FOREACH(warning
+    "cast-qual"
+    )
+  MY_CHECK_CXX_COMPILER_WARNING("${warning}" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+    STRING_APPEND(CMAKE_C_FLAGS " ${HAS_WARN_FLAG}")
+  ENDIF()
+ENDFOREACH()
 
 IF(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   MESSAGE(FATAL_ERROR "Only 64-bit build of NDB is supported")

@@ -777,11 +777,11 @@ st_ndb_slave_state::st_ndb_slave_state()
 
   /* Init conflict handling state memroot */
   const size_t CONFLICT_MEMROOT_BLOCK_SIZE = 32768;
-  init_alloc_root(PSI_INSTRUMENT_ME, &conflict_mem_root,
-                  CONFLICT_MEMROOT_BLOCK_SIZE, 0);
+  ::new ((void *)&conflict_mem_root)
+      MEM_ROOT(PSI_INSTRUMENT_ME, CONFLICT_MEMROOT_BLOCK_SIZE);
 }
 
-st_ndb_slave_state::~st_ndb_slave_state() { free_root(&conflict_mem_root, 0); }
+st_ndb_slave_state::~st_ndb_slave_state() {}
 
 /**
    resetPerAttemptCounters
@@ -1235,7 +1235,7 @@ void st_ndb_slave_state::atEndTransConflictHandling() {
     current_trans_in_conflict_count =
         trans_dependency_tracker->get_conflict_count();
     trans_dependency_tracker = NULL;
-    free_root(&conflict_mem_root, MY_MARK_BLOCKS_FREE);
+    conflict_mem_root.ClearForReuse();
   }
 }
 
@@ -2370,7 +2370,8 @@ int setup_conflict_fn(Ndb *ndb, NDB_CONFLICT_FN_SHARE **ppcfn_share,
         return -1;
       }
     }
-    /* Fall through - for the rest of the EPOCH* processing... */
+      /* Fall through - for the rest of the EPOCH* processing... */
+      [[fallthrough]];
     case CFT_NDB_EPOCH:
     case CFT_NDB_EPOCH_TRANS: {
       if (num_args > 1) {

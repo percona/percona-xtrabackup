@@ -42,6 +42,8 @@ Warning	1365	Division by 0
 select cast("A" as binary) = "a", cast(BINARY "a" as CHAR) = "A";
 cast("A" as binary) = "a"	cast(BINARY "a" as CHAR) = "A"
 0	1
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 select cast("2001-1-1" as DATE), cast("2001-1-1" as DATETIME);
 cast("2001-1-1" as DATE)	cast("2001-1-1" as DATETIME)
 2001-01-01	2001-01-01 00:00:00
@@ -870,7 +872,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	Using filesort
 Warnings:
 Note	3598	To get information about window functions use EXPLAIN FORMAT=JSON
-Note	1003	/* select#1 */ select `test`.`t1`.`date` AS `date`,(cast(`test`.`t1`.`spID` as double) = cast(first_value(`test`.`t1`.`date`) OVER (ORDER BY `test`.`t1`.`date` )  as double)) AS `spid = FIRST_VALUE(date) OVER (ORDER BY date )` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`date` AS `date`,(cast(`test`.`t1`.`spid` as double) = cast(first_value(`test`.`t1`.`date`) OVER (ORDER BY `test`.`t1`.`date` )  as double)) AS `spid = FIRST_VALUE(date) OVER (ORDER BY date )` from `test`.`t1`
 #
 # No casts when constants or constant functions are involved
 #
@@ -2176,4 +2178,15 @@ t	CREATE TABLE `t` (
 SELECT * FROM t;
 col1	col2	col3
 18446744073709551615	18446744073709551616.0	-9223372036854775808
+DROP TABLE t;
+#
+# Bug#32942327: CAST: ITEM_TYPECAST_UNSIGNED:
+#               ASSERTION `!NULL_VALUE || IS_NULLABLE()' FAILED
+#
+CREATE TABLE t (x VARCHAR(10) NOT NULL);
+INSERT INTO t VALUES ('');
+SELECT CAST(x <= 0x4891f642 AS UNSIGNED) FROM t;
+ERROR HY000: Cannot convert string 'H\x91\xF6B' from binary to utf8mb4
+SELECT CAST(STRCMP(x, 0x4891f642) AS UNSIGNED) FROM t;
+ERROR HY000: Cannot convert string 'H\x91\xF6B' from binary to utf8mb4
 DROP TABLE t;

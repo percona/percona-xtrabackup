@@ -572,8 +572,8 @@ static void report_memory_accounting_error(const char *api_name,
   @code
 static inline int
 inline_mysql_mutex_lock(mysql_mutex_t *that,
-                        const char *src_file MY_ATTRIBUTE((unused)),
-                        uint src_line MY_ATTRIBUTE((unused))
+                        const char *src_file [[maybe_unused]],
+                        uint src_line [[maybe_unused]]
                         )
 {
   int result;
@@ -2117,7 +2117,28 @@ thread_local PFS_thread *THR_PFS = nullptr;
 
 static inline PFS_thread *my_thread_get_THR_PFS() { return THR_PFS; }
 
-static inline void my_thread_set_THR_PFS(PFS_thread *pfs) { THR_PFS = pfs; }
+static my_thread_t main_thread_id;
+
+void record_main_thread_id() { main_thread_id = my_thread_self(); }
+
+static void pfs_thread_setname(PFS_thread *pfs) {
+  if (pfs != nullptr) {
+    /*
+      The main thread is named "mysqld" by default,
+      derived from the server executable name.
+      Do not change the main thread name,
+      this breaks ps -C mysqld.
+    */
+    if (main_thread_id != my_thread_self()) {
+      my_thread_self_setname(pfs->m_os_name);
+    }
+  }
+}
+
+static inline void my_thread_set_THR_PFS(PFS_thread *pfs) {
+  THR_PFS = pfs;
+  pfs_thread_setname(pfs);
+}
 
 /**
   Conversion map from PSI_mutex_operation to enum_operation_type.
@@ -2388,12 +2409,37 @@ void pfs_register_cond_v1(const char *category, PSI_cond_info_v1 *info,
 
 /**
   Implementation of the thread instrumentation interface.
-  @sa PSI_v1::register_thread.
+  @sa PSI_v5::register_thread.
 */
 void pfs_register_thread_vc(const char *category, PSI_thread_info *info,
                             int count) {
   REGISTER_BODY_V1(PSI_thread_key, thread_instrument_prefix,
                    register_thread_class);
+}
+
+/**
+  Implementation of the thread instrumentation interface.
+  @sa PSI_v1::register_thread.
+*/
+void pfs_register_thread_v1(const char *category, PSI_thread_info_v1 *info,
+                            int count) {
+  for (int i = 0; i < count; i++) {
+    PSI_thread_info info_vc;
+    char os_name[PFS_MAX_OS_NAME_LENGTH];
+
+    info_vc.m_key = info->m_key;
+    info_vc.m_name = info->m_name;
+    info_vc.m_flags = info->m_flags;
+    info_vc.m_volatility = info->m_volatility;
+    info_vc.m_documentation = info->m_documentation;
+
+    /* No os name in PSI_thread_info_v1, truncate the thread name. */
+    strncpy(os_name, info->m_name, sizeof(os_name) - 1);
+    os_name[sizeof(os_name) - 1] = '\0';
+    info_vc.m_os_name = os_name;
+
+    pfs_register_thread_vc(category, &info_vc, 1);
+  }
 }
 
 /**
@@ -2847,6 +2893,7 @@ struct PFS_spawn_thread_arg {
   uint m_hostname_length;
 
   PSI_thread_key m_child_key;
+  PSI_thread_seqnum m_child_seqnum;
   const void *m_child_identity;
   void *(*m_user_start_routine)(void *);
   void *m_user_arg;
@@ -2863,7 +2910,8 @@ static void *pfs_spawn_thread(void *arg) {
   /* First, attach instrumentation to this newly created pthread. */
   PFS_thread_class *klass = find_thread_class(typed_arg->m_child_key);
   if (likely(klass != nullptr)) {
-    pfs = create_thread(klass, typed_arg->m_child_identity, 0);
+    pfs = create_thread(klass, typed_arg->m_child_seqnum,
+                        typed_arg->m_child_identity, 0);
     if (likely(pfs != nullptr)) {
       pfs->m_thread_os_id = my_thread_os_id();
       clear_thread_account(pfs);
@@ -2905,8 +2953,8 @@ static void *pfs_spawn_thread(void *arg) {
   Implementation of the thread instrumentation interface.
   @sa PSI_v2::spawn_thread.
 */
-int pfs_spawn_thread_vc(PSI_thread_key key, my_thread_handle *thread,
-                        const my_thread_attr_t *attr,
+int pfs_spawn_thread_vc(PSI_thread_key key, PSI_thread_seqnum seqnum,
+                        my_thread_handle *thread, const my_thread_attr_t *attr,
                         void *(*start_routine)(void *), void *arg) {
   PFS_spawn_thread_arg *psi_arg;
   PFS_thread *parent;
@@ -2919,6 +2967,7 @@ int pfs_spawn_thread_vc(PSI_thread_key key, my_thread_handle *thread,
   }
 
   psi_arg->m_child_key = key;
+  psi_arg->m_child_seqnum = seqnum;
   psi_arg->m_child_identity = (arg ? arg : thread);
   psi_arg->m_user_start_routine = start_routine;
   psi_arg->m_user_arg = arg;
@@ -2952,17 +3001,23 @@ int pfs_spawn_thread_vc(PSI_thread_key key, my_thread_handle *thread,
   return result;
 }
 
+int pfs_spawn_thread_v4(PSI_thread_key key, my_thread_handle *thread,
+                        const my_thread_attr_t *attr,
+                        void *(*start_routine)(void *), void *arg) {
+  return pfs_spawn_thread_vc(key, 0, thread, attr, start_routine, arg);
+}
+
 /**
   Implementation of the thread instrumentation interface.
-  @sa PSI_v2::new_thread.
+  @sa PSI_v5::new_thread.
 */
-PSI_thread *pfs_new_thread_vc(PSI_thread_key key, const void *identity,
-                              ulonglong processlist_id) {
+PSI_thread *pfs_new_thread_vc(PSI_thread_key key, PSI_thread_seqnum seqnum,
+                              const void *identity, ulonglong processlist_id) {
   PFS_thread *pfs;
 
   PFS_thread_class *klass = find_thread_class(key);
   if (likely(klass != nullptr)) {
-    pfs = create_thread(klass, identity, processlist_id);
+    pfs = create_thread(klass, seqnum, identity, processlist_id);
   } else {
     pfs = nullptr;
   }
@@ -2972,6 +3027,11 @@ PSI_thread *pfs_new_thread_vc(PSI_thread_key key, const void *identity,
   }
 
   return reinterpret_cast<PSI_thread *>(pfs);
+}
+
+PSI_thread *pfs_new_thread_v4(PSI_thread_key key, const void *identity,
+                              ulonglong processlist_id) {
+  return pfs_new_thread_vc(key, 0, identity, processlist_id);
 }
 
 /**
@@ -3441,8 +3501,7 @@ void pfs_notify_session_connect_vc(PSI_thread *thread) {
   Implementation of the thread instrumentation interface.
   @sa PSI_v2::notify_session_disconnect.
 */
-void pfs_notify_session_disconnect_vc(
-    PSI_thread *thread MY_ATTRIBUTE((unused))) {
+void pfs_notify_session_disconnect_vc(PSI_thread *thread [[maybe_unused]]) {
   pfs_notify_session_disconnect(thread);
 }
 
@@ -3450,8 +3509,7 @@ void pfs_notify_session_disconnect_vc(
   Implementation of the thread instrumentation interface.
   @sa PSI_v2::notify_session_change_user.
 */
-void pfs_notify_session_change_user_vc(
-    PSI_thread *thread MY_ATTRIBUTE((unused))) {
+void pfs_notify_session_change_user_vc(PSI_thread *thread [[maybe_unused]]) {
   pfs_notify_session_change_user(thread);
 }
 
@@ -4601,7 +4659,7 @@ void pfs_unlock_mutex_v1(PSI_mutex *mutex) {
   @sa PSI_v1::unlock_rwlock.
 */
 void pfs_unlock_rwlock_v2(PSI_rwlock *rwlock,
-                          PSI_rwlock_operation op MY_ATTRIBUTE((unused))) {
+                          PSI_rwlock_operation op [[maybe_unused]]) {
   PFS_rwlock *pfs_rwlock = reinterpret_cast<PFS_rwlock *>(rwlock);
   assert(pfs_rwlock != nullptr);
   assert(pfs_rwlock == sanitize_rwlock(pfs_rwlock));
@@ -4680,7 +4738,7 @@ void pfs_unlock_rwlock_v2(PSI_rwlock *rwlock,
   Implementation of the cond instrumentation interface.
   @sa PSI_v1::signal_cond.
 */
-void pfs_signal_cond_v1(PSI_cond *cond MY_ATTRIBUTE((unused))) {
+void pfs_signal_cond_v1(PSI_cond *cond [[maybe_unused]]) {
 #ifdef PFS_LATER
   PFS_cond *pfs_cond = reinterpret_cast<PFS_cond *>(cond);
 
@@ -4694,7 +4752,7 @@ void pfs_signal_cond_v1(PSI_cond *cond MY_ATTRIBUTE((unused))) {
   Implementation of the cond instrumentation interface.
   @sa PSI_v1::broadcast_cond.
 */
-void pfs_broadcast_cond_v1(PSI_cond *cond MY_ATTRIBUTE((unused))) {
+void pfs_broadcast_cond_v1(PSI_cond *cond [[maybe_unused]]) {
 #ifdef PFS_LATER
   PFS_cond *pfs_cond = reinterpret_cast<PFS_cond *>(cond);
 
@@ -5622,9 +5680,9 @@ void pfs_end_file_close_wait_vc(PSI_file_locker *locker, int rc) {
   @sa PSI_v1::start_file_rename_wait.
 */
 void pfs_start_file_rename_wait_vc(PSI_file_locker *locker,
-                                   size_t count MY_ATTRIBUTE((unused)),
-                                   const char *old_name MY_ATTRIBUTE((unused)),
-                                   const char *new_name MY_ATTRIBUTE((unused)),
+                                   size_t count [[maybe_unused]],
+                                   const char *old_name [[maybe_unused]],
+                                   const char *new_name [[maybe_unused]],
                                    const char *src_file, uint src_line) {
   PSI_file_locker_state *state =
       reinterpret_cast<PSI_file_locker_state *>(locker);
@@ -5646,8 +5704,8 @@ void pfs_start_file_rename_wait_vc(PSI_file_locker *locker,
   @sa PSI_v1::end_file_rename_wait.
 */
 void pfs_end_file_rename_wait_vc(PSI_file_locker *locker,
-                                 const char *old_name MY_ATTRIBUTE((unused)),
-                                 const char *new_name MY_ATTRIBUTE((unused)),
+                                 const char *old_name [[maybe_unused]],
+                                 const char *new_name [[maybe_unused]],
                                  int rc) {
   PSI_file_locker_state *state =
       reinterpret_cast<PSI_file_locker_state *>(locker);
@@ -7757,7 +7815,7 @@ PSI_memory_key pfs_memory_claim_vc(PSI_memory_key key, size_t size,
 }
 
 void pfs_memory_free_vc(PSI_memory_key key, size_t size,
-                        PSI_thread *owner MY_ATTRIBUTE((unused))) {
+                        PSI_thread *owner [[maybe_unused]]) {
   PFS_memory_class *klass = find_memory_class(key);
   if (klass == nullptr) {
     return;
@@ -8093,7 +8151,7 @@ void pfs_unregister_data_lock_v1(
   Implementation of the thread instrumentation interface.
   @sa PSI_v1::unload_plugin.
 */
-void pfs_unload_plugin_v1(const char *plugin_name MY_ATTRIBUTE((unused))) {
+void pfs_unload_plugin_v1(const char *plugin_name [[maybe_unused]]) {
   /*
     A plugin or component is being unloaded. Events that originated from the
     plugin contain string pointers set by the __FILE__ macro. These source file
@@ -8131,6 +8189,83 @@ SERVICE_IMPLEMENTATION(performance_schema, psi_system_v1) = {
 */
 PSI_thread_service_v4 pfs_thread_service_v4 = {
     /* Old interface, for plugins. */
+    pfs_register_thread_v1,
+    pfs_spawn_thread_v4,
+    pfs_new_thread_v4,
+    pfs_set_thread_id_vc,
+    pfs_get_current_thread_internal_id_vc,
+    pfs_get_thread_internal_id_vc,
+    pfs_get_thread_by_id_vc,
+    pfs_set_thread_THD_vc,
+    pfs_set_thread_os_id_vc,
+    pfs_get_thread_vc,
+    pfs_set_thread_user_vc,
+    pfs_set_thread_account_vc,
+    pfs_set_thread_db_vc,
+    pfs_set_thread_command_vc,
+    pfs_set_connection_type_vc,
+    pfs_set_thread_start_time_vc,
+    pfs_set_thread_info_vc,
+    pfs_set_thread_resource_group_vc,
+    pfs_set_thread_resource_group_by_id_vc,
+    pfs_set_thread_vc,
+    pfs_set_thread_peer_port_vc,
+    pfs_aggregate_thread_status_vc,
+    pfs_delete_current_thread_vc,
+    pfs_delete_thread_vc,
+    pfs_set_thread_connect_attrs_vc,
+    pfs_get_current_thread_event_id_vc,
+    pfs_get_thread_event_id_vc,
+    pfs_get_thread_system_attrs_vc,
+    pfs_get_thread_system_attrs_by_id_vc,
+    pfs_register_notification_vc,
+    pfs_unregister_notification_vc,
+    pfs_notify_session_connect_vc,
+    pfs_notify_session_disconnect_vc,
+    pfs_notify_session_change_user_vc};
+
+SERVICE_TYPE(psi_thread_v4)
+SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v4) = {
+    /* New interface, for components. */
+    pfs_register_thread_v1,
+    pfs_spawn_thread_v4,
+    pfs_new_thread_v4,
+    pfs_set_thread_id_vc,
+    pfs_get_current_thread_internal_id_vc,
+    pfs_get_thread_internal_id_vc,
+    pfs_get_thread_by_id_vc,
+    pfs_set_thread_THD_vc,
+    pfs_set_thread_os_id_vc,
+    pfs_get_thread_vc,
+    pfs_set_thread_user_vc,
+    pfs_set_thread_account_vc,
+    pfs_set_thread_db_vc,
+    pfs_set_thread_command_vc,
+    pfs_set_connection_type_vc,
+    pfs_set_thread_start_time_vc,
+    pfs_set_thread_info_vc,
+    pfs_set_thread_vc,
+    pfs_set_thread_peer_port_vc,
+    pfs_aggregate_thread_status_vc,
+    pfs_delete_current_thread_vc,
+    pfs_delete_thread_vc,
+    pfs_set_thread_connect_attrs_vc,
+    pfs_get_current_thread_event_id_vc,
+    pfs_get_thread_event_id_vc,
+    pfs_get_thread_system_attrs_vc,
+    pfs_get_thread_system_attrs_by_id_vc,
+    pfs_register_notification_vc,
+    pfs_unregister_notification_vc,
+    pfs_notify_session_connect_vc,
+    pfs_notify_session_disconnect_vc,
+    pfs_notify_session_change_user_vc};
+
+/**
+  Implementation of the instrumentation interface.
+  @sa PSI_thread_service_v5
+*/
+PSI_thread_service_v5 pfs_thread_service_v5 = {
+    /* Old interface, for plugins. */
     pfs_register_thread_vc,
     pfs_spawn_thread_vc,
     pfs_new_thread_vc,
@@ -8166,8 +8301,8 @@ PSI_thread_service_v4 pfs_thread_service_v4 = {
     pfs_notify_session_disconnect_vc,
     pfs_notify_session_change_user_vc};
 
-SERVICE_TYPE(psi_thread_v4)
-SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v4) = {
+SERVICE_TYPE(psi_thread_v5)
+SERVICE_IMPLEMENTATION(performance_schema, psi_thread_v5) = {
     /* New interface, for components. */
     pfs_register_thread_vc,
     pfs_spawn_thread_vc,
@@ -8551,6 +8686,8 @@ static void *get_thread_interface(int version) {
       return nullptr;
     case PSI_THREAD_VERSION_4:
       return &pfs_thread_service_v4;
+    case PSI_THREAD_VERSION_5:
+      return &pfs_thread_service_v5;
     default:
       return nullptr;
   }
@@ -8797,7 +8934,9 @@ PROVIDES_SERVICE(performance_schema, psi_cond_v1),
     PROVIDES_SERVICE(performance_schema, psi_table_v1),
     /* Obsolete: PROVIDES_SERVICE(performance_schema, psi_thread_v1), */
     /* Obsolete: PROVIDES_SERVICE(performance_schema, psi_thread_v2), */
+    /* Obsolete: PROVIDES_SERVICE(performance_schema, psi_thread_v3), */
     PROVIDES_SERVICE(performance_schema, psi_thread_v4),
+    PROVIDES_SERVICE(performance_schema, psi_thread_v5),
     PROVIDES_SERVICE(performance_schema, psi_transaction_v1),
     /* Deprecated, use pfs_plugin_table_v1. */
     PROVIDES_SERVICE(performance_schema, pfs_plugin_table),

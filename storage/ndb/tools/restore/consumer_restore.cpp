@@ -24,6 +24,7 @@
 
 #include "consumer_restore.hpp"
 #include <kernel/ndb_limits.h>
+#include <NdbIndexStat.hpp>
 #include <NdbSleep.h>
 #include <NdbTick.h>
 #include <NdbToolsProgramExitCodes.hpp>
@@ -2440,19 +2441,7 @@ BackupRestore::table_compatible_check(TableS & tableS)
     return true;
 
   const NdbTableImpl & tmptab = NdbTableImpl::getImpl(* tableS.m_dictTable);
-  if ((int) tmptab.m_indexType != (int) NdbDictionary::Index::Undefined)
-  {
-    if((int) tmptab.m_indexType == (int) NdbDictionary::Index::UniqueHashIndex)
-    {
-      BaseString dummy1, dummy2, indexname;
-      dissect_index_name(tablename, dummy1, dummy2, indexname);
-      restoreLogger.log_error( "WARNING: Table %s contains unique index %s."
-           "This can cause ndb_restore failures with duplicate key errors "
-           "while restoring data. To avoid duplicate key errors, use "
-           "--disable-indexes before restoring data and --rebuild-indexes "
-           "after data is restored.",
-           tmptab.m_primaryTable.c_str(), indexname.c_str());
-    }
+  if ((int)tmptab.m_indexType != (int)NdbDictionary::Index::Undefined) {
     return true;
   }
 
@@ -2472,6 +2461,52 @@ BackupRestore::table_compatible_check(TableS & tableS)
     restoreLogger.log_error("Unable to find table: %s error: %u: %s",
         table_name.c_str(), dict->getNdbError().code, dict->getNdbError().message);
     return false;
+  }
+
+  /**
+   * Check if target table is restored with --disable-indexes in previous steps.
+   * If it already has indexes, it indicates that --disable-indexes isn't used.
+   * In that case, dispaly a warning that it could lead to duplicate key errors
+   * if the indexes already restored are unique indexes.
+   */
+  {
+    NdbDictionary::Dictionary::List index_list;
+    if (dict->listIndexes(index_list, *tab) != 0) {
+      restoreLogger.log_error("Failed to list indexes due to NDB error %u: %s",
+                              dict->getNdbError().code,
+                              dict->getNdbError().message);
+      return false;
+    }
+
+    bool contains_unique_indexes = false;
+    for (unsigned i = 0; i < index_list.count; i++) {
+      const char *index_name = index_list.elements[i].name;
+      const NdbDictionary::Index *index =
+          dict->getIndexGlobal(index_name, *tab);
+      if (!index) {
+        restoreLogger.log_error(
+            "Failed to open index %s from NDB due to error %u: %s", index_name,
+            dict->getNdbError().code, dict->getNdbError().message);
+        return false;
+      }
+      if ((int)index->getType() == (int)NdbDictionary::Index::UniqueHashIndex) {
+        if (!contains_unique_indexes) {
+          restoreLogger.log_error("Unique indexes: ");
+        }
+        restoreLogger.log_error("%s", index_name);
+        contains_unique_indexes = true;
+      }
+    }
+
+    if (contains_unique_indexes) {
+      restoreLogger.log_error(
+          "WARNING: Table %s contains unique indexes. "
+          "This can cause ndb_restore failures with duplicate key errors "
+          "while restoring data. To avoid duplicate key errors, use "
+          "--disable-indexes before restoring data and --rebuild-indexes "
+          "after data is restored.",
+          tab->getName());
+    }
   }
 
   /**
@@ -3062,6 +3097,31 @@ BackupRestore::createSystable(const TableS & tables){
 }
 
 bool
+BackupRestore::handle_index_stat_tables() {
+  if (!m_restore_meta) return true;
+
+  m_ndb->setDatabaseName(NDB_REP_DB);
+  m_ndb->setSchemaName("def");
+
+  NdbIndexStat index_stat;
+
+  if (index_stat.check_systables(m_ndb) == 0) {
+    restoreLogger.log_debug("Index stat tables exist");
+    return true;
+  }
+
+  if (index_stat.create_systables(m_ndb) == 0) {
+    restoreLogger.log_debug("Index stat tables created");
+    return true;
+  }
+
+  restoreLogger.log_error("Creation of index stat tables failed: %d: %s",
+                          index_stat.getNdbError().code,
+                          index_stat.getNdbError().message);
+  return false;
+}
+
+bool
 BackupRestore::table(const TableS & table){
   if (!m_restore && !m_metadata_work_requested)
     return true;
@@ -3372,6 +3432,43 @@ BackupRestore::fk(Uint32 type, const void * ptr)
       }
       m_fks.push_back(fk_ptr);
       restoreLogger.log_info("Save FK %s", fk_ptr->getName());
+
+      if (m_disable_indexes)
+      {
+        // Extract foreign key name from format
+        // like 10/14/fk1 where 10,14 are old table ids
+        const char *fkname = 0;
+        Vector<BaseString> splitname;
+        BaseString tmpname(fk_ptr->getName());
+        int n = tmpname.split(splitname, "/");
+        if (n == 3)
+        {
+          fkname = splitname[2].c_str();
+        }
+        else
+        {
+          restoreLogger.log_error("Invalid foreign key name %s",
+                                  tmpname.c_str());
+          return false;
+        }
+        NdbDictionary::ForeignKey fk;
+        char fullname[MAX_TAB_NAME_SIZE];
+        sprintf(fullname, "%d/%d/%s", parent->getObjectId(),
+                child->getObjectId(), fkname);
+
+        // Drop foreign keys if they exist
+        if (dict->getForeignKey(fk, fullname) == 0)
+        {
+          restoreLogger.log_info("Dropping Foreign key %s", fkname);
+          if (dict->dropForeignKey(fk) != 0)
+          {
+            restoreLogger.log_error("Failed to drop fk '%s' : %u %s",
+                                    fk_ptr->getName(), dict->getNdbError().code,
+                                    dict->getNdbError().message);
+            return false;
+          }
+        }
+      }
     }
     return true;
     break;
@@ -3467,11 +3564,22 @@ BackupRestore::endOfTables(){
     }
     else if (m_disable_indexes)
     {
-      int res = dict->dropIndex(idx->getName(), prim->getName());
-      if (res == 0)
+      // Drop indexes if they exist
+      if(dict->getIndex(idx->getName(), prim->getName()))
       {
-      restoreLogger.log_info("Dropped index `%s` on `%s`",
+        if (dict->dropIndex(idx->getName(), prim->getName()) == 0)
+        {
+          restoreLogger.log_info("Dropped index `%s` on `%s`",
             split_idx[3].c_str(), table_name.c_str());
+        }
+        else
+        {
+          restoreLogger.log_info("Failed to drop index `%s` on `%s`: %u %s",
+                                 split_idx[3].c_str(), table_name.c_str(),
+                                 dict->getNdbError().code,
+                                 dict->getNdbError().message);
+          return false;
+        }
       }
     }
     Uint32 id = prim->getObjectId();
@@ -4435,7 +4543,7 @@ BackupRestore::dropPkMappingIndex(const TableS* table)
         dropped = true;
         break;
       }
-      /* Fall through */
+      [[fallthrough]];
     default:
       restoreLogger.log_error("Error dropping mapping index on %s %u %s",
                               tablename,

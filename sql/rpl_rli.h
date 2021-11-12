@@ -23,15 +23,6 @@
 #ifndef RPL_RLI_H
 #define RPL_RLI_H
 
-#if defined(__SUNPRO_CC)
-/*
-  Solaris Studio 12.5 has a bug where, if you use dynamic_cast
-  and then later #include this file (which Boost does), you will
-  get a compile error. Work around it by just including it right now.
-*/
-#include <cxxabi.h>
-#endif
-
 #include <sys/types.h>
 #include <time.h>
 #include <atomic>
@@ -652,6 +643,21 @@ class Relay_log_info : public Rpl_info {
   */
   Replication_transaction_boundary_parser transaction_parser;
 
+  /**
+    Marks the applier position information as being invalid or not.
+
+    @param invalid value to set the position/file info as invalid or not
+  */
+  void set_applier_source_position_info_invalid(bool invalid);
+
+  /**
+    Returns if the applier positions are marked as being invalid or not.
+
+    @return true if applier position information is not reliable,
+            false otherwise.
+  */
+  bool is_applier_source_position_info_invalid() const;
+
   /*
     Let's call a group (of events) :
       - a transaction
@@ -780,6 +786,15 @@ class Relay_log_info : public Rpl_info {
   */
   enum_require_table_primary_key m_require_table_primary_key_check;
 
+  /**
+    Are positions invalid. If true it means the applier related position
+    information (group_master_log_name and group_master_log_pos) might
+    be outdated.
+
+    Check also is_group_master_log_pos_invalid
+  */
+  bool m_is_applier_source_position_info_invalid;
+
  public:
   bool is_relay_log_truncated() { return m_relay_log_truncated; }
 
@@ -835,12 +850,14 @@ class Relay_log_info : public Rpl_info {
   void fill_coord_err_buf(loglevel level, int err_code,
                           const char *buff_coord) const;
 
-  /*
+  /**
     Flag that the group_master_log_pos is invalid. This may occur
     (for example) after CHANGE MASTER TO RELAY_LOG_POS.  This will
     be unset after the first event has been executed and the
     group_master_log_pos is valid again.
-   */
+
+    Check also m_is_applier_position_info_invalid
+  */
   bool is_group_master_log_pos_invalid;
 
   /*
@@ -1503,7 +1520,15 @@ class Relay_log_info : public Rpl_info {
   */
   int rli_init_info(bool skip_received_gtid_set_recovery = false);
   void end_info();
-  int flush_info(bool force = false);
+
+  /** No flush options given to relay log flush */
+  static constexpr int RLI_FLUSH_NO_OPTION{0};
+  /** Ignore server sync options and flush */
+  static constexpr int RLI_FLUSH_IGNORE_SYNC_OPT{1 << 0};
+  /** Flush disresgarding the value of GTID_ONLY */
+  static constexpr int RLI_FLUSH_IGNORE_GTID_ONLY{1 << 1};
+
+  int flush_info(const int flush_flags);
   /**
    Clears from `this` Relay_log_info object all attribute values that are
    not to be kept.
@@ -1534,16 +1559,28 @@ class Relay_log_info : public Rpl_info {
     future_event_relay_log_pos = log_pos;
   }
 
-  inline const char *get_group_master_log_name() {
+  inline const char *get_group_master_log_name() const {
     return group_master_log_name;
   }
-  inline ulonglong get_group_master_log_pos() { return group_master_log_pos; }
+  inline const char *get_group_master_log_name_info() const {
+    if (m_is_applier_source_position_info_invalid) return "INVALID";
+    return get_group_master_log_name();
+  }
+  inline ulonglong get_group_master_log_pos() const {
+    return group_master_log_pos;
+  }
+  inline ulonglong get_group_master_log_pos_info() const {
+    if (m_is_applier_source_position_info_invalid) return 0;
+    return get_group_master_log_pos();
+  }
   inline void set_group_master_log_name(const char *log_file_name) {
     strmake(group_master_log_name, log_file_name,
             sizeof(group_master_log_name) - 1);
   }
   inline void set_group_master_log_pos(ulonglong log_pos) {
     group_master_log_pos = log_pos;
+    // Whenever the position is set, it means it is no longer invalid
+    m_is_applier_source_position_info_invalid = false;
   }
 
   inline const char *get_group_relay_log_name() { return group_relay_log_name; }
@@ -1590,8 +1627,10 @@ class Relay_log_info : public Rpl_info {
   inline void set_event_relay_log_pos(ulonglong log_pos) {
     event_relay_log_pos = log_pos;
   }
-  inline const char *get_rpl_log_name() {
-    return (group_master_log_name[0] ? group_master_log_name : "FIRST");
+  inline const char *get_rpl_log_name() const {
+    return m_is_applier_source_position_info_invalid
+               ? "INVALID"
+               : (group_master_log_name[0] ? group_master_log_name : "FIRST");
   }
 
   static size_t get_number_info_rli_fields();

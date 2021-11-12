@@ -64,13 +64,13 @@
 #include "sql/mem_root_allocator.h"
 #include "sql/mem_root_array.h"     // Mem_root_array
 #include "sql/mysqld.h"             // heap_hton
-#include "sql/opt_range.h"          // QUICK_SELECT_I
 #include "sql/opt_trace.h"          // Opt_trace_object
 #include "sql/opt_trace_context.h"  // Opt_trace_context
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
-#include "sql/sql_base.h"   // free_io_cache
-#include "sql/sql_class.h"  // THD
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
+#include "sql/sql_base.h"                         // free_io_cache
+#include "sql/sql_class.h"                        // THD
 #include "sql/sql_const.h"
 #include "sql/sql_executor.h"  // SJ_TMP_TABLE
 #include "sql/sql_lex.h"
@@ -343,13 +343,6 @@ static Field *create_tmp_field_for_schema(const Item *item, TABLE *table) {
   @param make_copy_field if true, a pointer of the result field should be stored
   in from_field,  otherwise the item should be wrapped in Func_ptr and stored in
   copy_func
-  @param copy_result_field true <=> save item's result_field in the from_field
-                       arg, before changing it. This is used for a window's
-                       OUT table when window uses frame buffer to copy a
-                       function's result field from OUT table to frame buffer
-                       (and back). @note that the goals of 'from_field' when
-                       this argument is true and when it is false, are
-                       different.
 
   @retval NULL On error.
 
@@ -359,8 +352,8 @@ static Field *create_tmp_field_for_schema(const Item *item, TABLE *table) {
 Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
                         Func_ptr_array *copy_func, Field **from_field,
                         Field **default_field, bool group, bool modify_item,
-                        bool table_cant_handle_bit_fields, bool make_copy_field,
-                        bool copy_result_field) {
+                        bool table_cant_handle_bit_fields,
+                        bool make_copy_field) {
   DBUG_TRACE;
   Field *result = nullptr;
   Item::Type orig_type = type;
@@ -435,7 +428,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
       *from_field = item_field->field;
       break;
     }
-    /* Fall through */
+      [[fallthrough]];
     case Item::FUNC_ITEM:
       if (down_cast<Item_func *>(item)->functype() == Item_func::FUNC_SP) {
         Item_func_sp *item_func_sp = down_cast<Item_func_sp *>(item);
@@ -457,7 +450,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
         break;
       }
 
-      /* Fall through */
+      [[fallthrough]];
     case Item::COND_ITEM:
     case Item::FIELD_AVG_ITEM:
     case Item::FIELD_BIT_ITEM:
@@ -480,24 +473,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
         result = item_sum->create_tmp_field(group, table);
         if (!result) my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
       } else {
-        /*
-          (2) we're windowing. The Item doesn't contain any not-yet-calculated
-          window function (per logic in our caller create_tmp_table()). So it
-          is an ordinary function or can be considered as such. We're creating
-          the OUT table using IN table as source, and we have previously
-          created a frame buffer (FB) using IN table as source. That previous
-          creation has set IN's item's result_field to be the FB field. Here
-          we save that FB field in from_field. Right after that,
-          create_tmp_field_from_item() sets IN's item's result_field to the
-          OUT field (which OUT field is the 'result' variable). Later, we create
-          a Copy_field to from_field (FB) from the marked field (OUT). The end
-          situation is: IN's item's result_field is in OUT, enabling the
-          initial function evaluation and saving of its result in OUT; the
-          Copy_field from OUT to FB and back will allow buffering/restoration
-          of that result.
-        */
-        if (make_copy_field || (copy_result_field && !is_wf))  // (2)
-        {
+        if (make_copy_field) {
           *from_field = item->get_tmp_table_field();
           assert(*from_field);
         }
@@ -999,6 +975,15 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
   long hidden_field_count = param->hidden_field_count;
   const bool not_all_columns = !(select_options & TMP_TABLE_ALL_COLUMNS);
 
+  // Don't call set_result_field() on each item if:
+  //  - we materialize all columns, with no filtering of aggregate functions
+  //    or the likes (TODO: needs documentation with rationale, but probably
+  //    indicates that we are doing derived table materialization, which doesn't
+  //    use result fields), or
+  //  - We are creating a window function's framebuffer table, where the result
+  //    field is already set to the output field and must not be overwritten.
+  const bool modify_items = not_all_columns && !param->m_window_frame_buffer;
+
   /*
     total_uneven_bit_length is uneven bit length for visible fields
     hidden_uneven_bit_length is uneven bit length for hidden fields
@@ -1010,6 +995,11 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     Item::Type type = item->type();
     const bool is_sum_func =
         type == Item::SUM_FUNC_ITEM && !item->m_is_window_function;
+
+    if (param->m_window_frame_buffer) {
+      // These should have been filtered out in the caller.
+      assert(!item->m_is_window_function);
+    }
 
     bool store_column = true;
     if (not_all_columns) {
@@ -1026,15 +1016,8 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
           store_column = false;
         }
       } else if (item->m_is_window_function) {
-        if (!param->m_window || param->m_window_frame_buffer) {
-          /*
-            A pre-windowing table; no point in storing WF.
-            Or a window's frame buffer:
-            - the window's WFs cannot be calculated yet
-            - same for later windows' WFs
-            - previous windows' WFs are already replaced with Item_field (so
-            don't come here).
-          */
+        if (!param->m_window) {
+          // A pre-windowing table; no point in storing WF.
           store_column = false;
         } else if (param->m_window != down_cast<Item_sum *>(item)->window()) {
           // A later window's WF: no point in storing it in this table.
@@ -1063,7 +1046,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
           Field *new_field = create_tmp_field(
               thd, table, arg, arg->type(), param->items_to_copy,
               &from_field[fieldnr], &default_field[fieldnr], /*group=*/false,
-              not_all_columns, false, false, false);
+              modify_items, false, false);
           from_item[fieldnr] = arg;
           if (new_field == nullptr) return nullptr;  // Should be OOM
           new_field->set_field_index(fieldnr);
@@ -1117,20 +1100,15 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
           tables can't index BIT fields directly. We do the same
           for distinct, as we want the distinct index to be
           usable in this case too.
-          (3) This is the OUT table of windowing, there is a frame buffer, and
-          the item is an expression which can store its value in a result_field
-          (e.g. it is Item_func). In that case we pass copy_result_field=true.
         */
         new_field = create_tmp_field(
             thd, table, item, type, param->items_to_copy, &from_field[fieldnr],
             &default_field[fieldnr],
             group != nullptr,  // (1)
-            !param->force_copy_fields && (not_all_columns || group != nullptr),
+            !param->force_copy_fields && (modify_items || group != nullptr),
             item->marker == Item::MARKER_BIT ||
                 param->bit_fields_as_long,  //(2)
-            param->force_copy_fields,
-            (param->m_window &&  // (3)
-             param->m_window->frame_buffer_param() && item->is_result_field()));
+            param->force_copy_fields);
         from_item[fieldnr] = item;
       }
 
@@ -1144,7 +1122,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
         But only for the group-by table. So do not set result_field if this is
         a tmp table for UNION or derived table materialization.
       */
-      if (not_all_columns && type == Item::SUM_FUNC_ITEM)
+      if (modify_items && type == Item::SUM_FUNC_ITEM)
         down_cast<Item_sum *>(item)->set_result_field(new_field);
       share->reclength += new_field->pack_length();
       if (!new_field->is_flag_set(NOT_NULL_FLAG)) null_count++;
@@ -1243,8 +1221,15 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
       assert(field->table == table);
       cur_group->field_in_tmp_table = field;
 
-      if ((*cur_group->item)->max_char_length() > CONVERT_IF_BIGGER_TO_BLOB)
+      /*
+        Use hash key as the unique constraint if the group-by key is
+        big or if it is non-deterministic. Group-by items get evaluated
+        twice and a non-deterministic function would cause a discrepancy.
+      */
+      if ((*cur_group->item)->max_char_length() > CONVERT_IF_BIGGER_TO_BLOB ||
+          (*cur_group->item)->is_non_deterministic()) {
         unique_constraint_via_hash_field = true;
+      }
     }
     if (param->group_parts > max_key_parts ||
         param->group_length > max_key_length ||
@@ -1485,20 +1470,13 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     }
 
     if (from_field[i]) {
-      Item *item = from_item[i];
       /* This column is directly mapped to a column in the GROUP BY clause. */
-      if (param->m_window && param->m_window->frame_buffer_param() &&
-          item->is_result_field() &&
-          (item->type() != Item::SUM_FUNC_ITEM ||
-           !item->real_item()->m_is_window_function)) {
-        // A non-window-function. Grep for (2) in this file.
-        Temp_table_param *window_fb = param->m_window->frame_buffer_param();
-        window_fb->copy_fields.emplace_back(from_field[i], field);
+      if (param->m_window_frame_buffer) {
+        // Framebuffer copying uses copy_fields instead of items_to_copy,
+        // as it can copy fields in reverse (ie., back again from the
+        // framebuffer) when needed.
+        param->copy_fields.emplace_back(field, from_field[i]);
       } else {
-        if (param->m_window) {
-          param->copy_fields.emplace_back(field, from_field[i]);
-        }
-
         param->items_to_copy->push_back(Func_ptr{from_item[i], field});
       }
     }
@@ -2447,6 +2425,11 @@ void free_tmp_table(TABLE *table) {
          share->ref_count() > 0 && share->tmp_open_count == 0 &&
          share->tmp_handler_count < share->ref_count());
 
+  if (table->pos_in_table_list != nullptr &&
+      table->pos_in_table_list->common_table_expr() != nullptr) {
+    table->pos_in_table_list->common_table_expr()->remove_table(
+        table->pos_in_table_list);
+  }
   /*
     In create_tmp_table(), the share's memroot is allocated inside own_root
     and is then made a copy of own_root, so it is inside its memory blocks,
@@ -2457,7 +2440,7 @@ void free_tmp_table(TABLE *table) {
   {
     MEM_ROOT own_root = std::move(share->mem_root);
     destroy(table);
-    free_root(&own_root, MYF(0));
+    own_root.Clear();
   }
 }
 
@@ -2465,14 +2448,20 @@ void free_tmp_table(TABLE *table) {
   If a MEMORY table gets full, create a disk-based table and copy all rows
   to this.
 
-  @param thd             THD reference
-  @param wtable          Table reference being written to
-  @param error           Reason why inserting into MEMORY table failed.
-  @param ignore_last_dup If true, ignore duplicate key error for last
-                         inserted key (see detailed description below).
-  @param [out] is_duplicate if non-NULL and ignore_last_dup is true,
-                         return true if last key was a duplicate,
-                         and false otherwise.
+  @param[in] thd                THD reference
+  @param[in] wtable             Table reference being written to
+  @param[in] error              Reason why inserting into MEMORY table failed.
+  @param[in] insert_last_record If true, the last record(table->record[0])
+                                is inserted into the newly created table after
+                                copying all the records from the temp table.
+                                If false, the last record is not inserted
+                                and the paramters ignore_last_dup, is_duplicate
+                                are ignored.
+  @param[in] ignore_last_dup    If true, ignore duplicate key error for last
+                                inserted key (see detailed description below).
+  @param [out] is_duplicate     If non-NULL and ignore_last_dup is true,
+                                return true if last key was a duplicate,
+                                and false otherwise.
 
   @details
     Function can be called with any error code, but only HA_ERR_RECORD_FILE_FULL
@@ -2482,13 +2471,18 @@ void free_tmp_table(TABLE *table) {
     switches to use the new table within the table handle.
     The function uses table->record[1] as a temporary buffer while copying.
 
-    The function assumes that table->record[0] contains the row that caused
-    the error when inserting into the MEMORY table (the "last row").
-    After all existing rows have been copied to the new table, the last row
-    is attempted to be inserted as well. If ignore_last_dup is true,
-    this row can be a duplicate of an existing row without throwing an error.
-    If is_duplicate is non-NULL, an indication of whether the last row was
-    a duplicate is returned.
+    If the parameter insert_last_record is true, this function assumes that
+    table->record[0] contains the row that caused the error when inserting
+    into the MEMORY table (the "last row"). After all existing rows have been
+    copied to the new table,the last row is attempted to be inserted as well.
+    If ignore_last_dup is true, this row can be a duplicate of an existing row
+    without throwing an error. If is_duplicate is non-NULL, an indication of
+    whether the last row was a duplicate is returned.
+
+    If the parameter insert_last_record is false, this function makes no
+    assumptions on the operation and will not try an insert of the last
+    record(table->record[0]). The caller is expected to handle the operation
+    after moving to disk.
 
   @note that any index/scan access initialized on the MEMORY 'wtable' is not
   replicated to the on-disk table - it's the caller's responsibility.
@@ -2519,7 +2513,8 @@ void free_tmp_table(TABLE *table) {
 */
 
 bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
-                             bool ignore_last_dup, bool *is_duplicate) {
+                             bool insert_last_record, bool ignore_last_dup,
+                             bool *is_duplicate) {
   int write_err = 0;
   bool table_on_disk = false;
   DBUG_TRACE;
@@ -2688,16 +2683,17 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
           DBUG_EXECUTE_IF("raise_error", write_err = HA_ERR_FOUND_DUPP_KEY;);
           if (write_err) goto err_after_open;
         }
-        /* copy row that filled HEAP table */
-        if ((write_err = new_table.file->ha_write_row(table->record[0]))) {
-          if (!new_table.file->is_ignorable_error(write_err) ||
-              !ignore_last_dup)
-            goto err_after_open;
-          if (is_duplicate) *is_duplicate = true;
-        } else {
-          if (is_duplicate) *is_duplicate = false;
+        if (insert_last_record) {
+          /* copy row that filled in-memory table */
+          if ((write_err = new_table.file->ha_write_row(table->record[0]))) {
+            if (!new_table.file->is_ignorable_error(write_err) ||
+                !ignore_last_dup)
+              goto err_after_open;
+            if (is_duplicate) *is_duplicate = true;
+          } else {
+            if (is_duplicate) *is_duplicate = false;
+          }
         }
-
         (void)table->file->ha_rnd_end();
 #ifndef NDEBUG
         rows_on_disk = true;
@@ -2845,8 +2841,7 @@ err_after_proc_info:
   @param length       how many available bytes in rowid_bytes
   @param row_num      PK to encode
 */
-void encode_innodb_position(uchar *rowid_bytes,
-                            uint length MY_ATTRIBUTE((unused)),
+void encode_innodb_position(uchar *rowid_bytes, uint length [[maybe_unused]],
                             ha_rows row_num) {
   assert(length == 6);
   for (int i = 0; i < 6; i++)

@@ -881,6 +881,7 @@ ORDER BY i,j;
 
 #Bug#31073133 - The plan below should not have sorting on "i" before rollup
 #is processed.
+--skip_if_hypergraph  # Has fewer temporary tables in the plan.
 EXPLAIN FORMAT=tree SELECT i, j, i+j, AVG(j) over () from t1 GROUP BY i,j
 WITH ROLLUP HAVING i+j is NULL ORDER BY i;
 SELECT i, j, i+j, AVG(j) over () from t1 GROUP BY i,j WITH ROLLUP
@@ -1048,6 +1049,10 @@ DROP TABLE t1;
 CREATE TABLE t(a INT,b BLOB);
 INSERT INTO t VALUES (1,'a'),(1,'b'),(2,'c'),(3,'d');
 
+# This query is pretty nonsensical, and the query output itself doesn't matter much;
+# we just don't want it to crash. The result will depend on the point of which
+# we evaluate the variable assignments, so it's not stable with respect to the query plan.
+--replace_regex /^NULL$/1/
 SELECT (((@e:=`b`)) NOT BETWEEN 0x0b5f09 AND (CHAR(md5(@pub1),
   (CONNECTION_ID()+LEAD(5225.750000,110) RESPECT NULLS OVER(ORDER BY b, a)))))
   FROM t GROUP BY b,a WITH ROLLUP;
@@ -1170,4 +1175,57 @@ DROP TABLE t1;
 CREATE TABLE t1 ( i INTEGER NOT NULL PRIMARY KEY );
 INSERT INTO t1 VALUES (1), (2), (3);
 SELECT DISTINCT i FROM t1 WHERE i = 1 GROUP BY i WITH ROLLUP;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32918927: ASSERTION `!THD->IS_ERROR()' FAILED|SQL/SQL_EXECUTOR.CC
+--echo #
+
+CREATE TABLE t1 ( a TIME );
+
+--skip_if_hypergraph  # Adds a warning (on every row) instead of an error.
+--error ER_CANT_AGGREGATE_NCOLLATIONS
+SELECT
+  t1.a
+FROM
+  t1, t1 AS t2
+GROUP BY t1.a WITH ROLLUP
+HAVING COUNT(*) = 0 AND t1.a = '刔';
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#33036184: GROUP BY WITH ROLLUP AND CONCAT OVER GROUP BY KEY DOES NOT PRODUCE NULL
+--echo #
+
+CREATE TABLE t1 (f1 INTEGER PRIMARY KEY);
+INSERT INTO t1 values (1);
+
+# Result should have a NULL for the super-aggregate row
+SELECT CONCAT(INSTR(f1,'w')) FROM t1 GROUP BY f1 WITH ROLLUP;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #33041336: WL#14419: ASSERTION `THD->CHANGE_LIST.IS_EMPTY()' FAILED
+--echo #
+
+CREATE TABLE t1 ( a INTEGER );
+PREPARE ps FROM "SELECT RANK() OVER (ORDER BY a) FROM t1 GROUP BY a WITH ROLLUP";
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #33123934: QUERY WITH ROLLUP - SEGFAULT IN CHANGE_TO_USE_TMP_FIELDS_EXCEPT_SUMS
+--echo #
+
+CREATE TABLE t1 ( a VARCHAR(10), b TIMESTAMP );
+
+SELECT
+  REPLACE( IF( t2.a = t2.b, _latin1 'a', 'e'), 'd', 'b' )
+FROM
+  t1, t1 AS t2
+GROUP BY
+  REPLACE( IF( t2.a = t2.b, _latin1 'a', 'e'), 'd', 'b' )
+WITH ROLLUP;
+
 DROP TABLE t1;

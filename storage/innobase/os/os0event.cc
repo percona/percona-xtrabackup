@@ -43,8 +43,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <windows.h>
 #endif /* _WIN32 */
 
-#include <list>
-
 /** The number of microseconds in a second. */
 static const uint64_t MICROSECS_IN_A_SECOND = 1000000;
 
@@ -58,9 +56,6 @@ typedef CONDITION_VARIABLE os_cond_t;
 /** Native condition variable */
 typedef pthread_cond_t os_cond_t;
 #endif /* _WIN32 */
-
-typedef std::list<os_event_t, ut_allocator<os_event_t>> os_event_list_t;
-typedef os_event_list_t::iterator event_iter_t;
 
 /** InnoDB condition variable. */
 struct os_event {
@@ -274,9 +269,6 @@ struct os_event {
   static std::atomic_size_t n_objects_alive;
 #endif /* UNIV_DEBUG */
 
- public:
-  event_iter_t event_iter; /*!< For O(1) removal from
-                           list */
  protected:
   // Disable copying
   os_event(const os_event &);
@@ -529,7 +521,7 @@ states: signaled and nonsignaled. The created event is manual reset: it
 must be reset explicitly by calling sync_os_reset_event.
 @return	the event handle */
 os_event_t os_event_create() {
-  os_event_t ret = (UT_NEW_NOKEY(os_event()));
+  os_event_t ret = (ut::new_withkey<os_event>(UT_NEW_THIS_FILE_PSI_KEY));
 /**
  On SuSE Linux we get spurious EBUSY from pthread_mutex_destroy()
  unless we grab and release the mutex here. Current OS version:
@@ -608,7 +600,7 @@ void os_event_destroy(os_event_t &event) /*!< in/own: event to free */
 
 {
   if (event != nullptr) {
-    UT_DELETE(event);
+    ut::delete_(event);
     event = nullptr;
   }
 }

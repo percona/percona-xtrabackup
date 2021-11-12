@@ -653,7 +653,7 @@ bool Item_bool_func2::resolve_type(THD *thd) {
     return true;
 
   // Make a special case of compare with fields to get nicer DATE comparisons
-  if (!(thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW)) {
+  if (!(thd->lex->is_view_context_analysis())) {
     bool cvt1, cvt2;
     if (convert_constant_arg(thd, args[0], &args[1], &cvt1) ||
         convert_constant_arg(thd, args[1], &args[0], &cvt2))
@@ -1201,10 +1201,11 @@ bool Arg_comparator::set_cmp_func(Item_result_field *owner_arg, Item **left_arg,
       DTCollation::set() may have chosen a charset that's a superset of both
       and "left" and "right", so we need to convert both items.
      */
-    if (agg_item_set_converter(coll, owner->func_name(), left, 1,
-                               MY_COLL_CMP_CONV, 1, true) ||
-        agg_item_set_converter(coll, owner->func_name(), right, 1,
-                               MY_COLL_CMP_CONV, 1, true))
+    const char *func_name = owner ? owner->func_name() : "";
+    if (agg_item_set_converter(coll, func_name, left, 1, MY_COLL_CMP_CONV, 1,
+                               true) ||
+        agg_item_set_converter(coll, func_name, right, 1, MY_COLL_CMP_CONV, 1,
+                               true))
       return true;
   } else if (try_year_cmp_func(type)) {
     return false;
@@ -1239,6 +1240,13 @@ bool Arg_comparator::set_cmp_func(Item_result_field *owner_arg, Item **left_arg,
   const Item_result item_result =
       item_cmp_type((*left_arg)->result_type(), (*right_arg)->result_type());
   return set_cmp_func(owner_arg, left_arg, right_arg, item_result);
+}
+
+bool Arg_comparator::set_cmp_func(Item_result_field *owner_arg, Item **left_arg,
+                                  Item **right_arg, bool set_null_arg,
+                                  Item_result type) {
+  set_null = set_null_arg;
+  return set_cmp_func(owner_arg, left_arg, right_arg, type);
 }
 
 /**
@@ -1366,6 +1374,11 @@ bool Arg_comparator::inject_cast_nodes() {
         // one is DATE, the other one is TIME so wrap both in CAST to DATETIME
         return wrap_in_cast(left, MYSQL_TYPE_DATETIME) ||
                wrap_in_cast(right, MYSQL_TYPE_DATETIME);
+      }
+      if (left_is_datetime && right_is_datetime) {
+        // E.g., DATETIME = TIMESTAMP. We allow this (we could even produce it
+        // ourselves by the logic below).
+        return false;
       }
       // one is DATETIME the other one is not
       return left_is_datetime ? wrap_in_cast(right, MYSQL_TYPE_DATETIME)
@@ -1710,10 +1723,6 @@ int Arg_comparator::compare_string() {
   if (set_null) owner->null_value = false;
   size_t l1 = res1->length();
   size_t l2 = res2->length();
-  if (m_max_str_length > 0) {  // Truncate to imposed maximum length
-    if (l1 > m_max_str_length) l1 = m_max_str_length;
-    if (l2 > m_max_str_length) l2 = m_max_str_length;
-  }
   // Compare the two strings
   return cs->coll->strnncollsp(cs, pointer_cast<const uchar *>(res1->ptr()), l1,
                                pointer_cast<const uchar *>(res2->ptr()), l2);
@@ -1735,21 +1744,12 @@ int Arg_comparator::compare_binary_string() {
   if ((res1 = (*left)->val_str(&value1))) {
     if ((res2 = (*right)->val_str(&value2))) {
       if (set_null) owner->null_value = false;
-      auto orig_len1 = res1->length();
-      auto orig_len2 = res2->length();
-      auto new_len1 = orig_len1, new_len2 = orig_len2;
-      if (m_max_str_length > 0) {
-        if (orig_len1 > m_max_str_length)
-          res1->length(new_len1 = m_max_str_length);
-        if (orig_len2 > m_max_str_length)
-          res2->length(new_len2 = m_max_str_length);
-      }
-      size_t min_length = min(new_len1, new_len2);
+      size_t len1 = res1->length();
+      size_t len2 = res2->length();
+      size_t min_length = min(len1, len2);
       int cmp =
           min_length == 0 ? 0 : memcmp(res1->ptr(), res2->ptr(), min_length);
-      auto rc = cmp ? cmp : (int)(new_len1 - new_len2);
-      res1->length(orig_len1);
-      res2->length(orig_len2);
+      auto rc = cmp ? cmp : (int)(len1 - len2);
       return rc;
     }
   }
@@ -2456,7 +2456,7 @@ Item *Item_in_optimizer::compile(Item_analyzer analyzer, uchar **arg_p,
   return (this->*transformer)(arg_t);
 }
 
-void Item_in_optimizer::set_arg_resolve(THD *thd, uint i MY_ATTRIBUTE((unused)),
+void Item_in_optimizer::set_arg_resolve(THD *thd, uint i [[maybe_unused]],
                                         Item *newp) {
   assert(i == 0);
   // Maintain the invariant described in this class's comment
@@ -2654,12 +2654,14 @@ longlong Item_func_strcmp::val_int() {
   const CHARSET_INFO *cs = cmp.cmp_collation.collation;
   String *a = eval_string_arg(cs, args[0], &cmp.value1);
   if (a == nullptr) {
+    if (current_thd->is_error()) return error_int();
     null_value = true;
     return 0;
   }
 
   String *b = eval_string_arg(cs, args[1], &cmp.value2);
   if (b == nullptr) {
+    if (current_thd->is_error()) return error_int();
     null_value = true;
     return 0;
   }
@@ -2994,7 +2996,9 @@ bool Item_func_between::resolve_type(THD *thd) {
       }
 
       if (args[0]->is_temporal() && args[1]->is_temporal() &&
-          args[2]->is_temporal()) {
+          args[2]->is_temporal() && args[0]->data_type() != MYSQL_TYPE_YEAR &&
+          args[1]->data_type() != MYSQL_TYPE_YEAR &&
+          args[2]->data_type() != MYSQL_TYPE_YEAR) {
         /*
           An expression:
             time_or_datetime_field
@@ -3495,8 +3499,9 @@ bool Item_func_if::get_time(MYSQL_TIME *ltime) {
 }
 
 bool Item_func_nullif::resolve_type(THD *thd) {
-  // If 1. argument has no type, type of this operator cannot be determined yet
-  if (args[0]->data_type() == MYSQL_TYPE_INVALID) {
+  // If no arguments have a type, type of this operator cannot be determined yet
+  if (args[0]->data_type() == MYSQL_TYPE_INVALID &&
+      args[1]->data_type() == MYSQL_TYPE_INVALID) {
     /*
       Due to inheritance from Item_bool_func2, data_type() is LONGLONG.
       Ensure propagate_type() is called for this class:
@@ -3513,13 +3518,13 @@ bool Item_func_nullif::resolve_type_inner(THD *thd) {
   set_nullable(true);
   set_data_type_from_item(args[0]);
   cached_result_type = args[0]->result_type();
-  if (cached_result_type == STRING_RESULT &&
-      agg_arg_charsets_for_comparison(cmp.cmp_collation, args, arg_count))
-    return true;
 
   // This class does not implement temporal data types
-  if (is_temporal()) set_data_type_string(args[0]->max_length);
-
+  if (is_temporal()) {
+    set_data_type_string(args[0]->max_length);
+    if (agg_arg_charsets_for_comparison(cmp.cmp_collation, args, arg_count))
+      return true;
+  }
   return false;
 }
 
@@ -4324,7 +4329,7 @@ in_string::in_string(MEM_ROOT *mem_root, uint elements, const CHARSET_INFO *cs)
 
 void in_string::set(uint pos, Item *item) {
   String *str = base_pointers[pos];
-  String *res = item->val_str(str);
+  String *res = eval_string_arg(collation, item, str);
   if (res && res != str) {
     if (res->uses_buffer_owned_by(str)) res->copy();
     if (item->type() == Item::FUNC_ITEM)
@@ -5294,6 +5299,7 @@ longlong Item_func_in::val_int() {
     const int rc = in_item->cmp(args[i]);
     if (rc == false) return (longlong)(!negated);
     have_null |= (rc == UNKNOWN);
+    if (current_thd->is_error()) return error_int();
   }
 
   null_value = have_null;
@@ -7406,8 +7412,8 @@ static bool append_string_value(Item *comparand,
   // collation. This is given by the Arg_comparator, so we call strnxfrm
   // to make the string values memcmp-able.
   StringBuffer<STRING_BUFFER_USUAL_SIZE> str_buffer;
-  String *str = comparand->val_str(&str_buffer);
 
+  String *str = eval_string_arg(character_set, comparand, &str_buffer);
   if (comparand->null_value || str == nullptr) {
     return true;
   }

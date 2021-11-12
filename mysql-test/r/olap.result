@@ -1564,7 +1564,7 @@ EXPLAIN
 -> Sort: i
     -> Table scan on <temporary>  (cost=2.50..2.50 rows=0)
         -> Temporary table  (cost=2.50..2.50 rows=0)
-            -> Window aggregate with buffering: avg(t1.j) OVER () 
+            -> Window aggregate with buffering: avg(j) OVER () 
                 -> Filter: ((rollup_group_item(t1.i,0) + rollup_group_item(t1.j,1)) is null)
                     -> Table scan on <temporary>  (cost=2.50..2.50 rows=0)
                         -> Temporary table  (cost=2.50..2.50 rows=0)
@@ -2020,7 +2020,7 @@ SELECT (((@e:=`b`)) NOT BETWEEN 0x0b5f09 AND (CHAR(md5(@pub1),
 FROM t GROUP BY b,a WITH ROLLUP;
 (((@e:=`b`)) NOT BETWEEN 0x0b5f09 AND (CHAR(md5(@pub1),
 (CONNECTION_ID()+LEAD(5225.750000,110) RESPECT NULLS OVER(ORDER BY b, a)))))
-NULL
+1
 1
 1
 1
@@ -2208,4 +2208,45 @@ SELECT DISTINCT i FROM t1 WHERE i = 1 GROUP BY i WITH ROLLUP;
 i
 NULL
 1
+DROP TABLE t1;
+#
+# Bug #32918927: ASSERTION `!THD->IS_ERROR()' FAILED|SQL/SQL_EXECUTOR.CC
+#
+CREATE TABLE t1 ( a TIME );
+SELECT
+t1.a
+FROM
+t1, t1 AS t2
+GROUP BY t1.a WITH ROLLUP
+HAVING COUNT(*) = 0 AND t1.a = '刔';
+ERROR HY000: Illegal mix of collations for operation '='
+DROP TABLE t1;
+#
+# Bug#33036184: GROUP BY WITH ROLLUP AND CONCAT OVER GROUP BY KEY DOES NOT PRODUCE NULL
+#
+CREATE TABLE t1 (f1 INTEGER PRIMARY KEY);
+INSERT INTO t1 values (1);
+SELECT CONCAT(INSTR(f1,'w')) FROM t1 GROUP BY f1 WITH ROLLUP;
+CONCAT(INSTR(f1,'w'))
+0
+NULL
+DROP TABLE t1;
+#
+# Bug #33041336: WL#14419: ASSERTION `THD->CHANGE_LIST.IS_EMPTY()' FAILED
+#
+CREATE TABLE t1 ( a INTEGER );
+PREPARE ps FROM "SELECT RANK() OVER (ORDER BY a) FROM t1 GROUP BY a WITH ROLLUP";
+DROP TABLE t1;
+#
+# Bug #33123934: QUERY WITH ROLLUP - SEGFAULT IN CHANGE_TO_USE_TMP_FIELDS_EXCEPT_SUMS
+#
+CREATE TABLE t1 ( a VARCHAR(10), b TIMESTAMP );
+SELECT
+REPLACE( IF( t2.a = t2.b, _latin1 'a', 'e'), 'd', 'b' )
+FROM
+t1, t1 AS t2
+GROUP BY
+REPLACE( IF( t2.a = t2.b, _latin1 'a', 'e'), 'd', 'b' )
+WITH ROLLUP;
+REPLACE( IF( t2.a = t2.b, _latin1 'a', 'e'), 'd', 'b' )
 DROP TABLE t1;

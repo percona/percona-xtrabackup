@@ -629,10 +629,9 @@ bool is_simple_predicate(Item_func *func_item, Item **args, bool *inv_order) {
     case 0:
       /* MULT_EQUAL_FUNC */
       {
-        Item_equal *item_equal = (Item_equal *)func_item;
-        Item_equal_iterator it(*item_equal);
-        args[0] = it++;
-        if (it++) return false;
+        Item_equal *item_equal = down_cast<Item_equal *>(func_item);
+        args[0] = item_equal->get_first();
+        if (item_equal->members() > 1) return false;
         if (!(args[1] = item_equal->get_const())) return false;
       }
       break;
@@ -766,7 +765,8 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
 
   switch (((Item_func *)cond)->functype()) {
     case Item_func::ISNULL_FUNC:
-      is_null = true; /* fall through */
+      is_null = true;
+      [[fallthrough]];
     case Item_func::EQ_FUNC:
       eq_type = true;
       break;
@@ -774,12 +774,14 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
       eq_type = is_null_safe_eq = true;
       break;
     case Item_func::LT_FUNC:
-      noeq_type = true; /* fall through */
+      noeq_type = true;
+      [[fallthrough]];
     case Item_func::LE_FUNC:
       less_fl = true;
       break;
     case Item_func::GT_FUNC:
-      noeq_type = true; /* fall through */
+      noeq_type = true;
+      [[fallthrough]];
     case Item_func::GE_FUNC:
       break;
     case Item_func::BETWEEN:
@@ -873,13 +875,24 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
       Item *value = args[between && max_fl ? 2 : 1];
 
       /*
-        A perfect save is neccessary. Truncated / incorrect value can result
+        A perfect save is necessary. Truncated / incorrect value can result
         in an incorrect index lookup. Truncation of trailing space is ignored
-        since that is expected for strings even in other cases.
+        for strings with a PAD SPACE collation. (When trailing space has been
+        removed, TYPE_NOTE_TRUNCATED is returned. Not to be confused with
+        TYPE_WARN_TRUNCATED, which is returned when non-space has been removed.)
+
+        TODO(khatlen): It might be better if string literals that need
+        truncation are handled during constant folding, so that we only need to
+        check for TYPE_OK here. analyze_field_constant() does not yet handle
+        string constants.
       */
       type_conversion_status retval =
           value->save_in_field_no_warnings(part->field, true);
-      if (!(retval == TYPE_OK || retval == TYPE_NOTE_TRUNCATED)) return false;
+      if (!(retval == TYPE_OK ||
+            (retval == TYPE_NOTE_TRUNCATED && part->field->is_text_key_type() &&
+             part->field->charset()->pad_attribute == PAD_SPACE))) {
+        return false;
+      }
 
       if (part->null_bit) *key_ptr++ = (uchar)(part->field->is_null());
       part->field->get_key_image(key_ptr, part->length, Field::itRAW);
@@ -1081,7 +1094,7 @@ static bool maxmin_in_range(bool max_fl, Item_field *item_field, Item *cond) {
     case Item_func::LT_FUNC:
     case Item_func::LE_FUNC:
       less_fl = true;
-      // Fall through
+      [[fallthrough]];
     case Item_func::GT_FUNC:
     case Item_func::GE_FUNC: {
       Item *item = down_cast<Item_func *>(cond)->arguments()[1];

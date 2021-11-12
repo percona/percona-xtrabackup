@@ -25,8 +25,6 @@
 #include <thread>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
-// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
-// globally and require to include my_rapidjson_size_t.h
 #include "my_rapidjson_size_t.h"
 #endif
 
@@ -101,7 +99,7 @@ TEST_P(RestOpenApiTest, ensure_openapi) {
                                            GetParam().expected_content_type));
 
       for (const auto &kv : GetParam().value_checks) {
-        validate_value(json_doc, kv.first, kv.second);
+        ASSERT_NO_FATAL_FAILURE(validate_value(json_doc, kv.first, kv.second));
       }
     }
   }
@@ -293,7 +291,7 @@ static const RestApiTestParams rest_api_invalid_methods_params[]{
      kRestApiUsername,
      kRestApiPassword,
      /*request_authentication =*/true,
-     RestApiComponentTest::kProblemJsonMethodNotAllowed,
+     RestApiComponentTest::get_json_method_not_allowed_verifiers(),
      {}},
 };
 
@@ -320,7 +318,7 @@ static const RestApiTestParams rest_api_invalid_methods_no_auth_params[]{
      /*username =*/"",
      /*password =*/"",
      /*request_authentication =*/false,
-     RestApiComponentTest::kProblemJsonMethodNotAllowed,
+     RestApiComponentTest::get_json_method_not_allowed_verifiers(),
      {}},
 };
 

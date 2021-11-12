@@ -4282,7 +4282,7 @@ static enum_read_gtids_from_binlog_status read_gtids_from_binlog(
                    ? true
                    : all_gtids != nullptr || first_gtid != nullptr);
       }
-      // Fall through.
+        [[fallthrough]];
       default:
         // if we found any other event type without finding a
         // previous_gtids_log_event, then the rest of this binlog
@@ -4336,10 +4336,25 @@ static enum_read_gtids_from_binlog_status read_gtids_from_binlog(
   return ret;
 }
 
+bool MYSQL_BIN_LOG::find_first_log(std::string &binlog_file_name,
+                                   std::string &errmsg) {
+  auto log_index = this->get_log_index();
+  std::list<std::string> filename_list = log_index.second;
+
+  list<string>::iterator fit = filename_list.begin();
+  if (fit != filename_list.end()) {
+    binlog_file_name.assign(*fit);
+  } else {
+    errmsg.assign("Could not find the first log file name in the index file");
+    return true;
+  }
+  return false;
+}
+
 bool MYSQL_BIN_LOG::find_first_log_not_in_gtid_set(char *binlog_file_name,
                                                    const Gtid_set *gtid_set,
                                                    Gtid *first_gtid,
-                                                   const char **errmsg) {
+                                                   std::string &errmsg) {
   DBUG_TRACE;
   LOG_INFO linfo;
   auto log_index = this->get_log_index();
@@ -4349,19 +4364,19 @@ bool MYSQL_BIN_LOG::find_first_log_not_in_gtid_set(char *binlog_file_name,
   Gtid_set binlog_previous_gtid_set{gtid_set->get_sid_map()};
 
   if (error != LOG_INFO_EOF) {
-    *errmsg =
+    errmsg.assign(
         "Failed to read the binary log index file while "
         "looking for the oldest binary log that contains any GTID "
-        "that is not in the given gtid set";
+        "that is not in the given gtid set");
     error = -1;
     goto end;
   }
 
   if (filename_list.empty()) {
-    *errmsg =
+    errmsg.assign(
         "Could not find first log file name in binary log index file "
         "while looking for the oldest binary log that contains any GTID "
-        "that is not in the given gtid set";
+        "that is not in the given gtid set");
     error = -2;
     goto end;
   }
@@ -4390,17 +4405,17 @@ bool MYSQL_BIN_LOG::find_first_log_not_in_gtid_set(char *binlog_file_name,
                                    binlog_previous_gtid_set.get_sid_map(),
                                    opt_source_verify_checksum, is_relay_log)) {
       case ERROR:
-        *errmsg =
+        errmsg.assign(
             "Error reading header of binary log while looking for "
             "the oldest binary log that contains any GTID that is not in "
-            "the given gtid set";
+            "the given gtid set");
         error = -3;
         goto end;
       case NO_GTIDS:
-        *errmsg =
+        errmsg.assign(
             "Found old binary log without GTIDs while looking for "
             "the oldest binary log that contains any GTID that is not in "
-            "the given gtid set";
+            "the given gtid set");
         error = -4;
         goto end;
       case GOT_GTIDS:
@@ -4428,7 +4443,7 @@ bool MYSQL_BIN_LOG::find_first_log_not_in_gtid_set(char *binlog_file_name,
   }
 
 end:
-  if (error) DBUG_PRINT("error", ("'%s'", *errmsg));
+  if (error) DBUG_PRINT("error", ("'%s'", errmsg.c_str()));
   filename_list.clear();
   DBUG_PRINT("info", ("returning %d", error));
   return error != 0 ? true : false;
@@ -4565,7 +4580,7 @@ bool MYSQL_BIN_LOG::init_gtid_sets(Gtid_set *all_gtids, Gtid_set *lost_gtids,
             assert(lost_gtids->is_empty());
             goto end;
           }
-          /*FALLTHROUGH*/
+          [[fallthrough]];
         }
         case TRUNCATED: {
           break;
@@ -4686,7 +4701,7 @@ bool MYSQL_BIN_LOG::init_gtid_sets(Gtid_set *all_gtids, Gtid_set *lost_gtids,
           verify_checksum, is_relay_log)) {
         case ERROR: {
           error = 1;
-          /*FALLTHROUGH*/
+          [[fallthrough]];
         }
         case GOT_GTIDS: {
           goto end;
@@ -4707,7 +4722,7 @@ bool MYSQL_BIN_LOG::init_gtid_sets(Gtid_set *all_gtids, Gtid_set *lost_gtids,
             read any more binary logs.
           */
           if (binlog_gtid_simple_recovery) goto end;
-          /*FALLTHROUGH*/
+          [[fallthrough]];
         }
         case TRUNCATED: {
           break;
@@ -7338,9 +7353,9 @@ bool MYSQL_BIN_LOG::write_incident(Incident_log_event *ev, THD *thd,
   return error;
 }
 
-bool MYSQL_BIN_LOG::write_dml_directly(THD *thd, const char *stmt,
-                                       size_t stmt_len,
-                                       enum_sql_command sql_command) {
+bool MYSQL_BIN_LOG::write_stmt_directly(THD *thd, const char *stmt,
+                                        size_t stmt_len,
+                                        enum_sql_command sql_command) {
   bool ret = false;
   /* backup the original command */
   enum_sql_command save_sql_command = thd->lex->sql_command;
@@ -8444,7 +8459,7 @@ static const char *g_stage_name[] = {
 };
 #endif
 
-bool MYSQL_BIN_LOG::change_stage(THD *thd MY_ATTRIBUTE((unused)),
+bool MYSQL_BIN_LOG::change_stage(THD *thd [[maybe_unused]],
                                  Commit_stage_manager::StageID stage,
                                  THD *queue, mysql_mutex_t *leave_mutex,
                                  mysql_mutex_t *enter_mutex) {
@@ -9125,7 +9140,7 @@ static bool binlog_recover(Binlog_file_reader *binlog_file_reader,
 }
 
 void MYSQL_BIN_LOG::report_missing_purged_gtids(
-    const Gtid_set *slave_executed_gtid_set, const char **errmsg) {
+    const Gtid_set *slave_executed_gtid_set, std::string &errmsg) {
   DBUG_TRACE;
   THD *thd = current_thd;
   Gtid_set gtid_missing(gtid_state->get_lost_gtids()->get_sid_map());
@@ -9163,11 +9178,11 @@ void MYSQL_BIN_LOG::report_missing_purged_gtids(
   std::ostringstream gtid_info;
   gtid_info << "The GTID set sent by the slave is '" << slave_executed_gtids
             << "', and the missing transactions are '" << missing_gtids << "'";
-  *errmsg = ER_THD(thd, ER_MASTER_HAS_PURGED_REQUIRED_GTIDS);
+  errmsg.assign(ER_THD(thd, ER_MASTER_HAS_PURGED_REQUIRED_GTIDS));
 
   /* Don't consider the "%s" in the format string. Subtract 2 from the
      total length */
-  int total_length = (strlen(*errmsg) - 2 + gtid_info.str().length());
+  int total_length = (errmsg.length() - 2 + gtid_info.str().length());
 
   DBUG_EXECUTE_IF("simulate_long_missing_gtids",
                   { total_length = MYSQL_ERRMSG_SIZE + 1; });
@@ -9180,9 +9195,9 @@ void MYSQL_BIN_LOG::report_missing_purged_gtids(
         " GTID_SUBTRACT");
 
   /* Buffer for formatting the message about the missing GTIDs. */
-  static char buff[MYSQL_ERRMSG_SIZE];
-  snprintf(buff, MYSQL_ERRMSG_SIZE, *errmsg, gtid_info.str().c_str());
-  *errmsg = const_cast<const char *>(buff);
+  char buff[MYSQL_ERRMSG_SIZE] = {0};
+  snprintf(buff, MYSQL_ERRMSG_SIZE, errmsg.c_str(), gtid_info.str().c_str());
+  errmsg.assign(buff);
 
   my_free(missing_gtids);
   my_free(slave_executed_gtids);
@@ -9190,7 +9205,7 @@ void MYSQL_BIN_LOG::report_missing_purged_gtids(
 
 void MYSQL_BIN_LOG::report_missing_gtids(
     const Gtid_set *previous_gtid_set, const Gtid_set *slave_executed_gtid_set,
-    const char **errmsg) {
+    std::string &errmsg) {
   DBUG_TRACE;
   THD *thd = current_thd;
   char *missing_gtids = nullptr;
@@ -9228,20 +9243,21 @@ void MYSQL_BIN_LOG::report_missing_gtids(
   std::ostringstream gtid_info;
   gtid_info << "The GTID set sent by the slave is '" << slave_executed_gtids
             << "', and the missing transactions are '" << missing_gtids << "'";
-  *errmsg = ER_THD(thd, ER_MASTER_HAS_PURGED_REQUIRED_GTIDS);
+  errmsg.assign(ER_THD(thd, ER_MASTER_HAS_PURGED_REQUIRED_GTIDS));
 
   /* Don't consider the "%s" in the format string. Subtract 2 from the
      total length */
-  if ((strlen(*errmsg) - 2 + gtid_info.str().length()) > MYSQL_ERRMSG_SIZE)
+  if ((errmsg.length() - 2 + gtid_info.str().length()) > MYSQL_ERRMSG_SIZE)
     gtid_info.str(
         "The GTID sets and the missing purged transactions are too"
         " long to print in this message. For more information,"
         " please see the master's error log or the manual for"
         " GTID_SUBTRACT");
   /* Buffer for formatting the message about the missing GTIDs. */
-  static char buff[MYSQL_ERRMSG_SIZE];
-  snprintf(buff, MYSQL_ERRMSG_SIZE, *errmsg, gtid_info.str().c_str());
-  *errmsg = const_cast<const char *>(buff);
+  char buff[MYSQL_ERRMSG_SIZE] = {0};
+  snprintf(buff, MYSQL_ERRMSG_SIZE, errmsg.c_str(), gtid_info.str().c_str());
+  errmsg.assign(buff);
+
   my_free(missing_gtids);
   my_free(slave_executed_gtids);
 }
@@ -11489,7 +11505,7 @@ int THD::binlog_query(THD::enum_binlog_query_type qtype, const char *query_arg,
       DBUG_PRINT("debug", ("is_current_stmt_binlog_format_row: %d",
                            is_current_stmt_binlog_format_row()));
       if (is_current_stmt_binlog_format_row()) return 0;
-      /* Fall through */
+      [[fallthrough]];
 
       /*
         STMT_QUERY_TYPE means that the query must be logged in statement

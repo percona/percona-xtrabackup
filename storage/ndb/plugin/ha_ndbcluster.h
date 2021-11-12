@@ -38,6 +38,7 @@
 #include "storage/ndb/include/ndbapi/ndbapi_limits.h"
 #include "storage/ndb/plugin/ha_ndbcluster_cond.h"
 #include "storage/ndb/plugin/ndb_bitmap.h"
+#include "storage/ndb/plugin/ndb_blobs_buffer.h"
 #include "storage/ndb/plugin/ndb_conflict.h"
 #include "storage/ndb/plugin/ndb_table_map.h"
 
@@ -123,12 +124,6 @@ struct NDB_INDEX_DATA {
 
 #include "storage/ndb/plugin/ndb_ndbapi_util.h"
 #include "storage/ndb/plugin/ndb_share.h"
-
-struct Ndb_local_table_statistics {
-  int no_uncommitted_rows_count;
-  ha_rows records;
-};
-
 #include "storage/ndb/plugin/ndb_thd_ndb.h"
 
 struct st_ndb_status {
@@ -154,6 +149,7 @@ struct st_ndb_status {
   long long last_commit_epoch_session;
   long long api_client_stats[Ndb::NumClientStatistics];
   const char *system_name;
+  long fetch_table_stats;
 };
 
 int ndbcluster_commit(handlerton *, THD *thd, bool all);
@@ -343,8 +339,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
       cond_push()
       cond   Condition to be pushed. The condition tree must not be
       modified by the by the caller.
-      other_tbls_ok  Are other tables allowed to be referred
-      from the condition terms pushed down.
     RETURN
       The 'remainder' condition that caller must use to filter out records.
       NULL means the handler will not return rows that do not match the
@@ -363,7 +357,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
     =, !=, >, >=, <, <=, like, "not like", "is null", and "is not null".
     Negated conditions are supported by NOT which generate NAND/NOR groups.
   */
-  const Item *cond_push(const Item *cond, bool other_tbls_ok) override;
+  const Item *cond_push(const Item *cond) override;
 
  public:
   /**
@@ -474,10 +468,10 @@ class ha_ndbcluster : public handler, public Partition_handler {
 
   int prepare_inplace__add_index(THD *thd, KEY *key_info,
                                  uint num_of_keys) const;
-  int create_index_in_NDB(THD *thd, const char *name, KEY *key_info,
+  int create_index_in_NDB(THD *thd, const char *name, const KEY *key_info,
                           const NdbDictionary::Table *ndbtab,
                           bool unique) const;
-  int create_index(THD *thd, const char *name, KEY *key_info,
+  int create_index(THD *thd, const char *name, const KEY *key_info,
                    NDB_INDEX_TYPE idx_type,
                    const NdbDictionary::Table *ndbtab) const;
   // Index list management
@@ -512,7 +506,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
                         bool invalidate_objects);
   NDB_INDEX_TYPE get_index_type(uint idx_no) const;
   NDB_INDEX_TYPE get_index_type_from_table(uint index_num) const;
-  NDB_INDEX_TYPE get_index_type_from_key(uint index_num, KEY *key_info,
+  NDB_INDEX_TYPE get_index_type_from_key(uint index_num, const KEY *key_info,
                                          bool primary) const;
   bool has_null_in_unique_index(uint idx_no) const;
 
@@ -568,11 +562,12 @@ class ha_ndbcluster : public handler, public Partition_handler {
   uchar *get_buffer(Thd_ndb *thd_ndb, uint size);
   uchar *copy_row_to_buffer(Thd_ndb *thd_ndb, const uchar *record);
 
+  static int get_ndb_blobs_value_hook(NdbBlob *ndb_blob, void *arg);
+
   int get_blob_values(const NdbOperation *ndb_op, uchar *dst_record,
                       const MY_BITMAP *bitmap);
   int set_blob_values(const NdbOperation *ndb_op, ptrdiff_t row_offset,
                       const MY_BITMAP *bitmap, uint *set_count, bool batch);
-  friend int g_get_ndb_blobs_value(NdbBlob *ndb_blob, void *arg);
   void release_blobs_buffer();
   Uint32 setup_get_hidden_fields(NdbOperation::GetValueSpec gets[2]);
   void get_hidden_fields_keyop(NdbOperation::OperationOptions *options,
@@ -581,8 +576,6 @@ class ha_ndbcluster : public handler, public Partition_handler {
                               NdbOperation::GetValueSpec gets[2]);
   void get_read_set(bool use_cursor, uint idx);
 
-  void eventSetAnyValue(THD *thd,
-                        NdbOperation::OperationOptions *options) const;
   bool check_index_fields_in_write_set(uint keyno);
 
   int log_exclusive_read(const NdbRecord *key_rec, const uchar *key, uchar *buf,
@@ -606,9 +599,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
 
   int check_ndb_connection(THD *thd) const;
 
-  void set_rec_per_key();
-  void no_uncommitted_rows_execute_failure();
-  void no_uncommitted_rows_update(int);
+  void set_rec_per_key(THD *thd);
 
   /* Ordered index statistics v4 */
   int ndb_index_stat_query(uint inx, const key_range *min_key,
@@ -640,8 +631,8 @@ class ha_ndbcluster : public handler, public Partition_handler {
                                                    const NdbOperation *,
                                                    uint *ignore_count);
   friend int ndbcluster_commit(handlerton *, THD *thd, bool all);
+
   int start_statement(THD *thd, Thd_ndb *thd_ndb, uint table_count);
-  int init_handler_for_statement(THD *thd);
   /*
     Implementing Partition_handler API.
   */
@@ -681,8 +672,9 @@ class ha_ndbcluster : public handler, public Partition_handler {
   // Since all NDB table have primary key, the bitmap buffer is preallocated
   Ndb_bitmap_buf<NDB_MAX_ATTRIBUTES_IN_TABLE> m_pk_bitmap_buf;
 
-  struct Ndb_local_table_statistics *m_table_info;
-  struct Ndb_local_table_statistics m_table_info_instance;
+  // Pointer to table stats for transaction
+  Thd_ndb::Trans_tables::Stats *m_trans_table_stats{nullptr};
+
   THR_LOCK_DATA m_lock;
   bool m_lock_tuple;
   NDB_SHARE *m_share{nullptr};
@@ -725,8 +717,21 @@ class ha_ndbcluster : public handler, public Partition_handler {
   bool m_update_cannot_batch;
   uint m_bytes_per_write;
   bool m_skip_auto_increment;
-  bool m_slow_path;
   bool m_is_bulk_delete;
+
+  class Copying_alter {
+    Uint64 m_saved_commit_count;
+
+   public:
+    // Save the commit count for source table during copying ALTER,
+    // returns false on success and true on error
+    bool save_commit_count(Thd_ndb *thd_ndb,
+                           const NdbDictionary::Table *ndbtab);
+    // Check commit count for source table during copying ALTER,
+    // returns false on success and true on error
+    bool check_saved_commit_count(Thd_ndb *thd_ndb,
+                                  const NdbDictionary::Table *ndbtab) const;
+  } copying_alter;
 
   /* State for setActiveHook() callback for reading blob data. */
   uint m_blob_counter;
@@ -734,9 +739,8 @@ class ha_ndbcluster : public handler, public Partition_handler {
   uchar *m_blob_destination_record;
   Uint64 m_blobs_row_total_size; /* Bytes needed for all blobs in current row */
 
-  // memory for blobs in one tuple
-  uchar *m_blobs_buffer;
-  Uint64 m_blobs_buffer_size;
+  Ndb_blobs_buffer m_blobs_buffer;
+
   uint m_dupkey;
   // set from thread variables at external lock
   ha_rows m_autoincrement_prefetch;
@@ -757,8 +761,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
   uchar *m_multi_range_result_ptr;
   NdbIndexScanOperation *m_multi_cursor;
 
-  int update_stats(THD *thd, bool do_read_stat, uint part_id = ~(uint)0);
-  int add_handler_to_open_tables(THD *, Thd_ndb *, ha_ndbcluster *handler);
+  int update_stats(THD *thd, bool do_read_stat);
 };
 
 // Global handler synchronization

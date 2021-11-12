@@ -109,7 +109,7 @@ extern uint ibuf_debug;
 #include "row0ins.h"
 #include "row0log.h"
 #ifndef UNIV_HOTBACKUP
-#include "row0merge.h"
+#include "ddl0ddl.h"
 #include "row0mysql.h"
 #endif /* !UNIV_HOTBACKUP */
 #include "row0upd.h"
@@ -315,8 +315,8 @@ static void dict_table_stats_latch_alloc(void *table_void) {
 
   /* Note: rw_lock_create() will call the constructor */
 
-  table->stats_latch =
-      static_cast<rw_lock_t *>(ut_malloc_nokey(sizeof(rw_lock_t)));
+  table->stats_latch = static_cast<rw_lock_t *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(rw_lock_t)));
 
   ut_a(table->stats_latch != nullptr);
 
@@ -328,7 +328,7 @@ This function must not be called concurrently on the same table object.
 @param[in,out]	table	table whose stats latch to free */
 static void dict_table_stats_latch_free(dict_table_t *table) {
   rw_lock_free(table->stats_latch);
-  ut_free(table->stats_latch);
+  ut::free(table->stats_latch);
 }
 
 /** Create a dict_table_t's stats latch or delay for lazy creation.
@@ -385,7 +385,7 @@ void dict_table_stats_lock(dict_table_t *table, ulint latch_mode) {
       rw_lock_x_lock(table->stats_latch);
       break;
     case RW_NO_LATCH:
-      /* fall through */
+      [[fallthrough]];
     default:
       ut_error;
   }
@@ -413,7 +413,7 @@ void dict_table_stats_unlock(dict_table_t *table, ulint latch_mode) {
       rw_lock_x_unlock(table->stats_latch);
       break;
     case RW_NO_LATCH:
-      /* fall through */
+      [[fallthrough]];
     default:
       ut_error;
   }
@@ -447,9 +447,9 @@ static void dict_table_try_drop_aborted(
   }
 
   if (table && table->get_ref_count() == ref_count && table->drop_aborted) {
-    /* Silence a debug assertion in row_merge_drop_indexes(). */
+    /* Silence a debug assertion in ddl::drop_indexes(). */
     ut_d(table->acquire());
-    row_merge_drop_indexes(trx, table, TRUE);
+    ddl::drop_indexes(trx, table, true);
     ut_d(table->release());
     ut_ad(table->get_ref_count() == ref_count);
     trx_commit_for_mysql(trx);
@@ -584,7 +584,7 @@ void dict_table_close_and_drop(
   ut_a(!table->stat_initialized);
 #endif /* UNIV_DEBUG || UNIV_DDL_DEBUG */
 
-  row_merge_drop_table(trx, table);
+  ddl::drop_table(trx, table);
 }
 
 /** Check if the table has a given (non_virtual) column.
@@ -707,11 +707,12 @@ This function must not be called concurrently on the same table object.
 static void dict_table_autoinc_alloc(void *table_void) {
   dict_table_t *table = static_cast<dict_table_t *>(table_void);
 
-  table->autoinc_mutex = UT_NEW_NOKEY(ib_mutex_t());
+  table->autoinc_mutex = ut::new_withkey<ib_mutex_t>(UT_NEW_THIS_FILE_PSI_KEY);
   ut_a(table->autoinc_mutex != nullptr);
   mutex_create(LATCH_ID_AUTOINC, table->autoinc_mutex);
 
-  table->autoinc_persisted_mutex = UT_NEW_NOKEY(ib_mutex_t());
+  table->autoinc_persisted_mutex =
+      ut::new_withkey<ib_mutex_t>(UT_NEW_THIS_FILE_PSI_KEY);
   ut_a(table->autoinc_persisted_mutex != nullptr);
   mutex_create(LATCH_ID_PERSIST_AUTOINC, table->autoinc_persisted_mutex);
 }
@@ -721,7 +722,7 @@ This function must not be called concurrently on the same index object.
 @param[in,out]	index_void	index whose zip_pad_mutex to create */
 static void dict_index_zip_pad_alloc(void *index_void) {
   dict_index_t *index = static_cast<dict_index_t *>(index_void);
-  index->zip_pad.mutex = UT_NEW_NOKEY(SysMutex());
+  index->zip_pad.mutex = ut::new_withkey<SysMutex>(UT_NEW_THIS_FILE_PSI_KEY);
   ut_a(index->zip_pad.mutex != nullptr);
   mutex_create(LATCH_ID_ZIP_PAD_MUTEX, index->zip_pad.mutex);
 }
@@ -753,12 +754,7 @@ void dict_table_autoinc_initialize(dict_table_t *table, ib_uint64_t value) {
   table->autoinc = value;
 }
 
-/** Write redo logs for autoinc counter that is to be inserted, or to
-update some existing smaller one to bigger.
-@param[in,out]	table	InnoDB table object
-@param[in]	value	AUTOINC counter to log
-@param[in,out]	mtr	Mini-transaction */
-void dict_table_autoinc_log(dict_table_t *table, uint64_t value, mtr_t *mtr) {
+bool dict_table_autoinc_log(dict_table_t *table, uint64_t value, mtr_t *mtr) {
   bool log = false;
 
   mutex_enter(table->autoinc_persisted_mutex);
@@ -804,6 +800,9 @@ void dict_table_autoinc_log(dict_table_t *table, uint64_t value, mtr_t *mtr) {
     persister->write_log(table->id, metadata, mtr);
     /* No need to flush due to performance reason */
   }
+
+  /* Check and return if auto increment is to be persisted. */
+  return (log && dict_persist->check_persist_immediately());
 }
 
 /** Get all the FTS indexes on a table.
@@ -1013,10 +1012,11 @@ ibool dict_table_col_in_clustered_key(
 
 /** Inits the data dictionary module. */
 void dict_init(void) {
-  dict_operation_lock =
-      static_cast<rw_lock_t *>(ut_zalloc_nokey(sizeof(*dict_operation_lock)));
+  dict_operation_lock = static_cast<rw_lock_t *>(ut::zalloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY, sizeof(*dict_operation_lock)));
 
-  dict_sys = static_cast<dict_sys_t *>(ut_zalloc_nokey(sizeof(*dict_sys)));
+  dict_sys = static_cast<dict_sys_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*dict_sys)));
 
   UT_LIST_INIT(dict_sys->table_LRU);
   UT_LIST_INIT(dict_sys->table_non_LRU);
@@ -1486,8 +1486,9 @@ dberr_t dict_table_rename_in_cache(
   if (strlen(table->name.m_name) + 1 <= sizeof(old_name)) {
     strcpy(old_name, table->name.m_name);
   } else {
-    ib::fatal(ER_IB_MSG_177) << "Too long table name: " << table->name
-                             << ", max length is " << MAX_FULL_NAME_LEN;
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_177)
+        << "Too long table name: " << table->name << ", max length is "
+        << MAX_FULL_NAME_LEN;
   }
 
   fold = ut_fold_string(new_name);
@@ -1551,7 +1552,7 @@ dberr_t dict_table_rename_in_cache(
       ib::info(ER_IB_MSG_180) << "Delete of " << filepath << " failed.";
     }
 
-    ut_free(filepath);
+    ut::free(filepath);
 
   } else if (dict_table_is_file_per_table(table)) {
     char *new_path = nullptr;
@@ -1572,8 +1573,8 @@ dberr_t dict_table_rename_in_cache(
       in this remote location. */
       err = os_file_create_subdirs_if_needed(new_path);
       if (err != DB_SUCCESS) {
-        ut_free(old_path);
-        ut_free(new_path);
+        ut::free(old_path);
+        ut::free(new_path);
         return (err);
       }
     } else {
@@ -1583,12 +1584,10 @@ dberr_t dict_table_rename_in_cache(
     /* New filepath must not exist. */
     err = fil_rename_tablespace_check(table->space, old_path, new_path, false);
     if (err != DB_SUCCESS) {
-      ut_free(old_path);
-      ut_free(new_path);
+      ut::free(old_path);
+      ut::free(new_path);
       return (err);
     }
-
-    clone_mark_abort(true);
 
     std::string new_tablespace_name(new_name);
     dict_name::convert_to_space(new_tablespace_name);
@@ -1596,10 +1595,8 @@ dberr_t dict_table_rename_in_cache(
     dberr_t err = fil_rename_tablespace(table->space, old_path,
                                         new_tablespace_name.c_str(), new_path);
 
-    clone_mark_active();
-
-    ut_free(old_path);
-    ut_free(new_path);
+    ut::free(old_path);
+    ut::free(new_path);
 
     if (err != DB_SUCCESS) {
       return (err);
@@ -1621,8 +1618,8 @@ dberr_t dict_table_rename_in_cache(
     ut_realloc() with the same size do not cause fragmentation */
     ut_a(strlen(new_name) <= MAX_FULL_NAME_LEN);
 
-    table->name.m_name = static_cast<char *>(
-        ut_realloc(table->name.m_name, MAX_FULL_NAME_LEN + 1));
+    table->name.m_name = static_cast<char *>(ut::realloc_withkey(
+        UT_NEW_THIS_FILE_PSI_KEY, table->name.m_name, MAX_FULL_NAME_LEN + 1));
   }
   strcpy(table->name.m_name, new_name);
 
@@ -1808,7 +1805,7 @@ dberr_t dict_table_rename_in_cache(
         strcpy(foreign->id + db_len, dict_remove_db_name(old_id));
       }
 
-      ut_free(old_id);
+      ut::free(old_id);
     }
 
     table->foreign_set.erase(it);
@@ -1892,7 +1889,7 @@ static void dict_table_remove_from_cache_low(
       /* Write back the dirty metadata to DDTableBuffer */
       dict_table_persist_to_dd_table_buffer(table);
       ut_ad(table->dirty_status.load() != METADATA_DIRTY);
-      /* Fall through */
+      [[fallthrough]];
     case METADATA_BUFFERED:
       /* We have to remove it away here, since it's evicted.
       And we will add it again once it's re-loaded if possible */
@@ -1947,7 +1944,7 @@ static void dict_table_remove_from_cache_low(
   /* Free virtual column template if any */
   if (table->vc_templ != nullptr) {
     dict_free_vc_templ(table->vc_templ);
-    UT_DELETE(table->vc_templ);
+    ut::delete_(table->vc_templ);
   }
 
   size = mem_heap_get_size(table->heap) + strlen(table->name.m_name) + 1;
@@ -2736,8 +2733,8 @@ index.
 static ibool dict_index_find_and_set_cols(const dict_table_t *table,
                                           dict_index_t *index,
                                           const dict_add_v_col_t *add_v) {
-  std::vector<ulint, ut_allocator<ulint>> col_added;
-  std::vector<ulint, ut_allocator<ulint>> v_col_added;
+  std::vector<ulint, ut::allocator<ulint>> col_added;
+  std::vector<ulint, ut::allocator<ulint>> v_col_added;
 
   ut_ad(table != nullptr && index != nullptr);
   ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
@@ -3043,8 +3040,8 @@ static dict_index_t *dict_index_build_internal_clust(
   }
 
   /* Remember the table columns already contained in new_index */
-  indexed =
-      static_cast<ibool *>(ut_zalloc_nokey(table->n_cols * sizeof *indexed));
+  indexed = static_cast<ibool *>(ut::zalloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY, table->n_cols * sizeof *indexed));
 
   /* Mark the table columns already contained in new_index */
   for (i = 0; i < new_index->n_def; i++) {
@@ -3070,7 +3067,7 @@ static dict_index_t *dict_index_build_internal_clust(
     }
   }
 
-  ut_free(indexed);
+  ut::free(indexed);
 
   ut_ad(UT_LIST_GET_LEN(table->indexes) == 0);
 
@@ -3122,8 +3119,8 @@ static dict_index_t *dict_index_build_internal_non_clust(
   dict_index_copy(new_index, index, table, 0, index->n_fields);
 
   /* Remember the table columns already contained in new_index */
-  indexed =
-      static_cast<ibool *>(ut_zalloc_nokey(table->n_cols * sizeof *indexed));
+  indexed = static_cast<ibool *>(ut::zalloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY, table->n_cols * sizeof *indexed));
 
   /* Mark the table columns already contained in new_index */
   for (i = 0; i < new_index->n_def; i++) {
@@ -3158,7 +3155,7 @@ static dict_index_t *dict_index_build_internal_non_clust(
     }
   }
 
-  ut_free(indexed);
+  ut::free(indexed);
 
   if (dict_index_is_unique(index)) {
     new_index->n_uniq = index->n_fields;
@@ -3825,8 +3822,8 @@ void dict_print_info_on_foreign_key_in_create_format(FILE *file, trx_t *trx,
 
 /** Inits the structure for persisting dynamic metadata */
 void dict_persist_init(void) {
-  dict_persist =
-      static_cast<dict_persist_t *>(ut_zalloc_nokey(sizeof(*dict_persist)));
+  dict_persist = static_cast<dict_persist_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*dict_persist)));
 
   mutex_create(LATCH_ID_DICT_PERSIST_DIRTY_TABLES, &dict_persist->mutex);
 
@@ -3836,7 +3833,10 @@ void dict_persist_init(void) {
 
   dict_persist->num_dirty_tables = 0;
 
-  dict_persist->persisters = UT_NEW_NOKEY(Persisters());
+  dict_persist->m_persist_immediately.store(false);
+
+  dict_persist->persisters =
+      ut::new_withkey<Persisters>(UT_NEW_THIS_FILE_PSI_KEY);
   dict_persist->persisters->add(PM_INDEX_CORRUPTED);
   dict_persist->persisters->add(PM_TABLE_AUTO_INC);
 
@@ -3847,15 +3847,15 @@ void dict_persist_init(void) {
 
 /** Clear the structure */
 void dict_persist_close(void) {
-  UT_DELETE(dict_persist->persisters);
+  ut::delete_(dict_persist->persisters);
 
 #ifndef UNIV_HOTBACKUP
-  UT_DELETE(dict_persist->table_buffer);
+  ut::delete_(dict_persist->table_buffer);
 #endif /* !UNIV_HOTBACKUP */
 
   mutex_free(&dict_persist->mutex);
 
-  ut_free(dict_persist);
+  ut::free(dict_persist);
 }
 
 #ifndef UNIV_HOTBACKUP
@@ -4038,9 +4038,8 @@ void dict_table_load_dynamic_metadata(dict_table_t *table) {
 
   mutex_exit(&dict_persist->mutex);
 
-  UT_DELETE(readmeta);
+  ut::delete_(readmeta);
 }
-#endif /* !UNIV_HOTBACKUP */
 
 /** Mark the dirty_status of a table as METADATA_DIRTY, and add it to the
 dirty_dict_tables list if necessary.
@@ -4048,11 +4047,9 @@ dirty_dict_tables list if necessary.
 void dict_table_mark_dirty(dict_table_t *table) {
   ut_ad(!table->is_temporary());
 
-#ifndef UNIV_HOTBACKUP
   /* We should not adding dynamic metadata so late in shutdown phase and
   this data would only be retrieved during recovery. */
   ut_ad(srv_shutdown_state.load() < SRV_SHUTDOWN_FLUSH_PHASE);
-#endif /* !UNIV_HOTBACKUP */
 
   mutex_enter(&dict_persist->mutex);
 
@@ -4061,17 +4058,14 @@ void dict_table_mark_dirty(dict_table_t *table) {
       break;
     case METADATA_CLEAN:
       /* Not in dirty_tables list, add it now */
-#ifndef UNIV_HOTBACKUP
       UT_LIST_ADD_LAST(dict_persist->dirty_dict_tables, table);
-#endif
       ut_d(table->in_dirty_dict_tables_list = true);
-      /* Fall through */
+      [[fallthrough]];
     case METADATA_BUFFERED:
       table->dirty_status.store(METADATA_DIRTY);
       ++dict_persist->num_dirty_tables;
-#ifndef UNIV_HOTBACKUP
+
       dict_persist_update_log_margin();
-#endif /* !UNIV_HOTBACKUP */
   }
 
   ut_ad(table->in_dirty_dict_tables_list);
@@ -4104,7 +4098,6 @@ void dict_set_corrupted(dict_index_t *index) {
     Persister *persister = dict_persist->persisters->get(PM_INDEX_CORRUPTED);
     ut_ad(persister != nullptr);
 
-#ifndef UNIV_HOTBACKUP
     mtr_t mtr;
 
     mtr.start();
@@ -4113,13 +4106,11 @@ void dict_set_corrupted(dict_index_t *index) {
 
     /* Make sure the corruption bit won't be lost */
     log_write_up_to(*log_sys, mtr.commit_lsn(), true);
-#endif /* !UNIV_HOTBACKUP */
 
     dict_table_mark_dirty(table);
   }
 }
 
-#ifndef UNIV_HOTBACKUP
 /** Write the dirty persistent dynamic metadata for a table to
 DD TABLE BUFFER table. This is the low level function to write back.
 @param[in,out]	table	table to write */
@@ -4164,18 +4155,13 @@ static void dict_table_persist_to_dd_table_buffer_low(dict_table_t *table) {
 
   ut_ad(dict_persist->num_dirty_tables > 0);
   --dict_persist->num_dirty_tables;
-#ifndef UNIV_HOTBACKUP
   dict_persist_update_log_margin();
-#endif /* !UNIV_HOTBACKUP */
 }
 
 /** Write back the dirty persistent dynamic metadata of the table
 to DDTableBuffer
 @param[in,out]	table	table object */
 void dict_table_persist_to_dd_table_buffer(dict_table_t *table) {
-  ut_ad(dict_sys != nullptr);
-  ut_ad(dict_sys_mutex_own());
-
   mutex_enter(&dict_persist->mutex);
 
   if (table->dirty_status.load() != METADATA_DIRTY) {
@@ -4191,7 +4177,7 @@ void dict_table_persist_to_dd_table_buffer(dict_table_t *table) {
 
   mutex_exit(&dict_persist->mutex);
 }
-#ifndef UNIV_HOTBACKUP
+
 /** Check if any table has any dirty persistent data, if so
 write dirty persistent data of table to mysql.innodb_dynamic_metadata
 accordingly. */
@@ -4292,7 +4278,6 @@ static void dict_persist_update_log_margin() {
     log_set_dict_persist_margin(*log_sys, margin);
   }
 }
-#endif /* !UNIV_HOTBACKUP */
 
 #ifdef UNIV_DEBUG
 /** Sets merge_threshold for all indexes in the list of tables
@@ -4470,7 +4455,7 @@ void dict_table_check_for_dup_indexes(const dict_table_t *table,
             case ONLINE_INDEX_ABORTED_DROPPED:
               break;
           }
-          /* fall through */
+          [[fallthrough]];
         case CHECK_PARTIAL_OK:
           break;
       }
@@ -4575,6 +4560,12 @@ void dict_resize() {
 
   dict_sys_mutex_exit();
 }
+#else
+/* Dummy implementation for satisfying compiler for MEB. This can be removed
+once the callers in dict0dd.cc is factored out from MEB compilation. */
+/* purecov: begin deadcode */
+void dict_set_corrupted(dict_index_t *index [[maybe_unused]]) {}
+/* purecov: end */
 #endif /* !UNIV_HOTBACKUP */
 
 /** Closes the data dictionary module. */
@@ -4635,7 +4626,7 @@ void dict_close(void) {
 
   rw_lock_free(dict_operation_lock);
 
-  ut_free(dict_operation_lock);
+  ut::free(dict_operation_lock);
   dict_operation_lock = nullptr;
 
   mutex_free(&dict_foreign_err_mutex);
@@ -4649,7 +4640,7 @@ void dict_close(void) {
 
   ut_ad(dict_sys->size == 0);
 
-  ut_free(dict_sys);
+  ut::free(dict_sys);
   dict_sys = nullptr;
 }
 
@@ -5370,7 +5361,7 @@ void DDTableBuffer::truncate() {
 }
 
 /** Get the buffered metadata for a specific table, the caller
-has to delete the returned std::string object by UT_DELETE
+has to delete the returned std::string object by ut::delete_
 @param[in]	id	table id
 @param[out]	version	table dynamic metadata version
 @return the metadata saved in a string object, if nothing, the
@@ -5412,8 +5403,8 @@ std::string *DDTableBuffer::get(table_id_t id, uint64 *version) {
     *version = 0;
   }
 
-  std::string *metadata =
-      UT_NEW_NOKEY(std::string(reinterpret_cast<const char *>(field), len));
+  std::string *metadata = ut::new_withkey<std::string>(
+      UT_NEW_THIS_FILE_PSI_KEY, reinterpret_cast<const char *>(field), len);
 
   mtr.commit();
 
@@ -5650,7 +5641,7 @@ ulint AutoIncPersister::read(PersistentTableMetadata &metadata,
 Persisters::~Persisters() {
   persisters_t::iterator iter;
   for (iter = m_persisters.begin(); iter != m_persisters.end(); ++iter) {
-    UT_DELETE(iter->second);
+    ut::delete_(iter->second);
   }
 }
 
@@ -5683,10 +5674,11 @@ Persister *Persisters::add(persistent_type_t type) {
 
   switch (type) {
     case PM_INDEX_CORRUPTED:
-      persister = UT_NEW_NOKEY(CorruptedIndexPersister());
+      persister =
+          ut::new_withkey<CorruptedIndexPersister>(UT_NEW_THIS_FILE_PSI_KEY);
       break;
     case PM_TABLE_AUTO_INC:
-      persister = UT_NEW_NOKEY(AutoIncPersister());
+      persister = ut::new_withkey<AutoIncPersister>(UT_NEW_THIS_FILE_PSI_KEY);
       break;
     default:
       ut_ad(0);
@@ -5704,7 +5696,7 @@ void Persisters::remove(persistent_type_t type) {
   persisters_t::iterator iter = m_persisters.find(type);
 
   if (iter != m_persisters.end()) {
-    UT_DELETE(iter->second);
+    ut::delete_(iter->second);
     m_persisters.erase(iter);
   }
 }
@@ -6015,4 +6007,40 @@ dberr_t dict_set_compression(dict_table_t *table, const char *algorithm,
 
   return err;
 }
+
+dict_persist_t::Enable_immediate::Enable_immediate(dict_persist_t *persister)
+    : m_persister(persister) {
+  /* 1. Make sure all new auto increment operations save metadata to
+  DD buffer table immediately. */
+  m_persister->m_persist_immediately.store(true);
+
+  /* 2. Save all existing metadata to DD buffer table. */
+  dict_persist_to_dd_table_buffer();
+}
+
+dict_persist_t::Enable_immediate::~Enable_immediate() {
+  m_persister->m_persist_immediately.store(false);
+  m_persister = nullptr;
+}
+
+/** @return number of base columns of virtual column in foreign key column
+@param[in]      vcol    in-memory virtual column
+@param[in]      foreign in-memory Foreign key constraint */
+uint32_t dict_vcol_base_is_foreign_key(dict_v_col_t *vcol,
+                                       dict_foreign_t *foreign) {
+  const dict_table_t *table = foreign->foreign_table;
+  uint32_t foreign_col_count = 0;
+
+  for (uint32_t i = 0; i < foreign->n_fields; i++) {
+    const char *foreign_col_name = foreign->foreign_col_names[i];
+    for (uint32_t j = 0; j < vcol->num_base; j++) {
+      if (strcmp(foreign_col_name,
+                 table->get_col_name(vcol->base_col[j]->ind)) == 0) {
+        foreign_col_count++;
+      }
+    }
+  }
+  return foreign_col_count;
+}
+
 #endif /* !UNIV_HOTBACKUP */

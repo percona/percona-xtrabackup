@@ -1,5 +1,5 @@
 # Copyright (c) 2006, 2021, Oracle and/or its affiliates.
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
@@ -141,6 +141,7 @@ SET(CLIENT_API_FUNCTIONS
   mysql_warning_count
   mysql_real_connect_dns_srv
   mysql_bind_param
+  mysql_plugin_get_option
   CACHE INTERNAL "Functions exported by client API"
 )
 
@@ -191,7 +192,7 @@ SET(CLIENT_SOURCES
 )
 
 IF (WIN32 AND OPENSSL_APPLINK_C)
-  ADD_COMPILE_DEFINITIONS(
+  MY_ADD_COMPILE_DEFINITIONS(
     ../sql-common/client_authentication.cc
     COMPILE_DEFINITIONS HAVE_OPENSSL_APPLINK_C
   )
@@ -261,7 +262,7 @@ IF(HAVE_DNS_SRV EQUAL 0)
   MESSAGE(FATAL_ERROR "Can't find neither Win32 nor Unix DNS SRV APIs")
 ENDIF()
 #
-# On Windows platform client library includes the client-side 
+# On Windows platform client library includes the client-side
 # Windows Native Authentication plugin.
 #
 IF(WIN32)
@@ -273,8 +274,14 @@ ENDIF()
 # LDAP authentication SASL client plug-in
 ADD_SUBDIRECTORY(authentication_ldap)
 
+# FIDO authentication client plugin
+ADD_SUBDIRECTORY(authentication_fido)
+
 # authentication kerberos client plug-in
 ADD_SUBDIRECTORY(authentication_kerberos)
+
+# authentication IAM client plug-in
+ADD_SUBDIRECTORY(authentication_oci_client)
 
 # Merge several convenience libraries into one big mysqlclient
 MERGE_CONVENIENCE_LIBRARIES(mysqlclient ${LIBS_TO_MERGE}
@@ -302,14 +309,14 @@ ENDIF()
 IF(UNIX)
   MACRO(GET_VERSIONED_LIBNAME LIBNAME EXTENSION VERSION OUTNAME)
     SET(DOT_VERSION ".${VERSION}")
-    IF(DOT_VERSION STREQUAL ".") 
+    IF(DOT_VERSION STREQUAL ".")
       SET(DOT_VERSION "")
     ENDIF()
     IF(APPLE)
       SET(${OUTNAME} ${LIBNAME}${DOT_VERSION}${EXTENSION})
     ELSE()
       SET(${OUTNAME} ${LIBNAME}${EXTENSION}${DOT_VERSION})
-    ENDIF() 
+    ENDIF()
   ENDMACRO()
 ENDIF()
 
@@ -340,6 +347,11 @@ MERGE_LIBRARIES_SHARED(libmysql ${LIBS_TO_MERGE}
   SKIP_INSTALL
   )
 
+# Downgrade warning for strncat in my_crypt_genhash.
+IF((WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO) AND MY_COMPILER_IS_GNU)
+  MY_TARGET_LINK_OPTIONS(libmysql "-Wno-error=stringop-truncation")
+ENDIF()
+
 IF(LINUX_STANDALONE AND KERBEROS_CUSTOM_LIBRARY)
   ADD_DEPENDENCIES(libmysql ${kerberos_target})
   ADD_DEPENDENCIES(mysqlclient ${kerberos_target})
@@ -354,7 +366,7 @@ IF(UNIX)
     CONFIGURE_FILE(libmysql.ver.in ${CMAKE_CURRENT_BINARY_DIR}/libmysql.ver)
     MY_TARGET_LINK_OPTIONS(libmysql
       "LINKER:--version-script=${CMAKE_CURRENT_BINARY_DIR}/libmysql.ver")
-  ENDIF() 
+  ENDIF()
 
   # clean direct output needs to be set several targets have the same name
   #(mysqlclient in this case)

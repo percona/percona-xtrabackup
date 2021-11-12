@@ -123,7 +123,9 @@ Gcs_xcom_control::Gcs_xcom_control(
     Gcs_xcom_engine *gcs_engine,
     Gcs_xcom_state_exchange_interface *state_exchange,
     Gcs_xcom_view_change_control_interface *view_control, bool boot,
-    My_xp_socket_util *socket_util)
+    My_xp_socket_util *socket_util,
+    std::unique_ptr<Network_provider_operations_interface>
+        comms_operation_interface)
     : m_gid(nullptr),
       m_gid_hash(0),
       m_xcom_proxy(xcom_proxy),
@@ -139,6 +141,7 @@ Gcs_xcom_control::Gcs_xcom_control(
       m_suspicions_manager(new Gcs_suspicions_manager(xcom_proxy, this)),
       m_suspicions_processing_thread(),
       m_sock_probe_interface(nullptr),
+      m_comms_operation_interface(std::move(comms_operation_interface)),
       m_xcom_running(false),
       m_leave_view_requested(false),
       m_leave_view_delivered(false),
@@ -287,7 +290,7 @@ enum_gcs_error Gcs_xcom_control::do_join(bool retry) {
     return GCS_NOK;
   }
 
-  while (ret == GCS_NOK) {
+  while (ret == GCS_NOK && !m_view_control->is_finalized()) {
     ret = retry_do_join();
 
     retry_join_count--;
@@ -358,7 +361,6 @@ enum_gcs_error Gcs_xcom_control::retry_do_join() {
     MYSQL_GCS_LOG_ERROR("Error initializing the group communication engine.")
     goto err;
   }
-
   // Wait for XCom comms to become ready
   m_xcom_proxy->xcom_wait_for_xcom_comms_status_change(comm_status);
 
@@ -400,8 +402,11 @@ enum_gcs_error Gcs_xcom_control::retry_do_join() {
       m_local_node_address->get_member_ip(),
       m_local_node_address->get_member_port());
   if (!could_connect_to_local_xcom) {
-    MYSQL_GCS_LOG_ERROR("Error connecting to the local group communication"
+    MYSQL_GCS_LOG_ERROR("Error testing to the local group communication"
                         << " engine instance.")
+    MYSQL_GCS_LOG_DEBUG(
+        "Error testing the connection to the local group communication engine "
+        "instance.")
     goto err;
   }
 
@@ -550,6 +555,8 @@ bool Gcs_xcom_control::try_send_add_node_request_to_seeds(
       */
       if (xcom_will_process) add_node_accepted = true;
     }
+
+    if (con != nullptr) free(con);
   }
 
   return add_node_accepted;
@@ -575,7 +582,7 @@ std::pair<bool, connection_descriptor *> Gcs_xcom_control::connect_to_peer(
       m_local_node_address->get_member_port(), addr.c_str(), port);
 
   con = m_xcom_proxy->xcom_client_open_connection(addr, port);
-  if (con == nullptr) {
+  if (con->fd == -1) {
     // Could not connect to the peer.
     MYSQL_GCS_LOG_ERROR("Error on opening a connection to "
                         << addr << ":" << port << " on local port: "
@@ -748,8 +755,8 @@ connection_descriptor *Gcs_xcom_control::get_connection_to_node(
         "get_connection_to_node: xcom_client_open_connection to %s:%d", addr,
         port)
 
-    if ((con = m_xcom_proxy->xcom_client_open_connection(addr, port)) ==
-        nullptr) {
+    con = m_xcom_proxy->xcom_client_open_connection(addr, port);
+    if (con->fd == -1) {
       MYSQL_GCS_LOG_DEBUG(
           "get_connection_to_node: Error while opening a connection to %s:%d",
           addr, port)
@@ -813,17 +820,21 @@ void Gcs_xcom_control::do_remove_node_from_group() {
     delete current_view;
   }
 
-  if (!con) {
+  if (con->fd == -1) {
     // GET INITIAL PEERS
     MYSQL_GCS_LOG_DEBUG(
         "do_remove_node_from_group: (%d) Couldn't get a connection from view! "
         "Using initial peers...",
         local_port)
 
+    free(con);
+    con = nullptr;
+
     con = get_connection_to_node(&m_initial_peers);
   }
 
-  if (con && !m_leave_view_delivered && m_view_control->belongs_to_group()) {
+  if (con->fd != -1 && !m_leave_view_delivered &&
+      m_view_control->belongs_to_group()) {
     MYSQL_GCS_LOG_TRACE(
         "do_remove_node_from_group: (%d) got a connection! "
         "m_leave_view_delivered=%d belongs=%d",
@@ -841,9 +852,11 @@ void Gcs_xcom_control::do_remove_node_from_group() {
         local_port);
   }
 
-  if (con) {
-    xcom_close_client_connection(con);
+  if (con->fd != -1) {
+    m_xcom_proxy->xcom_client_close_connection(con);
   }
+
+  if (con != nullptr) free(con);
 
   /*
     Destroy this node's stored suspicions to avoid them from unnecessary
@@ -1311,7 +1324,7 @@ bool Gcs_xcom_control::is_this_node_in(
 bool Gcs_xcom_control::xcom_receive_global_view(synode_no const config_id,
                                                 synode_no message_id,
                                                 Gcs_xcom_nodes *xcom_nodes,
-                                                bool same_view,
+                                                bool do_not_deliver_to_client,
                                                 synode_no max_synode) {
   bool ret = false;
   bool free_built_members = false;
@@ -1341,7 +1354,7 @@ bool Gcs_xcom_control::xcom_receive_global_view(synode_no const config_id,
     current_members = const_cast<std::vector<Gcs_member_identifier> *>(
         &current_view->get_members());
   MYSQL_GCS_LOG_TRACE("::xcom_receive_global_view():: My node_id is %d",
-                      xcom_nodes->get_node_no())
+                      xcom_nodes->get_node_no());
 
   /*
     Identify which nodes are alive and which are considered faulty.
@@ -1452,10 +1465,10 @@ bool Gcs_xcom_control::xcom_receive_global_view(synode_no const config_id,
 
   /*
     If nobody has joined or left the group, there is no need to install any
-    view. This fact is denoted by the same_view flag and the execution only
-    gets so far because we may have to kill some faulty members. Note that
-    the code could be optimized but we are focused on correctness for now
-    and any possible optimization will be handled in the future.
+    view. This fact is denoted by the do_not_deliver_to_client flag and the
+    execution only gets so far because we may have to kill some faulty members.
+    Note that the code could be optimized but we are focused on correctness for
+    now and any possible optimization will be handled in the future.
 
     Views that contain a node marked as faulty are also ignored. This is
     done because XCOM does not deliver messages to or accept messages from
@@ -1471,13 +1484,13 @@ bool Gcs_xcom_control::xcom_receive_global_view(synode_no const config_id,
     If the execution has managed to pass these steps, the node is alive and
     it is time to start building the view.
   */
-  if (same_view || failed_members.size() != 0) {
+  if (do_not_deliver_to_client || failed_members.size() != 0) {
     MYSQL_GCS_LOG_TRACE(
         "(My node_id is %d) ::xcom_receive_global_view():: "
         "Discarding view because nothing has changed. "
-        "Same view flag is %d, number of failed nodes is %llu"
+        "Do not deliver to client flag is %d, number of failed nodes is %llu"
         ", number of joined nodes is %llu, number of left nodes is %llu",
-        xcom_nodes->get_node_no(), same_view,
+        xcom_nodes->get_node_no(), do_not_deliver_to_client,
         static_cast<long long unsigned>(failed_members.size()),
         static_cast<long long unsigned>(joined_members.size()),
         static_cast<long long unsigned>(left_members.size()));
@@ -1572,6 +1585,8 @@ end:
   return ret;
 }
 
+extern uint32_t get_my_xcom_id();
+
 void Gcs_xcom_control::process_control_message(
     Gcs_message *msg, Gcs_protocol_version maximum_supported_protocol_version,
     Gcs_protocol_version used_protocol_version) {
@@ -1588,8 +1603,9 @@ void Gcs_xcom_control::process_control_message(
           msg->get_message_data().get_payload_length()));
 
   MYSQL_GCS_LOG_TRACE(
-      "::process_control_message():: From: %s regarding view_id: %s in %s",
-      msg->get_origin().get_member_id().c_str(),
+      "xcom_id %x ::process_control_message():: From: %s regarding view_id: %s "
+      "in %s",
+      get_my_xcom_id(), msg->get_origin().get_member_id().c_str(),
       ms_info->get_view_id()->get_representation().c_str(),
       get_node_address()->get_member_address().c_str())
 
@@ -1601,18 +1617,21 @@ void Gcs_xcom_control::process_control_message(
   MYSQL_GCS_DEBUG_EXECUTE(
       synode_no configuration_id = ms_info->get_configuration_id();
       if (!m_view_control->is_view_changing()){MYSQL_GCS_LOG_DEBUG(
-          "There is no state exchange going on. Ignoring exchangeable data "
+          "xcom_id %x There is no state exchange going on. Ignoring "
+          "exchangeable data "
           "because its from a previous state exchange phase. Message is "
           "from group_id (%u), msg_no(%llu), node_no(%llu)",
-          configuration_id.group_id,
+          get_my_xcom_id(), configuration_id.group_id,
           static_cast<long long unsigned>(configuration_id.msgno),
           static_cast<long long unsigned>(
               configuration_id
-                  .node))} MYSQL_GCS_LOG_DEBUG("There is a state exchange "
+                  .node))} MYSQL_GCS_LOG_DEBUG("xcom_id %x There is a state "
+                                               "exchange "
                                                "going on. Message is "
                                                "from group_id (%u), "
                                                "msg_no(%llu), "
                                                "node_no(%llu)",
+                                               get_my_xcom_id(),
                                                configuration_id.group_id,
                                                static_cast<long long unsigned>(
                                                    configuration_id.msgno),
@@ -1812,6 +1831,10 @@ void Gcs_xcom_control::set_node_address(
     init_me() method.
   */
   m_local_node_info = new Gcs_xcom_node_information(address);
+
+  Network_configuration_parameters params;
+  params.port = xcom_node_address->get_member_port();
+  m_comms_operation_interface->configure_active_provider(params);
 }
 
 void Gcs_xcom_control::set_peer_nodes(

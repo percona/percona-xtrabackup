@@ -33,7 +33,7 @@
 #include "sql/handler.h"
 #include "sql/item.h"
 #include "sql/key.h"
-#include "sql/opt_range.h"  // QUICK_SELECT_I
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
 #include "sql/sql_const.h"
 #include "sql/sql_executor.h"  // QEP_TAB
 #include "sql/sql_opt_exec_shared.h"
@@ -270,11 +270,10 @@ void Table_access::compute_type_and_index() const {
 
           // Temporary assert as we are still investigation the relation between
           // 'quick->index == MAX_KEY' and the different quick_types
-          assert(
-              (quick->index == MAX_KEY) ==
-              ((quick->get_type() == QUICK_SELECT_I::QS_TYPE_INDEX_MERGE) ||
-               (quick->get_type() == QUICK_SELECT_I::QS_TYPE_ROR_INTERSECT) ||
-               (quick->get_type() == QUICK_SELECT_I::QS_TYPE_ROR_UNION)));
+          assert((quick->index == MAX_KEY) ==
+                 (quick->get_type() == QS_TYPE_INDEX_MERGE ||
+                  quick->get_type() == QS_TYPE_ROR_INTERSECT ||
+                  quick->get_type() == QS_TYPE_ROR_UNION));
 
           // JT_INDEX_MERGE: We have a set of qualifying PKs as root of pushed
           // joins
@@ -405,13 +404,6 @@ int Table_access::get_last_sj_inner() const {
 bool Table_access::is_sj_firstmatch() const {
   const QEP_TAB *qep_tab = get_qep_tab();
   return (qep_tab->get_sj_strategy() == SJ_OPT_FIRST_MATCH);
-}
-int Table_access::get_firstmatch_return() const {
-  const int last_sj_inner = get_last_sj_inner();
-  if (last_sj_inner < 0) return -1;
-
-  const QEP_TAB *last_sj_inner_tab = m_join_plan->get_qep_tab(last_sj_inner);
-  return last_sj_inner_tab->firstmatch_return;
 }
 
 bool Table_access::is_antijoin() const {

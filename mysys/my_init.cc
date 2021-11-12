@@ -549,14 +549,14 @@ static PSI_memory_info all_mysys_memory[] = {
 
 #ifdef HAVE_PSI_THREAD_INTERFACE
 static PSI_thread_info all_mysys_thread[] = {
-    {&key_thread_timer_notifier, "thread_timer_notifier", PSI_FLAG_SINGLETON, 0,
-     PSI_DOCUMENT_ME}};
+    {&key_thread_timer_notifier, "thread_timer_notifier", "timer_notifier",
+     PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}};
 #endif /* HAVE_PSI_THREAD_INTERFACE */
 
 #ifdef HAVE_PSI_INTERFACE
 void my_init_mysys_psi_keys() {
-  const char *category MY_ATTRIBUTE((unused)) = "mysys";
-  int count MY_ATTRIBUTE((unused));
+  const char *category [[maybe_unused]] = "mysys";
+  int count [[maybe_unused]];
 
 #ifdef HAVE_PSI_MUTEX_INTERFACE
   count = sizeof(all_mysys_mutexes) / sizeof(all_mysys_mutexes[0]);

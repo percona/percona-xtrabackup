@@ -1796,7 +1796,7 @@ EXPLAIN
 -> Index scan on t1 using j  (cost=411.60 rows=4096)
 -> Select #2 (subquery in projection; dependent)
     -> Limit: 1 row(s)  (cost=410.97 rows=1)
-        -> Index lookup on t2 using j (j=t1.j; iterate backwards)  (cost=410.97 rows=4096)
+        -> Covering index lookup on t2 using j (j=t1.j; iterate backwards)  (cost=410.97 rows=4096)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.j' of SELECT #2 was resolved in SELECT #1
@@ -1848,12 +1848,12 @@ EXPLAIN
 -> Table scan on <temporary>  (cost=1.26..2.52 rows=2)
     -> Temporary table with deduplication  (cost=1.91..3.17 rows=2)
         -> Table scan on t1  (cost=0.45 rows=2)
--> Select #2 (subquery in projection; dependent)
-    -> Aggregate: count(0)  (cost=1.75 rows=4)
-        -> Nested loop left join  (cost=1.35 rows=4)
-            -> Table scan on t2  (cost=0.45 rows=2)
-            -> Filter: (t3.a > (t2.a - t1.a))  (cost=0.35 rows=2)
-                -> Table scan on t3  (cost=0.35 rows=2)
+        -> Select #2 (subquery in projection; dependent)
+            -> Aggregate: count(0)  (cost=1.75 rows=4)
+                -> Nested loop left join  (cost=1.35 rows=4)
+                    -> Table scan on t2  (cost=0.45 rows=2)
+                    -> Filter: (t3.a > (t2.a - t1.a))  (cost=0.35 rows=2)
+                        -> Table scan on t3  (cost=0.35 rows=2)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.a' of SELECT #2 was resolved in SELECT #1
@@ -2352,6 +2352,97 @@ a
 2
 DROP TABLE t1;
 #
+# Bug #32663072: WL#14418: ASSERTION `PATH->TYPE == ACCESSPATH::FILTER' FAILED|JOIN_OPTIMIZER.CC
+#
+CREATE TABLE t1 (c1 INTEGER, c2 INTEGER, c3 INTEGER, c4 INTEGER, c5 INTEGER, c6 INTEGER, c7 INTEGER, c8 INTEGER, c9 INTEGER, c10 INTEGER, c11 INTEGER, c12 INTEGER, c13 INTEGER, c14 INTEGER, c15 INTEGER, c16 INTEGER, c17 INTEGER, c18 INTEGER, c19 INTEGER, c20 INTEGER, c21 INTEGER, c22 INTEGER, c23 INTEGER, c24 INTEGER, c25 INTEGER, c26 INTEGER, c27 INTEGER, c28 INTEGER, c29 INTEGER, c30 INTEGER, c31 INTEGER, c32 INTEGER, c33 INTEGER, c34 INTEGER, c35 INTEGER, c36 INTEGER, c37 INTEGER, c38 INTEGER, c39 INTEGER, c40 INTEGER, c41 INTEGER, c42 INTEGER, c43 INTEGER, c44 INTEGER, c45 INTEGER, c46 INTEGER, c47 INTEGER, c48 INTEGER, c49 INTEGER, c50 INTEGER, c51 INTEGER, c52 INTEGER, c53 INTEGER, c54 INTEGER, c55 INTEGER, c56 INTEGER, c57 INTEGER, c58 INTEGER, c59 INTEGER, c60 INTEGER, c61 INTEGER);
+SELECT *
+FROM t1
+NATURAL JOIN (
+SELECT t2.*
+FROM t1 AS t2 JOIN t1 AS t3 ON t3.c1 = t2.c1
+WHERE t2.c3 <> ANY (SELECT c3 FROM t1)
+) AS d1;
+c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14	c15	c16	c17	c18	c19	c20	c21	c22	c23	c24	c25	c26	c27	c28	c29	c30	c31	c32	c33	c34	c35	c36	c37	c38	c39	c40	c41	c42	c43	c44	c45	c46	c47	c48	c49	c50	c51	c52	c53	c54	c55	c56	c57	c58	c59	c60	c61
+DROP TABLE t1;
+#
+# Bug #32672275: WL#14418: ASSERTION `ISSINGLEBITSET(PRED.TOTAL_ELIGIBILITY_SET)' FAILED.
+#
+CREATE TABLE t1 ( a INTEGER );
+SELECT *
+FROM t1 AS outer_t1
+WHERE EXISTS (
+SELECT t2.a
+FROM t1
+LEFT JOIN t1 AS t2 ON t2.a = outer_t1.a
+);
+a
+DROP TABLE t1;
+#
+# Bug #32643386: WL#14418: ASSERTION `FD_SET == IT_AND_INSERTED.FIRST->SECOND.ACTIVE_FUNCTIONAL_D
+#
+CREATE TABLE t1 ( a INTEGER );
+SELECT *
+FROM (t1 STRAIGHT_JOIN t1 AS t2) JOIN t1 AS t3 ON t1.a = t3.a
+WHERE t2.a = t3.a
+ORDER BY t1.a;
+a	a	a
+DROP TABLE t1;
+CREATE TABLE t1 (a INTEGER, b INTEGER);
+SELECT *
+FROM (t1 STRAIGHT_JOIN t1 AS t2 ON t1.b = t2.b) JOIN t1 AS t3 ON t1.a = t3.b
+WHERE t1.a < t2.b AND t2.a < t3.b
+ORDER BY t1.b;
+a	b	a	b	a	b
+DROP TABLE t1;
+#
+# Bug #32642893: WL#14418: ASSERTION `!ISMULTIPLEEQUALS(ITEM)' FAILED|MAKE_JOIN_HYPERGRAPH.CC
+#
+CREATE TABLE t1 ( a INTEGER );
+SELECT *
+FROM t1
+LEFT JOIN t1 AS t2 ON t1.a = t2.a
+LEFT JOIN t1 AS t3 ON t2.a = t3.a
+WHERE t2.a = t3.a OR t2.a <> t2.a;
+a	a	a
+DROP TABLE t1;
+#
+# Bug #32707348: WL#14418: RESULT MISMATCHES SEEN WITH HYPERGRAPH
+#
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+INSERT INTO t1 VALUES (1,2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT * FROM t1, t1 AS t2, t1 AS t3 WHERE t1.a = t2.a AND t1.a = t3.b AND t1.a = t3.a;
+a	b	a	b	a	b
+DROP TABLE t1;
+#
+# Bug #32751315: WL#14418: ASSERTION `RIGHT != NULLPTR' FAILED|MAKE_JOIN_HYPERGRAPH.CC
+#
+CREATE TABLE t1 ( pk INTEGER );
+SELECT * FROM
+t1
+JOIN t1 AS t2 ON t1.pk = t2.pk
+JOIN t1 AS t3
+LEFT JOIN t1 AS t4 ON t2.pk = t3.pk AND t4.pk = 135;
+pk	pk	pk	pk
+DROP TABLE t1;
+#
+# Bug #32757178: WL#14418: ASSERTION `!EQ_ITEMS.IS_EMPTY()' FAILED|MAKE_JOIN_HYPERGRAPH.CC
+#
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+SELECT *
+FROM
+t1
+JOIN t1 AS t2 ON t1.a = t2.b
+LEFT JOIN t1 AS t3 ON t2.b = t3.b
+LEFT JOIN (
+t1 AS t4
+JOIN t1 AS t5 ON t4.b = t5.b
+) ON t2.b = t4.a
+WHERE t1.b >= 6 OR t3.b <> t4.b;
+a	b	a	b	a	b	a	b	a	b
+DROP TABLE t1;
 # Bug#32508878 - MYSQL SERVER CRASH - ASSERTION FAILURE IN
 # DEPS_OF_REMAINING_LATERAL_DERIVED_TABLES::RECALCULATE
 #
@@ -2375,6 +2466,38 @@ Note	1276	Field or reference 'test.x1.b' of SELECT #3 was resolved in SELECT #2
 Note	1003	/* select#1 */ select `test`.`x3`.`a` AS `a`,`test`.`x3`.`b` AS `b` from `test`.`t1` `x3` semi join (`test`.`t1` `x1` join `test`.`t1` `x2` join lateral (/* select#3 */ select count(`test`.`t1`.`a`) AS `c` from `test`.`t1` where (`test`.`t1`.`b` = `test`.`x1`.`b`)) `d3`) where ((`test`.`x2`.`b` = `test`.`x1`.`b`) and (`test`.`x1`.`b` = `d3`.`c`))
 DROP TABLE t1;
 #
+# Bug #32917482: SIG11 IN FLATTENINNERJOINS|MAKE_JOIN_HYPERGRAPH.CC
+#
+CREATE TABLE t1 (
+a VARCHAR(1),
+b INTEGER
+);
+SELECT *
+FROM
+t1
+JOIN t1 AS t2 ON t1.b = t2.b
+JOIN t1 AS t3
+JOIN (
+t1 AS t4 STRAIGHT_JOIN t1 AS t5 ON t4.a = t5.b
+) ON t1.b = t4.b
+WHERE t1.a = t5.b;
+a	b	a	b	a	b	a	b	a	b
+DROP TABLE t1;
+#
+# Bug #32939191: HYPERGRAPH: DIFFERENT RESULTS WHEN HYPERGRAPH_OPTIMIZER IS ON/OFF
+#
+CREATE TABLE t1 (a INTEGER);
+INSERT INTO t1 VALUES (1), (2), (3), (4);
+SELECT *
+FROM
+t1
+LEFT JOIN (
+t1 AS t2
+LEFT JOIN t1 AS t3 ON FALSE
+) ON t1.a <=> t3.a
+WHERE t1.a <=> t3.a;
+a	a	a
+DROP TABLE t1;
 # Bug#32915307- RECENT REGRESSION: ASSERTION
 # `JOIN->DEPS_OF_REMAINING_LATERAL_DERIVED_TABLES
 # == CALCULATE_LATERAL_DEPS_OF_FINAL_PLAN(FIRST_TAB_NO)' FAILED.
@@ -2441,3 +2564,71 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`k` AS `k`,`test`.`t2`.`d` AS `d`,`test`.`t3`.`e` AS `e` from `test`.`t1` left join (`test`.`t2`) on((`test`.`t2`.`k` = `test`.`t1`.`t2ref`)) left join `test`.`t3` on((`test`.`t3`.`k` = `test`.`t2`.`t3ref`)) where true
 DROP TABLE t1, t2, t3;
+#
+# Bug #32976194: HYPERGRAPH: ASSERTION `!OVERLAPS(EXPR->LEFT->TABLES_IN_SUBTREE, EXPR->RIGHT->TAB
+#
+CREATE TABLE t1 ( a INTEGER );
+SELECT *
+FROM t1, t1 AS t2, t1 AS t3
+WHERE rand() > 0.5 OR (t1.a = 1 AND t2.a = 1);
+a	a	a
+DROP TABLE t1;
+#
+# Bug #33003335: HYPERGRAPH: ASSERTION `FD_SET == IT_AND_INSERTED.FIRST->SECOND.ACTIVE_FUNCTIONAL
+#
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+SELECT * FROM
+t1
+STRAIGHT_JOIN t1 AS t2 ON t1.b = t2.b
+JOIN (t1 AS t3 JOIN t1 AS t4 ON t3.a = t4.a AND t3.b = t4.b) ON t2.b = t3.b AND t2.a < t3.a
+ORDER BY t2.b;
+a	b	a	b	a	b	a	b
+DROP TABLE t1;
+#
+# Bug #33003581: HYPERGRAPH: ASSERTION `FALSE' FAILED|SQL/ITEM_CMPFUNC.CC
+#
+CREATE TABLE t1 ( i INTEGER );
+INSERT INTO t1 VALUES (1), (2);
+SELECT * FROM
+t1 LEFT JOIN (SELECT i FROM t1 WHERE FALSE) AS d1 ON t1.i = d1.i
+WHERE NOT EXISTS (SELECT 1 FROM t1 AS inner_t1 WHERE i = d1.i);
+i	i
+1	NULL
+2	NULL
+DROP TABLE t1;
+CREATE TABLE t1 ( a INTEGER, b INTEGER, c INTEGER, d INTEGER, e INTEGER, f INTEGER, g INTEGER, h INTEGER, i INTEGER, j INTEGER, k INTEGER, l INTEGER, m INTEGER, n INTEGER, o INTEGER, p INTEGER, q INTEGER, r INTEGER, s INTEGER, t INTEGER, u INTEGER, v INTEGER, w INTEGER, KEY (a) );
+SELECT 1
+FROM t1 NATURAL JOIN t1 AS t2 NATURAL JOIN t1 AS t3
+WHERE
+t1.a <> ( SELECT SUM(a) FROM t1 );
+1
+DROP TABLE t1;
+#
+# Bug #32366946: USE-AFTER-FREE WITH HYPERGRAPH OPTIMIZER + SORT + REMATERIALIZATION
+#
+CREATE TABLE t1 (
+f1 INTEGER
+);
+INSERT INTO t1 VALUES (1), (2), (3);
+CREATE TABLE t2 (
+pk INTEGER,
+blobfield LONGTEXT
+);
+INSERT INTO t2 VALUES (4, '');
+SELECT *
+FROM t1, t2, LATERAL (
+SELECT pk, blobfield
+GROUP BY pk, blobfield WITH ROLLUP
+) AS d1
+ORDER BY t1.f1, t2.pk;
+f1	pk	blobfield	pk	blobfield
+1	4		4	
+1	4		4	NULL
+1	4		NULL	NULL
+2	4		4	
+2	4		4	NULL
+2	4		NULL	NULL
+3	4		4	
+3	4		4	NULL
+3	4		NULL	NULL
+DROP TABLE t1, t2;

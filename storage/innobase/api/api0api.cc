@@ -50,12 +50,12 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lock0lock.h"
 #include "lock0types.h"
 
+#include "ddl0ddl.h"
 #include "dict0sdi-decompress.h"
 #include "dict0sdi.h"
 #include "pars0pars.h"
 #include "rem0cmp.h"
 #include "row0ins.h"
-#include "row0merge.h"
 #include "row0sel.h"
 #include "row0upd.h"
 #include "row0vers.h"
@@ -157,7 +157,7 @@ struct ib_key_col_t {
 struct ib_table_def_t;
 
 /** InnoDB index schema used during index creation */
-struct ib_index_def_t {
+struct ib_Index_defn {
   mem_heap_t *heap; /*!< Heap used to build this and all
                     its columns in the list */
 
@@ -512,7 +512,7 @@ ib_err_t ib_trx_start(
 
   trx_start_if_not_started(trx, read_write);
 
-  trx->isolation_level = ib_trx_level;
+  trx->isolation_level = static_cast<trx_t::isolation_level_t>(ib_trx_level);
 
   /* FIXME: This is a place holder, we should add an arg that comes
   from the client. */
@@ -845,7 +845,8 @@ ib_err_t ib_cursor_open_table(const char *name,   /*!< in: table name */
   trx_t *trx = static_cast<trx_t *>(ib_trx);
   MDL_ticket *mdl = nullptr;
 
-  normalized_name = static_cast<char *>(ut_malloc_nokey(ut_strlen(name) + 1));
+  normalized_name = static_cast<char *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, ut_strlen(name) + 1));
   ib_normalize_table_name(normalized_name, name);
 
   ut_ad(ib_trx != nullptr);
@@ -858,7 +859,7 @@ ib_err_t ib_cursor_open_table(const char *name,   /*!< in: table name */
     table = ib_lookup_table_by_name(normalized_name);
   }
 
-  ut_free(normalized_name);
+  ut::free(normalized_name);
   normalized_name = nullptr;
 
   /* It can happen that another thread has created the table but
@@ -1668,7 +1669,8 @@ static inline ib_err_t ib_cursor_position(
   if (prebuilt->innodb_api) {
     prebuilt->cursor_heap = cursor->heap;
   }
-  buf = static_cast<unsigned char *>(ut_malloc_nokey(UNIV_PAGE_SIZE));
+  buf = static_cast<unsigned char *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, UNIV_PAGE_SIZE));
   prebuilt->clear_search_tuples();
 
   /* We want to position at one of the ends, row_search_for_mysql()
@@ -1677,7 +1679,7 @@ static inline ib_err_t ib_cursor_position(
   err = static_cast<ib_err_t>(row_search_for_mysql(
       buf, static_cast<page_cur_mode_t>(mode), prebuilt, 0, 0));
 
-  ut_free(buf);
+  ut::free(buf);
 
   return (err);
 }
@@ -1750,7 +1752,8 @@ ib_err_t ib_cursor_moveto(ib_crsr_t ib_crsr, /*!< in: InnoDB cursor instance */
 
   prebuilt->innodb_api_rec = nullptr;
 
-  buf = static_cast<unsigned char *>(ut_malloc_nokey(UNIV_PAGE_SIZE));
+  buf = static_cast<unsigned char *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, UNIV_PAGE_SIZE));
 
   if (prebuilt->innodb_api) {
     prebuilt->cursor_heap = cursor->heap;
@@ -1759,7 +1762,7 @@ ib_err_t ib_cursor_moveto(ib_crsr_t ib_crsr, /*!< in: InnoDB cursor instance */
       row_search_for_mysql(buf, static_cast<page_cur_mode_t>(ib_srch_mode),
                            prebuilt, cursor->match_mode, direction));
 
-  ut_free(buf);
+  ut::free(buf);
 
   return (err);
 }
@@ -3365,8 +3368,8 @@ ib_err_t ib_memc_sdi_get(ib_crsr_t crsr, const char *key_str, void *sdi,
   ut_ad(*sdi_len < UINT32_MAX);
   uint32_t uncompressed_sdi_len;
   uint32_t compressed_sdi_len = static_cast<uint32_t>(*sdi_len);
-  byte *compressed_sdi =
-      static_cast<byte *>(ut_malloc_nokey(compressed_sdi_len));
+  byte *compressed_sdi = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, compressed_sdi_len));
 
   err = ib_sdi_get(tablespace_id, &sk, compressed_sdi, &compressed_sdi_len,
                    &uncompressed_sdi_len, trx);

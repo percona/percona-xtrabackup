@@ -52,9 +52,13 @@ aaa	bbb
 select charset(a), charset(b), charset(binary 'ccc') from t1 limit 1;
 charset(a)	charset(b)	charset(binary 'ccc')
 cp1251	binary	binary
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 select collation(a), collation(b), collation(binary 'ccc') from t1 limit 1;
 collation(a)	collation(b)	collation(binary 'ccc')
 cp1251_bin	binary	binary
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 drop table t1;
 create table t1 (
 a varchar(16) character set cp1251 collate cp1251_bin not null,
@@ -382,6 +386,7 @@ Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 DROP TABLE t1;
 set global LC_TIME_NAMES=convert((-8388608) using cp1251);
 ERROR HY000: Unknown locale: '-8388608'
@@ -1569,7 +1574,7 @@ create table t1 as select concat(ST_IsEmpty(ST_GeomFromText('Point(1 1)'))) as c
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(21) CHARACTER SET cp1251 DEFAULT NULL
+  `c1` varchar(1) CHARACTER SET cp1251 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(ST_IsSimple(ST_GeomFromText('POINT(1 1)'))));
@@ -1589,7 +1594,7 @@ create table t1 as select concat(ST_IsClosed(ST_GeomFromText('LineString(1 1,2 2
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(21) CHARACTER SET cp1251 DEFAULT NULL
+  `c1` varchar(1) CHARACTER SET cp1251 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(MBREquals(ST_GeomFromText('Point(1 1)'),ST_GeomFromText('Point(1 1)'))));

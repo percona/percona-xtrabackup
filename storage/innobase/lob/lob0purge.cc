@@ -278,14 +278,14 @@ static void z_rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
 }
 
 /** Purge a compressed LOB.
-@param[in]	ctx	      the delete operation context information.
-@param[in]	index	      clustered index in which LOB is present
-@param[in]	trxid	      the transaction that is being purged.
-@param[in]	undo_no	      during rollback to savepoint, purge only upto
-                              this undo number.
-@param[in]	rec_type      undo record type.
-@param[in,out]  purge_node    if nullptr, free the complete LOB. Otherwise,
-                              save the first page of LOB in this purge node. */
+@param[in] ctx		              The delete operation context information.
+@param[in] index                Clustered index in which LOB is present
+@param[in] trxid                The transaction that is being purged.
+@param[in] undo_no              During rollback to savepoint, purge only upto
+                                this undo number.
+@param[in] rec_type	            Undo record type.
+@param[in,out] purge_node       if nullptr, free the complete LOB. Otherwise,
+                                save the first page of LOB in this purge node.*/
 static void z_purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
                     undo_no_t undo_no, ulint rec_type,
                     purge_node_t *purge_node) {
@@ -337,6 +337,9 @@ static void z_purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
       ref.set_length(0, nullptr);
       ctx->zblob_write_blobref(ctx->m_field_no, mtr);
     } else {
+      /* Only purge operation should reach this else block. */
+      ut_ad(purge_node != nullptr);
+
       /* Note that page_zip will be NULL in
       row_purge_upd_exist_or_extern(). */
       ref.set_page_no(FIL_NULL, mtr);
@@ -386,12 +389,14 @@ static void z_purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
     node_loc = cur_entry.get_next();
     cur_entry.reset(nullptr);
 
+    ut_ad(!lob_mtr.conflicts_with(mtr));
     mtr_commit(&lob_mtr);
     mtr_start(&lob_mtr);
     lob_mtr.set_log_mode(mtr->get_log_mode());
     first.load_x(first_page_no);
   }
 
+  ut_ad(!lob_mtr.conflicts_with(mtr));
   mtr_commit(&lob_mtr);
 
   if (ctx->get_page_zip() != nullptr) {

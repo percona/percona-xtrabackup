@@ -20,7 +20,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-SET(GOOGLETEST_RELEASE googletest-release-1.10.0)
+SET(GOOGLETEST_RELEASE googletest-release-1.11.0)
 SET(GMOCK_SOURCE_DIR
   ${CMAKE_SOURCE_DIR}/extra/googletest/${GOOGLETEST_RELEASE}/googlemock)
 SET(GTEST_SOURCE_DIR
@@ -59,14 +59,7 @@ FOREACH(googletest_library
   TARGET_INCLUDE_DIRECTORIES(${googletest_library} SYSTEM PUBLIC
     ${GMOCK_INCLUDE_DIRS}
     )
-  IF(MY_COMPILER_IS_SUNPRO)
-    TARGET_COMPILE_OPTIONS(${googletest_library} PRIVATE $<$<CONFIG:RelWithDebInfo>:-xO4>)
-  ENDIF()
   IF(HAS_MISSING_PROFILE)
     TARGET_COMPILE_OPTIONS(${googletest_library} PRIVATE ${HAS_MISSING_PROFILE})
   ENDIF()
 ENDFOREACH()
-
-IF(MY_COMPILER_IS_SUNPRO)
-  ADD_DEFINITIONS(-DGTEST_LANG_CXX11=1)
-ENDIF()

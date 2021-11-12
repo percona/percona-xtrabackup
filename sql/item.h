@@ -33,6 +33,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "decimal.h"
@@ -672,7 +673,7 @@ class Settable_routine_parameter {
                       MODE_OUT   - UPDATE_ACL
                       MODE_INOUT - SELECT_ACL | UPDATE_ACL
   */
-  virtual void set_required_privilege(ulong privilege MY_ATTRIBUTE((unused))) {}
+  virtual void set_required_privilege(ulong privilege [[maybe_unused]]) {}
 
   /*
     Set parameter value.
@@ -690,7 +691,7 @@ class Settable_routine_parameter {
   */
   virtual bool set_value(THD *thd, sp_rcontext *ctx, Item **it) = 0;
 
-  virtual void set_out_param_info(Send_field *info MY_ATTRIBUTE((unused))) {}
+  virtual void set_out_param_info(Send_field *info [[maybe_unused]]) {}
 
   virtual const Send_field *get_out_param_info() const { return nullptr; }
 };
@@ -822,13 +823,13 @@ class Item : public Parse_tree_node {
     return (*THR_MALLOC)->Alloc(size);
   }
   static void *operator new(size_t size, MEM_ROOT *mem_root,
-                            const std::nothrow_t &arg MY_ATTRIBUTE((unused)) =
-                                std::nothrow) noexcept {
+                            const std::nothrow_t &arg
+                            [[maybe_unused]] = std::nothrow) noexcept {
     return mem_root->Alloc(size);
   }
 
-  static void operator delete(void *ptr MY_ATTRIBUTE((unused)),
-                              size_t size MY_ATTRIBUTE((unused))) {
+  static void operator delete(void *ptr [[maybe_unused]],
+                              size_t size [[maybe_unused]]) {
     TRASH(ptr, size);
   }
   static void operator delete(void *, MEM_ROOT *,
@@ -1134,9 +1135,10 @@ class Item : public Parse_tree_node {
     @param removed_query_block query_block that tables are moved away from,
                           child of parent_query_block.
   */
-  virtual void fix_after_pullout(
-      Query_block *parent_query_block MY_ATTRIBUTE((unused)),
-      Query_block *removed_query_block MY_ATTRIBUTE((unused))) {}
+  virtual void fix_after_pullout(Query_block *parent_query_block
+                                 [[maybe_unused]],
+                                 Query_block *removed_query_block
+                                 [[maybe_unused]]) {}
   /*
     should be used in case where we are sure that we do not need
     complete fix_fields() procedure.
@@ -1153,9 +1155,8 @@ class Item : public Parse_tree_node {
 
     @returns false if success, true if error
   */
-  virtual bool propagate_type(THD *thd MY_ATTRIBUTE((unused)),
-                              const Type_properties &type
-                                  MY_ATTRIBUTE((unused))) {
+  virtual bool propagate_type(THD *thd [[maybe_unused]],
+                              const Type_properties &type [[maybe_unused]]) {
     return false;
   }
 
@@ -1330,9 +1331,10 @@ class Item : public Parse_tree_node {
   }
 
   inline void set_data_type_bool() {
-    set_data_type(MYSQL_TYPE_LONG);
+    set_data_type(MYSQL_TYPE_LONGLONG);
     collation.set_numeric();
     max_length = 1;
+    unsigned_flag = true;
   }
 
   /**
@@ -1351,14 +1353,14 @@ class Item : public Parse_tree_node {
     The unsigned property must have been set before calling this function.
 
     @param precision Number of digits of precision
-    @param dec       Number of digits after decimal point.
+    @param scale     Number of digits after decimal point.
   */
-  inline void set_data_type_decimal(uint8 precision, uint8 dec) {
+  inline void set_data_type_decimal(uint8 precision, uint8 scale) {
     set_data_type(MYSQL_TYPE_NEWDECIMAL);
     collation.set_numeric();
-    decimals = dec;
+    decimals = scale;
     fix_char_length(my_decimal_precision_to_length_no_truncation(
-        precision, dec, unsigned_flag));
+        precision, scale, unsigned_flag));
   }
 
   /// Set the data type of the Item to be double precision floating point.
@@ -1631,8 +1633,8 @@ class Item : public Parse_tree_node {
         - If the value of the function is NULL then the bound is the
           smallest possible value of LLONG_MIN
   */
-  virtual longlong val_int_endpoint(bool left_endp MY_ATTRIBUTE((unused)),
-                                    bool *incl_endp MY_ATTRIBUTE((unused))) {
+  virtual longlong val_int_endpoint(bool left_endp [[maybe_unused]],
+                                    bool *incl_endp [[maybe_unused]]) {
     assert(0);
     return 0;
   }
@@ -1853,7 +1855,7 @@ class Item : public Parse_tree_node {
     @return false if successful, true on failure
   */
   /* purecov: begin deadcode */
-  virtual bool val_json(Json_wrapper *result MY_ATTRIBUTE((unused))) {
+  virtual bool val_json(Json_wrapper *result [[maybe_unused]]) {
     assert(false);
     my_error(ER_NOT_SUPPORTED_YET, MYF(0), "item type for JSON");
     return error_json();
@@ -1881,12 +1883,13 @@ class Item : public Parse_tree_node {
     @return                  the filtering effect (between 0 and 1) this
                              Item contributes with.
   */
-  virtual float get_filtering_effect(
-      THD *thd MY_ATTRIBUTE((unused)),
-      table_map filter_for_table MY_ATTRIBUTE((unused)),
-      table_map read_tables MY_ATTRIBUTE((unused)),
-      const MY_BITMAP *fields_to_ignore MY_ATTRIBUTE((unused)),
-      double rows_in_table MY_ATTRIBUTE((unused))) {
+  virtual float get_filtering_effect(THD *thd [[maybe_unused]],
+                                     table_map filter_for_table
+                                     [[maybe_unused]],
+                                     table_map read_tables [[maybe_unused]],
+                                     const MY_BITMAP *fields_to_ignore
+                                     [[maybe_unused]],
+                                     double rows_in_table [[maybe_unused]]) {
     // Filtering effect cannot be calculated for a table already read.
     assert((read_tables & filter_for_table) == 0);
     return COND_FILTER_ALLPASS;
@@ -2122,6 +2125,13 @@ class Item : public Parse_tree_node {
   */
   virtual bool basic_const_item() const { return false; }
   /**
+    @returns true when a const item may be evaluated during resolving.
+             Only const items that are basic const items are evaluated when
+             resolving CREATE VIEW statements. For other statements, all
+             const items may be evaluated during resolving.
+  */
+  bool may_eval_const_item(const THD *thd) const;
+  /**
     @return cloned item if it is constant
       @retval nullptr  if this is not const
   */
@@ -2299,7 +2309,13 @@ class Item : public Parse_tree_node {
   virtual void no_rows_in_result() {}
   virtual Item *copy_or_same(THD *) { return this; }
   virtual Item *copy_andor_structure(THD *) { return this; }
+  /**
+    @returns the "real item" underlying the owner object. Used to strip away
+             Item_ref objects.
+    @note remember to implement both real_item() functions in sub classes!
+  */
   virtual Item *real_item() { return this; }
+  virtual const Item *real_item() const { return this; }
   /**
     If an Item is materialized in a temporary table, a different Item may have
     to be used in the part of the query that runs after the materialization.
@@ -2345,15 +2361,21 @@ class Item : public Parse_tree_node {
                        by agreement, an error may have been reported
   */
 
-  virtual bool walk(Item_processor processor,
-                    enum_walk walk MY_ATTRIBUTE((unused)), uchar *arg) {
+  virtual bool walk(Item_processor processor, enum_walk walk [[maybe_unused]],
+                    uchar *arg) {
     return (this->*processor)(arg);
   }
 
-  /** @see WalkItem */
+  /** @see WalkItem, CompileItem */
   template <class T>
-  bool walk_helper_thunk(uchar *arg) {
-    return (*reinterpret_cast<T *>(arg))(this);
+  auto walk_helper_thunk(uchar *arg) {
+    return (*reinterpret_cast<std::remove_reference_t<T> *>(arg))(this);
+  }
+
+  /** See CompileItem */
+  template <class T>
+  auto analyze_helper_thunk(uchar **arg) {
+    return (*reinterpret_cast<std::remove_reference_t<T> *>(*arg))(this);
   }
 
   /**
@@ -2513,7 +2535,7 @@ class Item : public Parse_tree_node {
      @param arg  A MY_BITMAP* cast to unsigned char*, where the bits represent
                  Field::field_index values.
    */
-  virtual bool remove_column_from_bitmap(uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual bool remove_column_from_bitmap(uchar *arg [[maybe_unused]]) {
     return false;
   }
   virtual bool find_item_in_field_list_processor(uchar *) { return false; }
@@ -2531,9 +2553,7 @@ class Item : public Parse_tree_node {
 
     @param arg        Mark_field object
   */
-  virtual bool mark_field_in_map(uchar *arg MY_ATTRIBUTE((unused))) {
-    return false;
-  }
+  virtual bool mark_field_in_map(uchar *arg [[maybe_unused]]) { return false; }
 
   /// Traverse the item tree and replace fields that are outside of reach with
   /// fields that are within reach. This is used by hash join when it detects
@@ -2570,9 +2590,7 @@ class Item : public Parse_tree_node {
     @param arg   pointing to a bool which, if true, says to reset state
                  for framing window function, else for non-framing
   */
-  virtual bool reset_wf_state(uchar *arg MY_ATTRIBUTE((unused))) {
-    return false;
-  }
+  virtual bool reset_wf_state(uchar *arg [[maybe_unused]]) { return false; }
 
   /**
     Return used table information for the specified query block (level).
@@ -2588,7 +2606,7 @@ class Item : public Parse_tree_node {
     @note This function is used to update used tables information after
           merging a query block (a subquery) with its parent.
   */
-  virtual bool used_tables_for_level(uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual bool used_tables_for_level(uchar *arg [[maybe_unused]]) {
     return false;
   }
   /**
@@ -2596,7 +2614,7 @@ class Item : public Parse_tree_node {
 
     @param thd   thread handle
   */
-  virtual bool check_column_privileges(uchar *thd MY_ATTRIBUTE((unused))) {
+  virtual bool check_column_privileges(uchar *thd [[maybe_unused]]) {
     return false;
   }
   virtual bool inform_item_in_cond_of_tab(uchar *) { return false; }
@@ -2804,8 +2822,8 @@ class Item : public Parse_tree_node {
 
     @returns false if the function is not DEFAULT(args), otherwise true.
   */
-  virtual bool check_gcol_depend_default_processor(
-      uchar *args MY_ATTRIBUTE((unused))) {
+  virtual bool check_gcol_depend_default_processor(uchar *args
+                                                   [[maybe_unused]]) {
     return false;
   }
   /**
@@ -2813,8 +2831,7 @@ class Item : public Parse_tree_node {
     derived table. Used in determining if a condition can be pushed
     down to derived table.
   */
-  virtual bool check_column_from_derived_table(
-      uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual bool check_column_from_derived_table(uchar *arg [[maybe_unused]]) {
     // A generic item cannot be pushed down unless constant.
     return !const_item();
   }
@@ -2824,8 +2841,7 @@ class Item : public Parse_tree_node {
     in PARTITION clause of window functions of the derived table.
     Used in checking if a condition can be pushed down to derived table.
   */
-  virtual bool check_column_in_window_functions(
-      uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual bool check_column_in_window_functions(uchar *arg [[maybe_unused]]) {
     return false;
   }
   /**
@@ -2833,7 +2849,7 @@ class Item : public Parse_tree_node {
     in GROUP BY clause of the derived table. Used in checking if
     a condition can be pushed down to derived table.
   */
-  virtual bool check_column_in_group_by(uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual bool check_column_in_group_by(uchar *arg [[maybe_unused]]) {
     return false;
   }
   /**
@@ -2843,7 +2859,7 @@ class Item : public Parse_tree_node {
     in the derived table's definition. We replace with a clone, because the
     condition can be pushed further down in case of nested derived tables.
   */
-  virtual Item *replace_with_derived_expr(uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual Item *replace_with_derived_expr(uchar *arg [[maybe_unused]]) {
     return this;
   }
   /**
@@ -2854,8 +2870,7 @@ class Item : public Parse_tree_node {
     clone is not used because HAVING condition will not be pushed further
     down in case of nested derived tables.
   */
-  virtual Item *replace_with_derived_expr_ref(
-      uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual Item *replace_with_derived_expr_ref(uchar *arg [[maybe_unused]]) {
     return this;
   }
   /**
@@ -2865,8 +2880,7 @@ class Item : public Parse_tree_node {
     We replace with a clone, because the referenced item in a view reference
     is shared by all the view references to that expression.
   */
-  virtual Item *replace_view_refs_with_clone(
-      uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual Item *replace_view_refs_with_clone(uchar *arg [[maybe_unused]]) {
     return this;
   }
   /*
@@ -2900,8 +2914,8 @@ class Item : public Parse_tree_node {
     @param thd   Thread handle
     @param test  Truth test
   */
-  virtual Item *truth_transformer(THD *thd MY_ATTRIBUTE((unused)),
-                                  Bool_test test MY_ATTRIBUTE((unused))) {
+  virtual Item *truth_transformer(THD *thd [[maybe_unused]],
+                                  Bool_test test [[maybe_unused]]) {
     return nullptr;
   }
   virtual Item *update_value_transformer(uchar *) { return this; }
@@ -3062,6 +3076,13 @@ class Item : public Parse_tree_node {
     return max_len;
   }
 
+  uint32 max_char_length(const CHARSET_INFO *cs) const {
+    if (cs == &my_charset_bin && result_type() == STRING_RESULT) {
+      return max_length;
+    }
+    return max_char_length();
+  }
+
   inline void fix_char_length(uint32 max_char_length_arg) {
     max_length = char_to_byte_length_safe(max_char_length_arg,
                                           collation.collation->mbmaxlen);
@@ -3198,7 +3219,7 @@ class Item : public Parse_tree_node {
 
     @param arg  Keep track of whether an Item_ref refers to an Item_field.
   */
-  virtual bool repoint_const_outer_ref(uchar *arg MY_ATTRIBUTE((unused))) {
+  virtual bool repoint_const_outer_ref(uchar *arg [[maybe_unused]]) {
     return false;
   }
   virtual bool strip_db_table_name_processor(uchar *) { return false; }
@@ -3390,8 +3411,8 @@ class Item : public Parse_tree_node {
     @return true if this expression can be used for partial update,
       false otherwise
   */
-  virtual bool supports_partial_update(
-      const Field_json *field MY_ATTRIBUTE((unused))) const {
+  virtual bool supports_partial_update(const Field_json *field
+                                       [[maybe_unused]]) const {
     return false;
   }
 
@@ -3434,6 +3455,21 @@ template <class T>
 inline bool WalkItem(Item *item, enum_walk walk, T &&functor) {
   return item->walk(&Item::walk_helper_thunk<T>, walk,
                     reinterpret_cast<uchar *>(&functor));
+}
+
+/**
+  Same as WalkItem, but for Item::compile(). Use as e.g.:
+
+  Item *item = CompileItem(root_item,
+     [](Item *item) { return true; },   // Analyzer.
+     [](Item *item) { return item; });  // Transformer.
+ */
+template <class T, class U>
+inline Item *CompileItem(Item *item, T &&analyzer, U &&transformer) {
+  uchar *analyzer_ptr = reinterpret_cast<uchar *>(&analyzer);
+  return item->compile(&Item::analyze_helper_thunk<T>, &analyzer_ptr,
+                       &Item::walk_helper_thunk<U>,
+                       reinterpret_cast<uchar *>(&transformer));
 }
 
 class sp_head;
@@ -3505,8 +3541,7 @@ class Item_sp_variable : public Item {
     // ZEROFILL attribute.
     return this_item()->send(protocol, str);
   }
-  bool check_column_from_derived_table(
-      uchar *arg MY_ATTRIBUTE((unused))) override {
+  bool check_column_from_derived_table(uchar *arg [[maybe_unused]]) override {
     // It is ok to push down a condition like "column > SP_variable"
     return false;
   }
@@ -3793,6 +3828,13 @@ class Item_ident : public Item {
     If column is from a non-aliased base table or view, the name of the
     column in that base table or view.
     If column is from an expression, a string generated from that expression.
+
+    Notice that a column can be aliased in two ways:
+    1. With an explicit column alias, or <as clause>, or
+    2. With only a column name specified, which differs from the table's
+       column name due to case insensitivity.
+    In both cases field_name will differ from m_orig_field_name.
+    field_name is normally identical to Item::item_name.
   */
   const char *field_name;
 
@@ -3854,15 +3896,16 @@ class Item_ident : public Item {
   bool itemize(Parse_context *pc, Item **res) override;
 
   const char *full_name() const override;
-  void set_orig_db_name(const char *name_arg) { m_orig_db_name = name_arg; }
-  void set_orig_table_name(const char *name_arg) {
+  void set_orignal_db_name(const char *name_arg) { m_orig_db_name = name_arg; }
+  void set_original_table_name(const char *name_arg) {
     m_orig_table_name = name_arg;
   }
-  void set_orig_field_name(const char *name_arg) {
+  void set_original_field_name(const char *name_arg) {
     m_orig_field_name = name_arg;
   }
-  const char *orig_db_name() const { return m_orig_db_name; }
-  const char *orig_table_name() const { return m_orig_table_name; }
+  const char *original_db_name() const { return m_orig_db_name; }
+  const char *original_table_name() const { return m_orig_table_name; }
+  const char *original_field_name() const { return m_orig_field_name; }
   void fix_after_pullout(Query_block *parent_query_block,
                          Query_block *removed_query_block) override;
   bool aggregate_check_distinct(uchar *arg) override;
@@ -4661,8 +4704,7 @@ class Item_param final : public Item, private Settable_routine_parameter {
     func_arg->err_code = func_arg->get_unnamed_function_error_code();
     return true;
   }
-  bool check_column_from_derived_table(
-      uchar *arg MY_ATTRIBUTE((unused))) override {
+  bool check_column_from_derived_table(uchar *arg [[maybe_unused]]) override {
     // It is ok to push down a condition like "column > PS_parameter"
     return false;
   }
@@ -5531,7 +5573,7 @@ class Item_ref : public Item_ident {
         ref(item->ref) {}
   enum Type type() const override { return REF_ITEM; }
   bool eq(const Item *item, bool binary_cmp) const override {
-    const Item *it = const_cast<Item *>(item)->real_item();
+    const Item *it = item->real_item();
     return ref && (*ref)->eq(it, binary_cmp);
   }
   double val_real() override;
@@ -5588,6 +5630,10 @@ class Item_ref : public Item_ident {
   bool is_result_field() const override { return true; }
   Field *get_result_field() const override { return result_field; }
   Item *real_item() override { return ref ? (*ref)->real_item() : this; }
+  const Item *real_item() const override {
+    return ref ? (*ref)->real_item() : this;
+  }
+
   bool walk(Item_processor processor, enum_walk walk, uchar *arg) override {
     return ((walk & enum_walk::PREFIX) && (this->*processor)(arg)) ||
            // For having clauses 'ref' will consistently =NULL.
@@ -5941,6 +5987,7 @@ class Item_int_with_ref : public Item_int {
   }
   Item *clone_item() const override;
   Item *real_item() override { return ref; }
+  const Item *real_item() const override { return ref; }
 };
 
 /*
@@ -6089,30 +6136,27 @@ class Item_cache;
 class Cached_item {
  protected:
   Item *item;  ///< The item whose value to cache.
+  explicit Cached_item(Item *i) : item(i), null_value(false) {}
+
  public:
   bool null_value;
-  Cached_item(Item *i) : item(i), null_value(false) {}
+  virtual ~Cached_item() = default;
   /**
     If cached value is different from item's, returns true and updates
     cached value with item's.
   */
   virtual bool cmp() = 0;
-  virtual ~Cached_item(); /*line -e1509 */
   Item *get_item() { return item; }
-  virtual void copy_to_Item_cache(Item_cache *i_c MY_ATTRIBUTE((unused))) {
-    assert(false); /* purecov: inspected */
-  }
+  Item **get_item_ptr() { return &item; }
 };
 
 class Cached_item_str : public Cached_item {
-  uint32 value_max_length;
   String value, tmp_value;
 
  public:
-  Cached_item_str(THD *thd, Item *arg);
+  explicit Cached_item_str(Item *arg);
   bool cmp() override;
   ~Cached_item_str() override;  // Deallocate String:s
-  void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
 /// Cached_item subclass for JSON values.
@@ -6122,7 +6166,6 @@ class Cached_item_json : public Cached_item {
   explicit Cached_item_json(Item *item);
   ~Cached_item_json() override;
   bool cmp() override;
-  void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
 class Cached_item_real : public Cached_item {
@@ -6131,7 +6174,6 @@ class Cached_item_real : public Cached_item {
  public:
   Cached_item_real(Item *item_par) : Cached_item(item_par), value(0.0) {}
   bool cmp() override;
-  void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
 class Cached_item_int : public Cached_item {
@@ -6140,7 +6182,6 @@ class Cached_item_int : public Cached_item {
  public:
   Cached_item_int(Item *item_par) : Cached_item(item_par), value(0) {}
   bool cmp() override;
-  void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
 class Cached_item_temporal : public Cached_item {
@@ -6149,7 +6190,6 @@ class Cached_item_temporal : public Cached_item {
  public:
   Cached_item_temporal(Item *item_par) : Cached_item(item_par), value(0) {}
   bool cmp() override;
-  void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
 class Cached_item_decimal : public Cached_item {
@@ -6158,7 +6198,6 @@ class Cached_item_decimal : public Cached_item {
  public:
   Cached_item_decimal(Item *item_par);
   bool cmp() override;
-  void copy_to_Item_cache(Item_cache *i_c) override;
 };
 
 class Item_default_value final : public Item_field {

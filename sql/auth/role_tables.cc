@@ -211,7 +211,7 @@ bool populate_roles_caches(THD *thd, TABLE_LIST *tablelst) {
 
   {
     roles_edges_table->use_all_columns();
-    iterator = init_table_iterator(thd, roles_edges_table, nullptr,
+    iterator = init_table_iterator(thd, roles_edges_table,
                                    /*ignore_not_found_rows=*/false,
                                    /*count_examined_rows=*/false);
     if (iterator == nullptr) {
@@ -223,8 +223,7 @@ bool populate_roles_caches(THD *thd, TABLE_LIST *tablelst) {
     ACL_USER *acl_role;
     ACL_USER *acl_user;
     int read_rec_errcode;
-    MEM_ROOT tmp_mem;
-    init_alloc_root(PSI_NOT_INSTRUMENTED, &tmp_mem, 128, 0);
+    MEM_ROOT tmp_mem(PSI_NOT_INSTRUMENTED, 128);
     g_authid_to_vertex->clear();
     g_granted_roles->clear();
     while (!(read_rec_errcode = iterator->Read())) {
@@ -271,7 +270,7 @@ bool populate_roles_caches(THD *thd, TABLE_LIST *tablelst) {
 
     default_role_table->use_all_columns();
 
-    iterator = init_table_iterator(thd, default_role_table, nullptr,
+    iterator = init_table_iterator(thd, default_role_table,
                                    /*ignore_not_found_rows=*/false,
                                    /*count_examined_rows=*/false);
     DBUG_EXECUTE_IF("dbug_fail_in_role_cache_reinit", iterator = nullptr;);

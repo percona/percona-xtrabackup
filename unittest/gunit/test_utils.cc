@@ -51,7 +51,7 @@
 #include "sql/mysqld.h"  // set_remaining_args
 #include "sql/mysqld_thd_manager.h"
 #include "sql/opt_costconstantcache.h"  // optimizer cost constant cache
-#include "sql/opt_range.h"
+#include "sql/range_optimizer/range_optimizer.h"
 #include "sql/rpl_filter.h"
 #include "sql/rpl_handler.h"  // delegates_init()
 #include "sql/set_var.h"
@@ -94,6 +94,7 @@ void setup_server_for_unit_tests() {
   sys_var_init();
   init_common_variables();
   test_flags |= TEST_SIGINT;
+  test_flags |= TEST_NO_TEMP_TABLES;
   test_flags &= ~TEST_CORE_ON_SIGNAL;
   my_init_signals();
   randominit(&sql_rand, 0, 0);

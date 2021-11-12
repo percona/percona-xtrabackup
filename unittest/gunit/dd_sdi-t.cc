@@ -341,8 +341,7 @@ TEST(SdiTest, Column_statistics) {
   std::unique_ptr<dd::Column_statistics> dd_obj(
       dd::create_object<dd::Column_statistics>());
 
-  MEM_ROOT mem_root;
-  init_alloc_root(PSI_NOT_INSTRUMENTED, &mem_root, 256, 0);
+  MEM_ROOT mem_root(PSI_NOT_INSTRUMENTED, 256);
 
   mock_column_statistics_obj(dd_obj.get(), &mem_root);
 
@@ -360,7 +359,7 @@ TEST(SdiTest, Column_statistics) {
   EXPECT_TRUE(dd_obj.get()->schema_name() == deserialized.get()->schema_name());
   EXPECT_TRUE(dd_obj.get()->table_name() == deserialized.get()->table_name());
   EXPECT_TRUE(dd_obj.get()->column_name() == deserialized.get()->column_name());
-  free_root(&mem_root, MYF(0));
+  mem_root.Clear();
 }
 
 TEST(SdiTest, Index_element) { simple_test<dd::Index_element>(); }

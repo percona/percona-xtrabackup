@@ -76,7 +76,6 @@ SET(XCOM_SOURCES
   src/bindings/xcom/xcom/xcom_statistics.cc
   src/bindings/xcom/xcom/app_data.cc
   src/bindings/xcom/xcom/site_def.cc
-  src/bindings/xcom/xcom/xcom_ssl_transport.cc
   src/bindings/xcom/xcom/xcom_recover.cc
   src/bindings/xcom/xcom/task.cc
   src/bindings/xcom/xcom/bitset.cc
@@ -93,6 +92,11 @@ SET(XCOM_SOURCES
   src/bindings/xcom/xcom/get_synode_app_data.cc
   src/bindings/xcom/xcom/checked_data.cc
   src/bindings/xcom/xcom/xdr_checked_data.c
+  src/bindings/xcom/xcom/network/network_provider_manager.cc
+  src/bindings/xcom/xcom/network/xcom_network_provider.cc
+  src/bindings/xcom/xcom/network/xcom_network_provider_native_lib.cc
+  src/bindings/xcom/xcom/network/xcom_network_provider_ssl_native_lib.cc
+  src/bindings/xcom/xcom/leader_info_data.cc
   ${XCOM_SUNRPC_SOURCES}
   ${XCOM_RPCGEN_SOURCES})
 
@@ -188,14 +192,14 @@ ELSEIF(MY_COMPILER_IS_GNU_OR_CLANG)
   ENDIF()
 ENDIF()
 
-ADD_COMPILE_DEFINITIONS(
+MY_ADD_COMPILE_DEFINITIONS(
   ${XCOM_SOURCES}
   ${GCS_SOURCES}
   COMPILE_DEFINITIONS MYSQL_DYNAMIC_PLUGIN)
 
 INCLUDE_DIRECTORIES(${BUNDLED_LZ4_PATH})
 
-ADD_COMPILE_DEFINITIONS(${BUNDLED_LZ4_PATH}/xxhash.c
+MY_ADD_COMPILE_DEFINITIONS(${BUNDLED_LZ4_PATH}/xxhash.c
   COMPILE_DEFINITIONS "XXH_NAMESPACE=GCS_")
 
 # Warn about variable shadowing

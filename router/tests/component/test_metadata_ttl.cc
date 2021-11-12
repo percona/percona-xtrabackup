@@ -76,7 +76,8 @@ class MetadataChacheTTLTest : public RouterComponentTest {
            "router_id=1\n"
            "bootstrap_server_addresses=" +
            bootstrap_server_addresses + "\n" +
-           "user=mysql_router1_user\n"
+           "user=" + router_metadata_username +
+           "\n"
            "connect_timeout=1\n"
            "metadata_cluster=test\n" +
            (ttl.empty() ? "" : std::string("ttl=" + ttl + "\n")) + "\n";
@@ -124,8 +125,8 @@ class MetadataChacheTTLTest : public RouterComponentTest {
     return get_int_field_value(json_string, "md_query_count");
   }
 
-  int get_update_version_count(const std::string &json_string) {
-    return get_int_field_value(json_string, "update_version_count");
+  int get_update_attributes_count(const std::string &json_string) {
+    return get_int_field_value(json_string, "update_attributes_count");
   }
 
   int get_update_last_check_in_count(const std::string &json_string) {
@@ -156,6 +157,8 @@ class MetadataChacheTTLTest : public RouterComponentTest {
 
     return router;
   }
+
+  const std::string router_metadata_username{"mysql_router1_user"};
 };
 
 struct MetadataTTLTestParams {
@@ -216,77 +219,6 @@ MATCHER_P2(IsBetween, a, b,
            std::string(negation ? "isn't" : "is") + " between " +
                PrintToString(a) + " and " + PrintToString(b)) {
   return a <= arg && arg <= b;
-}
-
-// Wait for the nth occurence of the log_regex in the log_file with the timeout
-// If it's found returns the full line containing the log_regex
-// If the timeout has been reached returns unexpected
-static stdx::expected<std::string, void> wait_log_line(
-    const std::string &log_file, const std::string &log_regex,
-    const unsigned n_occurence = 1,
-    const std::chrono::milliseconds timeout = 1s) {
-  const auto start_timestamp = std::chrono::steady_clock::now();
-  const auto kStep = 50ms;
-
-  do {
-    std::istringstream ss{get_file_output(log_file)};
-
-    unsigned current_occurence = 0;
-    for (std::string line; std::getline(ss, line);) {
-      if (pattern_found(line, log_regex)) {
-        current_occurence++;
-        if (current_occurence == n_occurence) return {line};
-      }
-    }
-
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start_timestamp) >= timeout) {
-      return stdx::make_unexpected();
-    }
-    std::this_thread::sleep_for(kStep);
-  } while (true);
-}
-
-// Wait for the nth occurence of the log_regex in the log_file with timeout
-// If it's found returns the timepoint from the matched line prefix
-// If timed out or failed to convert the timestamp returns unexpected
-static stdx::expected<std::chrono::time_point<std::chrono::system_clock>, void>
-get_log_timestamp(const std::string &log_file, const std::string &log_regex,
-                  const unsigned occurence = 1,
-                  const std::chrono::milliseconds timeout = 1s) {
-  // first wait for the nth occurence of the pattern
-  const auto log_line = wait_log_line(log_file, log_regex, occurence, timeout);
-  if (!log_line) {
-    return log_line.get_unexpected();
-  }
-
-  const std::string log_line_str = log_line.value();
-  // make sure the line is prefixed with the expected timestamp
-  // 2020-06-09 03:53:26.027 foo bar
-  if (!pattern_found(log_line_str,
-                     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}.*")) {
-    return stdx::make_unexpected();
-  }
-
-  // extract the timestamp prefix and conver to the duration
-  std::string timestamp_str =
-      log_line_str.substr(0, strlen("2020-06-09 03:53:26.027"));
-  std::tm tm{};
-#ifdef HAVE_STRPTIME
-  char *rest = strptime(timestamp_str.c_str(), "%Y-%m-%d %H:%M:%S", &tm);
-  assert(*rest == '.');
-  int milliseconds = atoi(++rest);
-#else
-  std::stringstream timestamp_ss(timestamp_str);
-  char dot;
-  unsigned milliseconds;
-  timestamp_ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S") >> dot >>
-      milliseconds;
-#endif
-  auto result = std::chrono::system_clock::from_time_t(std::mktime(&tm));
-  result += std::chrono::milliseconds(milliseconds);
-
-  return result;
 }
 
 TEST_P(MetadataChacheTTLTestParam, CheckTTLValid) {
@@ -426,17 +358,6 @@ INSTANTIATE_TEST_SUITE_P(
         MetadataTTLTestParams("metadata_1_node_repeat_gr_v2.js", "3_all",
                               ClusterType::GR_V2, "1,1")),
     get_test_description);
-
-static size_t count_str_occurences(const std::string &s,
-                                   const std::string &needle) {
-  if (needle.length() == 0) return 0;
-  size_t result = 0;
-  for (size_t pos = s.find(needle); pos != std::string::npos;) {
-    ++result;
-    pos = s.find(needle, pos + needle.length());
-  }
-  return result;
-}
 
 class MetadataChacheTTLTestInstanceListUnordered
     : public MetadataChacheTTLTest,
@@ -625,6 +546,7 @@ class CheckRouterVersionUpdateOnceTest
       public ::testing::WithParamInterface<MetadataTTLTestParams> {};
 
 TEST_P(CheckRouterVersionUpdateOnceTest, CheckRouterVersionUpdateOnce) {
+  const auto router_port = port_pool_.get_next_available();
   SCOPED_TRACE(
       "// launch the server mock (it's our metadata server and single cluster "
       "node)");
@@ -637,16 +559,21 @@ TEST_P(CheckRouterVersionUpdateOnceTest, CheckRouterVersionUpdateOnce) {
       json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
 
   SCOPED_TRACE(
-      "// let's tell the mock which version it should expect so that it does "
+      "// let's tell the mock which attributes it should expect so that it "
+      "does "
       "the strict sql matching for us");
   auto globals = mock_GR_metadata_as_json("", {md_server_port});
   JsonAllocator allocator;
   globals.AddMember("router_version", MYSQL_ROUTER_VERSION, allocator);
+  globals.AddMember("router_rw_classic_port", router_port, allocator);
+  globals.AddMember("router_metadata_user",
+                    JsonValue(router_metadata_username.c_str(),
+                              router_metadata_username.length(), allocator),
+                    allocator);
   const auto globals_str = json_to_string(globals);
   MockServerRestClient(md_server_http_port).set_globals(globals_str);
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  const auto router_port = port_pool_.get_next_available();
 
   const std::string metadata_cache_section = get_metadata_cache_section(
       {md_server_port}, GetParam().cluster_type, GetParam().ttl);
@@ -661,8 +588,8 @@ TEST_P(CheckRouterVersionUpdateOnceTest, CheckRouterVersionUpdateOnce) {
   SCOPED_TRACE("// we still expect the version to be only set once");
   std::string server_globals =
       MockServerRestClient(md_server_http_port).get_globals_as_json_string();
-  const int version_upd_count = get_update_version_count(server_globals);
-  EXPECT_EQ(1, version_upd_count);
+  const int attributes_upd_count = get_update_attributes_count(server_globals);
+  EXPECT_EQ(1, attributes_upd_count);
 
   SCOPED_TRACE(
       "// Let's check if the first query is starting a trasaction and the "
@@ -713,7 +640,8 @@ class PermissionErrorOnVersionUpdateTest
     : public MetadataChacheTTLTest,
       public ::testing::WithParamInterface<MetadataTTLTestParams> {};
 
-TEST_P(PermissionErrorOnVersionUpdateTest, PermissionErrorOnVersionUpdate) {
+TEST_P(PermissionErrorOnVersionUpdateTest, PermissionErrorOnAttributesUpdate) {
+  const auto router_port = port_pool_.get_next_available();
   SCOPED_TRACE(
       "// launch the server mock (it's our metadata server and single cluster "
       "node)");
@@ -726,18 +654,23 @@ TEST_P(PermissionErrorOnVersionUpdateTest, PermissionErrorOnVersionUpdate) {
       json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
 
   SCOPED_TRACE(
-      "// let's tell the mock which version it should expect so that it does "
-      "the strict sql matching for us, also tell it to issue the permission "
-      "error on the update attempt");
+      "// let's tell the mock which attributes it should expect so that it "
+      "does the strict sql matching for us, also tell it to issue the "
+      "permission error on the update attempt");
   auto globals = mock_GR_metadata_as_json("", {md_server_port});
   JsonAllocator allocator;
   globals.AddMember("router_version", MYSQL_ROUTER_VERSION, allocator);
+  globals.AddMember("router_rw_classic_port", router_port, allocator);
+  globals.AddMember("router_metadata_user",
+                    JsonValue(router_metadata_username.c_str(),
+                              router_metadata_username.length(), allocator),
+                    allocator);
+
   globals.AddMember("perm_error_on_version_update", 1, allocator);
   const auto globals_str = json_to_string(globals);
   MockServerRestClient(md_server_http_port).set_globals(globals_str);
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  const auto router_port = port_pool_.get_next_available();
 
   const std::string metadata_cache_section = get_metadata_cache_section(
       {md_server_port}, GetParam().cluster_type, GetParam().ttl);
@@ -751,10 +684,10 @@ TEST_P(PermissionErrorOnVersionUpdateTest, PermissionErrorOnVersionUpdate) {
   EXPECT_TRUE(wait_for_transaction_count_increase(md_server_http_port, 3));
 
   SCOPED_TRACE(
-      "// we expect the error trying to update the version in the log");
+      "// we expect the error trying to update the attributes in the log");
   const std::string log_content = router.get_full_logfile();
   const std::string pattern =
-      "Updating the router version in metadata failed:.*\n"
+      "Updating the router attributes in metadata failed:.*\n"
       "Make sure to follow the correct steps to upgrade your metadata.\n"
       "Run the dba.upgradeMetadata\\(\\) then launch the new Router version "
       "when prompted";
@@ -765,8 +698,8 @@ TEST_P(PermissionErrorOnVersionUpdateTest, PermissionErrorOnVersionUpdate) {
       "even tho it failed");
   std::string server_globals =
       MockServerRestClient(md_server_http_port).get_globals_as_json_string();
-  const int version_upd_count = get_update_version_count(server_globals);
-  EXPECT_EQ(1, version_upd_count);
+  const int attributes_upd_count = get_update_attributes_count(server_globals);
+  EXPECT_EQ(1, attributes_upd_count);
 
   SCOPED_TRACE(
       "// It should still not be fatal, the router should accept the "
@@ -1029,13 +962,14 @@ class NodeHiddenTest : public MetadataChacheTTLTest {
   void set_nodes_attributes(const std::vector<std::string> &nodes_attributes,
                             const bool no_primary = false) {
     const auto primary_id = no_primary ? -1 : 0;
+
     ASSERT_NO_THROW({
       set_mock_metadata(node_http_ports[0], "", node_ports, primary_id, 0,
                         false, node_hostname, {}, nodes_attributes);
     });
 
     try {
-      ASSERT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 2));
+      ASSERT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 3));
     } catch (const std::exception &e) {
       FAIL() << "failed waiting for trans' count increase: " << e.what();
     };

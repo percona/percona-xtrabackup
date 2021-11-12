@@ -32,6 +32,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -72,9 +73,9 @@
 #include "mysql_version.h"
 #include "mysqld_error.h"
 #include "mysys_err.h"  // EE_CAPACITY_EXCEEDED
-#include "nullable.h"
 #include "pfs_thread_provider.h"
 #include "prealloced_array.h"
+#include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // acl_authenticate
 #include "sql/auth/sql_security_ctx.h"
@@ -195,7 +196,6 @@ namespace dd {
 class Abstract_table;
 }  // namespace dd
 
-using Mysql::Nullable;
 using std::max;
 
 /**
@@ -248,6 +248,7 @@ const std::string Command_names::m_names[] = {
     "Binlog Dump GTID",
     "Reset Connection",
     "clone",
+    "Group Replication Data Stream subscription",
     "Error"  // Last command number
 };
 
@@ -1488,6 +1489,43 @@ static void check_secondary_engine_statement(THD *thd,
                                    query_length);
 }
 
+/*Reference to the GR callback that receives incoming connections*/
+static std::atomic<gr_incoming_connection_cb> com_incoming_gr_stream_cb;
+
+void set_gr_incoming_connection(gr_incoming_connection_cb x) {
+  com_incoming_gr_stream_cb.store(x);
+}
+
+gr_incoming_connection_cb get_gr_incoming_connection() {
+  gr_incoming_connection_cb retval = nullptr;
+  retval = com_incoming_gr_stream_cb.load();
+  return retval;
+}
+
+void call_gr_incoming_connection_cb(THD *thd, int fd, SSL *ssl_ctx) {
+  gr_incoming_connection_cb gr_connection_callback =
+      get_gr_incoming_connection();
+
+  if (gr_connection_callback) {
+    gr_connection_callback(thd, fd, ssl_ctx);
+
+    PSI_stage_info saved_stage;
+    mysql_mutex_lock(&thd->LOCK_group_replication_connection_mutex);
+    thd->ENTER_COND(&thd->COND_group_replication_connection_cond_var,
+                    &thd->LOCK_group_replication_connection_mutex,
+                    &stage_communication_delegation, &saved_stage);
+    while (thd->is_killed() == THD::NOT_KILLED) {
+      struct timespec abstime;
+      set_timespec(&abstime, 1);
+      mysql_cond_timedwait(&thd->COND_group_replication_connection_cond_var,
+                           &thd->LOCK_group_replication_connection_mutex,
+                           &abstime);
+    }
+    mysql_mutex_unlock(&thd->LOCK_group_replication_connection_mutex);
+    thd->EXIT_COND(&saved_stage);
+  }
+}
+
 /**
   Deep copy the name and value of named parameters into the THD memory.
 
@@ -1709,6 +1747,25 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
 
       break;
     }
+    case COM_SUBSCRIBE_GROUP_REPLICATION_STREAM: {
+      Security_context *sctx = thd->security_context();
+      if (!sctx->has_global_grant(STRING_WITH_LEN("GROUP_REPLICATION_STREAM"))
+               .first) {
+        my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "");
+        error = true;
+        break;
+      }
+
+      if (!error && get_gr_incoming_connection() == nullptr) {
+        my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
+        error = true;
+        break;
+      }
+
+      my_ok(thd);
+
+      break;
+    }
     case COM_CHANGE_USER: {
       int auth_rc;
       thd->status_var.com_other++;
@@ -1843,6 +1900,8 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
 
       Parser_state parser_state;
       if (parser_state.init(thd, thd->query().str, thd->query().length)) break;
+
+      parser_state.m_input.m_has_digest = true;
 
       // we produce digest if it's not explicitly turned off
       // by setting maximum digest length to zero
@@ -2057,6 +2116,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
       }
 
       thd->cleanup_after_query();
+      thd->lex->destroy();
       break;
     }
     case COM_QUIT:
@@ -2124,13 +2184,14 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
       if (trans_commit_implicit(thd)) break;
       close_thread_tables(thd);
       thd->mdl_context.release_transactional_locks();
+      thd->lex->destroy();
       my_ok(thd);
       break;
     }
     case COM_STATISTICS: {
       System_status_var current_global_status_var;
       ulong uptime;
-      size_t length MY_ATTRIBUTE((unused));
+      size_t length [[maybe_unused]];
       ulonglong queries_per_second1000;
       char buff[250];
       size_t buff_len = sizeof(buff);
@@ -2252,6 +2313,13 @@ done:
   if (clone_cmd != nullptr) {
     assert(command == COM_CLONE);
     error = clone_cmd->execute_server(thd);
+  }
+
+  if (command == COM_SUBSCRIBE_GROUP_REPLICATION_STREAM && !error) {
+    call_gr_incoming_connection_cb(
+        thd, thd->active_vio->mysql_socket.fd,
+        thd->active_vio->ssl_arg ? static_cast<SSL *>(thd->active_vio->ssl_arg)
+                                 : nullptr);
   }
 
   thd->rpl_thd_ctx.session_gtids_ctx().notify_after_response_packet(thd);
@@ -3530,10 +3598,11 @@ int mysql_execute_command(THD *thd, bool first_level) {
           set_var_password *setpasswd = static_cast<set_var_password *>(var);
           if (setpasswd->has_generated_password()) {
             const LEX_USER *user = setpasswd->get_user();
-            generated_passwords.push_back(
-                {std::string(user->user.str, user->user.length),
-                 std::string(user->host.str, user->host.length),
-                 setpasswd->get_generated_password()});
+            random_password_info p{
+                std::string(user->user.str, user->user.length),
+                std::string(user->host.str, user->host.length),
+                setpasswd->get_generated_password(), 1};
+            generated_passwords.push_back(p);
           }
         }
         if (generated_passwords.size() > 0) {
@@ -3910,7 +3979,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
         my_ok(thd);
         break;
       }
-      // Fall through.
+      [[fallthrough]];
     case SQLCOM_FLUSH: {
       int write_to_binlog;
       if (is_reload_request_denied(thd, lex->type)) goto error;
@@ -4100,7 +4169,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
       thd->binlog_invoker();
 
       if (!(res = sp_create_routine(thd, lex->sphead, thd->lex->definer))) {
-        /* only add privileges if really neccessary */
+        /* only add privileges if really necessary */
 
         Security_context security_context;
         bool restore_backup_context = false;
@@ -4349,7 +4418,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
     case SQLCOM_HA_READ:
     case SQLCOM_HA_CLOSE:
       assert(first_table == all_tables && first_table != nullptr);
-      /* fall through */
+      [[fallthrough]];
     case SQLCOM_CREATE_SERVER:
     case SQLCOM_CREATE_RESOURCE_GROUP:
     case SQLCOM_ALTER_SERVER:
@@ -4443,11 +4512,22 @@ int mysql_execute_command(THD *thd, bool first_level) {
       Security_context *sctx = thd->security_context();
       bool own_password_expired = sctx->password_expired();
       bool check_permission = true;
+      /* track if it is ALTER USER registration step */
+      bool finish_reg = false;
+      bool init_reg = false;
+      bool unregister = false;
+      bool is_self = false;
 
       List_iterator<LEX_USER> user_list(lex->users_list);
       while ((tmp_user = user_list++)) {
+        LEX_MFA *tmp_lex_mfa;
+        List_iterator<LEX_MFA> mfa_list_it(tmp_user->mfa_list);
+        while ((tmp_lex_mfa = mfa_list_it++)) {
+          finish_reg |= tmp_lex_mfa->finish_registration;
+          init_reg |= tmp_lex_mfa->init_registration;
+          unregister |= tmp_lex_mfa->unregister;
+        }
         bool update_password_only = false;
-        bool is_self = false;
         bool second_password = false;
 
         /* If it is an empty lex_user update it with current user */
@@ -4464,15 +4544,14 @@ int mysql_execute_command(THD *thd, bool first_level) {
 
         /* copy password expire attributes to individual lex user */
         user->alter_status = thd->lex->alter_password;
-
         /*
           Only self password change is non-privileged operation. To detect the
           same, we find :
           (1) If it is only password change operation
           (2) If this operation is on self
         */
-        if (user->uses_identified_by_clause &&
-            !user->uses_identified_with_clause &&
+        if (user->first_factor_auth_info.uses_identified_by_clause &&
+            !user->first_factor_auth_info.uses_identified_with_clause &&
             !thd->lex->mqh.specified_limits &&
             !user->alter_status.update_account_locked_column &&
             !user->alter_status.update_password_expired_column &&
@@ -4491,6 +4570,14 @@ int mysql_execute_command(THD *thd, bool first_level) {
                           user->user.str) &&
                   !my_strcasecmp(&my_charset_latin1, user->host.str,
                                  sctx->priv_host().str);
+        if (finish_reg || init_reg) {
+          /* Registration step is allowed only for connecting users */
+          if (!is_self) {
+            my_error(ER_INVALID_USER_FOR_REGISTRATION, MYF(0), sctx->user().str,
+                     sctx->priv_host().str);
+            goto error;
+          }
+        }
         /*
           if user executes ALTER statement to change password only
           for himself then skip access check - Provided preference to
@@ -4500,7 +4587,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
         if (user->discard_old_password || user->retain_current_password) {
           second_password = true;
         }
-        if ((update_password_only || user->discard_old_password) && is_self) {
+        if ((update_password_only || user->discard_old_password || init_reg ||
+             finish_reg || unregister) &&
+            is_self) {
           changing_own_password = update_password_only;
           if (second_password) {
             if (check_access(thd, UPDATE_ACL, consts::mysql.c_str(), nullptr,
@@ -4524,9 +4613,10 @@ int mysql_execute_command(THD *thd, bool first_level) {
           check_permission = false;
         }
 
-        if (is_self && (user->uses_identified_by_clause ||
-                        user->uses_identified_with_clause ||
-                        user->uses_authentication_string_clause)) {
+        if (is_self &&
+            (user->first_factor_auth_info.uses_identified_by_clause ||
+             user->first_factor_auth_info.uses_identified_with_clause ||
+             user->first_factor_auth_info.uses_authentication_string_clause)) {
           changing_own_password = true;
           break;
         }
@@ -4543,9 +4633,17 @@ int mysql_execute_command(THD *thd, bool first_level) {
         my_error(ER_MUST_CHANGE_PASSWORD, MYF(0));
         goto error;
       }
-
       /* Conditionally writes to binlog */
       res = mysql_alter_user(thd, lex->users_list, lex->drop_if_exists);
+      /*
+        Iterate over list of MFA methods, check if all auth plugin methods
+        which need registration steps have completed, then turn OFF server
+        sandbox mode
+      */
+      tmp_user = lex->users_list[0];
+      if (!res && is_self && finish_reg) {
+        if (turn_off_sandbox_mode(thd, tmp_user)) return true;
+      }
       break;
     }
     default:
@@ -4700,9 +4798,9 @@ finish:
   if (test_flags & TEST_DO_QUICK_LEAK_CHECK) {
     static unsigned long total_leaked_bytes = 0;
     unsigned long leaked = 0;
-    unsigned long dubious MY_ATTRIBUTE((unused));
-    unsigned long reachable MY_ATTRIBUTE((unused));
-    unsigned long suppressed MY_ATTRIBUTE((unused));
+    unsigned long dubious [[maybe_unused]];
+    unsigned long reachable [[maybe_unused]];
+    unsigned long suppressed [[maybe_unused]];
     /*
       We could possibly use VALGRIND_DO_CHANGED_LEAK_CHECK here,
       but that is a fairly new addition to the Valgrind api.
@@ -4746,7 +4844,7 @@ finish:
   @returns false if check is successful, true if error
 */
 
-bool show_precheck(THD *thd, LEX *lex, bool lock MY_ATTRIBUTE((unused))) {
+bool show_precheck(THD *thd, LEX *lex, bool lock [[maybe_unused]]) {
   assert(lex->sql_command == SQLCOM_SHOW_CREATE_USER);
   TABLE_LIST *const tables = lex->query_tables;
   if (tables != nullptr) {
@@ -5014,12 +5112,16 @@ void dispatch_sql_command(THD *thd, Parser_state *parser_state) {
         }
         lex->set_trg_event_type_for_tables();
 
-        int error MY_ATTRIBUTE((unused));
-        if (unlikely(thd->security_context()->password_expired() &&
-                     lex->sql_command != SQLCOM_SET_PASSWORD &&
-                     lex->sql_command != SQLCOM_SET_OPTION &&
-                     lex->sql_command != SQLCOM_ALTER_USER)) {
-          my_error(ER_MUST_CHANGE_PASSWORD, MYF(0));
+        int error [[maybe_unused]];
+        if (unlikely(
+                (thd->security_context()->password_expired() ||
+                 thd->security_context()->is_in_registration_sandbox_mode()) &&
+                lex->sql_command != SQLCOM_SET_PASSWORD &&
+                lex->sql_command != SQLCOM_ALTER_USER)) {
+          if (thd->security_context()->is_in_registration_sandbox_mode())
+            my_error(ER_PLUGIN_REQUIRES_REGISTRATION, MYF(0));
+          else
+            my_error(ER_MUST_CHANGE_PASSWORD, MYF(0));
           error = 1;
         } else {
           resourcegroups::Resource_group *src_res_grp = nullptr;
@@ -5045,8 +5147,8 @@ void dispatch_sql_command(THD *thd, Parser_state *parser_state) {
     }
   } else {
     /*
-      Log the failed raw query in the Performance Schema. This statement did not
-      parse, so there is no way to tell if it may contain a password of not.
+      Log the failed raw query in the Performance Schema. This statement did
+      not parse, so there is no way to tell if it may contain a password of not.
 
       The tradeoff is:
         a) If we do log the query, a user typing by accident a broken query
@@ -5163,7 +5265,7 @@ bool Alter_info::add_field(
     const char *change, List<String> *interval_list, const CHARSET_INFO *cs,
     bool has_explicit_collation, uint uint_geom_type,
     Value_generator *gcol_info, Value_generator *default_val_expr,
-    const char *opt_after, Nullable<gis::srid_t> srid,
+    const char *opt_after, std::optional<gis::srid_t> srid,
     Sql_check_constraint_spec_list *col_check_const_spec_list,
     dd::Column::enum_hidden_type hidden, bool is_array) {
   uint8 datetime_precision = decimals ? atoi(decimals) : 0;
@@ -6151,13 +6253,12 @@ const CHARSET_INFO *get_bin_collation(const CHARSET_INFO *cs) {
 */
 
 static uint kill_one_thread(THD *thd, my_thread_id id, bool only_kill_query) {
-  THD *tmp = nullptr;
   uint error = ER_NO_SUCH_THREAD;
   Find_thd_with_id find_thd_with_id(id);
 
   DBUG_TRACE;
   DBUG_PRINT("enter", ("id=%u only_kill=%d", id, only_kill_query));
-  tmp = Global_THD_manager::get_instance()->find_thd(&find_thd_with_id);
+  THD_ptr tmp = Global_THD_manager::get_instance()->find_thd(&find_thd_with_id);
   Security_context *sctx = thd->security_context();
   if (tmp) {
     /*
@@ -6184,6 +6285,7 @@ static uint kill_one_thread(THD *thd, my_thread_id id, bool only_kill_query) {
         Process the kill:
         if thread is not already undergoing any kill connection.
         Killer must have SYSTEM_USER privilege iff killee has the same privilege
+        privilege
       */
       if (tmp->killed != THD::KILL_CONNECTION) {
         if (tmp->is_system_user() && !thd->is_system_user()) {
@@ -6196,7 +6298,6 @@ static uint kill_one_thread(THD *thd, my_thread_id id, bool only_kill_query) {
         error = 0;
     } else
       error = ER_KILL_DENIED_ERROR;
-    mysql_mutex_unlock(&tmp->LOCK_thd_data);
   }
   DEBUG_SYNC(thd, "kill_thd_end");
   DBUG_PRINT("exit", ("%d", error));
@@ -6363,7 +6464,7 @@ Comp_creator *comp_eq_creator(bool invert) {
   return invert ? (Comp_creator *)&ne_creator : (Comp_creator *)&eq_creator;
 }
 
-Comp_creator *comp_equal_creator(bool invert MY_ATTRIBUTE((unused))) {
+Comp_creator *comp_equal_creator(bool invert [[maybe_unused]]) {
   assert(!invert);  // Function never called with true.
   return &equal_creator;
 }
@@ -6461,12 +6562,12 @@ void get_default_definer(THD *thd, LEX_USER *definer) {
   definer->host.str = sctx->priv_host().str;
   definer->host.length = strlen(definer->host.str);
 
-  definer->plugin = EMPTY_CSTR;
-  definer->auth = NULL_CSTR;
+  definer->first_factor_auth_info.plugin = EMPTY_CSTR;
+  definer->first_factor_auth_info.auth = NULL_CSTR;
   definer->current_auth = NULL_CSTR;
-  definer->uses_identified_with_clause = false;
-  definer->uses_identified_by_clause = false;
-  definer->uses_authentication_string_clause = false;
+  definer->first_factor_auth_info.uses_identified_with_clause = false;
+  definer->first_factor_auth_info.uses_identified_by_clause = false;
+  definer->first_factor_auth_info.uses_authentication_string_clause = false;
   definer->uses_replace_clause = false;
   definer->retain_current_password = false;
   definer->discard_old_password = false;
@@ -6477,7 +6578,7 @@ void get_default_definer(THD *thd, LEX_USER *definer) {
   definer->alter_status.account_locked = false;
   definer->alter_status.update_password_require_current =
       Lex_acl_attrib_udyn::DEFAULT;
-  definer->has_password_generator = false;
+  definer->first_factor_auth_info.has_password_generator = false;
   definer->alter_status.failed_login_attempts = 0;
   definer->alter_status.password_lock_time = 0;
   definer->alter_status.update_failed_login_attempts = false;
@@ -6498,7 +6599,7 @@ void get_default_definer(THD *thd, LEX_USER *definer) {
 LEX_USER *create_default_definer(THD *thd) {
   LEX_USER *definer;
 
-  if (!(definer = (LEX_USER *)thd->alloc(sizeof(LEX_USER)))) return nullptr;
+  if (!(definer = (LEX_USER *)LEX_USER::alloc(thd))) return nullptr;
 
   thd->get_definer(definer);
 
@@ -6528,23 +6629,25 @@ LEX_USER *get_current_user(THD *thd, LEX_USER *user) {
         This is needed because a LEX_USER is both used as a component in an
         AST and as a specifier for a particular user in the ACL subsystem.
       */
-      default_definer->uses_authentication_string_clause =
-          user->uses_authentication_string_clause;
-      default_definer->uses_identified_by_clause =
-          user->uses_identified_by_clause;
-      default_definer->uses_identified_with_clause =
-          user->uses_identified_with_clause;
+      default_definer->first_factor_auth_info
+          .uses_authentication_string_clause =
+          user->first_factor_auth_info.uses_authentication_string_clause;
+      default_definer->first_factor_auth_info.uses_identified_by_clause =
+          user->first_factor_auth_info.uses_identified_by_clause;
+      default_definer->first_factor_auth_info.uses_identified_with_clause =
+          user->first_factor_auth_info.uses_identified_with_clause;
       default_definer->uses_replace_clause = user->uses_replace_clause;
       default_definer->current_auth.str = user->current_auth.str;
       default_definer->current_auth.length = user->current_auth.length;
       default_definer->retain_current_password = user->retain_current_password;
       default_definer->discard_old_password = user->discard_old_password;
-      default_definer->plugin.str = user->plugin.str;
-      default_definer->plugin.length = user->plugin.length;
-      default_definer->auth.str = user->auth.str;
-      default_definer->auth.length = user->auth.length;
+      default_definer->first_factor_auth_info.plugin =
+          user->first_factor_auth_info.plugin;
+      default_definer->first_factor_auth_info.auth =
+          user->first_factor_auth_info.auth;
       default_definer->alter_status = user->alter_status;
-      default_definer->has_password_generator = user->has_password_generator;
+      default_definer->first_factor_auth_info.has_password_generator =
+          user->first_factor_auth_info.has_password_generator;
       return default_definer;
     }
   }
@@ -6736,6 +6839,7 @@ class Parser_oom_handler : public Internal_error_handler {
       ... handle error
     }
 
+    parser_state.m_input.m_has_digest= true;
     parser_state.m_input.m_compute_digest= true;
 
     rc= parse_sql(the, &parser_state, ctx);
@@ -6782,21 +6886,37 @@ bool parse_sql(THD *thd, Parser_state *parser_state,
   parser_state->m_digest_psi = nullptr;
   parser_state->m_lip.m_digest = nullptr;
 
-  if (thd->m_digest != nullptr) {
-    /* Start Digest */
-    parser_state->m_digest_psi = MYSQL_DIGEST_START(thd->m_statement_psi);
+  /*
+    Partial parsers (GRAMMAR_SELECTOR_*) are not supposed to compute digests.
+  */
+  assert(!parser_state->m_lip.is_partial_parser() ||
+         !parser_state->m_input.m_has_digest);
 
-    if (parser_state->m_input.m_compute_digest ||
-        (parser_state->m_digest_psi != nullptr)) {
-      /*
-        If either:
-        - the caller wants to compute a digest
-        - the performance schema wants to compute a digest
-        set the digest listener in the lexer.
-      */
-      parser_state->m_lip.m_digest = thd->m_digest;
-      parser_state->m_lip.m_digest->m_digest_storage.m_charset_number =
-          thd->charset()->number;
+  /*
+    Only consider statements that are supposed to have a digest,
+    like top level queries.
+  */
+  if (parser_state->m_input.m_has_digest) {
+    /*
+      For these statements,
+      see if the digest computation is required.
+    */
+    if (thd->m_digest != nullptr) {
+      /* Start Digest */
+      parser_state->m_digest_psi = MYSQL_DIGEST_START(thd->m_statement_psi);
+
+      if (parser_state->m_input.m_compute_digest ||
+          (parser_state->m_digest_psi != nullptr)) {
+        /*
+          If either:
+          - the caller wants to compute a digest
+          - the performance schema wants to compute a digest
+          set the digest listener in the lexer.
+        */
+        parser_state->m_lip.m_digest = thd->m_digest;
+        parser_state->m_lip.m_digest->m_digest_storage.m_charset_number =
+            thd->charset()->number;
+      }
     }
   }
 

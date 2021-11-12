@@ -11,13 +11,17 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 --source include/not_group_replication_plugin.inc
+--source include/only_mts_replica_parallel_workers.inc
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
 --let $rpl_gtid_utils= 1
 --source include/master-slave.inc
 
 --connection slave
-SET @@GLOBAL.DEBUG= '+d, dont_compress_gtid_table';
+
+--let $debug_point= dont_compress_gtid_table
+--source include/add_debug_point.inc
+
 --connection master
 
 --let $master_uuid= `SELECT @@GLOBAL.SERVER_UUID`
@@ -106,7 +110,10 @@ while ($i < 60) {
   --inc $i
 }
 COMMIT;
-SET GLOBAL DEBUG= @debug_save;
+
+--let $debug_point= dont_compress_gtid_table
+--source include/remove_debug_point.inc
+
 SET GLOBAL MAX_BINLOG_SIZE=@SIZE_DEFAULT;
 
 --replace_result $master_uuid MASTER_UUID

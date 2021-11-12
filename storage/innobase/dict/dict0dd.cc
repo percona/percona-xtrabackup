@@ -78,7 +78,8 @@ const char *DD_instant_col_val_coder::encode(const byte *stream, size_t in_len,
                                              size_t *out_len) {
   cleanup();
 
-  m_result = UT_NEW_ARRAY_NOKEY(byte, in_len * 2);
+  m_result = ut::new_arr_withkey<byte>(UT_NEW_THIS_FILE_PSI_KEY,
+                                       ut::Count{in_len * 2});
   char *result = reinterpret_cast<char *>(m_result);
 
   for (size_t i = 0; i < in_len; ++i) {
@@ -100,7 +101,8 @@ const byte *DD_instant_col_val_coder::decode(const char *stream, size_t in_len,
 
   cleanup();
 
-  m_result = UT_NEW_ARRAY_NOKEY(byte, in_len / 2);
+  m_result = ut::new_arr_withkey<byte>(UT_NEW_THIS_FILE_PSI_KEY,
+                                       ut::Count{in_len / 2});
 
   for (size_t i = 0; i < in_len / 2; ++i) {
     char c1 = stream[i * 2];
@@ -1495,8 +1497,7 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
 @param[in,out]	table	InnoDB table or partition
 @return error code
 @retval 0 on success (DD_SUVCCESS) */
-static MY_ATTRIBUTE((warn_unused_result)) int dd_check_corrupted(
-    dict_table_t *&table) {
+[[nodiscard]] static int dd_check_corrupted(dict_table_t *&table) {
   if (table->is_corrupted()) {
     if (dict_table_is_sdi(table->id)
 #ifndef UNIV_HOTBACKUP
@@ -1506,7 +1507,8 @@ static MY_ATTRIBUTE((warn_unused_result)) int dd_check_corrupted(
 #ifndef UNIV_HOTBACKUP
       my_error(ER_TABLE_CORRUPT, MYF(0), "", table->name.m_name);
 #else  /* !UNIV_HOTBACKUP */
-      ib::fatal(ER_IB_MSG_168) << "table is corrupt: " << table->name.m_name;
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_168)
+          << "table is corrupt: " << table->name.m_name;
 #endif /* !UNIV_HOTBACKUP */
     } else {
 #ifndef UNIV_HOTBACKUP
@@ -1516,7 +1518,8 @@ static MY_ATTRIBUTE((warn_unused_result)) int dd_check_corrupted(
 
       my_error(ER_TABLE_CORRUPT, MYF(0), db_str.c_str(), tbl_str.c_str());
 #else  /* !UNIV_HOTBACKUP */
-      ib::fatal(ER_IB_MSG_169) << "table is corrupt: " << table->name.m_name;
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_169)
+          << "table is corrupt: " << table->name.m_name;
 #endif /* !UNIV_HOTBACKUP */
     }
     table = nullptr;
@@ -1528,7 +1531,7 @@ static MY_ATTRIBUTE((warn_unused_result)) int dd_check_corrupted(
 #ifndef UNIV_HOTBACKUP
     my_error(ER_TABLESPACE_MISSING, MYF(0), table->name.m_name);
 #else  /* !UNIV_HOTBACKUP */
-    ib::fatal(ER_IB_MSG_170)
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_170)
         << "table space is missing: " << table->name.m_name;
 #endif /* !UNIV_HOTBACKUP */
     table = nullptr;
@@ -2225,7 +2228,7 @@ static bool format_validate(THD *thd, const TABLE *form, row_type real_type,
             ER_DEFAULT(ER_ILLEGAL_HA_CREATE_OPTION), innobase_hton_name, name);
       }
     }
-      /* fall through */
+      [[fallthrough]];
     case ROW_TYPE_DEFAULT:
       switch (real_type) {
         case ROW_TYPE_FIXED:
@@ -2234,7 +2237,7 @@ static bool format_validate(THD *thd, const TABLE *form, row_type real_type,
         case ROW_TYPE_DEFAULT:
           /* get_real_row_type() should not return these */
           ut_ad(0);
-          /* fall through */
+          [[fallthrough]];
         case ROW_TYPE_DYNAMIC:
           ut_ad(*zip_ssize == 0);
           break;
@@ -2259,7 +2262,7 @@ static bool format_validate(THD *thd, const TABLE *form, row_type real_type,
         }
         break;
       }
-      /* fall through */
+      [[fallthrough]];
     case ROW_TYPE_COMPRESSED:
       if (is_temporary) {
         if (strict) {
@@ -3150,9 +3153,11 @@ template const dict_index_t *dd_find_index<dd::Partition_index>(
 @retval		0 on success
 @retval		HA_ERR_INDEX_COL_TOO_LONG if a column is too long
 @retval		HA_ERR_TOO_BIG_ROW if the record is too long */
-static MY_ATTRIBUTE((warn_unused_result)) int dd_fill_one_dict_index(
-    const dd::Index *dd_index, dict_table_t *table, bool strict,
-    const TABLE_SHARE *form, uint key_num) {
+[[nodiscard]] static int dd_fill_one_dict_index(const dd::Index *dd_index,
+                                                dict_table_t *table,
+                                                bool strict,
+                                                const TABLE_SHARE *form,
+                                                uint key_num) {
   const KEY &key = form->key_info[key_num];
   ulint type = 0;
   unsigned n_fields = key.user_defined_key_parts;
@@ -4288,8 +4293,7 @@ bool dd_set_tablespace_compression(dd::cache::Dictionary_client *client,
                                    const char *algorithm,
                                    dd::Object_id dd_space_id) {
   dd::Tablespace *dd_space{};
-  auto fail = client->acquire_uncached_uncommitted<dd::Tablespace>(dd_space_id,
-                                                                   &dd_space);
+  auto fail = client->acquire_uncached<dd::Tablespace>(dd_space_id, &dd_space);
 
   if (fail || dd_space == nullptr) {
     return true;
@@ -4672,7 +4676,7 @@ for a given space_id.
 @param[in,out]	heap		heap for store file name.
 @param[in]	table		dict table
 @param[in]	dd_table	dd table obj
-@return First filepath (caller must invoke ut_free() on it)
+@return First filepath (caller must invoke ut::free() on it)
 @retval nullptr if no mysql.tablespace_datafiles entry was found. */
 template <typename Table>
 char *dd_get_first_path(mem_heap_t *heap, dict_table_t *table,
@@ -4768,7 +4772,7 @@ void dd_get_and_save_data_dir_path(dict_table_t *table, const Table *dd_table,
   if (heap != nullptr) {
     mem_heap_free(heap);
   } else {
-    ut_free(path);
+    ut::free(path);
   }
 }
 
@@ -4797,7 +4801,7 @@ void dd_get_meta_data_filename(dict_table_t *table, dd::Table *dd_table,
 
   strcpy(filename, filepath);
 
-  ut_free(filepath);
+  ut::free(filepath);
 }
 
 /** Opens a tablespace for dd_load_table_one()
@@ -4852,8 +4856,8 @@ void dd_load_tablespace(const Table *dd_table, dict_table_t *table,
       dict_sys_mutex_enter();
     } else {
       /* Make the temporary tablespace name. */
-      shared_space_name =
-          static_cast<char *>(ut_malloc_nokey(strlen(general_space_name) + 20));
+      shared_space_name = static_cast<char *>(ut::malloc_withkey(
+          UT_NEW_THIS_FILE_PSI_KEY, strlen(general_space_name) + 20));
 
       sprintf(shared_space_name, "%s_" ULINTPF, general_space_name,
               static_cast<ulint>(table->space));
@@ -4872,7 +4876,7 @@ void dd_load_tablespace(const Table *dd_table, dict_table_t *table,
   auto is_already_opened = [&]() {
     if (fil_space_exists_in_mem(table->space, space_name, false, true)) {
       dd_get_and_save_data_dir_path(table, dd_table, true);
-      ut_free(shared_space_name);
+      ut::free(shared_space_name);
       return true;
     }
     return false;
@@ -4900,8 +4904,8 @@ void dd_load_tablespace(const Table *dd_table, dict_table_t *table,
     have happened yet. */
     table->ibd_file_missing = TRUE;
 
-    ut_free(shared_space_name);
-    ut_free(filepath);
+    ut::free(shared_space_name);
+    ut::free(filepath);
     return;
   }
 
@@ -4940,7 +4944,7 @@ void dd_load_tablespace(const Table *dd_table, dict_table_t *table,
     table->ibd_file_missing = TRUE;
   }
 
-  ut_free(shared_space_name);
+  ut::free(shared_space_name);
 }
 
 /** Get the space name from mysql.tablespaces for a given space_id.
@@ -4948,7 +4952,7 @@ void dd_load_tablespace(const Table *dd_table, dict_table_t *table,
 @param[in,out]	heap		heap for store file name.
 @param[in]	table		dict table
 @param[in]	dd_table	dd table obj
-@return First filepath (caller must invoke ut_free() on it)
+@return First filepath (caller must invoke ut::free() on it)
 @retval nullptr if no mysql.tablespace_datafiles entry was found. */
 template <typename Table>
 char *dd_space_get_name(mem_heap_t *heap, dict_table_t *table,
@@ -5479,7 +5483,7 @@ static const rec_t *dd_getnext_system_low(btr_pcur_t *pcur, mtr_t *mtr) {
   bool is_comp = dict_table_is_comp(pcur->index()->table);
 
   while (!rec || rec_get_deleted_flag(rec, is_comp)) {
-    btr_pcur_move_to_next_user_rec(pcur, mtr);
+    pcur->move_to_next_user_rec(mtr);
 
     rec = btr_pcur_get_rec(pcur);
 
@@ -6421,7 +6425,7 @@ static bool dd_get_or_assign_fts_tablespace_id(const dict_table_t *parent_table,
                                         table->name.m_name, filename, false,
                                         dd_space_id);
 
-    ut_free(filename);
+    ut::free(filename);
     if (ret) {
       return false;
     }
@@ -6905,7 +6909,7 @@ bool dd_rename_fts_table(const dict_table_t *table, const char *old_name) {
       ut_a(false);
     }
 
-    ut_free(new_path);
+    ut::free(new_path);
   }
 
   if (client->update(dd_table)) {

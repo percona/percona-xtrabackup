@@ -58,6 +58,7 @@
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
+#include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // *_ACL
 #include "sql/auth/sql_security_ctx.h"
@@ -75,7 +76,9 @@
 #include "sql/item_subselect.h"
 #include "sql/item_sum.h"  // Item_sum
 #include "sql/join_optimizer/access_path.h"
+#include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/join_optimizer.h"
+#include "sql/join_optimizer/replace_item.h"
 #include "sql/json_dom.h"
 #include "sql/key.h"  // key_copy, key_cmp, key_cmp_if_same
 #include "sql/key_spec.h"
@@ -86,12 +89,12 @@
 #include "sql/opt_explain.h"
 #include "sql/opt_explain_format.h"
 #include "sql/opt_hints.h"  // hint_key_state()
-#include "sql/opt_range.h"  // QUICK_SELECT_I
 #include "sql/opt_trace.h"
 #include "sql/opt_trace_context.h"
 #include "sql/parse_tree_node_base.h"
 #include "sql/query_options.h"
 #include "sql/query_result.h"
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
 #include "sql/row_iterator.h"
 #include "sql/set_var.h"
 #include "sql/sorting_iterator.h"
@@ -108,6 +111,7 @@
 #include "sql/sql_optimizer.h"  // JOIN
 #include "sql/sql_parse.h"      // bind_fields
 #include "sql/sql_planner.h"    // calculate_condition_filter
+#include "sql/sql_resolver.h"
 #include "sql/sql_test.h"       // misc. debug printing utilities
 #include "sql/sql_timer.h"      // thd_timer_set
 #include "sql/sql_tmp_table.h"  // tmp tables
@@ -327,7 +331,8 @@ bool Sql_cmd_dml::prepare(THD *thd) {
 
   lex->using_hypergraph_optimizer =
       thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) &&
-      (lex->sql_command == SQLCOM_SELECT ||
+      (lex->sql_command == SQLCOM_SELECT || lex->sql_command == SQLCOM_DO ||
+       lex->sql_command == SQLCOM_CALL ||
        lex->sql_command == SQLCOM_INSERT_SELECT ||
        lex->sql_command == SQLCOM_REPLACE_SELECT);
 
@@ -757,7 +762,7 @@ bool Sql_cmd_dml::execute_inner(THD *thd) {
   Query_expression *unit = lex->unit;
 
   if (unit->optimize(thd, /*materialize_destination=*/nullptr,
-                     /*create_iterators=*/true))
+                     /*create_iterators=*/true, /*finalize_access_paths=*/true))
     return true;
 
   // Calculate the current statement cost.
@@ -1631,12 +1636,6 @@ void JOIN::reset() {
         subquery, so resetting key_err is not needed.
       */
       tab->ref().key_err = true;
-      /*
-        If the finished execution used "filesort", it may have reset "quick"
-        or "condition" when it didn't need them anymore. Restore them for the
-        new execution (the new filesort will need them when it starts).
-      */
-      tab->restore_quick_optim_and_condition();
     }
   }
 
@@ -1787,7 +1786,7 @@ void JOIN::cleanup_item_list(const mem_root_deque<Item *> &items) const {
   @returns false if success, true if error
 */
 
-bool Query_block::optimize(THD *thd) {
+bool Query_block::optimize(THD *thd, bool finalize_access_paths) {
   DBUG_TRACE;
 
   assert(join == nullptr);
@@ -1802,7 +1801,7 @@ bool Query_block::optimize(THD *thd) {
   join = join_local;
   thd->unlock_query_plan();
 
-  if (join->optimize()) return true;
+  if (join->optimize(finalize_access_paths)) return true;
 
   if (join->zero_result_cause && !is_implicitly_grouped()) return false;
 
@@ -1812,7 +1811,8 @@ bool Query_block::optimize(THD *thd) {
     // Derived tables and const subqueries are already optimized
     if (!query_expression->is_optimized() &&
         query_expression->optimize(thd, /*materialize_destination=*/nullptr,
-                                   /*create_iterators=*/false))
+                                   /*create_iterators=*/false,
+                                   /*finalize_access_paths=*/true))
       return true;
   }
 
@@ -2314,49 +2314,21 @@ bool create_ref_for_key(JOIN *join, JOIN_TAB *j, Key_use *org_keyuse,
   return thd->is_error();
 }
 
-store_key_field::store_key_field(THD *thd, Field *to_field_arg, uchar *ptr,
-                                 uchar *null_ptr_arg, uint length,
-                                 Field *from_field, const char *name_arg)
-    : store_key(thd, to_field_arg, ptr, null_ptr_arg, length),
-      m_field_name(name_arg) {
-  // If from_field is nullable but we cannot store null, make
-  // to_field temporary nullable so we can check in copy_inner()
-  // if we end up with an illegal null value.
-  if (!to_field->is_nullable() &&
-      (from_field->is_nullable() || from_field->table->is_nullable()))
-    to_field->set_tmp_nullable();
-  m_copy_field.set(to_field, from_field);
-}
-
-enum store_key::store_key_result store_key_field::copy_inner() {
-  TABLE *table = to_field->table;
-  my_bitmap_map *old_map = dbug_tmp_use_all_columns(table, table->write_set);
-  m_copy_field.invoke_do_copy();
-  dbug_tmp_restore_column_map(table->write_set, old_map);
-  null_key = to_field->is_null();
-  return to_field->is_tmp_null() ? STORE_KEY_FATAL : STORE_KEY_OK;
-}
-
-void store_key_field::replace_from_field(Field *from_field) {
-  m_copy_field.set(to_field, from_field);
-}
-
 namespace {
 
-class store_key_const_item final : public store_key_item {
+class store_key_const_item final : public store_key {
   int cached_result = -1;
 
  public:
   store_key_const_item(THD *thd, Field *to_field_arg, uchar *ptr,
                        uchar *null_ptr_arg, uint length, Item *item_arg)
-      : store_key_item(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg) {
-  }
+      : store_key(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg) {}
   const char *name() const override { return STORE_KEY_CONST_NAME; }
 
  protected:
   enum store_key_result copy_inner() override {
     if (cached_result == -1) {
-      cached_result = store_key_item::copy_inner();
+      cached_result = store_key::copy_inner();
     }
     return static_cast<store_key_result>(cached_result);
   }
@@ -2367,7 +2339,7 @@ class store_key_const_item final : public store_key_item {
   obtained from val_json() method and then converted according to field's
   result type and saved. This allows proper handling of temporal values.
 */
-class store_key_json_item final : public store_key_item {
+class store_key_json_item final : public store_key {
   /// Whether the key is constant.
   const bool m_const_key{false};
   /// Whether the key was already copied.
@@ -2377,7 +2349,7 @@ class store_key_json_item final : public store_key_item {
   store_key_json_item(THD *thd, Field *to_field_arg, uchar *ptr,
                       uchar *null_ptr_arg, uint length, Item *item_arg,
                       bool const_key_arg)
-      : store_key_item(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg),
+      : store_key(thd, to_field_arg, ptr, null_ptr_arg, length, item_arg),
         m_const_key(const_key_arg) {}
 
   const char *name() const override {
@@ -2406,30 +2378,14 @@ static store_key *get_store_key(THD *thd, Item *val, table_map used_tables,
         thd, key_part->field, key_buff + maybe_null,
         maybe_null ? key_buff : nullptr, key_part->length, val);
   }
-
-  Item_field *field_item = nullptr;
-  if (val->type() == Item::FIELD_ITEM)
-    field_item = down_cast<Item_field *>(val->real_item());
-  else if (val->type() == Item::REF_ITEM) {
-    Item_ref *item_ref = down_cast<Item_ref *>(val);
-    if (item_ref->ref_type() == Item_ref::OUTER_REF) {
-      if ((*item_ref->ref)->type() == Item::FIELD_ITEM)
-        field_item = down_cast<Item_field *>(item_ref->real_item());
-    }
-  }
-  if (field_item)
-    return new (thd->mem_root)
-        store_key_field(thd, key_part->field, key_buff + maybe_null,
-                        maybe_null ? key_buff : nullptr, key_part->length,
-                        field_item->field, val->full_name());
-
   return new (thd->mem_root)
-      store_key_item(thd, key_part->field, key_buff + maybe_null,
-                     maybe_null ? key_buff : nullptr, key_part->length, val);
+      store_key(thd, key_part->field, key_buff + maybe_null,
+                maybe_null ? key_buff : nullptr, key_part->length, val);
 }
 
 store_key::store_key(THD *thd, Field *field_arg, uchar *ptr, uchar *null,
-                     uint length) {
+                     uint length, Item *item_arg)
+    : item(item_arg) {
   if (field_arg->type() == MYSQL_TYPE_BLOB ||
       field_arg->type() == MYSQL_TYPE_GEOMETRY) {
     /*
@@ -2443,6 +2399,12 @@ store_key::store_key(THD *thd, Field *field_arg, uchar *ptr, uchar *null,
   } else
     to_field =
         field_arg->new_key_field(thd->mem_root, field_arg->table, ptr, null, 1);
+
+  // If the item is nullable, but we cannot store null, make
+  // to_field temporary nullable so that we can check in copy_inner()
+  // if we end up with an illegal null value.
+  if (!to_field->is_nullable() && item->is_nullable())
+    to_field->set_tmp_nullable();
 }
 
 store_key::store_key_result store_key::copy() {
@@ -2464,7 +2426,7 @@ store_key::store_key_result store_key::copy() {
 }
 
 enum store_key::store_key_result store_key_hash_item::copy_inner() {
-  enum store_key_result res = store_key_item::copy_inner();
+  enum store_key_result res = store_key::copy_inner();
   if (res != STORE_KEY_FATAL) {
     // Convert to and from little endian, since that is what gets
     // stored in the hash field we are lookup up against.
@@ -2530,17 +2492,7 @@ static store_key::store_key_result type_conversion_status_to_store_key(
   return store_key::STORE_KEY_FATAL;
 }
 
-store_key_item::store_key_item(THD *thd, Field *to_field_arg, uchar *ptr,
-                               uchar *null_ptr_arg, uint length, Item *item_arg)
-    : store_key(thd, to_field_arg, ptr, null_ptr_arg, length), item(item_arg) {
-  // If the item is nullable, but we cannot store null, make
-  // to_field temporary nullable so that we can check in copy_inner()
-  // if we end up with an illegal null value.
-  if (!to_field->is_nullable() && item->is_nullable())
-    to_field->set_tmp_nullable();
-}
-
-enum store_key::store_key_result store_key_item::copy_inner() {
+enum store_key::store_key_result store_key::copy_inner() {
   THD *thd = current_thd;
   TABLE *table = to_field->table;
   my_bitmap_map *old_map = dbug_tmp_use_all_columns(table, table->write_set);
@@ -3156,7 +3108,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
       case JT_ALL:
         join->thd->set_status_no_index_used();
         qep_tab->using_dynamic_range = (tab->use_quick == QS_DYNAMIC_RANGE);
-      /* Fall through */
+        [[fallthrough]];
       case JT_INDEX_SCAN:
         if (tab->position()->filter_effect != COND_FILTER_STALE_NO_CONST &&
             !tab->sj_mat_exec()) {
@@ -3293,7 +3245,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
       */
       if (last != NO_PLAN_IDX) {
         QEP_TAB &t = join->qep_tab[last];
-        t.lateral_derived_tables_depend_on_me |= table_ref->map();
+        t.lateral_derived_tables_depend_on_me |= TableBitmap(i);
         trace_refine_table.add_utf8("rematerialized_for_each_row_of",
                                     t.table()->alias);
       }
@@ -3371,7 +3323,6 @@ void QEP_TAB::cleanup() {
   // Delete parts specific of QEP_TAB:
   destroy(filesort);
   filesort = nullptr;
-  if (quick_optim() != quick()) delete quick_optim();
 
   TABLE *const t = table();
 
@@ -3421,7 +3372,7 @@ void QEP_shared_owner::qs_cleanup() {
       table_ref->derived_key_list.clear();
     }
   }
-  delete quick();
+  destroy(quick());
 }
 
 uint QEP_TAB::sjm_query_block_id() const {
@@ -4120,6 +4071,65 @@ bool JOIN::add_having_as_tmp_table_cond(uint curr_tmp_table) {
   return false;
 }
 
+bool CreateFramebufferTable(
+    THD *thd, const Temp_table_param &tmp_table_param,
+    const Query_block &query_block, const mem_root_deque<Item *> &source_fields,
+    const mem_root_deque<Item *> &window_output_fields,
+    Func_ptr_array *mapping_from_source_to_window_output, Window *window) {
+  /*
+    Create the window frame buffer tmp table.  We create a
+    temporary table with same contents as the output tmp table
+    in the windowing pipeline (columns defined by
+    curr_all_fields), but used for intermediate storage, saving
+    the window's frame buffer now that we know the window needs
+    buffering.
+  */
+  Temp_table_param *par = new (thd->mem_root) Temp_table_param(tmp_table_param);
+  par->m_window_frame_buffer = true;
+
+  // Don't include temporary fields that originally came from
+  // a window function (or an expression containing a window function).
+  // Window functions are not relevant to store in the framebuffer,
+  // and in fact, trying to restore them would often overwrite
+  // good data we shouldn't.
+  //
+  // Not that the regular filtering in create_tmp_table() cannot do this
+  // for us, as it only sees the Item_field, not where it came from.
+  mem_root_deque<Item *> fb_fields(window_output_fields);
+  for (size_t i = 0; i < fb_fields.size(); ++i) {
+    Item *orig_item = source_fields[i];
+    if (orig_item->has_wf()) {
+      fb_fields[i] = nullptr;
+    }
+  }
+  fb_fields.erase(std::remove(fb_fields.begin(), fb_fields.end(), nullptr),
+                  fb_fields.end());
+  count_field_types(&query_block, par, fb_fields, false, false);
+
+  TABLE *table =
+      create_tmp_table(thd, par, fb_fields, nullptr, false, false,
+                       query_block.active_options(), HA_POS_ERROR, "");
+  if (table == nullptr) return true;
+
+  window->set_frame_buffer_param(par);
+  window->set_frame_buffer(table);
+
+  // For window function expressions we are to evaluate after
+  // framebuffering, we need to replace their arguments to point to the
+  // output table instead of the input table (we could probably also have
+  // used the framebuffer if we wanted). E.g., if our input is t1 and our
+  // output is <temporary>, we need to rewrite 1 + SUM(t1.x) OVER w into
+  // 1 + SUM(<temporary>.x) OVER w.
+  for (Func_ptr &ptr : *mapping_from_source_to_window_output) {
+    if (ptr.func()->has_wf()) {
+      ReplaceMaterializedItems(thd, ptr.func(),
+                               *mapping_from_source_to_window_output,
+                               /*need_exact_match=*/false);
+    }
+  }
+  return false;
+}
+
 /**
   Init tmp tables usage info.
 
@@ -4161,9 +4171,25 @@ bool JOIN::make_tmp_tables_info() {
   uint curr_tmp_table = const_tables;
   TABLE *exec_tmp_table = nullptr;
 
+  auto cleanup_tmp_tables_on_error =
+      create_scope_guard([this, &curr_tmp_table] {
+        if (qep_tab == nullptr) {
+          return;
+        }
+        for (unsigned table_idx = primary_tables; table_idx <= curr_tmp_table;
+             ++table_idx) {
+          TABLE *table = qep_tab[table_idx].table();
+          if (table != nullptr) {
+            close_tmp_table(table);
+            free_tmp_table(table);
+            qep_tab[table_idx].set_table(nullptr);
+          }
+        }
+      });
+
   /*
     If the plan is constant, we will not do window tmp table processing
-    cf. special code path in do_query_block.
+    cf. special code path for handling const plans.
   */
   m_windowing_steps = m_windows.elements > 0 && !plan_is_const() &&
                       !implicit_grouping && !group_optimized_away;
@@ -4387,7 +4413,6 @@ bool JOIN::make_tmp_tables_info() {
         if (!plan_is_const())  // No need to sort a single row
         {
           if (add_sorting_to_table(curr_tmp_table - 1, &group_list,
-                                   /*force_stable_sort=*/false,
                                    /*sort_before_group=*/true))
             return true;
         }
@@ -4554,7 +4579,6 @@ bool JOIN::make_tmp_tables_info() {
         explain_flags.set(order_arg.src, ESP_USING_TMPTABLE);
 
       if (add_sorting_to_table(curr_tmp_table, &order_arg,
-                               /*force_stable_sort=*/false,
                                /*sort_before_group=*/false))
         return true;
       /*
@@ -4610,52 +4634,42 @@ bool JOIN::make_tmp_tables_info() {
         from the next temporary table.
       */
       const uint widx = REF_SLICE_WIN_1 + wno;
-      m_windows[wno]->set_needs_restore_input_row(
-          wno == 0 && qep_tab[primary_tables - 1].type() == JT_EQ_REF);
 
-      if (m_windows[wno]->needs_buffering()) {
-        /*
-          Create the window frame buffer tmp table.  We create a
-          temporary table with same contents as the output tmp table
-          in the windowing pipeline (columns defined by
-          curr_all_fields), but used for intermediate storage, saving
-          the window's frame buffer now that we know the window needs
-          buffering.
-        */
-        Temp_table_param *par =
-            new (thd->mem_root) Temp_table_param(tmp_table_param);
-        par->m_window_frame_buffer = true;
-        TABLE *table =
-            create_tmp_table(thd, par, *curr_fields, nullptr, false, false,
-                             query_block->active_options(), HA_POS_ERROR, "");
-        if (table == nullptr) return true;
+      QEP_TAB *tab = &qep_tab[curr_tmp_table];
+      mem_root_deque<Item *> *orig_fields = curr_fields;
+      {
+        Opt_trace_object trace_this_tbl(trace);
+        trace_this_tbl
+            .add("adding_tmp_table_in_plan_at_position", curr_tmp_table)
+            .add_alnum("cause", "output_for_window_functions")
+            .add("with_buffer", m_windows[wno]->needs_buffering());
 
-        m_windows[wno]->set_frame_buffer_param(par);
-        m_windows[wno]->set_frame_buffer(table);
+        if (create_intermediate_table(tab, *curr_fields, dummy, false))
+          return true;
+
+        if (alloc_ref_item_slice(thd, widx)) return true;
+
+        if (change_to_use_tmp_fields(curr_fields, thd, ref_items[widx],
+                                     &tmp_fields[widx],
+                                     query_block->m_added_non_hidden_fields))
+          return true;
+
+        curr_fields = &tmp_fields[widx];
+        set_ref_item_slice(widx);
+        tab->ref_item_slice = widx;
+        setup_tmptable_write_func(tab, &trace_this_tbl);
       }
 
-      Opt_trace_object trace_this_tbl(trace);
-      trace_this_tbl.add("adding_tmp_table_in_plan_at_position", curr_tmp_table)
-          .add_alnum("cause", "output_for_window_functions")
-          .add("with_buffer", m_windows[wno]->needs_buffering());
-      QEP_TAB *tab = &qep_tab[curr_tmp_table];
-      if (create_intermediate_table(tab, *curr_fields, dummy, false))
-        return true;
+      if (m_windows[wno]->needs_buffering()) {
+        if (CreateFramebufferTable(
+                thd, tmp_table_param, *query_block, *orig_fields, *curr_fields,
+                tab->tmp_table_param->items_to_copy, m_windows[wno])) {
+          return true;
+        }
+      }
 
       if (m_windows[wno]->make_special_rows_cache(thd, tab->table()))
         return true;
-
-      if (alloc_ref_item_slice(thd, widx)) return true;
-
-      if (change_to_use_tmp_fields(curr_fields, thd, ref_items[widx],
-                                   &tmp_fields[widx],
-                                   query_block->m_added_non_hidden_fields))
-        return true;
-
-      curr_fields = &tmp_fields[widx];
-      set_ref_item_slice(widx);
-      tab->ref_item_slice = widx;
-      setup_tmptable_write_func(tab, &trace_this_tbl);
 
       ORDER_with_src w_partition(m_windows[wno]->sorting_order(),
                                  ESC_WINDOWING);
@@ -4663,7 +4677,6 @@ bool JOIN::make_tmp_tables_info() {
       if (w_partition.order != nullptr) {
         Opt_trace_object trace_pre_sort(trace, "adding_sort_to_previous_table");
         if (add_sorting_to_table(curr_tmp_table - 1, &w_partition,
-                                 /*force_stable_sort=*/true,
                                  /*sort_before_group=*/false))
           return true;
       }
@@ -4671,7 +4684,6 @@ bool JOIN::make_tmp_tables_info() {
       if (m_windows[wno]->is_last()) {
         if (!order.empty() && m_ordered_index_usage != ORDERED_INDEX_ORDER_BY) {
           if (add_sorting_to_table(curr_tmp_table, &order,
-                                   /*force_stable_sort=*/false,
                                    /*sort_before_group=*/false))
             return true;
         }
@@ -4723,6 +4735,7 @@ bool JOIN::make_tmp_tables_info() {
     etc).
   */
   assert(!query_block->is_recursive() || !tmp_tables);
+  cleanup_tmp_tables_on_error.commit();
   return false;
 }
 
@@ -4754,19 +4767,6 @@ void JOIN::refresh_base_slice() {
 void JOIN::unplug_join_tabs() {
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
 
-  /*
-    During execution we will need to access QEP_TABs by map.
-    map2table points to JOIN_TABs which are to be trashed a few lines down; so
-    we won't use map2table, but build a similar map2qep_tab; no need to
-    allocate new space for this array, we can reuse that of map2table.
-  */
-  static_assert(sizeof(QEP_TAB *) == sizeof(JOIN_TAB *), "");
-  void *storage = reinterpret_cast<void *>(map2table);
-  map2qep_tab = reinterpret_cast<QEP_TAB **>(storage);
-  for (uint i = 0; i < tables; ++i)
-    if (best_ref[i]->table_ref)
-      map2qep_tab[best_ref[i]->table_ref->tableno()] = &qep_tab[i];
-
   map2table = nullptr;
 
   for (uint i = 0; i < tables; ++i) best_ref[i]->cleanup();
@@ -4781,10 +4781,6 @@ void JOIN::unplug_join_tabs() {
                     created Filesort object gets attached to this.
 
   @param sort_order List of expressions to sort the table by
-  @param force_stable_sort
-                    If true, use stable sort, that is the sort will
-                    keep the reative order of equivalent elements.
-                    Needed for windowing semantics.
   @param sort_before_group
                     If true, this sort happens before grouping is done
                     (potentially as a step of grouping itself),
@@ -4797,7 +4793,6 @@ void JOIN::unplug_join_tabs() {
 */
 
 bool JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order,
-                                bool force_stable_sort,
                                 bool sort_before_group) {
   DBUG_TRACE;
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
@@ -4846,8 +4841,7 @@ bool JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order,
     Switch_ref_item_slice slice_switch(this, tab->ref_item_slice);
     tab->filesort = new (thd->mem_root)
         Filesort(thd, {tab->table()}, keep_buffers, sort_order->order,
-                 HA_POS_ERROR, force_stable_sort,
-                 /*remove_duplicates=*/false, force_sort_position,
+                 HA_POS_ERROR, /*remove_duplicates=*/false, force_sort_position,
                  /*unwrap_rollup=*/sort_before_group);
     tab->filesort_pushed_order = sort_order->order;
   }
@@ -5109,8 +5103,9 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
   Find a key to apply single table UPDATE/DELETE by a given ORDER
 
   @param       order           Linked list of ORDER BY arguments
-  @param       tab             Table to find a key
+  @param       table           Table to find a key
   @param       limit           LIMIT clause parameter
+  @param [in,out] quick        QUICK_SELECT_I used for this table, if any
   @param [out] need_sort       true if filesort needed
   @param [out] reverse
     true if the key is reversed again given ORDER (undefined if key == MAX_KEY)
@@ -5127,12 +5122,12 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
       to table->file->stats.records.
 */
 
-uint get_index_for_order(ORDER_with_src *order, QEP_TAB *tab, ha_rows limit,
-                         bool *need_sort, bool *reverse) {
-  if (tab->quick() &&
-      tab->quick()->unique_key_range()) {  // Single row select (always
-                                           // "ordered"): Ok to use with key
-                                           // field UPDATE
+uint get_index_for_order(ORDER_with_src *order, TABLE *table, ha_rows limit,
+                         QUICK_SELECT_I **quick, bool *need_sort,
+                         bool *reverse) {
+  if ((*quick) && (*quick)->unique_key_range()) {  // Single row select (always
+                                                   // "ordered"): Ok to use with
+                                                   // key field UPDATE
     *need_sort = false;
     /*
       Returning of MAX_KEY here prevents updating of used_key_is_modified
@@ -5141,12 +5136,10 @@ uint get_index_for_order(ORDER_with_src *order, QEP_TAB *tab, ha_rows limit,
     return MAX_KEY;
   }
 
-  TABLE *const table = tab->table();
-
   if (order->empty()) {
     *need_sort = false;
-    if (tab->quick())
-      return tab->quick()->index;  // index or MAX_KEY, use quick select as is
+    if ((*quick))
+      return (*quick)->index;  // index or MAX_KEY, use quick select as is
     else
       return table->file
           ->key_used_on_scan;  // MAX_KEY or index for some engines
@@ -5158,19 +5151,19 @@ uint get_index_for_order(ORDER_with_src *order, QEP_TAB *tab, ha_rows limit,
     return MAX_KEY;
   }
 
-  if (tab->quick()) {
-    if (tab->quick()->index == MAX_KEY) {
+  if ((*quick)) {
+    if ((*quick)->index == MAX_KEY) {
       *need_sort = true;
       return MAX_KEY;
     }
 
     uint used_key_parts;
     bool skip_quick;
-    switch (test_if_order_by_key(order, table, tab->quick()->index,
-                                 &used_key_parts, &skip_quick)) {
+    switch (test_if_order_by_key(order, table, (*quick)->index, &used_key_parts,
+                                 &skip_quick)) {
       case 1:  // desired order
         *need_sort = false;
-        return tab->quick()->index;
+        return (*quick)->index;
       case 0:  // unacceptable order
         *need_sort = true;
         return MAX_KEY;
@@ -5178,10 +5171,9 @@ uint get_index_for_order(ORDER_with_src *order, QEP_TAB *tab, ha_rows limit,
       {
         QUICK_SELECT_I *reverse_quick;
         if (!skip_quick &&
-            (reverse_quick = tab->quick()->make_reverse(used_key_parts))) {
-          delete tab->quick();
-          tab->set_quick(reverse_quick);
-          tab->set_type(calc_join_type(reverse_quick->get_type()));
+            (reverse_quick = (*quick)->make_reverse(used_key_parts))) {
+          destroy(*quick);
+          *quick = reverse_quick;
           *need_sort = false;
           return reverse_quick->index;
         } else {
@@ -5237,15 +5229,13 @@ uint actual_key_flags(const KEY *key_info) {
 }
 
 join_type calc_join_type(int quick_type) {
-  if ((quick_type == QUICK_SELECT_I::QS_TYPE_INDEX_MERGE) ||
-      (quick_type == QUICK_SELECT_I::QS_TYPE_ROR_INTERSECT) ||
-      (quick_type == QUICK_SELECT_I::QS_TYPE_ROR_UNION))
+  if ((quick_type == QS_TYPE_INDEX_MERGE) ||
+      (quick_type == QS_TYPE_ROR_INTERSECT) ||
+      (quick_type == QS_TYPE_ROR_UNION))
     return JT_INDEX_MERGE;
   else
     return JT_RANGE;
 }
-
-const char *STORE_KEY_CONST_NAME = "const";
 
 /**
   @} (end of group Query_Optimizer)

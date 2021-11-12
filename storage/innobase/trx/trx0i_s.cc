@@ -178,11 +178,6 @@ struct trx_i_s_cache_t {
                             rw_lock member */
   i_s_table_cache_t innodb_trx;     /*!< innodb_trx table */
   i_s_table_cache_t innodb_locks;   /*!< innodb_locks table */
-/** the hash table size is LOCKS_HASH_CELLS_NUM * sizeof(void*) bytes */
-#define LOCKS_HASH_CELLS_NUM 10000
-  hash_table_t *locks_hash; /*!< hash table used to eliminate
-                            duplicate entries in the
-                            innodb_locks table */
 /** Initial size of the cache storage */
 #define CACHE_STORAGE_INITIAL_SIZE 1024
 /** Number of hash cells in the cache storage */
@@ -259,7 +254,7 @@ static void table_cache_free(
     /* the memory is actually allocated in
     table_cache_create_empty_row() */
     if (table_cache->chunks[i].base) {
-      ut_free(table_cache->chunks[i].base);
+      ut::free(table_cache->chunks[i].base);
       table_cache->chunks[i].base = nullptr;
     }
   }
@@ -331,7 +326,7 @@ static void *table_cache_create_empty_row(
     chunk = &table_cache->chunks[i];
 
     got_bytes = req_bytes;
-    chunk->base = ut_malloc_nokey(req_bytes);
+    chunk->base = ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, req_bytes);
 
     got_rows = got_bytes / table_cache->row_size;
 
@@ -854,8 +849,6 @@ static void trx_i_s_cache_clear(
   cache->innodb_trx.rows_used = 0;
   cache->innodb_locks.rows_used = 0;
 
-  hash_table_clear(cache->locks_hash);
-
   ha_storage_empty(&cache->storage);
 }
 
@@ -1011,8 +1004,8 @@ void trx_i_s_cache_init(trx_i_s_cache_t *cache) /*!< out: cache to init */
   release trx_i_s_cache_t::last_read_mutex
   release trx_i_s_cache_t::rw_lock */
 
-  cache->rw_lock =
-      static_cast<rw_lock_t *>(ut_malloc_nokey(sizeof(*cache->rw_lock)));
+  cache->rw_lock = static_cast<rw_lock_t *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*cache->rw_lock)));
 
   rw_lock_create(trx_i_s_cache_lock_key, cache->rw_lock, SYNC_TRX_I_S_RWLOCK);
 
@@ -1022,8 +1015,6 @@ void trx_i_s_cache_init(trx_i_s_cache_t *cache) /*!< out: cache to init */
 
   table_cache_init(&cache->innodb_trx, sizeof(i_s_trx_row_t));
   table_cache_init(&cache->innodb_locks, sizeof(i_s_locks_row_t));
-
-  cache->locks_hash = hash_create(LOCKS_HASH_CELLS_NUM);
 
   cache->storage =
       ha_storage_create(CACHE_STORAGE_INITIAL_SIZE, CACHE_STORAGE_HASH_CELLS);
@@ -1037,12 +1028,11 @@ void trx_i_s_cache_init(trx_i_s_cache_t *cache) /*!< out: cache to init */
 void trx_i_s_cache_free(trx_i_s_cache_t *cache) /*!< in, own: cache to free */
 {
   rw_lock_free(cache->rw_lock);
-  ut_free(cache->rw_lock);
+  ut::free(cache->rw_lock);
   cache->rw_lock = nullptr;
 
   mutex_free(&cache->last_read_mutex);
 
-  hash_table_free(cache->locks_hash);
   ha_storage_free(cache->storage);
   table_cache_free(&cache->innodb_trx);
   table_cache_free(&cache->innodb_locks);

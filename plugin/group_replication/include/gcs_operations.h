@@ -30,12 +30,16 @@
 #include <utility>
 
 #include "plugin/group_replication/include/gcs_logger.h"
+#include "plugin/group_replication/include/gcs_mysql_network_provider.h"
 #include "plugin/group_replication/include/gcs_plugin_messages.h"
 #include "plugin/group_replication/include/gcs_view_modification_notifier.h"
 #include "plugin/group_replication/include/mysql_version_gcs_protocol_map.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_interface.h"
+// TODO::change this for something more elegant
+#include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/network/include/network_provider.h"
 
 class Transaction_message_interface;
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_member_identifier.h"
 
 /**
   @class Gcs_operations
@@ -288,6 +292,52 @@ class Gcs_operations {
   enum enum_gcs_error set_write_concurrency(uint32_t new_write_concurrency);
 
   /**
+   * @brief Reconfigures the group's "consensus leaders."
+   *
+   * Instructs the underlying GCS to use @c leader as the single preferred
+   * consensus leader.
+   *
+   * The method is non-blocking, meaning that it shall only send the
+   * request to an underlying GCS. The final result can be polled via @c
+   * get_leaders.
+   *
+   * @param leader The member you desire to act as a consensus leader.
+   *
+   * @retval GCS_OK if successful
+   * @retval GCS_NOK if unsuccessful
+   */
+  enum enum_gcs_error set_leader(Gcs_member_identifier const &leader);
+
+  /**
+   * @brief Reconfigures the group's "consensus leaders."
+   *
+   * Instructs the underlying GCS to use every member as a consensus leader.
+   *
+   * The method is non-blocking, meaning that it shall only send the
+   * request to an underlying GCS. The final result can be polled via @c
+   * get_leaders.
+   *
+   * @retval GCS_OK if successful
+   * @retval GCS_NOK if unsuccessful
+   */
+  enum enum_gcs_error set_everyone_leader();
+
+  /**
+   * @brief Inspect the group's "consensus leader" configuration.
+   *
+   * @param[out] preferred_leaders The members specified as preferred leaders.
+   * @param[out] actual_leaders The members actually carrying out the leader
+   * role at this moment.
+   *
+   * @retval GCS_OK if successful, @c preferred_leaders and @c actual_leaders
+   * contain the result
+   * @retval GCS_NOK if unsuccessful
+   */
+  enum enum_gcs_error get_leaders(
+      std::vector<Gcs_member_identifier> &preferred_leaders,
+      std::vector<Gcs_member_identifier> &actual_leaders);
+
+  /**
     Retrieves the group's "group communication protocol" value.
 
     @retval the protocol version
@@ -326,6 +376,21 @@ class Gcs_operations {
   enum enum_gcs_error set_xcom_cache_size(uint64_t new_size);
 
   /**
+   * @brief Get the current incoming connections protocol stack configured in
+   * GCS
+   *
+   * @return GcsRunningProtocol
+   */
+  enum_transport_protocol get_current_incoming_connections_protocol();
+
+  /**
+   * @brief Get the mysql network provider owned by GCS operations
+   *
+   * @return a Network_provider if initialized and running. nullptr, otherwise.
+   */
+  Gcs_mysql_network_provider *get_mysql_network_provider();
+
+  /**
    * @return the communication engine being used
    */
   static const std::string &get_gcs_engine();
@@ -349,6 +414,16 @@ class Gcs_operations {
 
   static const std::string gcs_engine;
   Gcs_gr_logger_impl gcs_logger;
+
+  /**
+   * External IoC dependencies for gcs_mysql_net_provider.
+   * - A provider for authentication parameters
+   * - A provider for all mysql native methods
+   */
+  Gcs_mysql_network_provider_auth_interface_impl auth_provider;
+  Gcs_mysql_network_provider_native_interface_impl native_interface;
+  std::shared_ptr<Gcs_mysql_network_provider> gcs_mysql_net_provider;
+
   Gcs_interface *gcs_interface;
 
   /** Was this view change injected */

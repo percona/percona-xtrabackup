@@ -68,8 +68,8 @@
 # WL#12819:GTIDs: Replicate from GTID disabled source to GTID enabled replica directly
 
 --source include/big_test.inc
---source include/have_debug.inc
 --source include/not_group_replication_plugin.inc
+--source include/not_rpl_gtid_only.inc
 # This test is unrelated to log format
 --source include/have_binlog_format_row.inc
 --source include/not_master_info_file.inc
@@ -284,6 +284,12 @@ UPDATE mysql.slave_relay_log_info SET Number_of_lines = 12;
 --echo #       2. A group_replication channel (group_replication_recovery)
 --echo #       3. A channel with a privileged user (default channel)
 --echo #     ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS is set to OFF for all channels
+
+# We must enable GTID_MODE so we can configure the group_replication recovery channel
+--let $rpl_gtid_mode= ON
+--let $rpl_server_numbers= 2
+--let $rpl_skip_sync= 1
+--source include/rpl_set_gtid_mode.inc
 
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12 FOR CHANNEL "ch1" ;
 --disable_warnings

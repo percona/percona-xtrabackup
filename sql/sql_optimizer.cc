@@ -83,14 +83,15 @@
 #include "sql/opt_costmodel.h"
 #include "sql/opt_explain.h"  // join_type_str
 #include "sql/opt_hints.h"    // hint_table_state
-#include "sql/opt_range.h"    // QUICK_SELECT_I
 #include "sql/opt_trace.h"    // Opt_trace_object
 #include "sql/opt_trace_context.h"
 #include "sql/parse_tree_node_base.h"
 #include "sql/parser_yystype.h"
 #include "sql/query_options.h"
 #include "sql/query_result.h"
-#include "sql/sql_base.h"  // init_ftfuncs
+#include "sql/range_optimizer/partition_pruning.h"
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
+#include "sql/sql_base.h"                         // init_ftfuncs
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"
 #include "sql/sql_const.h"
@@ -218,11 +219,36 @@ bool JOIN::alloc_indirection_slices() {
   return false;
 }
 
-static bool HasFullTextFunction(Item *item) {
+bool HasFullTextFunction(Item *item) {
   return WalkItem(item, enum_walk::PREFIX, [](Item *inner_item) {
     return inner_item->type() == Item::FUNC_ITEM &&
            down_cast<Item_func *>(inner_item)->functype() == Item_func::FT_FUNC;
   });
+}
+
+/**
+  The List<Item_equal> in COND_EQUAL partially overlaps with the argument list
+  in various Item_cond via C-style casts. However, the hypergraph optimizer can
+  modify the lists in Item_cond (by calling compile()), causing an Item_equal to
+  be replaced with Item_func_eq, and this can cause a List<Item_equal> not to
+  contain Item_equal pointers anymore. This is is obviously bad if anybody wants
+  to actually look into these lists after optimization (in particular, NDB
+  wants this).
+
+  Since untangling this spaghetti seems very hard, we solve it by brute force:
+  Make a copy of all the COND_EQUAL lists, so that they no longer reach into the
+  Item_cond. This allows us to modify the Item_cond at will.
+ */
+static void SaveCondEqualLists(COND_EQUAL *cond_equal) {
+  if (cond_equal == nullptr) {
+    return;
+  }
+  List<Item_equal> copy;
+  for (Item_equal &item : cond_equal->current_level) {
+    copy.push_back(&item);
+  }
+  cond_equal->current_level = std::move(copy);
+  SaveCondEqualLists(cond_equal->upper_levels);
 }
 
 /**
@@ -259,7 +285,7 @@ static bool HasFullTextFunction(Item *item) {
   @retval false Success.
   @retval true Error, error code saved in member JOIN::error.
 */
-bool JOIN::optimize() {
+bool JOIN::optimize(bool finalize_access_paths) {
   DBUG_TRACE;
 
   uint no_jbuf_after = UINT_MAX;
@@ -289,7 +315,7 @@ bool JOIN::optimize() {
 
   const bool has_windows = m_windows.elements != 0;
 
-  if (has_windows && Window::setup_windows2(thd, m_windows))
+  if (has_windows && Window::setup_windows2(thd, &m_windows))
     return true; /* purecov: inspected */
 
   if (query_block->olap == ROLLUP_TYPE && optimize_rollup())
@@ -349,7 +375,8 @@ bool JOIN::optimize() {
       // Derived tables and const subqueries are already optimized
       if (!unit->is_optimized() &&
           unit->optimize(thd, /*materialize_destination=*/nullptr,
-                         /*create_iterators=*/false))
+                         /*create_iterators=*/false,
+                         /*finalize_access_paths=*/false))
         return true;
     }
   }
@@ -529,7 +556,14 @@ bool JOIN::optimize() {
     std::string trace_str;
     std::string *trace_ptr = thd->opt_trace.is_started() ? &trace_str : nullptr;
 
+    SaveCondEqualLists(cond_equal);
+
     m_root_access_path = FindBestQueryPlan(thd, query_block, trace_ptr);
+    if (finalize_access_paths && m_root_access_path != nullptr) {
+      if (FinalizePlanForQueryBlock(thd, query_block, m_root_access_path)) {
+        return true;
+      }
+    }
 
     // If this query block was modified by IN-to-EXISTS conversion,
     // the outer query block may want to undo that conversion and materialize
@@ -557,6 +591,7 @@ bool JOIN::optimize() {
       }
       where_cond = where_cond_no_in2exists;
       having_cond = having_cond_no_in2exists;
+      assert(!finalize_access_paths);
       m_root_access_path_no_in2exists =
           FindBestQueryPlan(thd, query_block, trace_ptr);
     } else {
@@ -743,6 +778,13 @@ bool JOIN::optimize() {
   // if needed.
   for (Item *item : *fields) {
     item->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX, nullptr);
+  }
+
+  // Also GROUP BY expressions, so that find_in_group_list() doesn't
+  // inadvertently fail because the SELECT list has casts that GROUP BY doesn't.
+  for (ORDER *ord = group_list.order; ord != nullptr; ord = ord->next) {
+    (*ord->item)
+        ->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX, nullptr);
   }
 
   if (rollup_state != RollupState::NONE) {
@@ -1176,22 +1218,20 @@ bool substitute_gc(THD *thd, Query_block *query_block, Item *where_cond,
    Sets the plan's state of the JOIN. This is always the final step of
    optimization; starting from this call, we expose the plan to other
    connections (via EXPLAIN CONNECTION) so the plan has to be final.
-   QEP_TAB's quick_optim, condition_optim and keyread_optim are set here.
-*/
+   keyread_optim is set here.
+ */
 void JOIN::set_plan_state(enum_plan_state plan_state_arg) {
   // A plan should not change to another plan:
   assert(plan_state_arg == NO_PLAN || plan_state == NO_PLAN);
   if (plan_state == NO_PLAN && plan_state_arg != NO_PLAN) {
     if (qep_tab != nullptr) {
       /*
-        We want to cover primary tables, tmp tables (they may have a sort, so
-        their "quick" and "condition" may change when execution runs the
-        sort), and sj-mat inner tables. Note that make_tmp_tables_info() may
-        have added a sort to the first non-const primary table, so it's
-        important to do those assignments after make_tmp_tables_info().
+        We want to cover primary tables, tmp tables. Note that
+        make_tmp_tables_info() may have added a sort to the first non-const
+        primary table, so it's important to do this assignment after
+        make_tmp_tables_info().
       */
       for (uint i = const_tables; i < tables; ++i) {
-        qep_tab[i].set_quick_optim();
         qep_tab[i].set_condition_optim();
         qep_tab[i].set_keyread_optim();
       }
@@ -1347,7 +1387,8 @@ int JOIN::replace_index_subquery() {
 
   subselect_indexsubquery_engine *engine =
       new (thd->mem_root) subselect_indexsubquery_engine(
-          first_qep_tab,
+          first_qep_tab->table(), first_qep_tab->table_ref,
+          first_qep_tab->ref(), first_qep_tab->type(),
           down_cast<Item_in_subselect *>(query_expression()->item),
           first_qep_tab->condition(), having_cond);
   query_expression()->item->set_indexsubquery_engine(engine);
@@ -1405,8 +1446,7 @@ bool JOIN::optimize_distinct_group_order() {
 
   if (plan_is_single_table() && (!group_list.empty() || select_distinct) &&
       !tmp_table_param.sum_func_count &&
-      (!tab->quick() ||
-       tab->quick()->get_type() != QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX)) {
+      (!tab->quick() || tab->quick()->get_type() != QS_TYPE_GROUP_MIN_MAX)) {
     if (!group_list.empty() && rollup_state == RollupState::NONE &&
         list_contains_unique_index(tab, find_field_in_order_list,
                                    (void *)group_list.order)) {
@@ -1558,8 +1598,7 @@ void JOIN::test_skip_sort() {
       now only for one table queries with covering indexes.
     */
     if (!(query_block->active_options() & SELECT_BIG_RESULT || with_json_agg) ||
-        (tab->quick() &&
-         tab->quick()->get_type() == QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX)) {
+        (tab->quick() && tab->quick()->get_type() == QS_TYPE_GROUP_MIN_MAX)) {
       if (simple_group &&    // GROUP BY is possibly skippable
           !select_distinct)  // .. if not preceded by a DISTINCT
       {
@@ -2185,9 +2224,8 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
       by clustered PK values.
     */
 
-    if (quick_type == QUICK_SELECT_I::QS_TYPE_INDEX_MERGE ||
-        quick_type == QUICK_SELECT_I::QS_TYPE_ROR_UNION ||
-        quick_type == QUICK_SELECT_I::QS_TYPE_ROR_INTERSECT)
+    if (quick_type == QS_TYPE_INDEX_MERGE || quick_type == QS_TYPE_ROR_UNION ||
+        quick_type == QS_TYPE_ROR_INTERSECT)
       return false;
     ref_key = tab->quick()->index;
     ref_key_parts = tab->quick()->used_key_parts;
@@ -2262,15 +2300,18 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
           trace_recest.add_utf8_table(tab->table_ref)
               .add_utf8("index", table->key_info[new_ref_key].name);
           QUICK_SELECT_I *qck;
+          MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                                 thd->variables.range_alloc_block_size);
           const bool no_quick =
               test_quick_select(
-                  thd, new_ref_key_map,
+                  thd, thd->mem_root, &temp_mem_root, new_ref_key_map, 0,
                   0,  // empty table_map
                   join->calc_found_rows
                       ? HA_POS_ERROR
                       : join->query_expression()->select_limit_cnt,
                   false,  // don't force quick range
-                  order.order->direction, tab,
+                  order.order->direction, tab->table(),
+                  tab->skip_records_in_range(),
                   // we are after make_join_query_block():
                   tab->condition(), &tab->needed_reg, &qck,
                   tab->table()->force_index, join->query_block) <= 0;
@@ -2374,15 +2415,18 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
 
       Key_map keys_to_use;            // Force the creation of quick select
       keys_to_use.set_bit(best_key);  // only best_key.
+      MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                             thd->variables.range_alloc_block_size);
       QUICK_SELECT_I *qck;
       test_quick_select(
-          thd, keys_to_use,
+          thd, thd->mem_root, &temp_mem_root, keys_to_use, 0,
           0,  // empty table_map
           join->calc_found_rows ? HA_POS_ERROR
                                 : join->query_expression()->select_limit_cnt,
           true,  // force quick range
-          order.order->direction, tab, tab->condition(), &tab->needed_reg, &qck,
-          tab->table()->force_index, join->query_block);
+          order.order->direction, tab->table(), tab->skip_records_in_range(),
+          tab->condition(), &tab->needed_reg, &qck, tab->table()->force_index,
+          join->query_block);
       if (order_direction < 0 && tab->quick() != nullptr &&
           tab->quick() != save_quick) {
         /*
@@ -2395,7 +2439,7 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
             3 - constructed right above
           In this case we drop quick #2 as #3 is expected to be better.
         */
-        delete tab->quick();
+        destroy(tab->quick());
         tab->set_quick(nullptr);
       }
       /*
@@ -2555,7 +2599,7 @@ check_reverse_order:
           /* purecov: end */
         }
         if (tab->quick() != tmp && tab->quick() != save_quick)
-          delete tab->quick();
+          destroy(tab->quick());
         tab->set_quick(tmp);
         tab->set_type(calc_join_type(tmp->get_type()));
         tab->position()->filter_effect = COND_FILTER_STALE;
@@ -2599,11 +2643,11 @@ fix_ICP:
     }
 
     // Keep current (ordered) tab->quick()
-    if (save_quick != tab->quick()) delete save_quick;
+    if (save_quick != tab->quick()) destroy(save_quick);
   } else {
     // Restore original save_quick
     if (tab->quick() != save_quick) {
-      delete tab->quick();
+      destroy(tab->quick());
       tab->set_quick(save_quick);
     }
   }
@@ -2747,21 +2791,25 @@ static bool can_switch_from_ref_to_range(THD *thd, JOIN_TAB *tab,
             trace, "rerunning_range_optimizer_for_single_index");
 
         QUICK_SELECT_I *qck;
+        MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                               thd->variables.range_alloc_block_size);
         if (test_quick_select(
-                thd, new_ref_key_map, 0,  // empty table_map
-                tab->join()->row_limit, false, ordering, tab,
+                thd, thd->mem_root, &temp_mem_root, new_ref_key_map, 0,
+                0,  // empty table_map
+                tab->join()->row_limit, false, ordering, tab->table(),
+                tab->skip_records_in_range(),
                 tab->join_cond() ? tab->join_cond() : tab->join()->where_cond,
                 &tab->needed_reg, &qck, recheck_range,
                 tab->join()->query_block) > 0) {
           if (length < qck->max_used_key_length) {
-            delete tab->quick();
+            destroy(tab->quick());
             tab->set_quick(qck);
             return true;
           } else {
             Opt_trace_object(trace, "access_type_unchanged")
                 .add("ref_key_length", length)
                 .add("range_key_length", qck->max_used_key_length);
-            delete qck;
+            destroy(qck);
           }
         }
       } else
@@ -2835,7 +2883,7 @@ void JOIN::adjust_access_methods() {
         tab->position()->filter_effect = COND_FILTER_STALE;
       } else {
         // Cleanup quick, REF/REF_OR_NULL/EQ_REF, will be clarified later
-        delete tab->quick();
+        ::destroy(tab->quick());
         tab->set_quick(nullptr);
       }
     }
@@ -3041,7 +3089,7 @@ bool JOIN::get_best_combination() {
           We must use the duplicate-eliminating index, so this QUICK is not
           an option.
         */
-        delete tab->quick();
+        ::destroy(tab->quick());
         tab->set_quick(nullptr);
       }
       if (!pos->key) {
@@ -3491,8 +3539,8 @@ no_join_cache:
 class COND_CMP : public ilink<COND_CMP> {
  public:
   static void *operator new(size_t size) { return (*THR_MALLOC)->Alloc(size); }
-  static void operator delete(void *ptr MY_ATTRIBUTE((unused)),
-                              size_t size MY_ATTRIBUTE((unused))) {
+  static void operator delete(void *ptr [[maybe_unused]],
+                              size_t size [[maybe_unused]]) {
     TRASH(ptr, size);
   }
 
@@ -3627,12 +3675,6 @@ Item_field *get_best_field(Item_field *item_field, COND_EQUAL *cond_equal) {
 static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
                                   Item *item, COND_EQUAL *cond_equal,
                                   bool *simple_equality) {
-  if (thd->lex->using_hypergraph_optimizer) {
-    // We cannot handle loops in the query graph yet.
-    *simple_equality = false;
-    return false;
-  }
-
   *simple_equality = false;
 
   if (left_item->type() == Item::REF_ITEM &&
@@ -4376,7 +4418,7 @@ static Item *eliminate_item_equal(THD *thd, Item *cond,
   if (((Item *)item_equal)->const_item() && !item_equal->val_int())
     return new Item_func_false();
   Item *const item_const = item_equal->get_const();
-  Item_equal_iterator it(*item_equal);
+  auto it = item_equal->get_fields().begin();
   if (!item_const) {
     /*
       If there is a const item, match all field items with the const item,
@@ -4384,14 +4426,14 @@ static Item *eliminate_item_equal(THD *thd, Item *cond,
     */
     it++;
   }
-  Item_field *item_field;  // Field to generate equality for.
-  while ((item_field = it++)) {
+  while (it != item_equal->get_fields().end()) {
     /*
       Generate an equality of the form:
       item_field = some previous field in item_equal's list.
 
       First see if we really need to generate it:
     */
+    Item_field *item_field = &*it++;  // Field to generate equality for.
     Item_equal *const upper = item_field->find_item_equal(upper_levels);
     if (upper)  // item_field is in this upper equality
     {
@@ -4409,8 +4451,8 @@ static Item *eliminate_item_equal(THD *thd, Item *cond,
 
       if (!(tab && sj_is_materialize_strategy(tab->get_sj_strategy()))) {
         Item_field *item_match;
-        Item_equal_iterator li(*item_equal);
-        while ((item_match = li++) != item_field) {
+        auto li = item_equal->get_fields().begin();
+        while ((item_match = &*li++) != item_field) {
           if (item_match->find_item_equal(upper_levels) == upper)
             break;  // (item_match, item_field) is also in upper level equality
         }
@@ -5964,12 +6006,14 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit) {
     QUICK_SELECT_I *qck;
     Key_map keys_to_use = tab->const_keys;
     keys_to_use.merge(tab->skip_scan_keys);
+    MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                           thd->variables.range_alloc_block_size);
     int error = test_quick_select(
-        thd, keys_to_use,
+        thd, thd->mem_root, &temp_mem_root, keys_to_use, 0,
         0,  // empty table_map
         limit,
         false,  // don't force quick range
-        ORDER_NOT_RELEVANT, tab,
+        ORDER_NOT_RELEVANT, tab->table(), tab->skip_records_in_range(),
         tab->join_cond() ? tab->join_cond() : tab->join()->where_cond,
         &tab->needed_reg, &qck, tab->table()->force_index,
         tab->join()->query_block);
@@ -7044,11 +7088,9 @@ static bool add_key_equal_fields(THD *thd, Key_field **key_fields,
     Add to the set of possible key values every substitution of
     the field for an equal field included into item_equal
   */
-  Item_equal_iterator it(*item_equal);
-  Item_field *item;
-  while ((item = it++)) {
-    if (!field_item->field->eq(item->field)) {
-      if (add_key_field(thd, key_fields, and_level, cond, item, eq_func, val,
+  for (Item_field &item : item_equal->get_fields()) {
+    if (!field_item->field->eq(item.field)) {
+      if (add_key_field(thd, key_fields, and_level, cond, &item, eq_func, val,
                         num_values, usable_tables, sargables))
         return true;
     }
@@ -7455,10 +7497,8 @@ bool add_key_fields(THD *thd, JOIN *join, Key_field **key_fields,
           field1=const_item as a condition allowing an index access of the table
           with field1 by the keys value of field1.
         */
-        Item_equal_iterator it(*item_equal);
-        Item_field *item;
-        while ((item = it++)) {
-          if (add_key_field(thd, key_fields, *and_level, cond_func, item, true,
+        for (Item_field &item : item_equal->get_fields()) {
+          if (add_key_field(thd, key_fields, *and_level, cond_func, &item, true,
                             &const_item, 1, usable_tables, sargables))
             return true;
         }
@@ -7469,20 +7509,15 @@ bool add_key_fields(THD *thd, JOIN *join, Key_field **key_fields,
           field1=field2 as a condition allowing an index access of the table
           with field1 by the keys value of field2.
         */
-        Item_equal_iterator outer_it(*item_equal);
-        Item_equal_iterator inner_it(*item_equal);
-        Item_field *outer;
-        while ((outer = outer_it++)) {
-          Item_field *inner;
-          while ((inner = inner_it++)) {
-            if (!outer->field->eq(inner->field)) {
-              if (add_key_field(thd, key_fields, *and_level, cond_func, outer,
-                                true, (Item **)&inner, 1, usable_tables,
-                                sargables))
+        for (Item_field &outer : item_equal->get_fields()) {
+          for (Item_field &inner : item_equal->get_fields()) {
+            if (!outer.field->eq(inner.field)) {
+              Item *inner_ptr = &inner;
+              if (add_key_field(thd, key_fields, *and_level, cond_func, &outer,
+                                true, &inner_ptr, 1, usable_tables, sargables))
                 return true;
             }
           }
-          inner_it.rewind();
         }
       }
       break;
@@ -7803,7 +7838,7 @@ bool is_indexed_agg_distinct(JOIN *join,
       case Item_sum::AVG_DISTINCT_FUNC:
       case Item_sum::SUM_DISTINCT_FUNC:
         if (sum_item->argument_count() == 1) break;
-      /* fall through */
+        [[fallthrough]];
       default:
         return false;
     }
@@ -9374,9 +9409,8 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
               We keep (for now) the QUICK AM calculated in
               get_quick_record_count().
             */
-            assert(tab->quick()->is_valid());
           } else {
-            delete tab->quick();
+            destroy(tab->quick());
             tab->set_quick(nullptr);
           }
         }
@@ -9534,18 +9568,22 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
             bool search_if_impossible = recheck_reason != DONT_RECHECK;
             if (search_if_impossible) {
               if (tab->quick()) {
-                delete tab->quick();
+                destroy(tab->quick());
                 tab->set_type(JT_ALL);
               }
               QUICK_SELECT_I *qck;
+              MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                                     thd->variables.range_alloc_block_size);
               search_if_impossible =
                   test_quick_select(
-                      thd, usable_keys, used_tables & ~tab->table_ref->map(),
+                      thd, thd->mem_root, &temp_mem_root, usable_keys,
+                      used_tables & ~tab->table_ref->map(), 0,
                       join->calc_found_rows
                           ? HA_POS_ERROR
                           : join->query_expression()->select_limit_cnt,
                       false,  // don't force quick range
-                      interesting_order, tab, tab->condition(),
+                      interesting_order, tab->table(),
+                      tab->skip_records_in_range(), tab->condition(),
                       &tab->needed_reg, &qck, tab->table()->force_index,
                       join->query_block) < 0;
               tab->set_quick(qck);
@@ -9560,18 +9598,22 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
                 return true;  // No ON, so it's really "impossible WHERE"
               Opt_trace_object trace_without_on(trace, "without_ON_clause");
               if (tab->quick()) {
-                delete tab->quick();
+                destroy(tab->quick());
                 tab->set_type(JT_ALL);
               }
               QUICK_SELECT_I *qck;
+              MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                                     thd->variables.range_alloc_block_size);
               const bool impossible_where =
                   test_quick_select(
-                      thd, tab->keys(), used_tables & ~tab->table_ref->map(),
+                      thd, thd->mem_root, &temp_mem_root, tab->keys(),
+                      used_tables & ~tab->table_ref->map(), 0,
                       join->calc_found_rows
                           ? HA_POS_ERROR
                           : join->query_expression()->select_limit_cnt,
                       false,  // don't force quick range
-                      ORDER_NOT_RELEVANT, tab, tab->condition(),
+                      ORDER_NOT_RELEVANT, tab->table(),
+                      tab->skip_records_in_range(), tab->condition(),
                       &tab->needed_reg, &qck, tab->table()->force_index,
                       join->query_block) < 0;
               tab->set_quick(qck);
@@ -10486,6 +10528,9 @@ bool JOIN::optimize_fts_query() {
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
 
   assert(query_block->has_ft_funcs());
+
+  // Only used by the old optimizer.
+  assert(!thd->lex->using_hypergraph_optimizer);
 
   for (uint i = const_tables; i < tables; i++) {
     JOIN_TAB *tab = best_ref[i];

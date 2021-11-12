@@ -240,6 +240,10 @@ bool Common_table_expr::substitute_recursive_reference(THD *thd,
   return false;
 }
 
+void Common_table_expr::remove_table(TABLE_LIST *tr) {
+  (void)tmp_tables.erase_value(tr);
+}
+
 /**
   Resolve a derived table or view reference, including recursively resolving
   contained subqueries.
@@ -1006,6 +1010,14 @@ Item *Condition_pushdown::extract_cond_for_table(Item *cond) {
       return nullptr;
   }
 
+  // Pushing in2exists conditions down into other query blocks
+  // could cause them to get lost, as Item_subselect would not know
+  // where to remove them from. They're a very rare case to have pushable,
+  // so simply refuse pushing them.
+  if (cond->created_by_in2exists()) {
+    return nullptr;
+  }
+
   // Mark the condition as it passed the checks
   cond->marker = Item::MARKER_COND_DERIVED_TABLE;
   return cond;
@@ -1154,7 +1166,7 @@ bool Condition_pushdown::replace_columns_in_cond(Item **cond, bool is_having) {
   if (view_ref) {
     (*cond) = (*cond)->transform(&Item::replace_view_refs_with_clone,
                                  pointer_cast<uchar *>(m_derived_table));
-    if (cond == nullptr) return true;
+    if (*cond == nullptr) return true;
   }
   Item *new_cond =
       is_having ? (*cond)->transform(&Item::replace_with_derived_expr_ref,
@@ -1301,6 +1313,14 @@ bool Condition_pushdown::attach_cond_to_derived(Item *derived_cond,
   having ? derived_query_block->set_having_cond(derived_cond)
          : derived_query_block->set_where_cond(derived_cond);
   thd->lex->set_current_query_block(saved_query_block);
+  // Need to call setup_ftfuncs() if we have pushed down a condition having
+  // full text function.
+  if (derived_query_block->has_ft_funcs() &&
+      HasFullTextFunction(cond_to_attach)) {
+    if (setup_ftfuncs(thd, derived_query_block)) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -1335,7 +1355,9 @@ bool TABLE_LIST::optimize_derived(THD *thd) {
     }
   }
 
-  if (unit->optimize(thd, table, /*create_iterators=*/false) || thd->is_error())
+  if (unit->optimize(thd, table, /*create_iterators=*/false,
+                     /*finalize_access_paths=*/true) ||
+      thd->is_error())
     return true;
 
   // If the table is const, materialize it now. The hypergraph optimizer

@@ -212,6 +212,10 @@ void MySQLServerMockSessionClassic::client_greeting() {
     return;
   }
 
+  if (auto *ssl = protocol_.ssl()) {
+    json_reader_->set_session_ssl_info(ssl);
+  }
+
   auto decode_res =
       classic_protocol::decode<classic_protocol::message::client::Greeting>(
           net::buffer(payload), protocol_.server_capabilities());
@@ -243,9 +247,6 @@ void MySQLServerMockSessionClassic::client_greeting() {
         disconnect();
         return;
       }
-
-      auto *ssl = protocol_.ssl();
-      json_reader_->set_session_ssl_info(ssl);
 
       // read again other part
       client_greeting();
@@ -550,9 +551,9 @@ void MySQLServerMockSessionClassic::finish() { disconnect(); }
 void MySQLServerMockSessionClassic::run() { server_greeting(); }
 
 void MySQLClassicProtocol::encode_auth_fast_message() {
-  auto encode_res = classic_protocol::encode<
-      classic_protocol::frame::Frame<classic_protocol::wire::FixedInt<1>>>(
-      {seq_no_++, {3}}, shared_capabilities(),
+  auto encode_res = classic_protocol::encode<classic_protocol::frame::Frame<
+      classic_protocol::message::server::AuthMethodData>>(
+      {seq_no_++, {"\x03"}}, shared_capabilities(),
       net::dynamic_buffer(send_buffer_));
 }
 
@@ -589,11 +590,11 @@ stdx::expected<std::string, std::error_code> cert_get_name(X509_NAME *name) {
 
   BIO_get_mem_ptr(bio.get(), &buf);
 
-  return {stdx::in_place, buf->data, buf->data + buf->length};
+  return {std::in_place, buf->data, buf->data + buf->length};
 #else
   std::array<char, 256> buf;
 
-  return {stdx::in_place, X509_NAME_oneline(name, buf.data(), buf.size())};
+  return {std::in_place, X509_NAME_oneline(name, buf.data(), buf.size())};
 #endif
 }
 
@@ -723,12 +724,15 @@ void MySQLClassicProtocol::encode_resultset(const ResultsetResponse &response) {
     }
   }
 
-  encode_res = classic_protocol::encode<
-      classic_protocol::frame::Frame<classic_protocol::message::server::Eof>>(
-      {seq_no_++, {}}, shared_caps, net::dynamic_buffer(send_buffer_));
-  if (!encode_res) {
-    //
-    return;
+  if (!shared_caps.test(classic_protocol::capabilities::pos::
+                            text_result_with_session_tracking)) {
+    encode_res = classic_protocol::encode<
+        classic_protocol::frame::Frame<classic_protocol::message::server::Eof>>(
+        {seq_no_++, {}}, shared_caps, net::dynamic_buffer(send_buffer_));
+    if (!encode_res) {
+      //
+      return;
+    }
   }
 
   for (auto const &row : response.rows) {

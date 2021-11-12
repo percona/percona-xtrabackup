@@ -58,11 +58,11 @@
 #include "sql/nested_join.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_hints.h"  // hint_table_state
-#include "sql/opt_range.h"  // QUICK_SELECT_I
 #include "sql/opt_trace.h"  // Opt_trace_object
 #include "sql/opt_trace_context.h"
 #include "sql/query_options.h"
 #include "sql/query_result.h"
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
@@ -1076,10 +1076,8 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
              tab->quick()->index == best_ref->key &&  // (2)
              (used_key_parts >=
               table->quick_key_parts[best_ref->key]) &&  // (2)
-             (tab->quick()->get_type() !=
-              QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX) &&
-             (tab->quick()->get_type() !=
-              QUICK_SELECT_I::QS_TYPE_SKIP_SCAN))  // (2)
+             (tab->quick()->get_type() != QS_TYPE_GROUP_MIN_MAX) &&
+             (tab->quick()->get_type() != QS_TYPE_SKIP_SCAN))  // (2)
   {
     trace_access_scan.add_alnum("access_type", "range");
     tab->quick()->trace_quick_description(trace);
@@ -1088,8 +1086,7 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
   } else if ((table->file->ha_table_flags() & HA_TABLE_SCAN_ON_INDEX) &&  //(3)
              !table->covering_keys.is_clear_all() && best_ref &&          //(3)
              (!tab->quick() ||                                            //(3)
-              (tab->quick()->get_type() ==
-                   QUICK_SELECT_I::QS_TYPE_ROR_INTERSECT &&  //(3)
+              (tab->quick()->get_type() == QS_TYPE_ROR_INTERSECT &&       //(3)
                best_ref->read_cost <
                    tab->quick()->cost_est.total_cost())))  //(3)
   {
@@ -1730,7 +1727,7 @@ bool Optimize_table_order::semijoin_loosescan_fill_driving_table_position(
     // Ok, can use the strategy
 
     if (tab->quick() && tab->quick()->index == key &&
-        tab->quick()->get_type() == QUICK_SELECT_I::QS_TYPE_RANGE) {
+        tab->quick()->get_type() == QS_TYPE_RANGE) {
       quick_uses_applicable_index = true;
       quick_max_keypart = max_keypart;
     }
@@ -2365,7 +2362,7 @@ bool Optimize_table_order::greedy_search(table_map remaining_tables) {
       join state will not be reverted back to its initial state because we
       don't "pop" tables already present in the partial plan.
     */
-    bool is_interleave_error MY_ATTRIBUTE((unused)) =
+    bool is_interleave_error [[maybe_unused]] =
         check_interleaving_with_nj(best_table);
     /* This has been already checked by best_extension_by_limited_search */
     assert(!is_interleave_error);
@@ -4620,7 +4617,7 @@ void Optimize_table_order::advance_sj_state(table_map remaining_tables,
 */
 
 void Optimize_table_order::backout_nj_state(const table_map remaining_tables
-                                                MY_ATTRIBUTE((unused)),
+                                            [[maybe_unused]],
                                             const JOIN_TAB *tab) {
   assert(remaining_tables & tab->table_ref->map());
 

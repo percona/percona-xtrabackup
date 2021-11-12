@@ -42,6 +42,8 @@ struct MCPVIO_EXT {
   struct {
     uchar *pkt; /**< pointer into NET::buff */
     uint pkt_len;
+    /** a flag indicating that pkt, pkt_len contain valid packet to be reused */
+    bool pkt_received;
   } cached_server_reply;
   int packets_read, packets_written; /**< counters for send/received packets */
   int mysql_change_user;             /**< if it's mysql_change_user() */
@@ -106,6 +108,7 @@ struct mysql_async_auth {
   /** Used by caching_sha256_password plugin */
   int client_auth_plugin_state;
   authsm_function state_function;
+  uint current_factor_index;
 };
 
 /*

@@ -67,8 +67,9 @@ static void test_no_registration() {
   PSI_cond_info_v1 cond_info;
   memset(&cond_info, 0, sizeof(cond_info));
 
-  PSI_thread_info_v1 thread_info;
+  PSI_thread_info_v5 thread_info;
   memset(&thread_info, 0, sizeof(thread_info));
+  thread_info.m_os_name = "OS_NAME";
 
   PSI_file_info_v1 file_info;
   memset(&file_info, 0, sizeof(file_info));
@@ -338,8 +339,9 @@ static void test_thread_registration() {
   int rc;
   PFS_thread_key key;
   PFS_thread_class *thread;
-  PSI_thread_info_v1 thread_info;
+  PSI_thread_info_v5 thread_info;
   memset(&thread_info, 0, sizeof(thread_info));
+  thread_info.m_os_name = "OS_NAME";
 
   rc = init_thread_class(5);
   ok(rc == 0, "room for 5 thread");

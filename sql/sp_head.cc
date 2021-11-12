@@ -1692,7 +1692,7 @@ void sp_head::destroy(sp_head *sp) {
 
   sp->~sp_head();
 
-  free_root(&own_root, MYF(0));
+  own_root.Clear();
 }
 
 sp_head::sp_head(MEM_ROOT &&mem_root, enum_sp_type type)
@@ -2021,12 +2021,12 @@ bool sp_head::execute(THD *thd, bool merge_da_on_success) {
     Stack size depends on the platform:
       - for most platforms (8 * STACK_MIN_SIZE) is enough;
       - for Solaris SPARC 64 (10 * STACK_MIN_SIZE) is required.
-      - for clang and UBSAN we need even more stack space.
+      - for clang and ASAN/UBSAN we need even more stack space.
   */
 
   {
-#if defined(__sparc) && defined(__SUNPRO_CC)
-    const int sp_stack_size = 10 * STACK_MIN_SIZE;
+#if defined(__clang__) && defined(HAVE_ASAN)
+    const int sp_stack_size = 12 * STACK_MIN_SIZE;
 #elif defined(__clang__) && defined(HAVE_UBSAN)
     const int sp_stack_size = 16 * STACK_MIN_SIZE;
 #else
@@ -2243,7 +2243,7 @@ bool sp_head::execute(THD *thd, bool merge_da_on_success) {
     thd->cleanup_after_query();
 
     // Release memory allocated during execution of the instruction
-    free_root(&execute_mem_root, MYF(0));
+    execute_mem_root.Clear();
 
     /*
       Find and process SQL handlers unless it is a fatal error (fatal
@@ -2500,7 +2500,7 @@ err_with_cleanup:
 
   ::destroy(trigger_runtime_ctx);
   call_arena.free_items();
-  free_root(&call_mem_root, MYF(0));
+  call_mem_root.Clear();
   thd->sp_runtime_ctx = parent_sp_runtime_ctx;
 
   if (thd->killed) thd->send_kill_message();
@@ -2709,7 +2709,7 @@ bool sp_head::execute_function(THD *thd, Item **argp, uint argcount,
 err_with_cleanup:
   ::destroy(func_runtime_ctx);
   call_arena.free_items();
-  free_root(&call_mem_root, MYF(0));
+  call_mem_root.Clear();
   thd->sp_runtime_ctx = parent_sp_runtime_ctx;
 
   /*

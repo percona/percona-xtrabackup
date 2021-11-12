@@ -2747,7 +2747,7 @@ Dbspj::sendConf(Signal* signal, Ptr<Request> requestPtr, bool is_complete)
       {
         if (treeNodePtr.p->m_state == TreeNode::TN_ACTIVE)
         {
-          assert(treeNodePtr.p->m_node_no <= 31);
+          ndbassert(treeNodePtr.p->m_node_no <= 31);
           activeMask |= (1 << treeNodePtr.p->m_node_no);
         }
       }
@@ -5627,6 +5627,9 @@ Dbspj::lookup_parent_row(Signal* signal,
     if (treeNodePtr.p->m_bits & TreeNode::T_ATTRINFO_CONSTRUCTED)
     {
       jam();
+      // Need to build a modified attrInfo, extended with a parameter
+      // build with the 'attrParamPattern' applied to the parent rowRef
+      DEBUG("parent_row w/ T_ATTRINFO_CONSTRUCTED");
       Uint32 tmp = RNIL;
 
       /**
@@ -5663,7 +5666,14 @@ Dbspj::lookup_parent_row(Signal* signal,
         getSection(ptr, tmp);
         org_size = ptr.sz;
       }
-
+      Uint32 paramLen = 0;  // Set paramLen after it has been expand'ed
+      if (unlikely(!appendToSection(tmp, &paramLen, 1)))
+      {
+        jam();
+        releaseSection(tmp);
+        err = DbspjErr::OutOfSectionMemory;
+        break;
+      }
       bool hasNull;
       LocalArenaPool<DataBufferSegment<14> > pool(requestPtr.p->m_arena, m_dependency_map_pool);
       Local_pattern_store pattern(pool, treeNodePtr.p->m_attrParamPattern);
@@ -5674,17 +5684,20 @@ Dbspj::lookup_parent_row(Signal* signal,
         releaseSection(tmp);
         break;
       }
-//    ndbrequire(!hasNull);
 
       /**
-       * Update size of subsrouting section, which contains arguments
+       * Set size of this parameter. Note that parameter 'hasNull' is OK.
        */
       SegmentedSectionPtr ptr;
       getSection(ptr, tmp);
       Uint32 new_size = ptr.sz;
-      Uint32 * sectionptrs = ptr.p->theData;
-      sectionptrs[4] = new_size - org_size;
+      paramLen = new_size - org_size;
+      writeToSection(tmp, org_size, &paramLen, 1);
 
+      Uint32 * sectionptrs = ptr.p->theData;
+      sectionptrs[4] = paramLen;
+
+      // Set new constructed attrInfo, containing the constructed parameter
       treeNodePtr.p->m_send.m_attrInfoPtrI = tmp;
     }
 
@@ -7135,7 +7148,7 @@ Dbspj::scanFrag_parent_row(Signal* signal,
       {
         jam();
         DEBUG("Key contain NULL values, ignoring it");
-        assert((treeNodePtr.p->m_bits & TreeNode::T_ONE_SHOT) == 0);
+        ndbassert((treeNodePtr.p->m_bits & TreeNode::T_ONE_SHOT) == 0);
         // Ignore this request as 'NULL == <column>' will never give a match
         releaseSection(keyPtrI);
         return;  // Bailout, SCANREQ would have returned 0 rows anyway
@@ -7156,6 +7169,49 @@ Dbspj::scanFrag_parent_row(Signal* signal,
       jam();
       // Fixed key...fix later...
       ndbabort();
+    }
+
+    if (treeNodePtr.p->m_bits & TreeNode::T_ATTRINFO_CONSTRUCTED)
+    {
+      jam();
+      // Append to fragPtr's parameter set
+      // Build with the 'attrParamPattern' applied to the parent rowRef
+      DEBUG("parent_row w/ T_ATTRINFO_CONSTRUCTED");
+      Uint32 paramPtrI = fragPtr.p->m_paramPtrI;
+      Uint32 org_size = 0;
+      if (paramPtrI != RNIL)
+      {
+        // Get current end of parameter section
+        SegmentedSectionPtr ptr;
+        getSection(ptr, paramPtrI);
+        org_size = ptr.sz;
+      }
+      Uint32 paramLen = 0;  // Set paramLen after it has been expanded
+      if (unlikely(!appendToSection(paramPtrI, &paramLen, 1)))
+      {
+        jam();
+        err = DbspjErr::OutOfSectionMemory;
+        break;
+      }
+      bool hasNull = false;
+      Local_pattern_store pattern(pool, treeNodePtr.p->m_attrParamPattern);
+      err = expand(paramPtrI, pattern, rowRef, hasNull);
+      if (unlikely(err != 0))
+      {
+        jam();
+        break;
+      }
+
+      /**
+       * Set size of this parameter. Note that parameter 'isNull' is OK.
+       */
+      {
+        SegmentedSectionPtr ptr;
+        getSection(ptr, paramPtrI);
+        paramLen = ptr.sz - org_size;
+      }
+      writeToSection(paramPtrI, org_size, &paramLen, 1);
+      fragPtr.p->m_paramPtrI = paramPtrI;
     }
 
     if (treeNodePtr.p->m_bits & TreeNode::T_ONE_SHOT)
@@ -7550,8 +7606,9 @@ Dbspj::scanFrag_send(Signal* signal,
        *   in the first frag, which is reused for all the frags.
        * - Child nodes can possibly be 'repeatable', which implies
        *   that m_rangePtrI can't be released yet.
-       * - attrInfo is always taken from m_send.m_attrInfoPtrI, and
-       *   is reused from all frag scans, either repeated or not!
+       * - attrInfo is always taken from m_send.m_attrInfoPtrI, possibly
+       *   with constructed parameters appended. It is reused from
+       *   all frag scans, either repeated or not!
        *
        * Note the somewhat different lifetime of key- vs attrInfo:
        * Except for the ONE_SHOT rootNode, the attrInfo always has
@@ -7574,6 +7631,7 @@ Dbspj::scanFrag_send(Signal* signal,
         jam();
         ndbassert(!repeatable);
         ndbassert(fragPtr.p->m_rangePtrI == RNIL);
+        ndbassert(fragPtr.p->m_paramPtrI == RNIL);
         /**
          * Pass sections to send and release them (root only)
          */
@@ -7609,9 +7667,12 @@ Dbspj::scanFrag_send(Signal* signal,
         /**
          * 'releaseAtSend' is set above based on the keyInfo lifetime.
          * Copy the attrInfo (comment above) whenever needed.
+         * If the attrInfo is constructed it has to be duplicated as well
+         * in preparation for the parameter to be appended
          */
-        if (releaseAtSend)
-        {
+        if (releaseAtSend ||
+            treeNodePtr.p->m_bits & TreeNode::T_ATTRINFO_CONSTRUCTED)
+	{
           jam();
           /**
            * Test execution terminated due to 'OutOfSectionMemory' which
@@ -7643,9 +7704,41 @@ Dbspj::scanFrag_send(Signal* signal,
             break;
           }
           attrInfoPtrI = tmp;
+        } //if (releaseAtSend || ATTRINFO_CONSTRUCTED)
 
+        if (treeNodePtr.p->m_bits & TreeNode::T_ATTRINFO_CONSTRUCTED)
+        {
+          jam();
+          /**
+           * We constructed a parameter section in scanFrag_parent_row(), append
+           * it to the attrInfo as we send each fragment scans.
+           */
+          SectionReader params(fragWithRangePtr.p->m_paramPtrI, getSectionSegmentPool());
+          const Uint32 paramLen = params.getSize();
+          err = appendReaderToSection(attrInfoPtrI, params, paramLen);
+          if (unlikely(err != 0))
+          {
+            jam();
+            releaseSection(attrInfoPtrI);
+            break;
+          }
+          SegmentedSectionPtr ptr;
+          getSection(ptr, attrInfoPtrI);
+          Uint32 *sectionptrs = ptr.p->theData;
+          sectionptrs[4] = paramLen;
+        } //ATTRINFO_CONSTRUCTED
+
+        if (releaseAtSend)
+        {
+          jam();
           /** Reflect the release of the keyInfo 'range' set above */
           fragWithRangePtr.p->m_rangePtrI = RNIL;
+
+          if (fragWithRangePtr.p->m_paramPtrI != RNIL)
+          {
+            releaseSection(fragWithRangePtr.p->m_paramPtrI);
+            fragWithRangePtr.p->m_paramPtrI = RNIL;
+          }
         } //if (releaseAtSend)
       }
 
@@ -7879,6 +7972,11 @@ Dbspj::scanFrag_send(Signal* signal,
       if (releaseAtSend)
       {
         ndbassert(handle.m_cnt == 0);
+      }
+      else if (treeNodePtr.p->m_bits & TreeNode::T_ATTRINFO_CONSTRUCTED)
+      {
+        // Release the constructed attrInfo
+        releaseSection(attrInfoPtrI);
       }
       handle.clear();
 
@@ -8581,7 +8679,7 @@ Dbspj::scanFrag_execNODE_FAILREP(Signal* signal,
       data.m_frags_complete++;
       ndbrequire(data.m_frags_not_started > 0);
       data.m_frags_not_started--;
-      // fall through
+      [[fallthrough]];
     case ScanFragHandle::SFH_COMPLETE:
       jam();
       sum++; // indicate that we should abort
@@ -8597,7 +8695,7 @@ Dbspj::scanFrag_execNODE_FAILREP(Signal* signal,
       jam();
       ndbrequire(data.m_frags_outstanding > 0);
       data.m_frags_outstanding--;
-      // fall through
+      [[fallthrough]];
     case ScanFragHandle::SFH_WAIT_NEXTREQ:
       jam();
       sum++;
@@ -8651,6 +8749,11 @@ Dbspj::scanFrag_release_rangekeys(Ptr<Request> requestPtr,
         releaseSection(fragPtr.p->m_rangePtrI);
         fragPtr.p->m_rangePtrI = RNIL;
       }
+      if (fragPtr.p->m_paramPtrI != RNIL)
+      {
+        releaseSection(fragPtr.p->m_paramPtrI);
+        fragPtr.p->m_paramPtrI = RNIL;
+      }
     }
   }
   else
@@ -8663,13 +8766,18 @@ Dbspj::scanFrag_release_rangekeys(Ptr<Request> requestPtr,
       releaseSection(fragPtr.p->m_rangePtrI);
       fragPtr.p->m_rangePtrI = RNIL;
     }
+    if (fragPtr.p->m_paramPtrI != RNIL)
+    {
+      releaseSection(fragPtr.p->m_paramPtrI);
+      fragPtr.p->m_paramPtrI = RNIL;
+    }
   }
 }
 
 /**
  * Parent batch has completed, and will not refetch (X-joined) results
- * from its childs. Release & reset range keys which are unsent or we
- * have kept for possible resubmits.
+ * from its childs. Release & reset range keys and parameters which are
+ * unsent or we have kept for possible resubmits.
  */
 void
 Dbspj::scanFrag_parent_batch_cleanup(Ptr<Request> requestPtr,
@@ -9517,8 +9625,8 @@ Uint32
 Dbspj::parseDA(Build_context& ctx,
                Ptr<Request> requestPtr,
                Ptr<TreeNode> treeNodePtr,
-               DABuffer& tree, Uint32 treeBits,
-               DABuffer& param, Uint32 paramBits)
+               DABuffer& tree, const Uint32 treeBits,
+               DABuffer& param, const Uint32 paramBits)
 {
   Uint32 err;
   Uint32 attrInfoPtrI = RNIL;
@@ -9709,8 +9817,8 @@ Dbspj::parseDA(Build_context& ctx,
     } // DABits::NI_KEY_...
 
     const Uint32 mask =
-      DABits::NI_LINKED_ATTR | DABits::NI_ATTR_INTERPRET |
-      DABits::NI_ATTR_LINKED | DABits::NI_ATTR_PARAMS;
+      DABits::NI_LINKED_ATTR |
+      DABits::NI_ATTR_INTERPRET | DABits::NI_ATTR_LINKED;
 
     if (((treeBits & mask) | (paramBits & DABits::PI_ATTR_LIST)) != 0)
     {
@@ -9722,16 +9830,10 @@ Dbspj::parseDA(Build_context& ctx,
 
        * - NI_ATTR_INTERPRET - tree contains interpreted program
        * - NI_ATTR_LINKED - means that the attr-info contains linked-values
-       * - NI_ATTR_PARAMS - means that the attr-info is parameterized
-       *   PI_ATTR_PARAMS - means that the parameters contains attr parameters
        *
        * IF NI_ATTR_INTERPRET
        *   DATA0[LO/HI] = Length of program / total #arguments to program
        *   DATA1..N     = Program
-       *
-       * IF NI_ATTR_PARAMS
-       *   DATA0[LO/HI] = Length / #param
-       *   DATA1..N     = PARAM-0...PARAM-M
        *
        * IF PI_ATTR_INTERPRET
        *   DATA0[LO/HI] = Length of program / Length of subroutine-part
@@ -9739,19 +9841,17 @@ Dbspj::parseDA(Build_context& ctx,
        *
        * IF NI_ATTR_LINKED
        *   DATA0[LO/HI] = Length / #
-       *
-       *
        */
-      Uint32 sections[5] = { 0, 0, 0, 0, 0 };
-      Uint32 * sectionptrs = 0;
+      Uint32 *sectionptrs = nullptr;
 
-      bool interpreted =
+      const bool interpreted =
         (treeBits & DABits::NI_ATTR_INTERPRET) ||
         (paramBits & DABits::PI_ATTR_INTERPRET) ||
         (treeNodePtr.p->m_bits & TreeNode::T_ATTR_INTERPRETED);
 
       if (interpreted)
       {
+        static constexpr Uint32 sections[5] = { 0, 0, 0, 0, 0 };
         /**
          * Add section headers for interpreted execution
          *   and create pointer so that they can be updated later
@@ -9768,47 +9868,66 @@ Dbspj::parseDA(Build_context& ctx,
         getSection(ptr, attrInfoPtrI);
         sectionptrs = ptr.p->theData;
 
-        if (treeBits & DABits::NI_ATTR_INTERPRET)
+        /**
+         * Note that there might be a NI_ATTR_LINKED without a NI_ATTR_INTERPRET.
+         * INTERPRET code can then be specified with PI_ATTR_INTERPRET. (or not)
+         */
+        if (treeBits & (DABits::NI_ATTR_INTERPRET
+                        | DABits::NI_ATTR_LINKED))
         {
           jam();
-
-          /**
-           * Having two interpreter programs is an error.
-           */
-          err = DbspjErr::BothTreeAndParametersContainInterpretedProgram;
-          if (unlikely(paramBits & DABits::PI_ATTR_INTERPRET))
-          {
-            jam();
-            break;
-          }
-
-          treeNodePtr.p->m_bits |= TreeNode::T_ATTR_INTERPRETED;
           Uint32 len2 = * tree.ptr++;
           Uint32 len_prg = len2 & 0xFFFF; // Length of interpret program
           Uint32 len_pattern = len2 >> 16;// Length of attr param pattern
-          err = DbspjErr::OutOfSectionMemory;
-          if (unlikely(!appendToSection(attrInfoPtrI, tree.ptr, len_prg)))
+
+          // Note: NI_ATTR_INTERPRET seems to never have been used, nor tested
+          if (treeBits & DABits::NI_ATTR_INTERPRET)
           {
             jam();
-            break;
-          }
+            /**
+             * Having two interpreter programs is an error.
+             */
+            err = DbspjErr::BothTreeAndParametersContainInterpretedProgram;
+            if (unlikely(paramBits & DABits::PI_ATTR_INTERPRET))
+            {
+              jam();
+              break;
+            }
 
-          tree.ptr += len_prg;
-          sectionptrs[1] = len_prg; // size of interpret program
+            treeNodePtr.p->m_bits |= TreeNode::T_ATTR_INTERPRETED;
+            err = DbspjErr::OutOfSectionMemory;
+            if (unlikely(!appendToSection(attrInfoPtrI, tree.ptr, len_prg)))
+            {
+              jam();
+              break;
+            }
+            tree.ptr += len_prg;
+            sectionptrs[1] = len_prg; // size of interpret program
+          }  // NI_ATTR_INTERPRET
 
-          Uint32 tmp = * tree.ptr ++; // attr-pattern header
-          Uint32 cnt = tmp & 0xFFFF;
+          /**
+           * We do not support (or need) API supplied parameters to
+           * be expand'ed into the interpreter parameter section.
+           * Such parameters has always been included directly into the
+           * generated interpreter code. Thus the no_param being set up
+           * as expand() arguemt here.
+           */
+          DABuffer no_param;
+          no_param.ptr = nullptr;
 
           if (treeBits & DABits::NI_ATTR_LINKED)
           {
             jam();
+            DEBUG("NI_ATTR_LINKED" << ", len_pattern:" << len_pattern);
             /**
              * Expand pattern into a new pattern (with linked values)
+             * Real attrInfo will be constructed with another expand
+             * when parent row values arrives.
              */
             LocalArenaPool<DataBufferSegment<14> > pool(requestPtr.p->m_arena,
                                     m_dependency_map_pool);
             Local_pattern_store pattern(pool,treeNodePtr.p->m_attrParamPattern);
-            err = expand(pattern, treeNodePtr, tree, len_pattern, param, cnt);
+            err = expand(pattern, treeNodePtr, tree, len_pattern, no_param, 0);
             if (unlikely(err))
             {
               jam();
@@ -9819,36 +9938,81 @@ Dbspj::parseDA(Build_context& ctx,
              */
             treeNodePtr.p->m_bits |= TreeNode::T_ATTRINFO_CONSTRUCTED;
           }
-          else
+          else if (len_pattern > 0)
           {
             jam();
+            // This code branch has never been tested, unused as well.
+            ndbassert(false);  // Need validation before being used.
+
             /**
              * Expand pattern directly into attr-info param
              *   This means a "fixed" attr-info param from here on
              */
             bool hasNull;
-            err = expand(attrParamPtrI, tree, len_pattern, param, cnt, hasNull);
+            err = expand(attrParamPtrI, tree, len_pattern, no_param, 0, hasNull);
             if (unlikely(err))
             {
               jam();
               break;
             }
-//          ndbrequire(!hasNull);
-          }
-        }
-        else // if (treeBits & DABits::NI_ATTR_INTERPRET)
+          }  // NI_ATTR_LINKED
+        } // NI_ATTR_INTERPRET | NI_ATTR_LINKED
+
+        /**
+         * Interpreter code may also be (usually is) specified in the
+         * param-section. That might be combined with a NI_ATTR_LINKED
+         * containing the constructor receipe for a parameter.
+         */
+        if (paramBits & DABits::PI_ATTR_INTERPRET)
         {
           jam();
-          /**
-           * Only relevant for interpreted stuff
-           */
-          ndbrequire((treeBits & DABits::NI_ATTR_PARAMS) == 0);
-          ndbrequire((paramBits & DABits::PI_ATTR_PARAMS) == 0);
-          ndbrequire((treeBits & DABits::NI_ATTR_LINKED) == 0);
+          DEBUG("PI_ATTR_INTERPRET");
 
+          /**
+           * Add the interpreted code that represents the scan filter.
+           */
+          const Uint32 len2 = * param.ptr++;
+          const Uint32 program_len = len2 & 0xFFFF;
+          const Uint32 subroutine_len = len2 >> 16;
+          err = DbspjErr::OutOfSectionMemory;
+          if (unlikely(!appendToSection(attrInfoPtrI, param.ptr, program_len)))
+          {
+            jam();
+            break;
+          }
+          /**
+           * The interpreted code is added is in the "Interpreted execute region"
+           * of the attrinfo (see Dbtup::interpreterStartLab() for details).
+           * It will thus execute before reading the attributes that constitutes
+           * the projections.
+           */
+          sectionptrs[1] = program_len;
+          param.ptr += program_len;
+
+          if (subroutine_len > 0)
+          {
+            jam();
+            // This code branch has never been tested, unused as well.
+            ndbassert(false);  // Need validation before being used.
+
+            err = DbspjErr::OutOfSectionMemory;
+            if (unlikely(!appendToSection(attrParamPtrI,
+                                          param.ptr, subroutine_len)))
+            {
+              jam();
+              break;
+            }
+            sectionptrs[4] = subroutine_len;
+            param.ptr += subroutine_len;
+          }
+          treeNodePtr.p->m_bits |= TreeNode::T_ATTR_INTERPRETED;
+        }
+        else // not PI_ATTR_INTERPRET
+        {
+          jam();
           treeNodePtr.p->m_bits |= TreeNode::T_ATTR_INTERPRETED;
 
-          if (! (paramBits & DABits::PI_ATTR_INTERPRET))
+          if (! (treeBits & DABits::NI_ATTR_INTERPRET))
           {
             jam();
 
@@ -9866,47 +10030,8 @@ Dbspj::parseDA(Build_context& ctx,
             }
             sectionptrs[1] = 1;
           }
-        } // if (treeBits & DABits::NI_ATTR_INTERPRET)
+        } // PI_ATTR_INTERPRET)
       } // if (interpreted)
-
-      if (paramBits & DABits::PI_ATTR_INTERPRET)
-      {
-        jam();
-
-        /**
-         * Add the interpreted code that represents the scan filter.
-         */
-        const Uint32 len2 = * param.ptr++;
-        Uint32 program_len = len2 & 0xFFFF;
-        Uint32 subroutine_len = len2 >> 16;
-        err = DbspjErr::OutOfSectionMemory;
-        if (unlikely(!appendToSection(attrInfoPtrI, param.ptr, program_len)))
-        {
-          jam();
-          break;
-        }
-        /**
-         * The interpreted code is added is in the "Interpreted execute region"
-         * of the attrinfo (see Dbtup::interpreterStartLab() for details).
-         * It will thus execute before reading the attributes that constitutes
-         * the projections.
-         */
-        sectionptrs[1] = program_len;
-        param.ptr += program_len;
-
-        if (subroutine_len)
-        {
-          if (unlikely(!appendToSection(attrParamPtrI,
-                                        param.ptr, subroutine_len)))
-          {
-            jam();
-            break;
-          }
-          sectionptrs[4] = subroutine_len;
-          param.ptr += subroutine_len;
-        }
-        treeNodePtr.p->m_bits |= TreeNode::T_ATTR_INTERPRETED;
-      }
 
       Uint32 sum_read = 0;
       Uint32 dst[MAX_ATTRIBUTES_IN_TABLE + 2];

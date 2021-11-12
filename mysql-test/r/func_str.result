@@ -30,9 +30,15 @@ locate('he','hello')	locate('he','hello',2)	locate('lo','hello',2)
 select instr('hello','HE'), instr('hello',binary 'HE'), instr(binary 'hello','HE');
 instr('hello','HE')	instr('hello',binary 'HE')	instr(binary 'hello','HE')
 1	1	0
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 select position(binary 'll' in 'hello'),position('a' in binary 'hello');
 position(binary 'll' in 'hello')	position('a' in binary 'hello')
 3	0
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 SELECT LOCATE('d', _utf8mb4'abcdef');
 LOCATE('d', _utf8mb4'abcdef')
 4
@@ -897,6 +903,7 @@ explain select binary 'HE';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 Note	1003	/* select#1 */ select cast('HE' as char charset binary) AS `binary 'HE'`
 explain select export_set(255,_latin2'y', _latin2'n', _latin2' ');
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -4646,9 +4653,13 @@ hex(cast(0x20000000000000 as decimal(30,0)) + 2)
 SELECT REPLACE( 'a', binary 'b', NULL ) as xxx;
 xxx
 NULL
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 SELECT REPLACE( 'a', binary '', NULL ) as xxx;
 xxx
 NULL
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 SELECT REPLACE( 'a', 'b', NULL ) as xxx;
 xxx
 NULL
@@ -4667,6 +4678,8 @@ NULL
 SELECT REPLACE( 'a', binary NULL, 'bravo' ) as xxx;
 xxx
 NULL
+Warnings:
+Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 #
 # Bug#22565155 DATA ROWS LOST AFTER ADDING DISTINCT WITH
 # SUBSTR() IN SELECT LIST
@@ -4808,7 +4821,6 @@ from_base64(aes_encrypt(right(cast((0x5d44f4d736397d92c8267c12)as decimal),1),
 rand(to_days('2028-12-04 15:50:01.284969'))));
 Warnings:
 Warning	1292	Truncated incorrect BINARY value: 'x'5d44f4d736397d92c8267c12''
-Warning	1264	Out of range value for column '(null)' at row 1
 do from_base64(cast(right(11,1)as binary(24)));
 do convert(inet_aton(cast(left(-1,1)as binary(30))) using utf8);
 Warnings:
@@ -5360,3 +5372,143 @@ DO ST_ISVALID(INSTR(9223372036854775806 ,0x46bc299f));
 ERROR HY000: Cannot convert string 'F\xBC)\x9F' from binary to utf8mb4
 DO ST_SRID(LOCATE(0x58ed0b8e,8,135));
 ERROR HY000: Cannot convert string 'X\xED\x0B\x8E' from binary to utf8mb4
+#
+# Bug #32864958 ITEM_STR_FUNC::PUSH_PACKET_OVERFLOW_WARNING:
+#               ASSERTION `IS_NULLABLE()' FAILED.
+Warnings:
+Warning	3135	'NO_ZERO_DATE', 'NO_ZERO_IN_DATE' and 'ERROR_FOR_DIVISION_BY_ZERO' sql modes should be used with strict mode. They will be merged with strict mode in a future release.
+DO NOT CAST(UTC_TIME AS CHAR(2877246026) CHARACTER SET ujis);
+ERROR 22003: char(n) value is out of range in 'cast_as_char'
+DO REPEAT(LAST_INSERT_ID(''), 4294967295);
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: ''
+Warning	1301	Result of repeat() was larger than max_allowed_packet (67108864) - truncated
+DO REPEAT(LAST_INSERT_ID(''), 0x96e4ed7e70a7fec7f11572c8980a);
+Warnings:
+Warning	1292	Truncated incorrect BINARY value: 'x'96e4ed7e70a7fec7f11572c8980a''
+Warning	1292	Truncated incorrect BINARY value: 'x'96e4ed7e70a7fec7f11572c8980a''
+Warning	1292	Truncated incorrect INTEGER value: ''
+# Bug#33142010: Failure on complex const argument to string functions
+CREATE VIEW v AS SELECT LPAD('x', 1 NOT IN (0), 1) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select lpad('x',(1 <> 0),1) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE VIEW v AS SELECT RPAD('x', 1 NOT IN (0), 1) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select rpad('x',(1 <> 0),1) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE VIEW v AS SELECT SHA2('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select sha2('x',(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+NULL
+Warnings:
+Warning	1583	Incorrect parameters in the call to native function 'sha2'
+DROP VIEW v;
+CREATE VIEW v AS SELECT SUBSTR('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select substr('x',(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE VIEW v AS SELECT SUBSTR('x', 1, 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select substr('x',1,(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE VIEW v AS SELECT REPEAT('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select repeat('x',(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE VIEW v AS SELECT SPACE(1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select space((1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+ 
+DROP VIEW v;
+CREATE VIEW v AS SELECT LEFT('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select left('x',(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE VIEW v AS SELECT RIGHT('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select right('x',(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+x
+DROP VIEW v;
+CREATE TABLE t(s SET('0', '1'));
+CREATE VIEW v AS SELECT FIND_IN_SET(1 NOT IN (0), s) AS c FROM t;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select find_in_set((1 <> 0),`t`.`s`) AS `c` from `t`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+DROP VIEW v;
+DROP TABLE t;
+CREATE VIEW v AS SELECT STR_TO_DATE('2020', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select str_to_date('2020',(1 <> 0)) AS `c`	utf8mb4	utf8mb4_0900_ai_ci
+SELECT * FROM v;
+c
+NULL
+Warnings:
+Warning	1411	Incorrect datetime value: '2020' for function str_to_date
+DROP VIEW v;
+#
+# Bug #33180446 SPACE(): Item_str_func::push_packet_overflow_warning:
+#               Assertion `is_nullable()' failed.
+Warnings:
+Warning	3135	'NO_ZERO_DATE', 'NO_ZERO_IN_DATE' and 'ERROR_FOR_DIVISION_BY_ZERO' sql modes should be used with strict mode. They will be merged with strict mode in a future release.
+SELECT space(9223372036854775808);
+space(9223372036854775808)
+NULL
+Warnings:
+Warning	1301	Result of space() was larger than max_allowed_packet (67108864) - truncated
+SELECT length(space(9223372036854775809));
+length(space(9223372036854775809))
+NULL
+Warnings:
+Warning	1301	Result of space() was larger than max_allowed_packet (67108864) - truncated
+CREATE TABLE t(i BIGINT UNSIGNED);
+INSERT INTO t values(9223372036854775808);
+SELECT space(i) FROM t;
+space(i)
+NULL
+Warnings:
+Warning	1301	Result of space() was larger than max_allowed_packet (67108864) - truncated
+DROP TABLE t;
+SET @@collation_connection = 'utf32_bin';
+SELECT space(1073741824);
+space(1073741824)
+NULL
+Warnings:
+Warning	1301	Result of space() was larger than max_allowed_packet (67108864) - truncated
+SET @@collation_connection = default;

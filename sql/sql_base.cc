@@ -35,6 +35,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "ft_global.h"
 #include "libbinlogevents/include/table_id.h"
 #include "m_ctype.h"
 #include "m_string.h"
@@ -103,8 +104,9 @@
 #include "sql/item_subselect.h"
 #include "sql/lock.h"  // mysql_lock_remove
 #include "sql/log.h"
-#include "sql/log_event.h"  // Query_log_event
-#include "sql/mysqld.h"     // replica_open_temp_tables
+#include "sql/log_event.h"           // Query_log_event
+#include "sql/mysqld.h"              // replica_open_temp_tables
+#include "sql/mysqld_thd_manager.h"  // Global_THD_manage
 #include "sql/nested_join.h"
 #include "sql/partition_info.h"  // partition_info
 #include "sql/psi_memory_key.h"  // key_memory_TABLE
@@ -143,6 +145,7 @@
 #include "sql/thd_raii.h"
 #include "sql/transaction.h"  // trans_rollback_stmt
 #include "sql/transaction_info.h"
+#include "sql/trigger_chain.h"  // Trigger_chain
 #include "sql/xa.h"
 #include "sql_string.h"
 #include "template_utils.h"
@@ -499,7 +502,7 @@ void table_def_free(void) {
 
 uint cached_table_definitions(void) { return table_def_cache->size(); }
 
-static TABLE_SHARE *process_found_table_share(THD *thd MY_ATTRIBUTE((unused)),
+static TABLE_SHARE *process_found_table_share(THD *thd [[maybe_unused]],
                                               TABLE_SHARE *share,
                                               bool open_view) {
   DBUG_TRACE;
@@ -3792,7 +3795,7 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share,
     if (mysql_bin_log.is_open()) {
       bool result = false;
       String temp_buf;
-      result = temp_buf.append("DELETE FROM ");
+      result = temp_buf.append("TRUNCATE TABLE ");
       append_identifier(thd, &temp_buf, share->db.str, strlen(share->db.str));
       result = temp_buf.append(".");
       append_identifier(thd, &temp_buf, share->table_name.str,
@@ -3821,10 +3824,14 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share,
       new_thd.store_globals();
       new_thd.set_db(thd->db());
       new_thd.variables.gtid_next.set_automatic();
-      result = mysql_bin_log.write_dml_directly(
-          &new_thd, temp_buf.c_ptr_safe(), temp_buf.length(), SQLCOM_DELETE);
+      Global_THD_manager *thd_manager = Global_THD_manager::get_instance();
+      thd_manager->add_thd(&new_thd);
+      result = mysql_bin_log.write_stmt_directly(
+          &new_thd, temp_buf.c_ptr_safe(), temp_buf.length(), SQLCOM_TRUNCATE);
       new_thd.restore_globals();
       thd->store_globals();
+      new_thd.release_resources();
+      thd_manager->remove_thd(&new_thd);
       return result;
     }
   }
@@ -5308,8 +5315,24 @@ bool get_and_lock_tablespace_names(THD *thd, TABLE_LIST *tables_start,
     After we have identified the tablespace names, we iterate
     over the names and acquire IX locks on each of them.
   */
-  if (lock_tablespace_names(thd, &tablespace_set, lock_wait_timeout))
-    return true;
+
+  if (thd->lex->sql_command == SQLCOM_DROP_DB) {
+    /*
+      In case of DROP DATABASE we might have to lock many thousands of
+      tablespaces in extreme cases. Ensure that we don't hold memory used
+      by corresponding MDL_requests after locks have been acquired to
+      reduce memory usage by DROP DATABASE in such cases.
+    */
+    MEM_ROOT mdl_reqs_root(key_memory_rm_db_mdl_reqs_root, MEM_ROOT_BLOCK_SIZE);
+
+    if (lock_tablespace_names(thd, &tablespace_set, lock_wait_timeout,
+                              &mdl_reqs_root))
+      return true;
+  } else {
+    if (lock_tablespace_names(thd, &tablespace_set, lock_wait_timeout,
+                              thd->mem_root))
+      return true;
+  }
 
   return false;
 }
@@ -7587,7 +7610,6 @@ static Field *find_field_in_natural_join(THD *thd, TABLE_LIST *table_ref,
 
   @param table           table where to search for the field
   @param name            name of field
-  @param length          length of name
   @param allow_rowid     do allow finding of "_rowid" field?
   @param[out] field_index_ptr position in field list (used to speedup
                               lookup for fields in prepared tables)
@@ -7596,27 +7618,22 @@ static Field *find_field_in_natural_join(THD *thd, TABLE_LIST *table_ref,
   @retval != NULL        pointer to field
 */
 
-Field *find_field_in_table(TABLE *table, const char *name, size_t length,
-                           bool allow_rowid, uint *field_index_ptr) {
+Field *find_field_in_table(TABLE *table, const char *name, bool allow_rowid,
+                           uint *field_index_ptr) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("table: '%s', field name: '%s'", table->alias, name));
 
   Field **field_ptr = nullptr, *field;
 
-  if (table->s->name_hash != nullptr) {
-    const auto it = table->s->name_hash->find(std::string(name, length));
-    if (it != table->s->name_hash->end()) {
-      /*
-        field_ptr points to field in TABLE_SHARE. Convert it to the matching
-        field in table
-      */
-      field_ptr = (table->field + (it->second - table->s->field));
-    }
-  } else {
-    if (!(field_ptr = table->field)) return (Field *)nullptr;
-    for (; *field_ptr; ++field_ptr)
-      if (!my_strcasecmp(system_charset_info, (*field_ptr)->field_name, name))
-        break;
+  if (!(field_ptr = table->field)) return nullptr;
+  for (; *field_ptr; ++field_ptr) {
+    // NOTE: This should probably be strncollsp() instead of my_strcasecmp();
+    // in particular, Ñ != N for my_strcasecmp(), which is not according to the
+    // usual ai_ci rules. However, changing it would risk breaking existing
+    // table definitions (which don't distinguish between N and Ñ), so we can
+    // only do this when actually changing the system collation.
+    if (!my_strcasecmp(system_charset_info, (*field_ptr)->field_name, name))
+      break;
   }
 
   if (field_ptr && *field_ptr) {
@@ -7735,7 +7752,7 @@ Field *find_field_in_table_ref(THD *thd, TABLE_LIST *table_list,
   } else if (!table_list->nested_join) {
     /* 'table_list' is a stored table. */
     assert(table_list->table);
-    if ((fld = find_field_in_table(table_list->table, name, length, allow_rowid,
+    if ((fld = find_field_in_table(table_list->table, name, allow_rowid,
                                    field_index_ptr)))
       *actual_table = table_list;
   } else {
@@ -7815,20 +7832,11 @@ Field *find_field_in_table_ref(THD *thd, TABLE_LIST *table_list,
 
 Field *find_field_in_table_sef(TABLE *table, const char *name) {
   Field **field_ptr = nullptr;
-  if (table->s->name_hash != nullptr) {
-    const auto it = table->s->name_hash->find(name);
-    if (it != table->s->name_hash->end()) {
-      /*
-        field_ptr points to field in TABLE_SHARE. Convert it to the matching
-        field in table
-      */
-      field_ptr = (table->field + (it->second - table->s->field));
-    }
-  } else {
-    if (!(field_ptr = table->field)) return (Field *)nullptr;
-    for (; *field_ptr; ++field_ptr)
-      if (!my_strcasecmp(system_charset_info, (*field_ptr)->field_name, name))
-        break;
+  if (!(field_ptr = table->field)) return nullptr;
+  for (; *field_ptr; ++field_ptr) {
+    // NOTE: See comment on the same call in find_field_in_table().
+    if (!my_strcasecmp(system_charset_info, (*field_ptr)->field_name, name))
+      break;
   }
   if (field_ptr)
     return *field_ptr;
@@ -7920,8 +7928,7 @@ Field *find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *first_table,
     */
 
     if (table_ref->table && !table_ref->is_view()) {
-      found = find_field_in_table(table_ref->table, name, length, true,
-                                  &field_index);
+      found = find_field_in_table(table_ref->table, name, true, &field_index);
       // Check if there are sufficient privileges to the found field.
       if (found && want_privilege &&
           check_column_grant_in_table_ref(thd, table_ref, name, length,
@@ -9784,11 +9791,14 @@ bool fill_record_n_invoke_before_triggers(
         if any other column of the row is updated.
       */
       if (*is_row_changed &&
-          (optype_info->function_defaults_apply_on_columns(table->write_set)))
-        optype_info->set_function_defaults(table);
+          (optype_info->function_defaults_apply_on_columns(table->write_set))) {
+        if (optype_info->set_function_defaults(table)) return true;
+      }
     } else if (optype_info->function_defaults_apply_on_columns(
-                   table->write_set))
-      optype_info->set_function_defaults(table);
+                   table->write_set)) {
+      if (optype_info->set_function_defaults(table)) return true;
+    }
+    return false;
   };
 
   /*
@@ -9796,23 +9806,27 @@ bool fill_record_n_invoke_before_triggers(
     the event is TRG_EVENT_UPDATE and the SQL-command is SQLCOM_INSERT.
   */
 
-  if (table->triggers) {
+  Trigger_chain *tc =
+      table->triggers != nullptr
+          ? table->triggers->get_triggers(event, TRG_ACTION_BEFORE)
+          : nullptr;
+
+  if (tc != nullptr) {
     bool rc;
 
     table->triggers->enable_fields_temporary_nullability(thd);
-
-    if (table->triggers->has_triggers(event, TRG_ACTION_BEFORE) &&
-        command_can_invoke_insert_triggers(event, thd->lex->sql_command)) {
+    if (command_can_invoke_insert_triggers(event, thd->lex->sql_command)) {
       assert(num_fields);
 
       MY_BITMAP insert_into_fields_bitmap;
       bitmap_init(&insert_into_fields_bitmap, nullptr, num_fields);
 
-      fill_function_defaults();
+      rc = fill_function_defaults();
 
-      rc = fill_record(thd, table, fields, values, nullptr,
-                       &insert_into_fields_bitmap,
-                       raise_autoinc_has_expl_non_null_val);
+      if (!rc)
+        rc = fill_record(thd, table, fields, values, nullptr,
+                         &insert_into_fields_bitmap,
+                         raise_autoinc_has_expl_non_null_val);
 
       if (!rc)
         rc = call_before_insert_triggers(thd, table, event,
@@ -9824,9 +9838,10 @@ bool fill_record_n_invoke_before_triggers(
                        raise_autoinc_has_expl_non_null_val);
 
       if (!rc) {
-        fill_function_defaults();
-        rc = table->triggers->process_triggers(thd, event, TRG_ACTION_BEFORE,
-                                               true);
+        rc = fill_function_defaults();
+        if (!rc)
+          rc = table->triggers->process_triggers(thd, event, TRG_ACTION_BEFORE,
+                                                 true);
         // For UPDATE operation, check if row is updated by the triggers.
         if (!rc &&
             optype_info->get_operation_type() == COPY_INFO::UPDATE_OPERATION &&
@@ -9840,8 +9855,13 @@ bool fill_record_n_invoke_before_triggers(
       updated by the triggers.
     */
     assert(table->pos_in_table_list && !table->pos_in_table_list->is_view());
-    if (!rc && table->has_gcol())
+    if (!rc && table->has_gcol() &&
+        tc->has_updated_trigger_fields(table->write_set)) {
+      // Dont save old value while re-calculating generated fields.
+      // Before image will already be saved in the first calculation.
+      table->blobs_need_not_keep_old_value();
       rc = update_generated_write_fields(table->write_set, table);
+    }
 
     table->triggers->disable_fields_temporary_nullability();
 
@@ -9850,7 +9870,7 @@ bool fill_record_n_invoke_before_triggers(
     if (fill_record(thd, table, fields, values, nullptr, nullptr,
                     raise_autoinc_has_expl_non_null_val))
       return true;
-    fill_function_defaults();
+    if (fill_function_defaults()) return true;
     return check_record(thd, fields);
   }
 }
@@ -9999,8 +10019,12 @@ bool fill_record_n_invoke_before_triggers(THD *thd, Field **ptr,
                                           enum enum_trigger_event_type event,
                                           int num_fields) {
   bool rc;
+  Trigger_chain *tc =
+      table->triggers != nullptr
+          ? table->triggers->get_triggers(event, TRG_ACTION_BEFORE)
+          : nullptr;
 
-  if (table->triggers) {
+  if (tc != nullptr) {
     assert(command_can_invoke_insert_triggers(event, thd->lex->sql_command));
     assert(num_fields);
 
@@ -10021,8 +10045,13 @@ bool fill_record_n_invoke_before_triggers(THD *thd, Field **ptr,
     */
     if (!rc && *ptr) {
       TABLE *table_p = (*ptr)->table;
-      if (table_p->has_gcol())
+      if (table_p->has_gcol() &&
+          tc->has_updated_trigger_fields(table_p->write_set)) {
+        // Dont save old value while re-calculating generated fields.
+        // Before image will already be saved in the first calculation.
+        table_p->blobs_need_not_keep_old_value();
         rc = update_generated_write_fields(table_p->write_set, table_p);
+      }
     }
     bitmap_free(&insert_into_fields_bitmap);
     table->triggers->disable_fields_temporary_nullability();
@@ -10049,7 +10078,6 @@ bool mysql_rm_tmp_tables(void) {
   THD *thd;
   List<LEX_STRING> files;
   List_iterator<LEX_STRING> files_it;
-  MEM_ROOT files_root;
   LEX_STRING *file_str;
   bool result = true;
   DBUG_TRACE;
@@ -10058,7 +10086,7 @@ bool mysql_rm_tmp_tables(void) {
   thd->thread_stack = (char *)&thd;
   thd->store_globals();
 
-  init_alloc_root(PSI_NOT_INSTRUMENTED, &files_root, 32768, 0);
+  MEM_ROOT files_root(PSI_NOT_INSTRUMENTED, 32768);
 
   for (i = 0; i <= mysql_tmpdir_list.max; i++) {
     tmpdir = mysql_tmpdir_list.list[i];
@@ -10104,7 +10132,7 @@ bool mysql_rm_tmp_tables(void) {
     (void)mysql_file_delete(key_file_misc, file_str->str, MYF(0));
 
 err:
-  free_root(&files_root, MYF(0));
+  files_root.Clear();
   delete thd;
   return result;
 }
@@ -10271,14 +10299,27 @@ int setup_ftfuncs(const THD *thd, Query_block *query_block) {
 bool init_ftfuncs(THD *thd, Query_block *query_block) {
   assert(query_block->has_ft_funcs());
 
-  List_iterator<Item_func_match> li(*(query_block->ftfunc_list));
   DBUG_PRINT("info", ("Performing FULLTEXT search"));
   THD_STAGE_INFO(thd, stage_fulltext_initialization);
 
-  Item_func_match *ifm;
-  while ((ifm = li++)) {
-    if (ifm->init_search(thd)) return true;
+  if (thd->lex->using_hypergraph_optimizer) {
+    // Set the no_ranking hint if ranking of the results is not required. The
+    // old optimizer does this when it determines which scan to use. The
+    // hypergraph optimizer doesn't know until the full plan is built, so do it
+    // here, just before the full-text search is performed.
+    for (Item_func_match &ifm : *query_block->ftfunc_list) {
+      if (ifm.master == nullptr && ifm.can_skip_ranking()) {
+        ifm.get_hints()->set_hint_flag(FT_NO_RANKING);
+      }
+    }
   }
+
+  for (Item_func_match &ifm : *query_block->ftfunc_list) {
+    if (ifm.init_search(thd)) {
+      return true;
+    }
+  }
+
   return false;
 }
 

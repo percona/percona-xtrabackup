@@ -25,7 +25,16 @@ INCLUDE_DIRECTORIES(SYSTEM ${GMOCK_INCLUDE_DIRS})
 # TODO(sgunders): Remove when all GMock tests use MOCK_METHOD().
 STRING(REPLACE "-Wsuggest-override" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
-IF(NOT BUILD_IS_SINGLE_CONFIG)
+IF(BUILD_IS_SINGLE_CONFIG)
+  EXECUTE_PROCESS(
+    COMMAND ${CMAKE_COMMAND} -E
+    make_directory ${CMAKE_CURRENT_BINARY_DIR}/var
+    COMMAND ${CMAKE_COMMAND} -E
+    make_directory ${CMAKE_CURRENT_BINARY_DIR}/var/log
+    COMMAND ${CMAKE_COMMAND} -E
+    make_directory ${CMAKE_CURRENT_BINARY_DIR}/var/log/harness
+    )
+ELSE()
   FOREACH(config ${CMAKE_CONFIGURATION_TYPES})
     EXECUTE_PROCESS(
       COMMAND ${CMAKE_COMMAND} -E
@@ -36,15 +45,6 @@ IF(NOT BUILD_IS_SINGLE_CONFIG)
       make_directory ${CMAKE_CURRENT_BINARY_DIR}/${config}/var/log/harness
     )
   ENDFOREACH()
-ELSE()
-  EXECUTE_PROCESS(
-    COMMAND ${CMAKE_COMMAND} -E
-    make_directory ${CMAKE_CURRENT_BINARY_DIR}/var
-    COMMAND ${CMAKE_COMMAND} -E
-    make_directory ${CMAKE_CURRENT_BINARY_DIR}/var/log
-    COMMAND ${CMAKE_COMMAND} -E
-    make_directory ${CMAKE_CURRENT_BINARY_DIR}/var/log/harness
-  )
 ENDIF()
 
 ADD_SUBDIRECTORY(plugins)
@@ -74,6 +74,7 @@ SET(TESTS
   test_process_launcher.cc
   test_tcp_address.cc
   test_config_builder.cc
+  test_event_state_tracker.cc
 )
 
 FOREACH(TEST ${TESTS})
@@ -127,7 +128,6 @@ ADD_GOOGLETEST_FILE(test_net_ts_local.cc
 SET(TESTS
   test_stdx_bit.cc
   test_stdx_expected.cc
-  test_stdx_string_view.cc
   test_stdx_monitor.cc
   test_stdx_io_file_handle.cc
 )

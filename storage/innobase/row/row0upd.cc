@@ -176,16 +176,15 @@ static ibool row_upd_index_is_referenced(dict_index_t *index, /*!< in: index */
  pcur position!
 
  @return DB_SUCCESS or an error code */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_check_references_constraints(
-        upd_node_t *node,    /*!< in: row update node */
-        btr_pcur_t *pcur,    /*!< in: cursor positioned on a record; NOTE: the
-                             cursor position is lost in this function! */
-        dict_table_t *table, /*!< in: table in question */
-        dict_index_t *index, /*!< in: index of the cursor */
-        ulint *offsets,      /*!< in/out: rec_get_offsets(pcur.rec, index) */
-        que_thr_t *thr,      /*!< in: query thread */
-        mtr_t *mtr)          /*!< in: mtr */
+[[nodiscard]] static dberr_t row_upd_check_references_constraints(
+    upd_node_t *node,    /*!< in: row update node */
+    btr_pcur_t *pcur,    /*!< in: cursor positioned on a record; NOTE: the
+                         cursor position is lost in this function! */
+    dict_table_t *table, /*!< in: table in question */
+    dict_index_t *index, /*!< in: index of the cursor */
+    ulint *offsets,      /*!< in/out: rec_get_offsets(pcur.rec, index) */
+    que_thr_t *thr,      /*!< in: query thread */
+    mtr_t *mtr)          /*!< in: mtr */
 {
   dict_foreign_t *foreign;
   mem_heap_t *heap;
@@ -529,12 +528,12 @@ void row_upd_rec_in_place(
  to determine their positions within a clustered index record.
  @return new pointer to mlog */
 byte *row_upd_write_sys_vals_to_log(
-    dict_index_t *index, /*!< in: clustered index */
-    trx_id_t trx_id,     /*!< in: transaction id */
-    roll_ptr_t roll_ptr, /*!< in: roll ptr of the undo log record */
-    byte *log_ptr,       /*!< pointer to a buffer of size > 20 opened
-                         in mlog */
-    mtr_t *mtr MY_ATTRIBUTE((unused))) /*!< in: mtr */
+    dict_index_t *index,         /*!< in: clustered index */
+    trx_id_t trx_id,             /*!< in: transaction id */
+    roll_ptr_t roll_ptr,         /*!< in: roll ptr of the undo log record */
+    byte *log_ptr,               /*!< pointer to a buffer of size > 20 opened
+                                 in mlog */
+    mtr_t *mtr [[maybe_unused]]) /*!< in: mtr */
 {
   ut_ad(index->is_clustered());
   ut_ad(mtr);
@@ -1084,7 +1083,7 @@ static void row_upd_index_replace_new_col_val_func(
       dfield_set_data(dfield, data + len - BTR_EXTERN_FIELD_REF_SIZE,
                       BTR_EXTERN_FIELD_REF_SIZE);
       dfield_set_ext(dfield);
-      /* fall through */
+      [[fallthrough]];
     case 0:
       if (dfield_is_multi_value(dfield)) {
         dfield_multi_value_dup(dfield, heap);
@@ -2102,9 +2101,9 @@ multi-value field.
                                 gets updated too
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_multi_sec_index_entry(upd_node_t *node, que_thr_t *thr,
-                                  bool non_mv_upd) {
+[[nodiscard]] static dberr_t row_upd_multi_sec_index_entry(upd_node_t *node,
+                                                           que_thr_t *thr,
+                                                           bool non_mv_upd) {
   mem_heap_t *heap;
   dict_index_t *index;
   dberr_t err = DB_SUCCESS;
@@ -2169,9 +2168,9 @@ func_exit:
 @param[in]	thr		query thread
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_sec_index_entry_low(upd_node_t *node, dtuple_t *old_entry,
-                                que_thr_t *thr) {
+[[nodiscard]] static dberr_t row_upd_sec_index_entry_low(upd_node_t *node,
+                                                         dtuple_t *old_entry,
+                                                         que_thr_t *thr) {
   mtr_t mtr;
   const rec_t *rec;
   btr_pcur_t pcur;
@@ -2268,7 +2267,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t
           ut_a(entry);
           row_log_online_op(index, entry, trx->id);
         }
-        /* fall through */
+        [[fallthrough]];
       case ONLINE_INDEX_ABORTED:
       case ONLINE_INDEX_ABORTED_DROPPED:
         mtr_commit(&mtr);
@@ -2412,8 +2411,8 @@ func_exit:
 @param[in]      thr     query thread
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static inline MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_sec_index_entry(upd_node_t *node, que_thr_t *thr) {
+[[nodiscard]] static inline dberr_t row_upd_sec_index_entry(upd_node_t *node,
+                                                            que_thr_t *thr) {
   return (row_upd_sec_index_entry_low(node, nullptr, thr));
 }
 
@@ -2423,8 +2422,8 @@ multi-value field.
 @param[in]      thr     query thread
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static inline MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_del_multi_sec_index_entry(upd_node_t *node, que_thr_t *thr) {
+[[nodiscard]] static inline dberr_t row_upd_del_multi_sec_index_entry(
+    upd_node_t *node, que_thr_t *thr) {
   mem_heap_t *heap;
   dberr_t err = DB_SUCCESS;
   heap = mem_heap_create(1024);
@@ -2465,9 +2464,9 @@ func_exit:
  deletes it if this is a delete.
  @return DB_SUCCESS if operation successfully completed, else error
  code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_sec_step(upd_node_t *node, /*!< in: row update node */
-                     que_thr_t *thr)   /*!< in: query thread */
+[[nodiscard]] static dberr_t row_upd_sec_step(
+    upd_node_t *node, /*!< in: row update node */
+    que_thr_t *thr)   /*!< in: query thread */
 {
   ut_ad((node->state == UPD_NODE_UPDATE_ALL_SEC) ||
         (node->state == UPD_NODE_UPDATE_SOME_SEC));
@@ -2582,7 +2581,7 @@ static bool row_upd_clust_rec_by_insert_inherit_func(
  database applications.
  @return DB_SUCCESS if operation successfully completed, else error
  code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_upd_clust_rec_by_insert(
+[[nodiscard]] static dberr_t row_upd_clust_rec_by_insert(
     ulint flags,         /*!< in: undo logging and locking flags */
     upd_node_t *node,    /*!< in/out: row update node */
     dict_index_t *index, /*!< in: clustered index of the record */
@@ -2734,13 +2733,14 @@ ib_uint64_t row_upd_get_new_autoinc_counter(const upd_t *update,
 some bigger value, we need to log the new autoinc counter. We will
 use the given mtr to do logging for performance reasons.
 @param[in]	node	Row update node
-@param[in,out]	mtr	Mini-transaction */
-static void row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
+@param[in,out]	mtr	Mini-transaction
+@return true if auto increment needs to be persisted to DD table buffer. */
+static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   dict_table_t *table = node->table;
 
   if (!dict_table_has_autoinc_col(table) || table->is_temporary() ||
       node->row == nullptr) {
-    return;
+    return false;
   }
 
   /* If the node->row hasn't been prepared, there must
@@ -2753,7 +2753,7 @@ static void row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
       row_upd_get_new_autoinc_counter(node->update, table->autoinc_field_no);
 
   if (new_counter == 0) {
-    return;
+    return false;
   }
 
   ib_uint64_t old_counter;
@@ -2767,20 +2767,24 @@ static void row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   old_counter = row_get_autoinc_counter(
       node->row, index->get_col_no(table->autoinc_field_no));
 
+  bool persist_autoinc = false;
+
   /* We just check if the updated counter is bigger than
   the old one, which may result in more redo logs, since
   this is safer than checking with the counter in table
   object. */
   if (new_counter > old_counter) {
-    dict_table_autoinc_log(table, new_counter, mtr);
+    persist_autoinc = dict_table_autoinc_log(table, new_counter, mtr);
   }
+
+  return persist_autoinc;
 }
 
 /** Updates a clustered index record of a row when the ordering fields do
  not change.
  @return DB_SUCCESS if operation successfully completed, else error
  code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_upd_clust_rec(
+[[nodiscard]] static dberr_t row_upd_clust_rec(
     ulint flags,         /*!< in: undo logging and locking flags */
     upd_node_t *node,    /*!< in: row update node */
     dict_index_t *index, /*!< in: clustered index */
@@ -2818,7 +2822,7 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_upd_clust_rec(
 
   /* Check and log if necessary at the beginning, to prevent any
   further potential deadlock */
-  row_upd_check_autoinc_counter(node, mtr);
+  bool persist_autoinc = row_upd_check_autoinc_counter(node, mtr);
 
   /* Try optimistic updating of the record, keeping changes within
   the page; we do not check locks because we assume the x-lock on the
@@ -2917,12 +2921,18 @@ func_exit:
     dtuple_big_rec_free(big_rec);
   }
 
-  return (err);
+  /* Persist auto increment value to DD buffer table if requested. Do it after
+  closing the mini transaction and releasing latches. */
+  if (persist_autoinc) {
+    dict_table_persist_to_dd_table_buffer(node->table);
+  }
+
+  return err;
 }
 
 /** Delete marks a clustered index record.
  @return DB_SUCCESS if operation successfully completed, else error code */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_upd_del_mark_clust_rec(
+[[nodiscard]] static dberr_t row_upd_del_mark_clust_rec(
     ulint flags,         /*!< in: undo logging and locking flags */
     upd_node_t *node,    /*!< in: row update node */
     dict_index_t *index, /*!< in: clustered index */
@@ -2973,9 +2983,9 @@ static MY_ATTRIBUTE((warn_unused_result)) dberr_t row_upd_del_mark_clust_rec(
 /** Updates the clustered index record.
  @return DB_SUCCESS if operation successfully completed, DB_LOCK_WAIT
  in case of a lock wait, else error code */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    row_upd_clust_step(upd_node_t *node,     /*!< in: row update node */
-                       que_thr_t *const thr) /*!< in: query thread */
+[[nodiscard]] static dberr_t row_upd_clust_step(
+    upd_node_t *node,     /*!< in: row update node */
+    que_thr_t *const thr) /*!< in: query thread */
 {
   dict_index_t *index;
   btr_pcur_t *pcur;

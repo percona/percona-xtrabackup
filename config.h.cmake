@@ -104,6 +104,9 @@
 #cmakedefine HAVE_PTHREAD_CONDATTR_SETCLOCK 1
 #cmakedefine HAVE_PTHREAD_GETAFFINITY_NP 1
 #cmakedefine HAVE_PTHREAD_SIGMASK 1
+#cmakedefine HAVE_PTHREAD_SETNAME_NP_LINUX 1
+#cmakedefine HAVE_PTHREAD_SETNAME_NP_MACOS 1
+#cmakedefine HAVE_SET_THREAD_DESCRIPTION 1
 #cmakedefine HAVE_SLEEP 1
 #cmakedefine HAVE_STPCPY 1
 #cmakedefine HAVE_STPNCPY 1
@@ -195,6 +198,7 @@
 #define SYSTEM_TYPE "@SYSTEM_TYPE@"
 /* This should mean case insensitive file system */
 #cmakedefine FN_NO_CASE_SENSE 1
+#cmakedefine APPLE_ARM 1
 
 /*
  * From main CMakeLists.txt
@@ -213,6 +217,7 @@
 #cmakedefine KERBEROS_LIB_CONFIGURED
 #cmakedefine SCRAM_LIB_CONFIGURED
 #cmakedefine WITH_HYPERGRAPH_OPTIMIZER
+#cmakedefine KERBEROS_LIB_SSPI
 
 /* Lock Order */
 #cmakedefine WITH_LOCK_ORDER 1

@@ -270,6 +270,8 @@ ErrorBundle ErrorCodes[] = {
     "SharedGlobalMemory" },
   { 233,  DMEC, TR,
     "Out of operation records in transaction coordinator (increase SharedGlobalMemory)" },
+  { 234,  DMEC, TR,
+    "Out of operation records in transaction coordinator (increase MaxNoOfConcurrentOperations)" },
   { 251,  DMEC, TR, "Out of frag location records in TC (increase SharedGlobalMemory)" },
   { 275,  DMEC, TR, "Out of transaction records for complete phase (increase SharedGlobalMemory)" },
   { 273,  DMEC, TR, "Out of transaction markers databuffer in TC, "
@@ -678,7 +680,7 @@ ErrorBundle ErrorCodes[] = {
   /*
    * Index stats error codes
    */
-  { 4714, DMEC, AE, "Index stats sys tables " NDB_INDEX_STAT_PREFIX " do not exist" },
+  { 4714, DMEC, AE, "Index stats system tables do not exist" },
   { 4715, DMEC, AE, "Index stats for specified index do not exist" },
   { 4716, DMEC, AE, "Index stats methods usage error" },
   { 4717, DMEC, AE, "Index stats cannot allocate memory" },

@@ -99,6 +99,10 @@ static const std::chrono::milliseconds kDefaultMetadataTTL =
     std::chrono::milliseconds(500);
 static const std::chrono::milliseconds kDefaultMetadataTTLGRNotificationsON =
     std::chrono::milliseconds(60 * 1000);
+static const std::chrono::milliseconds kDefaultMetadataTTLClusterSet =
+    std::chrono::milliseconds(
+        5 * 1000);  // default TTL for ClusterSet is 5 seconds regardless if GR
+                    // Notifications are used or not
 static const std::chrono::milliseconds kDefaultAuthCacheTTL =
     std::chrono::seconds(-1);
 static const std::chrono::milliseconds kDefaultAuthCacheRefreshInterval =
@@ -112,6 +116,7 @@ static constexpr unsigned kDefaultPasswordRetries =
 static constexpr unsigned kMaxPasswordRetries = 10000;
 
 using mysql_harness::DIM;
+using mysql_harness::get_from_map;
 using mysql_harness::get_strerror;
 using mysql_harness::Path;
 using mysql_harness::truncate_string;
@@ -360,9 +365,6 @@ URI ConfigGenerator::parse_server_uri(const std::string &server_uri,
           "non-'localhost' hostname: " +
           u.host);
     }
-  } else {
-    // setup localhost address.
-    u.host = (u.host == "localhost" ? "127.0.0.1" : u.host);
   }
 
   return u;
@@ -421,25 +423,26 @@ void ConfigGenerator::init(
 
   // throws std::runtime_error, std::logic_error,
   connect_to_metadata_server(u, bootstrap_socket, bootstrap_options);
-  auto schema_version = mysqlrouter::get_metadata_schema_version(mysql_.get());
+  schema_version_ = mysqlrouter::get_metadata_schema_version(mysql_.get());
 
-  if (schema_version == mysqlrouter::kUpgradeInProgressMetadataVersion) {
+  if (schema_version_ == mysqlrouter::kUpgradeInProgressMetadataVersion) {
     throw std::runtime_error(
         "Currently the cluster metadata update is in progress. Please rerun "
         "the bootstrap when it is finished.");
   }
 
   if (!metadata_schema_version_is_compatible(kRequiredBootstrapSchemaVersion,
-                                             schema_version)) {
+                                             schema_version_)) {
     throw std::runtime_error(mysqlrouter::string_format(
         "This version of MySQL Router is not compatible with the provided "
         "MySQL InnoDB cluster metadata. Expected metadata version %s, "
         "got %s",
         to_string(kRequiredBootstrapSchemaVersion).c_str(),
-        to_string(schema_version).c_str()));
+        to_string(schema_version_).c_str()));
   }
 
-  metadata_ = mysqlrouter::create_metadata(schema_version, mysql_.get());
+  metadata_ = mysqlrouter::create_metadata(schema_version_, mysql_.get(),
+                                           bootstrap_options);
 
   // at this point we know the cluster type so let's do additional verifications
   if (mysqlrouter::ClusterType::RS_V2 == metadata_->get_type()) {
@@ -448,6 +451,22 @@ void ConfigGenerator::init(
       throw std::runtime_error(
           "The parameter 'use-gr-notifications' is valid only for GR cluster "
           "type.");
+    }
+  }
+
+  if (mysqlrouter::ClusterType::GR_CS != metadata_->get_type()) {
+    if (bootstrap_options.find("target-cluster") != bootstrap_options.end()) {
+      throw std::runtime_error(
+          "The parameter 'target-cluster' is valid only for Cluster that is "
+          "part of the ClusterSet.");
+    }
+
+    if (bootstrap_options.find("target-cluster-by-name") !=
+        bootstrap_options.end()) {
+      throw std::runtime_error(
+          "The parameter 'target-cluster-by-name' is valid only for Cluster "
+          "that is "
+          "part of the ClusterSet.");
     }
   }
 
@@ -473,13 +492,7 @@ static stdx::expected<std::ofstream, std::error_code> open_ofstream(
         std::error_code{errno, std::generic_category()});
   }
 
-#ifdef __SUNPRO_CC
-  // make sure sun-cc uses the move-constructor (and not the non-existant
-  // copy-constructor)
-  return {std::move(of)};
-#else
   return of;
-#endif
 }
 
 void ConfigGenerator::bootstrap_system_deployment(
@@ -931,8 +944,23 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
   options.ssl_options.crl = get_opt(user_options, "ssl_crl", "");
   options.ssl_options.crlpath = get_opt(user_options, "ssl_crlpath", "");
 
-  options.use_gr_notifications =
-      user_options.find("use-gr-notifications") != user_options.end();
+  if (user_options.find("use-gr-notifications") != user_options.end())
+    options.use_gr_notifications =
+        user_options.at("use-gr-notifications") == "1";
+  else {
+    // default for ClusterSet is use to GR Notifications, for single cluster it
+    // is not use them
+    options.use_gr_notifications =
+        mysqlrouter::ClusterType::GR_CS == metadata_->get_type();
+  }
+
+  if (mysqlrouter::ClusterType::GR_CS == metadata_->get_type()) {
+    options.ttl = kDefaultMetadataTTLClusterSet;
+  } else {
+    options.ttl = options.use_gr_notifications
+                      ? kDefaultMetadataTTLGRNotificationsON
+                      : kDefaultMetadataTTL;
+  }
 
   if (user_options.find("disable-rest") != user_options.end())
     options.disable_rest = true;
@@ -978,6 +1006,12 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
   options.server_ssl_curves = get_opt(user_options, "server_ssl_curves", "");
   options.server_ssl_verify =
       get_opt(user_options, "server_ssl_verify", "DISABLED");
+
+  options.target_cluster = get_opt(user_options, "target-cluster", "default");
+
+  options.target_cluster = get_opt(user_options, "target-cluster", "");
+  options.target_cluster_by_name =
+      get_opt(user_options, "target-cluster-by-name", "");
 
   return options;
 }
@@ -1143,7 +1177,7 @@ R ClusterAwareDecorator::failover_on_failure(std::function<R()> wrapped_func) {
       } catch (const MySQLSession::Error &e) {
         MySQLErrorc ec = static_cast<MySQLErrorc>(e.code());
 
-        log_info(
+        log_debug(
             "Executing statements failed with: '%s' (%d), trying to connect to "
             "another node",
             e.what(), e.code());
@@ -1190,7 +1224,7 @@ R ClusterAwareDecorator::failover_on_failure(std::function<R()> wrapped_func) {
       }
 
       if (metadata_.get_session().is_connected()) {
-        log_info("%s", "disconnecting from mysql-server");
+        log_debug("%s", "disconnecting from mysql-server");
         metadata_.get_session().disconnect();
       }
 
@@ -1313,14 +1347,6 @@ void ConfigGenerator::prepare_ssl_certificate_files(
   }
 }
 
-// get a value from the map if it exists, default-value otherwise
-static std::string map_get(
-    const std::map<std::string, std::string> &user_options,
-    const std::string &key, const std::string &def_value) {
-  const auto &it = user_options.find(key);
-  return (it != user_options.end()) ? it->second : def_value;
-}
-
 std::string ConfigGenerator::bootstrap_deployment(
     std::ostream &config_file, std::ostream &state_file,
     const mysql_harness::Path &config_file_path,
@@ -1336,11 +1362,11 @@ std::string ConfigGenerator::bootstrap_deployment(
   auto cluster_info = metadata_->fetch_metadata_servers();
 
   auto conf_options = get_options_from_config_if_it_exists(
-      config_file_path.str(), cluster_info.metadata_cluster_name, force);
+      config_file_path.str(), cluster_info.name, force);
 
   // if user provided --account, override username with it
   conf_options.username =
-      map_get(user_options, "account", conf_options.username);
+      get_from_map(user_options, "account"s, conf_options.username);
 
   // If username is still empty at this point, it will be autogenerated
   // inside try_bootstrap_deployment().  It cannot be done here, because the
@@ -1383,8 +1409,8 @@ std::string ConfigGenerator::bootstrap_deployment(
         cluster_aware.failover_on_failure<std::tuple<std::string>>([&]() {
           return try_bootstrap_deployment(
               conf_options.router_id, conf_options.username, password,
-              router_name, cluster_info.metadata_cluster_id, user_options,
-              multivalue_options, options);
+              router_name, cluster_info, user_options, multivalue_options,
+              options);
         });
   }
 
@@ -1405,8 +1431,8 @@ std::string ConfigGenerator::bootstrap_deployment(
   // test out the connection that Router would use
   {
     bool strict = user_options.count("strict");
-    verify_router_account(conf_options.username, password,
-                          cluster_info.metadata_cluster_name, strict);
+    verify_router_account(conf_options.username, password, cluster_info.name,
+                          strict);
   }
 
   store_credentials_in_keyring(auto_clean, user_options, conf_options.router_id,
@@ -1417,7 +1443,7 @@ std::string ConfigGenerator::bootstrap_deployment(
   {
     out_stream_ << "- Creating configuration " << config_file_path.str()
                 << std::endl;
-    auto system_username = map_get(user_options, "user", "");
+    auto system_username = get_from_map(user_options, "user"s, ""s);
     create_config(config_file, state_file, conf_options.router_id, router_name,
                   system_username, cluster_info, conf_options.username, options,
                   default_paths, state_file_path.str());
@@ -1425,12 +1451,22 @@ std::string ConfigGenerator::bootstrap_deployment(
 
   // return bootstrap report (several lines of human-readable text) if desired
   if (!quiet) {
-    const std::string cluster_type_name =
-        metadata_->get_type() == ClusterType::RS_V2 ? "InnoDB ReplicaSet"
-                                                    : "InnoDB Cluster";
+    const std::string cluster_type_name = [&]() -> auto {
+      switch (metadata_->get_type()) {
+        case ClusterType::RS_V2:
+          return "InnoDB ReplicaSet";
+        case ClusterType::GR_CS:
+          return "ClusterSet";
+        default:
+          return "InnoDB Cluster";
+      }
+    }
+    ();
+
     return get_bootstrap_report_text(
-        config_file_path.str(), router_name, cluster_info.metadata_cluster_name,
-        cluster_type_name, map_get(user_options, "report-host", "localhost"),
+        config_file_path.str(), router_name, cluster_info.name,
+        cluster_type_name,
+        get_from_map(user_options, "report-host"s, "localhost"s),
         !directory_deployment, options);
   } else {
     return "";
@@ -1601,9 +1637,45 @@ See https://dev.mysql.com/doc/mysql-router/8.0/en/ for more information.)";
   }
 }
 
+static std::string get_target_cluster_value(
+    const std::string &target_cluster_option,
+    const std::string &target_cluster_by_name_option,
+    const ClusterInfo &cluster_info) {
+  if (!target_cluster_by_name_option.empty()) {
+    return cluster_info.get_cluster_type_specific_id();
+  }
+
+  std::string option_lowercase{target_cluster_option};
+  std::transform(option_lowercase.begin(), option_lowercase.end(),
+                 option_lowercase.begin(), ::tolower);
+
+  if (option_lowercase == "primary") return "primary";
+
+  if (option_lowercase == "current") {
+    if (cluster_info.is_primary) {
+      // user wants current on the Primary cluster, let's issue an warning
+      log_warning(
+          "WARNING: Option --conf-target-cluster=current was used to bootstrap "
+          "against the Primary Cluster. Note that the Router will not follow "
+          "the new Primary Cluster in case of the Primary Cluster change in "
+          "the ClusterSet");
+    }
+
+    return cluster_info.get_cluster_type_specific_id();
+  }
+
+  if (option_lowercase.empty()) {
+    // neither --conf-target-cluster nor --conf-target-cluster-by-name was used
+    return "";
+  }
+
+  harness_assert(option_lowercase == "primary");
+  return "primary";
+}
+
 std::tuple<std::string> ConfigGenerator::try_bootstrap_deployment(
     uint32_t &router_id, std::string &username, std::string &password,
-    const std::string &router_name, const std::string &cluster_id,
+    const std::string &router_name, const ClusterInfo &cluster_info,
     const std::map<std::string, std::string> &user_options,
     const std::map<std::string, std::vector<std::string>> &multivalue_options,
     const Options &options) {
@@ -1653,8 +1725,20 @@ std::tuple<std::string> ConfigGenerator::try_bootstrap_deployment(
   const std::string ro_endpoint = str(options.ro_endpoint);
   const std::string rw_x_endpoint = str(options.rw_x_endpoint);
   const std::string ro_x_endpoint = str(options.ro_x_endpoint);
-  metadata_->update_router_info(router_id, cluster_id, rw_endpoint, ro_endpoint,
-                                rw_x_endpoint, ro_x_endpoint, username);
+  const std::string target_cluster =
+      mysqlrouter::ClusterType::GR_CS == metadata_->get_type()
+          ? get_target_cluster_value(options.target_cluster,
+                                     options.target_cluster_by_name,
+                                     cluster_info)
+          : "";
+  const std::string cluster_id =
+      mysqlrouter::ClusterType::GR_CS == metadata_->get_type()
+          ? cluster_specific_id_
+          : cluster_info.cluster_id;
+
+  metadata_->update_router_info(router_id, cluster_id, target_cluster,
+                                rw_endpoint, ro_endpoint, rw_x_endpoint,
+                                ro_x_endpoint, username);
 
   transaction.commit();
 
@@ -1923,23 +2007,58 @@ static void save_initial_dynamic_state(
   // put metadata-caches secion in it
   ClusterMetadataDynamicState mdc_dynamic_state(&dynamic_state,
                                                 cluster_metadata.get_type());
-  mdc_dynamic_state.set_cluster_type_specific_id(cluster_type_specific_id);
-  mdc_dynamic_state.set_metadata_servers(metadata_server_addresses);
-  if (cluster_metadata.get_type() == ClusterType::RS_V2) {
-    auto view_id =
-        dynamic_cast<mysqlrouter::ClusterMetadataAR &>(cluster_metadata)
-            .get_view_id();
-    mdc_dynamic_state.set_view_id(view_id);
+
+  if (cluster_metadata.get_type() == mysqlrouter::ClusterType::GR_CS) {
+    mdc_dynamic_state.set_clusterset_id(cluster_type_specific_id);
+  } else {
+    mdc_dynamic_state.set_cluster_type_specific_id(cluster_type_specific_id);
   }
+  mdc_dynamic_state.set_metadata_servers(metadata_server_addresses);
+  const auto view_id = cluster_metadata.get_view_id(cluster_type_specific_id);
+  mdc_dynamic_state.set_view_id(view_id);
   // save to out stream
   mdc_dynamic_state.save(state_stream);
 }
 
+/**
+ * Add proper authentication backend section to the config based on the
+ * metadata version. If needed it creates an empty authentication password
+ * file used in the config.
+ *
+ * @param[in] datadir - path of a router data directory
+ * @param[in] auth_backend_name - authentication backend section name
+ * @param[in] schema_version - metadata schema version
+ *
+ * @return http_auth_backend config section string
+ */
+static std::string create_http_auth_backend_section(
+    const mysql_harness::Path &datadir,
+    const std::string_view auth_backend_name,
+    const mysqlrouter::MetadataSchemaVersion schema_version) {
+  if (metadata_schema_version_is_compatible(kNewMetadataVersion,
+                                            schema_version)) {
+    return mysql_harness::ConfigBuilder::build_section(
+        std::string{"http_auth_backend:"}.append(auth_backend_name),
+        {{"backend", "metadata_cache"}});
+  } else {
+    const auto auth_backend_passwd_file =
+        datadir.join("auth_backend_passwd_file").str();
+    const auto open_res = open_ofstream(auth_backend_passwd_file);
+    if (!open_res) {
+      log_warning("Cannot create file '%s': %s",
+                  auth_backend_passwd_file.c_str(),
+                  open_res.error().message().c_str());
+    }
+
+    return mysql_harness::ConfigBuilder::build_section(
+        std::string{"http_auth_backend:"}.append(auth_backend_name),
+        {{"backend", "file"}, {"filename", auth_backend_passwd_file}});
+  }
+}
+
 /*static*/ std::string ConfigGenerator::gen_metadata_cache_routing_section(
     bool is_classic, bool is_writable, const Options::Endpoint endpoint,
-    const Options &options, const std::string &metadata_key,
-    const std::string &metadata_replicaset,
-    const std::string &fast_router_key) {
+    const Options &options, const std::string &metadata_key) {
   if (!endpoint) return "";
 
   const std::string key_suffix =
@@ -1948,9 +2067,11 @@ static void save_initial_dynamic_state(
   const std::string strategy =
       is_writable ? "first-available" : "round-robin-with-fallback";
   const std::string protocol = is_classic ? "classic" : "x";
+  // kept for backward compatibility, always empty
+  const std::string metadata_replicaset{""};
 
   // clang-format off
-  return "[routing:" + fast_router_key + key_suffix + "]\n" +
+  return "[routing:" + metadata_key + key_suffix + "]\n" +
          endpoint_option(options, endpoint) + "\n" +
          "destinations=metadata-cache://" + metadata_key + "/" +
              metadata_replicaset + "?role=" + role + "\n"
@@ -2017,13 +2138,7 @@ void ConfigGenerator::create_config(
 
   config_file << "\n";
 
-  const auto &metadata_key = cluster_info.metadata_cluster_name;
-  auto ttl = options.use_gr_notifications ? kDefaultMetadataTTLGRNotificationsON
-                                          : kDefaultMetadataTTL;
-
-  const auto auth_cache_refresh_interval =
-      options.use_gr_notifications ? kDefaultMetadataTTLGRNotificationsON
-                                   : kDefaultAuthCacheRefreshInterval;
+  const auto &metadata_key = cluster_info.name;
 
   const std::string use_gr_notifications =
       mysqlrouter::ClusterType::RS_V2 == metadata_->get_type()
@@ -2031,19 +2146,26 @@ void ConfigGenerator::create_config(
           : "use_gr_notifications="s +
                 (options.use_gr_notifications ? "1" : "0") + "\n";
 
-  config_file << "[metadata_cache:" << cluster_info.metadata_cluster_name
-              << "]\n"
+  const std::string metadata_cluster =
+      mysqlrouter::ClusterType::GR_CS == metadata_->get_type()
+          ? ""
+          : "metadata_cluster="s + cluster_info.name + "\n";
+
+  config_file << "[metadata_cache:" << cluster_info.name << "]\n"
               << "cluster_type="
               << mysqlrouter::to_string(metadata_->get_type()) << "\n"
               << "router_id=" << router_id << "\n"
               << "user=" << username << "\n"
-              << "metadata_cluster=" << cluster_info.metadata_cluster_name
+              << metadata_cluster
+              << "ttl=" << mysqlrouter::ms_to_seconds_string(options.ttl)
               << "\n"
-              << "ttl=" << mysqlrouter::ms_to_seconds_string(ttl) << "\n"
               << "auth_cache_ttl="
               << mysqlrouter::ms_to_seconds_string(kDefaultAuthCacheTTL) << "\n"
               << "auth_cache_refresh_interval="
-              << mysqlrouter::ms_to_seconds_string(auth_cache_refresh_interval)
+              << mysqlrouter::ms_to_seconds_string(
+                     kDefaultAuthCacheRefreshInterval > options.ttl
+                         ? kDefaultAuthCacheRefreshInterval
+                         : options.ttl)
               << "\n"
               << use_gr_notifications;
 
@@ -2061,17 +2183,11 @@ void ConfigGenerator::create_config(
   // connection itself.
   config_file << "\n";
 
-  const auto &metadata_replicaset = cluster_info.metadata_replicaset;
-  const std::string fast_router_key = metadata_key +
-                                      (metadata_replicaset.empty() ? "" : "_") +
-                                      metadata_replicaset;
-
   // proxy to save on typing the same long list of args
   auto gen_mdc_rt_sect = [&](bool is_classic, bool is_writable,
                              Options::Endpoint endpoint) {
-    return gen_metadata_cache_routing_section(
-        is_classic, is_writable, endpoint, options, metadata_key,
-        metadata_replicaset, fast_router_key);
+    return gen_metadata_cache_routing_section(is_classic, is_writable, endpoint,
+                                              options, metadata_key);
   };
   config_file << gen_mdc_rt_sect(true, true, options.rw_endpoint);
   config_file << gen_mdc_rt_sect(true, false, options.ro_endpoint);
@@ -2123,9 +2239,8 @@ std::string ConfigGenerator::generate_config_for_rest(
   config << mysql_harness::ConfigBuilder::build_section("rest_api", {});
 
   config << "\n\n";
-  config << mysql_harness::ConfigBuilder::build_section(
-      "http_auth_backend:" + auth_backend_name,
-      {{"backend", "metadata_cache"}});
+  config << create_http_auth_backend_section(datadir_path, auth_backend_name,
+                                             schema_version_);
 
   config << "\n\n";
   config << mysql_harness::ConfigBuilder::build_section(
@@ -2208,7 +2323,7 @@ std::string ConfigGenerator::get_bootstrap_report_text(
 #endif
   ss << "    " << kPromptPrefix << g_program_name << " -c " << config_file_name
      << "\n\n"
-     << "the cluster '" << metadata_cluster
+     << cluster_type_name << " '" << metadata_cluster
      << "' can be reached by connecting to:\n"
      << std::endl;
 
@@ -2289,7 +2404,7 @@ std::string ConfigGenerator::create_router_accounts(
   bool if_not_exists;
   {
     const std::string ac =
-        map_get(user_options, "account-create", "if-not-exists");
+        get_from_map(user_options, "account-create"s, "if-not-exists"s);
     if (ac == "never")
       return password;
     else if (ac == "if-not-exists" || !user_options.count("account"))
@@ -2772,7 +2887,7 @@ might have already existed before bootstrapping):
                     << Vt100::foreground(Vt100::Color::Red) << "ERROR: "
                     << Vt100::render(Vt100::Render::ForegroundDefault) <<
             R"(As part of cleanup after bootstrap failure, we tried to erase account(s)
-that we created.  Unfortuantely the cleanup failed with error:
+that we created.  Unfortunately the cleanup failed with error:
 
   )"s << e.what() << R"(
 You may want to clean up the accounts yourself, here is the full list of

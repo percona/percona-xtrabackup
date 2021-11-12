@@ -1134,13 +1134,14 @@ byte *page_cur_parse_insert_rec(
   if (mismatch_index + end_seg_len < sizeof buf1) {
     buf = buf1;
   } else {
-    buf = static_cast<byte *>(ut_malloc_nokey(mismatch_index + end_seg_len));
+    buf = static_cast<byte *>(ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                                 mismatch_index + end_seg_len));
   }
 
   /* Build the inserted record to buf */
 
   if (UNIV_UNLIKELY(mismatch_index >= UNIV_PAGE_SIZE)) {
-    ib::fatal(ER_IB_MSG_859)
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_859)
         << "is_short " << is_short << ", "
         << "info_and_status_bits " << info_and_status_bits << ", offset "
         << page_offset(cursor_rec)
@@ -1171,7 +1172,7 @@ byte *page_cur_parse_insert_rec(
   }
 
   if (buf != buf1) {
-    ut_free(buf);
+    ut::free(buf);
   }
 
   if (UNIV_LIKELY_NULL(heap)) {

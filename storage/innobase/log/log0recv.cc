@@ -71,7 +71,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #ifndef UNIV_HOTBACKUP
 #include "buf0rea.h"
-#include "row0merge.h"
+#include "ddl0ddl.h"
 #include "srv0srv.h"
 #include "srv0start.h"
 #include "trx0purge.h"
@@ -141,10 +141,10 @@ void meb_print_page_header(const page_t *page) {
 }
 #endif /* UNIV_HOTBACKUP */
 
-#ifndef UNIV_HOTBACKUP
+//#ifndef UNIV_HOTBACKUP
 PSI_memory_key mem_log_recv_page_hash_key;
 PSI_memory_key mem_log_recv_space_hash_key;
-#endif /* !UNIV_HOTBACKUP */
+//#endif /* !UNIV_HOTBACKUP */
 
 /** true when recv_init_crash_recovery() has been called. */
 bool recv_needed_recovery;
@@ -246,7 +246,7 @@ lsn_t recv_calc_lsn_on_data_add(lsn_t lsn, uint64_t len) {
 /** Destructor */
 MetadataRecover::~MetadataRecover() {
   for (auto &table : m_tables) {
-    UT_DELETE(table.second);
+    ut::delete_(table.second);
   }
 }
 
@@ -259,7 +259,8 @@ PersistentTableMetadata *MetadataRecover::getMetadata(table_id_t id) {
   PersistentTables::iterator iter = m_tables.find(id);
 
   if (iter == m_tables.end()) {
-    metadata = UT_NEW_NOKEY(PersistentTableMetadata(id, 0));
+    metadata = ut::new_withkey<PersistentTableMetadata>(
+        UT_NEW_THIS_FILE_PSI_KEY, id, 0);
 
     m_tables.insert(std::make_pair(id, metadata));
   } else {
@@ -385,7 +386,8 @@ void recv_sys_create() {
     return;
   }
 
-  recv_sys = static_cast<recv_sys_t *>(ut_zalloc_nokey(sizeof(*recv_sys)));
+  recv_sys = static_cast<recv_sys_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*recv_sys)));
 
   mutex_create(LATCH_ID_RECV_SYS, &recv_sys->mutex);
   mutex_create(LATCH_ID_RECV_WRITER, &recv_sys->writer_mutex);
@@ -406,7 +408,7 @@ bool recv_sys_resize_buf() {
 #else  /* !UNIV_HOTBACKUP */
   if ((recv_sys->buf_len >= srv_log_buffer_size) ||
       (recv_sys->len >= srv_log_buffer_size)) {
-    ib::fatal(ER_IB_ERR_LOG_PARSING_BUFFER_OVERFLOW)
+    ib::fatal(UT_LOCATION_HERE, ER_IB_ERR_LOG_PARSING_BUFFER_OVERFLOW)
         << "Log parsing buffer overflow. Log parse failed. "
         << "Please increase --limit-memory above "
         << srv_log_buffer_size / 1024 / 1024 << " (MB)";
@@ -420,8 +422,8 @@ bool recv_sys_resize_buf() {
                           : recv_sys->buf_len * 2;
 
   /* Resize the buffer to the new size. */
-  recv_sys->buf =
-      static_cast<byte *>(ut_realloc(recv_sys->buf, recv_sys->buf_len));
+  recv_sys->buf = static_cast<byte *>(ut::realloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY, recv_sys->buf, recv_sys->buf_len));
 
   ut_ad(recv_sys->buf != nullptr);
 
@@ -449,12 +451,12 @@ static void recv_sys_finish() {
       }
     }
 
-    UT_DELETE(recv_sys->spaces);
+    ut::delete_(recv_sys->spaces);
   }
 
-  ut_free(recv_sys->buf);
+  ut::free(recv_sys->buf);
   ut::aligned_free(recv_sys->last_block);
-  UT_DELETE(recv_sys->metadata_recover);
+  ut::delete_(recv_sys->metadata_recover);
 
   recv_sys->buf = nullptr;
   recv_sys->spaces = nullptr;
@@ -481,7 +483,7 @@ void recv_sys_close() {
 
 #endif /* !UNIV_HOTBACKUP */
 
-  UT_DELETE(recv_sys->dblwr);
+  ut::delete_(recv_sys->dblwr);
 
   call_destructor(&recv_sys->deleted);
   call_destructor(&recv_sys->missing_ids);
@@ -494,7 +496,7 @@ void recv_sys_close() {
 #endif /* !UNIV_HOTBACKUP */
   mutex_free(&recv_sys->writer_mutex);
 
-  ut_free(recv_sys);
+  ut::free(recv_sys);
   recv_sys = nullptr;
 }
 
@@ -604,7 +606,8 @@ void recv_sys_init(ulint max_mem) {
     recv_n_pool_free_frames = 512;
   }
 
-  recv_sys->buf = static_cast<byte *>(ut_malloc_nokey(RECV_PARSING_BUF_SIZE));
+  recv_sys->buf = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, RECV_PARSING_BUF_SIZE));
   recv_sys->buf_len = RECV_PARSING_BUF_SIZE;
 
   recv_sys->len = 0;
@@ -612,7 +615,8 @@ void recv_sys_init(ulint max_mem) {
 
   using Spaces = recv_sys_t::Spaces;
 
-  recv_sys->spaces = UT_NEW(Spaces(), mem_log_recv_space_hash_key);
+  recv_sys->spaces = ut::new_withkey<Spaces>(
+      ut::make_psi_memory_key(mem_log_recv_space_hash_key));
 
   recv_sys->n_addrs = 0;
 
@@ -628,7 +632,8 @@ void recv_sys_init(ulint max_mem) {
 
   recv_max_page_lsn = 0;
 
-  recv_sys->dblwr = UT_NEW_NOKEY(dblwr::recv::DBLWR());
+  recv_sys->dblwr =
+      ut::new_withkey<dblwr::recv::DBLWR>(UT_NEW_THIS_FILE_PSI_KEY);
 
   new (&recv_sys->deleted) recv_sys_t::Missing_Ids();
 
@@ -638,7 +643,8 @@ void recv_sys_init(ulint max_mem) {
 
   recv_sys->saved_recs.resize(recv_sys_t::MAX_SAVED_MLOG_RECS);
 
-  recv_sys->metadata_recover = UT_NEW_NOKEY(MetadataRecover());
+  recv_sys->metadata_recover =
+      ut::new_withkey<MetadataRecover>(UT_NEW_THIS_FILE_PSI_KEY);
 
   mutex_exit(&recv_sys->mutex);
 }
@@ -648,7 +654,7 @@ static void recv_sys_empty_hash() {
   ut_ad(mutex_own(&recv_sys->mutex));
 
   if (recv_sys->n_addrs != 0) {
-    ib::fatal(ER_IB_MSG_699, ulonglong{recv_sys->n_addrs});
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_699, ulonglong{recv_sys->n_addrs});
   }
 
   for (auto &space : *recv_sys->spaces) {
@@ -658,11 +664,12 @@ static void recv_sys_empty_hash() {
     }
   }
 
-  UT_DELETE(recv_sys->spaces);
+  ut::delete_(recv_sys->spaces);
 
   using Spaces = recv_sys_t::Spaces;
 
-  recv_sys->spaces = UT_NEW(Spaces(), mem_log_recv_space_hash_key);
+  recv_sys->spaces = ut::new_withkey<Spaces>(
+      ut::make_psi_memory_key(mem_log_recv_space_hash_key));
 }
 
 /** Check the consistency of a log header block.
@@ -847,19 +854,19 @@ void recv_sys_free() {
   if (recv_sys->keys != nullptr) {
     for (auto &key : *recv_sys->keys) {
       if (key.ptr != nullptr) {
-        ut_free(key.ptr);
+        ut::free(key.ptr);
         key.ptr = nullptr;
       }
 
       if (key.iv != nullptr) {
-        ut_free(key.iv);
+        ut::free(key.iv);
         key.iv = nullptr;
       }
     }
 
     recv_sys->keys->swap(*recv_sys->keys);
 
-    UT_DELETE(recv_sys->keys);
+    ut::delete_(recv_sys->keys);
     recv_sys->keys = nullptr;
   }
 
@@ -959,8 +966,13 @@ static dberr_t recv_log_recover_pre_8_0_4(log_t &log,
 @param[in,out]	log		redo log
 @param[out]	max_field	LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
+<<<<<<< HEAD
 MY_ATTRIBUTE((warn_unused_result))
 dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field) {
+=======
+[[nodiscard]] static dberr_t recv_find_max_checkpoint(log_t &log,
+                                                      ulint *max_field) {
+>>>>>>> mysql-8.0.27
   bool found_checkpoint = false;
 
   *max_field = 0;
@@ -1467,8 +1479,9 @@ void meb_apply_log_record(recv_addr_t *recv_addr, buf_block_t *block) {
   success = fil_space_extend(space, recv_addr->page_no + 1);
 
   if (!success) {
-    ib::fatal(ER_IB_MSG_711) << "Cannot extend tablespace " << recv_addr->space
-                             << " to hold " << recv_addr->page_no << " pages";
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_711)
+        << "Cannot extend tablespace " << recv_addr->space << " to hold "
+        << recv_addr->page_no << " pages";
   }
 
   mutex_exit(&recv_sys->mutex);
@@ -1490,7 +1503,7 @@ void meb_apply_log_record(recv_addr_t *recv_addr, buf_block_t *block) {
   }
 
   if (err != DB_SUCCESS) {
-    ib::fatal(ER_IB_MSG_712)
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_712)
         << "Cannot read from tablespace " << recv_addr->space << " page number "
         << recv_addr->page_no;
   }
@@ -1523,7 +1536,7 @@ void meb_apply_log_record(recv_addr_t *recv_addr, buf_block_t *block) {
   }
 
   if (err != DB_SUCCESS) {
-    ib::fatal(ER_IB_MSG_713)
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_713)
         << "Cannot write to tablespace " << recv_addr->space << " page number "
         << recv_addr->page_no;
   }
@@ -1599,6 +1612,50 @@ void meb_apply_log_recs_via_callback(
 }
 
 #endif /* !UNIV_HOTBACKUP */
+
+/** Check if redo log is for encryption information.
+@param[in]	page_no		Page number
+@param[in]	space_id	Tablespace identifier
+@param[in]	start		Redo log record body
+@param[in]	end		End of buffer
+@return true if encryption information. */
+static inline bool check_encryption(page_no_t page_no, space_id_t space_id,
+                                    const byte *start, const byte *end) {
+  /* Only page zero contains encryption metadata. */
+  if (page_no != 0 || fsp_is_system_or_temp_tablespace(space_id) ||
+      end < start + 4) {
+    return false;
+  }
+
+  bool found = false;
+
+  const page_size_t &page_size = fil_space_get_page_size(space_id, &found);
+
+  if (!found) {
+    return false;
+  }
+
+  auto encryption_offset = fsp_header_get_encryption_offset(page_size);
+  auto offset = mach_read_from_2(start);
+
+  /* Encryption offset at page 0 is the only way we can identify encryption
+  information as of today. Ideally we should have a separate redo type. */
+  if (offset == encryption_offset) {
+    auto len = mach_read_from_2(start + 2);
+    ut_ad(len == Encryption::INFO_SIZE);
+
+    if (len != Encryption::INFO_SIZE) {
+      /* purecov: begin inspected */
+      ib::warn(ER_IB_WRN_ENCRYPTION_INFO_SIZE_MISMATCH, size_t{len},
+               Encryption::INFO_SIZE);
+      return false;
+      /* purecov: end */
+    }
+    return true;
+  }
+
+  return false;
+}
 
 /** Try to parse a single log record body and also applies it if
 specified.
@@ -1861,7 +1918,7 @@ static byte *recv_parse_or_apply_log_rec_body(
         break;
       }
 
-      // fall through
+      [[fallthrough]];
 
     case MLOG_1BYTE:
       /* If 'ALTER TABLESPACE ... ENCRYPTION' was in progress and page 0 has
@@ -1881,20 +1938,22 @@ static byte *recv_parse_or_apply_log_rec_body(
           byte op = mach_read_from_1(page + offset);
           switch (op) {
             case Encryption::ENCRYPT_IN_PROGRESS:
-              space->encryption_op_in_progress = ENCRYPTION;
+              space->encryption_op_in_progress =
+                  Encryption::Progress::ENCRYPTION;
               break;
             case Encryption::DECRYPT_IN_PROGRESS:
-              space->encryption_op_in_progress = DECRYPTION;
+              space->encryption_op_in_progress =
+                  Encryption::Progress::DECRYPTION;
               break;
             default:
-              space->encryption_op_in_progress = NONE;
+              space->encryption_op_in_progress = Encryption::Progress::NONE;
               break;
           }
         }
         fil_space_release(space);
       }
 
-      // fall through
+      [[fallthrough]];
 
     case MLOG_2BYTES:
     case MLOG_8BYTES:
@@ -2067,7 +2126,7 @@ static byte *recv_parse_or_apply_log_rec_body(
         break;
       }
 
-      /* Fall through */
+      [[fallthrough]];
 
     case MLOG_REC_SEC_DELETE_MARK:
 
@@ -2256,23 +2315,33 @@ static byte *recv_parse_or_apply_log_rec_body(
       break;
 
     case MLOG_INIT_FILE_PAGE:
-    case MLOG_INIT_FILE_PAGE2:
+    case MLOG_INIT_FILE_PAGE2: {
+      /* For clone, avoid initializing page-0. Page-0 should already have been
+      initialized. This is to avoid erasing encryption information. We cannot
+      update encryption information later with redo logged information for
+      clone. Please check comments in MLOG_WRITE_STRING. */
+      bool skip_init = (recv_sys->is_cloned_db && page_no == 0);
 
-      /* Allow anything in page_type when creating a page. */
-
-      ptr = fsp_parse_init_file_page(ptr, end_ptr, block);
-
+      if (!skip_init) {
+        /* Allow anything in page_type when creating a page. */
+        ptr = fsp_parse_init_file_page(ptr, end_ptr, block);
+      }
       break;
+    }
 
-    case MLOG_WRITE_STRING:
-
+    case MLOG_WRITE_STRING: {
       ut_ad(!page || page_type != FIL_PAGE_TYPE_ALLOCATED || page_no == 0);
+      bool is_encryption = check_encryption(page_no, space_id, ptr, end_ptr);
 
 #ifndef UNIV_HOTBACKUP
       /* Reset in-mem encryption information for the tablespace here if this
       is "resetting encryprion info" log. */
+<<<<<<< HEAD
       if (page_no == 0 && !fsp_is_system_or_temp_tablespace(space_id) &&
           applying_redo) {
+=======
+      if (is_encryption && !recv_sys->is_cloned_db) {
+>>>>>>> mysql-8.0.27
         byte buf[Encryption::INFO_SIZE] = {0};
 
         if (memcmp(ptr + 4, buf, Encryption::INFO_SIZE - 4) == 0) {
@@ -2281,9 +2350,18 @@ static byte *recv_parse_or_apply_log_rec_body(
       }
 
 #endif
-      ptr = mlog_parse_string(ptr, end_ptr, page, page_zip);
+      auto apply_page = page;
 
+      /* For clone recovery, skip applying encryption information from
+      redo log. It is already updated in page 0. Redo log encryption
+      information is encrypted with donor master key and must be ignored. */
+      if (recv_sys->is_cloned_db && is_encryption) {
+        apply_page = nullptr;
+      }
+
+      ptr = mlog_parse_string(ptr, end_ptr, apply_page, page_zip);
       break;
+    }
 
     case MLOG_ZIP_WRITE_NODE_PTR:
 
@@ -2653,7 +2731,8 @@ void recv_recover_page_func(
       /* We have to copy the record body to a separate
       buffer */
 
-      buf = static_cast<byte *>(ut_malloc_nokey(recv->len));
+      buf = static_cast<byte *>(
+          ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, recv->len));
 
       recv_data_copy_to_buf(buf, recv);
     } else if (recv->data != nullptr) {
@@ -2735,7 +2814,7 @@ void recv_recover_page_func(
     }
 
     if (recv->len > RECV_DATA_BLOCK_SIZE) {
-      ut_free(buf);
+      ut::free(buf);
     }
   }
 
@@ -3016,7 +3095,7 @@ static bool recv_single_rec(byte *ptr, byte *end_ptr) {
 #endif /* !UNIV_HOTBACKUP */
       }
 
-      /* fall through */
+      [[fallthrough]];
 
     case MLOG_INDEX_LOAD:
     case MLOG_FILE_DELETE:
@@ -3515,7 +3594,8 @@ bool meb_scan_log_recs(
             return (true);
           }
 #else  /* !UNIV_HOTBACKUP */
-          ib::fatal(ER_IB_ERR_NOT_ENOUGH_MEMORY_FOR_PARSE_BUFFER)
+          ib::fatal(UT_LOCATION_HERE,
+                    ER_IB_ERR_NOT_ENOUGH_MEMORY_FOR_PARSE_BUFFER)
               << "Insufficient memory for InnoDB parse buffer; want "
               << recv_sys->buf_len;
 #endif /* !UNIV_HOTBACKUP */
@@ -3787,7 +3867,7 @@ static void recv_init_crash_recovery() {
     from the buffer pools. */
 
     srv_threads.m_recv_writer =
-        os_thread_create(recv_writer_thread_key, recv_writer_thread);
+        os_thread_create(recv_writer_thread_key, 0, recv_writer_thread);
 
     srv_threads.m_recv_writer.start();
   }

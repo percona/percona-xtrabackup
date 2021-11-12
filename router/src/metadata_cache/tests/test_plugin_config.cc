@@ -38,23 +38,6 @@ using ::testing::StrEq;
 
 using mysql_harness::TCPAddress;
 
-// demangle the symbols returned by typeid().name() if needed
-//
-// typeid() on gcc/clang returns a mangled name, msvc doesn't.
-static std::string cxx_demangle_name(const char *mangled) {
-#if defined(__GNUC__) && defined(__cplusplus)
-  // gcc and clang are mangling the names
-  std::shared_ptr<char> demangled_name(
-      abi::__cxa_demangle(mangled, nullptr, nullptr, nullptr), [&](char *p) {
-        if (p) free(p);
-      });
-
-  return std::string(demangled_name.get());
-#else
-  return mangled;
-#endif
-}
-
 // the Good
 
 struct GoodTestData {
@@ -108,7 +91,7 @@ TEST_P(MetadataCachePluginConfigGoodTest, GoodConfigs) {
 
   EXPECT_THAT(plugin_config.user, StrEq(test_data.expected.user));
   EXPECT_THAT(plugin_config.ttl, Eq(test_data.expected.ttl));
-  EXPECT_THAT(plugin_config.metadata_cluster,
+  EXPECT_THAT(plugin_config.cluster_name,
               StrEq(test_data.expected.metadata_cluster));
   EXPECT_THAT(plugin_config.metadata_servers_addresses,
               ContainerEq(test_data.expected.bootstrap_addresses));
@@ -273,9 +256,8 @@ TEST_P(MetadataCachePluginConfigBadTest, BadConfigs) {
     MetadataCachePluginConfig plugin_config(&section);
     FAIL() << "should have failed";
   } catch (const std::exception &exc) {
-    EXPECT_THAT(
-        cxx_demangle_name(typeid(exc).name()),
-        StrEq(cxx_demangle_name(test_data.expected.exception_type.name())));
+    EXPECT_THAT(typeid(exc).name(),
+                StrEq(test_data.expected.exception_type.name()));
     EXPECT_THAT(exc.what(), StrEq(test_data.expected.exception_msg));
   }
 }
