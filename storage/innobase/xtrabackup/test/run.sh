@@ -42,6 +42,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -f          Continue running tests after failures
 -d path     Server installation directory. Default is './server'.
 -g          Debug mode
+-k          Make a copy of failed var directory
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
 -s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, rocksdb, main.
@@ -464,6 +465,30 @@ function get_version_info()
 	XB_BIN XB_ARGS MYSQLD_EXTRA_ARGS WSREP_READY LIBGALERA_PATH
 }
 
+############################################################################
+# Make a copy of var directory
+############################################################################
+function copy_worker_var_dir()
+{
+  local keep_worker_number=$1
+  [ -d $TEST_BASEDIR/results/debug/ ] || mkdir $TEST_BASEDIR/results/debug/
+  for worker_dir in $TEST_BASEDIR/var/w+([0-9])
+  do
+      [ -d $worker_dir ] || continue
+      [[ $worker_dir =~ w([0-9]+)$ ]] || continue
+
+      local worker=${BASH_REMATCH[1]}
+
+      if [ "$worker" = "$keep_worker_number" ]
+      then
+          local tname=`basename $tpath .sh`
+          local debug_dir=$(mktemp -d -p $TEST_BASEDIR/results/debug/ -t ${tname}.XXXXXX)
+          cp -R ${worker_outfiles[$worker]} ${debug_dir}
+          cp -R $TEST_BASEDIR/var/w${worker} ${debug_dir}
+      fi
+  done
+}
+
 ###########################################################################
 # Kill all server processes started by a worker specified with its var root
 # directory
@@ -643,6 +668,10 @@ function reap_worker()
 
            if [ -z "$DEBUG" ]
            then
+                if [ ! -z "$KEEP_VAR" ]
+                then
+                  copy_worker_var_dir $worker
+                fi
                cleanup_worker $worker
            else
                DEBUG_WORKER=$worker
@@ -650,6 +679,10 @@ function reap_worker()
 
            return 1
        else
+           if [ ! -z "$KEEP_VAR" ]
+           then
+             copy_worker_var_dir $worker
+           fi
            cleanup_worker $worker
 
            return 0
@@ -784,12 +817,13 @@ suites=""
 NOFSUITES=0
 XTRACE_OPTION=""
 force=""
+KEEP_VAR=""
 SUBUNIT_OUT=test_results.subunit
 NWORKERS=
 DEBUG_WORKER=""
 MYSQL_DEBUG_MODE=off
 
-while getopts "fghD?:t:s:d:c:j:T:x:X:i:r:" options; do
+while getopts "fgkhD?:t:s:d:c:j:T:x:X:i:r:" options; do
         case $options in
             f ) force="yes";;
             t )
@@ -803,6 +837,7 @@ while getopts "fghD?:t:s:d:c:j:T:x:X:i:r:" options; do
                 ;;
 
             g ) DEBUG=on;;
+            k ) KEEP_VAR=on;;
             h ) usage; exit;;
             s )
                 if [[ "$OPTARG" = "default" ]];
