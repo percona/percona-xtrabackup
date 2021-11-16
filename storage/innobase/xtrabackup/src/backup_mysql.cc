@@ -402,7 +402,7 @@ check_server_version(unsigned long version_number,
 	version_supported = version_supported
 		|| (mysql51 && innodb_version != NULL);
 	version_supported = version_supported
-		|| (version_number > 50500 && version_number < 50800);
+		|| (version_number >= 50500 && version_number < 50800);
 	version_supported = version_supported
 		|| ((version_number > 100000 && version_number < 100300)
 		    && server_flavor == FLAVOR_MARIADB);
