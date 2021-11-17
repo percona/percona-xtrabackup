@@ -1,0 +1,12 @@
+jobs:
+- job: BiDiScan
+  pool:
+    vmImage: 'ubuntu-18.04'
+
+  steps:
+  - checkout: self
+    fetchDepth: 32
+
+  - script: |
+      git fetch origin 8.0
+      python $(Build.SourcesDirectory)/scripts/find_unicode_control.py -p bidi -v $(git diff --name-only --relative --diff-filter AMR origin/8.0 -- . | tr '\n' ' ')
