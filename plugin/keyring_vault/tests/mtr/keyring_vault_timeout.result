@@ -7,7 +7,6 @@ call mtr.add_suppression("Plugin keyring_vault reported: 'CURL returned this err
 call mtr.add_suppression("Plugin keyring_vault reported: 'File '' not found");
 INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
 Warnings:
-Warning	29	File '' not found (OS errno 2 - No such file or directory)
 Warning	42000	keyring_vault initialization failure. Please check the server log.
 include/assert.inc [Default vaule of keyring_vault_timeout should be 15]
 SET @@GLOBAL.keyring_vault_timeout=15;

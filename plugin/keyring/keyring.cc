@@ -25,6 +25,7 @@
 #include <mysql/plugin_keyring.h>
 #include <memory>
 
+#include <my_rnd.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/services/log_builtins.h>
 #include <openssl/err.h>
@@ -33,6 +34,7 @@
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_psi_config.h"
+#include "mysql/psi/mysql_rwlock.h"
 #include "mysqld_error.h"
 #include "plugin/keyring/buffered_file_io.h"
 #include "plugin/keyring/common/keyring.h"

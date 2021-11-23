@@ -25,7 +25,6 @@
 
 #include <memory>
 
-#include "my_rnd.h"
 #include "mysql/plugin.h"
 #include "plugin/keyring/common/keyring_memory.h"
 #include "plugin/keyring/common/keys_container.h"

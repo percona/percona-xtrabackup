@@ -1,4 +1,5 @@
-/* Copyright (c) 2018 Percona LLC and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021 Percona LLC and/or its affiliates. All rights
+   reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -15,42 +16,41 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
 
 #include "vault_curl.h"
+
 #include <algorithm>
+
 #include <boost/core/noncopyable.hpp>
-#include <boost/scope_exit.hpp>
-#include "my_rdtsc.h"
-#include "mysql/service_thd_wait.h"
-#include "plugin/keyring/common/secure_string.h"
-#include "sql/current_thd.h"
-#include "sql/mysqld.h"
-#include "sql/sql_error.h"
+#include <boost/optional.hpp>
+
+#include <curl/curl.h>
+
+#include "i_vault_parser_composer.h"
+#include "plugin/keyring/common/logger.h"
 #include "vault_base64.h"
+
+#ifdef RAPIDJSON_NO_SIZETYPEDEFINE
+// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
+// globally and require to include my_rapidjson_size_t.h
+#include "my_rapidjson_size_t.h"
+#endif
+
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
+namespace {
+
+const char data_subpath[] = "data";
+const char metadata_subpath[] = "metadata";
+const char config_subpath[] = "config";
+
+const char mount_point_path_delimiter = '/';
+
+}  // anonymous namespace
 
 namespace keyring {
 
-static const constexpr size_t max_response_size = 32000000;
-static MY_TIMER_INFO curl_timer_info;
-static ulonglong last_ping_time;
-static bool was_thd_wait_started = false;
-#ifndef NDEBUG
-static const constexpr ulonglong slow_connection_threshold = 100;  // [ms]
-#endif
-
-class Thd_wait_end_guard {
- public:
-  ~Thd_wait_end_guard() {
-    DBUG_EXECUTE_IF("vault_network_lag", { was_thd_wait_started = false; });
-    assert(!was_thd_wait_started);
-    if (was_thd_wait_started) {
-      // This should never be called as thd_wait_end should be called at the end
-      // of CURL I/O operation. However, in production the call to thd_wait_end
-      // cannot be missed. Thus we limit our trust to CURL lib and make sure
-      // thd_wait_end was called.
-      thd_wait_end(current_thd);
-      was_thd_wait_started = false;
-    }
-  }
-};
+static const std::size_t max_response_size = 32000000;
 
 class Curl_session_guard : private boost::noncopyable {
  public:
@@ -67,7 +67,7 @@ static size_t write_response_memory(void *contents, size_t size, size_t nmemb,
                                     void *userp) noexcept {
   size_t realsize = size * nmemb;
   if (size != 0 && realsize / size != nmemb) return 0;  // overflow
-  Secure_ostringstream *read_data = static_cast<Secure_ostringstream *>(userp);
+  auto *read_data = static_cast<Secure_ostringstream *>(userp);
   size_t ss_pos = read_data->tellp();
   read_data->seekp(0, std::ios::end);
   size_t number_of_read_bytes = read_data->tellp();
@@ -79,51 +79,6 @@ static size_t write_response_memory(void *contents, size_t size, size_t nmemb,
   read_data->write(static_cast<char *>(contents), realsize);
   if (!read_data->good()) return 0;
   return realsize;
-}
-
-int progress_callback(void *clientp MY_ATTRIBUTE((unused)), double dltotal,
-                      double dlnow, double ultotal MY_ATTRIBUTE((unused)),
-                      double ulnow MY_ATTRIBUTE((unused))) noexcept {
-  ulonglong curr_ping_time = my_timer_milliseconds();
-
-  DBUG_EXECUTE_IF("vault_network_lag", {
-    curr_ping_time = last_ping_time + slow_connection_threshold + 10;
-    dltotal = 1;
-    dlnow = 0;
-  });
-
-  BOOST_SCOPE_EXIT(&curr_ping_time, &last_ping_time) {
-    last_ping_time = curr_ping_time;
-  }
-  BOOST_SCOPE_EXIT_END
-
-      //***To keep compiler happy, remove when PS-244 gets resolved
-      (void) dltotal;
-  (void)dlnow;
-  //****
-
-  // The calls to threadpool are disabled till bug PS-244 gets resolved.
-  /* <--Uncomment when PS-244 gets resolved
-  if (!was_thd_wait_started)
-  {
-    if ((dlnow < dltotal || ulnow < ultotal) && last_ping_time - curr_ping_time
-  > slow_connection_threshold)
-    {
-      // there is a good chance that connection is slow, thus we can let know
-  the threadpool that there is time
-      // to start new thread(s)
-      thd_wait_begin(current_thd, THD_WAIT_NET);
-      was_thd_wait_started = true;
-    }
-  }
-  else if ((dlnow == dltotal && ulnow == ultotal) || last_ping_time -
-  curr_ping_time <= slow_connection_threshold)
-  {
-    // connection has speed up or we have finished transfering
-    thd_wait_end(current_thd);
-    was_thd_wait_started = false;
-  }*/  // <--Uncomment when PS-244 gets resolved
-  return 0;
 }
 
 std::string Vault_curl::get_error_from_curl(CURLcode curl_code) {
@@ -140,21 +95,99 @@ std::string Vault_curl::get_error_from_curl(CURLcode curl_code) {
   return ss.str();
 }
 
-bool Vault_curl::init(const Vault_credentials &vault_credentials) {
-  this->token_header =
-      "X-Vault-Token:" + get_credential(vault_credentials, "token");
-  this->vault_url = get_credential(vault_credentials, "vault_url") + "/v1/" +
-                    get_credential(vault_credentials, "secret_mount_point");
-  this->vault_ca = get_credential(vault_credentials, "vault_ca");
-  if (this->vault_ca.empty()) {
-    logger->log(
-        MY_WARNING_LEVEL,
-        "There is no vault_ca specified in keyring_vault's configuration file. "
-        "Please make sure that Vault's CA certificate is trusted by the "
-        "machine from "
-        "which you intend to connect to Vault.");
+Secure_string Vault_curl::get_secret_url(const Secure_string &type_of_data) {
+  Secure_ostringstream oss_data;
+
+  assert(!vault_credentials_.get_vault_url().empty());
+  oss_data << vault_credentials_.get_vault_url() << "/v1/";
+  if (resolved_secret_mount_point_version_ == Vault_version_v2) {
+    oss_data << mount_point_path_ << '/' << type_of_data;
+    if (!directory_path_.empty()) {
+      oss_data << '/' << directory_path_;
+    }
+  } else {
+    oss_data << vault_credentials_.get_secret_mount_point();
   }
-  my_timer_init(&curl_timer_info);
+
+  return oss_data.str();
+}
+
+Secure_string Vault_curl::get_secret_url_metadata() {
+  return get_secret_url(metadata_subpath);
+}
+
+Secure_string Vault_curl::get_secret_url_data() {
+  return get_secret_url(data_subpath) + '/';
+}
+
+bool Vault_curl::init(const Vault_credentials &vault_credentials) {
+  vault_credentials_ = vault_credentials;
+  if (vault_credentials.get_secret_mount_point_version() == Vault_version_v1) {
+    resolved_secret_mount_point_version_ =
+        vault_credentials_.get_secret_mount_point_version();
+    return false;
+  }
+
+  std::size_t max_versions;
+  bool cas_required;
+  Optional_secure_string delete_version_after;
+
+  Secure_string::const_iterator bg =
+      vault_credentials_.get_secret_mount_point().begin();
+  Secure_string::const_iterator en =
+      vault_credentials_.get_secret_mount_point().end();
+  Secure_string::const_iterator delimiter_it = bg;
+  Secure_string::const_iterator from_it;
+  Secure_string json_response;
+
+  Vault_version_type mp_version = Vault_version_v1;
+  Secure_string partial_path;
+
+  while (delimiter_it != en && mp_version == Vault_version_v1) {
+    from_it = delimiter_it;
+    ++from_it;
+    delimiter_it = std::find(from_it, en, mount_point_path_delimiter);
+    partial_path.assign(bg, delimiter_it);
+    Secure_string err_msg = "Probing ";
+    err_msg += partial_path;
+    err_msg += " for being a mount point";
+
+    if (probe_mount_point_config(partial_path, json_response)) {
+      err_msg += " unsuccessful - skipped.";
+      logger_->log(MY_INFORMATION_LEVEL, err_msg.c_str());
+    } else if (parser_->parse_mount_point_config(json_response, max_versions,
+                                                 cas_required,
+                                                 delete_version_after)) {
+      err_msg += " successful but response has unexpected format - skipped.";
+      logger_->log(MY_WARNING_LEVEL, err_msg.c_str());
+    } else {
+      err_msg += " successful - identified kv-v2 secret engine.";
+      logger_->log(MY_INFORMATION_LEVEL, err_msg.c_str());
+      mp_version = Vault_version_v2;
+    }
+  }
+
+  if (vault_credentials.get_secret_mount_point_version() == Vault_version_v2 &&
+      mp_version != Vault_version_v2) {
+    logger_->log(MY_ERROR_LEVEL,
+                 "Auto-detected mount point version is not the same as "
+                 "specified in 'secret_mount_point_version'.");
+    return true;
+  }
+  Secure_string mount_point_path;
+  Secure_string directory_path;
+  if (mp_version == Vault_version_v2) {
+    mount_point_path.swap(partial_path);
+    if (delimiter_it != en) {
+      ++delimiter_it;
+      directory_path.assign(delimiter_it, en);
+    }
+  }
+
+  resolved_secret_mount_point_version_ = mp_version;
+  mount_point_path_.swap(mount_point_path);
+  directory_path_.swap(directory_path);
+
   return false;
 }
 
@@ -168,8 +201,8 @@ bool Vault_curl::setup_curl_session(CURL *curl) {
     list = nullptr;
   }
 
-  last_ping_time = my_timer_milliseconds();
-
+  Secure_string token_header =
+      "X-Vault-Token:" + vault_credentials_.get_token();
   if ((list = curl_slist_append(list, token_header.c_str())) == nullptr ||
       (list = curl_slist_append(list, "Content-Type: application/json")) ==
           nullptr ||
@@ -186,50 +219,49 @@ bool Vault_curl::setup_curl_session(CURL *curl) {
           CURLE_OK ||
       (curl_res = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L)) !=
           CURLE_OK ||
-      (!vault_ca.empty() &&
-       (curl_res = curl_easy_setopt(curl, CURLOPT_CAINFO, vault_ca.c_str())) !=
+      (!vault_credentials_.get_vault_ca().empty() &&
+       (curl_res = curl_easy_setopt(
+            curl, CURLOPT_CAINFO, vault_credentials_.get_vault_ca().c_str())) !=
            CURLE_OK) ||
       (curl_res = curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL)) !=
           CURLE_OK ||
-      (curl_res = curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION,
-                                   progress_callback)) != CURLE_OK ||
-      (curl_res = curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L)) != CURLE_OK ||
+      (curl_res = curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L)) !=
+          CURLE_OK ||
       (curl_res = curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, timeout)) !=
           CURLE_OK ||
       (curl_res = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout)) !=
-          CURLE_OK) {
-    logger->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+          CURLE_OK ||
+      (curl_res = curl_easy_setopt(curl, CURLOPT_HTTP_VERSION,
+                                   (long)CURL_HTTP_VERSION_1_1)) != CURLE_OK) {
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
     return true;
   }
   return false;
 }
 
 bool Vault_curl::list_keys(Secure_string *response) {
+  Secure_string url_to_list = get_secret_url_metadata() + "?list=true";
   CURLcode curl_res = CURLE_OK;
   long http_code = 0;
 
-  Thd_wait_end_guard thd_wait_end_guard;
-  (void)thd_wait_end_guard;  // silence unused variable error
-
   CURL *curl = curl_easy_init();
   if (curl == nullptr) {
-    logger->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
+    logger_->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
     return true;
   }
   Curl_session_guard curl_session_guard(curl);
 
   if (setup_curl_session(curl) ||
-      (curl_res = curl_easy_setopt(curl, CURLOPT_URL,
-                                   (vault_url + "?list=true").c_str())) !=
+      (curl_res = curl_easy_setopt(curl, CURLOPT_URL, url_to_list.c_str())) !=
           CURLE_OK ||
       (curl_res = curl_easy_perform(curl)) != CURLE_OK ||
       (curl_res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE,
                                     &http_code)) != CURLE_OK) {
-    logger->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
     return true;
   }
   if (http_code == 404) {
-    *response = "";  // no keys found
+    *response = "";  // list returned empty list
     return false;
   }
   *response = read_data_ss.str();
@@ -241,7 +273,7 @@ bool Vault_curl::encode_key_signature(const Vault_key &key,
   if (Vault_base64::encode(
           key.get_key_signature()->c_str(), key.get_key_signature()->length(),
           encoded_key_signature, Vault_base64::Format::SINGLE_LINE)) {
-    logger->log(MY_ERROR_LEVEL, "Could not encode key's signature in base64");
+    logger_->log(MY_ERROR_LEVEL, "Could not encode key's signature in base64");
     return true;
   }
   return false;
@@ -250,8 +282,39 @@ bool Vault_curl::encode_key_signature(const Vault_key &key,
 bool Vault_curl::get_key_url(const Vault_key &key, Secure_string *key_url) {
   Secure_string encoded_key_signature;
   if (encode_key_signature(key, &encoded_key_signature)) return true;
-  *key_url = vault_url + '/' + encoded_key_signature.c_str();
+  *key_url = get_secret_url_data() + encoded_key_signature;
   return false;
+}
+
+bool Vault_curl::probe_mount_point_config(const Secure_string &partial_path,
+                                          Secure_string &response) {
+  Secure_string config_url = vault_credentials_.get_vault_url();
+  config_url += "/v1/";
+  config_url += partial_path;
+  config_url += '/';
+  config_url += config_subpath;
+
+  CURLcode curl_res = CURLE_OK;
+  long http_code = 0;
+
+  CURL *curl = curl_easy_init();
+  if (curl == nullptr) {
+    logger_->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
+    return true;
+  }
+  Curl_session_guard curl_session_guard(curl);
+
+  if (setup_curl_session(curl) ||
+      (curl_res = curl_easy_setopt(curl, CURLOPT_URL, config_url.c_str())) !=
+          CURLE_OK ||
+      (curl_res = curl_easy_perform(curl)) != CURLE_OK ||
+      (curl_res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE,
+                                    &http_code)) != CURLE_OK) {
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+    return true;
+  }
+  response = read_data_ss.str();
+  return http_code / 100 != 2;
 }
 
 bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
@@ -259,24 +322,21 @@ bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
   if (Vault_base64::encode(reinterpret_cast<const char *>(key.get_key_data()),
                            key.get_key_data_size(), &encoded_key_data,
                            Vault_base64::Format::SINGLE_LINE)) {
-    logger->log(MY_ERROR_LEVEL, "Could not encode a key in base64");
+    logger_->log(MY_ERROR_LEVEL, "Could not encode a key in base64");
     return true;
   }
   CURLcode curl_res = CURLE_OK;
-  Secure_string postdata = "{\"type\":\"";
-  postdata += key.get_key_type_as_string()->c_str();
-  postdata += "\",\"";
-  postdata += "value\":\"" + encoded_key_data + "\"}";
-
+  Secure_string postdata;
+  if (parser_->compose_write_key_postdata(key, encoded_key_data,
+                                          resolved_secret_mount_point_version_,
+                                          postdata))
+    return true;
   Secure_string key_url;
   if (get_key_url(key, &key_url)) return true;
 
-  Thd_wait_end_guard thd_wait_end_guard;
-  (void)thd_wait_end_guard;  // silence unused variable error
-
   CURL *curl = curl_easy_init();
   if (curl == nullptr) {
-    logger->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
+    logger_->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
     return true;
   }
   Curl_session_guard curl_session_guard(curl);
@@ -287,7 +347,7 @@ bool Vault_curl::write_key(const Vault_key &key, Secure_string *response) {
       (curl_res = curl_easy_setopt(curl, CURLOPT_POSTFIELDS,
                                    postdata.c_str())) != CURLE_OK ||
       (curl_res = curl_easy_perform(curl)) != CURLE_OK) {
-    logger->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
     return true;
   }
   *response = read_data_ss.str();
@@ -299,12 +359,9 @@ bool Vault_curl::read_key(const Vault_key &key, Secure_string *response) {
   if (get_key_url(key, &key_url)) return true;
   CURLcode curl_res = CURLE_OK;
 
-  Thd_wait_end_guard thd_wait_end_guard;
-  (void)thd_wait_end_guard;  // silence unused variable error
-
   CURL *curl = curl_easy_init();
-  if (curl == NULL) {
-    logger->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
+  if (curl == nullptr) {
+    logger_->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
     return true;
   }
   Curl_session_guard curl_session_guard(curl);
@@ -313,7 +370,7 @@ bool Vault_curl::read_key(const Vault_key &key, Secure_string *response) {
       (curl_res = curl_easy_setopt(curl, CURLOPT_URL, key_url.c_str())) !=
           CURLE_OK ||
       (curl_res = curl_easy_perform(curl)) != CURLE_OK) {
-    logger->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
     return true;
   }
   *response = read_data_ss.str();
@@ -325,11 +382,9 @@ bool Vault_curl::delete_key(const Vault_key &key, Secure_string *response) {
   if (get_key_url(key, &key_url)) return true;
   CURLcode curl_res = CURLE_OK;
 
-  Thd_wait_end_guard thd_wait_end_guard;
-  (void)thd_wait_end_guard;  // silence unused variable error
   CURL *curl = curl_easy_init();
-  if (curl == NULL) {
-    logger->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
+  if (curl == nullptr) {
+    logger_->log(MY_ERROR_LEVEL, "Cannot initialize curl session");
     return true;
   }
   Curl_session_guard curl_session_guard(curl);
@@ -340,7 +395,7 @@ bool Vault_curl::delete_key(const Vault_key &key, Secure_string *response) {
       (curl_res = curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE")) !=
           CURLE_OK ||
       (curl_res = curl_easy_perform(curl)) != CURLE_OK) {
-    logger->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
+    logger_->log(MY_ERROR_LEVEL, get_error_from_curl(curl_res).c_str());
     return true;
   }
   *response = read_data_ss.str();

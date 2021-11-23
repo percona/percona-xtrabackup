@@ -30,7 +30,7 @@ namespace keyring {
 
 class IKeyring_io : public Keyring_alloc {
  public:
-  virtual bool init(std::string *keyring_storage_url) = 0;
+  virtual bool init(const std::string *keyring_storage_url) = 0;
   virtual bool flush_to_backup(ISerialized_object *serialized_object) = 0;
   virtual bool flush_to_storage(ISerialized_object *serialized_object) = 0;
 

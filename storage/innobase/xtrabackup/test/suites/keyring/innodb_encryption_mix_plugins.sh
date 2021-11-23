@@ -49,7 +49,7 @@ vlog prepare
 xtrabackup --prepare --target-dir=$topdir/backup1 --transition-key=key1
 
 keyring_vault_ping || skip_test "Keyring vault server is not avaliable"
-keyring_vault_mount
+keyring_vault_mount "2" "2"
 
 trap "keyring_vault_unmount" EXIT
 

@@ -39,16 +39,28 @@ function keyring_vault_ping()
 
 function keyring_vault_mount()
 {
+	local VAULT_CONFIG_VERSION=$1
+	local VAULT_MOUNT_VERSION=$2
+	local VAULT_MOUNT_DATA=""
 	cat > ${keyring_vault_config} <<EOF
 vault_url = ${VAULT_URL}
 secret_mount_point = ${VAULT_MOUNT_POINT}
+secret_mount_point_version = ${VAULT_MOUNT_VERSION}
 token = ${VAULT_TOKEN}
 vault_ca = ${VAULT_CA}
 EOF
 
+	if [[ "${VAULT_MOUNT_VERSION}" -eq "1" ]];
+	then
+		VAULT_MOUNT_DATA="{\"type\":\"kv\"}"
+	elif [[ "${VAULT_MOUNT_VERSION}" -eq "2" ]];
+	then
+		VAULT_MOUNT_DATA="{\"type\":\"kv\", \"options\": { \"version\":\"2\" }}"
+	fi
+
 	curl -H "X-Vault-Token: ${VAULT_TOKEN}" \
 		--cacert "${VAULT_CA}" -k \
-		--data '{"type":"generic"}' \
+		--data "${VAULT_MOUNT_DATA}" \
 		-X POST \
 		"${VAULT_URL}/v1/sys/mounts/${VAULT_MOUNT_POINT}"
 	return $?
