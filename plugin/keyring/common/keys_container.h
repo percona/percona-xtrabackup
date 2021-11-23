@@ -28,18 +28,15 @@
 #include "keyring_key.h"
 #include "i_keyring_io.h"
 #include "logger.h"
-#include <sys_vars_shared.h> //For PolyLock, AutoWLock, AutoRLock
 #include "i_keys_container.h"
 #include "keyring_memory.h"
 #include "i_system_keys_container.h"
 
 #include <vector>
 
-#include <vector>
+extern "C" MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;
 
 namespace keyring {
-
-extern "C" MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;
 
 class Keys_container : public IKeys_container
 {

@@ -9,7 +9,6 @@ call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'File '.*' 
 call mtr.add_suppression("\\[ERROR\\] Plugin keyring_vault reported: 'Could not read file with credentials.'");
 INSTALL PLUGIN keyring_vault SONAME 'keyring_vault.so';
 Warnings:
-Warning	29	File '' not found (Errcode: 2 - No such file or directory)
 Warning	42000	keyring_vault initialization failure. Please check the server log.
 SELECT PLUGIN_NAME,PLUGIN_VERSION,PLUGIN_STATUS
 FROM INFORMATION_SCHEMA.PLUGINS WHERE plugin_name='keyring_vault';

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018 Percona LLC and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021 Percona LLC and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -18,19 +18,19 @@
 #define I_VAULTIO_INCLUDED
 
 #include <my_global.h>
+
 #include "i_keyring_io.h"
 
 namespace keyring {
 
-class IVault_io : public IKeyring_io
-{
-public:
-  virtual my_bool retrieve_key_type_and_data(IKey *key) = 0;
-  virtual void set_curl_timeout(uint timeout) = 0;
-  
+class IVault_io : public IKeyring_io {
+ public:
+  virtual my_bool retrieve_key_type_and_data(IKey *key)= 0;
+  virtual void    set_curl_timeout(uint timeout)= 0;
+
   virtual ~IVault_io() {}
 };
 
-} // namespace keyring
+}  // namespace keyring
 
-#endif // I_VAULTIO_INCLUDED
+#endif  // I_VAULTIO_INCLUDED

@@ -1,43 +1,43 @@
+/* Copyright (c) 2018, 2021 Percona LLC and/or its affiliates. All rights reserved.
+
+   This program is free software; you can redistribute it and/or
+   modify it under the terms of the GNU General Public License
+   as published by the Free Software Foundation; version 2 of
+   the License.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA */
+
 #ifndef MYSQL_VAULT_CREDENTIALS_PARSER_H
 #define MYSQL_VAULT_CREDENTIALS_PARSER_H
 
-#include <my_global.h>
+#include <cstddef>
+
 #include <string>
-#include <set>
-#include "vault_credentials.h"
-#include "logger.h"
 
-namespace keyring
-{
-  class Vault_credentials_parser
-  {
-  public:
-    Vault_credentials_parser(ILogger *logger)
-      : logger(logger)
-    {
-      vault_credentials_in_progress.insert(std::make_pair("vault_url", ""));
-      vault_credentials_in_progress.insert(std::make_pair("secret_mount_point", ""));
-      vault_credentials_in_progress.insert(std::make_pair("vault_ca", ""));
-      vault_credentials_in_progress.insert(std::make_pair("token", ""));
+namespace keyring {
+class ILogger;
+class Vault_credentials;
 
-      optional_value.insert("vault_ca");
-    }
+class Vault_credentials_parser {
+ public:
+  Vault_credentials_parser(ILogger *logger) : logger_(logger) {}
 
-    bool parse(const std::string &file_url, Vault_credentials *vault_credentials);
+  bool parse(const std::string &conf_file_path,
+             Vault_credentials &vault_credentials) const;
 
-  private:
-    void reset_vault_credentials(Vault_credentials *vault_credentials);
+ private:
+  ILogger *logger_;
 
-    bool parse_line(uint line_number, const Secure_string& line, Vault_credentials *vault_credentials);
+  static const std::size_t max_file_size= 16384;
+};
 
-    bool is_valid_option(const Secure_string &option) const;
-    Vault_credentials vault_credentials_in_progress;
-    std::set<Secure_string> optional_value;
+}  // namespace keyring
 
-    ILogger *logger;
-    static const size_t max_file_size;
-  };
-
-} // namespace keyring
-
-#endif // MYSQL_VAULT_CREDENTIALS_PARSER_H
+#endif  // MYSQL_VAULT_CREDENTIALS_PARSER_H

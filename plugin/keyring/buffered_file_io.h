@@ -50,7 +50,7 @@ public:
   {
   }
 
-  my_bool init(std::string *keyring_filename);
+  my_bool init(const std::string *keyring_filename);
 
   my_bool flush_to_backup(ISerialized_object *serialized_object);
   my_bool flush_to_storage(ISerialized_object *serialized_object);

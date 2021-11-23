@@ -1,12 +1,12 @@
 #
-# Basic test of InnoDB encryption support
+# Basic test of InnoDB encryption support using vault version v2 -> vv2
 #
 . inc/keyring_common.sh
 . inc/keyring_vault.sh
 
 keyring_vault_ping || skip_test "Keyring vault server is not avaliable"
 
-keyring_vault_mount
+keyring_vault_mount "2" "2"
 
 function cleanup_keyring() {
 	keyring_vault_remove_all_keys

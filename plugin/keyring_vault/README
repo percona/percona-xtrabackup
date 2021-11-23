@@ -1,0 +1,31 @@
+Percona Keyring Vault Plugin
+----------------------------
+
+In order to run 'keyring_vault' MTR test suite the following environment
+variables must be defined:
+
+MTR_VAULT_VERSION=<vault_version> \
+MTR_VAULT_ADDRESS=<vault_url> \
+MTR_VAULT_CA=<ca_path> \
+MTR_VAULT_ADMIN_TOKEN=<admin_token> \
+MTR_VAULT_PLUGIN_TOKEN=<plugin_token> \
+./mysql-test/mtr ... --suite=keyring_vault
+
+'<vault_version>' - the version of the secret engine used in Vault Server
+                    mount points: '1' for 'kv', '2' for 'kv-v2' (please
+                    notice that Vault Server version <= 0.9.6 does not support
+                   'kv-v2')
+'<vault_url>'     - Vault Server Endpoint URL, will be translated into
+                   'vault_url' parameter in the plugin configuration file,
+                    e.g. 'https://127.0.0.1:8200'
+                    (the protocol part must be 'https://' if 'MTR_VAULT_CA'
+                    is set)
+'<ca_path>'       - path to the CA certificate file in PEM format, will be
+                    translated into 'vault_ca' parameter in the plugin
+                    configuration file (please notice that 'MTR_VAULT_CA'
+                    is optional)
+'<admin_token>'   - Vault Server token with elevated privileges that will be
+                    used to create temporary mount points
+'<plugin_token>'  - Vault Server token that will be used to run the tests,
+                    will be translated into 'token' parameter in the plugin
+                    configuration file

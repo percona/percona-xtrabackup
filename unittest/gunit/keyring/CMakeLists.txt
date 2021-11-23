@@ -105,7 +105,6 @@ ENDIF(MERGE_UNITTESTS)
     TARGET_LINK_LIBRARIES(${test}-t sql binlog rpl master slave sql)
 
     IF(WITH_PERFSCHEMA_STORAGE_ENGINE)
-      TARGET_LINK_LIBRARIES(${test}-t perfschema)
       TARGET_LINK_LIBRARIES(${test}-t perfschema pfs_server_stubs)
     ENDIF()
 

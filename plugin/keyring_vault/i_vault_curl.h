@@ -1,4 +1,4 @@
-/* Copyright (c) 2018 Percona LLC and/or its affiliates. All rights reserved.
+/* Copyright (c) 2018, 2021 Percona LLC and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -23,20 +23,22 @@
 
 namespace keyring {
 
-class IVault_curl : public Keyring_alloc
-{
-public:
-  virtual bool init(const Vault_credentials &vault_credentials) = 0;
+struct Vault_key;
+class IVault_curl : public Keyring_alloc {
+ public:
+  virtual bool init(const Vault_credentials &vault_credentials)= 0;
 
-  virtual bool list_keys(Secure_string *response) = 0;
-  virtual bool write_key(const Vault_key &key, Secure_string *response) = 0;
-  virtual bool read_key(const Vault_key &key, Secure_string *response) = 0;
-  virtual bool delete_key(const Vault_key &key, Secure_string *response) = 0;
-  virtual void set_timeout(uint timeout) = 0;
+  virtual bool list_keys(Secure_string *response)= 0;
+  virtual bool write_key(const Vault_key &key, Secure_string *response)= 0;
+  virtual bool read_key(const Vault_key &key, Secure_string *response)= 0;
+  virtual bool delete_key(const Vault_key &key, Secure_string *response)= 0;
+  virtual void set_timeout(uint timeout)= 0;
+  virtual Vault_version_type get_resolved_secret_mount_point_version()
+      const= 0;
 
-  virtual ~IVault_curl() {};
+  virtual ~IVault_curl(){};
 };
 
-} // namespace keyring
+}  // namespace keyring
 
-#endif // MYSQL_I_VAULT_CURL_H
+#endif  // MYSQL_I_VAULT_CURL_H

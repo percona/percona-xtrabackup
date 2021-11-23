@@ -24,9 +24,7 @@
 #define MYSQL_KEYRING_H
 
 #include <my_global.h>
-#include "mysql/plugin.h"
-#include <my_rnd.h>
-#include <mysqld.h>
+#include <mysql/plugin.h>
 #include "keys_container.h"
 #include "keys_iterator.h"
 #include "keyring_memory.h"

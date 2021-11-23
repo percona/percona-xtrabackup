@@ -20,10 +20,11 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#ifndef MOCKLOGGER_H
-#define MOCKLOGGER_H
+#ifndef MOCK_LOGGER_H
+#define MOCK_LOGGER_H
 
 #include <gmock/gmock.h>
+
 #include "logger.h"
 
 namespace keyring
@@ -33,5 +34,6 @@ namespace keyring
   public:
     MOCK_METHOD2(log, void(plugin_log_level level, const char *message));
   };
-} //namespace keyring
-#endif //MOCKLOGGER_H
+  }  // namespace keyring
+
+#endif  // MOCK_LOGGER_H
