@@ -104,7 +104,7 @@ Delegate::Delegate(
 Delegate::~Delegate() {
   inited = false;
   mysql_rwlock_destroy(&lock);
-  free_root(&memroot, MYF(0));
+  memroot.Clear();
 }
 
 int Delegate::add_observer(void *observer, st_plugin_int *plugin) {
@@ -1100,6 +1100,8 @@ void Binlog_relay_IO_delegate::init_param(Binlog_relay_IO_param *param,
   param->port = mi->port;
   param->master_log_name = const_cast<char *>(mi->get_master_log_name());
   param->master_log_pos = mi->get_master_log_pos();
+  param->source_connection_auto_failover =
+      mi->is_source_connection_auto_failover();
 }
 
 int Binlog_relay_IO_delegate::thread_start(THD *thd, Master_info *mi) {
@@ -1279,6 +1281,39 @@ int unregister_binlog_relay_io_observer(Binlog_relay_IO_observer *observer,
   return binlog_relay_io_delegate->remove_observer(observer);
 }
 
+static bool is_show_status(enum_sql_command sql_command) {
+  switch (sql_command) {
+    case SQLCOM_SHOW_VARIABLES:
+    case SQLCOM_SHOW_STATUS:
+    case SQLCOM_SHOW_ENGINE_LOGS:
+    case SQLCOM_SHOW_ENGINE_STATUS:
+    case SQLCOM_SHOW_ENGINE_MUTEX:
+    case SQLCOM_SHOW_PROCESSLIST:
+    case SQLCOM_SHOW_MASTER_STAT:
+    case SQLCOM_SHOW_SLAVE_STAT:
+    case SQLCOM_SHOW_CHARSETS:
+    case SQLCOM_SHOW_COLLATIONS:
+    case SQLCOM_SHOW_BINLOGS:
+    case SQLCOM_SHOW_OPEN_TABLES:
+    case SQLCOM_SHOW_SLAVE_HOSTS:
+    case SQLCOM_SHOW_BINLOG_EVENTS:
+    case SQLCOM_SHOW_WARNS:
+    case SQLCOM_SHOW_ERRORS:
+    case SQLCOM_SHOW_STORAGE_ENGINES:
+    case SQLCOM_SHOW_PRIVILEGES:
+    case SQLCOM_SHOW_STATUS_PROC:
+    case SQLCOM_SHOW_STATUS_FUNC:
+    case SQLCOM_SHOW_PLUGINS:
+    case SQLCOM_SHOW_EVENTS:
+    case SQLCOM_SHOW_PROFILE:
+    case SQLCOM_SHOW_PROFILES:
+    case SQLCOM_SHOW_RELAYLOG_EVENTS:
+      return true;
+    default:
+      return false;
+  }
+}
+
 int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
   DBUG_TRACE;
   LEX *lex = thd->lex;
@@ -1293,12 +1328,10 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
     return 0;
   }
 
-  bool is_show = ((sql_command_flags[sql_command] & CF_STATUS_COMMAND) &&
-                  (sql_command != SQLCOM_BINLOG_BASE64_EVENT)) ||
-                 (sql_command == SQLCOM_SHOW_RELAYLOG_EVENTS);
+  bool is_show = is_show_status(sql_command);
   bool is_set = (sql_command == SQLCOM_SET_OPTION);
-  bool is_query_block = (sql_command == SQLCOM_SELECT);
-  bool is_do = (sql_command == SQLCOM_DO);
+  bool is_query_block =
+      (sql_command == SQLCOM_SELECT || sql_command == SQLCOM_DO);
   bool is_empty = (sql_command == SQLCOM_EMPTY_QUERY);
   bool is_use = (sql_command == SQLCOM_CHANGE_DB);
   bool is_stop_gr = (sql_command == SQLCOM_STOP_GROUP_REPLICATION);
@@ -1306,8 +1339,8 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
   bool is_reset_persist =
       (sql_command == SQLCOM_RESET && lex->option_type == OPT_PERSIST);
 
-  if ((is_set || is_do || is_show || is_empty || is_use || is_stop_gr ||
-       is_shutdown || is_reset_persist) &&
+  if ((is_set || is_show || is_empty || is_use || is_stop_gr || is_shutdown ||
+       is_reset_persist) &&
       !lex->uses_stored_routines()) {
     return 0;
   }
@@ -1315,7 +1348,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
   if (is_query_block) {
     bool is_udf = false;
 
-    // if select is an udf function
+    // If SELECT or DO is a UDF
     Query_block *query_block_elem = lex->unit->first_query_block();
     while (query_block_elem != nullptr) {
       for (Item *item : query_block_elem->visible_fields()) {
@@ -1330,7 +1363,7 @@ int launch_hook_trans_begin(THD *thd, TABLE_LIST *all_tables) {
     }
 
     if (!is_udf && all_tables == nullptr) {
-      // SELECT that don't use tables and isn't a UDF
+      // SELECT or DO that don't use tables and isn't a UDF
       hold_command = false;
     }
 

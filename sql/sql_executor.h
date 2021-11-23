@@ -36,7 +36,6 @@
 #include <vector>
 
 #include "my_alloc.h"
-#include "my_compiler.h"
 #include "my_inttypes.h"
 #include "my_table_map.h"
 #include "sql/row_iterator.h"
@@ -162,9 +161,8 @@ class Semijoin_mat_exec {
 
 void setup_tmptable_write_func(QEP_TAB *tab, Opt_trace_object *trace);
 
-MY_ATTRIBUTE((warn_unused_result))
-bool copy_fields(Temp_table_param *param, const THD *thd,
-                 bool reverse_copy = false);
+[[nodiscard]] bool copy_fields(Temp_table_param *param, const THD *thd,
+                               bool reverse_copy = false);
 
 enum Copy_func_type : int {
   /**
@@ -233,8 +231,6 @@ bool construct_lookup_ref(THD *thd, TABLE *table, TABLE_REF *ref);
 /** Help function when we get some an error from the table handler. */
 int report_handler_error(TABLE *table, int error);
 
-int safe_index_read(QEP_TAB *tab);
-
 int join_read_const_table(JOIN_TAB *tab, POSITION *pos);
 
 int do_sj_dups_weedout(THD *thd, SJ_TMP_TABLE *sjtbl);
@@ -273,8 +269,6 @@ class QEP_TAB : public QEP_shared_owner {
         tmp_table_param(nullptr),
         filesort(nullptr),
         ref_item_slice(REF_SLICE_SAVED_BASE),
-        m_condition_optim(nullptr),
-        m_quick_optim(nullptr),
         m_keyread_optim(false),
         m_reversed_access(false),
         lateral_derived_tables_depend_on_me(0) {}
@@ -287,8 +281,6 @@ class QEP_TAB : public QEP_shared_owner {
   // Getters and setters
 
   Item *condition_optim() const { return m_condition_optim; }
-  QUICK_SELECT_I *quick_optim() const { return m_quick_optim; }
-  void set_quick_optim() { m_quick_optim = quick(); }
   void set_condition_optim() { m_condition_optim = condition(); }
   bool keyread_optim() const { return m_keyread_optim; }
   void set_keyread_optim() {
@@ -338,15 +330,6 @@ class QEP_TAB : public QEP_shared_owner {
   }
 
   bool use_order() const;  ///< Use ordering provided by chosen index?
-
-  /**
-     Used to begin a new execution of a subquery. Necessary if this subquery
-     has done a filesort which which has cleared condition/quick.
-  */
-  void restore_quick_optim_and_condition() {
-    if (m_condition_optim) set_condition(m_condition_optim);
-    if (m_quick_optim) set_quick(m_quick_optim);
-  }
 
   /**
     Construct an access path for reading from this table in the query,
@@ -455,26 +438,9 @@ class QEP_TAB : public QEP_shared_owner {
   */
   uint ref_item_slice;
 
-  /// @see m_quick_optim
-  Item *m_condition_optim;
-
-  /**
-     m_quick is the quick "to be used at this stage of execution".
-     It can happen that filesort uses the quick (produced by the optimizer) to
-     produce a sorted result, then the read of this result has to be done
-     without "quick", so we must reset m_quick to NULL, but we want to delay
-     freeing of m_quick or it would close the filesort's result and the table
-     prematurely.
-     In that case, we move m_quick to m_quick_optim (=> delay deletion), reset
-     m_quick to NULL (read of filesort's result will be without quick); if
-     this is a subquery which is later executed a second time,
-     QEP_TAB::reset() will restore the quick from m_quick_optim into m_quick.
-     quick_optim stands for "the quick decided by the optimizer".
-     EXPLAIN reads this member and m_condition_optim; so if you change them
-     after exposing the plan (setting plan_state), do it with the
-     LOCK_query_plan mutex.
-  */
-  QUICK_SELECT_I *m_quick_optim;
+  /// Condition as it was set by the optimizer, used for EXPLAIN.
+  /// m_condition may be overwritten at a later stage.
+  Item *m_condition_optim = nullptr;
 
   /**
      True if only index is going to be read for this table. This is the
@@ -495,33 +461,12 @@ class QEP_TAB : public QEP_shared_owner {
      LDT, for efficiency (less useless calls to QEP_TAB::refresh_lateral())
      and clarity in EXPLAIN.
   */
-  table_map lateral_derived_tables_depend_on_me;
+  qep_tab_map lateral_derived_tables_depend_on_me;
 
   Mem_root_array<const AccessPath *> *invalidators = nullptr;
 
   QEP_TAB(const QEP_TAB &);             // not defined
   QEP_TAB &operator=(const QEP_TAB &);  // not defined
-};
-
-/**
-   @returns a pointer to the QEP_TAB whose index is qtab->member. For
-   example, QEP_AT(x,first_inner) is the first_inner table of x.
-*/
-#define QEP_AT(qtab, member) (qtab->join()->qep_tab[qtab->member])
-
-/**
-   Use this class when you need a QEP_TAB not connected to any JOIN_TAB.
-*/
-class QEP_TAB_standalone {
- public:
-  QEP_TAB_standalone() { m_qt.set_qs(&m_qs); }
-  ~QEP_TAB_standalone() { m_qt.cleanup(); }
-  /// @returns access to the QEP_TAB
-  QEP_TAB &as_QEP_TAB() { return m_qt; }
-
- private:
-  QEP_shared m_qs;
-  QEP_TAB m_qt;
 };
 
 bool set_record_buffer(TABLE *table, double expected_rows_to_fetch);
@@ -543,6 +488,12 @@ struct PendingCondition {
   int table_index_to_attach_to;  // -1 means “on the last possible outer join”.
 };
 
+/**
+  Create an AND conjuction of all given items. If there are no items, returns
+  nullptr. If there's only one item, returns that item.
+ */
+Item *CreateConjunction(List<Item> *items);
+
 unique_ptr_destroy_only<RowIterator> PossiblyAttachFilterIterator(
     unique_ptr_destroy_only<RowIterator> iterator,
     const std::vector<Item *> &conditions, THD *thd);
@@ -551,6 +502,18 @@ void SplitConditions(Item *condition, QEP_TAB *current_table,
                      std::vector<Item *> *predicates_below_join,
                      std::vector<PendingCondition> *predicates_above_join,
                      std::vector<PendingCondition> *join_conditions);
+
+/**
+  For a MATERIALIZE access path, move any non-basic iterators (e.g. sorts and
+  filters) from table_path to above the path, for easier EXPLAIN and generally
+  simpler structure. Note the assert in CreateIteratorFromAccessPath() that we
+  succeeded. (ALTERNATIVE counts as a basic iterator in this regard.)
+
+  We do this by finding the second-bottommost access path, and inserting our
+  materialize node as it child. The bottommost one becomes the actual table
+  access path.
+ */
+AccessPath *MoveCompositeIteratorsFromTablePath(AccessPath *path);
 
 AccessPath *GetAccessPathForDerivedTable(THD *thd, QEP_TAB *qep_tab,
                                          AccessPath *table_path);

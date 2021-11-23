@@ -157,7 +157,7 @@ public:
   {
     NdbProcess::Args args;
     args.add("--no-defaults");
-    args.add("--configdir=.");
+    args.add("--configdir=", working_dir);
     args.add("-f config.ini");
     args.add("--ndb-nodeid=", m_nodeid);
     args.add("--nodaemon");
@@ -185,7 +185,7 @@ public:
   {
     NdbProcess::Args args;
     args.add("--no-defaults");
-    args.add("--configdir=.");
+    args.add("--configdir=", working_dir);
     args.add("--ndb-nodeid=", m_nodeid);
     args.add("--nodaemon");
     args.add("--log-name=", name());
@@ -1609,6 +1609,7 @@ int main(int argc, const char** argv)
   testMgmd.setCreateTable(false);
   testMgmd.setRunAllTables(true);
   testMgmd.setConnectCluster(false);
+  testMgmd.setEnsureIndexStatTables(false);
 
 #ifdef NDB_USE_GET_ENV
   char buf1[255], buf2[255];

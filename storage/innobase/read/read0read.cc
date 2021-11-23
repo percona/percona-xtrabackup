@@ -225,7 +225,8 @@ void ReadView::ids_t::reserve(ulint n) {
 
   value_type *p = m_ptr;
 
-  m_ptr = UT_NEW_ARRAY_NOKEY(value_type, n);
+  m_ptr =
+      ut::new_arr_withkey<value_type>(UT_NEW_THIS_FILE_PSI_KEY, ut::Count{n});
 
   m_reserved = n;
 
@@ -234,7 +235,7 @@ void ReadView::ids_t::reserve(ulint n) {
   if (p != nullptr) {
     ::memmove(m_ptr, p, size() * sizeof(value_type));
 
-    UT_DELETE_ARRAY(p);
+    ut::delete_arr(p);
   }
 }
 
@@ -330,7 +331,7 @@ ReadView::~ReadView() {
 @param size		Number of views to pre-allocate */
 MVCC::MVCC(ulint size) : m_free(), m_views() {
   for (ulint i = 0; i < size; ++i) {
-    ReadView *view = UT_NEW_NOKEY(ReadView());
+    ReadView *view = ut::new_withkey<ReadView>(UT_NEW_THIS_FILE_PSI_KEY);
 
     UT_LIST_ADD_FIRST(m_free, view);
   }
@@ -340,7 +341,7 @@ MVCC::~MVCC() {
   while (ReadView *view = UT_LIST_GET_FIRST(m_free)) {
     UT_LIST_REMOVE(m_free, view);
 
-    UT_DELETE(view);
+    ut::delete_(view);
   }
 
   ut_a(UT_LIST_GET_LEN(m_views) == 0);
@@ -411,19 +412,21 @@ void ReadView::copy_trx_ids(const trx_ids_t &trx_ids) {
   if (ut_rnd_interval(0, 99) == 0) {
     /* Assert that all transaction ids in list are active. */
     for (auto trx_id : trx_ids) {
-      while (true) {
-        {
-          Trx_shard_latch_guard guard{trx_id, UT_LOCATION_HERE};
-          trx_t *trx = trx_get_rw_trx_by_id_low(trx_id);
-          if (trx != nullptr) {
-            const auto trx_state = trx->state.load(std::memory_order_relaxed);
-            /* Transaction in rw_trx_ids might only be ACTIVE or PREPARED,
-            before it becomes COMMITTED it is removed from rw_trx_ids. */
-            ut_ad(trx_state == TRX_STATE_ACTIVE ||
-                  trx_state == TRX_STATE_PREPARED);
-            break;
-          }
-        }
+      while (trx_sys->latch_and_execute_with_active_trx(
+          trx_id,
+          [](trx_t *trx) {
+            if (trx != nullptr) {
+              const auto trx_state = trx->state.load(std::memory_order_relaxed);
+              /* Transaction in active_rw_trxs might only be ACTIVE or
+              PREPARED, before it becomes COMMITTED it is removed from
+              active_rw_trxs. */
+              ut_ad(trx_state == TRX_STATE_ACTIVE ||
+                    trx_state == TRX_STATE_PREPARED);
+              return false;
+            }
+            return true;
+          },
+          UT_LOCATION_HERE)) {
         /* It might happen that transaction became added to rw_trx_ids,
         then trx_sys mutex has been released and thread become scheduled
         out before the call to trx_sys_rw_trx_add(trx). We need to wait,
@@ -480,7 +483,7 @@ ReadView *MVCC::get_view() {
     view = UT_LIST_GET_FIRST(m_free);
     UT_LIST_REMOVE(m_free, view);
   } else {
-    view = UT_NEW_NOKEY(ReadView());
+    view = ut::new_withkey<ReadView>(UT_NEW_THIS_FILE_PSI_KEY);
 
     if (view == nullptr) {
       ib::error(ER_IB_MSG_918) << "Failed to allocate MVCC view";

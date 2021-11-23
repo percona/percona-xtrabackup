@@ -129,7 +129,7 @@ static ibool row_purge_reposition_pcur(
 /** Removes a delete marked clustered index record if possible.
  @retval true if the row was not found, or it was successfully removed
  @retval false if the row was modified after the delete marking */
-static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_remove_clust_if_poss_low(
+[[nodiscard]] static bool row_purge_remove_clust_if_poss_low(
     purge_node_t *node, /*!<
                            in/out:
                            row
@@ -235,7 +235,7 @@ func_exit:
  @retval true if the row was not found, or it was successfully removed
  @retval false the purge needs to be suspended because of running out
  of file space. */
-static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_remove_clust_if_poss(
+[[nodiscard]] static bool row_purge_remove_clust_if_poss(
     purge_node_t *node) /*!< in/out: row purge node */
 {
   if (row_purge_remove_clust_if_poss_low(node, BTR_MODIFY_LEAF)) {
@@ -298,11 +298,10 @@ bool row_purge_poss_sec(purge_node_t *node,    /*!< in/out: row purge node */
 Removes a secondary index entry if possible, by modifying the
 index tree.  Does not try to buffer the delete.
 @return true if success or if not found */
-static MY_ATTRIBUTE((warn_unused_result)) ibool
-    row_purge_remove_sec_if_poss_tree(
-        purge_node_t *node,    /*!< in: row purge node */
-        dict_index_t *index,   /*!< in: index */
-        const dtuple_t *entry) /*!< in: index entry */
+[[nodiscard]] static ibool row_purge_remove_sec_if_poss_tree(
+    purge_node_t *node,    /*!< in: row purge node */
+    dict_index_t *index,   /*!< in: index */
+    const dtuple_t *entry) /*!< in: index entry */
 {
   btr_pcur_t pcur;
   btr_cur_t *btr_cur;
@@ -412,7 +411,7 @@ Removes a secondary index entry without modifying the index tree,
 if possible.
 @retval true if success or if not found
 @retval false if row_purge_remove_sec_if_poss_tree() should be invoked */
-static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_remove_sec_if_poss_leaf(
+[[nodiscard]] static bool row_purge_remove_sec_if_poss_leaf(
     purge_node_t *node,    /*!<
                               in:
                               row
@@ -554,6 +553,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_remove_sec_if_poss_leaf
       }
       /* fall through (the index entry is still needed,
       or the deletion succeeded) */
+      [[fallthrough]];
     case ROW_NOT_DELETED_REF:
       /* The index entry is still needed. */
     case ROW_BUFFERED:
@@ -649,7 +649,7 @@ static inline void row_purge_remove_multi_sec_if_poss(purge_node_t *node,
  @retval true if the row was not found, or it was successfully removed
  @retval false the purge needs to be suspended because of
  running out of file space */
-static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_del_mark(
+[[nodiscard]] static bool row_purge_del_mark(
     purge_node_t *node) /*!< in/out: row purge node */
 {
   mem_heap_t *heap;
@@ -1076,12 +1076,12 @@ try_again:
 @param[in]	updated_extern	whether external columns were updated
 @param[in,out]	thd		current thread
 @return true if purged, false if skipped */
-static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_record_func(
-    purge_node_t *node, trx_undo_rec_t *undo_rec,
+[[nodiscard]] static bool row_purge_record_func(purge_node_t *node,
+                                                trx_undo_rec_t *undo_rec,
 #ifdef UNIV_DEBUG
-    const que_thr_t *thr,
+                                                const que_thr_t *thr,
 #endif /* UNIV_DEBUG */
-    bool updated_extern, THD *thd) {
+                                                bool updated_extern, THD *thd) {
   dict_index_t *clust_index;
   bool purged = true;
 
@@ -1105,7 +1105,7 @@ static MY_ATTRIBUTE((warn_unused_result)) bool row_purge_record_func(
       if (!updated_extern) {
         break;
       }
-      /* fall through */
+      [[fallthrough]];
     case TRX_UNDO_UPD_EXIST_REC:
       DBUG_EXECUTE_IF("innodb_purge_sleep_12",
                       std::this_thread::sleep_for(std::chrono::seconds(5)););
@@ -1362,7 +1362,7 @@ void purge_node_t::free_lob_pages() {
     dict_sys_mutex_enter();
     const dict_index_t *idx = dict_index_find(index_id);
 
-    if (idx == nullptr || idx->space != space_id ||
+    if (idx == nullptr || idx->space != space_id || idx->page == FIL_NULL ||
         idx->table->id != table_id) {
       dict_sys_mutex_exit();
       continue;

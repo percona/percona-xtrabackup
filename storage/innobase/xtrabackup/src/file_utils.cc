@@ -3,10 +3,10 @@
 
 #if defined _WIN32 || defined __CYGWIN__ || defined __EMX__ || \
     defined __MSDOS__ || defined __DJGPP__
-#define _IS_DRIVE_LETTER(C) \
+#define IS_DRIVE_LETTER(C) \
   (((C) >= 'A' && (C) <= 'Z') || ((C) >= 'a' && (C) <= 'z'))
 #define HAS_DEVICE(Filename) \
-  (_IS_DRIVE_LETTER((Filename)[0]) && (Filename)[1] == FN_DEVCHAR)
+  (IS_DRIVE_LETTER((Filename)[0]) && (Filename)[1] == FN_DEVCHAR)
 #define FILE_SYSTEM_PREFIX_LEN(Filename) (HAS_DEVICE(Filename) ? 2 : 0)
 #else
 #define FILE_SYSTEM_PREFIX_LEN(Filename) ((void)(Filename), 0)

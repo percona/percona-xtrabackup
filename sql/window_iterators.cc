@@ -61,7 +61,7 @@ using std::min;
 namespace {
 
 void SwitchSlice(JOIN *join, int slice_num) {
-  if (!join->ref_items[slice_num].is_null()) {
+  if (slice_num != -1 && !join->ref_items[slice_num].is_null()) {
     join->set_ref_item_slice(slice_num);
   }
 }
@@ -156,7 +156,8 @@ bool buffer_record_somewhere(THD *thd, Window *w, int64 rowno) {
 
     /* Other error than duplicate error: Attempt to create a temporary table. */
     bool is_duplicate;
-    if (create_ondisk_from_heap(thd, t, error, true, &is_duplicate))
+    if (create_ondisk_from_heap(thd, t, error, /*insert_last_record=*/true,
+                                /*ignore_last_dup=*/true, &is_duplicate))
       return true;
 
     assert(t->s->db_type() == innodb_hton);
@@ -269,21 +270,6 @@ bool buffer_windowing_record(THD *thd, Temp_table_param *param,
     }
   }
 
-  /*
-    The record is now ready in TABLE and can be saved. The window
-    function(s) on the window have not yet been evaluated, but
-    will be evaluated when we read frame rows back, before the end wf result
-    (usually ready in the last read when the last frame row has been read back)
-    can be produced. E.g. SUM(i): we save away all rows in partition.
-    We read back rows in current row's frame, producing the total SUM in the
-    last read back row. That value for SUM will then be used for the current row
-    output.
-  */
-
-  if (w->needs_restore_input_row()) {
-    w->save_special_row(Window::FBC_LAST_BUFFERED_ROW, w->frame_buffer());
-  }
-
   if (buffer_record_somewhere(thd, w, w->partition_rowno())) return true;
 
   w->set_last_rowno_in_cache(w->partition_rowno());
@@ -299,7 +285,7 @@ bool read_frame_buffer_row(int64 rowno, Window *w,
 #ifndef NDEBUG
                            bool for_nth_value)
 #else
-                           bool for_nth_value MY_ATTRIBUTE((unused)))
+                           bool for_nth_value [[maybe_unused]])
 #endif
 {
   int use_idx = 0;  // closest prior position found, a priori 0 (row 1)
@@ -404,8 +390,6 @@ inline void dbug_restore_all_columns(std::map<TABLE *, my_bitmap_map *> &map) {
 
   @param thd       The current thread
   @param w         The current window
-  @param out_param OUT table; if not nullptr, does copy_funcs() to OUT
-                   (fields only)
   @param rowno     The row number (in the partition) to set up
   @param reason    What kind of row to retrieve
   @param fno       Used with NTH_VALUE and LEAD/LAG to specify which
@@ -416,8 +400,8 @@ inline void dbug_restore_all_columns(std::map<TABLE *, my_bitmap_map *> &map) {
 
   @return true on error
 */
-bool bring_back_frame_row(THD *thd, Window *w, Temp_table_param *out_param,
-                          int64 rowno, Window_retrieve_cached_row_reason reason,
+bool bring_back_frame_row(THD *thd, Window *w, int64 rowno,
+                          Window_retrieve_cached_row_reason reason,
                           int fno = 0) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("rowno: %" PRId64 " reason: %d fno: %d", rowno,
@@ -441,9 +425,6 @@ bool bring_back_frame_row(THD *thd, Window *w, Temp_table_param *out_param,
   if (rowno == Window::FBC_FIRST_IN_NEXT_PARTITION) {
     do_fetch = true;
     w->restore_special_row(rowno, fb_rec);
-  } else if (rowno == Window::FBC_LAST_BUFFERED_ROW) {
-    do_fetch = w->row_has_fields_in_out_table() != w->last_rowno_in_cache();
-    if (do_fetch) w->restore_special_row(rowno, fb_rec);
   } else {
     assert(reason != Window_retrieve_cached_row_reason::WONT_UPDATE_HINT);
     do_fetch = w->row_has_fields_in_out_table() != rowno;
@@ -469,7 +450,7 @@ bool bring_back_frame_row(THD *thd, Window *w, Temp_table_param *out_param,
 
 #if !defined(NDEBUG)
   /*
-    Since we are copying back a row from the frame buffer to the input table's
+    Since we are copying back a row from the frame buffer to the output table's
     buffer, we will be copying into fields that are not necessarily marked as
     writeable. To eliminate problems with ASSERT_COLUMN_MARKED_FOR_WRITE, we
     set all fields writeable. This is only
@@ -491,15 +472,9 @@ bool bring_back_frame_row(THD *thd, Window *w, Temp_table_param *out_param,
 #endif
 
   if (!rc) {
-    if (out_param) {
-      if (copy_funcs(out_param, thd, CFT_FIELDS)) return true;
-      // fields are in IN and in OUT
-      if (rowno >= 1) w->set_row_has_fields_in_out_table(rowno);
-    } else
-      // we only wrote IN record, so OUT and IN are inconsistent
-      w->set_row_has_fields_in_out_table(0);
+    // fields are in OUT
+    if (rowno >= 1) w->set_row_has_fields_in_out_table(rowno);
   }
-
   return rc;
 }
 
@@ -572,7 +547,7 @@ bool process_wfs_needing_partition_cardinality(
 
       if (rowno_to_visit >= 1 && rowno_to_visit <= w->last_rowno_in_cache()) {
         if (bring_back_frame_row(
-                thd, w, param, rowno_to_visit,
+                thd, w, rowno_to_visit,
                 Window_retrieve_cached_row_reason::MISC_POSITIONS,
                 nths + fno++))
           return true;
@@ -582,7 +557,7 @@ bool process_wfs_needing_partition_cardinality(
         return true;
     }
     /* Bring back the fields for the output row */
-    if (bring_back_frame_row(thd, w, param, current_row, current_row_reason))
+    if (bring_back_frame_row(thd, w, current_row, current_row_reason))
       return true;
   }
 
@@ -949,7 +924,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       We need to reset functions. As part of it, their comparators need to
       update themselves to use the new row as base line. So, restore it:
     */
-    if (bring_back_frame_row(thd, &w, param, current_row,
+    if (bring_back_frame_row(thd, &w, current_row,
                              Window_retrieve_cached_row_reason::CURRENT))
       return true;
 
@@ -1033,7 +1008,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       w.save_pos(reason);
 
       /* Set up the non-wf fields for aggregating to the output row. */
-      if (bring_back_frame_row(thd, &w, param, rowno, reason)) return true;
+      if (bring_back_frame_row(thd, &w, rowno, reason)) return true;
 
       if (range_frame) {
         if (w.before_frame()) {
@@ -1111,7 +1086,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
   */
   if (static_aggregate && current_row != 1) {
     /* Set up the correct non-wf fields for copying to the output row */
-    if (bring_back_frame_row(thd, &w, param, current_row,
+    if (bring_back_frame_row(thd, &w, current_row,
                              Window_retrieve_cached_row_reason::CURRENT))
       return true;
 
@@ -1144,7 +1119,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
         bool is_last_row_in_peerset = true;
         if (rowno < upper) {
           if (bring_back_frame_row(
-                  thd, &w, param, rowno,
+                  thd, &w, rowno,
                   Window_retrieve_cached_row_reason::LAST_IN_PEERSET))
             return true;
           // Establish current row as base-line for peer set.
@@ -1157,7 +1132,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
           rowno++;
           if (rowno < upper) {
             if (bring_back_frame_row(
-                    thd, &w, param, rowno,
+                    thd, &w, rowno,
                     Window_retrieve_cached_row_reason::LAST_IN_PEERSET))
               return true;
             // Compare only the first order by item.
@@ -1170,7 +1145,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       }
 
       if (bring_back_frame_row(
-              thd, &w, param, lower_limit - 1,
+              thd, &w, lower_limit - 1,
               Window_retrieve_cached_row_reason::FIRST_IN_FRAME))
         return true;
 
@@ -1194,7 +1169,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     if (have_first_value && (lower_limit <= last_rowno_in_cache)) {
       // We have seen first row of frame, FIRST_VALUE can be computed:
       if (bring_back_frame_row(
-              thd, &w, param, lower_limit,
+              thd, &w, lower_limit,
               Window_retrieve_cached_row_reason::FIRST_IN_FRAME))
         return true;
 
@@ -1211,8 +1186,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     if (have_last_value && !new_last_row) {
       // We have seen last row of frame, LAST_VALUE can be computed:
       if (bring_back_frame_row(
-              thd, &w, param, upper,
-              Window_retrieve_cached_row_reason::LAST_IN_FRAME))
+              thd, &w, upper, Window_retrieve_cached_row_reason::LAST_IN_FRAME))
         return true;
 
       w.set_rowno_in_frame(rn_in_frame);
@@ -1229,7 +1203,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       for (Window::st_offset nth : have_nth_value.m_offsets) {
         if (lower_limit + nth.m_rowno - 1 <= upper) {
           if (bring_back_frame_row(
-                  thd, &w, param, lower_limit + nth.m_rowno - 1,
+                  thd, &w, lower_limit + nth.m_rowno - 1,
                   Window_retrieve_cached_row_reason::MISC_POSITIONS, fno++))
             return true;
 
@@ -1243,8 +1217,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     if (new_last_row)  // Add new last row to framing WF's value
     {
       if (bring_back_frame_row(
-              thd, &w, param, upper,
-              Window_retrieve_cached_row_reason::LAST_IN_FRAME))
+              thd, &w, upper, Window_retrieve_cached_row_reason::LAST_IN_FRAME))
         return true;
 
       w.set_rowno_in_frame(upper - lower_limit + 1)
@@ -1302,7 +1275,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
              rowno++) {
           /* Set up the non-wf fields for aggregating to the output row. */
           if (bring_back_frame_row(
-                  thd, &w, param, rowno,
+                  thd, &w, rowno,
                   Window_retrieve_cached_row_reason::FIRST_IN_FRAME))
             return true;
 
@@ -1353,6 +1326,12 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
           }
         }
 
+        // Empty frame
+        if (rowno > upper && !found_first) {
+          w.set_first_rowno_in_range_frame(rowno);
+          w.set_last_rowno_in_range_frame(rowno - 1);
+        }
+
         if ((have_first_value || have_last_value) &&
             (rowno <= last_rowno_in_cache) && found_first) {
           /*
@@ -1368,7 +1347,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
           if (have_last_value && w.last_rowno_in_range_frame() > rowno) {
             /* Set up the non-wf fields for aggregating to the output row. */
             if (bring_back_frame_row(
-                    thd, &w, param, w.last_rowno_in_range_frame(),
+                    thd, &w, w.last_rowno_in_range_frame(),
                     Window_retrieve_cached_row_reason::LAST_IN_FRAME))
               return true;
 
@@ -1394,7 +1373,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       for (rowno = first; rowno <= upper; rowno++) {
         w.save_pos(Window_retrieve_cached_row_reason::LAST_IN_FRAME);
         if (bring_back_frame_row(
-                thd, &w, param, rowno,
+                thd, &w, rowno,
                 Window_retrieve_cached_row_reason::LAST_IN_FRAME))
           return true;
 
@@ -1462,7 +1441,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
               w.first_rowno_in_range_frame() + nth.m_rowno - 1;
           if (row_to_get <= w.last_rowno_in_range_frame()) {
             if (bring_back_frame_row(
-                    thd, &w, param, row_to_get,
+                    thd, &w, row_to_get,
                     Window_retrieve_cached_row_reason::MISC_POSITIONS, fno++))
               return true;
 
@@ -1491,7 +1470,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       int64 rowno;
       for (rowno = current_row; rowno <= last_rowno_in_cache; rowno++) {
         if (bring_back_frame_row(
-                thd, &w, param, rowno,
+                thd, &w, rowno,
                 Window_retrieve_cached_row_reason::LAST_IN_PEERSET))
           return true;
 
@@ -1511,7 +1490,7 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
 
   if (optimizable && optimizable_primed) w.set_aggregates_primed(true);
 
-  if (bring_back_frame_row(thd, &w, param, current_row,
+  if (bring_back_frame_row(thd, &w, current_row,
                            Window_retrieve_cached_row_reason::CURRENT))
     return true;
 
@@ -1634,8 +1613,7 @@ int BufferingWindowIterator::Read() {
         Bring back saved row for next partition.
       */
       if (bring_back_frame_row(
-              thd(), m_window, m_temp_table_param,
-              Window::FBC_FIRST_IN_NEXT_PARTITION,
+              thd(), m_window, Window::FBC_FIRST_IN_NEXT_PARTITION,
               Window_retrieve_cached_row_reason::WONT_UPDATE_HINT)) {
         return 1;
       }
@@ -1692,23 +1670,6 @@ int BufferingWindowIterator::Read() {
     int err = ReadBufferedRow(m_last_input_row_started_new_partition);
     if (err == 1) {
       return 1;
-    }
-
-    if (m_window->needs_restore_input_row()) {
-      /*
-        Reestablish last row read from input table in case it is needed
-        again before reading a new row. May be necessary if this is the
-        first window following after a join, cf. the caching presumption
-        in EQRefIterator. This logic can be removed if we move to copying
-        between out tmp record and frame buffer record, instead of
-        involving the in record. FIXME.
-      */
-      if (bring_back_frame_row(
-              thd(), m_window, nullptr /* no copy to OUT */,
-              Window::FBC_LAST_BUFFERED_ROW,
-              Window_retrieve_cached_row_reason::WONT_UPDATE_HINT)) {
-        return 1;
-      }
     }
 
     if (err == 0) {

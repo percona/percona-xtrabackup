@@ -53,4 +53,46 @@ let $dump_file = $MYSQLTEST_VARDIR/tmp/ndb_mgmd_dump_file.txt;
 --let $assert_count= 1
 --source include/assert_grep.inc
 
+# To validate Mgmd throws warning when connectstring option is specified
+# when starting mgmd with -f or binary config.
+--echo #
+--echo # Bug32554779 DO NOT ACCEPT -C OPTION WHEN STARTING WITH -F OR
+--echo # BINARY CONFIG
+--echo #
+--error 1
+--exec $NDB_MGMD_EXE -f config.ini -c hostname --initial --nowait-nodes=0 > $dump_file 2>&1
+--echo # verify that mgmd throws warning when -c option is provided along with -f
+--let $assert_text= Do not accept -c option when starting with -f
+--let $assert_select= WARNING: --ndb-connectstring is ignored when mgmd is started with -f or config-file.
+--let $assert_file= $dump_file
+--let $assert_count= 1
+--source include/assert_grep.inc
+
+# To validate Mgmd gives error when -f is not specified
+--echo #
+--echo # Bug32554492 NDB_MGMD SHOULD REPORT ERROR WHEN STARTED
+--echo # WITHOUT -F AND BINARY CONFIG
+--echo #
+--error 1
+--exec $NDB_MGMD_EXE config.ini --initial > $dump_file 2>&1
+--echo # verify that mgmd throws error when -f is not specified
+--let $assert_text= Mgmd gives error when -f is not specifed
+--let $assert_select= ERROR: Unknown option - config.ini specified.
+--let $assert_file= $dump_file
+--let $assert_count= 1
+--source include/assert_grep.inc
+
+# Validates Mgmd gives error when relative path is specified for configdir
+--echo #
+--echo # Bug11755867 NDB_MGMD MISMATCH BETWEEN --CONFIGDIR AND DATADIR
+--echo #
+--error 1
+--exec $NDB_MGMD_EXE -f config.ini --initial --configdir=. > $dump_file 2>&1
+--echo # verify that mgmd throws error when --configdir=. is specified
+--let $assert_text= Mgmd gives error when relative path is specified for configdir
+--let $assert_select= ERROR: Relative path \('.'\) not supported for configdir, specify absolute path.
+--let $assert_file= $dump_file
+--let $assert_count= 1
+--source include/assert_grep.inc
+
 --remove_file $dump_file

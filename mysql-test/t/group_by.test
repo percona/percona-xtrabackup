@@ -246,8 +246,10 @@ select value,description,bug_id from t2 left join t1 on t2.program=t1.product an
 select value,description,COUNT(bug_id) from t2 left join t1 on t2.program=t1.product and t2.value=t1.component where program="AAAAA" group by value;
 --sorted_result
 select value,description,COUNT(bug_id) from t2 left join t1 on t2.program=t1.product and t2.value=t1.component where program="AAAAA" group by value having COUNT(bug_id) IN (0,2);
+# NOTE: The DISTINCT is to force sort-based aggregation, making the query somewhat
+# more deterministic between the hypergraph and non-hypergraph optimizers.
 --sorted_result
-select row_number() over (), value,description,COUNT(bug_id) from t2 left join t1 on t2.program=t1.product and t2.value=t1.component where program="AAAAA" group by value having COUNT(bug_id) IN (0,2);
+select row_number() over (), value,description,COUNT(DISTINCT bug_id) from t2 left join t1 on t2.program=t1.product and t2.value=t1.component where program="AAAAA" group by value having COUNT(DISTINCT bug_id) IN (0,2);
 
 --source include/restore_sql_mode_after_turn_off_only_full_group_by.inc
 drop table t1,t2;
@@ -597,7 +599,8 @@ from t1 x3, t1 x4, t1 C, t1 D where x3.a < 3 and x4.a < 4 and D.a < 4
 order by x3.a, x4.a, C.a, D.a;
 
 delete from t2  where a = 2 and b = 'val-2' order by a,b,c,d limit 30;
-
+ANALYZE TABLE t1, t2;
+--replace_column 10 6
 explain select c from t2 where a = 2 and b = 'val-2' group by c;
 select c from t2 where a = 2 and b = 'val-2' group by c;
 drop table t1,t2;
@@ -3215,3 +3218,23 @@ EXECUTE stmt USING @a;
 set @a=32767;
 EXECUTE stmt USING @a;
 DROP TABLE t1;
+
+--echo #
+--echo # Verify that ROLLUP and DISTINCT on nullable GROUP BY expressions
+--echo # work as expected (the sort is not elided).
+--echo #
+
+CREATE TABLE t1 (a INTEGER);
+INSERT INTO t1 VALUES (NULL), (1), (2);
+
+--sorted_result
+SELECT DISTINCT a, COUNT(*) FROM t1 GROUP BY a WITH ROLLUP;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #33007298: RECENT REGRESSION: CRASH IN QEP_SHARED_OWNER::TABLE
+--echo #
+
+--error ER_INVALID_JSON_TEXT_IN_PARAM
+select is_uuid(avg(distinct json_storage_free('$b*<*#]E')));

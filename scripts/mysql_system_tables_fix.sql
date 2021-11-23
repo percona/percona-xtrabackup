@@ -795,6 +795,20 @@ INSERT INTO global_grants SELECT user, host, 'SHOW_ROUTINE', IF(grant_priv = 'Y'
 FROM mysql.user WHERE select_priv = 'Y' AND @hadShowRoutinePriv = 0 AND user NOT IN ('mysql.infoschema','mysql.session','mysql.sys');
 COMMIT;
 
+-- Add the privilege AUTHENTICATION_POLICY_ADMIN for every user who has the SYSTEM_VARIABLES_ADMIN privilege
+-- provided that there isn't a user who already has the privilege AUTHENTICATION_POLICY_ADMIN.
+SET @hadAuthenticationPolicyAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'AUTHENTICATION_POLICY_ADMIN');
+INSERT INTO global_grants SELECT mu.user, mu.host, 'AUTHENTICATION_POLICY_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user mu, global_grants gg WHERE mu.user = gg.user AND gg.priv = 'SYSTEM_VARIABLES_ADMIN' AND @hadAuthenticationPolicyAdminPriv = 0;
+COMMIT;
+
+-- Add the privilege PASSWORDLESS_USER_ADMIN for every user who has the privilege CREATE USER
+-- provided that there isn't a user who already has the privilege PASSWORDLESS_USER_ADMIN.
+SET @hadPasswordlessUserAdminPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'PASSWORDLESS_USER_ADMIN');
+INSERT INTO global_grants SELECT user, host, 'PASSWORDLESS_USER_ADMIN', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE Create_user_priv = 'Y' AND @hadPasswordlessUserAdminPriv = 0;
+COMMIT;
+
 # Activate the new, possible modified privilege tables
 # This should not be needed, but gives us some extra testing that the above
 # changes was correct
@@ -851,6 +865,8 @@ ALTER TABLE slave_master_info ADD Master_compression_algorithm CHAR(64) CHARACTE
 ALTER TABLE slave_master_info ADD Tls_ciphersuites TEXT CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL COMMENT 'Ciphersuites used for TLS 1.3 communication with the master server.';
 
 ALTER TABLE slave_master_info ADD Source_connection_auto_failover BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Indicates whether the channel connection failover is enabled.';
+
+ALTER TABLE slave_master_info ADD Gtid_only BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Indicates if this channel only uses GTIDs and does not persist positions.';
 
 -- This would add the Managed_name column to
 -- replication_asynchronous_connection_failover table on upgrade from older

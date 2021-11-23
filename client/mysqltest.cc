@@ -246,6 +246,7 @@ static Secondary_engine *secondary_engine = nullptr;
 
 static uint opt_zstd_compress_level = default_zstd_compression_level;
 static char *opt_compress_algorithm = nullptr;
+static uint opt_test_ssl_fips_mode = 0;
 
 #ifdef _WIN32
 static DWORD opt_safe_process_pid;
@@ -677,7 +678,7 @@ class AsyncTimer {
   ~AsyncTimer() {
     auto now = std::chrono::system_clock::now();
     auto delta = now - start_;
-    ulonglong MY_ATTRIBUTE((unused)) micros =
+    [[maybe_unused]] ulonglong micros =
         std::chrono::duration_cast<std::chrono::microseconds>(delta).count();
     DBUG_PRINT("async_timing",
                ("%s total micros: %llu", label_.c_str(), micros));
@@ -687,7 +688,7 @@ class AsyncTimer {
     auto now = std::chrono::system_clock::now();
     auto delta = now - time_;
     time_ = now;
-    ulonglong MY_ATTRIBUTE((unused)) micros =
+    [[maybe_unused]] ulonglong micros =
         std::chrono::duration_cast<std::chrono::microseconds>(delta).count();
     DBUG_PRINT("async_timing", ("%s op micros: %llu", label_.c_str(), micros));
   }
@@ -2206,7 +2207,7 @@ static void check_result() {
       break; /* ok */
     case RESULT_LENGTH_MISMATCH:
       mess = "Result length mismatch\n";
-      /* Fallthrough */
+      [[fallthrough]];
     case RESULT_CONTENT_MISMATCH: {
       /*
         Result mismatched, dump results to .reject file
@@ -3194,7 +3195,7 @@ static void do_source(struct st_command *command) {
 }
 
 static FILE *my_popen(DYNAMIC_STRING *ds_cmd, const char *mode,
-                      struct st_command *command MY_ATTRIBUTE((unused))) {
+                      struct st_command *command [[maybe_unused]]) {
 #ifdef _WIN32
   /*
     --execw is for tests executing commands containing non-ASCII characters.
@@ -4925,8 +4926,7 @@ static int do_echo(struct st_command *command) {
   return 0;
 }
 
-static void do_wait_for_slave_to_stop(
-    struct st_command *c MY_ATTRIBUTE((unused))) {
+static void do_wait_for_slave_to_stop(struct st_command *c [[maybe_unused]]) {
   static int SLAVE_POLL_INTERVAL = 300000;
   MYSQL *mysql = &cur_con->mysql;
   for (;;) {
@@ -5660,7 +5660,7 @@ static bool kill_process(int pid) {
   @param pid  Process id.
   @param path Path to create minidump file in.
 */
-static void abort_process(int pid, const char *path MY_ATTRIBUTE((unused))) {
+static void abort_process(int pid, const char *path [[maybe_unused]]) {
 #ifdef _WIN32
   HANDLE proc;
   proc = OpenProcess(PROCESS_ALL_ACCESS, false, pid);
@@ -6597,7 +6597,7 @@ static void do_connect(struct st_command *command) {
   static DYNAMIC_STRING ds_connection_name;
   static DYNAMIC_STRING ds_host;
   static DYNAMIC_STRING ds_user;
-  static DYNAMIC_STRING ds_password;
+  static DYNAMIC_STRING ds_password1;
   static DYNAMIC_STRING ds_database;
   static DYNAMIC_STRING ds_port;
   static DYNAMIC_STRING ds_sock;
@@ -6606,12 +6606,14 @@ static void do_connect(struct st_command *command) {
   static DYNAMIC_STRING ds_shm;
   static DYNAMIC_STRING ds_compression_algorithm;
   static DYNAMIC_STRING ds_zstd_compression_level;
+  static DYNAMIC_STRING ds_password2;
+  static DYNAMIC_STRING ds_password3;
   const struct command_arg connect_args[] = {
       {"connection name", ARG_STRING, true, &ds_connection_name,
        "Name of the connection"},
       {"host", ARG_STRING, true, &ds_host, "Host to connect to"},
       {"user", ARG_STRING, false, &ds_user, "User to connect as"},
-      {"passsword", ARG_STRING, false, &ds_password,
+      {"passsword", ARG_STRING, false, &ds_password1,
        "Password used when connecting"},
       {"database", ARG_STRING, false, &ds_database,
        "Database to select after connect"},
@@ -6626,7 +6628,11 @@ static void do_connect(struct st_command *command) {
       {"default_zstd_compression_level", ARG_STRING, false,
        &ds_zstd_compression_level,
        "Default compression level to use "
-       "when using zstd compression."}};
+       "when using zstd compression."},
+      {"second_passsword", ARG_STRING, false, &ds_password2,
+       "Password used when connecting"},
+      {"third_passsword", ARG_STRING, false, &ds_password3,
+       "Password used when connecting"}};
 
   DBUG_TRACE;
   DBUG_PRINT("enter", ("connect: %s", command->first_argument));
@@ -6803,12 +6809,30 @@ static void do_connect(struct st_command *command) {
     mysql_options(&con_slot->mysql, MYSQL_ENABLE_CLEARTEXT_PLUGIN,
                   (char *)&con_cleartext_enable);
 
+  unsigned int factor = 0;
+  if (ds_password1.length) {
+    factor = 1;
+    mysql_options4(&con_slot->mysql, MYSQL_OPT_USER_PASSWORD, &factor,
+                   ds_password1.str);
+  }
+  /* set second and third password */
+  if (ds_password2.length) {
+    factor = 2;
+    mysql_options4(&con_slot->mysql, MYSQL_OPT_USER_PASSWORD, &factor,
+                   ds_password2.str);
+  }
+  if (ds_password3.length) {
+    factor = 3;
+    mysql_options4(&con_slot->mysql, MYSQL_OPT_USER_PASSWORD, &factor,
+                   ds_password3.str);
+  }
+
   /* Special database to allow one to connect without a database name */
   if (ds_database.length && !std::strcmp(ds_database.str, "*NO-ONE*"))
     dynstr_set(&ds_database, "");
 
   if (connect_n_handle_errors(command, &con_slot->mysql, ds_host.str,
-                              ds_user.str, ds_password.str, ds_database.str,
+                              ds_user.str, ds_password1.str, ds_database.str,
                               con_port, ds_sock.str)) {
     DBUG_PRINT("info", ("Inserting connection %s in connection pool",
                         ds_connection_name.str));
@@ -6826,7 +6850,7 @@ static void do_connect(struct st_command *command) {
   dynstr_free(&ds_connection_name);
   dynstr_free(&ds_host);
   dynstr_free(&ds_user);
-  dynstr_free(&ds_password);
+  dynstr_free(&ds_password1);
   dynstr_free(&ds_database);
   dynstr_free(&ds_port);
   dynstr_free(&ds_sock);
@@ -6835,6 +6859,8 @@ static void do_connect(struct st_command *command) {
   dynstr_free(&ds_shm);
   dynstr_free(&ds_compression_algorithm);
   dynstr_free(&ds_zstd_compression_level);
+  dynstr_free(&ds_password2);
+  dynstr_free(&ds_password3);
 }
 
 static int do_done(struct st_command *command) {
@@ -6940,11 +6966,14 @@ static void do_block(enum block_cmd cmd, struct st_command *command) {
 
   /* If this block is ignored */
   if (!cur_block->ok) {
-    /* Inner block should be ignored too */
-    cur_block++;
-    cur_block->cmd = cmd;
-    cur_block->ok = false;
-    cur_block->delim[0] = '\0';
+    if (cmd == cmd_if || cmd == cmd_while) {
+      /* Inner block which comes with the command should be ignored */
+      cur_block++;
+      cur_block->cmd = cmd;
+      cur_block->ok = false;
+      cur_block->delim[0] = '\0';
+    }
+    /* No need to evaulate the condition */
     return;
   }
 
@@ -7782,6 +7811,12 @@ static struct my_option my_long_options[] = {
      "inclusive. Default is 3.",
      &opt_zstd_compress_level, &opt_zstd_compress_level, nullptr, GET_UINT,
      REQUIRED_ARG, 3, 1, 22, nullptr, 0, nullptr},
+    {"test-ssl-fips-mode", 0,
+     "Toggle SSL FIPS mode on or off, to see whether FIPS is supported. "
+     "Prints the result to stdout, and then exits. "
+     "Used by mtr to enable/disable FIPS tests. ",
+     &opt_test_ssl_fips_mode, nullptr, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
 
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
@@ -7802,6 +7837,13 @@ static void usage() {
 
 static bool get_one_option(int optid, const struct my_option *opt,
                            char *argument) {
+  if (opt_test_ssl_fips_mode) {
+    char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
+    int fips_test = test_ssl_fips_mode(ssl_err_string);
+    fprintf(stdout, "--test-ssl-fips-mode %d %s\n", fips_test,
+            fips_test == 0 ? ssl_err_string : "Success");
+    exit(0);
+  }
   switch (optid) {
     case '#':
 #ifndef NDEBUG
@@ -9835,7 +9877,7 @@ int main(int argc, char **argv) {
             command->query = command->first_argument;
             command->first_word_len = 0;
           }
-          /* fall through */
+          [[fallthrough]];
         case Q_QUERY:
         case Q_REAP: {
           bool old_display_result_vertically = display_result_vertically;
@@ -10374,7 +10416,8 @@ void replace_numeric_round_append(int round, DYNAMIC_STRING *result,
           to 1.2000000
         */
         if (size1 < (size_t)r) r = size1;
-      // fallthrough: all cases till next break are executed
+        // fallthrough: all cases till next break are executed
+        [[fallthrough]];
       case 'e':
       case 'E':
         if (isdigit(*(from + size + 1))) {
@@ -10505,7 +10548,7 @@ struct REPLACE_STRING {
 };
 
 void replace_strings_append(REPLACE *rep, DYNAMIC_STRING *ds, const char *str,
-                            size_t len MY_ATTRIBUTE((unused))) {
+                            size_t len [[maybe_unused]]) {
   REPLACE *rep_pos;
   REPLACE_STRING *rep_str;
   const char *start, *from;

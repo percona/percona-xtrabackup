@@ -70,7 +70,7 @@ it is enlarged */
 static const ulint RECALC_POOL_INITIAL_SLOTS = 128;
 
 /** Allocator type, used by std::vector */
-typedef ut_allocator<table_id_t> recalc_pool_allocator_t;
+typedef ut::allocator<table_id_t> recalc_pool_allocator_t;
 
 /** The multitude of tables whose stats are to be automatically
 recalculated - an STL vector */
@@ -90,7 +90,8 @@ static void dict_stats_recalc_pool_init() {
 
   const PSI_memory_key key = mem_key_dict_stats_bg_recalc_pool_t;
 
-  recalc_pool = UT_NEW(recalc_pool_t(recalc_pool_allocator_t(key)), key);
+  recalc_pool = ut::new_withkey<recalc_pool_t>(ut::make_psi_memory_key(key),
+                                               recalc_pool_allocator_t(key));
 
   recalc_pool->reserve(RECALC_POOL_INITIAL_SLOTS);
 }
@@ -102,7 +103,7 @@ static void dict_stats_recalc_pool_deinit() {
 
   recalc_pool->clear();
 
-  UT_DELETE(recalc_pool);
+  ut::delete_(recalc_pool);
   recalc_pool = nullptr;
 }
 
@@ -356,7 +357,7 @@ the auto recalc list and proceeds them, eventually recalculating their
 statistics. */
 void dict_stats_thread() {
   ut_a(!srv_read_only_mode);
-  THD *thd = create_thd(false, true, true, 0);
+  THD *thd = create_internal_thd();
 
   while (!SHUTTING_DOWN()) {
     /* Wake up periodically even if not signaled. This is
@@ -385,7 +386,7 @@ void dict_stats_thread() {
     os_event_reset(dict_stats_event);
   }
 
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 }
 
 /** Shutdown the dict stats thread. */

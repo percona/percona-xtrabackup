@@ -25,7 +25,6 @@
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);
 --source include/rpl_sync.inc
 
-
 --echo
 --echo ############################################################
 --echo # 2. Collect server uuids and increase member2 weight.
@@ -47,7 +46,6 @@ SET GLOBAL group_replication_member_weight= 60;
 --let $rpl_connection_name= server4
 --source include/rpl_connection.inc
 --let $member4_uuid= query_get_value(SELECT @@SERVER_UUID, @@SERVER_UUID, 1)
-
 
 --echo
 --echo ############################################################

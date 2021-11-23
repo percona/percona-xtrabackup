@@ -39,7 +39,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "sql/auth/sql_auth_cache.h"
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/current_thd.h"
-#include "sql/sql_thd_internal_api.h"  // create_thd
+#include "sql/sql_thd_internal_api.h"  // create_internal_thd
 
 class THD;
 
@@ -62,7 +62,7 @@ class Thd_creator {
         without attaching to the Global_THD_manager, and without setting
         an OS thread ID.
       */
-      m_tmp_thd = create_thd(false, true, false, PSI_NOT_INSTRUMENTED);
+      m_tmp_thd = create_internal_thd();
       return m_tmp_thd;
     } else if (m_thd == nullptr) {
       return m_tmp_thd;
@@ -75,7 +75,7 @@ class Thd_creator {
   */
   ~Thd_creator() {
     if (m_thd == nullptr && m_tmp_thd != nullptr) {
-      destroy_thd(m_tmp_thd);
+      destroy_internal_thd(m_tmp_thd);
     }
   }
 
@@ -223,6 +223,12 @@ bool dynamic_privilege_init(void) {
       ret +=
           service->register_privilege(STRING_WITH_LEN("FLUSH_USER_RESOURCES"));
       ret += service->register_privilege(STRING_WITH_LEN("FLUSH_TABLES"));
+      ret += service->register_privilege(
+          STRING_WITH_LEN("GROUP_REPLICATION_STREAM"));
+      ret += service->register_privilege(
+          STRING_WITH_LEN("AUTHENTICATION_POLICY_ADMIN"));
+      ret += service->register_privilege(
+          STRING_WITH_LEN("PASSWORDLESS_USER_ADMIN"));
     }
   }  // exist scope
   mysql_plugin_registry_release(r);

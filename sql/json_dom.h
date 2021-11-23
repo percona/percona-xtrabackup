@@ -1195,10 +1195,7 @@ class Json_wrapper {
   /**
     Create an empty wrapper. Cf #empty().
   */
-  Json_wrapper() : m_dom_value(nullptr), m_is_dom(true) {
-    // Workaround for Solaris Studio, initialize in CTOR body.
-    m_dom_alias = true;
-  }
+  Json_wrapper() : m_dom_value(nullptr), m_dom_alias(true), m_is_dom(true) {}
 
   /**
     Wrap the supplied DOM value (no copy taken). The wrapper takes
@@ -1374,7 +1371,7 @@ class Json_wrapper {
     @param[in] message If given, the JSON document is prefixed with
     this message.
   */
-  void dbug_print(const char *message MY_ATTRIBUTE((unused)) = "") const;
+  void dbug_print(const char *message [[maybe_unused]] = "") const;
 
   /**
     Format the JSON value to an external JSON string in buffer in the format of

@@ -23,6 +23,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include <assert.h>
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -31,6 +32,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <optional>
 
 #include "decimal.h"      // E_DEC_OOM
 #include "field_types.h"  // enum_field_types
@@ -40,8 +42,8 @@
 #include "my_alloc.h"
 #include "my_base.h"  // ha_storage_media
 #include "my_bitmap.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_double2ulonglong.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_time.h"  // MYSQL_TIME_NOTE_TRUNCATED
@@ -49,7 +51,6 @@
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"  // ER_*
-#include "nullable.h"
 #include "sql/dd/types/column.h"
 #include "sql/field_common_properties.h"
 #include "sql/gis/srid.h"
@@ -107,8 +108,6 @@ class Time_zone;
 class my_decimal;
 struct TYPELIB;
 struct timeval;
-
-using Mysql::Nullable;
 
 /*
   Inside an in-memory data record, memory pointers to pieces of the
@@ -886,12 +885,7 @@ class Field {
   Field(uchar *ptr_arg, uint32 length_arg, uchar *null_ptr_arg,
         uchar null_bit_arg, uchar auto_flags_arg, const char *field_name_arg);
 
-#ifdef __SUNPRO_CC
-  // Several mock classes in unit tests need this.
-  virtual ~Field() {}
-#else
   virtual ~Field() = default;
-#endif
 
   void reset_warnings() { m_warnings_pushed = 0; }
 
@@ -1093,8 +1087,7 @@ class Field {
     Useful only for variable length datatypes where it's overloaded.
     By default assume the length is constant.
   */
-  virtual uint32 data_length(
-      ptrdiff_t row_offset MY_ATTRIBUTE((unused)) = 0) const {
+  virtual uint32 data_length(ptrdiff_t row_offset [[maybe_unused]] = 0) const {
     return pack_length();
   }
 
@@ -1198,12 +1191,12 @@ class Field {
   }
   int cmp(const uchar *str) const { return cmp(ptr, str); }
   virtual int cmp_max(const uchar *a, const uchar *b,
-                      uint max_len MY_ATTRIBUTE((unused))) const {
+                      uint max_len [[maybe_unused]]) const {
     return cmp(a, b);
   }
   virtual int cmp(const uchar *, const uchar *) const = 0;
   virtual int cmp_binary(const uchar *a, const uchar *b,
-                         uint32 max_length MY_ATTRIBUTE((unused)) = ~0L) const {
+                         uint32 max_length [[maybe_unused]] = ~0L) const {
     return memcmp(a, b, pack_length());
   }
   virtual int cmp_offset(ptrdiff_t row_offset) const {
@@ -1215,8 +1208,7 @@ class Field {
   virtual int key_cmp(const uchar *a, const uchar *b) const {
     return cmp(a, b);
   }
-  virtual int key_cmp(const uchar *str,
-                      uint length MY_ATTRIBUTE((unused))) const {
+  virtual int key_cmp(const uchar *str, uint length [[maybe_unused]]) const {
     return cmp(ptr, str);
   }
   virtual uint decimals() const { return 0; }
@@ -1433,7 +1425,7 @@ class Field {
   */
 
   virtual size_t get_key_image(uchar *buff, size_t length,
-                               imagetype type MY_ATTRIBUTE((unused))) const {
+                               imagetype type [[maybe_unused]]) const {
     get_image(buff, length, &my_charset_bin);
     return length;
   }
@@ -1554,8 +1546,8 @@ class Field {
 
     @retval false The field was written.
   */
-  virtual bool pack_diff(uchar **to MY_ATTRIBUTE((unused)),
-                         ulonglong value_options MY_ATTRIBUTE((unused))) const {
+  virtual bool pack_diff(uchar **to [[maybe_unused]],
+                         ulonglong value_options [[maybe_unused]]) const {
     return true;
   }
 
@@ -1700,8 +1692,8 @@ class Field {
   }
 
   /* Validate the value stored in a field */
-  virtual type_conversion_status validate_stored_val(
-      THD *thd MY_ATTRIBUTE((unused))) {
+  virtual type_conversion_status validate_stored_val(THD *thd
+                                                     [[maybe_unused]]) {
     return TYPE_OK;
   }
 
@@ -1830,8 +1822,8 @@ class Field {
 
      @returns 0 no bytes written.
   */
-  virtual int do_save_field_metadata(
-      uchar *metadata_ptr MY_ATTRIBUTE((unused))) const {
+  virtual int do_save_field_metadata(uchar *metadata_ptr
+                                     [[maybe_unused]]) const {
     return 0;
   }
 
@@ -2220,7 +2212,7 @@ class Field_tiny : public Field_num {
   }
 
   const uchar *unpack(uchar *to, const uchar *from,
-                      uint param_data MY_ATTRIBUTE((unused))) final {
+                      uint param_data [[maybe_unused]]) final {
     *to = *from;
     return from + 1;
   }
@@ -2271,7 +2263,7 @@ class Field_short final : public Field_num {
   }
 
   const uchar *unpack(uchar *to, const uchar *from,
-                      uint param_data MY_ATTRIBUTE((unused))) final {
+                      uint param_data [[maybe_unused]]) final {
     return unpack_int16(to, from);
   }
 
@@ -2361,7 +2353,7 @@ class Field_long : public Field_num {
     return pack_int32(to, from, max_length);
   }
   const uchar *unpack(uchar *to, const uchar *from,
-                      uint param_data MY_ATTRIBUTE((unused))) final {
+                      uint param_data [[maybe_unused]]) final {
     return unpack_int32(to, from);
   }
 
@@ -2411,7 +2403,7 @@ class Field_longlong : public Field_num {
     return pack_int64(to, from, max_length);
   }
   const uchar *unpack(uchar *to, const uchar *from,
-                      uint param_data MY_ATTRIBUTE((unused))) final {
+                      uint param_data [[maybe_unused]]) final {
     return unpack_int64(to, from);
   }
 
@@ -2672,8 +2664,7 @@ class Field_temporal : public Field {
 
     @note STRICT mode can convert warnings to error.
    */
-  bool set_warnings(const ErrConvString &str, int warnings)
-      MY_ATTRIBUTE((warn_unused_result));
+  [[nodiscard]] bool set_warnings(const ErrConvString &str, int warnings);
 
   /**
     Flags that are passed as "flag" argument to
@@ -2688,8 +2679,7 @@ class Field_temporal : public Field {
     @param  thd  THD
     @retval      sql_mode flags mixed with the field type flags.
   */
-  virtual my_time_flags_t date_flags(
-      const THD *thd MY_ATTRIBUTE((unused))) const {
+  virtual my_time_flags_t date_flags(const THD *thd [[maybe_unused]]) const {
     return 0;
   }
 
@@ -2717,11 +2707,10 @@ class Field_temporal : public Field {
     truncated fields counter if check_for_truncated_fields == FIELD_CHECK_IGNORE
       for current thread.
   */
-  bool set_datetime_warning(Sql_condition::enum_severity_level level, uint code,
-                            const ErrConvString &val,
-                            enum_mysql_timestamp_type ts_type,
-                            int truncate_increment)
-      MY_ATTRIBUTE((warn_unused_result));
+  [[nodiscard]] bool set_datetime_warning(
+      Sql_condition::enum_severity_level level, uint code,
+      const ErrConvString &val, enum_mysql_timestamp_type ts_type,
+      int truncate_increment);
 
  public:
   /**
@@ -2971,7 +2960,7 @@ class Field_timestamp : public Field_temporal_with_date_and_time {
     return pack_int32(to, from, max_length);
   }
   const uchar *unpack(uchar *to, const uchar *from,
-                      uint param_data MY_ATTRIBUTE((unused))) final {
+                      uint param_data [[maybe_unused]]) final {
     return unpack_int32(to, from);
   }
   /* Validate the value stored in a field */
@@ -3345,7 +3334,7 @@ class Field_datetime : public Field_temporal_with_date_and_time {
     return pack_int64(to, from, max_length);
   }
   const uchar *unpack(uchar *to, const uchar *from,
-                      uint param_data MY_ATTRIBUTE((unused))) final {
+                      uint param_data [[maybe_unused]]) final {
     return unpack_int64(to, from);
   }
 };
@@ -3893,7 +3882,7 @@ class Field_blob : public Field_longstr {
 
 class Field_geom final : public Field_blob {
  private:
-  const Nullable<gis::srid_t> m_srid;
+  const std::optional<gis::srid_t> m_srid;
 
   type_conversion_status store_internal(const char *from, size_t length,
                                         const CHARSET_INFO *cs) final;
@@ -3904,13 +3893,13 @@ class Field_geom final : public Field_blob {
   Field_geom(uchar *ptr_arg, uchar *null_ptr_arg, uint null_bit_arg,
              uchar auto_flags_arg, const char *field_name_arg,
              TABLE_SHARE *share, uint blob_pack_length,
-             enum geometry_type geom_type_arg, Nullable<gis::srid_t> srid)
+             enum geometry_type geom_type_arg, std::optional<gis::srid_t> srid)
       : Field_blob(ptr_arg, null_ptr_arg, null_bit_arg, auto_flags_arg,
                    field_name_arg, share, blob_pack_length, &my_charset_bin),
         m_srid(srid),
         geom_type(geom_type_arg) {}
   Field_geom(uint32 len_arg, bool is_nullable_arg, const char *field_name_arg,
-             enum geometry_type geom_type_arg, Nullable<gis::srid_t> srid)
+             enum geometry_type geom_type_arg, std::optional<gis::srid_t> srid)
       : Field_blob(len_arg, is_nullable_arg, field_name_arg, &my_charset_bin,
                    false),
         m_srid(srid),
@@ -3945,7 +3934,7 @@ class Field_geom final : public Field_blob {
   }
   uint is_equal(const Create_field *new_field) const final;
 
-  Nullable<gis::srid_t> get_srid() const { return m_srid; }
+  std::optional<gis::srid_t> get_srid() const { return m_srid; }
 };
 
 /// A field that stores a JSON value.
@@ -4546,7 +4535,7 @@ Field *make_field(MEM_ROOT *mem_root_arg, TABLE_SHARE *share, uchar *ptr,
                   TYPELIB *interval, const char *field_name, bool is_nullable,
                   bool is_zerofill, bool is_unsigned, uint decimals,
                   bool treat_bit_as_char, uint pack_length_override,
-                  Nullable<gis::srid_t> srid, bool is_array);
+                  std::optional<gis::srid_t> srid, bool is_array);
 
 /**
   Instantiates a Field object with the given name and record buffer values.
@@ -4643,9 +4632,9 @@ class Copy_field {
   void invoke_do_copy(bool reverse = false);
   void invoke_do_copy2(const Field *from_field, Field *to_field);
 
-  Field *from_field() { return m_from_field; }
+  Field *from_field() const { return m_from_field; }
 
-  Field *to_field() { return m_to_field; }
+  Field *to_field() const { return m_to_field; }
 };
 
 enum_field_types get_blob_type_from_length(size_t length);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 
 #include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/node_map.h"
+#include "sql/join_optimizer/overflow_bitset.h"
 #include "sql/join_type.h"
 #include "sql/mem_root_array.h"
 #include "sql/sql_class.h"
@@ -60,7 +61,9 @@ struct ConflictRule {
  */
 struct RelationalExpression {
   explicit RelationalExpression(THD *thd)
-      : join_conditions(thd->mem_root), equijoin_conditions(thd->mem_root) {}
+      : multi_children(thd->mem_root),
+        join_conditions(thd->mem_root),
+        equijoin_conditions(thd->mem_root) {}
 
   enum Type {
     INNER_JOIN = static_cast<int>(JoinType::INNER),
@@ -80,6 +83,13 @@ struct RelationalExpression {
     // tests).
     FULL_OUTER_JOIN = static_cast<int>(JoinType::FULL_OUTER),
 
+    // An inner join between two _or more_ tables, with no join conditions.
+    // This is a special form used only during pushdown, for increased
+    // flexibility in reordering. MULTI_INNER_JOIN nodes do not use
+    // left and right, but rather store all its children in multi_children
+    // (which is empty for all other types).
+    MULTI_INNER_JOIN = 102,
+
     TABLE = 100
   } type;
   table_map tables_in_subtree;
@@ -92,14 +102,36 @@ struct RelationalExpression {
   // If type == TABLE.
   const TABLE_LIST *table;
   Mem_root_array<Item *> join_conditions_pushable_to_this;
+  // Tables in the same companion set are those that are inner-joined
+  // against each other; we use this to see in what parts of the graph
+  // we allow cycles. (Within companion sets, we are also allowed to
+  // add Cartesian products if we deem that an advantage, but we don't
+  // do it currently.) -1 means that the table is not part of a companion
+  // set, e.g. because it only participates in outer joins. Tables may
+  // also be alone in their companion sets, which essentially means
+  // the same thing as -1. The companion sets are just opaque identifiers;
+  // the number itself doesn't mean much.
+  int companion_set{-1};
 
   // If type != TABLE. Note that equijoin_conditions will be split off
   // from join_conditions fairly late (at CreateHashJoinConditions()),
   // so often, you will see equijoin conditions in join_condition..
   RelationalExpression *left, *right;
+  Mem_root_array<RelationalExpression *>
+      multi_children;  // See MULTI_INNER_JOIN.
   Mem_root_array<Item *> join_conditions;
   Mem_root_array<Item_func_eq *> equijoin_conditions;
+  // If true, at least one condition under “join_conditions” is a false (0)
+  // constant. (Such conditions can never be under “equijoin_conditions”.)
+  bool join_conditions_reject_all_rows{false};
   table_map conditions_used_tables{0};
+  // If the join conditions were also added as predicates due to cycles
+  // in the graph (see comment in AddCycleEdges()), contains a range of
+  // which indexes they got in the predicate list. This is so that we know that
+  // they are redundant and don't have to apply them if we actually apply this
+  // join (as opposed to getting the edge implicitly by means of joining the
+  // tables along some other way in the cycle).
+  int join_predicate_first{0}, join_predicate_last{0};
 
   // Conflict rules that must be checked before making a subgraph
   // out of this join; this is in addition to the regular connectivity

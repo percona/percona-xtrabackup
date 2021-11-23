@@ -305,14 +305,14 @@ static bool scan_tz_dir(char *name_end) {
           return true;
         }
       } else if (MY_S_ISREG(cur_dir->dir_entry[i].mystat->st_mode)) {
-        init_alloc_root(PSI_NOT_INSTRUMENTED, &tz_storage, 32768, 0);
+        ::new ((void *)&tz_storage) MEM_ROOT(PSI_NOT_INSTRUMENTED, 32768);
         if (!tz_load(fullname, &tz_info, &tz_storage))
           print_tz_as_sql(root_name_end + 1, &tz_info);
         else
           fprintf(stderr,
                   "Warning: Unable to load '%s' as time zone. Skipping it.\n",
                   fullname);
-        free_root(&tz_storage, MYF(0));
+        tz_storage.Clear();
       } else
         fprintf(stderr, "Warning: '%s' is not regular file or directory\n",
                 fullname);
@@ -354,7 +354,7 @@ int main(int argc, char **argv) {
     }
     printf("COMMIT;\n");
   } else {
-    init_alloc_root(PSI_NOT_INSTRUMENTED, &tz_storage, 32768, 0);
+    ::new ((void *)&tz_storage) MEM_ROOT(PSI_NOT_INSTRUMENTED, 32768);
 
     if (strcmp(argv[1], "--leap") == 0) {
       if (tz_load(argv[2], &tz_info, &tz_storage)) {
@@ -372,7 +372,7 @@ int main(int argc, char **argv) {
       printf("COMMIT;\n");
     }
 
-    free_root(&tz_storage, MYF(0));
+    tz_storage.Clear();
   }
 
   return 0;

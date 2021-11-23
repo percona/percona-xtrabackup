@@ -3553,7 +3553,7 @@ setupOperation(NdbOperation*& op, OpTypes optype, Tup& tup)
   case PkInsert:
   case PkUpdate:
   case UkUpdate:
-    /* Fall through */
+    [[fallthrough]];
   case PkWrite:
   case UkWrite:
     CHK(setBlobValue(tup) == 0);
@@ -4716,6 +4716,7 @@ testmain()
     DBG("random seed = " << g_opt.m_seed);
     ndb_srand(g_opt.m_seed);
   }
+
   for (g_loop = 0; g_opt.m_loop == 0 || g_loop < g_opt.m_loop; g_loop++) {
     for (int storage= 0; storage < 2; storage++) {
       if (!testcase(storageSymbol[storage]))
@@ -5945,7 +5946,7 @@ bugtest_27772916()
     switch(v)
     {
     case 0:
-      /* Fall through */
+      [[fallthrough]];
     case 1:
     {
       /* Define a scan, reading blobs */
@@ -5959,7 +5960,7 @@ bugtest_27772916()
       break;
     }
     case 2:
-      /* Fall through */
+      [[fallthrough]];
     case 3:
     {
       /* Define an update operation */

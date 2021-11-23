@@ -72,12 +72,12 @@ this program; if not, write to the Free Software Foundation, Inc.,
 static const ulint MAX_DETAILED_ERROR_LEN = 256;
 
 /** Set of table_id */
-typedef std::set<table_id_t, std::less<table_id_t>, ut_allocator<table_id_t>>
+typedef std::set<table_id_t, std::less<table_id_t>, ut::allocator<table_id_t>>
     table_id_set;
 
 /** Map of transactions to affected table_id */
 typedef std::map<trx_t *, table_id_set, std::less<trx_t *>,
-                 ut_allocator<std::pair<trx_t *const, table_id_set>>>
+                 ut::allocator<std::pair<trx_t *const, table_id_set>>>
     trx_table_map;
 
 /** Map of resurrected transactions to affected table_id */
@@ -117,7 +117,7 @@ static void trx_release_impl_and_expl_locks(trx_t *trx, bool serialised);
 /** Set flush observer for the transaction
 @param[in,out]	trx		transaction struct
 @param[in]	observer	flush observer */
-void trx_set_flush_observer(trx_t *trx, FlushObserver *observer) {
+void trx_set_flush_observer(trx_t *trx, Flush_observer *observer) {
   trx->flush_observer = observer;
 }
 
@@ -243,7 +243,7 @@ struct TrxFactory {
   static void init(trx_t *trx) {
     /* Explicitly call the constructor of the already
     allocated object. trx_t objects are allocated by
-    ut_zalloc() in Pool::Pool() which would not call
+    ut::zalloc_withkey() in Pool::Pool() which would not call
     the constructors of the trx_t members. */
     new (trx) trx_t();
 
@@ -253,10 +253,10 @@ struct TrxFactory {
 
     trx->dict_operation_lock_mode = 0;
 
-    trx->xid = UT_NEW_NOKEY(xid_t());
+    trx->xid = ut::new_withkey<xid_t>(UT_NEW_THIS_FILE_PSI_KEY);
 
-    trx->detailed_error =
-        reinterpret_cast<char *>(ut_zalloc_nokey(MAX_DETAILED_ERROR_LEN));
+    trx->detailed_error = reinterpret_cast<char *>(
+        ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, MAX_DETAILED_ERROR_LEN));
 
     trx->lock.lock_heap = mem_heap_create_typed(1024, MEM_HEAP_FOR_LOCK_HEAP);
 
@@ -288,8 +288,8 @@ struct TrxFactory {
 
     ut_a(UT_LIST_GET_LEN(trx->lock.trx_locks) == 0);
 
-    UT_DELETE(trx->xid);
-    ut_free(trx->detailed_error);
+    ut::delete_(trx->xid);
+    ut::free(trx->detailed_error);
 
     mutex_free(&trx->mutex);
     mutex_free(&trx->undo_mutex);
@@ -302,14 +302,14 @@ struct TrxFactory {
       /* See lock_trx_alloc_locks() why we only free
       the first element. */
 
-      ut_free(trx->lock.rec_pool[0]);
+      ut::free(trx->lock.rec_pool[0]);
     }
 
     if (!trx->lock.table_pool.empty()) {
       /* See lock_trx_alloc_locks() why we only free
       the first element. */
 
-      ut_free(trx->lock.table_pool[0]);
+      ut::free(trx->lock.table_pool[0]);
     }
 
     trx->lock.rec_pool.~lock_pool_t();
@@ -410,14 +410,15 @@ static const ulint MAX_TRX_BLOCK_SIZE = 1024 * 1024 * 4;
 
 /** Create the trx_t pool */
 void trx_pool_init() {
-  trx_pools = UT_NEW_NOKEY(trx_pools_t(MAX_TRX_BLOCK_SIZE));
+  trx_pools = ut::new_withkey<trx_pools_t>(UT_NEW_THIS_FILE_PSI_KEY,
+                                           MAX_TRX_BLOCK_SIZE);
 
   ut_a(trx_pools != nullptr);
 }
 
 /** Destroy the trx_t pool */
 void trx_pool_close() {
-  UT_DELETE(trx_pools);
+  ut::delete_(trx_pools);
 
   trx_pools = nullptr;
 }
@@ -723,47 +724,52 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
   mtr_commit(&mtr);
 }
 
-/** Resurrect table locks for resurrected transactions. */
-void trx_resurrect_locks() {
-  for (trx_table_map::const_iterator t = resurrected_trx_tables.begin();
-       t != resurrected_trx_tables.end(); t++) {
-    trx_t *trx = t->first;
-    const table_id_set &tables = t->second;
-    ut_ad(trx->is_recovered);
+void trx_resurrect_locks(bool all) {
+  for (const auto &element : resurrected_trx_tables) {
+    trx_t *trx = element.first;
 
-    for (table_id_set::const_iterator i = tables.begin(); i != tables.end();
-         i++) {
-      dict_table_t *table =
-          dd_table_open_on_id(*i, nullptr, nullptr, false, true);
-      if (table) {
-        ut_ad(!table->is_temporary());
+    /* We deal only with recovered transactions. If all is false,
+    we skip non dictionary transactions. */
+    if (!trx->is_recovered || (!all && !trx->ddl_operation)) {
+      continue;
+    }
 
-        if (table->ibd_file_missing || table->is_temporary()) {
-          dict_sys_mutex_enter();
-          dd_table_close(table, nullptr, nullptr, true);
-          dict_table_remove_from_cache(table);
-          dict_sys_mutex_exit();
-          continue;
-        }
+    const table_id_set &tables = element.second;
 
-        if (trx->state.load(std::memory_order_relaxed) == TRX_STATE_PREPARED &&
-            !dict_table_is_sdi(table->id)) {
-          trx->mod_tables.insert(table);
-        }
-        DICT_TF2_FLAG_SET(table, DICT_TF2_RESURRECT_PREPARED);
+    for (auto id : tables) {
+      auto table = dd_table_open_on_id(id, nullptr, nullptr, false, true);
 
-        lock_table_ix_resurrect(table, trx);
-
-        DBUG_PRINT("ib_trx", ("resurrect" TRX_ID_FMT "  table '%s' IX lock",
-                              trx_get_id_for_print(trx), table->name.m_name));
-
-        dd_table_close(table, nullptr, nullptr, false);
+      if (table == nullptr) {
+        continue;
       }
+
+      ut_ad(!table->is_temporary());
+
+      if (table->ibd_file_missing || table->is_temporary()) {
+        dict_sys_mutex_enter();
+        dd_table_close(table, nullptr, nullptr, true);
+        dict_table_remove_from_cache(table);
+        dict_sys_mutex_exit();
+        continue;
+      }
+
+      if (trx->state.load(std::memory_order_relaxed) == TRX_STATE_PREPARED &&
+          !dict_table_is_sdi(table->id)) {
+        trx->mod_tables.insert(table);
+      }
+      DICT_TF2_FLAG_SET(table, DICT_TF2_RESURRECT_PREPARED);
+
+      lock_table_ix_resurrect(table, trx);
+
+      DBUG_PRINT("ib_trx", ("resurrect" TRX_ID_FMT "  table '%s' IX lock",
+                            trx_get_id_for_print(trx), table->name.m_name));
+
+      dd_table_close(table, nullptr, nullptr, false);
     }
   }
-
-  resurrected_trx_tables.clear();
 }
+
+void trx_clear_resurrected_table_ids() { resurrected_trx_tables.clear(); }
 
 /** Resurrect the transactions that were doing inserts at the time of the
  crash, they need to be undone.
@@ -783,6 +789,7 @@ static trx_t *trx_resurrect_insert(
   trx->rsegs.m_redo.rseg = rseg;
   *trx->xid = undo->xid;
   trx->id = undo->trx_id;
+  trx_sys_rw_trx_add(trx);
   trx->rsegs.m_redo.insert_undo = undo;
   trx->is_recovered = true;
 
@@ -916,6 +923,7 @@ static void trx_resurrect_update(
     trx->rsegs.m_redo.rseg = rseg;
     *trx->xid = undo->xid;
     trx->id = undo->trx_id;
+    trx_sys_rw_trx_add(trx);
     trx->is_recovered = true;
   }
 
@@ -971,19 +979,15 @@ static void trx_resurrect(trx_rseg_t *rseg) {
   for (auto undo : rseg->insert_undo_list) {
     auto trx = trx_resurrect_insert(undo, rseg);
 
-    trx_sys_rw_trx_add(trx);
-
     trx_resurrect_table_ids(trx, &trx->rsegs.m_redo, undo);
   }
 
   /* Ressurrect transactions that were doing updates. */
   for (auto undo : rseg->update_undo_list) {
-    /* Check the rw_trx_set first. */
-    trx_t *trx;
-    {
-      Trx_shard_latch_guard guard{undo->trx_id, UT_LOCATION_HERE};
-      trx = trx_get_rw_trx_by_id_low(undo->trx_id);
-    }
+    /* Check the active_rw_trxs.by_id first. */
+
+    trx_t *trx = trx_sys->latch_and_execute_with_active_trx(
+        undo->trx_id, [](trx_t *trx) { return trx; }, UT_LOCATION_HERE);
 
     if (trx == nullptr) {
       trx = trx_allocate_for_background();
@@ -993,8 +997,6 @@ static void trx_resurrect(trx_rseg_t *rseg) {
     }
 
     trx_resurrect_update(trx, undo, rseg);
-
-    trx_sys_rw_trx_add(trx);
 
     trx_resurrect_table_ids(trx, &trx->rsegs.m_redo, undo);
   }
@@ -1054,9 +1056,13 @@ void trx_lists_init_at_db_start(void) {
 
   ut::vector<trx_t *> trxs;
   for (auto &shard : trx_sys->shards) {
-    for (const auto &trx_track : shard.rw_trx_set) {
-      trxs.emplace_back(trx_track.m_trx);
-    }
+    shard.active_rw_trxs.latch_and_execute(
+        [&](const Trx_by_id_with_min &trx_by_id_with_min) {
+          for (const auto &trx_track : trx_by_id_with_min.by_id()) {
+            trxs.emplace_back(trx_track.second);
+          }
+        },
+        UT_LOCATION_HERE);
   }
   std::sort(trxs.begin(), trxs.end(),
             [&](trx_t *a, trx_t *b) { return a->id < b->id; });
@@ -1177,7 +1183,7 @@ static trx_rseg_t *get_next_redo_rseg_from_trx_sys() {
   trx_rseg_t *rseg = trx_sys->rsegs.at(slot);
   trx_sys->rsegs.s_unlock();
 
-  /* It is not neccessary to s_lock Rsegs::m_latch here because the
+  /* It is not necessary to s_lock Rsegs::m_latch here because the
   system tablespace is never truncated like other undo tablespaces. */
   rseg->trx_ref_count++;
 
@@ -1718,7 +1724,7 @@ static void trx_flush_log_if_needed_low(lsn_t lsn) /*!< in: lsn up to which logs
     case 2:
       /* Write the log but do not flush it to disk */
       flush = false;
-      /* fall through */
+      [[fallthrough]];
     case 1:
       /* Write the log and optionally flush it to disk */
       wait_stats = log_write_up_to(*log_sys, lsn, flush);
@@ -1793,22 +1799,8 @@ static void trx_erase_lists(trx_t *trx) {
   trx_ids_t::iterator it = std::lower_bound(trx_sys->rw_trx_ids.begin(),
                                             trx_sys->rw_trx_ids.end(), trx->id);
 
-  const bool update_min_active = it == trx_sys->rw_trx_ids.begin();
-
   ut_ad(*it == trx->id);
   trx_sys->rw_trx_ids.erase(it);
-
-  /* We update min_active_trx_id only if needed (separate cache line). */
-  if (update_min_active) {
-    trx_id_t min_id =
-        trx_sys->rw_trx_ids.empty()
-            ? trx_sys->rw_max_trx_id.load(std::memory_order_relaxed) + 1
-            : trx_sys->rw_trx_ids.front();
-
-    ut_ad(min_id > trx_sys->min_active_trx_id.load());
-
-    trx_sys->min_active_trx_id.store(min_id);
-  }
 
   if (trx->read_only || trx->rsegs.m_redo.rseg == nullptr) {
     ut_ad(!trx->in_rw_trx_list);
@@ -1820,6 +1812,7 @@ static void trx_erase_lists(trx_t *trx) {
       trx_sys->mvcc->view_close(trx->read_view, true);
     }
   }
+  DEBUG_SYNC_C("after_trx_erase_lists");
 }
 
 static void trx_release_impl_and_expl_locks(trx_t *trx, bool serialised) {
@@ -1861,38 +1854,40 @@ static void trx_release_impl_and_expl_locks(trx_t *trx, bool serialised) {
     trx_sys_mutex_exit();
   }
 
-  size_t trx_shard_no{};
+  auto state_transition = [&]() {
+    trx_mutex_enter(trx);
+    /* Please consider this particular point in time as the moment the trx's
+    implicit locks become released.
+    This change is protected by both Trx_shard's mutex and trx->mutex.
+    Therefore, there are two secure ways to check if the trx still can hold
+    implicit locks:
+    (1) if you only know id of the trx, then you can obtain Trx_shard's mutex
+    and check if trx is still in the Trx_shard's active_rw_trxs. This works,
+        because the removal from the active_rw_trxs is also protected by the
+        same mutex. We use this approach in lock_rec_convert_impl_to_expl() by
+        using trx_rw_is_active()
+    (2) if you have pointer to trx, and you know it is safe to access (say, you
+        hold reference to this trx which prevents it from being freed) then you
+        can obtain trx->mutex and check if trx->state is equal to
+        TRX_STATE_COMMITTED_IN_MEMORY. We use this approach in
+        lock_rec_convert_impl_to_expl_for_trx() when deciding for the final time
+        if we really want to create explicit lock on behalf of implicit lock
+        holder. */
+    trx->state.store(TRX_STATE_COMMITTED_IN_MEMORY, std::memory_order_relaxed);
+    trx_mutex_exit(trx);
+  };
   if (trx->id > 0) {
-    trx_shard_no = trx_get_shard_no(trx->id);
-    trx_sys_shard_mutex_enter(trx_shard_no, UT_LOCATION_HERE);
-  }
-
-  trx_mutex_enter(trx);
-  /* Please consider this particular point in time as the moment the trx's
-  implicit locks become released.
-  This change is protected by both Trx_shard's mutex and trx->mutex.
-  Therefore, there are two secure ways to check if the trx still can hold
-  implicit locks:
-  (1) if you only know id of the trx, then you can obtain Trx_shard's mutex and
-      check if trx is still in the Trx_shard's rw_trx_set. This works, because
-      the removal from the rw_trx_set is also protected by the same mutex.
-      We use this approach in lock_rec_convert_impl_to_expl() by using
-      trx_rw_is_active()
-  (2) if you have pointer to trx, and you know it is safe to access (say, you
-      hold reference to this trx which prevents it from being freed) then you
-      can obtain trx->mutex and check if trx->state is equal to
-      TRX_STATE_COMMITTED_IN_MEMORY. We use this approach in
-      lock_rec_convert_impl_to_expl_for_trx() when deciding for the final time
-      if we really want to create explicit lock on behalf of implicit lock
-      holder. */
-  trx->state.store(TRX_STATE_COMMITTED_IN_MEMORY, std::memory_order_relaxed);
-  trx_mutex_exit(trx);
-
-  if (trx->id > 0) {
-    ut_ad(1 ==
-          trx_sys->shards[trx_shard_no].rw_trx_set.count(TrxTrack(trx->id)));
-    trx_sys->shards[trx_shard_no].rw_trx_set.erase(TrxTrack(trx->id));
-    trx_sys_shard_mutex_exit(trx_shard_no);
+    trx_sys->get_shard_by_trx_id(trx->id).active_rw_trxs.latch_and_execute(
+        [&](Trx_by_id_with_min &trx_by_id_with_min) {
+          state_transition();
+          ut_d(const size_t trx_shard_no = trx_get_shard_no(trx->id));
+          ut_ad(trx_get_shard_no(trx_by_id_with_min.min_id()) == trx_shard_no);
+          trx_by_id_with_min.erase(trx->id);
+          ut_ad(trx_get_shard_no(trx_by_id_with_min.min_id()) == trx_shard_no);
+        },
+        UT_LOCATION_HERE);
+  } else {
+    state_transition();
   }
 
   /* It is important to remove the transaction from the serialisation list
@@ -1996,15 +1991,6 @@ written */
     }
   }
 
-  if (trx->rsegs.m_redo.rseg != nullptr) {
-    trx_rseg_t *rseg = trx->rsegs.m_redo.rseg;
-    ut_ad(rseg->trx_ref_count > 0);
-
-    /* Multiple transactions can simultaneously decrement
-    the atomic counter. */
-    rseg->trx_ref_count--;
-  }
-
   /* Reset flag that SE persists GTID. */
   auto &gtid_persistor = clone_sys->get_gtid_persistor();
   gtid_persistor.set_persist_gtid(trx, false);
@@ -2074,6 +2060,27 @@ written */
     master thread, purge thread or page_cleaner thread might
     have some work to do. */
     srv_active_wake_master_thread();
+  }
+
+  /* Do not decrement the reference count before this point.
+  There is a potential issue where a thread attempting to drop
+  an undo tablespace may end up dropping this undo space
+  before this thread can complete the cleanup.
+  While marking a undo space as inactive, the server tries
+  to find if any transaction is actively using the undo log
+  being truncated. A non-zero reference count ensures that the
+  thread attempting to truncate/drop the undo tablespace
+  cannot be successful as the undo log cannot be dropped until
+  is it empty. */
+  if (trx->rsegs.m_redo.rseg != nullptr) {
+    trx_rseg_t *rseg = trx->rsegs.m_redo.rseg;
+    ut_ad(rseg->trx_ref_count > 0);
+
+    /* Multiple transactions can simultaneously decrement
+    the atomic counter. */
+    rseg->trx_ref_count--;
+
+    trx->rsegs.m_redo.rseg = nullptr;
   }
 
   /* Free all savepoints, starting from the first. */
@@ -2306,7 +2313,7 @@ void trx_commit_or_rollback_prepare(trx_t *trx) /*!< in/out: transaction */
     case TRX_STATE_FORCED_ROLLBACK:
 
       trx_start_low(trx, true);
-      /* fall through */
+      [[fallthrough]];
 
     case TRX_STATE_ACTIVE:
     case TRX_STATE_PREPARED:
@@ -2420,7 +2427,7 @@ dberr_t trx_commit_for_mysql(trx_t *trx) /*!< in/out: transaction */
       ut_d(trx->start_line = __LINE__);
 
       trx_start_low(trx, true);
-      /* fall through */
+      [[fallthrough]];
     case TRX_STATE_ACTIVE:
     case TRX_STATE_PREPARED:
       trx->op_info = "committing";
@@ -2483,7 +2490,7 @@ void trx_mark_sql_stat_end(trx_t *trx) /*!< in: trx handle */
     case TRX_STATE_FORCED_ROLLBACK:
       trx->undo_no = 0;
       trx->undo_rseg_space = 0;
-      /* fall through */
+      [[fallthrough]];
     case TRX_STATE_ACTIVE:
       trx->last_sql_stat_start.least_undo_no = trx->undo_no;
 
@@ -3175,7 +3182,7 @@ int trx_recover_for_mysql(
  which is in the prepared state
  @return trx on match, the trx->xid will be invalidated;
  */
-static MY_ATTRIBUTE((warn_unused_result)) trx_t *trx_get_trx_by_xid_low(
+[[nodiscard]] static trx_t *trx_get_trx_by_xid_low(
     const XID *xid) /*!< in: X/Open XA transaction
                     identifier */
 {

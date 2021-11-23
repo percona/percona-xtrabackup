@@ -51,15 +51,13 @@ void Clone_persist_gtid::add(const Gtid_desc &gtid_desc) {
   }
   ut_ad(trx_sys_serialisation_mutex_own());
 
-  /* If too many GTIDs are accumulated, wait for all to get flushed. */
-  while (check_max_gtid_threshold()) {
+  /* If too many GTIDs are accumulated, wait for all to get flushed. Ignore
+  timeout and loop to avoid possible hang. The insert should already be
+  slowed down by the wait here. */
+  if (check_max_gtid_threshold() && is_thread_active()) {
     trx_sys_serialisation_mutex_exit();
     wait_flush(false, false, nullptr);
     trx_sys_serialisation_mutex_enter();
-    /* Starvation is possible theoretically here, if the active list gets
-    filled to threshold before a transaction could get hold of the mutex
-    after being woken up. Practically not feasible as the number of waiting
-    transactions at any point in time is far less than the threshold. */
   }
 
   ut_ad(trx_sys_serialisation_mutex_own());
@@ -562,7 +560,7 @@ bool Clone_persist_gtid::check_max_gtid_threshold() {
 }
 
 void Clone_persist_gtid::periodic_write() {
-  auto thd = create_thd(false, true, true, PSI_NOT_INSTRUMENTED);
+  auto thd = create_internal_thd();
 
   /* Allow GTID to be persisted on read only server. */
   thd->set_skip_readonly_check();
@@ -621,7 +619,7 @@ void Clone_persist_gtid::periodic_write() {
   }
 
   m_active.store(false);
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
   m_thread_active.store(false);
 }
 
@@ -700,7 +698,7 @@ bool Clone_persist_gtid::start() {
   }
 
   srv_threads.m_gtid_persister =
-      os_thread_create(clone_gtid_thread_key, clone_gtid_thread, this);
+      os_thread_create(clone_gtid_thread_key, 0, clone_gtid_thread, this);
   srv_threads.m_gtid_persister.start();
 
   if (!wait_thread(true, false, 0, false, false, nullptr)) {

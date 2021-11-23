@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <regex>
@@ -340,7 +341,7 @@ bool is_port_available(const uint16_t port) {
 #elif defined(_WIN32)
   const std::string &netstat_cmd{"netstat -p tcp -n -a | findstr LISTEN"};
 #elif defined(__sun)
-  const std::string &netstat_cmd{"netstat -n -P tcp | grep LISTEN"};
+  const std::string &netstat_cmd{"netstat -na -P tcp | grep LISTEN"};
 #else
   // BSD and MacOS
   const std::string &netstat_cmd{"netstat -p tcp -an | grep LISTEN"};
@@ -360,8 +361,26 @@ bool is_port_available(const uint16_t port) {
 
   std::string line;
   while (std::getline(file, line)) {
-    if (pattern_found(line,
-                      "127\\..*[.:]" + std::to_string(port) + "[^\\d]?")) {
+    // Check if netstat output contains listening port <XYZ> given the following
+    // netstat outputs:
+    //
+    // MacOS
+    // tcp46   0   0 *.XYZ             *.*          LISTEN
+    // tcp4    0   0 127.0.0.1.XYZ     *.*          LISTEN
+    //
+    // Windows
+    //  TCP    127.0.0.1:XYZ          0.0.0.0:0              LISTENING
+    //  TCP    0.0.0.0:XYZ            0.0.0.0:0              LISTENING
+    //
+    //  Linux/BSD
+    //  tcp     0    0 0.0.0.0:XYZ       0.0.0.0:*               LISTEN
+    //  tcp     0    0 127.0.0.1:XYZ     0.0.0.0:*               LISTEN
+    //
+    //  SunOS
+    //  *.XYZ                 *.*              0      0  256000      0 LISTEN
+    //  127.0.0.1.XYZ         *.*              0      0  256000      0 LISTEN
+    if (pattern_found(
+            line, "[\\*,0,127]\\..*[.:]" + std::to_string(port) + "[^\\d]?")) {
       return false;
     }
   }
@@ -576,4 +595,72 @@ void connect_client_and_query_port(unsigned router_port, std::string &out_port,
         std::to_string(result->size()));
   }
   out_port = std::string((*result)[0]);
+}
+
+// Wait for the nth occurence of the log_regex in the log_file with the timeout
+// If it's found returns the full line containing the log_regex
+// If the timeout has been reached returns unexpected
+static stdx::expected<std::string, void> wait_log_line(
+    const std::string &log_file, const std::string &log_regex,
+    const unsigned n_occurence = 1,
+    const std::chrono::milliseconds timeout = 1s) {
+  const auto start_timestamp = std::chrono::steady_clock::now();
+  const auto kStep = 50ms;
+
+  do {
+    std::istringstream ss{get_file_output(log_file)};
+
+    unsigned current_occurence = 0;
+    for (std::string line; std::getline(ss, line);) {
+      if (pattern_found(line, log_regex)) {
+        current_occurence++;
+        if (current_occurence == n_occurence) return {line};
+      }
+    }
+
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_timestamp) >= timeout) {
+      return stdx::make_unexpected();
+    }
+    std::this_thread::sleep_for(kStep);
+  } while (true);
+}
+
+stdx::expected<std::chrono::time_point<std::chrono::system_clock>, void>
+get_log_timestamp(const std::string &log_file, const std::string &log_regex,
+                  const unsigned occurence,
+                  const std::chrono::milliseconds timeout) {
+  // first wait for the nth occurence of the pattern
+  const auto log_line = wait_log_line(log_file, log_regex, occurence, timeout);
+  if (!log_line) {
+    return log_line.get_unexpected();
+  }
+
+  const std::string log_line_str = log_line.value();
+  // make sure the line is prefixed with the expected timestamp
+  // 2020-06-09 03:53:26.027 foo bar
+  if (!pattern_found(log_line_str,
+                     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}.*")) {
+    return stdx::make_unexpected();
+  }
+
+  // extract the timestamp prefix and conver to the duration
+  std::string timestamp_str =
+      log_line_str.substr(0, strlen("2020-06-09 03:53:26.027"));
+  std::tm tm{};
+#ifdef HAVE_STRPTIME
+  char *rest = strptime(timestamp_str.c_str(), "%Y-%m-%d %H:%M:%S", &tm);
+  assert(*rest == '.');
+  int milliseconds = atoi(++rest);
+#else
+  std::stringstream timestamp_ss(timestamp_str);
+  char dot;
+  unsigned milliseconds;
+  timestamp_ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S") >> dot >>
+      milliseconds;
+#endif
+  auto result = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+  result += std::chrono::milliseconds(milliseconds);
+
+  return result;
 }

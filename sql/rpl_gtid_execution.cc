@@ -302,16 +302,7 @@ int gtid_acquire_ownership_multiple(THD *thd) {
 }
 #endif
 
-/**
-  Check if current transaction should be skipped, that is, if GTID_NEXT
-  was already logged.
-
-  @param  thd    The calling thread.
-
-  @retval true   Transaction was already logged.
-  @retval false  Transaction must be executed.
-*/
-static inline bool is_already_logged_transaction(const THD *thd) {
+bool is_already_logged_transaction(const THD *thd) {
   DBUG_TRACE;
 
   const Gtid_specification *gtid_next = &thd->variables.gtid_next;
@@ -345,7 +336,7 @@ static inline bool is_already_logged_transaction(const THD *thd) {
 
   @param  thd     The calling thread.
 */
-static inline void skip_statement(const THD *thd MY_ATTRIBUTE((unused))) {
+static inline void skip_statement(const THD *thd [[maybe_unused]]) {
   DBUG_TRACE;
 
   DBUG_PRINT("info", ("skipping statement '%s'. "
@@ -536,7 +527,7 @@ enum_gtid_statement_status gtid_pre_statement_checks(THD *thd) {
           skip_statement(thd);
           return GTID_STATEMENT_SKIP;
         }
-        /*FALLTHROUGH*/
+        [[fallthrough]];
       case ANONYMOUS_GTID:
         return GTID_STATEMENT_EXECUTE;
       case INVALID_GTID:
@@ -580,7 +571,7 @@ bool gtid_pre_statement_post_implicit_commit_checks(THD *thd) {
   return false;
 }
 
-void gtid_set_performance_schema_values(const THD *thd MY_ATTRIBUTE((unused))) {
+void gtid_set_performance_schema_values(const THD *thd [[maybe_unused]]) {
   DBUG_TRACE;
 #ifdef HAVE_PSI_TRANSACTION_INTERFACE
   if (thd->m_transaction_psi != nullptr) {

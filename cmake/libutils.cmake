@@ -309,22 +309,24 @@ ENDMACRO(MERGE_LIBRARIES_SHARED)
 
 
 FUNCTION(GET_DEPENDEND_OS_LIBS target result)
-  SET(deps ${${target}_LIB_DEPENDS})
-  IF(deps)
-    FOREACH(lib ${deps})
-      # Filter out keywords for used for debug vs optimized builds
-      IF(NOT lib MATCHES "general" AND
-          NOT lib MATCHES "debug" AND
-          NOT lib MATCHES "optimized")
-        LIST(FIND KNOWN_CONVENIENCE_LIBRARIES ${lib} FOUNDIT)
-        IF(FOUNDIT LESS 0)
-          SET(ret ${ret} ${lib})
-        ENDIF()
+  GET_TARGET_PROPERTY(TARGET_LIB_DEPENDS ${target} LINK_LIBRARIES)
+  SET(MY_DEPENDENT_OS_LIBS)
+  IF(TARGET_LIB_DEPENDS)
+    LIST(REMOVE_DUPLICATES TARGET_LIB_DEPENDS)
+    FOREACH(lib ${TARGET_LIB_DEPENDS})
+      IF(lib MATCHES "${CMAKE_BINARY_DIR}")
+        # This is a "custom/imported" system lib (libssl libcrypto)
+        # MESSAGE(STATUS "GET_DEPENDEND_OS_LIBS ignore imported ${lib}")
+      ELSEIF(TARGET ${lib})
+        # This is one of our own libraries
+        # MESSAGE(STATUS "GET_DEPENDEND_OS_LIBS ignore our ${lib}")
+      ELSE()
+        LIST(APPEND MY_DEPENDENT_OS_LIBS ${lib})
       ENDIF()
     ENDFOREACH()
   ENDIF()
-  SET(${result} ${ret} PARENT_SCOPE)
-ENDFUNCTION()
+  SET(${result} ${MY_DEPENDENT_OS_LIBS} PARENT_SCOPE)
+ENDFUNCTION(GET_DEPENDEND_OS_LIBS)
 
 
 MACRO(MERGE_CONVENIENCE_LIBRARIES TARGET_ARG)
@@ -338,9 +340,18 @@ MACRO(MERGE_CONVENIENCE_LIBRARIES TARGET_ARG)
   SET(TARGET ${TARGET_ARG})
   SET(LIBS ${ARG_UNPARSED_ARGUMENTS})
 
+  # Add a dummy source file, with non-empty content, to avoid warning:
+  # libjson_binlog_static.a(json_binlog_static_depends.c.o) has no symbols
   SET(SOURCE_FILE
     ${CMAKE_BINARY_DIR}/archive_output_directory/${TARGET}_depends.c)
+  SET(SOURCE_FILE_CONTENT "void dummy_${TARGET}_function() {}")
+  CONFIGURE_FILE_CONTENT("${SOURCE_FILE_CONTENT}" "${SOURCE_FILE}")
+
   ADD_LIBRARY(${TARGET} STATIC ${SOURCE_FILE})
+  MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-profile" HAS_MISSING_PROFILE)
+  IF(FPROFILE_USE AND HAS_MISSING_PROFILE)
+    ADD_COMPILE_FLAGS(${SOURCE_FILE} COMPILE_FLAGS ${HAS_MISSING_PROFILE})
+  ENDIF()
 
   IF(ARG_EXCLUDE_FROM_ALL)
     IF(NOT ARG_SKIP_INSTALL)

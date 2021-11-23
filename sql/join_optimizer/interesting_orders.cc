@@ -22,13 +22,17 @@
 
 #include "sql/join_optimizer/interesting_orders.h"
 #include <algorithm>
+#include <functional>
 #include <type_traits>
 #include "sql/item.h"
 #include "sql/item_func.h"
+#include "sql/item_sum.h"
 #include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/print_utils.h"
+#include "sql/parse_tree_nodes.h"
 #include "sql/sql_class.h"
 
+using std::bind;
 using std::distance;
 using std::equal;
 using std::fill;
@@ -36,14 +40,38 @@ using std::lower_bound;
 using std::make_pair;
 using std::max;
 using std::move;
+using std::none_of;
 using std::pair;
 using std::sort;
 using std::string;
 using std::swap;
 using std::unique;
 using std::upper_bound;
+using std::placeholders::_1;
+using std::placeholders::_2;
 
 namespace {
+
+// Set some maximum limits on the size of the FSMs, in order to prevent runaway
+// computation on pathological queries. As rough reference: As of 8.0.26,
+// there is a single query in the test suite hitting these limits (it wants 8821
+// NFSM states and an estimated 2^50 DFSM states). Excluding that query, the
+// test suite contains the following largest FSMs:
+//
+//  - Largest NFSM: 63 NFSM states => 2 DFSM states
+//  - Largest DFSM: 37 NFSM states => 152 DFSM states
+//
+// And for DBT-3:
+//
+//  - Largest NFSM: 43 NFSM states => 3 DFSM states
+//  - Largest DFSM: 8 NFSM states => 8 DFSM states
+//
+// We could make system variables out of these if needed, but they would
+// probably have to be settable by superusers only, in order to prevent runaway
+// unabortable queries from taking down the server. Having them as fixed limits
+// is good enough for now.
+constexpr int kMaxNFSMStates = 200;
+constexpr int kMaxDFSMStates = 2000;
 
 template <class T>
 Bounds_checked_array<T> DuplicateArray(THD *thd,
@@ -102,6 +130,13 @@ int LogicalOrderings::AddOrderingInternal(THD *thd, Ordering order,
     for (size_t i = 1; i < order.size(); ++i) {
       assert(order[i].item > order[i - 1].item);
       assert(order[i].direction == ORDER_NOT_RELEVANT);
+    }
+
+    // Verify that none of the items are of ROW_RESULT,
+    // as RemoveDuplicatesIterator cannot handle them.
+    // (They would theoretically be fine for orderings.)
+    for (size_t i = 0; i < order.size(); ++i) {
+      assert(m_items[order[i].item].item->result_type() != ROW_RESULT);
     }
   }
 #endif
@@ -168,8 +203,10 @@ int LogicalOrderings::AddFunctionalDependency(THD *thd,
 
 void LogicalOrderings::Build(THD *thd, string *trace) {
   BuildEquivalenceClasses();
+  RecanonicalizeGroupings();
   AddFDsFromComputedItems(thd);
   AddFDsFromConstItems(thd);
+  AddFDsFromAggregateItems(thd);
   PreReduceOrderings(thd);
   CreateOrderingsFromGroupings(thd);
   CreateHomogenizedOrderings(thd);
@@ -186,6 +223,9 @@ void LogicalOrderings::Build(THD *thd, string *trace) {
   if (trace != nullptr) {
     *trace += "NFSM for interesting orders, before pruning:\n";
     PrintNFSMDottyGraph(trace);
+    if (m_states.size() >= kMaxNFSMStates) {
+      *trace += "NOTE: NFSM is incomplete, because it became too big.\n";
+    }
   }
   PruneNFSM(thd);
   if (trace != nullptr) {
@@ -196,6 +236,11 @@ void LogicalOrderings::Build(THD *thd, string *trace) {
   if (trace != nullptr) {
     *trace += "\nDFSM for interesting orders:\n";
     PrintDFSMDottyGraph(trace);
+    if (m_dfsm_states.size() >= kMaxDFSMStates) {
+      *trace +=
+          "NOTE: DFSM does not contain all NFSM states, because it became too "
+          "big.\n";
+    }
   }
   FindInitialStatesForOrdering();
   m_built = true;
@@ -402,6 +447,47 @@ void LogicalOrderings::BuildEquivalenceClasses() {
   } while (done_anything);
 }
 
+// Put all groupings into a canonical form that we can compare them
+// as orderings without further logic. (It needs to be on a form that
+// does not change markedly after applying equivalences, and it needs
+// to be deterministic, but apart from that, the order is pretty arbitrary.)
+// We can only do this after BuildEquivalenceClasses().
+void LogicalOrderings::RecanonicalizeGroupings() {
+  for (OrderingWithInfo &ordering : m_orderings) {
+    if (IsGrouping(ordering.ordering)) {
+      sort(ordering.ordering.begin(), ordering.ordering.end(),
+           bind(&LogicalOrderings::ItemBeforeInGroup, this, _1, _2));
+    }
+  }
+}
+
+// Window functions depend on both the function argument and on the PARTITION BY
+// clause, so we need to add both to the functional dependency's head.
+// The order of elements is arbitrary.
+Bounds_checked_array<ItemHandle>
+LogicalOrderings::CollectHeadForStaticWindowFunction(THD *thd,
+                                                     ItemHandle argument_item,
+                                                     Window *window) {
+  const PT_order_list *partition_by = window->effective_partition_by();
+  int partition_len = 0;
+  if (partition_by != nullptr) {
+    for (ORDER *order = partition_by->value.first; order != nullptr;
+         order = order->next) {
+      ++partition_len;
+    }
+  }
+  auto head =
+      Bounds_checked_array<ItemHandle>::Alloc(thd->mem_root, partition_len + 1);
+  if (partition_by != nullptr) {
+    for (ORDER *order = partition_by->value.first; order != nullptr;
+         order = order->next) {
+      head[partition_len--] = GetHandle(*order->item);
+    }
+  }
+  head[0] = argument_item;
+  return head;
+}
+
 /**
   Try to add new FDs from items that are not base items; e.g., if we have
   an item (a + 1), we add {a} → (a + 1) (since addition is deterministic).
@@ -432,15 +518,33 @@ void LogicalOrderings::AddFDsFromComputedItems(THD *thd) {
       continue;
     }
 
-    // We only want to look at items that are not already Item_field,
-    // and that are generated from a single field. Some quick heuristics
-    // will eliminate most of these for us.
+    // We only want to look at items that are not already Item_field
+    // or aggregate functions (the latter are handled in
+    // AddFDsFromAggregateItems()), and that are generated from a single field.
+    // Some quick heuristics will eliminate most of these for us.
     Item *item = m_items[item_idx].item;
     const table_map used_tables = item->used_tables();
-    if (item->type() == Item::FIELD_ITEM || used_tables == 0 ||
-        Overlaps(used_tables, PSEUDO_TABLE_BITS) ||
+    if (item->type() == Item::FIELD_ITEM || item->has_aggregation() ||
+        used_tables == 0 || Overlaps(used_tables, PSEUDO_TABLE_BITS) ||
         !IsSingleBitSet(used_tables)) {
       continue;
+    }
+
+    // Window functions have much more state than just the parameter,
+    // so we cannot say that e.g. {a} → SUM(a) OVER (...), unless we
+    // know that the function is over the entire frame (unbounded).
+    //
+    // TODO(sgunders): We could also add FDs for window functions
+    // where could guarantee that the partition is only one row.
+    bool is_static_wf = false;
+    if (item->has_wf()) {
+      if (item->m_is_window_function &&
+          down_cast<Item_sum *>(item)->framing() &&
+          down_cast<Item_sum *>(item)->window()->static_aggregates()) {
+        is_static_wf = true;
+      } else {
+        continue;
+      }
     }
 
     Item_field *base_field = nullptr;
@@ -482,18 +586,26 @@ void LogicalOrderings::AddFDsFromComputedItems(THD *thd) {
     ItemHandle head_item = GetHandle(base_field);
     FunctionalDependency fd;
     fd.type = FunctionalDependency::FD;
-    fd.head = Bounds_checked_array<ItemHandle>(&head_item, 1);
+    if (is_static_wf) {
+      fd.head = CollectHeadForStaticWindowFunction(
+          thd, head_item, down_cast<Item_sum *>(item)->window());
+    } else {
+      fd.head = Bounds_checked_array<ItemHandle>(&head_item, 1);
+    }
     fd.tail = item_idx;
+    fd.always_active = true;
     AddFunctionalDependency(thd, fd);
 
-    // Extend existing FDs transitively (see function comment).
-    // E.g. if we have S → base, also add S → item.
-    for (int fd_idx = 0; fd_idx < num_original_fds; ++fd_idx) {
-      if (m_fds[fd_idx].type == FunctionalDependency::FD &&
-          m_fds[fd_idx].tail == head_item && m_fds[fd_idx].always_active) {
-        fd = m_fds[fd_idx];
-        fd.tail = item_idx;
-        AddFunctionalDependency(thd, fd);
+    if (fd.head.size() == 1) {
+      // Extend existing FDs transitively (see function comment).
+      // E.g. if we have S → base, also add S → item.
+      for (int fd_idx = 0; fd_idx < num_original_fds; ++fd_idx) {
+        if (m_fds[fd_idx].type == FunctionalDependency::FD &&
+            m_fds[fd_idx].tail == head_item && m_fds[fd_idx].always_active) {
+          fd = m_fds[fd_idx];
+          fd.tail = item_idx;
+          AddFunctionalDependency(thd, fd);
+        }
       }
     }
   }
@@ -524,6 +636,44 @@ void LogicalOrderings::AddFDsFromConstItems(THD *thd) {
       FunctionalDependency fd;
       fd.type = FunctionalDependency::FD;
       fd.head = Bounds_checked_array<ItemHandle>();
+      fd.tail = item_idx;
+      fd.always_active = true;
+      AddFunctionalDependency(thd, fd);
+    }
+  }
+}
+
+void LogicalOrderings::AddFDsFromAggregateItems(THD *thd) {
+  // If ROLLUP is active, and we have nullable GROUP BY expressions, we could
+  // get two different NULL groups with different aggregates; one for the actual
+  // NULL value, and one for the rollup group. If so, these FDs no longer hold,
+  // and we cannot add them.
+  if (m_rollup) {
+    for (ItemHandle item : m_aggregate_head) {
+      if (m_items[item].item->is_nullable()) {
+        return;
+      }
+    }
+  }
+
+  int num_original_items = m_items.size();
+  for (int item_idx = 0; item_idx < num_original_items; ++item_idx) {
+    // We only care about items that are used in some ordering,
+    // not any used as base in FDs or the likes.
+    const ItemHandle canonical_idx = m_items[item_idx].canonical_item;
+    if (!m_items[canonical_idx].used_asc && !m_items[canonical_idx].used_desc &&
+        !m_items[canonical_idx].used_in_grouping) {
+      continue;
+    }
+
+    if (m_items[item_idx].item->has_aggregation() &&
+        !m_items[item_idx].item->has_wf()) {
+      // Add {all GROUP BY items} → item.
+      // Note that the head might be empty, for implicit grouping,
+      // which means all aggregate items are constant (there is only one row).
+      FunctionalDependency fd;
+      fd.type = FunctionalDependency::FD;
+      fd.head = m_aggregate_head;
       fd.tail = item_idx;
       fd.always_active = true;
       AddFunctionalDependency(thd, fd);
@@ -920,9 +1070,7 @@ void LogicalOrderings::AddHomogenizedOrderingIfPossible(
   if (IsGrouping(reduced_ordering)) {
     // We've replaced some items, so we need to re-sort.
     sort(tmpbuf, tmpbuf + length,
-         [](const OrderElement &a, const OrderElement &b) {
-           return a.item < b.item;
-         });
+         bind(&LogicalOrderings::ItemBeforeInGroup, this, _1, _2));
   }
 
   AddOrderingInternal(thd, Ordering(tmpbuf, length),
@@ -983,7 +1131,9 @@ bool LogicalOrderings::CouldBecomeInterestingOrdering(Ordering ordering) const {
       continue;
     }
 
-    // Since groupings are ordered by item, we can use the same comparison
+    // Since groupings are ordered by item (actually canonical item;
+    // see RecanonicalizeGroupings(), ItemBeforeInGroup() and
+    // the GroupReordering unit test), we can use the same comparison
     // for ordering-ordering and grouping-grouping comparisons.
     bool match = true;
     for (size_t i = 0, j = 0;
@@ -1121,24 +1271,44 @@ void LogicalOrderings::BuildNFSM(THD *thd) {
   OrderElement *tmpbuf2 =
       thd->mem_root->ArrayAlloc<OrderElement>(m_longest_ordering);
   for (size_t state_idx = 0; state_idx < m_states.size(); ++state_idx) {
-    {
-      Ordering old_ordering = m_states[state_idx].satisfied_ordering;
-      if (!IsGrouping(old_ordering)) {
-        // Apply the special decay FD; first to shorten the ordering,
-        // then to convert it to a grouping.
-        if (old_ordering.size() > 1) {
-          AddEdge(thd, state_idx, /*required_fd_idx=*/0,
-                  old_ordering.without_back());
-        }
-        if (!old_ordering.empty()) {
-          AddGroupingFromOrdering(thd, state_idx, old_ordering, tmpbuf);
-        }
-      }
+    // Refuse to apply FDs for nondeterministic orderings other than possibly
+    // ordering -> grouping; ie., (a) can _not_ be satisfied by (a, rand()).
+    // This is to avoid evaluating such a nondeterministic function unexpectedly
+    // early, e.g. in GROUP BY when the user didn't expect it to be used in
+    // ORDER BY. (We still allow it on exact matches, though.See also comments
+    // on RAND_TABLE_BIT in SortAheadOrdering.)
+    Ordering old_ordering = m_states[state_idx].satisfied_ordering;
+    const bool deterministic = none_of(
+        old_ordering.begin(), old_ordering.end(), [this](OrderElement element) {
+          return Overlaps(m_items[element.item].item->used_tables(),
+                          RAND_TABLE_BIT);
+        });
+
+    // Apply the special decay FD; first to convert it into a grouping
+    // (which we always allow, even for nondeterministic items),
+    // then to shorten the ordering.
+    if (!IsGrouping(old_ordering) && !old_ordering.empty()) {
+      AddGroupingFromOrdering(thd, state_idx, old_ordering, tmpbuf);
+    }
+    if (!deterministic) {
+      continue;
+    }
+    if (!IsGrouping(old_ordering) && old_ordering.size() > 1) {
+      AddEdge(thd, state_idx, /*required_fd_idx=*/0,
+              old_ordering.without_back());
+    }
+
+    if (m_states.size() >= kMaxNFSMStates) {
+      // Stop expanding new functional dependencies, causing us to end fairly
+      // soon. We won't necessarily find the optimal query, but we'll keep all
+      // essential information, and not throw away any of the information we
+      // have already gathered (unless the DFSM gets too large, too;
+      // see ConvertNFSMToDFSM()).
+      continue;
     }
 
     for (size_t fd_idx = 1; fd_idx < m_fds.size(); ++fd_idx) {
       const FunctionalDependency &fd = m_fds[fd_idx];
-      Ordering old_ordering = m_states[state_idx].satisfied_ordering;
 
       int start_point;
       if (!FunctionalDependencyApplies(fd, old_ordering, &start_point)) {
@@ -1148,6 +1318,7 @@ void LogicalOrderings::BuildNFSM(THD *thd) {
       ItemHandle item_to_add = fd.tail;
 
       // On a = b, try to replace a with b or b with a.
+      Ordering base_ordering;
       if (fd.type == FunctionalDependency::EQUIVALENCE) {
         Ordering new_ordering{tmpbuf, old_ordering.size()};
         memcpy(tmpbuf, &old_ordering[0],
@@ -1169,15 +1340,17 @@ void LogicalOrderings::BuildNFSM(THD *thd) {
         // adbc or adcb. Also, we'll fall through afterwards
         // to _not_ replacing but just adding d, e.g. abdc and abcd.
         // So fall through.
-        old_ordering = new_ordering;
+        base_ordering = new_ordering;
         item_to_add = other_item;
+      } else {
+        base_ordering = old_ordering;
       }
 
       // On S -> b, try to add b everywhere after the last element of S.
-      if (IsGrouping(old_ordering)) {
+      if (IsGrouping(base_ordering)) {
         if (m_items[m_items[item_to_add].canonical_item].used_in_grouping) {
           TryAddingOrderWithElementInserted(
-              thd, state_idx, fd_idx, old_ordering, /*start_point=*/0,
+              thd, state_idx, fd_idx, base_ordering, /*start_point=*/0,
               item_to_add, ORDER_NOT_RELEVANT, tmpbuf2);
         }
       } else {
@@ -1188,12 +1361,12 @@ void LogicalOrderings::BuildNFSM(THD *thd) {
         bool add_desc = m_items[m_items[item_to_add].canonical_item].used_desc;
         if (add_asc) {
           TryAddingOrderWithElementInserted(thd, state_idx, fd_idx,
-                                            old_ordering, start_point + 1,
+                                            base_ordering, start_point + 1,
                                             item_to_add, ORDER_ASC, tmpbuf2);
         }
         if (add_desc) {
           TryAddingOrderWithElementInserted(thd, state_idx, fd_idx,
-                                            old_ordering, start_point + 1,
+                                            base_ordering, start_point + 1,
                                             item_to_add, ORDER_DESC, tmpbuf2);
         }
       }
@@ -1213,9 +1386,7 @@ void LogicalOrderings::AddGroupingFromOrdering(THD *thd, int state_idx,
     }
   }
   sort(tmpbuf, tmpbuf + ordering.size(),
-       [](const OrderElement &a, const OrderElement &b) {
-         return a.item < b.item;
-       });
+       bind(&LogicalOrderings::ItemBeforeInGroup, this, _1, _2));
   AddEdge(thd, state_idx, /*required_fd_idx=*/0,
           Ordering(tmpbuf, ordering.size()));
 }
@@ -1231,18 +1402,20 @@ void LogicalOrderings::TryAddingOrderWithElementInserted(
   for (size_t add_pos = start_point; add_pos <= old_ordering.size();
        ++add_pos) {
     if (direction == ORDER_NOT_RELEVANT) {
-      // For groupings, we just deduplicate right away.
-      if (add_pos < old_ordering.size() &&
-          old_ordering[add_pos].item == item_to_add) {
-        break;
-      }
-
       // For groupings, only insert in the sorted sequence.
       // (If we have found the right insertion spot, we immediately
       // exit after this at the end of the loop.)
       if (add_pos < old_ordering.size() &&
-          old_ordering[add_pos].item < item_to_add) {
+          ItemHandleBeforeInGroup(old_ordering[add_pos].item, item_to_add)) {
         continue;
+      }
+
+      // For groupings, we just deduplicate right away.
+      // TODO(sgunders): When we get C++20, use operator<=> so that we
+      // can use a == b here instead of !(a < b) && !(b < a) as we do now.
+      if (add_pos < old_ordering.size() &&
+          !ItemHandleBeforeInGroup(item_to_add, old_ordering[add_pos].item)) {
+        break;
       }
     }
 
@@ -1512,6 +1685,14 @@ void LogicalOrderings::ConvertNFSMToDFSM(THD *thd) {
           nfsm_edges.push_back(edge);
         }
       }
+    }
+
+    if (m_dfsm_states.size() >= kMaxDFSMStates) {
+      // Stop creating new states, causing us to end fairly soon (same as the
+      // cutoff in BuildNFSM()). Note that since the paths representing explicit
+      // sorts are put first, they will never be lost unless kMaxDFSMStates is
+      // set extremely low.
+      continue;
     }
 
     {

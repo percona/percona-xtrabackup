@@ -35,8 +35,6 @@
 #include <tuple>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
-// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
-// globally and require to include my_rapidjson_size_t.h
 #include "my_rapidjson_size_t.h"
 #endif
 
@@ -107,7 +105,7 @@ MySQLXProtocol::decode_single_message(const std::vector<uint8_t> &payload) {
   auto buf = net::buffer(payload) + 1;
 
   return {
-      stdx::in_place, msg_id,
+      std::in_place, msg_id,
       protocol_decoder_.decode_message(
           header_msg_id, static_cast<const uint8_t *>(buf.data()), buf.size())};
 }
@@ -309,7 +307,10 @@ void MySQLServerMockSessionX::handshake() {
     } else {
       log_warning("decoding handshake-frame failed: %s", ec.message().c_str());
 
-      disconnect();
+      protocol_.encode_error({ER_X_BAD_MESSAGE, "Bad Message", "HY000"});
+
+      send_response_then_disconnect();
+
       return;
     }
   }
@@ -319,7 +320,10 @@ void MySQLServerMockSessionX::handshake() {
     auto ec = decode_res.error();
     log_warning("decoding handshake-message failed: %s", ec.message().c_str());
 
-    disconnect();
+    protocol_.encode_error({ER_X_BAD_MESSAGE, "Bad Message", "HY000"});
+
+    send_response_then_disconnect();
+
     return;
   }
 
@@ -708,8 +712,7 @@ void MySQLXProtocol::encode_resultset(const ResultsetResponse &response) {
                    metadata_msg);
   }
 
-  for (size_t i = 0; i < response.rows.size(); ++i) {
-    auto row = response.rows[i];
+  for (const auto &row : response.rows) {
     if (response.columns.size() != row.size()) {
       throw std::runtime_error(
           std::string("columns_info.size() != row_values.size() ") +
@@ -717,11 +720,14 @@ void MySQLXProtocol::encode_resultset(const ResultsetResponse &response) {
           std::to_string(row.size()));
     }
     Mysqlx::Resultset::Row row_msg;
+
+    size_t col_ndx{};
     for (const auto &field : row) {
       const bool is_null = !field;
       protocol_encoder_.encode_row_field(
           row_msg,
-          protocol_encoder_.column_type_to_x(response.columns[i].type()),
+          protocol_encoder_.column_type_to_x(
+              response.columns[col_ndx++].type()),
           field.value(), is_null);
     }
     encode_message(Mysqlx::ServerMessages::RESULTSET_ROW, row_msg);

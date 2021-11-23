@@ -4187,7 +4187,7 @@ Dblqh::execDROP_TAB_REQ(Signal* signal){
   switch((DropTabReq::RequestType)req->requestType) {
   case DropTabReq::RestartDropTab:
     jam();
-    // Fall through
+    [[fallthrough]];
   case DropTabReq::CreateTabDrop:
     if (tabPtr.p->tableStatus == Tablerec::TABLE_DEFINED)
     {
@@ -4225,7 +4225,7 @@ Dblqh::execDROP_TAB_REQ(Signal* signal){
     case Tablerec::ADD_TABLE_ONGOING:
       jam();
       ndbassert(false);
-      // Fall through
+      [[fallthrough]];
     case Tablerec::PREP_DROP_TABLE_DONE:
       jam();
       tabPtr.p->m_informed_backup_drop_tab = false;
@@ -14505,7 +14505,7 @@ void Dblqh::lqhTransNextLab(Signal* signal,
                 jam();
                 break; /* Skip over */
               }
-              /* Fall through */
+              [[fallthrough]];
             default :
               jam();
               tcConnectptr.p->tcNodeFailrec = tcNodeFailPtr.i;
@@ -15145,7 +15145,8 @@ void Dblqh::setup_scan_pointers_from_tc_con(TcConnectionrecPtr tcConnectptr,
   {
     jamDebug();
     Uint32 storedProcLen =
-      c_tup->copyAttrinfo(loc_scanptr.p->scanStoredProcId);
+      c_tup->copyAttrinfo(loc_scanptr.p->scanStoredProcId,
+                          bool(tcConnectptr.p->opExec));
     (void)storedProcLen;
     ndbassert(loc_scanptr.p->scanAiLength == storedProcLen);
   }
@@ -15158,11 +15159,7 @@ void Dblqh::setup_scan_pointers_from_tc_con(TcConnectionrecPtr tcConnectptr,
    * ensured shared access to the fragment.
    */
   acquire_frag_scan_access_new(prim_tab_fragptr.p, m_tc_connect_ptr.p);
-  if (likely(loc_scanptr.p->scanAccPtr != RNIL))
-  {
-    jamDebug();
-    block->prepare_scan_ctx(loc_scanptr.p->scanAccPtr);
-  }
+  block->prepare_scan_ctx(loc_scanptr.p->scanAccPtr);
   ndbrequire(Magic::check_ptr(tcConnectptr.p->tupConnectPtrP));
   ndbrequire(Magic::check_ptr(tcConnectptr.p->accConnectPtrP));
   loc_scanptr.p->scan_startLine = line;
@@ -15209,16 +15206,13 @@ void Dblqh::setup_scan_pointers(Uint32 scanPtrI, Uint32 line)
   {
     jamDebug();
     Uint32 storedProcLen =
-      c_tup->copyAttrinfo(loc_scanptr.p->scanStoredProcId);
+      c_tup->copyAttrinfo(loc_scanptr.p->scanStoredProcId,
+                          bool(loc_tcConnectptr.p->opExec));
     (void)storedProcLen;
     ndbassert(loc_scanptr.p->scanAiLength == storedProcLen);
   }
   acquire_frag_scan_access_new(prim_tab_fragptr.p, m_tc_connect_ptr.p);
-  if (likely(loc_scanptr.p->scanAccPtr != RNIL))
-  {
-    jamDebug();
-    block->prepare_scan_ctx(loc_scanptr.p->scanAccPtr);
-  }
+  block->prepare_scan_ctx(loc_scanptr.p->scanAccPtr);
   ndbrequire(Magic::check_ptr(loc_tcConnectptr.p->tupConnectPtrP));
   ndbrequire(Magic::check_ptr(loc_tcConnectptr.p->accConnectPtrP));
   loc_scanptr.p->scan_startLine = line;
@@ -15884,7 +15878,7 @@ void Dblqh::closeScanRequestLab(Signal* signal,
     case ScanRecord::WAIT_CLOSE_SCAN:
       jam();
       scanPtr->scanCompletedStatus = ZTRUE;
-      break;
+      return;
       /* -------------------------------------------------------------------
        *       CLOSE IS ALREADY ONGOING. WE NEED NOT DO ANYTHING.
        * ------------------------------------------------------------------- */
@@ -16797,7 +16791,7 @@ void Dblqh::accScanConfScanLab(Signal* signal,
       jamEntryDebug();
       Uint32 storedProcId = signal->theData[1];
       scanPtr->scanStoredProcId = storedProcId;
-      c_tup->copyAttrinfo(storedProcId);
+      c_tup->copyAttrinfo(storedProcId, bool(regTcPtr->opExec));
       storedProcConfScanLab(signal, tcConnectptr);
       return;
     }
@@ -16817,7 +16811,14 @@ void Dblqh::accScanConfScanLab(Signal* signal,
   {
     /* TUP already has the Stored procedure, continue */
     jam();
-    c_tup->copyAttrinfo(scanPtr->scanStoredProcId);
+    TcConnectionrec * const regTcPtr = tcConnectptr.p;
+
+    if (regTcPtr->opExec)  // has interpreter code, possibly using param
+    {
+      // Advance to next parameter in the attrInfo
+      c_tup->nextAttrInfoParam(scanPtr->scanStoredProcId);
+    }
+    c_tup->copyAttrinfo(scanPtr->scanStoredProcId, bool(regTcPtr->opExec));
     storedProcConfScanLab(signal, tcConnectptr);
     return;
   }
@@ -18320,7 +18321,7 @@ void Dblqh::initScanTc(const ScanFragReq* req,
   regTcPtr->m_dealloc_state = TcConnectionrec::DA_IDLE;
   regTcPtr->m_dealloc_data.m_dealloc_ref_count = RNIL;
   regTcPtr->operation = ZREAD;
-  regTcPtr->opExec = 1;
+  regTcPtr->opExec = 0;  // Default 'not interpret', set later if needed
   regTcPtr->abortState = TcConnectionrec::ABORT_IDLE;
   // set TcConnectionrec::OP_SAVEATTRINFO so that a
   // "old" scan (short signals) update currTupAiLen which is checked
@@ -19375,7 +19376,6 @@ void Dblqh::execCOPY_FRAGREQ(Signal* signal)
     regTcPtr->transactionState = TcConnectionrec::SCAN_STATE_USED;
   }
 
-
   {
     AccScanReq * req = (AccScanReq*)&signal->theData[0];
     Uint32 sig_request_info = 0;
@@ -19493,7 +19493,7 @@ void Dblqh::accScanConfCopyLab(Signal* signal)
   ndbrequire(signal->theData[0] == 0);
   scanPtr->scanStoredProcId = signal->theData[1];
   scanPtr->scanAiLength = signal->theData[2];
-  c_tup->copyAttrinfo(scanPtr->scanStoredProcId);
+  c_tup->copyAttrinfo(scanPtr->scanStoredProcId, bool(regTcPtr->opExec));
 
   if (scanPtr->scanCompletedStatus == ZTRUE)
   {
@@ -20327,7 +20327,7 @@ void Dblqh::closeCopyRequestLab(Signal* signal,
   case ScanRecord::COPY_FRAG_HALTED:
     jam();
     c_copy_frag_live_node_halted = false;
-    /* Fall through */
+    [[fallthrough]];
   case ScanRecord::WAIT_LQHKEY_COPY:
     jam();
 /*---------------------------------------------------------------------------*/
@@ -24479,7 +24479,7 @@ void Dblqh::execFSOPENCONF(Signal* signal)
       jam();
       m_redo_open_file_cache.m_lru.addFirst(logFilePtr);
     }
-    // Fall through
+    [[fallthrough]];
   case LogFileRecord::OPEN_EXEC_LOG_CACHED:
     jam();
     unlock_log_part(logPartPtr.p);
@@ -30026,8 +30026,7 @@ Dblqh::invalidateLogAfterLastGCI(Signal* signal,
                         logPartPtrP->firstInvalidatePageNo - 1,
                         logPartPtrP->invalidateFileNo,
                         logPartPtrP->invalidatePageNo - 1);
-
-    // Fall through...
+    [[fallthrough]];
   case LogFileOperationRecord::WRITE_SR_INVALIDATE_PAGES:
     jam();
 
@@ -32700,7 +32699,7 @@ void Dblqh::initReqinfoExecSr(Signal* signal,
 /* ------------------------------------------------------------------------- */
   regTcPtr->lastReplicaNo = 0;
   regTcPtr->nextSeqNoReplica = 0;
-  regTcPtr->opExec = 0;
+  regTcPtr->opExec = 0;      /* NOT INTERPRETED MODE */
   regTcPtr->readlenAi = 0;
   regTcPtr->nodeAfterNext[0] = ZNIL;
   regTcPtr->nodeAfterNext[1] = ZNIL;
@@ -35511,9 +35510,16 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
     if (cstartRecReq < SRR_REDO_COMPLETE)
     {
       jam();
+      g_eventLogger->info("DBLQH %u: Dump 2399 redo not complete - not "
+                          "sending status",
+                          instance());
       return;
     }
 
+    g_eventLogger->info("DBLQH %u: Dump 2399 redo complete - sending status "
+                        "for %u log parts.",
+                        instance(),
+                        clogPartFileSize);
     for(Uint32 i = 0; i < clogPartFileSize; i++)
     {
       LogPartRecordPtr logPartPtr;
@@ -35541,6 +35547,10 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
       signal->theData[10] = logPartPtr.p->noLogFiles;
       signal->theData[11] = clogFileSize;
       sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 12, JBB);
+      g_eventLogger->info("DBLQH %u: Dump 2399 sent redo log status for "
+                          "part %u.",
+                          instance(),
+                          logPartPtr.p->logPartNo);
     }
   }
 

@@ -20,20 +20,16 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+INCLUDE(ndb_downgrade_warnings)
+
 # Disable specific types of warnings for current directory
 # if the compiler supports the flag
 FOREACH(warning
-    "unused-but-set-variable"
-    "strict-aliasing"
-    "unused-parameter"
-    "cast-qual"
-    # Downgrade -Werror to warning for "may be used uninitialized"
-    # and "is used uninitialized in this function"
-    "error=maybe-uninitialized"
-    # Downgrade -Werror=deprecated-copy to warning for gcc 9
-    "error=deprecated-copy"
     # Downgrade -Werror=stringop-truncation to warning for gcc 8/9
     "error=stringop-truncation"
+    # Downgrade -Werror=implicit-fallthrough to warning for
+    # NdbImportCsvGram.cpp
+    "error=implicit-fallthrough"
     )
   MY_CHECK_CXX_COMPILER_WARNING("${warning}" HAS_WARN_FLAG)
   IF(HAS_WARN_FLAG)
@@ -64,6 +60,12 @@ IF(MY_COMPILER_IS_GNU_OR_CLANG)
   # Suppress warnings for undefined identifiers in bison output
   ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/NdbImportCsvGram.cpp
     COMPILE_FLAGS "-Wno-undef")
+ENDIF()
+
+IF(MSVC)
+  # Suppress warnings for switch statement with no 'case' labels
+  ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/NdbImportCsvGram.cpp
+    COMPILE_FLAGS "/wd4065")
 ENDIF()
 
 BISON_TARGET(ndb_import

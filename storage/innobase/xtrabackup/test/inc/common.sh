@@ -497,14 +497,6 @@ function shutdown_server()
 ########################################################################
 function start_group_replication_cluster()
 {
-  # PXB-2551 - Upstram MySQL Debug version doesn't work with GR
-  # https://bugs.mysql.com/bug.php?id=103316
-  if is_debug_server; then
-    if [[ $INNODB_FLAVOR = "InnoDB" ]];
-    then
-      require_server_version_higher_than 8.0.26
-    fi
-  fi
   local number_of_nodes=$1
   shift
   if [[ -z  $number_of_nodes ]];
@@ -531,6 +523,11 @@ loose-group_replication_recovery_use_ssl=ON
 loose-group_replication_recovery_get_public_key=ON
 loose-group_replication_local_address=\"127.0.0.1:${SRV_MYSQLD_GR_PORT[$i]}\"
 loose-group_replication_group_seeds= \"${GR_CLUSTER_ADDRESS%?}\""
+    if [ "$MYSQL_DEBUG_MODE" = "on" ]; then
+      MYSQLD_EXTRA_MY_CNF_OPTS="
+${MYSQLD_EXTRA_MY_CNF_OPTS}
+plugin_dir=${MYSQL_BASEDIR}/lib/plugin/debug"
+    fi
     start_server_with_id ${i} 'gr' $*
 
     # config GR User

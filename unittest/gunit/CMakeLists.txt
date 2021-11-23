@@ -81,21 +81,6 @@ ADD_LIBRARY(gunit_small STATIC
 SET_TARGET_PROPERTIES(gunit_small
   PROPERTIES COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}"
 )
-IF(MY_COMPILER_IS_SUNPRO)
-  TARGET_COMPILE_OPTIONS(gunit_small PRIVATE $<$<CONFIG:RelWithDebInfo>:-xO4>)
-  # Segfaults in EXPECT_EQ(TYPE_OK, set_field_to_null(field));
-  # unless we switch off optimization.
-  ADD_COMPILE_FLAGS(item_json_func-t.cc COMPILE_FLAGS "-xO0")
-ENDIF()
-
-# Several "small" unit tests got 'missing symbol client_errors'
-# When building with Sun Studio
-ADD_LIBRARY(libmysql_errmsg STATIC
-  ${CMAKE_SOURCE_DIR}/libmysql/errmsg.cc
-)
-SET_TARGET_PROPERTIES(libmysql_errmsg
-  PROPERTIES COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}"
-)
 
 ADD_LIBRARY(gunit_large STATIC
   benchmark.cc
@@ -105,11 +90,8 @@ ADD_LIBRARY(gunit_large STATIC
 )
 ADD_DEPENDENCIES(gunit_small GenError)
 ADD_DEPENDENCIES(gunit_large GenError)
-TARGET_LINK_LIBRARIES(gunit_small
-  mysys strings ${GTEST_LIBRARIES} libmysql_errmsg)
-TARGET_LINK_LIBRARIES(gunit_large
-  mysys strings ${GTEST_LIBRARIES})
-MESSAGE(STATUS "GTEST_LIBRARIES:${GTEST_LIBRARIES}")
+TARGET_LINK_LIBRARIES(gunit_small mysys strings ${GTEST_LIBRARIES})
+TARGET_LINK_LIBRARIES(gunit_large mysys strings ${GTEST_LIBRARIES})
 
 IF(WIN32)
   ## Create an object library of nt_servc.cc, so we don't have to
@@ -174,8 +156,8 @@ SET(TESTS
   mysys_my_time
   mysys_my_write
   mysys_pathfuncs
-  nullable
   opt_recperkey
+  overflow_bitset
   partitioned_rwlock
   pattern_matcher
   prealloced_array
@@ -234,6 +216,7 @@ SET(SERVER_TESTS
   gis_frechet_distance
   gis_geometries
   gis_hausdorff_distance
+  gis_intersection
   gis_is_simple
   gis_isvalid
   gis_line_interpolate_point
@@ -241,6 +224,7 @@ SET(SERVER_TESTS
   gis_rtree_support
   gis_setops
   gis_srs
+  gis_symdifference
   gis_union
   gis_wkb_parser
   gis_wkb_writer
@@ -328,6 +312,7 @@ SET(SQL_GUNIT_LIB_SOURCE
   ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc
   ${CMAKE_SOURCE_DIR}/sql/thr_malloc.cc
   ${CMAKE_SOURCE_DIR}/sql/join_optimizer/hypergraph.cc
+  ${CMAKE_SOURCE_DIR}/sql/join_optimizer/overflow_bitset.cc
   ${CMAKE_SOURCE_DIR}/sql/locks/shared_spin_lock.cc
   )
 
@@ -338,10 +323,11 @@ SET_TARGET_PROPERTIES(sqlgunitlib
 )
 
 MYSQL_ADD_EXECUTABLE(merge_small_tests-t ${ALL_SMALL_TESTS}
+  ADD_TEST merge_small_tests
+  COMPILE_DEFINITIONS ${DISABLE_PSI_DEFINITIONS}
   ENABLE_EXPORTS
-  ADD_TEST merge_small_tests)
-TARGET_LINK_LIBRARIES(merge_small_tests-t
-  sqlgunitlib gunit_small)
+  LINK_LIBRARIES sqlgunitlib gunit_small
+  )
 
 IF(WIN32)
   LIST(APPEND ALL_LARGE_TESTS ../../sql/nt_servc.cc)
@@ -349,20 +335,19 @@ ENDIF()
 LIST(APPEND ALL_LARGE_TESTS ../../storage/example/ha_example.cc)
 
 MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS}
+  ADD_TEST merge_large_tests
   ENABLE_EXPORTS
-  ADD_TEST merge_large_tests)
-
-TARGET_LINK_LIBRARIES(merge_large_tests-t
-  gunit_large
-  server_unittest_library
+  LINK_LIBRARIES gunit_large server_unittest_library
   )
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
-    ENABLE_EXPORTS SKIP_INSTALL EXCLUDE_FROM_ALL)
-  ADD_COMPILE_DEFINITIONS(${test}-t.cc
-    COMPILE_DEFINITIONS ${DISABLE_PSI_DEFINITIONS})
-  TARGET_LINK_LIBRARIES(${test}-t sqlgunitlib gunit_small)
+    COMPILE_DEFINITIONS ${DISABLE_PSI_DEFINITIONS}
+    ENABLE_EXPORTS
+    EXCLUDE_FROM_ALL
+    LINK_LIBRARIES sqlgunitlib gunit_small
+    SKIP_INSTALL
+    )
 ENDFOREACH()
 
 # See comments about __builtin_memcmp in the source file.
@@ -387,11 +372,10 @@ FOREACH(test ${SERVER_TESTS})
     LIST(APPEND SRC_FILES ../../storage/example/ha_example.cc)
   ENDIF()
   MYSQL_ADD_EXECUTABLE(${test}-t ${SRC_FILES}
-    ENABLE_EXPORTS SKIP_INSTALL EXCLUDE_FROM_ALL)
-
-  TARGET_LINK_LIBRARIES(${test}-t
-    gunit_large
-    server_unittest_library
+    ENABLE_EXPORTS
+    EXCLUDE_FROM_ALL
+    LINK_LIBRARIES gunit_large server_unittest_library
+    SKIP_INSTALL
     )
 ENDFOREACH()
 

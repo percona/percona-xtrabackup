@@ -72,7 +72,6 @@
 #include "sql/mysqld.h"       // stage_... mysql_tmpdir
 #include "sql/opt_explain.h"  // Modification_plan
 #include "sql/opt_explain_format.h"
-#include "sql/opt_range.h"  // QUICK_SELECT_I
 #include "sql/opt_trace.h"  // Opt_trace_object
 #include "sql/opt_trace_context.h"
 #include "sql/parse_tree_node_base.h"
@@ -80,6 +79,8 @@
 #include "sql/protocol.h"
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
+#include "sql/range_optimizer/partition_pruning.h"
+#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
 #include "sql/records.h"  // unique_ptr_destroy_only<RowIterator>
 #include "sql/row_iterator.h"
 #include "sql/select_lex_visitor.h"
@@ -107,6 +108,7 @@
 #include "sql/thd_raii.h"
 #include "sql/timing_iterator.h"
 #include "sql/transaction_info.h"
+#include "sql/trigger_chain.h"
 #include "sql/trigger_def.h"
 #include "template_utils.h"
 #include "thr_lock.h"
@@ -454,15 +456,20 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   table->mark_columns_needed_for_update(thd,
                                         false /*mark_binlog_columns=false*/);
 
-  QEP_TAB_standalone qep_tab_st;
-  QEP_TAB &qep_tab = qep_tab_st.as_QEP_TAB();
+  QUICK_SELECT_I *quick = nullptr;
+  join_type type = JT_UNKNOWN;
 
-  qep_tab.set_table(table);
-  qep_tab.set_condition(conds);
+  auto cleanup = create_scope_guard([&quick, table] {
+    destroy(quick);
+    table->set_keyread(false);
+    table->file->ha_index_or_rnd_end();
+    free_io_cache(table);
+    filesort_free_buffers(table, true);
+  });
 
   if (conds &&
       thd->optimizer_switch_flag(OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN)) {
-    table->file->cond_push(conds, false);
+    table->file->cond_push(conds);
   }
 
   {  // Enter scope for optimizer trace wrapper
@@ -471,12 +478,13 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
 
     if (!no_rows && conds != nullptr) {
       Key_map keys_to_use(Key_map::ALL_BITS), needed_reg_dummy;
-      QUICK_SELECT_I *qck;
+      MEM_ROOT temp_mem_root(key_memory_test_quick_select_exec,
+                             thd->variables.range_alloc_block_size);
       no_rows = test_quick_select(
-                    thd, keys_to_use, 0, limit, safe_update, ORDER_NOT_RELEVANT,
-                    &qep_tab, conds, &needed_reg_dummy, &qck,
-                    qep_tab.table()->force_index, query_block) < 0;
-      qep_tab.set_quick(qck);
+                    thd, thd->mem_root, &temp_mem_root, keys_to_use, 0, 0,
+                    limit, safe_update, ORDER_NOT_RELEVANT, table,
+                    /*skip_records_in_range=*/false, conds, &needed_reg_dummy,
+                    &quick, table->force_index, query_block) < 0;
       if (thd->is_error()) return true;
     }
     if (no_rows) {
@@ -528,8 +536,12 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   uint used_index;
   {
     ORDER_with_src order_src(order, ESC_ORDER_BY);
-    used_index =
-        get_index_for_order(&order_src, &qep_tab, limit, &need_sort, &reverse);
+    used_index = get_index_for_order(&order_src, table, limit, &quick,
+                                     &need_sort, &reverse);
+    if (quick != nullptr) {
+      // May have been changed by get_index_for_order().
+      type = calc_join_type(quick->get_type());
+    }
   }
   if (need_sort) {  // Assign table scan index to check below for modified key
                     // fields:
@@ -538,13 +550,13 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   if (used_index != MAX_KEY) {  // Check if we are modifying a key that we are
                                 // used to search with:
     used_key_is_modified = is_key_used(table, used_index, table->write_set);
-  } else if (qep_tab.quick()) {
+  } else if (quick) {
     /*
       select->quick != NULL and used_index == MAX_KEY happens for index
       merge and should be handled in a different way.
     */
-    used_key_is_modified = (!qep_tab.quick()->unique_key_range() &&
-                            qep_tab.quick()->is_keys_used(table->write_set));
+    used_key_is_modified =
+        (!quick->unique_key_range() && quick->is_keys_used(table->write_set));
   }
 
   if (table->part_info)
@@ -568,18 +580,17 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
 
   {  // Start of scope for Modification_plan
     ha_rows rows;
-    if (qep_tab.quick())
-      rows = qep_tab.quick()->records;
+    if (quick)
+      rows = quick->records;
     else if (!conds && !need_sort && limit != HA_POS_ERROR)
       rows = limit;
     else {
       update_table_ref->fetch_number_of_rows();
       rows = table->file->stats.records;
     }
-    qep_tab.set_quick_optim();
-    qep_tab.set_condition_optim();
     DEBUG_SYNC(thd, "before_single_update");
-    Modification_plan plan(thd, MT_UPDATE, &qep_tab, used_index, limit,
+    Modification_plan plan(thd, MT_UPDATE, table, type, quick, conds,
+                           used_index, limit,
                            (!using_filesort && (used_key_is_modified || order)),
                            using_filesort, used_key_is_modified, rows);
     DEBUG_SYNC(thd, "planned_single_update");
@@ -606,25 +617,24 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         */
         JOIN join(thd, query_block);  // Only for holding examined_rows.
         AccessPath *path = create_table_access_path(
-            thd, nullptr, &qep_tab, /*count_examined_rows=*/true);
+            thd, table, quick, /*table_ref=*/nullptr,
+            /*position=*/nullptr, /*count_examined_rows=*/true);
 
-        if (qep_tab.condition() != nullptr) {
-          path = NewFilterAccessPath(thd, path, qep_tab.condition());
+        if (conds != nullptr) {
+          path = NewFilterAccessPath(thd, path, conds);
         }
 
         // Force filesort to sort by position.
         fsort.reset(new (thd->mem_root) Filesort(
-            thd, {qep_tab.table()}, /*keep_buffers=*/false, order, limit,
-            /*force_stable_sort=*/false,
+            thd, {table}, /*keep_buffers=*/false, order, limit,
             /*remove_duplicates=*/false,
             /*force_sort_positions=*/true, /*unwrap_rollup=*/false));
         path = NewSortAccessPath(thd, path, fsort.get(),
                                  /*count_examined_rows=*/false);
         iterator = CreateIteratorFromAccessPath(
             thd, path, &join, /*eligible_for_batch_mode=*/true);
-        // Prevent cleanup in JOIN::destroy() and
-        // QEP_shared_owner::qs_cleanup(), to avoid double-destroy of the
-        // SortingIterator.
+        // Prevent cleanup in JOIN::destroy() and in the cleanup condition
+        // guard, to avoid double-destroy of the SortingIterator.
         table->sorting_iterator = nullptr;
 
         if (iterator == nullptr || iterator->Init()) return true;
@@ -634,8 +644,9 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           Filesort has already found and selected the rows we want to update,
           so we don't need the where clause
         */
-        qep_tab.set_quick(nullptr);
-        qep_tab.set_condition(nullptr);
+        destroy(quick);
+        quick = nullptr;
+        conds = nullptr;
       } else {
         /*
           We are doing a search on a key that is updated. In this case
@@ -652,14 +663,6 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           table->set_keyread(true);
 
         table->prepare_for_position();
-
-        /* If quick select is used, initialize it before retrieving rows. */
-        if (qep_tab.quick() && (error = qep_tab.quick()->reset())) {
-          if (table->file->is_fatal_error(error)) error_flags |= ME_FATALERROR;
-
-          table->file->print_error(error, error_flags);
-          return true;
-        }
         table->file->try_semi_consistent_read(true);
         auto end_semi_consistent_read = create_scope_guard(
             [table] { table->file->try_semi_consistent_read(false); });
@@ -676,8 +679,10 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         */
 
         AccessPath *path;
-        if (used_index == MAX_KEY || qep_tab.quick()) {
-          path = create_table_access_path(thd, nullptr, &qep_tab,
+        if (used_index == MAX_KEY || quick) {
+          path = create_table_access_path(thd, table, quick,
+                                          /*table_ref=*/nullptr,
+                                          /*position=*/nullptr,
                                           /*count_examined_rows=*/false);
         } else {
           empty_record(table);
@@ -688,9 +693,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
 
         iterator = CreateIteratorFromAccessPath(
             thd, path, /*join=*/nullptr, /*eligible_for_batch_mode=*/true);
-        // Prevent cleanup in JOIN::destroy() and
-        // QEP_shared_owner::qs_cleanup(), to avoid double-destroy of the
-        // SortingIterator.
+        // Prevent cleanup in JOIN::destroy() and in the cleanup condition
+        // guard, to avoid double-destroy of the SortingIterator.
         table->sorting_iterator = nullptr;
 
         if (iterator == nullptr || iterator->Init()) {
@@ -714,8 +718,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           assert(!thd->is_error());
           thd->inc_examined_row_count(1);
 
-          if (qep_tab.condition() != nullptr) {
-            const bool skip_record = qep_tab.condition()->val_int() == 0;
+          if (conds != nullptr) {
+            const bool skip_record = conds->val_int() == 0;
             if (thd->is_error()) {
               error = 1;
               /*
@@ -769,14 +773,17 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
             /*examined_rows=*/nullptr);
         if (iterator->Init()) return true;
 
-        qep_tab.set_quick(nullptr);
-        qep_tab.set_condition(nullptr);
+        destroy(quick);
+        quick = nullptr;
+        conds = nullptr;
       }
     } else {
       // No ORDER BY or updated key underway, so we can use a regular read.
-      iterator = init_table_iterator(thd, nullptr, &qep_tab,
-                                     /*ignore_not_found_rows=*/false,
-                                     /*count_examined_rows=*/false);
+      iterator =
+          init_table_iterator(thd, table, quick,
+                              /*table_ref=*/nullptr, /*position=*/nullptr,
+                              /*ignore_not_found_rows=*/false,
+                              /*count_examined_rows=*/false);
       if (iterator == nullptr) return true; /* purecov: inspected */
     }
 
@@ -810,9 +817,9 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
     }
     if ((table->file->ha_table_flags() & HA_READ_BEFORE_WRITE_REMOVAL) &&
         !thd->lex->is_ignore() && !using_limit && !has_update_triggers &&
-        qep_tab.quick() && qep_tab.quick()->index != MAX_KEY &&
+        quick && quick->index != MAX_KEY &&
         check_constant_expressions(*update_value_list))
-      read_removal = table->check_read_removal(qep_tab.quick()->index);
+      read_removal = table->check_read_removal(quick->index);
 
     // If the update is batched, we cannot do partial update, so turn it off.
     if (will_batch) table->cleanup_partial_update(); /* purecov: inspected */
@@ -823,8 +830,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
       error = iterator->Read();
       if (error || thd->killed) break;
       thd->inc_examined_row_count(1);
-      if (qep_tab.condition() != nullptr) {
-        const bool skip_record = qep_tab.condition()->val_int() == 0;
+      if (conds != nullptr) {
+        const bool skip_record = conds->val_int() == 0;
         if (thd->is_error()) {
           error = 1;
           break;
@@ -978,27 +985,34 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
             ((error = table->file->exec_bulk_update(&dup_key_found)) ||
              dup_key_found)) {
           if (error) {
-            /* purecov: begin inspected */
-            assert(false);
             /*
-              The handler should not report error of duplicate keys if they
-              are ignored. This is a requirement on batching handlers.
+              ndbcluster is the only handler that returns an error at this
+              juncture
             */
+            assert(table->file->ht->db_type == DB_TYPE_NDBCLUSTER);
             if (table->file->is_fatal_error(error))
               error_flags |= ME_FATALERROR;
 
             table->file->print_error(error, error_flags);
             error = 1;
             break;
-            /* purecov: end */
           }
+          /* purecov: begin inspected */
           /*
-            Either an error was found and we are ignoring errors or there
-            were duplicate keys found. In both cases we need to correct
-            the counters and continue the loop.
+            Either an error was found and we are ignoring errors or there were
+            duplicate keys found with HA_IGNORE_DUP_KEY enabled. In both cases
+            we need to correct the counters and continue the loop.
           */
+
+          /*
+            Note that NDB disables batching when duplicate keys are to be
+            ignored. Any duplicate key found will result in an error returned
+            above.
+          */
+          assert(false);
           limit = dup_key_found;  // limit is 0 when we get here so need to +
           updated_rows -= dup_key_found;
+          /* purecov: end */
         } else {
           error = -1;  // Simulate end of file
           break;
@@ -1925,6 +1939,7 @@ static bool safe_update_on_fly(JOIN_TAB *join_tab, TABLE_LIST *table_ref,
       // If the index access is using some secondary key(s), and if the table
       // has a clustered primary key, modifying that key might affect the
       // functioning of the the secondary key(s), so fall through to check that.
+      [[fallthrough]];
     case JT_ALL:
       assert(join_tab->type() != JT_ALL || join_tab->quick() == nullptr);
       // If using the clustered key under the cover:
@@ -2417,9 +2432,10 @@ bool Query_result_update::send_data(THD *thd, const mem_root_deque<Item *> &) {
       /* Write row, ignoring duplicated updates to a row */
       error = tmp_table->file->ha_write_row(tmp_table->record[0]);
       if (error != HA_ERR_FOUND_DUPP_KEY && error != HA_ERR_FOUND_DUPP_UNIQUE) {
-        if (error &&
-            (create_ondisk_from_heap(thd, tmp_table, error, true, nullptr) ||
-             tmp_table->file->ha_index_init(0, false /*sorted*/))) {
+        if (error && (create_ondisk_from_heap(
+                          thd, tmp_table, error, /*insert_last_record=*/true,
+                          /*ignore_last_dup=*/true, /*is_duplicate=*/nullptr) ||
+                      tmp_table->file->ha_index_init(0, false /*sorted*/))) {
           update_completed = true;
           return true;  // Not a table_is_full error
         }
@@ -2636,9 +2652,16 @@ bool Query_result_update::do_updates(THD *thd) {
                                                     TRG_ACTION_BEFORE, true);
 
         // Trigger might have changed dependencies of generated columns
-        if (!rc && table->vfield &&
-            update_generated_write_fields(table->write_set, table))
-          goto err;
+        Trigger_chain *tc =
+            table->triggers->get_triggers(TRG_EVENT_UPDATE, TRG_ACTION_BEFORE);
+        bool has_trigger_updated_fields =
+            (tc && tc->has_updated_trigger_fields(table->write_set));
+        if (!rc && table->vfield && has_trigger_updated_fields) {
+          // Dont save old value while re-calculating generated fields.
+          // Before image will already be saved in the first calculation.
+          table->blobs_need_not_keep_old_value();
+          if (update_generated_write_fields(table->write_set, table)) goto err;
+        }
 
         table->triggers->disable_fields_temporary_nullability();
 
@@ -2654,8 +2677,9 @@ bool Query_result_update::do_updates(THD *thd) {
           are set before before-triggers are called; here, it's the opposite
           order.
         */
-        update_operations[offset]->set_function_defaults(table);
-
+        if (update_operations[offset]->set_function_defaults(table)) {
+          goto err;
+        }
         /*
           It is safe to not invoke CHECK OPTION for VIEW if records are same.
           In this case the row is coming from the view and thus should satisfy

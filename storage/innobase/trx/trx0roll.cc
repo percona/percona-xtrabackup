@@ -355,8 +355,8 @@ static void trx_roll_savepoint_free(
 {
   UT_LIST_REMOVE(trx->trx_savepoints, savep);
 
-  ut_free(savep->name);
-  ut_free(savep);
+  ut::free(savep->name);
+  ut::free(savep);
 }
 
 /** Frees savepoint structs starting from savep.
@@ -383,11 +383,10 @@ void trx_roll_savepoints_free(trx_t *trx, trx_named_savept_t *savep) {
  were set after this savepoint are deleted.
  @return if no savepoint of the name found then DB_NO_SAVEPOINT,
  otherwise DB_SUCCESS */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    trx_rollback_to_savepoint_for_mysql_low(
-        trx_t *trx,                /*!< in/out: transaction */
-        trx_named_savept_t *savep, /*!< in/out: savepoint */
-        int64_t *mysql_binlog_cache_pos)
+[[nodiscard]] static dberr_t trx_rollback_to_savepoint_for_mysql_low(
+    trx_t *trx,                /*!< in/out: transaction */
+    trx_named_savept_t *savep, /*!< in/out: savepoint */
+    int64_t *mysql_binlog_cache_pos)
 /*!< out: the MySQL binlog
 cache position corresponding
 to this savepoint; MySQL needs
@@ -510,13 +509,14 @@ dberr_t trx_savepoint_for_mysql(
 
     UT_LIST_REMOVE(trx->trx_savepoints, savep);
 
-    ut_free(savep->name);
-    ut_free(savep);
+    ut::free(savep->name);
+    ut::free(savep);
   }
 
   /* Create a new savepoint and add it as the last in the list */
 
-  savep = static_cast<trx_named_savept_t *>(ut_malloc_nokey(sizeof(*savep)));
+  savep = static_cast<trx_named_savept_t *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*savep)));
 
   savep->name = mem_strdup(savepoint_name);
 
@@ -783,12 +783,7 @@ committed, then we clean up a possible insert undo log. If the
 transaction was not yet committed, then we roll it back.
 Note: this is done in a background thread. */
 void trx_recovery_rollback_thread() {
-#ifdef UNIV_PFS_THREAD
-  THD *thd =
-      create_thd(false, true, true, trx_recovery_rollback_thread_key.m_value);
-#else
-  THD *thd = create_thd(false, true, true, 0);
-#endif /* UNIV_PFS_THREAD */
+  THD *thd = create_internal_thd();
 
   ut_ad(!srv_read_only_mode);
 
@@ -801,7 +796,7 @@ void trx_recovery_rollback_thread() {
 
   trx_rollback_or_clean_recovered(TRUE);
 
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 }
 
 /** Tries truncate the undo logs. */

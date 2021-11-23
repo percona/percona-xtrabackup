@@ -119,7 +119,7 @@ class Item_str_func : public Item_func {
     return get_time_from_string(ltime);
   }
   enum Item_result result_type() const override { return STRING_RESULT; }
-  void left_right_max_length();
+  void left_right_max_length(THD *thd);
   bool fix_fields(THD *thd, Item **ref) override;
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, -1)) return true;
@@ -1169,11 +1169,7 @@ class Item_func_compress final : public Item_str_func {
 
  public:
   Item_func_compress(const POS &pos, Item *a) : Item_str_func(pos, a) {}
-  bool resolve_type(THD *thd) override {
-    if (Item_str_func::resolve_type(thd)) return true;
-    set_data_type_string((args[0]->max_length * 120U) / 100U + 12U);
-    return false;
-  }
+  bool resolve_type(THD *thd) override;
   const char *func_name() const override { return "compress"; }
   String *val_str(String *str) override;
 };

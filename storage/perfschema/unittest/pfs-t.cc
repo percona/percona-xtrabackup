@@ -657,7 +657,7 @@ static void test_bad_registration() {
   */
 
   PSI_thread_key dummy_thread_key = 9999;
-  PSI_thread_info bad_thread_1[] = {{&dummy_thread_key, "X", 0, 0, ""}};
+  PSI_thread_info bad_thread_1[] = {{&dummy_thread_key, "X", "X", 0, 0, ""}};
 
   thread_service->register_thread("/", bad_thread_1, 1);
   ok(dummy_thread_key == 0, "zero key");
@@ -689,7 +689,7 @@ static void test_bad_registration() {
        "12345678901234567890123456789012345678901234567890"
        "12345678901234567890123456789012345678901234567890"
        "12345678901234567890",
-       0, 0, ""}};
+       "BAD", 0, 0, ""}};
 
   thread_service->register_thread("X", bad_thread_2, 1);
   ok(dummy_thread_key == 0, "zero key");
@@ -701,7 +701,7 @@ static void test_bad_registration() {
        "12345678901234567890123456789012345678901234567890"
        "12345678901234567890123456789012345678901234567890"
        "1234567890123456789",
-       0, 0, ""}};
+       "OK", 0, 0, ""}};
 
   thread_service->register_thread("XX", bad_thread_3, 1);
   ok(dummy_thread_key == 0, "zero key");
@@ -872,7 +872,7 @@ static void test_init_disabled() {
   PSI_socket_info all_socket[] = {{&socket_key_A, "S-A", 0, 0, ""}};
 
   PSI_thread_key thread_key_1;
-  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", 0, 0, ""}};
+  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", "T-1", 0, 0, ""}};
 
   mutex_service->register_mutex("test", all_mutex, 1);
   rwlock_service->register_rwlock("test", all_rwlock, 1);
@@ -895,7 +895,7 @@ static void test_init_disabled() {
 
   /* Preparation */
 
-  thread_1 = thread_service->new_thread(thread_key_1, nullptr, 0);
+  thread_1 = thread_service->new_thread(thread_key_1, 12, nullptr, 0);
   ok(thread_1 != nullptr, "T-1");
   thread_service->set_thread_id(thread_1, 1);
 
@@ -1312,7 +1312,7 @@ static void test_locker_disabled() {
   PSI_socket_info all_socket[] = {{&socket_key_A, "S-A", 0, 0, ""}};
 
   PSI_thread_key thread_key_1;
-  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", 0, 0, ""}};
+  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", "T-1", 0, 0, ""}};
 
   mutex_service->register_mutex("test", all_mutex, 1);
   rwlock_service->register_rwlock("test", all_rwlock, 1);
@@ -1335,7 +1335,7 @@ static void test_locker_disabled() {
 
   /* Preparation */
 
-  thread_1 = thread_service->new_thread(thread_key_1, nullptr, 0);
+  thread_1 = thread_service->new_thread(thread_key_1, 12, nullptr, 0);
   ok(thread_1 != nullptr, "T-1");
   thread_service->set_thread_id(thread_1, 1);
 
@@ -1676,7 +1676,7 @@ static void test_file_instrumentation_leak() {
                               {&file_key_B, "F-B", 0, 0, ""}};
 
   PSI_thread_key thread_key_1;
-  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", 0, 0, ""}};
+  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", "T-1", 0, 0, ""}};
 
   file_service->register_file("test", all_file, 2);
   thread_service->register_thread("test", all_thread, 1);
@@ -1688,7 +1688,7 @@ static void test_file_instrumentation_leak() {
 
   /* Preparation */
 
-  thread_1 = thread_service->new_thread(thread_key_1, nullptr, 0);
+  thread_1 = thread_service->new_thread(thread_key_1, 12, nullptr, 0);
   ok(thread_1 != nullptr, "T-1");
   thread_service->set_thread_id(thread_1, 1);
 
@@ -2059,7 +2059,7 @@ static void test_memory_instruments() {
   PSI_memory_info all_memory[] = {{&memory_key_A, "M-A", 0, 0, ""}};
 
   PSI_thread_key thread_key_1;
-  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", 0, 0, ""}};
+  PSI_thread_info all_thread[] = {{&thread_key_1, "T-1", "T-1", 0, 0, ""}};
 
   memory_service->register_memory("test", all_memory, 1);
   thread_service->register_thread("test", all_thread, 1);
@@ -2070,7 +2070,7 @@ static void test_memory_instruments() {
 
   /* Preparation */
 
-  thread_1 = thread_service->new_thread(thread_key_1, nullptr, 0);
+  thread_1 = thread_service->new_thread(thread_key_1, 12, nullptr, 0);
   ok(thread_1 != nullptr, "T-1");
   thread_service->set_thread_id(thread_1, 1);
 
@@ -2229,18 +2229,18 @@ File my_create_temp_file(const char **filename) {
 }
 
 /* Simulated my_close() */
-int my_close(File fd MY_ATTRIBUTE((unused)), bool success) {
+int my_close(File fd [[maybe_unused]], bool success) {
   return (success ? 0 : 1);
 }
 
 /* Simulated my_delete() */
-int my_delete(const char *filename MY_ATTRIBUTE((unused)), bool success) {
+int my_delete(const char *filename [[maybe_unused]], bool success) {
   return (success ? 0 : 1);
 }
 
 /* Simulated my_rename() */
-int my_rename(const char *from MY_ATTRIBUTE((unused)),
-              const char *to MY_ATTRIBUTE((unused)), bool success) {
+int my_rename(const char *from [[maybe_unused]],
+              const char *to [[maybe_unused]], bool success) {
   return (success ? 0 : 1);
 }
 
@@ -2283,17 +2283,18 @@ static void test_file_operations() {
   PSI_file_key file_key;
   PSI_file_info all_file[] = {{&file_key, "File Class", 0, 0, ""}};
   PSI_thread_key thread_key;
-  PSI_thread_info all_thread[] = {{&thread_key, "Thread Class", 0, 0, ""}};
+  PSI_thread_info all_thread[] = {
+      {&thread_key, "Thread Class", "OS NAME", 0, 0, ""}};
 
   file_service->register_file("test", all_file, 1);
   thread_service->register_thread("test", all_thread, 1);
 
   /* Create Thread A and B to simulate operations from different threads. */
-  thread_A = thread_service->new_thread(thread_key, NULL, 0);
+  thread_A = thread_service->new_thread(thread_key, 12, nullptr, 0);
   ok(thread_A != NULL, "Thread A");
   thread_service->set_thread_id(thread_A, 1);
 
-  thread_B = thread_service->new_thread(thread_key, NULL, 0);
+  thread_B = thread_service->new_thread(thread_key, 12, nullptr, 0);
   ok(thread_B != NULL, "Thread B");
   thread_service->set_thread_id(thread_B, 1);
 

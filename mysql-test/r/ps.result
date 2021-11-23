@@ -1,4 +1,6 @@
 call mtr.add_suppression('Unsafe statement written to the binary log using statement format since BINLOG_FORMAT = STATEMENT.');
+SET @old_log_output=@@global.log_output;
+SET GLOBAL log_output="FILE,TABLE";
 drop table if exists t1,t2,t3,t4;
 drop database if exists client_test_db;
 create table t1
@@ -4040,3 +4042,18 @@ PREPARE s FROM 'SELECT 1 FROM t1 WHERE TRUE OR ( SELECT 1 FROM (SELECT a) q ) = 
 EXECUTE s;
 1
 DROP TABLE t1;
+#
+# Bug #32808790: DON'T ADD CACHES AROUND PREPARED STATEMENT PARAMETERS
+#
+CREATE TABLE t1 ( pk INTEGER NOT NULL, a INTEGER );
+PREPARE q FROM 'EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE pk = ?';
+SET @v = 2;
+EXECUTE q USING @v;
+EXPLAIN
+-> Filter: (t1.pk = 2)
+    -> Table scan on t1
+
+DROP TABLE t1;
+SET GLOBAL log_output=@old_log_output;
+TRUNCATE TABLE mysql.general_log;
+TRUNCATE TABLE mysql.slow_log;

@@ -1606,7 +1606,7 @@ sym_node_t *pars_column_def(sym_node_t *sym_node,  /*!< in: column node in the
 @return table create subgraph */
 tab_node_t *pars_create_table(sym_node_t *table_sym, sym_node_t *column_defs,
                               sym_node_t *compact, sym_node_t *block_size,
-                              void *not_fit_in_memory MY_ATTRIBUTE((unused))) {
+                              void *not_fit_in_memory [[maybe_unused]]) {
   return (nullptr);
 }
 
@@ -1695,12 +1695,13 @@ int pars_get_lex_chars(char *buf, size_t max_size) {
 }
 
 /** Called by yyparse on error. */
-void yyerror(const char *s MY_ATTRIBUTE((unused)))
+void yyerror(const char *s [[maybe_unused]])
 /*!< in: error message string */
 {
   ut_ad(s);
 
-  ib::fatal(ER_IB_MSG_917) << "PARSER: Syntax error in SQL string";
+  ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_917)
+      << "PARSER: Syntax error in SQL string";
 }
 
 /** Parses an SQL string returning the query graph.

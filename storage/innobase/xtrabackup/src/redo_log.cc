@@ -579,7 +579,7 @@ Archived_Redo_Log_Monitor::~Archived_Redo_Log_Monitor() {}
 void Archived_Redo_Log_Monitor::close() { os_event_destroy(event); }
 
 void Archived_Redo_Log_Monitor::start() {
-  thread = os_thread_create(PFS_NOT_INSTRUMENTED, [this] { thread_func(); });
+  thread = os_thread_create(PFS_NOT_INSTRUMENTED, 0, [this] { thread_func(); });
   thread.start();
   os_event_wait_time_low(event, 100 * 1000, 0);
   debug_sync_point("stop_before_redo_archive");
@@ -931,7 +931,7 @@ bool Redo_Log_Data_Manager::init() {
   error = true;
   event = os_event_create();
 
-  thread = os_thread_create(PFS_NOT_INSTRUMENTED, [this] { copy_func(); });
+  thread = os_thread_create(PFS_NOT_INSTRUMENTED, 0, [this] { copy_func(); });
 
   if (!log_sys_init(srv_n_log_files, srv_log_file_size,
                     dict_sys_t::s_log_space_first_id)) {

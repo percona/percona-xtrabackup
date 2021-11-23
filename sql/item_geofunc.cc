@@ -1864,7 +1864,7 @@ bool Item_func_geomfromgeojson::fix_fields(THD *thd, Item **ref) {
         return true;
       }
     }
-      // Fall through.
+      [[fallthrough]];
     case 2: {
       // Validate options argument
       if (args[1]->propagate_type(thd, MYSQL_TYPE_LONGLONG)) return true;
@@ -1873,7 +1873,7 @@ bool Item_func_geomfromgeojson::fix_fields(THD *thd, Item **ref) {
         return true;
       }
     }
-      // Fall through.
+      [[fallthrough]];
     case 1: {
       /*
         Validate GeoJSON argument type. We do not allow binary data as GeoJSON
@@ -3659,7 +3659,7 @@ class Point_accumulator : public WKB_scanner_event_handler {
     }
   }
 
-  void on_wkb_end(const void *wkb MY_ATTRIBUTE((unused))) override {
+  void on_wkb_end(const void *wkb [[maybe_unused]]) override {
     if (pt_start)
       assert(static_cast<const char *>(pt_start) + POINT_DATA_SIZE == wkb);
 
@@ -4738,8 +4738,7 @@ longlong Item_func_st_issimple::val_int() {
 
   String backing_arg_wkb;
   String *arg_wkb = args[0]->val_str(&backing_arg_wkb);
-
-  // Note: Item.null_value is valid only after Item.val_* has been invoked.
+  if (current_thd->is_error()) return error_int();
 
   if (args[0]->null_value) {
     null_value = true;
@@ -4806,6 +4805,7 @@ longlong Item_func_isvalid::val_int() {
 
   String tmp;
   String *swkb = args[0]->val_str(&tmp);
+  if (current_thd->is_error()) return error_int();
 
   if ((null_value = args[0]->null_value)) {
     assert(is_nullable());
@@ -4993,6 +4993,7 @@ double Item_func_coordinate_observer::val_real() {
   assert(fixed);
   String tmp_str;
   String *swkb = args[0]->val_str(&tmp_str);
+  if (current_thd->is_error()) return error_real();
 
   if ((null_value = (args[0]->null_value))) {
     assert(is_nullable());
@@ -5736,11 +5737,11 @@ double Item_func_st_distance_sphere::val_real() {
 
   String backing_arg_wkb1;
   String *arg_wkb1 = args[0]->val_str(&backing_arg_wkb1);
+  if (current_thd->is_error()) return error_real();
 
   String backing_arg_wkb2;
   String *arg_wkb2 = args[1]->val_str(&backing_arg_wkb2);
-
-  // Note: Item.null_value is valid only after Item.val_* has been invoked.
+  if (current_thd->is_error()) return error_real();
 
   if (args[0]->null_value || args[1]->null_value) {
     null_value = true;
@@ -5827,6 +5828,70 @@ double Item_func_st_distance_sphere::val_real() {
   return result;
 }
 
+String *Item_func_st_intersection::val_str(String *str) {
+  assert(fixed);
+  String temp_str1;
+  String temp_str2;
+  String *swkb1 = args[0]->val_str(&temp_str1);
+  String *swkb2 = args[1]->val_str(&temp_str2);
+  if (args[0]->null_value || args[1]->null_value) {
+    return null_return_str();
+  }
+  if (!swkb1 || !swkb2) {
+    /*
+    We've already found out that args[0]->null_value and args[1]->null_value are
+    false. Therefore, this should never happen.
+    */
+    assert(false);
+    my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
+    return error_str();
+  }
+  std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
+      new dd::cache::Dictionary_client::Auto_releaser(
+          current_thd->dd_client()));
+  const dd::Spatial_reference_system *srs1 = nullptr;
+  const dd::Spatial_reference_system *srs2 = nullptr;
+  std::unique_ptr<gis::Geometry> g1;
+  std::unique_ptr<gis::Geometry> g2;
+  if (gis::parse_geometry(current_thd, func_name(), swkb1, &srs1, &g1) ||
+      gis::parse_geometry(current_thd, func_name(), swkb2, &srs2, &g2)) {
+    assert(current_thd->is_error());
+    return error_str();
+  }
+  assert(g1);
+  assert(g2);
+  // The two geometry operand must be in the same coordinate system.
+  gis::srid_t srid1 = srs1 == nullptr ? 0 : srs1->id();
+  gis::srid_t srid2 = srs2 == nullptr ? 0 : srs2->id();
+  if (srid1 != srid2) {
+    my_error(ER_GIS_DIFFERENT_SRIDS, MYF(0), func_name(), srid1, srid2);
+    return error_str();
+  }
+  // Currently not supporting geographic SRS
+  if (srs1 && srs1->is_geographic()) {
+    std::string parameters(gis::type_to_name(g1->type()));
+    parameters.append(", ").append(gis::type_to_name(g2->type()));
+    my_error(ER_NOT_IMPLEMENTED_FOR_GEOGRAPHIC_SRS, MYF(0), func_name(),
+             parameters.c_str());
+    return error_str();
+  }
+  std::unique_ptr<gis::Geometry> result_g;
+  if (gis::intersection(srs1, g1.get(), g2.get(), func_name(), &result_g)) {
+    assert(current_thd->is_error());
+    return error_str();
+  }
+  if (result_g.get() == nullptr) {
+    // There should always be an output geometry for valid input.
+    my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
+    return error_str();
+  }
+  if (write_geometry(srs1, *result_g, str)) {
+    assert(current_thd->is_error());
+    return error_str();
+  }
+  return str;
+}
+
 String *Item_func_lineinterpolate::val_str(String *str) {
   String *swkb = args[0]->val_str(str);
   const double distance = args[1]->val_real();
@@ -5895,6 +5960,71 @@ String *Item_func_lineinterpolate::val_str(String *str) {
   }
 
   write_geometry(srs, *target_g, str);
+  return str;
+}
+
+String *Item_func_st_symdifference::val_str(String *str) {
+  assert(fixed);
+  String temp_str1;
+  String temp_str2;
+  String *swkb1 = args[0]->val_str(&temp_str1);
+  String *swkb2 = args[1]->val_str(&temp_str2);
+
+  if (args[0]->null_value || args[1]->null_value) {
+    return null_return_str();
+  }
+
+  if (!swkb1 || !swkb2) {
+    /*
+    We've already found out that args[0]->null_value and args[1]->null_value are
+    false. Therefore, this should never happen.
+    */
+    assert(false);
+    my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
+    return error_str();
+  }
+
+  std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
+      new dd::cache::Dictionary_client::Auto_releaser(
+          current_thd->dd_client()));
+  const dd::Spatial_reference_system *srs1 = nullptr;
+  const dd::Spatial_reference_system *srs2 = nullptr;
+  std::unique_ptr<gis::Geometry> g1;
+  std::unique_ptr<gis::Geometry> g2;
+  if (gis::parse_geometry(current_thd, func_name(), swkb1, &srs1, &g1) ||
+      gis::parse_geometry(current_thd, func_name(), swkb2, &srs2, &g2)) {
+    assert(current_thd->is_error());
+    return error_str();
+  }
+
+  assert(g1);
+  assert(g2);
+
+  // The two geometry operand must be in the same coordinate system.
+  gis::srid_t srid1 = srs1 == nullptr ? 0 : srs1->id();
+  gis::srid_t srid2 = srs2 == nullptr ? 0 : srs2->id();
+  if (srid1 != srid2) {
+    my_error(ER_GIS_DIFFERENT_SRIDS, MYF(0), func_name(), srid1, srid2);
+    return error_str();
+  }
+
+  std::unique_ptr<gis::Geometry> result_g;
+  if (gis::symdifference(srs1, g1.get(), g2.get(), func_name(), &result_g)) {
+    assert(current_thd->is_error());
+    return error_str();
+  }
+
+  if (result_g.get() == nullptr) {
+    // There should always be an output geometry for valid input.
+    my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
+    return error_str();
+  }
+
+  if (write_geometry(srs1, *result_g, str)) {
+    assert(current_thd->is_error());
+    return error_str();
+  }
+
   return str;
 }
 

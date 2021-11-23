@@ -156,8 +156,6 @@ class JOIN {
   JOIN_TAB **best_ref{nullptr};
   /// mapping between table indexes and JOIN_TABs
   JOIN_TAB **map2table{nullptr};
-  ///< mapping between table indexes and QEB_TABs
-  QEP_TAB **map2qep_tab{nullptr};
   /*
     The table which has an index that allows to produce the requried ordering.
     A special value of 0x1 means that the ordering will be produced by
@@ -611,7 +609,7 @@ class JOIN {
   */
   bool plan_is_single_table() { return primary_tables - const_tables == 1; }
 
-  bool optimize();
+  bool optimize(bool finalize_access_paths);
   void reset();
   bool prepare_result();
   void destroy();
@@ -714,7 +712,7 @@ class JOIN {
  public:
   bool update_equalities_for_sjm();
   bool add_sorting_to_table(uint idx, ORDER_with_src *order,
-                            bool force_stable_sort, bool sort_before_group);
+                            bool sort_before_group);
   bool decide_subquery_strategy();
   void refine_best_rowcount();
   table_map calculate_deps_of_remaining_lateral_derived_tables(
@@ -787,6 +785,13 @@ class JOIN {
     When we get rid of slices entirely, we can get rid of this, too.
    */
   void refresh_base_slice();
+
+  /**
+    Whether this query block needs finalization (see
+    FinalizePlanForQueryBlock()) before it can be actually used.
+    This only happens when using the hypergraph join optimizer.
+   */
+  bool needs_finalize{false};
 
  private:
   bool optimized{false};  ///< flag to avoid double optimization in EXPLAIN
@@ -1193,5 +1198,7 @@ double find_worst_seeks(const Cost_model_table *cost_model, double num_rows,
   needs to keep the comparison after the ref lookup.
  */
 bool ref_lookup_subsumes_comparison(Field *field, Item *right_item);
+
+bool HasFullTextFunction(Item *item);
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

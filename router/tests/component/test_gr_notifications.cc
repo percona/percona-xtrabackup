@@ -24,8 +24,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <limits>
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
-// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
-// globally and require to include my_rapidjson_size_t.h
 #include "my_rapidjson_size_t.h"
 #endif
 
@@ -260,7 +258,7 @@ class GrNotificationsTest : public RouterComponentTest {
                                 const std::string &group_id,
                                 const std::vector<uint16_t> node_ports) {
     return RouterComponentTest::create_state_file(
-        dir, create_state_file_content(group_id, node_ports));
+        dir, create_state_file_content(group_id, "", node_ports));
   }
 
   int get_current_queries_count(const uint16_t http_port) {
@@ -387,8 +385,8 @@ TEST_P(GrNotificationsParamTest, GrNotification) {
   }
 
   SCOPED_TRACE("// Create a router state file");
-  const std::string state_file =
-      create_state_file(temp_test_dir.name(), kGroupId, cluster_nodes_ports);
+  const std::string state_file = GrNotificationsTest::create_state_file(
+      temp_test_dir.name(), kGroupId, cluster_nodes_ports);
 
   SCOPED_TRACE(
       "// Create a configuration file sections with high ttl so that "
@@ -400,8 +398,20 @@ TEST_P(GrNotificationsParamTest, GrNotification) {
       router_port, "PRIMARY", "first-available");
 
   SCOPED_TRACE("// Launch ther router");
-  launch_router(temp_test_dir.name(), metadata_cache_section, routing_section,
-                state_file);
+  auto &router = launch_router(temp_test_dir.name(), metadata_cache_section,
+                               routing_section, state_file);
+
+  SCOPED_TRACE("// Wait for the expected log about enabling the GR notices");
+  for (unsigned i = 0; i < kClusterNodesCount; ++i) {
+    const bool found =
+        wait_log_contains(router,
+                          "INFO .* Enabling GR notices for cluster 'test' "
+                          "changes on node 127.0.0.1:" +
+                              std::to_string(cluster_nodes_xports[i]),
+                          2s);
+
+    EXPECT_TRUE(found);
+  }
 
   RouterComponentTest::sleep_for(test_params.router_uptime);
 
@@ -649,8 +659,8 @@ TEST_P(GrNotificationNoXPortTest, GrNotificationNoXPort) {
   }
 
   SCOPED_TRACE("// Create a router state file");
-  const std::string state_file =
-      create_state_file(temp_test_dir.name(), kGroupId, cluster_nodes_ports);
+  const std::string state_file = GrNotificationsTest::create_state_file(
+      temp_test_dir.name(), kGroupId, cluster_nodes_ports);
 
   SCOPED_TRACE("// Create a configuration file sections with high ttl");
   const std::string metadata_cache_section =
@@ -731,8 +741,8 @@ TEST_P(GrNotificationMysqlxWaitTimeoutUnsupportedTest,
       true);
 
   SCOPED_TRACE("// Create a router state file");
-  const std::string state_file =
-      create_state_file(temp_test_dir.name(), kGroupId, {cluster_classic_port});
+  const std::string state_file = GrNotificationsTest::create_state_file(
+      temp_test_dir.name(), kGroupId, {cluster_classic_port});
 
   SCOPED_TRACE("// Create a configuration file sections with high ttl");
   const std::string metadata_cache_section =
@@ -755,9 +765,14 @@ TEST_P(GrNotificationMysqlxWaitTimeoutUnsupportedTest,
 
   // there should be no WARNINGs nor ERRORs in the log file
   const std::string log_content = router.get_full_logfile();
-  EXPECT_EQ(log_content.find("ERROR"), log_content.npos) << log_content;
-  EXPECT_EQ(log_content.find("WARNING"), log_content.npos) << log_content;
+  EXPECT_EQ(log_content.find(" ERROR "), log_content.npos) << log_content;
+  EXPECT_EQ(log_content.find(" WARNING "), log_content.npos) << log_content;
 }
+
+INSTANTIATE_TEST_SUITE_P(GrNotificationMysqlxWaitTimeoutUnsupported,
+                         GrNotificationMysqlxWaitTimeoutUnsupportedTest,
+                         ::testing::Values("metadata_dynamic_nodes_v2_gr.js",
+                                           "metadata_dynamic_nodes.js"));
 
 class GrNotificationNoticesUnsupportedTest
     : public GrNotificationsTest,
@@ -792,8 +807,8 @@ TEST_P(GrNotificationNoticesUnsupportedTest, GrNotificationNoticesUnsupported) {
                     {cluster_x_port}, true);
 
   SCOPED_TRACE("// Create a router state file");
-  const std::string state_file =
-      create_state_file(temp_test_dir.name(), kGroupId, {cluster_classic_port});
+  const std::string state_file = GrNotificationsTest::create_state_file(
+      temp_test_dir.name(), kGroupId, {cluster_classic_port});
 
   SCOPED_TRACE("// Create a configuration file sections with high ttl");
   const std::string metadata_cache_section =
@@ -816,7 +831,7 @@ TEST_P(GrNotificationNoticesUnsupportedTest, GrNotificationNoticesUnsupported) {
 
   const bool found = wait_log_contains(
       router,
-      "WARNING.* Failed enabling notices on the node.* This "
+      "WARNING.* Failed enabling GR notices on the node.* This "
       "MySQL server version does not support GR notifications.*",
       2s);
 
@@ -869,8 +884,8 @@ TEST_P(GrNotificationXPortConnectionFailureTest,
   }
 
   SCOPED_TRACE("// Create a router state file");
-  const std::string state_file =
-      create_state_file(temp_test_dir.name(), kGroupId, cluster_nodes_ports);
+  const std::string state_file = GrNotificationsTest::create_state_file(
+      temp_test_dir.name(), kGroupId, cluster_nodes_ports);
 
   SCOPED_TRACE("// Create a configuration file sections with high ttl");
   const std::string metadata_cache_section =
@@ -1027,8 +1042,8 @@ TEST_F(GrNotificationsTest, GrNotificationInconsistentMetadata) {
   }
 
   SCOPED_TRACE("// Create a router state file");
-  const std::string state_file =
-      create_state_file(temp_test_dir.name(), "00-000", nodes_ports);
+  const std::string state_file = GrNotificationsTest::create_state_file(
+      temp_test_dir.name(), "00-000", nodes_ports);
 
   SCOPED_TRACE(
       "// Create a configuration file sections with high ttl so that "

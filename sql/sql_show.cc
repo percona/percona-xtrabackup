@@ -33,6 +33,7 @@
 #include <functional>
 #include <memory>
 #include <new>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -66,7 +67,6 @@
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
-#include "nullable.h"
 #include "scope_guard.h"         // Scope_guard
 #include "sql/auth/auth_acls.h"  // DB_ACLS
 #include "sql/auth/auth_common.h"
@@ -1027,8 +1027,8 @@ class Show_create_error_handler : public Internal_error_handler {
      failed is not available at this point. The only way for us to check is by
      reconstructing the actual error message and see if it's the same.
   */
-  // MY_ATTRIBUTE((unused)) This applies to CHECK_ERRMSG_FORMAT = ON
-  const char *get_view_access_denied_message(THD *thd MY_ATTRIBUTE((unused))) {
+  // [[maybe_unused]] This applies to CHECK_ERRMSG_FORMAT = ON
+  const char *get_view_access_denied_message(THD *thd [[maybe_unused]]) {
     if (!m_view_access_denied_message_ptr) {
       m_view_access_denied_message_ptr = m_view_access_denied_message;
       snprintf(m_view_access_denied_message, MYSQL_ERRMSG_SIZE,
@@ -1060,7 +1060,7 @@ class Show_create_error_handler : public Internal_error_handler {
           is_handled = false;
           break;
         }
-        // Fall through
+        [[fallthrough]];
       case ER_COLUMNACCESS_DENIED_ERROR:
       // ER_VIEW_NO_EXPLAIN cannot happen here.
       case ER_PROCACCESS_DENIED_ERROR:
@@ -2193,18 +2193,19 @@ bool store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
   }
 
   packet->append(STRING_WITH_LEN("\n)"));
+
+  /**
+    Append START TRANSACTION for CREATE SELECT on SE supporting atomic DDL.
+    This is done only while binlogging CREATE TABLE AS SELECT.
+  */
+  if (!thd->lex->query_block->field_list_is_empty() &&
+      (create_info_arg->db_type->flags & HTON_SUPPORTS_ATOMIC_DDL)) {
+    packet->append(STRING_WITH_LEN(" START TRANSACTION"));
+  }
+
   bool show_tablespace = false;
   if (!foreign_db_mode) {
     show_table_options = true;
-
-    /**
-      Append START TRANSACTION for CREATE SELECT on SE supporting atomic DDL.
-      This is done only while binlogging CREATE TABLE AS SELECT.
-    */
-    if (!thd->lex->query_block->field_list_is_empty() &&
-        (create_info_arg->db_type->flags & HTON_SUPPORTS_ATOMIC_DDL)) {
-      packet->append(STRING_WITH_LEN(" START TRANSACTION"));
-    }
 
     // Show tablespace name only if it is explicitly provided by user.
     if (share->tmp_table) {
@@ -2697,16 +2698,16 @@ class List_process_list : public Do_THD_Impl {
     LEX_CSTRING inspect_sctx_host = inspect_sctx->host();
     LEX_CSTRING inspect_sctx_host_or_ip = inspect_sctx->host_or_ip();
 
-    mysql_mutex_lock(&inspect_thd->LOCK_thd_protocol);
-    if ((!(inspect_thd->get_protocol() &&
-           inspect_thd->get_protocol()->connection_alive()) &&
-         !inspect_thd->system_thread) ||
-        (m_user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
-                    strcmp(inspect_sctx_user.str, m_user)))) {
-      mysql_mutex_unlock(&inspect_thd->LOCK_thd_protocol);
-      return;
+    {
+      MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
+      if ((!(inspect_thd->get_protocol() &&
+             inspect_thd->get_protocol()->connection_alive()) &&
+           !inspect_thd->system_thread) ||
+          (m_user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
+                      strcmp(inspect_sctx_user.str, m_user)))) {
+        return;
+      }
     }
-    mysql_mutex_unlock(&inspect_thd->LOCK_thd_protocol);
 
     thread_info *thd_info = new (m_client_thd->mem_root) thread_info;
 
@@ -2907,12 +2908,14 @@ class Fill_process_list : public Do_THD_Impl {
             ? NullS
             : client_priv_user;
 
-    if ((!inspect_thd->get_protocol()->connection_alive() &&
-         !inspect_thd->system_thread) ||
-        (user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
-                  strcmp(inspect_sctx_user.str, user))))
-      return;
-
+    {
+      MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
+      if ((!inspect_thd->get_protocol()->connection_alive() &&
+           !inspect_thd->system_thread) ||
+          (user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
+                    strcmp(inspect_sctx_user.str, user))))
+        return;
+    }
     DBUG_EXECUTE_IF(
         "test_fill_proc_with_x_root",
         if (0 == strcmp(inspect_sctx_user.str, "x_root")) {
@@ -3510,7 +3513,10 @@ extern ST_SCHEMA_TABLE schema_tables[];
 bool schema_table_store_record(THD *thd, TABLE *table) {
   int error;
   if ((error = table->file->ha_write_row(table->record[0]))) {
-    if (create_ondisk_from_heap(thd, table, error, false, nullptr)) return true;
+    if (create_ondisk_from_heap(thd, table, error, /*insert_last_record=*/true,
+                                /*ignore_last_dup=*/false,
+                                /*is_duplicate=*/nullptr))
+      return true;
   }
   return false;
 }
@@ -3544,7 +3550,9 @@ int schema_table_store_record2(THD *thd, TABLE *table, bool make_ondisk) {
   @return false on success, true on error.
 */
 bool convert_heap_table_to_ondisk(THD *thd, TABLE *table, int error) {
-  return (create_ondisk_from_heap(thd, table, error, false, nullptr));
+  return (create_ondisk_from_heap(
+      thd, table, error, /*insert_last_record=*/true,
+      /*ignore_last_dup=*/false, /*is_duplicate=*/nullptr));
 }
 
 /**

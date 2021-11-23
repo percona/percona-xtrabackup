@@ -28,6 +28,8 @@ IF(WIN32)
   ADD_DEFINITIONS(-DPROTOBUF_USE_DLLS)
 ENDIF()
 
+DISABLE_MISSING_PROFILE_WARNING()
+
 ADD_SUBDIRECTORY(libmysqlgcs)
 ADD_SUBDIRECTORY(protobuf)
 
@@ -43,6 +45,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/delayed_plugin_initialization.cc
   src/gcs_event_handlers.cc
   src/gcs_logger.cc
+  src/gcs_mysql_network_provider.cc
   src/gcs_operations.cc
   src/gcs_plugin_messages.cc
   src/gcs_view_modification_notifier.cc
@@ -66,9 +69,11 @@ SET(GROUP_REPLICATION_SOURCES
   src/perfschema/pfs.cc
   src/perfschema/table_replication_group_configuration_version.cc
   src/perfschema/table_replication_group_member_actions.cc
+  src/perfschema/table_communication_information.cc
   src/pipeline_factory.cc
   src/pipeline_stats.cc
   src/plugin.cc
+  src/plugin_handlers/consensus_leaders_handler.cc
   src/plugin_handlers/group_partition_handling.cc
   src/plugin_handlers/member_actions_handler.cc
   src/plugin_handlers/member_actions_handler_configuration.cc
@@ -103,8 +108,10 @@ SET(GROUP_REPLICATION_SOURCES
   src/recovery_channel_state_observer.cc
   src/recovery_state_transfer.cc
   src/replication_threads_api.cc
+  src/services/get_system_variable/get_system_variable.cc
   src/services/message_service/message_service.cc
   src/services/notification/notification.cc
+  src/services/status_service/status_service.cc
   src/services/registry.cc
   src/sql_service/sql_command_test.cc
   src/sql_service/sql_resultset.cc
@@ -137,10 +144,14 @@ IF(WITH_UNIT_TESTS)
     src/member_version.cc
     src/compatibility_module.cc
     src/mysql_version_gcs_protocol_map.cc
+    src/gcs_mysql_network_provider.cc
+    src/replication_threads_api.cc
+    src/plugin_psi.cc
   )
   SET_TARGET_PROPERTIES(gr_unit_test_resource
     PROPERTIES COMPILE_DEFINITIONS "DISABLE_PSI_MUTEX"
     )
+  ADD_DEPENDENCIES(gr_unit_test_resource GenError)
 ENDIF()
 
 ADD_COMPILE_FLAGS(${GROUP_REPLICATION_SOURCES}
@@ -148,6 +159,10 @@ ADD_COMPILE_FLAGS(${GROUP_REPLICATION_SOURCES}
 )
 
 ### Configuration ###
+
+IF(WIN32)
+  ADD_DEFINITIONS(-DIMPORT_UNKNOWN_SQLSTATE)
+ENDIF()
 
 # declare the plugin itself
 MYSQL_ADD_PLUGIN(group_replication

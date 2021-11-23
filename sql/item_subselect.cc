@@ -307,9 +307,19 @@ Item_subselect::enum_engine_type Item_subselect::engine_type() const {
   return Item_subselect::OTHER_ENGINE;
 }
 
-const QEP_TAB *Item_subselect::get_qep_tab() const {
+const TABLE *Item_subselect::get_table() const {
   return down_cast<subselect_hash_sj_engine *>(indexsubquery_engine)
-      ->get_qep_tab();
+      ->get_table();
+}
+
+const TABLE_REF &Item_subselect::get_table_ref() const {
+  return down_cast<subselect_hash_sj_engine *>(indexsubquery_engine)
+      ->get_table_ref();
+}
+
+join_type Item_subselect::get_join_type() const {
+  return down_cast<subselect_hash_sj_engine *>(indexsubquery_engine)
+      ->get_join_type();
 }
 
 void Item_subselect::cleanup() {
@@ -381,6 +391,10 @@ bool Item_in_subselect::finalize_exists_transform(THD *thd,
   if (unit->set_limit(thd, unit->global_parameters()))
     return true; /* purecov: inspected */
 
+  if (unit->finalize(thd)) {
+    return true;
+  }
+
   query_block->join->allow_outer_refs = true;  // for JOIN::set_prefix_tables()
   strategy = Subquery_strategy::SUBQ_EXISTS;
   return false;
@@ -449,6 +463,9 @@ bool Item_in_subselect::finalize_materialization_transform(THD *thd,
   // This part is only relevant for the hypergraph optimizer.
   unit->change_to_access_path_without_in2exists(thd);
   assert(!in2exists_info->dependent_before);
+  if (unit->finalize(thd)) {
+    return true;
+  }
 
   join->query_block->uncacheable &= ~UNCACHEABLE_DEPENDENT;
   unit->uncacheable &= ~UNCACHEABLE_DEPENDENT;
@@ -492,7 +509,7 @@ void Item_in_subselect::cleanup() {
         unit->first_query_block()->uncacheable |= UNCACHEABLE_DEPENDENT;
         unit->uncacheable |= UNCACHEABLE_DEPENDENT;
       }
-      // fall through
+      [[fallthrough]];
     case Subquery_strategy::SUBQ_EXISTS:
       /*
         Back to EXISTS_OR_MAT, so that next execution of this statement can
@@ -667,14 +684,24 @@ bool Item_subselect::exec(THD *thd) {
   // Normally, the unit would be optimized here, but statements like DO and SET
   // may still rely on lazy optimization. Also, we might not have iterators,
   // so make sure to create them if they're missing.
-  if (unit->is_optimized()) {
-    if (should_create_iterators) {
-      if (unit->force_create_iterators(thd)) return true;
-    }
-  } else {
+  if (!unit->is_optimized()) {
     if (unit->optimize(thd, /*materialize_destination=*/nullptr,
-                       should_create_iterators))
+                       /*create_iterators=*/false,
+                       /*finalize_access_paths=*/false))
       return true;
+
+    // NOTE: We defer finalization and creating iterators to the statements
+    // below; asking optimize() to finalize a plan with two choices
+    // (materialization and exists) rightfully causes a failed assertion. We
+    // should probably have made a cost-based choice between the two here, but
+    // as it stands, we will always implicitly choose in2exists in these cases
+    // (DO/SET).
+  }
+  if (should_create_iterators && unit->root_access_path() != nullptr) {
+    if (unit->finalize(thd)) {
+      return true;
+    }
+    if (unit->force_create_iterators(thd)) return true;
   }
   if (indexsubquery_engine != nullptr) {
     return indexsubquery_engine->exec(thd);
@@ -1091,6 +1118,21 @@ Item_subselect::trans_res Item_singlerow_subselect::select_transformer(
 
   Item *single_field = select->single_visible_field();
 
+  if (single_field != nullptr &&
+      single_field->type() == Item::VALUES_COLUMN_ITEM) {
+    /*
+      A subquery that is a VALUES clause can be used as a scalar subquery.
+      But VALUES clauses with a single row are transformed to their simple
+      components and will not be shown as VALUES_COLUMN_ITEM here.
+    */
+    assert(select->row_value_list->size() > 1);
+    /*
+      Since scalar subqueries can have at most one row, reject VALUES
+      clauses (with more than one row) immediately:
+    */
+    my_error(ER_SUBQUERY_NO_1_ROW, MYF(0));
+    return RES_ERROR;
+  }
   if (!unit->is_union() && !select->table_list.elements &&
       single_field != nullptr && !single_field->has_aggregation() &&
       !single_field->has_wf() && !select->where_cond() &&
@@ -1218,7 +1260,7 @@ my_decimal *Item_singlerow_subselect::val_decimal(my_decimal *decimal_value) {
     return retval;
   } else {
     reset();
-    return nullptr;
+    return error_decimal(decimal_value);
   }
 }
 
@@ -1493,7 +1535,7 @@ bool Item_exists_subselect::resolve_type(THD *thd) {
 */
 bool Item_exists_subselect::choose_semijoin_or_antijoin() {
   can_do_aj = false;
-  bool MY_ATTRIBUTE((unused)) might_do_sj = false, might_do_aj = false;
+  [[maybe_unused]] bool might_do_sj = false, might_do_aj = false;
   bool null_problem = false;
   switch (value_transform) {
     case BOOL_IS_TRUE:
@@ -2160,7 +2202,8 @@ Item_subselect::trans_res Item_in_subselect::row_value_in_to_exists_transformer(
   uint cols_num = left_expr->cols();
   bool is_having_used = select->having_cond() || select->with_sum_func ||
                         select->group_list.first ||
-                        !select->table_list.elements;
+                        !select->table_list.elements ||
+                        select->m_windows.elements > 0;
 
   DBUG_TRACE;
   OPT_TRACE_TRANSFORM(&thd->opt_trace, oto0, oto1, select->select_number,
@@ -2735,6 +2778,10 @@ static Item **find_subquery_in_select_list(Query_block *select,
                                            Item_singlerow_subselect *subquery) {
   int item_idx = 0;
   for (Item *item : select->visible_fields()) {
+    // All comparisons are done after unwrapping rollup group item.
+    // base_ref_items might be without rollup wrappers while the fields
+    // might be.
+    item = unwrap_rollup_group(item);
     if (item == subquery) {
       assert(select->base_ref_items[item_idx] == item);
       return &select->base_ref_items[item_idx];
@@ -3053,17 +3100,16 @@ void SubqueryWithResult::print(const THD *thd, String *str,
 
 void subselect_indexsubquery_engine::print(const THD *thd, String *str,
                                            enum_query_type query_type) {
-  const bool unique = tab->type() == JT_EQ_REF;
-  const bool check_null = tab->type() == JT_REF_OR_NULL;
+  const bool unique = type == JT_EQ_REF;
+  const bool check_null = type == JT_REF_OR_NULL;
 
   if (unique)
     str->append(STRING_WITH_LEN("<primary_index_lookup>("));
   else
     str->append(STRING_WITH_LEN("<index_lookup>("));
-  tab->ref().items[0]->print(thd, str, query_type);
+  ref.items[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" in "));
-  TABLE *const table = tab->table();
-  if (tab->table_ref && tab->table_ref->uses_materialization()) {
+  if (table_ref && table_ref->uses_materialization()) {
     /*
       For materialized derived tables/views use table/view alias instead of
       temporary table name, as it changes on each run and not acceptable for
@@ -3075,7 +3121,7 @@ void subselect_indexsubquery_engine::print(const THD *thd, String *str,
     str->append(STRING_WITH_LEN("<temporary table>"));
   } else
     str->append(table->s->table_name.str, table->s->table_name.length);
-  KEY *key_info = table->key_info + tab->ref().key;
+  KEY *key_info = table->key_info + ref.key;
   str->append(STRING_WITH_LEN(" on "));
   str->append(key_info->name);
   if (check_null) str->append(STRING_WITH_LEN(" checking NULL"));
@@ -3129,8 +3175,8 @@ Query_block *SubqueryWithResult::single_query_block() const {
     the index allows at most one NULL row.
   - Create a new result sink that sends the result stream of the subquery to
     the temporary table,
-  - Create and initialize a new JOIN_TAB, and TABLE_REF objects to perform
-    lookups into the indexed temporary table.
+  - Create and initialize TABLE_REF objects to perform lookups into the
+    indexed temporary table.
 
   @param thd          thread handle
   @param tmp_columns  columns of temporary table
@@ -3198,32 +3244,25 @@ bool subselect_hash_sj_engine::setup(
   /* 2. Create/initialize execution related objects. */
 
   /*
-    Create and initialize the JOIN_TAB that represents an index lookup
-    plan operator into the materialized subquery result. Notice that:
-    - this JOIN_TAB has no corresponding JOIN (and doesn't need one), and
-    - here we initialize only those members that are used by
-      subselect_indexsubquery_engine, so these objects are incomplete.
+    Create and initialize the TABLE_REF used by the index lookup
+    iterator into the materialized subquery result.
   */
 
-  QEP_TAB_standalone *tmp_tab_st = new (thd->mem_root) QEP_TAB_standalone;
-  if (tmp_tab_st == nullptr) return true;
-  tab = &tmp_tab_st->as_QEP_TAB();
-  tab->set_table(tmp_table);
-  tab->ref().key = 0; /* The only temp table index. */
-  tab->ref().key_length = tmp_key->key_length;
-  tab->set_type((tmp_table->key_info[0].flags & HA_NOSAME) ? JT_EQ_REF
-                                                           : JT_REF);
-  if (!(tab->ref().key_buff = (uchar *)thd->mem_calloc(key_length)) ||
-      !(tab->ref().key_copy =
+  table = tmp_table;
+  ref.key = 0; /* The only temp table index. */
+  ref.key_length = tmp_key->key_length;
+  type = (tmp_table->key_info[0].flags & HA_NOSAME) ? JT_EQ_REF : JT_REF;
+  if (!(ref.key_buff = (uchar *)thd->mem_calloc(key_length)) ||
+      !(ref.key_copy =
             (store_key **)thd->alloc((sizeof(store_key *) * tmp_key_parts))) ||
-      !(tab->ref().items = (Item **)thd->alloc(sizeof(Item *) * tmp_key_parts)))
+      !(ref.items = (Item **)thd->alloc(sizeof(Item *) * tmp_key_parts)))
     return true;
 
   if (tmp_table->hash_field) {
-    tab->ref().keypart_hash = &hash;
+    ref.keypart_hash = &hash;
   }
 
-  uchar *cur_ref_buff = tab->ref().key_buff;
+  uchar *cur_ref_buff = ref.key_buff;
 
   /*
     Create an artificial condition to post-filter those rows matched by index
@@ -3262,13 +3301,12 @@ bool subselect_hash_sj_engine::setup(
     Item_field *right_col_item;
     Field *field = tmp_table->visible_field_ptr()[part_no];
     const bool nullable = field->is_nullable();
-    tab->ref().items[part_no] = item->left_expr->element_index(part_no);
+    ref.items[part_no] = item->left_expr->element_index(part_no);
 
     if (!(right_col_item =
               new Item_field(thd, &tmp_table_ref->query_block->context,
                              tmp_table_ref, field)) ||
-        !(eq_cond =
-              new Item_func_eq(tab->ref().items[part_no], right_col_item)) ||
+        !(eq_cond = new Item_func_eq(ref.items[part_no], right_col_item)) ||
         ((Item_cond_and *)cond)->add(eq_cond)) {
       delete cond;
       cond = nullptr;
@@ -3276,11 +3314,11 @@ bool subselect_hash_sj_engine::setup(
     }
 
     if (tmp_table->hash_field) {
-      tab->ref().key_copy[part_no] = new (thd->mem_root) store_key_hash_item(
-          thd, field, cur_ref_buff, nullptr, field->pack_length(),
-          tab->ref().items[part_no], &hash);
+      ref.key_copy[part_no] = new (thd->mem_root)
+          store_key_hash_item(thd, field, cur_ref_buff, nullptr,
+                              field->pack_length(), ref.items[part_no], &hash);
     } else {
-      tab->ref().key_copy[part_no] = new (thd->mem_root) store_key_item(
+      ref.key_copy[part_no] = new (thd->mem_root) store_key(
           thd, field,
           /* TODO:
              the NULL byte is taken into account in
@@ -3289,7 +3327,7 @@ bool subselect_hash_sj_engine::setup(
              use that information instead.
            */
           cur_ref_buff + (nullable ? 1 : 0), nullable ? cur_ref_buff : nullptr,
-          key_parts[part_no].length, tab->ref().items[part_no]);
+          key_parts[part_no].length, ref.items[part_no]);
     }
     if (nullable &&  // nullable column in tmp table,
                      // and UNKNOWN should not be interpreted as FALSE
@@ -3297,10 +3335,10 @@ bool subselect_hash_sj_engine::setup(
       // It must be the single column, or we wouldn't be here
       assert(tmp_key_parts == 1);
       // Be ready to search for NULL into inner column:
-      tab->ref().null_ref_key = cur_ref_buff;
+      ref.null_ref_key = cur_ref_buff;
       mat_table_has_nulls = NEX_UNKNOWN;
     } else {
-      tab->ref().null_ref_key = nullptr;
+      ref.null_ref_key = nullptr;
       mat_table_has_nulls = NEX_IRRELEVANT_OR_FALSE;
     }
 
@@ -3310,9 +3348,9 @@ bool subselect_hash_sj_engine::setup(
       cur_ref_buff += key_parts[part_no].store_length;
   }
   tmp_table->pos_in_table_list = nullptr;
-  tab->ref().key_err = true;
-  tab->ref().key_parts = tmp_key_parts;
-  tab->table_ref = tmp_table_ref;
+  ref.key_err = true;
+  ref.key_parts = tmp_key_parts;
+  table_ref = tmp_table_ref;
 
   if (cond->fix_fields(thd, &cond)) return true;
 
@@ -3341,12 +3379,12 @@ void subselect_hash_sj_engine::create_iterators(THD *thd) {
   // (which would require the AlternativeIterator); subqueries with
   // JT_REF_OR_NULL are always transformed with IN-to-EXISTS, and thus,
   // their artificial HAVING rejects NULL values.
-  assert(tab->type() != JT_REF_OR_NULL);
-  AccessPath *path = NewRefAccessPath(thd, tab->table(), &tab->ref(),
+  assert(type != JT_REF_OR_NULL);
+  AccessPath *path = NewRefAccessPath(thd, table, &ref,
                                       /*use_order=*/false, /*reverse=*/false,
                                       /*count_examined_rows=*/false);
 
-  if (tab->type() == JT_EQ_REF && (cond != nullptr || having != nullptr)) {
+  if (type == JT_EQ_REF && (cond != nullptr || having != nullptr)) {
     path = NewLimitOffsetAccessPath(thd, path, /*limit=*/1, /*offset=*/0,
                                     /*count_all_rows=*/false,
                                     /* reject_multiple_rows=*/false,
@@ -3366,16 +3404,19 @@ void subselect_hash_sj_engine::create_iterators(THD *thd) {
     However, it works for the time being (partially because TABLE object's
     pos_in_table_list is nullptr).
   */
-  tab->table_ref->set_derived_query_expression(unit);
-  if (tab->table_ref->is_table_function()) {
+  table_ref->set_derived_query_expression(unit);
+  if (table_ref->is_table_function()) {
     path = NewMaterializedTableFunctionAccessPath(
-        thd, tab->table(), tab->table_ref->table_function, path);
+        thd, table, table_ref->table_function, path);
   } else {
-    path = GetAccessPathForDerivedTable(thd, tab, path);
+    path = GetAccessPathForDerivedTable(
+        thd, table_ref, table, /*rematerialize=*/false,
+        /*invalidators=*/nullptr, /*need_rowid=*/false, path);
   }
 
   m_root_access_path = path;
   JOIN *join = unit->is_union() ? nullptr : unit->first_query_block()->join;
+  unit->finalize(thd);
   m_iterator = CreateIteratorFromAccessPath(thd, path, join,
                                             /*eligible_for_batch_mode=*/true);
 
@@ -3385,7 +3426,7 @@ void subselect_hash_sj_engine::create_iterators(THD *thd) {
 
 subselect_hash_sj_engine::~subselect_hash_sj_engine() {
   /* Assure that cleanup has been called for this engine. */
-  assert(!tab);
+  assert(!table);
 
   destroy(result);
 }
@@ -3402,16 +3443,23 @@ void subselect_hash_sj_engine::cleanup(THD *thd) {
   DEBUG_SYNC(thd, "before_index_end_in_subselect");
   m_root_access_path = nullptr;
   m_iterator.reset();
-  if (tab != nullptr) {
-    TABLE *const table = tab->table();
+  if (table != nullptr) {
     if (table->file->inited)
       table->file->ha_index_end();  // Close the scan over the index
     close_tmp_table(table);
     free_tmp_table(table);
     // Note that tab->qep_cleanup() is not called
-    tab = nullptr;
+    table = nullptr;
   }
   if (unit->is_executed()) unit->reset_executed();
+}
+
+static int safe_index_read(TABLE *table, const TABLE_REF &ref) {
+  int error = table->file->ha_index_read_map(
+      table->record[0], ref.key_buff, make_prev_keypart_map(ref.key_parts),
+      HA_READ_KEY_EXACT);
+  if (error) return report_handler_error(table, error);
+  return 0;
 }
 
 /**
@@ -3425,7 +3473,6 @@ void subselect_hash_sj_engine::cleanup(THD *thd) {
 */
 
 bool subselect_hash_sj_engine::exec(THD *thd) {
-  TABLE *const table = tab->table();
   DBUG_TRACE;
 
   /*
@@ -3516,12 +3563,12 @@ bool subselect_hash_sj_engine::exec(THD *thd) {
     if (mat_table_has_nulls == NEX_UNKNOWN)  // We do not know yet
     {
       // Search for NULL inside tmp table, and remember the outcome.
-      *tab->ref().null_ref_key = 1;
+      *ref.null_ref_key = 1;
       if (!table->file->inited &&
-          table->file->ha_index_init(tab->ref().key, false /* sorted */))
+          table->file->ha_index_init(ref.key, false /* sorted */))
         return true;
-      if (safe_index_read(tab) == 1) return true;
-      *tab->ref().null_ref_key = 0;  // prepare for next searches of non-NULL
+      if (safe_index_read(table, ref) == 1) return true;
+      *ref.null_ref_key = 0;  // prepare for next searches of non-NULL
       mat_table_has_nulls =
           table->has_row() ? NEX_TRUE : NEX_IRRELEVANT_OR_FALSE;
     }
@@ -3548,7 +3595,7 @@ void subselect_hash_sj_engine::print(const THD *thd, String *str,
   str->append(STRING_WITH_LEN(" <materialize> ("));
   unit->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" ), "));
-  if (tab)
+  if (table)
     subselect_indexsubquery_engine::print(thd, str, query_type);
   else
     str->append(

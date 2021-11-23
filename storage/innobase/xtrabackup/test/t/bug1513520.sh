@@ -4,4 +4,4 @@
 
 start_server
 
-xtrabackup --slave-info --backup --target-dir=$topdir/backup2
+xtrabackup --slave-info --safe-slave-backup --backup --target-dir=$topdir/backup2

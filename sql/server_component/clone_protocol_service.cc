@@ -95,7 +95,7 @@ DEFINE_METHOD(void, mysql_clone_start_statement,
     my_thread_init();
 
     /* Create thread with input key for PFS */
-    thd = create_thd(true, true, true, thread_key);
+    thd = create_thd(true, true, true, thread_key, 0);
 #ifdef HAVE_PSI_THREAD_INTERFACE
     thd_created = true;
 #endif
@@ -213,11 +213,11 @@ static int get_utf8_config(THD *thd, std::string config_name,
   auto value = get_one_variable(thd, &show, OPT_GLOBAL, SHOW_SYS, nullptr,
                                 &fromcs, val_buf, &val_length);
 
-  mysql_mutex_unlock(&LOCK_global_system_variables);
-
   uint dummy_err;
   const CHARSET_INFO *tocs = &my_charset_utf8mb4_bin;
   utf8_val.copy(value, val_length, fromcs, tocs, &dummy_err);
+
+  mysql_mutex_unlock(&LOCK_global_system_variables);
   return (0);
 }
 
@@ -560,6 +560,19 @@ DEFINE_METHOD(int, mysql_clone_get_response,
     err = ER_QUERY_INTERRUPTED;
   }
 
+  /* This error is not relevant for client but is raised by network
+  net_read_raw_loop() as the code is compiled in server MYSQL_SERVER.
+  For clone client we need to set valid client network error. */
+  if (err == ER_CLIENT_INTERACTION_TIMEOUT) {
+    /* purecov: begin inspected */
+    thd->clear_error();
+    thd->get_stmt_da()->reset_condition_info(thd);
+    net->last_errno = ER_NET_READ_ERROR;
+    err = ER_NET_READ_ERROR;
+    my_error(ER_NET_READ_ERROR, MYF(0));
+    /* purecov: end */
+  }
+
   if (err == 0) {
     net->last_errno = ER_NET_PACKETS_OUT_OF_ORDER;
     err = ER_NET_PACKETS_OUT_OF_ORDER;
@@ -708,6 +721,32 @@ DEFINE_METHOD(int, mysql_clone_send_error,
               (THD * thd, uchar err_cmd, bool is_fatal)) {
   DBUG_TRACE;
 
+  NET *net = thd->get_protocol_classic()->get_net();
+  auto da = thd->get_stmt_da();
+
+  /* Consider any previous network error as fatal. */
+  if (!is_fatal && net->last_errno != 0) {
+    is_fatal = true;
+  }
+
+  if (is_fatal) {
+    int err = 0;
+
+    /* Handle the case if network layer hasn't set the error in THD. */
+    if (da->is_error()) {
+      err = da->mysql_errno();
+    } else {
+      err = ER_NET_ERROR_ON_WRITE;
+      my_error(err, MYF(0));
+    }
+
+    mysql_mutex_lock(&thd->LOCK_thd_data);
+    thd->shutdown_active_vio();
+    mysql_mutex_unlock(&thd->LOCK_thd_data);
+
+    return err;
+  }
+
   uchar err_packet[1 + 4 + MYSQL_ERRMSG_SIZE + 1];
   uchar *buf_ptr = &err_packet[0];
   size_t packet_length = 0;
@@ -715,8 +754,6 @@ DEFINE_METHOD(int, mysql_clone_send_error,
   *buf_ptr = err_cmd;
   ++buf_ptr;
   ++packet_length;
-
-  auto da = thd->get_stmt_da();
 
   char *bufp;
 
@@ -728,13 +765,6 @@ DEFINE_METHOD(int, mysql_clone_send_error,
     bufp = reinterpret_cast<char *>(buf_ptr);
     packet_length +=
         snprintf(bufp, MYSQL_ERRMSG_SIZE, "%s", da->message_text());
-    if (is_fatal) {
-      mysql_mutex_lock(&thd->LOCK_thd_data);
-      thd->shutdown_active_vio();
-      mysql_mutex_unlock(&thd->LOCK_thd_data);
-
-      return da->mysql_errno();
-    }
   } else {
     int4store(buf_ptr, ER_INTERNAL_ERROR);
     buf_ptr += 4;
@@ -744,14 +774,6 @@ DEFINE_METHOD(int, mysql_clone_send_error,
     packet_length += snprintf(bufp, MYSQL_ERRMSG_SIZE, "%s", "Unknown Error");
   }
 
-  NET *net = thd->get_protocol_classic()->get_net();
-
-  if (net->last_errno != 0) {
-    return static_cast<int>(net->last_errno);
-  }
-
-  assert(!is_fatal);
-
   /* Clean error in THD */
   thd->clear_error();
   thd->get_stmt_da()->reset_condition_info(thd);
@@ -759,12 +781,18 @@ DEFINE_METHOD(int, mysql_clone_send_error,
 
   if (my_net_write(net, &err_packet[0], packet_length) || net_flush(net)) {
     int err = static_cast<int>(net->last_errno);
+    da = thd->get_stmt_da();
 
-    if (err == 0) {
+    if (err == 0 || !da->is_error()) {
       net->last_errno = ER_NET_PACKETS_OUT_OF_ORDER;
       err = ER_NET_PACKETS_OUT_OF_ORDER;
       my_error(err, MYF(0));
     }
+
+    mysql_mutex_lock(&thd->LOCK_thd_data);
+    thd->shutdown_active_vio();
+    mysql_mutex_unlock(&thd->LOCK_thd_data);
+
     return err;
   }
   return 0;

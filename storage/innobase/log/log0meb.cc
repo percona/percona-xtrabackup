@@ -56,7 +56,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "ut0new.h"
 
 namespace meb {
-const std::string logmsgpfx("innodb_redo_log_archive: ");
+constexpr const char *innodb_redo_log_archive_privilege{
+    "INNODB_REDO_LOG_ARCHIVE"};
+constexpr const char *backup_admin_privilege{"BACKUP_ADMIN"};
+constexpr const char *logmsgpfx{"innodb_redo_log_archive: "};
+#define LOGMSGPFX std::string(logmsgpfx)
 constexpr size_t QUEUE_BLOCK_SIZE = 4096;
 constexpr size_t QUEUE_SIZE_MAX = 16384;
 
@@ -98,9 +102,7 @@ class Block {
 
       @retval byte[] The byte array of size  QUEUE_BLOCK_SIZE in this
       object. */
-  const byte *get_queue_block() const MY_ATTRIBUTE((warn_unused_result)) {
-    return m_block;
-  }
+  [[nodiscard]] const byte *get_queue_block() const { return m_block; }
 
   /** Copy a log block from the given position inside the input byte array. Note
       that a complete log block is of size OS_FILE_LOG_BLOCK_SIZE. A log block
@@ -115,8 +117,7 @@ class Block {
       @retval true if a complete redo log block (multiple of
                    OS_FILE_LOG_BLOCK_SIZE) was copied.
       @retval false otherwise. */
-  bool put_log_block(const byte block[], const size_t pos)
-      MY_ATTRIBUTE((warn_unused_result)) {
+  [[nodiscard]] bool put_log_block(const byte block[], const size_t pos) {
     ut_ad(!full());
 
     size_t size = log_block_get_data_len(block + pos);
@@ -140,9 +141,7 @@ class Block {
 
       @retval true if the is_final_block flag is true.
               false if the is_final_block flag is false. */
-  bool get_is_final_block() const MY_ATTRIBUTE((warn_unused_result)) {
-    return m_is_final_block;
-  }
+  [[nodiscard]] bool get_is_final_block() const { return m_is_final_block; }
 
   /** Set the is_final_block flag.
 
@@ -161,7 +160,7 @@ class Block {
 
       @retval true if the log block has QUEUE_BLOCK_SIZE bytes.
       @retval false otherwise. */
-  bool full() const MY_ATTRIBUTE((warn_unused_result)) {
+  [[nodiscard]] bool full() const {
     return (m_offset > QUEUE_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE);
   }
 
@@ -517,7 +516,7 @@ bool register_privilege(const char *priv_name) {
     /* purecov: begin inspected */
     LogErr(
         ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-        (logmsgpfx + "mysql_plugin_registry_acquire() returns NULL").c_str());
+        (LOGMSGPFX + "mysql_plugin_registry_acquire() returns NULL").c_str());
     return true;
     /* purecov: end */
   }
@@ -531,7 +530,7 @@ bool register_privilege(const char *priv_name) {
     if (reg_priv->register_privilege(priv_name, strlen(priv_name))) {
       /* purecov: begin inspected */
       LogErr(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-             (logmsgpfx + "cannot register privilege '" + priv_name + "'")
+             (LOGMSGPFX + "cannot register privilege '" + priv_name + "'")
                  .c_str());
       failed = true;
       /* purecov: end */
@@ -565,7 +564,7 @@ void redo_log_archive_init() {
   redo_log_archive_file_handle.m_file = OS_FILE_CLOSED;
   redo_log_archive_queue.create();
   bool failed = false;
-  if (register_privilege("INNODB_REDO_LOG_ARCHIVE")) {
+  if (register_privilege(innodb_redo_log_archive_privilege)) {
     failed = true;
   } else if (register_udfs()) {
     failed = true;
@@ -599,7 +598,7 @@ static bool drop_remnants(bool force) {
     redo_log_archive_recorded_error.append(
         "Consumer thread did not terminate properly");
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + redo_log_archive_recorded_error).c_str());
+           (LOGMSGPFX + redo_log_archive_recorded_error).c_str());
     if (terminate_consumer(/*rapid*/ true) && !force) {
       return true;
     }
@@ -666,9 +665,9 @@ void redo_log_archive_deinit() {
   @param[in]	value     incoming string
   @return 0 for valid contents
 */
-int validate_redo_log_archive_dirs(THD *thd MY_ATTRIBUTE((unused)),
-                                   SYS_VAR *var MY_ATTRIBUTE((unused)),
-                                   void *save, struct st_mysql_value *value) {
+int validate_redo_log_archive_dirs(THD *thd [[maybe_unused]],
+                                   SYS_VAR *var [[maybe_unused]], void *save,
+                                   struct st_mysql_value *value) {
   ut_a(save != nullptr);
   ut_a(value != nullptr);
   char buff[STRING_BUFFER_USUAL_SIZE];
@@ -714,13 +713,14 @@ int validate_redo_log_archive_dirs(THD *thd MY_ATTRIBUTE((unused)),
 }
 
 /**
-  Verify that thd has the INNODB_REDO_LOG_ARCHIVE privilege.
+  Verify that thd has a certain privilege.
   @param[in,out]  thd           current THD instance, current session
+  @param[in]      priv_name     name of the required privilege
   @return         status
-    @retval       false         success
-    @retval       true          failure
+    @retval       false         privilege is granted
+    @retval       true          privilege is denied
 */
-static bool verify_redo_log_archive_privilege(THD *thd) {
+static bool verify_privilege(THD *thd, const char *priv_name) {
   DBUG_TRACE;
   if (thd == nullptr) {
     /* service interface does not allow this. */
@@ -730,9 +730,8 @@ static bool verify_redo_log_archive_privilege(THD *thd) {
     /* purecov: end */
   }
   auto sctx = thd->security_context();
-  const char privilege[]{"INNODB_REDO_LOG_ARCHIVE"};
-  if (!(sctx->has_global_grant(STRING_WITH_LEN(privilege)).first)) {
-    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), privilege);
+  if (!(sctx->has_global_grant(priv_name, strlen(priv_name)).first)) {
+    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), priv_name);
     return true;
   }
   return false;
@@ -793,7 +792,7 @@ static bool get_labeled_directory(const char *label, std::string *dir) {
   DBUG_PRINT("redo_log_archive", ("dir: '%s'", dir->c_str()));
 #ifdef DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG
   LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-         (logmsgpfx + "selected dir '" + dir + "'").c_str());
+         (LOGMSGPFX + "selected dir '" + dir + "'").c_str());
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG */
   return false;
 }
@@ -921,7 +920,7 @@ static bool verify_no_server_directory(const Fil_path &path) {
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA */
 #ifdef DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG
   LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-         (logmsgpfx + "compare '" + target + "'").c_str());
+         (LOGMSGPFX + "compare '" + target + "'").c_str());
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG */
 
   for (int idx = 0; idx < int(std::min(variables.size(), directories.size()));
@@ -954,7 +953,7 @@ static bool verify_no_server_directory(const Fil_path &path) {
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA */
 #ifdef DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + "with    '" + compare + "'").c_str());
+           (LOGMSGPFX + "with    '" + compare + "'").c_str());
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG */
     if (((compare_len == target_len) ||
          ((compare_len < target_len) &&
@@ -969,7 +968,7 @@ static bool verify_no_server_directory(const Fil_path &path) {
     ) {
 #ifdef DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG
       LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-             (logmsgpfx + "match").c_str());
+             (LOGMSGPFX + "match").c_str());
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG */
       my_error(ER_INNODB_REDO_LOG_ARCHIVE_DIR_CLASH, MYF(0), path(),
                variables[idx].c_str(), compare_path());
@@ -978,7 +977,7 @@ static bool verify_no_server_directory(const Fil_path &path) {
   }
 #ifdef DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG
   LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-         (logmsgpfx + "no match").c_str());
+         (LOGMSGPFX + "no match").c_str());
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG */
   return false;
 }
@@ -1068,7 +1067,7 @@ static bool construct_secure_file_path_name(THD *thd, const char *label,
     directory.append(subdir);
 #ifdef DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + "subdir path '" + directory + "'").c_str());
+           (LOGMSGPFX + "subdir path '" + directory + "'").c_str());
 #endif /* DEBUG_REDO_LOG_ARCHIVE_EXTRA_LOG */
   }
 
@@ -1161,7 +1160,7 @@ static bool terminate_consumer(bool rapid) {
     redo_log_archive_recorded_error.append(
         "Termination of the consumer thread timed out");
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + redo_log_archive_recorded_error).c_str());
+           (LOGMSGPFX + redo_log_archive_recorded_error).c_str());
     my_error(ER_INNODB_REDO_LOG_ARCHIVE_FAILED, MYF(0),
              redo_log_archive_recorded_error.c_str());
     return true;
@@ -1182,7 +1181,7 @@ static bool redo_log_archive_start(THD *thd, const char *label,
                                   (label == nullptr) ? "[NULL]" : label,
                                   (subdir == nullptr) ? "[NULL]" : subdir));
   /* Security measure: Require the redo log archive privilege. */
-  if (verify_redo_log_archive_privilege(thd)) {
+  if (verify_privilege(thd, innodb_redo_log_archive_privilege)) {
     return true;
   }
 
@@ -1303,7 +1302,7 @@ static bool redo_log_archive_start(THD *thd, const char *label,
   redo_log_archive_active = true;
 
   srv_threads.m_backup_log_archiver = os_thread_create(
-      redo_log_archive_consumer_thread_key, redo_log_archive_consumer);
+      redo_log_archive_consumer_thread_key, 0, redo_log_archive_consumer);
 
   mutex_exit(&redo_log_archive_admin_mutex);
 
@@ -1369,7 +1368,7 @@ static bool redo_log_archive_stop(THD *thd) {
   /*
     Security measure: Require the redo log archive privilege.
   */
-  if (verify_redo_log_archive_privilege(thd)) {
+  if (verify_privilege(thd, innodb_redo_log_archive_privilege)) {
     return true;
   }
 
@@ -1492,7 +1491,7 @@ static bool redo_log_archive_flush(THD *thd) {
   /*
     Security measure: Require the redo log archive privilege.
   */
-  if (verify_redo_log_archive_privilege(thd)) {
+  if (verify_privilege(thd, innodb_redo_log_archive_privilege)) {
     return true;
   }
 
@@ -1558,7 +1557,7 @@ static bool redo_log_archive_flush(THD *thd) {
     redo_log_archive_recorded_error.append(
         "Flushing of the archive log timed out");
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + redo_log_archive_recorded_error).c_str());
+           (LOGMSGPFX + redo_log_archive_recorded_error).c_str());
     my_error(ER_INNODB_REDO_LOG_ARCHIVE_FAILED, MYF(0),
              redo_log_archive_recorded_error.c_str());
     mutex_exit(&redo_log_archive_admin_mutex);
@@ -1609,7 +1608,7 @@ void redo_log_archive_session_end(innodb_session_t *session) {
 
     if (stop_required && (thd != nullptr)) {
       LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-             (logmsgpfx + "Unexpected termination of the session that started"
+             (LOGMSGPFX + "Unexpected termination of the session that started"
                           " redo log archiving. Stopping redo log archiving.")
                  .c_str());
       if (redo_log_archive_stop(thd)) {
@@ -1725,7 +1724,7 @@ static void redo_log_archive_consumer() {
       os_event_set(redo_log_archive_consume_event);
     }
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + "Redo log archiving consumer thread refuses to start"
+           (LOGMSGPFX + "Redo log archiving consumer thread refuses to start"
                         " - another one is running")
                .c_str());
     mutex_exit(&redo_log_archive_admin_mutex);
@@ -1756,7 +1755,7 @@ static void redo_log_archive_consumer() {
       os_event_set(redo_log_archive_consume_event); /* purecov: inspected */
     }
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx +
+           (LOGMSGPFX +
             "Redo log archiving consumer thread sees completion at start"
             " - terminating")
                .c_str());
@@ -1798,7 +1797,7 @@ static void redo_log_archive_consumer() {
         }
         redo_log_archive_recorded_error.append(recorded_error_ss.str());
         LogErr(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-               (logmsgpfx + recorded_error_ss.str()).c_str());
+               (LOGMSGPFX + recorded_error_ss.str()).c_str());
         /* Setting this flag prevents from entering the below loop. */
         redo_log_archive_consume_complete = true;
         /* purecov: end */
@@ -1886,7 +1885,7 @@ static void redo_log_archive_consumer() {
             os_event_set(redo_log_archive_consume_event);
           }
           LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-                 (logmsgpfx + "Flushed redo log archive").c_str());
+                 (LOGMSGPFX + "Flushed redo log archive").c_str());
         } else {
           file_offset += QUEUE_BLOCK_SIZE;
         }
@@ -1922,7 +1921,7 @@ static void redo_log_archive_consumer() {
     redo_log_archive_recorded_error.append(
         " - stopped redo log archiving and deleted the file.");
     LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-           (logmsgpfx + redo_log_archive_recorded_error).c_str());
+           (LOGMSGPFX + redo_log_archive_recorded_error).c_str());
     /* purecov: end */
   }
   mutex_exit(&redo_log_archive_admin_mutex);
@@ -1934,7 +1933,7 @@ static void redo_log_archive_consumer() {
 
   See include/mysql/udf_registration_types.h
 */
-bool innodb_redo_log_archive_start_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
+bool innodb_redo_log_archive_start_init(UDF_INIT *initid [[maybe_unused]],
                                         UDF_ARGS *args, char *message) {
   if ((args->arg_count < 1) || (args->arg_count > 2)) {
     strncpy(message, "Invalid number of arguments.", MYSQL_ERRMSG_SIZE);
@@ -1960,8 +1959,7 @@ bool innodb_redo_log_archive_start_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
 
   See include/mysql/udf_registration_types.h
 */
-void innodb_redo_log_archive_start_deinit(
-    UDF_INIT *initid MY_ATTRIBUTE((unused))) {
+void innodb_redo_log_archive_start_deinit(UDF_INIT *initid [[maybe_unused]]) {
   return;
 }
 
@@ -1983,10 +1981,11 @@ void innodb_redo_log_archive_start_deinit(
 
   Returns zero on success, one otherwise.
 */
-long long innodb_redo_log_archive_start(
-    UDF_INIT *initid MY_ATTRIBUTE((unused)), UDF_ARGS *args,
-    unsigned char *null_value MY_ATTRIBUTE((unused)),
-    unsigned char *error MY_ATTRIBUTE((unused))) {
+long long innodb_redo_log_archive_start(UDF_INIT *initid [[maybe_unused]],
+                                        UDF_ARGS *args,
+                                        unsigned char *null_value
+                                        [[maybe_unused]],
+                                        unsigned char *error [[maybe_unused]]) {
   return static_cast<long long>(meb::redo_log_archive_start(
       current_thd, args->args[0],
       (args->arg_count == 2) ? args->args[1] : nullptr));
@@ -1997,7 +1996,7 @@ long long innodb_redo_log_archive_start(
 
   See include/mysql/udf_registration_types.h
 */
-bool innodb_redo_log_archive_stop_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
+bool innodb_redo_log_archive_stop_init(UDF_INIT *initid [[maybe_unused]],
                                        UDF_ARGS *args, char *message) {
   if (args->arg_count != 0) {
     strncpy(message, "Invalid number of arguments.", MYSQL_ERRMSG_SIZE);
@@ -2011,8 +2010,7 @@ bool innodb_redo_log_archive_stop_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
 
   See include/mysql/udf_registration_types.h
 */
-void innodb_redo_log_archive_stop_deinit(
-    UDF_INIT *initid MY_ATTRIBUTE((unused))) {
+void innodb_redo_log_archive_stop_deinit(UDF_INIT *initid [[maybe_unused]]) {
   return;
 }
 
@@ -2028,11 +2026,11 @@ void innodb_redo_log_archive_stop_deinit(
 
   Returns zero on success, one otherwise.
 */
-long long innodb_redo_log_archive_stop(
-    UDF_INIT *initid MY_ATTRIBUTE((unused)),
-    UDF_ARGS *args MY_ATTRIBUTE((unused)),
-    unsigned char *null_value MY_ATTRIBUTE((unused)),
-    unsigned char *error MY_ATTRIBUTE((unused))) {
+long long innodb_redo_log_archive_stop(UDF_INIT *initid [[maybe_unused]],
+                                       UDF_ARGS *args [[maybe_unused]],
+                                       unsigned char *null_value
+                                       [[maybe_unused]],
+                                       unsigned char *error [[maybe_unused]]) {
   return static_cast<long long>(meb::redo_log_archive_stop(current_thd));
 }
 
@@ -2041,7 +2039,7 @@ long long innodb_redo_log_archive_stop(
 
   See include/mysql/udf_registration_types.h
 */
-bool innodb_redo_log_archive_flush_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
+bool innodb_redo_log_archive_flush_init(UDF_INIT *initid [[maybe_unused]],
                                         UDF_ARGS *args, char *message) {
   if (args->arg_count != 0) {
     strncpy(message, "Invalid number of arguments.", MYSQL_ERRMSG_SIZE);
@@ -2055,8 +2053,7 @@ bool innodb_redo_log_archive_flush_init(UDF_INIT *initid MY_ATTRIBUTE((unused)),
 
   See include/mysql/udf_registration_types.h
 */
-void innodb_redo_log_archive_flush_deinit(
-    UDF_INIT *initid MY_ATTRIBUTE((unused))) {
+void innodb_redo_log_archive_flush_deinit(UDF_INIT *initid [[maybe_unused]]) {
   return;
 }
 
@@ -2072,12 +2069,67 @@ void innodb_redo_log_archive_flush_deinit(
 
   Returns zero on success, one otherwise.
 */
-long long innodb_redo_log_archive_flush(
-    UDF_INIT *initid MY_ATTRIBUTE((unused)),
-    UDF_ARGS *args MY_ATTRIBUTE((unused)),
-    unsigned char *null_value MY_ATTRIBUTE((unused)),
-    unsigned char *error MY_ATTRIBUTE((unused))) {
+long long innodb_redo_log_archive_flush(UDF_INIT *initid [[maybe_unused]],
+                                        UDF_ARGS *args [[maybe_unused]],
+                                        unsigned char *null_value
+                                        [[maybe_unused]],
+                                        unsigned char *error [[maybe_unused]]) {
   return static_cast<long long>(meb::redo_log_archive_flush(current_thd));
+}
+
+/**
+  Initialize UDF innodb_redo_log_sharp_checkpoint
+
+  See include/mysql/udf_registration_types.h
+*/
+bool innodb_redo_log_sharp_checkpoint_init([[maybe_unused]] UDF_INIT *initid,
+                                           UDF_ARGS *args, char *message) {
+  if (args->arg_count != 0) {
+    strncpy(message, "Invalid number of arguments.", MYSQL_ERRMSG_SIZE);
+    return true;
+  }
+  return false;
+}
+
+/**
+  Deinitialize UDF innodb_redo_log_sharp_checkpoint
+
+  See include/mysql/udf_registration_types.h
+*/
+void innodb_redo_log_sharp_checkpoint_deinit([
+    [maybe_unused]] UDF_INIT *initid) {
+  return;
+}
+
+/**
+  UDF innodb_redo_log_sharp_checkpoint
+
+  The UDF is of type Udf_func_longlong returning INT_RESULT
+
+  See include/mysql/udf_registration_types.h
+
+  The UDF expects one argument:
+  - A thread context pointer, maybe NULL
+
+  Returns zero on success, one otherwise.
+*/
+long long innodb_redo_log_sharp_checkpoint(
+    [[maybe_unused]] UDF_INIT *initid, [[maybe_unused]] UDF_ARGS *args,
+    [[maybe_unused]] unsigned char *null_value,
+    [[maybe_unused]] unsigned char *error) {
+  /* Security measure: Require the backup admin privilege. */
+  if (verify_privilege(current_thd, backup_admin_privilege)) {
+    return 1;
+  }
+
+  if (log_sys == nullptr) {
+    my_error(ER_INVALID_USE_OF_NULL, MYF(0));
+    return 1;
+  }
+  LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
+         "innodb_redo_log_sharp_checkpoint() making checkpoint");
+  log_make_latest_checkpoint(*log_sys);
+  return 0;
 }
 
 /**
@@ -2114,7 +2166,12 @@ static udf_data_t component_udfs[] = {
     {"innodb_redo_log_archive_flush", INT_RESULT,
      reinterpret_cast<Udf_func_any>(innodb_redo_log_archive_flush),
      reinterpret_cast<Udf_func_init>(innodb_redo_log_archive_flush_init),
-     reinterpret_cast<Udf_func_deinit>(innodb_redo_log_archive_flush_deinit)}};
+     reinterpret_cast<Udf_func_deinit>(innodb_redo_log_archive_flush_deinit)},
+    {"innodb_redo_log_sharp_checkpoint", INT_RESULT,
+     reinterpret_cast<Udf_func_any>(innodb_redo_log_sharp_checkpoint),
+     reinterpret_cast<Udf_func_init>(innodb_redo_log_sharp_checkpoint_init),
+     reinterpret_cast<Udf_func_deinit>(
+         innodb_redo_log_sharp_checkpoint_deinit)}};
 
 /**
   Unregister UDF(s)
@@ -2125,7 +2182,7 @@ static void unregister_udfs() {
     /* purecov: begin inspected */
     LogErr(
         WARNING_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-        (logmsgpfx + "mysql_plugin_registry_acquire() returns NULL").c_str());
+        (LOGMSGPFX + "mysql_plugin_registry_acquire() returns NULL").c_str());
     return;
     /* purecov: end */
   }
@@ -2144,13 +2201,13 @@ static void unregister_udfs() {
         if (udf_registrar->udf_unregister(name, &was_present) && was_present) {
           /* purecov: begin inspected */ /* Only needed if unregister fails. */
           LogErr(WARNING_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-                 (logmsgpfx + "Cannot unregister UDF '" + name + "'").c_str());
+                 (LOGMSGPFX + "Cannot unregister UDF '" + name + "'").c_str());
           /* purecov: end */
         }
       }
     } else {
       LogErr(WARNING_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-             (logmsgpfx + "Cannot get valid udf_registration service").c_str());
+             (LOGMSGPFX + "Cannot get valid udf_registration service").c_str());
     }
   } /* end of udf_registrar block */
   mysql_plugin_registry_release(plugin_registry);
@@ -2175,7 +2232,7 @@ static bool register_udfs() {
     /* purecov: begin inspected */
     LogErr(
         ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-        (logmsgpfx + "mysql_plugin_registry_acquire() returns NULL").c_str());
+        (LOGMSGPFX + "mysql_plugin_registry_acquire() returns NULL").c_str());
     return true;
     /* purecov: end */
   }
@@ -2195,7 +2252,7 @@ static bool register_udfs() {
                                         udf.m_init_func, udf.m_deinit_func)) {
           /* purecov: begin inspected */ /* Only needed if register fails. */
           LogErr(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-                 (logmsgpfx + "Cannot register UDF '" + name + "'").c_str());
+                 (LOGMSGPFX + "Cannot register UDF '" + name + "'").c_str());
           failed = true;
           break;
           /* purecov: end */
@@ -2203,7 +2260,7 @@ static bool register_udfs() {
       }
     } else {
       LogErr(ERROR_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
-             (logmsgpfx + "Cannot get valid udf_registration service").c_str());
+             (LOGMSGPFX + "Cannot get valid udf_registration service").c_str());
       failed = true;
     }
   } /* end of udf_registrar block */

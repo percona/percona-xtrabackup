@@ -18,8 +18,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
-#ifndef __XBCLOUD_S3_H__
-#define __XBCLOUD_S3_H__
+#ifndef XBCLOUD_S3_H
+#define XBCLOUD_S3_H
 
 #include "object_store.h"
 #include "xbcloud/http.h"
@@ -343,4 +343,4 @@ class S3_object_store : public Object_store {
 
 }  // namespace xbcloud
 
-#endif
+#endif  // XBCLOUD_S3_H

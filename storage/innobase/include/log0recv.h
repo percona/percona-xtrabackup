@@ -197,7 +197,7 @@ size_t meb_heap_used();
 
 /** Returns true if recovery is currently running.
 @return recv_recovery_on */
-static inline bool recv_recovery_is_on() MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] static inline bool recv_recovery_is_on();
 
 /** Returns true if the page is brand new (the next log record is init_file_page
 or no records to apply).
@@ -212,16 +212,16 @@ bool recv_page_is_brand_new(buf_block_t *block);
                                 of first system tablespace page
 @param[in]  to_lsn    LSN to store recovery at
 @return error code or DB_SUCCESS */
-dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
-                                            lsn_t to_lsn)
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] dberr_t recv_recovery_from_checkpoint_start(log_t &log,
+                                                          lsn_t flush_lsn,
+                                                          lsn_t to_lsn);
 
 /** Complete the recovery from the latest checkpoint.
 @param[in,out]	log		redo log
 @param[in]	aborting	true if the server has to abort due to an error
 @return recovered persistent metadata or nullptr if aborting*/
-MetadataRecover *recv_recovery_from_checkpoint_finish(log_t &log, bool aborting)
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] MetadataRecover *recv_recovery_from_checkpoint_finish(
+    log_t &log, bool aborting);
 
 /** Creates the recovery system. */
 void recv_sys_create();
@@ -345,7 +345,7 @@ merge them and apply them to in-memory table objects finally */
 class MetadataRecover {
   using PersistentTables = std::map<
       table_id_t, PersistentTableMetadata *, std::less<table_id_t>,
-      ut_allocator<std::pair<const table_id_t, PersistentTableMetadata *>>>;
+      ut::allocator<std::pair<const table_id_t, PersistentTableMetadata *>>>;
 
  public:
   /** Default constructor */
@@ -446,7 +446,7 @@ struct recv_sys_t {
     size_t size;
   };
 
-  using Mlog_records = std::vector<Mlog_record, ut_allocator<Mlog_record>>;
+  using Mlog_records = std::vector<Mlog_record, ut::allocator<Mlog_record>>;
 
   /** While scanning logs for multi-record mini transaction (mtr), we have two
   passes. In first pass, we check if all the logs of the mtr is present in
@@ -709,8 +709,7 @@ bool log_block_checksum_is_ok(const byte *block);
 @param[in,out]  log   redo log
 @param[out] max_field LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
 @return error code or DB_SUCCESS */
-MY_ATTRIBUTE((warn_unused_result))
-dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field);
+[[nodiscard]] dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field);
 
 /** Reads a specified log segment to a buffer.
 @param[in,out]  log   redo log

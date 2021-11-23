@@ -106,11 +106,7 @@ Json_dom_ptr merge_doms(Json_dom_ptr left, Json_dom_ptr right) {
     Json_object_ptr right_object(down_cast<Json_object *>(right.release()));
     if (left_object->consume(std::move(right_object)))
       return nullptr; /* purecov: inspected */
-#ifdef __SUNPRO_CC
-    return std::move(left_object);
-#else
     return left_object;
-#endif
   }
 
   Json_array_ptr left_array = wrap_in_array(std::move(left));
@@ -119,11 +115,7 @@ Json_dom_ptr merge_doms(Json_dom_ptr left, Json_dom_ptr right) {
       left_array->consume(std::move(right_array)))
     return nullptr; /* purecov: inspected */
 
-#ifdef __SUNPRO_CC
-  return std::move(left_array);
-#else
   return left_array;
-#endif
 }
 #endif  // ifdef MYSQL_SERVER
 
@@ -903,7 +895,7 @@ bool Json_object::consume(Json_object_ptr other) {
 }
 
 template <typename Key>
-static Json_dom *json_object_get(const Json_dom *object MY_ATTRIBUTE((unused)),
+static Json_dom *json_object_get(const Json_dom *object [[maybe_unused]],
                                  const Json_object_map &map, const Key &key) {
   const Json_object_map::const_iterator iter = map.find(key);
 
@@ -956,11 +948,7 @@ Json_dom_ptr Json_object::clone() const {
       return nullptr; /* purecov: inspected */
   }
 
-#ifdef __SUNPRO_CC
-  return std::move(o);
-#else
   return o;
-#endif
 }
 
 bool Json_object::merge_patch(Json_object_ptr patch) {
@@ -1104,11 +1092,7 @@ Json_dom_ptr Json_array::clone() const {
     if (vv->append_clone(child.get())) return nullptr; /* purecov: inspected */
   }
 
-#ifdef __SUNPRO_CC
-  return std::move(vv);
-#else
   return vv;
-#endif
 }
 
 #ifdef MYSQL_SERVER
@@ -1411,9 +1395,7 @@ void Json_wrapper_object_iterator::initialize_current_member() {
 }
 
 Json_wrapper::Json_wrapper(Json_dom *dom_value, bool alias)
-    : m_dom_value(dom_value), m_is_dom(true) {
-  // Workaround for Solaris Studio, initialize in CTOR body
-  m_dom_alias = alias;
+    : m_dom_value(dom_value), m_dom_alias(alias), m_is_dom(true) {
   if (!dom_value) {
     m_dom_alias = true;  //!< no deallocation, make us empty
   }
@@ -1797,8 +1779,7 @@ bool Json_wrapper::to_pretty_string(String *buffer,
   return wrapper_to_string(*this, buffer, true, true, func_name, 0);
 }
 
-void Json_wrapper::dbug_print(
-    const char *message MY_ATTRIBUTE((unused))) const {
+void Json_wrapper::dbug_print(const char *message [[maybe_unused]]) const {
 #ifndef NDEBUG
   StringBuffer<STRING_BUFFER_USUAL_SIZE> buf;
   if (to_string(&buf, false, "Json_wrapper::dbug_print"))
@@ -3008,7 +2989,7 @@ bool Json_wrapper::coerce_date(MYSQL_TIME *ltime, const char *msgnam,
           !status.warnings)
         break;
     }
-    /* Fall through */
+      [[fallthrough]];
     default:
       handle_coercion_error(cr_error, "DATE/TIME/DATETIME/TIMESTAMP",
                             ER_INVALID_JSON_VALUE_FOR_CAST, msgnam);
@@ -3032,7 +3013,7 @@ bool Json_wrapper::coerce_time(MYSQL_TIME *ltime, const char *msgnam,
           !status.warnings)
         break;
     }
-    /* Fall through */
+      [[fallthrough]];
     default:
       handle_coercion_error(cr_error, "DATE/TIME/DATETIME/TIMESTAMP",
                             ER_INVALID_JSON_VALUE_FOR_CAST, msgnam);

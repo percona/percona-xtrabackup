@@ -295,6 +295,12 @@ class AggregateIterator final : public RowIterator {
    */
   String m_first_row_next_group;
 
+  /**
+    The slice we're setting when returning rows. See the comment in the
+    constructor.
+   */
+  int m_output_slice = -1;
+
   void SetRollupLevel(int level);
 };
 
@@ -725,6 +731,8 @@ class TemptableAggregateIterator final : public TableRowIterator {
 
   // See MaterializeIterator::doing_hash_deduplication().
   bool using_hash_key() const { return table()->hash_field; }
+
+  bool move_table_to_disk(int error, bool was_insert);
 };
 
 /**

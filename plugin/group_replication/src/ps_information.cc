@@ -32,7 +32,7 @@ using std::string;
 bool get_group_members_info(
     uint index, const GROUP_REPLICATION_GROUP_MEMBERS_CALLBACKS &callbacks,
     Group_member_info_manager_interface *group_member_manager,
-    char *channel_name) {
+    Gcs_operations *gcs_module, char *channel_name) {
   if (channel_name != nullptr) {
     callbacks.set_channel_name(callbacks.context, *channel_name,
                                strlen(channel_name));
@@ -114,6 +114,24 @@ bool get_group_members_info(
   callbacks.set_member_version(callbacks.context, *member_version.c_str(),
                                member_version.length());
 
+  enum_transport_protocol incoming_connection_protocol_value = INVALID_PROTOCOL;
+  if (gcs_module == nullptr || (local_member_info->get_recovery_status() ==
+                                Group_member_info::MEMBER_OFFLINE)) {
+    // use the value that is present in the variable
+    incoming_connection_protocol_value =
+        static_cast<enum_transport_protocol>(get_communication_stack_var());
+  } else {
+    incoming_connection_protocol_value =
+        gcs_module->get_current_incoming_connections_protocol();
+  }
+
+  const char *incoming_connection_protocol =
+      Communication_stack_to_string::to_string(
+          incoming_connection_protocol_value);
+  callbacks.set_member_incoming_communication_protocol(
+      callbacks.context, *incoming_connection_protocol,
+      strlen(incoming_connection_protocol));
+
   delete member_info;
 
   return false;
@@ -159,6 +177,13 @@ bool get_group_member_stats(
 
   std::string uuid(member_info->get_uuid());
   callbacks.set_member_id(callbacks.context, *uuid.c_str(), uuid.length());
+
+  if (nullptr == local_member_info ||
+      local_member_info->get_recovery_status() ==
+          Group_member_info::MEMBER_OFFLINE) {
+    delete member_info;
+    return false;
+  }
 
   // Retrieve view information
   Gcs_view *view = gcs_module->get_current_view();

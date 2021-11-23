@@ -81,7 +81,7 @@ static inline ssize_t parse_trad_field(const char *parse_from,
 */
 log_service_error log_sink_trad_parse_log_line(const char *line_start,
                                                size_t line_length) {
-  char timestamp[iso8601_size];
+  char timestamp[iso8601_size];  // space for timestamp + '\0'
   char label[16];
   char msg[LOG_BUFF_MAX];
   ssize_t len;
@@ -97,9 +97,10 @@ log_service_error log_sink_trad_parse_log_line(const char *line_start,
   // parse timestamp
   if ((len = parse_trad_field(start, &end, line_end)) <= 0)
     return LOG_SERVICE_PARSE_ERROR;
-  if (len > iso8601_size) return LOG_SERVICE_ARGUMENT_TOO_LONG;
+  if (len >= iso8601_size) return LOG_SERVICE_ARGUMENT_TOO_LONG;
+
   memcpy(timestamp, start, len);
-  timestamp[len] = '\0';
+  timestamp[len] = '\0';  // terminate target buffer
   start = end + 1;
   e.m_timestamp = iso8601_timestamp_to_microseconds(timestamp, len);
 
@@ -201,7 +202,7 @@ log_service_error log_sink_trad_parse_log_line(const char *line_start,
 
   @retval          int                  number of added fields, if any
 */
-int log_sink_trad(void *instance MY_ATTRIBUTE((unused)), log_line *ll) {
+int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
   const char *label = "", *msg = "";
   int c, out_fields = 0;
   size_t msg_len = 0, iso_len = 0, label_len = 0, subsys_len = 0;

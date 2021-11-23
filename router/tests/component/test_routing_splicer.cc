@@ -1968,6 +1968,7 @@ TEST_P(SplicerParamTest, classic_protocol) {
 
     try {
       const auto row = sess.query_one("show status like 'ssl_cipher'");
+      ASSERT_TRUE(row) << "<show status like 'ssl_cipher'> returned no row";
       ASSERT_EQ(row->size(), 2);
 
       if (GetParam().expect_server_encrypted) {
@@ -2150,7 +2151,8 @@ TEST_P(SplicerParamTest, xproto) {
       if (!result->has_resultset()) {
         FAIL() << xerr.what();
       } else {
-        const auto row = result->get_next_row();
+        const auto row = result->get_next_row(&xerr);
+        ASSERT_TRUE(row) << xerr;
         std::string field;
         ASSERT_TRUE(row->get_string(1, &field));
 

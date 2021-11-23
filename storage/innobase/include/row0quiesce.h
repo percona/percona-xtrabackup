@@ -62,20 +62,21 @@ void row_quiesce_table_start(dict_table_t *table, trx_t *trx);
 
 /** Set a table's quiesce state.
  @return DB_SUCCESS or errro code. */
-dberr_t row_quiesce_set_state(
+[[nodiscard]] dberr_t row_quiesce_set_state(
     dict_table_t *table, /*!< in: quiesce this table */
     ib_quiesce_t state,  /*!< in: quiesce state to set */
-    trx_t *trx)          /*!< in/out: transaction */
-    MY_ATTRIBUTE((warn_unused_result));
+    trx_t *trx);         /*!< in/out: transaction */
 
 /** Cleanup after table quiesce.
 @param[in] table Quiesce this table
 @param[in,out] trx Transaction/session */
 void row_quiesce_table_complete(dict_table_t *table, trx_t *trx);
 
-#ifdef XTRABACKUP
-MY_ATTRIBUTE((warn_unused_result))
-dberr_t row_quiesce_write_default_value(const dict_col_t *col, FILE *file);
+[[nodiscard]]
+#ifndef XTRABACKUP
+static
 #endif
+    dberr_t
+    row_quiesce_write_default_value(const dict_col_t *col, FILE *file);
 
 #endif /* row0quiesce_h */

@@ -762,6 +762,8 @@ bool check_acl_tables_intact(THD *thd, bool mdl_locked);
 bool check_acl_tables_intact(THD *thd, TABLE_LIST *tables);
 void notify_flush_event(THD *thd);
 bool wildcard_db_grant_exists();
+void append_auth_id_string(const THD *thd, const char *user, size_t user_len,
+                           const char *host, size_t host_len, String *str);
 
 /* sql_authorization */
 bool skip_grant_tables();
@@ -1097,11 +1099,21 @@ using Role_id = Auth_id;
 static constexpr int USER_HOST_BUFF_SIZE =
     HOSTNAME_LENGTH + USERNAME_LENGTH + 2;
 
+struct random_password_info {
+  std::string user;
+  std::string host;
+  std::string password;
+  unsigned int authentication_factor;
+};
+
 void generate_random_password(std::string *password, uint32_t);
-typedef std::list<std::vector<std::string>> Userhostpassword_list;
+typedef std::list<random_password_info> Userhostpassword_list;
 bool send_password_result_set(THD *thd,
                               const Userhostpassword_list &generated_passwords);
 bool lock_and_get_mandatory_roles(std::vector<Role_id> *mandatory_roles);
 bool mysql_alter_user_comment(THD *thd, const List<LEX_USER> *users,
                               const std::string &json_blob, bool expect_text);
+
+/* helper method to check if sandbox mode should be turned off or not */
+bool turn_off_sandbox_mode(THD *thd, LEX_USER *user);
 #endif /* AUTH_COMMON_INCLUDED */

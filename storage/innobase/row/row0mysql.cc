@@ -43,6 +43,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <vector>
 
 #include "btr0sea.h"
+#include "ddl0ddl.h"
 #include "dict0boot.h"
 #include "dict0crea.h"
 #include "dict0dd.h"
@@ -66,7 +67,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0ext.h"
 #include "row0import.h"
 #include "row0ins.h"
-#include "row0merge.h"
 #include "row0mysql.h"
 #include "row0pread.h"
 #include "row0row.h"
@@ -670,7 +670,7 @@ handle_new_error:
         trx_rollback_to_savepoint(trx, nullptr);
         break;
       }
-    /* fall through */
+      [[fallthrough]];
     case DB_DUPLICATE_KEY:
     case DB_FOREIGN_DUPLICATE_KEY:
     case DB_TOO_BIG_RECORD:
@@ -725,7 +725,7 @@ handle_new_error:
       break;
 
     case DB_MUST_GET_MORE_FILE_SPACE:
-      ib::fatal(ER_IB_MSG_972)
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_972)
           << "The database cannot continue operation because"
              " of lack of space. You must add a new data file"
              " to my.cnf and restart the database.";
@@ -750,7 +750,7 @@ handle_new_error:
              " foreign constraints and try again";
       break;
     default:
-      ib::fatal(ER_IB_MSG_975)
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_975)
           << "Unknown error code " << err << ": " << ut_strerr(err);
   }
 
@@ -941,7 +941,7 @@ void row_prebuilt_free(row_prebuilt_t *prebuilt, ibool dict_locked) {
   btr_pcur_reset(prebuilt->pcur);
   btr_pcur_reset(prebuilt->clust_pcur);
 
-  ut_free(prebuilt->mysql_template);
+  ut::free(prebuilt->mysql_template);
 
   if (prebuilt->ins_graph) {
     que_graph_free_recursive(prebuilt->ins_graph);
@@ -981,7 +981,7 @@ void row_prebuilt_free(row_prebuilt_t *prebuilt, ibool dict_locked) {
       ptr += 4;
     }
 
-    ut_free(base);
+    ut::free(base);
   }
 
   if (prebuilt->rtr_info) {
@@ -1955,7 +1955,7 @@ static dberr_t row_update_inplace_for_intrinsic(const upd_node_t *node) {
   return (DB_SUCCESS);
 }
 
-typedef std::vector<btr_pcur_t, ut_allocator<btr_pcur_t>> cursors_t;
+typedef std::vector<btr_pcur_t, ut::allocator<btr_pcur_t>> cursors_t;
 
 /** Delete row from table (corresponding entries from all the indexes).
 Function will maintain cursor to the entries to invoke explicity rollback
@@ -3040,8 +3040,8 @@ error_handling:
   trx->op_info = "";
   trx->dict_operation = TRX_DICT_OP_NONE;
 
-  ut_free(table_name);
-  ut_free(index_name);
+  ut::free(table_name);
+  ut::free(index_name);
 
   return (err);
 }
@@ -3185,7 +3185,7 @@ loop:
     intrinsic ones, so this is no need later. */
     /* xtrabackup does not bind MySQL sessions to InnoDB ones */
 #ifndef XTRABACKUP
-      UT_DELETE(thd_to_innodb_session(thd));
+      ut::delete_(thd_to_innodb_session(thd));
       thd_to_innodb_session(thd) = nullptr;
 #endif
     }
@@ -3228,7 +3228,7 @@ loop:
     if (thd != nullptr) {
       /* All these kind of table should not be
       intrinsic ones, so this is no need later. */
-      UT_DELETE(thd_to_innodb_session(thd));
+      ut::delete_(thd_to_innodb_session(thd));
       thd_to_innodb_session(thd) = nullptr;
     }
 
@@ -3251,9 +3251,9 @@ already_dropped:
                           << ut_get_name(nullptr, drop->table_name)
                           << " in background drop queue.",
 
-      ut_free(drop->table_name);
+      ut::free(drop->table_name);
 
-  ut_free(drop);
+  ut::free(drop);
 
   mutex_exit(&row_drop_list_mutex);
 
@@ -3288,7 +3288,7 @@ static ibool row_add_table_to_background_drop_list(
   }
 
   auto drop = static_cast<row_mysql_drop_t *>(
-      ut_malloc_nokey(sizeof(row_mysql_drop_t)));
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(row_mysql_drop_t)));
 
   drop->table_name = mem_strdup(name);
 
@@ -4131,7 +4131,7 @@ dberr_t row_drop_table_for_mysql(const char *name, trx_t *trx, bool nonatomic,
 
 funct_exit:
 
-  ut_free(filepath);
+  ut::free(filepath);
 
   if (locked_dictionary) {
     row_mysql_unlock_data_dictionary(trx);
@@ -4159,8 +4159,7 @@ funct_exit:
   return err;
 }
 
-MY_ATTRIBUTE((warn_unused_result))
-bool row_is_mysql_tmp_table_name(const char *name) {
+[[nodiscard]] bool row_is_mysql_tmp_table_name(const char *name) {
   return (strstr(name, "/" TEMP_FILE_PREFIX) != nullptr);
   /* return(strstr(name, "/@0023sql") != NULL); */
 }
@@ -4378,67 +4377,47 @@ funct_exit:
   return (err);
 }
 
-/** Read the total number of records in a consistent view.
-@param[in,out]  trx             Covering transaction.
-@param[in]  indexes             Indexes to scan.
-@param[in]  max_threads         Maximum number of threads to use.
-@param[out] n_rows              Number of rows seen.
-@return DB_SUCCESS or error code. */
 dberr_t row_mysql_parallel_select_count_star(
-    trx_t *trx, std::vector<dict_index_t *> &indexes, size_t max_threads,
+    trx_t *trx, std::vector<dict_index_t *> &indexes, size_t n_threads,
     ulint *n_rows) {
+  ut_a(n_threads > 1);
   ut_a(!indexes.empty());
   using Shards = Counter::Shards<Parallel_reader::MAX_THREADS>;
 
   Shards n_recs;
   Counter::clear(n_recs);
 
-  struct alignas(ut::INNODB_CACHE_LINE_SIZE) Check_interrupt {
-    size_t m_count{};
-    const buf_block_t *m_prev_block{};
-  };
-
-  Check_interrupt checker[Parallel_reader::MAX_THREADS] = {};
-
-  Parallel_reader reader(max_threads);
-
   const Parallel_reader::Scan_range FULL_SCAN;
 
-  // clang-format off
-  bool success{};
+  Parallel_reader reader(n_threads);
+
+  dberr_t err{DB_SUCCESS};
 
   for (auto index : indexes) {
     Parallel_reader::Config config(FULL_SCAN, index);
 
-    success =
-      reader.add_scan(trx, config, [&](const Parallel_reader::Ctx *ctx) {
+    err = reader.add_scan(trx, config, [&](const Parallel_reader::Ctx *ctx) {
       Counter::inc(n_recs, ctx->thread_id());
-
-      auto &check = checker[ctx->thread_id()];
-
-      if (ctx->m_block != check.m_prev_block) {
-        check.m_prev_block = ctx->m_block;
-
-        ++check.m_count;
-      }
-      return (DB_SUCCESS);
+      return DB_SUCCESS;
     });
 
-    if (!success) {
+    if (err != DB_SUCCESS) {
       break;
     }
   }
-  // clang-format on
 
-  auto err = success ? reader.run() : DB_ERROR;
+  if (err == DB_SUCCESS) {
+    err = reader.run(n_threads);
+  }
 
   if (err == DB_OUT_OF_RESOURCES) {
+    ut_a(n_threads > 0);
+
     ib::warn(ER_INNODB_OUT_OF_RESOURCES)
         << "Resource not available to create threads for parallel scan."
         << " Falling back to single thread mode.";
 
-    reader.fallback_to_single_threaded_mode();
-    err = reader.run();
+    err = reader.run(0);
   }
 
   if (err == DB_SUCCESS) {
@@ -4449,17 +4428,12 @@ dberr_t row_mysql_parallel_select_count_star(
     });
   }
 
-  return (err);
+  return err;
 }
 
-/** Scan the rows in parallel.
-@param[in,out] trx              Transaction covering the scan.
-@param[in] index                (Cluster) Index to scan.
-@param[in] max_threads          Maximum threads to use for the scan.
-@param[out] n_rows              Number of rows seen.
-@return DB_SUCCESS or error code. */
 static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
-                                    size_t max_threads, ulint *n_rows) {
+                                    size_t n_threads, ulint *n_rows) {
+  ut_a(n_threads > 1);
   using Shards = Counter::Shards<Parallel_reader::MAX_THREADS>;
 
   Shards n_recs{};
@@ -4470,49 +4444,29 @@ static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
   Counter::clear(n_recs);
   Counter::clear(n_corrupt);
 
-  using Tuples = std::vector<dtuple_t *, ut_allocator<dtuple_t *>>;
-  using Heaps = std::vector<mem_heap_t *, ut_allocator<mem_heap_t *>>;
-  using Blocks =
-      std::vector<const buf_block_t *, ut_allocator<const buf_block_t *>>;
+  using Tuples = std::vector<dtuple_t *, ut::allocator<dtuple_t *>>;
+  using Heaps = std::vector<mem_heap_t *, ut::allocator<mem_heap_t *>>;
+  using Buf_block_allocator = ut::allocator<const buf_block_t *>;
+  using Blocks = std::vector<const buf_block_t *, Buf_block_allocator>;
 
+  Heaps heaps;
   Tuples prev_tuples;
   Blocks prev_blocks;
 
-  Heaps heaps;
-
-  for (size_t i = 0; i < max_threads; ++i) {
-    heaps.push_back(mem_heap_create(100));
+  for (size_t i = 0; i < n_threads; ++i) {
+    heaps.push_back(mem_heap_create(4096));
   }
 
-  /* Check for transaction interrupted every 1000 rows. */
-  size_t counter = 1000;
-
-  Parallel_reader reader(max_threads);
-
+  Parallel_reader reader(n_threads);
   Parallel_reader::Scan_range full_scan;
-
   Parallel_reader::Config config(full_scan, index);
 
-  // clang-format off
-  dberr_t err = reader.add_scan(
-    trx, config, [&](const Parallel_reader::Ctx* ctx) {
-
+  auto err = reader.add_scan(trx, config, [&](const Parallel_reader::Ctx *ctx) {
     const auto rec = ctx->m_rec;
     const auto block = ctx->m_block;
     const auto id = ctx->thread_id();
 
     Counter::inc(n_recs, id);
-
-    /* Only check the THD state for the first thread. */
-    if (id == 0) {
-      --counter;
-
-      if (counter == 0 && trx_is_interrupted(trx)) {
-        return (DB_INTERRUPTED);
-      }
-
-      counter = 1000;
-    }
 
     auto heap = heaps[id];
 
@@ -4550,9 +4504,9 @@ static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
         Counter::inc(n_corrupt, id);
 
         ib::error(ER_IB_ERR_INDEX_RECORDS_WRONG_ORDER)
-          << "Index records in a wrong order in " << index->name
-          << " of table " << index->table->name << ": " << *prev_tuple
-          << ", " << rec_offsets_print(rec, offsets);
+            << "Index records in a wrong order in " << index->name
+            << " of table " << index->table->name << ": " << *prev_tuple << ", "
+            << rec_offsets_print(rec, offsets);
         /* Continue reading */
       } else if (dict_index_is_unique(index) && !contains_null &&
                  matched_fields >=
@@ -4560,9 +4514,9 @@ static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
         Counter::inc(n_dups, id);
 
         ib::error(ER_IB_ERR_INDEX_DUPLICATE_KEY)
-          << "Duplicate key in " << index->name << " of table "
-          << index->table->name << ": " << *prev_tuple << ", "
-          << rec_offsets_print(rec, offsets);
+            << "Duplicate key in " << index->name << " of table "
+            << index->table->name << ": " << *prev_tuple << ", "
+            << rec_offsets_print(rec, offsets);
       }
     }
 
@@ -4575,25 +4529,23 @@ static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
 
     prev_tuples[id] = row_rec_to_index_entry(rec, index, offsets, heap);
 
-    return (DB_SUCCESS);
+    return DB_SUCCESS;
   });
 
-  // clang-format off
-
   if (err == DB_SUCCESS) {
-    prev_tuples.resize(max_threads);
-    prev_blocks.resize(max_threads);
+    prev_tuples.resize(n_threads);
+    prev_blocks.resize(n_threads);
 
-    err = reader.run();
+    err = reader.run(n_threads);
   }
 
   if (err == DB_OUT_OF_RESOURCES) {
+    ut_a(n_threads > 0);
     ib::warn(ER_INNODB_OUT_OF_RESOURCES)
-      << "Resource not available to create threads for parallel scan."
-      << " Falling back to single thread mode.";
+        << "Resource not available to create threads for parallel scan."
+        << " Falling back to single thread mode.";
 
-    reader.fallback_to_single_threaded_mode();
-    err = reader.run();
+    err = reader.run(0);
   }
 
   for (auto heap : heaps) {
@@ -4602,22 +4554,23 @@ static dberr_t parallel_check_table(trx_t *trx, dict_index_t *index,
 
   if (Counter::total(n_dups) > 0) {
     ib::error(ER_IB_ERR_FOUND_N_DUPLICATE_KEYS)
-      << "Found " << Counter::total(n_dups) << " duplicate rows in "
-      << index->name;
+        << "Found " << Counter::total(n_dups) << " duplicate rows in "
+        << index->name;
 
     err = DB_DUPLICATE_KEY;
   }
 
   if (Counter::total(n_corrupt) > 0) {
-    ib::error(ER_IB_ERR_FOUND_N_RECORDS_WRONG_ORDER) << "Found " << Counter::total(n_corrupt)
-                << " rows in the wrong order in " << index->name;
+    ib::error(ER_IB_ERR_FOUND_N_RECORDS_WRONG_ORDER)
+        << "Found " << Counter::total(n_corrupt)
+        << " rows in the wrong order in " << index->name;
 
     err = DB_INDEX_CORRUPT;
   }
 
   *n_rows = Counter::total(n_recs);
 
-  return (err);
+  return err;
 }
 
 dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
@@ -4649,10 +4602,9 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
       prebuilt->select_lock_type == LOCK_NONE && index->is_clustered() &&
       (check_keys || prebuilt->trx->mysql_n_tables_locked == 0) &&
       !prebuilt->ins_sel_stmt) {
+    auto n_threads = Parallel_reader::available_threads(max_threads, false);
 
-    max_threads = Parallel_reader::available_threads(max_threads);
-
-    if (max_threads > 0) {
+    if (n_threads > 1) {
       /* No INSERT INTO  ... SELECT  and non-locking selects only. */
       trx_start_if_not_started_xa(prebuilt->trx, false);
 
@@ -4662,16 +4614,19 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
 
       ut_a(prebuilt->table == index->table);
 
-      std::vector<dict_index_t*> indexes;
+      std::vector<dict_index_t *> indexes;
 
       indexes.push_back(index);
 
       if (!check_keys) {
-        return (row_mysql_parallel_select_count_star(trx, indexes, max_threads,
-                                                     n_rows));
+        return row_mysql_parallel_select_count_star(trx, indexes, n_threads,
+                                                    n_rows);
       }
 
-      return (parallel_check_table(trx, index, max_threads, n_rows));
+      return parallel_check_table(trx, index, n_threads, n_rows);
+    } else if (n_threads == 1) {
+      /* If there is a single thread available then we do a sync scan. */
+      Parallel_reader::release_threads(n_threads);
     }
   }
 
@@ -4690,7 +4645,8 @@ skip_parallel_read:
 
   ulint cnt = 1000;
   ulint bufsize = ut_max(UNIV_PAGE_SIZE, prebuilt->mysql_row_len);
-  auto buf = static_cast<byte *>(ut_malloc_nokey(bufsize));
+  auto buf = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, bufsize));
   auto heap = mem_heap_create(100);
 
   auto ret = row_search_for_mysql(buf, PAGE_CUR_G, prebuilt, 0, 0);
@@ -4720,11 +4676,12 @@ loop:
                                   " table "
                                << index->table->name << " returned " << ret;
     }
-    /* fall through (this error is ignored by CHECK TABLE) */
+      /* fall through (this error is ignored by CHECK TABLE) */
+      [[fallthrough]];
     case DB_END_OF_INDEX:
       ret = DB_SUCCESS;
     func_exit:
-      ut_free(buf);
+      ut::free(buf);
       mem_heap_free(heap);
 
       return (ret);
@@ -4860,8 +4817,8 @@ bool row_prebuilt_t::skip_concurrency_ticket() const {
 
   /* Skip concurrency ticket while implicitly updating GTID table. This is to
   avoid deadlock otherwise possible with low innodb_thread_concurrency.
-  Session: RESET MASTER -> FLUSH LOGS -> get innodb ticket -> wait for GTID flush
-  GTID Background: Write to GTID table -> wait for innodb ticket. */
+  Session: RESET MASTER -> FLUSH LOGS -> get innodb ticket -> wait for GTID
+  flush GTID Background: Write to GTID table -> wait for innodb ticket. */
   auto thd = trx->mysql_thd;
   if (thd == nullptr) {
     thd = current_thd;

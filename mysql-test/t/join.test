@@ -464,6 +464,7 @@ select * from t5 natural join ((t1 natural join t2) cross join (t3 natural join 
 --sorted_result
 select * from  ((t1 natural join t2) cross join (t3 natural join t4)) natural join t5;
 
+--sorted_result
 select * from (t1 join t2 using (b)) join (t3 join t4 using (c)) using (c);
 --sorted_result
 select * from (t1 join t2 using (b)) natural join (t3 join t4 using (c));
@@ -608,6 +609,7 @@ select * from v1a join v1b on t1.b = t2.b;
 #
 # Omit columns.ORDINAL_POSITION and statistics.CARDINALITY as it may vary with hostname='localhost'.
 ANALYZE TABLE mysql.user;
+--sorted_result
 select 
  statistics.TABLE_NAME, statistics.COLUMN_NAME, statistics.TABLE_CATALOG, statistics.TABLE_SCHEMA, statistics.NON_UNIQUE, statistics.INDEX_SCHEMA, statistics.INDEX_NAME, statistics.SEQ_IN_INDEX, statistics.COLLATION, statistics.SUB_PART, statistics.PACKED, statistics.NULLABLE, statistics.INDEX_TYPE, statistics.COMMENT, 
  columns.TABLE_CATALOG, columns.TABLE_SCHEMA, columns.COLUMN_DEFAULT, columns.IS_NULLABLE, columns.DATA_TYPE, columns.CHARACTER_MAXIMUM_LENGTH, columns.CHARACTER_OCTET_LENGTH, columns.NUMERIC_PRECISION, columns.NUMERIC_SCALE, columns.CHARACTER_SET_NAME, columns.COLLATION_NAME, columns.COLUMN_TYPE, columns.COLUMN_KEY, columns.EXTRA, columns.PRIVILEGES, columns.COLUMN_COMMENT
@@ -1617,6 +1619,127 @@ GROUP BY t1.a;
 DROP TABLE t1;
 
 --echo #
+--echo # Bug #32663072: WL#14418: ASSERTION `PATH->TYPE == ACCESSPATH::FILTER' FAILED|JOIN_OPTIMIZER.CC
+--echo #
+
+# The number of columns is carefully balanced so that the join predicates
+# arising from the NATURAL JOIN and other predicates below come to
+# exactly 64 in all.
+CREATE TABLE t1 (c1 INTEGER, c2 INTEGER, c3 INTEGER, c4 INTEGER, c5 INTEGER, c6 INTEGER, c7 INTEGER, c8 INTEGER, c9 INTEGER, c10 INTEGER, c11 INTEGER, c12 INTEGER, c13 INTEGER, c14 INTEGER, c15 INTEGER, c16 INTEGER, c17 INTEGER, c18 INTEGER, c19 INTEGER, c20 INTEGER, c21 INTEGER, c22 INTEGER, c23 INTEGER, c24 INTEGER, c25 INTEGER, c26 INTEGER, c27 INTEGER, c28 INTEGER, c29 INTEGER, c30 INTEGER, c31 INTEGER, c32 INTEGER, c33 INTEGER, c34 INTEGER, c35 INTEGER, c36 INTEGER, c37 INTEGER, c38 INTEGER, c39 INTEGER, c40 INTEGER, c41 INTEGER, c42 INTEGER, c43 INTEGER, c44 INTEGER, c45 INTEGER, c46 INTEGER, c47 INTEGER, c48 INTEGER, c49 INTEGER, c50 INTEGER, c51 INTEGER, c52 INTEGER, c53 INTEGER, c54 INTEGER, c55 INTEGER, c56 INTEGER, c57 INTEGER, c58 INTEGER, c59 INTEGER, c60 INTEGER, c61 INTEGER);
+
+SELECT *
+FROM t1
+NATURAL JOIN (
+  SELECT t2.*
+  FROM t1 AS t2 JOIN t1 AS t3 ON t3.c1 = t2.c1
+  WHERE t2.c3 <> ANY (SELECT c3 FROM t1)
+) AS d1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32672275: WL#14418: ASSERTION `ISSINGLEBITSET(PRED.TOTAL_ELIGIBILITY_SET)' FAILED.
+--echo #
+
+CREATE TABLE t1 ( a INTEGER );
+
+SELECT *
+FROM t1 AS outer_t1
+WHERE EXISTS (
+  SELECT t2.a
+  FROM t1
+  LEFT JOIN t1 AS t2 ON t2.a = outer_t1.a
+);
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32643386: WL#14418: ASSERTION `FD_SET == IT_AND_INSERTED.FIRST->SECOND.ACTIVE_FUNCTIONAL_D
+--echo #
+
+CREATE TABLE t1 ( a INTEGER );
+
+# t1 and t2 cannot be part of the same companion set, or we'd add mesh
+# around non-simple edges.
+SELECT *
+FROM (t1 STRAIGHT_JOIN t1 AS t2) JOIN t1 AS t3 ON t1.a = t3.a
+WHERE t2.a = t3.a
+ORDER BY t1.a;
+
+DROP TABLE t1;
+
+CREATE TABLE t1 (a INTEGER, b INTEGER);
+
+# Similar; the t1/t3 edge must not be allowed to create a cycle.
+SELECT *
+FROM (t1 STRAIGHT_JOIN t1 AS t2 ON t1.b = t2.b) JOIN t1 AS t3 ON t1.a = t3.b
+WHERE t1.a < t2.b AND t2.a < t3.b
+ORDER BY t1.b;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32642893: WL#14418: ASSERTION `!ISMULTIPLEEQUALS(ITEM)' FAILED|MAKE_JOIN_HYPERGRAPH.CC
+--echo #
+
+CREATE TABLE t1 ( a INTEGER );
+
+# Sets up a case where a multiple equality is left in the WHERE condition
+# (because it is unpushable). The t2.a <> t2.a is to avoid the LEFT JOIN
+# being converted into an inner join, but gets removed later.
+SELECT *
+FROM t1
+LEFT JOIN t1 AS t2 ON t1.a = t2.a
+LEFT JOIN t1 AS t3 ON t2.a = t3.a
+WHERE t2.a = t3.a OR t2.a <> t2.a;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32707348: WL#14418: RESULT MISMATCHES SEEN WITH HYPERGRAPH
+--echo #
+
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+INSERT INTO t1 VALUES (1,2);
+ANALYZE TABLE t1;
+
+# A multiple equality that refers to two fields from t3. We must make sure
+# to not forget the t3.a = t3.b equality.
+SELECT * FROM t1, t1 AS t2, t1 AS t3 WHERE t1.a = t2.a AND t1.a = t3.b AND t1.a = t3.a;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32751315: WL#14418: ASSERTION `RIGHT != NULLPTR' FAILED|MAKE_JOIN_HYPERGRAPH.CC
+--echo #
+
+CREATE TABLE t1 ( pk INTEGER );
+SELECT * FROM
+  t1
+  JOIN t1 AS t2 ON t1.pk = t2.pk
+  JOIN t1 AS t3
+  LEFT JOIN t1 AS t4 ON t2.pk = t3.pk AND t4.pk = 135;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32757178: WL#14418: ASSERTION `!EQ_ITEMS.IS_EMPTY()' FAILED|MAKE_JOIN_HYPERGRAPH.CC
+--echo #
+
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+
+SELECT *
+  FROM
+    t1
+    JOIN t1 AS t2 ON t1.a = t2.b
+    LEFT JOIN t1 AS t3 ON t2.b = t3.b
+    LEFT JOIN (
+      t1 AS t4
+      JOIN t1 AS t5 ON t4.b = t5.b
+    ) ON t2.b = t4.a
+  WHERE t1.b >= 6 OR t3.b <> t4.b;
+
+DROP TABLE t1;
+
 --echo # Bug#32508878 - MYSQL SERVER CRASH - ASSERTION FAILURE IN
 --echo # DEPS_OF_REMAINING_LATERAL_DERIVED_TABLES::RECALCULATE
 --echo #
@@ -1633,6 +1756,42 @@ EXPLAIN SELECT * FROM t1 AS x3 WHERE EXISTS
 DROP TABLE t1;
 
 --echo #
+--echo # Bug #32917482: SIG11 IN FLATTENINNERJOINS|MAKE_JOIN_HYPERGRAPH.CC
+--echo #
+
+CREATE TABLE t1 (
+  a VARCHAR(1),
+  b INTEGER
+);
+
+SELECT *
+FROM
+  t1
+  JOIN t1 AS t2 ON t1.b = t2.b
+  JOIN t1 AS t3
+  JOIN (
+    t1 AS t4 STRAIGHT_JOIN t1 AS t5 ON t4.a = t5.b
+  ) ON t1.b = t4.b
+WHERE t1.a = t5.b;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32939191: HYPERGRAPH: DIFFERENT RESULTS WHEN HYPERGRAPH_OPTIMIZER IS ON/OFF
+--echo #
+
+CREATE TABLE t1 (a INTEGER);
+INSERT INTO t1 VALUES (1), (2), (3), (4);
+SELECT *
+  FROM
+    t1
+    LEFT JOIN (
+      t1 AS t2
+      LEFT JOIN t1 AS t3 ON FALSE
+    ) ON t1.a <=> t3.a
+  WHERE t1.a <=> t3.a;
+DROP TABLE t1;
+
 --echo # Bug#32915307- RECENT REGRESSION: ASSERTION
 --echo # `JOIN->DEPS_OF_REMAINING_LATERAL_DERIVED_TABLES
 --echo # == CALCULATE_LATERAL_DEPS_OF_FINAL_PLAN(FIRST_TAB_NO)' FAILED.
@@ -1689,3 +1848,80 @@ eval $query;
 eval explain $query;
 
 DROP TABLE t1, t2, t3;
+
+--echo #
+--echo # Bug #32976194: HYPERGRAPH: ASSERTION `!OVERLAPS(EXPR->LEFT->TABLES_IN_SUBTREE, EXPR->RIGHT->TAB
+--echo #
+
+CREATE TABLE t1 ( a INTEGER );
+
+SELECT *
+FROM t1, t1 AS t2, t1 AS t3
+WHERE rand() > 0.5 OR (t1.a = 1 AND t2.a = 1);
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #33003335: HYPERGRAPH: ASSERTION `FD_SET == IT_AND_INSERTED.FIRST->SECOND.ACTIVE_FUNCTIONAL
+--echo #
+
+CREATE TABLE t1 ( a INTEGER, b INTEGER );
+
+SELECT * FROM
+  t1
+  STRAIGHT_JOIN t1 AS t2 ON t1.b = t2.b
+  JOIN (t1 AS t3 JOIN t1 AS t4 ON t3.a = t4.a AND t3.b = t4.b) ON t2.b = t3.b AND t2.a < t3.a
+ORDER BY t2.b;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #33003581: HYPERGRAPH: ASSERTION `FALSE' FAILED|SQL/ITEM_CMPFUNC.CC
+--echo #
+
+CREATE TABLE t1 ( i INTEGER );
+INSERT INTO t1 VALUES (1), (2);
+
+--sorted_result
+SELECT * FROM
+  t1 LEFT JOIN (SELECT i FROM t1 WHERE FALSE) AS d1 ON t1.i = d1.i
+WHERE NOT EXISTS (SELECT 1 FROM t1 AS inner_t1 WHERE i = d1.i);
+
+DROP TABLE t1;
+
+# Test that more than 64 predicates work well together with
+# sargable predicates _and_ materialized subqueries.
+
+CREATE TABLE t1 ( a INTEGER, b INTEGER, c INTEGER, d INTEGER, e INTEGER, f INTEGER, g INTEGER, h INTEGER, i INTEGER, j INTEGER, k INTEGER, l INTEGER, m INTEGER, n INTEGER, o INTEGER, p INTEGER, q INTEGER, r INTEGER, s INTEGER, t INTEGER, u INTEGER, v INTEGER, w INTEGER, KEY (a) );
+
+SELECT 1
+FROM t1 NATURAL JOIN t1 AS t2 NATURAL JOIN t1 AS t3
+WHERE
+  t1.a <> ( SELECT SUM(a) FROM t1 );
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug #32366946: USE-AFTER-FREE WITH HYPERGRAPH OPTIMIZER + SORT + REMATERIALIZATION
+--echo #
+
+CREATE TABLE t1 (
+  f1 INTEGER
+);
+INSERT INTO t1 VALUES (1), (2), (3);
+
+CREATE TABLE t2 (
+  pk INTEGER,
+  blobfield LONGTEXT
+);
+INSERT INTO t2 VALUES (4, '');
+
+--partially_sorted_result 2
+SELECT *
+FROM t1, t2, LATERAL (
+  SELECT pk, blobfield
+  GROUP BY pk, blobfield WITH ROLLUP
+) AS d1
+ORDER BY t1.f1, t2.pk;
+
+DROP TABLE t1, t2;

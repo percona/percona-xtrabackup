@@ -63,10 +63,9 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
    * @return bool value indicating if the pattern was found in the log file or
    * not
    */
-  STDX_NODISCARD
-  bool wait_log_contains(const ProcessWrapper &process,
-                         const std::string &pattern,
-                         std::chrono::milliseconds timeout);
+  [[nodiscard]] bool wait_log_contains(const ProcessWrapper &process,
+                                       const std::string &pattern,
+                                       std::chrono::milliseconds timeout);
 
   /** @brief Sleep for a duration given as a parameter. The duration is
    * increased 10 times for the run with VALGRIND.
@@ -100,8 +99,29 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
     }
   }
 
-  void verify_existing_connection_dropped(MySQLSession *session) {
-    ASSERT_ANY_THROW(session->query_one("select @@port"));
+  void verify_existing_connection_dropped(
+      MySQLSession *session,
+      std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+    if (getenv("WITH_VALGRIND")) {
+      timeout *= 10;
+    }
+
+    const auto MSEC_STEP = std::chrono::milliseconds(50);
+    const auto started = std::chrono::steady_clock::now();
+    do {
+      try {
+        session->query_one("select @@port");
+      } catch (mysqlrouter::MySQLSession::Error &) {
+        // query failed, connection dropped, all good
+        return;
+      }
+
+      auto step = std::min(timeout, MSEC_STEP);
+      RouterComponentTest::sleep_for(step);
+      timeout -= step;
+    } while (timeout > std::chrono::steady_clock::now() - started);
+
+    FAIL() << "Timed out waiting for the connection to drop";
   }
 
  protected:
@@ -113,7 +133,7 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
  * Base class for the MySQLRouter component-like bootstrap tests.
  *
  **/
-class RouterComponentBootstrapTest : public RouterComponentTest {
+class RouterComponentBootstrapTest : virtual public RouterComponentTest {
  public:
   static void SetUpTestCase() { my_hostname = "dont.query.dns"; }
 
@@ -147,8 +167,9 @@ class RouterComponentBootstrapTest : public RouterComponentTest {
       const std::vector<std::tuple<ProcessWrapper &, unsigned int>> &T);
 
   ProcessWrapper &launch_router_for_bootstrap(
-      std::vector<std::string> params, int expected_exit_code = EXIT_SUCCESS) {
-    params.push_back("--disable-rest");
+      std::vector<std::string> params, int expected_exit_code = EXIT_SUCCESS,
+      const bool disable_rest = true) {
+    if (disable_rest) params.push_back("--disable-rest");
     return ProcessManager::launch_router(
         params, expected_exit_code, /*catch_stderr=*/true, /*with_sudo=*/false,
         /*wait_for_notify_ready=*/std::chrono::seconds(-1));

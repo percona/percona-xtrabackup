@@ -55,7 +55,7 @@ class Storing_auto_THD {
     if (!m_previous_thd) {
       my_thread_init();
     }
-    thd = create_thd(false, true, false, 0);
+    thd = create_internal_thd();
   }
 
   ~Storing_auto_THD() {
@@ -70,7 +70,7 @@ class Storing_auto_THD {
 
       prev_da->copy_sql_conditions_from_da(m_previous_thd, curr_da);
     }
-    destroy_thd(thd);
+    destroy_internal_thd(thd);
     if (!m_previous_thd) {
       my_thread_end();
     }

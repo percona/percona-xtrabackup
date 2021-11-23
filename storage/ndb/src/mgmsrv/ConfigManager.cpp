@@ -394,6 +394,16 @@ ConfigManager::init(void)
   BaseString config_bin_name;
   if (saved_config_exists(config_bin_name))
   {
+    /**
+     * ndb-connectstring is ignored when mgmd is started from binary
+     * config
+     */
+    if (!(m_opts.config_filename || m_opts.mycnf) && opt_ndb_connectstring) {
+      g_eventLogger->warning(
+          "--ndb-connectstring is ignored when mgmd is started from binary "
+          "config.");
+    }
+
     Config* conf = NULL;
     if (!(conf = load_saved_config(config_bin_name)))
       DBUG_RETURN(false);
@@ -735,6 +745,28 @@ ConfigManager::config_ok(const Config* conf)
                          datadir);
     return false;
   }
+
+  /**
+   * Gives information to users to start all the management nodes for multiple
+   * mgmd node configuration.
+   */
+  if (!(m_started.get(m_node_id) || m_opts.print_full_config)) {
+    Uint32 num_mgm_nodes = 0;
+    ConfigIter it(conf, CFG_SECTION_NODE);
+    for (it.first(); it.valid(); it.next()) {
+      unsigned int type;
+      require(it.get(CFG_TYPE_OF_SECTION, &type) == 0);
+
+      if (type == NODE_TYPE_MGM) num_mgm_nodes++;
+      if (num_mgm_nodes > 1) {
+        g_eventLogger->info("Cluster configuration has multiple "
+                            "Management nodes. Please start the other "
+                            "mgmd nodes if not started yet.");
+        break;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -2182,7 +2214,7 @@ ConfigManager::fetch_config(void)
     }
   }
   // read config from other management server
-  ndb_mgm_config_unique_ptr conf =
+  ndb_mgm::config_ptr conf =
     m_config_retriever.getConfig(m_config_retriever.get_mgmHandle());
 
   // Disconnect from other mgmd
@@ -2350,7 +2382,7 @@ ConfigManager::failed_config_change_exists() const
 Config*
 ConfigManager::load_saved_config(const BaseString& config_name)
 {
-  ndb_mgm_config_unique_ptr retrieved_config =
+  ndb_mgm::config_ptr retrieved_config =
       m_config_retriever.getConfig(config_name.c_str());
   if(!retrieved_config)
   {

@@ -767,7 +767,7 @@ pad(const Uint8* src, Uint32 align, Uint32 bitPos)
 #ifdef VM_TRACE
     abort();
 #endif
-    //Fall through:
+    [[fallthrough]];
 
   case DictTabInfo::an8Bit:
   case DictTabInfo::a16Bit:
@@ -918,6 +918,7 @@ handle_bitfield_ndbrecord(const NdbRecord::Attr* col,
   if (isMDBitfield)
   {
     assert(len <= 64);
+    mysqldSpace = 0;
     dest= (char*) &mysqldSpace;
   }
   else

@@ -245,7 +245,7 @@ bool simplify_string_args(THD *thd, const DTCollation &c, Item **args,
 */
 
 String *eval_string_arg(const CHARSET_INFO *to_cs, Item *arg, String *buffer) {
-  StringBuffer<STRING_BUFFER_USUAL_SIZE> local_string(nullptr);
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> local_string(nullptr, 0, to_cs);
 
   size_t offset;
   const bool convert =
@@ -1018,6 +1018,7 @@ static bool is_function_of_type(const Item *item, Item_func::Functype type) {
 
 Item_field *get_gc_for_expr(const Item *func, Field *fld, Item_result type,
                             Field **found) {
+  func = func->real_item();
   Item *expr = fld->gcol_info->expr_item;
 
   /*
@@ -1314,11 +1315,11 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
       Item_result type = args[0]->result_type();
       /*
         Check whether MEMBER OF is applicable for optimization:
-        1) 1st arg is a constant
+        1) 1st arg is constant for execution
         2) .. and it isn't NULL, as MEMBER OF can't be used to lookup NULLs
         3) 2nd arg can be substituted for a GC
       */
-      if (args[0]->const_item() &&                               // 1
+      if (args[0]->const_for_execution() &&                      // 1
           !args[0]->is_null() &&                                 // 2
           args[1]->can_be_substituted_for_gc(/*array=*/true)) {  // 3
         if (substitute_gc_expression(args + 1, args, gc_fields, type, this))
@@ -1332,12 +1333,12 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
       /*
         Check whether JSON_CONTAINS is applicable for optimization:
         1) 1st arg can be substituted with a generated column
-        2) value to lookup is a constant
+        2) value to lookup is constant for execution
         3) value to lookup is a proper JSON doc
         4) value to lookup is an array or scalar
       */
       if (!args[0]->can_be_substituted_for_gc(/*array=*/true) ||  // 1
-          !args[1]->real_item()->const_item())                    // 2
+          !args[1]->const_for_execution())                        // 2
         break;
       if (get_json_wrapper(args, 1, &str, func_name(), &vals_wr) ||  // 3
           args[1]->null_value ||
@@ -1352,17 +1353,17 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
 
       /*
         Check whether JSON_OVERLAPS is applicable for optimization:
-        1) One argument is a constant
+        1) One argument is constant for execution
         2) The other argument can be substituted with a generated column
         3) value to lookup is a proper JSON doc
         4) value to lookup is an array or scalar
       */
       if (args[0]->can_be_substituted_for_gc(/*array=*/true) &&  // 2
-          args[1]->const_item()) {                               // 1
+          args[1]->const_for_execution()) {                      // 1
         func = args;
         vals = 1;
       } else if (args[1]->can_be_substituted_for_gc(/*array=*/true) &&  // 2
-                 args[0]->const_item()) {                               // 1
+                 args[0]->const_for_execution()) {                      // 1
         func = args + 1;
         vals = 0;
       } else {
@@ -2331,8 +2332,8 @@ void Item_func_mul::result_precision() {
                                                             unsigned_flag);
 }
 
-double Item_func_div::real_op() {
-  assert(fixed == 1);
+double Item_func_div_base::real_op() {
+  assert(fixed);
   double val1 = args[0]->val_real();
   if (current_thd->is_error()) return error_real();
   double val2 = args[1]->val_real();
@@ -2346,7 +2347,7 @@ double Item_func_div::real_op() {
   return check_float_overflow(val1 / val2);
 }
 
-my_decimal *Item_func_div::decimal_op(my_decimal *decimal_value) {
+my_decimal *Item_func_div_base::decimal_op(my_decimal *decimal_value) {
   my_decimal value1, *val1;
   my_decimal value2, *val2;
   int err;
@@ -2358,7 +2359,7 @@ my_decimal *Item_func_div::decimal_op(my_decimal *decimal_value) {
 
   if ((err = check_decimal_overflow(
            my_decimal_div(E_DEC_FATAL_ERROR & ~E_DEC_OVERFLOW & ~E_DEC_DIV_ZERO,
-                          decimal_value, val1, val2, prec_increment))) > 3) {
+                          decimal_value, val1, val2, m_prec_increment))) > 3) {
     if (err == E_DEC_DIV_ZERO) signal_divide_by_null();
     return error_decimal(decimal_value);
   }
@@ -2367,7 +2368,7 @@ my_decimal *Item_func_div::decimal_op(my_decimal *decimal_value) {
 
 void Item_func_div::result_precision() {
   uint precision = min<uint>(
-      args[0]->decimal_precision() + args[1]->decimals + prec_increment,
+      args[0]->decimal_precision() + args[1]->decimals + m_prec_increment,
       DECIMAL_MAX_PRECISION);
 
   if (result_type() == DECIMAL_RESULT) assert(precision > 0);
@@ -2377,19 +2378,39 @@ void Item_func_div::result_precision() {
     unsigned_flag = args[0]->unsigned_flag | args[1]->unsigned_flag;
   else
     unsigned_flag = args[0]->unsigned_flag & args[1]->unsigned_flag;
-  decimals = min<uint>(args[0]->decimals + prec_increment, DECIMAL_MAX_SCALE);
+  decimals = min<uint>(args[0]->decimals + m_prec_increment, DECIMAL_MAX_SCALE);
   max_length = my_decimal_precision_to_length_no_truncation(precision, decimals,
                                                             unsigned_flag);
 }
 
+void Item_func_div_int::result_precision() {
+  assert(result_type() == INT_RESULT);
+
+  // Integer operations keep unsigned_flag if one of arguments is unsigned
+  unsigned_flag = args[0]->unsigned_flag | args[1]->unsigned_flag;
+
+  uint arg0_decimals = args[0]->decimals;
+  if (arg0_decimals == DECIMAL_NOT_SPECIFIED) arg0_decimals = 0;
+  uint arg1_decimals = args[1]->decimals;
+  if (arg1_decimals == DECIMAL_NOT_SPECIFIED)
+    arg1_decimals = args[1]->decimal_precision();
+
+  uint precision =
+      min<uint>(args[0]->decimal_precision() - arg0_decimals + arg1_decimals,
+                MY_INT64_NUM_DECIMAL_DIGITS);
+
+  max_length =
+      my_decimal_precision_to_length_no_truncation(precision, 0, unsigned_flag);
+}
+
 bool Item_func_div::resolve_type(THD *thd) {
   DBUG_TRACE;
-  prec_increment = thd->variables.div_precincrement;
+  m_prec_increment = thd->variables.div_precincrement;
   if (Item_num_op::resolve_type(thd)) return true;
 
   switch (hybrid_type) {
     case REAL_RESULT: {
-      decimals = max(args[0]->decimals, args[1]->decimals) + prec_increment;
+      decimals = max(args[0]->decimals, args[1]->decimals) + m_prec_increment;
       decimals = min(decimals, uint8(DECIMAL_NOT_SPECIFIED));
       uint tmp = float_length(decimals);
       if (decimals == DECIMAL_NOT_SPECIFIED)
@@ -2416,9 +2437,8 @@ bool Item_func_div::resolve_type(THD *thd) {
   return false;
 }
 
-/* Integer division */
-longlong Item_func_int_div::val_int() {
-  assert(fixed == 1);
+longlong Item_func_div_base::int_op() {
+  assert(fixed);
 
   /*
     Perform division using DECIMAL math if either of the operands has a
@@ -2477,15 +2497,21 @@ longlong Item_func_int_div::val_int() {
   return check_integer_overflow(res, !res_negative);
 }
 
-bool Item_func_int_div::resolve_type(THD *thd) {
+bool Item_func_div_int::resolve_type(THD *thd) {
+  // Integer division forces result to be integer, so force arguments
+  // that are parameters to be integer as well.
   if (param_type_uses_non_param(thd, MYSQL_TYPE_LONGLONG)) return true;
-  uint precision = args[0]->decimal_precision();
-  unsigned_flag = args[0]->unsigned_flag | args[1]->unsigned_flag;
 
-  fix_char_length(my_decimal_precision_to_length(precision, 0, unsigned_flag));
+  if (Item_func_div_base::resolve_type(thd)) return true;
+  set_nullable(true);  // division by zero
 
-  set_nullable(true);
-  return reject_geometry_args(arg_count, args, this);
+  return false;
+}
+
+void Item_func_div_int::set_numeric_type() {
+  set_data_type_longlong();
+  hybrid_type = INT_RESULT;
+  result_precision();
 }
 
 longlong Item_func_mod::int_op() {
@@ -2553,7 +2579,7 @@ my_decimal *Item_func_mod::decimal_op(my_decimal *decimal_value) {
       return decimal_value;
     case E_DEC_DIV_ZERO:
       signal_divide_by_null();
-      // Fall through.
+      [[fallthrough]];
     default:
       null_value = true;
       return nullptr;
@@ -2562,7 +2588,12 @@ my_decimal *Item_func_mod::decimal_op(my_decimal *decimal_value) {
 
 void Item_func_mod::result_precision() {
   decimals = max(args[0]->decimals, args[1]->decimals);
-  max_length = max(args[0]->max_length, args[1]->max_length);
+  uint precision =
+      max(args[0]->decimal_precision(), args[1]->decimal_precision());
+
+  max_length = my_decimal_precision_to_length_no_truncation(precision, decimals,
+                                                            unsigned_flag);
+
   // Increase max_length if we have: signed % unsigned(precision == scale)
   if (!args[0]->unsigned_flag && args[1]->unsigned_flag &&
       args[0]->max_length <= args[1]->max_length &&
@@ -2623,7 +2654,8 @@ bool Item_func_neg::resolve_type(THD *thd) {
     Use val() to get value as arg_type doesn't mean that item is
     Item_int or Item_real due to existence of Item_param.
   */
-  if (hybrid_type == INT_RESULT && args[0]->const_item()) {
+  if (hybrid_type == INT_RESULT && args[0]->const_item() &&
+      args[0]->may_eval_const_item(thd)) {
     longlong val = args[0]->val_int();
     if ((ulonglong)val >= (ulonglong)LLONG_MIN &&
         ((ulonglong)val != (ulonglong)LLONG_MIN ||
@@ -2632,7 +2664,8 @@ bool Item_func_neg::resolve_type(THD *thd) {
         Ensure that result is converted to DECIMAL, as longlong can't hold
         the negated number
       */
-      set_data_type(MYSQL_TYPE_NEWDECIMAL);
+      unsigned_flag = false;
+      set_data_type_decimal(args[0]->decimal_precision(), 0);
       hybrid_type = DECIMAL_RESULT;
       DBUG_PRINT("info", ("Type changed: DECIMAL_RESULT"));
     }
@@ -3313,9 +3346,10 @@ bool Item_func_round::resolve_type(THD *thd) {
         Example: ROUND(99.999, 2). Here, the type of the argument is
         DECIMAL(5, 3). The type of the result is DECIMAL(5,2), since the
         result of this operation is 100.00.
+        Also make sure that precision is greater than zero.
       */
       longlong val1;
-      if (args[1]->const_item()) {
+      if (args[1]->const_item() && args[1]->may_eval_const_item(thd)) {
         val1 = args[1]->val_int();
         if ((null_value = args[1]->is_null())) {
           val1 = 0;
@@ -3342,6 +3376,7 @@ bool Item_func_round::resolve_type(THD *thd) {
         if (!truncate) precision += 1;
         new_scale = val1;
       }
+      if (precision == 0) precision = 1;
       set_data_type_decimal(precision, new_scale);
       hybrid_type = DECIMAL_RESULT;
       break;
@@ -4156,15 +4191,17 @@ bool Item_func_find_in_set::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1)) return true;
   max_length = 3;  // 1-999
 
-  if (args[0]->const_item() && args[1]->type() == FIELD_ITEM) {
-    Field *field = ((Item_field *)args[1])->field;
+  if (args[0]->const_item() && args[1]->type() == FIELD_ITEM &&
+      args[0]->may_eval_const_item(thd)) {
+    Field *field = down_cast<Item_field *>(args[1])->field;
     if (field->real_type() == MYSQL_TYPE_SET) {
       String *find = args[0]->val_str(&value);
-      if (find) {
+      if (thd->is_error()) return true;
+      if (find != nullptr) {
         // find is not NULL pointer so args[0] is not a null-value
         assert(!args[0]->null_value);
-        enum_value = find_type(((Field_enum *)field)->typelib, find->ptr(),
-                               find->length(), false);
+        enum_value = find_type(down_cast<Field_enum *>(field)->typelib,
+                               find->ptr(), find->length(), false);
         enum_bit = 0;
         if (enum_value) enum_bit = 1LL << (enum_value - 1);
       }
@@ -4295,8 +4332,10 @@ void udf_handler::cleanup() {
   if (thd->stmt_arena->is_stmt_prepare() && thd->stmt_arena->is_repreparing)
     return;
 
-  if (u_d->func_deinit != nullptr) (*u_d->func_deinit)(&initid);
-
+  if (m_init_func_called && u_d->func_deinit != nullptr) {
+    (*u_d->func_deinit)(&initid);
+    m_init_func_called = false;
+  }
   DEBUG_SYNC(current_thd, "udf_handler_destroy_sync");
   free_handler();
 }
@@ -4438,9 +4477,11 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
   initid.ptr = nullptr;
   initid.extension = &m_return_value_extension;
 
-  if (thd->stmt_arena->is_stmt_prepare() && !thd->stmt_arena->is_repreparing)
+  if (thd->stmt_arena->is_stmt_prepare() && !thd->stmt_arena->is_repreparing &&
+      !initid.const_item) {
+    udf_fun_guard.defer();
     return false;
-
+  }
   if (u_d->func_init) {
     if (call_init_func()) {
       return true;
@@ -4517,6 +4558,7 @@ bool udf_handler::call_init_func() {
     my_error(ER_CANT_INITIALIZE_UDF, MYF(0), u_d->name.str, init_msg_buff);
     return true;
   }
+  m_init_func_called = true;
   return false;
 }
 
@@ -6242,7 +6284,7 @@ String *user_var_entry::val_str(bool *null_value, String *str,
       break;
     case DECIMAL_RESULT:
       str_set_decimal(E_DEC_FATAL_ERROR, pointer_cast<my_decimal *>(m_ptr), str,
-                      collation.collation);
+                      collation.collation, decimals);
       break;
     case STRING_RESULT:
       if (str->copy(m_ptr, m_length, collation.collation))
@@ -6690,13 +6732,21 @@ static int get_var_with_binlog(THD *thd, enum_sql_command sql_command,
   *out_entry = var_entry;
 
   /*
+    In cases when this function is called for a sub-statement, we can't
+    rely on OPTION_BIN_LOG flag in THD::variables.option_bits bitmap
+    to determine whether binary logging is turned on, as this bit can be
+    cleared before executing sub-statement. So instead we have to look
+    at THD::variables::sql_log_bin member.
+  */
+  bool log_on = mysql_bin_log.is_open() && thd->variables.sql_log_bin;
+
+  /*
     Any reference to user-defined variable which is done from stored
     function or trigger affects their execution and the execution of the
     calling statement. We must log all such variables even if they are
     not involved in table-updating statements.
   */
-  if (!(opt_bin_log && (is_update_query(sql_command) || thd->in_sub_stmt)))
-    return 0;
+  if (!(log_on && (is_update_query(sql_command) || thd->in_sub_stmt))) return 0;
 
   if (var_entry == nullptr) {
     /*

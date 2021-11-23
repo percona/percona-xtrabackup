@@ -488,7 +488,9 @@ PROVIDES_SERVICE(mysql_server_path_filter, dynamic_loader_scheme_file),
     PROVIDES_SERVICE(performance_schema, psi_table_v1),
     /* Obsolete: PROVIDES_SERVICE(performance_schema, psi_thread_v1), */
     /* Obsolete: PROVIDES_SERVICE(performance_schema, psi_thread_v2), */
+    /* Obsolete: PROVIDES_SERVICE(performance_schema, psi_thread_v3), */
     PROVIDES_SERVICE(performance_schema, psi_thread_v4),
+    PROVIDES_SERVICE(performance_schema, psi_thread_v5),
     PROVIDES_SERVICE(performance_schema, psi_transaction_v1),
     /* Deprecated, use pfs_plugin_table_v1. */
     PROVIDES_SERVICE(performance_schema, pfs_plugin_table),
@@ -595,8 +597,8 @@ bool initialize_minimal_chassis(SERVICE_TYPE_NO_CONST(registry) * *registry) {
   return false;
 }
 
-bool deinitialize_minimal_chassis(SERVICE_TYPE_NO_CONST(registry) *
-                                  registry MY_ATTRIBUTE((unused))) {
+bool deinitialize_minimal_chassis(SERVICE_TYPE_NO_CONST(registry) * registry
+                                  [[maybe_unused]]) {
 #ifdef WITH_MYSQL_COMPONENTS_TEST_DRIVER
   /* Normal server code path. Hence we need to deinitialize minimal chassis */
   if (minimal_chassis_deinit(registry, &COMPONENT_REF(mysql_server))) {

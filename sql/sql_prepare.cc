@@ -245,7 +245,7 @@ class Query_fetch_protocol_binary final : public Query_result_send {
 class Protocol_local final : public Protocol {
  public:
   Protocol_local(THD *thd, Ed_connection *ed_connection);
-  ~Protocol_local() override { free_root(&m_rset_root, MYF(0)); }
+  ~Protocol_local() override { m_rset_root.Clear(); }
 
   int read_packet() override;
 
@@ -2391,7 +2391,7 @@ Prepared_statement::~Prepared_statement() {
     lex->destroy();
     delete (st_lex_local *)lex;  // TRASH memory
   }
-  free_root(&main_mem_root, MYF(0));
+  main_mem_root.Clear();
 }
 
 void Prepared_statement::cleanup_stmt() {
@@ -2527,6 +2527,8 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length,
   sql_digest_state digest;
   digest.reset(token_array, max_digest_length);
   thd->m_digest = &digest;
+
+  parser_state.m_input.m_has_digest = true;
 
   // we produce digest if it's not explicitly turned off
   // by setting maximum digest length to zero
@@ -2954,7 +2956,7 @@ bool Prepared_statement::execute_loop(String *expanded_query,
                                       bool open_cursor) {
   Reprepare_observer reprepare_observer;
   bool error;
-  bool reprepared_for_types MY_ATTRIBUTE((unused)) = false;
+  bool reprepared_for_types [[maybe_unused]] = false;
 
   /* Check if we got an error when sending long data */
   if (m_arena.get_state() == Query_arena::STMT_ERROR) {

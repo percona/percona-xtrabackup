@@ -25,6 +25,7 @@
 #ifndef ROUTER_CONFIG_GENERATOR_INCLUDED
 #define ROUTER_CONFIG_GENERATOR_INCLUDED
 
+#include <chrono>
 #include <functional>
 #include <map>
 #include <ostream>
@@ -35,6 +36,7 @@
 
 #include "auto_cleaner.h"
 #include "mysql/harness/filesystem.h"
+#include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/datatypes.h"
 #include "mysqlrouter/keyring_info.h"
 #include "mysqlrouter/mysql_session.h"
@@ -195,6 +197,7 @@ class ConfigGenerator {
 
     mysqlrouter::SSLOptions ssl_options;
 
+    std::chrono::milliseconds ttl;
     bool use_gr_notifications;
 
     bool disable_rest{false};
@@ -215,6 +218,10 @@ class ConfigGenerator {
     std::string server_ssl_crl;
     std::string server_ssl_crlpath;
     std::string server_ssl_verify;
+
+    // only relevant for ClusterSet
+    std::string target_cluster;
+    std::string target_cluster_by_name;
   };
 
   void set_file_owner(
@@ -313,7 +320,7 @@ class ConfigGenerator {
 
   std::tuple<std::string> try_bootstrap_deployment(
       uint32_t &router_id, std::string &username, std::string &password,
-      const std::string &router_name, const std::string &cluster_id,
+      const std::string &router_name, const ClusterInfo &cluster_info,
       const std::map<std::string, std::string> &user_options,
       const std::map<std::string, std::vector<std::string>> &multivalue_options,
       const Options &options);
@@ -344,9 +351,7 @@ class ConfigGenerator {
 
   static std::string gen_metadata_cache_routing_section(
       bool is_classic, bool is_writable, const Options::Endpoint endpoint,
-      const Options &options, const std::string &metadata_key,
-      const std::string &metadata_replicaset,
-      const std::string &fast_router_key);
+      const Options &options, const std::string &metadata_key);
 
   /** @brief Deletes Router accounts just created
    *
@@ -579,7 +584,7 @@ class ConfigGenerator {
   int read_timeout_;
 
   // For GR cluster Group Replication ID, for AR cluster cluster_id from the
-  // metadata
+  // metadata, for ClusterSet clusterset_id
   std::string cluster_specific_id_;
   std::string cluster_initial_hostname_;
   unsigned int cluster_initial_port_;
@@ -612,6 +617,8 @@ class ConfigGenerator {
 #ifndef _WIN32
   SysUserOperationsBase *sys_user_operations_;
 #endif
+
+  mysqlrouter::MetadataSchemaVersion schema_version_;
 
 #ifdef FRIEND_TEST
   FRIEND_TEST(::ConfigGeneratorTest, fetch_bootstrap_servers_one);

@@ -259,6 +259,8 @@ class Item_func : public Item_result_field {
     NULLIF_FUNC,
     CASE_FUNC,
     YEAR_FUNC,
+    YEARWEEK_FUNC,
+    MAKEDATE_FUNC,
     MONTH_FUNC,
     MONTHNAME_FUNC,
     DAY_FUNC,
@@ -602,8 +604,7 @@ class Item_func : public Item_result_field {
     @retval true   arg can be cached
     @retval false  otherwise
   */
-  virtual enum_const_item_cache can_cache_json_arg(
-      Item *arg MY_ATTRIBUTE((unused))) {
+  virtual enum_const_item_cache can_cache_json_arg(Item *arg [[maybe_unused]]) {
     return CACHE_NONE;
   }
 
@@ -695,8 +696,7 @@ class Item_func : public Item_result_field {
     }
     return false;
   }
-  bool check_column_from_derived_table(
-      uchar *arg MY_ATTRIBUTE((unused))) override {
+  bool check_column_from_derived_table(uchar *arg [[maybe_unused]]) override {
     return false;
   }
   bool check_column_in_window_functions(uchar *arg) override;
@@ -1121,36 +1121,41 @@ class Item_func_mul final : public Item_num_op {
   enum Functype functype() const override { return MUL_FUNC; }
 };
 
-class Item_func_div final : public Item_num_op {
+class Item_func_div_base : public Item_num_op {
  public:
-  uint prec_increment;
-  Item_func_div(const POS &pos, Item *a, Item *b) : Item_num_op(pos, a, b) {}
-  longlong int_op() override {
-    assert(false);
-    return 0;
-  }
+  Item_func_div_base(const POS &pos, Item *a, Item *b)
+      : Item_num_op(pos, a, b) {}
+  Item_func_div_base(Item *a, Item *b) : Item_num_op(a, b) {}
+  longlong int_op() override;
   double real_op() override;
   my_decimal *decimal_op(my_decimal *) override;
+  enum Functype functype() const override { return DIV_FUNC; }
+
+ protected:
+  uint m_prec_increment;
+};
+
+class Item_func_div final : public Item_func_div_base {
+ public:
+  Item_func_div(const POS &pos, Item *a, Item *b)
+      : Item_func_div_base(pos, a, b) {}
   const char *func_name() const override { return "/"; }
   bool resolve_type(THD *thd) override;
   void result_precision() override;
-  enum Functype functype() const override { return DIV_FUNC; }
 };
 
-class Item_func_int_div final : public Item_int_func {
+class Item_func_div_int final : public Item_func_div_base {
  public:
-  Item_func_int_div(Item *a, Item *b) : Item_int_func(a, b) {}
-  Item_func_int_div(const POS &pos, Item *a, Item *b)
-      : Item_int_func(pos, a, b) {}
-  longlong val_int() override;
+  Item_func_div_int(Item *a, Item *b) : Item_func_div_base(a, b) {}
+  Item_func_div_int(const POS &pos, Item *a, Item *b)
+      : Item_func_div_base(pos, a, b) {}
   const char *func_name() const override { return "DIV"; }
-  bool resolve_type(THD *thd) override;
-
-  void print(const THD *thd, String *str,
-             enum_query_type query_type) const override {
-    print_op(thd, str, query_type);
+  enum_field_types default_data_type() const override {
+    return MYSQL_TYPE_LONGLONG;
   }
-
+  bool resolve_type(THD *thd) override;
+  void result_precision() override;
+  void set_numeric_type() override;
   bool check_partition_func_processor(uchar *) override { return false; }
   bool check_function_as_value_generator(uchar *) override { return false; }
 };
@@ -1975,7 +1980,6 @@ class Item_func_last_insert_id final : public Item_int_func {
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_LONGLONG)) return true;
     unsigned_flag = true;
-    if (arg_count) max_length = args[0]->max_length;
     return false;
   }
   bool check_function_as_value_generator(uchar *checker_args) override {
@@ -3492,6 +3496,7 @@ class Item_func_match final : public Item_real_func {
     if (master == nullptr && ft_handler != nullptr) {
       ft_handler->please->close_search(ft_handler);
     }
+    score_from_index_scan = false;
     ft_handler = nullptr;
     concat_ws = nullptr;
     return;

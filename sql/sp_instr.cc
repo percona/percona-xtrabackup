@@ -565,7 +565,7 @@ LEX *sp_lex_instr::parse_expr(THD *thd, sp_head *sp) {
   cleanup_before_parsing(thd);
 
   // Cleanup and re-init the lex mem_root for re-parse.
-  free_root(&m_lex_mem_root, MYF(0));
+  m_lex_mem_root.Clear();
   init_sql_alloc(PSI_NOT_INSTRUMENTED, &m_lex_mem_root, MEM_ROOT_BLOCK_SIZE,
                  MEM_ROOT_PREALLOC);
 
@@ -1707,16 +1707,16 @@ bool sp_instr_set_case_expr::exec_core(THD *thd, uint *nextp) {
 
   sp_rcontext *rctx = thd->sp_runtime_ctx;
 
-  if (rctx->set_case_expr(thd, m_case_expr_id, &m_expr_item) &&
-      !rctx->get_case_expr(m_case_expr_id)) {
-    // Failed to evaluate the value, the case expression is still not
-    // initialized. Set to NULL so we can continue.
+  if (rctx->set_case_expr(thd, m_case_expr_id, &m_expr_item)) {
+    if (!rctx->get_case_expr(m_case_expr_id)) {
+      // Failed to evaluate the value, the case expression is still not
+      // initialized. Set to NULL so we can continue.
+      Item *null_item = new Item_null();
 
-    Item *null_item = new Item_null();
-
-    if (!null_item || rctx->set_case_expr(thd, m_case_expr_id, &null_item)) {
-      // If this also failed, we have to abort.
-      my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
+      if (!null_item || rctx->set_case_expr(thd, m_case_expr_id, &null_item)) {
+        // If this also failed, we have to abort.
+        my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
+      }
     }
 
     return true;

@@ -2279,9 +2279,10 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
   uint32_t compressed_buf_len = 1024 * 1024;
   uint32_t uncompressed_buf_len = 1024 * 1024;
-  byte *compressed_sdi =
-      static_cast<byte *>(ut_malloc_nokey(compressed_buf_len));
-  byte *sdi = static_cast<byte *>(ut_malloc_nokey(uncompressed_buf_len));
+  byte *compressed_sdi = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, compressed_buf_len));
+  byte *sdi = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, uncompressed_buf_len));
 
   ib_err_t err = ib_sdi_get_keys(space_id, &ib_vector, trx);
 
@@ -2329,8 +2330,8 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
                        &uncompressed_sdi_len, trx);
       if (err == DB_OUT_OF_MEMORY) {
         compressed_buf_len = compressed_sdi_len;
-        compressed_sdi =
-            static_cast<byte *>(ut_realloc(compressed_sdi, compressed_buf_len));
+        compressed_sdi = static_cast<byte *>(
+            ut::realloc(compressed_sdi, compressed_buf_len));
         continue;
       }
       break;
@@ -2342,7 +2343,7 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
     if (uncompressed_buf_len < uncompressed_sdi_len) {
       uncompressed_buf_len = uncompressed_sdi_len;
-      sdi = static_cast<byte *>(ut_realloc(sdi, uncompressed_buf_len));
+      sdi = static_cast<byte *>(ut::realloc(sdi, uncompressed_buf_len));
     }
 
     Sdi_Decompressor decompressor(static_cast<byte *>(sdi),
@@ -2383,8 +2384,8 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
   }
 
 error:
-  ut_free(compressed_sdi);
-  ut_free(sdi);
+  ut::free(compressed_sdi);
+  ut::free(sdi);
 
   return (err);
 }
@@ -2420,7 +2421,7 @@ static dberr_t dict_load_from_spaces_sdi() {
 
   my_thread_init();
 
-  THD *thd = create_thd(false, true, true, 0);
+  THD *thd = create_internal_thd();
 
   ib_trx_t trx = ib_trx_begin(IB_TRX_READ_COMMITTED, false, false, thd);
 
@@ -2455,7 +2456,7 @@ static dberr_t dict_load_from_spaces_sdi() {
   ib_trx_commit(trx);
   ib_trx_release(trx);
 
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 
   my_thread_end();
   return err;
@@ -2504,7 +2505,8 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
           dd_table_open_on_name(NULL, NULL, "mysql/innodb_dynamic_metadata",
                                 false, DICT_ERR_IGNORE_NONE);
     if (dict_persist->table_buffer == nullptr)
-      dict_persist->table_buffer = UT_NEW_NOKEY(DDTableBuffer());
+      dict_persist->table_buffer =
+          ut::new_withkey<DDTableBuffer>(UT_NEW_THIS_FILE_PSI_KEY);
     srv_dict_recover_on_restart();
   }
 
@@ -3451,7 +3453,7 @@ static dberr_t xb_load_tablespaces(void)
   lsn_t flush_lsn;
 
   for (ulint i = 0; i < srv_n_file_io_threads; i++) {
-    os_thread_create(PFS_NOT_INSTRUMENTED, io_handler_thread, i).start();
+    os_thread_create(PFS_NOT_INSTRUMENTED, i, io_handler_thread, i).start();
   }
 
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -3580,8 +3582,8 @@ static xb_filter_entry_t *xb_new_filter_entry(
 
   ut_a(namelen <= NAME_LEN * 2 + 1);
 
-  entry = static_cast<xb_filter_entry_t *>(
-      ut_zalloc_nokey(sizeof(xb_filter_entry_t) + namelen + 1));
+  entry = static_cast<xb_filter_entry_t *>(ut::zalloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY, sizeof(xb_filter_entry_t) + namelen + 1));
   entry->name = ((char *)entry) + sizeof(xb_filter_entry_t);
   strcpy(entry->name, name);
   entry->has_tables = FALSE;
@@ -3836,7 +3838,7 @@ static void xb_filter_hash_free(hash_table_t *hash) {
 
       HASH_DELETE(xb_filter_entry_t, name_hash, hash,
                   ut_fold_string(prev_table->name), prev_table);
-      ut_free(prev_table);
+      ut::free(prev_table);
     }
   }
 
@@ -4183,7 +4185,7 @@ void xtrabackup_backup_func(void) {
 
   io_ticket = xtrabackup_throttle;
   wait_throttle = os_event_create();
-  os_thread_create(PFS_NOT_INSTRUMENTED, io_watching_thread).start();
+  os_thread_create(PFS_NOT_INSTRUMENTED, 0, io_watching_thread).start();
 
   if (!redo_mgr.start()) {
     exit(EXIT_FAILURE);
@@ -4235,7 +4237,8 @@ void xtrabackup_backup_func(void) {
   }
 
   /* Create data copying threads */
-  data_threads = (data_thread_ctxt_t *)ut_malloc_nokey(
+  data_threads = (data_thread_ctxt_t *)ut::malloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY,
       sizeof(data_thread_ctxt_t) * xtrabackup_parallel);
   count = xtrabackup_parallel;
   mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
@@ -4246,7 +4249,7 @@ void xtrabackup_backup_func(void) {
     data_threads[i].count = &count;
     data_threads[i].count_mutex = &count_mutex;
     data_threads[i].error = &data_copying_error;
-    os_thread_create(PFS_NOT_INSTRUMENTED, data_copy_thread_func,
+    os_thread_create(PFS_NOT_INSTRUMENTED, i, data_copy_thread_func,
                      data_threads + i)
         .start();
   }
@@ -4267,7 +4270,7 @@ void xtrabackup_backup_func(void) {
   }
 
   mutex_free(&count_mutex);
-  ut_free(data_threads);
+  ut::free(data_threads);
   datafiles_iter_free(it);
 
   if (data_copying_error) {
@@ -4743,7 +4746,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   {
     my_thread_init();
-    THD *thd = create_thd(false, false, true, 0);
+    THD *thd = create_internal_thd();
 
     dict_table_t *sys_tables = nullptr;
     dict_table_t *table = nullptr;
@@ -4803,7 +4806,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
     mutex_exit(&(dict_sys->mutex));
 
-    destroy_thd(thd);
+    destroy_internal_thd(thd);
     my_thread_end();
   }
 
@@ -4867,7 +4870,8 @@ static bool xtrabackup_init_temp_log(void) {
 
   max_no = 0;
 
-  log_buf = static_cast<byte *>(ut_malloc_nokey(UNIV_PAGE_SIZE_MAX * 128));
+  log_buf = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, UNIV_PAGE_SIZE_MAX * 128));
   if (log_buf == NULL) {
     goto error;
   }
@@ -5094,14 +5098,14 @@ retry:
   xtrabackup_logfile_is_renamed = TRUE;
 
   if (log_buf != NULL) {
-    ut_free(log_buf);
+    ut::free(log_buf);
   }
 
   return (FALSE);
 
 skip_modify:
   if (log_buf != NULL) {
-    ut_free(log_buf);
+    ut::free(log_buf);
   }
   os_file_close(src_file);
   src_file = XB_FILE_UNDEFINED;
@@ -5109,7 +5113,7 @@ skip_modify:
 
 error:
   if (log_buf != NULL) {
-    ut_free(log_buf);
+    ut::free(log_buf);
   }
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
   return (TRUE); /*ERROR*/
@@ -5248,7 +5252,8 @@ static bool xb_space_create_file(
   with zeros from the call of os_file_set_size(), until a buffer pool
   flush would write to it. */
 
-  buf2 = static_cast<byte *>(ut_malloc_nokey(3 * UNIV_PAGE_SIZE));
+  buf2 = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, 3 * UNIV_PAGE_SIZE));
   /* Align the memory for file i/o if we might have O_DIRECT set */
   page = static_cast<byte *>(ut_align(buf2, UNIV_PAGE_SIZE));
 
@@ -5283,7 +5288,7 @@ static bool xb_space_create_file(
                             page_size.physical());
   }
 
-  ut_free(buf2);
+  ut::free(buf2);
 
   if (!success) {
     ib::error() << "Could not write the first page to"
@@ -5305,8 +5310,8 @@ static bool xb_space_create_file(
   fil_space_t *space = fil_space_get(space_id);
 
   if (fil_node_create(path, size, space, false, false) == nullptr) {
-    ib::fatal() << "Unable to add tablespace node '" << path
-                << "' to the tablespace cache.";
+    ib::fatal(UT_LOCATION_HERE) << "Unable to add tablespace node '" << path
+                                << "' to the tablespace cache.";
   }
 
   return (true);
@@ -5319,7 +5324,8 @@ static space_id_t get_space_id_from_page_0(const char *file_name) {
   bool ok;
   space_id_t space_id = SPACE_UNKNOWN;
 
-  auto buf = static_cast<byte *>(ut_malloc_nokey(2 * srv_page_size));
+  auto buf = static_cast<byte *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, 2 * srv_page_size));
 
   auto file = os_file_create_simple_no_error_handling(
       0, file_name, OS_FILE_OPEN, OS_FILE_READ_ONLY, srv_read_only_mode, &ok);
@@ -5342,7 +5348,7 @@ static space_id_t get_space_id_from_page_0(const char *file_name) {
     msg("xtrabackup: Cannot open file to read first page %s\n", file_name);
   }
 
-  ut_free(buf);
+  ut::free(buf);
 
   return (space_id);
 }
@@ -5402,8 +5408,9 @@ static pfs_os_file_t xb_delta_open_matching_space(
 
   /* remember space name used by incremental prepare. This hash is later used to
   detect the dropped tablespaces and remove them. Check rm_if_not_found() */
-  table = static_cast<xb_filter_entry_t *>(
-      ut_malloc_nokey(sizeof(xb_filter_entry_t) + strlen(dest_space_name) + 1));
+  table = static_cast<xb_filter_entry_t *>(ut::malloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY,
+      sizeof(xb_filter_entry_t) + strlen(dest_space_name) + 1));
 
   table->name = ((char *)table) + sizeof(xb_filter_entry_t);
   strcpy(table->name, dest_space_name);
@@ -5447,12 +5454,12 @@ static pfs_os_file_t xb_delta_open_matching_space(
 
         if (!fil_rename_tablespace(f_space_id, oldpath, tmpname, tmpname)) {
           msg("xtrabackup: Cannot rename %s to %s\n", dest_space_name, tmpname);
-          ut_free(oldpath);
-          ut_free(space_name);
+          ut::free(oldpath);
+          ut::free(space_name);
           goto exit;
         }
-        ut_free(oldpath);
-        ut_free(space_name);
+        ut::free(oldpath);
+        ut::free(space_name);
       }
 
       /* either file doesn't exist or it has been renamed above */
@@ -5499,12 +5506,12 @@ static pfs_os_file_t xb_delta_open_matching_space(
       if (exists &&
           !fil_rename_tablespace(f_space_id, oldpath, tmpname, NULL)) {
         msg("xtrabackup: Cannot rename %s to %s\n", dest_space_name, tmpname);
-        ut_free(oldpath);
-        ut_free(space_name);
+        ut::free(oldpath);
+        ut::free(space_name);
         goto exit;
       }
-      ut_free(oldpath);
-      ut_free(space_name);
+      ut::free(oldpath);
+      ut::free(space_name);
     }
   }
 
@@ -5538,12 +5545,12 @@ static pfs_os_file_t xb_delta_open_matching_space(
         !fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
       msg("xtrabackup: Cannot rename %s to %s\n", fil_space->name,
           dest_space_name);
-      ut_free(oldpath);
-      ut_free(space_name);
+      ut::free(oldpath);
+      ut::free(space_name);
       goto exit;
     }
-    ut_free(oldpath);
-    ut_free(space_name);
+    ut::free(oldpath);
+    ut::free(space_name);
 
     goto found;
   }
@@ -5688,7 +5695,8 @@ static bool xtrabackup_apply_delta(
 
   /* allocate buffer for incremental backup */
   incremental_buffer_base = static_cast<byte *>(
-      ut_malloc_nokey((page_size / 4 + 1) * page_size + UNIV_PAGE_SIZE_MAX));
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                         (page_size / 4 + 1) * page_size + UNIV_PAGE_SIZE_MAX));
   incremental_buffer = static_cast<byte *>(
       ut_align(incremental_buffer_base, UNIV_PAGE_SIZE_MAX));
 
@@ -5771,13 +5779,13 @@ static bool xtrabackup_apply_delta(
     incremental_buffers++;
   }
 
-  if (incremental_buffer_base) ut_free(incremental_buffer_base);
+  if (incremental_buffer_base) ut::free(incremental_buffer_base);
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
   if (dst_file != XB_FILE_UNDEFINED) os_file_close(dst_file);
   return true;
 
 error:
-  if (incremental_buffer_base) ut_free(incremental_buffer_base);
+  if (incremental_buffer_base) ut::free(incremental_buffer_base);
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
   if (dst_file != XB_FILE_UNDEFINED) os_file_close(dst_file);
   msg("xtrabackup: Error: xtrabackup_apply_delta(): failed to apply %s to "
@@ -6072,8 +6080,7 @@ static bool xb_export_cfg_write_index_fields(
 /*********************************************************************/ /**
  Write the meta data config file index information.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_one_index(
+[[nodiscard]] static bool xb_export_cfg_write_one_index(
     /*======================*/
     const dict_index_t *index, /*!< in: write metadata for this
                                index */
@@ -6137,8 +6144,7 @@ xb_export_cfg_write_one_index(
 /*********************************************************************/ /**
  Write the meta data config file index information.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_indexes(
+[[nodiscard]] static bool xb_export_cfg_write_indexes(
     /*======================*/
     const dict_table_t *table, /*!< in: write the meta data for
                                this table */
@@ -6188,8 +6194,7 @@ xb_export_cfg_write_indexes(
  dict_col_t structure, along with the column name. All fields are serialized
  as ib_uint32_t.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_table(
+[[nodiscard]] static bool xb_export_cfg_write_table(
     /*====================*/
     const dict_table_t *table, /*!< in: write the meta data for
                                this table */
@@ -6262,8 +6267,7 @@ xb_export_cfg_write_table(
 /*********************************************************************/ /**
  Write the meta data config file header.
  @return true in case of success otherwise false. */
-static __attribute__((nonnull, warn_unused_result)) bool
-xb_export_cfg_write_header(
+[[nodiscard]] static bool xb_export_cfg_write_header(
     /*=====================*/
     const dict_table_t *table, /*!< in: write the meta data for
                                this table */
@@ -6420,8 +6424,8 @@ static bool xb_export_cfg_write(
 @param[in]	table		write the data for this table
 @param[in]	file		file to write to
 @return DB_SUCCESS or error code. */
-static __attribute__((nonnull, warn_unused_result)) dberr_t
-xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
+[[nodiscard]] static dberr_t xb_export_write_transfer_key(
+    const dict_table_t *table, FILE *file) {
   byte key_size[sizeof(ib_uint32_t)];
   byte row[Encryption::KEY_LEN * 3];
   byte *ptr = row;
@@ -6499,8 +6503,7 @@ xb_export_write_transfer_key(const dict_table_t *table, FILE *file) {
 /** Write the encryption data after quiesce.
 @param[in]	table		write the data for this table
 @return DB_SUCCESS or error code */
-static __attribute__((nonnull, warn_unused_result)) dberr_t xb_export_cfp_write(
-    dict_table_t *table) {
+[[nodiscard]] static dberr_t xb_export_cfp_write(dict_table_t *table) {
   dberr_t err;
   char name[OS_FILE_MAX_PATH];
 
@@ -6871,7 +6874,7 @@ skip_check:
 
     my_thread_init();
 
-    THD *thd = create_thd(false, true, true, 0);
+    THD *thd = create_internal_thd();
 
     while ((node = datafiles_iter_next(it)) != NULL) {
       dict_table_t *table;
@@ -6911,7 +6914,7 @@ skip_check:
 
     datafiles_iter_free(it);
 
-    destroy_thd(thd);
+    destroy_internal_thd(thd);
     my_thread_end();
   }
 

@@ -160,8 +160,16 @@ int Primary_election_primary_process::primary_election_process_handler() {
   stage_handler->set_stage(
       info_GR_STAGE_primary_election_buffered_transactions.m_key, __FILE__,
       __LINE__, 1, 0);
+  /*
+   Force primary_change to fail.
+   This is needed so that we move to applier suspension.
+   Maybe this fail will automatically happen during shutdown in real scenario
+  */
+  DBUG_EXECUTE_IF("group_replication_wait_for_current_events_execution_fail",
+                  { error = 1; };);
   if (election_mode != SAFE_OLD_PRIMARY) {
-    if (applier_module->wait_for_current_events_execution(
+    if (error ||
+        applier_module->wait_for_current_events_execution(
             applier_checkpoint_condition, &election_process_aborted, false)) {
       error = 1;
       err_msg.assign("Could not wait for the execution of local transactions.");
@@ -196,6 +204,8 @@ int Primary_election_primary_process::primary_election_process_handler() {
       Group changed from multi to single-primary mode, the elected primary
       member actions configuration will override all other members
       configuration.
+      Replication failover channels configuration will also override all
+      other members configuration.
     */
     if (SAFE_OLD_PRIMARY == election_mode) {
       if (member_actions_handler
@@ -205,6 +215,17 @@ int Primary_election_primary_process::primary_election_process_handler() {
             "Unable to read the member actions configuration during group "
             "change from multi to single-primary mode. Please check the tables "
             "'mysql.replication_group_member_actions' and "
+            "'mysql.replication_group_configuration_version'.");
+        goto end;
+      }
+      if (force_my_replication_failover_channels_configuration_on_all_members()) {
+        error = 7;
+        err_msg.assign(
+            "Unable to read or send the replication failover channels "
+            "configuration during group change from multi to single-primary "
+            "mode. Please check the tables "
+            "'mysql.replication_asynchronous_connection_failover', "
+            "'mysql.replication_asynchronous_connection_failover_managed' and "
             "'mysql.replication_group_configuration_version'.");
         goto end;
       }
@@ -344,16 +365,16 @@ end:
   global_thd_manager_remove_thd(thd);
   delete thd;
 
+  Gcs_interface_factory::cleanup_thread_communication_resources(
+      Gcs_operations::get_gcs_engine());
+
+  my_thread_end();
+
   mysql_mutex_lock(&election_lock);
   election_process_thd_state.set_terminated();
   election_process_ending = false;
   mysql_cond_broadcast(&election_cond);
   mysql_mutex_unlock(&election_lock);
-
-  Gcs_interface_factory::cleanup_thread_communication_resources(
-      Gcs_operations::get_gcs_engine());
-
-  my_thread_end();
 
   return error;
 }

@@ -717,8 +717,6 @@ struct TABLE_SHARE {
   /** Category of this table. */
   TABLE_CATEGORY table_category{TABLE_UNKNOWN_CATEGORY};
 
-  /* hash of field names (contains pointers to elements of field array) */
-  collation_unordered_map<std::string, Field **> *name_hash{nullptr};
   MEM_ROOT mem_root;
   /**
     Used to allocate new handler for internal temporary table when the
@@ -1284,7 +1282,7 @@ class Blob_mem_storage {
   ~Blob_mem_storage();
 
   void reset() {
-    free_root(&storage, MYF(MY_MARK_BLOCKS_FREE));
+    storage.ClearForReuse();
     truncated_value = false;
   }
   /**
@@ -2453,6 +2451,65 @@ enum class Lex_acl_attrib_udyn {
   NO         /* Value that maps to False is specified */
 };
 
+struct LEX_MFA {
+  LEX_CSTRING plugin;
+  LEX_CSTRING auth;
+  LEX_CSTRING generated_password;
+  LEX_CSTRING challenge_response;
+  uint nth_factor;
+  /*
+    The following flags are indicators for the SQL syntax used while
+    parsing CREATE/ALTER user. While other members are self-explanatory,
+    'uses_authentication_string_clause' signifies if the password is in
+    hash form (if the var was set to true) or not.
+  */
+  bool uses_identified_by_clause;
+  bool uses_authentication_string_clause;
+  bool uses_identified_with_clause;
+  bool has_password_generator;
+  /* flag set during CREATE USER .. INITIAL AUTHENTICATION BY */
+  bool passwordless;
+  /* flag set during ALTER USER .. ADD nth FACTOR */
+  bool add_factor;
+  /* flag set during ALTER USER .. MODIFY nth FACTOR */
+  bool modify_factor;
+  /* flag set during ALTER USER .. DROP nth FACTOR */
+  bool drop_factor;
+  /*
+    flag used during authentication and to decide if server should
+    be in sandbox mode or not
+  */
+  bool requires_registration;
+  /* flag set during ALTER USER .. nth FACTOR UNREGISTER */
+  bool unregister;
+  /* flag set during ALTER USER .. INITIATE REGISTRATION */
+  bool init_registration;
+  /* flag set during ALTER USER .. FINISH REGISTRATION */
+  bool finish_registration;
+
+  LEX_MFA() { reset(); }
+  void reset() {
+    plugin = EMPTY_CSTR;
+    auth = NULL_CSTR;
+    generated_password = NULL_CSTR;
+    challenge_response = NULL_CSTR;
+    nth_factor = 1;
+    uses_identified_by_clause = false;
+    uses_authentication_string_clause = false;
+    uses_identified_with_clause = false;
+    has_password_generator = false;
+    passwordless = false;
+    add_factor = false;
+    drop_factor = false;
+    modify_factor = false;
+    requires_registration = false;
+    unregister = false;
+    init_registration = false;
+    finish_registration = false;
+  }
+  void copy(LEX_MFA *m, MEM_ROOT *alloc);
+};
+
 /*
   This structure holds the specifications relating to
   ALTER user ... PASSWORD EXPIRE ...
@@ -2504,29 +2561,54 @@ struct LEX_ALTER {
 struct LEX_USER {
   LEX_CSTRING user;
   LEX_CSTRING host;
-  LEX_CSTRING plugin;
-  LEX_CSTRING auth;
   LEX_CSTRING current_auth;
-  /*
-    The following flags are indicators for the SQL syntax used while
-    parsing CREATE/ALTER user. While other members are self-explanatory,
-    'uses_authentication_string_clause' signifies if the password is in
-    hash form (if the var was set to true) or not.
-  */
-  bool uses_identified_by_clause;
-  bool uses_identified_with_clause;
-  bool uses_authentication_string_clause;
   bool uses_replace_clause;
   bool retain_current_password;
   bool discard_old_password;
-  bool has_password_generator;
   LEX_ALTER alter_status;
+  /* restrict MFA methods to atmost 3 authentication plugins */
+  LEX_MFA first_factor_auth_info;
+  List<LEX_MFA> mfa_list;
+  bool with_initial_auth;
+
+  void init() {
+    user = NULL_CSTR;
+    host = NULL_CSTR;
+    current_auth = NULL_CSTR;
+    uses_replace_clause = false;
+    retain_current_password = false;
+    discard_old_password = false;
+    alter_status.account_locked = false;
+    alter_status.expire_after_days = 0;
+    alter_status.update_account_locked_column = false;
+    alter_status.update_password_expired_column = false;
+    alter_status.update_password_expired_fields = false;
+    alter_status.use_default_password_lifetime = true;
+    alter_status.use_default_password_history = true;
+    alter_status.update_password_require_current =
+        Lex_acl_attrib_udyn::UNCHANGED;
+    alter_status.password_history_length = 0;
+    alter_status.password_reuse_interval = 0;
+    alter_status.failed_login_attempts = 0;
+    alter_status.password_lock_time = 0;
+    alter_status.update_failed_login_attempts = false;
+    alter_status.update_password_lock_time = false;
+    first_factor_auth_info.reset();
+    mfa_list.clear();
+    with_initial_auth = false;
+  }
+
+  LEX_USER() { init(); }
+
+  bool add_mfa_identifications(LEX_MFA *factor2, LEX_MFA *factor3 = nullptr);
+
   /*
     Allocates the memory in the THD mem pool and initialize the members of
     this struct. It is preferable to use this method to create a LEX_USER
     rather allocating the memory in the THD and initializing the members
     explicitly.
   */
+  static LEX_USER *alloc(THD *thd);
   static LEX_USER *alloc(THD *thd, LEX_STRING *user, LEX_STRING *host);
   /*
     Initialize the members of this struct. It is preferable to use this method
@@ -3005,7 +3087,7 @@ struct TABLE_LIST {
   /// Set table as full-text search (default is not fulltext searched)
   void set_fulltext_searched() { m_fulltext_searched = true; }
 
-  /// Return true if table is insertable-into
+  /// Returns true if a MATCH function references this table.
   bool is_fulltext_searched() const { return m_fulltext_searched; }
 
   /**
@@ -3919,9 +4001,10 @@ static inline void tmp_restore_column_map(MY_BITMAP *bitmap,
 
 /* The following is only needed for debugging */
 
-static inline my_bitmap_map *dbug_tmp_use_all_columns(
-    TABLE *table MY_ATTRIBUTE((unused)),
-    MY_BITMAP *bitmap MY_ATTRIBUTE((unused))) {
+static inline my_bitmap_map *dbug_tmp_use_all_columns(TABLE *table
+                                                      [[maybe_unused]],
+                                                      MY_BITMAP *bitmap
+                                                      [[maybe_unused]]) {
 #ifndef NDEBUG
   return tmp_use_all_columns(table, bitmap);
 #else
@@ -3929,9 +4012,10 @@ static inline my_bitmap_map *dbug_tmp_use_all_columns(
 #endif
 }
 
-static inline void dbug_tmp_restore_column_map(
-    MY_BITMAP *bitmap MY_ATTRIBUTE((unused)),
-    my_bitmap_map *old MY_ATTRIBUTE((unused))) {
+static inline void dbug_tmp_restore_column_map(MY_BITMAP *bitmap
+                                               [[maybe_unused]],
+                                               my_bitmap_map *old
+                                               [[maybe_unused]]) {
 #ifndef NDEBUG
   tmp_restore_column_map(bitmap, old);
 #endif
@@ -3942,10 +4026,9 @@ static inline void dbug_tmp_restore_column_map(
   Provide for the possiblity of the read set being the same as the write set
 */
 static inline void dbug_tmp_use_all_columns(
-    TABLE *table MY_ATTRIBUTE((unused)),
-    my_bitmap_map **save MY_ATTRIBUTE((unused)),
-    MY_BITMAP *read_set MY_ATTRIBUTE((unused)),
-    MY_BITMAP *write_set MY_ATTRIBUTE((unused))) {
+    TABLE *table [[maybe_unused]], my_bitmap_map **save [[maybe_unused]],
+    MY_BITMAP *read_set [[maybe_unused]],
+    MY_BITMAP *write_set [[maybe_unused]]) {
 #ifndef NDEBUG
   save[0] = read_set->bitmap;
   save[1] = write_set->bitmap;
@@ -3955,9 +4038,8 @@ static inline void dbug_tmp_use_all_columns(
 }
 
 static inline void dbug_tmp_restore_column_maps(
-    MY_BITMAP *read_set MY_ATTRIBUTE((unused)),
-    MY_BITMAP *write_set MY_ATTRIBUTE((unused)),
-    my_bitmap_map **old MY_ATTRIBUTE((unused))) {
+    MY_BITMAP *read_set [[maybe_unused]], MY_BITMAP *write_set [[maybe_unused]],
+    my_bitmap_map **old [[maybe_unused]]) {
 #ifndef NDEBUG
   tmp_restore_column_map(read_set, old[0]);
   tmp_restore_column_map(write_set, old[1]);
@@ -4158,6 +4240,8 @@ class Common_table_expr {
       : references(mem_root), recursive(false), tmp_tables(mem_root) {}
   TABLE *clone_tmp_table(THD *thd, TABLE_LIST *tl);
   bool substitute_recursive_reference(THD *thd, Query_block *sl);
+  /// Remove one table reference.
+  void remove_table(TABLE_LIST *tr);
   /// Empties the materialized CTE and informs all of its clones.
   bool clear_all_references();
   /**

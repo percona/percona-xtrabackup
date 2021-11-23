@@ -7700,7 +7700,7 @@ ER_CANNOT_CREATE_VIRTUAL_INDEX_CONSTRAINT
   eng "Cannot create index on virtual column whose base column has foreign constraint."
 
 ER_ERROR_ON_MODIFYING_GTID_EXECUTED_TABLE
-  eng "Please do not modify the %s table with an XA transaction. This is an internal system table used to store GTIDs for committed transactions. Although modifying it can lead to an inconsistent GTID state, if neccessary you can modify it with a non-XA transaction."
+  eng "Please do not modify the %s table with an XA transaction. This is an internal system table used to store GTIDs for committed transactions. Although modifying it can lead to an inconsistent GTID state, if necessary you can modify it with a non-XA transaction."
 
 ER_LOCK_REFUSED_BY_ENGINE
   eng "Lock acquisition refused by storage engine."
@@ -9441,7 +9441,7 @@ ER_DA_ERROR_LOG_MULTIPLE_FILTERS
 ER_DA_CANT_OPEN_ERROR_LOG
   eng "Could not open file '%s' for error logging%s%s"
 
-ER_USER_REFERENCED_AS_DEFINER  
+ER_USER_REFERENCED_AS_DEFINER
   eng "User %.256s is referenced as a definer account in %s."
 
 ER_CANNOT_USER_REFERENCED_AS_DEFINER
@@ -9582,6 +9582,75 @@ ER_GRP_RPL_FAILOVER_CHANNEL_STATUS_PROPAGATION
 
 ER_WARN_AUDIT_LOG_FORMAT_UNIX_TIMESTAMP_ONLY_WHEN_JSON
   eng "audit_log_format_unix_timestamp is applicable only when audit_log_format = JSON."
+
+ER_INVALID_MFA_PLUGIN_SPECIFIED
+  eng "Invalid plugin \"%s\" specified as %d factor during \"%s\"."D
+
+ER_IDENTIFIED_BY_UNSUPPORTED
+  eng "IDENTIFIED BY clause during \"%s\" not supported for plugin \"%s\"."
+
+ER_INVALID_PLUGIN_FOR_REGISTRATION
+  eng "This operation is not supported for plugin \"%s\"."
+
+ER_PLUGIN_REQUIRES_REGISTRATION
+  eng "Authentication plugin requires registration. Please refer ALTER USER syntax or set --fido-register-factor command line option to do registration."
+
+ER_MFA_METHOD_EXISTS
+  eng "%d factor authentication method exists. Please do ALTER USER... DROP %d factor before doing this operation OR do ALTER USER... MODIFY %d factor... to modify existing %d factor authentication method."
+
+ER_MFA_METHOD_NOT_EXISTS
+  eng "%d factor authentication method doesn't exist. Please do ALTER USER... ADD %d factor... before doing this operation."
+
+ER_AUTHENTICATION_POLICY_MISMATCH
+  eng "%d factor authentication method does not match against authentication policy. Please refer @@authentication_policy system variable."
+
+ER_PLUGIN_REGISTRATION_DONE
+  eng "The registration for %d factor authentication method is already completed. You cannot perform registration multiple times."
+
+ER_INVALID_USER_FOR_REGISTRATION
+  eng "The registration operation is not allowed for user '%s'@'%s'. The operation can only be performed in user's own session."
+
+ER_USER_REGISTRATION_FAILED
+  eng "Authentication plugin's registration failed."
+
+ER_MFA_METHODS_INVALID_ORDER
+  eng "%d factor authentication method should be added before %d factor authentication method."
+
+ER_MFA_METHODS_IDENTICAL
+  eng "Authentication factor should be different."
+
+ER_INVALID_MFA_OPERATIONS_FOR_PASSWORDLESS_USER
+  eng "The operation \"%s\" cannot be performed for user '%s'@'%s' configured to connect without a password."
+
+ER_CHANGE_REPLICATION_SOURCE_NO_OPTIONS_FOR_GTID_ONLY
+  eng "GTID_ONLY cannot be enabled for replication channel '%.192s'. You need GTID_MODE = ON, SOURCE_AUTO_POSITION = 1 and REQUIRE_ROW_FORMAT = 1."
+
+ER_CHANGE_REP_SOURCE_CANT_DISABLE_REQ_ROW_FORMAT_WITH_GTID_ONLY
+  eng "REQUIRE_ROW_FORMAT cannot be disabled for replication channel '%.192s' when GTID_ONLY=1."
+
+ER_CHANGE_REP_SOURCE_CANT_DISABLE_AUTO_POSITION_WITH_GTID_ONLY
+  eng "SOURCE_AUTO_POSITION cannot be disabled for replication channel '%.192s' when GTID_ONLY=1."
+
+ER_CHANGE_REP_SOURCE_CANT_DISABLE_GTID_ONLY_WITHOUT_POSITIONS
+  eng "When disabling GTID_ONLY and SOURCE_AUTO_POSITION FOR CHANNEL '%.192s' you must provide SOURCE_LOG_FILE and SOURCE_LOG_POS as source positions are invalid."
+
+ER_CHANGE_REP_SOURCE_CANT_DISABLE_AUTO_POS_WITHOUT_POSITIONS
+  eng "When disabling SOURCE_AUTO_POSITION FOR CHANNEL '%.192s' you must provide SOURCE_LOG_FILE and SOURCE_LOG_POS as source positions are invalid."
+
+ER_CHANGE_REP_SOURCE_GR_CHANNEL_WITH_GTID_MODE_NOT_ON
+  eng "When configuring a group replication channel you must do it when GTID_MODE = ON."
+
+ER_CANT_USE_GTID_ONLY_WITH_GTID_MODE_NOT_ON
+  eng "Replication cannot start%.192s with GTID_ONLY = 1 as this server uses @@GLOBAL.GTID_MODE <> ON."
+
+ER_WARN_C_DISABLE_GTID_ONLY_WITH_SOURCE_AUTO_POS_INVALID_POS
+  eng "The replication positions relative to the source may be out-of-date on channel '%.192s', due to the use of GTID_ONLY=1. The out-of-date positions can still be used in some cases so, in order to update them, we suggest that you start the replication to receive and apply at least one transaction, which will set the positions to valid values."
+
+ER_DA_SSL_FIPS_MODE_ERROR
+  eng "SSL fips mode error: %s"
+
+ER_VALUE_OUT_OF_RANGE
+  eng "%s=%llu is outside the valid range [%llu,%llu]. %llu will be used."
 
 #
 #  End of 8.0 error messages (server-to-client).

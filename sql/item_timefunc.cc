@@ -277,7 +277,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
         case 'I':
         case 'l':
           usa_time = true;
-          /* fall through */
+          [[fallthrough]];
         case 'k':
         case 'H':
           tmp = val + min(2, val_len);
@@ -2133,8 +2133,9 @@ type_conversion_status Item_func_now::save_in_field_inner(Field *to, bool) {
     Converts current time in my_time_t to MYSQL_TIME represenatation for local
     time zone. Defines time zone (local) used for whole SYSDATE function.
 */
-bool Item_func_sysdate_local::get_date(
-    MYSQL_TIME *now_time, my_time_flags_t fuzzy_date MY_ATTRIBUTE((unused))) {
+bool Item_func_sysdate_local::get_date(MYSQL_TIME *now_time,
+                                       my_time_flags_t fuzzy_date
+                                       [[maybe_unused]]) {
   THD *thd = current_thd;
   ulonglong tmp = my_micro_time();
   thd->time_zone()->gmt_sec_to_TIME(now_time, (my_time_t)(tmp / 1000000));
@@ -2334,8 +2335,9 @@ bool Item_func_from_unixtime::resolve_type(THD *thd) {
   return false;
 }
 
-bool Item_func_from_unixtime::get_date(
-    MYSQL_TIME *ltime, my_time_flags_t fuzzy_date MY_ATTRIBUTE((unused))) {
+bool Item_func_from_unixtime::get_date(MYSQL_TIME *ltime,
+                                       my_time_flags_t fuzzy_date
+                                       [[maybe_unused]]) {
   THD *thd = current_thd;
   lldiv_t lld;
   if (decimals) {
@@ -2384,8 +2386,9 @@ bool Item_func_convert_tz::resolve_type(THD *thd) {
   return false;
 }
 
-bool Item_func_convert_tz::get_date(
-    MYSQL_TIME *ltime, my_time_flags_t fuzzy_date MY_ATTRIBUTE((unused))) {
+bool Item_func_convert_tz::get_date(MYSQL_TIME *ltime,
+                                    my_time_flags_t fuzzy_date
+                                    [[maybe_unused]]) {
   my_time_t my_time_tmp;
   String str;
   THD *thd = current_thd;
@@ -3491,7 +3494,7 @@ bool Item_func_str_to_date::resolve_type(THD *thd) {
   set_data_type_datetime(DATETIME_MAX_DECIMALS);
   sql_mode = thd->variables.sql_mode &
              (MODE_NO_ZERO_DATE | MODE_NO_ZERO_IN_DATE | MODE_INVALID_DATES);
-  if (args[1]->const_item()) {
+  if (args[1]->const_item() && args[1]->may_eval_const_item(thd)) {
     char format_buff[64];
     String format_str(format_buff, sizeof(format_buff), &my_charset_bin);
     String *format = args[1]->val_str(&format_str);

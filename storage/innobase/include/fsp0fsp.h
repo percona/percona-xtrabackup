@@ -182,6 +182,7 @@ header slots are reserved */
   4 /* this many free extents are added \
     to the free list from above         \
     FSP_FREE_LIMIT at a time */
+
 /** @} */
 
 /* Maximum allowed value of AUTOEXTEND_SIZE attribue */
@@ -433,7 +434,7 @@ page of a tablespace.
 @param[in]	page_size	tablespace page size
 @return operation type
 */
-encryption_op_type fsp_header_encryption_op_type_in_progress(
+Encryption::Progress fsp_header_encryption_op_type_in_progress(
     const page_t *page, page_size_t page_size);
 
 /** Check if the tablespace size information is valid.
@@ -577,11 +578,9 @@ latched in mtr, do not initialize the page.
 @retval block, rw_lock_x_lock_count(&block->lock) == 1 if allocation succeeded
 (init_mtr == mtr, or the page was not previously freed in mtr),
 returned block is not allocated nor initialized otherwise */
-buf_block_t *fseg_alloc_free_page_general(fseg_header_t *seg_header,
-                                          page_no_t hint, byte direction,
-                                          ibool has_done_reservation,
-                                          mtr_t *mtr, mtr_t *init_mtr)
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] buf_block_t *fseg_alloc_free_page_general(
+    fseg_header_t *seg_header, page_no_t hint, byte direction,
+    ibool has_done_reservation, mtr_t *mtr, mtr_t *init_mtr);
 
 /** Reserves free pages from a tablespace. All mini-transactions which may
 use several pages from the tablespace should call this function beforehand
@@ -650,34 +649,32 @@ void fseg_free_page(fseg_header_t *seg_header, space_id_t space_id,
 
 /** Checks if a single page of a segment is free.
  @return true if free */
-bool fseg_page_is_free(fseg_header_t *seg_header, /*!< in: segment header */
-                       space_id_t space_id,       /*!< in: space id */
-                       page_no_t page)            /*!< in: page offset */
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] bool fseg_page_is_free(
+    fseg_header_t *seg_header, /*!< in: segment header */
+    space_id_t space_id,       /*!< in: space id */
+    page_no_t page);           /*!< in: page offset */
 /** Frees part of a segment. This function can be used to free a segment
  by repeatedly calling this function in different mini-transactions.
  Doing the freeing in a single mini-transaction might result in
  too big a mini-transaction.
  @return true if freeing completed */
-ibool fseg_free_step(
+[[nodiscard]] ibool fseg_free_step(
     fseg_header_t *header, /*!< in, own: segment header; NOTE: if the header
                            resides on the first page of the frag list
                            of the segment, this pointer becomes obsolete
                            after the last freeing step */
     bool ahi,              /*!< in: whether we may need to drop
                            the adaptive hash index */
-    mtr_t *mtr)            /*!< in/out: mini-transaction */
-    MY_ATTRIBUTE((warn_unused_result));
+    mtr_t *mtr);           /*!< in/out: mini-transaction */
 /** Frees part of a segment. Differs from fseg_free_step because this function
  leaves the header page unfreed.
  @return true if freeing completed, except the header page */
-ibool fseg_free_step_not_header(
+[[nodiscard]] ibool fseg_free_step_not_header(
     fseg_header_t *header, /*!< in: segment header which must reside on
                            the first fragment page of the segment */
     bool ahi,              /*!< in: whether we may need to drop
                            the adaptive hash index */
-    mtr_t *mtr)            /*!< in/out: mini-transaction */
-    MY_ATTRIBUTE((warn_unused_result));
+    mtr_t *mtr);           /*!< in/out: mini-transaction */
 
 /** Checks if a page address is an extent descriptor page address.
 @param[in]	page_id		page id
@@ -1012,11 +1009,12 @@ class File_segment_inode {
   mtr_t *m_mtr;
 
 #ifdef UNIV_DEBUG
- private:
+ public:
   /** Verify the stored FSEG_NOT_FULL_N_USED value.
   @return true if correct value, false if incorrect. */
   bool verify_not_full_n_used();
 
+ private:
   /** Calculate the value of FSEG_NOT_FULL_N_USED by traversing
   the FSEG_NOT_FULL list.
   @return the calculated value of FSEG_NOT_FULL_N_USED. */
@@ -1043,4 +1041,14 @@ inline std::ostream &operator<<(std::ostream &out,
   return (obj.print(out));
 }
 
+/** Returns the file segment inode, page x-latched.
+@param[in]	header		Segment header
+@param[in]	space		Space id
+@param[in]	page_size	Page size
+@param[in,out]	mtr		Mini-transaction
+@param[out]	block		Inode block
+@return segment inode, page x-latched */
+fseg_inode_t *fseg_inode_get(const fseg_header_t *header, space_id_t space,
+                             const page_size_t &page_size, mtr_t *mtr,
+                             buf_block_t **block = nullptr);
 #endif

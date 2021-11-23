@@ -225,7 +225,7 @@ static inline void ibuf_count_check(const page_id_t &page_id) {
     return;
   }
 
-  ib::fatal(ER_IB_MSG_605)
+  ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_605)
       << "UNIV_IBUF_COUNT_DEBUG limits space_id and page_no"
          " and breaks crash recovery. space_id="
       << page_id.space() << ", should be 0<=space_id<" << IBUF_COUNT_N_SPACES
@@ -438,7 +438,7 @@ void ibuf_close(void) {
   dict_mem_index_free(ibuf->index);
   dict_mem_table_free(ibuf_table);
 
-  ut_free(ibuf);
+  ut::free(ibuf);
   ibuf = nullptr;
 }
 
@@ -465,7 +465,8 @@ void ibuf_init_at_db_start(void) {
   ulint n_used;
   page_t *header_page;
 
-  ibuf = static_cast<ibuf_t *>(ut_zalloc_nokey(sizeof(ibuf_t)));
+  ibuf = static_cast<ibuf_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(ibuf_t)));
 
   /* At startup we intialize ibuf to have a maximum of
   CHANGE_BUFFER_DEFAULT_SIZE in terms of percentage of the
@@ -570,7 +571,7 @@ void ibuf_bitmap_page_init(buf_block_t *block, /*!< in: bitmap page */
  @return end of log record or NULL */
 byte *ibuf_parse_bitmap_init(byte *ptr, /*!< in: buffer */
                              byte *end_ptr
-                                 MY_ATTRIBUTE((unused)), /*!< in: buffer end */
+                             [[maybe_unused]],   /*!< in: buffer end */
                              buf_block_t *block, /*!< in: block or NULL */
                              mtr_t *mtr)         /*!< in: mtr or NULL */
 {
@@ -1684,7 +1685,7 @@ static dtuple_t *ibuf_entry_build(
     case 1:
       /* set the flag for ROW_FORMAT=COMPACT */
       *ti++ = 0;
-      /* fall through */
+      [[fallthrough]];
     case 0:
       /* the old format does not allow delete buffering */
       ut_ad(op == IBUF_OP_INSERT);
@@ -2234,7 +2235,7 @@ static ulint ibuf_get_merge_page_nos_func(
 
 /** Get the matching records for space id.
  @return current rec or NULL */
-static MY_ATTRIBUTE((warn_unused_result)) const rec_t *ibuf_get_user_rec(
+[[nodiscard]] static const rec_t *ibuf_get_user_rec(
     btr_pcur_t *pcur, /*!< in: the current cursor */
     mtr_t *mtr)       /*!< in: mini-transaction */
 {
@@ -2252,14 +2253,14 @@ static MY_ATTRIBUTE((warn_unused_result)) const rec_t *ibuf_get_user_rec(
 /** Reads page numbers for a space id from an ibuf tree.
  @return a lower limit for the combined volume of records which will be
  merged */
-static MY_ATTRIBUTE((warn_unused_result)) ulint
-    ibuf_get_merge_pages(btr_pcur_t *pcur, /*!< in/out: cursor */
-                         space_id_t space, /*!< in: space for which to merge */
-                         ulint limit,      /*!< in: max page numbers to read */
-                         page_no_t *pages, /*!< out: pages read */
-                         space_id_t *spaces, /*!< out: spaces read */
-                         ulint *n_pages,     /*!< out: number of pages read */
-                         mtr_t *mtr)         /*!< in: mini-transaction */
+[[nodiscard]] static ulint ibuf_get_merge_pages(
+    btr_pcur_t *pcur,   /*!< in/out: cursor */
+    space_id_t space,   /*!< in: space for which to merge */
+    ulint limit,        /*!< in: max page numbers to read */
+    page_no_t *pages,   /*!< out: pages read */
+    space_id_t *spaces, /*!< out: spaces read */
+    ulint *n_pages,     /*!< out: number of pages read */
+    mtr_t *mtr)         /*!< in: mini-transaction */
 {
   const rec_t *rec;
   ulint volume = 0;
@@ -2417,8 +2418,7 @@ the issued reads to complete
 @return a lower limit for the combined size in bytes of entries which
 will be merged from ibuf trees to the pages read, 0 if ibuf is
 empty */
-static MY_ATTRIBUTE((warn_unused_result)) ulint
-    ibuf_merge(ulint *n_pages, bool sync) {
+[[nodiscard]] static ulint ibuf_merge(ulint *n_pages, bool sync) {
   *n_pages = 0;
 
   /* We perform a dirty read of ibuf->empty, without latching
@@ -3047,11 +3047,10 @@ or clustered
 @param[in]	page_size	page size
 @param[in,out]	thr		query thread
 @return DB_SUCCESS, DB_STRONG_FAIL or other error */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    ibuf_insert_low(ulint mode, ibuf_op_t op, ibool no_counter,
-                    const dtuple_t *entry, ulint entry_size,
-                    dict_index_t *index, const page_id_t &page_id,
-                    const page_size_t &page_size, que_thr_t *thr) {
+[[nodiscard]] static dberr_t ibuf_insert_low(
+    ulint mode, ibuf_op_t op, ibool no_counter, const dtuple_t *entry,
+    ulint entry_size, dict_index_t *index, const page_id_t &page_id,
+    const page_size_t &page_size, que_thr_t *thr) {
   big_rec_t *dummy_big_rec;
   btr_pcur_t pcur;
   btr_cur_t *cursor;
@@ -3899,7 +3898,8 @@ static ibool ibuf_restore_pos(
 
     rec_print_old(stderr, page_rec_get_next(btr_pcur_get_rec(pcur)));
 
-    ib::fatal(ER_IB_MSG_622) << "Failed to restore ibuf position.";
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_622)
+        << "Failed to restore ibuf position.";
   }
 
   return (FALSE);
@@ -3909,7 +3909,7 @@ static ibool ibuf_restore_pos(
  resort to a pessimistic delete, this function commits mtr and closes
  the cursor.
  @return true if mtr was committed and pcur closed in this operation */
-static MY_ATTRIBUTE((warn_unused_result)) ibool ibuf_delete_rec(
+[[nodiscard]] static ibool ibuf_delete_rec(
     space_id_t space,  /*!< in: space id */
     page_no_t page_no, /*!< in: index page number that the record
                        should belong to */

@@ -128,6 +128,11 @@ TARGET_LINK_LIBRARIES(xtrabackup
   crc
   )
 
+ # We depend on protobuf because of the mysqlx plugin and replication.
+ IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR)
+   ADD_INSTALL_RPATH_FOR_PROTOBUF(xtrabackup)
+ ENDIF()
+
 IF(WITH_VERSION_CHECK)
 ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
                    COMMAND ${XXD_PATH} --include version_check.pl
@@ -161,7 +166,7 @@ MYSQL_ADD_EXECUTABLE(xbstream
   ${BUNDLED_LZ4_PATH}/xxhash.c
   )
 
-ADD_COMPILE_DEFINITIONS(
+MY_ADD_COMPILE_DEFINITIONS(
   ${BUNDLED_LZ4_PATH}/xxhash.c
   COMPILE_DEFINITIONS XXH_NAMESPACE=MY_
   )

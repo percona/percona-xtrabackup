@@ -177,6 +177,12 @@ int group_replication_trans_before_commit(Trans_param *param) {
     assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
 
+  DBUG_EXECUTE_IF("group_replication_pause_on_before_commit_hook", {
+    // DBUG_SYNC are hold by same MDL lock test is using
+    const uint sleep_time_seconds = VIEW_MODIFICATION_TIMEOUT * 1.5;
+    my_sleep(sleep_time_seconds * 1000000);
+  });
+
   /*
     If the originating id belongs to a thread in the plugin, the transaction
     was already certified. Channel operations can deadlock against
@@ -195,12 +201,14 @@ int group_replication_trans_before_commit(Trans_param *param) {
     if (!fail_to_lock) {
       const Group_member_info::Group_member_status member_status =
           local_member_info->get_recovery_status();
-      if (Group_member_info::MEMBER_ONLINE == member_status) {
+      if (Group_member_info::MEMBER_ONLINE == member_status ||
+          Group_member_info::MEMBER_IN_RECOVERY == member_status) {
         applier_module->get_pipeline_stats_member_collector()
             ->decrement_transactions_waiting_apply();
         applier_module->get_pipeline_stats_member_collector()
             ->increment_transactions_applied();
-      } else if (Group_member_info::MEMBER_IN_RECOVERY == member_status) {
+      }
+      if (Group_member_info::MEMBER_IN_RECOVERY == member_status) {
         applier_module->get_pipeline_stats_member_collector()
             ->increment_transactions_applied_during_recovery();
       }

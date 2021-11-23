@@ -384,13 +384,13 @@ static void trx_undo_page_init(
 /** Creates a new undo log segment in file.
  @return DB_SUCCESS if page creation OK possible error codes are:
  DB_TOO_MANY_CONCURRENT_TRXS DB_OUT_OF_FILE_SPACE */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t trx_undo_seg_create(
-    trx_rseg_t *rseg MY_ATTRIBUTE((unused)), /*!< in: rollback segment */
-    trx_rsegf_t *rseg_hdr, /*!< in: rollback segment header, page
-                          x-latched */
-    ulint type,            /*!< in: type of the segment: TRX_UNDO_INSERT or
-                           TRX_UNDO_UPDATE */
-    ulint *id,             /*!< out: slot index within rseg header */
+[[nodiscard]] static dberr_t trx_undo_seg_create(
+    trx_rseg_t *rseg [[maybe_unused]], /*!< in: rollback segment */
+    trx_rsegf_t *rseg_hdr,             /*!< in: rollback segment header,
+                                      page x-latched */
+    ulint type,                        /*!< in: type of the segment:
+                                       TRX_UNDO_INSERT or            TRX_UNDO_UPDATE */
+    ulint *id, /*!< out: slot index within rseg header */
     page_t **undo_page,
     /*!< out: segment header page x-latched, NULL
     if there was an error */
@@ -1481,7 +1481,8 @@ static trx_undo_t *trx_undo_mem_create(trx_rseg_t *rseg, ulint id, ulint type,
 
   ut_a(id < TRX_RSEG_N_SLOTS);
 
-  undo = static_cast<trx_undo_t *>(ut_malloc_nokey(sizeof(*undo)));
+  undo = static_cast<trx_undo_t *>(
+      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*undo)));
 
   if (undo == nullptr) {
     return (nullptr);
@@ -1544,7 +1545,7 @@ void trx_undo_mem_free(trx_undo_t *undo) /*!< in: the undo object to be freed */
 {
   ut_a(undo->id < TRX_RSEG_N_SLOTS);
 
-  ut_free(undo);
+  ut::free(undo);
 }
 
 /** Create a new undo log in the given rollback segment.
@@ -1560,10 +1561,9 @@ void trx_undo_mem_free(trx_undo_t *undo) /*!< in: the undo object to be freed */
 @retval DB_TOO_MANY_CONCURRENT_TRXS
 @retval DB_OUT_OF_FILE_SPACE
 @retval DB_OUT_OF_MEMORY */
-static MY_ATTRIBUTE((warn_unused_result)) dberr_t
-    trx_undo_create(trx_t *trx, trx_rseg_t *rseg, ulint type, trx_id_t trx_id,
-                    const XID *xid, trx_undo_t::Gtid_storage gtid_storage,
-                    trx_undo_t **undo, mtr_t *mtr) {
+[[nodiscard]] static dberr_t trx_undo_create(
+    trx_t *trx, trx_rseg_t *rseg, ulint type, trx_id_t trx_id, const XID *xid,
+    trx_undo_t::Gtid_storage gtid_storage, trx_undo_t **undo, mtr_t *mtr) {
   trx_rsegf_t *rseg_header;
   page_no_t page_no;
   ulint offset;
@@ -1967,6 +1967,7 @@ void trx_undo_insert_cleanup(trx_undo_ptr_t *undo_ptr, bool noredo) {
 
     rseg->unlatch();
 
+    DEBUG_SYNC_C("innodb_commit_wait_for_truncate");
     trx_undo_seg_free(undo, noredo);
 
     rseg->latch();

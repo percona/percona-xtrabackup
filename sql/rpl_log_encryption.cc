@@ -611,7 +611,7 @@ bool Rpl_encryption::rotate_master_key(Key_rotation_step step,
       }
       DBUG_EXECUTE_IF("crash_after_set_old_master_key_seqno_on_keyring",
                       DBUG_SUICIDE(););
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::DETERMINE_NEXT_SEQNO: {
       assert(new_master_key_seqno == 0);
       Keyring_status candidate_key_fetch_status;
@@ -637,7 +637,7 @@ bool Rpl_encryption::rotate_master_key(Key_rotation_step step,
       DBUG_EXECUTE_IF("crash_after_set_new_master_key_seqno_on_keyring",
                       DBUG_SUICIDE(););
     }
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::GENERATE_NEW_MASTER_KEY:
       /*
         Request the keyring to generate a new master key by key id
@@ -647,7 +647,7 @@ bool Rpl_encryption::rotate_master_key(Key_rotation_step step,
       if (generate_master_key_on_keyring(new_master_key_seqno)) goto err1;
       DBUG_EXECUTE_IF("crash_after_generate_new_master_key_on_keyring",
                       DBUG_SUICIDE(););
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::REMOVE_MASTER_KEY_INDEX:
       /*
         We did not store a master key seqno into keyring if
@@ -658,14 +658,14 @@ bool Rpl_encryption::rotate_master_key(Key_rotation_step step,
         DBUG_EXECUTE_IF("crash_after_remove_master_key_seqno_from_keyring",
                         DBUG_SUICIDE(););
       }
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::STORE_MASTER_KEY_INDEX:
       if (set_master_key_seqno_on_keyring(new_master_key_seqno)) goto err1;
       DBUG_EXECUTE_IF("crash_after_set_master_key_seqno_on_keyring",
                       DBUG_SUICIDE(););
       /* The master key is now usable */
       m_master_key_seqno = new_master_key_seqno;
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::ROTATE_LOGS: {
       /* We do not rotate and re-encrypt logs during recovery. */
       if (m_master_key_recovered && current_thd) {
@@ -685,7 +685,7 @@ bool Rpl_encryption::rotate_master_key(Key_rotation_step step,
         if (reencrypt_relay_logs()) return true;
       }
     }
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::PURGE_UNUSED_ENCRYPTION_KEYS: {
       if (m_master_key_recovered && current_thd) {
         /* We do not purge unused encryption keys during recovery. */
@@ -698,7 +698,7 @@ bool Rpl_encryption::rotate_master_key(Key_rotation_step step,
       DBUG_EXECUTE_IF("crash_after_remove_old_master_key_seqno_from_keyring",
                       DBUG_SUICIDE(););
     }
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case Key_rotation_step::REMOVE_KEY_ROTATION_TAG:
       if (remove_new_master_key_seqno_from_keyring()) goto warn2;
       DBUG_EXECUTE_IF("crash_after_remove_new_master_key_seqno_from_keyring",
@@ -1284,8 +1284,8 @@ std::string Rpl_encryption_header_v1::key_id_prefix() {
   return ostr.str();
 }
 
-std::string Rpl_encryption_header_v1::seqno_to_key_id(
-    uint32_t seqno MY_ATTRIBUTE((unused))) {
+std::string Rpl_encryption_header_v1::seqno_to_key_id(uint32_t seqno
+                                                      [[maybe_unused]]) {
   std::ostringstream ostr;
 #ifdef MYSQL_SERVER
   ostr << key_id_prefix() << "_" << seqno;
@@ -1293,8 +1293,8 @@ std::string Rpl_encryption_header_v1::seqno_to_key_id(
   return ostr.str();
 }
 
-std::string Rpl_encryption_header_v1::key_id_with_suffix(
-    const char *suffix MY_ATTRIBUTE((unused))) {
+std::string Rpl_encryption_header_v1::key_id_with_suffix(const char *suffix
+                                                         [[maybe_unused]]) {
   std::ostringstream ostr;
 #ifdef MYSQL_SERVER
   ostr << key_id_prefix() << "_" << suffix;

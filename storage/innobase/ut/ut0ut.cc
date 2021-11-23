@@ -231,7 +231,7 @@ char *ut_format_name(const char *name, char *formatted, ulint formatted_size) {
   switch (formatted_size) {
     case 1:
       formatted[0] = '\0';
-      /* FALL-THROUGH */
+      [[fallthrough]];
     case 0:
       return (formatted);
   }
@@ -330,8 +330,6 @@ The returned string is static and should not be freed or modified.
 @return string, describing the error */
 const char *ut_strerr(dberr_t num) {
   switch (num) {
-    case DB_CACHE_RECORDS:
-      return ("Request caller to copy tuple");
     case DB_SUCCESS:
       return ("Success");
     case DB_SUCCESS_LOCKED_REC:
@@ -525,6 +523,8 @@ const char *ut_strerr(dberr_t num) {
       return ("Too many nested sub-expressions in a full-text search");
     case DB_PAGE_IS_STALE:
       return "Page was discarded, was not written to storage.";
+    case DB_AUTOINC_READ_ERROR:
+      return "Auto-increment read failed";
     case DB_FILE_READ_BEYOND_SIZE:
       return "File read failure because of the read being beyond file size.";
     case DB_ERROR_UNSET:;
@@ -558,19 +558,34 @@ void logger::log_event(std::string msg) {
 }
 logger::~logger() { log_event(m_oss.str()); }
 
+/*
+MSVS complains: Warning C4722: destructor never returns, potential memory leak.
+But, the whole point of using ib::fatal temporary object is to cause an abort.
+*/
+#ifdef _WIN32
+#pragma warning(push)
+#pragma warning(disable : 4722)
+#endif /* _WIN32 */
+
 fatal::~fatal() {
 #if !(defined XTRABACKUP)
   log_event("[FATAL] " + m_oss.str());
 #else
   fprintf(stderr, "%s\n", m_oss.str().c_str());
 #endif
-  ut_error;
+  ut_dbg_assertion_failed("ib::fatal triggered", m_location.filename,
+                          m_location.line);
 }
+// Restore the MSVS checks for Warning C4722, silenced for ib::fatal::~fatal().
+#ifdef _WIN32
+#pragma warning(pop)
+#endif /* _WIN32 */
 
 fatal_or_error::~fatal_or_error() {
   if (m_fatal) {
     log_event("[FATAL] " + m_oss.str());
-    ut_error;
+    ut_dbg_assertion_failed("ib::fatal_or_error triggered", m_location.filename,
+                            m_location.line);
   }
 }
 

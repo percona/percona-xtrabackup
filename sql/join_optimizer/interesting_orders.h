@@ -152,6 +152,8 @@
 // and usually lives on the MEM_ROOT.
 using Ordering = Bounds_checked_array<OrderElement>;
 
+class Window;
+
 struct FunctionalDependency {
   enum {
     // A special “empty” kind of edge in the FSM that signifies
@@ -236,9 +238,10 @@ class LogicalOrderings {
   // active. This enables reducing the ordering more (which can in
   // some cases help with better sortahead or the likes), but is not
   // correct if the ordering wants to be used earlier on, e.g.
-  // in merge join or for semijoin duplicate removal. If it is true,
+  // in merge join or for semijoin duplicate removal. If it is false,
   // then it is also only attempted homogenized onto the given set
-  // of tables (otherwise, it is ignored).
+  // of tables (otherwise, it is ignored, and homogenization is over
+  // all tables).
   //
   // The empty ordering/grouping is always index 0.
   int AddOrdering(THD *thd, Ordering order, bool interesting, bool used_at_end,
@@ -267,6 +270,24 @@ class LogicalOrderings {
 
   // NOTE: Will include the decay (epsilon) FD.
   int num_fds() const { return m_fds.size(); }
+
+  // Set the list of GROUP BY expressions, if any. This is used as the
+  // head of the functional dependencies for all aggregate functions
+  // (which by definition are functionally dependent on the GROUP BY
+  // expressions, unless ROLLUP is active -- see below), and must be
+  // valid (ie., not freed or modified) until Build() has run.
+  //
+  // If none is set, and there are aggregates present in orderings,
+  // implicit aggregation is assumed (ie., all aggregate functions
+  // are constant).
+  void SetHeadForAggregates(Bounds_checked_array<ItemHandle> head) {
+    m_aggregate_head = head;
+  }
+
+  // Set whether ROLLUP is active; if so, we can no longer assume that
+  // aggregate functions are functionally dependent on (nullable)
+  // GROUP BY expressions, as two NULLs may be for different reasons.
+  void SetRollup(bool rollup) { m_rollup = rollup; }
 
   // Builds the actual FSMs; all information about orderings and FDs is locked,
   // optimized and then the state machine is built. After this, you can no
@@ -419,6 +440,15 @@ class LogicalOrderings {
   // and indexed by ItemHandle.
   Mem_root_array<ItemInfo> m_items;
 
+  // Head for all FDs generated for aggregate functions.
+  // See SetHeadForAggregates().
+  Bounds_checked_array<ItemHandle> m_aggregate_head;
+
+  // Whether rollup is active; if so, we need to take care not to create
+  // FDs for aggregates in some cases. See SetHeadForAggregates() and
+  // SetRollup().
+  bool m_rollup = false;
+
   struct NFSMState {
     enum { INTERESTING, ARTIFICIAL, DELETED } type;
     Mem_root_array<int> outgoing_edges;
@@ -527,7 +557,7 @@ class LogicalOrderings {
 
     bool used_at_end;
 
-    // Only used if used_at_end = true (see AddOrdering()).
+    // Only used if used_at_end = false (see AddOrdering()).
     table_map homogenize_tables = 0;
 
     // Which initial state to use for this ordering (in SetOrder()).
@@ -556,6 +586,24 @@ class LogicalOrderings {
   // After PruneFDs() has run, maps from the old indexes to the new indexes.
   Bounds_checked_array<int> m_optimized_fd_mapping;
 
+  // The canonical order for two items in a grouping
+  // (after BuildEquivalenceClasses() has run; enforced by
+  // RecanonicalizeGroupings()). The reason why we sort by
+  // canonical_item first is so that switching out one element
+  // with an equivalent one (ie., applying an EQUIVALENCE
+  // functional dependency) does not change the order of the
+  // elements in the grouing, which could give false negatives
+  // in CouldBecomeInterestingOrdering().
+  inline bool ItemHandleBeforeInGroup(ItemHandle a, ItemHandle b) {
+    if (m_items[a].canonical_item != m_items[b].canonical_item)
+      return m_items[a].canonical_item < m_items[b].canonical_item;
+    return a < b;
+  }
+
+  inline bool ItemBeforeInGroup(const OrderElement &a, const OrderElement &b) {
+    return ItemHandleBeforeInGroup(a.item, b.item);
+  }
+
   // Helper for AddOrdering().
   int AddOrderingInternal(THD *thd, Ordering order, OrderingWithInfo::Type type,
                           bool used_at_end, table_map homogenize_tables);
@@ -574,7 +622,17 @@ class LogicalOrderings {
   void BuildEquivalenceClasses();
 
   // See comment in .cc file.
+  void RecanonicalizeGroupings();
+
+  // See comment in .cc file.
   void AddFDsFromComputedItems(THD *thd);
+
+  // See comment in .cc file.
+  void AddFDsFromAggregateItems(THD *thd);
+
+  // See comment in .cc file.
+  Bounds_checked_array<ItemHandle> CollectHeadForStaticWindowFunction(
+      THD *thd, ItemHandle argument_item, Window *window);
 
   // See comment in .cc file.
   void AddFDsFromConstItems(THD *thd);

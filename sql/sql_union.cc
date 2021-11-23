@@ -124,7 +124,8 @@ bool Query_result_union::send_data(THD *thd,
   // create_ondisk_from_heap will generate error if needed
   if (!table->file->is_ignorable_error(error)) {
     bool is_duplicate;
-    if (create_ondisk_from_heap(thd, table, error, true, &is_duplicate))
+    if (create_ondisk_from_heap(thd, table, error, /*insert_last_record=*/true,
+                                /*ignore_last_dup=*/true, &is_duplicate))
       return true; /* purecov: inspected */
     // Table's engine changed, index is not initialized anymore
     if (table->hash_field) table->file->ha_index_init(0, false);
@@ -656,9 +657,42 @@ bool Query_expression::prepare(THD *thd, Query_result *sel_result,
   return false;
 }
 
+/// Finalizes the initialization of all the full-text functions used in the
+/// given query expression, and recursively in every query expression inner to
+/// the given one. We do this fairly late, since we need to know whether or not
+/// the full-text function is to be used for a full-text index scan, and whether
+/// or not that scan is sorted. When the iterators have been created, we know
+/// that the final decision has been made, so we do it right after the iterators
+/// have been created.
+static bool finalize_full_text_functions(THD *thd,
+                                         Query_expression *query_expression) {
+  assert(thd->lex->using_hypergraph_optimizer);
+  for (Query_expression *qe = query_expression; qe != nullptr;
+       qe = qe->next_query_expression()) {
+    for (Query_block *qb = qe->first_query_block(); qb != nullptr;
+         qb = qb->next_query_block()) {
+      if (qb->has_ft_funcs()) {
+        if (init_ftfuncs(thd, qb)) {
+          return true;
+        }
+      }
+      if (finalize_full_text_functions(thd,
+                                       qb->first_inner_query_expression())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
-                                bool create_iterators) {
+                                bool create_iterators,
+                                bool finalize_access_paths) {
   DBUG_TRACE;
+
+  if (!finalize_access_paths) {
+    assert(!create_iterators);
+  }
 
   assert(is_prepared() && !is_optimized());
 
@@ -669,13 +703,14 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
 
   if (query_result() != nullptr) query_result()->estimated_rowcount = 0;
 
-  for (Query_block *sl = first_query_block(); sl; sl = sl->next_query_block()) {
-    thd->lex->set_current_query_block(sl);
+  for (Query_block *query_block = first_query_block(); query_block != nullptr;
+       query_block = query_block->next_query_block()) {
+    thd->lex->set_current_query_block(query_block);
 
     // LIMIT is required for optimization
-    if (set_limit(thd, sl)) return true; /* purecov: inspected */
+    if (set_limit(thd, query_block)) return true; /* purecov: inspected */
 
-    if (sl->optimize(thd)) return true;
+    if (query_block->optimize(thd, finalize_access_paths)) return true;
 
     /*
       Accumulate estimated number of rows.
@@ -684,11 +719,11 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
       2. If GROUP BY clause is optimized away because it was a constant then
          query produces at most one row.
      */
-    estimated_rowcount +=
-        sl->is_implicitly_grouped() || sl->join->group_optimized_away
-            ? 1
-            : sl->join->best_rowcount;
-    estimated_cost += sl->join->best_read;
+    estimated_rowcount += query_block->is_implicitly_grouped() ||
+                                  query_block->join->group_optimized_away
+                              ? 1
+                              : query_block->join->best_rowcount;
+    estimated_cost += query_block->join->best_read;
 
     // TABLE_LIST::fetch_number_of_rows() expects to get the number of rows
     // from all earlier query blocks from the query result, so we need to update
@@ -741,7 +776,8 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
            fake_query_block->where_cond() == nullptr &&
            fake_query_block->having_cond() == nullptr);
 
-    if (fake_query_block->optimize(thd)) return true;
+    if (fake_query_block->optimize(thd, /*finalize_access_paths=*/true))
+      return true;
   } else if (saved_fake_query_block != nullptr) {
     // When GetTableIterator() sets up direct materialization, it looks for
     // the value of global_parameters()'s LIMIT in unit->select_limit_cnt;
@@ -808,6 +844,16 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
     }
     m_root_iterator = CreateIteratorFromAccessPath(
         thd, m_root_access_path, join, /*eligible_for_batch_mode=*/true);
+    if (m_root_iterator == nullptr) {
+      return true;
+    }
+
+    if (thd->lex->using_hypergraph_optimizer) {
+      if (finalize_full_text_functions(thd, this)) {
+        return true;
+      }
+    }
+
     if (false) {
       // This can be useful during debugging.
       bool is_root_of_join = (join != nullptr);
@@ -820,13 +866,35 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
   return false;
 }
 
+bool Query_expression::finalize(THD *thd) {
+  for (Query_block *query_block = first_query_block(); query_block != nullptr;
+       query_block = query_block->next_query_block()) {
+    if (query_block->join != nullptr && query_block->join->needs_finalize) {
+      if (FinalizePlanForQueryBlock(thd, query_block,
+                                    query_block->join->root_access_path())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool Query_expression::force_create_iterators(THD *thd) {
   if (m_root_iterator == nullptr) {
     JOIN *join = is_union() ? nullptr : first_query_block()->join;
     m_root_iterator = CreateIteratorFromAccessPath(
         thd, m_root_access_path, join, /*eligible_for_batch_mode=*/true);
   }
-  return m_root_iterator == nullptr;
+
+  if (m_root_iterator == nullptr) return true;
+
+  if (thd->lex->using_hypergraph_optimizer) {
+    if (finalize_full_text_functions(thd, this)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 Mem_root_array<MaterializePathParameters::QueryBlock>
@@ -948,7 +1016,8 @@ void Query_expression::create_access_paths(THD *thd) {
         /*ref_slice=*/-1,
         /*rematerialize=*/true, push_limit_down ? limit : HA_POS_ERROR,
         /*reject_multiple_rows=*/false);
-    EstimateMaterializeCost(param.path);
+    EstimateMaterializeCost(thd, param.path);
+    param.path = MoveCompositeIteratorsFromTablePath(param.path);
     param.join = nullptr;
     union_all_sub_paths->push_back(param);
   }

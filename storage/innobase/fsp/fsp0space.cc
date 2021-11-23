@@ -68,11 +68,11 @@ void Tablespace::shutdown() {
   m_space_id = SPACE_UNKNOWN;
 
   if (m_name != NULL) {
-    ut_free(m_name);
+    ut::free(m_name);
     m_name = NULL;
   }
   if (m_path != NULL) {
-    ut_free(m_path);
+    ut::free(m_path);
     m_path = NULL;
   }
 }

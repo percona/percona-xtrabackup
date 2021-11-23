@@ -36,13 +36,14 @@
 #include <algorithm>
 #include <cmath>   // isnan
 #include <memory>  // unique_ptr
+#include <optional>
 
 #include "decimal.h"
 #include "m_string.h"
 #include "my_alloc.h"
-#include "my_bit.h"
 #include "my_byteorder.h"
 #include "my_compare.h"
+#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_double2ulonglong.h"
 #include "my_sqlcommand.h"
@@ -79,8 +80,10 @@
 #include "sql/sql_time.h"       // str_to_datetime_with_warn
 #include "sql/sql_tmp_table.h"  // create_tmp_field
 #include "sql/srs_fetcher.h"
+#include "sql/stateless_allocator.h"
 #include "sql/strfunc.h"  // find_type2
 #include "sql/system_variables.h"
+#include "sql/time_zone_common.h"
 #include "sql/transaction_info.h"
 #include "sql/tztime.h"      // Time_zone
 #include "template_utils.h"  // pointer_cast
@@ -1733,7 +1736,7 @@ type_conversion_status Field::check_constraints(int mysql_errno) {
   switch (m_check_for_truncated_fields_saved) {
     case CHECK_FIELD_WARN:
       set_warning(Sql_condition::SL_WARNING, mysql_errno, 1);
-      /* fall through */
+      [[fallthrough]];
     case CHECK_FIELD_IGNORE:
       return TYPE_OK;
     case CHECK_FIELD_ERROR_FOR_NULL:
@@ -2889,7 +2892,8 @@ type_conversion_status Field_new_decimal::store(
         thd, Sql_condition::SL_WARNING, ER_TRUNCATED_WRONG_VALUE_FOR_FIELD,
         ER_THD(thd, ER_TRUNCATED_WRONG_VALUE_FOR_FIELD), "decimal",
         errmsg.ptr(), field_name, da->current_row_for_condition());
-    return decimal_err_to_type_conv_status(err);
+    return err != E_DEC_BAD_NUM ? decimal_err_to_type_conv_status(err)
+                                : store_value(&decimal_value);
   }
 
   if (err != 0) {
@@ -2903,7 +2907,9 @@ type_conversion_status Field_new_decimal::store(
 #endif
 
   type_conversion_status store_stat = store_value(&decimal_value);
-  return err != 0 ? decimal_err_to_type_conv_status(err) : store_stat;
+  return (err != 0 && err != E_DEC_BAD_NUM)
+             ? decimal_err_to_type_conv_status(err)
+             : store_stat;
 }
 
 type_conversion_status store_internal_with_error_check(Field_new_decimal *field,
@@ -3284,7 +3290,7 @@ int Field_tiny::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_tiny::make_sort_key(uchar *to,
-                                 size_t length MY_ATTRIBUTE((unused))) const {
+                                 size_t length [[maybe_unused]]) const {
   assert(length == 1);
   if (is_unsigned())
     *to = *ptr;
@@ -3463,7 +3469,7 @@ int Field_short::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_short::make_sort_key(uchar *to,
-                                  size_t length MY_ATTRIBUTE((unused))) const {
+                                  size_t length [[maybe_unused]]) const {
   assert(length == 2);
 #ifdef WORDS_BIGENDIAN
   if (!table->s->db_low_byte_first) {
@@ -3622,7 +3628,7 @@ int Field_medium::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_medium::make_sort_key(uchar *to,
-                                   size_t length MY_ATTRIBUTE((unused))) const {
+                                   size_t length [[maybe_unused]]) const {
   assert(length == 3);
   if (is_unsigned())
     to[0] = ptr[2];
@@ -3804,7 +3810,7 @@ int Field_long::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_long::make_sort_key(uchar *to,
-                                 size_t length MY_ATTRIBUTE((unused))) const {
+                                 size_t length [[maybe_unused]]) const {
   assert(length == 4);
 #ifdef WORDS_BIGENDIAN
   if (!table->s->db_low_byte_first) {
@@ -4139,7 +4145,7 @@ int Field_float::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_float::make_sort_key(uchar *to,
-                                  size_t length MY_ATTRIBUTE((unused))) const {
+                                  size_t length [[maybe_unused]]) const {
   assert(length == sizeof(float));
   float nr;
   if (table->s->db_low_byte_first)
@@ -5082,8 +5088,8 @@ int Field_timestamp::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
   return ((uint32)a < (uint32)b) ? -1 : ((uint32)a > (uint32)b) ? 1 : 0;
 }
 
-size_t Field_timestamp::make_sort_key(
-    uchar *to, size_t length MY_ATTRIBUTE((unused))) const {
+size_t Field_timestamp::make_sort_key(uchar *to,
+                                      size_t length [[maybe_unused]]) const {
   assert(length == 4);
 #ifdef WORDS_BIGENDIAN
   if (!table || !table->s->db_low_byte_first) {
@@ -5392,7 +5398,7 @@ int Field_time::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_time::make_sort_key(uchar *to,
-                                 size_t length MY_ATTRIBUTE((unused))) const {
+                                 size_t length [[maybe_unused]]) const {
   assert(length == 3);
   to[0] = (uchar)(ptr[2] ^ 128);
   to[1] = ptr[1];
@@ -6332,7 +6338,7 @@ size_t Field_string::make_sort_key(uchar *to, size_t length) const {
   }
 
   assert(char_length_cache == char_length());
-  size_t tmp MY_ATTRIBUTE((unused)) = field_charset->coll->strnxfrm(
+  size_t tmp [[maybe_unused]] = field_charset->coll->strnxfrm(
       field_charset, to, length, char_length_cache, ptr, input_length,
       MY_STRXFRM_PAD_TO_MAXLEN);
   assert(tmp == length);
@@ -7494,8 +7500,9 @@ type_conversion_status Field_geom::store_internal(const char *from,
     gis::srid_t geometry_srid = uint4korr(from);
     if (geometry_srid != get_srid().value()) {
       Field_blob::reset();
-      my_error(ER_WRONG_SRID_FOR_COLUMN, MYF(0), field_name, geometry_srid,
-               get_srid().value());
+      my_error(ER_WRONG_SRID_FOR_COLUMN, MYF(0), field_name,
+               static_cast<unsigned long>(geometry_srid),
+               static_cast<unsigned long>(get_srid().value()));
       return TYPE_ERR_BAD_VALUE;
     }
   }
@@ -9235,7 +9242,7 @@ Field *make_field(MEM_ROOT *mem_root, TABLE_SHARE *share, uchar *ptr,
                   TYPELIB *interval, const char *field_name, bool is_nullable,
                   bool is_zerofill, bool is_unsigned, uint decimals,
                   bool treat_bit_as_char, uint pack_length_override,
-                  Nullable<gis::srid_t> srid, bool is_array) {
+                  std::optional<gis::srid_t> srid, bool is_array) {
   uchar *bit_ptr = nullptr;
   uchar bit_offset = 0;
   assert(mem_root);
@@ -10115,8 +10122,8 @@ static inline void handle_int16(uchar *to, const uchar *from, size_t max_length,
 
 // Byteswaps and/or truncates int24 values; used for both pack() and unpack().
 static inline void handle_int24(uchar *to, const uchar *from, size_t max_length,
-                                bool low_byte_first_from MY_ATTRIBUTE((unused)),
-                                bool low_byte_first_to MY_ATTRIBUTE((unused))) {
+                                bool low_byte_first_from [[maybe_unused]],
+                                bool low_byte_first_to [[maybe_unused]]) {
   int32 val;
   uchar buf[3];
 #ifdef WORDS_BIGENDIAN
@@ -10169,8 +10176,8 @@ static inline void handle_int32(uchar *to, const uchar *from, size_t max_length,
 
 // Byteswaps and/or truncates int64 values; used for both pack() and unpack().
 static inline void handle_int64(uchar *to, const uchar *from, size_t max_length,
-                                bool low_byte_first_from MY_ATTRIBUTE((unused)),
-                                bool low_byte_first_to MY_ATTRIBUTE((unused))) {
+                                bool low_byte_first_from [[maybe_unused]],
+                                bool low_byte_first_to [[maybe_unused]]) {
   int64 val;
   uchar buf[sizeof(val)];
 #ifdef WORDS_BIGENDIAN
@@ -10347,7 +10354,7 @@ Create_field *generate_create_field(THD *thd, Item *item, TABLE *tmp_table) {
     Field *from_field, *default_field;
     tmp_table_field = create_tmp_field(thd, tmp_table, item, item->type(),
                                        nullptr, &from_field, &default_field,
-                                       false, false, false, false, false);
+                                       false, false, false, false);
   }
 
   if (!tmp_table_field) {

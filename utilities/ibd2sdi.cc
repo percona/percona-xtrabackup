@@ -313,9 +313,10 @@ static void usage() {
 }
 
 /** Parse the options passed to tool. */
-extern "C" bool ibd2sdi_get_one_option(
-    int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
-    char *argument MY_ATTRIBUTE((unused))) {
+extern "C" bool ibd2sdi_get_one_option(int optid,
+                                       const struct my_option *opt
+                                       [[maybe_unused]],
+                                       char *argument [[maybe_unused]]) {
   switch (optid) {
 #ifndef NDEBUG
     case '#':
@@ -718,8 +719,7 @@ static size_t fetch_page(ib_tablespace *ts, page_no_t page_num,
   }
 
   if (page_size.is_compressed() && fil_page_get_type(buf) == FIL_PAGE_SDI) {
-    byte *uncomp_buf =
-        static_cast<byte *>(ut_malloc_nokey(2 * page_size.logical()));
+    byte *uncomp_buf = static_cast<byte *>(ut::malloc(2 * page_size.logical()));
 
     byte *uncomp_page =
         static_cast<byte *>(ut_align(uncomp_buf, page_size.logical()));
@@ -753,7 +753,7 @@ static size_t fetch_page(ib_tablespace *ts, page_no_t page_num,
       memcpy(buf, uncomp_page, page_size.logical());
     }
 
-    ut_free(uncomp_buf);
+    ut::free(uncomp_buf);
   }
 
   return n_bytes;
@@ -1688,7 +1688,7 @@ uint64_t ibd2sdi::copy_compressed_blob(ib_tablespace *ts,
         if (next_page_num == FIL_NULL) {
           goto func_exit;
         }
-      /* fall through */
+        [[fallthrough]];
       default:
       inflate_error : {
         page_id_t page_id(space_id, page_num);

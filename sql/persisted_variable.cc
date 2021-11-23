@@ -129,8 +129,8 @@ static PSI_memory_info all_options[] = {
 
 #ifdef HAVE_PSI_INTERFACE
 void my_init_persist_psi_keys(void) {
-  const char *category MY_ATTRIBUTE((unused)) = "persist";
-  int count MY_ATTRIBUTE((unused));
+  const char *category [[maybe_unused]] = "persist";
+  int count [[maybe_unused]];
 
 #ifdef HAVE_PSI_FILE_INTERFACE
   count = sizeof(all_persist_files) / sizeof(all_persist_files[0]);
@@ -207,7 +207,7 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
 #endif
 
   int temp_argc = *argc;
-  MEM_ROOT alloc{PSI_NOT_INSTRUMENTED, 512};
+  MEM_ROOT alloc{key_memory_persisted_variables, 512};
   char *ptr, **res, *datadir = nullptr;
   char dir[FN_REFLEN] = {0}, local_datadir_buffer[FN_REFLEN] = {0};
   const char *dirs = NULL;
@@ -222,7 +222,6 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
        0, nullptr, 0, nullptr}};
 
   /* create temporary args list and pass it to handle_options */
-  init_alloc_root(key_memory_persisted_variables, &alloc, 512, 0);
   if (!(ptr =
             (char *)alloc.Alloc(sizeof(alloc) + (*argc + 1) * sizeof(char *))))
     return 1;
@@ -233,11 +232,11 @@ int Persisted_variables_cache::init(int *argc, char ***argv) {
   my_getopt_skip_unknown = true;
   if (my_handle_options(&temp_argc, &res, persist_options, nullptr, nullptr,
                         true, false)) {
-    free_root(&alloc, MYF(0));
+    alloc.Clear();
     return 1;
   }
   my_getopt_skip_unknown = false;
-  free_root(&alloc, MYF(0));
+  alloc.Clear();
 
   persisted_globals_load = persist_load;
 
@@ -449,10 +448,9 @@ String *Persisted_variables_cache::get_variable_value(THD *thd,
   mysql_mutex_lock(&LOCK_global_system_variables);
   value = get_one_variable(thd, show, OPT_GLOBAL, show->type, nullptr, &fromcs,
                            val_buf, &val_length, is_null);
-  mysql_mutex_unlock(&LOCK_global_system_variables);
-
   /* convert the retrieved value to utf8mb4 */
   str->copy(value, val_length, fromcs, tocs, &dummy_err);
+  mysql_mutex_unlock(&LOCK_global_system_variables);
   return str;
 }
 
@@ -680,12 +678,14 @@ bool Persisted_variables_cache::load_persist_file() {
    @param [in] plugin_options      Flag which tells what options are being set.
                                    If set to false non plugin variables are set
                                    else plugin variables are set
-
+   @param [in] lock_vars           Lock @ref LOCK_system_variables_hash and
+  release if if true.
   @return Error state
     @retval true An error occurred
     @retval false Success
 */
-bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
+bool Persisted_variables_cache::set_persist_options(bool plugin_options,
+                                                    bool lock_vars) {
   THD *thd;
   LEX lex_tmp, *sav_lex = nullptr;
   List<set_var_base> tmp_var_list;
@@ -743,6 +743,7 @@ bool Persisted_variables_cache::set_persist_options(bool plugin_options) {
   */
   lock();
   assert_lock_owner();
+  if (lock_vars) mysql_rwlock_rdlock(&LOCK_system_variables_hash);
   /*
     Based on plugin_options, we decide on what options to be set. If
     plugin_options is false we set all non plugin variables and then
@@ -914,6 +915,7 @@ err:
   } else {
     thd->lex = sav_lex;
   }
+  if (lock_vars) mysql_rwlock_unlock(&LOCK_system_variables_hash);
   unlock();
   return result;
 }
@@ -1083,6 +1085,7 @@ void Persisted_variables_cache::load_aliases() {
         }
       };
   lock();
+  mysql_rwlock_rdlock(&LOCK_system_variables_hash);
 
   for (auto iter : var_set) {
     insert_alias(
@@ -1104,6 +1107,7 @@ void Persisted_variables_cache::load_aliases() {
         [&](st_persist_var &v) { m_persist_ro_variables[v.key] = v; },
         pair.second);
   }
+  mysql_rwlock_unlock(&LOCK_system_variables_hash);
   unlock();
 
   // Generate deprecation warnings
@@ -1206,11 +1210,9 @@ int Persisted_variables_cache::read_persist_file() {
 bool Persisted_variables_cache::append_read_only_variables(
     int *argc, char ***argv, bool plugin_options) {
   Prealloced_array<char *, 100> my_args(key_memory_persisted_variables);
-  MEM_ROOT alloc;
+  MEM_ROOT alloc(key_memory_persisted_variables, 512);
 
   if (*argc < 2 || no_defaults || !persisted_globals_load) return false;
-
-  init_alloc_root(key_memory_persisted_variables, &alloc, 512, 0);
 
   /* create a set of values sorted by timestamp */
   std::multiset<st_persist_var, sort_tv_by_timestamp> sorted_vars;
@@ -1340,8 +1342,14 @@ bool Persisted_variables_cache::reset_persisted_variables(THD *thd,
     if (erase_variable(name)) goto end;
 
     // If the variable has an alias, erase that too.
-    const char *alias = get_variable_alias(name);
-    if (alias && erase_variable(alias)) goto end;
+    std::string alias_name;
+    mysql_rwlock_rdlock(&LOCK_system_variables_hash);
+    {
+      const char *alias = get_variable_alias(name);
+      if (alias) alias_name.assign(alias);
+    }
+    mysql_rwlock_unlock(&LOCK_system_variables_hash);
+    if (!alias_name.empty() && erase_variable(alias_name.c_str())) goto end;
 
     if (!found) {
       /* if not present and IF EXISTS is specified, report warning */
@@ -1385,6 +1393,6 @@ map<string, st_persist_var>
 void Persisted_variables_cache::cleanup() {
   mysql_mutex_destroy(&m_LOCK_persist_variables);
   mysql_mutex_destroy(&m_LOCK_persist_file);
-  free_root(&ro_persisted_argv_alloc, MYF(0));
-  free_root(&ro_persisted_plugin_argv_alloc, MYF(0));
+  ro_persisted_argv_alloc.Clear();
+  ro_persisted_plugin_argv_alloc.Clear();
 }

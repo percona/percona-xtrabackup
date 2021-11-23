@@ -781,8 +781,7 @@ log_make_latest_checkpoint(). */
 PSI_stage_info srv_stage_alter_table_flush = {
     0, "alter table (flush)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
-/** Performance schema stage event for monitoring ALTER TABLE progress
-row_merge_insert_index_tuples(). */
+/** Performance schema stage event for monitoring ALTER TABLE progress. */
 PSI_stage_info srv_stage_alter_table_insert = {
     0, "alter table (insert)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
@@ -798,13 +797,11 @@ PSI_stage_info srv_stage_alter_table_log_table = {
     0, "alter table (log apply table)", PSI_FLAG_STAGE_PROGRESS,
     PSI_DOCUMENT_ME};
 
-/** Performance schema stage event for monitoring ALTER TABLE progress
-row_merge_sort(). */
+/** Performance schema stage event for monitoring ALTER TABLE progress. */
 PSI_stage_info srv_stage_alter_table_merge_sort = {
     0, "alter table (merge sort)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
-/** Performance schema stage event for monitoring ALTER TABLE progress
-row_merge_read_clustered_index(). */
+/** Performance schema stage event for monitoring ALTER TABLE progress. */
 PSI_stage_info srv_stage_alter_table_read_pk_internal_sort = {
     0, "alter table (read PK and internal sort)", PSI_FLAG_STAGE_PROGRESS,
     PSI_DOCUMENT_ME};
@@ -1089,8 +1086,8 @@ static void srv_init(void) {
 
   srv_threads.m_purge_workers_n = srv_n_purge_threads;
 
-  srv_threads.m_purge_workers =
-      UT_NEW_ARRAY_NOKEY(IB_thread, srv_threads.m_purge_workers_n);
+  srv_threads.m_purge_workers = ut::new_arr_withkey<IB_thread>(
+      UT_NEW_THIS_FILE_PSI_KEY, ut::Count{srv_threads.m_purge_workers_n});
 
   if (!srv_read_only_mode) {
     /* Number of purge threads + master thread */
@@ -1103,10 +1100,12 @@ static void srv_init(void) {
 
   srv_threads.m_page_cleaner_workers_n = srv_n_page_cleaners;
 
-  srv_threads.m_page_cleaner_workers =
-      UT_NEW_ARRAY_NOKEY(IB_thread, srv_threads.m_page_cleaner_workers_n);
+  srv_threads.m_page_cleaner_workers = ut::new_arr_withkey<IB_thread>(
+      UT_NEW_THIS_FILE_PSI_KEY,
+      ut::Count{srv_threads.m_page_cleaner_workers_n});
 
-  srv_sys = static_cast<srv_sys_t *>(ut_zalloc_nokey(srv_sys_sz));
+  srv_sys = static_cast<srv_sys_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, srv_sys_sz));
 
   srv_sys->n_sys_threads = n_sys_threads;
 
@@ -1199,7 +1198,7 @@ void srv_free(void) {
 
   trx_i_s_cache_free(trx_i_s_cache);
 
-  ut_free(srv_sys);
+  ut::free(srv_sys);
 
   srv_sys = nullptr;
 
@@ -1207,7 +1206,7 @@ void srv_free(void) {
     for (size_t i = 0; i < srv_threads.m_page_cleaner_workers_n; ++i) {
       srv_threads.m_page_cleaner_workers[i] = {};
     }
-    UT_DELETE_ARRAY(srv_threads.m_page_cleaner_workers);
+    ut::delete_arr(srv_threads.m_page_cleaner_workers);
     srv_threads.m_page_cleaner_workers = nullptr;
   }
 
@@ -1215,7 +1214,7 @@ void srv_free(void) {
     for (size_t i = 0; i < srv_threads.m_purge_workers_n; ++i) {
       srv_threads.m_purge_workers[i] = {};
     }
-    UT_DELETE_ARRAY(srv_threads.m_purge_workers);
+    ut::delete_arr(srv_threads.m_purge_workers);
     srv_threads.m_purge_workers = nullptr;
   }
 
@@ -1841,7 +1840,8 @@ loop:
       waiter == old_waiter) {
     fatal_cnt++;
     if (fatal_cnt > 10) {
-      ib::fatal(ER_IB_MSG_1047, ulonglong{srv_fatal_semaphore_wait_threshold});
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_1047,
+                ulonglong{srv_fatal_semaphore_wait_threshold});
     }
   } else {
     fatal_cnt = 0;
@@ -2051,8 +2051,7 @@ void srv_master_thread_disabled_debug_update(THD *thd, SYS_VAR *var,
 @param[in]	a	later timeval
 @param[in]	b	earlier timeval
 @return a - b; number of microseconds between b and a */
-MY_ATTRIBUTE((unused))
-static int64_t timeval_diff_us(timeval a, timeval b) {
+[[maybe_unused]] static int64_t timeval_diff_us(timeval a, timeval b) {
   return ((a.tv_sec - b.tv_sec) * 1000000LL + a.tv_usec - b.tv_usec);
 }
 
@@ -2483,6 +2482,12 @@ bool srv_enable_redo_encryption(bool is_boot) {
     return false;
   }
 
+  Clone_notify notifier(Clone_notify::Type::SPACE_ALTER_ENCRYPT,
+                        dict_sys_t::s_log_space_first_id, false);
+  if (notifier.failed()) {
+    return true;
+  }
+
   dberr_t err;
   byte key[Encryption::KEY_LEN];
   byte iv[Encryption::KEY_LEN];
@@ -2554,6 +2559,7 @@ bool set_undo_tablespace_encryption(space_id_t space_id, mtr_t *mtr,
 bool srv_enable_undo_encryption(bool is_boot) {
   /* Make sure undo::ddl_mutex is owned. */
   ut_ad(mutex_own(&undo::ddl_mutex));
+  bool ret_val = false;
 
   /* Traverse over all UNDO tablespaces and mark them encrypted. */
   undo::spaces->s_lock();
@@ -2572,6 +2578,13 @@ bool srv_enable_undo_encryption(bool is_boot) {
       continue;
     }
 
+    Clone_notify notifier(Clone_notify::Type::SPACE_ALTER_ENCRYPT, space->id,
+                          false);
+    if (notifier.failed()) {
+      ret_val = true;
+      break;
+    }
+
     undo_space->rsegs()->s_lock();
 
     /* Make sure that there is enough reusable space in the redo log files. */
@@ -2584,8 +2597,8 @@ bool srv_enable_undo_encryption(bool is_boot) {
     if (set_undo_tablespace_encryption(undo_space->id(), &mtr, is_boot)) {
       mtr_commit(&mtr);
       undo_space->rsegs()->s_unlock();
-      undo::spaces->s_unlock();
-      return true;
+      ret_val = true;
+      break;
     }
 
     mtr_commit(&mtr);
@@ -2594,9 +2607,9 @@ bool srv_enable_undo_encryption(bool is_boot) {
     /* Announce encryption is successfully enabled for the undo tablespace. */
     ib::info(ER_IB_MSG_1055, undo_space->space_name());
   }
-  undo::spaces->s_unlock();
 
-  return false;
+  undo::spaces->s_unlock();
+  return ret_val;
 }
 
 /** Puts master thread to sleep. At this point we are using polling to
@@ -2662,15 +2675,6 @@ static void srv_master_main_loop(srv_slot_t *slot) {
       srv_master_do_idle_tasks();
     }
 
-    /* Let clone wait when redo/undo log encryption is set. If clone is already
-    in progress we skip the check and come back later. */
-    if (!clone_mark_wait()) {
-      continue;
-    }
-
-    /* Allow any blocking clone to progress. */
-    clone_mark_free();
-
     /* Purge any deleted tablespace pages. */
     fil_purge();
   }
@@ -2710,7 +2714,7 @@ void srv_master_thread() {
 
   srv_slot_t *slot;
 
-  THD *thd = create_thd(false, true, true, 0);
+  THD *thd = create_internal_thd();
 
   ut_ad(!srv_read_only_mode);
 
@@ -2736,7 +2740,7 @@ void srv_master_thread() {
   srv_master_shutdown_loop();
 
   srv_main_thread_op_info = "exiting";
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 }
 
 /**
@@ -2810,11 +2814,7 @@ void srv_worker_thread() {
   ut_ad(!srv_read_only_mode);
   ut_a(srv_force_recovery < SRV_FORCE_NO_BACKGROUND);
 
-#ifdef UNIV_PFS_THREAD
-  THD *thd = create_thd(false, true, true, srv_worker_thread_key.m_value);
-#else
-  THD *thd = create_thd(false, true, true, 0);
-#endif
+  THD *thd = create_internal_thd();
 
   rw_lock_x_lock(&purge_sys->latch);
 
@@ -2862,7 +2862,7 @@ void srv_worker_thread() {
 
   rw_lock_x_unlock(&purge_sys->latch);
 
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 }
 
 /** Do the actual purge operation.
@@ -3058,11 +3058,7 @@ static void srv_purge_coordinator_suspend(
 void srv_purge_coordinator_thread() {
   srv_slot_t *slot;
 
-#ifdef UNIV_PFS_THREAD
-  THD *thd = create_thd(false, true, true, srv_purge_thread_key.m_value);
-#else
-  THD *thd = create_thd(false, true, true, 0);
-#endif
+  THD *thd = create_internal_thd();
 
   rw_lock_x_lock(&purge_sys->latch);
 
@@ -3173,7 +3169,7 @@ void srv_purge_coordinator_thread() {
   For explanation look at comment for similar usage above. */
   srv_thread_delay_cleanup_if_needed(false);
 
-  destroy_thd(thd);
+  destroy_internal_thd(thd);
 }
 
 /** Enqueues a task to server task queue and releases a worker thread, if there

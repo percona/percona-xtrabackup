@@ -29,6 +29,11 @@ ADD_DEFINITIONS(-DLOG_SUBSYSTEM_TAG="InnoDB")
 # Expand PSI_XXX_CALL into direct calls to the performance_schema.
 ADD_DEFINITIONS(-DPFS_DIRECT_CALL)
 
+# Treat warnings as errors on MSVC for InnoDB
+IF(MSVC AND NOT WIN32_CLANG)
+  ADD_COMPILE_OPTIONS("/WX")
+ENDIF()
+
 # TODO: Fix up all non-canonical include paths and remove this.
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/sql
@@ -52,7 +57,8 @@ SET(INNOBASE_ZIP_DECOMPRESS_SOURCES
   page/zipdecompress.cc
   rem/rec.cc
   ut/crc32.cc
-  ut/ut.cc)
+  ut/ut.cc
+  ut/ut0new.cc)
 
 SET(INNOBASE_SOURCES
   api/api0api.cc
@@ -65,13 +71,13 @@ SET(INNOBASE_SOURCES
   btr/btr0cur.cc
   btr/btr0pcur.cc
   btr/btr0sea.cc
-  btr/btr0bulk.cc
   buf/buf0block_hint.cc
   buf/buf0buddy.cc
   buf/buf0buf.cc
   buf/buf0dblwr.cc
   buf/buf0dump.cc
   buf/buf0flu.cc
+  btr/btr0load.cc
   buf/buf0lru.cc
   buf/buf0rea.cc
   clone/clone0api.cc
@@ -93,6 +99,16 @@ SET(INNOBASE_SOURCES
   dict/dict0stats.cc
   dict/dict0stats_bg.cc
   dict/dict0upgrade.cc
+  ddl/ddl0buffer.cc
+  ddl/ddl0builder.cc
+  ddl/ddl0ctx.cc
+  ddl/ddl0ddl.cc
+  ddl/ddl0fts.cc
+  ddl/ddl0file-reader.cc
+  ddl/ddl0loader.cc
+  ddl/ddl0merge.cc
+  ddl/ddl0rtree.cc
+  ddl/ddl0par-scan.cc
   eval/eval0eval.cc
   eval/eval0proc.cc
   fil/fil0fil.cc
@@ -173,10 +189,8 @@ SET(INNOBASE_SOURCES
   rem/rem0cmp.cc
   rem/rem0rec.cc
   row/row0ext.cc
-  row/row0ftsort.cc
   row/row0import.cc
   row/row0ins.cc
-  row/row0merge.cc
   row/row0mysql.cc
   row/row0log.cc
   row/row0pread.cc
@@ -244,7 +258,7 @@ ENDIF()
 
 ADD_LIBRARY(innodb_zipdecompress STATIC ${INNOBASE_ZIP_DECOMPRESS_SOURCES})
 TARGET_COMPILE_DEFINITIONS(
-  innodb_zipdecompress PRIVATE UNIV_LIBRARY UNIV_NO_ERR_MSGS)
+    innodb_zipdecompress PRIVATE DISABLE_PSI_MEMORY UNIV_LIBRARY UNIV_NO_ERR_MSGS)
 ADD_DEPENDENCIES(innodb_zipdecompress GenError)
 
 MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-profile" HAS_MISSING_PROFILE)
@@ -264,17 +278,6 @@ MYSQL_ADD_PLUGIN(innobase
   MODULE_OUTPUT_NAME ha_innodb
   LINK_LIBRARIES sql_dd sql_gis ${ZLIB_LIBRARY} ${LZ4_LIBRARY} ${NUMA_LIBRARY})
 
-
-# Avoid generating Hardware Capabilities due to crc32 instructions
-IF(SOLARIS_INTEL)
-  MY_CHECK_CXX_COMPILER_FLAG("-Wa,-nH" HAVE_WA_NH)
-  IF(HAVE_WA_NH)
-    ADD_COMPILE_FLAGS(
-      ut/crc32.cc
-      COMPILE_FLAGS "-Wa,-nH"
-    )
-  ENDIF()
-ENDIF()
 
 # On linux: /usr/include/stdio.h:#define BUFSIZ 8192
 # On Solaris: /usr/include/iso/stdio_iso.h:#define    BUFSIZ  1024

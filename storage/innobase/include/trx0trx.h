@@ -61,7 +61,7 @@ struct mtr_t;
 class ReadView;
 
 // Forward declaration
-class FlushObserver;
+class Flush_observer;
 
 /** Dummy session used currently in MySQL interface */
 extern sess_t *trx_dummy_sess;
@@ -70,7 +70,7 @@ extern sess_t *trx_dummy_sess;
 /** Set flush observer for the transaction
 @param[in,out]	trx		transaction struct
 @param[in]	observer	flush observer */
-void trx_set_flush_observer(trx_t *trx, FlushObserver *observer);
+void trx_set_flush_observer(trx_t *trx, Flush_observer *observer);
 
 /** Set detailed error message for the transaction.
 @param[in] trx Transaction struct
@@ -93,8 +93,14 @@ trx_t *trx_allocate_for_mysql(void);
  @return own: transaction object */
 trx_t *trx_allocate_for_background(void);
 
-/** Resurrect table locks for resurrected transactions. */
-void trx_resurrect_locks();
+/** Resurrect table locks for resurrected transactions.
+@param[in]      all     false: resurrect locks for dictionary transactions,
+                        true : resurrect locks for all transactions. */
+void trx_resurrect_locks(bool all);
+
+/** Clear all resurrected table IDs. Needs to be called after all tables locks
+are resurrected. */
+void trx_clear_resurrected_table_ids();
 
 /** Free and initialize a transaction object instantiated during recovery.
 @param[in,out]	trx	transaction object to free and initialize */
@@ -283,9 +289,8 @@ void trx_print(FILE *f, const trx_t *trx, ulint max_query_len);
 
 /** Determine if a transaction is a dictionary operation.
  @return dictionary operation mode */
-static inline enum trx_dict_op_t trx_get_dict_operation(
-    const trx_t *trx) /*!< in: transaction */
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] static inline enum trx_dict_op_t trx_get_dict_operation(
+    const trx_t *trx); /*!< in: transaction */
 
 /** Flag a transaction a dictionary operation.
 @param[in,out]	trx	transaction
@@ -297,9 +302,9 @@ static inline void trx_set_dict_operation(trx_t *trx, enum trx_dict_op_t op);
  that is serving a running transaction.
  A running RW transaction must be in trx_sys->rw_trx_list.
  @return true if trx->state == state */
-static inline bool trx_state_eq(const trx_t *trx,  /*!< in: transaction */
-                                trx_state_t state) /*!< in: state */
-    MY_ATTRIBUTE((warn_unused_result));
+[[nodiscard]] static inline bool trx_state_eq(
+    const trx_t *trx,   /*!< in: transaction */
+    trx_state_t state); /*!< in: state */
 #ifdef UNIV_DEBUG
 /** Determines if trx can be handled by current thread, which is when
 trx->mysql_thd is nullptr (a "background" trx) or equals current_thd.
@@ -319,9 +324,9 @@ bool trx_can_be_handled_by_current_thread_or_is_hp_victim(const trx_t *trx);
 /** Asserts that a transaction has been started.
  The caller must hold trx_sys->mutex.
  @return true if started */
-ibool trx_assert_started(const trx_t *trx) /*!< in: transaction */
-    MY_ATTRIBUTE((warn_unused_result));
-#endif /* UNIV_DEBUG */
+[[nodiscard]] ibool trx_assert_started(
+    const trx_t *trx); /*!< in: transaction */
+#endif                 /* UNIV_DEBUG */
 
 /** Determines if the currently running transaction has been interrupted.
  @return true if interrupted */
@@ -381,11 +386,10 @@ void trx_set_rw_mode(trx_t *trx);
 /**
 Increase the reference count. If the transaction is in state
 TRX_STATE_COMMITTED_IN_MEMORY then the transaction is considered
-committed and the reference count is not incremented.
+committed and this function fails on assertion.
 @param trx Transaction that is being referenced
-@param do_ref_count Increment the reference iff this is true
-@return transaction instance if it is not committed */
-static inline trx_t *trx_reference(trx_t *trx, bool do_ref_count);
+*/
+static inline void trx_reference(trx_t *trx);
 
 /**
 Release the transaction. Decrease the reference count.
@@ -471,7 +475,7 @@ Check transaction state */
     ut_ad(!trx_is_autocommit_non_locking((t))); \
     switch ((t)->state) {                       \
       case TRX_STATE_PREPARED:                  \
-        /* fall through */                      \
+        [[fallthrough]];                        \
       case TRX_STATE_ACTIVE:                    \
       case TRX_STATE_COMMITTED_IN_MEMORY:       \
         continue;                               \
@@ -531,7 +535,7 @@ transaction pool.
 #endif /* UNIV_DEBUG */
 #endif /* !UNIV_HOTBACKUP */
 
-typedef std::vector<ib_lock_t *, ut_allocator<ib_lock_t *>> lock_pool_t;
+typedef std::vector<ib_lock_t *, ut::allocator<ib_lock_t *>> lock_pool_t;
 
 /** Latching protocol for trx_lock_t::que_state.  trx_lock_t::que_state
  captures the state of the query thread during the execution of a query.
@@ -739,7 +743,7 @@ transaction. We store pointers to the table objects in memory because
 we know that a table object will not be destroyed while a transaction
 that modified it is running. */
 typedef std::set<dict_table_t *, std::less<dict_table_t *>,
-                 ut_allocator<dict_table_t *>>
+                 ut::allocator<dict_table_t *>>
     trx_mod_tables_t;
 
 /** The transaction handle
@@ -1005,14 +1009,17 @@ struct trx_t {
                             the running thread can change. */
 
   /* These fields are not protected by any mutex. */
-  const char *op_info;   /*!< English text describing the
-                         current operation, or an empty
-                         string */
-  ulint isolation_level; /*!< TRX_ISO_REPEATABLE_READ, ... */
-  bool check_foreigns;   /*!< normally TRUE, but if the user
-                         wants to suppress foreign key checks,
-                         (in table imports, for example) we
-                         set this FALSE */
+  const char *op_info; /*!< English text describing the
+                       current operation, or an empty
+                       string */
+
+  /** Current isolation level */
+  isolation_level_t isolation_level;
+
+  bool check_foreigns; /*!< normally TRUE, but if the user
+                       wants to suppress foreign key checks,
+                       (in table imports, for example) we
+                       set this FALSE */
   /*------------------------------*/
   /* MySQL has a transaction coordinator to coordinate two phase
   commit between multiple storage engines and the binary log. When
@@ -1241,9 +1248,9 @@ struct trx_t {
   this fact. */
   bool purge_sys_trx;
   /*------------------------------*/
-  char *detailed_error;          /*!< detailed error message for last
-                                 error, or empty. */
-  FlushObserver *flush_observer; /*!< flush observer */
+  char *detailed_error;           /*!< detailed error message for last
+                                  error, or empty. */
+  Flush_observer *flush_observer; /*!< flush observer */
 
 #ifdef UNIV_DEBUG
   bool is_dd_trx; /*!< True if the transaction is used for

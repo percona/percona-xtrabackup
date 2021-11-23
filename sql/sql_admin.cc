@@ -1531,7 +1531,7 @@ bool Sql_cmd_analyze_table::handle_histogram_command(THD *thd,
   }
 
   thd->clear_error();
-  send_histogram_results(thd, results, table);
+  res = send_histogram_results(thd, results, table);
   thd->get_stmt_da()->reset_condition_info(thd);
   my_eof(thd);
   return res;
@@ -1691,7 +1691,7 @@ class Alter_instance_reload_tls : public Alter_instance {
                                      &server_admin_callback, &error, force_);
         break;
       case Ssl_acceptor_context_type::context_last:
-        // Fall through
+        [[fallthrough]];
       default:
         assert(false);
         return false;
@@ -1793,7 +1793,7 @@ Sql_cmd_clone::Sql_cmd_clone(LEX_USER *user_info, ulong port,
     : m_port(port), m_data_dir(data_dir), m_clone(), m_is_local(false) {
   m_host = user_info->host;
   m_user = user_info->user;
-  m_passwd = user_info->auth;
+  m_passwd = user_info->first_factor_auth_info.auth;
 }
 
 bool Sql_cmd_clone::execute(THD *thd) {
@@ -2047,18 +2047,17 @@ bool Sql_cmd_create_role::execute(THD *thd) {
   List_iterator<LEX_USER> it(*const_cast<List<LEX_USER> *>(roles));
   LEX_USER *role;
   while ((role = it++)) {
-    role->uses_identified_by_clause = false;
-    role->uses_identified_with_clause = false;
-    role->uses_authentication_string_clause = false;
+    role->first_factor_auth_info.uses_identified_by_clause = false;
+    role->first_factor_auth_info.uses_identified_with_clause = false;
+    role->first_factor_auth_info.uses_authentication_string_clause = false;
     role->alter_status.expire_after_days = 0;
     role->alter_status.account_locked = true;
     role->alter_status.update_account_locked_column = true;
     role->alter_status.update_password_expired_fields = true;
     role->alter_status.use_default_password_lifetime = true;
     role->alter_status.update_password_expired_column = true;
-    role->auth.str = nullptr;
-    role->auth.length = 0;
-    role->has_password_generator = false;
+    role->first_factor_auth_info.auth = {};
+    role->first_factor_auth_info.has_password_generator = false;
   }
   if (!(mysql_create_user(thd, *const_cast<List<LEX_USER> *>(roles),
                           if_not_exists, true))) {

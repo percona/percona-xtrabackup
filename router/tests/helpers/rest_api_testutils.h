@@ -28,8 +28,6 @@
 #include <chrono>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
-// if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
-// globally and require to include my_rapidjson_size_t.h
 #include "my_rapidjson_size_t.h"
 #endif
 
@@ -237,9 +235,10 @@ class RestApiComponentTest : public RouterComponentTest {
                       const std::string &value_json_pointer,
                       const RestApiTestParams::value_check_func value_check);
 
-  static const std::vector<
-      std::pair<std::string, RestApiTestParams::value_check_func>>
-      kProblemJsonMethodNotAllowed;
+  using json_verifiers_t =
+      std::vector<std::pair<std::string, RestApiTestParams::value_check_func>>;
+
+  static json_verifiers_t get_json_method_not_allowed_verifiers();
 
  protected:
   const uint16_t http_port_{port_pool_.get_next_available()};

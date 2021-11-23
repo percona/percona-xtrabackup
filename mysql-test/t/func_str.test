@@ -2257,3 +2257,102 @@ DO ST_ISVALID(INSTR(9223372036854775806 ,0x46bc299f));
 
 --error ER_CANNOT_CONVERT_STRING
 DO ST_SRID(LOCATE(0x58ed0b8e,8,135));
+
+--echo #
+--echo # Bug #32864958 ITEM_STR_FUNC::PUSH_PACKET_OVERFLOW_WARNING:
+--echo #               ASSERTION `IS_NULLABLE()' FAILED.
+
+--source include/turn_off_strict_mode.inc
+
+--error ER_DATA_OUT_OF_RANGE
+DO NOT CAST(UTC_TIME AS CHAR(2877246026) CHARACTER SET ujis);
+
+DO REPEAT(LAST_INSERT_ID(''), 4294967295);
+
+DO REPEAT(LAST_INSERT_ID(''), 0x96e4ed7e70a7fec7f11572c8980a);
+
+--source include/restore_strict_mode.inc
+
+--echo # Bug#33142010: Failure on complex const argument to string functions
+
+CREATE VIEW v AS SELECT LPAD('x', 1 NOT IN (0), 1) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT RPAD('x', 1 NOT IN (0), 1) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT SHA2('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT SUBSTR('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT SUBSTR('x', 1, 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT REPEAT('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT SPACE(1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT LEFT('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE VIEW v AS SELECT RIGHT('x', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+CREATE TABLE t(s SET('0', '1'));
+CREATE VIEW v AS SELECT FIND_IN_SET(1 NOT IN (0), s) AS c FROM t;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+DROP TABLE t;
+
+CREATE VIEW v AS SELECT STR_TO_DATE('2020', 1 NOT IN (0)) AS c;
+SHOW CREATE TABLE v;
+SELECT * FROM v;
+DROP VIEW v;
+
+--echo #
+--echo # Bug #33180446 SPACE(): Item_str_func::push_packet_overflow_warning:
+--echo #               Assertion `is_nullable()' failed.
+
+# set_nullable(is_nullable() || thd->is_strict_mode());
+--source include/turn_off_strict_mode.inc
+
+SELECT space(9223372036854775808);
+SELECT length(space(9223372036854775809));
+
+CREATE TABLE t(i BIGINT UNSIGNED);
+INSERT INTO t values(9223372036854775808);
+
+SELECT space(i) FROM t;
+
+DROP TABLE t;
+
+SET @@collation_connection = 'utf32_bin';
+
+SELECT space(1073741824);
+
+SET @@collation_connection = default;
+
+--source include/restore_strict_mode.inc

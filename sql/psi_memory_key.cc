@@ -67,7 +67,6 @@ PSI_memory_key key_memory_Owned_gtids_sidno_to_hash;
 PSI_memory_key key_memory_Owned_gtids_to_string;
 PSI_memory_key key_memory_PROFILE;
 PSI_memory_key key_memory_QUICK_RANGE_SELECT_mrr_buf_desc;
-PSI_memory_key key_memory_Quick_ranges;
 PSI_memory_key key_memory_READ_INFO;
 PSI_memory_key key_memory_READ_RECORD_cache;
 PSI_memory_key key_memory_xa_recovered_transactions;
@@ -123,11 +122,6 @@ PSI_memory_key key_memory_prepared_statement_infrastructure;
 PSI_memory_key key_memory_prepared_statement_main_mem_root;
 PSI_memory_key key_memory_partitions_prune_exec;
 PSI_memory_key key_memory_queue_item;
-PSI_memory_key key_memory_quick_group_min_max_select_root;
-PSI_memory_key key_memory_quick_index_merge_root;
-PSI_memory_key key_memory_quick_range_select_root;
-PSI_memory_key key_memory_quick_ror_intersect_select_root;
-PSI_memory_key key_memory_quick_ror_union_select_root;
 PSI_memory_key key_memory_rm_db_mdl_reqs_root;
 PSI_memory_key key_memory_rm_table_foreach_root;
 PSI_memory_key key_memory_rpl_filter;
@@ -192,16 +186,6 @@ static PSI_memory_info all_server_memory[] = {
      0, "Mem root for objects with same life time as stored program call."},
     {&key_memory_table_mapping_root, "table_mapping::m_mem_root", 0, 0,
      PSI_DOCUMENT_ME},
-    {&key_memory_quick_range_select_root, "QUICK_RANGE_SELECT::alloc",
-     PSI_FLAG_THREAD, 0, PSI_DOCUMENT_ME},
-    {&key_memory_quick_index_merge_root, "QUICK_INDEX_MERGE_SELECT::alloc",
-     PSI_FLAG_THREAD, 0, PSI_DOCUMENT_ME},
-    {&key_memory_quick_ror_intersect_select_root,
-     "QUICK_ROR_INTERSECT_SELECT::alloc", PSI_FLAG_THREAD, 0, PSI_DOCUMENT_ME},
-    {&key_memory_quick_ror_union_select_root, "QUICK_ROR_UNION_SELECT::alloc",
-     PSI_FLAG_THREAD, 0, PSI_DOCUMENT_ME},
-    {&key_memory_quick_group_min_max_select_root,
-     "QUICK_GROUP_MIN_MAX_SELECT::alloc", PSI_FLAG_THREAD, 0, PSI_DOCUMENT_ME},
     {&key_memory_test_quick_select_exec, "test_quick_select", PSI_FLAG_THREAD,
      0, PSI_DOCUMENT_ME},
     {&key_memory_partitions_prune_exec, "Partition::prune_exec", 0, 0,
@@ -359,7 +343,6 @@ static PSI_memory_info all_server_memory[] = {
     {&key_memory_READ_RECORD_cache, "READ_RECORD_cache", 0, 0, PSI_DOCUMENT_ME},
     {&key_memory_xa_recovered_transactions, "XA::recovered_transactions", 0, 0,
      "List infrastructure for recovered XA transactions."},
-    {&key_memory_Quick_ranges, "Quick_ranges", 0, 0, PSI_DOCUMENT_ME},
     {&key_memory_File_query_log_name, "File_query_log::name",
      PSI_FLAG_ONLY_GLOBAL_STAT, 0, PSI_DOCUMENT_ME},
     {&key_memory_thd_timer, "thd_timer", 0, 0, "Thread timer object."},

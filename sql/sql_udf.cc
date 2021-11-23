@@ -228,7 +228,7 @@ void udf_read_functions_table() {
   THD *new_thd = new (std::nothrow) THD;
   if (new_thd == nullptr) {
     LogErr(ERROR_LEVEL, ER_UDF_CANT_ALLOC_FOR_STRUCTURES);
-    free_root(&mem, MYF(0));
+    mem.Clear();
     delete new_thd;
     return;
   }
@@ -248,9 +248,9 @@ void udf_read_functions_table() {
   }
 
   table = tables.table;
-  iterator = init_table_iterator(new_thd, table, nullptr,
-                                 /*ignore_not_found_rows=*/false,
-                                 /*count_examined_rows=*/false);
+  iterator =
+      init_table_iterator(new_thd, table, /*ignore_not_found_rows=*/false,
+                          /*count_examined_rows=*/false);
   if (iterator == nullptr) goto end;
   while (!(error = iterator->Read())) {
     DBUG_PRINT("info", ("init udf record"));
@@ -375,7 +375,7 @@ void udf_deinit_globals() {
     delete udf_hash;
     udf_hash = nullptr;
   }
-  free_root(&mem, MYF(0));
+  mem.Clear();
   initialized = false;
 
   mysql_rwlock_destroy(&THR_LOCK_udf);
