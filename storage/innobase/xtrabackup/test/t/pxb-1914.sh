@@ -11,12 +11,12 @@ mysql -e "CREATE TABLE t (a INT) ENGINE=MyISAM" test
 mysql -e "SET GLOBAL general_log = 'ON'"
 mysql -e "SET GLOBAL log_output = 'TABLE'"
 
-xtrabackup --backup --target-dir=$topdir/bak1 --binlog-info=ON
+xtrabackup --backup --target-dir=$topdir/bak1
 
 rm -rf $topdir/bak1
 
 xtrabackup --backup --lock-ddl=false --backup-lock-retry-count=5 --backup-lock-timeout=3 \
-	   --target-dir=$topdir/bak1 --binlog-info=ON
+	   --target-dir=$topdir/bak1
 
 rm -rf $topdir/bak1
 

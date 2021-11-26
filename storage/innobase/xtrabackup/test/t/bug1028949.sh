@@ -24,8 +24,7 @@ function test_bug_1028949()
 
   vlog "Starting backup"
 
-  xtrabackup --datadir=$mysql_datadir --backup --target-dir=$FULL_DIR \
-      $mysqld_additional_args
+  xtrabackup --datadir=$mysql_datadir --backup --target-dir=$FULL_DIR
 
   vlog "Full backup done"
 
@@ -55,24 +54,21 @@ function test_bug_1028949()
 
   # Incremental backup
   xtrabackup --datadir=$mysql_datadir --backup \
-      --target-dir=$DELTA_DIR --incremental-basedir=$FULL_DIR \
-      $mysqld_additional_args
+      --target-dir=$DELTA_DIR --incremental-basedir=$FULL_DIR
 
   vlog "Incremental backup done"
   vlog "Preparing backup"
 
   # Prepare backup
   xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-      --target-dir=$FULL_DIR $mysqld_additional_args
+      --target-dir=$FULL_DIR
   vlog "Log applied to backup"
 
   xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-      --target-dir=$FULL_DIR --incremental-dir=$DELTA_DIR \
-      $mysqld_additional_args
+      --target-dir=$FULL_DIR --incremental-dir=$DELTA_DIR
   vlog "Delta applied to backup"
 
-  xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$FULL_DIR \
-      $mysqld_additional_args
+  xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$FULL_DIR
   vlog "Data prepared for restore"
 
   # removing rows
