@@ -340,11 +340,15 @@ class Http_client {
   bool insecure{false};
   bool verbose{false};
   std::string cacert;
+  /*
+   * CURLcode::CURLE_OBSOLETE16 is used as backwards compatible error.
+   * On newer versions of curl library it translates to CURLcode::CURLE_HTTP2.
+   */
   std::vector<CURLcode> curl_retriable_errors{
       CURLcode::CURLE_GOT_NOTHING,       CURLcode::CURLE_OPERATION_TIMEDOUT,
       CURLcode::CURLE_RECV_ERROR,        CURLcode::CURLE_SEND_ERROR,
       CURLcode::CURLE_SEND_FAIL_REWIND,  CURLcode::CURLE_PARTIAL_FILE,
-      CURLcode::CURLE_SSL_CONNECT_ERROR, CURLcode::CURLE_HTTP2};
+      CURLcode::CURLE_SSL_CONNECT_ERROR, CURLcode::CURLE_OBSOLETE16};
   std::vector<long> http_retriable_errors{503, 500, 504, 408};
   mutable curl_easy_unique_ptr curl{nullptr, curl_easy_cleanup};
 
