@@ -1,0 +1,20 @@
+version: 2
+jobs:
+  checking-branch-job:
+    docker:
+      - image: circleci/buildpack-deps:bionic
+        auth:
+          username: $DOCKERHUB_USERNAME
+          password: $DOCKERHUB_PASSWORD
+    steps:
+      - run: echo "Clang Format not required"
+workflows:
+  version: 2
+
+  build:
+    jobs:
+      - checking-branch-job:
+          filters:
+            branches:
+              only:
+                - none
