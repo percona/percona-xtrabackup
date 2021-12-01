@@ -192,9 +192,10 @@ void unlock_all(MYSQL *connection);
 
 bool write_current_binlog_file(MYSQL *connection);
 
-/** Read binaty log position and InnoDB LSN from p_s.log_status.
+/** Read binary log position and InnoDB LSN from p_s.log_status.
 @param[in]   conn         mysql connection handle */
 const log_status_t &log_status_get(MYSQL *conn);
+
 
 /*********************************************************************/ /**
  Retrieves MySQL binlog position and

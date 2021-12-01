@@ -9,6 +9,9 @@
 #    first_inc_suspend_command: if non-empty string, suspends incremental XB
 #                               invocation at start and executes the 
 #                               given command while it's suspended
+#    ib_inc_extra_args: extra args to be passed to innobackup incremental
+#                       backup invocations.
+#    ib_full_backup_extra_args: extra args to be passed to xtrabackup backup invocations.
 
 . inc/common.sh
 
@@ -17,6 +20,8 @@
 #
 function test_incremental_compressed()
 {
+ib_full_backup_extra_args=${ib_full_backup_extra_args:-""}
+ib_inc_extra_args=${ib_inc_extra_args:-""}
   page_size=$1
   
   echo "************************************************************************"
@@ -32,6 +37,9 @@ innodb_max_dirty_pages_pct=0
 innodb_log_file_size=4M"
   
   start_server
+  if [[ $ib_full_backup_extra_args =~ 'page-tracking' ]]; then
+    run_cmd ${MYSQL} ${MYSQL_ARGS} -e "INSTALL COMPONENT \"file://component_mysqlbackup\""
+  fi
 
   load_dbase_schema incremental_sample
 
@@ -56,7 +64,7 @@ KEY_BLOCK_SIZE=$page_size" incremental_sample
 
   vlog "Starting backup"
 
-  xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/full
+  xtrabackup --datadir=$mysql_datadir --backup $ib_full_backup_extra_args --target-dir=$topdir/full
 
   vlog "Full backup done"
 
@@ -111,7 +119,7 @@ incremental_sample`
   fi
  
   # Incremental backup
-  xtrabackup --datadir=$mysql_datadir --backup \
+  xtrabackup --datadir=$mysql_datadir --backup $ib_inc_extra_args  \
       --target-dir=$topdir/delta --incremental-basedir=$topdir/full \
       $suspend_arg &
 

@@ -55,6 +55,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <limits>
 #include "backup_copy.h"
 #include "common.h"
+#include "components/mysqlbackup/backup_comp_constants.h"
 #include "keyring_plugins.h"
 #include "mysqld.h"
 #include "os0event.h"
@@ -1672,7 +1673,7 @@ static void log_status_storage_engines_parse(const char *s,
   }
 }
 
-/** Parse binaty log position from JSON.
+/** Parse binary log position from JSON.
 @param[in]   s            JSON string
 @param[out]  log_status   binary log info */
 static void log_status_local_parse(const char *s, log_status_t &log_status) {
@@ -1701,7 +1702,7 @@ static void log_status_local_parse(const char *s, log_status_t &log_status) {
   }
 }
 
-/** Read binaty log position and InnoDB LSN from p_s.log_status.
+/** Read binary log position and InnoDB LSN from p_s.log_status.
 @param[in]   conn         mysql connection handle */
 const log_status_t &log_status_get(MYSQL *conn) {
   msg_ts("Selecting LSN and binary log position from p_s.log_status\n");

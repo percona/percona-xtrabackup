@@ -418,7 +418,7 @@ socket $MYSQLD_SOCKET"
 }
 
 ########################################################################
-# Stop server with the id specified as the first argument.  The server 
+# Stop server with the id specified as the first argument.  The server
 # is stopped in the fastest possible way.
 ########################################################################
 function stop_server_with_id()
@@ -848,32 +848,67 @@ function grep_count()
 ####################################################
 function check_full_scan_inc_backup()
 {
-    local xb_performed_bmp_inc_backup="xtrabackup: using the full scan for incremental backup"
-    local xb_performed_full_scan_inc_backup="xtrabackup: using the changed page bitmap"
+    local xb_performed_full_scan_inc_backup="xtrabackup: using the full scan for incremental backup"
+    local xb_performed_bitmap_backup="xtrabackup: using the changed page bitmap"
+    local xb_performed_pagetracking_inc_backup="xtrabackup: using the pagetracking"
 
-    if ! grep -q "$xb_performed_bmp_inc_backup" $OUTFILE ;
+    if ! grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
     then
         vlog "xtrabackup did not perform a full scan for the incremental backup."
         exit -1
     fi
-    if grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
+    if grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
     then
         vlog "xtrabackup appeared to use bitmaps instead of full scan for the incremental backup."
+        exit -1
+    fi
+    if grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup appeared to use pagtracking instead of full scan for the incremental backup."
         exit -1
     fi
 }
 
 function check_bitmap_inc_backup()
 {
-    local xb_performed_bmp_inc_backup="xtrabackup: using the full scan for incremental backup"
-    local xb_performed_full_scan_inc_backup="xtrabackup: using the changed page bitmap"
+    local xb_performed_full_scan_inc_backup="xtrabackup: using the full scan for incremental backup"
+    local xb_performed_bitmap_backup="xtrabackup: using the changed page bitmap"
+    local xb_performed_pagetracking_inc_backup="xtrabackup: using the pagetracking"
 
-    if ! grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
+    if ! grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
     then
         vlog "xtrabackup did not use bitmaps for the incremental backup."
         exit -1
     fi
-    if grep -q "$xb_performed_bmp_inc_backup" $OUTFILE ;
+    if grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup used a full scan instead of bitmaps for the incremental backup."
+        exit -1
+    fi
+    if grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup appeared to use pagtracking instead of full scan for the incremental backup."
+        exit -1
+    fi
+}
+
+function check_pagetracking_inc_backup()
+{
+    local xb_performed_full_scan_inc_backup="xtrabackup: using the full scan for incremental backup"
+    local xb_performed_bitmap_backup="xtrabackup: using the changed page bitmap"
+    local xb_performed_pagetracking_inc_backup="xtrabackup: Using pagetracking feature for incremental backup"
+
+    if ! grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup did not use pagtracking for the incremental backup."
+        exit -1
+    fi
+    if grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
+    then
+        vlog "xtrabackup used bitmaps for the incremental backup."
+        exit -1
+    fi
+    if grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
     then
         vlog "xtrabackup used a full scan instead of bitmaps for the incremental backup."
         exit -1
