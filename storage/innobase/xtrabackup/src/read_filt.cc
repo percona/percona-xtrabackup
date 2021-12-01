@@ -205,9 +205,9 @@ static void rf_page_tracking_init(xb_read_filt_ctxt_t *ctxt,
 @param[in/out] cursor            source file cursor
 @param[out]    read_batch_start  starting read offset for the next pages batch
 @param[out]    read_batch_len    length in bytes of next batch of pages */
-static void rf_page_tracking_get_next_batch(
-    xb_fil_cur_t *cursor, ib_uint64_t *read_batch_start,
-    ib_uint64_t *read_batch_len) {
+static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
+                                            ib_uint64_t *read_batch_start,
+                                            ib_uint64_t *read_batch_len) {
   xb_read_filt_ctxt_t *ctxt = &cursor->read_filter_ctxt;
 
   ulint next_page_id;
@@ -323,10 +323,8 @@ static void rf_page_tracking_get_next_batch(
 
 /** Deinitialize the page tracking based read filter.
 @param[in] ctxt   read filtr context */
-static void rf_page_tracking_deinit(
-    xb_read_filt_ctxt_t *ctxt __attribute__((unused)))
-{
-}
+static void rf_page_tracking_deinit(xb_read_filt_ctxt_t *ctxt
+                                    __attribute__((unused))) {}
 
 /* The pass-through read filter */
 xb_read_filt_t rf_pass_through = {&rf_pass_through_init,
