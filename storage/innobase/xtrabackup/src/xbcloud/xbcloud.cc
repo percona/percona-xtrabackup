@@ -42,6 +42,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "crc_glue.h"
 
+#include "xbcloud/azure.h"
 #include "xbcloud/s3.h"
 #include "xbcloud/swift.h"
 #include "xbcloud/util.h"
@@ -56,8 +57,14 @@ using namespace xbcloud;
 
 const char *config_file = "my"; /* Default config file */
 
-enum { SWIFT, S3, GOOGLE };
-const char *storage_names[] = {"SWIFT", "S3", "GOOGLE", NullS};
+const char *azure_development_access_key =
+    "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/"
+    "KBHBeksoGMGw==";
+const char *azure_development_storage_account = "devstoreaccount1";
+const char *azure_development_container = "testcontainer";
+
+enum { SWIFT, S3, GOOGLE, AZURE };
+const char *storage_names[] = {"SWIFT", "S3", "GOOGLE", "AZURE", NullS};
 
 const char *s3_bucket_lookup_names[] = {"AUTO", "DNS", "PATH", NullS};
 
@@ -100,6 +107,13 @@ static char *opt_google_secret_key = nullptr;
 static char *opt_google_session_token = nullptr;
 static char *opt_google_storage_class = nullptr;
 static char *opt_google_bucket = nullptr;
+
+static char *opt_azure_account = nullptr;
+static char *opt_azure_container = nullptr;
+static char *opt_azure_access_key = nullptr;
+static char *opt_azure_endpoint = nullptr;
+static char *opt_azure_storage_class = nullptr;
+static bool opt_azure_development_storage = 0;
 
 static std::string backup_name;
 static char *opt_cacert = nullptr;
@@ -159,6 +173,13 @@ enum {
   OPT_S3_BUCKET_LOOKUP,
   OPT_S3_API_VERSION,
 
+  OPT_AZURE_ACCOUNT,
+  OPT_AZURE_CONTAINER,
+  OPT_AZURE_ACCESS_KEY,
+  OPT_AZURE_STORAGE_CLASS,
+  OPT_AZURE_ENDPOINT,
+  OPT_AZURE_DEVELOPMENT_STORAGE,
+
   OPT_GOOGLE_REGION,
   OPT_GOOGLE_ENDPOINT,
   OPT_GOOGLE_ACCESS_KEY,
@@ -191,8 +212,9 @@ static struct my_option my_long_options[] = {
     {"version", 'V', "Display version and exit.", 0, 0, 0, GET_NO_ARG, NO_ARG,
      0, 0, 0, 0, 0, 0},
 
-    {"storage", OPT_STORAGE, "Specify storage type S3/SWIFT.", &opt_storage,
-     &opt_storage, &storage_typelib, GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"storage", OPT_STORAGE, "Specify storage type S3/SWIFT/GOOGLE/AZURE.",
+     &opt_storage, &opt_storage, &storage_typelib, GET_ENUM, REQUIRED_ARG, 0, 0,
+     0, 0, 0, 0},
 
     {"swift-auth-version", OPT_SWIFT_AUTH_VERSION,
      "Swift authentication verison to use.", &opt_swift_auth_version,
@@ -318,6 +340,36 @@ static struct my_option my_long_options[] = {
     {"s3-api-version", OPT_S3_API_VERSION, "S3 API version.",
      &opt_s3_api_version, &opt_s3_api_version, &s3_api_version_typelib,
      GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"azure-storage-account", OPT_AZURE_ACCOUNT, "AZURE storage account. ",
+     &opt_azure_account, &opt_azure_account, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
+     0, 0, 0, 0, 0},
+
+    {"azure-container-name", OPT_AZURE_CONTAINER, "AZURE container name. ",
+     &opt_azure_container, &opt_azure_container, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
+
+    {"azure-access-key", OPT_AZURE_ACCESS_KEY, "AZURE access key.",
+     &opt_azure_access_key, &opt_azure_access_key, 0, GET_STR_ALLOC,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"azure-development-storage", OPT_AZURE_DEVELOPMENT_STORAGE,
+     "To run against azurite emulator use --azure-development-storage. It can "
+     "work with the default credentials provided by azurite. For example, it "
+     "uses http://127.0.0.1:10000 as the default endpoint, which can be "
+     "overwritten by --azure-endpoint. Users can also provide "
+     "--azure-access-key,  --azure-storage-account, --azure-container-name",
+     &opt_azure_development_storage, &opt_azure_development_storage, 0,
+     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"azure-endpoint", OPT_AZURE_ENDPOINT, "Azure cloud storage endpoint.",
+     &opt_azure_endpoint, &opt_azure_endpoint, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
+
+    {"azure-tier-class", OPT_AZURE_STORAGE_CLASS,
+     "Azure cloud tier class. Hot|Cool|Archive", &opt_azure_storage_class,
+     &opt_azure_storage_class, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
+     0},
 
     {"google-region", OPT_GOOGLE_REGION, "Google cloud storage region.",
      &opt_google_region, &opt_google_region, 0, GET_STR_ALLOC, REQUIRED_ARG, 0,
@@ -515,6 +567,11 @@ static void get_env_args() {
   get_env_value(opt_s3_region, "DEFAULT_REGION");
   get_env_value(opt_s3_endpoint, "ENDPOINT");
 
+  get_env_value(opt_azure_account, "AZURE_STORAGE_ACCOUNT");
+  get_env_value(opt_azure_container, "AZURE_CONTAINER_NAME");
+  get_env_value(opt_azure_access_key, "AZURE_ACCESS_KEY");
+  get_env_value(opt_azure_endpoint, "ENDPOINT");
+
   get_env_value(opt_google_access_key, "ACCESS_KEY_ID");
   get_env_value(opt_google_secret_key, "SECRET_ACCESS_KEY");
   get_env_value(opt_google_session_token, "SESSION_TOKEN");
@@ -588,8 +645,11 @@ static bool parse_args(int argc, char **argv) {
     backup_name_uri_formatted = true;
     opt_storage = SWIFT;
     backup_uri = backup_uri.substr(8);
+  } else if (starts_with(backup_uri, "azure://")) {
+    backup_name_uri_formatted = true;
+    opt_storage = AZURE;
+    backup_uri = backup_uri.substr(8);
   }
-
   if (backup_name_uri_formatted) {
     auto slash_pos = backup_uri.find('/');
     if (slash_pos != std::string::npos) {
@@ -608,8 +668,16 @@ static bool parse_args(int argc, char **argv) {
         my_free(opt_swift_container);
         opt_swift_container =
             my_strdup(PSI_NOT_INSTRUMENTED, bucket_name.c_str(), MYF(MY_WME));
+      } else if (opt_storage == AZURE) {
+        my_free(opt_azure_container);
+        opt_azure_container =
+            my_strdup(PSI_NOT_INSTRUMENTED, bucket_name.c_str(), MYF(MY_WME));
       }
     }
+  }
+
+  if (opt_azure_development_storage) {
+    opt_storage = AZURE;
   }
 
   /* validate arguments */
@@ -633,6 +701,11 @@ static bool parse_args(int argc, char **argv) {
     }
     if (opt_s3_secret_key == nullptr) {
       msg_ts("S3 secret key is not specified\n");
+      return true;
+    }
+  } else if (opt_storage == AZURE) {
+    if (opt_azure_account == nullptr && !opt_azure_development_storage) {
+      msg_ts("Azure account name is not specified\n");
       return true;
     }
   }
@@ -700,7 +773,7 @@ bool xbcloud_put(Object_store *store, const std::string &container,
   }
   auto thread = h.run();
 
-  while (!has_errors) {
+  do {
     res = xb_stream_read_chunk(stream, &chunk);
     if (res != XB_STREAM_READ_CHUNK) {
       my_free(chunk.raw_data);
@@ -775,7 +848,7 @@ bool xbcloud_put(Object_store *store, const std::string &container,
     }
 
     memset(&chunk, 0, sizeof(chunk));
-  }
+  } while (!has_errors);
 
   h.stop();
   thread.join();
@@ -1231,6 +1304,49 @@ int main(int argc, char **argv) {
              ->probe_api_version_and_lookup(container_name)) {
       return EXIT_FAILURE;
     }
+  } else if (opt_storage == AZURE) {
+    std::string storage_account =
+        opt_azure_account != nullptr ? opt_azure_account : "";
+    if (storage_account.empty() && opt_azure_development_storage) {
+      storage_account.assign(azure_development_storage_account);
+    }
+    if (storage_account.empty()) {
+      msg_ts("%s: Azure storage account is not specified.\n", my_progname);
+      return EXIT_FAILURE;
+    }
+
+    std::string access_key =
+        opt_azure_access_key != nullptr ? opt_azure_access_key : "";
+    if (access_key.empty() && opt_azure_development_storage) {
+      access_key.assign(azure_development_access_key);
+    }
+    if (access_key.empty()) {
+      msg_ts("%s: Azure access key is not specified.\n", my_progname);
+      return EXIT_FAILURE;
+    }
+
+    container_name = opt_azure_container != nullptr ? opt_azure_container : "";
+    if (container_name.empty() && opt_azure_development_storage) {
+      container_name.assign(azure_development_container);
+    }
+    if (container_name.empty()) {
+      msg_ts("%s: Azure container is not specified.\n", my_progname);
+      return EXIT_FAILURE;
+    }
+
+    std::string storage_class =
+        opt_azure_storage_class != nullptr ? opt_azure_storage_class : "";
+
+    std::string azure_endpoint =
+        opt_azure_endpoint != nullptr ? opt_azure_endpoint : "";
+
+    object_store = std::unique_ptr<Object_store>(new Azure_object_store(
+        &http_client, storage_account, access_key,
+        opt_azure_development_storage, storage_class, opt_max_retries,
+        opt_max_backoff, azure_endpoint));
+
+    reinterpret_cast<Azure_object_store *>(object_store.get())
+        ->set_extra_http_headers(extra_http_headers);
   }
 
   if (opt_mode == MODE_PUT) {
