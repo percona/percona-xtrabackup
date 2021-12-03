@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "changed_page_bitmap.h"
 #include "changed_page_tracking.h"
 #include "datasink.h"
+#include "mysql.h"
 #include "xb_regex.h"
 #include "xbstream.h"
 #include "xtrabackup_config.h"
@@ -210,6 +211,18 @@ extern bool opt_dump_innodb_buffer_pool;
 extern bool punch_hole_supported;
 extern bool compile_regex(const char *regex_string, const char *error_context,
                           xb_regex_t *compiled_re);
+/* sslopt-vars.h */
+extern uint opt_ssl_mode;
+extern char *opt_ssl_ca;
+extern char *opt_ssl_capath;
+extern char *opt_ssl_cert;
+extern char *opt_ssl_cipher;
+extern char *opt_ssl_key;
+extern char *opt_ssl_crl;
+extern char *opt_ssl_crlpath;
+extern char *opt_tls_version;
+extern bool ssl_mode_set_explicitly;
+extern int set_client_ssl_options(MYSQL *mysql);
 
 enum binlog_info_enum {
   BINLOG_INFO_OFF,

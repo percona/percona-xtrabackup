@@ -79,7 +79,6 @@ ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
 
 ${XB_BIN} --prepare --target-dir=$topdir/backup \
 	  --keyring-file-data=$keyring_file \
-	  --reencrypt-for-server-id=200 \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 stop_server

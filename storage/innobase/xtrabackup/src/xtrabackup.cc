@@ -142,7 +142,6 @@ const char reserved_system_space_name[] = "innodb_system";
 /* This tablespace name is reserved by InnoDB for the predefined temporary
 tablespace. */
 const char reserved_temporary_space_name[] = "innodb_temporary";
-ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 
 /* === xtrabackup specific options === */
 char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
@@ -226,7 +225,7 @@ bool io_watching_thread_running = false;
 bool xtrabackup_logfile_is_renamed = false;
 
 int xtrabackup_parallel;
-bool opt_strict = false;
+bool opt_strict = true;
 
 char *xtrabackup_stream_str = NULL;
 xb_stream_fmt_t xtrabackup_stream_fmt = XB_STREAM_FMT_NONE;
@@ -485,6 +484,7 @@ std::vector<ulint> invalid_encrypted_tablespace_ids;
 extern TYPELIB innodb_flush_method_typelib;
 
 #include "caching_sha2_passwordopt-vars.h"
+#include "sslopt-vars.h"
 
 bool mdl_taken = FALSE;
 extern struct rand_struct sql_rand;
@@ -1249,6 +1249,7 @@ struct my_option xb_client_options[] = {
      0},
 
 #include "caching_sha2_passwordopt-longopts.h"
+#include "sslopt-longopts.h"
 
 #if !defined(HAVE_YASSL)
     {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
@@ -1297,7 +1298,7 @@ struct my_option xb_client_options[] = {
 
     {"strict", OPT_XTRA_STRICT,
      "Fail with error when invalid arguments were passed to the xtrabackup.",
-     (uchar *)&opt_strict, (uchar *)&opt_strict, 0, GET_BOOL, NO_ARG, 0, 0, 0,
+     (uchar *)&opt_strict, (uchar *)&opt_strict, 0, GET_BOOL, NO_ARG, 1, 0, 0,
      0, 0, 0},
 
     {"rocksdb-checkpoint-max-age", OPT_ROCKSDB_CHECKPOINT_MAX_AGE,
@@ -1842,6 +1843,9 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
     case OPT_XTRA_ENCRYPT_KEY:
       hide_option(argument, &xtrabackup_encrypt_key);
       break;
+
+#include "sslopt-case.h"
+
     case '?':
       usage();
       exit(EXIT_SUCCESS);

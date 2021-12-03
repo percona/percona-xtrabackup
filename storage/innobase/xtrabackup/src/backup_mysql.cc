@@ -71,18 +71,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fsp0fsp.h"
 #include "xb_regex.h"
 
-extern uint opt_ssl_mode;
 extern bool opt_no_server_version_check;
-extern char *opt_ssl_ca;
-extern char *opt_ssl_capath;
-extern char *opt_ssl_cert;
-extern char *opt_ssl_cipher;
-extern char *opt_ssl_key;
-extern char *opt_ssl_crl;
-extern char *opt_ssl_crlpath;
-extern char *opt_tls_version;
-extern ulong opt_ssl_fips_mode;
-extern bool ssl_mode_set_explicitly;
 
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
@@ -170,30 +159,7 @@ MYSQL *xb_mysql_connect() {
       opt_port != 0 ? mysql_port_str : "not set",
       opt_socket ? opt_socket : "not set");
 
-#ifdef HAVE_OPENSSL
-  /*
-  Print a warning if explicitly defined combination of --ssl-mode other than
-  VERIFY_CA or VERIFY_IDENTITY with explicit --ssl-ca or --ssl-capath values.
-  */
-  if (ssl_mode_set_explicitly && opt_ssl_mode < SSL_MODE_VERIFY_CA &&
-      (opt_ssl_ca || opt_ssl_capath)) {
-    msg("WARNING: no verification of server certificate will "
-        "be done. Use --ssl-mode=VERIFY_CA or "
-        "VERIFY_IDENTITY.\n");
-  }
-
-  /* Set SSL parameters: key, cert, ca, capath, cipher, clr, clrpath. */
-  if (opt_ssl_mode >= SSL_MODE_VERIFY_CA)
-    mysql_ssl_set(connection, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
-                  opt_ssl_capath, opt_ssl_cipher);
-  else
-    mysql_ssl_set(connection, opt_ssl_key, opt_ssl_cert, NULL, NULL,
-                  opt_ssl_cipher);
-  mysql_options(connection, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
-  mysql_options(connection, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
-  mysql_options(connection, MYSQL_OPT_TLS_VERSION, opt_tls_version);
-  mysql_options(connection, MYSQL_OPT_SSL_MODE, &opt_ssl_mode);
-#endif
+  set_client_ssl_options(connection);
 
   if (!mysql_real_connect(connection, opt_host ? opt_host : "localhost",
                           opt_user, opt_password, "" /*database*/, opt_port,
