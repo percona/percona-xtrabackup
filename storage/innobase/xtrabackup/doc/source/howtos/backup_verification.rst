@@ -24,9 +24,9 @@ After you confirmed that replication has been set up successfully, you can `inst
 
 .. note:: 
 
-  In order for pt-table-checksum to work correctly ``libdbd-mysql-perl`` will need to be installed on *Debian/Ubuntu* systems or ``perl-DBD-MySQL`` on *RHEL/CentOS*. If you installed the *percona-toolkit* package from the Percona repositories package manager should install those libraries automatically.
+  For pt-table-checksum to work correctly the ``libdbd-mysql-perl`` library must be installed on *Debian/Ubuntu* systems or the ``perl-DBD-MySQL`` library on *RHEL/CentOS*. If you have installed the *percona-toolkit* package from the Percona repositories, those libraries are installed automatically.
  
-After this command has been run, *pt-table-checksum* will be downloaded to your current working directory.
+After this command runs, *pt-table-checksum* downloads to your current working directory.
 
 Running the *pt-table-checksum* on the source will create ``percona`` database with the ``checksums`` table which will be replicated to the replicas as well. Example of the *pt-table-checksum* will look like this: ::
  
@@ -47,11 +47,11 @@ Running the *pt-table-checksum* on the source will create ``percona`` database w
 
 If all the values in the ``DIFFS`` column are 0 that means that backup is consistent with the current setup.
 
-In case backup wasn't consistent  *pt-table-checksum* should spot the difference and point to the table that doesn't match. Following example shows adding new user on the backed up replica in order to simulate the inconsistent backup: ::
+In case backup wasn't consistent *pt-table-checksum* should spot the difference and point to the table that doesn't match. The following example adds a new user on the backed up replica in order to simulate the inconsistent backup: ::
 
   mysql> grant usage on exampledb.* to exampledb@localhost identified by 'thisisnewpassword';
 
-If we run the *pt-table-checksum* now difference should be spotted :: 
+If we run the *pt-table-checksum* now, difference should be spotted ::
 
     $ ./pt-table-checksum 
     TS ERRORS  DIFFS     ROWS  CHUNKS SKIPPED    TIME TABLE
@@ -70,4 +70,4 @@ If we run the *pt-table-checksum* now difference should be spotted ::
 
 This output shows that source and the replica aren't in consistent state and that the difference is in the ``mysql.user`` table.
 
-More information on different options that pt-table-checksum provides can be found in the *pt-table-checksum* `documentation <http://www.percona.com/doc/percona-toolkit/2.2/pt-table-checksum.html>`_.
+More information on different options that pt-table-checksum provides can be found in the *pt-table-checksum* `documentation <https://www.percona.com/doc/percona-toolkit/LATEST/pt-table-checksum.html>`_.

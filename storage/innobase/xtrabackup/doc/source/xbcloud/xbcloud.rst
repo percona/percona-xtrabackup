@@ -5,13 +5,13 @@ The xbcloud Binary
 ================================================================================
 
 The purpose of |xbcloud| is to download from the cloud and upload to the cloud the full or part of an |xbstream| archive. |xbcloud| will not overwrite the backup with the same name. |xbcloud| accepts input via a pipe from |xbstream| so that it can be
-invoked as a pipeline with |xtrabackup| to stream directly to the cloud without
+invoked as a pipeline with *Percona XtraBackup* to stream directly to the cloud without
 needing a local storage.
 
 |xbcloud| stores each chunk as a separate object with a name
 ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a
 0-padded serial number of chunk within file. Size of chunk produced by
-|xtrabackup| and |xbstream| changed to 10M.
+*Percona XtraBackup* and |xbstream| changed to 10M.
 
 |xbcloud| has three essential operations: *put*, *get*, and *delete*. With these
 operations, backups are created, stored, retrieved, restored, and

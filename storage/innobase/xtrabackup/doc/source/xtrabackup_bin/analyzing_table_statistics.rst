@@ -4,7 +4,7 @@
  Analyzing Table Statistics
 ================================================================================
 
-The |xtrabackup| binary can analyze InnoDB data files in read-only mode to give
+The *Percona XtraBackup* binary can analyze InnoDB data files in read-only mode to give
 statistics about them. To do this, you should use the :option:`--stats`
 option. You can combine this with the :option:`--tables` option to limit the
 files to examine. It also uses the :option:`--use-memory` option.

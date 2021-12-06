@@ -4,10 +4,10 @@
  The xtrabackup Binary
 ================================================================================
 
-The |xtrabackup| binary is a compiled C program that is linked with the |InnoDB|
+The *Percona XtraBackup* binary is a compiled C program that is linked with the |InnoDB|
 libraries and the standard |MySQL| client libraries.
 
-|xtrabackup| enables point-in-time backups of |InnoDB| / |XtraDB| tables
+*Percona XtraBackup* enables point-in-time backups of |InnoDB| / |XtraDB| tables
 together with the schema definitions, |MyISAM| tables, and other portions of the
 server.
 

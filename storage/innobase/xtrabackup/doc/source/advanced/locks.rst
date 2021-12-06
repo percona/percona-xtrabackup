@@ -54,7 +54,7 @@ The following procedure reorders the steps:
 
 * Copy the ``.ibd`` files.
 
-Other Improvements
+Improvements
 ------------------
 
 The following improvements have been added:
@@ -63,7 +63,7 @@ The following improvements have been added:
 
 * For a FullText Index, an MDL is acquired on the base table.
 
-* A ``SELECT`` query that acquires an MDL does not retrieve any data.
+* A ``SELECT`` query that acquires an MDL does not retrieve data.
 
 .. warning::
 

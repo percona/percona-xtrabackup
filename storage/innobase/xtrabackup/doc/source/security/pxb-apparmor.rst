@@ -1,7 +1,7 @@
 .. _pxb-apparmor:
 
 =============================================
-Working with AppArmor 
+AppArmor 
 =============================================
 
 The Linux Security Module implements mandatory access controls (MAC) with AppArmor. Debian and Ubuntu systems install AppArmor by default. AppArmor uses profiles which define which files and permissions are needed for application.

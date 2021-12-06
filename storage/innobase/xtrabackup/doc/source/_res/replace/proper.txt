@@ -1,4 +1,4 @@
-.. Company names (e.g. Percona, Oracle), product names (e.g. MySQL, Ubuntu)
+.. Company names (for example Percona, Oracle), product names (for example MySQL, Ubuntu)
 
 .. |percona| replace:: Percona
 .. |percona-xtrabackup| replace:: Percona XtraBackup

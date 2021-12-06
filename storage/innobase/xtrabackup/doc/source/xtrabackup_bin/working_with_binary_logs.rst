@@ -26,9 +26,9 @@ The output is similar to the following during the backup stage:
 Point-In-Time Recovery
 -----------------------
 
-To perform a point-in-time recovery from an ``xtrabackup`` backup, you should prepare and restore the backup, and then replay binary logs from the point shown in the :file:`xtrabackup_binlog_info` file. 
+To perform a point-in-time recovery from an ``xtrabackup`` backup, you should prepare and restore the backup, and then replay binary logs from the point shown in the `xtrabackup_binlog_info` file. 
 
-A more detailed procedure is found :ref:`here <pxb.xtrabackup.point-in-time-recovery>`.
+A more detailed procedure is found in :ref:`Point in Time recovery <pxb.xtrabackup.point-in-time-recovery>`.
 
 
 Setting Up a New Replication Replica

@@ -1,46 +1,102 @@
 .. _docker:
 
-Running Percona XtraBackup in a `Docker` container
+Run *Percona XtraBackup* in a `Docker` container
 ********************************************************************************
 
 You may run Percona XtraBackup in a `Docker` container without
-having to install it. All required libraries come already installed in
+having to install it. All required libraries are installed in
 the container.
 
 Being a lightweight execution environment, `Docker` containers enable creating
-configurations where each program runs in a separate container. You may run
+configurations where each program runs in a separate container. You can run
 Percona Server for MySQL in one container and Percona XtraBackup in another.
 
-You create a new `Docker` container based on a `Docker` image, which works as a
-template for newly created containers. `Docker` images for Percona XtraBackup
-are hosted publicly on Docker Hub `here <https://hub.docker.com/r/percona/percona-xtrabackup>`__.
+A `Docker` container is based on a `Docker` image, which works as a
+template for newly created containers. The `Docker` images for Percona XtraBackup are hosted publicly on the ` Docker Hub <https://hub.docker.com/r/percona/percona-xtrabackup>`__.
+
+Install `Docker`
+================================================================================
+
+The Docker engine can be installed on many platforms. Consult `Install Docker Engine <https://docs.docker.com/engine/install/>`__ for the latest versions, system requirements, and instructions.
+
+Create and run a **Percona XtraBackup** Docker container
+===============================================================================
+
+1. Create a directory for the container. Within that directory, pull the latest image of Percona XtraBackup from Docker Hub repository. This operation may take a few minutes. 
+
+   .. code-block:: bash
+
+      $ docker pull percona/percona-xtrabackup
+
+2. After the download is complete, create the container in an interactive mode. The ``-i`` option attaches the standard input stream (stdin) of the bash shell and the ``-t`` creates a terminal for the process. 
+
+   The hostname is automatically generated when you create a container. For this example, the hostname is ``660cdc388af`` in these steps. The hostname for your container will be different.
+
+   .. code-block:: bash
+
+      $ docker run -it percona/percona-xtrabackup /bin/bash
+      [root@e660cdc388af /]#
+
+3. You access the container as root. 
+
+   .. code-block:: bash
+
+      [root@e660cdc388af /]# xtrabackup --version
+      xtrabackup version 8.0.26-18 based on MySQL server 8.0.26 Linux (x86_64) (revision id: 4aecf82)
+
+Run a container in daemon mode
+==================================================
+
+You can run a container in detached (daemon) mode to run in the background. 
 
 .. code-block:: bash
 
-   $ sudo docker create ... percona/percona-xtrabackup --name xtrabackup ...
+   $ docker run -it -d percona/percona-xtrabackup bash
 
-.. rubric:: Scope of this section
+You can verify that the container is running with the following command:
 
-`Docker` containers offer a range of different options effectively allowing
-to create quite complex setup. This section demonstrates how to backup data
-on a Percona Server for MySQL running in another `Docker` container.
+.. code-block:: bash
 
-Installing `Docker`
-================================================================================
+   $ docker ps 
+   CONTAINER ID   IMAGE                        COMMAND   CREATED              STATUS              PORTS     NAMES
+   ffb00224ea9f   percona/percona-xtrabackup   "bash"    30 seconds ago       Up 29 seconds                 sleepy_maxwell
 
-Your operating system may already provide a package for |cmd.docker|. However,
-the versions of `Docker` provided by your operating system are likely to be
-outdated.
+The following command uses the container ID to access the container.
 
-Use the installation instructions for your operating system available from the
-`Docker` site to set up the latest version of |cmd.docker|.
+.. code-block:: bash
 
-.. seealso::
+   $ docker exec -it ffb00224ea9f bash
+   [root@ffb00224ea9f /]#
 
-   `Docker` Documentation:
-      - `How to use Docker <https://docs.docker.com/>`_
-      - `Installing <https://docs.docker.com/get-docker/>`_
-      - `Getting started <https://docs.docker.com/get-started/>`_
+You can send a command to verify that you are running in the container:
+
+.. code-block:: bash
+
+   [root@ffb00224ea9f /]# xtrabackup --version
+   xtrabackup version 8.0.26-18 based on MySQL server 8.0.26 Linux (x86_64) (revision id: 4aecf82)
+
+
+Exiting a container
+=================================================
+
+To exit and stop a container, you can use any of the following methods:
+
+* In the container, enter ``exit``.
+
+  .. code-block:: bash
+
+     [root@e660cdc388af /]# exit
+
+* The ``ctrl+d`` key combination
+
+If you exit the container in detached mode and do not want the container to stop, at the container's prompt, enter the following key combinations:
+
+* ``ctrl+p`` and ``ctrl+q``
+
+.. code-block:: bash
+
+   [root@ffb00224ea9f /]# read escape sequence
+   $
 
 Connecting to a Percona Server for MySQL container
 ================================================================================
@@ -54,6 +110,11 @@ To set up a database server on a host machine or in `Docker`
 container, follow the documentation of the supported product that you
 intend to use with Percona XtraBackup.
 
+.. code-block:: bash
+
+   $ sudo docker run -d --name percona-server-mysql \
+   -e MYSQL_ROOT_PASSWORD=root percona/percona-server:8.0
+
 .. seealso::
 
    Percona Server for MySQL Documentation:
@@ -62,15 +123,58 @@ intend to use with Percona XtraBackup.
       - `Running in a Docker container
 	<https://www.percona.com/doc/percona-server/LATEST/installation/docker.html>`_
 
-.. code-block:: bash
-
-   $ sudo docker run -d --name percona-server-mysql \
-   -e MYSQL_ROOT_PASSWORD=root percona/percona-server:8.0
 
 As soon as Percona Server for MySQL runs, add some data to it. Now, you are
 ready to make backups with Percona XtraBackup.
 
-Creating a `Docker` container from Percona XtraBackup image
+Use Docker Inspect to find container information 
+==================================================
+
+
+The xtrabackup container needs the  host's local directory and the container's internal IP address. 
+
+While the database server is running, type the following command:
+
+.. code-block:: bash
+
+   docker inspect <container name or container id>
+
+In the results, search for "Mounts" and "Networks".
+
+.. code-block:: json
+
+   "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "96344bf8b0edcfd070e486e349ab6dff41869a28d8584fa57c9e5e7a77775d26",
+                "Source": "/var/lib/docker/volumes/96344bf8b0edcfd070e486e349ab6dff41869a28d8584fa57c9e5e7a77775d26/_data",
+                "Destination": "/var/lib/mysql",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            },
+   ...
+   "Networks": {
+                "bridge": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "NetworkID": "eade3d3d51988c41192a79ba903c5bda0bc1f211ec24027fb4bb64a28aa3c00d",
+                    "EndpointID": "d5d8f2233e9fe605390a8ff5542880b8b73ffe34d99aa14ae3f5011fb63951ee",
+                    "Gateway": "172.17.0.1",
+                    "IPAddress": "172.17.0.4",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "MacAddress": "02:42:ac:11:00:04",
+                    "DriverOpts": null
+                }
+
+For this example, the source directory is ``"/var/lib/docker/volumes/96344bf8b0edcfd070e486e349ab6dff41869a28d8584fa57c9e5e7a77775d26/_data"``, and the network address is ``"172.17.0.4"``.
+
+​​Creating a `Docker` container from Percona XtraBackup image
 ================================================================================
 
 You can create a `Docker` container based on Percona XtraBackup image with

@@ -1,8 +1,16 @@
 .. _full_backup:
 
 ================================================================================
-The Backup Cycle - Full Backups
+Basic Backup cycle - Full Backups
 ================================================================================
+
+The backup cycle has the following steps:
+
+* :ref:`creating_a_backup`
+* :ref:`preparing_a_backup`
+* :ref:`restoring_a_backup`
+
+You must do the steps in order. 
 
 .. _creating_a_backup:
 
@@ -13,10 +21,10 @@ To create a backup, run :program:`xtrabackup` with the :option:`--backup`
 option. You also need to specify the :option:`--target-dir` option, which is where
 the backup will be stored, if the |InnoDB| data or log files are not stored in
 the same directory, you might need to specify the location of those, too. If the
-target directory does not exist, |xtrabackup| creates it. If the directory does
-exist and is empty, |xtrabackup| will succeed.
+target directory does not exist, *Percona XtraBackup* creates it. If the directory does
+exist and is empty, *Percona XtraBackup* will succeed.
 
-|xtrabackup| will not overwrite existing files, it will fail with operating
+*Percona XtraBackup* will not overwrite existing files, it will fail with operating
 system error 17, ``file exists``.
 
 To start the backup process run:
@@ -88,7 +96,7 @@ are using MySQL's :term:`innodb_file_per_table` option:
    -rw-r-----  1 root root 106M Sep  6 10:19 xtrabackup_logfile
 
 The backup can take a long time, depending on how large the database is. It is
-safe to cancel at any time, because |xtrabackup| does not modify the database.
+safe to cancel at any time, because *Percona XtraBackup* does not modify the database.
 
 The next step is getting your backup ready to be restored.
 
@@ -96,7 +104,7 @@ The next step is getting your backup ready to be restored.
 
 Preparing a backup
 ================================================================================
-After making a backup with the :option:`--backup` option, you need need to
+After making a backup with the :option:`--backup` option, you must
 prepare it in order to restore it. Data files are not point-in-time consistent
 until they are *prepared*, because they were copied at different times as the
 program ran, and they might have been changed while this was happening.
@@ -114,17 +122,17 @@ Note that |Percona XtraBackup| 8.0 can only prepare backups of |MySQL|
 8.0, |Percona Server| 8.0, and |Percona XtraDB Cluster| 8.0
 databases. Releases prior to 8.0 are not supported.
 
-During the *prepare* operation, |xtrabackup| boots up a kind of modified
-embedded InnoDB (the libraries |xtrabackup| was linked against). The
+During the *prepare* operation, *Percona XtraBackup* boots up a kind of modified
+embedded InnoDB (the libraries *Percona XtraBackup* was linked against). The
 modifications are necessary to disable InnoDB standard safety checks, such as
 complaining about the log file not being the right size. This warning is not
 appropriate for working with backups. These modifications are only for the
-xtrabackup binary; you do not need a modified |InnoDB| to use |xtrabackup| for
+xtrabackup binary; you do not need a modified |InnoDB| to use *Percona XtraBackup* for
 your backups.
 
 The *prepare* step uses this "embedded InnoDB" to perform crash recovery on the
 copied data files, using the copied log file. The ``prepare`` step is very
-simple to use: you simply run |xtrabackup| with the :option:`--prepare` option
+simple to use: you simply run *Percona XtraBackup* with the :option:`--prepare` option
 and tell it which directory to prepare, for example, to prepare the previously
 taken backup run:
 
@@ -132,9 +140,8 @@ taken backup run:
 
   $ xtrabackup --prepare --target-dir=/data/backups/
 
-When this finishes, you should see an ``InnoDB shutdown`` with a message such
-as the following, where again the value of :term:`LSN` will depend on your
-system:
+When this operation finishes, you should see an ``InnoDB shutdown`` with a message like the following statement (the `LSN` value is different on your
+system):
 
 .. code-block:: text
 
@@ -150,8 +157,7 @@ see that output says:
   xtrabackup: notice: xtrabackup_logfile was already used to '--prepare'.
 
 It is not recommended to interrupt xtrabackup process while preparing backup
-because it may cause data files corruption and backup will become unusable.
-Backup validity is not guaranteed if prepare process was interrupted.
+because interruption may cause data files corruption and backup will become unusable. Backup validity is not guaranteed if the prepare process is interrupted.
 
 .. note::
 
@@ -171,7 +177,7 @@ Restoring a Backup
   Backup needs to be :ref:`prepared <preparing_a_backup>` before it can be
   restored.
 
-For convenience, |xtrabackup| binary has the :option:`--copy-back`
+For convenience, *Percona XtraBackup* binary has the :option:`--copy-back`
 option to copy the backup to the :term:`datadir` of the server:
 
 .. code-block:: bash

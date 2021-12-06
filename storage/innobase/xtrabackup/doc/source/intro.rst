@@ -22,8 +22,8 @@ backups.
 
    With the introduction of |Percona XtraBackup| 8.0, |Percona XtraBackup| 2.4
    will continue to support MySQL and Percona Server 5.6 and 5.7 databases. Due
-   to the new MySQL redo log and data dictionary formats the Percona XtraBackup
-   8.0.x versions will only be compatible with MySQL 8.0.x and the upcoming
+   to the new MySQL redo log and data dictionary formats, the Percona XtraBackup
+   8.0.x versions are only compatible with MySQL 8.0.x and the upcoming
    Percona Server for MySQL 8.0.x
 
 Percona's enterprise-grade commercial `MySQL Support
@@ -34,23 +34,17 @@ XtraBackup|. We recommend support for critical production deployments. Percona X
 
 Percona XtraBackup works with MySQL and Percona Server. It supports
 completely non-blocking backups of InnoDB, XtraDB, and MyRocks storage
-engines. Fast incremental backups are supported for Percona Server with the XtraDB changed page tracking enabled.
+engines. XtraBackup does not support backup or restore of the `MyRocks ZenFS <https://www.percona.com/doc/percona-server/LATEST/myrocks/zenfs.html>`__ data at this time. Fast incremental backups are supported for Percona Server with the XtraDB changed page tracking enabled.
 
 In addition, it can back up the following storage engines by briefly
 pausing writes at the end of the backup: MyISAM, :term:`Merge <.MRG>`, and
 :term:`Archive <.ARM>`, including partitioned tables, triggers, and database
 options. InnoDB tables are still locked while copying non-InnoDB data.
 
-.. important::
 
-   The support of the MyRocks storage engine was added in version 8.0.6.
+Although, support for the MyRocks storage engine was added in version 8.0.6, XtraBackup does not support the backup or the restore of the `MyRocks ZenFS <https://www.percona.com/doc/percona-server/LATEST/myrocks/zenfs.html>`__ data at this time.
 
-   Percona XtraBackup 8.0 does not support the TokuDB storage engine.
-
-   .. seealso::
-
-      Percona TokuBackup
-         https://www.percona.com/doc/percona-server/LATEST/tokudb/toku_backup.html
+Percona XtraBackup 8.0 does not support the TokuDB storage engine. See `Percona TokuBackup <https://www.percona.com/doc/percona-server/LATEST/tokudb/toku_backup.html>`__ for information on taking a backup on that storage engine.
 
 
 What are the features of Percona XtraBackup?
@@ -72,11 +66,6 @@ for more.
 
 .. seealso::
 
-     For more information see :ref:`how_xtrabackup_works`
+     For more information, see :ref:`how_xtrabackup_works`
 
 
-
-
-.. rubric:: Additional information
-
-|InnoDB| tables are still locked while copying non-|InnoDB| data.

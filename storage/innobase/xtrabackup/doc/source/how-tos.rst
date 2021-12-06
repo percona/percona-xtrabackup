@@ -2,43 +2,6 @@
 How-tos and Recipes
 ===================
 
-.. _recipes-xbk:
-
-Recipes for |xtrabackup|
-========================
-
-.. toctree::
-   :maxdepth: 1
-
-   howtos/recipes_xbk_full
-   howtos/recipes_xbk_inc
-   howtos/recipes_xbk_stream
-   howtos/recipes_xbk_compressed
-   howtos/recipes_xbk_partition
-
-.. _howtos:
-
-How-Tos
-=======
-
-.. toctree::
-   :maxdepth: 1
-
-   howtos/setting_up_replication
-   howtos/backup_verification
-   howtos/recipes_ibkx_gtid
-
-.. _aux-guides:
-
-Auxiliary Guides
-================
-
-.. toctree::
-   :maxdepth: 1
-
-   howtos/enabling_tcp
-   howtos/permissions
-   howtos/ssh_server
 
 Assumptions in this section
 ===========================

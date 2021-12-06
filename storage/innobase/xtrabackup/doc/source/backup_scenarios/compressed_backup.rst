@@ -28,9 +28,11 @@ the ``percona-release`` package configuration tool as follows:
 
 .. note::
 
-   .. include:: ../.res/contents/instruction.repository.enabling.txt
+   Enable the repository: :bash:`percona-release enable-only tools release`
 
-   .. seealso:: :ref:`installing_from_binaries`
+   If |Percona XtraBackup| is intended to be used in combination with
+   the upstream MySQL Server, you only need to enable the ``tools``
+   repository: :bash:`percona-release enable-only tools`.
 
 If you want to speed up the compression you can use the parallel compression,
 which can be enabled with :option:`--compress-threads` option.
@@ -96,7 +98,7 @@ Now the files in :file:`/data/compressed/` are ready to be used by the server.
 Restoring the backup
 --------------------
 
-|xtrabackup| has a :option:`--copy-back` option, which performs the
+*Percona XtraBackup* has a :option:`--copy-back` option, which performs the
 restoration of a backup to the server's :term:`datadir`:
 
 .. code-block:: bash

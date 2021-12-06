@@ -1,7 +1,7 @@
 .. _compiling_xtrabackup:
 
 ================================================================================
-Compiling and Installing from Source Code
+Compile and Install from Source Code
 ================================================================================
 
 The source code is available from the |Percona XtraBackup| *Github* `project
@@ -169,7 +169,7 @@ To compile the source code in your :file:`build` directory, use the ``make`` com
 Step 3: Installing on the target system
 ================================================================================
 
-The following command installs all |Percona XtraBackup| binaries |xtrabackup|
+The following command installs all |Percona XtraBackup| binaries *Percona XtraBackup*
 and tests to default location on the target system: :file:`/usr/local/xtrabackup`.
 
 Run ``make install`` to install |Percona XtraBackup| to the default location.

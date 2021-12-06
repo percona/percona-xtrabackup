@@ -1,5 +1,5 @@
 ================================================================================
- Making an Incremental Backup
+Make an Incremental Backup
 ================================================================================
 
 Backup all InnoDB data and log files - located in ``/var/lib/mysql/`` -
