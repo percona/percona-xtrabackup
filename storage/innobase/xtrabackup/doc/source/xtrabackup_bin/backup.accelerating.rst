@@ -8,7 +8,7 @@ Accelerating the backup process
 
 When making a local or streaming backup with |xbstream| option, multiple files
 can be copied at the same time when using the :option:`--parallel` option. This
-option specifies the number of threads created by |xtrabackup| to copy data
+option specifies the number of threads created by *Percona XtraBackup* to copy data
 files.
 
 To take advantage of this option either the multiple tablespaces option must be
@@ -21,7 +21,7 @@ As this feature is implemented **at the file level**, concurrent file transfer
 can sometimes increase I/O throughput when doing a backup on highly fragmented
 data files, due to the overlap of a greater number of random read requests. You
 should consider tuning the filesystem also to obtain the maximum performance
-(e.g. checking fragmentation).
+(for example, checking fragmentation).
 
 If the data is stored on a single file, this option will have no effect.
 
@@ -33,7 +33,7 @@ To use this feature, simply add the option to a local backup, for example:
 
 By using the |xbstream| in streaming backups, you can additionally speed up the
 compression process with the :option:`--compress-threads` option. This option
-specifies the number of threads created by |xtrabackup| for for parallel data
+specifies the number of threads created by *Percona XtraBackup* for for parallel data
 compression. The default value for this option is 1.
 
 To use this feature, simply add the option to a local backup, for example:
@@ -48,10 +48,10 @@ Before applying logs, compressed files will need to be uncompressed.
 
 In order to speed up the backup process and to minimize the time ``FLUSH TABLES
 WITH READ LOCK`` is blocking the writes, the option :option:`--rsync` should be
-used. When this option is specified, |xtrabackup| uses ``rsync`` to copy all
+used. When this option is specified, *Percona XtraBackup* uses ``rsync`` to copy all
 non-InnoDB files instead of spawning a separate ``cp`` for each file, which can
 be much faster for servers with a large number of databases or
-tables. |xtrabackup| will call the ``rsync`` twice, once before the ``FLUSH
+tables. *Percona XtraBackup* will call the ``rsync`` twice, once before the ``FLUSH
 TABLES WITH READ LOCK`` and once during to minimize the time the read lock is
 being held. During the second ``rsync`` call, it will only synchronize the
 changes to non-transactional data (if any) since the first call performed before

@@ -29,8 +29,8 @@ until waiting for these queries to complete.
 
 In order to prevent this from happening two things have been implemented:
 
-* |xtrabackup| can wait for a good moment to issue the global lock.
-* |xtrabackup| can kill all or only SELECT queries which are preventing the
+* *Percona XtraBackup* can wait for a good moment to issue the global lock.
+* *Percona XtraBackup* can kill all or only SELECT queries which are preventing the
   global lock from being acquired
 
 Waiting for queries to finish
@@ -39,26 +39,26 @@ Waiting for queries to finish
 Good moment to issue a global lock is the moment when there are no long queries
 running. But waiting for a good moment to issue the global lock for extended
 period of time isn't always good approach, as it can extend the time needed for
-backup to take place. To prevent |xtrabackup| from waiting to issue ``FLUSH
+backup to take place. To prevent *Percona XtraBackup* from waiting to issue ``FLUSH
 TABLES WITH READ LOCK`` for too long, new option has been implemented:
 :option:`--ftwrl-wait-timeout` option can be used to limit the
 waiting time. If the good moment to issue the lock did not happen during this
-time, |xtrabackup| will give up and exit with an error message and backup will
+time, *Percona XtraBackup* will give up and exit with an error message and backup will
 not be taken. Zero value for this option turns off the feature (which is
 default).
 
 Another possibility is to specify the type of query to wait on. In this case
 :option:`--ftwrl-wait-query-type`. Possible values are ``all`` and
-``update``. When ``all`` is used |xtrabackup| will wait for all long running
+``update``. When ``all`` is used *Percona XtraBackup* will wait for all long running
 queries (execution time longer than allowed by :option:`--ftwrl-wait-threshold`)
 to finish before running the ``FLUSH TABLES WITH READ LOCK``. When ``update`` is
-used |xtrabackup| will wait on ``UPDATE/ALTER/REPLACE/INSERT`` queries to
+used *Percona XtraBackup* will wait on ``UPDATE/ALTER/REPLACE/INSERT`` queries to
 finish.
 
 Although the time needed for a specific query to complete is hard to predict, we
 can assume that the queries that have been running for a long time are not
 likely to finish soon. The queries which are running for a short time are likely
-to finish shortly. |xtrabackup| can use the value of
+to finish shortly. *Percona XtraBackup* can use the value of
 :option:`--ftwrl-wait-threshold` option to specify which query is long running
 and will likely block global lock for a while. In order to use this option
 xtrabackup user should have ``PROCESS`` and ``SUPER`` privileges.
@@ -100,7 +100,7 @@ Options summary
 Example
 --------------------------------------------------------------------------------
 
-Running the |xtrabackup| with the following options will cause |xtrabackup|
+Running the *Percona XtraBackup* with the following options will cause *Percona XtraBackup*
 to spend no longer than 3 minutes waiting for all queries older than 40 seconds
 to complete.
 
@@ -112,7 +112,7 @@ to complete.
    --target-dir=/data/backups/
 
 
-After ``FLUSH TABLES WITH READ LOCK`` is issued, |xtrabackup| will wait for 20
+After ``FLUSH TABLES WITH READ LOCK`` is issued, *Percona XtraBackup* will wait for 20
 seconds for lock to be acquired. If lock is still not acquired after 20 seconds,
 it will kill all queries which are running longer that the ``FLUSH TABLES WITH
 READ LOCK``.

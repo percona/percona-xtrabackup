@@ -4,8 +4,11 @@
 Incremental Backup
 ==================
 
-|xtrabackup| supports incremental backups, which means that they can copy only
-the data that has changed since the last backup.
+*Percona XtraBackup* supports incremental backups, which means that they can copy only the data that has changed since the last backup. 
+
+.. note::
+
+   You cannot do an incremental backup with the MyRocks storage engine.
 
 You can perform many incremental backups between each full backup, so you can
 set up a backup process such as a full backup once a week and an incremental
@@ -24,9 +27,9 @@ to enable the `changed page tracking
 <http://www.percona.com/doc/percona-server/5.6/management/changed_page_tracking.html>`_
 feature on the server, which will note the pages as they are being changed.
 This information will be then written out in a compact separate so-called
-bitmap file. The |xtrabackup| binary will use that file to read only the data
+bitmap file. The *Percona XtraBackup* binary will use that file to read only the data
 pages it needs for the incremental backup, potentially saving many read
-requests. The latter algorithm is enabled by default if the |xtrabackup| binary
+requests. The latter algorithm is enabled by default if the *Percona XtraBackup* binary
 finds the bitmap file. It is possible to specify
 :option:`--incremental-force-scan` to read all the pages even if the
 bitmap data is available.
@@ -51,7 +54,7 @@ Creating an Incremental Backup
 ==============================
 
 To make an incremental backup, begin with a full backup as usual. The
-|xtrabackup| binary writes a file called :file:`xtrabackup_checkpoints` into
+*Percona XtraBackup* binary writes a file called :file:`xtrabackup_checkpoints` into
 the backup's target directory. This file contains a line showing the
 ``to_lsn``, which is the database's :term:`LSN` at the end of the backup.
 :ref:`Create the full backup <full_backup>` with a following command:

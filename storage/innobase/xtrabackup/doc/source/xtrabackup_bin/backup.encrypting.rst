@@ -33,7 +33,7 @@ This value then can be used as the encryption key
 The :option:`--encrypt-key` Option
 --------------------------------------------------------------------------------
 
-Example of the |xtrabackup| command using the :option:`--encrypt-key` should
+Example of the *Percona XtraBackup* command using the :option:`--encrypt-key` should
 look like this:
 
 .. code-block:: bash
@@ -107,7 +107,7 @@ the standard full backups with the :option:`--prepare` option:
 Restoring Encrypted Backups
 ================================================================================
 
-|xtrabackup| offers the :option:`--copy-back` option to restore a backup to the
+*Percona XtraBackup* offers the :option:`--copy-back` option to restore a backup to the
 server's :term:`datadir`:
 
 .. code-block:: bash

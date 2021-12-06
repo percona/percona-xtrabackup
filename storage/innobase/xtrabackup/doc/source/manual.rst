@@ -1,8 +1,8 @@
 .. _user-manual:
 
-==================================
- *Percona XtraBackup* User Manual
-==================================
+==========================================
+ *Percona XtraBackup* Components
+==========================================
 
 .. toctree::
    :maxdepth: 1
@@ -32,5 +32,5 @@
    archive from/to cloud.
 
 After |Percona XtraBackup| 2.3 release, the recommend way to take the backup is
-by using the |xtrabackup| script. More information on script options can be found
+by using the *Percona XtraBackup* script. More information on script options can be found
 in :doc:`how to use xtrabackup <xtrabackup_bin/xtrabackup_binary>`.

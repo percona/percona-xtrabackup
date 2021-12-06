@@ -1,8 +1,37 @@
 .. _xtrabackup.full:
 
 ================================================================================
- Making a Full Backup
+Make a Full Backup
 ================================================================================
+
+Assumptions
+--------------------
+
+Most of the times, the context will make the recipe or tutorial understandable.
+To assure that, a list of the assumptions, names and "things" that will appear
+in this section is given. At the beginning of each recipe or tutorial they will
+be specified in order to make it quicker and more practical.
+
+``HOST``
+
+A system with a |MySQL|-based server installed, configured, and running. We assume the following about this system:
+
+* Can :ref:`enable-tcpip`
+
+* a SSH server is installed and configured - see :doc:`here <howtos/ssh_server>` if it is not;
+
+* you have an user account in the system with the appropriate :doc:`permissions <howtos/permissions>` and
+
+* you have a MySQL's user account with appropriate :ref:`privileges`.
+
+``USER``
+   A system account with shell access and the appropriate permissions
+   for the task. A guide for checking them is :doc:`here <howtos/permissions>`.
+
+``DB-USER``
+   A database server account with the appropriate privileges for the
+   task. A guide for checking them is :doc:`here <howtos/permissions>`.
+
 
 Backup the InnoDB data and log files located in ``/var/lib/mysql/`` to
 ``/data/backups/mysql/`` (destination). Then, prepare the backup files to be

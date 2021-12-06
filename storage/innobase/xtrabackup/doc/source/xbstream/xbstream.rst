@@ -48,12 +48,12 @@ This utility has a tar-like interface:
 The utility also tries to minimize its impact on the OS page cache by using the
 appropriate ``posix_fadvise()`` calls when available.
 
-When compression is enabled with |xtrabackup| all data is being compressed,
+When compression is enabled with *Percona XtraBackup* all data is being compressed,
 including the transaction log file and meta data files, using the specified
 compression algorithm. The only currently supported algorithm is ``quicklz``.
 
 The resulting files have the qpress archive format, i.e., every ``*.qp`` file
-produced by |xtrabackup| is essentially a one-file qpress archive and can be
+produced by *Percona XtraBackup* is essentially a one-file qpress archive and can be
 extracted and uncompressed by the `qpress file archiver
 <http://www.quicklz.com/>`_. This means that there is no need to decompress
 entire backup to restore a single table as with :file:`tar.gz`.

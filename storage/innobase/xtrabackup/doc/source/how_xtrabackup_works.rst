@@ -29,8 +29,7 @@ to the data files since it began execution.
 |Percona XtraBackup| uses `Backup locks
 <https://www.percona.com/doc/percona-server/8.0/management/backup_locks.html>`_
 where available as a lightweight alternative to ``FLUSH TABLES WITH READ
-LOCK``. This feature is available in |Percona Server| 5.6+. |MySQL| 8.0 allows
-acquiring an instance level backup lock via the ``LOCK INSTANCE FOR BACKUP``
+LOCK``. |MySQL| 8.0 allows acquiring an instance level backup lock via the ``LOCK INSTANCE FOR BACKUP``
 statement.
 
 Locking is only done for |MyISAM| and other non-InnoDB tables
@@ -44,10 +43,8 @@ avoid blocking DML queries that modify |InnoDB| tables.
    BACKUP``, the ``BACKUP_ADMIN`` privilege is needed in order to query
    ``performance_schema.log_status``.
 
-|xtrabackup| tries to avoid backup locks and ``FLUSH TABLES WITH READ LOCK``
-when the instance contains only InnoDB tables. In this case, |xtrabackup|
-obtains binary log coordinates from ``performance_schema.log_status``. ``FLUSH
-TABLES WITH READ LOCK`` is still required in MySQL 8.0 when xtrabackup is
+When the instance contains only InnoDB tables, *Percona XtraBackup* tries to avoid backup locks and ``FLUSH TABLES WITH READ LOCK``. In this case, *Percona XtraBackup* obtains the binary log coordinates from the ``performance_schema.log_status``. The ``FLUSH
+TABLES WITH READ LOCK`` command is still required in MySQL 8.0 when xtrabackup is
 started with the :option:`--slave-info`. The ``log_status`` table in |Percona
 Server| 8.0 is extended to include the relay log coordinates, so no locks are
 needed even with the :option:`--slave-info` option.
@@ -57,28 +54,26 @@ needed even with the :option:`--slave-info` option.
    |MySQL| Documentation: More information about ``LOCK INSTANCE FOR BACKUP``
       https://dev.mysql.com/doc/refman/8.0/en/lock-instance-for-backup.html
 
-When backup locks are supported by the server, |xtrabackup| first copies
+When backup locks are supported by the server, *Percona XtraBackup* first copies
 |InnoDB| data, runs the ``LOCK TABLES FOR BACKUP`` and then copies the |MyISAM|
 tables. Once this is done, the backup of the files will
 begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`,
 :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`,
 :term:`.CSV`, ``.sdi`` and ``.par`` files.
 
-
-
-After that |xtrabackup| will use ``LOCK BINLOG FOR BACKUP`` to block all
+After that *Percona XtraBackup* will use ``LOCK BINLOG FOR BACKUP`` to block all
 operations that might change either binary log position or
 ``Exec_Master_Log_Pos`` or ``Exec_Gtid_Set`` (i.e. source binary log coordinates
 corresponding to the current SQL thread state on a replication replica) as
-reported by ``SHOW MASTER/SLAVE STATUS``. |xtrabackup| will then finish copying
+reported by ``SHOW MASTER/SLAVE STATUS``. *Percona XtraBackup* will then finish copying
 the REDO log files and fetch the binary log coordinates. After this is completed
-|xtrabackup| will unlock the binary log and tables.
+*Percona XtraBackup* will unlock the binary log and tables.
 
-Finally, the binary log position will be printed to ``STDERR`` and |xtrabackup|
+Finally, the binary log position will be printed to ``STDERR`` and *Percona XtraBackup*
 will exit returning 0 if all went OK.
 
-Note that the ``STDERR`` of |xtrabackup| is not written in any file. You will
-have to redirect it to a file, e.g., ``xtrabackup OPTIONS 2> backupout.log``.
+Note that the ``STDERR`` of *Percona XtraBackup* is not written in any file. You will
+have to redirect it to a file, for example, ``xtrabackup OPTIONS 2> backupout.log``.
 
 It will also create the :ref:`following files <xtrabackup_files>` in the
 directory of the backup.
@@ -94,7 +89,7 @@ the point at which it started. This point in time matches where the ``FLUSH
 TABLES WITH READ LOCK`` was taken, so the |MyISAM| data and the prepared
 |InnoDB| data are in sync.
 
-The |xtrabackup| offers many features not mentioned in the preceding
+The *Percona XtraBackup* offers many features not mentioned in the preceding
 explanation. The functionality of each tool is explained in more
 detail further in this manual. In brief, though, the tools enable you
 to do operations such as streaming and incremental backups with
@@ -106,10 +101,10 @@ and applying the logs to the data.
 Restoring a backup
 ------------------
 
-To restore a backup with |xtrabackup| you can use the :option:`--copy-back` or
+To restore a backup with *Percona XtraBackup* you can use the :option:`--copy-back` or
 :option:`--move-back` options.
 
-|xtrabackup| will read from the :file:`my.cnf` the variables :term:`datadir`,
+*Percona XtraBackup* will read from the :file:`my.cnf` the variables :term:`datadir`,
 :term:`innodb_data_home_dir`, :term:`innodb_data_file_path`,
 :term:`innodb_log_group_home_dir` and check that the directories exist.
 

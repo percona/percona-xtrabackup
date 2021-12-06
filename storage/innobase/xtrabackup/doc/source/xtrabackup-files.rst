@@ -10,23 +10,23 @@ Index of files created by Percona XtraBackup
        This file contains information to start the mini instance of InnoDB
        during the :option:`--prepare`. This is **NOT** a backup of
        original :file:`my.cnf`. The InnoDB configuration is read from the file
-       :file:`backup-my.cnf` created by |xtrabackup| when the backup was
+       :file:`backup-my.cnf` created by *Percona XtraBackup* when the backup was
        made. :option:`--prepare` uses InnoDB configuration from
        ``backup-my.cnf`` by default, or from
        :option:`--defaults-file`, if specified. InnoDB
        configuration in this context means server variables that affect data
-       format, i.e. ``innodb_page_size`` option,
+       format, such as the ``innodb_page_size`` option,
        ``innodb_log_block_size``, etc. Location-related variables, like
        ``innodb_log_group_home_dir`` or ``innodb_data_file_path``
        are always ignored by :option:`--prepare`, so preparing
        a backup always works with data files from the backup directory, rather
        than any external ones.
 
-    * :file:`xtrabackup_checkpoints`
-       The type of the backup (e.g. full or incremental), its state (e.g.
-       prepared) and the |LSN| range contained in it. This information is used
+    * `xtrabackup_checkpoints`
+       The type of the backup (for example, full or incremental), its state (for example,
+       prepared) and the LSN range contained in it. This information is used
        for incremental backups.
-       Example of the :file:`xtrabackup_checkpoints` after taking a full
+       Example of the `xtrabackup_checkpoints` after taking a full
        backup:
 
        .. code-block:: text
@@ -53,7 +53,7 @@ Index of files created by Percona XtraBackup
                SELECT server_uuid, local, replication, storage_engines FROM performance_schema.log_status;
 
     * :file:`xtrabackup_binary`
-       The |xtrabackup| binary used in the process.
+       The *Percona XtraBackup* binary used in the process.
 
     * :file:`xtrabackup_logfile`
        Contains data needed for running the: :option:`--prepare`.

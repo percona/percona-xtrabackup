@@ -11,11 +11,11 @@ for physical tablespace data files.
 
 For an authenticated user or application to access an encrypted tablespace,
 InnoDB uses the master encryption key to decrypt the tablespace key. The
-master encryption key is stored in a keyring. |xtrabackup| supports two keyring
+master encryption key is stored in a keyring. *Percona XtraBackup* supports two keyring
 plugins: ``keyring_file``, and ``keyring_vault``. These plugins are installed
 into the ``plugin`` directory.
 
-Implemented in |xtrabackup| version 8.0.25, adds support for the ``keyring_file`` component, which is part of the component-based infrastructure MySQL includes to extend the server capabilities. The component is stored in the ``plugin`` directory. 
+Implemented in *Percona XtraBackup* version 8.0.25, adds support for the ``keyring_file`` component, which is part of the component-based infrastructure MySQL includes to extend the server capabilities. The component is stored in the ``plugin`` directory. 
 
 See a `comparison of keyring components and keyring plugins <https://dev.mysql.com/doc/refman/8.0/en/keyring-component-plugin-comparison.html>`__ for more information.
 
@@ -37,7 +37,7 @@ tablespaces, specify the path to a keyring file as the value of the
    $ xtrabackup --backup --target-dir=/data/backup/ --user=root \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-After |xtrabackup| takes the backup, the following
+After *Percona XtraBackup* takes the backup, the following
 message confirms the action:
 
 .. code-block:: bash
@@ -47,7 +47,7 @@ message confirms the action:
 
 .. warning:: 
 
-   |xtrabackup| does not copy the keyring file into the backup directory. To prepare the backup, you must copy the keyring file manually.
+   *Percona XtraBackup* does not copy the keyring file into the backup directory. To prepare the backup, you must copy the keyring file manually.
 
 .. rubric:: Preparing the Backup
 
@@ -58,7 +58,7 @@ To prepare the backup specify the keyring-file-data.
    $ xtrabackup --prepare --target-dir=/data/backup \
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-After |xtrabackup| takes the backup, the following
+After *Percona XtraBackup* takes the backup, the following
 message confirms the action:
 
 .. code-block:: bash
@@ -85,7 +85,7 @@ The following command creates a backup in the ``/data/backup`` directory:
    $ xtrabackup --backup --target-dir=/data/backup --user=root 
 
 
-After |xtrabackup| completes the action, the following confirmation message appears:
+After *Percona XtraBackup* completes the action, the following confirmation message appears:
 
 .. code-block:: bash
 
@@ -94,8 +94,8 @@ After |xtrabackup| completes the action, the following confirmation message appe
 
 .. rubric:: Preparing the Backup
 
-To prepare the backup, |xtrabackup| must access the keyring.
-|xtrabackup| does not communicate with the |MySQL| server or read the default ``my.cnf`` configuration file. Specify the keyring settings in the command line:
+To prepare the backup, *Percona XtraBackup* must access the keyring.
+*Percona XtraBackup* does not communicate with the |MySQL| server or read the default ``my.cnf`` configuration file. Specify the keyring settings in the command line:
 
 .. code-block:: bash
 
@@ -108,7 +108,7 @@ To prepare the backup, |xtrabackup| must access the keyring.
    <https://www.percona.com/doc/percona-server/LATEST/security/using-keyring-plugin.html#using-keyring-plugin>`_
    for a description of keyring vault plugin settings.
 
-After |xtrabackup| completes the action, the following confirmation message appears:
+After *Percona XtraBackup* completes the action, the following confirmation message appears:
 
 .. code-block:: text
 
@@ -156,7 +156,7 @@ The component has no special requirements for backing up a database that contain
 
    xtrabackup --backup --target-dir=/data/backup --user=root
 
-After |xtrabackup| completes the action, the following confirmation message appears:
+After *Percona XtraBackup* completes the action, the following confirmation message appears:
 
 .. sourcecode:: bash
 
@@ -165,11 +165,11 @@ After |xtrabackup| completes the action, the following confirmation message appe
 
 .. warning:: 
 
-   |xtrabackup| does not copy the keyring file into the backup directory. To prepare the backup, you must copy the keyring file manually.
+   *Percona XtraBackup* does not copy the keyring file into the backup directory. To prepare the backup, you must copy the keyring file manually.
 
 .. rubric:: Preparing the Backup
 
-|xtrabackup| reads the keyring_file component configuration from ``xtrabackup_component_keyring_file.cnf``. You must specify the keyring_file data path if the ``keyring-file-data`` is not located in the attribute ``PATH`` from the xtrabackup_component_keyring_file.cnf. 
+*Percona XtraBackup* reads the keyring_file component configuration from ``xtrabackup_component_keyring_file.cnf``. You must specify the keyring_file data path if the ``keyring-file-data`` is not located in the attribute ``PATH`` from the xtrabackup_component_keyring_file.cnf. 
 
 The following is an example of adding the location for the keyring-file-data:
 
@@ -178,9 +178,9 @@ The following is an example of adding the location for the keyring-file-data:
    xtrabackup --prepare --target-dir=/data/backup \ 
    --keyring-file-data=/var/lib/mysql-keyring/keyring
 
-.. note:: |xtrabackup| attempts to read ``xtrabackup_component_keyring_file.cnf``. You can assign another keyring file component configuration by passing the ``--component-keyring-file-config`` option. 
+.. note:: *Percona XtraBackup* attempts to read ``xtrabackup_component_keyring_file.cnf``. You can assign another keyring file component configuration by passing the ``--component-keyring-file-config`` option. 
 
-After |xtrabackup| completes preparing the backup, the following confirmation message appears:
+After *Percona XtraBackup* completes preparing the backup, the following confirmation message appears:
 
 .. sourcecode:: bash
 
@@ -200,7 +200,7 @@ similar to taking the :ref:`xb_incremental` with unencrypted tablespace.
 
 .. rubric:: Creating an Incremental Backup
 
-To make an incremental backup, begin with a full backup. The |xtrabackup| binary
+To make an incremental backup, begin with a full backup. The *Percona XtraBackup* binary
 writes a file called :file:`xtrabackup_checkpoints` into the backup's target
 directory. This file contains a line showing the ``to_lsn``, which is the
 database's :term:`LSN` at the end of the backup. First you need to create a full
@@ -213,7 +213,7 @@ backup with the following command:
 
 .. warning:: 
 
-   |xtrabackup| will not copy the keyring file into the backup directory. In order to
+   *Percona XtraBackup* will not copy the keyring file into the backup directory. In order to
    prepare the backup, you must make a copy of the keyring file yourself. If you
    try to restore the backup after the keyring has been changed you'll see errors
    like ``ERROR 3185 (HY000): Can't find master key from keyring, please check
@@ -231,7 +231,7 @@ contents similar to the following:
    compact = 0
    recover_binlog_info = 1
 
-Now that you have a full backup, you can make an incremental backup based on it. Use a command such as the following: 
+Now that you have a full backup, you can make an incremental backup based on it. Use the following command: 
 
 .. code-block:: bash
 
@@ -241,7 +241,7 @@ Now that you have a full backup, you can make an incremental backup based on it.
 
 .. warning:: 
 
-   ||xtrabackup| does not copy the keyring file into the backup directory. To prepare the backup, you must copy the keyring file manually. 
+   *Percona XtraBackup* does not copy the keyring file into the backup directory. To prepare the backup, you must copy the keyring file manually. 
    
    If the
    keyring has not been rotated you can use the same as the one you've backed-up
@@ -315,7 +315,7 @@ The output should end with some text such as the following:
    InnoDB: Number of pools: 1
    160401 12:31:11 completed OK!
 
-To apply the first incremental backup to the full backup, you should use the
+To apply the first incremental backup to the full backup, use the
 following command:
 
 .. code-block:: bash
@@ -363,8 +363,8 @@ purged, or, in the case of a malfunction, when the keyring vault server is not
 available at all.
 
 The ``--transition-key=<passphrase>`` option should be used to make it possible
-for |xtrabackup| to process the backup without access to the keyring vault
-server. In this case, |xtrabackup| derives the AES encryption key from the
+for *Percona XtraBackup* to process the backup without access to the keyring vault
+server. In this case, *Percona XtraBackup* derives the AES encryption key from the
 specified passphrase and will use it to encrypt tablespace keys of tablespaces
 that are being backed up.
 
@@ -377,12 +377,12 @@ The following example illustrates how the backup can be created in this case:
    $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
    --transition-key=MySecetKey
 
-If ``--transition-key`` is specified without a value, |xtrabackup| will ask for
+If ``--transition-key`` is specified without a value, *Percona XtraBackup* will ask for
 it.
 
 .. note::
 
-   |xtrabackup| scrapes ``--transition-key`` so that its value is not visible in
+   *Percona XtraBackup* scrapes ``--transition-key`` so that its value is not visible in
    the ``ps`` command output.
 
 .. rubric:: Preparing the Backup with a Passphrase
@@ -394,7 +394,7 @@ The same passphrase should be specified for the `prepare` command:
    $ xtrabackup --prepare --target-dir=/data/backup
 
 There are no ``--keyring-vault...``,``--keyring-file...``, or ``--component-keyring-file-config`` options here,
-because |xtrabackup| does not talk to the keyring in this case.
+because *Percona XtraBackup* does not talk to the keyring in this case.
 
 .. rubric:: Restoring the Backup with a Generated Key
 
@@ -415,17 +415,17 @@ In case of ``keyring_vault``, it will look like this:
    --transition-key=MySecetKey --generate-new-master-key \
    --keyring-vault-config=/etc/vault.cnf
 
-|xtrabackup| will generate a new master key, store it in the target keyring
+*Percona XtraBackup* will generate a new master key, store it in the target keyring
 vault server and re-encrypt the tablespace keys using this key.
 
 .. rubric:: Making the Backup with a Stored Transition Key
 
 Finally, there is an option to store a transition key in the keyring. In this case,
-|xtrabackup| will need to access the same keyring file or vault server during
+*Percona XtraBackup* will need to access the same keyring file or vault server during
 prepare and copy-back but does not depend on whether the server keys have been
 purged.
 
-In this scenario, the three stages of the backup process look as follows. 
+In this scenario, the three stages of the backup process look as follows:
 
 .. doc-attribute warning is version specific; problem may be solved in a later release
    (review

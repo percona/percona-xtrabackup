@@ -1,7 +1,7 @@
 .. _pxb-selinux:
 
 =========================================
-Working with SELinux 
+SELinux 
 =========================================
 
 |Percona XtraBackup| is installed as an unconfined process running in an undefined domain. SELinux allows unconfined processes almost all access and the processes only use Discretionary Access Control (DAC) rules. 

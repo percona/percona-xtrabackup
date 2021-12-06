@@ -2,10 +2,22 @@
 Frequently Asked Questions
 ================================================================================
 
-Does |Percona XtraBackup| 8.0 support making backups of databases in versions prior to 8.0?
+Does *Percona XtraBackup* 8.0 support making backups of databases in versions prior to 8.0?
 ====================================================================================================
 
-.. include:: .res/contents/text.pxb.8-0.txt
+*Percona XtraBackup* 8.0 does not support making backups of databases
+created in versions prior to 8.0 of |MySQL|, |Percona Server| or
+|Percona XtraDB Cluster|. The changes that |MySQL| 8.0 introduced
+in *data dictionaries*, *redo log* and *undo log* are incompatible
+with the previous versions. It is currently impossible for *Percona XtraBackup* 8.0 to also support versions prior to 8.0.
+
+Due to changes in MySQL 8.0.20 released by Oracle at the end of April 2020,
+*Percona XtraBackup* 8.0, up to version 8.0.11, is not compatible with MySQL version 8.0.20 or
+higher, or Percona products that are based on it: Percona Server for MySQL and
+Percona XtraDB Cluster.
+
+For more information, see `Percona XtraBackup 8.x and MySQL 8.0.20
+<https://www.percona.com/blog/2020/04/28/percona-xtrabackup-8-x-and-mysql-8-0-20/>`_
 
 .. _pxb.faq.innobackupex.8-0:
 
@@ -33,12 +45,12 @@ a commercial tool that uses |Percona XtraBackup| for Non-Blocking Backups:
  even though the backup was done at the database level (needs the recovery
  database server to be |Percona Server| with XtraDB)."*
 
-|xtrabackup| binary fails with a floating point exception
+*Percona XtraBackup* binary fails with a floating point exception
 ================================================================================
 
 In most of the cases this is due to not having install the required libraries
-(and version) by |xtrabackup|. Installing the *GCC* suite with the supporting
-libraries and recompiling |xtrabackup| will solve the issue. See
+(and version) by *Percona XtraBackup*. Installing the *GCC* suite with the supporting
+libraries and recompiling *Percona XtraBackup* will solve the issue. See
 :doc:`installation/compiling_xtrabackup` for instructions on the procedure.
 
 How xtrabackup handles the ibdata/ib_log files on restore if they aren't in mysql datadir?

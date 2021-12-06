@@ -4,14 +4,11 @@
 How to create a new (or repair a broken) GTID-based Replica
 ================================================================================
 
-|MySQL| 5.6 introduced the Global Transaction ID (`GTID
-<http://dev.mysql.com/doc/refman/5.6/en/replication-gtids-concepts.html>`_)
-support in replication. |Percona XtraBackup| automatically
+|Percona XtraBackup| automatically
 stores the ``GTID`` value in the :file:`xtrabackup_binlog_info` when doing the
 backup of |MySQL| and |Percona Server| 5.7 with the ``GTID`` mode enabled. This
 information can be used to create a new (or repair a broken) ``GTID``-based
 replica.
-
 
 STEP 1: Take a backup from any server on the replication environment, source or replica
 =========================================================================================
