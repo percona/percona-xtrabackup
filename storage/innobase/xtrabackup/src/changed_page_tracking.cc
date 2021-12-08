@@ -145,6 +145,24 @@ void deinit(xb_space_map *space_map) {
   }
 }
 
+/* Get the page tracking start lsn
+@param[in] connection               MySQL connectionn
+@return the page tracking start lsn */
+lsn_t get_pagetracking_start_lsn(MYSQL *connection) {
+  std::string udf_get_start_lsn = Backup_comp_constants::udf_get_start_lsn;
+  char *start_lsn_str = read_mysql_one_value(
+      connection, ("SELECT " + udf_get_start_lsn + "()").c_str());
+  lsn_t page_track_start_lsn = strtoll(start_lsn_str, nullptr, 10);
+  free(start_lsn_str);
+
+  if (page_track_start_lsn == 0) {
+    msg("xtrabackup: pagetracking: Error tracking lsn is 0. Page tracking was "
+        "disabled?\n");
+  }
+
+  return page_track_start_lsn;
+}
+
 /** Call the mysqlbackup component mysqlbackup_page_track_get_changed_pages
 to get the pages between the LSN interval incremental_lsn to
 checkpoint_lsn_start. Server writes file with spaceid and page_num in data
@@ -170,22 +188,15 @@ bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
     return (false);
   }
 
-  std::string udf_get_start_lsn = Backup_comp_constants::udf_get_start_lsn;
-
   /* validate tracking lsn */
-  char *start_lsn_str = read_mysql_one_value(
-      connection, ("SELECT " + udf_get_start_lsn + "()").c_str());
-  lsn_t backup_start_lsn = strtoll(start_lsn_str, nullptr, 10);
-  free(start_lsn_str);
-  if (backup_start_lsn == 0) {
-    msg("xtrabackup: pagetracking: Error tracking lsn is 0. Page tracking was "
-        "disabled?\n");
+  lsn_t page_track_start_lsn = get_pagetracking_start_lsn(connection);
+
+  if (page_track_start_lsn == 0) {
     return (false);
-  } else if (backup_start_lsn > start_lsn) {
-    msg("xtrabackup: pagetracking: Error tracking lsn " LSN_PF
-        " is more than increment "
-        "start lsn " LSN_PF "\n",
-        backup_start_lsn, start_lsn);
+  } else if (page_track_start_lsn > start_lsn) {
+    msg("xtrabackup: pagetracking: Warning tracking start lsn " LSN_PF
+        " is more than increment start lsn " LSN_PF "\n",
+        page_track_start_lsn, start_lsn);
     return (false);
   }
 
@@ -238,7 +249,7 @@ bool set_backupid(MYSQL *connection, uint64_t backupid) {
     return (true);
   } else {
     msg("xtrabackup: pagetracking: Error failed to set backupid"
-        "currently it is set to %lu \n",
+        "currently it is set to " LSN_PF "\n",
         get_id);
     return (false);
   }

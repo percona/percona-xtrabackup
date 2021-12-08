@@ -59,6 +59,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <set>
 #include <sstream>
 #include <string>
+#include "changed_page_tracking.h"
 #include "common.h"
 #include "fil_cur.h"
 #include "os0event.h"
@@ -1584,6 +1585,7 @@ bool backup_start(Backup_context &context) {
                  false);
 
   auto log_status = log_status_get(mysql_connection);
+
   /* Wait until we have checkpoint LSN greater than the page tracking start LSN.
   Page tracking start LSN is system LSN (lets say 105) and Backup End LSN is
   checkpoint LSN (say 100). Next incremental backup will request changes pages
@@ -1592,19 +1594,24 @@ bool backup_start(Backup_context &context) {
   return error. Hence, we have to ensure that checkpoint LSN is greater page
   tracking LSN */
 
-  while (opt_page_tracking && page_tracking_start_lsn > 0) {
-    if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
-      msg("xtrabackup: pagetracking: Checkpoint lsn is " LSN_PF
-          " and page_tracking lsn is " LSN_PF "\n",
-          log_status.lsn_checkpoint, page_tracking_start_lsn);
-      break;
-    } else {
-      msg("xtrabackup: pagetracking: Sleeping for 1 second, waiting for "
-          "checkpoint lsn " LSN_PF " to reach to page tracking " LSN_PF
-          " lsn\n",
-          log_status.lsn_checkpoint, page_tracking_start_lsn);
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-      log_status = log_status_get(mysql_connection);
+  if (opt_page_tracking) {
+    auto page_tracking_start_lsn =
+        pagetracking::get_pagetracking_start_lsn(mysql_connection);
+    debug_sync_point("xtrabackup_after_wait_page_tracking");
+    while (true) {
+      if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
+        msg("xtrabackup: pagetracking: Checkpoint lsn is " LSN_PF
+            " and page tracking start lsn is " LSN_PF "\n",
+            log_status.lsn_checkpoint, page_tracking_start_lsn);
+        break;
+      } else {
+        msg("xtrabackup: pagetracking: Sleeping for 1 second, waiting for "
+            "checkpoint lsn " LSN_PF
+            " to reach to page tracking start lsn " LSN_PF " \n",
+            log_status.lsn_checkpoint, page_tracking_start_lsn);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        log_status = log_status_get(mysql_connection);
+      }
     }
   }
 
