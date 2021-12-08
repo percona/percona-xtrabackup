@@ -22,7 +22,7 @@ The installation instructions in the official documentation are [here](https://w
 
 ## Submit a bug report or a feature request
 
-If you find a bug in Percona XtraDB Cluster, you can submit a report to the project's [Jira issue tracker](https://jira.percona.com/projects/PXB/issues)
+If you find a bug in Percona XtraBackup, you can submit a report to the project's [Jira issue tracker](https://jira.percona.com/projects/PXB/issues)
 
 As a general rule of thumb, please try to create a bug report that is:
 
