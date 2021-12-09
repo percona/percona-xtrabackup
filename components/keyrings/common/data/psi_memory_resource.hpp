@@ -3,7 +3,9 @@
 
 #include "psi_memory_resource_fwd.hpp"
 
+#ifndef XTRABACKUP
 #include <mysql/components/services/psi_memory.h>
+#endif
 #include <boost/container/pmr/memory_resource.hpp>
 
 class psi_memory_resource : public boost::container::pmr::memory_resource {

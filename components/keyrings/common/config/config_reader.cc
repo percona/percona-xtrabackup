@@ -53,5 +53,18 @@ inline Config_reader::Config_reader(const std::string config_file_path)
   file_stream.close();
 }
 
+#ifdef XTRABACKUP
+inline Config_reader::Config_reader(
+    const rapidjson::StringBuffer &config_data) {
+  data_.Parse(config_data.GetString());
+  valid_ = !data_.HasParseError();
+  if (!valid_) {
+    LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED,
+                    rapidjson::GetParseError_En(data_.GetParseError()),
+                    data_.GetErrorOffset());
+  }
+}
+#endif
+
 }  // namespace config
 }  // namespace keyring_common

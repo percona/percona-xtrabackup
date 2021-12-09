@@ -41,9 +41,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <components/keyrings/common/component_helpers/include/keyring_reader_service_definition.h>
 /* Keyring_writer_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_writer_service_definition.h>
-#ifdef XTRABACKUP
-#include <storage/innobase/xtrabackup/src/keyring_components.h>
-#endif
 
 #include <mysql/components/services/psi_memory.h>
 
@@ -190,12 +187,8 @@ bool set_paths(const char *component_path, const char *instance_path) {
 bool init_or_reinit_keyring() {
   /* Get config */
   std::unique_ptr<Config_pod> new_config_pod;
-#ifndef XTRABACKUP
   if (keyring_file::config::find_and_read_config_file(new_config_pod))
     return true;
-#else
-  new_config_pod = std::move(xtrabackup::components::new_config_pod);
-#endif
 
   /* Initialize backend handler */
   std::unique_ptr<Keyring_file_backend> new_backend =

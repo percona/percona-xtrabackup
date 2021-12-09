@@ -20,7 +20,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <components/keyrings/common/json_data/json_reader.h>
 #include <components/keyrings/common/json_data/json_writer.h>
 
-#include <components/keyrings/keyring_file/config/config.h>
 #include <dict0dict.h>
 #include <mysqld.h>
 #include <sql/server_component/mysql_server_keyring_lockable_imp.h>
@@ -40,13 +39,15 @@ namespace components {
 const char *XTRABACKUP_KEYRING_FILE_CONFIG =
     "xtrabackup_component_keyring_file.cnf";
 
-std::unique_ptr<keyring_file::config::Config_pod> new_config_pod;
+const char *XTRABACKUP_KEYRING_KMIP_CONFIG =
+    "xtrabackup_component_keyring_kmip.cnf";
 
 SERVICE_TYPE(registry) *reg_srv = nullptr;
 SERVICE_TYPE(keyring_reader_with_status) *keyring_reader_service = nullptr;
 bool service_handler_initialized = false;
 bool keyring_component_initialized = false;
-std::string component_config_data;
+rapidjson::StringBuffer component_config_data_sb;
+std::string component_name;
 
 bool inititialize_service_handles() {
   DBUG_TRACE;
@@ -96,59 +97,90 @@ static bool initialize_manifest_file_components(std::string components) {
 }
 
 bool write_component_config_file() {
-  return backup_file_print(XTRABACKUP_KEYRING_FILE_CONFIG,
-                           component_config_data.c_str(),
-                           component_config_data.length());
+  if (component_name == "component_keyring_file") {
+    return backup_file_print(XTRABACKUP_KEYRING_FILE_CONFIG,
+                             component_config_data_sb.GetString(),
+                             component_config_data_sb.GetSize());
+  } else if (component_name == "component_keyring_kmip") {
+    return backup_file_print(XTRABACKUP_KEYRING_KMIP_CONFIG,
+                             component_config_data_sb.GetString(),
+                             component_config_data_sb.GetSize());
+  }
+  return false;
 }
 
-void create_component_config_data() {
+void create_component_config_data(MYSQL_RES *mysql_result) {
   rapidjson::Document json;
   json.SetObject();
   rapidjson::Document::AllocatorType &allocator = json.GetAllocator();
+  rapidjson::Value config_name(rapidjson::kObjectType);
   rapidjson::Value config_value(rapidjson::kObjectType);
-  config_value.SetString(new_config_pod->config_file_path_.c_str(),
-                         static_cast<rapidjson::SizeType>(
-                             new_config_pod->config_file_path_.length()),
-                         allocator);
-  json.AddMember("path", config_value, allocator);
-  json.AddMember("read_only", new_config_pod->read_only_, allocator);
-  rapidjson::StringBuffer string_buffer;
-  string_buffer.Clear();
-  rapidjson::Writer<rapidjson::StringBuffer> string_writer(string_buffer);
+  MYSQL_ROW row;
+  unsigned long *lengths;
+  while ((row = mysql_fetch_row(mysql_result)) != NULL) {
+    lengths = mysql_fetch_lengths(mysql_result);
+    if (component_name == "component_keyring_file") {
+      if (strcmp(row[0], "data_file") == 0) {
+        config_value.SetString(
+            row[1], static_cast<rapidjson::SizeType>(lengths[1]), allocator);
+        json.AddMember("path", config_value, allocator);
+      } else if (strcmp(row[0], "read_only") == 0) {
+        json.AddMember("read_only", (strcmp(row[1], "No") == 0) ? false : true,
+                       allocator);
+      }
+    } else if (component_name == "component_keyring_kmip") {
+      if (strcmp(row[0], "server_addr") == 0 ||
+          strcmp(row[0], "server_port") == 0 ||
+          strcmp(row[0], "client_ca") == 0 ||
+          strcmp(row[0], "client_key") == 0 ||
+          strcmp(row[0], "server_ca") == 0) {
+        config_name.SetString(
+            row[0], static_cast<rapidjson::SizeType>(lengths[0]), allocator);
+        config_value.SetString(
+            row[1], static_cast<rapidjson::SizeType>(lengths[1]), allocator);
+        json.AddMember(config_name, config_value, allocator);
+      } else if (strcmp(row[0], "object_group") == 0) {
+        if (strcmp(row[1], "<NONE>") != 0) {
+          config_name.SetString(
+              row[0], static_cast<rapidjson::SizeType>(lengths[0]), allocator);
+          config_value.SetString(
+              row[1], static_cast<rapidjson::SizeType>(lengths[1]), allocator);
+          json.AddMember(config_name, config_value, allocator);
+        }
+      }
+    }
+  }
+  component_config_data_sb.Clear();
+  rapidjson::Writer<rapidjson::StringBuffer> string_writer(
+      component_config_data_sb);
   json.Accept(string_writer);
-  component_config_data =
-      std::string(string_buffer.GetString(), string_buffer.GetSize());
 }
-
 
 bool keyring_init_online(MYSQL *connection) {
   bool init_components = false;
   std::string component_urn = "file://";
-  std::string component_name;
-  new_config_pod = std::make_unique<keyring_file::config::Config_pod>();
   const char *query =
-      "SELECT * FROM performance_schema.keyring_component_status";
+      "SELECT lower(STATUS_KEY), STATUS_VALUE FROM "
+      "performance_schema.keyring_component_status";
 
   MYSQL_RES *mysql_result;
   MYSQL_ROW row;
 
   mysql_result = xb_mysql_query(connection, query, true);
-
-  while ((row = mysql_fetch_row(mysql_result)) != NULL) {
-    init_components = true;
-    if (strcmp(row[0], "Component_name") == 0) {
+  if (mysql_num_rows(mysql_result) > 0) {
+    /* First row has component Name */
+    row = mysql_fetch_row(mysql_result);
+    if (strcmp(row[0], "component_name") == 0) {
+      init_components = true;
       component_name = row[1];
       component_urn += row[1];
-    } else if (strcmp(row[0], "Data_file") == 0)
-      new_config_pod->config_file_path_ = row[1];
-    else if (strcmp(row[0], "Read_only") == 0)
-      new_config_pod->read_only_ = (strcmp(row[1], "No") == 0) ? false : true;
+      create_component_config_data(mysql_result);
+    }
   }
 
   mysql_free_result(mysql_result);
 
   if (init_components) {
-    create_component_config_data();
     if (initialize_manifest_file_components(component_urn)) return false;
     /*
       If keyring component was loaded through manifest file, services provided
@@ -161,45 +193,60 @@ bool keyring_init_online(MYSQL *connection) {
   return true;
 }
 
-bool keyring_init_offline() {
-  if (!xtrabackup::utils::read_server_uuid()) return (false);
-
-  char fname[FN_REFLEN];
+bool set_component_config_path(const char *component_config, char *fname) {
   if (opt_component_keyring_file_config != nullptr) {
     strncpy(fname, opt_component_keyring_file_config, FN_REFLEN);
   } else if (xtrabackup_stats) {
-    if (fn_format(fname, XTRABACKUP_KEYRING_FILE_CONFIG, mysql_real_data_home,
-                  "", MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
+    if (fn_format(fname, component_config, mysql_real_data_home, "",
+                  MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
       return (false);
     }
 
   } else {
     if (xtrabackup_incremental_dir != nullptr) {
-      if (fn_format(fname, XTRABACKUP_KEYRING_FILE_CONFIG,
-                    xtrabackup_incremental_dir, "",
+      if (fn_format(fname, component_config, xtrabackup_incremental_dir, "",
                     MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
         return (false);
       }
     } else {
-      if (fn_format(fname, XTRABACKUP_KEYRING_FILE_CONFIG,
-                    xtrabackup_real_target_dir, "",
+      if (fn_format(fname, component_config, xtrabackup_real_target_dir, "",
                     MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
         return (false);
       }
     }
   }
+  return (true);
+}
 
+bool keyring_init_offline() {
+  if (!xtrabackup::utils::read_server_uuid()) return (false);
+
+  char fname[FN_REFLEN];
   std::string config;
-  File_reader component_config(fname, false, config);
-  std::string component_name = "file://component_keyring_file";
-  if (!component_config.valid()) {
+  std::string component_name;
+  /* keyring file */
+  set_component_config_path(XTRABACKUP_KEYRING_FILE_CONFIG, fname);
+  File_reader component_file_config(fname, false, config);
+  component_name = "file://component_keyring_file";
+  if (!component_file_config.valid()) {
     if (opt_component_keyring_file_config != nullptr) {
       msg("xtrabackup: Error: Component configuration file is not readable or "
           "not found.\n");
       return false;
     }
-    /* XTRABACKUP_KEYRING_FILE_CONFIG not found. Attempt to init plugin. */
-    return true;
+
+    /* keyring kmip */
+    memset(fname, 0, FN_REFLEN);
+    config = "";
+    set_component_config_path(XTRABACKUP_KEYRING_KMIP_CONFIG, fname);
+    File_reader component_kmip_config(fname, false, config);
+    component_name = "file://component_keyring_kmip";
+    if (!component_kmip_config.valid()) return true;
+  }
+
+  if (xtrabackup_stats) {
+    msg_ts("xtrabackup: Encryption is not supported with --stats");
+    return false;
   }
   if (config.length() == 0) {
     msg("xtrabackup: Error: Component configuration file is empty.\n");
@@ -213,29 +260,11 @@ bool keyring_init_offline() {
         "JSON.\n");
     return false;
   }
-  if (!config_json.HasMember("path")) {
-    msg("xtrabackup: Error: Component configuration does not have path "
-        "member.\n");
-    return false;
-  }
+  component_config_data_sb.Clear();
+  rapidjson::Writer<rapidjson::StringBuffer> string_writer(
+      component_config_data_sb);
+  config_json.Accept(string_writer);
 
-  std::string path;
-  if (opt_keyring_file_data != nullptr) {
-    path = opt_keyring_file_data;
-  } else {
-    path = config_json["path"].GetString();
-  }
-
-  bool read_only;
-  if (config_json.HasMember("read_only") && config_json["read_only"].IsBool()) {
-    read_only = config_json["read_only"].GetBool();
-  } else {
-    read_only = false;
-  }
-
-  new_config_pod = std::make_unique<keyring_file::config::Config_pod>();
-  new_config_pod->config_file_path_ = path;
-  new_config_pod->read_only_ = read_only;
   if (initialize_manifest_file_components(component_name)) return false;
   set_srv_keyring_implementation_as_default();
   keyring_component_initialized = true;
