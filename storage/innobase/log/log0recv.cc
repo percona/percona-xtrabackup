@@ -96,6 +96,12 @@ otherwise.  Note that this is false while a background thread is
 rolling back incomplete transactions. */
 volatile bool recv_recovery_on;
 volatile lsn_t backup_redo_log_flushed_lsn;
+extern bool opt_page_tracking;
+extern char *xtrabackup_incremental;
+extern lsn_t incremental_start_checkpoint_lsn;
+
+/**  map of sapce_id, that experienced an inplace DDL during a backup op */
+std::map<space_id_t, bool> index_load_map;
 
 #ifdef UNIV_HOTBACKUP
 std::list<std::pair<space_id_t, lsn_t>> index_load_list;
@@ -1754,7 +1760,7 @@ static byte *recv_parse_or_apply_log_rec_body(
       Error out in case of online backup and emit a warning in case
       of offline backup and continue. */
       if (!recv_recovery_on) {
-        if (mdl_taken) {
+        if (redo_catchup_completed) {
           if (backup_redo_log_flushed_lsn < recv_sys->recovered_lsn) {
             ib::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
                        << " load_index lsn " << recv_sys->recovered_lsn;
@@ -1781,6 +1787,24 @@ static byte *recv_parse_or_apply_log_rec_body(
           /** else the index is flushed to disk before
           backup started hence no error */
         } else {
+          // While scaning redo logs during a backup operation a
+          // MLOG_INDEX_LOAD type redo log record indicates, that a DDL
+          // (create index, alter table...) is performed with
+          // 'algorithm=inplace'. If using pagetracking, the affected tablespace
+          // must be copied using full scan. Record it in the index_load_list
+          // We do this during the first scan of redo before starting file copy
+          // thread. This copy is required because Page-tracking relies on
+          // changes from redo as well. ie PXB has to copy redo as well apart
+          // from copying pages from the pages given by page-tracking list.
+          // Since in-place DDL skips redo logging and the pages that are not
+          // yet flushed, will not be tracked by page-tracking. And since the
+          // redo logging is skipped, PXB will fail to get those changed pages
+          // (currently only in buffer pool). hence, we rely on re-copying the
+          // datafiles.
+          if (opt_page_tracking && xtrabackup_incremental != nullptr &&
+              recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
+            index_load_map[space_id] = true;
+          }
           /* offline backup */
           ib::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
                      << " load_index lsn " << recv_sys->recovered_lsn;
@@ -1788,7 +1812,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           ib::warn(ER_IB_MSG_717);
         }
       }
-#endif /* UNIV_HOTBACKUP */
+#endif /* UNIV_HOTBACKUP || XTRABACKUP */
       if (end_ptr < ptr + 8) {
         return (nullptr);
       }
