@@ -67,7 +67,6 @@ enum xtrabackup_compress_t {
 /* value of the --incremental option */
 extern lsn_t incremental_lsn;
 extern lsn_t incremental_start_checkpoint_lsn;
-extern lsn_t page_tracking_start_lsn;
 
 extern char *xtrabackup_target_dir;
 extern char xtrabackup_real_target_dir[FN_REFLEN];
