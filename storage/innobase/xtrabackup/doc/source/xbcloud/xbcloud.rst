@@ -8,9 +8,28 @@ The purpose of |xbcloud| is to download from the cloud and upload to the cloud t
 invoked as a pipeline with |xtrabackup| to stream directly to the cloud without
 needing a local storage.
 
-|xbcloud| stores each chunk as a separate object with a name
+.. note::
+
+   In a Bash shell, the ``$?`` parameter returns the exit code from the last binary. If you use pipes, the ``${PIPESTATUS[x]}`` array parameter returns the exit codes for each binary in the pipe string. 
+
+   .. code-block::
+
+      $ xtrabackup --backup --stream=xbstream --target-dir=/storage/backups/ | xbcloud put [options] full_backup
+       ...
+      $ ${PIPESTATUS[x]}
+      0 0 
+      $ true | false
+      $ echo $?
+      1
+
+      # with PIPESTATUS
+      $ true | false
+      $ echo ${PIPESTATUS[0]} ${PIPESTATUS[1]}
+      0 1
+
+The *xbcloud* binary stores each chunk as a separate object with a name
 ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a
-0-padded serial number of chunk within file. Size of chunk produced by
+0-padded serial number of chunk within a file. Size of chunk produced by
 |xtrabackup| and |xbstream| changed to 10M.
 
 |xbcloud| has three essential operations: *put*, *get*, and *delete*. With these
