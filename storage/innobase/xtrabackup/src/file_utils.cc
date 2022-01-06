@@ -1,4 +1,5 @@
 #include "common.h"
+#include "msg.h"
 #include "my_io.h"
 
 #if defined _WIN32 || defined __CYGWIN__ || defined __EMX__ || \

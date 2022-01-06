@@ -69,8 +69,9 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "backup_copy.h"
 #include "backup_mysql.h"
-#include "keyring_plugins.h"
 #include "keyring_components.h"
+#include "keyring_plugins.h"
+#include "sql_thd_internal_api.h"
 #include "xtrabackup.h"
 #include "xtrabackup_config.h"
 #include "xtrabackup_version.h"
@@ -203,13 +204,13 @@ static bool datafile_open(const char *file, datafile_cur_t *cursor,
     /* The following call prints an error message */
     os_file_get_last_error(TRUE);
 
-    msg("[%02u] error: cannot open file %s\n", thread_n, cursor->abs_path);
+    xb::error() << "cannot open file " << cursor->abs_path;
 
     return (false);
   }
 
   if (my_fstat(cursor->fd, &cursor->statinfo)) {
-    msg("[%02u] error: cannot stat %s\n", thread_n, cursor->abs_path);
+    xb::error() << "cannot stat " << cursor->abs_path;
 
     datafile_close(cursor);
 
@@ -357,8 +358,8 @@ bool directory_exists(const char *dir, bool create) {
     }
 
     if (mkdirp(dir, 0777, MYF(0)) < 0) {
-      msg("Can not create directory %s: %s\n", dir,
-          my_strerror(errbuf, sizeof(errbuf), my_errno()));
+      xb::error() << "Can not create directory " << dir << ": "
+                  << my_strerror(errbuf, sizeof(errbuf), my_errno());
 
       return (false);
     }
@@ -368,8 +369,8 @@ bool directory_exists(const char *dir, bool create) {
   DIR *directory = opendir(dir);
 
   if (directory == nullptr) {
-    msg("Can not open directory %s: %s\n", dir,
-        my_strerror(errbuf, sizeof(errbuf), my_errno()));
+    xb::error() << "Can not open directory " << dir << ": "
+                << my_strerror(errbuf, sizeof(errbuf), my_errno());
 
     return (false);
   }
@@ -389,7 +390,7 @@ static bool directory_exists_and_empty(const char *dir, const char *comment) {
   DIR *directory = opendir(dir);
 
   if (directory == nullptr) {
-    msg("%s can not open directory %s\n", comment, dir);
+    xb::error() << comment << " can not open directory " << dir;
     return (false);
   }
 
@@ -410,7 +411,7 @@ static bool directory_exists_and_empty(const char *dir, const char *comment) {
   closedir(directory);
 
   if (!empty) {
-    msg("%s directory %s is not empty!\n", comment, dir);
+    xb::info() << comment << " directory " << dir << " is not empty!";
   }
 
   return (empty);
@@ -464,7 +465,7 @@ static bool datafile_copy_backup(const char *filepath, uint thread_n) {
   of the filters value. */
 
   if (check_if_skip_table(filepath)) {
-    msg_ts("[%02u] Skipping %s.\n", thread_n, filepath);
+    xb::info() << "Skipping " << filepath;
     return (true);
   }
 
@@ -509,17 +510,17 @@ static bool datafile_rsync_backup(const char *filepath, bool save_to_list,
 
 static bool backup_ds_print(ds_file_t *dstfile, const char *message, int len) {
   const char *action = xb_get_copy_action("Writing");
-  msg_ts("[%02u] %s %s\n", 0, action, dstfile->path);
+  xb::info() << action << " " << dstfile->path;
 
   if (ds_write(dstfile, message, len)) {
     goto error;
   }
 
-  msg_ts("[%02u]        ...done\n", 0);
+  xb::info() << "Done: " << action << " file " << dstfile->path;
   return true;
 
 error:
-  msg("[%02u] Error: %s backup file failed.\n", 0, action);
+  xb::error() << action << " backup file " << dstfile->path << " failed.";
   return false;
 }
 
@@ -533,9 +534,7 @@ bool backup_file_print(const char *filename, const char *message, int len) {
 
   dstfile = ds_open(ds_data, filename, &stat);
   if (dstfile == NULL) {
-    msg("[%02u] error: "
-        "cannot open the destination stream for %s\n",
-        0, filename);
+    xb::error() << "cannot open the destination stream for " << filename;
     goto error;
   }
 
@@ -630,7 +629,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
   for (i = 0; i < n; i++) {
     ret = data_threads[i].ret && ret;
     if (!data_threads[i].ret) {
-      msg("Error: %s thread %u failed.\n", thread_description, i);
+      xb::error() << thread_description << " thread " << i << " failed.";
     }
   }
 
@@ -711,8 +710,8 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
 
   if (pos >= 0) {
     if ((ssize_t)cursor.statinfo.st_size < pos) {
-      msg("xtrabackup: Error file '%s' is smaller than %zd\n", src_file_path,
-          pos);
+      xb::error() << "file " << SQUOTE(src_file_path) << " is smaller than "
+                  << pos;
       goto error;
     }
     cursor.statinfo.st_size = pos;
@@ -722,18 +721,16 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
 
   dstfile = ds_open(datasink, trim_dotslash(dst_file_path), &cursor.statinfo);
   if (dstfile == NULL) {
-    msg("[%02u] error: cannot open the destination stream for %s\n", thread_n,
-        dst_name);
+    xb::error() << "cannot open the destination stream for " << dst_name;
     goto error;
   }
 
   action = xb_get_copy_action();
   if (pos >= 0) {
-    msg_ts("[%02u] %s %s to %s up to position %zd\n", thread_n, action,
-           src_file_path, dstfile->path, pos);
+    xb::info() << action << " " << src_file_path << " to " << dstfile->path
+               << " up to position " << pos;
   } else {
-    msg_ts("[%02u] %s %s to %s\n", thread_n, action, src_file_path,
-           dstfile->path);
+    xb::info() << action << " " << src_file_path << " to " << dstfile->path;
   }
 
   /* The main copy loop */
@@ -755,7 +752,8 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
   }
 
   /* close */
-  msg_ts("[%02u]        ...done\n", thread_n);
+  xb::info() << "Done: " << action << " " << src_file_path << " to "
+             << dstfile->path;
   datafile_close(&cursor);
   if (ds_close(dstfile)) {
     goto error_close;
@@ -769,7 +767,7 @@ error:
   }
 
 error_close:
-  msg("[%02u] Error: copy_file() failed.\n", thread_n);
+  xb::error() << "copy_file() failed.";
   return (false); /*ERROR*/
 }
 
@@ -795,34 +793,33 @@ static bool move_file(ds_ctxt_t *datasink, const char *src_file_path,
   }
 
   if (file_exists(dst_file_path_abs)) {
-    msg("Error: Move file %s to %s failed: Destination "
-        "file exists\n",
-        src_file_path, dst_file_path_abs);
+    xb::error() << "Move file " << src_file_path << " to " << dst_file_path_abs
+                << " failed: Destination file exists";
     return (false);
   }
 
-  msg_ts("[%02u] Moving %s to %s\n", thread_n, src_file_path,
-         dst_file_path_abs);
+  xb::info() << "Moving " << src_file_path << " to " << dst_file_path_abs;
 
   if (my_rename(src_file_path, dst_file_path_abs, MYF(0)) != 0) {
     if (my_errno() == EXDEV) {
       bool ret;
       ret = copy_file(datasink, src_file_path, dst_file_path, thread_n,
                       file_purpose);
-      msg_ts("[%02u] Removing %s\n", thread_n, src_file_path);
+      xb::info() << "Removing " << src_file_path;
       if (unlink(src_file_path) != 0) {
-        msg("Error: unlink %s failed: %s\n", src_file_path,
-            my_strerror(errbuf, sizeof(errbuf), errno));
+        xb::error() << "unlink " << src_file_path << "  failed: "
+                    << my_strerror(errbuf, sizeof(errbuf), errno);
       }
       return (ret);
     }
-    msg("Can not move file %s to %s: %s\n", src_file_path, dst_file_path_abs,
-        my_strerror(errbuf, sizeof(errbuf), my_errno()));
+    xb::error() << "Can not move file " << src_file_path << " to "
+                << dst_file_path_abs << " : "
+                << my_strerror(errbuf, sizeof(errbuf), my_errno());
     return (false);
   }
 
-  msg_ts("[%02u]        ...done\n", thread_n);
-
+  xb::info() << "Done: Moving file " << src_file_path << " to "
+             << dst_file_path_abs;
   return (true);
 }
 
@@ -896,7 +893,7 @@ bool copy_redo_encryption_info() {
       &success);
   if (!success) {
     os_file_get_last_error(TRUE);
-    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", src_path);
+    xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << src_path;
 
     return false;
   }
@@ -906,7 +903,7 @@ bool copy_redo_encryption_info() {
       &success);
   if (!success) {
     os_file_get_last_error(TRUE);
-    msg_ts("xtrabackup: Fatal error: cannot find %s.\n", dst_path);
+    xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << dst_path;
 
     return false;
   }
@@ -918,10 +915,8 @@ bool copy_redo_encryption_info() {
                           log_buf.get() + encryption_offset, encryption_offset,
                           Encryption::INFO_SIZE);
   if (!success) {
-    msg_ts(
-        "xtrabackup: Fatal error: cannot write encryption to redo log "
-        "%s.\n",
-        dst_path);
+    xb::fatal_or_error(UT_LOCATION_HERE)
+        << "cannot write encryption to redo log " << dst_path;
     return false;
   }
   os_file_close(src_file);
@@ -965,8 +960,7 @@ static bool reencrypt_redo_header(const char *dir, const char *filename,
     my_close(fd, MYF(MY_FAE));
     return (true);
   }
-  msg_ts("[%02u] Encrypting %s header with new master key.\n", thread_n,
-         fullpath);
+  xb::info() << "Encrypting " << fullpath << " header with new master key";
 
   memset(encrypt_info, 0, Encryption::INFO_SIZE);
   space.id = dict_sys_t::s_log_space_first_id;
@@ -1022,8 +1016,8 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
     return (true);
   }
 
-  msg_ts("[%02u] Encrypting %s tablespace header with new master key.\n",
-         thread_n, fullpath);
+  xb::info() << "Encrypting " << fullpath
+             << " tablespace header with new master key.";
 
   memset(encrypt_info, 0, Encryption::INFO_SIZE);
 
@@ -1111,11 +1105,14 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
                                FILE *rsync_tmpfile) {
   bool ret = true;
   datadir_entry_t entry;
-
+  THD *thd = nullptr;
   if (my_thread_init()) {
     ret = false;
     goto cleanup;
   }
+
+  /* create THD to get thread number in the error log */
+  thd = create_thd(false, false, true, 0, 0);
 
   while (ctx->queue->pop(entry)) {
     char name[FN_REFLEN];
@@ -1138,7 +1135,7 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
         ret = datafile_copy_backup(path, ctx->n_thread);
       }
       if (!ret) {
-        msg("Failed to copy file %s\n", path);
+        xb::error() << "Failed to copy file " << path;
         ret = false;
         goto cleanup;
       }
@@ -1149,7 +1146,7 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
       if (path[strlen(path) - 1] == '/') path[strlen(path) - 1] = '\0';
       snprintf(opath, sizeof(opath), "%s/db.opt", path);
       if (!(ret = backup_file_printf(trim_dotslash(opath), "%s", ""))) {
-        msg("Failed to create file %s\n", opath);
+        xb::error() << "Failed to create file " << opath;
         ret = false;
         goto cleanup;
       }
@@ -1157,6 +1154,7 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
   }
 
 cleanup:
+  destroy_thd(thd);
   my_thread_end();
 
   mutex_enter(ctx->count_mutex);
@@ -1180,13 +1178,13 @@ bool backup_files(const char *from, bool prep_mode) {
              opt_mysql_tmpdir, "xtrabackup_rsyncfiles_pass", prep_mode ? 1 : 2);
     rsync_tmpfile = fopen(rsync_tmpfile_name, "w");
     if (rsync_tmpfile == NULL) {
-      msg("Error: can't create file %s\n", rsync_tmpfile_name);
+      xb::error() << "can't create file " << rsync_tmpfile_name;
       return (false);
     }
   }
 
-  msg_ts("Starting %s non-InnoDB tables and files\n",
-         prep_mode ? "prep copy of" : "to backup");
+  xb::info() << "Starting " << (prep_mode ? "prep copy of" : "to backup")
+             << " non-InnoDB tables and files";
 
   run_data_threads(from,
                    std::bind(backup_thread_func, std::placeholders::_1,
@@ -1218,13 +1216,13 @@ bool backup_files(const char *from, bool prep_mode) {
     cmd << "rsync -t . --files-from=" << rsync_tmpfile_name << " "
         << xtrabackup_target_dir;
 
-    msg_ts("Starting rsync as: %s\n", cmd.str().c_str());
+    xb::info() << "Starting rsync as: " << cmd.str().c_str();
     if ((err = system(cmd.str().c_str()) && !prep_mode) != 0) {
-      msg_ts("Error: rsync failed with error code %d\n", err);
+      xb::error() << "rsync failed with error code " << err;
       ret = false;
       goto out;
     }
-    msg_ts("rsync finished successfully.\n");
+    xb::info() << "rsync finished successfully.";
 
     if (!prep_mode && !opt_no_lock) {
       char path[FN_REFLEN];
@@ -1239,7 +1237,7 @@ bool backup_files(const char *from, bool prep_mode) {
 
       rsync_tmpfile = fopen(rsync_tmpfile_name, "r");
       if (rsync_tmpfile == NULL) {
-        msg("Error: can't open file %s\n", rsync_tmpfile_name);
+        xb::error() << "can't open file " << rsync_tmpfile_name;
         return (false);
       }
 
@@ -1251,7 +1249,7 @@ bool backup_files(const char *from, bool prep_mode) {
         if (rsync_list.count(path) < 1) {
           snprintf(dst_path, sizeof(dst_path), "%s/%s", xtrabackup_target_dir,
                    path);
-          msg_ts("Removing %s\n", dst_path);
+          xb::info() << "Removing " << dst_path;
           unlink(dst_path);
         }
       }
@@ -1261,8 +1259,8 @@ bool backup_files(const char *from, bool prep_mode) {
     }
   }
 
-  msg_ts("Finished %s non-InnoDB tables and files\n",
-         prep_mode ? "a prep copy of" : "backing up");
+  xb::info() << "Finished " << (prep_mode ? "a prep copy of" : "backing up")
+             << " non-InnoDB tables and files";
 
 out:
   if (rsync_tmpfile != NULL) {
@@ -1346,7 +1344,7 @@ Myrocks_datadir::file_list Myrocks_datadir::meta_files(
 }
 
 void Myrocks_checkpoint::create(MYSQL *con, bool disable_file_deletions) {
-  msg_ts("xtrabackup: Creating RocksDB checkpoint\n");
+  xb::info() << "Creating RocksDB checkpoint";
 
   if (disable_file_deletions) {
     xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = TRUE",
@@ -1379,7 +1377,7 @@ void Myrocks_checkpoint::enable_file_deletions() const {
 }
 
 void Myrocks_checkpoint::remove() const {
-  msg_ts("xtrabackup: Removing RocksDB checkpoint\n");
+  xb::info() << "Removing RocksDB checkpoint";
 
   xb_mysql_query(con, "SET SESSION rocksdb_create_temporary_checkpoint = NULL",
                  false);
@@ -1479,7 +1477,7 @@ static bool backup_rocksdb_wal(const Myrocks_checkpoint &checkpoint,
   par_for(PFS_NOT_INSTRUMENTED, live_wal_files, xtrabackup_parallel, copy);
 
   if (!result) {
-    msg("xtrabackup: error: failed to backup rocksdb WAL files.\n");
+    xb::error() << "failed to backup rocksdb WAL files.";
   }
 
   return result;
@@ -1515,7 +1513,7 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
   par_for(PFS_NOT_INSTRUMENTED, checkpoint_files, xtrabackup_parallel, copy);
 
   if (!result) {
-    msg("xtrabackup: error: failed to backup rocksdb datadir.\n");
+    xb::error() << "failed to backup rocksdb datadir.";
   }
 
   return result;
@@ -1582,7 +1580,7 @@ bool backup_start(Backup_context &context) {
     context.myrocks_checkpoint.create(mysql_connection, true);
   }
 
-  msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS\n");
+  xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS";
   xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS",
                  false);
 
@@ -1605,15 +1603,16 @@ bool backup_start(Backup_context &context) {
                       log_status.lsn_checkpoint = 1;
                       DBUG_SET("-d,page_tracking_checkpoint_behind"););
       if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
-        msg("xtrabackup: pagetracking: Checkpoint lsn is " LSN_PF
-            " and page tracking start lsn is " LSN_PF "\n",
-            log_status.lsn_checkpoint, page_tracking_start_lsn);
+        xb::info() << "pagetracking: Checkpoint lsn is "
+                   << log_status.lsn_checkpoint
+                   << " and page tracking start lsn is "
+                   << page_tracking_start_lsn;
         break;
       } else {
-        msg("xtrabackup: pagetracking: Sleeping for 1 second, waiting for "
-            "checkpoint lsn " LSN_PF
-            " to reach to page tracking start lsn " LSN_PF " \n",
-            log_status.lsn_checkpoint, page_tracking_start_lsn);
+        xb::info() << "pagetracking: Sleeping for 1 second, waiting for "
+                   << "checkpoint lsn " << log_status.lsn_checkpoint
+                   << " to reach to page tracking start lsn "
+                   << page_tracking_start_lsn;
         std::this_thread::sleep_for(std::chrono::seconds(1));
         log_status_get(mysql_connection);
       }
@@ -1642,7 +1641,7 @@ bool backup_start(Backup_context &context) {
   write_binlog_info(mysql_connection);
 
   if (have_flush_engine_logs) {
-    msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...\n");
+    xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...";
     xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS",
                    false);
   }
@@ -1662,7 +1661,7 @@ bool backup_finish(Backup_context &context) {
   }
 
   if (opt_safe_slave_backup && sql_thread_started) {
-    msg("Starting slave SQL thread\n");
+    xb::info() << "Starting slave SQL thread";
     xb_mysql_query(mysql_connection, "START SLAVE SQL_THREAD", false);
   }
 
@@ -1689,16 +1688,18 @@ bool backup_finish(Backup_context &context) {
     context.myrocks_checkpoint.remove();
   }
 
-  msg_ts("Backup created in directory '%s'\n", xtrabackup_target_dir);
+  xb::info() << "Backup created in directory " << SQUOTE(xtrabackup_target_dir);
+
   if (!mysql_binlog_position.empty()) {
-    msg("MySQL binlog position: %s\n", mysql_binlog_position.c_str());
+    xb::info() << "MySQL binlog position: " << mysql_binlog_position.c_str();
   }
   if (!mysql_slave_position.empty() && opt_slave_info) {
-    msg("MySQL slave binlog position: %s\n", mysql_slave_position.c_str());
+    xb::info() << "MySQL slave binlog position: "
+               << mysql_slave_position.c_str();
   }
   if (xtrabackup::components::keyring_component_initialized &&
       !xtrabackup::components::write_component_config_file()) {
-    msg("xtrabackup: write_component_config_file failed\n");
+    xb::error() << "write_component_config_file failed";
     return (false);
   }
   if (!write_backup_config_file()) {
@@ -1725,7 +1726,7 @@ bool copy_if_ext_matches(const char **ext_list, const datadir_entry_t &entry,
 
   if (!copy_file(ds_data, entry.path.c_str(), entry.rel_path.c_str(), 1,
                  FILE_PURPOSE_OTHER)) {
-    msg("Failed to copy file %s\n", entry.path.c_str());
+    xb::error() << "Failed to copy file " << entry.path.c_str();
     return false;
   }
 
@@ -1841,7 +1842,7 @@ bool binlog_file_location::find_binlog(const std::string &dir,
     if (ends_with(path.c_str(), ".index") && !Dir_Walker::is_directory(path)) {
       std::ifstream f_index(path);
       if (f_index.fail()) {
-        msg("xtrabackup: Error cannot read '%s'\n", path.c_str());
+        xb::error() << "cannot read " << SQUOTE(path.c_str());
         error = true;
         return (false);
       }
@@ -1986,15 +1987,13 @@ bool copy_incremental_over_full() {
       /* remove .rocksdb from the full backup first */
       for (const auto &file : old_rocksdb.files()) {
         if (unlink(file.path.c_str())) {
-          msg("xtrabackup: error: unable to unlink file '%s'\n",
-              file.path.c_str());
+          xb::error() << "unable to unlink file " << SQUOTE(file.path.c_str());
           ret = false;
           goto cleanup;
         }
       }
       if (rmdir(ROCKSDB_SUBDIR)) {
-        msg("xtrabackup: error: unable to remove directory '" ROCKSDB_SUBDIR
-            "'\n");
+        xb::error() << "unable to remove directory " << SQUOTE(ROCKSDB_SUBDIR);
         ret = false;
         goto cleanup;
       }
@@ -2137,29 +2136,32 @@ bool should_skip_file_on_copy_back(const char *filepath) {
 static void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
   bool ret = true;
   datadir_entry_t entry;
+  THD *thd = nullptr;
 
   if (my_thread_init()) {
     ret = false;
     goto cleanup;
   }
 
+  /* create THD to get thread number in the error log */
+  thd = create_thd(false, false, true, 0, 0);
+
   while (ctx->queue->pop(entry)) {
     /* create empty directories */
     if (entry.is_empty_dir) {
-      msg_ts("[%02u] Creating directory %s\n", ctx->n_thread,
-             entry.path.c_str());
+      xb::info() << "Creating directory " << entry.path.c_str();
 
       if (mkdirp(entry.path.c_str(), 0777, MYF(0)) < 0) {
         char errbuf[MYSYS_STRERROR_SIZE];
 
-        msg("Can not create directory %s: %s\n", entry.path.c_str(),
-            my_strerror(errbuf, sizeof(errbuf), my_errno()));
+        xb::error() << "Can not create directory " << entry.path.c_str() << ": "
+                    << my_strerror(errbuf, sizeof(errbuf), my_errno());
         ret = false;
 
         goto cleanup;
       }
 
-      msg_ts("[%02u] ...done.\n", ctx->n_thread);
+      xb::info() << "Done: creating directory " << entry.path;
       continue;
     }
 
@@ -2205,6 +2207,7 @@ static void copy_back_thread_func(datadir_thread_ctxt_t *ctx) {
 
 cleanup:
   my_thread_end();
+  destroy_thd(thd);
 
   mutex_enter(ctx->count_mutex);
   --(*ctx->count);
@@ -2244,7 +2247,7 @@ bool copy_back(int argc, char **argv) {
 
   /* cd to backup directory */
   if (my_setwd(xtrabackup_target_dir, MYF(MY_WME))) {
-    msg("cannot my_setwd %s\n", xtrabackup_target_dir);
+    xb::error() << "cannot my_setwd " << xtrabackup_target_dir;
     return (false);
   }
 
@@ -2256,27 +2259,29 @@ bool copy_back(int argc, char **argv) {
 
   if (!xtrabackup::utils::load_backup_my_cnf(backup_options,
                                              xtrabackup_target_dir)) {
-    msg("xtrabackup: Error: failed to load backup-my.cnf\n");
+    xb::error() << "failed to load backup-my.cnf";
     return (false);
   }
 
   if (!Tablespace_map::instance().deserialize("./")) {
-    msg("xtrabackup: Error: failed to load tablespaces list.\nIt is possible "
-        "that the backup was created by Percona XtraBackup 2.4 or earlier "
-        "version. Please use the same XtraBackup version to restore.\n");
+    xb::error() << "failed to load tablespaces list.";
+    xb::error()
+        << "It is possible "
+           "that the backup was created by Percona XtraBackup 2.4 or earlier "
+           "version. Please use the same XtraBackup version to restore.";
     return (false);
   }
 
   if (opt_generate_new_master_key && !xb_tablespace_keys_exist()) {
-    msg("xtrabackup: Error: option --generate_new_master_key "
-        "is specified but xtrabackup_keys is absent.\n");
+    xb::error() << "option --generate_new_master_key "
+                << "is specified but xtrabackup_keys is absent";
     return (false);
   }
 
   if (xb_tablespace_keys_exist() && opt_generate_new_master_key) {
     FILE *f = fopen("xtrabackup_master_key_id", "r");
     if (f == NULL) {
-      msg("xtrabackup: Error: can't read master_key_id\n");
+      xb::error() << "can't read master_key_id";
       return (false);
     }
     auto key = Encryption::get_master_key_id();
@@ -2284,13 +2289,13 @@ bool copy_back(int argc, char **argv) {
     ut_a(ret == 1);
     fclose(f);
     if (!xb_keyring_init_for_copy_back(argc, argv)) {
-      msg("xtrabackup: Error: failed to init keyring plugin\n");
+      xb::error() << "failed to init keyring plugin";
       return (false);
     }
     if (!xb_tablespace_keys_load(
             "./", opt_transition_key,
             opt_transition_key != NULL ? strlen(opt_transition_key) : 0)) {
-      msg("xtrabackup: Error: failed to load tablespace keys\n");
+      xb::error() << "failed to load tablespace keys";
       return (false);
     }
 
@@ -2299,8 +2304,8 @@ bool copy_back(int argc, char **argv) {
     Encryption::create_master_key(&master_key);
 
     if (master_key == NULL) {
-      msg("xtrabackup: Error: can't generate new master "
-          "key. Please check keyring plugin settings.\n");
+      xb::error() << "can't generate new master "
+                     "key. Please check keyring plugin settings.";
       return (false);
     }
 
@@ -2309,7 +2314,7 @@ bool copy_back(int argc, char **argv) {
     uint32_t master_key_id;
     Encryption::get_master_key(&master_key_id, &master_key);
 
-    msg_ts("Generated new master key");
+    xb::info() << "Generated new master key";
 
     my_free(master_key);
   }
@@ -2324,7 +2329,7 @@ bool copy_back(int argc, char **argv) {
   srv_sys_space.set_path(".");
 
   if (!srv_sys_space.parse_params(innobase_data_file_path, true, false)) {
-    msg("syntax error in innodb_data_file_path\n");
+    xb::error() << "syntax error in innodb_data_file_path";
     return (false);
   }
 
@@ -2416,8 +2421,8 @@ bool copy_back(int argc, char **argv) {
       }
       ret = xb_binlog_password_reencrypt(target.path.c_str());
       if (!ret) {
-        msg("xtrabackup: Error: failed to reencrypt binary log file "
-            "header.\n");
+        xb::error() << "failed to reencrypt binary log file "
+                       "header.";
         goto cleanup;
       }
       /* make sure we don't copy binary log and .index files twice */
@@ -2446,8 +2451,8 @@ bool copy_back(int argc, char **argv) {
 
   ut_a(xtrabackup_parallel >= 0);
   if (xtrabackup_parallel > 1) {
-    msg("xtrabackup: Starting %u threads for parallel data files transfer\n",
-        xtrabackup_parallel);
+    xb::info() << "Starting " << xtrabackup_parallel
+               << " threads for parallel data files transfer";
   }
 
   ret = run_data_threads(".", copy_back_thread_func, xtrabackup_parallel,
@@ -2612,14 +2617,14 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   free(dest_filepath);
 
   if (needs_action) {
-    msg_ts("[%02u] %s\n", thread_n, message.str().c_str());
+    xb::info() << message.str().c_str();
 
     if (system(cmd.str().c_str()) != 0) {
       return (false);
     }
 
     if (opt_remove_original) {
-      msg_ts("[%02u] removing %s\n", thread_n, filepath);
+      xb::info() << "removing " << filepath;
       if (my_delete(filepath, MYF(MY_WME)) != 0) {
         return (false);
       }
@@ -2667,7 +2672,7 @@ bool decrypt_decompress() {
 
   /* cd to backup directory */
   if (my_setwd(xtrabackup_target_dir, MYF(MY_WME))) {
-    msg("cannot my_setwd %s\n", xtrabackup_target_dir);
+    xb::error() << "cannot my_setwd " << xtrabackup_target_dir;
     return (false);
   }
 
@@ -2694,7 +2699,7 @@ bool decrypt_decompress() {
 #ifdef HAVE_VERSION_CHECK
 void version_check() {
   if (system("which perl > /dev/null 2>&1")) {
-    msg("xtrabackup: perl binary not found. Skipping the version check\n");
+    xb::info() << "perl binary not found. Skipping the version check";
     return;
   }
 

@@ -23,4 +23,4 @@ xtrabackup --prepare --incremental-dir=$topdir/inc --target-dir=$topdir/backup
 run_cmd_expect_failure ${XB_BIN} ${XB_ARGS} --prepare --incremental-dir=$topdir/inc \
 		       --target-dir=$topdir/backup1
 
-grep -q "xtrabackup: error: xtrabackup_logfile was already used to '--prepare'" $OUTFILE || die "error message not found!"
+grep -q "xtrabackup_logfile was already used to '--prepare'" $OUTFILE || die "error message not found!"

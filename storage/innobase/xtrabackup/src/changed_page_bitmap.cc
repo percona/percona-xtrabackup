@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "common.h"
 #include "srv0srv.h"
+#include "xb0xb.h"
 #include "xtrabackup.h"
 
 /* TODO: copy-pasted shared definitions from the XtraDB bitmap write code.
@@ -191,9 +192,8 @@ static bool log_online_read_bitmap_page(
   if (UNIV_UNLIKELY(!success)) {
     /* The following call prints an error message */
     os_file_get_last_error(TRUE);
-    msg("InnoDB: Warning: failed reading changed page bitmap "
-        "file \'%s\'\n",
-        bitmap_file->name);
+    xb::warn() << "failed reading changed page bitmap file "
+               << bitmap_file->name;
     return FALSE;
   }
 
@@ -313,7 +313,7 @@ static bool log_online_setup_bitmap_file_range(
       false);
 
   if (!ret) {
-    msg("InnoDB: Error: cannot read \'%s\'\n", srv_data_home);
+    xb::error() << "cannot read " << SQUOTE(srv_data_home);
     return false;
   }
 
@@ -359,8 +359,7 @@ static bool log_online_setup_bitmap_file_range(
 
         array_pos = file_seq_num - first_file_seq_num;
         if (UNIV_UNLIKELY(array_pos >= bitmap_files->count)) {
-          msg("InnoDB: Error: inconsistent bitmap file "
-              "directory\n");
+          xb::info() << "inconsistent bitmap file directory ";
           ut::free(bitmap_files->files);
           error = true;
           return;
@@ -381,7 +380,7 @@ static bool log_online_setup_bitmap_file_range(
   }
 
   if (!ret) {
-    msg("InnoDB: Error: cannot read \'%s\'\n", srv_data_home);
+    xb::error() << "cannot read " << SQUOTE(srv_data_home);
     return false;
   }
 
@@ -427,9 +426,8 @@ static bool log_online_open_bitmap_file_read_only(
 
     /* Here and below assume that bitmap file names do not
     contain apostrophes, thus no need for ut_print_filename(). */
-    msg("InnoDB: Warning: error opening the changed page "
-        "bitmap \'%s\'\n",
-        bitmap_file->name);
+    xb::warn() << "error opening the changed page bitmap "
+               << SQUOTE(bitmap_file->name);
     return FALSE;
   }
 
@@ -467,9 +465,8 @@ static bool log_online_diagnose_bitmap_eof(
       to read, it's junk.  This error is not fatal in
       itself. */
 
-      msg("InnoDB: Warning: junk at the end of changed "
-          "page bitmap file \'%s\'.\n",
-          bitmap_file->name);
+      xb::warn() << "junk at the end of changed page bitmap file "
+                 << SQUOTE(bitmap_file->name);
     }
 
     if (UNIV_UNLIKELY(!last_page_in_run)) {
@@ -477,10 +474,9 @@ static bool log_online_diagnose_bitmap_eof(
       a run */
       /* It's a "Warning" here because it's not a fatal error
       for the whole server */
-      msg("InnoDB: Warning: changed page bitmap "
-          "file \'%s\' does not contain a complete run "
-          "at the end.\n",
-          bitmap_file->name);
+      xb::warn() << "changed page bitmap file " << SQUOTE(bitmap_file->name)
+                 << " does not contain a complete run "
+                    "at the end.";
       return FALSE;
     }
   }
@@ -508,9 +504,8 @@ static void xb_msg_missing_lsn_data(
     lsn_t missing_interval_start, /*!<in: interval start */
     lsn_t missing_interval_end)   /*!<in: interval end */
 {
-  msg("xtrabackup: warning: changed page data missing for LSNs between " LSN_PF
-      " and " LSN_PF "\n",
-      missing_interval_start, missing_interval_end);
+  xb::warn() << "changed page data missing for LSNs between "
+             << missing_interval_start << " and " << missing_interval_end;
 }
 
 /****************************************************************/ /**
@@ -578,9 +573,9 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   bool last_page_ok = TRUE;
 
   if (UNIV_UNLIKELY(bmp_start_lsn > bmp_end_lsn)) {
-    msg("xtrabackup: incremental backup LSN " LSN_PF
-        " is larger than than the last checkpoint LSN " LSN_PF "\n",
-        bmp_start_lsn, bmp_end_lsn);
+    xb::info() << "incremental backup LSN " << bmp_start_lsn
+               << " is larger than than the last checkpoint LSN "
+               << bmp_end_lsn;
     return NULL;
   }
 
@@ -649,9 +644,8 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   /* Find the start of the required LSN range in the file */
   if (UNIV_UNLIKELY(!xb_find_lsn_in_bitmap_file(
           &bitmap_file, page, &current_page_end_lsn, bmp_start_lsn))) {
-    msg("xtrabackup: Warning: changed page bitmap file "
-        "\'%s\' corrupted\n",
-        bitmap_file.name);
+    xb::warn() << "changed page bitmap file " << SQUOTE(bitmap_file.name)
+               << " corrupted";
     rbt_free(result);
     ut::free(bitmap_files.files);
     os_file_close(bitmap_file.file);
@@ -734,9 +728,8 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
     }
 
     if (UNIV_UNLIKELY(!last_page_ok)) {
-      msg("xtrabackup: warning: changed page bitmap file "
-          "\'%s\' corrupted.\n",
-          bitmap_file.name);
+      xb::warn() << "changed page bitmap file " << SQUOTE(bitmap_file.name)
+                 << " corrupted.";
       rbt_free(result);
       ut::free(bitmap_files.files);
       os_file_close(bitmap_file.file);

@@ -42,6 +42,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "crc_glue.h"
 
+#include "msg.h"
 #include "xbcloud/azure.h"
 #include "xbcloud/s3.h"
 #include "xbcloud/swift.h"

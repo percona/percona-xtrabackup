@@ -8,4 +8,4 @@ mkdir $topdir/backup
 
 xtrabackup --backup --close-files --target-dir=$topdir/backup
 
-grep "xtrabackup: warning: close-files specified" $OUTFILE
+grep "close-files specified" $OUTFILE

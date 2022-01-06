@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql_version.h>
 #include "common.h"
 #include "datasink.h"
+#include "msg.h"
 #include "my_xxhash.h"
 #include "thread_pool.h"
 

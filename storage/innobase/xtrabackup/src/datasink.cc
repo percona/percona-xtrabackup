@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_stdout.h"
 #include "ds_tmpfile.h"
 #include "ds_xbstream.h"
+#include "msg.h"
 
 /************************************************************************
 Create a datasink of the specified type */

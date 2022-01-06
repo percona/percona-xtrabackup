@@ -147,24 +147,24 @@ MYSQL *xb_mysql_connect() {
   sprintf(mysql_port_str, "%d", opt_port);
 
   if (connection == NULL) {
-    msg("Failed to init MySQL struct: %s.\n", mysql_error(connection));
+    xb::error() << "Failed to init MySQL struct: " << mysql_error(connection);
     return (NULL);
   }
 
-  msg_ts(
-      "Connecting to MySQL server host: %s, user: %s, password: %s, "
-      "port: %s, socket: %s\n",
-      opt_host ? opt_host : "localhost", opt_user ? opt_user : "not set",
-      opt_password ? "set" : "not set",
-      opt_port != 0 ? mysql_port_str : "not set",
-      opt_socket ? opt_socket : "not set");
+  xb::info() << "Connecting to MySQL server host: "
+             << (opt_host ? opt_host : "localhost")
+             << ", user: " << (opt_user ? opt_user : "not set")
+             << ", password: " << (opt_password ? "set" : "not set")
+             << ", port: " << (opt_port != 0 ? mysql_port_str : "not set")
+             << ", socket: " << (opt_socket ? opt_socket : "not set");
 
   set_client_ssl_options(connection);
 
   if (!mysql_real_connect(connection, opt_host ? opt_host : "localhost",
                           opt_user, opt_password, "" /*database*/, opt_port,
                           opt_socket, 0)) {
-    msg("Failed to connect to MySQL server: %s.\n", mysql_error(connection));
+    xb::error() << "Failed to connect to MySQL server: "
+                << mysql_error(connection);
     mysql_close(connection);
     return (NULL);
   }
@@ -185,10 +185,10 @@ MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
   MYSQL_RES *mysql_result = NULL;
 
   if (mysql_query(connection, query)) {
-    msg("Error: failed to execute query '%s': %u (%s) %s\n", query,
-        mysql_errno(connection),
-        mysql_errno_to_sqlstate(mysql_errno(connection)),
-        mysql_error(connection));
+    xb::error() << "failed to execute query " << SQUOTE(query) << " : "
+                << mysql_errno(connection) << " ("
+                << mysql_errno_to_sqlstate(mysql_errno(connection)) << ") "
+                << mysql_error(connection);
     if (die_on_error) {
       exit(EXIT_FAILURE);
     }
@@ -198,8 +198,8 @@ MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
   /* store result set on client if there is a result */
   if (mysql_field_count(connection) > 0) {
     if ((mysql_result = mysql_store_result(connection)) == NULL) {
-      msg("Error: failed to fetch query result %s: %s\n", query,
-          mysql_error(connection));
+      xb::error() << "failed to fetch query result " << query << " : "
+                  << mysql_error(connection);
       if (die_on_error) {
         exit(EXIT_FAILURE);
       }
@@ -333,7 +333,6 @@ void parse_show_engine_innodb_status(MYSQL *connection) {
   mysql_free_result(mysql_result);
 }
 
-
 static bool check_server_version(unsigned long version_number,
                                  const char *version_string,
                                  const char *version_comment,
@@ -363,19 +362,19 @@ static bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
 
-
   if (!version_supported) {
-    msg("Error: Unsupported server version: '%s'.\n"
-        "This version of Percona XtraBackup can only perform backups and "
-        "restores against MySQL 8.0 and Percona Server 8.0\n",
-        version_string);
+    xb::error() << "Unsupported server version: " << SQUOTE(version_string);
+    xb::error()
+        << "This version of Percona XtraBackup can only perform backups and "
+           "restores against MySQL 8.0 and Percona Server 8.0";
     if (mysql51 && innodb_version == NULL) {
-      msg("You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "
-          "InnoDB, or upgrade to InnoDB plugin and use Percona XtraBackup "
-          "2.4.\n");
+      xb::error()
+          << "You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "
+             "InnoDB, or upgrade to InnoDB plugin and use Percona XtraBackup "
+             "2.4.";
     }
     if (pxb24) {
-      msg("Please use Percona XtraBackup 2.4 for this database.\n");
+      xb::info() << "Please use Percona XtraBackup 2.4 for this database.";
     }
   }
 
@@ -385,11 +384,12 @@ static bool check_server_version(unsigned long version_number,
   DBUG_EXECUTE_IF("simulate_lower_version", pxb_base_ver = 80014;);
 
   if (!opt_no_server_version_check && pxb_base_ver < version_number) {
-    msg("Error: Unsupported server version %s.\n"
-        "Please upgrade PXB, if a new "
-        "version is available. To continue with risk, use the option "
-        "--no-server-version-check.\n",
-        mysql_connection->server_version);
+    xb::error() << "Unsupported server version "
+                << mysql_connection->server_version;
+    xb::error()
+        << "Please upgrade PXB, if a new "
+           "version is available. To continue with risk, use the option "
+           "--no-server-version-check.";
     version_supported = false;
   }
 
@@ -504,7 +504,7 @@ bool get_mysql_vars(MYSQL *connection) {
     have_gtid_slave = true;
   }
 
-  msg("Using server version %s\n", version_var);
+  xb::info() << "Using server version " << version_var;
 
   if (!(ret = detect_mysql_capabilities_for_backup())) {
     goto out;
@@ -513,21 +513,17 @@ bool get_mysql_vars(MYSQL *connection) {
   /* make sure datadir value is the same in configuration file */
   if (check_if_param_set("datadir")) {
     if (!directory_exists(mysql_data_home, false)) {
-      msg("Warning: option 'datadir' points to "
-          "nonexistent directory '%s'\n",
-          mysql_data_home);
+      xb::warn() << "option 'datadir' points to "
+                 << "nonexistent directory " << SQUOTE(mysql_data_home);
     }
     if (!directory_exists(datadir_var, false)) {
-      msg("Warning: MySQL variable 'datadir' points to "
-          "nonexistent directory '%s'\n",
-          datadir_var);
+      xb::warn() << "MySQL variable 'datadir' points to "
+                 << "nonexistent directory " << SQUOTE(datadir_var);
     }
     if (!equal_paths(mysql_data_home, datadir_var)) {
-      msg("Warning: option 'datadir' has different "
-          "values:\n"
-          "  '%s' in defaults file\n"
-          "  '%s' in SHOW VARIABLES\n",
-          mysql_data_home, datadir_var);
+      xb::warn() << "option 'datadir' has different values: "
+                 << SQUOTE(mysql_data_home) << " in defaults file "
+                 << SQUOTE(datadir_var) << " in SHOW VARIABLES";
     }
   }
 
@@ -660,10 +656,9 @@ bool get_mysql_vars(MYSQL *connection) {
 
     while (read_mysql_variables_from_result(res, vars, false)) {
       if (strcasecmp(engine, "ROCKSDB") == 0) {
-        msg_ts(
-            "WARNING: ROCKSB storage engine is enabled, but ROCKSB backup "
-            "extensions are not supported by server. Please upgrade "
-            "Percona Server to enable ROCKSDB backups.\n");
+        xb::warn() << "ROCKSB storage engine is enabled, but ROCKSB backup "
+                   << "extensions are not supported by server. Please upgrade "
+                   << "Percona Server to enable ROCKSDB backups.";
       }
       free_mysql_variables(vars);
     }
@@ -697,16 +692,17 @@ bool detect_mysql_capabilities_for_backup() {
 
   /* do some sanity checks */
   if (opt_galera_info && !have_galera_enabled) {
-    msg("--galera-info is specified on the command "
-        "line, but the server does not support Galera "
-        "replication. Ignoring the option.\n");
+    xb::info() << "--galera-info is specified on the command "
+               << "line, but the server does not support Galera "
+               << "replication. Ignoring the option.";
     opt_galera_info = false;
   }
 
   if (opt_slave_info && have_multi_threaded_slave && !have_gtid_slave &&
       !opt_safe_slave_backup) {
-    msg("The --slave-info option requires GTID enabled or --safe-slave-backup "
-        "option used for a multi-threaded slave.\n");
+    xb::error() << "The --slave-info option requires GTID enabled or "
+                << "--safe-slave-backup "
+                << "option used for a multi-threaded slave.";
     return (false);
   }
 
@@ -775,11 +771,11 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
 
   ut_ad(mysql_num_fields(mysql_result) == 1);
   if (!(row = mysql_fetch_row(mysql_result))) {
-    msg("Error while attempting to find history record "
-        "for %s %s\n",
-        opt_incremental_history_uuid ? "uuid" : "name",
-        opt_incremental_history_uuid ? opt_incremental_history_uuid
-                                     : opt_incremental_history_name);
+    xb::error() << "while attempting to find history record for "
+                << (opt_incremental_history_uuid ? "uuid" : "name") << " "
+                << (opt_incremental_history_uuid
+                        ? opt_incremental_history_uuid
+                        : opt_incremental_history_name);
     return (false);
   }
 
@@ -787,10 +783,10 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
 
   mysql_free_result(mysql_result);
 
-  msg("Found and using lsn: " LSN_PF " for %s %s\n", *incremental_lsn,
-      opt_incremental_history_uuid ? "uuid" : "name",
-      opt_incremental_history_uuid ? opt_incremental_history_uuid
-                                   : opt_incremental_history_name);
+  xb::info() << "Found and using lsn: " << *incremental_lsn << " for "
+             << (opt_incremental_history_uuid ? "uuid" : "name") << " "
+             << (opt_incremental_history_uuid ? opt_incremental_history_uuid
+                                              : opt_incremental_history_name);
 
   return (true);
 }
@@ -877,7 +873,8 @@ static bool have_queries_to_wait_for(MYSQL *connection, uint threshold) {
 
     if (info != NULL && duration >= (int)threshold &&
         ((all_queries && is_query(info)) || is_update_query(info))) {
-      msg_ts("Waiting for query %s (duration %d sec): %s", id, duration, info);
+      xb::info() << "Waiting for query " << id << " (duration " << duration
+                 << " sec): " << info;
       mysql_free_result(result);
       return (true);
     }
@@ -904,7 +901,8 @@ static void kill_long_queries(MYSQL *connection, uint timeout) {
 
     if (info != NULL && duration >= (int)timeout &&
         ((all_queries && is_query(info)) || is_select_query(info))) {
-      msg_ts("Killing query %s (duration %d sec): %s\n", id, duration, info);
+      xb::info() << "Killing query " << id << " (duration " << duration
+                 << " sec): " << info;
       snprintf(kill_stmt, sizeof(kill_stmt), "KILL %s", id);
       xb_mysql_query(connection, kill_stmt, false, false);
     }
@@ -921,10 +919,9 @@ static bool wait_for_no_updates(MYSQL *connection, uint timeout,
 
   start_time = time(NULL);
 
-  msg_ts(
-      "Waiting %u seconds for queries running longer than %u seconds "
-      "to finish\n",
-      timeout, threshold);
+  xb::info() << "Waiting " << timeout
+             << " seconds for queries running longer than " << threshold
+             << " seconds to finish";
 
   while (time(NULL) <= (time_t)(start_time + timeout)) {
     if (!have_queries_to_wait_for(connection, threshold)) {
@@ -933,7 +930,7 @@ static bool wait_for_no_updates(MYSQL *connection, uint timeout,
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
-  msg_ts("Unable to obtain lock. Please try again later.");
+  xb::info() << "Unable to obtain lock. Please try again later.";
 
   return (false);
 }
@@ -946,7 +943,8 @@ static void kill_query_thread() {
 
   os_event_set(kill_query_thread_started);
 
-  msg_ts("Kill query timeout %d seconds.\n", opt_kill_long_queries_timeout);
+  xb::info() << "Kill query timeout " << opt_kill_long_queries_timeout
+             << " seconds.";
 
   while (time(NULL) - start_time < (time_t)opt_kill_long_queries_timeout) {
     if (os_event_wait_time(kill_query_thread_stop, 1000) !=
@@ -956,7 +954,7 @@ static void kill_query_thread() {
   }
 
   if ((mysql = xb_mysql_connect()) == NULL) {
-    msg("Error: kill query thread failed\n");
+    xb::error() << "kill query thread failed";
     goto stop_thread;
   }
 
@@ -975,7 +973,7 @@ stop_thread:
 
   os_event_set(kill_query_thread_stopped);
 
-  msg_ts("Kill query thread stopped\n");
+  xb::info() << "Kill query thread stopped";
 }
 
 static void start_query_killer() {
@@ -1007,7 +1005,7 @@ static bool execute_query_with_timeout(MYSQL *mysql, const char *query,
   }
 
   for (int i = 0; i <= retry_count; ++i) {
-    msg_ts("Executing %s...\n", query);
+    xb::info() << "Executing " << query << " ...";
     xb_mysql_query(mysql, query, true);
     uint err = mysql_errno(mysql);
     if (err == ER_LOCK_WAIT_TIMEOUT) {
@@ -1067,7 +1065,7 @@ bool lock_tables_ftwrl(MYSQL *connection) {
     compatible with this trick.
     */
 
-    msg_ts("Executing FLUSH NO_WRITE_TO_BINLOG TABLES...\n");
+    xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG TABLES...";
 
     xb_mysql_query(connection, "FLUSH NO_WRITE_TO_BINLOG TABLES", false);
   }
@@ -1079,7 +1077,7 @@ bool lock_tables_ftwrl(MYSQL *connection) {
     }
   }
 
-  msg_ts("Executing FLUSH TABLES WITH READ LOCK...\n");
+  xb::info() << "Executing FLUSH TABLES WITH READ LOCK...";
 
   if (opt_kill_long_queries_timeout) {
     start_query_killer();
@@ -1131,17 +1129,17 @@ bool lock_tables_maybe(MYSQL *connection, int timeout, int retry_count) {
  the locking strategy being used */
 void unlock_all(MYSQL *connection) {
   if (instance_locked) {
-    msg_ts("Executing UNLOCK INSTANCE\n");
+    xb::info() << "Executing UNLOCK INSTANCE";
     xb_mysql_query(connection, "UNLOCK INSTANCE", false);
     instance_locked = false;
   }
 
   if (tables_locked) {
-    msg_ts("Executing UNLOCK TABLES\n");
+    xb::info() << "Executing UNLOCK TABLES";
     xb_mysql_query(connection, "UNLOCK TABLES", false);
   }
 
-  msg_ts("All tables unlocked\n");
+  xb::info() << "All tables unlocked";
 }
 
 static int get_open_temp_tables(MYSQL *connection) {
@@ -1203,8 +1201,8 @@ bool wait_for_safe_slave(MYSQL *connection) {
   read_mysql_variables(connection, "SHOW SLAVE STATUS", status, false);
 
   if (!(read_master_log_pos && slave_sql_running)) {
-    msg("Not checking slave open temp tables for "
-        "--safe-slave-backup because host is not a slave\n");
+    xb::info() << "Not checking slave open temp tables for "
+               << "--safe-slave-backup because host is not a slave";
     goto cleanup;
   }
 
@@ -1218,17 +1216,15 @@ bool wait_for_safe_slave(MYSQL *connection) {
 
 retry:
   open_temp_tables = get_open_temp_tables(connection);
-  msg_ts("Slave open temp tables: %d\n", open_temp_tables);
+  xb::info() << "Slave open temp tables: " << open_temp_tables;
   curr_slave_coordinates = get_slave_coordinates(connection);
 
   while (open_temp_tables &&
          routine_start_time + timeout > (ssize_t)my_time(MY_WME)) {
-    msg_ts(
-        "Starting slave SQL thread, waiting %d seconds, then "
-        "checking Slave_open_temp_tables again (%d seconds of "
-        "sleep time remaining)...\n",
-        sleep_time,
-        (int)(routine_start_time + timeout - (ssize_t)my_time(MY_WME)));
+    xb::info() << "Starting slave SQL thread, waiting " << sleep_time
+               << " seconds, then checking Slave_open_temp_tables again ("
+               << (int)(routine_start_time + timeout - (ssize_t)my_time(MY_WME))
+               << " seconds of sleep time remaining)...";
     free(prev_slave_coordinates);
     prev_slave_coordinates = curr_slave_coordinates;
     curr_slave_coordinates = NULL;
@@ -1237,20 +1233,19 @@ retry:
     std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
 
     curr_slave_coordinates = get_slave_coordinates(connection);
-    msg_ts("Slave pos:\n\tprev: %s\n\tcurr: %s\n", prev_slave_coordinates,
-           curr_slave_coordinates);
+    xb::info() << "Slave pos: prev: " << prev_slave_coordinates
+               << " , curr: " << curr_slave_coordinates;
     if (prev_slave_coordinates && curr_slave_coordinates &&
         strcmp(prev_slave_coordinates, curr_slave_coordinates) == 0) {
-      msg_ts(
-          "Slave pos hasn't moved during wait period, "
-          "not stopping the SQL thread.\n");
+      xb::info() << "Slave pos hasn't moved during wait period, "
+                    "not stopping the SQL thread.";
     } else {
-      msg_ts("Stopping SQL thread.\n");
+      xb::info() << "Stopping SQL thread.";
       xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
     }
 
     open_temp_tables = get_open_temp_tables(connection);
-    msg_ts("Slave open temp tables: %d\n", open_temp_tables);
+    xb::info() << "Slave open temp tables: " << open_temp_tables;
   }
 
   if (open_temp_tables == 0) {
@@ -1263,19 +1258,17 @@ retry:
       goto retry;
     }
 
-    msg_ts("Slave is safe to backup.\n");
+    xb::info() << "Slave is safe to backup.";
     goto cleanup;
   }
 
   result = false;
 
-  msg_ts(
-      "Slave_open_temp_tables did not become zero after "
-      "%d seconds\n",
-      opt_safe_slave_backup_timeout);
+  xb::info() << "Slave_open_temp_tables did not become zero after "
+             << opt_safe_slave_backup_timeout << " seconds";
 
-  msg_ts("Restoring SQL thread state to %s\n",
-         sql_thread_started ? "STARTED" : "STOPPED");
+  xb::info() << "Restoring SQL thread state to "
+             << (sql_thread_started ? "STARTED" : "STOPPED");
   if (sql_thread_started) {
     xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
   } else {
@@ -1354,9 +1347,9 @@ bool write_slave_info(MYSQL *connection) {
     }
 
     if (ch == channels.end()) {
-      msg("xtrabackup: Error: Failed to find information for "
-          "channel '%s' in SHOW SLAVE STATUS output.\n",
-          channel.channel_name.c_str());
+      xb::error() << "Failed to find information for channel "
+                  << SQUOTE(channel.channel_name.c_str())
+                  << " in SHOW SLAVE STATUS output.";
       result = false;
       goto cleanup;
     }
@@ -1431,7 +1424,7 @@ bool write_galera_info(MYSQL *connection) {
 
   if ((state_uuid == NULL && state_uuid55 == NULL) ||
       (last_committed == NULL && last_committed55 == NULL)) {
-    msg("Failed to get master wsrep state from SHOW STATUS.\n");
+    xb::error() << "Failed to get master wsrep state from SHOW STATUS.";
     result = false;
     goto cleanup;
   }
@@ -1539,7 +1532,7 @@ bool write_current_binlog_file(MYSQL *connection) {
   if (opt_transition_key != NULL || opt_generate_transition_key) {
     result = xb_binlog_password_store(log_status.filename.c_str());
     if (!result) {
-      msg("xtrabackup: Error: failed to dump binary log password.\n");
+      xb::error() << "failed to dump binary log password.";
       goto cleanup;
     }
   }
@@ -1553,8 +1546,7 @@ bool write_current_binlog_file(MYSQL *connection) {
 
   f_index = fopen(log_bin_index, "r");
   if (f_index == nullptr) {
-    msg("xtrabackup: Error cannot open binlog index file '%s'\n",
-        log_bin_index);
+    xb::error() << "cannot open binlog index file " << SQUOTE(log_bin_index);
     result = false;
     goto cleanup;
   }
@@ -1574,8 +1566,8 @@ bool write_current_binlog_file(MYSQL *connection) {
   fclose(f_index);
 
   if (!result) {
-    msg("xtrabackup: Error cannot find current log file in the '%s'\n",
-        log_bin_index);
+    xb::error() << "cannot find current log file in the "
+                << SQUOTE(log_bin_index);
   }
 
 cleanup:
@@ -1672,7 +1664,7 @@ static void log_status_local_parse(const char *s, log_status_t &log_status) {
 from p_s.log_status and update global log_status variable.
 @param[in]   conn         mysql connection handle */
 void log_status_get(MYSQL *conn) {
-  msg_ts("Selecting LSN and binary log position from p_s.log_status\n");
+  xb::info() << "Selecting LSN and binary log position from p_s.log_status";
 
   debug_sync_point("log_status_get");
 
@@ -2157,7 +2149,7 @@ void backup_cleanup() {
 
 static MYSQL *mdl_con = NULL;
 void mdl_lock_tables() {
-  msg_ts("Initializing MDL on all current tables.\n");
+  xb::info() << "Initializing MDL on all current tables.";
   MYSQL_RES *mysql_result = NULL;
   MYSQL_ROW row;
   mdl_con = xb_mysql_connect();
@@ -2173,15 +2165,15 @@ void mdl_lock_tables() {
         innobase_format_name(full_table_name, sizeof(full_table_name), row[0]);
         if (is_fts_index(full_table_name)) {
           // We will eventually get to the row to lock the main table
-          msg_ts("%s is a Full-Text Index. Skipping\n", full_table_name);
+          xb::info() << full_table_name << " is a Full-Text Index. Skipping";
           continue;
         } else if (is_tmp_table(full_table_name)) {
           // We cannot run SELECT ... #sql-; Skipped to avoid invalid query.
-          msg_ts("%s is a temporary table. Skipping\n", full_table_name);
+          xb::info() << full_table_name << " is a temporary table. Skipping";
           continue;
         }
 
-        msg_ts("Locking MDL for %s\n", full_table_name);
+        xb::info() << "Locking MDL for " << full_table_name;
         char *lock_query;
         xb_a(
             asprintf(&lock_query, "SELECT 1 FROM %s LIMIT 0", full_table_name));
@@ -2196,7 +2188,7 @@ void mdl_lock_tables() {
 }
 
 void mdl_unlock_all() {
-  msg_ts("Unlocking MDL for all tables\n");
+  xb::info() << "Unlocking MDL for all tables";
   if (mdl_con != NULL) {
     xb_mysql_query(mdl_con, "COMMIT", false, true);
     mysql_close(mdl_con);
@@ -2251,7 +2243,7 @@ bool has_innodb_buffer_pool_dump() {
     return (true);
   }
 
-  msg_ts("Server has no support for innodb_buffer_pool_dump_now");
+  xb::info() << "Server has no support for innodb_buffer_pool_dump_now";
   return (false);
 }
 
@@ -2298,11 +2290,11 @@ void dump_innodb_buffer_pool(MYSQL *connection) {
     snprintf(change_bp_dump_pct_query, sizeof(change_bp_dump_pct_query),
              "SET GLOBAL innodb_buffer_pool_dump_pct = %u",
              opt_dump_innodb_buffer_pool_pct);
-    msg_ts("Executing %s \n", change_bp_dump_pct_query);
+    xb::info() << "Executing " << change_bp_dump_pct_query;
     xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
   }
 
-  msg_ts("Executing SET GLOBAL innodb_buffer_pool_dump_now=ON...\n");
+  xb::info() << "Executing SET GLOBAL innodb_buffer_pool_dump_now=ON...";
   xb_mysql_query(mysql_connection, "SET GLOBAL innodb_buffer_pool_dump_now=ON;",
                  false);
 }
@@ -2326,16 +2318,15 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
                        status, true);
 
   /* check if dump has been completed */
-  msg_ts("Checking if InnoDB buffer pool dump has completed\n");
+  xb::info() << "Checking if InnoDB buffer pool dump has completed";
   while (!strstr(innodb_buffer_pool_dump_status, "dump completed at")) {
     if (innodb_buffer_pool_dump_start_time + timeout <
         (ssize_t)my_time(MY_WME)) {
-      msg_ts(
-          "InnoDB Buffer Pool Dump was not completed "
-          "after %d seconds... Adjust "
-          "--dump-innodb-buffer-pool-timeout if you "
-          "need higher wait time before copying %s.\n",
-          opt_dump_innodb_buffer_pool_timeout, buffer_pool_filename);
+      xb::info() << "InnoDB Buffer Pool Dump was not completed after "
+                 << opt_dump_innodb_buffer_pool_timeout << " seconds... Adjust "
+                 << "--dump-innodb-buffer-pool-timeout if you "
+                 << "need higher wait time before copying "
+                 << buffer_pool_filename;
       break;
     }
 

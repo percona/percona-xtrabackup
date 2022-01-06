@@ -23,7 +23,7 @@ EOF
 
 xtrabackup --backup --target-dir=$topdir/backup1 \
 --component-keyring-file-config=${MYSQLD_DATADIR}/component_keyring_file.cnf 2>&1 | tee $topdir/pxb.log
-grep_count "xtrabackup: Warning: \-\-component-keyring-file-config will be ignored for \-\-backup operation" $topdir/pxb.log 1
+grep_count "\-\-component-keyring-file-config will be ignored for \-\-backup operation" $topdir/pxb.log 1
 
 cp -r $topdir/backup1 $topdir/backup2
 record_db_state test

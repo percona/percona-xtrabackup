@@ -848,9 +848,9 @@ function grep_count()
 ####################################################
 function check_full_scan_inc_backup()
 {
-    local xb_performed_full_scan_inc_backup="xtrabackup: using the full scan for incremental backup"
-    local xb_performed_bitmap_backup="xtrabackup: using the changed page bitmap"
-    local xb_performed_pagetracking_inc_backup="xtrabackup: using the pagetracking"
+    local xb_performed_full_scan_inc_backup="using the full scan for incremental backup"
+    local xb_performed_bitmap_backup="using the changed page bitmap"
+    local xb_performed_pagetracking_inc_backup="using the pagetracking"
 
     if ! grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
     then
@@ -871,9 +871,9 @@ function check_full_scan_inc_backup()
 
 function check_bitmap_inc_backup()
 {
-    local xb_performed_full_scan_inc_backup="xtrabackup: using the full scan for incremental backup"
-    local xb_performed_bitmap_backup="xtrabackup: using the changed page bitmap"
-    local xb_performed_pagetracking_inc_backup="xtrabackup: using the pagetracking"
+    local xb_performed_full_scan_inc_backup="using the full scan for incremental backup"
+    local xb_performed_bitmap_backup="using the changed page bitmap"
+    local xb_performed_pagetracking_inc_backup="using the pagetracking"
 
     if ! grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
     then
@@ -894,9 +894,9 @@ function check_bitmap_inc_backup()
 
 function check_pagetracking_inc_backup()
 {
-    local xb_performed_full_scan_inc_backup="xtrabackup: using the full scan for incremental backup"
-    local xb_performed_bitmap_backup="xtrabackup: using the changed page bitmap"
-    local xb_performed_pagetracking_inc_backup="xtrabackup: Using pagetracking feature for incremental backup"
+    local xb_performed_full_scan_inc_backup="using the full scan for incremental backup"
+    local xb_performed_bitmap_backup="using the changed page bitmap"
+    local xb_performed_pagetracking_inc_backup="Using pagetracking feature for incremental backup"
 
     if ! grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
     then
