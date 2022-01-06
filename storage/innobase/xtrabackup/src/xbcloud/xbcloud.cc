@@ -570,7 +570,8 @@ static void get_env_args() {
   get_env_value(opt_azure_account, "AZURE_STORAGE_ACCOUNT");
   get_env_value(opt_azure_container, "AZURE_CONTAINER_NAME");
   get_env_value(opt_azure_access_key, "AZURE_ACCESS_KEY");
-  get_env_value(opt_azure_endpoint, "ENDPOINT");
+  get_env_value(opt_azure_storage_class, "AZURE_STORAGE_CLASS");
+  get_env_value(opt_azure_endpoint, "AZURE_ENDPOINT");
 
   get_env_value(opt_google_access_key, "ACCESS_KEY_ID");
   get_env_value(opt_google_secret_key, "SECRET_ACCESS_KEY");
