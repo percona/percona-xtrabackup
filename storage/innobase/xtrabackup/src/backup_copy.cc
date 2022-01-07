@@ -1495,7 +1495,7 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
       copy = std::bind(&backup_rocksdb_files, _1, _2, _3, &result);
 
   auto checkpoint_files =
-      final ? context.myrocks_checkpoint.checkpoint_files(context.log_status)
+      final ? context.myrocks_checkpoint.checkpoint_files(log_status)
             : context.myrocks_checkpoint.data_files();
 
   checkpoint_files.erase(
@@ -1584,7 +1584,7 @@ bool backup_start(Backup_context &context) {
   xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS",
                  false);
 
-  auto log_status = log_status_get(mysql_connection);
+  log_status_get(mysql_connection);
 
   /* Wait until we have checkpoint LSN greater than the page tracking start LSN.
   Page tracking start LSN is system LSN (lets say 105) and Backup End LSN is
@@ -1599,6 +1599,9 @@ bool backup_start(Backup_context &context) {
         pagetracking::get_pagetracking_start_lsn(mysql_connection);
     debug_sync_point("xtrabackup_after_wait_page_tracking");
     while (true) {
+      DBUG_EXECUTE_IF("page_tracking_checkpoint_behind",
+                      log_status.lsn_checkpoint = 1;
+                      DBUG_SET("-d,page_tracking_checkpoint_behind"););
       if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
         msg("xtrabackup: pagetracking: Checkpoint lsn is " LSN_PF
             " and page tracking start lsn is " LSN_PF "\n",
@@ -1610,12 +1613,10 @@ bool backup_start(Backup_context &context) {
             " to reach to page tracking start lsn " LSN_PF " \n",
             log_status.lsn_checkpoint, page_tracking_start_lsn);
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        log_status = log_status_get(mysql_connection);
+        log_status_get(mysql_connection);
       }
     }
   }
-
-  context.log_status = log_status;
 
   debug_sync_point("xtrabackup_after_query_log_status");
 
@@ -1624,7 +1625,7 @@ bool backup_start(Backup_context &context) {
   }
 
   if (have_rocksdb) {
-    if (!backup_rocksdb_wal(context.myrocks_checkpoint, context.log_status)) {
+    if (!backup_rocksdb_wal(context.myrocks_checkpoint, log_status)) {
       return (false);
     }
     context.myrocks_checkpoint.enable_file_deletions();

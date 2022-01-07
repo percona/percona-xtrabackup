@@ -58,6 +58,10 @@ struct log_status_t {
   lsn_t lsn_checkpoint;
   std::vector<replication_channel_status_t> channels;
   std::vector<rocksdb_wal_t> rocksdb_wal_files;
+  void clear() {
+    channels.clear();
+    rocksdb_wal_files.clear();
+  }
 };
 
 struct mysql_variable {
@@ -132,7 +136,6 @@ class Myrocks_checkpoint {
 };
 
 struct Backup_context {
-  log_status_t log_status;
   Myrocks_checkpoint myrocks_checkpoint;
   std::unordered_set<std::string> rocksdb_files;
 };
@@ -192,10 +195,10 @@ void unlock_all(MYSQL *connection);
 
 bool write_current_binlog_file(MYSQL *connection);
 
-/** Read binary log position and InnoDB LSN from p_s.log_status.
+/** Read binary log position, InnoDB LSN and other storage engine information
+from p_s.log_status and update global log_status variable.
 @param[in]   conn         mysql connection handle */
-const log_status_t &log_status_get(MYSQL *conn);
-
+void log_status_get(MYSQL *conn);
 
 /*********************************************************************/ /**
  Retrieves MySQL binlog position and
@@ -259,4 +262,5 @@ void dump_innodb_buffer_pool(MYSQL *connection);
 
 void check_dump_innodb_buffer_pool(MYSQL *connection);
 
+extern log_status_t log_status;
 #endif

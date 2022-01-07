@@ -1290,7 +1290,7 @@ cleanup:
   return (result);
 }
 
-static log_status_t log_status;
+log_status_t log_status;
 
 /*********************************************************************/ /**
  Retrieves MySQL binlog position of the master server in a replication
@@ -1668,9 +1668,10 @@ static void log_status_local_parse(const char *s, log_status_t &log_status) {
   }
 }
 
-/** Read binary log position and InnoDB LSN from p_s.log_status.
+/** Read binary log position, InnoDB LSN and other storage engine information
+from p_s.log_status and update global log_status variable.
 @param[in]   conn         mysql connection handle */
-const log_status_t &log_status_get(MYSQL *conn) {
+void log_status_get(MYSQL *conn) {
   msg_ts("Selecting LSN and binary log position from p_s.log_status\n");
 
   debug_sync_point("log_status_get");
@@ -1687,14 +1688,17 @@ const log_status_t &log_status_get(MYSQL *conn) {
     const char *local = row[1];
     const char *replication = row[2];
     const char *storage_engines = row[3];
-
+    /*
+     * log_status_get can be called multiple times with page tracking enabled.
+     * Clear method will make sure struct vectors are clean before we start to
+     * push_back data to it.
+     */
+    log_status.clear();
     log_status_local_parse(local, log_status);
     log_status_storage_engines_parse(storage_engines, log_status);
     log_status_replication_parse(replication, log_status);
   }
   mysql_free_result(result);
-
-  return log_status;
 }
 
 /*********************************************************************/ /**

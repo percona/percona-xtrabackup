@@ -4341,8 +4341,7 @@ void xtrabackup_backup_func(void) {
     std::this_thread::sleep_for(std::chrono::seconds(opt_debug_sleep_before_unlock));
   }
 
-  if (!redo_mgr.stop_at(backup_ctxt.log_status.lsn,
-                        backup_ctxt.log_status.lsn_checkpoint)) {
+  if (!redo_mgr.stop_at(log_status.lsn, log_status.lsn_checkpoint)) {
     exit(EXIT_FAILURE);
   }
   if (redo_mgr.is_error()) {
