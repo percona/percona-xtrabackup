@@ -59,6 +59,11 @@ struct log_status_t {
   std::vector<replication_channel_status_t> channels;
   std::vector<rocksdb_wal_t> rocksdb_wal_files;
   void clear() {
+    filename = "";
+    position = 0;
+    gtid_executed = "";
+    lsn = 0;
+    lsn_checkpoint = 0;
     channels.clear();
     rocksdb_wal_files.clear();
   }
