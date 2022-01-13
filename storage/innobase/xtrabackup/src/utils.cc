@@ -19,6 +19,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_default.h>
 #include <mysqld.h>
 
+#ifdef __APPLE__
+#include <mach/mach_host.h>
+#include <sys/sysctl.h>
+#else
+#include <proc/sysinfo.h>
+#endif
 #include "common.h"
 #include "msg.h"
 #include "xtrabackup.h"
@@ -100,5 +106,47 @@ unsigned long get_version_number(std::string version_str) {
   return major * 10000 + minor * 100 + version;
 }
 
+#ifdef __APPLE__
+unsigned long free_memory() {
+  int64_t unused_mem;
+  vm_size_t page_size;
+  mach_msg_type_number_t count;
+  vm_statistics_data_t vm_stats;
+  mach_port_t host = mach_host_self();
+  count = sizeof(vm_stats) / sizeof(natural_t);
+  if (KERN_SUCCESS == host_page_size(host, &page_size) &&
+      KERN_SUCCESS ==
+          host_statistics(host, HOST_VM_INFO, (host_info_t)&vm_stats, &count)) {
+    unused_mem = (int64_t)vm_stats.free_count * (int64_t)page_size;
+    return (unsigned long)unused_mem;
+  }
+  return 0;
+}
+
+unsigned long total_memory() {
+  unsigned long free_mem = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE);
+  return free_mem;
+}
+
+uint free_memory_pct() { return 0; }
+
+#else
+unsigned long free_memory() {
+  meminfo();
+  return kb_main_available * 1024;
+}
+
+unsigned long total_memory() {
+  meminfo();
+  return kb_main_total * 1024;
+}
+
+uint free_memory_pct() {
+  unsigned long free = free_memory();
+  unsigned long total = total_memory();
+
+  return (uint)(free * 100 / total);
+}
+#endif
 }  // namespace utils
 }  // namespace xtrabackup

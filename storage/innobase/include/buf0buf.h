@@ -2581,4 +2581,7 @@ inline const page_zip_des_t *buf_block_get_page_zip(
 }
 #include "buf0buf.ic"
 
+#ifdef XTRABACKUP
+void buf_pool_resize();
+#endif
 #endif /* !buf0buf_h */

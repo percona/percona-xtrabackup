@@ -34,6 +34,8 @@ extern bool use_dumped_tablespace_keys;
 
 extern std::vector<ulint> invalid_encrypted_tablespace_ids;
 
+extern uint xtrabackup_use_free_memory_pct;
+extern bool xtrabackup_use_free_memory_pct_set;
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
@@ -77,4 +79,12 @@ bool check_if_skip_table(
 
 extern bool xtrabackup_stats;
 #define SQUOTE(str) "'" << str << "'"
+
+namespace xtrabackup {
+namespace utils {
+unsigned long free_memory();
+unsigned long total_memory();
+uint free_memory_pct();
+}  // namespace utils
+}  // namespace xtrabackup
 #endif

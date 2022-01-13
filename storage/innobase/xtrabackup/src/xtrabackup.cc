@@ -159,6 +159,9 @@ bool xtrabackup_export = FALSE;
 bool xtrabackup_apply_log_only = FALSE;
 
 longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
+uint xtrabackup_use_free_memory_pct = 50;
+bool xtrabackup_use_free_memory_pct_set = false;
+
 bool xtrabackup_create_ib_logfile = FALSE;
 
 long xtrabackup_throttle = 0; /* 0:unlimited */
@@ -567,6 +570,7 @@ enum options_xtrabackup {
   OPT_XTRA_APPLY_LOG_ONLY,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
+  OPT_XTRA_USE_FREE_MEMORY_PCT,
   OPT_XTRA_THROTTLE,
   OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
@@ -759,6 +763,13 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_use_memory, (G_PTR *)&xtrabackup_use_memory, 0,
      GET_LL, REQUIRED_ARG, 100 * 1024 * 1024L, 1024 * 1024L, LLONG_MAX, 0,
      1024 * 1024L, 0},
+    {"use-free-memory-pct", OPT_XTRA_USE_FREE_MEMORY_PCT,
+     "This option specifies the percentage of free memory to be used by"
+     " buffer pool at --prepare stage (default is 50%). ",
+     (G_PTR *)&xtrabackup_use_free_memory_pct,
+     (G_PTR *)&xtrabackup_use_free_memory_pct, 0, GET_UINT, REQUIRED_ARG, 50, 0,
+     100, 0, 1, 0},
+
     {"throttle", OPT_XTRA_THROTTLE,
      "limit count of IO operations (pairs of read&write) per second to IOS "
      "values (for '--backup')",
@@ -1842,6 +1853,9 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       break;
     case OPT_XTRA_ENCRYPT_KEY:
       hide_option(argument, &xtrabackup_encrypt_key);
+      break;
+    case OPT_XTRA_USE_FREE_MEMORY_PCT:
+      xtrabackup_use_free_memory_pct_set = true;
       break;
 
 #include "sslopt-case.h"

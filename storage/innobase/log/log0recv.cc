@@ -3423,6 +3423,45 @@ void recv_reset_buffer() {
   recv_sys->recovered_offset = 0;
 }
 
+#ifdef XTRABACKUP
+static bool xb_double_bp(ulint *max_mem) {
+  if (!xtrabackup_use_free_memory_pct_set) return false;
+
+  /* find availabe free memory */
+  auto free_memory = xtrabackup::utils::free_memory();
+  xb::info() << "Maximum memory for buffer pool:" << free_memory;
+  xb::info() << "Current Buffer Pool Size: " << srv_buf_pool_size;
+
+  /* gradually increase the buffer pool until it can processed redo log in
+one iteration or it hit threshold */
+  if (srv_buf_pool_size * 2 <=
+      (free_memory * xtrabackup_use_free_memory_pct / 100)) {
+    dict_ind_init();
+    if (!dict_boot()) return false;
+    srv_buf_pool_size *= 2;
+
+    srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
+
+    xb::info() << "Increasing the buffer pool to " << srv_buf_pool_size;
+
+    buf_pool_resize();
+    recv_n_pool_free_frames *= 2;
+    *max_mem =
+        UNIV_PAGE_SIZE * (srv_buf_pool_size / UNIV_PAGE_SIZE -
+                          (recv_n_pool_free_frames * srv_buf_pool_instances));
+    dict_close();
+    ibuf_close();
+    dict_ind_init();
+    return true;
+  }
+  xb::info() << "Not increasing Buffer Pool as it will exceed "
+             << xtrabackup_use_free_memory_pct << "% of free memory";
+  xb::info() << "Adjust --use-free-memory-pct or --use-memory to get better "
+                "performance.";
+  return false;
+}
+#endif /* XTRABACKUP */
+
 /** Scans log from a buffer and stores new log data to the parsing buffer.
 Parses and hashes the log records if new data found.  Unless
 UNIV_HOTBACKUP is defined, this function will apply log records
@@ -3444,7 +3483,7 @@ static bool recv_scan_log_recs(log_t &log,
 #else  /* !UNIV_HOTBACKUP */
 bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
-                               ulint max_memory, const byte *buf, ulint len,
+                               ulint *max_memory, const byte *buf, ulint len,
                                lsn_t checkpoint_lsn, lsn_t start_lsn,
                                lsn_t *contiguous_lsn, lsn_t *read_upto_lsn,
                                lsn_t to_lsn) {
@@ -3664,8 +3703,11 @@ bool meb_scan_log_recs(
     recv_parse_log_recs(checkpoint_lsn);
 
 #ifndef UNIV_HOTBACKUP
-    if (recv_heap_used() > max_memory) {
-      recv_apply_hashed_log_recs(log, false);
+    if (recv_heap_used() > *max_memory) {
+#ifdef XTRABACKUP
+      if (!xb_double_bp(max_memory))
+#endif
+        recv_apply_hashed_log_recs(log, false);
     }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -3861,7 +3903,7 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
 
     recv_read_log_seg(log, log.buf, start_lsn, end_lsn);
 
-    finished = recv_scan_log_recs(log, max_mem, log.buf, RECV_SCAN_SIZE,
+    finished = recv_scan_log_recs(log, &max_mem, log.buf, RECV_SCAN_SIZE,
                                   checkpoint_lsn, start_lsn, contiguous_lsn,
                                   &log.scanned_lsn, to_lsn);
 

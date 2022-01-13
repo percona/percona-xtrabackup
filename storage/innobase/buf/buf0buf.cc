@@ -2013,7 +2013,11 @@ ulonglong buf_pool_adjust_chunk_unit(ulonglong size) {
 
 /** Resize the buffer pool based on srv_buf_pool_size from
 srv_buf_pool_old_size. */
-static void buf_pool_resize() {
+#ifndef XTRABACKUP
+static
+#endif
+    void
+    buf_pool_resize() {
   buf_pool_t *buf_pool;
   ulint new_instance_size;
   bool warning = false;
@@ -2043,7 +2047,10 @@ static void buf_pool_resize() {
     ut_ad(UT_LIST_GET_LEN(buf_pool->withdraw) == 0);
 
     buf_flush_list_mutex_enter(buf_pool);
+#ifndef XTRABACKUP
     ut_ad(buf_pool->flush_rbt == nullptr);
+#endif
+
     buf_flush_list_mutex_exit(buf_pool);
 #endif
 
