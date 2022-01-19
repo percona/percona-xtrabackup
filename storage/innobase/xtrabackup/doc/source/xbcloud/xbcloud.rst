@@ -29,6 +29,8 @@ The following cloud storage types are supported:
 
 * Amazon Simple Storage (S3) - see :ref:`xbcloud_s3`
 
+* Azure Cloud Storage - see :ref:`xbcloud_azure`
+
 * Google Cloud Storage (gcs) - see :ref:`xbcloud_gcs`
 
 * MinIO - see :ref:`xbcloud_minio`
