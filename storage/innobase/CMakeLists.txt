@@ -333,11 +333,6 @@ IF(HAS_WARN_FLAG)
     COMPILE_FLAGS "${HAS_WARN_FLAG}")
 ENDIF()
 
-<<<<<<< HEAD
-# Must be after all ADD_DEFINITIONS() to be inherited by the
-# 'xtrabackup' subdirectory
-ADD_SUBDIRECTORY(xtrabackup)
-=======
 IF(MSVC AND NOT WIN32_CLANG)
   # Disable C4100: unreferenced formal parameter
   # for release builds and other non-innobase targets, as many parameters are
@@ -349,4 +344,7 @@ IF(MSVC AND NOT WIN32_CLANG)
   ENDFOREACH()
   TARGET_COMPILE_OPTIONS(innodb_zipdecompress PRIVATE "/wd4100")
 ENDIF()
->>>>>>> mysql-8.0.28
+
+# Must be after all ADD_DEFINITIONS() to be inherited by the
+# 'xtrabackup' subdirectory
+ADD_SUBDIRECTORY(xtrabackup)

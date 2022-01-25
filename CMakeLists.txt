@@ -2097,20 +2097,6 @@ INCLUDE(${CMAKE_BINARY_DIR}/info_macros.cmake)
 # Source: This can be done during the cmake phase, all information is
 # available, but should be repeated on each "make" just in case someone
 # does "cmake ; make ; git pull ; make".
-<<<<<<< HEAD
-=======
-CREATE_INFO_SRC(${CMAKE_BINARY_DIR}/Docs)
-MY_ADD_CUSTOM_TARGET(INFO_SRC ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_src.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-
-# Build flags: This must be postponed to the make phase.
-MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_bin.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
->>>>>>> mysql-8.0.28
 
 # Packaging
 IF(WIN32)
