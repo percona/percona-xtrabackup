@@ -134,12 +134,10 @@ ulong sql_rnd_with_mutex();
 struct System_status_var *get_thd_status_var(THD *thd, bool *aggregated);
 #ifdef XTRABACKUP
 int setup_error_log_components();
-#endif /* XTRABACKUP */
-
-<<<<<<< HEAD
 bool component_infrastructure_deinit();
 bool component_infrastructure_init();
-=======
+#endif /* XTRABACKUP */
+
 #ifndef NDEBUG
 bool thd_mem_cnt_alloc(THD *thd, size_t size, const char *key_name);
 #else
@@ -148,7 +146,6 @@ bool thd_mem_cnt_alloc(THD *thd, size_t size);
 
 void thd_mem_cnt_free(THD *thd, size_t size);
 
->>>>>>> mysql-8.0.28
 // These are needed for unit testing.
 void set_remaining_args(int argc, char **argv);
 int init_common_variables();
