@@ -28,6 +28,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "fil_cur.h"
 #include "xtrabackup.h"
 
+/** map of tablespace_id, that experienced an inplace DDL during a backup op */
+extern std::map<space_id_t, bool> index_load_map;
+
 /****************************************************************/ /**
  Perform read filter context initialization that is common to all read
  filters.  */
@@ -229,7 +232,7 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
       for (i = 0, page = cursor->buf; i < cursor->buf_npages;
            i++, page += page_size) {
         lsn_t page_lsn = mach_read_from_8(page + FIL_PAGE_LSN);
-        ut_ad(page_lsn < incremental_lsn ||
+        ut_ad(page_lsn <= incremental_lsn ||
               page_lsn >= incremental_start_checkpoint_lsn);
       }
     }
@@ -245,7 +248,12 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
    * since the last backup. Hence we copy all changes to mysql.ibd since last
    * backup start_lsn instead of last backup end_lsn.
    * We read all pages by setting read_batch_len to the size of file */
-  if (ctxt->space_id == dict_sys_t::s_dict_space_id) {
+
+  /* if DDL happened on the table after the checkpoint LSN we do full scan on
+  that table. index_load_map is poped during the first scan of redo */
+
+  if (ctxt->space_id == dict_sys_t::s_dict_space_id ||
+      index_load_map[ctxt->space_id] == true) {
     *read_batch_start = ctxt->offset;
     if (ctxt->offset >= ctxt->data_file_size) {
       *read_batch_len = 0;
@@ -307,7 +315,6 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
 
     *read_batch_len = ctxt->filter_batch_end * ctxt->page_size - ctxt->offset;
   }
-
   /* If the page block is larger than the buffer capacity, limit it to
   buffer capacity.  The subsequent invocations will continue returning
   the current block in buffer-sized pieces until ctxt->filter_batch_end

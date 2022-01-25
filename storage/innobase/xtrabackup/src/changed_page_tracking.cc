@@ -50,7 +50,7 @@ xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
 
   if (page_start_lsn == page_end_lsn) {
     msg("xtrabackup: pagetracking: incremental backup LSN is same as last "
-        "checkpoint LSN " LSN_PF " not calling mysql component",
+        "checkpoint LSN " LSN_PF " not calling mysql component\n",
         page_start_lsn);
     space_map = new xb_space_map;
     return space_map;

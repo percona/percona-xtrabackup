@@ -1026,7 +1026,7 @@ bool Redo_Log_Data_Manager::start() {
    * MLOG_INDEX_LOAD event is parsed as its not safe to continue the backup
    * in any situation (with or without --lock-ddl-per-table).
    */
-  mdl_taken = true;
+  redo_catchup_completed = true;
 
   debug_sync_point("xtrabackup_pause_after_redo_catchup");
 

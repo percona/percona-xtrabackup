@@ -485,7 +485,7 @@ extern TYPELIB innodb_flush_method_typelib;
 #include "caching_sha2_passwordopt-vars.h"
 #include "sslopt-vars.h"
 
-bool mdl_taken = FALSE;
+bool redo_catchup_completed = false;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 
