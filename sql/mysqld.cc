@@ -10059,9 +10059,6 @@ bool mysqld_get_one_option(int optid,
       g_admin_ssl_configured = true;
       opt_use_admin_ssl = true;
       break;
-<<<<<<< HEAD
-#endif /* XTRABACKUP */
-=======
     case OPT_ADMIN_TLS_VERSION:
       g_admin_ssl_configured = true;
       opt_use_admin_ssl = true;
@@ -10070,7 +10067,7 @@ bool mysqld_get_one_option(int optid,
         return true;
       }
       break;
->>>>>>> mysql-8.0.28
+#endif /* XTRABACKUP */
     case 'V':
       print_server_version();
       exit(MYSQLD_SUCCESS_EXIT);
