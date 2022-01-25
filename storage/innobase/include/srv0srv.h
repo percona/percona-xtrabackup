@@ -690,18 +690,14 @@ extern double srv_max_buf_pool_modified_pct;
 extern ulong srv_max_purge_lag;
 extern ulong srv_max_purge_lag_delay;
 
-<<<<<<< HEAD
-extern ulong srv_replication_delay;
+std::chrono::milliseconds get_srv_replication_delay();
+#ifdef XTRABACKUP
 
 extern bool srv_apply_log_only;
-
 extern bool srv_backup_mode;
 extern bool srv_close_files;
 extern bool srv_rollback_prepared_trx;
-
-=======
-std::chrono::milliseconds get_srv_replication_delay();
->>>>>>> mysql-8.0.28
+#endif /* XTRABACKUP */
 /*-------------------------------------------*/
 
 extern bool srv_print_innodb_monitor;
