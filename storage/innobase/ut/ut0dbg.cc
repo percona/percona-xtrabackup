@@ -53,14 +53,9 @@ void ut_set_assert_callback(std::function<void()> &callback) {
 @param[in] file Source file containing the assertion
 @param[in] line Line number of the assertion */
 [[noreturn]] void ut_dbg_assertion_failed(const char *expr, const char *file,
-<<<<<<< HEAD
-                                          ulint line) {
+                                          uint64_t line) {
 #if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS) && \
     !defined(XTRABACKUP)
-=======
-                                          uint64_t line) {
-#if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS)
->>>>>>> mysql-8.0.28
   ib::error(ER_IB_MSG_1273)
       << "Assertion failure: " << innobase_basename(file) << ":" << line
       << ((expr != nullptr) ? ":" : "") << ((expr != nullptr) ? expr : "")
@@ -87,14 +82,8 @@ void ut_set_assert_callback(std::function<void()> &callback) {
   fputs(
       "InnoDB: We intentionally generate a memory trap.\n"
       "InnoDB: Submit a detailed bug report"
-<<<<<<< HEAD
       " to https://jira.percona.com/projects/PXB.\n"
-      "InnoDB: If you get repeated assertion failures"
-      " or crashes, even\n"
-=======
-      " to http://bugs.mysql.com.\n"
       "InnoDB: If you get repeated assertion failures or crashes, even\n"
->>>>>>> mysql-8.0.28
       "InnoDB: immediately after the mysqld startup, there may be\n"
       "InnoDB: corruption in the InnoDB tablespace. Please refer to\n"
       "InnoDB: " REFMAN
