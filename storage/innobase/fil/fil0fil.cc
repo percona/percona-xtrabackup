@@ -1611,14 +1611,6 @@ class Fil_system {
   @param[in]	free_all	If set then free all instances */
   void close_all_log_files(bool free_all);
 
-<<<<<<< HEAD
-  /** Iterate through all tablespaces
-  @param[in]  include_log Include redo log space, if true
-  @param[in]  f   Callback
-  @return any error returned by the callback function. */
-  [[nodiscard]] dberr_t iterate_spaces(bool include_log,
-                                       Fil_space_iterator::Function &f);
-=======
   /** Returns maximum number of allowed non-LRU files opened for a specified
   open files limit. */
   static size_t get_limit_for_non_lru_files(size_t open_files_limit);
@@ -1639,8 +1631,16 @@ class Fil_system {
 
   /** Returns maximum number of allowed opened files. */
   size_t get_open_files_limit() const { return m_open_files_limit.get_limit(); }
->>>>>>> mysql-8.0.28
 
+#ifdef XTRABACKUP
+  /** Iterate through all tablespaces
+  @param[in]  include_log Include redo log space, if true
+  @param[in]  f   Callback
+  @return any error returned by the callback function. */
+  [[nodiscard]] dberr_t iterate_spaces(bool include_log,
+                                       Fil_space_iterator::Function &f);
+
+#endif /* XTRABACKUP */
   /** Iterate through all persistent tablespace files
   (FIL_TYPE_TABLESPACE) returning the nodes via callback function cbk.
   @param[in]	include_log	Include log files, if true
@@ -3198,137 +3198,7 @@ fil_space_t *Fil_shard::get_space_by_id(space_id_t space_id) const {
     return fil_space_t::s_redo_space;
   }
 
-<<<<<<< HEAD
-  return get_space_by_id(space_id);
-}
-
-/** Reserves the mutex and tries to make sure we can open at least
-one file while holding it. This should be called before calling
-prepare_file_for_io(), because that function may need to open a file.
-@param[in]	space_id	Tablespace ID
-@param[out]	space		Tablespace instance
-@return true if a slot was reserved. */
-bool Fil_shard::mutex_acquire_and_get_space(space_id_t space_id,
-                                            fil_space_t *&space) {
-  mutex_acquire();
-
-  if (space_id == TRX_SYS_SPACE || dict_sys_t::is_reserved(space_id)) {
-    space = get_reserved_space(space_id);
-
-    return false;
-  }
-
-  space = get_space_by_id(space_id);
-
-  if (space == nullptr) {
-    /* Caller handles the case of a missing tablespce. */
-    return false;
-  }
-
-  ut_ad(space->files.size() == 1);
-
-  auto is_open = space->files.front().is_open;
-
-  if (is_open) {
-    /* Ensure that the file is not closed behind our back. */
-    ++space->files.front().in_use;
-  }
-
-  mutex_release();
-
-  if (is_open) {
-    wait_for_io_to_stop(space);
-
-    mutex_acquire();
-
-    /* We are guaranteed that this file cannot be closed
-    because we now own the mutex. */
-
-    ut_ad(space->files.front().in_use > 0);
-    --space->files.front().in_use;
-
-    return false;
-  }
-
-  /* The number of open file descriptors is a shared resource, in
-  order to guarantee that we don't over commit, we use a ticket system
-  to reserve a slot/ticket to open a file. This slot/ticket should
-  be released after the file is opened. */
-
-  while (!reserve_open_slot(m_id)) {
-    std::this_thread::yield();
-  }
-
-  auto begin_time = ut_time_monotonic();
-  auto start_time = begin_time;
-  auto last_wake_time = begin_time;
-
-  for (size_t i = 0; i < 3; ++i) {
-    /* Flush tablespaces so that we can close modified
-    files in the LRU list */
-
-    auto type = to_int(FIL_TYPE_TABLESPACE);
-
-    fil_system->flush_file_spaces(type);
-
-    std::this_thread::yield();
-
-    /* Reserve an open slot for this shard. So that this
-    shard's open file succeeds. */
-
-    while (fil_system->m_max_n_open <= s_n_spaces_in_lru) {
-      if (!fil_system->close_file_in_all_LRU(false)) {
-        std::this_thread::yield();
-      }
-      if (ut_time_monotonic() - start_time >= PRINT_INTERVAL_SECS) {
-        start_time = ut_time_monotonic();
-
-        ib::warn(ER_IB_MSG_279) << "Trying to close a file for "
-                                << start_time - begin_time << " seconds"
-                                << ". Configuration only allows for "
-                                << fil_system->m_max_n_open << " open files.";
-        fil_system->close_file_in_all_LRU(
-            fil_system->should_print_close_by_lru_info());
-        break;
-      }
-      if (ut_difftime(ut_time(), last_wake_time) > 1.0) {
-        /* We've spent more than a second trying to close some of the open files
-        without any luck. We can hang in this loop forewer, because:
-        - files cannot be closed, they have pending IO requests
-        - aio handler threads are waiting in os_aio_simulated_handler */
-
-        /* in order to break the loop, lets wake aio handler threads */
-        os_aio_simulated_wake_handler_threads();
-
-        std::this_thread::yield();
-
-        /* and flush the changes so that files with no pending IOs can be
-        closed */
-        fil_system->flush_file_spaces(type);
-
-        last_wake_time = ut_time();
-      }
-    }
-
-    if (fil_system->m_max_n_open > s_n_spaces_in_lru) {
-      break;
-    }
-
-#ifndef UNIV_HOTBACKUP
-    /* Wake the I/O-handler threads to make sure pending I/Os are
-    performed */
-    os_aio_simulated_wake_handler_threads();
-
-    std::this_thread::yield();
-#endif /* !UNIV_HOTBACKUP */
-  }
-
-  mutex_acquire();
-
-  return true;
-=======
   return get_space_by_id_from_map(space_id);
->>>>>>> mysql-8.0.28
 }
 
 /** Prepare to free a file. Remove from the unflushed list if there
@@ -4171,6 +4041,7 @@ void Fil_system::close_all_files() {
 modifications in the files. */
 void fil_close_all_files() { fil_system->close_all_files(); }
 
+#ifdef XTRABACUP
 /** Open a file of a tablespace.
 The caller must own the shard mutex.
 @param[in,out]  file    Tablespace file
@@ -4182,7 +4053,7 @@ bool fil_node_open_file(fil_node_t *file) {
 
   shard->mutex_acquire();
 
-  bool res = shard->open_file(file, false);
+  bool res = shard->open_file(file);
 
   shard->mutex_release();
 
@@ -4202,11 +4073,12 @@ void fil_node_close_file(fil_node_t *file) {
 
   shard->mutex_acquire();
 
-  shard->close_file(file, true);
+  shard->close_file(file);
 
   shard->mutex_release();
 }
 
+#endif /* XTRABACKUP */
 /** Close log files.
 @param[in]	free_all	If set then free all instances */
 void Fil_shard::close_log_files(bool free_all) {
@@ -5294,8 +5166,12 @@ static void fil_name_write_rename(space_id_t space_id, const char *old_name,
 @param[in]	size		Number of bytes by which the file
                                 is extended starting from the offset
 @param[in,out]	mtr		Mini-transaction */
-static void fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
-                                      os_offset_t size, mtr_t *mtr) {
+#ifdef XTRABACKUP
+[[maybe_unused]]
+#endif /* XTRABACKUP */
+static void
+fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
+                          os_offset_t size, mtr_t *mtr) {
   ut_ad(space_id != TRX_SYS_SPACE);
 
   byte *log_ptr;
@@ -9278,15 +9154,14 @@ void fil_adjust_name_import(dict_table_t *table, const char *path,
     found_path = true;
   });
 
-<<<<<<< HEAD
-=======
+#ifndef XTRABACKUP
   /* Check and rename the import file name. */
   if (found_path) {
     fil_rename_partition_file(saved_path, extn, false, true);
   }
+#endif /* !XTRABACKUP */
 #endif /* !WIN32 */
 
->>>>>>> mysql-8.0.28
   return;
 }
 
