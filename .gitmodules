@@ -1,0 +1,3 @@
+[submodule "extra/libkmip"]
+	path = extra/libkmip
+	url = https://github.com/Percona-Lab/libkmip.git

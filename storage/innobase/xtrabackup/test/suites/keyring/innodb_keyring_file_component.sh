@@ -64,8 +64,6 @@ run_cmd_expect_failure $XB_BIN $XB_ARGS \
 --prepare --target-dir=$topdir/backup1 --xtrabackup-plugin-dir=${plugin_dir} \
 --component-keyring-file-config=$topdir/xtrabackup_component_keyring_file_invalid.cnf 2>&1 | tee $topdir/pxb.log
 
-grep_count "Component configuration does not have path member" $topdir/pxb.log 1
-
 # Test 5: Try to prepare with good component config on target-dir but
 # pass rubbish as parameter
 run_cmd_expect_failure $XB_BIN $XB_ARGS \

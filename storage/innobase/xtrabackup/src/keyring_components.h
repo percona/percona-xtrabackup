@@ -18,13 +18,12 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #ifndef XB_KEYRING_COMPONENTS_H
 #define XB_KEYRING_COMPONENTS_H
 
-#include <components/keyrings/keyring_file/config/config.h>
 #include <mysql.h>
 namespace xtrabackup {
 namespace components {
 /** Data types */
-extern std::unique_ptr<keyring_file::config::Config_pod> new_config_pod;
 extern bool keyring_component_initialized;
+extern rapidjson::StringBuffer component_config_data_sb;
 
 /**
   Write backup keyring component config file

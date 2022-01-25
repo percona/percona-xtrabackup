@@ -72,4 +72,5 @@ bool check_if_skip_table(
     /******************/
     const char *name); /*!< in: path to the table */
 
+extern bool xtrabackup_stats;
 #endif

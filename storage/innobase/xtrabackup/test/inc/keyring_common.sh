@@ -108,7 +108,7 @@ EOF
   else
     plugin_load_arg="--plugin-load=${plugin_load}"
   fi
-  xtrabackup --stats --datadir=$topdir/backup ${plugin_load_arg}
+ # xtrabackup --stats --datadir=$topdir/backup ${plugin_load_arg}
 
   # make sure t1.ibd is still encrypted
   vlog "-- running strings "

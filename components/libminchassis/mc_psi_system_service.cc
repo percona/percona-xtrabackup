@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/service.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/mysql_psi_system_service.h>
+#include <mysql/components/services/psi_memory_service.h>
 
 void impl_min_chassis_psi_system(const char *) { return; }
 
@@ -33,3 +34,39 @@ extern SERVICE_TYPE(mysql_psi_system_v1)
 SERVICE_TYPE(mysql_psi_system_v1)
 SERVICE_IMPLEMENTATION(mysql_minimal_chassis,
                        mysql_psi_system_v1) = {impl_min_chassis_psi_system};
+
+//////////////////////////////////////////////
+
+static void register_memory_noop(const char *, PSI_memory_info *, int) {
+  return;
+}
+
+static PSI_memory_key memory_alloc_noop(PSI_memory_key, size_t,
+                                        struct PSI_thread **owner) {
+  *owner = nullptr;
+  return PSI_NOT_INSTRUMENTED;
+}
+
+static PSI_memory_key memory_realloc_noop(PSI_memory_key, size_t, size_t,
+                                          struct PSI_thread **owner) {
+  *owner = nullptr;
+  return PSI_NOT_INSTRUMENTED;
+}
+
+static PSI_memory_key memory_claim_noop(PSI_memory_key, size_t,
+                                        struct PSI_thread **owner, bool) {
+  *owner = nullptr;
+  return PSI_NOT_INSTRUMENTED;
+}
+
+static void memory_free_noop(PSI_memory_key, size_t, struct PSI_thread *) {
+  return;
+}
+
+extern SERVICE_TYPE(psi_memory_v2)
+    SERVICE_IMPLEMENTATION(mysql_minimal_chassis, psi_memory_v2);
+
+SERVICE_TYPE(psi_memory_v2)
+SERVICE_IMPLEMENTATION(mysql_minimal_chassis, psi_memory_v2) = {
+    register_memory_noop, memory_alloc_noop, memory_realloc_noop,
+    memory_claim_noop, memory_free_noop};

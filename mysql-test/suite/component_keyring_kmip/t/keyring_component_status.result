@@ -1,0 +1,43 @@
+# ----------------------------------------------------------------------
+# Setup
+# Creating global configuration file for keyring component: component_keyring_kmip
+# Creating local configuration file for keyring component: component_keyring_kmip
+# Creating manifest file for current MySQL server instance
+# Re-starting mysql server with manifest file
+# ----------------------------------------------------------------------
+CALL mtr.add_suppression("No suitable 'keyring_component_metadata_query' service implementation found to fulfill the request");
+#
+# Bug#32390719: QUERYING KEYRING_COMPONENT_STATUS TABLE
+#               GENERATES AN ERROR IN THE SERVER LOG
+#
+SELECT * FROM performance_schema.keyring_component_status;
+STATUS_KEY	STATUS_VALUE
+Component_name	component_keyring_kmip
+Author	Percona Corporation
+License	GPL
+Implementation_name	component_keyring_kmip
+Version	1.0
+Component_status	Active
+Server_addr	127.0.0.1
+Server_port	5696
+Client_ca	/home/dutow/.local/etc/pykmip/client_certificate_jane_doe.pem
+Client_key	/home/dutow/.local/etc/pykmip/client_key_jane_doe.pem
+Server_ca	/home/dutow/.local/etc/pykmip/root_certificate.pem
+Object_group	<NONE>
+SELECT PRIO, ERROR_CODE, SUBSYSTEM, DATA FROM performance_schema.error_log WHERE ERROR_CODE='MY-013712';
+PRIO	ERROR_CODE	SUBSYSTEM	DATA
+# Restarting server without keyring component
+# Taking backup of local manifest file for MySQL server instance
+SELECT * FROM performance_schema.keyring_component_status;
+STATUS_KEY	STATUS_VALUE
+SELECT PRIO, ERROR_CODE, SUBSYSTEM, DATA FROM performance_schema.error_log WHERE ERROR_CODE='MY-013712';
+PRIO	ERROR_CODE	SUBSYSTEM	DATA
+Warning	MY-013712	Server	No suitable 'keyring_component_metadata_query' service implementation found to fulfill the request.
+# Restore local manifest file for MySQL server instance from backup
+# ----------------------------------------------------------------------
+# Teardown
+# Removing manifest file for current MySQL server instance
+# Removing local configuration file for keyring component: component_keyring_kmip
+# Removing global configuration file for keyring component: component_keyring_kmip
+# Restarting server without the manifest file
+# ----------------------------------------------------------------------

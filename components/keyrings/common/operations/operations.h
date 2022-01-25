@@ -609,7 +609,7 @@ class Keyring_operations {
   */
   bool generate(const meta::Metadata &metadata, const data::Type type,
                 size_t length) {
-    Data_extension generated_data("", type);
+    Data_extension generated_data(keyring_common::data::Data{"", type});
     if (!metadata.valid()) return true;
     if (cache_.get(metadata, generated_data)) return true;
     if ((*backend_).generate(metadata, generated_data, length)) return true;

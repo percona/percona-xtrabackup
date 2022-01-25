@@ -5,22 +5,12 @@
 . inc/common.sh
 
 plugin_load=keyring_vault.so
-if test -d $PWD/../../../../plugin_output_directory
-then
-  plugin_dir=$PWD/../../../../plugin_output_directory
-else
-  plugin_dir=$PWD/../../lib/plugin/
-fi
 keyring_vault_config=${TEST_VAR_ROOT}/keyring_vault_config
 keyring_args="--keyring-vault-config=${keyring_vault_config}"
 
 MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
 early-plugin-load=${plugin_load}
 keyring-vault-config=${keyring_vault_config}
-"
-
-XB_EXTRA_MY_CNF_OPTS="${XB_EXTRA_MY_CNF_OPTS:-""}
-xtrabackup-plugin-dir=${plugin_dir}
 "
 
 VAULT_URL="${VAULT_URL:-https://vault.public-ci.percona.com:8200}"

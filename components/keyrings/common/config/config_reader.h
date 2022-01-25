@@ -42,8 +42,17 @@ class Config_reader {
 
     @param [in] config_file_path Full path to configuration file
   */
-  explicit Config_reader(const std::string config_file_path);
+  inline explicit Config_reader(const std::string config_file_path);
+#ifdef XTRABACKUP
+  /**
+    Constructor
 
+    Reads JSON from parameter and stores it in memory.
+
+    @param [in] config_data rapidjson::StringBuffer containing config data
+  */
+  inline explicit Config_reader(const rapidjson::StringBuffer &config_data);
+#endif
   /**
     Get an element value from JSON document.
     Assumption: Type is compatible with Get() function and
@@ -76,3 +85,5 @@ class Config_reader {
 }  // namespace keyring_common
 
 #endif  // !CONFIG_READER_INCLUDED
+
+#include "config_reader.cc"

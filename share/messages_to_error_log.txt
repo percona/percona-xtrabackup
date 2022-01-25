@@ -2760,7 +2760,7 @@ ER_FAILED_TO_FIND_DL_ENTRY
   eng "Can't find symbol '%-.128s' in library."
 
 ER_FAILED_TO_OPEN_SHARED_LIBRARY
-  eng "Can't open shared library '%-.192s' (errno: %d %-.128s)."
+  eng "Can't open shared library '%-.192s' (errno: %d %s)."
 
 ER_THREAD_PRIORITY_IGNORED
   eng "Thread priority attribute setting in Resource Group SQL shall be ignored due to unsupported platform or insufficient privilege."
@@ -11255,6 +11255,12 @@ ER_NOTE_KEYRING_COMPONENT_KEYS_METADATA_ITERATOR_FETCH_FAILED
 
 ER_NOTE_KEYRING_COMPONENT_METADATA_ITERATOR_INVALID_OUT_PARAM
   eng "Key and value length parameters must not be null."
+
+ER_KEYRING_COMPONENT_NO_CONFIG
+  eng "Keyring configuration doesn't exists: %s"
+
+ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
+  eng "Keyring configuration JSON parse error: %s (%lu)"
 
 ER_IB_WRN_FAILED_TO_ACQUIRE_SERVICE
   eng "Innodb could not acquire service : %s"
