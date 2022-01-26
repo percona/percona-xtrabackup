@@ -336,8 +336,7 @@ xtrabackup will ask for it.
 
 .. note::
 
-   `xtrabackup --transition-key` scrapes the supplkied value so that it
-   should not visible in the ``ps`` command output.
+   `xtrabackup --transition-key` scrapes the supplied value so that it does not appear in the ``ps`` command output.
 
 Preparing the Backup with a Passphrase
 --------------------------------------------------------------------------------
