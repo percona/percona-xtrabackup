@@ -2099,6 +2099,7 @@ detect this and will eventually quit sooner. */
       }
     }
     ut_a(0);
+    return 1;
   }
 
   /**Gets the nth column of a table.
