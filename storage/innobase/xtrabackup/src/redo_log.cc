@@ -41,8 +41,10 @@ constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
 
 Redo_Log_Reader::Redo_Log_Reader() {
-  log_hdr_buf.alloc(LOG_FILE_HDR_SIZE);
-  log_buf.alloc(redo_log_read_buffer_size);
+  log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                            ut::Count{LOG_FILE_HDR_SIZE});
+  log_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                        ut::Count{redo_log_read_buffer_size});
 }
 
 bool Redo_Log_Reader::find_start_checkpoint_lsn() {
@@ -423,7 +425,10 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn,
   return (true);
 }
 
-Redo_Log_Writer::Redo_Log_Writer() { scratch_buf.alloc(16 * 1024 * 1024); }
+Redo_Log_Writer::Redo_Log_Writer() {
+  scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                            ut::Count{16 * 1024 * 1024});
+}
 
 bool Redo_Log_Writer::create_logfile(const char *name) {
   MY_STAT stat_info;
@@ -487,8 +492,10 @@ bool Redo_Log_Writer::write_buffer(byte *buf, size_t len) {
 }
 
 Archived_Redo_Log_Reader::Archived_Redo_Log_Reader() {
-  log_buf.alloc(redo_log_read_buffer_size);
-  scratch_buf.alloc(UNIV_PAGE_SIZE_MAX);
+  log_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                        ut::Count{redo_log_read_buffer_size});
+  scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                            ut::Count{UNIV_PAGE_SIZE_MAX});
 }
 
 void Archived_Redo_Log_Reader::set_fd(File fd) { file = fd; }
@@ -773,7 +780,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
     }
 
     ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> buf;
-    buf.alloc(OS_FILE_LOG_BLOCK_SIZE);
+    buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                      ut::Count{OS_FILE_LOG_BLOCK_SIZE});
 
     size_t hdr_len = OS_FILE_LOG_BLOCK_SIZE;
     while (hdr_len > 0 && !stopped) {
@@ -794,7 +802,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
       archive_first_block_zero = true;
       hdr_len = HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE;
       ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> buf2;
-      buf2.alloc(HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE);
+      buf2.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                         ut::Count{HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE});
       /* Read remaining header of length (4096 - 512) bytes */
       while (hdr_len > 0 && !stopped) {
         size_t n_read = my_read(file, buf2, hdr_len, MYF(MY_WME));
@@ -825,7 +834,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
       }
       if (srv_redo_log_encrypt) {
         ut::aligned_array_pointer<byte, OS_FILE_LOG_BLOCK_SIZE> scratch_buf;
-        scratch_buf.alloc(OS_FILE_LOG_BLOCK_SIZE);
+        scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                  ut::Count{OS_FILE_LOG_BLOCK_SIZE});
         IORequest req_type(IORequestLogRead);
         fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
         fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
