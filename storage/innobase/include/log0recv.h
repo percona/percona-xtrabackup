@@ -52,6 +52,11 @@ class PersistentTableMetadata;
 
 struct recv_addr_t;
 
+#ifdef XTRABACKUP
+/** map of tablespace_id, that experienced an inplace DDL during a backup op */
+extern std::map<space_id_t, bool> index_load_map;
+#endif /* XTRABACKUP */
+
 /** list of tablespaces, that experienced an inplace DDL during a backup op */
 extern std::list<std::pair<space_id_t, lsn_t>> index_load_list;
 /** the last redo log flush len as seen by MEB */
