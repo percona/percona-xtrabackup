@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <mysys_err.h>
+#include <linux/falloc.h>
 #include "common.h"
 #include "datasink.h"
 
