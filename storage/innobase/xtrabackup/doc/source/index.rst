@@ -133,6 +133,17 @@ Tutorials, Recipes, How-tos
 * :ref:`recipes-xbk`
 * :ref:`howtos`
 * :ref:`aux-guides`
+  
+
+Release notes
+=============
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   release-notes
+
 
 References
 ==========
@@ -143,9 +154,7 @@ References
    :maxdepth: 1
    :glob:
 
-   release-notes
    xtrabackup_bin/xbk_option_reference
-   
    xbcrypt/xbcrypt
    xbstream/xbstream
    faq
