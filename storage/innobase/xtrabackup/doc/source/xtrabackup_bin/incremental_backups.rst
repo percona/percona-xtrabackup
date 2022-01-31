@@ -49,10 +49,6 @@ full backup <creating_a_backup>` with a command such as the following: ::
 
   xtrabackup --backup --target-dir=/data/backups/base --datadir=/var/lib/mysql/
 
-If you want a usable full backup, use :doc:`innobackupex
-<../innobackupex/innobackupex_script>` since `xtrabackup` itself won't copy
-table definitions, triggers, or anything else that's not .ibd.
-
 If you look at the `xtrabackup_checkpoints` file, you should see some
 contents similar to the following: ::
 
