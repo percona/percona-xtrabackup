@@ -1437,16 +1437,3 @@ function grep_general_log()
 
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
-
-
-# Adjust pxb plugin dir:
-if test -d $PWD/../../../../plugin_output_directory
-then
-  plugin_dir=$PWD/../../../../plugin_output_directory
-else
-  plugin_dir=$PWD/../../lib/plugin/
-fi
-
-XB_EXTRA_MY_CNF_OPTS="${XB_EXTRA_MY_CNF_OPTS:-""}
-xtrabackup-plugin-dir=${plugin_dir}
-"
