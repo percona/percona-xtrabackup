@@ -296,8 +296,8 @@ point of the second incremental backup:
 
 .. note::
 
-   `xtrabackup --apply-log-only` should be used when merging all
-   incrementals except the last one. That's why the previous line doesn't
+   `xtrabackup --apply-log-only` should be used when merging each
+   incremental backup except the last one. That's why the previous line doesn't
    contain `xtrabackup --apply-log-only`. Even if the
    `xtrabackup --apply-log-only` were used on the last step, backup
    would still be consistent but in that case server would perform the rollback
@@ -329,14 +329,14 @@ The following example illustrates how a backup can be created in this case:
 .. code-block:: bash
 
    $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
-   --transition-key=MySecetKey
+   --transition-key=MySecretKey
 
 If `xtrabackup --transition-key` is specified without a value,
 xtrabackup will ask for it.
 
 .. note::
 
-   `xtrabackup --transition-key` scrapes the supplkied value so that it
+   `xtrabackup --transition-key` scrapes the supplied value so that it
    should not visible in the ``ps`` command output.
 
 Preparing the Backup with a Passphrase
@@ -346,7 +346,8 @@ The same passphrase should be specified for the ``prepare`` command:
 
 .. code-block:: bash
 
-   $ xtrabackup --prepare --target-dir=/data/backup
+   $ xtrabackup --prepare --target-dir=/data/backup \
+   --transition-key=MySecretKey
 
 There is no ``keyring-vault`` or ``keyring-file`` here, because xtrabackup
 does not talk to the keyring in this case.
@@ -382,10 +383,9 @@ xtrabackup will need an access to the same keyring file or vault server during
 prepare and copy-back, but does not depend on whether the server keys have been
 purged.
 
-In this scenario, the three stages of the backup process are the following:
+The three stages of the backup process are the following:
 
-.. contents::
-   :local:
+
 
 Backup
 --------------------------------------------------------------------------------
@@ -393,7 +393,7 @@ Backup
 .. code-block:: bash
 
    $ xtrabackup --backup --target-dir=/data/backup \
-   --transition-key=MySecretKey
+   --generate-transition-key
 
 Prepare
 --------------------------------------------------------------------------------
