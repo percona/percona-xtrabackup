@@ -11,4 +11,4 @@ xtrabackup --prepare --target-dir=$topdir/backup
 run_cmd_expect_failure ${XB_BIN} --defaults-file= --defaults-group=mysqld.2 \
 	  --no-version-check --move-back --force-non-empty-directories \
 	  --target-dir=$topdir/backup 2>&1 | \
-	  grep "Error: datadir must be specified"
+	  grep "datadir must be specified"

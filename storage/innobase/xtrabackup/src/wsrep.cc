@@ -178,21 +178,18 @@ void xb_write_galera_info(bool incremental_prepare)
 
   fp = fopen(XB_GALERA_INFO_FILENAME, "w");
   if (fp == NULL) {
-    msg("xtrabackup: error: "
-        "could not create " XB_GALERA_INFO_FILENAME ", errno = %d\n",
-        errno);
+    xb::error() << "could not create " << XB_GALERA_INFO_FILENAME
+                << ", errno = " << errno;
     exit(EXIT_FAILURE);
   }
 
   seqno = wsrep_xid_seqno(&xid);
 
-  msg("xtrabackup: Recovered WSREP position: %s:%lld\n", uuid_str,
-      (long long)seqno);
+  xb::info() << "Recovered WSREP position: " << uuid_str << ":" << seqno;
 
   if (fprintf(fp, "%s:%lld", uuid_str, (long long)seqno) < 0) {
-    msg("xtrabackup: error: "
-        "could not write to " XB_GALERA_INFO_FILENAME ", errno = %d\n",
-        errno);
+    xb::error() << "could not write to " << XB_GALERA_INFO_FILENAME
+                << ", errno = " << errno;
     exit(EXIT_FAILURE);
   }
 

@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "datasink.h"
 #include "ds_decrypt.h"
 #include "ds_encrypt.h"
+#include "msg.h"
 #include "xbcrypt_common.h"
 #include "xtrabackup_version.h"
 

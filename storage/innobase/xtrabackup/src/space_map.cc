@@ -211,7 +211,7 @@ bool Tablespace_map::serialize(ds_ctxt_t *ds) const {
   const char *path = XBTS_FILE_NAME;
   ds_file_t *stream = ds_open(ds, path, &mystat);
   if (stream == NULL) {
-    msg("xtrabackup: Error: cannot open output stream for %s\n", path);
+    xb::error() << "cannot open output stream for " << path;
     return (false);
   }
 
@@ -267,7 +267,7 @@ bool Tablespace_map::deserialize(const std::string &dir) {
   std::ifstream f(path);
 
   if (f.fail()) {
-    msg("xtrabackup: Error: cannot open file '%s'\n", path.c_str());
+    xb::error() << "cannot open file " << SQUOTE(path.c_str());
     return (false);
   }
 
@@ -276,7 +276,7 @@ bool Tablespace_map::deserialize(const std::string &dir) {
   Document doc;
   doc.ParseStream(wrapper);
   if (doc.HasParseError()) {
-    msg("xtrabackup: JSON parse error in file '%s'\n", path.c_str());
+    xb::error() << "JSON parse error in file " << SQUOTE(path.c_str());
     return (false);
   }
 
@@ -284,9 +284,9 @@ bool Tablespace_map::deserialize(const std::string &dir) {
 
   int version = root["version"].GetInt();
   if (version > XBTS_FILE_VERSION) {
-    msg("xtrabackup: Error: wrong '%s' file version %d, maximum version"
-        "supported is %d",
-        XBTS_FILE_NAME, version, XBTS_FILE_VERSION);
+    xb::error() << "wrong " << SQUOTE(XBTS_FILE_NAME) << " file version "
+                << version << ", maximum version supported is "
+                << XBTS_FILE_VERSION;
     return (false);
   }
 

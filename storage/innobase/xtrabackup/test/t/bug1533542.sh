@@ -13,4 +13,4 @@ vlog "Starting backup"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --target-dir=$topdir/backup tmp-dir
 
 # Should failed with error
-grep -q "xtrabackup: Error: unknown argument: 'tmp-dir'" $OUTFILE
+grep -q "unknown argument: 'tmp-dir'" $OUTFILE

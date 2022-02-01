@@ -14,7 +14,7 @@ xtrabackup --prepare --target-dir=$topdir/backup
 xtrabackup --copy-back --parallel=10 --target-dir=$topdir/backup \
 	2>&1 | tee $topdir/pxb.log
 
-run_cmd grep -q "xtrabackup: Starting 10 threads for parallel data files transfer" $topdir/pxb.log
+run_cmd grep -q "Starting 10 threads for parallel data files transfer" $topdir/pxb.log
 threads_count=$(grep -Eo '\[[0-9]+\] Copying' $topdir/pxb.log | sort | uniq | wc -l)
 vlog "Involved threads count: $threads_count"
 if [ $threads_count -eq 1 ]

@@ -544,19 +544,15 @@ namespace ib {
 
 #if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS)
 
-void logger::log_event(std::string msg) {
-#if !(defined XTRABACKUP)
+void logger::log_event(std::string msg, IF_XB(const char *const module)) {
   LogEvent()
       .type(LOG_TYPE_ERROR)
       .prio(m_level)
       .errcode(m_err)
-      .subsys("InnoDB")
+      .subsys(module)
       .verbatim(msg.c_str());
-#else
-  fprintf(stderr, "%s\n", msg.c_str());
-#endif
 }
-logger::~logger() { log_event(m_oss.str()); }
+logger::~logger() { log_event(m_oss.str(), IF_XB(m_module)); }
 
 /*
 MSVS complains: Warning C4722: destructor never returns, potential memory leak.
@@ -568,11 +564,7 @@ But, the whole point of using ib::fatal temporary object is to cause an abort.
 #endif /* _WIN32 */
 
 fatal::~fatal() {
-#if !(defined XTRABACKUP)
-  log_event("[FATAL] " + m_oss.str());
-#else
-  fprintf(stderr, "%s\n", m_oss.str().c_str());
-#endif
+  log_event("[FATAL] " + m_oss.str(), m_module);
   ut_dbg_assertion_failed("ib::fatal triggered", m_location.filename,
                           m_location.line);
 }
@@ -582,8 +574,8 @@ fatal::~fatal() {
 #endif /* _WIN32 */
 
 fatal_or_error::~fatal_or_error() {
+  log_event("[FATAL] " + m_oss.str(), m_module);
   if (m_fatal) {
-    log_event("[FATAL] " + m_oss.str());
     ut_dbg_assertion_failed("ib::fatal_or_error triggered", m_location.filename,
                             m_location.line);
   }
@@ -592,3 +584,24 @@ fatal_or_error::~fatal_or_error() {
 #endif /* !UNIV_NO_ERR_MSGS */
 
 }  // namespace ib
+
+namespace xb {
+fatal::~fatal() {
+  log_event("[FATAL] " + m_oss.str(), m_module);
+  ut_dbg_assertion_failed("xb::fatal triggered", m_location.filename,
+                          m_location.line);
+}
+
+fatal_or_error::~fatal_or_error() {
+  const std::string &temp = m_oss.str();
+  m_oss.seekp(0);
+  m_oss << "[FATAL] ";
+  m_oss << temp;
+  if (m_fatal) {
+    log_event(m_oss.str(), m_module);
+    ut_dbg_assertion_failed("xb::fatal_or_error triggered", m_location.filename,
+                            m_location.line);
+  }
+}
+
+}  // namespace xb

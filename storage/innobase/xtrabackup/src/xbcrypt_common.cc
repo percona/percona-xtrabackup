@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_thread_local.h>
 #include <mysql/service_mysql_alloc.h>
 #include "common.h"
+#include "msg.h"
 #include "xbcrypt.h"
 
 /* Encryption options */

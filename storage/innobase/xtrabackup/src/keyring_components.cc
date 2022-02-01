@@ -61,17 +61,17 @@ bool inititialize_service_handles() {
 
   reg_srv = mysql_plugin_registry_acquire();
   if (reg_srv == nullptr) {
-    msg("xtrabackup: mysql_plugin_registry_acquire failed\n");
+    xb::error() << "mysql_plugin_registry_acquire failed";
     return false;
   }
 
   /* Add module specific initialization here */
   if (innobase::encryption::init_keyring_services(reg_srv) == false) {
-    msg("xtrabackup: init_keyring_services failed\n");
+    xb::error() << "init_keyring_services failed";
     cleanup();
     return false;
   }
-  msg("xtrabackup: inititialize_service_handles suceeded\n");
+  xb::info() << "inititialize_service_handles suceeded";
   service_handler_initialized = true;
   return true;
 }
@@ -230,8 +230,8 @@ bool keyring_init_offline() {
   component_name = "file://component_keyring_file";
   if (!component_file_config.valid()) {
     if (opt_component_keyring_file_config != nullptr) {
-      msg("xtrabackup: Error: Component configuration file is not readable or "
-          "not found.\n");
+      xb::error() << "Component configuration file is not readable or "
+                     "not found.";
       return false;
     }
 
@@ -245,21 +245,22 @@ bool keyring_init_offline() {
   }
 
   if (xtrabackup_stats) {
-    msg_ts("xtrabackup: Encryption is not supported with --stats");
+    xb::error() << "Encryption is not supported with --stats";
     return false;
   }
   if (config.length() == 0) {
-    msg("xtrabackup: Error: Component configuration file is empty.\n");
+    xb::error() << "Component configuration file is empty.";
     return false;
   }
 
   rapidjson::Document config_json;
   config_json.Parse(config);
   if (config_json.HasParseError()) {
-    msg("xtrabackup: Error: Component configuration file is not a valid "
-        "JSON.\n");
+    xb::error() << "Component configuration file is not a valid "
+                << "JSON.";
     return false;
   }
+
   component_config_data_sb.Clear();
   rapidjson::Writer<rapidjson::StringBuffer> string_writer(
       component_config_data_sb);

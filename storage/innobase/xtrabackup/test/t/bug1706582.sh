@@ -8,5 +8,5 @@ vlog "Full backup"
 
 run_cmd_expect_failure xtrabackup --backup --lock-ddl --lock-ddl-per-table \
     --target-dir=$topdir/data/full  2>&1 | \
-        grep "Error: --lock-ddl and --lock-ddl-per-table are mutually exclusive"
+        grep "\-\-lock-ddl and --lock-ddl-per-table are mutually exclusive"
 

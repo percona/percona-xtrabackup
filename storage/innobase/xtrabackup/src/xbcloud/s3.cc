@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_sys.h>
 
 #include "common.h"
+#include "msg.h"
 
 #define AWS_DATE_HEADER "X-Amz-Date"
 #define AWS_CONTENT_SHA256_HEADER "X-Amz-Content-SHA256"

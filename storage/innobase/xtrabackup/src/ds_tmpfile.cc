@@ -29,6 +29,7 @@ datasink in a serialized way in deinit(). */
 #include <mysql/service_mysql_alloc.h>
 #include "common.h"
 #include "datasink.h"
+#include "msg.h"
 
 typedef struct {
   pthread_mutex_t mutex;

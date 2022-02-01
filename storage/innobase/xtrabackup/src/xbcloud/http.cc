@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <iostream>
 #include "azure.h"
 #include "common.h"
+#include "msg.h"
 #include "s3.h"
 #include "swift.h"
 

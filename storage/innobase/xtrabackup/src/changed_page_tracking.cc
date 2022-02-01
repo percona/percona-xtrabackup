@@ -1,5 +1,5 @@
 /******************************************************
-* Copyright (c) 2021 Percona LLC and/or its affiliates.
+* Copyright (c) 2022 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "components/mysqlbackup/backup_comp_constants.h"
 #include "srv0srv.h"
+#include "xb0xb.h"
 #include "xtrabackup.h"
 
 namespace pagetracking {
@@ -49,24 +50,23 @@ xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
   xb_space_map *space_map = nullptr;
 
   if (page_start_lsn == page_end_lsn) {
-    msg("xtrabackup: pagetracking: incremental backup LSN is same as last "
-        "checkpoint LSN " LSN_PF " not calling mysql component\n",
-        page_start_lsn);
+    xb::info() << "pagetracking: incremental backup LSN is same as last "
+               << "checkpoint LSN " << page_start_lsn
+               << " not calling mysql component";
     space_map = new xb_space_map;
     return space_map;
   }
 
   if (page_start_lsn > page_end_lsn) {
-    msg("xtrabackup: pagetracking: incremental backup LSN " LSN_PF
-        " is larger than the last checkpoint LSN " LSN_PF "\n",
-        page_start_lsn, page_end_lsn);
+    xb::error() << "pagetracking: incremental backup LSN " << page_start_lsn
+                << " is larger than the last checkpoint LSN " << page_end_lsn;
     return nullptr;
   }
 
   uint64_t backupid = 0;
   if (!get_changed_pages(page_start_lsn, page_end_lsn, &backupid, connection)) {
-    msg("xtrabackup: pagetracking: error: Failed to get page tracking file "
-        "from server");
+    xb::error() << "pagetracking: Failed to get page tracking file "
+                   "from server";
     return nullptr;
   }
 
@@ -86,7 +86,7 @@ xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
   file = my_open(full_path, O_RDONLY, MYF(MY_WME));
 
   if (file < 0) {
-    msg("xtrabackup: pagetracking: error: cannot open '%s'\n", full_path);
+    xb::error() << "pagetracking: cannot open " << SQUOTE(full_path);
     return nullptr;
   }
 
@@ -103,7 +103,7 @@ xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
     ut_a(n_read % Backup_comp_constants::page_number_size == 0);
 
     if (n_read == MY_FILE_ERROR) {
-      msg("xtrabackup: cannot read from '%s'\n", full_path);
+      xb::error() << "pagetracking: cannot read from " << SQUOTE(full_path);
       my_close(file, MYF(MY_FAE));
       return nullptr;
     }
@@ -156,8 +156,8 @@ lsn_t get_pagetracking_start_lsn(MYSQL *connection) {
   free(start_lsn_str);
 
   if (page_track_start_lsn == 0) {
-    msg("xtrabackup: pagetracking: Error tracking lsn is 0. Page tracking was "
-        "disabled?\n");
+    xb::error() << "pagetracking: tracking lsn is 0. Page tracking was "
+                   "disabled?";
   }
 
   return page_track_start_lsn;
@@ -177,14 +177,15 @@ bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
   *backupid = get_uuid_short(connection);
 
   if (!is_component_installed(connection)) {
-    msg("xtrabackup: pagetracking: Error Please install mysqlbackup "
-        "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
-        "use page tracking\n");
+    xb::error()
+        << "pagetracking: Please install mysqlbackup "
+           "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
+           "use page tracking";
     return (false);
   }
 
   if (!set_backupid(connection, *backupid)) {
-    msg("xtrabackkup: pagetracking: Error unable to set backupid\n");
+    xb::error() << "pagetracking: unable to set backupid";
     return (false);
   }
 
@@ -194,16 +195,14 @@ bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
   if (page_track_start_lsn == 0) {
     return (false);
   } else if (page_track_start_lsn > start_lsn) {
-    msg("xtrabackup: pagetracking: Warning tracking start lsn " LSN_PF
-        " is more than increment start lsn " LSN_PF "\n",
-        page_track_start_lsn, start_lsn);
+    xb::warn() << "pagetracking: tracking start lsn " << page_track_start_lsn
+               << " is more than increment start lsn " << start_lsn;
     return (false);
   }
 
   /* call component api to generate page tracking file */
-  msg_ts("xtrabackup: pagetracking: calling get pages with start lsn " LSN_PF
-         " and end lsn " LSN_PF "\n",
-         start_lsn, end_lsn);
+  xb::info() << "pagetracking: calling get pages with start lsn " << start_lsn
+             << " and end lsn " << end_lsn;
   std::ostringstream query;
   query << "SELECT " << Backup_comp_constants::udf_get_changed_pages << "("
         << start_lsn << "," << end_lsn << ")";
@@ -215,9 +214,8 @@ bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
   if (get_pages == 0) {
     return (true);
   } else {
-    msg("xtrabackup: pagetracking: Error failed to generate page tracking "
-        "file with error code %d \n",
-        get_pages);
+    xb::error() << "pagetracking: failed to generate page tracking "
+                << "file with error code " << get_pages;
     return (false);
   }
 }
@@ -248,9 +246,8 @@ bool set_backupid(MYSQL *connection, uint64_t backupid) {
   if (get_id == backupid) {
     return (true);
   } else {
-    msg("xtrabackup: pagetracking: Error failed to set backupid"
-        "currently it is set to " LSN_PF "\n",
-        get_id);
+    xb::error() << "pagetracking: failed to set backupid"
+                << " currently it is set to " << get_id;
     return (false);
   }
 }
@@ -294,9 +291,10 @@ void range_get_next_page(xb_page_set *page_set) {
 @return true on success. */
 bool start(MYSQL *connection, lsn_t *lsn) {
   if (!is_component_installed(connection)) {
-    msg("xtrabackup: pagetracking: Error Please install mysqlbackup "
-        "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
-        "use page tracking\n");
+    xb::error()
+        << "pagetracking: Please install mysqlbackup "
+           "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
+           "use page tracking";
     return (false);
   }
 

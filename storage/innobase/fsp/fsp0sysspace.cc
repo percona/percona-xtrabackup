@@ -933,7 +933,7 @@ dberr_t SysTablespace::open_or_create(bool is_temp, bool create_new_db,
     }
 
     if (err != DB_SUCCESS) {
-      ib::error(ER_IB_MSG_312, space->name);
+      xb::error(ER_IB_MSG_312, space->name);
     }
   }
 

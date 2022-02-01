@@ -29,6 +29,7 @@ exception for the last write for a file. */
 #include <mysql_version.h>
 #include "common.h"
 #include "datasink.h"
+#include "msg.h"
 
 #define DS_DEFAULT_BUFFER_SIZE (64 * 1024)
 
