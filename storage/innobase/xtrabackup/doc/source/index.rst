@@ -11,8 +11,12 @@
 servers that doesn't lock your database during the backup.
 
 It can back up data from *InnoDB*, XtraDB, and *MyISAM* tables on
-*MySQL* 5.1 [#n-1]_, 5.5, 5.6 and 5.7 servers, as well as |Percona
-Server| with XtraDB.
+*MySQL* 5.1 , 5.5, 5.6 and 5.7 servers, as well as Percona
+Server with XtraDB.
+
+.. note::
+
+  Support for InnoDB 5.1 builtin has been removed in *Percona XtraBackup* 2.1
 
 For a high-level overview of many of its advanced features, including a feature
 comparison, please see :doc:`intro`.
@@ -21,13 +25,15 @@ Whether it is a 24x7 highly loaded server or a low-transaction-volume
 environment, *Percona XtraBackup* is designed to make backups a seamless
 procedure without disrupting the performance of the server in a production
 environment. `Commercial support contracts are available
-<http://www.percona.com/mysql-support/>`_.
+<https://www.percona.com/mysql-support/>`_.
 
 .. important::
-   
-   *Percona XtraBackup* |version| does not support making backups of databases
-   created in *MySQL* 8.0, *Percona Server for MySQL* 8.0 or Percona XtraDB Cluster
-   8.0.
+
+   Percona XtraBackup 2.4 does not support making backups of databases
+   created in *MySQL 8.0*, *Percona Server for MySQL 8.0*, or *Percona XtraDB Cluster 8.0*.
+
+   Use `Percona XtraBackup 8.0 <https://www.percona.com/downloads/Percona-XtraBackup-LATEST/#>`__ for making backups of databases in *MySQL 8.0*, *Percona Server for MySQL 8.0*, and *Percona XtraDB Cluster 8.0*.
+
 
 Introduction
 ============
@@ -138,9 +144,6 @@ Indices and tables
 
 * :ref:`search`
 
-.. rubric:: Footnotes
 
-.. [#n-1]
 
-  Support for InnoDB 5.1 builtin has been removed in *Percona XtraBackup* 2.1
 

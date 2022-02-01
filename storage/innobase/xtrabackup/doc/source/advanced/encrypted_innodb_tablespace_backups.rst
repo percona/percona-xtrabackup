@@ -336,8 +336,7 @@ xtrabackup will ask for it.
 
 .. note::
 
-   `xtrabackup --transition-key` scrapes the supplied value so that it
-   should not visible in the ``ps`` command output.
+   `xtrabackup --transition-key` scrapes the supplied value so that it does not appear in the ``ps`` command output.
 
 Preparing the Backup with a Passphrase
 --------------------------------------------------------------------------------
@@ -392,7 +391,7 @@ Backup
 
 .. code-block:: bash
 
-   $ xtrabackup --backup --target-dir=/data/backup \
+   $ xtrabackup --backup --user=root -p --target-dir=/data/backup \
    --generate-transition-key
 
 Prepare

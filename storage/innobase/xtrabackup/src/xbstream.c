@@ -58,7 +58,6 @@ datasink_t datasink_xbstream;
 datasink_t datasink_compress;
 datasink_t datasink_tmpfile;
 datasink_t datasink_encrypt;
-datasink_t datasink_buffer;
 
 static run_mode_t	opt_mode;
 static char *		opt_directory = NULL;

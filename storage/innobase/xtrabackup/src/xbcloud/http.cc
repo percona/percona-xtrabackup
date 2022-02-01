@@ -27,6 +27,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xbcloud/util.h"
 
 #include <my_sys.h>
+#include <iostream>
+#include "azure.h"
 #include "common.h"
 #include "s3.h"
 #include "swift.h"
@@ -95,24 +97,17 @@ std::string uri_escape_path(const std::string &path) {
   return result;
 }
 
-void Http_request::add_param(const std::string &name,
-                             const std::string &value) {
-  std::stringstream param;
-  param << uri_escape_string(name) << "=" + uri_escape_string(value);
-  params_.push_back(param.str());
-}
-
 std::string Http_request::query_string() const {
   std::stringstream query_string;
   int idx = 0;
   /* we need to sort query string params for AWS canonical request */
-  std::vector<std::string> sorted_params = params_;
-  std::sort(sorted_params.begin(), sorted_params.end());
-  for (auto &param : sorted_params) {
+  for (const auto &param : params()) {
+    std::string name = uri_escape_string(param.first);
+    std::string val = uri_escape_string(param.second);
     if (idx++ > 0) {
       query_string << "&";
     }
-    query_string << param;
+    query_string << name << "=" << val;
   }
   return query_string.str();
 }
@@ -669,5 +664,12 @@ Http_client::callback<S3_client, S3_client::async_download_callback_t>(
     S3_client *client, std::string container, std::string name,
     Http_request *req, Http_response *resp, const Http_client *http_client,
     Event_handler *h, S3_client::async_download_callback_t callback,
+    CURLcode rc, const Http_connection *conn, ulong count) const;
+
+template void
+Http_client::callback<Azure_client, Azure_client::async_download_callback_t>(
+    Azure_client *client, std::string container, std::string name,
+    Http_request *req, Http_response *resp, const Http_client *http_client,
+    Event_handler *h, Azure_client::async_download_callback_t callback,
     CURLcode rc, const Http_connection *conn, ulong count) const;
 }  // namespace xbcloud
