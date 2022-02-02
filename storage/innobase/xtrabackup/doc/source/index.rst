@@ -119,6 +119,7 @@ xbcloud Binary
    xbcloud/xbcloud_minio
    xbcloud/xbcloud_gcs
    xbcloud/xbcloud_exbackoff
+   xbcloud/xbcloud_azure
 
 Tutorials, Recipes, How-tos
 ===========================
