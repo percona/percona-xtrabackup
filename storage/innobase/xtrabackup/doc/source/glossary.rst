@@ -193,14 +193,6 @@
      `:file:`mytable.TRN`. With the :term:`.TRG` file, they represent all the
      Trigger definitions.
 
-   .ARM
-     Each table with the :program:`Archive Storage Engine` has ``.ARM`` file
-     which contains the metadata of it.
-
-   .ARZ
-     Each table with the :program:`Archive Storage Engine` has ``.ARZ`` file
-     which contains the data of it.
-
    .CSM
      Each table with the :program:`CSV Storage Engine` has ``.CSM`` file which
      contains the metadata of it.
