@@ -668,7 +668,38 @@ Options
    momentarily stop the replication replica thread, this may help the backup to
    succeed and you do not need to use this option.
 
-.. include:: ../.res/contents/option.no-version-check.txt
+.. option:: --no-server-version-check
+
+   Implemented in *Percona XtraBackup* 8.0.21. 
+
+   The ``--no-server-version-check`` option disables the server version check. 
+   
+   The default behavior runs a check that compares the source system version to the *Percona XtraBackup* version. If the source system version is higher than the XtraBackup version, the backup is aborted with a message. 
+   
+   Adding the option overrides this check, and the backup proceeds, but there may be issues with the backup.
+
+   See :ref:`comparison` for more information.
+
+.. option:: --no-version-check
+
+   This option disables the version check. If you do not pass this option, the
+   automatic version check is enabled implicitly when |xtrabackup| runs
+   in the ``--backup`` mode. To disable the version check, you should pass
+   explicitly the ``--no-version-check`` option when invoking |xtrabackup|.
+
+   When the automatic version check is enabled, |xtrabackup| performs a
+   version check against the server on the backup stage after creating a server
+   connection. |xtrabackup| sends the following information to the server:
+
+   - MySQL flavour and version
+   - Operating system name
+   - Percona Toolkit version
+   - Perl version
+
+   Each piece of information has a unique identifier. This is a MD5 hash value
+   that Percona Toolkit uses to obtain statistics about how it is used. This is
+   a random UUID; no client information is either collected or stored.
+
 
 .. option:: --open-files-limit=# 
 
