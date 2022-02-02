@@ -73,7 +73,7 @@ The following sample command creates an incremental backup:
 
 To prepare an incremental backup, you must first download the full backup with the following command:
 
-.. sourcecode::bash
+.. sourcecode:: bash
 
    xtrabackup get [options] full_backup | xbstream -xv -C /tmp/full-backup
 
