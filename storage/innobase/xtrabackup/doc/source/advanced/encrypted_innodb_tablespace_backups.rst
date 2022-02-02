@@ -5,9 +5,7 @@ Encrypted InnoDB tablespace backups
 ===================================
 
 InnoDB supports `data encryption for InnoDB tables
-<http://dev.mysql.com/doc/refman/8.0/en/innodb-tablespace-encryption.html>`_
-stored in file-per-table tablespaces. This feature provides an at-rest encryption
-for physical tablespace data files.
+<https://dev.mysql.com/doc/refman/8.0/en/innodb-data-encryption.html>`__ stored in file-per-table tablespaces. This feature provides an at-rest encryption for physical tablespace data files.
 
 For an authenticated user or application to access an encrypted tablespace,
 InnoDB uses the master encryption key to decrypt the tablespace key. The
@@ -18,6 +16,10 @@ into the ``plugin`` directory.
 Implemented in |xtrabackup| version 8.0.25, adds support for the ``keyring_file`` component, which is part of the component-based infrastructure MySQL includes to extend the server capabilities. The component is stored in the ``plugin`` directory. 
 
 See a `comparison of keyring components and keyring plugins <https://dev.mysql.com/doc/refman/8.0/en/keyring-component-plugin-comparison.html>`__ for more information.
+
+Percona XtraBackup 8.0.27-19 adds support for the Key Management Interoperability Protocol (KMIP) which enables the communication between the key management system and encrypted database server.
+
+This feature is *tech preview* quality.
 
 .. contents::
    :local:
@@ -353,6 +355,25 @@ The backup is now prepared and can be restored with :option:`--copy-back` option
 case the keyring has been rotated you'll need to restore the keyring which was
 used to take and prepare the backup.
 
+Using Key Management Interoperability Protocol
+==============================================
+
+This feature is *tech preview* quality.
+
+Percona XtraBackup 8.0.27-19 adds support for the Key Management Interoperability Protocol (KMIP) which enables the communication between the key management system and encrypted database server.
+
+Percona XtraBackup has no special requirements for backing up a database that contains encrypted InnoDB tablespaces. 
+
+Percona XtraBackup performs the following actions:
+
+1. Connects to the MySQL server
+2. Pulls the configuration
+3. Connects to the KMIP server
+4. Fetches the necessary keys from the KMIP server
+5. Stores the KMIP server configuration settings in the ``xtrabackup_component_keyring_kmip.cnf`` file in the backup directory
+
+When preparing the backup, Percona XtraBackup connects to the KMIP server with the settings from the ``xtrabackup_component_keyring_kmip.cnf`` file.
+   
 Restoring a Backup When Keyring Is not Available
 ================================================================================
 
