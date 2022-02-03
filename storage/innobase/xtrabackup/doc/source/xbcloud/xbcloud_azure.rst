@@ -1,4 +1,4 @@
-.. xbcloud_azure:
+.. _xbcloud_azure:
 
 =============================================================
 Using the xbcloud binary with Microsoft Azure Cloud Storage
