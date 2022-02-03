@@ -60,8 +60,7 @@ needed even with the :option:`--slave-info` option.
 When backup locks are supported by the server, |xtrabackup| first copies
 |InnoDB| data, runs the ``LOCK TABLES FOR BACKUP`` and then copies the |MyISAM|
 tables. Once this is done, the backup of the files will
-begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`,
-:term:`.ARM`, :term:`.ARZ`, :term:`.CSM`,
+begin. It will backup :term:`.frm`, :term:`.MRG`, :term:`.MYD`, :term:`.MYI`, :term:`.CSM`,
 :term:`.CSV`, ``.sdi`` and ``.par`` files.
 
 
@@ -114,7 +113,7 @@ To restore a backup with |xtrabackup| you can use the :option:`--copy-back` or
 :term:`innodb_log_group_home_dir` and check that the directories exist.
 
 It will copy the |MyISAM| tables, indexes, etc. (:term:`.MRG`, :term:`.MYD`,
-:term:`.MYI`, :term:`.ARM`, :term:`.ARZ`, :term:`.CSM`, :term:`.CSV`, ``.sdi``,
+:term:`.MYI`, :term:`.CSM`, :term:`.CSV`, ``.sdi``,
 and ``par`` files) first, |InnoDB| tables and indexes next and the log files at
 last. It will preserve file's attributes when copying them, you may have to
 change the files' ownership to ``mysql`` before starting the database server, as
