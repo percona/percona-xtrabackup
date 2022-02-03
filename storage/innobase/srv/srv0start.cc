@@ -1121,10 +1121,12 @@ static dberr_t srv_undo_tablespaces_open(bool backup_mode) {
   for (space_id_t num = 1; num <= FSP_MAX_UNDO_TABLESPACES; ++num) {
     /* Check if this undo tablespace was in the process of being truncated.
     If so, recreate it and add it to the construction list. */
-    dberr_t err = srv_undo_tablespace_fixup_num(num);
-    if (err != DB_SUCCESS) {
-      undo::spaces->x_unlock();
-      return (err);
+    if (!backup_mode) {
+      dberr_t err = srv_undo_tablespace_fixup_num(num);
+      if (err != DB_SUCCESS) {
+        undo::spaces->x_unlock();
+        return (err);
+      }
     }
 
     err = srv_undo_tablespace_open_by_num(num);
