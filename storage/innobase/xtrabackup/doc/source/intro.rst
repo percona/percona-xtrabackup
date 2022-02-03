@@ -43,6 +43,7 @@ options. InnoDB tables are still locked while copying non-InnoDB data.
 .. important::
 
    The support of the MyRocks storage engine was added in version 8.0.6.
+   Incremental backups on the MyRocks storage engine do not determine if an earlier full backup or incremental backup contains the same files. **Percona XtraBackup** copies all of the MyRocks files each time it takes a backup.
 
    Percona XtraBackup 8.0 does not support the TokuDB storage engine.
 
