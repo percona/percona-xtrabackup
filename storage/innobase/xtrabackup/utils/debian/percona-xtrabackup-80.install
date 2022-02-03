@@ -1,5 +1,9 @@
 /usr/bin
 /usr/lib/xtrabackup/plugin/*.so
+/usr/lib/libkmip*.a
+/usr/include/kmip*.h
 /usr/share/man/man1/xbcrypt*
 /usr/share/man/man1/xtrabackup*
 /usr/share/man/man1/xbstream*
+/usr/lib/private/libprotobuf-lite.so.*
+/usr/lib/private/libprotobuf.so.*
