@@ -10,6 +10,8 @@ between each full backup, so you can set up a backup process such as a full
 backup once a week and an incremental backup every day, or full backups every
 day and incremental backups every hour.
 
+.. note:: Incremental backups on the MyRocks storage engine do not determine if an earlier full backup or incremental backup contains the same files. **Percona XtraBackup** copies all of the MyRocks files each time it takes a backup.
+
 Incremental backups work because each InnoDB page (usually 16kb in size)
 contains a log sequence number, or :term:`LSN`. The :term:`LSN` is the system
 version number for the entire database. Each page's :term:`LSN` shows how
