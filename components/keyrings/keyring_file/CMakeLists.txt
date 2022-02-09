@@ -90,3 +90,8 @@ MYSQL_ADD_COMPONENT(keyring_file
   LINK_LIBRARIES ${KEYRING_FILE_LIBRARIES}
   MODULE_ONLY
 )
+IF(APPLE)
+  SET_TARGET_PROPERTIES(component_keyring_file PROPERTIES
+    LINK_FLAGS "-undefined dynamic_lookup")
+ENDIF()
+
