@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "crc_glue.h"
 #include "datasink.h"
+#include "msg.h"
 #include "xbstream.h"
 
 /* Group writes smaller than this into a single chunk */

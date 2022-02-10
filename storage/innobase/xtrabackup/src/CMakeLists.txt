@@ -134,6 +134,11 @@ TARGET_LINK_LIBRARIES(xtrabackup
    ADD_INSTALL_RPATH_FOR_PROTOBUF(xtrabackup)
  ENDIF()
 
+ # KMIP depend on boost
+ INCLUDE_DIRECTORIES(SYSTEM
+        ${BOOST_PATCHES_DIR}
+        ${BOOST_INCLUDE_DIR})
+
 IF(WITH_VERSION_CHECK)
 ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
                    COMMAND ${XXD_PATH} --include version_check.pl

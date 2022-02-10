@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_byteorder.h>
 #include <mysql/service_mysql_alloc.h>
 #include "crc_glue.h"
+#include "msg.h"
 #include "xbcrypt.h"
 
 struct xb_rcrypt_struct {

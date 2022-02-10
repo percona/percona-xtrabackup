@@ -49,6 +49,11 @@ the LSN interval incremental_lsn to checkpoint_lsn_start.
 @return the built map or nullptr if unable to build for any reason. */
 xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection);
 
+/* Get the start page-tracking-lsn
+@param[in] connection               MySQL connectionn
+@return the page tracking start lsn */
+lsn_t get_pagetracking_start_lsn(MYSQL *connection);
+
 /** Free the tracking map.
 @param[in/out] space_map pagetracking map */
 void deinit(xb_space_map *space_map);

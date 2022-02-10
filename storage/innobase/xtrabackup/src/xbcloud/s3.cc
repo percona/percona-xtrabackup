@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_sys.h>
 
 #include "common.h"
+#include "msg.h"
 
 #define AWS_DATE_HEADER "X-Amz-Date"
 #define AWS_CONTENT_SHA256_HEADER "X-Amz-Content-SHA256"
@@ -40,20 +41,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 namespace xbcloud {
 
-static std::string canonicalize_http_header_value(const std::string &s) {
-  std::string r = s;
-
-  /* replace multiple spaces with single space */
-  auto new_end = std::unique(r.begin(), r.end(), [](char lhs, char rhs) {
-    return rhs == ' ' && lhs == ' ';
-  });
-  r.erase(new_end, r.end());
-
-  /* trim trailing and leading spaces */
-  trim(r);
-
-  return r;
-}
 
 bool S3_response::parse_http_response(Http_response &http_response) {
   using namespace rapidxml;

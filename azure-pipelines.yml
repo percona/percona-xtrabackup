@@ -9,4 +9,10 @@ jobs:
 
   - script: |
       git fetch origin 8.0
-      python $(Build.SourcesDirectory)/scripts/find_unicode_control.py -p bidi -v $(git diff --name-only --relative --diff-filter AMR origin/8.0 -- . | tr '\n' ' ')
+      CHANGED_FILES=$(git diff --name-only --relative --diff-filter AMR origin/8.0 -- . | tr '\n' ' ')
+
+      if [ -z "${CHANGED_FILES}" ]; then
+          echo --- No changed files
+      else
+          python $(Build.SourcesDirectory)/scripts/find_unicode_control.py -p bidi -v ${CHANGED_FILES}
+      fi

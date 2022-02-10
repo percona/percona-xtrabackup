@@ -29,6 +29,8 @@ The following cloud storage types are supported:
 
 * Amazon Simple Storage (S3) - see :ref:`xbcloud_s3`
 
+* Azure Cloud Storage - see :ref:`xbcloud_azure`
+
 * Google Cloud Storage (gcs) - see :ref:`xbcloud_gcs`
 
 * MinIO - see :ref:`xbcloud_minio`
@@ -71,7 +73,7 @@ The following sample command creates an incremental backup:
 
 To prepare an incremental backup, you must first download the full backup with the following command:
 
-.. sourcecode::bash
+.. sourcecode:: bash
 
    xtrabackup get [options] full_backup | xbstream -xv -C /tmp/full-backup
 

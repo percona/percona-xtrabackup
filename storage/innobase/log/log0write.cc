@@ -2832,7 +2832,7 @@ bool log_read_encryption() {
       fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
       err = xb_set_encryption(space);
       if (err != DB_SUCCESS) {
-        ib::error() << "Cannot find encryption key for redo log.";
+        xb::error() << "Cannot find encryption key for redo log.";
         return (false);
       }
       return (true);

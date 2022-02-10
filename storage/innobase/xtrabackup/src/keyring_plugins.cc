@@ -183,14 +183,14 @@ static bool xb_fetch_key(char *key_name, char *key) {
       srv_keyring_reader, key_name, nullptr,
       &tmp_key, &key_len, &key_type, PSI_INSTRUMENT_ME);
   if (ret == -1 || tmp_key == NULL) {
-    msg("xtrabackup: Error: Can't fetch the key, please "
-        "check the keyring plugin is loaded.\n");
+    xb::error() << "Can't fetch the key, please "
+                   "check the keyring plugin is loaded.";
     return (false);
   }
 
   if (key_len != Encryption::KEY_LEN) {
-    msg("xtrabackup: Error: Can't fetch the key, key length "
-        "mismatch.\n");
+    xb::error() << "Can't fetch the key, key length "
+                   "mismatch.";
     my_free(tmp_key);
     return (false);
   }
@@ -212,7 +212,7 @@ static bool xb_create_transition_key(char *key_name, char *key) {
   char rand64[TRANSITION_KEY_RANDOM_DATA_LEN];
   int ret;
 
-  msg_ts("Creating transition key.\n");
+  xb::info() << "Creating transition key.";
 
   ut_ad(base64_needed_encoded_length(20) <= TRANSITION_KEY_RANDOM_DATA_LEN);
 
@@ -230,8 +230,8 @@ static bool xb_create_transition_key(char *key_name, char *key) {
   ret = srv_keyring_generator->generate(key_name, nullptr, "AES",
                                           Encryption::KEY_LEN);
   if (ret) {
-    msg("xtrabackup: Error: Can't generate the key, please "
-        "check the keyring plugin is loaded.\n");
+    xb::error() << "Can't generate the key, please "
+                   "check the keyring plugin is loaded.";
     return (false);
   }
 
@@ -262,7 +262,8 @@ bool xb_keyring_init_for_backup(MYSQL *connection) {
     keyring_plugin_lib = row[1];
     opt_plugin_load_list_ptr->push_back(new i_string(my_strdup(
         PSI_NOT_INSTRUMENTED, keyring_plugin_lib.c_str(), MYF(MY_FAE))));
-    msg_ts("Added plugin '%s' to load list.\n", keyring_plugin_lib.c_str());
+    xb::info() << "Added plugin " << SQUOTE(keyring_plugin_lib.c_str())
+               << " to load list.";
   }
 
   mysql_free_result(mysql_result);
@@ -388,7 +389,7 @@ from my.cnf.
 bool xb_keyring_init_for_copy_back(int argc, char **argv) {
   if(!xtrabackup::components::keyring_init_offline())
   {
-    msg("xtrabackup: Error: failed to init keyring component\n");
+    xb::error() << "failed to init keyring component";
     return (false);
   }
   if (!xtrabackup::components::keyring_component_initialized) {
@@ -495,11 +496,12 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     return (true);
   }
 
-  msg_ts("Loading %s.\n", XTRABACKUP_KEYS_FILE);
+  xb::info() << "Loading " << XTRABACKUP_KEYS_FILE;
 
   if (fread(magic, 1, XTRABACKUP_KEYS_MAGIC_SIZE, f) !=
       XTRABACKUP_KEYS_MAGIC_SIZE) {
-    msg_ts("Error reading %s: failed to read magic.\n", XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                << ": failed to read magic.";
     goto error;
   }
 
@@ -511,20 +513,21 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                     XTRABACKUP_KEYS_MAGIC_SIZE) == 0) {
     transition_key_name_size = TRANSITION_KEY_NAME_MAX_LEN_V2;
   } else {
-    msg_ts("Error reading %s: wrong magic.\n", XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE << ": wrong magic.";
     goto error;
   }
 
   if (fread(salt, 1, sizeof(salt), f) != sizeof(salt)) {
-    msg_ts("Error reading %s: failed to read salt.\n", XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                << ": failed to read salt.";
     goto error;
   }
 
   transition_key_name = std::make_unique<char[]>(transition_key_name_size);
   if (fread(transition_key_name.get(), 1, transition_key_name_size, f) !=
       transition_key_name_size) {
-    msg_ts("Error reading %s: failed to read transition key name.\n",
-           XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                << ": failed to read transition key name.";
     goto error;
   }
 
@@ -540,8 +543,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                       sizeof(derived_key), derived_key);
 
   if (!ret) {
-    msg_ts("Error reading %s: failed to derive encryption key.\n",
-           XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                << ": failed to derive encryption key.";
     goto error;
   }
 
@@ -555,8 +558,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                        sizeof(derived_key), my_aes_256_ecb, NULL, false);
 
     if (olen == MY_AES_BAD_DATA) {
-      msg_ts("Error reading %s: failed to decrypt key for tablespace %lu.\n",
-             XTRABACKUP_KEYS_FILE, space_id);
+      xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                  << " : failed to decrypt key for tablespace " << space_id;
       goto error;
     }
 
@@ -565,8 +568,8 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
                           sizeof(derived_key), my_aes_256_ecb, NULL, false);
 
     if (olen == MY_AES_BAD_DATA) {
-      msg_ts("Error reading %s: failed to decrypt iv for tablespace %lu.\n",
-             XTRABACKUP_KEYS_FILE, space_id);
+      xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                  << ": failed to decrypt iv for tablespace " << space_id;
       goto error;
     }
 
@@ -576,10 +579,9 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     ulint crc2 = uint4korr(read_buf + Encryption::KEY_LEN * 2 + 4);
 
     if (crc1 != crc2) {
-      msg_ts(
-          "Error reading %s: failed to decrypt key and iv for tablespace %lu. "
-          "Wrong transition key?\n",
-          XTRABACKUP_KEYS_FILE, space_id);
+      xb::error() << "Error reading " << XTRABACKUP_KEYS_FILE
+                  << ": failed to decrypt key and iv for tablespace "
+                  << space_id << ". Wrong transition key?";
       goto error;
     }
 
@@ -628,7 +630,7 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
                         Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
-    msg_ts("Failed to encrypt key for tablespace %lu.\n", space_id);
+    xb::error() << "Failed to encrypt key for tablespace " << space_id;
     return (false);
   }
 
@@ -638,7 +640,7 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
                         Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
-    msg_ts("Failed to encrypt iv for tablespace %lu.\n", space_id);
+    xb::error() << "Failed to encrypt iv for tablespace " << space_id;
     return (false);
   }
 
@@ -650,7 +652,7 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
   int4store(write_buf + Encryption::KEY_LEN * 2 + 4, crc);
 
   if (ds_write(stream, write_buf, Encryption::KEY_LEN * 2 + 8)) {
-    msg_ts("Failed to write key for tablespace %lu.\n", space_id);
+    xb::error() << "Failed to write key for tablespace " << space_id;
     return (false);
   }
 
@@ -670,7 +672,7 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
   char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN_V2];
   char transition_key_buf[Encryption::KEY_LEN];
 
-  msg_ts("Saving %s.\n", XTRABACKUP_KEYS_FILE);
+  xb::info() << "Saving " << XTRABACKUP_KEYS_FILE;
 
   if (my_rand_buffer(salt, sizeof(salt)) != 0) {
     return (false);
@@ -690,8 +692,8 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
                            sizeof(salt), sizeof(derived_key), derived_key);
 
   if (!ret) {
-    msg_ts("Error writing %s: failed to derive encryption key.\n",
-           XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to derive encryption key.";
     return (false);
   }
 
@@ -701,23 +703,26 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
 
   ds_file_t *stream = ds_open(ds_ctxt, XTRABACKUP_KEYS_FILE, &stat_info);
   if (stream == NULL) {
-    msg_ts("Error writing %s: failed to create file.\n", XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to create file.";
     return (false);
   }
 
   if (ds_write(stream, XTRABACKUP_KEYS_MAGIC_V2, XTRABACKUP_KEYS_MAGIC_SIZE)) {
-    msg_ts("Error writing %s: failed to write magic.\n", XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to write magic.";
     goto error;
   }
 
   if (ds_write(stream, salt, sizeof(salt))) {
-    msg_ts("Error writing %s: failed to write salt.\n", XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to write salt.";
     goto error;
   }
 
   if (ds_write(stream, transition_key_name, sizeof(transition_key_name))) {
-    msg_ts("Error writing %s: failed to write transition key name.\n",
-           XTRABACKUP_KEYS_FILE);
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to write transition key name.";
     goto error;
   }
 
@@ -728,8 +733,8 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     if (!xb_tablespace_keys_write_single(stream, derived_key, space->id,
                                          space->encryption_key,
                                          space->encryption_iv)) {
-      msg_ts("Error writing %s: failed to save tablespace key.\n",
-             XTRABACKUP_KEYS_FILE);
+      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                  << ": failed to save tablespace key.";
       return (DB_ERROR);
     }
     return (DB_SUCCESS);
@@ -743,8 +748,8 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     for (auto &key : *recv_sys->keys) {
       if (!xb_tablespace_keys_write_single(stream, derived_key, key.space_id,
                                            key.ptr, key.iv)) {
-        msg_ts("Error writing %s: failed to save tablespace key.\n",
-               XTRABACKUP_KEYS_FILE);
+        xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                    << ": failed to save tablespace key.";
         goto error;
       }
     }
@@ -753,8 +758,8 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
   for (const auto entry : encryption_info) {
     if (!xb_tablespace_keys_write_single(stream, derived_key, entry.first,
                                          entry.second.key, entry.second.iv)) {
-      msg_ts("Error writing %s: failed to save tablespace key.\n",
-             XTRABACKUP_KEYS_FILE);
+      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                  << ": failed to save tablespace key.";
       goto error;
     }
   }
@@ -840,12 +845,12 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
 
   rpl_encryption.initialize();
   if (rpl_encryption.enable_for_xtrabackup()) {
-    msg_ts("Error: cannot generate master key for binlog encryption.\n");
+    xb::error() << "cannot generate master key for binlog encryption.";
     return (false);
   }
 
   if (memcmp(iv, BINLOG_KEY_MAGIC, BINLOG_KEY_MAGIC_SIZE) != 0) {
-    msg_ts("Error: key entry for mysql binary log is corrupt.\n");
+    xb::error() << "key entry for mysql binary log is corrupt.";
     return (false);
   }
 
@@ -866,9 +871,8 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path) {
   ostream.seek(0);
 
   if (header->serialize(&ostream)) {
-    msg_ts(
-        "Error writing to %s. Cannot update binlog file encryption header.\n",
-        binlog_file_path);
+    xb::error() << "Error writing to " << binlog_file_path
+                << ". Cannot update binlog file encryption header.";
     return (false);
   }
 

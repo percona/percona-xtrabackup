@@ -121,6 +121,6 @@ packages.
 
    .. code-block:: bash
 
-      $ sudo apt remove percona-xtrabackup-24
+      $ sudo apt remove percona-xtrabackup-80
 
 .. |percona-release| replace:: ``percona-release``

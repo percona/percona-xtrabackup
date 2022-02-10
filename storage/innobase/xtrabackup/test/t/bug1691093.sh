@@ -25,4 +25,4 @@ xtrabackup --prepare --apply-log-only \
     --target-dir=$topdir/backup/full --incremental-dir=$topdir/backup/delta \
     2>&1 | tee $topdir/pxb.log
 
-run_cmd grep 'xtrabackup: warning.*--throttle' $topdir/pxb.log
+run_cmd grep '.*--throttle' $topdir/pxb.log

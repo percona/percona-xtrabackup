@@ -193,7 +193,7 @@ bool keys_metadata_get_length_template(
       return true;
     }
 
-    Data data;
+    Data_extension data;
     Metadata metadata;
     if (keyring_operations.get_iterator_data(it, metadata, data) == true) {
       LogComponentErr(
@@ -238,7 +238,7 @@ bool keys_metadata_get_template(
       return true;
     }
 
-    Data data;
+    Data_extension data;
     Metadata metadata;
     if (keyring_operations.get_iterator_data(it, metadata, data) == true) {
       LogComponentErr(

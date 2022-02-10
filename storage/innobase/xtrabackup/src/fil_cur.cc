@@ -163,8 +163,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
       /* The following call prints an error message */
       os_file_get_last_error(TRUE);
 
-      msg("[%02u] xtrabackup: error: cannot open tablespace %s\n", thread_n,
-          cursor->abs_path);
+      xb::error() << "cannot open tablespace " << cursor->abs_path;
 
       return (XB_FIL_CUR_ERROR);
     }
@@ -178,8 +177,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->file = node->handle;
 
   if (my_fstat(cursor->file.m_file, &cursor->statinfo)) {
-    msg("[%02u] xtrabackup: error: cannot stat %s\n", thread_n,
-        cursor->abs_path);
+    xb::error() << "cannot stat " << cursor->abs_path;
 
     xb_fil_cur_close(cursor);
 
@@ -207,13 +205,11 @@ xb_fil_cur_result_t xb_fil_cur_open(
     return (XB_FIL_CUR_SKIP);
   } else if (page_size.is_compressed()) {
     page_size_shift = get_bit_shift(page_size.physical());
-    msg("[%02u] %s is compressed with page size = "
-        "%u bytes\n",
-        thread_n, node->name, (uint)page_size.physical());
+    xb::info() << node->name
+               << " is compressed with page size = " << page_size.physical()
+               << " bytes";
     if (page_size_shift < 10 || page_size_shift > 14) {
-      msg("[%02u] xtrabackup: Error: Invalid "
-          "page size: %u.\n",
-          thread_n, (uint)page_size.physical());
+      xb::error() << "Invalid page size: " << page_size.physical();
       ut_error;
     }
   } else {
@@ -293,12 +289,8 @@ xb_fil_cur_result_t xb_fil_cur_read_from_offset(xb_fil_cur_t *cursor,
   if (to_read % cursor->page_size != 0 &&
       offset + to_read == (uint64_t)cursor->statinfo.st_size) {
     if (to_read < (uint64_t)cursor->page_size) {
-      msg("[%02u] xtrabackup: Warning: junk at the end of %s:\n",
-          cursor->thread_n, cursor->abs_path);
-      msg("[%02u] xtrabackup: Warning: offset = %llu, to_read = %llu\n",
-          cursor->thread_n, (unsigned long long)offset,
-          (unsigned long long)to_read);
-
+      xb::warn() << "junk at the end of " << cursor->abs_path;
+      xb::warn() << "offset = " << offset << ", to_read = " << to_read;
       return (XB_FIL_CUR_EOF);
     }
 
@@ -327,8 +319,7 @@ read_retry:
       fail with DB_IO_ERROR, but XtraBackup must treat this
       error as non critical. */
       if (my_fstat(cursor->file.m_file, &cursor->statinfo)) {
-        msg("[%02u] xtrabackup: error: cannot stat %s\n", cursor->thread_n,
-            cursor->abs_path);
+        xb::error() << "cannot stat " << cursor->abs_path;
         return (XB_FIL_CUR_ERROR);
       }
       /* Check if we reached EOF */
@@ -389,21 +380,18 @@ read_retry:
           page_no < FSP_EXTENT_SIZE * 3) {
         /* skip doublewrite buffer pages */
         xb_a(cursor->page_size == UNIV_PAGE_SIZE);
-        msg("[%02u] xtrabackup: Page %lu is a doublewrite buffer page, "
-            "skipping.\n",
-            cursor->thread_n, page_no);
+        xb::info() << "Page " << page_no
+                   << " is a doublewrite buffer page, skipping.";
       } else {
         retry_count--;
         if (retry_count == 0) {
-          msg("[%02u] xtrabackup: Error: failed to read page after 10 retries. "
-              "File %s seems to be corrupted.\n",
-              cursor->thread_n, cursor->abs_path);
+          xb::error() << "failed to read page after 10 retries. File "
+                      << cursor->abs_path << " seems to be corrupted.";
           ret = XB_FIL_CUR_ERROR;
           break;
         }
-        msg("[%02u] xtrabackup: Database page corruption detected at page %lu, "
-            "retrying...\n",
-            cursor->thread_n, page_no);
+        xb::info() << "Database page corruption detected at page " << page_no
+                   << ", retrying...";
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 

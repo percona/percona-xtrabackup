@@ -62,9 +62,9 @@ class Memory_backend final {
     if (!key) return true;
     if (!keyring_common::utils::get_random_data(key, length)) return true;
 
-    std::string key_str;
+    pmr_string key_str;
     key_str.assign(reinterpret_cast<const char *>(key.get()), length);
-    data.set_data(key_str);
+    data.set_data(keyring_common::data::Sensitive_data{key_str});
     if (!cache_.store(metadata, data)) return true;
 
     return false;

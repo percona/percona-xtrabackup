@@ -6,9 +6,7 @@ Incremental Backup
 
 *Percona XtraBackup* supports incremental backups, which means that they can copy only the data that has changed since the last backup. 
 
-.. note::
-
-   You cannot do an incremental backup with the MyRocks storage engine.
+.. note:: Incremental backups on the MyRocks storage engine do not determine if an earlier full backup or incremental backup contains the same files. **Percona XtraBackup** copies all of the MyRocks files each time it takes a backup.
 
 You can perform many incremental backups between each full backup, so you can
 set up a backup process such as a full backup once a week and an incremental

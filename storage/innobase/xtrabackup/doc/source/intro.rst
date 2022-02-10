@@ -37,10 +37,8 @@ completely non-blocking backups of InnoDB, XtraDB, and MyRocks storage
 engines. XtraBackup does not support backup or restore of the `MyRocks ZenFS <https://www.percona.com/doc/percona-server/LATEST/myrocks/zenfs.html>`__ data at this time. Fast incremental backups are supported for Percona Server with the XtraDB changed page tracking enabled.
 
 In addition, it can back up the following storage engines by briefly
-pausing writes at the end of the backup: MyISAM, :term:`Merge <.MRG>`, and
-:term:`Archive <.ARM>`, including partitioned tables, triggers, and database
+pausing writes at the end of the backup: MyISAM and :term:`Merge <.MRG>`, including partitioned tables, triggers, and database
 options. InnoDB tables are still locked while copying non-InnoDB data.
-
 
 Although, support for the MyRocks storage engine was added in version 8.0.6, XtraBackup does not support the backup or the restore of the `MyRocks ZenFS <https://www.percona.com/doc/percona-server/LATEST/myrocks/zenfs.html>`__ data at this time.
 

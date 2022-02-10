@@ -667,7 +667,7 @@ Options
    the lock from succeeding. Please try using :option:`--safe-slave-backup` to
    momentarily stop the replication replica thread, this may help the backup to
    succeed and you do not need to use this option.
-
+   
 .. option:: --no-version-check
 
    Invoking **Percona XtraBackup** with this option disables the version check.
@@ -683,8 +683,7 @@ Options
 
    Each piece of information has a unique identifier. This identifier is an MD5 hash value
    that Percona Toolkit uses to obtain statistics about how it is used. This is
-   a random UUID; no client information is collected or stored.
-
+   a random UUID; no client information is collected or stored
 
 .. option:: --open-files-limit=# 
 

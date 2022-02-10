@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <zlib.h>
 #include "common.h"
 #include "crc_glue.h"
+#include "msg.h"
 #include "xbstream.h"
 
 /* Allocate 1 MB for the payload buffer initially */

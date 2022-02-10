@@ -114,6 +114,7 @@ get_sources(){
 
     REVISION=$(git rev-parse --short HEAD)
     git reset --hard
+    git submodule update --init
     #
     source XB_VERSION
     cat XB_VERSION > ../percona-xtrabackup-8.0.properties
@@ -141,6 +142,7 @@ get_sources(){
     rm -f ${EXPORTED_TAR}
 
     cd ${PXBDIR}
+    rsync -av ../extra/libkmip/* extra/libkmip/
     sed -i "s:@@XB_VERSION_MAJOR@@:${XB_VERSION_MAJOR}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_VERSION_MINOR@@:${XB_VERSION_MINOR}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_VERSION_PATCH@@:${XB_VERSION_PATCH}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
@@ -256,7 +258,7 @@ install_deps() {
             PKGLIST+=" wget libcurl-devel cmake cmake3 make gcc gcc-c++ libev-devel openssl-devel rpm-build"
             PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
             PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
-            PKGLIST+=" socat numactl"
+            PKGLIST+=" socat numactli libudev-devel"
             if [[ "${RHEL}" -eq 7 ]]; then
                 PKGLIST+=" numactl-libs perl-Digest-MD5  python3-pip python3-setuptools python3-wheel rh-python36-python-sphinx"
             elif [[ "${RHEL}" -eq 6 ]]; then
@@ -283,9 +285,12 @@ install_deps() {
 
         PKGLIST+=" bison cmake devscripts debconf debhelper automake bison ca-certificates libcurl4-openssl-dev"
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev"
-        PKGLIST+=" libgcrypt-dev libev-dev lsb-release"
+        PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf"
 
+        if [ "${OS_NAME}" == "bionic" ]; then
+            PKGLIST+=" gcc-8 g++-8"
+	fi
         if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else

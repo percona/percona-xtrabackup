@@ -142,7 +142,9 @@ bool Json_reader::get_element(
   unsigned long length = unhex_string(
       hex_data.data(), hex_data.data() + hex_data.size(), &unhex_data[0]);
   unhex_data.resize(length);
-  data = {unhex_data, elements[index]["data_type"].Get<std::string>()};
+  std::string g = elements[index]["data_type"].Get<std::string>();
+  data = {pmr_string{unhex_data.begin(), unhex_data.end()},
+          pmr_string{g.begin(), g.end()}};
   json_data_extension = std::make_unique<Json_data_extension>();
   return false;
 }

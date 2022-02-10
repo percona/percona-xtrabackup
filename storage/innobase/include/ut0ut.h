@@ -73,6 +73,12 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/derror.h"
 #endif /* !UNIV_NO_ERR_MSGS */
 
+#ifdef XTRABACKUP
+#define IF_XB(...) __VA_ARGS__
+#else
+#define IF_XB(...)
+#endif /* XTRABACKUP */
+
 /** Index name prefix in fast index creation, as a string constant */
 #define TEMP_INDEX_PREFIX_STR "\377"
 
@@ -368,6 +374,11 @@ void ut_vsnprintf(char *str,       /*!< out: string */
  @return string, describing the error */
 const char *ut_strerr(dberr_t num); /*!< in: error number */
 
+#ifdef XTRABACKUP
+const char *const INNO = "InnoDB";
+const char *const PXB = "Xtrabackup";
+#endif /* XTRABACKUP */
+
 namespace ib {
 
 #ifdef UNIV_DEBUG
@@ -564,6 +575,11 @@ class logger {
 
   /** Error logging level. */
   loglevel m_level{INFORMATION_LEVEL};
+
+#ifdef XTRABACKUP
+  /** Error Generating Module like InnoDB, Xtrabackup */
+  const char *const m_module;
+#endif /* XTRABACKUP */
 #endif /* !UNIV_NO_ERR_MSGS */
 
 #ifdef UNIV_HOTBACKUP
@@ -603,14 +619,17 @@ class logger {
 
  protected:
   /** Uses LogEvent to report the log entry, using provided message
-  @param[in]    msg    message to be logged
+  @param[in]	msg		message to be logged
+  @param[in]	module		module that generates the event
   */
-  void log_event(std::string msg);
+  void log_event(std::string msg, IF_XB(const char *const module));
 
   /** Constructor.
   @param[in]	level		Logging level
-  @param[in]	err		Error message code. */
-  logger(loglevel level, int err) : m_err(err), m_level(level) {
+  @param[in]	err		Error message code.
+  @param[in]	module		module that generates the event */
+  logger(loglevel level, int err, IF_XB(const char *module))
+      : m_err(err), m_level(level), IF_XB(m_module(module)) {
     /* Note: Dummy argument to avoid the warning:
 
     "format not a string literal and no format arguments"
@@ -627,16 +646,20 @@ class logger {
   /** Constructor.
   @param[in]	level		Logging level
   @param[in]	err		Error message code.
+  @param[in]	module		module that generates the event
   @param[in]	args		Variable length argument list */
   template <class... Args>
-  explicit logger(loglevel level, int err, Args &&... args)
-      : m_err(err), m_level(level) {
+  explicit logger(loglevel level, int err,
+                  IF_XB(const char *module, ) Args &&... args)
+      : m_err(err), m_level(level), IF_XB(m_module(module)) {
     m_oss << msg(err, std::forward<Args>(args)...);
   }
 
   /** Constructor
-  @param[in]	level		Log error level */
-  explicit logger(loglevel level) : m_err(ER_IB_MSG_0), m_level(level) {}
+  @param[in]	level		Log error level
+  @param[in]	module		module that generates the event */
+  explicit logger(loglevel level, IF_XB(const char *module))
+      : m_err(ER_IB_MSG_0), m_level(level), IF_XB(m_module(module)) {}
 
 #endif /* !UNIV_NO_ERR_MSGS */
 };
@@ -657,14 +680,14 @@ class info : public logger {
 #ifndef UNIV_NO_ERR_MSGS
 
   /** Default constructor uses ER_IB_MSG_0 */
-  info() : logger(INFORMATION_LEVEL) {}
+  info() : logger(INFORMATION_LEVEL, INNO) {}
 
   /** Constructor.
   @param[in]	err		Error code from errmsg-*.txt.
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit info(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {}
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {}
 #else
   /** Destructor */
   ~info() override;
@@ -677,14 +700,14 @@ class warn : public logger {
  public:
 #ifndef UNIV_NO_ERR_MSGS
   /** Default constructor uses ER_IB_MSG_0 */
-  warn() : logger(WARNING_LEVEL) {}
+  warn() : logger(WARNING_LEVEL, INNO) {}
 
   /** Constructor.
   @param[in]	err		Error code from errmsg-*.txt.
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit warn(int err, Args &&... args)
-      : logger(WARNING_LEVEL, err, std::forward<Args>(args)...) {}
+      : logger(WARNING_LEVEL, err, INNO, std::forward<Args>(args)...) {}
 
 #else
   /** Destructor */
@@ -698,14 +721,14 @@ class error : public logger {
  public:
 #ifndef UNIV_NO_ERR_MSGS
   /** Default constructor uses ER_IB_MSG_0 */
-  error() : logger(ERROR_LEVEL) {}
+  error() : logger(ERROR_LEVEL, INNO) {}
 
   /** Constructor.
   @param[in]	err		Error code from errmsg-*.txt.
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit error(int err, Args &&... args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...) {}
+      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...) {}
 
 #else
   /** Destructor */
@@ -722,7 +745,8 @@ class fatal : public logger {
   /** Default constructor uses ER_IB_MSG_0
   @param[in]	location		Location that creates the fatal message.
 */
-  fatal(ut::Location location) : logger(ERROR_LEVEL), m_location(location) {}
+  fatal(ut::Location location)
+      : logger(ERROR_LEVEL, INNO), m_location(location) {}
 
   /** Constructor.
   @param[in]	location		Location that creates the fatal message.
@@ -730,7 +754,7 @@ class fatal : public logger {
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit fatal(ut::Location location, int err, Args &&... args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...),
+      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
         m_location(location) {}
 #else
   /** Constructor
@@ -755,7 +779,7 @@ class error_or_warn : public logger {
 
   /** Default constructor uses ER_IB_MSG_0
   @param[in]	pred		True if it's a warning. */
-  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL) {}
+  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, INNO) {}
 
   /** Constructor.
   @param[in]	pred		True if it's a warning.
@@ -763,7 +787,7 @@ class error_or_warn : public logger {
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit error_or_warn(bool pred, int err, Args &&... args)
-      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err,
+      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err, INNO,
                std::forward<Args>(args)...) {}
 
 #endif /* !UNIV_NO_ERR_MSGS */
@@ -778,7 +802,7 @@ class fatal_or_error : public logger {
   @param[in]	fatal		true if it's a fatal message
   @param[in] location Location that creates the fatal */
   fatal_or_error(bool fatal, ut::Location location)
-      : logger(ERROR_LEVEL), m_fatal(fatal), m_location(location) {}
+      : logger(ERROR_LEVEL, INNO), m_fatal(fatal), m_location(location) {}
 
   /** Constructor.
   @param[in]	fatal		true if it's a fatal message
@@ -788,7 +812,7 @@ class fatal_or_error : public logger {
   template <class... Args>
   explicit fatal_or_error(bool fatal, ut::Location location, int err,
                           Args &&... args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...),
+      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
         m_fatal(fatal),
         m_location(location) {}
 
@@ -818,14 +842,14 @@ class trace_1 : public logger {
  public:
 #ifndef UNIV_NO_ERR_MSGS
   /** Default constructor uses ER_IB_MSG_0 */
-  trace_1() : logger(INFORMATION_LEVEL) { m_trace_level = 1; }
+  trace_1() : logger(INFORMATION_LEVEL, INNO) { m_trace_level = 1; }
 
   /** Constructor.
   @param[in]	err		Error code from errmsg-*.txt.
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit trace_1(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
     m_trace_level = 1;
   }
 
@@ -841,14 +865,14 @@ class trace_2 : public logger {
  public:
 #ifndef UNIV_NO_ERR_MSGS
   /** Default constructor uses ER_IB_MSG_0 */
-  trace_2() : logger(INFORMATION_LEVEL) { m_trace_level = 2; }
+  trace_2() : logger(INFORMATION_LEVEL, INNO) { m_trace_level = 2; }
 
   /** Constructor.
   @param[in]	err		Error code from errmsg-*.txt.
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit trace_2(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
     m_trace_level = 2;
   }
 #else
@@ -870,7 +894,7 @@ class trace_3 : public logger {
   @param[in]	args		Variable length argument list */
   template <class... Args>
   explicit trace_3(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
     m_trace_level = 3;
   }
 
@@ -917,6 +941,173 @@ class Timer {
 };
 
 }  // namespace ib
+
+namespace xb {
+/**In the above usage, the temporary object will be destroyed at the end of the
+statement and hence the log message will be emitted at the end of the
+statement.  If a named object is created, then the log message will be emitted
+only when it goes out of scope or destroyed. */
+class info : public ib::logger {
+ public:
+#ifndef UNIV_NO_ERR_MSGS
+
+  /** Default constructor uses ER_IB_MSG_0 */
+  info() : logger(INFORMATION_LEVEL, PXB) {}
+
+  /** Constructor.
+  @param[in]	err		Error code from errmsg-*.txt.
+  @param[in]	args		Variable length argument list */
+  template <class... Args>
+  explicit info(int err, Args &&... args)
+      : logger(INFORMATION_LEVEL, err, PXB, std::forward<Args>(args)...) {}
+#else
+  /** Destructor */
+  ~info() override;
+#endif /* !UNIV_NO_ERR_MSGS */
+};
+
+/** The class warn is used to emit warnings.  Refer to the documentation of
+class info for further details. */
+class warn : public ib::logger {
+ public:
+#ifndef UNIV_NO_ERR_MSGS
+  /** Default constructor uses ER_IB_MSG_0 */
+  warn() : logger(WARNING_LEVEL, PXB) {}
+
+  /** Constructor.
+  @param[in]	err		Error code from errmsg-*.txt.
+  @param[in]	args		Variable length argument list */
+  template <class... Args>
+  explicit warn(int err, Args &&... args)
+      : logger(WARNING_LEVEL, err, PXB, std::forward<Args>(args)...) {}
+
+#else
+  /** Destructor */
+  ~warn() override;
+#endif /* !UNIV_NO_ERR_MSGS */
+};
+
+/** The class error is used to emit error messages.  Refer to the
+documentation of class info for further details. */
+class error : public ib::logger {
+ public:
+#ifndef UNIV_NO_ERR_MSGS
+  /** Default constructor uses ER_IB_MSG_0 */
+  error() : logger(ERROR_LEVEL, PXB) {}
+
+  /** Constructor.
+  @param[in]	err		Error code from errmsg-*.txt.
+  @param[in]	args		Variable length argument list */
+  template <class... Args>
+  explicit error(int err, Args &&... args)
+      : logger(ERROR_LEVEL, err, PXB, std::forward<Args>(args)...) {}
+
+#else
+  /** Destructor */
+  ~error() override;
+#endif /* !UNIV_NO_ERR_MSGS */
+};
+
+/** The class fatal is used to emit an error message and stop the server
+by crashing it.  Use this class when MySQL server needs to be stopped
+immediately.  Refer to the documentation of class info for usage details. */
+class fatal : public ib::logger {
+ public:
+#ifndef UNIV_NO_ERR_MSGS
+  /** Default constructor uses ER_IB_MSG_0
+  @param[in]	location		Location that creates the fatal message.
+*/
+  fatal(ut::Location location)
+      : ib::logger(ERROR_LEVEL, PXB), m_location(location) {}
+
+  /** Constructor.
+  @param[in]	location		Location that creates the fatal message.
+  @param[in]	err		Error code from errmsg-*.txt.
+  @param[in]	args		Variable length argument list */
+  template <class... Args>
+  explicit fatal(ut::Location location, int err, Args &&... args)
+      : logger(ERROR_LEVEL, err, PXB, std::forward<Args>(args)...),
+        m_location(location) {}
+#else
+  /** Constructor
+  @param[in]	location		Location that creates the fatal message.
+  */
+  fatal(ut::Location location) : m_location(location) {}
+#endif /* !UNIV_NO_ERR_MSGS */
+
+  /** Destructor. */
+  ~fatal() override;
+
+ private:
+  /** Location of the original caller to report to assertion failure */
+  ut::Location m_location;
+};
+
+/** Emit an error message if the given predicate is true, otherwise emit a
+warning message */
+class error_or_warn : public ib::logger {
+ public:
+#ifndef UNIV_NO_ERR_MSGS
+
+  /** Default constructor uses ER_IB_MSG_0
+  @param[in]	pred		True if it's a warning. */
+  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, PXB) {}
+
+  /** Constructor.
+  @param[in]	pred		True if it's a warning.
+  @param[in]	err		Error code from errmsg-*.txt.
+  @param[in]	args		Variable length argument list */
+  template <class... Args>
+  explicit error_or_warn(bool pred, int err, Args &&... args)
+      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err, PXB,
+               std::forward<Args>(args)...) {}
+
+#endif /* !UNIV_NO_ERR_MSGS */
+};
+
+/** Emit a fatal message if the given predicate is true, otherwise emit a
+error message. */
+class fatal_or_error : public ib::logger {
+ public:
+#ifndef UNIV_NO_ERR_MSGS
+  /** Constructor.
+  @param[in]	fatal		true if it's a fatal message
+  @param[in] location Location that creates the fatal
+  @param[in]	err		Error code from errmsg-*.txt.
+  @param[in]	args		Variable length argument list */
+  template <class... Args>
+  explicit fatal_or_error(bool fatal, ut::Location location, int err,
+                          Args &&... args)
+      : logger(ERROR_LEVEL, err, PXB, std::forward<Args>(args)...),
+        m_fatal(fatal),
+        m_location(location) {}
+
+  fatal_or_error(ut::Location location)
+      : logger(ERROR_LEVEL, PXB), m_fatal(false), m_location(location) {}
+
+  fatal_or_error(bool fatal, ut::Location location)
+      : logger(ERROR_LEVEL, PXB), m_fatal(fatal), m_location(location) {}
+
+  /** Destructor */
+  ~fatal_or_error() override;
+#else
+  /** Constructor
+  @param[in] location Location that creates the fatal */
+  fatal_or_error(bool fatal, ut::Location location)
+      : m_fatal(fatal), m_location(location) {}
+
+  /** Destructor */
+  ~fatal_or_error() override;
+
+#endif /* !UNIV_NO_ERR_MSGS */
+ private:
+  /** If true then assert after printing an error message. */
+  const bool m_fatal;
+  /** Location of the original caller to report to assertion failure */
+  ut::Location m_location;
+};
+
+}  // namespace xb
 
 #ifdef UNIV_HOTBACKUP
 /** Sprintfs a timestamp to a buffer with no spaces and with ':' characters

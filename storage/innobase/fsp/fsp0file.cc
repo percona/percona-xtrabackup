@@ -689,7 +689,7 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
         ut::free(m_encryption_iv);
         m_encryption_key = nullptr;
         m_encryption_iv = nullptr;
-        ib::info() << "Failed to decrypt table " << m_filepath << " with space"
+        xb::info() << "Failed to decrypt table " << m_filepath << " with space"
                    << " id " << m_space_id
                    << ". Will check if encrytion key has been"
                    << " parsed at the end of backup.";

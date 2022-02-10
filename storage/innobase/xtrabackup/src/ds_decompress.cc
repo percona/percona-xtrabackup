@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <zlib.h>
 #include "common.h"
 #include "datasink.h"
+#include "msg.h"
 #include "thread_pool.h"
 
 /* Possible states of input data parsing. There are quite a few different

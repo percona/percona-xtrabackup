@@ -20,7 +20,7 @@ xtrabackup --backup --stream=xbstream --target-dir=$topdir/backup > $topdir/back
 stop_server
 
 # See if xtrabackup was using O_DIRECT
-if ! grep -q "xtrabackup: using O_DIRECT" $OUTFILE ;
+if ! grep -q "using O_DIRECT" $OUTFILE ;
 then
   vlog "xtrabackup was not using O_DIRECT for the input file."
   exit -1

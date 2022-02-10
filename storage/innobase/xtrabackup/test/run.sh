@@ -333,16 +333,32 @@ XTRABACKUP_BASEDIR
 # Configure mysql to read local component files if created by test cases.
 function config_local_components()
 {
-  cat <<EOF > "${MYSQLD}.my"
+  local FILE="${MYSQLD}.my"
+  if [[ ! -f "${FILE}" ]]; then
+    cat <<EOF > "${FILE}"
 {
   "read_local_manifest": true
 }
 EOF
- cat <<EOF > "$MYSQL_BASEDIR/lib/plugin/component_keyring_file.cnf"
+  fi
+
+  FILE="$MYSQL_BASEDIR/lib/plugin/component_keyring_file.cnf"
+  if [[ ! -f "${FILE}" ]]; then
+    cat <<EOF > "${FILE}"
 {
   "read_local_config": true
 }
 EOF
+  fi
+
+  FILE="$MYSQL_BASEDIR/lib/plugin/component_keyring_kmip.cnf"
+  if [[ ! -f "${FILE}" ]]; then
+    cat <<EOF > "${FILE}"
+{
+ "read_local_config": true
+}
+EOF
+  fi
 }
 
 # Fix innodb51 test failures on Centos5-32 Jenkins slaves due to SELinux

@@ -139,6 +139,8 @@ class Http_request {
 
   using header_t = std::pair<std::string, std::string>;
   using headers_t = std::map<std::string, std::string>;
+  using param_t = std::pair<std::string, std::string>;
+  using params_t = std::map<std::string, std::string>;
 
  private:
   method_t method_;
@@ -146,7 +148,7 @@ class Http_request {
   std::string host_;
   std::string path_;
   headers_t headers_;
-  std::vector<std::string> params_;
+  params_t params_;
   Http_buffer payload_;
 
  public:
@@ -160,8 +162,9 @@ class Http_request {
     headers_[name] = value;
   }
   void remove_header(const std::string &name) { headers_.erase(name); }
-  void add_param(const std::string &name, const std::string &value);
-  void add_param(const std::string &name) { params_.push_back(name); }
+  void add_param(const std::string &name, const std::string &value) {
+    params_[name] = value;
+  }
   template <typename T>
   void append_payload(const T &payload) {
     payload_.append(payload);
@@ -182,7 +185,7 @@ class Http_request {
   std::string header_value(const std::string &header_name) const {
     return headers_.at(header_name);
   }
-  const std::vector<std::string> &params() const { return params_; }
+  const params_t &params() const { return params_; }
   method_t method() const { return method_; }
   protocol_t protocol() const { return protocol_; }
   const Http_buffer &payload() const { return payload_; }
@@ -364,6 +367,7 @@ class Http_client {
 
  public:
   Http_client() {}
+  virtual ~Http_client() {}
   Http_client(const Http_client &) = delete;
 
   virtual bool make_request(const Http_request &request,

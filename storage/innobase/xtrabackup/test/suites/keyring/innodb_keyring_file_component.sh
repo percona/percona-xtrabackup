@@ -23,7 +23,7 @@ EOF
 
 xtrabackup --backup --target-dir=$topdir/backup1 \
 --component-keyring-file-config=${MYSQLD_DATADIR}/component_keyring_file.cnf 2>&1 | tee $topdir/pxb.log
-grep_count "xtrabackup: Warning: \-\-component-keyring-file-config will be ignored for \-\-backup operation" $topdir/pxb.log 1
+grep_count "\-\-component-keyring-file-config will be ignored for \-\-backup operation" $topdir/pxb.log 1
 
 cp -r $topdir/backup1 $topdir/backup2
 record_db_state test
@@ -63,8 +63,6 @@ echo "{}" > $topdir/xtrabackup_component_keyring_file_invalid.cnf
 run_cmd_expect_failure $XB_BIN $XB_ARGS \
 --prepare --target-dir=$topdir/backup1 --xtrabackup-plugin-dir=${plugin_dir} \
 --component-keyring-file-config=$topdir/xtrabackup_component_keyring_file_invalid.cnf 2>&1 | tee $topdir/pxb.log
-
-grep_count "Component configuration does not have path member" $topdir/pxb.log 1
 
 # Test 5: Try to prepare with good component config on target-dir but
 # pass rubbish as parameter

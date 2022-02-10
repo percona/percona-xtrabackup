@@ -127,6 +127,8 @@ Auxiliary guides
    howtos/ssh_server
    xtrabackup_bin/analyzing_table_statistics
    xtrabackup_bin/flush-tables-with-read-lock
+   advanced/locks
+   advanced/page_tracking
 
 
 Common backup scenarios
@@ -202,6 +204,9 @@ How to use the **xbcloud** binary
    xbcloud/xbcloud_s3
    xbcloud/xbcloud_minio
    xbcloud/xbcloud_gcs
+   xbcloud/xbcloud_exbackoff
+   xbcloud/xbcloud_azure
+
 
 
 
