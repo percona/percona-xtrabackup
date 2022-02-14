@@ -22,11 +22,11 @@ i.e. just one of them needs to be provided):
 Both the :option:`--encrypt-key` option and
 :option:`--encrypt-key-file` option can be used to specify the
 encryption key. An encryption key can be generated with a command like
-:bash:`openssl rand -base64 24`
+:bash:`openssl rand -base64 32`
 
 Example output of that command should look like this: ::
 
-  GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs
+  U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=
 
 This value then can be used as the encryption key
 
@@ -38,7 +38,7 @@ look like this:
 
 .. code-block:: bash
 
-   $  xtrabackup --backup --encrypt=AES256 --encrypt-key="GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" --target-dir=/data/backup
+   $  xtrabackup --backup --encrypt=AES256 --encrypt-key="U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=" --target-dir=/data/backup
 
 
 The :option:`--encrypt-key-file` Option
@@ -56,7 +56,7 @@ Use the :option:`--encrypt-key-file` option as follows:
    the editor can automatically insert the CRLF (end of line)
    character. This will cause the key size to grow and thus making it
    invalid. The suggested way to create the file is by using the
-   command line: :bash:`echo -n "GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" > /data/backups/keyfile`.
+   command line: :bash:`echo -n "U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=" > /data/backups/keyfile`.
 
 Optimizing the encryption process
 ================================================================================
@@ -81,7 +81,7 @@ used to decrypt the backups:
 
 .. code-block:: bash
 
-   $ xtrabackup --decrypt=AES256 --encrypt-key="GCHFLrDFVx6UAsRb88uLVbAVWbK+Yzfs" --target-dir=/data/backup/
+   $ xtrabackup --decrypt=AES256 --encrypt-key="U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=" --target-dir=/data/backup/
 
 |Percona XtraBackup| doesn't automatically remove the encrypted files. In order
 to clean up the backup directory users should remove the :file:`*.xbcrypt`
