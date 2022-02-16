@@ -26,10 +26,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "dict0dict.h"
 #include "fil_cur.h"
+#include "xb0xb.h"
 #include "xtrabackup.h"
-
-/** map of tablespace_id, that experienced an inplace DDL during a backup op */
-extern std::map<space_id_t, bool> index_load_map;
 
 /****************************************************************/ /**
  Perform read filter context initialization that is common to all read
@@ -249,8 +247,9 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
    * backup start_lsn instead of last backup end_lsn.
    * We read all pages by setting read_batch_len to the size of file */
 
-  /* if DDL happened on the table after the checkpoint LSN we do full scan on
-  that table. index_load_map is poped during the first scan of redo */
+  /* if inplace DDLs that generated MLOG_INDEX_LOAD happened on the table after
+  the checkpoint LSN we do full scan on that table. index_load_map is populated
+  during the first scan of redo */
 
   if (ctxt->space_id == dict_sys_t::s_dict_space_id ||
       index_load_map[ctxt->space_id] == true) {

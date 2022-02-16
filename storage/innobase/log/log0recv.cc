@@ -96,12 +96,10 @@ otherwise.  Note that this is false while a background thread is
 rolling back incomplete transactions. */
 volatile bool recv_recovery_on;
 volatile lsn_t backup_redo_log_flushed_lsn;
-extern bool opt_page_tracking;
-extern char *xtrabackup_incremental;
-extern lsn_t incremental_start_checkpoint_lsn;
-
-/**  map of sapce_id, that experienced an inplace DDL during a backup op */
+#ifdef XTRABACKUP
+/** map of space_id, that experienced an inplace DDL during a backup op */
 std::map<space_id_t, bool> index_load_map;
+#endif /* XTRABACKUP */
 
 #ifdef UNIV_HOTBACKUP
 std::list<std::pair<space_id_t, lsn_t>> index_load_list;
@@ -1791,16 +1789,16 @@ static byte *recv_parse_or_apply_log_rec_body(
           // MLOG_INDEX_LOAD type redo log record indicates, that a DDL
           // (create index, alter table...) is performed with
           // 'algorithm=inplace'. If using pagetracking, the affected tablespace
-          // must be copied using full scan. Record it in the index_load_list
+          // must be copied using full scan. Record it in the index_load_map
           // We do this during the first scan of redo before starting file copy
           // thread. This copy is required because Page-tracking relies on
-          // changes from redo as well. ie PXB has to copy redo as well apart
+          // changes from redo. ie PXB has to copy redo as well apart
           // from copying pages from the pages given by page-tracking list.
           // Since in-place DDL skips redo logging and the pages that are not
           // yet flushed, will not be tracked by page-tracking. And since the
           // redo logging is skipped, PXB will fail to get those changed pages
-          // (currently only in buffer pool). hence, we rely on re-copying the
-          // datafiles.
+          // (on disk .ibd but yet not on pagetracking). hence, we rely on
+          // re-copying the datafiles.
           if (opt_page_tracking && xtrabackup_incremental != nullptr &&
               recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
             index_load_map[space_id] = true;
