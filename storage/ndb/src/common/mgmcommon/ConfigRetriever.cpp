@@ -136,9 +136,24 @@ int
 ConfigRetriever::do_connect(int no_retries,
 			    int retry_delay_in_seconds, int verbose)
 {
-  return
-    (ndb_mgm_connect(m_handle,no_retries,retry_delay_in_seconds,verbose)==0) ?
-    0 : -1;
+  if (ndb_mgm_connect(m_handle, no_retries, retry_delay_in_seconds, verbose) == 0)
+  {
+    return 0;
+  }
+  else
+  {
+    const int err = ndb_mgm_get_latest_error(m_handle);
+    if (err == NDB_MGM_ILLEGAL_CONNECT_STRING)
+    {
+      BaseString tmp(ndb_mgm_get_latest_error_msg(m_handle));
+      tmp.append(" : ");
+      tmp.append(ndb_mgm_get_latest_error_desc(m_handle));
+      setError(CR_ERROR, tmp.c_str());
+      return -2;
+    }
+    return -1;
+  }
+
 }
 
 int
@@ -292,7 +307,9 @@ ConfigRetriever::verifyConfig(const ndb_mgm_configuration *conf,
   }
 
   if(_type != (unsigned int)m_node_type){
-    const char *type_s, *alias_s, *type_s2, *alias_s2;
+    const char *alias_s, *alias_s2;
+    const char *type_s = nullptr;
+    const char *type_s2 = nullptr;
     alias_s=
       ndb_mgm_get_node_type_alias_string((enum ndb_mgm_node_type)m_node_type,
                                          &type_s);

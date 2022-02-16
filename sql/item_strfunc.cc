@@ -1097,8 +1097,10 @@ bool Item_func_reverse::resolve_type(THD *thd) {
 String *Item_func_replace::val_str(String *str) {
   assert(fixed);
 
+  null_value = false;
+
   String *res1 = args[0]->val_str(str);
-  if ((null_value = args[0]->null_value)) return nullptr;
+  if (res1 == nullptr) return error_str();
 
   res1->set_charset(collation.collation);
 
@@ -1150,6 +1152,7 @@ String *Item_func_replace::val_str(String *str) {
       if (err) return error_str();
     }
   }
+
   return result;
 }
 
@@ -1159,6 +1162,7 @@ bool Item_func_replace::resolve_type(THD *thd) {
   // We let the first argument (only) determine the character set of the result.
   // REPLACE(str, from_str, to_str)
   if (agg_arg_charsets_for_string_result(collation, args, 1)) return true;
+  if (simplify_string_args(thd, collation, args + 1, 1)) return true;
 
   ulonglong char_length = args[0]->max_char_length(collation.collation);
   ulonglong replace_length = args[2]->max_char_length(collation.collation);
@@ -1383,24 +1387,28 @@ bool Item_func_right::resolve_type(THD *thd) {
 }
 
 String *Item_func_substr::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
+  null_value = false;
+  THD *const thd = current_thd;
   String *res = args[0]->val_str(str);
+  if (res == nullptr) return error_str();
   /* must be longlong to avoid truncation */
   longlong start = args[1]->val_int();
+  if (args[1]->null_value || thd->is_error()) {
+    return error_str();
+  }
   /* Assumes that the maximum length of a String is < INT_MAX32. */
   /* Limit so that code sees out-of-bound value properly. */
-  longlong length = arg_count == 3 ? args[2]->val_int() : INT_MAX32;
-  longlong tmp_length;
-
-  if ((null_value = (args[0]->null_value || args[1]->null_value ||
-                     (arg_count == 3 && args[2]->null_value))))
-    return nullptr; /* purecov: inspected */
-
-  /* Negative or zero length, will return empty string. */
-  if ((arg_count == 3) && (length <= 0) &&
-      (length == 0 || !args[2]->unsigned_flag))
-    return make_empty_result();
-
+  longlong length = INT_MAX32;
+  if (arg_count > 2) {
+    length = args[2]->val_int();
+    if (args[2]->null_value || thd->is_error()) {
+      return error_str();
+    }
+    /* Negative or zero length, will return empty string. */
+    if (length <= 0 && (length == 0 || !args[2]->unsigned_flag))
+      return make_empty_result();
+  }
   /* Assumes that the maximum length of a String is < INT_MAX32. */
   /* Set here so that rest of code sees out-of-bound value as such. */
   if ((length <= 0) || (length > INT_MAX32)) length = INT_MAX32;
@@ -1417,7 +1425,7 @@ String *Item_func_substr::val_str(String *str) {
     return make_empty_result();
 
   length = res->charpos((int)length, (uint32)start);
-  tmp_length = static_cast<longlong>(res->length()) - start;
+  longlong tmp_length = static_cast<longlong>(res->length()) - start;
   length = min(length, tmp_length);
 
   if (!start && (longlong)res->length() == length) return res;
@@ -2542,9 +2550,9 @@ bool Item_func_rpad::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
   if (param_type_is_default(thd, 0, -1)) return true;
 
-  // Handle character set for args[0] and args[2].
-  if (agg_arg_charsets_for_string_result(collation, &args[0], 2, 2))
-    return true;
+  // Character set of result is based on first argument.
+  if (agg_arg_charsets_for_string_result(collation, args, 1)) return true;
+  if (simplify_string_args(thd, collation, args + 2, 1)) return true;
   if (args[1]->const_item() && args[1]->may_eval_const_item(thd)) {
     ulonglong char_length = args[1]->val_uint();
     if (args[1]->null_value) goto end;
@@ -2565,112 +2573,84 @@ end:
 }
 
 String *Item_func_rpad::val_str(String *str) {
-  assert(fixed == 1);
-  char *to;
+  assert(fixed);
+
+  null_value = false;
+
+  String *res = eval_string_arg(collation.collation, args[0], str);
+  if (res == nullptr) return error_str();
+
+  String *pad = eval_string_arg(collation.collation, args[2], &rpad_str);
+  if (pad == nullptr) return error_str();
+
   /* must be longlong to avoid truncation */
   longlong count = args[1]->val_int();
-  /* Avoid modifying this string as it may affect args[0] */
-  String *res = args[0]->val_str(str);
-  String *rpad = args[2]->val_str(&rpad_str);
-
-  if ((null_value =
-           (args[0]->null_value || args[1]->null_value || args[2]->null_value)))
-    return nullptr;
+  if (args[1]->null_value) return error_str();
 
   if ((count < 0) && !args[1]->unsigned_flag) {
     return null_return_str();
   }
 
-  if (!res || !rpad) {
-    /* purecov: begin deadcode */
-    assert(false);
-    null_value = true;
-    return nullptr;
-    /* purecov: end */
-  }
-
   /* Assumes that the maximum length of a String is < INT_MAX32. */
   /* Set here so that rest of code sees out-of-bound value as such. */
-  if ((ulonglong)count > INT_MAX32) count = INT_MAX32;
-  /*
-    There is one exception not handled (intentionaly) by the character set
-    aggregation code. If one string is strong side and is binary, and
-    another one is weak side and is a multi-byte character string,
-    then we need to operate on the second string in terms on bytes when
-    calling ::numchars() and ::charpos(), rather than in terms of characters.
-    Lets substitute its character set to binary.
-  */
-  if (collation.collation == &my_charset_bin) {
-    res->set_charset(&my_charset_bin);
-    rpad->set_charset(&my_charset_bin);
-  }
-
-  if (use_mb(rpad->charset())) {
-    // This will chop off any trailing illegal characters from rpad.
-    String *well_formed_pad =
-        args[2]->check_well_formed_result(rpad,
-                                          false,  // send warning
-                                          true);  // truncate
-    if (!well_formed_pad) {
-      assert(current_thd->is_error());
-      return error_str();
-    }
-  }
+  if (static_cast<ulonglong>(count) > INT_MAX32) count = INT_MAX32;
 
   const size_t res_char_length = res->numchars();
+  const size_t res_byte_length = res->length();
 
-  if (count <=
-      static_cast<longlong>(res_char_length)) {  // String to pad is big enough
+  size_t remainder_char_length = static_cast<size_t>(count);
+  if (remainder_char_length <= res_char_length) {
+    // String to pad is big enough
     int res_charpos = res->charpos((int)count);
     if (tmp_value.alloc(res_charpos)) return nullptr;
     (void)tmp_value.copy(*res);
     tmp_value.length(res_charpos);  // Shorten result if longer
     return &tmp_value;
   }
-  const size_t pad_char_length = rpad->numchars();
+  const size_t pad_char_length = pad->numchars();
+  const size_t pad_byte_length = pad->length();
+
+  remainder_char_length -= res_char_length;
 
   // Must be ulonglong to avoid overflow
-  const ulonglong byte_count = count * collation.collation->mbmaxlen;
-  if (byte_count > current_thd->variables.max_allowed_packet) {
+  const ulonglong target_byte_size =
+      res_byte_length + static_cast<ulonglong>(remainder_char_length) *
+                            collation.collation->mbmaxlen;
+  if (target_byte_size > current_thd->variables.max_allowed_packet) {
     return push_packet_overflow_warning(current_thd, func_name());
   }
-  if (!pad_char_length) return make_empty_result();
-  /* Must be done before alloc_buffer */
-  const size_t res_byte_length = res->length();
+  if (pad_char_length == 0) return make_empty_result();
   /*
     alloc_buffer() doesn't modify 'res' because 'res' is guaranteed too short
     at this stage.
   */
-  if (!(res = alloc_buffer(res, str, &tmp_value,
-                           static_cast<size_t>(byte_count)))) {
-    return error_str();
-  }
+  res =
+      alloc_buffer(res, str, &tmp_value, static_cast<size_t>(target_byte_size));
+  if (res == nullptr) return error_str();
 
-  to = res->ptr() + res_byte_length;
-  const char *ptr_pad = rpad->ptr();
-  const size_t pad_byte_length = rpad->length();
-  count -= res_char_length;
-  for (; (uint32)count > pad_char_length; count -= pad_char_length) {
+  char *to = res->ptr() + res_byte_length;
+  const char *ptr_pad = pad->ptr();
+  while (remainder_char_length >= pad_char_length) {
     memcpy(to, ptr_pad, pad_byte_length);
     to += pad_byte_length;
+    remainder_char_length -= pad_char_length;
   }
-  if (count) {
-    const size_t pad_charpos = rpad->charpos((int)count);
+  if (remainder_char_length > 0) {
+    const size_t pad_charpos = pad->charpos((int)remainder_char_length);
     memcpy(to, ptr_pad, pad_charpos);
     to += pad_charpos;
   }
-  res->set_charset(collation.collation);
   res->length((uint)(to - res->ptr()));
-  return (res);
+  return res;
 }
 
 bool Item_func_lpad::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
   if (param_type_is_default(thd, 0, -1)) return true;
 
-  // Handle character set for args[0] and args[2].
-  if (agg_arg_charsets_for_string_result(collation, &args[0], 2, 2))
-    return true;
+  // Character set of result is based on first argument.
+  if (agg_arg_charsets_for_string_result(collation, args, 1)) return true;
+  if (simplify_string_args(thd, collation, args + 2, 1)) return true;
 
   if (args[1]->const_item() && args[1]->may_eval_const_item(thd)) {
     ulonglong char_length = args[1]->val_uint();
@@ -2798,63 +2778,36 @@ longlong Item_func_is_uuid::val_int() {
 }
 
 String *Item_func_lpad::val_str(String *str) {
-  assert(fixed == 1);
-  size_t res_char_length, pad_char_length;
+  assert(fixed);
+
+  null_value = false;
+
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> base_string(nullptr, 0,
+                                                     collation.collation);
+  String *res = eval_string_arg(collation.collation, args[0], &base_string);
+  if (res == nullptr) return error_str();
+
+  String *pad = eval_string_arg(collation.collation, args[2], &lpad_str);
+  if (pad == nullptr) return error_str();
+
   /* must be longlong to avoid truncation */
   longlong count = args[1]->val_int();
-  size_t byte_count;
-  /* Avoid modifying this string as it may affect args[0] */
-  String *res = args[0]->val_str(&tmp_value);
-  String *pad = args[2]->val_str(&lpad_str);
-
-  if ((null_value =
-           (args[0]->null_value || args[1]->null_value || args[2]->null_value)))
-    return nullptr;
+  if (args[1]->null_value) return error_str();
 
   if (count < 0 && !args[1]->unsigned_flag) {
     return null_return_str();
   }
 
-  if (!res || !pad) {
-    /* purecov: begin deadcode */
-    assert(false);
-    null_value = true;
-    return nullptr;
-    /* purecov: end */
-  }
-
   /* Assumes that the maximum length of a String is < INT_MAX32. */
   /* Set here so that rest of code sees out-of-bound value as such. */
-  if ((ulonglong)count > INT_MAX32) count = INT_MAX32;
+  if (static_cast<ulonglong>(count) > INT_MAX32) count = INT_MAX32;
 
-  /*
-    There is one exception not handled (intentionaly) by the character set
-    aggregation code. If one string is strong side and is binary, and
-    another one is weak side and is a multi-byte character string,
-    then we need to operate on the second string in terms on bytes when
-    calling ::numchars() and ::charpos(), rather than in terms of characters.
-    Lets substitute its character set to binary.
-  */
-  if (collation.collation == &my_charset_bin) {
-    res->set_charset(&my_charset_bin);
-    pad->set_charset(&my_charset_bin);
-  }
+  const size_t res_char_length = res->numchars();
+  const size_t res_byte_length = res->length();
 
-  if (use_mb(pad->charset())) {
-    // This will chop off any trailing illegal characters from pad.
-    String *well_formed_pad =
-        args[2]->check_well_formed_result(pad,
-                                          false,  // send warning
-                                          true);  // truncate
-    if (!well_formed_pad) {
-      assert(current_thd->is_error());
-      return error_str();
-    }
-  }
+  size_t remainder_char_length = static_cast<size_t>(count);
 
-  res_char_length = res->numchars();
-
-  if (count <= static_cast<longlong>(res_char_length)) {
+  if (remainder_char_length <= res_char_length) {
     int res_charpos = res->charpos((int)count);
     if (tmp_value.alloc(res_charpos)) return nullptr;
     (void)tmp_value.copy(*res);
@@ -2862,31 +2815,38 @@ String *Item_func_lpad::val_str(String *str) {
     return &tmp_value;
   }
 
-  pad_char_length = pad->numchars();
-  byte_count = count * collation.collation->mbmaxlen;
+  const size_t pad_char_length = pad->numchars();
 
-  if (byte_count > current_thd->variables.max_allowed_packet) {
+  remainder_char_length -= res_char_length;
+
+  // Must be ulonglong to avoid overflow
+  const ulonglong target_byte_size =
+      res_byte_length + remainder_char_length * collation.collation->mbmaxlen;
+
+  if (target_byte_size > current_thd->variables.max_allowed_packet) {
     return push_packet_overflow_warning(current_thd, func_name());
   }
 
-  if (!pad_char_length) return make_empty_result();
-  if (str->alloc(byte_count)) {
+  if (pad_char_length == 0) return make_empty_result();
+  if (str->alloc(target_byte_size)) {
     my_error(ER_DA_OOM, MYF(0));
     return error_str();
   }
 
   str->length(0);
   str->set_charset(collation.collation);
-  count -= res_char_length;
-  while (count >= static_cast<longlong>(pad_char_length)) {
-    str->append(*pad);
-    count -= pad_char_length;
-  }
-  if (count > 0)
-    str->append(pad->ptr(), pad->charpos((int)count), collation.collation);
 
+  while (remainder_char_length >= pad_char_length) {
+    str->append(*pad);
+    remainder_char_length -= pad_char_length;
+  }
+  if (remainder_char_length > 0) {
+    str->append(pad->ptr(),
+                pad->charpos(static_cast<int>(remainder_char_length)),
+                collation.collation);
+  }
   str->append(*res);
-  null_value = false;
+
   return str;
 }
 
@@ -2964,36 +2924,12 @@ String *Item_func_conv::val_str(String *str) {
   return str;
 }
 
-String *Item_func_conv_charset::val_str(String *str) {
-  assert(fixed == 1);
-  if (use_cached_value) return null_value ? nullptr : &str_value;
-  String *arg = args[0]->val_str(str);
-  uint dummy_errors;
-  if (!arg) {
-    null_value = true;
-    return nullptr;
-  }
-  null_value = tmp_value.copy(arg->ptr(), arg->length(), arg->charset(),
-                              conv_charset, &dummy_errors);
-  return null_value ? nullptr
-                    : check_well_formed_result(&tmp_value,
-                                               false,  // send warning
-                                               true);  // truncate
-}
-
-bool Item_func_conv_charset::resolve_type(THD *thd) {
-  if (Item_str_func::resolve_type(thd)) return true;
-  collation.set(conv_charset, DERIVATION_IMPLICIT);
-  set_data_type_string(args[0]->max_char_length(collation.collation));
-  return false;
-}
-
 void Item_func_conv_charset::print(const THD *thd, String *str,
                                    enum_query_type query_type) const {
   str->append(STRING_WITH_LEN("convert("));
   args[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" using "));
-  str->append(replace_utf8_utf8mb3(conv_charset->csname));
+  str->append(replace_utf8_utf8mb3(m_cast_cs->csname));
   str->append(')');
 }
 
@@ -3097,8 +3033,8 @@ bool Item_func_weight_string::itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (as_binary) {
     if (args[0]->itemize(pc, &args[0])) return true;
-    args[0] = new (pc->mem_root)
-        Item_typecast_char(args[0], num_codepoints, &my_charset_bin);
+    args[0] = new (pc->mem_root) Item_typecast_char(
+        current_thd, args[0], num_codepoints, &my_charset_bin);
     if (args[0] == nullptr) return true;
   }
   return super::itemize(pc, res);
@@ -3373,7 +3309,7 @@ bool Item_typecast_char::eq(const Item *item, bool binary_cmp) const {
     return false;
 
   const Item_typecast_char *cast = down_cast<const Item_typecast_char *>(item);
-  if (cast_length != cast->cast_length || cast_cs != cast->cast_cs)
+  if (m_cast_length != cast->m_cast_length || m_cast_cs != cast->m_cast_cs)
     return false;
 
   if (!args[0]->eq(cast->args[0], binary_cmp)) return false;
@@ -3385,23 +3321,25 @@ void Item_typecast_char::print(const THD *thd, String *str,
   str->append(STRING_WITH_LEN("cast("));
   args[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" as char"));
-  if (cast_length >= 0) str->append_parenthesized(cast_length);
-  if (cast_cs) {
+  if (m_cast_length >= 0) str->append_parenthesized(m_cast_length);
+  if (m_cast_cs) {
     str->append(STRING_WITH_LEN(" charset "));
-    str->append(replace_utf8_utf8mb3(cast_cs->csname));
+    str->append(replace_utf8_utf8mb3(m_cast_cs->csname));
   }
   str->append(')');
 }
 
-String *Item_typecast_char::val_str(String *str) {
+String *Item_charset_conversion::val_str(String *str) {
   assert(fixed);
-  THD *thd = current_thd;
-  uint32 length;
+  /* Cache is only ever used by Item_func_conv_charset */
+  if (m_use_cached_value) return null_value ? nullptr : &str_value;
 
-  if (cast_length >= 0 &&
-      static_cast<ulonglong>(cast_length) > thd->variables.max_allowed_packet) {
+  THD *thd = current_thd;
+
+  if (m_cast_length >= 0 && static_cast<ulonglong>(m_cast_length) >
+                                thd->variables.max_allowed_packet) {
     return push_packet_overflow_warning(
-        thd, cast_cs == &my_charset_bin ? "cast_as_binary" : func_name());
+        thd, m_cast_cs == &my_charset_bin ? "cast_as_binary" : func_name());
   }
 
   String *res = args[0]->val_str(str);
@@ -3410,104 +3348,110 @@ String *Item_typecast_char::val_str(String *str) {
     return nullptr;
   }
   /*
-    Convert character set if differ
+    Convert character set if they differ
     If it is a literal string, we must also take a copy.
   */
-  if (charset_conversion || res->alloced_length() == 0) {
+  if (m_charset_conversion || res->alloced_length() == 0) {
     uint dummy_err;
-    if (tmp_value.copy(res->ptr(), res->length(), from_cs, cast_cs, &dummy_err))
+    if (m_tmp_value.copy(res->ptr(), res->length(), m_from_cs, m_cast_cs,
+                         &dummy_err))
       return error_str();
-    res = &tmp_value;
+    res = check_well_formed_result(&m_tmp_value,
+                                   false,  // send warning
+                                   true);  // truncate
+    if (res == nullptr) return error_str();
   }
 
-  res->set_charset(cast_cs);
+  res->set_charset(m_cast_cs);
 
   /*
     Cut the tail if cast with length
     and the result is longer than cast length, e.g.
     CAST('string' AS CHAR(1))
   */
-  if (cast_length >= 0) {
+  if (m_cast_length >= 0) {
+    uint32 length;
     if (res->length() > (length = (uint32)res->charpos(
-                             cast_length))) {  // Safe even if const arg
+                             m_cast_length))) {  // Safe even if const arg
       char char_type[40];
       snprintf(char_type, sizeof(char_type), "%s(%lu)",
-               cast_cs == &my_charset_bin ? "BINARY" : "CHAR", (ulong)length);
+               m_cast_cs == &my_charset_bin ? "BINARY" : "CHAR", (ulong)length);
 
       if (!res->alloced_length()) {  // Don't change const str
-        assert(res != &tmp_value);
-        tmp_value = *res;  // Not malloced string
-        res = &tmp_value;
+        assert(res != &m_tmp_value);
+        m_tmp_value = *res;  // Not malloced string
+        res = &m_tmp_value;
       }
       ErrConvString err(res);
       push_warning_printf(
           thd, Sql_condition::SL_WARNING, ER_TRUNCATED_WRONG_VALUE,
           ER_THD(thd, ER_TRUNCATED_WRONG_VALUE), char_type, err.ptr());
       res->length(length);
-    } else if (cast_cs == &my_charset_bin &&
-               res->length() < static_cast<ulonglong>(cast_length)) {
-      if (res->alloced_length() < static_cast<ulonglong>(cast_length)) {
-        if (res == &tmp_value) {
-          if (tmp_value.reserve(cast_length - res->length()))
+    } else if (m_cast_cs == &my_charset_bin &&
+               res->length() < static_cast<ulonglong>(m_cast_length)) {
+      if (res->alloced_length() < static_cast<ulonglong>(m_cast_length)) {
+        if (res == &m_tmp_value) {
+          if (m_tmp_value.reserve(m_cast_length - res->length()))
             return error_str();
         } else {
-          if (tmp_value.reserve(cast_length)) return error_str();
-          tmp_value.copy(*res);
-          res = &tmp_value;
+          if (m_tmp_value.reserve(m_cast_length)) return error_str();
+          m_tmp_value.copy(*res);
+          res = &m_tmp_value;
         }
       }
-      memset(res->ptr() + res->length(), 0, cast_length - res->length());
-      res->length(cast_length);
+      memset(res->ptr() + res->length(), 0, m_cast_length - res->length());
+      res->length(m_cast_length);
     }
   }
   null_value = false;
   return res;
 }
 
-bool Item_typecast_char::resolve_type(THD *thd) {
+bool Item_charset_conversion::resolve_type(THD *thd) {
+  if (m_cast_length >= 0 &&
+      m_cast_length > MAX_FIELD_BLOBLENGTH / m_cast_cs->mbmaxlen) {
+    my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "char(n)", func_name());
+    return true;
+  }
+
   if (args[0]->data_type() == MYSQL_TYPE_INVALID) {
     if (args[0]->propagate_type(thd,
-                                Type_properties(MYSQL_TYPE_VARCHAR, cast_cs)))
+                                Type_properties(MYSQL_TYPE_VARCHAR, m_cast_cs)))
       return true;
     args[0]->set_data_type_inherited();
   }
+  collation.set(m_cast_cs, DERIVATION_IMPLICIT);
   /*
     If we convert between two ASCII compatible character sets and the
     argument repertoire is MY_REPERTOIRE_ASCII then from_cs is set to cast_cs.
     This allows just to take over the args[0]->val_str() result
     and thus avoid unnecessary character set conversion.
   */
-  from_cs = args[0]->collation.repertoire == MY_REPERTOIRE_ASCII &&
-                    my_charset_is_ascii_based(cast_cs) &&
-                    my_charset_is_ascii_based(args[0]->collation.collation)
-                ? cast_cs
-                : args[0]->collation.collation;
+  m_from_cs = args[0]->collation.repertoire == MY_REPERTOIRE_ASCII &&
+                      my_charset_is_ascii_based(m_cast_cs) &&
+                      my_charset_is_ascii_based(args[0]->collation.collation)
+                  ? m_cast_cs
+                  : args[0]->collation.collation;
 
-  collation.set(cast_cs, DERIVATION_IMPLICIT);
-  if (cast_length >= 0 &&
-      cast_length > MAX_FIELD_BLOBLENGTH / cast_cs->mbmaxlen) {
-    my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "char(n)", func_name());
-    return true;
-  }
-  // cast_length can be -1, see validate_cast_type_and_extract_length().
-  set_data_type_string((uint32)(cast_length >= 0
-                                    ? cast_length
-                                    : cast_cs == &my_charset_bin
-                                          ? args[0]->max_length
-                                          : args[0]->max_char_length()));
+  // m_cast_length can be -1, see definition and also
+  // validate_cast_type_and_extract_length().
+  set_data_type_string(
+      (uint32)(m_cast_length >= 0 ? m_cast_length : compute_max_char_length()));
+
   set_nullable(is_nullable() || max_length > thd->variables.max_allowed_packet);
 
   /*
      We always force character set conversion if cast_cs
-     is a multi-byte character set. It garantees that the
+     is a multi-byte character set. It guarantees that the
      result of CAST is a well-formed string.
      For single-byte character sets we allow just to copy from the argument.
      A single-byte character sets string is always well-formed.
   */
-  charset_conversion =
-      (cast_cs->mbmaxlen > 1) ||
-      (!my_charset_same(from_cs, cast_cs) && from_cs != &my_charset_bin &&
-       cast_cs != &my_charset_bin);
+  m_charset_conversion =
+      (m_cast_cs->mbmaxlen > 1) ||
+      (!my_charset_same(m_from_cs, m_cast_cs) && m_from_cs != &my_charset_bin &&
+       m_cast_cs != &my_charset_bin);
+
   return false;
 }
 
@@ -4078,7 +4022,8 @@ String *mysql_generate_uuid(String *str) {
         with a clock_seq value (initialized random below), we use a separate
         randominit() here
       */
-      randominit(&uuid_rand, tmp + (ulong)thd,
+      randominit(&uuid_rand,
+                 tmp + static_cast<ulong>(reinterpret_cast<uintptr_t>(thd)),
                  tmp + (ulong)atomic_global_query_id);
       for (i = 0; i < (int)sizeof(mac); i++)
         mac[i] = (uchar)(my_rnd(&uuid_rand) * 255);

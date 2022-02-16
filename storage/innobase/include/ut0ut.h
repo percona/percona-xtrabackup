@@ -46,6 +46,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <string.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <iterator>
@@ -82,26 +83,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /** Index name prefix in fast index creation, as a string constant */
 #define TEMP_INDEX_PREFIX_STR "\377"
 
-/** Get the format string for the logger.
-@param[in]	errcode		The error code from share/errmsg-*.txt
-@return the message string or nullptr */
-const char *srv_get_server_errmsgs(int errcode);
-
-/** Time stamp */
-typedef time_t ib_time_t;
-
-/** Time stamp read from the monotonic clock (returned by ut_time_monotonic()).
- */
-typedef int64_t ib_time_monotonic_t;
-
-/** Number of milliseconds read from the monotonic clock (returned by
- ut_time_monotonic_ms()). */
-typedef int64_t ib_time_monotonic_ms_t;
-
-/** Number of microseconds read from the monotonic clock (returned by
- ut_time_monotonic_us()). */
-typedef int64_t ib_time_monotonic_us_t;
-
 #ifndef UNIV_HOTBACKUP
 #if defined(HAVE_PAUSE_INSTRUCTION)
 /* According to the gcc info page, asm volatile means that the
@@ -137,42 +118,9 @@ performance. */
 #define UT_RESUME_PRIORITY_CPU() ((void)0)
 #endif
 
-/** Delays execution for at most max_wait_us microseconds or returns earlier
- if cond becomes true.
- @param cond in: condition to wait for; evaluated every 2 ms
- @param max_wait_us in: maximum delay to wait, in microseconds */
-#define UT_WAIT_FOR(cond, max_wait_us)                                        \
-  do {                                                                        \
-    const auto start_us = ut_time_monotonic_us();                             \
-    while (!(cond)) {                                                         \
-      const auto diff = ut_time_monotonic_us() - start_us;                    \
-      const auto limit = max_wait_us;                                         \
-      if (limit <= 0 || (diff > 0 && ((uint64_t)diff) > ((uint64_t)limit))) { \
-        break;                                                                \
-      }                                                                       \
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));              \
-    }                                                                         \
-  } while (0)
 #else                  /* !UNIV_HOTBACKUP */
 #define UT_RELAX_CPU() /* No op */
 #endif                 /* !UNIV_HOTBACKUP */
-
-namespace ut {
-struct Location {
-  const char *filename;
-  size_t line;
-  std::ostream &print(std::ostream &out) const {
-    out << "[Location: file=" << filename << ", line=" << line << "]";
-    return out;
-  }
-};
-}  // namespace ut
-
-inline std::ostream &operator<<(std::ostream &out, const ut::Location &obj) {
-  return obj.print(out);
-}
-
-#define UT_LOCATION_HERE (ut::Location{__FILE__, __LINE__})
 
 #define ut_max std::max
 #define ut_min std::min
@@ -250,28 +198,6 @@ store the given number of bits.
 @param b in: bits
 @return number of bytes (octets) needed to represent b */
 #define UT_BITS_IN_BYTES(b) (((b) + 7UL) / 8UL)
-
-/** Returns system time. We do not specify the format of the time returned:
- the only way to manipulate it is to use the function ut_difftime.
- @return system time */
-ib_time_t ut_time(void);
-
-/** Returns the number of microseconds since epoch. Uses the monotonic clock.
- @return us since epoch or 0 if failed to retrieve */
-ib_time_monotonic_us_t ut_time_monotonic_us(void);
-
-/** Returns the number of milliseconds since epoch. Uses the monotonic clock.
- @return ms since epoch */
-ib_time_monotonic_ms_t ut_time_monotonic_ms(void);
-
-/** Returns the number of seconds since epoch. Uses the monotonic clock.
- @return us since epoch or 0 if failed to retrieve */
-ib_time_monotonic_t ut_time_monotonic(void);
-
-/** Returns the difference of two times in seconds.
- @return time2 - time1 expressed in seconds */
-double ut_difftime(ib_time_t time2,  /*!< in: time */
-                   ib_time_t time1); /*!< in: time */
 
 /** Determines if a number is zero or a power of two.
 @param[in]	n	number
@@ -381,6 +307,7 @@ const char *const PXB = "Xtrabackup";
 
 namespace ib {
 
+<<<<<<< HEAD
 #ifdef UNIV_DEBUG
 /** Finds the first format specifier in `fmt` format string
 @param[in]   fmt  The format string
@@ -905,6 +832,8 @@ class trace_3 : public logger {
 };
 #endif /* UNIV_HOTBACKUP */
 
+=======
+>>>>>>> mysql-8.0.28
 /** For measuring time elapsed. Since std::chrono::high_resolution_clock
 may be influenced by a change in system time, it might not be steady.
 So we use std::chrono::steady_clock for ellapsed time. */

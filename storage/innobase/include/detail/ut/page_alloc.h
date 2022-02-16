@@ -48,10 +48,12 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "my_compiler.h"
 #include "my_config.h"
+#include "mysqld_error.h"
 #include "storage/innobase/include/detail/ut/allocator_traits.h"
 #include "storage/innobase/include/detail/ut/helper.h"
 #include "storage/innobase/include/detail/ut/page_metadata.h"
 #include "storage/innobase/include/detail/ut/pfs.h"
+#include "storage/innobase/include/ut0log.h"
 
 namespace ut {
 namespace detail {
@@ -67,12 +69,24 @@ inline void *page_aligned_alloc(size_t n_bytes) {
   // to the multiple of system page size if it is not already
   void *ptr =
       VirtualAlloc(nullptr, n_bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+  if (unlikely(!ptr)) {
+    ib::log_warn(ER_IB_MSG_856) << "page_aligned_alloc VirtualAlloc(" << n_bytes
+                                << " bytes) failed;"
+                                   " Windows error "
+                                << GetLastError();
+  }
   return ptr;
 #else
   // With addr set to nullptr, mmap will internally round n_bytes to the
   // multiple of system page size if it is not already
   void *ptr = mmap(nullptr, n_bytes, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANON, -1, 0);
+  if (unlikely(ptr == (void *)-1)) {
+    ib::log_warn(ER_IB_MSG_856) << "page_aligned_alloc mmap(" << n_bytes
+                                << " bytes) failed;"
+                                   " errno "
+                                << errno;
+  }
   return (ptr != (void *)-1) ? ptr : nullptr;
 #endif
 }
@@ -87,11 +101,24 @@ inline bool page_aligned_free(void *ptr, size_t n_bytes) {
   if (unlikely(!ptr)) return false;
 #ifdef _WIN32
   auto ret = VirtualFree(ptr, 0, MEM_RELEASE);
-  (void)n_bytes;
+  if (unlikely(ret == 0)) {
+    ib::log_error(ER_IB_MSG_858)
+        << "large_page_aligned_free VirtualFree(" << ptr
+        << ")  failed;"
+           " Windows error "
+        << GetLastError();
+  }
   return ret != 0;
 #else
   // length aka n_bytes does not need to be aligned to page-size
   auto ret = munmap(ptr, n_bytes);
+  if (unlikely(ret != 0)) {
+    ib::log_error(ER_IB_MSG_858)
+        << "page_aligned_free munmap(" << ptr << ", " << n_bytes
+        << ") failed;"
+           " errno "
+        << errno;
+  }
   return ret == 0;
 #endif
 }
@@ -169,8 +196,9 @@ struct Page_alloc : public allocator_traits<false> {
    */
   static inline bool free(void *data) noexcept {
     if (unlikely(!data)) return false;
+    ut_ad(page_type(data) == Page_type::system_page);
     return page_aligned_free(deduce(data),
-                             datalen(data) + page_allocation_metadata::len);
+                             page_allocation_metadata::datalen(data));
   }
 
   /** Returns the number of bytes that have been allocated.
@@ -180,6 +208,7 @@ struct Page_alloc : public allocator_traits<false> {
       @return Number of bytes.
    */
   static inline page_allocation_metadata::datalen_t datalen(void *data) {
+    ut_ad(page_type(data) == Page_type::system_page);
     return page_allocation_metadata::datalen(data) -
            page_allocation_metadata::len;
   }
@@ -191,7 +220,21 @@ struct Page_alloc : public allocator_traits<false> {
       @return Page type.
    */
   static inline Page_type page_type(void *data) {
+    ut_ad(page_allocation_metadata::page_type(data) == Page_type::system_page);
     return page_allocation_metadata::page_type(data);
+  }
+
+  /** Retrieves the pointer and size of the allocation provided by the OS. It is
+      a low level information, and is needed only to call low level
+      memory-related OS functions.
+
+      @param[in] data Pointer to storage allocated through
+      Page_alloc::alloc()
+      @return Low level allocation info.
+   */
+  static inline allocation_low_level_info low_level_info(void *data) {
+    ut_ad(page_type(data) == Page_type::system_page);
+    return {deduce(data), page_allocation_metadata::datalen(data)};
   }
 
  private:
@@ -199,8 +242,11 @@ struct Page_alloc : public allocator_traits<false> {
       Page_alloc from a pointer which is passed to us by the call-site.
    */
   static inline void *deduce(void *data) noexcept {
-    return reinterpret_cast<void *>(static_cast<uint8_t *>(data) -
-                                    page_allocation_metadata::len);
+    ut_ad(page_type(data) == Page_type::system_page);
+    const auto res = reinterpret_cast<void *>(static_cast<uint8_t *>(data) -
+                                              page_allocation_metadata::len);
+    ut_ad(reinterpret_cast<std::uintptr_t>(res) % CPU_PAGE_SIZE == 0);
+    return res;
   }
 };
 
@@ -299,6 +345,7 @@ struct Page_alloc_pfs : public allocator_traits<true> {
    */
   static inline bool free(PFS_metadata::data_segment_ptr data) noexcept {
     if (unlikely(!data)) return false;
+    ut_ad(page_type(data) == Page_type::system_page);
 
     PFS_metadata::pfs_datalen_t total_len = {};
 #ifdef HAVE_PSI_MEMORY_INTERFACE
@@ -322,6 +369,7 @@ struct Page_alloc_pfs : public allocator_traits<true> {
       @return Number of bytes.
    */
   static inline size_t datalen(PFS_metadata::data_segment_ptr data) {
+    ut_ad(page_type(data) == Page_type::system_page);
     return page_allocation_metadata::pfs_metadata::pfs_datalen(data) -
            page_allocation_metadata::len;
   }
@@ -333,7 +381,22 @@ struct Page_alloc_pfs : public allocator_traits<true> {
       @return Page type.
    */
   static inline Page_type page_type(PFS_metadata::data_segment_ptr data) {
+    ut_ad(page_allocation_metadata::page_type(data) == Page_type::system_page);
     return page_allocation_metadata::page_type(data);
+  }
+
+  /** Retrieves the pointer and size of the allocation provided by the OS. It is
+      a low level information, and is needed only to call low level
+      memory-related OS functions.
+
+      @param[in] data Pointer to storage allocated through
+      Page_alloc_pfs::alloc()
+      @return Low level allocation info.
+   */
+  static inline allocation_low_level_info low_level_info(void *data) {
+    ut_ad(page_type(data) == Page_type::system_page);
+    return {deduce(data),
+            page_allocation_metadata::pfs_metadata::pfs_datalen(data)};
   }
 
  private:
@@ -342,7 +405,11 @@ struct Page_alloc_pfs : public allocator_traits<true> {
       call-site.
    */
   static inline void *deduce(PFS_metadata::data_segment_ptr data) noexcept {
-    return page_allocation_metadata::pfs_metadata::deduce_pfs_meta(data);
+    ut_ad(page_type(data) == Page_type::system_page);
+    const auto res =
+        page_allocation_metadata::pfs_metadata::deduce_pfs_meta(data);
+    ut_ad(reinterpret_cast<std::uintptr_t>(res) % CPU_PAGE_SIZE == 0);
+    return res;
   }
 };
 
@@ -382,6 +449,9 @@ struct Page_alloc_ {
   static inline bool free(void *ptr) { return Impl::free(ptr); }
   static inline size_t datalen(void *ptr) { return Impl::datalen(ptr); }
   static inline Page_type page_type(void *ptr) { return Impl::page_type(ptr); }
+  static inline allocation_low_level_info low_level_info(void *ptr) {
+    return Impl::low_level_info(ptr);
+  }
 };
 
 }  // namespace detail

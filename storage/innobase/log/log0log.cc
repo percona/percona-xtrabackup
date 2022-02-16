@@ -373,6 +373,10 @@ ut::aligned_pointer<log_t, ut::INNODB_CACHE_LINE_SIZE> *log_sys_object;
 /** Redo log system (singleton). */
 log_t *log_sys;
 
+#ifdef UNIV_PFS_MEMORY
+PSI_memory_key log_buffer_memory_key;
+#endif /* UNIV_PFS_MEMORY */
+
 #ifdef UNIV_PFS_THREAD
 
 /** PFS key for the log writer thread. */
@@ -501,7 +505,7 @@ bool log_sys_init(uint32_t n_files, uint64_t file_size, space_id_t space_id) {
   using log_t_aligned_pointer = std::decay_t<decltype(*log_sys_object)>;
   log_sys_object =
       ut::new_withkey<log_t_aligned_pointer>(UT_NEW_THIS_FILE_PSI_KEY);
-  log_sys_object->alloc();
+  log_sys_object->alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY);
 
   log_sys = *log_sys_object;
 
@@ -612,7 +616,7 @@ void log_start(log_t &log, checkpoint_no_t checkpoint_no, lsn_t checkpoint_lsn,
   ut_a(start_lsn >= checkpoint_lsn);
 
   log.write_to_file_requests_total.store(0);
-  log.write_to_file_requests_interval.store(0);
+  log.write_to_file_requests_interval.store(std::chrono::seconds::zero());
 
   log.recovered_lsn = start_lsn;
   log.last_checkpoint_lsn = checkpoint_lsn;
@@ -1145,7 +1149,8 @@ static void log_allocate_buffer(log_t &log) {
   ut_a(srv_log_buffer_size <= INNODB_LOG_BUFFER_SIZE_MAX);
   ut_a(srv_log_buffer_size >= 4 * UNIV_PAGE_SIZE);
 
-  log.buf.alloc(srv_log_buffer_size);
+  log.buf.alloc_withkey(ut::make_psi_memory_key(log_buffer_memory_key),
+                        ut::Count{srv_log_buffer_size});
 }
 
 static void log_deallocate_buffer(log_t &log) { log.buf.dealloc(); }
@@ -1155,7 +1160,8 @@ static void log_allocate_write_ahead_buffer(log_t &log) {
   ut_a(srv_log_write_ahead_size <= INNODB_LOG_WRITE_AHEAD_SIZE_MAX);
 
   log.write_ahead_buf_size = srv_log_write_ahead_size;
-  log.write_ahead_buf.alloc(log.write_ahead_buf_size);
+  log.write_ahead_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                    ut::Count{log.write_ahead_buf_size});
 }
 
 static void log_deallocate_write_ahead_buffer(log_t &log) {
@@ -1163,7 +1169,8 @@ static void log_deallocate_write_ahead_buffer(log_t &log) {
 }
 
 static void log_allocate_checkpoint_buffer(log_t &log) {
-  log.checkpoint_buf.alloc(OS_FILE_LOG_BLOCK_SIZE);
+  log.checkpoint_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                   ut::Count{OS_FILE_LOG_BLOCK_SIZE});
 }
 
 static void log_deallocate_checkpoint_buffer(log_t &log) {
@@ -1249,7 +1256,8 @@ static void log_allocate_file_header_buffers(log_t &log) {
                                                       ut::Count{n_files});
 
   for (uint32_t i = 0; i < n_files; i++) {
-    log.file_header_bufs[i].alloc(LOG_FILE_HDR_SIZE);
+    log.file_header_bufs[i].alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                          ut::Count{LOG_FILE_HDR_SIZE});
   }
 }
 

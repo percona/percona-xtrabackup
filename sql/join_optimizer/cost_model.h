@@ -24,8 +24,11 @@
 #define SQL_JOIN_OPTIMIZER_COST_MODEL_H_
 
 #include "my_base.h"
+#include "sql/join_optimizer/relational_expression.h"
+#include "sql/mem_root_array.h"
 
 struct AccessPath;
+struct ContainedSubquery;
 class Item;
 struct JoinPredicate;
 class Query_block;
@@ -59,6 +62,10 @@ struct FilterCost {
   double cost_to_materialize;
 };
 
+/// Used internally by EstimateFilterCost() only.
+void AddCost(THD *thd, const ContainedSubquery &subquery, double num_rows,
+             FilterCost *cost);
+
 /**
   Estimate the cost of evaluating “condition”, “num_rows” times.
   This is a fairly rudimentary estimation, _but_ it includes the cost
@@ -67,13 +74,33 @@ struct FilterCost {
 FilterCost EstimateFilterCost(THD *thd, double num_rows, Item *condition,
                               Query_block *outer_query_block);
 
+/**
+  A cheaper overload of EstimateFilterCost() that assumes that all
+  contained subqueries have already been extracted (ie., it skips the
+  walking, which can be fairly expensive). This data is typically
+  computed by FindContainedSubqueries().
+ */
+inline FilterCost EstimateFilterCost(
+    THD *thd, double num_rows,
+    const Mem_root_array<ContainedSubquery> &contained_subqueries) {
+  FilterCost cost{0.0, 0.0, 0.0};
+  cost.cost_if_not_materialized = num_rows * kApplyOneFilterCost;
+  cost.cost_if_materialized = num_rows * kApplyOneFilterCost;
+
+  for (const ContainedSubquery &subquery : contained_subqueries) {
+    AddCost(thd, subquery, num_rows, &cost);
+  }
+  return cost;
+}
+
 double EstimateCostForRefAccess(THD *thd, TABLE *table, unsigned key_idx,
                                 double num_output_rows);
 void EstimateSortCost(AccessPath *path, ha_rows limit_rows = HA_POS_ERROR);
 void EstimateMaterializeCost(THD *thd, AccessPath *path);
 void EstimateAggregateCost(AccessPath *path);
+void EstimateDeleteRowsCost(AccessPath *path);
 double FindOutputRowsForJoin(AccessPath *left_path, AccessPath *right_path,
                              const JoinPredicate *edge,
-                             double already_applied_selectivity);
+                             double right_path_already_applied_selectivity);
 
 #endif  // SQL_JOIN_OPTIMIZER_COST_MODEL_H_

@@ -375,9 +375,7 @@ inline uint invert_max_flag(uint max_flag) {
    - check_quick_select() - Walk the SEL_ARG graph and find an estimate of
                             how many table records are contained within all
                             intervals.
-   - get_quick_select()   - Walk the SEL_ARG, materialize the key intervals,
-                            and create QUICK_RANGE_SELECT object that will
-                            read records within these intervals.
+   - get_ranges_from_tree() - Walk the SEL_ARG, materialize the key intervals.
 
   4. SPACE COMPLEXITY NOTES
 
@@ -561,7 +559,8 @@ class SEL_ARG {
   SEL_ARG(SEL_ARG &);
   SEL_ARG(Field *, const uchar *, const uchar *, bool asc);
   SEL_ARG(Field *field, uint8 part, uchar *min_value, uchar *max_value,
-          uint8 min_flag, uint8 max_flag, bool maybe_flag, bool asc);
+          uint8 min_flag, uint8 max_flag, bool maybe_flag, bool asc,
+          ha_rkey_function gis_flag);
   /**
     Note that almost all SEL_ARGs are created on the MEM_ROOT,
     so this destructor will only rarely be called.
@@ -613,20 +612,22 @@ class SEL_ARG {
     }
     return new (mem_root)
         SEL_ARG(field, part, new_min, new_max, flag_min, flag_max,
-                maybe_flag && arg->maybe_flag, is_ascending);
+                maybe_flag && arg->maybe_flag, is_ascending,
+                min_flag & GEOM_FLAG ? rkey_func_flag : HA_READ_INVALID);
   }
   SEL_ARG *clone_first(SEL_ARG *arg,
                        MEM_ROOT *mem_root) {  // arg->min <= X < arg->min
-    return new (mem_root)
-        SEL_ARG(field, part, min_value, arg->min_value, min_flag,
-                arg->min_flag & NEAR_MIN ? 0 : NEAR_MAX,
-                maybe_flag || arg->maybe_flag, is_ascending);
+    return new (mem_root) SEL_ARG(
+        field, part, min_value, arg->min_value, min_flag,
+        arg->min_flag & NEAR_MIN ? 0 : NEAR_MAX, maybe_flag || arg->maybe_flag,
+        is_ascending, min_flag & GEOM_FLAG ? rkey_func_flag : HA_READ_INVALID);
   }
   SEL_ARG *clone_last(SEL_ARG *arg,
                       MEM_ROOT *mem_root) {  // arg->min <= X <= key_max
     return new (mem_root)
         SEL_ARG(field, part, min_value, arg->max_value, min_flag, arg->max_flag,
-                maybe_flag || arg->maybe_flag, is_ascending);
+                maybe_flag || arg->maybe_flag, is_ascending,
+                min_flag & GEOM_FLAG ? rkey_func_flag : HA_READ_INVALID);
   }
   SEL_ARG *clone(RANGE_OPT_PARAM *param, SEL_ARG *new_parent, SEL_ARG **next);
 
@@ -883,14 +884,8 @@ class SEL_TREE {
 
     KEY: There are range predicates that can be used on at least one
       index.
-
-    KEY_SMALLER: There are range predicates that can be used on at
-      least one index. In addition, there are predicates that cannot
-      be directly utilized by range access on key parts in the same
-      index. These unused predicates makes it probable that the row
-      estimate for range access on this index is too pessimistic.
   */
-  enum Type { IMPOSSIBLE, ALWAYS, MAYBE, KEY, KEY_SMALLER } type;
+  enum Type { IMPOSSIBLE, ALWAYS, KEY } type;
 
   SEL_TREE(enum Type type_arg, MEM_ROOT *root, size_t num_keys)
       : type(type_arg), keys(root, num_keys), n_ror_scans(0) {}

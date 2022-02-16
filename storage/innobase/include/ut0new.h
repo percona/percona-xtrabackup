@@ -54,7 +54,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
     they become PFS-aware.
 
     Following is the list of currently implemented PFS-enabled dynamic
-    allocation overloads:
+    allocation overloads and associated facilities:
       * Primitive allocation functions:
           * ut::malloc
           * ut::zalloc
@@ -95,6 +95,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
           * ut::aligned_delete_arr
       * Custom memory allocators:
           * ut::allocator
+      * Overloads for std::unique_ptr and std::shared_ptr factory functions
+          * ut::make_unique
+          * ut::make_unique_aligned
+          * ut::make_shared
+          * ut::make_shared_aligned
     _withkey variants from above are the PFS-enabled dynamic allocation
     overloads.
 
@@ -115,6 +120,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <cstring>
 #include <limits>
 #include <map>
+#include <memory>
 #include <type_traits> /* std::is_trivially_default_constructible */
 #include <unordered_set>
 
@@ -122,6 +128,18 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/psi_memory.h"
+
+namespace ut {
+/** Can be used to extract pointer and size of the allocation provided by the
+OS. It is a low level information, and is needed only to call low level
+memory-related OS functions. */
+struct allocation_low_level_info {
+  /** A pointer returned by the OS allocator. */
+  void *base_ptr;
+  /** The size of allocation that OS performed. */
+  size_t allocation_size;
+};
+}  // namespace ut
 
 #include "detail/ut0new.h"
 #include "os0proc.h"
@@ -857,10 +875,8 @@ inline T *new_arr_withkey(PSI_memory_key_t key, Args &&... args) {
 
   size_t idx = 0;
   try {
-    using arr_t = int[];
-    (void)arr_t{0, (detail::construct<T>(mem, sizeof(T) * idx++,
-                                         std::forward<Args>(args)),
-                    0)...};
+    (...,
+     detail::construct<T>(mem, sizeof(T) * idx++, std::forward<Args>(args)));
   } catch (...) {
     for (size_t offset = (idx - 1) * sizeof(T); offset != 0;
          offset -= sizeof(T)) {
@@ -1178,6 +1194,20 @@ inline size_t page_allocation_size(void *ptr) noexcept {
   return page_alloc_impl::datalen(ptr);
 }
 
+/** Retrieves the pointer and size of the allocation provided by the OS. It is a
+    low level information, and is needed only to call low level memory-related
+    OS functions.
+
+    @param[in] ptr Pointer which has been obtained through any of the
+    ut::malloc_page*() variants.
+    @return Low level OS allocation info.
+ */
+inline allocation_low_level_info page_low_level_info(void *ptr) noexcept {
+  using impl = detail::select_page_alloc_impl_t<WITH_PFS_MEMORY>;
+  using page_alloc_impl = detail::Page_alloc_<impl>;
+  return page_alloc_impl::low_level_info(ptr);
+}
+
 /** Releases storage which has been dynamically allocated through any of
     the ut::malloc_page*() variants.
 
@@ -1260,6 +1290,20 @@ inline size_t large_page_allocation_size(void *ptr) noexcept {
   using impl = detail::select_large_page_alloc_impl_t<WITH_PFS_MEMORY>;
   using large_page_alloc_impl = detail::Large_alloc_<impl>;
   return large_page_alloc_impl::datalen(ptr);
+}
+
+/** Retrieves the pointer and size of the allocation provided by the OS. It is a
+    low level information, and is needed only to call low level memory-related
+    OS functions.
+
+    @param[in] ptr Pointer which has been obtained through any of the
+    ut::malloc_large_page*() variants.
+    @return Low level OS allocation info.
+ */
+inline allocation_low_level_info large_page_low_level_info(void *ptr) noexcept {
+  using impl = detail::select_large_page_alloc_impl_t<WITH_PFS_MEMORY>;
+  using large_page_alloc_impl = detail::Large_alloc_<impl>;
+  return large_page_alloc_impl::low_level_info(ptr);
 }
 
 /** Releases storage which has been dynamically allocated through any of
@@ -1363,7 +1407,27 @@ inline size_t large_page_allocation_size(void *ptr,
   using large_page_alloc_impl = detail::Large_alloc_<impl>;
   if (large_page_alloc_impl::page_type(ptr) == detail::Page_type::system_page)
     return ut::page_allocation_size(ptr);
+  ut_a(large_page_alloc_impl::page_type(ptr) == detail::Page_type::large_page);
   return ut::large_page_allocation_size(ptr);
+}
+
+/** Retrieves the pointer and size of the allocation provided by the OS. It is a
+    low level information, and is needed only to call low level memory-related
+    OS functions.
+
+    @param[in] ptr Pointer which has been obtained through any of the
+    ut::malloc_large_page*(fallback_to_normal_page_t) variants.
+    @return Low level OS allocation info.
+ */
+inline allocation_low_level_info large_page_low_level_info(
+    void *ptr, fallback_to_normal_page_t) noexcept {
+  assert(ptr);
+  using impl = detail::select_large_page_alloc_impl_t<WITH_PFS_MEMORY>;
+  using large_page_alloc_impl = detail::Large_alloc_<impl>;
+  if (large_page_alloc_impl::page_type(ptr) == detail::Page_type::system_page)
+    return ut::page_low_level_info(ptr);
+  ut_a(large_page_alloc_impl::page_type(ptr) == detail::Page_type::large_page);
+  return ut::large_page_low_level_info(ptr);
 }
 
 /** Releases storage which has been dynamically allocated through any of
@@ -1389,6 +1453,8 @@ inline bool free_large_page(void *ptr, fallback_to_normal_page_t) noexcept {
   if (large_page_alloc_impl::page_type(ptr) == detail::Page_type::system_page) {
     success = free_page(ptr);
   } else {
+    ut_a(large_page_alloc_impl::page_type(ptr) ==
+         detail::Page_type::large_page);
     success = free_large_page(ptr);
   }
   assert(success);
@@ -1522,7 +1588,12 @@ inline T *aligned_new_withkey(PSI_memory_key_t key, std::size_t alignment,
                               Args &&... args) {
   auto mem = aligned_alloc_withkey(key, sizeof(T), alignment);
   if (unlikely(!mem)) throw std::bad_alloc();
-  new (mem) T(std::forward<Args>(args)...);
+  try {
+    new (mem) T(std::forward<Args>(args)...);
+  } catch (...) {
+    ut::aligned_free(mem);
+    throw;
+  }
   return static_cast<T *>(mem);
 }
 
@@ -1574,98 +1645,148 @@ inline void aligned_delete(T *ptr) noexcept {
   aligned_free(ptr);
 }
 
-/** Dynamically allocates storage for an array of T's at address aligned to
-    the requested alignment. Constructs objects of type T with provided Args.
-    Instruments the memory with given PSI memory key in case PFS memory support
-    is enabled.
+/** Dynamically allocates storage for an array of T's at address aligned to the
+    requested alignment. Constructs objects of type T with provided Args.
+    Arguments that are to be used to construct some respective instance of T
+    shall be wrapped into a std::tuple. See examples down below. Instruments the
+    memory with given PSI memory key in case PFS memory support is enabled.
+
+    To create an array of default-intialized T's, one can use this function
+    template but for convenience purposes one can achieve the same by using
+    the ut::aligned_new_arr_withkey with ut::Count overload.
 
     @param[in] key PSI memory key to be used for PFS memory instrumentation.
     @param[in] alignment Alignment requirement for storage to be allocated.
-    @param[in] args Arguments one wishes to pass over to T constructor(s)
+    @param[in] args Tuples of arguments one wishes to pass over to T
+    constructor(s).
     @return Pointer to the first element of allocated storage. Throws
     std::bad_alloc exception if dynamic storage allocation could not be
-    fulfilled.
+    fulfilled. Re-throws whatever exception that may have occured during the
+    construction of any instance of T, in which case it automatically destroys
+    successfully constructed objects till that moment (if any), and finally
+    cleans up the raw memory allocated for T instances.
 
     Example 1:
-     int *ptr = aligned_new_arr_withkey<int, 5>(key, 2);
-     ptr[0] ... ptr[4]
+     int *ptr = ut::aligned_new_arr_withkey<int>(key, 32,
+                    std::forward_as_tuple(1),
+                    std::forward_as_tuple(2));
+     assert(ptr[0] == 1);
+     assert(ptr[1] == 2);
 
     Example 2:
-     int *ptr = aligned_new_arr_withkey<int, 5>(key, 2, 1, 2, 3, 4, 5);
-     assert(*ptr[0] == 1);
-     assert(*ptr[1] == 2);
-     ...
-     assert(*ptr[4] == 5);
+     struct A {
+       A(int x, int y) : _x(x), _y(y) {}
+       int _x, _y;
+     };
+     A *ptr = ut::aligned_new_arr_withkey<A>(key, 32,
+                std::forward_as_tuple(0, 1), std::forward_as_tuple(2, 3),
+                std::forward_as_tuple(4, 5), std::forward_as_tuple(6, 7),
+                std::forward_as_tuple(8, 9));
+     assert(ptr[0]->_x == 0 && ptr[0]->_y == 1);
+     assert(ptr[1]->_x == 2 && ptr[1]->_y == 3);
+     assert(ptr[2]->_x == 4 && ptr[2]->_y == 5);
+     assert(ptr[3]->_x == 6 && ptr[3]->_y == 7);
+     assert(ptr[4]->_x == 8 && ptr[4]->_y == 9);
 
     Example 3:
-     struct A { A(int x, int y) : _x(x), _y(y) {} int x, y; }
-     A *ptr =
-       aligned_new_arr_withkey<A, 5>(key, 2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
-     assert(ptr[0]->x == 1); assert(ptr[0]->y == 2); assert(ptr[1]->x == 3);
-     assert(ptr[1]->y == 4);
-     ...
-     assert(ptr[4]->x == 9);
-     assert(ptr[4]->y == 10);
+     struct A {
+       A() : _x(10), _y(100) {}
+       A(int x, int y) : _x(x), _y(y) {}
+       int _x, _y;
+     };
+     A *ptr = ut::aligned_new_arr_withkey<A>(key, 32,
+                std::forward_as_tuple(0, 1), std::forward_as_tuple(2, 3),
+                std::forward_as_tuple(), std::forward_as_tuple(6, 7),
+                std::forward_as_tuple());
+     assert(ptr[0]->_x == 0  && ptr[0]->_y == 1);
+     assert(ptr[1]->_x == 2  && ptr[1]->_y == 3);
+     assert(ptr[2]->_x == 10 && ptr[2]->_y == 100);
+     assert(ptr[3]->_x == 6  && ptr[3]->_y == 7);
+     assert(ptr[4]->_x == 10 && ptr[4]->_y == 100);
  */
-template <typename T, size_t Count, typename... Args>
+template <typename T, typename... Args>
 inline T *aligned_new_arr_withkey(PSI_memory_key_t key, std::size_t alignment,
                                   Args &&... args) {
-  static_assert(
-      sizeof...(args) % Count == 0,
-      "Instantiating Count instances of T and invoking their respective "
-      "constructors with possibly different kind and/or different number "
-      "of input arguments is currently not supported.");
-  constexpr auto n_args_per_T = sizeof...(args) / Count;
-  auto tuple = std::make_tuple(args...);
-
-  auto mem = aligned_alloc_withkey(key, sizeof(T) * Count, alignment);
+  auto mem = aligned_alloc_withkey(key, sizeof(T) * sizeof...(args), alignment);
   if (unlikely(!mem)) throw std::bad_alloc();
-  ut::detail::Loop<0, Count, T, 0, n_args_per_T, 0, decltype(tuple)>::run(
-      mem, std::forward<decltype(tuple)>(tuple));
+
+  size_t idx = 0;
+  try {
+    (...,
+     detail::construct<T>(mem, sizeof(T) * idx++, std::forward<Args>(args)));
+  } catch (...) {
+    for (size_t offset = (idx - 1) * sizeof(T); offset != 0;
+         offset -= sizeof(T)) {
+      reinterpret_cast<T *>(reinterpret_cast<std::uintptr_t>(mem) + offset -
+                            sizeof(T))
+          ->~T();
+    }
+    aligned_free(mem);
+    throw;
+  }
   return static_cast<T *>(mem);
 }
 
-/** Dynamically allocates storage for an array of T's at address aligned to
-    the requested alignment. Constructs objects of type T using default
-    constructor. Instruments the memory with given PSI memory key in case PFS
-    memory support is enabled.
+/** Dynamically allocates storage for an array of T's at address aligned to the
+    requested alignment. Constructs objects of type T using default constructor.
+    If T cannot be default-initialized (e.g. default constructor does not
+    exist), then this interace cannot be used for constructing such an array.
+    ut::new_arr_withkey overload with user-provided initialization must be used
+    then. Instruments the memory with given PSI memory key in case PFS memory
+    support is enabled.
 
     @param[in] key PSI memory key to be used for PFS memory instrumentation.
     @param[in] alignment Alignment requirement for storage to be allocated.
     @param[in] count Number of T elements in an array.
     @return Pointer to the first element of allocated storage. Throws
     std::bad_alloc exception if dynamic storage allocation could not be
-    fulfilled.
+    fulfilled. Re-throws whatever exception that may have occured during the
+    construction of any instance of T, in which case it automatically destroys
+    successfully constructed objects till that moment (if any), and finally
+    cleans up the raw memory allocated for T instances.
 
     Example 1:
-     int *ptr = aligned_new_arr_withkey<int>(key, 2, 5);
-     assert(*ptr[0] == 0);
-     assert(*ptr[1] == 0);
-     ...
-     assert(*ptr[4] == 0);
+     int *ptr = ut::aligned_new_arr_withkey<int>(key, 32, ut::Count{2});
 
     Example 2:
-     struct A { A) : x(1), y(2) {} int x, y; }
-     A *ptr = aligned_new_arr_withkey<A>(key, 2, 5);
-     assert(ptr[0].x == 1);
-     assert(ptr[0].y == 2);
-     ...
-     assert(ptr[4].x == 1);
-     assert(ptr[4].y == 2);
+     struct A {
+       A() : _x(10), _y(100) {}
+       int _x, _y;
+     };
+     A *ptr = ut::aligned_new_arr_withkey<A>(key, 32, ut::Count{5});
+     assert(ptr[0]->_x == 10 && ptr[0]->_y == 100);
+     assert(ptr[1]->_x == 10 && ptr[1]->_y == 100);
+     assert(ptr[2]->_x == 10 && ptr[2]->_y == 100);
+     assert(ptr[3]->_x == 10 && ptr[3]->_y == 100);
+     assert(ptr[4]->_x == 10 && ptr[4]->_y == 100);
 
     Example 3:
-     struct A { A(int x, int y) : _x(x), _y(y) {} int x, y; }
-     A *ptr = aligned_new_arr_withkey<A>(key, 2, 5);
-     // will not compile, no default constructor
+     struct A {
+       A(int x, int y) : _x(x), _y(y) {}
+       int _x, _y;
+     };
+     // Following cannot compile because A is not default-constructible
+     A *ptr = ut::aligned_new_arr_withkey<A>(key, 32, ut::Count{5});
  */
 template <typename T>
 inline T *aligned_new_arr_withkey(PSI_memory_key_t key, std::size_t alignment,
-                                  size_t count) {
-  auto mem = aligned_alloc_withkey(key, sizeof(T) * count, alignment);
+                                  Count count) {
+  auto mem = aligned_alloc_withkey(key, sizeof(T) * count(), alignment);
   if (unlikely(!mem)) throw std::bad_alloc();
-  for (size_t offset = 0; offset < sizeof(T) * count; offset += sizeof(T)) {
-    new (reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(mem) +
-                                  offset)) T();
+
+  size_t offset = 0;
+  try {
+    for (; offset < sizeof(T) * count(); offset += sizeof(T)) {
+      new (reinterpret_cast<uint8_t *>(mem) + offset) T{};
+    }
+  } catch (...) {
+    for (; offset != 0; offset -= sizeof(T)) {
+      reinterpret_cast<T *>(reinterpret_cast<std::uintptr_t>(mem) + offset -
+                            sizeof(T))
+          ->~T();
+    }
+    aligned_free(mem);
+    throw;
   }
   return static_cast<T *>(mem);
 }
@@ -1706,11 +1827,10 @@ inline T *aligned_new_arr_withkey(PSI_memory_key_t key, std::size_t alignment,
      assert(ptr[4]->x == 9);
      assert(ptr[4]->y == 10);
  */
-template <typename T, size_t Count, typename... Args>
+template <typename T, typename... Args>
 inline T *aligned_new_arr(std::size_t alignment, Args &&... args) {
-  return aligned_new_arr_withkey<T, Count>(
-      make_psi_memory_key(PSI_NOT_INSTRUMENTED), alignment,
-      std::forward<Args>(args)...);
+  return aligned_new_arr_withkey<T>(make_psi_memory_key(PSI_NOT_INSTRUMENTED),
+                                    alignment, std::forward<Args>(args)...);
 }
 
 /** Dynamically allocates storage for an array of T's at address aligned to
@@ -1750,7 +1870,7 @@ inline T *aligned_new_arr(std::size_t alignment, Args &&... args) {
      // will not compile, no default constructor
  */
 template <typename T>
-inline T *aligned_new_arr(std::size_t alignment, size_t count) {
+inline T *aligned_new_arr(std::size_t alignment, Count count) {
   return aligned_new_arr_withkey<T>(make_psi_memory_key(PSI_NOT_INSTRUMENTED),
                                     alignment, count);
 }
@@ -1909,9 +2029,9 @@ class aligned_array_pointer {
 
       @param[in] size Number of T elements in an array.
     */
-  void alloc(size_t size) {
+  void alloc(Count count) {
     ut_ad(ptr == nullptr);
-    ptr = ut::aligned_new_arr<T>(Alignment, size);
+    ptr = ut::aligned_new_arr<T>(Alignment, count);
   }
 
   /** Allocates sufficiently large memory of dynamic storage duration to fit
@@ -1926,10 +2046,10 @@ class aligned_array_pointer {
       @param[in] args Any number and type of arguments that type T can be
       constructed with.
     */
-  template <size_t Size, typename... Args>
+  template <typename... Args>
   void alloc(Args &&... args) {
     ut_ad(ptr == nullptr);
-    ptr = ut::aligned_new_arr<T, Size>(Alignment, args...);
+    ptr = ut::aligned_new_arr<T>(Alignment, std::forward<Args>(args)...);
   }
 
   /** Allocates sufficiently large memory of dynamic storage duration to fit
@@ -1945,9 +2065,9 @@ class aligned_array_pointer {
       @param[in] key PSI memory key to be used for PFS memory instrumentation.
       @param[in] size Number of T elements in an array.
     */
-  void alloc_withkey(PSI_memory_key_t key, size_t size) {
+  void alloc_withkey(PSI_memory_key_t key, Count count) {
     ut_ad(ptr == nullptr);
-    ptr = ut::aligned_new_arr_withkey<T>(key, Alignment, size);
+    ptr = ut::aligned_new_arr_withkey<T>(key, Alignment, count);
   }
 
   /** Allocates sufficiently large memory of dynamic storage duration to fit
@@ -1964,11 +2084,11 @@ class aligned_array_pointer {
       @param[in] args Any number and type of arguments that type T can be
       constructed with.
     */
-  template <size_t Size, typename... Args>
+  template <typename... Args>
   void alloc_withkey(PSI_memory_key_t key, Args &&... args) {
     ut_ad(ptr == nullptr);
-    ptr = ut::aligned_new_arr_withkey<T, Size>(key, Alignment,
-                                               std::forward<Args>(args)...);
+    ptr = ut::aligned_new_arr_withkey<T>(key, Alignment,
+                                         std::forward<Args>(args)...);
   }
 
   /** Invokes destructors of instances of type T, if applicable.
@@ -2148,6 +2268,558 @@ class allocator : public Allocator_base {
    */
   void deallocate(pointer ptr, size_type n_elements = 0) { ut::free(ptr); }
 };
+
+namespace detail {
+template <typename>
+constexpr bool is_unbounded_array_v = false;
+template <typename T>
+constexpr bool is_unbounded_array_v<T[]> = true;
+
+template <typename>
+constexpr bool is_bounded_array_v = false;
+template <typename T, std::size_t N>
+constexpr bool is_bounded_array_v<T[N]> = true;
+
+template <typename>
+constexpr size_t bounded_array_size_v = 0;
+template <typename T, std::size_t N>
+constexpr size_t bounded_array_size_v<T[N]> = N;
+
+template <typename T>
+struct Deleter {
+  void operator()(T *ptr) { ut::delete_(ptr); }
+};
+
+template <typename T>
+struct Array_deleter {
+  void operator()(T *ptr) { ut::delete_arr(ptr); }
+};
+
+template <typename T>
+struct Aligned_deleter {
+  void operator()(T *ptr) { ut::aligned_delete(ptr); }
+};
+
+template <typename T>
+struct Aligned_array_deleter {
+  void operator()(T *ptr) { ut::aligned_delete_arr(ptr); }
+};
+
+}  // namespace detail
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to T instance into the
+    std::unique_ptr.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Deleter<T>, typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::unique_ptr<T, Deleter>>
+make_unique(Args &&... args) {
+  return std::unique_ptr<T, Deleter>(ut::new_<T>(std::forward<Args>(args)...));
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to T instance into the
+    std::unique_ptr with custom deleter which knows how to handle PFS-enabled
+    dynamic memory allocations. Instruments the memory with given PSI memory key
+    in case PFS memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Deleter<T>, typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::unique_ptr<T, Deleter>>
+make_unique(PSI_memory_key_t key, Args &&... args) {
+  return std::unique_ptr<T, Deleter>(
+      ut::new_withkey<T>(key, std::forward<Args>(args)...));
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instance
+    into the std::unique_ptr.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to an array of size instances of
+   T.
+ */
+template <typename T,
+          typename Deleter = detail::Array_deleter<std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::unique_ptr<T, Deleter>>
+make_unique(size_t size) {
+  return std::unique_ptr<T, Deleter>(
+      ut::new_arr<std::remove_extent_t<T>>(ut::Count{size}));
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instances
+    into the std::unique_ptr with custom deleter which knows how to handle
+    PFS-enabled dyanmic memory allocations. Instruments the memory with given
+    PSI memory key in case PFS memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to an array of size instances of
+   T.
+ */
+template <typename T,
+          typename Deleter = detail::Array_deleter<std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::unique_ptr<T, Deleter>>
+make_unique(PSI_memory_key_t key, size_t size) {
+  return std::unique_ptr<T, Deleter>(
+      ut::new_arr_withkey<std::remove_extent_t<T>>(key, ut::Count{size}));
+}
+
+/** std::unique_ptr for arrays of known compile-time bound are disallowed.
+
+    For more details see 4.3 paragraph from
+    http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3588.txt
+ */
+template <typename T, typename... Args>
+std::enable_if_t<detail::is_bounded_array_v<T>> make_unique(Args &&...) =
+    delete;
+
+/** std::unique_ptr in PFS-enabled builds for arrays of known compile-time bound
+    are disallowed.
+
+    For more details see 4.3 paragraph from
+    http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3588.txt
+ */
+template <typename T, typename... Args>
+std::enable_if_t<detail::is_bounded_array_v<T>> make_unique(
+    PSI_memory_key_t key, Args &&...) = delete;
+
+/** The following is a common type that is returned by all the ut::make_unique
+    (non-aligned) specializations listed above. This is effectively a if-ladder
+    for the following list of conditions on the input type:
+    !std::is_array<T>::value -> std::unique_ptr<T, detail::Deleter<T>>
+    detail::is_unbounded_array_v<T> ->
+      std::unique_ptr<T,detail::Array_deleter<std::remove_extent_t<T>>> else (or
+    else if detail::is_bounded_array_v<T>) -> void (we do not support bounded
+     array ut::make_unique)
+ */
+template <typename T>
+using unique_ptr = std::conditional_t<
+    !std::is_array<T>::value, std::unique_ptr<T, detail::Deleter<T>>,
+    std::conditional_t<
+        detail::is_unbounded_array_v<T>,
+        std::unique_ptr<T, detail::Array_deleter<std::remove_extent_t<T>>>,
+        void>>;
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to T instance into the std::unique_ptr.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Aligned_deleter<T>,
+          typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::unique_ptr<T, Deleter>>
+make_unique_aligned(size_t alignment, Args &&... args) {
+  return std::unique_ptr<T, Deleter>(
+      ut::aligned_new<T>(alignment, std::forward<Args>(args)...));
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to T instance into the std::unique_ptr with custom deleter
+    which knows how to handle PFS-enabled dynamic memory allocations.
+    Instruments the memory with given PSI memory key in case PFS memory support
+    is enabled.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Aligned_deleter<T>,
+          typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::unique_ptr<T, Deleter>>
+make_unique_aligned(PSI_memory_key_t key, size_t alignment, Args &&... args) {
+  return std::unique_ptr<T, Deleter>(
+      ut::aligned_new_withkey<T>(key, alignment, std::forward<Args>(args)...));
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to an array of T instance into the std::unique_ptr.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to an array of size instances of
+   T.
+ */
+template <typename T, typename Deleter = detail::Aligned_array_deleter<
+                          std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::unique_ptr<T, Deleter>>
+make_unique_aligned(size_t alignment, size_t size) {
+  return std::unique_ptr<T, Deleter>(
+      ut::aligned_new_arr<std::remove_extent_t<T>>(alignment, ut::Count{size}));
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to an array of T instances into the std::unique_ptr with
+    custom deleter which knows how to handle PFS-enabled dyanmic memory
+    allocations. Instruments the memory with given PSI memory key in case PFS
+    memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::unique_ptr holding a pointer to an array of size instances of
+   T.
+ */
+template <typename T, typename Deleter = detail::Aligned_array_deleter<
+                          std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::unique_ptr<T, Deleter>>
+make_unique_aligned(PSI_memory_key_t key, size_t alignment, size_t size) {
+  return std::unique_ptr<T, Deleter>(
+      ut::aligned_new_arr_withkey<std::remove_extent_t<T>>(key, alignment,
+                                                           ut::Count{size}));
+}
+
+/** std::unique_ptr for arrays of known compile-time bound are disallowed.
+
+    For more details see 4.3 paragraph from
+    http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3588.txt
+ */
+template <typename T, typename... Args>
+std::enable_if_t<detail::is_bounded_array_v<T>> make_unique_aligned(
+    Args &&...) = delete;
+
+/** std::unique_ptr in PFS-enabled builds for arrays of known compile-time bound
+    are disallowed.
+
+    For more details see 4.3 paragraph from
+    http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3588.txt
+ */
+template <typename T, typename... Args>
+std::enable_if_t<detail::is_bounded_array_v<T>> make_unique_aligned(
+    PSI_memory_key_t key, Args &&...) = delete;
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to T instance into the
+    std::shared_ptr.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Deleter<T>, typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::shared_ptr<T>> make_shared(
+    Args &&... args) {
+  return std::shared_ptr<T>(ut::new_<T>(std::forward<Args>(args)...),
+                            Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to T instance into the
+    std::shared_ptr with custom deleter which knows how to handle PFS-enabled
+    dynamic memory allocations. Instruments the memory with given PSI memory key
+    in case PFS memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Deleter<T>, typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::shared_ptr<T>> make_shared(
+    PSI_memory_key_t key, Args &&... args) {
+  return std::shared_ptr<T>(
+      ut::new_withkey<T>(key, std::forward<Args>(args)...), Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instance
+    into the std::shared_ptr.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T,
+          typename Deleter = detail::Array_deleter<std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::shared_ptr<T>>
+make_shared(size_t size) {
+  return std::shared_ptr<T>(
+      ut::new_arr<std::remove_extent_t<T>>(ut::Count{size}), Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instances
+    into the std::shared_ptr with custom deleter which knows how to handle
+    PFS-enabled dynamic memory allocations. Instruments the memory with given
+    PSI memory key in case PFS memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T,
+          typename Deleter = detail::Array_deleter<std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::shared_ptr<T>>
+make_shared(PSI_memory_key_t key, size_t size) {
+  return std::shared_ptr<T>(
+      ut::new_arr_withkey<std::remove_extent_t<T>>(key, ut::Count{size}),
+      Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instance
+    into the std::shared_ptr.
+
+    This overload participates in overload resolution only if T
+    is an array type with known compile-time bound.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T,
+          typename Deleter = detail::Array_deleter<std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_bounded_array_v<T>, std::shared_ptr<T>>
+make_shared() {
+  return std::shared_ptr<T>(ut::new_arr<std::remove_extent_t<T>>(
+                                ut::Count{detail::bounded_array_size_v<T>}),
+                            Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instances
+    into the std::shared_ptr with custom deleter which knows how to handle
+    PFS-enabled dynamic memory allocations. Instruments the memory with given
+    PSI memory key in case PFS memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is an array type with known compile-time bound.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T,
+          typename Deleter = detail::Array_deleter<std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_bounded_array_v<T>, std::shared_ptr<T>> make_shared(
+    PSI_memory_key_t key) {
+  return std::shared_ptr<T>(
+      ut::new_arr_withkey<std::remove_extent_t<T>>(
+          key, ut::Count{detail::bounded_array_size_v<T>}),
+      Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to T instance into the std::shared_ptr.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Aligned_deleter<T>,
+          typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::shared_ptr<T>>
+make_shared_aligned(size_t alignment, Args &&... args) {
+  return std::shared_ptr<T>(
+      ut::aligned_new<T>(alignment, std::forward<Args>(args)...), Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to T instance into the std::shared_ptr with custom deleter
+    which knows how to handle PFS-enabled dynamic memory allocations.
+    Instruments the memory with given PSI memory key in case PFS memory support
+    is enabled.
+
+    This overload participates in overload resolution only if T
+    is not an array type.
+
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to instance of T.
+ */
+template <typename T, typename Deleter = detail::Aligned_deleter<T>,
+          typename... Args>
+std::enable_if_t<!std::is_array<T>::value, std::shared_ptr<T>>
+make_shared_aligned(PSI_memory_key_t key, size_t alignment, Args &&... args) {
+  return std::shared_ptr<T>(
+      ut::aligned_new_withkey<T>(key, alignment, std::forward<Args>(args)...),
+      Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to an array of T instance into the std::shared_ptr.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T, typename Deleter = detail::Aligned_array_deleter<
+                          std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::shared_ptr<T>>
+make_shared_aligned(size_t alignment, size_t size) {
+  return std::shared_ptr<T>(
+      ut::aligned_new_arr<std::remove_extent_t<T>>(alignment, ut::Count{size}),
+      Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to an array of T instances into the std::shared_ptr with
+    custom deleter which knows how to handle PFS-enabled dynamic memory
+    allocations. Instruments the memory with given PSI memory key in case PFS
+    memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is an array type with unknown compile-time bound.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T, typename Deleter = detail::Aligned_array_deleter<
+                          std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_unbounded_array_v<T>, std::shared_ptr<T>>
+make_shared_aligned(PSI_memory_key_t key, size_t alignment, size_t size) {
+  return std::shared_ptr<T>(
+      ut::aligned_new_arr_withkey<std::remove_extent_t<T>>(key, alignment,
+                                                           ut::Count{size}),
+      Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to an array of T instance into the std::shared_ptr.
+
+    This overload participates in overload resolution only if T
+    is an array type with known compile-time bound.
+
+    NOTE: Given that this function will _NOT_ be instrumenting the allocation
+    through PFS, observability for particular parts of the system which want to
+    use it will be lost or in best case inaccurate. Please have a strong reason
+    to do so.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T, typename Deleter = detail::Aligned_array_deleter<
+                          std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_bounded_array_v<T>, std::shared_ptr<T>>
+make_shared_aligned(size_t alignment) {
+  return std::shared_ptr<T>(
+      ut::aligned_new_arr<std::remove_extent_t<T>>(
+          alignment, ut::Count{detail::bounded_array_size_v<T>}),
+      Deleter{});
+}
+
+/** Dynamically allocates storage for an object of type T at address aligned to
+    the requested alignment. Constructs the object of type T with provided Args.
+    Wraps the pointer to an array of T instances into the std::shared_ptr with
+    custom deleter which knows how to handle PFS-enabled dynamic memory
+    allocations. Instruments the memory with given PSI memory key in case PFS
+    memory support is enabled.
+
+    This overload participates in overload resolution only if T
+    is an array type with known compile-time bound.
+
+    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @return std::shared_ptr holding a pointer to an array of size instances of
+    T.
+ */
+template <typename T, typename Deleter = detail::Aligned_array_deleter<
+                          std::remove_extent_t<T>>>
+std::enable_if_t<detail::is_bounded_array_v<T>, std::shared_ptr<T>>
+make_shared_aligned(PSI_memory_key_t key, size_t alignment) {
+  return std::shared_ptr<T>(
+      ut::aligned_new_arr_withkey<std::remove_extent_t<T>>(
+          key, alignment, ut::Count{detail::bounded_array_size_v<T>}),
+      Deleter{});
+}
 
 /** Specialization of basic_ostringstream which uses ut::allocator. Please note
     that it's .str() method returns std::basic_string which is not std::string,

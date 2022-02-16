@@ -292,7 +292,7 @@ bool prune_partitions(THD *thd, TABLE *table, Query_block *query_block,
   alloc.set_error_for_capacity_exceeded(true);
   thd->push_internal_handler(&range_par->error_handler);
   range_par->return_mem_root =
-      &alloc;  // We never use the generated TRPs, if any.
+      &alloc;  // We never use the generated AccessPaths, if any.
   range_par->temp_mem_root = &alloc;
 
   if (create_partition_index_description(&prune_param)) {
@@ -330,8 +330,7 @@ bool prune_partitions(THD *thd, TABLE *table, Query_block *query_block,
     goto end;
   }
 
-  if (tree->type != SEL_TREE::KEY && tree->type != SEL_TREE::KEY_SMALLER)
-    goto all_used;
+  if (tree->type != SEL_TREE::KEY) goto all_used;
 
   if (tree->merges.is_empty()) {
     /* Range analysis has produced a single list of intervals. */
@@ -582,7 +581,7 @@ static int find_used_partitions_imerge_list(THD *thd, PART_PRUNE_PARAM *ppar,
 static int find_used_partitions_imerge(THD *thd, PART_PRUNE_PARAM *ppar,
                                        SEL_IMERGE *imerge) {
   int res = 0;
-  for (SEL_TREE **ptree = imerge->trees; ptree < imerge->trees_next; ptree++) {
+  for (SEL_TREE *ptree : imerge->trees) {
     ppar->arg_stack_end = ppar->arg_stack;
     ppar->cur_part_fields = 0;
     ppar->cur_subpart_fields = 0;
@@ -592,7 +591,7 @@ static int find_used_partitions_imerge(THD *thd, PART_PRUNE_PARAM *ppar,
     ppar->cur_min_flag = ppar->cur_max_flag = 0;
 
     init_all_partitions_iterator(ppar->part_info, &ppar->part_iter);
-    SEL_ROOT *key_tree = (*ptree)->keys[0];
+    SEL_ROOT *key_tree = ptree->keys[0];
     if (!key_tree || (-1 == (res |= find_used_partitions(thd, ppar, key_tree))))
       return -1;
   }

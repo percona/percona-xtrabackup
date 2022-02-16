@@ -659,7 +659,7 @@ struct trx_lock_t {
   /** Lock wait started at this time.
   Writes under shared lock_sys latch combined with trx->mutex.
   Reads require either trx->mutex or exclusive lock_sys latch. */
-  time_t wait_started;
+  std::chrono::system_clock::time_point wait_started;
 
   /** query thread belonging to this trx that is in QUE_THR_LOCK_WAIT state.
   For threads suspended in a lock wait, this is protected by lock_sys latch for
@@ -1083,7 +1083,9 @@ struct trx_t {
   by dict_operation_lock. */
 
   /** Time the state last time became TRX_STATE_ACTIVE. */
-  std::atomic<time_t> start_time;
+  std::atomic<std::chrono::system_clock::time_point> start_time{
+      std::chrono::system_clock::time_point{}};
+  static_assert(decltype(start_time)::is_always_lock_free);
 
   lsn_t commit_lsn; /*!< lsn at the time of the commit */
 
@@ -1281,6 +1283,11 @@ struct trx_t {
   }
 
   bool allow_semi_consistent() const { return (skip_gap_locks()); }
+  /** Checks if this transaction releases locks on non matching records due to
+  low isolation level.
+  @return true iff in this transaction's isolation level locks on records which
+               do not match the WHERE clause are released */
+  bool releases_non_matching_rows() const { return skip_gap_locks(); }
 };
 #ifndef UNIV_HOTBACKUP
 

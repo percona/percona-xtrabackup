@@ -34,10 +34,14 @@
 #include "sql/join_optimizer/materialize_path_parameters.h"
 #include "sql/join_optimizer/node_map.h"
 #include "sql/join_optimizer/overflow_bitset.h"
+#include "sql/join_optimizer/relational_expression.h"
 #include "sql/join_type.h"
 #include "sql/mem_root_array.h"
+#include "sql/sql_array.h"
 #include "sql/sql_class.h"
 
+template <class T>
+class Bounds_checked_array;
 class Common_table_expr;
 class Filesort;
 class Item;
@@ -46,12 +50,15 @@ class JOIN;
 class KEY;
 class RowIterator;
 class QEP_TAB;
-class QUICK_SELECT_I;
+class QUICK_RANGE;
 class SJ_TMP_TABLE;
 class Table_function;
 class Temp_table_param;
 class Window;
 struct AccessPath;
+struct GroupIndexSkipScanParameters;
+struct IndexSkipScanParameters;
+struct KEY_PART;
 struct ORDER;
 struct POSITION;
 struct RelationalExpression;
@@ -144,6 +151,11 @@ struct Predicate {
   // See the equivalent fields in JoinPredicate.
   FunctionalDependencySet functional_dependencies;
   Mem_root_array<int> functional_dependencies_idx;
+
+  // The list of all subqueries referred to in this predicate, if any.
+  // The optimizer uses this to add their materialized/non-materialized
+  // costs when evaluating filters.
+  Mem_root_array<ContainedSubquery> contained_subqueries;
 };
 
 struct AppendPathParameters {
@@ -187,6 +199,11 @@ struct AccessPath {
     MRR,
     FOLLOW_TAIL,
     INDEX_RANGE_SCAN,
+    INDEX_MERGE,
+    ROWID_INTERSECTION,
+    ROWID_UNION,
+    INDEX_SKIP_SCAN,
+    GROUP_INDEX_SKIP_SCAN,
     DYNAMIC_INDEX_RANGE_SCAN,
 
     // Basic access paths that don't correspond to a specific table.
@@ -218,7 +235,10 @@ struct AccessPath {
     REMOVE_DUPLICATES,
     REMOVE_DUPLICATES_ON_INDEX,
     ALTERNATIVE,
-    CACHE_INVALIDATOR
+    CACHE_INVALIDATOR,
+
+    // Access paths that modify tables.
+    DELETE_ROWS,
   } type;
 
   /// Whether this access path counts as one that scans a base table,
@@ -311,10 +331,13 @@ struct AccessPath {
   /// created, we will add FILTER access paths to represent these instead,
   /// removing the dependency on the array. Said FILTER paths are by
   /// convention created with materialize_subqueries = false, since the by far
-  /// most common case is that there are no subqueries in the predicate. In
-  /// other words, if you wish to represent a filter with
-  /// materialize_subqueries = true, you will nede to make an explicit FILTER
+  /// most common case is that there are no subqueries in the predicate.
+  /// In other words, if you wish to represent a filter with
+  /// materialize_subqueries = true, you will need to make an explicit FILTER
   /// node.
+  ///
+  /// See also nested_loop_join().equijoin_predicates, which is for filters
+  /// being applied _before_ nested-loop joins, but is otherwise the same idea.
   OverflowBitset filter_predicates{0};
 
   /// Bitmap of sargable join predicates that have already been applied
@@ -476,6 +499,46 @@ struct AccessPath {
   const auto &index_range_scan() const {
     assert(type == INDEX_RANGE_SCAN);
     return u.index_range_scan;
+  }
+  auto &index_merge() {
+    assert(type == INDEX_MERGE);
+    return u.index_merge;
+  }
+  const auto &index_merge() const {
+    assert(type == INDEX_MERGE);
+    return u.index_merge;
+  }
+  auto &rowid_intersection() {
+    assert(type == ROWID_INTERSECTION);
+    return u.rowid_intersection;
+  }
+  const auto &rowid_intersection() const {
+    assert(type == ROWID_INTERSECTION);
+    return u.rowid_intersection;
+  }
+  auto &rowid_union() {
+    assert(type == ROWID_UNION);
+    return u.rowid_union;
+  }
+  const auto &rowid_union() const {
+    assert(type == ROWID_UNION);
+    return u.rowid_union;
+  }
+  auto &index_skip_scan() {
+    assert(type == INDEX_SKIP_SCAN);
+    return u.index_skip_scan;
+  }
+  const auto &index_skip_scan() const {
+    assert(type == INDEX_SKIP_SCAN);
+    return u.index_skip_scan;
+  }
+  auto &group_index_skip_scan() {
+    assert(type == GROUP_INDEX_SKIP_SCAN);
+    return u.group_index_skip_scan;
+  }
+  const auto &group_index_skip_scan() const {
+    assert(type == GROUP_INDEX_SKIP_SCAN);
+    return u.group_index_skip_scan;
   }
   auto &dynamic_index_range_scan() {
     assert(type == DYNAMIC_INDEX_RANGE_SCAN);
@@ -685,6 +748,14 @@ struct AccessPath {
     assert(type == CACHE_INVALIDATOR);
     return u.cache_invalidator;
   }
+  auto &delete_rows() {
+    assert(type == DELETE_ROWS);
+    return u.delete_rows;
+  }
+  const auto &delete_rows() const {
+    assert(type == DELETE_ROWS);
+    return u.delete_rows;
+  }
 
  private:
   // We'd prefer if this could be an std::variant, but we don't have C++17 yet.
@@ -747,9 +818,104 @@ struct AccessPath {
       TABLE *table;
     } follow_tail;
     struct {
-      TABLE *table;
-      QUICK_SELECT_I *quick;
+      // The key part(s) we are scanning on. Note that this may be an array.
+      // You can get the table we are working on by looking into
+      // used_key_parts[0].field->table (it is not stored directly, to avoid
+      // going over the AccessPath size limits).
+      KEY_PART *used_key_part;
+
+      // The actual ranges we are scanning over (originally derived from “key”).
+      // Not a Bounds_checked_array, to save 4 bytes on the length.
+      QUICK_RANGE **ranges;
+      unsigned num_ranges;
+
+      unsigned mrr_flags;
+      unsigned mrr_buf_size;
+
+      // Which index (in the TABLE) we are scanning over, and how many of its
+      // key parts we are using.
+      unsigned index;
+      unsigned num_used_key_parts;
+
+      // If true, the scan can return rows in rowid order.
+      bool can_be_used_for_ror : 1;
+
+      // If true, the scan _should_ return rows in rowid order.
+      // Should only be set if can_be_used_for_ror == true.
+      bool need_rows_in_rowid_order : 1;
+
+      // If true, this plan can be used for index merge scan.
+      bool can_be_used_for_imerge : 1;
+
+      // See row intersection for more details.
+      bool reuse_handler : 1;
+
+      // Whether we are scanning over a geometry key part.
+      bool geometry : 1;
+
+      // Whether we need a reverse scan. Only supported if geometry == false.
+      bool reverse : 1;
+
+      // For a reverse scan, if we are using extended key parts. It is needed,
+      // to set correct flags when retrieving records.
+      bool using_extended_key_parts : 1;
     } index_range_scan;
+    struct {
+      TABLE *table;
+      bool forced_by_hint;
+      Mem_root_array<AccessPath *> *children;
+    } index_merge;
+    struct {
+      TABLE *table;
+      Mem_root_array<AccessPath *> *children;
+
+      // Clustered primary key scan, if any.
+      AccessPath *cpk_child;
+
+      bool forced_by_hint;
+      bool retrieve_full_rows;
+      bool need_rows_in_rowid_order;
+
+      // If true, the first child scan should reuse table->file instead of
+      // creating its own. This is true if the intersection is the topmost
+      // range scan, but _not_ if it's below a union. (The reasons for this
+      // are unknown.) It can also be negated by logic involving
+      // retrieve_full_rows and is_covering, again for unknown reasons.
+      //
+      // This is not only for performance; multi-table delete has a hidden
+      // dependency on this behavior when running against certain types of
+      // tables (e.g. MyISAM), as it assumes table->file is correctly positioned
+      // when deleting (and not all table types can transfer the position of one
+      // handler to another by using position()).
+      bool reuse_handler;
+
+      // true if no row retrieval phase is necessary.
+      bool is_covering;
+    } rowid_intersection;
+    struct {
+      TABLE *table;
+      Mem_root_array<AccessPath *> *children;
+      bool forced_by_hint;
+    } rowid_union;
+    struct {
+      TABLE *table;
+      unsigned index;
+      unsigned num_used_key_parts;
+      bool forced_by_hint;
+
+      // Large, and has nontrivial destructors, so split out into
+      // its own allocation.
+      IndexSkipScanParameters *param;
+    } index_skip_scan;
+    struct {
+      TABLE *table;
+      unsigned index;
+      unsigned num_used_key_parts;
+      bool forced_by_hint;
+
+      // Large, so split out into its own allocation.
+      GroupIndexSkipScanParameters *param;
+    } group_index_skip_scan;
     struct {
       TABLE *table;
       QEP_TAB *qep_tab;  // Used only for buffering.
@@ -800,9 +966,24 @@ struct AccessPath {
     } bka_join;
     struct {
       AccessPath *outer, *inner;
-      JoinType join_type;
+      JoinType join_type;  // Somewhat redundant wrt. join_predicate.
       bool pfs_batch_mode;
-    } nested_loop_join;
+      bool already_expanded_predicates;
+      const JoinPredicate *join_predicate;
+
+      // Equijoin filters to apply before the join, if any.
+      // Indexes into join_predicate->expr->equijoin_conditions.
+      // Non-equijoin conditions are always applied.
+      // If already_expanded_predicates is true, do not re-expand.
+      OverflowBitset equijoin_predicates;
+
+      // NOTE: Due to the nontrivial constructor on equijoin_predicates,
+      // this struct needs an initializer, or the union would not be
+      // default-constructible. If we need more than one union member
+      // with such an initializer, we would probably need to change
+      // equijoin_predicates into a uint64_t type-punned to an OverflowBitset.
+    } nested_loop_join = {nullptr, nullptr, JoinType::INNER, false, false,
+                          nullptr, {}};
     struct {
       AccessPath *outer, *inner;
       const TABLE *table;
@@ -918,6 +1099,11 @@ struct AccessPath {
       AccessPath *child;
       const char *name;
     } cache_invalidator;
+    struct {
+      AccessPath *child;
+      table_map tables_to_delete_from;
+      table_map immediate_tables;
+    } delete_rows;
   } u;
 };
 static_assert(std::is_trivially_destructible<AccessPath>::value,
@@ -1066,17 +1252,6 @@ inline AccessPath *NewFollowTailAccessPath(THD *thd, TABLE *table,
   path->type = AccessPath::FOLLOW_TAIL;
   path->count_examined_rows = count_examined_rows;
   path->follow_tail().table = table;
-  return path;
-}
-
-inline AccessPath *NewIndexRangeScanAccessPath(THD *thd, TABLE *table,
-                                               QUICK_SELECT_I *quick,
-                                               bool count_examined_rows) {
-  AccessPath *path = new (thd->mem_root) AccessPath;
-  path->type = AccessPath::INDEX_RANGE_SCAN;
-  path->count_examined_rows = count_examined_rows;
-  path->index_range_scan().table = table;
-  path->index_range_scan().quick = quick;
   return path;
 }
 
@@ -1419,6 +1594,10 @@ inline AccessPath *NewInvalidatorAccessPath(THD *thd, AccessPath *child,
   return path;
 }
 
+AccessPath *NewDeleteRowsAccessPath(THD *thd, AccessPath *child,
+                                    table_map delete_tables,
+                                    table_map immediate_tables);
+
 void FindTablesToGetRowidFor(AccessPath *path);
 
 /**
@@ -1435,7 +1614,17 @@ void FindTablesToGetRowidFor(AccessPath *path);
 bool FinalizeMaterializedSubqueries(THD *thd, JOIN *join, AccessPath *path);
 
 unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
-    THD *thd, AccessPath *path, JOIN *join, bool eligible_for_batch_mode);
+    THD *thd, MEM_ROOT *mem_root, AccessPath *path, JOIN *join,
+    bool eligible_for_batch_mode);
+
+// A short form of CreateIteratorFromAccessPath() that implicitly uses the THD's
+// MEM_ROOT for storage, which is nearly always what you want. (The only caller
+// that does anything else is DynamicRangeIterator.)
+inline unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
+    THD *thd, AccessPath *path, JOIN *join, bool eligible_for_batch_mode) {
+  return CreateIteratorFromAccessPath(thd, thd->mem_root, path, join,
+                                      eligible_for_batch_mode);
+}
 
 void SetCostOnTableAccessPath(const Cost_model_server &cost_model,
                               const POSITION *pos, bool is_after_filter,
@@ -1482,7 +1671,7 @@ void ExpandFilterAccessPaths(THD *thd, AccessPath *path, const JOIN *join,
 
 /// Like ExpandFilterAccessPaths(), but expands only the single access path
 /// at “path”.
-void ExpandSingleFilterAccessPath(THD *thd, AccessPath *path,
+void ExpandSingleFilterAccessPath(THD *thd, AccessPath *path, const JOIN *join,
                                   const Mem_root_array<Predicate> &predicates,
                                   unsigned num_where_predicates);
 

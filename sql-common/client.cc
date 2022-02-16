@@ -112,7 +112,7 @@
 #ifndef _WIN32
 #include <errno.h>
 
-#define SOCKET_ERROR -1
+#define INVALID_SOCKET -1
 #endif
 
 #include <mysql/client_plugin.h>
@@ -200,10 +200,8 @@ const char *unknown_sqlstate = "HY000";
 const char *not_error_sqlstate = "00000";
 const char *cant_connect_sqlstate = "08001";
 #if defined(_WIN32)
-static char *shared_memory_base_name = 0;
 const char *def_shared_memory_base_name = default_shared_memory_base_name;
 #endif
-
 ulong g_net_buffer_length = 8192;
 ulong g_max_allowed_packet = 1024L * 1024L * 1024L;
 
@@ -375,7 +373,6 @@ static HANDLE create_named_pipe(MYSQL *mysql, DWORD connect_timeout,
   char pipe_name[1024];
   DWORD dwMode;
   int i;
-  bool testing_named_pipes = 0;
   const char *host = *arg_host, *unix_socket = *arg_unix_socket;
 
   if (!unix_socket || (unix_socket)[0] == 0x00) unix_socket = mysql_unix_port;
@@ -475,14 +472,13 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
   ulong connect_number;
   char connect_number_char[22], *p;
   char *tmp = NULL;
-  char *suffix_pos;
+  char *suffix_pos = NULL;
   DWORD error_allow = 0;
   DWORD error_code = 0;
   DWORD event_access_rights = SYNCHRONIZE | EVENT_MODIFY_STATE;
   char *shared_memory_base_name = mysql->options.shared_memory_base_name;
   static const char *name_prefixes[] = {"", "Global\\"};
   const char *prefix;
-  int i;
 
   /*
     If this is NULL, somebody freed the MYSQL* options.  mysql_close()
@@ -508,7 +504,7 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
     shared_memory_base_name is unique value for each server
     unique_part is uniquel value for each object (events and file-mapping)
   */
-  for (i = 0; i < array_elements(name_prefixes); i++) {
+  for (size_t i = 0; i < array_elements(name_prefixes); i++) {
     prefix = name_prefixes[i];
     suffix_pos = strxmov(tmp, prefix, shared_memory_base_name, "_", NullS);
     my_stpcpy(suffix_pos, "CONNECT_REQUEST");
@@ -521,6 +517,7 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
     error_allow = CR_SHARED_MEMORY_CONNECT_REQUEST_ERROR;
     goto err;
   }
+  assert(suffix_pos != nullptr);
   my_stpcpy(suffix_pos, "CONNECT_ANSWER");
   if (!(event_connect_answer = OpenEvent(event_access_rights, false, tmp))) {
     error_allow = CR_SHARED_MEMORY_CONNECT_ANSWER_ERROR;
@@ -2230,8 +2227,8 @@ void mysql_read_default_options(struct st_mysql_options *options,
             break;
           case OPT_shared_memory_base_name:
 #if defined(_WIN32)
-            if (options->shared_memory_base_name != def_shared_memory_base_name)
-              my_free(options->shared_memory_base_name);
+            my_free(options->shared_memory_base_name);
+
             options->shared_memory_base_name =
                 my_strdup(key_memory_mysql_options, opt_arg, MYF(MY_WME));
 #endif
@@ -3196,7 +3193,8 @@ MYSQL *STDCALL mysql_init(MYSQL *mysql) {
 #endif
 
 #if defined(_WIN32)
-  mysql->options.shared_memory_base_name = (char *)def_shared_memory_base_name;
+  mysql->options.shared_memory_base_name = my_strdup(
+      key_memory_mysql_options, def_shared_memory_base_name, MYF(MY_WME));
 #endif
 
   mysql->options.report_data_truncation = true; /* default */
@@ -5981,7 +5979,14 @@ net_async_status STDCALL mysql_real_connect_nonblocking(
     ASYNC_DATA(mysql)->async_op_status = ASYNC_OP_CONNECT;
   }
 
-  status = ctx->state_function(ctx);
+  /*
+    Continue to loop When different state returns STATE_MACHINE_CONTINUE, which
+    means more work has to be done immediately and should not return to the
+    caller.
+  */
+  do {
+    status = ctx->state_function(ctx);
+  } while (status == STATE_MACHINE_CONTINUE);
 
   if (status == STATE_MACHINE_DONE) {
     my_free(ASYNC_DATA(mysql)->connect_context);
@@ -5999,6 +6004,11 @@ net_async_status STDCALL mysql_real_connect_nonblocking(
       mysql_close_free_options(mysql);
     return NET_ASYNC_ERROR;
   }
+  /*
+    State machine returned STATE_MACHINE_WOULD_BLOCK, thus expecting caller to
+    call this function again to continue with state machine once pending IO is
+    completed.
+  */
   return NET_ASYNC_NOT_READY;
 }
 /**
@@ -6117,7 +6127,7 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
       (!host || !strcmp(host, LOCAL_HOST))) {
     my_socket sock = socket(AF_UNIX, SOCK_STREAM, 0);
     DBUG_PRINT("info", ("Using socket"));
-    if (sock == SOCKET_ERROR) {
+    if (sock == INVALID_SOCKET) {
       set_mysql_extended_error(mysql, CR_SOCKET_CREATE_ERROR, unknown_sqlstate,
                                ER_CLIENT(CR_SOCKET_CREATE_ERROR), socket_errno);
       return STATE_MACHINE_FAILED;
@@ -6163,7 +6173,7 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
 #elif defined(_WIN32)
   if (!net->vio && (mysql->options.protocol == MYSQL_PROTOCOL_PIPE ||
                     (host && !strcmp(host, LOCAL_HOST_NAMEDPIPE)) ||
-                    (!have_tcpip && (unix_socket || !host && is_NT())))) {
+                    (!have_tcpip && (unix_socket || (!host && is_NT()))))) {
     hPipe = create_named_pipe(mysql, get_win32_connect_timeout(mysql), &host,
                               &unix_socket);
 
@@ -6190,7 +6200,7 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
                     mysql->options.protocol == MYSQL_PROTOCOL_TCP)) {
     struct addrinfo *res_lst, *client_bind_ai_lst = nullptr, hints, *t_res;
     char port_buf[NI_MAXSERV];
-    my_socket sock = SOCKET_ERROR;
+    my_socket sock = INVALID_SOCKET;
     int gai_errno, saved_error = 0, status = -1, bind_result = 0;
     uint flags = VIO_BUFFERED_READ;
 
@@ -6260,7 +6270,7 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
                   t_res->ai_family, t_res->ai_socktype, t_res->ai_protocol));
 
       sock = socket(t_res->ai_family, t_res->ai_socktype, t_res->ai_protocol);
-      if (sock == SOCKET_ERROR) {
+      if (sock == INVALID_SOCKET) {
         DBUG_PRINT("info", ("Socket created was invalid"));
         /* Try next address if there is one */
         saved_error = socket_errno;
@@ -6356,7 +6366,7 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
     freeaddrinfo(res_lst);
     if (client_bind_ai_lst) freeaddrinfo(client_bind_ai_lst);
 
-    if (sock == SOCKET_ERROR) {
+    if (sock == INVALID_SOCKET) {
       set_mysql_extended_error(mysql, CR_IPSOCK_ERROR, unknown_sqlstate,
                                ER_CLIENT(CR_IPSOCK_ERROR), saved_error);
       return STATE_MACHINE_FAILED;
@@ -6410,7 +6420,8 @@ static mysql_state_machine_status csm_wait_connect(mysql_async_connect *ctx) {
     timeout possible can be used to peek if connect() completed.
 
     If vio_io_wait() returns 0,
-    the socket never became writable and we'll return to caller.
+    the socket never became writable or there is timeout and we'll return
+    to caller.
     Otherwise, if vio_io_wait() returns 1, then one of two conditions
     exist:
 
@@ -6418,36 +6429,39 @@ static mysql_state_machine_status csm_wait_connect(mysql_async_connect *ctx) {
     2. The connection was set up successfully: getsockopt() will
        return 0 as an error.
   */
-  if (vio_io_wait(vio, VIO_IO_EVENT_CONNECT, timeout_ms) == 1) {
-    int error;
-    IF_WIN(int, socklen_t) optlen = sizeof(error);
-    IF_WIN(char, void) *optval = (IF_WIN(char, void) *)&error;
 
-    /*
-      At this point, we know that something happened on the socket.
-      But this does not means that everything is alright. The connect
-      might have failed. We need to retrieve the error code from the
-      socket layer. We must return success only if we are sure that
-      it was really a success. Otherwise we might prevent the caller
-      from trying another address to connect to.
-    */
-    DBUG_PRINT("info", ("Connect to '%s' completed", ctx->host));
-    ctx->state_function = csm_complete_connect;
-    if (!(ret = mysql_socket_getsockopt(vio->mysql_socket, SOL_SOCKET, SO_ERROR,
-                                        optval, &optlen))) {
+  int io_wait_ret = vio_io_wait(vio, VIO_IO_EVENT_CONNECT, timeout_ms);
+  if (io_wait_ret == 0) return STATE_MACHINE_WOULD_BLOCK;
+  if (io_wait_ret == -1) return STATE_MACHINE_FAILED;
+
+  int error;
+  IF_WIN(int, socklen_t) optlen = sizeof(error);
+  IF_WIN(char, void) *optval = (IF_WIN(char, void) *)&error;
+
+  /*
+    At this point, we know that something happened on the socket.
+    But this does not means that everything is alright. The connect
+    might have failed. We need to retrieve the error code from the
+    socket layer. We must return success only if we are sure that
+    it was really a success. Otherwise we might prevent the caller
+    from trying another address to connect to.
+  */
+  DBUG_PRINT("info", ("Connect to '%s' completed", ctx->host));
+  ctx->state_function = csm_complete_connect;
+  if (!(ret = mysql_socket_getsockopt(vio->mysql_socket, SOL_SOCKET, SO_ERROR,
+                                      optval, &optlen))) {
 #ifdef _WIN32
-      WSASetLastError(error);
+    WSASetLastError(error);
 #else
-      errno = error;
+    errno = error;
 #endif
-      if (error != 0) {
-        DBUG_PRINT("error",
-                   ("Got error %d on connect to '%s'", error, ctx->host));
-        set_mysql_extended_error(
-            ctx->mysql, CR_CONN_HOST_ERROR, unknown_sqlstate,
-            ER_CLIENT(CR_CONN_HOST_ERROR), ctx->host, ctx->port, error);
-        return STATE_MACHINE_FAILED;
-      }
+    if (error != 0) {
+      DBUG_PRINT("error",
+                 ("Got error %d on connect to '%s'", error, ctx->host));
+      set_mysql_extended_error(ctx->mysql, CR_CONN_HOST_ERROR, unknown_sqlstate,
+                               ER_CLIENT(CR_CONN_HOST_ERROR), ctx->host,
+                               ctx->port, error);
+      return STATE_MACHINE_FAILED;
     }
   }
   return STATE_MACHINE_CONTINUE;
@@ -7087,7 +7101,9 @@ int STDCALL mysql_binlog_fetch(MYSQL *mysql, MYSQL_RPL *rpl) {
     if (rpl->flags & MYSQL_RPL_SKIP_HEARTBEAT) {
       Log_event_type event_type =
           (Log_event_type)net->read_pos[1 + EVENT_TYPE_OFFSET];
-      if (event_type == binary_log::HEARTBEAT_LOG_EVENT) continue;
+      if ((event_type == binary_log::HEARTBEAT_LOG_EVENT) ||
+          (event_type == binary_log::HEARTBEAT_LOG_EVENT_V2))
+        continue;
     }
 
     rpl->buffer = net->read_pos;
@@ -7157,8 +7173,7 @@ void mysql_close_free_options(MYSQL *mysql) {
   }
   mysql_ssl_free(mysql);
 #if defined(_WIN32)
-  if (mysql->options.shared_memory_base_name != def_shared_memory_base_name)
-    my_free(mysql->options.shared_memory_base_name);
+  my_free(mysql->options.shared_memory_base_name);
 #endif /* _WIN32 */
   if (mysql->options.extension) {
     my_free(mysql->options.extension->plugin_dir);
@@ -8208,8 +8223,8 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
       break;
     case MYSQL_SHARED_MEMORY_BASE_NAME:
 #if defined(_WIN32)
-      if (mysql->options.shared_memory_base_name != def_shared_memory_base_name)
-        my_free(mysql->options.shared_memory_base_name);
+      my_free(mysql->options.shared_memory_base_name);
+
       mysql->options.shared_memory_base_name =
           my_strdup(key_memory_mysql_options, static_cast<const char *>(arg),
                     MYF(MY_WME));

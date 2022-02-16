@@ -53,17 +53,20 @@
 #include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_grant, check_access
-#include "sql/basic_row_iterators.h"
-#include "sql/binlog.h"  // mysql_bin_log
-#include "sql/composite_iterators.h"
-#include "sql/debug_sync.h"  // DEBUG_SYNC
-#include "sql/derror.h"      // ER_THD
-#include "sql/field.h"       // Field
-#include "sql/filesort.h"    // Filesort
+#include "sql/binlog.h"            // mysql_bin_log
+#include "sql/debug_sync.h"        // DEBUG_SYNC
+#include "sql/derror.h"            // ER_THD
+#include "sql/field.h"             // Field
+#include "sql/filesort.h"          // Filesort
 #include "sql/handler.h"
 #include "sql/item.h"            // Item
 #include "sql/item_json_func.h"  // Item_json_func
 #include "sql/item_subselect.h"  // Item_subselect
+#include "sql/iterators/basic_row_iterators.h"
+#include "sql/iterators/composite_iterators.h"
+#include "sql/iterators/row_iterator.h"
+#include "sql/iterators/sorting_iterator.h"
+#include "sql/iterators/timing_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/key.h"  // is_key_used
 #include "sql/key_spec.h"
@@ -80,11 +83,9 @@
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
 #include "sql/range_optimizer/partition_pruning.h"
-#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
-#include "sql/records.h"  // unique_ptr_destroy_only<RowIterator>
-#include "sql/row_iterator.h"
+#include "sql/range_optimizer/path_helpers.h"
+#include "sql/range_optimizer/range_optimizer.h"
 #include "sql/select_lex_visitor.h"
-#include "sql/sorting_iterator.h"
 #include "sql/sql_array.h"
 #include "sql/sql_base.h"  // check_record, fill_record
 #include "sql/sql_bitmap.h"
@@ -92,6 +93,7 @@
 #include "sql/sql_const.h"
 #include "sql/sql_data_change.h"
 #include "sql/sql_error.h"
+#include "sql/sql_executor.h"  // unique_ptr_destroy_only<RowIterator>
 #include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_opt_exec_shared.h"
@@ -106,7 +108,6 @@
 #include "sql/table_trigger_dispatcher.h"  // Table_trigger_dispatcher
 #include "sql/temp_table_param.h"
 #include "sql/thd_raii.h"
-#include "sql/timing_iterator.h"
 #include "sql/transaction_info.h"
 #include "sql/trigger_chain.h"
 #include "sql/trigger_def.h"
@@ -138,15 +139,50 @@ bool Sql_cmd_update::precheck(THD *thd) {
       */
       if (tr->is_derived() || tr->uses_materialization())
         tr->grant.privilege = SELECT_ACL;
-      else if ((check_access(thd, UPDATE_ACL, tr->db, &tr->grant.privilege,
-                             &tr->grant.m_internal, false, true) ||
-                check_grant(thd, UPDATE_ACL, tr, false, 1, true)) &&
-               (check_access(thd, SELECT_ACL, tr->db, &tr->grant.privilege,
-                             &tr->grant.m_internal, false, false) ||
-                check_grant(thd, SELECT_ACL, tr, false, 1, false)))
-        return true;
-    }
-  }
+      else {
+        auto chk = [&](long want_access) {
+          const bool ignore_errors = (want_access == UPDATE_ACL);
+          return check_access(thd, want_access, tr->db, &tr->grant.privilege,
+                              &tr->grant.m_internal, false, ignore_errors) ||
+                 check_grant(thd, want_access, tr, false, 1, ignore_errors);
+        };
+        if (chk(UPDATE_ACL)) {
+          // Verify that lock has not yet been acquired for request.
+          assert(tr->mdl_request.ticket == nullptr);
+          // If there is no UPDATE privilege on this table we want to avoid
+          // acquring SHARED_WRITE MDL. It is safe to change lock type to
+          // SHARE_READ in such a case, since attempts to update column in
+          // this table will be rejected by later column-level privilege
+          // check.
+          // If a prepared statement/stored procedure is re-executed after
+          // the tables and privileges have been modified such that the
+          // ps/sp will attempt to update the SR-locked table, a
+          // reprepare/recompilation will restore the mdl request to SW.
+          //
+          // There are two possible cases in which we could try to update the SR
+          // locked table, here, in theory:
+          //
+          // 1) There was no movement of columns between tables mentioned in
+          // UPDATE statement.
+          //    We didn't have privilege on the table which we try to update
+          //    before but i was granted. This case is not relevant for PS, as
+          //    in it we will get an error during prepare phase and no PS will
+          //    be created. For SP first execution of statement will fail during
+          //    prepare phase as well, however, SP will stay around, and the
+          //    second execution attempt will just cause another prepare.
+          // 2) Some columns has been moved between tables mentioned in UPDATE
+          // statement,
+          //    so the table which was read-only initially (and on which we
+          //    didn't have UPDATE privilege then, so it was SR-locked), now
+          //    needs to be updated. The change in table definition will be
+          //    detected at open_tables() time and cause re-prepare in this
+          //    case.
+          tr->mdl_request.type = MDL_SHARED_READ;
+          if (chk(SELECT_ACL)) return true;
+        }
+      }  // else
+    }    // for
+  }      // else
   return false;
 }
 
@@ -456,11 +492,11 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   table->mark_columns_needed_for_update(thd,
                                         false /*mark_binlog_columns=false*/);
 
-  QUICK_SELECT_I *quick = nullptr;
+  AccessPath *range_scan = nullptr;
   join_type type = JT_UNKNOWN;
 
-  auto cleanup = create_scope_guard([&quick, table] {
-    destroy(quick);
+  auto cleanup = create_scope_guard([&range_scan, table] {
+    destroy(range_scan);
     table->set_keyread(false);
     table->file->ha_index_or_rnd_end();
     free_io_cache(table);
@@ -484,7 +520,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
                     thd, thd->mem_root, &temp_mem_root, keys_to_use, 0, 0,
                     limit, safe_update, ORDER_NOT_RELEVANT, table,
                     /*skip_records_in_range=*/false, conds, &needed_reg_dummy,
-                    &quick, table->force_index, query_block) < 0;
+                    table->force_index, query_block, &range_scan) < 0;
       if (thd->is_error()) return true;
     }
     if (no_rows) {
@@ -536,11 +572,11 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   uint used_index;
   {
     ORDER_with_src order_src(order, ESC_ORDER_BY);
-    used_index = get_index_for_order(&order_src, table, limit, &quick,
+    used_index = get_index_for_order(&order_src, table, limit, range_scan,
                                      &need_sort, &reverse);
-    if (quick != nullptr) {
+    if (range_scan != nullptr) {
       // May have been changed by get_index_for_order().
-      type = calc_join_type(quick->get_type());
+      type = calc_join_type(range_scan);
     }
   }
   if (need_sort) {  // Assign table scan index to check below for modified key
@@ -550,13 +586,13 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   if (used_index != MAX_KEY) {  // Check if we are modifying a key that we are
                                 // used to search with:
     used_key_is_modified = is_key_used(table, used_index, table->write_set);
-  } else if (quick) {
+  } else if (range_scan) {
     /*
-      select->quick != NULL and used_index == MAX_KEY happens for index
+      select->range_scan != NULL and used_index == MAX_KEY happens for index
       merge and should be handled in a different way.
     */
-    used_key_is_modified =
-        (!quick->unique_key_range() && quick->is_keys_used(table->write_set));
+    used_key_is_modified = (!unique_key_range(range_scan) &&
+                            uses_index_on_fields(range_scan, table->write_set));
   }
 
   if (table->part_info)
@@ -580,8 +616,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
 
   {  // Start of scope for Modification_plan
     ha_rows rows;
-    if (quick)
-      rows = quick->records;
+    if (range_scan)
+      rows = range_scan->num_output_rows;
     else if (!conds && !need_sort && limit != HA_POS_ERROR)
       rows = limit;
     else {
@@ -589,7 +625,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
       rows = table->file->stats.records;
     }
     DEBUG_SYNC(thd, "before_single_update");
-    Modification_plan plan(thd, MT_UPDATE, table, type, quick, conds,
+    Modification_plan plan(thd, MT_UPDATE, table, type, range_scan, conds,
                            used_index, limit,
                            (!using_filesort && (used_key_is_modified || order)),
                            using_filesort, used_key_is_modified, rows);
@@ -617,7 +653,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         */
         JOIN join(thd, query_block);  // Only for holding examined_rows.
         AccessPath *path = create_table_access_path(
-            thd, table, quick, /*table_ref=*/nullptr,
+            thd, table, range_scan, /*table_ref=*/nullptr,
             /*position=*/nullptr, /*count_examined_rows=*/true);
 
         if (conds != nullptr) {
@@ -644,8 +680,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           Filesort has already found and selected the rows we want to update,
           so we don't need the where clause
         */
-        destroy(quick);
-        quick = nullptr;
+        destroy(range_scan);
+        range_scan = nullptr;
         conds = nullptr;
       } else {
         /*
@@ -679,8 +715,8 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         */
 
         AccessPath *path;
-        if (used_index == MAX_KEY || quick) {
-          path = create_table_access_path(thd, table, quick,
+        if (used_index == MAX_KEY || range_scan) {
+          path = create_table_access_path(thd, table, range_scan,
                                           /*table_ref=*/nullptr,
                                           /*position=*/nullptr,
                                           /*count_examined_rows=*/false);
@@ -768,19 +804,19 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         }
 
         iterator = NewIterator<SortFileIndirectIterator>(
-            thd, Mem_root_array<TABLE *>{table}, tempfile,
+            thd, thd->mem_root, Mem_root_array<TABLE *>{table}, tempfile,
             /*ignore_not_found_rows=*/false, /*has_null_flags=*/false,
             /*examined_rows=*/nullptr);
         if (iterator->Init()) return true;
 
-        destroy(quick);
-        quick = nullptr;
+        destroy(range_scan);
+        range_scan = nullptr;
         conds = nullptr;
       }
     } else {
       // No ORDER BY or updated key underway, so we can use a regular read.
       iterator =
-          init_table_iterator(thd, table, quick,
+          init_table_iterator(thd, table, range_scan,
                               /*table_ref=*/nullptr, /*position=*/nullptr,
                               /*ignore_not_found_rows=*/false,
                               /*count_examined_rows=*/false);
@@ -817,9 +853,9 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
     }
     if ((table->file->ha_table_flags() & HA_READ_BEFORE_WRITE_REMOVAL) &&
         !thd->lex->is_ignore() && !using_limit && !has_update_triggers &&
-        quick && quick->index != MAX_KEY &&
+        range_scan && ::used_index(range_scan) != MAX_KEY &&
         check_constant_expressions(*update_value_list))
-      read_removal = table->check_read_removal(quick->index);
+      read_removal = table->check_read_removal(::used_index(range_scan));
 
     // If the update is batched, we cannot do partial update, so turn it off.
     if (will_batch) table->cleanup_partial_update(); /* purecov: inspected */
@@ -1932,16 +1968,17 @@ static bool safe_update_on_fly(JOIN_TAB *join_tab, TABLE_LIST *table_ref,
       return !is_key_used(table, join_tab->ref().key, table->write_set);
     case JT_RANGE:
     case JT_INDEX_MERGE:
-      assert(join_tab->quick() != nullptr);
+      assert(join_tab->range_scan() != nullptr);
       // When scanning a range, it's possible to read a row twice if it moves
       // within the range:
-      if (join_tab->quick()->is_keys_used(table->write_set)) return false;
+      if (uses_index_on_fields(join_tab->range_scan(), table->write_set))
+        return false;
       // If the index access is using some secondary key(s), and if the table
       // has a clustered primary key, modifying that key might affect the
       // functioning of the the secondary key(s), so fall through to check that.
       [[fallthrough]];
     case JT_ALL:
-      assert(join_tab->type() != JT_ALL || join_tab->quick() == nullptr);
+      assert(join_tab->type() != JT_ALL || join_tab->range_scan() == nullptr);
       // If using the clustered key under the cover:
       if ((table->file->ha_table_flags() & HA_PRIMARY_KEY_IN_READ_INDEX) &&
           table->s->primary_key < MAX_KEY)
@@ -2275,6 +2312,7 @@ void Query_result_update::cleanup(THD *thd) {
   error_handled = false;
   found_rows = 0;
   updated_rows = 0;
+  unupdated_check_opt_tables.clear();
 }
 
 bool Query_result_update::send_data(THD *thd, const mem_root_deque<Item *> &) {

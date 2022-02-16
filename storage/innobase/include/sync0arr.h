@@ -33,7 +33,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef sync0arr_h
 #define sync0arr_h
 
-#include "os0thread.h"
 #include "univ.i"
 
 /** Synchronization wait array cell */
@@ -90,6 +89,8 @@ void sync_arr_wake_threads_if_sema_free();
 ibool sync_array_print_long_waits(
     std::thread::id *waiter, /*!< out: longest waiting thread */
     const void **sema);      /*!< out: longest-waited-for semaphore */
+
+void sync_array_detect_deadlock();
 
 /** Prints info of the wait array. */
 void sync_array_print(FILE *file); /*!< in: file where to print */

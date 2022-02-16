@@ -25,7 +25,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "mysql_session.h"
+#include "mysqlrouter/mysql_session.h"
 #include "mysqlxclient.h"
 #include "mysqlxclient/xerror.h"
 #include "mysqlxclient/xrow.h"
@@ -416,6 +416,7 @@ TEST_P(MockServerConnectOkTest, classic_protocol) {
 TEST_P(MockServerConnectOkTest, x_protocol) {
   auto mysql_server_mock_path = get_mysqlserver_mock_exec().str();
   auto bind_port = port_pool_.get_next_available();
+  auto other_bind_port = port_pool_.get_next_available();
   ASSERT_THAT(mysql_server_mock_path, ::testing::StrNe(""));
 
   std::map<std::string, std::string> config{
@@ -434,6 +435,12 @@ TEST_P(MockServerConnectOkTest, x_protocol) {
       cmdline_args.push_back(replace_placeholders(arg, config));
     }
   }
+
+  // set the classic port even though we don't use it.
+  // otherwise it defaults to bind to port 3306 which may lead to "Address
+  // already in use"
+  cmdline_args.emplace_back("--port");
+  cmdline_args.push_back(std::to_string(other_bind_port));
 
   cmdline_args.emplace_back("--xport");
   cmdline_args.push_back(std::to_string(bind_port));
@@ -971,12 +978,18 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
            replace_placeholders("@certdir@/crl-client-cert.pem", config),
            replace_placeholders("@certdir@/crl-client-key.pem", config));
 
-       sess.set_ssl_options(SSL_MODE_REQUIRED, "TLSv1.1",
-                            "",  //
-                            "",  //
-                            "",  //
-                            "",  //
-                            "");
+       // TLSv1.1 may be forbidden in libmysqlclient.
+       try {
+         sess.set_ssl_options(SSL_MODE_REQUIRED, "TLSv1.1",
+                              "",  //
+                              "",  //
+                              "",  //
+                              "",  //
+                              "");
+       } catch (const std::exception &e) {
+         // Error setting TLS_VERSION option for MySQL connection
+         GTEST_SKIP() << e.what();
+       }
 
        try {
          sess.connect(config.at("hostname"), atol(config.at("port").c_str()),
@@ -1049,6 +1062,7 @@ INSTANTIATE_TEST_CASE_P(Spec, MockServerConnectTest,
                         [](const auto &info) { return info.param.test_name; });
 
 int main(int argc, char *argv[]) {
+  net::impl::socket::init();
   ProcessManager::set_origin(Path(argv[0]).dirname());
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

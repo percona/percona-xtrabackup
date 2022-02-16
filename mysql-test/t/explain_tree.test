@@ -516,3 +516,66 @@ EXPLAIN FORMAT=tree
   SELECT 1 IN (SELECT 1 FROM t1) FROM t1 WHERE 1=2;
 
 DROP TABLE t1;
+
+#
+# Demonstrates printing an index range scan with too many ranges to print
+# (more than three). The pushed index condition is redundant.
+#
+
+CREATE TABLE t1 (pk INTEGER NOT NULL, a INTEGER, b INTEGER, KEY (a), KEY (b), PRIMARY KEY (pk));
+ANALYZE TABLE t1;
+
+EXPLAIN FORMAT=tree
+  SELECT * FROM t1 WHERE a IN (2,4,6,8,10);
+
+#
+# EXPLAIN ANALYZE on an IndexMergeIterator. Also demonstrates printing of
+# scanning over clustered primary keys. (The filter is redundant.)
+#
+
+--replace_regex /time=\d+\.\d+\.\.\d+\.\d+/time=N.NNN..N.NNN/
+EXPLAIN ANALYZE
+  SELECT /*+ INDEX_MERGE(t1) */ * FROM t1 WHERE pk > 1 OR a > 2 OR b > 3;
+
+DROP TABLE t1;
+
+#
+# Demonstrates printing index skip scan.
+#
+
+CREATE TABLE t1 (a INTEGER, b INTEGER, c INTEGER, d INTEGER, e INTEGER, KEY idx1 (a,b,c,d,e));
+ANALYZE TABLE t1;
+
+EXPLAIN FORMAT=tree
+  SELECT /*+ SKIP_SCAN(t1) */ * FROM t1 WHERE a IN (2,4,6,8,10) AND b=5 AND e BETWEEN 100 AND 200;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#33343948: Multi-valued index ranges are printed as binary
+--echo #
+
+# Demonstrates printing of range scans over an index on a string
+# column with a binary collation. Range values used to be printed as a
+# hex strings.
+
+CREATE TABLE t(a VARCHAR(10) COLLATE utf8mb4_0900_bin, KEY (a));
+INSERT INTO t VALUES ('abc'), ('def'), ('ghi');
+ANALYZE TABLE t;
+EXPLAIN FORMAT=tree SELECT * FROM t WHERE a > 'abc' AND a < 'ghi';
+# Also verify that special characters are escaped.
+EXPLAIN FORMAT=tree
+SELECT * FROM t WHERE a > 'abc''def' AND a < CONCAT('z', UNHEX('090A1A5C0D'));
+DROP TABLE t;
+
+--echo #
+--echo # Bug#33364732: Preliminary fixes for WL#14673
+--echo #
+
+# Demonstrates printing of DELETE with an impossible WHERE clause.
+
+CREATE TABLE t(x INTEGER);
+INSERT INTO t VALUES (1), (2), (3);
+ANALYZE TABLE t;
+EXPLAIN FORMAT=TREE DELETE t FROM t WHERE 0=1;
+DROP TABLE t;

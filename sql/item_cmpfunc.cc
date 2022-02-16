@@ -95,6 +95,8 @@ using std::min;
 static bool convert_constant_item(THD *, Item_field *, Item **, bool *);
 static longlong get_year_value(THD *thd, Item ***item_arg, Item **cache_arg,
                                const Item *warn_item, bool *is_null);
+static Item **cache_converted_constant(THD *thd, Item **value,
+                                       Item **cache_item, Item_result type);
 
 /**
   Compare row signature of two expressions
@@ -1110,6 +1112,11 @@ static longlong get_time_value(THD *, Item ***item_arg, Item **, const Item *,
 /**
   Sets compare functions for various datatypes.
 
+  It additionally sets up Item_cache objects for caching any constant values
+  that need conversion to a type compatible with the comparator type, to avoid
+  the need for performing the conversion again each time the comparator is
+  invoked.
+
   NOTE
     The result type of a comparison is chosen by item_cmp_type().
     Here we override the chosen result type for certain expression
@@ -1448,9 +1455,8 @@ bool Arg_comparator::try_year_cmp_func(Item_result type) {
   @return cache item or original value.
 */
 
-Item **Arg_comparator::cache_converted_constant(THD *thd, Item **value,
-                                                Item **cache_item,
-                                                Item_result type) {
+static Item **cache_converted_constant(THD *thd, Item **value,
+                                       Item **cache_item, Item_result type) {
   // Don't need cache if doing context analysis only.
   if (!(thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW) &&
       (*value)->const_for_execution() && type != (*value)->result_type()) {
@@ -2561,6 +2567,13 @@ float Item_func_lt::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table) {
+  // 0 < MATCH(...) is the same as just MATCH(...), so reuse its selectivity.
+  if (is_function_of_type(args[1], Item_func::FT_FUNC) &&
+      args[0]->const_item() && args[0]->val_real() == 0.0) {
+    return args[1]->get_filtering_effect(thd, filter_for_table, read_tables,
+                                         fields_to_ignore, rows_in_table);
+  }
+
   const Item_field *fld =
       contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld) return COND_FILTER_ALLPASS;
@@ -2597,6 +2610,13 @@ float Item_func_gt::get_filtering_effect(THD *thd, table_map filter_for_table,
                                          table_map read_tables,
                                          const MY_BITMAP *fields_to_ignore,
                                          double rows_in_table) {
+  // MATCH(...) > 0 is the same as just MATCH(...), so reuse its selectivity.
+  if (is_function_of_type(args[0], Item_func::FT_FUNC) &&
+      args[1]->const_item() && args[1]->val_real() == 0.0) {
+    return args[0]->get_filtering_effect(thd, filter_for_table, read_tables,
+                                         fields_to_ignore, rows_in_table);
+  }
+
   const Item_field *fld =
       contributes_to_filter(read_tables, filter_for_table, fields_to_ignore);
   if (!fld) return COND_FILTER_ALLPASS;
@@ -5372,8 +5392,7 @@ Item *make_condition(Parse_context *pc, Item *item) {
   assert(!item->is_bool_func());
 
   Item *predicate;
-  if (item->type() != Item::FUNC_ITEM ||
-      down_cast<Item_func *>(item)->functype() != Item_func::FT_FUNC) {
+  if (!is_function_of_type(item, Item_func::FT_FUNC)) {
     Item *const item_zero = new (pc->mem_root) Item_int(0);
     if (item_zero == nullptr) return nullptr;
     predicate = new (pc->mem_root) Item_func_ne(item_zero, item);
@@ -7699,15 +7718,20 @@ HashJoinCondition::HashJoinCondition(Item_func_eq *join_condition,
                                  m_right_extractor->max_char_length())) {
   m_store_full_sort_key = true;
 
-  if (join_condition->compare_type() == STRING_RESULT ||
-      join_condition->compare_type() == ROW_RESULT) {
+  const bool using_secondary_storage_engine =
+      (current_thd->lex->m_sql_cmd != nullptr &&
+       current_thd->lex->m_sql_cmd->using_secondary_storage_engine());
+  if ((join_condition->compare_type() == STRING_RESULT ||
+       join_condition->compare_type() == ROW_RESULT) &&
+      !using_secondary_storage_engine) {
     const CHARSET_INFO *cs = join_condition->compare_collation();
     if (cs->coll->strnxfrmlen(cs, cs->mbmaxlen * m_max_character_length) >
         1024) {
       // This field can potentially get very long keys; it is better to
       // just store the hash, and then re-check the condition afterwards.
       // The value of 1024 is fairly arbitrary, and may be changed in the
-      // future.
+      // future. We don't do this for secondary engines; how they wish
+      // to do their hash joins will be an internal implementation detail.
       m_store_full_sort_key = false;
     }
   }

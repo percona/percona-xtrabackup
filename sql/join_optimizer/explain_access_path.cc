@@ -22,19 +22,23 @@
 
 #include "sql/join_optimizer/access_path.h"
 
-#include "sql/basic_row_iterators.h"
-#include "sql/bka_iterator.h"
-#include "sql/composite_iterators.h"
 #include "sql/filesort.h"
-#include "sql/hash_join_iterator.h"
 #include "sql/item_sum.h"
+#include "sql/iterators/basic_row_iterators.h"
+#include "sql/iterators/bka_iterator.h"
+#include "sql/iterators/composite_iterators.h"
+#include "sql/iterators/hash_join_iterator.h"
+#include "sql/iterators/ref_row_iterators.h"
+#include "sql/iterators/sorting_iterator.h"
+#include "sql/iterators/timing_iterator.h"
+#include "sql/join_optimizer/print_utils.h"
 #include "sql/join_optimizer/relational_expression.h"
+#include "sql/range_optimizer/group_index_skip_scan_plan.h"
+#include "sql/range_optimizer/index_skip_scan_plan.h"
+#include "sql/range_optimizer/internal.h"
 #include "sql/range_optimizer/range_optimizer.h"
-#include "sql/ref_row_iterators.h"
-#include "sql/sorting_iterator.h"
 #include "sql/sql_optimizer.h"
 #include "sql/table.h"
-#include "sql/timing_iterator.h"
 
 #include <functional>
 #include <string>
@@ -43,6 +47,9 @@
 using std::function;
 using std::string;
 using std::vector;
+
+static string PrintRanges(const QUICK_RANGE *const *ranges, unsigned num_ranges,
+                          const KEY_PART_INFO *key_part, bool single_part_only);
 
 struct ExplainData {
   /**
@@ -304,6 +311,115 @@ static void ExplainMaterializeAccessPath(const AccessPath *path, JOIN *join,
   }
 }
 
+static void ExplainIndexSkipScanAccessPath(const AccessPath *path,
+                                           JOIN *join [[maybe_unused]],
+                                           vector<string> *description,
+                                           vector<ExplainData::Child> *children
+                                           [[maybe_unused]]) {
+  TABLE *table = path->index_skip_scan().table;
+  KEY *key_info = table->key_info + path->index_skip_scan().index;
+
+  // NOTE: Currently, index skip scan is always covering, but there's no
+  // good reason why we cannot fix this limitation in the future.
+  string ret = string(table->key_read ? "Covering index skip scan on "
+                                      : "Index skip scan on ") +
+               table->alias + " using " + key_info->name + " over ";
+  IndexSkipScanParameters *param = path->index_skip_scan().param;
+
+  // Print out any equality ranges.
+  bool first = true;
+  for (unsigned key_part_idx = 0; key_part_idx < param->eq_prefix_key_parts;
+       ++key_part_idx) {
+    if (!first) {
+      ret += ", ";
+    }
+    first = false;
+
+    ret += param->index_info->key_part[key_part_idx].field->field_name;
+    Bounds_checked_array<unsigned char *> prefixes =
+        param->eq_prefixes[key_part_idx].eq_key_prefixes;
+    if (prefixes.size() == 1) {
+      ret += " = ";
+      String out;
+      print_key_value(&out, &param->index_info->key_part[key_part_idx],
+                      prefixes[0]);
+      ret += to_string(out);
+    } else {
+      ret += " IN (";
+      for (unsigned i = 0; i < prefixes.size(); ++i) {
+        if (i == 2 && prefixes.size() > 3) {
+          ret += StringPrintf(", (%zu more)", prefixes.size() - 2);
+          break;
+        } else if (i != 0) {
+          ret += ", ";
+        }
+        String out;
+        print_key_value(&out, &param->index_info->key_part[key_part_idx],
+                        prefixes[i]);
+        ret += to_string(out);
+      }
+      ret += ")";
+    }
+  }
+
+  // Then the ranges.
+  if (!first) {
+    ret += ", ";
+  }
+  String out;
+  append_range(&out, param->range_key_part, param->min_range_key,
+               param->max_range_key, param->range_cond_flag);
+  ret += to_string(out);
+
+  description->push_back(ret);
+}
+
+static void ExplainGroupIndexSkipScanAccessPath(
+    const AccessPath *path, JOIN *join [[maybe_unused]],
+    vector<string> *description,
+    vector<ExplainData::Child> *children [[maybe_unused]]) {
+  TABLE *table = path->group_index_skip_scan().table;
+  KEY *key_info = table->key_info + path->group_index_skip_scan().index;
+  GroupIndexSkipScanParameters *param = path->group_index_skip_scan().param;
+
+  // NOTE: Currently, group index skip scan is always covering, but there's no
+  // good reason why we cannot fix this limitation in the future.
+  string ret;
+  if (param->min_max_arg_part != nullptr) {
+    ret = string(table->key_read ? "Covering index skip scan for grouping on "
+                                 : "Index skip scan for grouping on ") +
+          table->alias + " using " + key_info->name;
+  } else {
+    ret = string(table->key_read
+                     ? "Covering index skip scan for deduplication on "
+                     : "Index skip scan for deduplication on ") +
+          table->alias + " using " + key_info->name;
+  }
+
+  // Print out prefix ranges, if any.
+  if (!param->prefix_ranges.empty()) {
+    ret += " over ";
+    ret += PrintRanges(param->prefix_ranges.data(), param->prefix_ranges.size(),
+                       key_info->key_part, /*single_part_only=*/false);
+  }
+
+  // Print out the ranges on the MIN/MAX keypart, if we have them.
+  // (We don't print infix ranges, because they seem to be in an unusual
+  // format.)
+  if (!param->min_max_ranges.empty()) {
+    if (param->prefix_ranges.empty()) {
+      ret += " over ";
+    } else {
+      ret += ", ";
+    }
+    ret += PrintRanges(param->min_max_ranges.data(),
+                       param->min_max_ranges.size(), param->min_max_arg_part,
+                       /*single_part_only=*/true);
+  }
+
+  description->push_back(ret);
+}
+
 static void AddChildrenFromPushedCondition(
     const TABLE *table, vector<ExplainData::Child> *children) {
   /*
@@ -319,6 +435,35 @@ static void AddChildrenFromPushedCondition(
   if (pushed_cond != nullptr) {
     GetAccessPathsFromItem(pushed_cond, "pushed condition", children);
   }
+}
+
+static string PrintRanges(const QUICK_RANGE *const *ranges, unsigned num_ranges,
+                          const KEY_PART_INFO *key_part,
+                          bool single_part_only) {
+  string ret;
+  for (unsigned range_idx = 0; range_idx < num_ranges; ++range_idx) {
+    if (range_idx == 2 && num_ranges > 3) {
+      char str[256];
+      snprintf(str, sizeof(str), " OR (%u more)", num_ranges - 2);
+      ret += str;
+      break;
+    } else if (range_idx > 0) {
+      ret += " OR ";
+    }
+    String str;
+    if (single_part_only) {
+      // key_part is the part we are printing on,
+      // and we have to ignore min_keypart_map / max_keypart_map,
+      // so we cannot use append_range_to_string().
+      append_range(&str, key_part, ranges[range_idx]->min_key,
+                   ranges[range_idx]->max_key, ranges[range_idx]->flag);
+    } else {
+      // NOTE: key_part is the first keypart in the key.
+      append_range_to_string(ranges[range_idx], key_part, &str);
+    }
+    ret += "(" + to_string(str) + ")";
+  }
+  return ret;
 }
 
 ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
@@ -465,14 +610,14 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       AddChildrenFromPushedCondition(path->follow_tail().table, &children);
       break;
     case AccessPath::INDEX_RANGE_SCAN: {
-      TABLE *table = path->index_range_scan().table;
-      // TODO(sgunders): Convert QUICK_SELECT_I to RowIterator so that we can
-      // get better outputs here (similar to dbug_dump()).
-      String str;
-      path->index_range_scan().quick->add_info_string(&str);
+      const auto &param = path->index_range_scan();
+      TABLE *table = param.used_key_part[0].field->table;
+      KEY *key_info = table->key_info + param.index;
       string ret = string(table->key_read ? "Covering index range scan on "
                                           : "Index range scan on ") +
-                   table->alias + " using " + to_string(str);
+                   table->alias + " using " + key_info->name + " over ";
+      ret += PrintRanges(param.ranges, param.num_ranges, key_info->key_part,
+                         /*single_part_only=*/false);
       if (table->file->pushed_idx_cond != nullptr) {
         ret += ", with index condition: " +
                ItemToString(table->file->pushed_idx_cond);
@@ -482,11 +627,44 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
       AddChildrenFromPushedCondition(table, &children);
       break;
     }
+    case AccessPath::INDEX_MERGE: {
+      const auto &param = path->index_merge();
+      description.push_back("Sort-deduplicate by row ID");
+      for (AccessPath *child : *path->index_merge().children) {
+        if (param.table->file->primary_key_is_clustered() &&
+            child->index_range_scan().index == param.table->s->primary_key) {
+          children.push_back(
+              {child, "Clustered primary key (scanned separately)"});
+        } else {
+          children.push_back({child});
+        }
+      }
+      break;
+    }
+    case AccessPath::ROWID_INTERSECTION: {
+      description.push_back("Intersect rows sorted by row ID");
+      for (AccessPath *child : *path->rowid_intersection().children) {
+        children.push_back({child});
+      }
+      break;
+    }
+    case AccessPath::ROWID_UNION: {
+      description.push_back("Deduplicate rows sorted by row ID");
+      for (AccessPath *child : *path->rowid_union().children) {
+        children.push_back({child});
+      }
+      break;
+    }
+    case AccessPath::INDEX_SKIP_SCAN: {
+      ExplainIndexSkipScanAccessPath(path, join, &description, &children);
+      break;
+    }
+    case AccessPath::GROUP_INDEX_SKIP_SCAN: {
+      ExplainGroupIndexSkipScanAccessPath(path, join, &description, &children);
+      break;
+    }
     case AccessPath::DYNAMIC_INDEX_RANGE_SCAN: {
       TABLE *table = path->dynamic_index_range_scan().table;
-      // TODO(sgunders): Convert QUICK_SELECT_I to RowIterator so that we can
-      // get better outputs here (similar to dbug_dump()), although it might get
-      // tricky when there are many alternatives.
       string str = string(table->key_read ? "Covering index range scan on "
                                           : "Index range scan on ") +
                    table->alias + " (re-planned for each iteration)";
@@ -822,6 +1000,26 @@ ExplainData ExplainAccessPath(const AccessPath *path, JOIN *join) {
           path->cache_invalidator().name + ")");
       children.push_back({path->cache_invalidator().child});
       break;
+    case AccessPath::DELETE_ROWS: {
+      string tables;
+      for (TABLE_LIST *t = join->query_block->leaf_tables; t != nullptr;
+           t = t->next_leaf) {
+        if (Overlaps(t->map(), path->delete_rows().tables_to_delete_from)) {
+          if (!tables.empty()) {
+            tables.append(", ");
+          }
+          tables.append(t->alias);
+          if (Overlaps(t->map(), path->delete_rows().immediate_tables)) {
+            tables.append(" (immediate)");
+          } else {
+            tables.append(" (buffered)");
+          }
+        }
+      }
+      description.push_back(string("Delete from ") + tables);
+      children.push_back({path->delete_rows().child});
+      break;
+    }
   }
   if (path->num_output_rows >= 0.0) {
     double first_row_cost;

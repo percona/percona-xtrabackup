@@ -586,7 +586,7 @@ bool Sql_cmd_show_processlist::execute_inner(THD *thd) {
                           thd->security_context()->check_access(PROCESS_ACL)
                               ? NullS
                               : thd->security_context()->priv_user().str,
-                          m_verbose);
+                          m_verbose, true);
     return false;
   }
 }
@@ -633,7 +633,7 @@ bool Sql_cmd_show_replicas::check_privileges(THD *thd) {
 }
 
 bool Sql_cmd_show_replicas::execute_inner(THD *thd) {
-  return show_slave_hosts(thd);
+  return show_replicas(thd);
 }
 
 bool Sql_cmd_show_replica_status::check_privileges(THD *thd) {
@@ -1263,7 +1263,8 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
     db_access = DB_OP_ACLS;
   else {
     if (sctx->get_active_roles()->size() > 0 && dbname != nullptr) {
-      db_access = sctx->db_acl({dbname, strlen(dbname)});
+      db_access = (sctx->db_acl({dbname, strlen(dbname)}) |
+                   sctx->master_access(dbname ? dbname : ""));
     } else {
       db_access = (acl_get(thd, sctx->host().str, sctx->ip().str,
                            sctx->priv_user().str, dbname, false) |
@@ -2693,50 +2694,59 @@ class List_process_list : public Do_THD_Impl {
 
   void operator()(THD *inspect_thd) override {
     DBUG_TRACE;
-    Security_context *inspect_sctx = inspect_thd->security_context();
-    LEX_CSTRING inspect_sctx_user = inspect_sctx->user();
-    LEX_CSTRING inspect_sctx_host = inspect_sctx->host();
-    LEX_CSTRING inspect_sctx_host_or_ip = inspect_sctx->host_or_ip();
+
+    thread_info *thd_info = nullptr;
 
     {
-      MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
-      if ((!(inspect_thd->get_protocol() &&
-             inspect_thd->get_protocol()->connection_alive()) &&
-           !inspect_thd->system_thread) ||
-          (m_user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
-                      strcmp(inspect_sctx_user.str, m_user)))) {
-        return;
+      MUTEX_LOCK(grd_secctx, &inspect_thd->LOCK_thd_security_ctx);
+
+      Security_context *inspect_sctx = inspect_thd->security_context();
+
+      LEX_CSTRING inspect_sctx_user = inspect_sctx->user();
+      LEX_CSTRING inspect_sctx_host = inspect_sctx->host();
+      LEX_CSTRING inspect_sctx_host_or_ip = inspect_sctx->host_or_ip();
+
+      {
+        MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
+
+        if ((!(inspect_thd->get_protocol() &&
+               inspect_thd->get_protocol()->connection_alive()) &&
+             !inspect_thd->system_thread) ||
+            (m_user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
+                        strcmp(inspect_sctx_user.str, m_user)))) {
+          return;
+        }
       }
-    }
 
-    thread_info *thd_info = new (m_client_thd->mem_root) thread_info;
+      thd_info = new (m_client_thd->mem_root) thread_info;
 
-    /* ID */
-    thd_info->thread_id = inspect_thd->thread_id();
+      /* ID */
+      thd_info->thread_id = inspect_thd->thread_id();
 
-    /* USER */
-    if (inspect_sctx_user.str)
-      thd_info->user = m_client_thd->mem_strdup(inspect_sctx_user.str);
-    else if (inspect_thd->system_thread)
-      thd_info->user = "system user";
-    else
-      thd_info->user = "unauthenticated user";
+      /* USER */
+      if (inspect_sctx_user.str)
+        thd_info->user = m_client_thd->mem_strdup(inspect_sctx_user.str);
+      else if (inspect_thd->system_thread)
+        thd_info->user = "system user";
+      else
+        thd_info->user = "unauthenticated user";
 
-    /* HOST */
-    if (inspect_thd->peer_port &&
-        (inspect_sctx_host.length || inspect_sctx->ip().length) &&
-        m_client_thd->security_context()->host_or_ip().str[0]) {
-      char *host =
-          static_cast<char *>(m_client_thd->alloc(HOST_AND_PORT_LENGTH));
-      if (host)
-        snprintf(host, HOST_AND_PORT_LENGTH, "%s:%u",
-                 inspect_sctx_host_or_ip.str, inspect_thd->peer_port);
-      thd_info->host = host;
-    } else
-      thd_info->host = m_client_thd->mem_strdup(
-          inspect_sctx_host_or_ip.str[0]
-              ? inspect_sctx_host_or_ip.str
-              : inspect_sctx_host.length ? inspect_sctx_host.str : "");
+      /* HOST */
+      if (inspect_thd->peer_port &&
+          (inspect_sctx_host.length || inspect_sctx->ip().length) &&
+          m_client_thd->security_context()->host_or_ip().str[0]) {
+        char *host =
+            static_cast<char *>(m_client_thd->alloc(HOST_AND_PORT_LENGTH + 1));
+        if (host)
+          snprintf(host, HOST_AND_PORT_LENGTH + 1, "%s:%u",
+                   inspect_sctx_host_or_ip.str, inspect_thd->peer_port);
+        thd_info->host = host;
+      } else
+        thd_info->host = m_client_thd->mem_strdup(
+            inspect_sctx_host_or_ip.str[0]
+                ? inspect_sctx_host_or_ip.str
+                : inspect_sctx_host.length ? inspect_sctx_host.str : "");
+    }  // We've copied the security context, so release the lock.
 
     DBUG_EXECUTE_IF("processlist_acquiring_dump_threads_LOCK_thd_data", {
       if (inspect_thd->get_command() == COM_BINLOG_DUMP ||
@@ -2811,7 +2821,19 @@ class List_process_list : public Do_THD_Impl {
   }
 };
 
-void mysqld_list_processes(THD *thd, const char *user, bool verbose) {
+/**
+  List running processes (actually connected sessions).
+
+  @param thd        thread handle.
+  @param user
+  @param verbose    if false, limit output to PROCESS_LIST_WIDTH characters.
+  @param has_cursor if true, called from a command object that handles
+                    terminatation of sending to client, otherwise terminate
+                    explicitly with my_eof() call.
+*/
+
+void mysqld_list_processes(THD *thd, const char *user, bool verbose,
+                           bool has_cursor) {
   Item *field;
   mem_root_deque<Item *> field_list(thd->mem_root);
   Thread_info_array thread_infos(thd->mem_root);
@@ -2869,7 +2891,16 @@ void mysqld_list_processes(THD *thd, const char *user, bool verbose) {
                     thd_info->query_string.charset());
     if (protocol->end_row()) break; /* purecov: inspected */
   }
-  if (thd->lex->query_block != nullptr)
+  /*
+    "show" commands that are implemented as subclass of Sql_cmd_show_noplan
+    usually call my_eof() directly, as they don't have a cursor implementation.
+    However, SHOW PROCESSLIST has one implementation using PFS that uses
+    a regular join plan, and another that calls this function, so inherits
+    from Sql_cmd_show.
+    The following code is necessary to prevent my_eof() from being called twice
+    when this function is called as part of Sql_cmd execution.
+  */
+  if (has_cursor)
     thd->lex->unit->query_result()->send_eof(thd);
   else
     my_eof(thd);
@@ -2897,59 +2928,69 @@ class Fill_process_list : public Do_THD_Impl {
 
   void operator()(THD *inspect_thd) override {
     DBUG_TRACE;
-    Security_context *inspect_sctx = inspect_thd->security_context();
-    LEX_CSTRING inspect_sctx_user = inspect_sctx->user();
-    LEX_CSTRING inspect_sctx_host = inspect_sctx->host();
-    LEX_CSTRING inspect_sctx_host_or_ip = inspect_sctx->host_or_ip();
-    const char *client_priv_user =
-        m_client_thd->security_context()->priv_user().str;
-    const char *user =
-        m_client_thd->security_context()->check_access(PROCESS_ACL)
-            ? NullS
-            : client_priv_user;
+
+    TABLE *table;
+    const char *val = nullptr;
 
     {
-      MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
-      if ((!inspect_thd->get_protocol()->connection_alive() &&
-           !inspect_thd->system_thread) ||
-          (user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
-                    strcmp(inspect_sctx_user.str, user))))
-        return;
-    }
-    DBUG_EXECUTE_IF(
-        "test_fill_proc_with_x_root",
-        if (0 == strcmp(inspect_sctx_user.str, "x_root")) {
-          DEBUG_SYNC(m_client_thd, "fill_proc_list_with_x_root");
-        });
+      MUTEX_LOCK(grd_secctx, &inspect_thd->LOCK_thd_security_ctx);
 
-    TABLE *table = m_tables->table;
-    restore_record(table, s->default_values);
+      Security_context *inspect_sctx = inspect_thd->security_context();
 
-    /* ID */
-    table->field[0]->store((ulonglong)inspect_thd->thread_id(), true);
+      LEX_CSTRING inspect_sctx_user = inspect_sctx->user();
+      LEX_CSTRING inspect_sctx_host = inspect_sctx->host();
+      LEX_CSTRING inspect_sctx_host_or_ip = inspect_sctx->host_or_ip();
 
-    /* USER */
-    const char *val = nullptr;
-    if (inspect_sctx_user.str)
-      val = inspect_sctx_user.str;
-    else if (inspect_thd->system_thread)
-      val = "system user";
-    else
-      val = "unauthenticated user";
-    table->field[1]->store(val, strlen(val), system_charset_info);
+      const char *client_priv_user =
+          m_client_thd->security_context()->priv_user().str;
+      const char *user =
+          m_client_thd->security_context()->check_access(PROCESS_ACL)
+              ? NullS
+              : client_priv_user;
 
-    /* HOST */
-    if (inspect_thd->peer_port &&
-        (inspect_sctx_host.length || inspect_sctx->ip().length) &&
-        m_client_thd->security_context()->host_or_ip().str[0]) {
-      char host[HOST_AND_PORT_LENGTH];
-      snprintf(host, HOST_AND_PORT_LENGTH, "%s:%u", inspect_sctx_host_or_ip.str,
-               inspect_thd->peer_port);
-      table->field[2]->store(host, strlen(host), system_charset_info);
-    } else
-      table->field[2]->store(inspect_sctx_host_or_ip.str,
-                             inspect_sctx_host_or_ip.length,
-                             system_charset_info);
+      {
+        MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
+        if ((!inspect_thd->get_protocol()->connection_alive() &&
+             !inspect_thd->system_thread) ||
+            (user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
+                      strcmp(inspect_sctx_user.str, user))))
+          return;
+      }
+
+      DBUG_EXECUTE_IF(
+          "test_fill_proc_with_x_root",
+          if (0 == strcmp(inspect_sctx_user.str, "x_root")) {
+            DEBUG_SYNC(m_client_thd, "fill_proc_list_with_x_root");
+          });
+
+      table = m_tables->table;
+      restore_record(table, s->default_values);
+
+      /* ID */
+      table->field[0]->store((ulonglong)inspect_thd->thread_id(), true);
+
+      /* USER */
+      if (inspect_sctx_user.str)
+        val = inspect_sctx_user.str;
+      else if (inspect_thd->system_thread)
+        val = "system user";
+      else
+        val = "unauthenticated user";
+      table->field[1]->store(val, strlen(val), system_charset_info);
+
+      /* HOST */
+      if (inspect_thd->peer_port &&
+          (inspect_sctx_host.length || inspect_sctx->ip().length) &&
+          m_client_thd->security_context()->host_or_ip().str[0]) {
+        char host[HOST_AND_PORT_LENGTH + 1];
+        snprintf(host, HOST_AND_PORT_LENGTH + 1, "%s:%u",
+                 inspect_sctx_host_or_ip.str, inspect_thd->peer_port);
+        table->field[2]->store(host, strlen(host), system_charset_info);
+      } else
+        table->field[2]->store(inspect_sctx_host_or_ip.str,
+                               inspect_sctx_host_or_ip.length,
+                               system_charset_info);
+    }  // We've copied the security context, so release the lock.
 
     DBUG_EXECUTE_IF("processlist_acquiring_dump_threads_LOCK_thd_data", {
       if (inspect_thd->get_command() == COM_BINLOG_DUMP ||
@@ -2957,6 +2998,7 @@ class Fill_process_list : public Do_THD_Impl {
         DEBUG_SYNC(m_client_thd,
                    "processlist_after_LOCK_thd_list_before_LOCK_thd_data");
     });
+
     /* DB */
     mysql_mutex_lock(&inspect_thd->LOCK_thd_data);
     const char *db = inspect_thd->db().str;
@@ -4769,7 +4811,7 @@ ST_FIELD_INFO open_tables_fields_info[] = {
 ST_FIELD_INFO processlist_fields_info[] = {
     {"ID", 21, MYSQL_TYPE_LONGLONG, 0, MY_I_S_UNSIGNED, "Id", 0},
     {"USER", USERNAME_CHAR_LENGTH, MYSQL_TYPE_STRING, 0, 0, "User", 0},
-    {"HOST", HOST_AND_PORT_LENGTH - 1, MYSQL_TYPE_STRING, 0, 0, "Host", 0},
+    {"HOST", HOST_AND_PORT_LENGTH, MYSQL_TYPE_STRING, 0, 0, "Host", 0},
     {"DB", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 1, "Db", 0},
     {"COMMAND", 16, MYSQL_TYPE_STRING, 0, 0, "Command", 0},
     {"TIME", 7, MYSQL_TYPE_LONG, 0, 0, "Time", 0},

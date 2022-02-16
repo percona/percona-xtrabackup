@@ -52,6 +52,7 @@ ADD_SUBDIRECTORY(plugins)
 SET(TEST_MODULE harness)
 
 SET(TESTS
+  test_access_rights.cc
   test_utility_string.cc
   test_loader.cc
   test_loader_lifecycle.cc
@@ -121,13 +122,14 @@ ENDFOREACH()
 ADD_GOOGLETEST_FILE(test_net_ts_local.cc
   MODULE ${TEST_MODULE}
   LIB_DEPENDS harness_net_ts
-  # TmpDir
+  # TempDirectory
   LIB_DEPENDS test-helpers
   )
 
 SET(TESTS
   test_stdx_bit.cc
   test_stdx_expected.cc
+  test_stdx_flags.cc
   test_stdx_monitor.cc
   test_stdx_io_file_handle.cc
 )
@@ -167,3 +169,7 @@ ADD_DEPENDENCIES(mysqlrouter_all net_ts_accept)
 MYSQL_ADD_EXECUTABLE(net_ts_forward net_ts_forward.cc SKIP_INSTALL)
 TARGET_LINK_LIBRARIES(net_ts_forward harness_net_ts)
 ADD_DEPENDENCIES(mysqlrouter_all net_ts_forward)
+
+MYSQL_ADD_EXECUTABLE(acl_cli acl_cli.cc SKIP_INSTALL)
+TARGET_LINK_LIBRARIES(acl_cli harness-library)
+ADD_DEPENDENCIES(mysqlrouter_all acl_cli)

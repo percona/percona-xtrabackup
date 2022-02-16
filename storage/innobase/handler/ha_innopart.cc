@@ -1151,6 +1151,7 @@ int ha_innopart::open(const char *name, int, uint, const dd::Table *table_def) {
   }
 
   m_sql_stat_start_parts.init(m_bitset, UT_BITS_IN_BYTES(m_tot_parts));
+  m_reuse_mysql_template = false;
 
   info(HA_STATUS_NO_LOCK | HA_STATUS_VARIABLE | HA_STATUS_CONST);
 
@@ -1361,6 +1362,7 @@ void ha_innopart::update_partition(uint part_id) {
   m_row_read_type_parts[part_id] = m_prebuilt->row_read_type;
   if (m_prebuilt->sql_stat_start == 0) {
     m_sql_stat_start_parts.set(part_id, false);
+    m_reuse_mysql_template = true;
   }
   m_last_part = part_id;
 }
@@ -2309,7 +2311,6 @@ void ha_innopart::update_create_info(HA_CREATE_INFO *create_info) {
   uint num_parts;
   uint part;
   bool display_tablespace = false;
-  dict_table_t *table;
   List_iterator<partition_element> part_it(m_part_info->partitions);
   partition_element *part_elem;
   partition_element *sub_elem;
@@ -2337,21 +2338,24 @@ void ha_innopart::update_create_info(HA_CREATE_INFO *create_info) {
     return;
   }
   part = 0;
-  while ((part_elem = part_it++)) {
+  for (part_elem = part_it++; part_elem != nullptr;
+       part_elem = part_it++, part++) {
     if (part >= num_parts) {
       return;
     }
     if (m_part_info->is_sub_partitioned()) {
       List_iterator<partition_element> subpart_it(part_elem->subpartitions);
       uint subpart = 0;
-      while ((sub_elem = subpart_it++)) {
+      for (sub_elem = subpart_it++; sub_elem != nullptr;
+           sub_elem = subpart_it++) {
         if (subpart >= num_subparts) {
           return;
         }
-        table = m_part_share->get_table_part(part * num_subparts + subpart);
+        auto table_part =
+            m_part_share->get_table_part(part * num_subparts + subpart);
 
         if (sub_elem->tablespace_name != nullptr ||
-            table->tablespace != nullptr || table->space == 0) {
+            table_part->tablespace != nullptr || table_part->space == 0) {
           display_tablespace = true;
         }
         subpart++;
@@ -2360,14 +2364,13 @@ void ha_innopart::update_create_info(HA_CREATE_INFO *create_info) {
         return;
       }
     } else {
-      table = m_part_share->get_table_part(part);
+      auto table_part = m_part_share->get_table_part(part);
 
-      if (table->space == 0 || table->tablespace != nullptr ||
+      if (table_part->space == 0 || table_part->tablespace != nullptr ||
           part_elem->tablespace_name != nullptr) {
         display_tablespace = true;
       }
     }
-    part++;
   }
   if (part != num_parts) {
     return;
@@ -2379,16 +2382,17 @@ void ha_innopart::update_create_info(HA_CREATE_INFO *create_info) {
 
   part = 0;
   part_it.rewind();
-  while ((part_elem = part_it++)) {
+  for (part_elem = part_it++; part_elem != nullptr; part_elem = part_it++) {
     if (m_part_info->is_sub_partitioned()) {
       List_iterator<partition_element> subpart_it(part_elem->subpartitions);
-      while ((sub_elem = subpart_it++)) {
-        table = m_part_share->get_table_part(part++);
-        update_part_elem(sub_elem, table, display_tablespace);
+      for (sub_elem = subpart_it++; sub_elem != nullptr;
+           sub_elem = subpart_it++) {
+        auto table_part = m_part_share->get_table_part(part++);
+        update_part_elem(sub_elem, table_part, display_tablespace);
       }
     } else {
-      table = m_part_share->get_table_part(part++);
-      update_part_elem(part_elem, table, display_tablespace);
+      auto table_part = m_part_share->get_table_part(part++);
+      update_part_elem(part_elem, table_part, display_tablespace);
     }
   }
 }
@@ -2520,12 +2524,12 @@ int ha_innopart::create(const char *name, TABLE *form,
   std::vector<const char *> tablespace_names;
   List_iterator_fast<partition_element> part_it(form->part_info->partitions);
   partition_element *part_elem;
-  while ((part_elem = part_it++)) {
+  for (part_elem = part_it++; part_elem != nullptr; part_elem = part_it++) {
     const char *tablespace;
     if (form->part_info->is_sub_partitioned()) {
       List_iterator_fast<partition_element> sub_it(part_elem->subpartitions);
       partition_element *sub_elem;
-      while ((sub_elem = sub_it++)) {
+      for (sub_elem = sub_it++; sub_elem != nullptr; sub_elem = sub_it++) {
         tablespace = partition_get_tablespace(table_level_tablespace_name,
                                               part_elem, sub_elem);
         if (is_shared_tablespace(tablespace)) {
@@ -2829,13 +2833,11 @@ int ha_innopart::set_dd_discard_attribute(dd::Table *table_def, bool discard) {
   }
 
   /* Set new table id of the first partition to dd::Column::se_private_data */
-  if (!discard) {
-    table = m_part_share->get_table_part(0);
+  table = m_part_share->get_table_part(0);
 
-    for (auto dd_column : *table_def->columns()) {
-      dd_column->se_private_data().set(dd_index_key_strings[DD_TABLE_ID],
-                                       table->id);
-    }
+  for (auto dd_column : *table_def->columns()) {
+    dd_column->se_private_data().set(dd_index_key_strings[DD_TABLE_ID],
+                                     table->id);
   }
 
   return error;
@@ -3528,8 +3530,9 @@ int ha_innopart::info_low(uint flag, bool is_analyze) {
           return error;
         }
       }
-      stats.update_time =
-          std::max(stats.update_time, ulong(ib_table->update_time));
+      stats.update_time = std::max(stats.update_time,
+                                   ulong(std::chrono::system_clock::to_time_t(
+                                       ib_table->update_time.load())));
     }
 
     if (is_analyze || innobase_stats_on_metadata) {
@@ -3971,6 +3974,7 @@ int ha_innopart::start_stmt(THD *thd, thr_lock_type lock_type) {
   } else {
     m_sql_stat_start_parts.reset();
   }
+  m_reuse_mysql_template = false;
   return (error);
 }
 
@@ -4094,6 +4098,7 @@ int ha_innopart::external_lock(THD *thd, int lock_type) {
   } else {
     m_sql_stat_start_parts.reset();
   }
+  m_reuse_mysql_template = false;
   return (error);
 }
 
@@ -4231,7 +4236,7 @@ err:
 }
 
 /****************************************************************************
- * DS-MRR implementation
+DS-MRR implementation
  ***************************************************************************/
 
 /* TODO: move the default implementations into the base handler class! */

@@ -551,6 +551,40 @@ bool is_gtid_committed(const Gtid &gtid) {
   return result;
 }
 
+bool wait_for_gtid_set_committed(const char *gtid_set_text, double timeout,
+                                 bool update_thd_status) {
+  THD *thd = current_thd;
+  assert(!thd->slave_thread);
+  Gtid_set wait_for_gtid_set(global_sid_map, nullptr);
+
+  global_sid_lock->rdlock();
+
+  if (wait_for_gtid_set.add_gtid_text(gtid_set_text) != RETURN_STATUS_OK) {
+    global_sid_lock->unlock();
+    return true;
+  }
+
+  /*
+    If the current session owns a GTID that is part of the waiting
+    set then that GTID will not reach GTID_EXECUTED while the session
+    is waiting.
+  */
+  if (thd->owned_gtid.sidno > 0 &&
+      wait_for_gtid_set.contains_gtid(thd->owned_gtid)) {
+    global_sid_lock->unlock();
+    return true;
+  }
+
+  gtid_state->begin_gtid_wait();
+  bool result = gtid_state->wait_for_gtid_set(thd, &wait_for_gtid_set, timeout,
+                                              update_thd_status);
+  gtid_state->end_gtid_wait();
+
+  global_sid_lock->unlock();
+
+  return result;
+}
+
 unsigned long get_replica_max_allowed_packet() {
   return replica_max_allowed_packet;
 }
@@ -599,7 +633,10 @@ bool get_group_replication_view_change_uuid(std::string &uuid) {
                         &component_sys_variable_register_service_handler);
 
   char *var_value = nullptr;
-  size_t var_len = 36;  // uuid length
+  // uuid length + sizeof('\0')
+  constexpr size_t var_buffer_capacity = UUID_LENGTH + 1;
+  size_t var_len = var_buffer_capacity;
+
   bool error = false;
 
   if (nullptr == component_sys_variable_register_service_handler) {
@@ -611,17 +648,23 @@ bool get_group_replication_view_change_uuid(std::string &uuid) {
       reinterpret_cast<SERVICE_TYPE(component_sys_variable_register) *>(
           component_sys_variable_register_service_handler);
 
-  if ((var_value = new char[var_len + 1]) == nullptr) {
+  if ((var_value = new char[var_len]) == nullptr) {
     error = true; /* purecov: inspected */
     goto end;     /* purecov: inspected */
   }
 
-  // The variable may not exist, thence we use its default value.
-  uuid.assign("AUTOMATIC");
   if (!component_sys_variable_register_service->get_variable(
           "mysql_server", "group_replication_view_change_uuid",
           reinterpret_cast<void **>(&var_value), &var_len)) {
     uuid.assign(var_value, var_len);
+  } else if (var_len != var_buffer_capacity) {
+    // Should never happen: no enough space for UUID in the buffer
+    assert(false);
+    error = true;
+    goto end;
+  } else {
+    // The variable does not exist, thence we use its default value.
+    uuid.assign("AUTOMATIC");
   }
 
 end:

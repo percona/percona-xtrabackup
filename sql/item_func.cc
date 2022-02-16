@@ -218,6 +218,13 @@ bool simplify_string_args(THD *thd, const DTCollation &c, Item **args,
                               ostr->charset());
       return true;
     }
+    // If source is a binary string, the string may have to be validated:
+    if (c.collation != &my_charset_bin && ostr->charset() == &my_charset_bin &&
+        !converted.is_valid_string(c.collation)) {
+      report_conversion_error(c.collation, ostr->ptr(), ostr->length(),
+                              ostr->charset());
+      return true;
+    }
 
     char *ptr = thd->strmake(converted.ptr(), converted.length());
     if (ptr == nullptr) return true;
@@ -865,7 +872,9 @@ Item *Item_func::get_tmp_table_item(THD *thd) {
     object (temp table fields are not created for windowing
     functions if they are not evaluated at this stage).
   */
-  if (!has_aggregation() && !const_item() && !has_wf()) {
+  if (!has_aggregation() && !has_wf() &&
+      !(const_for_execution() &&
+        evaluate_during_optimization(this, thd->lex->current_query_block()))) {
     Item *result = new Item_field(result_field);
     return result;
   }
@@ -996,9 +1005,15 @@ bool Item_func::check_column_in_group_by(uchar *arg) {
   return select->is_grouped();
 }
 
-static bool is_function_of_type(const Item *item, Item_func::Functype type) {
+bool is_function_of_type(const Item *item, Item_func::Functype type) {
   return item->type() == Item::FUNC_ITEM &&
          down_cast<const Item_func *>(item)->functype() == type;
+}
+
+bool contains_function_of_type(Item *item, Item_func::Functype type) {
+  return WalkItem(item, enum_walk::PREFIX, [type](Item *inner_item) {
+    return is_function_of_type(inner_item, type);
+  });
 }
 
 /**
@@ -1245,18 +1260,22 @@ static void gc_subst_overlaps_contains(Item **func, Item **vals,
 
   @param arg  List of indexed GC field
 
-  @return this item
+  @return this item on successful execution, nullptr on error
 
-  @details This function transforms the WHERE condition. It doesn't change
+  @details This function transforms a search condition. It doesn't change
   'this' item but rather changes its arguments. It takes list of GC fields
   and checks whether arguments of 'this' item matches them and index over
   the GC field isn't disabled with hints. If so, it replaces
-  the argument with newly created Item_field which uses the matched GC
-  field. Following functions' arguments could be transformed:
-  - EQ_FUNC, LT_FUNC, LE_FUNC, GE_FUNC, GT_FUNC
+  the argument with newly created Item_field which uses the matched GC field.
+  The following predicates' arguments could be transformed:
+  - EQ_FUNC, LT_FUNC, LE_FUNC, GE_FUNC, GT_FUNC, JSON_OVERLAPS
     - Left _or_ right argument if the opposite argument is a constant.
   - IN_FUNC, BETWEEN
     - Left argument if all other arguments are constant and of the same type.
+  - MEMBER OF
+    - Right argument if left argument is constant.
+  - JSON_CONTAINS
+    - First argument if the second argument is constant.
 
   After transformation comparators are updated to take into account the new
   field.
@@ -1277,11 +1296,12 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
       // Check if we can substitute a function with a GC. The
       // predicate must be on the form <expr> OP <constant> or
       // <constant> OP <expr>.
-      if (args[0]->can_be_substituted_for_gc() && args[1]->const_item()) {
+      if (args[0]->can_be_substituted_for_gc() &&
+          args[1]->const_for_execution()) {
         func = args;
         val = args[1];
       } else if (args[1]->can_be_substituted_for_gc() &&
-                 args[0]->const_item()) {
+                 args[0]->const_for_execution()) {
         func = args + 1;
         val = args[0];
       } else {
@@ -1302,7 +1322,7 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
       Item_result type = args[1]->result_type();
       if (!std::all_of(args + 1, args + arg_count,
                        [type](const Item *item_arg) {
-                         return item_arg->const_item() &&
+                         return item_arg->const_for_execution() &&
                                 item_arg->result_type() == type;
                        })) {
         break;
@@ -1340,8 +1360,10 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
       if (!args[0]->can_be_substituted_for_gc(/*array=*/true) ||  // 1
           !args[1]->const_for_execution())                        // 2
         break;
-      if (get_json_wrapper(args, 1, &str, func_name(), &vals_wr) ||  // 3
-          args[1]->null_value ||
+      if (get_json_wrapper(args, 1, &str, func_name(), &vals_wr)) {  // 3
+        return nullptr;
+      }
+      if (args[1]->null_value ||
           vals_wr.type() == enum_json_type::J_OBJECT)  // 4
         break;
       gc_subst_overlaps_contains(args, args + 1, vals_wr, gc_fields);
@@ -1372,8 +1394,10 @@ Item *Item_func::gc_subst_transformer(uchar *arg) {
 
       Json_wrapper vals_wr;
       String str;
-      if (get_json_wrapper(args, vals, &str, func_name(), &vals_wr) ||  // 3
-          args[vals]->null_value ||
+      if (get_json_wrapper(args, vals, &str, func_name(), &vals_wr)) {  // 3
+        return nullptr;
+      }
+      if (args[vals]->null_value ||
           vals_wr.type() == enum_json_type::J_OBJECT)  // 4
         break;
       gc_subst_overlaps_contains(func, args + vals, vals_wr, gc_fields);
@@ -2643,6 +2667,8 @@ my_decimal *Item_func_neg::decimal_op(my_decimal *decimal_value) {
 void Item_func_neg::fix_num_length_and_dec() {
   decimals = args[0]->decimals;
   max_length = args[0]->max_length + (args[0]->unsigned_flag ? 1 : 0);
+  // Booleans have max_length = 1, but need to add the minus sign
+  if (max_length == 1) max_length++;
 }
 
 bool Item_func_neg::resolve_type(THD *thd) {
@@ -7628,7 +7654,9 @@ bool Item_func_match::init_search(THD *thd) {
 
   assert(master == nullptr);
   ft_handler = table->file->ft_init_ext_with_hints(key, ft_tmp, get_hints());
-  if (thd->is_error()) return true;
+  if (ft_handler == nullptr || thd->is_error()) {
+    return true;
+  }
 
   if (score_from_index_scan) table->file->ft_handler = ft_handler;
 
@@ -7865,9 +7893,8 @@ err:
 
 bool Item_func_match::eq(const Item *item, bool binary_cmp) const {
   /* We ignore FT_SORTED flag when checking for equality since result is
-     equvialent regardless of sorting */
-  if (item->type() != FUNC_ITEM ||
-      down_cast<const Item_func *>(item)->functype() != FT_FUNC ||
+     equivalent regardless of sorting */
+  if (!is_function_of_type(item, FT_FUNC) ||
       (flags | FT_SORTED) !=
           (down_cast<const Item_func_match *>(item)->flags | FT_SORTED))
     return false;
@@ -7882,7 +7909,16 @@ bool Item_func_match::eq(const Item *item, bool binary_cmp) const {
 }
 
 double Item_func_match::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
+
+  // MATCH only knows how to get the score for base columns. Other types of
+  // expressions (such as function calls or rollup columns) should have been
+  // rejected during resolving.
+  assert(!has_rollup_expr());
+  assert(std::all_of(args, args + arg_count, [](const Item *item) {
+    return item->real_item()->type() == FIELD_ITEM;
+  }));
+
   DBUG_TRACE;
   if (ft_handler == nullptr) return -1.0;
 

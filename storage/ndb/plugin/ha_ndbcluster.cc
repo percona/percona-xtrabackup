@@ -37,7 +37,6 @@
 
 #include "m_ctype.h"
 #include "my_dbug.h"
-#include "mysql/plugin.h"
 #include "mysql/psi/mysql_thread.h"
 #include "sql/abstract_query_plan.h"
 #include "sql/current_thd.h"
@@ -408,18 +407,8 @@ static constexpr uint NDB_AUTO_INCREMENT_RETRIES = 100;
 
 static int ndbcluster_inited = 0;
 
-/*
-   Indicator used to delay client and slave
-   connections until Ndb has Binlog setup
-   (bug#46955)
-*/
-int ndb_setup_complete = 0;  // Use ndbcluster_mutex & ndbcluster_cond
 extern Ndb *g_ndb;
 extern Ndb_cluster_connection *g_ndb_cluster_connection;
-
-/// Handler synchronization
-mysql_mutex_t ndbcluster_mutex;
-mysql_cond_t ndbcluster_cond;
 
 static const char *ndbcluster_hton_name = "ndbcluster";
 static const int ndbcluster_hton_name_length = sizeof(ndbcluster_hton_name) - 1;
@@ -427,6 +416,32 @@ static const int ndbcluster_hton_name_length = sizeof(ndbcluster_hton_name) - 1;
 static ulong multi_range_fixed_size(int num_ranges);
 
 static ulong multi_range_max_entry(NDB_INDEX_TYPE keytype, ulong reclength);
+
+struct st_ndb_status {
+  st_ndb_status() { memset(this, 0, sizeof(struct st_ndb_status)); }
+  long cluster_node_id;
+  const char *connected_host;
+  long connected_port;
+  long config_generation;
+  long number_of_data_nodes;
+  long number_of_ready_data_nodes;
+  long connect_count;
+  long execute_count;
+  long trans_hint_count;
+  long scan_count;
+  long pruned_scan_count;
+  long schema_locks_count;
+  long sorted_scan_count;
+  long pushed_queries_defined;
+  long pushed_queries_dropped;
+  long pushed_queries_executed;
+  long pushed_reads;
+  long long last_commit_epoch_server;
+  long long last_commit_epoch_session;
+  long long api_client_stats[Ndb::NumClientStatistics];
+  const char *system_name;
+  long fetch_table_stats;
+};
 
 /* Status variables shown with 'show status like 'Ndb%' */
 static st_ndb_status g_ndb_status;
@@ -515,7 +530,7 @@ static int check_slave_state(THD *thd) {
                                  Ndb_apply_status_table::TABLE_NAME.c_str());
 
         const NDBTAB *ndbtab = ndbtab_g.get_table();
-        if (unlikely(ndbtab == NULL)) {
+        if (unlikely(ndbtab == nullptr)) {
           ndb_error = ndbtab_g.getNdbError();
           break;
         }
@@ -2690,7 +2705,7 @@ static const ulong index_type_flags[] = {
     HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE | HA_READ_ORDER,
 
     /* UNIQUE_INDEX */
-    HA_ONLY_WHOLE_INDEX,
+    HA_ONLY_WHOLE_INDEX | HA_TABLE_SCAN_ON_NULL,
 
     /* UNIQUE_ORDERED_INDEX */
     HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE | HA_READ_ORDER,
@@ -3296,6 +3311,14 @@ int ha_ndbcluster::index_read_pushed(uchar *buf, const uchar *key,
     assert(m_next_row != NULL);
     const int ignore = unpack_record_and_set_generated_fields(buf, m_next_row);
     m_thd_ndb->m_pushed_reads++;
+
+    // Pushed join results are Ref-compared using the correlation key, not
+    // the specified key (unless where it is not push-executed after all).
+    // Check that we still returned a row matching the specified key.
+    assert(key_cmp_if_same(
+               table, key, active_index,
+               calculate_key_len(table, active_index, keypart_map)) == 0);
+
     if (unlikely(ignore)) {
       return index_next_pushed(buf);
     }
@@ -6672,6 +6695,7 @@ void ha_ndbcluster::position(const uchar *record) {
     } else
       key_length = ref_length;
 #ifndef NDEBUG
+    constexpr uint NDB_HIDDEN_PRIMARY_KEY_LENGTH = 8;
     const int hidden_no = Ndb_table_map::num_stored_fields(table);
     const NDBCOL *hidden_col = m_table->getColumn(hidden_no);
     assert(hidden_col->getPrimaryKey() && hidden_col->getAutoIncrement() &&
@@ -7144,12 +7168,121 @@ int ha_ndbcluster::end_bulk_insert() {
   This is to be comparable to the number returned by records_in_range so
   that we can decide if we should scan the table or use keys.
 */
-
 double ha_ndbcluster::scan_time() {
   DBUG_TRACE;
   const double res = rows2double(stats.records * 1000);
   DBUG_PRINT("exit", ("table: %s value: %f", table_share->table_name.str, res));
   return res;
+}
+
+/**
+  read_time() need to differentiate between single row type lookups,
+  and accesses where an ordered index need to be scanned.
+  The later will need to scan all fragments, which might be
+  significantly more expensive - imagine a deployment with hundreds
+  of partitions.
+ */
+double ha_ndbcluster::read_time(uint index, uint ranges, ha_rows rows) {
+  DBUG_TRACE;
+  assert(rows > 0);
+  assert(ranges > 0);
+  assert(rows >= ranges);
+
+  const NDB_INDEX_TYPE index_type =
+      (index < MAX_KEY)
+          ? get_index_type(index)
+          : (index == MAX_KEY) ? PRIMARY_KEY_INDEX  // Hidden primary key
+                               : UNDEFINED_INDEX;   // -> worst index
+
+  // fanout_factor is intended to compensate for the amount
+  // of roundtrips between API <-> data node and between data nodes
+  // themself by the different index type. As an initial guess
+  // we assume a single full roundtrip for each 'range'.
+  double fanout_factor;
+
+  /**
+   * Note that for now we use the default handler cost estimate
+   * 'rows2double(ranges + rows)' as the baseline - Even if it
+   * might have some obvious flaws. For now it is more important
+   * to get the relative cost between PK/UQ and order index scan
+   * more correct. It is also a matter of not changing too many
+   * existing MTR tests. (and customer queries as well!)
+   *
+   * We also estimate the same cost for a request roundtrip as
+   * for returning a row. Thus the baseline cost 'ranges + rows'
+   */
+  if (index_type == PRIMARY_KEY_INDEX) {
+    assert(index == table->s->primary_key);
+    // Need a full roundtrip for each row
+    fanout_factor = 1.0 * rows2double(rows);
+  } else if (index_type == UNIQUE_INDEX) {
+    // Need to lookup first on UQ, then on PK, + lock/unlock
+    fanout_factor = 2.0 * rows2double(rows);
+
+  } else if (rows > ranges || index_type == ORDERED_INDEX ||
+             index_type == UNDEFINED_INDEX) {
+    // Assume || need a range scan
+
+    // TODO: - Handler call need a parameter specifying whether
+    //         key was fully specified or not (-> scan or lookup)
+    //       - The range scan could be pruned -> lower cost, or
+    //       - The scan need to be 'ordered' -> higher cost.
+    //       - Returning multiple rows pr range has a lower
+    //         pr. row cost?
+    const uint fragments_to_scan =
+        m_table->getFullyReplicated() ? 1 : m_table->getPartitionCount();
+
+    // The range scan does one API -> TC request, which scale out the
+    // requests to all fragments. Assume a somewhat (*0.5) lower cost
+    // for these requests, as they are not full roundtrips back to the API
+    fanout_factor = (double)ranges * (1.0 + ((double)fragments_to_scan * 0.5));
+
+  } else {
+    assert(rows == ranges);
+
+    // Assume a set of PK/UQ single row lookups.
+    // We assume the hash key is used for a direct lookup
+    if (index_type == PRIMARY_KEY_ORDERED_INDEX) {
+      assert(index == table->s->primary_key);
+      fanout_factor = (double)ranges * 1.0;
+    } else {
+      assert(index_type == UNIQUE_ORDERED_INDEX);
+      // Unique key access has a higher cost than PK. Need to first
+      // lookup in index, then use that to lookup the row + lock & unlock
+      fanout_factor = (double)ranges * 2.0;  // Assume twice as many roundtrips
+    }
+  }
+  return fanout_factor + rows2double(rows);
+}
+
+/**
+ * Estimate the cost for reading the specified number of rows,
+ * using 'index'. Note that there is no such thing as a 'page'-read
+ * in ha_ndbcluster. Unfortunately, the optimizer does some
+ * assumptions about an underlying page based storage engine,
+ * which explains the name.
+ *
+ * In the NDB implementation we simply ignore the 'page', and
+ * calculate it as any other read_cost()
+ */
+double ha_ndbcluster::page_read_cost(uint index, double rows) {
+  DBUG_TRACE;
+  return read_cost(index, 1, rows).total_cost();
+}
+
+/**
+ * Estimate the upper cost for reading rows in a seek-and-read fashion.
+ * Calculation is based on the worst index we can find for this table, such
+ * that any other better way of reading the rows will be preferred.
+ *
+ * Note that worst_seek will be compared against page_read_cost().
+ * Thus, it need to calculate the cost using comparable 'metrics'.
+ */
+double ha_ndbcluster::worst_seek_times(double reads) {
+  // Specifying the 'UNDEFINED_INDEX' is a special case in read_time(),
+  // where the cost for the most expensive/worst index will be calculated.
+  const uint undefined_index = MAX_KEY + 1;
+  return page_read_cost(undefined_index, std::max(reads, 1.0));
 }
 
 /*
@@ -7212,7 +7345,7 @@ static int ndbcluster_update_apply_status(THD *thd, int do_update) {
   }
   NdbTransaction *trans = thd_ndb->trans;
   NdbOperation *op = 0;
-  int r = 0;
+  int r [[maybe_unused]] = 0;
   r |= (op = trans->getNdbOperation(ndbtab)) == 0;
   assert(r == 0);
   if (do_update)
@@ -8958,7 +9091,7 @@ static bool adjusted_frag_count(Ndb *ndb, uint requested_frags,
     Ndb_table_guard ndbtab_g(ndb, "sys", "SYSTAB_0");
     const NdbDictionary::Table *tab = ndbtab_g.get_table();
     if (tab) {
-      no_replicas = ndbtab_g.get_table()->getReplicaCount();
+      no_replicas = tab->getReplicaCount();
 
       /**
        * Guess #threads
@@ -9327,7 +9460,9 @@ int ha_ndbcluster::create(const char *path [[maybe_unused]],
 
   if (thd_sql_command(thd) == SQLCOM_TRUNCATE) {
     Ndb_table_guard ndbtab_g(ndb, dbname, tabname);
-    if (!ndbtab_g.get_table()) ERR_RETURN(ndbtab_g.getNdbError());
+    if (!ndbtab_g.get_table()) {
+      ERR_RETURN(ndbtab_g.getNdbError());
+    }
 
     /* save the foreign key information in fk_list */
     if (!retrieve_foreign_key_list_from_ndb(dict, ndbtab_g.get_table(),
@@ -12067,66 +12202,31 @@ static bool is_supported_system_table(const char *, const char *, bool) {
   return false;
 }
 
-/* Call back after cluster connect */
-static int connect_callback() {
-  mysql_mutex_lock(&ndbcluster_mutex);
-  update_status_variables(NULL, &g_ndb_status, g_ndb_cluster_connection);
-
-  mysql_cond_broadcast(&ndbcluster_cond);
-  mysql_mutex_unlock(&ndbcluster_mutex);
-  return 0;
-}
-
-bool ndbcluster_is_connected(uint max_wait_sec) {
-  mysql_mutex_lock(&ndbcluster_mutex);
-  bool connected =
-      !(!g_ndb_status.cluster_node_id && ndbcluster_hton->slot != ~(uint)0);
-
-  if (!connected) {
-    /* ndb not connected yet */
-    struct timespec abstime;
-    set_timespec(&abstime, max_wait_sec);
-    mysql_cond_timedwait(&ndbcluster_cond, &ndbcluster_mutex, &abstime);
-    connected =
-        !(!g_ndb_status.cluster_node_id && ndbcluster_hton->slot != ~(uint)0);
-  }
-  mysql_mutex_unlock(&ndbcluster_mutex);
-  return connected;
-}
-
 Ndb_index_stat_thread ndb_index_stat_thread;
 Ndb_metadata_change_monitor ndb_metadata_change_monitor_thread;
 
 extern THD *ndb_create_thd(char *stackptr);
 
-static int ndb_wait_setup_func(ulong max_wait) {
+//
+// Functionality used for delaying MySQL Server startup until
+// connection to NDB and setup (of index stat plus binlog) has completed
+//
+static bool wait_setup_completed(ulong max_wait_seconds) {
   DBUG_TRACE;
 
-  mysql_mutex_lock(&ndbcluster_mutex);
+  const auto timeout_time =
+      std::chrono::steady_clock::now() + std::chrono::seconds(max_wait_seconds);
 
-  struct timespec abstime;
-  set_timespec(&abstime, 1);
-
-  while (max_wait &&
-         (!ndb_setup_complete || !Ndb_index_stat_thread::is_setup_complete())) {
-    const int rc =
-        mysql_cond_timedwait(&ndbcluster_cond, &ndbcluster_mutex, &abstime);
-    if (rc) {
-      if (rc == ETIMEDOUT) {
-        DBUG_PRINT("info", ("1s elapsed waiting"));
-        max_wait--;
-        set_timespec(&abstime, 1); /* 1 second from now*/
-      } else {
-        DBUG_PRINT("info", ("Bad mysql_cond_timedwait rc : %u", rc));
-        assert(false);
-        break;
-      }
+  while (std::chrono::steady_clock::now() < timeout_time) {
+    if (ndb_binlog_is_initialized() &&
+        Ndb_index_stat_thread::is_setup_complete()) {
+      return true;
     }
+    ndb_milli_sleep(100);
   }
 
-  mysql_mutex_unlock(&ndbcluster_mutex);
-
-  return (ndb_setup_complete == 1) ? 0 : 1;
+  // Timer expired
+  return false;
 }
 
 /*
@@ -12134,17 +12234,18 @@ static int ndb_wait_setup_func(ulong max_wait) {
   connections are allowed. Wait for --ndb-wait-setup= seconds
   for ndbcluster connect to NDB and complete setup.
 */
-
 static int ndb_wait_setup_server_startup(void *) {
   DBUG_TRACE;
   ndbcluster_hton->notify_alter_table = ndbcluster_notify_alter_table;
   ndbcluster_hton->notify_exclusive_mdl = ndbcluster_notify_exclusive_mdl;
+
   // Signal components that server is started
   ndb_index_stat_thread.set_server_started();
   ndbcluster_binlog_set_server_started();
   ndb_metadata_change_monitor_thread.set_server_started();
 
-  if (ndb_wait_setup_func(opt_ndb_wait_setup) != 0) {
+  // Wait for connection to NDB and thread(s) setup
+  if (wait_setup_completed(opt_ndb_wait_setup) == false) {
     ndb_log_error(
         "Tables not available after %lu seconds. Consider "
         "increasing --ndb-wait-setup value",
@@ -12180,8 +12281,9 @@ static bool upgrade_migrate_privilege_tables() {
   Function installed as server hook that runs after DD upgrades.
 */
 static int ndb_dd_upgrade_hook(void *) {
-  if (!ndbcluster_is_connected(opt_ndb_wait_connected)) {
-    ndb_log_error("Timeout waiting to connect to cluster.");
+  if (!ndb_connection_is_ready(g_ndb_cluster_connection,
+                               opt_ndb_wait_connected)) {
+    ndb_log_error("Timeout waiting for connection to NDB.");
     return 1;
   }
 
@@ -12202,7 +12304,7 @@ static int ndb_dd_upgrade_hook(void *) {
 static int ndb_wait_setup_replication_applier(void *) {
   DBUG_TRACE;
   g_ndb_slave_state.applier_sql_thread_start = true;
-  if (ndb_wait_setup_func(opt_ndb_wait_setup) != 0) {
+  if (wait_setup_completed(opt_ndb_wait_setup) == false) {
     ndb_log_error(
         "NDB Replica: Tables not available after %lu seconds. Consider "
         "increasing --ndb-wait-setup value",
@@ -12460,10 +12562,7 @@ static int ndbcluster_init(void *handlerton_ptr) {
         "Failed to initialize NDB Metadata Change Monitor");
   }
 
-  mysql_mutex_init(PSI_INSTRUMENT_ME, &ndbcluster_mutex, MY_MUTEX_INIT_FAST);
-  mysql_cond_init(PSI_INSTRUMENT_ME, &ndbcluster_cond);
   ndb_dictionary_is_mysqld = 1;
-  ndb_setup_complete = 0;
 
   ndbcluster_hton = hton;
   hton->state = SHOW_OPTION_YES;
@@ -12528,9 +12627,9 @@ static int ndbcluster_init(void *handlerton_ptr) {
   /* allocate connection resources and connect to cluster */
   const uint global_opti_node_select = THDVAR(NULL, optimized_node_selection);
   if (ndbcluster_connect(
-          connect_callback, opt_ndb_wait_connected,
-          opt_ndb_cluster_connection_pool, opt_connection_pool_nodeids_str,
-          (global_opti_node_select & 1), opt_ndb_connectstring, opt_ndb_nodeid,
+          opt_ndb_wait_connected, opt_ndb_cluster_connection_pool,
+          opt_connection_pool_nodeids_str, (global_opti_node_select & 1),
+          opt_ndb_connectstring, opt_ndb_nodeid,
           opt_ndb_recv_thread_activation_threshold,
           opt_ndb_data_node_neighbour)) {
     return ndbcluster_init_abort("Failed to initialize connection(s)");
@@ -12616,9 +12715,6 @@ static int ndbcluster_end(handlerton *, ha_panic_function) {
 
   ndb_index_stat_thread.deinit();
 
-  mysql_mutex_destroy(&ndbcluster_mutex);
-  mysql_cond_destroy(&ndbcluster_cond);
-
   ndb_pfs_deinit();
 
   // Cleanup NdbApi
@@ -12673,29 +12769,40 @@ void ha_ndbcluster::print_error(int error, myf errflag) {
 /* Determine roughly how many records are in the range specified */
 ha_rows ha_ndbcluster::records_in_range(uint inx, key_range *min_key,
                                         key_range *max_key) {
-  KEY *key_info = table->key_info + inx;
-  uint key_length = key_info->key_length;
-  NDB_INDEX_TYPE idx_type = get_index_type(inx);
+  const KEY *const key_info = table->key_info + inx;
+  const uint key_length = key_info->key_length;
+  const NDB_INDEX_TYPE idx_type = get_index_type(inx);
 
   DBUG_TRACE;
-  // Prevent partial read of hash indexes by returning HA_POS_ERROR
-  if ((idx_type == UNIQUE_INDEX || idx_type == PRIMARY_KEY_INDEX) &&
-      ((min_key && min_key->length < key_length) ||
-       (max_key && max_key->length < key_length)))
-    return HA_POS_ERROR;
 
-  // Read from hash index with full key
-  // This is a "const" table which returns only one record!
-  if ((idx_type != ORDERED_INDEX) &&
-      ((min_key && min_key->length == key_length) &&
-       (max_key && max_key->length == key_length) &&
-       (min_key->key == max_key->key ||
-        memcmp(min_key->key, max_key->key, key_length) == 0)))
-    return 1;
+  if (key_info->flags & HA_NOSAME) {  // 0)
+    // Is a potential single row lookup operation.
+    assert(idx_type == UNIQUE_INDEX || idx_type == PRIMARY_KEY_INDEX ||
+           idx_type == UNIQUE_ORDERED_INDEX ||
+           idx_type == PRIMARY_KEY_ORDERED_INDEX);
+    /**
+     * Read from PRIMARY or UNIQUE index with full key
+     * will return (at most) a single record, iff:
+     * 0) Index has flag NOSAME (-> A unique key)
+     * 1) Both min and max keys are fully specified.
+     * 2) Min and max keys are equal.
+     * 3) There are no NULL values in key (NULLs are not unique)
+     */
+    if ((min_key && min_key->length == key_length) &&  // 1a)
+        (max_key && max_key->length == key_length) &&  // 1b)
+        (min_key->key == max_key->key ||               // 2)
+         memcmp(min_key->key, max_key->key, key_length) == 0) &&
+        !check_null_in_key(key_info, min_key->key, key_length))  // 3)
+      return 1;
 
-  // XXX why this if
-  if ((idx_type == PRIMARY_KEY_ORDERED_INDEX ||
-       idx_type == UNIQUE_ORDERED_INDEX || idx_type == ORDERED_INDEX)) {
+    // Prevent partial read of hash indexes by returning HA_POS_ERROR
+    if (idx_type == UNIQUE_INDEX || idx_type == PRIMARY_KEY_INDEX)
+      return HA_POS_ERROR;
+  }
+  // An UNIQUE_INDEX or PRIMARY_KEY_INDEX would have completed above
+  assert(idx_type == PRIMARY_KEY_ORDERED_INDEX ||
+         idx_type == UNIQUE_ORDERED_INDEX || idx_type == ORDERED_INDEX);
+  {
     THD *thd = current_thd;
     const bool index_stat_enable =
         THDVAR(NULL, index_stat_enable) && THDVAR(thd, index_stat_enable);
@@ -12886,9 +12993,7 @@ int ha_ndbcluster::update_stats(THD *thd, bool do_read_stat) {
   Ndb_table_stats table_stats;
   if (!do_read_stat) {
     // Just use the cached stats from NDB_SHARE without reading from NDB
-    mysql_mutex_lock(&m_share->mutex);
-    table_stats = m_share->cached_table_stats;
-    mysql_mutex_unlock(&m_share->mutex);
+    table_stats = m_share->cached_stats.get_table_stats();
   } else {
     // Count number of table stat fetches
     thd_ndb->m_fetch_table_stats++;
@@ -12909,9 +13014,7 @@ int ha_ndbcluster::update_stats(THD *thd, bool do_read_stat) {
     }
 
     // Update cached stats in NDB_SHARE with fresh data
-    mysql_mutex_lock(&m_share->mutex);
-    m_share->cached_table_stats = table_stats;
-    mysql_mutex_unlock(&m_share->mutex);
+    m_share->cached_stats.save_table_stats(table_stats);
   }
 
   int active_rows = 0;  // Active uncommitted rows
@@ -13893,9 +13996,7 @@ int ha_ndbcluster::read_multi_range_fetch_next() {
     if (!m_next_row) {
       int res = fetch_next_pushed();
       if (res == NdbQuery::NextResult_gotRow) {
-        m_current_range_no = 0;
-        //      m_current_range_no= cursor->get_range_no();  // FIXME SPJ, need
-        //      rangeNo from index scan
+        m_current_range_no = m_active_query->getRangeNo();
       } else if (res == NdbQuery::NextResult_scanComplete) {
         /* We have fetched the last row from the scan. */
         m_active_query->close(false);
@@ -16120,7 +16221,9 @@ static int ndbcluster_get_tablespace(THD *thd, LEX_CSTRING db_name,
 
   Ndb_table_guard ndbtab_g(ndb, db_name.str, table_name.str);
   const NdbDictionary::Table *ndbtab = ndbtab_g.get_table();
-  if (ndbtab == nullptr) ERR_RETURN(ndbtab_g.getNdbError());
+  if (ndbtab == nullptr) {
+    ERR_RETURN(ndbtab_g.getNdbError());
+  }
 
   Uint32 id;
   if (ndbtab->getTablespace(&id)) {
@@ -17517,6 +17620,17 @@ static MYSQL_SYSVAR_BOOL(
     1     /* default */
 );
 
+bool opt_ndb_applier_allow_skip_epoch;
+static MYSQL_SYSVAR_BOOL(applier_allow_skip_epoch,         /* name */
+                         opt_ndb_applier_allow_skip_epoch, /* var */
+                         PLUGIN_VAR_OPCMDARG,
+                         "Should replication applier be "
+                         "allowed to skip epochs",
+                         NULL, /* check func. */
+                         NULL, /* update func. */
+                         0     /* default */
+);
+
 bool opt_ndb_schema_dist_upgrade_allowed;
 static MYSQL_SYSVAR_BOOL(
     schema_dist_upgrade_allowed,         /* name */
@@ -17861,6 +17975,7 @@ static SYS_VAR *system_variables[] = {
     MYSQL_SYSVAR(metadata_check),
     MYSQL_SYSVAR(metadata_check_interval),
     MYSQL_SYSVAR(metadata_sync),
+    MYSQL_SYSVAR(applier_allow_skip_epoch),
     NULL};
 
 struct st_mysql_storage_engine ndbcluster_storage_engine = {

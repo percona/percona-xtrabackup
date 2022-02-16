@@ -44,8 +44,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "keyring/keyring_manager.h"
 #include "mock_server_rest_client.h"
 #include "mock_server_testutils.h"
-#include "mysql_session.h"
 #include "mysqlrouter/cluster_metadata.h"
+#include "mysqlrouter/mysql_session.h"
 #include "mysqlrouter/rest_client.h"
 #include "mysqlrouter/utils.h"
 #include "router_component_clusterset.h"
@@ -404,14 +404,14 @@ TEST_P(ClusterChangeTargetClusterInTheMetadataTest,
     const std::string accepting_rw = initial_target_cluster_id == 0
                                          ? "accepting RW connections"
                                          : "not accepting RW connections";
-    const auto log_content = router.get_full_logfile();
+
     const std::string pattern =
         "INFO .* Target cluster '" + target_cluster_name +
         "' is part of a ClusterSet; role of a cluster within a ClusterSet "
         "is '" +
         cluster_role + "'; " + accepting_rw;
 
-    EXPECT_TRUE(pattern_found(log_content, pattern)) << log_content;
+    EXPECT_TRUE(wait_log_contains(router, pattern, 5s)) << pattern;
   }
 
   SCOPED_TRACE(
@@ -465,12 +465,9 @@ TEST_P(ClusterChangeTargetClusterInTheMetadataTest,
     const std::string accepting_rw = changed_target_cluster_id == 0
                                          ? "accepting RW connections"
                                          : "not accepting RW connections";
-
-    const auto log_content = router.get_full_logfile();
     const std::string pattern =
         "INFO .* New target cluster assigned in the metadata: '" +
         changed_target_cluster_name + "'";
-    EXPECT_TRUE(pattern_found(log_content, pattern)) << log_content;
 
     const std::string pattern2 =
         "INFO .* Target cluster '" + changed_target_cluster_name +
@@ -478,17 +475,15 @@ TEST_P(ClusterChangeTargetClusterInTheMetadataTest,
         "is '" +
         cluster_role + "'; " + accepting_rw;
 
-    EXPECT_TRUE(pattern_found(log_content, pattern2)) << log_content;
-
     const std::string pattern3 =
         "INFO .* New router options read from the metadata "
         "'\\{\"target_cluster\" : \"" +
         changed_target_cluster + "\" \\}', was '\\{\"target_cluster\" : \"" +
         initial_target_cluster + "\" \\}'";
 
-    EXPECT_TRUE(pattern_found(log_content, pattern3)) << "pattern:\n"
-                                                      << pattern << "\n"
-                                                      << log_content;
+    EXPECT_TRUE(wait_log_contains(router, pattern, 5s)) << pattern;
+    EXPECT_TRUE(wait_log_contains(router, pattern2, 100ms)) << pattern2;
+    EXPECT_TRUE(wait_log_contains(router, pattern3, 100ms)) << pattern3;
   }
 
   if (GetParam().initial_connections_should_drop) {
@@ -1238,13 +1233,13 @@ TEST_P(ViewIdChangesTest, ViewIdChanges) {
                    clusterset_data_.get_all_nodes_classic_ports(), view_id + 1);
 
   SCOPED_TRACE("// Check that information about outdated view id is logged");
-  const auto log_content = router.get_full_logfile();
   const std::string pattern =
       "INFO .* Metadata server 127.0.0.1:" +
       std::to_string(clusterset_data_.clusters[0].nodes[0].classic_port) +
       " has outdated metadata view_id = " + std::to_string(view_id) +
       ", current view_id = " + std::to_string(view_id + 1) + ", ignoring";
-  EXPECT_TRUE(pattern_found(log_content, pattern)) << log_content;
+
+  EXPECT_TRUE(wait_log_contains(router, pattern, 5s)) << pattern;
 
   SCOPED_TRACE(
       "// Let's make another change in the metadata (remove second node in "
@@ -1295,7 +1290,7 @@ TEST_P(ViewIdChangesTest, ViewIdChanges) {
 
 INSTANTIATE_TEST_SUITE_P(ViewIdChanges, ViewIdChangesTest,
                          ::testing::Values(
-                             // [@TS_R11_1] // TODO: are these references ok?
+                             // [@TS_R11_1]
                              TargetClusterTestParams{"primary", 0},
                              // [@TS_R11_2]
                              TargetClusterTestParams{
@@ -1504,7 +1499,7 @@ struct InvalidatedClusterTestParams {
   bool expected_ro_connections_allowed;
 };
 
-class ClusterMarkedInvalidInTheMetadataTest
+class PrimaryTargetClusterMarkedInvalidInTheMetadataTest
     : public ClusterSetTest,
       public ::testing::WithParamInterface<InvalidatedClusterTestParams> {};
 
@@ -1515,13 +1510,13 @@ class ClusterMarkedInvalidInTheMetadataTest
  * [@FR11]
  * [@TS_R15_1-3]
  */
-TEST_P(ClusterMarkedInvalidInTheMetadataTest,
-       ClusterMarkedInvalidInTheMetadata) {
+TEST_P(PrimaryTargetClusterMarkedInvalidInTheMetadataTest,
+       TargetClusterIsPrimary) {
   view_id = 1;
   const std::string policy = GetParam().invalidated_cluster_routing_policy;
   const bool ro_allowed = GetParam().expected_ro_connections_allowed;
 
-  SCOPED_TRACE("// We configure Router to follow the first REPLICA cluster");
+  SCOPED_TRACE("// We configure Router to follow the PRIMARY cluster");
 
   create_clusterset(view_id, /*target_cluster_id*/ kPrimaryClusterId,
                     /*primary_cluster_id*/ kPrimaryClusterId,
@@ -1583,7 +1578,7 @@ TEST_P(ClusterMarkedInvalidInTheMetadataTest,
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    ClusterMarkedInvalidInTheMetadata, ClusterMarkedInvalidInTheMetadataTest,
+    TargetClusterIsPrimary, PrimaryTargetClusterMarkedInvalidInTheMetadataTest,
     ::testing::Values(
         // policy empty, default should be dropAll so RO connections are not
         // allowed
@@ -1595,80 +1590,93 @@ INSTANTIATE_TEST_SUITE_P(
         // accept_ro policy in  the metadata, RO connections are allowed
         InvalidatedClusterTestParams{"accept_ro", true}));
 
+class ReplicaTargetClusterMarkedInvalidInTheMetadataTest
+    : public ClusterSetTest,
+      public ::testing::WithParamInterface<InvalidatedClusterTestParams> {};
+
 /**
- * @test Check that the Router correctly follows new target_cluster when it is
- * changed manually in the config file.
- * [@FR3.6]
- * [@TS_R8_3]
+ * @test Check that when target_cluster is Replica and it is marked as invalid
+ * in the metadata along with the current Primary, the invalidate policy is
+ * honored. Also check that the periodic updates are performed on the new
+ * Primary.
  */
-#if 0
-TEST_F(ClusterSetTest, ManualTargetClusterChangeInConfig) {
-  create_clusterset(0, /*target_cluster_id*/ 0,
-                    /*primary_cluster_id*/ 0, "metadata_clusterset.js");
+TEST_P(ReplicaTargetClusterMarkedInvalidInTheMetadataTest,
+       TargetClusterIsReplica) {
+  view_id = 1;
+  const std::string policy = GetParam().invalidated_cluster_routing_policy;
+  const bool ro_allowed = GetParam().expected_ro_connections_allowed;
 
-  SCOPED_TRACE("// Launch Router with target_cluster=primary");
-  auto &router = launch_router("primary");
+  SCOPED_TRACE("// We configure Router to follow the first REPLICA cluster");
 
-  make_new_connection_ok(router_port_rw,
-                         clusterset_data_.clusters[kPrimaryClusterId]
-                             .nodes[kRWNodeId]
-                             .classic_port);
+  create_clusterset(
+      view_id, /*target_cluster_id*/ kFirstReplicaClusterId,
+      /*primary_cluster_id*/ kPrimaryClusterId, "metadata_clusterset.js",
+      /*router_options*/
+      R"({"target_cluster" : "00000000-0000-0000-0000-0000000000g2"})");
+  /* auto &router = */ launch_router();
 
-  make_new_connection_ok(router_port_ro,
-                         clusterset_data_.clusters[kPrimaryClusterId]
-                             .nodes[kRONodeId]
-                             .classic_port);
-
-  router.kill();
-  EXPECT_TRUE(
-      wait_log_contains(router, "DEBUG .* Unloading all plugins.", 5000ms));
-
-  SCOPED_TRACE(
-      "// Now the Router is down, let's change the target_cluster to first "
-      "Replica Cluster");
-
-  {
-    std::ifstream conf_in{router_conf_file};
-    std::ofstream conf_out{router_conf_file + "tmp"};
-    std::string line;
-    bool replaced{false};
-    EXPECT_TRUE(conf_in);
-    while (std::getline(conf_in, line)) {
-      if (line == "target_cluster=primary") {
-        conf_out << "target_cluster=00000000-0000-0000-0000-0000000000g2"
-                 << std::endl;
-        replaced = true;
-      } else {
-        conf_out << line << std::endl;
-      }
-    }
-    EXPECT_TRUE(replaced);
-  }
-  mysqlrouter::rename_file(router_conf_file + "tmp", router_conf_file);
-
-  for (const auto &cluster : clusterset_data_.clusters) {
-    for (const auto &node : cluster.nodes) {
-      const auto http_port = node.http_port;
-      set_mock_metadata(view_id, /*this_cluster_id*/ cluster.id,
-                        /*target_cluster_id*/ kFirstReplicaClusterId, http_port,
-                        clusterset_data_,
-                        /*router_options*/ "");
-    }
-  }
-
-  SCOPED_TRACE(
-      "// After restarting the Router it should now use Replica for a "
-      "connections");
-  relaunch_router(router_conf_file);
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      clusterset_data_.clusters[kFirstReplicaClusterId].nodes[0].http_port, 2));
 
   verify_new_connection_fails(router_port_rw);
 
-  make_new_connection_ok(router_port_ro,
-                         clusterset_data_.clusters[kFirstReplicaClusterId]
-                             .nodes[kRWNodeId]
-                             .classic_port);
+  auto ro_con1 = make_new_connection_ok(
+      router_port_ro,
+      clusterset_data_.clusters[kFirstReplicaClusterId].nodes[0].classic_port);
+
+  verify_only_primary_gets_updates(kPrimaryClusterId);
+
+  SCOPED_TRACE(
+      "// Simulate the invalidating scenario: clusters PRIMARY and REPLICA1 "
+      "become invalid, REPLICA2 is a new PRIMARY");
+  clusterset_data_.clusters[kPrimaryClusterId].invalid = true;
+  clusterset_data_.clusters[kFirstReplicaClusterId].invalid = true;
+  change_clusterset_primary(clusterset_data_, kSecondReplicaClusterId);
+  const auto &second_replica =
+      clusterset_data_.clusters[kSecondReplicaClusterId];
+  for (const auto &node : second_replica.nodes) {
+    const auto http_port = node.http_port;
+    set_mock_metadata(
+        view_id + 1, /*this_cluster_id*/ second_replica.id,
+        /*target_cluster_id*/ kFirstReplicaClusterId, http_port,
+        clusterset_data_,
+        /*router_options*/
+        R"({"target_cluster" : "00000000-0000-0000-0000-0000000000g2", "invalidated_cluster_policy" : ")" +
+            policy + "\" }");
+  }
+
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      second_replica.nodes[0].http_port, 2));
+
+  SCOPED_TRACE(
+      "// Check that making a new RW connection is still not possible");
+  verify_new_connection_fails(router_port_rw);
+
+  SCOPED_TRACE(
+      "// Check that RO connections are possible or not depending on the "
+      "configured policy");
+  if (!ro_allowed) {
+    verify_existing_connection_dropped(ro_con1.get());
+    verify_new_connection_fails(router_port_ro);
+  } else {
+    verify_existing_connection_ok(ro_con1.get());
+    make_new_connection_ok(router_port_ro,
+                           clusterset_data_.clusters[kFirstReplicaClusterId]
+                               .nodes[1]
+                               .classic_port);
+  }
+
+  // make sure only new PRIMARY (former REPLICA2) gets the periodic updates now
+  verify_only_primary_gets_updates(kSecondReplicaClusterId);
 }
-#endif
+
+INSTANTIATE_TEST_SUITE_P(
+    TargetClusterIsReplica, ReplicaTargetClusterMarkedInvalidInTheMetadataTest,
+    ::testing::Values(
+        // explicitly set dropAll, no RO connections allowed again
+        InvalidatedClusterTestParams{"drop_all", false},
+        // accept_ro policy in  the metadata, RO connections are allowed
+        InvalidatedClusterTestParams{"accept_ro", true}));
 
 /**
  * @test Check that the changes to the ClusterSet topology are reflected in the

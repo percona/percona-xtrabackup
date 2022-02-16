@@ -556,12 +556,6 @@ struct rw_lock_t
   reset in x_unlock functions before incrementing the lock_word */
   std::atomic<bool> recursive;
 
-  /** This is TRUE if the writer field is RW_LOCK_X_WAIT; this field
-  is located far from the memory update hotspot fields which are at
-  the start of this struct, thus we can peek this field without
-  causing much memory bus traffic */
-  bool writer_is_wait_ex;
-
   /** number of granted SX locks. */
   volatile ulint sx_recursive;
 
@@ -633,6 +627,15 @@ struct rw_lock_t
   /** Level in the global latching order. */
   latch_level_t level;
 #endif /* UNIV_DEBUG */
+
+  /** Checks if there is a thread requesting an x-latch waiting for threads to
+  release their s-latches.
+  @return true iff there is an x-latcher blocked by s-latchers. */
+  bool is_x_blocked_by_s() {
+    const auto snapshot = lock_word.load();
+    return snapshot < 0 && -X_LOCK_DECR < snapshot &&
+           snapshot != -X_LOCK_HALF_DECR;
+  }
 };
 
 #ifndef UNIV_LIBRARY

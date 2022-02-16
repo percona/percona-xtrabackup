@@ -23,6 +23,7 @@
 */
 
 #ifndef _WIN32
+#include <pwd.h>  // getpwuid
 #include <sys/stat.h>
 #endif
 
@@ -39,7 +40,6 @@
 #include <rapidjson/writer.h>
 
 #include "dim.h"
-#include "filesystem_utils.h"
 #include "harness_assert.h"
 #include "keyring/keyring_manager.h"
 #include "mock_server_rest_client.h"
@@ -50,14 +50,15 @@
 #include "mysql/harness/string_utils.h"  // split_lines
 #include "mysqld_error.h"
 #include "mysqlrouter/cluster_metadata.h"
+#include "mysqlrouter/utils.h"  // getpwuid
 #include "random_generator.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
+#include "router_component_testutils.h"
 #include "router_test_helpers.h"  // get_file_output
 #include "script_generator.h"
 #include "socket_operations.h"
 #include "tcp_port_pool.h"
-#include "utils.h"
 
 /**
  * @file
@@ -234,6 +235,8 @@ class RouterBootstrapOkBasePortTest
     : public RouterComponentBootstrapTest,
       public ::testing::WithParamInterface<BootstrapOkBasePortTestParam> {};
 
+namespace {
+
 void check_bind_port(const std::string &conf_file_content,
                      const std::string &route_name,
                      const std::string &protocol_name,
@@ -256,6 +259,14 @@ void check_bind_port(const std::string &conf_file_content,
       << conf_file_content << "EXPECTED: \n"
       << routing_section;
 }
+
+bool config_file_contains(const std::string &conf_file_content,
+                          const std::string &line,
+                          const size_t occurences = 1) {
+  return occurences == count_str_occurences(conf_file_content, line);
+}
+
+}  // namespace
 
 /**
  * @test
@@ -378,19 +389,17 @@ TEST_P(RouterBootstrapErrorBasePortTest, RouterBootstrapErrorBasePort) {
 const BootstrapErrorBasePortTestParam bootstrap_error_base_port_test_param[] = {
     {"negative",
      {"--conf-base-port=-1"},
-     "Error: Invalid base-port number -1; please pick "
-     "a value between 0 and 65532"},
+     "--conf-base-port needs value between 0 and 65532 inclusive, was '-1'"},
     {"too_big",
      {"--conf-base-port=65533"},
-     "Error: Invalid base-port number 65533; please pick "
-     "a value between 0 and 65532"},
+     "--conf-base-port needs value between 0 and 65532 inclusive, was '65533'"},
     {"nan",
      {"--conf-base-port=abc"},
-     "Error: Invalid base-port number abc; please pick "
-     "a value between 0 and 65532"},
+     "--conf-base-port needs value between 0 and 65532 inclusive, was 'abc'"},
     {"empty",
      {"--conf-base-port="},
-     "Error: Value for base-port can't be empty"}};
+     "--conf-base-port needs value between 0 and 65532 inclusive, was ''"},
+};
 
 INSTANTIATE_TEST_SUITE_P(
     RouterBootstrapErrorBasePort, RouterBootstrapErrorBasePortTest,
@@ -1357,10 +1366,6 @@ TEST_F(RouterBootstrapTest,
       bootstrap_directory.name(), "--report-host", "host.foo.bar"};
   auto &router = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
 
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
-
   check_exit_code(router, EXIT_FAILURE, 5s);
   // expect config write error
   EXPECT_THAT(router.get_full_output(),
@@ -1643,10 +1648,6 @@ TEST_P(ConfUseGrNotificationParamTest, ConfUseGrNotificationParam) {
   // launch the router in bootstrap mode
   auto &router = launch_router_for_bootstrap(bootsrtap_params);
 
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
-
   check_exit_code(router, EXIT_SUCCESS);
 
   const std::string conf_file =
@@ -1798,9 +1799,6 @@ TEST_F(ErrorReportTest, bootstrap_dir_exists_and_is_not_empty) {
           bootstrap_directory.name(),
       },
       EXIT_FAILURE);
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
 
   // verify that appropriate message was logged (first line) and error message
   // printed (last line)
@@ -1827,14 +1825,11 @@ TEST_F(ErrorReportTest, bootstrap_conf_base_port_hex) {
           "-d", bootstrap_directory.name(),                           //
       },
       EXIT_FAILURE);
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
 
   check_exit_code(router, EXIT_FAILURE);
   EXPECT_THAT(router.get_full_output(),
-              ::testing::HasSubstr("Error: Invalid base-port number 0x0; "
-                                   "please pick a value between 0 and 65532"));
+              ::testing::HasSubstr("--conf-base-port needs value between 0 and "
+                                   "65532 inclusive, was '0x0'"));
 }
 
 // unfortunately it's not (reasonably) possible to make folders read-only on
@@ -1876,9 +1871,6 @@ TEST_F(ErrorReportTest, bootstrap_dir_exists_but_is_inaccessible) {
           bootstrap_directory.name(),
       },
       EXIT_FAILURE);
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
 
   // verify that appropriate message was logged (all but last) and error message
   // printed (last line)
@@ -1929,10 +1921,6 @@ TEST_F(ErrorReportTest,
       },
       EXIT_FAILURE);
 
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
-
   // verify that appropriate message was logged (all but last) and error message
   // printed (last line)
   std::string err_msg =
@@ -1963,10 +1951,6 @@ TEST_F(ErrorReportTest, ConfUseGrNotificationsAsyncReplicaset) {
       {"--bootstrap=127.0.0.1:" + std::to_string(server_port), "-d",
        bootstrap_directory.name(), "--conf-use-gr-notifications"},
       EXIT_FAILURE);
-
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           "fake-pass\n");
 
   EXPECT_NO_THROW(router.wait_for_exit());
   EXPECT_THAT(
@@ -2003,10 +1987,6 @@ TEST_F(RouterBootstrapTest, BootstrapRouterDuplicateEntry) {
       {"--bootstrap=127.0.0.1:" + std::to_string(bootstrap_server_port), "-d",
        bootstrap_directory.name()},
       EXIT_FAILURE);
-
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
 
   check_exit_code(router, EXIT_FAILURE);
 
@@ -2048,10 +2028,6 @@ TEST_F(RouterBootstrapTest, CheckAuthBackendWhenOldMetadata) {
   auto &router = launch_router_for_bootstrap(bootsrtap_params, EXIT_SUCCESS,
                                              /*disable rest*/ false);
 
-  // add login hook
-  router.register_response("Please enter MySQL password for root: ",
-                           kRootPassword + "\n"s);
-
   check_exit_code(router, EXIT_SUCCESS);
 
   const std::string conf_file =
@@ -2069,6 +2045,400 @@ TEST_F(RouterBootstrapTest, CheckAuthBackendWhenOldMetadata) {
                                             passwd_file.str())}));
   ASSERT_TRUE(passwd_file.exists());
 }
+
+class ConfSetOptionTest : public RouterBootstrapTest {};
+
+/**
+ * @test
+ *       verify that using --conf-set-option for not bootstrap gives a proper
+ * error
+ */
+TEST_F(ConfSetOptionTest, ErrorIfNotBootstrap) {
+  const std::string tracefile = "bootstrap_gr.js";
+
+  std::vector<std::string> cmdline = {
+      "--conf-set-option=DEFAULT.max_total_connections=1024"};
+
+  auto &router = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
+
+  check_exit_code(router, EXIT_FAILURE, 5s);
+
+  // let's check if the expected error was reported:
+  EXPECT_THAT(
+      router.get_full_output(),
+      ::testing::ContainsRegex("Error: Option --conf-set-option can only be "
+                               "used together with -B/--bootstrap"));
+}
+
+/**
+ * @test
+ *       verify that the --conf-set-option bootstrap parameter is handled
+ * properly when used to set bind port of each route along with other config
+ * options
+ */
+TEST_F(ConfSetOptionTest, MultipleConfOptionsSet) {
+  const std::string tracefile = "bootstrap_gr.js";
+
+  std::vector<Config> mock_servers{
+      {"127.0.0.1", port_pool_.get_next_available(),
+       port_pool_.get_next_available(), get_data_dir().join(tracefile).str()},
+  };
+
+  // mysqlrouter -B ...
+  // --conf-set-option=routing:mycluster_rw.bind_port=A -
+  // --conf-set-option=routing:mycluster_ro.bind_port=B
+  // --conf-set-option=routing:mycluster_x_rw.bind_port=C
+  // --conf-set-option=routing:mycluster_x_ro.bind_port=D
+  // --conf-set-option=logger.level=DEBUG
+  // --conf-set-option=DEFAULT.read_timeout=50
+  // --conf-set-option=DEFAULT.connect_timeout=38
+
+  const uint16_t classic_rw_port = 1234;
+  const uint16_t classic_ro_port = 2345;
+  const uint16_t x_rw_port = 2222;
+  const uint16_t x_ro_port = 3333;
+  const std::string log_level = "DEBUG";
+  const int read_tout = 50;
+  const int connect_tout = 38;
+
+  std::vector<std::string> cmdline = {
+      "--bootstrap=" + mock_servers.at(0).ip + ":" +
+          std::to_string(mock_servers.at(0).port),
+      "-d",
+      bootstrap_dir.name(),
+      "--conf-set-option=routing:mycluster_rw.bind_port=" +
+          std::to_string(classic_rw_port),
+      "--conf-set-option=routing:mycluster_ro.bind_port=" +
+          std::to_string(classic_ro_port),
+      "--conf-set-option=routing:mycluster_x_rw.bind_port=" +
+          std::to_string(x_rw_port),
+      "--conf-set-option=routing:mycluster_x_ro.bind_port=" +
+          std::to_string(x_ro_port),
+      "--conf-set-option=logger.level=" + log_level,
+      "--conf-set-option=DEFAULT.read_timeout=" + std::to_string(read_tout),
+      "--conf-set-option=DEFAULT.connect_timeout=" +
+          std::to_string(connect_tout)};
+
+  ASSERT_NO_FATAL_FAILURE(
+      bootstrap_failover(mock_servers, ClusterType::GR_V2, cmdline));
+
+  // 'config_file' is set as side-effect of bootstrap_failover()
+  ASSERT_THAT(config_file, ::testing::Not(::testing::IsEmpty()));
+
+  // let's check if the actual config file contains what we expect:
+  const std::string config_file_str = get_file_output(config_file);
+
+  // classic RW
+  check_bind_port(config_file_str, "mycluster_rw", "classic", "PRIMARY",
+                  classic_rw_port);
+
+  // classic RO
+  check_bind_port(config_file_str, "mycluster_ro", "classic", "SECONDARY",
+                  classic_ro_port);
+
+  // x RW
+  check_bind_port(config_file_str, "mycluster_x_rw", "x", "PRIMARY", x_rw_port);
+
+  // x RO
+  check_bind_port(config_file_str, "mycluster_x_ro", "x", "SECONDARY",
+                  x_ro_port);
+
+  EXPECT_TRUE(config_file_contains(config_file_str, "level=" + log_level))
+      << config_file_str;
+  EXPECT_TRUE(config_file_contains(config_file_str,
+                                   "read_timeout=" + std::to_string(read_tout)))
+      << config_file_str;
+  EXPECT_TRUE(config_file_contains(
+      config_file_str, "connect_timeout=" + std::to_string(connect_tout)))
+      << config_file_str;
+}
+
+struct ConfSetOptionErrorTestParam {
+  std::vector<std::string> con_set_option_params;
+  std::string expected_error;
+};
+
+class ConfSetOptionErrorTest
+    : public ConfSetOptionTest,
+      public ::testing::WithParamInterface<ConfSetOptionErrorTestParam> {};
+
+TEST_P(ConfSetOptionErrorTest, ErrorTest) {
+  const std::string tracefile = get_data_dir().join("bootstrap_gr.js").str();
+  const auto mock_server_port = port_pool_.get_next_available();
+
+  launch_mysql_server_mock(tracefile, mock_server_port, EXIT_SUCCESS, false);
+
+  std::vector<std::string> cmdline = {
+      "--bootstrap=127.0.0.1:" + std::to_string(mock_server_port), "-d",
+      bootstrap_dir.name()};
+
+  for (const auto &param : GetParam().con_set_option_params) {
+    cmdline.push_back(param);
+  }
+
+  auto &router = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
+  check_exit_code(router, EXIT_FAILURE, 5s);
+
+  // let's check if the expected error was reported:
+  EXPECT_THAT(router.get_full_output(),
+              ::testing::ContainsRegex(GetParam().expected_error));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ErrorTest, ConfSetOptionErrorTest,
+    ::testing::Values(
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=:test_rw.bind_port=6666"},
+            "Error: conf-set-option: invalid section name ':test_rw'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=routing:=6666"},
+            "Error: conf-set-option: invalid option 'routing:=6666', should be "
+            "section.option_name=value"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=.para=value"},
+            "Error: conf-set-option: invalid section name ''"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=.:="},
+            "Error: conf-set-option: invalid section name ''"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=:.="},
+            "Error: conf-set-option: invalid section name ':'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT.read_timeout=1",
+             "--conf-set-option=DEFAULT.read_timeout=1"},
+            "Error: conf-set-option: duplicate value for option "
+            "'default.read_timeout'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT.read_timeout=1",
+             "--conf-set-option=DEFAULT.read_timeout=2"},
+            "Error: conf-set-option: duplicate value for option "
+            "'default.read_timeout'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT.connect_timeout=1",
+             "--connect-timeout=20",
+             "--conf-set-option=DEFAULT.connect_timeout=3"},
+            "Error: conf-set-option: duplicate value for option "
+            "'default.connect_timeout'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=MySection:AB.read_timeout=1",
+             "--conf-set-option=mysection:ab.read_TimeOut=2"},
+            "Error: conf-set-option: duplicate value for option "
+            "'mysection:ab.read_timeout'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT.read_timeout=1",
+             "--conf-set-option=DEFAULT.read_timeout=2",
+             "--conf-set-option=DEFAULT.read_timeout=3"},
+            "Error: conf-set-option: duplicate value for option "
+            "'default.read_timeout'"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT.=xx"},
+            "Error: conf-set-option: invalid option name ''"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT.:=xx"},
+            "Error: conf-set-option: invalid option name ':'"},
+
+        ConfSetOptionErrorTestParam{{"--conf-set-option=DEFAULT:.option=xx"},
+                                    "Error: conf-set-option: DEFAULT section "
+                                    "is not allowed to have a key: 'DEFAULT:"},
+
+        ConfSetOptionErrorTestParam{
+            {"--conf-set-option=DEFAULT:aa.option=xx"},
+            "Error: conf-set-option: DEFAULT section is not allowed to have a "
+            "key: 'DEFAULT:aa'"}));
+
+struct ConfSetOptionTestParam {
+  std::vector<std::string> bootstrap_params;
+  std::vector<std::string> expected_conf_entries;
+  std::vector<std::string> unexpected_conf_entries;
+};
+
+class ConfSetOptionParamTest
+    : public ConfSetOptionTest,
+      public ::testing::WithParamInterface<ConfSetOptionTestParam> {};
+
+TEST_P(ConfSetOptionParamTest, Spec) {
+  const std::string tracefile = get_data_dir().join("bootstrap_gr.js").str();
+  const auto mock_server_port = port_pool_.get_next_available();
+  launch_mysql_server_mock(tracefile, mock_server_port, EXIT_SUCCESS, false);
+
+  std::vector<std::string> cmdline = {
+      "--bootstrap=127.0.0.1:" + std::to_string(mock_server_port), "-d",
+      bootstrap_dir.name()};
+  // add parameters passed by the testcase
+  cmdline.insert(cmdline.end(), GetParam().bootstrap_params.begin(),
+                 GetParam().bootstrap_params.end());
+
+  auto &router = launch_router_for_bootstrap(cmdline, EXIT_SUCCESS, false);
+
+  ASSERT_NO_FATAL_FAILURE(check_exit_code(router, EXIT_SUCCESS));
+
+  config_file = bootstrap_dir.name() + "/mysqlrouter.conf";
+  const std::string config_file_str = get_file_output(config_file);
+
+  // check that expected entries are in the config file
+  for (const auto &entry : GetParam().expected_conf_entries) {
+    EXPECT_TRUE(config_file_contains(config_file_str, entry))
+        << entry << "\n"
+        << config_file_str;
+  }
+
+  // check that unexpected entries are NOT in the config file
+  for (const auto &entry : GetParam().unexpected_conf_entries) {
+    EXPECT_FALSE(config_file_contains(config_file_str, entry))
+        << entry << "\n"
+        << config_file_str;
+  }
+}
+
+/**
+ * @test
+ *       verify that the --conf-set-option bootstrap parameter has precedence
+ * over other existing bootstrap options setting configuration values
+ */
+INSTANTIATE_TEST_SUITE_P(
+    OverwriteTest, ConfSetOptionParamTest,
+    ::testing::Values(
+        ConfSetOptionTestParam{
+            {"--connect-timeout=20",
+             "--conf-set-option=DEFAULT.connect_timeout=1"},
+            /*expected_conf_entries=*/{"connect_timeout=1"},
+            /*unexpected_conf_entries=*/{"connect_timeout=20"}},
+        ConfSetOptionTestParam{
+            {"--connect-timeout=1",
+             "--conf-set-option=DEFAULT.connect_timeout=20"},
+            /*expected_conf_entries=*/{"connect_timeout=20"},
+            /*unexpected_conf_entries=*/{"connect_timeout=1"}},
+        ConfSetOptionTestParam{
+            {"--read-timeout=20", "--conf-set-option=DEFAULT.read_timeout=1"},
+            /*expected_conf_entry=*/{"read_timeout=1"},
+            /*unexpected_conf_entry=*/{"read_timeout=20"}},
+        ConfSetOptionTestParam{
+            {"--conf-base-port=1000",
+             "--conf-set-option=routing:mycluster_rw.bind_port=2000"},
+            /*expected_conf_entries=*/{"bind_port=2000"},
+            /*unexpected_conf_entries=*/{"bind_port=1000"}},
+        // ConfSetOptionTestParam{
+        //     {"--ssl-mode=REQUIRED",
+        //      "--conf-set-option=metadata_cache:mycluster.ssl_mode=DISABLED"},
+        //     /*expected_conf_entries=*/{"ssl_mode=DISABLED"},
+        //     /*unexpected_conf_entries=*/{"ssl-mode=REQUIRED"}}
+        ConfSetOptionTestParam{
+            {"--https-port=101", "--conf-set-option=http_server.port=202"},
+            /*expected_conf_entries=*/{"port=202"},
+            /*unexpected_conf_entries=*/{"port=101"}},
+        ConfSetOptionTestParam{
+            {"--name=Router01", "--conf-set-option=DEFAULT.name=Router02"},
+            /*expected_conf_entries=*/{"name=Router02"},
+            /*unexpected_conf_entries=*/{"name=Router01"}}));
+
+/**
+ * @test
+ *       verify that the --conf-set-option section name and option name are case
+ * insensitive
+ */
+INSTANTIATE_TEST_SUITE_P(
+    CaseSensitivity, ConfSetOptionParamTest,
+    ::testing::Values(
+        ConfSetOptionTestParam{
+            {"--conf-set-option=DEFAULt.read_timeout=1"},
+            /*expected_conf_entries=*/{"[DEFAULT]", "read_timeout=1"},
+            /*unexpected_conf_entries=*/{"[DEFAULt]", "[default]"}},
+
+        ConfSetOptionTestParam{
+            {"--conf-set-option=default.connect_timeout=15"},
+            /*expected_conf_entries=*/{"[DEFAULT]", "connect_timeout=15"},
+            /*unexpected_conf_entries=*/{"[default]"}},
+
+        ConfSetOptionTestParam{
+            {"--conf-set-option=LOGGER.level=DEBUG"},
+            /*expected_conf_entries=*/{"[logger]", "level=DEBUG"},
+            /*unexpected_conf_entries=*/{"[LOGGER]", "level=debug"}},
+
+        ConfSetOptionTestParam{
+            {"--conf-set-option=METADATA_cache:MYCLUSTER.router_id=1"},
+            /*expected_conf_entries=*/
+            {"[metadata_cache:mycluster]", "router_id=1"},
+            /*unexpected_conf_entries=*/
+            {"[METADATA_cache:MYCLUSTER]", "[metadata_cache:MYCLUSTER]"}},
+
+        ConfSetOptionTestParam{
+            {"--conf-set-option=METADATA_cache:Mycluster.router_id=1"},
+            /*expected_conf_entries=*/
+            {"[metadata_cache:mycluster]", "router_id=1"},
+            /*unexpected_conf_entries=*/
+            {"[METADATA_cache:Mycluster]", "[metadata_cache:Mycluster]"}},
+
+        ConfSetOptionTestParam{
+            {"--conf-set-option=test_section.para1=10",
+             "--conf-set-option=test_Section.para2=20",
+             "--conf-set-option=TEST_SECTION.para3=30"},
+            /*expected_conf_entries=*/
+            {"[test_section]", "para1=10", "para2=20", "para3=30"},
+            /*unexpected_conf_entries=*/
+            {"[test_Section]", "[TEST_SECTION]"}},
+
+        ConfSetOptionTestParam{
+            {"--conf-set-option=test_section:SUB.para1=10",
+             "--conf-set-option=test_Section:Sub.para2=20",
+             "--conf-set-option=TEST_SECTION:sub.para3=30"},
+            /*expected_conf_entries=*/
+            {"[test_section:sub]", "para1=10", "para2=20", "para3=30"},
+            /*unexpected_conf_entries=*/
+            {"[test_section:SUB]", "[TEST_SECTION:sub]", "[TEST_SECTION:sub]"}},
+
+        ConfSetOptionTestParam{{"--conf-set-option=DEFAULT.READ_TIMEOUT=1"},
+                               /*expected_conf_entries=*/
+                               {"read_timeout=1"},
+                               /*unexpected_conf_entries=*/
+                               {"READ_TIMEOUT=1"}},
+
+        ConfSetOptionTestParam{{"--conf-set-option=DEFAULT.READ_Timeout=1"},
+                               /*expected_conf_entries=*/
+                               {"read_timeout=1"},
+                               /*unexpected_conf_entries=*/
+                               {"READ_Timeout=1"}},
+
+        ConfSetOptionTestParam{{"--conf-set-option=test_section.para1=10",
+                                "--conf-set-option=test_section.Para2=20",
+                                "--conf-set-option=test_section.PARA3=30"},
+                               /*expected_conf_entries=*/
+                               {"para1=10", "para2=20", "para3=30"},
+                               /*unexpected_conf_entries=*/
+                               {"Para2=10", "PARA3=20"}},
+
+        ConfSetOptionTestParam{{"--conf-set-option=DEFAULT.name=\"My Router\""},
+                               /*expected_conf_entries=*/
+                               {"name=\"My Router\""},
+                               /*unexpected_conf_entries=*/
+                               {}},
+
+        ConfSetOptionTestParam{
+            {"--name=\"My Router\"",
+             "--conf-set-option=DEFAULT.name=\"other router\""},
+            /*expected_conf_entries=*/
+            {"name=\"other router\""},
+            /*unexpected_conf_entries=*/
+            {"name=\"My Router\""}},
+
+        ConfSetOptionTestParam{{"--name=\"My Router\"",
+                                "--conf-set-option=DEFAULT.name=\"MY router\""},
+                               /*expected_conf_entries=*/
+                               {"name=\"MY router\""},
+                               /*unexpected_conf_entries=*/
+                               {"name=\"My Router\""}}
+
+        ));
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();

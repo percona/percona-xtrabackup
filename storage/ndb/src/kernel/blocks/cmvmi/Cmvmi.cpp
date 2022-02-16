@@ -376,6 +376,8 @@ void Cmvmi::execSET_LOGLEVELORD(Signal* signal)
   Uint32 level;
   jamEntry();
 
+  ndbrequire(llOrd->noOfEntries <= LogLevel::LOGLEVEL_CATEGORIES);
+
   for(unsigned int i = 0; i<llOrd->noOfEntries; i++){
     category = (LogLevel::EventCategory)(llOrd->theData[i] >> 16);
     level = llOrd->theData[i] & 0xFFFF;
@@ -687,13 +689,13 @@ void Cmvmi::execEVENT_REP(Signal* signal)
 
   Uint32 buf[MAX_EVENT_REP_SIZE_WORDS];
   Uint32 *data = signal->theData;
+  const Uint32 sz = (num_sections > 0) ? segptr.sz : signal->getLength();
+  ndbrequire(sz <= MAX_EVENT_REP_SIZE_WORDS);
   if (num_sections > 0)
   {
     copy(&buf[0], segptr);
     data = &buf[0];
   }
-  Uint32 sz = (num_sections > 0) ? segptr.sz : signal->getLength();
-  ndbrequire(sz <= MAX_EVENT_REP_SIZE_WORDS);
 
   Uint32 saveBuf = Uint32(eventCategory);
   if (saveBuf >= NDB_ARRAY_SIZE(m_saved_event_buffer) - 1)
@@ -759,6 +761,7 @@ Cmvmi::execEVENT_SUBSCRIBE_REQ(Signal * signal){
      */
     LogLevel::EventCategory category;
     Uint32 level = 0;
+    ndbrequire(subReq->noOfEntries <= LogLevel::LOGLEVEL_CATEGORIES);
     for(Uint32 i = 0; i<subReq->noOfEntries; i++){
       category = (LogLevel::EventCategory)(subReq->theData[i] >> 16);
       level = subReq->theData[i] & 0xFFFF;

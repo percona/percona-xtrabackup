@@ -30,7 +30,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "cluster_metadata.h"
 #include "config_builder.h"
 #include "keyring/keyring_manager.h"
 #include "mock_server_rest_client.h"
@@ -40,8 +39,9 @@
 #include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/net_ts/socket.h"
 #include "mysql/harness/stdx/expected.h"  // make_unexpected
-#include "mysql_session.h"
 #include "mysqlrouter/classic_protocol.h"
+#include "mysqlrouter/cluster_metadata.h"
+#include "mysqlrouter/mysql_session.h"
 #include "mysqlrouter/rest_client.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
@@ -1264,14 +1264,12 @@ TEST_P(StaticRoutingToNonExistentNodes, StaticRoutingToNonExistentNodesTest) {
            {"routing_strategy", "first-available"},
            {"destinations", "127.0.0.1:" + std::to_string(local_port)},
            {"protocol", "classic"}}) +
-      "\n" +
       mysql_harness::ConfigBuilder::build_section(
           "routing:R2",
           {{"bind_port", std::to_string(port2)},
            {"routing_strategy", "next-available"},
            {"destinations", "127.0.0.1:" + std::to_string(local_port)},
            {"protocol", "classic"}}) +
-      "\n" +
       mysql_harness::ConfigBuilder::build_section(
           "routing:R3",
           {{"bind_port", std::to_string(port3)},

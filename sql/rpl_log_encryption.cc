@@ -784,7 +784,7 @@ bool Rpl_encryption::set_seqno_on_keyring(std::string key_id, uint32_t seqno) {
   DBUG_PRINT("debug", ("key_id= '%s'. seqno= %u", key_id.c_str(), seqno));
 #ifdef NDEBUG
   if (srv_keyring_writer->store(key_id.c_str(), nullptr, key, SEQNO_KEY_LENGTH,
-                                SEQNO_KEY_TYPE) == true) {
+                                SEQNO_KEY_TYPE) != 0) {
 #else
   if ((DBUG_EVALUATE_IF("rpl_encryption_first_time_enable_1", true, false) &&
        key_id.compare(get_new_master_key_seqno_key_id()) == 0) ||
@@ -803,7 +803,7 @@ bool Rpl_encryption::set_seqno_on_keyring(std::string key_id, uint32_t seqno) {
                         true, false) &&
        key_id.compare(get_last_purged_master_key_seqno_key_id()) == 0) ||
       srv_keyring_writer->store(key_id.c_str(), nullptr, key, SEQNO_KEY_LENGTH,
-                                SEQNO_KEY_TYPE) == true) {
+                                SEQNO_KEY_TYPE) != 0) {
 #endif
     report_keyring_error(Keyring_status::KEYRING_ERROR_STORING);
     return true;
@@ -814,7 +814,7 @@ bool Rpl_encryption::set_seqno_on_keyring(std::string key_id, uint32_t seqno) {
 bool Rpl_encryption::remove_key_from_keyring(std::string key_id) {
   DBUG_TRACE;
 #ifdef NDEBUG
-  if (srv_keyring_writer->remove(key_id.c_str(), nullptr) == true) {
+  if (srv_keyring_writer->remove(key_id.c_str(), nullptr) != 0) {
 #else
   if (DBUG_EVALUATE_IF("rpl_encryption_first_time_enable_4", true, false) ||
       (DBUG_EVALUATE_IF("fail_to_remove_master_key_from_keyring", true,
@@ -832,7 +832,7 @@ bool Rpl_encryption::remove_key_from_keyring(std::string key_id) {
       (DBUG_EVALUATE_IF("fail_to_remove_unused_key_from_keyring",
                         !current_thd->is_error(), false) &&
        key_id.compare(get_master_key_seqno_key_id()) != 0) ||
-      srv_keyring_writer->remove(key_id.c_str(), nullptr) == true) {
+      srv_keyring_writer->remove(key_id.c_str(), nullptr) != 0) {
 #endif
     report_keyring_error(Keyring_status::KEYRING_ERROR_REMOVING);
     return true;
@@ -959,7 +959,7 @@ bool Rpl_encryption::generate_master_key_on_keyring(uint32 seqno) {
       DBUG_EVALUATE_IF("fail_to_generate_key_on_keyring", true, false) ||
       srv_keyring_generator->generate(
           key_id.c_str(), nullptr, Rpl_encryption_header_v1::KEY_TYPE,
-          Rpl_encryption_header_v1::KEY_LENGTH) == true) {
+          Rpl_encryption_header_v1::KEY_LENGTH) != 0) {
     Rpl_encryption::report_keyring_error(
         Keyring_status::KEYRING_ERROR_GENERATING);
     return true;

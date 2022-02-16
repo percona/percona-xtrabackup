@@ -140,13 +140,12 @@ BuildRequires:  openssl-devel
 BuildRequires:  zlib-devel
 %{?sles12:BuildRequires: gcc10 gcc10-c++}
 %{?sles15:BuildRequires: gcc9 gcc9-c++}
-%{?sles16:BuildRequires: rpcgen pkgconfig(libtirpc)}
+%{?sles15:BuildRequires: rpcgen pkgconfig(libtirpc)}
 BuildRequires:  systemd
 BuildRequires:  pkgconfig(systemd)
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  cyrus-sasl-devel
 BuildRequires:  openldap2-devel
-BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 %global _privatelibs libprotobuf.*|libmysqlharness\.so.*|libmysqlharness_stdx\.so.*|libmysqlharness_tls\.so.*|libmysqlrouter\.so\..*|libmysqlrouter_.*\.so\..*|libfido2.*
 %global _privateperl perl\\((GD|hostnames|lib::mtr|lib::v1|mtr_|My::)
@@ -181,6 +180,7 @@ Requires:       net-tools
 Requires:       perl-base
 Requires:       %{name}-client >= %{min}
 Requires:       %{name}-common = %{version}-%{release}
+Requires:       %{name}-icu-data-files = %{version}-%{release}
 %if 0%{?commercial}
 Obsoletes:      mysql-commercial-bench < 5.7.8
 Provides:       MySQL-server-advanced = %{version}-%{release}
@@ -284,6 +284,12 @@ Conflicts:      otherproviders(mysql-client)
 %description    client
 This package contains the standard MySQL clients and administration
 tools.
+
+%package        icu-data-files
+Summary:        MySQL packaging of ICU data files
+
+%description    icu-data-files
+This package contains ICU data files needer by MySQL regular expressions.
 
 %package        common
 Summary:        MySQL database common files for server and client libs
@@ -594,7 +600,7 @@ mkdir debug
            -DUSE_LD_LLD=0 \
            -DWITH_SYSTEMD=1 \
            -DSYSTEMD_SERVICE_NAME="mysql" \
-           -DSYSTEMD_PID_DIR="/var/run/mysql" \
+           -DSYSTEMD_PID_DIR="/run/mysql" \
            -DWITH_MEB=%{with_meb} \
            -DWITH_ROUTER=%{with_router} \
 %if 0%{?cluster}
@@ -638,7 +644,7 @@ mkdir release
            -DUSE_LD_LLD=0 \
            -DWITH_SYSTEMD=1 \
            -DSYSTEMD_SERVICE_NAME="mysql" \
-           -DSYSTEMD_PID_DIR="/var/run/mysql" \
+           -DSYSTEMD_PID_DIR="/run/mysql" \
            -DWITH_MEB=%{with_meb} \
            -DWITH_ROUTER=%{with_router} \
 %if 0%{?cluster}
@@ -982,6 +988,13 @@ rm -r $(readlink var) var
 %{_datadir}/mysql-*/swedish/
 %{_datadir}/mysql-*/ukrainian/
 
+%files icu-data-files
+%defattr(-, root, root, -)
+%doc %{?license_files_server}
+%dir %attr(755, root, root) %{_libdir}/mysql/private/icudt69l
+%{_libdir}/mysql/private/icudt69l/unames.icu
+%{_libdir}/mysql/private/icudt69l/brkitr
+
 %files client
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
@@ -1133,6 +1146,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_backup_lock_service.so
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_page_track_component.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_global_priv_registration.so
 %endif
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_string_service_charset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_string_service_long.so
@@ -1220,6 +1234,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_backup_lock_service.so
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_page_track_component.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_global_priv_registration.so
 %endif
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_string_service_charset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_string_service_long.so
@@ -1339,6 +1354,8 @@ rm -r $(readlink var) var
 %defattr(-, root, root, -)
 %doc %{src_dir}/packaging/meb/LICENSE.meb
 %doc %{src_dir}/packaging/meb/README.meb
+%doc %{src_dir}/Docs/INFO_SRC*
+%doc release/Docs/INFO_BIN*
 %attr(755, root, root) %{_bindir}/mysqlbackup
 %endif # with_meb
 
@@ -1346,6 +1363,8 @@ rm -r $(readlink var) var
 %files -n mysql-router-%{product_suffix}
 %defattr(-, root, root, -)
 %doc %{src_dir}/router/README.router  %{src_dir}/router/LICENSE.router
+%doc %{src_dir}/Docs/INFO_SRC*
+%doc release/Docs/INFO_BIN*
 %dir %{_sysconfdir}/mysqlrouter
 %config(noreplace) %{_sysconfdir}/mysqlrouter/mysqlrouter.conf
 %attr(644, root, root) %config(noreplace,missingok) %{_sysconfdir}/logrotate.d/mysqlrouter

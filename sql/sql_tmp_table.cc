@@ -68,14 +68,15 @@
 #include "sql/opt_trace_context.h"  // Opt_trace_context
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
-#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
-#include "sql/sql_base.h"                         // free_io_cache
-#include "sql/sql_class.h"                        // THD
+#include "sql/range_optimizer/range_optimizer.h"
+#include "sql/sql_base.h"   // free_io_cache
+#include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
 #include "sql/sql_executor.h"  // SJ_TMP_TABLE
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h"
 #include "sql/sql_plugin.h"  // plugin_unlock
 #include "sql/sql_plugin_ref.h"
 #include "sql/sql_select.h"
@@ -1032,8 +1033,12 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
         if (param->m_window == nullptr || !param->m_window->is_last())
           store_column = false;
       }
-      if (item->const_item() && hidden_field_count <= 0)
+
+      if (item->const_for_execution() &&
+          evaluate_during_optimization(item, thd->lex->current_query_block()) &&
+          hidden_field_count <= 0) {
         continue;  // We don't have to store this
+      }
     }
 
     if (store_column && is_sum_func && group == nullptr &&
@@ -1298,22 +1303,6 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
       // keyinfo->algorithm is set later, when storage engine is known
       param->keyinfo->set_rec_per_key_array(nullptr, nullptr);
       param->keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
-
-      // Set up records-per-key estimates.
-      ulong *rec_per_key = share->mem_root.ArrayAlloc<ulong>(
-          param->keyinfo->user_defined_key_parts);
-      rec_per_key_t *rec_per_key_float =
-          share->mem_root.ArrayAlloc<rec_per_key_t>(
-              param->keyinfo->user_defined_key_parts);
-      if (rec_per_key == nullptr || rec_per_key_float == nullptr)
-        return nullptr;
-      param->keyinfo->set_rec_per_key_array(rec_per_key, rec_per_key_float);
-      for (unsigned key_part_idx = 0;
-           key_part_idx < param->keyinfo->user_defined_key_parts;
-           ++key_part_idx) {
-        param->keyinfo->rec_per_key[key_part_idx] = 0;
-        param->keyinfo->set_records_per_key(key_part_idx, REC_PER_KEY_UNKNOWN);
-      }
 
       /* Create a distinct key over the columns we are going to return */
       for (unsigned i = param->hidden_field_count; i < share->fields;
@@ -2753,23 +2742,6 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
     assert(new_table.mem_root.allocated_size() == 0);
     table->mem_root = std::move(new_table.mem_root);
 
-    /*
-      Depending on if this TABLE clone is early/late in optimization, or in
-      execution, it has a JOIN_TAB or a QEP_TAB or none.
-    */
-    QEP_TAB *qep_tab = table->reginfo.qep_tab;
-    QEP_shared_owner *tab;
-    if (qep_tab)
-      tab = qep_tab;
-    else
-      tab = table->reginfo.join_tab;
-
-    /* Update quick select, if any. */
-    if (tab && tab->quick()) {
-      assert(table->pos_in_table_list->uses_materialization());
-      tab->quick()->set_handler(table->file);
-    }
-
     // TODO(sgunders): Move this into MaterializeIterator when we remove the
     // pre-iterator executor.
     if (rec_ref_w_open_cursor) {
@@ -2902,7 +2874,7 @@ static int FindCopyBitmap(Item *item) {
     } else {
       bits |= 1 << CFT_HAS_NO_WF;
     }
-    if (item->type() == Item::FIELD_ITEM) {
+    if (item->real_item()->type() == Item::FIELD_ITEM) {
       bits |= 1 << CFT_FIELDS;
     }
   }

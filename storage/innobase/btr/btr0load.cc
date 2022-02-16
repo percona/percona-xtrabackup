@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2021, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -136,7 +136,7 @@ class Page_load : private ut::Non_copyable {
   [[nodiscard]] dtuple_t *get_node_ptr() noexcept;
 
   /** Split the page records between this and given bulk.
-   * @param new_page_load  The new bulk to store split records. */
+  @param new_page_load  The new bulk to store split records. */
   void split(Page_load &new_page_load) noexcept;
 
   /** Copy all records from page.
@@ -516,8 +516,8 @@ void Page_load::finish() noexcept {
   auto n_rec_to_assign = m_rec_no - m_slotted_rec_no;
 
   /* Fill slots for non-supremum records if possible.
-   * Slot for supremum record could store up to
-   * PAGE_DIR_SLOT_MAX_N_OWNED-1 records. */
+  Slot for supremum record could store up to
+  PAGE_DIR_SLOT_MAX_N_OWNED-1 records. */
   while (n_rec_to_assign >= PAGE_DIR_SLOT_MAX_N_OWNED) {
     static constexpr size_t RECORDS_PER_SLOT =
         (PAGE_DIR_SLOT_MAX_N_OWNED + 1) / 2;
@@ -946,7 +946,8 @@ dberr_t Btree_load::page_commit(Page_load *page_loader,
   need to acquire a lock in that case. */
   ut_ad(!page_loader->is_index_locked());
 
-  IF_ENABLED("ddl_btree_build_sleep", os_thread_sleep(1000000);)
+  IF_ENABLED("ddl_btree_build_sleep",
+             std::this_thread::sleep_for(std::chrono::seconds{1});)
 
   /* Compress page if it's a compressed table. */
   if (page_loader->is_table_compressed() && !page_loader->compress()) {

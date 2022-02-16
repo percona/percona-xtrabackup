@@ -34,7 +34,6 @@
 #include "my_sqlcommand.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysqld_error.h"
-#include "sql/current_thd.h"
 #include "sql/handler.h"
 #include "sql/key.h"
 #include "sql/key_spec.h"
@@ -193,7 +192,7 @@ SEL_TREE::SEL_TREE(SEL_TREE *arg, RANGE_OPT_PARAM *param)
   List_iterator<SEL_IMERGE> it(arg->merges);
   for (SEL_IMERGE *el = it++; el; el = it++) {
     SEL_IMERGE *merge = new (param->temp_mem_root) SEL_IMERGE(el, param);
-    if (!merge || merge->trees == merge->trees_next || param->has_errors()) {
+    if (!merge || merge->trees.empty() || param->has_errors()) {
       merges.clear();
       return;
     }
@@ -326,12 +325,12 @@ SEL_ARG::SEL_ARG(Field *f, const uchar *min_value_arg,
 
 SEL_ARG::SEL_ARG(Field *field_, uint8 part_, uchar *min_value_,
                  uchar *max_value_, uint8 min_flag_, uint8 max_flag_,
-                 bool maybe_flag_, bool asc)
+                 bool maybe_flag_, bool asc, ha_rkey_function gis_flag)
     : min_flag(min_flag_),
       max_flag(max_flag_),
       maybe_flag(maybe_flag_),
       part(part_),
-      rkey_func_flag(HA_READ_INVALID),
+      rkey_func_flag(gis_flag),
       field(field_),
       min_value(min_value_),
       max_value(max_value_),
@@ -351,7 +350,8 @@ SEL_ARG *SEL_ARG::clone(RANGE_OPT_PARAM *param, SEL_ARG *new_parent,
 
   if (!(tmp = new (param->temp_mem_root)
             SEL_ARG(field, part, min_value, max_value, min_flag, max_flag,
-                    maybe_flag, is_ascending)))
+                    maybe_flag, is_ascending,
+                    min_flag & GEOM_FLAG ? rkey_func_flag : HA_READ_INVALID)))
     return nullptr;  // OOM
   tmp->parent = new_parent;
   tmp->set_next_key_part(next_key_part);
@@ -510,14 +510,6 @@ SEL_TREE *tree_and(RANGE_OPT_PARAM *param, SEL_TREE *tree1, SEL_TREE *tree2) {
     return tree1;
   if (tree2->type == SEL_TREE::IMPOSSIBLE || tree1->type == SEL_TREE::ALWAYS)
     return tree2;
-  if (tree1->type == SEL_TREE::MAYBE) {
-    if (tree2->type == SEL_TREE::KEY) tree2->type = SEL_TREE::KEY_SMALLER;
-    return tree2;
-  }
-  if (tree2->type == SEL_TREE::MAYBE) {
-    tree1->type = SEL_TREE::KEY_SMALLER;
-    return tree1;
-  }
 
   dbug_print_tree("tree1", tree1, param);
   dbug_print_tree("tree2", tree2, param);
@@ -589,7 +581,7 @@ bool sel_trees_can_be_ored(SEL_TREE *tree1, SEL_TREE *tree2,
   Remove the trees that are not suitable for record retrieval.
   SYNOPSIS
     param  Range analysis parameter
-    tree   Tree to be processed, tree->type is KEY or KEY_SMALLER
+    tree   Tree to be processed, tree->type is KEY
 
   DESCRIPTION
     This function walks through tree->keys[] and removes the SEL_ARG* trees
@@ -665,8 +657,6 @@ SEL_TREE *tree_or(RANGE_OPT_PARAM *param, bool remove_jump_scans,
     return tree2;
   if (tree2->type == SEL_TREE::IMPOSSIBLE || tree1->type == SEL_TREE::ALWAYS)
     return tree1;
-  if (tree1->type == SEL_TREE::MAYBE) return tree1;  // Can't use this
-  if (tree2->type == SEL_TREE::MAYBE) return tree2;
 
   /*
     It is possible that a tree contains both
@@ -738,10 +728,10 @@ SEL_TREE *tree_or(RANGE_OPT_PARAM *param, bool remove_jump_scans,
       /* both trees are "range" trees, produce new index merge structure */
       if (!(result = new (param->temp_mem_root)
                 SEL_TREE(param->temp_mem_root, param->keys)) ||
-          !(merge = new (param->temp_mem_root) SEL_IMERGE()) ||
-          (result->merges.push_back(merge)) ||
-          (merge->or_sel_tree(param, tree1)) ||
-          (merge->or_sel_tree(param, tree2)))
+          !(merge =
+                new (param->temp_mem_root) SEL_IMERGE(param->temp_mem_root)) ||
+          result->merges.push_back(merge) || merge->or_sel_tree(tree1) ||
+          merge->or_sel_tree(tree2))
         result = nullptr;
       else
         result->type = tree1->type;
