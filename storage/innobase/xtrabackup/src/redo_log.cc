@@ -585,7 +585,7 @@ void Archived_Redo_Log_Monitor::close() { os_event_destroy(event); }
 void Archived_Redo_Log_Monitor::start() {
   thread = os_thread_create(PFS_NOT_INSTRUMENTED, 0, [this] { thread_func(); });
   thread.start();
-  os_event_wait_time_low(event, 100 * 1000, 0);
+  os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
   debug_sync_point("stop_before_redo_archive");
 }
 
@@ -765,7 +765,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
     if (exists) {
       break;
     }
-    os_event_wait_time_low(event, 100 * 1000, 0);
+    os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
     os_event_reset(event);
   }
 
@@ -792,7 +792,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
         my_thread_end();
         return;
       }
-      os_event_wait_time_low(event, 100 * 1000, 0);
+      os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
       os_event_reset(event);
       hdr_len -= n_read;
     }
@@ -813,7 +813,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
           my_thread_end();
           return;
         }
-        os_event_wait_time_low(event, 100 * 1000, 0);
+        os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
         os_event_reset(event);
         hdr_len -= n_read;
       }
@@ -828,7 +828,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
           my_thread_end();
           return;
         }
-        os_event_wait_time_low(event, 100 * 1000, 0);
+        os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
         os_event_reset(event);
         hdr_len -= n_read;
       }
@@ -859,7 +859,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
   }
 
   while (!stopped) {
-    os_event_wait_time_low(event, 100 * 1000, 0);
+    os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
     os_event_reset(event);
   }
 
@@ -1153,7 +1153,8 @@ void Redo_Log_Data_Manager::copy_func() {
       debug_sync_point("xtrabackup_copy_logfile_pause");
 
       os_event_reset(event);
-      os_event_wait_time_low(event, copy_interval * 1000UL, 0);
+      os_event_wait_time_low(event, std::chrono::milliseconds{copy_interval},
+                             0);
     }
   }
 
