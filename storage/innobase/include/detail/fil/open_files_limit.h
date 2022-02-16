@@ -43,12 +43,12 @@ class Open_files_limit {
  public:
   Open_files_limit(size_t limit) : m_limit{limit}, m_old_limit{0} {
     m_is_change_in_progress.clear();
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
     m_dynamic_procedures.register_procedures();
 #endif
   }
   ~Open_files_limit() {
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
     m_dynamic_procedures.unregister();
 #endif
   }

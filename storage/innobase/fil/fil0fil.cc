@@ -4041,7 +4041,7 @@ void Fil_system::close_all_files() {
 modifications in the files. */
 void fil_close_all_files() { fil_system->close_all_files(); }
 
-#ifdef XTRABACUP
+#ifdef XTRABACKUP
 /** Open a file of a tablespace.
 The caller must own the shard mutex.
 @param[in,out]  file    Tablespace file
@@ -11872,6 +11872,11 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
 
   ut_a(space != NULL);
 
+  char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
+  if (fn == nullptr) {
+    return (DB_ERROR);
+  }
+
   /* For encrypted tablespace, initialize encryption
   information.*/
   if (FSP_FLAGS_GET_ENCRYPTION(file.flags())) {
@@ -11888,11 +11893,6 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
     }
 
     ut_ad(err == DB_SUCCESS);
-  }
-
-  char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
-  if (fn == nullptr) {
-    return (DB_ERROR);
   }
 
   /* by opening the tablespace we forcing node and space objects

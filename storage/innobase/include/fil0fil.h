@@ -1480,6 +1480,7 @@ bool fil_open_files_limit_update(size_t &new_max_open_files);
 /** Initializes the tablespace memory cache. */
 void fil_close();
 
+#ifdef XTRABACKUP
 /** Open a file of a tablespace.
 The caller must own the shard mutex.
 @param[in,out]  file    Tablespace file
@@ -1490,6 +1491,7 @@ bool fil_node_open_file(fil_node_t *file);
 @param[in] node file to close. */
 void fil_node_close_file(fil_node_t *node);
 
+#endif /* XTRABACKUP */
 /** Opens all log files and system tablespace data files.
 They stay open until the database server shutdown. This should be called
 at a server startup after the space objects for the log and the system

@@ -71,6 +71,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <row0mysql.h>
 #include <row0quiesce.h>
 #include <sql_locale.h>
+#include <srv0srv.h>
 #include <srv0start.h>
 
 #include <clone0api.h>
@@ -2095,7 +2096,7 @@ static bool innodb_init_param(void) {
 
   srv_file_per_table = (bool)innobase_file_per_table;
 
-  srv_max_n_open_files = (ulint)innobase_open_files;
+  innobase_set_open_files_limit(innobase_open_files);
   srv_innodb_status = (ibool)innobase_create_status_file;
 
   /* Store the default charset-collation number of this MySQL
@@ -5204,6 +5205,7 @@ static bool xb_space_create_file(
     const char *path,    /*!<in: path to tablespace */
     ulint space_id,      /*!<in: space id */
     ulint flags,         /*!<in: tablespace flags */
+    fil_space_t *space,  /*!<in: space object */
     pfs_os_file_t *file) /*!<out: file handle */
 {
   const ulint size = FIL_IBD_FILE_INITIAL_SIZE;
@@ -5359,8 +5361,6 @@ static bool xb_space_create_file(
     return (false);
   }
 
-  fil_space_t *space = fil_space_get(space_id);
-
   if (fil_node_create(path, size, space, false, false) == nullptr) {
     ib::fatal(UT_LOCATION_HERE) << "Unable to add tablespace node '" << path
                                 << "' to the tablespace cache.";
@@ -5427,7 +5427,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   bool ok;
   pfs_os_file_t file = XB_FILE_UNDEFINED;
   xb_filter_entry_t *table;
-  const fil_space_t *fil_space;
+  fil_space_t *fil_space;
   space_id_t f_space_id;
   os_file_create_t create_option = OS_FILE_OPEN;
 
@@ -5517,12 +5517,14 @@ static pfs_os_file_t xb_delta_open_matching_space(
       }
 
       /* either file doesn't exist or it has been renamed above */
-      if (!fil_space_create(dest_space_name, space_id, space_flags,
-                            FIL_TYPE_TABLESPACE)) {
+      fil_space = fil_space_create(dest_space_name, space_id, space_flags,
+                                   FIL_TYPE_TABLESPACE);
+      if (fil_space == nullptr) {
         xb::error() << "Cannot create tablespace " << dest_space_name;
         goto exit;
       }
-      *success = xb_space_create_file(real_name, space_id, space_flags, &file);
+      *success = xb_space_create_file(real_name, space_id, space_flags,
+                                      fil_space, &file);
       goto exit;
     }
     goto found;
@@ -5612,8 +5614,9 @@ static pfs_os_file_t xb_delta_open_matching_space(
 
   /* No matching space found. create the new one.  */
 
-  if (!fil_space_create(dest_space_name, space_id, space_flags,
-                        FIL_TYPE_TABLESPACE)) {
+  fil_space = fil_space_create(dest_space_name, space_id, space_flags,
+                               FIL_TYPE_TABLESPACE);
+  if (fil_space == nullptr) {
     xb::error() << " Cannot create tablespace " << dest_space_name;
     goto exit;
   }
@@ -5626,7 +5629,8 @@ static pfs_os_file_t xb_delta_open_matching_space(
                    (DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT);
     ut_a(page_size_t(space_flags).physical() == zip_size);
   }
-  *success = xb_space_create_file(real_name, space_id, space_flags, &file);
+  *success =
+      xb_space_create_file(real_name, space_id, space_flags, fil_space, &file);
   goto exit;
 
 found:

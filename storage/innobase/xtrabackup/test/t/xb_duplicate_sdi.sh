@@ -9,6 +9,7 @@ lower_case_table_names
 "
 
 . inc/common.sh
+keyring_args=""
 start_server
 
 vlog "case#1 check exchange partition"

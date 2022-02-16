@@ -65,12 +65,12 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
       mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_NO);
 
   while (true) {
-    err = fil_io(IORequest(IORequest::READ), true,
-                 page_id_t(log_sys->files_space_id, 0), univ_page_size, 0,
-                 LOG_FILE_HDR_SIZE, log_hdr_buf, nullptr);
+    err = fil_redo_io(IORequest(IORequest::LOG | IORequest::READ),
+                      page_id_t(log_sys->files_space_id, 0), univ_page_size, 0,
+                      LOG_FILE_HDR_SIZE, log_hdr_buf);
 
     if (err != DB_SUCCESS) {
-      xb::error() << "fil_io() failed.";
+      xb::error() << "fil_redo_io() failed.";
       return (false);
     }
 
