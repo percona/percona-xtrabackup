@@ -65,4 +65,5 @@ xb_fetch_tablespace_key(ulint space_id, byte *key, byte *iv);
 }
 #endif
 
+#define SQUOTE(str) "'" << str << "'"
 #endif
