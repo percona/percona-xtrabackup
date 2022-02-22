@@ -895,7 +895,7 @@ static dberr_t open_or_create_log_file(bool *log_file_created, ulint i,
   if (size != srv_log_file_size) {
     xb::error() << "log file " << name << " is of different size " << size
                 << " bytes than specified in the .cnf file "
-                << srv_log_file_size * UNIV_PAGE_SIZE << " bytes!";
+                << srv_log_file_size << " bytes!";
 
     return (DB_ERROR);
   }
