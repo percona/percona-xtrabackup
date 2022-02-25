@@ -25,7 +25,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <mysys_err.h>
+
+#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
 #include <linux/falloc.h>
+#endif
+
 #include "common.h"
 #include "datasink.h"
 
