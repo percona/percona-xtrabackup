@@ -271,9 +271,13 @@ Options
 .. option:: --encrypt-chunk-size=#
 
    This option specifies the size of the internal working buffer for each
-   encryption thread, measured in bytes. It is passed directly to the
+   encryption thread, and is measured in bytes. It is passed directly to the
    xtrabackup child process. See the `xtrabackup` :doc:`documentation
    <../xtrabackup_bin/xtrabackup_binary>` for more details.
+
+   .. note::
+
+      To adjust the xbcloud/xbstream chunk size when you use encryption, you must adjust both the --encrypt-chunk-size and --read-buffer-size variables.
 
 .. option:: --export
 
@@ -602,8 +606,18 @@ Options
 
 .. option:: --read-buffer-size[=#]
 
-   Set datafile read buffer size. The given value is scaled up to page size. The
+   Set read buffer size. The given value is scaled up to page size. The
    default is 10MB.
+  
+   Use this variable to increase the xbcloud/xbstream chunk size from the default value of 10MB. 
+
+.. note::
+
+   When you use encryption, to adjust the xbcloud/xbstream chunk size, adjust both the ``--encrypt-chunk-size`` and ``--read-buffer-size`` variables.
+
+   .. code-block:: mysql
+
+      $ xtrabackup ... --read-buffer-size=1G | xbcloud put ...
    
 .. option:: --rebuild-indexes
 
@@ -815,7 +829,9 @@ Options
 .. option:: --throttle=#
 
    This option limits the number of chunks copied per second. The chunk size is
-   *10 MB*. To limit the bandwidth to *10 MB/s*, set the option to *1*:
+   *10 MB*. 
+   
+   To limit the bandwidth to *10 MB/s*, set the option to *1*:
    `--throttle=1`.
 
    .. seealso::
