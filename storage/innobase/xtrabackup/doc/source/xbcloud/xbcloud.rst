@@ -30,7 +30,13 @@ needing a local storage.
 The *xbcloud* binary stores each chunk as a separate object with a name
 ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a
 0-padded serial number of chunk within file. Size of chunk produced by
-*xtrabackup* and xbstream changed to 10M.
+*xtrabackup* and xbstream changed to 10MB. 
+
+.. note:: 
+
+   Use ``--read-buffer-size`` to adjust the chunk size.
+
+   If you use encryption, specify both the ``--read-buffer-size`` and ``--encrypt-chunk-size`` options to adjust the chunk size.
 
 *xbcloud* has three essential operations: *put*, *get*, and *delete*. With these
 operations, backups are created, stored, retrieved, restored, and

@@ -60,3 +60,11 @@ entire backup to restore a single table as with `tar.gz`.
 
 Files can be decompressed using the **qpress** tool that can be downloaded from
 `here <http://www.quicklz.com/>`_. Qpress supports multi-threaded decompression.
+
+The default size of the chunk file is 10MB.
+
+.. note:: 
+
+   Use ``--read-buffer-size`` to adjust the chunk size.
+
+   If you use encryption, specify both the ``--read-buffer-size`` and ``--encrypt-chunk-size`` options to adjust the chunk size.
