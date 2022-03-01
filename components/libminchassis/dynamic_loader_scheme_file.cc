@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/services/mysql_runtime_error_service.h>
 #include <mysql/components/services/mysql_rwlock.h>
 #include <mysqld_error.h>
-
+#include "my_config.h"
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
@@ -215,7 +215,12 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::unload,
     mysql_unload_plugin(it->first.c_str());
 
     /* Close library and delete entry from libraries list. */
+#if !defined(HAVE_VALGRIND) && !defined(HAVE_ASAN)
+    /*
+     * Avoid closing components under ASAN / Valgrind in order to get
+     * meaningfull leak report */
     dlclose(it->second);
+#endif
     object_files_list.erase(it);
     return false;
   } catch (...) {
