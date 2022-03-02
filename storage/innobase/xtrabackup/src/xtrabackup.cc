@@ -5951,10 +5951,6 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
                            handle_datadir_entry_func_t func, void *data) {
   struct stat statinfo;
   size_t suffix_len = strlen(suffix);
-  if (!strcmp(name, ".rocksdb")) {
-      fprintf(stderr, "KH: skipping .rocksdb directory\n");
-      return;
-  }
   if (stat(path, &statinfo) != 0) {
     return;
   }
@@ -5996,14 +5992,18 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
                         const char *suffix, /*!<in: suffix to match
                                             against */
                         handle_datadir_entry_func_t func, /*!<in: callback */
-                        void *data) /*!<in: additional argument for
+                        void *data, /*!<in: additional argument for
                                     callback */
-{
+                        const std::unordered_set<std::string>* dir_exception_list) {
   bool ret = os_file_scan_directory(
       path,
       [&](const char *l1path, const char *l1name) -> void {
         if (strcmp(l1name, ".") == 0 || strcmp(l1name, "..") == 0) {
           return;
+        }
+        if(dir_exception_list && dir_exception_list->count(l1name)) {
+            xb::info() << "SKIPPING " << l1name  << " DIRECTORY";
+            return;
         }
         char fullpath[FN_REFLEN];
         snprintf(fullpath, sizeof(fullpath), "%s/%s", l1path, l1name);

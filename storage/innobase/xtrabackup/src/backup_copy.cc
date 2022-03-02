@@ -1436,10 +1436,13 @@ static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
         ends_with(it->path.c_str(), ".xbcrypt")) {
       continue;
     }
-    
-    // KH: 
+
+    // We already removed MANIFEST, CURRENT and OPTONS files
+    // in copy_incremental_over_full(). However there may be log files in
+    // incremental which we are not filtering. Handle them here.
     if (file_exists(it->rel_path.c_str())) {
-      fprintf(stderr, "KH: deleting file %s\n", it->rel_path.c_str());
+      xb::info() << "Removing " << it->rel_path <<
+        " from base dir. Using the one from incremental backup";
       unlink(it->rel_path.c_str());
     }
 
@@ -2013,25 +2016,53 @@ bool copy_incremental_over_full() {
            ROCKSDB_SUBDIR);
   if (directory_exists(path, false)) {
     Myrocks_datadir rocksdb(path);
-#if 0 // KH:
-    if (directory_exists(ROCKSDB_SUBDIR, false)) {
-      Myrocks_datadir old_rocksdb(ROCKSDB_SUBDIR);
 
-      /* remove .rocksdb from the full backup first */
+  // Remove obsolete files from the base dir.
+  // Even if we copied everything from incremental to base, rocksdb would remove
+  // obsolete files on its start, but such approach would lead to the situation
+  // when after server inc prepare we end up with the directory containing a lot
+  // of obsolete SST files which take huge amount of space.
+  // Instead of above naive approach, just remove from base SST files we learned
+  // are obsolete (we know it from incremental backup information)
+
+    RdbManifest newRocksdbManifest;
+    newRocksdbManifest.deserialize(xtrabackup_incremental_dir);
+    if (directory_exists(ROCKSDB_SUBDIR, false)) {
+      RdbManifest oldRocksdbManifest;
+      oldRocksdbManifest.deserialize(xtrabackup_target_dir);
+
+      auto &oldSST = oldRocksdbManifest.GetOldSstFiles();
+      auto &newSST = newRocksdbManifest.GetOldSstFiles();
+      // calculate SST files present in base, but not needed anymore (oldSST - newSST)
+      std::unordered_set<std::string> oldObsoleteSST;
+
+      for (auto &oldSSTFile : oldSST) {
+          if (newSST.count(oldSSTFile) == 0) {
+              oldObsoleteSST.emplace(oldSSTFile);
+          }
+      }
+
+      Myrocks_datadir old_rocksdb(ROCKSDB_SUBDIR);
+      /* Remove obsolete .rocksdb SST files from the full backup first
+         Remove also MANIFEST, CURRENT AND OPTIONS files as they are for sure
+         in incremental backup.
+         (probably we can remove *.log files here as well) */
       for (const auto &file : old_rocksdb.files()) {
-        if (unlink(file.path.c_str())) {
-          xb::error() << "unable to unlink file " << SQUOTE(file.path.c_str());
-          ret = false;
-          goto cleanup;
+        if (oldObsoleteSST.count(file.file_name) ||
+            file.file_name.find("MANIFEST-") != std::string::npos ||
+            file.file_name.find("CURRENT") != std::string::npos ||
+            file.file_name.find("OPTIONS-") != std::string::npos) {
+            xb::info() << "Removing " << file.path << " from base - not needed anymore";
+            if (unlink(file.path.c_str())) {
+              xb::error() << "unable to unlink file " << SQUOTE(file.path.c_str());
+              ret = false;
+              goto cleanup;
+            }
         }
       }
-      if (rmdir(ROCKSDB_SUBDIR)) {
-        xb::error() << "unable to remove directory " << SQUOTE(ROCKSDB_SUBDIR);
-        ret = false;
-        goto cleanup;
-      }
+
     }
-#endif
+
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;
@@ -2086,6 +2117,7 @@ bool rm_for_cleanup_full_backup(const char **ext_list,
 
 bool cleanup_full_backup() {
   const char *ext_list[] = {"delta", "meta", "ibd", NULL};
+  static const std::unordered_set<std::string> exception_dirs = {".rocksdb"};
   bool ret = true;
 
   /* If we are applying an incremental change set, we need to make
@@ -2096,7 +2128,7 @@ bool cleanup_full_backup() {
       xtrabackup_target_dir, "",
       std::bind(rm_for_cleanup_full_backup, ext_list, std::placeholders::_1,
                 std::placeholders::_2),
-      nullptr);
+      nullptr, &exception_dirs);
 
   return (ret);
 }

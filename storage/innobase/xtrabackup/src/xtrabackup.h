@@ -322,7 +322,7 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
                         const char *suffix, /*!<in: suffix to match
                                             against */
                         handle_datadir_entry_func_t func, /*!<in: callback */
-                        void *data); /*!<in: additional argument for
+                        void *data, /*!<in: additional argument for
                                      callback */
-
+                        const std::unordered_set<std::string>* dir_exception_list = nullptr);
 #endif /* XB_XTRABACKUP_H */
