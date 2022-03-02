@@ -1,12 +1,13 @@
 #
 # Component keyring file specific variables
 #
+. inc/keyring_common.sh
+. inc/keyring_kmip.sh
+ping_kmip || skip_test "Keyring kmip requires KMIP Server configured"
 is_xtradb || skip_test "Keyring kmip requires Percona Server"
 require_server_version_higher_than 8.0.26
 
 KEYRING_TYPE="component"
-. inc/keyring_common.sh
-. inc/keyring_kmip.sh
 configure_server_with_component
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
