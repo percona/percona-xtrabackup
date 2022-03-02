@@ -1436,6 +1436,13 @@ static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
         ends_with(it->path.c_str(), ".xbcrypt")) {
       continue;
     }
+    
+    // KH: 
+    if (file_exists(it->rel_path.c_str())) {
+      fprintf(stderr, "KH: deleting file %s\n", it->rel_path.c_str());
+      unlink(it->rel_path.c_str());
+    }
+
     if (!copy_file(ds, it->path.c_str(), it->rel_path.c_str(), thread_n,
                    FILE_PURPOSE_OTHER, it->file_size)) {
       *result = false;
@@ -1483,6 +1490,12 @@ static bool backup_rocksdb_wal(const Myrocks_checkpoint &checkpoint,
   return result;
 }
 
+static bool ends_with(std::string const & value, std::string const & ending)
+{
+    if (ending.size() > value.size()) return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
+
 static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
   bool result = true;
 
@@ -1497,6 +1510,26 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
   auto checkpoint_files =
       final ? context.myrocks_checkpoint.checkpoint_files(log_status)
             : context.myrocks_checkpoint.data_files();
+
+  // Filter SST files already archived in the previous backup
+  checkpoint_files.erase(
+      std::remove_if(checkpoint_files.begin(), checkpoint_files.end(),
+                     [&context](const datadir_entry_t &f) {
+                       if(!ends_with(f.file_name, ".sst")) return false;
+                       // store the current snapshot sst file info
+                       context.myrocks_manifest.StoreCurrentSstFile(f.file_name);
+                       // check if the file is present in the incremental base
+                       // if it is, we will skip copying it
+                       // note that it can be that skipped file is physically
+                       // not included in incremental base, but if it is indicated
+                       // by base, it means that it is there or is in base's base.
+                       bool found = (context.myrocks_manifest.GetOldSstFiles().count(f.file_name));
+                       if (!found) {
+                           xb::info() << "New file found: " << f.file_name;
+                       }
+                       return found;
+                     }),
+      checkpoint_files.end());
 
   checkpoint_files.erase(
       std::remove_if(checkpoint_files.begin(), checkpoint_files.end(),
@@ -1980,7 +2013,7 @@ bool copy_incremental_over_full() {
            ROCKSDB_SUBDIR);
   if (directory_exists(path, false)) {
     Myrocks_datadir rocksdb(path);
-
+#if 0 // KH:
     if (directory_exists(ROCKSDB_SUBDIR, false)) {
       Myrocks_datadir old_rocksdb(ROCKSDB_SUBDIR);
 
@@ -1998,7 +2031,7 @@ bool copy_incremental_over_full() {
         goto cleanup;
       }
     }
-
+#endif
     using std::placeholders::_1;
     using std::placeholders::_2;
     using std::placeholders::_3;

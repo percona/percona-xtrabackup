@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <vector>
 
 #include "xtrabackup.h"
+#include "rdb_manifest.h"
 
 /* mysql flavor and version */
 enum mysql_flavor_t {
@@ -141,8 +142,11 @@ class Myrocks_checkpoint {
 };
 
 struct Backup_context {
+  Backup_context(RdbManifest &manifest)
+  : myrocks_manifest(manifest) {}
   Myrocks_checkpoint myrocks_checkpoint;
   std::unordered_set<std::string> rocksdb_files;
+  RdbManifest &myrocks_manifest;
 };
 
 /* server capabilities */

@@ -119,6 +119,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xbstream.h"
 #include "xtrabackup.h"
 #include "xtrabackup_config.h"
+#include "rdb_manifest.h"
 
 /* TODO: replace with appropriate macros used in InnoDB 5.6 */
 #define PAGE_ZIP_MIN_SIZE_SHIFT 10
@@ -4337,7 +4338,11 @@ void xtrabackup_backup_func(void) {
     pagetracking::deinit(changed_page_tracking);
   }
 
-  Backup_context backup_ctxt;
+  RdbManifest rdbManifest;
+  if (xtrabackup_incremental) {
+    rdbManifest.deserialize(xtrabackup_incremental_basedir);
+  }
+  Backup_context backup_ctxt(rdbManifest);
   if (!backup_start(backup_ctxt)) {
     exit(EXIT_FAILURE);
   }
@@ -4379,6 +4384,10 @@ void xtrabackup_backup_func(void) {
 
   if (!backup_finish(backup_ctxt)) {
     exit(EXIT_FAILURE);
+  }
+
+  if (have_rocksdb) {
+    backup_ctxt.myrocks_manifest.serialize(ds_data);
   }
 
   if (xtrabackup_extra_lsndir) {
@@ -5942,7 +5951,10 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
                            handle_datadir_entry_func_t func, void *data) {
   struct stat statinfo;
   size_t suffix_len = strlen(suffix);
-
+  if (!strcmp(name, ".rocksdb")) {
+      fprintf(stderr, "KH: skipping .rocksdb directory\n");
+      return;
+  }
   if (stat(path, &statinfo) != 0) {
     return;
   }
