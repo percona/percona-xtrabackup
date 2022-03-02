@@ -42,6 +42,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "rpl_log_encryption.h"
 #include "utils.h"
 #include "xb0xb.h"
+#include "xbcrypt_common.h"
 #include "xtrabackup.h"
 
 #include <map>
@@ -539,6 +540,7 @@ bool xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
     transition_key_len = Encryption::KEY_LEN;
   }
 
+  xb_libgcrypt_init();
   ret = xb_derive_key(transition_key, transition_key_len, salt, sizeof(salt),
                       sizeof(derived_key), derived_key);
 
@@ -688,6 +690,7 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     transition_key_len = Encryption::KEY_LEN;
   }
 
+  xb_libgcrypt_init();
   bool ret = xb_derive_key(transition_key, transition_key_len, salt,
                            sizeof(salt), sizeof(derived_key), derived_key);
 
