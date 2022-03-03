@@ -4338,11 +4338,16 @@ void xtrabackup_backup_func(void) {
     pagetracking::deinit(changed_page_tracking);
   }
 
-  RdbManifest rdbManifest;
-  if (xtrabackup_incremental) {
-    rdbManifest.deserialize(xtrabackup_incremental_basedir);
+  RdbManifest rdbManifestBase;
+  RdbManifest rdbManifestCurrent;
+  if (xtrabackup_incremental && have_rocksdb) {
+    // if this is incremental backup, restore the manifest from base
+    if (!rdbManifestBase.deserialize(xtrabackup_incremental_basedir)) {
+      exit(EXIT_FAILURE);
+    }
   }
-  Backup_context backup_ctxt(rdbManifest);
+
+  Backup_context backup_ctxt(rdbManifestBase, rdbManifestCurrent);
   if (!backup_start(backup_ctxt)) {
     exit(EXIT_FAILURE);
   }
@@ -4387,7 +4392,9 @@ void xtrabackup_backup_func(void) {
   }
 
   if (have_rocksdb) {
-    backup_ctxt.myrocks_manifest.serialize(ds_data);
+    if (!backup_ctxt.myrocks_manifest_current.serialize(ds_data)) {
+      exit(EXIT_FAILURE);
+    }
   }
 
   if (xtrabackup_extra_lsndir) {
@@ -5951,6 +5958,7 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
                            handle_datadir_entry_func_t func, void *data) {
   struct stat statinfo;
   size_t suffix_len = strlen(suffix);
+
   if (stat(path, &statinfo) != 0) {
     return;
   }

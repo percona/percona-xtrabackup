@@ -1442,7 +1442,7 @@ static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
     // incremental which we are not filtering. Handle them here.
     if (file_exists(it->rel_path.c_str())) {
       xb::info() << "Removing " << it->rel_path <<
-        " from base dir. Using the one from incremental backup";
+        " from base dir. Using the one from incremental backup.";
       unlink(it->rel_path.c_str());
     }
 
@@ -1520,15 +1520,15 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
                      [&context](const datadir_entry_t &f) {
                        if(!ends_with(f.file_name, ".sst")) return false;
                        // store the current snapshot sst file info
-                       context.myrocks_manifest.StoreCurrentSstFile(f.file_name);
+                       context.myrocks_manifest_current.AddSstFile(f.file_name);
                        // check if the file is present in the incremental base
                        // if it is, we will skip copying it
                        // note that it can be that skipped file is physically
                        // not included in incremental base, but if it is indicated
                        // by base, it means that it is there or is in base's base.
-                       bool found = (context.myrocks_manifest.GetOldSstFiles().count(f.file_name));
+                       bool found = (context.myrocks_manifest_base.GetSstFiles().count(f.file_name));
                        if (!found) {
-                           xb::info() << "New file found: " << f.file_name;
+                           xb::info() << "New SST file found: " << f.file_name;
                        }
                        return found;
                      }),
@@ -1919,6 +1919,7 @@ bool copy_incremental_over_full() {
                              "xtrabackup_component_keyring_file.cnf",
                              "xtrabackup_component_keyring_kmip.cnf",
                              "ib_lru_dump",
+                             "xtrabackup_rdb_files",
                              nullptr};
   bool ret = true;
   char path[FN_REFLEN];
@@ -1956,23 +1957,6 @@ bool copy_incremental_over_full() {
 
     if (!ret) {
       goto cleanup;
-    }
-
-    /* copy supplementary files */
-
-    for (i = 0; sup_files[i]; i++) {
-      snprintf(path, sizeof(path), "%s/%s", xtrabackup_incremental_dir,
-               sup_files[i]);
-
-      if (file_exists(path)) {
-        if (file_exists(sup_files[i])) {
-          unlink(sup_files[i]);
-        }
-        ret = copy_file(ds_data, path, sup_files[i], 0, FILE_PURPOSE_OTHER);
-        if (!ret) {
-          goto cleanup;
-        }
-      }
     }
 
     /* copy binary log */
@@ -2026,13 +2010,19 @@ bool copy_incremental_over_full() {
   // are obsolete (we know it from incremental backup information)
 
     RdbManifest newRocksdbManifest;
-    newRocksdbManifest.deserialize(xtrabackup_incremental_dir);
+    if (!newRocksdbManifest.deserialize(xtrabackup_incremental_dir)) {
+      ret = false;
+      goto cleanup;
+    }
     if (directory_exists(ROCKSDB_SUBDIR, false)) {
       RdbManifest oldRocksdbManifest;
-      oldRocksdbManifest.deserialize(xtrabackup_target_dir);
+      if (!oldRocksdbManifest.deserialize(xtrabackup_target_dir)) {
+        ret = false;
+        goto cleanup;
+      }
 
-      auto &oldSST = oldRocksdbManifest.GetOldSstFiles();
-      auto &newSST = newRocksdbManifest.GetOldSstFiles();
+      auto &oldSST = oldRocksdbManifest.GetSstFiles();
+      auto &newSST = newRocksdbManifest.GetSstFiles();
       // calculate SST files present in base, but not needed anymore (oldSST - newSST)
       std::unordered_set<std::string> oldObsoleteSST;
 
@@ -2058,6 +2048,8 @@ bool copy_incremental_over_full() {
               ret = false;
               goto cleanup;
             }
+        } else {
+            xb::info() << "Keeping " << file.path << " in base - still needed";
         }
       }
 
@@ -2072,6 +2064,27 @@ bool copy_incremental_over_full() {
         copy = std::bind(&par_copy_rocksdb_files, _1, _2, _3, ds_data, &result);
 
     par_for(PFS_NOT_INSTRUMENTED, rocksdb.files(), xtrabackup_parallel, copy);
+  }
+
+  if (xtrabackup_incremental) {
+    /* copy supplementary files */
+    // Copy it at the end, as during rocksdb incremental copy we use
+    // xtrabackup_rdb_files file from base to detect obsolete sst files
+
+    for (i = 0; sup_files[i]; i++) {
+      snprintf(path, sizeof(path), "%s/%s", xtrabackup_incremental_dir,
+               sup_files[i]);
+
+      if (file_exists(path)) {
+        if (file_exists(sup_files[i])) {
+          unlink(sup_files[i]);
+        }
+        ret = copy_file(ds_data, path, sup_files[i], 0, FILE_PURPOSE_OTHER);
+        if (!ret) {
+          goto cleanup;
+        }
+      }
+    }
   }
 
 cleanup:

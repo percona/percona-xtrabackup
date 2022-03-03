@@ -142,11 +142,13 @@ class Myrocks_checkpoint {
 };
 
 struct Backup_context {
-  Backup_context(RdbManifest &manifest)
-  : myrocks_manifest(manifest) {}
+  Backup_context(RdbManifest &manifest_base, RdbManifest &manifest_current)
+  : myrocks_manifest_base(manifest_base)
+  , myrocks_manifest_current(manifest_current) {}
   Myrocks_checkpoint myrocks_checkpoint;
   std::unordered_set<std::string> rocksdb_files;
-  RdbManifest &myrocks_manifest;
+  RdbManifest &myrocks_manifest_base;
+  RdbManifest &myrocks_manifest_current;
 };
 
 /* server capabilities */

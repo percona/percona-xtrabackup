@@ -28,12 +28,11 @@ public:
     bool serialize(ds_ctxt_t *ds) const;
     bool deserialize(const std::string &dir);
 
-    const std::unordered_set<std::string>& GetOldSstFiles() const;
-    void StoreCurrentSstFile(const std::string &filename);
+    const std::unordered_set<std::string>& GetSstFiles() const;
+    void AddSstFile(const std::string &filename);
 
 private:
-   std::unordered_set<std::string> oldSstFiles_;
-   std::unordered_set<std::string> currentSstFiles_;
+   std::unordered_set<std::string> sstFiles_;
 };
 
 

@@ -16,30 +16,14 @@ bool RdbManifest::serialize(ds_ctxt_t *ds) const {
 
   bool rc = true;
 
-#if 0
-  for(auto file : oldSstFiles_) {
+  for(auto file : sstFiles_) {
     auto file_ = file + "\n";
     if (ds_write(stream, file_.c_str(), file_.length())) {
         rc = false;
         break;
     }
   }
-  for(auto file : newSstFiles_) {
-    auto file_ = file + "\n";
-    if (ds_write(stream, file_.c_str(), file_.length())) {
-        rc = false;
-        break;
-    }
-  }
-#else
-  for(auto file : currentSstFiles_) {
-    auto file_ = file + "\n";
-    if (ds_write(stream, file_.c_str(), file_.length())) {
-        rc = false;
-        break;
-    }
-  }
-#endif
+
   if (ds_close(stream)) {
     rc = false;
   }
@@ -53,16 +37,16 @@ bool RdbManifest::deserialize(const std::string &dir) {
 
   std::string line;
   while (std::getline(f, line)) {
-      oldSstFiles_.insert(line);
+      sstFiles_.insert(line);
   }
 
   return true;
 }
 
-const std::unordered_set<std::string>& RdbManifest::GetOldSstFiles() const {
-    return oldSstFiles_;
+const std::unordered_set<std::string>& RdbManifest::GetSstFiles() const {
+    return sstFiles_;
 }
 
-void RdbManifest::StoreCurrentSstFile(const std::string &filename) {
-    currentSstFiles_.insert(filename);
+void RdbManifest::AddSstFile(const std::string &filename) {
+    sstFiles_.insert(filename);
 }
