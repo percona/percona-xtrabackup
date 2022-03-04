@@ -55,6 +55,51 @@ struct recv_addr_t;
 #ifdef XTRABACKUP
 /** map of tablespace_id, that experienced an inplace DDL during a backup op */
 extern std::map<space_id_t, bool> index_load_map;
+
+namespace xtrabackup {
+struct recv_sys_t {
+  struct mem_block_t {
+    /** Constructor
+    @param[in]	n	size of this block and total size of all the blocks. */
+    mem_block_t(ulint n) : len(n), total_size(n), free(MEM_BLOCK_HEADER_SIZE) {}
+
+    /** Default constructor */
+    mem_block_t() : len(), total_size(), free(MEM_BLOCK_HEADER_SIZE) {}
+    ulint len;
+    ulint total_size;
+    ulint free;
+  };
+
+  struct space_page_t {
+    /** Default constructor */
+    space_page_t() : m_pages(), m_blocks() {}
+    std::vector<page_no_t> m_pages;
+    std::vector<mem_block_t *> m_blocks;
+  };
+
+  using Spaces =
+      std::unordered_map<space_id_t, space_page_t *, std::hash<space_id_t>,
+                         std::equal_to<space_id_t>>;
+  Spaces *spaces;
+  ~recv_sys_t() {
+    if (this->spaces != nullptr) {
+      for (auto &space : *this->spaces) {
+        for (auto &block : space.second->m_blocks) {
+          delete (block);
+        }
+        delete (space.second);
+      }
+      ut::delete_(this->spaces);
+    }
+  }
+};
+
+/** calculates the amount of memory required for xtrabackup prepare
+@retval amount of memory required for hash table of parsed records
+@retval number of database frames */
+std::pair<size_t, ulint> recv_backup_heap_used();
+}  // namespace xtrabackup
+
 #endif /* XTRABACKUP */
 
 /** list of tablespaces, that experienced an inplace DDL during a backup op */

@@ -129,6 +129,12 @@ TARGET_LINK_LIBRARIES(xtrabackup
   crc
   )
 
+IF(NOT APPLE)
+  TARGET_LINK_LIBRARIES(xtrabackup
+    procps
+    )
+ENDIF()
+
  # We depend on protobuf because of the mysqlx plugin and replication.
  IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR)
    ADD_INSTALL_RPATH_FOR_PROTOBUF(xtrabackup)

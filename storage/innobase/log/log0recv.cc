@@ -91,6 +91,11 @@ static const size_t RECV_READ_AHEAD_AREA = 32;
 /** The recovery system */
 recv_sys_t *recv_sys = nullptr;
 
+#ifdef XTRABACKUP
+/** Xtrabackup memory recovery system */
+xtrabackup::recv_sys_t *pxb_recv_sys = nullptr;
+#endif
+
 /** true when applying redo log records during crash recovery; false
 otherwise.  Note that this is false while a background thread is
 rolling back incomplete transactions. */
@@ -195,6 +200,9 @@ log records to the database.
 This is the default value. If the actual size of the buffer pool is
 larger than 10 MB we'll set this value to 512. */
 ulint recv_n_pool_free_frames;
+
+/** we let the hash table of recs to grow to this size, at the maximum */
+ulint max_mem;
 
 /** The maximum lsn we see for a page during the recovery process. If this
 is bigger than the lsn we are able to scan up to, that is an indication that
@@ -395,6 +403,17 @@ void recv_sys_create() {
   mutex_create(LATCH_ID_RECV_WRITER, &recv_sys->writer_mutex);
 
   recv_sys->spaces = nullptr;
+
+#ifdef XTRABACKUP
+  if (pxb_recv_sys != nullptr) {
+    return;
+  }
+
+  pxb_recv_sys = static_cast<xtrabackup::recv_sys_t *>(
+      ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*pxb_recv_sys)));
+
+  pxb_recv_sys->spaces = nullptr;
+#endif
 }
 
 /** Resize the recovery parsing buffer upto log_buffer_size */
@@ -500,6 +519,15 @@ void recv_sys_close() {
 
   ut::free(recv_sys);
   recv_sys = nullptr;
+
+#ifdef XTRABACKUP
+  if (pxb_recv_sys == nullptr) {
+    return;
+  }
+
+  ut::delete_(pxb_recv_sys);
+  pxb_recv_sys = nullptr;
+#endif
 }
 
 #ifndef UNIV_HOTBACKUP
@@ -599,6 +627,19 @@ void recv_sys_init() {
   recv_sys->apply_file_operations = false;
 #endif /* !UNIV_HOTBACKUP */
 
+#ifdef XTRABACKUP
+  if (predict_memory) {
+    if (srv_buf_pool_curr_size >= (long long)redo_memory) {
+      if (recv_n_pool_free_frames < redo_frames) {
+        xb::info() << "Setting free frames to " << redo_frames;
+        recv_n_pool_free_frames = redo_frames;
+      }
+    } else {
+      recv_n_pool_free_frames = 0;
+    }
+  }
+#endif
+
   recv_sys->buf = static_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, RECV_PARSING_BUF_SIZE));
   recv_sys->buf_len = RECV_PARSING_BUF_SIZE;
@@ -611,6 +652,10 @@ void recv_sys_init() {
   recv_sys->spaces = ut::new_withkey<Spaces>(
       ut::make_psi_memory_key(mem_log_recv_space_hash_key));
 
+#ifdef XTRABACKUP
+  pxb_recv_sys->spaces =
+      ut::new_withkey<xtrabackup::recv_sys_t::Spaces>(UT_NEW_THIS_FILE_PSI_KEY);
+#endif
   recv_sys->n_addrs = 0;
 
   recv_sys->apply_log_recs = false;
@@ -663,6 +708,18 @@ static void recv_sys_empty_hash() {
 
   recv_sys->spaces = ut::new_withkey<Spaces>(
       ut::make_psi_memory_key(mem_log_recv_space_hash_key));
+
+#ifdef XTRABACKUP
+
+  if (predict_memory && srv_buf_pool_curr_size < (long long)redo_memory) {
+    recv_n_pool_free_frames = 0;
+  }
+  if (pxb_recv_sys->spaces == nullptr) return;
+  ut::delete_(pxb_recv_sys->spaces);
+  pxb_recv_sys->spaces =
+      ut::new_withkey<xtrabackup::recv_sys_t::Spaces>(UT_NEW_THIS_FILE_PSI_KEY);
+
+#endif
 }
 
 /** Check the consistency of a log header block.
@@ -2562,6 +2619,136 @@ static byte *recv_parse_or_apply_log_rec_body(
   return (ptr);
 }
 
+#ifdef XTRABACKUP
+namespace xtrabackup {
+using pxb_mem_block = xtrabackup::recv_sys_t::mem_block_t;
+using pxb_space_page = xtrabackup::recv_sys_t::space_page_t;
+using pxb_spaces = xtrabackup::recv_sys_t::Spaces;
+
+std::pair<size_t, ulint> recv_backup_heap_used() {
+  size_t size = 0;
+  ulint pages = 0;
+  for (auto &space : *pxb_recv_sys->spaces) {
+    pxb_mem_block *block = space.second->m_blocks.back();
+    size += block->total_size;
+    if (space.second->m_pages.size() >= 1) {
+      pages += space.second->m_pages.size();
+    }
+  }
+
+  return std::make_pair(size, pages);
+}
+
+/*
+ * This function mimics the calculation done at
+ * recv_add_to_hash_table->mem_heap_alloc. We call this during --backup from
+ * recv_calculate_hash_heapas we parse each log record copyed by redo follow
+ * thread in order to hint the amout of memory required at --prepare. Please
+ * note we do not allocate any memory here, we just calcuate how much will be
+ * required based on log records parsed so far.
+ */
+static pxb_mem_block *add_new_block(pxb_space_page *space, ulint size) {
+  pxb_mem_block *block;
+  pxb_mem_block *new_block = new pxb_mem_block();
+  ulint new_size;
+  block = space->m_blocks.back();
+  new_size = 2 * block->len;
+  if (new_size > MEM_MAX_ALLOC_IN_BUF) {
+    new_size = MEM_MAX_ALLOC_IN_BUF;
+  }
+  if (new_size < size) {
+    new_size = size;
+  }
+  ulint len = MEM_BLOCK_HEADER_SIZE + MEM_SPACE_NEEDED(new_size);
+
+  if (len >= UNIV_PAGE_SIZE / 2) len = UNIV_PAGE_SIZE;
+
+  new_block->len = len;
+  new_block->total_size = block->total_size + len;
+  new_block->free = MEM_BLOCK_HEADER_SIZE;
+  space->m_blocks.push_back(new_block);
+
+  return new_block;
+}
+
+/** Get the page map for a tablespace. It will create one if one isn't found.
+@param[in]	space_id	Tablespace ID for which page map required.
+@return the space data  */
+static pxb_space_page *recv_get_page_map(space_id_t space_id) {
+  auto it = pxb_recv_sys->spaces->find(space_id);
+
+  if (it != pxb_recv_sys->spaces->end()) {
+    return (it->second);
+  }
+
+  ulint len = MEM_BLOCK_HEADER_SIZE + MEM_SPACE_NEEDED(256);
+  pxb_mem_block *block = new pxb_mem_block(len);
+  pxb_space_page *space_page = new pxb_space_page();
+  space_page->m_blocks.push_back(block);
+  using Space = xtrabackup::recv_sys_t::space_page_t *;
+  using Value = xtrabackup::recv_sys_t::Spaces::value_type;
+
+  auto where =
+      pxb_recv_sys->spaces->insert(it, Value({space_id, Space(space_page)}));
+
+  return (where->second);
+}
+
+/*
+ * This function is the core of predict memory work. It mimics the work done at
+ * recv_add_to_hash_table. We call recv_calculate_hash_heap at --backup phase
+ * each time redo follow thread parses a new log record. It will result on
+ * having xtrabackup::recv_sys_t knowing the memory crash recovery will require
+ * later when we run the --prepare phase.
+ */
+static void recv_calculate_hash_heap(mlog_id_t type, space_id_t space_id,
+                                     page_no_t page_no, byte *body,
+                                     byte *rec_end, lsn_t start_lsn) {
+  if (!recv_recovery_on && xtrabackup_start_checkpoint > start_lsn) return;
+
+  ut_ad(type != MLOG_FILE_DELETE);
+  ut_ad(type != MLOG_FILE_CREATE);
+  ut_ad(type != MLOG_FILE_RENAME);
+  ut_ad(type != MLOG_FILE_EXTEND);
+  ut_ad(type != MLOG_DUMMY_RECORD);
+  ut_ad(type != MLOG_INDEX_LOAD);
+
+  /* check if we already have a Heap for this space id */
+  auto space = xtrabackup::recv_get_page_map(space_id);
+
+  pxb_mem_block *last_block = space->m_blocks.back();
+  if (last_block->len < (last_block->free + MEM_SPACE_NEEDED(sizeof(recv_t)))) {
+    last_block = xtrabackup::add_new_block(space, sizeof(recv_t));
+  }
+  last_block->free = last_block->free + MEM_SPACE_NEEDED(sizeof(recv_t));
+
+  if (std::find(space->m_pages.begin(), space->m_pages.end(), page_no) ==
+      space->m_pages.end()) {
+    if (last_block->len <
+        (last_block->free + MEM_SPACE_NEEDED(sizeof(recv_addr_t)))) {
+      last_block = xtrabackup::add_new_block(space, sizeof(recv_addr_t));
+    }
+    last_block->free = last_block->free + MEM_SPACE_NEEDED(sizeof(recv_addr_t));
+    space->m_pages.push_back(page_no);
+  }
+
+  while (rec_end > body) {
+    ulint len = rec_end - body;
+
+    if (len > RECV_DATA_BLOCK_SIZE) {
+      len = RECV_DATA_BLOCK_SIZE;
+    }
+    if (last_block->len <
+        (last_block->free + MEM_SPACE_NEEDED(sizeof(recv_data_t) + len))) {
+      last_block = xtrabackup::add_new_block(space, sizeof(recv_data_t) + len);
+    }
+    last_block->free =
+        last_block->free + MEM_SPACE_NEEDED(sizeof(recv_data_t) + len);
+    body += len;
+  }
+}
+}  // namespace xtrabackup
+#endif
 /** Adds a new log record to the hash table of log records.
 @param[in]      type            log record type
 @param[in]      space_id        Tablespace id
@@ -2601,6 +2788,19 @@ static void recv_add_to_hash_table(mlog_id_t type, space_id_t space_id,
     recv_addr = it->second;
 
   } else {
+#ifdef XTRABACKUP
+    /*
+     * In case we do not have enough free memory to run --prepare in a single
+     * batch, we adjust recv_n_pool_free_frames as we parse each single record.
+     * This way we have room to hold all required pages on this batch.
+     */
+    if (predict_memory && recv_n_pool_free_frames != redo_frames) {
+      recv_n_pool_free_frames++;
+      max_mem =
+          UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -
+                            (recv_n_pool_free_frames * srv_buf_pool_instances));
+    }
+#endif
     recv_addr = static_cast<recv_addr_t *>(
         mem_heap_alloc(space->m_heap, sizeof(*recv_addr)));
 
@@ -3216,6 +3416,9 @@ static bool recv_single_rec(byte *ptr, byte *end_ptr) {
           recv_sys->missing_ids.insert(space_id);
         }
 #endif /* !UNIV_HOTBACKUP */
+      } else {
+        xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
+                                             ptr + len, old_lsn);
       }
 
       [[fallthrough]];
@@ -3399,6 +3602,9 @@ static bool recv_multi_rec(byte *ptr, byte *end_ptr) {
             recv_sys->missing_ids.insert(space_id);
           }
 #endif /* !UNIV_HOTBACKUP */
+        } else {
+          xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
+                                               ptr + len, old_lsn);
         }
     }
 
@@ -3547,7 +3753,7 @@ static bool recv_scan_log_recs(log_t &log,
 #else  /* !UNIV_HOTBACKUP */
 bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
-                               ulint max_memory, const byte *buf, ulint len,
+                               ulint *max_memory, const byte *buf, ulint len,
                                lsn_t start_lsn, lsn_t *contiguous_lsn,
                                lsn_t *read_upto_lsn, lsn_t to_lsn) {
   const byte *log_block = buf;
@@ -3766,7 +3972,7 @@ bool meb_scan_log_recs(
     recv_parse_log_recs();
 
 #ifndef UNIV_HOTBACKUP
-    if (recv_heap_used() > max_memory) {
+    if (recv_heap_used() > *max_memory) {
       recv_apply_hashed_log_recs(log, false);
     }
 #endif /* !UNIV_HOTBACKUP */
@@ -3948,7 +4154,7 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
 
   mutex_exit(&recv_sys->mutex);
 
-  ulint max_mem =
+  max_mem =
       UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -
                         (recv_n_pool_free_frames * srv_buf_pool_instances));
 
@@ -3965,7 +4171,7 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
     recv_read_log_seg(log, log.buf, start_lsn, end_lsn);
 
     finished =
-        recv_scan_log_recs(log, max_mem, log.buf, RECV_SCAN_SIZE, start_lsn,
+        recv_scan_log_recs(log, &max_mem, log.buf, RECV_SCAN_SIZE, start_lsn,
                            contiguous_lsn, &log.scanned_lsn, to_lsn);
     start_lsn = end_lsn;
   }

@@ -44,6 +44,8 @@ bool read_server_uuid();
 @return version_number like 80022 */
 unsigned long get_version_number(std::string version_str);
 
+unsigned long host_total_memory();
+unsigned long host_free_memory();
 }  // namespace utils
 }  // namespace xtrabackup
 #endif  // XTRABACKUP_UTILS_H
