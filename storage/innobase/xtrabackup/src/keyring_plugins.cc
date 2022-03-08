@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "common.h"
 #include "kdf.h"
+#include "xbcrypt_common.h"
 
 #include <map>
 
@@ -559,6 +560,7 @@ xb_tablespace_keys_load_one(const char *dir, const char *transition_key,
 		transition_key_len = ENCRYPTION_KEY_LEN;
 	}
 
+	xb_libgcrypt_init();
 	ret = xb_derive_key(transition_key, transition_key_len,
 			salt, sizeof(salt), sizeof(derived_key), derived_key);
 
@@ -741,6 +743,7 @@ xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
 		transition_key_len = ENCRYPTION_KEY_LEN;
 	}
 
+	xb_libgcrypt_init();
 	bool ret = xb_derive_key(transition_key, transition_key_len,
 			salt, sizeof(salt), sizeof(derived_key), derived_key);
 
