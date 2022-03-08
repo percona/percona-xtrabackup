@@ -330,6 +330,21 @@ XTRABACKUP_BASEDIR
     export PERCONA_VERSION_CHECK_URL=https://stage-v.percona.com
 }
 
+########################################################################
+# Configura ASAN suppress list
+########################################################################
+function config_asan()
+{
+  IS_ASAN=$(ldd $XB_BIN | grep asan | wc -l)
+  if [[ $IS_ASAN != 0 ]];
+  then
+    LSAN_OPTIONS=suppressions=${PWD}/asan.supp
+    export LSAN_OPTIONS
+    echo "This is ASAN build"
+  fi
+}
+
+
 # Configure mysql to read local component files if created by test cases.
 function config_local_components()
 {
@@ -938,6 +953,8 @@ then
     echo "get_version_info failed. See $OUTFILE for details."
     exit -1
 fi
+
+config_asan
 
 if is_server_version_higher_than 8.0.23
 then

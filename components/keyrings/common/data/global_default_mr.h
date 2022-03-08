@@ -19,7 +19,7 @@
 
 inline ::boost::container::pmr::memory_resource
     * ::boost::container::pmr::get_default_resource() BOOST_NOEXCEPT {
-  psi_memory_resource *global_default_mr = new psi_memory_resource{};
+  static psi_memory_resource *global_default_mr = new psi_memory_resource{};
   return global_default_mr;
 }
 
