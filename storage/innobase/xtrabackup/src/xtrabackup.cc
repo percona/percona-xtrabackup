@@ -466,6 +466,8 @@ char *opt_rocksdb_wal_dir = nullptr;
 int opt_rocksdb_checkpoint_max_age = 0;
 int opt_rocksdb_checkpoint_max_count = 0;
 
+int opt_rocksdb_incremental_seqno = 0;
+
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
 
@@ -1310,6 +1312,12 @@ struct my_option xb_client_options[] = {
      "Maximum count of ROCKSB checkpoints.", &opt_rocksdb_checkpoint_max_count,
      &opt_rocksdb_checkpoint_max_count, 0, GET_INT, REQUIRED_ARG, 0, 0, INT_MAX,
      0, 0, 0},
+
+    {"rocksdb-incremental-seqno", OPT_XTRA_INCREMENTAL,
+     "(for --backup): copy only SST files with the sequence number higher "
+     "than specified. Should equal to last_seqno from the backup base. ",
+     &opt_rocksdb_incremental_seqno, &opt_rocksdb_incremental_seqno,
+     0, GET_INT, REQUIRED_ARG, 0, 0, INT_MAX, 0, 0, 0},
 
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
@@ -4338,9 +4346,9 @@ void xtrabackup_backup_func(void) {
     pagetracking::deinit(changed_page_tracking);
   }
 
-  RdbManifest rdbManifestBase;
+  RdbManifest rdbManifestBase(opt_rocksdb_incremental_seqno);
   RdbManifest rdbManifestCurrent;
-  if (xtrabackup_incremental && have_rocksdb) {
+  if (xtrabackup_incremental && xtrabackup_incremental_basedir && have_rocksdb) {
     // if this is incremental backup, restore the manifest from base
     if (!rdbManifestBase.deserialize(xtrabackup_incremental_basedir)) {
       exit(EXIT_FAILURE);
@@ -7864,6 +7872,12 @@ int main(int argc, char **argv) {
   /* temporary setting of enough size */
   srv_page_size_shift = UNIV_PAGE_SIZE_SHIFT_MAX;
   srv_page_size = UNIV_PAGE_SIZE_MAX;
+  if (opt_rocksdb_incremental_seqno > 0 && !xtrabackup_incremental) {
+      xb::error() << "Requested MyRocks incremental backup at seqno " << opt_rocksdb_incremental_seqno
+                  << " but InnoDB --incremental-lsn was not specified.";
+      exit(EXIT_FAILURE);
+  }
+
   if (xtrabackup_backup && xtrabackup_incremental) {
     /* direct specification is only for --backup */
     /* and the lsn is prior to the other option */
@@ -7877,6 +7891,11 @@ int main(int argc, char **argv) {
       xb::error() << "value " << SQUOTE(xtrabackup_incremental)
                   << " may be wrong format for incremental option.";
       exit(EXIT_FAILURE);
+    }
+    if (incremental_lsn > 0 && opt_rocksdb_incremental_seqno == 0) {
+      xb::warn() << "Requested InnoDB incremental backup at LSN " << incremental_lsn
+                  << " but MyRocks --rocksdb-incremental-seqno was not specified."
+                  << " The backup will include full MyRocks backup.";
     }
   } else if (xtrabackup_backup && xtrabackup_incremental_basedir) {
     char filename[FN_REFLEN];

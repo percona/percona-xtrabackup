@@ -1521,16 +1521,15 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
                        if(!ends_with(f.file_name, ".sst")) return false;
                        // store the current snapshot sst file info
                        context.myrocks_manifest_current.AddSstFile(f.file_name);
-                       // check if the file is present in the incremental base
-                       // if it is, we will skip copying it
-                       // note that it can be that skipped file is physically
-                       // not included in incremental base, but if it is indicated
-                       // by base, it means that it is there or is in base's base.
-                       bool found = (context.myrocks_manifest_base.GetSstFiles().count(f.file_name));
-                       if (!found) {
+
+                       // Check if this sst file seqno is not includded in the
+                       // base backup.
+                       auto seqno = RdbManifest::GetSstFileSeqNo(f.file_name);
+                       auto isNewFile = seqno > context.myrocks_manifest_base.GetHighestSstSeqNo();
+                       if (isNewFile) {
                            xb::info() << "New SST file found: " << f.file_name;
                        }
-                       return found;
+                       return !isNewFile;
                      }),
       checkpoint_files.end());
 

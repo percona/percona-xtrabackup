@@ -21,9 +21,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <string>
 #include <unordered_set>
 #include "datasink.h"
+#include <rapidjson/fwd.h>
 
 class RdbManifest {
 public:
+    RdbManifest(int highestSstSeqNo = 0);
 
     bool serialize(ds_ctxt_t *ds) const;
     bool deserialize(const std::string &dir);
@@ -31,8 +33,15 @@ public:
     const std::unordered_set<std::string>& GetSstFiles() const;
     void AddSstFile(const std::string &filename);
 
+    uint64_t GetHighestSstSeqNo() const;
+
+
+    static uint64_t GetSstFileSeqNo(const std::string &filename);
+
 private:
-   std::unordered_set<std::string> sstFiles_;
+    bool serialize(rapidjson::StringBuffer &buf) const;
+    std::unordered_set<std::string> sstFiles_;
+    uint64_t highestSstSeqNo_;
 };
 
 
