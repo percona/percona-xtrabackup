@@ -110,6 +110,41 @@ Now you can install |Percona XtraBackup| by running:
    When installing packages manually like this, you'll need to make sure to
    resolve all the dependencies and install missing packages yourself.
 
+Update the Curl utility in Debian 10
+=============================================
+
+The default curl version, 7.64.0, in Debian 10 has known issues when attempting to reuse an already closed connection. This issue directly affects ``xbcloud`` and users may see intermittent backup failures. 
+
+For more details, see `curl #3750 <https://github.com/curl/curl/issues/3750>`__ or `curl #3763 <https://github.com/curl/curl/pull/3763>`__. 
+
+Follow these steps to upgrade curl to version 7.74.0: 
+
+
+#. Edit the ``/etc/apt/sources.list`` to add the following:
+
+   .. code-block:: text
+
+      deb http://ftp.de.debian.org/debian buster-backports main
+
+#. Refresh the ``apt`` sources:
+
+   .. code-block:: bash
+
+      sudo apt update
+
+#. Install the version from ``buster-backports``:
+
+   .. code-block:: bash
+
+      $ sudo apt install curl/buster-backports
+
+#. Verify the version number:
+
+   .. code-block:: bash
+   
+      $ curl --version
+      curl 7.74.0 (x86_64-pc-linux-gnu) libcurl/7.74.0 
+
 Uninstalling |Percona XtraBackup|
 =================================
 
