@@ -84,16 +84,12 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
     return false;
   };
   if (set_config_path(path) == true) return true;
-
 #ifdef XTRABACKUP
-  /* Read config JSON populated by xtrabackup at create_component_config_data */
-  std::unique_ptr<Config_reader> config_reader(new (std::nothrow) Config_reader(
-      xtrabackup::components::component_config_data_sb));
-#else
+  path = xtrabackup::components::component_config_path;
+#endif
   /* Read config file that's located at shared library location */
   std::unique_ptr<Config_reader> config_reader(new (std::nothrow)
                                                    Config_reader(path));
-#endif
 
   {
     bool read_local_config = false;

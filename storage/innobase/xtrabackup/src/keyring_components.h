@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2021 Percona LLC and/or its affiliates.
+Copyright (c) 2021-2022 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,14 +23,10 @@ namespace xtrabackup {
 namespace components {
 /** Data types */
 extern bool keyring_component_initialized;
-extern rapidjson::StringBuffer component_config_data_sb;
+extern std::string component_config_path;
 
-/**
-  Write backup keyring component config file
-
-  @return false in case of error, true otherwise
-*/
-bool write_component_config_file();
+/** @Return name of component config file */
+const char *xb_component_config_file();
 
 /**
   Initialize Keyring component by querying config from a running server

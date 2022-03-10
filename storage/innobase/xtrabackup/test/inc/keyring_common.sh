@@ -24,7 +24,7 @@ function test_do()
   else
     backup_options="--transition-key=$transition_key"
     prepare_options="--transition-key=$transition_key"
-    copyback_options="--transition-key=$transition_key"
+    copyback_options="--transition-key=$transition_key --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}"
   fi
 
   if [[ "${KEYRING_TYPE}" = "plugin" ]]; then
@@ -123,6 +123,10 @@ EOF
 
   xtrabackup --copy-back --target-dir=$topdir/backup
 
+if [[ "${KEYRING_TYPE}" = "component" ]] || [[ "${KEYRING_TYPE}" = "both" ]]; then
+  cp ${keyring_component_cnf} $mysql_datadir
+fi
+
   start_server
 
   verify_db_state test
@@ -142,6 +146,12 @@ EOF
     if grep -q "Could not find the data corresponding to Data ID: 'MySQLReplicationKey__1'" $OUTFILE
     then
       die "Cannot read uuid from backup-my.cnf file"
+    fi
+
+    if [[ "${KEYRING_TYPE}" = "component" ]] || [[ "${KEYRING_TYPE}" = "both" ]];
+    then
+      vlog "copying component config back to datadir"
+      cp ${keyring_component_cnf} $mysql_datadir
     fi
     start_server
 
@@ -227,6 +237,10 @@ function keyring_extra_tests()
 
   xtrabackup --prepare --target-dir=$topdir/backup1 ${prepare_options}
   xtrabackup --copy-back --target-dir=$topdir/backup1
+  if [[ "${KEYRING_TYPE}" = "component" ]] || [[ "${KEYRING_TYPE}" = "both" ]];
+  then
+    cp ${keyring_component_cnf} $mysql_datadir
+  fi
   start_server
   run_cmd verify_db_state test
   stop_server

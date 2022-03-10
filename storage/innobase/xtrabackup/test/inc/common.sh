@@ -383,8 +383,14 @@ EOF
         fi
 
         # Start the server
-        echo "Starting ${MYSQLD} ${MYSQLD_ARGS} $* "
-        ${MYSQLD} ${MYSQLD_ARGS} $* &
+        if [ -z ${WITH_RR+x} ]; then
+          echo "Starting ${MYSQLD} ${MYSQLD_ARGS} $* "
+          ${MYSQLD} ${MYSQLD_ARGS} $* &
+        else
+          echo "Starting rr ${MYSQLD} ${MYSQLD_ARGS} $* "
+          rr ${MYSQLD} ${MYSQLD_ARGS} $* &
+        fi
+
         if ! mysql_ping $!
         then
             if grep "another mysqld server running on port" $MYSQLD_ERRFILE

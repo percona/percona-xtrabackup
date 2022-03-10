@@ -1,11 +1,14 @@
 #
 # Component keyring file specific variables
 #
-require_server_version_higher_than 8.0.23
+. inc/keyring_common.sh
+. inc/keyring_kms.sh
+
+ping_kms || skip_test "Keyring kms requires KMS variables configured"
+is_xtradb || skip_test "Keyring kms requires Percona Server"
+require_server_version_higher_than 8.0.27
 
 KEYRING_TYPE="component"
-. inc/keyring_common.sh
-. inc/keyring_file.sh
 configure_server_with_component
 
 vlog "-- Starting main test with ${KEYRING_TYPE} --"

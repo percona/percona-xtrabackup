@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2021 Percona LLC and/or its affiliates.
+Copyright (c) 2021-2022 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -15,39 +15,34 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 *******************************************************/
-#include <components/keyrings/common/data_file/reader.h>
-#include <components/keyrings/common/data_file/writer.h>
-#include <components/keyrings/common/json_data/json_reader.h>
-#include <components/keyrings/common/json_data/json_writer.h>
-
 #include <dict0dict.h>
 #include <mysqld.h>
+#include <rapidjson/istreamwrapper.h>
 #include <sql/server_component/mysql_server_keyring_lockable_imp.h>
 #include <sql/sql_component.h>
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "common.h"
+#include "my_rapidjson_size_t.h"
+#include "rapidjson/document.h"
 #include "utils.h"
 #include "xtrabackup.h"
-
-using keyring_common::data_file::File_reader;
-using keyring_common::data_file::File_writer;
 
 namespace xtrabackup {
 namespace components {
 
-const char *XTRABACKUP_KEYRING_FILE_CONFIG =
-    "xtrabackup_component_keyring_file.cnf";
+const char *XTRABACKUP_KEYRING_FILE_CONFIG = "component_keyring_file.cnf";
 
-const char *XTRABACKUP_KEYRING_KMIP_CONFIG =
-    "xtrabackup_component_keyring_kmip.cnf";
+const char *XTRABACKUP_KEYRING_KMIP_CONFIG = "component_keyring_kmip.cnf";
+
+const char *XTRABACKUP_KEYRING_KMS_CONFIG = "component_keyring_kms.cnf";
 
 SERVICE_TYPE(registry) *reg_srv = nullptr;
 SERVICE_TYPE(keyring_reader_with_status) *keyring_reader_service = nullptr;
 bool service_handler_initialized = false;
 bool keyring_component_initialized = false;
-rapidjson::StringBuffer component_config_data_sb;
 std::string component_name;
+std::string component_config_path;
 
 bool inititialize_service_handles() {
   DBUG_TRACE;
@@ -96,64 +91,55 @@ static bool initialize_manifest_file_components(std::string components) {
   return false;
 }
 
-bool write_component_config_file() {
+/** validate component fetched from keyring_component_status
+to xtrabackup filename.
+@return config file name or nullptr in case of not found */
+const char *xb_component_config_file() {
   if (component_name == "component_keyring_file") {
-    return backup_file_print(XTRABACKUP_KEYRING_FILE_CONFIG,
-                             component_config_data_sb.GetString(),
-                             component_config_data_sb.GetSize());
+    return XTRABACKUP_KEYRING_FILE_CONFIG;
   } else if (component_name == "component_keyring_kmip") {
-    return backup_file_print(XTRABACKUP_KEYRING_KMIP_CONFIG,
-                             component_config_data_sb.GetString(),
-                             component_config_data_sb.GetSize());
+    return XTRABACKUP_KEYRING_KMIP_CONFIG;
+  } else if (component_name == "component_keyring_kms") {
+    return XTRABACKUP_KEYRING_KMS_CONFIG;
   }
-  return false;
+  return nullptr;
 }
 
-void create_component_config_data(MYSQL_RES *mysql_result) {
-  rapidjson::Document json;
-  json.SetObject();
-  rapidjson::Document::AllocatorType &allocator = json.GetAllocator();
-  rapidjson::Value config_name(rapidjson::kObjectType);
-  rapidjson::Value config_value(rapidjson::kObjectType);
-  MYSQL_ROW row;
-  unsigned long *lengths;
-  while ((row = mysql_fetch_row(mysql_result)) != NULL) {
-    lengths = mysql_fetch_lengths(mysql_result);
-    if (component_name == "component_keyring_file") {
-      if (strcmp(row[0], "data_file") == 0) {
-        config_value.SetString(
-            row[1], static_cast<rapidjson::SizeType>(lengths[1]), allocator);
-        json.AddMember("path", config_value, allocator);
-      } else if (strcmp(row[0], "read_only") == 0) {
-        json.AddMember("read_only", (strcmp(row[1], "No") == 0) ? false : true,
-                       allocator);
-      }
-    } else if (component_name == "component_keyring_kmip") {
-      if (strcmp(row[0], "server_addr") == 0 ||
-          strcmp(row[0], "server_port") == 0 ||
-          strcmp(row[0], "client_ca") == 0 ||
-          strcmp(row[0], "client_key") == 0 ||
-          strcmp(row[0], "server_ca") == 0) {
-        config_name.SetString(
-            row[0], static_cast<rapidjson::SizeType>(lengths[0]), allocator);
-        config_value.SetString(
-            row[1], static_cast<rapidjson::SizeType>(lengths[1]), allocator);
-        json.AddMember(config_name, config_value, allocator);
-      } else if (strcmp(row[0], "object_group") == 0) {
-        if (strcmp(row[1], "<NONE>") != 0) {
-          config_name.SetString(
-              row[0], static_cast<rapidjson::SizeType>(lengths[0]), allocator);
-          config_value.SetString(
-              row[1], static_cast<rapidjson::SizeType>(lengths[1]), allocator);
-          json.AddMember(config_name, config_value, allocator);
-        }
-      }
+/** Check if component file exist on plugin dir or datadir setting
+component_config_path to config file path.
+@return true in case of file found. */
+bool check_component_config_file() {
+  os_file_type_t type;
+  bool exists = false;
+  std::string config_name = component_name + ".cnf";
+  component_config_path = server_plugin_dir;
+  component_config_path += OS_PATH_SEPARATOR + config_name;
+  os_file_status(component_config_path.c_str(), &exists, &type);
+  if (exists) {
+    /* we need to read the file to validate if it is instructing to read local
+     * configuration file inside datadir */
+    rapidjson::Document data_;
+    std::ifstream file_stream(component_config_path);
+    if (!file_stream.is_open()) return false;
+
+    rapidjson::IStreamWrapper json_fstream_reader(file_stream);
+    data_.ParseStream(json_fstream_reader);
+    if (data_.HasParseError()) {
+      xb::error() << "error parsing json file " << component_config_path;
+    }
+    if (!data_.HasMember("read_local_config") ||
+        (data_.HasMember("read_local_config") &&
+         data_["read_local_config"].Get<bool>() == false)) {
+      return true;
     }
   }
-  component_config_data_sb.Clear();
-  rapidjson::Writer<rapidjson::StringBuffer> string_writer(
-      component_config_data_sb);
-  json.Accept(string_writer);
+
+  component_config_path = mysql_real_data_home;
+  component_config_path += OS_PATH_SEPARATOR + config_name;
+  os_file_status(component_config_path.c_str(), &exists, &type);
+  if (exists) return true;
+
+  return false;
 }
 
 bool keyring_init_online(MYSQL *connection) {
@@ -174,7 +160,9 @@ bool keyring_init_online(MYSQL *connection) {
       init_components = true;
       component_name = row[1];
       component_urn += row[1];
-      create_component_config_data(mysql_result);
+      if (!check_component_config_file()) {
+        xb::error() << "Error reading " << component_name << " config file";
+      }
     }
   }
 
@@ -194,8 +182,18 @@ bool keyring_init_online(MYSQL *connection) {
 }
 
 bool set_component_config_path(const char *component_config, char *fname) {
-  if (opt_component_keyring_file_config != nullptr) {
-    strncpy(fname, opt_component_keyring_file_config, FN_REFLEN);
+  if (opt_component_keyring_config != nullptr) {
+    char filepart[FN_REFLEN];
+    /* extract file part of full path */
+    if (fn_format(filepart, opt_component_keyring_config, "", "",
+                  MY_REPLACE_DIR) == NULL) {
+      return (false);
+    }
+    if (strcmp(filepart, component_config) == 0) {
+      strncpy(fname, opt_component_keyring_config, FN_REFLEN);
+      return (true);
+    }
+    return (false);
   } else if (xtrabackup_stats) {
     if (fn_format(fname, component_config, mysql_real_data_home, "",
                   MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
@@ -222,51 +220,51 @@ bool keyring_init_offline() {
   if (!xtrabackup::utils::read_server_uuid()) return (false);
 
   char fname[FN_REFLEN];
-  std::string config;
-  std::string component_name;
+  std::string component_urn;
+  os_file_type_t type;
+  bool exists = false;
   /* keyring file */
-  set_component_config_path(XTRABACKUP_KEYRING_FILE_CONFIG, fname);
-  File_reader component_file_config(fname, false, config);
-  component_name = "file://component_keyring_file";
-  if (!component_file_config.valid()) {
-    if (opt_component_keyring_file_config != nullptr) {
-      xb::error() << "Component configuration file is not readable or "
-                     "not found.";
-      return false;
+  if (set_component_config_path(XTRABACKUP_KEYRING_FILE_CONFIG, fname)) {
+    os_file_status(fname, &exists, &type);
+    if (exists) {
+      component_urn = "file://component_keyring_file";
+      component_config_path = fname;
+      goto init_components;
     }
-
-    /* keyring kmip */
-    memset(fname, 0, FN_REFLEN);
-    config = "";
-    set_component_config_path(XTRABACKUP_KEYRING_KMIP_CONFIG, fname);
-    File_reader component_kmip_config(fname, false, config);
-    component_name = "file://component_keyring_kmip";
-    if (!component_kmip_config.valid()) return true;
   }
 
-  if (xtrabackup_stats) {
-    xb::error() << "Encryption is not supported with --stats";
-    return false;
-  }
-  if (config.length() == 0) {
-    xb::error() << "Component configuration file is empty.";
-    return false;
-  }
-
-  rapidjson::Document config_json;
-  config_json.Parse(config);
-  if (config_json.HasParseError()) {
-    xb::error() << "Component configuration file is not a valid "
-                << "JSON.";
-    return false;
+  /* keyring kmip */
+  if (set_component_config_path(XTRABACKUP_KEYRING_KMIP_CONFIG, fname)) {
+    os_file_status(fname, &exists, &type);
+    if (exists) {
+      component_urn = "file://component_keyring_kmip";
+      component_config_path = fname;
+      goto init_components;
+    }
   }
 
-  component_config_data_sb.Clear();
-  rapidjson::Writer<rapidjson::StringBuffer> string_writer(
-      component_config_data_sb);
-  config_json.Accept(string_writer);
+  /* keyring kms */
+  if (set_component_config_path(XTRABACKUP_KEYRING_KMS_CONFIG, fname)) {
+    os_file_status(fname, &exists, &type);
+    if (exists) {
+      component_urn = "file://component_keyring_kms";
+      component_config_path = fname;
+      goto init_components;
+    }
+  }
 
-  if (initialize_manifest_file_components(component_name)) return false;
+  if (opt_component_keyring_config != nullptr) {
+    /* user have set --component-keyring-config but it did not match any of know
+     * componenets. Abort */
+    xb::error() << "Unable to read " << opt_component_keyring_config
+                << " passed as --component-keyring-config parameter";
+    exit(EXIT_FAILURE);
+  }
+  /* no component to load */
+  return true;
+
+init_components:
+  if (initialize_manifest_file_components(component_urn)) return false;
   set_srv_keyring_implementation_as_default();
   keyring_component_initialized = true;
   return true;
