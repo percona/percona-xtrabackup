@@ -84,7 +84,6 @@ namespace xtrabackup {
 namespace utils {
 unsigned long free_memory();
 unsigned long total_memory();
-uint free_memory_pct();
 }  // namespace utils
 }  // namespace xtrabackup
 #endif

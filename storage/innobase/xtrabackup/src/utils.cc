@@ -124,11 +124,9 @@ unsigned long free_memory() {
 }
 
 unsigned long total_memory() {
-  unsigned long free_mem = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE);
-  return free_mem;
+  unsigned long total_mem = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE);
+  return total_mem;
 }
-
-uint free_memory_pct() { return 0; }
 
 #else
 unsigned long free_memory() {
@@ -139,13 +137,6 @@ unsigned long free_memory() {
 unsigned long total_memory() {
   meminfo();
   return kb_main_total * 1024;
-}
-
-uint free_memory_pct() {
-  unsigned long free = free_memory();
-  unsigned long total = total_memory();
-
-  return (uint)(free * 100 / total);
 }
 #endif
 }  // namespace utils

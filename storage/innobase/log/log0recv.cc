@@ -3436,8 +3436,9 @@ static bool xb_double_bp(ulint *max_mem) {
 one iteration or it hit threshold */
   if (srv_buf_pool_size * 2 <=
       (free_memory * xtrabackup_use_free_memory_pct / 100)) {
-    dict_ind_init();
-    if (!dict_boot()) return false;
+    if (dict_sys == nullptr) {
+      if (!dict_boot()) return false;
+    }
     srv_buf_pool_size *= 2;
 
     srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
@@ -3449,9 +3450,6 @@ one iteration or it hit threshold */
     *max_mem =
         UNIV_PAGE_SIZE * (srv_buf_pool_size / UNIV_PAGE_SIZE -
                           (recv_n_pool_free_frames * srv_buf_pool_instances));
-    dict_close();
-    ibuf_close();
-    dict_ind_init();
     return true;
   }
   xb::info() << "Not increasing Buffer Pool as it will exceed "
@@ -3908,6 +3906,11 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
                                   &log.scanned_lsn, to_lsn);
 
     start_lsn = end_lsn;
+  }
+
+  if (dict_sys != nullptr) {
+    dict_close();
+    ibuf_close();
   }
 
   DBUG_PRINT("ib_log", ("scan " LSN_PF " completed", log.scanned_lsn));

@@ -4617,9 +4617,9 @@ void dict_close(void) {
   therefore we don't delete the individual elements. */
   hash_table_free(dict_sys->table_id_hash);
 
-#ifndef UNIV_HOTBACKUP
+#if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   dict_ind_free();
-#endif /* !UNIV_HOTBACKUP */
+#endif /* !UNIV_HOTBACKUP && !XTRABACKUP */
 
   dict_sys_mutex_exit();
   dict_sys_mutex_free();
