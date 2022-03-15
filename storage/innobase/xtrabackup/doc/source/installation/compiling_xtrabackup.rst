@@ -13,8 +13,8 @@ branch that you want to install, such as **8.0**.
 
   $ git clone https://github.com/percona/percona-xtrabackup.git
   $ cd percona-xtrabackup
-  $ git submodule update --init --recursive
   $ git checkout 8.0
+  $ git submodule update --init --recursive
 
 .. _pxb.source-code.installing/prerequesite:
 
