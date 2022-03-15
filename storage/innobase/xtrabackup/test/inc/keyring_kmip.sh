@@ -51,3 +51,9 @@ function cleanup_keyring()
 {
   echo "place holder" > /dev/null
 }
+
+function ping_kmip()
+{
+  echo test | socat - TCP4:${KMIP_SERVER_ADDR}:${KMIP_SERVER_PORT} || \
+  return 1
+}
