@@ -6662,17 +6662,10 @@ static bool store_master_key_id(
   return (true);
 }
 
-static void xtrabackup_prepare_func(int argc, char **argv) {
-  ulint err;
-  datafiles_iter_t *it;
-  fil_node_t *node;
-  fil_space_t *space;
+static void read_metadata() {
   char metadata_path[FN_REFLEN];
-  char xtrabackup_info_path[FN_REFLEN];
-  IORequest write_request(IORequest::WRITE);
 
   /* cd to target-dir */
-
   if (my_setwd(xtrabackup_real_target_dir, MYF(MY_WME))) {
     xb::error() << "cannot my_setwd " << xtrabackup_real_target_dir;
     exit(EXIT_FAILURE);
@@ -6683,10 +6676,6 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
   xtrabackup_target_dir[0] = FN_CURLIB;  // all paths are relative from here
   xtrabackup_target_dir[1] = 0;
 
-  /*
-    read metadata of target, we don't need metadata reading in the case
-    archived logs applying
-  */
   sprintf(metadata_path, "%s/%s", xtrabackup_target_dir,
           XTRABACKUP_METADATA_FILENAME);
 
@@ -6694,9 +6683,17 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
     xb::error() << "failed to read metadata from " << SQUOTE(metadata_path);
     exit(EXIT_FAILURE);
   }
+}
 
-  sprintf(metadata_path, "%s/%s", xtrabackup_target_dir,
-          XTRABACKUP_METADATA_FILENAME);
+static void xtrabackup_prepare_func(int argc, char **argv) {
+  ulint err;
+  datafiles_iter_t *it;
+  fil_node_t *node;
+  fil_space_t *space;
+  char xtrabackup_info_path[FN_REFLEN];
+  IORequest write_request(IORequest::WRITE);
+
+  read_metadata();
 
   /* read xtrabackup_info file only in the case of export since we need the
    * server version */
@@ -6707,7 +6704,6 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
                 << SQUOTE(xtrabackup_info_path);
     exit(EXIT_FAILURE);
   }
-
 
   if (!strcmp(metadata_type_str, "full-backuped")) {
     xb::info() << "This target seems to be not prepared yet.";
@@ -7969,6 +7965,15 @@ int main(int argc, char **argv) {
       xb::error() << "datadir must be specified.";
       exit(EXIT_FAILURE);
     }
+
+    /* abort backup  if target is not prepared */
+    read_metadata();
+    if (strcmp(metadata_type_str, "full-prepared") != 0) {
+      xb::error() << "The target is not fully prepared. Please prepare it "
+                     "without option --apply-log-only";
+      exit(EXIT_FAILURE);
+    }
+
     init_mysql_environment();
     if (!copy_back(server_argc, server_defaults)) {
       exit(EXIT_FAILURE);
