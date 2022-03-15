@@ -409,9 +409,8 @@ char *get_field_timestamp(Field *f, char *val, uint *len) {
 }
 
 void set_field_timestamp(Field *f, ulonglong value) {
-  struct timeval tm;
-  tm.tv_sec = (long)(value / 1000000);
-  tm.tv_usec = (long)(value % 1000000);
+  my_timeval tm = {static_cast<int64_t>(value / 1000000),
+                   static_cast<int64_t>(value % 1000000)};
   assert(f->real_type() == MYSQL_TYPE_TIMESTAMP2);
   Field_timestampf *f2 = (Field_timestampf *)f;
   f2->store_timestamp(&tm);
@@ -1034,6 +1033,9 @@ void PFS_statement_stat_row::set_field(uint index, Field *f) {
       break;
     case 23: /* SUM_NO_GOOD_INDEX_USED */
       set_field_ulonglong(f, m_no_good_index_used);
+      break;
+    case 24: /* SUM_CPU_TIME */
+      set_field_ulonglong(f, m_cpu_time);
       break;
     default:
       assert(false);

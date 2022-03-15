@@ -231,6 +231,7 @@ Requires:       shadow-utils
 Requires:       net-tools
 Requires:       %{name}-client%{?_isa} >= %{min}
 Requires:       %{name}-common%{?_isa} = %{version}-%{release}
+Requires:       %{name}-icu-data-files = %{version}-%{release}
 %if 0%{?commercial}
 Obsoletes:      mysql-commercial-bench < 5.7.8
 Obsoletes:      mysql-commercial-embedded < 8.0.1
@@ -359,6 +360,12 @@ Provides:       mysql%{?_isa} = %{version}-%{release}
 %description    client
 This package contains the standard MySQL clients and administration
 tools.
+
+%package        icu-data-files
+Summary:        MySQL packaging of ICU data files
+
+%description    icu-data-files
+This package contains ICU data files needer by MySQL regular expressions.
 
 %package        common
 Summary:        MySQL database common files for server and client libs
@@ -1276,6 +1283,13 @@ fi
 %{_datadir}/mysql-*/swedish/
 %{_datadir}/mysql-*/ukrainian/
 
+%files icu-data-files
+%defattr(-, root, root, -)
+%doc %{?license_files_server}
+%dir %attr(755, root, root) %{_libdir}/mysql/private/icudt69l
+%{_libdir}/mysql/private/icudt69l/unames.icu
+%{_libdir}/mysql/private/icudt69l/brkitr
+
 %files client
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
@@ -1438,6 +1452,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_backup_lock_service.so
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_page_track_component.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_global_priv_registration.so
 %endif
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_string_service_charset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_string_service_long.so
@@ -1525,6 +1540,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_backup_lock_service.so
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_page_track_component.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_global_priv_registration.so
 %endif
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_string_service_charset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_string_service_long.so
@@ -1680,6 +1696,8 @@ fi
 %defattr(-, root, root, -)
 %doc %{src_dir}/packaging/meb/LICENSE.meb
 %doc %{src_dir}/packaging/meb/README.meb
+%doc %{src_dir}/Docs/INFO_SRC*
+%doc release/Docs/INFO_BIN*
 %attr(755, root, root) %{_bindir}/mysqlbackup
 %endif # with_meb
 
@@ -1687,6 +1705,8 @@ fi
 %files -n mysql-router-%{product_suffix}
 %defattr(-, root, root, -)
 %doc %{src_dir}/router/README.router  %{src_dir}/router/LICENSE.router
+%doc %{src_dir}/Docs/INFO_SRC*
+%doc release/Docs/INFO_BIN*
 %dir %{_sysconfdir}/mysqlrouter
 %config(noreplace) %{_sysconfdir}/mysqlrouter/mysqlrouter.conf
 %attr(644, root, root) %config(noreplace,missingok) %{_sysconfdir}/logrotate.d/mysqlrouter

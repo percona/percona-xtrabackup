@@ -41,7 +41,8 @@ void xcom_tcp_server_startup(Xcom_network_provider *net_provider) {
   xcom_port port = net_provider->get_port();
 
   result tcp_fd = {0, 0};
-  if ((tcp_fd = Xcom_network_provider_library::announce_tcp(port)).val < 0) {
+  tcp_fd = Xcom_network_provider_library::announce_tcp(port);
+  if (tcp_fd.val < 0) {
     g_critical("Unable to announce tcp port %d. Port already in use?", port);
     net_provider->notify_provider_ready(true);
     return;
@@ -399,9 +400,9 @@ void Xcom_network_provider::notify_provider_ready(bool init_error) {
   m_init_cond_var.notify_one();
 }
 
-int Xcom_network_provider::start() {
+std::pair<bool, int> Xcom_network_provider::start() {
   if (is_provider_initialized()) {
-    return true;
+    return std::make_pair(true, -1);
   }
 
   set_shutdown_tcp_server(false);
@@ -424,12 +425,12 @@ int Xcom_network_provider::start() {
     lck.unlock();
   }
 
-  return init_error;
+  return std::make_pair(init_error, init_error ? -1 : 0);
 }
 
-int Xcom_network_provider::stop() {
+std::pair<bool, int> Xcom_network_provider::stop() {
   if (!is_provider_initialized()) {
-    return true;
+    return std::make_pair(true, -1);
   }
 
   set_shutdown_tcp_server(true);
@@ -445,5 +446,5 @@ int Xcom_network_provider::stop() {
 
   this->reset_new_connection();
 
-  return 0;
+  return std::make_pair(false, 0);
 }

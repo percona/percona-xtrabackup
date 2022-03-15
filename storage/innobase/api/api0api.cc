@@ -365,7 +365,7 @@ static ib_err_t ib_read_tuple(
     if (rec_offs_nth_extern(offsets, i)) {
       const page_size_t page_size(dict_table_page_size(index->table));
 
-      /** Passing nullptr to the transaction object.  This
+      /* Passing nullptr to the transaction object.  This
       means that partial update of LOB is not supported
       via this interface.*/
       data = lob::btr_rec_copy_externally_stored_field(
@@ -557,7 +557,8 @@ ib_u32_t ib_trx_read_only(ib_trx_t ib_trx) /*!< in: trx handle */
 ib_u64_t ib_trx_get_start_time(ib_trx_t ib_trx) /*!< in: transaction */
 {
   trx_t *trx = (trx_t *)ib_trx;
-  return static_cast<ib_u64_t>(trx->start_time.load(std::memory_order_relaxed));
+  return static_cast<ib_u64_t>(std::chrono::system_clock::to_time_t(
+      trx->start_time.load(std::memory_order_relaxed)));
 }
 /** Release the resources of the transaction.
  @return DB_SUCCESS or err code */

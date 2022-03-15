@@ -85,6 +85,7 @@
 #include "sql/opt_trace.h"  // Opt_trace_object
 #include "sql/opt_trace_context.h"
 #include "sql/parse_tree_nodes.h"  // PT_order_expr
+#include "sql/parser_yystype.h"
 #include "sql/query_options.h"
 #include "sql/query_result.h"  // Query_result
 #include "sql/range_optimizer/partition_pruning.h"
@@ -118,6 +119,7 @@ static bool simplify_const_condition(THD *thd, Item **cond,
                                      bool *ret_cond_value = nullptr);
 static Item *create_rollup_switcher(THD *thd, Query_block *query_block,
                                     Item *item, int send_group_parts);
+static bool fulltext_uses_rollup_column(const Query_block *query_block);
 
 /**
   Prepare query block for optimization.
@@ -302,6 +304,7 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   if (olap == ROLLUP_TYPE) {
     for (Item *item : fields) {
       mark_item_as_maybe_null_if_rollup_item(item);
+      item->update_used_tables();
     }
   }
 
@@ -356,6 +359,11 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
     if (setup_order(thd, base_ref_items, get_table_list(), &fields,
                     order_list.first))
       return true;
+  }
+
+  if (fulltext_uses_rollup_column(this)) {
+    my_error(ER_FULLTEXT_WITH_ROLLUP, MYF(0));
+    return true;
   }
 
   hidden_order_field_count = fields.size() - all_fields_count;
@@ -4333,10 +4341,14 @@ bool find_order_in_list(THD *thd, Ref_item_array ref_item_array,
         cleaning up), but it may contain subqueries that should be
         unlinked.
       */
-      if ((*order->item)->real_item() != *select_item)
+      if ((*order->item)->real_item() != (*select_item)->real_item()) {
+        Item::Cleanup_after_removal_context ctx(
+            thd->lex->current_query_block());
+
         (*order->item)
             ->walk(&Item::clean_up_after_removal, enum_walk::SUBQUERY_POSTFIX,
-                   nullptr);
+                   pointer_cast<uchar *>(&ctx));
+      }
       order->item = &ref_item_array[counter];
       order->in_field_list = true;
       if (resolution == RESOLVED_AGAINST_ALIAS && from_field == not_found_field)
@@ -4733,21 +4745,7 @@ bool WalkAndReplace(
         return true;
       }
     }
-    switch (down_cast<Item_func *>(item)->functype()) {
-      case Item_func::GE_FUNC:
-      case Item_func::GT_FUNC:
-      case Item_func::LT_FUNC:
-      case Item_func::LE_FUNC:
-      case Item_func::EQ_FUNC:
-      case Item_func::NE_FUNC:
-      case Item_func::EQUAL_FUNC:
-        if (down_cast<Item_bool_func2 *>(item)->set_cmp_func()) {
-          return true;
-        }
-        break;
-      default:
-        break;
-    }
+
     if (item->m_is_window_function) {
       down_cast<Item_sum *>(item)->update_after_wf_arguments_changed(thd);
     }
@@ -4849,6 +4847,35 @@ void Query_block::remove_hidden_fields() {
 }
 
 /**
+  Refreshes the comparators after ROLLUP resolving.
+
+  This is needed because ROLLUP resolving happens after the comparators have
+  been set up. In ROLLUP resolving, it may turn out that something initially
+  believed to be constant, is not constant after all (e.g., group items that may
+  be NULL in some cases). So we call set_cmp_func() to make Arg_comparator
+  adjust/remove its caches accordingly.
+*/
+static bool refresh_comparators_after_rollup(Item *item) {
+  return WalkItem(item, enum_walk::POSTFIX, [](Item *inner_item) {
+    if (inner_item->type() != Item::FUNC_ITEM) {
+      return false;
+    }
+    switch (down_cast<Item_func *>(inner_item)->functype()) {
+      case Item_func::GE_FUNC:
+      case Item_func::GT_FUNC:
+      case Item_func::LT_FUNC:
+      case Item_func::LE_FUNC:
+      case Item_func::EQ_FUNC:
+      case Item_func::NE_FUNC:
+      case Item_func::EQUAL_FUNC:
+        return down_cast<Item_bool_func2 *>(inner_item)->set_cmp_func();
+      default:
+        return false;
+    }
+  });
+}
+
+/**
   Resolve an item (and its tree) for rollup processing by replacing items
   matching grouped expressions with Item_rollup_group_items and
   updating properties (m_nullable, PROP_ROLLUP_FIELD).
@@ -4878,6 +4905,9 @@ Item *Query_block::resolve_rollup_item(THD *thd, Item *item) {
       });
   if (error) return nullptr;
   if (changed) {
+    if (refresh_comparators_after_rollup(item)) {
+      return nullptr;
+    }
     item->update_used_tables();
     // Since item is now nullable, mark every expression (except rollup sum
     // functions) depending on it as also potentially nullable. (This is a
@@ -4999,6 +5029,49 @@ bool Query_block::resolve_rollup(THD *thd) {
   }
 
   thd->lex->allow_sum_func = saved_allow;
+  return false;
+}
+
+/**
+  Checks if there are any calls to the MATCH function that take a ROLLUP column
+  as argument in the SELECT list, GROUP BY clause, HAVING clause or ORDER BY
+  clause. Such calls should be rejected, since MATCH only works on base columns.
+*/
+static bool fulltext_uses_rollup_column(const Query_block *query_block) {
+  if (query_block->olap != ROLLUP_TYPE || !query_block->has_ft_funcs()) {
+    return false;
+  }
+
+  // References to ROLLUP columns in SELECT, HAVING and ORDER BY are represented
+  // by Item_rollup_group_items. So we can just check if any of the MATCH
+  // functions has such an argument.
+  for (Item_func_match &match : *query_block->ftfunc_list) {
+    if (match.has_rollup_expr()) {
+      return true;
+    }
+  }
+
+  // The references in GROUP BY are not wrapped in Item_rollup_group_item, so we
+  // need to search for them.
+  for (ORDER *group = query_block->group_list.first; group != nullptr;
+       group = group->next) {
+    if (WalkItem(*group->item, enum_walk::PREFIX, [query_block](Item *item) {
+          if (is_function_of_type(item, Item_func::FT_FUNC)) {
+            Item_func_match *match = down_cast<Item_func_match *>(item);
+            for (unsigned i = 0; i < match->arg_count; ++i) {
+              if (query_block->find_in_group_list(match->get_arg(i),
+                                                  /*rollup_level=*/nullptr) !=
+                  nullptr) {
+                return true;
+              }
+            }
+          }
+          return false;
+        })) {
+      return true;
+    }
+  }
+
   return false;
 }
 

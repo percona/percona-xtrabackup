@@ -831,44 +831,34 @@ static SEL_TREE *get_full_func_mm_tree(THD *thd, RANGE_OPT_PARAM *param,
 SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
                       table_map read_tables, table_map current_table,
                       bool remove_jump_scans, Item *cond) {
-  SEL_TREE *tree = nullptr;
   SEL_TREE *ftree = nullptr;
   bool inv = false;
-  Item *value = nullptr;
   DBUG_TRACE;
 
   if (param->has_errors()) return nullptr;
 
   if (cond->type() == Item::COND_ITEM) {
-    List_iterator<Item> li(*((Item_cond *)cond)->argument_list());
+    Item_func::Functype functype = down_cast<Item_cond *>(cond)->functype();
 
-    if (((Item_cond *)cond)->functype() == Item_func::COND_AND_FUNC) {
-      tree = nullptr;
-      Item *item;
-      while ((item = li++)) {
-        SEL_TREE *new_tree =
-            get_mm_tree(thd, param, prev_tables, read_tables, current_table,
-                        remove_jump_scans, item);
-        if (param->has_errors()) return nullptr;
+    SEL_TREE *tree = nullptr;
+    bool first = true;
+    for (Item &item : *down_cast<Item_cond *>(cond)->argument_list()) {
+      SEL_TREE *new_tree = get_mm_tree(thd, param, prev_tables, read_tables,
+                                       current_table, remove_jump_scans, &item);
+      if (param->has_errors()) return nullptr;
+      if (first) {
+        tree = new_tree;
+        first = false;
+        continue;
+      }
+      if (functype == Item_func::COND_AND_FUNC) {
         tree = tree_and(param, tree, new_tree);
         dbug_print_tree("after_and", tree, param);
         if (tree && tree->type == SEL_TREE::IMPOSSIBLE) break;
-      }
-    } else {  // Item OR
-      tree = get_mm_tree(thd, param, prev_tables, read_tables, current_table,
-                         remove_jump_scans, li++);
-      if (param->has_errors()) return nullptr;
-      if (tree) {
-        Item *item;
-        while ((item = li++)) {
-          SEL_TREE *new_tree =
-              get_mm_tree(thd, param, prev_tables, read_tables, current_table,
-                          remove_jump_scans, item);
-          if (new_tree == nullptr || param->has_errors()) return nullptr;
-          tree = tree_or(param, remove_jump_scans, tree, new_tree);
-          dbug_print_tree("after_or", tree, param);
-          if (tree == nullptr || tree->type == SEL_TREE::ALWAYS) break;
-        }
+      } else {  // OR.
+        tree = tree_or(param, remove_jump_scans, tree, new_tree);
+        dbug_print_tree("after_or", tree, param);
+        if (tree == nullptr || tree->type == SEL_TREE::ALWAYS) break;
       }
     }
     dbug_print_tree("tree_returned", tree, param);
@@ -877,7 +867,7 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
   if (cond->const_item() && !cond->is_expensive()) {
     const SEL_TREE::Type type =
         cond->val_int() ? SEL_TREE::ALWAYS : SEL_TREE::IMPOSSIBLE;
-    tree = new (param->temp_mem_root)
+    SEL_TREE *tree = new (param->temp_mem_root)
         SEL_TREE(type, param->temp_mem_root, param->keys);
 
     if (param->has_errors()) return nullptr;
@@ -885,15 +875,11 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
     return tree;
   }
 
-  table_map ref_tables = 0;
-  table_map param_comp = ~(prev_tables | read_tables | current_table);
-  if (cond->type() != Item::FUNC_ITEM) {  // Should be a field
-    ref_tables = cond->used_tables();
-    if ((ref_tables & current_table) ||
-        (ref_tables & ~(prev_tables | read_tables)))
-      return nullptr;
-    return new (param->temp_mem_root)
-        SEL_TREE(SEL_TREE::MAYBE, param->temp_mem_root, param->keys);
+  // This used to be a guard against predicates like “WHERE x;”. But these are
+  // now always rewritten to “x <> 0”, so it does not trigger there.
+  // However, it is still relevant for subselects.
+  if (cond->type() != Item::FUNC_ITEM) {
+    return nullptr;
   }
 
   Item_func *cond_func = (Item_func *)cond;
@@ -926,6 +912,7 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
         Concerning the code below see the NOTES section in
         the comments for the function get_full_func_mm_tree()
       */
+      SEL_TREE *tree = nullptr;
       for (uint i = 1; i < cond_func->arg_count; i++) {
         Item *const arg = cond_func->arguments()[i];
 
@@ -968,14 +955,17 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
     }  // end case Item_func::IN_FUNC
 
     case Item_func::MULT_EQUAL_FUNC: {
-      Item_equal *item_equal = (Item_equal *)cond;
-      if (!(value = item_equal->get_const())) return nullptr;
-      ref_tables = value->used_tables();
+      Item_equal *item_equal = down_cast<Item_equal *>(cond);
+      Item *value = item_equal->get_const();
+      if (value == nullptr) return nullptr;
+      table_map ref_tables = value->used_tables();
       for (Item_field &field_item : item_equal->get_fields()) {
         Field *field = field_item.field;
+        table_map param_comp = ~(prev_tables | read_tables | current_table);
         if (!((ref_tables | field_item.table_ref->map()) & param_comp)) {
-          tree = get_mm_parts(thd, param, prev_tables, read_tables, item_equal,
-                              field, Item_func::EQ_FUNC, value);
+          SEL_TREE *tree =
+              get_mm_parts(thd, param, prev_tables, read_tables, item_equal,
+                           field, Item_func::EQ_FUNC, value);
           ftree = !ftree ? tree : tree_and(param, ftree, tree);
         }
       }
@@ -991,7 +981,8 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
       if (!arg_left->is_outer_reference() &&
           arg_left->real_item()->type() == Item::FIELD_ITEM) {
         Item_field *field_item = down_cast<Item_field *>(arg_left->real_item());
-        value = cond_func->arg_count > 1 ? cond_func->arguments()[1] : nullptr;
+        Item *value =
+            cond_func->arg_count > 1 ? cond_func->arguments()[1] : nullptr;
         ftree = get_full_func_mm_tree(thd, param, prev_tables, read_tables,
                                       current_table, remove_jump_scans,
                                       field_item, cond_func, value, inv);
@@ -1019,7 +1010,7 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
           arg_right->real_item()->type() == Item::FIELD_ITEM) {
         Item_field *field_item =
             down_cast<Item_field *>(arg_right->real_item());
-        value = arg_left;
+        Item *value = arg_left;
         ftree = get_full_func_mm_tree(thd, param, prev_tables, read_tables,
                                       current_table, remove_jump_scans,
                                       field_item, cond_func, value, inv);

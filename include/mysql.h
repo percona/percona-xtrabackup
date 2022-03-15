@@ -54,7 +54,7 @@ typedef uint64_t my_ulonglong;
 
 #ifndef my_socket_defined
 #define my_socket_defined
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MYSQL_ABI_CHECK)
 #include <windows.h>
 #ifdef WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -62,13 +62,13 @@ typedef uint64_t my_ulonglong;
 #define my_socket SOCKET
 #else
 typedef int my_socket;
-#endif /* _WIN32 */
+#endif /* _WIN32 && ! MYSQL_ABI_CHECK */
 #endif /* my_socket_defined */
 
 // Small extra definition to avoid pulling in my_compiler.h in client code.
 // IWYU pragma: no_include "my_compiler.h"
 #ifndef MY_COMPILER_INCLUDED
-#if !defined(_WIN32)
+#if !defined(_WIN32) || defined(MYSQL_ABI_CHECK)
 #define STDCALL
 #else
 #define STDCALL __stdcall
@@ -362,6 +362,12 @@ typedef struct MYSQL_RES {
   Skip HEARBEAT events in the @sa mysql_binlog_fetch().
 */
 #define MYSQL_RPL_SKIP_HEARTBEAT (1 << 17)
+
+/**
+ Flag to indicate that the heartbeat_event being generated
+ is using the class Heartbeat_event_v2
+*/
+#define USE_HEARTBEAT_EVENT_V2 (1 << 1)
 
 /**
   Struct for information about a replication stream.

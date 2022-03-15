@@ -60,6 +60,15 @@
 static unsigned long lfactor[9] = {
     1L, 10L, 100L, 1000L, 10000L, 100000L, 1000000L, 10000000L, 100000000L};
 
+MY_COMPILER_DIAGNOSTIC_PUSH()
+// Suppress warning C4146 unary minus operator applied to unsigned type,
+// result still unsigned
+MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4146)
+static inline longlong ulonglong_with_sign(bool negative, ulonglong ll) {
+  return negative ? -ll : ll;
+}
+MY_COMPILER_DIAGNOSTIC_POP()
+
 static inline int my_bincmp(const uchar *s, const uchar *se, const uchar *t,
                             const uchar *te) {
   int slen = (int)(se - s), tlen = (int)(te - t);
@@ -365,7 +374,7 @@ bs:
     return negative ? LLONG_MIN : LLONG_MAX;
   }
 
-  return negative ? -res : res;
+  return ulonglong_with_sign(negative, res);
 }
 
 static ulonglong my_strntoull_mb2_or_mb4(const CHARSET_INFO *cs,
@@ -455,7 +464,7 @@ bs:
     return (~(ulonglong)0);
   }
 
-  return negative ? -res : res;
+  return ulonglong_with_sign(negative, res);
 }
 
 static double my_strntod_mb2_or_mb4(const CHARSET_INFO *cs, const char *nptr,

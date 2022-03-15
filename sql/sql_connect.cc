@@ -674,17 +674,6 @@ static int check_connection(THD *thd) {
     can be inspected.
   */
   thd->set_ssl(net->vio);
-
-  if (net->vio->ssl_arg) {
-    int version = SSL_version((SSL *)net->vio->ssl_arg);
-    if (version == TLS1_VERSION || version == TLS1_1_VERSION) {
-      Security_context *sctx = thd->security_context();
-      LogErr(WARNING_LEVEL, ER_DEPRECATED_TLS_VERSION_SESSION,
-             SSL_get_version((SSL *)net->vio->ssl_arg), sctx->priv_user().str,
-             sctx->priv_host().str, sctx->host_or_ip().str, sctx->user().str);
-    }
-  }
-
   return auth_rc;
 }
 
@@ -817,17 +806,24 @@ static void prepare_new_connection_state(THD *thd) {
   thd->set_proc_info(nullptr);
   thd->set_command(COM_SLEEP);
   thd->init_query_mem_roots();
-
-  if (opt_init_connect.length &&
-      !(sctx->check_access(SUPER_ACL) ||
-        sctx->has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN")).first)) {
+  const bool is_admin_conn =
+      (sctx->check_access(SUPER_ACL) ||
+       sctx->has_global_grant(STRING_WITH_LEN("CONNECTION_ADMIN")).first);
+  thd->mem_cnt->set_orig_mode(is_admin_conn ? MEM_CNT_UPDATE_GLOBAL_COUNTER
+                                            : (MEM_CNT_UPDATE_GLOBAL_COUNTER |
+                                               MEM_CNT_GENERATE_ERROR |
+                                               MEM_CNT_GENERATE_LOG_ERROR));
+  if (opt_init_connect.length && !is_admin_conn) {
     if (sctx->password_expired()) {
       LogErr(WARNING_LEVEL, ER_CONN_INIT_CONNECT_IGNORED, sctx->priv_user().str,
              sctx->priv_host().str);
       return;
     }
-
+    // Do not print OOM error to error log.
+    thd->mem_cnt->set_curr_mode(
+        (MEM_CNT_UPDATE_GLOBAL_COUNTER | MEM_CNT_GENERATE_ERROR));
     execute_init_command(thd, &opt_init_connect, &LOCK_sys_init_connect);
+    thd->mem_cnt->set_curr_mode(MEM_CNT_DEFAULT);
     if (thd->is_error()) {
       Host_errors errors;
       ulong packet_length;
@@ -884,6 +880,8 @@ static void prepare_new_connection_state(THD *thd) {
 }
 
 bool thd_prepare_connection(THD *thd) {
+  if (thd->enable_mem_cnt()) return true;
+
   bool rc;
   lex_start(thd);
   rc = login_connection(thd);

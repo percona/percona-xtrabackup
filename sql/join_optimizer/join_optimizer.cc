@@ -62,6 +62,8 @@
 #include "sql/join_optimizer/build_interesting_orders.h"
 #include "sql/join_optimizer/cost_model.h"
 #include "sql/join_optimizer/estimate_selectivity.h"
+#include "sql/join_optimizer/explain_access_path.h"
+#include "sql/join_optimizer/find_contained_subqueries.h"
 #include "sql/join_optimizer/interesting_orders.h"
 #include "sql/join_optimizer/interesting_orders_defs.h"
 #include "sql/join_optimizer/make_join_hypergraph.h"
@@ -106,6 +108,7 @@ using hypergraph::NodeMap;
 using std::array;
 using std::bitset;
 using std::min;
+using std::pair;
 using std::string;
 using std::swap;
 
@@ -193,10 +196,9 @@ class CostingReceiver {
 
   size_t num_access_paths() const { return m_access_paths.size(); }
 
-  void ProposeAccessPath(AccessPath *path,
-                         Prealloced_array<AccessPath *, 4> *existing_paths,
-                         OrderingSet obsolete_orderings,
-                         const char *description_for_trace) const;
+  AccessPath *ProposeAccessPath(
+      AccessPath *path, Prealloced_array<AccessPath *, 4> *existing_paths,
+      OrderingSet obsolete_orderings, const char *description_for_trace) const;
 
   bool HasSecondaryEngineCostHook() const {
     return m_secondary_engine_cost_hook != nullptr;
@@ -213,7 +215,7 @@ class CostingReceiver {
     AccessPathSet contains information that is common between all access
     paths for that set. One would believe num_output_rows would be such
     a member (a set of tables should produce the same number of ouptut
-    rows no matter the join order), but due to parametrized paths,
+    rows no matter the join order), but due to parameterized paths,
     different access paths could have different outputs. delayed_predicates
     is another, but currently, it's already efficiently hidden space-wise
     due to the use of a union.
@@ -313,6 +315,27 @@ class CostingReceiver {
   /// there must be zero or one bit here; the common case is zero.
   NodeMap forced_leftmost_table = 0;
 
+  /// A special MEM_ROOT for allocating OverflowBitsets that we might end up
+  /// discarding, ie. for AccessPaths that do not yet live in m_access_paths.
+  /// For any AccessPath that is to have a permanent life (ie., not be
+  /// immediately discarded as inferior), the OverflowBitset _must_ be taken
+  /// out of this MEM_ROOT and onto the regular one, as it is cleared often.
+  /// (This significantly reduces the amount of memory used in situations
+  /// where lots of AccessPaths are produced and discarded. Of course,
+  /// it only matters for queries with >= 64 predicates.)
+  ///
+  /// The copying is using CommitBitsetsToHeap(). ProposeAccessPath() will
+  /// automatically call CommitBitsetsToHeap() for accepted access paths,
+  /// but it will not call it on any of their children. Thus, if you've
+  /// added more than one AccessPath in the chain (e.g. if you add a join,
+  /// then a sort of that join, and then propose the sort), you will need
+  /// to make sure there are no stray bitsets left on this MEM_ROOT.
+  ///
+  /// Because this can be a source of subtle bugs, you should be conservative
+  /// about what bitsets you put here; really, only the ones you could be
+  /// allocating many of (like joins) should be candidates.
+  MEM_ROOT m_overflow_bitset_mem_root;
+
   /// For trace use only.
   std::string PrintSet(NodeMap x) {
     std::string ret = "{";
@@ -352,9 +375,14 @@ class CostingReceiver {
   bool ProposeRefAccess(TABLE *table, int node_idx, unsigned key_idx,
                         bool reverse, table_map allowed_parameter_tables,
                         int ordering_idx);
-  bool AlreadyAppliedThroughSargable(
-      Item_func_eq *cond, OverflowBitset applied_sargable_join_predicates,
-      NodeMap left, NodeMap right);
+  bool RedundantThroughSargable(
+      OverflowBitset redundant_against_sargable_predicates,
+      OverflowBitset left_applied_sargable_join_predicates,
+      OverflowBitset right_applied_sargable_join_predicates, NodeMap left,
+      NodeMap right);
+  inline pair<bool, bool> AlreadyAppliedAsSargable(
+      Item *condition, const AccessPath *left_path,
+      const AccessPath *right_path);
   bool ProposeAllFullTextIndexScans(TABLE *table, int node_idx);
   bool ProposeFullTextIndexScan(TABLE *table, int node_idx,
                                 Item_func_match *match, int predicate_idx,
@@ -380,15 +408,21 @@ class CostingReceiver {
       const AccessPath *right_path, int join_predicate_first,
       int join_predicate_last, bool materialize_subqueries,
       AccessPath *join_path, FunctionalDependencySet *new_fd_set);
+
+  void CommitBitsetsToHeap(AccessPath *path) const;
+  bool BitsetsAreCommitted(AccessPath *path) const;
 };
 
 /// Lists the current secondary engine flags in use. If there is no secondary
 /// engine, will use a default set of permissive flags suitable for
 /// non-secondary engine use.
 SecondaryEngineFlags EngineFlags(const THD *thd) {
-  const handlerton *secondary_engine = thd->lex->m_sql_cmd->secondary_engine();
-  if (secondary_engine != nullptr) {
-    return secondary_engine->secondary_engine_flags;
+  if (thd->lex->m_sql_cmd != nullptr) {
+    const handlerton *secondary_engine =
+        thd->lex->m_sql_cmd->secondary_engine();
+    if (secondary_engine != nullptr) {
+      return secondary_engine->secondary_engine_flags;
+    }
   }
 
   return MakeSecondaryEngineFlags(
@@ -399,21 +433,15 @@ SecondaryEngineFlags EngineFlags(const THD *thd) {
 /// Gets the secondary storage engine cost modification function, if any.
 secondary_engine_modify_access_path_cost_t SecondaryEngineCostHook(
     const THD *thd) {
+  if (thd->lex->m_sql_cmd == nullptr) {
+    return nullptr;
+  }
   const handlerton *secondary_engine = thd->lex->m_sql_cmd->secondary_engine();
   if (secondary_engine == nullptr) {
     return nullptr;
   } else {
     return secondary_engine->secondary_engine_modify_access_path_cost;
   }
-}
-
-bool IsFullTextFunction(const Item *item) {
-  return item->type() == Item::FUNC_ITEM &&
-         down_cast<const Item_func *>(item)->functype() == Item_func::FT_FUNC;
-}
-
-bool HasFullTextFunction(Item *item) {
-  return WalkItem(item, enum_walk::PREFIX, IsFullTextFunction);
 }
 
 /// Returns the MATCH function of a predicate that can be pushed down to a
@@ -519,15 +547,15 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
         // other tables (e.g. t1.x = t2.x). Such access paths can only be used
         // on the inner side of a nested loop join, where all the other
         // referenced tables are among the outer tables of the join. Such path
-        // is called a parametrized path.
+        // is called a parameterized path.
         //
         // Since indexes can have multiple parts, the access path can also end
-        // up being parametrized on multiple outer tables. However, since
-        // parametrized paths are less flexible in joining than non-parametrized
-        // ones, it can be advantageous to not use all parts of the index; it's
-        // impossible to say locally. Thus, we enumerate all possible subsets of
-        // table parameters that may be useful, to make sure we don't miss any
-        // such paths.
+        // up being parameterized on multiple outer tables. However, since
+        // parameterized paths are less flexible in joining than
+        // non-parameterized ones, it can be advantageous to not use all parts
+        // of the index; it's impossible to say locally. Thus, we enumerate all
+        // possible subsets of table parameters that may be useful, to make sure
+        // we don't miss any such paths.
         table_map want_parameter_tables = 0;
         for (unsigned pred_idx = 0;
              pred_idx < m_graph.nodes[node_idx].sargable_predicates.size();
@@ -1102,7 +1130,7 @@ bool IsSubsumableFullTextPredicate(Item_func *condition) {
     }
     case Item_func::GT_FUNC: {
       // WHERE MATCH (col) AGAINST ('search string') > 0 is subsumable.
-      assert(IsFullTextFunction(condition->get_arg(0)));
+      assert(is_function_of_type(condition->get_arg(0), Item_func::FT_FUNC));
       assert(condition->get_arg(1)->const_item());
       const double value = condition->get_arg(1)->val_real();
       assert(!condition->get_arg(1)->null_value);
@@ -1111,7 +1139,7 @@ bool IsSubsumableFullTextPredicate(Item_func *condition) {
     case Item_func::LT_FUNC: {
       // WHERE 0 < MATCH (col) AGAINST ('search string') subsumable.
       assert(condition->get_arg(0)->const_item());
-      assert(IsFullTextFunction(condition->get_arg(1)));
+      assert(is_function_of_type(condition->get_arg(1), Item_func::FT_FUNC));
       const double value = condition->get_arg(0)->val_real();
       assert(!condition->get_arg(0)->null_value);
       return value == 0;
@@ -1119,14 +1147,14 @@ bool IsSubsumableFullTextPredicate(Item_func *condition) {
     case Item_func::GE_FUNC:
       // WHERE MATCH >= const is not subsumable, but assert the predicate is on
       // the expected form.
-      assert(IsFullTextFunction(condition->get_arg(0)));
+      assert(is_function_of_type(condition->get_arg(0), Item_func::FT_FUNC));
       assert(condition->get_arg(1)->const_item());
       return false;
     case Item_func::LE_FUNC:
       // WHERE const <= MATCH is not subsumable, but assert the predicate is on
       // the expected form.
       assert(condition->get_arg(0)->const_item());
-      assert(IsFullTextFunction(condition->get_arg(1)));
+      assert(is_function_of_type(condition->get_arg(1), Item_func::FT_FUNC));
       return false;
     default:
       // Not a sargable full-text predicate, so we don't expect to be called on
@@ -1424,7 +1452,7 @@ void CostingReceiver::ApplyPredicatesForBaseTable(
       filter_predicates.SetBit(i);
       FilterCost cost =
           EstimateFilterCost(m_thd, path->num_output_rows,
-                             m_graph.predicates[i].condition, m_query_block);
+                             m_graph.predicates[i].contained_subqueries);
       if (materialize_subqueries) {
         path->cost += cost.cost_if_materialized;
         materialize_cost += cost.cost_to_materialize;
@@ -1446,7 +1474,9 @@ void CostingReceiver::ApplyPredicatesForBaseTable(
   path->delayed_predicates = std::move(delayed_predicates);
 
   if (materialize_subqueries) {
-    ExpandSingleFilterAccessPath(m_thd, path, m_graph.predicates,
+    CommitBitsetsToHeap(path);
+    ExpandSingleFilterAccessPath(m_thd, path, m_query_block->join,
+                                 m_graph.predicates,
                                  m_graph.num_where_predicates);
     assert(path->type == AccessPath::FILTER);
     path->filter().materialize_subqueries = true;
@@ -1542,28 +1572,32 @@ bool CostingReceiver::FoundSubgraphPair(NodeMap left, NodeMap right,
   bool wrote_trace = false;
 
   for (AccessPath *right_path : right_it->second.paths) {
+    assert(BitsetsAreCommitted(right_path));
     if (edge->expr->join_conditions_reject_all_rows &&
         edge->expr->type != RelationalExpression::FULL_OUTER_JOIN) {
       // If the join condition can never be true, we also don't need to read the
       // right side. For inner joins and semijoins, we can actually just skip
-      // reading the left side as well, but if so, the join condition would be
-      // pulled up into a WHERE condition (or into the join condition of the
-      // next higher non-inner join), so we'll never see that in practice,
-      // and thus, don't care particularly about the case. We also don't need to
-      // care much about the ordering, since we don't propagate the right-hand
-      // ordering properties through joins.
+      // reading the left side as well, but if so, the join condition would
+      // normally be pulled up into a WHERE condition (or into the join
+      // condition of the next higher non-inner join), so we'll never see that
+      // in practice, and thus, don't care particularly about the case. We also
+      // don't need to care much about the ordering, since we don't propagate
+      // the right-hand ordering properties through joins.
       AccessPath *zero_path = NewZeroRowsAccessPath(
           m_thd, right_path, "Join condition rejects all rows");
       MutableOverflowBitset applied_sargable_join_predicates =
-          right_path->applied_sargable_join_predicates().Clone(m_thd->mem_root);
+          right_path->applied_sargable_join_predicates().Clone(
+              &m_overflow_bitset_mem_root);
       applied_sargable_join_predicates.ClearBits(0,
                                                  m_graph.num_where_predicates);
       zero_path->filter_predicates =
           std::move(applied_sargable_join_predicates);
       zero_path->delayed_predicates = right_path->delayed_predicates;
       right_path = zero_path;
+      CommitBitsetsToHeap(right_path);
     }
     for (AccessPath *left_path : left_it->second.paths) {
+      assert(BitsetsAreCommitted(left_path));
       // For inner joins and full outer joins, the order does not matter.
       // In lieu of a more precise cost model, always keep the one that hashes
       // the fewest amount of rows. (This has lower initial cost, and the same
@@ -1601,6 +1635,7 @@ bool CostingReceiver::FoundSubgraphPair(NodeMap left, NodeMap right,
             /*rewrite_semi_to_inner=*/can_rewrite_semi_to_inner, new_fd_set,
             new_obsolete_orderings);
       }
+      m_overflow_bitset_mem_root.ClearForReuse();
     }
   }
   return false;
@@ -1639,7 +1674,7 @@ void CostingReceiver::ProposeHashJoin(
 
   if (Overlaps(left_path->parameter_tables, right) ||
       right_path->parameter_tables != 0) {
-    // Parametrized paths must be solved by nested loop.
+    // Parameterized paths must be solved by nested loop.
     // We can still have parameters from outside the join,
     // but only on the outer side.
     return;
@@ -1660,6 +1695,9 @@ void CostingReceiver::ProposeHashJoin(
     // don't need to be evaluated again outside of the join.
     return;
   }
+
+  assert(BitsetsAreCommitted(left_path));
+  assert(BitsetsAreCommitted(right_path));
 
   AccessPath join_path;
   join_path.type = AccessPath::HASH_JOIN;
@@ -1686,13 +1724,14 @@ void CostingReceiver::ProposeHashJoin(
 
     // NOTE: We purposefully don't overwrite left_path here, so that we
     // don't have to worry about copying ordering_state etc.
+    CommitBitsetsToHeap(left_path);
     join_path.hash_join().outer = DeduplicateForSemijoin(
         m_thd, left_path, edge->semijoin_group, edge->semijoin_group_size);
   }
 
   double num_output_rows =
       FindOutputRowsForJoin(left_path, right_path, edge,
-                            /*already_applied_selectivity=*/1.0);
+                            /*right_path_already_applied_selectivity=*/1.0);
 
   // TODO(sgunders): Add estimates for spill-to-disk costs.
   const double build_cost =
@@ -1841,40 +1880,47 @@ void CostingReceiver::ApplyDelayedPredicatesAfterJoin(
   // filter_predicates holds both filter_predicates and
   // applied_sargable_join_predicates. Keep the information about the latter,
   // but reset the one pertaining to the former.
-  MutableOverflowBitset filter_predicates = OverflowBitset::Or(
-      m_thd->mem_root, left_path->applied_sargable_join_predicates(),
-      right_path->applied_sargable_join_predicates());
+  MutableOverflowBitset filter_predicates =
+      OverflowBitset::Or(&m_overflow_bitset_mem_root,
+                         left_path->applied_sargable_join_predicates(),
+                         right_path->applied_sargable_join_predicates());
   filter_predicates.ClearBits(0, m_graph.num_where_predicates);
 
   // Predicates we are still delaying.
-  MutableOverflowBitset delayed_predicates =
-      OverflowBitset::Xor(m_thd->mem_root, left_path->delayed_predicates,
-                          right_path->delayed_predicates);
+  MutableOverflowBitset delayed_predicates = OverflowBitset::Xor(
+      &m_overflow_bitset_mem_root, left_path->delayed_predicates,
+      right_path->delayed_predicates);
   delayed_predicates.ClearBits(join_predicate_first, join_predicate_last);
 
   // Predicates that were delayed, but that we need to check now.
-  MutableOverflowBitset ready_predicates =
-      OverflowBitset::And(m_thd->mem_root, left_path->delayed_predicates,
-                          right_path->delayed_predicates);
-  ready_predicates.ClearBits(join_predicate_first, join_predicate_last);
-
+  // (We don't need to allocate a MutableOverflowBitset for this.)
   const NodeMap ready_tables = left | right;
-  for (int pred_idx : BitsSetIn(std::move(ready_predicates))) {
+  for (int pred_idx : BitsSetInBoth(left_path->delayed_predicates,
+                                    right_path->delayed_predicates)) {
+    if (pred_idx >= join_predicate_first && pred_idx < join_predicate_last) {
+      continue;
+    }
     const Predicate &pred = m_graph.predicates[pred_idx];
     if (IsSubset(pred.total_eligibility_set, ready_tables)) {
+      const auto [already_applied_as_sargable, subsumed] =
+          AlreadyAppliedAsSargable(pred.condition, left_path, right_path);
       if (pred.source_multiple_equality_idx == -1 ||
           !IsBitSet(pred.source_multiple_equality_idx,
                     multiple_equality_bitmap)) {
-        filter_predicates.SetBit(pred_idx);
-        FilterCost cost = EstimateFilterCost(m_thd, join_path->num_output_rows,
-                                             pred.condition, m_query_block);
-        if (materialize_subqueries) {
-          join_path->cost += cost.cost_if_materialized;
-          materialize_cost += cost.cost_to_materialize;
-        } else {
-          join_path->cost += cost.cost_if_not_materialized;
+        if (!subsumed) {
+          FilterCost cost = EstimateFilterCost(
+              m_thd, join_path->num_output_rows, pred.contained_subqueries);
+          if (materialize_subqueries) {
+            join_path->cost += cost.cost_if_materialized;
+            materialize_cost += cost.cost_to_materialize;
+          } else {
+            join_path->cost += cost.cost_if_not_materialized;
+          }
+          join_path->num_output_rows *= pred.selectivity;
+          if (!already_applied_as_sargable) {
+            filter_predicates.SetBit(pred_idx);
+          }
         }
-        join_path->num_output_rows *= pred.selectivity;
         if (pred.source_multiple_equality_idx != -1) {
           multiple_equality_bitmap |= uint64_t{1}
                                       << pred.source_multiple_equality_idx;
@@ -1889,7 +1935,9 @@ void CostingReceiver::ApplyDelayedPredicatesAfterJoin(
   join_path->delayed_predicates = std::move(delayed_predicates);
 
   if (materialize_subqueries) {
-    ExpandSingleFilterAccessPath(m_thd, join_path, m_graph.predicates,
+    CommitBitsetsToHeap(join_path);
+    ExpandSingleFilterAccessPath(m_thd, join_path, m_query_block->join,
+                                 m_graph.predicates,
                                  m_graph.num_where_predicates);
     assert(join_path->type == AccessPath::FILTER);
     join_path->filter().materialize_subqueries = true;
@@ -1900,8 +1948,8 @@ void CostingReceiver::ApplyDelayedPredicatesAfterJoin(
   }
 }
 
-static string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
-                        const char *description_for_trace);
+string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
+                 const char *description_for_trace);
 
 /**
   Check if we're about to apply a join condition that would be redundant
@@ -1923,37 +1971,67 @@ static string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
   different alternative for this join at some point that is not redundant
   (e.g., in the given example, we'd see the t2=t3 join).
  */
-bool CostingReceiver::AlreadyAppliedThroughSargable(
-    Item_func_eq *join_cond, OverflowBitset applied_sargable_join_predicates,
-    NodeMap left, NodeMap right) {
-  if (join_cond->source_multiple_equality == nullptr) {
-    return false;
-  }
-  for (size_t predicate_idx : BitsSetIn(applied_sargable_join_predicates)) {
-    const Predicate &pred = m_graph.predicates[predicate_idx];
-
-    // Don't deduplicate against ourselves (in case we're sargable).
-    if (pred.condition == join_cond) {
-      continue;
-    }
-
-    // Must be an equijoin condition that comes from the same multiple equality
-    // as the one we're trying to join in.
-    if (pred.condition->type() != Item::FUNC_ITEM ||
-        down_cast<Item_func *>(pred.condition)->functype() !=
-            Item_func::EQ_FUNC ||
-        down_cast<Item_func_eq *>(pred.condition)->source_multiple_equality !=
-            join_cond->source_multiple_equality) {
-      continue;
-    }
-
+bool CostingReceiver::RedundantThroughSargable(
+    OverflowBitset redundant_against_sargable_predicates,
+    OverflowBitset left_applied_sargable_join_predicates,
+    OverflowBitset right_applied_sargable_join_predicates, NodeMap left,
+    NodeMap right) {
+  const auto redundant_and_applied = [](uint64_t redundant_sargable,
+                                        uint64_t left_applied,
+                                        uint64_t right_applied) {
+    return redundant_sargable & (left_applied | right_applied);
+  };
+  for (size_t predicate_idx :
+       OverflowBitsetBitsIn<3, decltype(redundant_and_applied)>(
+           {redundant_against_sargable_predicates,
+            left_applied_sargable_join_predicates,
+            right_applied_sargable_join_predicates},
+           redundant_and_applied)) {
     // The sargable condition must work as a join condition for this join
     // (not between tables we've already joined in).
-    if (Overlaps(pred.used_nodes, left) && Overlaps(pred.used_nodes, right)) {
+    const Predicate &sargable_predicate = m_graph.predicates[predicate_idx];
+    if (Overlaps(sargable_predicate.used_nodes, left) &&
+        Overlaps(sargable_predicate.used_nodes, right)) {
       return true;
     }
   }
   return false;
+}
+
+/**
+  Whether the given join condition is already applied as a sargable predicate
+  earlier in the tree (presumably on the right side). This is different from
+  RedundantThroughSargable() in that this checks whether we have already applied
+  this exact join condition earlier, while the former checks whether we are
+  trying to apply a different join condition that is redundant against something
+  we've applied earlier.
+
+  The first boolean is whether “condition” is a join condition we've applied
+  earlier (as sargable; so we should not count its selectivity again),
+  and the second argument is whether that sargable also subsumed the entire
+  join condition (so we need not apply it as a filter).
+ */
+pair<bool, bool> CostingReceiver::AlreadyAppliedAsSargable(
+    Item *condition, const AccessPath *left_path [[maybe_unused]],
+    const AccessPath *right_path) {
+  const auto it = m_graph.sargable_join_predicates.find(condition);
+  if (it == m_graph.sargable_join_predicates.end()) {
+    return {false, false};
+  }
+
+  // NOTE: It is rare that join predicates already have been applied as
+  // ref access on the outer side, but not impossible if conditions are
+  // duplicated; see e.g. bug #33383388.
+  const bool applied =
+      IsBitSet(it->second, left_path->applied_sargable_join_predicates()) ||
+      IsBitSet(it->second, right_path->applied_sargable_join_predicates());
+  const bool subsumed =
+      IsBitSet(it->second, left_path->subsumed_sargable_join_predicates()) ||
+      IsBitSet(it->second, right_path->subsumed_sargable_join_predicates());
+  if (subsumed) {
+    assert(applied);
+  }
+  return {applied, subsumed};
 }
 
 void CostingReceiver::ProposeNestedLoopJoin(
@@ -1969,12 +2047,16 @@ void CostingReceiver::ProposeNestedLoopJoin(
     return;
   }
 
+  assert(BitsetsAreCommitted(left_path));
+  assert(BitsetsAreCommitted(right_path));
+
   AccessPath join_path;
   join_path.type = AccessPath::NESTED_LOOP_JOIN;
   join_path.parameter_tables =
       (left_path->parameter_tables | right_path->parameter_tables) &
       ~(left | right);
   join_path.nested_loop_join().pfs_batch_mode = false;
+  join_path.nested_loop_join().already_expanded_predicates = false;
   join_path.nested_loop_join().outer = left_path;
   join_path.nested_loop_join().inner = right_path;
   if (rewrite_semi_to_inner) {
@@ -2012,105 +2094,91 @@ void CostingReceiver::ProposeNestedLoopJoin(
     join_path.nested_loop_join().join_type =
         static_cast<JoinType>(edge->expr->type);
   }
+  join_path.nested_loop_join().join_predicate = edge;
 
-  const OverflowBitset applied_sargable_join_predicates = OverflowBitset::Or(
-      m_thd->mem_root, left_path->applied_sargable_join_predicates(),
-      right_path->applied_sargable_join_predicates());
-  const OverflowBitset subsumed_sargable_join_predicates = OverflowBitset::Or(
-      m_thd->mem_root, left_path->subsumed_sargable_join_predicates(),
-      right_path->subsumed_sargable_join_predicates());
+  const AccessPath *inner = join_path.nested_loop_join().inner;
+  double inner_rescan_cost = inner->cost - inner->init_once_cost;
 
-  double already_applied_selectivity = 1.0;
+  double right_path_already_applied_selectivity = 1.0;
+  join_path.nested_loop_join().equijoin_predicates = OverflowBitset{};
   if (edge->expr->join_conditions_reject_all_rows) {
     // We've already taken out all rows from the right-hand side
     // (by means of a ZeroRowsIterator), so no need to add filters;
     // they'd only clutter the EXPLAIN.
+    //
+    // Note that for obscure cases (inner joins where the join condition
+    // was not pulled up due to a pass ordering issue), we might see
+    // the left and right path be switched around due to commutativity.
+    assert(left_path->type == AccessPath::ZERO_ROWS ||
+           right_path->type == AccessPath::ZERO_ROWS);
   } else if (!edge->expr->equijoin_conditions.empty() ||
              !edge->expr->join_conditions.empty()) {
     // Apply join filters. Don't update num_output_rows, as the join's
     // selectivity will already be applied in FindOutputRowsForJoin().
     // NOTE(sgunders): We don't model the effect of short-circuiting filters on
     // the cost here.
-    AccessPath filter_path;
-    filter_path.type = AccessPath::FILTER;
-    filter_path.filter().child = right_path;
-
-    // We don't bother trying to materialize subqueries in join conditions,
-    // since they should be very rare.
-    filter_path.filter().materialize_subqueries = false;
-
-    CopyBasicProperties(*right_path, &filter_path);
+    double rows_after_filtering = inner->num_output_rows;
 
     // num_output_rows is only for cost calculation and display purposes;
     // we hard-code the use of edge->selectivity below, so that we're
     // seeing the same number of rows as for hash join. This might throw
     // the filtering cost off slightly.
-    List<Item> items;
-    for (Item_func_eq *condition : edge->expr->equijoin_conditions) {
-      const auto it = m_graph.sargable_join_predicates.find(condition);
-      bool subsumed = false;
-      if (it != m_graph.sargable_join_predicates.end() &&
-          IsBitSet(it->second, applied_sargable_join_predicates)) {
+    MutableOverflowBitset equijoin_predicates{
+        m_thd->mem_root, edge->expr->equijoin_conditions.size()};
+    int filter_idx = 0;
+    for (size_t join_cond_idx = 0;
+         join_cond_idx < edge->expr->equijoin_conditions.size();
+         ++join_cond_idx) {
+      Item_func_eq *condition = edge->expr->equijoin_conditions[join_cond_idx];
+      const CachedPropertiesForPredicate &properties =
+          edge->expr->properties_for_equijoin_conditions[join_cond_idx];
+
+      const auto [already_applied_as_sargable, subsumed] =
+          AlreadyAppliedAsSargable(condition, left_path, right_path);
+      if (already_applied_as_sargable) {
         // This predicate was already applied as a ref access earlier.
         // Make sure not to double-count its selectivity, and also
         // that we don't reapply it if it was subsumed by the ref access.
-        already_applied_selectivity *=
+        const auto it = m_graph.sargable_join_predicates.find(condition);
+        right_path_already_applied_selectivity *=
             m_graph.predicates[it->second].selectivity;
-        subsumed = IsBitSet(it->second, subsumed_sargable_join_predicates);
-      } else if (AlreadyAppliedThroughSargable(condition,
-                                               applied_sargable_join_predicates,
-                                               left, right)) {
+      } else if (RedundantThroughSargable(
+                     properties.redundant_against_sargable_predicates,
+                     left_path->applied_sargable_join_predicates(),
+                     right_path->applied_sargable_join_predicates(), left,
+                     right)) {
         if (m_trace != nullptr) {
           *m_trace +=
               " - " + PrintCost(*right_path, m_graph, "") +
               " has a sargable predicate that is redundant with our join "
               "predicate, skipping\n";
-          return;
         }
+        return;
       }
       if (!subsumed) {
-        items.push_back(condition);
-        filter_path.cost +=
-            EstimateFilterCost(m_thd, filter_path.num_output_rows, condition,
-                               m_query_block)
-                .cost_if_not_materialized;
-        filter_path.num_output_rows *=
-            EstimateSelectivity(m_thd, condition, m_trace);
+        equijoin_predicates.SetBit(filter_idx);
+        inner_rescan_cost += EstimateFilterCost(m_thd, rows_after_filtering,
+                                                properties.contained_subqueries)
+                                 .cost_if_not_materialized;
+        rows_after_filtering *= properties.selectivity;
       }
+      ++filter_idx;
     }
-    for (Item *condition : edge->expr->join_conditions) {
-      items.push_back(condition);
-      filter_path.cost += EstimateFilterCost(m_thd, filter_path.num_output_rows,
-                                             condition, m_query_block)
-                              .cost_if_not_materialized;
-      filter_path.num_output_rows *=
-          EstimateSelectivity(m_thd, condition, m_trace);
+    for (const CachedPropertiesForPredicate &properties :
+         edge->expr->properties_for_join_conditions) {
+      inner_rescan_cost += EstimateFilterCost(m_thd, rows_after_filtering,
+                                              properties.contained_subqueries)
+                               .cost_if_not_materialized;
+      rows_after_filtering *= properties.selectivity;
     }
-    if (items.is_empty()) {
-      // Everything was subsumed, so no filter needed after all.
-    } else {
-      Item *condition;
-      if (items.size() == 1) {
-        condition = items.head();
-      } else {
-        condition = new Item_cond_and(items);
-        condition->quick_fix_field();
-        condition->update_used_tables();
-        condition->apply_is_true();
-      }
-      filter_path.filter().condition = condition;
-
-      join_path.nested_loop_join().inner =
-          new (m_thd->mem_root) AccessPath(filter_path);
-    }
+    join_path.nested_loop_join().equijoin_predicates =
+        std::move(equijoin_predicates);
   }
 
   // Ignores the row count from filter_path; see above.
   join_path.num_output_rows_before_filter = join_path.num_output_rows =
       FindOutputRowsForJoin(left_path, right_path, edge,
-                            already_applied_selectivity);
-  const AccessPath *inner = join_path.nested_loop_join().inner;
-  double inner_rescan_cost = inner->cost - inner->init_once_cost;
+                            right_path_already_applied_selectivity);
   join_path.init_cost = left_path->init_cost;
   join_path.cost_before_filter = join_path.cost =
       left_path->cost + inner->init_cost +
@@ -2212,7 +2280,7 @@ static inline PathComparisonResult CompareAccessPaths(
     }
   }
 
-  // If we have a parametrized path, this means that at some point, it _must_
+  // If we have a parameterized path, this means that at some point, it _must_
   // be on the right side of a nested-loop join. This destroys ordering
   // information (at least in our implementation -- see comment in
   // NestedLoopJoin()), so in this situation, consider all orderings as equal.
@@ -2230,10 +2298,10 @@ static inline PathComparisonResult CompareAccessPaths(
   }
 
   // Normally, two access paths for the same subplan should have the same
-  // number of output rows. However, for parametrized paths, this need not
+  // number of output rows. However, for parameterized paths, this need not
   // be the case; due to pushdown of sargable conditions into indexes;
   // some filters may be applied earlier, causing fewer rows to be
-  // carried around temporarily (until the parametrization is resolved).
+  // carried around temporarily (until the parameterization is resolved).
   // This can have an advantage in causing less work later even if it's
   // non-optimal now, e.g. by saving on filtering work, or having less work
   // done in other joins. Thus, we need to keep it around as an extra
@@ -2265,8 +2333,8 @@ static inline PathComparisonResult CompareAccessPaths(
   }
 }
 
-static string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
-                        const char *description_for_trace) {
+string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
+                 const char *description_for_trace) {
   string str =
       StringPrintf("{cost=%.1f, init_cost=%.1f", path.cost, path.init_cost);
   if (path.init_once_cost != 0.0) {
@@ -2309,6 +2377,36 @@ static string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
   }
 }
 
+/// Commit OverflowBitsets in path (but not its children) to
+/// stable storage (see m_overflow_bitset_mem_root).
+void CostingReceiver::CommitBitsetsToHeap(AccessPath *path) const {
+  if (path->filter_predicates.IsContainedIn(&m_overflow_bitset_mem_root)) {
+    path->filter_predicates = path->filter_predicates.Clone(m_thd->mem_root);
+  }
+  if (path->delayed_predicates.IsContainedIn(&m_overflow_bitset_mem_root)) {
+    path->delayed_predicates = path->delayed_predicates.Clone(m_thd->mem_root);
+  }
+}
+
+/// Check if all bitsets under “path” are committed to stable storage
+/// (see m_overflow_bitset_mem_root). Only relevant in debug mode,
+/// as it is expensive.
+[[maybe_unused]] bool CostingReceiver::BitsetsAreCommitted(
+    AccessPath *path) const {
+  // Verify that there are no uncommitted bitsets forgotten in children.
+  bool all_ok = true;
+  WalkAccessPaths(path, /*join=*/nullptr,
+                  WalkAccessPathPolicy::STOP_AT_MATERIALIZATION,
+                  [this, &all_ok](const AccessPath *subpath, const JOIN *) {
+                    all_ok &= !subpath->filter_predicates.IsContainedIn(
+                        &m_overflow_bitset_mem_root);
+                    all_ok &= !subpath->delayed_predicates.IsContainedIn(
+                        &m_overflow_bitset_mem_root);
+                    return false;
+                  });
+  return all_ok;
+}
+
 /**
   Propose the given access path as an alternative to the existing access paths
   for the same task (assuming any exist at all), and hold a “tournament” to find
@@ -2332,20 +2430,25 @@ static string PrintCost(const AccessPath &path, const JoinHypergraph &graph,
   to distinguish it in optimizer trace, if active. For instance, one might
   write “hash join” when proposing a hash join access path. It may be
   the empty string.
+
+  If the access path is discarded, returns nullptr. Otherwise returns
+  a pointer to where it was inserted. (This is useful if you need to
+  call CommitBitsetsToHeap() on any of its children, or otherwise do
+  work only for access paths that were kept.)
  */
-void CostingReceiver::ProposeAccessPath(
+AccessPath *CostingReceiver::ProposeAccessPath(
     AccessPath *path, Prealloced_array<AccessPath *, 4> *existing_paths,
     OrderingSet obsolete_orderings, const char *description_for_trace) const {
   if (m_secondary_engine_cost_hook != nullptr) {
     // If an error was raised by a previous invocation of the hook, reject all
     // paths.
     if (m_thd->is_error()) {
-      return;
+      return nullptr;
     }
 
     if (m_secondary_engine_cost_hook(m_thd, m_graph, path)) {
       // Rejected by the secondary engine.
-      return;
+      return nullptr;
     }
     assert(!m_thd->is_error());
     assert(path->init_cost <= path->cost);
@@ -2363,7 +2466,8 @@ void CostingReceiver::ProposeAccessPath(
     }
     AccessPath *insert_position = new (m_thd->mem_root) AccessPath(*path);
     existing_paths->push_back(insert_position);
-    return;
+    CommitBitsetsToHeap(insert_position);
+    return insert_position;
   }
 
   AccessPath *insert_position = nullptr;
@@ -2383,7 +2487,7 @@ void CostingReceiver::ProposeAccessPath(
                     PrintCost(*(*existing_paths)[i], m_graph, "") +
                     ", discarding\n";
       }
-      return;
+      return nullptr;
     }
     if (result == PathComparisonResult::FIRST_DOMINATES) {
       ++num_dominated;
@@ -2420,7 +2524,8 @@ void CostingReceiver::ProposeAccessPath(
     }
     insert_position = new (m_thd->mem_root) AccessPath(*path);
     existing_paths->emplace_back(insert_position);
-    return;
+    CommitBitsetsToHeap(insert_position);
+    return insert_position;
   }
 
   if (m_trace != nullptr) {
@@ -2456,7 +2561,8 @@ void CostingReceiver::ProposeAccessPath(
     }
   }
   *insert_position = *path;
-  return;
+  CommitBitsetsToHeap(insert_position);
+  return insert_position;
 }
 
 AccessPath MakeSortPathWithoutFilesort(THD *thd, AccessPath *child,
@@ -2523,7 +2629,7 @@ void CostingReceiver::ProposeAccessPathWithOrderings(
     return;
   }
 
-  // Don't try to sort-ahead parametrized paths; see the comment in
+  // Don't try to sort-ahead parameterized paths; see the comment in
   // CompareAccessPaths for why.
   if (path->parameter_tables != 0) {
     return;
@@ -2553,11 +2659,6 @@ void CostingReceiver::ProposeAccessPathWithOrderings(
       continue;
     }
 
-    if (!path_is_on_heap) {
-      path = new (m_thd->mem_root) AccessPath(*path);
-      path_is_on_heap = true;
-    }
-
     AccessPath sort_path =
         MakeSortPathWithoutFilesort(m_thd, path, sort_ahead_ordering.order,
                                     new_state, m_graph.num_where_predicates);
@@ -2572,13 +2673,22 @@ void CostingReceiver::ProposeAccessPathWithOrderings(
                  sort_ahead_ordering.ordering_idx);
       }
     }
-    ProposeAccessPath(&sort_path, &it_and_inserted.first->second.paths,
-                      obsolete_orderings, buf);
+    AccessPath *insert_position =
+        ProposeAccessPath(&sort_path, &it_and_inserted.first->second.paths,
+                          obsolete_orderings, buf);
+    if (insert_position != nullptr && !path_is_on_heap) {
+      path = new (m_thd->mem_root) AccessPath(*path);
+      CommitBitsetsToHeap(path);
+      insert_position->sort().child = path;
+      assert(BitsetsAreCommitted(insert_position));
+      path_is_on_heap = true;
+    }
   }
 }
 
 bool CheckSupportedQuery(THD *thd) {
-  if (thd->lex->m_sql_cmd->using_secondary_storage_engine() &&
+  if (thd->lex->m_sql_cmd != nullptr &&
+      thd->lex->m_sql_cmd->using_secondary_storage_engine() &&
       !Overlaps(EngineFlags(thd),
                 MakeSecondaryEngineFlags(
                     SecondaryEngineFlag::SUPPORTS_HASH_JOIN,
@@ -2733,23 +2843,6 @@ void CollectItemsToMaterializeForFullTextAggregation(
   CompileItem(
       root,
       [items](Item *item) {
-        // First, unconditionally materialize any call to the MATCH function.
-        // This would usually be done anyways by the "else" branch in the if
-        // statement below. But not if the argument of the MATCH function is a
-        // rollup group item. When the argument is a rollup item, we can either
-        // materialize the inside of the rollup item and get right result for
-        // the rollup group (but not the other groups), or materialize the MATCH
-        // function and get the right result for the non-rollup groups (but not
-        // for the rollup group). We cannot get both right currently. The old
-        // optimizer has the same problem, see bug#32996762.
-        if (item->type() == Item::FUNC_ITEM) {
-          Item_func::Functype type = down_cast<Item_func *>(item)->functype();
-          if (type == Item_func::FT_FUNC || type == Item_func::MATCH_FUNC) {
-            items->push_back(item);
-            return false;
-          }
-        }
-
         if (item->has_aggregation()) {
           // Since we materialize before aggregation, we cannot materialize
           // items that depend on an aggregated value. But we can look inside
@@ -2826,7 +2919,9 @@ bool CreateTemporaryTableForFullTextFunctions(
   // If we didn't find any full-text functions that needed materialization, we
   // don't need a temporary table.
   if (std::none_of(items_to_materialize.begin(), items_to_materialize.end(),
-                   HasFullTextFunction)) {
+                   [](Item *item) {
+                     return contains_function_of_type(item, Item_func::FT_FUNC);
+                   })) {
     *temp_table = nullptr;
     return false;
   }
@@ -2924,7 +3019,8 @@ bool IsSargableFullTextIndexPredicate(Item *condition) {
   // constant value.
   Item *const_arg = func->get_arg(const_arg_idx);
   Item *match_arg = func->get_arg(1 - const_arg_idx);
-  if (!IsFullTextFunction(match_arg) || !const_arg->const_item()) {
+  if (!is_function_of_type(match_arg, Item_func::FT_FUNC) ||
+      !const_arg->const_item()) {
     return false;
   }
 
@@ -3067,6 +3163,9 @@ void ApplyHavingCondition(THD *thd, Item *having_cond, Query_block *query_block,
                               .cost_if_not_materialized;
     filter_path.num_output_rows_before_filter = filter_path.num_output_rows;
     filter_path.cost_before_filter = filter_path.cost;
+    // TODO(sgunders): Collect and apply functional dependencies from
+    // HAVING conditions.
+    filter_path.ordering_state = root_path->ordering_state;
     receiver->ProposeAccessPath(&filter_path, &new_root_candidates,
                                 /*obsolete_orderings=*/0, "");
   }
@@ -3167,6 +3266,9 @@ Prealloced_array<AccessPath *, 4> ApplyDistinctAndOrder(
           orderings.DoesFollowOrder(root_path->ordering_state,
                                     distinct_ordering_idx)) {
         // We don't need the sort, and can do with a simpler deduplication.
+        // TODO(sgunders): In some cases, we could apply LIMIT 1,
+        // which would be slightly more efficient; see e.g. the test for
+        // bug #33148369.
         Item **group_items = thd->mem_root->ArrayAlloc<Item *>(grouping.size());
         for (size_t i = 0; i < grouping.size(); ++i) {
           group_items[i] = orderings.item(grouping[i].item);
@@ -3713,6 +3815,7 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
       p.total_eligibility_set =
           ~0;  // Should never be applied as a WHERE predicate.
       p.functional_dependencies_idx.init(thd->mem_root);
+      p.contained_subqueries.init(thd->mem_root);  // Empty.
       graph->predicates.push_back(std::move(p));
       predicate_index = graph->predicates.size() - 1;
       graph->sargable_join_predicates.emplace(eq_item, predicate_index);
@@ -3752,6 +3855,69 @@ void FindSargablePredicates(THD *thd, string *trace, JoinHypergraph *graph) {
   }
 }
 
+static bool ComesFromSameMultiEquality(Item *cond1, Item_func_eq *cond2) {
+  return cond1->type() == Item::FUNC_ITEM &&
+         down_cast<Item_func *>(cond1)->functype() == Item_func::EQ_FUNC &&
+         down_cast<Item_func_eq *>(cond1)->source_multiple_equality ==
+             cond2->source_multiple_equality;
+}
+
+/**
+  For each edge, cache some information for each of its join conditions.
+  This reduces work when repeatedly applying these join conditions later on.
+  In particular, FindContainedSubqueries() contains a large amount of
+  virtual function calls that we would like to avoid doing every time
+  we consider a given join.
+ */
+static void CacheCostInfoForJoinConditions(THD *thd,
+                                           const Query_block *query_block,
+                                           JoinHypergraph *graph,
+                                           string *trace) {
+  for (JoinPredicate &edge : graph->edges) {
+    edge.expr->properties_for_equijoin_conditions.init(thd->mem_root);
+    edge.expr->properties_for_join_conditions.init(thd->mem_root);
+    for (Item_func_eq *cond : edge.expr->equijoin_conditions) {
+      CachedPropertiesForPredicate properties;
+      properties.selectivity = EstimateSelectivity(thd, cond, trace);
+      properties.contained_subqueries.init(thd->mem_root);
+      FindContainedSubqueries(
+          thd, cond, query_block,
+          [&properties](const ContainedSubquery &subquery) {
+            properties.contained_subqueries.push_back(subquery);
+          });
+
+      // Cache information about what sargable conditions this join condition
+      // would be redundant against, for RedundantThroughSargable().
+      // But doon't deduplicate against ourselves (in case we're sargable).
+      MutableOverflowBitset redundant(thd->mem_root, graph->predicates.size());
+      for (unsigned sargable_pred_idx = graph->num_where_predicates;
+           sargable_pred_idx < graph->predicates.size(); ++sargable_pred_idx) {
+        Item *sargable_condition =
+            graph->predicates[sargable_pred_idx].condition;
+        if (sargable_condition != cond &&
+            ComesFromSameMultiEquality(sargable_condition, cond)) {
+          redundant.SetBit(sargable_pred_idx);
+        }
+      }
+      properties.redundant_against_sargable_predicates = std::move(redundant);
+      edge.expr->properties_for_equijoin_conditions.push_back(
+          std::move(properties));
+    }
+    for (Item *cond : edge.expr->join_conditions) {
+      CachedPropertiesForPredicate properties;
+      properties.selectivity = EstimateSelectivity(thd, cond, trace);
+      properties.contained_subqueries.init(thd->mem_root);
+      FindContainedSubqueries(
+          thd, cond, query_block,
+          [&properties](const ContainedSubquery &subquery) {
+            properties.contained_subqueries.push_back(subquery);
+          });
+      edge.expr->properties_for_join_conditions.push_back(
+          std::move(properties));
+    }
+  }
+}
+
 /**
   Find the lowest-cost plan (which hopefully is also the cheapest to execute)
   of all the legal ways to execute the query. The overall order of operations is
@@ -3786,8 +3952,9 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
 
   // The hypergraph optimizer does not do const tables,
   // nor does it evaluate subqueries during optimization.
-  query_block->add_active_options(OPTION_NO_CONST_TABLES |
-                                  OPTION_NO_SUBQUERY_DURING_OPTIMIZATION);
+  assert(
+      IsSubset(OPTION_NO_CONST_TABLES | OPTION_NO_SUBQUERY_DURING_OPTIMIZATION,
+               query_block->active_options()));
 
   // In the case of rollup (only): After the base slice list was made, we may
   // have modified the field list to add rollup group items and sum switchers.
@@ -3815,6 +3982,10 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
     return nullptr;
   }
   FindSargablePredicates(thd, trace, &graph);
+
+  // Now that we have all join conditions, cache some properties
+  // that we'd like to use many times.
+  CacheCostInfoForJoinConditions(thd, query_block, &graph, trace);
 
   // Figure out if any later sort will need row IDs.
   bool need_rowid = false;
@@ -3960,7 +4131,7 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
             filter_predicates.SetBit(i);
             FilterCost cost =
                 EstimateFilterCost(thd, root_path->num_output_rows,
-                                   graph.predicates[i].condition, query_block);
+                                   graph.predicates[i].contained_subqueries);
             if (materialize_subqueries) {
               path.cost += cost.cost_if_materialized;
               init_once_cost += cost.cost_to_materialize;

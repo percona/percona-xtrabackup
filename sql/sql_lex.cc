@@ -482,6 +482,7 @@ void LEX::reset() {
   reset_exec_started();
   max_execution_time = 0;
   reparse_common_table_expr_at = 0;
+  reparse_derived_table_condition = false;
   opt_hints_global = nullptr;
   binlog_need_explicit_defaults_ts = false;
   m_extended_show = false;
@@ -492,6 +493,7 @@ void LEX::reset() {
   grant_as.cleanup();
   alter_user_attribute = enum_alter_user_attribute::ALTER_USER_COMMENT_NOT_USED;
   m_is_replication_deprecated_syntax_used = false;
+  m_was_replication_command_executed = false;
 
   plugin_var_bind_list.clear();
 }

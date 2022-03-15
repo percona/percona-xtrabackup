@@ -4444,7 +4444,7 @@ bool TABLE_LIST::save_properties() {
   nullable_saved = table->is_nullable();
   force_index_saved = table->force_index;
   force_index_order_saved = table->force_index_order;
-  force_index_group_saved = table->force_index_order;
+  force_index_group_saved = table->force_index_group;
   partition_info *const part = table->part_info;
   if (part != nullptr) {
     const uint part_count = part->read_partitions.n_bits;
@@ -4477,7 +4477,7 @@ void TABLE_LIST::restore_properties() {
   if (nullable_saved) table->set_nullable();
   table->force_index = force_index_saved;
   table->force_index_order = force_index_order_saved;
-  table->force_index_order = force_index_group_saved;
+  table->force_index_group = force_index_group_saved;
   partition_info *const part = table->part_info;
   if (part != nullptr) {
     bitmap_copy(&part->lock_partitions, &lock_partitions_saved);
@@ -5437,9 +5437,6 @@ void TABLE::prepare_for_position() {
 
 /**
   Mark column as either read or written (or none) according to mark_used.
-
-  @note If marking a written field, set thd->dup_field if the column is
-        already marked.
 
   @note If TABLE::get_fields_in_item_tree is set, set the flag bit
         GET_FIXED_FIELDS_FLAG for the field.
@@ -7254,6 +7251,11 @@ bool TABLE_LIST::set_recursive_reference() {
   query_block->recursive_reference = this;
   m_is_recursive_reference = true;
   return false;
+}
+
+bool TABLE_LIST::is_derived_unfinished_materialization() const {
+  return (is_view_or_derived() &&
+          derived_query_expression()->unfinished_materialization());
 }
 
 void LEX_MFA::copy(LEX_MFA *m, MEM_ROOT *alloc) {

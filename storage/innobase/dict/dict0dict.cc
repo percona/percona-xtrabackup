@@ -31,6 +31,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
  Created 1/8/1996 Heikki Tuuri
  ***********************************************************************/
 
+#include "debug_sync.h"
 #include "my_config.h"
 
 #include <stdlib.h>
@@ -543,6 +544,7 @@ void dict_table_close(dict_table_t *table, ibool dict_locked, ibool try_drop) {
   stats re-reads (e.g. in other cases than FLUSH TABLE). */
   if (strchr(table->name.m_name, '/') != nullptr &&
       table->get_ref_count() == 0 && dict_stats_is_persistent_enabled(table)) {
+    DEBUG_SYNC(current_thd, "innodb.before_stats_deinit");
     dict_stats_deinit(table);
   }
 
@@ -1427,9 +1429,6 @@ static const dict_index_t *dict_table_find_index_on_id(
 }
 
 #ifndef UNIV_HOTBACKUP
-/** Look up an index.
-@param[in]	id	index identifier
-@return index or NULL if not found */
 const dict_index_t *dict_index_find(const index_id_t &id) {
   ut_ad(dict_sys_mutex_own());
 
@@ -2915,15 +2914,8 @@ void dict_table_copy_types(dtuple_t *tuple,           /*!< in/out: data tuple */
   dict_table_copy_v_types(tuple, table);
 }
 
-/********************************************************************
-Wait until all the background threads of the given table have exited, i.e.,
-bg_threads == 0. Note: bg_threads_mutex must be reserved when
-calling this. */
-void dict_table_wait_for_bg_threads_to_exit(
-    dict_table_t *table, /*!< in: table */
-    ulint delay)         /*!< in: time in microseconds to wait between
-                         checks of bg_threads. */
-{
+void dict_table_wait_for_bg_threads_to_exit(dict_table_t *table,
+                                            std::chrono::microseconds delay) {
   fts_t *fts = table->fts;
 
   ut_ad(mutex_own(&fts->bg_threads_mutex));
@@ -2931,7 +2923,7 @@ void dict_table_wait_for_bg_threads_to_exit(
   while (fts->bg_threads > 0) {
     mutex_exit(&fts->bg_threads_mutex);
 
-    std::this_thread::sleep_for(std::chrono::microseconds(delay));
+    std::this_thread::sleep_for(delay);
 
     mutex_enter(&fts->bg_threads_mutex);
   }
@@ -5926,13 +5918,15 @@ dberr_t dd_sdi_acquire_exclusive_mdl(THD *thd, space_id_t space_id,
 
   snprintf(tbl_buf, sizeof(tbl_buf), "SDI_" SPACE_ID_PF, space_id);
 
-  /* Submit a higher than default lock wait timeout */
-  auto lock_wait_timeout = thd_lock_wait_timeout(thd);
-  if (lock_wait_timeout < 100000) {
-    lock_wait_timeout += 100000;
+  /* Submit a higher than default lock wait timeout, the timeout accepted by
+  dd::acquire_exclusive_table_mdl is in seconds. */
+  std::chrono::seconds lock_wait_timeout = thd_lock_wait_timeout(thd);
+  if (lock_wait_timeout < std::chrono::hours(27)) {
+    lock_wait_timeout += std::chrono::hours(27);
   }
-  if (dd::acquire_exclusive_table_mdl(thd, db_buf, tbl_buf, lock_wait_timeout,
-                                      sdi_mdl)) {
+  if (dd::acquire_exclusive_table_mdl(
+          thd, db_buf, tbl_buf, (unsigned long int)lock_wait_timeout.count(),
+          sdi_mdl)) {
     /* MDL failure can happen with lower timeout
     values chosen by user */
     return (DB_LOCK_WAIT_TIMEOUT);

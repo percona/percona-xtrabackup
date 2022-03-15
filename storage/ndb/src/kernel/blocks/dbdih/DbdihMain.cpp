@@ -1928,6 +1928,7 @@ void Dbdih::execSET_LATEST_LCP_ID(Signal *signal)
 void Dbdih::execGET_LATEST_GCI_REQ(Signal *signal)
 {
   Uint32 nodeId = signal->theData[0];
+  ndbrequire(nodeId < MAX_NDB_NODES);
   Uint32 latestGci = SYSFILE->lastCompletedGCI[nodeId];
   signal->theData[0] = latestGci;
 }
@@ -13375,6 +13376,7 @@ void Dbdih::execCREATE_FRAGMENTATION_REQ(Signal * signal)
         When we come here the the exact partition is specified
         and there is an array of node groups sent along as well.
       */
+      ndbrequire(noOfFragments <= NDB_ARRAY_SIZE(tmp_node_group_id));
       memcpy(&tmp_node_group_id[0], &signal->theData[25], 2 * noOfFragments);
       Uint16 (*next_replica_node)[MAX_NDB_NODE_GROUPS]
                                  [NDBMT_MAX_WORKER_INSTANCES] =
@@ -15196,7 +15198,7 @@ void Dbdih::execALTER_TAB_REQ(Signal * signal)
     signal->theData[4] = connectPtr.i;
     signal->theData[5] = Uint32(now.getUint64() >> 32);
     signal->theData[6] = Uint32(now.getUint64());
-    signal->theData[7] = 3; // Seconds to wait
+    signal->theData[7] = 10; // Seconds to wait
     sendSignal(reference(), GSN_CONTINUEB, signal, 8, JBB);
     return;
   }
@@ -15211,12 +15213,17 @@ void Dbdih::execALTER_TAB_REQ(Signal * signal)
     SectionHandle handle(this, signal);
     handle.getSection(ptr, 0);
     union {
-      Uint16 buf[2+2*MAX_NDB_PARTITIONS];
-      Uint32 _align[1];
+      Uint16 buf[MAX_FRAGMENT_DATA_ENTRIES];
+      Uint32 _align[MAX_FRAGMENT_DATA_WORDS];
     };
+    ndbrequire(ptr.sz <= MAX_FRAGMENT_DATA_WORDS);
     copy(_align, ptr);
     releaseSections(handle);
-    start_add_fragments_in_new_table(tabPtr, connectPtr, buf, signal);
+    start_add_fragments_in_new_table(tabPtr,
+                                     connectPtr,
+                                     buf,
+                                     ptr.sz * 2,
+                                     signal);
     return;
   }
 
@@ -15224,10 +15231,14 @@ void Dbdih::execALTER_TAB_REQ(Signal * signal)
 }
 
 Uint32
-Dbdih::add_fragments_to_table(Ptr<TabRecord> tabPtr, const Uint16 buf[])
+Dbdih::add_fragments_to_table(Ptr<TabRecord> tabPtr,
+                              const Uint16 buf[],
+                              const Uint32 bufLen)
 {
   Uint32 replicas = buf[0];
   Uint32 cnt = buf[1];
+
+  ndbrequire(bufLen >= (2 + ((1+replicas) * cnt)));
 
   Uint32 i = 0;
   Uint32 err = 0;
@@ -15324,24 +15335,18 @@ Dbdih::wait_old_scan(Signal* signal)
   const NDB_TICKS now  = NdbTick_getCurrentTicks();
   const Uint32 elapsed = (Uint32)NdbTick_Elapsed(start,now).seconds();
 
-  if (elapsed > wait)
+  if (elapsed >= wait)
   {
-    infoEvent("Waiting(%u) for scans(%u) to complete on table %u",
+    infoEvent("Waiting %us for %u scans to complete on table %u",
               elapsed,
               tabPtr.p->m_scan_count[1],
               tabPtr.i);
 
-    if (wait == 3)
-    {
-      signal->theData[7] = 3 + 7;
-    }
-    else
-    {
-      signal->theData[7] = 2 * wait;
-    }
+
+    signal->theData[7] = wait + 10;
   }
 
-  sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100, 7);
+  sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100, 8);
 }
 
 Uint32
@@ -16564,7 +16569,6 @@ Dbdih::start_scan_on_table(TabRecordPtr tabPtr,
   }
 
   tabPtr.p->m_scan_count[0]++;
-  ndbrequire(tabPtr.p->m_map_ptr_i != DihScanTabConf::InvalidCookie);
   {
     DihScanTabConf* conf = (DihScanTabConf*)signal->getDataPtrSend();
     conf->tableId = tabPtr.i;
@@ -16583,7 +16587,7 @@ Dbdih::start_scan_on_table(TabRecordPtr tabPtr,
     conf->fragmentCount = tabPtr.p->partitionCount;
 
     conf->noOfBackups = tabPtr.p->noOfBackups;
-    conf->scanCookie = tabPtr.p->m_map_ptr_i;
+    conf->scanCookie = tabPtr.p->m_scan_reorg_flag;
     conf->reorgFlag = tabPtr.p->m_scan_reorg_flag;
     NdbMutex_Unlock(&tabPtr.p->theMutex);
     return;
@@ -16602,7 +16606,7 @@ error:
 
 void
 Dbdih::complete_scan_on_table(TabRecordPtr tabPtr,
-                              Uint32 map_ptr_i,
+                              Uint32 scanCookie,
                               EmulatedJamBuffer *jambuf)
 {
   /**
@@ -16615,16 +16619,18 @@ Dbdih::complete_scan_on_table(TabRecordPtr tabPtr,
 
   Uint32 line;
   NdbMutex_Lock(&tabPtr.p->theMutex);
-  if (map_ptr_i == tabPtr.p->m_map_ptr_i)
+  if (scanCookie == tabPtr.p->m_scan_reorg_flag)
   {
+    /* Scan started + completed in same reorg state */
     line = __LINE__;
-    ndbassert(tabPtr.p->m_scan_count[0]);
+    ndbrequire(tabPtr.p->m_scan_count[0]);
     tabPtr.p->m_scan_count[0]--;
   }
   else
   {
+    /* Scan started + completed in diff reorg states */
     line = __LINE__;
-    ndbassert(tabPtr.p->m_scan_count[1]);
+    ndbrequire(tabPtr.p->m_scan_count[1]);
     tabPtr.p->m_scan_count[1]--;
   }
   NdbMutex_Unlock(&tabPtr.p->theMutex);
@@ -16734,6 +16740,7 @@ void
 Dbdih::start_add_fragments_in_new_table(TabRecordPtr tabPtr,
                                         ConnectRecordPtr connectPtr,
                                         const Uint16 buf[],
+                                        const Uint32 bufLen,
                                         Signal *signal)
 {
   /**
@@ -16748,7 +16755,7 @@ Dbdih::start_add_fragments_in_new_table(TabRecordPtr tabPtr,
   DIH_TAB_WRITE_LOCK(tabPtr.p);
 
   Uint32 save = tabPtr.p->totalfragments;
-  if ((err = add_fragments_to_table(tabPtr, buf)))
+  if ((err = add_fragments_to_table(tabPtr, buf, bufLen)))
   {
     jam();
     DIH_TAB_WRITE_UNLOCK(tabPtr.p);
@@ -16885,7 +16892,7 @@ Dbdih::make_new_table_read_and_writeable(TabRecordPtr tabPtr,
     DIH_TAB_WRITE_UNLOCK(tabPtr.p);
 
     /* These variables are only protected by mutex. */
-    ndbassert(tabPtr.p->m_scan_count[1] == 0);
+    ndbrequire(tabPtr.p->m_scan_count[1] == 0);
     tabPtr.p->m_scan_count[1] = tabPtr.p->m_scan_count[0];
     tabPtr.p->m_scan_count[0] = 0;
     tabPtr.p->m_scan_reorg_flag = 1;
@@ -16932,7 +16939,7 @@ Dbdih::make_old_table_non_writeable(TabRecordPtr tabPtr,
      * REORG_NOT_MOVED flag set we also start waiting for those
      * scans to complete here.
      */
-    ndbassert(tabPtr.p->m_scan_count[1] == 0);
+    ndbrequire(tabPtr.p->m_scan_count[1] == 0);
     tabPtr.p->m_scan_count[1] = tabPtr.p->m_scan_count[0];
     tabPtr.p->m_scan_count[0] = 0;
     wait_flag = true;
@@ -17077,8 +17084,8 @@ Dbdih::getFragstore(const TabRecord * tab,      //In parameter
   Fragmentstore* TfragStore = fragmentstore;
   Uint32 chunkNo = fragNo >> LOG_NO_OF_FRAGS_PER_CHUNK;
   Uint32 chunkIndex = fragNo & (NO_OF_FRAGS_PER_CHUNK - 1);
-  fragPtr.i = tab->startFid[chunkNo] + chunkIndex;
   if (likely(chunkNo < NDB_ARRAY_SIZE(tab->startFid))) {
+    fragPtr.i = tab->startFid[chunkNo] + chunkIndex;
     ptrCheckGuard(fragPtr, TfragstoreFileSize, TfragStore);
     fragptr = fragPtr;
     return;
@@ -17096,9 +17103,9 @@ Dbdih::getFragstoreCanFail(const TabRecord * tab,      //In parameter
   Fragmentstore* TfragStore = fragmentstore;
   Uint32 chunkNo = fragNo >> LOG_NO_OF_FRAGS_PER_CHUNK;
   Uint32 chunkIndex = fragNo & (NO_OF_FRAGS_PER_CHUNK - 1);
-  fragPtr.i = tab->startFid[chunkNo] + chunkIndex;
   if (likely(chunkNo < NDB_ARRAY_SIZE(tab->startFid)))
   {
+    fragPtr.i = tab->startFid[chunkNo] + chunkIndex;
     if (fragPtr.i < TfragstoreFileSize)
     {
       ptrAss(fragPtr, TfragStore);
@@ -20798,7 +20805,7 @@ void Dbdih::copyTableLab(Signal* signal, Uint32 tableId)
 {
   TabRecordPtr tabPtr;
   tabPtr.i = tableId;
-  ptrAss(tabPtr, tabRecord);
+  ptrCheckGuard(tabPtr, ctabFileSize, tabRecord);
 
   ndbrequire(tabPtr.p->tabCopyStatus == TabRecord::CS_IDLE);
   tabPtr.p->tabCopyStatus = TabRecord::CS_SR_PHASE2_READ_TABLE;
@@ -24195,6 +24202,8 @@ Dbdih::emptyverificbuffer(Signal* signal, Uint32 q, bool aContinueB)
     return;
   }
 
+  ndbrequire(q < NDB_ARRAY_SIZE(c_diverify_queue));
+
   if (!isEmpty(c_diverify_queue[q]))
   {
     jam();
@@ -25734,6 +25743,7 @@ void Dbdih::execCHECKNODEGROUPSREQ(Signal* signal)
   }
   case CheckNodeGroups::GetNodeGroupMembers: {
     ok = true;
+    ndbrequire(sd->nodeId < MAX_NDB_NODES);
     Uint32 ng = SYSFILE->getNodeGroup(sd->nodeId);
     DEB_MULTI_TRP(("My node group is %u", ng));
     if (ng == NO_NODE_GROUP_ID)

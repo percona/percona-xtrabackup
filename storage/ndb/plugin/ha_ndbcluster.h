@@ -42,8 +42,6 @@
 #include "storage/ndb/plugin/ndb_conflict.h"
 #include "storage/ndb/plugin/ndb_table_map.h"
 
-#define NDB_HIDDEN_PRIMARY_KEY_LENGTH 8
-
 class Ndb;             // Forward declaration
 class NdbOperation;    // Forward declaration
 class NdbTransaction;  // Forward declaration
@@ -125,32 +123,6 @@ struct NDB_INDEX_DATA {
 #include "storage/ndb/plugin/ndb_ndbapi_util.h"
 #include "storage/ndb/plugin/ndb_share.h"
 #include "storage/ndb/plugin/ndb_thd_ndb.h"
-
-struct st_ndb_status {
-  st_ndb_status() { memset(this, 0, sizeof(struct st_ndb_status)); }
-  long cluster_node_id;
-  const char *connected_host;
-  long connected_port;
-  long config_generation;
-  long number_of_data_nodes;
-  long number_of_ready_data_nodes;
-  long connect_count;
-  long execute_count;
-  long trans_hint_count;
-  long scan_count;
-  long pruned_scan_count;
-  long schema_locks_count;
-  long sorted_scan_count;
-  long pushed_queries_defined;
-  long pushed_queries_dropped;
-  long pushed_queries_executed;
-  long pushed_reads;
-  long long last_commit_epoch_server;
-  long long last_commit_epoch_session;
-  long long api_client_stats[Ndb::NumClientStatistics];
-  const char *system_name;
-  long fetch_table_stats;
-};
 
 int ndbcluster_commit(handlerton *, THD *thd, bool all);
 
@@ -313,6 +285,11 @@ class ha_ndbcluster : public handler, public Partition_handler {
   }
 
   double scan_time() override;
+
+  double read_time(uint index, uint ranges, ha_rows rows) override;
+  double page_read_cost(uint index, double rows) override;
+  double worst_seek_times(double reads) override;
+
   ha_rows records_in_range(uint inx, key_range *min_key,
                            key_range *max_key) override;
   void start_bulk_insert(ha_rows rows) override;
@@ -764,12 +741,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
   int update_stats(THD *thd, bool do_read_stat);
 };
 
-// Global handler synchronization
-extern mysql_cond_t ndbcluster_cond;
-
-extern int ndb_setup_complete;
-
-static const int NDB_INVALID_SCHEMA_OBJECT = 241;
+static constexpr int NDB_INVALID_SCHEMA_OBJECT = 241;
 
 int ndb_to_mysql_error(const NdbError *ndberr);
 

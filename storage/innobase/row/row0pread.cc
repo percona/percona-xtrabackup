@@ -461,16 +461,6 @@ bool Parallel_reader::Scan_ctx::check_visibility(const rec_t *&rec,
     } else {
       /* Secondary index scan not supported yet. */
       ut_error;
-
-      auto max_trx_id = page_get_max_trx_id(page_align(rec));
-
-      ut_ad(max_trx_id > 0);
-
-      if (!view->sees(max_trx_id)) {
-        /* FIXME: This is not sufficient. We may need to read in the cluster
-        index record to be 100% sure. */
-        return (false);
-      }
     }
   }
 
@@ -781,8 +771,6 @@ void Parallel_reader::worker(Parallel_reader::Thread_ctx *thread_ctx) {
   dberr_t err{DB_SUCCESS};
   dberr_t cb_err{DB_SUCCESS};
 
-  constexpr auto FOREVER = OS_SYNC_INFINITE_TIME;
-
   if (m_start_callback) {
     /* Thread start. */
     thread_ctx->m_state = State::THREAD;
@@ -798,7 +786,8 @@ void Parallel_reader::worker(Parallel_reader::Thread_ctx *thread_ctx) {
   abort the operation if there are not enough resources to spawn all the
   threads. */
   if (!m_sync) {
-    os_event_wait_time_low(m_event, FOREVER, m_sig_count);
+    os_event_wait_time_low(m_event, std::chrono::microseconds::max(),
+                           m_sig_count);
   }
 
   for (;;) {
@@ -867,7 +856,8 @@ void Parallel_reader::worker(Parallel_reader::Thread_ctx *thread_ctx) {
     }
 
     if (!m_sync) {
-      os_event_wait_time_low(m_event, FOREVER, sig_count);
+      os_event_wait_time_low(m_event, std::chrono::microseconds::max(),
+                             sig_count);
     }
   }
 
@@ -971,10 +961,6 @@ page_cur_t Parallel_reader::Scan_ctx::start_range(
 
     return (page_cursor);
   }
-
-  ut_error;
-
-  return (page_cur_t{});
 }
 
 void Parallel_reader::Scan_ctx::create_range(Ranges &ranges,

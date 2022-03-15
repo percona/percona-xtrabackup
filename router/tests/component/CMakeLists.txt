@@ -42,6 +42,7 @@ FOREACH(test_file
     test_clusterset.cc
     test_component_test_framework.cc
     test_config.cc
+    test_config_overwrites.cc
     test_gr_notifications.cc
     test_http_server.cc
     test_logging.cc
@@ -69,6 +70,7 @@ FOREACH(test_file
 add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE "component"
   INCLUDE_DIRS
+    ${PROJECT_SOURCE_DIR}/src/harness/shared/include/
     ${PROJECT_SOURCE_DIR}/src/http/include/
     ${PROJECT_SOURCE_DIR}/src/mock_server/include/mysqlrouter/
     ${CMAKE_SOURCE_DIR}/plugin/x/client

@@ -71,6 +71,7 @@
 #include "sql/my_decimal.h"   // my_decimal
 #include "sql/rpl_handler.h"  // RUN_HOOK
 #include "sql/rpl_tblmap.h"
+#include "sql/sql_show_processlist.h"  // pfs_processlist_enabled
 #include "sql/system_variables.h"
 #include "sql/tc_log.h"
 #include "sql_const.h"
@@ -173,8 +174,6 @@ struct mysql_mutex_t;
 PSI_memory_key key_memory_log_event;
 PSI_memory_key key_memory_Incident_log_event_message;
 PSI_memory_key key_memory_Rows_query_log_event_rows_query;
-
-extern bool pfs_processlist_enabled;
 
 using std::max;
 using std::min;
@@ -969,6 +968,7 @@ const char *Log_event::get_type_str(Log_event_type type) {
     case binary_log::PREVIOUS_GTIDS_LOG_EVENT:
       return "Previous_gtids";
     case binary_log::HEARTBEAT_LOG_EVENT:
+    case binary_log::HEARTBEAT_LOG_EVENT_V2:
       return "Heartbeat";
     case binary_log::TRANSACTION_CONTEXT_EVENT:
       return "Transaction_context";
@@ -1985,7 +1985,7 @@ static size_t log_event_print_value(IO_CACHE *file, const uchar *ptr, uint type,
       snprintf(typestr, typestr_length, "TIMESTAMP(%d)", meta);
       if (!ptr) return my_b_printf(file, "NULL");
       char buf[MAX_DATE_STRING_REP_LENGTH];
-      struct timeval tm;
+      my_timeval tm;
       my_timestamp_from_binary(&tm, ptr, meta);
       int buflen = my_timeval_to_str(&tm, buf, meta);
       my_b_write(file, pointer_cast<uchar *>(buf), buflen);
@@ -4766,7 +4766,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
       if (default_table_encryption != 0xff) {
         assert(default_table_encryption == 0 || default_table_encryption == 1);
         if (thd->variables.default_table_encryption !=
-                default_table_encryption &&
+                static_cast<bool>(default_table_encryption) &&
             !security_context.skip_priv_checks() &&
             !security_context.has_access({SUPER_ACL}) &&
             !security_context.has_access(
@@ -6087,7 +6087,7 @@ bool Xid_log_event::do_commit(THD *thd_arg) {
                   DBUG_SUICIDE(););
   thd_arg->mdl_context.release_transactional_locks();
 
-  error |= mysql_bin_log.gtid_end_transaction(thd_arg);
+  error |= (mysql_bin_log.gtid_end_transaction(thd_arg) != 0);
 
   /*
     The parser executing a SQLCOM_COMMIT or SQLCOM_ROLLBACK will reset the
@@ -7719,8 +7719,9 @@ Rows_log_event::Rows_log_event(THD *thd_arg, TABLE *tbl_arg,
                           m_width))) {
     /* Cols can be zero if this is a dummy binrows event */
     if (likely(cols != nullptr)) {
-      memcpy(m_cols.bitmap, cols->bitmap, no_bytes_in_map(cols));
-      create_last_word_mask(&m_cols);
+      // 'cols' may have additional hidden columns at the end.
+      assert(cols->n_bits >= m_cols.n_bits);
+      bitmap_n_copy(&m_cols, cols);
     }
   } else {
     // Needed because bitmap_init() does not set it to null on failure
@@ -7788,6 +7789,7 @@ Rows_log_event::Rows_log_event(
                           m_width <= sizeof(m_bitbuf) * 8 ? m_bitbuf : nullptr,
                           m_width))) {
     if (!columns_before_image.empty()) {
+      assert(n_bits_len == (m_width + 7) / 8);
       memcpy(m_cols.bitmap, &columns_before_image[0], n_bits_len);
       create_last_word_mask(&m_cols);
       DBUG_DUMP("m_cols", (uchar *)m_cols.bitmap, no_bytes_in_map(&m_cols));
@@ -10185,7 +10187,8 @@ static int rows_event_stmt_cleanup(Relay_log_info const *rli, THD *thd) {
       already. So there should be no need to rollback the transaction.
     */
     assert(!thd->transaction_rollback_request);
-    error |= (error ? trans_rollback_stmt(thd) : trans_commit_stmt(thd));
+    error |= ((error != 0) ? static_cast<int>(trans_rollback_stmt(thd))
+                           : static_cast<int>(trans_commit_stmt(thd)));
 
     /*
       Now what if this is not a transactional engine? we still need to
@@ -10511,8 +10514,18 @@ Table_map_log_event::Table_map_log_event(THD *thd_arg, TABLE *tbl,
 
   m_data_size = Binary_log_event::TABLE_MAP_HEADER_LEN;
   DBUG_EXECUTE_IF("old_row_based_repl_4_byte_map_id_source", m_data_size = 6;);
-  m_data_size += m_dblen + 2;   // Include length and terminating \0
-  m_data_size += m_tbllen + 2;  // Include length and terminating \0
+
+  uchar dbuf[sizeof(m_dblen) + 1];
+  uchar tbuf[sizeof(m_tbllen) + 1];
+  uchar *const dbuf_end = net_store_length(dbuf, (size_t)m_dblen);
+  assert(static_cast<size_t>(dbuf_end - dbuf) <= sizeof(dbuf));
+  uchar *const tbuf_end = net_store_length(tbuf, (size_t)m_tbllen);
+  assert(static_cast<size_t>(tbuf_end - tbuf) <= sizeof(tbuf));
+
+  m_data_size +=
+      m_dblen + 1 + (dbuf_end - dbuf);  // Include length and terminating \0
+  m_data_size +=
+      m_tbllen + 1 + (tbuf_end - tbuf);  // Include length and terminating \0
   cbuf_end = net_store_length(cbuf, (size_t)m_colcnt);
   assert(static_cast<size_t>(cbuf_end - cbuf) <= sizeof(cbuf));
   m_data_size += (cbuf_end - cbuf) + m_colcnt;  // COLCNT and column types
@@ -10881,12 +10894,14 @@ bool Table_map_log_event::write_data_header(Basic_ostream *ostream) {
 bool Table_map_log_event::write_data_body(Basic_ostream *ostream) {
   assert(!m_dbnam.empty());
   assert(!m_tblnam.empty());
-  /* We use only one byte per length for storage in event: */
-  assert(m_dblen <= 128);
-  assert(m_tbllen <= 128);
 
-  uchar const dbuf[] = {(uchar)m_dblen};
-  uchar const tbuf[] = {(uchar)m_tbllen};
+  uchar dbuf[sizeof(m_dblen) + 1];
+  uchar *const dbuf_end = net_store_length(dbuf, (size_t)m_dblen);
+  assert(static_cast<size_t>(dbuf_end - dbuf) <= sizeof(dbuf));
+
+  uchar tbuf[sizeof(m_tbllen) + 1];
+  uchar *const tbuf_end = net_store_length(tbuf, (size_t)m_tbllen);
+  assert(static_cast<size_t>(tbuf_end - tbuf) <= sizeof(tbuf));
 
   uchar cbuf[sizeof(m_colcnt) + 1];
   uchar *const cbuf_end = net_store_length(cbuf, (size_t)m_colcnt);
@@ -10898,10 +10913,10 @@ bool Table_map_log_event::write_data_body(Basic_ostream *ostream) {
   uchar mbuf[2 * sizeof(m_field_metadata_size)];
   uchar *const mbuf_end = net_store_length(mbuf, m_field_metadata_size);
 
-  return (wrapper_my_b_safe_write(ostream, dbuf, sizeof(dbuf)) ||
+  return (wrapper_my_b_safe_write(ostream, dbuf, (size_t)(dbuf_end - dbuf)) ||
           wrapper_my_b_safe_write(ostream, (const uchar *)m_dbnam.c_str(),
                                   m_dblen + 1) ||
-          wrapper_my_b_safe_write(ostream, tbuf, sizeof(tbuf)) ||
+          wrapper_my_b_safe_write(ostream, tbuf, (size_t)(tbuf_end - tbuf)) ||
           wrapper_my_b_safe_write(ostream, (const uchar *)m_tblnam.c_str(),
                                   m_tbllen + 1) ||
           wrapper_my_b_safe_write(ostream, cbuf, (size_t)(cbuf_end - cbuf)) ||
@@ -12355,8 +12370,9 @@ void Update_rows_log_event::init(MY_BITMAP const *cols) {
           m_width))) {
     /* Cols can be zero if this is a dummy binrows event */
     if (likely(cols != nullptr)) {
-      memcpy(m_cols_ai.bitmap, cols->bitmap, no_bytes_in_map(cols));
-      create_last_word_mask(&m_cols_ai);
+      // 'cols' may have additional hidden columns at the end.
+      assert(cols->n_bits >= m_cols_ai.n_bits);
+      bitmap_n_copy(&m_cols_ai, cols);
     }
   }
 }
@@ -14062,6 +14078,13 @@ PRINT_EVENT_INFO::PRINT_EVENT_INFO()
 Heartbeat_log_event::Heartbeat_log_event(
     const char *buf, const Format_description_event *description_event)
     : binary_log::Heartbeat_event(buf, description_event),
+      Log_event(header(), footer()) {
+  DBUG_TRACE;
+}
+
+Heartbeat_log_event_v2::Heartbeat_log_event_v2(
+    const char *buf, const Format_description_event *description_event)
+    : binary_log::Heartbeat_event_v2(buf, description_event),
       Log_event(header(), footer()) {
   DBUG_TRACE;
 }

@@ -25,6 +25,7 @@
 #include "sql/sp.h"
 
 #include <string.h>
+
 #include <algorithm>
 #include <atomic>
 #include <memory>
@@ -659,15 +660,31 @@ static bool create_routine_precheck(THD *thd, sp_head *sp) {
   }
 
   // Validate body definition to avoid invalid UTF8 characters.
-  if (is_invalid_string(sp->m_body_utf8, system_charset_info)) return true;
+  std::string invalid_sub_str;
+  if (is_invalid_string(sp->m_body_utf8, system_charset_info,
+                        invalid_sub_str)) {
+    // Provide contextual information
+    my_error(ER_DEFINITION_CONTAINS_INVALID_STRING, MYF(0), "stored routine",
+             sp->m_db.str, sp->m_name.str,
+             replace_utf8_utf8mb3(system_charset_info->csname),
+             invalid_sub_str.c_str());
+    return true;
+  }
 
   // Validate routine comment.
   if (sp->m_chistics->comment.length) {
     // validate comment string to avoid invalid utf8 characters.
     if (is_invalid_string(LEX_CSTRING{sp->m_chistics->comment.str,
                                       sp->m_chistics->comment.length},
-                          system_charset_info))
+                          system_charset_info, invalid_sub_str)) {
+      // Provide contextual information
+      my_error(ER_COMMENT_CONTAINS_INVALID_STRING, MYF(0), "stored routine",
+               (std::string(sp->m_db.str) + "." + std::string(sp->m_name.str))
+                   .c_str(),
+               replace_utf8_utf8mb3(system_charset_info->csname),
+               invalid_sub_str.c_str());
       return true;
+    }
 
     // Check comment string length.
     if (check_string_char_length(
@@ -1027,7 +1044,19 @@ bool sp_update_routine(THD *thd, enum_sp_type type, sp_name *name,
   // Validate routine comment.
   if (chistics->comment.str) {
     // validate comment string to invalid utf8 characters.
-    if (is_invalid_string(chistics->comment, system_charset_info)) return true;
+    std::string invalid_sub_str;
+    if (is_invalid_string(
+            LEX_CSTRING{chistics->comment.str, chistics->comment.length},
+            system_charset_info, invalid_sub_str)) {
+      // Provide contextual information
+      my_error(
+          ER_COMMENT_CONTAINS_INVALID_STRING, MYF(0), "stored routine",
+          (std::string(name->m_db.str) + "." + std::string(name->m_name.str))
+              .c_str(),
+          replace_utf8_utf8mb3(system_charset_info->csname),
+          invalid_sub_str.c_str());
+      return true;
+    }
 
     // Check comment string length.
     if (check_string_char_length(
@@ -1451,7 +1480,7 @@ sp_head *sp_find_routine(THD *thd, enum_sp_type type, sp_name *name,
   if (!cache_only) {
     if (db_find_routine(thd, type, name, &sp) == SP_OK) {
       sp_cache_insert(cp, sp);
-      DBUG_PRINT("info", ("added new: 0x%lx, level: %lu, flags %x", (ulong)sp,
+      DBUG_PRINT("info", ("added new: %p, level: %lu, flags %x", sp,
                           sp->m_recursion_level, sp->m_flags));
     }
   }
@@ -1483,15 +1512,15 @@ sp_head *sp_setup_routine(THD *thd, enum_sp_type type, sp_name *name,
   sp_head *sp = sp_cache_lookup(cp, name);
   if (sp == nullptr) return nullptr;
 
-  DBUG_PRINT("info", ("found: 0x%lx", (ulong)sp));
+  DBUG_PRINT("info", ("found: %p", sp));
 
   const ulong depth = type == enum_sp_type::PROCEDURE
                           ? thd->variables.max_sp_recursion_depth
                           : 0;
 
   if (sp->m_first_free_instance) {
-    DBUG_PRINT("info", ("first free: 0x%lx  level: %lu  flags %x",
-                        (ulong)sp->m_first_free_instance,
+    DBUG_PRINT("info", ("first free: %p  level: %lu  flags %x",
+                        sp->m_first_free_instance,
                         sp->m_first_free_instance->m_recursion_level,
                         sp->m_first_free_instance->m_flags));
     assert(!(sp->m_first_free_instance->m_flags & sp_head::IS_INVOKED));
@@ -1535,7 +1564,7 @@ sp_head *sp_setup_routine(THD *thd, enum_sp_type type, sp_name *name,
   new_sp->m_recursion_level = level;
   new_sp->m_first_instance = sp;
   sp->m_last_cached_sp = sp->m_first_free_instance = new_sp;
-  DBUG_PRINT("info", ("added level: 0x%lx, level: %lu, flags %x", (ulong)new_sp,
+  DBUG_PRINT("info", ("added level: %p, level: %lu, flags %x", new_sp,
                       new_sp->m_recursion_level, new_sp->m_flags));
   return new_sp;
 }
@@ -2378,6 +2407,7 @@ uint sp_get_flags_for_command(LEX *lex) {
     case SQLCOM_CREATE_RESOURCE_GROUP:
     case SQLCOM_ALTER_RESOURCE_GROUP:
     case SQLCOM_DROP_RESOURCE_GROUP:
+    case SQLCOM_ALTER_TABLESPACE:
       flags = sp_head::HAS_COMMIT_OR_ROLLBACK;
       break;
     default:

@@ -514,7 +514,8 @@ bool Item_sum::resolve_type(THD *thd) {
   @see Item_cond::fix_fields()
   @see Item_cond::remove_const_cond()
  */
-bool Item_sum::clean_up_after_removal(uchar *arg) {
+bool Item_sum::clean_up_after_removal(uchar *arg [[maybe_unused]]) {
+  assert(arg != nullptr);
   /*
     Don't do anything if
     1) this is an unresolved item (This may happen if an
@@ -535,15 +536,12 @@ bool Item_sum::clean_up_after_removal(uchar *arg) {
 
   if (m_window) {
     // Cleanup the reference for this window function from m_functions
-    auto *ctx = pointer_cast<Cleanup_after_removal_context *>(arg);
-    if (ctx != nullptr) {
-      List_iterator<Item_sum> li(m_window->functions());
-      Item *item = nullptr;
-      while ((item = li++)) {
-        if (item == this) {
-          li.remove();
-          break;
-        }
+    List_iterator<Item_sum> li(m_window->functions());
+    Item *item = nullptr;
+    while ((item = li++)) {
+      if (item == this) {
+        li.remove();
+        break;
       }
     }
   } else {
@@ -4257,14 +4255,20 @@ Field *Item_func_group_concat::make_string_field(TABLE *table_arg) const {
 
   const uint32 max_characters =
       group_concat_max_len / collation.collation->mbminlen;
+
+  // Avoid arithmetic overflow
+  const uint32 field_length = min<uint64>(
+      static_cast<uint64>(max_characters) * collation.collation->mbmaxlen,
+      UINT_MAX32);
+
   if (max_characters > CONVERT_IF_BIGGER_TO_BLOB)
     field = new (*THR_MALLOC)
-        Field_blob(max_characters * collation.collation->mbmaxlen,
-                   is_nullable(), item_name.ptr(), collation.collation, true);
+        Field_blob(field_length, is_nullable(), item_name.ptr(),
+                   collation.collation, true);
   else
-    field = new (*THR_MALLOC) Field_varstring(
-        max_characters * collation.collation->mbmaxlen, is_nullable(),
-        item_name.ptr(), table_arg->s, collation.collation);
+    field = new (*THR_MALLOC)
+        Field_varstring(field_length, is_nullable(), item_name.ptr(),
+                        table_arg->s, collation.collation);
 
   if (field) field->init(table_arg);
   return field;
@@ -4373,7 +4377,10 @@ bool Item_func_group_concat::fix_fields(THD *thd, Item **ref) {
     group_concat_max_len =
         static_cast<uint>(thd->variables.group_concat_max_len);
   uint32 max_chars = group_concat_max_len / collation.collation->mbminlen;
-  uint32 max_byte_length = max_chars * collation.collation->mbmaxlen;
+  // Avoid arithmetic overflow
+  uint32 max_byte_length = min<uint64>(
+      static_cast<uint64>(max_chars) * collation.collation->mbmaxlen,
+      UINT_MAX32);
   max_chars > CONVERT_IF_BIGGER_TO_BLOB ? set_data_type_blob(max_byte_length)
                                         : set_data_type_string(max_chars);
 
@@ -5029,11 +5036,9 @@ bool Item_first_last_value::fix_fields(THD *thd, Item **items) {
       args[0]->check_cols(1))
     return true;
 
-  if (setup_first_last()) return true;
-
-  result_field = nullptr;
-
   if (resolve_type(thd)) return true;
+
+  if (setup_first_last()) return true;
 
   if (check_sum_func(thd, items)) return true;
 
@@ -6137,7 +6142,7 @@ longlong Item_func_grouping::val_int() {
     while (real_item->type() == REF_ITEM)
       real_item = *((down_cast<Item_ref *>(real_item))->ref);
     if (has_rollup_result(real_item)) {
-      result += 1 << (arg_count - (i + 1));
+      result += 1ULL << (arg_count - (i + 1));
     }
   }
   return result;

@@ -46,6 +46,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <mysql_com.h>
 #endif /* !UNIV_HOTBACKUP */
 
+#include "my_compiler.h"
 #include "mysql_com.h"
 #include "os0thread.h"
 #include "ut0ut.h"
@@ -61,49 +62,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 namespace ut {
 ulong spin_wait_pause_multiplier = 50;
-}
-
-/** Returns system time. We do not specify the format of the time returned:
- the only way to manipulate it is to use the function ut_difftime.
- @return system time */
-ib_time_t ut_time(void) { return (time(nullptr)); }
-
-/** Returns the number of microseconds since epoch. Uses the monotonic clock.
- @return us since epoch or 0 if failed to retrieve */
-ib_time_monotonic_us_t ut_time_monotonic_us(void) {
-  const auto now = std::chrono::steady_clock::now();
-  return (std::chrono::duration_cast<std::chrono::microseconds>(
-              now.time_since_epoch())
-              .count());
-}
-
-/** Returns the number of milliseconds since epoch. Uses the monotonic clock.
- @return ms since epoch */
-ib_time_monotonic_ms_t ut_time_monotonic_ms(void) {
-  const auto now = std::chrono::steady_clock::now();
-  return (std::chrono::duration_cast<std::chrono::milliseconds>(
-              now.time_since_epoch())
-              .count());
-}
-
-/** Returns the number of seconds since epoch. Uses the monotonic clock.
- @return us since epoch or 0 if failed to retrieve */
-ib_time_monotonic_t ut_time_monotonic(void) {
-  const auto now = std::chrono::steady_clock::now();
-
-  const auto ret =
-      std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch())
-          .count();
-
-  return (ret);
-}
-
-/** Returns the difference of two times in seconds.
- @return time2 - time1 expressed in seconds */
-double ut_difftime(ib_time_t time2, /*!< in: time */
-                   ib_time_t time1) /*!< in: time */
-{
-  return (difftime(time2, time1));
 }
 
 #ifdef UNIV_HOTBACKUP
@@ -558,10 +516,8 @@ logger::~logger() { log_event(m_oss.str(), IF_XB(m_module)); }
 MSVS complains: Warning C4722: destructor never returns, potential memory leak.
 But, the whole point of using ib::fatal temporary object is to cause an abort.
 */
-#ifdef _WIN32
-#pragma warning(push)
-#pragma warning(disable : 4722)
-#endif /* _WIN32 */
+MY_COMPILER_DIAGNOSTIC_PUSH()
+MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4722)
 
 fatal::~fatal() {
   log_event("[FATAL] " + m_oss.str(), m_module);
@@ -569,9 +525,7 @@ fatal::~fatal() {
                           m_location.line);
 }
 // Restore the MSVS checks for Warning C4722, silenced for ib::fatal::~fatal().
-#ifdef _WIN32
-#pragma warning(pop)
-#endif /* _WIN32 */
+MY_COMPILER_DIAGNOSTIC_POP()
 
 fatal_or_error::~fatal_or_error() {
   log_event("[FATAL] " + m_oss.str(), m_module);
