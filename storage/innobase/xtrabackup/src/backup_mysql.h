@@ -139,6 +139,9 @@ class Myrocks_checkpoint {
 
   /* get the list of sst files */
   file_list data_files() const;
+
+  /* get the list of encryption metadata files */
+  file_list encryption_meta_files() const;
 };
 
 struct Backup_context {

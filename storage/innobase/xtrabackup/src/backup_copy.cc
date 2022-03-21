@@ -1403,6 +1403,21 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::wal_files(
   return wal_files;
 }
 
+Myrocks_checkpoint::file_list Myrocks_checkpoint::encryption_meta_files() const {
+  file_list result;
+  const char *enc_info_filename = ".encryption_info";
+  char path[FN_REFLEN];
+
+  fn_format(path, enc_info_filename,
+            rocksdb_datadir.c_str(),
+            "", MY_UNPACK_FILENAME | MY_SAFE_PATH);
+  if (file_exists(path)) {
+    result.push_back(datadir_entry_t("", path, ".rocksdb",
+                                        enc_info_filename, false));
+  }
+  return result;
+}
+
 Myrocks_checkpoint::file_list Myrocks_checkpoint::checkpoint_files(
     const log_status_t &log_status) const {
   std::unordered_set<std::string> live_wal_set;
@@ -1488,6 +1503,28 @@ static bool backup_rocksdb_wal(const Myrocks_checkpoint &checkpoint,
 
   if (!result) {
     xb::error() << "failed to backup rocksdb WAL files.";
+  }
+
+  return result;
+}
+
+static bool backup_rocksdb_encryption_metadata(const Myrocks_checkpoint &checkpoint) {
+  bool result = true;
+
+  using std::placeholders::_1;
+  using std::placeholders::_2;
+  using std::placeholders::_3;
+
+  std::function<void(const Myrocks_datadir::const_iterator &,
+                     const Myrocks_datadir::const_iterator &, size_t)>
+      copy = std::bind(&backup_rocksdb_files, _1, _2, _3, &result);
+
+  const auto encryption_meta_files = checkpoint.encryption_meta_files();
+
+  par_for(PFS_NOT_INSTRUMENTED, encryption_meta_files, xtrabackup_parallel, copy);
+
+  if (!result) {
+    xb::error() << "failed to backup rocksdb encryption metadata files.";
   }
 
   return result;
@@ -1662,6 +1699,10 @@ bool backup_start(Backup_context &context) {
 
   if (have_rocksdb) {
     if (!backup_rocksdb_wal(context.myrocks_checkpoint, log_status)) {
+      return (false);
+    }
+
+    if (!backup_rocksdb_encryption_metadata(context.myrocks_checkpoint)) {
       return (false);
     }
     context.myrocks_checkpoint.enable_file_deletions();
