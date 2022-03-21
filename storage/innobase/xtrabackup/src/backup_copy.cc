@@ -2570,10 +2570,16 @@ cleanup:
 
 bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   std::stringstream cmd, message;
-  char *dest_filepath = strdup(filepath);
+  char buf[FN_LEN];
   bool needs_action = false;
 
-  cmd << "cat " << filepath;
+  if (escape_string_for_mysql(&my_charset_utf8mb4_general_ci, buf, 0, filepath,
+                              strlen(filepath)) == (size_t)-1) {
+    xb::error() << "Error escaping file : " << filepath;
+    return false;
+  }
+  char *dest_filepath = strdup(buf);
+  cmd << "cat " << SQUOTE(buf);
 
   if (ends_with(filepath, ".xbcrypt") && opt_decrypt) {
     cmd << " | xbcrypt --decrypt --encrypt-algo="
@@ -2611,7 +2617,7 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
     needs_action = true;
   }
 
-  cmd << " > " << dest_filepath;
+  cmd << " > " << SQUOTE(dest_filepath);
   message << " " << filepath;
 
   free(dest_filepath);
