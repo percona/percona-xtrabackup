@@ -95,6 +95,7 @@ Advanced Features
    advanced/encrypted_innodb_tablespace_backups
    advanced/locks
    advanced/page_tracking
+   advanced/log_enhancements
 
 Security
 ===============
