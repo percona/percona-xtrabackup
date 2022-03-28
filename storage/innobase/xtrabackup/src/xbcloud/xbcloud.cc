@@ -480,6 +480,8 @@ static my_bool get_one_option(int optid,
     case OPT_GOOGLE_ACCESS_KEY:
     case OPT_GOOGLE_SECRET_KEY:
     case OPT_GOOGLE_SESSION_TOKEN:
+    case OPT_AZURE_ACCESS_KEY:
+    case OPT_AZURE_ACCOUNT:
       if (argument != nullptr) {
         while (*argument) *argument++ = 0;  // Destroy argument
       }
