@@ -1150,5 +1150,31 @@ function backup_and_restore() {
   verify_db_state $db
 }
 
+### kill all running queries pattern is passed as argument or WHERE condition
+### example kill_condition_queries "time > 0 & INFO like '%SLEEP%'"
+function kill_query_pattern()
+{
+  local condition=$1
+  run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
+  select concat('KILL ',id,';') from information_schema.processlist
+  where $condition into outfile '$MYSQLD_TMPDIR/killcondition.sql';
+  source $MYSQLD_TMPDIR/killcondition.sql;
+EOF
+  rm -f $MYSQLD_TMPDIR/killcondition.sql
+}
+
+### wait for file to be generated()
+### It is used to ensure backup has been started by checking if xtrabackup_logfile
+## is generated
+function wait_for_file_to_generated() {
+  local file=$1
+  vlog "Wait for $file to be generated"
+  while [ ! -r "$file" ]
+  do
+    sleep 1
+    i=$((i+1))
+    echo "Waited $i seconds for $file to be created"
+  done
+}
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
