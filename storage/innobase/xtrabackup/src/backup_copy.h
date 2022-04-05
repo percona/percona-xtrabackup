@@ -47,8 +47,6 @@ void
 version_check();
 #endif
 bool
-is_path_separator(char);
-bool
 directory_exists(const char *dir, bool create);
 
 #endif

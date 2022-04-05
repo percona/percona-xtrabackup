@@ -56,6 +56,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sstream>
 #include <algorithm>
 #include "fil_cur.h"
+#include "file_utils.h"
 #include "xtrabackup.h"
 #include "common.h"
 #include "backup_copy.h"
@@ -127,15 +128,6 @@ struct datadir_thread_ctxt_t {
 	os_thread_id_t		id;
 	bool			ret;
 };
-
-
-/************************************************************************
-Retirn true if character if file separator */
-bool
-is_path_separator(char c)
-{
-	return is_directory_separator(c);
-}
 
 
 /************************************************************************
@@ -621,42 +613,6 @@ ends_with(const char *str, const char *suffix)
 	size_t str_len = strlen(str);
 	return(str_len >= suffix_len
 	       && strcmp(str + str_len - suffix_len, suffix) == 0);
-}
-
-/************************************************************************
-Create directories recursively.
-@return 0 if directories created successfully. */
-static
-int
-mkdirp(const char *pathname, int Flags, myf MyFlags)
-{
-	char parent[PATH_MAX], *p;
-
-	/* make a parent directory path */
-	strncpy(parent, pathname, sizeof(parent));
-	parent[sizeof(parent) - 1] = 0;
-
-	for (p = parent + strlen(parent);
-	    !is_path_separator(*p) && p != parent; p--);
-
-	*p = 0;
-
-	/* try to make parent directory */
-	if (p != parent && mkdirp(parent, Flags, MyFlags) != 0) {
-		return(-1);
-	}
-
-	/* make this one if parent has been made */
-	if (my_mkdir(pathname, Flags, MyFlags) == 0) {
-		return(0);
-	}
-
-	/* if it already exists that is fine */
-	if (errno == EEXIST) {
-		return(0);
-	}
-
-	return(-1);
 }
 
 /************************************************************************

@@ -63,6 +63,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xb0xb.h"
 #include "xbstream.h"
 #include "fil_cur.h"
+#include "file_utils.h"
 #include "write_filt.h"
 #include "backup_copy.h"
 #include "xbcrypt_common.h"
