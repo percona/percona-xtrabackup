@@ -172,6 +172,4 @@ Indices and tables
 
 * :ref:`search`
 
-.. rubric:: Footnotes
-
 
