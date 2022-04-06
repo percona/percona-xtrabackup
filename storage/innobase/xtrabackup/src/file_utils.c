@@ -1,5 +1,7 @@
 #include "file_utils.h"
 #include "common.h"
+#include "my_dir.h"
+#include "my_thread_local.h"
 
 #if defined _WIN32 || defined __CYGWIN__ \
     || defined __EMX__ || defined __MSDOS__ || defined __DJGPP__
@@ -43,4 +45,44 @@ const char *safer_name_suffix(char const *file_name, int* prefix_len_out) {
 
   *prefix_len_out = prefix_len;
   return p;
+}
+
+
+/************************************************************************
+  Return true if character if file separator */
+int is_path_separator(char c) {
+  return is_directory_separator(c);
+}
+
+
+/************************************************************************
+  Create directories recursively.
+  @return 0 if directories created successfully. */
+int mkdirp(const char* pathname, int Flags, myf MyFlags) {
+  char parent[PATH_MAX], *p;
+
+  /* make a parent directory path */
+  strncpy(parent, pathname, sizeof(parent));
+  parent[sizeof(parent) - 1] = 0;
+
+  for (p = parent + strlen(parent); !is_path_separator(*p) && p != parent; p--);
+
+  *p = 0;
+
+  /* try to make parent directory */
+  if (p != parent && mkdirp(parent, Flags, MyFlags) != 0) {
+    return (-1);
+  }
+
+  /* make this one if parent has been made */
+  if (my_mkdir(pathname, Flags, MyFlags) == 0) {
+    return (0);
+  }
+
+  /* if it already exists that is fine */
+  if (my_errno() == EEXIST) {
+    return (0);
+  }
+
+  return (-1);
 }

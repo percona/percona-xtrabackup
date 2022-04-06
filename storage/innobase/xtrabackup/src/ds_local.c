@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_thread_local.h>
 #include "common.h"
 #include "datasink.h"
+#include "file_utils.h"
 
 typedef struct {
 	File fd;
@@ -84,7 +85,7 @@ local_open(ds_ctxt_t *ctxt, const char *path,
 
 	/* Create the directory if needed */
 	dirname_part(dirpath, fullpath, &dirpath_len);
-	if (my_mkdir(dirpath, 0777, MYF(0)) < 0 && my_errno() != EEXIST) {
+	if (mkdirp(dirpath, 0777, MYF(0)) < 0) {
 		char errbuf[MYSYS_STRERROR_SIZE];
 		my_error(EE_CANT_MKDIR, MYF(ME_BELL),
 			 dirpath, my_errno(), my_strerror(errbuf,
