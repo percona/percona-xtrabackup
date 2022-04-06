@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "common.h"
+#include "file_utils.h"
 #include "os0event.h"
 #include "sql_thd_internal_api.h"
 #include "xb0xb.h"
