@@ -758,7 +758,7 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     }
   }
 
-  for (const auto entry : encryption_info) {
+  for (const auto &entry : encryption_info) {
     if (!xb_tablespace_keys_write_single(stream, derived_key, entry.first,
                                          entry.second.key, entry.second.iv)) {
       xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
