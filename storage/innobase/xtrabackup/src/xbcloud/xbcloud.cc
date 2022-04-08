@@ -865,17 +865,21 @@ bool xbcloud_put(Object_store *store, const std::string &container,
   xtrabackup_tablespaces.00000000000000000000) is uploaded to cloud storage to
   determine successful xbcloud "put" operation. */
   std::string last_file_prefix = backup_name + "/xtrabackup_tablespaces";
+  auto last_file_size = last_file_prefix.size();
   bool file_found = false;
-
-  if (!object_list.empty()) {
-    auto cur_file = object_list.back();
-    auto last_file_size = last_file_prefix.size();
-    if (cur_file.size() >= last_file_size &&
-        cur_file.substr(0, last_file_size).compare(last_file_prefix) == 0)
+  for (auto cur_file = object_list.rbegin(); cur_file != object_list.rend();
+       cur_file++) {
+    if (cur_file->size() >= last_file_size &&
+        cur_file->substr(0, last_file_size).compare(last_file_prefix) == 0) {
       file_found = true;
+      break;
+    }
   }
   if (!file_found) {
-    msg_ts("%s: Upload failed: backup is incomplete.\n", my_progname);
+    msg_ts(
+        "%s: Upload failed: backup is incomplete.\nBackup doesn't contain "
+        "last file with prefix xtrabackup_tablespaces in the cloud storage\n",
+        my_progname);
     return false;
   }
 
