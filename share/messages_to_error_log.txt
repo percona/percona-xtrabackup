@@ -11603,6 +11603,9 @@ ER_RPL_RELAY_LOG_RECOVERY_GTID_ONLY
 # same directory as this file for more
 # information.
 
+ER_KEYRING_COMPONENT_KMS_ERROR
+  eng "KMS communication error: %s"
+
 #
 # End of 8.0 error messages intended to be written to the server error log.
 #
