@@ -29,7 +29,7 @@ Installing *Percona XtraBackup* via *percona-release*
 ================================================================================
 
 *Percona XtraBackup*, like many other *Percona* products, is installed
-via the *percona-release* package configuration tool.
+with the *percona-release* package configuration tool.
 
 1. Download a deb package for *percona-release* the repository packages from Percona web:
 
@@ -48,8 +48,11 @@ via the *percona-release* package configuration tool.
    can check the repository setup in the
    `/etc/apt/sources.list.d/percona-release.list` file.
 
-#.
-   .. include:: ../.res/contents/instruction.repository.enabling.txt
+#. Enable the repository: :bash:`percona-release enable-only tools release`
+
+   If |Percona XtraBackup| is intended to be used in combination with
+   the upstream MySQL Server, you enable only the ``tools``
+   repository: :bash:`percona-release enable-only tools`.
 
 #. After that you can install the ``percona-xtrabackup-24`` package:
 

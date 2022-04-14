@@ -3,16 +3,14 @@
 Running Percona XtraBackup in a Docker container
 ********************************************************************************
 
-You may run Percona XtraBackup in a Docker container without
-having to install it. All required libraries come already installed in
-the container.
+Docker allows you to run applications in a lightweight unit called a container.
 
-Being a lightweight execution environment, Docker containers enable creating
+You can run *Percona XtraBackup* in a Docker container without installing the product. All required libraries are available in
+the container. Being a lightweight execution environment, Docker containers enable creating
 configurations where each program runs in a separate container. You may run
-|percona-server| in one container and Percona XtraBackup in another.
+*Percona Server for MySQL* in one container and *Percona XtraBackup* in another. Docker images offer a range of options.
 
-You create a new Docker container based on a Docker image, which works as a
-template for newly created containers. Docker images for Percona XtraBackup
+Create a Docker container based on a Docker image. Docker images for Percona XtraBackup
 are hosted publicly on |docker-hub| at :code:`percona/percona-xtrabackup`.
 
 .. code-block:: bash
@@ -21,8 +19,9 @@ are hosted publicly on |docker-hub| at :code:`percona/percona-xtrabackup`.
 
 .. rubric:: Scope of this section
 
-Docker containers offer a range of different options effectively allowing
-to create quite complex setup. This section demonstrates how to backup data
+
+
+This section demonstrates how to backup data
 on a Percona Server for MySQL running in another Docker container.
 
 Installing Docker
