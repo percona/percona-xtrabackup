@@ -54,8 +54,47 @@ function grep_in_datadir_ps() {
 
   ###kill running mysql query on MyISAM table to let backup resume
   vlog "killing mysql query"
+  ## sleep is to ensure time equation works fine
+  sleep 1
   kill_query_pattern "time > 0 && INFO like '%SLEEP%'"
 
+  run_cmd wait $job_pid
+
+  vlog "check for $password_string string in directory $topdir"
+  if grep -rq $password_string $topdir/backup
+  then
+     grep -r $password_string $topdir/backup
+     die "found $password_string string in $topdir/backup "
+  fi
+  rm -rf $topdir/backup
+}
+
+##grep for encryption key while decrypting
+function grep_in_datadir_ps_decrypt() {
+
+  additional_options=$1
+
+  xtrabackup --backup $additional_options --target-dir=$topdir/backup
+
+  $XB_BIN $XB_ARGS --decrypt=AES256 $additional_options \
+  --target-dir=$topdir/backup \
+       2> >( tee $topdir/pxb_2740.log)&
+  job_pid=$!
+  wait_for_file_to_generated $topdir/pxb_2740.log
+
+  echo "backup pid is $job_pid"
+
+  #sleep is to ensure password string is removed from ps
+  while ! grep -q 'decrypting' $topdir/pxb_2740.log
+  do
+	  sleep 1;
+  done
+
+  vlog "check for $password_string string in ps with $job_pid "
+  if ps -ef | grep $job_pid | grep "xbcrypt.*$password_string" | grep -v grep
+  then
+     die "found $password_string string in ps output"
+  fi
   run_cmd wait $job_pid
 
   vlog "check for $password_string string in directory $topdir"
@@ -94,3 +133,7 @@ grep_in_datadir_ps "--password=$password_string"
 
 vlog "check for encryption string in data directory"
 grep_in_datadir_ps "--password=$password_string --encrypt=AES256 --encrypt-key=r______$password_string"
+
+vlog "check for encryption string during decryption"
+grep_in_datadir_ps_decrypt " --encrypt=AES256 --encrypt-key=r______$password_string"
+

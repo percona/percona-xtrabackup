@@ -305,3 +305,10 @@ gcry_error_t xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
 
   return 0;
 }
+
+void get_env_value(char *&var, const char *env) {
+  char *val;
+  if (var == nullptr && (val = getenv(env)) != nullptr) {
+    var = my_strdup(PSI_NOT_INSTRUMENTED, val, MYF(MY_FAE));
+  }
+}
