@@ -26,7 +26,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <signal.h>
 #include <typelib.h>
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <set>
@@ -525,12 +524,6 @@ static bool get_one_option(int optid,
 
 static const char *load_default_groups[] = {"xbcloud", 0};
 
-static void get_env_value(char *&var, const char *env) {
-  char *val;
-  if (var == nullptr && (val = getenv(env)) != nullptr) {
-    var = my_strdup(PSI_NOT_INSTRUMENTED, val, MYF(MY_FAE));
-  }
-}
 
 static void get_env_args() {
   get_env_value(opt_swift_auth_url, "OS_AUTH_URL");
