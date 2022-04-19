@@ -258,7 +258,7 @@ install_deps() {
             PKGLIST+=" wget libcurl-devel cmake cmake3 make gcc gcc-c++ libev-devel openssl-devel rpm-build"
             PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
             PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
-            PKGLIST+=" socat numactli libudev-devel"
+            PKGLIST+=" socat numactli libudev-devel libicu-devel"
             if [[ "${RHEL}" -eq 7 ]]; then
                 PKGLIST+=" numactl-libs perl-Digest-MD5  python3-pip python3-setuptools python3-wheel rh-python36-python-sphinx"
             elif [[ "${RHEL}" -eq 6 ]]; then
@@ -286,7 +286,7 @@ install_deps() {
         PKGLIST+=" bison cmake devscripts debconf debhelper automake bison ca-certificates libcurl4-openssl-dev"
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
-        PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf"
+        PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
 
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
