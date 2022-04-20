@@ -28,20 +28,24 @@ function grep_in_datadir_ps() {
   ### PXB will do FLUSH TABLES on MyISAM tables which requires access
   ### to the table and waits for the running update on MyISAM to finish.
   mysql -e "SELECT SLEEP(1000) from t1 for update " test &
+  while ! mysql -e 'SHOW PROCESSLIST' | grep 'SELECT SLEEP' ; do
+      sleep 1;
+  done
 
-  $XB_BIN $XB_ARGS --backup -u pxb $additional_options\
+  $XB_BIN $XB_ARGS --backup -u pxb $additional_options \
   --transition-key=$password_string --target-dir=$topdir/backup \
-  2>&1 | tee $topdir/pxb.log &
+       2> >( tee $topdir/pxb_2722.log)&
   job_pid=$!
+  wait_for_file_to_generated $topdir/pxb_2722.log
 
   echo "backup pid is $job_pid"
 
-  file=$topdir/backup/xtrabackup_logfile
-  if [[ $additional_options == *"encrypt"* ]]; then
-	  file+=".xbcrypt"
-  fi
-  echo "looking for $file"
-  wait_for_file_to_generated $file
+  #sleep is to ensure password string is removed from ps
+  while ! grep -q 'Connecting to MySQL server host' $topdir/pxb_2722.log
+  do
+	  sleep 1;
+  done
+
   vlog "check for $password_string string in ps with $job_pid "
   if ps -ef | grep $job_pid | grep "xtrabackup.*$password_string" | grep -v grep
   then
@@ -50,15 +54,54 @@ function grep_in_datadir_ps() {
 
   ###kill running mysql query on MyISAM table to let backup resume
   vlog "killing mysql query"
-  kill_query_pattern "time > 0 & INFO like '%SLEEP%'"
+  ## sleep is to ensure time equation works fine
+  sleep 1
+  kill_query_pattern "time > 0 && INFO like '%SLEEP%'"
 
   run_cmd wait $job_pid
 
   vlog "check for $password_string string in directory $topdir"
-  if grep -rq $password_string $topdir
+  if grep -rq $password_string $topdir/backup
   then
-     grep -r $password_string $topdir
-     die "found $password_string string in $topdir "
+     grep -r $password_string $topdir/backup
+     die "found $password_string string in $topdir/backup "
+  fi
+  rm -rf $topdir/backup
+}
+
+##grep for encryption key while decrypting
+function grep_in_datadir_ps_decrypt() {
+
+  additional_options=$1
+
+  xtrabackup --backup $additional_options --target-dir=$topdir/backup
+
+  $XB_BIN $XB_ARGS --decrypt=AES256 $additional_options \
+  --target-dir=$topdir/backup \
+       2> >( tee $topdir/pxb_2740.log)&
+  job_pid=$!
+  wait_for_file_to_generated $topdir/pxb_2740.log
+
+  echo "backup pid is $job_pid"
+
+  #sleep is to ensure password string is removed from ps
+  while ! grep -q 'decrypting' $topdir/pxb_2740.log
+  do
+	  sleep 1;
+  done
+
+  vlog "check for $password_string string in ps with $job_pid "
+  if ps -ef | grep $job_pid | grep "xbcrypt.*$password_string" | grep -v grep
+  then
+     die "found $password_string string in ps output"
+  fi
+  run_cmd wait $job_pid
+
+  vlog "check for $password_string string in directory $topdir"
+  if grep -rq $password_string $topdir/backup
+  then
+     grep -r $password_string $topdir/backup
+     die "found $password_string string in $topdir/backup "
   fi
   rm -rf $topdir/backup
 }
@@ -90,3 +133,7 @@ grep_in_datadir_ps "--password=$password_string"
 
 vlog "check for encryption string in data directory"
 grep_in_datadir_ps "--password=$password_string --encrypt=AES256 --encrypt-key=r______$password_string"
+
+vlog "check for encryption string during decryption"
+grep_in_datadir_ps_decrypt " --encrypt=AES256 --encrypt-key=r______$password_string"
+

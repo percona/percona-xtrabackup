@@ -72,6 +72,9 @@ gcry_error_t xb_crypt_encrypt(gcry_cipher_hd_t cipher_handle, const uchar *from,
                               size_t from_len, uchar *to, size_t *to_len,
                               uchar *iv);
 
+/* Get the enviorment variable env value into var */
+void get_env_value(char *&var, const char *env);
+
 #ifdef __cplusplus
 }
 #endif

@@ -148,6 +148,9 @@ int main(int argc, char **argv) {
   if (get_options(&argc, &argv)) {
     goto cleanup;
   }
+  if (opt_encrypt_key == nullptr) {
+    get_env_value(opt_encrypt_key, "XBCRYPT_ENCRYPTION_KEY");
+  }
 
   xb_libgcrypt_init();
 
@@ -249,6 +252,7 @@ cleanup:
   }
 
   my_cleanup_options(my_long_options);
+  my_free(opt_encrypt_key);
 
   my_end(0);
 

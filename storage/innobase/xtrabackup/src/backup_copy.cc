@@ -67,6 +67,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "utils.h"
 #include "xb0xb.h"
 
+#include <cstdlib>
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "file_utils.h"
@@ -2533,9 +2534,7 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   if (ends_with(filepath, ".xbcrypt") && opt_decrypt) {
     cmd << " | xbcrypt --decrypt --encrypt-algo="
         << xtrabackup_encrypt_algo_names[opt_decrypt_algo];
-    if (xtrabackup_encrypt_key) {
-      cmd << " --encrypt-key=" << xtrabackup_encrypt_key;
-    } else {
+    if (xtrabackup_encrypt_key == nullptr) {
       cmd << " --encrypt-key-file=" << xtrabackup_encrypt_key_file;
     }
     dest_filepath[strlen(dest_filepath) - 8] = 0;
@@ -2635,6 +2634,10 @@ bool decrypt_decompress() {
   ds_data = ds_create(".", DS_TYPE_LOCAL);
 
   ut_a(xtrabackup_parallel >= 0);
+
+  if (xtrabackup_encrypt_key) {
+    setenv("XBCRYPT_ENCRYPTION_KEY", xtrabackup_encrypt_key, 1);
+  }
 
   ret = run_data_threads(".", decrypt_decompress_thread_func,
                          xtrabackup_parallel, "decrypt and decompress");

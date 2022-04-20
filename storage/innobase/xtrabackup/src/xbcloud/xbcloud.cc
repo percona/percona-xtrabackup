@@ -26,7 +26,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <signal.h>
 #include <typelib.h>
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <set>
@@ -482,6 +481,8 @@ static bool get_one_option(int optid,
     case OPT_GOOGLE_ACCESS_KEY:
     case OPT_GOOGLE_SECRET_KEY:
     case OPT_GOOGLE_SESSION_TOKEN:
+    case OPT_AZURE_ACCOUNT:
+    case OPT_AZURE_ACCESS_KEY:
       if (argument != nullptr) {
         while (*argument) *argument++ = 0;  // Destroy argument
       }
@@ -523,12 +524,6 @@ static bool get_one_option(int optid,
 
 static const char *load_default_groups[] = {"xbcloud", 0};
 
-static void get_env_value(char *&var, const char *env) {
-  char *val;
-  if (var == nullptr && (val = getenv(env)) != nullptr) {
-    var = my_strdup(PSI_NOT_INSTRUMENTED, val, MYF(MY_FAE));
-  }
-}
 
 static void get_env_args() {
   get_env_value(opt_swift_auth_url, "OS_AUTH_URL");
@@ -870,17 +865,21 @@ bool xbcloud_put(Object_store *store, const std::string &container,
   xtrabackup_tablespaces.00000000000000000000) is uploaded to cloud storage to
   determine successful xbcloud "put" operation. */
   std::string last_file_prefix = backup_name + "/xtrabackup_tablespaces";
+  auto last_file_size = last_file_prefix.size();
   bool file_found = false;
-
-  if (!object_list.empty()) {
-    auto cur_file = object_list.back();
-    auto last_file_size = last_file_prefix.size();
-    if (cur_file.size() >= last_file_size &&
-        cur_file.substr(0, last_file_size).compare(last_file_prefix) == 0)
+  for (auto cur_file = object_list.rbegin(); cur_file != object_list.rend();
+       cur_file++) {
+    if (cur_file->size() >= last_file_size &&
+        cur_file->substr(0, last_file_size).compare(last_file_prefix) == 0) {
       file_found = true;
+      break;
+    }
   }
   if (!file_found) {
-    msg_ts("%s: Upload failed: backup is incomplete.\n", my_progname);
+    msg_ts(
+        "%s: Upload failed: backup is incomplete.\nBackup doesn't contain "
+        "last file with prefix xtrabackup_tablespaces in the cloud storage\n",
+        my_progname);
     return false;
   }
 
