@@ -4,7 +4,7 @@
 Compiling and Installing from Source Code
 ================================================================================
 
-The source code is available from the |Percona XtraBackup| *Github* `project
+The source code is available from the *Percona XtraBackup Github* `project
 <https://github.com/percona/percona-xtrabackup>`_. The easiest way to get the
 code is by using the :command:`git clone` command. Then, switch to the release
 branch that you want to install, such as **8.0**.
@@ -20,12 +20,12 @@ branch that you want to install, such as **8.0**.
 Step 1: Installing prerequisites
 ================================================================================
 
-The following packages and tools must be installed to compile |Percona
-XtraBackup| from source. These might vary from system to system.
+The following packages and tools must be installed to compile *Percona XtraBackup* from source. 
+These might vary from system to system.
 
 .. important::
 
-   In order to build |Percona XtraBackup| v8.0 from source, you must use
+   In order to build *Percona XtraBackup* v8.0 from source, you must use
    `cmake` version 3. In your distribution, it may be available either as a
    separate package ``cmake3`` or as ``cmake``. To check which version is
    installed, run ``cmake --version`` and if it does report a version 3, install
@@ -45,7 +45,7 @@ XtraBackup| from source. These might vary from system to system.
       libdbd-mysql-perl libnuma1 socat librtmp-dev libtinfo5 \ 
       qpress liblz4-tool liblz4-1 liblz4-dev vim-common
 
-|optional.python3-sphinx|:
+To install the man pages, install the python3-sphinx package first:
 
 .. code-block:: bash
 
@@ -53,7 +53,7 @@ XtraBackup| from source. These might vary from system to system.
 
 .. rubric:: CentOS or Red Hat using ``yum``
 
-|Percona Xtrabackup| requires GCC version 5.3 or higher. If the
+*Percona Xtrabackup* requires GCC version 5.3 or higher. If the
 version of GCC installed on your system is lower then you may need to
 install and enable `the Developer Toolset 7
 <https://www.softwarecollections.org/en/scls/rhscl/devtoolset-7/>`_ on
@@ -67,7 +67,7 @@ dependencies:
    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel zlib-devel \
    vim-common
 
-|optional.python3-sphinx|:
+To install the man pages, install the python3-sphinx package first:
 
 .. code-block:: bash
 
@@ -82,7 +82,7 @@ At this step, you have ``cmake`` run the commands in the :file:`CMakeList.txt`
 file to generate the build pipeline, i.e. a native build environment that will
 be used to compile the source code).
 
-1. Change to the directory where you cloned the |percona-xtrabackup| repository 
+1. Change to the directory where you cloned the Percona XtraBackup repository 
 
    .. code-block:: bash
 
@@ -101,7 +101,7 @@ be used to compile the source code).
 
 .. note::
 
-   You can build |Percona XtraBackup| with man pages but this requires
+   You can build *Percona XtraBackup* with man pages but this requires
    ``python-sphinx`` package which isn't available from that main repositories
    for every distribution. If you installed the ``python-sphinx`` package you
    need to remove the ``-DWITH_MAN_PAGES=OFF`` from previous command.
@@ -137,10 +137,10 @@ be used to compile the source code).
 	    -DFORCE_INSOURCE_BUILD=1
 
       -DWITH_MAN_PAGES
-         To build |Percona XtraBackup| man pages, use ``ON`` or remove this
+         To build *Percona XtraBackup* man pages, use ``ON`` or remove this
 	 parameter from the command line (it is ``ON`` by default).
 
-	 |optional.python3-sphinx|.
+	 To install the man pages, install the python3-sphinx package first.
 
 	 .. seealso:: :ref:`pxb.source-code.installing/prerequesite`
 
@@ -153,7 +153,7 @@ To compile the source code in your :file:`build` directory, use the ``make`` com
 
 .. important::
    
-   The computer where you intend to compile |Percona XtraBackup| 8.0 must have
+   The computer where you intend to compile *Percona XtraBackup* 8.0 must have
    at least 2G of RAM available.
 
 1. Change to the :file:`build` directory (created at
@@ -169,10 +169,10 @@ To compile the source code in your :file:`build` directory, use the ``make`` com
 Step 3: Installing on the target system
 ================================================================================
 
-The following command installs all |Percona XtraBackup| binaries |xtrabackup|
+The following command installs all *Percona XtraBackup* binaries *xtrabackup*
 and tests to default location on the target system: :file:`/usr/local/xtrabackup`.
 
-Run ``make install`` to install |Percona XtraBackup| to the default location.
+Run ``make install`` to install *Percona XtraBackup* to the default location.
 
 .. code-block:: bash
 
@@ -205,7 +205,7 @@ installation directory to be :file:`/usr/local/xtrabackup`.
 Step 4: Running
 ================================================================================
 
-After |Percona XtraBackup| is installed on your system, you may run it by using
+After *Percona XtraBackup* is installed on your system, you may run it by using
 the full path to the ``xtrabackup`` command:
 
 .. code-block:: bash
@@ -229,6 +229,3 @@ the locations listed in your ``PATH`` environment variable.
 .. seealso:: ``man ln``
 
 To view the documentation with ``man``, update the ``MANPATH`` variable.
-
-.. |percona-xtrabackup| replace:: :file:`percona-xtrabackup`
-.. |optional.python3-sphinx| replace:: To be able to install the man pages, install the ``python3-sphinx`` package
