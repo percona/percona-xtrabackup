@@ -19,6 +19,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef FILE_UTILS_H
 #define FILE_UTILS_H
 
+#include "my_inttypes.h"
+
 /** Return a safer suffix of file_name, or "." if it has no safer
 suffix. Check for fully specified file names and other atrocities.
 Warn the user if we do not return file_name.
@@ -26,5 +28,11 @@ Warn the user if we do not return file_name.
 @param[out] prefix_len_out       the length of the unsafe prefix
 @return ptr to a safer suffix of file_nam. */
 const char *safer_name_suffix(char const *file_name, int *prefix_len_out);
+
+bool file_exists(const char *filename);
+
+bool is_path_separator(char c);
+
+int mkdirp(const char *pathname, int Flags, myf MyFlags);
 
 #endif
