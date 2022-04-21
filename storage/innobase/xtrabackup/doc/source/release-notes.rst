@@ -5,6 +5,7 @@
 .. toctree::
    :maxdepth: 1
 
+   release-notes/2.4/2.4.25
    release-notes/2.4/2.4.24
    release-notes/2.4/2.4.23
    release-notes/2.4/2.4.22
