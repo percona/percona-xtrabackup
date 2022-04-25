@@ -159,6 +159,13 @@ html_theme = 'percona-theme-1-4'
 # Add any paths that contain custom themes here, relative to this directory.
 html_theme_path = ['.', './percona-theme']
 
+# Redirect info for Edit on Github link
+html_context = {
+    'repo_name': '/percona/percona-xtrabackup',
+    'repo_url': 'https://github.com/percona/percona-xtrabackup',
+    'edit_uri': 'edit/2.4/storage/innobase/xtrabackup/doc/source'
+}
+
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
 html_title = 'Percona XtraBackup 2.4 Documentation'
