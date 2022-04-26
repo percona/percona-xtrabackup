@@ -81,16 +81,15 @@
 #include "sql/derror.h"                   // ER_THD
 #include "sql/field.h"
 #include "sql/handler.h"  // ha_initalize_handlerton
-#include "sql/key.h"      // key_copy
-#include "sql/lock.h"     // acquire_shared_global...
+#include "sql/iterators/row_iterator.h"
+#include "sql/key.h"   // key_copy
+#include "sql/lock.h"  // acquire_shared_global...
 #include "sql/log.h"
 #include "sql/mdl.h"
 #include "sql/mysqld.h"              // files_charset_info
 #include "sql/persisted_variable.h"  // Persisted_variables_cache
 #include "sql/protocol_classic.h"
 #include "sql/psi_memory_key.h"
-#include "sql/records.h"  // unique_ptr_destroy_only<RowIterator>
-#include "sql/row_iterator.h"
 #include "sql/set_var.h"
 #include "sql/sql_audit.h"        // mysql_audit_acquire_plugins
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
@@ -98,6 +97,7 @@
 #include "sql/sql_class.h"        // THD
 #include "sql/sql_const.h"
 #include "sql/sql_error.h"
+#include "sql/sql_executor.h"  // unique_ptr_destroy_only<RowIterator>
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"  // check_string_char_length
@@ -2524,55 +2524,6 @@ static bool mysql_uninstall_plugin(THD *thd, LEX_CSTRING name) {
   if (plugin->plugin->flags & PLUGIN_OPT_NO_UNINSTALL) {
     mysql_mutex_unlock(&LOCK_plugin);
     my_error(ER_PLUGIN_NO_UNINSTALL, MYF(0), plugin->plugin->name);
-    goto err;
-  }
-
-  /*
-    FIXME: plugin rpl_semi_sync_source, check_uninstall() function.
-  */
-
-  /* Block Uninstallation of semi_sync plugins (Master/Slave)
-     when they are busy
-   */
-  char buff[20];
-  size_t buff_length;
-  /*
-    Master: If there are active semi sync slaves for this Master,
-    then that means it is busy and rpl_semi_sync_source plugin
-    cannot be uninstalled. To check whether the master
-    has any semi sync slaves or not, check Rpl_semi_sync_master_cliens
-    status variable value, if it is not 0, that means it is busy.
-  */
-  if (!strcmp(name.str, "rpl_semi_sync_source") &&
-      get_status_var(thd, plugin->plugin->status_vars,
-                     "Rpl_semi_sync_source_clients", buff, OPT_DEFAULT,
-                     &buff_length) &&
-      strcmp(buff, "0")) {
-    mysql_mutex_unlock(&LOCK_plugin);
-    my_error(ER_PLUGIN_CANNOT_BE_UNINSTALLED, MYF(0), name.str,
-             "Stop any active semisynchronous slaves of this master first.");
-    goto err;
-  }
-
-  /*
-    FIXME: plugin rpl_semi_sync_replica, check_uninstall() function.
-  */
-
-  /* Slave: If there is semi sync enabled IO thread active on this Slave,
-    then that means plugin is busy and rpl_semi_sync_replica plugin
-    cannot be uninstalled. To check whether semi sync
-    IO thread is active or not, check Rpl_semi_sync_replica_status status
-    variable value, if it is ON, that means it is busy.
-  */
-  if (!strcmp(name.str, "rpl_semi_sync_replica") &&
-      get_status_var(thd, plugin->plugin->status_vars,
-                     "Rpl_semi_sync_replica_status", buff, OPT_DEFAULT,
-                     &buff_length) &&
-      !strcmp(buff, "ON")) {
-    mysql_mutex_unlock(&LOCK_plugin);
-    my_error(
-        ER_PLUGIN_CANNOT_BE_UNINSTALLED, MYF(0), name.str,
-        "Stop any active semisynchronous I/O threads on this slave first.");
     goto err;
   }
 

@@ -187,6 +187,7 @@ static bool binlog_recover(Binlog_file_reader *binlog_file_reader,
                            my_off_t *valid_pos);
 static void binlog_prepare_row_images(const THD *thd, TABLE *table);
 static bool is_loggable_xa_prepare(THD *thd);
+static int check_instance_backup_locked();
 
 bool normalize_binlog_name(char *to, const char *from, bool is_relay_log) {
   DBUG_TRACE;
@@ -527,6 +528,9 @@ class Thd_backup_and_restore {
 
     m_new_thd->thread_stack = m_backup_thd->thread_stack;
     m_new_thd->store_globals();
+#ifdef HAVE_PSI_THREAD_INTERFACE
+    PSI_THREAD_CALL(set_mem_cnt_THD)(m_new_thd, &m_backup_cnt_thd);
+#endif
   }
 
   /**
@@ -543,11 +547,16 @@ class Thd_backup_and_restore {
 
     // Reset the global variables to the original state.
     m_backup_thd->store_globals();
+#ifdef HAVE_PSI_THREAD_INTERFACE
+    PSI_THREAD_CALL(set_mem_cnt_THD)(m_backup_cnt_thd, &m_dummy_cnt_thd);
+#endif
   }
 
  private:
   THD *m_backup_thd;
   THD *m_new_thd;
+  THD *m_backup_cnt_thd;
+  THD *m_dummy_cnt_thd;
   my_thread_t m_new_thd_old_real_id;
   const char *m_new_thd_old_thread_stack;
 };
@@ -2358,7 +2367,7 @@ static void exec_binlog_error_action_abort(const char *err_string) {
   flush_error_log_messages();
 
   if (thd) thd->send_statement_status();
-  abort();
+  my_abort();
 }
 
 /**
@@ -2829,6 +2838,9 @@ static uint purge_log_get_error_code(int res) {
     case LOG_INFO_EMFILE:
       errcode = ER_BINLOG_PURGE_EMFILE;
       break;
+    case LOG_INFO_BACKUP_LOCK:
+      errcode = ER_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK;
+      break;
     default:
       errcode = ER_LOG_PURGE_UNKNOWN_ERR;
       break;
@@ -3096,11 +3108,15 @@ bool purge_master_logs(THD *thd, const char *to_log) {
     return false;
   }
 
-  mysql_bin_log.make_log_name(search_file_name, to_log);
-  return purge_error_message(
-      thd, mysql_bin_log.purge_logs(
-               search_file_name, false, true /*need_lock_index=true*/,
-               true /*need_update_threads=true*/, nullptr, false));
+  int error = check_instance_backup_locked();
+  if (!error) {
+    mysql_bin_log.make_log_name(search_file_name, to_log);
+    error = mysql_bin_log.purge_logs(
+        search_file_name, false, true /*need_lock_index=true*/,
+        true /*need_update_threads=true*/, nullptr, false);
+  }
+
+  return purge_error_message(thd, error);
 }
 
 /**
@@ -3119,8 +3135,35 @@ bool purge_master_logs_before_date(THD *thd, time_t purge_time) {
     my_ok(thd);
     return false;
   }
-  return purge_error_message(
-      thd, mysql_bin_log.purge_logs_before_date(purge_time, false));
+
+  int error = check_instance_backup_locked();
+  if (!error) error = mysql_bin_log.purge_logs_before_date(purge_time, false);
+
+  return purge_error_message(thd, error);
+}
+
+/**
+  Check whether the instance is backup locked.
+
+  @retval 0 Instance is not backup locked
+  @retval other Instance is backup locked or failure
+*/
+int check_instance_backup_locked() {
+  int res{0};
+
+  auto is_instance_locked = is_instance_backup_locked(current_thd);
+  switch (is_instance_locked) {
+    case Is_instance_backup_locked_result::OOM:
+      res = LOG_INFO_MEM;
+      break;
+    case Is_instance_backup_locked_result::LOCKED:
+      res = LOG_INFO_BACKUP_LOCK;
+      break;
+    case Is_instance_backup_locked_result::NOT_LOCKED:
+      break;
+  }
+
+  return res;
 }
 
 /*
@@ -5598,6 +5641,8 @@ bool MYSQL_BIN_LOG::reset_logs(THD *thd, bool delete_only) {
                             "of your binlog index file "
                             "to the actual binlog files",
                             linfo.log_file_name);
+        LogErr(ERROR_LEVEL, ER_BINLOG_CANT_DELETE_FILE, linfo.log_file_name);
+        my_error(ER_BINLOG_PURGE_FATAL_ERR, MYF(0));
         error = true;
         goto err;
       }
@@ -5626,6 +5671,8 @@ bool MYSQL_BIN_LOG::reset_logs(THD *thd, bool delete_only) {
                           "of your binlog index file "
                           "to the actual binlog files",
                           index_file_name);
+      LogErr(ERROR_LEVEL, ER_BINLOG_CANT_DELETE_FILE, index_file_name);
+      my_error(ER_BINLOG_PURGE_FATAL_ERR, MYF(0));
       error = true;
       goto err;
     }
@@ -8316,6 +8363,7 @@ int MYSQL_BIN_LOG::process_flush_stage_queue(my_off_t *total_bytes_var,
   assign_automatic_gtids_to_flush_group(first_seen);
   /* Flush thread caches to binary log. */
   for (THD *head = first_seen; head; head = head->next_to_commit) {
+    Thd_backup_and_restore switch_thd(current_thd, head);
     std::pair<int, my_off_t> result = flush_thread_caches(head);
     total_bytes += result.second;
     if (flush_error == 1) flush_error = result.first;
@@ -10601,58 +10649,82 @@ static bool handle_gtid_consistency_violation(THD *thd, int error_code,
 bool THD::is_ddl_gtid_compatible() {
   DBUG_TRACE;
 
-  // If @@session.sql_log_bin has been manually turned off (only
-  // doable by SUPER), then no problem, we can execute any statement.
-  if ((variables.option_bits & OPTION_BIN_LOG) == 0 ||
-      mysql_bin_log.is_open() == false)
-    return true;
+  bool is_binlog_open{mysql_bin_log.is_open()};
+  bool is_binlog_enabled_for_session{(variables.option_bits & OPTION_BIN_LOG) !=
+                                     0};
+  DBUG_PRINT("info", ("is_binlog_open:%d is_binlog_enabled_for_session:%d",
+                      is_binlog_open, is_binlog_enabled_for_session));
+  // If we are not going to log, then no problem, we can execute any
+  // statement.
+  if (!is_binlog_open || !is_binlog_enabled_for_session) return true;
 
-  DBUG_PRINT(
-      "info",
-      ("SQLCOM_CREATE:%d CREATE-TMP:%d SELECT:%zu SQLCOM_DROP:%d "
-       "DROP-TMP:%d trx:%d",
-       lex->sql_command == SQLCOM_CREATE_TABLE,
-       (lex->sql_command == SQLCOM_CREATE_TABLE &&
-        (lex->create_info->options & HA_LEX_CREATE_TMP_TABLE)),
-       lex->query_block->fields.size(), lex->sql_command == SQLCOM_DROP_TABLE,
-       (lex->sql_command == SQLCOM_DROP_TABLE && lex->drop_temporary),
-       in_multi_stmt_transaction_mode()));
-
-  if (lex->sql_command == SQLCOM_CREATE_TABLE &&
-      !(lex->create_info->options & HA_LEX_CREATE_TMP_TABLE) &&
-      !lex->query_block->field_list_is_empty()) {
-    if (!(get_default_handlerton(this, lex->create_info->db_type)->flags &
-          HTON_SUPPORTS_ATOMIC_DDL)) {
-      /*
-        CREATE ... SELECT (without TEMPORARY) for engines not supporting atomic
-        DDL is unsafe because if binlog_format=row it will be logged as a CREATE
-        TABLE followed by row events, re-executed non-atomically as two
-        transactions, and then written to the slave's binary log as two separate
-        transactions with the same GTID.
-      */
-      bool ret = handle_gtid_consistency_violation(
-          this, ER_GTID_UNSAFE_CREATE_SELECT,
-          ER_RPL_GTID_UNSAFE_STMT_CREATE_SELECT);
-      return ret;
-    }
-  } else if ((lex->sql_command == SQLCOM_CREATE_TABLE &&
-              (lex->create_info->options & HA_LEX_CREATE_TMP_TABLE) != 0) ||
-             (lex->sql_command == SQLCOM_DROP_TABLE && lex->drop_temporary)) {
-    /*
-      When @@session.binlog_format=statement, [CREATE|DROP] TEMPORARY TABLE
-      is unsafe to execute inside a transaction or Procedure, because the
-      [CREATE|DROP] statement on the temporary table will be executed and
-      written into binary log with a GTID even if the transaction or
-      Procedure is rolled back.
-    */
-    if (variables.binlog_format == BINLOG_FORMAT_STMT &&
-        (in_multi_stmt_transaction_mode() || in_sub_stmt)) {
-      bool ret = handle_gtid_consistency_violation(
-          this, ER_CLIENT_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRX_IN_SBR,
-          ER_SERVER_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRX_IN_SBR);
-      return ret;
-    }
+  bool is_create_table{lex->sql_command == SQLCOM_CREATE_TABLE};
+  bool is_create_temporary_table{false};
+  bool is_create_table_select{false};
+  bool is_create_table_atomic{false};
+  if (is_create_table) {
+    // Check this conditionally, since create_info and/or query_block
+    // may be uninitialized if sql_command!=SQLCOM_CREATE_TABLE.
+    is_create_temporary_table =
+        (lex->create_info->options & HA_LEX_CREATE_TMP_TABLE);
+    if (!is_create_temporary_table)
+      is_create_table_select = !lex->query_block->field_list_is_empty();
+    is_create_table_atomic =
+        get_default_handlerton(this, lex->create_info->db_type)->flags &
+        HTON_SUPPORTS_ATOMIC_DDL;
   }
+
+  bool is_drop_table{lex->sql_command == SQLCOM_DROP_TABLE};
+  bool is_drop_temporary_table{false};
+  if (is_drop_table) is_drop_temporary_table = lex->drop_temporary;
+
+  bool is_in_transaction{in_multi_stmt_transaction_mode()};
+
+  bool is_in_sub_statement{in_sub_stmt != 0};
+
+  bool is_binlog_format_statement{variables.binlog_format ==
+                                  BINLOG_FORMAT_STMT};
+
+  DBUG_PRINT("info", ("is_create_table:%d is_create_temporary_table:%d "
+                      "is_create_table_select:%d is_create_table_atomic:%d "
+                      "is_drop_table:%d is_drop_temporary_table:%d "
+                      "is_in_transaction:%d is_in_sub_statement:%d "
+                      "is_binlog_format_statement:%d",
+                      is_create_table, is_create_temporary_table,
+                      is_create_table_select, is_create_table_atomic,
+                      is_drop_table, is_drop_temporary_table, is_in_transaction,
+                      is_in_sub_statement, is_binlog_format_statement));
+
+  if (is_create_table_select && !is_create_temporary_table &&
+      !is_create_table_atomic) {
+    /*
+      CREATE ... SELECT (without TEMPORARY) for engines not supporting
+      atomic DDL is unsafe because if binlog_format=row it will be
+      logged as a CREATE TABLE followed by row events, re-executed
+      non-atomically as two transactions, and then written to the
+      slave's binary log as two separate transactions with the same
+      GTID.
+    */
+    return handle_gtid_consistency_violation(
+        this, ER_GTID_UNSAFE_CREATE_SELECT,
+        ER_RPL_GTID_UNSAFE_STMT_CREATE_SELECT);
+  }
+
+  if ((is_create_temporary_table || is_drop_temporary_table) &&
+      is_binlog_format_statement &&
+      (is_in_transaction || is_in_sub_statement)) {
+    /*
+      When @@session.binlog_format=statement,
+      [CREATE|DROP] TEMPORARY TABLE is unsafe to execute inside a
+      transaction or Procedure, because the [CREATE|DROP] statement on
+      the temporary table will be executed and written into binary log
+      with a GTID even if the transaction or Procedure is rolled back.
+    */
+    return handle_gtid_consistency_violation(
+        this, ER_CLIENT_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRX_IN_SBR,
+        ER_SERVER_GTID_UNSAFE_CREATE_DROP_TEMP_TABLE_IN_TRX_IN_SBR);
+  }
+
   return true;
 }
 

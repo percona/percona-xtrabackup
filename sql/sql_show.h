@@ -67,7 +67,8 @@ void mysqld_list_fields(THD *thd, TABLE_LIST *table, const char *wild);
 bool mysqld_show_create(THD *thd, TABLE_LIST *table_list);
 bool mysqld_show_create_db(THD *thd, char *dbname, HA_CREATE_INFO *create);
 
-void mysqld_list_processes(THD *thd, const char *user, bool verbose);
+void mysqld_list_processes(THD *thd, const char *user, bool verbose,
+                           bool has_cursor);
 bool mysqld_show_privileges(THD *thd);
 void calc_sum_of_all_status(System_status_var *to);
 void append_definer(const THD *thd, String *buffer,
@@ -161,8 +162,6 @@ class Sql_cmd_show : public Sql_cmd_select {
   bool execute(THD *thd) override;
 
  protected:
-  // Use for SHOW commands that operate on a single table.
-  bool check_privileges_for_table(THD *thd, bool is_temporary);
   enum_sql_command m_sql_command;
 };
 
@@ -474,7 +473,6 @@ class Sql_cmd_show_processlist : public Sql_cmd_show {
 
  private:
   bool use_pfs() { return m_use_pfs; }
-  bool execute_with_performance_schema(THD *thd);
 
   const bool m_verbose{false};
   bool m_use_pfs{false};

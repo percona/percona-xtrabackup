@@ -573,13 +573,13 @@ void dict_col_t::set_default(const byte *value, size_t length,
 
 bool dict_col_default_t::operator==(const dict_col_default_t &other) {
   /* If the lengths are different, trivially the default values are not
-   * the same, return false immediately */
+  the same, return false immediately */
   if (len != other.len) {
     return false;
   }
   /* If the lengths are null or 0, the values are empty and equal.
-   * No need to check both lengths since we only reach this point
-   * if len == other.len */
+  No need to check both lengths since we only reach this point
+  if len == other.len */
   if (len == UNIV_SQL_NULL || len == 0) {
     return true;
   }
@@ -772,7 +772,8 @@ char *dict_mem_create_temporary_tablename(mem_heap_t *heap, const char *dbtab,
 /** Initialize dict memory variables */
 void dict_mem_init(void) {
   /* Initialize a randomly distributed temporary file number */
-  ib_uint32_t now = static_cast<ib_uint32_t>(ut_time());
+  ib_uint32_t now = static_cast<ib_uint32_t>(
+      std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 
   const byte *buf = reinterpret_cast<const byte *>(&now);
   auto file_num = ut_crc32(buf, sizeof(now));

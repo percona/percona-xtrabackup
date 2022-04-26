@@ -280,6 +280,7 @@ class Item_func : public Item_result_field {
     DATEADD_FUNC,
     FROM_UNIXTIME_FUNC,
     CONVERT_TZ_FUNC,
+    LAST_DAY_FUNC,
     UNIX_TIMESTAMP_FUNC,
     TIME_TO_SEC_FUNC,
     TIMESTAMPDIFF_FUNC,
@@ -4017,5 +4018,11 @@ Item_field *get_gc_for_expr(const Item *func, Field *fld, Item_result type,
 void retrieve_tablespace_statistics(THD *thd, Item **args, bool *null_value);
 
 extern bool volatile mqh_used;
+
+/// Checks if "item" is a function of the specified type.
+bool is_function_of_type(const Item *item, Item_func::Functype type);
+
+/// Checks if "item" contains a function of the specified type.
+bool contains_function_of_type(Item *item, Item_func::Functype type);
 
 #endif /* ITEM_FUNC_INCLUDED */

@@ -75,6 +75,8 @@
 #include "sql/item_json_func.h"
 #include "sql/item_subselect.h"
 #include "sql/item_sum.h"  // Item_sum
+#include "sql/iterators/row_iterator.h"
+#include "sql/iterators/sorting_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/join_optimizer.h"
@@ -94,10 +96,9 @@
 #include "sql/parse_tree_node_base.h"
 #include "sql/query_options.h"
 #include "sql/query_result.h"
-#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
-#include "sql/row_iterator.h"
+#include "sql/range_optimizer/path_helpers.h"
+#include "sql/range_optimizer/range_optimizer.h"
 #include "sql/set_var.h"
-#include "sql/sorting_iterator.h"
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"
 #include "sql/sql_cmd.h"
@@ -372,6 +373,7 @@ bool Sql_cmd_dml::prepare(THD *thd) {
     lex->cleanup(thd, false);
     return true;
   }
+  DEBUG_SYNC(thd, "after_open_tables");
 #ifndef NDEBUG
   if (sql_command_code() == SQLCOM_SELECT) DEBUG_SYNC(thd, "after_table_open");
 #endif
@@ -935,7 +937,8 @@ bool Sql_cmd_select::check_privileges(THD *thd) {
 bool Sql_cmd_dml::check_all_table_privileges(THD *thd) {
   // Check for all possible DML privileges
 
-  for (TABLE_LIST *tr = lex->query_tables; tr != nullptr;
+  const TABLE_LIST *const first_not_own_table = thd->lex->first_not_own_table();
+  for (TABLE_LIST *tr = lex->query_tables; tr != first_not_own_table;
        tr = tr->next_global) {
     if (tr->is_internal())  // No privilege check required for internal tables
       continue;
@@ -979,10 +982,15 @@ const MYSQL_LEX_CSTRING *Sql_cmd_dml::get_eligible_secondary_engine() const {
   // storage engine.
   const LEX_CSTRING *secondary_engine = nullptr;
   const TABLE_LIST *tl = lex->query_tables;
-  // For INSERT INTO SELECT statements, the table to insert into does not have
-  // to have a secondary engine. This table is always first in the list.
-  if (lex->sql_command == SQLCOM_INSERT_SELECT && tl != nullptr)
+
+  if (lex->sql_command == SQLCOM_INSERT_SELECT && tl != nullptr) {
+    // If table from TABLE_LIST is either view or derived table then
+    // do not perform INSERT AS SELECT.
+    if (tl->is_view_or_derived()) return nullptr;
+    // For INSERT INTO SELECT statements, the table to insert into does not have
+    // to have a secondary engine. This table is always first in the list.
     tl = tl->next_global;
+  }
   for (; tl != nullptr; tl = tl->next_global) {
     // Schema tables are not available in secondary engines.
     if (tl->schema_table != nullptr) return nullptr;
@@ -1361,9 +1369,9 @@ static bool setup_semijoin_dups_elimination(JOIN *join, uint no_jbuf_after) {
            should not happen since LooseScan strategy is only picked if sorted
            output is supported.
         */
-        if (tab->quick()) {
-          assert(tab->quick()->index == pos->loosescan_key);
-          tab->quick()->need_sorted_output();
+        if (tab->range_scan()) {
+          assert(used_index(tab->range_scan()) == pos->loosescan_key);
+          set_need_sorted_output(tab->range_scan());
         }
 
         const uint keyno = pos->loosescan_key;
@@ -3155,18 +3163,18 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
             join->thd->inc_status_select_full_range_join();
         }
         if (!table->no_keyread && qep_tab->type() == JT_RANGE) {
-          if (table->covering_keys.is_set(qep_tab->quick()->index)) {
-            assert(qep_tab->quick()->index != MAX_KEY);
+          if (table->covering_keys.is_set(used_index(qep_tab->range_scan()))) {
+            assert(used_index(qep_tab->range_scan()) != MAX_KEY);
             table->set_keyread(true);
           }
           if (!table->key_read)
-            qep_tab->push_index_cond(tab, qep_tab->quick()->index,
+            qep_tab->push_index_cond(tab, used_index(qep_tab->range_scan()),
                                      &trace_refine_table);
         }
         if (tab->position()->filter_effect != COND_FILTER_STALE_NO_CONST) {
           double rows_w_const_cond = qep_tab->position()->rows_fetched;
           qep_tab->position()->rows_fetched =
-              rows2double(tab->quick()->records);
+              tab->range_scan()->num_output_rows;
           if (tab->position()->filter_effect != COND_FILTER_STALE) {
             // Constant condition moves to filter_effect:
             if (tab->position()->rows_fetched == 0)  // avoid division by zero
@@ -3372,7 +3380,7 @@ void QEP_shared_owner::qs_cleanup() {
       table_ref->derived_key_list.clear();
     }
   }
-  destroy(quick());
+  destroy(range_scan());
 }
 
 uint QEP_TAB::sjm_query_block_id() const {
@@ -4223,10 +4231,10 @@ bool JOIN::make_tmp_tables_info() {
     single table queries, thus it is sufficient to test only the first
     join_tab element of the plan for its access method.
   */
-  if (qep_tab && qep_tab[0].quick() &&
-      qep_tab[0].quick()->is_loose_index_scan())
+  if (qep_tab && qep_tab[0].range_scan() &&
+      is_loose_index_scan(qep_tab[0].range_scan()))
     tmp_table_param.precomputed_group_by =
-        !qep_tab[0].quick()->is_agg_loose_index_scan();
+        !is_agg_loose_index_scan(qep_tab[0].range_scan());
 
   /*
     Create the first temporary table if distinct elimination is requested or
@@ -4399,7 +4407,8 @@ bool JOIN::make_tmp_tables_info() {
         functions are precomputed, and should be treated as regular
         functions. See extended comment above.
       */
-      if (qep_tab[0].quick() && qep_tab[0].quick()->is_loose_index_scan())
+      if (qep_tab[0].range_scan() &&
+          is_loose_index_scan(qep_tab[0].range_scan()))
         tmp_table_param.precomputed_group_by = true;
 
       ORDER_with_src dummy;  // TODO can use table->group here also
@@ -4425,8 +4434,8 @@ bool JOIN::make_tmp_tables_info() {
       if (!group_list.empty() || tmp_table_param.sum_func_count) {
         if (make_sum_func_list(*curr_fields, true, true)) return true;
         const bool need_distinct =
-            !(qep_tab[0].quick() &&
-              qep_tab[0].quick()->is_agg_loose_index_scan());
+            !(qep_tab[0].range_scan() &&
+              is_agg_loose_index_scan(qep_tab[0].range_scan()));
         if (prepare_sum_aggregators(sum_funcs, need_distinct)) return true;
         group_list.clean();
         if (setup_sum_funcs(thd, sum_funcs)) return true;
@@ -4514,8 +4523,9 @@ bool JOIN::make_tmp_tables_info() {
     if (make_group_fields(this, this)) return true;
 
     if (make_sum_func_list(*curr_fields, true, true)) return true;
-    const bool need_distinct = !(qep_tab && qep_tab[0].quick() &&
-                                 qep_tab[0].quick()->is_agg_loose_index_scan());
+    const bool need_distinct =
+        !(qep_tab && qep_tab[0].range_scan() &&
+          is_agg_loose_index_scan(qep_tab[0].range_scan()));
     if (prepare_sum_aggregators(sum_funcs, need_distinct)) return true;
     if (setup_sum_funcs(thd, sum_funcs) || thd->is_fatal_error()) return true;
   }
@@ -4872,7 +4882,8 @@ bool JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order,
                                       of new_key prefix columns if success
                                       or undefined if the function fails
   @param [out]  saved_best_key_parts  NULL by default, otherwise preserve the
-                                      value for further use in QUICK_SELECT_DESC
+                                      value for further use in
+                                      ReverseIndexRangeScanIterator
 
   @note
     This function takes into account table->quick_condition_rows statistic
@@ -5004,11 +5015,16 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
           and as result we'll choose an index scan when using ref/range
           access + filesort will be cheaper.
         */
-        if (fanout == 0)                // Would have been a division-by-zero
+        if (fanout == 0) {              // Would have been a division-by-zero
           select_limit = HA_POS_ERROR;  // -> 'infinite'
-        else if (fanout > 0)            // 'fanout' not unknown
-          select_limit =
-              (ha_rows)(select_limit < fanout ? 1 : select_limit / fanout);
+        } else if (fanout >= 0) {       // 'fanout' not unknown
+          const double new_limit = max(select_limit / fanout, 1.0);
+          if (new_limit >= static_cast<double>(HA_POS_ERROR)) {
+            select_limit = HA_POS_ERROR;
+          } else {
+            select_limit = new_limit;
+          }
+        }
         /*
           We assume that each of the tested indexes is not correlated
           with ref_key. Thus, to select first N records we have to scan
@@ -5043,7 +5059,7 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
         const Cost_estimate table_scan_time = table->file->table_scan_cost();
         const double index_scan_time =
             select_limit / rec_per_key *
-            min<double>(table->cost_model()->page_read_cost(rec_per_key),
+            min<double>(table->file->page_read_cost(nr, rec_per_key),
                         table_scan_time.total_cost());
 
         /*
@@ -5105,7 +5121,7 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
   @param       order           Linked list of ORDER BY arguments
   @param       table           Table to find a key
   @param       limit           LIMIT clause parameter
-  @param [in,out] quick        QUICK_SELECT_I used for this table, if any
+  @param       range_scan      Range scan used for this table, if any
   @param [out] need_sort       true if filesort needed
   @param [out] reverse
     true if the key is reversed again given ORDER (undefined if key == MAX_KEY)
@@ -5123,23 +5139,24 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
 */
 
 uint get_index_for_order(ORDER_with_src *order, TABLE *table, ha_rows limit,
-                         QUICK_SELECT_I **quick, bool *need_sort,
+                         AccessPath *range_scan, bool *need_sort,
                          bool *reverse) {
-  if ((*quick) && (*quick)->unique_key_range()) {  // Single row select (always
-                                                   // "ordered"): Ok to use with
-                                                   // key field UPDATE
+  if (range_scan &&
+      unique_key_range(range_scan)) {  // Single row select (always
+                                       // "ordered"): Ok to use with
+                                       // key field UPDATE
     *need_sort = false;
     /*
       Returning of MAX_KEY here prevents updating of used_key_is_modified
-      in mysql_update(). Use quick select "as is".
+      in mysql_update(). Use AccessPath "as is".
     */
     return MAX_KEY;
   }
 
   if (order->empty()) {
     *need_sort = false;
-    if ((*quick))
-      return (*quick)->index;  // index or MAX_KEY, use quick select as is
+    if (range_scan)
+      return used_index(range_scan);  // index or MAX_KEY, use AccessPath as is
     else
       return table->file
           ->key_used_on_scan;  // MAX_KEY or index for some engines
@@ -5151,31 +5168,27 @@ uint get_index_for_order(ORDER_with_src *order, TABLE *table, ha_rows limit,
     return MAX_KEY;
   }
 
-  if ((*quick)) {
-    if ((*quick)->index == MAX_KEY) {
+  if (range_scan) {
+    if (used_index(range_scan) == MAX_KEY) {
       *need_sort = true;
       return MAX_KEY;
     }
 
     uint used_key_parts;
-    bool skip_quick;
-    switch (test_if_order_by_key(order, table, (*quick)->index, &used_key_parts,
-                                 &skip_quick)) {
+    bool skip_path;
+    switch (test_if_order_by_key(order, table, used_index(range_scan),
+                                 &used_key_parts, &skip_path)) {
       case 1:  // desired order
         *need_sort = false;
-        return (*quick)->index;
+        return used_index(range_scan);
       case 0:  // unacceptable order
         *need_sort = true;
         return MAX_KEY;
       case -1:  // desired order, but opposite direction
       {
-        QUICK_SELECT_I *reverse_quick;
-        if (!skip_quick &&
-            (reverse_quick = (*quick)->make_reverse(used_key_parts))) {
-          destroy(*quick);
-          *quick = reverse_quick;
+        if (!skip_path && !make_reverse(used_key_parts, range_scan)) {
           *need_sort = false;
-          return reverse_quick->index;
+          return used_index(range_scan);
         } else {
           *need_sort = true;
           return MAX_KEY;
@@ -5228,13 +5241,20 @@ uint actual_key_flags(const KEY *key_info) {
              : key_info->flags;
 }
 
-join_type calc_join_type(int quick_type) {
-  if ((quick_type == QS_TYPE_INDEX_MERGE) ||
-      (quick_type == QS_TYPE_ROR_INTERSECT) ||
-      (quick_type == QS_TYPE_ROR_UNION))
-    return JT_INDEX_MERGE;
-  else
-    return JT_RANGE;
+join_type calc_join_type(AccessPath *path) {
+  switch (path->type) {
+    case AccessPath::INDEX_RANGE_SCAN:
+    case AccessPath::INDEX_SKIP_SCAN:
+    case AccessPath::GROUP_INDEX_SKIP_SCAN:
+      return JT_RANGE;
+    case AccessPath::INDEX_MERGE:
+    case AccessPath::ROWID_INTERSECTION:
+    case AccessPath::ROWID_UNION:
+      return JT_INDEX_MERGE;
+    default:
+      assert(false);
+      return JT_RANGE;
+  }
 }
 
 /**

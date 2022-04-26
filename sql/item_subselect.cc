@@ -52,17 +52,20 @@
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "scope_guard.h"
-#include "sql/basic_row_iterators.h"  // ZeroRowsIterator
 #include "sql/check_stack.h"
-#include "sql/composite_iterators.h"  // FilterIterator
-#include "sql/current_thd.h"          // current_thd
-#include "sql/debug_sync.h"           // DEBUG_SYNC
-#include "sql/derror.h"               // ER_THD
+#include "sql/current_thd.h"  // current_thd
+#include "sql/debug_sync.h"   // DEBUG_SYNC
+#include "sql/derror.h"       // ER_THD
 #include "sql/field.h"
 #include "sql/handler.h"
 #include "sql/item_cmpfunc.h"
 #include "sql/item_func.h"
-#include "sql/item_sum.h"  // Item_sum_max
+#include "sql/item_sum.h"                       // Item_sum_max
+#include "sql/iterators/basic_row_iterators.h"  // ZeroRowsIterator
+#include "sql/iterators/composite_iterators.h"  // FilterIterator
+#include "sql/iterators/ref_row_iterators.h"
+#include "sql/iterators/row_iterator.h"  // RowIterator
+#include "sql/iterators/timing_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/join_optimizer.h"
 #include "sql/key.h"
@@ -74,9 +77,7 @@
 #include "sql/parse_tree_nodes.h"  // PT_subquery
 #include "sql/query_options.h"
 #include "sql/query_result.h"
-#include "sql/ref_row_iterators.h"
-#include "sql/row_iterator.h"  // RowIterator
-#include "sql/sql_class.h"     // THD
+#include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
 #include "sql/sql_error.h"
 #include "sql/sql_executor.h"
@@ -92,7 +93,6 @@
 #include "sql/table.h"
 #include "sql/temp_table_param.h"
 #include "sql/thd_raii.h"
-#include "sql/timing_iterator.h"
 #include "sql/window.h"
 #include "sql_string.h"
 #include "template_utils.h"
@@ -807,7 +807,9 @@ bool Item_subselect::resolve_type(THD *) {
 
 Item *Item_subselect::get_tmp_table_item(THD *thd_arg) {
   DBUG_TRACE;
-  if (!has_aggregation() && !const_item()) {
+  if (!has_aggregation() && !(const_for_execution() &&
+                              evaluate_during_optimization(
+                                  this, thd_arg->lex->current_query_block()))) {
     Item *result = new Item_field(result_field);
     return result;
   }
@@ -2653,15 +2655,14 @@ bool Item_subselect::clean_up_after_removal(uchar *arg) {
     in the SELECT list via an alias.
     In that case, do not remove this subselect.
   */
-  auto *ctx = pointer_cast<Cleanup_after_removal_context *>(arg);
-  Query_block *root = nullptr;
+  Query_block *const root =
+      pointer_cast<Cleanup_after_removal_context *>(arg)->get_root();
 
-  if (ctx != nullptr) {
-    if ((ctx->m_root->resolve_place != Query_block::RESOLVE_SELECT_LIST) &&
-        ctx->m_root->is_in_select_list(this))
-      return false;
-    root = ctx->m_root;
+  if ((root->resolve_place != Query_block::RESOLVE_SELECT_LIST) &&
+      root->is_in_select_list(this)) {
+    return false;
   }
+
   Query_block *sl = unit->outer_query_block();
 
   // Notify flatten_subqueries() that subquery has been removed.

@@ -82,7 +82,6 @@ class PFS_opaque_container_page;
 */
 
 extern bool pfs_enabled;
-extern bool pfs_processlist_enabled;
 
 /** Global ref count for plugin and component events. */
 extern std::atomic<uint32> pfs_unload_plugin_ref_count;
@@ -249,6 +248,8 @@ struct PFS_instr_class {
   }
 
   bool has_auto_seqnum() const { return m_flags & PSI_FLAG_AUTO_SEQNUM; }
+
+  bool has_memory_cnt() const { return m_flags & PSI_FLAG_MEM_COLLECT; }
 
   void enforce_valid_flags(uint allowed_flags) {
     /* Reserved for future use. */

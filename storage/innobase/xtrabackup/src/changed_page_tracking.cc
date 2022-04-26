@@ -91,7 +91,8 @@ xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
   }
 
   ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> buf;
-  buf.alloc(page_tracking_read_buffer_size);
+  buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                    ut::Count{page_tracking_read_buffer_size});
   size_t hdr_len = page_tracking_read_buffer_size;
 
   space_map = new xb_space_map;

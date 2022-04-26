@@ -191,6 +191,9 @@
 #define MACHINE_TYPE "@MYSQL_MACHINE_TYPE@"
 #cmakedefine LINUX_ALPINE 1
 #cmakedefine LINUX_SUSE
+#cmakedefine LINUX_RHEL6
+#cmakedefine LINUX_RHEL7
+#cmakedefine LINUX_RHEL8
 #cmakedefine HAVE_LINUX_LARGE_PAGES 1
 #cmakedefine HAVE_SOLARIS_LARGE_PAGES 1
 #cmakedefine HAVE_SOLARIS_ATOMIC 1
@@ -232,6 +235,8 @@
 #cmakedefine PLUGINDIR "@PLUGINDIR@"
 #cmakedefine DEFAULT_SYSCONFDIR "@DEFAULT_SYSCONFDIR@"
 #cmakedefine DEFAULT_TMPDIR @DEFAULT_TMPDIR@
+#cmakedefine MYSQL_ICU_DATADIR "@MYSQL_ICU_DATADIR@"
+#cmakedefine ICUDT_DIR "@ICUDT_DIR@"
 /*
  * Readline
  */
@@ -325,10 +330,6 @@
 #define HAVE_FCNTL_H 1
 #define HAVE_GETADDRINFO 1
 #define HAVE_INTTYPES_H 1
-/* libevent's select.c is not Windows compatible */
-#ifndef _WIN32
-#define HAVE_SELECT 1
-#endif
 #define HAVE_SIGNAL_H 1
 #define HAVE_STDARG_H 1
 #define HAVE_STDINT_H 1

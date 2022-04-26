@@ -53,6 +53,7 @@
 #include "sql/handler.h"
 #include "sql/item.h"
 #include "sql/item_cmpfunc.h"
+#include "sql/join_optimizer/access_path.h"
 #include "sql/key.h"
 #include "sql/merge_sort.h"  // merge_sort
 #include "sql/nested_join.h"
@@ -62,7 +63,8 @@
 #include "sql/opt_trace_context.h"
 #include "sql/query_options.h"
 #include "sql/query_result.h"
-#include "sql/range_optimizer/range_optimizer.h"  // QUICK_SELECT_I
+#include "sql/range_optimizer/path_helpers.h"
+#include "sql/range_optimizer/range_optimizer.h"
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_const.h"
@@ -134,7 +136,10 @@ double find_cost_for_ref(const THD *thd, TABLE *table, unsigned keyno,
                          double num_rows, double worst_seeks) {
   // Limit the number of matched rows
   num_rows = std::min(num_rows, double(thd->variables.max_seeks_for_key));
-  if (table->covering_keys.is_set(keyno)) {
+  //  The costs can be calculated only if the table is materialized.
+  if (table->pos_in_table_list->is_derived_unfinished_materialization()) {
+    return worst_seeks;
+  } else if (table->covering_keys.is_set(keyno)) {
     // We can use only index tree
     const Cost_estimate index_read_cost =
         table->file->index_scan_cost(keyno, 1, num_rows);
@@ -145,7 +150,7 @@ double find_cost_for_ref(const THD *thd, TABLE *table, unsigned keyno,
         table->file->read_cost(keyno, 1, num_rows);
     return table_read_cost.total_cost();
   } else
-    return min(table->cost_model()->page_read_cost(num_rows), worst_seeks);
+    return min(table->file->page_read_cost(keyno, num_rows), worst_seeks);
 }
 
 /**
@@ -194,7 +199,8 @@ Key_use *Optimize_table_order::find_best_ref(
     const double prefix_rowcount, bool *found_condition,
     table_map *ref_depend_map, uint *used_key_parts) {
   // Skip finding best_ref if quick object is forced by hint.
-  if (tab->quick() && tab->quick()->forced_by_hint) return nullptr;
+  if (tab->range_scan() && get_forced_by_hint(tab->range_scan()))
+    return nullptr;
 
   // Return value - will point to Key_use of the index with cheapest ref access
   Key_use *best_ref = nullptr;
@@ -294,6 +300,10 @@ Key_use *Optimize_table_order::find_best_ref(
              a) the condition for an earlier keypart is of type
                 ref_or_null, and
              b) the condition for the current keypart is ref_or_null
+          4) The keyuse->value is a const-NULL-value and the key
+             is not null_rejecting, while the index key will require a
+             full TABLE_SCAN on NULL keys
+             (Typically a NDB HASH index on a nullable column.)
         */
         if ((excluded_tables & keyuse->used_tables) ||        // 1)
             (remaining_tables & keyuse->used_tables) ||       // 2)
@@ -301,6 +311,19 @@ Key_use *Optimize_table_order::find_best_ref(
              (keyuse->optimize & KEY_OPTIMIZE_REF_OR_NULL)))  // 3b)
           continue;
 
+        if (!(keyuse->used_tables & ~join->const_table_map)) {
+          // keyuse can be const-evaluated, if needed, using the const tables.
+          // Note that if the key is null_rejecting, it is better to still use
+          // the key. RefIterator 'Late NULL filtering' eliminates the Read().
+          if (!keyuse->null_rejecting &&  // 4)
+              keyuse->val->is_null() &&
+              (table->file->index_flags(key, 0, false) &
+               HA_TABLE_SCAN_ON_NULL)) {
+            continue;
+          }
+          const_part |= keyuse->keypart_map;
+        }
+        found_part |= keyuse->keypart_map;
         if (keypart != FT_KEYPART) {
           const bool keyinfo_maybe_null =
               keyinfo->key_part[keypart].field->is_nullable() ||
@@ -309,10 +332,6 @@ Key_use *Optimize_table_order::find_best_ref(
               !keyinfo_maybe_null)
             null_rejecting_part |= keyuse->keypart_map;
         }
-        found_part |= keyuse->keypart_map;
-        if (!(keyuse->used_tables & ~join->const_table_map))
-          const_part |= keyuse->keypart_map;
-
         const double cur_distinct_prefix_rowcount =
             prev_record_reads(join, idx, (table_deps | keyuse->used_tables));
         if (cur_distinct_prefix_rowcount < best_distinct_prefix_rowcount) {
@@ -789,9 +808,9 @@ double Optimize_table_order::calculate_scan_cost(
     than FULL: so if RANGE is present, it's always preferred to FULL.
     Here we estimate its cost.
   */
-  if (tab->quick()) {
+  if (tab->range_scan()) {
     trace_access_scan->add_alnum("access_type", "range");
-    tab->quick()->trace_quick_description(&thd->opt_trace);
+    trace_quick_description(tab->range_scan(), &thd->opt_trace);
     /*
       For each record we:
       - read record range through 'quick'
@@ -802,7 +821,7 @@ double Optimize_table_order::calculate_scan_cost(
       account here for range/index_merge access. Find out why this is so.
     */
     scan_and_filter_cost =
-        prefix_rowcount * (tab->quick()->cost_est.total_cost() +
+        prefix_rowcount * (tab->range_scan()->cost +
                            cost_model->row_evaluate_cost(
                                tab->found_records - *rows_after_filtering));
   } else {
@@ -1059,9 +1078,9 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
       best_read_cost <= tab->read_time)     // (1b)
   {
     // "scan" means (full) index scan or (full) table scan.
-    if (tab->quick()) {
+    if (tab->range_scan()) {
       trace_access_scan.add_alnum("access_type", "range");
-      tab->quick()->trace_quick_description(trace);
+      trace_quick_description(tab->range_scan(), &thd->opt_trace);
     } else
       trace_access_scan.add_alnum("access_type", "scan");
 
@@ -1072,33 +1091,32 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
         .add("rows", tab->found_records)
         .add("chosen", false)
         .add_alnum("cause", "cost");
-  } else if (tab->quick() && best_ref &&              // (2)
-             tab->quick()->index == best_ref->key &&  // (2)
-             (used_key_parts >=
-              table->quick_key_parts[best_ref->key]) &&  // (2)
-             (tab->quick()->get_type() != QS_TYPE_GROUP_MIN_MAX) &&
-             (tab->quick()->get_type() != QS_TYPE_SKIP_SCAN))  // (2)
+  } else if (tab->range_scan() && best_ref &&                            // (2)
+             used_index(tab->range_scan()) == best_ref->key &&           // (2)
+             used_key_parts >= table->quick_key_parts[best_ref->key] &&  // (2)
+             tab->range_scan()->type != AccessPath::GROUP_INDEX_SKIP_SCAN &&
+             tab->range_scan()->type != AccessPath::INDEX_SKIP_SCAN)  // (2)
   {
     trace_access_scan.add_alnum("access_type", "range");
-    tab->quick()->trace_quick_description(trace);
+    trace_quick_description(tab->range_scan(), &thd->opt_trace);
     trace_access_scan.add("chosen", false)
         .add_alnum("cause", "heuristic_index_cheaper");
   } else if ((table->file->ha_table_flags() & HA_TABLE_SCAN_ON_INDEX) &&  //(3)
              !table->covering_keys.is_clear_all() && best_ref &&          //(3)
-             (!tab->quick() ||                                            //(3)
-              (tab->quick()->get_type() == QS_TYPE_ROR_INTERSECT &&       //(3)
-               best_ref->read_cost <
-                   tab->quick()->cost_est.total_cost())))  //(3)
+             (!tab->range_scan() ||                                       //(3)
+              (tab->range_scan()->type ==
+                   AccessPath::ROWID_INTERSECTION &&             //(3)
+               best_ref->read_cost < tab->range_scan()->cost)))  //(3)
   {
-    if (tab->quick()) {
+    if (tab->range_scan()) {
       trace_access_scan.add_alnum("access_type", "range");
-      tab->quick()->trace_quick_description(trace);
+      trace_quick_description(tab->range_scan(), &thd->opt_trace);
     } else
       trace_access_scan.add_alnum("access_type", "scan");
 
     trace_access_scan.add("chosen", false)
         .add_alnum("cause", "covering_index_better_than_full_scan");
-  } else if ((table->force_index && best_ref && !tab->quick()))  // (4)
+  } else if ((table->force_index && best_ref && !tab->range_scan()))  // (4)
   {
     trace_access_scan.add_alnum("access_type", "scan")
         .add("chosen", false)
@@ -1358,8 +1376,8 @@ float calculate_condition_filter(const JOIN_TAB *const tab,
         curr_ku++;
       }
     }
-  } else if (tab->quick())
-    tab->quick()->get_fields_used(&table->tmp_set);
+  } else if (tab->range_scan())
+    get_fields_used(tab->range_scan(), &table->tmp_set);
 
   /*
     Early exit if the only conditions for the table refers to columns
@@ -1726,8 +1744,8 @@ bool Optimize_table_order::semijoin_loosescan_fill_driving_table_position(
 
     // Ok, can use the strategy
 
-    if (tab->quick() && tab->quick()->index == key &&
-        tab->quick()->get_type() == QS_TYPE_RANGE) {
+    if (tab->range_scan() && used_index(tab->range_scan()) == key &&
+        tab->range_scan()->type == AccessPath::INDEX_RANGE_SCAN) {
       quick_uses_applicable_index = true;
       quick_max_keypart = max_keypart;
     }
@@ -1793,13 +1811,13 @@ bool Optimize_table_order::semijoin_loosescan_fill_driving_table_position(
 
   if (quick_uses_applicable_index && idx == join->const_tables) {
     Opt_trace_object trace_range(trace, "range_scan");
-    trace_range.add("cost", tab->quick()->cost_est);
+    trace_range.add("cost", tab->range_scan()->cost);
     // @TODO: this the right part restriction:
-    if (tab->quick()->cost_est.total_cost() < pos->read_cost) {
-      pos->loosescan_key = tab->quick()->index;
-      pos->read_cost = tab->quick()->cost_est.total_cost();
+    if (tab->range_scan()->cost < pos->read_cost) {
+      pos->loosescan_key = used_index(tab->range_scan());
+      pos->read_cost = tab->range_scan()->cost;
       // this is ok because idx == join->const_tables
-      pos->rows_fetched = rows2double(tab->quick()->records);
+      pos->rows_fetched = tab->range_scan()->num_output_rows;
       pos->loosescan_parts = quick_max_keypart + 1;
       pos->key = nullptr;
       trace_range.add("chosen", true);

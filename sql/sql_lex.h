@@ -59,14 +59,15 @@
 #include "mysql/service_mysql_alloc.h"  // my_free
 #include "mysql_com.h"
 #include "mysqld_error.h"
-#include "prealloced_array.h"  // Prealloced_array
-#include "sql/composite_iterators.h"
+#include "prealloced_array.h"                // Prealloced_array
 #include "sql/dd/info_schema/table_stats.h"  // dd::info_schema::Table_stati...
 #include "sql/dd/info_schema/tablespace_stats.h"  // dd::info_schema::Tablesp...
 #include "sql/enum_query_type.h"
 #include "sql/handler.h"
 #include "sql/item.h"            // Name_resolution_context
 #include "sql/item_subselect.h"  // Subquery_strategy
+#include "sql/iterators/composite_iterators.h"
+#include "sql/iterators/row_iterator.h"
 #include "sql/join_optimizer/materialize_path_parameters.h"
 #include "sql/key_spec.h"  // KEY_CREATE_INFO
 #include "sql/mdl.h"
@@ -74,7 +75,6 @@
 #include "sql/parse_tree_node_base.h"  // enum_parsing_context
 #include "sql/parser_yystype.h"
 #include "sql/query_options.h"  // OPTION_NO_CONST_TABLES
-#include "sql/row_iterator.h"
 #include "sql/set_var.h"
 #include "sql/sql_array.h"
 #include "sql/sql_connect.h"  // USER_RESOURCES
@@ -3867,6 +3867,11 @@ struct LEX : public Query_tables_list {
     clause. Otherwise this is 0.
   */
   uint reparse_common_table_expr_at;
+  /**
+    If currently re-parsing a condition which is pushed down to a derived
+    table, this will be set to true.
+  */
+  bool reparse_derived_table_condition{false};
 
   enum SSL_type ssl_type; /* defined in violite.h */
   enum enum_duplicates duplicates;
@@ -4325,6 +4330,18 @@ struct LEX : public Query_tables_list {
     m_is_replication_deprecated_syntax_used = true;
   }
 
+ private:
+  bool m_was_replication_command_executed{false};
+
+ public:
+  bool was_replication_command_executed() const {
+    return m_was_replication_command_executed;
+  }
+
+  void set_was_replication_command_executed() {
+    m_was_replication_command_executed = true;
+  }
+
   bool set_channel_name(LEX_CSTRING name = {});
 };
 
@@ -4617,6 +4634,37 @@ inline bool is_invalid_string(const LEX_CSTRING &string_val,
         hexbuf, string_val.str + valid_len,
         static_cast<uint>(std::min<size_t>(string_val.length - valid_len, 3)));
     my_error(ER_INVALID_CHARACTER_STRING, MYF(0), charset_info->csname, hexbuf);
+    return true;
+  }
+  return false;
+}
+
+/**
+   Check if the given string is invalid using the system charset.
+
+   @param       string_val       Reference to the string.
+   @param       charset_info     Pointer to charset info.
+   @param[out]  invalid_sub_str  If string has an invalid encoding then invalid
+                                 string in printable ASCII format is stored.
+
+   @return true if the string has an invalid encoding using
+                the system charset else false.
+*/
+
+inline bool is_invalid_string(const LEX_CSTRING &string_val,
+                              const CHARSET_INFO *charset_info,
+                              std::string &invalid_sub_str) {
+  size_t valid_len;
+  bool len_error;
+
+  if (validate_string(charset_info, string_val.str, string_val.length,
+                      &valid_len, &len_error)) {
+    char printable_buff[32];
+    convert_to_printable(
+        printable_buff, sizeof(printable_buff), string_val.str + valid_len,
+        static_cast<uint>(std::min<size_t>(string_val.length - valid_len, 3)),
+        charset_info, 3);
+    invalid_sub_str = printable_buff;
     return true;
   }
   return false;

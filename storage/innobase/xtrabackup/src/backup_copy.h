@@ -83,8 +83,6 @@ bool decrypt_decompress();
 #ifdef HAVE_VERSION_CHECK
 void version_check();
 #endif
-bool is_path_separator(char);
 bool directory_exists(const char *dir, bool create);
-int mkdirp(const char *pathname, int Flags, myf MyFlags);
 
 #endif

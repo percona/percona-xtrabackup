@@ -9541,7 +9541,7 @@ ER_SDI_GET_KEYS_INVALID_TABLESPACE
 ER_CHANGE_RPL_SRC_WRONG_COMPRESSION_ALGORITHM_SIZE
   eng "Value too long setting SOURCE_COMPRESSION_ALGORITHMS option to a %d chars long string for channel '%.192s'."
 
-ER_WARN_DEPRECATED_TLS_VERSION_FOR_CHANNEL_CLI
+OBSOLETE_ER_WARN_DEPRECATED_TLS_VERSION_FOR_CHANNEL_CLI
   eng "A deprecated TLS version %s is enabled for channel %s. Please use TLSv1.2 or higher."
 
 ER_CANT_USE_SAME_UUID_AS_VIEW_CHANGE_UUID
@@ -9651,6 +9651,55 @@ ER_DA_SSL_FIPS_MODE_ERROR
 
 ER_VALUE_OUT_OF_RANGE
   eng "%s=%llu is outside the valid range [%llu,%llu]. %llu will be used."
+
+ER_FULLTEXT_WITH_ROLLUP
+  eng "MATCH does not support ROLLUP columns."
+
+ER_REGEXP_MISSING_RESOURCE
+  eng "Missing locale resource in regular expression library."
+
+ER_WARN_REGEXP_USING_DEFAULT
+  eng "Regular expression library used default (root) locale."
+
+ER_REGEXP_MISSING_FILE
+  eng "Missing data file in regular expression library."
+
+ER_WARN_DEPRECATED_COLLATION
+  eng "'%-.64s' is a collation of the deprecated character set %s. Please consider using %s with an appropriate collation instead."
+
+ER_CONCURRENT_PROCEDURE_USAGE
+  eng "The %s was called when there was already another concurrent call to this procedure. No action was taken. Wait for other calls to %s to finish before retrying."
+
+ER_DA_GLOBAL_CONN_LIMIT
+  eng "Connection closed. Global connection memory limit %llu bytes exceeded. Consumed %llu bytes."
+
+ER_DA_CONN_LIMIT
+  eng "Connection closed. Connection memory limit %llu bytes exceeded. Consumed %llu bytes."
+
+ER_ALTER_OPERATION_NOT_SUPPORTED_REASON_COLUMN_TYPE_INSTANT
+  eng "Need to rebuild the table to change column type"
+
+ER_WARN_SF_UDF_NAME_COLLISION
+  eng "This function '%-.192s' has the same name as a loadable function (UDF). To invoke the stored function, it is necessary to qualify it with the schema name."
+
+ER_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
+  eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
+
+ER_TOO_MANY_WINDOWS
+  eng "Too many windows in SELECT: %d. Maximum allowed is %d. Use named windows to share windows between window functions."
+
+ER_MYSQLBACKUP_CLIENT_MSG
+  eng "%s"
+
+ER_COMMENT_CONTAINS_INVALID_STRING
+  eng "Comment for %s '%s' contains an invalid %s character string: '%.64s'."
+
+ER_DEFINITION_CONTAINS_INVALID_STRING
+  eng "Definition of %s '%-.192s.%-.192s' contains an invalid %s character string: '%.64s'."
+
+ER_CANT_EXECUTE_COMMAND_WITH_ASSIGNED_GTID_NEXT
+  eng "Can't execute the given command when @@SESSION.GTID_NEXT == 'UUID:NUMBER'."
+
 
 #
 #  End of 8.0 error messages (server-to-client).

@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "backup_copy.h"
 #include "backup_mysql.h"
 #include "common.h"
+#include "file_utils.h"
 #include "os0event.h"
 #include "sql_thd_internal_api.h"
 #include "xb0xb.h"
@@ -41,8 +42,10 @@ constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
 
 Redo_Log_Reader::Redo_Log_Reader() {
-  log_hdr_buf.alloc(LOG_FILE_HDR_SIZE);
-  log_buf.alloc(redo_log_read_buffer_size);
+  log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                            ut::Count{LOG_FILE_HDR_SIZE});
+  log_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                        ut::Count{redo_log_read_buffer_size});
 }
 
 bool Redo_Log_Reader::find_start_checkpoint_lsn() {
@@ -63,12 +66,12 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
       mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_NO);
 
   while (true) {
-    err = fil_io(IORequest(IORequest::READ), true,
-                 page_id_t(log_sys->files_space_id, 0), univ_page_size, 0,
-                 LOG_FILE_HDR_SIZE, log_hdr_buf, nullptr);
+    err = fil_redo_io(IORequest(IORequest::LOG | IORequest::READ),
+                      page_id_t(log_sys->files_space_id, 0), univ_page_size, 0,
+                      LOG_FILE_HDR_SIZE, log_hdr_buf);
 
     if (err != DB_SUCCESS) {
-      xb::error() << "fil_io() failed.";
+      xb::error() << "fil_redo_io() failed.";
       return (false);
     }
 
@@ -423,7 +426,10 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn,
   return (true);
 }
 
-Redo_Log_Writer::Redo_Log_Writer() { scratch_buf.alloc(16 * 1024 * 1024); }
+Redo_Log_Writer::Redo_Log_Writer() {
+  scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                            ut::Count{16 * 1024 * 1024});
+}
 
 bool Redo_Log_Writer::create_logfile(const char *name) {
   MY_STAT stat_info;
@@ -487,8 +493,10 @@ bool Redo_Log_Writer::write_buffer(byte *buf, size_t len) {
 }
 
 Archived_Redo_Log_Reader::Archived_Redo_Log_Reader() {
-  log_buf.alloc(redo_log_read_buffer_size);
-  scratch_buf.alloc(UNIV_PAGE_SIZE_MAX);
+  log_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                        ut::Count{redo_log_read_buffer_size});
+  scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                            ut::Count{UNIV_PAGE_SIZE_MAX});
 }
 
 void Archived_Redo_Log_Reader::set_fd(File fd) { file = fd; }
@@ -578,7 +586,7 @@ void Archived_Redo_Log_Monitor::close() { os_event_destroy(event); }
 void Archived_Redo_Log_Monitor::start() {
   thread = os_thread_create(PFS_NOT_INSTRUMENTED, 0, [this] { thread_func(); });
   thread.start();
-  os_event_wait_time_low(event, 100 * 1000, 0);
+  os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
   debug_sync_point("stop_before_redo_archive");
 }
 
@@ -758,7 +766,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
     if (exists) {
       break;
     }
-    os_event_wait_time_low(event, 100 * 1000, 0);
+    os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
     os_event_reset(event);
   }
 
@@ -773,7 +781,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
     }
 
     ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> buf;
-    buf.alloc(OS_FILE_LOG_BLOCK_SIZE);
+    buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                      ut::Count{OS_FILE_LOG_BLOCK_SIZE});
 
     size_t hdr_len = OS_FILE_LOG_BLOCK_SIZE;
     while (hdr_len > 0 && !stopped) {
@@ -784,7 +793,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
         my_thread_end();
         return;
       }
-      os_event_wait_time_low(event, 100 * 1000, 0);
+      os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
       os_event_reset(event);
       hdr_len -= n_read;
     }
@@ -794,7 +803,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
       archive_first_block_zero = true;
       hdr_len = HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE;
       ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> buf2;
-      buf2.alloc(HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE);
+      buf2.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                         ut::Count{HEADER_BLOCK_SIZE - OS_FILE_LOG_BLOCK_SIZE});
       /* Read remaining header of length (4096 - 512) bytes */
       while (hdr_len > 0 && !stopped) {
         size_t n_read = my_read(file, buf2, hdr_len, MYF(MY_WME));
@@ -804,7 +814,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
           my_thread_end();
           return;
         }
-        os_event_wait_time_low(event, 100 * 1000, 0);
+        os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
         os_event_reset(event);
         hdr_len -= n_read;
       }
@@ -819,13 +829,14 @@ void Archived_Redo_Log_Monitor::thread_func() {
           my_thread_end();
           return;
         }
-        os_event_wait_time_low(event, 100 * 1000, 0);
+        os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
         os_event_reset(event);
         hdr_len -= n_read;
       }
       if (srv_redo_log_encrypt) {
         ut::aligned_array_pointer<byte, OS_FILE_LOG_BLOCK_SIZE> scratch_buf;
-        scratch_buf.alloc(OS_FILE_LOG_BLOCK_SIZE);
+        scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
+                                  ut::Count{OS_FILE_LOG_BLOCK_SIZE});
         IORequest req_type(IORequestLogRead);
         fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
         fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
@@ -849,7 +860,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
   }
 
   while (!stopped) {
-    os_event_wait_time_low(event, 100 * 1000, 0);
+    os_event_wait_time_low(event, std::chrono::milliseconds{100}, 0);
     os_event_reset(event);
   }
 
@@ -1143,7 +1154,8 @@ void Redo_Log_Data_Manager::copy_func() {
       debug_sync_point("xtrabackup_copy_logfile_pause");
 
       os_event_reset(event);
-      os_event_wait_time_low(event, copy_interval * 1000UL, 0);
+      os_event_wait_time_low(event, std::chrono::milliseconds{copy_interval},
+                             0);
     }
   }
 

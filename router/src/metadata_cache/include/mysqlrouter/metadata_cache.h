@@ -26,6 +26,7 @@
 #define MYSQLROUTER_METADATA_CACHE_INCLUDED
 
 #include <atomic>
+#include <chrono>
 #include <exception>
 #include <list>
 #include <map>
@@ -41,7 +42,6 @@
 #include "mysql_router_thread.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/datatypes.h"
-#include "mysqlrouter/utils.h"
 #include "tcp_address.h"
 
 #ifdef _WIN32
@@ -66,7 +66,6 @@ enum class metadata_errc {
   no_rw_node_needed,
   no_metadata_server_reached,
   no_metadata_read_successful,
-  cluster_marked_as_invalid,
   metadata_refresh_terminated,
   cluster_not_found,
   invalid_cluster_type,
@@ -97,8 +96,6 @@ inline const std::error_category &metadata_cache_category() noexcept {
           return "no metadata server accessible";
         case metadata_errc::no_metadata_read_successful:
           return "did not successfully read metadata from any metadata server";
-        case metadata_errc::cluster_marked_as_invalid:
-          return "cluster marked as invalid in the metadata";
         case metadata_errc::metadata_refresh_terminated:
           return "metadata refresh terminated";
         case metadata_errc::cluster_not_found:
@@ -121,21 +118,26 @@ inline std::error_code make_error_code(metadata_errc e) noexcept {
   return std::error_code(static_cast<int>(e), metadata_cache_category());
 }
 
-extern const uint16_t kDefaultMetadataPort;
-extern const std::string kDefaultMetadataAddress;
-extern const std::string kDefaultMetadataUser;
-extern const std::string kDefaultMetadataPassword;
-extern const std::chrono::milliseconds kDefaultMetadataTTL;
-extern const std::chrono::milliseconds kDefaultAuthCacheTTL;
-extern const std::chrono::milliseconds kDefaultAuthCacheRefreshInterval;
-extern const std::string kDefaultMetadataCluster;
-extern const unsigned int kDefaultConnectTimeout;
-extern const unsigned int kDefaultReadTimeout;
+constexpr const uint16_t kDefaultMetadataPort{32275};
+constexpr const std::string_view kDefaultMetadataAddress{"127.0.0.1:32275"};
+constexpr const std::string_view kDefaultMetadataUser{""};
+constexpr const std::string_view kDefaultMetadataPassword{""};
+constexpr const std::chrono::milliseconds kDefaultMetadataTTL{500};
+constexpr const std::chrono::milliseconds kDefaultAuthCacheTTL{
+    std::chrono::seconds{-1}};
+constexpr const std::chrono::milliseconds kDefaultAuthCacheRefreshInterval{
+    2000};
+// blank cluster name means pick the 1st (and only) cluster
+constexpr const std::string_view kDefaultMetadataCluster{""};
+constexpr const unsigned int kDefaultConnectTimeout{30};
+constexpr const unsigned int kDefaultReadTimeout{30};
 
-extern const std::string kNodeTagHidden;
-extern const std::string kNodeTagDisconnectWhenHidden;
-extern const bool kNodeTagHiddenDefault;
-extern const bool kNodeTagDisconnectWhenHiddenDefault;
+constexpr const std::string_view kNodeTagHidden{"_hidden"};
+constexpr const std::string_view kNodeTagDisconnectWhenHidden{
+    "_disconnect_existing_sessions_when_hidden"};
+
+constexpr const bool kNodeTagHiddenDefault{false};
+constexpr const bool kNodeTagDisconnectWhenHiddenDefault{true};
 
 enum class ClusterStatus {
   AvailableWritable,

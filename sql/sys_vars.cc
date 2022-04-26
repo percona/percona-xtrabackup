@@ -126,9 +126,10 @@
 #include "sql/sp_head.h"          // SP_PSI_STATEMENT_INFO_COUNT
 #include "sql/sql_backup_lock.h"  // is_instance_backup_locked
 #include "sql/sql_lex.h"
-#include "sql/sql_locale.h"     // my_locale_by_number
-#include "sql/sql_parse.h"      // killall_non_super_threads
-#include "sql/sql_tmp_table.h"  // internal_tmp_mem_storage_engine_names
+#include "sql/sql_locale.h"            // my_locale_by_number
+#include "sql/sql_parse.h"             // killall_non_super_threads
+#include "sql/sql_show_processlist.h"  // pfs_processlist_enabled
+#include "sql/sql_tmp_table.h"         // internal_tmp_mem_storage_engine_names
 #include "sql/ssl_acceptor_context_operator.h"
 #include "sql/system_variables.h"
 #include "sql/table_cache.h"  // Table_cache_manager
@@ -463,6 +464,13 @@ static Sys_var_bool Sys_pfs_consumer_events_stages_history_long(
     "Default startup value for the events_stages_history_long consumer.",
     READ_ONLY NOT_VISIBLE
         GLOBAL_VAR(pfs_param.m_consumer_events_stages_history_long_enabled),
+    CMD_LINE(OPT_ARG), DEFAULT(false), PFS_TRAILING_PROPERTIES);
+
+static Sys_var_bool Sys_pfs_consumer_events_statements_cpu(
+    "performance_schema_consumer_events_statements_cpu",
+    "Default startup value for the events_statements_cpu consumer.",
+    READ_ONLY NOT_VISIBLE
+        GLOBAL_VAR(pfs_param.m_consumer_events_statements_cpu_enabled),
     CMD_LINE(OPT_ARG), DEFAULT(false), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_bool Sys_pfs_consumer_events_statements_current(
@@ -3325,6 +3333,48 @@ static Sys_var_flagset Sys_optimizer_switch(
     optimizer_switch_names, DEFAULT(OPTIMIZER_SWITCH_DEFAULT), NO_MUTEX_GUARD,
     NOT_IN_BINLOG, ON_CHECK(check_optimizer_switch), ON_UPDATE(nullptr));
 
+static PolyLock_mutex PLock_global_conn_mem_limit(&LOCK_global_conn_mem_limit);
+
+static Sys_var_ulonglong Sys_global_connection_memory_limit(
+    "global_connection_memory_limit",
+    "Maximum amount of memory all connections can consume",
+    GLOBAL_VAR(global_conn_mem_limit), CMD_LINE(REQUIRED_ARG),
+#ifndef NDEBUG
+    VALID_RANGE(1, max_mem_sz), DEFAULT(max_mem_sz),
+#else
+    VALID_RANGE(1024 * 1024 * 16, max_mem_sz), DEFAULT(max_mem_sz),
+#endif
+    BLOCK_SIZE(1), &PLock_global_conn_mem_limit, NOT_IN_BINLOG,
+    ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
+static Sys_var_ulonglong Sys_connection_memory_limit(
+    "connection_memory_limit",
+    "Maximum amount of memory connection can consume",
+    SESSION_VAR(conn_mem_limit), CMD_LINE(REQUIRED_ARG),
+#ifndef NDEBUG
+    VALID_RANGE(1, max_mem_sz), DEFAULT(max_mem_sz),
+#else
+    VALID_RANGE(1024 * 1024 * 2, max_mem_sz), DEFAULT(max_mem_sz),
+#endif
+    BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_session_admin),
+    ON_UPDATE(nullptr));
+
+static Sys_var_ulong Sys_connection_memory_chunk_size(
+    "connection_memory_chunk_size",
+    "Chunk size regulating frequency of updating the global memory counter",
+    SESSION_VAR(conn_mem_chunk_size), CMD_LINE(REQUIRED_ARG),
+    VALID_RANGE(1, 1024 * 1024 * 512), DEFAULT(8912), BLOCK_SIZE(1),
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_session_admin),
+    ON_UPDATE(nullptr));
+
+static Sys_var_bool Sys_connection_global_memory_tracking(
+    "global_connection_memory_tracking",
+    "Enable updating the global memory counter and checking "
+    "the global connection memory limit exceeding",
+    SESSION_VAR(conn_global_mem_tracking), CMD_LINE(OPT_ARG), DEFAULT(false),
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_session_admin),
+    ON_UPDATE(nullptr));
+
 static Sys_var_bool Sys_var_end_markers_in_json(
     "end_markers_in_json",
     "In JSON output (\"EXPLAIN FORMAT=JSON\" and optimizer trace), "
@@ -3469,20 +3519,85 @@ static bool check_require_secure_transport(sys_var *, THD *,
 #endif
 }
 
+static void event_scheduler_restart(THD *thd) {
+  /*
+    Restart event scheduler if needed.
+
+    At present, turning on SUPER_READ_ONLY means that we
+    can no longer acquire an MDL to update mysql.*.
+    As a result of this, updating the "last run at ..."
+    timestamp of events fails, and the event scheduler
+    shuts down when trying to do so.
+
+    As a convenience, we restart the event scheduler when
+    [SUPER_]READ_ONLY is turned off while the scheduler is
+    enabled (in the settings), but not actually running.
+  */
+  if (Events::opt_event_scheduler == Events::EVENTS_ON) {
+    bool evsched_error;       // Did we fail to start the event scheduler?
+    int evsched_errcode = 0;  // If we failed, what was the actual error code?
+
+    /*
+      We must not hold the lock while starting the event scheduler,
+      as that will internally try to take the lock while creating a THD.
+    */
+    mysql_mutex_unlock(&LOCK_global_system_variables);
+    evsched_error = Events::start(&evsched_errcode);
+    mysql_mutex_lock(&LOCK_global_system_variables);
+
+    if (evsched_error) {
+      /*
+        The user requested a change of super_read_only.
+        That change succeeded, so we do not signal a failure here,
+        since it is only the side-effect/convenience of restarting
+        the event scheduler that failed.
+        We do however notify them of that failure, since we're
+        just that nice.
+        We also do not modify opt_event_scheduler, since user
+        intent has not changed. If this policy ever changes,
+        opt_event_scheduler should probably be unset when the
+        event scheduler shuts down.
+      */
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_EVENT_SET_VAR_ERROR,
+                          ER_THD(thd, ER_EVENT_SET_VAR_ERROR), evsched_errcode);
+    }
+  }
+}
+
 static bool fix_read_only(sys_var *self, THD *thd, enum_var_type) {
   bool result = true;
   bool new_read_only = read_only;  // make a copy before releasing a mutex
   DBUG_TRACE;
 
+  /*
+    If we're not newly turning on READ_ONLY, we don't have to worry
+    about locks.
+  */
   if (read_only == false || read_only == opt_readonly) {
+    opt_readonly = read_only;
+
+    /*
+      If we're turning off READ_ONLY here, turn off
+      SUPER_READ_ONLY as well (if on).
+    */
     if (opt_super_readonly && !read_only) {
       opt_super_readonly = false;
       super_read_only = false;
+
+      // Do this last as it temporarily releases the global sys-var lock.
+      event_scheduler_restart(thd);
     }
-    opt_readonly = read_only;
     return false;
   }
 
+  /*
+    Check whether we can change read_only state without causing a deadlock.
+
+    Not to be confused with check_readonly(), which checks in a
+    standardized way whether the current settings of opt_readonly
+    and opt_super_readonly prohibit certain operations.
+  */
   if (check_read_only(self, thd, nullptr))  // just in case
     goto end;
 
@@ -3493,11 +3608,15 @@ static bool fix_read_only(sys_var *self, THD *thd, enum_var_type) {
       - FLUSH TABLES WITH READ LOCK
       - SET GLOBAL READ_ONLY = 1
     */
+    opt_readonly = read_only;
+
     if (opt_super_readonly && !read_only) {
       opt_super_readonly = false;
       super_read_only = false;
+
+      // Do this last as it temporarily releases the global sys-var lock.
+      event_scheduler_restart(thd);
     }
-    opt_readonly = read_only;
     return false;
   }
 
@@ -3547,50 +3666,8 @@ static bool fix_super_read_only(sys_var *, THD *thd, enum_var_type type) {
   if (super_read_only == false) {
     opt_super_readonly = false;
 
-    /*
-      Restart event scheduler if needed.
-
-      At present, turning on super_read_only means that we
-      can no longer acquire an MDL to update mysql.*.
-      As a result of this, updating the "last run at ..."
-      timestamp of events fails, and the event scheduler
-      shuts down when trying to do so.
-
-      As a convenience, we restart the event scheduler when
-      super_read_only is turned off, and the scheduler is
-      turned on (in the settings), but not actually running
-      (anymore).
-    */
-    if (Events::opt_event_scheduler == Events::EVENTS_ON) {
-      bool evsched_error;       // Did we fail to start the event scheduler?
-      int evsched_errcode = 0;  // If we failed, what was the actual error code?
-
-      /*
-        We must not hold the lock while starting the event scheduler,
-        as that will internally try to take the lock while creating a THD.
-      */
-      mysql_mutex_unlock(&LOCK_global_system_variables);
-      evsched_error = Events::start(&evsched_errcode);
-      mysql_mutex_lock(&LOCK_global_system_variables);
-
-      if (evsched_error) {
-        /*
-          The user requested a change of super_read_only.
-          That change succeeded, so we do not signal a failure here,
-          since it is only the side-effect/convenience of restarting
-          the event scheduler that failed.
-          We do however notify them of that failure, since we're
-          just that nice.
-          We also do not modify opt_event_scheduler, since user
-          intent has not changed. If this policy ever changes,
-          opt_event_scheduler should probably be unset when the
-          event scheduler shuts down.
-        */
-        push_warning_printf(
-            thd, Sql_condition::SL_WARNING, ER_EVENT_SET_VAR_ERROR,
-            ER_THD(thd, ER_EVENT_SET_VAR_ERROR), evsched_errcode);
-      }
-    }
+    // Do this last as it temporarily releases the global sys-var lock.
+    event_scheduler_restart(thd);
 
     return false;
   }
@@ -5061,12 +5138,12 @@ static Sys_var_transaction_read_only Sys_transaction_read_only(
 
 static Sys_var_ulonglong Sys_tmp_table_size(
     "tmp_table_size",
-    "If an internal in-memory temporary table in the MEMORY storage engine "
-    "exceeds this size, MySQL will automatically convert it to an on-disk "
-    "table",
+    "If an internal in-memory temporary table in the MEMORY or TempTable "
+    "storage engine exceeds this size, MySQL will automatically convert it "
+    "to an on-disk table ",
     HINT_UPDATEABLE SESSION_VAR(tmp_table_size), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(1024, (ulonglong) ~(intptr)0), DEFAULT(16 * 1024 * 1024),
-    BLOCK_SIZE(1));
+    VALID_RANGE(1024, std::numeric_limits<ulonglong>::max()),
+    DEFAULT(16 * 1024 * 1024), BLOCK_SIZE(1));
 
 static char *server_version_ptr;
 static Sys_var_version Sys_version(
@@ -5423,7 +5500,7 @@ static bool check_timestamp(sys_var *, THD *, set_var *var) {
 
   val = var->save_result.double_value;
   if (val != 0 &&  // this is how you set the default value
-      (val < TIMESTAMP_MIN_VALUE || val > TIMESTAMP_MAX_VALUE)) {
+      (val < TYPE_TIMESTAMP_MIN_VALUE || val > TYPE_TIMESTAMP_MAX_VALUE)) {
     ErrConvString prm(val);
     my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), "timestamp", prm.ptr());
     return true;

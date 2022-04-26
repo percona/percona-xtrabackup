@@ -467,10 +467,10 @@ bool Trigger_loader::load_triggers(THD *thd, MEM_ROOT *mem_root,
     LEX_CSTRING definer_host_name{definer_host.str, definer_host.length};
 
     // Set timeval to use for Created field.
-    timeval timestamp_value;
+    my_timeval timestamp_value;
     if (created_timestamp) {
-      timestamp_value.tv_sec = static_cast<long>(*created_timestamp / 100);
-      timestamp_value.tv_usec = (*created_timestamp % 100) * 10000;
+      timestamp_value.m_tv_sec = *created_timestamp / 100;
+      timestamp_value.m_tv_usec = (*created_timestamp % 100) * 10000;
     } else {
       // Trigger created before 5.7.2, set created value.
       timestamp_value = thd->query_start_timeval_trunc(2);
@@ -1024,6 +1024,19 @@ static bool migrate_view_to_dd(THD *thd, const FRM_context &frm_context,
              view_name.c_str());
       return true;
     }
+  }
+
+  // Validate body definition to avoid invalid UTF8 characters.
+  std::string invalid_sub_str;
+  if (is_invalid_string(LEX_CSTRING{table_list.view_body_utf8.str,
+                                    table_list.view_body_utf8.length},
+                        system_charset_info, invalid_sub_str)) {
+    // Provide contextual information
+    my_error(ER_DEFINITION_CONTAINS_INVALID_STRING, MYF(0), "view",
+             db_name.c_str(), view_name.c_str(),
+             replace_utf8_utf8mb3(system_charset_info->csname),
+             invalid_sub_str.c_str());
+    return true;
   }
 
   // View is already created, we are recreating it now.
@@ -1665,7 +1678,8 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   List_iterator<Create_field> it_create(alter_info.create_list);
 
   for (int field_no = 0; (sql_field = it_create++); field_no++) {
-    if (prepare_create_field(thd, &create_info, &alter_info.create_list,
+    if (prepare_create_field(thd, schema_name.c_str(), table_name.c_str(),
+                             &create_info, &alter_info.create_list,
                              &select_field_pos, table.file, sql_field,
                              field_no))
       return true;

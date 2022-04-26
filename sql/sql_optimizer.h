@@ -41,9 +41,9 @@
 #include "my_table_map.h"
 #include "sql/field.h"
 #include "sql/item.h"
+#include "sql/iterators/row_iterator.h"
 #include "sql/mem_root_array.h"
 #include "sql/opt_explain_format.h"  // Explain_sort_clause
-#include "sql/row_iterator.h"
 #include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
@@ -1008,6 +1008,7 @@ class JOIN {
   /** @{ Helpers for create_access_paths. */
   AccessPath *create_root_access_path_for_join();
   AccessPath *attach_access_paths_for_having_and_limit(AccessPath *path);
+  AccessPath *attach_access_path_for_delete(AccessPath *path);
   /** @} */
 
   /**
@@ -1188,7 +1189,7 @@ Item_equal *find_item_equal(COND_EQUAL *cond_equal,
   (ie., normally, if we do many, they will hit cache instead of being
   separate seeks). Given to find_cost_for_ref().
  */
-double find_worst_seeks(const Cost_model_table *cost_model, double num_rows,
+double find_worst_seeks(const TABLE *table, double num_rows,
                         double table_scan_cost);
 
 /**
@@ -1198,7 +1199,5 @@ double find_worst_seeks(const Cost_model_table *cost_model, double num_rows,
   needs to keep the comparison after the ref lookup.
  */
 bool ref_lookup_subsumes_comparison(Field *field, Item *right_item);
-
-bool HasFullTextFunction(Item *item);
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

@@ -37,7 +37,7 @@
 #include "mysqlrouter/rest_client.h"
 #include "router_component_test.h"
 #include "tcp_port_pool.h"
-#include "temp_dir.h"
+#include "test/temp_directory.h"
 
 // a placeholder that will be replaced with a valid value
 //
@@ -257,7 +257,7 @@ TEST_P(HttpServerPlainTest, ensure) {
       mysql_harness::join(
           std::vector<std::string>{mysql_harness::ConfigBuilder::build_section(
               "http_server", http_section)},
-          "\n"))};
+          ""))};
   ProcessWrapper &http_server{launch_router(
       {"-c", conf_file}, GetParam().expected_success ? 0 : EXIT_FAILURE, true,
       false, GetParam().expected_success ? 5s : -1s)};
@@ -875,8 +875,10 @@ INSTANTIATE_TEST_SUITE_P(
 const char kServerCertFile[]{"server-cert.pem"};  // 2048 bit
 const char kServerKeyFile[]{"server-key.pem"};
 const char kServerCertCaFile[]{"cacert.pem"};
+#if (OPENSSL_VERSION_NUMBER >= 0x1000200fL)
 static const char kServerCertRsa1024File[]{
     "server-sha1-1024-cert.pem"};  // 1024 bit
+#endif
 
 #ifdef EVENT__HAVE_OPENSSL
 static const char kWrongServerCertCaFile[]{"ca-sha512.pem"};
@@ -1596,7 +1598,7 @@ class HttpServerAuthTest
                                                    {"method", "basic"},
                                                    {"name", "API"},
                                                    {"require", "valid-user"}})},
-                "\n"))} {
+                ""))} {
     std::string pwf_name(
         mysql_harness::Path(conf_dir_.name()).join(passwd_filename_).str());
     std::fstream pwf{pwf_name, pwf.out};

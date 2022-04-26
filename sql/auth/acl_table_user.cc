@@ -55,12 +55,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "sql/field.h"     /* Field, Field_json, Field_enum, TYPE_OK */
 #include "sql/handler.h"   /* handler, DB_TYPE_NDBCLUSTER, handlerton */
 #include "sql/item_func.h" /* mqh_used */
-#include "sql/key.h"       /* key_copy, KEY */
-#include "sql/mysqld.h"    /* specialflag */
-#include "sql/records.h"
-#include "sql/row_iterator.h"     /* RowIterator */
-#include "sql/sql_class.h"        /* THD */
-#include "sql/sql_const.h"        /* ACL_ALLOC_BLOCK_SIZE, MAX_KEY_LENGTH */
+#include "sql/iterators/row_iterator.h" /* RowIterator */
+#include "sql/key.h"                    /* key_copy, KEY */
+#include "sql/mysqld.h"                 /* specialflag */
+#include "sql/sql_class.h"              /* THD */
+#include "sql/sql_const.h" /* ACL_ALLOC_BLOCK_SIZE, MAX_KEY_LENGTH */
+#include "sql/sql_executor.h"
 #include "sql/sql_lex.h"          /* LEX */
 #include "sql/sql_plugin.h"       /* plugin_unlock, my_plugin_lock_by_name */
 #include "sql/sql_plugin_ref.h"   /* plugin_decl, plugin_ref */
@@ -79,7 +79,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 namespace consts {
 /** Initial timestamp */
-const struct timeval BEGIN_TIMESTAMP = {0, 0};
+const my_timeval BEGIN_TIMESTAMP = {0, 0};
 
 /** Error indicating table operation error */
 const int CRITICAL_ERROR = -1;
@@ -2178,7 +2178,7 @@ int replace_user_table(THD *thd, TABLE *table, LEX_USER *combo, ulong rights,
     if (builtin_plugin && (update_password || !old_row_exists))
       thd->variables.time_zone->gmt_sec_to_TIME(
           &password_change_time,
-          (my_time_t)return_value.password_change_timestamp.tv_sec);
+          (my_time_t)return_value.password_change_timestamp.m_tv_sec);
     else
       password_change_time.time_type = MYSQL_TIMESTAMP_ERROR;
     clear_and_init_db_cache(); /* Clear privilege cache */

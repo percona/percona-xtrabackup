@@ -64,7 +64,8 @@
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/sd_notify.h"
 #include "mysql/harness/stdx/monitor.h"
-#include "utilities.h"
+#include "mysql/harness/utility/string.h"  // join
+#include "utilities.h"                     // make_range
 IMPORT_LOG_FUNCTIONS()
 
 #include "my_compiler.h"
@@ -76,7 +77,6 @@ using mysql_harness::utility::reverse;
 using mysql_harness::Config;
 using mysql_harness::Path;
 
-using std::ostringstream;
 using namespace std::chrono_literals;
 
 #if !defined(_WIN32)
@@ -203,7 +203,8 @@ static void block_all_nonfatal_signals() {
 
 // GCC defines __SANITIZE_ADDRESS
 // clang has __has_feature and 'address_sanitizer'
-#if defined(__SANITIZE_ADDRESS__) || (__has_feature(address_sanitizer))
+#if defined(__SANITIZE_ADDRESS__) || (__has_feature(address_sanitizer)) || \
+    (__has_feature(thread_sanitizer))
 #define HAS_FEATURE_ASAN
 #endif
 
@@ -629,7 +630,7 @@ const Plugin *Loader::load_from(const std::string &plugin_name,
   auto plugin = info.plugin();
   if ((plugin->abi_version & 0xFF00) != (PLUGIN_ABI_VERSION & 0xFF00) ||
       (plugin->abi_version & 0xFF) > (PLUGIN_ABI_VERSION & 0xFF)) {
-    ostringstream buffer;
+    std::ostringstream buffer;
     buffer.setf(std::ios::hex, std::ios::basefield);
     buffer.setf(std::ios::showbase);
     buffer << "Bad ABI version - plugin version: " << plugin->abi_version

@@ -240,8 +240,9 @@ std::ostream &Fil_page_header::print(std::ostream &out) const noexcept {
 @param[in]	expr	the failed assertion if not NULL
 @param[in]	file	source file containing the assertion
 @param[in]	line	line number of the assertion */
-void ut_dbg_assertion_failed(const char *expr, const char *file, ulint line) {
-  fprintf(stderr, "ibd2sdi: Assertion failure in file %s line " ULINTPF "\n",
+[[noreturn]] void ut_dbg_assertion_failed(const char *expr, const char *file,
+                                          uint64_t line) {
+  fprintf(stderr, "ibd2sdi: Assertion failure in file %s line " UINT64PF "\n",
           file, line);
 
   if (expr != nullptr) {
@@ -405,10 +406,20 @@ error::~error() {
   std::cerr << "[ERROR] ibd2sdi: " << m_oss.str() << "." << std::endl;
 }
 
+/*
+MSVS complains: Warning C4722: destructor never returns, potential memory leak.
+But, the whole point of using ib::fatal temporary object is to cause an abort.
+*/
+MY_COMPILER_DIAGNOSTIC_PUSH()
+MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4722)
+
 fatal::~fatal() {
   std::cerr << "[FATAL] ibd2sdi: " << m_oss.str() << "." << std::endl;
   ut_error;
 }
+
+// Restore the MSVS checks for Warning C4722, silenced for ib::fatal::~fatal().
+MY_COMPILER_DIAGNOSTIC_POP()
 
 /* TODO: Improve Object creation & destruction on NDEBUG */
 class dbug : public logger {
@@ -1629,8 +1640,6 @@ uint64_t ibd2sdi::copy_compressed_blob(ib_tablespace *ts,
   DBUG_TRACE;
 
   byte page_buf[UNIV_PAGE_SIZE_MAX];
-  uint64_t calc_length = 0;
-  uint64_t part_len;
   page_no_t page_num = first_blob_page_num;
   z_stream d_stream;
   int err;
@@ -1667,16 +1676,12 @@ uint64_t ibd2sdi::copy_compressed_blob(ib_tablespace *ts,
       break;
     }
 
-    part_len =
-        mach_read_from_4(page_buf + FIL_PAGE_DATA + lob::LOB_HDR_PART_LEN);
-
     page_no_t next_page_num = mach_read_from_4(page_buf + FIL_PAGE_NEXT);
     space_id_t space_id =
         mach_read_from_4(page_buf + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
 
     d_stream.next_in = page_buf + FIL_PAGE_DATA;
     d_stream.avail_in = static_cast<uInt>(page_size.physical() - FIL_PAGE_DATA);
-    calc_length += part_len;
     err = inflate(&d_stream, Z_NO_FLUSH);
     switch (err) {
       case Z_OK:
@@ -2079,7 +2084,11 @@ void ibd2sdi::dump_sdi_rec(uint64_t sdi_type, uint64_t sdi_id, byte *sdi_data,
       d.Accept(writer);
       fprintf(out_stream, "%s", _b.GetString());
     } else {
-      fwrite(sdi_data, 1, static_cast<size_t>(sdi_data_len - 1), out_stream);
+      if (fwrite(sdi_data, 1, static_cast<size_t>(sdi_data_len - 1),
+                 out_stream) != static_cast<size_t>(sdi_data_len - 1)) {
+        std::cerr << "File write error: " << ferror(out_stream) << std::endl;
+        exit(1);
+      }
     }
   }
 

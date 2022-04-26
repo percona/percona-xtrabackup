@@ -191,6 +191,8 @@ bool ndb_binlog_running = false;
 static bool ndb_binlog_tables_inited = false;  // injector_data_mutex, relaxed
 static bool ndb_binlog_is_ready = false;       // injector_data_mutex, relaxed
 
+bool ndb_binlog_is_initialized() { return ndb_binlog_is_ready; }
+
 bool ndb_binlog_is_read_only() {
   /*
     Could be called from any client thread. Need a mutex to
@@ -677,19 +679,6 @@ bool ndbcluster_binlog_init(handlerton *h) {
   return true;
 }
 
-/*
-   ndb_notify_tables_writable
-
-   Called to notify any waiting threads that Ndb tables are
-   now writable
-*/
-static void ndb_notify_tables_writable() {
-  mysql_mutex_lock(&ndbcluster_mutex);
-  ndb_setup_complete = 1;
-  mysql_cond_broadcast(&ndbcluster_cond);
-  mysql_mutex_unlock(&ndbcluster_mutex);
-}
-
 /**
   Utility class encapsulating the code which setup the 'ndb binlog thread'
   to be "connected" to the cluster.
@@ -1118,9 +1107,8 @@ bool Ndb_schema_dist_client::log_schema_op_impl(
     ndb_log_error_dump("}");
   }
 
-  int count = 0;
-
   // Wait for participants to complete the schema change
+  int count = 0;
   while (true) {
     const bool completed = ndb_schema_object->client_wait_completed(1);
     if (completed) {
@@ -1129,18 +1117,19 @@ bool Ndb_schema_dist_client::log_schema_op_impl(
       break;
     }
 
+    // Client normally relies on the coordinator to time out the schema
+    // operation when it has receieved the schema operation. Until then
+    // the client will check for timeout itself.
     count++;
-    if (count > opt_ndb_schema_dist_timeout &&
-        !ndb_schema_object->has_coordinator_received_schema_op()) {
-      // Client rely on the coordinator to time-out the schema operation.
-      // But when the client doesn't hear back from coordinator after
-      // ndb_schema_dist_timeout second(s), it implies that some thing is
-      // wrong and So, check if the coordinator has received the schema op.
+    if (ndb_schema_object->has_coordinator_received_schema_op() == false &&
+        count > opt_ndb_schema_dist_timeout) {
       ndb_log_verbose(19,
-                      "Schema events for '%s' - not received by "
-                      "the co-ordinator",
+                      "Schema events for '%s' - not received by coordinator",
                       op_name.c_str());
       ndb_log_warning("Schema dist client detected timeout");
+      // Delay the execution of client thread so that the Coordinator
+      // will receive the schema event when the schema object is valid
+      DBUG_EXECUTE_IF("ndb_stale_event_with_schema_obj", sleep(2););
       return false;
     }
 
@@ -1170,7 +1159,7 @@ bool Ndb_schema_dist_client::log_schema_op_impl(
     if (thd_killed(m_thd)) {
       ndb_log_verbose(
           19,
-          "Distribution of '%s' - client killed but waiting for co-ordinator "
+          "Distribution of '%s' - client killed but waiting for coordinator "
           "to complete!",
           op_name.c_str());
     }
@@ -1264,7 +1253,6 @@ static void ndbcluster_binlog_event_operation_teardown(THD *thd, Ndb *is_ndb,
  */
 class Ndb_schema_dist_data {
   uint m_own_nodeid;
-  uint m_max_subscribers{0};
   // List of active schema operations in this coordinator. Having an
   // active schema operation means it need to be checked
   // for timeout or request to be killed regularly
@@ -1355,7 +1343,7 @@ class Ndb_schema_dist_data {
   }
 
   void init(Ndb_cluster_connection *cluster_connection) {
-    Uint32 max_subscribers = cluster_connection->max_api_nodeid() + 1;
+    const Uint32 max_subscribers = cluster_connection->max_api_nodeid() + 1;
     m_own_nodeid = cluster_connection->node_id();
     NDB_SCHEMA_OBJECT::init(m_own_nodeid);
 
@@ -1366,8 +1354,6 @@ class Ndb_schema_dist_data {
       m_subscriber_bitmaps.emplace(node_id,
                                    new Node_subscribers(max_subscribers));
     }
-    // Remember max number of subscribers
-    m_max_subscribers = max_subscribers;
   }
 
   void release(void) {
@@ -1377,7 +1363,6 @@ class Ndb_schema_dist_data {
       delete subscriber_bitmap;
     }
     m_subscriber_bitmaps.clear();
-    m_max_subscribers = 0;
 
     // Release the prepared rename key, it's very unlikely
     // that the key is still around here, but just in case
@@ -1879,7 +1864,7 @@ class Ndb_schema_event_handler {
       if ((trans = ndb->startTransaction()) == 0) goto err;
       {
         NdbOperation *op = 0;
-        int r = 0;
+        int r [[maybe_unused]] = 0;
 
         /* read row from ndb_schema with exlusive row lock */
         r |= (op = trans->getNdbOperation(ndbtab)) == 0;
@@ -1921,7 +1906,7 @@ class Ndb_schema_event_handler {
 
       {
         NdbOperation *op = 0;
-        int r = 0;
+        int r [[maybe_unused]] = 0;
 
         /* now update the tuple */
         r |= (op = trans->getNdbOperation(ndbtab)) == 0;
@@ -3703,6 +3688,10 @@ class Ndb_schema_event_handler {
         return 0;
       }
 
+      // Delay the execution of the Binlog thread, until the client thread
+      // detects the schema distribution timeout
+      DBUG_EXECUTE_IF("ndb_stale_event_with_schema_obj", sleep(7););
+
       if (schema->node_id == own_nodeid()) {
         // This is the Coordinator who hear about this schema operation for
         // the first time. Save the list of current subscribers as participants
@@ -3714,14 +3703,13 @@ class Ndb_schema_event_handler {
                 NDB_SCHEMA_OBJECT::get(schema->db, schema->name, schema->id,
                                        schema->version),
                 NDB_SCHEMA_OBJECT::release);
-        if (!ndb_schema_object) {
-          // There is no NDB_SCHEMA_OBJECT waiting for this schema operation
-          // Unexpected since the client who started this schema op
-          // is always in same node as coordinator
-          ndbcluster::ndbrequire(false);
+        if (!ndb_schema_object ||
+            !ndb_schema_object->set_coordinator_received_schema_op()) {
+          // Schema dict client already detected the schema distribution
+          // timeout for this event. So, its a stale event dont not process
+          ndb_log_info("Coordinator received a stale schema event");
           return 0;
         }
-        ndb_schema_object->coordinator_received_schema_op();
         std::unordered_set<uint32> subscribers;
         m_schema_dist_data.get_subscriber_list(subscribers);
         ndb_schema_object->register_participants(subscribers);
@@ -4208,6 +4196,11 @@ class Ndb_schema_event_handler {
     // take the GSL properly
     assert(!m_thd_ndb->check_option(Thd_ndb::IS_SCHEMA_DIST_PARTICIPANT));
 
+    // Sleep here will make other mysql server in same cluster setup to create
+    // the schema result table in NDB before this mysql server. This also makes
+    // the create table in the connection thread to acquire GSL before the
+    // Binlog thread
+    DBUG_EXECUTE_IF("ndb_bi_sleep_before_gsl", sleep(1););
     // Protect the setup with GSL(Global Schema Lock)
     Ndb_global_schema_lock_guard global_schema_lock_guard(m_thd);
     if (global_schema_lock_guard.lock()) {
@@ -7103,8 +7096,7 @@ restart_cluster_failure:
     goto err;
   }
 
-  // Create Thd_ndb after server started when handlerton->slot has been set
-  assert(ndbcluster_hton->slot != HA_SLOT_UNDEF);
+  // Create Thd_ndb after server started
   if (!(thd_ndb = Thd_ndb::seize(thd))) {
     log_error("Failed to seize Thd_ndb object");
     goto err;
@@ -7136,7 +7128,8 @@ restart_cluster_failure:
 
     assert(m_apply_status_share == nullptr);
 
-    while (!ndbcluster_is_connected(1) || !binlog_setup.setup(thd_ndb)) {
+    while (!ndb_connection_is_ready(thd_ndb->connection, 1) ||
+           !binlog_setup.setup(thd_ndb)) {
       // Failed to complete binlog_setup, remove all existing event
       // operations from potential partial setup
       remove_all_event_operations(s_ndb, i_ndb);
@@ -7177,8 +7170,6 @@ restart_cluster_failure:
     }  // while (!ndb_binlog_setup())
 
     log_and_clear_thd_conditions(thd, condition_logging_level::WARNING);
-
-    assert(ndbcluster_hton->slot != ~(uint)0);
   }
 
   // Setup reference to ndb_apply_status share
@@ -7268,16 +7259,7 @@ restart_cluster_failure:
   log_verbose(1, "ndb tables writable");
   ndb_tdc_close_cached_tables();
 
-  /*
-     Signal any waiting thread that ndb table setup is
-     now complete
-  */
-  ndb_notify_tables_writable();
-
-  {
-    static LEX_CSTRING db_lex_cstr = EMPTY_CSTR;
-    thd->reset_db(db_lex_cstr);
-  }
+  thd->reset_db(EMPTY_CSTR);
 
   log_verbose(1, "Startup and setup completed");
 

@@ -28,8 +28,9 @@
 #include <chrono>
 #include <string>
 #include <vector>
-#include "mysql_session.h"
+
 #include "mysqlrouter/cluster_metadata.h"
+#include "mysqlrouter/mysql_session.h"
 
 std::string create_state_file_content(
     const std::string &cluster_type_specific_id,
@@ -65,5 +66,7 @@ bool wait_connection_dropped(
     std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
 size_t count_str_occurences(const std::string &s, const std::string &needle);
+
+void make_bad_connection(uint16_t port);
 
 #endif  // _ROUTER_COMPONENT_TESTUTILS_H_

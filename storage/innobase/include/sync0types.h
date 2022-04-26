@@ -39,6 +39,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sync0sync.h"
 #include "univ.i"
 #include "ut0counter.h"
+#include "ut0log.h"
 #include "ut0new.h"
 
 #ifdef UNIV_DEBUG
@@ -53,24 +54,6 @@ typedef CRITICAL_SECTION sys_mutex_t;
 /** Native mutex */
 typedef pthread_mutex_t sys_mutex_t;
 #endif /* _WIN32 */
-
-/** The new (C++11) syntax allows the following and we should use it when it
-is available on platforms that we support.
-
-        enum class mutex_state_t : lock_word_t { ... };
-*/
-
-/** Mutex states. */
-enum mutex_state_t {
-  /** Mutex is free */
-  MUTEX_STATE_UNLOCKED = 0,
-
-  /** Mutex is acquired by some thread. */
-  MUTEX_STATE_LOCKED = 1,
-
-  /** Mutex is contended and there are threads waiting on the lock. */
-  MUTEX_STATE_WAITERS = 2
-};
 
 /*
                 LATCHING ORDER WITHIN THE DATABASE
@@ -1175,6 +1158,9 @@ struct sync_allowed_latches : public sync_check_functor_t {
   @param[in]	to	last element in an array of latch_level_t */
   sync_allowed_latches(const latch_level_t *from, const latch_level_t *to)
       : m_result(), m_latches(from, to) {}
+
+  /** Default constructor.  The list of allowed latches is empty. */
+  sync_allowed_latches() : m_result(), m_latches() {}
 
   /** Check whether the given latch_t violates the latch constraint.
   This object maintains a list of allowed latch levels, and if the given

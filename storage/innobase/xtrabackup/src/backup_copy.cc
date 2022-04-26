@@ -67,8 +67,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "utils.h"
 #include "xb0xb.h"
 
+#include <cstdlib>
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "file_utils.h"
 #include "keyring_components.h"
 #include "keyring_plugins.h"
 #include "sql_thd_internal_api.h"
@@ -158,10 +160,6 @@ struct datadir_thread_ctxt_t {
   std::thread::id id;
   bool ret;
 };
-
-/************************************************************************
-Retirn true if character if file separator */
-bool is_path_separator(char c) { return is_directory_separator(c); }
 
 /************************************************************************
 Holds the state needed to copy single data file. */
@@ -254,20 +252,6 @@ static xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor) {
 }
 
 /************************************************************************
-Check to see if a file exists.
-Takes name of the file to check.
-@return true if file exists. */
-static bool file_exists(const char *filename) {
-  MY_STAT stat_arg;
-
-  if (!my_stat(filename, &stat_arg, MYF(0))) {
-    return (false);
-  }
-
-  return (true);
-}
-
-/************************************************************************
 Trim leading slashes from absolute path so it becomes relative */
 static const char *trim_dotslash(const char *path) {
   while (*path) {
@@ -292,40 +276,6 @@ static bool ends_with(const char *str, const char *suffix) {
   size_t str_len = strlen(str);
   return (str_len >= suffix_len &&
           strcmp(str + str_len - suffix_len, suffix) == 0);
-}
-
-/** Create directories recursively.
-@return 0 if directories created successfully. */
-int mkdirp(const char *pathname, int Flags, myf MyFlags) {
-  char parent[PATH_MAX], *p;
-
-  /* make a parent directory path */
-  strncpy(parent, pathname, sizeof(parent));
-  parent[sizeof(parent) - 1] = 0;
-
-  for (p = parent + strlen(parent); !is_path_separator(*p) && p != parent; p--)
-    ;
-
-  *p = 0;
-
-  /* try to create parent directory if it doesn't exist */
-  if (!file_exists(parent)) {
-    if (p != parent && mkdirp(parent, Flags, MyFlags) != 0) {
-      return (-1);
-    }
-  }
-
-  /* create this one if parent has been created */
-  if (my_mkdir(pathname, Flags, MyFlags) == 0) {
-    return (0);
-  }
-
-  /* if it already exists that is fine */
-  if (errno == EEXIST) {
-    return (0);
-  }
-
-  return (-1);
 }
 
 /************************************************************************
@@ -2570,17 +2520,21 @@ cleanup:
 
 bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   std::stringstream cmd, message;
-  char *dest_filepath = strdup(filepath);
+  char buf[FN_LEN];
   bool needs_action = false;
 
-  cmd << "cat " << filepath;
+  if (escape_string_for_mysql(&my_charset_utf8mb4_general_ci, buf, 0, filepath,
+                              strlen(filepath)) == (size_t)-1) {
+    xb::error() << "Error escaping file : " << filepath;
+    return false;
+  }
+  char *dest_filepath = strdup(buf);
+  cmd << "cat " << SQUOTE(buf);
 
   if (ends_with(filepath, ".xbcrypt") && opt_decrypt) {
     cmd << " | xbcrypt --decrypt --encrypt-algo="
         << xtrabackup_encrypt_algo_names[opt_decrypt_algo];
-    if (xtrabackup_encrypt_key) {
-      cmd << " --encrypt-key=" << xtrabackup_encrypt_key;
-    } else {
+    if (xtrabackup_encrypt_key == nullptr) {
       cmd << " --encrypt-key-file=" << xtrabackup_encrypt_key_file;
     }
     dest_filepath[strlen(dest_filepath) - 8] = 0;
@@ -2611,7 +2565,7 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
     needs_action = true;
   }
 
-  cmd << " > " << dest_filepath;
+  cmd << " > " << SQUOTE(dest_filepath);
   message << " " << filepath;
 
   free(dest_filepath);
@@ -2680,6 +2634,10 @@ bool decrypt_decompress() {
   ds_data = ds_create(".", DS_TYPE_LOCAL);
 
   ut_a(xtrabackup_parallel >= 0);
+
+  if (xtrabackup_encrypt_key) {
+    setenv("XBCRYPT_ENCRYPTION_KEY", xtrabackup_encrypt_key, 1);
+  }
 
   ret = run_data_threads(".", decrypt_decompress_thread_func,
                          xtrabackup_parallel, "decrypt and decompress");

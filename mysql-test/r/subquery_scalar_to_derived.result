@@ -2683,6 +2683,7 @@ sum_sort_rows BIGINT UNSIGNED NOT NULL,
 sum_sort_scan BIGINT UNSIGNED NOT NULL,
 sum_no_index_used BIGINT UNSIGNED NOT NULL,
 sum_no_good_index_used BIGINT UNSIGNED NOT NULL,
+sum_cpu_time BIGINT UNSIGNED NOT NULL,
 first_seen TIMESTAMP NULL DEFAULT NULL,
 last_seen TIMESTAMP NULL DEFAULT NULL,
 quantile_95 BIGINT UNSIGNED NOT NULL,
@@ -2799,7 +2800,6 @@ JOIN t1 AS table2
 ON table2.col_int_key = table1.col_int_key
 );
 field1	( SELECT COUNT( col_int_key )
-FROM t1
 )
 0	4
 1	4
@@ -2807,6 +2807,7 @@ FROM t1
 8	4
 8	4
 8	4
+FROM t1
 EXPLAIN SELECT *
 FROM where_subselect_20070
 WHERE (field1, ( SELECT COUNT( col_int_key ) FROM t1 )) IN (

@@ -7,19 +7,19 @@
  Percona XtraBackup - Documentation
 ====================================
 
-|Percona XtraBackup| is an open-source hot backup utility for
-|MySQL| - based servers that doesn't lock your database during the
+*Percona XtraBackup* is an open-source hot backup utility for
+*MySQL* - based servers that doesn't lock your database during the
 backup.
 
 Whether it is a 24x7 highly loaded server or a low-transaction-volume
-environment, |Percona XtraBackup| is designed to make backups a seamless
+environment, *Percona XtraBackup* is designed to make backups a seamless
 procedure without disrupting the performance of the server in a production
 environment. `Commercial support contracts are available
 <http://www.percona.com/mysql-support/>`_.
 
-|Percona XtraBackup| can back up data from |InnoDB|, |XtraDB|, 
-|MyISAM|, and MyRocks tables on |MySQL| 8.0 servers as well as |Percona Server|
-with |XtraDB|, |Percona Server| 8.0, and |Percona XtraDB Cluster| 8.0.
+*Percona XtraBackup* can back up data from *InnoDB*, *XtraDB*, 
+*MyISAM*, and MyRocks tables on *MySQL* 8.0 servers as well as *Percona Server for MySQL*
+with *XtraDB*, *Percona Server for MySQL* 8.0, and *Percona XtraDB Cluster* 8.0.
 
 .. include:: .res/contents/important.storage-engine.txt
 
@@ -39,7 +39,6 @@ Introduction
    intro
    how_xtrabackup_works
 
-
 Installation
 ============
 
@@ -47,10 +46,18 @@ Installation
    :maxdepth: 1
    :glob:
 
-   installation
    installation/apt_repo
    installation/yum_repo
-   installation/compiling_xtrabackup 
+   installation/binary-tarball
+   installation/compiling_xtrabackup
+
+Run in Docker
+=====================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+   
    installation/docker
 
 Prerequisites
@@ -95,6 +102,7 @@ Advanced Features
    advanced/encrypted_innodb_tablespace_backups
    advanced/locks
    advanced/page_tracking
+   advanced/log_enhancements
 
 Security
 ===============
@@ -171,7 +179,5 @@ Indices and tables
 * :ref:`genindex`
 
 * :ref:`search`
-
-.. rubric:: Footnotes
 
 

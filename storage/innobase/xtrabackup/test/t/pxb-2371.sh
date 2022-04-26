@@ -21,7 +21,6 @@ echo "a" > $file
 ## Run
 run_cmd xbstream -v -c $file > $file_xb
 rm -f $file
-mkdir -p $dir_dst/$(dirname $file)  # xbstream doesn't create parent directories
 run_cmd xbstream -v -x -C $dir_dst < $file_xb
 
 ## Check: The file was extracted in the relative path

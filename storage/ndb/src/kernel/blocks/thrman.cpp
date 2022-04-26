@@ -1086,6 +1086,7 @@ Thrman::execOVERLOAD_STATUS_REP(Signal *signal)
 {
   Uint32 thr_no = signal->theData[0];
   Uint32 overload_status = signal->theData[1];
+  ndbrequire(thr_no < NDB_ARRAY_SIZE(m_thread_overload_status));
   m_thread_overload_status[thr_no].overload_status = (OverloadStatus)overload_status;
 
   Uint32 node_overload_level = 0;
@@ -4363,6 +4364,7 @@ Thrman::execDBINFO_SCANREQ(Signal* signal)
     Uint32 arr[MAX_INSTANCES_PER_THREAD];
     Uint32 len = mt_get_blocklist(this, arr, NDB_ARRAY_SIZE(arr));
     Uint32 pos = cursor->data[0];
+    ndbrequire(pos < NDB_ARRAY_SIZE(arr));
     for (; ; )
     {
       Ndbinfo::Row row(signal, req);

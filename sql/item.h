@@ -1334,7 +1334,6 @@ class Item : public Parse_tree_node {
     set_data_type(MYSQL_TYPE_LONGLONG);
     collation.set_numeric();
     max_length = 1;
-    unsigned_flag = true;
   }
 
   /**
@@ -2245,6 +2244,10 @@ class Item : public Parse_tree_node {
     Updates used tables, not null tables information and accumulates
     properties up the item tree, cf. used_tables_cache, not_null_tables_cache
     and m_accum_properties.
+
+    TODO(sgunders): Consider just removing these caches; it causes a lot of bugs
+    (cache invalidation is known to be a complex problem), and the performance
+    benefits are dubious.
   */
   virtual void update_used_tables() {}
 
@@ -2261,7 +2264,7 @@ class Item : public Parse_tree_node {
     @retval  false on success
     @retval  true  on error
   */
-  virtual bool get_timeval(struct timeval *tm, int *warnings);
+  virtual bool get_timeval(my_timeval *tm, int *warnings);
   /**
     The method allows to determine nullness of a complex expression
     without fully evaluating it, instead of calling val*() then
@@ -2625,22 +2628,35 @@ class Item : public Parse_tree_node {
   */
   virtual void bind_fields() {}
 
-  struct Cleanup_after_removal_context {
+  /**
+     Context object for (functions that override)
+     Item::clean_up_after_removal().
+   */
+  class Cleanup_after_removal_context final {
+   public:
+    Cleanup_after_removal_context(Query_block *root) : m_root(root) {
+      assert(root != nullptr);
+    }
+
+    Query_block *get_root() { return m_root; }
+
+   private:
     /**
       Pointer to Cleanup_after_removal_context containing from which
       select the walk started, i.e., the Query_block that contained the clause
       that was removed.
     */
-    Query_block *m_root;
-
-    Cleanup_after_removal_context(Query_block *root) : m_root(root) {}
+    Query_block *const m_root;
   };
   /**
      Clean up after removing the item from the item tree.
 
      param arg pointer to a Cleanup_after_removal_context object
   */
-  virtual bool clean_up_after_removal(uchar *) { return false; }
+  virtual bool clean_up_after_removal(uchar *arg [[maybe_unused]]) {
+    assert(arg != nullptr);
+    return false;
+  }
 
   /**
     Propagate components that use referenced columns from derived tables.
@@ -4184,7 +4200,7 @@ class Item_field : public Item_ident {
   }
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
   bool get_time(MYSQL_TIME *ltime) override;
-  bool get_timeval(struct timeval *tm, int *warnings) override;
+  bool get_timeval(my_timeval *tm, int *warnings) override;
   bool is_null() override {
     // NOTE: May return true even if maybe_null is not set!
     // This can happen if the underlying TABLE did not have a NULL row
@@ -4496,6 +4512,37 @@ class Item_param final : public Item, private Settable_routine_parameter {
   */
   bool m_type_pinned{false};
   /**
+    Parameter objects have a rather complex handling of data type, in order
+    to consistently handle required type conversion semantics. There are
+    three data type properties involved:
+
+    1. The data_type() property contains the desired type of the parameter
+       value, as defined by an explicit CAST, the operation the parameter
+       is part of, and/or the context given by other values and expressions.
+       After implicit repreparation it may also be assigned from provided
+       parameter values.
+
+    2. The data_type_source() property is the data type of the parameter value,
+       as given by the supplied user variable or from the protocol buffer.
+
+    3. The data_type_actual() property is the data type of the parameter value,
+       after possible conversion from the source data type.
+       Conversions may involve
+       - Character set conversion of string value.
+       - Conversion from string or number into temporal value, if the
+         resolved data type is a temporal.
+       - Conversion from string to number, if the resolved data type is numeric.
+
+    In addition, each data type property may have extra attributes to enforce
+    correct character set, collation and signedness of integers.
+  */
+  /**
+    The "source" data type of the provided parameter.
+    Used when the parameter comes through protocol buffers.
+    Notice that signedness of integers is stored in m_unsigned_actual.
+  */
+  enum_field_types m_data_type_source{MYSQL_TYPE_INVALID};
+  /**
     The actual data type of the parameter value provided by the user.
     For example:
 
@@ -4506,29 +4553,34 @@ class Item_param final : public Item, private Settable_routine_parameter {
         SET @a='1';
         EXECUTE s USING @a;
 
-    data_type() is still MYSQL_TYPE_DOUBLE, while m_param_state is
-    STRING_VALUE and m_data_type_actual is MYSQL_TYPE_VAR_STRING.
-    Compatibility of data_type() and m_data_type_actual is later tested
+    data_type() is still MYSQL_TYPE_DOUBLE, while data_type_source() is
+    MYSQL_TYPE_VARCHAR and data_type_actual() is MYSQL_TYPE_VARCHAR.
+    Compatibility of data_type() and data_type_actual() is later tested
     in check_parameter_types().
+    Only a limited set of field types are possible values:
+      MYSQL_TYPE_LONGLONG, MYSQL_TYPE_NEWDECIMAL, MYSQL_TYPE_DOUBLE,
+      MYSQL_TYPE_DATE,     MYSQL_TYPE_TIME,       MYSQL_TYPE_DATETIME,
+      MYSQL_TYPE_VARCHAR,  MYSQL_TYPE_NULL,       MYSQL_TYPE_INVALID
   */
   enum_field_types m_data_type_actual{MYSQL_TYPE_INVALID};
   /// Used when actual value is integer to indicate whether value is unsigned
   bool m_unsigned_actual{false};
   /**
-    The character set and collation of the actual parameter value.
+    The character set and collation of the source parameter value.
     Ignored if not a string value.
     - If parameter value is sent over the protocol: the client collation
     - If parameter value is a user variable: the variable's collation
   */
-  const CHARSET_INFO *m_collation_actual{nullptr};
+  const CHARSET_INFO *m_collation_source{nullptr};
   /**
     The character set and collation of the value stored in str_value, possibly
-    after being converted from the m_collation_actual collation.
+    after being converted from the m_collation_source collation.
     Ignored if not a string value.
     - If the derived collation is binary, the connection collation.
     - Otherwise, the derived collation (@see Item::collation).
   */
-  const CHARSET_INFO *m_collation_stored{nullptr};
+  const CHARSET_INFO *m_collation_actual{nullptr};
+  ///  Result type of parameter. @todo replace with type_to_result(data_type()
   Item_result m_result_type{STRING_RESULT};
   /**
     m_param_state is used to indicate that no parameter value is available
@@ -4584,23 +4636,21 @@ class Item_param final : public Item, private Settable_routine_parameter {
   /// @returns true if actual data value (integer) is unsigned
   bool is_unsigned_actual() const { return m_unsigned_actual; }
 
+  void set_collation_source(const CHARSET_INFO *coll) {
+    assert(is_string_type(m_data_type_source));
+    m_collation_source = coll;
+  }
   void set_collation_actual(const CHARSET_INFO *coll) {
     assert(is_string_type(m_data_type_actual));
     m_collation_actual = coll;
   }
-  void set_collation_stored(const CHARSET_INFO *coll) {
-    assert(is_string_type(m_data_type_actual));
-    m_collation_stored = coll;
-  }
+  /// @returns the source collation of the supplied string parameter
+  const CHARSET_INFO *collation_source() const { return m_collation_source; }
+
   /// @returns the actual collation of the supplied string parameter
   const CHARSET_INFO *collation_actual() const {
     assert(is_string_type(m_data_type_actual));
     return m_collation_actual;
-  }
-  /// @returns the stored collation of the supplied string parameter
-  const CHARSET_INFO *collation_stored() const {
-    assert(is_string_type(m_data_type_actual));
-    return m_collation_stored;
   }
   bool fix_fields(THD *thd, Item **ref) override;
 
@@ -4614,10 +4664,21 @@ class Item_param final : public Item, private Settable_routine_parameter {
   bool get_time(MYSQL_TIME *tm) override;
   bool get_date(MYSQL_TIME *tm, my_time_flags_t fuzzydate) override;
 
-  void set_type_actual(enum_field_types data_type, bool unsigned_act) {
-    m_data_type_actual = data_type;
-    m_unsigned_actual = unsigned_act;
+  void set_data_type_source(enum_field_types data_type, bool unsigned_val) {
+    m_data_type_source = data_type;
+    m_unsigned_actual = unsigned_val;
   }
+  // For use with non-integer field types only
+  void set_data_type_actual(enum_field_types data_type) {
+    m_data_type_actual = data_type;
+  }
+  /// For use with all field types, especially integer types
+  void set_data_type_actual(enum_field_types data_type, bool unsigned_val) {
+    m_data_type_actual = data_type;
+    m_unsigned_actual = unsigned_val;
+  }
+  enum_field_types data_type_source() const { return m_data_type_source; }
+
   enum_field_types data_type_actual() const { return m_data_type_actual; }
 
   enum_field_types actual_data_type() const override {
@@ -4636,14 +4697,10 @@ class Item_param final : public Item, private Settable_routine_parameter {
   bool set_from_user_var(THD *thd, const user_var_entry *entry);
   void copy_param_actual_type(Item_param *from);
   void reset();
-  /*
-    Assign placeholder value from bind data.
-  */
-  void (*set_param_func)(Item_param *param, uchar **pos, ulong len);
 
   const String *query_val_str(const THD *thd, String *str) const;
 
-  bool convert_str_value();
+  bool convert_value();
 
   /*
     Parameter is treated as constant during execution, thus it will not be
@@ -6568,7 +6625,7 @@ class Item_cache : public Item_basic_constant {
   Item *get_example() const { return example; }
 };
 
-class Item_cache_int final : public Item_cache {
+class Item_cache_int : public Item_cache {
  protected:
   longlong value;
 
@@ -6594,6 +6651,27 @@ class Item_cache_int final : public Item_cache {
   bool get_time(MYSQL_TIME *ltime) override { return get_time_from_int(ltime); }
   Item_result result_type() const override { return INT_RESULT; }
   bool cache_value() override;
+};
+
+/**
+  Cache class for BIT type expressions. The BIT data type behaves like unsigned
+  integer numbers in all situations, except when formatted as a string, where
+  it is directly interpreted as a byte string, possibly right-extended with
+  zero-bits.
+*/
+class Item_cache_bit final : public Item_cache_int {
+ public:
+  Item_cache_bit(enum_field_types field_type_arg)
+      : Item_cache_int(field_type_arg) {
+    assert(field_type_arg == MYSQL_TYPE_BIT);
+  }
+
+  /**
+    Transform the result Item_cache_int::value in bit format. The process is
+    similar to Field_bit_as_char::store().
+  */
+  String *val_str(String *str) override;
+  uint string_length() { return ((max_length + 7) / 8); }
 };
 
 class Item_cache_real final : public Item_cache {

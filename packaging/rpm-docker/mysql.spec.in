@@ -264,6 +264,7 @@ for p in \
          component_test_mysql_runtime_error.so \
          component_test_mysql_system_variable_set.so \
          component_test_component_deinit.so \
+         component_test_global_priv_registration.so \
          component_test_page_track_component.so \
          component_test_pfs_notification.so \
          component_test_pfs_resource_group.so \
@@ -477,6 +478,10 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_datadir}/mysql-*/innodb_memcached_config.sql
 %attr(644, root, root) %{_datadir}/mysql-*/install_rewriter.sql
 %attr(644, root, root) %{_datadir}/mysql-*/uninstall_rewriter.sql
+
+%dir %attr(755, root, root) %{_libdir}/mysql/private/icudt69l
+%{_libdir}/mysql/private/icudt69l/unames.icu
+%{_libdir}/mysql/private/icudt69l/brkitr
 
 %if 0%{?commercial}
 %if 0%{?with_meb}

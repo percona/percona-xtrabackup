@@ -47,6 +47,7 @@
 #include "m_ctype.h"
 #include "m_string.h"
 #include "mem_root_deque.h"
+#include "mutex_lock.h"  // MUTEX_LOCK
 #include "my_alloc.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -403,6 +404,8 @@ bool stmt_causes_implicit_commit(const THD *thd, uint mask) {
       return lex->autocommit;
     case SQLCOM_RESET:
       return lex->option_type != OPT_PERSIST;
+    case SQLCOM_STOP_GROUP_REPLICATION:
+      return lex->was_replication_command_executed();
     default:
       return true;
   }
@@ -720,6 +723,7 @@ void init_sql_command_flags(void) {
   sql_command_flags[SQLCOM_CHANGE_REPLICATION_FILTER] = CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_SLAVE_START] = CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_SLAVE_STOP] = CF_AUTO_COMMIT_TRANS;
+  sql_command_flags[SQLCOM_STOP_GROUP_REPLICATION] = CF_IMPLICIT_COMMIT_END;
   sql_command_flags[SQLCOM_ALTER_TABLESPACE] |= CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_CREATE_SRS] |= CF_AUTO_COMMIT_TRANS;
   sql_command_flags[SQLCOM_DROP_SRS] |= CF_AUTO_COMMIT_TRANS;
@@ -1228,7 +1232,7 @@ bool do_command(THD *thd) {
   bool return_value;
   int rc;
   NET *net = nullptr;
-  enum enum_server_command command;
+  enum enum_server_command command = COM_SLEEP;
   COM_DATA com_data;
   DBUG_TRACE;
   assert(thd->is_classic_protocol());
@@ -1274,20 +1278,25 @@ bool do_command(THD *thd) {
   */
   DEBUG_SYNC(thd, "before_do_command_net_read");
 
-  /*
-    Because of networking layer callbacks in place,
-    this call will maintain the following instrumentation:
-    - IDLE events
-    - SOCKET events
-    - STATEMENT events
-    - STAGE events
-    when reading a new network packet.
-    In particular, a new instrumented statement is started.
-    See init_net_server_extension()
-  */
-  thd->m_server_idle = true;
-  rc = thd->get_protocol()->get_command(&com_data, &command);
-  thd->m_server_idle = false;
+  rc = thd->mem_cnt->reset();
+  if (rc)
+    thd->mem_cnt->set_thd_error_status();
+  else {
+    /*
+      Because of networking layer callbacks in place,
+      this call will maintain the following instrumentation:
+      - IDLE events
+      - SOCKET events
+      - STATEMENT events
+      - STAGE events
+      when reading a new network packet.
+      In particular, a new instrumented statement is started.
+      See init_net_server_extension()
+    */
+    thd->m_server_idle = true;
+    rc = thd->get_protocol()->get_command(&com_data, &command);
+    thd->m_server_idle = false;
+  }
 
   if (rc) {
 #ifndef NDEBUG
@@ -1623,7 +1632,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
   thd->set_time();
   if (is_time_t_valid_for_timestamp(thd->query_start_in_secs()) == false) {
     /*
-      If the time has gone past 2038 we need to shutdown the server. But
+      If the time has gone past end of epoch we need to shutdown the server. But
       there is possibility of getting invalid time value on some platforms.
       For example, gettimeofday() might return incorrect value on solaris
       platform. Hence validating the current time with 5 iterations before
@@ -1644,7 +1653,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
     }
     if (tries > max_tries) {
       /*
-        If the time has got past 2038 we need to shut this server down
+        If the time has got past epoch, we need to shut this server down.
         We do this by making sure every command is a shutdown and we
         have enough privileges to shut the server down
 
@@ -1721,8 +1730,8 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
     }
     case COM_REGISTER_SLAVE: {
       // TODO: access of protocol_classic should be removed
-      if (!register_slave(thd, thd->get_protocol_classic()->get_raw_packet(),
-                          thd->get_protocol_classic()->get_packet_length()))
+      if (!register_replica(thd, thd->get_protocol_classic()->get_raw_packet(),
+                            thd->get_protocol_classic()->get_packet_length()))
         my_ok(thd);
       break;
     }
@@ -1767,6 +1776,13 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
       break;
     }
     case COM_CHANGE_USER: {
+      /*
+        LOCK_thd_security_ctx protects the THD's security-context from
+        inspection by SHOW PROCESSLIST while we're updating it. Nested
+        acquiring of LOCK_thd_data is fine (see below).
+      */
+      MUTEX_LOCK(grd_secctx, &thd->LOCK_thd_security_ctx);
+
       int auth_rc;
       thd->status_var.com_other++;
 
@@ -2245,7 +2261,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
 
       mysqld_list_processes(
           thd, global_access ? NullS : thd->security_context()->priv_user().str,
-          false);
+          false, false);
 
       DBUG_EXECUTE_IF("force_db_name_to_null", thd->reset_db(db_saved););
       break;
@@ -2815,6 +2831,8 @@ int mysql_execute_command(THD *thd, bool first_level) {
   assert(!thd->m_transactional_ddl.inited() ||
          thd->in_active_multi_stmt_transaction());
 
+  bool early_error_on_rep_command{false};
+
   /*
     If there is a CREATE TABLE...START TRANSACTION command which
     is not yet committed or rollbacked, then we should allow only
@@ -3318,6 +3336,13 @@ int mysql_execute_command(THD *thd, bool first_level) {
         goto error;
       }
 
+      if (thd->variables.gtid_next.type == ASSIGNED_GTID &&
+          thd->owned_gtid.sidno > 0) {
+        my_error(ER_CANT_EXECUTE_COMMAND_WITH_ASSIGNED_GTID_NEXT, MYF(0));
+        early_error_on_rep_command = true;
+        goto error;
+      }
+
       if (Clone_handler::is_provisioning()) {
         my_error(ER_GROUP_REPLICATION_COMMAND_FAILURE, MYF(0),
                  "START GROUP_REPLICATION",
@@ -3394,6 +3419,13 @@ int mysql_execute_command(THD *thd, bool first_level) {
         goto error;
       }
 
+      if (thd->variables.gtid_next.type == ASSIGNED_GTID &&
+          thd->owned_gtid.sidno > 0) {
+        my_error(ER_CANT_EXECUTE_COMMAND_WITH_ASSIGNED_GTID_NEXT, MYF(0));
+        early_error_on_rep_command = true;
+        goto error;
+      }
+
       char *error_message = nullptr;
       res = group_replication_stop(&error_message);
       if (res == 1)  // GROUP_REPLICATION_CONFIGURATION_ERROR
@@ -3424,6 +3456,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
                      ER_GRP_RPL_RECOVERY_CHANNEL_STILL_RUNNING,
                      ER_THD(thd, ER_GRP_RPL_RECOVERY_CHANNEL_STILL_RUNNING));
 
+      // Allow the command to commit any underlying transaction
+      lex->set_was_replication_command_executed();
+      thd->set_skip_readonly_check();
       my_ok(thd);
       res = 0;
       break;
@@ -4153,10 +4188,14 @@ int mysql_execute_command(THD *thd, bool first_level) {
       name = lex->sphead->name(&namelen);
       if (lex->sphead->m_type == enum_sp_type::FUNCTION) {
         udf_func *udf = find_udf(name, namelen);
-
+        /*
+          Issue a warning if there is an existing loadable function with the
+          same name.
+        */
         if (udf) {
-          my_error(ER_UDF_EXISTS, MYF(0), name);
-          goto error;
+          push_warning_printf(thd, Sql_condition::SL_NOTE,
+                              ER_WARN_SF_UDF_NAME_COLLISION,
+                              ER_THD(thd, ER_WARN_SF_UDF_NAME_COLLISION), name);
         }
       }
 
@@ -4698,7 +4737,7 @@ finish:
 
     /* report error issued during command execution */
     if (thd->killed) thd->send_kill_message();
-    if (thd->is_error() ||
+    if ((thd->is_error() && !early_error_on_rep_command) ||
         (thd->variables.option_bits & OPTION_MASTER_SQL_ERROR))
       trans_rollback_stmt(thd);
     else {
@@ -5766,9 +5805,15 @@ TABLE_LIST *Query_block::add_table_to_list(
     ptr->db = table_name->db.str;
     ptr->db_length = table_name->db.length;
   } else {
-    bool found_cte;
-    if (find_common_table_expr(thd, table_name, ptr, pc, &found_cte))
-      return nullptr;
+    // Check if the unqualified name could refer to a CTE. Don't do this for the
+    // alias list of a multi-table DELETE statement (TL_OPTION_ALIAS), since
+    // those are only references into the FROM list, and any CTEs referenced by
+    // the aliases will be resolved when we later resolve the FROM list.
+    bool found_cte = false;
+    if ((table_options & TL_OPTION_ALIAS) == 0) {
+      if (find_common_table_expr(thd, table_name, ptr, pc, &found_cte))
+        return nullptr;
+    }
     if (!found_cte && lex->copy_db_to(&ptr->db, &ptr->db_length))
       return nullptr;
   }
