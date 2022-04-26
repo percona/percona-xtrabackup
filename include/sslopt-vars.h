@@ -64,12 +64,9 @@ static char *opt_ssl_crlpath = nullptr;
 static char *opt_tls_version = nullptr;
 static ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 static bool ssl_mode_set_explicitly = false;
-<<<<<<< HEAD
-=======
 static char *opt_ssl_session_data = nullptr;
 static bool opt_ssl_session_data_continue_on_failed_reuse = false;
 
->>>>>>> mysql-8.0.29
 static inline int set_client_ssl_options(MYSQL *mysql) {
 #else
 uint opt_ssl_mode = SSL_MODE_PREFERRED;
@@ -84,6 +81,9 @@ char *opt_ssl_crlpath = nullptr;
 char *opt_tls_version = nullptr;
 ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 bool ssl_mode_set_explicitly = false;
+char *opt_ssl_session_data = nullptr;
+bool opt_ssl_session_data_continue_on_failed_reuse = false;
+
 int set_client_ssl_options(MYSQL *mysql) {
 #endif
   /*
