@@ -1,10 +1,10 @@
 .. _apt_repo:
 
 ==========================================================
- Installing |Percona XtraBackup| on *Debian* and *Ubuntu*
+ Installing *Percona XtraBackup* on *Debian* and *Ubuntu*
 ==========================================================
 
-Ready-to-use packages are available from the |Percona XtraBackup| software
+Ready-to-use packages are available from the *Percona XtraBackup* software
 repositories and the `download page
 <https://www.percona.com/downloads/XtraBackup/>`_.
 
@@ -13,25 +13,25 @@ Specific information on the supported platforms, products, and versions is descr
 What's in each DEB package?
 ================================================================================
 
-The ``percona-xtrabackup-80`` package contains the latest |Percona XtraBackup|
+The ``percona-xtrabackup-80`` package contains the latest *Percona XtraBackup*
 GA binaries and associated files.
 
 The ``percona-xtrabackup-dbg-80`` package contains the debug symbols for
 binaries in ``percona-xtrabackup-80``.
 
 The ``percona-xtrabackup-test-80`` package contains the test suite for
-|Percona XtraBackup|.
+*Percona XtraBackup*.
 
 The ``percona-xtrabackup`` package contains the older version of the
-|Percona XtraBackup|.
+*Percona XtraBackup*.
 
-Installing |Percona XtraBackup| via |percona-release|
+Installing *Percona XtraBackup* via *percona-release*
 ================================================================================
 
-|Percona XtraBackup|, like many other |percona| products, is installed
-via the |percona-release| package configuration tool.
+*Percona XtraBackup*, like many other *Percona* products, is installed
+with the *percona-release* package configuration tool.
 
-1. Download a deb package for |percona-release| the repository packages from Percona web:
+1. Download a deb package for *percona-release* the repository packages from Percona web:
 
    .. code-block:: bash
 
@@ -46,7 +46,7 @@ via the |percona-release| package configuration tool.
 
 #. Enable the repository: :bash:`percona-release enable-only tools release`
 
-   If |Percona XtraBackup| is intended to be used in combination with
+   If *Percona XtraBackup* is intended to be used in combination with
    the upstream MySQL Server, you only need to enable the ``tools``
    repository: :bash:`percona-release enable-only tools`.
 
@@ -74,7 +74,7 @@ Apt-Pinning the packages
 ========================
 
 In some cases you might need to "pin" the selected packages to avoid the
-upgrades from the distribution repositories. You'll need to make a new file
+upgrades from the distribution repositories. Make a new file
 :file:`/etc/apt/preferences.d/00percona.pref` and add the following lines in
 it:
 
@@ -84,22 +84,22 @@ it:
    Pin: release o=Percona Development Team
    Pin-Priority: 1001
 
-For more information about the pinning you can check the official
+For more information about the pinning, check the official
 `debian wiki <http://wiki.debian.org/AptPreferences>`_.
 
 .. _standalone_deb:
 
-Installing |Percona XtraBackup| using downloaded deb packages
+Installing *Percona XtraBackup* using downloaded deb packages
 =============================================================
 
 Download the packages of the desired series for your architecture from `Download Percona XtraBackup 8.0 <https://www.percona.com/downloads/XtraBackup/>`_. The following
-example downloads |Percona XtraBackup| 8.0.26-18 release package for Ubuntu 20.04:
+example downloads *Percona XtraBackup* 8.0.26-18 release package for Ubuntu 20.04:
 
 .. code-block:: bash
 
   $ wget https://downloads.percona.com/downloads/Percona-XtraBackup-LATEST/Percona-XtraBackup-8.0.26-18/binary/debian/focal/x86_64/percona-xtrabackup-80_8.0.26-18-1.focal_amd64.deb
 
-Now you can install |Percona XtraBackup| by running:
+Install *Percona XtraBackup* by running:
 
 .. code-block:: bash
 
@@ -107,13 +107,12 @@ Now you can install |Percona XtraBackup| by running:
 
 .. note::
 
-   When installing packages manually like this, you'll need to make sure to
-   resolve all the dependencies and install missing packages yourself.
+   When installing packages manually like this, resolve all the dependencies and install missing packages yourself.
 
-Uninstalling |Percona XtraBackup|
+Uninstalling *Percona XtraBackup*
 =================================
 
-To uninstall |Percona XtraBackup| you'll need to remove all the installed
+To uninstall *Percona XtraBackup*, remove all the installed
 packages.
 
 #. Remove the packages
