@@ -371,8 +371,7 @@ Restoring with *Amazon S3*
 Incremental backups
 ================================================================================
 
-First, you need to make the full backup on which the incremental one is going to
-be based:
+First, make the full backup which is the base for an incremental backup:
 
 .. code-block:: bash
 
@@ -384,7 +383,7 @@ be based:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    full_backup
 
-Then you can make the incremental backup:
+Then make the incremental backup:
 
 .. code-block:: bash
 
@@ -396,10 +395,10 @@ Then you can make the incremental backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    inc_backup
 
-Preparing incremental backups
+Preparing an incremental backup
 --------------------------------------------------------------------------------
 
-To prepare a backup you first need to download the full backup:
+To prepare a backup, download the full backup:
 
 .. code-block:: bash
 
@@ -409,13 +408,13 @@ To prepare a backup you first need to download the full backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    full_backup | xbstream -xv -C /storage/downloaded_full
 
-Once you download the full backup it should be prepared:
+Prepare the downloaded full backup:
 
 .. code-block:: bash
 
    $ xtrabackup --prepare --apply-log-only --target-dir=/storage/downloaded_full
 
-After the full backup has been prepared you can download the incremental backup:
+After the full backup has been prepared, download the incremental backup:
 
 .. code-block:: bash
 
@@ -425,7 +424,7 @@ After the full backup has been prepared you can download the incremental backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    inc_backup | xbstream -xv -C /storage/downloaded_inc
 
-Once the incremental backup has been downloaded you can prepare it by running:
+Prepare the incremental backup:
 
 .. code-block:: bash
 
@@ -438,8 +437,8 @@ Once the incremental backup has been downloaded you can prepare it by running:
 Partial download of the cloud backup
 --------------------------------------------------------------------------------
 
-If you don't want to download the entire backup to restore the specific database
-you can specify only tables you want to restore:
+If you don't want to download the entire backup to restore a database
+you can restore only specific tables:
 
 .. code-block:: bash
 
@@ -452,8 +451,7 @@ you can specify only tables you want to restore:
 
    $ xbstream -xv -C /storage/partial < /storage/partial/partial.xbs
 
-This command will download just ``ibdata1`` and ``sakila/payment.ibd`` table
-from the full backup.
+This command downloads the ``ibdata1`` table and the ``sakila/payment.ibd`` table from a full backup.
 
 Command-line options
 ================================================================================
@@ -477,7 +475,7 @@ Command-line options
 
 .. option:: --swift-storage-url
 
-   xbcloud will try to get object-store URL for given region (if any specified)
+   xbcloud attempts to get object-store URL for a specfied region (if any specified)
    from the keystone response. One can override that URL by passing
    --swift-storage-url=URL argument.
 
