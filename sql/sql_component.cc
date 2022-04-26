@@ -125,8 +125,10 @@ Deployed_components::Deployed_components(const std::string program_name,
 }
 #ifdef XTRABACKUP
 Deployed_components::Deployed_components(const std::string program_name,
+                                         const std::string instance_path,
                                          std::string component_names)
     : program_name_(program_name),
+      instance_path_(instance_path),
       components_(component_names),
       last_error_(),
       valid_(false),

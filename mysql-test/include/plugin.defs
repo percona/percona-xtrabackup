@@ -167,9 +167,5 @@ component_test_mysql_system_variable_set          plugin_output_directory  no  C
 # component test_table_access
 component_test_table_access  	plugin_output_directory no TEST_TABLE_ACCESS
 
-<<<<<<< HEAD
-
-=======
 # component test_sensitive_system_variables
 component_test_sensitive_system_variables  	plugin_output_directory no TEST_SENSITIVE_SYSTEM_VARIABLES
->>>>>>> mysql-8.0.29

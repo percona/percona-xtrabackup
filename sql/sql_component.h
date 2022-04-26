@@ -90,16 +90,13 @@ class Sql_cmd_uninstall_component : public Sql_cmd {
 */
 class Deployed_components final {
  public:
-<<<<<<< HEAD
-  explicit Deployed_components(const std::string program_name);
-#ifdef XTRABACKUP
-  explicit Deployed_components(const std::string program_name,
-                               std::string component_names);
-#endif
-=======
   explicit Deployed_components(const std::string program_name,
                                const std::string instance_path);
->>>>>>> mysql-8.0.29
+#ifdef XTRABACKUP
+  explicit Deployed_components(const std::string program_name,
+                               const std::string instance_path,
+                               std::string component_names);
+#endif
   ~Deployed_components();
   bool valid() const { return valid_; }
   bool components_loaded() const { return loaded_; }
