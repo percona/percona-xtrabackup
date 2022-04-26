@@ -1,0 +1,32 @@
+.. _PXB-2.4.25:
+
+================================================================================
+*Percona XtraBackup* 2.4.25
+================================================================================
+
+:Date: April 26, 2022
+
+.. include:: ../../_res/replace/pxb-blurb.txt
+
+.. contents::
+   :local:
+
+Release Highlights
+=================================================
+
+The xbcloud binary adds support for the :ref:`Microsoft Azure Cloud Storage <xbcloud_azure>` using the REST API. 
+
+New Features
+=================================================
+
+* :jirabug:`PXB-1883`: Implements support for Microsoft Azure Cloud Storage in the xbcloud binary. (Thanks to Ivan Groenewold for reporting this issue)
+
+Bugs Fixed
+=================================================
+
+* :jirabug:`PXB-2608`: Upgraded the Vault API to V2 (Thanks to Benedito Marques Magalhaes for reporting this issue)
+* :jirabug:`PXB-2649`: Fix for compilation issues on GCC-10.
+* :jirabug:`PXB-2648`: CURL prior to 7.38.0 version doesn't use CURLE_HTTP2 and throws an error ``'CURLE_HTTP2' is not a member of 'CURLcode'``. Added CURLE_OBSOLETE16 as a connectivity error code. In CURL versions after 7.38.0, CURLE_OBSOLETE16 is translated to CURLE_HTTP2.
+* :jirabug:`PXB-2711`: Fix for libgcrypt initialization warnings in xtrabackup.
+
+.. include:: ../../_res/replace/useful-links.txt
