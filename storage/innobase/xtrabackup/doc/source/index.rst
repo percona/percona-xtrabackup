@@ -100,8 +100,10 @@ Advanced Features
 
    advanced/throttling_backups
    advanced/encrypted_innodb_tablespace_backups
-   advanced/locks
-   advanced/page_tracking
+   xtrabackup_bin/backup.encrypting
+   xtrabackup_bin/lru_dump
+   xtrabackup_bin/point-in-time-recovery
+   xtrabackup_bin/working_with_binary_logs
    advanced/log_enhancements
 
 Security
@@ -113,6 +115,22 @@ Security
 
    security/pxb-selinux
    security/pxb-apparmor
+
+.. _aux-guides:
+
+Auxiliary guides 
+=======================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   howtos/enabling_tcp
+   howtos/ssh_server
+   xtrabackup_bin/analyzing_table_statistics
+   xtrabackup_bin/flush-tables-with-read-lock
+   advanced/locks
+   advanced/page_tracking
 
 xbcloud Binary
 ==================
@@ -142,7 +160,7 @@ Tutorials, Recipes, How-tos
 
 * :ref:`recipes-xbk`
 * :ref:`howtos`
-* :ref:`aux-guides`
+
   
 
 Release notes

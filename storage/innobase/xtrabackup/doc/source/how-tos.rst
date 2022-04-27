@@ -24,21 +24,13 @@ How-Tos
 .. toctree::
    :maxdepth: 1
 
+   howtos/permissions
    howtos/setting_up_replication
    howtos/backup_verification
    howtos/recipes_ibkx_gtid
 
-.. _aux-guides:
 
-Auxiliary Guides
-================
 
-.. toctree::
-   :maxdepth: 1
-
-   howtos/enabling_tcp
-   howtos/permissions
-   howtos/ssh_server
 
 Assumptions in this section
 ===========================
