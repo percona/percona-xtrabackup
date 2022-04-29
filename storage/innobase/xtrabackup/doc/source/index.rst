@@ -60,16 +60,19 @@ Run in Docker
    
    installation/docker
 
-Prerequisites
-=============
+How Percona XtraBackup works
+==================================
 
 .. toctree::
    :maxdepth: 1
    :glob:
 
+   xtrabackup_bin/implementation_details
    using_xtrabackup/privileges
    using_xtrabackup/configuring
    using_xtrabackup/comparison
+   xtrabackup_bin/xtrabackup_exit_codes
+
 
 Backup Scenarios
 ================

@@ -4,10 +4,9 @@
 Streaming Backups
 ================================================================================
 
-Streaming mode, supported by |Percona XtraBackup|, sends backup to ``STDOUT`` in
-the |xbstream| format instead of copying files to the backup directory.
+**Percona XtraBackup** supports streaming mode. Streaming mode sends a backup to ``STDOUT`` in the |xbstream| format instead of copying the files to the backup directory.
 
-This allows you to use other programs to filter the output of the backup,
+This method allows you to use other programs to filter the output of the backup,
 providing greater flexibility for storage of the backup. For example,
 compression is achieved by piping the output to a compression utility. One of
 the benefits of streaming backups and using Unix pipes is that the backups can
@@ -28,8 +27,7 @@ to ``STDOUT``, it stops xtrabackup and streams the saved log file too.
    More information about |xbstream|
       :ref:`xbstream_binary`
 
-When compression is enabled, |xtrabackup| compresses all output data, except the
-meta and non-InnoDB files which are not compressed, using the specified
+When compression is enabled, |xtrabackup| compresses the output data, except for the meta and non-InnoDB files which are not compressed, using the specified
 compression algorithm. The only currently supported algorithm is
 ``quicklz``. The resulting files have the ``qpress`` archive format, i.e. every
 \*.qp file produced by xtrabackup is essentially a one-file qpress archive and
@@ -38,9 +36,8 @@ can be extracted and uncompressed by the `qpress file archiver
 repositories <installation>`.
 
 Using |xbstream| as a stream option, backups can be copied and compressed in
-parallel which can significantly speed up the backup process. In case backups
-were both compressed and encrypted, they'll need to decrypted first in order to
-be uncompressed.
+parallel. This option can significantly improve the speed of the backup process. In case backups
+were both compressed and encrypted, they must be decrypted before they are uncompressed.
 
 .. include:: ../.res/contents/example.xbstream.txt
 

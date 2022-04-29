@@ -1,21 +1,25 @@
 .. _pxb.xtrabackup.flush-tables-with-read-lock:
 
 ================================================================================
-Handling ``FLUSH TABLES WITH READ LOCK``
+``FLUSH TABLES WITH READ LOCK`` option
 ================================================================================
 
-When making backups, ``FLUSH TABLES WITH READ LOCK`` is used before the
-non-InnoDB files are backed up to ensure that the backup is consistent. ``FLUSH
-TABLES WITH READ LOCK`` can be run even though there may be a running query that
-has been executing for hours.
+The ``FLUSH TABLES WITH READ LOCK`` option does the following with a global read lock:
 
-In this case, everything is locked in the ``Waiting for table flush`` or
-``Waiting for master to send event`` state. Killing the ``FLUSH TABLES WITH
-READ LOCK`` does not correct this problem. The only way to get
-the server operating normally again is to kill off the long running queries that
-blocked it to begin with. This means that if there are long running queries
-``FLUSH TABLES WITH READ LOCK`` can get stuck, leaving server in read-only mode
-until waiting for these queries to complete.
+* Closes all open tables
+
+* Locks all tables for all databases
+
+Release the lock with ``UNLOCK TABLES``.
+
+.. note::
+
+   ``FLUSH TABLES WITH READ LOCK`` does not prevent inserting rows into the log tables.
+   
+
+To ensure consistent backups, use the ``FLUSH TABLES WITH READ LOCK`` option before taking a non-InnoDB file backup. The option does not affect long-running queries.
+
+Long-running queries with ``FLUSH TABLES WITH READ LOCK`` enabled can leave the server in a read-only mode until the queries finish. Killing the ``FLUSH TABLES WITH READ LOCK`` does not help if the database is in either the ``Waiting for table flush`` or ``Waiting for master to send event`` state. To return to normal operation, you must kill any long-running queries.
 
 .. note:: 
 
@@ -29,23 +33,20 @@ until waiting for these queries to complete.
 
 In order to prevent this from happening two things have been implemented:
 
-* |xtrabackup| can wait for a good moment to issue the global lock.
-* |xtrabackup| can kill all or only SELECT queries which are preventing the
+* |xtrabackup| waits for a good moment to issue the global lock
+* |xtrabackup| kills all queries or only the SELECT queries which prevent the
   global lock from being acquired
 
 Waiting for queries to finish
 ================================================================================
 
-Good moment to issue a global lock is the moment when there are no long queries
-running. But waiting for a good moment to issue the global lock for extended
-period of time isn't always good approach, as it can extend the time needed for
-backup to take place. To prevent |xtrabackup| from waiting to issue ``FLUSH
-TABLES WITH READ LOCK`` for too long, new option has been implemented:
-:option:`--ftwrl-wait-timeout` option can be used to limit the
-waiting time. If the good moment to issue the lock did not happen during this
-time, |xtrabackup| will give up and exit with an error message and backup will
-not be taken. Zero value for this option turns off the feature (which is
-default).
+You should issue a global lock when no long queries are running. Waiting to issue the global lock for extended period of time is not a good method. The wait can extend the time needed for
+backup to take place. The `--ftwrl-wait-timeout` option can limit the
+waiting time. If it cannot issue the lock during this
+time, |xtrabackup| stops the option, exits with an error message, and backup is
+not be taken.
+
+The default value for this option is zero (0) value which turns off the option.
 
 Another possibility is to specify the type of query to wait on. In this case
 :option:`--ftwrl-wait-query-type`. Possible values are ``all`` and
@@ -55,12 +56,9 @@ to finish before running the ``FLUSH TABLES WITH READ LOCK``. When ``update`` is
 used |xtrabackup| will wait on ``UPDATE/ALTER/REPLACE/INSERT`` queries to
 finish.
 
-Although the time needed for a specific query to complete is hard to predict, we
-can assume that the queries that have been running for a long time are not
-likely to finish soon. The queries which are running for a short time are likely
-to finish shortly. |xtrabackup| can use the value of
-:option:`--ftwrl-wait-threshold` option to specify which query is long running
-and will likely block global lock for a while. In order to use this option
+The time needed for a specific query to complete is hard to predict. We assume that the long-running queries will not finish in a timely manner. Other queries which run for a short time finish quickly. |xtrabackup| uses the value of
+`--ftwrl-wait-threshold` option to specify the long-running queries
+and will block a global lock. In order to use this option
 xtrabackup user should have ``PROCESS`` and ``SUPER`` privileges.
 
 Killing the blocking queries
