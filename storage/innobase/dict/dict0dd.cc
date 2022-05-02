@@ -837,7 +837,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
   /* add instant column default value */
   if (table->has_instant_cols()) {
-    dd_fill_instant_columns(*dd_table, table);
+    dd_fill_instant_columns_default(*dd_table, table);
   }
 
   /* It appears that index list for InnoDB table always starts with
@@ -4088,18 +4088,6 @@ inline int dd_fill_dict_index(const dd::Table &dd_table, const TABLE *m_form,
   return error;
 }
 
-<<<<<<< HEAD
-/** Read the metadata of default values for all columns added instantly
-@param[in]	dd_table	dd::Table
-@param[in,out]	table		InnoDB table object */
-#ifdef XTRABACKUP
-void dd_fill_instant_columns(const dd::Table &dd_table,
-#else
-static void dd_fill_instant_columns(const dd::Table &dd_table,
-#endif /*XTRABACKUP */
-                             dict_table_t *table) {
-  ut_ad(table->has_instant_cols());
-=======
 /** Determine if a table contains a fulltext index.
 @param[in]      table           dd::Table
 @return whether the table contains any fulltext index */
@@ -4115,10 +4103,13 @@ inline bool dd_table_contains_fulltext(const dd::Table &table) {
 /** Read the metadata of default values for all columns added instantly
 @param[in]      dd_table        dd::Table
 @param[in,out]  table           InnoDB table object */
-static void dd_fill_instant_columns_default(const dd::Table &dd_table,
-                                            dict_table_t *table) {
+#ifndef XTRABACKUP
+static
+#endif /*XTRABACKUP */
+    void
+    dd_fill_instant_columns_default(const dd::Table &dd_table,
+                                    dict_table_t *table) {
   ut_ad(table->has_instant_cols() || table->has_row_versions());
->>>>>>> mysql-8.0.29
   ut_ad(dd_table_has_instant_cols(dd_table));
 
 #ifdef UNIV_DEBUG
@@ -6345,13 +6336,9 @@ const char *dd_process_dd_tables_rec_and_mtr_commit(
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
                                    ULINT_UNDEFINED, &heap);
 
-  field = rec_get_nth_field(
-<<<<<<< HEAD
-      rec, offsets, dd_tables->field_number("engine") + DD_FIELD_OFFSET, &len);
-=======
-      nullptr, rec, offsets,
-      dd_object_table.field_number("FIELD_ENGINE") + DD_FIELD_OFFSET, &len);
->>>>>>> mysql-8.0.29
+  field = rec_get_nth_field(nullptr, rec, offsets,
+                            dd_tables->field_number("engine") + DD_FIELD_OFFSET,
+                            &len);
 
   /* If "engine" field is not "innodb", return. */
   if (strncmp((const char *)field, "InnoDB", 6) != 0) {
@@ -6362,13 +6349,8 @@ const char *dd_process_dd_tables_rec_and_mtr_commit(
 
   /* Get the se_private_id field. */
   field = (const byte *)rec_get_nth_field(
-<<<<<<< HEAD
-      rec, offsets, dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET,
-=======
       nullptr, rec, offsets,
-      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
->>>>>>> mysql-8.0.29
-      &len);
+      dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET, &len);
 
   if (len != 8) {
     *table = nullptr;
@@ -6423,13 +6405,9 @@ const char *dd_process_dd_partitions_rec_and_mtr_commit(
                                    ULINT_UNDEFINED, &heap);
 
   /* Get the engine field. */
-  field = rec_get_nth_field(
-<<<<<<< HEAD
-      rec, offsets, dd_tables->field_number("engine") + DD_FIELD_OFFSET, &len);
-=======
-      nullptr, rec, offsets,
-      dd_object_table.field_number("FIELD_ENGINE") + DD_FIELD_OFFSET, &len);
->>>>>>> mysql-8.0.29
+  field = rec_get_nth_field(nullptr, rec, offsets,
+                            dd_tables->field_number("engine") + DD_FIELD_OFFSET,
+                            &len);
 
   /* If "engine" field is not "innodb", return. */
   if (strncmp((const char *)field, "InnoDB", 6) != 0) {
@@ -6440,13 +6418,8 @@ const char *dd_process_dd_partitions_rec_and_mtr_commit(
 
   /* Get the se_private_id field. */
   field = (const byte *)rec_get_nth_field(
-<<<<<<< HEAD
-      rec, offsets, dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET,
-=======
       nullptr, rec, offsets,
-      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
->>>>>>> mysql-8.0.29
-      &len);
+      dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET, &len);
   /* When table is partitioned table, the se_private_id is null. */
   if (len != 8) {
     *table = nullptr;
