@@ -4249,16 +4249,10 @@ dberr_t Fil_shard::iterate(bool include_log, Fil_iterator::Function &f) {
   return DB_SUCCESS;
 }
 
-<<<<<<< HEAD
+#ifdef XTRABACKUP
 /** Iterate through all tablespaces
-@param[in]  include_log Include redo log space, if true
-@param[in]  f   Callback
-=======
-/** Iterate through all persistent tablespace files
-(FIL_TYPE_TABLESPACE) returning the nodes via callback function cbk.
 @param[in]      include_log     Include log files, if true
 @param[in]      f               Callback
->>>>>>> mysql-8.0.29
 @return any error returned by the callback function. */
 dberr_t Fil_system::iterate_spaces(bool include_log,
                                    Fil_space_iterator::Function &f) {
@@ -4272,12 +4266,20 @@ dberr_t Fil_system::iterate_spaces(bool include_log,
 
   return DB_SUCCESS;
 }
+/** Iterate through all spaces
+returning the them via callback function cbk.
+@param[in]      include_log     include log files, if true
+@param[in]      f               Callback
+@return any error returned by the callback function. */
+dberr_t Fil_space_iterator::iterate(bool include_log, Function &&f) {
+  return (fil_system->iterate_spaces(include_log, f));
+}
+#endif  // XTRABACKUP
 
 /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
 returning the nodes via callback function cbk.
-<<<<<<< HEAD
-@param[in]	include_log	include log files, if true
-@param[in]	f		callback function
+@param[in]      include_log     include log files, if true
+@param[in]      f               Callback
 @return any error returned by the callback function. */
 dberr_t Fil_system::iterate(bool include_log, Fil_iterator::Function &f) {
   for (auto shard : m_shards) {
@@ -4289,19 +4291,6 @@ dberr_t Fil_system::iterate(bool include_log, Fil_iterator::Function &f) {
   }
 
   return (DB_SUCCESS);
-}
-
-/** Iterate through all spaces
-returning the them via callback function cbk.
-@param[in]	include_log	include log files, if true
-@param[in]	f		Callback
-=======
-@param[in]      include_log     include log files, if true
-@param[in]      f               Callback
->>>>>>> mysql-8.0.29
-@return any error returned by the callback function. */
-dberr_t Fil_space_iterator::iterate(bool include_log, Function &&f) {
-  return (fil_system->iterate_spaces(include_log, f));
 }
 
 /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
@@ -5224,19 +5213,13 @@ static void fil_name_write_rename(space_id_t space_id, const char *old_name,
                                 is extended
 @param[in]      size            Number of bytes by which the file
                                 is extended starting from the offset
-<<<<<<< HEAD
-@param[in,out]	mtr		Mini-transaction */
+@param[in,out]  mtr             Mini-transaction */
 #ifdef XTRABACKUP
 [[maybe_unused]]
 #endif /* XTRABACKUP */
 static void
 fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
                           os_offset_t size, mtr_t *mtr) {
-=======
-@param[in,out]  mtr             Mini-transaction */
-static void fil_op_write_space_extend(space_id_t space_id, os_offset_t offset,
-                                      os_offset_t size, mtr_t *mtr) {
->>>>>>> mysql-8.0.29
   ut_ad(space_id != TRX_SYS_SPACE);
 
   byte *log_ptr;

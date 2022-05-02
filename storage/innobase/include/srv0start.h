@@ -88,12 +88,8 @@ referenced by the TRX_SYS page.
 dberr_t srv_undo_tablespaces_upgrade();
 
 /** Start InnoDB.
-<<<<<<< HEAD
-@param[in]  create_new_db     Whether to create a new database
-@param[in]  to_lsn            LSN to stop recovery at
-=======
 @param[in]      create_new_db           Whether to create a new database
->>>>>>> mysql-8.0.29
+@param[in]      to_lsn                  LSN to stop recovery at
 @return DB_SUCCESS or error code */
 [[nodiscard]] dberr_t srv_start(bool create_new_db, lsn_t to_lsn);
 

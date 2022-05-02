@@ -1130,7 +1130,6 @@ void release_uncached_table(TABLE_SHARE *ts, TABLE *td);
 
 /** Instantiate an InnoDB in-memory table metadata (dict_table_t)
 based on a Global DD object or MYSQL table definition.
-<<<<<<< HEAD
 @param[in,out]  client    data dictionary client
 @param[in]  space_id  ID of the tablespace where the table residing
 @param[in]  dd_table  Global DD table object
@@ -1151,20 +1150,12 @@ int dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
 
 /** Instantiate an InnoDB in-memory table metadata (dict_table_t)
 based on a Global DD object or MYSQL table definition.
-@param[in]	thd		thread THD
-@param[in,out]	client		data dictionary client
-@param[in]	dd_table	Global DD table object
-@param[in]	dd_part		Global DD partition or subpartition, or NULL
-@param[in]	tbl_name	table name, or NULL if not known
-@param[out]	table		InnoDB table (NULL if not found or loadable)
-=======
 @param[in]      thd             thread THD
 @param[in,out]  client          data dictionary client
 @param[in]      dd_table        Global DD table object
 @param[in]      dd_part         Global DD partition or subpartition, or NULL
 @param[in]      tbl_name        table name, or NULL if not known
 @param[out]     table           InnoDB table (NULL if not found or loadable)
->>>>>>> mysql-8.0.29
 @param[in]      td              MYSQL table definition
 @return error code
 @retval 0       on success */

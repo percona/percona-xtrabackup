@@ -156,18 +156,11 @@ class logger {
   void log_event(std::string msg, IF_XB(const char *const module));
 
   /** Constructor.
-<<<<<<< HEAD
-  @param[in]	level		Logging level
-  @param[in]	err		Error message code
-  @param[in]    module  module that generates the event
-  */
+  @param[in]    level           Logging level
+  @param[in]    err             Error message code.
+  @param[in]    module          module that generates the event */
   logger(loglevel level, int err, IF_XB(const char *module))
       : m_err(err), m_level(level), IF_XB(m_module(module)) {
-=======
-  @param[in]    level           Logging level
-  @param[in]    err             Error message code. */
-  logger(loglevel level, int err) : m_err(err), m_level(level) {
->>>>>>> mysql-8.0.29
     /* Note: Dummy argument to avoid the warning:
 
     "format not a string literal and no format arguments"
@@ -182,16 +175,10 @@ class logger {
   }
 
   /** Constructor.
-<<<<<<< HEAD
-  @param[in]	level		Logging level
-  @param[in]	err		Error message code.
-  @param[in]	module		module that generates the event
-  @param[in]	args		Variable length argument list */
-=======
   @param[in]    level           Logging level
   @param[in]    err             Error message code.
+  @param[in]    module          module that generates the event
   @param[in]    args            Variable length argument list */
->>>>>>> mysql-8.0.29
   template <class... Args>
   explicit logger(loglevel level, int err, IF_XB(const char *module),
                   Args &&... args)
@@ -200,15 +187,10 @@ class logger {
   }
 
   /** Constructor
-<<<<<<< HEAD
-  @param[in]	level		Log error level
-  @param[in]	module		module that generates the event */
+  @param[in]    level           Log error level
+  @param[in]    module          Module that generates the event */
   explicit logger(loglevel level, IF_XB(const char *module))
       : m_err(ER_IB_MSG_0), m_level(level), IF_XB(m_module(module)) {}
-=======
-  @param[in]    level           Log error level */
-  explicit logger(loglevel level) : m_err(ER_IB_MSG_0), m_level(level) {}
->>>>>>> mysql-8.0.29
 
 #endif /* !UNIV_NO_ERR_MSGS */
 };
@@ -327,13 +309,8 @@ class error_or_warn : public logger {
 #ifndef UNIV_NO_ERR_MSGS
 
   /** Default constructor uses ER_IB_MSG_0
-<<<<<<< HEAD
-  @param[in]	pred		True if it's a warning. */
-  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, INNO) {}
-=======
   @param[in]    pred            True if it's a warning. */
-  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL) {}
->>>>>>> mysql-8.0.29
+  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, INNO) {}
 
   /** Constructor.
   @param[in]    pred            True if it's a warning.

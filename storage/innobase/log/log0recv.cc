@@ -216,17 +216,6 @@ static bool recv_writer_is_active() {
 
 #ifndef UNIV_HOTBACKUP
 
-<<<<<<< HEAD
-=======
-/** Reads a specified log segment to a buffer.
-@param[in,out]  log             redo log
-@param[in,out]  buf             buffer where to read
-@param[in]      start_lsn       read area start
-@param[in]      end_lsn         read area end */
-static void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                              lsn_t end_lsn);
-
->>>>>>> mysql-8.0.29
 /** Initialize crash recovery environment. Can be called iff
 recv_needed_recovery == false. */
 static void recv_init_crash_recovery();
@@ -3459,16 +3448,11 @@ static void recv_parse_log_recs() {
 
 /** Adds data from a new log block to the parsing buffer of recv_sys if
 recv_sys->parse_start_lsn is non-zero.
-<<<<<<< HEAD
-@param[in]  log_block   log block
-@param[in]  scanned_lsn  lsn of how far we were able
-                         to find data in this log block
-@param[in]  len          0 if full block or length of the data to add
-=======
 @param[in]      log_block               log block
 @param[in]      scanned_lsn             lsn of how far we were able
                                         to find data in this log block
->>>>>>> mysql-8.0.29
+@param[in]      len                     0 if full block or length of the data
+                                        to add
 @return true if more data added */
 bool recv_sys_add_to_parsing_buf(const byte *log_block, lsn_t scanned_lsn,
                                  ulint len) {
@@ -3551,12 +3535,8 @@ automatically when the hash table becomes full.
 @param[in]      start_lsn       buffer start lsn
 @param[in,out]  contiguous_lsn  it is known that log contain
                                 contiguous log data up to this lsn
-<<<<<<< HEAD
-@param[out]	read_upto_lsn	scanning succeeded up to this lsn
-@param[in]  to_lsn LSN to stop scanning at
-=======
 @param[out]     read_upto_lsn   scanning succeeded up to this lsn
->>>>>>> mysql-8.0.29
+@param[in]      to_lsn          LSN to stop scanning at
 @return true if not able to scan any more in this log */
 #ifndef UNIV_HOTBACKUP
 static bool recv_scan_log_recs(log_t &log,
@@ -3870,23 +3850,16 @@ bool meb_read_log_encryption(IORequest &encryption_request,
 
 #ifndef UNIV_HOTBACKUP
 /** Reads a specified log segment to a buffer.
-<<<<<<< HEAD
-@param[in,out]	log		redo log
-@param[in,out]	buf		buffer where to read
-@param[in]	start_lsn	read area start
-@param[in]	end_lsn		read area end */
-void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn) {
-  log_background_threads_inactive_validate(log);
-=======
 @param[in,out]  log             redo log
 @param[in,out]  buf             buffer where to read
 @param[in]      start_lsn       read area start
 @param[in]      end_lsn         read area end */
-static void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                              lsn_t end_lsn) {
-  log_background_threads_inactive_validate();
->>>>>>> mysql-8.0.29
-
+#ifndef XTRABACKUP
+static
+#endif
+void recv_read_log_seg(log_t & log, byte * buf, lsn_t start_lsn,
+                       lsn_t end_lsn) {
+  log_background_threads_inactive_validate(log);
   do {
     lsn_t source_offset;
 
@@ -3931,21 +3904,13 @@ static void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
 
 /** Scans log from a buffer and stores new log data to the parsing buffer.
 Parses and hashes the log records if new data found.
-<<<<<<< HEAD
-@param[in,out]	log               redo log
-@param[in,out]  contiguous_lsn    log sequence number
-                                  until which all redo log has been
-                                  scanned
-@param[in,out]  to_lsn            LSN to stop recovery at */
-static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
-                                lsn_t to_lsn) {
-=======
 @param[in,out]  log                     redo log
 @param[in,out]  contiguous_lsn          log sequence number
                                         until which all redo log has been
-                                        scanned */
-static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn) {
->>>>>>> mysql-8.0.29
+                                        scanned
+@param[in,out]  to_lsn                  LSN to stop recovery at */
+static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
+                                lsn_t to_lsn) {
   mutex_enter(&recv_sys->mutex);
 
   recv_sys->len = 0;
@@ -4033,15 +3998,10 @@ static void recv_init_crash_recovery() {
 #ifndef UNIV_HOTBACKUP
 /** Start recovering from a redo log checkpoint.
 @see recv_recovery_from_checkpoint_finish
-<<<<<<< HEAD
-@param[in,out]	log		redo log
-@param[in]  flush_lsn FIL_PAGE_FILE_FLUSH_LSN
-=======
 @param[in,out]  log             redo log
 @param[in]      flush_lsn       FIL_PAGE_FILE_FLUSH_LSN
->>>>>>> mysql-8.0.29
                                 of first system tablespace page
-@param[in]  to_lsn    LSN to store recovery at
+@param[in]      to_lsn          LSN to store recovery at
 @return error code or DB_SUCCESS */
 dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
                                             lsn_t to_lsn) {

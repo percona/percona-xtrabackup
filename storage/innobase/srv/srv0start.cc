@@ -1526,13 +1526,10 @@ void undo_spaces_deinit() {
 }
 
 /** Open the configured number of implicit undo tablespaces.
-<<<<<<< HEAD
-@param[in]	create_new_db	true if new db being created
-@param[in]  true disables reading the system tablespace (used in XtraBackup),
-            false is passed on recovery.
-=======
 @param[in]      create_new_db   true if new db being created
->>>>>>> mysql-8.0.29
+@param[in]      backup_mode     true disables reading the system tablespace
+                                (used in XtraBackup), false is passed on
+                                recovery.
 @return DB_SUCCESS or error code */
 dberr_t srv_undo_tablespaces_init(bool create_new_db, bool backup_mode) {
   dberr_t err = DB_SUCCESS;

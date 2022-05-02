@@ -761,15 +761,9 @@ bool os_file_create_directory(const char *pathname, bool fail_if_exists);
 
 /** Callback function type to be implemented by caller. It is called for each
 entry in directory.
-<<<<<<< HEAD
-@param[in]	path	path to the file
-@param[in]	name	name of the file */
-typedef std::function<void(const char *path, const char *name)> os_dir_cbk_t;
-=======
 @param[in]      path    path to the file
 @param[in]      name    name of the file */
-typedef void (*os_dir_cbk_t)(const char *path, const char *name);
->>>>>>> mysql-8.0.29
+typedef std::function<void(const char *path, const char *name)> os_dir_cbk_t;
 
 /** This function scans the contents of a directory and invokes the callback
 for each entry.

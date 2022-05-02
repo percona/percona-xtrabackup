@@ -2475,7 +2475,6 @@ detect this and will eventually quit sooner. */
     return (s);
   }
 
-<<<<<<< HEAD
   int field_number(const char *field_name) const {
     for (int i = 0; i < n_def; ++i) {
       if (strcmp(field_name, get_col_name(i)) == 0) {
@@ -2486,12 +2485,8 @@ detect this and will eventually quit sooner. */
     return 1;
   }
 
-  /**Gets the nth column of a table.
-  @param[in] pos	position of column
-=======
   /** Gets the nth column of a table.
   @param[in] pos        position of column
->>>>>>> mysql-8.0.29
   @return pointer to column object */
   dict_col_t *get_col(uint pos) const {
     ut_ad(pos < n_def);
