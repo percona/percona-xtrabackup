@@ -12100,15 +12100,10 @@ void Tablespace_dirs::print_duplicates(const Space_id_set &duplicates) {
   }
 }
 
-<<<<<<< HEAD
 #ifndef XTRABACKUP
-static bool fil_get_partition_file(const std::string &old_path,
-                                   ib_file_suffix extn, std::string &new_path) {
-=======
 static bool fil_get_partition_file(const std::string &old_path [[maybe_unused]],
                                    ib_file_suffix extn [[maybe_unused]],
                                    std::string &new_path [[maybe_unused]]) {
->>>>>>> mysql-8.0.29
   /* Safe check. Never needed on Windows. */
 #ifdef _WIN32
   return false;

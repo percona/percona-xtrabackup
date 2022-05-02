@@ -3420,14 +3420,8 @@ static bool recv_multi_rec(byte *ptr, byte *end_ptr) {
 }
 
 /** Parse log records from a buffer and optionally store them to a
-<<<<<<< HEAD
-hash table to wait merging to file pages.
-@param[in]	checkpoint_lsn	the LSN of the latest checkpoint */
-void recv_parse_log_recs(lsn_t checkpoint_lsn) {
-=======
 hash table to wait merging to file pages. */
 static void recv_parse_log_recs() {
->>>>>>> mysql-8.0.29
   ut_ad(recv_sys->parse_start_lsn != 0);
 
   for (;;) {
@@ -3570,14 +3564,8 @@ static bool recv_scan_log_recs(log_t &log,
 bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
                                ulint max_memory, const byte *buf, ulint len,
-<<<<<<< HEAD
-                               lsn_t checkpoint_lsn, lsn_t start_lsn,
-                               lsn_t *contiguous_lsn, lsn_t *read_upto_lsn,
-                               lsn_t to_lsn) {
-=======
                                lsn_t start_lsn, lsn_t *contiguous_lsn,
-                               lsn_t *read_upto_lsn) {
->>>>>>> mysql-8.0.29
+                               lsn_t *read_upto_lsn, lsn_t to_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool finished = false;
@@ -4007,14 +3995,9 @@ static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn) {
 
     recv_read_log_seg(log, log.buf, start_lsn, end_lsn);
 
-    finished = recv_scan_log_recs(log, max_mem, log.buf, RECV_SCAN_SIZE,
-<<<<<<< HEAD
-                                  checkpoint_lsn, start_lsn, contiguous_lsn,
-                                  &log.scanned_lsn, to_lsn);
-=======
-                                  start_lsn, contiguous_lsn, &log.scanned_lsn);
->>>>>>> mysql-8.0.29
-
+    finished =
+        recv_scan_log_recs(log, max_mem, log.buf, RECV_SCAN_SIZE, start_lsn,
+                           contiguous_lsn, &log.scanned_lsn, to_lsn);
     start_lsn = end_lsn;
   }
 

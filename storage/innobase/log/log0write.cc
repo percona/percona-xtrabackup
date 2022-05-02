@@ -2905,14 +2905,9 @@ bool log_write_encryption(byte *key, byte *iv) {
     iv = space->encryption_iv;
   }
 
-<<<<<<< HEAD
   bool encrypt = true;
   if (use_dumped_tablespace_keys && !srv_backup_mode) encrypt = false;
-  if (!log_file_header_fill_encryption(log_block_buf, key, iv, is_boot,
-                                       encrypt)) {
-=======
-  if (!log_file_header_fill_encryption(log_block_buf, key, iv, true)) {
->>>>>>> mysql-8.0.29
+  if (!log_file_header_fill_encryption(log_block_buf, key, iv, encrypt)) {
     ut::aligned_free(log_block_buf);
     return (false);
   }

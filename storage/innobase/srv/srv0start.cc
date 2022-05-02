@@ -2628,21 +2628,10 @@ files_checked:
     tablespaces were found and recovered. */
 
     if (srv_force_recovery == 0 && fil_check_missing_tablespaces()) {
-<<<<<<< HEAD
       // Missing tablespaces in the redo log are a valid possibility
       // with partial backups.
       // But keep them in the output for visibility
       xb::warn(ER_IB_MSG_1139);
-=======
-      ib::error(ER_IB_MSG_1139);
-
-      /* Set the abort flag to true. */
-      auto p = recv_recovery_from_checkpoint_finish(true);
-
-      ut_a(p == nullptr);
-
-      return (srv_init_abort(DB_ERROR));
->>>>>>> mysql-8.0.29
     }
 
     /* We have successfully recovered from the redo log. The
