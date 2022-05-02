@@ -4,7 +4,9 @@
 
 .. toctree::
    :maxdepth: 1
-
+   
+   release-notes/2.4/2.4.26
+   release-notes/2.4/2.4.25
    release-notes/2.4/2.4.24
    release-notes/2.4/2.4.23
    release-notes/2.4/2.4.22
@@ -31,3 +33,4 @@
    release-notes/2.4/2.4.2
    release-notes/2.4/2.4.1
    release-notes/2.4/2.4.0-rc1
+
