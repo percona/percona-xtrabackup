@@ -366,11 +366,6 @@ inline bool fsp_flags_is_valid(uint32_t flags) {
     return (false);
   }
 
-<<<<<<< HEAD
-#if FSP_FLAGS_POS_UNUSED != 15
-#error You have added a new FSP_FLAG without adding a validation check.
-#endif
-=======
   /* Only single-table and general tablespaces and not temp tablespaces
   use the encryption clause. */
   if (is_encryption && (is_temp)) {
@@ -380,7 +375,6 @@ inline bool fsp_flags_is_valid(uint32_t flags) {
   static_assert(
       FSP_FLAGS_POS_UNUSED == 15,
       "You have added a new FSP_FLAG without adding a validation check.");
->>>>>>> mysql-8.0.29
 
   return (true);
 }

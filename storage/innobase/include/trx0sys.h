@@ -317,8 +317,8 @@ constexpr uint32_t TRX_SYS_MYSQL_LOG_NAME = 12;
 are persisted to table */
 #define TRX_SYS_TRX_NUM_GTID \
   (TRX_SYS_MYSQL_LOG_INFO + TRX_SYS_MYSQL_LOG_NAME + TRX_SYS_MYSQL_LOG_NAME_LEN)
-<<<<<<< HEAD
-#define TRX_SYS_TRX_NUM_END = (TRX_SYS_TRX_NUM_GTID + 8)
+
+#define TRX_SYS_TRX_NUM_END (TRX_SYS_TRX_NUM_GTID + 8)
 
 /* The offset to WSREP XID headers */
 #define TRX_SYS_WSREP_XID_INFO (UNIV_PAGE_SIZE - 3500)
@@ -332,9 +332,6 @@ are persisted to table */
 #define TRX_SYS_WSREP_XID_BQUAL_LEN 12
 #define TRX_SYS_WSREP_XID_DATA 16
 
-=======
-#define TRX_SYS_TRX_NUM_END (TRX_SYS_TRX_NUM_GTID + 8)
->>>>>>> mysql-8.0.29
 /** Doublewrite buffer */
 /** @{ */
 /** The offset of the doublewrite buffer header on the trx system header page */

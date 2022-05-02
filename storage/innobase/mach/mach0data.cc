@@ -77,8 +77,8 @@ uint64_t mach_parse_u64_much_compressed(const byte **ptr, const byte *end_ptr) {
 advanced by the number of bytes consumed, or set NULL if out of space
 @param[in]      end_ptr end of the buffer
 @return unsigned value */
-<<<<<<< HEAD
-static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_ptr) {
+static uint32_t mach_parse_compressed_v3(const byte **ptr,
+                                         const byte *end_ptr) {
   ulint val;
 
   if (*ptr >= end_ptr) {
@@ -91,7 +91,7 @@ static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_pt
   if (val < 0x80) {
     /* 0nnnnnnn (7 bits) */
     ++*ptr;
-    return (static_cast<ib_uint32_t>(val));
+    return (static_cast<uint32_t>(val));
   }
 
   /* Workaround GCC bug
@@ -113,7 +113,7 @@ static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_pt
       val = mach_read_from_2(*ptr) & 0x3FFF;
       ut_ad(val > 0x7F);
       *ptr += 2;
-      return (static_cast<ib_uint32_t>(val));
+      return (static_cast<uint32_t>(val));
     }
     *ptr = NULL;
     return (0);
@@ -129,7 +129,7 @@ static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_pt
       val = mach_read_from_3(*ptr) & 0x1FFFFF;
       ut_ad(val > 0x3FFF);
       *ptr += 3;
-      return (static_cast<ib_uint32_t>(val));
+      return (static_cast<uint32_t>(val));
     }
     *ptr = NULL;
     return (0);
@@ -145,7 +145,7 @@ static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_pt
       val = mach_read_from_4(*ptr) & 0xFFFFFFF;
       ut_ad(val > 0x1FFFFF);
       *ptr += 4;
-      return (static_cast<ib_uint32_t>(val));
+      return (static_cast<uint32_t>(val));
     }
     *ptr = NULL;
     return (0);
@@ -164,7 +164,7 @@ static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_pt
     val = mach_read_from_4(*ptr + 1);
     ut_ad(val > 0xFFFFFFF);
     *ptr += 5;
-    return (static_cast<ib_uint32_t>(val));
+    return (static_cast<uint32_t>(val));
   }
 
   *ptr = NULL;
@@ -176,10 +176,7 @@ static ib_uint32_t mach_parse_compressed_v3(const byte **ptr, const byte *end_pt
 advanced by the number of bytes consumed, or set NULL if out of space
 @param[in]	end_ptr	end of the buffer
 @return unsigned value */
-ib_uint32_t mach_parse_compressed_v4(const byte **ptr, const byte *end_ptr) {
-=======
-uint32_t mach_parse_compressed(const byte **ptr, const byte *end_ptr) {
->>>>>>> mysql-8.0.29
+uint32_t mach_parse_compressed_v4(const byte **ptr, const byte *end_ptr) {
   ulint val;
 
   if (*ptr >= end_ptr) {
@@ -327,7 +324,7 @@ uint32_t mach_parse_compressed(const byte **ptr, const byte *end_ptr) {
 advanced by the number of bytes consumed, or set NULL if out of space
 @param[in]	end_ptr	end of the buffer
 @return unsigned value */
-ib_uint32_t mach_parse_compressed(const byte **ptr, const byte *end_ptr) {
+uint32_t mach_parse_compressed(const byte **ptr, const byte *end_ptr) {
   switch (log_sys->format) {
     case LOG_HEADER_FORMAT_5_7_9:
       ut_a(0);
