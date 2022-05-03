@@ -40,7 +40,8 @@ Bugs Fixed
 * :jirabug:`PXB-2716`: Fix for a compilation error on systems without fallocate. (Thanks to user Bo98 for providing the patch to fix this issue.)
 * :jirabug:`PXB-2506`: During copy back and move back operations, added a check if the backup is fully prepared. Percona XtraBackup throws an error if the backup is not prepared or was prepared with --apply-log-only. 
 * :jirabug:`PXB-2662`: Percona XtraBackup exited during prepare when creating an incremental backup using page tracking. 
-* :jirabug:`PXB-2697`: Undefined symbols in macOS resulted in an error when linked with Percona XtraBackup 8.0.27.
 * :jirabug:`PXB-2714`: Fix for a memory leak on the keyring component.
+* :jirabug:`PXB-2697`: Undefined symbols in macOS resulted in an error when linked with Percona XtraBackup 8.0.27.
+* :jirabug:`PXB-2722`: Fix for when via command line, a password, passed using the -p option, was written into the backup tool_command in xtrabackup_info.
 
 .. include:: ../../_res/replace/useful-links.txt
