@@ -4,12 +4,17 @@ We welcome contributions from all users and the community. By contributing, you 
 
 You can contribute to the documentation in the following ways:
 
+- Add a topic
 - Request a doc change through a Jira issue
 - Contribute to the documentation yourself
 
+## Add a topic
+
+In the [Percona Product Documentation category](https://forums.percona.com/c/percona-product-documentation/71) in the Percona Community Forum, select New Topic. Complete the form and select Create Topic to add the topic to the forum.![Create a topic](./_res/images/new-topic.png "Create a topic")
+
 ## Request a doc change through a Jira issue
 
-**Request a doc change through a Jira issue**. If you’ve found a doc issue (a typo, broken links, inaccurate instructions, etc.) let us know about it if you would rather not [contribute to the documentation yourself](#contribute-to-documentation-yourself).
+**Request a doc change through a Jira issue**. If you’ve found a doc issue (a typo, broken links, inaccurate instructions, etc.) create a Jira ticket to let us know about it if you would rather not [contribute to the documentation yourself](#contribute-to-documentation-yourself).
 
 - Click the **Submit DOC bug** link on the sidebar. This opens the [Jira issue tracker](https://jira.percona.com/projects/PXB/issues) for the doc project.
 - Sign in (create a Jira account if you don’t have one) and click **Create** to create an issue.
