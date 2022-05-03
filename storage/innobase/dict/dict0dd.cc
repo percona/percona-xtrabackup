@@ -329,6 +329,7 @@ bool dd_mdl_for_undo(const trx_t *trx) {
           ((trx->in_innodb & TRX_FORCE_ROLLBACK) == 0));
 }
 
+#ifdef XTRABACKUP
 /** Determine if a table contains a fulltext index.
 @param[in]      table   dd::Table
 @return whether the table contains any fulltext index */
@@ -340,6 +341,7 @@ inline bool dd_table_contains_fulltext(const dd::Table &table) {
   }
   return (false);
 }
+#endif /* XTRABACKUP */
 
 ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
   unsigned_type = col->is_unsigned() ? DATA_UNSIGNED : 0;
@@ -442,10 +444,10 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
                                         const dd::String_type *schema_name,
                                         bool is_implicit, space_id_t space_id) {
   using namespace dict_name;
-  mem_heap_t *heap = mem_heap_create(1000);
+  mem_heap_t *heap = mem_heap_create(1000, UT_LOCATION_HERE);
 
   char table_name[MAX_SPACE_NAME_LEN + 1];
-  char tmp_schema[MAX_DATABASE_NAME_LEN + 1];
+  char tmp_schema[+1];
   char tmp_tablename[MAX_TABLE_NAME_LEN + 1];
 
   tablename_to_filename(schema_name->c_str(), tmp_schema,
@@ -836,7 +838,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   dict_table_add_system_columns(table, heap);
 
   /* add instant column default value */
-  if (table->has_instant_cols()) {
+  if (table->has_instant_cols() || table->has_row_versions()) {
     dd_fill_instant_columns_default(*dd_table, table);
   }
 
@@ -855,7 +857,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         table->name.m_name, "GEN_CLUST_INDEX", 0, DICT_CLUSTERED, 0);
     index->n_uniq = 0;
 
-    dberr_t new_err = dict_index_add_to_cache(table, index, index->page, FALSE);
+    dberr_t new_err = dict_index_add_to_cache(table, index, index->page, false);
     if (new_err != DB_SUCCESS) {
       return (nullptr);
     }
@@ -934,7 +936,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
                          prefix_len, is_asc);
     }
 
-    if (dict_index_add_to_cache(table, index, 0, FALSE) != DB_SUCCESS) {
+    if (dict_index_add_to_cache(table, index, 0, false) != DB_SUCCESS) {
       ut_ad(0);
       return (nullptr);
     }
@@ -950,7 +952,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         DICT_TF2_FLAG_SET(table, DICT_TF2_FTS);
         table->fts->cache = fts_cache_create(table);
 
-        rw_lock_x_lock(&table->fts->cache->init_lock);
+        rw_lock_x_lock(&table->fts->cache->init_lock, UT_LOCATION_HERE);
         /* Notify the FTS cache about this index. */
         fts_cache_index_cache_create(table, index);
         rw_lock_x_unlock(&table->fts->cache->init_lock);
@@ -1002,7 +1004,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
       doc_id_index->add_field(FTS_DOC_ID_COL_NAME, 0, true);
 
       dberr_t err = dict_index_add_to_cache(table, doc_id_index,
-                                            doc_id_index->page, FALSE);
+                                            doc_id_index->page, false);
       if (err != DB_SUCCESS) {
         return (nullptr);
       }
@@ -1121,7 +1123,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
   mutex_enter(&dict_sys->mutex);
 
-  dict_table_add_to_cache(table, false, heap);
+  dict_table_add_to_cache(table, false);
   table->acquire();
 
   mutex_exit(&dict_sys->mutex);
@@ -4088,6 +4090,7 @@ inline int dd_fill_dict_index(const dd::Table &dd_table, const TABLE *m_form,
   return error;
 }
 
+#ifndef XTRABACKUP
 /** Determine if a table contains a fulltext index.
 @param[in]      table           dd::Table
 @return whether the table contains any fulltext index */
@@ -4099,6 +4102,7 @@ inline bool dd_table_contains_fulltext(const dd::Table &table) {
   }
   return false;
 }
+#endif /* XTRABACKUP */
 
 /** Read the metadata of default values for all columns added instantly
 @param[in]      dd_table        dd::Table
@@ -6265,13 +6269,14 @@ void dd_process_schema_rec(mem_heap_t *heap, const rec_t *rec,
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
                                    ULINT_UNDEFINED, &heap);
 
-  field = (const byte *)rec_get_nth_field(rec, offsets,
+  field = (const byte *)rec_get_nth_field(nullptr, rec, offsets,
                                           dd_tables->field_number("id"), &len);
 
   *id = mach_read_from_8(field);
 
-  field = rec_get_nth_field(
-      rec, offsets, dd_tables->field_number("name") + DD_FIELD_OFFSET, &len);
+  field = rec_get_nth_field(nullptr, rec, offsets,
+                            dd_tables->field_number("name") + DD_FIELD_OFFSET,
+                            &len);
   auto name_csr = (const char *)field;
 
   name->assign(name_csr, name_csr + len);
@@ -6298,18 +6303,19 @@ void dd_process_dd_tables_rec(mem_heap_t *heap, const rec_t *rec,
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
                                    ULINT_UNDEFINED, &heap);
 
-  field = rec_get_nth_field(
-      rec, offsets, dd_tables->field_number("name") + DD_FIELD_OFFSET, &len);
+  field = rec_get_nth_field(nullptr, rec, offsets,
+                            dd_tables->field_number("name") + DD_FIELD_OFFSET,
+                            &len);
   auto name_csr = (const char *)field;
   name->assign(name_csr, name_csr + len);
 
-  field = (const byte *)rec_get_nth_field(rec, offsets,
+  field = (const byte *)rec_get_nth_field(nullptr, rec, offsets,
                                           dd_tables->field_number("id"), &len);
   *id = mach_read_from_8(field);
 
   field = (const byte *)rec_get_nth_field(
-      rec, offsets, dd_tables->field_number("schema_id") + DD_FIELD_OFFSET,
-      &len);
+      nullptr, rec, offsets,
+      dd_tables->field_number("schema_id") + DD_FIELD_OFFSET, &len);
   *schema_id = mach_read_from_8(field);
   mtr_commit(mtr);
 }

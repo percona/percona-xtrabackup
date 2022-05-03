@@ -206,7 +206,7 @@ bool Tablespace_map::serialize(ds_ctxt_t *ds) const {
 
   MY_STAT mystat;
   mystat.st_size = buf.GetSize();
-  mystat.st_mtime = my_time(0);
+  mystat.st_mtime = time(nullptr);
 
   const char *path = XBTS_FILE_NAME;
   ds_file_t *stream = ds_open(ds, path, &mystat);

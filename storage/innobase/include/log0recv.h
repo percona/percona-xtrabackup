@@ -742,9 +742,8 @@ void recv_reset_buffer();
 bool recv_sys_resize_buf();
 
 /** Parse log records from a buffer and optionally store them to a
-hash table to wait merging to file pages.
-@param[in]  checkpoint_lsn  the LSN of the latest checkpoint */
-void recv_parse_log_recs(lsn_t checkpoint_lsn);
+hash table to wait merging to file pages. */
+void recv_parse_log_recs();
 
 #include "log0recv.ic"
 

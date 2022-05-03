@@ -3410,7 +3410,11 @@ static bool recv_multi_rec(byte *ptr, byte *end_ptr) {
 
 /** Parse log records from a buffer and optionally store them to a
 hash table to wait merging to file pages. */
-static void recv_parse_log_recs() {
+#ifndef XTRABACKUP
+static
+#endif
+    void
+    recv_parse_log_recs() {
   ut_ad(recv_sys->parse_start_lsn != 0);
 
   for (;;) {
@@ -3859,7 +3863,7 @@ static
 #endif
 void recv_read_log_seg(log_t & log, byte * buf, lsn_t start_lsn,
                        lsn_t end_lsn) {
-  log_background_threads_inactive_validate(log);
+  log_background_threads_inactive_validate();
   do {
     lsn_t source_offset;
 

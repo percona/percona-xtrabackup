@@ -118,10 +118,8 @@ class Redo_Log_Parser {
   @param[in] buf                buffer to parse
   @param[in] len                data length
   @param[in] start_lsn          start lsn
-  @param[in] checkpoint_lsn     checkpoint lsn
   @return false if error. */
-  bool parse_log(const byte *buf, size_t len, lsn_t start_lsn,
-                 lsn_t checkpoint_lsn);
+  bool parse_log(const byte *buf, size_t len, lsn_t start_lsn);
 };
 
 /** Redo log writer. */

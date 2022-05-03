@@ -147,20 +147,20 @@ const char reserved_temporary_space_name[] = "innodb_temporary";
 /* === xtrabackup specific options === */
 char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
 char *xtrabackup_target_dir = xtrabackup_real_target_dir;
-bool xtrabackup_version = FALSE;
-bool xtrabackup_backup = FALSE;
-bool xtrabackup_stats = FALSE;
-bool xtrabackup_prepare = FALSE;
-bool xtrabackup_copy_back = FALSE;
-bool xtrabackup_move_back = FALSE;
-bool xtrabackup_decrypt_decompress = FALSE;
-bool xtrabackup_print_param = FALSE;
+bool xtrabackup_version = false;
+bool xtrabackup_backup = false;
+bool xtrabackup_stats = false;
+bool xtrabackup_prepare = false;
+bool xtrabackup_copy_back = false;
+bool xtrabackup_move_back = false;
+bool xtrabackup_decrypt_decompress = false;
+bool xtrabackup_print_param = false;
 
-bool xtrabackup_export = FALSE;
-bool xtrabackup_apply_log_only = FALSE;
+bool xtrabackup_export = false;
+bool xtrabackup_apply_log_only = false;
 
 longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
-bool xtrabackup_create_ib_logfile = FALSE;
+bool xtrabackup_create_ib_logfile = false;
 
 long xtrabackup_throttle = 0; /* 0:unlimited */
 lint io_ticket;
@@ -214,7 +214,7 @@ static hash_table_t *inc_dir_tables_hash;
 
 struct xb_filter_entry_struct {
   char *name;
-  ibool has_tables;
+  bool has_tables;
   hash_node_t name_hash;
 };
 typedef struct xb_filter_entry_struct xb_filter_entry_t;
@@ -318,12 +318,12 @@ char *innobase_temp_data_file_path = NULL;
 values */
 
 ulong innobase_fast_shutdown = 1;
-bool innobase_use_checksums = TRUE;
-bool innobase_use_large_pages = FALSE;
-bool innobase_file_per_table = FALSE;
-bool innobase_rollback_on_timeout = FALSE;
-bool innobase_create_status_file = FALSE;
-bool innobase_adaptive_hash_index = TRUE;
+bool innobase_use_checksums = true;
+bool innobase_use_large_pages = false;
+bool innobase_file_per_table = false;
+bool innobase_rollback_on_timeout = false;
+bool innobase_create_status_file = false;
+bool innobase_adaptive_hash_index = true;
 
 static char *internal_innobase_data_file_path = NULL;
 
@@ -335,8 +335,8 @@ char *opt_keyring_file_data = nullptr;
 char *opt_component_keyring_config = nullptr;
 char *opt_component_keyring_file_config = nullptr;
 
-bool opt_generate_new_master_key = FALSE;
-bool opt_generate_transition_key = FALSE;
+bool opt_generate_new_master_key = false;
+bool opt_generate_transition_key = false;
 
 bool use_dumped_tablespace_keys = false;
 
@@ -351,7 +351,7 @@ ulong innobase_active_counter = 0;
 static char *xtrabackup_debug_sync = NULL;
 static const char *dbug_setting = nullptr;
 
-bool xtrabackup_incremental_force_scan = FALSE;
+bool xtrabackup_incremental_force_scan = false;
 
 /* The flushed lsn which is read from data files */
 lsn_t min_flushed_lsn = 0;
@@ -365,7 +365,7 @@ lsn_t xtrabackup_arch_first_file_lsn = 0ULL;
 lsn_t xtrabackup_arch_last_file_lsn = 0ULL;
 
 ulong xb_open_files_limit = 0;
-bool xb_close_files = FALSE;
+bool xb_close_files = false;
 
 /* Datasinks */
 ds_ctxt_t *ds_data = nullptr;
@@ -399,22 +399,22 @@ static ulonglong global_max_value;
 
 extern "C" void handle_fatal_signal(int sig);
 
-bool opt_galera_info = FALSE;
-bool opt_slave_info = FALSE;
-bool opt_page_tracking = FALSE;
-bool opt_no_lock = FALSE;
-bool opt_safe_slave_backup = FALSE;
-bool opt_rsync = FALSE;
-bool opt_force_non_empty_dirs = FALSE;
+bool opt_galera_info = false;
+bool opt_slave_info = false;
+bool opt_page_tracking = false;
+bool opt_no_lock = false;
+bool opt_safe_slave_backup = false;
+bool opt_rsync = false;
+bool opt_force_non_empty_dirs = false;
 #ifdef HAVE_VERSION_CHECK
-bool opt_noversioncheck = FALSE;
+bool opt_noversioncheck = false;
 #endif
-bool opt_no_server_version_check = FALSE;
-bool opt_no_backup_locks = FALSE;
-bool opt_decompress = FALSE;
-bool opt_remove_original = FALSE;
-bool opt_tables_compatibility_check = TRUE;
-static bool opt_check_privileges = FALSE;
+bool opt_no_server_version_check = false;
+bool opt_no_backup_locks = false;
+bool opt_decompress = false;
+bool opt_remove_original = false;
+bool opt_tables_compatibility_check = true;
+static bool opt_check_privileges = false;
 
 char *opt_incremental_history_name = NULL;
 char *opt_incremental_history_uuid = NULL;
@@ -448,18 +448,18 @@ uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
 uint opt_dump_innodb_buffer_pool_timeout = 10;
 uint opt_dump_innodb_buffer_pool_pct = 0;
-bool opt_dump_innodb_buffer_pool = FALSE;
+bool opt_dump_innodb_buffer_pool = false;
 
-bool punch_hole_supported = FALSE;
+bool punch_hole_supported = false;
 
-bool opt_lock_ddl = FALSE;
-bool opt_lock_ddl_per_table = FALSE;
+bool opt_lock_ddl = false;
+bool opt_lock_ddl_per_table = false;
 uint opt_lock_ddl_timeout = 0;
 uint opt_backup_lock_timeout = 0;
 uint opt_backup_lock_retry_count = 0;
 
 const char *opt_history = NULL;
-bool opt_decrypt = FALSE;
+bool opt_decrypt = false;
 uint opt_read_buffer_size = 0;
 
 char *opt_rocksdb_datadir = nullptr;
@@ -717,6 +717,8 @@ enum options_xtrabackup {
   OPT_SSL_MODE,
   OPT_SSL_FIPS_MODE,
   OPT_TLS_CIPHERSUITES,
+  OPT_SSL_SESSION_DATA,
+  OPT_SSL_SESSION_DATA_CONTINUE_ON_FAILED_REUSE,
   OPT_SERVER_PUBLIC_KEY,
 
   OPT_XTRA_TABLES_EXCLUDE,
@@ -1082,7 +1084,7 @@ struct my_option xb_client_options[] = {
     {"tables-compatibility-check", OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
      "This option enables engine compatibility warning.",
      (uchar *)&opt_tables_compatibility_check,
-     (uchar *)&opt_tables_compatibility_check, 0, GET_BOOL, NO_ARG, TRUE, 0, 0,
+     (uchar *)&opt_tables_compatibility_check, 0, GET_BOOL, NO_ARG, true, 0, 0,
      0, 0, 0},
 
     {"no-backup-locks", OPT_NO_BACKUP_LOCKS,
@@ -1402,7 +1404,7 @@ Disable with --skip-innodb-checksums.",
     {"innodb_file_per_table", OPT_INNODB_FILE_PER_TABLE,
      "Stores each InnoDB table to an .ibd file in the database dir.",
      (G_PTR *)&innobase_file_per_table, (G_PTR *)&innobase_file_per_table, 0,
-     GET_BOOL, NO_ARG, FALSE, 0, 0, 0, 0, 0},
+     GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
     {"innodb_flush_log_at_trx_commit", OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT,
      "Set to 0 (write and flush once per second), 1 (write and flush at each "
      "commit) or 2 (write at commit, flush once per second).",
@@ -1453,7 +1455,7 @@ Disable with --skip-innodb-checksums.",
     {"innodb_use_native_aio", OPT_INNODB_USE_NATIVE_AIO,
      "Use native AIO if supported on this platform.",
      (G_PTR *)&srv_use_native_aio, (G_PTR *)&srv_use_native_aio, 0, GET_BOOL,
-     NO_ARG, FALSE, 0, 0, 0, 0, 0},
+     NO_ARG, false, 0, 0, 0, 0, 0},
     {"innodb_page_size", OPT_INNODB_PAGE_SIZE,
      "The universal page size of the database.", (G_PTR *)&innobase_page_size,
      (G_PTR *)&innobase_page_size, 0,
@@ -1496,7 +1498,7 @@ Disable with --skip-innodb-checksums.",
     {"innodb_log_checksums", OPT_INNODB_LOG_CHECKSUMS,
      "Whether to compute and require checksums for InnoDB redo log blocks",
      &srv_log_checksums, &srv_log_checksums, &innodb_checksum_algorithm_typelib,
-     GET_BOOL, REQUIRED_ARG, TRUE, 0, 0, 0, 0, 0},
+     GET_BOOL, REQUIRED_ARG, true, 0, 0, 0, 0, 0},
     {"innodb_undo_directory", OPT_INNODB_UNDO_DIRECTORY,
      "Directory where undo tablespace files live, this path can be absolute.",
      &srv_undo_dir, &srv_undo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
@@ -1783,7 +1785,7 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
         xb::error() << "Invalid --stream argument: " << argument;
         return 1;
       }
-      xtrabackup_stream = TRUE;
+      xtrabackup_stream = true;
       break;
     case OPT_XTRA_COMPRESS:
       if (argument == NULL) {
@@ -1804,7 +1806,7 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
             << " algorithm.";
         return 1;
       }
-      xtrabackup_encrypt = TRUE;
+      xtrabackup_encrypt = true;
       break;
     case OPT_DECRYPT:
       if (argument == NULL) {
@@ -1812,11 +1814,11 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
                        " valid encryption algorithm.";
         return (1);
       }
-      opt_decrypt = TRUE;
+      opt_decrypt = true;
       xtrabackup_decrypt_decompress = true;
       break;
     case OPT_DECOMPRESS:
-      opt_decompress = TRUE;
+      opt_decompress = true;
       xtrabackup_decrypt_decompress = true;
       break;
     case (int)OPT_CORE_FILE:
@@ -1900,7 +1902,7 @@ static bool innodb_init_param(void) {
   if (init_tmpdir(&mysql_tmpdir_list, opt_mysql_tmpdir)) exit(EXIT_FAILURE);
 
   /* dummy for initialize all_charsets[] */
-  get_charset_name(0);
+  get_collation_name(0);
 
   /* Check that the value of system variable innodb_page_size was
   set correctly.  Its value was put into srv_page_size. If valid,
@@ -2059,7 +2061,7 @@ static bool innodb_init_param(void) {
     goto error;
   }
 
-  srv_adaptive_flushing = FALSE;
+  srv_adaptive_flushing = false;
   /* --------------------------------------------------*/
 
   srv_n_log_files = (ulint)innobase_log_files_in_group;
@@ -2099,15 +2101,15 @@ static bool innodb_init_param(void) {
 
   btr_search_enabled = (char)innobase_adaptive_hash_index;
 
-  os_use_large_pages = (ibool)innobase_use_large_pages;
+  os_use_large_pages = (bool)innobase_use_large_pages;
   os_large_page_size = (ulint)innobase_large_page_size;
 
-  row_rollback_on_timeout = (ibool)innobase_rollback_on_timeout;
+  row_rollback_on_timeout = (bool)innobase_rollback_on_timeout;
 
   srv_file_per_table = (bool)innobase_file_per_table;
 
   innobase_set_open_files_limit(innobase_open_files);
-  srv_innodb_status = (ibool)innobase_create_status_file;
+  srv_innodb_status = (bool)innobase_create_status_file;
 
   /* Store the default charset-collation number of this MySQL
   installation */
@@ -2121,7 +2123,7 @@ static bool innodb_init_param(void) {
   modules, we check at run time that the size is the same in
   these compilation modules. */
 
-  /* On 5.5+ srv_use_native_aio is TRUE by default. It is later reset
+  /* On 5.5+ srv_use_native_aio is true by default. It is later reset
   if it is not supported by the platform in
   innobase_start_or_create_for_mysql(). As we don't call it in xtrabackup,
   we have to duplicate checks from that function here. */
@@ -2136,19 +2138,19 @@ static bool innodb_init_param(void) {
       but when run in conjunction with InnoDB Hot Backup, it seemed
       to corrupt the data files. */
 
-      srv_use_native_aio = FALSE;
+      srv_use_native_aio = false;
       break;
 
     case OS_WIN2000:
     case OS_WINXP:
       /* On 2000 and XP, async IO is available. */
-      srv_use_native_aio = TRUE;
+      srv_use_native_aio = true;
       break;
 
     default:
       /* Vista and later have both async IO and condition variables */
-      srv_use_native_aio = TRUE;
-      srv_use_native_conditions = TRUE;
+      srv_use_native_aio = true;
+      srv_use_native_conditions = true;
       break;
   }
 
@@ -2162,7 +2164,7 @@ static bool innodb_init_param(void) {
   /* Currently native AIO is supported only on windows and linux
   and that also when the support is compiled in. In all other
   cases, we ignore the setting of innodb_use_native_aio. */
-  srv_use_native_aio = FALSE;
+  srv_use_native_aio = false;
 
 #endif
 
@@ -2191,11 +2193,11 @@ static bool innodb_init_param(void) {
 
   Fil_path::normalize(ibt::srv_temp_dir);
 
-  return (FALSE);
+  return (false);
 
 error:
   xb::error() << "innodb_init_param(): Error occured.";
-  return (TRUE);
+  return (true);
 }
 
 /** Scan the SDI id from DD table "mysql.tables"
@@ -2221,7 +2223,7 @@ static dberr_t get_id_from_dd_scan(const std::string &name, uint64 *id,
     const rec_t *rec = nullptr;
     mtr_t mtr;
     MDL_ticket *mdl = nullptr;
-    mem_heap_t *heap = mem_heap_create(1000);
+    mem_heap_t *heap = mem_heap_create(1000, UT_LOCATION_HERE);
     mutex_enter(&(dict_sys->mutex));
 
     mtr_start(&mtr);
@@ -2572,22 +2574,22 @@ static bool innodb_end(void) {
   free(internal_innobase_data_file_path);
   internal_innobase_data_file_path = NULL;
 
-  return (FALSE);
+  return (false);
 }
 
 /* Read backup meta info.
 @param[in] filename filename to read mysql version
-@return TRUE on success, FALSE on failure. */
+@return true on success, false on failure. */
 static bool xtrabackup_read_info(char *filename) {
   FILE *fp;
-  bool r = TRUE;
+  bool r = true;
   char mysql_server_version_str[30] = ""; /* 8.0.20.debug| 8.0.20 */
   unsigned long mysql_server_version;
 
   fp = fopen(filename, "r");
   if (!fp) {
     xb::error() << "cannot open " << filename;
-    return (FALSE);
+    return (false);
   }
   /* skip uuid, name, tool_name, tool_command, tool_version, ibbackup_version */
   for (int i = 0; i < 6; i++) {
@@ -2598,7 +2600,7 @@ static bool xtrabackup_read_info(char *filename) {
   }
 
   if (fscanf(fp, "server_version = %29s\n", mysql_server_version_str) != 1) {
-    r = FALSE;
+    r = false;
     goto end;
   }
   mysql_server_version =
@@ -2621,29 +2623,29 @@ end:
 
 /***********************************************************************
 Read backup meta info.
-@return TRUE on success, FALSE on failure. */
+@return true on success, false on failure. */
 static bool xtrabackup_read_metadata(char *filename) {
   FILE *fp;
-  bool r = TRUE;
+  bool r = true;
 
   fp = fopen(filename, "r");
   if (!fp) {
     xb::error() << "cannot open " << filename;
-    return (FALSE);
+    return (false);
   }
 
   if (fscanf(fp, "backup_type = %29s\n", metadata_type_str) != 1) {
-    r = FALSE;
+    r = false;
     goto end;
   }
   /* Use UINT64PF instead of LSN_PF here, as we have to maintain the file
   format. */
   if (fscanf(fp, "from_lsn = " LSN_PF "\n", &metadata_from_lsn) != 1) {
-    r = FALSE;
+    r = false;
     goto end;
   }
   if (fscanf(fp, "to_lsn = " LSN_PF "\n", &metadata_to_lsn) != 1) {
-    r = FALSE;
+    r = false;
     goto end;
   }
   if (fscanf(fp, "last_lsn = " LSN_PF "\n", &metadata_last_lsn) != 1) {
@@ -2680,34 +2682,34 @@ static void xtrabackup_print_metadata(char *buf, size_t buf_len) {
 
 /***********************************************************************
 Stream backup meta info to a specified datasink.
-@return TRUE on success, FALSE on failure. */
+@return true on success, false on failure. */
 static bool xtrabackup_stream_metadata(ds_ctxt_t *ds_ctxt) {
   char buf[1024];
   size_t len;
   ds_file_t *stream;
   MY_STAT mystat;
-  bool rc = TRUE;
+  bool rc = true;
 
   xtrabackup_print_metadata(buf, sizeof(buf));
 
   len = strlen(buf);
 
   mystat.st_size = len;
-  mystat.st_mtime = my_time(0);
+  mystat.st_mtime = time(nullptr);
 
   stream = ds_open(ds_ctxt, XTRABACKUP_METADATA_FILENAME, &mystat);
   if (stream == NULL) {
     xb::error() << "cannot open output stream for "
                 << XTRABACKUP_METADATA_FILENAME;
-    return (FALSE);
+    return (false);
   }
 
   if (ds_write(stream, buf, len)) {
-    rc = FALSE;
+    rc = false;
   }
 
   if (ds_close(stream)) {
-    rc = FALSE;
+    rc = false;
   }
 
   return (rc);
@@ -2718,20 +2720,20 @@ static bool write_to_file(const char *filepath, const char *data) {
   FILE *fp = fopen(filepath, "w");
   if (!fp) {
     xb::error() << "cannot open " << filepath;
-    return (FALSE);
+    return (false);
   }
   if (fwrite(data, len, 1, fp) < 1) {
     fclose(fp);
-    return (FALSE);
+    return (false);
   }
 
   fclose(fp);
-  return TRUE;
+  return true;
 }
 
 /***********************************************************************
 Write backup meta info to a specified file.
-@return TRUE on success, FALSE on failure. */
+@return true on success, false on failure. */
 static bool xtrabackup_write_metadata(const char *filepath) {
   char buf[1024];
 
@@ -2741,13 +2743,13 @@ static bool xtrabackup_write_metadata(const char *filepath) {
 
 /***********************************************************************
 Read meta info for an incremental delta.
-@return TRUE on success, FALSE on failure. */
+@return true on success, false on failure. */
 static bool xb_read_delta_metadata(const char *filepath,
                                    xb_delta_info_t *info) {
   FILE *fp;
   char key[51];
   char value[51];
-  bool r = TRUE;
+  bool r = true;
 
   /* set defaults */
   info->page_size = ULINT_UNDEFINED;
@@ -2758,7 +2760,7 @@ static bool xb_read_delta_metadata(const char *filepath,
   fp = fopen(filepath, "r");
   if (!fp) {
     /* Meta files for incremental deltas are optional */
-    return (TRUE);
+    return (true);
   }
 
   while (!feof(fp)) {
@@ -2779,7 +2781,7 @@ static bool xb_read_delta_metadata(const char *filepath,
 
   if (info->page_size == ULINT_UNDEFINED) {
     xb::error() << "page_size is required in " << filepath;
-    r = FALSE;
+    r = false;
   }
   if (info->space_id == SPACE_UNKNOWN) {
     xb::warn()
@@ -2793,7 +2795,7 @@ static bool xb_read_delta_metadata(const char *filepath,
 
 /***********************************************************************
 Write meta info for an incremental delta.
-@return TRUE on success, FALSE on failure. */
+@return true on success, false on failure. */
 bool xb_write_delta_metadata(const char *filename,
                              const xb_delta_info_t *info) {
   ds_file_t *f;
@@ -2811,18 +2813,18 @@ bool xb_write_delta_metadata(const char *filename,
   len = strlen(buf);
 
   mystat.st_size = len;
-  mystat.st_mtime = my_time(0);
+  mystat.st_mtime = time(nullptr);
 
   f = ds_open(ds_meta, filename, &mystat);
   if (f == NULL) {
     xb::error() << "cannot open output stream for " << filename;
-    return (FALSE);
+    return (false);
   }
 
   ret = (ds_write(f, buf, len) == 0);
 
   if (ds_close(f)) {
-    ret = FALSE;
+    ret = false;
   }
 
   return (ret);
@@ -2831,7 +2833,7 @@ bool xb_write_delta_metadata(const char *filename,
 static bool xtrabackup_write_info(const char *filepath) {
   char *xtrabackup_info_data = get_xtrabackup_info(mysql_connection);
   if (!xtrabackup_info_data) {
-    return FALSE;
+    return false;
   }
 
   bool result = write_to_file(filepath, xtrabackup_info_data);
@@ -2856,10 +2858,10 @@ static bool regex_list_check_match(const regex_list_t &list, const char *name) {
     int regres = xb_regexec(&regex, name, 1, tables_regmatch, 0);
 
     if (regres != REG_NOMATCH) {
-      return (TRUE);
+      return (true);
     }
   }
-  return (FALSE);
+  return (false);
 }
 
 static bool find_filter_in_hashtable(const char *name, hash_table_t *table,
@@ -2878,23 +2880,23 @@ static bool find_filter_in_hashtable(const char *name, hash_table_t *table,
 Checks if a given table name matches any of specifications given in
 regex_list or tables_hash.
 
-@return TRUE on match or both regex_list and tables_hash are empty.*/
+@return true on match or both regex_list and tables_hash are empty.*/
 static bool check_if_table_matches_filters(const char *name,
                                            const regex_list_t &regex_list,
                                            hash_table_t *tables_hash) {
   if (regex_list.empty() && !tables_hash) {
-    return (FALSE);
+    return (false);
   }
 
   if (regex_list_check_match(regex_list, name)) {
-    return (TRUE);
+    return (true);
   }
 
   if (tables_hash && find_filter_in_hashtable(name, tables_hash, NULL)) {
-    return (TRUE);
+    return (true);
   }
 
-  return FALSE;
+  return false;
 }
 
 enum skip_database_check_result {
@@ -2908,8 +2910,8 @@ enum skip_database_check_result {
 Checks if a database specified by name should be skipped from backup based on
 the --databases, --databases_file or --databases_exclude options.
 
-@return TRUE if entire database should be skipped,
-        FALSE otherwise.
+@return true if entire database should be skipped,
+        false otherwise.
 */
 static skip_database_check_result check_if_skip_database(
     const char *name /*!< in: path to the database */
@@ -2943,12 +2945,12 @@ static skip_database_check_result check_if_skip_database(
 Checks if a database specified by path should be skipped from backup based on
 the --databases, --databases_file or --databases_exclude options.
 
-@return TRUE if the table should be skipped. */
+@return true if the table should be skipped. */
 bool check_if_skip_database_by_path(
     const char *path /*!< in: path to the db directory. */
 ) {
   if (databases_include_hash == NULL && databases_exclude_hash == NULL) {
-    return (FALSE);
+    return (false);
   }
 
   const char *db_name = strrchr(path, OS_PATH_SEPARATOR);
@@ -2966,7 +2968,7 @@ Checks if a table specified as a name in the form "database/name" (InnoDB 5.6)
 or "./database/name.ibd" (InnoDB 5.5-) should be skipped from backup based on
 the --tables or --tables-file options.
 
-@return TRUE if the table should be skipped. */
+@return true if the table should be skipped. */
 bool check_if_skip_table(
     /******************/
     const char *name) /*!< in: path to the table */
@@ -3094,7 +3096,7 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
   xb_write_filt_ctxt_t write_filt_ctxt;
   const char *action;
   xb_read_filt_t *read_filter;
-  bool rc = FALSE;
+  bool rc = false;
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
@@ -3112,7 +3114,7 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
 
   if (!is_system && check_if_skip_table(node_name)) {
     xb::info() << " Skipping " << node_name;
-    return (FALSE);
+    return (false);
   }
 
   if (changed_page_tracking && changed_page_bitmap) {
@@ -3199,7 +3201,7 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
 
   xb_fil_cur_close(&cursor);
   if (ds_close(dstfile)) {
-    rc = TRUE;
+    rc = true;
   }
   if (write_filter && write_filter->deinit) {
     write_filter->deinit(&write_filt_ctxt);
@@ -3216,7 +3218,7 @@ error:
     ;
   }
   xb::error() << "xtrabackup_copy_datafile() failed";
-  return (TRUE); /*ERROR*/
+  return (true); /*ERROR*/
 
 skip:
 
@@ -3231,7 +3233,7 @@ skip:
              << "table was dropped during xtrabackup execution "
              << "and ignore the file.";
   xb::warn() << "skipping tablespace " << node_name;
-  return (FALSE);
+  return (false);
 }
 
 /* io throttle watching (rough) */
@@ -3478,8 +3480,7 @@ static void xb_fil_io_init(void)
 {
   srv_n_file_io_threads = srv_n_read_io_threads;
 
-  os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads,
-              SRV_MAX_N_PENDING_SYNC_IOS);
+  os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads);
 
   fil_init(LONG_MAX);
 
@@ -3630,7 +3631,7 @@ static xb_filter_entry_t *xb_new_filter_entry(
       UT_NEW_THIS_FILE_PSI_KEY, sizeof(xb_filter_entry_t) + namelen + 1));
   entry->name = ((char *)entry) + sizeof(xb_filter_entry_t);
   strcpy(entry->name, name);
-  entry->has_tables = FALSE;
+  entry->has_tables = false;
 
   return entry;
 }
@@ -3708,7 +3709,7 @@ static void xb_register_filter_entry(
     if (!db_entry) {
       db_entry = xb_add_filter(dbname, databases_hash);
     }
-    db_entry->has_tables = TRUE;
+    db_entry->has_tables = true;
     xb_add_filter(name, tables_hash);
   } else {
     xb_validate_name(name, namelen);
@@ -4012,7 +4013,7 @@ static void xb_tables_compatibility_check() {
 }
 
 static void init_mysql_environment() {
-  ulong server_start_time = my_time(0);
+  ulong server_start_time = time(nullptr);
 
   randominit(&sql_rand, server_start_time, server_start_time / 2);
 
@@ -4096,9 +4097,9 @@ void xtrabackup_backup_func(void) {
   mysql_data_home[0] = FN_CURLIB;  // all paths are relative from here
   mysql_data_home[1] = 0;
 
-  srv_read_only_mode = TRUE;
+  srv_read_only_mode = true;
 
-  srv_backup_mode = TRUE;
+  srv_backup_mode = true;
   /* We can safely close files if we don't allow DDL during the
   backup */
   srv_close_files = xb_close_files || opt_lock_ddl;
@@ -4487,7 +4488,7 @@ static bool xtrabackup_stats_level(dict_index_t *index, ulint level) {
   page_cur_t cursor;
 
   mtr_t mtr;
-  mem_heap_t *heap = mem_heap_create(256);
+  mem_heap_t *heap = mem_heap_create(256, UT_LOCATION_HERE);
 
   ulint *offsets = NULL;
 
@@ -4508,7 +4509,7 @@ static bool xtrabackup_stats_level(dict_index_t *index, ulint level) {
 
   mtr_start(&mtr);
 
-  mtr_x_lock(&(index->lock), &mtr);
+  mtr_x_lock(&(index->lock), &mtr, UT_LOCATION_HERE);
   block = btr_root_block_get(index, RW_X_LATCH, &mtr);
   page = buf_block_get_frame(block);
 
@@ -4517,7 +4518,7 @@ static bool xtrabackup_stats_level(dict_index_t *index, ulint level) {
 
   ut_a(found);
 
-  while (level != btr_page_get_level(page, &mtr)) {
+  while (level != btr_page_get_level(page)) {
     ut_a(space == block->page.id.space());
     ut_a(space == page_get_space_id(page));
     ut_a(!page_is_leaf(page));
@@ -4534,7 +4535,7 @@ static bool xtrabackup_stats_level(dict_index_t *index, ulint level) {
 loop:
   mem_heap_empty(heap);
   offsets = NULL;
-  mtr_x_lock(&(index->lock), &mtr);
+  mtr_x_lock(&(index->lock), &mtr, UT_LOCATION_HERE);
 
   right_page_no = btr_page_get_next(page, &mtr);
 
@@ -4565,7 +4566,7 @@ loop:
       n_fields = rec_offs_n_fields(local_offsets);
 
       for (i = 0; i < n_fields; i++) {
-        if (rec_offs_nth_extern(local_offsets, i)) {
+        if (rec_offs_nth_extern(nullptr, local_offsets, i)) {
           page_t *local_page;
           ulint space_id;
           ulint page_no;
@@ -4577,7 +4578,9 @@ loop:
           byte *data;
           buf_block_t *local_block;
 
-          data = rec_get_nth_field(cur.rec, local_offsets, i, &local_len);
+          data =
+
+              rec_get_nth_field(nullptr, cur.rec, local_offsets, i, &local_len);
 
           ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
           local_len -= BTR_EXTERN_FIELD_REF_SIZE;
@@ -4599,8 +4602,9 @@ loop:
           for (;;) {
             mtr_start(&local_mtr);
 
-            local_block = btr_block_get(page_id_t(space_id, page_no), page_size,
-                                        RW_S_LATCH, index, &local_mtr);
+            local_block =
+                btr_block_get(page_id_t(space_id, page_no), page_size,
+                              RW_S_LATCH, UT_LOCATION_HERE, index, &local_mtr);
             local_page = buf_block_get_frame(local_block);
             blob_header = local_page + offset;
 #define BTR_BLOB_HDR_PART_LEN 0
@@ -4634,7 +4638,7 @@ loop:
   if (right_page_no != FIL_NULL) {
     mtr_start(&mtr);
     block = btr_block_get(page_id_t(space, dict_index_get_page(index)),
-                          page_size, RW_X_LATCH, index, &mtr);
+                          page_size, RW_X_LATCH, UT_LOCATION_HERE, index, &mtr);
     page = buf_block_get_frame(block);
     goto loop;
   }
@@ -4661,7 +4665,7 @@ loop:
     xtrabackup_stats_level(index, level - 1);
   }
 
-  return (TRUE);
+  return (true);
 }
 
 static void stat_with_rec(dict_table_t *table, THD *thd,
@@ -4676,7 +4680,7 @@ static void stat_with_rec(dict_table_t *table, THD *thd,
 
       index = UT_LIST_GET_FIRST(table->indexes);
       while (index != NULL) {
-        ib_uint64_t n_vals;
+        uint64_t n_vals;
         bool found;
 
         if (index->n_user_defined_cols > 0) {
@@ -4705,10 +4709,10 @@ static void stat_with_rec(dict_table_t *table, THD *thd,
 
           mtr_start(&local_mtr);
 
-          mtr_x_lock(&(index->lock), &local_mtr);
+          mtr_x_lock(&(index->lock), &local_mtr, UT_LOCATION_HERE);
 
           root = btr_root_get(index, &local_mtr);
-          page_level = btr_page_get_level(root, &local_mtr);
+          page_level = btr_page_get_level(root);
 
           xtrabackup_stats_level(index, page_level);
 
@@ -4742,7 +4746,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   mysql_data_home[1] = 0;
 
   /* set read only */
-  srv_read_only_mode = TRUE;
+  srv_read_only_mode = true;
 
   init_mysql_environment();
   if(!xtrabackup::components::keyring_init_offline())
@@ -4776,7 +4780,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   }
 
   /* Check if the log files have been created, otherwise innodb_init()
-  will crash when called with srv_read_only == TRUE */
+  will crash when called with srv_read_only == true */
   for (n = 0; n < srv_n_log_files; n++) {
     char logname[FN_REFLEN];
     bool exists;
@@ -4822,7 +4826,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
     const rec_t *rec = nullptr;
     mtr_t mtr;
     MDL_ticket *mdl = nullptr;
-    mem_heap_t *heap = mem_heap_create(1000);
+    mem_heap_t *heap = mem_heap_create(1000, UT_LOCATION_HERE);
 
     mutex_enter(&(dict_sys->mutex));
 
@@ -4925,7 +4929,7 @@ static bool xtrabackup_init_temp_log(void) {
   ulint field;
   byte *log_buf;
 
-  ib_uint64_t file_size;
+  uint64_t file_size;
 
   lsn_t max_no;
   lsn_t max_lsn = 0;
@@ -4960,7 +4964,7 @@ retry:
       &success);
   if (!success) {
     /* The following call prints an error message */
-    os_file_get_last_error(TRUE);
+    os_file_get_last_error(true);
 
     xb::warn() << "cannot open " << src_path << " will try to find.";
 
@@ -4969,7 +4973,7 @@ retry:
         0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
         &success);
     if (!success) {
-      os_file_get_last_error(TRUE);
+      os_file_get_last_error(true);
       xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << src_path;
 
       goto error;
@@ -5163,13 +5167,13 @@ retry:
   if (!success) {
     goto error;
   }
-  xtrabackup_logfile_is_renamed = TRUE;
+  xtrabackup_logfile_is_renamed = true;
 
   if (log_buf != NULL) {
     ut::free(log_buf);
   }
 
-  return (FALSE);
+  return (false);
 
 skip_modify:
   if (log_buf != NULL) {
@@ -5177,22 +5181,22 @@ skip_modify:
   }
   os_file_close(src_file);
   src_file = XB_FILE_UNDEFINED;
-  return (FALSE);
+  return (false);
 
 error:
   if (log_buf != NULL) {
     ut::free(log_buf);
   }
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
-  return (TRUE); /*ERROR*/
+  return (true); /*ERROR*/
 }
 
 /***********************************************************************
 Generates path to the meta file path from a given path to an incremental .delta
 by replacing trailing ".delta" with ".meta", or returns error if 'delta_path'
 does not end with the ".delta" character sequence.
-@return TRUE on success, FALSE on error. */
-static ibool get_meta_path(
+@return true on success, false on error. */
+static bool get_meta_path(
     const char *delta_path, /* in: path to a .delta file */
     char *meta_path)        /* out: path to the corresponding .meta
                             file */
@@ -5200,12 +5204,12 @@ static ibool get_meta_path(
   size_t len = strlen(delta_path);
 
   if (len <= 6 || strcmp(delta_path + len - 6, ".delta")) {
-    return FALSE;
+    return false;
   }
   memcpy(meta_path, delta_path, len - 6);
   strcpy(meta_path + len - 6, XB_DELTA_INFO_SUFFIX);
 
-  return TRUE;
+  return true;
 }
 
 /****************************************************************/ /**
@@ -5214,7 +5218,7 @@ static ibool get_meta_path(
  the main difference that only disk file is created without updating
  the InnoDB in-memory dictionary data structures.
 
- @return TRUE on success, FALSE on error.  */
+ @return true on success, false on error.  */
 static bool xb_space_create_file(
     /*==================*/
     const char *path,    /*!<in: path to tablespace */
@@ -5296,12 +5300,10 @@ static bool xb_space_create_file(
       success = true;
     }
   } else {
-    success = os_file_set_size(path, *file, 0, size * UNIV_PAGE_SIZE,
-                               srv_read_only_mode, false);
+    success = os_file_set_size(path, *file, 0, size * UNIV_PAGE_SIZE, false);
   }
 #else
-  success = os_file_set_size(path, *file, 0, size * UNIV_PAGE_SIZE,
-                             srv_read_only_mode, false);
+  success = os_file_set_size(path, *file, 0, size * UNIV_PAGE_SIZE, false);
 #endif /* !NO_FALLOCATE && UNIV_LINUX */
 
   if (!success) {
@@ -5435,7 +5437,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
     ulint zip_size,       /* in: zip_size of tablespace */
     char *real_name,      /* out: full path of destination file */
     size_t real_name_len, /* out: buffer size for real_name */
-    bool *success)        /* out: indicates error. TRUE = success */
+    bool *success)        /* out: indicates error. true = success */
 {
   char dest_dir[FN_REFLEN * 2 + 1];
   char dest_space_name[FN_REFLEN * 2 + 1];
@@ -5468,7 +5470,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   dest_space_name[strlen(dest_space_name) - 4] = '\0';
 
   /* Create the database directory if it doesn't exist yet */
-  if (!os_file_create_directory(dest_dir, FALSE)) {
+  if (!os_file_create_directory(dest_dir, false)) {
     xb::error() << "cannot create dir " << dest_dir;
     return file;
   }
@@ -5667,7 +5669,7 @@ exit:
 
 /************************************************************************
 Applies a given .delta file to the corresponding data file.
-@return TRUE on success */
+@return true on success */
 static bool xtrabackup_apply_delta(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
@@ -5742,7 +5744,7 @@ static bool xtrabackup_apply_delta(
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
   if (!success) {
-    os_file_get_last_error(TRUE);
+    os_file_get_last_error(true);
     xb::error() << "cannot open " << src_path;
     goto error;
   }
@@ -5869,7 +5871,7 @@ error:
 /************************************************************************
 Callback to handle datadir entry. Deletes entry if it has no matching
 fil_space in fil_system directory.
-@return FALSE if delete attempt was unsuccessful */
+@return false if delete attempt was unsuccessful */
 static bool rm_if_not_found(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void *arg __attribute__((unused))) {
@@ -5998,7 +6000,7 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
 /************************************************************************
 Function enumerates files in datadir (provided by path) which are matched
 by provided suffix. For each entry callback is called.
-@return FALSE if callback for some entry returned FALSE */
+@return false if callback for some entry returned false */
 bool xb_process_datadir(const char *path,   /*!<in: datadir path */
                         const char *suffix, /*!<in: suffix to match
                                             against */
@@ -6022,7 +6024,7 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 
 /************************************************************************
 Applies all .delta files from incremental_dir to the full backup.
-@return TRUE on success. */
+@return true on success. */
 static bool xtrabackup_apply_deltas() {
   return xb_process_datadir(xtrabackup_incremental_dir, ".delta",
                             xtrabackup_apply_delta, NULL);
@@ -6037,7 +6039,7 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
 
-  if (!xtrabackup_logfile_is_renamed) return (FALSE);
+  if (!xtrabackup_logfile_is_renamed) return (false);
 
   /* rename 'ib_logfile0' to 'xtrabackup_logfile' */
   if (!xtrabackup_incremental_dir) {
@@ -6055,9 +6057,9 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
   if (!success) {
     goto error;
   }
-  xtrabackup_logfile_is_renamed = FALSE;
+  xtrabackup_logfile_is_renamed = false;
 
-  if (!clear_flag) return (FALSE);
+  if (!clear_flag) return (false);
 
   /* clear LOG_HEADER_CREATOR field */
   src_file = os_file_create_simple_no_error_handling(
@@ -6087,11 +6089,11 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
   srv_log_group_home_dir = srv_log_group_home_dir_save;
   innobase_log_file_size = innobase_log_file_size_save;
 
-  return (FALSE);
+  return (false);
 error:
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
   xb::error() << "xtrabackup_close_temp_log() failed.";
-  return (TRUE); /*ERROR*/
+  return (true); /*ERROR*/
 }
 
 /*********************************************************************/ /**
@@ -6105,7 +6107,7 @@ static bool xb_export_cfg_write_index_fields(
 {
   /* This row will store prefix_len, fixed_len,
   and in IB_EXPORT_CFG_VERSION_V4, is_ascending */
-  byte row[sizeof(ib_uint32_t) * 3];
+  byte row[sizeof(uint32_t) * 3];
   size_t row_len = sizeof(row);
 
   for (ulint i = 0; i < index->n_fields; ++i) {
@@ -6113,17 +6115,17 @@ static bool xb_export_cfg_write_index_fields(
     const dict_field_t *field = &index->fields[i];
 
     mach_write_to_4(ptr, field->prefix_len);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, field->fixed_len);
 
     if (cfg_version >= IB_EXPORT_CFG_VERSION_V4)
     {
-      ptr += sizeof(ib_uint32_t);
+      ptr += sizeof(uint32_t);
       /* In IB_EXPORT_CFG_VERSION_V4 we also write the is_ascending boolean. */
       mach_write_to_4(ptr, field->is_ascending);
     } else {
-      row_len = sizeof(ib_uint32_t) * 2;
+      row_len = sizeof(uint32_t) * 2;
     }
 
     if (fwrite(row, 1, row_len, file) != row_len) {
@@ -6133,7 +6135,7 @@ static bool xb_export_cfg_write_index_fields(
     }
 
     /* Include the NUL byte in the length. */
-    ib_uint32_t len = strlen(field->name) + 1;
+    uint32_t len = strlen(field->name) + 1;
     ut_a(len > 1);
 
     mach_write_to_4(row, len);
@@ -6264,7 +6266,7 @@ static bool xb_export_cfg_write_index_fields(
 /*********************************************************************/ /**
  Write the meta data (table columns) config file. Serialise the contents of
  dict_col_t structure, along with the column name. All fields are serialized
- as ib_uint32_t.
+ as uint32_t.
  @return true in case of success otherwise false. */
 [[nodiscard]] static bool xb_export_cfg_write_table(
     /*====================*/
@@ -6273,7 +6275,7 @@ static bool xb_export_cfg_write_index_fields(
     FILE *file)                /*!< in: file to write to */
 {
   dict_col_t *col;
-  byte row[sizeof(ib_uint32_t) * 7];
+  byte row[sizeof(uint32_t) * 7];
 
   col = table->cols;
 
@@ -6281,22 +6283,22 @@ static bool xb_export_cfg_write_index_fields(
     byte *ptr = row;
 
     mach_write_to_4(ptr, col->prtype);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, col->mtype);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, col->len);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, col->mbminmaxlen);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, col->ind);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, col->ord_part);
-    ptr += sizeof(ib_uint32_t);
+    ptr += sizeof(uint32_t);
 
     mach_write_to_4(ptr, col->max_prefix);
 
@@ -6308,7 +6310,7 @@ static bool xb_export_cfg_write_index_fields(
 
     /* Write out the column name as [len, byte array]. The len
     includes the NUL byte. */
-    ib_uint32_t len;
+    uint32_t len;
     const char *col_name;
 
     col_name = table->get_col_name(dict_col_get_no(col));
@@ -6345,7 +6347,7 @@ static bool xb_export_cfg_write_index_fields(
                                this table */
     FILE *file)                /*!< in: file to write to */
 {
-  byte value[sizeof(ib_uint32_t)];
+  byte value[sizeof(uint32_t)];
 
   /* Write the meta-data version number. */
   mach_write_to_4(value, cfg_version);
@@ -6357,7 +6359,7 @@ static bool xb_export_cfg_write_index_fields(
   }
 
   /* Write the server hostname. */
-  ib_uint32_t len;
+  uint32_t len;
   const char *hostname = "Hostname unknown";
 
   /* The server hostname includes the NUL byte. */
@@ -6385,12 +6387,12 @@ static bool xb_export_cfg_write_index_fields(
     return (false);
   }
 
-  byte row[sizeof(ib_uint32_t) * 3];
+  byte row[sizeof(uint32_t) * 3];
 
   /* Write the next autoinc value. */
   mach_write_to_8(row, table->autoinc);
 
-  if (fwrite(row, 1, sizeof(ib_uint64_t), file) != sizeof(ib_uint64_t)) {
+  if (fwrite(row, 1, sizeof(uint64_t), file) != sizeof(uint64_t)) {
     xb::error() << "writing table autoinc value.";
 
     return (false);
@@ -6400,11 +6402,11 @@ static bool xb_export_cfg_write_index_fields(
 
   /* Write the system page size. */
   mach_write_to_4(ptr, UNIV_PAGE_SIZE);
-  ptr += sizeof(ib_uint32_t);
+  ptr += sizeof(uint32_t);
 
   /* Write the table->flags. */
   mach_write_to_4(ptr, table->flags);
-  ptr += sizeof(ib_uint32_t);
+  ptr += sizeof(uint32_t);
 
   /* Write the number of columns in the table. */
   mach_write_to_4(ptr, table->n_cols);
@@ -6498,7 +6500,7 @@ static bool xb_export_cfg_write(
 @return DB_SUCCESS or error code. */
 [[nodiscard]] static dberr_t xb_export_write_transfer_key(
     const dict_table_t *table, FILE *file) {
-  byte key_size[sizeof(ib_uint32_t)];
+  byte key_size[sizeof(uint32_t)];
   byte row[Encryption::KEY_LEN * 3];
   byte *ptr = row;
   byte *transfer_key = ptr;
@@ -6869,7 +6871,7 @@ skip_check:
     goto error_cleanup;
   }
 
-  srv_apply_log_only = (ibool)xtrabackup_apply_log_only;
+  srv_apply_log_only = (bool)xtrabackup_apply_log_only;
 
   /* increase IO threads */
   if (srv_n_file_io_threads < 10) {
@@ -6909,10 +6911,10 @@ skip_check:
 
     mtr_start(&mtr);
 
-    mtr_s_lock(fil_space_get_latch(space->id), &mtr);
+    mtr_s_lock(fil_space_get_latch(space->id), &mtr, UT_LOCATION_HERE);
 
     block = buf_page_get(page_id_t(space->id, 0), page_size_t(space->flags),
-                         RW_S_LATCH, &mtr);
+                         RW_S_LATCH, UT_LOCATION_HERE, &mtr);
     header = FSP_HEADER_OFFSET + buf_block_get_frame(block);
 
     size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, &mtr);
@@ -7019,7 +7021,7 @@ skip_check:
   trx_pool_init();
   que_init();
 
-  if (xtrabackup_close_temp_log(TRUE)) exit(EXIT_FAILURE);
+  if (xtrabackup_close_temp_log(true)) exit(EXIT_FAILURE);
 
   /* output to metadata file */
   {
@@ -7076,7 +7078,7 @@ skip_check:
       goto error;
     }
 
-    srv_apply_log_only = FALSE;
+    srv_apply_log_only = false;
 
     /* increase IO threads */
     if (srv_n_file_io_threads < 10) {
@@ -7116,7 +7118,7 @@ error_cleanup:
 
   xb_keyring_shutdown();
 
-  xtrabackup_close_temp_log(FALSE);
+  xtrabackup_close_temp_log(false);
 
   cleanup_mysql_environment();
 
@@ -7652,7 +7654,7 @@ static void handle_options(int argc, char **argv, int *argc_client,
 
   /* We want xtrabackup to ignore unknown options, because it only
   recognizes a small subset of server variables */
-  my_getopt_skip_unknown = TRUE;
+  my_getopt_skip_unknown = true;
 
   /* Reset u_max_value for all options, as we don't want the
   --maximum-... modifier to set the actual option values */
@@ -7927,10 +7929,10 @@ int main(int argc, char **argv) {
                << " is enabled.";
   }
 
-  if (xtrabackup_export && innobase_file_per_table == FALSE) {
+  if (xtrabackup_export && innobase_file_per_table == false) {
     xb::info() << "auto-enabling --innodb-file-per-table due to "
                   "the --export option";
-    innobase_file_per_table = TRUE;
+    innobase_file_per_table = true;
   }
 
   if (xtrabackup_throttle && !xtrabackup_backup) {

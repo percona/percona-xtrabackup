@@ -57,7 +57,7 @@ xb_write_filt_t wf_incremental = {&wf_incremental_init, &wf_incremental_process,
 /************************************************************************
 Initialize incremental page write filter.
 
-@return TRUE on success, FALSE on error. */
+@return true on success, false on error. */
 static bool wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
                                 xb_fil_cur_t *cursor) {
   char meta_name[FN_REFLEN];
@@ -86,7 +86,7 @@ static bool wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
   if (!xb_write_delta_metadata(meta_name, &info)) {
     msg("[%02u] xtrabackup: Error: failed to write meta info for %s\n",
         cursor->thread_n, cursor->rel_path);
-    return (FALSE);
+    return (false);
   }
 
   /* change the target file name, since we are only going to write
@@ -96,13 +96,13 @@ static bool wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
   mach_write_to_4(cp->delta_buf, 0x78747261UL); /*"xtra"*/
   cp->npages = 1;
 
-  return (TRUE);
+  return (true);
 }
 
 /************************************************************************
 Run the next batch of pages through incremental page write filter.
 
-@return TRUE on success, FALSE on error. */
+@return true on success, false on error. */
 static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
                                    ds_file_t *dstfile) {
   ulint i;
@@ -131,7 +131,7 @@ static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
     if (cp->npages == page_size / 4) {
       /* flush buffer */
       if (ds_write(dstfile, cp->delta_buf, cp->npages * page_size)) {
-        return (FALSE);
+        return (false);
       }
 
       /* clear buffer */
@@ -147,13 +147,13 @@ static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
     cp->npages++;
   }
 
-  return (TRUE);
+  return (true);
 }
 
 /************************************************************************
 Flush the incremental page write filter's buffer.
 
-@return TRUE on success, FALSE on error. */
+@return true on success, false on error. */
 static bool wf_incremental_finalize(xb_write_filt_ctxt_t *ctxt,
                                     ds_file_t *dstfile) {
   xb_fil_cur_t *cursor = ctxt->cursor;
@@ -169,10 +169,10 @@ static bool wf_incremental_finalize(xb_write_filt_ctxt_t *ctxt,
 
   /* flush buffer */
   if (ds_write(dstfile, cp->delta_buf, cp->npages * page_size)) {
-    return (FALSE);
+    return (false);
   }
 
-  return (TRUE);
+  return (true);
 }
 
 /************************************************************************
@@ -188,7 +188,7 @@ static void wf_incremental_deinit(xb_write_filt_ctxt_t *ctxt) {
 /************************************************************************
 Initialize the write-through page write filter.
 
-@return TRUE on success, FALSE on error. */
+@return true on success, false on error. */
 static bool wf_wt_init(xb_write_filt_ctxt_t *ctxt,
                        char *dst_name __attribute__((unused)),
                        xb_fil_cur_t *cursor) {
@@ -200,7 +200,7 @@ static bool wf_wt_init(xb_write_filt_ctxt_t *ctxt,
 /************************************************************************
 Write the next batch of pages to the destination datasink.
 
-@return TRUE on success, FALSE on error. */
+@return true on success, false on error. */
 static bool wf_wt_process(xb_write_filt_ctxt_t *ctxt, ds_file_t *dstfile) {
   const auto cursor = ctxt->cursor;
 

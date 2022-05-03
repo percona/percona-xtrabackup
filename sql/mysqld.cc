@@ -6972,8 +6972,8 @@ class Plugin_and_data_dir_option_parser final {
     memcpy((uchar *)res, (char *)(argv), (argc) * sizeof(char *));
 
     my_getopt_skip_unknown = true;
-    if (my_handle_options(&argc, &res, datadir_options, nullptr, nullptr,
-                          true)) {
+    if (my_handle_options(&argc, &res, datadir_options, nullptr, nullptr, true,
+                          false)) {
       my_getopt_skip_unknown = false;
       return;
     }

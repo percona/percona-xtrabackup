@@ -854,7 +854,8 @@ MY_COMPILER_DIAGNOSTIC_POP()
 /** Read the metadata of default values for all columns added instantly
 @param[in]	dd_table	dd::Table
 @param[in,out]	table		InnoDB table object */
-void dd_fill_instant_columns(const dd::Table &dd_table, dict_table_t *table);
+void dd_fill_instant_columns_default(const dd::Table &dd_table,
+                                     dict_table_t *table);
 #endif /*XTRABACKUP */
 
 /** Acquire a shared metadata lock.

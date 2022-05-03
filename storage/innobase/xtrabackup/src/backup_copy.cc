@@ -171,9 +171,9 @@ struct datafile_cur_t {
   uint thread_n;
   byte *orig_buf;
   byte *buf;
-  ib_uint64_t buf_size;
-  ib_uint64_t buf_read;
-  ib_uint64_t buf_offset;
+  uint64_t buf_size;
+  uint64_t buf_read;
+  uint64_t buf_offset;
 };
 
 static void datafile_close(datafile_cur_t *cursor) {
@@ -200,7 +200,7 @@ static bool datafile_open(const char *file, datafile_cur_t *cursor,
 
   if (cursor->fd == -1) {
     /* The following call prints an error message */
-    os_file_get_last_error(TRUE);
+    os_file_get_last_error(true);
 
     xb::error() << "cannot open file " << cursor->abs_path;
 
@@ -477,7 +477,7 @@ bool backup_file_print(const char *filename, const char *message, int len) {
   MY_STAT stat;
 
   memset(&stat, 0, sizeof(stat));
-  stat.st_mtime = my_time(0);
+  stat.st_mtime = time(nullptr);
   stat.st_size = len;
 
   dstfile = ds_open(ds_data, filename, &stat);
@@ -774,7 +774,7 @@ static bool move_file(ds_ctxt_t *datasink, const char *src_file_path,
 /************************************************************************
 Fix InnoDB page checksum after modifying it. */
 static void page_checksum_fix(byte *page, const page_size_t &page_size) {
-  ib_uint32_t checksum = BUF_NO_CHECKSUM_MAGIC;
+  uint32_t checksum = BUF_NO_CHECKSUM_MAGIC;
 
   BlockReporter reporter = BlockReporter(false, page, page_size, false);
 
@@ -793,9 +793,9 @@ static void page_checksum_fix(byte *page, const page_size_t &page_size) {
         break;
       case SRV_CHECKSUM_ALGORITHM_INNODB:
       case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
-        checksum = (ib_uint32_t)buf_calc_page_new_checksum(page);
+        checksum = (uint32_t)buf_calc_page_new_checksum(page);
         mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
-        checksum = (ib_uint32_t)buf_calc_page_old_checksum(page);
+        checksum = (uint32_t)buf_calc_page_old_checksum(page);
         break;
       case SRV_CHECKSUM_ALGORITHM_NONE:
       case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
@@ -820,7 +820,7 @@ bool copy_redo_encryption_info() {
   auto log_buf = ut_make_unique_ptr_nokey(UNIV_PAGE_SIZE_MAX * 128);
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
-  bool success = FALSE;
+  bool success = false;
   if (log_buf == NULL) {
     return false;
   }
@@ -840,7 +840,7 @@ bool copy_redo_encryption_info() {
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_ONLY, srv_read_only_mode,
       &success);
   if (!success) {
-    os_file_get_last_error(TRUE);
+    os_file_get_last_error(true);
     xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << src_path;
 
     return false;
@@ -850,7 +850,7 @@ bool copy_redo_encryption_info() {
       0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
   if (!success) {
-    os_file_get_last_error(TRUE);
+    os_file_get_last_error(true);
     xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << dst_path;
 
     return false;
@@ -918,9 +918,8 @@ static bool reencrypt_redo_header(const char *dir, const char *filename,
   space.encryption_type = Encryption::AES;
   space.encryption_klen = Encryption::KEY_LEN;
 
-  if (!Encryption::fill_encryption_info(space.encryption_key,
-                                        space.encryption_iv, encrypt_info,
-                                        false, true)) {
+  if (!Encryption::fill_encryption_info(
+          space.encryption_key, space.encryption_iv, encrypt_info, true)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
@@ -978,9 +977,8 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
 
   const page_size_t page_size(fsp_header_get_page_size(page));
 
-  if (!Encryption::fill_encryption_info(space.encryption_key,
-                                        space.encryption_iv, encrypt_info,
-                                        false, true)) {
+  if (!Encryption::fill_encryption_info(
+          space.encryption_key, space.encryption_iv, encrypt_info, true)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
@@ -1295,7 +1293,7 @@ void Myrocks_checkpoint::create(MYSQL *con, bool disable_file_deletions) {
   xb::info() << "Creating RocksDB checkpoint";
 
   if (disable_file_deletions) {
-    xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = TRUE",
+    xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = true",
                    false);
   }
 
@@ -1320,7 +1318,7 @@ void Myrocks_checkpoint::create(MYSQL *con, bool disable_file_deletions) {
 }
 
 void Myrocks_checkpoint::enable_file_deletions() const {
-  xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = FALSE",
+  xb_mysql_query(con, "SET SESSION rocksdb_disable_file_deletions = false",
                  false);
 }
 

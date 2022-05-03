@@ -108,7 +108,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   ${CMAKE_SOURCE_DIR}/sql-common/client_authentication.cc
   )
 
-SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS TRUE)
+SET_TARGET_PROPERTIES(xtrabackup PROPERTIES ENABLE_EXPORTS true)
 
 TARGET_LINK_LIBRARIES(xtrabackup
   sql_main

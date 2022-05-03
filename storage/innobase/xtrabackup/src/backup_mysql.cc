@@ -1193,7 +1193,8 @@ bool wait_for_safe_slave(MYSQL *connection) {
   char *prev_slave_coordinates = NULL;
 
   const int sleep_time = 3;
-  const ssize_t routine_start_time = (ssize_t)my_time(MY_WME);
+  const ssize_t routine_start_time = (ssize_t)time(nullptr);
+  ;
   const ssize_t timeout = opt_safe_slave_backup_timeout;
 
   int open_temp_tables = 0;
@@ -1227,10 +1228,10 @@ retry:
   curr_slave_coordinates = get_slave_coordinates(connection);
 
   while (open_temp_tables &&
-         routine_start_time + timeout > (ssize_t)my_time(MY_WME)) {
+         routine_start_time + timeout > (ssize_t)time(nullptr)) {
     xb::info() << "Starting slave SQL thread, waiting " << sleep_time
                << " seconds, then checking Slave_open_temp_tables again ("
-               << (int)(routine_start_time + timeout - (ssize_t)my_time(MY_WME))
+               << (int)(routine_start_time + timeout - (ssize_t)time(nullptr))
                << " seconds of sleep time remaining)...";
     free(prev_slave_coordinates);
     prev_slave_coordinates = curr_slave_coordinates;
@@ -1835,7 +1836,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
   char *server_version = NULL;
   char *xtrabackup_info_data = NULL;
   int idx;
-  bool null = TRUE;
+  bool null = true;
 
   const char *ins_query =
       "insert into PERCONA_SCHEMA.xtrabackup_history("
@@ -2278,7 +2279,7 @@ void dump_innodb_buffer_pool(MYSQL *connection) {
     return;
   }
 
-  innodb_buffer_pool_dump_start_time = (ssize_t)my_time(MY_WME);
+  innodb_buffer_pool_dump_start_time = (ssize_t)time(nullptr);
 
   char *buf_innodb_buffer_pool_dump_pct;
   char change_bp_dump_pct_query[100];
@@ -2330,8 +2331,7 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
   /* check if dump has been completed */
   xb::info() << "Checking if InnoDB buffer pool dump has completed";
   while (!strstr(innodb_buffer_pool_dump_status, "dump completed at")) {
-    if (innodb_buffer_pool_dump_start_time + timeout <
-        (ssize_t)my_time(MY_WME)) {
+    if (innodb_buffer_pool_dump_start_time + timeout < (ssize_t)time(nullptr)) {
       xb::info() << "InnoDB Buffer Pool Dump was not completed after "
                  << opt_dump_innodb_buffer_pool_timeout << " seconds... Adjust "
                  << "--dump-innodb-buffer-pool-timeout if you "

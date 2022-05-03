@@ -82,7 +82,7 @@ specified possibly absolute path.
 For user tablespaces both "./database/table.ibd" and
 "/remote/dir/database/table.ibd" result in "database/table.ibd".
 
-For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
+For system tablepsaces (i.e. When is_system is true) both "/remote/dir/ibdata1"
 and "./ibdata1" yield "ibdata1" in the output. */
 const char *xb_get_relative_path(
     /*=================*/
@@ -161,7 +161,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
         &success);
     if (!success) {
       /* The following call prints an error message */
-      os_file_get_last_error(TRUE);
+      os_file_get_last_error(true);
 
       xb::error() << "cannot open tablespace " << cursor->abs_path;
 
