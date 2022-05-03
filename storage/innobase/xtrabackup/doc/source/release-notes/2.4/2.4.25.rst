@@ -28,5 +28,6 @@ Bugs Fixed
 * :jirabug:`PXB-2649`: Fix for compilation issues on GCC-10.
 * :jirabug:`PXB-2648`: CURL prior to 7.38.0 version doesn't use CURLE_HTTP2 and throws an error ``'CURLE_HTTP2' is not a member of 'CURLcode'``. Added CURLE_OBSOLETE16 as a connectivity error code. In CURL versions after 7.38.0, CURLE_OBSOLETE16 is translated to CURLE_HTTP2.
 * :jirabug:`PXB-2711`: Fix for libgcrypt initialization warnings in xtrabackup.
+* :jirabug:`PXB-2722`: Fix for when via command line, a password, passed using the -p option, was written into the backup tool_command in xtrabackup_info.
 
 .. include:: ../../_res/replace/useful-links.txt
