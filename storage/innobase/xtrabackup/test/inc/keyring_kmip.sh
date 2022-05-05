@@ -1,16 +1,16 @@
 #
 # keyring_kmip helpers
 # Read KEYRING_TYPE[component|plugin] to decide which keyring type to setup
-# If KEYRING_TYPE is not set, we assume plugin
+# If KEYRING_TYPE is not set, we assume component
 
 . inc/common.sh
 
 if [ -z ${KEYRING_TYPE+x} ]; then
-  KEYRING_TYPE="plugin"
+  KEYRING_TYPE="component"
 fi
 
-#placeholder
-keyring_args=""
+keyring_component_cnf=${TEST_VAR_ROOT}/component_keyring_kmip.cnf
+keyring_args="--component-keyring-config=${keyring_component_cnf}"
 
 # Check https://github.com/OpenKMIP/PyKMIP/wiki for how to use PyKMIP server
 # Run https://github.com/OpenKMIP/PyKMIP/blob/master/bin/create_certificates.py
@@ -45,6 +45,7 @@ EOF
   "object_group": "${KMIP_OBJECT_GROUP}"
 }
 EOF
+cp "${MYSQLD_DATADIR}/component_keyring_kmip.cnf" ${keyring_component_cnf}
 }
 
 function cleanup_keyring()

@@ -1,0 +1,14 @@
+# ----------------------------------------------------------------------
+# Setup
+# Creating global configuration file for keyring component: component_keyring_kms
+# Creating local configuration file for keyring component: component_keyring_kms
+# Creating manifest file for current MySQL server instance
+# Re-starting mysql server with manifest file
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# Teardown
+# Removing manifest file for current MySQL server instance
+# Removing local configuration file for keyring component: component_keyring_kms
+# Removing global configuration file for keyring component: component_keyring_kms
+# Restarting server without the manifest file
+# ----------------------------------------------------------------------

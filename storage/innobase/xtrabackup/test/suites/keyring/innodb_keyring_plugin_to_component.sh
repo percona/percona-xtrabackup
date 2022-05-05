@@ -112,7 +112,7 @@ xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_option
 xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
 
-prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${TEST_VAR_ROOT}/keyring_file"
+prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --component-keyring-config=${keyring_component_cnf} --keyring-file-data=${TEST_VAR_ROOT}/keyring_file"
 xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
     --target-dir=$topdir/full ${prepare_options}
 xtrabackup --prepare --incremental-dir=$topdir/inc3 \

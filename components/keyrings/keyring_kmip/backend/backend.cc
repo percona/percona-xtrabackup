@@ -152,7 +152,7 @@ bool Keyring_kmip_backend::generate(const Metadata &metadata,
   if (!key) return true;
   if (!get_random_data(key, length)) return true;
 
-  pmr_string key_str;
+  pfs_string key_str;
   key_str.assign(reinterpret_cast<const char *>(key.get()), length);
   Data inner_data = data.get_data();
   inner_data.set_data(keyring_common::data::Sensitive_data{key_str});

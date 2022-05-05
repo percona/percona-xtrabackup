@@ -329,8 +329,10 @@ static char *internal_innobase_data_file_path = NULL;
 
 char *opt_transition_key = NULL;
 char *opt_xtra_plugin_dir = NULL;
+char *server_plugin_dir = NULL;
 char *opt_xtra_plugin_load = NULL;
 char *opt_keyring_file_data = nullptr;
+char *opt_component_keyring_config = nullptr;
 char *opt_component_keyring_file_config = nullptr;
 
 bool opt_generate_new_master_key = FALSE;
@@ -696,6 +698,7 @@ enum options_xtrabackup {
   OPT_XB_SECURE_AUTH,
   OPT_TRANSITION_KEY,
   OPT_KEYRING_FILE_DATA,
+  OPT_COMPONENT_KEYRING_CONFIG,
   OPT_COMPONENT_KEYRING_FILE_CONFIG,
   OPT_GENERATE_TRANSITION_KEY,
   OPT_XTRA_PLUGIN_DIR,
@@ -1284,9 +1287,16 @@ struct my_option xb_client_options[] = {
      &opt_keyring_file_data, &opt_keyring_file_data, 0, GET_STR, OPT_ARG, 0, 0,
      0, 0, 0, 0},
 
+    {"component-keyring-config", OPT_COMPONENT_KEYRING_CONFIG,
+     "Path to load component config. Used for --prepare, --move-back,"
+     " --copy-back and --stats.",
+     &opt_component_keyring_config, &opt_component_keyring_config, 0, GET_STR,
+     OPT_ARG, 0, 0, 0, 0, 0, 0},
+
     {"component-keyring-file-config", OPT_COMPONENT_KEYRING_FILE_CONFIG,
      "Path to load keyring component config. Used for --prepare, --move-back,"
-     " --copy-back and --stats.",
+     " --copy-back and --stats. (Deprecated, please use "
+     "--keyring-component-config instead)",
      &opt_component_keyring_file_config, &opt_component_keyring_file_config, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -4149,6 +4159,11 @@ void xtrabackup_backup_func(void) {
   xb_filters_init();
   if (opt_component_keyring_file_config != nullptr) {
     xb::warn() << "--component-keyring-file-config will be ignored "
+                  "for --backup operation";
+  }
+
+  if (opt_component_keyring_config != nullptr) {
+    xb::warn() << "--component-keyring-config will be ignored "
                   "for --backup operation";
   }
 
@@ -7937,6 +7952,17 @@ int main(int argc, char **argv) {
       usage();
       exit(EXIT_FAILURE);
     }
+  }
+  if (opt_component_keyring_file_config != nullptr) {
+    xb::warn() << "--component-keyring-file-config is deprecated, please use "
+               << " --component-keyring-config instead.";
+    if (opt_component_keyring_config != nullptr) {
+      xb::error() << "--component-keyring-file-config and "
+                  << "--component-keyring-config are mutually exclusive."
+                  << "Please use --component-keyring-config.";
+      exit(EXIT_FAILURE);
+    }
+    strcpy(opt_component_keyring_config, opt_component_keyring_file_config);
   }
 
 #ifndef __WIN__

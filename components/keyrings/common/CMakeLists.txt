@@ -29,7 +29,7 @@ SET(KEYRING_COMMON_SOURCES
   # Data representation
   data/data.cc
   data/meta.cc
-  data/psi_memory_resource.cpp
+  data/pfs_string.cpp
   # File reader/writer
   data_file/reader.cc
   data_file/writer.cc
@@ -61,5 +61,3 @@ ADD_CONVENIENCE_LIBRARY(
   DEPENDENCIES ${KEYRING_COMMON_DEPENDENCIES}
   LINK_LIBRARIES library_mysys
 )
-TARGET_COMPILE_OPTIONS(keyring_common PUBLIC "-Wno-cast-qual")
-

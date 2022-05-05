@@ -196,9 +196,10 @@ extern bool opt_decrypt;
 extern uint opt_read_buffer_size;
 
 extern char *opt_xtra_plugin_dir;
+extern char *server_plugin_dir;
 extern char *opt_transition_key;
 extern char *opt_keyring_file_data;
-extern char *opt_component_keyring_file_config;
+extern char *opt_component_keyring_config;
 extern bool opt_generate_transition_key;
 extern bool opt_generate_new_master_key;
 

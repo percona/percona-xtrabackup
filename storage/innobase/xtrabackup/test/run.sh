@@ -374,6 +374,15 @@ EOF
 }
 EOF
   fi
+
+  FILE="$MYSQL_BASEDIR/lib/plugin/component_keyring_kms.cnf"
+  if [[ ! -f "${FILE}" ]]; then
+    cat <<EOF > "${FILE}"
+{
+  "read_local_config": true
+}
+EOF
+  fi
 }
 
 # Fix innodb51 test failures on Centos5-32 Jenkins slaves due to SELinux
@@ -959,6 +968,13 @@ config_asan
 if is_server_version_higher_than 8.0.23
 then
   config_local_components
+fi
+
+if test -d $PWD/../../../../plugin_output_directory
+then
+  plugin_dir=$PWD/../../../../plugin_output_directory
+else
+  plugin_dir=$PWD/../../lib/plugin/
 fi
 
 echo "Running against $MYSQL_FLAVOR $MYSQL_VERSION ($INNODB_FLAVOR $INNODB_VERSION)" |

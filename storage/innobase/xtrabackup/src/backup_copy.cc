@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2021 Percona LLC and/or its affiliates
+(c) 2009-2022 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -401,8 +401,6 @@ static bool datafile_copy_backup(const char *filepath, uint thread_n) {
                             "sdi",
                             "mysqld.my",
                             "mysqld-debug.my",
-                            "component_keyring_file.cnf",
-                            "component_keyring_kmip.cnf",
                             NULL};
 
   /* Get the name and the path for the tablespace. node->name always
@@ -1647,11 +1645,6 @@ bool backup_finish(Backup_context &context) {
     xb::info() << "MySQL slave binlog position: "
                << mysql_slave_position.c_str();
   }
-  if (xtrabackup::components::keyring_component_initialized &&
-      !xtrabackup::components::write_component_config_file()) {
-    xb::error() << "write_component_config_file failed";
-    return (false);
-  }
   if (!write_backup_config_file()) {
     return (false);
   }
@@ -1832,6 +1825,7 @@ bool copy_incremental_over_full() {
                              "xtrabackup_tablespaces",
                              "xtrabackup_component_keyring_file.cnf",
                              "xtrabackup_component_keyring_kmip.cnf",
+                             "xtrabackup_component_keyring_kms.cnf",
                              "ib_lru_dump",
                              nullptr};
   bool ret = true;
@@ -2039,6 +2033,7 @@ bool should_skip_file_on_copy_back(const char *filepath) {
                             "xtrabackup_tablespaces",
                             "xtrabackup_component_keyring_file.cnf",
                             "xtrabackup_component_keyring_kmip.cnf",
+                            "xtrabackup_component_keyring_kms.cnf",
                             ".qp",
                             ".lz4",
                             ".pmap",

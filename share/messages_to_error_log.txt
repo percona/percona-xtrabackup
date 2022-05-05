@@ -11256,12 +11256,6 @@ ER_NOTE_KEYRING_COMPONENT_KEYS_METADATA_ITERATOR_FETCH_FAILED
 ER_NOTE_KEYRING_COMPONENT_METADATA_ITERATOR_INVALID_OUT_PARAM
   eng "Key and value length parameters must not be null."
 
-ER_KEYRING_COMPONENT_NO_CONFIG
-  eng "Keyring configuration doesn't exists: %s"
-
-ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
-  eng "Keyring configuration JSON parse error: %s (%lu)"
-
 ER_IB_WRN_FAILED_TO_ACQUIRE_SERVICE
   eng "Innodb could not acquire service : %s"
 
@@ -11602,11 +11596,27 @@ ER_RPL_RELAY_LOG_RECOVERY_GTID_ONLY
 # See the FAQ in errmsg_readme.txt in the
 # same directory as this file for more
 # information.
-
 #
 # End of 8.0 error messages intended to be written to the server error log.
 #
 
+#
+# Start of Percona Server 8.0 server error log messages
+#
+start-error-number 48000
+
+ER_KEYRING_COMPONENT_NO_CONFIG
+  eng "Keyring configuration doesn't exists: %s"
+
+ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
+  eng "Keyring configuration JSON parse error: %s (%lu)"
+
+ER_KEYRING_COMPONENT_KMS_ERROR
+  eng "KMS communication error: %s"
+
+#
+# End of Percona Server 8.0 server error log messages
+#
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.
