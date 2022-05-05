@@ -333,7 +333,8 @@ uint32_t mach_parse_compressed(const byte **ptr, const byte *end_ptr) {
     case LOG_HEADER_FORMAT_8_0_3:
        return(mach_parse_compressed_v3(ptr, end_ptr));
     case LOG_HEADER_FORMAT_8_0_19:
-       return(mach_parse_compressed_v4(ptr, end_ptr));
+    case LOG_HEADER_FORMAT_8_0_28:
+      return (mach_parse_compressed_v4(ptr, end_ptr));
   }
   /* make compiler happy */
   ut_a(0);

@@ -244,6 +244,7 @@ inline bool LOG_HEADER_CHECK_FLAG(uint32_t flag, uint32_t bit) {
 
 /** Contents of the LOG_HEADER_CREATOR field */
 #define LOG_HEADER_CREATOR_CURRENT "MySQL " INNODB_VERSION_STR
+#define LOG_HEADER_CREATOR_8028 "MySQL 8.0.28"  // (v4 format)
 #define LOG_HEADER_CREATOR_8018  "MySQL 8.0.18" // (v3 format)
 
 /** Header is created during DB clone */

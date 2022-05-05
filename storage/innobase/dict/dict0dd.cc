@@ -447,7 +447,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   mem_heap_t *heap = mem_heap_create(1000, UT_LOCATION_HERE);
 
   char table_name[MAX_SPACE_NAME_LEN + 1];
-  char tmp_schema[+1];
+  char tmp_schema[MAX_DATABASE_NAME_LEN + 1];
   char tmp_tablename[MAX_TABLE_NAME_LEN + 1];
 
   tablename_to_filename(schema_name->c_str(), tmp_schema,

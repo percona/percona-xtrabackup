@@ -315,11 +315,24 @@ void log_files_header_fill(byte *buf, lsn_t start_lsn, const char *creator,
 
   mach_write_to_8(buf + LOG_HEADER_START_LSN, start_lsn);
 
-  strncpy(reinterpret_cast<char *>(buf) + LOG_HEADER_CREATOR,
-          log_detected_format == LOG_HEADER_FORMAT_8_0_19
-              ? LOG_HEADER_CREATOR_CURRENT
-              : LOG_HEADER_CREATOR_8018,
-          LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR);
+  /* set proper redo log format */
+  switch (log_detected_format) {
+    case LOG_HEADER_FORMAT_8_0_28:
+      strncpy(reinterpret_cast<char *>(buf) + LOG_HEADER_CREATOR,
+              LOG_HEADER_CREATOR_CURRENT,
+              LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR);
+      break;
+    case LOG_HEADER_FORMAT_8_0_19:
+      strncpy(reinterpret_cast<char *>(buf) + LOG_HEADER_CREATOR,
+              LOG_HEADER_CREATOR_8028,
+              LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR);
+      break;
+    case LOG_HEADER_FORMAT_8_0_3:
+      strncpy(reinterpret_cast<char *>(buf) + LOG_HEADER_CREATOR,
+              LOG_HEADER_CREATOR_8018,
+              LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR);
+      break;
+  }
 
   ut_ad(LOG_HEADER_CREATOR_END - LOG_HEADER_CREATOR >= strlen(creator));
 

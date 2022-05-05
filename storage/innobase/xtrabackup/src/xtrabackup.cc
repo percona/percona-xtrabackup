@@ -2567,6 +2567,8 @@ static bool innodb_end(void) {
 
   srv_pre_dd_shutdown();
 
+  mutex_free(&master_key_id_mutex);
+
   srv_shutdown();
 
   os_event_global_destroy();
@@ -5058,6 +5060,8 @@ retry:
             log_block_calc_checksum_crc32(log_buf + field) &&
         (mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
              LOG_HEADER_FORMAT_CURRENT ||
+         mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
+             LOG_HEADER_FORMAT_8_0_19 ||
          mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
              LOG_HEADER_FORMAT_8_0_3)) {
       if (!innodb_checksum_algorithm_specified) {

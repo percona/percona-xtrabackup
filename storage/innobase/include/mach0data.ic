@@ -247,6 +247,7 @@ static inline ulint mach_write_compressed(byte *b, ulint n) {
     case LOG_HEADER_FORMAT_8_0_3:
       return (mach_write_compressed_v3(b, n));
     case LOG_HEADER_FORMAT_8_0_19:
+    case LOG_HEADER_FORMAT_8_0_28:
       return (mach_write_compressed_v4(b, n));
   }
   /* make compiler happy */
@@ -319,6 +320,7 @@ static inline uint32_t mach_get_compressed_size(ulint n) {
     case LOG_HEADER_FORMAT_8_0_3:
       return (mach_get_compressed_size_v3(n));
     case LOG_HEADER_FORMAT_8_0_19:
+    case LOG_HEADER_FORMAT_8_0_28:
       return (mach_get_compressed_size_v4(n));
   }
   /* make compiler happy */
@@ -419,6 +421,7 @@ static inline ulint mach_read_compressed(const byte *b) {
     case LOG_HEADER_FORMAT_8_0_3:
       return (mach_read_compressed_v3(b));
     case LOG_HEADER_FORMAT_8_0_19:
+    case LOG_HEADER_FORMAT_8_0_28:
       return (mach_read_compressed_v4(b));
   }
   /* make compiler happy */
@@ -527,6 +530,7 @@ static inline uint32_t mach_read_next_compressed(const byte **b) {
     case LOG_HEADER_FORMAT_8_0_3:
       return (mach_read_next_compressed_v3(b));
     case LOG_HEADER_FORMAT_8_0_19:
+    case LOG_HEADER_FORMAT_8_0_28:
       return (mach_read_next_compressed_v4(b));
   }
   /* make compiler happy */
@@ -789,6 +793,7 @@ static inline uint64_t mach_read_next_much_compressed(const byte **b) {
     case LOG_HEADER_FORMAT_8_0_3:
       return (mach_read_next_much_compressed_v3(b));
     case LOG_HEADER_FORMAT_8_0_19:
+    case LOG_HEADER_FORMAT_8_0_28:
       return (mach_read_next_much_compressed_v4(b));
   }
   /* make compiler happy */

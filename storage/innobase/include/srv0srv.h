@@ -699,6 +699,7 @@ extern bool srv_apply_log_only;
 extern bool srv_backup_mode;
 extern bool srv_close_files;
 extern bool srv_rollback_prepared_trx;
+extern ib_mutex_t master_key_id_mutex;
 #endif /* XTRABACKUP */
 /*-------------------------------------------*/
 
