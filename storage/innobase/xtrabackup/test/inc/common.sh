@@ -2,7 +2,11 @@ set -eu
 
 function xtrabackup()
 {
+  if [ -z ${WITH_RR+x} ]; then
     run_cmd $XB_BIN $XB_ARGS "$@"
+  else
+    run_cmd rr $XB_BIN $XB_ARGS "$@"
+  fi
 }
 
 function rr_xtrabackup()

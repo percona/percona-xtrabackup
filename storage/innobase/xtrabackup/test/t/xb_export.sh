@@ -122,6 +122,17 @@ mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incre
 mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
 mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
 mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
+if is_server_version_higher_than 8.0.28
+then
+  mysql -e 'CREATE TABLE test9(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
+  mysql -e 'INSERT INTO test9 VALUES (1,1);' incremental_sample
+  mysql -e 'ALTER TABLE test9 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ALGORITHM=INSTANT' incremental_sample
+  mysql -e 'CREATE TABLE test10(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
+  mysql -e 'INSERT INTO test10 VALUES (1,1);' incremental_sample
+  mysql -e 'ALTER TABLE test10 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ADD COLUMN c4 INT,  ALGORITHM=INSTANT' incremental_sample
+  mysql -e 'INSERT INTO test10 VALUES (1,1,1,1);' incremental_sample
+  mysql -e 'ALTER TABLE test10 DROP COLUMN c3, ALGORITHM=INSTANT' incremental_sample
+fi
 
 checksum_1=`checksum_table incremental_sample test`
 rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
@@ -151,6 +162,18 @@ mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incre
 mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
 mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
 mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
+if is_server_version_higher_than 8.0.28
+then
+  mysql -e 'CREATE TABLE test9(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
+  mysql -e 'INSERT INTO test9 VALUES (1,1);' incremental_sample
+  mysql -e 'ALTER TABLE test9 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ALGORITHM=INSTANT' incremental_sample
+  mysql -e 'CREATE TABLE test10(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
+  mysql -e 'INSERT INTO test10 VALUES (1,1);' incremental_sample
+  mysql -e 'ALTER TABLE test10 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ADD COLUMN c4 INT,  ALGORITHM=INSTANT' incremental_sample
+  mysql -e 'INSERT INTO test10 VALUES (1,1,1,1);' incremental_sample
+  mysql -e 'ALTER TABLE test10 DROP COLUMN c3, ALGORITHM=INSTANT' incremental_sample
+fi
+
 vlog "Database was re-initialized"
 
 mysql -e "alter table test discard tablespace;" incremental_sample
@@ -161,16 +184,26 @@ mysql -e "alter table test5 discard tablespace;" incremental_sample
 mysql -e "alter table test6 discard tablespace;" incremental_sample
 mysql -e "alter table test7 discard tablespace;" incremental_sample
 mysql -e "alter table test8 discard tablespace;" incremental_sample
+if is_server_version_higher_than 8.0.28
+then
+  mysql -e "alter table test9 discard tablespace;" incremental_sample
+  mysql -e "alter table test10 discard tablespace;" incremental_sample
+fi
 
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
 
 ls -tlr $backup_dir/incremental_sample/*cfg
 cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
-vlog "Verifying .cfg files in backup, expecting 10."
-if [ $cfg_count -ne 10 ]
+NUMBER_OF_CFG_FILES=10
+if is_server_version_higher_than 8.0.28
 then
-   vlog "Expecting 10 cfg files. Found only $cfg_count"
+  NUMBER_OF_CFG_FILES=12
+fi
+vlog "Verifying .cfg files in backup, expecting ${NUMBER_OF_CFG_FILES}."
+if [ $cfg_count -ne ${NUMBER_OF_CFG_FILES} ]
+then
+   vlog "Expecting ${NUMBER_OF_CFG_FILES} cfg files. Found only $cfg_count"
    exit -1
 fi
 
@@ -183,6 +216,12 @@ mysql -e "alter table test5 import tablespace" incremental_sample
 mysql -e "alter table test6 import tablespace" incremental_sample
 mysql -e "alter table test7 import tablespace" incremental_sample
 mysql -e "alter table test8 import tablespace" incremental_sample
+if is_server_version_higher_than 8.0.28
+then
+  mysql -e "alter table test9 import tablespace" incremental_sample
+  mysql -e "alter table test10 import tablespace" incremental_sample
+fi
+
 vlog "Table has been imported"
 
 vlog "Cheking checksums"

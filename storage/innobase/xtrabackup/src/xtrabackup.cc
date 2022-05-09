@@ -199,10 +199,13 @@ static hash_table_t *tables_exclude_hash = NULL;
 /* map of schema name and schema id */
 static std::map<std::string, uint64> dd_schema_map;
 
-static uint32_t cfg_version = IB_EXPORT_CFG_VERSION_V6;
+static uint32_t cfg_version = IB_EXPORT_CFG_VERSION_V7;
 
 /* map of <schema id, name> and SDI id*/
 static std::map<std::pair<int, std::string>, uint64> dd_table_map;
+
+/* map of <space_id, dd:table> used at --export */
+static std::map<space_id_t, std::shared_ptr<dd::Table>> g_dd_tables;
 
 char *xtrabackup_databases = NULL;
 char *xtrabackup_databases_file = NULL;
@@ -2384,7 +2387,7 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
                                   compressed_sdi_len);
     decompressor.decompress();
 
-    using Table_Ptr = std::unique_ptr<dd::Table>;
+    using Table_Ptr = std::shared_ptr<dd::Table>;
 
     Table_Ptr dd_table{dd::create_object<dd::Table>()};
     dd::String_type schema_name;
@@ -2398,6 +2401,8 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
       goto error;
     }
 
+    Table_Ptr g_dd_table = dd_table;
+    g_dd_tables.insert(std::make_pair(space_id, g_dd_table));
     using Client = dd::cache::Dictionary_client;
     using Releaser = dd::cache::Dictionary_client::Auto_releaser;
 
@@ -2615,6 +2620,8 @@ static bool xtrabackup_read_info(char *filename) {
     cfg_version = IB_EXPORT_CFG_VERSION_V4;
   } else if (mysql_server_version < 80023) {
     cfg_version = IB_EXPORT_CFG_VERSION_V5;
+  } else if (mysql_server_version < 80029) {
+    cfg_version = IB_EXPORT_CFG_VERSION_V6;
   }
 end:
   fclose(fp);
@@ -6283,7 +6290,7 @@ static bool xb_export_cfg_write_index_fields(
 
   col = table->cols;
 
-  for (ulint i = 0; i < table->n_cols; ++i, ++col) {
+  for (ulint i = 0; i < table->get_total_cols(); ++i, ++col) {
     byte *ptr = row;
 
     mach_write_to_4(ptr, col->prtype);
@@ -6331,7 +6338,122 @@ static bool xb_export_cfg_write_index_fields(
 
       return (false);
     }
+    /* Write column's INSTANT metadata */
+    if (cfg_version >= IB_EXPORT_CFG_VERSION_V7) {
+      byte row[2 + sizeof(uint32_t)];
+      byte *ptr = row;
 
+      /* version added */
+      byte value =
+          col->is_instant_added() ? col->get_version_added() : UINT8_UNDEFINED;
+      mach_write_to_1(ptr, value);
+      ptr++;
+
+      /* version dropped */
+      value = col->is_instant_dropped() ? col->get_version_dropped()
+                                        : UINT8_UNDEFINED;
+      mach_write_to_1(ptr, value);
+      ptr++;
+
+      /* physical position */
+      mach_write_to_4(ptr, col->get_phy_pos());
+
+      if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
+        xb::error() << "while writing table column instant metadata.";
+        return (false);
+      }
+      /* Write DD::Column specific info for dropped columns */
+      if (col->is_instant_dropped()) {
+        auto dd_search = g_dd_tables.find(table->space);
+        if (dd_search != g_dd_tables.end()) {
+          /* Total metadata to be written
+          1 byte for is NULLABLE
+          1 byte for is_unsigned
+          4 bytes for char_length
+          4 bytes for column type
+          4 bytes for numeric scale
+          8 bytes for collation id */
+          constexpr size_t METADATA_SIZE = 22;
+
+          byte _row[METADATA_SIZE];
+
+          ut_ad(col->is_instant_dropped());
+          const dd::Table *dd_table = dd_search->second.get();
+          const dd::Column *column = dd_find_column(dd_table, col_name);
+          ut_ad(column != nullptr);
+
+          byte *_ptr = _row;
+
+          /* 1 byte for is NULLABLE */
+          mach_write_to_1(_ptr, column->is_nullable());
+          _ptr++;
+
+          /* 1 byte for is_unsigned */
+          mach_write_to_1(_ptr, column->is_unsigned());
+          _ptr++;
+
+          /* 4 bytes for char_length() */
+          mach_write_to_4(_ptr, column->char_length());
+          _ptr += 4;
+
+          /* 4 bytes for column type */
+          mach_write_to_4(_ptr, (uint32_t)column->type());
+          _ptr += 4;
+
+          /* 4 bytes for numeric scale */
+          mach_write_to_4(_ptr, column->numeric_scale());
+          _ptr += 4;
+
+          /* 8 bytes for collation id */
+          mach_write_to_8(_ptr, column->collation_id());
+          _ptr += 8;
+
+          if (fwrite(_row, 1, sizeof(_row), file) != sizeof(_row)) {
+            return (false);
+          }
+          /* Write elements for enum column type.
+          [4]     bytes : numner of elements
+          For each element
+            [4]     bytes : element name length (len+1)
+            [len+1] bytes : element name */
+          if (column->type() == dd::enum_column_types::ENUM ||
+              column->type() == dd::enum_column_types::SET) {
+            byte __row[sizeof(uint32_t)];
+
+            /* Write element count */
+            mach_write_to_4(__row, column->elements().size());
+            if (fwrite(__row, 1, sizeof(__row), file) != sizeof(__row)) {
+              xb::error()
+                  << "while writing enum column element count for column "
+                  << col_name;
+
+              return (false);
+            }
+
+            /* Write out the enum/set column element name as [len, byte array].
+             */
+            for (const auto *source_elem : column->elements()) {
+              const char *elem_name = source_elem->name().c_str();
+              uint32_t len = strlen(elem_name) + 1;
+              ut_a(len > 1);
+
+              mach_write_to_4(__row, len);
+
+              if (fwrite(__row, 1, sizeof(len), file) != sizeof(len) ||
+                  fwrite(elem_name, 1, len, file) != len) {
+                xb::error()
+                    << "while writing enum column element name for column "
+                    << col_name;
+
+                return (false);
+              }
+            }
+          }
+        } else {
+          xb::error() << "DD table ID " << table->space << " not found.";
+        }
+      }
+    }
     if (cfg_version >= IB_EXPORT_CFG_VERSION_V3) {
       if (row_quiesce_write_default_value(col, file) != DB_SUCCESS) {
         return (false);
@@ -6412,8 +6534,9 @@ static bool xb_export_cfg_write_index_fields(
   mach_write_to_4(ptr, table->flags);
   ptr += sizeof(uint32_t);
 
-  /* Write the number of columns in the table. */
-  mach_write_to_4(ptr, table->n_cols);
+  /* Write the number of columns in the table. In case of INSTANT, include
+  dropped columns as well. */
+  mach_write_to_4(ptr, table->get_total_cols());
 
   if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
     xb::error() << "writing table meta-data.";
@@ -6423,10 +6546,41 @@ static bool xb_export_cfg_write_index_fields(
 
   if (cfg_version >= IB_EXPORT_CFG_VERSION_V5) {
     /* write number of nullable column before first instant column */
-    mach_write_to_4(value, table->first_index()->n_instant_nullable);
+    mach_write_to_4(value, table->first_index()->get_instant_nullable());
 
     if (fwrite(&value, 1, sizeof(value), file) != sizeof(value)) {
       xb::error() << "Error writing table meta-data.";
+
+      return (false);
+    }
+  }
+
+  /* Write table instant metadata */
+  if (cfg_version >= IB_EXPORT_CFG_VERSION_V7) {
+    byte row[sizeof(uint32_t) * 5];
+    byte *ptr = row;
+
+    /* Write initial column count */
+    mach_write_to_4(ptr, table->initial_col_count);
+    ptr += sizeof(uint32_t);
+
+    /* Write current column count */
+    mach_write_to_4(ptr, table->current_col_count);
+    ptr += sizeof(uint32_t);
+
+    /* Write total column count */
+    mach_write_to_4(ptr, table->total_col_count);
+    ptr += sizeof(uint32_t);
+
+    /* Write number of instantly dropped columns */
+    mach_write_to_4(ptr, table->get_n_instant_drop_cols());
+    ptr += sizeof(uint32_t);
+
+    /* Write current row version */
+    mach_write_to_4(ptr, table->current_row_version);
+
+    if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
+      xb::error() << "while writing table meta-data.";
 
       return (false);
     }
