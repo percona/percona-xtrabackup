@@ -2189,9 +2189,7 @@ decrypt_decompress_file(const char *filepath, uint thread_n)
  	if (ends_with(filepath, ".xbcrypt") && opt_decrypt) {
  		cmd << " | xbcrypt --decrypt --encrypt-algo="
  		    << xtrabackup_encrypt_algo_names[opt_decrypt_algo];
- 		if (xtrabackup_encrypt_key) {
- 			cmd << " --encrypt-key=" << xtrabackup_encrypt_key;
- 		} else {
+ 		if (xtrabackup_encrypt_key == NULL) {
  			cmd << " --encrypt-key-file="
  			    << xtrabackup_encrypt_key_file;
  		}
@@ -2303,6 +2301,10 @@ decrypt_decompress()
 	it = datadir_iter_new(".", false);
 
 	ut_a(xtrabackup_parallel >= 0);
+
+	if (xtrabackup_encrypt_key) {
+		setenv("XBCRYPT_ENCRYPTION_KEY", xtrabackup_encrypt_key, 1);
+	}
 
 	ret = run_data_threads(it, decrypt_decompress_thread_func,
 		xtrabackup_parallel ? xtrabackup_parallel : 1,
