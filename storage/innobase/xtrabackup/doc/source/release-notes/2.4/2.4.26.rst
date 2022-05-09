@@ -1,0 +1,24 @@
+.. _PXB-2.4.26:
+
+================================================================================
+*Percona XtraBackup* 2.4.26
+================================================================================
+
+.. include:: ../../_res/replace/date.txt
+
+.. include:: ../../_res/replace/pxb-blurb.txt
+
+.. contents::
+   :local:
+
+Release Highlights
+=================================================
+
+Fixed a segmentation fault when creating a tmpdir.
+
+Bugs Fixed
+=================================================
+
+* :jirabug:`PXB-2756`: Fixed a segmentation fault when creating a tmpdir.
+
+.. include:: ../../_res/replace/useful-links.txt

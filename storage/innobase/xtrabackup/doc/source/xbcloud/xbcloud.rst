@@ -46,8 +46,9 @@ S3 API.
 Version specific information
 ================================================================================
 
+- 2.4.25 - Added the support for :ref:`Microsoft Azure Cloud Storage <xbcloud_azure>`
 - 2.4.21 - Added s3-storage-class and google-storage-class
-- 2.4.14 - Added the support of *Amazon S3*, MinIO and Google Cloud Storage storage types.
+- 2.4.14 - Added the support of *Amazon S3*, MinIO and Google Cloud Storage storage types
 - 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
   `.cnf` file
 - 2.3.1-beta1 - Implemented support different :ref:`authentication options
@@ -60,10 +61,8 @@ Version specific information
 Supported Cloud Storage Types
 ================================================================================
 
-In addition to Swift, which has been the only option for storing backups in a
-cloud storage until *Percona XtraBackup* 2.4.14, *xbcloud* supports *Amazon S3*,
-MinIO, and Google Cloud Storage. Other *Amazon S3* compatible storages, such
-as Wasabi or Digital Ocean Spaces, are also supported.
+Swift was the only option for storing backups in cloud storage until *Percona XtraBackup 2.4.14*. 
+Currently, the xbcloud binary supports :ref:`Amazon S3 <amazon_s3>`, :ref:`Azure <xbcloud_azure>`, :ref:`MinIO <minio>` and :ref:`Google Cloud Storage <google_cloud_storage>`. Amazon S3-compatible cloud storage types, such as Wasabi and Digital Ocean Spaces, are also supported.
 
 .. seealso::
 
@@ -71,6 +70,8 @@ as Wasabi or Digital Ocean Spaces, are also supported.
       https://wiki.openstack.org/wiki/Swift
    Amazon Simple Storage Service
       https://aws.amazon.com/s3/
+   Azure Cloud Storage
+      https://azure.microsoft.com/en-gb/product-categories/storage/
    MinIO
       https://min.io/
    Google Cloud Storage
@@ -103,6 +104,8 @@ The following example shows how to make a full backup and upload it to Swift.
    --swift-key=testing \
    --parallel=10 \
    full_backup
+
+.. _amazon_s3:
 
 Creating a full backup with *Amazon S3*
 ================================================================================
@@ -151,6 +154,7 @@ The following options are available when using *Amazon S3*:
 
        Also supports using custom S3 implementations such as MinIO or CephRadosGW.
 
+.. _minio:
 
 Creating a full backup with MinIO
 ================================================================================
@@ -165,6 +169,8 @@ Creating a full backup with MinIO
    --s3-bucket='mysql_backups'
    --parallel=10 \
    $(date -I)-full_backup
+
+.. _google_cloud_storage:
 
 Creating a full backup with Google Cloud Storage
 ================================================================================
@@ -365,8 +371,7 @@ Restoring with *Amazon S3*
 Incremental backups
 ================================================================================
 
-First, you need to make the full backup on which the incremental one is going to
-be based:
+First, make the full backup which is the base for an incremental backup:
 
 .. code-block:: bash
 
@@ -378,7 +383,7 @@ be based:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    full_backup
 
-Then you can make the incremental backup:
+Then make the incremental backup:
 
 .. code-block:: bash
 
@@ -390,10 +395,10 @@ Then you can make the incremental backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    inc_backup
 
-Preparing incremental backups
+Preparing an incremental backup
 --------------------------------------------------------------------------------
 
-To prepare a backup you first need to download the full backup:
+To prepare a backup, download the full backup:
 
 .. code-block:: bash
 
@@ -403,13 +408,13 @@ To prepare a backup you first need to download the full backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    full_backup | xbstream -xv -C /storage/downloaded_full
 
-Once you download the full backup it should be prepared:
+Prepare the downloaded full backup:
 
 .. code-block:: bash
 
    $ xtrabackup --prepare --apply-log-only --target-dir=/storage/downloaded_full
 
-After the full backup has been prepared you can download the incremental backup:
+After the full backup has been prepared, download the incremental backup:
 
 .. code-block:: bash
 
@@ -419,7 +424,7 @@ After the full backup has been prepared you can download the incremental backup:
    --swift-auth-url=http://127.0.0.1:35357/ --parallel=10 \
    inc_backup | xbstream -xv -C /storage/downloaded_inc
 
-Once the incremental backup has been downloaded you can prepare it by running:
+Prepare the incremental backup:
 
 .. code-block:: bash
 
@@ -432,8 +437,8 @@ Once the incremental backup has been downloaded you can prepare it by running:
 Partial download of the cloud backup
 --------------------------------------------------------------------------------
 
-If you don't want to download the entire backup to restore the specific database
-you can specify only tables you want to restore:
+If you don't want to download the entire backup to restore a database
+you can restore only specific tables:
 
 .. code-block:: bash
 
@@ -446,8 +451,7 @@ you can specify only tables you want to restore:
 
    $ xbstream -xv -C /storage/partial < /storage/partial/partial.xbs
 
-This command will download just ``ibdata1`` and ``sakila/payment.ibd`` table
-from the full backup.
+This command downloads the ``ibdata1`` table and the ``sakila/payment.ibd`` table from a full backup.
 
 Command-line options
 ================================================================================
@@ -471,7 +475,7 @@ Command-line options
 
 .. option:: --swift-storage-url
 
-   xbcloud will try to get object-store URL for given region (if any specified)
+   xbcloud attempts to get object-store URL for a specfied region (if any specified)
    from the keystone response. One can override that URL by passing
    --swift-storage-url=URL argument.
 

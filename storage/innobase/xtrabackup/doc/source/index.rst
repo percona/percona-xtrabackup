@@ -145,6 +145,7 @@ References
    innobackupex/innobackupex_option_reference
    xbcloud/xbcloud
    xbcloud/xbcloud_exbackoff
+   xbcloud/xbcloud_azure
    xbcrypt/xbcrypt
    xbstream/xbstream
    known_issues
