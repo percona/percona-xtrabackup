@@ -81,6 +81,7 @@ Backup Scenarios
    backup_scenarios/full_backup
    backup_scenarios/incremental_backup
    backup_scenarios/compressed_backup
+   xtrabackup_bin/partial_backups
 
 User's Manual
 =============
