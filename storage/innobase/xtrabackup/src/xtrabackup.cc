@@ -1296,7 +1296,7 @@ struct my_option xb_client_options[] = {
     {"component-keyring-file-config", OPT_COMPONENT_KEYRING_FILE_CONFIG,
      "Path to load keyring component config. Used for --prepare, --move-back,"
      " --copy-back and --stats. (Deprecated, please use "
-     "--keyring-component-config instead)",
+     "--component-keyring-config instead)",
      &opt_component_keyring_file_config, &opt_component_keyring_file_config, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -7962,7 +7962,8 @@ int main(int argc, char **argv) {
                   << "Please use --component-keyring-config.";
       exit(EXIT_FAILURE);
     }
-    strcpy(opt_component_keyring_config, opt_component_keyring_file_config);
+    opt_component_keyring_config =
+        static_cast<char *>(opt_component_keyring_file_config);
   }
 
 #ifndef __WIN__
