@@ -1,12 +1,13 @@
 .. _pxb.release-notes.8-0:
 
 ================================================================================
-|Percona XtraBackup| |version| Release Notes 
+*Percona XtraBackup* 8.0 Release Notes 
 ================================================================================
 
 .. toctree::
    :maxdepth: 1
 
+   release-notes/8.0/8.0.28-21.0
    release-notes/8.0/8.0.28-20.0
    release-notes/8.0/8.0.27-19.0
    release-notes/8.0/8.0.26-18.0
