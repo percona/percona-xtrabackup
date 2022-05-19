@@ -116,6 +116,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/xtrabackup/plugin/keyring_file.so
 %{_libdir}/xtrabackup/plugin/keyring_vault.so
 %{_libdir}/xtrabackup/plugin/component_keyring_file.so
+%{_libdir}/xtrabackup/plugin/component_keyring_kms.so
 %{_includedir}/kmip.h
 %{_includedir}/kmippp.h
 /usr/lib/libkmip.a
