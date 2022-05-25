@@ -13,13 +13,15 @@ master encryption key is stored in a keyring. |xtrabackup| supports two keyring
 plugins: ``keyring_file``, and ``keyring_vault``. These plugins are installed
 into the ``plugin`` directory.
 
-Implemented in |xtrabackup| version 8.0.25, adds support for the ``keyring_file`` component, which is part of the component-based infrastructure MySQL includes to extend the server capabilities. The component is stored in the ``plugin`` directory. 
+.. rubric:: Version Updates
+
+Percona XtraBackup 8.0.25-17 adds support for the ``keyring_file`` component, which is part of the component-based infrastructure MySQL which extends the server capabilities. The component is stored in the ``plugin`` directory. 
 
 See a `comparison of keyring components and keyring plugins <https://dev.mysql.com/doc/refman/8.0/en/keyring-component-plugin-comparison.html>`__ for more information.
 
-Percona XtraBackup 8.0.27-19 adds support for the Key Management Interoperability Protocol (KMIP) which enables the communication between the key management system and encrypted database server.
+Percona XtraBackup 8.0.27-19 adds support for the Key Management Interoperability Protocol (KMIP) which enables the communication between the key management system and encrypted database server. This feature is *tech preview* quality.
 
-This feature is *tech preview* quality.
+Percona XtraBackup 8.0.28-21 adds support for the Amazon Key Management Service (AWS KMS). AWS KMS is cloud-based encryption and key management service. The keys and functionality can be used for other AWS services or your applications that use AWS. No configuration is required to back up a server with AWS KMS-enabled encryption. This feature is *tech preview* quality.
 
 .. contents::
    :local:
