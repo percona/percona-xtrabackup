@@ -1,12 +1,12 @@
 .. _pxb.release-notes.8-0:
 
 ================================================================================
-|Percona XtraBackup| |version| Release Notes 
+*Percona XtraBackup* 8.0 Release Notes 
 ================================================================================
 
 .. toctree::
    :maxdepth: 1
-
+   Percona XtraBackup 8.0.28-21.0 (2022-05-25)<release-notes/8.0/8.0.28-21.0.rst>
    Percona XtraBackup 8.0.28-20.0 (2022-04-26)<release-notes/8.0/8.0.28-20.0.rst>
    Percona Xtrabackup 8.0.27-19.0 (2022-02-02)<release-notes/8.0/8.0.27-19.0.rst>
    Percona XtraBackup 8.0.26-18.0 (2021-09-02)<release-notes/8.0/8.0.26-18.0.rst>
@@ -25,5 +25,3 @@
    Percona XtraBackup 8.0.5 (2019-03-04)<release-notes/8.0/8.0.5.rst>
    Percona Xtrabackup 8.0.4 (2018-12-10)<release-notes/8.0/8.0.4.rst>
    Percona XtraBackup 8.0-3-rc1 (2018-10-31)<release-notes/8.0/8.0-3-rc1.rst>
-
-
