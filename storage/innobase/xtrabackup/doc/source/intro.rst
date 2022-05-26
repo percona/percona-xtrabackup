@@ -72,7 +72,7 @@ for more.
 
 .. seealso::
 
-     For more information see :ref:`how_xtrabackup_works`
+     For more information, see :ref:`how_xtrabackup_works`.
 
 
 

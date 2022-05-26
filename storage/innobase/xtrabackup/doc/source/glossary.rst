@@ -68,7 +68,7 @@
      arbitrary :term:`.ibd` files exported using the |Percona XtraBackup|
      :option:`--export` option.
 
-     See the `the full documentation
+     See the `full documentation
      <http://www.percona.com/doc/percona-server/5.5/management/innodb_expand_import.html>`_
      for more information.
 
