@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <time.h>
 #include <algorithm>
 #include <atomic>
 #include <functional>
@@ -1222,8 +1223,9 @@ bool mysqld_show_create(THD *thd, TABLE_LIST *table_list) {
     protocol->store(table_list->view_creation_ctx->get_client_cs()->csname,
                     system_charset_info);
 
-    protocol->store(table_list->view_creation_ctx->get_connection_cl()->name,
-                    system_charset_info);
+    protocol->store(
+        table_list->view_creation_ctx->get_connection_cl()->m_coll_name,
+        system_charset_info);
   } else
     protocol->store_string(buffer.ptr(), buffer.length(), buffer.charset());
 
@@ -1331,7 +1333,7 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
     if (!(create.default_table_charset->state & MY_CS_PRIMARY) ||
         create.default_table_charset == &my_charset_utf8mb4_0900_ai_ci) {
       buffer.append(STRING_WITH_LEN(" COLLATE "));
-      buffer.append(create.default_table_charset->name);
+      buffer.append(create.default_table_charset->m_coll_name);
     }
     buffer.append(STRING_WITH_LEN(" */"));
   }
@@ -1991,7 +1993,7 @@ bool store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
           (field->charset() == &my_charset_utf8mb4_0900_ai_ci &&
            share->table_charset != &my_charset_utf8mb4_0900_ai_ci)) {
         packet->append(STRING_WITH_LEN(" COLLATE "));
-        packet->append(field->charset()->name);
+        packet->append(field->charset()->m_coll_name);
       }
     }
 
@@ -2304,11 +2306,11 @@ bool store_create_info(THD *thd, TABLE_LIST *table_list, String *packet,
       if (!create_info_arg ||
           (create_info_arg->used_fields & HA_CREATE_USED_DEFAULT_CHARSET)) {
         packet->append(STRING_WITH_LEN(" DEFAULT CHARSET="));
-        packet->append(replace_utf8_utf8mb3(share->table_charset->csname));
+        packet->append(share->table_charset->csname);
         if (!(share->table_charset->state & MY_CS_PRIMARY) ||
             share->table_charset == &my_charset_utf8mb4_0900_ai_ci) {
           packet->append(STRING_WITH_LEN(" COLLATE="));
-          packet->append(table->s->table_charset->name);
+          packet->append(table->s->table_charset->m_coll_name);
         }
       }
     }
@@ -2825,7 +2827,7 @@ class List_process_list : public Do_THD_Impl {
   List running processes (actually connected sessions).
 
   @param thd        thread handle.
-  @param user
+  @param user       Username of connected client.
   @param verbose    if false, limit output to PROCESS_LIST_WIDTH characters.
   @param has_cursor if true, called from a command object that handles
                     terminatation of sending to client, otherwise terminate
@@ -2869,7 +2871,7 @@ void mysqld_list_processes(THD *thd, const char *user, bool verbose,
   // Return list sorted by thread_id.
   std::sort(thread_infos.begin(), thread_infos.end(), thread_info_compare());
 
-  time_t now = my_time(0);
+  time_t now = time(nullptr);
   for (size_t ix = 0; ix < thread_infos.size(); ++ix) {
     thread_info *thd_info = thread_infos.at(ix);
     protocol->start_row();
@@ -3348,13 +3350,10 @@ const char *get_one_variable_ext(THD *running_thd, THD *target_thd,
   const CHARSET_INFO *value_charset;
 
   if (show_type == SHOW_SYS) {
-    LEX_STRING null_lex_str;
-    null_lex_str.str = nullptr;  // For sys_var->value_ptr()
-    null_lex_str.length = 0;
     sys_var *var = ((sys_var *)variable->value);
     show_type = var->show_type();
     value = pointer_cast<const char *>(
-        var->value_ptr(running_thd, target_thd, value_type, &null_lex_str));
+        var->value_ptr(running_thd, target_thd, value_type, {}));
     value_charset = var->charset(target_thd);
   } else {
     value = variable->value;
@@ -3842,7 +3841,8 @@ static int get_schema_tmp_table_columns_record(THD *thd, TABLE_LIST *tables,
     // COLLATION_NAME
     if (field->has_charset()) {
       table->field[TMP_TABLE_COLUMNS_COLLATION_NAME]->store(
-          field->charset()->name, strlen(field->charset()->name), cs);
+          field->charset()->m_coll_name, strlen(field->charset()->m_coll_name),
+          cs);
       table->field[TMP_TABLE_COLUMNS_COLLATION_NAME]->set_notnull();
     }
 

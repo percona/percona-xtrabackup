@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1830,7 +1830,7 @@ void mysql_sql_stmt_prepare(THD *thd) {
     if (thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
             ->is_enabled())
       thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
-          ->mark_as_changed(thd, nullptr);
+          ->mark_as_changed(thd, {});
     my_ok(thd, 0L, 0L, "Statement prepared");
   }
 }
@@ -1895,6 +1895,8 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
   const auto saved_secondary_engine = thd->secondary_engine_optimization();
   thd->set_secondary_engine_optimization(
       Secondary_engine_optimization::PRIMARY_TENTATIVELY);
+
+  MYSQL_SET_PS_SECONDARY_ENGINE(stmt->m_prepared_stmt, false);
 
   // Query text for binary, general or slow log, if any of them is open
   String expanded_query;
@@ -2073,7 +2075,7 @@ void mysql_sql_stmt_close(THD *thd) {
     if (thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
             ->is_enabled())
       thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
-          ->mark_as_changed(thd, nullptr);
+          ->mark_as_changed(thd, {});
     my_ok(thd);
   }
 }
@@ -2294,10 +2296,9 @@ Prepared_statement::Prepared_statement(THD *thd_arg)
       flags((uint)IS_IN_USE),
       with_log(false),
       m_name(NULL_CSTR),
-      m_db(NULL_CSTR) {
-  init_sql_alloc(key_memory_prepared_statement_main_mem_root, &main_mem_root,
-                 thd_arg->variables.query_alloc_block_size,
-                 thd_arg->variables.query_prealloc_size);
+      m_db(NULL_CSTR),
+      main_mem_root(key_memory_prepared_statement_main_mem_root,
+                    thd_arg->variables.query_alloc_block_size) {
   *last_error = '\0';
 }
 
@@ -2379,7 +2380,6 @@ Prepared_statement::~Prepared_statement() {
     lex->destroy();
     delete (st_lex_local *)lex;  // TRASH memory
   }
-  main_mem_root.Clear();
 }
 
 void Prepared_statement::cleanup_stmt() {
@@ -2931,7 +2931,11 @@ bool Prepared_statement::check_parameter_types() {
       case MYSQL_TYPE_LONG_BLOB:
         if (item->data_type_actual() == MYSQL_TYPE_LONGLONG ||
             item->data_type_actual() == MYSQL_TYPE_NEWDECIMAL ||
-            item->data_type_actual() == MYSQL_TYPE_DOUBLE)
+            item->data_type_actual() == MYSQL_TYPE_DOUBLE ||
+            item->data_type_actual() == MYSQL_TYPE_DATETIME ||
+            item->data_type_actual() == MYSQL_TYPE_TIMESTAMP ||
+            item->data_type_actual() == MYSQL_TYPE_DATE ||
+            item->data_type_actual() == MYSQL_TYPE_TIME)
           return false;
         break;
       default:
@@ -3075,12 +3079,15 @@ reexecute:
                Secondary_engine_optimization::PRIMARY_TENTATIVELY);
         assert(!lex->unit->is_executed());
         thd->clear_error();
-        if (err_seen == ER_PREPARE_FOR_SECONDARY_ENGINE)
+        if (err_seen == ER_PREPARE_FOR_SECONDARY_ENGINE) {
           thd->set_secondary_engine_optimization(
               Secondary_engine_optimization::SECONDARY);
-        else
+          MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, true);
+        } else {
           thd->set_secondary_engine_optimization(
               Secondary_engine_optimization::PRIMARY_ONLY);
+          MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, false);
+        }
         // Disable the general log. The query was written to the general log in
         // the first attempt to execute it. No need to write it twice.
         general_log_temporarily_disabled |= disable_general_log(thd);
@@ -3097,6 +3104,7 @@ reexecute:
         thd->clear_error();
         thd->set_secondary_engine_optimization(
             Secondary_engine_optimization::PRIMARY_ONLY);
+        MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, false);
         error = reprepare();
         if (!error) {
           // The reprepared statement should not use a secondary engine.

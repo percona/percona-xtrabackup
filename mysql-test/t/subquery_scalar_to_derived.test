@@ -205,6 +205,7 @@ let query = SELECT t1.a, t2.a
             FROM t1
                  JOIN t2
                  ON t1.a+t2.a = (SELECT COUNT(*) FROM t1);
+--sorted_result
 eval $query;
 eval explain $query;
 
@@ -1030,6 +1031,7 @@ CREATE TEMPORARY TABLE tmp_digests (
   sum_no_index_used BIGINT UNSIGNED NOT NULL,
   sum_no_good_index_used BIGINT UNSIGNED NOT NULL,
   sum_cpu_time BIGINT UNSIGNED NOT NULL,
+  count_secondary BIGINT UNSIGNED NOT NULL,
   first_seen TIMESTAMP NULL DEFAULT NULL,
   last_seen TIMESTAMP NULL DEFAULT NULL,
   quantile_95 BIGINT UNSIGNED NOT NULL,

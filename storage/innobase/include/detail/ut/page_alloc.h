@@ -97,7 +97,7 @@ inline void *page_aligned_alloc(size_t n_bytes) {
     @param[in] n_bytes Size of the storage.
     @return True if releasing the page-aligned memory was successful.
  */
-inline bool page_aligned_free(void *ptr, size_t n_bytes) {
+inline bool page_aligned_free(void *ptr, size_t n_bytes [[maybe_unused]]) {
   if (unlikely(!ptr)) return false;
 #ifdef _WIN32
   auto ret = VirtualFree(ptr, 0, MEM_RELEASE);
@@ -190,8 +190,7 @@ struct Page_alloc : public allocator_traits<false> {
 
   /** Releases storage allocated through Page_alloc::alloc().
 
-      @param[in] data Pointer to storage allocated through
-      Page_alloc::alloc()
+      @param[in] data Pointer to storage allocated through Page_alloc::alloc()
       @return True if releasing the page-aligned memory was successful.
    */
   static inline bool free(void *data) noexcept {
@@ -203,8 +202,7 @@ struct Page_alloc : public allocator_traits<false> {
 
   /** Returns the number of bytes that have been allocated.
 
-      @param[in] data Pointer to storage allocated through
-      Page_alloc::alloc()
+      @param[in] data Pointer to storage allocated through Page_alloc::alloc()
       @return Number of bytes.
    */
   static inline page_allocation_metadata::datalen_t datalen(void *data) {
@@ -213,10 +211,9 @@ struct Page_alloc : public allocator_traits<false> {
            page_allocation_metadata::len;
   }
 
-  /** Returns the the type of the page..
+  /** Returns the the type of the page.
 
-      @param[in] data Pointer to storage allocated through
-      Page_alloc::alloc()
+      @param[in] data Pointer to storage allocated through Page_alloc::alloc()
       @return Page type.
    */
   static inline Page_type page_type(void *data) {
@@ -228,8 +225,7 @@ struct Page_alloc : public allocator_traits<false> {
       a low level information, and is needed only to call low level
       memory-related OS functions.
 
-      @param[in] data Pointer to storage allocated through
-      Page_alloc::alloc()
+      @param[in] data Pointer to storage allocated through Page_alloc::alloc()
       @return Low level allocation info.
    */
   static inline allocation_low_level_info low_level_info(void *data) {
@@ -401,8 +397,7 @@ struct Page_alloc_pfs : public allocator_traits<true> {
 
  private:
   /** Helper function which deduces the original pointer returned by
-      Page_alloc_pfs from a pointer which is passed to us by the
-      call-site.
+      Page_alloc_pfs from a pointer which is passed to us by the call-site.
    */
   static inline void *deduce(PFS_metadata::data_segment_ptr data) noexcept {
     ut_ad(page_type(data) == Page_type::system_page);
@@ -413,7 +408,7 @@ struct Page_alloc_pfs : public allocator_traits<true> {
   }
 };
 
-/** Simple utility metafunction which selects appropriate allocator variant
+/** Simple utility meta-function which selects appropriate allocator variant
     (implementation) depending on the input parameter(s).
   */
 template <bool Pfs_memory_instrumentation_on>

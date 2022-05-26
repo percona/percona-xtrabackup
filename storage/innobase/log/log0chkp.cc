@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -98,7 +98,7 @@ static void log_consider_sync_flush(log_t &log);
 /** Makes a checkpoint. Note that this function does not flush dirty blocks
 from the buffer pool. It only checks what is lsn of the oldest modification
 in the buffer pool, and writes information about the lsn in log files.
-@param[in,out]	log	redo log */
+@param[in,out]  log     redo log */
 static void log_checkpoint(log_t &log);
 
 /** Calculates time that elapsed since last checkpoint.
@@ -109,13 +109,13 @@ static std::chrono::steady_clock::duration log_checkpoint_time_elapsed(
 /** Requests a checkpoint written for lsn greater or equal to provided one.
 The log.checkpointer_mutex has to be acquired before it is called, and it
 is not released within this function.
-@param[in,out]	log		redo log
-@param[in]	requested_lsn	provided lsn (checkpoint should be not older) */
+@param[in,out]  log             redo log
+@param[in]      requested_lsn   provided lsn (checkpoint should be not older) */
 static void log_request_checkpoint_low(log_t &log, lsn_t requested_lsn);
 
 /** Waits for checkpoint advanced to at least that lsn.
-@param[in]	log	redo log
-@param[in]	lsn	lsn up to which we are waiting */
+@param[in]      log     redo log
+@param[in]      lsn     lsn up to which we are waiting */
 static void log_wait_for_checkpoint(const log_t &log, lsn_t lsn);
 
 /** Requests for urgent flush of dirty pages, to advance oldest_lsn
@@ -123,9 +123,8 @@ in flush lists to provided value. This should force page cleaners
 to perform the sync-flush in which case the innodb_max_io_capacity
 is not respected. This should be called when we are close to running
 out of space in redo log (close to free_check_limit_sn).
-@param[in]  log         redo log
 @param[in]  new_oldest  oldest_lsn to stop flush at (or greater) */
-static bool log_request_sync_flush(const log_t &log, lsn_t new_oldest);
+static bool log_request_sync_flush(lsn_t new_oldest);
 
 /** Sync log file changes to disk if required. */
 static void log_fsync() {
@@ -668,7 +667,7 @@ void log_create_first_checkpoint(log_t &log, lsn_t lsn) {
   ut_a(!recv_recovery_is_on());
   ut_a(buf_are_flush_lists_empty_validate());
 
-  log_background_threads_inactive_validate(log);
+  log_background_threads_inactive_validate();
 
   /* Write header of first file. */
   log_files_header_flush(*log_sys, 0, LOG_START_LSN);
@@ -809,7 +808,7 @@ bool log_make_latest_checkpoint() {
   return (log_make_latest_checkpoint(*log_sys));
 }
 
-static bool log_request_sync_flush(const log_t &log, lsn_t new_oldest) {
+static bool log_request_sync_flush(lsn_t new_oldest) {
   if (log_test != nullptr) {
     return (false);
   }
@@ -917,7 +916,7 @@ static void log_consider_sync_flush(log_t &log) {
   if (flush_up_to != 0) {
     log_checkpointer_mutex_exit(log);
 
-    log_request_sync_flush(log, flush_up_to);
+    log_request_sync_flush(flush_up_to);
 
     log_checkpointer_mutex_enter(log);
 

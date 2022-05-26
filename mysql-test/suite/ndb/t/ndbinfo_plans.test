@@ -44,7 +44,8 @@ set ndbinfo_show_hidden=1;
 SELECT table_name, table_rows, avg_row_length
   FROM information_schema.tables
   WHERE table_schema='ndbinfo' AND table_type = 'BASE TABLE'
-  AND table_name not like '%cpu%';
+  AND table_name not like '%cpu%'
+  ORDER BY table_name;
 
 --disable_query_log
 CREATE TEMPORARY TABLE rowcounts
@@ -86,7 +87,8 @@ END|;
 ## List the tables where estimated size equals actual size.
 CALL populate_sizes();
 SELECT count(*) from rowcounts WHERE est_rows = actual_rows;
-SELECT table_name from rowcounts WHERE est_rows = actual_rows;
+SELECT table_name from rowcounts WHERE est_rows = actual_rows
+  ORDER BY table_name;
 
 ## Check that no tables have zero estimates
 SELECT table_name from rowcounts WHERE est_rows = 0;
@@ -97,7 +99,8 @@ DROP PROCEDURE populate_sizes;
 ## Show the indexes on virtual tables
 SELECT table_name, constraint_name, column_name, ordinal_position
   FROM information_schema.key_column_usage
-  WHERE table_schema = 'ndbinfo';
+  WHERE table_schema = 'ndbinfo'
+  ORDER BY table_name;
 
 SELECT * FROM blocks ORDER BY block_number DESC;
 
@@ -112,10 +115,17 @@ assert($key == "PRIMARY");
 
 select * from blocks where block_number in (250,251);
 
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from blocks where block_number in (250,251);
+
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from blocks order by block_number;
+
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from blocks where block_number < 250;
+
 ## Can scan backwards:
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from blocks where block_number > 250
   order by block_number desc;
 
@@ -142,12 +152,36 @@ select param_name from ndb$config_params where param_number = 1;
 select param_name from ndb$config_params where param_number = 40000;
 
 ## The plan for counters
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from counters;
 
 ## The plan for memory_per_fragment
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from memory_per_fragment;
 
+## WL#11968 tables and views
+##
+--horizontal_results
+SELECT event_id, e.name, table_name
+  FROM events e JOIN dictionary_tables t using(table_id)
+  WHERE event_id < 6 ORDER BY event_id;
 
+## Query uses primary keys on both tables:
+EXPLAIN SELECT event_id, e.name, table_name FROM events e
+  JOIN dictionary_tables t using(table_id) WHERE event_id < 6 ORDER BY event_id;
+
+SELECT * from events where event_id = -1;
+SELECT table_event from events where event_id = 1;
+SELECT table_name from dictionary_tables where table_id = -1;
+SELECT table_name from dictionary_tables where table_id = 9990;
+SELECT table_name from dictionary_tables where table_id = 5;
+SELECT table_name from dictionary_tables where table_id = 6;
+
+select * from blobs;
+select * from index_columns order by index_object_id;
+select * from hash_maps order by id limit 1;
+
+--vertical_results
 ## Create an all-MyISAM version of memory_per_fragment for comparison
 ## (now with a primary key in the MyISAM version as well)
 ## and explain the same query
@@ -181,8 +215,8 @@ CREATE VIEW memory_per_fragment AS
 --enable_query_log
 --enable_result_log
 
+--replace_regex /cost=[0-9]+\.[0-9]+/cost=#/
 explain format=tree select * from memory_per_fragment;
-
 
 
 ## CLEANUP

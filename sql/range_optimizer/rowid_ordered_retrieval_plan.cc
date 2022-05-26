@@ -170,9 +170,11 @@ static ROR_SCAN_INFO *make_ror_scan(const RANGE_OPT_PARAM *param, int idx,
       param->table->file->index_scan_cost(ror_scan->keynr, 1, rows);
 
   Quick_ranges ranges(param->return_mem_root);
+  unsigned num_exact_key_parts_unused;
   if (get_ranges_from_tree(param->return_mem_root, param->table,
                            param->key[idx], param->real_keynr[idx], sel_root,
-                           MAX_REF_PARTS, &ror_scan->used_key_parts, &ranges)) {
+                           MAX_REF_PARTS, &ror_scan->used_key_parts,
+                           &num_exact_key_parts_unused, &ranges)) {
     return nullptr;
   }
   ror_scan->ranges = {&ranges[0], ranges.size()};
@@ -705,8 +707,6 @@ static AccessPath *MakeAccessPath(ROR_SCAN_INFO *scan, TABLE *table,
   SYNOPSIS
     get_best_ror_intersect()
       param            Parameter from test_quick_select function.
-      order_direction  The sort order the range access method must be able
-                       to provide. Three-value logic: asc/desc/don't care
       tree             Transformed restriction condition to be used to look
                        for ROR scans.
       cost_est         Do not return read plans with cost > cost_est.
@@ -769,8 +769,8 @@ static AccessPath *MakeAccessPath(ROR_SCAN_INFO *scan, TABLE *table,
 
 AccessPath *get_best_ror_intersect(
     THD *thd, const RANGE_OPT_PARAM *param, TABLE *table,
-    bool index_merge_intersect_allowed, enum_order order_direction,
-    SEL_TREE *tree, const MY_BITMAP *needed_fields, double cost_est,
+    bool index_merge_intersect_allowed, SEL_TREE *tree,
+    const MY_BITMAP *needed_fields, double cost_est,
     bool force_index_merge_result, bool reuse_handler) {
   uint idx;
   Cost_estimate min_cost;
@@ -795,8 +795,6 @@ AccessPath *get_best_ror_intersect(
       trace_ror.add("need_tracing", true);
     return nullptr;
   }
-
-  if (order_direction == ORDER_DESC) return nullptr;
 
   /*
     Step1: Collect ROR-able SEL_ARGs and create ROR_SCAN_INFO for each of

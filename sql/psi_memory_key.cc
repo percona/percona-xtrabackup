@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 
 #include "my_psi_config.h"
 #include "mysql/components/services/bits/psi_bits.h"
-#include "mysql/components/services/psi_memory_bits.h"
+#include "mysql/components/services/bits/psi_memory_bits.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/psi_memory.h"
 #include "template_utils.h"
@@ -60,7 +60,6 @@ PSI_memory_key key_memory_MYSQL_LOG_name;
 PSI_memory_key key_memory_MYSQL_RELAY_LOG_basename;
 PSI_memory_key key_memory_MYSQL_RELAY_LOG_index;
 PSI_memory_key key_memory_Mutex_cond_array_Mutex_cond;
-PSI_memory_key key_memory_NAMED_ILINK_name;
 PSI_memory_key key_memory_NET_buff;
 PSI_memory_key key_memory_NET_compress_packet;
 PSI_memory_key key_memory_Owned_gtids_sidno_to_hash;
@@ -117,6 +116,9 @@ PSI_memory_key key_memory_locked_thread_list;
 PSI_memory_key key_memory_my_str_malloc;
 PSI_memory_key key_memory_opt_bin_logname;
 PSI_memory_key key_memory_partition_syntax_buffer;
+PSI_memory_key key_memory_persisted_variables_memroot;
+PSI_memory_key key_memory_persisted_variables_unordered_map;
+PSI_memory_key key_memory_persisted_variables_unordered_set;
 PSI_memory_key key_memory_prepared_statement_infrastructure;
 PSI_memory_key key_memory_prepared_statement_main_mem_root;
 PSI_memory_key key_memory_partitions_prune_exec;
@@ -199,8 +201,6 @@ static PSI_memory_info all_server_memory[] = {
     {&key_memory_blob_mem_storage, "Blob_mem_storage::storage",
      PSI_FLAG_MEM_COLLECT, 0, PSI_DOCUMENT_ME},
 
-    {&key_memory_NAMED_ILINK_name, "NAMED_ILINK::name", 0, 0,
-     "Names in the MyISAM key cache."},
     {&key_memory_String_value, "String::value", 0, 0, PSI_DOCUMENT_ME},
     {&key_memory_Sys_var_charptr_value, "Sys_var_charptr::value", 0, 0,
      PSI_DOCUMENT_ME},
@@ -376,7 +376,17 @@ static PSI_memory_info all_server_memory[] = {
      "Mem root for temporary objects allocated while dropping tables or the "
      "whole database."},
     {&key_memory_rm_db_mdl_reqs_root, "rm_db::mdl_reqs_root", PSI_FLAG_THREAD,
-     0, "Mem root for allocating MDL requests while dropping datbase."}};
+     0, "Mem root for allocating MDL requests while dropping datbase."},
+    {&key_memory_persisted_variables_memroot, "Persisted_variables::memroot",
+     PSI_FLAG_ONLY_GLOBAL_STAT, 0,
+     "Memory allocated to process persisted variables during server start-up "
+     "and plugin/component initialization."},
+    {&key_memory_persisted_variables_unordered_map,
+     "Persisted_variables::unordered_map", PSI_FLAG_ONLY_GLOBAL_STAT, 0,
+     "Memory allocated for in-memory maps for persisted variables"},
+    {&key_memory_persisted_variables_unordered_set,
+     "Persisted_variables::unordered_set", PSI_FLAG_ONLY_GLOBAL_STAT, 0,
+     "Memory allocated for in-memory sets for persisted variables"}};
 
 void register_server_memory_keys() {
   const char *category = "sql";

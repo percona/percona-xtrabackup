@@ -39,8 +39,8 @@ RTree_inserter::RTree_inserter(Context &ctx, dict_index_t *index) noexcept
     : m_dtuples(ut::new_withkey<Tuples>(ut::make_psi_memory_key(mem_key_ddl))),
       m_index(index),
       m_ctx(ctx) {
-  m_dml_heap = mem_heap_create(512);
-  m_dtuple_heap = mem_heap_create(512);
+  m_dml_heap = mem_heap_create(512, UT_LOCATION_HERE);
+  m_dtuple_heap = mem_heap_create(512, UT_LOCATION_HERE);
 }
 
 RTree_inserter::~RTree_inserter() noexcept {
@@ -175,7 +175,7 @@ dberr_t RTree_inserter::batch_insert(trx_id_t trx_id,
 
     if (err == DB_SUCCESS) {
       if (rtr_info.mbr_adj) {
-        err = rtr_ins_enlarge_mbr(&cursor, nullptr, &mtr);
+        err = rtr_ins_enlarge_mbr(&cursor, &mtr);
       }
 
       if (err == DB_SUCCESS) {

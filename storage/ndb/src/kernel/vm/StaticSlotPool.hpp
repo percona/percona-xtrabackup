@@ -25,6 +25,7 @@
 #ifndef STATICSLOTPOOL_HPP
 #define STATICSLOTPOOL_HPP
 
+#include "util/require.h"
 #include "debugger/EventLogger.hpp"
 #include "portlib/ndb_prefetch.h"
 #include "vm/IntrusiveList.hpp"
@@ -105,7 +106,7 @@ class StaticSlotPool::Page
 
   static void static_asserts()
   {
-    NDB_STATIC_ASSERT(sizeof(Page) == WORDS_PER_PAGE * sizeof(Uint32));
+    static_assert(sizeof(Page) == WORDS_PER_PAGE * sizeof(Uint32));
   }
 };
 

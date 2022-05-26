@@ -2,7 +2,7 @@
 #define HANDLER_INCLUDED
 
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,7 @@
 #include <random>  // std::mt19937
 #include <set>
 #include <string>
+#include <string_view>
 
 #include <mysql/components/services/page_track_service.h>
 #include "ft_global.h"  // ft_hints
@@ -58,7 +59,7 @@
 #include "my_sys.h"
 #include "my_table_map.h"
 #include "my_thread_local.h"  // my_errno
-#include "mysql/components/services/psi_table_bits.h"
+#include "mysql/components/services/bits/psi_table_bits.h"
 #include "sql/dd/object_id.h"  // dd::Object_id
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/object_table.h"  // dd::Object_table
@@ -112,6 +113,8 @@ class Table;
 class Tablespace;
 }  // namespace dd
 
+constexpr const ha_rows EXTRA_RECORDS{10};
+
 /** Id for identifying Table SDIs */
 constexpr const uint32 SDI_TYPE_TABLE = 1;
 
@@ -141,10 +144,6 @@ typedef bool(stat_print_fn)(THD *thd, const char *type, size_t type_len,
 
 class ha_statistics;
 class ha_tablespace_statistics;
-
-namespace AQP {
-class Table_access;
-}  // namespace AQP
 class Unique_on_insert;
 
 extern ulong savepoint_alloc_size;
@@ -1536,6 +1535,25 @@ typedef int (*table_exists_in_engine_t)(handlerton *hton, THD *thd,
                                         const char *db, const char *name);
 
 /**
+  Let storage engine inspect the query Accesspath and pick whatever
+  it like for being pushed down to the engine. (Join, conditions, ..)
+
+  The handler implementation should itself keep track of what it 'pushed',
+  such that later calls to the handlers access methods should
+  activate the pushed parts of the execution plan on the storage
+  engines.
+
+  @param  thd        Thread context
+  @param  query      The AccessPath for the entire query.
+  @param  join       The JOIN to be pushed
+
+  @returns
+    0     on success
+    error otherwise
+*/
+using push_to_engine_t = int (*)(THD *thd, AccessPath *query, JOIN *);
+
+/**
   Check if the given db.tablename is a system table for this SE.
 
   @param db                         Database name to check.
@@ -2485,6 +2503,7 @@ struct handlerton {
   discover_t discover;
   find_files_t find_files;
   table_exists_in_engine_t table_exists_in_engine;
+  push_to_engine_t push_to_engine;
   is_supported_system_table_t is_supported_system_table;
 
   /*
@@ -4779,7 +4798,7 @@ class handler {
     This method is mainly provided as a temporary workaround for
     bug#33317872, where we fix problems caused by calling
     Cost_model::page_read_cost() directly from the optimizer.
-    That should be avoide, as it introduced assumption about all
+    That should be avoided, as it introduced assumption about all
     storage engines being disk-page based, and having a 'page' cost.
     Furthermore, this page cost was even compared against read_cost(),
     which was computed with an entirely different algorithm, and thus
@@ -4787,12 +4806,12 @@ class handler {
 
     The default implementation still call Cost_model::page_read_cost(),
     thus behaving just as before. However, handler implementation may
-    override it to call handler::read_cost() instead(), which propably
+    override it to call handler::read_cost() instead(), which probably
     will be more correct. (If a page_read_cost should be included
     in the cost estimate, that should preferable be done inside
     each read_cost() implementation)
 
-    Longer term we should considder to remove all page_read_cost()
+    Longer term we should consider to remove all page_read_cost()
     usage from the optimizer itself, making this method obsolete.
 
     @param index  the index number
@@ -4890,7 +4909,7 @@ class handler {
   int check_collation_compatibility();
 
   /**
-    Make a guestimate for how much of a table or index is in a memory
+    Make a guesstimate for how much of a table or index is in a memory
     buffer in the case where the storage engine has not provided any
     estimate for this.
 
@@ -4938,7 +4957,7 @@ class handler {
 
     @param error  error code received from the handler interface (HA_ERR_...)
 
-    @return   whether the error is ignorablel or not
+    @return   whether the error is ignorable or not
       @retval true  the error is ignorable
       @retval false the error is not ignorable
   */
@@ -5169,7 +5188,7 @@ class handler {
   }
 
   virtual int read_range_first(const key_range *start_key,
-                               const key_range *end_key, bool eq_range,
+                               const key_range *end_key, bool eq_range_arg,
                                bool sorted);
   virtual int read_range_next();
 
@@ -5318,24 +5337,21 @@ class handler {
   }
 
   /**
-    Let storage engine inspect the optimized 'plan' and pick whatever
-    it like for being pushed down to the engine. (Join, conditions, ..)
+    Get the handlerton of the storage engine if the SE is capable of
+    pushing down some of the AccessPath functionality.
+    (Join, Filter conditions, ... possiby more)
 
-    The handler implementation should keep track of what it 'pushed',
-    such that later calls to the handlers access methods should
-    activate the pushed (part of) the execution plan on the storage
-    engines.
+    Call the handlerton::push_to_engine() method for performing the
+    actuall pushdown of (parts of) the AccessPath functionality
 
-    @param  table
-            Abstract Query Plan 'table' object for the table
-            being pushed to
+    @returns   handlerton* of the SE if it may be capable of
+               off loading part of the query by calling
+               handlerton::push_to_engine()
 
-    @returns
-      0     on success
-      error otherwise
+               Else, 'nullptr' is returned.
   */
-  virtual int engine_push(AQP::Table_access *table [[maybe_unused]]) {
-    return 0;
+  virtual const handlerton *hton_supporting_engine_pushdown() {
+    return nullptr;
   }
 
   /**
@@ -6946,7 +6962,7 @@ bool ha_rm_tmp_tables(THD *thd, List<LEX_STRING> *files);
 bool default_rm_tmp_tables(handlerton *hton, THD *thd, List<LEX_STRING> *files);
 
 /* key cache */
-extern "C" int ha_init_key_cache(const char *name, KEY_CACHE *key_cache);
+int ha_init_key_cache(std::string_view name, KEY_CACHE *key_cache);
 int ha_resize_key_cache(KEY_CACHE *key_cache);
 int ha_change_key_cache(KEY_CACHE *old_key_cache, KEY_CACHE *new_key_cache);
 
@@ -7067,14 +7083,14 @@ class ha_tablespace_statistics {
  public:
   ha_tablespace_statistics()
       : m_id(0),
-        m_logfile_group_number(-1),
+        m_logfile_group_number(~0ULL),
         m_free_extents(0),
         m_total_extents(0),
         m_extent_size(0),
         m_initial_size(0),
         m_maximum_size(0),
         m_autoextend_size(0),
-        m_version(-1),
+        m_version(~0ULL),
         m_data_free(0) {}
 
   ulonglong m_id;

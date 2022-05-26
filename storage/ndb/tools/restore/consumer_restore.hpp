@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -83,6 +83,7 @@ public:
     m_no_restore_disk = false;
     m_restore_epoch_requested = false;
     m_restore_epoch = false;
+    m_delete_epoch_tuple = false;
     m_parallelism = parallelism;
     m_callback = 0;
     m_free_callback = 0;
@@ -129,6 +130,7 @@ public:
                                        const NDBCOL* backupCol, 
                                        const NDBCOL* dbCol);
   bool update_apply_status(const RestoreMetaData &metaData, bool snapshotstart) override;
+  bool delete_epoch_tuple() override;
   bool report_started(unsigned node_id, unsigned backup_id) override;
   bool report_meta_data(unsigned node_id, unsigned backup_id) override;
   bool report_data(unsigned node_id, unsigned backup_id) override;
@@ -231,7 +233,9 @@ public:
   bool m_restore_epoch;
   bool m_disable_indexes;
   bool m_rebuild_indexes;
+  bool m_delete_epoch_tuple;
 
+  bool m_with_apply_status;
   bool m_no_upgrade; // for upgrade ArrayType from 5.0 backup file.
   bool m_no_restore_disk;
   Uint32 m_tableChangesMask;

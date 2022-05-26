@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,17 +48,17 @@
 #include "my_sqlcommand.h"  // SQLCOM_END
 #include "my_sys.h"         // MY_TMPDIR
 #include "my_thread.h"      // my_thread_attr_t
-#include "mysql/components/services/mysql_cond_bits.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/mysql_rwlock_bits.h"
-#include "mysql/components/services/psi_cond_bits.h"
-#include "mysql/components/services/psi_file_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
-#include "mysql/components/services/psi_rwlock_bits.h"
-#include "mysql/components/services/psi_socket_bits.h"
-#include "mysql/components/services/psi_stage_bits.h"
-#include "mysql/components/services/psi_statement_bits.h"
-#include "mysql/components/services/psi_thread_bits.h"
+#include "mysql/components/services/bits/mysql_cond_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_rwlock_bits.h"
+#include "mysql/components/services/bits/psi_cond_bits.h"
+#include "mysql/components/services/bits/psi_file_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
+#include "mysql/components/services/bits/psi_rwlock_bits.h"
+#include "mysql/components/services/bits/psi_socket_bits.h"
+#include "mysql/components/services/bits/psi_stage_bits.h"
+#include "mysql/components/services/bits/psi_statement_bits.h"
+#include "mysql/components/services/bits/psi_thread_bits.h"
 #include "mysql/status_var.h"
 #include "mysql_com.h"  // SERVER_VERSION_LENGTH
 #ifdef _WIN32
@@ -128,6 +128,7 @@ extern bool dynamic_plugins_are_initialized;
 bool signal_restart_server();
 void kill_mysql(void);
 void refresh_status();
+void reset_status_by_thd();
 bool is_secure_file_path(const char *path);
 ulong sql_rnd_with_mutex();
 
@@ -256,6 +257,7 @@ extern bool opt_using_transactions;
 extern ulong current_pid;
 extern ulong expire_logs_days;
 extern ulong binlog_expire_logs_seconds;
+extern bool opt_binlog_expire_logs_auto_purge;
 extern uint sync_binlog_period, sync_relaylog_period, sync_relayloginfo_period,
     sync_masterinfo_period, opt_mta_checkpoint_period, opt_mta_checkpoint_group;
 extern ulong opt_tc_log_size, tc_log_max_pages_used, tc_log_page_size;
@@ -838,4 +840,8 @@ extern SERVICE_TYPE(dynamic_loader) * dynamic_loader_srv;
 
 class Deployed_components;
 extern Deployed_components *g_deployed_components;
+
+extern bool opt_persist_sensitive_variables_in_plaintext;
+
+void persisted_variables_refresh_keyring_support();
 #endif /* MYSQLD_INCLUDED */

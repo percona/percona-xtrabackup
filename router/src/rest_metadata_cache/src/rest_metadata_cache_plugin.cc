@@ -54,6 +54,8 @@ static const char kRequireRealm[]{"require_realm"};
 // one shared setting
 std::string require_realm_metadata_cache;
 
+using StringOption = mysql_harness::StringOption;
+
 class RestMetadataCachePluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string require_realm;
@@ -61,7 +63,7 @@ class RestMetadataCachePluginConfig : public mysql_harness::BasePluginConfig {
   explicit RestMetadataCachePluginConfig(
       const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        require_realm(get_option_string(section, kRequireRealm)) {}
+        require_realm(get_option(section, kRequireRealm, StringOption{})) {}
 
   std::string get_default(const std::string & /* option */) const override {
     return {};
@@ -852,18 +854,26 @@ static const std::array<const char *, 2> required = {{
     "rest_api",
 }};
 
+static const std::array<const char *, 1> supported_options{kRequireRealm};
+
 extern "C" {
 mysql_harness::Plugin DLLEXPORT harness_plugin_rest_metadata_cache = {
-    mysql_harness::PLUGIN_ABI_VERSION, mysql_harness::ARCHITECTURE_DESCRIPTOR,
-    "REST_METADATA_CACHE", VERSION_NUMBER(0, 0, 1),
+    mysql_harness::PLUGIN_ABI_VERSION,
+    mysql_harness::ARCHITECTURE_DESCRIPTOR,
+    "REST_METADATA_CACHE",
+    VERSION_NUMBER(0, 0, 1),
     // requires
-    required.size(), required.data(),
+    required.size(),
+    required.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     nullptr,  // deinit
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
+    supported_options.size(),
+    supported_options.data(),
 };
 }

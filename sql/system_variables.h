@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -229,6 +229,7 @@ struct System_variables {
   ulong net_write_timeout;
   ulong optimizer_prune_level;
   ulong optimizer_search_depth;
+  ulong optimizer_max_subgraph_pairs;
   ulonglong parser_max_mem_size;
   ulong range_optimizer_max_mem_size;
   ulong preload_buff_size;
@@ -438,6 +439,23 @@ struct System_variables {
     @sa Sys_connection_global_memory_tracking
   */
   bool conn_global_mem_tracking;
+
+  /**
+    Switch which controls whether XA transactions are detached
+    (made accessible to other connections for commit/rollback)
+    as part of XA PREPARE (true), or at session disconnect (false, default).
+    An important side effect of setting this to true is that temporary tables
+    are disallowed in XA transactions. This is necessary beacuse temporary
+    tables and their contents (and thus changes to them) is bound to
+    specific connections, so they don't make sense if XA transaction is
+    committed or rolled back from another connection.
+   */
+  bool xa_detach_on_prepare;
+
+  /**
+    @sa Sys_debug_sensitive_session_string
+  */
+  char *debug_sensitive_session_str;
 };
 
 /**

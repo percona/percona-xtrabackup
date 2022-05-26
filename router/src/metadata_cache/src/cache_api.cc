@@ -31,7 +31,6 @@
 
 #include "metadata_cache_ar.h"
 #include "metadata_cache_gr.h"
-#include "metadata_factory.h"
 #include "mysqlrouter/metadata_cache.h"
 
 #include "cluster_metadata.h"
@@ -97,20 +96,20 @@ void MetadataCacheAPI::cache_init(
 
   switch (cluster_type) {
     case mysqlrouter::ClusterType::RS_V2:
-      g_metadata_cache.reset(new ARMetadataCache(
+      g_metadata_cache = std::make_unique<ARMetadataCache>(
           router_id, cluster_type_specific_id, metadata_servers,
-          get_instance(cluster_type, session_config, ssl_options,
-                       use_cluster_notifications, view_id),
+          instance_factory_(cluster_type, session_config, ssl_options,
+                            use_cluster_notifications, view_id),
           ttl_config, ssl_options, target_cluster, router_attributes,
-          thread_stack_size));
+          thread_stack_size);
       break;
     default:
-      g_metadata_cache.reset(new GRMetadataCache(
+      g_metadata_cache = std::make_unique<GRMetadataCache>(
           router_id, cluster_type_specific_id, clusterset_id, metadata_servers,
-          get_instance(cluster_type, session_config, ssl_options,
-                       use_cluster_notifications, view_id),
+          instance_factory_(cluster_type, session_config, ssl_options,
+                            use_cluster_notifications, view_id),
           ttl_config, ssl_options, target_cluster, router_attributes,
-          thread_stack_size, use_cluster_notifications));
+          thread_stack_size, use_cluster_notifications);
   }
 
   is_initialized_ = true;
@@ -177,13 +176,6 @@ LookupResult MetadataCacheAPI::get_cluster_nodes() {
   return LookupResult(g_metadata_cache->get_cluster_nodes());
 }
 
-void MetadataCacheAPI::mark_instance_reachability(
-    const std::string &instance_id, InstanceStatus status) {
-  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
-
-  g_metadata_cache->mark_instance_reachability(instance_id, status);
-}
-
 bool MetadataCacheAPI::wait_primary_failover(
     const std::string &primary_server_uuid,
     const std::chrono::seconds &timeout) {
@@ -226,6 +218,24 @@ void MetadataCacheAPI::remove_acceptor_handler_listener(
   // remove_acceptor_handler_listener.
   { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
   g_metadata_cache->remove_acceptor_handler_listener(listener);
+}
+
+void MetadataCacheAPI::add_md_refresh_listener(
+    MetadataRefreshListenerInterface *listener) {
+  // We only want to keep the lock when checking if the metadata cache global is
+  // initialized. The object itself protects its shared state in its
+  // add_md_refresh_listener.
+  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
+  g_metadata_cache->add_md_refresh_listener(listener);
+}
+
+void MetadataCacheAPI::remove_md_refresh_listener(
+    MetadataRefreshListenerInterface *listener) {
+  // We only want to keep the lock when checking if the metadata cache global is
+  // initialized. The object itself protects its shared state in its
+  // remove_md_refresh_listener.
+  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
+  g_metadata_cache->remove_md_refresh_listener(listener);
 }
 
 MetadataCacheAPI::RefreshStatus MetadataCacheAPI::get_refresh_status() {

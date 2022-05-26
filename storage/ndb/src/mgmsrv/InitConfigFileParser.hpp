@@ -26,6 +26,7 @@
 #define InitConfigFileParser_H
 
 #include <ndb_global.h>
+#include "portlib/ndb_compiler.h"
 
 #include <Properties.hpp>
 #include <ConfigValues.hpp>
@@ -97,7 +98,7 @@ public:
       ATTRIBUTE_FORMAT(printf, 2, 3);
   };
 
-  static bool convertStringToUint64(const char* s, Uint64& val, Uint32 log10base = 0);
+  static bool convertStringToUint64(const char* s, Uint64& val);
   static bool convertStringToBool(const char* s, bool& val);
 
 private:

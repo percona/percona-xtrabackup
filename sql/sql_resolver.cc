@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -118,7 +118,7 @@ static bool simplify_const_condition(THD *thd, Item **cond,
                                      bool remove_cond = true,
                                      bool *ret_cond_value = nullptr);
 static Item *create_rollup_switcher(THD *thd, Query_block *query_block,
-                                    Item *item, int send_group_parts);
+                                    Item_sum *item, int send_group_parts);
 static bool fulltext_uses_rollup_column(const Query_block *query_block);
 
 /**
@@ -396,12 +396,13 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
     to know about implicit grouping which may be induced by an aggregate
     function in the window's PARTITION or ORDER clause).
   */
+  const size_t fields_cnt = fields.size();
   if (m_windows.elements != 0 &&
       Window::setup_windows1(thd, this, base_ref_items, get_table_list(),
                              &fields, &m_windows))
     return true;
 
-  bool added_new_sum_funcs = false;
+  bool added_new_sum_funcs = fields.size() > fields_cnt;
 
   if (order_list.elements) {
     if (setup_order_final(thd)) return true; /* purecov: inspected */
@@ -488,15 +489,17 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
     uint send_group_parts = group_list_size();
     for (auto it = fields.begin(); it != fields.end(); ++it) {
       Item *item = *it;
-      if (item->type() == Item::SUM_FUNC_ITEM && !item->const_item() &&
-          down_cast<Item_sum *>(item)->aggr_query_block == this &&
-          !is_rollup_sum_wrapper(item)) {
-        // split_sum_func2 created a new aggregate function item,
-        // so we need to update it for rollup.
-        Item *new_item =
-            create_rollup_switcher(thd, this, item, send_group_parts);
-        if (new_item == nullptr) return true;
-        *it = new_item;
+      if (item->type() == Item::SUM_FUNC_ITEM && !item->const_item()) {
+        Item_sum *item_sum = down_cast<Item_sum *>(item);
+        if (item_sum->aggr_query_block == this &&
+            !item_sum->is_rollup_sum_wrapper()) {
+          // split_sum_func2 created a new aggregate function item,
+          // so we need to update it for rollup.
+          Item *new_item =
+              create_rollup_switcher(thd, this, item_sum, send_group_parts);
+          if (new_item == nullptr) return true;
+          *it = new_item;
+        }
       }
     }
   }
@@ -3611,17 +3614,23 @@ bool Query_block::merge_derived(THD *thd, TABLE_LIST *derived_table) {
           is_distinct() || is_ordered() ||
           get_table_list()->next_local != nullptr)) {
       order_list.push_back(&derived_query_block->order_list);
-      /*
-        If at outer-most level (not within another derived table), ensure
-        the ordering columns are marked in read_set, since columns selected
-        from derived tables are not marked in initial resolving.
-      */
-      if (!thd->derived_tables_processing) {
-        Mark_field mf(thd->mark_used_columns);
-        for (ORDER *o = derived_query_block->order_list.first; o != nullptr;
-             o = o->next)
+      for (ORDER *o = derived_query_block->order_list.first; o != nullptr;
+           o = o->next) {
+        /*
+          ORDER BY clause may contain expressions with outer references that
+          must be adjusted:
+        */
+        o->item[0]->fix_after_pullout(this, derived_query_block);
+        /*
+          If at outer-most level (not within another derived table), ensure
+          the ordering columns are marked in read_set, since columns selected
+          from derived tables are not marked in initial resolving.
+        */
+        if (!thd->derived_tables_processing) {
+          Mark_field mf(thd->mark_used_columns);
           o->item[0]->walk(&Item::mark_field_in_map, enum_walk::POSTFIX,
                            pointer_cast<uchar *>(&mf));
+        }
       }
     } else {
       derived_query_block->empty_order_list(this);
@@ -4532,18 +4541,16 @@ bool Query_block::check_only_full_group_by(THD *thd) {
   bool rc = false;
 
   if (is_grouped()) {
-    MEM_ROOT root;
     /*
       "root" has very short lifetime, and should not consume much
       => not instrumented.
     */
-    init_sql_alloc(PSI_NOT_INSTRUMENTED, &root, MEM_ROOT_BLOCK_SIZE, 0);
+    MEM_ROOT root(PSI_NOT_INSTRUMENTED, MEM_ROOT_BLOCK_SIZE);
     {
       Group_check gc(this, &root);
       rc = gc.check_query(thd);
       gc.to_opt_trace(thd);
-    }  // scope, to let any destructor run before root.Clear().
-    root.Clear();
+    }  // Scope, to let any destructor run before the MEM_ROOT DTOR.
   }
 
   if (!rc && is_distinct()) {
@@ -4940,10 +4947,10 @@ Item *Query_block::resolve_rollup_item(THD *thd, Item *item) {
   return item;
 }
 
-Item *create_rollup_switcher(THD *thd, Query_block *query_block, Item *item,
+Item *create_rollup_switcher(THD *thd, Query_block *query_block, Item_sum *item,
                              int send_group_parts) {
   assert(!item->m_is_window_function);
-  assert(!is_rollup_sum_wrapper(item));
+  assert(!item->is_rollup_sum_wrapper());
 
   List<Item> alternatives;
   alternatives.push_back(item);
@@ -4982,11 +4989,13 @@ bool Query_block::resolve_rollup(THD *thd) {
   for (auto it = fields.begin(); it != fields.end(); ++it) {
     Item *item = *it;
     Item *new_item;
-    if (item->type() == Item::SUM_FUNC_ITEM && !item->const_item() &&
-        down_cast<Item_sum *>(item)->aggr_query_block == this) {
+    if (Item_sum * item_sum; item->type() == Item::SUM_FUNC_ITEM &&
+                             !item->const_item() &&
+                             (item_sum = down_cast<Item_sum *>(item),
+                              item_sum->aggr_query_block == this)) {
       // This is a top level aggregate, which must be replaced with
       // a different one for each rollup level.
-      new_item = create_rollup_switcher(thd, this, item, send_group_parts);
+      new_item = create_rollup_switcher(thd, this, item_sum, send_group_parts);
     } else {
       new_item = resolve_rollup_item(thd, item);
     }
@@ -5015,13 +5024,14 @@ bool Query_block::resolve_rollup(THD *thd) {
                                 (order_item = *order->item)->check_cols(1)));
     if (ret) return true; /* Wrong field. */
 
-    if (order_item->type() == Item::SUM_FUNC_ITEM &&
-        !order_item->const_item() &&
-        down_cast<Item_sum *>(order_item)->aggr_query_block == this) {
+    if (Item_sum * item_sum; order_item->type() == Item::SUM_FUNC_ITEM &&
+                             !order_item->const_item() &&
+                             (item_sum = down_cast<Item_sum *>(order_item),
+                              item_sum->aggr_query_block == this)) {
       // This is a top level aggregate, which must be replaced with
       // a different one for each rollup level.
       *order->item =
-          create_rollup_switcher(thd, this, order_item, send_group_parts);
+          create_rollup_switcher(thd, this, item_sum, send_group_parts);
     } else {
       *order->item = resolve_rollup_item(thd, order_item);
     }

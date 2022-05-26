@@ -31,8 +31,8 @@
 #include "my_compiler.h"
 
 #include "my_psi_config.h"
-#include "mysql/components/services/psi_socket_bits.h"
-#include "mysql/components/services/psi_statement_bits.h"
+#include "mysql/components/services/bits/psi_socket_bits.h"
+#include "mysql/components/services/bits/psi_statement_bits.h"
 #include "mysql/psi/mysql_idle.h"  // MYSQL_SOCKET_SET_STATE,
 #include "mysql/psi/mysql_socket.h"
 #include "mysql/psi/mysql_statement.h"
@@ -66,6 +66,8 @@ static void net_before_header_psi(NET *net [[maybe_unused]], void *user_data,
     MYSQL_SOCKET_SET_STATE(net->vio->mysql_socket, PSI_SOCKET_STATE_IDLE);
     MYSQL_START_IDLE_WAIT(thd->m_idle_psi, &thd->m_idle_state);
   }
+
+  mysql_thread_set_secondary_engine(false);
 }
 
 static void net_after_header_psi(NET *net [[maybe_unused]], void *user_data,

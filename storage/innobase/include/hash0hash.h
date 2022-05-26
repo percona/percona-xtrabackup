@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2021, Oracle and/or its affiliates.
+Copyright (c) 1997, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -67,9 +67,9 @@ hash_table_t *hash_create(ulint n); /*!< in: number of array cells */
 #ifndef UNIV_HOTBACKUP
 
 /** Creates a sync object array to protect a hash table.
-@param[in]	table		hash table
-@param[in]	id		latch ID
-@param[in]	n_sync_obj	number of sync objects, must be a power of 2 */
+@param[in]      table           hash table
+@param[in]      id              latch ID
+@param[in]      n_sync_obj      number of sync objects, must be a power of 2 */
 void hash_create_sync_obj(hash_table_t *table, latch_id_t id, ulint n_sync_obj);
 #endif /* !UNIV_HOTBACKUP */
 
@@ -77,8 +77,8 @@ void hash_create_sync_obj(hash_table_t *table, latch_id_t id, ulint n_sync_obj);
 void hash_table_free(hash_table_t *table); /*!< in, own: hash table */
 
 /** Calculates the hash value from a folded value.
-@param[in]	fold	folded value
-@param[in]	table	hash table
+@param[in]      fold    folded value
+@param[in]      table   hash table
 @return hashed value */
 static inline ulint hash_calc_hash(ulint fold, hash_table_t *table);
 
@@ -201,8 +201,8 @@ static inline ulint hash_calc_hash(ulint fold, hash_table_t *table);
   } while (0)
 
 /** Gets the nth cell in a hash table.
-@param[in]	table	hash table
-@param[in]	n	cell index
+@param[in]      table   hash table
+@param[in]      n       cell index
 @return pointer to cell */
 static inline hash_cell_t *hash_get_nth_cell(hash_table_t *table, ulint n);
 
@@ -217,55 +217,55 @@ static inline ulint hash_get_n_cells(hash_table_t *table); /*!< in: table */
  the heap. The fold value must be stored in the struct NODE in a field named
  'fold'. */
 
-#define HASH_DELETE_AND_COMPACT(TYPE, NAME, TABLE, NODE)                       \
-  do {                                                                         \
-    TYPE *node111;                                                             \
-    TYPE *top_node111;                                                         \
-    hash_cell_t *cell111;                                                      \
-    ulint fold111;                                                             \
-                                                                               \
-    fold111 = (NODE)->fold;                                                    \
-                                                                               \
-    HASH_DELETE(TYPE, NAME, TABLE, fold111, NODE);                             \
-                                                                               \
-    top_node111 =                                                              \
-        (TYPE *)mem_heap_get_top(hash_get_heap(TABLE, fold111), sizeof(TYPE)); \
-                                                                               \
-    /* If the node to remove is not the top node in the heap, compact the      \
-    heap of nodes by moving the top node in the place of NODE. */              \
-                                                                               \
-    if (NODE != top_node111) {                                                 \
-      /* Copy the top node in place of NODE */                                 \
-                                                                               \
-      *(NODE) = *top_node111;                                                  \
-                                                                               \
-      cell111 =                                                                \
-          hash_get_nth_cell(TABLE, hash_calc_hash(top_node111->fold, TABLE));  \
-                                                                               \
-      /* Look for the pointer to the top node, to update it */                 \
-                                                                               \
-      if (cell111->node == top_node111) {                                      \
-        /* The top node is the first in the chain */                           \
-                                                                               \
-        cell111->node = NODE;                                                  \
-      } else {                                                                 \
-        /* We have to look for the predecessor of the top                      \
-        node */                                                                \
-        node111 = static_cast<TYPE *>(cell111->node);                          \
-                                                                               \
-        while (top_node111 != HASH_GET_NEXT(NAME, node111)) {                  \
-          node111 = static_cast<TYPE *>(HASH_GET_NEXT(NAME, node111));         \
-        }                                                                      \
-                                                                               \
-        /* Now we have the predecessor node */                                 \
-                                                                               \
-        node111->NAME = NODE;                                                  \
-      }                                                                        \
-    }                                                                          \
-                                                                               \
-    /* Free the space occupied by the top node */                              \
-                                                                               \
-    mem_heap_free_top(hash_get_heap(TABLE, fold111), sizeof(TYPE));            \
+#define HASH_DELETE_AND_COMPACT(TYPE, NAME, TABLE, NODE)                      \
+  do {                                                                        \
+    TYPE *node111;                                                            \
+    TYPE *top_node111;                                                        \
+    hash_cell_t *cell111;                                                     \
+    ulint fold111;                                                            \
+                                                                              \
+    fold111 = (NODE)->fold;                                                   \
+                                                                              \
+    HASH_DELETE(TYPE, NAME, TABLE, fold111, NODE);                            \
+                                                                              \
+    top_node111 =                                                             \
+        (TYPE *)mem_heap_get_top(hash_get_heap(TABLE), sizeof(TYPE));         \
+                                                                              \
+    /* If the node to remove is not the top node in the heap, compact the     \
+    heap of nodes by moving the top node in the place of NODE. */             \
+                                                                              \
+    if (NODE != top_node111) {                                                \
+      /* Copy the top node in place of NODE */                                \
+                                                                              \
+      *(NODE) = *top_node111;                                                 \
+                                                                              \
+      cell111 =                                                               \
+          hash_get_nth_cell(TABLE, hash_calc_hash(top_node111->fold, TABLE)); \
+                                                                              \
+      /* Look for the pointer to the top node, to update it */                \
+                                                                              \
+      if (cell111->node == top_node111) {                                     \
+        /* The top node is the first in the chain */                          \
+                                                                              \
+        cell111->node = NODE;                                                 \
+      } else {                                                                \
+        /* We have to look for the predecessor of the top                     \
+        node */                                                               \
+        node111 = static_cast<TYPE *>(cell111->node);                         \
+                                                                              \
+        while (top_node111 != HASH_GET_NEXT(NAME, node111)) {                 \
+          node111 = static_cast<TYPE *>(HASH_GET_NEXT(NAME, node111));        \
+        }                                                                     \
+                                                                              \
+        /* Now we have the predecessor node */                                \
+                                                                              \
+        node111->NAME = NODE;                                                 \
+      }                                                                       \
+    }                                                                         \
+                                                                              \
+    /* Free the space occupied by the top node */                             \
+                                                                              \
+    mem_heap_free_top(hash_get_heap(TABLE), sizeof(TYPE));                    \
   } while (0)
 
 #ifndef UNIV_HOTBACKUP
@@ -294,44 +294,43 @@ static inline ulint hash_get_n_cells(hash_table_t *table); /*!< in: table */
   } while (0)
 
 /** Gets the sync object index for a fold value in a hash table.
-@param[in]	table	hash table
-@param[in]	fold	fold
+@param[in]      table   hash table
+@param[in]      fold    fold
 @return index */
 static inline ulint hash_get_sync_obj_index(hash_table_t *table, ulint fold);
 
 /** Gets the heap for a fold value in a hash table.
-@param[in]	table	hash table
-@param[in]	fold	fold
+@param[in]      table   hash table
 @return mem heap */
-static inline mem_heap_t *hash_get_heap(hash_table_t *table, ulint fold);
+static inline mem_heap_t *hash_get_heap(hash_table_t *table);
 
 /** Gets the nth rw_lock in a hash table.
-@param[in]	table	hash table
-@param[in]	i	index of the rw_lock
+@param[in]      table   hash table
+@param[in]      i       index of the rw_lock
 @return rw_lock */
 static inline rw_lock_t *hash_get_nth_lock(hash_table_t *table, ulint i);
 
 /** Gets the rw_lock for a fold value in a hash table.
-@param[in]	table	hash table
-@param[in]	fold	fold
+@param[in]      table   hash table
+@param[in]      fold    fold
 @return rw_lock */
 static inline rw_lock_t *hash_get_lock(hash_table_t *table, ulint fold);
 
 /** If not appropriate rw_lock for a fold value in a hash table,
 relock S-lock the another rw_lock until appropriate for a fold value.
-@param[in]	hash_lock	latched rw_lock to be confirmed
-@param[in]	table		hash table
-@param[in]	fold		fold value
-@return	latched rw_lock */
+@param[in]      hash_lock       latched rw_lock to be confirmed
+@param[in]      table           hash table
+@param[in]      fold            fold value
+@return latched rw_lock */
 static inline rw_lock_t *hash_lock_s_confirm(rw_lock_t *hash_lock,
                                              hash_table_t *table, ulint fold);
 
 /** If not appropriate rw_lock for a fold value in a hash table,
 relock X-lock the another rw_lock until appropriate for a fold value.
-@param[in]	hash_lock	latched rw_lock to be confirmed
-@param[in]	table		hash table
-@param[in]	fold		fold value
-@return	latched rw_lock */
+@param[in]      hash_lock       latched rw_lock to be confirmed
+@param[in]      table           hash table
+@param[in]      fold            fold value
+@return latched rw_lock */
 static inline rw_lock_t *hash_lock_x_confirm(rw_lock_t *hash_lock,
                                              hash_table_t *table, ulint fold);
 
@@ -377,8 +376,8 @@ struct hash_table_t {
   enum hash_table_sync_t type;
 #if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
 #ifndef UNIV_HOTBACKUP
-  /* TRUE if this is the hash table of the adaptive hash index */
-  ibool adaptive;
+  /* true if this is the hash table of the adaptive hash index */
+  bool adaptive;
 #endif /* !UNIV_HOTBACKUP */
 #endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
  private:

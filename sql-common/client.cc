@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -156,6 +156,7 @@ PSI_memory_key key_memory_MYSQL_RES;
 PSI_memory_key key_memory_MYSQL_ROW;
 PSI_memory_key key_memory_MYSQL_state_change_info;
 PSI_memory_key key_memory_MYSQL_HANDSHAKE;
+PSI_memory_key key_memory_MYSQL_ssl_session_data;
 
 #if defined(_WIN32)
 PSI_memory_key key_memory_create_shared_memory;
@@ -182,7 +183,14 @@ static PSI_memory_info all_client_memory[] = {
     {&key_memory_MYSQL_ROW, "MYSQL_ROW", 0, 0, PSI_DOCUMENT_ME},
     {&key_memory_MYSQL_state_change_info, "MYSQL_STATE_CHANGE_INFO", 0, 0,
      PSI_DOCUMENT_ME},
-    {&key_memory_MYSQL_HANDSHAKE, "MYSQL_HANDSHAKE", 0, 0, PSI_DOCUMENT_ME}};
+    {&key_memory_MYSQL_HANDSHAKE, "MYSQL_HANDSHAKE", 0, 0, PSI_DOCUMENT_ME},
+    {&key_memory_MYSQL_ssl_session_data, "MYSQL_SSL_session", 0, 0,
+     "Saved SSL sessions"}};
+
+/* SSL_SESSION_is_resumable is openssl 1.1.1+ */
+#if OPENSSL_VERSION_NUMBER < 0x10101000L
+#define SSL_SESSION_is_resumable(x) true
+#endif
 
 void init_client_psi_keys(void) {
   const char *category = "client";
@@ -764,7 +772,6 @@ void read_ok_ex(MYSQL *mysql, ulong length) {
   bool is_charset;
 
   STATE_INFO *info = nullptr;
-  enum enum_session_state_type type;
   LIST *element = nullptr;
   LEX_STRING *data = nullptr;
   bool is_error;
@@ -836,8 +843,8 @@ void read_ok_ex(MYSQL *mysql, ulong length) {
 
         while (total_len > 0) {
           saved_pos = pos;
-          type = (enum enum_session_state_type)net_field_length_ll_safe(
-              mysql, &pos, length, &is_error);
+          my_ulonglong type =
+              net_field_length_ll_safe(mysql, &pos, length, &is_error);
           if (is_error) return;
           switch (type) {
             case SESSION_TRACK_SYSTEM_VARIABLES:
@@ -1022,7 +1029,12 @@ void read_ok_ex(MYSQL *mysql, ulong length) {
 
               break;
             default:
-              assert(type <= SESSION_TRACK_END);
+              if (type > SESSION_TRACK_END) {
+                DBUG_PRINT(
+                    "warning",
+                    ("invalid/unknown session tracker type received: %llu",
+                     (unsigned long long)type));
+              }
               /*
                Unknown/unsupported type received, get the total length and
                move past it.
@@ -1348,7 +1360,7 @@ bool cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
           cli_safe_read will also set error variables in net,
           and we are already in error state.
         */
-        if (cli_safe_read(mysql, NULL) == packet_error) {
+        if (cli_safe_read(mysql, nullptr) == packet_error) {
           goto end;
         }
         /* Can this happen in any other case than COM_QUIT? */
@@ -3389,6 +3401,136 @@ const char *STDCALL mysql_get_ssl_cipher(MYSQL *mysql [[maybe_unused]]) {
   return nullptr;
 }
 
+/**
+  Get the current SSL session serialization
+
+  Return the SSL session serialized (if any) used for current
+  connection to the server.
+  The caller needs to free the return value by calling @ref
+  mysql_free_ssl_session_data()
+
+  @param mysql pointer to the mysql connection
+  @param n_ticket the ticket to return. Currently on 0 is supported.
+  @param[out] out_len if a non-null is supplied, stores the length of data
+  returned.
+  @retval null-terminated string of the session serialization
+  @retval null pointer if not an SSL connection or error
+*/
+
+void *STDCALL mysql_get_ssl_session_data(MYSQL *mysql, unsigned int n_ticket,
+                                         unsigned int *out_len) {
+  DBUG_TRACE;
+
+  /* multiple TLS ticket not implemented yet */
+  if (n_ticket != 0) return nullptr;
+
+  using raii_bio = std::unique_ptr<BIO, decltype(&BIO_free)>;
+  using raii_sess = std::unique_ptr<SSL_SESSION, decltype(&SSL_SESSION_free)>;
+
+  if (!mysql->net.vio || !mysql->net.vio->ssl_arg) {
+    set_mysql_extended_error(
+        mysql, CR_CANT_GET_SESSION_DATA, unknown_sqlstate,
+        ER_CLIENT(CR_CANT_GET_SESSION_DATA),
+        !mysql->net.vio ? "Not connected" : "Not a TLS connection");
+    return nullptr;
+  }
+  raii_sess sess(
+      SSL_get1_session(reinterpret_cast<SSL *>(mysql->net.vio->ssl_arg)),
+      &SSL_SESSION_free);
+  if (!sess || !SSL_SESSION_is_resumable(sess.get())) {
+    set_mysql_extended_error(
+        mysql, CR_CANT_GET_SESSION_DATA, unknown_sqlstate,
+        ER_CLIENT(CR_CANT_GET_SESSION_DATA),
+        !sess ? "no session returned" : "session returned not resumable");
+    return nullptr;
+  }
+
+  raii_bio bio(BIO_new(BIO_s_mem()), &BIO_free);
+  if (!bio) {
+    set_mysql_extended_error(mysql, CR_CANT_GET_SESSION_DATA, unknown_sqlstate,
+                             ER_CLIENT(CR_CANT_GET_SESSION_DATA),
+                             "Can't create the session data encoding object");
+    return nullptr;
+  }
+  if (0 == PEM_write_bio_SSL_SESSION(bio.get(), sess.get())) {
+    set_mysql_extended_error(mysql, CR_CANT_GET_SESSION_DATA, unknown_sqlstate,
+                             ER_CLIENT(CR_CANT_GET_SESSION_DATA),
+                             "Can't encode the session data");
+    return nullptr;
+  }
+
+  BUF_MEM *mem = nullptr;
+  BIO_get_mem_ptr(bio.get(), &mem);
+  if (!mem || mem->length == 0) {
+    set_mysql_extended_error(mysql, CR_CANT_GET_SESSION_DATA, unknown_sqlstate,
+                             ER_CLIENT(CR_CANT_GET_SESSION_DATA),
+                             "Can't get a pointer to the session data");
+    return nullptr;
+  }
+  char *ret = reinterpret_cast<char *>(
+      my_malloc(key_memory_MYSQL_ssl_session_data, mem->length + 1, MYF(0)));
+  memcpy(ret, mem->data, mem->length);
+  ret[mem->length] = 0;
+  if (out_len) *out_len = static_cast<unsigned int>(mem->length);
+  return ret;
+}
+
+static SSL_SESSION *ssl_session_deserialize_from_data_ptr(MYSQL *, char *data) {
+  using raii_bio = std::unique_ptr<BIO, decltype(&BIO_free)>;
+  if (data != nullptr) {
+    SSL_SESSION *ret = nullptr;
+    raii_bio bio(BIO_new_mem_buf(data, strlen(data)), &BIO_free);
+    if (!bio) return ret;
+    ret = PEM_read_bio_SSL_SESSION(bio.get(), &ret, nullptr, nullptr);
+    if (ret && !SSL_SESSION_is_resumable(ret)) {
+      if (ret) SSL_SESSION_free(ret);
+      ret = nullptr;
+    }
+    return ret;
+  }
+  return nullptr;
+}
+
+/**
+  Free a saved SSL session serialization
+
+  Frees the session serialization as returned by @ref
+  mysql_get_ssl_session_data()
+
+  @param mysql pointer to the mysql connection
+  @param data the session data to dispose of
+  @retval true failure
+  @retval false success
+*/
+
+bool STDCALL mysql_free_ssl_session_data(MYSQL *mysql, void *data) {
+  SSL_SESSION *ses = ssl_session_deserialize_from_data_ptr(
+      mysql, reinterpret_cast<char *>(data));
+  my_free(data);
+  if (ses) {
+    SSL_SESSION_free(ses);
+    return false;
+  } else
+    return true;
+}
+
+/**
+  Check if the current ssl session is reused
+
+  @param mysql pointer to the mysql connection
+  @retval false not SSL or session not reused
+  @retval true session reused
+*/
+
+bool STDCALL mysql_get_ssl_session_reused(MYSQL *mysql) {
+  DBUG_TRACE;
+  if (mysql->net.vio && mysql->net.vio->ssl_arg) {
+    return SSL_session_reused(
+               reinterpret_cast<SSL *>(mysql->net.vio->ssl_arg)) != 0;
+  }
+  return false;
+}
+
 /*
   Check the server's (subject) Common Name against the
   hostname we connected to
@@ -4181,12 +4323,18 @@ static void cli_calculate_client_flag(MYSQL *mysql, const char *db,
   }
 }
 
-/**
-Establishes SSL if requested and supported.
+static SSL_SESSION *ssl_session_deserialize_from_data(MYSQL *mysql) {
+  return ssl_session_deserialize_from_data_ptr(
+      mysql,
+      reinterpret_cast<char *>(mysql->options.extension->ssl_session_data));
+}
 
-@param  mysql   the connection handle
-@retval 0       success
-@retval 1       failure
+/**
+  Establishes SSL if requested and supported.
+
+  @param  mysql   the connection handle
+  @retval 0       success
+  @retval 1       failure
 */
 static int cli_establish_ssl(MYSQL *mysql) {
   NET *net = &mysql->net;
@@ -4275,19 +4423,22 @@ static int cli_establish_ssl(MYSQL *mysql) {
       goto error;
     }
     mysql->connector_fd = (unsigned char *)ssl_fd;
+    SSL_SESSION *ssl_session = ssl_session_deserialize_from_data(mysql);
 
     /* Connect to the server */
     DBUG_PRINT("info", ("IO layer change in progress..."));
     MYSQL_TRACE(SSL_CONNECT, mysql, ());
     if (sslconnect(ssl_fd, net->vio, (long)(mysql->options.connect_timeout),
-                   &ssl_error, nullptr)) {
+                   ssl_session, &ssl_error, nullptr)) {
       char buf[512];
       ERR_error_string_n(ssl_error, buf, 512);
       buf[511] = 0;
       set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR, unknown_sqlstate,
                                ER_CLIENT(CR_SSL_CONNECTION_ERROR), buf);
+      if (ssl_session != nullptr) SSL_SESSION_free(ssl_session);
       goto error;
     }
+    if (ssl_session != nullptr) SSL_SESSION_free(ssl_session);
     DBUG_PRINT("info", ("IO layer change done!"));
 
     /* Verify server cert */
@@ -4416,6 +4567,8 @@ static net_async_status cli_establish_ssl_nonblocking(MYSQL *mysql, int *res) {
     MYSQL_TRACE_STAGE(mysql, SSL_NEGOTIATION);
 
     if (!mysql->connector_fd) {
+      long flags = options->extension ? options->extension->ssl_ctx_flags : 0;
+
       /* Create the VioSSLConnectorFd - init SSL and load certs */
       if (!(ssl_fd = new_VioSSLConnectorFd(
                 options->ssl_key, options->ssl_cert, options->ssl_ca,
@@ -4425,8 +4578,7 @@ static net_async_status cli_establish_ssl_nonblocking(MYSQL *mysql, int *res) {
                 &ssl_init_error,
                 options->extension ? options->extension->ssl_crl : nullptr,
                 options->extension ? options->extension->ssl_crlpath : nullptr,
-                options->extension ? options->extension->ssl_ctx_flags : 0,
-                verify_identity ? mysql->host : nullptr))) {
+                flags, verify_identity ? mysql->host : nullptr))) {
         set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR,
                                  unknown_sqlstate,
                                  ER_CLIENT(CR_SSL_CONNECTION_ERROR),
@@ -4437,13 +4589,15 @@ static net_async_status cli_establish_ssl_nonblocking(MYSQL *mysql, int *res) {
     } else {
       ssl_fd = (struct st_VioSSLFd *)mysql->connector_fd;
     }
+    SSL_SESSION *ssl_session = ssl_session_deserialize_from_data(mysql);
 
     /* Connect to the server */
     DBUG_PRINT("info", ("IO layer change in progress..."));
     MYSQL_TRACE(SSL_CONNECT, mysql, ());
     if ((ret = sslconnect(ssl_fd, net->vio,
-                          (long)(mysql->options.connect_timeout), &ssl_error,
-                          &ctx->ssl))) {
+                          (long)(mysql->options.connect_timeout), ssl_session,
+                          &ssl_error, &ctx->ssl))) {
+      if (ssl_session != nullptr) SSL_SESSION_free(ssl_session);
       switch (ret) {
         case VIO_SOCKET_WANT_READ:
           net_async->async_blocking_state = NET_NONBLOCKING_READ;
@@ -4463,6 +4617,7 @@ static net_async_status cli_establish_ssl_nonblocking(MYSQL *mysql, int *res) {
                                ER_CLIENT(CR_SSL_CONNECTION_ERROR), buf);
       goto error;
     }
+    if (ssl_session != nullptr) SSL_SESSION_free(ssl_session);
     DBUG_PRINT("info", ("IO layer change done!"));
 
     /* sslconnect creates a new vio, so update it. */
@@ -5744,7 +5899,7 @@ static mysql_state_machine_status authsm_init_multi_auth(
     set_mysql_extended_error(mysql, CR_AUTH_PLUGIN_CANNOT_LOAD,
                              unknown_sqlstate,
                              ER_CLIENT(CR_AUTH_PLUGIN_CANNOT_LOAD),
-                             ctx->auth_plugin->name, "plugin not available");
+                             ctx->auth_plugin_name, "plugin not available");
     return STATE_MACHINE_FAILED;
   }
   if (mysql->options.extension) {
@@ -6649,7 +6804,7 @@ static mysql_state_machine_status csm_parse_handshake(
        to 0.
       */
       if (ctx->scramble_data + ctx->scramble_data_len > pkt_end) {
-        ctx->scramble_data = 0;
+        ctx->scramble_data = nullptr;
         ctx->scramble_data_len = 0;
         ctx->scramble_plugin = const_cast<char *>("");
       }
@@ -6894,8 +7049,7 @@ bool mysql_reconnect(MYSQL *mysql) {
     my_stpcpy(mysql->net.sqlstate, tmp_mysql.net.sqlstate);
     return true;
   }
-  if (mysql_set_character_set(&tmp_mysql,
-                              replace_utf8_utf8mb3(mysql->charset->csname))) {
+  if (mysql_set_character_set(&tmp_mysql, mysql->charset->csname)) {
     DBUG_PRINT("error", ("mysql_set_character_set() failed"));
 #ifdef MYSQL_SERVER
     MYSQL_EXTENSION_PTR(mysql)->server_extn = server_extn;
@@ -7181,7 +7335,7 @@ void mysql_close_free_options(MYSQL *mysql) {
     my_free(mysql->options.extension->server_public_key_path);
     delete mysql->options.extension->connection_attributes;
     my_free(mysql->options.extension->compression_algorithm);
-    mysql->options.extension->total_configured_compression_algorithms = 0;
+    my_free(mysql->options.extension->ssl_session_data);
     my_free(mysql->options.extension);
   }
   memset(&mysql->options, 0, sizeof(mysql->options));
@@ -7451,8 +7605,13 @@ static net_async_status cli_read_query_result_nonblocking(MYSQL *mysql) {
 
       /* TODO: Make LOAD DATA LOCAL INFILE asynchronous. */
       if ((length = cli_safe_read(mysql, nullptr)) == packet_error || error) {
-        net_async->async_read_query_result_status =
-            NET_ASYNC_READ_QUERY_RESULT_IDLE;
+        /*
+          When processing of LOAD DATA fails, server sends an error packet,
+          which is handled here, for async connections.
+        */
+        if (NET_ASYNC_DATA(net) != nullptr)
+          net_async->async_read_query_result_status =
+              NET_ASYNC_READ_QUERY_RESULT_IDLE;
         async_context->async_op_status = ASYNC_OP_UNSET;
         async_context->async_query_state = QUERY_IDLE;
         async_context->async_query_length = 0;
@@ -7580,7 +7739,7 @@ int STDCALL mysql_send_query(MYSQL *mysql, const char *query, ulong length) {
     return 1;
   int ret = (*mysql->methods->advanced_command)(
       mysql, COM_QUERY, ret_data, ret_data_length,
-      pointer_cast<const uchar *>(query), length, true, NULL);
+      pointer_cast<const uchar *>(query), length, true, nullptr);
   if (ret_data) my_free(ret_data);
   return ret;
 }
@@ -7613,7 +7772,7 @@ static net_async_status mysql_send_query_nonblocking_inner(MYSQL *mysql,
   if ((*mysql->methods->advanced_command_nonblocking)(
           mysql, COM_QUERY, async_context->async_qp_data,
           async_context->async_qp_data_length,
-          pointer_cast<const uchar *>(query), length, true, NULL,
+          pointer_cast<const uchar *>(query), length, true, nullptr,
           &ret) == NET_ASYNC_NOT_READY) {
     return NET_ASYNC_NOT_READY;
   }
@@ -8443,6 +8602,10 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
                                             static_cast<const char *>(arg)))
         return 1;
       break;
+    case MYSQL_OPT_SSL_SESSION_DATA:
+      EXTENSION_SET_STRING(&mysql->options, ssl_session_data,
+                           static_cast<const char *>(arg));
+      break;
     default:
       return 1;
   }
@@ -8662,6 +8825,13 @@ int STDCALL mysql_get_option(MYSQL *mysql, enum mysql_option option,
           mysql->options.extension ? mysql->options.extension->load_data_dir
                                    : nullptr;
       break;
+    case MYSQL_OPT_SSL_SESSION_DATA:
+      *(static_cast<char **>(const_cast<void *>(arg))) =
+          mysql->options.extension
+              ? static_cast<char *>(mysql->options.extension->ssl_session_data)
+              : nullptr;
+      break;
+
     case MYSQL_OPT_NAMED_PIPE:          /* This option is deprecated */
     case MYSQL_INIT_COMMAND:            /* Cumulative */
     case MYSQL_OPT_CONNECT_ATTR_RESET:  /* Cumulative */

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,9 +73,9 @@
 #include "my_sys.h"
 #include "my_systime.h"
 #include "myisampack.h"
-#include "mysql/components/services/log_builtins.h"  // LogErr
-#include "mysql/components/services/my_io_bits.h"    // File
-#include "mysql/mysql_lex_string.h"                  // MYSQL_LEX_CSTRING
+#include "mysql/components/services/bits/my_io_bits.h"  // File
+#include "mysql/components/services/log_builtins.h"     // LogErr
+#include "mysql/mysql_lex_string.h"                     // MYSQL_LEX_CSTRING
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysqld_error.h"
@@ -899,7 +899,7 @@ String *Item_func_statement_digest::val_str_ascii(String *buf) {
     const CHARSET_INFO *cs = statement_string->charset();
     if (!is_supported_parser_charset(cs)) {
       my_error(ER_FUNCTION_DOES_NOT_SUPPORT_CHARACTER_SET, myf(0), func_name(),
-               cs->name);
+               cs->m_coll_name);
       return error_str();
     }
     if (parse(thd, args[0], statement_string)) return error_str();
@@ -935,7 +935,7 @@ String *Item_func_statement_digest_text::val_str(String *buf) {
   const CHARSET_INFO *cs = statement_string->charset();
   if (!is_supported_parser_charset(cs)) {
     my_error(ER_FUNCTION_DOES_NOT_SUPPORT_CHARACTER_SET, myf(0), func_name(),
-             cs->name);
+             cs->m_coll_name);
     return error_str();
   }
   if (parse(thd, args[0], statement_string)) return error_str();
@@ -2929,7 +2929,7 @@ void Item_func_conv_charset::print(const THD *thd, String *str,
   str->append(STRING_WITH_LEN("convert("));
   args[0]->print(thd, str, query_type);
   str->append(STRING_WITH_LEN(" using "));
-  str->append(replace_utf8_utf8mb3(m_cast_cs->csname));
+  str->append(m_cast_cs->csname);
   str->append(')');
 }
 
@@ -2969,7 +2969,7 @@ bool Item_func_set_collation::resolve_type(THD *) {
       (!my_charset_same(args[0]->collation.collation, set_collation) &&
        args[0]->collation.derivation != DERIVATION_NUMERIC)) {
     my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), colname,
-             replace_utf8_utf8mb3(args[0]->collation.collation->csname));
+             args[0]->collation.collation->csname);
     return true;
   }
   collation.set(set_collation, DERIVATION_EXPLICIT,
@@ -3011,7 +3011,7 @@ String *Item_func_charset::val_str(String *str) {
   const CHARSET_INFO *cs = args[0]->charset_for_protocol();
   null_value = false;
 
-  const char *charset_name = replace_utf8_utf8mb3(cs->csname);
+  const char *charset_name = cs->csname;
 
   str->copy(charset_name, strlen(charset_name), &my_charset_latin1,
             collation.collation, &dummy_errors);
@@ -3024,8 +3024,8 @@ String *Item_func_collation::val_str(String *str) {
   const CHARSET_INFO *cs = args[0]->charset_for_protocol();
 
   null_value = false;
-  str->copy(cs->name, strlen(cs->name), &my_charset_latin1, collation.collation,
-            &dummy_errors);
+  str->copy(cs->m_coll_name, strlen(cs->m_coll_name), &my_charset_latin1,
+            collation.collation, &dummy_errors);
   return str;
 }
 
@@ -3195,6 +3195,18 @@ String *Item_func_weight_string::val_str(String *str) {
   return &tmp_value;
 }
 
+bool Item_func_hex::resolve_type(THD *thd) {
+  if (param_type_is_default(thd, 0, -1)) return true;
+  // See Item_func_hex::val_str_ascii()
+  // A numeric argument is converted to an 8-byte integer,
+  // and then the bytes of the integer are converted to hex characters.
+  if (args[0]->result_type() != STRING_RESULT)
+    set_data_type_string(sizeof(ulonglong) * 2U, default_charset());
+  else
+    set_data_type_string(args[0]->max_length * 2U, default_charset());
+  return false;
+}
+
 String *Item_func_hex::val_str_ascii(String *str) {
   String *res;
   assert(fixed == 1);
@@ -3324,7 +3336,7 @@ void Item_typecast_char::print(const THD *thd, String *str,
   if (m_cast_length >= 0) str->append_parenthesized(m_cast_length);
   if (m_cast_cs) {
     str->append(STRING_WITH_LEN(" charset "));
-    str->append(replace_utf8_utf8mb3(m_cast_cs->csname));
+    str->append(m_cast_cs->csname);
   }
   str->append(')');
 }
@@ -3405,6 +3417,37 @@ String *Item_charset_conversion::val_str(String *str) {
   }
   null_value = false;
   return res;
+}
+
+uint32 Item_charset_conversion::compute_max_char_length() {
+  uint32 new_max_chars;
+  Item *from = args[0];
+  if (m_cast_cs == &my_charset_bin) {
+    // We are converting from CHAR/BINARY to BINARY, in which case we
+    // just reinterpret all the bytes of the (CHAR) source to be bytes,
+    // or no change, i.e. BINARY to BINARY
+    new_max_chars = from->max_length;
+  } else if (from->collation.collation == &my_charset_bin) {
+    // We reinterpret the bytes available, i.e. from BINARY to CHAR,
+    // so a by conservative guess it can contain one character per
+    // byte in the BINARY if the minimum character length of the
+    // target is one.  If it is larger, e.g. for UTF-16 (min 2 bytes
+    // per character), we can halve the estimate safely.
+#ifndef NDEBUG
+    // For MYSQL_TYPE_DOUBLE we have
+    // max_length        = DBL_DIG + 8 = 23  (see float_length())
+    // max_char_length() = DBL_DIG + 7 = 22
+    if (from->data_type() != MYSQL_TYPE_DOUBLE) {
+      assert(from->max_length == from->max_char_length());
+    }
+#endif
+    new_max_chars =
+        ((from->max_length + (m_cast_cs->mbminlen - 1)) / m_cast_cs->mbminlen);
+  } else {
+    // We convert from CHAR -> CHAR, so length is the same
+    new_max_chars = from->max_char_length();
+  }
+  return new_max_chars;
 }
 
 bool Item_charset_conversion::resolve_type(THD *thd) {
@@ -4366,7 +4409,7 @@ String *Item_func_get_dd_create_options::val_str(String *str) {
   if (p->exists("encrypt_type")) {
     p->get("encrypt_type", &encrypt_type);
   } else {
-    encrypt_type = "N";
+    encrypt_type = dd::String_type("N");
   }
 
   // Show ENCRYPTION clause only if we have a encrypted table

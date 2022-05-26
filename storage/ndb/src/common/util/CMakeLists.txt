@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2022, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,17 +30,13 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/ndb/include/logger
   )
 
-# "system" does not work, ndbzio.cpp includes private, non-existing headers.
-IF(WITH_ZLIB STREQUAL "bundled")
-  INCLUDE_DIRECTORIES(SYSTEM ${CMAKE_SOURCE_DIR}/extra/zlib)
-ENDIF()
-
 ADD_DEFINITIONS(-DNO_DUMMY_DECL)
 ADD_CONVENIENCE_LIBRARY(ndbgeneral
   BaseString.cpp
   Bitmask.cpp
   CharsetMap.cpp
   CharsetMapImpl.cpp
+  Checksum.cpp
   ConfigValues.cpp
   File.cpp
   HashMap2.cpp
@@ -54,8 +50,7 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   ndb_ndbxfrm1.cpp
   ndb_openssl_evp.cpp
   ndb_zlib.cpp
-  ndbxfrm_readfile.cpp
-  ndbxfrm_writefile.cpp
+  ndbxfrm_file.cpp
   OutputStream.cpp
   OwnProcessInfo.cpp
   Parser.cpp
@@ -73,7 +68,6 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   ndb_init.cpp
   ndb_opts.cpp
   ndb_rand.cpp
-  ndbzio.cpp
   parse_mask.cpp
   random.cpp
   require.cpp
@@ -81,13 +75,13 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   uucode.cpp
   version.cpp
 )
-SET(NDBGENERAL_LIBS ndbtrace ${ZLIB_LIBRARY} mysys)
+SET(NDBGENERAL_LIBS ndbtrace ndbportlib ${ZLIB_LIBRARY} mysys)
 TARGET_LINK_LIBRARIES(ndbgeneral ${NDBGENERAL_LIBS})
 # Cyclic dependencies for ndbgeneral.
 SET_TARGET_PROPERTIES(ndbgeneral PROPERTIES LINK_INTERFACE_MULTIPLICITY 3)
 
 FOREACH(tests BaseString Bitmask SparseBitmask Parser HashMap2 LinkedStack
-        ndb_zlib)
+        ndb_zlib cstrbuf span)
   NDB_ADD_TEST("${tests}-t" "${tests}.cpp" LIBS ndbgeneral)
 ENDFOREACH(tests)
 
@@ -97,6 +91,7 @@ FOREACH(tests
     NdbPack
     mysql_utils_test
     ndb_openssl_evp
+    ndbxfrm_file
     NdbSqlUtil
     LogBuffer
     testSimpleProperties

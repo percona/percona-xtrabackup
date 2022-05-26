@@ -40,7 +40,8 @@
 #include <sys/types.h>  // timeval
 
 // Harness interface include files
-#include "common.h"  // rename_thread()
+#include "my_thread.h"  // my_thread_self_setname
+#include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
@@ -51,6 +52,7 @@
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
 #include "mysql/harness/utility/string.h"
+#include "scope_guard.h"
 
 #include "http_auth.h"
 #include "http_server_plugin.h"
@@ -354,7 +356,7 @@ void HttpServer::start(size_t max_threads) {
     auto &thr = thread_contexts_[ndx];
 
     sys_threads_.emplace_back([&]() {
-      mysql_harness::rename_thread("HttpSrv Worker");
+      my_thread_self_setname("HttpSrv Worker");
 
       thr.set_request_router(request_router_);
       thr.accept_socket();
@@ -402,7 +404,7 @@ void HttpsServer::start(size_t max_threads) {
     auto &thr = thread_contexts_[ndx];
 
     sys_threads_.emplace_back([&]() {
-      mysql_harness::rename_thread("HttpSrv Worker");
+      my_thread_self_setname("HttpSrv Worker");
 
       thr.set_request_router(request_router_);
       thr.accept_socket();
@@ -430,6 +432,9 @@ void HttpServer::remove_route(const std::string &url_regex) {
   }
 }
 
+using mysql_harness::IntOption;
+using mysql_harness::StringOption;
+
 class HttpServerPluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string static_basedir;
@@ -445,16 +450,16 @@ class HttpServerPluginConfig : public mysql_harness::BasePluginConfig {
 
   explicit HttpServerPluginConfig(const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        static_basedir(get_option_string(section, "static_folder")),
-        srv_address(get_option_string(section, "bind_address")),
-        require_realm(get_option_string(section, "require_realm")),
-        ssl_cert(get_option_string(section, "ssl_cert")),
-        ssl_key(get_option_string(section, "ssl_key")),
-        ssl_cipher(get_option_string(section, "ssl_cipher")),
-        ssl_dh_params(get_option_string(section, "ssl_dh_param")),
-        ssl_curves(get_option_string(section, "ssl_curves")),
-        with_ssl(get_uint_option<uint8_t>(section, "ssl", 0, 1)),
-        srv_port(get_uint_option<uint16_t>(section, "port")) {}
+        static_basedir(get_option(section, "static_folder", StringOption{})),
+        srv_address(get_option(section, "bind_address", StringOption{})),
+        require_realm(get_option(section, "require_realm", StringOption{})),
+        ssl_cert(get_option(section, "ssl_cert", StringOption{})),
+        ssl_key(get_option(section, "ssl_key", StringOption{})),
+        ssl_cipher(get_option(section, "ssl_cipher", StringOption{})),
+        ssl_dh_params(get_option(section, "ssl_dh_param", StringOption{})),
+        ssl_curves(get_option(section, "ssl_curves", StringOption{})),
+        with_ssl(get_option(section, "ssl", IntOption<bool>{})),
+        srv_port(get_option(section, "port", IntOption<uint16_t>{})) {}
 
   std::string get_default_ciphers() const {
     return mysql_harness::join(TlsServerContext::default_ciphers(), ":");
@@ -572,8 +577,7 @@ static void init(mysql_harness::PluginFuncEnv *env) {
       has_started = true;
 
       Event::initialize_threads();
-      mysql_harness::ScopeGuard initialization_finished(
-          []() { Event::shutdown(); });
+      Scope_guard initialization_finished([]() { Event::shutdown(); });
 
       HttpServerPluginConfig config{section};
 
@@ -608,7 +612,7 @@ static void init(mysql_harness::PluginFuncEnv *env) {
                                config.static_basedir, config.require_realm));
       }
 
-      initialization_finished.dismiss();
+      initialization_finished.commit();
     }
   } catch (const std::invalid_argument &exc) {
     set_error(env, mysql_harness::kConfigInvalidArgument, "%s", exc.what());
@@ -642,7 +646,7 @@ static void start(mysql_harness::PluginFuncEnv *env) {
   // - important log messages
   // - mismatch between group-membership and metadata
 
-  mysql_harness::rename_thread("HttpSrv Main");
+  my_thread_self_setname("HttpSrv Main");
 
   try {
     auto srv = http_servers.at(get_config_section(env)->name);
@@ -666,13 +670,17 @@ static void start(mysql_harness::PluginFuncEnv *env) {
   }
 }
 
-const static std::array<const char *, 3> required = {{
+static const std::array<const char *, 3> required = {{
     "logger",
     "router_openssl",
     // as long as this plugin links against http_auth_backend_lib which links
     // against metadata_cache there is a need to cleanup protobuf
     "router_protobuf",
 }};
+
+static const std::array<const char *, 10> supported_options{
+    "static_folder", "bind_address", "require_realm", "ssl_cert", "ssl_key",
+    "ssl_cipher",    "ssl_dh_param", "ssl_curves",    "ssl",      "port"};
 
 extern "C" {
 mysql_harness::Plugin HTTP_SERVER_EXPORT harness_plugin_http_server = {
@@ -681,13 +689,17 @@ mysql_harness::Plugin HTTP_SERVER_EXPORT harness_plugin_http_server = {
     "HTTP_SERVER",                           // name
     VERSION_NUMBER(0, 0, 1),
     // requires
-    required.size(), required.data(),
+    required.size(),
+    required.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     deinit,   // deinit
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
+    supported_options.size(),
+    supported_options.data(),
 };
 }

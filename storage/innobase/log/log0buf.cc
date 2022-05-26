@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -440,8 +440,8 @@ the reserved range of lsn values, it resizes the log buffer.
 It's used during reservation of lsn values, when the reserved handle.end_sn is
 greater than log.buf_limit_sn.
 
-@param[in,out]	log		redo log
-@param[in]	handle		handle for the reservation */
+@param[in,out]  log             redo log
+@param[in]      handle          handle for the reservation */
 static void log_wait_for_space_after_reserving(log_t &log,
                                                const Log_handle &handle);
 
@@ -509,8 +509,8 @@ static inline sn_t log_buffer_s_lock_enter_reserve(log_t &log, size_t len) {
     log_buffer_s_lock_wait(log, start_sn);
   }
 
-  ut_d(rw_lock_add_debug_info(log.sn_lock_inst, 0, RW_LOCK_S, __FILE__,
-                              __LINE__));
+  ut_d(
+      rw_lock_add_debug_info(log.sn_lock_inst, 0, RW_LOCK_S, UT_LOCATION_HERE));
 #ifdef UNIV_PFS_RWLOCK
   if (locker != nullptr) {
     PSI_RWLOCK_CALL(end_rwlock_rdwait)(locker, 0);
@@ -603,8 +603,8 @@ void log_buffer_x_lock_enter(log_t &log) {
     }
   }
 
-  ut_d(rw_lock_add_debug_info(log.sn_lock_inst, 0, RW_LOCK_X, __FILE__,
-                              __LINE__));
+  ut_d(
+      rw_lock_add_debug_info(log.sn_lock_inst, 0, RW_LOCK_X, UT_LOCATION_HERE));
 #ifdef UNIV_PFS_RWLOCK
   if (locker != nullptr) {
     PSI_RWLOCK_CALL(end_rwlock_wrwait)(locker, 0);
@@ -876,8 +876,8 @@ Log_handle log_buffer_reserve(log_t &log, size_t len) {
 
 /** @{ */
 
-lsn_t log_buffer_write(log_t &log, const Log_handle &handle, const byte *str,
-                       size_t str_len, lsn_t start_lsn) {
+lsn_t log_buffer_write(log_t &log, const byte *str, size_t str_len,
+                       lsn_t start_lsn) {
   ut_ad(rw_lock_own(log.sn_lock_inst, RW_LOCK_S));
 
   ut_a(log.buf != nullptr);
@@ -1015,8 +1015,7 @@ lsn_t log_buffer_write(log_t &log, const Log_handle &handle, const byte *str,
   return (lsn);
 }
 
-void log_buffer_write_completed(log_t &log, const Log_handle &handle,
-                                lsn_t start_lsn, lsn_t end_lsn) {
+void log_buffer_write_completed(log_t &log, lsn_t start_lsn, lsn_t end_lsn) {
   ut_ad(rw_lock_own(log.sn_lock_inst, RW_LOCK_S));
 
   ut_a(log_lsn_validate(start_lsn));
@@ -1116,8 +1115,7 @@ void log_buffer_close(log_t &log, const Log_handle &handle) {
   log_buffer_s_lock_exit_close(log, start_lsn, end_lsn);
 }
 
-void log_buffer_set_first_record_group(log_t &log, const Log_handle &handle,
-                                       lsn_t rec_group_end_lsn) {
+void log_buffer_set_first_record_group(log_t &log, lsn_t rec_group_end_lsn) {
   ut_ad(rw_lock_own(log.sn_lock_inst, RW_LOCK_S));
 
   ut_a(log_lsn_validate(rec_group_end_lsn));
@@ -1246,7 +1244,7 @@ void log_buffer_get_last_block(log_t &log, lsn_t &last_lsn, byte *last_block,
 
 void log_advance_ready_for_write_lsn(log_t &log) {
   ut_ad(log_writer_mutex_own(log));
-  ut_d(log_writer_thread_active_validate(log));
+  ut_d(log_writer_thread_active_validate());
 
   const lsn_t write_lsn = log.write_lsn.load();
 

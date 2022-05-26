@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -354,6 +354,7 @@ int ha_ndbinfo::open(const char *name, int mode, uint, const dd::Table *) {
   int err = g_ndbinfo->openTable(name, &m_impl.m_table);
   if (err) {
     assert(m_impl.m_table == 0);
+    ndb_log_info("NdbInfo::openTable failed for %s", name);
     if (err == NdbInfo::ERR_NoSuchTable) {
       if (g_ndb_cluster_connection->get_min_db_version() < NDB_VERSION_D) {
         // The table does not exist but there is a data node from a lower
@@ -385,10 +386,9 @@ int ha_ndbinfo::open(const char *name, int mode, uint, const dd::Table *) {
   for (uint i = 0; i < table->s->fields; i++) {
     const Field *field = table->field[i];
 
-    // Check that field is NULLable. The only allowed NOT NULL field is the
-    // first column (the primary key column) of an indexed virtual table.
+    // Check that field is NULLable, unless the table is virtual.
     if ((const_cast<Field *>(field)->is_nullable() == false) &&
-        !(i == 0 && m_impl.m_table->getVirtualTable())) {
+        !m_impl.m_table->getVirtualTable()) {
       warn_incompatible(ndb_tab, true, "column '%s' is NOT NULL",
                         field->field_name);
       delete m_impl.m_table;
@@ -407,7 +407,10 @@ int ha_ndbinfo::open(const char *name, int mode, uint, const dd::Table *) {
     bool compatible = false;
     switch (col->m_type) {
       case NdbInfo::Column::Number:
-        if (field->type() == MYSQL_TYPE_LONG) compatible = true;
+        if (field->type() == MYSQL_TYPE_LONG ||
+            field->real_type() == MYSQL_TYPE_ENUM ||
+            field->real_type() == MYSQL_TYPE_SET)
+          compatible = true;
         stats.mean_rec_length += 4;
         break;
       case NdbInfo::Column::Number64:
@@ -426,6 +429,8 @@ int ha_ndbinfo::open(const char *name, int mode, uint, const dd::Table *) {
       // The column type is not compatible
       warn_incompatible(ndb_tab, true, "column '%s' is not compatible",
                         field->field_name);
+      ndb_log_info("Incompatible ndbinfo column: %s, type: %d,%d",
+                   field->field_name, field->type(), field->real_type());
       delete m_impl.m_table;
       m_impl.m_table = 0;
       return ERR_INCOMPAT_TABLE_DEF;
@@ -631,9 +636,7 @@ int ha_ndbinfo::rnd_next(uchar *buf) {
 
   if (err != 1) return err2mysql(err);
 
-  unpack_record(buf);
-
-  return 0;
+  return unpack_record(buf);
 }
 
 int ha_ndbinfo::rnd_pos(uchar *buf, uchar *pos) {
@@ -668,51 +671,94 @@ int ha_ndbinfo::info(uint flag) {
   return 0;
 }
 
-void ha_ndbinfo::unpack_record(uchar *dst_row) {
+static int unpack_unexpected_field(Field *f) {
+  ndb_log_error(
+      "unexpected field '%s', type: %u, real_type: %u, pack_length: %u",
+      f->field_name, f->type(), f->real_type(), f->pack_length());
+  assert(false); /* stop here on debug build */
+  return HA_ERR_INTERNAL_ERROR;
+}
+
+static int unpack_unexpected_value(Field *f, const Uint32 value) {
+  ndb_log_error(
+      "unexpected value %u for field '%s', real_type: %u, pack_length: %u",
+      value, f->field_name, f->real_type(), f->pack_length());
+  assert(false); /* stop here on debug build */
+  return HA_ERR_INTERNAL_ERROR;
+}
+
+int ha_ndbinfo::unpack_record(uchar *dst_row) {
   DBUG_TRACE;
   ptrdiff_t dst_offset = dst_row - table->record[0];
 
   for (uint i = 0; i < table->s->fields; i++) {
     Field *field = table->field[i];
     const NdbInfoRecAttr *record = m_impl.m_columns[i];
-    if (record && !record->isNULL()) {
-      field->set_notnull();
-      field->move_field_offset(dst_offset);
-      switch (field->type()) {
-        case (MYSQL_TYPE_VARCHAR): {
-          DBUG_PRINT("info", ("str: %s", record->c_str()));
-          Field_varstring *vfield = (Field_varstring *)field;
-          /* Field_bit in DBUG requires the bit set in write_set for store(). */
-          my_bitmap_map *old_map =
-              dbug_tmp_use_all_columns(table, table->write_set);
-          (void)vfield->store(
-              record->c_str(),
-              std::min(record->length(), field->field_length) - 1,
-              field->charset());
-          dbug_tmp_restore_column_map(table->write_set, old_map);
-          break;
-        }
-
-        case (MYSQL_TYPE_LONG): {
-          memcpy(field->field_ptr(), record->ptr(), sizeof(Uint32));
-          break;
-        }
-
-        case (MYSQL_TYPE_LONGLONG): {
-          memcpy(field->field_ptr(), record->ptr(), sizeof(Uint64));
-          break;
-        }
-
-        default:
-          ndb_log_error("Found unexpected field type %u", field->type());
-          break;
+    if (!record || record->isNULL()) {
+      field->set_null();
+      continue;
+    }
+    field->set_notnull();
+    field->move_field_offset(dst_offset);
+    switch (field->type()) {
+      case (MYSQL_TYPE_VARCHAR): {
+        DBUG_PRINT("info", ("str: %s", record->c_str()));
+        Field_varstring *vfield = (Field_varstring *)field;
+        /* Field_bit in DBUG requires the bit set in write_set for store(). */
+        my_bitmap_map *old_map =
+            dbug_tmp_use_all_columns(table, table->write_set);
+        (void)vfield->store(record->c_str(),
+                            std::min(record->length(), field->field_length) - 1,
+                            field->charset());
+        dbug_tmp_restore_column_map(table->write_set, old_map);
+        break;
       }
 
-      field->move_field_offset(-dst_offset);
-    } else {
-      field->set_null();
+      case (MYSQL_TYPE_LONG): {
+        memcpy(field->field_ptr(), record->ptr(), sizeof(Uint32));
+        break;
+      }
+
+      case (MYSQL_TYPE_LONGLONG): {
+        memcpy(field->field_ptr(), record->ptr(), sizeof(Uint64));
+        break;
+      }
+
+      case (MYSQL_TYPE_STRING): {
+        const Uint32 value = record->u_32_value();
+        unsigned char val8;
+        uint16 val16;
+
+        if (!(field->real_type() == MYSQL_TYPE_SET ||
+              field->real_type() == MYSQL_TYPE_ENUM))
+          return unpack_unexpected_field(field);
+
+        switch (field->pack_length()) {
+          case 1:
+            if (unlikely(value > 255))
+              return unpack_unexpected_value(field, value);
+            val8 = value;
+            *(field->field_ptr()) = val8;
+            break;
+          case 2:
+            if (unlikely(value > 65535))
+              return unpack_unexpected_value(field, value);
+            val16 = value;
+            memcpy(field->field_ptr(), &val16, sizeof(Uint16));
+            break;
+          default:
+            return unpack_unexpected_field(field);
+        }
+        break;
+      }
+
+      default:
+        return unpack_unexpected_field(field);
     }
+
+    field->move_field_offset(-dst_offset);
   }
+  return 0;
 }
 
 ulonglong ha_ndbinfo::table_flags() const {
@@ -736,13 +782,16 @@ ulong ha_ndbinfo::index_flags(uint, uint, bool) const {
 int ha_ndbinfo::index_init(uint index, bool) {
   assert(index == 0);
   active_index = index;  // required
-  return rnd_init(true);
+  int err = rnd_init(true);
+  if (err != 0) return err;
+  m_impl.m_scan_op->initIndex(index);
+  return 0;
 }
 
 int ha_ndbinfo::index_end() { return rnd_end(); }
 
 int ha_ndbinfo::index_read(uchar *buf, const uchar *key,
-                           uint key_len ATTRIBUTE_UNUSED,
+                           uint key_len [[maybe_unused]],
                            enum ha_rkey_function flag) {
   assert(key != nullptr);
   assert(key_len == sizeof(int));
@@ -876,11 +925,9 @@ static int ndbinfo_init(void *plugin) {
   char prefix[FN_REFLEN];
   build_table_filename(prefix, sizeof(prefix) - 1, opt_ndbinfo_dbname,
                        opt_ndbinfo_table_prefix, "", 0);
-  DBUG_PRINT("info", ("prefix: '%s'", prefix));
+  ndb_log_info("ndbinfo prefix: '%s'", prefix);
   assert(g_ndb_cluster_connection);
-  g_ndbinfo =
-      new (std::nothrow) NdbInfo(g_ndb_cluster_connection, prefix,
-                                 opt_ndbinfo_dbname, opt_ndbinfo_table_prefix);
+  g_ndbinfo = new (std::nothrow) NdbInfo(g_ndb_cluster_connection, prefix);
   if (!g_ndbinfo) {
     ndb_log_error("Failed to create NdbInfo");
     return 1;

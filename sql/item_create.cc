@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1140,7 +1140,7 @@ Item *Create_udf_func::create(THD *thd, udf_func *udf,
   assert((udf->type == UDFTYPE_FUNCTION) || (udf->type == UDFTYPE_AGGREGATE));
 
   Item *func = nullptr;
-  POS pos;
+  POS pos{};
 
   switch (udf->returns) {
     case STRING_RESULT:
@@ -1930,7 +1930,7 @@ static bool validate_cast_type_and_extract_length(
         len = my_strtoll10(c_len, nullptr, &error);
         if ((error != 0) || (len > MAX_FIELD_BLOBLENGTH)) {
           my_error(ER_TOO_BIG_DISPLAYWIDTH, MYF(0), "cast as char",
-                   MAX_FIELD_BLOBLENGTH);
+                   static_cast<unsigned long>(MAX_FIELD_BLOBLENGTH));
           return true;
         }
       }
@@ -2152,8 +2152,10 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
       if (!propagate_datetime_overflow(
               thd, &status.warnings,
               str_to_datetime(cs, str, length, &ltime, flags, &status)) &&
-          ltime.time_type == MYSQL_TIMESTAMP_DATE && !status.warnings)
+          ltime.time_type == MYSQL_TIMESTAMP_DATE && !status.warnings) {
+        check_deprecated_datetime_format(thd, cs, status);
         item = new (thd->mem_root) Item_date_literal(&ltime);
+      }
       break;
     case MYSQL_TYPE_DATETIME:
       if (!propagate_datetime_overflow(
@@ -2162,6 +2164,7 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
           (ltime.time_type == MYSQL_TIMESTAMP_DATETIME ||
            ltime.time_type == MYSQL_TIMESTAMP_DATETIME_TZ) &&
           !status.warnings) {
+        check_deprecated_datetime_format(thd, cs, status);
         if (convert_time_zone_displacement(thd->time_zone(), &ltime))
           return nullptr;
         item = new (thd->mem_root) Item_datetime_literal(
@@ -2170,9 +2173,11 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
       break;
     case MYSQL_TYPE_TIME:
       if (!str_to_time(cs, str, length, &ltime, 0, &status) &&
-          ltime.time_type == MYSQL_TIMESTAMP_TIME && !status.warnings)
+          ltime.time_type == MYSQL_TIMESTAMP_TIME && !status.warnings) {
+        check_deprecated_datetime_format(thd, cs, status);
         item = new (thd->mem_root)
             Item_time_literal(&ltime, status.fractional_digits);
+      }
       break;
     default:
       assert(0);

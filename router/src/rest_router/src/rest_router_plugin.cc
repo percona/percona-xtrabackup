@@ -29,6 +29,7 @@
 #include <array>
 #include <string>
 
+#include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
@@ -49,13 +50,15 @@ static const char kSectionName[]{"rest_router"};
 // one shared setting
 std::string require_realm_router;
 
+using StringOption = mysql_harness::StringOption;
+
 class RestRouterPluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string require_realm;
 
   explicit RestRouterPluginConfig(const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        require_realm(get_option_string(section, "require_realm")) {}
+        require_realm(get_option(section, "require_realm", StringOption{})) {}
 
   std::string get_default(const std::string & /* option */) const override {
     return {};
@@ -281,6 +284,8 @@ static const std::array<const char *, 2> rest_router_plugin_requires = {
     "rest_api",
 };
 
+static const std::array<const char *, 2> supported_options{"require_realm"};
+
 extern "C" {
 mysql_harness::Plugin DLLEXPORT harness_plugin_rest_router = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
@@ -288,13 +293,17 @@ mysql_harness::Plugin DLLEXPORT harness_plugin_rest_router = {
     "REST_ROUTER",                           // name
     VERSION_NUMBER(0, 0, 1),
     // requires
-    rest_router_plugin_requires.size(), rest_router_plugin_requires.data(),
+    rest_router_plugin_requires.size(),
+    rest_router_plugin_requires.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     nullptr,  // deinit
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
+    supported_options.size(),
+    supported_options.data(),
 };
 }

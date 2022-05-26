@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -44,11 +44,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "my_macros.h"
 #include "my_sys.h"
 #include "mysql/components/service_implementation.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysqld_error.h"
 #include "persistent_dynamic_loader_imp.h"
@@ -92,7 +92,7 @@ static const TABLE_FIELD_TYPE component_table_fields[CT_FIELD_COUNT] = {
      {nullptr, 0}},
     {{STRING_WITH_LEN("component_urn")},
      {STRING_WITH_LEN("text")},
-     {STRING_WITH_LEN("utf8")}}};
+     {STRING_WITH_LEN("utf8mb3")}}};
 
 static const TABLE_FIELD_DEF component_table_def = {CT_FIELD_COUNT,
                                                     component_table_fields};

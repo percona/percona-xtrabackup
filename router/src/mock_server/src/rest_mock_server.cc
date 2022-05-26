@@ -44,9 +44,9 @@
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
 
-#include "common.h"  // ScopeGuard
 #include "mysqlrouter/http_server_component.h"
 #include "mysqlrouter/mock_server_component.h"
+#include "scope_guard.h"
 
 IMPORT_LOG_FUNCTIONS()
 
@@ -301,12 +301,12 @@ static void run(mysql_harness::PluginFuncEnv *env) {
 
   srv.add_route(kRestGlobalsUri,
                 std::make_unique<RestApiV1MockServerGlobals>());
-  mysql_harness::ScopeGuard global_route_guard(
+  Scope_guard global_route_guard(
       [&srv]() { srv.remove_route(kRestGlobalsUri); });
 
   srv.add_route(kRestConnectionsUri,
                 std::make_unique<RestApiV1MockServerConnections>());
-  mysql_harness::ScopeGuard connection_route_guard(
+  Scope_guard connection_route_guard(
       [&srv]() { srv.remove_route(kRestConnectionsUri); });
 
   mysql_harness::on_service_ready(env);
@@ -335,13 +335,17 @@ mysql_harness::Plugin DLLEXPORT harness_plugin_rest_mock_server = {
     "REST_MOCK_SERVER",                      // name
     VERSION_NUMBER(0, 0, 1),
     // requires
-    plugin_requires.size(), plugin_requires.data(),
+    plugin_requires.size(),
+    plugin_requires.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     nullptr,  // deinit
     run,      // run
     nullptr,  // stop
     true,     // declares_readiness
+    0,
+    nullptr,
 };
 }

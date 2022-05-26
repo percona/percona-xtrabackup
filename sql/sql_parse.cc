@@ -1,4 +1,4 @@
-/* Copyright (c) 1999, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 1999, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -63,8 +63,8 @@
 #include "my_time.h"
 #include "mysql/com_data.h"
 #include "mysql/components/services/bits/plugin_audit_connection_types.h"  // MYSQL_AUDIT_CONNECTION_CHANGE_USER
-#include "mysql/components/services/log_builtins.h"        // LogErr
-#include "mysql/components/services/psi_statement_bits.h"  // PSI_statement_info
+#include "mysql/components/services/bits/psi_statement_bits.h"  // PSI_statement_info
+#include "mysql/components/services/log_builtins.h"             // LogErr
 #include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_rwlock.h"
@@ -80,7 +80,7 @@
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // acl_authenticate
 #include "sql/auth/sql_security_ctx.h"
-#include "sql/binlog.h"  // purge_master_logs
+#include "sql/binlog.h"  // purge_source_logs
 #include "sql/clone_handler.h"
 #include "sql/comp_creator.h"
 #include "sql/create_field.h"
@@ -1431,6 +1431,8 @@ static void check_secondary_engine_statement(THD *thd,
                                              Parser_state *parser_state,
                                              const char *query_string,
                                              size_t query_length) {
+  bool use_secondary_engine = false;
+
   // Only restart the statement if a non-fatal error was raised.
   if (!thd->is_error() || thd->is_killed() || thd->is_fatal_error()) return;
 
@@ -1450,6 +1452,7 @@ static void check_secondary_engine_statement(THD *thd,
         return;
       thd->set_secondary_engine_optimization(
           Secondary_engine_optimization::SECONDARY);
+      use_secondary_engine = true;
       break;
     case Secondary_engine_optimization::SECONDARY:
       // If the query failed during offloading to a secondary engine,
@@ -1469,9 +1472,17 @@ static void check_secondary_engine_statement(THD *thd,
 
   // Tell performance schema that the statement is restarted.
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
+
+  mysql_thread_set_secondary_engine(use_secondary_engine);
+
   thd->m_statement_psi = MYSQL_START_STATEMENT(
       &thd->m_statement_state, com_statement_info[thd->get_command()].m_key,
       thd->db().str, thd->db().length, thd->charset(), nullptr);
+
+  mysql_statement_set_secondary_engine(thd->m_statement_psi,
+                                       use_secondary_engine);
+
+  DEBUG_SYNC(thd, "retry_secondary_engine");
 
   // Reset the statement digest state.
   thd->m_digest = &thd->m_digest_state;
@@ -1588,6 +1599,14 @@ static void copy_bind_parameter_values(THD *thd, PS_PARAM *parameters,
 */
 bool dispatch_command(THD *thd, const COM_DATA *com_data,
                       enum enum_server_command command) {
+  assert(thd->lex->m_IS_table_stats.is_valid() == false);
+  assert(thd->lex->m_IS_tablespace_stats.is_valid() == false);
+#ifndef NDEBUG
+  auto tabstat_grd = create_scope_guard([&]() {
+    assert(thd->lex->m_IS_table_stats.is_valid() == false);
+    assert(thd->lex->m_IS_tablespace_stats.is_valid() == false);
+  });
+#endif /* NDEBUG */
   bool error = false;
   Global_THD_manager *thd_manager = Global_THD_manager::get_instance();
   DBUG_TRACE;
@@ -2001,6 +2020,8 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
         thd->profiling->set_query_source(beginning_of_next_stmt, length);
 #endif
 
+        mysql_thread_set_secondary_engine(false);
+
         /* PSI begin */
         thd->m_digest = &thd->m_digest_state;
         thd->m_digest->reset(thd->m_token_array, max_digest_length);
@@ -2379,8 +2400,8 @@ done:
   thd->work_part_info = nullptr;
 
   /*
-    If we've allocated a lot of memory (compared to the user's desired
-    preallocation size; note that we don't actually preallocate anymore), free
+    If we've allocated a lot of memory (compared to the default preallocation
+    size = 8192; note that we don't actually preallocate anymore), free
     it so that one big query won't cause us to hold on to a lot of RAM forever.
     If not, keep the last block so that the next query will hopefully be able to
     run without allocating memory from the OS.
@@ -2388,7 +2409,8 @@ done:
     The factor 5 is pretty much arbitrary, but ends up allowing three
     allocations (1 + 1.5 + 1.5²) under the current allocation policy.
   */
-  if (thd->mem_root->allocated_size() < 5 * thd->variables.query_prealloc_size)
+  constexpr size_t kPreallocSz = 40960;
+  if (thd->mem_root->allocated_size() < kPreallocSz)
     thd->mem_root->ClearForReuse();
   else
     thd->mem_root->Clear();
@@ -3264,7 +3286,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
         goto error;
       }
       /* PURGE MASTER LOGS TO 'file' */
-      res = purge_master_logs(thd, lex->to_log);
+      res = purge_source_logs_to_file(thd, lex->to_log);
       break;
     }
     case SQLCOM_PURGE_BEFORE: {
@@ -3290,7 +3312,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
       it->quick_fix_field();
       time_t purge_time = static_cast<time_t>(it->val_int());
       if (thd->is_error()) goto error;
-      res = purge_master_logs_before_date(thd, purge_time);
+      res = purge_source_logs_before_date(thd, purge_time);
       break;
     }
     case SQLCOM_CHANGE_MASTER: {
@@ -3569,7 +3591,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
         if (thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
                 ->is_enabled())
           thd->session_tracker.get_tracker(SESSION_STATE_CHANGE_TRACKER)
-              ->mark_as_changed(thd, nullptr);
+              ->mark_as_changed(thd, {});
       }
     } break;
     case SQLCOM_CHANGE_DB: {
@@ -3822,7 +3844,10 @@ int mysql_execute_command(THD *thd, bool first_level) {
     {
       if (check_access(thd, INSERT_ACL, "mysql", nullptr, nullptr, true, false))
         break;
-      if (!(res = mysql_create_function(thd, &lex->udf))) my_ok(thd);
+      if (!(res = mysql_create_function(
+                thd, &lex->udf,
+                lex->create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS)))
+        my_ok(thd);
       break;
     }
     case SQLCOM_CREATE_USER: {
@@ -4207,79 +4232,86 @@ int mysql_execute_command(THD *thd, bool first_level) {
       */
       thd->binlog_invoker();
 
-      if (!(res = sp_create_routine(thd, lex->sphead, thd->lex->definer))) {
-        /* only add privileges if really necessary */
+      bool sp_already_exists = false;
+      if (!(res = sp_create_routine(
+                thd, lex->sphead, thd->lex->definer,
+                thd->lex->create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS,
+                sp_already_exists))) {
+        if (!sp_already_exists) {
+          /* only add privileges if really necessary */
 
-        Security_context security_context;
-        bool restore_backup_context = false;
-        Security_context *backup = nullptr;
-        /*
-          We're going to issue an implicit GRANT statement so we close all
-          open tables. We have to keep metadata locks as this ensures that
-          this statement is atomic against concurent FLUSH TABLES WITH READ
-          LOCK. Deadlocks which can arise due to fact that this implicit
-          statement takes metadata locks should be detected by a deadlock
-          detector in MDL subsystem and reported as errors.
+          Security_context security_context;
+          bool restore_backup_context = false;
+          Security_context *backup = nullptr;
+          /*
+            We're going to issue an implicit GRANT statement so we close all
+            open tables. We have to keep metadata locks as this ensures that
+            this statement is atomic against concurent FLUSH TABLES WITH READ
+            LOCK. Deadlocks which can arise due to fact that this implicit
+            statement takes metadata locks should be detected by a deadlock
+            detector in MDL subsystem and reported as errors.
 
-          No need to commit/rollback statement transaction, it's not started.
+            No need to commit/rollback statement transaction, it's not started.
 
-          TODO: Long-term we should either ensure that implicit GRANT statement
-                is written into binary log as a separate statement or make both
-                creation of routine and implicit GRANT parts of one fully atomic
-                statement.
-        */
-        assert(thd->get_transaction()->is_empty(Transaction_ctx::STMT));
-        close_thread_tables(thd);
-        /*
-          Check if invoker exists on slave, then use invoker privilege to
-          insert routine privileges to mysql.procs_priv. If invoker is not
-          available then consider using definer.
+            TODO: Long-term we should either ensure that implicit GRANT
+            statement is written into binary log as a separate statement or make
+            both creation of routine and implicit GRANT parts of one fully
+            atomic statement.
+          */
+          assert(thd->get_transaction()->is_empty(Transaction_ctx::STMT));
+          close_thread_tables(thd);
+          /*
+            Check if invoker exists on slave, then use invoker privilege to
+            insert routine privileges to mysql.procs_priv. If invoker is not
+            available then consider using definer.
 
-          Check if the definer exists on slave,
-          then use definer privilege to insert routine privileges to
-          mysql.procs_priv.
+            Check if the definer exists on slave,
+            then use definer privilege to insert routine privileges to
+            mysql.procs_priv.
 
-          For current user of SQL thread has GLOBAL_ACL privilege,
-          which doesn't any check routine privileges,
-          so no routine privilege record  will insert into mysql.procs_priv.
-        */
+            For current user of SQL thread has GLOBAL_ACL privilege,
+            which doesn't any check routine privileges,
+            so no routine privilege record  will insert into mysql.procs_priv.
+          */
 
-        if (thd->slave_thread) {
-          LEX_CSTRING current_user;
-          LEX_CSTRING current_host;
-          if (thd->has_invoker()) {
-            current_host = thd->get_invoker_host();
-            current_user = thd->get_invoker_user();
-          } else {
-            current_host = lex->definer->host;
-            current_user = lex->definer->user;
+          if (thd->slave_thread) {
+            LEX_CSTRING current_user;
+            LEX_CSTRING current_host;
+            if (thd->has_invoker()) {
+              current_host = thd->get_invoker_host();
+              current_user = thd->get_invoker_user();
+            } else {
+              current_host = lex->definer->host;
+              current_user = lex->definer->user;
+            }
+            if (is_acl_user(thd, current_host.str, current_user.str)) {
+              security_context.change_security_context(
+                  thd, current_user, current_host, thd->lex->sphead->m_db.str,
+                  &backup);
+              restore_backup_context = true;
+            }
           }
-          if (is_acl_user(thd, current_host.str, current_user.str)) {
-            security_context.change_security_context(
-                thd, current_user, current_host, thd->lex->sphead->m_db.str,
-                &backup);
-            restore_backup_context = true;
+
+          if (sp_automatic_privileges && !opt_noacl &&
+              check_routine_access(
+                  thd, DEFAULT_CREATE_PROC_ACLS, lex->sphead->m_db.str, name,
+                  lex->sql_command == SQLCOM_CREATE_PROCEDURE, true)) {
+            if (sp_grant_privileges(
+                    thd, lex->sphead->m_db.str, name,
+                    lex->sql_command == SQLCOM_CREATE_PROCEDURE))
+              push_warning(thd, Sql_condition::SL_WARNING,
+                           ER_PROC_AUTO_GRANT_FAIL,
+                           ER_THD(thd, ER_PROC_AUTO_GRANT_FAIL));
+            thd->clear_error();
           }
-        }
 
-        if (sp_automatic_privileges && !opt_noacl &&
-            check_routine_access(
-                thd, DEFAULT_CREATE_PROC_ACLS, lex->sphead->m_db.str, name,
-                lex->sql_command == SQLCOM_CREATE_PROCEDURE, true)) {
-          if (sp_grant_privileges(thd, lex->sphead->m_db.str, name,
-                                  lex->sql_command == SQLCOM_CREATE_PROCEDURE))
-            push_warning(thd, Sql_condition::SL_WARNING,
-                         ER_PROC_AUTO_GRANT_FAIL,
-                         ER_THD(thd, ER_PROC_AUTO_GRANT_FAIL));
-          thd->clear_error();
-        }
-
-        /*
-          Restore current user with GLOBAL_ACL privilege of SQL thread
-        */
-        if (restore_backup_context) {
-          assert(thd->slave_thread == 1);
-          thd->security_context()->restore_security_context(thd, backup);
+          /*
+            Restore current user with GLOBAL_ACL privilege of SQL thread
+          */
+          if (restore_backup_context) {
+            assert(thd->slave_thread == 1);
+            thd->security_context()->restore_security_context(thd, backup);
+          }
         }
         my_ok(thd);
       }
@@ -4757,6 +4789,7 @@ finish:
   }
 
   lex->cleanup(thd, true);
+
   /* Free tables */
   THD_STAGE_INFO(thd, stage_closing_tables);
   close_thread_tables(thd);
@@ -7104,7 +7137,7 @@ bool merge_charset_and_collation(const CHARSET_INFO *charset,
                                  const CHARSET_INFO **to) {
   if (charset != nullptr && collation != nullptr &&
       !my_charset_same(charset, collation)) {
-    my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), collation->name,
+    my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), collation->m_coll_name,
              charset->csname);
     return true;
   }

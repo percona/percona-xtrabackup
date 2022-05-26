@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -143,9 +143,9 @@ namespace recv {
 /** Page recovered from the doublewrite buffer */
 struct Page {
   /** Constructor
-  @param[in]	page_no	          Page number in the doublewrite buffer
-  @param[in]	page	            Page read from the double write buffer
-  @param[in]	n_bytes	          Length of the page data. */
+  @param[in]    page_no           Page number in the doublewrite buffer
+  @param[in]    page                Page read from the double write buffer
+  @param[in]    n_bytes           Length of the page data. */
   Page(page_no_t page_no, const byte *page, uint32_t n_bytes)
       : m_no(page_no), m_buffer(1), m_recovered() {
     ut_a(n_bytes <= univ_page_size.physical());
@@ -188,19 +188,19 @@ class Pages {
   }
 
   /** Add a page frame to the doublewrite recovery buffer.
-  @param[in]	page_no		        Page number in the doublewrite buffer
-  @param[in]	page		          Page contents
-  @param[in]	n_bytes		        Size in bytes */
+  @param[in]    page_no                 Page number in the doublewrite buffer
+  @param[in]    page                      Page contents
+  @param[in]    n_bytes                 Size in bytes */
   void add(page_no_t page_no, const byte *page, uint32_t n_bytes) noexcept;
 
   /** Find a doublewrite copy of a page.
-  @param[in]	page_id		        Page number to lookup
-  @return	page frame
+  @param[in]    page_id                 Page number to lookup
+  @return       page frame
   @retval nullptr if no page was found */
   const byte *find(const page_id_t &page_id) const noexcept;
 
   /** Recover double write buffer pages
-  @param[in]	space		          Tablespace pages to recover, if set
+  @param[in]    space                     Tablespace pages to recover, if set
                                 to nullptr then try and recovery all. */
   void recover(fil_space_t *space) noexcept;
 
@@ -456,15 +456,13 @@ class Double_write {
       uint32_t segments_per_file) noexcept;
 
   /** Create the single page flush segments.
-  @param[in] segments_per_file  Number of configured segments per file.
   @return DB_SUCCESS or error code. */
-  [[nodiscard]] static dberr_t create_single_segments(
-      uint32_t segments_per_file) noexcept;
+  [[nodiscard]] static dberr_t create_single_segments() noexcept;
 
   /** Get the instance that handles a particular page's IO. Submit the
   write request to the a double write queue that is empty.
   @param[in]  flush_type        Flush type.
-  @param[in]	bpage             Page from the buffer pool.
+  @param[in]    bpage             Page from the buffer pool.
   @param[in]  e_block    compressed + encrypted frame contents or nullptr.*/
   static void submit(buf_flush_t flush_type, buf_page_t *bpage,
                      const file::Block *e_block) noexcept {
@@ -478,8 +476,8 @@ class Double_write {
 
   /** Writes a single page to the doublewrite buffer on disk, syncs it,
   then writes the page to the datafile.
-  @param[in]	bpage             Data page to write to disk.
-  @param[in]	e_block           Encrypted data block.
+  @param[in]    bpage             Data page to write to disk.
+  @param[in]    e_block           Encrypted data block.
   @return DB_SUCCESS or error code */
   [[nodiscard]] static dberr_t sync_page_flush(buf_page_t *bpage,
                                                file::Block *e_block) noexcept;
@@ -539,22 +537,22 @@ class Double_write {
   }
 
   /** Load the doublewrite buffer pages from an external file.
-  @param[in,out]	file		      File handle
-  @param[in,out]	pages		      For storing the doublewrite pages
+  @param[in,out]        file                  File handle
+  @param[in,out]        pages                 For storing the doublewrite pages
                                 read from the file
   @return DB_SUCCESS or error code */
   [[nodiscard]] static dberr_t load(dblwr::File &file,
                                     recv::Pages *pages) noexcept;
 
   /** Write zeros to the file if it is "empty"
-  @param[in]	file		          File instance.
-  @param[in]	n_pages           Size in physical pages.
+  @param[in]    file                      File instance.
+  @param[in]    n_pages           Size in physical pages.
   @return DB_SUCCESS or error code */
   [[nodiscard]] static dberr_t init_file(dblwr::File &file,
                                          uint32_t n_pages) noexcept;
 
   /** Reset the size in bytes to the configured size.
-  @param[in,out] file						File to reset.
+  @param[in,out] file                                           File to reset.
   @param[in] truncate           Truncate the file to configured size if true. */
   static void reset_file(dblwr::File &file, bool truncate) noexcept;
 
@@ -580,9 +578,9 @@ class Double_write {
 #endif /* _WIN32 */
 
   /** Extract the data and length to write to the doublewrite file
-  @param[in]	bpage		          Page to write
-  @param[out]	ptr		            Start of buffer to write
-  @param[out]	len		            Length of the data to write */
+  @param[in]    bpage                     Page to write
+  @param[out]   ptr                         Start of buffer to write
+  @param[out]   len                         Length of the data to write */
   static void prepare(const buf_page_t *bpage, void **ptr,
                       uint32_t *len) noexcept;
 
@@ -590,7 +588,7 @@ class Double_write {
   static void shutdown() noexcept;
 
   /** Toggle the doublewrite buffer dynamically
-  @param[in]	value		          Current value */
+  @param[in]    value                     Current value */
   static void toggle(bool value) noexcept {
     if (s_instances == nullptr) {
       return;
@@ -605,7 +603,7 @@ class Double_write {
 
   /** Write the data to disk synchronously.
   @param[in]    segment      Segment to write to.
-  @param[in]	bpage        Page to write.
+  @param[in]    bpage        Page to write.
   @param[in]    e_block      Encrypted block.  Can be nullptr. */
   static void single_write(Segment *segment, const buf_page_t *bpage,
                            file::Block *e_block) noexcept;
@@ -617,21 +615,21 @@ class Double_write {
 
   /** Asserts when a corrupt block is found during writing out
   data to the disk.
-  @param[in]	block		          Block that was corrupt */
+  @param[in]    block                     Block that was corrupt */
   static void croak(const buf_block_t *block) noexcept;
 
   /** Check the LSN values on the page with which this block
   is associated.  Also validate the page if the option is set.
-  @param[in]	block		          Block to check */
+  @param[in]    block                     Block to check */
   static void check_block(const buf_block_t *block) noexcept;
 
   /** Check the LSN values on the page.
-  @param[in]	page		          Page to check */
+  @param[in]    page                      Page to check */
   static void check_page_lsn(const page_t *page) noexcept;
 
   /** Calls buf_page_get() on the TRX_SYS_PAGE and returns
   a pointer to the doublewrite buffer within it.
-  @param[in,out]	mtr		        To manage the page latches
+  @param[in,out]        mtr                     To manage the page latches
   @return pointer to the doublewrite buffer within the filespace
           header page. */
   [[nodiscard]] static byte *get(mtr_t *mtr) noexcept;
@@ -749,8 +747,8 @@ class Batch_segment : public Segment {
 
   /** Destructor. */
   ~Batch_segment() noexcept override {
-    ut_a(m_written.load(std::memory_order_relaxed) == 0);
-    ut_a(m_batch_size.load(std::memory_order_relaxed) == 0);
+    ut_a(m_uncompleted.load(std::memory_order_relaxed) == 0);
+    ut_a(m_batch_size == 0);
   }
 
   /** @return the batch segment ID. */
@@ -763,26 +761,33 @@ class Batch_segment : public Segment {
   /** Called on page write completion.
   @return if batch ended. */
   [[nodiscard]] bool write_complete() noexcept {
-    const auto n = m_written.fetch_add(1, std::memory_order_relaxed);
-    return n + 1 == m_batch_size.load(std::memory_order_relaxed);
+    /* We "release our reference" here, so can't access the segment after this
+    fetch_sub() unless we decreased it to 0 and handle requeuing it. */
+    const auto n = m_uncompleted.fetch_sub(1, std::memory_order_relaxed);
+    ut_ad(0 < n);
+    return n == 1;
   }
 
   /** Reset the state. */
   void reset() noexcept {
-    m_written.store(0, std::memory_order_relaxed);
-    m_batch_size.store(0, std::memory_order_relaxed);
+    /* We shouldn't reset() the batch while it's being processed. */
+    ut_ad(m_uncompleted.load(std::memory_order_relaxed) == 0);
+    m_uncompleted.store(0, std::memory_order_relaxed);
+    m_batch_size = 0;
   }
 
   /** Set the batch size.
   @param[in] size               Number of pages to write to disk. */
   void set_batch_size(uint32_t size) noexcept {
-    m_batch_size.store(size, std::memory_order_release);
+    /* We should only call set_batch_size() on new or reset()ed instance. */
+    ut_ad(m_uncompleted.load(std::memory_order_relaxed) == 0);
+    ut_ad(m_batch_size == 0);
+    m_batch_size = size;
+    m_uncompleted.store(size, std::memory_order_relaxed);
   }
 
   /** @return the batch size. */
-  uint32_t batch_size() const noexcept {
-    return m_batch_size.load(std::memory_order_acquire);
-  }
+  uint32_t batch_size() const noexcept { return m_batch_size; }
 
   /** Note that the batch has started for the double write instance.
   @param[in] dblwr              Instance for which batch has started. */
@@ -805,13 +810,36 @@ class Batch_segment : public Segment {
 
   byte m_pad1[ut::INNODB_CACHE_LINE_SIZE];
 
-  /** Size of the batch. */
-  std::atomic_int m_batch_size{};
+  /** Size of the batch.
+  Set to number of pages to be written with set_batch_size() before scheduling
+  writes to data pages.
+  Reset to zero with reset() after all IOs are completed.
+  Read only by the thread which has observed the last IO completion, the one
+  which will reset it back to zero and enqueue the segment for future reuse.
+  Accesses to this field are ordered by happens-before relation:
+  set_batch_size() sequenced-before
+    fil_io()  happens-before
+    dblwr::write_complete() entry sequenced-before
+  batch_size() sequenced-before
+  reset() sequenced-before
+    enqueue() synchronizes-with
+    dequeue() sequenced-before
+  set_batch_size() ...
+  */
+  uint32_t m_batch_size{};
 
   byte m_pad2[ut::INNODB_CACHE_LINE_SIZE];
 
-  /** Number of pages to write. */
-  std::atomic_int m_written{};
+  /** Number of page writes in the batch which are still not completed.
+  Set to equal m_batch_size by set_batch_size(), and decremented when a page
+  write is finished (either by failing/not attempting or in IO completion).
+  It serves a role of a reference counter: when it drops to zero, the segment
+  can be enqueued back to the pool of available segments.
+  Accessing a segment which has m_uncompleted == 0 is safe only from the thread
+  which knows it can not be recycled - for example because it's the thread which
+  has caused the m_uncompleted drop to 0 and will enqueue it, or it's the thread
+  which has just dequeued it, or it is handling shutdown.*/
+  std::atomic_int m_uncompleted{};
 };
 
 uint32_t Double_write::s_n_instances{};
@@ -1198,7 +1226,7 @@ void Double_write::reset_file(dblwr::File &file, bool truncate) noexcept {
   } else if (new_size > cur_size) {
     auto err = os_file_write_zeros(pfs_file, file.m_name.c_str(),
                                    univ_page_size.physical(), cur_size,
-                                   new_size - cur_size, srv_read_only_mode);
+                                   new_size - cur_size);
 
     if (err != DB_SUCCESS) {
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_DBLWR_1321, file.m_name.c_str());
@@ -1217,9 +1245,9 @@ dberr_t Double_write::init_file(dblwr::File &file, uint32_t n_pages) noexcept {
   ut_ad(dblwr::File::s_n_pages > 0);
 
   if (size == 0) {
-    auto err = os_file_write_zeros(
-        pfs_file, file.m_name.c_str(), univ_page_size.physical(), 0,
-        n_pages * univ_page_size.physical(), srv_read_only_mode);
+    auto err = os_file_write_zeros(pfs_file, file.m_name.c_str(),
+                                   univ_page_size.physical(), 0,
+                                   n_pages * univ_page_size.physical());
 
     if (err != DB_SUCCESS) {
       return err;
@@ -1248,7 +1276,8 @@ static bool is_buffer_pool_size_ok() noexcept {
 byte *Double_write::get(mtr_t *mtr) noexcept {
   const page_id_t sys_page_id(TRX_SYS_SPACE, TRX_SYS_PAGE_NO);
 
-  auto block = buf_page_get(sys_page_id, univ_page_size, RW_X_LATCH, mtr);
+  auto block = buf_page_get(sys_page_id, univ_page_size, RW_X_LATCH,
+                            UT_LOCATION_HERE, mtr);
 
   buf_block_dbg_add_level(block, SYNC_NO_ORDER_CHECK);
 
@@ -1582,8 +1611,7 @@ dberr_t Double_write::create_batch_segments(
   return DB_SUCCESS;
 }
 
-dberr_t Double_write::create_single_segments(
-    uint32_t segments_per_file) noexcept {
+dberr_t Double_write::create_single_segments() noexcept {
   ut_a(s_single_segments == nullptr);
 
   const auto n_segments =
@@ -1908,7 +1936,7 @@ static dberr_t dblwr_file_open(const std::string &dir_name, int id,
   return DB_SUCCESS;
 }
 
-dberr_t dblwr::open(bool create_new_db) noexcept {
+dberr_t dblwr::open() noexcept {
   ut_a(!dblwr::dir.empty());
   ut_a(Double_write::s_files.empty());
   ut_a(Double_write::s_n_instances == 0);
@@ -1989,7 +2017,7 @@ dberr_t dblwr::open(bool create_new_db) noexcept {
 
   /* Create the segments for the single page flushes. */
   if (err == DB_SUCCESS) {
-    err = Double_write::create_single_segments(segments_per_file);
+    err = Double_write::create_single_segments();
   }
 
   if (err == DB_SUCCESS) {
@@ -2130,10 +2158,10 @@ static bool is_dblwr_page_corrupted(const byte *page, fil_space_t *space,
 }
 
 /** Recover a page from the doublewrite buffer.
-@param[in]	dblwr_page_no	      Page number if the doublewrite buffer
-@param[in]	space		            Tablespace the page belongs to
-@param[in]	page_no		          Page number in the tablespace
-@param[in]	page		            Data to write to <space, page_no>
+@param[in]      dblwr_page_no         Page number if the doublewrite buffer
+@param[in]      space                       Tablespace the page belongs to
+@param[in]      page_no                   Page number in the tablespace
+@param[in]      page                        Data to write to <space, page_no>
 @return true if page was restored to the tablespace */
 static bool dblwr_recover_page(page_no_t dblwr_page_no, fil_space_t *space,
                                page_no_t page_no, const byte *page) noexcept {
@@ -2464,7 +2492,7 @@ dberr_t dblwr::recv::load(recv::Pages *pages) noexcept {
   for (uint32_t i = 0; i < ids.size(); ++i) {
     if ((uint32_t)ids[i] != i) {
       ib::warn(ER_IB_MSG_DBLWR_1312) << "Gap in the double write buffer files.";
-      ut_ad(0);
+      ut_d(ut_error);
     }
   }
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2021, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2020, 2021, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -81,7 +81,7 @@ Key_sort_buffer::Key_sort_buffer(dict_index_t *index, size_t size) noexcept
     : m_index(index), m_buffer_size(size) {
   m_max_tuples = m_buffer_size / std::max(ulint{1}, m_index->get_min_size());
   m_dtuples.resize(m_max_tuples);
-  m_heap = mem_heap_create(1024);
+  m_heap = mem_heap_create(1024, UT_LOCATION_HERE);
 }
 
 void Key_sort_buffer::deep_copy(size_t n_fields, size_t data_size) noexcept {
@@ -155,8 +155,8 @@ dberr_t Key_sort_buffer::serialize(IO_buffer io_buffer, Function &&f) noexcept {
 
     ulint extra_size;
 
-    const auto size =
-        rec_get_serialize_size(m_index, fields, n_fields, nullptr, &extra_size);
+    const auto size = rec_get_serialize_size(m_index, fields, n_fields, nullptr,
+                                             &extra_size, MAX_ROW_VERSION);
 
     {
       const auto rec_size = size + extra_size + 2;

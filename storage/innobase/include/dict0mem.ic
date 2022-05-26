@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2021, Oracle and/or its affiliates.
+Copyright (c) 1996, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -69,6 +69,7 @@ static inline void dict_mem_fill_index_struct(
 #endif /* !UNIV_HOTBACKUP */
   index->table_name = table_name;
   index->n_fields = (unsigned int)n_fields;
+  index->n_total_fields = (unsigned int)n_fields;
   /* The '1 +' above prevents allocation
   of an empty mem block */
   index->allow_duplicates = false;

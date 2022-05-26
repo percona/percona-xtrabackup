@@ -34,7 +34,7 @@
 #include "my_psi_config.h"
 #include "my_thread.h"  // my_start_routine
 #include "mysql.h"      // MYSQL
-#include "mysql/components/services/psi_thread_bits.h"
+#include "mysql/components/services/bits/psi_thread_bits.h"
 #include "mysql_com.h"
 #include "sql/changestreams/apply/constants.h"
 #include "sql/current_thd.h"
@@ -291,12 +291,12 @@ extern bool server_id_supplied;
 
       [Note: purge_logs contains a known bug: LOCK_index should not be
       taken before LOCK_thd_list.  This implies that, e.g.,
-      purge_master_logs can deadlock with reset_master.  However,
+      purge_source_logs_to_file can deadlock with reset_master.  However,
       although purge_first_log and reset_slave take locks in reverse
       order, they cannot deadlock because they both first acquire
       rli.data_lock.]
 
-    purge_master_logs, purge_master_logs_before_date, purge:
+    purge_source_logs_to_file, purge_source_logs_before_date, purge:
       (binlog.purge_logs) binlog.LOCK_index, LOCK_thd_list, thd.linfo.lock
 
     purge_first_log:

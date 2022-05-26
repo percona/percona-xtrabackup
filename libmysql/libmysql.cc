@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -960,15 +960,15 @@ ulong STDCALL mysql_thread_id(MYSQL *mysql) {
 }
 
 const char *STDCALL mysql_character_set_name(MYSQL *mysql) {
-  return replace_utf8_utf8mb3(mysql->charset->csname);
+  return mysql->charset->csname;
 }
 
 void STDCALL mysql_get_character_set_info(MYSQL *mysql,
                                           MY_CHARSET_INFO *csinfo) {
   csinfo->number = mysql->charset->number;
   csinfo->state = mysql->charset->state;
-  csinfo->csname = replace_utf8_utf8mb3(mysql->charset->csname);
-  csinfo->name = mysql->charset->name;
+  csinfo->csname = mysql->charset->csname;
+  csinfo->name = mysql->charset->m_coll_name;
   csinfo->comment = mysql->charset->comment;
   csinfo->mbminlen = mysql->charset->mbminlen;
   csinfo->mbmaxlen = mysql->charset->mbmaxlen;
@@ -1879,9 +1879,9 @@ int cli_stmt_execute(MYSQL_STMT *stmt) {
     }
 
     if (mysql_int_serialize_param_data(
-            &mysql->net, stmt->param_count, stmt->params, NULL, 1, &param_data,
-            &param_length, stmt->send_types_to_server, send_named_params, false,
-            can_deal_with_flags)) {
+            &mysql->net, stmt->param_count, stmt->params, nullptr, 1,
+            &param_data, &param_length, stmt->send_types_to_server,
+            send_named_params, false, can_deal_with_flags)) {
       set_stmt_errmsg(stmt, &mysql->net);
       return 1;
     }

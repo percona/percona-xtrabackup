@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "util/require.h"
 #include <ndb_global.h>
 #include "API.hpp"
 
@@ -68,8 +69,8 @@ private :
 
   void checkStaticAssertions()
   {
-    STATIC_ASSERT(KeyInfo::HeaderLength == KeyAndAttrInfoHeaderLength);
-    STATIC_ASSERT(AttrInfo::HeaderLength == KeyAndAttrInfoHeaderLength);
+    static_assert(KeyInfo::HeaderLength == KeyAndAttrInfoHeaderLength);
+    static_assert(AttrInfo::HeaderLength == KeyAndAttrInfoHeaderLength);
   }
 
 public :

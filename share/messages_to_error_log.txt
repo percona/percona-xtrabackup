@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2022, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -2840,7 +2840,7 @@ ER_ACCESS_DENIED_ERROR_WITH_PASSWORD
 ER_ACCESS_DENIED_FOR_USER_ACCOUNT_LOCKED
   eng "Access denied for user '%-.48s'@'%-.64s'. Account is locked."
 
-ER_MUST_CHANGE_EXPIRED_PASSWORD
+OBSOLETE_ER_MUST_CHANGE_EXPIRED_PASSWORD
   eng "Your password has expired. To log in you must change it using a client that supports expired passwords."
 
 ER_SYSTEM_TABLES_NOT_SUPPORTED_BY_STORAGE_ENGINE
@@ -3374,7 +3374,7 @@ ER_THREAD_POOL_CON_HANDLER_INIT_FAILED
 ER_THREAD_POOL_INIT_FAILED
   eng "Failed to initialize thread pool plugin."
 
-ER_THREAD_POOL_PLUGIN_STARTED
+OBSOLETE_ER_THREAD_POOL_PLUGIN_STARTED
   eng "Thread pool plugin started successfully with parameters: thread_pool_size = %lu, thread_pool_algorithm = %s, thread_pool_stall_limit = %u, thread_pool_prio_kickup_timer = %u, thread_pool_max_unused_threads = %u, thread_pool_high_priority_connection = %d."
 
 ER_THREAD_POOL_CANNOT_SET_THREAD_SPECIFIC_DATA
@@ -11586,6 +11586,60 @@ ER_INVALID_TLS_VERSION
 
 ER_RPL_RELAY_LOG_RECOVERY_GTID_ONLY
   eng "Relay log recovery on channel with GTID_ONLY=1. The channel will switch to a new relay log and the GTID protocol will be used to replicate unapplied transactions."
+
+ER_KEYRING_OKV_STANDBY_SERVER_COUNT_EXCEEDED
+  eng "Number of STANDBY_SERVER values exceeded maximum limit of 64."
+
+ER_WARN_MIGRATION_EMPTY_SOURCE_KEYRING
+  eng "Source keyring does not have any keys to migrate."
+
+ER_WARN_CANNOT_PERSIST_SENSITIVE_VARIABLES
+  eng "Cannot persist SENSITIVE system variables because keyring component support is unavailable and persist_sensitive_variables_in_plaintext is set to OFF. Please make sure that keyring services are active and required keys are available."
+
+ER_CANNOT_INTERPRET_PERSISTED_SENSITIVE_VARIABLES
+  eng "Cannot interpret persisted SENSITIVE system variables. Please make sure that keyring services are active and required keys are available."
+
+ER_PERSISTED_VARIABLES_KEYRING_SUPPORT_REQUIRED
+  eng "Keyring has to be loaded through manifest file in order to support secure storage for persisted variables"
+
+ER_PERSISTED_VARIABLES_MASTER_KEY_NOT_FOUND
+  eng "Could not find master key %s in keyring"
+
+ER_PERSISTED_VARIABLES_MASTER_KEY_CANNOT_BE_GENERATED
+  eng "A new master key %s could not be generated"
+
+ER_PERSISTED_VARIABLES_ENCRYPTION_FAILED
+  eng "Failed to encrypt %s using %s"
+
+ER_PERSISTED_VARIABLES_DECRYPTION_FAILED
+  eng "Failed to decrypt %s using %s"
+
+ER_PERSISTED_VARIABLES_LACK_KEYRING_SUPPORT
+  eng "Persisting SENSITIVE variables in encrypted form requires keyring component loaded through manifest file."
+
+ER_MY_MALLOC_USING_JEMALLOC
+  eng "Using jemalloc.dll for my_malloc and ut::malloc etc."
+
+ER_MY_MALLOC_USING_STD_MALLOC
+  eng "%s."
+
+ER_MY_MALLOC_LOADLIBRARY_FAILED
+  eng "%s."
+
+ER_MY_MALLOC_GETPROCADDRESS_FAILED
+  eng "%s."
+
+ER_ACCOUNT_WITH_EXPIRED_PASSWORD
+  eng "Password for the account '%-.48s'@'%-.64s' has expired. To log in, either change it using a client that supports expired passwords or send the change request to an administrator."
+
+ER_THREAD_POOL_PLUGIN_STARTED
+  eng "Thread pool plugin started successfully with parameters: %s"
+
+ER_THREAD_POOL_DEDICATED_LISTENERS_INVALID
+  eng "thread_pool_dedicated_listeners cannot be set unless thread_pool_max_transactions_limit > 0"
+
+ER_GRP_RPL_FAILED_TO_LOG_VIEW_CHANGE
+  eng "This member was unable to log the View_change_log_event into the binary log, hence it will leave the group. Please check that there is available disk space and add the member back to the group."
 
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt

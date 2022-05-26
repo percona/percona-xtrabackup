@@ -903,7 +903,7 @@ bool AlreadyExistsOnJoin(Item *cond, const RelationalExpression &expr) {
   assert(expr.equijoin_conditions
              .empty());  // MakeHashJoinConditions() has not run yet.
   for (Item *item : expr.join_conditions) {
-    if (cond->eq(item, /*binary_eq=*/true)) {
+    if (cond->eq(item, /*binary_cmp=*/true)) {
       return true;
     }
   }
@@ -1690,7 +1690,10 @@ void PushDownToSargableCondition(Item *cond, RelationalExpression *expr,
     if (cond->has_subquery()) {
       return;
     }
-    expr->join_conditions_pushable_to_this.push_back(cond);
+    if (!IsSubset(cond->used_tables() & ~PSEUDO_TABLE_BITS,
+                  expr->tables_in_subtree)) {
+      expr->join_conditions_pushable_to_this.push_back(cond);
+    }
     return;
   }
 
@@ -1753,7 +1756,7 @@ Mem_root_array<Item *> PushDownAsMuchAsPossible(
       // be sent through PushDownCondition() below, and possibly end up
       // in table_filters.
       remaining_parts.push_back(item);
-    } else if (is_join_condition_for_expr &&
+    } else if (is_join_condition_for_expr && !IsMultipleEquals(item) &&
                !IsSubset(item->used_tables() & ~PSEUDO_TABLE_BITS,
                          expr->tables_in_subtree)) {
       // Condition refers to tables outside this subtree, so it can not be
@@ -2261,6 +2264,8 @@ table_map FindTESForCondition(table_map used_tables,
   }
 }
 
+}  // namespace
+
 /**
   For the given hypergraph, make a textual representation in the form
   of a dotty graph. You can save this to a file and then use Graphviz
@@ -2297,6 +2302,8 @@ string PrintDottyHypergraph(const JoinHypergraph &graph) {
     const Hyperedge &e = graph.graph.edges[edge_idx];
     const RelationalExpression *expr = graph.edges[edge_idx / 2].expr;
     string label = GenerateExpressionLabel(expr);
+
+    label += StringPrintf(" (%.3g)", graph.edges[edge_idx / 2].selectivity);
 
     // Add conflict rules to the label.
     for (const ConflictRule &rule : expr->conflict_rules) {
@@ -2368,6 +2375,8 @@ string PrintDottyHypergraph(const JoinHypergraph &graph) {
   digraph += "}\n";
   return digraph;
 }
+
+namespace {
 
 NodeMap IntersectIfNotDegenerate(NodeMap used_nodes, NodeMap available_nodes) {
   if (!Overlaps(used_nodes, available_nodes)) {
@@ -2755,32 +2764,74 @@ void AddCycleEdges(THD *thd, const Mem_root_array<Item *> &cycle_inducing_edges,
   for (Item *cond : cycle_inducing_edges) {
     const NodeMap used_nodes = GetNodeMapFromTableMap(
         cond->used_tables(), graph->table_num_to_node_num);
+    RelationalExpression *expr = nullptr;
+    JoinPredicate *pred = nullptr;
+
     const NodeMap left = IsolateLowestBit(used_nodes);  // Arbitrary.
     const NodeMap right = used_nodes & ~left;
-    graph->graph.AddEdge(left, right);
 
-    RelationalExpression *expr = new (thd->mem_root) RelationalExpression(thd);
-    expr->type = RelationalExpression::INNER_JOIN;
+    // See if we already have a suitable edge.
+    for (size_t edge_idx = 0; edge_idx < graph->edges.size(); ++edge_idx) {
+      Hyperedge edge = graph->graph.edges[edge_idx * 2];
+      if ((edge.left | edge.right) == used_nodes &&
+          graph->edges[edge_idx].expr->type ==
+              RelationalExpression::INNER_JOIN) {
+        pred = &graph->edges[edge_idx];
+        expr = pred->expr;
+        break;
+      }
+    }
+
+    if (expr == nullptr) {
+      graph->graph.AddEdge(left, right);
+
+      expr = new (thd->mem_root) RelationalExpression(thd);
+      expr->type = RelationalExpression::INNER_JOIN;
+
+      // TODO(sgunders): This does not really make much sense, but
+      // estimated_bytes_per_row doesn't make that much sense to begin with; it
+      // will depend on the join order. See if we can replace it with a
+      // per-table width calculation that we can sum up in the join optimizer.
+      expr->tables_in_subtree = cond->used_tables();
+      expr->nodes_in_subtree =
+          GetNodeMapFromTableMap(cond->used_tables() & ~PSEUDO_TABLE_BITS,
+                                 graph->table_num_to_node_num);
+      double selectivity = EstimateSelectivity(thd, cond, trace);
+      const size_t estimated_bytes_per_row =
+          EstimateRowWidthForJoin(*graph, expr);
+      graph->edges.push_back(JoinPredicate{
+          expr, selectivity, estimated_bytes_per_row,
+          /*functional_dependencies=*/0, /*functional_dependencies_idx=*/{}});
+    } else {
+      // Skip this item if it is a duplicate (this can
+      // happen with multiple equalities in particular).
+      bool dup = false;
+      for (Item *other_cond : expr->equijoin_conditions) {
+        if (other_cond->eq(cond, /*binary_cmp=*/true)) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) {
+        continue;
+      }
+      for (Item *other_cond : expr->join_conditions) {
+        if (other_cond->eq(cond, /*binary_cmp=*/true)) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) {
+        continue;
+      }
+      pred->selectivity *= EstimateSelectivity(thd, cond, trace);
+    }
     if (cond->type() == Item::FUNC_ITEM &&
         down_cast<Item_func *>(cond)->functype() == Item_func::EQ_FUNC) {
       expr->equijoin_conditions.push_back(down_cast<Item_func_eq *>(cond));
     } else {
       expr->join_conditions.push_back(cond);
     }
-
-    // TODO(sgunders): This does not really make much sense, but
-    // estimated_bytes_per_row doesn't make that much sense to begin with; it
-    // will depend on the join order. See if we can replace it with a per-table
-    // width calculation that we can sum up in the join optimizer.
-    expr->tables_in_subtree = cond->used_tables();
-    expr->nodes_in_subtree = GetNodeMapFromTableMap(
-        cond->used_tables() & ~PSEUDO_TABLE_BITS, graph->table_num_to_node_num);
-    double selectivity = EstimateSelectivity(thd, cond, trace);
-    const size_t estimated_bytes_per_row =
-        EstimateRowWidthForJoin(*graph, expr);
-    graph->edges.push_back(JoinPredicate{
-        expr, selectivity, estimated_bytes_per_row,
-        /*functional_dependencies=*/0, /*functional_dependencies_idx=*/{}});
 
     // Make this predicate potentially sargable (cycle edges are always
     // simple equalities).
@@ -2888,6 +2939,26 @@ void MakeJoinGraphFromRelationalExpression(THD *thd, RelationalExpression *expr,
   const Hyperedge edge = FindHyperedgeAndJoinConflicts(thd, used_nodes, expr);
   graph->graph.AddEdge(edge.left, edge.right);
 
+  // Figure out whether we have two left joins that are associatively
+  // reorderable, which can trigger a bug in our row count estimation. See the
+  // definition of has_reordered_left_joins for more information.
+  if (!graph->has_reordered_left_joins &&
+      expr->type == RelationalExpression::LEFT_JOIN) {
+    ForEachJoinOperator(expr->left, [expr, graph](RelationalExpression *child) {
+      if (child->type == RelationalExpression::LEFT_JOIN &&
+          OperatorsAreAssociative(*child, *expr)) {
+        graph->has_reordered_left_joins = true;
+      }
+    });
+    ForEachJoinOperator(expr->right,
+                        [expr, graph](RelationalExpression *child) {
+                          if (child->type == RelationalExpression::LEFT_JOIN &&
+                              OperatorsAreAssociative(*expr, *child)) {
+                            graph->has_reordered_left_joins = true;
+                          }
+                        });
+  }
+
   if (trace != nullptr) {
     *trace += StringPrintf("Selectivity of join %s:\n",
                            GenerateExpressionLabel(expr).c_str());
@@ -2925,6 +2996,30 @@ NodeMap GetNodeMapFromTableMap(
   return ret;
 }
 
+namespace {
+
+// See if there is already a connection between the given nodes, potentially
+// through a larger hyperedge.
+bool ExistsEdgeBetween(const JoinHypergraph *graph, int left_node_idx,
+                       int right_node_idx, int *out_edge_idx) {
+  if (IsBitSet(right_node_idx,
+               graph->graph.nodes[left_node_idx].simple_neighborhood)) {
+    for (int edge_idx : graph->graph.nodes[left_node_idx].simple_edges) {
+      if (graph->graph.edges[edge_idx].right == TableBitmap(right_node_idx)) {
+        *out_edge_idx = edge_idx / 2;
+        return true;
+      }
+    }
+  }
+  for (int edge_idx : graph->graph.nodes[left_node_idx].complex_edges) {
+    if (IsBitSet(right_node_idx, graph->graph.edges[edge_idx].right)) {
+      *out_edge_idx = edge_idx / 2;
+      return true;
+    }
+  }
+  return false;
+}
+
 void AddMultipleEqualityPredicate(THD *thd, Item_equal *item_equal,
                                   Item_field *left_field, int left_table_idx,
                                   Item_field *right_field, int right_table_idx,
@@ -2933,23 +3028,17 @@ void AddMultipleEqualityPredicate(THD *thd, Item_equal *item_equal,
   const int right_node_idx = graph->table_num_to_node_num[right_table_idx];
 
   // See if there is already an edge between these two tables.
-  // Since the tables are in the same companion set, they are not
-  // outerjoined to each other, so it's enough to check the simple
-  // neighborhood.
+  // Even though the tables are in the same companion set
+  // (i.e., no outerjoins), they may be connected through complex edges
+  // due to hyperpredicates.
   RelationalExpression *expr = nullptr;
-  if (IsSubset(TableBitmap(right_node_idx),
-               graph->graph.nodes[left_node_idx].simple_neighborhood)) {
-    for (int edge_idx : graph->graph.nodes[left_node_idx].simple_edges) {
-      if (graph->graph.edges[edge_idx].right == TableBitmap(right_node_idx)) {
-        expr = graph->edges[edge_idx / 2].expr;
-        if (MultipleEqualityAlreadyExistsOnJoin(item_equal, *expr)) {
-          return;
-        }
-        graph->edges[edge_idx / 2].selectivity *= selectivity;
-        break;
-      }
+  int edge_idx;
+  if (ExistsEdgeBetween(graph, left_node_idx, right_node_idx, &edge_idx)) {
+    expr = graph->edges[edge_idx].expr;
+    if (MultipleEqualityAlreadyExistsOnJoin(item_equal, *expr)) {
+      return;
     }
-    assert(expr != nullptr);
+    graph->edges[edge_idx].selectivity *= selectivity;
   } else {
     // There was none, so create a new one.
     graph->graph.AddEdge(TableBitmap(left_node_idx),
@@ -3001,6 +3090,10 @@ void CompleteFullMeshForMultipleEqualities(
     THD *thd, const Mem_root_array<Item_equal *> &multiple_equalities,
     JoinHypergraph *graph, string *trace) {
   for (Item_equal *item_equal : multiple_equalities) {
+    if (item_equal->get_fields().size() <= 2) {
+      continue;
+    }
+
     double selectivity = EstimateSelectivity(thd, item_equal, trace);
     for (Item_field &left_field : item_equal->get_fields()) {
       const int left_table_idx =
@@ -3019,6 +3112,8 @@ void CompleteFullMeshForMultipleEqualities(
     }
   }
 }
+
+}  // namespace
 
 const JOIN *JoinHypergraph::join() const { return m_query_block->join; }
 
@@ -3090,11 +3185,10 @@ bool MakeJoinHypergraph(THD *thd, string *trace, JoinHypergraph *graph) {
       return true;
     }
 
-    // See if we can push remaining WHERE conditions to sargable predicates.
-    for (Item *item : where_conditions) {
-      PushDownToSargableCondition(item, root,
-                                  /*is_join_condition_for_expr=*/false);
-    }
+    // NOTE: Any remaining WHERE conditions, whether single-table or multi-table
+    // (join conditions), are left up here for a reason (i.e., they are
+    // nondeterministic and/or blocked by outer joins), so they should not be
+    // attempted pushed as sargable predicates.
   } else {
     // We're done pushing, so unflatten so that the rest of the algorithms
     // don't need to worry about it.
@@ -3116,6 +3210,33 @@ bool MakeJoinHypergraph(THD *thd, string *trace, JoinHypergraph *graph) {
   FindConditionsUsedTables(thd, root);
   MakeHashJoinConditions(thd, root);
 
+  // One could argue this is a strange place to inject casts into the SELECT
+  // list, since it has nothing to do with the construction of the hypergraph
+  // itself. However, putting it here allows us to easily reach it in the unit
+  // test, and since we just added casts to the join conditions (in
+  // CanonicalizeJoinConditions), it should at least be fairly easy to find one
+  // from the other, and it's nice to have all canonicalization done before we
+  // start optimizing (this should really have been done in the prepare phase,
+  // as deciding data types should be part of resolving). For the old join
+  // optimizer, we do this after the join optimizer has finished, in
+  // sql_optimizer.cc.
+
+  // Traverse the expressions and inject cast nodes to compatible data types,
+  // if needed.
+  for (Item *item : *query_block->join->fields) {
+    item->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX, nullptr);
+  }
+
+  // Also GROUP BY expressions and HAVING, to be consistent everywhere.
+  for (ORDER *ord = join->group_list.order; ord != nullptr; ord = ord->next) {
+    (*ord->item)
+        ->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX, nullptr);
+  }
+  if (join->having_cond != nullptr) {
+    join->having_cond->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX,
+                            nullptr);
+  }
+
   if (trace != nullptr) {
     *trace += StringPrintf(
         "\nAfter pushdown; remaining WHERE conditions are %s, "
@@ -3124,6 +3245,16 @@ bool MakeJoinHypergraph(THD *thd, string *trace, JoinHypergraph *graph) {
         ItemsToString(table_filters).c_str());
     *trace += PrintRelationalExpression(root, 0);
     *trace += '\n';
+  }
+
+  // Ask the storage engine to update stats.records, if needed.
+  // We need to do this before MakeJoinGraphFromRelationalExpression(),
+  // which determines selectivities that are in part based on it.
+  // NOTE: ha_archive breaks without this call! (That is probably a bug in
+  // ha_archive, though.)
+  for (TABLE_LIST *tl = graph->query_block()->leaf_tables; tl != nullptr;
+       tl = tl->next_leaf) {
+    tl->fetch_number_of_rows();
   }
 
   // Construct the hypergraph from the relational expression.
@@ -3179,6 +3310,22 @@ bool MakeJoinHypergraph(THD *thd, string *trace, JoinHypergraph *graph) {
     }
     *trace += "\n";
   }
+
+#ifndef NDEBUG
+  {
+    // Verify we have no duplicate edges.
+    const vector<Hyperedge> &edges = graph->graph.edges;
+    for (size_t edge1_idx = 0; edge1_idx < edges.size(); ++edge1_idx) {
+      for (size_t edge2_idx = edge1_idx + 1; edge2_idx < edges.size();
+           ++edge2_idx) {
+        const Hyperedge &e1 = edges[edge1_idx];
+        const Hyperedge &e2 = edges[edge2_idx];
+        assert(e1.left != e2.left || e1.right != e2.right);
+      }
+    }
+  }
+
+#endif
 
   // Find TES and selectivity for each WHERE predicate that was not pushed
   // down earlier.

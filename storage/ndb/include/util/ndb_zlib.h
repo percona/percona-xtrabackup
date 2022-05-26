@@ -39,7 +39,10 @@ public:
   ndb_zlib();
   ~ndb_zlib();
 
+  void reset();
   int set_memory(void* mem, size_t size);
+  int set_pkcs_padding() { pkcs_padded = true; return 0; }
+  size_t get_random_access_block_size() const { return 0; }
 
   int deflate_init();
   int deflate(output_iterator* out, input_iterator* in);
@@ -72,6 +75,9 @@ private:
 
   enum operation_mode { NO_OP, DEFLATE, INFLATE };
   operation_mode m_op_mode;
+  bool pkcs_padded;
+  byte padding;
+  unsigned padding_left;
   z_stream file;
 };
 

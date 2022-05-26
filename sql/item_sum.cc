@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -580,10 +580,18 @@ bool Item_sum::eq(const Item *item, bool binary_cmp) const {
   if (item->type() != type() ||
       item->m_is_window_function != m_is_window_function)
     return false;
-  const Item_sum *const item_sum = static_cast<const Item_sum *>(item);
+  const Item_sum *item_sum = down_cast<const Item_sum *>(item);
   const enum Sumfunctype my_sum_func = sum_func();
   if (item_sum->sum_func() != my_sum_func || item_sum->m_window != m_window)
     return false;
+
+  if (is_rollup_sum_wrapper() || item_sum->is_rollup_sum_wrapper()) {
+    // we want to compare underlying Item_sums
+    const Item_sum *this_real_sum = unwrap_sum();
+    const Item_sum *item_real_sum = item_sum->unwrap_sum();
+    return this_real_sum->eq(item_real_sum, binary_cmp);
+  }
+
   if (arg_count != item_sum->arg_count ||
       (my_sum_func != Item_sum::UDF_SUM_FUNC &&
        strcmp(func_name(), item_sum->func_name()) != 0) ||
@@ -1264,9 +1272,16 @@ bool Aggregator_distinct::add() {
     }
 
     if (!check_unique_constraint(table)) return false;
-    if ((error = table->file->ha_write_row(table->record[0])) &&
-        !table->file->is_ignorable_error(error))
-      return true;
+    error = table->file->ha_write_row(table->record[0]);
+    if (error && !table->file->is_ignorable_error(error)) {
+      if (create_ondisk_from_heap(current_thd, table, error,
+                                  /*insert_last_record=*/true,
+                                  /*ignore_last_dup=*/true,
+                                  /*is_duplicate=*/nullptr) ||
+          table->file->ha_index_init(0, false)) {
+        return true;
+      }
+    }
     return false;
   } else {
     item_sum->get_arg(0)->save_in_field(table->field[0], false);

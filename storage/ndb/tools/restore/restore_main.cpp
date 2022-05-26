@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "util/require.h"
 #include <Logger.hpp>
 #include <NdbOut.hpp>
 #include <NdbTCP.h>
@@ -127,6 +128,7 @@ static bool ga_skip_table_check = false;
 static bool ga_exclude_missing_columns = false;
 static bool ga_exclude_missing_tables = false;
 static bool opt_exclude_intermediate_sql_tables = true;
+static bool ga_with_apply_status = false;
 bool opt_include_stored_grants = false;
 #ifdef ERROR_INSERT
 static unsigned int _error_insert = 0;
@@ -326,6 +328,10 @@ static struct my_option my_long_options[] =
     NDB_REP_DB "." NDB_APPLY_TABLE " with id 0 will be updated/inserted.", 
     (uchar**) &ga_restore_epoch, (uchar**) &ga_restore_epoch,  0,
     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 },
+  { "with-apply-status", 'w',
+    "Restore the " NDB_APPLY_TABLE " system table content from the backup.",
+    (uchar**) &ga_with_apply_status, (uchar**) &ga_with_apply_status,
+    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 },
   { "skip-table-check", 's', "Skip table structure check during restore of data",
    (uchar**) &ga_skip_table_check, (uchar**) &ga_skip_table_check, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0 },
@@ -1091,6 +1097,13 @@ bool create_consumers(RestoreThreadData *data)
     restore->m_metadata_work_requested = true;
     if (data->m_part_id == 1)
       restore->m_rebuild_indexes = true;
+  }
+
+  if(ga_with_apply_status)
+  {
+    restore->m_with_apply_status = true;
+    if (data->m_part_id == 1)
+      restore->m_delete_epoch_tuple = true;
   }
 
   {
@@ -2323,7 +2336,9 @@ int do_restore(RestoreThreadData *thrdata)
     table_output.push_back(NULL);
     if (!checkDbAndTableName(table))
       continue;
-    if (isSYSTAB_0(table))
+    if (isSYSTAB_0(table) ||
+        (strcmp(table->getTableName(), NDB_REP_DB "/def/" NDB_APPLY_TABLE) == 0
+         && ga_with_apply_status))
     {
       table_output[i]= ndbout.m_out;
     }
@@ -2453,8 +2468,10 @@ int do_restore(RestoreThreadData *thrdata)
     {
       // Check table compatibility
       for (i=0; i < metaData.getNoOfTables(); i++){
-        if (checkSysTable(metaData, i) &&
-            checkDbAndTableName(metaData[i]))
+        if ((checkSysTable(metaData, i) &&
+            checkDbAndTableName(metaData[i])) ||
+            (strcmp(metaData[i]->getTableName(), NDB_REP_DB "/def/" NDB_APPLY_TABLE) == 0
+             && ga_with_apply_status))
         {
           TableS & tableS = *metaData[i]; // not const
           for(Uint32 j = 0; j < g_consumers.size(); j++)
@@ -2751,6 +2768,35 @@ int do_restore(RestoreThreadData *thrdata)
     return NdbToolsProgramExitCode::FAILED;  
   }
 
+  if(ga_with_apply_status)
+  {
+    /**
+     * Wait for all the threads to finish restoring data before attempting to
+     * delete the tuple with server_id = 0 in ndb_apply_status table.
+     * Later, the appropriate data for that tuple is generated when ndb_restore
+     * is with invoked with restore-epoch option.
+     */
+    if (!thrdata->m_barrier->wait())
+    {
+      ga_error_thread = thrdata->m_part_id;
+      return NdbToolsProgramExitCode::FAILED;
+    }
+    for (i= 0; i < g_consumers.size(); i++)
+    {
+      if (!g_consumers[i]->delete_epoch_tuple())
+      {
+        restoreLogger.log_error("Restore: Failed to delete tuple with server_id=0");
+        return NdbToolsProgramExitCode::FAILED;
+      }
+    }
+  }
+
+  if (ga_error_thread > 0)
+  {
+    restoreLogger.log_error("Thread %u exits on error", thrdata->m_part_id);
+    return NdbToolsProgramExitCode::FAILED;
+  }
+
   if (ga_restore_epoch)
   {
     Logger::format_timestamp(time(NULL), timestamp, sizeof(timestamp));
@@ -2774,7 +2820,6 @@ int do_restore(RestoreThreadData *thrdata)
   if (ga_error_thread > 0)
   {
     restoreLogger.log_error("Thread %u exits on error", thrdata->m_part_id);
-    // thread 1 failed to restore metadata, exiting
     return NdbToolsProgramExitCode::FAILED;  
   }
 
@@ -2792,16 +2837,16 @@ int do_restore(RestoreThreadData *thrdata)
   {
     /**
      * Index rebuild should not be allowed to start until all threads have
-     * finished restoring data. Wait until all threads have arrived at
-     * barrier, then allow all threads to continue. Thread 1 will then rebuild
-     * indices, while all other threads do nothing.
+     * finished restoring data and epoch values are sorted out.
+     * Wait until all threads have arrived at barrier, then allow all
+     * threads to continue. Thread 1 will then rebuild indices, while all
+     * other threads do nothing.
      */
     if (!thrdata->m_barrier->wait())
     {
       ga_error_thread = thrdata->m_part_id;
       return NdbToolsProgramExitCode::FAILED;
     }
-
     restoreLogger.log_debug("Rebuilding indexes");
     Logger::format_timestamp(time(NULL), timestamp, sizeof(timestamp));
     restoreLogger.log_info("%s [rebuild_indexes] Rebuilding indexes", timestamp);
@@ -2966,6 +3011,21 @@ main(int argc, char** argv)
     g_options.appfmt(" -r");
   if (ga_restore_epoch)
     g_options.appfmt(" -e");
+  if(ga_with_apply_status)
+  {
+    if(!_restore_data && !_print_data && !_print_log && !_print_sql_log)
+    {
+      err << "--with-apply-status should only "
+          << "be used along with any of the following options:" << endl;
+      err << "--restore-data" << endl;
+      err << "--print-data" << endl;
+      err << "--print-log" << endl;
+      err << "--print-sql-log" << endl;
+      err << "Exiting..." << endl;
+      exitHandler(NdbToolsProgramExitCode::WRONG_ARGS);
+    }
+    g_options.appfmt(" -w");
+  }
   if (_no_restore_disk)
     g_options.appfmt(" -d");
   if (ga_exclude_missing_columns)
@@ -3107,7 +3167,7 @@ main(int argc, char** argv)
     for (int part_id=1; part_id<=ga_part_count; part_id++)
     {
       NDB_THREAD_PRIO prio = NDB_THREAD_PRIO_MEAN;
-      uint stack_size = 128 * 1024;
+      uint stack_size = 256 * 1024;
       char name[20];
       snprintf (name, sizeof(name), "restore%d", part_id);
       RestoreThreadData *data = new RestoreThreadData(part_id, &barrier);

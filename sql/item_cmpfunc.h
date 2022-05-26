@@ -1,7 +1,7 @@
 #ifndef ITEM_CMPFUNC_INCLUDED
 #define ITEM_CMPFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -643,7 +643,7 @@ class Item_bool_func2 : public Item_bool_func {
   /// function's arguments. Also sets up caches to hold constant values
   /// converted to the type expected by the comparator. See
   /// Arg_comparator::set_cmp_func().
-  bool set_cmp_func() {
+  virtual bool set_cmp_func() {
     return cmp.set_cmp_func(this, args, args + 1, is_nullable());
   }
   optimize_type select_optimize(const THD *) override { return OPTIMIZE_OP; }
@@ -997,10 +997,13 @@ class Item_func_eq : public Item_func_comparison {
   ///   with some pre-calculated values
   /// @param[out] join_key_buffer a buffer where the value from the join
   ///   condition will be appended
+  /// @param is_multi_column_key true if the hash join key has multiple columns
+  ///   (that is, the hash join condition is a conjunction)
   ///
   /// @returns true if an SQL NULL was encountered, false otherwise
   bool append_join_key_for_hash_join(THD *thd, table_map tables,
                                      const HashJoinCondition &join_condition,
+                                     bool is_multi_column_key,
                                      String *join_key_buffer) const;
 
   /// Wrap the argument in a typecast, if needed.
@@ -1081,6 +1084,10 @@ class Item_func_equal final : public Item_func_comparison {
       : Item_func_comparison(pos, a, b) {
     null_on_null = false;
   }
+  // Needs null value propagated to parent, even though operator is not nullable
+  bool set_cmp_func() override {
+    return cmp.set_cmp_func(this, args, args + 1, true);
+  }
   longlong val_int() override;
   bool resolve_type(THD *thd) override;
   enum Functype functype() const override { return EQUAL_FUNC; }
@@ -1088,6 +1095,7 @@ class Item_func_equal final : public Item_func_comparison {
   cond_result eq_cmp_result() const override { return COND_TRUE; }
   const char *func_name() const override { return "<=>"; }
   Item *truth_transformer(THD *, Bool_test) override { return nullptr; }
+  bool is_null() override { return false; }
 
   float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
@@ -1167,13 +1175,24 @@ class Item_func_reject_if : public Item_bool_func {
   longlong val_int() override;
   const char *func_name() const override { return "reject_if"; }
   /// Redefine to avoid pushing into derived table
-  bool check_column_from_derived_table(uchar *arg [[maybe_unused]]) override {
+  bool is_valid_for_pushdown(uchar *arg [[maybe_unused]]) override {
     return true;
   }
   float get_filtering_effect(THD *thd, table_map filter_for_table,
                              table_map read_tables,
                              const MY_BITMAP *fields_to_ignore,
                              double rows_in_table) override;
+  /**
+    We add RAND_TABLE_BIT to prevent moving this item from the JOIN condition:
+    it might raise an error too early: only if the join condition succeeds is
+    it relevant and should be evaluated. Cf.
+    Query_block::decorrelate_derived_scalar_subquery_post
+
+    @return Always RAND_TABLE_BIT
+  */
+  table_map get_initial_pseudo_tables() const override {
+    return RAND_TABLE_BIT;
+  }
 };
 
 /**
@@ -2559,6 +2578,7 @@ class Item_equal final : public Item_bool_func {
     List_STL_Iterator<const Item_field> cend() const {
       return m_fields->cend();
     }
+    size_t size() const { return m_fields->size(); }
 
    private:
     List<Item_field> *m_fields;
@@ -2577,6 +2597,7 @@ class Item_equal final : public Item_bool_func {
     List_STL_Iterator<const Item_field> cend() const {
       return m_fields->cend();
     }
+    size_t size() const { return m_fields->size(); }
 
    private:
     const List<Item_field> *m_fields;
@@ -2590,6 +2611,7 @@ class Item_equal final : public Item_bool_func {
   bool walk(Item_processor processor, enum_walk walk, uchar *arg) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  bool eq(const Item *item, bool binary_cmp) const override;
   const CHARSET_INFO *compare_collation() const override {
     return fields.head()->collation.collation;
   }

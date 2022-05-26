@@ -23,6 +23,7 @@
 */
 
 #define DBTC_C
+#include "util/require.h"
 #include "Dbtc.hpp"
 #include "ndb_global.h"
 #include <pc.hpp>
@@ -710,7 +711,7 @@ Dbtc::Dbtc(Block_context& ctx, Uint32 instanceNo):
     &scanRecordPool;
   c_transient_pools[DBTC_COMMIT_ACK_MARKER_TRANSIENT_POOL_INDEX] =
     &m_commitAckMarkerPool;
-  NDB_STATIC_ASSERT(c_transient_pool_count == 13);
+  static_assert(c_transient_pool_count == 13);
   c_transient_pools_shrinking.clear();
 }//Dbtc::Dbtc()
 

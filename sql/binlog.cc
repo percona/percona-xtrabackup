@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "lex_string.h"
 #include "map_helpers.h"
@@ -242,6 +243,91 @@ bool normalize_binlog_name(char *to, const char *from, bool is_relay_log) {
   }
 end:
   return error;
+}
+
+/**
+  @brief Checks whether purge conditions are met to be able to run purge
+         for binary log files.
+
+  This function checks whether the binary log is open, if the instance
+  is not locked for backup.
+
+  @param log The reference to the binary log.
+  @return std::pair<bool, int> the first element states whether there is a
+  purge condition violation. The second element states what is the associated
+  error code, if any.
+*/
+static std::pair<bool, int> check_purge_conditions(const MYSQL_BIN_LOG &log) {
+  // is the binary log open?
+  if (!log.is_open()) {
+    return std::make_pair(true, 0);
+  }
+
+  // is instance locked for backup ?
+  int error{0};
+  if ((error = check_instance_backup_locked()) != 0) {
+    return std::make_pair(true, error);
+  }
+
+  // go ahead, validations checked successfully
+  return std::make_pair(false, 0);
+}
+
+/**
+  @brief This function abstracts the calculation of the binary log files
+         retention lower bound. It is just a function that makes it easier
+         to handle the fact that there are two mutually exclusive variables
+         that control the purge period and one of them is deprecated.
+
+  NOTE: This function and part of the purge validation functions should
+        really move to a retention policy class that abstracts the
+        retention policy altogether and its controls. Perhaps we
+        can do that once expire_logs_days is removed and a refactoring
+        is done to also include retention based on storage space
+        occupied. Then we can uses the same retention abstraction
+        for binary and relay logs and possibly extend the options
+        to retain (binary) log files not only based on time, but
+        also on space used.
+
+  @return time_t the time after which log files are considered expired.
+*/
+static time_t calculate_auto_purge_lower_time_bound() {
+  if (DBUG_EVALUATE_IF("expire_logs_always", true, false)) return time(nullptr);
+
+  if (binlog_expire_logs_seconds > 0)
+    return time(nullptr) - binlog_expire_logs_seconds;
+  else if (expire_logs_days > 0)
+    return time(nullptr) -
+           expire_logs_days * static_cast<time_t>(SECONDS_IN_24H);
+
+  // This function should only be called if binlog_expire_logs_seconds
+  // or expire_logs_days are greater than 0. In debug builds assert.
+  // In the event that on production builds there is ever a bug,
+  // that causes the caller to call this function with expire time set
+  // to 0, then do not purge - return 0 and thus file stat time is
+  // always greater than purge time.
+  assert(false); /* purecov: inspected */
+  return 0;      /* purecov: inspected */
+}
+
+/**
+  @brief Checks if automatic purge conditions are met and therefore the
+  purge is allowed to be done. If not met returns true. Otherwise, false.
+
+  @return false if the check is successful. True otherwise.
+*/
+static bool check_auto_purge_conditions() {
+  // purge is disabled
+  if (!opt_binlog_expire_logs_auto_purge) return true;
+
+  // no retention window configured
+  if (binlog_expire_logs_seconds == 0 && expire_logs_days == 0) return true;
+
+  // retention window is set, but we are still within the window
+  if (calculate_auto_purge_lower_time_bound() < 0) return true;
+
+  // go ahead, validations checked successfully
+  return false;
 }
 
 /**
@@ -2331,9 +2417,6 @@ static xa_status_code binlog_xa_rollback(handlerton *, XID *xid) {
 
   @param err_string          Error string which specifies the exact error
                              message from the caller.
-
-  @retval
-    none
 */
 static void exec_binlog_error_action_abort(const char *err_string) {
   THD *thd = current_thd;
@@ -2470,7 +2553,7 @@ int MYSQL_BIN_LOG::rollback(THD *thd, bool all) {
     XID_STATE *xs = thd->get_transaction()->xid_state();
 
     assert(all || !xs->is_binlogged() ||
-           (!xs->is_in_recovery() && thd->is_error()));
+           (!xs->is_detached() && thd->is_error()));
     /*
       Whenever cache_mngr is not initialized, the xa prepared
       transaction's binary logging status must not be set, unless the
@@ -3101,22 +3184,21 @@ bool stmt_cannot_safely_rollback(const THD *thd) {
   @retval false success
   @retval true failure
 */
-bool purge_master_logs(THD *thd, const char *to_log) {
+bool purge_source_logs_to_file(THD *thd, const char *to_log) {
+  // first run the purge validations
+  auto [is_invalid, invalid_error] = check_purge_conditions(mysql_bin_log);
+  if (is_invalid) return purge_error_message(thd, invalid_error);
+
   char search_file_name[FN_REFLEN];
-  if (!mysql_bin_log.is_open()) {
-    my_ok(thd);
-    return false;
-  }
-
-  int error = check_instance_backup_locked();
-  if (!error) {
-    mysql_bin_log.make_log_name(search_file_name, to_log);
-    error = mysql_bin_log.purge_logs(
-        search_file_name, false, true /*need_lock_index=true*/,
-        true /*need_update_threads=true*/, nullptr, false);
-  }
-
-  return purge_error_message(thd, error);
+  constexpr auto auto_purge{false};
+  constexpr auto include_to_log{false};
+  constexpr auto need_index_lock{true};
+  constexpr auto need_update_threads{true};
+  mysql_bin_log.make_log_name(search_file_name, to_log);
+  auto purge_error = mysql_bin_log.purge_logs(
+      search_file_name, include_to_log, need_index_lock, need_update_threads,
+      nullptr, auto_purge);
+  return purge_error_message(thd, purge_error);
 }
 
 /**
@@ -3130,16 +3212,17 @@ bool purge_master_logs(THD *thd, const char *to_log) {
   @retval false success
   @retval true failure
 */
-bool purge_master_logs_before_date(THD *thd, time_t purge_time) {
-  if (!mysql_bin_log.is_open()) {
-    my_ok(thd);
-    return false;
-  }
+bool purge_source_logs_before_date(THD *thd, time_t purge_time) {
+  // first run the purge validations
+  const auto [is_invalid, invalid_error] =
+      check_purge_conditions(mysql_bin_log);
+  if (is_invalid) return purge_error_message(thd, invalid_error);
 
-  int error = check_instance_backup_locked();
-  if (!error) error = mysql_bin_log.purge_logs_before_date(purge_time, false);
-
-  return purge_error_message(thd, error);
+  // validations done, now purge
+  constexpr auto auto_purge{false};
+  auto purge_error =
+      mysql_bin_log.purge_logs_before_date(purge_time, auto_purge);
+  return purge_error_message(thd, purge_error);
 }
 
 /**
@@ -7111,39 +7194,49 @@ int MYSQL_BIN_LOG::rotate(bool force_rotate, bool *check_purge) {
   return error;
 }
 
+void MYSQL_BIN_LOG::auto_purge_at_server_startup() {
+  // first run the auto purge validations
+  if (check_auto_purge_conditions()) return;
+
+  auto purge_time = calculate_auto_purge_lower_time_bound();
+  constexpr auto auto_purge{true};
+  purge_logs_before_date(purge_time, auto_purge);
+}
+
 /**
   The method executes logs purging routine.
 */
-void MYSQL_BIN_LOG::purge() {
-  if (expire_logs_days || binlog_expire_logs_seconds) {
-    DEBUG_SYNC(current_thd, "at_purge_logs_before_date");
-    time_t purge_time = 0;
+void MYSQL_BIN_LOG::auto_purge() {
+  // first run the auto purge validations
+  if (check_auto_purge_conditions()) return;
 
-    if (binlog_expire_logs_seconds) {
-      purge_time = my_time(0) - binlog_expire_logs_seconds;
-    } else
-      purge_time = my_time(0) - expire_logs_days * 24 * 60 * 60;
-
-    DBUG_EXECUTE_IF("expire_logs_always", { purge_time = my_time(0); });
-    if (purge_time >= 0) {
-      Is_instance_backup_locked_result is_instance_locked =
-          is_instance_backup_locked(current_thd);
-
-      if (is_instance_locked == Is_instance_backup_locked_result::OOM) {
-        exec_binlog_error_action_abort(
-            "Out of memory happened while checking if "
-            "instance was locked for backup");
-      }
-      if (is_instance_locked == Is_instance_backup_locked_result::NOT_LOCKED) {
-        /*
-          Flush logs for storage engines, so that the last transaction
-          is persisted inside storage engines.
-        */
-        ha_flush_logs();
-        purge_logs_before_date(purge_time, true);
-      }
+  // then we run the purge validations
+  // if we run into out of memory, execute binlog_error_action_abort
+  const auto [is_invalid_purge, purge_error] = check_purge_conditions(*this);
+  if (is_invalid_purge) {
+    if (purge_error == LOG_INFO_MEM) {
+      /* purecov: begin inspected */
+      // OOM
+      exec_binlog_error_action_abort(
+          "Out of memory happened while checking if "
+          "instance was locked for backup");
+      /* purecov: end */
     }
+    return;
   }
+
+  assert(purge_error == 0);
+
+  DEBUG_SYNC(current_thd, "at_purge_logs_before_date");
+
+  auto purge_time = calculate_auto_purge_lower_time_bound();
+  constexpr auto auto_purge{true};
+  /*
+    Flush logs for storage engines, so that the last transaction
+    is persisted inside storage engines.
+  */
+  ha_flush_logs();
+  purge_logs_before_date(purge_time, auto_purge);
 }
 
 /**
@@ -7185,7 +7278,7 @@ int MYSQL_BIN_LOG::rotate_and_purge(THD *thd, bool force_rotate) {
   */
   mysql_mutex_unlock(&LOCK_log);
 
-  if (!error && check_purge) purge();
+  if (!error && check_purge) auto_purge();
 
   return error;
 }
@@ -7295,7 +7388,7 @@ bool MYSQL_BIN_LOG::write_incident(Incident_log_event *ev, THD *thd,
     create one, so that a GTID is generated and is written prior to flushing
     the stmt_cache.
   */
-  if (cache_mngr == NULL ||
+  if (cache_mngr == nullptr ||
       DBUG_EVALUATE_IF("simulate_cache_creation_failure", 1, 0)) {
     if (thd->binlog_setup_trx_data() ||
         DBUG_EVALUATE_IF("simulate_cache_creation_failure", 1, 0)) {
@@ -7384,7 +7477,7 @@ bool MYSQL_BIN_LOG::write_incident(Incident_log_event *ev, THD *thd,
       is_rotating_caused_by_incident = true;
       error = rotate(true, &check_purge);
       is_rotating_caused_by_incident = false;
-      if (!error && check_purge) purge();
+      if (!error && check_purge) auto_purge();
     }
   }
 
@@ -9030,7 +9123,7 @@ commit_stage:
     if (error)
       thd->commit_error = THD::CE_COMMIT_ERROR;
     else if (check_purge)
-      purge();
+      auto_purge();
   }
   /*
     flush or sync errors are handled above (using binlog_error_action).
@@ -9357,7 +9450,13 @@ int THD::binlog_setup_trx_data() {
   DBUG_TRACE;
   binlog_cache_mngr *cache_mngr = thd_get_cache_mngr(this);
 
-  if (cache_mngr) return 0;  // Already set up
+  if (cache_mngr) /* Already set up */ {
+    if (Rpl_thd_context::TX_RPL_STAGE_BEGIN ==
+        rpl_thd_ctx.get_tx_rpl_delegate_stage_status())
+      rpl_thd_ctx.set_tx_rpl_delegate_stage_status(
+          Rpl_thd_context::TX_RPL_STAGE_CACHE_CREATED);
+    return 0;
+  }
 
   cache_mngr = (binlog_cache_mngr *)my_malloc(key_memory_binlog_cache_mngr,
                                               sizeof(binlog_cache_mngr),
@@ -9374,6 +9473,10 @@ int THD::binlog_setup_trx_data() {
     my_free(cache_mngr);
     return 1;
   }
+  if (Rpl_thd_context::TX_RPL_STAGE_BEGIN ==
+      rpl_thd_ctx.get_tx_rpl_delegate_stage_status())
+    rpl_thd_ctx.set_tx_rpl_delegate_stage_status(
+        Rpl_thd_context::TX_RPL_STAGE_CACHE_CREATED);
 
   DBUG_PRINT("debug", ("Set ha_data slot %d to 0x%llx", binlog_hton->slot,
                        (ulonglong)cache_mngr));

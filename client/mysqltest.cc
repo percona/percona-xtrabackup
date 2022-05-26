@@ -1,4 +1,4 @@
-// Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -6725,8 +6725,7 @@ static void do_connect(struct st_command *command) {
   if (opt_compress || con_compress)
     mysql_options(&con_slot->mysql, MYSQL_OPT_COMPRESS, NullS);
   mysql_options(&con_slot->mysql, MYSQL_OPT_LOCAL_INFILE, nullptr);
-  mysql_options(&con_slot->mysql, MYSQL_SET_CHARSET_NAME,
-                replace_utf8_utf8mb3(charset_info->csname));
+  mysql_options(&con_slot->mysql, MYSQL_SET_CHARSET_NAME, charset_info->csname);
   if (opt_charsets_dir)
     mysql_options(&con_slot->mysql, MYSQL_SET_CHARSET_DIR, opt_charsets_dir);
 
@@ -7659,14 +7658,14 @@ static struct my_option my_long_options[] = {
     {"database", 'D', "Database to use.", &opt_db, &opt_db, nullptr, GET_STR,
      REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #ifdef NDEBUG
-    {"debug", '#', "This is a non-debug version. Catch this and exit.", 0, 0, 0,
-     GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+    {"debug", '#', "This is a non-debug version. Catch this and exit.", nullptr,
+     nullptr, nullptr, GET_DISABLED, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-check", OPT_DEBUG_CHECK,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-info", OPT_DEBUG_INFO,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #else
     {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'.", nullptr,
      nullptr, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -9559,13 +9558,11 @@ int main(int argc, char **argv) {
                   (void *)&opt_connect_timeout);
   if (opt_compress) mysql_options(&con->mysql, MYSQL_OPT_COMPRESS, NullS);
   mysql_options(&con->mysql, MYSQL_OPT_LOCAL_INFILE, nullptr);
-  if (0 != std::strcmp(replace_utf8_utf8mb3(default_charset),
-                       replace_utf8_utf8mb3(charset_info->csname)) &&
+  if (0 != std::strcmp(default_charset, charset_info->csname) &&
       !(charset_info =
             get_charset_by_csname(default_charset, MY_CS_PRIMARY, MYF(MY_WME))))
     die("Invalid character set specified.");
-  mysql_options(&con->mysql, MYSQL_SET_CHARSET_NAME,
-                replace_utf8_utf8mb3(charset_info->csname));
+  mysql_options(&con->mysql, MYSQL_SET_CHARSET_NAME, charset_info->csname);
   if (opt_charsets_dir)
     mysql_options(&con->mysql, MYSQL_SET_CHARSET_DIR, opt_charsets_dir);
 
@@ -9594,6 +9591,10 @@ int main(int argc, char **argv) {
 
   safe_connect(&con->mysql, con->name, opt_host, opt_user, opt_pass, opt_db,
                opt_port, unix_sock);
+
+  if (ssl_client_check_post_connect_ssl_setup(
+          &con->mysql, [](const char *err) { die("%s", err); }))
+    return 0;
 
   /* Use all time until exit if no explicit 'start_timer' */
   timer_start = timer_now();

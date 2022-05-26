@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "util/require.h"
 #include <NDBT.hpp>
 #include <NDBT_Test.hpp>
 #include <HugoTransactions.hpp>
@@ -10432,8 +10433,8 @@ runBug14645319(NDBT_Context* ctx, NDBT_Step* step)
     int expected_buckets;
   };
 
-  STATIC_ASSERT(NDB_DEFAULT_HASHMAP_BUCKETS % 240 == 0);
-  STATIC_ASSERT(NDB_DEFAULT_HASHMAP_BUCKETS % 260 != 0);
+  static_assert(NDB_DEFAULT_HASHMAP_BUCKETS % 240 == 0);
+  static_assert(NDB_DEFAULT_HASHMAP_BUCKETS % 260 != 0);
   test_case test_cases[] = {
     { "Simulate online reorg, may or may not change hashmap depending on default fragment count",
       3, 120, 0, NDB_DEFAULT_HASHMAP_BUCKETS, 0 },

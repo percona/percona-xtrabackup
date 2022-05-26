@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2021, Oracle and/or its affiliates.
+Copyright (c) 2014, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -448,10 +448,10 @@ extern PSI_memory_info pfs_info_auto[n_auto];
 #if defined(__GNUG__) && (__GNUG__ == 5)
 
 /** Compute whether a string begins with a given prefix, compile-time.
-@param[in]	a	first string, taken to be zero-terminated
-@param[in]	b	second string (prefix to search for)
-@param[in]	b_len	length in bytes of second string
-@param[in]	index	character index to start comparing at
+@param[in]      a       first string, taken to be zero-terminated
+@param[in]      b       second string (prefix to search for)
+@param[in]      b_len   length in bytes of second string
+@param[in]      index   character index to start comparing at
 @return whether b is a prefix of a */
 constexpr bool ut_string_begins_with(const char *a, const char *b, size_t b_len,
                                      size_t index = 0) {
@@ -460,8 +460,8 @@ constexpr bool ut_string_begins_with(const char *a, const char *b, size_t b_len,
 }
 
 /** Find the length of the filename without its file extension.
-@param[in]	file	filename, with extension but without directory
-@param[in]	index	character index to start scanning for extension
+@param[in]      file    filename, with extension but without directory
+@param[in]      index   character index to start scanning for extension
                         separator at
 @return length, in bytes */
 constexpr size_t ut_len_without_extension(const char *file, size_t index = 0) {
@@ -472,9 +472,9 @@ constexpr size_t ut_len_without_extension(const char *file, size_t index = 0) {
 
 /** Retrieve a memory key (registered with PFS), given the file name of the
 caller.
-@param[in]	file	portion of the filename - basename, with extension
-@param[in]	len	length of the filename to check for
-@param[in]	index	index of first PSI key to check
+@param[in]      file    portion of the filename - basename, with extension
+@param[in]      len     length of the filename to check for
+@param[in]      index   index of first PSI key to check
 @return registered memory key or PSI_NOT_INSTRUMENTED if not found */
 constexpr PSI_memory_key ut_new_get_key_by_base_file(const char *file,
                                                      size_t len,
@@ -488,7 +488,7 @@ constexpr PSI_memory_key ut_new_get_key_by_base_file(const char *file,
 
 /** Retrieve a memory key (registered with PFS), given the file name of
 the caller.
-@param[in]	file	portion of the filename - basename, with extension
+@param[in]      file    portion of the filename - basename, with extension
 @return registered memory key or PSI_NOT_INSTRUMENTED if not found */
 constexpr PSI_memory_key ut_new_get_key_by_file(const char *file) {
   return (ut_new_get_key_by_base_file(file, ut_len_without_extension(file)));
@@ -499,9 +499,9 @@ constexpr PSI_memory_key ut_new_get_key_by_file(const char *file) {
 #else /* __GNUG__ == 5 */
 
 /** Compute whether a string begins with a given prefix, compile-time.
-@param[in]	a	first string, taken to be zero-terminated
-@param[in]	b	second string (prefix to search for)
-@param[in]	b_len	length in bytes of second string
+@param[in]      a       first string, taken to be zero-terminated
+@param[in]      b       second string (prefix to search for)
+@param[in]      b_len   length in bytes of second string
 @return whether b is a prefix of a */
 constexpr bool ut_string_begins_with(const char *a, const char *b,
                                      size_t b_len) {
@@ -514,7 +514,7 @@ constexpr bool ut_string_begins_with(const char *a, const char *b,
 }
 
 /** Find the length of the filename without its file extension.
-@param[in]	file	filename, with extension but without directory
+@param[in]      file    filename, with extension but without directory
 @return length, in bytes */
 constexpr size_t ut_len_without_extension(const char *file) {
   for (size_t i = 0;; ++i) {
@@ -526,8 +526,8 @@ constexpr size_t ut_len_without_extension(const char *file) {
 
 /** Retrieve a memory key (registered with PFS), given the file name of the
 caller.
-@param[in]	file	portion of the filename - basename, with extension
-@param[in]	len	length of the filename to check for
+@param[in]      file    portion of the filename - basename, with extension
+@param[in]      len     length of the filename to check for
 @return index to registered memory key or -1 if not found */
 constexpr int ut_new_get_key_by_base_file(const char *file, size_t len) {
   for (size_t i = 0; i < n_auto; ++i) {
@@ -540,7 +540,7 @@ constexpr int ut_new_get_key_by_base_file(const char *file, size_t len) {
 
 /** Retrieve a memory key (registered with PFS), given the file name of
 the caller.
-@param[in]	file	portion of the filename - basename, with extension
+@param[in]      file    portion of the filename - basename, with extension
 @return index to memory key or -1 if not found */
 constexpr int ut_new_get_key_by_file(const char *file) {
   return ut_new_get_key_by_base_file(file, ut_len_without_extension(file));
@@ -1334,6 +1334,8 @@ struct fallback_to_normal_page_t {};
 
     @param[in] key PSI memory key to be used for PFS memory instrumentation.
     @param[in] size Size of storage (in bytes) requested to be allocated.
+    @param[in] large_pages_enabled If true, the large pages will be tried to be
+    used.
     @return Pointer to the page-aligned storage. nullptr if dynamic storage
     allocation failed.
 
@@ -1366,8 +1368,9 @@ inline void *malloc_large_page_withkey(
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] key PSI memory key to be used for PFS memory instrumentation.
     @param[in] size Size of storage (in bytes) requested to be allocated.
+    @param[in] large_pages_enabled If true, the large pages will be tried to be
+    used.
     @return Pointer to the page-aligned storage. nullptr if dynamic storage
     allocation failed.
 
@@ -2027,7 +2030,7 @@ class aligned_array_pointer {
       Underlying instances of type T are accessed through the conversion
       operator.
 
-      @param[in] size Number of T elements in an array.
+      @param[in] count Number of T elements in an array.
     */
   void alloc(Count count) {
     ut_ad(ptr == nullptr);
@@ -2063,7 +2066,7 @@ class aligned_array_pointer {
       operator.
 
       @param[in] key PSI memory key to be used for PFS memory instrumentation.
-      @param[in] size Number of T elements in an array.
+      @param[in] count Number of T elements in an array.
     */
   void alloc_withkey(PSI_memory_key_t key, Count count) {
     ut_ad(ptr == nullptr);
@@ -2218,7 +2221,7 @@ class allocator : public Allocator_base {
   };
 
   /** Equality of allocators instantiated with same types T. */
-  inline bool operator==(const ut::allocator<T, Allocator_base> &other) const {
+  inline bool operator==(const ut::allocator<T, Allocator_base> &) const {
     return true;
   }
   /** Non-equality of allocators instantiated with same types T. */
@@ -2237,7 +2240,7 @@ class allocator : public Allocator_base {
 
   /** Allocates chunk of memory that can hold n_elements objects of
       type T. Returned pointer is always valid. In case underlying
-      allocation function was not able to fulfil the allocation request,
+      allocation function was not able to fulfill the allocation request,
       this function will throw std::bad_alloc exception. After successful
       allocation, returned pointer must be passed back to
       ut::allocator<T>::deallocate() when no longer needed.
@@ -2247,7 +2250,8 @@ class allocator : public Allocator_base {
                               not used by this implementation
       @return pointer to the allocated memory
     */
-  pointer allocate(size_type n_elements, const_pointer hint = nullptr) {
+  pointer allocate(size_type n_elements,
+                   const_pointer hint [[maybe_unused]] = nullptr) {
     if (unlikely(n_elements > max_size())) {
       throw std::bad_array_new_length();
     }
@@ -2266,7 +2270,9 @@ class allocator : public Allocator_base {
       @param[in,out]  ptr         pointer to memory to free
       @param[in]      n_elements  number of elements allocated (unused)
    */
-  void deallocate(pointer ptr, size_type n_elements = 0) { ut::free(ptr); }
+  void deallocate(pointer ptr, size_type n_elements [[maybe_unused]] = 0) {
+    ut::free(ptr);
+  }
 };
 
 namespace detail {
@@ -2360,7 +2366,6 @@ make_unique(PSI_memory_key_t key, Args &&... args) {
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::unique_ptr holding a pointer to an array of size instances of
    T.
  */
@@ -2381,7 +2386,6 @@ make_unique(size_t size) {
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::unique_ptr holding a pointer to an array of size instances of
    T.
  */
@@ -2441,6 +2445,7 @@ using unique_ptr = std::conditional_t<
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
+    @param[in] alignment Alignment requirement for storage to be allocated.
     @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::unique_ptr holding a pointer to instance of T.
  */
@@ -2452,17 +2457,18 @@ make_unique_aligned(size_t alignment, Args &&... args) {
       ut::aligned_new<T>(alignment, std::forward<Args>(args)...));
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to T instance into the std::unique_ptr with custom deleter
-    which knows how to handle PFS-enabled dynamic memory allocations.
-    Instruments the memory with given PSI memory key in case PFS memory support
-    is enabled.
+/** Dynamically allocates storage for an array of objects of type T at address
+    aligned to the requested alignment. Constructs the object of type T with
+    provided Args. Wraps the pointer to T instance into the std::unique_ptr with
+    custom deleter which knows how to handle PFS-enabled dynamic memory
+    allocations. Instruments the memory with given PSI memory key in case PFS
+    memory support is enabled.
 
-    This overload participates in overload resolution only if T
-    is not an array type.
+    This overload participates in overload resolution only if T is not an array
+    type.
 
     @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
     @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::unique_ptr holding a pointer to instance of T.
  */
@@ -2474,9 +2480,10 @@ make_unique_aligned(PSI_memory_key_t key, size_t alignment, Args &&... args) {
       ut::aligned_new_withkey<T>(key, alignment, std::forward<Args>(args)...));
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to an array of T instance into the std::unique_ptr.
+/** Dynamically allocates storage for an array of requested size of objects of
+    type T at address aligned to the requested alignment. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instance
+    into the std::unique_ptr.
 
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
@@ -2486,7 +2493,8 @@ make_unique_aligned(PSI_memory_key_t key, size_t alignment, Args &&... args) {
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] size Size of the array of objects T to allocate.
     @return std::unique_ptr holding a pointer to an array of size instances of
    T.
  */
@@ -2498,17 +2506,19 @@ make_unique_aligned(size_t alignment, size_t size) {
       ut::aligned_new_arr<std::remove_extent_t<T>>(alignment, ut::Count{size}));
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to an array of T instances into the std::unique_ptr with
-    custom deleter which knows how to handle PFS-enabled dyanmic memory
-    allocations. Instruments the memory with given PSI memory key in case PFS
-    memory support is enabled.
+/** Dynamically allocates storage for an array of requested size of objects of
+    type T at address aligned to the requested alignment. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instances
+    into the std::unique_ptr with custom deleter which knows how to handle
+    PFS-enabled dynamic memory allocations. Instruments the memory with given
+    PSI memory key in case PFS memory support is enabled.
 
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] size Size of the array of objects T to allocate.
     @return std::unique_ptr holding a pointer to an array of size instances of
    T.
  */
@@ -2582,9 +2592,9 @@ std::enable_if_t<!std::is_array<T>::value, std::shared_ptr<T>> make_shared(
       ut::new_withkey<T>(key, std::forward<Args>(args)...), Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T. Constructs the object
-    of type T with provided Args. Wraps the pointer to an array of T instance
-    into the std::shared_ptr.
+/** Dynamically allocates storage for an array of requested size of objects of
+    type T. Constructs the object of type T with provided Args. Wraps the
+    pointer to an array of T instance into the std::shared_ptr.
 
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
@@ -2594,7 +2604,7 @@ std::enable_if_t<!std::is_array<T>::value, std::shared_ptr<T>> make_shared(
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] size Size of the array of objects T to allocate.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2606,16 +2616,18 @@ make_shared(size_t size) {
       ut::new_arr<std::remove_extent_t<T>>(ut::Count{size}), Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T. Constructs the object
-    of type T with provided Args. Wraps the pointer to an array of T instances
-    into the std::shared_ptr with custom deleter which knows how to handle
-    PFS-enabled dynamic memory allocations. Instruments the memory with given
-    PSI memory key in case PFS memory support is enabled.
+/** Dynamically allocates storage for an array of requested size of objects of
+    type T. Constructs the object of type T with provided Args. Wraps the
+    pointer to an array of T instances into the std::shared_ptr with custom
+    deleter which knows how to handle PFS-enabled dynamic memory allocations.
+    Instruments the memory with given PSI memory key in case PFS memory support
+    is enabled.
 
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] size Size of the array of objects T to allocate.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2628,9 +2640,9 @@ make_shared(PSI_memory_key_t key, size_t size) {
       Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T. Constructs the object
-    of type T with provided Args. Wraps the pointer to an array of T instance
-    into the std::shared_ptr.
+/** Dynamically allocates storage for an array of objects of type T. Constructs
+    the object of type T with provided Args. Wraps the pointer to an array of T
+    instance into the std::shared_ptr.
 
     This overload participates in overload resolution only if T
     is an array type with known compile-time bound.
@@ -2640,7 +2652,6 @@ make_shared(PSI_memory_key_t key, size_t size) {
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2653,16 +2664,16 @@ make_shared() {
                             Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T. Constructs the object
-    of type T with provided Args. Wraps the pointer to an array of T instances
-    into the std::shared_ptr with custom deleter which knows how to handle
-    PFS-enabled dynamic memory allocations. Instruments the memory with given
-    PSI memory key in case PFS memory support is enabled.
+/** Dynamically allocates storage for an array of objects of type T. Constructs
+    the object of type T with provided Args. Wraps the pointer to an array of T
+    instances into the std::shared_ptr with custom deleter which knows how to
+    handle PFS-enabled dynamic memory allocations. Instruments the memory with
+    given PSI memory key in case PFS memory support is enabled.
 
     This overload participates in overload resolution only if T
     is an array type with known compile-time bound.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2688,6 +2699,7 @@ std::enable_if_t<detail::is_bounded_array_v<T>, std::shared_ptr<T>> make_shared(
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
+    @param[in] alignment Alignment requirement for storage to be allocated.
     @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::shared_ptr holding a pointer to instance of T.
  */
@@ -2710,6 +2722,7 @@ make_shared_aligned(size_t alignment, Args &&... args) {
     is not an array type.
 
     @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
     @param[in] args Arguments one wishes to pass over to T constructor(s) .
     @return std::shared_ptr holding a pointer to instance of T.
  */
@@ -2722,9 +2735,10 @@ make_shared_aligned(PSI_memory_key_t key, size_t alignment, Args &&... args) {
       Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to an array of T instance into the std::shared_ptr.
+/** Dynamically allocates storage for an array of requested size of objects of
+    type T at address aligned to the requested alignment. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instance
+    into the std::shared_ptr.
 
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
@@ -2734,7 +2748,8 @@ make_shared_aligned(PSI_memory_key_t key, size_t alignment, Args &&... args) {
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] size Size of the array of objects T to allocate.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2747,17 +2762,19 @@ make_shared_aligned(size_t alignment, size_t size) {
       Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to an array of T instances into the std::shared_ptr with
-    custom deleter which knows how to handle PFS-enabled dynamic memory
-    allocations. Instruments the memory with given PSI memory key in case PFS
-    memory support is enabled.
+/** Dynamically allocates storage for an array of requested size of objects of
+    type T at address aligned to the requested alignment. Constructs the object
+    of type T with provided Args. Wraps the pointer to an array of T instances
+    into the std::shared_ptr with custom deleter which knows how to handle
+    PFS-enabled dynamic memory allocations. Instruments the memory with given
+    PSI memory key in case PFS memory support is enabled.
 
     This overload participates in overload resolution only if T
     is an array type with unknown compile-time bound.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
+    @param[in] size Size of the array of objects T to allocate.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2771,9 +2788,10 @@ make_shared_aligned(PSI_memory_key_t key, size_t alignment, size_t size) {
       Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to an array of T instance into the std::shared_ptr.
+/** Dynamically allocates storage for an array of objects of type T at address
+    aligned to the requested alignment. Constructs the object of type T with
+    provided Args. Wraps the pointer to an array of T instance into the
+    std::shared_ptr.
 
     This overload participates in overload resolution only if T
     is an array type with known compile-time bound.
@@ -2783,7 +2801,7 @@ make_shared_aligned(PSI_memory_key_t key, size_t alignment, size_t size) {
     use it will be lost or in best case inaccurate. Please have a strong reason
     to do so.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] alignment Alignment requirement for storage to be allocated.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */
@@ -2797,17 +2815,18 @@ make_shared_aligned(size_t alignment) {
       Deleter{});
 }
 
-/** Dynamically allocates storage for an object of type T at address aligned to
-    the requested alignment. Constructs the object of type T with provided Args.
-    Wraps the pointer to an array of T instances into the std::shared_ptr with
-    custom deleter which knows how to handle PFS-enabled dynamic memory
-    allocations. Instruments the memory with given PSI memory key in case PFS
-    memory support is enabled.
+/** Dynamically allocates storage for an array of objects of type T at address
+    aligned to the requested alignment. Constructs the object of type T with
+    provided Args. Wraps the pointer to an array of T instances into the
+    std::shared_ptr with custom deleter which knows how to handle PFS-enabled
+    dynamic memory allocations. Instruments the memory with given PSI memory key
+    in case PFS memory support is enabled.
 
     This overload participates in overload resolution only if T
     is an array type with known compile-time bound.
 
-    @param[in] args Arguments one wishes to pass over to T constructor(s) .
+    @param[in] key PSI memory key to be used for PFS memory instrumentation.
+    @param[in] alignment Alignment requirement for storage to be allocated.
     @return std::shared_ptr holding a pointer to an array of size instances of
     T.
  */

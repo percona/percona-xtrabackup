@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,10 +24,9 @@
 
 #include "sql/sql_udf.h"
 
-#include "my_config.h"
-
 #include <stdio.h>
 #include <string.h>
+
 #include <iterator>
 #include <memory>
 #include <new>
@@ -40,6 +39,7 @@
 #include "map_helpers.h"
 #include "my_alloc.h"
 #include "my_base.h"
+#include "my_config.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
@@ -50,16 +50,17 @@
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysql/components/service_implementation.h"
+#include "mysql/components/services/bits/mysql_rwlock_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_memory_bits.h"
+#include "mysql/components/services/bits/psi_rwlock_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
-#include "mysql/components/services/mysql_rwlock_bits.h"
-#include "mysql/components/services/psi_memory_bits.h"
-#include "mysql/components/services/psi_rwlock_bits.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_rwlock.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"  // ER_*
+#include "sql/derror.h"    // ER_THD
 #include "sql/field.h"
 #include "sql/handler.h"
 #include "sql/iterators/row_iterator.h"
@@ -106,6 +107,8 @@ static MEM_ROOT mem;
 static collation_unordered_map<std::string, udf_func *> *udf_hash;
 static mysql_rwlock_t THR_LOCK_udf;
 
+static constexpr const size_t UDF_ALLOC_BLOCK_SIZE{1024};
+
 static udf_func *add_udf(LEX_STRING *name, Item_result ret, char *dl,
                          Item_udftype typ);
 static void udf_hash_delete(udf_func *udf);
@@ -122,7 +125,7 @@ static const TABLE_FIELD_TYPE
         {{STRING_WITH_LEN("dl")}, {STRING_WITH_LEN("char(128)")}, {nullptr, 0}},
         {{STRING_WITH_LEN("type")},
          {STRING_WITH_LEN("enum('function','aggregate')")},
-         {STRING_WITH_LEN("utf8")}}};
+         {STRING_WITH_LEN("utf8mb3")}}};
 static const TABLE_FIELD_DEF mysql_udf_table_def = {MYSQL_UDF_TABLE_FIELD_COUNT,
                                                     mysql_udf_table_fields};
 
@@ -199,7 +202,7 @@ void udf_init_globals() {
 #endif
 
   mysql_rwlock_init(key_rwlock_THR_LOCK_udf, &THR_LOCK_udf);
-  init_sql_alloc(key_memory_udf_mem, &mem, UDF_ALLOC_BLOCK_SIZE, 0);
+  init_sql_alloc(key_memory_udf_mem, &mem, UDF_ALLOC_BLOCK_SIZE);
 
   udf_hash = new collation_unordered_map<std::string, udf_func *>(
       system_charset_info, key_memory_udf_mem);
@@ -258,7 +261,7 @@ void udf_read_functions_table() {
     name.str = get_field(&mem, table->field[0]);
 
     // Check the name.str is NULL or not.
-    if (name.str == NULL) {
+    if (name.str == nullptr) {
       sql_print_error("Invalid row in mysql.func table for column 'name'");
       continue;
     }
@@ -266,7 +269,7 @@ void udf_read_functions_table() {
     name.length = strlen(name.str);
     char *dl_name = get_field(&mem, table->field[2]);
 
-    if (dl_name == NULL) {
+    if (dl_name == nullptr) {
       sql_print_error("Invalid row in mysql.func table for function '%.64s'",
                       name.str);
       continue;
@@ -595,13 +598,14 @@ static bool udf_end_transaction(THD *thd, bool rollback, udf_func *udf,
 
   @param thd                 THD context.
   @param udf                 Pointer to UDF function.
+  @param if_not_exists       True if 'IF NOT EXISTS' clause was specified.
 
   @note Like implementations of other DDL/DML in MySQL, this function
   relies on the caller to close the thread tables. This is done in the
   end of dispatch_command().
 */
 
-bool mysql_create_function(THD *thd, udf_func *udf) {
+bool mysql_create_function(THD *thd, udf_func *udf, bool if_not_exists) {
   bool error = true;
   void *dl = nullptr;
   int new_dl = 0;
@@ -674,8 +678,19 @@ bool mysql_create_function(THD *thd, udf_func *udf) {
 
   mysql_rwlock_rdlock(&THR_LOCK_udf);
   if (udf_hash->count(to_string(udf->name)) != 0) {
-    my_error(ER_UDF_EXISTS, MYF(0), udf->name.str);
     mysql_rwlock_unlock(&THR_LOCK_udf);
+
+    // UDF with the same name already exists
+    if (if_not_exists) {
+      push_warning_printf(thd, Sql_condition::SL_NOTE, ER_UDF_EXISTS,
+                          ER_THD(thd, ER_UDF_EXISTS), udf->name.str);
+      error = (write_bin_log(thd, true, thd->query().str, thd->query().length,
+                             false) != 0);
+      if (error) error = udf_end_transaction(thd, error, nullptr, false);
+
+    } else {
+      my_error(ER_UDF_EXISTS, MYF(0), udf->name.str);
+    }
     return error;
   }
   dl = find_udf_dl(udf->dl);

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2021, Oracle and/or its affiliates.
+Copyright (c) 2014, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -65,11 +65,11 @@ class Page_load : private ut::Non_copyable {
 
  public:
   /** Constructor
-  @param[in]	index		          B-tree index
-  @param[in]	trx_id		        Transaction id
-  @param[in]	page_no		        Page number
-  @param[in]	level		          Page level
-  @param[in]	observer	        Flush observer */
+  @param[in]    index                     B-tree index
+  @param[in]    trx_id                  Transaction id
+  @param[in]    page_no                 Page number
+  @param[in]    level                     Page level
+  @param[in]    observer                Flush observer */
   Page_load(dict_index_t *index, trx_id_t trx_id, page_no_t page_no,
             size_t level, Flush_observer *observer) noexcept
       : m_index(index),
@@ -122,8 +122,8 @@ class Page_load : private ut::Non_copyable {
   void rollback() noexcept;
 
   /** Compress if it is compressed table
-  @return	true	compress successfully or no need to compress
-  @return	false	compress failed. */
+  @return       true    compress successfully or no need to compress
+  @return       false   compress failed. */
   [[nodiscard]] bool compress() noexcept;
 
   /** Check whether the record needs to be stored externally.
@@ -144,11 +144,11 @@ class Page_load : private ut::Non_copyable {
   void copy_all(const page_t *src_page) noexcept;
 
   /** Set next page
-  @param[in]	next_page_no	    Next page no */
+  @param[in]    next_page_no        Next page no */
   void set_next(page_no_t next_page_no) noexcept;
 
   /** Set previous page
-  @param[in]	prev_page_no	    Previous page no */
+  @param[in]    prev_page_no        Previous page no */
   void set_prev(page_no_t prev_page_no) noexcept;
 
   /** Release block by committing mtr */
@@ -158,9 +158,9 @@ class Page_load : private ut::Non_copyable {
   inline void latch() noexcept;
 
   /** Check if required space is available in the page for the rec
-  to be inserted.	We check fill factor & padding here.
-  @param[in]	rec_size	        Required space
-  @return true	if space is available */
+  to be inserted.       We check fill factor & padding here.
+  @param[in]    rec_size                Required space
+  @return true  if space is available */
   [[nodiscard]] inline bool is_space_available(size_t rec_size) const noexcept;
 
   /** Get page no */
@@ -295,7 +295,7 @@ dberr_t Page_load::init() noexcept {
 
   ut_ad(m_heap == nullptr);
 
-  m_heap = mem_heap_create(1024);
+  m_heap = mem_heap_create(1024, UT_LOCATION_HERE);
 
   auto mtr_alloc = mem_heap_alloc(m_heap, sizeof(mtr_t));
 
@@ -304,7 +304,7 @@ dberr_t Page_load::init() noexcept {
   mtr->start();
 
   if (!dict_index_is_online_ddl(m_index)) {
-    mtr->x_lock(dict_index_get_lock(m_index), __FILE__, __LINE__);
+    mtr->x_lock(dict_index_get_lock(m_index), UT_LOCATION_HERE);
   }
 
   mtr->set_log_mode(MTR_LOG_NO_REDO);
@@ -361,7 +361,8 @@ dberr_t Page_load::init() noexcept {
     page_id_t page_id(dict_index_get_space(m_index), m_page_no);
     page_size_t page_size(dict_table_page_size(m_index->table));
 
-    new_block = btr_block_get(page_id, page_size, RW_X_LATCH, m_index, mtr);
+    new_block = btr_block_get(page_id, page_size, RW_X_LATCH, UT_LOCATION_HERE,
+                              m_index, mtr);
 
     new_page = buf_block_get_frame(new_block);
     new_page_zip = buf_block_get_page_zip(new_block);
@@ -384,7 +385,7 @@ dberr_t Page_load::init() noexcept {
   m_page_zip = new_page_zip;
   m_page_no = new_page_no;
   m_cur_rec = page_get_infimum_rec(new_page);
-  ut_ad(m_is_comp == !!page_is_comp(new_page));
+  ut_ad(m_is_comp == page_is_comp(new_page));
   m_free_space = page_get_free_space_of_empty(m_is_comp);
 
   if (ddl::fill_factor == 100 && m_index->is_clustered()) {
@@ -806,7 +807,7 @@ void Page_load::release() noexcept {
   ut_ad(m_block->page.buf_fix_count > 0);
 
   /* We fix the block because we will re-pin it soon. */
-  buf_block_buf_fix_inc(m_block, __FILE__, __LINE__);
+  buf_block_buf_fix_inc(m_block, UT_LOCATION_HERE);
 
   m_modify_clock = m_block->get_modify_clock(IF_DEBUG(true));
 
@@ -818,7 +819,7 @@ void Page_load::latch() noexcept {
   m_mtr->start();
 
   if (!dict_index_is_online_ddl(m_index)) {
-    m_mtr->x_lock(dict_index_get_lock(m_index), __FILE__, __LINE__);
+    m_mtr->x_lock(dict_index_get_lock(m_index), UT_LOCATION_HERE);
   }
 
   m_mtr->set_log_mode(MTR_LOG_NO_REDO);
@@ -842,9 +843,8 @@ void Page_load::latch() noexcept {
     page_id_t page_id(dict_index_get_space(m_index), m_page_no);
     page_size_t page_size(dict_table_page_size(m_index->table));
 
-    m_block =
-        buf_page_get_gen(page_id, page_size, RW_X_LATCH, m_block,
-                         Page_fetch::IF_IN_POOL, __FILE__, __LINE__, m_mtr);
+    m_block = buf_page_get_gen(page_id, page_size, RW_X_LATCH, m_block,
+                               Page_fetch::IF_IN_POOL, UT_LOCATION_HERE, m_mtr);
     ut_ad(m_block != nullptr);
   }
 
@@ -993,12 +993,8 @@ Btree_load::~Btree_load() noexcept {
 }
 
 void Btree_load::release() noexcept {
-  ut_a(m_root_level + 1 == m_page_loaders.size());
-
-  for (size_t level = 0; level <= m_root_level; level++) {
-    auto page_loader = m_page_loaders[level];
-    page_loader->release();
-  }
+  auto page_loader = m_page_loaders[0];
+  page_loader->release();
 }
 
 void Btree_load::latch() noexcept {
@@ -1006,13 +1002,8 @@ void Btree_load::latch() noexcept {
     /* Nothing to latch. */
     return;
   }
-
-  ut_ad(m_root_level + 1 == m_page_loaders.size());
-
-  for (size_t level = 0; level <= m_root_level; level++) {
-    auto page_loader = m_page_loaders[level];
-    page_loader->latch();
-  }
+  auto page_loader = m_page_loaders[0];
+  page_loader->latch();
 }
 
 dberr_t Btree_load::prepare_space(Page_load *&page_loader, size_t level,
@@ -1082,25 +1073,8 @@ dberr_t Btree_load::insert(Page_load *page_loader, dtuple_t *tuple,
     ut_a(m_index->is_clustered());
     ut_a(page_loader->get_level() == 0);
     ut_a(page_loader == m_page_loaders[0]);
-
-    /* Release all latched but leaf node. */
-    for (size_t level = 1; level <= m_root_level; ++level) {
-      auto page_loader = m_page_loaders[level];
-
-      page_loader->release();
-    }
   }
-
   auto err = page_loader->insert(tuple, big_rec, rec_size);
-
-  if (big_rec != nullptr) {
-    /* Restore latches */
-    for (size_t level = 1; level <= m_root_level; ++level) {
-      auto page_loader = m_page_loaders[level];
-      page_loader->latch();
-    }
-  }
-
   return err;
 }
 
@@ -1133,15 +1107,22 @@ dberr_t Btree_load::insert(dtuple_t *tuple, size_t level) noexcept {
     m_root_level = level;
 
     is_left_most = true;
+
+    if (level > 0) {
+      page_loader->release();
+    }
   }
 
   ut_a(m_page_loaders.size() > level);
 
   auto page_loader = m_page_loaders[level];
+  if (level > 0) {
+    page_loader->latch();
+  }
 
   if (is_left_most && level > 0 && page_loader->get_rec_no() == 0) {
     /* The node pointer must be marked as the predefined minimum
-    record,	as there is no lower alphabetical limit to records in
+    record,     as there is no lower alphabetical limit to records in
     the leftmost node of a level: */
     const auto info_bits = dtuple_get_info_bits(tuple) | REC_INFO_MIN_REC_FLAG;
     dtuple_set_info_bits(tuple, info_bits);
@@ -1155,6 +1136,9 @@ dberr_t Btree_load::insert(dtuple_t *tuple, size_t level) noexcept {
     externally on separate database pages */
     big_rec = dtuple_convert_big_rec(m_index, nullptr, tuple);
     if (big_rec == nullptr) {
+      if (level > 0) {
+        page_loader->release();
+      }
       return DB_TOO_BIG_RECORD;
     }
 
@@ -1176,6 +1160,9 @@ dberr_t Btree_load::insert(dtuple_t *tuple, size_t level) noexcept {
             if (big_rec != nullptr) {
               dtuple_convert_back_big_rec(tuple, big_rec);
             }
+            if (level > 0) {
+              page_loader->release();
+            }
             return DB_TOO_BIG_RECORD;
           })
 
@@ -1186,7 +1173,9 @@ dberr_t Btree_load::insert(dtuple_t *tuple, size_t level) noexcept {
   if (big_rec != nullptr) {
     dtuple_convert_back_big_rec(tuple, big_rec);
   }
-
+  if (level > 0) {
+    page_loader->release();
+  }
   return err;
 }
 
@@ -1198,7 +1187,9 @@ dberr_t Btree_load::finalize_page_loads(dberr_t err,
   /* Finish all page bulks */
   for (size_t level = 0; level <= m_root_level; level++) {
     auto page_loader = m_page_loaders[level];
-
+    if (level > 0) {
+      page_loader->latch();
+    }
     page_loader->finish();
 
     last_page_no = page_loader->get_page_no();
@@ -1230,10 +1221,10 @@ dberr_t Btree_load::load_root_page(page_no_t last_page_no) noexcept {
   mtr_t mtr;
 
   mtr.start();
-  mtr.x_lock(dict_index_get_lock(m_index), __FILE__, __LINE__);
+  mtr.x_lock(dict_index_get_lock(m_index), UT_LOCATION_HERE);
 
-  auto last_block =
-      btr_block_get(page_id, page_size, RW_X_LATCH, m_index, &mtr);
+  auto last_block = btr_block_get(page_id, page_size, RW_X_LATCH,
+                                  UT_LOCATION_HERE, m_index, &mtr);
 
   auto last_page = buf_block_get_frame(last_block);
 

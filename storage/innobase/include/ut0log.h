@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@ const char *const PXB = "Xtrabackup";
 #endif /* XTRABACKUP */
 
 /** Get the format string for the logger.
-@param[in]	errcode		The error code from share/errmsg-*.txt
+@param[in]      errcode         The error code from share/errmsg-*.txt
 @return the message string or nullptr */
 const char *srv_get_server_errmsgs(int errcode);
 
@@ -59,8 +59,8 @@ class logger {
 #ifndef UNIV_NO_ERR_MSGS
 
   /** Format an error message.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   logger &log(int err, Args &&... args) {
     ut_a(m_err == ER_IB_MSG_0);
@@ -81,16 +81,16 @@ class logger {
   }
 
   /** Write the given buffer to the internal string stream object.
-  @param[in]	buf		the buffer contents to log.
-  @param[in]	count		the length of the buffer buf.
+  @param[in]    buf             the buffer contents to log.
+  @param[in]    count           the length of the buffer buf.
   @return the output stream into which buffer was written. */
   std::ostream &write(const char *buf, std::streamsize count) {
     return (m_oss.write(buf, count));
   }
 
   /** Write the given buffer to the internal string stream object.
-  @param[in]	buf		the buffer contents to log
-  @param[in]	count		the length of the buffer buf.
+  @param[in]    buf             the buffer contents to log
+  @param[in]    count           the length of the buffer buf.
   @return the output stream into which buffer was written. */
   std::ostream &write(const unsigned char *buf, std::streamsize count) {
     return (m_oss.write(reinterpret_cast<const char *>(buf), count));
@@ -121,8 +121,8 @@ class logger {
  protected:
 #ifndef UNIV_NO_ERR_MSGS
   /** Format an error message.
-  @param[in]	err	Error code from errmsg-*.txt.
-  @param[in]	args	Variable length argument list */
+  @param[in]    err     Error code from errmsg-*.txt.
+  @param[in]    args    Variable length argument list */
   template <class... Args>
   static std::string msg(int err, Args &&... args) {
     const char *fmt = srv_get_server_errmsgs(err);
@@ -156,12 +156,18 @@ class logger {
   void log_event(std::string msg, IF_XB(const char *const module));
 
   /** Constructor.
+<<<<<<< HEAD
   @param[in]	level		Logging level
   @param[in]	err		Error message code
   @param[in]    module  module that generates the event
   */
   logger(loglevel level, int err, IF_XB(const char *module))
       : m_err(err), m_level(level), IF_XB(m_module(module)) {
+=======
+  @param[in]    level           Logging level
+  @param[in]    err             Error message code. */
+  logger(loglevel level, int err) : m_err(err), m_level(level) {
+>>>>>>> mysql-8.0.29
     /* Note: Dummy argument to avoid the warning:
 
     "format not a string literal and no format arguments"
@@ -176,10 +182,16 @@ class logger {
   }
 
   /** Constructor.
+<<<<<<< HEAD
   @param[in]	level		Logging level
   @param[in]	err		Error message code.
   @param[in]	module		module that generates the event
   @param[in]	args		Variable length argument list */
+=======
+  @param[in]    level           Logging level
+  @param[in]    err             Error message code.
+  @param[in]    args            Variable length argument list */
+>>>>>>> mysql-8.0.29
   template <class... Args>
   explicit logger(loglevel level, int err, IF_XB(const char *module),
                   Args &&... args)
@@ -188,10 +200,15 @@ class logger {
   }
 
   /** Constructor
+<<<<<<< HEAD
   @param[in]	level		Log error level
   @param[in]	module		module that generates the event */
   explicit logger(loglevel level, IF_XB(const char *module))
       : m_err(ER_IB_MSG_0), m_level(level), IF_XB(m_module(module)) {}
+=======
+  @param[in]    level           Log error level */
+  explicit logger(loglevel level) : m_err(ER_IB_MSG_0), m_level(level) {}
+>>>>>>> mysql-8.0.29
 
 #endif /* !UNIV_NO_ERR_MSGS */
 };
@@ -215,8 +232,8 @@ class info : public logger {
   info() : logger(INFORMATION_LEVEL, INNO) {}
 
   /** Constructor.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit info(int err, Args &&... args)
       : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {}
@@ -235,8 +252,8 @@ class warn : public logger {
   warn() : logger(WARNING_LEVEL, INNO) {}
 
   /** Constructor.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit warn(int err, Args &&... args)
       : logger(WARNING_LEVEL, err, INNO, std::forward<Args>(args)...) {}
@@ -256,8 +273,8 @@ class error : public logger {
   error() : logger(ERROR_LEVEL, INNO) {}
 
   /** Constructor.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit error(int err, Args &&... args)
       : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...) {}
@@ -275,22 +292,22 @@ class fatal : public logger {
  public:
 #ifndef UNIV_NO_ERR_MSGS
   /** Default constructor uses ER_IB_MSG_0
-  @param[in]	location		Location that creates the fatal message.
+  @param[in]    location                Location that creates the fatal message.
 */
   fatal(ut::Location location)
       : logger(ERROR_LEVEL, INNO), m_location(location) {}
 
   /** Constructor.
-  @param[in]	location		Location that creates the fatal message.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    location                Location that creates the fatal message.
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit fatal(ut::Location location, int err, Args &&... args)
       : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
         m_location(location) {}
 #else
   /** Constructor
-  @param[in]	location		Location that creates the fatal message.
+  @param[in]    location                Location that creates the fatal message.
   */
   fatal(ut::Location location) : m_location(location) {}
 #endif /* !UNIV_NO_ERR_MSGS */
@@ -310,13 +327,18 @@ class error_or_warn : public logger {
 #ifndef UNIV_NO_ERR_MSGS
 
   /** Default constructor uses ER_IB_MSG_0
+<<<<<<< HEAD
   @param[in]	pred		True if it's a warning. */
   error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, INNO) {}
+=======
+  @param[in]    pred            True if it's a warning. */
+  error_or_warn(bool pred) : logger(pred ? ERROR_LEVEL : WARNING_LEVEL) {}
+>>>>>>> mysql-8.0.29
 
   /** Constructor.
-  @param[in]	pred		True if it's a warning.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    pred            True if it's a warning.
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit error_or_warn(bool pred, int err, Args &&... args)
       : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err, INNO,
@@ -331,16 +353,16 @@ class fatal_or_error : public logger {
  public:
 #ifndef UNIV_NO_ERR_MSGS
   /** Default constructor uses ER_IB_MSG_0
-  @param[in]	fatal		true if it's a fatal message
+  @param[in]    fatal           true if it's a fatal message
   @param[in] location Location that creates the fatal */
   fatal_or_error(bool fatal, ut::Location location)
       : logger(ERROR_LEVEL, INNO), m_fatal(fatal), m_location(location) {}
 
   /** Constructor.
-  @param[in]	fatal		true if it's a fatal message
+  @param[in]    fatal           true if it's a fatal message
   @param[in] location Location that creates the fatal
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit fatal_or_error(bool fatal, ut::Location location, int err,
                           Args &&... args)
@@ -377,8 +399,8 @@ class trace_1 : public logger {
   trace_1() : logger(INFORMATION_LEVEL, INNO) { m_trace_level = 1; }
 
   /** Constructor.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit trace_1(int err, Args &&... args)
       : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
@@ -400,8 +422,8 @@ class trace_2 : public logger {
   trace_2() : logger(INFORMATION_LEVEL, INNO) { m_trace_level = 2; }
 
   /** Constructor.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit trace_2(int err, Args &&... args)
       : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
@@ -422,8 +444,8 @@ class trace_3 : public logger {
   trace_3() : logger(INFORMATION_LEVEL, INNO) { m_trace_level = 3; }
 
   /** Constructor.
-  @param[in]	err		Error code from errmsg-*.txt.
-  @param[in]	args		Variable length argument list */
+  @param[in]    err             Error code from errmsg-*.txt.
+  @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit trace_3(int err, Args &&... args)
       : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {

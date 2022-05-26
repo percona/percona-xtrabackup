@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2021, Oracle and/or its affiliates.
+Copyright (c) 2017, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -42,7 +42,7 @@ const uint MAX_CLONES_PER_SNAPSHOT = 1;
 
 Clone_Snapshot::Clone_Snapshot(Clone_Handle_Type hdl_type,
                                Ha_clone_type clone_type, uint arr_idx,
-                               ib_uint64_t snap_id)
+                               uint64_t snap_id)
     : m_snapshot_handle_type(hdl_type),
       m_snapshot_type(clone_type),
       m_snapshot_id(snap_id),
@@ -72,7 +72,8 @@ Clone_Snapshot::Clone_Snapshot(Clone_Handle_Type hdl_type,
       m_enable_pfs(false) {
   mutex_create(LATCH_ID_CLONE_SNAPSHOT, &m_snapshot_mutex);
 
-  m_snapshot_heap = mem_heap_create(SNAPSHOT_MEM_INITIAL_SIZE);
+  m_snapshot_heap =
+      mem_heap_create(SNAPSHOT_MEM_INITIAL_SIZE, UT_LOCATION_HERE);
 
   m_chunk_size_pow2 = SNAPSHOT_DEF_CHUNK_SIZE_POW2;
   m_block_size_pow2 = SNAPSHOT_DEF_BLOCK_SIZE_POW2;
@@ -132,7 +133,7 @@ void Clone_Snapshot::get_state_info(bool do_estimate,
       break;
 
     default:
-      ut_ad(false);
+      ut_d(ut_error);
   }
 }
 
@@ -171,7 +172,7 @@ void Clone_Snapshot::set_state_info(Clone_Desc_State *state_desc) {
     m_monitor.init_state(PSI_NOT_INSTRUMENTED, m_enable_pfs);
 
   } else {
-    ut_ad(false);
+    ut_d(ut_error);
   }
 }
 
@@ -271,7 +272,7 @@ Clone_Snapshot::State_transit::State_transit(Clone_Snapshot *snapshot,
 
 Clone_Snapshot::State_transit::~State_transit() {
   if (m_error == 0) {
-    m_snapshot->end_transit(m_error);
+    m_snapshot->end_transit();
   }
 
   ut_ad(!m_snapshot->in_transit_state());
@@ -442,7 +443,7 @@ int Clone_Snapshot::get_next_block(uint chunk_num, uint &block_num,
   /* Find number of blocks in current chunk. */
   if (chunk_num == file_meta->m_end_chunk) {
     /* If it is last chunk, we need to adjust the size. */
-    ib_uint64_t size_in_pages;
+    uint64_t size_in_pages;
     uint aligned_sz;
 
     ut_ad(file_meta->m_file_size >= start_offset);
@@ -472,9 +473,9 @@ int Clone_Snapshot::get_next_block(uint chunk_num, uint &block_num,
   ut_ad(block_num < num_blocks);
 
   /* Calculate the offset of next block. */
-  ib_uint64_t block_offset;
+  uint64_t block_offset;
 
-  block_offset = static_cast<ib_uint64_t>(block_num);
+  block_offset = static_cast<uint64_t>(block_num);
   block_offset *= block_size();
 
   data_offset = chunk_offset + block_offset;
@@ -569,11 +570,10 @@ int Clone_Snapshot::change_state(Clone_Desc_State *state_desc,
   switch (new_state) {
     case CLONE_SNAPSHOT_NONE:
     case CLONE_SNAPSHOT_INIT:
-      ut_ad(false);
-
       err = ER_INTERNAL_ERROR;
       my_error(err, MYF(0), "Innodb Clone Snapshot Invalid state");
-      break;
+      ut_d(ut_error);
+      ut_o(break);
 
     case CLONE_SNAPSHOT_FILE_COPY:
       ib::info(ER_IB_CLONE_OPERATION) << "Clone State BEGIN FILE COPY";
@@ -695,7 +695,7 @@ int Clone_Snapshot::get_next_page(uint chunk_num, uint &block_num,
   ut_ad(file_meta->m_space_id == clone_page.m_space_id);
 
   /* Data offset could be beyond 32 BIT integer. */
-  data_offset = static_cast<ib_uint64_t>(clone_page.m_page_no);
+  data_offset = static_cast<uint64_t>(clone_page.m_page_no);
   data_offset *= page_size.physical();
 
   auto file_index = file_meta->m_file_index;
@@ -757,7 +757,7 @@ bool Clone_Snapshot::encrypt_key_in_log_header(byte *log_header,
   if (success) {
     /* Encrypt with master key and fill encryption information. */
     success = Encryption::fill_encryption_info(
-        &encryption_key[0], &encryption_iv[0], encryption_info, false, true);
+        &encryption_key[0], &encryption_iv[0], encryption_info, true);
   }
   return (success);
 }
@@ -782,7 +782,7 @@ bool Clone_Snapshot::encrypt_key_in_header(const page_size_t &page_size,
 
   /* Encrypt with master key and fill encryption information. */
   success = Encryption::fill_encryption_info(
-      &encryption_key[0], &encryption_iv[0], encryption_info, false, true);
+      &encryption_key[0], &encryption_iv[0], encryption_info, true);
   if (!success) {
     return (false);
   }
@@ -804,7 +804,7 @@ void Clone_Snapshot::decrypt_key_in_header(const Clone_File_Meta *file_meta,
   /* Get tablespace encryption information. */
   Encryption::fill_encryption_info(file_meta->m_encryption_key,
                                    file_meta->m_encryption_iv, encryption_info,
-                                   false, false);
+                                   false);
 
   /* Set encryption information in page. */
   auto offset = fsp_header_get_encryption_offset(page_size);
@@ -835,9 +835,9 @@ void Clone_Snapshot::page_update_for_flush(const page_size_t &page_size,
 }
 
 /** Set Page encryption information for IORequest.
-@param[in,out]	request		IO request
-@param[in]	page_id		page id
-@param[in]	file_ctx	clone file context */
+@param[in,out]  request         IO request
+@param[in]      page_id         page id
+@param[in]      file_ctx        clone file context */
 static void set_page_encryption(IORequest &request, const page_id_t &page_id,
                                 const Clone_file_ctx *file_ctx) {
   auto file_meta = file_ctx->get_file_meta_read();
@@ -874,7 +874,7 @@ int Clone_Snapshot::get_page_for_write(const page_id_t &page_id,
   we would like to serialize with page flush to disk. */
   auto block =
       buf_page_get_gen(page_id, page_size, RW_SX_LATCH, nullptr,
-                       Page_fetch::POSSIBLY_FREED, __FILE__, __LINE__, &mtr);
+                       Page_fetch::POSSIBLY_FREED, UT_LOCATION_HERE, &mtr);
   auto bpage = &block->page;
 
   buf_page_mutex_enter(block);
@@ -950,9 +950,9 @@ int Clone_Snapshot::get_page_for_write(const page_id_t &page_id,
 
   if (reporter.is_corrupted() || page_lsn > cur_lsn ||
       (page_checksum != 0 && page_lsn == 0)) {
-    ut_ad(false);
     my_error(ER_INTERNAL_ERROR, MYF(0), "Innodb Clone Corrupt Page");
     err = ER_INTERNAL_ERROR;
+    ut_d(ut_error);
   }
 
   auto encrypted_data = page_data + data_size;
@@ -1022,7 +1022,7 @@ Clone_file_ctx *Clone_Snapshot::get_file_ctx(uint32_t chunk_num,
       file = get_redo_file_ctx(chunk_num, hint_index);
       break;
     default:
-      ut_ad(false); /* purecov: deadcode */
+      ut_d(ut_error); /* purecov: deadcode */
   }
   return file;
 }
@@ -1067,8 +1067,8 @@ Clone_file_ctx *Clone_Snapshot::get_page_file_ctx(uint32_t chunk_num,
   auto file_index = m_data_file_map[clone_page.m_space_id];
   if (file_index == 0) {
     /* purecov: begin deadcode */
-    ut_ad(false);
-    return nullptr;
+    ut_d(ut_error);
+    ut_o(return nullptr);
     /* purecov: end */
   }
   --file_index;
@@ -1117,8 +1117,8 @@ bool Clone_Snapshot::begin_ddl_state(Clone_notify::Type type, space_id_t space,
       case CLONE_SNAPSHOT_NONE:
         /* purecov: begin deadcode */
         /* Clone must have started at this point. */
-        ut_ad(false);
-        break;
+        ut_d(ut_error);
+        ut_o(break);
         /* purecov: end */
 
       case CLONE_SNAPSHOT_INIT:
@@ -1186,8 +1186,8 @@ bool Clone_Snapshot::begin_ddl_state(Clone_notify::Type type, space_id_t space,
         break;
       default:
         /* purecov: begin deadcode */
-        ut_ad(false);
-        break;
+        ut_d(ut_error);
+        ut_o(break);
         /* purecov: end */
     }
     break;
@@ -1246,7 +1246,7 @@ void Clone_Snapshot::get_wait_mesg(Wait_type wait_type, std::string &info,
       error.assign("Clone wait for DDL file operation timed out");
       break;
     default:
-      ut_ad(false); /* purecov: deadcode */
+      ut_d(ut_error); /* purecov: deadcode */
   }
 }
 
@@ -1338,7 +1338,7 @@ int Clone_Snapshot::wait(Wait_type wait_type, const Clone_file_ctx *ctx,
       default:
         /* purecov: begin deadcode */
         wait = false;
-        ut_ad(false);
+        ut_d(ut_error);
         /* purecov: end */
     }
 
@@ -1383,9 +1383,9 @@ int Clone_Snapshot::wait(Wait_type wait_type, const Clone_file_ctx *ctx,
 
   if (!err && is_timeout) {
     /* purecov: begin deadcode */
-    ut_ad(false);
     err = ER_INTERNAL_ERROR;
     my_error(err, MYF(0), error_mesg.c_str());
+    ut_d(ut_error);
     /* purecov: end */
   }
   return err;
@@ -1518,8 +1518,8 @@ int Clone_Snapshot::begin_ddl_file(Clone_notify::Type type, space_id_t space,
 
   if (file_index == 0) {
     /* purecov: begin deadcode */
-    ut_ad(false);
-    return 0;
+    ut_d(ut_error);
+    ut_o(return 0);
     /* purecov: end */
   }
   --file_index;
@@ -1569,8 +1569,8 @@ void Clone_Snapshot::end_ddl_file(Clone_notify::Type type, space_id_t space) {
 
   if (file_index == 0) {
     /* purecov: begin deadcode */
-    ut_ad(false);
-    return;
+    ut_d(ut_error);
+    ut_o(return );
     /* purecov: end */
   }
   --file_index;

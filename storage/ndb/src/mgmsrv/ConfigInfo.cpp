@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "util/require.h"
 #include <ndb_global.h>
 #include <cstring>
 
@@ -1882,6 +1883,18 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     DB_TOKEN,
     "If set to one only encrypted backups are allowed. If zero both encrypted "
     "and unencrypted backups are allowed.",
+    ConfigInfo::CI_USED,
+    0,
+    ConfigInfo::CI_INT,
+    "0",
+    "0",
+    "1"},
+
+  {
+    CFG_DB_ENCRYPTED_FILE_SYSTEM,
+    "EncryptedFileSystem",
+    DB_TOKEN,
+    "Encryption of local checkpoint and table space files.",
     ConfigInfo::CI_USED,
     0,
     ConfigInfo::CI_INT,

@@ -29,9 +29,9 @@
 #include <stdexcept>
 #include <system_error>
 
-#include "common.h"
+#include <gtest/gtest.h>
+
 #include "dim.h"
-#include "gtest/gtest.h"
 #include "keyring/keyring_memory.h"
 #include "mysql/harness/filesystem.h"
 #include "random_generator.h"

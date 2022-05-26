@@ -866,6 +866,8 @@ xxxxxxxxx	bbbbbb
 xxxxxxxxx	bbbbbb
 DROP TABLE t1;
 SET @@myisam_repair_threads=2;
+Warnings:
+Warning	1681	'@@myisam_repair_threads' is deprecated and will be removed in a future release.
 SHOW VARIABLES LIKE 'myisam_repair%';
 Variable_name	Value
 myisam_repair_threads	2
@@ -1774,7 +1776,7 @@ Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but wil
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `v` char(10) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL
+  `v` char(10) CHARACTER SET utf8mb3 COLLATE utf8_general_ci DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 (v varchar(10), c char(10)) row_format=fixed;
@@ -1827,7 +1829,7 @@ Note	1246	Converting column 'v' from VARCHAR to TEXT
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `v` mediumtext CHARACTER SET utf8 COLLATE utf8_general_ci
+  `v` mediumtext CHARACTER SET utf8mb3 COLLATE utf8_general_ci
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 create table t1 (v varchar(65535)) charset latin1;
@@ -1983,6 +1985,8 @@ Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	I
 t1	MyISAM	10	Fixed	1	#	#	#	3072	#	#	#	#	#	#	#		
 # Enable keys with parallel repair
 SET @@myisam_repair_threads=2;
+Warnings:
+Warning	1681	'@@myisam_repair_threads' is deprecated and will be removed in a future release.
 ALTER TABLE t1 DISABLE KEYS;
 ALTER TABLE t1 ENABLE KEYS;
 SET @@myisam_repair_threads=1;
@@ -2447,7 +2451,7 @@ Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but wil
 
 MyISAM file:         MYSQLD_DATADIR/test/t1
 Record format:       Packed
-Character set:       utf8_general_ci (33)
+Collation:           utf8_general_ci (33)
 Data records:                    0  Deleted blocks:                 0
 Recordlength:                   94
 
@@ -2525,6 +2529,8 @@ test.t1	repair	error	myisam_sort_buffer_size is too small
 test.t1	repair	warning	Number of rows changed from 0 to 7168
 test.t1	repair	status	OK
 SET myisam_repair_threads=2;
+Warnings:
+Warning	1681	'@@myisam_repair_threads' is deprecated and will be removed in a future release.
 REPAIR TABLE t1;
 SET myisam_repair_threads=@@global.myisam_repair_threads;
 SET myisam_sort_buffer_size=@@global.myisam_sort_buffer_size;
@@ -2599,6 +2605,8 @@ DROP TABLE t1;
 #             cardinalities=1
 #
 SET myisam_repair_threads=2;
+Warnings:
+Warning	1681	'@@myisam_repair_threads' is deprecated and will be removed in a future release.
 SET myisam_sort_buffer_size=4096;
 CREATE TABLE t1(a CHAR(255), KEY(a), KEY(a), KEY(a)) charset latin1;
 Warnings:

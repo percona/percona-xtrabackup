@@ -143,8 +143,7 @@ add_harness_plugin(mock_server
   REQUIRES
     mysql_protocol
     duktape
-    ${PROTOBUF_LITE_LIBRARY}
-    mysqlxmessages_lite
+    router_mysqlxmessages
     harness_stdx
     harness-library
     router_lib
@@ -156,8 +155,6 @@ TARGET_INCLUDE_DIRECTORIES(mock_server SYSTEM PUBLIC
   ${DUKTAPE_SOURCE_DIR}/extras/logging/
   ${DUKTAPE_SOURCE_DIR}/extras/module-node/
   ${DUKTAPE_SOURCE_DIR}/extras/module-duktape/
-  ${MYSQLX_GENERATE_DIR}
-  ${CMAKE_SOURCE_DIR}/plugin/x/client
   )
 
 TARGET_INCLUDE_DIRECTORIES(mock_server PUBLIC
@@ -181,8 +178,6 @@ MYSQL_ADD_EXECUTABLE(mysql_server_mock
   LINK_LIBRARIES
   ${common_libraries}
   harness-library
-  mysqlxmessages_lite
-  ${PROTOBUF_LITE_LIBRARY}
   harness_stdx
   harness_net_ts
   SKIP_INSTALL

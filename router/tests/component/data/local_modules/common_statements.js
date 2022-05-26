@@ -11,9 +11,9 @@ var defaults = {
   // - state
   // - xport (if available and needed)
   group_replication_membership: [],
-  group_replication_name: "cluster-specific-id",
+  group_replication_name: "00000000-0000-0000-0000-0000000000g1",
   port: mysqld.session.port,
-  cluster_id: "cluster-specific-id",
+  cluster_id: "00000000-0000-0000-0000-0000000000c1",
   innodb_cluster_name: "test",
   innodb_cluster_replicaset_name: "default",
   use_bootstrap_big_data: false,
@@ -527,8 +527,8 @@ function get_response(stmt_key, options) {
       return {
         "stmt_regex":
             "^UPDATE mysql_innodb_cluster_metadata\\.routers SET attributes =    " +
-            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
-            "'\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
+            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
+            "'\\$\\.version', '.*'\\),    '\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
             "'\\$\\.ROXEndpoint', '.*'\\),    '\\$.MetadataUser', 'mysql_router.*'\\),    '\\$.bootstrapTargetType', '.*'\\) " +
             "WHERE router_id = .*",
         "ok": {}
@@ -773,11 +773,11 @@ function get_response(stmt_key, options) {
       };
     case "router_update_attributes_v1":
       return {
-        "stmt_regex": "UPDATE mysql_innodb_cluster_metadata\.routers" +
-            " SET attributes = JSON_SET\(JSON_SET\(JSON_SET\(JSON_SET\(JSON_SET\(JSON_SET\(" +
-            " IF\(attributes IS NULL, '\{\}', attributes\), '\$\.version', '.*'\)," +
-            " '\$\.RWEndpoint', '.*'\), '\$\.ROEndpoint', '.*'\), '\$\.RWXEndpoint', '.*'\)," +
-            " '\$\.ROXEndpoint', '.*'\), '\$\.MetadataUser', '.*'\) WHERE router_id = " +
+        "stmt_regex": "UPDATE mysql_innodb_cluster_metadata\\.routers" +
+            " SET attributes = JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(" +
+            " IF\\(attributes IS NULL, '\\{\\}', attributes\\), '\\$\\.version', '.*'\\)," +
+            " '\\$\\.RWEndpoint', '.*'\\), '\\$\\.ROEndpoint', '.*'\\), '\\$\\.RWXEndpoint', '.*'\\)," +
+            " '\\$\\.ROXEndpoint', '.*'\\), '\\$\\.MetadataUser', '.*'\\) WHERE router_id = " +
             options.router_id,
         "ok": {}
       };
@@ -818,11 +818,11 @@ function get_response(stmt_key, options) {
       };
     case "router_update_attributes_v2":
       return {
-        "stmt_regex": "UPDATE mysql_innodb_cluster_metadata\.v2_routers" +
-            " SET version = .*, attributes = JSON_SET\(JSON_SET\(JSON_SET\(JSON_SET\(JSON_SET\(" +
-            " IF\(attributes IS NULL, '\{\}', attributes\)," +
-            " '\$\.RWEndpoint', '.*'\), '\$\.ROEndpoint', '.*'\), '\$\.RWXEndpoint', '.*'\)," +
-            " '\$\.ROXEndpoint', '.*'\), '\$\.MetadataUser', '.*'\) WHERE router_id = .*",
+        "stmt_regex": "UPDATE mysql_innodb_cluster_metadata\\.v2_routers" +
+            " SET version = .*, attributes = JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(" +
+            " IF\\(attributes IS NULL, '\\{\\}', attributes\\)," +
+            " '\\$\\.RWEndpoint', '.*'\\), '\\$\\.ROEndpoint', '.*'\\), '\\$\\.RWXEndpoint', '.*'\\)," +
+            " '\\$\\.ROXEndpoint', '.*'\\), '\\$\\.MetadataUser', '.*'\\) WHERE router_id = .*",
         "ok": {}
       };
     case "router_update_attributes_strict_v2":
@@ -1025,27 +1025,41 @@ function get_response(stmt_key, options) {
       };
     case "router_clusterset_all_nodes":
       return {
-        stmt:
-            "select i.address from mysql_innodb_cluster_metadata.v2_instances i where i.cluster_id in " +
-            "(select cluster_id from mysql_innodb_cluster_metadata.v2_cs_members where clusterset_id = (" +
-            "select clusterset_id from mysql_innodb_cluster_metadata.v2_cs_members where cluster_id = '" +
+        stmt: "SELECT i.address, csm.member_role " +
+            "FROM mysql_innodb_cluster_metadata.v2_instances i " +
+            "LEFT JOIN mysql_innodb_cluster_metadata.v2_cs_members csm " +
+            "ON i.cluster_id = csm.cluster_id " +
+            "WHERE i.cluster_id IN ( " +
+            "   SELECT cluster_id " +
+            "   FROM mysql_innodb_cluster_metadata.v2_cs_members " +
+            "   WHERE clusterset_id = " +
+            "      (SELECT clusterset_id " +
+            "       FROM mysql_innodb_cluster_metadata.v2_cs_members " +
+            "       WHERE cluster_id = '" +
             options.clusterset_data
                 .clusters[options.clusterset_target_cluster_id]
                 .uuid +
-            "'))",
+            "') )",
         result: {
           columns: [
             {"type": "STRING", "name": "i.address"},
+            {"type": "STRING", "name": "csm.member_role"},
           ],
 
           rows: options.clusterset_data.clusters
                     .reduce(
                         function(nodes, cluster) {
+                          var cluster_nodes = cluster.nodes;
+                          for (var i = 0; i < cluster_nodes.length; i++) {
+                            cluster_nodes[i].cluster_role = cluster.role;
+                          }
                           return nodes.concat(cluster.nodes);
                         },
                         [])
                     .map(function(node) {
-                      return [node.host + ":" + node.classic_port]
+                      return [
+                        node.host + ":" + node.classic_port, node.cluster_role
+                      ]
                     })
         }
       };

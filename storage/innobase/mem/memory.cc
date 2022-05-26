@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2021, Oracle and/or its affiliates.
+Copyright (c) 1994, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,8 +44,8 @@ external tools. */
 #include <stdarg.h>
 
 /** Duplicates a NUL-terminated string, allocated from a memory heap.
-@param[in]	heap	memory heap where string is allocated
-@param[in]	str	string to be copied
+@param[in]      heap    memory heap where string is allocated
+@param[in]      str     string to be copied
 @return own: a copy of the string */
 char *mem_heap_strdup(mem_heap_t *heap, const char *str) {
   return (static_cast<char *>(mem_heap_dup(heap, str, strlen(str) + 1)));
@@ -94,7 +94,7 @@ static ulint mem_heap_printf_low(
 
   while (*format) {
     /* Does this format specifier have the 'l' length modifier. */
-    ibool is_long = FALSE;
+    bool is_long = false;
 
     /* Length of one parameter. */
     size_t plen;
@@ -112,7 +112,7 @@ static ulint mem_heap_printf_low(
     }
 
     if (*format == 'l') {
-      is_long = TRUE;
+      is_long = true;
       format++;
     }
 
@@ -218,7 +218,7 @@ char *mem_heap_printf(mem_heap_t *heap,   /*!< in: memory heap */
 /** Validates the contents of a memory heap.
 Checks a memory heap for consistency, prints the contents if any error
 is detected. A fatal error is logged if an error is detected.
-@param[in]	heap	Memory heap to validate. */
+@param[in]      heap    Memory heap to validate. */
 void mem_heap_validate(const mem_heap_t *heap) {
   ulint size = 0;
 
@@ -244,20 +244,9 @@ void mem_heap_validate(const mem_heap_t *heap) {
 }
 #endif /* UNIV_DEBUG */
 
-/** Creates a memory heap block where data can be allocated.
- @return own: memory heap block, NULL if did not succeed (only possible
- for MEM_HEAP_BTR_SEARCH type heaps) */
-mem_block_t *mem_heap_create_block_func(
-    mem_heap_t *heap, /*!< in: memory heap or NULL if first block
-                      should be created */
-    ulint n,          /*!< in: number of bytes needed for user data */
-#ifdef UNIV_DEBUG
-    const char *file_name, /*!< in: file name where created */
-    ulint line,            /*!< in: line where created */
-#endif                     /* UNIV_DEBUG */
-    ulint type)            /*!< in: type of heap: MEM_HEAP_DYNAMIC or
-                           MEM_HEAP_BUFFER */
-{
+mem_block_t *mem_heap_create_block(mem_heap_t *heap, ulint n,
+                                   IF_DEBUG(const char *file_name, ulint line, )
+                                       ulint type) {
 #ifndef UNIV_LIBRARY
   buf_block_t *buf_block = nullptr;
 #endif /* !UNIV_LIBRARY */
@@ -390,8 +379,8 @@ mem_block_t *mem_heap_add_block(mem_heap_t *heap, /*!< in: memory heap */
     new_size = n;
   }
 
-  new_block = mem_heap_create_block(heap, new_size, heap->type, heap->file_name,
-                                    heap->line);
+  new_block = mem_heap_create_block(
+      heap, new_size, IF_DEBUG(heap->file_name, heap->line, ) heap->type);
   if (new_block == nullptr) {
     return (nullptr);
   }

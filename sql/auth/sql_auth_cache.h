@@ -45,7 +45,7 @@
 #include "my_inttypes.h"
 #include "my_sharedlib.h"
 #include "my_sys.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql_com.h"   // SCRAMBLE_LENGTH
 #include "mysql_time.h"  // MYSQL_TIME
@@ -103,7 +103,6 @@ class ACL_HOST_AND_IP {
     @param[in]  ip_arg Buffer containing CIDR mask value.
     @param[out] val    Numeric IP mask value on success.
 
-    @return
     @retval false Parsing succeeded.
     @retval true  Parsing failed.
   */
@@ -115,7 +114,6 @@ class ACL_HOST_AND_IP {
     @param[in]  ip_arg Buffer containing subnet mask value.
     @param[out] val    Numeric IP mask value on success.
 
-    @return
     @retval false Parsing succeeded.
     @retval true  Parsing failed.
   */
@@ -127,7 +125,6 @@ class ACL_HOST_AND_IP {
     @param[in]  ip_arg Buffer containing IP value.
     @param[out] val    Numeric IP value on success.
 
-    @return
     @retval !nullptr Parsing succeeded. Returned value is the pointer following
     the buffer holding the IP.
     @retval nullptr  Parsing failed. The buffer does not contain valid IP value.

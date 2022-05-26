@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -80,7 +80,7 @@ inline bool log_block_get_encrypt_bit(const byte *log_block) {
   return (false);
 }
 
-inline void log_block_set_encrypt_bit(byte *log_block, ibool val) {
+inline void log_block_set_encrypt_bit(byte *log_block, bool val) {
   uint32_t field;
 
   field = mach_read_from_2(log_block + LOG_BLOCK_HDR_DATA_LEN);
@@ -143,7 +143,7 @@ inline uint32_t log_block_calc_checksum_crc32(const byte *log_block) {
   return (ut_crc32(log_block, OS_FILE_LOG_BLOCK_SIZE - LOG_BLOCK_TRL_SIZE));
 }
 
-inline uint32_t log_block_calc_checksum_none(const byte *log_block) {
+inline uint32_t log_block_calc_checksum_none(const byte *) {
   return (LOG_NO_CHECKSUM_MAGIC);
 }
 
@@ -295,7 +295,7 @@ inline void log_buffer_flush_to_disk(bool sync) {
 
 #if defined(UNIV_HOTBACKUP) && defined(UNIV_DEBUG)
 /** Print a log file header.
-@param[in]	block	pointer to the log buffer */
+@param[in]      block   pointer to the log buffer */
 static inline void meb_log_print_file_hdr(byte *block) {
   ib::info(ER_IB_MSG_626) << "Log file header:"
                           << " format "

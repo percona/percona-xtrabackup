@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,10 +42,13 @@
 #include "sql/current_thd.h"
 #include "sql/debug_sync.h"  // DEBUG_SYNC
 #include "sql/derror.h"      // ER_THD
-#include "sql/mysqld.h"      // global_system_variables table_alias_charset ...
+#include "sql/filesort.h"
+#include "sql/join_optimizer/walk_access_paths.h"
+#include "sql/mysqld.h"  // global_system_variables table_alias_charset ...
 #include "sql/partition_info.h"
 #include "sql/sql_alter.h"
 #include "sql/sql_class.h"
+#include "sql/sql_executor.h"  // QEP_TAB
 #include "sql/sql_lex.h"
 #ifndef NDEBUG
 #include "sql/sql_test.h"  // print_where
@@ -233,12 +236,12 @@ static MYSQL_THDVAR_UINT(optimized_node_selection, /* name */
 
 static MYSQL_THDVAR_ULONG(batch_size, /* name */
                           PLUGIN_VAR_RQCMDARG, "Batch size in bytes.",
-                          NULL,                /* check func. */
-                          NULL,                /* update func. */
-                          32768,               /* default */
-                          0,                   /* min */
-                          ONE_YEAR_IN_SECONDS, /* max */
-                          0                    /* block */
+                          NULL,                     /* check func. */
+                          NULL,                     /* update func. */
+                          32768,                    /* default */
+                          0,                        /* min */
+                          2UL * 1024 * 1024 * 1024, /* max */
+                          0                         /* block */
 );
 
 static MYSQL_THDVAR_ULONG(
@@ -351,6 +354,8 @@ bool ndb_show_foreign_key_mock_tables(THD *thd) {
   const bool value = THDVAR(thd, show_foreign_key_mock_tables);
   return value;
 }
+
+int ndbcluster_push_to_engine(THD *, AccessPath *, JOIN *);
 
 static int ndbcluster_end(handlerton *, ha_panic_function);
 static bool ndbcluster_show_status(handlerton *, THD *, stat_print_fn *,
@@ -476,16 +481,18 @@ static int check_slave_config() {
   DBUG_TRACE;
 
   if (ndb_get_number_of_channels() > 1) {
+    // Ideally NDB should not impose any limit on the number of non-NDB sources.
     ndb_log_error(
         "NDB Replica: Configuration with number of replication "
         "sources = %u is not supported when applying to NDB",
         ndb_get_number_of_channels());
     return HA_ERR_UNSUPPORTED;
   }
+  // NDB does not yet support replica worker
   if (ndb_mi_get_replica_parallel_workers() > 0) {
     ndb_log_error(
         "NDB Replica: Configuration 'replica_parallel_workers = %lu' is "
-        "not supported when applying to NDB",
+        "not supported when applying to NDB, use 'replica_parallel_workers=0'.",
         ndb_mi_get_replica_parallel_workers());
     return HA_ERR_UNSUPPORTED;
   }
@@ -568,8 +575,12 @@ static int check_slave_state(THD *thd) {
 
           int rc = 0;
           while (0 == (rc = sop->nextResult(true))) {
-            Uint32 serverid = server_id_ra->u_32_value();
-            Uint64 epoch = epoch_ra->u_64_value();
+            const Uint32 serverid = server_id_ra->u_32_value();
+            const Uint64 epoch = epoch_ra->u_64_value();
+
+            // Save all server_id's found in ndb_apply_status, they will later
+            // be used to avoid overwriting any epochs
+            g_ndb_slave_state.saveServerId(serverid);
 
             if ((serverid == ::server_id) ||
                 (ndb_mi_get_ignore_server_id(serverid))) {
@@ -1179,7 +1190,7 @@ void ha_ndbcluster::set_rec_per_key(THD *thd) {
   */
   for (uint i = 0; i < table_share->keys; i++) {
     KEY *const key_info = table->key_info + i;
-    switch (get_index_type(i)) {
+    switch (m_index[i].type) {
       case UNIQUE_INDEX:
       case PRIMARY_KEY_INDEX: {
         // Index is unique when all 'key_parts' are specified,
@@ -1224,8 +1235,8 @@ void ha_ndbcluster::set_rec_per_key(THD *thd) {
           // no fallback method...
           break;
         }
-      default:
-        assert(false);
+      case UNDEFINED_INDEX:  // index is currently unavailable
+        break;
     }
   }
 }
@@ -2176,6 +2187,7 @@ static bool check_same_order_in_index(const KEY *key_info,
 void NDB_INDEX_DATA::create_attrid_map(const KEY *key_info,
                                        const NdbDictionary::Index *index) {
   DBUG_TRACE;
+  assert(index);
   assert(!attrid_map);  // Should not already have been created
 
   if (key_info->user_defined_key_parts == 1) {
@@ -2223,7 +2235,7 @@ int ha_ndbcluster::create_indexes(THD *thd, TABLE *tab,
 
   for (uint i = 0; i < tab->s->keys; i++, key_info++, key_name++) {
     const char *index_name = *key_name;
-    NDB_INDEX_TYPE idx_type = get_index_type_from_table(i);
+    NDB_INDEX_TYPE idx_type = get_declared_index_type(i);
     error = create_index(thd, index_name, key_info, idx_type, ndbtab);
     if (error) {
       DBUG_PRINT("error", ("Failed to create index %u", i));
@@ -2254,17 +2266,13 @@ static void ndb_protect_char(const char *from, char *to, uint to_length,
   to[tpos] = '\0';
 }
 
-/*
-  Associate a direct reference to an index handle
-  with an index (for faster access)
- */
 int ha_ndbcluster::open_index(NdbDictionary::Dictionary *dict,
                               const KEY *key_info, const char *key_name,
                               uint index_no) {
   DBUG_TRACE;
 
-  const NDB_INDEX_TYPE idx_type = get_index_type_from_table(index_no);
-  m_index[index_no].type = idx_type;
+  NDB_INDEX_TYPE idx_type = get_declared_index_type(index_no);
+  NDB_INDEX_DATA &index_data = m_index[index_no];
 
   char index_name[FN_LEN + 1];
   ndb_protect_char(key_name, index_name, sizeof(index_name) - 1, '/');
@@ -2272,38 +2280,76 @@ int ha_ndbcluster::open_index(NdbDictionary::Dictionary *dict,
     DBUG_PRINT("info", ("Get handle to index %s", index_name));
     const NdbDictionary::Index *index =
         dict->getIndexGlobal(index_name, *m_table);
-    if (!index) ERR_RETURN(dict->getNdbError());
-    DBUG_PRINT("info",
-               ("index: %p  id: %d  version: %d.%d  status: %d", index,
-                index->getObjectId(), index->getObjectVersion() & 0xFFFFFF,
-                index->getObjectVersion() >> 24, index->getObjectStatus()));
-    assert(index->getObjectStatus() == NdbDictionary::Object::Retrieved);
-    m_index[index_no].index = index;
+    if (index) {
+      DBUG_PRINT("info",
+                 ("index: %p  id: %d  version: %d.%d  status: %d", index,
+                  index->getObjectId(), index->getObjectVersion() & 0xFFFFFF,
+                  index->getObjectVersion() >> 24, index->getObjectStatus()));
+      assert(index->getObjectStatus() == NdbDictionary::Object::Retrieved);
+      index_data.index = index;
+    } else {
+      const NdbError &err = dict->getNdbError();
+      if (err.code != 4243) ERR_RETURN(err);
+      // Index Not Found. Proceed with this index unavailable.
+    }
   }
 
   if (idx_type == UNIQUE_ORDERED_INDEX || idx_type == UNIQUE_INDEX) {
     char unique_index_name[FN_LEN + 1];
     static const char *unique_suffix = "$unique";
-    m_has_unique_index = true;
     strxnmov(unique_index_name, FN_LEN, index_name, unique_suffix, NullS);
     DBUG_PRINT("info", ("Get handle to unique_index %s", unique_index_name));
     const NdbDictionary::Index *index =
         dict->getIndexGlobal(unique_index_name, *m_table);
-    if (!index) ERR_RETURN(dict->getNdbError());
-    DBUG_PRINT("info",
-               ("index: %p  id: %d  version: %d.%d  status: %d", index,
-                index->getObjectId(), index->getObjectVersion() & 0xFFFFFF,
-                index->getObjectVersion() >> 24, index->getObjectStatus()));
-    assert(index->getObjectStatus() == NdbDictionary::Object::Retrieved);
-    m_index[index_no].unique_index = index;
-
-    // Create attrid map for unique index
-    m_index[index_no].create_attrid_map(key_info, index);
+    if (index) {
+      DBUG_PRINT("info",
+                 ("index: %p  id: %d  version: %d.%d  status: %d", index,
+                  index->getObjectId(), index->getObjectVersion() & 0xFFFFFF,
+                  index->getObjectVersion() >> 24, index->getObjectStatus()));
+      assert(index->getObjectStatus() == NdbDictionary::Object::Retrieved);
+      m_has_unique_index = true;
+      index_data.unique_index = index;
+      // Create attrid map for unique index
+      index_data.create_attrid_map(key_info, index);
+    } else {
+      const NdbError &err = dict->getNdbError();
+      if (err.code != 4243) ERR_RETURN(err);
+      // Index Not Found. Proceed with this index unavailable.
+    }
   }
+
+  /* Set type of index as actually opened */
+  switch (idx_type) {
+    case UNDEFINED_INDEX:
+      assert(false);
+      break;
+    case PRIMARY_KEY_INDEX:
+      break;
+    case PRIMARY_KEY_ORDERED_INDEX:
+      if (!index_data.index) idx_type = PRIMARY_KEY_INDEX;
+      break;
+    case UNIQUE_INDEX:
+      if (!index_data.unique_index) idx_type = UNDEFINED_INDEX;
+      break;
+    case UNIQUE_ORDERED_INDEX:
+      if (!(index_data.unique_index || index_data.index))
+        idx_type = UNDEFINED_INDEX;
+      else if (!index_data.unique_index)
+        idx_type = ORDERED_INDEX;
+      else if (!index_data.index)
+        idx_type = UNIQUE_INDEX;
+      break;
+    case ORDERED_INDEX:
+      if (!index_data.index) idx_type = UNDEFINED_INDEX;
+      break;
+  }
+  index_data.type = idx_type;
+
+  if (idx_type == UNDEFINED_INDEX) return 0;
 
   if (idx_type == PRIMARY_KEY_ORDERED_INDEX || idx_type == PRIMARY_KEY_INDEX) {
     // Create attrid map for primary key
-    m_index[index_no].create_attrid_map(key_info, m_table);
+    index_data.create_attrid_map(key_info, m_table);
   }
 
   return open_index_ndb_record(dict, key_info, index_no);
@@ -2620,24 +2666,31 @@ int ha_ndbcluster::inplace__drop_index(NdbDictionary::Dictionary *dict,
 }
 
 /**
-  Decode the type of an index from information
+  Decode the declared type of an index from information
   provided in table object.
 */
-NDB_INDEX_TYPE ha_ndbcluster::get_index_type_from_table(uint index_num) const {
-  return get_index_type_from_key(index_num, table_share->key_info,
-                                 index_num == table_share->primary_key);
-}
-
-NDB_INDEX_TYPE ha_ndbcluster::get_index_type_from_key(uint index_num,
-                                                      const KEY *key_info,
-                                                      bool primary) const {
+NDB_INDEX_TYPE get_index_type_from_key(uint index_num, const KEY *key_info,
+                                       bool primary) {
   const bool is_hash_index = (key_info[index_num].algorithm == HA_KEY_ALG_HASH);
   if (primary)
     return is_hash_index ? PRIMARY_KEY_INDEX : PRIMARY_KEY_ORDERED_INDEX;
 
-  return ((key_info[index_num].flags & HA_NOSAME)
-              ? (is_hash_index ? UNIQUE_INDEX : UNIQUE_ORDERED_INDEX)
-              : ORDERED_INDEX);
+  if (!(key_info[index_num].flags & HA_NOSAME)) return ORDERED_INDEX;
+
+  return is_hash_index ? UNIQUE_INDEX : UNIQUE_ORDERED_INDEX;
+}
+
+inline NDB_INDEX_TYPE ha_ndbcluster::get_declared_index_type(uint idxno) const {
+  return get_index_type_from_key(idxno, table_share->key_info,
+                                 idxno == table_share->primary_key);
+}
+
+/* Return the actual type of the index as currently available
+ */
+NDB_INDEX_TYPE ha_ndbcluster::get_index_type(uint idx_no) const {
+  assert(idx_no < MAX_KEY);
+  assert(m_table);
+  return m_index[idx_no].type;
 }
 
 void ha_ndbcluster::release_metadata(NdbDictionary::Dictionary *dict,
@@ -2688,36 +2741,6 @@ static inline NdbOperation::LockMode get_ndb_lock_mode(
   return NdbOperation::LM_CommittedRead;
 }
 
-static const ulong index_type_flags[] = {
-    /* UNDEFINED_INDEX */
-    0,
-
-    /* PRIMARY_KEY_INDEX */
-    HA_ONLY_WHOLE_INDEX,
-
-    /* PRIMARY_KEY_ORDERED_INDEX */
-    /*
-       Enable HA_KEYREAD_ONLY when "sorted" indexes are supported,
-       thus ORDER BY clauses can be optimized by reading directly
-       through the index.
-    */
-    // HA_KEYREAD_ONLY |
-    HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE | HA_READ_ORDER,
-
-    /* UNIQUE_INDEX */
-    HA_ONLY_WHOLE_INDEX | HA_TABLE_SCAN_ON_NULL,
-
-    /* UNIQUE_ORDERED_INDEX */
-    HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE | HA_READ_ORDER,
-
-    /* ORDERED_INDEX */
-    HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE | HA_READ_ORDER};
-
-NDB_INDEX_TYPE ha_ndbcluster::get_index_type(uint idx_no) const {
-  assert(idx_no < MAX_KEY);
-  return m_index[idx_no].type;
-}
-
 inline bool ha_ndbcluster::has_null_in_unique_index(uint idx_no) const {
   assert(idx_no < MAX_KEY);
   return m_index[idx_no].null_in_unique_index;
@@ -2726,16 +2749,44 @@ inline bool ha_ndbcluster::has_null_in_unique_index(uint idx_no) const {
 /**
   Get the flags for an index.
 
-  @return
-    flags depending on the type of the index.
+  The index currently available in NDB may differ from the one defined in the
+  data dictionary, if ndb_restore or ndb_drop_index has caused some component
+  of it to be dropped.
+
+  Generally, index_flags() is called after the table has been open, so that the
+  NdbDictionary::Table pointer in m_table is non-null, and index_flags()
+  can return the flags for the index as actually available.
+
+  But in a small number of cases index_flags() is called without an open table.
+  This happens in CREATE TABLE, where index_flags() is called from
+  setup_key_part_field(). It also happens in DD code as discussed in a
+  long comment at fill_dd_indexes_from_keyinfo() in dd_table.cc. And it can
+  happen as the result of an information_schema or SHOW query. In these cases
+  index_flags() returns the flags for the index as declared in the dictionary.
 */
 
-inline ulong ha_ndbcluster::index_flags(uint idx_no, uint, bool) const {
-  DBUG_TRACE;
-  DBUG_PRINT("enter", ("idx_no: %u", idx_no));
-  const NDB_INDEX_TYPE index_type = get_index_type_from_table(idx_no);
-  assert(index_type < array_elements(index_type_flags));
-  return index_type_flags[index_type] | HA_KEY_SCAN_NOT_ROR;
+ulong ha_ndbcluster::index_flags(uint idx_no, uint, bool) const {
+  const NDB_INDEX_TYPE index_type =
+      m_table ? get_index_type(idx_no) : get_declared_index_type(idx_no);
+
+  switch (index_type) {
+    case UNDEFINED_INDEX:
+      return 0;
+
+    case PRIMARY_KEY_INDEX:
+      return HA_ONLY_WHOLE_INDEX;
+
+    case UNIQUE_INDEX:
+      return HA_ONLY_WHOLE_INDEX | HA_TABLE_SCAN_ON_NULL;
+
+    case PRIMARY_KEY_ORDERED_INDEX:
+    case UNIQUE_ORDERED_INDEX:
+    case ORDERED_INDEX:
+      return HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE | HA_READ_ORDER |
+             HA_KEY_SCAN_NOT_ROR;
+  }
+  assert(false);  // unreachable
+  return 0;
 }
 
 bool ha_ndbcluster::primary_key_is_clustered() const {
@@ -2750,8 +2801,7 @@ bool ha_ndbcluster::primary_key_is_clustered() const {
     (for which there is IO to read data when scanning index)
     but that will need to be handled later...
   */
-  const NDB_INDEX_TYPE idx_type =
-      get_index_type_from_table(table->s->primary_key);
+  const NDB_INDEX_TYPE idx_type = m_index[table->s->primary_key].type;
   return (idx_type == PRIMARY_KEY_ORDERED_INDEX ||
           idx_type == UNIQUE_ORDERED_INDEX || idx_type == ORDERED_INDEX);
 }
@@ -2810,10 +2860,6 @@ int ha_ndbcluster::pk_read(const uchar *key, uchar *buf, uint32 *part_id) {
       return ndb_err(trans);
     }
   } else {
-    if (m_pushed_join_operation == PUSHED_ROOT) {
-      m_thd_ndb->m_pushed_queries_dropped++;
-    }
-
     const NdbOperation *op;
     if (!(op = pk_unique_index_read_key(
               table->s->primary_key, key, buf, lm,
@@ -3120,10 +3166,6 @@ int ha_ndbcluster::unique_index_read(const uchar *key, uchar *buf) {
       return ndb_err(trans);
     }
   } else {
-    if (m_pushed_join_operation == PUSHED_ROOT) {
-      m_thd_ndb->m_pushed_queries_dropped++;
-    }
-
     const NdbOperation *op;
 
     if (!(op = pk_unique_index_read_key(active_index, key, buf, lm, NULL)))
@@ -3517,8 +3559,6 @@ const NdbOperation *ha_ndbcluster::pk_unique_index_read_key(
   NdbOperation::OperationOptions *poptions = NULL;
   options.optionsPresent = 0;
   NdbOperation::GetValueSpec gets[2];
-  const NDB_INDEX_TYPE idx_type =
-      (idx != MAX_KEY) ? get_index_type(idx) : UNDEFINED_INDEX;
 
   assert(m_thd_ndb->trans);
 
@@ -3565,23 +3605,14 @@ const NdbOperation *ha_ndbcluster::pk_unique_index_read_key(
   /* Perform 'empty update' to mark the read in the binlog, iff required */
   /*
    * Lock_mode = exclusive
-   * Index = primary or unique
+   * Index = primary or unique (always true inside this method)
+   * Index is not the hidden primary key
    * Session_state = marking_exclusive_reads
    * THEN
    * issue updateTuple with AnyValue explicitly set
    */
-  if ((lm == NdbOperation::LM_Exclusive) &&
-      /*
-        We don't need to check index type
-        (idx_type == PRIMARY_KEY_INDEX ||
-        idx_type == PRIMARY_KEY_ORDERED_INDEX ||
-        idx_type == UNIQUE_ORDERED_INDEX ||
-        idx_type == UNIQUE_INDEX)
-        since this method is only invoked for
-        primary or unique indexes, but we do need to check
-        if it was a hidden primary key.
-      */
-      idx_type != UNDEFINED_INDEX && THDVAR(current_thd, log_exclusive_reads)) {
+  if ((lm == NdbOperation::LM_Exclusive) && idx != MAX_KEY &&
+      THDVAR(current_thd, log_exclusive_reads)) {
     if (log_exclusive_read(key_rec, key, buf, ppartition_id) != 0) return NULL;
   }
 
@@ -3796,10 +3827,6 @@ int ha_ndbcluster::ordered_index_scan(const key_range *start_key,
     // Can't have BLOB in pushed joins (yet)
     assert(!uses_blob_value(table->read_set));
   } else {
-    if (m_pushed_join_operation == PUSHED_ROOT) {
-      m_thd_ndb->m_pushed_queries_dropped++;
-    }
-
     NdbScanOperation::ScanOptions options;
     options.optionsPresent = NdbScanOperation::ScanOptions::SO_SCANFLAGS;
     options.scan_flags = 0;
@@ -3958,10 +3985,6 @@ int ha_ndbcluster::full_table_scan(const KEY *key_info,
     // Can't have BLOB in pushed joins (yet)
     assert(!uses_blob_value(table->read_set));
   } else {
-    if (m_pushed_join_operation == PUSHED_ROOT) {
-      m_thd_ndb->m_pushed_queries_dropped++;
-    }
-
     NdbScanOperation *op;
     NdbInterpretedCode code(m_table);
 
@@ -6230,9 +6253,22 @@ static void get_default_value(void *def_val, Field *field) {
   }
 }
 
+static inline int fail_index_offline(TABLE *t, int index) {
+  KEY *key_info = t->key_info + index;
+  push_warning_printf(
+      t->in_use, Sql_condition::SL_WARNING, ER_NOT_KEYFILE,
+      "Index %s is not available in NDB. Use \"ALTER TABLE %s ALTER INDEX %s "
+      "INVISIBLE\" to prevent MySQL from attempting to access it, or use "
+      "\"ndb_restore --rebuild-indexes\" to rebuild it.",
+      key_info->name, t->s->table_name.str, key_info->name);
+  return HA_ERR_CRASHED;
+}
+
 int ha_ndbcluster::index_init(uint index, bool sorted) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("index: %u  sorted: %d", index, sorted));
+  if (index < MAX_KEY && m_index[index].type == UNDEFINED_INDEX)
+    return fail_index_offline(table, index);
   active_index = index;
   m_sorted = sorted;
   /*
@@ -6325,6 +6361,8 @@ int ha_ndbcluster::index_prev(uchar *buf) {
 
 int ha_ndbcluster::index_first(uchar *buf) {
   DBUG_TRACE;
+  if (!m_index[active_index].index)
+    return fail_index_offline(table, active_index);
   ha_statistic_increment(&System_status_var::ha_read_first_count);
   // Start the ordered index scan and fetch the first row
 
@@ -6335,6 +6373,8 @@ int ha_ndbcluster::index_first(uchar *buf) {
 
 int ha_ndbcluster::index_last(uchar *buf) {
   DBUG_TRACE;
+  if (!m_index[active_index].index)
+    return fail_index_offline(table, active_index);
   ha_statistic_increment(&System_status_var::ha_read_last_count);
   const int error = ordered_index_scan(0, 0, m_sorted, true, buf, NULL);
   return error;
@@ -6870,9 +6910,11 @@ void ha_ndbcluster::get_dynamic_partition_info(ha_statistics *stat_info,
   DBUG_TRACE;
   DBUG_PRINT("enter", ("part_id: %d", part_id));
 
-  THD *thd = table->in_use;
-  if (!thd) thd = current_thd;
-
+  THD *thd = current_thd;
+  if (check_ndb_connection(thd)) {
+    my_error(HA_ERR_NO_CONNECTION, MYF(0));
+    return;
+  }
   Thd_ndb *thd_ndb = get_thd_ndb(thd);
 
   // Checksum not supported, set it to 0
@@ -7348,6 +7390,14 @@ static int ndbcluster_update_apply_status(THD *thd, int do_update) {
   int r [[maybe_unused]] = 0;
   r |= (op = trans->getNdbOperation(ndbtab)) == 0;
   assert(r == 0);
+
+  if (!do_update) {
+    // Don't overwrite when already seen epochs from this server_id
+    if (g_ndb_slave_state.seenServerId(thd->server_id)) {
+      do_update = true;
+    }
+  }
+
   if (do_update)
     r |= op->updateTuple();
   else
@@ -9442,6 +9492,27 @@ int ha_ndbcluster::create(const char *path [[maybe_unused]],
     // Creating table with temporary name, table will only be access by this
     // MySQL Server -> skip schema distribution
     DBUG_PRINT("info", ("Creating table with temporary name"));
+
+    ndbcluster::ndbrequire(is_prefix(tabname, "#sql2") == 0);
+
+    // Checking if there is no table with given temporary name in NDB
+    // If such a table exists, it will be dropped to allow name reuse
+    Ndb_table_guard ndbtab_g(ndb, dbname, tabname);
+    const NDBTAB *ndbtab = ndbtab_g.get_table();
+    constexpr int flag = NdbDictionary::Dictionary::DropTableCascadeConstraints;
+
+    if (ndbtab != nullptr) {
+      thd_ndb->push_warning(
+          "The temporary named table %s.%s already exists, it will be removed",
+          tabname, dbname);
+      if (ndb->getDictionary()->dropTableGlobal(*ndbtab, flag) != 0) {
+        thd_ndb->push_warning(
+            "Attempt to drop temporary named table %s.%s failed", dbname,
+            tabname);
+        return create.failed_in_NDB(ndb->getDictionary()->getNdbError());
+      }
+    }
+
   } else {
     // Prepare schema distribution
     if (!schema_dist_client.prepare(dbname, tabname)) {
@@ -10423,6 +10494,14 @@ int rename_table_impl(THD *thd, Ndb *ndb,
                "Simulated : Failed to rename new table to target name.");
       DBUG_SET("-d,ndb_simulate_alter_failure_rename2");
       return ER_INTERNAL_ERROR;
+    }
+  });
+
+  DBUG_EXECUTE_IF("ndb_simulate_crash_during_alter_table_rename1", {
+    // Force mysqld crash during copy alter first rename
+    // before renaming old table to a temp name
+    if (!ndb_name_is_temp(old_tabname) && ndb_name_is_temp(new_tabname)) {
+      DBUG_SUICIDE();
     }
   });
 
@@ -11889,19 +11968,6 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
     return 1;
   }
 
-  // Don't allow discovery of the index stat tables which aren't synchronized
-  // to the DD by the binlog thread due to a timing issue post initial system
-  // restarts. The table contents are incomprehensible without some kind of
-  // parsing and are thus not exposed to the MySQL Server.
-  if (!strcmp("mysql", db) && (!strcmp("ndb_index_stat_head", name) ||
-                               !strcmp("ndb_index_stat_sample", name))) {
-    thd_ndb->push_warning(
-        "NDB index statistics tables are not exposed to the "
-        "MySQL Server. The tables can be accessed using NDB "
-        "tools such as ndb_select_all");
-    return 1;
-  }
-
   Ndb_table_guard ndbtab_g(ndb, db, name);
   const NDBTAB *ndbtab = ndbtab_g.get_table();
   if (ndbtab == nullptr) {
@@ -12077,6 +12143,12 @@ static int ndbcluster_table_exists_in_engine(handlerton *, THD *thd,
 
   if (!(ndb = check_ndb_in_thd(thd))) return HA_ERR_NO_CONNECTION;
 
+  // ignore temporary named tables left behind by copy alter
+  // if the temporary named table exists, it will be removed before creating
+  if (ndb_name_is_temp(name)) {
+    return HA_ERR_NO_SUCH_TABLE;
+  }
+
   const Thd_ndb *thd_ndb = get_thd_ndb(thd);
   if (thd_ndb->check_option(Thd_ndb::CREATE_UTIL_TABLE)) {
     DBUG_PRINT("exit", ("Simulate that table does not exist in NDB"));
@@ -12089,6 +12161,7 @@ static int ndbcluster_table_exists_in_engine(handlerton *, THD *thd,
     ndb_to_mysql_error(&dict->getNdbError());
     return HA_ERR_NO_SUCH_TABLE;
   }
+
   for (uint i = 0; i < list.count; i++) {
     NdbDictionary::Dictionary::List::Element &elmt = list.elements[i];
     if (my_strcasecmp(table_alias_charset, elmt.database, db)) continue;
@@ -12219,7 +12292,7 @@ static bool wait_setup_completed(ulong max_wait_seconds) {
 
   while (std::chrono::steady_clock::now() < timeout_time) {
     if (ndb_binlog_is_initialized() &&
-        Ndb_index_stat_thread::is_setup_complete()) {
+        ndb_index_stat_thread.is_setup_complete()) {
       return true;
     }
     ndb_milli_sleep(100);
@@ -12544,12 +12617,15 @@ static int ndbcluster_init(void *handlerton_ptr) {
         "Changed global value of binlog_format from STATEMENT to MIXED");
   }
 
-  if (opt_mts_replica_parallel_workers) {
+  // NDB should probably not be changing the value of global settings, but
+  // the data structures used to maintain replica state are not thread-safe,
+  // so this is necessary until that is fixed in wl#14885.
+  const ulong max_replica_workers = 0;
+  if (opt_mts_replica_parallel_workers > max_replica_workers) {
     ndb_log_info(
-        "Changed global value of --replica-parallel-workers "
-        "from %lu to 0",
-        opt_mts_replica_parallel_workers);
-    opt_mts_replica_parallel_workers = 0;
+        "Changed global value of --replica-parallel-workers from %lu to %lu",
+        opt_mts_replica_parallel_workers, max_replica_workers);
+    opt_mts_replica_parallel_workers = max_replica_workers;
   }
 
   if (ndb_index_stat_thread.init() ||
@@ -12586,6 +12662,7 @@ static int ndbcluster_init(void *handlerton_ptr) {
                 HTON_SUPPORTS_FOREIGN_KEYS | HTON_SUPPORTS_ATOMIC_DDL;
   hton->discover = ndbcluster_discover;
   hton->table_exists_in_engine = ndbcluster_table_exists_in_engine;
+  hton->push_to_engine = ndbcluster_push_to_engine;
   hton->is_supported_system_table = is_supported_system_table;
 
   // Install dummy callbacks to avoid writing <tablename>_<id>.SDI files
@@ -12774,6 +12851,8 @@ ha_rows ha_ndbcluster::records_in_range(uint inx, key_range *min_key,
   const NDB_INDEX_TYPE idx_type = get_index_type(inx);
 
   DBUG_TRACE;
+
+  if (idx_type == UNDEFINED_INDEX) return HA_POS_ERROR;  // index is offline
 
   if (key_info->flags & HA_NOSAME) {  // 0)
     // Is a potential single row lookup operation.
@@ -13726,9 +13805,13 @@ int ha_ndbcluster::multi_range_start_retrievals(uint starting_range) {
             return error;
           }
         } else {
-          if (m_pushed_join_operation == PUSHED_ROOT) {
+          if (m_pushed_join_operation == PUSHED_ROOT &&
+              !m_disable_pushed_join) {
             DBUG_PRINT("info",
                        ("Cannot push join due to incomplete implementation."));
+            m_thd_ndb->push_warning(
+                "Prepared pushed join could not be executed"
+                ", not implemented for UNIQUE KEY 'multi range read'");
             m_thd_ndb->m_pushed_queries_dropped++;
           }
           if (!(op = pk_unique_index_read_key(
@@ -14031,107 +14114,369 @@ int ha_ndbcluster::read_multi_range_fetch_next() {
 }
 
 /**
+ * Use whatever conditions got pushed to the table, either as part of a
+ * pushed join or not. Update the FILTER AccessPath with the remaining
+ * conditions not pushed, possibly clearing the entire FILTER condition.
+ * In such cases the FILTER AccessPath may later be entirely eliminated.
+ */
+void accept_pushed_conditions(const TABLE *table, AccessPath *filter) {
+  if (table == nullptr) return;
+  ha_ndbcluster *const handler = dynamic_cast<ha_ndbcluster *>(table->file);
+  if (handler == nullptr) return;
+
+  // Is a NDB table
+  const Item *remainder;
+  assert(handler->pushed_cond == nullptr);
+  if (handler->m_cond.use_cond_push(handler->pushed_cond, remainder) == 0) {
+    if (handler->pushed_cond != nullptr) {  // Something was pushed
+      assert(filter->filter().condition != nullptr);
+      filter->filter().condition = const_cast<Item *>(remainder);
+
+      // To get correct explain output: (Does NOT affect what is executed)
+      // Need to set the QEP_TAB condition as well. Note that QEP_TABs
+      // are not 'executed' any longer -> affects only explain output.
+      // Can be removed when/if the 'traditional' explain is rewritten
+      // to not use the QEP_TAB's
+      QEP_TAB *qep_tab = table->reginfo.qep_tab;
+      if (qep_tab != nullptr) {
+        // The Hypergraph-optimizer do not construct QEP_TAB's
+        qep_tab->set_condition(const_cast<Item *>(remainder));
+        qep_tab->set_condition_optim();
+      }
+    }
+  }
+}
+
+/**
+ * 'path' is a basic access path, refering 'table'. If it was pushed
+ * as a child in a pushed join a 'PushedJoinRefAccessPath' has to be
+ * constructed, replacing the original 'path' for this table.
+ *
+ * Returns the complete table_map for all tables being members of the
+ * same pushed join as 'table'.
+ */
+static void accept_pushed_child_joins(THD *thd, AccessPath *path, TABLE *table,
+                                      TABLE_REF *ref, bool is_unique) {
+  const TABLE *const pushed_join_root = table->file->member_of_pushed_join();
+  if (pushed_join_root == nullptr) return;
+  if (pushed_join_root == table) return;
+
+  assert(path->type == AccessPath::EQ_REF || path->type == AccessPath::REF);
+  assert(is_unique == (path->type == AccessPath::EQ_REF));
+
+  // Is a 'child' in the pushed join. As it receive its result rows
+  // as the result of navigating its parents, it need a special
+  // AccessPath operation for retrieving the results.
+  AccessPath *pushedJoinRef =
+      NewPushedJoinRefAccessPath(thd, table, ref,
+                                 /*ordered=*/false, is_unique,
+                                 /*count_examined_rows=*/true);
+  // Keep the rows/cost statistics.
+  CopyBasicProperties(*path, pushedJoinRef);
+  *path = std::move(*pushedJoinRef);
+}
+
+#ifndef NDEBUG
+/**
+ * Check if any tables within the (sub-)path is a member of a pushed join
+ */
+static bool has_pushed_members(AccessPath *path, const JOIN *join) {
+  bool has_pushed_joins = false;
+  auto func = [&has_pushed_joins](AccessPath *subpath, const JOIN *) {
+    const TABLE *table = GetBasicTable(subpath);
+    if (table != nullptr && table->file->member_of_pushed_join()) {
+      has_pushed_joins = true;
+      return true;
+    }
+    return false;  // -> Allow walker to continue
+  };
+  WalkAccessPaths(path, join, WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK, func);
+  return has_pushed_joins;
+}
+#endif
+
+/**
+ * Check if any tables within the (sub-)path is a member of
+ * a pushed join not entirely inside this path.
+ * (Check the AQP 'Query_scope')
+ */
+static bool has_pushed_members_outside_of_branch(AccessPath *path,
+                                                 const JOIN *join) {
+  table_map branch_map(0);
+  table_map pushed_map(0);
+
+  auto func = [&branch_map, &pushed_map](AccessPath *subpath, const JOIN *) {
+    const TABLE *table = GetBasicTable(subpath);
+    if (table == nullptr) return false;
+    if (table->pos_in_table_list == nullptr) return false;
+
+    // Is refering a TABLE: Collect table_map of tables in path,
+    // and any pushed joins having table(s) within path.
+    const table_map map = table->pos_in_table_list->map();
+    branch_map |= map;
+    if ((pushed_map & map) == 0) {  // Not already seen
+      pushed_map |= table->file->tables_in_pushed_join();
+    }
+    return false;  // -> Allow walker to continue
+  };
+  WalkAccessPaths(path, join, WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK, func);
+  return ((pushed_map & ~branch_map) != 0);
+}
+
+/**
+ * Walk through the AccessPath three, possibly modify it as needed to adapt it
+ * to query elements which got pushed down to the NDB engine.
+ */
+static void fixup_pushed_access_paths(THD *thd, AccessPath *path,
+                                      const JOIN *join, AccessPath *filter) {
+  /**
+   * Define the lambda function which modify the Accesspath to take advantage
+   * of whatever we pushed to the NDB engine.
+   */
+  auto fixupFunc = [thd, filter](AccessPath *subpath, const JOIN *join) {
+    /**
+     * Note that for most of the cases handled below, we manually handle the
+     * child-walk, and 'return true' which will stop the 'upper' callee from
+     * walking further down.
+     */
+    switch (subpath->type) {
+      /**
+       * Note that REF / EQ_REF are the only TABLE refering AccessPath types
+       * which may be pushed as a 'child' in a pushed join. Such 'child' needs
+       * changes of their AccessPath done by accept_pushed_child_joins()
+       */
+      case AccessPath::REF: {
+        const auto &param = subpath->ref();
+        accept_pushed_conditions(param.table, filter);
+        accept_pushed_child_joins(thd, subpath, param.table, param.ref,
+                                  /*is_unique=*/false);
+        return true;
+      }
+      case AccessPath::EQ_REF: {
+        const auto &param = subpath->eq_ref();
+        accept_pushed_conditions(param.table, filter);
+        accept_pushed_child_joins(thd, subpath, param.table, param.ref,
+                                  /*is_unique=*/true);
+        return true;
+      }
+      /**
+       * Other AccessPath types refering a TABLE may have a pushed condition
+       * and/or being a root in a set of pushed joins.
+       */
+      default: {
+        const TABLE *table = GetBasicTable(subpath);
+        if (table != nullptr) {  // Is refering a TABLE
+          accept_pushed_conditions(table, filter);
+          // Can not push as a ChildJoin:
+          assert(table->file->member_of_pushed_join() == nullptr ||
+                 table->file->member_of_pushed_join() == table);
+          return true;
+        }
+        break;
+      }
+      /**
+       * FILTERs may be pushed down to the engine when accessing the TABLE.
+       * Possibly eliminating the entire FILTER operation.
+       */
+      case AccessPath::FILTER: {
+        auto &param = subpath->filter();
+        fixup_pushed_access_paths(thd, param.child, join, /*filter=*/subpath);
+
+        if (param.condition == nullptr) {
+          // Entire FILTER condition was pushed down.
+          // Remove the FILTER operation, keep the estimated rows/cost.
+          // (Used for explain only, query plan is already decided)
+          param.child->num_output_rows = subpath->num_output_rows;
+          param.child->cost = subpath->cost;
+          *subpath = std::move(*param.child);
+        }
+        return true;
+      }
+      /**
+       * HASH_JOINs may gracefully start writing to temporary 'chunks-files',
+       * or use 'spill_to_disk' strategy for INNER-joins if the join_buffer
+       * is too small. (We can never guarantee that we can avoid this too-small
+       * situation, so need to protect against any ill effects of it,
+       * or handle it).
+       * If written to such temporary files, we need to ensure that entire
+       * pushed join is part of what is being written - We can't go back later
+       * and re-establish the parent-child relations between parent rows in
+       * a temporary file, and child rows still not fetched.
+       *
+       * 1) If pushed, the inner 'HASH-build' branch need to contain all
+       *    tables pushed as part of it. Such that the complete pushed join
+       *    is evaluated and written to the chunk files. This is handled by the
+       *    AQP creating a seperate HASH-scope for this branch.
+       *    (Just assert it below.)
+       * 2) If the outer 'probe' branch of the hash join does not contain all
+       *    tables pushed as part of it, we disable 'spill_to_disk' as
+       *    described above. We might then need to read the outer part
+       *    multiple times.
+       */
+      case AccessPath::HASH_JOIN: {
+        auto &param = subpath->hash_join();
+        assert(!has_pushed_members_outside_of_branch(param.inner, join));
+
+        if (has_pushed_members_outside_of_branch(param.outer, join)) {
+          // The pushed join is not contained within 'probe'. Only pushed if
+          // INNER- or CROSS-joined, and require 'spill_to_disk' to be disabled.
+          // Note that this controls only the spill of the probe input.
+
+          // If this table is part of a pushed join query, rows from the
+          // dependant child table(s) has to be read while we are positioned
+          // on the rows from the pushed ancestors which the child depends on.
+          // Thus, we can not allow rows from a 'pushed join' to
+          // 'spill_to_disk'.
+          param.allow_spill_to_disk = false;
+        }
+        break;
+      }
+
+#ifndef NDEBUG
+      // Below, debug only: Assert Query_scope containment.
+      // For some operations this is stricter than what was set up by
+      // Join_plan::construct(), where only a Join_scope was constructed.
+      // (See further below)
+      case AccessPath::AGGREGATE: {
+        assert(!has_pushed_members_outside_of_branch(subpath->aggregate().child,
+                                                     join));
+        break;
+      }
+      case AccessPath::TEMPTABLE_AGGREGATE: {
+        assert(!has_pushed_members_outside_of_branch(
+            subpath->temptable_aggregate().subquery_path, join));
+        break;
+      }
+      case AccessPath::STREAM: {
+        assert(!has_pushed_members_outside_of_branch(subpath->stream().child,
+                                                     join));
+        break;
+      }
+      case AccessPath::MATERIALIZE: {
+        for (const MaterializePathParameters::QueryBlock &query_block :
+             subpath->materialize().param->query_blocks) {
+          AccessPath *subquery = query_block.subquery_path;
+          assert(!has_pushed_members_outside_of_branch(subquery, join));
+        }
+        break;
+      }
+      case AccessPath::WEEDOUT: {
+        assert(!has_pushed_members_outside_of_branch(subpath->weedout().child,
+                                                     join));
+        break;
+      }
+
+      /////////////////
+      // For asserts below we only constructed a Join_scope in
+      // Join_plan::construct(), thus we do allow 'upper' references
+      // '..OutsideOfBranch'. Never seen it being taken advantage of though,
+      // it seems to always behave as if a Query_scope was constructed.
+      // Would like to investigate, and add as testcase, if any of the
+      // (too strict) asserts are hit below.
+      case AccessPath::SORT: {
+        if (has_pushed_members(subpath->sort().child, join)) {
+          // No indirect sort: An indirect sort will first build a temporary
+          // sorted 'key-set', then use it to fetch the rows one-by-one. We do
+          // not want this to be a pushed operation, as that would have
+          // retrieved (and wasted) the rows already, effectively fetching them
+          // twice.
+          assert(subpath->sort().filesort->m_sort_param.using_addon_fields());
+        }
+        assert(
+            !has_pushed_members_outside_of_branch(subpath->sort().child, join));
+        break;
+      }
+#endif
+    }
+    // AccessPaths not needing attention:
+    return false;  // -> Allow walker to continue
+  };
+
+  WalkAccessPaths(path, join, WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK,
+                  fixupFunc);
+}
+
+/**
  * Try to find parts of queries which can be pushed down to
  * storage engines for faster execution. This is typically
  * conditions which can filter out result rows on the SE,
  * and/or entire joins between tables.
  *
- * @param table_aqp The specific table in the join plan to examine.
+ * @param  thd         Thread context
+ * @param  root_path   The AccessPath for the entire query.
+ * @param  join        The JOIN struct built for the main query.
+ *
  * @return Possible error code, '0' if no errors.
  */
-int ha_ndbcluster::engine_push(AQP::Table_access *table_aqp) {
+int ndbcluster_push_to_engine(THD *thd, AccessPath *root_path, JOIN *join) {
   DBUG_TRACE;
-  THD *const thd = table->in_use;
-  const AQP::Join_plan *const plan = table_aqp->get_join_plan();
+  AQP::Join_plan query_plan(thd, root_path, join);
 
-  const bool has_descendants =
-      table_aqp->get_access_no() < plan->get_access_count() - 1;
-
-  if (has_descendants &&                // Need descendants to join with
-      THDVAR(thd, join_pushdown) &&     // Enabled 'ndb_join_pushdown'
-      m_pushed_join_member == nullptr)  // Not pushed yet
-  {
-    const ndb_pushed_join *pushed_join = nullptr;
-
-    // Try to build a ndb_pushed_join starting from 'table_aqp'
-    ndb_pushed_builder_ctx pushed_builder(m_thd_ndb, table_aqp);
-    int error = pushed_builder.make_pushed_join(pushed_join);
+  /**
+   * Investigate what could be pushed down as entire joins first.
+   * Note that we also handle condition pushdowns for the tables which
+   * are members of pushed join. There are mutual dependencies between
+   * such join- and condition pushdowns, so they need to be handled together
+   */
+  if (THDVAR(thd, join_pushdown)) {  // Enabled 'ndb_join_pushdown'
+    const int error =
+        ndb_pushed_builder_ctx::make_pushed_join(get_thd_ndb(thd), query_plan);
     if (unlikely(error)) {
-      if (error < 0)  // getNdbError() gives us the error code
-      {
-        ERR_SET(pushed_builder.getNdbError(), error);
-      }
-      print_error(error, MYF(0));
       return error;
-    }
-
-    /*
-       Assign any produced pushed_join definitions to the involved
-       ha_ndbcluster instances, such that the prepared NdbQuery
-       might be instantiated at execution time.
-    */
-    if (pushed_join != nullptr) {
-      m_thd_ndb->m_pushed_queries_defined++;
-      DBUG_PRINT("info", ("Created pushed join with %d child operations",
-                          pushed_join->get_operation_count() - 1));
-
-      for (uint i = 0; i < pushed_join->get_operation_count(); i++) {
-        const TABLE *const tab = pushed_join->get_table(i);
-        ha_ndbcluster *child = dynamic_cast<ha_ndbcluster *>(tab->file);
-        child->m_pushed_join_member = pushed_join;
-        child->m_pushed_join_operation = i;
-      }
     }
   }
 
-  /*
-    If enabled by optimizer settings, (parts of) the table condition may
-    by pushed down to the SE-engine for evaluation.
-    Note that for child in a pushed join, any conditions were already pushed
-    above.
-  */
+  /**
+   * For those tables not being join-pushed we may still be able to
+   * push any conditions on the table. (There are less restrictions on whether
+   * a condition could be pushed when not being part of a pushed join.)
+   */
   if (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_ENGINE_CONDITION_PUSHDOWN)) {
-    if (m_pushed_join_operation <= PUSHED_ROOT)  // Not a pushed join child
-    {
-      const Item *cond = table_aqp->get_condition();
-      if (cond == nullptr) return 0;
+    const uint count = query_plan.get_access_count();
+    for (uint i = 0; i < count; i++) {
+      AQP::Table_access *table_access = query_plan.get_table_access(i);
+      const Item *cond = table_access->get_condition();
+      if (cond == nullptr) continue;
 
-      const AQP::enum_access_type jt = table_aqp->get_access_type();
+      const TABLE *table = table_access->get_table();
+      handler *const ha = table->file;
+      if (ha->member_of_pushed_join() != nullptr &&
+          ha->member_of_pushed_join() != table) {
+        // Condition already pushed as part of pushed join child -> skip
+        continue;
+      }
+
+      ha_ndbcluster *const ndb_handler = dynamic_cast<ha_ndbcluster *>(ha);
+      if (ndb_handler == nullptr) continue;
+
+      const AQP::enum_access_type jt = table_access->get_access_type();
       if ((jt == AQP::AT_PRIMARY_KEY || jt == AQP::AT_UNIQUE_KEY ||
            jt == AQP::AT_OTHER) &&  // CONST or SYSTEM
-          !member_of_pushed_join()) {
+          !ha->member_of_pushed_join()) {
         /*
           It is of limited value to push a condition to a single row
           access method if not member of a pushed join, so we skip cond_push()
           for these. The exception is if we are member of a pushed join, where
-          execution of entire join branches may be eliminated.
+          execution of entire join branches may be eliminated. (above)
         */
-        return 0;
+        continue;
       }
 
       /*
-        If a join cache is referred by this table, there is not a single
-        specific row from the 'other tables' to compare rows from this table
-        against. Thus, other tables can not be referred in this case.
+        In a 'Select' any tables preceding this table, and in its 'query_scope'
+        can be referred as a const-table from the pushed conditions.
       */
-      const bool other_tbls_ok = thd->lex->sql_command == SQLCOM_SELECT &&
-                                 !table_aqp->uses_join_cache();
-
       table_map const_expr_tables(0);
-      if (other_tbls_ok)
-        // Can refer all other (preceeding) tables, except 'self' as 'const
-        const_expr_tables = ~table->pos_in_table_list->map();
-
-      /* Push condition to handler, possibly leaving a remainder */
-      m_cond.prep_cond_push(cond, const_expr_tables, table_map(0));
+      if (thd->lex->sql_command == SQLCOM_SELECT) {
+        table_map query_scope = table_access->get_tables_in_all_query_scopes();
+        const_expr_tables = (query_scope & ~table->pos_in_table_list->map());
+      }
+      /* Prepare push of condition to handler, possibly leaving a remainder */
+      ndb_handler->m_cond.prep_cond_push(cond, const_expr_tables, table_map(0));
     }
-
-    // Use whatever conditions got pushed, either as part of a pushed join
-    // or not
-    const Item *remainder;
-    if (m_cond.use_cond_push(pushed_cond, remainder) == 0)
-      table_aqp->set_condition(const_cast<Item *>(remainder));
   }
+  // Modify the AccessPath structure to reflect pushed execution.
+  fixup_pushed_access_paths(thd, root_path, join, /*filter=*/nullptr);
   return 0;
 }
 
@@ -14187,13 +14532,24 @@ bool ha_ndbcluster::maybe_pushable_join(const char *&reason) const {
 bool ha_ndbcluster::check_if_pushable(int type,  // NdbQueryOperationDef::Type,
                                       uint idx) const {
   if (m_disable_pushed_join) {
+    // We will likely re-enable and (try to) execute it later, not just yet
     DBUG_PRINT("info", ("Push disabled (HA_EXTRA_KEYREAD)"));
     return false;
   }
-  return m_pushed_join_operation == PUSHED_ROOT &&
-         m_pushed_join_member != NULL &&
-         m_pushed_join_member->match_definition(
-             type, (idx < MAX_KEY) ? &m_index[idx] : NULL);
+  if (m_pushed_join_operation == PUSHED_ROOT &&
+      m_pushed_join_member != nullptr) {
+    const char *reason = nullptr;
+    // We had prepared a pushed join for this table, can it be executed?
+    if (!m_pushed_join_member->match_definition(
+            type, (idx < MAX_KEY) ? &m_index[idx] : nullptr, reason)) {
+      m_thd_ndb->push_warning("Prepared pushed join could not be executed, %s",
+                              reason);
+      m_thd_ndb->m_pushed_queries_dropped++;
+      return false;
+    }
+    return true;  // Ok to execute it
+  }
+  return false;
 }
 
 int ha_ndbcluster::create_pushed_join(const NdbQueryParamValue *keyFieldParams,
@@ -14358,7 +14714,8 @@ table_map ha_ndbcluster::tables_in_pushed_join() const {
   which we accepted to be pushed down.
 
   Note that this handler call has been partly deprecated by
-  ::engine_push() which does both join- and condition pushdown.
+  handlerton::push_to_engine(), which does both join- and
+  condition pushdown for the entire query AccessPath.
   The only remaining intended usage for ::cond_push() is simple
   update and delete queries, where the join part is not relevant.
 
