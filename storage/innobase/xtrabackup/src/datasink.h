@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2013 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2022 Percona LLC and/or its affiliates.
 
 Data sink interface.
 
@@ -68,8 +68,10 @@ typedef enum {
   DS_TYPE_XBSTREAM,
   DS_TYPE_COMPRESS_QUICKLZ,
   DS_TYPE_COMPRESS_LZ4,
+  DS_TYPE_COMPRESS_ZSTD,
   DS_TYPE_DECOMPRESS_QUICKLZ,
   DS_TYPE_DECOMPRESS_LZ4,
+  DS_TYPE_DECOMPRESS_ZSTD,
   DS_TYPE_ENCRYPT,
   DS_TYPE_DECRYPT,
   DS_TYPE_TMPFILE,

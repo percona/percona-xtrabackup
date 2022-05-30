@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2021 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2022 Percona LLC and/or its affiliates.
 
 Declarations for xtrabackup.cc
 
@@ -61,7 +61,8 @@ typedef struct {
 enum xtrabackup_compress_t {
   XTRABACKUP_COMPRESS_NONE,
   XTRABACKUP_COMPRESS_QUICKLZ,
-  XTRABACKUP_COMPRESS_LZ4
+  XTRABACKUP_COMPRESS_LZ4,
+  XTRABACKUP_COMPRESS_ZSTD
 };
 
 /* value of the --incremental option */
@@ -126,6 +127,7 @@ extern bool xb_close_files;
 extern const char *xtrabackup_compress_alg;
 extern uint xtrabackup_compress_threads;
 extern ulonglong xtrabackup_compress_chunk_size;
+extern uint xtrabackup_compress_zstd_level;
 extern ulong xtrabackup_encrypt_algo;
 extern uint xtrabackup_encrypt_threads;
 extern ulonglong xtrabackup_encrypt_chunk_size;

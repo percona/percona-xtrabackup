@@ -1103,6 +1103,13 @@ function require_lz4()
     fi
 }
 
+function require_zstd()
+{
+    if ! which zstd > /dev/null 2>&1 ; then
+        skip_test "Requires zstd to be installed"
+    fi
+}
+
 function require_tokudb()
 {
     if ! [ -a $(dirname ${MYSQLD})/../lib/mysql/plugin/ha_tokudb.so ]; then

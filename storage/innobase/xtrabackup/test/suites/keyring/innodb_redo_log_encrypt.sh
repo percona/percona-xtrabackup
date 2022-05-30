@@ -3,6 +3,8 @@
 #
 
 require_server_version_higher_than 8.0.10
+require_lz4
+require_zstd
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_redo_log_encrypt=ON
@@ -67,3 +69,4 @@ function test_do() {
 test_do "" "--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}" ""
 test_do "--transition-key=123_" "--transition-key=123_" "--transition-key=123_ --generate-new-key"
 test_do "--compress=lz4" "--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}" ""
+test_do "--compress=zstd" "--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}" ""
