@@ -1051,6 +1051,10 @@ bool is_active_truncate_log_present(space_id_t space_num) {
   truncate action was complete. */
 
   if (os_file_exists(log_file_name)) {
+#ifdef XTRABACKUP
+    if (srv_backup_mode) return (true);
+#endif
+
     bool ret;
     pfs_os_file_t handle = os_file_create_simple_no_error_handling(
         innodb_log_file_key, log_file_name, OS_FILE_OPEN, OS_FILE_READ_WRITE,
