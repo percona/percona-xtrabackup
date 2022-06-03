@@ -93,6 +93,11 @@ IF(GIT_EXECUTABLE)
       )
     ENDIF()
   ENDIF()
+  EXECUTE_PROCESS(
+      COMMAND "${GIT_EXECUTABLE}" submodule foreach "${GIT_EXECUTABLE} checkout-index --all --prefix=${PACKAGE_DIR}/$path/"
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+      RESULT_VARIABLE RESULT
+    )
 ENDIF()
 
 IF(NOT GIT_EXECUTABLE)
