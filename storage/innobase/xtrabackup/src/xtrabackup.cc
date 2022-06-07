@@ -7246,6 +7246,22 @@ skip_check:
 
     srv_shutdown_state = SRV_SHUTDOWN_NONE;
 
+    /* PXB-2792 - Ensure we don't have ib_logfile's */
+    char logfilename[10000];
+    size_t dirnamelen;
+    dirnamelen = strlen(srv_log_group_home_dir);
+    ut_a(dirnamelen < (sizeof logfilename) - 10 - sizeof "ib_logfile");
+    memcpy(logfilename, srv_log_group_home_dir, dirnamelen);
+    /* Add a path separator if needed. */
+    if (dirnamelen && logfilename[dirnamelen - 1] != OS_PATH_SEPARATOR) {
+      logfilename[dirnamelen++] = OS_PATH_SEPARATOR;
+    }
+    for (unsigned i = 0; i < srv_n_log_files; i++) {
+      sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
+
+      my_delete(logfilename, MYF(0));
+    }
+
     if (innodb_init(false, false)) goto error;
 
     if (innodb_end()) goto error;
