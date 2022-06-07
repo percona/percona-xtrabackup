@@ -7,6 +7,7 @@
 .. toctree::
    :maxdepth: 1
    
+   release-notes/8.0/8.0.29-22.0
    release-notes/8.0/8.0.28-21.0
    Percona XtraBackup 8.0.28-20.0 (2022-04-26) <release-notes/8.0/8.0.28-20.0.rst>
    Percona Xtrabackup 8.0.27-19.0 (2022-02-02) <release-notes/8.0/8.0.27-19.0.rst>
