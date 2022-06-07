@@ -321,7 +321,9 @@ inline bool fsp_flags_is_valid(uint32_t flags) {
   bool has_data_dir = FSP_FLAGS_HAS_DATA_DIR(flags);
   bool is_shared = FSP_FLAGS_GET_SHARED(flags);
   bool is_temp = FSP_FLAGS_GET_TEMPORARY(flags);
+#ifndef XTRABACKUP
   bool is_encryption = FSP_FLAGS_GET_ENCRYPTION(flags);
+#endif
 
   ulint unused = FSP_FLAGS_GET_UNUSED(flags);
 
@@ -367,11 +369,13 @@ inline bool fsp_flags_is_valid(uint32_t flags) {
     return (false);
   }
 
+#ifndef XTRABACKUP
   /* Only single-table and general tablespaces and not temp tablespaces
   use the encryption clause. */
   if (is_encryption && (is_temp)) {
     return (false);
   }
+#endif
 
   static_assert(
       FSP_FLAGS_POS_UNUSED == 15,
