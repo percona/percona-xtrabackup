@@ -64,6 +64,8 @@ using namespace std::string_literals;
 static constexpr const char kSectionName[]{"http_auth_realm"};
 static std::vector<std::string> registered_realms;
 
+using StringOption = mysql_harness::StringOption;
+
 class HttpAuthRealmPluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string backend;
@@ -74,10 +76,10 @@ class HttpAuthRealmPluginConfig : public mysql_harness::BasePluginConfig {
   explicit HttpAuthRealmPluginConfig(
       const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        backend(get_option_string(section, "backend")),
-        method(get_option_string(section, "method")),
-        require(get_option_string(section, "require")),
-        name(get_option_string(section, "name")) {}
+        backend(get_option(section, "backend", StringOption{})),
+        method(get_option(section, "method", StringOption{})),
+        require(get_option(section, "require", StringOption{})),
+        name(get_option(section, "name", StringOption{})) {}
 
   std::string get_default(const std::string &option) const override {
     const std::map<std::string, std::string> defaults{
@@ -190,6 +192,9 @@ static const std::array<const char *, 1> required = {{
     "logger",
 }};
 
+static const std::array<const char *, 4> supported_options{"backend", "method",
+                                                           "require", "name"};
+
 extern "C" {
 mysql_harness::Plugin HTTP_AUTH_REALM_EXPORT harness_plugin_http_auth_realm = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
@@ -197,13 +202,17 @@ mysql_harness::Plugin HTTP_AUTH_REALM_EXPORT harness_plugin_http_auth_realm = {
     "HTTP_AUTH_REALM",                       // name
     VERSION_NUMBER(0, 0, 1),
     // requires
-    required.size(), required.data(),
+    required.size(),
+    required.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     deinit,   // deinit
     nullptr,  // start
     nullptr,  // stop
     false,    // declares_readiness
+    supported_options.size(),
+    supported_options.data(),
 };
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
@@ -1535,24 +1535,17 @@ bool set_and_validate_user_attributes(
       }
     }
 
-    if (!(auth->authentication_flags & AUTH_FLAG_USES_INTERNAL_STORAGE)) {
-      if (command == SQLCOM_SET_PASSWORD) {
-        /*
-          A plugin that does not use internal storage and
-          hence does not support SET PASSWORD
-        */
-        char warning_buffer[MYSQL_ERRMSG_SIZE];
-        snprintf(warning_buffer, sizeof(warning_buffer),
-                 "SET PASSWORD has no significance for user '%s'@'%s' as "
-                 "authentication plugin does not support it.",
-                 Str->user.str, Str->host.str);
-        warning_buffer[MYSQL_ERRMSG_SIZE - 1] = '\0';
-        push_warning(thd, Sql_condition::SL_NOTE, ER_SET_PASSWORD_AUTH_PLUGIN,
-                     warning_buffer);
-        plugin_unlock(nullptr, plugin);
-        what_to_set.m_what = NONE_ATTR;
-        return (false);
-      }
+    if (!(auth->authentication_flags & AUTH_FLAG_USES_INTERNAL_STORAGE) &&
+        command == SQLCOM_SET_PASSWORD) {
+      /*
+        A plugin that does not use internal storage and
+        hence does not support SET PASSWORD
+      */
+      my_error(ER_SET_PASSWORD_AUTH_PLUGIN_ERROR, MYF(0), Str->user.str,
+               Str->host.str);
+      plugin_unlock(nullptr, plugin);
+      what_to_set.m_what = NONE_ATTR;
+      return (true);
     }
   }
 
@@ -1808,8 +1801,7 @@ bool set_and_validate_user_attributes(
         */
         acl_user->m_mfa->alter_mfa(mfa);
       } else {
-        MEM_ROOT mr;
-        init_sql_alloc(PSI_NOT_INSTRUMENTED, &mr, 256, 0);
+        MEM_ROOT mr(PSI_NOT_INSTRUMENTED, 256);
         I_multi_factor_auth *tmp = new (&mr) Multi_factor_auth_list(&mr);
         if (tmp->is_alter_allowed(thd, Str)) {
           mr.Clear();

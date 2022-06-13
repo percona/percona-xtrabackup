@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1034,10 +1034,24 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
           store_column = false;
       }
 
-      if (item->const_for_execution() &&
-          evaluate_during_optimization(item, thd->lex->current_query_block()) &&
-          hidden_field_count <= 0) {
-        continue;  // We don't have to store this
+      if (hidden_field_count <= 0) {
+        if (thd->lex->current_query_block()->is_implicitly_grouped() &&
+            (item->used_tables() & ~(RAND_TABLE_BIT | INNER_TABLE_BIT)) == 0 &&
+            !item->has_rollup_expr()) {
+          /*
+            This will be evaluated exactly once, regardless of the number
+            of rows in the temporary table, as there is only one result row.
+          */
+          continue;
+        } else if (item->const_for_execution() &&
+                   evaluate_during_optimization(
+                       item, thd->lex->current_query_block())) {
+          /*
+             Constant for the duration of the query, so no need to store in
+             temporary table.
+          */
+          continue;
+        }
       }
     }
 
@@ -1620,7 +1634,6 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
 
 TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
                                           SJ_TMP_TABLE *sjtbl) {
-  MEM_ROOT own_root;
   TABLE *table;
   TABLE_SHARE *share;
   Field **reg_field;
@@ -1649,7 +1662,7 @@ TABLE *create_duplicate_weedout_tmp_table(THD *thd, uint uniq_tuple_length_arg,
     unique_constraint_via_hash_field = true;
 
   /* STEP 2: Allocate memory for temptable description */
-  init_sql_alloc(key_memory_TABLE, &own_root, TABLE_ALLOC_BLOCK_SIZE, 0);
+  MEM_ROOT own_root(key_memory_TABLE, TABLE_ALLOC_BLOCK_SIZE);
   if (!multi_alloc_root(
           &own_root, &table, sizeof(*table), &share, sizeof(*share), &reg_field,
           sizeof(Field *) * (1 + 2), &blob_field, sizeof(uint) * 3, &keyinfo,
@@ -1853,17 +1866,18 @@ TABLE *create_tmp_table_from_fields(THD *thd, List<Create_field> &field_list,
   uchar *bitmaps;
   TABLE *table;
   TABLE_SHARE *share;
-  MEM_ROOT own_root, *m_root;
+  MEM_ROOT own_root{key_memory_TABLE, TABLE_ALLOC_BLOCK_SIZE};
+  MEM_ROOT *m_root;
   /*
     total_uneven_bit_length is uneven bit length for BIT fields
   */
   uint total_uneven_bit_length = 0;
 
   if (!is_virtual) {
-    init_sql_alloc(key_memory_TABLE, &own_root, TABLE_ALLOC_BLOCK_SIZE, 0);
     m_root = &own_root;
-  } else
+  } else {
     m_root = thd->mem_root;
+  }
 
   if (!multi_alloc_root(m_root, &table, sizeof(*table), &share, sizeof(*share),
                         &reg_field, (field_count + 1) * sizeof(Field *),

@@ -124,7 +124,6 @@ ProcessManager::Spawner::wait_for_notified(
   const auto end_time = start_time + timeout;
 
   sock.native_non_blocking(true);
-
   do {
     auto accept_res = accept_until<clock_type>(sock, end_time);
     if (!accept_res) {
@@ -271,6 +270,7 @@ ProcessWrapper &ProcessManager::Spawner::launch_command_and_wait(
   const std::string socket_node = notify_socket_path_;
 
   EXPECT_NO_ERROR(notify_socket.open());
+  notify_socket.native_non_blocking(true);
   EXPECT_NO_ERROR(notify_socket.bind({socket_node}));
 
   env_vars.emplace_back("NOTIFY_SOCKET", socket_node);
@@ -554,11 +554,14 @@ std::string ProcessManager::create_config_file(
   }
 
   ofs_config << make_DEFAULT_section(default_section);
+  // overwrite the default bahavior (which is a warning) to make the Router
+  // fail if unknown option is used
+  ofs_config << "unknown_config_option=error" << std::endl;
   ofs_config << extra_defaults << std::endl;
   ofs_config << sections << std::endl;
   if (enable_debug_logging) {
-    ofs_config
-        << "[logger]\nlevel = DEBUG\ntimestamp_precision=millisecond\n\n";
+    ofs_config << mysql_harness::ConfigBuilder::build_section(
+        "logger", {{"level", "debug"}, {"timestamp_precision", "millisecond"}});
   }
   ofs_config.close();
 

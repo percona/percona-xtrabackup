@@ -319,8 +319,7 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
 
 void Redo_Log_Reader::seek_logfile(lsn_t lsn) { log_scanned_lsn = lsn; }
 
-bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn,
-                                lsn_t checkpoint_lsn) {
+bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool more_data = false;
@@ -414,7 +413,7 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn,
   if (more_data && !recv_sys->found_corrupt_log) {
     /* Try to parse more log records */
 
-    recv_parse_log_recs(checkpoint_lsn);
+    recv_parse_log_recs();
 
     if (recv_sys->recovered_offset > recv_sys->buf_len / 4) {
       /* Move parsing buffer data to the buffer start */
@@ -523,8 +522,7 @@ ssize_t Archived_Redo_Log_Reader::read_logfile(bool *finished) {
     fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
     fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
     Encryption encryption(req_type.encryption_algorithm());
-    auto err = encryption.decrypt_log(req_type, log_buf, len, scratch_buf,
-                                      UNIV_PAGE_SIZE_MAX);
+    auto err = encryption.decrypt_log(req_type, log_buf, len, scratch_buf);
     ut_a(err == DB_SUCCESS);
   }
 
@@ -841,8 +839,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
         fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
         fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
         Encryption encryption(req_type.encryption_algorithm());
-        auto err = encryption.decrypt_log(req_type, buf, hdr_len, scratch_buf,
-                                          OS_FILE_LOG_BLOCK_SIZE);
+        auto err = encryption.decrypt_log(req_type, buf, hdr_len, scratch_buf);
         ut_a(err == DB_SUCCESS);
       }
     }
@@ -944,7 +941,7 @@ bool Redo_Log_Data_Manager::init() {
   }
 
   recv_sys_create();
-  recv_sys_init(buf_pool_get_curr_size());
+  recv_sys_init();
 
   ut_a(srv_n_log_files > 0);
 
@@ -977,7 +974,7 @@ bool Redo_Log_Data_Manager::init() {
     }
   }
 
-  /* log_file_created must not be TRUE, if online */
+  /* log_file_created must not be true, if online */
   if (log_file_created) {
     xb::error() << "Something wrong with source files...";
     exit(EXIT_FAILURE);
@@ -1093,8 +1090,7 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
       }
 
       if (len > 0) {
-        if (!parser.parse_log(archive_reader.get_buffer(), len, start_lsn,
-                              reader.get_start_checkpoint_lsn())) {
+        if (!parser.parse_log(archive_reader.get_buffer(), len, start_lsn)) {
           return (false);
         }
 
@@ -1120,8 +1116,7 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
 
   track_archived_log(start_lsn, reader.get_buffer(), len);
 
-  if (!parser.parse_log(reader.get_buffer(), len, start_lsn,
-                        reader.get_start_checkpoint_lsn())) {
+  if (!parser.parse_log(reader.get_buffer(), len, start_lsn)) {
     return (false);
   }
 

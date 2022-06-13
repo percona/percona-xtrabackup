@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -576,13 +576,13 @@ AccessPath *get_best_group_min_max(THD *thd, RANGE_OPT_PARAM *param,
     if ((join->group_list.empty() && join->select_distinct) ||
         is_agg_distinct) {
       auto agg_distinct_flds_it = agg_distinct_flds.begin();
-      auto select_items_it = join->fields->begin();
-      while (is_agg_distinct ? (agg_distinct_flds_it != agg_distinct_flds.end())
-                             : (select_items_it != join->fields->end())) {
+      auto select_items_it = VisibleFields(*join->fields).begin();
+      while (is_agg_distinct
+                 ? (agg_distinct_flds_it != agg_distinct_flds.end())
+                 : (select_items_it != VisibleFields(*join->fields).end())) {
         Item *item =
             (is_agg_distinct ? static_cast<Item *>(*agg_distinct_flds_it++)
                              : *select_items_it++);
-        if (item->hidden) continue;
 
         /* (SA5) already checked above. */
         item_field = (Item_field *)item->real_item();
@@ -957,10 +957,11 @@ AccessPath *get_best_group_min_max(THD *thd, RANGE_OPT_PARAM *param,
       /* Prepare for a IndexRangeScanIterator to be used for group prefix
        * retrieval.
        */
-      unsigned used_key_parts_unused;
+      unsigned used_key_parts_unused, num_exact_key_parts_unused;
       if (get_ranges_from_tree(return_mem_root, table, used_key_part, keyno,
                                index_tree, group_key_parts,
-                               &used_key_parts_unused, &prefix_ranges)) {
+                               &used_key_parts_unused,
+                               &num_exact_key_parts_unused, &prefix_ranges)) {
         return nullptr;
       }
       // Opens the ranges if there are more conditions in
@@ -1672,9 +1673,9 @@ static bool add_range(MEM_ROOT *return_mem_root, SEL_ARG *sel_range,
       range_flag |= EQ_RANGE; /* equality condition */
   }
   QUICK_RANGE *range = new (return_mem_root) QUICK_RANGE(
-      sel_range->min_value, key_length, make_keypart_map(sel_range->part),
-      sel_range->max_value, key_length, make_keypart_map(sel_range->part),
-      range_flag, HA_READ_INVALID);
+      return_mem_root, sel_range->min_value, key_length,
+      make_keypart_map(sel_range->part), sel_range->max_value, key_length,
+      make_keypart_map(sel_range->part), range_flag, HA_READ_INVALID);
   if (!range) return true;
   if (range_array->push_back(range)) return true;
   return false;

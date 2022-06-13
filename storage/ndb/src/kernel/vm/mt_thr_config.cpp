@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "util/require.h"
 #include "mt_thr_config.hpp"
 #include <kernel/ndb_limits.h>
 #include "../../common/util/parse_mask.hpp"
@@ -168,262 +169,6 @@ THRConfig::setLockIoThreadsToCPU(unsigned val)
 {
   m_LockIoThreadsToCPU.set(val);
   return 0;
-}
-
-void
-THRConfig::reorganize_ldm_bindings(bool with_thread_config,
-                                   Uint32 & num_rr_groups,
-                                   bool check)
-{
-  T_Type t_ldm = T_LDM;
-  T_Type t_query = T_QUERY;
-  Uint32 num_ldm_instances = m_threads[t_ldm].size();
-  Uint32 num_query_instances = m_threads[t_query].size();
-  if (num_query_instances == 0)
-  {
-    return;
-  }
-  bool all_bind = true;
-  for (Uint32 i = 0; i < num_ldm_instances; i++)
-  {
-    T_Thread tmp = m_threads[t_ldm][i];
-    if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-    {
-      all_bind = false;
-    }
-  }
-  for (Uint32 i = 0; i < num_query_instances; i++)
-  {
-    T_Thread tmp = m_threads[t_query][i];
-    if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-    {
-      all_bind = false;
-    }
-  }
-  num_rr_groups = Ndb_GetRRGroups(num_ldm_instances);
-  if (!all_bind)
-  {
-    return;
-  }
-  struct ndb_hwinfo *hwinfo = Ndb_GetHWInfo(false);
-  if (!hwinfo->is_cpuinfo_available || check)
-  {
-    return;
-  }
-  bool use_recv_threads = false;
-  bool use_send_threads = false;
-  bool use_tc_threads = false;
-  bool use_main_threads = false;
-  bool use_rep_threads = false;
-  bool use_io_threads = false;
-  T_Type t_recv = T_RECV;
-  T_Type t_send = T_SEND;
-  T_Type t_tc = T_TC;
-  T_Type t_main = T_MAIN;
-  T_Type t_rep = T_REP;
-  T_Type t_io = T_IO;
-  Uint32 num_recv_instances = m_threads[t_recv].size();
-  Uint32 num_send_instances = m_threads[t_send].size();
-  Uint32 num_tc_instances = m_threads[t_tc].size();
-  Uint32 num_main_instances = m_threads[t_main].size();
-  Uint32 num_rep_instances = m_threads[t_rep].size();
-  Uint32 num_io_instances = m_threads[t_io].size();
-  if (!with_thread_config)
-  {
-    use_recv_threads = true;
-    for (Uint32 i = 0; i < num_recv_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_recv][i];
-      if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-      {
-        use_recv_threads = false;
-      }
-    }
-    use_send_threads = true;
-    for (Uint32 i = 0; i < num_send_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_send][i];
-      if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-      {
-        use_send_threads = false;
-      }
-    }
-    use_tc_threads = true;
-    for (Uint32 i = 0; i < num_tc_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_tc][i];
-      if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-      {
-        use_tc_threads = false;
-      }
-    }
-    use_main_threads = true;
-    for (Uint32 i = 0; i < num_main_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_main][i];
-      if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-      {
-        use_main_threads = false;
-      }
-    }
-    use_rep_threads = true;
-    for (Uint32 i = 0; i < num_rep_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_rep][i];
-      if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-      {
-        use_rep_threads = false;
-      }
-    }
-    use_io_threads = true;
-    for (Uint32 i = 0; i < num_io_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_io][i];
-      if (tmp.m_bind_type != T_Thread::B_CPU_BIND)
-      {
-        use_io_threads = false;
-      }
-    }
-  }
-  for (Uint32 i = 0; i < num_ldm_instances; i++)
-  {
-    T_Thread tmp = m_threads[t_ldm][i];
-    Ndb_SetVirtL3CPU(tmp.m_bind_no);
-  }
-  for (Uint32 i = 0; i < num_query_instances; i++)
-  {
-    T_Thread tmp = m_threads[t_query][i];
-    Ndb_SetVirtL3CPU(tmp.m_bind_no);
-  }
-  if (use_recv_threads)
-  {
-    for (Uint32 i = 0; i < num_recv_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_recv][i];
-      Ndb_SetVirtL3CPU(tmp.m_bind_no);
-    }
-  }
-  if (use_send_threads)
-  {
-    for (Uint32 i = 0; i < num_send_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_send][i];
-      Ndb_SetVirtL3CPU(tmp.m_bind_no);
-    }
-  }
-  if (use_tc_threads)
-  {
-    for (Uint32 i = 0; i < num_tc_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_tc][i];
-      Ndb_SetVirtL3CPU(tmp.m_bind_no);
-    }
-  }
-  if (use_main_threads)
-  {
-    for (Uint32 i = 0; i < num_main_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_main][i];
-      Ndb_SetVirtL3CPU(tmp.m_bind_no);
-    }
-  }
-  if (use_rep_threads)
-  {
-    for (Uint32 i = 0; i < num_rep_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_rep][i];
-      Ndb_SetVirtL3CPU(tmp.m_bind_no);
-    }
-  }
-  if (use_io_threads)
-  {
-    for (Uint32 i = 0; i < num_io_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_io][i];
-      Ndb_SetVirtL3CPU(tmp.m_bind_no);
-    }
-  }
-  Uint32 num_query_threads_per_ldm = num_query_instances /
-                                     num_ldm_instances;
-  num_rr_groups =
-    Ndb_CreateCPUMap(num_ldm_instances, num_query_threads_per_ldm);
-  Uint32 next_cpu = Ndb_GetFirstCPUInMap();
-  Uint32 query_instance = 0;
-  for (Uint32 i = 0; i < num_ldm_instances; i++)
-  {
-    T_Thread tmp = m_threads[t_ldm][i];
-    require(next_cpu != Uint32(RNIL));
-    tmp.m_bind_no = next_cpu;
-    next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    for (Uint32 j = 0; j < num_query_threads_per_ldm; j++)
-    {
-      T_Thread tmp = m_threads[t_query][query_instance];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-      query_instance++;
-    }
-  }
-  if (use_recv_threads)
-  {
-    for (Uint32 i = 0; i < num_recv_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_recv][i];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    }
-  }
-  if (use_send_threads)
-  {
-    for (Uint32 i = 0; i < num_send_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_send][i];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    }
-  }
-  if (use_tc_threads)
-  {
-    for (Uint32 i = 0; i < num_tc_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_tc][i];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    }
-  }
-  if (use_main_threads)
-  {
-    for (Uint32 i = 0; i < num_main_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_main][i];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    }
-  }
-  if (use_rep_threads)
-  {
-    for (Uint32 i = 0; i < num_rep_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_rep][i];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    }
-  }
-  if (use_io_threads)
-  {
-    for (Uint32 i = 0; i < num_io_instances; i++)
-    {
-      T_Thread tmp = m_threads[t_io][i];
-      require(next_cpu != Uint32(RNIL));
-      tmp.m_bind_no = next_cpu;
-      next_cpu = Ndb_GetNextCPUInMap(next_cpu);
-    }
-  }
 }
 
 void
@@ -1032,13 +777,12 @@ THRConfig::compute_automatic_thread_config(
   recv_threads = table[used_map_id].recv_threads;
 
   recover_threads = cpu_cnt - (ldm_threads + query_threads);
-  if (cpu_cnt == 1)
+
+  if (ldm_threads == 0)
   {
-    recover_threads = 0;
-  }
-  else if (cpu_cnt == 2)
-  {
-    recover_threads = 1;
+    // One worker instance of ldm blocks run in main or recv thread
+    require(recover_threads > 0);
+    recover_threads--;
   }
 
   Uint32 tot_threads = main_threads;
@@ -1217,7 +961,7 @@ THRConfig::do_parse(unsigned realtime,
     {
       require(next_cpu_id != Uint32(RNIL));
       m_threads[T_SEND][i].m_bind_no = next_cpu_id;
-      m_threads[T_TC][i].m_bind_type = T_Thread::B_CPU_BIND;
+      m_threads[T_SEND][i].m_bind_type = T_Thread::B_CPU_BIND;
       m_threads[T_SEND][i].m_core_bind = true;
       next_cpu_id = Ndb_GetNextCPUInMap(next_cpu_id);
     }
@@ -1225,7 +969,7 @@ THRConfig::do_parse(unsigned realtime,
     {
       require(next_cpu_id != Uint32(RNIL));
       m_threads[T_RECV][i].m_bind_no = next_cpu_id;
-      m_threads[T_SEND][i].m_bind_type = T_Thread::B_CPU_BIND;
+      m_threads[T_RECV][i].m_bind_type = T_Thread::B_CPU_BIND;
       m_threads[T_RECV][i].m_core_bind = true;
       next_cpu_id = Ndb_GetNextCPUInMap(next_cpu_id);
     }
@@ -1341,7 +1085,6 @@ THRConfig::do_parse(unsigned MaxNoOfExecutionThreads,
   {
     return res;
   }
-  reorganize_ldm_bindings(false, num_rr_groups, check);
   return do_validate();
 }
 
@@ -2033,7 +1776,6 @@ THRConfig::do_parse(const char * ThreadConfig,
   {
     return res;
   }
-  reorganize_ldm_bindings(true, num_rr_groups, check);
   return do_validate();
 }
 

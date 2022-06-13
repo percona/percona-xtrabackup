@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -292,14 +292,14 @@ static struct my_option my_long_options[] = {
      &opt_databases, &opt_databases, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
 #ifdef NDEBUG
-    {"debug", '#', "This is a non-debug version. Catch this and exit.", 0, 0, 0,
-     GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+    {"debug", '#', "This is a non-debug version. Catch this and exit.", nullptr,
+     nullptr, nullptr, GET_DISABLED, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-check", OPT_DEBUG_CHECK,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-info", OPT_DEBUG_INFO,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #else
     {"debug", '#', "Output debug log.", &default_dbug_option,
      &default_dbug_option, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr, 0,
@@ -1065,8 +1065,7 @@ static int get_options(int *argc, char ***argv) {
             my_progname);
     return (EX_USAGE);
   }
-  if (0 != strcmp(replace_utf8_utf8mb3(default_charset),
-                  replace_utf8_utf8mb3(charset_info->csname)) &&
+  if (0 != strcmp(default_charset, charset_info->csname) &&
       !(charset_info =
             get_charset_by_csname(default_charset, MY_CS_PRIMARY, MYF(MY_WME))))
     exit(1);
@@ -1243,8 +1242,7 @@ static int switch_db_collation(FILE *sql_file, const char *db_name,
     if (!db_cl) return 1;
 
     fprintf(sql_file, "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
-            quoted_db_name, replace_utf8_utf8mb3(db_cl->csname), db_cl->name,
-            delimiter);
+            quoted_db_name, db_cl->csname, db_cl->m_coll_name, delimiter);
 
     *db_cl_altered = 1;
 
@@ -1266,8 +1264,7 @@ static int restore_db_collation(FILE *sql_file, const char *db_name,
   if (!db_cl) return 1;
 
   fprintf(sql_file, "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
-          quoted_db_name, replace_utf8_utf8mb3(db_cl->csname), db_cl->name,
-          delimiter);
+          quoted_db_name, db_cl->csname, db_cl->m_coll_name, delimiter);
 
   return 0;
 }
@@ -1601,6 +1598,10 @@ static int connect_to_db(char *host, char *user) {
     DB_error(&mysql_connection, "when trying to connect");
     return 1;
   }
+
+  if (ssl_client_check_post_connect_ssl_setup(
+          mysql, [](const char *err) { fprintf(stderr, "%s\n", err); }))
+    return 1;
   if (mysql_get_server_version(&mysql_connection) < 40100) {
     /* Don't dump SET NAMES with a pre-4.1 server (bug#7997).  */
     opt_set_charset = false;
@@ -3717,7 +3718,7 @@ static void dump_table(char *table, char *db) {
     dynstr_append_checked(&query_string, " /*!50138 CHARACTER SET ");
     dynstr_append_checked(&query_string,
                           default_charset == mysql_universal_client_charset
-                              ? my_charset_bin.name
+                              ? my_charset_bin.m_coll_name
                               : /* backward compatibility */
                               default_charset);
     dynstr_append_checked(&query_string, " */");

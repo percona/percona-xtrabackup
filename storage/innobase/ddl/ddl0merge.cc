@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2021, Oracle and/or its affiliates.
+Copyright (c) 2020, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -162,8 +162,7 @@ struct Merge_file_sort::Output_file : private ut::Non_copyable {
   /** Do a duplicate check against the incoming record.
   @param[in] mrec               Row to write.
   @param[in] offsets            Column offsets in row.
-  @param[in,out] dup            For duplicate checks.
-  @return DB_SUCCESS or error code. */
+  @param[in,out] dup            For duplicate checks. */
   void duplicate_check(const mrec_t *mrec, const ulint *offsets,
                        Dup *dup) noexcept;
 
@@ -268,7 +267,7 @@ void Merge_file_sort::Output_file::duplicate_check(const mrec_t *mrec,
     auto last_mrec = m_last_mrec;
     size_t extra_size = *last_mrec++;
 
-    if (extra_size > 0x80) {
+    if (extra_size >= 0x80) {
       extra_size = (extra_size & 0x7f) << 8;
       extra_size |= *last_mrec++;
     }

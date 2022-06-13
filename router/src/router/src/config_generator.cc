@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2021, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -51,9 +51,8 @@
 #include <rapidjson/rapidjson.h>
 
 #include "certificate_handler.h"
-#include "common.h"
+#include "common.h"  // truncate_string
 #include "config_builder.h"
-#include "default_paths.h"
 #include "dim.h"
 #include "harness_assert.h"
 #include "hostname_validator.h"
@@ -65,6 +64,7 @@
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/vt100.h"
 #include "mysqld_error.h"
+#include "mysqlrouter/default_paths.h"
 #include "mysqlrouter/uri.h"
 #include "mysqlrouter/utils.h"
 #include "random_generator.h"
@@ -119,6 +119,8 @@ static constexpr unsigned kDefaultPasswordRetries =
     20;  // number of the retries when generating random password
          // for the router user during the bootstrap
 static constexpr unsigned kMaxPasswordRetries = 10000;
+
+static const std::string kDefaultMetadataCacheSectionKey = "bootstrap";
 
 using mysql_harness::DIM;
 using mysql_harness::get_from_map;
@@ -2147,6 +2149,7 @@ void add_metadata_cache_routing_section(
     std::ostream &config_file, bool is_classic, bool is_writable,
     const ConfigGenerator::Options::Endpoint endpoint,
     const ConfigGenerator::Options &options, const std::string &metadata_key,
+    const std::string &cluster_name,
     const std::map<std::string, std::string> &config_cmdln_options) {
   if (!endpoint) return;
 
@@ -2163,7 +2166,7 @@ void add_metadata_cache_routing_section(
                                        "routing:" + metadata_key + key_suffix);
   add_endpoint_option(section_printer, options, endpoint);
   section_printer
-      .add_line("destinations", "metadata-cache://" + metadata_key + "/" +
+      .add_line("destinations", "metadata-cache://" + cluster_name + "/" +
                                     metadata_replicaset + "?role=" + role)
       .add_line("routing_strategy", strategy)
       .add_line("protocol", protocol);
@@ -2313,7 +2316,8 @@ void ConfigGenerator::create_config(
       .add_line("server_ssl_cipher", options.server_ssl_cipher)
       .add_line("server_ssl_curves", options.server_ssl_curves)
       .add_line("server_ssl_mode", options.server_ssl_mode)
-      .add_line("server_ssl_verify", options.server_ssl_verify);
+      .add_line("server_ssl_verify", options.server_ssl_verify)
+      .add_line("unknown_config_option", "error");
 
   save_initial_dynamic_state(state_file, *metadata_.get(), cluster_specific_id_,
                              cluster_info.metadata_servers);
@@ -2323,11 +2327,10 @@ void ConfigGenerator::create_config(
       .add_line(mysql_harness::logging::kConfigOptionLogLevel, "INFO")
       .add_line("filename", options.override_logfilename);
 
-  const auto &metadata_key = cluster_info.name;
   {
     ConfigSectionPrinter metadata_section_printer(
         config_file, config_cmdln_options,
-        "metadata_cache:" + cluster_info.name);
+        "metadata_cache:" + kDefaultMetadataCacheSectionKey);
 
     metadata_section_printer
         .add_line("cluster_type", mysqlrouter::to_string(metadata_->get_type()))
@@ -2370,8 +2373,9 @@ void ConfigGenerator::create_config(
   auto add_mdc_rt_sect = [&](bool is_classic, bool is_writable,
                              Options::Endpoint endpoint) {
     add_metadata_cache_routing_section(config_file, is_classic, is_writable,
-                                       endpoint, options, metadata_key,
-                                       config_cmdln_options);
+                                       endpoint, options,
+                                       kDefaultMetadataCacheSectionKey,
+                                       cluster_info.name, config_cmdln_options);
   };
   add_mdc_rt_sect(true, true, options.rw_endpoint);
   add_mdc_rt_sect(true, false, options.ro_endpoint);

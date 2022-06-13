@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1007,6 +1007,7 @@ class Query_expression {
   bool change_query_result(THD *thd, Query_result_interceptor *result,
                            Query_result_interceptor *old_result);
   bool set_limit(THD *thd, Query_block *provider);
+  bool has_any_limit() const;
 
   inline bool is_union() const;
   bool union_needs_tmp_table(LEX *lex);
@@ -1829,6 +1830,12 @@ class Query_block {
   bool field_list_is_empty() const;
 
   void remove_hidden_fields();
+  /// Creates a clone for the given expression by re-parsing the
+  /// expression. Used in condition pushdown to derived tables.
+  Item *clone_expression(THD *thd, Item *item, bool is_system_view);
+  /// Returns an expression from the select list of the query block
+  /// using the field's index in a derived table.
+  Item *get_derived_expr(uint expr_index);
 
   // ************************************************
   // * Members (most of these should not be public) *
@@ -2438,8 +2445,6 @@ struct st_trg_chistics {
   */
   LEX_CSTRING anchor_trigger_name;
 };
-
-extern sys_var *trg_new_row_fake_var;
 
 class Sroutine_hash_entry;
 
@@ -3718,9 +3723,6 @@ struct LEX : public Query_tables_list {
       Plugins_array;
   Plugins_array plugins;
 
-  Prealloced_array<Item_func_get_system_var *, 1> plugin_var_bind_list{
-      PSI_NOT_INSTRUMENTED};
-
   /// Table being inserted into (may be a view)
   TABLE_LIST *insert_table;
   /// Leaf table being inserted into (always a base table)
@@ -3872,6 +3874,12 @@ struct LEX : public Query_tables_list {
     table, this will be set to true.
   */
   bool reparse_derived_table_condition{false};
+  /**
+    If currently re-parsing a condition that is being pushed down to a
+    derived table, this has the positions of all the parameters that are
+    part of that condition in the original statement. Otherwise it is empty.
+  */
+  std::vector<uint> reparse_derived_table_params_at;
 
   enum SSL_type ssl_type; /* defined in violite.h */
   enum enum_duplicates duplicates;
@@ -4013,7 +4021,13 @@ struct LEX : public Query_tables_list {
 
   bool check_preparation_invalid(THD *thd);
 
-  void cleanup(THD *thd, bool full) { unit->cleanup(thd, full); }
+  void cleanup(THD *thd, bool full) {
+    unit->cleanup(thd, full);
+    if (full) {
+      m_IS_table_stats.invalidate_cache();
+      m_IS_tablespace_stats.invalidate_cache();
+    }
+  }
 
   bool is_exec_started() const { return m_exec_started; }
   void set_exec_started() { m_exec_started = true; }
@@ -4271,9 +4285,6 @@ struct LEX : public Query_tables_list {
 
   void release_plugins();
 
-  bool add_plugin_var(Item_func_get_system_var *);
-  bool rebind_plugin_vars(THD *);
-
   /**
     IS schema queries read some dynamic table statistics from SE.
     These statistics are cached, to avoid opening of table more
@@ -4343,6 +4354,14 @@ struct LEX : public Query_tables_list {
   }
 
   bool set_channel_name(LEX_CSTRING name = {});
+
+ private:
+  bool rewrite_required{false};
+
+ public:
+  void set_rewrite_required() { rewrite_required = true; }
+  void reset_rewrite_required() { rewrite_required = false; }
+  bool is_rewrite_required() { return rewrite_required; }
 };
 
 /**
@@ -4487,7 +4506,7 @@ class Parser_state {
       : m_input(), m_lip(grammar_selector_token), m_yacc(), m_comment(false) {}
 
  public:
-  Parser_state() : m_input(), m_lip(-1), m_yacc(), m_comment(false) {}
+  Parser_state() : m_input(), m_lip(~0U), m_yacc(), m_comment(false) {}
 
   /**
      Object initializer. Must be called before usage.
@@ -4563,7 +4582,8 @@ class Common_table_expr_parser_state : public Parser_state {
 };
 
 /**
-  Parser state for Derived table select expressions
+  Parser state for Derived table's condition parser.
+  (Used in condition pushdown to derived tables)
 */
 class Derived_expr_parser_state : public Parser_state {
  public:

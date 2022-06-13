@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2001, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -856,10 +856,13 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
 
     if (false) {
       // This can be useful during debugging.
+      // TODO(sgunders): Consider adding the SET DEBUG force-subplan line here,
+      // like we have on EXPLAIN FORMAT=tree if subplan_tokens is active.
       bool is_root_of_join = (join != nullptr);
-      fprintf(
-          stderr, "Query plan:\n%s\n",
-          PrintQueryPlan(0, m_root_access_path, join, is_root_of_join).c_str());
+      fprintf(stderr, "Query plan:\n%s\n",
+              PrintQueryPlan(0, m_root_access_path, join, is_root_of_join,
+                             /*tokens_for_force_subplan=*/nullptr)
+                  .c_str());
     }
   }
 
@@ -870,8 +873,7 @@ bool Query_expression::finalize(THD *thd) {
   for (Query_block *query_block = first_query_block(); query_block != nullptr;
        query_block = query_block->next_query_block()) {
     if (query_block->join != nullptr && query_block->join->needs_finalize) {
-      if (FinalizePlanForQueryBlock(thd, query_block,
-                                    query_block->join->root_access_path())) {
+      if (FinalizePlanForQueryBlock(thd, query_block)) {
         return true;
       }
     }
@@ -1547,11 +1549,11 @@ void Query_expression::change_to_access_path_without_in2exists(THD *thd) {
 
   @param list List of tables to search in
 */
-static void remove_materialized(TABLE_LIST *list) {
+static void cleanup_tmp_tables(TABLE_LIST *list) {
   for (auto tl = list; tl; tl = tl->next_local) {
     if (tl->merge_underlying_list) {
       // Find a materialized view inside another view.
-      remove_materialized(tl->merge_underlying_list);
+      cleanup_tmp_tables(tl->merge_underlying_list);
     } else if (tl->is_table_function()) {
       tl->table_function->cleanup();
     }
@@ -1577,16 +1579,19 @@ static void remove_materialized(TABLE_LIST *list) {
 
    @param list List of tables to search in
 */
-static void destroy_materialized(TABLE_LIST *list) {
+static void destroy_tmp_tables(TABLE_LIST *list) {
   for (auto tl = list; tl; tl = tl->next_local) {
     if (tl->merge_underlying_list) {
       // Find a materialized view inside another view.
-      destroy_materialized(tl->merge_underlying_list);
+      destroy_tmp_tables(tl->merge_underlying_list);
     } else if (tl->is_table_function()) {
       tl->table_function->destroy();
     }
+    // If this table has a reference to CTE, we need to remove it.
+    if (tl->common_table_expr() != nullptr) {
+      tl->common_table_expr()->references.erase_value(tl);
+    }
     if (tl->table == nullptr) continue;  // Not materialized
-
     assert(tl->schema_table == nullptr);
     if (tl->is_view_or_derived() || tl->is_recursive_reference() ||
         tl->schema_table || tl->is_table_function()) {
@@ -1598,8 +1603,6 @@ static void destroy_materialized(TABLE_LIST *list) {
 
 /**
   Cleanup after preparation of one round of execution.
-
-  @return false if previous execution was successful, and true otherwise
 */
 
 void Query_block::cleanup(THD *thd, bool full) {
@@ -1614,7 +1617,7 @@ void Query_block::cleanup(THD *thd, bool full) {
   }
 
   if (full) {
-    remove_materialized(get_table_list());
+    cleanup_tmp_tables(get_table_list());
     if (hidden_items_from_optimization > 0) remove_hidden_items();
     if (m_windows.elements > 0) {
       List_iterator<Window> li(m_windows);
@@ -1650,7 +1653,7 @@ void Query_block::destroy() {
   while ((w = li++)) w->destroy();
 
   // Destroy allocated derived tables
-  destroy_materialized(get_table_list());
+  destroy_tmp_tables(get_table_list());
 
   // Our destructor is not called, so we need to make sure
   // all the memory for these arrays is freed.

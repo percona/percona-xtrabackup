@@ -40,10 +40,10 @@ Remove these on the first opportunity, i.e. single-binary XtraBackup.  */
 struct log_online_bitmap_file_t {
   char name[FN_REFLEN]; /*!< Name with full path */
   pfs_os_file_t file;   /*!< Handle to opened file */
-  ib_uint64_t size;     /*!< Size of the file */
-  ib_uint64_t offset;   /*!< Offset of the next read,
-                        or count of already-read bytes
-                        */
+  uint64_t size;        /*!< Size of the file */
+  uint64_t offset;      /*!< Offset of the next read,
+                           or count of already-read bytes
+                           */
 };
 
 /** A set of bitmap files containing some LSN range */
@@ -98,7 +98,7 @@ enum {
 /** Length of the bitmap data in a block in page ids */
 enum { MODIFIED_PAGE_BLOCK_ID_COUNT = MODIFIED_PAGE_BLOCK_BITMAP_LEN * 8 };
 
-typedef ib_uint64_t bitmap_word_t;
+typedef uint64_t bitmap_word_t;
 
 /****************************************************************/ /**
  Calculate a bitmap block checksum.  Algorithm borrowed from
@@ -166,7 +166,7 @@ static inline ulint log_online_calc_checksum(
 /****************************************************************/ /**
  Read one bitmap data page and check it for corruption.
 
- @return TRUE if page read OK, FALSE if I/O error */
+ @return true if page read OK, false if I/O error */
 static bool log_online_read_bitmap_page(
     /*========================*/
     log_online_bitmap_file_t *bitmap_file, /*!<in/out: bitmap
@@ -174,7 +174,7 @@ static bool log_online_read_bitmap_page(
     byte *page,                            /*!<out: read page.  Must be at
                                            least MODIFIED_PAGE_BLOCK_SIZE
                                            bytes long */
-    bool *checksum_ok)                     /*!<out: TRUE if page
+    bool *checksum_ok)                     /*!<out: true if page
                                            checksum OK */
 {
   ulint checksum;
@@ -191,10 +191,10 @@ static bool log_online_read_bitmap_page(
 
   if (UNIV_UNLIKELY(!success)) {
     /* The following call prints an error message */
-    os_file_get_last_error(TRUE);
+    os_file_get_last_error(true);
     xb::warn() << "failed reading changed page bitmap file "
                << bitmap_file->name;
-    return FALSE;
+    return false;
   }
 
   bitmap_file->offset += MODIFIED_PAGE_BLOCK_SIZE;
@@ -204,7 +204,7 @@ static bool log_online_read_bitmap_page(
   actual_checksum = log_online_calc_checksum(page);
   *checksum_ok = (checksum == actual_checksum);
 
-  return TRUE;
+  return true;
 }
 
 /*********************************************************************/ /**
@@ -212,7 +212,7 @@ static bool log_online_read_bitmap_page(
  return file sequence and start LSN name components if it is.  If is not,
  the values of output parameters are undefined.
 
- @return TRUE if a given file is a changed page bitmap file.  */
+ @return true if a given file is a changed page bitmap file.  */
 static bool log_online_is_bitmap_file(
     /*======================*/
     const struct stat *file_info, /*!<in: file to
@@ -241,11 +241,11 @@ static bool log_online_is_bitmap_file(
  has the greatest LSN equal to or less than the start LSN and will include all
  the files up to the one with the greatest LSN less than the end LSN.  Caller
  must free bitmap_files->files when done if bitmap_files set to non-NULL and
- this function returned TRUE.  Field bitmap_files->count might be set to a
+ this function returned true.  Field bitmap_files->count might be set to a
  larger value than the actual count of the files, and space for the unused array
  slots will be allocated but cleared to zeroes.
 
- @return TRUE if succeeded
+ @return true if succeeded
  */
 static bool log_online_setup_bitmap_file_range(
     /*===============================*/
@@ -397,13 +397,13 @@ static bool log_online_setup_bitmap_file_range(
   }
 #endif
 
-  return TRUE;
+  return true;
 }
 
 /****************************************************************/ /**
  Open a bitmap file for reading.
 
- @return TRUE if opened successfully */
+ @return true if opened successfully */
 static bool log_online_open_bitmap_file_read_only(
     /*==================================*/
     const char *name,                      /*!<in: bitmap file
@@ -413,7 +413,7 @@ static bool log_online_open_bitmap_file_read_only(
     log_online_bitmap_file_t *bitmap_file) /*!<out: opened bitmap
                                            file */
 {
-  bool success = FALSE;
+  bool success = false;
 
   xb_ad(name[0] != '\0');
 
@@ -428,7 +428,7 @@ static bool log_online_open_bitmap_file_read_only(
     contain apostrophes, thus no need for ut_print_filename(). */
     xb::warn() << "error opening the changed page bitmap "
                << SQUOTE(bitmap_file->name);
-    return FALSE;
+    return false;
   }
 
   bitmap_file->size = os_file_get_size(bitmap_file->file);
@@ -439,7 +439,7 @@ static bool log_online_open_bitmap_file_read_only(
   posix_fadvise(bitmap_file->file.m_file, 0, 0, POSIX_FADV_NOREUSE);
 #endif
 
-  return TRUE;
+  return true;
 }
 
 /****************************************************************/ /**
@@ -449,7 +449,7 @@ static bool log_online_open_bitmap_file_read_only(
  2) Error if we cannot read any more full pages but the last read page
  did not have the last-in-run flag set.
 
- @return FALSE for the error */
+ @return false for the error */
 static bool log_online_diagnose_bitmap_eof(
     /*===========================*/
     const log_online_bitmap_file_t *bitmap_file, /*!< in: bitmap file */
@@ -477,10 +477,10 @@ static bool log_online_diagnose_bitmap_eof(
       xb::warn() << "changed page bitmap file " << SQUOTE(bitmap_file->name)
                  << " does not contain a complete run "
                     "at the end.";
-      return FALSE;
+      return false;
     }
   }
-  return TRUE;
+  return true;
 }
 
 /* End of copy-pasted definitions */
@@ -515,7 +515,7 @@ static void xb_msg_missing_lsn_data(
  the page LSN values to determine if the bitmap file was scanned until the data
  was found or until EOF.  Page must be at least MODIFIED_PAGE_BLOCK_SIZE big.
 
- @return TRUE if the scan successful without corruption detected
+ @return true if the scan successful without corruption detected
  */
 static bool xb_find_lsn_in_bitmap_file(
     /*=======================*/
@@ -539,7 +539,7 @@ static bool xb_find_lsn_in_bitmap_file(
       (bitmap_file->offset <= bitmap_file->size - MODIFIED_PAGE_BLOCK_SIZE)) {
     next_to_last_page_ok = last_page_ok;
     if (!log_online_read_bitmap_page(bitmap_file, page, &last_page_ok)) {
-      return FALSE;
+      return false;
     }
 
     *page_end_lsn = mach_read_from_8(page + MODIFIED_PAGE_END_LSN);
@@ -567,10 +567,10 @@ xb_page_bitmap *xb_page_bitmap_init(lsn_t checkpoint_lsn_start)
   byte page[MODIFIED_PAGE_BLOCK_SIZE];
   lsn_t current_page_end_lsn;
   xb_page_bitmap *result;
-  bool last_page_in_run = FALSE;
+  bool last_page_in_run = false;
   log_online_bitmap_file_range_t bitmap_files;
   size_t bmp_i;
-  bool last_page_ok = TRUE;
+  bool last_page_ok = true;
 
   if (UNIV_UNLIKELY(bmp_start_lsn > bmp_end_lsn)) {
     xb::info() << "incremental backup LSN " << bmp_start_lsn
@@ -785,7 +785,7 @@ void xb_page_bitmap_deinit(
  given bitmap range.  Assumes that bitmap_range->bitmap_page has been
  already found/bumped by rbt_search()/rbt_next().
 
- @return FALSE if no more bitmap data for the range space ID */
+ @return false if no more bitmap data for the range space ID */
 static bool xb_page_bitmap_setup_next_page(
     /*===========================*/
     xb_page_bitmap_range *bitmap_range) /*!<in/out: the bitmap range */
@@ -795,7 +795,7 @@ static bool xb_page_bitmap_setup_next_page(
 
   if (bitmap_range->bitmap_node == NULL) {
     bitmap_range->current_page_id = ULINT_UNDEFINED;
-    return FALSE;
+    return false;
   }
 
   bitmap_range->bitmap_page = rbt_value(byte, bitmap_range->bitmap_node);
@@ -806,7 +806,7 @@ static bool xb_page_bitmap_setup_next_page(
     /* No more data for the current page id. */
     xb_a(new_space_id > bitmap_range->space_id);
     bitmap_range->current_page_id = ULINT_UNDEFINED;
-    return FALSE;
+    return false;
   }
 
   new_1st_page_id =
@@ -817,7 +817,7 @@ static bool xb_page_bitmap_setup_next_page(
   bitmap_range->current_page_id = new_1st_page_id;
   bitmap_range->bit_i = 0;
 
-  return TRUE;
+  return true;
 }
 
 /****************************************************************/ /**
@@ -865,8 +865,8 @@ static inline bool is_bit_set(
                                 MODIFIED_PAGE_BLOCK_BITMAP)) +
              (bitmap_range->bit_i >> 6))) &
           (1ULL << (bitmap_range->bit_i & 0x3F)))
-             ? TRUE
-             : FALSE;
+             ? true
+             : false;
 }
 
 /****************************************************************/ /**

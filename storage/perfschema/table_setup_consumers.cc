@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -253,8 +253,6 @@ int table_setup_consumers::update_row_values(TABLE *table,
   for (; (f = *fields); fields++) {
     if (bitmap_is_set(table->write_set, f->field_index())) {
       switch (f->field_index()) {
-        case 0: /* NAME */
-          return HA_ERR_WRONG_COMMAND;
         case 1: /* ENABLED */
         {
           value = (enum_yes_no)get_field_enum(f);
@@ -262,7 +260,7 @@ int table_setup_consumers::update_row_values(TABLE *table,
           break;
         }
         default:
-          assert(false);
+          return HA_ERR_WRONG_COMMAND;
       }
     }
   }

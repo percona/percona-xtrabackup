@@ -217,6 +217,8 @@ have_slave_repository_type_table.inc
 not_relay_log_info_file.inc
 not_master_info_file.inc
 have_transaction_write_set_extraction.inc
+have_default_replica_transaction_retries.inc
+have_default_slave_rows_search_algorithms.inc
 
 #14.3 Some replication tests cannot run with GTID_ONLY == 1
 not_rpl_gtid_only.inc
@@ -311,3 +313,12 @@ have_component_keyring_file.inc
 # 31. MTR test case can be skipped because it is just used to exercise
 # a unit test that requires a runninng server.
 have_cs_test_mysql_proto_reader_mtr.inc
+
+# skip the test if it's running with the wrong openssl command line version
+have_openssl_binary_version.inc
+
+# skip the test if the openssl library doesn't support TLS 1.3 (not openssl 1.1)
+not_tlsv13.inc
+
+# skip tests which require thread_pool_have_transactions_limit in configs which # don't have it
+have_max_transactions_limit.inc

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #define DBTC_H
 
 #ifndef DBTC_STATE_EXTRACT
+#include "util/require.h"
 #include <ndb_limits.h>
 #include <pc.hpp>
 #include <SimulatedBlock.hpp>
@@ -941,7 +942,7 @@ public:
 
     static void static_asserts()
     {
-      STATIC_ASSERT(sizeof(ApiConTimers) ==
+      static_assert(sizeof(ApiConTimers) ==
                       sizeof(TimerEntry) << INDEX_BITS);
     }
 
@@ -1479,6 +1480,7 @@ public:
   /* SYSTEM                                               */
   /********************************************************/
   struct HostRecord {
+    Bitmask<(MAX_NDBMT_LQH_THREADS+1+31)/32> lqh_pack_mask;
     struct PackedWordsContainer lqh_pack[MAX_NDBMT_LQH_THREADS+1];
     struct PackedWordsContainer packTCKEYCONF;
     HostState hostStatus;
@@ -1496,7 +1498,7 @@ public:
       NF_NODE_FAIL_BITS    = 0xF // All bits...
     };
     Uint32 m_nf_bits;
-    NdbNodeBitmask m_lqh_trans_conf;
+    NdbNodeBitmask _m_lqh_trans_conf;
     /**
      * Indicator if any history to track yet
      *

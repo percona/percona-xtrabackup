@@ -51,16 +51,16 @@ function cleanup_keyring() {
 
 function ping_kms()
 {
-  if [ -z ${KMS_REGION+x} ]; then
+  if [ -z "${KMS_REGION}" ]; then
     return 1
   fi
-  if [ -z ${KMS_AUTH_KEY+x} ]; then
+  if [ -z "${KMS_AUTH_KEY}" ]; then
     return 1
   fi
-  if [ -z ${KMS_SECRET_ACCESS_KEY+x} ]; then
+  if [ -z "${KMS_SECRET_ACCESS_KEY}" ]; then
     return 1
   fi
-  if [ -z ${KMS_KEY+x} ]; then
+  if [ -z "${KMS_KEY}" ]; then
     return 1
   fi
   return 0

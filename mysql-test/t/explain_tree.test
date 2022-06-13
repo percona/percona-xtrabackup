@@ -164,6 +164,7 @@ INSERT INTO t1 VALUES ('def');
 INSERT INTO t1 VALUES ('def');
 INSERT INTO t1 VALUES ('ghi');
 ANALYZE TABLE t1;
+--replace_regex /cost=1.76..2.27/cost=1.76..2.28/
 EXPLAIN FORMAT=tree SELECT DISTINCT f1 FROM t1 LIMIT 2;
 DROP TABLE t1;
 
@@ -528,6 +529,10 @@ ANALYZE TABLE t1;
 EXPLAIN FORMAT=tree
   SELECT * FROM t1 WHERE a IN (2,4,6,8,10);
 
+# Also, with printing of a reverse-scan iterator.
+EXPLAIN FORMAT=tree
+  SELECT * FROM t1 WHERE a IN (2,4,6,8,10) ORDER BY a DESC;
+
 #
 # EXPLAIN ANALYZE on an IndexMergeIterator. Also demonstrates printing of
 # scanning over clustered primary keys. (The filter is redundant.)
@@ -578,4 +583,14 @@ CREATE TABLE t(x INTEGER);
 INSERT INTO t VALUES (1), (2), (3);
 ANALYZE TABLE t;
 EXPLAIN FORMAT=TREE DELETE t FROM t WHERE 0=1;
+
+# Demonstrates EXPLAIN ANALYZE on a DELETE statement.
+--replace_regex /time=\d+\.\d+\.\.\d+\.\d+/time=N.NNN..N.NNN/
+EXPLAIN ANALYZE DELETE t1 FROM t t1, t t2 WHERE t1.x = t2.x + 1;
+# Should EXPLAIN ANALYZE DELETE actually delete rows? Currently, it
+# does not. (And EXPLAIN ANALYZE UPDATE/INSERT don't modify the table
+# either.)
+--sorted_result
+SELECT * FROM t;
+
 DROP TABLE t;

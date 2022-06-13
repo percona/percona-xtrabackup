@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -82,12 +82,7 @@ extern int HINT_PARSER_parse(THD *thd, Hint_scanner *scanner,
 
 static int lex_one_token(Lexer_yystype *yylval, THD *thd);
 
-/*
-  We are using pointer to this variable for distinguishing between assignment
-  to NEW row field (when parsing trigger definition) and structured variable.
-*/
-
-sys_var *trg_new_row_fake_var = (sys_var *)0x01;
+static constexpr const int MAX_SELECT_NESTING{sizeof(nesting_map) * 8 - 1};
 
 /**
   LEX_STRING constant for null-string to be used in parser and other places.
@@ -495,7 +490,7 @@ void LEX::reset() {
   m_is_replication_deprecated_syntax_used = false;
   m_was_replication_command_executed = false;
 
-  plugin_var_bind_list.clear();
+  reset_rewrite_required();
 }
 
 /**
@@ -521,8 +516,8 @@ bool lex_start(THD *thd) {
   assert(lex->current_query_block() == nullptr);
   lex->m_current_query_block = lex->query_block;
 
-  lex->m_IS_table_stats.invalidate_cache();
-  lex->m_IS_tablespace_stats.invalidate_cache();
+  assert(lex->m_IS_table_stats.is_valid() == false);
+  assert(lex->m_IS_tablespace_stats.is_valid() == false);
 
   return status;
 }
@@ -548,19 +543,6 @@ void LEX::release_plugins() {
     plugin_unlock_list(nullptr, plugins.begin(), plugins.size());
     plugins.clear();
   }
-}
-
-bool LEX::add_plugin_var(Item_func_get_system_var *item) {
-  return plugin_var_bind_list.push_back(item);
-}
-
-bool LEX::rebind_plugin_vars(THD *thd) {
-  for (Item_func_get_system_var *item : plugin_var_bind_list) {
-    if (item->bind(thd)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -610,9 +592,8 @@ Query_expression *LEX::create_query_expr_and_block(
     THD *thd, Query_block *current_query_block, Item *where, Item *having,
     enum_parsing_context ctx) {
   if (current_query_block != nullptr &&
-      current_query_block->nest_level >= (int)MAX_SELECT_NESTING) {
-    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0),
-             MAX_SELECT_NESTING);
+      current_query_block->nest_level >= MAX_SELECT_NESTING) {
+    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0));
     return nullptr;
   }
 
@@ -3737,6 +3718,22 @@ bool Query_expression::set_limit(THD *thd, Query_block *provider) {
 }
 
 /**
+  Checks if this query expression has limit defined. For a query expression
+  with set operation it checks if any of the query blocks has limit defined.
+
+  @returns true if the query expression has limit.
+  false otherwise.
+*/
+bool Query_expression::has_any_limit() const {
+  if (global_parameters()->has_limit()) return true;
+  if (is_union()) {
+    for (Query_block *qb = first_query_block(); qb; qb = qb->next_query_block())
+      if (qb->has_limit()) return true;
+  }
+  return false;
+}
+
+/**
   Decide if a temporary table is needed for the UNION.
 
   @retval true  A temporary table is needed.
@@ -4144,8 +4141,10 @@ void LEX::cleanup_after_one_table_open() {
   if (all_query_blocks_list != query_block) {
     /* cleunup underlying units (units of VIEW) */
     for (Query_expression *un = query_block->first_inner_query_expression(); un;
-         un = un->next_query_expression())
+         un = un->next_query_expression()) {
       un->cleanup(thd, true);
+      un->destroy();
+    }
     /* reduce all selects list to default state */
     all_query_blocks_list = query_block;
     /* remove underlying units (units of VIEW) subtree */

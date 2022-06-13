@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -125,7 +125,8 @@ class Database_rewrite {
       unsigned char **m_buffer{nullptr};
 
      public:
-      Buffer_realloc_manager(unsigned char **buffer) : m_buffer{buffer} {}
+      explicit Buffer_realloc_manager(unsigned char **buffer)
+          : m_buffer{buffer} {}
       ~Buffer_realloc_manager() {
         if (m_buffer != nullptr) free(*m_buffer);
       }
@@ -209,7 +210,7 @@ class Database_rewrite {
     }
 
    public:
-    Transaction_payload_content_rewriter(Database_rewrite &rewriter)
+    explicit Transaction_payload_content_rewriter(Database_rewrite &rewriter)
         : m_event_rewriter(rewriter) {}
 
     /**
@@ -1815,14 +1816,14 @@ static struct my_option my_long_options[] = {
      &rewrite, &rewrite, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, nullptr,
      0, nullptr},
 #ifdef NDEBUG
-    {"debug", '#', "This is a non-debug version. Catch this and exit.", 0, 0, 0,
-     GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+    {"debug", '#', "This is a non-debug version. Catch this and exit.", nullptr,
+     nullptr, nullptr, GET_DISABLED, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-check", OPT_DEBUG_CHECK,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-info", OPT_DEBUG_INFO,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #else
     {"debug", '#', "Output debug log.", &default_dbug_option,
      &default_dbug_option, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr, 0,
@@ -2363,6 +2364,10 @@ static Exit_status safe_connect() {
     error("Failed on connect: %s", mysql_error(mysql));
     return ERROR_STOP;
   }
+
+  if (ssl_client_check_post_connect_ssl_setup(
+          mysql, [](const char *err) { error("%s", err); }))
+    return ERROR_STOP;
   mysql->reconnect = true;
   return OK_CONTINUE;
 }
@@ -2575,7 +2580,7 @@ static void fix_gtid_set(MYSQL_RPL *rpl, uchar *packet_gtid_set) {
 class Destroy_log_event_guard {
  public:
   Log_event **ev_del;
-  Destroy_log_event_guard(Log_event **ev_arg) { ev_del = ev_arg; }
+  explicit Destroy_log_event_guard(Log_event **ev_arg) { ev_del = ev_arg; }
   ~Destroy_log_event_guard() {
     if (*ev_del != nullptr) delete *ev_del;
   }

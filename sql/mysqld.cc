@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -692,6 +692,9 @@ MySQL clients support the protocol:
 
 #include "errmsg.h"  // init_client_errs
 #include "ft_global.h"
+#ifdef _WIN32
+#include "jemalloc_win.h"
+#endif
 #include "keycache.h"  // KEY_CACHE
 #include "libbinlogevents/include/binlog_event.h"
 #include "libbinlogevents/include/control_events.h"
@@ -1188,6 +1191,7 @@ bool migrate_connect_options = false;
 uint host_cache_size;
 ulong log_error_verbosity = 3;  // have a non-zero value during early start-up
 bool opt_keyring_migration_to_component = false;
+bool opt_persist_sensitive_variables_in_plaintext{true};
 
 #if defined(_WIN32)
 /*
@@ -1384,6 +1388,7 @@ uint sync_binlog_period = 0, sync_relaylog_period = 0,
      opt_mta_checkpoint_period, opt_mta_checkpoint_group;
 ulong expire_logs_days = 0;
 ulong binlog_expire_logs_seconds = 0;
+bool opt_binlog_expire_logs_auto_purge{true};
 /**
   Soft upper limit for number of sp_head objects that can be stored
   in the sp_cache for one connection.
@@ -1801,6 +1806,10 @@ Gtid_table_persistor *gtid_table_persistor = nullptr;
 /* cache for persisted variables */
 static Persisted_variables_cache persisted_variables_cache;
 
+void persisted_variables_refresh_keyring_support() {
+  persisted_variables_cache.keyring_support_available();
+}
+
 void set_remaining_args(int argc, char **argv) {
   remaining_argc = argc;
   remaining_argv = argv;
@@ -2121,7 +2130,9 @@ static bool initialize_manifest_file_components() {
     like init_server_components() the word is used in bit different context
     and may mean general idea of modularity.
   */
-  g_deployed_components = new (std::nothrow) Deployed_components(my_progname);
+  assert(strlen(mysql_real_data_home) > 0);
+  g_deployed_components =
+      new (std::nothrow) Deployed_components(my_progname, mysql_real_data_home);
   if (g_deployed_components == nullptr ||
       g_deployed_components->valid() == false) {
     /*Error would have been raised by Deployed_components constructor */
@@ -4693,12 +4704,11 @@ static inline const char *rpl_make_log_name(PSI_memory_key key, const char *opt,
 }
 
 int init_common_variables() {
-  umask(((~my_umask) & 0666));
   my_decimal_set_zero(&decimal_zero);  // set decimal_zero constant;
   tzset();                             // Set tzname
 
   max_system_variables.pseudo_thread_id = (my_thread_id)~0;
-  server_start_time = flush_status_time = my_time(0);
+  server_start_time = flush_status_time = time(nullptr);
 
   binlog_filter = new Rpl_filter;
   if (!binlog_filter) {
@@ -4959,14 +4969,14 @@ int init_common_variables() {
   sys_var *var;
   /* Calculate and update default value for thread_cache_size. */
   if ((default_value = 8 + max_connections / 100) > 100) default_value = 100;
-  var = intern_find_sys_var(STRING_WITH_LEN("thread_cache_size"));
+  var = find_static_system_variable("thread_cache_size");
   var->update_default(default_value);
 
   /* Calculate and update default value for host_cache_size. */
   if ((default_value = 128 + max_connections) > 628 &&
       (default_value = 628 + ((max_connections - 500) / 20)) > 2000)
     default_value = 2000;
-  var = intern_find_sys_var(STRING_WITH_LEN("host_cache_size"));
+  var = find_static_system_variable("host_cache_size");
   var->update_default(default_value);
 
   /* Fix thread_cache_size. */
@@ -5700,7 +5710,7 @@ int setup_error_log_components() {
 
     if (log_builtins_error_stack(opt_log_error_services, false, &pos) < 0) {
       char *problem = opt_log_error_services; /* purecov: begin inspected */
-      const char *var_name = "log_error_services";
+      const std::string var_name = "log_error_services";
 
       /*
         We failed to set the requested configuration. This can happen
@@ -5722,7 +5732,7 @@ int setup_error_log_components() {
         item and extracting the default value from it).
         If that's impossible, print diagnostics, then exit.
       */
-      sys_var *var = intern_find_sys_var(var_name, strlen(var_name));
+      sys_var *var = find_static_system_variable(var_name);
 
       if (var != nullptr) {
         // We found the system variable, now extract the default value:
@@ -5733,7 +5743,7 @@ int setup_error_log_components() {
             We managed to set the default pipeline. Now log what was wrong
             about the user-supplied value, then shut down.
           */
-          LogErr(ERROR_LEVEL, ER_CANT_START_ERROR_LOG_SERVICE, var_name,
+          LogErr(ERROR_LEVEL, ER_CANT_START_ERROR_LOG_SERVICE, var_name.c_str(),
                  problem);
           return 1;
         }
@@ -5756,8 +5766,8 @@ int setup_error_log_components() {
         size_t len;
 
         len = snprintf(buff, sizeof(buff),
-                       ER_DEFAULT(ER_CANT_START_ERROR_LOG_SERVICE), var_name,
-                       problem);
+                       ER_DEFAULT(ER_CANT_START_ERROR_LOG_SERVICE),
+                       var_name.c_str(), problem);
         len = std::min(len, sizeof(buff) - 1);
 
         // Trust nothing. Write directly. Quit.
@@ -5775,7 +5785,7 @@ int setup_error_log_components() {
       will render correct results.
     */
 
-    sys_var *var = intern_find_sys_var(STRING_WITH_LEN("log_error_services"));
+    sys_var *var = find_static_system_variable("log_error_services");
     char *default_services = nullptr;
 
     if ((var != nullptr) &&
@@ -6266,9 +6276,6 @@ static int init_server_components() {
     later.
   */
   tc_log = &tc_log_dummy;
-
-  /* This limits ability to configure SSL library through config options */
-  init_ssl();
 
   /*
    Each server should have one UUID. We will create it automatically, if it
@@ -6870,7 +6877,7 @@ static void calculate_mysql_home_from_my_progname() {
       "/runtime_output_directory/"};
 #if defined(_WIN32) || defined(APPLE_XCODE)
   /* Allow Win32 users to move MySQL anywhere */
-  char prg_dev[LIBLEN];
+  char prg_dev[FN_REFLEN];
   my_path(prg_dev, my_progname, nullptr);
 
   // On windows or Xcode the basedir will always be one level up from where
@@ -6921,6 +6928,121 @@ static void calculate_mysql_home_from_my_progname() {
 #endif
   mysql_home_ptr = mysql_home;
 }
+
+/**
+  Helper class for loading keyring component
+  Keyring component is loaded after minimal chassis initialization.
+  At this time, home dir and plugin dir may not be initialized.
+
+  This helper class sets them temporarily by reading configurations
+  and resets them in destructor.
+*/
+class Plugin_and_data_dir_option_parser final {
+ public:
+  Plugin_and_data_dir_option_parser(int argc, char **argv)
+      : datadir_(nullptr),
+        plugindir_(nullptr),
+        save_homedir_{0},
+        save_plugindir_{0},
+        valid_(false) {
+    char *ptr, **res, *datadir = nullptr, *plugindir = nullptr;
+    char dir[FN_REFLEN] = {0}, local_datadir_buffer[FN_REFLEN] = {0},
+         local_plugindir_buffer[FN_REFLEN] = {0};
+    const char *dirs = nullptr;
+
+    my_option datadir_options[] = {
+        {"datadir", 0, "", &datadir, nullptr, nullptr, GET_STR, OPT_ARG, 0, 0,
+         0, nullptr, 0, nullptr},
+        {"plugin_dir", 0, "", &plugindir, nullptr, nullptr, GET_STR, OPT_ARG, 0,
+         0, 0, nullptr, 0, nullptr},
+        {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0,
+         0, 0, nullptr, 0, nullptr}};
+
+    /*
+      create temporary args list and pass it to handle_options.
+      We do this because we don't want to mess with the actual
+      argument list. handle_options() trims the processed parts.
+    */
+    MEM_ROOT alloc{PSI_NOT_INSTRUMENTED, 512};
+    if (!(ptr =
+              (char *)alloc.Alloc(sizeof(alloc) + (argc + 1) * sizeof(char *))))
+      return;
+    memset(ptr, 0, (sizeof(char *) * (argc + 1)));
+    res = (char **)(ptr);
+    memcpy((uchar *)res, (char *)(argv), (argc) * sizeof(char *));
+
+    my_getopt_skip_unknown = true;
+    if (my_handle_options(&argc, &res, datadir_options, nullptr, nullptr, true,
+                          false)) {
+      my_getopt_skip_unknown = false;
+      return;
+    }
+    my_getopt_skip_unknown = false;
+
+    if (!datadir) {
+      /* mysql_real_data_home must be initialized at this point */
+      assert(mysql_real_data_home[0]);
+      /*
+        mysql_home_ptr should also be initialized at this point.
+        See calculate_mysql_home_from_my_progname() for details
+      */
+      assert(mysql_home_ptr && mysql_home_ptr[0]);
+      convert_dirname(local_datadir_buffer, mysql_real_data_home, NullS);
+      (void)my_load_path(local_datadir_buffer, local_datadir_buffer,
+                         mysql_home_ptr);
+      datadir = local_datadir_buffer;
+    }
+    dirs = datadir;
+    unpack_dirname(dir, dirs);
+    datadir_ = my_strdup(PSI_INSTRUMENT_ME, dir, MYF(0));
+    memset(dir, 0, FN_REFLEN);
+
+    convert_dirname(local_plugindir_buffer,
+                    plugindir ? plugindir : get_relative_path(PLUGINDIR),
+                    NullS);
+    (void)my_load_path(local_plugindir_buffer, local_plugindir_buffer,
+                       mysql_home);
+    plugindir_ = my_strdup(PSI_INSTRUMENT_ME, local_plugindir_buffer, MYF(0));
+
+    /* Backup mysql_real_data_home */
+    if (mysql_real_data_home[0])
+      memcpy(save_homedir_, mysql_real_data_home, strlen(mysql_real_data_home));
+    if (datadir_ != nullptr)
+      memcpy(mysql_real_data_home, datadir_, strlen(datadir_));
+
+    /* Backup opt_plugin_dir */
+    if (opt_plugin_dir[0])
+      memcpy(save_plugindir_, opt_plugin_dir,
+             std::min(static_cast<size_t>(FN_REFLEN), strlen(opt_plugin_dir)));
+    if (plugindir_ != nullptr)
+      memcpy(opt_plugin_dir, plugindir_, strlen(plugindir_));
+
+    valid_ = true;
+  }
+
+  ~Plugin_and_data_dir_option_parser() {
+    valid_ = false;
+    if (datadir_ != nullptr) {
+      memset(mysql_real_data_home, 0, sizeof(mysql_real_data_home));
+      memcpy(mysql_real_data_home, save_homedir_, strlen(save_homedir_));
+      my_free(datadir_);
+    }
+    if (plugindir_ != nullptr) {
+      memset(opt_plugin_dir, 0, sizeof(opt_plugin_dir));
+      memcpy(opt_plugin_dir, save_plugindir_, strlen(save_plugindir_));
+      my_free(plugindir_);
+    }
+  }
+
+  bool valid() const { return valid_; }
+
+ private:
+  char *datadir_;
+  char *plugindir_;
+  char save_homedir_[FN_REFLEN + 1];
+  char save_plugindir_[FN_REFLEN + 1];
+  bool valid_;
+};
 
 #ifdef _WIN32
 int win_main(int argc, char **argv)
@@ -6975,18 +7097,30 @@ int mysqld_main(int argc, char **argv)
 
   sys_var_init();
 
+#ifdef _WIN32
+  if (mysys::is_my_malloc_using_jemalloc()) {
+    LogErr(INFORMATION_LEVEL, ER_MY_MALLOC_USING_JEMALLOC);
+  } else {
+    for (auto &msg : mysys::fetch_jemalloc_initialization_messages()) {
+      LogErr(msg.m_severity, ER_MY_MALLOC_USING_JEMALLOC + msg.m_ecode,
+             msg.m_message.c_str());
+    }
+  }
+#endif
   /*
    Initialize variables cache for persisted variables, load persisted
-   config file and append read only persisted variables to command line
-   options if present.
+   config file and append parse early  read only persisted variables
+   to command line options if present.
   */
+  bool arg_separator_added = false;
   if (persisted_variables_cache.init(&argc, &argv) ||
       persisted_variables_cache.load_persist_file() ||
-      persisted_variables_cache.append_read_only_variables(&argc, &argv)) {
+      persisted_variables_cache.append_parse_early_variables(
+          &argc, &argv, arg_separator_added)) {
     flush_error_log_messages();
     return 1;
   }
-  my_getopt_use_args_separator = false;
+
   remaining_argc = argc;
   remaining_argv = argv;
 
@@ -7205,16 +7339,61 @@ int mysqld_main(int argc, char **argv)
   my_thread_global_reinit();
 #endif /* HAVE_PSI_INTERFACE */
 
+  /* This limits ability to configure SSL library through config options */
+  init_ssl();
+
+  /* Set umask as early as possible */
+  umask(((~my_umask) & 0666));
+
   /*
     Initialize Components core subsystem early on, once we have PSI, which it
     uses. This part doesn't use any more MySQL-specific functionalities but
     error logging and PFS.
   */
-  if (component_infrastructure_init()) unireg_abort(MYSQLD_ABORT_EXIT);
+  if (component_infrastructure_init()) {
+    flush_error_log_messages();
+    return 1;
+  }
+
+  {
+    /* Must be initialized early because it is required by dynamic loader */
+    files_charset_info = &my_charset_utf8_general_ci;
+    auto keyring_helper = std::make_unique<Plugin_and_data_dir_option_parser>(
+        remaining_argc, remaining_argv);
+
+    if (keyring_helper->valid() == false) {
+      flush_error_log_messages();
+      return 1;
+    }
+
+    if (initialize_manifest_file_components()) {
+      flush_error_log_messages();
+      return 1;
+    }
 
     /*
-      Initialize Performance Schema component services.
+      If keyring component was loaded through manifest file, services provided
+      by such a component should get priority over keyring plugin. That's why
+      we have to set defaults before proxy keyring services are loaded.
     */
+    set_srv_keyring_implementation_as_default();
+  }
+
+  /*
+    Append read only persisted variables to command line now.
+    Note that if arg separator is already added, it will not
+    be added again.
+  */
+  if (persisted_variables_cache.append_read_only_variables(
+          &remaining_argc, &remaining_argv, arg_separator_added, false)) {
+    flush_error_log_messages();
+    return 1;
+  }
+  my_getopt_use_args_separator = false;
+
+  /*
+    Initialize Performance Schema component services.
+  */
 #ifdef HAVE_PSI_THREAD_INTERFACE
   if (!is_help_or_validate_option() && !opt_initialize) {
     register_pfs_notification_service();
@@ -7448,15 +7627,6 @@ int mysqld_main(int argc, char **argv)
     unireg_abort(MYSQLD_ABORT_EXIT); /* purecov: inspected */
   }
 
-  if (initialize_manifest_file_components()) unireg_abort(MYSQLD_ABORT_EXIT);
-
-  /*
-    If keyring component was loaded through manifest file, services provided
-    by such a component should get priority over keyring plugin. That's why
-    we have to set defaults before proxy keyring services are loaded.
-  */
-  set_srv_keyring_implementation_as_default();
-
   /*
    The subsequent calls may take a long time : e.g. innodb log read.
    Thus set the long running service control manager timeout
@@ -7605,13 +7775,22 @@ int mysqld_main(int argc, char **argv)
     if (mysql_bin_log.write_event_to_binlog_and_sync(&prev_gtids_ev))
       unireg_abort(MYSQLD_ABORT_EXIT);
 
-    if (expire_logs_days > 0 || binlog_expire_logs_seconds > 0) {
-      time_t purge_time = my_time(0) - binlog_expire_logs_seconds -
-                          expire_logs_days * 24 * 60 * 60;
-      DBUG_EXECUTE_IF("expire_logs_always_at_start",
-                      { purge_time = my_time(0); });
-      mysql_bin_log.purge_logs_before_date(purge_time, true);
-    }
+    // run auto purge member function. It will evaluate auto purge controls
+    // and configuration, calculate which log files are to be purged, and
+    // if any file is to be purged, it will purge it. This is all encapsulated
+    // insiude the auto purge member function.
+    //
+    // Note on the DBUG_EVALUATE_IF usage below:
+    // - when compiling it out: the condition evaluates to true, thus
+    //   mysql_bin_log.auto_purge_at_server_startup() runs
+    // - when "expire_logs_always_at_start" is set: evaluates to false,
+    //   thus mysql_bin_log.purge_logs_before_date() runs
+    // - when "expire_logs_always_at_start" is not set: evaluates to true,
+    //   this mysql_bin_log.auto_purge_at_server_startup() runs
+    if (DBUG_EVALUATE_IF("expire_logs_always_at_start", false, true))
+      mysql_bin_log.auto_purge_at_server_startup();
+    else if (expire_logs_days > 0 || binlog_expire_logs_seconds > 0)
+      mysql_bin_log.purge_logs_before_date(time(nullptr), true);
 
     (void)RUN_HOOK(server_state, after_engine_recovery, (nullptr));
   }
@@ -7798,7 +7977,7 @@ int mysqld_main(int argc, char **argv)
     update_authentication_policy();
   }
   /* set all persistent options */
-  if (persisted_variables_cache.set_persist_options(false, true)) {
+  if (persisted_variables_cache.set_persisted_options(false)) {
     LogErr(ERROR_LEVEL, ER_CANT_SET_UP_PERSISTED_VALUES);
     flush_error_log_messages();
     return 1;
@@ -8415,6 +8594,8 @@ static void adjust_open_files_limit(ulong *requested_open_files) {
         min<ulong>(effective_open_files, request_open_files);
 }
 
+static constexpr const ulong TABLE_OPEN_CACHE_MIN{400};
+
 static void adjust_max_connections(ulong requested_open_files) {
   ulong limit;
 
@@ -8448,7 +8629,7 @@ static void adjust_table_def_size() {
   sys_var *var;
 
   default_value = min<ulong>(400 + table_cache_size / 2, 2000);
-  var = intern_find_sys_var(STRING_WITH_LEN("table_definition_cache"));
+  var = find_static_system_variable("table_definition_cache");
   assert(var != nullptr);
   var->update_default(default_value);
 
@@ -8550,8 +8731,9 @@ struct my_option my_long_early_options[] = {
 */
 
 struct my_option my_long_options[] = {
-    {"abort-slave-event-count", 0,
-     "Option used by mysql-test for debugging and testing of replication.",
+    {"abort-slave-event-count", OPT_ABORT_SLAVE_EVENT_COUNT,
+     "Option used by mysql-test for debugging and testing of replication."
+     "This option is deprecated and will be removed in a future version. ",
      &abort_slave_event_count, &abort_slave_event_count, nullptr, GET_INT,
      REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"allow-suspicious-udfs", 0,
@@ -8620,8 +8802,9 @@ struct my_option my_long_options[] = {
     {"default-time-zone", 0, "Set the default time zone.", &default_tz_name,
      &default_tz_name, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
-    {"disconnect-slave-event-count", 0,
-     "Option used by mysql-test for debugging and testing of replication.",
+    {"disconnect-slave-event-count", OPT_DISCONNECT_SLAVE_EVENT_COUNT,
+     "Option used by mysql-test for debugging and testing of replication."
+     "This option is deprecated and will be removed in a future version.",
      &disconnect_slave_event_count, &disconnect_slave_event_count, nullptr,
      GET_INT, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"exit-info", 'T', "Used for debugging. Use at your own risk.", nullptr,
@@ -9586,6 +9769,9 @@ SHOW_VAR status_vars[] = {
     {"Uptime_since_flush_status", (char *)&show_flushstatustime, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
 #endif
+    {"Ssl_session_cache_timeout",
+     (char *)&Ssl_mysql_main_status::show_ssl_ctx_sess_timeout, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
     {NullS, NullS, SHOW_LONG, SHOW_SCOPE_ALL}};
 
 void add_terminator(vector<my_option> *options) {
@@ -9648,7 +9834,7 @@ static void usage(void) {
             default_character_set_name, MY_CS_PRIMARY, MYF(MY_WME))))
     exit(MYSQLD_ABORT_EXIT);
   if (!default_collation_name)
-    default_collation_name = default_charset_info->name;
+    default_collation_name = default_charset_info->m_coll_name;
   if (is_help_or_validate_option() || opt_verbose) {
     my_progname = my_progname + dirname_length(my_progname);
   }
@@ -9762,8 +9948,8 @@ static int mysql_init_variables() {
   refresh_version = 1L; /* Increments on each reload */
   my_stpcpy(server_version, MYSQL_SERVER_VERSION);
   key_caches.clear();
-  if (!(dflt_key_cache = get_or_create_key_cache(
-            default_key_cache_base.str, default_key_cache_base.length))) {
+  if (!(dflt_key_cache = get_or_create_key_cache(std::string_view{
+            default_key_cache_base.str, default_key_cache_base.length}))) {
     LogErr(ERROR_LEVEL, ER_KEYCACHE_OOM);
     return 1;
   }
@@ -10469,6 +10655,16 @@ bool mysqld_get_one_option(int optid,
     case OPT_TRANSACTION_WRITE_SET_EXTRACTION:
       push_deprecated_warn_no_replacement(nullptr,
                                           "--transaction-write-set-extraction");
+      break;
+    case OPT_DISCONNECT_SLAVE_EVENT_COUNT:
+      push_deprecated_warn_no_replacement(nullptr,
+                                          "--disconnect-slave-event-count");
+      break;
+    case OPT_ABORT_SLAVE_EVENT_COUNT:
+      push_deprecated_warn_no_replacement(nullptr, "--abort-slave-event-count");
+      break;
+    case OPT_REPLICA_PARALLEL_TYPE:
+      push_deprecated_warn_no_replacement(nullptr, "--replica-parallel-type");
   }
   return false;
 }
@@ -10484,7 +10680,8 @@ static void *mysql_getopt_value(const char *keyname, size_t key_length,
     case OPT_KEY_CACHE_DIVISION_LIMIT:
     case OPT_KEY_CACHE_AGE_THRESHOLD: {
       KEY_CACHE *key_cache;
-      if (!(key_cache = get_or_create_key_cache(keyname, key_length))) {
+      if (!(key_cache =
+                get_or_create_key_cache(std::string{keyname, key_length}))) {
         if (error) *error = EXIT_OUT_OF_MEMORY;
         return nullptr;
       }
@@ -10570,8 +10767,7 @@ static int get_options(int *argc_ptr, char ***argv_ptr) {
         actually used) so SELECT @@GLOBAL.log_error_suppression_list will
         render correct results.
       */
-      sys_var *var =
-          intern_find_sys_var(STRING_WITH_LEN("log_error_suppression_list"));
+      sys_var *var = find_static_system_variable("log_error_suppression_list");
       if (var != nullptr) {
         opt_log_error_suppression_list = (char *)var->get_default();
         /*
@@ -11271,6 +11467,31 @@ void refresh_status() {
     Status reset becomes not atomic, but status data is not exact anyway.
   */
   Connection_handler_manager::reset_max_used_connections();
+}
+
+class Do_THD_reset_status : public Do_THD_Impl {
+ public:
+  Do_THD_reset_status() {}
+  void operator()(THD *thd) override {
+    PSI_thread *thread = thd->get_psi();
+    if (thread != nullptr) {
+      /*
+        During this call,
+        - inspecting the THD associated with the performance schema
+          thread instrumentation,
+        - inspecting the THD status variable
+        is safe, because the call is protected
+        by Global_THD_manager::do_for_all_thd(),
+        so the THD will not be destroyed during the iteration.
+      */
+      PSI_THREAD_CALL(aggregate_thread_status)(thread);
+    }
+  }
+};
+
+void reset_status_by_thd() {
+  Do_THD_reset_status doit;
+  Global_THD_manager::get_instance()->do_for_all_thd(&doit);
 }
 
 /*****************************************************************************

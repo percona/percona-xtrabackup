@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@
 #include "my_time.h"
 #include "myisampack.h"
 #include "mysql/components/services/bits/psi_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/current_thd.h"
 #include "sql/field.h"
@@ -913,16 +913,18 @@ static bool allow_drop_schema_privilege() {
     in particular, as a schema level privilege:
     - DROP SCHEMA
     - GRANT DROP on performance_schema.*
+    - REVOKE DROP ON performance_schema.*
     - DROP TABLE performance_schema.*
 
     As a table level privilege:
     - DROP TABLE performance_schema.foo
     - GRANT DROP on performance_schema.foo
+    - REVOKE DROP on performance_schema.foo
     - TRUNCATE TABLE performance_schema.foo
 
     Here, we want to:
     - always prevent DROP SCHEMA (SQLCOM_DROP_DB)
-    - allow GRANT to give the TRUNCATE on any tables
+    - allow GRANT/REVOKE to give the TRUNCATE on any tables
     - allow DROP TABLE checks to proceed further,
       in particular to drop unknown tables,
       see PFS_unknown_acl::check()
@@ -935,6 +937,7 @@ static bool allow_drop_schema_privilege() {
   assert(thd->lex != nullptr);
   if ((thd->lex->sql_command != SQLCOM_TRUNCATE) &&
       (thd->lex->sql_command != SQLCOM_GRANT) &&
+      (thd->lex->sql_command != SQLCOM_REVOKE) &&
       (thd->lex->sql_command != SQLCOM_DROP_TABLE)) {
     return false;
   }

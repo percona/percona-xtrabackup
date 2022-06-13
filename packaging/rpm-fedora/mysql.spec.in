@@ -1,4 +1,4 @@
-# Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -726,8 +726,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_sbindir}/mysqld
 
 %dir %{_libdir}/mysql/private
-%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf-lite.so.3.11.4
-%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf.so.3.11.4
+%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf-lite.so.3.19.4
+%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf.so.3.19.4
 
 %dir %{_libdir}/mysql/plugin
 %attr(755, root, root) %{_libdir}/mysql/plugin/adt_null.so
@@ -779,6 +779,7 @@ rm -r $(readlink var) var
 %dir %attr(750, mysql, mysql) /var/lib/mysql-keyring
 
 %files server-debug
+%doc %{?license_files_server}
 %attr(755, root, root) %{_sbindir}/mysqld-debug
 %dir %{_libdir}/mysql/plugin/debug
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/adt_null.so
@@ -1054,6 +1055,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/test_udf_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/udf_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_mysqlx_global_reset.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_sensitive_system_variables.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_test_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl_client.so
@@ -1137,6 +1139,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_services_plugin_registry.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_services_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_mysqlx_global_reset.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_sensitive_system_variables.so
 
 %if 0%{?cluster}
 %files management-server
@@ -1195,11 +1198,15 @@ rm -r $(readlink var) var
 %{_libdir}/mysqlrouter/private/libmysqlharness_stdx.so.*
 %{_libdir}/mysqlrouter/private/libmysqlharness_tls.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_connection_pool.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http_auth_backend.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http_auth_realm.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_io_component.so.*
-%{_libdir}/mysqlrouter/private/libprotobuf-lite.so.3.11.4
+%{_libdir}/mysqlrouter/private/libmysqlrouter_metadata_cache.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_mysqlxmessages.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_routing.so.*
+%{_libdir}/mysqlrouter/private/libprotobuf-lite.so.3.19.4
 %dir %{_libdir}/mysqlrouter
 %dir %{_libdir}/mysqlrouter/private
 %{_libdir}/mysqlrouter/*.so
@@ -1208,6 +1215,9 @@ rm -r $(readlink var) var
 %endif # with_router
 
 %changelog
+* Mon Jan 03 2022 Harin Vadodaria <harin.vadodaria@oracle.com> - 8.0.29-1
+- Added component_test_sensitive_system_variables
+
 * Tue Aug 31 2021 Harin Vadodaria <harin.vadodaria@oracle.com> - 8.0.27-1
 - Added authentication_oci_client
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,15 +64,15 @@
 #include "my_table_map.h"
 #include "my_thread_local.h"
 #include "my_time_t.h"
+#include "mysql/components/services/bits/my_thread_bits.h"
+#include "mysql/components/services/bits/mysql_cond_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
-#include "mysql/components/services/my_thread_bits.h"
-#include "mysql/components/services/mysql_cond_bits.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/psi_idle_bits.h"
-#include "mysql/components/services/psi_stage_bits.h"
-#include "mysql/components/services/psi_statement_bits.h"
-#include "mysql/components/services/psi_thread_bits.h"
-#include "mysql/components/services/psi_transaction_bits.h"
+#include "mysql/components/services/bits/psi_idle_bits.h"
+#include "mysql/components/services/bits/psi_stage_bits.h"
+#include "mysql/components/services/bits/psi_statement_bits.h"
+#include "mysql/components/services/bits/psi_thread_bits.h"
+#include "mysql/components/services/bits/psi_transaction_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/mysql_thread.h"
@@ -1194,6 +1194,10 @@ class THD : public MDL_context_owner,
     of LOCK_thd_data and outside of LOCK_global_system_variables.
   */
   mysql_mutex_t LOCK_thd_sysvar;
+
+#ifndef NDEBUG
+  bool for_debug_only_is_set_persist_options{false};
+#endif
 
   /**
     Protects THD::m_protocol when it gets removed in x plugin.
@@ -4682,4 +4686,10 @@ inline void THD::set_system_user(bool system_user_flag) {
   m_is_system_user.store(system_user_flag, std::memory_order_seq_cst);
 }
 
+/**
+  Returns true if xa transactions are detached as part of executing XA PREPARE.
+*/
+inline bool is_xa_tran_detached_on_prepare(const THD *thd) {
+  return thd->variables.xa_detach_on_prepare;
+}
 #endif /* SQL_CLASS_INCLUDED */

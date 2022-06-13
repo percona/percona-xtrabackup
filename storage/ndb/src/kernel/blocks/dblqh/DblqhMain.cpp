@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1317,7 +1317,7 @@ Dblqh::sttor_startphase1(Signal *signal)
       m_num_restore_threads = 1;
     }
   }
-    
+
 #ifdef NDBD_TRACENR
 #ifdef VM_TRACE
   out = globalSignalLoggers.getOutputStream();
@@ -1387,6 +1387,8 @@ Dblqh::sttor_startphase1(Signal *signal)
      * In general full instance key of fragment must be used.
      */
     ThostPtr.p->inPackedList = false;
+    ThostPtr.p->lqh_pack_mask.clear();
+    ThostPtr.p->tc_pack_mask.clear();
     for (Tj = 0; Tj < NDB_ARRAY_SIZE(ThostPtr.p->lqh_pack); Tj++)
     {
       ThostPtr.p->lqh_pack[Tj].noOfPackedWords = 0;
@@ -1978,7 +1980,7 @@ void Dblqh::execREAD_NODESCONF(Signal* signal)
     ndbrequire(signal->getNoOfSections() == 1);
     SegmentedSectionPtr ptr;
     SectionHandle handle(this, signal);
-    handle.getSection(ptr, 0);
+    ndbrequire(handle.getSection(ptr, 0));
     ndbrequire(ptr.sz == 5 * NdbNodeBitmask::Size);
     copy((Uint32*)&readNodes->definedNodes.rep.data, ptr);
     releaseSections(handle);
@@ -2227,6 +2229,11 @@ void Dblqh::execREAD_CONFIG_REQ(Signal* signal)
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_DISCLESS, &c_diskless));
   c_o_direct = true;
   ndb_mgm_get_int_parameter(p, CFG_DB_O_DIRECT, &c_o_direct);
+
+  Uint32 encrypted_filesystem = 0;
+  ndb_mgm_get_int_parameter(
+      p, CFG_DB_ENCRYPTED_FILE_SYSTEM, &encrypted_filesystem);
+  c_encrypted_filesystem = encrypted_filesystem;
 
   m_use_om_init = 0;
   {
@@ -2715,7 +2722,8 @@ void Dblqh::execLQHADDATTREQ(Signal* signal)
   {
     SectionHandle handle(this, signal);
     SegmentedSectionPtr defValSection;
-    handle.getSection(defValSection, LqhAddAttrReq::DEFAULT_VALUE_SECTION_NUM);
+    ndbrequire(handle.getSection(defValSection,
+                                 LqhAddAttrReq::DEFAULT_VALUE_SECTION_NUM));
     addfragptr.p->defValSectionI = defValSection.i;
     addfragptr.p->defValNextPos = 0;
     //Don't free Section here. Section is freed after default values are trasfered to TUP
@@ -5470,8 +5478,7 @@ Dblqh::execREMOVE_MARKER_ORD(Signal* signal)
   jamEntry();
   
   CommitAckMarkerPtr removedPtr;
-  m_commitAckMarkerHash.remove(removedPtr, key);
-  if (removedPtr.i != RNIL)
+  if (m_commitAckMarkerHash.remove(removedPtr, key))
   {
     jam();
     ndbrequire(removedPtr.p->in_hash);
@@ -5543,31 +5550,37 @@ Dblqh::execREMOVE_MARKER_ORD(Signal* signal)
 void Dblqh::execSEND_PACKED(Signal* signal) 
 {
   HostRecordPtr Thostptr;
-  UintR i;
-  UintR j;
   UintR TpackedListIndex = cpackedListIndex;
   jamEntry();
-  for (i = 0; i < TpackedListIndex; i++) {
+  for (Uint32 i = 0; i < TpackedListIndex; i++) {
     Thostptr.i = cpackedList[i];
     ptrAss(Thostptr, hostRecord);
     jam();
     ndbrequire(Thostptr.i - 1 < MAX_NDB_NODES - 1);
-    for (j = 0; j < NDB_ARRAY_SIZE(Thostptr.p->lqh_pack); j++)
+
+    // LQH pack and send
+    for (Uint32 j = Thostptr.p->lqh_pack_mask.find_first();
+         j != BitmaskImpl::NotFound;
+         j = Thostptr.p->lqh_pack_mask.find_next(j+1))
     {
+      jamDebug();
       struct PackedWordsContainer * container = &Thostptr.p->lqh_pack[j];
-      if (container->noOfPackedWords > 0) {
-        jamDebug();
-        sendPackedSignal(signal, container);
-      }
+      ndbassert(container->noOfPackedWords > 0);
+      sendPackedSignal(signal, container);
     }
-    for (j = 0; j < NDB_ARRAY_SIZE(Thostptr.p->tc_pack); j++)
+    // TC pack and send
+    for (Uint32 j = Thostptr.p->tc_pack_mask.find_first();
+         j != BitmaskImpl::NotFound;
+         j = Thostptr.p->tc_pack_mask.find_next(j+1))
     {
+      jamDebug();
       struct PackedWordsContainer * container = &Thostptr.p->tc_pack[j];
-      if (container->noOfPackedWords > 0) {
-        jamDebug();
-        sendPackedSignal(signal, container);
-      }
+      ndbassert(container->noOfPackedWords > 0);
+      sendPackedSignal(signal, container);
     }
+
+    Thostptr.p->lqh_pack_mask.clear();
+    Thostptr.p->tc_pack_mask.clear();
     Thostptr.p->inPackedList = false;
   }//for
   cpackedListIndex = 0;
@@ -5581,6 +5594,8 @@ Dblqh::updatePackedList(Signal* signal, HostRecord * ahostptr, Uint16 hostId)
   if (ahostptr->inPackedList == false) {
     jamDebug();
     ahostptr->inPackedList = true;
+    ahostptr->lqh_pack_mask.clear();
+    ahostptr->tc_pack_mask.clear();
     cpackedList[TpackedListIndex] = hostId;
     cpackedListIndex = TpackedListIndex + 1;
   }//if
@@ -5889,6 +5904,7 @@ void Dblqh::sendCommitLqh(Signal* signal,
   Tdata[0] |= (ZCOMMIT << 28);
   Uint32 pos = container->noOfPackedWords;
   container->noOfPackedWords = pos + len;
+  Thostptr.p->lqh_pack_mask.set(instanceKey);
   memcpy(&container->packedWords[pos], &Tdata[0], len << 2);
 }
 
@@ -5933,6 +5949,7 @@ void Dblqh::sendCompleteLqh(Signal* signal,
   Tdata[0] |= (ZCOMPLETE << 28);
   Uint32 pos = container->noOfPackedWords;
   container->noOfPackedWords = pos + len;
+  Thostptr.p->lqh_pack_mask.set(instanceKey);
   memcpy(&container->packedWords[pos], &Tdata[0], len << 2);
 }
 
@@ -5976,6 +5993,7 @@ void Dblqh::sendCommittedTc(Signal* signal,
   Tdata[0] |= (ZCOMMITTED << 28);
   Uint32 pos = container->noOfPackedWords;
   container->noOfPackedWords = pos + len;
+  Thostptr.p->tc_pack_mask.set(instanceKey);
   memcpy(&container->packedWords[pos], &Tdata[0], len << 2);
 }
 
@@ -6019,6 +6037,7 @@ void Dblqh::sendCompletedTc(Signal* signal,
   Tdata[0] |= (ZCOMPLETED << 28);
   Uint32 pos = container->noOfPackedWords;
   container->noOfPackedWords = pos + len;
+  Thostptr.p->tc_pack_mask.set(instanceKey);
   memcpy(&container->packedWords[pos], &Tdata[0], len << 2);
 }
 
@@ -6084,6 +6103,17 @@ void Dblqh::sendLqhkeyconfTc(Signal* signal,
     lqhKeyConf = (LqhKeyConf *)
       &container->packedWords[container->noOfPackedWords];
     container->noOfPackedWords += LqhKeyConf::SignalLength;
+
+    if (block == getDBLQH())
+    {
+      if (instanceKey <= MAX_NDBMT_LQH_THREADS)
+        Thostptr.p->lqh_pack_mask.set(instanceKey);
+    }
+    else if (block == DBTC)
+    {
+      if (instanceKey <= MAX_NDBMT_TC_THREADS)
+        Thostptr.p->tc_pack_mask.set(instanceKey);
+    }
   }
   else
   {
@@ -6233,7 +6263,7 @@ int Dblqh::findTransaction(UintR Transid1,
   TcConnectionrecPtr locTcConnectptr;
 
   ndbassert(partial_fit_ok == false || is_key_operation == true);
-  Uint32 ThashIndex = (Transid1 ^ TcOprec) & (TRANSID_HASH_SIZE - 1);
+  const Uint32 ThashIndex = getHashIndex(Transid1, Transid2, TcOprec);
   locTcConnectptr.i = ctransidHash[ThashIndex];
   while (locTcConnectptr.i != RNIL) {
     ndbrequire(tcConnect_pool.getUncheckedPtrRW(locTcConnectptr));
@@ -6271,6 +6301,31 @@ int Dblqh::findTransaction(UintR Transid1,
 }//Dblqh::findTransaction()
 
 inline
+Uint32 Dblqh::getHashKey(UintR Transid1,
+                         UintR Transid2[[maybe_unused]],
+                         UintR TcOprec)
+{
+  return (Transid1 ^ TcOprec);
+}
+
+inline
+Uint32 Dblqh::getHashIndex(UintR Transid1,
+                           UintR Transid2[[maybe_unused]],
+                           UintR TcOprec)
+{
+  return getHashKey(Transid1, Transid2, TcOprec) % ctransidHashSize;
+}
+
+inline
+Uint32 Dblqh::getHashIndex(TcConnectionrec *regTcPtr)
+{
+  return getHashIndex(regTcPtr->transid[0],
+                      regTcPtr->transid[1],
+                      regTcPtr->tcOprec);
+}
+
+
+inline
 static void
 prefetch_op_record_3(Uint32 *op_ptr)
 {
@@ -6293,6 +6348,11 @@ prefetch_op_record_4(Uint32 *op_ptr)
 bool
 Dblqh::seize_op_rec(TcConnectionrecPtr& tcConnectptr)
 {
+  if (ERROR_INSERTED(5031))
+  {
+    jam();
+    return false;
+  }
   TcConnectionrecPtr opPtr;
   if (unlikely(!tcConnect_pool.seize(opPtr)))
   {
@@ -8348,8 +8408,7 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
   else
   {
     jamEntry();
-    if (unlikely(ERROR_INSERTED_CLEAR(5031) ||
-                 (!seize_op_rec(tcConnectptr))))
+    if (unlikely(!seize_op_rec(tcConnectptr)))
     {
       jam();
 /* ------------------------------------------------------------------------- */
@@ -8624,8 +8683,8 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
      */
     SegmentedSectionPtr keyInfoSection, attrInfoSection;
     
-    handle.getSection(keyInfoSection,
-                      LqhKeyReq::KeyInfoSectionNum);
+    ndbrequire(handle.getSection(keyInfoSection,
+                                 LqhKeyReq::KeyInfoSectionNum));
 
     ndbassert(keyInfoSection.i != RNIL);
 
@@ -8767,10 +8826,8 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
                                true,
                                false,
                                tcConnectptr) == ZNOT_FOUND);
-
     TcConnectionrecPtr localNextTcConnectptr;
-    Uint32 hashIndex = (regTcPtr->transid[0] ^ regTcPtr->tcOprec) &
-                       (TRANSID_HASH_SIZE - 1);
+    const Uint32 hashIndex = getHashIndex(regTcPtr);
     localNextTcConnectptr.i = ctransidHash[hashIndex];
     ctransidHash[hashIndex] = tcConnectptr.i;
     regTcPtr->prevHashRec = RNIL;
@@ -9085,7 +9142,7 @@ void Dblqh::execLQHKEYREQ(Signal* signal)
   default:
     ndbabort();
   }//switch
-}//Dblqh::endgettupkeyLab()
+}//Dblqh::execLQHKEYREQ()
 
 void Dblqh::prepareContinueAfterBlockedLab(
                 Signal* signal,
@@ -9276,7 +9333,7 @@ Dblqh::exec_acckeyreq(Signal* signal, TcConnectionrecPtr regTcPtr)
 
     /* Copy KeyInfo to end of ACCKEYREQ signal, starting at offset 7 */
     copy(req->keyInfo, regTcPtr.p->keyInfoIVal);
-    NDB_STATIC_ASSERT(AccKeyReq::SignalLength_keyInfo == 8);
+    static_assert(AccKeyReq::SignalLength_keyInfo == 8);
   }
   TRACE_OP(regTcPtr.p, "ACC");
 
@@ -9740,7 +9797,7 @@ Dblqh::nr_copy_delete_row(Signal* signal,
     req->localKey[0] = rowid->m_page_no;
     req->localKey[1] = rowid->m_page_idx;
     siglen = AccKeyReq::SignalLength_localKey;
-    NDB_STATIC_ASSERT(AccKeyReq::SignalLength_localKey == 10);
+    static_assert(AccKeyReq::SignalLength_localKey == 10);
   }
   else
   {
@@ -9754,7 +9811,7 @@ Dblqh::nr_copy_delete_row(Signal* signal,
      */
     copy(req->keyInfo, regTcPtr.p->keyInfoIVal);
     siglen = AccKeyReq::SignalLength_keyInfo + keylen;
-    NDB_STATIC_ASSERT(AccKeyReq::SignalLength_keyInfo == 8);
+    static_assert(AccKeyReq::SignalLength_keyInfo == 8);
   }
   signal->setLength(siglen);
   c_acc->execACCKEYREQ(signal,
@@ -9831,7 +9888,7 @@ Dblqh::get_nr_op_info(Nr_op_info* op, Uint32 page_id)
   
   ndbrequire(tcConnect_pool.getValidPtr(tcPtr));
   Ptr<Fragrecord> fragPtr;
-  c_fragment_pool.getPtr(fragPtr, tcPtr.p->fragmentptr);  
+  ndbrequire(c_fragment_pool.getPtr(fragPtr, tcPtr.p->fragmentptr));
 
   ndbassert(!m_is_in_query_thread);
   op->m_gci_hi = tcPtr.p->gci_hi;
@@ -9891,7 +9948,7 @@ Dblqh::nr_delete_complete(Signal* signal, Nr_op_info* op)
   {
     jam();
     const TcConnectionrecPtr tcConnectptr = tcPtr;
-    c_fragment_pool.getPtr(fragptr, tcPtr.p->fragmentptr);
+    ndbrequire(c_fragment_pool.getPtr(fragptr, tcPtr.p->fragmentptr));
     
     if (tcPtr.p->abortState != TcConnectionrec::ABORT_IDLE) 
     {
@@ -10267,7 +10324,7 @@ Uint32 Dblqh::decrDeallocRefCount(Signal* signal,
 #if defined(VM_TRACE) || defined(ERROR_INSERT)
     /* Verify that fragment used is a primary table fragment */
     FragrecordPtr fragPtr;
-    c_fragment_pool.getPtr(fragPtr, countOpPtr.p->fragmentptr);
+    ndbrequire(c_fragment_pool.getPtr(fragPtr, countOpPtr.p->fragmentptr));
     ndbrequire(fragPtr.p->tableFragptr == fragPtr.i);
 #endif
     /**
@@ -11915,9 +11972,8 @@ void Dblqh::deleteTransidHash(Signal* signal, TcConnectionrecPtr& tcConnectptr)
 /* THE OPERATION WAS PLACED FIRST IN THE LIST OF THE HASH TABLE. NEED TO SET */
 /* A NEW LEADER OF THE LIST.                                                 */
 /* ------------------------------------------------------------------------- */
-    Uint32 hashIndex = regTcPtr->hashIndex;
-    ndbassert(hashIndex == ((regTcPtr->transid[0] ^ regTcPtr->tcOprec) & 
-                             (TRANSID_HASH_SIZE - 1)));
+    const Uint32 hashIndex = regTcPtr->hashIndex;
+    ndbassert(hashIndex == getHashIndex(regTcPtr));
     ndbassert(ctransidHash[hashIndex] == tcConnectptr.i);
     ctransidHash[hashIndex] = nextHashptr.i;
   }//if
@@ -12226,6 +12282,7 @@ Dblqh::sendFireTrigConfTc(Signal* signal,
   ndbassert(FireTrigConf::SignalLength == 4);
   Uint32 * dst = &container->packedWords[container->noOfPackedWords];
   container->noOfPackedWords += len;
+  Thostptr.p->tc_pack_mask.set(instanceKey);
   dst[0] = Tdata[0] | (ZFIRE_TRIG_CONF << 28);
   dst[1] = Tdata[1];
   dst[2] = Tdata[2];
@@ -13398,8 +13455,7 @@ Dblqh::remove_commit_marker(TcConnectionrec * const regTcPtr)
     key.transid1 = regTcPtr->transid[0];
     key.transid2 = regTcPtr->transid[1];
     CommitAckMarkerPtr removedPtr;
-    m_commitAckMarkerHash.remove(removedPtr, key);
-    ndbrequire(removedPtr.i != RNIL);
+    ndbrequire(m_commitAckMarkerHash.remove(removedPtr, key));
     ndbrequire(removedPtr.i == tmp.i);
     removedPtr.p->in_hash = false;
     m_commitAckMarkerPool.release(removedPtr);
@@ -14232,7 +14288,7 @@ void Dblqh::execNODE_FAILREP(Signal* signal)
     ndbrequire(getNodeInfo(refToNode(signal->getSendersBlockRef())).m_version);
     SegmentedSectionPtr ptr;
     SectionHandle handle(this, signal);
-    handle.getSection(ptr, 0);
+    ndbrequire(handle.getSection(ptr, 0));
     memset(nodeFail->theNodes, 0, sizeof(nodeFail->theNodes));
     copy(nodeFail->theNodes, ptr);
     releaseSections(handle);
@@ -15022,7 +15078,7 @@ void Dblqh::setup_key_pointers(Uint32 tcIndex, bool acquire_lock)
   ndbrequire(tcConnect_pool.getUncheckedPtrRW(tcConnectptr));
   c_tup->prepare_op_pointer(tcConnectptr.p->tupConnectrec,
                             tcConnectptr.p->tupConnectPtrP);
-  c_fragment_pool.getPtr(fragPtr, tcConnectptr.p->fragmentptr);
+  ndbrequire(c_fragment_pool.getPtr(fragPtr, tcConnectptr.p->fragmentptr));
   fragptr = fragPtr;
   c_tup->prepare_tab_pointers(fragPtr.p->tupFragptr);
   m_tc_connect_ptr = tcConnectptr;
@@ -16336,8 +16392,6 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
 
   ScanFragReq * const scanFragReq = (ScanFragReq *)&signal->theData[0];
   Uint32 errorCode= 0;
-  Uint32 hashIndex;
-  TcConnectionrecPtr nextHashptr;
   TcConnectionrec * regTcPtr;
   // bug#13834481 hashHi!=0 caused timeout (tx not found)
 
@@ -16359,12 +16413,12 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
   ndbassert(numSections != 0);
   {
     /* Long request, get Attr + Key len from section sizes */
-    handle.getSection(attrInfoPtr, ScanFragReq::AttrInfoSectionNum);
+    ndbrequire(handle.getSection(attrInfoPtr, ScanFragReq::AttrInfoSectionNum));
     aiLen= attrInfoPtr.sz;
     
     if (numSections == 2)
     {
-      handle.getSection(keyInfoPtr, ScanFragReq::KeyInfoSectionNum);
+      ndbrequire(handle.getSection(keyInfoPtr, ScanFragReq::KeyInfoSectionNum));
       keyLen= keyInfoPtr.sz;
     }
   }
@@ -16375,7 +16429,8 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
   const Uint32 senderBlockNo = refToMain(senderBlockRef);
   TcConnectionrecPtr tcConnectptr;
   if (likely(ctcNumFree > ZNUM_RESERVED_UTIL_CONNECT_RECORDS &&
-             !ERROR_INSERTED(5055)) ||
+             !ERROR_INSERTED(5055) &&
+             !ERROR_INSERTED(5031)) ||
       (ScanFragReq::getLcpScanFlag(scanFragReq->requestInfo)) ||
       (senderBlockNo == getBACKUP()) ||
       (senderBlockNo == DBUTIL &&
@@ -16412,6 +16467,7 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
                         senderData,
                         senderBlockRef,
                         ZNO_TC_CONNECT_ERROR);
+      return;
     }
     jamEntry();
   }//if
@@ -16579,8 +16635,8 @@ void Dblqh::execSCAN_FRAGREQ(Signal* signal)
                                false,
                                false,
                                tcConnectptr) == ZNOT_FOUND);
-    hashIndex = (regTcPtr->transid[0] ^ regTcPtr->tcOprec) &
-                 (TRANSID_HASH_SIZE - 1);
+    TcConnectionrecPtr nextHashptr;
+    const Uint32 hashIndex = getHashIndex(regTcPtr);
     nextHashptr.i = ctransidHash[hashIndex];
     ctransidHash[hashIndex] = tcConnectptr.i;
     regTcPtr->prevHashRec = RNIL;
@@ -18409,7 +18465,7 @@ bool Dblqh::finishScanrec(Signal* signal,
     g_eventLogger->info("removing (%d %d)", scanPtr->scanNumber,
                         scanPtr->fragPtrI);
 #endif
-    c_scanTakeOverHash.remove(tmp, * scanPtr);
+    ndbrequire(c_scanTakeOverHash.remove(tmp, * scanPtr));
     ndbrequire(tmp.p == scanPtr);
   }
 
@@ -19272,7 +19328,7 @@ void Dblqh::execCOPY_FRAGREQ(Signal* signal)
      * distribution key again when restarted.
      */
     CopyFragRecordPtr copy_fragptr;
-    c_copy_fragment_pool.seize(copy_fragptr);
+    ndbrequire(c_copy_fragment_pool.seize(copy_fragptr));
     copy_fragptr.p->m_copy_fragreq = *copyFragReq;
     Uint32 nodeCount = copyFragReq->nodeCount;
     copy_fragptr.p->m_copy_fragreq.nodeCount = 0;
@@ -20407,7 +20463,7 @@ void Dblqh::execCOPY_ACTIVEREQ(Signal* signal)
   {
     jam();
     CopyActiveRecordPtr copy_activeptr;
-    c_copy_active_pool.seize(copy_activeptr);
+    ndbrequire(c_copy_active_pool.seize(copy_activeptr));
     copy_activeptr.p->m_copy_activereq = *req;
     copy_activeptr.p->m_copy_activereq.flags =
       flags | CopyActiveReq::CAR_LOCAL_SEND;
@@ -25728,28 +25784,32 @@ void Dblqh::openFileRw(Signal* signal,
                        bool writeBuffer)
 {
   FsOpenReq* req = (FsOpenReq*)signal->getDataPtrSend();
-  signal->theData[0] = cownref;
-  signal->theData[1] = olfLogFilePtr.i;
-  signal->theData[2] = olfLogFilePtr.p->fileName[0];
-  signal->theData[3] = olfLogFilePtr.p->fileName[1];
-  signal->theData[4] = olfLogFilePtr.p->fileName[2];
-  signal->theData[5] = olfLogFilePtr.p->fileName[3];
-  signal->theData[6] = FsOpenReq::OM_READWRITE |
-                       FsOpenReq::OM_AUTOSYNC |
-                       FsOpenReq::OM_CHECK_SIZE;
+  req->userReference = cownref;
+  req->userPointer = olfLogFilePtr.i;
+  req->fileNumber[0] = olfLogFilePtr.p->fileName[0];
+  req->fileNumber[1] = olfLogFilePtr.p->fileName[1];
+  req->fileNumber[2] = olfLogFilePtr.p->fileName[2];
+  req->fileNumber[3] = olfLogFilePtr.p->fileName[3];
+  req->fileFlags = FsOpenReq::OM_READWRITE | FsOpenReq::OM_AUTOSYNC |
+                   FsOpenReq::OM_CHECK_SIZE | FsOpenReq::OM_ZEROS_ARE_SPARSE;
   if (c_o_direct)
   {
     jam();
-    signal->theData[6] |= FsOpenReq::OM_DIRECT;
+    req->fileFlags |= FsOpenReq::OM_DIRECT;
     if (c_o_direct_sync_flag)
     {
       jam();
-      signal->theData[6] |= FsOpenReq::OM_DIRECT_SYNC;
+      req->fileFlags |= FsOpenReq::OM_DIRECT_SYNC;
     }
   }
   if (writeBuffer)
   {
-    signal->theData[6] |= FsOpenReq::OM_WRITE_BUFFER;
+    req->fileFlags |= FsOpenReq::OM_WRITE_BUFFER;
+  }
+  if (c_encrypted_filesystem)
+  {
+    jam();
+    req->fileFlags |= FsOpenReq::OM_ENCRYPT_XTS;
   }
 
   req->auto_sync_size = MAX_REDO_PAGES_WITHOUT_SYNCH * sizeof(LogPageRecord);
@@ -25757,7 +25817,28 @@ void Dblqh::openFileRw(Signal* signal,
   sz *= 1024; sz *= 1024;
   req->file_size_hi = (Uint32)(sz >> 32);
   req->file_size_lo = (Uint32)(sz & 0xFFFFFFFF);
-  sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA);
+  req->page_size = File_formats::NDB_PAGE_SIZE;
+  if (req->fileFlags & FsOpenReq::OM_ENCRYPT_CIPHER_MASK)
+  {
+    LinearSectionPtr lsptr[3];
+
+    // Use a dummy file name
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    lsptr[FsOpenReq::FILENAME].p = nullptr;
+    lsptr[FsOpenReq::FILENAME].sz = 0;
+
+    req->fileFlags |= FsOpenReq::OM_ENCRYPT_KEY;
+    lsptr[FsOpenReq::ENCRYPT_KEY_MATERIAL].p = (Uint32*)&FsOpenReq::DUMMY_KEY;
+    lsptr[FsOpenReq::ENCRYPT_KEY_MATERIAL].sz =
+        FsOpenReq::DUMMY_KEY.get_needed_words();
+
+    sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA,
+               lsptr, 2);
+  }
+  else
+  {
+    sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA);
+  }
 }//Dblqh::openFileRw()
 
 /* ------------------------------------------------------------------------- */
@@ -25769,25 +25850,23 @@ void Dblqh::openLogfileInit(Signal* signal, LogFileRecordPtr logFilePtr)
 {
   logFilePtr.p->logFileStatus = LogFileRecord::OPENING_INIT;
   FsOpenReq* req = (FsOpenReq*)signal->getDataPtrSend();
-  signal->theData[0] = cownref;
-  signal->theData[1] = logFilePtr.i;
-  signal->theData[2] = logFilePtr.p->fileName[0];
-  signal->theData[3] = logFilePtr.p->fileName[1];
-  signal->theData[4] = logFilePtr.p->fileName[2];
-  signal->theData[5] = logFilePtr.p->fileName[3];
-  signal->theData[6] = FsOpenReq::OM_READWRITE |
-                       FsOpenReq::OM_TRUNCATE |
-                       FsOpenReq::OM_CREATE |
-                       FsOpenReq::OM_AUTOSYNC |
-                       FsOpenReq::OM_WRITE_BUFFER;
+  req->userReference = cownref;
+  req->userPointer = logFilePtr.i;
+  req->fileNumber[0] = logFilePtr.p->fileName[0];
+  req->fileNumber[1] = logFilePtr.p->fileName[1];
+  req->fileNumber[2] = logFilePtr.p->fileName[2];
+  req->fileNumber[3] = logFilePtr.p->fileName[3];
+  req->fileFlags = FsOpenReq::OM_READWRITE | FsOpenReq::OM_TRUNCATE |
+                   FsOpenReq::OM_CREATE | FsOpenReq::OM_AUTOSYNC |
+                   FsOpenReq::OM_WRITE_BUFFER | FsOpenReq::OM_ZEROS_ARE_SPARSE;
   if (c_o_direct)
   {
     jam();
-    signal->theData[6] |= FsOpenReq::OM_DIRECT;
+    req->fileFlags |= FsOpenReq::OM_DIRECT;
     if (c_o_direct_sync_flag)
     {
       jam();
-      signal->theData[6] |= FsOpenReq::OM_DIRECT_SYNC;
+      req->fileFlags |= FsOpenReq::OM_DIRECT_SYNC;
     }
   }
   Uint64 sz = Uint64(clogFileSize) * 1024 * 1024;
@@ -25797,11 +25876,41 @@ void Dblqh::openLogfileInit(Signal* signal, LogFileRecordPtr logFilePtr)
   if (m_use_om_init)
   {
     jam();
-    signal->theData[6] |= FsOpenReq::OM_INIT;
+    req->fileFlags |= FsOpenReq::OM_INIT;
+  }
+  else
+  {
+    jam();
+    req->fileFlags |= FsOpenReq::OM_SPARSE_INIT;
+  }
+  if (c_encrypted_filesystem)
+  {
+    jam();
+    req->fileFlags |= FsOpenReq::OM_ENCRYPT_XTS;
   }
 
   req->auto_sync_size = MAX_REDO_PAGES_WITHOUT_SYNCH * sizeof(LogPageRecord);
-  sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA);
+  if (req->fileFlags & FsOpenReq::OM_ENCRYPT_CIPHER_MASK)
+  {
+    LinearSectionPtr lsptr[3];
+
+    // Use a dummy file name
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    lsptr[FsOpenReq::FILENAME].p = nullptr;
+    lsptr[FsOpenReq::FILENAME].sz = 0;
+
+    req->fileFlags |= FsOpenReq::OM_ENCRYPT_KEY;
+    lsptr[FsOpenReq::ENCRYPT_KEY_MATERIAL].p = (Uint32*)&FsOpenReq::DUMMY_KEY;
+    lsptr[FsOpenReq::ENCRYPT_KEY_MATERIAL].sz =
+        FsOpenReq::DUMMY_KEY.get_needed_words();
+
+    sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA,
+               lsptr, 2);
+  }
+  else
+  {
+    sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA);
+  }
 }//Dblqh::openLogfileInit()
 
 void
@@ -25820,7 +25929,8 @@ Dblqh::execFSWRITEREQ(const FsReadWriteReq* req) const /* called direct cross th
   Ptr<GlobalPage> page_ptr;
   ndbrequire(req->getFormatFlag(req->operationFlag) ==
                req->fsFormatSharedPage);
-  m_shared_page_pool.getPtr(page_ptr, req->data.sharedPage.pageNumber);
+  ndbrequire(m_shared_page_pool.getPtr(page_ptr,
+                                       req->data.sharedPage.pageNumber));
 
   LogFileRecordPtr currLogFilePtr;
   currLogFilePtr.i = req->userPointer;
@@ -25912,32 +26022,58 @@ void Dblqh::openNextLogfile(Signal *signal,
     }//if
     onlLogFilePtr.p->logFileStatus = LogFileRecord::OPENING_WRITE_LOG;
     FsOpenReq* req = (FsOpenReq*)signal->getDataPtrSend();
-    signal->theData[0] = logPartPtrP->myRef;
-    signal->theData[1] = onlLogFilePtr.i;
-    signal->theData[2] = onlLogFilePtr.p->fileName[0];
-    signal->theData[3] = onlLogFilePtr.p->fileName[1];
-    signal->theData[4] = onlLogFilePtr.p->fileName[2];
-    signal->theData[5] = onlLogFilePtr.p->fileName[3];
-    signal->theData[6] = FsOpenReq::OM_READWRITE |
-                         FsOpenReq::OM_AUTOSYNC |
-                         FsOpenReq::OM_CHECK_SIZE |
-                         FsOpenReq::OM_WRITE_BUFFER;
+    req->userReference = logPartPtrP->myRef;
+    req->userPointer = onlLogFilePtr.i;
+    req->fileNumber[0] = onlLogFilePtr.p->fileName[0];
+    req->fileNumber[1] = onlLogFilePtr.p->fileName[1];
+    req->fileNumber[2] = onlLogFilePtr.p->fileName[2];
+    req->fileNumber[3] = onlLogFilePtr.p->fileName[3];
+    req->fileFlags = FsOpenReq::OM_READWRITE | FsOpenReq::OM_AUTOSYNC |
+                     FsOpenReq::OM_CHECK_SIZE | FsOpenReq::OM_WRITE_BUFFER |
+                     FsOpenReq::OM_ZEROS_ARE_SPARSE;
     if (c_o_direct)
     {
       jam();
-      signal->theData[6] |= FsOpenReq::OM_DIRECT;
+      req->fileFlags |= FsOpenReq::OM_DIRECT;
       if (c_o_direct_sync_flag)
       {
         jam();
-        signal->theData[6] |= FsOpenReq::OM_DIRECT_SYNC;
+        req->fileFlags |= FsOpenReq::OM_DIRECT_SYNC;
       }
+    }
+    if (c_encrypted_filesystem)
+    {
+      jam();
+      req->fileFlags |= FsOpenReq::OM_ENCRYPT_XTS;
     }
     req->auto_sync_size = MAX_REDO_PAGES_WITHOUT_SYNCH * sizeof(LogPageRecord);
     Uint64 sz = logPartPtrP->my_block->clogFileSize;
     sz *= 1024; sz *= 1024;
     req->file_size_hi = (Uint32)(sz >> 32);
     req->file_size_lo = (Uint32)(sz & 0xFFFFFFFF);
-    sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA);
+    req->page_size = File_formats::NDB_PAGE_SIZE;
+    if (req->fileFlags & FsOpenReq::OM_ENCRYPT_CIPHER_MASK)
+    {
+      LinearSectionPtr lsptr[3];
+
+      // Use a dummy file name
+      ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+      lsptr[FsOpenReq::FILENAME].p = nullptr;
+      lsptr[FsOpenReq::FILENAME].sz = 0;
+
+      req->fileFlags |= FsOpenReq::OM_ENCRYPT_KEY;
+      lsptr[FsOpenReq::ENCRYPT_KEY_MATERIAL].p = (Uint32*)&FsOpenReq::DUMMY_KEY;
+      lsptr[FsOpenReq::ENCRYPT_KEY_MATERIAL].sz =
+          FsOpenReq::DUMMY_KEY.get_needed_words();
+
+      sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength, JBA,
+                 lsptr, 2);
+    }
+    else
+    {
+      sendSignal(NDBFS_REF, GSN_FSOPENREQ, signal, FsOpenReq::SignalLength,
+                 JBA);
+    }
   }//if
 }//Dblqh::openNextLogfile()
 
@@ -27332,7 +27468,7 @@ Dblqh::execCOPY_FRAGCONF(Signal* signal)
   {
     const CopyFragConf* conf = CAST_CONSTPTR(CopyFragConf,
                                              signal->getDataPtr());
-    c_fragment_pool.getPtr(fragptr, conf->senderData);
+    ndbrequire(c_fragment_pool.getPtr(fragptr, conf->senderData));
     fragptr.p->fragStatus = Fragrecord::CRASH_RECOVERING;
 
     Uint32 rows_lo = conf->rows_lo;
@@ -27865,7 +28001,7 @@ void Dblqh::execSTART_RECREQ(Signal* signal)
     ndbrequire(ndbd_send_node_bitmask_in_section(senderVersion));
     SegmentedSectionPtr ptr;
     SectionHandle handle(this,signal);
-    handle.getSection(ptr, 0);
+    ndbrequire(handle.getSection(ptr, 0));
     ndbrequire(ptr.sz <= NdbNodeBitmask::Size);
     memset(req->sr_nodes, 0 , sizeof(req->sr_nodes));
     copy(req->sr_nodes, ptr);
@@ -33145,7 +33281,7 @@ void Dblqh::readExecLog(Signal* signal,
   req->numberOfPages = lfoPtr.p->noPagesRw;
   req->data.listOfMemPages.fileOffset = logPartPtrP->execSrStartPageNo;
   static_assert(LogFileOperationRecord::LOG_PAGE_ARRAY_SIZE <=
-                  NDB_ARRAY_SIZE(req->data.listOfMemPages.varIndex), "");
+                  NDB_ARRAY_SIZE(req->data.listOfMemPages.varIndex));
   for (unsigned i = 0; i < lfoPtr.p->noPagesRw; i++)
   {
     req->data.listOfMemPages.varIndex[i] = lfoPtr.p->logPageArray[i];
@@ -35092,29 +35228,25 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
 
   if(arg == DumpStateOrd::LqhDumpAllTcRec)
   {
-    Uint32 bucketLen[TRANSID_HASH_SIZE];
-    for(Uint32 i = 0; i<TRANSID_HASH_SIZE; i++)
+    g_eventLogger->info("LQH transid hash bucket lengths : ");
+    for(Uint32 i = 0; i<ctransidHashSize; i++)
     {
       TcConnectionrecPtr tcRec;
       tcRec.i = ctransidHash[i];
-      bucketLen[i] = 0;
+      Uint32 bucketLen = 0;
       while(tcRec.i != RNIL)
       {
         ndbrequire(tcConnect_pool.getValidPtr(tcRec));
         g_eventLogger->info("TcConnectionrec %u", tcRec.i);
         signal->theData[0] = DumpStateOrd::LqhDumpOneTcRec;
-	signal->theData[1] = tcRec.i;
-	execDUMP_STATE_ORD(signal);
-	tcRec.i = tcRec.p->nextHashRec;
-        bucketLen[i]++;
+        signal->theData[1] = tcRec.i;
+        execDUMP_STATE_ORD(signal);
+        tcRec.i = tcRec.p->nextHashRec;
+        bucketLen++;
       }
-    }
-    g_eventLogger->info("LQH transid hash bucket lengths : ");
-    for (Uint32 i = 0; i < TRANSID_HASH_SIZE; i++)
-    {
-      if (bucketLen[i] > 0)
+      if (bucketLen > 0)
       {
-        g_eventLogger->info("bucket %u len %u", i, bucketLen[i]);
+        g_eventLogger->info("bucket %u len %u", i, bucketLen);
       }
     }
     g_eventLogger->info("Done.");
@@ -35328,7 +35460,7 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
     Uint32 record = signal->theData[2];
     Uint32 len = signal->getLength();
     TcConnectionrecPtr tcRec;
-    ndbrequire(bucket < NDB_ARRAY_SIZE(ctransidHash));
+    ndbrequire(bucket < ctransidHashSize);
 
     if (record != RNIL)
     {
@@ -35344,8 +35476,7 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
       }
       else
       {
-        Uint32 hashIndex = (tcRec.p->transid[0] ^ tcRec.p->tcOprec) &
-                            (TRANSID_HASH_SIZE - 1);
+        const Uint32 hashIndex = getHashIndex(tcRec.p);
         if (hashIndex != bucket)
         {
 	  jam();
@@ -35377,7 +35508,7 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
     {
       jam();
       bucket++;
-      if (bucket < TRANSID_HASH_SIZE)
+      if (bucket < ctransidHashSize)
       {
 	jam();
 	signal->theData[1] = bucket;
@@ -35422,7 +35553,7 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
     {
       jam();
       bucket++;
-      if (bucket < TRANSID_HASH_SIZE)
+      if (bucket < ctransidHashSize)
       {
 	jam();
 	signal->theData[1] = bucket;
@@ -35557,7 +35688,7 @@ Dblqh::execDUMP_STATE_ORD(Signal* signal)
   if (arg == 4002)
   {
     bool ops = false;
-    for (Uint32 i = 0; i<TRANSID_HASH_SIZE; i++)
+    for (Uint32 i = 0; i<ctransidHashSize; i++)
     {
       if (ctransidHash[i] != RNIL)
       {
@@ -36097,6 +36228,8 @@ void Dblqh::execDBINFO_SCANREQ(Signal *signal)
     break;
   }
   case Ndbinfo::OPERATIONS_TABLEID:{
+    static constexpr Uint32 max_buckets_to_check = 4096;
+    Uint32 buckets_checked = 0;
     Uint32 bucket = cursor->data[0];
 
     while (true)
@@ -36108,13 +36241,21 @@ void Dblqh::execDBINFO_SCANREQ(Signal *signal)
         return;
       }
 
-      for (; bucket < NDB_ARRAY_SIZE(ctransidHash); bucket++)
+      for (; bucket < ctransidHashSize; bucket++)
       {
+        buckets_checked++;
+        if (buckets_checked > max_buckets_to_check)
+        {
+          jam();
+          ndbinfo_send_scan_break(signal, req, rl, bucket);
+          return;
+        }
+
         if (ctransidHash[bucket] != RNIL)
           break;
       }
 
-      if (bucket == NDB_ARRAY_SIZE(ctransidHash))
+      if (bucket == ctransidHashSize)
       {
         break;
       }
@@ -36347,7 +36488,9 @@ void Dblqh::execDBINFO_SCANREQ(Signal *signal)
 
     const size_t num_config_params =
       sizeof(pools[0].config_params) / sizeof(pools[0].config_params[0]);
+    const Uint32 numPools = NDB_ARRAY_SIZE(pools);
     Uint32 pool = cursor->data[0];
+    ndbrequire(pool < numPools);
     BlockNumber bn = blockToMain(number());
     while(pools[pool].poolname)
     {

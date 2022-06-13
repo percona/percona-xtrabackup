@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2006, 2021, Oracle and/or its affiliates.
+  Copyright (c) 2006, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -47,7 +47,6 @@
 #include "sql/transaction.h"
 #include "storage/ndb/include/ndbapi/NdbDictionary.hpp"
 #include "storage/ndb/include/ndbapi/ndb_cluster_connection.hpp"
-#include "storage/ndb/plugin/ha_ndb_index_stat.h"
 #include "storage/ndb/plugin/ha_ndbcluster.h"
 #include "storage/ndb/plugin/ha_ndbcluster_connection.h"
 #include "storage/ndb/plugin/ndb_anyvalue.h"
@@ -64,6 +63,8 @@
 #include "storage/ndb/plugin/ndb_dd_table.h"
 #include "storage/ndb/plugin/ndb_event_data.h"
 #include "storage/ndb/plugin/ndb_global_schema_lock_guard.h"
+#include "storage/ndb/plugin/ndb_index_stat_head_table.h"
+#include "storage/ndb/plugin/ndb_index_stat_sample_table.h"
 #include "storage/ndb/plugin/ndb_local_connection.h"
 #include "storage/ndb/plugin/ndb_log.h"
 #include "storage/ndb/plugin/ndb_mysql_services.h"
@@ -825,16 +826,6 @@ class Ndb_binlog_setup {
       if (!dd_sync.remove_all_metadata()) {
         return false;
       }
-      // The index stat thread must be restarted. An additional wait
-      // for the setup to complete is required for the ndb_sql_metadata
-      // table to be created below. This also ensures that the index stat
-      // functionality is ready to be used as soon as binlog setup is done
-      ndb_log_info("Waiting for index stat setup to complete");
-      ndb_index_stat_restart();
-      while (!Ndb_index_stat_thread::is_setup_complete()) {
-        ndb_milli_sleep(100);
-      }
-      ndb_log_info("Index stat setup complete");
     } else {
       /*
         Not an initial restart. Delete DD table definitions corresponding to NDB
@@ -896,6 +887,19 @@ class Ndb_binlog_setup {
     if (!initial_system_restart && !schema_result_table.delete_all_rows()) {
       ndb_log_warning("Failed to remove obsolete rows from ndb_schema_result");
       return false;
+    }
+
+    Ndb_index_stat_head_table index_stat_head_table(thd_ndb);
+    if (!index_stat_head_table.create_or_upgrade(m_thd, true)) return false;
+
+    Ndb_index_stat_sample_table index_stat_sample_table(thd_ndb);
+    if (!index_stat_sample_table.create_or_upgrade(m_thd, true)) return false;
+
+    if (initial_system_restart) {
+      // The index stat thread must be restarted to ensure that the index stat
+      // functionality is ready to be used as soon as binlog setup is done
+      ndb_log_info("Signalling the index stat thread to restart");
+      ndb_index_stat_restart();
     }
 
     Ndb_apply_status_table apply_status_table(thd_ndb);
@@ -4993,7 +4997,8 @@ static int ndbcluster_setup_binlog_for_share(THD *thd, Ndb *ndb,
 
 int ndbcluster_binlog_setup_table(THD *thd, Ndb *ndb, const char *db,
                                   const char *table_name,
-                                  const dd::Table *table_def) {
+                                  const dd::Table *table_def,
+                                  const bool skip_error_handling) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("db: '%s', table_name: '%s'", db, table_name));
   assert(table_def);
@@ -5027,12 +5032,24 @@ int ndbcluster_binlog_setup_table(THD *thd, Ndb *ndb, const char *db,
       !(!strcmp("test", db) && !strcmp(table_name, "check_not_readonly"))) {
     ret = -1;
   }
+
+  // Force failure of setting up binlogging of a util table
+  DBUG_EXECUTE_IF("ndb_binlog_fail_setup_util_table", {
+    ret = -1;
+    DBUG_SET("-d,ndb_binlog_fail_setup_util_table");
+  });
 #endif
 
-  /*
-   * Handle failure of setting up binlogging of a table
-   */
+  if (skip_error_handling) {
+    // Skip the potentially fatal error handling below and instead just return
+    // error to caller. This is useful when failed setup will be retried later
+    return ret;
+  }
+
   if (ret != 0) {
+    /*
+     * Handle failure of setting up binlogging of a table
+     */
     ndb_log_error("Failed to setup binlogging for table '%s.%s'", db,
                   table_name);
 
@@ -5945,8 +5962,8 @@ void Ndb_binlog_thread::handle_non_data_event(THD *thd, NdbEventOperation *pOp,
   const NDB_SHARE *const share = event_data->share;
   switch (type) {
     case NDBEVENT::TE_CLUSTER_FAILURE:
-      log_verbose(1, "cluster failure for epoch %u/%u.",
-                  (uint)(pOp->getGCI() >> 32), (uint)(pOp->getGCI()));
+      // Connection to NDB has been lost, release resources in same way as when
+      // table has been dropped
       [[fallthrough]];
     case NDBEVENT::TE_DROP:
       if (m_apply_status_share == share) {
@@ -6733,7 +6750,8 @@ bool Ndb_binlog_thread::inject_apply_status_write(injector_transaction &trans,
   return true;
 }
 
-Ndb_binlog_thread::Ndb_binlog_thread() : Ndb_component("Binlog") {}
+Ndb_binlog_thread::Ndb_binlog_thread()
+    : Ndb_component("Binlog", "ndb_binlog") {}
 
 Ndb_binlog_thread::~Ndb_binlog_thread() {}
 
@@ -7412,7 +7430,7 @@ restart_cluster_failure:
     MEM_ROOT **root_ptr = THR_MALLOC;
     MEM_ROOT *old_root = *root_ptr;
     MEM_ROOT mem_root;
-    init_sql_alloc(PSI_INSTRUMENT_ME, &mem_root, 4096, 0);
+    init_sql_alloc(PSI_INSTRUMENT_ME, &mem_root, 4096);
 
     // The Ndb_schema_event_handler does not necessarily need
     // to use the same memroot(or vice versa)

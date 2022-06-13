@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,11 +61,11 @@ static bool is_key_scan_ror(RANGE_OPT_PARAM *param, uint keynr, uint nparts);
 static bool eq_ranges_exceeds_limit(const SEL_ROOT *keypart, uint *count,
                                     uint limit);
 static bool get_ranges_from_tree_given_base(
-    MEM_ROOT *return_mem_root, const KEY *table_key, KEY_PART *key,
+    THD *thd, MEM_ROOT *return_mem_root, const KEY *table_key, KEY_PART *key,
     SEL_ROOT *key_tree, uchar *const base_min_key, uchar *min_key,
     uint min_key_flag, uchar *const base_max_key, uchar *max_key,
     uint max_key_flag, bool first_keypart_is_asc, uint num_key_parts,
-    uint *used_key_parts, Quick_ranges *ranges);
+    uint *used_key_parts, uint *num_exact_key_parts, Quick_ranges *ranges);
 
 /* MRR range sequence, SEL_ARG* implementation: stack entry */
 struct RANGE_SEQ_ENTRY {
@@ -771,7 +771,7 @@ static bool is_key_scan_ror(RANGE_OPT_PARAM *param, uint keynr, uint nparts) {
 bool get_ranges_from_tree(MEM_ROOT *return_mem_root, TABLE *table,
                           KEY_PART *key, uint keyno, SEL_ROOT *key_tree,
                           uint num_key_parts, unsigned *used_key_parts,
-                          Quick_ranges *ranges) {
+                          unsigned *num_exact_key_parts, Quick_ranges *ranges) {
   *used_key_parts = 0;
   if (key_tree->type != SEL_ROOT::Type::KEY_RANGE) {
     return false;
@@ -779,10 +779,15 @@ bool get_ranges_from_tree(MEM_ROOT *return_mem_root, TABLE *table,
   const bool first_keypart_is_asc = key_tree->root->is_ascending;
   uchar min_key[MAX_KEY_LENGTH + MAX_FIELD_WIDTH];
   uchar max_key[MAX_KEY_LENGTH + MAX_FIELD_WIDTH];
-  return get_ranges_from_tree_given_base(
-      return_mem_root, &table->key_info[keyno], key, key_tree, min_key, min_key,
-      0, max_key, max_key, 0, first_keypart_is_asc, num_key_parts,
-      used_key_parts, ranges);
+  *num_exact_key_parts = num_key_parts;
+  if (get_ranges_from_tree_given_base(
+          current_thd, return_mem_root, &table->key_info[keyno], key, key_tree,
+          min_key, min_key, 0, max_key, max_key, 0, first_keypart_is_asc,
+          num_key_parts, used_key_parts, num_exact_key_parts, ranges)) {
+    return true;
+  }
+  *num_exact_key_parts = std::min(*num_exact_key_parts, *used_key_parts);
+  return false;
 }
 
 void trace_basic_info_index_range_scan(THD *thd, const AccessPath *path,
@@ -948,11 +953,11 @@ AccessPath *get_key_scans_params(THD *thd, RANGE_OPT_PARAM *param,
   }
 
   Quick_ranges ranges(param->return_mem_root);
-  unsigned used_key_parts;
+  unsigned used_key_parts, num_exact_key_parts;
   if (get_ranges_from_tree(param->return_mem_root, param->table,
                            param->key[best_idx], param->real_keynr[best_idx],
                            key_to_read, MAX_REF_PARTS, &used_key_parts,
-                           &ranges)) {
+                           &num_exact_key_parts, &ranges)) {
     return nullptr;
   }
 
@@ -1019,6 +1024,7 @@ static inline std::basic_string_view<uchar> make_string_view(const uchar *start,
   SYNOPSIS
     get_ranges_from_tree_given_base()
 
+  @param thd            THD object
   @param return_mem_root MEM_ROOT to use for allocating the data
   @param key            Generate key values for this key
   @param key_tree       SEL_ARG tree
@@ -1031,6 +1037,12 @@ static inline std::basic_string_view<uchar> make_string_view(const uchar *start,
   @param first_keypart_is_asc  Whether first keypart is ascending or not
   @param num_key_parts  Number of key parts that should be used for
                         creating ranges
+  @param used_key_parts Number of key parts that were ever used in some form
+  @param num_exact_key_parts
+                        The number of key parts for which we were able to
+                        apply the ranges fully (never higher than
+                        used_key_parts), subsuming conditions touching
+                        that key part.
   @param ranges         The ranges to scan
 
   @note Fix this to get all possible sub_ranges
@@ -1041,11 +1053,11 @@ static inline std::basic_string_view<uchar> make_string_view(const uchar *start,
 */
 
 static bool get_ranges_from_tree_given_base(
-    MEM_ROOT *return_mem_root, const KEY *table_key, KEY_PART *key,
+    THD *thd, MEM_ROOT *return_mem_root, const KEY *table_key, KEY_PART *key,
     SEL_ROOT *key_tree, uchar *const base_min_key, uchar *min_key,
     uint min_key_flag, uchar *const base_max_key, uchar *max_key,
     uint max_key_flag, bool first_keypart_is_asc, uint num_key_parts,
-    uint *used_key_parts, Quick_ranges *ranges) {
+    uint *used_key_parts, uint *num_exact_key_parts, Quick_ranges *ranges) {
   const uint part = key_tree->root->part;
   const bool asc = key_tree->root->is_ascending;
 
@@ -1077,11 +1089,11 @@ static bool get_ranges_from_tree_given_base(
         // (a=3) in itself (which is what the rest of the function is doing),
         // so skip to the next range after processing this one.
         if (get_ranges_from_tree_given_base(
-                return_mem_root, table_key, key, node->next_key_part,
+                thd, return_mem_root, table_key, key, node->next_key_part,
                 base_min_key, tmp_min_key, min_key_flag | node->get_min_flag(),
                 base_max_key, tmp_max_key, max_key_flag | node->get_max_flag(),
                 first_keypart_is_asc, num_key_parts - 1, used_key_parts,
-                ranges)) {
+                num_exact_key_parts, ranges)) {
           return true;
         }
         continue;
@@ -1116,6 +1128,17 @@ static bool get_ranges_from_tree_given_base(
     } else {
       // Invert flags for DESC keypart
       flag = invert_min_flag(node->min_flag) | invert_max_flag(node->max_flag);
+    }
+
+    if (node->next_key_part != nullptr &&
+        part + num_key_parts >= node->next_key_part->root->part) {
+      // We necessarily skipped something in the next keypart (see above),
+      // so note that. The caller can use this information to know that it
+      // cannot subsume any predicates that touch on that (or any later)
+      // keyparts, but must recheck them using a filter. (The old join optimizer
+      // always checks, but the hypergraph join optimizer is more precise.)
+      *num_exact_key_parts =
+          std::min<uint>(*num_exact_key_parts, node->next_key_part->root->part);
     }
 
     /*
@@ -1159,14 +1182,15 @@ static bool get_ranges_from_tree_given_base(
       flag |= DESC_FLAG;
     }
 
+    assert(!thd->mem_cnt->is_error());
     /* Get range for retrieving rows in RowIterator::Read() */
-    QUICK_RANGE *range = new (return_mem_root)
-        QUICK_RANGE(base_min_key, (uint)(tmp_min_key - base_min_key),
-                    min_part >= 0 ? make_keypart_map(min_part) : 0,
-                    base_max_key, (uint)(tmp_max_key - base_max_key),
-                    max_part >= 0 ? make_keypart_map(max_part) : 0, flag,
-                    node->rkey_func_flag);
-    if (range == nullptr) {
+    QUICK_RANGE *range = new (return_mem_root) QUICK_RANGE(
+        return_mem_root, base_min_key, (uint)(tmp_min_key - base_min_key),
+        min_part >= 0 ? make_keypart_map(min_part) : 0, base_max_key,
+        (uint)(tmp_max_key - base_max_key),
+        max_part >= 0 ? make_keypart_map(max_part) : 0, flag,
+        node->rkey_func_flag);
+    if (range == nullptr || thd->killed) {
       return true;  // out of memory
     }
 

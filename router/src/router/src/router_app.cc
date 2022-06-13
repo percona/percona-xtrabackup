@@ -40,10 +40,8 @@
 #include <system_error>
 #include <vector>
 
-#include "common.h"
-#include "config_files.h"
+#include "common.h"  // truncate_string
 #include "config_generator.h"
-#include "default_paths.h"
 #include "dim.h"
 #include "harness_assert.h"
 #include "hostname_validator.h"
@@ -56,6 +54,8 @@
 #include "mysql/harness/logging/registry.h"
 #include "mysql/harness/utility/string.h"  // string_format
 #include "mysql/harness/vt100.h"
+#include "mysqlrouter/config_files.h"
+#include "mysqlrouter/default_paths.h"
 #include "mysqlrouter/mysql_session.h"
 #include "mysqlrouter/utils.h"  // substitute_envvar
 #include "print_version.h"

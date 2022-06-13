@@ -25,6 +25,11 @@
 #ifndef ROUTER_MAIN_WINDOWS_INCLUDED
 #define ROUTER_MAIN_WINDOWS_INCLUDED
 
-int proxy_main(int (*real_main)(int, char **, bool), int argc, char **argv);
+#include "mysqlrouter/router_export.h"
+
+int ROUTER_LIB_EXPORT proxy_main(int (*real_main)(int, char **, bool), int argc,
+                                 char **argv);
+
+std::string ROUTER_LIB_EXPORT get_logging_folder(const std::string &);
 
 #endif  // ROUTER_MAIN_WINDOWS_INCLUDED

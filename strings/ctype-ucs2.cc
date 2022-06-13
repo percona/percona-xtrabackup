@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -1419,7 +1419,7 @@ CHARSET_INFO my_charset_utf16_general_ci = {
     MY_CS_COMPILED | MY_CS_PRIMARY | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,
     "utf16",             /* cs name    */
-    "utf16_general_ci",  /* name         */
+    "utf16_general_ci",  /* m_coll_name  */
     "UTF-16 Unicode",    /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */
@@ -1455,7 +1455,7 @@ CHARSET_INFO my_charset_utf16_bin = {
     MY_CS_COMPILED | MY_CS_BINSORT | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,
     "utf16",             /* cs name      */
-    "utf16_bin",         /* name         */
+    "utf16_bin",         /* m_coll_name  */
     "UTF-16 Unicode",    /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */
@@ -1575,7 +1575,7 @@ CHARSET_INFO my_charset_utf16le_general_ci = {
     MY_CS_COMPILED | MY_CS_PRIMARY | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,
     "utf16le",            /* cs name    */
-    "utf16le_general_ci", /* name         */
+    "utf16le_general_ci", /* m_coll_name  */
     "UTF-16LE Unicode",   /* comment      */
     nullptr,              /* tailoring    */
     nullptr,              /* coll_param   */
@@ -1611,7 +1611,7 @@ CHARSET_INFO my_charset_utf16le_bin = {
     MY_CS_COMPILED | MY_CS_BINSORT | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,
     "utf16le",           /* cs name      */
-    "utf16le_bin",       /* name         */
+    "utf16le_bin",       /* m_coll_name  */
     "UTF-16LE Unicode",  /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */
@@ -2125,6 +2125,9 @@ static size_t my_charpos_utf32(const CHARSET_INFO *cs [[maybe_unused]],
   return pos * 4 > string_length ? string_length + 4 : pos * 4;
 }
 
+/*
+  Valid characters are 0x00000000..0x0000D7FF and 0x0000E000..0x0010FFFF
+ */
 static size_t my_well_formed_len_utf32(const CHARSET_INFO *cs [[maybe_unused]],
                                        const char *b, const char *e,
                                        size_t nchars, int *error) {
@@ -2142,8 +2145,12 @@ static size_t my_well_formed_len_utf32(const CHARSET_INFO *cs [[maybe_unused]],
     e = b + nchars;
   }
   for (; b < e; b += 4) {
-    /* Don't accept characters greater than U+10FFFF */
-    if (b[0] || (uchar)b[1] > 0x10) {
+    if (b[0] != 0 || static_cast<unsigned char>(b[1]) > 0x10) {
+      *error = 1;
+      return b - b0;
+    }
+    if (b[1] == 0 && (static_cast<unsigned char>(b[2]) >= 0xd8 &&
+                      static_cast<unsigned char>(b[2]) < 0xe0)) {
       *error = 1;
       return b - b0;
     }
@@ -2349,7 +2356,7 @@ CHARSET_INFO my_charset_utf32_general_ci = {
     MY_CS_COMPILED | MY_CS_PRIMARY | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_UNICODE_SUPPLEMENT | MY_CS_NONASCII,
     "utf32",             /* cs name    */
-    "utf32_general_ci",  /* name         */
+    "utf32_general_ci",  /* m_coll_name  */
     "UTF-32 Unicode",    /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */
@@ -2385,7 +2392,7 @@ CHARSET_INFO my_charset_utf32_bin = {
     MY_CS_COMPILED | MY_CS_BINSORT | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,
     "utf32",             /* cs name    */
-    "utf32_bin",         /* name         */
+    "utf32_bin",         /* m_coll_name  */
     "UTF-32 Unicode",    /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */
@@ -2884,7 +2891,7 @@ CHARSET_INFO my_charset_ucs2_general_ci = {
     MY_CS_COMPILED | MY_CS_PRIMARY | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,
     "ucs2",              /* cs name    */
-    "ucs2_general_ci",   /* name         */
+    "ucs2_general_ci",   /* m_coll_name  */
     "UCS-2 Unicode",     /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */
@@ -2920,7 +2927,7 @@ CHARSET_INFO my_charset_ucs2_general_mysql500_ci = {
     MY_CS_COMPILED | MY_CS_STRNXFRM | MY_CS_UNICODE |
         MY_CS_NONASCII,         /* state */
     "ucs2",                     /* cs name          */
-    "ucs2_general_mysql500_ci", /* name             */
+    "ucs2_general_mysql500_ci", /* m_coll_name      */
     "UCS-2 Unicode",            /* comment          */
     nullptr,                    /* tailoring        */
     nullptr,                    /* coll_param       */
@@ -2955,7 +2962,7 @@ CHARSET_INFO my_charset_ucs2_bin = {
     0, /* number       */
     MY_CS_COMPILED | MY_CS_BINSORT | MY_CS_UNICODE | MY_CS_NONASCII,
     "ucs2",              /* cs name    */
-    "ucs2_bin",          /* name         */
+    "ucs2_bin",          /* m_coll_name  */
     "UCS-2 Unicode",     /* comment      */
     nullptr,             /* tailoring    */
     nullptr,             /* coll_param   */

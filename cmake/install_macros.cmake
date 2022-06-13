@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2022, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -96,7 +96,7 @@ ENDFUNCTION()
 
 FUNCTION(MYSQL_INSTALL_TARGET target_arg)
   CMAKE_PARSE_ARGUMENTS(ARG
-    ""
+    "NAMELINK_SKIP"
     "DESTINATION;COMPONENT"
     ""
     ${ARGN}
@@ -110,7 +110,13 @@ FUNCTION(MYSQL_INSTALL_TARGET target_arg)
   IF(ARG_COMPONENT)
     SET(COMP COMPONENT ${ARG_COMPONENT})
   ENDIF()
-  INSTALL(TARGETS ${target} DESTINATION ${ARG_DESTINATION} ${COMP})
+  IF(ARG_NAMELINK_SKIP)
+    SET(LIBRARY_INSTALL_ARGS NAMELINK_SKIP)
+  ENDIF()
+  INSTALL(TARGETS ${target}
+    RUNTIME DESTINATION ${ARG_DESTINATION} ${COMP}
+    ARCHIVE DESTINATION ${ARG_DESTINATION} ${COMP}
+    LIBRARY DESTINATION ${ARG_DESTINATION} ${COMP} ${LIBRARY_INSTALL_ARGS})
   SET(INSTALL_LOCATION ${ARG_DESTINATION} )
   INSTALL_DEBUG_SYMBOLS(${target})
   SET(INSTALL_LOCATION)
@@ -558,13 +564,13 @@ ENDMACRO()
 # For APPLE builds we support
 #   -DWITH_SSL=</path/to/custom/openssl>
 # SSL libraries are installed in lib/
-# For Makefile buids, we need to support running in the build directory
+# For Makefile builds, we need to support running in the build directory
 #   plugins are in plugin_output_directory/
 # and after 'make install'
 #   plugins are in lib/plugin/ and lib/plugin/debug/
 # For Xcode builds, we support running in the build directories only.
 FUNCTION(SET_PATH_TO_CUSTOM_SSL_FOR_APPLE target)
-  IF(APPLE AND HAVE_CRYPTO_DYLIB AND HAVE_OPENSSL_DYLIB)
+  IF(APPLE_WITH_CUSTOM_SSL)
     IF(BUILD_IS_SINGLE_CONFIG)
       GET_TARGET_PROPERTY(TARGET_TYPE_${target} ${target} TYPE)
       IF(TARGET_TYPE_${target} STREQUAL "MODULE_LIBRARY")
@@ -665,6 +671,8 @@ FUNCTION(COPY_CUSTOM_SHARED_LIBRARY library_full_filename subdir
     -Dlibrary_version="${library_version}"
     -Dsubdir="${subdir}"
     -DPATCHELF_EXECUTABLE="${PATCHELF_EXECUTABLE}"
+    -DCPU_PAGE_SIZE="${CPU_PAGE_SIZE}"
+    -DCMAKE_SYSTEM_PROCESSOR="${CMAKE_SYSTEM_PROCESSOR}"
     -P ${CMAKE_SOURCE_DIR}/cmake/copy_custom_library.cmake
 
     BYPRODUCTS

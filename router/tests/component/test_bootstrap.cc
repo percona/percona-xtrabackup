@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2021, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -47,7 +47,7 @@
 #include "mysql/harness/net_ts/impl/resolver.h"
 #include "mysql/harness/net_ts/internet.h"
 #include "mysql/harness/stdx/expected.h"
-#include "mysql/harness/string_utils.h"  // split_lines
+#include "mysql/harness/string_utils.h"  // split_string
 #include "mysqld_error.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/utils.h"  // getpwuid
@@ -110,86 +110,88 @@ TEST_P(RouterBootstrapOkTest, BootstrapOk) {
 
   // let's check if the actual config file output is what we expect:
 
+  const char *expected_config_default_part = "unknown_config_option=error";
+
   const char *expected_config_gr_part1 =
-      R"([metadata_cache:mycluster]
+      R"([metadata_cache:bootstrap]
 cluster_type=gr
 router_id=1)";
   // we skip user as it is random and would require regex matching which would
   // require tons of escaping
   // user=mysql_router1_daxi69tk9btt
   const char *expected_config_gr_part2 =
-      R"(metadata_cluster=mycluster
+      R"(metadata_cluster=my-cluster
 ttl=0.5
 auth_cache_ttl=-1
 auth_cache_refresh_interval=2
 use_gr_notifications=0
 
-[routing:mycluster_rw]
+[routing:bootstrap_rw]
 bind_address=0.0.0.0
 bind_port=6446
-destinations=metadata-cache://mycluster/?role=PRIMARY
+destinations=metadata-cache://my-cluster/?role=PRIMARY
 routing_strategy=first-available
 protocol=classic
 
-[routing:mycluster_ro]
+[routing:bootstrap_ro]
 bind_address=0.0.0.0
 bind_port=6447
-destinations=metadata-cache://mycluster/?role=SECONDARY
+destinations=metadata-cache://my-cluster/?role=SECONDARY
 routing_strategy=round-robin-with-fallback
 protocol=classic
 
-[routing:mycluster_x_rw]
+[routing:bootstrap_x_rw]
 bind_address=0.0.0.0
 bind_port=6448
-destinations=metadata-cache://mycluster/?role=PRIMARY
+destinations=metadata-cache://my-cluster/?role=PRIMARY
 routing_strategy=first-available
 protocol=x
 
-[routing:mycluster_x_ro]
+[routing:bootstrap_x_ro]
 bind_address=0.0.0.0
 bind_port=6449
-destinations=metadata-cache://mycluster/?role=SECONDARY
+destinations=metadata-cache://my-cluster/?role=SECONDARY
 routing_strategy=round-robin-with-fallback
 protocol=x)";
 
   const char *expected_config_ar_part1 =
-      R"([metadata_cache:mycluster]
+      R"([metadata_cache:bootstrap]
 cluster_type=rs
 router_id=1)";
   // we skip user as it is random and would require regex matching which would
   // require tons of escaping
   // user=mysql_router1_ritc56yrjz42
   const char *expected_config_ar_part2 =
-      R"(metadata_cluster=mycluster
+      R"(metadata_cluster=my-cluster
 ttl=0.5
 auth_cache_ttl=-1
 auth_cache_refresh_interval=2
 
-[routing:mycluster_rw]
+[routing:bootstrap_rw]
 bind_address=0.0.0.0
 bind_port=6446
-destinations=metadata-cache://mycluster/?role=PRIMARY
+destinations=metadata-cache://my-cluster/?role=PRIMARY
 routing_strategy=first-available
 protocol=classic
 
-[routing:mycluster_ro]
+[routing:bootstrap_ro]
 bind_address=0.0.0.0
 bind_port=6447
-destinations=metadata-cache://mycluster/?role=SECONDARY
+destinations=metadata-cache://my-cluster/?role=SECONDARY
 routing_strategy=round-robin-with-fallback
 protocol=classic
 
-[routing:mycluster_x_rw]
+[routing:bootstrap_x_rw]
 bind_address=0.0.0.0
 bind_port=6448
-destinations=metadata-cache://mycluster/?role=PRIMARY
+destinations=metadata-cache://my-cluster/?role=PRIMARY
 routing_strategy=first-available
 protocol=x
 
-[routing:mycluster_x_ro]
+[routing:bootstrap_x_ro]
 bind_address=0.0.0.0
 bind_port=6449
-destinations=metadata-cache://mycluster/?role=SECONDARY
+destinations=metadata-cache://my-cluster/?role=SECONDARY
 routing_strategy=round-robin-with-fallback
 protocol=x)";
 
@@ -206,9 +208,11 @@ protocol=x)";
 
   const std::string config_file_str = get_file_output(config_file);
 
-  EXPECT_THAT(config_file_str,
-              ::testing::AllOf(::testing::HasSubstr(config_file_expected1),
-                               ::testing::HasSubstr(config_file_expected2)));
+  EXPECT_THAT(
+      config_file_str,
+      ::testing::AllOf(::testing::HasSubstr(expected_config_default_part),
+                       ::testing::HasSubstr(config_file_expected1),
+                       ::testing::HasSubstr(config_file_expected2)));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -250,7 +254,7 @@ void check_bind_port(const std::string &conf_file_content,
       "[routing:"s + route_name + "]\n"
       "bind_address=0.0.0.0\n" +
       "bind_port=" + std::to_string(expected_bind_port) + "\n" +
-      "destinations=metadata-cache://mycluster/?role=" +  server_role + "\n" +
+      "destinations=metadata-cache://my-cluster/?role=" +  server_role + "\n" +
       "routing_strategy=" + routing_strategy + "\n" +
       "protocol=" + protocol_name + "\n";
   // clang-format on
@@ -300,19 +304,19 @@ TEST_P(RouterBootstrapOkBasePortTest, RouterBootstrapOkBasePort) {
   const std::string config_file_str = get_file_output(config_file);
 
   // classic RW
-  check_bind_port(config_file_str, "mycluster_rw", "classic", "PRIMARY",
+  check_bind_port(config_file_str, "bootstrap_rw", "classic", "PRIMARY",
                   param.expected_port_classic_rw);
 
   // classic RO
-  check_bind_port(config_file_str, "mycluster_ro", "classic", "SECONDARY",
+  check_bind_port(config_file_str, "bootstrap_ro", "classic", "SECONDARY",
                   param.expected_port_classic_ro);
 
   // x RW
-  check_bind_port(config_file_str, "mycluster_x_rw", "x", "PRIMARY",
+  check_bind_port(config_file_str, "bootstrap_x_rw", "x", "PRIMARY",
                   param.expected_port_x_rw);
 
   // x RO
-  check_bind_port(config_file_str, "mycluster_x_ro", "x", "SECONDARY",
+  check_bind_port(config_file_str, "bootstrap_x_ro", "x", "SECONDARY",
                   param.expected_port_x_ro);
 }
 
@@ -475,19 +479,19 @@ TEST_P(RouterReBootstrapOkBasePortTest, RouterReBootstrapOkBasePort) {
   const std::string config_file_str = get_file_output(conf_file);
 
   // classic RW
-  check_bind_port(config_file_str, "mycluster_rw", "classic", "PRIMARY",
+  check_bind_port(config_file_str, "bootstrap_rw", "classic", "PRIMARY",
                   param.expected_port_classic_rw);
 
   // classic RO
-  check_bind_port(config_file_str, "mycluster_ro", "classic", "SECONDARY",
+  check_bind_port(config_file_str, "bootstrap_ro", "classic", "SECONDARY",
                   param.expected_port_classic_ro);
 
   // x RW
-  check_bind_port(config_file_str, "mycluster_x_rw", "x", "PRIMARY",
+  check_bind_port(config_file_str, "bootstrap_x_rw", "x", "PRIMARY",
                   param.expected_port_x_rw);
 
   // x RO
-  check_bind_port(config_file_str, "mycluster_x_ro", "x", "SECONDARY",
+  check_bind_port(config_file_str, "bootstrap_x_ro", "x", "SECONDARY",
                   param.expected_port_x_ro);
 }
 
@@ -961,16 +965,23 @@ class RouterBootstrapFailoverSuperReadonly
  */
 TEST_P(RouterBootstrapFailoverSuperReadonly, BootstrapFailoverSuperReadonly) {
   const auto param = GetParam();
+  const std::string cluster_type_specific_id =
+      param.cluster_type == ClusterType::RS_V2
+          ? "00000000-0000-0000-0000-0000000000c1"
+          : "00000000-0000-0000-0000-0000000000g1";
 
   std::vector<Config> config{
       {"127.0.0.1", port_pool_.get_next_available(),
        port_pool_.get_next_available(),
-       get_data_dir().join(param.trace_file).str()},
+       get_data_dir().join(param.trace_file).str(), /*unaccessible=*/false,
+       cluster_type_specific_id},
       {"127.0.0.1", port_pool_.get_next_available(),
        port_pool_.get_next_available(),
-       get_data_dir().join(param.trace_file2).str()},
+       get_data_dir().join(param.trace_file2).str(), /*unaccessible=*/false,
+       cluster_type_specific_id},
       {"127.0.0.1", port_pool_.get_next_available(),
-       port_pool_.get_next_available(), ""},
+       port_pool_.get_next_available(), "", /*unaccessible=*/false,
+       cluster_type_specific_id},
   };
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(config, param.cluster_type));
@@ -1019,20 +1030,26 @@ class RouterBootstrapFailoverSuperReadonly2ndNodeDead
 TEST_P(RouterBootstrapFailoverSuperReadonly2ndNodeDead,
        BootstrapFailoverSuperReadonly2ndNodeDead) {
   const auto param = GetParam();
+  const std::string cluster_type_specific_id =
+      param.cluster_type == ClusterType::RS_V2
+          ? "00000000-0000-0000-0000-0000000000c1"
+          : "00000000-0000-0000-0000-0000000000g1";
 
   const auto dead_port = port_pool_.get_next_available();
   std::vector<Config> config{
       // member-1, PRIMARY, fails at first write
       {"127.0.0.1", port_pool_.get_next_available(),
        port_pool_.get_next_available(),
-       get_data_dir().join(param.trace_file).str()},
+       get_data_dir().join(param.trace_file).str(), /*unaccessible=*/false,
+       cluster_type_specific_id},
       // member-2, unreachable
       {"127.0.0.1", dead_port, port_pool_.get_next_available(), "",
-       /*unaccessible=*/true},
+       /*unaccessible=*/true, cluster_type_specific_id},
       // member-3, succeeds
       {"127.0.0.1", port_pool_.get_next_available(),
        port_pool_.get_next_available(),
-       get_data_dir().join(param.trace_file2).str()},
+       get_data_dir().join(param.trace_file2).str(), /*unaccessible=*/false,
+       cluster_type_specific_id},
   };
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
@@ -1320,7 +1337,7 @@ INSTANTIATE_TEST_SUITE_P(
 /**
  * @test
  * This test proves that bootstrap will not print out the success message
- * ("MySQL Router configured for the InnoDB cluster 'mycluster'" and many lines
+ * ("MySQL Router configured for the InnoDB cluster 'my-cluster'" and many lines
  *  that follow it) until entire bootstrap succeeds.
  *
  * At the time of writing, the last operation that bootstrap performs is
@@ -1376,7 +1393,7 @@ TEST_F(RouterBootstrapTest,
   // displayed
   EXPECT_THAT(router.get_full_output(), ::testing::Not(::testing::HasSubstr(
                                             "MySQL Router configured for the "
-                                            "InnoDB cluster 'mycluster'")));
+                                            "InnoDB cluster 'my-cluster'")));
 
   server_mock.kill();
 }
@@ -1633,7 +1650,8 @@ TEST_P(ConfUseGrNotificationParamTest, ConfUseGrNotificationParam) {
   set_mock_bootstrap_data(
       http_port, "test",
       {{"localhost", server_port}, {"localhost", server_port2}},
-      GetParam().metadata_schema_version, "cluster-specific-id");
+      GetParam().metadata_schema_version,
+      "00000000-0000-0000-0000-0000000000c1");
 
   const auto base_listening_port = port_pool_.get_next_available();
   std::vector<std::string> bootsrtap_params{
@@ -1671,7 +1689,8 @@ TEST_P(ConfUseGrNotificationParamTest, ConfUseGrNotificationParam) {
   // launch mock server that is our metadata server
   launch_mysql_server_mock(runtime_json_stmts, server_port, EXIT_SUCCESS, false,
                            http_port);
-  set_mock_metadata(http_port, "cluster-specific-id", {server_port});
+  set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
+                    {server_port});
 
   ASSERT_NO_FATAL_FAILURE(launch_router({"-c", conf_file}));
 }
@@ -1980,7 +1999,7 @@ TEST_F(RouterBootstrapTest, BootstrapRouterDuplicateEntry) {
                            false, bootstrap_server_http_port);
   set_mock_bootstrap_data(bootstrap_server_http_port, "test",
                           {{"127.0.0.1", server_port}}, {2, 0, 3},
-                          "cluster-specific-id");
+                          "00000000-0000-0000-0000-0000000000c1");
 
   // launch the router in bootstrap mode
   auto &router = launch_router_for_bootstrap(
@@ -2016,7 +2035,7 @@ TEST_F(RouterBootstrapTest, CheckAuthBackendWhenOldMetadata) {
                            http_port);
 
   set_mock_bootstrap_data(http_port, "test", {{"localhost", server_port}},
-                          {1, 0, 0}, "cluster-specific-id");
+                          {1, 0, 0}, "00000000-0000-0000-0000-0000000000c1");
 
   const auto base_listening_port = port_pool_.get_next_available();
   std::vector<std::string> bootsrtap_params{
@@ -2085,13 +2104,14 @@ TEST_F(ConfSetOptionTest, MultipleConfOptionsSet) {
   };
 
   // mysqlrouter -B ...
-  // --conf-set-option=routing:mycluster_rw.bind_port=A -
-  // --conf-set-option=routing:mycluster_ro.bind_port=B
-  // --conf-set-option=routing:mycluster_x_rw.bind_port=C
-  // --conf-set-option=routing:mycluster_x_ro.bind_port=D
+  // --conf-set-option=routing:bootstrap_rw.bind_port=A -
+  // --conf-set-option=routing:bootstrap_ro.bind_port=B
+  // --conf-set-option=routing:bootstrap_x_rw.bind_port=C
+  // --conf-set-option=routing:bootstrap_x_ro.bind_port=D
   // --conf-set-option=logger.level=DEBUG
   // --conf-set-option=DEFAULT.read_timeout=50
   // --conf-set-option=DEFAULT.connect_timeout=38
+  // --conf-set-option=DEFAULT.unknown_config_option=warning
 
   const uint16_t classic_rw_port = 1234;
   const uint16_t classic_ro_port = 2345;
@@ -2106,18 +2126,19 @@ TEST_F(ConfSetOptionTest, MultipleConfOptionsSet) {
           std::to_string(mock_servers.at(0).port),
       "-d",
       bootstrap_dir.name(),
-      "--conf-set-option=routing:mycluster_rw.bind_port=" +
+      "--conf-set-option=routing:bootstrap_rw.bind_port=" +
           std::to_string(classic_rw_port),
-      "--conf-set-option=routing:mycluster_ro.bind_port=" +
+      "--conf-set-option=routing:bootstrap_ro.bind_port=" +
           std::to_string(classic_ro_port),
-      "--conf-set-option=routing:mycluster_x_rw.bind_port=" +
+      "--conf-set-option=routing:bootstrap_x_rw.bind_port=" +
           std::to_string(x_rw_port),
-      "--conf-set-option=routing:mycluster_x_ro.bind_port=" +
+      "--conf-set-option=routing:bootstrap_x_ro.bind_port=" +
           std::to_string(x_ro_port),
       "--conf-set-option=logger.level=" + log_level,
       "--conf-set-option=DEFAULT.read_timeout=" + std::to_string(read_tout),
       "--conf-set-option=DEFAULT.connect_timeout=" +
-          std::to_string(connect_tout)};
+          std::to_string(connect_tout),
+      "--conf-set-option=DEFAULT.unknown_config_option=warning"};
 
   ASSERT_NO_FATAL_FAILURE(
       bootstrap_failover(mock_servers, ClusterType::GR_V2, cmdline));
@@ -2129,18 +2150,18 @@ TEST_F(ConfSetOptionTest, MultipleConfOptionsSet) {
   const std::string config_file_str = get_file_output(config_file);
 
   // classic RW
-  check_bind_port(config_file_str, "mycluster_rw", "classic", "PRIMARY",
+  check_bind_port(config_file_str, "bootstrap_rw", "classic", "PRIMARY",
                   classic_rw_port);
 
   // classic RO
-  check_bind_port(config_file_str, "mycluster_ro", "classic", "SECONDARY",
+  check_bind_port(config_file_str, "bootstrap_ro", "classic", "SECONDARY",
                   classic_ro_port);
 
   // x RW
-  check_bind_port(config_file_str, "mycluster_x_rw", "x", "PRIMARY", x_rw_port);
+  check_bind_port(config_file_str, "bootstrap_x_rw", "x", "PRIMARY", x_rw_port);
 
   // x RO
-  check_bind_port(config_file_str, "mycluster_x_ro", "x", "SECONDARY",
+  check_bind_port(config_file_str, "bootstrap_x_ro", "x", "SECONDARY",
                   x_ro_port);
 
   EXPECT_TRUE(config_file_contains(config_file_str, "level=" + log_level))
@@ -2150,6 +2171,13 @@ TEST_F(ConfSetOptionTest, MultipleConfOptionsSet) {
       << config_file_str;
   EXPECT_TRUE(config_file_contains(
       config_file_str, "connect_timeout=" + std::to_string(connect_tout)))
+      << config_file_str;
+
+  EXPECT_TRUE(
+      config_file_contains(config_file_str, "unknown_config_option=warning"))
+      << config_file_str;
+  EXPECT_FALSE(
+      config_file_contains(config_file_str, "unknown_config_option=error"))
       << config_file_str;
 }
 
@@ -2325,12 +2353,12 @@ INSTANTIATE_TEST_SUITE_P(
             /*unexpected_conf_entry=*/{"read_timeout=20"}},
         ConfSetOptionTestParam{
             {"--conf-base-port=1000",
-             "--conf-set-option=routing:mycluster_rw.bind_port=2000"},
+             "--conf-set-option=routing:bootstrap_rw.bind_port=2000"},
             /*expected_conf_entries=*/{"bind_port=2000"},
             /*unexpected_conf_entries=*/{"bind_port=1000"}},
         // ConfSetOptionTestParam{
         //     {"--ssl-mode=REQUIRED",
-        //      "--conf-set-option=metadata_cache:mycluster.ssl_mode=DISABLED"},
+        //      "--conf-set-option=metadata_cache:bootstrap.ssl_mode=DISABLED"},
         //     /*expected_conf_entries=*/{"ssl_mode=DISABLED"},
         //     /*unexpected_conf_entries=*/{"ssl-mode=REQUIRED"}}
         ConfSetOptionTestParam{
@@ -2366,18 +2394,11 @@ INSTANTIATE_TEST_SUITE_P(
             /*unexpected_conf_entries=*/{"[LOGGER]", "level=debug"}},
 
         ConfSetOptionTestParam{
-            {"--conf-set-option=METADATA_cache:MYCLUSTER.router_id=1"},
+            {"--conf-set-option=METADATA_cache:BOOTSTRAP.router_id=1"},
             /*expected_conf_entries=*/
-            {"[metadata_cache:mycluster]", "router_id=1"},
+            {"[metadata_cache:bootstrap]", "router_id=1"},
             /*unexpected_conf_entries=*/
-            {"[METADATA_cache:MYCLUSTER]", "[metadata_cache:MYCLUSTER]"}},
-
-        ConfSetOptionTestParam{
-            {"--conf-set-option=METADATA_cache:Mycluster.router_id=1"},
-            /*expected_conf_entries=*/
-            {"[metadata_cache:mycluster]", "router_id=1"},
-            /*unexpected_conf_entries=*/
-            {"[METADATA_cache:Mycluster]", "[metadata_cache:Mycluster]"}},
+            {"[METADATA_cache:BOOTSTRAP]", "[metadata_cache:BOOTSTRAP]"}},
 
         ConfSetOptionTestParam{
             {"--conf-set-option=test_section.para1=10",

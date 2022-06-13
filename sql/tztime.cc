@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,12 +58,12 @@
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "my_time.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_memory_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/psi_memory_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_mutex.h"
@@ -1204,7 +1204,7 @@ bool my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap) {
   thd->store_globals();
 
   /* Init all memory structures that require explicit destruction */
-  init_sql_alloc(key_memory_tz_storage, &tz_storage, 32 * 1024, 0);
+  init_sql_alloc(key_memory_tz_storage, &tz_storage, 32 * 1024);
   mysql_mutex_init(key_tz_LOCK, &tz_LOCK, MY_MUTEX_INIT_FAST);
   tz_inited = true;
 

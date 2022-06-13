@@ -42,11 +42,11 @@ struct xb_fil_cur_t {
                                UNIV_PAGE_SIZE for uncompressed ones */
   ulint page_size_shift;       /*!< bit shift corresponding to
                                page_size */
-  bool is_system;              /*!< TRUE for system tablespace, FALSE
+  bool is_system;              /*!< true for system tablespace, false
                                otherwise */
-  bool is_ibd;                 /*!< TRUE for IBD tablespace tablespace,
-                               FALSE otherwise */
-  bool is_compressable;        /*!< TRUE for uncompressed and unencrypted
+  bool is_ibd;                 /*!< true for IBD tablespace tablespace,
+                               false otherwise */
+  bool is_compressable;        /*!< true for uncompressed and unencrypted
                                tablespaces */
   xb_read_filt_t *read_filter; /*!< read filter */
   xb_read_filt_ctxt_t read_filter_ctxt;
@@ -62,8 +62,8 @@ struct xb_fil_cur_t {
                           after the last cursor read */
   ulint buf_npages;       /*!< number of pages in buffer after the
                           last cursor read */
-  ib_uint64_t buf_offset; /*!< file offset of the first page in
-                          buffer */
+  uint64_t buf_offset;    /*!< file offset of the first page in
+                             buffer */
   ulint buf_page_no;      /*!< number of the first page in
                           buffer */
   uint thread_n;          /*!< thread number for diagnostics */
@@ -123,7 +123,7 @@ specified possibly absolute path.
 For user tablespaces both "./database/table.ibd" and
 "/remote/dir/database/table.ibd" result in "database/table.ibd".
 
-For system tablepsaces (i.e. When is_system is TRUE) both "/remote/dir/ibdata1"
+For system tablepsaces (i.e. When is_system is true) both "/remote/dir/ibdata1"
 and "./ibdata1" yield "ibdata1" in the output. */
 const char *xb_get_relative_path(
     /*=================*/
@@ -139,6 +139,6 @@ file. Positions the cursor after the last read non-corrupted page.
 @return XB_FIL_CUR_SUCCESS if some have been read successfully, XB_FIL_CUR_EOF
 if there are no more pages to read and XB_FIL_CUR_ERROR on error */
 xb_fil_cur_result_t xb_fil_cur_read_from_offset(xb_fil_cur_t *cursor,
-                                                ib_uint64_t offset,
-                                                ib_uint64_t to_read);
+                                                uint64_t offset,
+                                                uint64_t to_read);
 #endif

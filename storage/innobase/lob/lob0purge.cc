@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2021, Oracle and/or its affiliates.
+Copyright (c) 2016, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -40,27 +40,25 @@ this program; if not, write to the Free Software Foundation, Inc.,
 namespace lob {
 
 /** Rollback from undo log information.
-@param[in]	ctx	the delete operation context.
-@param[in]	index	the clustered index to which LOB belongs.
-@param[in]	uf	the update vector of concerned field. */
+@param[in]      ctx     the delete operation context.
+@param[in]      index   the clustered index to which LOB belongs.
+@param[in]      uf      the update vector of concerned field. */
 static void rollback_from_undolog(DeleteContext *ctx, dict_index_t *index,
                                   const upd_field_t *uf) {
   DBUG_TRACE;
 
-  trx_t *trx = nullptr;
-
-  dberr_t err = apply_undolog(ctx->get_mtr(), trx, index, ctx->m_blobref, uf);
+  dberr_t err = apply_undolog(ctx->get_mtr(), index, ctx->m_blobref, uf);
   ut_a(err == DB_SUCCESS);
 }
 
 /** Rollback modification of a uncompressed LOB.
-@param[in]	ctx		the delete operation context information.
-@param[in]	index		clustered index in which LOB is present
-@param[in]	trxid		the transaction that is being rolled back.
-@param[in]	undo_no		during rollback to savepoint, rollback only
+@param[in]      ctx             the delete operation context information.
+@param[in]      index           clustered index in which LOB is present
+@param[in]      trxid           the transaction that is being rolled back.
+@param[in]      undo_no         during rollback to savepoint, rollback only
                                 upto this undo number.
-@param[in]	rec_type	undo record type.
-@param[in]	uf		update vector of the concerned field. */
+@param[in]      rec_type        undo record type.
+@param[in]      uf              update vector of the concerned field. */
 static void rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
                      undo_no_t undo_no, ulint rec_type, const upd_field_t *uf) {
   DBUG_TRACE;
@@ -116,7 +114,7 @@ static void rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
     flst_node_t *node = first.addr2ptr_x(node_loc);
     index_entry_t cur_entry(node, &local_mtr, index);
     if (cur_entry.can_rollback(trxid, undo_no)) {
-      node_loc = cur_entry.make_old_version_current(index, trxid, first);
+      node_loc = cur_entry.make_old_version_current(index, first);
     } else {
       node_loc = cur_entry.get_next();
     }
@@ -183,12 +181,12 @@ static void rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
 }
 
 /** Rollback modification of a compressed LOB.
-@param[in]	ctx		the delete operation context information.
-@param[in]	index		clustered index in which LOB is present
-@param[in]	trxid		the transaction that is being rolled back.
-@param[in]	undo_no		during rollback to savepoint, rollback only
+@param[in]      ctx             the delete operation context information.
+@param[in]      index           clustered index in which LOB is present
+@param[in]      trxid           the transaction that is being rolled back.
+@param[in]      undo_no         during rollback to savepoint, rollback only
                                 upto this undo number.
-@param[in]	rec_type	undo record type. */
+@param[in]      rec_type        undo record type. */
 static void z_rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
                        undo_no_t undo_no, ulint rec_type) {
   ut_ad(ctx->m_rollback);
@@ -226,7 +224,7 @@ static void z_rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
     z_index_entry_t cur_entry(node, &local_mtr, index);
 
     if (cur_entry.can_rollback(trxid, undo_no)) {
-      node_loc = cur_entry.make_old_version_current(index, trxid, first);
+      node_loc = cur_entry.make_old_version_current(index, first);
     } else {
       node_loc = cur_entry.get_next();
     }
@@ -278,12 +276,12 @@ static void z_rollback(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
 }
 
 /** Purge a compressed LOB.
-@param[in] ctx		              The delete operation context information.
+@param[in] ctx                        The delete operation context information.
 @param[in] index                Clustered index in which LOB is present
 @param[in] trxid                The transaction that is being purged.
 @param[in] undo_no              During rollback to savepoint, purge only upto
                                 this undo number.
-@param[in] rec_type	            Undo record type.
+@param[in] rec_type                 Undo record type.
 @param[in,out] purge_node       if nullptr, free the complete LOB. Otherwise,
                                 save the first page of LOB in this purge node.*/
 static void z_purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
@@ -379,8 +377,7 @@ static void z_purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
       z_index_entry_t vers_entry(ver_node, &lob_mtr, index);
 
       if (vers_entry.can_be_purged(trxid, undo_no)) {
-        ver_loc =
-            vers_entry.purge_version(index, trxid, first, vers, free_list);
+        ver_loc = vers_entry.purge_version(index, first, vers, free_list);
       } else {
         ver_loc = vers_entry.get_next();
       }
@@ -556,7 +553,7 @@ void purge(DeleteContext *ctx, dict_index_t *index, trx_id_t trxid,
       index_entry_t vers_entry(ver_node, &lob_mtr, index);
 
       if (vers_entry.can_be_purged(trxid, undo_no)) {
-        ver_loc = vers_entry.purge_version(index, trxid, vers, free_list);
+        ver_loc = vers_entry.purge_version(index, vers, free_list);
       } else {
         ver_loc = vers_entry.get_next();
       }

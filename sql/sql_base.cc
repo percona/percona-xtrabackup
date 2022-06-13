@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,16 +57,18 @@
 #include "my_systime.h"
 #include "my_table_map.h"
 #include "my_thread_local.h"
+#include "mysql/components/services/bits/mysql_cond_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_cond_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/components/services/log_builtins.h"
-#include "mysql/components/services/mysql_cond_bits.h"
-#include "mysql/components/services/psi_cond_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/mysql_table.h"
+#include "mysql/psi/mysql_thread.h"
 #include "mysql/psi/psi_table.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/thread_type.h"
@@ -157,6 +159,21 @@ using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
+
+/**
+  The maximum length of a key in the table definition cache.
+
+  The key consists of the schema name, a '\0' character, the table
+  name and a '\0' character. Hence NAME_LEN * 2 + 1 + 1.
+
+  Additionally, the key can be suffixed with either 4 + 4 extra bytes
+  for slave tmp tables, or with a single extra byte for tables in a
+  secondary storage engine. Add 4 + 4 to account for either of these
+  suffixes.
+*/
+static constexpr const size_t MAX_DBKEY_LENGTH{NAME_LEN * 2 + 1 + 1 + 4 + 4};
+
+static constexpr long STACK_MIN_SIZE_FOR_OPEN{1024 * 80};
 
 /**
   This internal handler is used to trap ER_NO_SUCH_TABLE and
@@ -5758,11 +5775,6 @@ bool open_tables(THD *thd, TABLE_LIST **start, uint *counter, uint flags,
   DBUG_TRACE;
   bool audit_notified = false;
 
-  if (!thd->lex->plugin_var_bind_list.empty() &&
-      thd->lex->rebind_plugin_vars(thd)) {
-    return true;
-  }
-
 restart:
   /*
     Close HANDLER tables which are marked for flush or against which there
@@ -6620,6 +6632,8 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
       thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED) {
     thd->set_secondary_engine_optimization(
         Secondary_engine_optimization::SECONDARY);
+    mysql_thread_set_secondary_engine(true);
+    mysql_statement_set_secondary_engine(thd->m_statement_psi, true);
   }
 
   // Only open secondary engine tables if use of a secondary engine
@@ -7338,6 +7352,16 @@ bool open_temporary_table(THD *thd, TABLE_LIST *tl) {
   }
 
   TABLE *table = find_temporary_table(thd, tl);
+
+  // Access to temporary tables is disallowed in XA transactions in
+  // xa_detach_on_prepare=ON mode.
+  if ((tl->open_type == OT_TEMPORARY_ONLY ||
+       (table && table->s->tmp_table != NO_TMP_TABLE)) &&
+      is_xa_tran_detached_on_prepare(thd) &&
+      thd->get_transaction()->xid_state()->check_in_xa(false)) {
+    my_error(ER_XA_TEMP_TABLE, MYF(0));
+    return true;
+  }
 
   if (!table) {
     if (tl->open_type == OT_TEMPORARY_ONLY &&

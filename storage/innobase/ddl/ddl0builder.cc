@@ -101,10 +101,11 @@ struct Gen_sequence : public ddl::Context::FTS::Sequence {
   @return the current document ID and advance the sequence. */
   doc_id_t current() noexcept override { return m_doc_id; }
 
-  /** No supported.
+  /** Not supported.
   @param[in] dtuple             Row from which to fetch ID (ignored).
   @return the current document ID. */
-  doc_id_t fetch(const dtuple_t *dtuple = nullptr) noexcept override {
+  doc_id_t fetch(const dtuple_t *dtuple
+                 [[maybe_unused]] = nullptr) noexcept override {
     ut_error;
   }
 
@@ -132,7 +133,7 @@ struct Gen_sequence : public ddl::Context::FTS::Sequence {
 /** For loading an index from a sorted buffer. */
 struct Key_sort_buffer_cursor : public Load_cursor {
   /** Constructor.
-  @param[in,out] builder  Index builer.
+  @param[in,out] builder  Index builder.
   @param[in,out] key_buffer     Key buffer to load from. */
   Key_sort_buffer_cursor(Builder *builder, Key_sort_buffer *key_buffer) noexcept
       : Load_cursor(builder, nullptr), m_key_buffer(key_buffer) {}
@@ -250,7 +251,7 @@ File_cursor::File_cursor(Builder *builder,
 }
 
 dberr_t File_cursor::open() noexcept {
-  MEM_HEAP_CREATE(m_tuple_heap, 2048);
+  m_tuple_heap.create(2048 IF_DEBUG(, UT_LOCATION_HERE));
 
   return m_reader.prepare();
 }
@@ -472,7 +473,7 @@ uint64_t Merge_cursor::get_n_rows() const noexcept {
   return n_rows;
 }
 
-void Builder::convert(trx_t *trx, const dict_index_t *clust_index,
+void Builder::convert(const dict_index_t *clust_index,
                       const dfield_t *row_field, dfield_t *field, ulint len,
                       const page_size_t &page_size,
                       IF_DEBUG(bool is_sdi, ) mem_heap_t *heap) noexcept {
@@ -517,7 +518,7 @@ dberr_t Key_sort_buffer_cursor::open() noexcept {
   {
     const auto i = 1 + REC_OFFS_HEADER_SIZE + n_fields;
 
-    MEM_HEAP_CREATE(m_heap, 1024 + i * sizeof(ulint));
+    m_heap.create(1024 + i * sizeof(ulint) IF_DEBUG(, UT_LOCATION_HERE));
 
     const size_t n = i * sizeof(*m_offsets);
 
@@ -534,7 +535,7 @@ dberr_t Key_sort_buffer_cursor::open() noexcept {
 
   dtuple_set_n_fields_cmp(m_dtuple, dict_index_get_n_unique_in_tree(index));
 
-  MEM_HEAP_CREATE(m_tuple_heap, 2048);
+  m_tuple_heap.create(2048 IF_DEBUG(, UT_LOCATION_HERE));
 
   return DB_SUCCESS;
 }
@@ -591,7 +592,7 @@ Builder::Builder(ddl::Context &ctx, Loader &loader, size_t i) noexcept
 
   if (dict_table_is_comp(m_ctx.m_old_table) &&
       !dict_table_is_comp(m_ctx.m_new_table)) {
-    MEM_HEAP_CREATE(m_conv_heap, sizeof(mrec_buf_t));
+    m_conv_heap.create(sizeof(mrec_buf_t) IF_DEBUG(, UT_LOCATION_HERE));
   }
 }
 
@@ -722,7 +723,7 @@ dberr_t Builder::init(Cursor &cursor, size_t n_threads) noexcept {
   }
 
   if (cursor.m_row_heap.get() == nullptr) {
-    MEM_HEAP_CREATE(cursor.m_row_heap, sizeof(mrec_buf_t));
+    cursor.m_row_heap.create(sizeof(mrec_buf_t) IF_DEBUG(, UT_LOCATION_HERE));
 
     if (cursor.m_row_heap.get() == nullptr) {
       set_error(DB_OUT_OF_MEMORY);
@@ -919,8 +920,8 @@ dberr_t Builder::copy_columns(Copy_ctx &ctx, size_t &mv_rows_added,
       if (field->len != UNIV_SQL_NULL && col->mtype == DATA_MYSQL &&
           col->len != field->len) {
         if (m_conv_heap.get() != nullptr) {
-          convert(m_ctx.m_trx, m_ctx.m_old_table->first_index(), src_field,
-                  field, col->len, page_size,
+          convert(m_ctx.m_old_table->first_index(), src_field, field, col->len,
+                  page_size,
                   IF_DEBUG(dict_table_is_sdi(m_ctx.m_old_table->id), )
                       m_conv_heap.get());
         } else {
@@ -1076,7 +1077,7 @@ dberr_t Builder::copy_row(Copy_ctx &ctx, size_t &mv_rows_added) noexcept {
       auto fields = key_buffer->m_dtuples[key_buffer->size()];
 
       auto size = rec_get_serialize_size(m_index, fields, ctx.m_n_fields,
-                                         nullptr, &extra);
+                                         nullptr, &extra, MAX_ROW_VERSION);
 
       ut_a(ctx.m_data_size + ctx.m_extra_size == size);
       ut_a(ctx.m_extra_size == extra);
@@ -1205,8 +1206,7 @@ dberr_t Builder::key_buffer_sort(size_t thread_id) noexcept {
   return DB_SUCCESS;
 }
 
-dberr_t Builder::insert_direct(Cursor &cursor, const Row &row,
-                               size_t thread_id) noexcept {
+dberr_t Builder::insert_direct(Cursor &cursor, size_t thread_id) noexcept {
   ut_a(m_id == 0);
   ut_ad(is_skip_file_sort());
   ut_a(!is_fts_index());
@@ -1437,7 +1437,7 @@ dberr_t Builder::bulk_add_row(Cursor &cursor, Row &row, size_t thread_id,
           }
         }
 
-        err = insert_direct(cursor, ctx.m_row, thread_id);
+        err = insert_direct(cursor, thread_id);
 
         key_buffer->clear();
 
@@ -1544,9 +1544,9 @@ dberr_t Builder::add_row(Cursor &cursor, Row &row, size_t thread_id,
   return err;
 }
 
-void Builder::copy_blobs(trx_t *trx, const dict_index_t *index,
-                         const mrec_t *mrec, const ulint *offsets,
-                         const page_size_t &page_size, dtuple_t *tuple,
+void Builder::copy_blobs(const dict_index_t *index, const mrec_t *mrec,
+                         const ulint *offsets, const page_size_t &page_size,
+                         dtuple_t *tuple,
                          IF_DEBUG(bool is_sdi, ) mem_heap_t *heap) noexcept {
   ut_ad(mrec == nullptr || rec_offs_any_extern(offsets));
 
@@ -1580,7 +1580,7 @@ void Builder::copy_blobs(trx_t *trx, const dict_index_t *index,
     } else {
       data = lob::btr_rec_copy_externally_stored_field_func(
           nullptr, index, mrec, offsets, page_size, i, &len, nullptr,
-          IF_DEBUG(is_sdi, ) heap);
+          IF_DEBUG(is_sdi, ) heap, true);
     }
 
     /* Because we have locked the table, any records
@@ -1620,7 +1620,7 @@ dberr_t Builder::dtuple_copy_blobs(dtuple_t *dtuple, ulint *offsets,
     Any modifications after the Loader::*read() scan will go through
     row_log_table_apply(). Any modifications to off-page columns will be
     tracked by row_log_table_blob_alloc() and row_log_table_blob_free(). */
-    Builder::copy_blobs(m_ctx.m_trx, old_index, mrec, offsets,
+    Builder::copy_blobs(old_index, mrec, offsets,
                         dict_table_page_size(m_ctx.m_old_table), dtuple,
                         IF_DEBUG(dict_index_is_sdi(m_index), ) heap);
   }
@@ -1663,7 +1663,7 @@ dberr_t Builder::check_duplicates(Thread_ctxs &dupcheck, Dup *dup) noexcept {
 
   const auto n_compare = dict_index_get_n_unique_in_tree(m_index);
 
-  MEM_HEAP_CREATE(prev_tuple_heap, 2048);
+  prev_tuple_heap.create(2048 IF_DEBUG(, UT_LOCATION_HERE));
 
   while ((err = cursor.fetch(dtuple)) == DB_SUCCESS) {
     if (prev_dtuple != nullptr) {

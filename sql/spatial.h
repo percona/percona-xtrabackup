@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -468,7 +468,7 @@ class Geometry {
 
   virtual const Class_info *get_class_info() const { return nullptr; }
 
-  virtual uint32 get_data_size() const { return -1; }
+  virtual uint32 get_data_size() const { return ~0U; }
 
   /* read from trs the wkt string and write into wkb as wkb encoded data. */
   virtual bool init_from_wkt(Gis_read_stream *trs [[maybe_unused]],
@@ -730,21 +730,16 @@ class Geometry {
   */
   class Flags_t {
    public:
-    Flags_t() {
-      memset(this, 0, sizeof(*this));
-      bo = wkb_ndr;
-      dim = GEOM_DIM - 1;
-      nomem = 1;
-    }
+    Flags_t() : Flags_t(wkb_invalid_type, /*len*/ 0) {}
 
-    Flags_t(wkbType type, size_t len) {
-      memset(this, 0, sizeof(*this));
-      geotype = type;
-      nbytes = len;
-      bo = wkb_ndr;
-      dim = GEOM_DIM - 1;
-      nomem = 1;
-    }
+    Flags_t(wkbType type, size_t len)
+        : bo(wkb_ndr),
+          dim(GEOM_DIM - 1),
+          nomem(1),
+          geotype(type),
+          nbytes(len),
+          props(0),
+          zm(0) {}
 
     uint64 bo : 1;
     uint64 dim : 2;

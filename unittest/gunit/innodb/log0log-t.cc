@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -160,10 +160,7 @@ static bool log_test_general_init() {
   os_create_block_cache();
   clone_init();
 
-  const size_t max_n_pending_sync_ios = 100;
-
-  if (!os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads,
-                   max_n_pending_sync_ios)) {
+  if (!os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads)) {
     std::cerr << "Cannot initialize aio system" << std::endl;
     return (false);
   }
@@ -172,7 +169,7 @@ static bool log_test_general_init() {
 
   /* Below function will initialize the srv_registry variable which is
   required for the mysql_plugin_registry_acquire() */
-  minimal_chassis_init(&srv_registry, NULL);
+  minimal_chassis_init(&srv_registry, nullptr);
   fil_init(max_n_open_files);
 
   log_space = fil_space_create(
@@ -221,9 +218,8 @@ static bool log_test_init() {
       return (false);
     }
 
-    ret =
-        os_file_set_size(filename, files[i], 0, (os_offset_t)srv_log_file_size,
-                         srv_read_only_mode, false);
+    ret = os_file_set_size(filename, files[i], 0,
+                           (os_offset_t)srv_log_file_size, false);
     if (!ret) {
       std::cerr << "Cannot set log file " << filename << " to size "
                 << (srv_log_file_size >> 20) << " MB" << std::endl;
@@ -274,7 +270,7 @@ static bool log_test_recovery() {
   recv_sys_create();
 
   /** DBLWR directory is the current directory. */
-  recv_sys_init(4 * 1024 * 1024);
+  recv_sys_init();
 
   const bool result = log_sys_init(srv_n_log_files, srv_log_file_size,
                                    dict_sys_t::s_log_space_first_id);
@@ -288,7 +284,7 @@ static bool log_test_recovery() {
   srv_is_being_started = false;
 
   if (err == DB_SUCCESS) {
-    auto *ret = recv_recovery_from_checkpoint_finish(log, true);
+    auto *ret = recv_recovery_from_checkpoint_finish(true);
     EXPECT_EQ(nullptr, ret);
 
   } else {
@@ -355,16 +351,16 @@ static lsn_t write_single_mlog_test(Log_test::Key key) {
   mach_write_to_8(record_end - 8, handle.end_lsn);
 
   const lsn_t end_lsn =
-      log_buffer_write(log, handle, record, rec_len, handle.start_lsn);
+      log_buffer_write(log, record, rec_len, handle.start_lsn);
 
   ut_a(end_lsn == handle.end_lsn);
 
   if (handle.start_lsn / OS_FILE_LOG_BLOCK_SIZE !=
       end_lsn / OS_FILE_LOG_BLOCK_SIZE) {
-    log_buffer_set_first_record_group(log, handle, end_lsn);
+    log_buffer_set_first_record_group(log, end_lsn);
   }
 
-  log_buffer_write_completed(log, handle, handle.start_lsn, end_lsn);
+  log_buffer_write_completed(log, handle.start_lsn, end_lsn);
 
   log_wait_for_space_in_log_recent_closed(log, handle.start_lsn);
 
@@ -452,7 +448,7 @@ static lsn_t write_multi_mlog_tests(Log_test::Key key, size_t n) {
       ++end;
     }
 
-    end_lsn = log_buffer_write(log, handle, ptr, rec_len, start_lsn);
+    end_lsn = log_buffer_write(log, ptr, rec_len, start_lsn);
 
     left_to_write -= rec_len;
     ptr = end;
@@ -460,10 +456,10 @@ static lsn_t write_multi_mlog_tests(Log_test::Key key, size_t n) {
 
     if (left_to_write == 0 && group_start_lsn / OS_FILE_LOG_BLOCK_SIZE !=
                                   end_lsn / OS_FILE_LOG_BLOCK_SIZE) {
-      log_buffer_set_first_record_group(log, handle, end_lsn);
+      log_buffer_set_first_record_group(log, end_lsn);
     }
 
-    log_buffer_write_completed(log, handle, start_lsn, end_lsn);
+    log_buffer_write_completed(log, start_lsn, end_lsn);
 
     start_lsn = end_lsn;
   }
@@ -541,7 +537,7 @@ static void log_test_general_close() {
 
   fil_close();
 
-  minimal_chassis_deinit(srv_registry, NULL);
+  minimal_chassis_deinit(srv_registry, nullptr);
 
   os_thread_close();
 

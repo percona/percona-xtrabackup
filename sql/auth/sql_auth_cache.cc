@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,14 +28,15 @@
 
 #include "m_ctype.h"
 #include "m_string.h"  // LEX_CSTRING
+#include "mutex_lock.h"
 #include "my_base.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_loglevel.h"
 #include "my_macros.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/components/services/log_builtins.h"
-#include "mysql/components/services/psi_mutex_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/plugin_auth.h"  // st_mysql_auth
@@ -183,8 +184,7 @@ static void set_hostname(ACL_HOST_AND_IP *host, const char *host_arg,
   Allocates the memory in the the global_acl_memory MEM_ROOT.
 */
 void init_acl_memory() {
-  init_sql_alloc(key_memory_acl_mem, &global_acl_memory, ACL_ALLOC_BLOCK_SIZE,
-                 0);
+  init_sql_alloc(key_memory_acl_mem, &global_acl_memory, ACL_ALLOC_BLOCK_SIZE);
 }
 
 /**
@@ -687,9 +687,9 @@ void ACL_DB::set_host(MEM_ROOT *mem, const char *host_arg) {
 /**
   Append the authorization id for the user
 
-  @param [in]       thd     The THD to find the SQL mode
-  @param [in]       user    ACL User to retrieve the user information
-  @param [in, out]  str     The string in which authID is suffixed
+  @param [in]       thd      The THD to find the SQL mode
+  @param [in]       acl_user ACL User to retrieve the user information
+  @param [in, out]  str      The string in which authID is suffixed
 */
 void append_auth_id(const THD *thd, ACL_USER *acl_user, String *str) {
   assert(thd);
@@ -699,7 +699,7 @@ void append_auth_id(const THD *thd, ACL_USER *acl_user, String *str) {
 }
 
 /**
-  Append the user@host to the str
+  Append the user\@host to the str.
 
   @param [in]       thd      The THD to find the SQL mode
   @param [in]       user     Username to append to authID
@@ -1642,7 +1642,7 @@ static void validate_user_plugin_records() {
   DBUG_TRACE;
   if (!validate_user_plugins) return;
 
-  lock_plugin_data();
+  MUTEX_LOCK(plugin_lock, &LOCK_plugin);
   for (ACL_USER *acl_user = acl_users->begin(); acl_user != acl_users->end();
        ++acl_user) {
     struct st_plugin_int *plugin;
@@ -1670,7 +1670,6 @@ static void validate_user_plugin_records() {
       }
     }
   }
-  unlock_plugin_data();
 }
 
 /**
@@ -2691,7 +2690,7 @@ bool grant_reload(THD *thd, bool mdl_locked) {
       undo opertion possible in case of failure.
     */
     old_mem = move(memex);
-    init_sql_alloc(key_memory_acl_memex, &memex, ACL_ALLOC_BLOCK_SIZE, 0);
+    init_sql_alloc(key_memory_acl_memex, &memex, ACL_ALLOC_BLOCK_SIZE);
     /*
       tables[2].table i.e. procs_priv can be null if we are working with
       pre 4.1 privilage tables

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -65,40 +65,40 @@ the corresponding file data structure. In the latching order below, these
 file page object latches are placed immediately below the corresponding
 central memory object latch or mutex.
 
-Synchronization object			Notes
-----------------------			-----
+Synchronization object                  Notes
+----------------------                  -----
 
-Dictionary mutex			If we have a pointer to a dictionary
-|					object, e.g., a table, it can be
-|					accessed without reserving the
-|					dictionary mutex. We must have a
-|					reservation, a memoryfix, to the
-|					appropriate table object in this case,
-|					and the table must be explicitly
-|					released later.
+Dictionary mutex                        If we have a pointer to a dictionary
+|                                       object, e.g., a table, it can be
+|                                       accessed without reserving the
+|                                       dictionary mutex. We must have a
+|                                       reservation, a memoryfix, to the
+|                                       appropriate table object in this case,
+|                                       and the table must be explicitly
+|                                       released later.
 V
 Dictionary header
 |
 V
-Secondary index tree latch		The tree latch protects also all
-|					the B-tree non-leaf pages. These
-V					can be read with the page only
-Secondary index non-leaf		bufferfixed to save CPU time,
-|					no s-latch is needed on the page.
-|					Modification of a page requires an
-|					x-latch on the page, however. If a
-|					thread owns an x-latch to the tree,
-|					it is allowed to latch non-leaf pages
-|					even after it has acquired the fsp
-|					latch.
+Secondary index tree latch              The tree latch protects also all
+|                                       the B-tree non-leaf pages. These
+V                                       can be read with the page only
+Secondary index non-leaf                bufferfixed to save CPU time,
+|                                       no s-latch is needed on the page.
+|                                       Modification of a page requires an
+|                                       x-latch on the page, however. If a
+|                                       thread owns an x-latch to the tree,
+|                                       it is allowed to latch non-leaf pages
+|                                       even after it has acquired the fsp
+|                                       latch.
 V
-Secondary index leaf			The latch on the secondary index leaf
-|					can be kept while accessing the
-|					clustered index, to save CPU time.
+Secondary index leaf                    The latch on the secondary index leaf
+|                                       can be kept while accessing the
+|                                       clustered index, to save CPU time.
 V
-Clustered index tree latch		To increase concurrency, the tree
-|					latch is usually released when the
-|					leaf page latch has been acquired.
+Clustered index tree latch              To increase concurrency, the tree
+|                                       latch is usually released when the
+|                                       leaf page latch has been acquired.
 V
 Clustered index non-leaf
 |
@@ -109,27 +109,27 @@ V
 Transaction system header
 |
 V
-Transaction undo mutex			The undo log entry must be written
-|					before any index page is modified.
-|					Transaction undo mutex is for the undo
-|					logs the analogue of the tree latch
-|					for a B-tree. If a thread has the
-|					trx undo mutex reserved, it is allowed
-|					to latch the undo log pages in any
-|					order, and also after it has acquired
-|					the fsp latch.
+Transaction undo mutex                  The undo log entry must be written
+|                                       before any index page is modified.
+|                                       Transaction undo mutex is for the undo
+|                                       logs the analogue of the tree latch
+|                                       for a B-tree. If a thread has the
+|                                       trx undo mutex reserved, it is allowed
+|                                       to latch the undo log pages in any
+|                                       order, and also after it has acquired
+|                                       the fsp latch.
 V
-Rollback segment mutex			The rollback segment mutex must be
-|					reserved, if, e.g., a new page must
-|					be added to an undo log. The rollback
-|					segment and the undo logs in its
-|					history list can be seen as an
-|					analogue of a B-tree, and the latches
-|					reserved similarly, using a version of
-|					lock-coupling. If an undo log must be
-|					extended by a page when inserting an
-|					undo log record, this corresponds to
-|					a pessimistic insert in a B-tree.
+Rollback segment mutex                  The rollback segment mutex must be
+|                                       reserved, if, e.g., a new page must
+|                                       be added to an undo log. The rollback
+|                                       segment and the undo logs in its
+|                                       history list can be seen as an
+|                                       analogue of a B-tree, and the latches
+|                                       reserved similarly, using a version of
+|                                       lock-coupling. If an undo log must be
+|                                       extended by a page when inserting an
+|                                       undo log record, this corresponds to
+|                                       a pessimistic insert in a B-tree.
 V
 Rollback segment header
 |
@@ -137,48 +137,48 @@ V
 Purge system latch
 |
 V
-Undo log pages				If a thread owns the trx undo mutex,
-|					or for a log in the history list, the
-|					rseg mutex, it is allowed to latch
-|					undo log pages in any order, and even
-|					after it has acquired the fsp latch.
-|					If a thread does not have the
-|					appropriate mutex, it is allowed to
-|					latch only a single undo log page in
-|					a mini-transaction.
+Undo log pages                          If a thread owns the trx undo mutex,
+|                                       or for a log in the history list, the
+|                                       rseg mutex, it is allowed to latch
+|                                       undo log pages in any order, and even
+|                                       after it has acquired the fsp latch.
+|                                       If a thread does not have the
+|                                       appropriate mutex, it is allowed to
+|                                       latch only a single undo log page in
+|                                       a mini-transaction.
 V
-File space management latch		If a mini-transaction must allocate
-|					several file pages, it can do that,
-|					because it keeps the x-latch to the
-|					file space management in its memo.
+File space management latch             If a mini-transaction must allocate
+|                                       several file pages, it can do that,
+|                                       because it keeps the x-latch to the
+|                                       file space management in its memo.
 V
 File system pages
 |
 V
-lock_sys_wait_mutex			Mutex protecting lock timeout data
+lock_sys_wait_mutex                     Mutex protecting lock timeout data
 |
 V
-lock_sys->global_sharded_latch		Sharded rw-latch protecting lock_sys_t
+lock_sys->global_sharded_latch          Sharded rw-latch protecting lock_sys_t
 |
 V
-lock_sys->table_mutexes			Mutexes protecting lock_sys_t table
-|					lock queues
+lock_sys->table_mutexes                 Mutexes protecting lock_sys_t table
+|                                       lock queues
 |
 V
-lock_sys->page_mutexes			Mutexes protecting lock_sys_t page
-|					lock queues
+lock_sys->page_mutexes                  Mutexes protecting lock_sys_t page
+|                                       lock queues
 |
 V
-trx_sys->mutex				Mutex protecting trx_sys_t
+trx_sys->mutex                          Mutex protecting trx_sys_t
 |
 V
-Threads mutex				Background thread scheduling mutex
+Threads mutex                           Background thread scheduling mutex
 |
 V
-query_thr_mutex				Mutex protecting query threads
+query_thr_mutex                         Mutex protecting query threads
 |
 V
-trx_mutex				Mutex protecting trx_t fields
+trx_mutex                               Mutex protecting trx_t fields
 |
 V
 Search system mutex
@@ -424,7 +424,6 @@ enum latch_id_t {
   LATCH_ID_OS_AIO_WRITE_MUTEX,
   LATCH_ID_OS_AIO_LOG_MUTEX,
   LATCH_ID_OS_AIO_IBUF_MUTEX,
-  LATCH_ID_OS_AIO_SYNC_MUTEX,
   LATCH_ID_ROW_DROP_LIST,
   LATCH_ID_INDEX_ONLINE_LOG,
   LATCH_ID_WORK_QUEUE,
@@ -571,9 +570,9 @@ struct OSMutex {
 #ifdef UNIV_PFS_MUTEX
 /** Latch element
 Used for mutexes which have PFS keys defined under UNIV_PFS_MUTEX.
-@param[in]	id		Latch id
-@param[in]	level		Latch level
-@param[in]	key		PFS key */
+@param[in]      id              Latch id
+@param[in]      level           Latch level
+@param[in]      key             PFS key */
 #define LATCH_ADD_MUTEX(id, level, key)                      \
   latch_meta[LATCH_ID_##id] = ut::new_withkey<latch_meta_t>( \
       UT_NEW_THIS_FILE_PSI_KEY, LATCH_ID_##id, #id, level, #level, key)
@@ -581,9 +580,9 @@ Used for mutexes which have PFS keys defined under UNIV_PFS_MUTEX.
 #ifdef UNIV_PFS_RWLOCK
 /** Latch element.
 Used for rwlocks which have PFS keys defined under UNIV_PFS_RWLOCK.
-@param[in]	id		Latch id
-@param[in]	level		Latch level
-@param[in]	key		PFS key */
+@param[in]      id              Latch id
+@param[in]      level           Latch level
+@param[in]      key             PFS key */
 #define LATCH_ADD_RWLOCK(id, level, key)                     \
   latch_meta[LATCH_ID_##id] = ut::new_withkey<latch_meta_t>( \
       UT_NEW_THIS_FILE_PSI_KEY, LATCH_ID_##id, #id, level, #level, key)
@@ -679,8 +678,9 @@ class LatchCounter {
   }
 
   /** Deregister the count. We don't do anything
-  @param[in]	count		The count instance to deregister */
-  void sum_deregister(Count *count) const UNIV_NOTHROW { /* Do nothing */
+  @param[in]    count           The count instance to deregister */
+  void sum_deregister(Count *count
+                      [[maybe_unused]]) const UNIV_NOTHROW { /* Do nothing */
   }
 
   /** Register a single instance counter */
@@ -693,7 +693,7 @@ class LatchCounter {
   }
 
   /** Deregister a single instance counter
-  @param[in]	count		The count instance to deregister */
+  @param[in]    count           The count instance to deregister */
   void single_deregister(Count *count) UNIV_NOTHROW {
     m_mutex.enter();
 
@@ -788,11 +788,11 @@ class LatchMeta {
   ~LatchMeta() = default;
 
   /** Constructor
-  @param[in]	id		Latch id
-  @param[in]	name		Latch name
-  @param[in]	level		Latch level
-  @param[in]	level_name	Latch level text representation
-  @param[in]	key		PFS key */
+  @param[in]    id              Latch id
+  @param[in]    name            Latch name
+  @param[in]    level           Latch level
+  @param[in]    level_name      Latch level text representation
+  @param[in]    key             PFS key */
   LatchMeta(latch_id_t id, const char *name, latch_level_t level,
             const char *level_name
 #ifdef UNIV_PFS_MUTEX
@@ -813,7 +813,7 @@ class LatchMeta {
   }
 
   /* Less than operator.
-  @param[in]	rhs		Instance to compare against
+  @param[in]    rhs             Instance to compare against
   @return true if this.get_id() < rhs.get_id() */
   bool operator<(const LatchMeta &rhs) const {
     return (get_id() < rhs.get_id());
@@ -871,7 +871,7 @@ that.  See sync_latch_meta_init() */
 extern LatchMetaData latch_meta;
 
 /** Get the latch meta-data from the latch ID
-@param[in]	id		Latch ID
+@param[in]      id              Latch ID
 @return the latch meta data */
 inline latch_meta_t &sync_latch_get_meta(latch_id_t id) {
   ut_ad(static_cast<size_t>(id) < latch_meta.size());
@@ -881,7 +881,7 @@ inline latch_meta_t &sync_latch_get_meta(latch_id_t id) {
 }
 
 /** Fetch the counter for the latch
-@param[in]	id		Latch ID
+@param[in]      id              Latch ID
 @return the latch counter */
 inline latch_meta_t::CounterType *sync_latch_get_counter(latch_id_t id) {
   latch_meta_t &meta = sync_latch_get_meta(id);
@@ -890,7 +890,7 @@ inline latch_meta_t::CounterType *sync_latch_get_counter(latch_id_t id) {
 }
 
 /** Get the latch name from the latch ID
-@param[in]	id		Latch ID
+@param[in]      id              Latch ID
 @return the name, will assert if not found */
 inline const char *sync_latch_get_name(latch_id_t id) {
   const latch_meta_t &meta = sync_latch_get_meta(id);
@@ -899,7 +899,7 @@ inline const char *sync_latch_get_name(latch_id_t id) {
 }
 
 /** Get the latch ordering level
-@param[in]	id		Latch id to lookup
+@param[in]      id              Latch id to lookup
 @return the latch level */
 inline latch_level_t sync_latch_get_level(latch_id_t id) {
   const latch_meta_t &meta = sync_latch_get_meta(id);
@@ -909,7 +909,7 @@ inline latch_level_t sync_latch_get_level(latch_id_t id) {
 
 #ifdef UNIV_PFS_MUTEX
 /** Get the latch PFS key from the latch ID
-@param[in]	id		Latch ID
+@param[in]      id              Latch ID
 @return the PFS key */
 inline mysql_pfs_key_t sync_latch_get_pfs_key(latch_id_t id) {
   const latch_meta_t &meta = sync_latch_get_meta(id);
@@ -921,13 +921,13 @@ inline mysql_pfs_key_t sync_latch_get_pfs_key(latch_id_t id) {
 #ifndef UNIV_HOTBACKUP
 /** String representation of the filename and line number where the
 latch was created
-@param[in]	id		Latch ID
-@param[in]	created		Filename and line number where it was crated
+@param[in]      id              Latch ID
+@param[in]      created         Filename and line number where it was crated
 @return the string representation */
 std::string sync_mutex_to_string(latch_id_t id, const std::string &created);
 
 /** Get the latch name from a sync level
-@param[in]	level		Latch level to lookup
+@param[in]      level           Latch level to lookup
 @return nullptr if not found. */
 const char *sync_latch_get_name(latch_level_t level);
 
@@ -937,18 +937,18 @@ const char *sync_basename(const char *filename);
 #endif /* !UNIV_HOTBACKUP */
 
 /** Register a latch, called when it is created
-@param[in]	ptr		Latch instance that was created
-@param[in]	filename	Filename where it was created
-@param[in]	line		Line number in filename */
+@param[in]      ptr             Latch instance that was created
+@param[in]      filename        Filename where it was created
+@param[in]      line            Line number in filename */
 void sync_file_created_register(const void *ptr, const char *filename,
                                 uint16_t line);
 
 /** Deregister a latch, called when it is destroyed
-@param[in]	ptr		Latch to be destroyed */
+@param[in]      ptr             Latch to be destroyed */
 void sync_file_created_deregister(const void *ptr);
 
 /** Get the string where the file was created. Its format is "name:line"
-@param[in]	ptr		Latch instance
+@param[in]      ptr             Latch instance
 @return created information or "" if can't be found */
 std::string sync_file_created_get(const void *ptr);
 
@@ -959,7 +959,7 @@ std::string sync_file_created_get(const void *ptr);
 /** All (ordered) latches, used in debugging, must derive from this class. */
 struct latch_t {
   /** Constructor
-  @param[in]	id	The latch ID */
+  @param[in]    id      The latch ID */
   explicit latch_t(latch_id_t id = LATCH_ID_NONE) UNIV_NOTHROW : m_id(id),
                                                                  m_rw_lock(),
                                                                  m_temp_fsp() {}
@@ -1047,7 +1047,7 @@ struct sync_check_functor_t {
 /** Functor to check whether the calling thread owns the btr search mutex. */
 struct btrsea_sync_check : public sync_check_functor_t {
   /** Constructor
-  @param[in]	has_search_latch	true if owns the latch */
+  @param[in]    has_search_latch        true if owns the latch */
   explicit btrsea_sync_check(bool has_search_latch)
       : m_result(), m_has_search_latch(has_search_latch) {}
 
@@ -1055,7 +1055,7 @@ struct btrsea_sync_check : public sync_check_functor_t {
   ~btrsea_sync_check() override = default;
 
   /** Called for every latch owned by the calling thread.
-  @param[in]	level		Level of the existing latch
+  @param[in]    level           Level of the existing latch
   @return true if the predicate check fails */
   bool operator()(const latch_level_t level) override {
     /* If calling thread doesn't hold search latch then
@@ -1109,7 +1109,7 @@ struct btrsea_sync_check : public sync_check_functor_t {
 /** Functor to check for dictionary latching constraints. */
 struct dict_sync_check : public sync_check_functor_t {
   /** Constructor
-  @param[in]	dict_mutex_allowed	true if the dict mutex
+  @param[in]    dict_mutex_allowed      true if the dict mutex
                                           is allowed */
   explicit dict_sync_check(bool dict_mutex_allowed)
       : m_result(), m_dict_mutex_allowed(dict_mutex_allowed) {}
@@ -1118,7 +1118,7 @@ struct dict_sync_check : public sync_check_functor_t {
   ~dict_sync_check() override = default;
 
   /** Check the latching constraints
-  @param[in]	level		The level held by the thread */
+  @param[in]    level           The level held by the thread */
   bool operator()(const latch_level_t level) override {
     if (!m_dict_mutex_allowed ||
         (level != SYNC_DICT && level != SYNC_UNDO_SPACES &&
@@ -1154,8 +1154,8 @@ struct dict_sync_check : public sync_check_functor_t {
 /** Functor to check for given latching constraints. */
 struct sync_allowed_latches : public sync_check_functor_t {
   /** Constructor
-  @param[in]	from	first element in an array of latch_level_t
-  @param[in]	to	last element in an array of latch_level_t */
+  @param[in]    from    first element in an array of latch_level_t
+  @param[in]    to      last element in an array of latch_level_t */
   sync_allowed_latches(const latch_level_t *from, const latch_level_t *to)
       : m_result(), m_latches(from, to) {}
 
@@ -1167,7 +1167,7 @@ struct sync_allowed_latches : public sync_check_functor_t {
   latch belongs to a latch level that is not there in the allowed list,
   then it is a violation.
 
-  @param[in]	level	The latch level to check
+  @param[in]    level   The latch level to check
   @return true if there is a latch ordering violation */
   virtual bool operator()(const latch_level_t level) override {
     for (latch_level_t allowed_level : m_latches) {
@@ -1204,7 +1204,7 @@ struct sync_allowed_latches : public sync_check_functor_t {
 };
 
 /** Get the latch id from a latch name.
-@param[in]	name	Latch name
+@param[in]      name    Latch name
 @return latch id if found else LATCH_ID_NONE. */
 latch_id_t sync_latch_get_id(const char *name);
 

@@ -88,8 +88,7 @@ struct NDB_INDEX_DATA {
     // Verify that vector's type is large enough to store "index of NDB column"
     // (currently 32 columns supported by NDB and 16 by MySQL)
     static_assert(std::numeric_limits<decltype(m_ids)::value_type>::max() >
-                      NDB_MAX_NO_OF_ATTRIBUTES_IN_KEY,
-                  "");
+                  NDB_MAX_NO_OF_ATTRIBUTES_IN_KEY);
 
    public:
     Attrid_map(const KEY *key_info, const NdbDictionary::Table *table);
@@ -357,8 +356,15 @@ class ha_ndbcluster : public handler, public Partition_handler {
                                     const KEY *key_info,
                                     const key_range *start_key,
                                     const key_range *end_key);
+  /**
+   * NDB support join- and condition pushdown, so we return
+   * the NDB-handlerton to signal that
+   * handlerton::push_to_engine() need to be called.
+   */
+  const handlerton *hton_supporting_engine_pushdown() override { return ht; }
 
-  int engine_push(AQP::Table_access *table) override;
+  friend int ndbcluster_push_to_engine(THD *thd, AccessPath *, JOIN *);
+  friend void accept_pushed_conditions(const TABLE *table, AccessPath *filter);
 
  private:
   bool maybe_pushable_join(const char *&reason) const;
@@ -482,9 +488,7 @@ class ha_ndbcluster : public handler, public Partition_handler {
   void release_metadata(NdbDictionary::Dictionary *dict,
                         bool invalidate_objects);
   NDB_INDEX_TYPE get_index_type(uint idx_no) const;
-  NDB_INDEX_TYPE get_index_type_from_table(uint index_num) const;
-  NDB_INDEX_TYPE get_index_type_from_key(uint index_num, const KEY *key_info,
-                                         bool primary) const;
+  NDB_INDEX_TYPE get_declared_index_type(uint index_num) const;
   bool has_null_in_unique_index(uint idx_no) const;
 
   bool check_if_pushable(int type,  // NdbQueryOperationDef::Type,

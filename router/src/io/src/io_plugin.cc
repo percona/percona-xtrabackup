@@ -40,7 +40,8 @@
 #include <thread>
 
 // Harness interface include files
-#include "common.h"  // rename_thread
+#include "my_thread.h"  // my_thread_self_setname
+#include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
@@ -67,6 +68,10 @@ static constexpr const char kSectionName[]{"io"};
 // - EPYC 7702: 64 cores/128 threads, 2x sockets
 static constexpr const size_t kMaxThreads{1024};
 
+using StringOption = mysql_harness::StringOption;
+template <class T>
+using IntOption = mysql_harness::IntOption<T>;
+
 class IoPluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string backend;
@@ -74,9 +79,9 @@ class IoPluginConfig : public mysql_harness::BasePluginConfig {
 
   explicit IoPluginConfig(const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        backend(get_option_string(section, "backend")),
-        num_threads(
-            get_uint_option<uint32_t>(section, "threads", 0, kMaxThreads)) {}
+        backend(get_option(section, "backend", StringOption{})),
+        num_threads(get_option(section, "threads",
+                               IntOption<uint32_t>{0, kMaxThreads})) {}
 
   std::string get_default(const std::string &option) const override {
     const std::map<std::string, std::string> defaults{
@@ -181,7 +186,7 @@ static void init(mysql_harness::PluginFuncEnv *env) {
 }
 
 static void run(mysql_harness::PluginFuncEnv * /* env */) {
-  mysql_harness::rename_thread("io_main");
+  my_thread_self_setname("io_main");
   // run events in the mainloop until the app signals a shutdown
   IoComponent::get_instance().run();
 }
@@ -195,19 +200,26 @@ static std::array<const char *, 1> required = {{
     "logger",
 }};
 
+static std::array<const char *, 2> supported_options{"backend", "threads"};
+
 extern "C" {
 mysql_harness::Plugin IO_EXPORT harness_plugin_io = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
     mysql_harness::ARCHITECTURE_DESCRIPTOR,  // arch-descriptor
-    "IO", VERSION_NUMBER(0, 0, 1),
+    "IO",
+    VERSION_NUMBER(0, 0, 1),
     // requires
-    required.size(), required.data(),
+    required.size(),
+    required.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     deinit,   // deinit
     run,      // run
     nullptr,  // on_signal_stop
     false,    // signals ready
+    supported_options.size(),
+    supported_options.data(),
 };
 }

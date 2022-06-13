@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "lex_string.h"
@@ -41,9 +42,9 @@
 #include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
-#include "mysql/components/services/mysql_cond_bits.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_cond_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/thread_type.h"
 #include "prealloced_array.h"  // Prealloced_array
@@ -1689,7 +1690,7 @@ class Relay_log_info : public Rpl_info {
   time_t get_row_stmt_start_timestamp() { return row_stmt_start_timestamp; }
 
   time_t set_row_stmt_start_timestamp() {
-    if (row_stmt_start_timestamp == 0) row_stmt_start_timestamp = my_time(0);
+    if (row_stmt_start_timestamp == 0) row_stmt_start_timestamp = time(nullptr);
 
     return row_stmt_start_timestamp;
   }
@@ -2408,7 +2409,8 @@ class Applier_security_context_guard {
     @return true if the privileges are included in the security context and
             false, otherwise.
    */
-  bool has_access(std::initializer_list<std::string> extra_privileges) const;
+  bool has_access(
+      std::initializer_list<std::string_view> extra_privileges) const;
 
   /**
     Checks if the `PRIVILEGE_CHECKS_USER` user has access to the privilieges

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,13 +41,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "include/compression.h"
 #include "include/mutex_lock.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_memory_bits.h"
+#include "mysql/components/services/bits/psi_stage_bits.h"
 #include "mysql/components/services/log_builtins.h"
-#include "mysql/components/services/psi_memory_bits.h"
-#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
@@ -912,7 +913,7 @@ static enum_read_rotate_from_relay_log_status read_rotate_from_relay_log(
    log search continues to next relay log. If rotate event from master is
    found then the extracted master_log_file and master_log_pos are used to set
    rli->group_master_log_name and rli->group_master_log_pos. If an error has
-   occurred the error code is retuned back.
+   occurred the error code is returned back.
 
    @param rli
           Relay_log_info object to read relay log files and to set
@@ -2228,9 +2229,9 @@ bool sql_slave_killed(THD *thd, Relay_log_info *rli) {
         */
 
         if (rli->last_event_start_time == 0)
-          rli->last_event_start_time = my_time(0);
+          rli->last_event_start_time = time(nullptr);
         rli->sql_thread_kill_accepted =
-            difftime(my_time(0), rli->last_event_start_time) <=
+            difftime(time(nullptr), rli->last_event_start_time) <=
                     SLAVE_WAIT_GROUP_DONE
                 ? false
                 : true;
@@ -3534,7 +3535,7 @@ static bool show_slave_status_send_data(THD *thd, Master_info *mi,
   protocol->store((uint32)mi->rli->get_sql_delay());
   // SQL_Remaining_Delay
   if (slave_sql_running_state == stage_sql_thd_waiting_until_delay.m_name) {
-    time_t t = my_time(0), sql_delay_end = mi->rli->get_sql_delay_end();
+    time_t t = time(nullptr), sql_delay_end = mi->rli->get_sql_delay_end();
     protocol->store((uint32)(t < sql_delay_end ? sql_delay_end - t : 0));
   } else
     protocol->store_null();
@@ -4227,7 +4228,7 @@ static int sql_delay_event(Log_event *ev, THD *thd, Relay_log_info *rli) {
     }
     if (sql_delay_end != 0) {
       // The current time.
-      time_t now = my_time(0);
+      time_t now = time(nullptr);
       // The amount of time we will have to sleep before executing the event.
       time_t nap_time = 0;
 
@@ -4419,7 +4420,7 @@ apply_event_and_update_pos(Log_event **ptr_ev, THD *thd, Relay_log_info *rli) {
           rli->last_assigned_worker = nullptr;
         }
         /*
-           Stroring GAQ index of the group that the event belongs to
+           Storing GAQ index of the group that the event belongs to
            in the event. Deferred events are handled similarly below.
         */
         ev->mts_group_idx = rli->gaq->assigned_group_index;
@@ -4427,7 +4428,7 @@ apply_event_and_update_pos(Log_event **ptr_ev, THD *thd, Relay_log_info *rli) {
         bool append_item_to_jobs_error = false;
         if (rli->curr_group_da.size() > 0) {
           /*
-            the current event sorted out which partion the current group
+            the current event sorted out which partition the current group
             belongs to. It's time now to processed deferred array events.
           */
           for (uint i = 0; i < rli->curr_group_da.size(); i++) {
@@ -4448,7 +4449,7 @@ apply_event_and_update_pos(Log_event **ptr_ev, THD *thd, Relay_log_info *rli) {
         DBUG_PRINT("mts", ("Assigning job %llu to worker %lu\n",
                            job_item->data->common_header->log_pos, w->id));
 
-        /* Notice `ev' instance can be destoyed after `append()' */
+        /* Notice `ev' instance can be destroyed after `append()' */
         if (append_item_to_jobs(job_item, w, rli))
           return SLAVE_APPLY_EVENT_AND_UPDATE_POS_APPEND_JOB_ERROR;
         if (need_sync) {
@@ -4466,7 +4467,7 @@ apply_event_and_update_pos(Log_event **ptr_ev, THD *thd, Relay_log_info *rli) {
       *ptr_ev = nullptr;  // announcing the event is passed to w-worker
 
       if (rli->is_parallel_exec() && rli->mts_events_assigned % 1024 == 1) {
-        time_t my_now = my_time(0);
+        time_t my_now = time(nullptr);
 
         if ((my_now - rli->mts_last_online_stat) >= mts_online_stat_period) {
           LogErr(INFORMATION_LEVEL, ER_RPL_MTS_STATISTICS,
@@ -5903,14 +5904,14 @@ static void *handle_slave_worker(void *arg) {
 
   mysql_mutex_lock(&w->jobs_lock);
 
-  while (de_queue(&w->jobs, job_item)) {
+  while (w->jobs.de_queue(job_item)) {
     purge_cnt++;
     purge_size += job_item->data->common_header->data_written;
     assert(job_item->data);
     delete job_item->data;
   }
 
-  assert(w->jobs.len == 0);
+  assert(w->jobs.get_length() == 0);
 
   mysql_mutex_unlock(&w->jobs_lock);
 
@@ -6502,7 +6503,7 @@ static int slave_start_workers(Relay_log_info *rli, ulong n, bool *mts_inited) {
   rli->curr_group_seen_begin = rli->curr_group_seen_gtid = false;
   rli->curr_group_isolated = false;
   rli->rli_checkpoint_seqno = 0;
-  rli->mts_last_online_stat = my_time(0);
+  rli->mts_last_online_stat = time(nullptr);
   rli->mts_group_status = Relay_log_info::MTS_NOT_IN_GROUP;
   clear_gtid_monitoring_info = true;
 

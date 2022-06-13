@@ -50,8 +50,8 @@ static void common_init(
 static void common_update(
     /*========*/
     xb_read_filt_ctxt_t *ctxt,  /*!<in/out: read filter context */
-    ib_uint64_t len,            /*!in: length in bytes of the batch has
-                                been read */
+    uint64_t len,               /*!in: length in bytes of the batch has
+                                   been read */
     const xb_fil_cur_t *cursor) /*!<in: file cursor */
 {
   ctxt->data_file_size = cursor->statinfo.st_size;
@@ -74,11 +74,11 @@ static void rf_pass_through_init(
  Get the next batch of pages for the pass-through read filter.  */
 static void rf_pass_through_get_next_batch(
     /*===========================*/
-    xb_fil_cur_t *cursor,          /*!< in/out: source file cursor */
-    ib_uint64_t *read_batch_start, /*!<out: starting read
+    xb_fil_cur_t *cursor,       /*!< in/out: source file cursor */
+    uint64_t *read_batch_start, /*!<out: starting read
                                    offset in bytes for the
                                    next batch of pages */
-    ib_uint64_t *read_batch_len)   /*!<out: length in
+    uint64_t *read_batch_len)   /*!<out: length in
                                    bytes of the next batch
                                    of pages */
 {
@@ -122,11 +122,11 @@ static void rf_bitmap_init(
  Get the next batch of pages for the bitmap read filter.  */
 static void rf_bitmap_get_next_batch(
     /*=====================*/
-    xb_fil_cur_t *cursor,          /*!< in/out: source file cursor */
-    ib_uint64_t *read_batch_start, /*!<out: starting read
+    xb_fil_cur_t *cursor,       /*!< in/out: source file cursor */
+    uint64_t *read_batch_start, /*!<out: starting read
                                    offset in bytes for the
                                    next batch of pages */
-    ib_uint64_t *read_batch_len)   /*!<out: length in
+    uint64_t *read_batch_len)   /*!<out: length in
                                    bytes of the next batch
                                    of pages */
 {
@@ -140,7 +140,7 @@ static void rf_bitmap_get_next_batch(
     ulint next_page_id;
 
     /* Find the next changed page using the bitmap */
-    next_page_id = xb_page_bitmap_range_get_next_bit(ctxt->bitmap_range, TRUE);
+    next_page_id = xb_page_bitmap_range_get_next_bit(ctxt->bitmap_range, true);
 
     if (next_page_id == ULINT_UNDEFINED) {
       *read_batch_len = 0;
@@ -152,7 +152,7 @@ static void rf_bitmap_get_next_batch(
     /* Find the end of the current changed page block by searching
     for the next cleared bitmap bit */
     ctxt->filter_batch_end =
-        xb_page_bitmap_range_get_next_bit(ctxt->bitmap_range, FALSE);
+        xb_page_bitmap_range_get_next_bit(ctxt->bitmap_range, false);
     xb_a(next_page_id < ctxt->filter_batch_end);
   }
 
@@ -207,8 +207,8 @@ static void rf_page_tracking_init(xb_read_filt_ctxt_t *ctxt,
 @param[out]    read_batch_start  starting read offset for the next pages batch
 @param[out]    read_batch_len    length in bytes of next batch of pages */
 static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
-                                            ib_uint64_t *read_batch_start,
-                                            ib_uint64_t *read_batch_len) {
+                                            uint64_t *read_batch_start,
+                                            uint64_t *read_batch_len) {
   xb_read_filt_ctxt_t *ctxt = &cursor->read_filter_ctxt;
 
   ulint next_page_id;
@@ -218,7 +218,7 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
     /* Ensure skipped pages does not have modified pages between last
     backup lsn and checkpoint LSN */
     while (true) {
-      ib_uint64_t to_read_len = next_page_id * ctxt->page_size - ctxt->offset;
+      uint64_t to_read_len = next_page_id * ctxt->page_size - ctxt->offset;
 
       if (to_read_len == 0) break;
 

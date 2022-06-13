@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -99,9 +99,9 @@ struct PFS_sizing_hints {
   /** Value of @c Sys_table_def_size */
   ulong m_table_definition_cache;
   /** Value of @c Sys_table_cache_size */
-  long m_table_open_cache;
+  ulong m_table_open_cache;
   /** Value of @c Sys_max_connections */
-  long m_max_connections;
+  ulong m_max_connections;
   /** Value of @c Sys_open_files_limit */
   long m_open_files_limit;
   /** Value of @c Sys_max_prepared_stmt_count */
@@ -329,7 +329,6 @@ void pre_initialize_performance_schema();
   @param [out] system_bootstrap System instrumentation service bootstrap
   @param [out] tls_channel_bootstrap TLS channel instrumentation service
   bootstrap
-  @returns
   @retval 0 success
 */
 int initialize_performance_schema(

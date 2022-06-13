@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -672,7 +672,7 @@ consuming operation, such as fil_io. The log.write_lsn is advanced.
 @param[in]  log            redo log
 @param[in]  buffer         the beginning of first log block to write
 @param[in]  buffer_size    number of bytes to write since 'buffer'
-@param[in]  start_lsn	lsn  corresponding to first block start */
+@param[in]  start_lsn   lsn  corresponding to first block start */
 static void log_files_write_buffer(log_t &log, byte *buffer, size_t buffer_size,
                                    lsn_t start_lsn);
 
@@ -687,10 +687,8 @@ static lsn_t log_writer_wait_on_checkpoint(log_t &log, lsn_t last_write_lsn,
 /* Waits until the archiver has archived enough for log_writer to proceed
 or until the archiver becomes aborted.
 @param[in]  log             redo log
-@param[in]  last_write_lsn  previous log.write_lsn
 @param[in]  next_write_lsn  next log.write_lsn */
-static void log_writer_wait_on_archiver(log_t &log, lsn_t last_write_lsn,
-                                        lsn_t next_write_lsn);
+static void log_writer_wait_on_archiver(log_t &log, lsn_t next_write_lsn);
 
 /** Writes fragment of the log buffer up to provided lsn (not further).
 Stops after the first call to fil_io() (possibly at smaller lsn).
@@ -704,7 +702,7 @@ Advances log.flushed_to_disk_lsn and notifies log flush_notifier thread.
 Note: if only a single log block was flushed to disk, user threads
 waiting for lsns within the block are notified directly from here,
 and log flush_notifier thread is not notified! (optimization)
-@param[in,out]	log   redo log */
+@param[in,out]  log   redo log */
 static void log_flush_low(log_t &log);
 
 /**************************************************/ /**
@@ -798,10 +796,10 @@ static inline uint64_t log_max_spins_when_waiting_in_user_thread(
 
 /** Waits until redo log is written up to provided lsn (or greater).
 We do not care if it's flushed or not.
-@param[in]	log	redo log
-@param[in]	lsn	wait until log.write_lsn >= lsn
+@param[in]      log     redo log
+@param[in]      lsn     wait until log.write_lsn >= lsn
 @param[in,out]  interrupted     if true, was interrupted, needs retry.
-@return		statistics related to waiting inside */
+@return         statistics related to waiting inside */
 static Wait_stats log_wait_for_write(const log_t &log, lsn_t lsn,
                                      bool *interrupted) {
   os_event_set(log.writer_event);
@@ -841,10 +839,10 @@ static Wait_stats log_wait_for_write(const log_t &log, lsn_t lsn,
 }
 
 /** Waits until redo log is flushed up to provided lsn (or greater).
-@param[in]	log	redo log
-@param[in]	lsn	wait until log.flushed_to_disk_lsn >= lsn
+@param[in]      log     redo log
+@param[in]      lsn     wait until log.flushed_to_disk_lsn >= lsn
 @param[in,out]  interrupted     if true, was interrupted, needs retry.
-@return		statistics related to waiting inside */
+@return         statistics related to waiting inside */
 static Wait_stats log_wait_for_flush(const log_t &log, lsn_t lsn,
                                      bool *interrupted) {
   if (log.write_lsn.load(std::memory_order_relaxed) < lsn) {
@@ -1994,8 +1992,7 @@ static lsn_t log_writer_wait_on_checkpoint(log_t &log, lsn_t last_write_lsn,
   return checkpoint_limited_lsn;
 }
 
-static void log_writer_wait_on_archiver(log_t &log, lsn_t last_write_lsn,
-                                        lsn_t next_write_lsn) {
+static void log_writer_wait_on_archiver(log_t &log, lsn_t next_write_lsn) {
   const int32_t SLEEP_BETWEEN_RETRIES_IN_US = 100; /* 100us */
 
   const int32_t TIME_BETWEEN_WARNINGS_IN_US = 100000; /* 100ms */
@@ -2114,7 +2111,7 @@ static void log_writer_write_buffer(log_t &log, lsn_t next_write_lsn) {
   LOG_SYNC_POINT("log_writer_after_checkpoint_check");
 
   if (arch_log_sys != nullptr) {
-    log_writer_wait_on_archiver(log, last_write_lsn, next_write_lsn);
+    log_writer_wait_on_archiver(log, next_write_lsn);
   }
 
   ut_ad(log_writer_mutex_own(log));
@@ -2880,22 +2877,23 @@ bool log_read_encryption() {
 }
 
 bool log_file_header_fill_encryption(byte *buf, const byte *key, const byte *iv,
-                                     bool is_boot, bool encrypt_key) {
+                                     bool encrypt_key) {
   byte encryption_info[Encryption::INFO_SIZE];
 
-  if (!Encryption::fill_encryption_info(key, iv, encryption_info, is_boot,
+  if (!Encryption::fill_encryption_info(key, iv, encryption_info,
                                         encrypt_key)) {
     return (false);
   }
 
-  ut_a(LOG_HEADER_CREATOR_END + Encryption::INFO_SIZE < OS_FILE_LOG_BLOCK_SIZE);
+  static_assert(LOG_HEADER_CREATOR_END + Encryption::INFO_SIZE <
+                OS_FILE_LOG_BLOCK_SIZE);
 
   memcpy(buf + LOG_HEADER_CREATOR_END, encryption_info, Encryption::INFO_SIZE);
 
   return (true);
 }
 
-bool log_write_encryption(byte *key, byte *iv, bool is_boot) {
+bool log_write_encryption(byte *key, byte *iv) {
   const page_id_t page_id{dict_sys_t::s_log_space_first_id, 0};
   byte *log_block_buf = static_cast<byte *>(
       ut::aligned_zalloc(OS_FILE_LOG_BLOCK_SIZE, OS_FILE_LOG_BLOCK_SIZE));
@@ -2909,8 +2907,7 @@ bool log_write_encryption(byte *key, byte *iv, bool is_boot) {
 
   bool encrypt = true;
   if (use_dumped_tablespace_keys && !srv_backup_mode) encrypt = false;
-  if (!log_file_header_fill_encryption(log_block_buf, key, iv, is_boot,
-                                       encrypt)) {
+  if (!log_file_header_fill_encryption(log_block_buf, key, iv, encrypt)) {
     ut::aligned_free(log_block_buf);
     return (false);
   }
@@ -2932,7 +2929,7 @@ bool log_rotate_encryption() {
   }
 
   /* Rotate log tablespace */
-  return (log_write_encryption(nullptr, nullptr, false));
+  return (log_write_encryption(nullptr, nullptr));
 }
 
 /** @} */

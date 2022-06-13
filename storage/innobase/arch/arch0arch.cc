@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2021, Oracle and/or its affiliates.
+Copyright (c) 2017, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -59,7 +59,7 @@ bool arch_wake_threads() {
 void arch_remove_file(const char *file_path, const char *file_name) {
   char path[MAX_ARCH_PAGE_FILE_NAME_LEN];
 
-  ut_ad(MAX_ARCH_LOG_FILE_NAME_LEN <= MAX_ARCH_PAGE_FILE_NAME_LEN);
+  static_assert(MAX_ARCH_LOG_FILE_NAME_LEN <= MAX_ARCH_PAGE_FILE_NAME_LEN);
   ut_ad(strlen(file_path) + 1 + strlen(file_name) <
         MAX_ARCH_PAGE_FILE_NAME_LEN);
 
@@ -89,7 +89,7 @@ void arch_remove_file(const char *file_path, const char *file_name) {
 void arch_remove_dir(const char *dir_path, const char *dir_name) {
   char path[MAX_ARCH_DIR_NAME_LEN];
 
-  ut_ad(sizeof(ARCH_LOG_DIR) <= sizeof(ARCH_PAGE_DIR));
+  static_assert(sizeof(ARCH_LOG_DIR) <= sizeof(ARCH_PAGE_DIR));
   ut_ad(strlen(dir_path) + 1 + strlen(dir_name) + 1 < sizeof(path));
 
   /* Remove only LOG and PAGE archival directories. */
@@ -387,8 +387,7 @@ dberr_t Arch_File_Ctx::open(bool read_only, lsn_t start_lsn, uint file_index,
   if (!exists && file_offset != 0) {
     /* This call would extend the length by multiple of UNIV_PAGE_SIZE. This is
     not an issue but we need to lseek to keep the current position at offset. */
-    success =
-        os_file_set_size(m_name_buf, m_file, 0, file_offset, false, false);
+    success = os_file_set_size(m_name_buf, m_file, 0, file_offset, false);
   }
 
   if (success) {

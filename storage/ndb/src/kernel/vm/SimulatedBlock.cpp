@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,9 @@
   macro not defined).
 */
 
+#include "util/require.h"
 #include <ndb_global.h>
+#include "portlib/ndb_compiler.h"
 
 #include "SimulatedBlock.hpp"
 #include <NdbOut.hpp>
@@ -161,7 +163,7 @@ SimulatedBlock::addInstance(SimulatedBlock* b, Uint32 theInstance)
 void
 SimulatedBlock::initCommon()
 {
-  NDB_STATIC_ASSERT(RG_COUNT == MM_RG_COUNT + 1);
+  static_assert(RG_COUNT == MM_RG_COUNT + 1);
 
   Uint32 count = 10;
   this->getParam("FragmentSendPool", &count);
@@ -494,13 +496,13 @@ static void
 linkSegments(Uint32 head, Uint32 tail){
   
   Ptr<SectionSegment> headPtr;
-  g_sectionSegmentPool.getPtr(headPtr, head);
+  require(g_sectionSegmentPool.getPtr(headPtr, head));
   
   Ptr<SectionSegment> tailPtr;
-  g_sectionSegmentPool.getPtr(tailPtr, tail);
+  require(g_sectionSegmentPool.getPtr(tailPtr, tail));
   
   Ptr<SectionSegment> oldTailPtr;
-  g_sectionSegmentPool.getPtr(oldTailPtr, headPtr.p->m_lastSegment);
+  require(g_sectionSegmentPool.getPtr(oldTailPtr, headPtr.p->m_lastSegment));
   
   /* Can only efficiently link segments if linking to the end of a 
    * multiple-of-segment-size sized chunk
@@ -2160,26 +2162,42 @@ SimulatedBlock::freeBat(){
   }
 }
 
+/**
+ * Return pointer to a const NewVARIABLE object indexed by
+ * blockNo, instanceNo and varNo.
+ * Will return NULL if no such variable exists
+ */
 const NewVARIABLE *
-SimulatedBlock::getBat(Uint16 blockNo, Uint32 instanceNo){
+SimulatedBlock::getBatVar(Uint16 blockNo, Uint32 instanceNo, Uint32 varNo){
   assert(blockNo == blockToMain(blockNo));
+  /* Check blockNo in range */
+  if (unlikely(blockNo > MAX_BLOCK_NO ||
+               blockNo < MIN_BLOCK_NO))
+  {
+    assert(false);
+    return NULL;
+  }
   SimulatedBlock * sb = globalData.getBlock(blockNo);
-  if (sb != 0 && instanceNo != 0)
+  if (sb != NULL && instanceNo != 0)
+  {
+    /* Lookup instance within block type */
     sb = sb->getInstance(instanceNo);
-  if(sb == 0)
-    return 0;
-  return sb->NewVarRef;
-}
+  }
 
-Uint16
-SimulatedBlock::getBatSize(Uint16 blockNo, Uint32 instanceNo){
-  assert(blockNo == blockToMain(blockNo));
-  SimulatedBlock * sb = globalData.getBlock(blockNo);
-  if (sb != 0 && instanceNo != 0)
-    sb = sb->getInstance(instanceNo);
-  if(sb == 0)
-    return 0;
-  return sb->theBATSize;
+  /* Check block exists, Bat exists, Var exists */
+  if(unlikely(sb == NULL))
+  {
+    return NULL;
+  }
+  if (unlikely(sb->NewVarRef == NULL))
+  {
+    return NULL;
+  }
+  if (unlikely(varNo >= sb->theBATSize))
+  {
+    return NULL;
+  }
+  return &sb->NewVarRef[varNo];
 }
 
 void* SimulatedBlock::allocRecord(const char * type, size_t s, size_t n, bool clear, Uint32 paramId)
@@ -3312,10 +3330,10 @@ SimulatedBlock::doNodeFailureCleanup(Signal* signal,
   sig->cleanup.resource = resource;
   sig->cleanup.cursor = cursor;
   sig->cleanup.elementsCleaned= elementsCleaned;
-  Uint32 callbackWords = (sizeof(Callback) + 3) >> 2;
-  Uint32 sigLen = ContinueFragmented::CONTINUE_CLEANUP_FIXED_WORDS + 
+  constexpr Uint32 callbackWords = (sizeof(Callback) + 3) >> 2;
+  constexpr Uint32 sigLen = ContinueFragmented::CONTINUE_CLEANUP_FIXED_WORDS +
     callbackWords;
-  ndbassert(sigLen <= 25); // Should be STATIC_ASSERT
+  static_assert(sigLen <= 25);
   memcpy(&sig->cleanup.callbackStart, &cb, callbackWords << 2);
   
   sendSignal(reference(), GSN_CONTINUE_FRAGMENTED, signal, sigLen, JBB);
@@ -4873,7 +4891,7 @@ SimulatedBlock::execLOCAL_ROUTE_ORD(Signal* signal)
     Uint32 gsn = ord->gsn;
     Uint32 prio = ord->prio;
     ndbrequire(dstcnt <= LocalRouteOrd::MaxDstCount);
-    NDB_STATIC_ASSERT(25 + LocalRouteOrd::MaxDstCount <= NDB_ARRAY_SIZE(signal->theData));
+    static_assert(25 + LocalRouteOrd::MaxDstCount <= NDB_ARRAY_SIZE(signal->theData));
     memcpy(signal->theData+25, ord->path, 4*dstcnt);
     SectionHandle handle(this, signal);
     if (sigLen > LocalRouteOrd::StaticLen + dstcnt)
@@ -5076,7 +5094,7 @@ SimulatedBlock::execSYNC_THREAD_CONF(Signal* signal)
 {
   jamEntry();
   Ptr<SyncThreadRecord> ptr;
-  c_syncThreadPool.getPtr(ptr, signal->theData[1]);
+  ndbrequire(c_syncThreadPool.getPtr(ptr, signal->theData[1]));
 
   ndbrequire(ptr.p->m_cnt > 0);
   ptr.p->m_cnt--;
@@ -5205,7 +5223,7 @@ SimulatedBlock::execSYNC_PATH_CONF(Signal* signal)
   SyncPathConf conf = * CAST_CONSTPTR(SyncPathConf, signal->getDataPtr());
   Ptr<SyncThreadRecord> ptr;
 
-  c_syncThreadPool.getPtr(ptr, conf.senderData);
+  ndbrequire(c_syncThreadPool.getPtr(ptr, conf.senderData));
 
   if (ptr.p->m_cnt == 0)
   {

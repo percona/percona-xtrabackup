@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +39,8 @@
 #include "my_systime.h"
 #include "my_thread.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_stage_bits.h"
 #include "mysql/components/services/log_builtins.h"
-#include "mysql/components/services/psi_stage_bits.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_file.h"
@@ -3428,7 +3428,7 @@ bool Applier_security_context_guard::has_access(
 }
 
 bool Applier_security_context_guard::has_access(
-    std::initializer_list<std::string> extra_privileges) const {
+    std::initializer_list<std::string_view> extra_privileges) const {
   if (this->m_privilege_checks_none) return true;
   if (this->m_current == nullptr) return false;
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2021, Oracle and/or its affiliates.
+Copyright (c) 2017, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -40,13 +40,13 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "srv0start.h"
 
 /** Callback to add an archived redo file to current snapshot
-@param[in]	file_name	file name
-@param[in]	file_size	file size in bytes
-@param[in]	file_offset	start offset in bytes
-@param[in]	context		snapshot
-@return	error code */
-static int add_redo_file_callback(char *file_name, ib_uint64_t file_size,
-                                  ib_uint64_t file_offset, void *context) {
+@param[in]      file_name       file name
+@param[in]      file_size       file size in bytes
+@param[in]      file_offset     start offset in bytes
+@param[in]      context         snapshot
+@return error code */
+static int add_redo_file_callback(char *file_name, uint64_t file_size,
+                                  uint64_t file_offset, void *context) {
   auto snapshot = static_cast<Clone_Snapshot *>(context);
 
   auto err = snapshot->add_redo_file(file_name, file_size, file_offset);
@@ -55,16 +55,16 @@ static int add_redo_file_callback(char *file_name, ib_uint64_t file_size,
 }
 
 /** Callback to add tracked page IDs to current snapshot
-@param[in]	context		snapshot
-@param[in]	buff		buffer having page IDs
-@param[in]	num_pages	number of tracked pages
-@return	error code */
+@param[in]      context         snapshot
+@param[in]      buff            buffer having page IDs
+@param[in]      num_pages       number of tracked pages
+@return error code */
 static int add_page_callback(void *context, byte *buff, uint num_pages) {
   uint index;
   Clone_Snapshot *snapshot;
 
   space_id_t space_id;
-  ib_uint32_t page_num;
+  uint32_t page_num;
 
   snapshot = static_cast<Clone_Snapshot *>(context);
 
@@ -236,9 +236,9 @@ int Clone_Snapshot::init_page_copy(Snapshot_State new_state, byte *page_buffer,
 
   } else if (m_snapshot_type == HA_CLONE_PAGE) {
     /* Start COW for all modified pages - Not implemented. */
-    ut_ad(false);
+    ut_d(ut_error);
   } else {
-    ut_ad(false);
+    ut_d(ut_error);
   }
 
   if (err != 0) {
@@ -461,10 +461,10 @@ int Clone_Snapshot::init_redo_copy(Snapshot_State new_state,
       my_error(ER_QUERY_INTERRUPTED, MYF(0));
       binlog_error = ER_QUERY_INTERRUPTED;
     } else {
-      ut_ad(false);
       my_error(ER_INTERNAL_ERROR, MYF(0),
                "Clone wait for XA operation timed out.");
       binlog_error = ER_INTERNAL_ERROR;
+      ut_d(ut_error);
     }
   }
 
@@ -559,9 +559,9 @@ bool Clone_Snapshot::build_file_name(Clone_File_Meta *file_meta,
 
   if (new_len > FN_REFLEN_SE) {
     /* purecov: begin deadcode */
-    ut_ad(false);
     my_error(ER_PATH_LENGTH, MYF(0), "CLONE FILE NAME");
-    return false;
+    ut_d(ut_error);
+    ut_o(return false);
     /* purecov: end */
   }
 
@@ -659,8 +659,8 @@ bool Clone_Snapshot::file_ctx_changed(const fil_node_t *node,
 
   if (file_index == 0) {
     /* purecov: begin deadcode */
-    ut_ad(false);
-    return true;
+    ut_d(ut_error);
+    ut_o(return true);
     /* purecov: end */
   }
 
@@ -676,8 +676,8 @@ bool Clone_Snapshot::file_ctx_changed(const fil_node_t *node,
 
   if (file_ctx == nullptr) {
     /* purecov: begin deadcode */
-    ut_ad(false);
-    return false;
+    ut_d(ut_error);
+    ut_o(return false);
     /* purecov: end */
   }
 
@@ -889,7 +889,7 @@ dberr_t Clone_Snapshot::add_node(fil_node_t *node, bool by_ddl) {
   return (err != 0 ? DB_ERROR : DB_SUCCESS);
 }
 
-int Clone_Snapshot::add_page(space_id_t space_id, ib_uint32_t page_num) {
+int Clone_Snapshot::add_page(space_id_t space_id, uint32_t page_num) {
   /* Skip pages belonging to tablespace not included for clone. This could
   be some left over pages from drop or truncate in buffer pool which
   would eventually get removed. Or it may be a page for an undo tablespace
@@ -951,7 +951,7 @@ int Clone_Snapshot::add_redo_file(char *file_name, uint64_t file_size,
     const byte *iv = redo_space->encryption_iv;
     byte *dest = m_redo_header + LOG_ENCRYPTION;
 
-    log_file_header_fill_encryption(dest, key, iv, false, false);
+    log_file_header_fill_encryption(dest, key, iv, false);
   }
 
   file_meta->m_file_index = num_redo_files();
@@ -1291,7 +1291,7 @@ void Clone_Handle::display_progress(
   }
 }
 
-int Clone_Handle::copy(THD *thd, uint task_id, Ha_clone_cbk *callback) {
+int Clone_Handle::copy(uint task_id, Ha_clone_cbk *callback) {
   ut_ad(m_clone_handle_type == CLONE_HDL_COPY);
 
   /* Get task from task manager. */
@@ -1717,10 +1717,10 @@ int Clone_Handle::close_and_unpin_file(Clone_Task *task) {
 
   if (file_ctx == nullptr) {
     /* purecov: begin deadcode */
-    ut_ad(false);
     err = ER_INTERNAL_ERROR;
     my_error(ER_INTERNAL_ERROR, MYF(0), "Clone file missing before unpin");
-    return err;
+    ut_d(ut_error);
+    ut_o(return err);
     /* purecov: end */
   }
 

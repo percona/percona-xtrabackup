@@ -58,13 +58,15 @@ static const char kRequireRealm[]{"require_realm"};
 // one shared setting
 std::string require_realm_routing;
 
+using StringOption = mysql_harness::StringOption;
+
 class RestRoutingPluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string require_realm;
 
   explicit RestRoutingPluginConfig(const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        require_realm(get_option_string(section, kRequireRealm)) {}
+        require_realm(get_option(section, kRequireRealm, StringOption{})) {}
 
   std::string get_default(const std::string & /* option */) const override {
     return {};
@@ -1197,6 +1199,8 @@ static std::array<const char *, 2> required = {{
     "rest_api",
 }};
 
+static const std::array<const char *, 2> supported_options{kRequireRealm};
+
 extern "C" {
 mysql_harness::Plugin REST_ROUTING_EXPORT harness_plugin_rest_routing = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
@@ -1204,13 +1208,17 @@ mysql_harness::Plugin REST_ROUTING_EXPORT harness_plugin_rest_routing = {
     "REST_ROUTING",                          // name
     VERSION_NUMBER(0, 0, 1),
     // requires
-    required.size(), required.data(),
+    required.size(),
+    required.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     nullptr,  // deinit
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
+    supported_options.size(),
+    supported_options.data(),
 };
 }

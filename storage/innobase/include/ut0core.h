@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,7 +78,8 @@ the type and order of the arguments
 types of head, tail...
 */
 template <typename Head, typename... Tail>
-static bool verify_fmt_match(const char *fmt, Head &&head, Tail &&... tail) {
+static bool verify_fmt_match(const char *fmt, Head &&head [[maybe_unused]],
+                             Tail &&... tail) {
   using H =
       typename std::remove_cv<typename std::remove_reference<Head>::type>::type;
   const char *pos = get_first_format(fmt);
@@ -172,9 +173,9 @@ struct hex {
 /** This is an overload of the global operator<< for the user defined type
 ib::hex.  The unsigned value held in the ib::hex wrapper class will be printed
 into the given output stream in hexadecimal format.
-@param[in,out]	lhs	the output stream into which rhs is written.
-@param[in]	rhs	the object to be written into lhs.
-@retval	reference to the output stream. */
+@param[in,out]  lhs     the output stream into which rhs is written.
+@param[in]      rhs     the object to be written into lhs.
+@retval reference to the output stream. */
 inline std::ostream &operator<<(std::ostream &lhs, const hex &rhs) {
   std::ios_base::fmtflags ff = lhs.flags();
   lhs << std::showbase << std::hex << rhs.m_val;

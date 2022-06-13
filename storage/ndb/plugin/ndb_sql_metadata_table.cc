@@ -94,8 +94,9 @@ bool Ndb_sql_metadata_table::define_table_ndb(NdbDictionary::Table &new_table,
   return true;
 }
 
-bool Ndb_sql_metadata_table::define_indexes(unsigned) const {
-  return create_primary_ordered_index();
+bool Ndb_sql_metadata_table::create_indexes(
+    const NdbDictionary::Table &table) const {
+  return create_primary_ordered_index(table);
 }
 
 bool Ndb_sql_metadata_table::check_schema() const { return true; }
@@ -162,7 +163,9 @@ void Ndb_sql_metadata_api::setup(NdbDictionary::Dictionary *dict,
                            sizeof(m_record_layout.record_specs[0]));
     dict->removeIndexGlobal(*primary, false);
   } else {
-    ndb_log_error("Failed to setup PRIMARY index of ndb_sql_metadata");
+    ndb_log_error(
+        "Failed to setup PRIMARY index of ndb_sql_metadata, error %u: %s",
+        dict->getNdbError().code, dict->getNdbError().message);
   }
 }
 

@@ -1818,10 +1818,11 @@ static bool check_acl_for_explain(const TABLE_LIST *table_list) {
 }
 
 /**
-  EXPLAIN handling for single-table UPDATE and DELETE queries
+  EXPLAIN handling for single-table INSERT VALUES, UPDATE, and DELETE queries
 
-  Send to the client a QEP data set for single-table EXPLAIN UPDATE/DELETE
-  queries. As far as single-table UPDATE/DELETE are implemented without
+  Send to the client a QEP data set for single-table
+  EXPLAIN INSERT VALUES/UPDATE/DELETE queries.
+  As far as single-table INSERT VALUES/UPDATE/DELETE are implemented without
   the regular JOIN tree, we can't reuse explain_query_expression() directly,
   thus we deal with this single table in a special way and then call
   explain_query_expression() for subqueries (if any).
@@ -1845,6 +1846,12 @@ bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
   if (explain_thd->lex->explain_format->is_tree()) {
     // These kinds of queries don't have a JOIN with an iterator tree.
     return ExplainIterator(explain_thd, query_thd, nullptr);
+  }
+
+  if (query_thd->lex->using_hypergraph_optimizer) {
+    my_error(ER_HYPERGRAPH_NOT_SUPPORTED_YET, MYF(0),
+             "EXPLAIN with non-tree formats");
+    return true;
   }
 
   /**
@@ -2018,8 +2025,8 @@ bool explain_query_specification(THD *explain_thd, const THD *query_thd,
 static string FindUpdatedTables(JOIN *join) {
   Query_result *result = join->query_block->query_result();
   string ret;
-  for (size_t idx = 0; idx < join->tables; ++idx) {
-    TABLE_LIST *table_ref = join->qep_tab[idx].table_ref;
+  for (TABLE_LIST *table_ref = join->query_block->leaf_tables;
+       table_ref != nullptr; table_ref = table_ref->next_leaf) {
     if (table_ref == nullptr) continue;
     TABLE *table = table_ref->table;
     if ((table_ref->is_updated() || table_ref->is_deleted()) &&
@@ -2049,6 +2056,12 @@ static bool ExplainIterator(THD *ethd, const THD *query_thd,
   }
 
   {
+    vector<string> *token_ptr = nullptr;
+#ifndef NDEBUG
+    vector<string> tokens_for_force_subplan;
+    DBUG_EXECUTE_IF("subplan_tokens", token_ptr = &tokens_for_force_subplan;);
+#endif
+
     std::string explain;
     if (unit != nullptr) {
       int base_level = 0;
@@ -2077,13 +2090,23 @@ static bool ExplainIterator(THD *ethd, const THD *query_thd,
         default:
           break;
       }
-      explain += PrintQueryPlan(base_level, unit->root_access_path(),
-                                unit->is_union() ? nullptr : join,
-                                /*is_root_of_join=*/!unit->is_union());
+      explain +=
+          PrintQueryPlan(base_level, unit->root_access_path(),
+                         unit->is_union() ? nullptr : join,
+                         /*is_root_of_join=*/!unit->is_union(), token_ptr);
     } else {
       explain += PrintQueryPlan(0, /*path=*/nullptr, /*join=*/nullptr,
-                                /*is_root_of_join=*/false);
+                                /*is_root_of_join=*/false, token_ptr);
     }
+    DBUG_EXECUTE_IF("subplan_tokens", {
+      explain += "\nTo force this plan, use:\nSET DEBUG='+d,subplan_tokens";
+      for (const string &token : tokens_for_force_subplan) {
+        explain += ",force_subplan_";
+        explain += token;
+      }
+      explain += "';\n";
+    });
+
     mem_root_deque<Item *> field_list(ethd->mem_root);
     Item *item =
         new Item_string(explain.data(), explain.size(), system_charset_info);

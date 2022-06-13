@@ -215,24 +215,25 @@ static bool lock_for_write(THD *thd, const MDL_key &mdl_key) {
 
 Histogram::Histogram(MEM_ROOT *mem_root, const std::string &db_name,
                      const std::string &tbl_name, const std::string &col_name,
-                     enum_histogram_type type, Value_map_type data_type)
+                     enum_histogram_type type, Value_map_type data_type,
+                     bool *error)
     : m_null_values_fraction(INVALID_NULL_VALUES_FRACTION),
       m_charset(nullptr),
       m_num_buckets_specified(0),
       m_mem_root(mem_root),
       m_hist_type(type),
       m_data_type(data_type) {
-  lex_string_strmake(m_mem_root, &m_database_name, db_name.c_str(),
-                     db_name.length());
-
-  lex_string_strmake(m_mem_root, &m_table_name, tbl_name.c_str(),
-                     tbl_name.length());
-
-  lex_string_strmake(m_mem_root, &m_column_name, col_name.c_str(),
-                     col_name.length());
+  if (lex_string_strmake(m_mem_root, &m_database_name, db_name.c_str(),
+                         db_name.length()) ||
+      lex_string_strmake(m_mem_root, &m_table_name, tbl_name.c_str(),
+                         tbl_name.length()) ||
+      lex_string_strmake(m_mem_root, &m_column_name, col_name.c_str(),
+                         col_name.length())) {
+    *error = true;
+  }
 }
 
-Histogram::Histogram(MEM_ROOT *mem_root, const Histogram &other)
+Histogram::Histogram(MEM_ROOT *mem_root, const Histogram &other, bool *error)
     : m_sampling_rate(other.m_sampling_rate),
       m_null_values_fraction(other.m_null_values_fraction),
       m_charset(other.m_charset),
@@ -240,14 +241,15 @@ Histogram::Histogram(MEM_ROOT *mem_root, const Histogram &other)
       m_mem_root(mem_root),
       m_hist_type(other.m_hist_type),
       m_data_type(other.m_data_type) {
-  lex_string_strmake(m_mem_root, &m_database_name, other.m_database_name.str,
-                     other.m_database_name.length);
-
-  lex_string_strmake(m_mem_root, &m_table_name, other.m_table_name.str,
-                     other.m_table_name.length);
-
-  lex_string_strmake(m_mem_root, &m_column_name, other.m_column_name.str,
-                     other.m_column_name.length);
+  if (lex_string_strmake(m_mem_root, &m_database_name,
+                         other.m_database_name.str,
+                         other.m_database_name.length) ||
+      lex_string_strmake(m_mem_root, &m_table_name, other.m_table_name.str,
+                         other.m_table_name.length) ||
+      lex_string_strmake(m_mem_root, &m_column_name, other.m_column_name.str,
+                         other.m_column_name.length)) {
+    *error = true;
+  }
 }
 
 bool Histogram::histogram_to_json(Json_object *json_object) const {
@@ -317,7 +319,7 @@ Histogram *build_histogram(MEM_ROOT *mem_root, const Value_map<T> &value_map,
     an equi-height histogram.
   */
   if (num_buckets >= value_map.size()) {
-    Singleton<T> *singleton = new (mem_root) Singleton<T>(
+    Singleton<T> *singleton = Singleton<T>::create(
         mem_root, db_name, tbl_name, col_name, value_map.get_data_type());
 
     if (singleton == nullptr) return nullptr;
@@ -327,7 +329,7 @@ Histogram *build_histogram(MEM_ROOT *mem_root, const Value_map<T> &value_map,
 
     histogram = singleton;
   } else {
-    Equi_height<T> *equi_height = new (mem_root) Equi_height<T>(
+    Equi_height<T> *equi_height = Equi_height<T>::create(
         mem_root, db_name, tbl_name, col_name, value_map.get_data_type());
 
     if (equi_height == nullptr) return nullptr;
@@ -385,39 +387,39 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
   if (histogram_type->value() == Histogram::equi_height_str()) {
     // Equi-height histogram
     if (data_type->value() == "double") {
-      histogram = new (mem_root)
-          Equi_height<double>(mem_root, schema_name, table_name, column_name,
-                              Value_map_type::DOUBLE);
+      histogram =
+          Equi_height<double>::create(mem_root, schema_name, table_name,
+                                      column_name, Value_map_type::DOUBLE);
     } else if (data_type->value() == "int") {
-      histogram = new (mem_root) Equi_height<longlong>(
+      histogram = Equi_height<longlong>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::INT);
     } else if (data_type->value() == "enum") {
-      histogram = new (mem_root) Equi_height<longlong>(
+      histogram = Equi_height<longlong>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::ENUM);
     } else if (data_type->value() == "set") {
-      histogram = new (mem_root) Equi_height<longlong>(
+      histogram = Equi_height<longlong>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::SET);
     } else if (data_type->value() == "uint") {
-      histogram = new (mem_root) Equi_height<ulonglong>(
+      histogram = Equi_height<ulonglong>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::UINT);
     } else if (data_type->value() == "string") {
-      histogram = new (mem_root)
-          Equi_height<String>(mem_root, schema_name, table_name, column_name,
-                              Value_map_type::STRING);
+      histogram =
+          Equi_height<String>::create(mem_root, schema_name, table_name,
+                                      column_name, Value_map_type::STRING);
     } else if (data_type->value() == "date") {
-      histogram = new (mem_root) Equi_height<MYSQL_TIME>(
+      histogram = Equi_height<MYSQL_TIME>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::DATE);
     } else if (data_type->value() == "time") {
-      histogram = new (mem_root) Equi_height<MYSQL_TIME>(
+      histogram = Equi_height<MYSQL_TIME>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::TIME);
     } else if (data_type->value() == "datetime") {
-      histogram = new (mem_root)
-          Equi_height<MYSQL_TIME>(mem_root, schema_name, table_name,
-                                  column_name, Value_map_type::DATETIME);
+      histogram = Equi_height<MYSQL_TIME>::create(mem_root, schema_name,
+                                                  table_name, column_name,
+                                                  Value_map_type::DATETIME);
     } else if (data_type->value() == "decimal") {
-      histogram = new (mem_root)
-          Equi_height<my_decimal>(mem_root, schema_name, table_name,
-                                  column_name, Value_map_type::DECIMAL);
+      histogram =
+          Equi_height<my_decimal>::create(mem_root, schema_name, table_name,
+                                          column_name, Value_map_type::DECIMAL);
     } else {
       return nullptr; /* purecov: deadcode */
     }
@@ -425,38 +427,38 @@ Histogram *Histogram::json_to_histogram(MEM_ROOT *mem_root,
     // Singleton histogram
     if (data_type->value() == "double") {
       histogram =
-          new (mem_root) Singleton<double>(mem_root, schema_name, table_name,
-                                           column_name, Value_map_type::DOUBLE);
+          Singleton<double>::create(mem_root, schema_name, table_name,
+                                    column_name, Value_map_type::DOUBLE);
     } else if (data_type->value() == "int") {
-      histogram = new (mem_root) Singleton<longlong>(
-          mem_root, schema_name, table_name, column_name, Value_map_type::INT);
+      histogram = Singleton<longlong>::create(mem_root, schema_name, table_name,
+                                              column_name, Value_map_type::INT);
     } else if (data_type->value() == "enum") {
-      histogram = new (mem_root) Singleton<longlong>(
+      histogram = Singleton<longlong>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::ENUM);
     } else if (data_type->value() == "set") {
-      histogram = new (mem_root) Singleton<longlong>(
-          mem_root, schema_name, table_name, column_name, Value_map_type::SET);
+      histogram = Singleton<longlong>::create(mem_root, schema_name, table_name,
+                                              column_name, Value_map_type::SET);
     } else if (data_type->value() == "uint") {
-      histogram = new (mem_root) Singleton<ulonglong>(
+      histogram = Singleton<ulonglong>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::UINT);
     } else if (data_type->value() == "string") {
       histogram =
-          new (mem_root) Singleton<String>(mem_root, schema_name, table_name,
-                                           column_name, Value_map_type::STRING);
+          Singleton<String>::create(mem_root, schema_name, table_name,
+                                    column_name, Value_map_type::STRING);
     } else if (data_type->value() == "datetime") {
-      histogram = new (mem_root)
-          Singleton<MYSQL_TIME>(mem_root, schema_name, table_name, column_name,
-                                Value_map_type::DATETIME);
+      histogram =
+          Singleton<MYSQL_TIME>::create(mem_root, schema_name, table_name,
+                                        column_name, Value_map_type::DATETIME);
     } else if (data_type->value() == "date") {
-      histogram = new (mem_root) Singleton<MYSQL_TIME>(
+      histogram = Singleton<MYSQL_TIME>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::DATE);
     } else if (data_type->value() == "time") {
-      histogram = new (mem_root) Singleton<MYSQL_TIME>(
+      histogram = Singleton<MYSQL_TIME>::create(
           mem_root, schema_name, table_name, column_name, Value_map_type::TIME);
     } else if (data_type->value() == "decimal") {
-      histogram = new (mem_root)
-          Singleton<my_decimal>(mem_root, schema_name, table_name, column_name,
-                                Value_map_type::DECIMAL);
+      histogram =
+          Singleton<my_decimal>::create(mem_root, schema_name, table_name,
+                                        column_name, Value_map_type::DECIMAL);
     } else {
       return nullptr; /* purecov: deadcode */
     }
@@ -1660,29 +1662,23 @@ bool Histogram::get_selectivity(Item **items, size_t item_count,
       return get_selectivity_dispatcher(items[1], op, typelib, selectivity);
     }
     case enum_operator::LESS_THAN_OR_EQUAL: {
-      double less_than_selectivity;
-      double equals_to_selectivity;
-      if (get_selectivity_dispatcher(items[1], enum_operator::LESS_THAN,
-                                     typelib, &less_than_selectivity) ||
-          get_selectivity_dispatcher(items[1], enum_operator::EQUALS_TO,
-                                     typelib, &equals_to_selectivity))
+      double greater_than_selectivity;
+      if (get_selectivity_dispatcher(items[1], enum_operator::GREATER_THAN,
+                                     typelib, &greater_than_selectivity))
         return true;
 
-      *selectivity = std::min(less_than_selectivity + equals_to_selectivity,
-                              get_non_null_values_frequency());
+      *selectivity = std::max(
+          get_non_null_values_frequency() - greater_than_selectivity, 0.0);
       return false;
     }
     case enum_operator::GREATER_THAN_OR_EQUAL: {
-      double greater_than_selectivity;
-      double equals_to_selectivity;
-      if (get_selectivity_dispatcher(items[1], enum_operator::GREATER_THAN,
-                                     typelib, &greater_than_selectivity) ||
-          get_selectivity_dispatcher(items[1], enum_operator::EQUALS_TO,
-                                     typelib, &equals_to_selectivity))
+      double less_than_selectivity;
+      if (get_selectivity_dispatcher(items[1], enum_operator::LESS_THAN,
+                                     typelib, &less_than_selectivity))
         return true;
 
-      *selectivity = std::min(greater_than_selectivity + equals_to_selectivity,
-                              get_non_null_values_frequency());
+      *selectivity = std::max(
+          get_non_null_values_frequency() - less_than_selectivity, 0.0);
       return false;
     }
     case enum_operator::NOT_EQUALS_TO: {
@@ -1733,6 +1729,12 @@ bool Histogram::get_selectivity(Item **items, size_t item_count,
                               get_non_null_values_frequency());
       return false;
     }
+    /*
+      TODO(Tobias Christiani): Improve IN selectivity estimates by ensuring that
+      selectivity estimates from within each bucket do not exceed the bucket
+      frequency. This can be done without allocating additional memory if we
+      sort the list of items and "merge" them with the histogram buckets.
+    */
     case enum_operator::IN_LIST: {
       *selectivity = 0.0;
       for (size_t i = 1; i < item_count; ++i) {

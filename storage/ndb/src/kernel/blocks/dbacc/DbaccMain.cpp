@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,6 +21,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "util/require.h"
 #include <cstdint>
 #include <cstring>
 
@@ -1091,12 +1092,12 @@ void Dbacc::initOpRec(const AccKeyReq* signal, Uint32 siglen) const
 
   if (operationRecPtr.p->tupkeylen == 0)
   {
-    NDB_STATIC_ASSERT(AccKeyReq::SignalLength_localKey == 10);
+    static_assert(AccKeyReq::SignalLength_localKey == 10);
     ndbassert(siglen == AccKeyReq::SignalLength_localKey);
   }
   else
   {
-    NDB_STATIC_ASSERT(AccKeyReq::SignalLength_keyInfo == 8);
+    static_assert(AccKeyReq::SignalLength_keyInfo == 8);
     ndbassert(siglen == AccKeyReq::SignalLength_keyInfo + operationRecPtr.p->tupkeylen);
   }
 }//Dbacc::initOpRec()
@@ -1851,6 +1852,33 @@ void Dbacc::insertelementLab(Signal* signal,
                           localKey.m_page_idx,
                           fragrecptr.p->tupFragptr);
   sendAcckeyconf(signal);
+
+  fragrecptr.p->slack -= fragrecptr.p->elementLength;
+  // EXPAND the structures if required:
+#ifdef ERROR_INSERT
+  if (ERROR_INSERTED(3004) &&
+      fragrecptr.p->fragmentid == 0 &&
+      fragrecptr.p->level.getSize() != ERROR_INSERT_EXTRA)
+  {
+    if (!fragrecptr.p->expandOrShrinkQueued)
+    {
+      jam();
+      signal->theData[0] = fragrecptr.i;
+      fragrecptr.p->expandOrShrinkQueued = true;
+      sendSignal(reference(), GSN_EXPANDCHECK2, signal, 1, JBB);
+    }//if
+  }
+#endif
+  if (fragrecptr.p->slack < 0 && !fragrecptr.p->level.isFull())
+  {
+    if (!fragrecptr.p->expandOrShrinkQueued)
+    {
+      jam();
+      signal->theData[0] = fragrecptr.i;
+      fragrecptr.p->expandOrShrinkQueued = true;
+      sendSignal(reference(), GSN_EXPANDCHECK2, signal, 1, JBB);
+    }//if
+  }//if
   return;
 }//Dbacc::insertelementLab()
 
@@ -2669,59 +2697,6 @@ void Dbacc::execACC_COMMITREQ(Signal* signal,
      (Toperation != ZSCAN_OP))
   {
     fragrecptr.p->m_commit_count++;
-#ifdef ERROR_INSERT
-    bool force_expand_shrink = false;
-    if (ERROR_INSERTED(3004) &&
-        fragrecptr.p->fragmentid == 0 &&
-        fragrecptr.p->level.getSize() != ERROR_INSERT_EXTRA)
-    {
-      force_expand_shrink = true;
-    }
-#endif
-    if (Toperation != ZINSERT) {
-      if (Toperation != ZDELETE) {
-	return;
-      } else {
-	jam();
-	fragrecptr.p->slack += fragrecptr.p->elementLength;
-#ifdef ERROR_INSERT
-        if (force_expand_shrink || fragrecptr.p->slack > fragrecptr.p->slackCheck)
-#else
-        if (fragrecptr.p->slack > fragrecptr.p->slackCheck)
-#endif
-        {
-          /* TIME FOR JOIN BUCKETS PROCESS */
-	  if (fragrecptr.p->expandCounter > 0) {
-            if (!fragrecptr.p->expandOrShrinkQueued)
-            {
-	      jam();
-	      signal->theData[0] = fragrecptr.i;
-              fragrecptr.p->expandOrShrinkQueued = true;
-              sendSignal(reference(), GSN_SHRINKCHECK2, signal, 1, JBB);
-	    }//if
-	  }//if
-	}//if
-      }//if
-    } else {
-      jam();                                                /* EXPAND PROCESS HANDLING */
-      fragrecptr.p->slack -= fragrecptr.p->elementLength;
-#ifdef ERROR_INSERT
-      if ((force_expand_shrink || fragrecptr.p->slack < 0) &&
-          !fragrecptr.p->level.isFull())
-#else
-      if (fragrecptr.p->slack < 0 && !fragrecptr.p->level.isFull())
-#endif
-      {
-	/* IT MEANS THAT IF SLACK < ZERO */
-        if (!fragrecptr.p->expandOrShrinkQueued)
-        {
-	  jam();
-	  signal->theData[0] = fragrecptr.i;
-          fragrecptr.p->expandOrShrinkQueued = true;
-          sendSignal(reference(), GSN_EXPANDCHECK2, signal, 1, JBB);
-	}//if
-      }//if
-    }
   }
   return;
 }//Dbacc::execACC_COMMITREQ()
@@ -2861,7 +2836,7 @@ void Dbacc::execACC_LOCKREQ(Signal* signal)
         // enter local key in place of PK
         keyreq->localKey[0] = req->page_id;
         keyreq->localKey[1] = req->page_idx;
-        NDB_STATIC_ASSERT(AccKeyReq::SignalLength_localKey == 10);
+        static_assert(AccKeyReq::SignalLength_localKey == 10);
       }
       signal->setLength(AccKeyReq::SignalLength_localKey);
       execACCKEYREQ(signal,
@@ -4387,34 +4362,61 @@ void Dbacc::commitdelete(Signal* signal)
       }
     }
   }
-  if (operationRecPtr.p->elementPage == lastPageptr.i) {
-    if (operationRecPtr.p->elementPointer == tlastElementptr) {
-      jam();
-      /* --------------------------------------------------------------------------------- */
-      /*  THE LAST ELEMENT WAS THE ELEMENT TO BE DELETED. WE NEED NOT COPY IT.             */
-      /*  Setting it to an invalid value only for sanity, the value should never be read.  */
-      /* --------------------------------------------------------------------------------- */
-      jamLineDebug(Uint16(delPageptr.i));
-      jamLineDebug(Uint16(delElemptr));
-      delPageptr.p->word32[delElemptr] = ElementHeader::setInvalid();
-      return;
+  if (operationRecPtr.p->elementPage == lastPageptr.i &&
+      operationRecPtr.p->elementPointer == tlastElementptr) {
+    jam();
+    /* --------------------------------------------------------------------------------- */
+    /*  THE LAST ELEMENT WAS THE ELEMENT TO BE DELETED. WE NEED NOT COPY IT.             */
+    /*  Setting it to an invalid value only for sanity, the value should never be read.  */
+    /* --------------------------------------------------------------------------------- */
+    jamLineDebug(Uint16(delPageptr.i));
+    jamLineDebug(Uint16(delElemptr));
+    delPageptr.p->word32[delElemptr] = ElementHeader::setInvalid();
+  } else {
+    /* --------------------------------------------------------------------------------- */
+    /*  THE DELETED ELEMENT IS NOT THE LAST. WE READ THE LAST ELEMENT AND OVERWRITE THE  */
+    /*  DELETED ELEMENT.                                                                 */
+    /* --------------------------------------------------------------------------------- */
+#if defined(VM_TRACE) || !defined(NDEBUG) || defined(ERROR_INSERT)
+    jamDebug();
+    jamLineDebug(Uint16(delPageptr.i));
+    jamLineDebug(Uint16(delElemptr));
+    delPageptr.p->word32[delElemptr] = ElementHeader::setInvalid();
+#endif
+    deleteElement(delPageptr,
+                  delConptr,
+                  delElemptr,
+                  lastPageptr,
+                  tlastElementptr);
+  }
+
+  // Adjust the 'slack' for the deleted element.
+  // If needed, initiate a 'shrink' of the storage structures.
+  fragrecptr.p->slack += fragrecptr.p->elementLength;
+#ifdef ERROR_INSERT
+  if (ERROR_INSERTED(3004) &&
+      fragrecptr.p->fragmentid == 0 &&
+      fragrecptr.p->level.getSize() != ERROR_INSERT_EXTRA)
+  {
+    jam();
+    signal->theData[0] = fragrecptr.i;
+    fragrecptr.p->expandOrShrinkQueued = true;
+    sendSignal(reference(), GSN_SHRINKCHECK2, signal, 1, JBB);
+  }
+#endif
+  if (fragrecptr.p->slack > fragrecptr.p->slackCheck)
+  {
+    /* TIME FOR JOIN BUCKETS PROCESS */
+    if (fragrecptr.p->expandCounter > 0) {
+      if (!fragrecptr.p->expandOrShrinkQueued)
+      {
+        jam();
+        signal->theData[0] = fragrecptr.i;
+        fragrecptr.p->expandOrShrinkQueued = true;
+        sendSignal(reference(), GSN_SHRINKCHECK2, signal, 1, JBB);
+      }//if
     }//if
   }//if
-  /* --------------------------------------------------------------------------------- */
-  /*  THE DELETED ELEMENT IS NOT THE LAST. WE READ THE LAST ELEMENT AND OVERWRITE THE  */
-  /*  DELETED ELEMENT.                                                                 */
-  /* --------------------------------------------------------------------------------- */
-#if defined(VM_TRACE) || !defined(NDEBUG) || defined(ERROR_INSERT)
-  jamDebug();
-  jamLineDebug(Uint16(delPageptr.i));
-  jamLineDebug(Uint16(delElemptr));
-  delPageptr.p->word32[delElemptr] = ElementHeader::setInvalid();
-#endif
-  deleteElement(delPageptr,
-                delConptr,
-                delElemptr,
-                lastPageptr,
-                tlastElementptr);
 }//Dbacc::commitdelete()
 
 /** --------------------------------------------------------------------------
@@ -9273,7 +9275,7 @@ void Dbacc::releaseFreeOpRec()
     OperationrecPtr opPtr;
     opPtr.i = cfreeopRec;
     cfreeopRec = RNIL;
-    oprec_pool.getValidPtr(opPtr);
+    ndbrequire(oprec_pool.getValidPtr(opPtr));
     ndbrequire(opPtr.p->m_op_bits == Operationrec::OP_INITIAL);
     oprec_pool.release(opPtr);
     checkPoolShrinkNeed(DBACC_OPERATION_RECORD_TRANSIENT_POOL_INDEX,
@@ -9526,7 +9528,9 @@ void Dbacc::execDBINFO_SCANREQ(Signal *signal)
 
     static const size_t num_config_params =
       sizeof(pools[0].config_params)/sizeof(pools[0].config_params[0]);
+    const Uint32 numPools = NDB_ARRAY_SIZE(pools);
     Uint32 pool = cursor->data[0];
+    ndbrequire(pool < numPools);
     BlockNumber bn = blockToMain(number());
     while(pools[pool].poolname)
     {

@@ -28,8 +28,8 @@
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "mysql/components/services/mysql_cond_bits.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_cond_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "sql/changestreams/apply/commit_order_queue.h"  // Commit_order_queue
 #include "sql/rpl_rli_pdb.h"                             // get_thd_worker
 
@@ -306,7 +306,7 @@ class Commit_order_manager {
     `wait_for_commit is in deadlock with the MDL context encapsulated in
     the visitor parameter.
 
-    @param wait_for_commit
+    @param wait_for_commit The wait ticket being held by the worker thread.
     @param gvisitor The MDL graph visitor to check for deadlocks against.
 
     @return true if a deadlock has been found and false otherwise.

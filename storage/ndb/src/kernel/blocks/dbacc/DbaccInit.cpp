@@ -25,6 +25,7 @@
 
 
 #define DBACC_C
+#include "util/require.h"
 #include "Dbacc.hpp"
 
 #define JAM_FILE_ID 346
@@ -242,7 +243,7 @@ Dbacc::Dbacc(Block_context& ctx,
     &scanRec_pool;
   c_transient_pools[DBACC_OPERATION_RECORD_TRANSIENT_POOL_INDEX] =
     &oprec_pool;
-  NDB_STATIC_ASSERT(c_transient_pool_count == 2);
+  static_assert(c_transient_pool_count == 2);
   c_transient_pools_shrinking.clear();
 }//Dbacc::Dbacc()
 

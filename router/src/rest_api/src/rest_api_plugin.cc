@@ -30,6 +30,7 @@
 #include <array>
 #include <string>
 
+#include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
@@ -51,9 +52,11 @@ class RestApiPluginConfig : public mysql_harness::BasePluginConfig {
  public:
   std::string require_realm;
 
+  using StringOption = mysql_harness::StringOption;
+
   explicit RestApiPluginConfig(const mysql_harness::ConfigSection *section)
       : mysql_harness::BasePluginConfig(section),
-        require_realm(get_option_string(section, "require_realm")) {}
+        require_realm(get_option(section, "require_realm", StringOption{})) {}
 
   std::string get_default(const std::string & /* option */) const override {
     return {};
@@ -270,18 +273,26 @@ static const std::array<const char *, 2> plugin_requires = {{
     "logger",
 }};
 
+const std::array<const char *, 1> supported_options{"require_realm"};
+
 extern "C" {
 mysql_harness::Plugin DLLEXPORT harness_plugin_rest_api = {
-    mysql_harness::PLUGIN_ABI_VERSION, mysql_harness::ARCHITECTURE_DESCRIPTOR,
-    "REST_API", VERSION_NUMBER(0, 0, 1),
+    mysql_harness::PLUGIN_ABI_VERSION,
+    mysql_harness::ARCHITECTURE_DESCRIPTOR,
+    "REST_API",
+    VERSION_NUMBER(0, 0, 1),
     // requires
-    plugin_requires.size(), plugin_requires.data(),
+    plugin_requires.size(),
+    plugin_requires.data(),
     // conflicts
-    0, nullptr,
+    0,
+    nullptr,
     init,     // init
     deinit,   // deinit
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
+    supported_options.size(),
+    supported_options.data(),
 };
 }

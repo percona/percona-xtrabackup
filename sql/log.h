@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,9 +51,9 @@
 #include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "my_thread_local.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/mysql_rwlock_bits.h"
-#include "mysql/components/services/psi_file_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_rwlock_bits.h"
+#include "mysql/components/services/bits/psi_file_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql_com.h"
 #include "sql/auth/sql_security_ctx.h"  // Security_context
@@ -1123,9 +1123,6 @@ log_line *log_line_init();
 
 /**
   Release a log_line allocated with log_line_init.
-
-  @retval nullptr  could not set up buffer (too small?)
-  @retval other    address of the newly initialized log_line
 */
 void log_line_exit(log_line *ll);
 

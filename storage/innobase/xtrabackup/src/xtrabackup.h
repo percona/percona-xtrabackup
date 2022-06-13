@@ -250,7 +250,7 @@ void xb_data_files_close(void);
 Checks if a database specified by path should be skipped from backup based on
 the --databases, --databases_file or --databases_exclude options.
 
-@return TRUE if the table should be skipped. */
+@return true if the table should be skipped. */
 bool check_if_skip_database_by_path(
     const char *path /*!< in: path to the db directory. */
 );
@@ -308,7 +308,7 @@ struct datadir_entry_t {
 /************************************************************************
 Callback to handle datadir entry. Function of this type will be called
 for each entry which matches the mask by xb_process_datadir.
-@return should return TRUE on success */
+@return should return true on success */
 typedef std::function<bool(
     /*=========================================*/
     const datadir_entry_t &entry, /*!<in: datadir entry */
@@ -318,7 +318,7 @@ typedef std::function<bool(
 /************************************************************************
 Function enumerates files in datadir (provided by path) which are matched
 by provided suffix. For each entry callback is called.
-@return FALSE if callback for some entry returned FALSE */
+@return false if callback for some entry returned false */
 bool xb_process_datadir(const char *path,   /*!<in: datadir path */
                         const char *suffix, /*!<in: suffix to match
                                             against */

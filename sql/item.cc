@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,8 @@
 #include "sql/sp_rcontext.h"  // sp_rcontext
 #include "sql/sql_base.h"     // view_ref_found
 #include "sql/sql_bitmap.h"
-#include "sql/sql_class.h"  // THD
+#include "sql/sql_class.h"    // THD
+#include "sql/sql_derived.h"  // Condition_pushdown
 #include "sql/sql_error.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
@@ -487,9 +488,8 @@ longlong Item::val_int_from_string() {
   StringBuffer<MY_INT64_NUM_DECIMAL_DIGITS + 1> tmp;
   const String *res = val_str(&tmp);
   if (res == nullptr) return 0;
-  int err_not_used;
-  return my_strntoll(res->charset(), res->ptr(), res->length(), 10, nullptr,
-                     &err_not_used);
+  return longlong_from_string_with_check(
+      res->charset(), res->ptr(), res->ptr() + res->length(), unsigned_flag);
 }
 
 type_conversion_status Item::save_time_in_field(Field *field) {
@@ -634,6 +634,9 @@ bool Item::itemize(Parse_context *pc, Item **res) {
 
 uint Item::decimal_precision() const {
   Item_result restype = result_type();
+  constexpr const uint DATE_INT_DIGITS{8};      /* YYYYMMDD       */
+  constexpr const uint TIME_INT_DIGITS{7};      /* hhhmmss        */
+  constexpr const uint DATETIME_INT_DIGITS{14}; /* YYYYMMDDhhmmss */
 
   if ((restype == DECIMAL_RESULT) || (restype == INT_RESULT)) {
     uint prec = my_decimal_length_to_precision(max_char_length(), decimals,
@@ -655,7 +658,8 @@ uint Item::decimal_precision() const {
 }
 
 uint Item::time_precision() {
-  if (const_item() && result_type() == STRING_RESULT && !is_temporal()) {
+  if (!current_thd->lex->is_view_context_analysis() && const_item() &&
+      result_type() == STRING_RESULT && !is_temporal()) {
     MYSQL_TIME ltime;
     String buf, *tmp;
     MYSQL_TIME_STATUS status;
@@ -669,7 +673,8 @@ uint Item::time_precision() {
 }
 
 uint Item::datetime_precision() {
-  if (const_item() && result_type() == STRING_RESULT && !is_temporal()) {
+  if (!current_thd->lex->is_view_context_analysis() && const_item() &&
+      result_type() == STRING_RESULT && !is_temporal()) {
     MYSQL_TIME ltime;
     String buf, *tmp;
     MYSQL_TIME_STATUS status;
@@ -891,18 +896,19 @@ bool Item_field::find_item_in_field_list_processor(uchar *arg) {
   return false;
 }
 
-bool Item_field::check_column_from_derived_table(uchar *arg) {
-  TABLE_LIST *tl = pointer_cast<TABLE_LIST *>(arg);
-  if (field->table == tl->table) {
+bool Item_field::is_valid_for_pushdown(uchar *arg) {
+  Condition_pushdown::Derived_table_info *dti =
+      pointer_cast<Condition_pushdown::Derived_table_info *>(arg);
+  TABLE_LIST *derived_table = dti->m_derived_table;
+  if (table_ref == derived_table) {
+    assert(field->table == derived_table->table);
     // If the expression in the derived table for this column has a subquery
-    // or contains parameters or has non-deterministic result, condition is
+    // or has non-deterministic result or is a trigger field, condition is
     // not pushed down.
     // Expressions having subqueries need a more complicated replacement
     // strategy than the one that currently exists when the condition is
     // moved to derived table.
-    // Expression having parameters when cloned as part of replacement have
-    // problems to locate the original "?" and therefore will not be able to
-    // get the value.  TODO: Lift these two limitations.
+    // TODO: Lift this limitation.
     // Any condition with expressions having non-deterministic result in the
     // underlying derived table should not be pushed.
     // For ex:
@@ -910,10 +916,27 @@ bool Item_field::check_column_from_derived_table(uchar *arg) {
     // Here a > 0.5 if pushed down would result in rand() getting evaluated
     // twice because the query would then be
     // select * from (select rand() as a from t1 where rand() > 0.5) which
-    // is not correct. See also Item_func::check_column_from_derived_table
-    Item *item = tl->get_derived_expr(field->field_index());
-    return (item->has_subquery() ||
-            (item->used_tables() & (INNER_TABLE_BIT | RAND_TABLE_BIT)));
+    // is not correct.
+    // Trigger fields need complicated resolving when we clone a condition
+    // having them.
+    Query_expression *derived_query_expression =
+        derived_table->derived_query_expression();
+    for (Query_block *qb = derived_query_expression->first_query_block();
+         qb != nullptr; qb = qb->next_query_block()) {
+      Item *item = qb->get_derived_expr(field->field_index());
+      bool has_trigger_field = false;
+      WalkItem(item, enum_walk::PREFIX, [&has_trigger_field](Item *inner_item) {
+        if (inner_item->type() == Item::TRIGGER_FIELD_ITEM) {
+          has_trigger_field = true;
+          return true;
+        }
+        return false;
+      });
+      if (item->has_subquery() || item->is_non_deterministic() ||
+          has_trigger_field)
+        return true;
+    }
+    return false;
   }
   return true;
 }
@@ -933,14 +956,13 @@ bool Item_field::check_column_from_derived_table(uchar *arg) {
 */
 
 bool Item_field::check_column_in_window_functions(uchar *arg) {
-  TABLE_LIST *tl = pointer_cast<TABLE_LIST *>(arg);
-  // Find the expression corresponding to this column in derived table and use
-  // that to find in window functions of the derived table.
-  Query_block *select = tl->derived_query_expression()->first_query_block();
-  Item *item = tl->get_derived_expr(field->field_index());
-
+  Query_block *query_block = pointer_cast<Query_block *>(arg);
+  // Find the expression corresponding to this column in derived table's
+  // query block and use that to find in window functions of that
+  // query block.
+  Item *item = query_block->get_derived_expr(field->field_index());
   bool ret = true;
-  List_iterator<Window> li(select->m_windows);
+  List_iterator<Window> li(query_block->m_windows);
   for (Window *w = li++; w != nullptr; w = li++) {
     ret = true;
     for (ORDER *o = w->first_partition_by(); o != nullptr; o = o->next) {
@@ -968,55 +990,63 @@ bool Item_field::check_column_in_window_functions(uchar *arg) {
   true otherwise.
 */
 bool Item_field::check_column_in_group_by(uchar *arg) {
-  TABLE_LIST *tl = pointer_cast<TABLE_LIST *>(arg);
-  // Find the expression correspondiing to this column in derived table and
-  // use that to find in GROUP BY of the derived table.
-  Query_block *select = tl->derived_query_expression()->first_query_block();
-  Item *item = tl->get_derived_expr(field->field_index());
-
-  for (ORDER *group = select->group_list.first; group; group = group->next) {
+  Query_block *query_block = pointer_cast<Query_block *>(arg);
+  // Find the expression corresponding to this column in the derived
+  // table's query block and use that to find in GROUP BY of that
+  // query block.
+  Item *item = query_block->get_derived_expr(field->field_index());
+  for (ORDER *group = query_block->group_list.first; group;
+       group = group->next) {
     if (*group->item == item || item->eq(*group->item, false)) return false;
   }
   return true;
 }
 
 Item *Item_field::replace_with_derived_expr(uchar *arg) {
-  TABLE_LIST *dt = pointer_cast<TABLE_LIST *>(arg);
+  Condition_pushdown::Derived_table_info *dti =
+      pointer_cast<Condition_pushdown::Derived_table_info *>(arg);
+
   // This column's table reference should be same as the derived table from
   // where the replacement is retrieved. If not, it is presumed that the
   // column has already been replaced with derived table expression (Maybe
   // there was an earlier reference to the same column in the condition that
   // is being pushed down). There is no need to do anything in such a case.
-  return (dt == table_ref)
-             ? dt->get_clone_for_derived_expr(
-                   current_thd, dt->get_derived_expr(field->field_index()),
-                   &dt->derived_query_expression()
-                        ->first_query_block()
-                        ->context)
-             : this;
+  TABLE_LIST *derived_table = dti->m_derived_table;
+  if (derived_table != table_ref) return this;
+  Query_block *query_block = dti->m_derived_query_block;
+  return query_block->clone_expression(
+      current_thd, query_block->get_derived_expr(field->field_index()),
+      (derived_table->is_system_view ||
+       (derived_table->referencing_view &&
+        derived_table->referencing_view->is_system_view)));
 }
 
 Item *Item_field::replace_with_derived_expr_ref(uchar *arg) {
-  TABLE_LIST *dt = pointer_cast<TABLE_LIST *>(arg);
+  Condition_pushdown::Derived_table_info *dti =
+      pointer_cast<Condition_pushdown::Derived_table_info *>(arg);
+
   // This column's table reference should be same as the derived table from
   // where the replacement is retrieved. If not, it is presumed that the
   // column has already been replaced with derived table expression (Maybe
   // there was an earlier reference to the same column in the condition that
   // is being pushed down). There is no need to do anything in such a case.
-  if (dt != table_ref) return this;
-  Query_block *select = dt->derived_query_expression()->first_query_block();
+  TABLE_LIST *derived_table = dti->m_derived_table;
+  if (derived_table != table_ref) return this;
+  Query_block *query_block = dti->m_derived_query_block;
+
   // Get the expression in the derived table and find the right ref item to
   // point to.
-  Item *select_item = dt->get_derived_expr(field->field_index());
+  Item *select_item = query_block->get_derived_expr(field->field_index());
   Item *new_ref = nullptr;
   if (select_item) {
     uint counter = 0;
     enum_resolution_type resolution;
-    if (find_item_in_list(current_thd, select_item, select->get_fields_list(),
-                          &counter, REPORT_EXCEPT_NOT_FOUND, &resolution)) {
-      Item **replace_item = &select->base_ref_items[counter];
-      new_ref = new Item_ref(&select->context, replace_item, nullptr, nullptr,
-                             (*replace_item)->item_name.ptr(),
+    if (find_item_in_list(current_thd, select_item,
+                          query_block->get_fields_list(), &counter,
+                          REPORT_EXCEPT_NOT_FOUND, &resolution)) {
+      Item **replace_item = &query_block->base_ref_items[counter];
+      new_ref = new Item_ref(&query_block->context, replace_item, nullptr,
+                             nullptr, (*replace_item)->item_name.ptr(),
                              resolution == RESOLVED_AGAINST_ALIAS);
     }
   }
@@ -1763,16 +1793,13 @@ bool Item_splocal::val_json(Json_wrapper *result) {
   return ret;
 }
 
-void Item_splocal::print(const THD *, String *str,
-                         enum_query_type query_type) const {
-  // With QT_DERIVED_TABLE_ORIG_FIELD_NAMES, print the SP variable name.
-  // Without QT_DERIVED_TABLE_ORIG_FIELD_NAMES, print the SP variable
-  // name, followed by '@' and the variable index.
-  // The first is used when cloning this item during condition pushdown
-  // to derived tables.
+void Item_splocal::print(const THD *thd, String *str, enum_query_type) const {
+  // While reparsing a derived table condition, print the SP variable name.
+  // Otherwise, print the SP variable name, followed by '@' and the variable
+  // index.
   str->reserve(m_name.length() + 8);
   str->append(m_name);
-  if (!(query_type & QT_DERIVED_TABLE_ORIG_FIELD_NAMES)) {
+  if (!thd->lex->reparse_derived_table_condition) {
     str->append('@');
     qs_append(m_var_idx, str);
   }
@@ -2391,16 +2418,17 @@ bool DTCollation::aggregate(DTCollation &dt, uint flags) {
 /******************************/
 static void my_coll_agg_error(DTCollation &c1, DTCollation &c2,
                               const char *fname) {
-  my_error(ER_CANT_AGGREGATE_2COLLATIONS, MYF(0), c1.collation->name,
-           c1.derivation_name(), c2.collation->name, c2.derivation_name(),
-           fname);
+  my_error(ER_CANT_AGGREGATE_2COLLATIONS, MYF(0), c1.collation->m_coll_name,
+           c1.derivation_name(), c2.collation->m_coll_name,
+           c2.derivation_name(), fname);
 }
 
 static void my_coll_agg_error(DTCollation &c1, DTCollation &c2, DTCollation &c3,
                               const char *fname) {
-  my_error(ER_CANT_AGGREGATE_3COLLATIONS, MYF(0), c1.collation->name,
-           c1.derivation_name(), c2.collation->name, c2.derivation_name(),
-           c3.collation->name, c3.derivation_name(), fname);
+  my_error(ER_CANT_AGGREGATE_3COLLATIONS, MYF(0), c1.collation->m_coll_name,
+           c1.derivation_name(), c2.collation->m_coll_name,
+           c2.derivation_name(), c3.collation->m_coll_name,
+           c3.derivation_name(), fname);
 }
 
 static void my_coll_agg_error(Item **args, uint count, const char *fname,
@@ -3361,7 +3389,7 @@ void Item_string::print(const THD *, String *str,
 
   if (print_introducer) {
     str->append('_');
-    str->append(replace_utf8_utf8mb3(collation.collation->csname));
+    str->append(collation.collation->csname);
   }
 
   str->append('\'');
@@ -3469,7 +3497,7 @@ longlong longlong_from_string_with_check(const CHARSET_INFO *cs,
 }
 
 longlong Item_string::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   return longlong_from_string_with_check(str_value.charset(), str_value.ptr(),
                                          str_value.ptr() + str_value.length(),
                                          -1);  // ignore sign issues
@@ -3555,6 +3583,22 @@ bool Item_param::itemize(Parse_context *pc, Item **res) {
       }
     }
     assert(false); /* purecov: inspected */
+  }
+  if (!lex->reparse_derived_table_params_at.empty()) {
+    // This parameter is a clone, find the Item_param which corresponds
+    // to it in the original statement - its "master".
+    List_iterator_fast<Item_param> it(lex->param_list);
+    Item_param *master;
+    auto master_pos = lex->reparse_derived_table_params_at.begin();
+    while ((master = it++)) {
+      if (*master_pos == master->pos_in_query) {
+        lex->reparse_derived_table_params_at.erase(master_pos);
+        // Register it against its master
+        pos_in_query = master->pos_in_query;
+        return master->add_clone(this);
+      }
+    }
+    assert(false);
   }
 
   return false;
@@ -3888,7 +3932,8 @@ bool Item_param::set_longdata(const char *str, ulong length) {
   @returns false if success, true if error
 */
 
-bool Item_param::set_from_user_var(THD *, const user_var_entry *entry) {
+bool Item_param::set_from_user_var(THD *thd [[maybe_unused]],
+                                   const user_var_entry *entry) {
   DBUG_TRACE;
   if (entry && entry->ptr()) {
     // An existing user variable that is not NULL
@@ -4449,8 +4494,8 @@ bool Item_param::convert_value() {
             return true;
           if (errors > 0) {
             my_error(ER_IMPOSSIBLE_STRING_CONVERSION, MYF(0),
-                     m_collation_source->name, m_collation_actual->name,
-                     "parameter");
+                     m_collation_source->m_coll_name,
+                     m_collation_actual->m_coll_name, "parameter");
             return true;
           }
           if (str_value.copy(convert_buffer)) return true;
@@ -5014,6 +5059,15 @@ static Item **resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
   ORDER *group_list = select->group_list.first;
   uint counter;
   enum_resolution_type resolution;
+
+  /*
+    If a query block is a table constructor, both the SELECT list and the GROUP
+    BY list don't exist. So there is no reason to search any of the lists.
+    Besides, for a table constructor, we don't initialize the base_ref_items
+    array until we process all the ROW() values. So we should give up if
+    base_ref_items is empty.
+  */
+  if (select->base_ref_items.empty()) return not_found_item;
 
   /*
     Search for a column or derived column named as 'ref' in the SELECT
@@ -5614,6 +5668,9 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
               intermediate value to resolve referenced item only.
               In this case the new Item_ref item is unused.
             */
+            if (resolution == RESOLVED_AGAINST_ALIAS)
+              res = &thd->lex->current_query_block()->base_ref_items[counter];
+
             Item_ref *rf =
                 new Item_ref(context, res, db_name, table_name, field_name,
                              resolution == RESOLVED_AGAINST_ALIAS);
@@ -6119,8 +6176,7 @@ String *Item::check_well_formed_result(String *str, bool send_error,
     size_t diff = min(size_t(str_end - print_byte), size_t(3));
     octet2hex(hexbuf, print_byte, diff);
     if (send_error && length_error) {
-      my_error(ER_INVALID_CHARACTER_STRING, MYF(0),
-               replace_utf8_utf8mb3(cs->csname), hexbuf);
+      my_error(ER_INVALID_CHARACTER_STRING, MYF(0), cs->csname, hexbuf);
       return nullptr;
     }
     if (truncate && length_error) {
@@ -6131,10 +6187,9 @@ String *Item::check_well_formed_result(String *str, bool send_error,
         str->length(valid_length);
       }
     }
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_INVALID_CHARACTER_STRING,
-                        ER_THD(thd, ER_INVALID_CHARACTER_STRING),
-                        replace_utf8_utf8mb3(cs->csname), hexbuf);
+    push_warning_printf(
+        thd, Sql_condition::SL_WARNING, ER_INVALID_CHARACTER_STRING,
+        ER_THD(thd, ER_INVALID_CHARACTER_STRING), cs->csname, hexbuf);
   }
   return str;
 }
@@ -7160,6 +7215,7 @@ bool Item::send(Protocol *protocol, String *buffer) {
     case MYSQL_TYPE_NEWDECIMAL:
     case MYSQL_TYPE_JSON: {
       const String *res = val_str(buffer);
+      assert(null_value == (res == nullptr));
       if (res != nullptr)
         return protocol->store_string(res->ptr(), res->length(),
                                       res->charset());
@@ -8173,18 +8229,11 @@ Item *Item_ref::compile(Item_analyzer analyzer, uchar **arg_p,
 
 void Item_ref::print(const THD *thd, String *str,
                      enum_query_type query_type) const {
-  bool is_view_ref;
-
-  if (  // Unresolved reference: print reference
-      !ref ||
-      // Reference to column of merged derived table, and we want to see the
-      // derived table's name, not that of the underlying table.
-      ((is_view_ref = (ref_type() == VIEW_REF)) &&
-       (query_type & QT_DERIVED_TABLE_ORIG_FIELD_NAMES)))
+  if (ref == nullptr)  // Unresolved reference: print reference
     return Item_ident::print(thd, str, query_type);
 
-  if (m_alias_of_expr && (*ref)->type() != Item::CACHE_ITEM && !is_view_ref &&
-      !table_name && item_name.ptr()) {
+  if (m_alias_of_expr && (*ref)->type() != Item::CACHE_ITEM &&
+      ref_type() != VIEW_REF && table_name == nullptr && item_name.ptr()) {
     Simple_cstring str1 = (*ref)->real_item()->item_name;
     append_identifier(thd, str, str1.ptr(), str1.length());
   } else
@@ -8606,10 +8655,12 @@ Item *Item_view_ref::replace_item_view_ref(uchar *arg) {
 }
 
 Item *Item_view_ref::replace_view_refs_with_clone(uchar *arg) {
-  TABLE_LIST *dt = pointer_cast<TABLE_LIST *>(arg);
+  Condition_pushdown::Derived_table_info *dti =
+      pointer_cast<Condition_pushdown::Derived_table_info *>(arg);
+
   // Replace the view ref with a clone to the referenced item.
   // We use a different context to resolve the clone from that of
-  // the derived table conetext.
+  // the derived table context.
   // For Ex:
   // SELECT * FROM
   // (SELECT f1 FROM (SELECT f1 FROM t1 GROUP BY f1) AS dt1) AS dt2
@@ -8622,9 +8673,11 @@ Item *Item_view_ref::replace_view_refs_with_clone(uchar *arg) {
   // Since the query block having dt2 is merged with the outer query
   // block, the context to resolve the field will be different than
   // the derived table context (dt1).
-  Name_resolution_context *context_to_use =
-      m_merged_derived_context ? m_merged_derived_context : context;
-  return dt->get_clone_for_derived_expr(current_thd, *ref, context_to_use);
+  return dti->m_derived_query_block->outer_query_block()->clone_expression(
+      current_thd, *ref,
+      (dti->m_derived_table->is_system_view ||
+       (dti->m_derived_table->referencing_view &&
+        dti->m_derived_table->referencing_view->is_system_view)));
 }
 
 bool Item_default_value::itemize(Parse_context *pc, Item **res) {

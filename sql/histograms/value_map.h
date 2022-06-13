@@ -47,6 +47,9 @@ class Mem_root_allocator;
 namespace histograms {
 
 class Histogram;
+template <class T>
+struct SingletonBucket;
+
 namespace equi_height {
 template <class T>
 class Bucket;
@@ -81,16 +84,62 @@ struct Histogram_comparator {
     return std::less<T>()(lhs, rhs);
   }
 
+  /**
+    Used by std::lower_bound when computing equal-to and less-than selectivity
+    to find the first bucket with an upper bound that is not less than b.
+  */
   template <class T>
   bool operator()(const equi_height::Bucket<T> &a, const T &b) const {
     return Histogram_comparator()(a.get_upper_inclusive(), b);
   }
 
+  /**
+   * Same as above, but for singleton histogram buckets.
+   */
+  template <class T>
+  bool operator()(const SingletonBucket<T> &a, const T &b) const {
+    return Histogram_comparator()(a.value, b);
+  }
+
+  /**
+    Used by std::upper_bound when computing greater-than selectivity in order to
+    find the first bucket with an upper bound that is greater than a.
+    Notice that the comparison function used by std::lower_bound and
+    std::upper_bound have the collection element as the first and second
+    argument, respectively.
+  */
+  template <class T>
+  bool operator()(const T &a, const equi_height::Bucket<T> &b) const {
+    return Histogram_comparator()(a, b.get_upper_inclusive());
+  }
+
+  /**
+   * Same as above, but for singleton histogram buckets.
+   */
+  template <class T>
+  bool operator()(const T &a, const SingletonBucket<T> &b) const {
+    return Histogram_comparator()(a, b.value);
+  }
+
+  /**
+    Used by std::is_sorted to verify that equi-height histogram buckets are
+    stored in sorted order. We consider bucket a = [a1, a2] to be less than
+    bucket b = [b1, b2]  if a2 < b1.
+  */
   template <class T>
   bool operator()(const equi_height::Bucket<T> &a,
                   const equi_height::Bucket<T> &b) const {
     return Histogram_comparator()(a.get_upper_inclusive(),
                                   b.get_lower_inclusive());
+  }
+
+  /**
+   * Same as above, but for singleton histogram buckets.
+   */
+  template <class T>
+  bool operator()(const SingletonBucket<T> &a,
+                  const SingletonBucket<T> &b) const {
+    return Histogram_comparator()(a.value, b.value);
   }
 };
 

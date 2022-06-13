@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2022, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@ INCLUDE(ndb_add_executable)
 # Add the ndbcluster plugin
 #
 SET(NDBCLUSTER_SOURCES
+  ../../sql/abstract_query_plan.cc
   plugin/ha_ndbcluster.cc
   plugin/ha_ndbcluster_cond.cc
   plugin/ha_ndbcluster_push.cc
@@ -103,6 +104,8 @@ SET(NDBCLUSTER_SOURCES
   plugin/ndb_mysql_services.cc
   plugin/ndb_blobs_buffer.cc
   plugin/ndb_table_stats.cc
+  plugin/ndb_index_stat_head_table.cc
+  plugin/ndb_index_stat_sample_table.cc
 )
 
 NDB_ADD_TEST("ndb_bitmap-t" "plugin/ndb_bitmap.cc" LIBS ndbgeneral)
@@ -212,13 +215,8 @@ FOREACH(flag ${DEBUG_FLAGS})
   STRING_APPEND(DEBUG_FLAGS_STRING " ${flag}")
 ENDFOREACH()
 
-IF(APPLE_ARM)
-  # Do not add any flags, ndbmtd gets signal 10 = sigbus
-  # Without any additional flags, ~10 out of 200 tests fail.
-ELSE()
-  STRING_APPEND(CMAKE_C_FLAGS_DEBUG "${DEBUG_FLAGS_STRING}")
-  STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG "${DEBUG_FLAGS_STRING}")
-ENDIF()
+STRING_APPEND(CMAKE_C_FLAGS_DEBUG "${DEBUG_FLAGS_STRING}")
+STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG "${DEBUG_FLAGS_STRING}")
 
 OPTION(WITH_ERROR_INSERT
   "Enable error injection in NDB" OFF)

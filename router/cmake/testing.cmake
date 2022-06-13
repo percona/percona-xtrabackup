@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2022, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -88,7 +88,7 @@ ENDFUNCTION()
 #
 # add a test for mysqlrouter project
 #
-# - adds dependency to the mysqlrouter_all target
+# - adds dependency to the mysqlrouter_all target (except 'integration' tests)
 # - adjusts runtime library search path for the build
 # - adds ASAN/LSAN suppressions
 #
@@ -120,7 +120,10 @@ FUNCTION(_ADD_TEST_FILE FILE)
     ${FILE} ${TEST_EXTRA_SOURCES}
     ADD_TEST ${test_name})
 
-  ADD_DEPENDENCIES(mysqlrouter_all ${test_target})
+  # don't add integration tests dependency on mysqld to 'mysqlrouter_all'
+  IF (NOT (TEST_MODULE STREQUAL "integration"))
+    ADD_DEPENDENCIES(mysqlrouter_all ${test_target})
+  ENDIF()
 
   FOREACH(libtarget ${TEST_LIB_DEPENDS})
     #add_dependencies(${test_target} ${libtarget})
@@ -237,4 +240,37 @@ FUNCTION(CREATE_HARNESS_TEST_DIRECTORY_POST_BUILD TARGET DIRECTORY_NAME)
         -E make_directory ${OUT_DIR}/${config_}/var/log/${DIRECTORY_NAME})
     ENDFOREACH()
   ENDIF()
+ENDFUNCTION()
+
+# create a static-library from a library target
+#
+# build a static library using:
+#
+# - the same sources
+# - the same include dirs
+# - the same library dependencies
+#
+# as the source library.
+#
+# @param TO    targetname of the newly created static library
+# @param FROM  targetname of the library to get sources from
+FUNCTION(STATICLIB_FROM_TARGET TO FROM)
+  # library as object-lib for testing
+  #
+  # SOURCES is relative to SOURCE_DIR
+  GET_TARGET_PROPERTY(_SOURCES ${FROM} SOURCES)
+  GET_TARGET_PROPERTY(_SOURCE_DIR ${FROM} SOURCE_DIR)
+
+  SET(_LIB_SOURCES)
+  FOREACH(F ${_SOURCES})
+    LIST(APPEND _LIB_SOURCES ${_SOURCE_DIR}/${F})
+  ENDFOREACH()
+
+  ADD_LIBRARY(${TO}
+    STATIC ${_LIB_SOURCES})
+  TARGET_INCLUDE_DIRECTORIES(${TO}
+    PUBLIC $<TARGET_PROPERTY:${FROM},INCLUDE_DIRECTORIES>)
+  TARGET_LINK_LIBRARIES(${TO}
+    PUBLIC $<TARGET_PROPERTY:${FROM},LINK_LIBRARIES>
+    )
 ENDFUNCTION()

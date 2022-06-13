@@ -208,12 +208,13 @@ void EstimateMaterializeCost(THD *thd, AccessPath *path) {
   path->cost = path->cost + std::max(table_path->cost, 0.0);
 }
 
-void EstimateAggregateCost(AccessPath *path) {
+void EstimateAggregateCost(AccessPath *path, const Query_block *query_block) {
   AccessPath *child = path->aggregate().child;
 
   // TODO(sgunders): How do we estimate how many rows aggregation
-  // will be reducing the output by?
-  path->num_output_rows = child->num_output_rows;
+  // will be reducing the output by in explicitly grouped queries?
+  path->num_output_rows =
+      query_block->is_implicitly_grouped() ? 1.0 : child->num_output_rows;
   path->init_cost = child->init_cost;
   path->init_once_cost = child->init_once_cost;
   path->cost = child->cost + kAggregateOneRowCost * child->num_output_rows;
@@ -237,33 +238,4 @@ void EstimateDeleteRowsCost(AccessPath *path) {
   path->cost = child->cost + kMaterializeOneRowCost *
                                  PopulationCount(buffered_tables) *
                                  child->num_output_rows;
-}
-
-double FindOutputRowsForJoin(AccessPath *left_path, AccessPath *right_path,
-                             const JoinPredicate *edge,
-                             double right_path_already_applied_selectivity) {
-  const double inner_rows =
-      right_path->num_output_rows / right_path_already_applied_selectivity;
-
-  double fanout = inner_rows * edge->selectivity;
-  if (edge->expr->type == RelationalExpression::LEFT_JOIN) {
-    // For outer joins, every outer row produces at least one row (if none
-    // are matching, we get a NULL-complemented row).
-    fanout = std::max(fanout, 1.0);
-  } else if (edge->expr->type == RelationalExpression::SEMIJOIN) {
-    // Semi- and antijoin estimation is pretty tricky, since we want isn't
-    // really selectivity; we want the probability that at least one row
-    // is matching, which is something else entirely. However, given that
-    // we only have selectivity to work with, we don't really have anything
-    // better than to estimate it as a normal join and cap the result
-    // at selectivity 1.0 (ie., each outer row generates at most one inner row).
-    fanout = std::min(fanout, 1.0);
-  } else if (edge->expr->type == RelationalExpression::ANTIJOIN) {
-    // Antijoin are estimated as simply the opposite of semijoin (see above),
-    // but wrongly estimating 0 rows (or, of course, a negative amount) could be
-    // really bad, so we assume at least 10% coming out as a fudge factor.
-    // It's better to estimate too high than too low here.
-    fanout = std::max(1.0 - fanout, 0.1);
-  }
-  return left_path->num_output_rows * fanout;
 }

@@ -504,12 +504,32 @@ SEL_TREE *tree_and(RANGE_OPT_PARAM *param, SEL_TREE *tree1, SEL_TREE *tree2) {
 
   if (param->has_errors()) return nullptr;
 
-  if (!tree1) return tree2;
-  if (!tree2) return tree1;
-  if (tree1->type == SEL_TREE::IMPOSSIBLE || tree2->type == SEL_TREE::ALWAYS)
-    return tree1;
-  if (tree2->type == SEL_TREE::IMPOSSIBLE || tree1->type == SEL_TREE::ALWAYS)
+  if (tree1 == nullptr) {
+    if (tree2 != nullptr) {
+      tree2->inexact = true;
+    }
     return tree2;
+  }
+  if (tree2 == nullptr) {
+    if (tree1 != nullptr) {
+      tree1->inexact = true;
+    }
+    return tree1;
+  }
+  if (tree1->type == SEL_TREE::IMPOSSIBLE) {
+    return tree1;
+  }
+  if (tree2->type == SEL_TREE::IMPOSSIBLE) {
+    return tree2;
+  }
+  if (tree2->type == SEL_TREE::ALWAYS) {
+    tree1->inexact |= tree2->inexact;
+    return tree1;
+  }
+  if (tree1->type == SEL_TREE::ALWAYS) {
+    tree2->inexact |= tree1->inexact;
+    return tree2;
+  }
 
   dbug_print_tree("tree1", tree1, param);
   dbug_print_tree("tree2", tree2, param);
@@ -521,7 +541,16 @@ SEL_TREE *tree_and(RANGE_OPT_PARAM *param, SEL_TREE *tree1, SEL_TREE *tree2) {
     SEL_ROOT *key1 = tree1->release_key(idx);
     SEL_ROOT *key2 = tree2->release_key(idx);
 
-    if (key1 || key2) {
+    if (key1 != nullptr || key2 != nullptr) {
+      if (key1 == nullptr || key2 == nullptr) {
+        // If AND-ing two trees together, and one has an expression over a
+        // different index from the other, we cannot guarantee that the entire
+        // expression is exact if that index is chosen. (The only time this
+        // really matters is when there's an AND within an OR; only the
+        // hypergraph optimizer cares about the inexact flag, and it does its
+        // own splitting of top-level ANDs.)
+        tree1->inexact = true;
+      }
       SEL_ROOT *new_key = key_and(param, key1, key2);
       tree1->set_key(idx, new_key);
       if (new_key) {
@@ -542,6 +571,7 @@ SEL_TREE *tree_and(RANGE_OPT_PARAM *param, SEL_TREE *tree1, SEL_TREE *tree2) {
     }
   }
   tree1->keys_map = result_keys;
+  tree1->inexact |= tree2->inexact;
 
   /* ok, both trees are index_merge trees */
   imerge_list_and_list(&tree1->merges, &tree2->merges);
@@ -653,6 +683,7 @@ SEL_TREE *tree_or(RANGE_OPT_PARAM *param, bool remove_jump_scans,
   if (param->has_errors()) return nullptr;
 
   if (!tree1 || !tree2) return nullptr;
+  tree1->inexact = tree2->inexact = tree1->inexact | tree2->inexact;
   if (tree1->type == SEL_TREE::IMPOSSIBLE || tree2->type == SEL_TREE::ALWAYS)
     return tree2;
   if (tree2->type == SEL_TREE::IMPOSSIBLE || tree1->type == SEL_TREE::ALWAYS)

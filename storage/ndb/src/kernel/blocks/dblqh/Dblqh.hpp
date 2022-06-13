@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1234,6 +1234,8 @@ public:
   typedef Ptr<GcpRecord> GcpRecordPtr;
 
   struct HostRecord {
+    Bitmask<(MAX_NDBMT_LQH_THREADS+1+31)/32> lqh_pack_mask;
+    Bitmask<(MAX_NDBMT_TC_THREADS+1+31)/32> tc_pack_mask;
     struct PackedWordsContainer lqh_pack[MAX_NDBMT_LQH_THREADS+1];
     struct PackedWordsContainer tc_pack[MAX_NDBMT_TC_THREADS+1];
     Uint8 inPackedList;
@@ -3315,6 +3317,13 @@ private:
                    CommitLogRecord* commitLogRecord,
                    LogPageRecordPtr & logPagePtr,
                    LogPartRecord *logPartPtrP);
+  Uint32 getHashKey(UintR Transid1,
+                    UintR Transid2,
+                    UintR TcOprec);
+  Uint32 getHashIndex(UintR Transid1,
+                      UintR Transid2,
+                      UintR TcOprec);
+  Uint32 getHashIndex(TcConnectionrec *regTcPtr);
   int  findTransaction(UintR Transid1,
                        UintR Transid2,
                        UintR TcOprec,
@@ -4272,9 +4281,10 @@ private:
 /* ACTUALLY USED FOR ALL ABORTS COMMANDED BY TC.                             */
 /* ------------------------------------------------------------------------- */
   UintR preComputedRequestInfoMask;
-#define TRANSID_HASH_SIZE 4096
-  UintR ctransidHash[TRANSID_HASH_SIZE];
-  
+
+  Uint32 *ctransidHash;
+  Uint32 ctransidHashSize;
+
   Uint32 c_diskless;
   Uint32 c_o_direct;
   Uint32 c_o_direct_sync_flag;
@@ -4491,6 +4501,8 @@ public:
   void execSET_LOCAL_LCP_ID_CONF(Signal*);
   void execCOPY_FRAG_NOT_IN_PROGRESS_REP(Signal*);
   void execCUT_REDO_LOG_TAIL_REQ(Signal*);
+
+  bool c_encrypted_filesystem;
 
   /**
    * Variable keeping track of which GCI to keep in REDO log

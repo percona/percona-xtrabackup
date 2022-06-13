@@ -43,12 +43,12 @@
 #include "my_psi_config.h"
 #include "my_thread.h"
 #include "my_thread_local.h"  // my_get_thread_local & my_set_thread_local
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_rwlock_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/components/services/bits/psi_mutex_bits.h"
+#include "mysql/components/services/bits/psi_rwlock_bits.h"
 #include "mysql/components/services/log_builtins.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
-#include "mysql/components/services/mysql_rwlock_bits.h"
-#include "mysql/components/services/psi_mutex_bits.h"
-#include "mysql/components/services/psi_rwlock_bits.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_rwlock.h"
@@ -1112,6 +1112,8 @@ int Srv_session::execute_command(enum enum_server_command command,
     COM_INIT_DB, for example
   */
   if (command != COM_QUERY) thd.reset_for_next_command();
+
+  mysql_thread_set_secondary_engine(false);
 
   assert(thd.m_statement_psi == nullptr);
   thd.m_statement_psi = MYSQL_START_STATEMENT(

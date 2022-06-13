@@ -81,7 +81,7 @@ void deinitialize_service_handles() {
 }
 static bool initialize_manifest_file_components(std::string components) {
   g_deployed_components =
-      new (std::nothrow) Deployed_components(my_progname, components);
+      new (std::nothrow) Deployed_components(my_progname, "", components);
   if (g_deployed_components == nullptr ||
       g_deployed_components->valid() == false) {
     /* Error would have been raised by Deployed_components constructor */

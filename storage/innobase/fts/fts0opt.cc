@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2021, Oracle and/or its affiliates.
+Copyright (c) 2007, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -74,7 +74,7 @@ static std::chrono::steady_clock::time_point last_check_sync_time;
 #if 0
 /** Check each table in round robin to see whether they'd
 need to be "optimized" */
-static	ulint	fts_optimize_sync_iterator = 0;
+static  ulint   fts_optimize_sync_iterator = 0;
 #endif
 
 /** State of a table within the optimization sub system. */
@@ -175,7 +175,7 @@ struct fts_optimize_t {
                  this is used to keep track of where
                  we are up to in the vector */
 
-  ibool done; /*!< TRUE when optimize finishes */
+  bool done; /*!< true when optimize finishes */
 
   ib_vector_t *words; /*!< Word + Nodes read from FTS_INDEX,
                       it contains instances of fts_word_t */
@@ -187,7 +187,7 @@ struct fts_optimize_t {
 
   ulint n_completed; /*!< Number of FTS indexes that have
                      been optimized */
-  ibool del_list_regenerated;
+  bool del_list_regenerated;
   /*!< BEING_DELETED list regenerated */
 };
 
@@ -336,7 +336,7 @@ static fts_word_t *fts_word_init(
     byte *utf8,       /*!< in: UTF-8 string */
     ulint len)        /*!< in: length of string in bytes */
 {
-  mem_heap_t *heap = mem_heap_create(sizeof(fts_node_t));
+  mem_heap_t *heap = mem_heap_create(sizeof(fts_node_t), UT_LOCATION_HERE);
 
   memset(word, 0, sizeof(*word));
 
@@ -406,7 +406,7 @@ static fts_node_t *fts_optimize_read_node(fts_word_t *word, /*!< in: */
 
 /** Callback function to fetch the rows in an FTS INDEX record.
  @return always returns non-NULL */
-ibool fts_optimize_index_fetch_node(
+bool fts_optimize_index_fetch_node(
     void *row,      /*!< in: sel_node_t* */
     void *user_arg) /*!< in: pointer to ib_vector_t */
 {
@@ -450,10 +450,10 @@ ibool fts_optimize_index_fetch_node(
   }
 
   if (fetch->total_memory >= fts_result_cache_limit) {
-    return (FALSE);
+    return false;
   }
 
-  return (TRUE);
+  return true;
 }
 
 /** Read the rows from the FTS inde.
@@ -633,7 +633,7 @@ static byte *fts_zip_read_word(
 /** Callback function to fetch and compress the word in an FTS
  INDEX record.
  @return false on EOF */
-static ibool fts_fetch_index_words(
+static bool fts_fetch_index_words(
     void *row,      /*!< in: sel_node_t* */
     void *user_arg) /*!< in: pointer to ib_vector_t */
 {
@@ -647,7 +647,7 @@ static ibool fts_fetch_index_words(
   /* Skip the duplicate words. */
   if (zip->word.f_len == static_cast<ulint>(len) &&
       !memcmp(zip->word.f_str, data, len)) {
-    return (TRUE);
+    return true;
   }
 
   ut_a(len <= FTS_MAX_WORD_LEN);
@@ -702,7 +702,7 @@ static ibool fts_fetch_index_words(
 
   ++zip->n_words;
 
-  return (zip->n_words >= zip->max_words ? FALSE : TRUE);
+  return zip->n_words >= zip->max_words ? false : true;
 }
 
 /** Finish Zip deflate. */
@@ -758,7 +758,7 @@ static void fts_zip_deflate_end(
   fts_zip_t *zip = nullptr;
   dberr_t error = DB_SUCCESS;
   mem_heap_t *heap = static_cast<mem_heap_t *>(optim->self_heap->arg);
-  ibool inited = FALSE;
+  bool inited = false;
 
   optim->trx->op_info = "fetching FTS index words";
 
@@ -813,7 +813,7 @@ static void fts_zip_deflate_end(
         error = DB_ERROR;
         break;
       } else {
-        inited = TRUE;
+        inited = true;
         error = fts_eval_sql(optim->trx, graph);
       }
 
@@ -828,7 +828,7 @@ static void fts_zip_deflate_end(
                                      " reading document. Retrying!";
 
           /* We need to reset the ZLib state. */
-          inited = FALSE;
+          inited = false;
           deflateEnd(zip->zp);
           fts_zip_init(zip);
 
@@ -864,9 +864,8 @@ static void fts_zip_deflate_end(
 
 /** Callback function to fetch the doc id from the record.
  @return always returns true */
-static ibool fts_fetch_doc_ids(
-    void *row,      /*!< in: sel_node_t* */
-    void *user_arg) /*!< in: pointer to ib_vector_t */
+static bool fts_fetch_doc_ids(void *row,      /*!< in: sel_node_t* */
+                              void *user_arg) /*!< in: pointer to ib_vector_t */
 {
   que_node_t *exp;
   int i = 0;
@@ -894,7 +893,7 @@ static ibool fts_fetch_doc_ids(
     }
   }
 
-  return (TRUE);
+  return true;
 }
 
 /** Read the rows from a FTS common auxiliary table.
@@ -907,7 +906,7 @@ dberr_t fts_table_fetch_doc_ids(
   dberr_t error;
   que_t *graph;
   pars_info_t *info = pars_info_create();
-  ibool alloc_bk_trx = FALSE;
+  bool alloc_bk_trx = false;
   char table_name[MAX_FULL_NAME_LEN];
 
   ut_a(fts_table->suffix != nullptr);
@@ -915,7 +914,7 @@ dberr_t fts_table_fetch_doc_ids(
 
   if (!trx) {
     trx = trx_allocate_for_background();
-    alloc_bk_trx = TRUE;
+    alloc_bk_trx = true;
   }
 
   trx->op_info = "fetching FTS doc ids";
@@ -1458,7 +1457,7 @@ void fts_word_free(fts_word_t *word) /*!< in: instance to free.*/
     if (fts_optimize_time_limit > std::chrono::seconds::zero() &&
         std::chrono::steady_clock::now() - start_time >
             fts_optimize_time_limit) {
-      optim->done = TRUE;
+      optim->done = true;
     }
   }
 
@@ -1471,7 +1470,7 @@ static fts_optimize_t *fts_optimize_create(
     dict_table_t *table) /*!< in: table with FTS indexes */
 {
   fts_optimize_t *optim;
-  mem_heap_t *heap = mem_heap_create(128);
+  mem_heap_t *heap = mem_heap_create(128, UT_LOCATION_HERE);
 
   optim = (fts_optimize_t *)mem_heap_zalloc(heap, sizeof(*optim));
 
@@ -1662,7 +1661,7 @@ static void fts_optimize_words(
     if (error == DB_SUCCESS) {
       if (!optim->done) {
         if (!fts_zip_read_word(optim->zip, word)) {
-          optim->done = TRUE;
+          optim->done = true;
         } else if (selected !=
                        fts_select_index(charset, word->f_str, word->f_len) &&
                    graph) {
@@ -1680,7 +1679,7 @@ static void fts_optimize_words(
 
       trx->error_state = DB_SUCCESS;
     } else {
-      optim->done = TRUE; /* Exit the loop. */
+      optim->done = true; /* Exit the loop. */
     }
   }
 
@@ -1782,7 +1781,7 @@ static void fts_optimize_words(
   optim->fts_index_table.index_id = index->id;
   optim->fts_index_table.charset = fts_index_get_charset(index);
 
-  optim->done = FALSE; /* Optimize until !done */
+  optim->done = false; /* Optimize until !done */
 
   /* We need to read the last word optimized so that we start from
   the next word. */
@@ -1812,7 +1811,7 @@ static void fts_optimize_words(
 
     /* Read the first word to optimize from the Zip buffer. */
     if (!fts_zip_read_word(optim->zip, &word)) {
-      optim->done = TRUE;
+      optim->done = true;
     } else {
       fts_optimize_words(optim, index, &word);
     }
@@ -2096,7 +2095,7 @@ static ulint fts_optimize_being_deleted_count(
     fts_sql_commit(optim->trx);
   }
 
-  optim->del_list_regenerated = TRUE;
+  optim->del_list_regenerated = true;
 
 func_exit:
   if (being_deleted_tbl != nullptr) {
@@ -2408,7 +2407,8 @@ static fts_msg_t *fts_optimize_create_msg(
   mem_heap_t *heap;
   fts_msg_t *msg;
 
-  heap = mem_heap_create(sizeof(*msg) + sizeof(ib_list_node_t) + 16);
+  heap = mem_heap_create(sizeof(*msg) + sizeof(ib_list_node_t) + 16,
+                         UT_LOCATION_HERE);
   msg = static_cast<fts_msg_t *>(mem_heap_alloc(heap, sizeof(*msg)));
 
   msg->ptr = ptr;
@@ -2447,18 +2447,18 @@ Optimize a table. */
 static
 void
 fts_optimize_do_table(
-	dict_table_t*	table)			/*!< in: table to optimize */
+        dict_table_t*   table)                  /*!< in: table to optimize */
 {
-	fts_msg_t*	msg;
+        fts_msg_t*      msg;
 
-	/* Optimizer thread could be shutdown */
-	if (!fts_optimize_wq) {
-		return;
-	}
+        /* Optimizer thread could be shutdown */
+        if (!fts_optimize_wq) {
+                return;
+        }
 
-	msg = fts_optimize_create_msg(FTS_MSG_OPTIMIZE_TABLE, table);
+        msg = fts_optimize_create_msg(FTS_MSG_OPTIMIZE_TABLE, table);
 
-	ib_wqueue_add(fts_optimize_wq, msg, msg->heap);
+        ib_wqueue_add(fts_optimize_wq, msg, msg->heap);
 }
 #endif
 
@@ -2493,7 +2493,7 @@ void fts_optimize_remove_table(dict_table_t *table) /*!< in: table to remove */
 }
 
 /** Send sync fts cache for the table.
-@param[in]	table	table to sync */
+@param[in]      table   table to sync */
 void fts_optimize_request_sync_table(dict_table_t *table) {
   fts_msg_t *msg;
   table_id_t *table_id;
@@ -2564,7 +2564,7 @@ static void fts_optimize_start_table(
 }
 
 /** Add the table to the vector if it doesn't already exist. */
-static ibool fts_optimize_new_table(
+static bool fts_optimize_new_table(
     ib_vector_t *tables, /*!< in/out: vector of tables */
     fts_msg_id_t *msg)   /*!< in: table to delete */
 {
@@ -2581,7 +2581,7 @@ static ibool fts_optimize_new_table(
       empty_slot = i;
     } else if (slot->table_id == table_id) {
       /* Already exists in our optimize queue. */
-      return (FALSE);
+      return false;
     }
   }
 
@@ -2596,17 +2596,19 @@ static ibool fts_optimize_new_table(
     slot = static_cast<fts_slot_t *>(ib_vector_push(tables, nullptr));
   }
 
-  *slot = {};
+  // Wee need to initialize a temporary to work around a gcc12 bug.
+  fts_slot_t tmp{};
+  *slot = tmp;
 
   slot->table_id = table_id;
   slot->state = FTS_STATE_LOADED;
   slot->interval_time = FTS_OPTIMIZE_INTERVAL;
 
-  return (TRUE);
+  return true;
 }
 
 /** Remove the table from the vector if it exists. */
-static ibool fts_optimize_del_table(
+static bool fts_optimize_del_table(
     ib_vector_t *tables, /*!< in/out: vector of tables */
     fts_msg_id_t *msg)   /*!< in: table to delete */
 {
@@ -2625,11 +2627,11 @@ static ibool fts_optimize_del_table(
 
       slot->state = FTS_STATE_EMPTY;
 
-      return (TRUE);
+      return true;
     }
   }
 
-  return (FALSE);
+  return false;
 }
 
 /** Calculate how many of the registered tables need to be optimized.
@@ -2710,7 +2712,7 @@ static bool fts_is_sync_needed(const ib_vector_t *tables) /*!< in: registered
       }
 
       if (table != nullptr) {
-        dict_table_close(table, TRUE, FALSE);
+        dict_table_close(table, true, false);
       }
 
       if (total_memory > fts_max_total_cache_size) {
@@ -2730,52 +2732,52 @@ Check whether a table needs to be optimized. */
 static
 void
 fts_optimize_need_sync(
-	ib_vector_t*	tables)	/*!< in: list of tables */
+        ib_vector_t*    tables) /*!< in: list of tables */
 {
-	dict_table_t*	table = NULL;
-	fts_slot_t*	slot;
-	ulint		num_table = ib_vector_size(tables);
+        dict_table_t*   table = NULL;
+        fts_slot_t*     slot;
+        ulint           num_table = ib_vector_size(tables);
 
-	if (!num_table) {
-		return;
-	}
+        if (!num_table) {
+                return;
+        }
 
-	if (fts_optimize_sync_iterator >= num_table) {
-		fts_optimize_sync_iterator = 0;
-	}
+        if (fts_optimize_sync_iterator >= num_table) {
+                fts_optimize_sync_iterator = 0;
+        }
 
-	slot = ib_vector_get(tables, fts_optimize_sync_iterator);
-	table = slot->table;
+        slot = ib_vector_get(tables, fts_optimize_sync_iterator);
+        table = slot->table;
 
-	if (!table) {
-		return;
-	}
+        if (!table) {
+                return;
+        }
 
-	ut_ad(table->fts);
+        ut_ad(table->fts);
 
-	if (table->fts->cache) {
-		ulint	deleted = table->fts->cache->deleted;
+        if (table->fts->cache) {
+                ulint   deleted = table->fts->cache->deleted;
 
-		if (table->fts->cache->added
-		    >= fts_optimize_add_threshold) {
-			fts_sync_table(table);
-		} else if (deleted >= fts_optimize_delete_threshold) {
-			fts_optimize_do_table(table);
+                if (table->fts->cache->added
+                    >= fts_optimize_add_threshold) {
+                        fts_sync_table(table);
+                } else if (deleted >= fts_optimize_delete_threshold) {
+                        fts_optimize_do_table(table);
 
-			mutex_enter(&table->fts->cache->deleted_lock);
-			table->fts->cache->deleted -= deleted;
-			mutex_exit(&table->fts->cache->deleted_lock);
-		}
-	}
+                        mutex_enter(&table->fts->cache->deleted_lock);
+                        table->fts->cache->deleted -= deleted;
+                        mutex_exit(&table->fts->cache->deleted_lock);
+                }
+        }
 
-	fts_optimize_sync_iterator++;
+        fts_optimize_sync_iterator++;
 
-	return;
+        return;
 }
 #endif
 
 /** Sync fts cache of a table
-@param[in]	table_id	table id */
+@param[in]      table_id        table id */
 void fts_optimize_sync_table(table_id_t table_id) {
   dict_table_t *table = nullptr;
   MDL_ticket *mdl = nullptr;
@@ -2798,7 +2800,7 @@ static void fts_optimize_thread(ib_wqueue_t *wq) {
   ib_vector_t *tables;
   ib_alloc_t *heap_alloc;
   ulint current = 0;
-  ibool done = FALSE;
+  bool done = false;
   ulint n_tables = 0;
   ulint n_optimize = 0;
 
@@ -2806,7 +2808,7 @@ static void fts_optimize_thread(ib_wqueue_t *wq) {
 
   THD *thd = create_internal_thd();
 
-  heap = mem_heap_create(sizeof(dict_table_t *) * 64);
+  heap = mem_heap_create(sizeof(dict_table_t *) * 64, UT_LOCATION_HERE);
   heap_alloc = ib_heap_allocator_create(heap);
 
   tables = ib_vector_create(heap_alloc, sizeof(fts_slot_t), 4);
@@ -2860,7 +2862,7 @@ static void fts_optimize_thread(ib_wqueue_t *wq) {
           break;
 
         case FTS_MSG_STOP:
-          done = TRUE;
+          done = true;
           break;
 
         case FTS_MSG_ADD_TABLE:

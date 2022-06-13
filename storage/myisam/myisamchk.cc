@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -227,8 +227,8 @@ static struct my_option my_long_options[] = {
      "Correct checksum information for table.", nullptr, nullptr, nullptr,
      GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #ifdef NDEBUG
-    {"debug", '#', "This is a non-debug version. Catch this and exit.", 0, 0, 0,
-     GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+    {"debug", '#', "This is a non-debug version. Catch this and exit.", nullptr,
+     nullptr, nullptr, GET_DISABLED, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #else
     {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'.", nullptr,
      nullptr, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -1199,8 +1199,8 @@ static void descript(MI_CHECK *param, MI_INFO *info, char *name) {
     puts("Packed");
   else
     puts("Fixed length");
-  printf("Character set:       %s (%d)\n",
-         get_charset_name(share->state.header.language),
+  printf("Collation:           %s (%d)\n",
+         get_collation_name(share->state.header.language),
          share->state.header.language);
 
   if (param->testflag & T_VERBOSE) {

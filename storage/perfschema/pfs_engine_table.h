@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@
 #include "my_compiler.h"
 
 #include "my_inttypes.h"
-#include "mysql/components/services/mysql_mutex_bits.h"
+#include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "sql/auth/auth_common.h" /* struct ACL_* */
 #include "sql/key.h"
@@ -266,7 +266,7 @@ struct PFS_key_reader {
 
 class PFS_engine_key {
  public:
-  PFS_engine_key(const char *name) : m_name(name), m_is_null(true) {}
+  explicit PFS_engine_key(const char *name) : m_name(name), m_is_null(true) {}
 
   virtual ~PFS_engine_key() = default;
 
@@ -298,7 +298,7 @@ class PFS_engine_index_abstract {
 
 class PFS_engine_index : public PFS_engine_index_abstract {
  public:
-  PFS_engine_index(PFS_engine_key *key_1)
+  explicit PFS_engine_index(PFS_engine_key *key_1)
       : m_key_ptr_1(key_1),
         m_key_ptr_2(nullptr),
         m_key_ptr_3(nullptr),
