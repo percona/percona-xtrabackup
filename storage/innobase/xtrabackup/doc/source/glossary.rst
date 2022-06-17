@@ -19,8 +19,8 @@
      contains the data of it (which is a standard Comma Separated Value file).
 
    .exp
-     Files with the ``.exp`` extension are created by |Percona XtraBackup| per
-     each |InnoDB| tablespace when the `--export` option is
+     Files with the ``.exp`` extension are created by *Percona XtraBackup* per
+     each *InnoDB* tablespace when the `--export` option is
      used in the prepare phase. See :doc:`restoring individual tables <xtrabackup_bin/restoring_individual_tables>`.
 
    .frm
@@ -35,14 +35,14 @@
    .MRG
      Each table using the :program:`MERGE` storage engine, besides of a
      :term:`.frm` file, will have :term:`.MRG` file containing the names of the
-     |MyISAM| tables associated with it.
+     *MyISAM* tables associated with it.
 
    .MYD
-     Each |MyISAM| table has ``.MYD`` (MYData) file which contains the data on
+     Each *MyISAM* table has ``.MYD`` (MYData) file which contains the data on
      it.
 
    .MYI
-     Each |MyISAM| table has ``.MYI`` (MYIndex) file which contains the table's
+     Each *MyISAM* table has ``.MYI`` (MYIndex) file which contains the table's
      indexes.
 
    .opt
@@ -103,7 +103,7 @@
 
    innodb_buffer_pool_size
      The size in bytes of the memory buffer to cache data and indexes of
-     |InnoDB|'s tables. This aims to reduce disk access to provide better
+     *InnoDB*'s tables. This aims to reduce disk access to provide better
      performance. By default:
 
       .. code-block:: text
@@ -140,7 +140,7 @@
       or start the server with ``--innodb_file_per_table``.
 
    innodb_log_group_home_dir
-     Specifies the location of the |InnoDB| log files:
+     Specifies the location of the *InnoDB* log files:
 
       .. code-block:: text
 
@@ -183,12 +183,12 @@
  
    xbcrypt
      To support encryption and decryption of the backups, a new tool xbcrypt
-     was introduced to |Percona XtraBackup|. This utility has been modeled
+     was introduced to *Percona XtraBackup*. This utility has been modeled
      after the xbstream binary to perform encryption and decryption outside of
-     |Percona XtraBackup|.
+     *Percona XtraBackup*.
 
    xbstream
-     To support simultaneous compression and streaming, |Percona XtraBackup| uses the xbstream format. For more information, see :option:`--stream` 
+     To support simultaneous compression and streaming, *Percona XtraBackup* uses the xbstream format. For more information, see :option:`--stream` 
 
    XtraDB
      *Percona XtraDB* is an enhanced version of the InnoDB storage engine,

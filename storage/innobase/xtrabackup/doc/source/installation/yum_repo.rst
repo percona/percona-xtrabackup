@@ -25,8 +25,7 @@ GA binaries and associated files.
 The ``percona-xtrabackup-24-debuginfo`` package contains the debug symbols for
 binaries in ``percona-xtrabackup-24``.
 
-The ``percona-xtrabackup-test-24`` package contains the test suite for |Percona
-XtraBackup|.
+The ``percona-xtrabackup-test-24`` package contains the test suite for *Percona XtraBackup*.
 
 The ``percona-xtrabackup`` package contains the older version of the
 *Percona XtraBackup*.
