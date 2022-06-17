@@ -69,8 +69,7 @@ additional `.cfp` file be listed for encrypted tables.
   *MySQL* uses `.cfg` file which contains *InnoDB* dictionary dump in
   special format. This format is different from the `.exp`` one which is
   used in XtraDB for the same purpose. Strictly speaking, a `.cfg``
-  file is not required to import a tablespace to *MySQL* 5.7 or |Percona
-  Server| 5.7. A tablespace will be imported successfully even if it is from
+  file is not required to import a tablespace to *MySQL* 5.7 or *Percona Server for MySQL* 5.7. A tablespace will be imported successfully even if it is from
   another server, but *InnoDB* will do schema validation if the corresponding
   `.cfg` file is present in the same directory.
 

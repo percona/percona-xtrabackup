@@ -48,7 +48,7 @@ Version specific information
 
 - 2.4.25 - Added the support for :ref:`Microsoft Azure Cloud Storage <xbcloud_azure>`
 - 2.4.21 - Added s3-storage-class and google-storage-class
-- 2.4.14 - Added the support of *Amazon S3*, MinIO and Google Cloud Storage storage types
+- 2.4.14 - Added the support of *Amazon S3*, *MinIO* and *Google Cloud Storage* storage types.
 - 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
   `.cnf` file
 - 2.3.1-beta1 - Implemented support different :ref:`authentication options
@@ -152,11 +152,11 @@ The following options are available when using *Amazon S3*:
 
            If you use the GLACIER storage class, the object must be `restored to S3 <https://docs.aws.amazon.com/AmazonS3/latest/dev/restoring-objects.html>`_ before restoring the backup.
 
-       Also supports using custom S3 implementations such as MinIO or CephRadosGW.
+       Also supports using custom S3 implementations such as *MinIO* or CephRadosGW.
 
 .. _minio:
 
-Creating a full backup with MinIO
+Creating a full backup with *MinIO*
 ================================================================================
 
 .. code-block:: bash
@@ -175,7 +175,7 @@ Creating a full backup with MinIO
 Creating a full backup with Google Cloud Storage
 ================================================================================
 
-The support for Google Cloud Storage is implemented using the interoperability
+The support for *Google Cloud Storage* is implemented using the interoperability
 mode. This mode was especially designed to interact with cloud services
 compatible with *Amazon S3*.
 
@@ -195,7 +195,7 @@ compatible with *Amazon S3*.
    --parallel=10 \
    $(date -I)-full_backup
 
-The following options are available when using Google Cloud Storage:
+The following options are available when using *Google Cloud Storage*:
 
 - --google-access-key = <ACCESS KEY ID>
 - --google-secret-key = <SECRET ACCESS KEY>
@@ -462,7 +462,7 @@ Command-line options
 
 .. option:: --storage=[swift*Amazon S3*google]
 
-   Cloud storage option. *xbcloud* supports Swift, MinIO, and AWS S3.
+   Cloud storage option. *xbcloud* supports Swift, *MinIO*, and AWS S3.
    The default value is ``swift``.
 
 .. option:: --swift-auth-url
@@ -557,7 +557,3 @@ For v3 additional options are:
 .. option:: --swift-domain-id
 
    Swift domain ID.
-
-.. Google Cloud Storage replace:: Google Cloud Storage
-.. *Amazon S3* replace:: Amazon S3
-.. MinIO replace:: MinIO
