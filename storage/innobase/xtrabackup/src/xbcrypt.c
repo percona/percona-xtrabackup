@@ -165,6 +165,14 @@ main(int argc, char **argv)
 
 	crc_init();
 
+	/* Get the env value XBCRYPT_ENCRYPTION_KEY */
+	if (opt_encrypt_key == NULL) {
+	  char *val;
+	  if ((val = getenv("XBCRYPT_ENCRYPTION_KEY")) != NULL) {
+	    opt_encrypt_key = my_strdup(PSI_NOT_INSTRUMENTED, val, MYF(MY_FAE));
+	  }
+	}
+
 	if (opt_input_file) {
 		MY_STAT 	input_file_stat;
 
@@ -266,6 +274,7 @@ cleanup:
 	}
 
 	my_cleanup_options(my_long_options);
+	my_free(opt_encrypt_key);
 
 	my_end(0);
 

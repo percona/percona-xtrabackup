@@ -124,6 +124,15 @@ Tutorials, Recipes, How-tos
 
 * :ref:`aux-guides`
 
+Release Notes
+=================
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+   
+   release-notes
+
 References
 ==========
 
@@ -131,11 +140,12 @@ References
    :maxdepth: 1
    :glob:
 
-   release-notes
+
    xtrabackup_bin/xbk_option_reference
    innobackupex/innobackupex_option_reference
    xbcloud/xbcloud
    xbcloud/xbcloud_exbackoff
+   xbcloud/xbcloud_azure
    xbcrypt/xbcrypt
    xbstream/xbstream
    known_issues
