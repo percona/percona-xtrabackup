@@ -160,6 +160,10 @@ bool xtrabackup_export = false;
 bool xtrabackup_apply_log_only = false;
 
 longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
+bool xtrabackup_use_memory_set = false;
+uint xtrabackup_use_free_memory_pct = 0;
+bool predict_memory = false;
+
 bool xtrabackup_create_ib_logfile = false;
 
 long xtrabackup_throttle = 0; /* 0:unlimited */
@@ -188,6 +192,8 @@ lsn_t xtrabackup_archived_to_lsn = 0; /* for --archived-to-lsn */
 char *xtrabackup_tables = NULL;
 char *xtrabackup_tables_file = NULL;
 char *xtrabackup_tables_exclude = NULL;
+
+lsn_t xtrabackup_start_checkpoint;
 
 typedef std::list<xb_regex_t> regex_list_t;
 static regex_list_t regex_include_list;
@@ -251,6 +257,9 @@ char *xtrabackup_encrypt_key = NULL;
 char *xtrabackup_encrypt_key_file = NULL;
 uint xtrabackup_encrypt_threads;
 ulonglong xtrabackup_encrypt_chunk_size = 0;
+
+size_t redo_memory = 0;
+ulint redo_frames = 0;
 
 ulint xtrabackup_rebuild_threads = 1;
 
@@ -573,6 +582,7 @@ enum options_xtrabackup {
   OPT_XTRA_APPLY_LOG_ONLY,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
+  OPT_XTRA_USE_FREE_MEMORY_PCT,
   OPT_XTRA_THROTTLE,
   OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
@@ -768,6 +778,12 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_use_memory, (G_PTR *)&xtrabackup_use_memory, 0,
      GET_LL, REQUIRED_ARG, 100 * 1024 * 1024L, 1024 * 1024L, LLONG_MAX, 0,
      1024 * 1024L, 0},
+    {"use-free-memory-pct", OPT_XTRA_USE_FREE_MEMORY_PCT,
+     "This option specifies the percentage of free memory to be used by"
+     " buffer pool at --prepare stage (default is 0% - disabled). ",
+     (G_PTR *)&xtrabackup_use_free_memory_pct,
+     (G_PTR *)&xtrabackup_use_free_memory_pct, 0, GET_UINT, REQUIRED_ARG, 0, 0,
+     100, 0, 1, 0},
     {"throttle", OPT_XTRA_THROTTLE,
      "limit count of IO operations (pairs of read&write) per second to IOS "
      "values (for '--backup')",
@@ -1859,6 +1875,9 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
     case OPT_XTRA_ENCRYPT_KEY:
       hide_option(argument, &xtrabackup_encrypt_key);
       break;
+    case OPT_XTRA_USE_MEMORY:
+      xtrabackup_use_memory_set = true;
+      break;
 
 #include "sslopt-case.h"
 
@@ -2086,8 +2105,46 @@ static bool innodb_init_param(void) {
   changes the value so that it becomes the number of database pages. */
 
   srv_buf_pool_chunk_unit = 134217728;
-  srv_buf_pool_size = (ulint)xtrabackup_use_memory;
   srv_buf_pool_instances = 1;
+  predict_memory = xtrabackup_prepare && redo_memory != 0 && redo_frames != 0 &&
+                   !xtrabackup_use_memory_set &&
+                   xtrabackup_use_free_memory_pct != 0;
+
+  if (predict_memory) {
+    ulint free_memory_total = xtrabackup::utils::host_free_memory();
+    ulint free_memory_usable =
+        (free_memory_total * xtrabackup_use_free_memory_pct) / 100;
+    ulint mem =
+        buf_pool_size_align(redo_memory + (redo_frames * UNIV_PAGE_SIZE));
+    if (mem > (ulint)xtrabackup_use_memory) {
+      xb::info() << "Got prediction from backup: " << redo_memory
+                 << " bytes for parsing and " << redo_frames
+                 << " frames. Requesting " << mem << " for --prepare.";
+      if (mem > free_memory_usable) {
+        xb::info() << "Required memory will exceed Free memory configuration. "
+                   << "Free memory: " << free_memory_total << ". "
+                   << "Free memory %: " << xtrabackup_use_free_memory_pct
+                   << ". Allowed usage of Free Memory: " << free_memory_usable;
+
+        /* We might exaust free memory if we pass 100% as parameter.
+         * In this case we align usable memory down
+         */
+        if (buf_pool_size_align(free_memory_usable) > free_memory_total) {
+          free_memory_usable = buf_pool_size_align_down(free_memory_usable);
+        }
+        xtrabackup_use_memory = free_memory_usable;
+      } else {
+        xtrabackup_use_memory = mem;
+      }
+      xb::info() << "Setting buffer pool to: " << xtrabackup_use_memory;
+    }
+    if ((long)redo_frames > innobase_open_files) {
+      xb::info() << "Setting innobase_open_files to: " << redo_frames;
+      innobase_open_files = (long)redo_frames;
+    }
+  }
+
+  srv_buf_pool_size = (ulint)xtrabackup_use_memory;
   srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
 
   srv_n_file_io_threads = (ulint)innobase_file_io_threads;
@@ -2664,6 +2721,12 @@ static bool xtrabackup_read_metadata(char *filename) {
       1) {
     backup_redo_log_flushed_lsn = 0;
   }
+  if (fscanf(fp, "redo_memory = %lu\n", &redo_memory) != 1) {
+    redo_memory = 0;
+  }
+  if (fscanf(fp, "redo_frames = %lu\n", &redo_frames) != 1) {
+    redo_frames = 0;
+  }
 
 end:
   fclose(fp);
@@ -2684,9 +2747,13 @@ static void xtrabackup_print_metadata(char *buf, size_t buf_len) {
            "\n"
            "last_lsn = " LSN_PF
            "\n"
-           "flushed_lsn = " LSN_PF "\n",
+           "flushed_lsn = " LSN_PF
+           "\n"
+           "redo_memory = %ld\n"
+           "redo_frames = %ld\n",
            metadata_type_str, metadata_from_lsn, metadata_to_lsn,
-           metadata_last_lsn, opt_lock_ddl ? backup_redo_log_flushed_lsn : 0);
+           metadata_last_lsn, opt_lock_ddl ? backup_redo_log_flushed_lsn : 0,
+           redo_memory, redo_frames);
 }
 
 /***********************************************************************
@@ -4384,6 +4451,9 @@ void xtrabackup_backup_func(void) {
 
   io_watching_thread_stop = true;
 
+  auto redo_memory_requirements = xtrabackup::recv_backup_heap_used();
+  redo_memory = redo_memory_requirements.first;
+  redo_frames = redo_memory_requirements.second;
   if (!validate_missing_encryption_tablespaces()) {
     exit(EXIT_FAILURE);
   }
@@ -4815,7 +4885,8 @@ static void xtrabackup_stats_func(int argc, char **argv) {
                 "index statistics.";
   xb::info() << "Using " << xtrabackup_use_memory
              << " bytes for buffer pool (set by "
-                "--use-memory parameter)";
+             << ((predict_memory) ? "--use-free-memory-pct" : "--use-memory")
+             << " parameter)";
 
   if (innodb_init(true, false)) exit(EXIT_FAILURE);
 
@@ -7039,8 +7110,9 @@ skip_check:
 
   xb::info() << "Starting InnoDB instance for recovery.";
   xb::info() << "Using " << xtrabackup_use_memory
-             << " bytes for buffer pool "
-                "(set by --use-memory parameter)";
+             << " bytes for buffer pool (set by "
+             << ((predict_memory) ? "--use-free-memory-pct" : "--use-memory")
+             << " parameter)";
 
   if (innodb_init(true, true)) {
     goto error_cleanup;
@@ -7261,7 +7333,11 @@ skip_check:
 
       my_delete(logfilename, MYF(0));
     }
-
+    /* We don't need bigger buffer pool on the second start, lowering
+     * memory footprint */
+    xtrabackup_use_memory = 128 * 1024 * 1024;
+    srv_buf_pool_size = (ulint)xtrabackup_use_memory;
+    srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
     if (innodb_init(false, false)) goto error;
 
     if (innodb_end()) goto error;

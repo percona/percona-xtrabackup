@@ -1009,6 +1009,7 @@ bool Redo_Log_Data_Manager::start() {
 
   start_checkpoint_lsn = reader.get_start_checkpoint_lsn();
   last_checkpoint_lsn = start_checkpoint_lsn;
+  xtrabackup_start_checkpoint = start_checkpoint_lsn;
   stop_lsn = 0;
 
   if (opt_lock_ddl_per_table) {

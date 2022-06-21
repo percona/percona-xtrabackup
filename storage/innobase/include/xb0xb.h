@@ -29,7 +29,7 @@ extern bool redo_catchup_completed;
 extern bool opt_page_tracking;
 extern char *xtrabackup_incremental;
 extern lsn_t incremental_start_checkpoint_lsn;
-
+extern lsn_t xtrabackup_start_checkpoint;
 extern bool use_dumped_tablespace_keys;
 
 extern std::vector<ulint> invalid_encrypted_tablespace_ids;
@@ -76,5 +76,15 @@ bool check_if_skip_table(
     const char *name); /*!< in: path to the table */
 
 extern bool xtrabackup_stats;
+
+/** Amount of memory calculated at --backup for recovery hash records */
+extern size_t redo_memory;
+
+/** Number of total frames that will be required for prepare */
+extern ulint redo_frames;
+
+/** This variables holds the result of all conditions that must be set in order
+to enable predict memory functionality */
+extern bool predict_memory;
 #define SQUOTE(str) "'" << str << "'"
 #endif
