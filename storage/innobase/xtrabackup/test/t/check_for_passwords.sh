@@ -41,15 +41,17 @@ function grep_in_datadir_ps() {
   echo "backup pid is $job_pid"
 
   #sleep is to ensure password string is removed from ps
+  sleep 3
   while ! grep -q 'Connecting to MySQL server host' $topdir/pxb_2722.log
   do
 	  sleep 1;
   done
 
-  vlog "check for $password_string string in ps with $job_pid "
-  if ps -ef | grep $job_pid | grep "xtrabackup.*$password_string" | grep -v grep
-  then
-     die "found $password_string string in ps output"
+  vlog "check for $password_string in xtrabackup ps with $job_pid "
+  ps_output=$(ps -ef | grep $job_pid | grep xtrabackup | grep -v grep)
+  echo "ps output xtrabckup is ${ps_output}"
+  if [[ ${ps_output} == *${password_string}* ]];  then
+     die "found $password_string string in $ps_output"
   fi
 
   ###kill running mysql query on MyISAM table to let backup resume
@@ -70,7 +72,7 @@ function grep_in_datadir_ps() {
 }
 
 ##grep for encryption key while decrypting
-function grep_in_datadir_ps_decrypt() {
+function grep_in_datadir_decrypt() {
 
   additional_options=$1
 
@@ -78,24 +80,7 @@ function grep_in_datadir_ps_decrypt() {
 
   $XB_BIN $XB_ARGS --decrypt=AES256 $additional_options \
   --target-dir=$topdir/backup \
-       2> >( tee $topdir/pxb_2740.log)&
-  job_pid=$!
-  wait_for_file_to_generated $topdir/pxb_2740.log
-
-  echo "backup pid is $job_pid"
-
-  #sleep is to ensure password string is removed from ps
-  while ! grep -q 'decrypting' $topdir/pxb_2740.log
-  do
-	  sleep 1;
-  done
-
-  vlog "check for $password_string string in ps with $job_pid "
-  if ps -ef | grep $job_pid | grep "xbcrypt.*$password_string" | grep -v grep
-  then
-     die "found $password_string string in ps output"
-  fi
-  run_cmd wait $job_pid
+       2> >( tee $topdir/pxb_2740.log)
 
   vlog "check for $password_string string in directory $topdir"
   if grep -rq $password_string $topdir/backup
@@ -135,5 +120,5 @@ vlog "check for encryption string in data directory"
 grep_in_datadir_ps "--password=$password_string --encrypt=AES256 --encrypt-key=r______$password_string"
 
 vlog "check for encryption string during decryption"
-grep_in_datadir_ps_decrypt " --encrypt=AES256 --encrypt-key=r______$password_string"
+grep_in_datadir_decrypt " --encrypt=AES256 --encrypt-key=r______$password_string"
 

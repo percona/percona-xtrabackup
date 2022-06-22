@@ -2637,6 +2637,8 @@ bool decrypt_decompress() {
   ret = run_data_threads(".", decrypt_decompress_thread_func,
                          xtrabackup_parallel, "decrypt and decompress");
 
+  debug_sync_point("decrypt_decompress_func");
+
   if (ds_data != NULL) {
     ds_destroy(ds_data);
   }
