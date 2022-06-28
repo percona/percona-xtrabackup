@@ -59,7 +59,7 @@ MYSQL_ADD_PLUGIN(heap ha_heap.cc
   LINK_LIBRARIES heap_library
   )
 
-IF(WITH_UNIT_TESTS)
+IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
   MYSQL_ADD_EXECUTABLE(hp_test1 hp_test1.cc _check.cc
     ADD_TEST hp_test1
     LINK_LIBRARIES heap_library
