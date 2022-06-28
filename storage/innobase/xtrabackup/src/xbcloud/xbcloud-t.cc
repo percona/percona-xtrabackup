@@ -1,6 +1,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "azure.h"
 #include "http.h"
 #include "s3.h"
 #include "swift.h"
@@ -38,7 +39,8 @@ MATCHER_P(PayloadEq, payload, "") {
 
 TEST(s3_client, basicDNSv4) {
   Mock_http_client http_client;
-  S3_client c(&http_client, "us-east-1", "my-access-key-id", "my-secret-key");
+  S3_client c(&http_client, "us-east-1", "my-access-key-id", "my-secret-key", 1,
+              1);
   EXPECT_CALL(
       http_client,
       make_request(
@@ -77,7 +79,8 @@ TEST(s3_client, basicDNSv4) {
 
 TEST(s3_client, basicPATHv4) {
   Mock_http_client http_client;
-  S3_client c(&http_client, "us-east-1", "my-access-key-id", "my-secret-key");
+  S3_client c(&http_client, "us-east-1", "my-access-key-id", "my-secret-key", 1,
+              1);
   c.set_api_version(S3_V4);
   EXPECT_CALL(
       http_client,
@@ -127,7 +130,8 @@ TEST(s3_client, basicPATHv4) {
 
 TEST(s3_client, basicEndpoint) {
   Mock_http_client http_client;
-  S3_client c(&http_client, "us-east-1", "my-access-key-id", "my-secret-key");
+  S3_client c(&http_client, "us-east-1", "my-access-key-id", "my-secret-key", 1,
+              1);
   c.set_endpoint("my.custom.endpoint.com");
   EXPECT_CALL(
       http_client,
@@ -200,7 +204,8 @@ TEST(s3v4_signer, sessionToken) {
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key", "session_token");
+  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key",
+                     "session_token");
 
   signer.sign_request("myhost", "mybucket", req, 1555892546);
 
@@ -226,14 +231,14 @@ TEST(s3v4_signer, storageClass) {
 
   signer.sign_request("myhost", "mybucket", req, 1555892546);
 
-  ASSERT_STREQ(req.headers().at("Authorization").c_str(),
-               "AWS4-HMAC-SHA256 "
-               "Credential=access_key/20190422/example-region/s3/aws4_request, "
-               "SignedHeaders=content-length;content-type;host;x-amz-content-"
-               "sha256;x-amz-date;x-amz-security-token;x-amz-storage-class, "
-               "Signature="
-               "891034a3bd13729689a54d363380ad1849b26bf2b9e461d4c2bdeeca32e0c1c"
-               "e");
+  ASSERT_STREQ(
+      req.headers().at("Authorization").c_str(),
+      "AWS4-HMAC-SHA256 "
+      "Credential=access_key/20190422/example-region/s3/aws4_request, "
+      "SignedHeaders=content-length;content-type;host;x-amz-content-"
+      "sha256;x-amz-date;x-amz-security-token;x-amz-storage-class, "
+      "Signature="
+      "fe6c888f22fb23a7a3fe6f663013b5df3cc761c3777ed4368b325114c885320f");
 }
 
 TEST(s3v2_signer, basicDNS) {
@@ -487,4 +492,100 @@ TEST(keystone_v3, project_scoped_with_project_domain_keystone_v3_success) {
   EXPECT_EQ(
       auth_info.url,
       "https://example.com:8080/v1/AUTH_67a0195262ec4452bd2af48e75bcb687");
+}
+
+TEST(azure_client, basicDNSv4) {
+  Mock_http_client http_client;
+  Azure_client c(&http_client, "my-storage-account", "my-access-key-id", 0,
+                 "my-storage-class", 1, 1);
+
+  EXPECT_CALL(
+      http_client,
+      make_request(
+          AllOf(
+              IsPut(),
+              Property(&Http_request::url,
+                       StrEq("https://my-storage-account.blob.core.windows.net/"
+                             "test-b?restype=container"))),
+          Response(200, "", std::vector<char *>{})))
+      .WillOnce(Return(true));
+  c.create_container("test-b");
+
+  Http_buffer buf;
+  buf.append("some contents");
+
+  EXPECT_CALL(
+      http_client,
+      make_request(
+          AllOf(
+              IsPut(),
+              Property(
+                  &Http_request::url,
+                  StrEq(
+                      "https://my-storage-account.blob.core.windows.netbucket/"
+                      "test-o"))),
+          Response(200, "", std::vector<char *>{})))
+      .WillOnce(Return(true));
+  c.upload_object("bucket", "test-o", buf);
+}
+
+TEST(azure_client, basicEndpoint) {
+  Mock_http_client http_client;
+  Azure_client c(&http_client, "my-storage-account", "my-access-key-id", 0,
+                 "my-storage-class", 1, 1);
+  c.set_endpoint("https://my-storage-account.endpoint.com", 0,
+                 "my-storage-account");
+
+  EXPECT_CALL(
+      http_client,
+      make_request(
+          AllOf(IsPut(),
+                Property(&Http_request::url,
+                         StrEq("https://my-storage-account.endpoint.com/"
+                               "test-b?restype=container"))),
+          Response(200, "", std::vector<char *>{})))
+      .WillOnce(Return(true));
+  c.create_container("test-b");
+}
+
+TEST(azure_signer, basicDNS) {
+  Http_request req(Http_request::GET, Http_request::HTTPS, "my_host",
+                   "my_container/my_object");
+
+  req.add_header("Content-Length", "4");
+  req.add_header("Content-Type", "application/octet-stream");
+  req.add_header("x-ms-blob-type", "BlockBlob");
+  req.append_payload("test", 4);
+  Azure_signer signer(
+      "my-storage-account",
+      "zUfvsKXc6+2RMJCwvnElnG/"
+      "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/b3OAg==",
+      0);
+  signer.sign_request("mycontainer", "myblob", req, 1555892546);
+
+  ASSERT_STREQ(
+      req.headers().at("Authorization").c_str(),
+      "SharedKey "
+      "my-storage-account:uZABJWDbfXO/SuDZbxrJnd00kCDV61cevqi423k21A4=");
+}
+
+TEST(azure_signer, storageClass) {
+  Http_request req(Http_request::GET, Http_request::HTTPS, "my_host",
+                   "my_container/my_object");
+
+  req.add_header("Content-Length", "4");
+  req.add_header("Content-Type", "application/octet-stream");
+  req.add_header("x-ms-blob-type", "BlockBlob");
+  req.append_payload("test", 4);
+  Azure_signer signer(
+      "my-storage-account",
+      "zUfvsKXc6+2RMJCwvnElnG/"
+      "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/i3OAg==",
+      0, "storage_class");
+  signer.sign_request("mycontainer", "myblob", req, 1555892546);
+
+  ASSERT_STREQ(
+      req.headers().at("Authorization").c_str(),
+      "SharedKey "
+      "my-storage-account:vq5FiJaSj9mrTxeEyp3RRfptEFug4PEozawQG5A+ZHs=");
 }
