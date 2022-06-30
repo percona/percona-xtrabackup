@@ -4,7 +4,7 @@
 Incremental Backups
 ================================================================================
 
-|xtrabackup| supports incremental backups. It copies only the data that has
+*xtrabackup* supports incremental backups. It copies only the data that has
 changed since the last full backup. You can perform many incremental backups
 between each full backup, so you can set up a backup process such as a full
 backup once a week and an incremental backup every day, or full backups every
@@ -20,13 +20,13 @@ recently it was changed. An incremental backup copies each page whose
 :term:`LSN`. There are two algorithms in use to find the set of such pages to be
 copied. The first one, available with all the server types and versions, is to
 check the page :term:`LSN` directly by reading all the data pages. The second
-one, available with |Percona Server|, is to enable the `changed page tracking
+one, available with *Percona Server for MySQL*, is to enable the `changed page tracking
 <http://www.percona.com/doc/percona-server/5.5/management/changed_page_tracking.html>`_
 feature on the server, which will note the pages as they are being changed. This
 information will be then written out in a compact separate so-called bitmap
-file. The |xtrabackup| binary will use that file to read only the data pages it
+file. The *xtrabackup* binary will use that file to read only the data pages it
 needs for the incremental backup, potentially saving many read requests. The
-latter algorithm is enabled by default if the |xtrabackup| binary finds the
+latter algorithm is enabled by default if the *xtrabackup* binary finds the
 bitmap file. It is possible to specify :option:`--incremental-force-scan` to
 read all the pages even if the bitmap data is available.
 
@@ -42,7 +42,7 @@ Creating an Incremental Backup
 ================================================================================
 
 To make an incremental backup, begin with a full backup as usual. The
-|xtrabackup| binary writes a file called :file:`xtrabackup_checkpoints` into the
+*xtrabackup* binary writes a file called :file:`xtrabackup_checkpoints` into the
 backup's target directory. This file contains a line showing the ``to_lsn``,
 which is the database's :term:`LSN` at the end of the backup. :ref:`Create the
 full backup <creating_a_backup>` with a command such as the following:
@@ -126,7 +126,7 @@ you saw previously.
 
 This backup is actually safe to :ref:`restore <restoring_a_backup>` as-is now,
 even though the rollback phase has been skipped. If you restore it and start
-|MySQL|, |InnoDB| will detect that the rollback phase was not performed, and it
+*MySQL*, *InnoDB* will detect that the rollback phase was not performed, and it
 will do that in the background, as it usually does for a crash recovery upon
 start. It will notify you that the database was not shut down normally.
 
@@ -151,7 +151,7 @@ some output such as the following: ::
   .... snip
   101107 20:56:30  InnoDB: Shutdown completed; log sequence number 1291340
 
-Again, the |LSN| should match what you saw from your earlier inspection of the
+Again, the LSN should match what you saw from your earlier inspection of the
 first incremental backup. If you restore the files from
 :file:`/data/backups/base`, you should see the state of the database as of the
 first incremental backup.
@@ -171,7 +171,7 @@ point of the second incremental backup: ::
    used on the last step, backup would still be consistent but in that case
    server would perform the rollback phase.
 
-If you wish to avoid the notice that |InnoDB| was not shut down normally, when
+If you wish to avoid the notice that *InnoDB* was not shut down normally, when
 you applied the desired deltas to the base backup, you can run
 :option:`--prepare` again without disabling the rollback phase.
 
@@ -188,7 +188,7 @@ You may have to change the ownership as detailed on
 Incremental Streaming Backups Using xbstream
 ================================================================================
 
-Incremental streaming backups can be performed with the |xbstream| streaming
+Incremental streaming backups can be performed with the *xbstream* streaming
 option. Currently backups are packed in custom **xbstream** format. With this
 feature, you need to take a BASE backup as well.
 

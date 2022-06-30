@@ -62,13 +62,13 @@ The following example shows how to fetch and restore the backup from Swift:
 Command-line options
 ================================================================================
 
-|xbcloud| has the following command line options:
+*xbcloud* has the following command line options:
 
 .. program:: xbcloud
 
 .. option:: --storage=[swift|s3|google]
 
-   Cloud storage option. |xbcloud| supports Swift, MinIO, and AWS S3.
+   Cloud storage option. *xbcloud* supports Swift, MinIO, and AWS S3.
    The default value is ``swift``.
 
 .. option:: --swift-auth-url
@@ -111,7 +111,7 @@ Swift authentication options
 ----------------------------
 
 Swift specification describes several `authentication options
-<http://docs.openstack.org/developer/swift/overview_auth.html>`_. |xbcloud| can
+<http://docs.openstack.org/developer/swift/overview_auth.html>`_. *xbcloud* can
 authenticate against keystone with API version 2 and 3.
 
 .. option:: --swift-auth-version

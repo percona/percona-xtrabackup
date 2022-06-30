@@ -1,8 +1,8 @@
 ================================
-|Percona XtraBackup| |release|
+Percona XtraBackup 8.0-3-rc1
 ================================
 
-Percona is glad to announce the release of |Percona XtraBackup| |release| on
+Percona is glad to announce the release of Percona XtraBackup 8.0-3-rc1 on
 October 31 2018. Downloads are available from our `download site
 <http://www.percona.com/downloads/XtraBackup/>`_ and from :ref:`apt <apt_repo>`
 and :ref:`yum <yum_repo>` repositories.
@@ -36,4 +36,4 @@ Bugs Fixed
 - :jirabug:`PXB-1672`: The MTS slave without GTID could be backed up when the
   ``--safe-slave-backup`` option was applied.
 
-.. |release| replace:: 8.0-3-rc1
+

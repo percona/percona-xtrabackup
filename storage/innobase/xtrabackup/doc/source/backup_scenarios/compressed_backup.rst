@@ -4,8 +4,8 @@
 Compressed Backup
 =================
 
-|Percona XtraBackup| supports compressed backups: a local or streaming backup
-can be compressed or decompressed with |xbstream|.
+*Percona XtraBackup* supports compressed backups: a local or streaming backup
+can be compressed or decompressed with *xbstream*.
 
 Creating Compressed Backups
 ===========================
@@ -58,7 +58,7 @@ Preparing the backup
 --------------------
 
 Before you can prepare the backup you'll need to uncompress all the files.
-|Percona XtraBackup| has implemented :option:`--decompress` option
+*Percona XtraBackup* has implemented :option:`--decompress` option
 that can be used to decompress the backup.
 
 
@@ -72,7 +72,7 @@ that can be used to decompress the backup.
   :option:`--decompress` option to decompress multiple files
   simultaneously.
 
-|Percona XtraBackup| doesn't automatically remove the compressed files. In
+*Percona XtraBackup* doesn't automatically remove the compressed files. In
 order to clean up the backup directory you should use
 :option:`--remove-original` option. Even if they're not removed
 these files will not be copied/moved over to the datadir if
@@ -96,7 +96,7 @@ Now the files in :file:`/data/compressed/` are ready to be used by the server.
 Restoring the backup
 --------------------
 
-|xtrabackup| has a :option:`--copy-back` option, which performs the
+*xtrabackup* has a :option:`--copy-back` option, which performs the
 restoration of a backup to the server's :term:`datadir`:
 
 .. code-block:: bash

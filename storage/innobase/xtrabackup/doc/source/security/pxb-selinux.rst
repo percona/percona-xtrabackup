@@ -4,9 +4,9 @@
 Working with SELinux 
 =========================================
 
-|Percona XtraBackup| is installed as an unconfined process running in an undefined domain. SELinux allows unconfined processes almost all access and the processes only use Discretionary Access Control (DAC) rules. 
+*Percona XtraBackup* is installed as an unconfined process running in an undefined domain. SELinux allows unconfined processes almost all access and the processes only use Discretionary Access Control (DAC) rules. 
 
-You find the current state of the |Percona XtraBackup| file with the following command:
+You find the current state of the *Percona XtraBackup* file with the following command:
 
 .. sourcecode:: bash
 
@@ -25,18 +25,18 @@ The SELinux context is the following:
 
 The unconfined domain supports the network-facing services, which are protected by SELinux. These domains are not exposed. In this configuration, SELinux protects against remote intrusions but local intrusions, which require local access, are not confined. 
 
-|Percona XtraBackup| works locally. The service is not network-facing and cannot be exploited externally. The service interacts only with the local user, who provides the parameters. |Percona XtraBackup| requires access to the ``target-dir`` location. 
+*Percona XtraBackup* works locally. The service is not network-facing and cannot be exploited externally. The service interacts only with the local user, who provides the parameters. *Percona XtraBackup* requires access to the ``target-dir`` location. 
 
 Confine XtraBackup
 --------------------
 
-You can modify your security configuration to confine |Percona XtraBackup|. The first question is where to store the backup files. The service requires read and write access to the selected location. 
+You can modify your security configuration to confine *Percona XtraBackup*. The first question is where to store the backup files. The service requires read and write access to the selected location. 
 
 You can use either of the following methods:
 
-* Allow |Percona XtraBackup| to write to any location. The user provides any path to the ``target-dir`` parameter. 
+* Allow *Percona XtraBackup* to write to any location. The user provides any path to the ``target-dir`` parameter. 
 
-* Allow |Percona XtraBackup| to write to a specific location, such as /backups or the user's home directory. 
+* Allow *Percona XtraBackup* to write to a specific location, such as /backups or the user's home directory. 
 
 The first option opens the entire system to read and write. Select the second option to harden your security.
 

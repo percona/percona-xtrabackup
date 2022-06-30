@@ -4,7 +4,7 @@
 Connection and Privileges Needed
 ================================================================================
 
-|Percona XtraBackup| needs to be able to connect to the database server and
+*Percona XtraBackup* needs to be able to connect to the database server and
 perform operations on the server and the :term:`datadir` when creating a
 backup, when preparing in some scenarios and when restoring it. In order to do
 so, there are privileges and permission requirements on its execution that
@@ -19,12 +19,12 @@ like reading, writing or executing on a certain directory or start/stop a
 system service. **They are set at a system level and only apply to system
 users**.
 
-When |xtrabackup| is used, there are two actors involved: the user invoking the
+When *xtrabackup* is used, there are two actors involved: the user invoking the
 program - *a system user* - and the user performing action in the database
 server - *a database user*. Note that these are different users in different
 places, even though they may have the same username.
 
-All the invocations of |xtrabackup| in this documentation assume that the system
+All the invocations of *xtrabackup* in this documentation assume that the system
 user has the appropriate permissions and you are providing the relevant options
 for connecting the database server - besides the options for the action to be
 performed - and the database user has adequate privileges.
@@ -42,7 +42,7 @@ by the :option:`--user` and :option:`--password` option:
   $ xtrabackup --user=DVADER --password=14MY0URF4TH3R --backup \
   --target-dir=/data/bkps/
 
-If you don't use the :option:`--user` option, |Percona XtraBackup| will assume
+If you don't use the :option:`--user` option, *Percona XtraBackup* will assume
 the database user whose name is the system user executing it.
 
 .. _pxb.privilege.server.option.connecting:
@@ -69,7 +69,7 @@ alteration, see ``mysql --help`` for details.
 .. note::
 
    In case of multiple server instances, the correct connection parameters
-   (port, socket, host) must be specified in order for |xtrabackup| to talk to
+   (port, socket, host) must be specified in order for *xtrabackup* to talk to
    the correct server.
 
 .. _pxb.privilege:

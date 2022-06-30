@@ -4,7 +4,7 @@ How-tos and Recipes
 
 .. _recipes-xbk:
 
-Recipes for |xtrabackup|
+Recipes for *xtrabackup*
 ========================
 
 .. toctree::
@@ -42,7 +42,7 @@ be specified in order to make it quicker and more practical.
 
 ``HOST``
 
-   A system with a |MySQL|-based server installed, configured and running. We
+   A system with a *MySQL*-based server installed, configured and running. We
    will assume the following about this system:
 
      * the MySQL server is able to :doc:`communicate with others by the

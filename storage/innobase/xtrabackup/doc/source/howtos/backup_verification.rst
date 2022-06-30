@@ -16,7 +16,7 @@ For checking the backup consistency you can use either the original server where
 Using pt-table-checksum
 =========================
 
-This tool is part of the |Percona Toolkit|. It performs an online replication consistency check by executing checksum queries on the source, which produces different results on replicas that are inconsistent with the source.
+This tool is part of the *Percona Toolkit*. It performs an online replication consistency check by executing checksum queries on the source, which produces different results on replicas that are inconsistent with the source.
 
 After you confirmed that replication has been set up successfully, you can `install <http://www.percona.com/doc/percona-toolkit/installation.html>`_ or download *pt-table-checksum*. This example shows downloading the latest version of *pt-table-checksum*: :: 
 

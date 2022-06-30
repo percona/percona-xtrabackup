@@ -16,16 +16,16 @@ replication environment with Percona XtraBackup.
 All the things you will need
 =============================
 
-Setting up a replica for replication with |Percona XtraBackup| is a 
+Setting up a replica for replication with *Percona XtraBackup* is a 
 straightforward procedure. In order to keep it simple, here is a list of the
 things you need to follow the steps without hassles:
 
 ``Source``
-  A system with a |MySQL|-based server installed, configured and running. This
+  A system with a *MySQL*-based server installed, configured and running. This
   system will be called ``Source``, as it is where your data is stored and
   the one to be replicated. We will assume the following about this system:
 
-  * the |MySQL| server is able to communicate with others by the standard TCP/IP port;
+  * the *MySQL* server is able to communicate with others by the standard TCP/IP port;
 
   * the *SSH* server is installed and configured;
 
@@ -37,7 +37,7 @@ things you need to follow the steps without hassles:
 
 
 ``Replica``
-  Another system, with a |MySQL|-based server installed on it. We
+  Another system, with a *MySQL*-based server installed on it. We
   will refer to this machine as ``Replica`` and we will assume the same things
   we did about ``Source``, except that the server-id on ``Replica`` is 2.
 
@@ -65,12 +65,12 @@ After this is finished you should get:
 
    xtrabackup: completed OK! 
 
-This will make a copy of your |MySQL| data dir
+This will make a copy of your *MySQL* data dir
 to the :file:`/path/to/backupdir` directory.
-You have told |Percona XtraBackup| to connect to the database server
+You have told *Percona XtraBackup* to connect to the database server
 using your database user and password,
 and do a hot backup of all your data in it
-(all |MyISAM|, |InnoDB| tables and indexes in them).
+(all *MyISAM*, *InnoDB* tables and indexes in them).
 
 In order for snapshot to be consistent you need to prepare the data on the source:
 
@@ -85,12 +85,12 @@ Now the transaction logs are applied to the data files,
 and new ones are created:
 your data files are ready to be used by the MySQL server.
 
-|Percona XtraBackup| knows where your data is by reading your :term:`my.cnf`.
+*Percona XtraBackup* knows where your data is by reading your :term:`my.cnf`.
 If you have your configuration file in a non-standard place,
 you should use the flag :option:`--defaults-file` ``=/location/of/my.cnf``.
 
 If you want to skip writing the user name and password
-every time you want to access |MySQL|,
+every time you want to access *MySQL*,
 you can set it up in :file:`.mylogin.cnf` as follows::
 
  mysql_config_editor set --login-path=client --host=localhost --user=root --password
@@ -108,7 +108,7 @@ On the Source, use rsync or scp to copy the data from the Source to the Replica.
 
     $ rsync -avpP -e ssh /path/to/backupdir Replica:/path/to/mysql/
 
-After data has been copied, you can back up the original or previously installed |MySQL| :term:`datadir` (**NOTE**: Make sure mysqld is shut down before you move the contents of its datadir, or move the snapshot into its datadir.). Run the following commands on the Replica:
+After data has been copied, you can back up the original or previously installed *MySQL* :term:`datadir` (**NOTE**: Make sure mysqld is shut down before you move the contents of its datadir, or move the snapshot into its datadir.). Run the following commands on the Replica:
 
 .. code-block:: console
 
@@ -120,7 +120,7 @@ and move the snapshot from the ``Source`` in its place:
 
     $ xtrabackup --move-back --target-dir=/path/to/mysql/backupdir
 
-After you copy data over, make sure the Replica |MySQL| has the proper permissions to access them.
+After you copy data over, make sure the Replica *MySQL* has the proper permissions to access them.
 
 .. code-block:: console
 
@@ -222,7 +222,7 @@ Both ``IO`` and ``SQL`` threads need to be running. The ``Seconds_Behind_Master`
 Adding more replicas to the Source
 ===================================
 
-You can use this procedure with slight variation to add new replicas to a source. We will use |Percona XtraBackup| to clone an already configured replica. We will continue using the previous scenario for convenience but we will add a ``NewReplica`` to the plot.
+You can use this procedure with slight variation to add new replicas to a source. We will use *Percona XtraBackup* to clone an already configured replica. We will continue using the previous scenario for convenience but we will add a ``NewReplica`` to the plot.
 
 At the ``Replica``, do a full backup:
 
@@ -231,7 +231,7 @@ At the ``Replica``, do a full backup:
    $ xtrabackup --user=yourDBuser --password=MaGiCiGaM \
       --backup --slave-info --target-dir=/path/to/backupdir
 
-By using the :option:`--slave-info` |Percona XtraBackup| creates additional file called :file:`xtrabackup_slave_info`.
+By using the :option:`--slave-info` *Percona XtraBackup* creates additional file called :file:`xtrabackup_slave_info`.
 
 Apply the logs:
 

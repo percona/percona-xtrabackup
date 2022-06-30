@@ -1,29 +1,29 @@
 .. _rn.8-0-7:
 
 ================================================================================
-|pxb.name| |release|
+*Percona XtraBackup* 8.0.7
 ================================================================================
 
-|percona| is glad to announce the release of |pxb.name| |release| on |date|.
+*Percona* is glad to announce the release of *Percona XtraBackup*  8.0.7 on August 7, 2019.
 Downloads are available from our `download site
 <https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
 :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
-|pxb.name| enables MySQL backups without blocking user queries, making it ideal
+*Percona XtraBackup* enables MySQL backups without blocking user queries, making it ideal
 for companies with large data sets and mission-critical applications that cannot
 tolerate long periods of downtime. Offered free as an open source solution, it
-drives down backup costs while providing unique features for |MySQL| backups.
+drives down backup costs while providing unique features for *MySQL* backups.
 
-In release |release|, |pxb.name| enables making backups of databases
+In release 8.0.7, *Percona XtraBackup* enables making backups of databases
 that contain the `encrypted system tablespace
 <https://www.percona.com/doc/percona-server/8.0/security/data-at-rest-encryption.html#data-at-rest-encryption>`_.
 Encrypted `mysql` tablespace is now also supported.
 
-|pxb.name| |release| implements the support of the ``lz4`` compression algorithm
+*Percona XtraBackup* 8.0.7 implements the support of the ``lz4`` compression algorithm
 so that you could make compressed backups using `lz4`
 (`--compress=lz4`) in addition to the default `quicklz` method.
 
-All |percona| software is open-source and free.
+All *Percona* software is open-source and free.
 
 New Features and Improvements
 ================================================================================
@@ -58,7 +58,6 @@ Bugs Fixed
 :jirabug:`PXB-1879`,
 :jirabug:`PXB-1901`.
 
-.. |percona| replace:: Percona
-.. |pxb.name| replace:: Percona XtraBackup
-.. |date| replace:: August 7, 2019
-.. |release| replace:: 8.0.7
+.. *Percona* replace:: Percona
+.. *Percona XtraBackup* replace:: Percona XtraBackup
+

@@ -11,9 +11,9 @@ LRU dump backup
    on how to enable it
 
 
-|Percona XtraBackup| includes a saved buffer pool dump into a backup to enable
+*Percona XtraBackup* includes a saved buffer pool dump into a backup to enable
 reducing the warm up time. It restores the buffer pool state from
-:file:`ib_buffer_pool` file after restart. |Percona XtraBackup| discovers
+:file:`ib_buffer_pool` file after restart. *Percona XtraBackup* discovers
 :file:`ib_buffer_pool` and backs it up automatically.
 
 .. image:: /_static/lru_dump.png
@@ -23,5 +23,5 @@ the warm state after backup is restored.
 
 .. seealso::
 
-   |MySQL| Documentation: Saving and Restoring the Buffer Pool State
+   *MySQL* Documentation: Saving and Restoring the Buffer Pool State
       https://dev.mysql.com/doc/refman/8.0/en/innodb-preload-buffer-pool.html
