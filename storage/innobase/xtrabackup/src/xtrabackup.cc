@@ -4083,6 +4083,8 @@ void xtrabackup_backup_func(void) {
 
   init_mysql_environment();
 
+  if (print_instant_versioned_tables(mysql_connection)) exit(EXIT_FAILURE);
+
   if (opt_dump_innodb_buffer_pool) {
     dump_innodb_buffer_pool(mysql_connection);
   }
