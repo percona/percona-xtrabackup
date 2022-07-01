@@ -1,0 +1,26 @@
+# MkDocs configuration for builds with material theme
+
+INHERIT: mkdocs-base.yml
+
+site_url: "https://docs.percona.com/percona-xtrabackup/"
+
+plugins:
+    section-index: {} # Adds links to nodes - comment out when creating PDF
+
+theme:
+  name: material
+  custom_dir: _resource/overrides
+
+# Theme features
+
+  features:
+    - search.highlight
+    - navigation.top
+    - navigation.tracking 
+    - content.tabs.link   
+  
+#Google Analytics configuration 
+extra:
+  analytics:
+    provider: google
+    property: UA-343802-3
