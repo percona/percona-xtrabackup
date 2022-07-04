@@ -102,8 +102,8 @@ rolling back incomplete transactions. */
 volatile bool recv_recovery_on;
 volatile lsn_t backup_redo_log_flushed_lsn;
 #ifdef XTRABACKUP
-/** map of space_id, that experienced an inplace DDL during a backup op */
-std::map<space_id_t, bool> index_load_map;
+/** map of space_id, that would be full scan during backup with pagetracking */
+std::map<space_id_t, bool> full_scan_tables;
 #endif /* XTRABACKUP */
 
 #ifdef UNIV_HOTBACKUP
@@ -1838,7 +1838,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           // MLOG_INDEX_LOAD type redo log record indicates, that a DDL
           // (create index, alter table...) is performed with
           // 'algorithm=inplace'. If using pagetracking, the affected tablespace
-          // must be copied using full scan. Record it in the index_load_map
+          // must be copied using full scan. Record it in the full_scan_tables
           // We do this during the first scan of redo before starting file copy
           // thread. This copy is required because Page-tracking relies on
           // changes from redo. ie PXB has to copy redo as well apart
@@ -1850,7 +1850,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           // re-copying the datafiles.
           if (opt_page_tracking && xtrabackup_incremental != nullptr &&
               recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
-            index_load_map[space_id] = true;
+            full_scan_tables[space_id] = true;
           }
           /* offline backup */
           xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
@@ -1878,6 +1878,27 @@ static byte *recv_parse_or_apply_log_rec_body(
             !fsp_is_system_or_temp_tablespace(space_id) &&
             /* For cloned db header page has the encryption information. */
             !recv_sys->is_cloned_db) {
+#ifdef XTRABACKUP
+          /* If tablespace has been in-place encrypted ie ALTER TABLESPACE
+          ENCRYPTION=Y/N after the last checkpoint LSN (after full backup),
+          and if the checkpoint LSN doesn't move between full and incremental
+          backups, page tracking will not give the full list of modified pages.
+          So we rely on the redo to roll forward the changes.
+
+          With redo based apply, if page 0 redo is applied first, it will remove
+          the encryption info and after this, other encrypted pages in
+          tablespace cannot be decrypted.
+
+          Scan and copy modified pages of such tablespaces during the
+          incremental backup. This way we would have the latest state of
+          tablespace and redo apply will skip all the redo generated on the
+          tablespace. */
+          if (opt_page_tracking && xtrabackup_incremental != nullptr &&
+              recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
+            full_scan_tables[space_id] = true;
+          }
+#endif /* XTRABACKUP */
+
           ut_ad(LSN_MAX != start_lsn);
 
           byte *ptr_copy = ptr;
