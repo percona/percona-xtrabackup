@@ -248,11 +248,11 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
    * We read all pages by setting read_batch_len to the size of file */
 
   /* if inplace DDLs that generated MLOG_INDEX_LOAD happened on the table after
-  the checkpoint LSN we do full scan on that table. index_load_map is populated
-  during the first scan of redo */
+  the checkpoint LSN or if tablepace encryption is changed after checkpoint LSN
+  we do full scan full_scan_tables is populated during the first scan of redo */
 
   if (ctxt->space_id == dict_sys_t::s_dict_space_id ||
-      index_load_map[ctxt->space_id] == true) {
+      full_scan_tables[ctxt->space_id] == true) {
     *read_batch_start = ctxt->offset;
     if (ctxt->offset >= ctxt->data_file_size) {
       *read_batch_len = 0;

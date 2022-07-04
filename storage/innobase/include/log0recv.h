@@ -53,8 +53,9 @@ class PersistentTableMetadata;
 struct recv_addr_t;
 
 #ifdef XTRABACKUP
-/** map of tablespace_id, that experienced an inplace DDL during a backup op */
-extern std::map<space_id_t, bool> index_load_map;
+/** map of tablespace_id, that would be full scan during backup with
+ * pagetracking*/
+extern std::map<space_id_t, bool> full_scan_tables;
 
 namespace xtrabackup {
 struct recv_sys_t {
