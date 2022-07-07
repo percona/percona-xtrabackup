@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2012 Percona LLC and/or its affiliates.
+Copyright (c) 2012-2023 Percona LLC and/or its affiliates.
 
 tmpfile datasink for XtraBackup.
 
@@ -27,12 +27,13 @@ datasink in a serialized way in deinit(). */
 #include <my_list.h>
 #include <my_thread_local.h>
 #include <mysql/service_mysql_alloc.h>
+#include <mutex>
 #include "common.h"
 #include "datasink.h"
 #include "msg.h"
 
 typedef struct {
-  pthread_mutex_t mutex;
+  std::mutex mutex;
   LIST *file_list;
 } ds_tmpfile_ctxt_t;
 
@@ -65,11 +66,6 @@ static ds_ctxt_t *tmpfile_init(const char *root) {
                 sizeof(ds_ctxt_t) + sizeof(ds_tmpfile_ctxt_t), MYF(MY_FAE)));
   tmpfile_ctxt = (ds_tmpfile_ctxt_t *)(ctxt + 1);
   tmpfile_ctxt->file_list = NULL;
-  if (pthread_mutex_init(&tmpfile_ctxt->mutex, NULL)) {
-    my_free(ctxt);
-    return NULL;
-  }
-
   ctxt->ptr = tmpfile_ctxt;
   ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
@@ -131,9 +127,9 @@ static ds_file_t *tmpfile_open(ds_ctxt_t *ctxt, const char *path,
   tmpfile_ctxt = (ds_tmpfile_ctxt_t *)ctxt->ptr;
   tmp_file->list.data = tmp_file;
 
-  pthread_mutex_lock(&tmpfile_ctxt->mutex);
+  tmpfile_ctxt->mutex.lock();
   tmpfile_ctxt->file_list = list_add(tmpfile_ctxt->file_list, &tmp_file->list);
-  pthread_mutex_unlock(&tmpfile_ctxt->mutex);
+  tmpfile_ctxt->mutex.unlock();
 
   return file;
 }
@@ -227,8 +223,6 @@ static void tmpfile_deinit(ds_ctxt_t *ctxt) {
     list = list_rest(list);
     my_free(tmp_file->file);
   }
-
-  pthread_mutex_destroy(&tmpfile_ctxt->mutex);
 
   my_free(buf);
   my_free(ctxt->root);

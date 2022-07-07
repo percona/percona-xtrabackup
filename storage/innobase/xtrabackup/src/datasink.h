@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2022 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 Data sink interface.
 
@@ -64,6 +64,7 @@ struct datasink_struct {
 /* Supported datasink types */
 typedef enum {
   DS_TYPE_STDOUT,
+  DS_TYPE_FIFO,
   DS_TYPE_LOCAL,
   DS_TYPE_XBSTREAM,
   DS_TYPE_COMPRESS_QUICKLZ,

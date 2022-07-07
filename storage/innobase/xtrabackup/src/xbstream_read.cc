@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2017 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 The xbstream format reader implementation.
 
@@ -24,8 +24,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <zlib.h>
+#include <thread>
 #include "common.h"
 #include "crc_glue.h"
+#include "file_utils.h"
 #include "msg.h"
 #include "xbstream.h"
 
@@ -41,7 +43,27 @@ struct xb_rstream_struct {
   File fd;
 };
 
-xb_rstream_t *xb_stream_read_new(void) {
+xb_rstream_t *xb_stream_read_new_fifo(const char *path, int timeout) {
+  xb_rstream_t *stream;
+  File fd;
+
+  fd = open_fifo_for_read_with_timeout(path, timeout);
+
+  if (fd < 0) return nullptr;
+
+  stream = (xb_rstream_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(xb_rstream_t),
+                                     MYF(MY_FAE));
+  stream->fd = fd;
+  stream->offset = 0;
+
+#ifdef __WIN__
+  setmode(stream->fd, _O_BINARY);
+#endif
+
+  return stream;
+}
+
+xb_rstream_t *xb_stream_read_new_stdin(void) {
   xb_rstream_t *stream;
 
   stream = (xb_rstream_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(xb_rstream_t),
@@ -282,6 +304,14 @@ err:
 }
 
 int xb_stream_read_done(xb_rstream_t *stream) {
+  /*
+   * FIFO stream needs to close FD otherwise other part might not get notified
+   * we are not reading anymore
+   */
+  if (stream->fd > 2) {
+    my_close(stream->fd, MYF(0));
+    stream->fd = -1;
+  }
   my_free(stream);
 
   return 0;

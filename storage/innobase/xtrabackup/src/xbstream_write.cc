@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2017 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 The xbstream format writer implementation.
 
@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <zlib.h>
+#include <mutex>
 #include "common.h"
 #include "crc_glue.h"
 #include "datasink.h"
@@ -34,7 +35,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XB_STREAM_MIN_CHUNK_SIZE (10 * 1024 * 1024)
 
 struct xb_wstream_struct {
-  pthread_mutex_t mutex;
+  std::mutex mutex;
 };
 
 struct xb_wstream_file_struct {
@@ -73,8 +74,6 @@ xb_wstream_t *xb_stream_write_new(void) {
 
   stream = (xb_wstream_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(xb_wstream_t),
                                      MYF(MY_FAE | MY_ZEROFILL));
-  pthread_mutex_init(&stream->mutex, NULL);
-
   return stream;
 }
 
@@ -153,8 +152,6 @@ int xb_stream_write_close(xb_wstream_file_t *file) {
 }
 
 int xb_stream_write_done(xb_wstream_t *stream) {
-  pthread_mutex_destroy(&stream->mutex);
-
   my_free(stream);
 
   return 0;
@@ -236,7 +233,7 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
                     4 * 2 * sparse_map_size);
   checksum = crc32_iso3309(checksum, static_cast<const uchar *>(buf), len);
 
-  pthread_mutex_lock(&stream->mutex);
+  stream->mutex.lock();
 
   int8store(ptr, file->offset); /* Payload offset */
   ptr += 8;
@@ -259,13 +256,13 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
     file->offset += sparse_map[i].skip;
   file->offset += len;
 
-  pthread_mutex_unlock(&stream->mutex);
+  stream->mutex.unlock();
 
   return 0;
 
 err:
 
-  pthread_mutex_unlock(&stream->mutex);
+  stream->mutex.unlock();
 
   return 1;
 }
@@ -276,7 +273,7 @@ static int xb_stream_write_eof(xb_wstream_file_t *file) {
   uchar *ptr;
   xb_wstream_t *stream = file->stream;
 
-  pthread_mutex_lock(&stream->mutex);
+  stream->mutex.lock();
 
   /* Write xbstream header */
   ptr = tmpbuf;
@@ -301,12 +298,12 @@ static int xb_stream_write_eof(xb_wstream_file_t *file) {
       -1)
     goto err;
 
-  pthread_mutex_unlock(&stream->mutex);
+  stream->mutex.unlock();
 
   return 0;
 err:
 
-  pthread_mutex_unlock(&stream->mutex);
+  stream->mutex.unlock();
 
   return 1;
 }

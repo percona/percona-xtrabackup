@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2022 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 Data sink interface.
 
@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_decompress_zstd.h"
 #include "ds_decrypt.h"
 #include "ds_encrypt.h"
+#include "ds_fifo.h"
 #include "ds_local.h"
 #include "ds_stdout.h"
 #include "ds_tmpfile.h"
@@ -45,6 +46,9 @@ ds_ctxt_t *ds_create(const char *root, ds_type_t type) {
   switch (type) {
     case DS_TYPE_STDOUT:
       ds = &datasink_stdout;
+      break;
+    case DS_TYPE_FIFO:
+      ds = &datasink_fifo;
       break;
     case DS_TYPE_LOCAL:
       ds = &datasink_local;

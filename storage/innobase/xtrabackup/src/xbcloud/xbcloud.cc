@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2014, 2021 Percona LLC and/or its affiliates.
+Copyright (c) 2014, 2023 Percona LLC and/or its affiliates.
 
 xbcloud utility. Manage backups on cloud storage services.
 
@@ -23,11 +23,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_dir.h>
 #include <my_getopt.h>
 #include <my_sys.h>
+#include <my_thread_local.h>
 #include <mysql/service_mysql_alloc.h>
 #include <signal.h>
 #include <typelib.h>
 #include <fstream>
 #include <iostream>
+#include <list>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -36,6 +38,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <curl/curl.h>
 
 #include "common.h"
+#include "file_utils.h"
 #include "xbstream.h"
 #include "xtrabackup_version.h"
 
@@ -47,6 +50,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xbcloud/s3_ec2.h"
 #include "xbcloud/swift.h"
 #include "xbcloud/util.h"
+#include "xbcloud/xbcloud.h"
 #include "xbcrypt_common.h"
 
 using namespace xbcloud;
@@ -57,6 +61,8 @@ using namespace xbcloud;
 /*****************************************************************************/
 
 const char *config_file = "my"; /* Default config file */
+
+const static int chunk_index_prefix_len = 20;
 
 const char *azure_development_access_key =
     "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/"
@@ -119,6 +125,9 @@ static bool opt_azure_development_storage = 0;
 static std::string backup_name;
 static char *opt_cacert = nullptr;
 static ulong opt_parallel = 1;
+static ulong opt_threads = 1;
+static char *opt_fifo_dir = nullptr;
+static ulong opt_fifo_timeout = 60;
 static ulong opt_max_retries = 10;
 static u_int32_t opt_max_backoff = 300000;
 
@@ -190,6 +199,9 @@ enum {
   OPT_GOOGLE_BUCKET,
 
   OPT_PARALLEL,
+  OPT_THREADS,
+  OPT_FIFO_DIR,
+  OPT_FIFO_TIMEOUT,
   OPT_MAX_RETRIES,
   OPT_MAX_BACKOFF,
   OPT_CACERT,
@@ -293,6 +305,22 @@ static struct my_option my_long_options[] = {
     {"parallel", OPT_PARALLEL, "Number of parallel chunk uploads.",
      &opt_parallel, &opt_parallel, 0, GET_ULONG, REQUIRED_ARG, 1, 1, ULONG_MAX,
      0, 0, 0},
+
+    {"fifo-streams", OPT_THREADS, "Number of parallel fifo stream threads.",
+     &opt_threads, &opt_threads, 0, GET_ULONG, REQUIRED_ARG, 1, 1, ULONG_MAX, 0,
+     0, 0},
+
+    {"fifo-dir", OPT_FIFO_DIR,
+     "Directory to read/write Named Pipe. On put mode, xbcloud read from named "
+     "pipes. On get mode, xbcloud writes to named pipes.",
+     &opt_fifo_dir, &opt_fifo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
+     0, 0},
+
+    {"fifo-timeout", OPT_FIFO_TIMEOUT,
+     "How many seconds to wait for other end to open the stream. "
+     "Default 60 seconds",
+     &opt_fifo_timeout, &opt_fifo_timeout, 0, GET_INT, REQUIRED_ARG, 60, 1,
+     INT_MAX, 0, 0, 0},
 
     {"max-retries", OPT_MAX_RETRIES,
      "Number of retries of chunk uploads/downloads after a failure (Default "
@@ -708,59 +736,85 @@ static bool parse_args(int argc, char **argv) {
   return (0);
 }
 
-bool xbcloud_put(Object_store *store, const std::string &container,
-                 const std::string &backup_name, bool upload_md5) {
-  bool exists;
+typedef struct {
+  /* used to create FIFO file and print thread number to log */
+  uint thread_id;
+  std::atomic<bool> *has_errors;
+  struct global_list_t *global_list;
+  const std::string *container;
+  Object_store *store;
+} download_thread_ctxt_t;
 
-  if (!store->container_exists(container, exists)) {
-    return false;
-  }
+typedef struct {
+  /* used to create FIFO file and print thread number to log */
+  uint thread_id;
+  std::atomic<bool> *has_errors;
+  Http_buffer *buf_md5;
+  const std::string *container;
+  Object_store *store;
+} put_thread_ctxt_t;
 
-  if (!exists) {
-    if (!store->create_container(container)) {
-      return false;
-    }
-  }
+struct file_entry_t {
+  my_off_t chunk_idx;
+  my_off_t offset;
+  std::string path;
+};
 
-  std::vector<std::string> object_list;
-  if (!store->list_objects_in_directory(container, backup_name, object_list)) {
-    return false;
-  }
+/**
+  Build filename with proper chunk index length.
 
-  if (!object_list.empty()) {
-    msg_ts("%s: error: backup named %s already exists!\n", my_progname,
-           backup_name.c_str());
-    return false;
-  }
+@param [in]    file_name   filename part of the chunk
+@param [in]    idx         chunk index
 
-  struct file_entry_t {
-    my_off_t chunk_idx;
-    my_off_t offset;
-    std::string path;
-  };
+@return string containing the file name */
+std::string build_file_name(const std::string &file_name, my_off_t idx) {
+  std::stringstream file_name_s;
+  file_name_s << file_name << "." << std::setw(chunk_index_prefix_len)
+              << std::setfill('0') << idx;
+  return file_name_s.str();
+}
 
+void put_func(put_thread_ctxt_t &cntx) {
+  std::thread ev;
+  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
   std::unordered_map<std::string, std::unique_ptr<file_entry_t>> filehash;
-  xb_rstream_t *stream = xb_stream_read_new();
-  if (stream == nullptr) {
-    msg_ts("%s: xb_stream_read_new() failed.", my_progname);
-    return false;
+  xb_rstream_t *stream;
+  if (opt_threads > 1) {
+    char filename[FN_REFLEN];
+    snprintf(filename, sizeof(filename), "%s%s%lu", opt_fifo_dir, "/thread_",
+             (ulong)cntx.thread_id);
+    stream = xb_stream_read_new_fifo(filename, opt_fifo_timeout);
+    if (stream == nullptr) {
+      msg_ts(
+          "%s: xb_stream_read_new_fifo() failed for thread %d. Possibly sender "
+          "did "
+          "not start.\n",
+          my_progname, cntx.thread_id);
+      cntx.has_errors->store(true);
+      goto end;
+    }
+
+  } else {
+    stream = xb_stream_read_new_stdin();
+    if (stream == nullptr) {
+      msg_ts("%s: xb_stream_read_new_stdin() failed.\n", my_progname);
+      cntx.has_errors->store(true);
+      goto end;
+    }
   }
 
   xb_rstream_chunk_t chunk;
   xb_rstream_result_t res;
 
-  bool has_errors = false;
 
   memset(&chunk, 0, sizeof(chunk));
 
-  Http_buffer buf_md5;
 
-  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
   if (!h.init()) {
     msg_ts("%s: Failed to initialize event handler.\n", my_progname);
-    return false;
+    goto end;
   }
-  auto thread = h.run();
+  ev = h.run();
 
   do {
     res = xb_stream_read_chunk(stream, &chunk);
@@ -796,10 +850,7 @@ bool xbcloud_put(Object_store *store, const std::string &container,
       }
     }
 
-    std::stringstream file_name_s;
-    file_name_s << chunk.path << "." << std::setw(20) << std::setfill('0')
-                << entry->chunk_idx;
-    std::string file_name = file_name_s.str();
+    std::string file_name = build_file_name(chunk.path, entry->chunk_idx);
     std::string object_name = backup_name;
     object_name.append("/").append(file_name);
 
@@ -807,27 +858,30 @@ bool xbcloud_put(Object_store *store, const std::string &container,
     buf.assign_buffer(static_cast<char *>(chunk.raw_data), chunk.buflen,
                       chunk.raw_length);
 
-    if (upload_md5) {
-      buf_md5.append(hex_encode(buf.md5()));
-      buf_md5.append("  ");
-      buf_md5.append(file_name);
-      buf_md5.append("\n");
+    if (opt_md5) {
+      cntx.buf_md5->append(hex_encode(buf.md5()));
+      cntx.buf_md5->append("  ");
+      cntx.buf_md5->append(file_name);
+      cntx.buf_md5->append("\n");
     }
 
-    store->async_upload_object(
-        container, object_name, buf, &h,
+    cntx.store->async_upload_object(
+        *cntx.container, object_name, buf, &h,
         std::bind(
-            [](bool ok, std::string path, size_t length, bool *err) {
+            [&](bool ok, std::string path, size_t length,
+                std::atomic<bool> *err) {
               if (ok) {
-                msg_ts("%s: successfully uploaded chunk: %s, size: %zu\n",
-                       my_progname, path.c_str(), length);
+                msg_ts("%s: [%d] successfully uploaded chunk: %s, size: %zu\n",
+                       my_progname, cntx.thread_id, path.c_str(), length);
               } else {
-                msg_ts("%s: error: failed to upload chunk: %s, size: %zu\n",
-                       my_progname, path.c_str(), length);
-                *err = true;
+                msg_ts(
+                    "%s: [%d] error: failed to upload chunk: %s, size: %zu\n",
+                    my_progname, cntx.thread_id, path.c_str(), length);
+                err->store(true);
               }
             },
-            std::placeholders::_1, object_name, chunk.raw_length, &has_errors));
+            std::placeholders::_1, object_name, chunk.raw_length,
+            cntx.has_errors));
 
     entry->offset += chunk.length;
     entry->chunk_idx++;
@@ -836,29 +890,88 @@ bool xbcloud_put(Object_store *store, const std::string &container,
       filehash.erase(entry->path);
     }
 
+    /* Reset chunk */
     memset(&chunk, 0, sizeof(chunk));
-  } while (!has_errors);
+  } while (!cntx.has_errors->load());
 
   h.stop();
-  thread.join();
+  ev.join();
 
-  xb_stream_read_done(stream);
+end:
+  if (stream != nullptr) xb_stream_read_done(stream);
+}
 
+bool xbcloud_put(Object_store *store, const std::string &container,
+                 const std::string &backup_name) {
+  bool exists;
+  std::atomic<bool> has_errors{false};
+  Http_buffer buf_md5 = Http_buffer();
+  std::string last_file_prefix = backup_name + "/xtrabackup_tablespaces";
+  auto last_file_size = last_file_prefix.size();
+  bool file_found = false;
+  if (!store->container_exists(container, exists)) {
+    return false;
+  }
 
-  // check if backup directory exists and it has some files
-  if (res == XB_STREAM_READ_ERROR || has_errors ||
+  if (!exists) {
+    if (!store->create_container(container)) {
+      return false;
+    }
+  }
+
+  std::vector<std::string> object_list;
+  if (!store->list_objects_in_directory(container, backup_name, object_list)) {
+    return false;
+  }
+
+  if (!object_list.empty()) {
+    msg_ts("%s: error: backup named %s already exists!\n", my_progname,
+           backup_name.c_str());
+    return false;
+  }
+
+  /* Create data copying threads */
+  put_thread_ctxt_t *data_threads = (put_thread_ctxt_t *)my_malloc(
+      PSI_NOT_INSTRUMENTED, sizeof(put_thread_ctxt_t) * (opt_threads + 1),
+      MYF(MY_FAE));
+  std::vector<std::thread> threads;
+  for (uint i = 0; i < (uint)opt_threads; i++) {
+    data_threads[i].thread_id = i;
+    data_threads[i].has_errors = &has_errors;
+    data_threads[i].store = store;
+    data_threads[i].container = &container;
+    data_threads[i].buf_md5 = new Http_buffer();
+
+    threads.push_back(std::thread(put_func, std::ref(data_threads[i])));
+  }
+
+  for (uint i = 0; i < (uint)opt_threads; i++) {
+    threads.at(i).join();
+    if (!has_errors.load() && opt_md5) {
+      buf_md5.append(*data_threads[i].buf_md5);
+    }
+  }
+
+  if (!has_errors.load() && opt_md5) {
+    msg_ts("%s: Uploading md5\n", my_progname);
+    if (!store->upload_object(container, backup_name + ".md5", buf_md5)) {
+      msg_ts("%s: Upload failed: Error uploading md5.\n", my_progname);
+      has_errors.store(true);
+      goto cleanup;
+    }
+  }
+
+  if (has_errors.load() ||
       !store->list_objects_in_directory(container, backup_name, object_list) ||
       object_list.size() == 0) {
     msg_ts("%s: Upload failed.\n", my_progname);
-    return false;
+    has_errors.store(true);
+    goto cleanup;
   }
 
   /* check if the last_file (xtrabackup_tablespaces.gz.00000000000 or
   xtrabackup_tablespaces.00000000000000000000) is uploaded to cloud storage to
   determine successful xbcloud "put" operation. */
-  std::string last_file_prefix = backup_name + "/xtrabackup_tablespaces";
-  auto last_file_size = last_file_prefix.size();
-  bool file_found = false;
   for (auto cur_file = object_list.rbegin(); cur_file != object_list.rend();
        cur_file++) {
     if (cur_file->size() >= last_file_size &&
@@ -872,21 +985,30 @@ bool xbcloud_put(Object_store *store, const std::string &container,
         "%s: Upload failed: backup is incomplete.\nBackup doesn't contain "
         "last file with prefix xtrabackup_tablespaces in the cloud storage\n",
         my_progname);
-    return false;
-  }
-
-  if (upload_md5) {
-    msg_ts("%s: Uploading md5\n", my_progname);
-    if (!store->upload_object(container, backup_name + ".md5", buf_md5)) {
-      msg_ts("%s: Upload failed: Error uploading md5.\n", my_progname);
-      return false;
-    }
+    has_errors.store(true);
+    goto cleanup;
   }
 
   msg_ts("%s: Upload completed.\n", my_progname);
-  return true;
+
+cleanup:
+  for (uint i = 0; i < (uint)opt_threads; i++) {
+    delete (data_threads[i].buf_md5);
+    char filename[FN_REFLEN];
+    snprintf(filename, sizeof(filename), "%s%s%lu", opt_fifo_dir, "/thread_",
+             (ulong)i);
+    unlink(filename);
+  }
+
+  my_free(data_threads);
+  return !has_errors.load();
 }
 
+/** Validates a chunk name splitting the name and index part of it.
+@param[in]        chunk_name  string holding the chunk name
+@param[in,out]    file_name   filename part of the chunk
+@param[in,out]    idx         chunk index
+@return true in case of success or false otherwise */
 bool chunk_name_to_file_name(const std::string &chunk_name,
                              std::string &file_name, my_off_t &idx) {
   if (chunk_name.size() < 22 && chunk_name[chunk_name.size() - 21] != '.') {
@@ -960,136 +1082,180 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
   return !error;
 }
 
+void download_func(download_thread_ctxt_t &cntx) {
+  auto thread_id = cntx.thread_id;
+  File fd;
+  std::thread ev;
+  std::atomic<bool> *error = cntx.has_errors;
+  thread_state_t *thread_state = new struct thread_state_t;
+  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
+
+  if (opt_threads > 1) {
+    char fifo_filename[FN_REFLEN];
+    snprintf(fifo_filename, sizeof(fifo_filename), "%s%s%lu", opt_fifo_dir,
+             "/thread_", (ulong)thread_id);
+    fd = open_fifo_for_write_with_timeout(fifo_filename, opt_fifo_timeout);
+    if (fd < 0) {
+      msg_ts("%s: [%d] my_open failed for file: %s.\n", my_progname, thread_id,
+             fifo_filename);
+      error->store(true);
+      goto end;
+    }
+  } else {
+    fd = fileno(stdout);
+  }
+  if (!h.init()) {
+    msg_ts("%s: Failed to initialize event handler.\n", my_progname);
+    error->store(true);
+    goto end;
+  }
+  ev = h.run();
+
+  while (true) {
+    /* Do not queue more than what we can handle. If another thread has free
+     * workable slots let it queue the file. */
+    if (thread_state->in_progress_files_size() >= opt_parallel) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      continue;
+    }
+
+    if (cntx.global_list->empty() && thread_state->file_list_empty()) {
+      break;
+    }
+    /* We ensure we don't have any pending callback to be processed */
+    if (error->load() && !thread_state->in_progress_files_empty()) {
+      continue;
+    }
+    if (error->load()) break;
+
+    /* Check if we have any file available from thread list or global list */
+    file_metadata_t file;
+    if (!thread_state->next_file(file) && !cntx.global_list->next_file(file)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      continue;
+    }
+
+    if (!thread_state->start_file(file)) {
+      /* This file is already been downloaded. skipping */
+      continue;
+    }
+    my_off_t id = thread_state->next_chunk(file);
+    std::string chunk = build_file_name(file.name, id);
+
+    msg_ts("%s: [%d] Downloading %s.\n", my_progname, thread_id, chunk.c_str());
+    cntx.store->async_download_object(
+        *cntx.container, chunk, &h,
+        std::bind(
+            [&cntx, &thread_state](bool success, const Http_buffer &contents,
+                                   std::string chunk, my_off_t idx,
+                                   std::atomic<bool> *error, uint thread_id,
+                                   File fd, file_metadata_t file) {
+              if (!success) {
+                error->store(true);
+                msg_ts("%s: [%d] Download failed. Cannot download %s.\n",
+                       my_progname, thread_id, chunk.c_str());
+
+              } else if (!my_write(fd,
+                                   reinterpret_cast<unsigned char *>(
+                                       const_cast<char *>(&contents[0])),
+                                   contents.size(), MYF(MY_WME | MY_NABP))) {
+                msg_ts("%s: [%d] Download successfull %s, size %zu\n",
+                       my_progname, thread_id, chunk.c_str(), contents.size());
+              } else {
+                msg_ts(
+                    "%s: [%d] Download of file %s failed. Cannot write to "
+                    "output "
+                    "\n",
+                    my_progname, thread_id, chunk.c_str());
+                error->store(true);
+              }
+              thread_state->complete_chunk(file, idx);
+            },
+            std::placeholders::_1, std::placeholders::_2, chunk, id,
+            cntx.has_errors, thread_id, fd, file));
+  }
+
+  h.stop();
+  ev.join();
+
+end:
+  delete (thread_state);
+  if (fd > 2) {
+    my_close(fd, MYF(0));
+    fd = -1;
+  }
+}
+
 bool xbcloud_download(Object_store *store, const std::string &container,
                       const std::string &backup_name) {
   std::vector<std::string> object_list;
-
+  std::atomic<bool> has_errors{false};
+  char fullpath[FN_REFLEN];
   if (!store->list_objects_in_directory(container, backup_name, object_list) ||
       object_list.size() == 0) {
     msg_ts("%s: Download failed. Cannot list %s.\n", my_progname,
            backup_name.c_str());
     return false;
   }
-
-  struct download_state {
-    std::mutex m;
-    std::set<std::string> chunks;
-
-    bool empty() {
-      std::lock_guard<std::mutex> g(m);
-      return chunks.empty();
-    }
-
-    bool start_chunk(const std::string &chunk) {
-      std::lock_guard<std::mutex> g(m);
-      if (chunks.count(chunk) > 0) {
-        return false;
-      }
-      chunks.insert(chunk);
-      return true;
-    }
-
-    void complete_chunk(const std::string &chunk) {
-      std::lock_guard<std::mutex> g(m);
-      chunks.erase(chunk);
-    }
-  };
-
-  struct chunk_state {
-    my_off_t next;
-    my_off_t last;
-  };
-
-  std::map<std::string, struct chunk_state> chunks;
-  struct download_state download_state;
-
+  struct global_list_t *global_list = new struct global_list_t;
   for (const auto &obj : object_list) {
     my_off_t idx;
     std::string file_name;
     if (!chunk_name_to_file_name(obj, file_name, idx)) {
       continue;
     }
-    if (!file_list.empty() &&
-        file_list.count(file_name.substr(backup_name.length() + 1)) < 1) {
-      continue;
-    }
-    chunks[file_name] = {0, idx};
+    global_list->add(file_name, idx);
   }
 
-  Event_handler h(opt_parallel > 0 ? opt_parallel : 1);
-  if (!h.init()) {
-    msg_ts("%s: Failed to initialize event handler.\n", my_progname);
-    return false;
+  /* Create FIFO files if necessary */
+
+  if (opt_threads > 1) {
+    if (my_mkdir(opt_fifo_dir, 0600, MYF(0)) < 0 && my_errno() != EEXIST &&
+        my_errno() != EISDIR) {
+      char errbuf[MYSYS_STRERROR_SIZE];
+      msg_ts("%s: Error creating dir: %s. (%d) %s\n", my_progname, opt_fifo_dir,
+             my_errno(), my_strerror(errbuf, sizeof(errbuf), my_errno()));
+      return false;
+    }
+    for (uint i = 0; i < opt_threads; i++) {
+      std::string path = "thread_" + std::to_string(i);
+      fn_format(fullpath, path.c_str(), opt_fifo_dir, "",
+                MYF(MY_RELATIVE_PATH));
+      mkfifo(fullpath, 0600);
+    }
+    msg_ts(
+        "Created %ld Named Pipes(FIFO). Waiting up to %ld seconds for xbstream "
+        "to open the files for reading.\n",
+        opt_threads, opt_fifo_timeout);
   }
-  auto thread = h.run();
-
-  bool error{false};
-
-  while (true) {
-    if (chunks.empty() && download_state.empty()) {
-      break;
-    }
-    if (error && !download_state.empty()) {
-      continue;
-    }
-    if (error) break;
-    for (auto it = chunks.begin(); it != chunks.end();) {
-      if (error) break;
-      if (!download_state.start_chunk(it->first)) {
-        ++it;
-        continue;
-      }
-      std::stringstream s_object_name;
-      s_object_name << it->first << "." << std::setw(20) << std::setfill('0')
-                    << it->second.next;
-      std::string object_name = s_object_name.str();
-      msg_ts("%s: Downloading %s.\n", my_progname, object_name.c_str());
-      store->async_download_object(
-          container, object_name, &h,
-          std::bind(
-              [](bool success, const Http_buffer &contents, std::string name,
-                 std::string basename, struct download_state *download_state,
-                 bool *error) {
-                if (!success) {
-                  *error = true;
-                  msg_ts("%s: Download failed. Cannot download %s.\n",
-                         my_progname, name.c_str());
-                  download_state->complete_chunk(basename);
-                  return;
-                }
-                msg_ts("%s: Download successfull %s, size %zu\n", my_progname,
-                       name.c_str(), contents.size());
-                std::cout.write(&contents[0], contents.size());
-                std::cout.flush();
-                download_state->complete_chunk(basename);
-                if (std::cout.fail()) {
-                  msg_ts(
-                      "%s: Download failed. Cannot write to the standard "
-                      "output.\n",
-                      my_progname);
-                  *error = true;
-                }
-              },
-              std::placeholders::_1, std::placeholders::_2, object_name,
-              it->first, &download_state, &error));
-      if (++it->second.next > it->second.last) {
-        it = chunks.erase(it);
-      } else {
-        ++it;
-      }
-    }
+  /* Create data copying threads */
+  download_thread_ctxt_t *data_threads = (download_thread_ctxt_t *)my_malloc(
+      PSI_NOT_INSTRUMENTED, sizeof(download_thread_ctxt_t) * (opt_threads + 1),
+      MYF(MY_FAE));
+  std::vector<std::thread> threads;
+  for (uint i = 0; i < (uint)opt_threads; i++) {
+    data_threads[i].thread_id = i;
+    data_threads[i].has_errors = &has_errors;
+    data_threads[i].global_list = global_list;
+    data_threads[i].store = store;
+    data_threads[i].container = &container;
+    threads.push_back(std::thread(download_func, std::ref(data_threads[i])));
   }
 
-  h.stop();
-  thread.join();
+  for (uint i = 0; i < (uint)opt_threads; i++) {
+    threads.at(i).join();
+  }
 
-  if (error) {
+  if (has_errors.load()) {
     msg_ts("%s: Download failed.\n", my_progname);
   } else {
     msg_ts("%s: Download completed.\n", my_progname);
   }
 
-  return !error;
+  delete (global_list);
+  my_free(data_threads);
+
+  return !has_errors.load();
 }
 
 struct main_exit_hook {
@@ -1373,10 +1539,15 @@ int main(int argc, char **argv) {
     reinterpret_cast<Azure_object_store *>(object_store.get())
         ->set_extra_http_headers(extra_http_headers);
   }
-
+  /* validation */
+  if (opt_threads > 1 && opt_fifo_dir == nullptr && opt_mode != MODE_DELETE) {
+    msg_ts(
+        "--fifo-streams parameter set to multi-thread using FIFO files. "
+        "It requires --fifo-dir to be set.\n");
+    return EXIT_FAILURE;
+  }
   if (opt_mode == MODE_PUT) {
-    if (!xbcloud_put(object_store.get(), container_name, backup_name,
-                     opt_md5)) {
+    if (!xbcloud_put(object_store.get(), container_name, backup_name)) {
       return EXIT_FAILURE;
     }
   } else if (opt_mode == MODE_GET) {
