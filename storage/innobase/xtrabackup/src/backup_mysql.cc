@@ -189,6 +189,12 @@ xb_mysql_connect()
 	xb_mysql_query(connection, "SET NAMES utf8",
 		       false, true);
 
+	if (xb_mysql_numrows(connection, "SELECT @@wsrep_sync_wait", false) >
+				0) {
+		xb_mysql_query(connection, "SET SESSION wsrep_sync_wait=0", false,
+				true);
+	}
+
 	return(connection);
 }
 
@@ -1134,8 +1140,12 @@ lock_tables_maybe(MYSQL *connection, int timeout, int retry_count)
 	}
 
 	if (have_galera_enabled) {
-		xb_mysql_query(connection,
-				"SET SESSION wsrep_causal_reads=0", false);
+		if (xb_mysql_numrows(connection, "SELECT @@wsrep_causal_reads",
+					false) > 0) {
+			xb_mysql_query(connection,
+				"SET SESSION wsrep_causal_reads=0",
+				false);
+		}
 	}
 
 	xb_mysql_query(connection, "FLUSH TABLES WITH READ LOCK", false);
