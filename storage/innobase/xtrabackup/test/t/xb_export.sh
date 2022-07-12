@@ -1,9 +1,13 @@
 . inc/common.sh
-if ! is_xtradb
+table_count=9
+NUMBER_OF_CFG_FILES=11
+if is_server_version_higher_than 8.0.28
 then
-  require_server_version_higher_than 8.0.31
+  NUMBER_OF_CFG_FILES=13
+  table_count=11
 fi
 
+vlog "total table to test $table_count "
 function init_schema() {
     local database_name=$1
     local table_name=$2
@@ -14,7 +18,7 @@ function init_schema() {
     cmd+="create table $database_name.$table_name ("
     for ((c=1; c<=$columns_count; ++c ))
     do
-        cmd+="\`c$c\` int,"
+        cmd+="c$c int,"
     done
     for ((c=1; c<=$columns_count; ++c ))
     do
@@ -59,23 +63,40 @@ function insert_data() {
     echo "$cmd" | run_cmd $MYSQL $MYSQL_ARGS
 }
 
-import_option=""
+function create_tables() {
+  ### check if we can import all the columns type in mysql
+  mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
+  col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
+  col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
+  col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
+  col20 varchar(255) character set latin1 )' incremental_sample;
 
-if is_xtradb
-then
-    if is_server_version_higher_than 5.6.0
-        # No additional options for XtraDB 5.6+
-    then
-        true
-    elif is_server_version_higher_than 5.5.0
-    then
-        import_option="--innodb_import_table_from_xtrabackup=1"
-    else
-        import_option="--innodb_expand_import=1"
-    fi
-fi
+  mysql -e 'CREATE TABLE test5(a int, b int, PRIMARY KEY (a), KEY (b DESC))' incremental_sample
+  mysql -e 'CREATE TABLE test6(a int)' incremental_sample
+  mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incremental_sample
+  mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
+  mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
+  mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
 
-mysql_extra_args="--innodb_file_per_table $import_option"
+  ### If we can insert without duplicate key error after import
+  mysql -e 'CREATE TABLE test9(c1 SERIAL) ENGINE = InnoDB' incremental_sample
+
+  if is_server_version_higher_than 8.0.28
+  then
+    mysql -e 'CREATE TABLE test10(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
+    mysql -e 'INSERT INTO test10 VALUES (1,1);' incremental_sample
+    mysql -e 'ALTER TABLE test10 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ALGORITHM=INSTANT' incremental_sample
+    mysql -e 'CREATE TABLE test11(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
+    mysql -e 'INSERT INTO test11 VALUES (1,1);' incremental_sample
+    mysql -e 'ALTER TABLE test11 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ADD COLUMN c4 INT,  ALGORITHM=INSTANT' incremental_sample
+    mysql -e 'INSERT INTO test11 VALUES (1,1,1,1);' incremental_sample
+    mysql -e 'ALTER TABLE test11 DROP COLUMN c3, ALGORITHM=INSTANT' incremental_sample
+  fi
+
+}
+
+
+mysql_extra_args="--innodb_file_per_table "
 
 # Starting database server
 start_server $mysql_extra_args
@@ -100,41 +121,20 @@ then
 fi
 
 # Loading table schema
-init_schema incremental_sample test $max_indices_count "n"
+init_schema incremental_sample test1 $max_indices_count "n"
 init_schema incremental_sample test2 $indices_count "n"
 init_schema incremental_sample test3 $indices_count "y"
 
 # Adding some data to database
-insert_data incremental_sample test $max_indices_count $rows_count
+insert_data incremental_sample test1 $max_indices_count $rows_count
 insert_data incremental_sample test2 $indices_count $rows_count
 
-# check if we can import all the columns type in mysql
-mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
-col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
-col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
-col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
-col20 varchar(255) character set latin1 )' incremental_sample;
+create_tables;
+mysql -e 'INSERT INTO test9 VALUES(null)' incremental_sample
 
-mysql -e 'CREATE TABLE test5(a int, b int, PRIMARY KEY (a), KEY (b DESC))' incremental_sample
-mysql -e 'CREATE TABLE test6(a int)' incremental_sample
-mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incremental_sample
-mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
-mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
-mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
-if is_server_version_higher_than 8.0.28
-then
-  mysql -e 'CREATE TABLE test9(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
-  mysql -e 'INSERT INTO test9 VALUES (1,1);' incremental_sample
-  mysql -e 'ALTER TABLE test9 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ALGORITHM=INSTANT' incremental_sample
-  mysql -e 'CREATE TABLE test10(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
-  mysql -e 'INSERT INTO test10 VALUES (1,1);' incremental_sample
-  mysql -e 'ALTER TABLE test10 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ADD COLUMN c4 INT,  ALGORITHM=INSTANT' incremental_sample
-  mysql -e 'INSERT INTO test10 VALUES (1,1,1,1);' incremental_sample
-  mysql -e 'ALTER TABLE test10 DROP COLUMN c3, ALGORITHM=INSTANT' incremental_sample
-fi
+checksum_1=`checksum_table incremental_sample test1`
+rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test1" incremental_sample`
 
-checksum_1=`checksum_table incremental_sample test`
-rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
 vlog "rowsnum_1 is $rowsnum_1"
 vlog "checksum_1 is $checksum_1"
 
@@ -146,59 +146,25 @@ vlog "Re-initializing database server"
 stop_server
 rm -rf ${MYSQLD_DATADIR}
 start_server $mysql_extra_args
-init_schema incremental_sample test $max_indices_count "n"
+init_schema incremental_sample test1 $max_indices_count "n"
 init_schema incremental_sample test2 $indices_count "n"
 init_schema incremental_sample test3 $indices_count "y"
-# check if we can import all the columns type in mysql
-mysql -e 'create table test4(col1 bool, col2 int, col3 float, col4 double,
-col5 timestamp, col6 long, col7 date, col8 time, col9 datetime, col10 year,
-col11 varchar(20), col12 bit ,col13 decimal, col14 blob, col16 json,
-col17 mediumtext, col18 enum("01","2"), col19 SET("0","1","2"),
-col20 varchar(255) character set latin1 )' incremental_sample;
-mysql -e 'CREATE TABLE test5(a int, b int, PRIMARY KEY (a), KEY (b DESC))' incremental_sample
-mysql -e 'CREATE TABLE test6(a int)' incremental_sample
-mysql -e 'ALTER TABLE test6 ADD COLUMN v1 VARCHAR(255), ALGORITHM=INSTANT' incremental_sample
-mysql -e 'CREATE TABLE test7(a int) row_format=compressed' incremental_sample
-mysql -e 'CREATE TABLE test8(c1 INT) ENGINE = InnoDB' incremental_sample
-mysql -e 'ALTER TABLE test8 ADD COLUMN c2 INT DEFAULT 500' incremental_sample
-if is_server_version_higher_than 8.0.28
-then
-  mysql -e 'CREATE TABLE test9(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
-  mysql -e 'INSERT INTO test9 VALUES (1,1);' incremental_sample
-  mysql -e 'ALTER TABLE test9 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ALGORITHM=INSTANT' incremental_sample
-  mysql -e 'CREATE TABLE test10(c1 INT, c3  INT DEFAULT 500)  ENGINE = InnoDB' incremental_sample
-  mysql -e 'INSERT INTO test10 VALUES (1,1);' incremental_sample
-  mysql -e 'ALTER TABLE test10 ADD COLUMN c2 INT DEFAULT 500 AFTER c1, ADD COLUMN c4 INT,  ALGORITHM=INSTANT' incremental_sample
-  mysql -e 'INSERT INTO test10 VALUES (1,1,1,1);' incremental_sample
-  mysql -e 'ALTER TABLE test10 DROP COLUMN c3, ALGORITHM=INSTANT' incremental_sample
-fi
+
+create_tables
+
 
 vlog "Database was re-initialized"
-
-mysql -e "alter table test discard tablespace;" incremental_sample
-mysql -e "alter table test2 discard tablespace;" incremental_sample
-mysql -e "alter table test3 discard tablespace;" incremental_sample
-mysql -e "alter table test4 discard tablespace;" incremental_sample
-mysql -e "alter table test5 discard tablespace;" incremental_sample
-mysql -e "alter table test6 discard tablespace;" incremental_sample
-mysql -e "alter table test7 discard tablespace;" incremental_sample
-mysql -e "alter table test8 discard tablespace;" incremental_sample
-if is_server_version_higher_than 8.0.28
-then
-  mysql -e "alter table test9 discard tablespace;" incremental_sample
-  mysql -e "alter table test10 discard tablespace;" incremental_sample
-fi
+for ((c=1; c<=$table_count; ++c ))
+do
+  mysql -e "alter table test$c discard tablespace;" incremental_sample
+done
 
 xtrabackup --datadir=$mysql_datadir --prepare --export \
     --target-dir=$backup_dir
 
 ls -tlr $backup_dir/incremental_sample/*cfg
 cfg_count=`find $backup_dir/incremental_sample -name '*.cfg' | wc -l`
-NUMBER_OF_CFG_FILES=10
-if is_server_version_higher_than 8.0.28
-then
-  NUMBER_OF_CFG_FILES=12
-fi
+
 vlog "Verifying .cfg files in backup, expecting ${NUMBER_OF_CFG_FILES}."
 if [ $cfg_count -ne ${NUMBER_OF_CFG_FILES} ]
 then
@@ -207,26 +173,20 @@ then
 fi
 
 run_cmd cp $backup_dir/incremental_sample/test* $mysql_datadir/incremental_sample/
-mysql -e "alter table test import tablespace" incremental_sample
-mysql -e "alter table test2 import tablespace" incremental_sample
-mysql -e "alter table test3 import tablespace" incremental_sample
-mysql -e "alter table test4 import tablespace" incremental_sample
-mysql -e "alter table test5 import tablespace" incremental_sample
-mysql -e "alter table test6 import tablespace" incremental_sample
-mysql -e "alter table test7 import tablespace" incremental_sample
-mysql -e "alter table test8 import tablespace" incremental_sample
-if is_server_version_higher_than 8.0.28
-then
-  mysql -e "alter table test9 import tablespace" incremental_sample
-  mysql -e "alter table test10 import tablespace" incremental_sample
-fi
+
+for ((c=1; c<=$table_count; ++c ))
+do
+  mysql -e "alter table test$c import tablespace" incremental_sample
+done
 
 vlog "Table has been imported"
 
+mysql -e "INSERT INTO test9 VALUES(null)" incremental_sample
+
 vlog "Cheking checksums"
-checksum_2=`checksum_table incremental_sample test`
+checksum_2=`checksum_table incremental_sample test1`
 vlog "checksum_2 is $checksum_2"
-rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test" incremental_sample`
+rowsnum_1=`${MYSQL} ${MYSQL_ARGS} -Ns -e "select count(*) from test1" incremental_sample`
 vlog "rowsnum_1 is $rowsnum_1"
 
 if [ "$checksum_1" != "$checksum_2"  ]
@@ -245,8 +205,8 @@ shutdown_server
 start_server $mysql_extra_args
 
 # Some testing queries
-mysql -e "select count(*) from test;" incremental_sample
-mysql -e "show create table test;" incremental_sample
+mysql -e "select count(*) from test1;" incremental_sample
+mysql -e "show create table test9;" incremental_sample
 
 # Performing full backup of imported table
 mkdir -p $topdir/backup/full
@@ -259,7 +219,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
 xtrabackup --datadir=$mysql_datadir --prepare \
     --target-dir=$topdir/backup/full
 
-mysql -e "delete from test;" incremental_sample
+mysql -e "delete from test1;" incremental_sample
 
 stop_server
 
@@ -270,7 +230,7 @@ xtrabackup --datadir=$mysql_datadir --copy-back \
 start_server $mysql_extra_args
 
 vlog "Cheking checksums"
-checksum_3=`checksum_table incremental_sample test`
+checksum_3=`checksum_table incremental_sample test1`
 vlog "checksum_3 is $checksum_3"
 
 if [ "$checksum_3" != "$checksum_2"  ]
