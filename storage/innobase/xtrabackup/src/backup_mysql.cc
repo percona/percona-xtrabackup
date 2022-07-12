@@ -2383,6 +2383,10 @@ bool print_instant_versioned_tables(MYSQL *connection) {
           << "Found tables with row versions due to INSTANT ADD/DROP columns";
       xb::error()
           << "This feature is not stable and will cause backup corruption.";
+      xb::error()
+          << "Please check "
+             "https://docs.percona.com/percona-xtrabackup/8.0/em/instant.html "
+             "for more details.";
       xb::error() << "Tables found:";
       while ((row = mysql_fetch_row(result)) != NULL) {
         xb::error() << row[0];
