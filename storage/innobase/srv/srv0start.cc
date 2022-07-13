@@ -776,6 +776,23 @@ static dberr_t srv_undo_tablespace_fixup_num(space_id_t space_num) {
   if (!undo::is_active_truncate_log_present(space_num)) {
     return (DB_SUCCESS);
   }
+#ifdef XTRABACKUP
+  if (srv_backup_mode) {
+    if (opt_lock_ddl) {
+      xb::warn() << "Found _trunc.log in server dirctory. ";
+      return (DB_SUCCESS);
+    } else {
+      xb::error()
+          << "Found _trunc.log file in server directory. Undo truncation might "
+             "be concurrently running, Try backup after undo truncation is "
+             "complete. These *_trunc.log could be left over from previous "
+             "undo truncation, remove them safely to continue backup. You can "
+             "also run backup with --lock-ddl=true that blocks concurrent undo "
+             "truncation";
+      return (DB_ERROR);
+    }
+  }
+#endif
 
   ib::info(ER_IB_MSG_1077, ulong{space_num});
 
