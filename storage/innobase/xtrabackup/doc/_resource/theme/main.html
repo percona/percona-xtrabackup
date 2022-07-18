@@ -1,0 +1,220 @@
+{#
+MkDocs template for PMM
+Builds HTML without outer html tags
+for wrapping within Drupal container
+#}
+{%- set url_root = config.site_url %}
+{%- set site_name = config.site_name %}
+{%- set page_title = page.title %}
+{%- set release = config.extra.release %}
+
+{# toctree() section level start and limit #}
+{% set default_level = 1 %}
+{% set max_level = 4 %}
+
+{#### Horizontal navigation bars above and below main content (Home, prev, next) #}
+{%- macro relbar() %}
+<div class="related row">
+    <ul class="nav nav-pills">
+        {% if page.next_page %}
+        <li class="right" style="margin-right: 10px">
+            <a href="{{ page.next_page.url|url }}" title="{{ page.next_page.title|e }}">Next</a>
+        </li>
+        {% endif %}
+        {% if page.previous_page %}
+        <li class="right" style="margin-right: 10px">
+            <a href="{{ page.previous_page.url|url }}" title="{{ page.previous_page.title|e }}">Previous</a>
+        </li>
+        {% endif %}
+        <li>
+            <a href="{{ url_root }}">Home</a>
+        </li>
+    </ul>
+</div>
+{% endmacro %}
+
+{#### 'Edit this page' and 'Report issue' links #}
+{% macro edit_report() %}
+{% if page and page.edit_url %}
+<div class="small">
+    <ul class="list-inline">
+        <li class="left">
+            <a href="{{ config.repo_url }}issues/new?title={{ config.extra.open_issue_subject }} '{{ page.title }}' ({{ page.url }})&body={{ config.extra.open_issue_body }}"
+                target="_blank" title="{{ config.extra.open_issue_tooltip }}">{{ config.extra.open_issue_text
+                }}</a>
+        </li>
+        <li class="pull-right">
+            <a href="{{ page.edit_url }}" target="_blank" title="Edit this page on GitHub in Markdown format">{{
+                config.extra.edit_page_text }}</a>
+        </li>
+    </ul>
+</div>
+{% endif %}
+{% endmacro %}
+
+{#### 'Last updated' (and later, other info such as author, tester) #}
+{% macro last_updated() %}
+<div class="small">
+    <ul class="list-inline">
+        {% if page and page.meta.revision_date %}
+        <li class="left">
+            {{ config.extra.updated_text }} {{ page.meta.revision_date }}
+        </li>
+        {% endif %}
+    </ul>
+</div>
+{% endmacro %}
+
+{#### Contents of left column navigation bar #}
+{% macro sidebar() %}
+<div class="sphinxsidebar col-md-3 col-md-pull-9">
+    <div class="sphinxsidebarwrapper">
+        {@ product_logo @}
+        {@ product_pdf_download @}
+        {{ version_menu() }}
+        <h3 id="toctree-heading"><a href="{{ url_root }}">Table Of Contents</a></h3>
+        {{ toctree(nav, default_level) }}
+        {{ relations() }}
+        {@ product_series @}
+    </div>
+</div>
+{% endmacro %}
+
+{### Left nav column previous/next links #}
+{% macro relations() %}
+{% if page.previous_page %}
+<h4>Previous page</h4>
+<p class="topless">
+    <a href="{{ page.previous_page.url|url }}" title="previous chapter">{{ page.previous_page.title|e }}</a>
+</p>
+{% endif %}
+{% if page.next_page %}
+<h4>Next page</h4>
+<p class="topless">
+    <a href="{{ page.next_page.url|url }}" title="next chapter">{{ page.next_page.title|e }}</a>
+</p>
+{% endif %}
+{% endmacro %}
+
+
+{#
+Used by toctree()
+
+MkDocs doesn't allow a section link. Example, in mkdocs.yaml:
+
+nav:
+  - SECTION TITLE:
+    - intro: dir/index.md
+    - another: dir/section.md
+
+The toctree will render without a link for 'SECTION TITLE',
+as it doesn't have a file. 'SECTION TITLE' is just a cosmetic
+label.
+
+To match Sphinx's behaviour, this macro detects special
+section labels as 'TITLE=path' (splitting on the equals sign).
+The new nav element would then be:
+
+nav:
+  - SECTION TITLE=/dir/:
+    - intro: dir/index.md
+    - another: dir/section.md
+
+This macro will put a link to /dir/ for the toc entry
+'SECTION TITLE'. If there is not an index.md file in
+the subdir, link to a file with its .html extension.
+
+nav:
+  - SECTION TITLE=/dir/myindex.html:
+    - intro: dir/index.md
+    - another: dir/section.md
+
+#}
+{%- macro navi(item, class, close) %}
+<li class="{{ class }}">
+{%- if item.url %}
+    <a class="reference internal" href="{{ item.url|url }}">{{ item.title }}</a>
+{%- else %}
+    <a class="reference internal" href="javascript: void(0)" style="text-decoration: none">{{ item.title }}</a>
+{% endif %}
+
+{%- if close %}
+</li>
+{% endif %}
+{% endmacro %}
+
+{# Table of contents for left nav column #}
+{% macro toctree(n, level) %}
+{% if level <= max_level %}
+<ul class="toctree" id="toctree">
+{% for i in n %}
+{{ navi(i, "toctree-l" + level|string) }}
+{% if i.children %}
+{{ toctree(i.children, level+1) }}
+{% endif %}
+{% endfor %}
+</ul>
+{% endif %}
+{% endmacro %}
+
+{# Inserts script items from mkdocs.yml #}
+{%- macro script() %}
+{%- for scriptfile in config.extra_javascript %}
+<script src="{{ scriptfile|url }}" type="text/javascript"></script>
+{% endfor %}
+{% endmacro %}
+
+{# Inserts CSS files from mkdocs.yml #}
+{%- macro css() %}
+{%- for cssfile in config.extra_css %}
+<link rel="stylesheet" href="{{ cssfile|url }}" type="text/css">
+{%- endfor %}
+{% endmacro %}
+
+{%- macro metatags() %}
+{# TODO #}
+{% endmacro %}
+
+{% macro version_menu() %}
+<section class="select-wrapper" id="version-select-wrapper">
+    <!-- Empty locator section for version selector -->
+</section>
+{% endmacro %}
+
+{# Layout for content as hosted by Drupal (no outer html tag) #}
+{# NOTE: title and head are ignored by Drupal's container #}
+<title>{{ site_name|e }}{% if page_title %} &mdash; {{ page_title|striptags|e }}{% endif %}</title>
+
+<head>
+    {{ metatags() }}
+    {{ script() }}
+    <link rel="top" title="{{ docstitle }}" href="{{ url_root }}" />
+    {% if page.next_page %}
+    <link rel="next" title="{{ page.next_page.title|striptags }}" href="{{ page.next_page.url|url }}" />
+    {% endif %}
+    {% if page.previous %}
+    <link rel="prev" title="{{ page.previous.title|striptags }}" href="{{ page.previous.url|url }}" />
+    {% endif %}
+</head>
+
+<body>
+    {{ css() }}
+    {{ script() }}
+    <div class="container">
+        <div class="document row">
+            <div class="documentwrapper col-md-9 col-md-push-3">
+                {{ relbar() }}
+                {{ edit_report() }}
+                <div class="bodywrapper">
+                    <div class="body">
+                        {{ page.content }}
+                    </div>
+                </div>
+                {{ last_updated() }}
+                {{ relbar() }}
+            </div>
+            {{ sidebar() }}
+            <div class="clearer"></div>
+        </div>
+    </div>
+</body>
