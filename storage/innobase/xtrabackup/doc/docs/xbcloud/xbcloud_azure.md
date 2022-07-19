@@ -14,12 +14,7 @@ The following are the options, environment variables, and descriptions for uploa
 | `--azure-container-name=name`  | AZURE_CONTAINER_NAME    | A container name is a valid DNS name that conforms to the [Azure naming rules](https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#container-names) |
 | `--azure-access-key=name`      | AZURE_ACCESS_KEY        | A generated key that can be used to authorize access to data in your account using the Shared Key authorization. |
 | `--azure-endpoint=name`        | AZURE_ENDPOINT          | The endpoint allows clients to securely access data. |
-| `--azure-tier-class=name`      | AZURE_STORAGE_CLASS     | Cloud tier can decrease the local storage required while maintaining the performance. When enabled, this feature has the following categories:
- * Hot - Frequently accessed or modified data
-
- * Cool - Infrequently accessed or modified data
-
- * Archive - Rarely accessed or modified data |
+| `--azure-tier-class=name`      | AZURE_STORAGE_CLASS     | Cloud tier can decrease the local storage required while maintaining the performance. When enabled, this feature has the following categories: <br /> &#42; Hot - Frequently accessed or modified data <br />&#42; Cool - Infrequently accessed or modified data <br />&#42; Archive - Rarely accessed or modified data|
 
 Test your Azure applications with the [Azurite open-source emulator](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=visual-studio). For testing purposes, the **xbcloud** binary adds the `--azure-development-storage` option that uses the default `access_key` and `storage account` of azurite and `testcontainer` for the container. You can overwrite these options, if needed.
 

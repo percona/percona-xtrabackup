@@ -41,7 +41,7 @@ $ sudo apt install python3-sphinx
 
 Percona Xtrabackup requires GCC version 5.3 or higher. If the
 version of GCC installed on your system is lower then you may need to
-install and enable [the Developer Toolset 7](https://www.softwarecollections.org/en/scls/rhscl/devtoolset-7/) on
+install and enable [the Developer Toolset](https://developers.redhat.com/products/developertoolset/overview) on
 `RPM`-based distributions to make sure that you use the latest GCC
 compiler and development tools.  Then, install `cmake` and other
 dependencies:

@@ -94,6 +94,8 @@ environment. [Commercial support contracts are available](https://www.percona.co
 
 * [Exponential Backoff](xbcloud/xbcloud_exbackoff.md)
 
+* [Using the xbcloud binary with Microsoft Azure Cloud Storage](xbcloud/xbcloud_azure.md)
+
 * [The xbcrypt binary](xbcrypt/xbcrypt.md)
 
 * [The xbstream binary](xbstream/xbstream.md)

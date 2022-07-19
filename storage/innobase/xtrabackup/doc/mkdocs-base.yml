@@ -130,6 +130,7 @@ nav:
       - innobackupex/innobackupex_option_reference.md
       - xbcloud/xbcloud.md
       - xbcloud/xbcloud_exbackoff.md
+      - xbcloud/xbcloud_azure.md
       - xbcrypt/xbcrypt.md
       - xbstream/xbstream.md
       - known_issues.md

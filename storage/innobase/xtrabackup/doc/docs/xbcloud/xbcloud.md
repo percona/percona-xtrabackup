@@ -18,7 +18,7 @@ needing a local storage.
     > 1
 
     # with PIPESTATUS
-     > true | false
+    > true | false
     > echo ${PIPESTATUS[0]} ${PIPESTATUS[1]}
     > 0 1
     ```
@@ -50,7 +50,7 @@ S3 API.
 * 2.3.1-beta1 - Implemented ability to store *xbcloud* parameters in a
 .cnf file
 
-* 2.3.1-beta1 - Implemented support different [authentication options](xbcloud.md#swift-auth) for Swift
+* 2.3.1-beta1 - Implemented support different [authentication options](#swift-authentication-options) for Swift
 
 * 2.3.1-beta1 - Implemented support for partial download of the cloud backups
 
@@ -62,7 +62,7 @@ S3 API.
 ## Supported Cloud Storage Types
 
 Swift was the only option for storing backups in cloud storage until *Percona XtraBackup 2.4.14*. 
-Currently, the xbcloud binary supports [Amazon S3](xbcloud.md#amazon-s3), [Azure](xbcloud_azure.md#xbcloud-azure), [MinIO] (xbcloud.md#minio) and [Google Cloud Storage](xbcloud.md#google-cloud-storage). Amazon S3-compatible cloud storage types, such as Wasabi and Digital Ocean Spaces, are also supported.
+Currently, the xbcloud binary supports [Amazon S3](#creating-a-full-backup-with-amazon-s3), [Azure](xbcloud_azure.md#xbcloud-azure), [MinIO](#creating-a-full-backup-with-minio) and [Google Cloud Storage](#creating-a-full-backup-with-google-cloud-storage). Amazon S3-compatible cloud storage types, such as Wasabi and Digital Ocean Spaces, are also supported.
 
 !!! seealso
 
@@ -126,15 +126,13 @@ The following options are available when using *Amazon S3*:
 
 | Option| Details|
 | ------| ------|
-| -–s3-access-key| Use to supply the AWS access key ID|
+| --s3-access-key| Use to supply the AWS access key ID|
 | --s3-secret-key| Use to supply the AWS secret access key|
 | --s3-bucket| Use supply the AWS bucket name|
 | --s3-region| Use to specify the AWS region. The default value is **us-east-1**|
-| --s3-api-version = <AUTO|2|4>|Select the signing algorithm. The default value is AUTO. In this case, *xbcloud* will probe.|
-| --s3-bucket-lookup = <AUTO|PATH|DNS>|Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket\** style requests. The default value is AUTO. In this case, *xbcloud* will probe.|
-| --s3-storage-class=<name>|Specify the [S3 storage class](https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html). The name options are the following:<br />* STANDARD<br />* STANDARD_IA<br />* GLACIER<br /><br />**NOTE**: If you use the GLACIER storage class, the object must be [restored to S3](https://docs.aws.amazon.com/AmazonS3/latest/dev/restoring-objects.html) before restoring the backup.
-
-Also supports using custom S3 implementations such as MinIO or CephRadosGW.|
+| --s3-api-version = &#60;AUTO&vert;2&vert;4&#62;|Select the signing algorithm. The default value is AUTO. In this case, *xbcloud* will probe.|
+| --s3-bucket-lookup = &#60;AUTO&vert;PATH&vert;DNS&#62;|Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket\** style requests. The default value is AUTO. In this case, *xbcloud* will probe.|
+| --s3-storage-class=&#60;name&#62;|Specify the [S3 storage class](https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html). The name options are the following:<br /> STANDARD<br /> STANDARD_IA<br /> GLACIER<br /><br /> NOTE: If you use the GLACIER storage class, the object must be [restored to S3](https://docs.aws.amazon.com/AmazonS3/latest/dev/restoring-objects.html) before restoring the backup.<br /> Also, supports using custom S3 implementations such as MinIO or CephRadosGW.|
 
 ## Creating a full backup with MinIO
 
@@ -173,11 +171,11 @@ $(date -I)-full_backup
 
 The following options are available when using Google Cloud Storage:
 
-* --google-access-key = <ACCESS KEY ID>
+* --google-access-key = &#60;ACCESS KEY ID&#62;
 
-* --google-secret-key = <SECRET ACCESS KEY>
+* --google-secret-key = &#60;SECRET ACCESS KEY&#62;
 
-* --google-bucket = <BUCKET NAME>
+* --google-bucket = &#60;BUCKET NAME&#62;
 
 * --google-storage-class=name
 
@@ -264,21 +262,18 @@ three distinct parameters (--storage, --s3-bucket, and backup name per se).
 
 **Using a shortcut syntax to provide a storage type, bucket, and backup name**
 
-!!!
+Use the following format: ``storage-type://bucket-name/backup-name``
 
-    Use the following format: ``storage-type://bucket-name/backup-name``
+```bash
+$ xbcloud get s3://operator-testing/bak22 ...
+```
 
-    .. code-block:: bash
+In this example, **s3** refers to a storage type, **operator-testing** is a
+bucket name, and **bak22** is the backup name. This shortcut expands as follows:
 
-       $ xbcloud get s3://operator-testing/bak22 ...
-
-    In this example, **s3** refers to a storage type, **operator-testing** is a
-    bucket name, and **bak22** is the backup name. This shortcut expands as
-    follows:
-
-    .. code-block:: bash
-
-      $ xbcloud get --storage=s3 --s3-bucket=operator-testing bak22 ...
+```bash
+$ xbcloud get --storage=s3 --s3-bucket=operator-testing bak22 ...
+```
 
 You can supply the mandatory parameters not only on the command line. You may use
 configuration files and environment variables.
@@ -301,16 +296,14 @@ header with the server side encryption while specifying a customer key.
 
 **Example of using --header for AES256 encryption**
 
-!!!
-
-    .. code-block:: bash
-
-      $ xtrabackup --backup --stream=xbstream --parallel=4 | \
-      xbcloud put s3://operator-testing/bak-enc/ \
-      --header="X-Amz-Server-Side-Encryption-Customer-Algorithm: AES256" \
-      --header="X-Amz-Server-Side-Encryption-Customer-Key: CuStoMerKey=" \
-      --header="X-Amz-Server-Side-Encryption-Customer-Key-MD5: CuStoMerKeyMd5==" \
-      --parallel=8
+```bash
+$ xtrabackup --backup --stream=xbstream --parallel=4 | \
+xbcloud put s3://operator-testing/bak-enc/ \
+--header="X-Amz-Server-Side-Encryption-Customer-Algorithm: AES256" \
+--header="X-Amz-Server-Side-Encryption-Customer-Key: CuStoMerKey=" \
+--header="X-Amz-Server-Side-Encryption-Customer-Key-MD5: CuStoMerKeyMd5==" \
+--parallel=8
+```
 
 The `--header` parameter is also useful to set the access control list (ACL)
 permissions: `--header="x-amz-acl: bucket-owner-full-control`
@@ -429,7 +422,7 @@ This command downloads the ``ibdata1`` table and the ``sakila/payment.ibd`` tabl
 
 *xbcloud* has the following command line options:
 
-### --storage=[swift\*Amazon S3\*google]
+### --storage=[swift*Amazon S3*google]
 Cloud storage option. *xbcloud* supports Swift, MinIO, and AWS S3.
 The default value is `swift`.
 
