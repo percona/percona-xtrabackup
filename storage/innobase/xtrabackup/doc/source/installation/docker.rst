@@ -67,6 +67,10 @@ intend to use with *Percona XtraBackup*.
 As soon as Percona Server for MySQL runs, add some data to it. Now, you are
 ready to make backups with Percona XtraBackup.
 
+.. important::
+
+   **When running Percona XtraBackup from a container and connecting to a MySQL server container, we recommend using the --user root option in the Docker command.**
+
 Creating a Docker container from Percona XtraBackup image
 ================================================================================
 
