@@ -55,7 +55,7 @@ datasink_t datasink_tmpfile = {
 	&tmpfile_deinit
 };
 
-MY_TMPDIR mysql_tmpdir_list_t;
+extern MY_TMPDIR mysql_tmpdir_list;
 
 static ds_ctxt_t *
 tmpfile_init(const char *root)
@@ -93,7 +93,7 @@ tmpfile_open(ds_ctxt_t *ctxt, const char *path,
 
 	/* Create a temporary file in tmpdir. The file will be automatically
 	removed on close. Code copied from mysql_tmpfile(). */
-	fd = create_temp_file(tmp_path, my_tmpdir(&mysql_tmpdir_list_t),
+	fd = create_temp_file(tmp_path, my_tmpdir(&mysql_tmpdir_list),
 			      "xbtemp",
 #ifdef __WIN__
 			      O_BINARY | O_TRUNC | O_SEQUENTIAL |

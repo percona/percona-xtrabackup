@@ -1,3 +1,5 @@
+.. _2-4-8:
+
 ==========================
 *Percona XtraBackup* 2.4.8
 ==========================
@@ -13,8 +15,7 @@ series.
 New Features
 ============
 
- To avoid issues with *MySQL* 5.7 skipping redo log for DDL |Percona
- XtraBackup| has implemented three new options
+ To avoid issues with *MySQL* 5.7 skipping redo log for DDL *Percona XtraBackup* has implemented three new options
  (`xtrabackup --lock-ddl`,
  `xtrabackup --lock-ddl-timeout`,
  `xtrabackup --lock-ddl-per-table`) that can be used to place MDL locks

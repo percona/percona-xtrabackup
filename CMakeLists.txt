@@ -671,7 +671,7 @@ OPTION(MYSQL_MAINTAINER_MODE
 
 INCLUDE(maintainer)
 
-IF(WITH_UNIT_TESTS)
+IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
  ENABLE_TESTING()
 ENDIF()
 
@@ -701,7 +701,7 @@ ELSE()
   ADD_SUBDIRECTORY(storage/ndb)
 ENDIF()
 
-IF(WITH_UNIT_TESTS)
+IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
   MESSAGE(STATUS "With unit tests")
   ERROR()
   # Visual Studio 11 needs this extra flag in order to compile gmock.
