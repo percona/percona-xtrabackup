@@ -4,7 +4,7 @@
 Incremental Backup
 ==================
 
-|xtrabackup| supports incremental backups, which means that they can copy only
+*xtrabackup* supports incremental backups, which means that they can copy only
 the data that has changed since the last backup. 
 
 .. note:: Incremental backups on the MyRocks storage engine do not determine if an earlier full backup or incremental backup contains the same files. **Percona XtraBackup** copies all of the MyRocks files each time it takes a backup.
@@ -13,7 +13,7 @@ You can perform many incremental backups between each full backup, so you can
 set up a backup process such as a full backup once a week and an incremental
 backup every day, or full backups every day and incremental backups every hour.
 
-Incremental backups work because each |InnoDB| page contains a log sequence
+Incremental backups work because each *InnoDB* page contains a log sequence
 number, or :term:`LSN`. The :term:`LSN` is the system version number for the
 entire database. Each page's :term:`LSN` shows how recently it was changed.
 
@@ -21,14 +21,14 @@ An incremental backup copies each page whose :term:`LSN` is newer than the
 previous incremental or full backup's :term:`LSN`. There are two algorithms in
 use to find the set of such pages to be copied. The first one, available with
 all the server types and versions, is to check the page :term:`LSN` directly by
-reading all the data pages. The second one, available with |Percona Server|, is
+reading all the data pages. The second one, available with *Percona Server for MySQL*, is
 to enable the `changed page tracking
 <http://www.percona.com/doc/percona-server/5.6/management/changed_page_tracking.html>`_
 feature on the server, which will note the pages as they are being changed.
 This information will be then written out in a compact separate so-called
-bitmap file. The |xtrabackup| binary will use that file to read only the data
+bitmap file. The *xtrabackup* binary will use that file to read only the data
 pages it needs for the incremental backup, potentially saving many read
-requests. The latter algorithm is enabled by default if the |xtrabackup| binary
+requests. The latter algorithm is enabled by default if the *xtrabackup* binary
 finds the bitmap file. It is possible to specify
 :option:`--incremental-force-scan` to read all the pages even if the
 bitmap data is available.
@@ -53,7 +53,7 @@ Creating an Incremental Backup
 ==============================
 
 To make an incremental backup, begin with a full backup as usual. The
-|xtrabackup| binary writes a file called :file:`xtrabackup_checkpoints` into
+*xtrabackup* binary writes a file called :file:`xtrabackup_checkpoints` into
 the backup's target directory. This file contains a line showing the
 ``to_lsn``, which is the database's :term:`LSN` at the end of the backup.
 :ref:`Create the full backup <full_backup>` with a following command:
@@ -178,7 +178,7 @@ you saw previously.
 
    This backup is actually safe to :ref:`restore <restoring_a_backup>` as-is
    now, even though the rollback phase has been skipped. If you restore it and
-   start |MySQL|, |InnoDB| will detect that the rollback phase was not
+   start *MySQL*, *InnoDB* will detect that the rollback phase was not
    performed, and it will do that in the background, as it usually does for a
    crash recovery upon start. It will notify you that the database was not shut
    down normally.
@@ -209,14 +209,14 @@ an output similar to:
    ...
    161011 12:45:56 completed OK!
 
-Again, the |LSN| should match what you saw from your earlier inspection of the
+Again, the LSN should match what you saw from your earlier inspection of the
 first incremental backup. If you restore the files from
 :file:`/data/backups/base`, you should see the state of the database as of the
 first incremental backup.
 
 .. warning::
 
-   |PXB| does not support using the same incremental backup directory to prepare
+   *Percona XtraBackup* does not support using the same incremental backup directory to prepare
    two copies of backup. Do not run :option:`--prepare` with the same
    incremental backup directory (the value of `--incremental-dir`) more than
    once.

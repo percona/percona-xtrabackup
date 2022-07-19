@@ -4,15 +4,15 @@
  The xtrabackup Binary
 ================================================================================
 
-The |xtrabackup| binary is a compiled C program that is linked with the |InnoDB|
-libraries and the standard |MySQL| client libraries.
+The *xtrabackup* binary is a compiled C program that is linked with the *InnoDB*
+libraries and the standard *MySQL* client libraries.
 
-|xtrabackup| enables point-in-time backups of |InnoDB| / |XtraDB| tables
-together with the schema definitions, |MyISAM| tables, and other portions of the
+*xtrabackup* enables point-in-time backups of *InnoDB* / *XtraDB* tables
+together with the schema definitions, *MyISAM* tables, and other portions of the
 server.
 
-The |InnoDB| libraries provide the functionality to apply a log to data
-files. The |MySQL| client libraries are used to parse command-line options and
+The *InnoDB* libraries provide the functionality to apply a log to data
+files. The *MySQL* client libraries are used to parse command-line options and
 configuration file.
 
 The tool runs in either :option:`--backup` or :option:`--prepare` mode,

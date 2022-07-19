@@ -121,7 +121,7 @@ be used to compile the source code).
 	 in your current directory.
 
       -B (--build)
-         |PXB| is configured to forbid generating the build pipeline for
+         *Percona XtraBackup* is configured to forbid generating the build pipeline for
 	 ``make`` in the same directory where you store your sources. The ``-B``
 	 parameter refers to the directory that contains the source code. In
 	 this example we use the relative path to the parent directory (..).
@@ -181,8 +181,8 @@ Run ``make install`` to install *Percona XtraBackup* to the default location.
 
 .. rubric:: Installing to a non-default location
 
-You may use the `DESTDIR` parameter with ``make install`` to install |Percona
-XtraBackup| to another location. Make sure that the effective user is able to
+You may use the `DESTDIR` parameter with ``make install`` to install *Percona
+XtraBackup* to another location. Make sure that the effective user is able to
 write to the destination you choose.
 
 .. code-block:: bash

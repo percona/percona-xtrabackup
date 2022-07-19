@@ -64,8 +64,8 @@
       or start the server with ``--innodb_file_per_table``.
 
    innodb_expand_import
-     This feature of |Percona Server| implements the ability to import
-     arbitrary :term:`.ibd` files exported using the |Percona XtraBackup|
+     This feature of *Percona Server for MySQL* implements the ability to import
+     arbitrary :term:`.ibd` files exported using the *Percona XtraBackup*
      :option:`--export` option.
 
      See the `full documentation
@@ -91,7 +91,7 @@
          innodb_data_file_path=ibdata1:50M;ibdata2:50M:autoextend
 
    innodb_log_group_home_dir
-     Specifies the location of the |InnoDB| log files:
+     Specifies the location of the *InnoDB* log files:
 
       .. code-block:: text
 
@@ -100,7 +100,7 @@
 
    innodb_buffer_pool_size
      The size in bytes of the memory buffer to cache data and indexes of
-     |InnoDB|'s tables. This aims to reduce disk access to provide better
+     *InnoDB*'s tables. This aims to reduce disk access to provide better
      performance. By default:
 
       .. code-block:: text
@@ -111,10 +111,10 @@
    InnoDB
       Storage engine which provides ACID-compliant transactions and foreign
       key support, among others improvements over :term:`MyISAM`. It is the
-      default engine for |MySQL| as of the 8.0 series.
+      default engine for *MySQL* as of the 8.0 series.
 
    MyISAM
-     Previous default storage engine for |MySQL| for versions prior to 5.5. It
+     Previous default storage engine for *MySQL* for versions prior to 5.5. It
      doesn't fully support transactions but in some scenarios may be faster
      than :term:`InnoDB`. Each table is stored on disk in 3 files:
      :term:`.frm`, :term:`.MYD`, :term:`.MYI`.
@@ -141,17 +141,17 @@
 
    xbcrypt
      To support encryption and decryption of the backups, a new tool xbcrypt
-     was introduced to |Percona XtraBackup|. This utility has been modeled
+     was introduced to *Percona XtraBackup*. This utility has been modeled
      after The xbstream binary to perform encryption and decryption outside of
-     |Percona XtraBackup|.
+     *Percona XtraBackup*.
 
    xbstream
-     To support simultaneous compression and streaming, |Percona XtraBackup| uses the 
+     To support simultaneous compression and streaming, *Percona XtraBackup* uses the 
       xbstream format. For more information see :option:`--stream` 
 
    ibdata
      Default prefix for tablespace files, e.g. :file:`ibdata1` is a 10MB
-     auto-extensible file that |MySQL| creates for the shared tablespace by
+     auto-extensible file that *MySQL* creates for the shared tablespace by
      default.
 
    .frm
@@ -160,28 +160,28 @@
 
    .ibd
      On a multiple tablespace setup (:term:`innodb_file_per_table` enabled),
-     |MySQL| will store each newly created table on a file with a ``.ibd``
+     *MySQL* will store each newly created table on a file with a ``.ibd``
      extension.
 
    .MYD
-     Each |MyISAM| table has ``.MYD`` (MYData) file which contains the data on
+     Each *MyISAM* table has ``.MYD`` (MYData) file which contains the data on
      it.
 
    .MYI
-     Each |MyISAM| table has ``.MYI`` (MYIndex) file which contains the table's
+     Each *MyISAM* table has ``.MYI`` (MYIndex) file which contains the table's
      indexes.
 
    .exp
-     Files with the ``.exp`` extension are created by |Percona XtraBackup| per
-     each |InnoDB| tablespace when the :option:`--export` option is
+     Files with the ``.exp`` extension are created by *Percona XtraBackup* per
+     each *InnoDB* tablespace when the :option:`--export` option is
      used on prepare. These files can be used to import those tablespaces on
-     |Percona Server| 5.5 or lower versions, see :doc:`restoring individual
+     *Percona Server for MySQL* 5.5 or lower versions, see :doc:`restoring individual
      tables <xtrabackup_bin/restoring_individual_tables>`".
 
    .MRG
      Each table using the :program:`MERGE` storage engine, besides of a
      :term:`.frm` file, will have :term:`.MRG` file containing the names of the
-     |MyISAM| tables associated with it.
+     *MyISAM* tables associated with it.
 
    .TRG
      File containing the Triggers associated to a table, e.g.
@@ -202,7 +202,7 @@
      contains the data of it (which is a standard Comma Separated Value file).
 
    .opt
-     |MySQL| stores options of a database (like charset) in a file with a
+     *MySQL* stores options of a database (like charset) in a file with a
      :file:`.opt` extension in the database directory.
 
    .par

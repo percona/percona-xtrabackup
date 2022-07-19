@@ -5,7 +5,7 @@ Point-In-Time recovery
 ================================================================================
 
 Recovering up to particular moment in database's history can be done with
-|xtrabackup| and the binary logs of the server.
+*xtrabackup* and the binary logs of the server.
 
 Note that the binary log contains the operations that modified the database from
 a point in the past. You need a full :term:`datadir` as a base, and then you can

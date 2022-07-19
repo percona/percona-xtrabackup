@@ -4,8 +4,8 @@
 The xbcloud Binary
 ================================================================================
 
-The purpose of |xbcloud| is to download from the cloud and upload to the cloud the full or part of an |xbstream| archive. |xbcloud| will not overwrite the backup with the same name. |xbcloud| accepts input via a pipe from |xbstream| so that it can be
-invoked as a pipeline with |xtrabackup| to stream directly to the cloud without
+The purpose of *xbcloud* is to download from the cloud and upload to the cloud the full or part of an *xbstream* archive. *xbcloud* will not overwrite the backup with the same name. *xbcloud* accepts input via a pipe from *xbstream* so that it can be
+invoked as a pipeline with *xtrabackup* to stream directly to the cloud without
 needing a local storage.
 
 .. note::
@@ -30,11 +30,11 @@ needing a local storage.
 The *xbcloud* binary stores each chunk as a separate object with a name
 ``backup_name/database/table.ibd.NNNNNNNNNNNNNNNNNNNN``, where ``NNN...`` is a
 0-padded serial number of chunk within a file. Size of chunk produced by
-|xtrabackup| and |xbstream| changed to 10M.
+*xtrabackup* and *xbstream* changed to 10M.
 
-|xbcloud| has three essential operations: *put*, *get*, and *delete*. With these
+*xbcloud* has three essential operations: *put*, *get*, and *delete*. With these
 operations, backups are created, stored, retrieved, restored, and
-deleted. |xbcloud| operations clearly map to similar operations within the AWS
+deleted. *xbcloud* operations clearly map to similar operations within the AWS
 Amazon Amazon S3 API.
 
 The :ref:`xbcloud_exbackoff` feature was implemented in Percona XtraBackup 8.0.26-18. Suppose a chunk fails to upload or download. In that case, this feature adds an exponential backoff, or sleep, time and then retries the upload or download, which increases the chances of completing a backup or a restore operation. 
@@ -54,7 +54,7 @@ The following cloud storage types are supported:
 
 * MinIO - see :ref:`xbcloud_minio`
 
-In addition to OpenStack Object Storage (Swift), which has been the only option for storing backups in a cloud storage until Percona XtraBackup 2.4.14, |xbcloud| supports Amazon S3, MinIO, and Google Cloud Storage. Other Amazon S3-compatible storages, such as Wasabi or Digital Ocean Spaces, are also supported.
+In addition to OpenStack Object Storage (Swift), which has been the only option for storing backups in a cloud storage until Percona XtraBackup 2.4.14, *xbcloud* supports Amazon S3, MinIO, and Google Cloud Storage. Other Amazon S3-compatible storages, such as Wasabi or Digital Ocean Spaces, are also supported.
 
 .. seealso::
 
@@ -151,13 +151,13 @@ template of configuration options under the ``[xbcloud]`` group:
 .. note::
 
    If you explicitly use a parameter on the command line and in a configuration
-   file, |xbcloud| uses the the value provided on the command line.
+   file, *xbcloud* uses the the value provided on the command line.
 
 Environment variables
 --------------------------------------------------------------------------------
 
 If you explicitly use a parameter on the command line, in a configuration
-file, and the corresponding environment variable contains a value, |xbcloud|
+file, and the corresponding environment variable contains a value, *xbcloud*
 uses the the value provided on the command line or in the configuration file.
 
 Shortcuts
@@ -189,7 +189,7 @@ configuration files and environment variables.
 Additional parameters
 --------------------------------------------------------------------------------
 
-|xbcloud| accepts additional parameters that you can use with any storage
+*xbcloud* accepts additional parameters that you can use with any storage
 type. The ``--md5`` parameter computes the MD5 hash value of the backup
 chunks. The result is stored in files that following the ``backup_name.md5``
 pattern.

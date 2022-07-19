@@ -1,20 +1,20 @@
 .. _rn.8-0-8:
 
 ================================================================================
-|pxb.name| |release|
+Percona XtraBackup 8.0.8
 ================================================================================
 
-|percona| is glad to announce the release of |pxb.name| |release| on |date|.
+*Percona* is glad to announce the release of Percona XtraBackup 8.0.8 on November 21, 2019.
 Downloads are available from our `download site
 <https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
 :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
-|pxb.name| enables MySQL backups without blocking user queries, making it ideal
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
 for companies with large data sets and mission-critical applications that cannot
 tolerate long periods of downtime. Offered free as an open source solution, it
-drives down backup costs while providing unique features for |MySQL| backups.
+drives down backup costs while providing unique features for *MySQL* backups.
 
-All |percona| software is open-source and free.
+All *Percona* software is open-source and free.
 
 New Features and Improvements
 ================================================================================
@@ -26,7 +26,7 @@ New Features and Improvements
   (controlled via :option:`--rocksdb-checkpoint-max-age` and
   :option:`--rocksdb-checkpoint-max-count`) to minimize the amount of binary
   logs to apply after the backup was completed. Using renewable checkpoints,
-  |pxb.name| only copies the SST files that were created after the previous
+  Percona XtraBackup only copies the SST files that were created after the previous
   checkpoint. More information in :jirabug:`PXB-1915`.
 - Two options (`–-backup-lock-timeout` and `-–backup-lock-retry-count`) were
   added to enable the configuring of the timeout for acquiring metadata locks in
@@ -42,7 +42,7 @@ Bugs Fixed
   reported that the operation completed ok. Bug fixed :jirabug:`PXB-1936`
 - ``xtrabackup --move-back`` did not complete successfully when the encrypted
   binlog file. Bug fixed :jirabug:`PXB-1937`.
-- |pxb.name| could crash during the prepare stage when making an incremental
+-  Percona XtraBackup could crash during the prepare stage when making an incremental
   backup when a multi valued index was being added or dropped for JSON
   data. Bug fixed :jirabug:`PXB-1913`.
 
@@ -53,7 +53,4 @@ Bugs Fixed
 :jirabug:`PXB-1953`,
 :jirabug:`PXB-1954`.
 
-.. |percona| replace:: Percona
-.. |pxb.name| replace:: Percona XtraBackup
-.. |date| replace:: November 21, 2019
-.. |release| replace:: 8.0.8
+

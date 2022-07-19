@@ -82,7 +82,7 @@ Now the files in :file:`/data/backup/` is ready to be used by the server.
 
 .. note::
 
-   |Percona XtraBackup| doesn't automatically remove the compressed files. In
+   *Percona XtraBackup* doesn't automatically remove the compressed files. In
    order to clean up the backup directory users should remove the :file:`*.qp`
    files.
 

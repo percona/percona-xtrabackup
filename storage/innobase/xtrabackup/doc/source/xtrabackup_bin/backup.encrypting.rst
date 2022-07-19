@@ -4,8 +4,8 @@
  Encrypting Backups
 ================================================================================
 
-|Percona XtraBackup| supports encrypting and decrypting local and streaming
-backups with |xbstream| option adding another layer of protection. The
+*Percona XtraBackup* supports encrypting and decrypting local and streaming
+backups with *xbstream* option adding another layer of protection. The
 encryption is implemented using the ``libgcrypt`` library from GnuPG.
 
 Creating Encrypted Backups
@@ -33,7 +33,7 @@ This value then can be used as the encryption key
 The :option:`--encrypt-key` Option
 --------------------------------------------------------------------------------
 
-Example of the |xtrabackup| command using the :option:`--encrypt-key` should
+Example of the *xtrabackup* command using the :option:`--encrypt-key` should
 look like this:
 
 .. code-block:: bash
@@ -76,14 +76,14 @@ used to encrypt the whole folder: ::
 
   $ for i in `find . -iname "*\.xbcrypt"`; do xbcrypt -d --encrypt-key-file=/root/secret_key --encrypt-algo=AES256 < $i > $(dirname $i)/$(basename $i .xbcrypt) && rm $i; done
 
-|Percona XtraBackup| :option:`--decrypt` option has been implemented that can be
+*Percona XtraBackup* :option:`--decrypt` option has been implemented that can be
 used to decrypt the backups:
 
 .. code-block:: bash
 
    $ xtrabackup --decrypt=AES256 --encrypt-key="U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=" --target-dir=/data/backup/
 
-|Percona XtraBackup| doesn't automatically remove the encrypted files. In order
+*Percona XtraBackup* doesn't automatically remove the encrypted files. In order
 to clean up the backup directory users should remove the :file:`*.xbcrypt`
 files.
 
@@ -107,7 +107,7 @@ the standard full backups with the :option:`--prepare` option:
 Restoring Encrypted Backups
 ================================================================================
 
-|xtrabackup| offers the :option:`--copy-back` option to restore a backup to the
+*xtrabackup* offers the :option:`--copy-back` option to restore a backup to the
 server's :term:`datadir`:
 
 .. code-block:: bash

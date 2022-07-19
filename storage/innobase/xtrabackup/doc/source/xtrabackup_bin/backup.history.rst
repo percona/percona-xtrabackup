@@ -4,8 +4,8 @@
 Store backup history on the server
 ================================================================================
  
-|Percona XtraBackup| supports storing the backups history on the server. This
-feature was implemented in |Percona XtraBackup| 2.2. Storing backup history on
+*Percona XtraBackup* supports storing the backups history on the server. This
+feature was implemented in *Percona XtraBackup* 2.2. Storing backup history on
 the server was implemented to provide users with additional information about
 backups that are being taken. Backup history information will be stored in the
 :ref:`PERCONA_SCHEMA.XTRABACKUP_HISTORY <xtrabackup_history>` table.
@@ -17,19 +17,19 @@ To use this feature the following options are available:
   placed within the history record.
 * :option:`--incremental-history-name` =<name> : This option allows an
   incremental backup to be made based on a specific history series by
-  name. |xtrabackup| will search the history table looking for the most recent
+  name. *xtrabackup* will search the history table looking for the most recent
   (highest ``to_lsn``) backup in the series and take the ``to_lsn`` value to use
   as it's starting lsn. This is mutually exclusive with
   :option:`--incremental-history-uuid`, :option:`--incremental-basedir` and
   :option:`--incremental-lsn` options. If no valid LSN can be found
-  (no series by that name) |xtrabackup| will return with an error.
+  (no series by that name) *xtrabackup* will return with an error.
 * :option:`--incremental-history-uuid` =<uuid> : Allows an incremental backup to
-  be made based on a specific history record identified by UUID. |xtrabackup|
+  be made based on a specific history record identified by UUID. *xtrabackup*
   will search the history table looking for the record matching UUID and take
   the ``to_lsn`` value to use as it's starting LSN. This options is mutually
   exclusive with :option:`--incremental-basedir`, :option:`--incremental-lsn`
   and :option:`--incremental-history-name` options. If no valid LSN can be found
-  (no record by that UUID or missing ``to_lsn``), |xtrabackup| will return
+  (no record by that UUID or missing ``to_lsn``), *xtrabackup* will return
   with an error.
 
 .. note::
@@ -40,7 +40,7 @@ To use this feature the following options are available:
 
 If you want access to backup history outside of your backup set in the case of
 some catastrophic event, you will need to either perform a ``mysqldump``,
-partial backup or ``SELECT`` * on the history table after |xtrabackup|
+partial backup or ``SELECT`` * on the history table after *xtrabackup*
 completes and store the results with you backup set.
 
 For the necessary privileges, see :ref:`pxb.privilege`.

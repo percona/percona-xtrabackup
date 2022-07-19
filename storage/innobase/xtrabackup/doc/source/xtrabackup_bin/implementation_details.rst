@@ -4,23 +4,23 @@
  Implementation Details
 ================================================================================
 
-This page contains notes on various internal aspects of the |xtrabackup| tool\'s
+This page contains notes on various internal aspects of the *xtrabackup* tool\'s
 operation.
 
 File Permissions
 ================================================================================
 
-|xtrabackup| opens the source data files in read-write mode, although it does
-not modify the files. This means that you must run |xtrabackup| as a user who
+*xtrabackup* opens the source data files in read-write mode, although it does
+not modify the files. This means that you must run *xtrabackup* as a user who
 has permission to write the data files. The reason for opening the files in
-read-write mode is that |xtrabackup| uses the embedded |InnoDB| libraries to
-open and read the files, and |InnoDB| opens them in read-write mode because it
+read-write mode is that *xtrabackup* uses the embedded *InnoDB* libraries to
+open and read the files, and *InnoDB* opens them in read-write mode because it
 normally assumes it is going to write to them.
 
 Tuning the OS Buffers
 ================================================================================
 
-Because |xtrabackup| reads large amounts of data from the filesystem, it uses
+Because *xtrabackup* reads large amounts of data from the filesystem, it uses
 ``posix_fadvise()`` where possible, to instruct the operating system not to try
 to cache the blocks it reads from disk. Without this hint, the operating system
 would prefer to cache the blocks, assuming that ``xtrabackup`` is likely to need
@@ -39,13 +39,12 @@ read-ahead optimizations on the source files: ::
 Copying Data Files
 ================================================================================
 
-When copying the data files to the target directory, |xtrabackup| reads and
+When copying the data files to the target directory, *xtrabackup* reads and
 writes 1 MB of data at a time. This is not configurable. When copying the log
-file, |xtrabackup| reads and writes 512 bytes at a time. This is also not
+file, *xtrabackup* reads and writes 512 bytes at a time. This is also not
 possible to configure, and matches InnoDB's behavior (workaround exists in
-|Percona Server| because it has an option to tune
-``innodb_log_block_size`` for |XtraDB|, and in that case |XtraBackup| will
-match the tuning).
+*Percona Server for MySQL* because it has an option to tune
+``innodb_log_block_size`` for *XtraDB*, and in that case *Percona XtraBackup* will match the tuning).
 
 After reading from the files, ``xtrabackup`` iterates over the 1MB buffer a page
 at a time, and checks for page corruption on each page with InnoDB's

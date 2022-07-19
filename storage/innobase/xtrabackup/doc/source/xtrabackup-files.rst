@@ -10,7 +10,7 @@ Index of files created by Percona XtraBackup
        This file contains information to start the mini instance of InnoDB
        during the :option:`--prepare`. This is **NOT** a backup of
        original :file:`my.cnf`. The InnoDB configuration is read from the file
-       :file:`backup-my.cnf` created by |xtrabackup| when the backup was
+       :file:`backup-my.cnf` created by *xtrabackup* when the backup was
        made. :option:`--prepare` uses InnoDB configuration from
        ``backup-my.cnf`` by default, or from
        :option:`--defaults-file`, if specified. InnoDB
@@ -24,7 +24,7 @@ Index of files created by Percona XtraBackup
 
     * :file:`xtrabackup_checkpoints`
        The type of the backup (e.g. full or incremental), its state (e.g.
-       prepared) and the |LSN| range contained in it. This information is used
+       prepared) and the LSN range contained in it. This information is used
        for incremental backups.
        Example of the :file:`xtrabackup_checkpoints` after taking a full
        backup:
@@ -53,7 +53,7 @@ Index of files created by Percona XtraBackup
                SELECT server_uuid, local, replication, storage_engines FROM performance_schema.log_status;
 
     * :file:`xtrabackup_binary`
-       The |xtrabackup| binary used in the process.
+       The *xtrabackup* binary used in the process.
 
     * :file:`xtrabackup_logfile`
        Contains data needed for running the: :option:`--prepare`.

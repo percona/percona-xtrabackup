@@ -4,7 +4,7 @@
 Partial Backups
 ================================================================================
 
-|xtrabackup| supports taking partial backups when the
+*xtrabackup* supports taking partial backups when the
 :term:`innodb_file_per_table` option is enabled. There are three ways to create
 partial backups:
 
@@ -32,7 +32,7 @@ named ``test`` which contains tables named ``t1`` and ``t2``.
 .. warning::
 
    If any of the matched or listed tables is deleted during the backup,
-   |xtrabackup| will fail.
+   *xtrabackup* will fail.
 
 Creating Partial Backups
 ================================================================================

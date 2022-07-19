@@ -6,7 +6,7 @@ Working with AppArmor
 
 The Linux Security Module implements mandatory access controls (MAC) with AppArmor. Debian and Ubuntu systems install AppArmor by default. AppArmor uses profiles which define which files and permissions are needed for application.
 
-|Percona XtraBackup| does not have a profile and is not confined by AppArmor. 
+*Percona XtraBackup* does not have a profile and is not confined by AppArmor. 
 
 For a list of common AppArmor commands, see `Percona Server for MySQL - AppArmor <https://www.percona.com/doc/percona-server/LATEST/security/apparmor.html>`_
 

@@ -1,22 +1,22 @@
 .. _rn.8-0-10:
 
 ================================================================================
-|pxb.name| |release|
+Percona XtraBackup 8.0.10
 ================================================================================
 
-:Date: |date|
-:Installation: :ref:`install`
+:Date: March 16, 2020
+`Installing Percona XtraBackup 8.0 <https://docs.percona.com/percona-xtrabackup/8.0/installation.html>`__
 
 Downloads are available from our `download site
 <https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
 :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
 
-|pxb.name| enables MySQL backups without blocking user queries, making it ideal
+*Percona XtraBackup* enables MySQL backups without blocking user queries, making it ideal
 for companies with large data sets and mission-critical applications that cannot
 tolerate long periods of downtime. Offered free as an open source solution, it
-drives down backup costs while providing unique features for |MySQL| backups.
+drives down backup costs while providing unique features for *MySQL* backups.
 
-All |percona| software is open-source and free.
+All *Percona* software is open-source and free.
 
 Bugs Fixed
 ================================================================================
@@ -28,7 +28,4 @@ Bugs Fixed
   backup failed at backup stage.
 - :jirabug:`PXB-2118`: Undo log file was renamed incorrectly to undo tablespace name after restore
 
-.. |percona| replace:: Percona
-.. |pxb.name| replace:: Percona XtraBackup
-.. |date| replace:: March 16, 2020
-.. |release| replace:: 8.0.10
+

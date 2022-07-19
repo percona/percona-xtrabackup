@@ -12,7 +12,7 @@ This page documents all of the command-line options for the
 Modes of operation
 ================================================================================
 
-You invoke |program| in one of the following modes:
+You invoke *xtrabackup* in one of the following modes:
 
 - :option:`--backup` mode to make a backup in a target directory
 - :option:`--prepare` mode to restore data from a backup (created in :option:`--backup` mode)
@@ -21,7 +21,7 @@ You invoke |program| in one of the following modes:
   the alternate :option:`--move-back` mode.
 - :option:`--stats` mode to scan the specified data files and print out index statistics.
 
-When you intend to run |program| in any of these modes, use the following syntax:
+When you intend to run *xtrabackup* in any of these modes, use the following syntax:
 
 .. code-block:: bash
 
@@ -41,10 +41,10 @@ For all modes, the default options are read from the **xtrabackup** and
 #. :file:`/usr/etc/my.cnf`
 #. :file:`~/.my.cnf`. 
 
-As the first parameter to |program| (in place of the :option:`--defaults-file`,
+As the first parameter to *xtrabackup* (in place of the :option:`--defaults-file`,
 you may supply one of the following:
 
-- :option:`--print-defaults` to have |program| print the argument list and exit.
+- :option:`--print-defaults` to have *xtrabackup* print the argument list and exit.
 - :option:`--no-defaults` to forbid reading options from any file but the login file.   
 - :option:`--defaults-file`  to read the default options from the given file.
 - :option:`--defaults-extra-file` to read the specified additional file after
@@ -57,7 +57,7 @@ you may supply one of the following:
 .. rubric:: InnoDB Options
 
 There is a large group of InnoDB options that are normally read from the
-:file:`my.cnf` configuration file, so that |program| boots up its embedded
+:file:`my.cnf` configuration file, so that *xtrabackup* boots up its embedded
 InnoDB in the same configuration as your current server. You normally do not
 need to specify them explicitly. These options have the same behavior in InnoDB
 and XtraDB. See :option:`--innodb-miscellaneous` for more information.
@@ -92,7 +92,7 @@ Options
 
 .. option:: --check-privileges
 
-   This option checks if |Percona XtraBackup| has all required privileges.
+   This option checks if *Percona XtraBackup* has all required privileges.
    If a missing privilege is required for the current operation,
    it will terminate and print out an error message.
    If a missing privilege is not required for the current operation,
@@ -106,21 +106,21 @@ Options
 
 .. option:: --close-files
 
-   Do not keep files opened. When |xtrabackup| opens tablespace it normally
+   Do not keep files opened. When *xtrabackup* opens tablespace it normally
    doesn't close its file handle in order to handle the DDL operations
    correctly. However, if the number of tablespaces is really huge and can not
    fit into any limit, there is an option to close file handles once they are
-   no longer accessed. |Percona XtraBackup| can produce inconsistent backups
+   no longer accessed. *Percona XtraBackup* can produce inconsistent backups
    with this option enabled. Use at your own risk.
 
 .. option:: --compress
 
-   This option tells |xtrabackup| to compress all output data, including the
+   This option tells *xtrabackup* to compress all output data, including the
    transaction log file and meta data files, using either the ``quicklz`` or
    ``lz4`` compression algorithm. ``quicklz`` is chosen by default.
 
    When using ``--compress=quicklz`` or ``--compress``, the resulting files have
-   the qpress archive format, i.e. every ``*.qp`` file produced by |xtrabackup| is
+   the qpress archive format, i.e. every ``*.qp`` file produced by *xtrabackup* is
    essentially a one-file qpress archive and can be extracted and uncompressed
    by the `qpress <http://www.quicklz.com/>`_ file archiver.
 
@@ -141,7 +141,7 @@ Options
 
 .. option:: --compress-threads=#
 
-   This option specifies the number of worker threads used by |xtrabackup| for
+   This option specifies the number of worker threads used by *xtrabackup* for
    parallel data compression. This option defaults to ``1``. Parallel
    compression (:option:`--compress-threads`) can be used together
    with parallel file copying (:option:`--parallel`). For example,
@@ -181,7 +181,7 @@ Options
 .. option:: --datadir=DIRECTORY
 
    The source directory for the backup. This should be the same as the datadir
-   for your |MySQL| server, so it should be read from :file:`my.cnf` if that
+   for your *MySQL* server, so it should be read from :file:`my.cnf` if that
    exists; otherwise you must specify it on the command line.
 
    When combined with the :option:`--copy-back` or
@@ -195,11 +195,11 @@ Options
 
 .. option:: --debug-sleep-before-unlock=#
 
-   This is a debug-only option used by the |xtrabackup| test suite.
+   This is a debug-only option used by the *xtrabackup* test suite.
 
 .. option:: --debug-sync=name
 
-   The debug sync point. This option is only used by the |xtrabackup| test suite.
+   The debug sync point. This option is only used by the *xtrabackup* test suite.
 
 .. option:: --decompress
 
@@ -207,11 +207,11 @@ Options
    made with the :option:`--compress` option. The
    :option:`--parallel` option will allow multiple files to be
    decrypted simultaneously. In order to decompress, the qpress utility MUST be
-   installed and accessible within the path. |Percona XtraBackup| does not
+   installed and accessible within the path. *Percona XtraBackup* does not
    automatically remove the compressed files. In order to clean up the backup
    directory users should use :option:`--remove-original` option.
 
-   The :option:`--decompress` option may be used with |xbstream| to
+   The :option:`--decompress` option may be used with *xbstream* to
    decompress individual qpress files.
 
    If you used the ``lz4`` compression algorithm to compress the files
@@ -220,7 +220,7 @@ Options
 
 .. option:: --decompress-threads=#
 
-   Force |xbstream| to use the specified number of threads for
+   Force *xbstream* to use the specified number of threads for
    decompressing.
 
 .. option:: --decrypt=ENCRYPTION-ALGORITHM
@@ -228,7 +228,7 @@ Options
    Decrypts all files with the :file:`.xbcrypt` extension in a backup
    previously made with :option:`--encrypt` option. The
    :option:`--parallel` option will allow multiple files to be
-   decrypted simultaneously. |Percona XtraBackup| doesn't
+   decrypted simultaneously. *Percona XtraBackup* doesn't
    automatically remove the encrypted files. In order to clean up the backup
    directory users should use :option:`--remove-original` option.
 
@@ -246,7 +246,7 @@ Options
 .. option:: --defaults-group=GROUP-NAME
 
    This option is to set the group which should be read from the configuration
-   file. This is used by |xtrabackup| if you use the
+   file. This is used by *xtrabackup* if you use the
    :option:`--defaults-group` option. It is needed for
    ``mysqld_multi`` deployments.
 
@@ -259,7 +259,7 @@ Options
    This option controls whether or not a new dump of buffer pool
    content should be done.
 
-   With ``--dump-innodb-buffer-pool``, |xtrabackup|
+   With ``--dump-innodb-buffer-pool``, *xtrabackup*
    makes a request to the server to start the buffer pool dump (it
    takes some time to complete and is done in background) at the
    beginning of a backup provided the status variable
@@ -273,7 +273,7 @@ Options
    By default, this option is set to `OFF`.
 
    If ``innodb_buffer_pool_dump_status`` reports that there is running
-   dump of buffer pool, |xtrabackup| waits for the dump to complete
+   dump of buffer pool, *xtrabackup* waits for the dump to complete
    using the value of :option:`--dump-innodb-buffer-pool-timeout`
 
    The file :file:`ib_buffer_pool` stores tablespace ID and page ID
@@ -281,12 +281,12 @@ Options
 
    .. seealso::
 
-      |MySQL| Documentation: Saving and Restoring the Buffer Pool State
+      *MySQL* Documentation: Saving and Restoring the Buffer Pool State
          https://dev.mysql.com/doc/refman/5.7/en/innodb-preload-buffer-pool.html
 
 .. option:: --dump-innodb-buffer-pool-timeout
 
-   This option contains the number of seconds that |xtrabackup| should
+   This option contains the number of seconds that *xtrabackup* should
    monitor the value of ``innodb_buffer_pool_dump_status`` to
    determine if buffer pool dump has completed.
       
@@ -300,17 +300,17 @@ Options
    pages to dump.
 
    This option is effective if :option:`--dump-innodb-buffer-pool` option is set
-   to `ON`. If this option contains a value, |xtrabackup| sets the |MySQL|
+   to `ON`. If this option contains a value, *xtrabackup* sets the *MySQL*
    system variable ``innodb_buffer_pool_dump_pct``. As soon as the buffer pool
    dump completes or it is stopped (see
-   :option:`--dump-innodb-buffer-pool-timeout`), the value of the |MySQL| system
+   :option:`--dump-innodb-buffer-pool-timeout`), the value of the *MySQL* system
    variable is restored.
 
    .. seealso::
 
       Changing the timeout for buffer pool dump
          :option:`--dump-innodb-buffer-pool-timeout`
-      |MySQL| Documentation: innodb_buffer_pool_dump_pct system variable
+      *MySQL* Documentation: innodb_buffer_pool_dump_pct system variable
          https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_buffer_pool_dump_pct
 
 .. option:: --encrypt=ENCRYPTION_ALGORITHM
@@ -374,7 +374,7 @@ Options
    If there are still such queries when the timeout expires, xtrabackup
    terminates with an error. Default is ``0``, in which case it does not wait
    for queries to complete and starts ``FLUSH TABLES WITH READ LOCK``
-   immediately. Where supported |xtrabackup| will
+   immediately. Where supported *xtrabackup* will
    automatically use `Backup Locks
    <https://www.percona.com/doc/percona-server/8.0/management/backup_locks.html#backup-locks>`_
    as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
@@ -402,7 +402,7 @@ Options
 
    This option creates the :file:`xtrabackup_galera_info` file which contains
    the local node state at the time of the backup. Option should be used when
-   performing the backup of |Percona XtraDB Cluster|. It has no effect when
+   performing the backup of *Percona XtraDB Cluster*. It has no effect when
    backup locks are used to create the backup.
 
 .. option:: --generate-new-master-key 
@@ -411,12 +411,12 @@ Options
 
 .. option:: --generate-transition-key
 
-   |xtrabackup| needs to access the same keyring file or vault server
+   *xtrabackup* needs to access the same keyring file or vault server
    during `prepare` and `copy-back` but it should not depend on whether the
    server keys have been purged.
 
    :option:`--generate-transition-key` creates and adds to the keyring
-   a transition key for |xtrabackup| to use if the master key used for
+   a transition key for *xtrabackup* to use if the master key used for
    encryption is not found because it has been rotated and purged.
 
 .. option:: --get-server-public-key
@@ -425,13 +425,13 @@ Options
 
    .. seealso::
 
-      |MySQL| Documentation: The --get-server-public-key Option
+      *MySQL* Documentation: The --get-server-public-key Option
 
          https://dev.mysql.com/doc/refman/5.7/en/connection-options.html#option_general_get-server-public-key
 
 .. option:: --help
  
-   When run with this option or without any options |xtrabackup| displays
+   When run with this option or without any options *xtrabackup* displays
    information about how to run the program on the command line along with all
    supported options and variables with default values where appropriate.
 
@@ -450,8 +450,8 @@ Options
 
 .. option:: --incremental
 
-   This option tells |xtrabackup| to create an incremental backup. It is passed
-   to the |xtrabackup| child process. When this option is specified, either
+   This option tells *xtrabackup* to create an incremental backup. It is passed
+   to the *xtrabackup* child process. When this option is specified, either
    :option:`--incremental-lsn` or :option:`--incremental-basedir` can also be
    given. If neither option is given, option :option:`--incremental-basedir` is
    passed to :program:`xtrabackup` by default, set to the first timestamped
@@ -483,13 +483,13 @@ Options
 
    This option specifies the name of the backup series stored in the
    ``PERCONA_SCHEMA.xtrabackup_history`` history record to base an incremental
-   backup on. |xtrabackup| will search the history table looking for the most
+   backup on. *xtrabackup* will search the history table looking for the most
    recent (highest ``innodb_to_lsn``), successful backup in the series and take
    the to_lsn value to use as the starting ``lsn`` for the incremental
    backup. This will be mutually exclusive with
    :option:`--incremental-history-uuid`, :option:`--incremental-basedir` and
    :option:`--incremental-lsn`. If no valid lsn can be found (no series by that
-   name, no successful backups by that name) |xtrabackup| will return with an
+   name, no successful backups by that name) *xtrabackup* will return with an
    error. It is used with the :option:`--incremental` option.
 
 .. option:: --incremental-history-uuid=name 
@@ -498,7 +498,7 @@ Options
    ``PERCONA_SCHEMA.xtrabackup_history`` to base an incremental backup on.
    :option:`--incremental-history-name`, :option:`--incremental-basedir` and
    :option:`--incremental-lsn`. If no valid lsn can be found (no success record
-   with that *UUID*) |xtrabackup| will return with an error. It is used with
+   with that *UUID*) *xtrabackup* will return with an error. It is used with
    the --incremental option.
 
 .. option:: --incremental-lsn=LSN
@@ -507,7 +507,7 @@ Options
    (:term:`LSN`) instead of specifying
    :option:`--incremental-basedir`. For databases created in 5.1 and
    later, specify the :term:`LSN` as a single 64-bit integer. **ATTENTION**: If
-   a wrong LSN value is specified (a user  error which |Percona XtraBackup| is
+   a wrong LSN value is specified (a user  error which *Percona XtraBackup* is
    unable to detect), the backup will be unusable. Be careful!
 
 .. option::   --innodb[=name]
@@ -517,7 +517,7 @@ Options
 .. option:: --innodb-miscellaneous
 
    There is a large group of InnoDB options that are normally read from the
-   :file:`my.cnf` configuration file, so that |xtrabackup| boots up its
+   :file:`my.cnf` configuration file, so that *xtrabackup* boots up its
    embedded InnoDB in the same configuration as your current server. You
    normally do not need to specify these explicitly. These options have the
    same behavior in InnoDB and XtraDB:
@@ -569,11 +569,11 @@ Options
 
 .. option:: --kill-long-queries-timeout=SECONDS
 
-   This option specifies the number of seconds |xtrabackup| waits between
+   This option specifies the number of seconds *xtrabackup* waits between
    starting ``FLUSH TABLES WITH READ LOCK`` and killing those queries that block
-   it. Default is 0 seconds, which means |xtrabackup| will not attempt to kill
+   it. Default is 0 seconds, which means *xtrabackup* will not attempt to kill
    any queries. In order to use this option xtrabackup user should have the
-   ``PROCESS`` and ``SUPER`` privileges. Where supported, |xtrabackup|
+   ``PROCESS`` and ``SUPER`` privileges. Where supported, *xtrabackup*
    automatically uses `Backup Locks
    <https://www.percona.com/doc/percona-server/8.0/management/backup_locks.html#backup-locks>`_
    as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
@@ -592,10 +592,10 @@ Options
    
    .. note::
    
-       Prior to |PXB| 8.0.22-15.0, using a `safe-slave-backup` stops the SQL replica thread
+       Prior to *Percona XtraBackup* 8.0.22-15.0, using a `safe-slave-backup` stops the SQL replica thread
        after the InnoDB tables and before the non-InnoDB tables are backed up.
        
-       As of |PXB| 8.0.22-15.0, using a `safe-slave-backup` option stops the SQL
+       As of *Percona XtraBackup* 8.0.22-15.0, using a `safe-slave-backup` option stops the SQL
        replica thread before copying the InnoDB files.
 
 .. option:: --lock-ddl-per-table
@@ -606,7 +606,7 @@ Options
    .. note::
    
 
-         As of |PXB| 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the `--lock-ddl` option instead.
+         As of *Percona XtraBackup* 8.0.15, the `--lock-ddl-per-table` option is deprecated. Use the `--lock-ddl` option instead.
 
 
 .. option:: --lock-ddl-timeout
@@ -616,7 +616,7 @@ Options
 
 .. option:: --log
 
-   This option is ignored for |mysql|
+   This option is ignored for *MySQL*
 
 .. option:: --log-bin
 
@@ -658,7 +658,7 @@ Options
    there are any ``DDL`` statements being executed or if any updates are
    happening on non-InnoDB tables (this includes the system MyISAM tables in the
    *mysql* database), otherwise it could lead to an inconsistent backup. Where
-   supported |xtrabackup| will automatically use `Backup Locks
+   supported *xtrabackup* will automatically use `Backup Locks
    <https://www.percona.com/doc/percona-server/8.0/management/backup_locks.html#backup-locks>`_
    as a lightweight alternative to ``FLUSH TABLES WITH READ LOCK`` to copy
    non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.  If
@@ -683,13 +683,13 @@ Options
 .. option:: --no-version-check
 
    This option disables the version check. If you do not pass this option, the
-   automatic version check is enabled implicitly when |xtrabackup| runs
+   automatic version check is enabled implicitly when *xtrabackup* runs
    in the ``--backup`` mode. To disable the version check, you should pass
-   explicitly the ``--no-version-check`` option when invoking |xtrabackup|.
+   explicitly the ``--no-version-check`` option when invoking *xtrabackup*.
 
-   When the automatic version check is enabled, |xtrabackup| performs a
+   When the automatic version check is enabled, *xtrabackup* performs a
    version check against the server on the backup stage after creating a server
-   connection. |xtrabackup| sends the following information to the server:
+   connection. *xtrabackup* sends the following information to the server:
 
    - MySQL flavour and version
    - Operating system name
@@ -709,7 +709,7 @@ Options
 
    This option specifies the number of threads to use to copy multiple data
    files concurrently when creating a backup. The default value is 1 (i.e., no
-   concurrent transfer). In |Percona XtraBackup| 2.3.10 and newer, this option
+   concurrent transfer). In *Percona XtraBackup* 2.3.10 and newer, this option
    can be used with the :option:`--copy-back` option to copy the user
    data files in parallel (redo logs and system tablespaces are copied in the
    main thread).
@@ -765,7 +765,7 @@ Options
 
 .. option:: --remove-original
 
-   Implemented in |Percona XtraBackup| 2.4.6, this option when specified will
+   Implemented in *Percona XtraBackup* 2.4.6, this option when specified will
    remove :file:`.qp`, :file:`.xbcrypt` and :file:`.qp.xbcrypt` files after
    decryption and decompression.
 
@@ -794,7 +794,7 @@ Options
 .. option:: --rsync
 
    Uses the :program:`rsync` utility to optimize local file transfers. When this
-   option is specified, |xtrabackup| uses :program:`rsync` to copy
+   option is specified, *xtrabackup* uses :program:`rsync` to copy
    all non-InnoDB files instead of spawning a separate :program:`cp` for each
    file, which can be much faster for servers with a large number of databases
    or tables.  This option cannot be used together with :option:`--stream`.
@@ -833,7 +833,7 @@ Options
 
    .. seealso::
 
-      |MySQL| Documentation: The --server-public-key-path Option
+      *MySQL* Documentation: The --server-public-key-path Option
          https://dev.mysql.com/doc/refman/8.0/en/connection-options.html#option_general_server-public-key-path
 
 .. option:: --skip-tables-compatibility-check
@@ -943,7 +943,7 @@ Options
 
 .. option:: --strict
 
-   If this option is specified, |xtrabackup| fails with an error when invalid
+   If this option is specified, *xtrabackup* fails with an error when invalid
    parameters are passed.
 
 .. option:: --tables=name
@@ -1050,7 +1050,7 @@ Options
 
 .. option:: --version
 
-   This option prints |xtrabackup| version and exits.
+   This option prints *xtrabackup* version and exits.
 
 .. option:: --xtrabackup-plugin-dir=DIRNAME
 
@@ -1058,9 +1058,9 @@ Options
 
    .. seealso::
 
-      |Percona Server| Documentation: keyring_vault plugin with Data at Rest Encryption
+      *Percona Server for MySQL* Documentation: keyring_vault plugin with Data at Rest Encryption
          https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html#keyring-vault-plugin
-      |MySQL| Documentation: Using the keyring_file File-Based Plugin
+      *MySQL* Documentation: Using the keyring_file File-Based Plugin
          https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html
 
-.. |program| replace:: :program:`xtrabackup`
+.. *xtrabackup* replace:: :program:`xtrabackup`

@@ -19,10 +19,10 @@ as well as to provide guidance on how to disable this functionality if desired.
 Usage
 ================================================================================
 
-*Version Check* was implemented in |pt| 2.1.4, and was enabled by default in
+*Version Check* was implemented in *Percona Toolkit* 2.1.4, and was enabled by default in
 version 2.2.1. Currently it is supported as a ``--[no]version-check`` option
 by `a number of tools in Percona Toolkit <https://www.percona.com/doc/percona-toolkit/LATEST/genindex.html>`_,
-|pxb|, and |pmm|.
+*Percona XtraBackup*, and *Percona Monitoring and Management* (PMM).
 
 When launched with Version Check enabled, the tool that supports this feature
 connects to a Percona's *version check service* via a secure HTTPS channel. It
@@ -41,14 +41,14 @@ identified as running in the environment.
 
 Each version check request is logged by the server. Stored information consists
 of the checked system unique ID followed by the software name and version.  The
-ID is generated either at installation or when the |version-check| query is
+ID is generated either at installation or when the *version checking* query is
 submitted for the first time.
 
 .. note::
 
-   Prior to version 3.0.7 of |pt|, the system ID was calculated as an MD5 hash
-   of a hostname, and starting from |pt| 3.0.7 it is generated as an MD5 hash of
-   a random number. |pxb| continues to use hostname-based MD5 hash.
+   Prior to version 3.0.7 of *Percona Toolkit*, the system ID was calculated as an MD5 hash
+   of a hostname, and starting from *Percona Toolkit* 3.0.7 it is generated as an MD5 hash of
+   a random number. *Percona XtraBackup* continues to use hostname-based MD5 hash.
 
 As a result, the content of the sent query is as follows::
 
@@ -61,27 +61,27 @@ As a result, the content of the sent query is as follows::
 Disabling Version Check
 ================================================================================
 
-Although the |version-check| feature does not collect any personal information,
+Although the *version checking* feature does not collect any personal information,
 you might prefer to disable this feature, either one time or permanently.  To
 disable it one time, use ``--no-version-check`` option when invoking the tool
 from a Percona product which supports it. Here is a simple example which shows
 running `pt-diskstats
 <https://www.percona.com/doc/percona-toolkit/LATEST/pt-diskstats.html>`_ tool
-from the |pt| with |version-check| turned off::
+from the *Percona Toolkit* with *version checking* turned off::
 
   pt-diskstats --no-version-check
 
-Disabling |version-check| permanently can be done by placing
+Disabling *version checking* permanently can be done by placing
 ``no-version-check`` option into the configuration file of a Percona product
 (see correspondent documentation for exact file name and syntax). For example,
-in case of |pt| `this can be done
+in case of *Percona Toolkit* `this can be done
 <https://www.percona.com/doc/percona-toolkit/LATEST/configuration_files.html>`_
 in a global configuration file ``/etc/percona-toolkit/percona-toolkit.conf``::
 
   # Disable Version Check for all tools:
   no-version-check
 
-In case of |pxb| this can be done `in its configuration file
+In case of *Percona XtraBackup* this can be done `in its configuration file
 <https://www.percona.com/doc/percona-xtrabackup/2.4/using_xtrabackup/configuring.htm>`_
 in a similar way::
 
@@ -115,7 +115,7 @@ Compatibility problems can be caused by versions of various components in the
 environment, for example problematic versions of Perl, DBD or MySQL could cause
 operational problems with Percona Toolkit.
 
-.. |pmm| replace:: PMM (Percona Monitoring and Management)
-.. |pt| replace:: Percona Toolkit
-.. |pxb| replace:: Percona XtraBackup
-.. |version-check| replace:: *version checking*
+.. *Percona Monitoring and Management* (PMM) replace:: PMM (Percona Monitoring and Management)
+.. *Percona Toolkit* replace:: Percona Toolkit
+.. *Percona XtraBackup* replace:: Percona XtraBackup
+.. *version checking* replace:: *version checking*

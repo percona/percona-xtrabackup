@@ -35,10 +35,10 @@ The following options are available when using Amazon S3:
    * - --s3-region
      - Use to specify the AWS region. The default value is **us-east-1**
    * - --s3-api-version = <AUTO|2|4>
-     - Select the signing algorithm. The default value is AUTO. In this case, |xbcloud| will probe.
+     - Select the signing algorithm. The default value is AUTO. In this case, *xbcloud* will probe.
    * - --s3-bucket-lookup = <AUTO|PATH|DNS>
      - Specify whether to use **bucket.endpoint.com** or *endpoint.com/bucket**
-       style requests. The default value is AUTO. In this case, |xbcloud| will probe.
+       style requests. The default value is AUTO. In this case, *xbcloud* will probe.
    * - --s3-storage-class=<name>
      - Specify the `S3 storage class <https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html>`__. The default storage class depends on the provider. The name options are the following: 
      

@@ -144,7 +144,7 @@ Follow these steps to upgrade curl to version 7.74.0:
       $ curl --version
       curl 7.74.0 (x86_64-pc-linux-gnu) libcurl/7.74.0 
 
-Uninstalling |Percona XtraBackup|
+Uninstalling *Percona XtraBackup*
 =================================
 
 To uninstall *Percona XtraBackup*, remove all the installed
@@ -156,4 +156,4 @@ packages.
 
       $ sudo apt remove percona-xtrabackup-80
 
-.. |percona-release| replace:: ``percona-release``
+

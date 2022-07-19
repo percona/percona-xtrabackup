@@ -4,8 +4,8 @@
  About Percona XtraBackup
 ==========================
 
-*Percona XtraBackup* is the world's only open-source, free |MySQL| hot backup
-software that performs non-blocking backups for |InnoDB| and |XtraDB|
+*Percona XtraBackup* is the world's only open-source, free *MySQL* hot backup
+software that performs non-blocking backups for *InnoDB* and *XtraDB*
 databases. With *Percona XtraBackup*, you can achieve the following benefits:
 
 * Backups that complete quickly and reliably
@@ -14,21 +14,21 @@ databases. With *Percona XtraBackup*, you can achieve the following benefits:
 * Automatic backup verification
 * Higher uptime due to faster restore time
 
-|Percona XtraBackup| makes |MySQL| hot backups for all versions of |Percona
-Server|, and |MySQL|. It performs streaming, compressed, and incremental |MySQL|
+*Percona XtraBackup* makes *MySQL* hot backups for all versions of Percona
+Server for MySQL, and *MySQL*. It performs streaming, compressed, and incremental *MySQL*
 backups.
 
 .. important::
 
-   With the introduction of |Percona XtraBackup| 8.0, |Percona XtraBackup| 2.4
+   With the introduction of *Percona XtraBackup* 8.0, *Percona XtraBackup* 2.4
    will continue to support MySQL and Percona Server 5.6 and 5.7 databases. Due
    to the new MySQL redo log and data dictionary formats the Percona XtraBackup
    8.0.x versions will only be compatible with MySQL 8.0.x and the upcoming
    Percona Server for MySQL 8.0.x
 
 Percona's enterprise-grade commercial `MySQL Support
-<http://www.percona.com/mysql-support/>`_ contracts include support for |Percona
-XtraBackup|. We recommend support for critical production deployments. Percona XtraDB Backup supports encryption.
+<http://www.percona.com/mysql-support/>`_ contracts include support for *Percona
+XtraBackup*. We recommend support for critical production deployments. Percona XtraDB Backup supports encryption.
 
 .. rubric:: Supported storage engines
 
@@ -79,4 +79,4 @@ for more.
 
 .. rubric:: Additional information
 
-|InnoDB| tables are still locked while copying non-|InnoDB| data.
+*InnoDB* tables are still locked while copying non-*InnoDB* data.
