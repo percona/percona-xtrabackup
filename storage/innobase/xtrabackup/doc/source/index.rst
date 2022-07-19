@@ -176,6 +176,14 @@ Release notes
 
    release-notes
 
+Error Message Descriptions
+=============================
+
+.. toctree:: 
+   :maxdepth: 1
+   :glob:
+
+   em/instant
 
 References
 ==========
