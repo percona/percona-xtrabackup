@@ -64,22 +64,20 @@ At this step, you have `cmake` run the commands in the `CMakeList.txt`
 file to generate the build pipeline, i.e. a native build environment that will
 be used to compile the source code).
 
-1. Change to the directory where you cloned the Percona XtraBackup repository
+* Change to the directory where you cloned the Percona XtraBackup repository
 
 ```bash
 $ cd percona-xtrabackup
 ```
 
-2. Create a directory to store the compiled files and then change to that
-directory:
+* Create a directory to store the compiled files and then change to that directory:
 
 ```bash
 $ mkdir build
 $ cd build
 ```
 
-3. Run `cmake` or `cmake3`. In either case, the options you need to use are the
-same.
+* Run `cmake` or `cmake3`. In either case, the options you need to use are the same.
 
 !!! note
 
@@ -120,9 +118,9 @@ To compile the source code in your build directory, use the `make` command.
 
     The computer where you intend to compile *Percona XtraBackup* 8.0 must have at least 2G of RAM available.
 
-1. Change to the `build` directory (created at [Step 2: Generating the build pipeline](compiling_xtrabackup.md#pxb-source-code-installing-build-pipe-line-generating)).
+* Change to the `build` directory (created at [Step 2: Generating the build pipeline](compiling_xtrabackup.md#pxb-source-code-installing-build-pipe-line-generating)).
 
-2. Run the `make` command. This command may take a long time to complete.
+* Run the `make` command. This command may take a long time to complete.
 
 ```bash
 $ make

@@ -25,7 +25,7 @@ The `percona-xtrabackup` package contains the older version of the
 
 ## Installing *Percona XtraBackup* from Percona `yum` repository
 
-1. Install the `percona-release` configuration tool
+* Install the `percona-release` configuration tool
 
 You can install the yum repository for percona-release
 by running the following command as a `root` user or with
@@ -52,7 +52,7 @@ $ wget https://repo.percona.com/yum/percona-release-latest.noarch.rpm
 $ rpm -ivH percona-release-latest.noarch.rpm
 ```
 
-2. Testing the repository
+* Testing the repository
 
 Make sure packages are now available from the repository, by executing the
 following command:
@@ -79,13 +79,13 @@ percona-xtrabackup-test-22.x86_64          2.2.13-1.el5                percona-r
 ...
 ```
 
-3. Enable the repository: `percona-release enable-only tools release`
+* Enable the repository: `percona-release enable-only tools release`
 
 If *Percona XtraBackup* is intented to be used in combination with
 the upstream MySQL Server, you only need to enable the `tools`
 repository: `percona-release enable-only tools`.
 
-4. Install *Percona XtraBackup* by running:  `yum install percona-xtrabackup-24`
+* Install *Percona XtraBackup* by running:  `yum install percona-xtrabackup-24`
 
 !!! warning
 
@@ -102,7 +102,7 @@ and experimental - in this case it is the second section that requires
 updating). **NOTE:** You’ll need to install the Percona repository first (ref
 above) if this hasn’t been done already.
 
-1. To be able to make compressed backups, install the `qpress` package:
+* To be able to make compressed backups, install the `qpress` package:
 
 $ yum install qpress
 

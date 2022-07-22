@@ -50,7 +50,7 @@ or for a particular user with:
 mysql> SHOW GRANTS FOR 'db-user'@'host';
 ```
 
-It will display the privileges using the same format as for the [GRANT statement](http://dev.mysql.com/doc/refman/5.1/en/show-grants.html).
+It will display the privileges using the same format as for the [GRANT statement](http://dev.mysql.com/doc/refman/5.7/en/show-grants.html).
 
 Note that privileges may vary across versions of the server. To list the exact list of privileges that your server support (and a brief description of them) execute:
 

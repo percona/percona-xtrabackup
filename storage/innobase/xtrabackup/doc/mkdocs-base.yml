@@ -33,6 +33,12 @@ theme:
         icon: material/toggle-switch
         name: Switch to light mode
 
+# Theme features
+
+  features:
+    - search.highlight
+    - navigation.top
+    - content.tabs.link
 
 extra_css:
   - https://unicons.iconscout.com/release/v3.0.3/css/line.css
