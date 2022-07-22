@@ -41,7 +41,7 @@ XtraBackup* from source. These might vary from system to system.
    libtool cmake libaio-dev mysql-client libncurses-dev zlib1g-dev \
    libgcrypt11-dev libev-dev libcurl4-gnutls-dev vim-common
 
-|optional.python3-sphinx|:
+To be able to install the man pages, install the ``python3-sphinx`` package:
 
 .. code-block:: bash
 
@@ -63,7 +63,7 @@ dependencies:
    bison libtool ncurses-devel libgcrypt-devel libev-devel libcurl-devel zlib-devel \
    vim-common
 
-|optional.python3-sphinx|:
+To be able to install the man pages, install the ``python3-sphinx`` package:
 
 .. code-block:: bash
 
@@ -136,7 +136,7 @@ be used to compile the source code).
          To build *Percona XtraBackup* man pages, use ``ON`` or remove this
 	 parameter from the command line (it is ``ON`` by default).
 
-	 |optional.python3-sphinx|.
+	 To be able to install the man pages, install the ``python3-sphinx`` package.
 
 	 .. seealso:: :ref:`pxb.source-code.installing/prerequesite`
 
@@ -176,8 +176,8 @@ Run ``make install`` to install *Percona XtraBackup* to the default location.
 
 .. rubric:: Installing to a non-default location
 
-You may use the `DESTDIR` parameter with ``make install`` to install |Percona
-XtraBackup| to another location. Make sure that the effective user is able to
+You may use the `DESTDIR` parameter with ``make install`` to install `Percona
+XtraBackup` to another location. Make sure that the effective user is able to
 write to the destination you choose.
 
 .. code-block:: bash
@@ -225,7 +225,3 @@ the locations listed in your ``PATH`` environment variable.
 .. seealso:: ``man ln``
 
 To view the documentation with ``man``, update the ``MANPATH`` variable.
-
-.. Percona XtraBackup replace:: `percona-xtrabackup`
-.. |optional.python3-sphinx| replace:: To be able to install the man pages, install the ``python3-sphinx`` package
-

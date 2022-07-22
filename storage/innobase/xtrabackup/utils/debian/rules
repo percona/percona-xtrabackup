@@ -43,3 +43,5 @@ override_dh_strip:
 %:
 	dh $@
 
+override_dh_builddeb:
+	dh_builddeb -- -Zgzip

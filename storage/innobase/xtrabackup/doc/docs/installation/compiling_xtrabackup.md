@@ -70,16 +70,14 @@ be used to compile the source code).
 $ cd percona-xtrabackup
 ```
 
-* Create a directory to store the compiled files and then change to that
-directory:
+* Create a directory to store the compiled files and then change to that directory:
 
 ```bash
 $ mkdir build
 $ cd build
 ```
 
-* Run `cmake` or `cmake3`. In either case, the options you need to use are the
-same.
+* Run `cmake` or `cmake3`. In either case, the options you need to use are the same.
 
 !!! note
 

@@ -71,7 +71,7 @@ TARGET_LINK_LIBRARIES(xbcloud
   crc
   )
 
-IF (WITH_DEBUG)
+IF (WITH_UNIT_TESTS AND CMAKE_VERSION VERSION_GREATER 3.22.1)
 
   ENABLE_TESTING()
 
@@ -87,6 +87,7 @@ IF (WITH_DEBUG)
       ../xbstream_read.c
       http.cc
       s3.cc
+      azure.cc
       swift.cc)
 
     TARGET_LINK_LIBRARIES(xbcloud-t
@@ -94,7 +95,8 @@ IF (WITH_DEBUG)
       ${LIBEV_LIBRARIES}
       ${CURL_LIBRARIES}
       ${GTEST_BOTH_LIBRARIES}
-      gmock
+      GTest::gtest
+      GTest::gmock
       mysys
       mysys_ssl
       crc

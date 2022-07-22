@@ -50,7 +50,7 @@ with the *percona-release* package configuration tool.
 
 #. Enable the repository: :bash:`percona-release enable-only tools release`
 
-   If |Percona XtraBackup| is intended to be used in combination with
+   If *Percona XtraBackup* is intended to be used in combination with
    the upstream MySQL Server, you enable only the ``tools``
    repository: :bash:`percona-release enable-only tools`.
 

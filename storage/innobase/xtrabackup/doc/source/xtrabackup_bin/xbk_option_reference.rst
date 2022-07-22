@@ -896,9 +896,9 @@ Options
 
    .. seealso::
 
-      |Percona Server| Documentation: keyring_vault plugin with Data at Rest Encryption
+      *Percona Server for MySQL* Documentation: keyring_vault plugin with Data at Rest Encryption
          https://www.percona.com/doc/percona-server/5.7/security/data-at-rest-encryption.html
-      |MySQL| Documentation: Using the keyring_file File-Based Plugin
+      *MySQL* Documentation: Using the keyring_file File-Based Plugin
          https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html
 
 

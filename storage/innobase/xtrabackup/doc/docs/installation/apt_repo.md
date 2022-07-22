@@ -31,6 +31,7 @@ $ wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_al
 ```
 
 * Install the downloaded package with `dpkg`. To do that, run the
+
 following commands as root or with `sudo`:
 
 ```bash
