@@ -1,6 +1,5 @@
-# The **xtrabackup** Option Reference
+# The xtrabackup Option Reference
 
-<!-- .. program:: xtrabackup -->
 This page documents all of the command-line options for the
 **xtrabackup** binary.
 

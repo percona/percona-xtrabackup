@@ -1,4 +1,4 @@
-# Installing *Percona XtraBackup* on *Debian* and *Ubuntu*
+# Installing Percona XtraBackup on Debian and Ubuntu
 
 Ready-to-use packages are available from the *Percona XtraBackup* software
 repositories and

@@ -1,4 +1,4 @@
-# Installing *Percona XtraBackup* on *Red Hat Enterprise Linux* and *CentOS*
+# Installing Percona XtraBackup on Red Hat Enterprise Linux and CentOS
 
 Ready-to-use packages are available from the *Percona XtraBackup* software
 repositories and the [download page](https://www.percona.com/downloads/XtraBackup/). The Percona yum repository supports popular *RPM*-based operating systems, including the *Amazon

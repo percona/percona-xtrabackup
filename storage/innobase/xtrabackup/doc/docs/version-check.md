@@ -16,8 +16,7 @@ as well as to provide guidance on how to disable this functionality if desired.
 
 *Version Check* was implemented in *Percona Toolkit* 2.1.4, and was enabled by default in
 version 2.2.1. Currently, it is supported as a `--[no]version-check` option
-by [a number of tools in Percona Toolkit](https://www.percona.com/doc/percona-toolkit/LATEST/genindex.html),
-*Percona XtraBackup*, and *Percona Monitoring and Management* (PMM).
+by a number of tools in Percona Toolkit, *Percona XtraBackup*, and *Percona Monitoring and Management* (PMM).
 
 When launched with Version Check enabled, the tool that supports this feature
 connects to a Percona’s *version check service* via a secure HTTPS channel. It

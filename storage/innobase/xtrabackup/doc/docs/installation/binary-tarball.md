@@ -1,4 +1,4 @@
-# Installing *Percona XtraBackup* from a Binary Tarball
+# Installing Percona XtraBackup from a Binary Tarball
 
 **Percona** provides binary tarballs of **Percona XtraBackup**. Binary tarballs
 contain precompiled executable files, libraries, and other dependencies and are

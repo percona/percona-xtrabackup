@@ -1,4 +1,4 @@
-# *xtrabackup* Exit Codes
+# xtrabackup Exit Codes
 
 The *xtrabackup* binary exits with the traditional success value of 0 after a backup when no error occurs. If an error occurs during the backup, the exit value is 1.
 

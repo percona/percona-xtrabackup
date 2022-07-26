@@ -40,200 +40,135 @@ Percona XtraDB Cluster.
 For more information, see [Percona XtraBackup 8.x and MySQL 8.0.20](https://www.percona.com/blog/2020/04/28/percona-xtrabackup-8-x-and-mysql-8-0-20/)
 
 For a high-level overview of many of its advanced features, including
-a feature comparison, please see [About Percona XtraBackup]
-(https://docs.percona.com/percona-xtrabackup/8.0/intro.html)p.
+a feature comparison, please see [About Percona XtraBackup](intro.md).
 
 ## Introduction
 
+* [About Percona XtraBackup](intro.md)
 
-* [About Percona XtraBackup](https://docs.percona.com/percona-xtrabackup/8.0/intro.html)
-
-
-* [How *Percona XtraBackup* Works](https://docs.percona.com/percona-xtrabackup/8.0/how_xtrabackup_works.html)
-
+* [How *Percona XtraBackup* Works](how_xtrabackup_works.md)
 
 ## Installation
 
+* [Installing *Percona XtraBackup* on *Debian* and *Ubuntu*](installation/apt_repo.md)
 
-* [Installing *Percona XtraBackup* on *Debian* and *Ubuntu*](https://docs.percona.com/percona-xtrabackup/8.0/installation/apt_repo.html)
+* [Installing *Percona XtraBackup* on *Red Hat Enterprise Linux* and *CentOS*](installation/yum_repo.md)
 
+* [Installing *Percona XtraBackup* from a Binary Tarball](installation/binary-tarball.md)
 
-* [Installing *Percona XtraBackup* on *Red Hat Enterprise Linux* and *CentOS*](https://docs.percona.com/percona-xtrabackup/8.0/installation/yum_repo.html)
-
-
-* [Installing *Percona XtraBackup* from a Binary Tarball](https://docs.percona.com/percona-xtrabackup/8.0/installation/binary-tarball.html)
-
-
-* [Compiling and Installing from Source Code](https://docs.percona.com/percona-xtrabackup/8.0/installation/compiling_xtrabackup.html)
-
+* [Compiling and Installing from Source Code](installation/compiling_xtrabackup.md)
 
 ## Run in Docker
 
-
-* [Running Percona XtraBackup in a Docker container](https://docs.percona.com/percona-xtrabackup/8.0/installation/docker.html)
-
+* [Running Percona XtraBackup in a Docker container](installation/docker.md)
 
 ## How Percona XtraBackup works
 
+* [Implementation Details](xtrabackup_bin/implementation_details.md)
 
-* [Implementation Details](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/implementation_details.html)
+* [Connection and Privileges Needed](using_xtrabackup/privileges.md)
 
+* [Configuring xtrabackup](using_xtrabackup/configuring.md)
 
-* [Connection and Privileges Needed](https://docs.percona.com/percona-xtrabackup/8.0/using_xtrabackup/privileges.html)
+* [Server Version and Backup Version Comparison](using_xtrabackup/comparison.md)
 
-
-* [Configuring xtrabackup](https://docs.percona.com/percona-xtrabackup/8.0/using_xtrabackup/configuring.html)
-
-
-* [Server Version and Backup Version Comparison](https://docs.percona.com/percona-xtrabackup/8.0/using_xtrabackup/comparison.html)
-
-
-* [*xtrabackup* Exit Codes](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/xtrabackup_exit_codes.html)
-
+* [*xtrabackup* Exit Codes](xtrabackup_bin/xtrabackup_exit_codes.md)
 
 ## Backup Scenarios
 
+* [The Backup Cycle - Full Backups](backup_scenarios/full_backup.md)
 
-* [The Backup Cycle - Full Backups](https://docs.percona.com/percona-xtrabackup/8.0/backup_scenarios/full_backup.html)
+* [Incremental Backup](backup_scenarios/incremental_backup.md)
 
+* [Compressed Backup](backup_scenarios/compressed_backup.md)
 
-* [Incremental Backup](https://docs.percona.com/percona-xtrabackup/8.0/backup_scenarios/incremental_backup.html)
-
-
-* [Compressed Backup](https://docs.percona.com/percona-xtrabackup/8.0/backup_scenarios/compressed_backup.html)
-
-
-* [Partial Backups](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/partial_backups.html)
-
+* [Partial Backups](xtrabackup_bin/partial_backups.md)
 
 ## User’s Manual
 
-
-* [*Percona XtraBackup* User Manual](https://docs.percona.com/percona-xtrabackup/8.0/manual.html)
-
+* [*Percona XtraBackup* User Manual](manual.md)
 
 ## Advanced Features
 
+* [Throttling Backups](advanced/throttling_backups.md)
 
-* [Throttling Backups](https://docs.percona.com/percona-xtrabackup/8.0/advanced/throttling_backups.html)
+* [Encrypted InnoDB tablespace backups](advanced/encrypted_innodb_tablespace_backups.md)
 
+* [Encrypting Backups](xtrabackup_bin/backup.encrypting.md)
 
-* [Encrypted InnoDB tablespace backups](https://docs.percona.com/percona-xtrabackup/8.0/advanced/encrypted_innodb_tablespace_backups.html)
+* [LRU dump backup](xtrabackup_bin/lru_dump.md)
 
+* [Point-In-Time recovery](xtrabackup_bin/point-in-time-recovery.md)
 
-* [Encrypting Backups](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/backup.encrypting.html)
+* [Working with Binary Logs](xtrabackup_bin/working_with_binary_logs.md)
 
-
-* [LRU dump backup](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/lru_dump.html)
-
-
-* [Point-In-Time recovery](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/point-in-time-recovery.html)
-
-
-* [Working with Binary Logs](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/working_with_binary_logs.html)
-
-
-* [Improved Log statements](https://docs.percona.com/percona-xtrabackup/8.0/advanced/log_enhancements.html)
-
+* [Improved Log statements](advanced/log_enhancements.md)
 
 ## Security
 
+* [Working with SELinux](security/pxb-selinux.md)
 
-* [Working with SELinux](https://docs.percona.com/percona-xtrabackup/8.0/security/pxb-selinux.html)
-
-
-* [Working with AppArmor](https://docs.percona.com/percona-xtrabackup/8.0/security/pxb-apparmor.html)
-
+* [Working with AppArmor](security/pxb-apparmor.md)
 
 ## Auxiliary guides
 
+* [Enabling the server to communicate via TCP/IP](howtos/enabling_tcp.md)
 
-* [Enabling the server to communicate via TCP/IP](https://docs.percona.com/percona-xtrabackup/8.0/howtos/enabling_tcp.html)
+* [Installing and configuring an SSH server](howtos/ssh_server.md)
 
+* [Analyzing table statistics](xtrabackup_bin/analyzing_table_statistics.md)
 
-* [Installing and configuring an SSH server](https://docs.percona.com/percona-xtrabackup/8.0/howtos/ssh_server.html)
+* [`FLUSH TABLES WITH READ LOCK` option](xtrabackup_bin/flush-tables-with-read-lock.md)
 
+* [`lock-ddl-per-table` option improvements](advanced/locks.md)
 
-* [Analyzing table statistics](https://docs.percona.
-  com/percona-xtrabackup/8.0/xtrabackup_bin/analyzing_table_statistics.html)
-
-
-* [`FLUSH TABLES WITH READ LOCK` option](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/flush-tables-with-read-lock.html)
-
-
-* [`lock-ddl-per-table` option improvements](https://docs.percona.
-  com/percona-xtrabackup/8.0/advanced/locks.html)
-
-
-* [Incremental backup using page tracking](https://docs.percona.com/percona-xtrabackup/8.0/advanced/page_tracking.html)
-
+* [Incremental backup using page tracking](advanced/page_tracking.md)
 
 ## xbcloud Binary
 
+* [The xbcloud Binary](xbcloud/xbcloud.md)
 
-* [The xbcloud Binary](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud.html)
+* [Using the xbcloud Binary with Swift](xbcloud/xbcloud_swift.md)
 
+* [Using xbcloud Binary with Amazon S3](xbcloud/xbcloud_s3.md)
 
-* [Using the xbcloud Binary with Swift](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud_swift.html)
+* [Using the xbcloud Binary with MinIO](xbcloud/xbcloud_minio.md)
 
+* [Using the xbcloud with Google Cloud Storage](xbcloud/xbcloud_gcs.md)
 
-* [Using xbcloud Binary with Amazon S3](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud_s3.html)
+* [Exponential Backoff](xbcloud/xbcloud_exbackoff.md)
 
-
-* [Using the xbcloud Binary with MinIO](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud_minio.html)
-
-
-* [Using the xbcloud with Google Cloud Storage](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud_gcs.html)
-
-
-* [Exponential Backoff](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud_exbackoff.html)
-
-
-* [Using the xbcloud binary with Microsoft Azure Cloud Storage](https://docs.percona.com/percona-xtrabackup/8.0/xbcloud/xbcloud_azure.html)
-
+* [Using the xbcloud binary with Microsoft Azure Cloud Storage](xbcloud/xbcloud_azure.md)
 
 ## Tutorials, Recipes, How-tos
 
-* [Recipes for xtrabackup](https://docs.percona.com/percona-xtrabackup/8.0/how-tos.html#recipes-xbk)
+* [Recipes for xtrabackup](how-tos.md#recipes-xbk)
 
-
-* [How-Tos](https://docs.percona.com/percona-xtrabackup/8.0/how-tos.html#howtos)
+* [How-Tos](how-tos.md#howtos)
 
 ## Release notes
 
-
-* [*Percona XtraBackup* 8.0 Release Notes](https://docs.percona.com/percona-xtrabackup/8.0/release-notes.html)
+* [*Percona XtraBackup* 8.0 Release Notes](release-notes.md)
 
 ## Error message descriptions
 
-* [Error Message: Found tables with row version due to INSTANT ADD/DROP 
-  columns](https://docs.percona.com/percona-xtrabackup/8.0/em/instant.html)
+* [Error Message: Found tables with row version due to INSTANT ADD/DROP columns](em/instant.md)
 
 ## References
 
+* [The **xtrabackup** Option Reference](xtrabackup_bin/xbk_option_reference.md)
 
+* [The xbcrypt binary](xbcrypt/xbcrypt.md)
 
-* [The **xtrabackup** Option Reference](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup_bin/xbk_option_reference.html)
+* [The xbstream binary](xbstream/xbstream.md)
 
+* [Frequently Asked Questions](faq.md)
 
-* [The xbcrypt binary](https://docs.percona.com/percona-xtrabackup/8.0/xbcrypt/xbcrypt.html)
+* [Glossary](glossary.md)
 
+* [Index of files created by Percona XtraBackup](xtrabackup-files.md)
 
-* [The xbstream binary](https://docs.percona.com/percona-xtrabackup/8.0/xbstream/xbstream.html)
+* [Trademark Policy](trademark-policy.md)
 
-
-* [Frequently Asked Questions](https://docs.percona.com/percona-xtrabackup/8.0/faq.html)
-
-
-* [Glossary](https://docs.percona.com/percona-xtrabackup/8.0/glossary.html)
-
-
-* [Index of files created by Percona XtraBackup](https://docs.percona.com/percona-xtrabackup/8.0/xtrabackup-files.html)
-
-
-* [Trademark Policy](https://docs.percona.com/percona-xtrabackup/8.0/trademark-policy.html)
-
-
-* [Version checking](https://docs.percona.com/percona-xtrabackup/8.0/version-check.html)
-
+* [Version checking](version-check.md)
 

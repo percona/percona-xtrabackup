@@ -1,0 +1,23 @@
+# MkDocs configuration for Percona website builds
+
+INHERIT: mkdocs-base.yml
+
+site_url: "https://docs.percona.com/percona-xtrabackup/8.0/index.html"
+
+plugins:
+  section-index: {}
+  bootstrap-tables: {}
+
+theme:
+  name: material
+  custom_dir: _resource/theme
+
+extra_css:
+  - css/version-select.css
+  - css/toctree.css
+  - css/percona.css
+  - css/details.css
+
+extra: # Used in main.html template and can't be externalized
+    edit_page_text: '<i class="uil uil-pen"></i> <b>Edit this page</b>'
+    updated_text: '<i class="uil uil-refresh"></i> Page updated'

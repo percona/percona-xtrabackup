@@ -1,0 +1,16 @@
+# MkDocs configuration for builds with material theme
+
+INHERIT: mkdocs-base.yml
+
+site_url: "https://docs.percona.com/percona-xtrabackup/8.0/"
+
+theme:
+  name: material
+  custom_dir: _resource/overrides
+
+
+#Google Analytics configuration 
+extra:
+  analytics:
+    provider: google
+    property: UA-343802-3
