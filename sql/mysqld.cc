@@ -5683,14 +5683,11 @@ static void setup_error_log() {
 */
 #ifndef XTRABACKUP
 static int setup_error_log_components() {
-<<<<<<< HEAD
 #else
 int setup_error_log_components() {
 #endif /* XTRABACKUP */
-=======
   int ret = 1;  // failure unless otherwise specified
 
->>>>>>> mysql-8.0.30
   /*
     LOCK_plugin needs to be valid in case we implicitly load
     components below that install component-variables.
