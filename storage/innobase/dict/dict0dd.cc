@@ -1395,14 +1395,14 @@ int dd_table_open_on_dd_obj(THD *thd, dd::cache::Dictionary_client *client,
   int error = 0;
   const table_id_t table_id =
       dd_part == nullptr ? dd_table.se_private_id() : dd_part->se_private_id();
-  const ulint fold = ut_fold_ull(table_id);
+  const auto hash_value = ut::hash_uint64(table_id);
 
   ut_ad(table_id != dd::INVALID_OBJECT_ID);
 
   dict_sys_mutex_enter();
 
-  HASH_SEARCH(id_hash, dict_sys->table_id_hash, fold, dict_table_t *, table,
-              ut_ad(table->cached), table->id == table_id);
+  HASH_SEARCH(id_hash, dict_sys->table_id_hash, hash_value, dict_table_t *,
+              table, ut_ad(table->cached), table->id == table_id);
 
   if (table != nullptr) {
     table->acquire();
@@ -1696,15 +1696,15 @@ dict_table_t *dd_table_open_on_id(table_id_t table_id, THD *thd,
                                   MDL_ticket **mdl, bool dict_locked,
                                   bool check_corruption, bool skip_missing) {
   dict_table_t *ib_table;
-  const ulint fold = ut_fold_ull(table_id);
+  const auto hash_value = ut::hash_uint64(table_id);
   char full_name[MAX_FULL_NAME_LEN + 1];
 
   if (!dict_locked) {
     dict_sys_mutex_enter();
   }
 
-  HASH_SEARCH(id_hash, dict_sys->table_id_hash, fold, dict_table_t *, ib_table,
-              ut_ad(ib_table->cached), ib_table->id == table_id);
+  HASH_SEARCH(id_hash, dict_sys->table_id_hash, hash_value, dict_table_t *,
+              ib_table, ut_ad(ib_table->cached), ib_table->id == table_id);
 
 reopen:
   if (ib_table == nullptr) {
@@ -1716,7 +1716,7 @@ reopen:
       /* The table is SDI table */
       space_id_t space_id = dict_sdi_get_space_id(table_id);
 
-      /* Create in-memory table oject for SDI table */
+      /* Create in-memory table object for SDI table */
       dict_index_t *sdi_index =
           dict_sdi_create_idx_in_mem(space_id, false, 0, false);
 
@@ -1792,7 +1792,7 @@ reopen:
       /* Re-lookup the table after acquiring MDL. */
       dict_sys_mutex_enter();
 
-      HASH_SEARCH(id_hash, dict_sys->table_id_hash, fold, dict_table_t *,
+      HASH_SEARCH(id_hash, dict_sys->table_id_hash, hash_value, dict_table_t *,
                   ib_table, ut_ad(ib_table->cached), ib_table->id == table_id);
 
       if (ib_table != nullptr) {
@@ -2626,13 +2626,9 @@ void dd_copy_private(Table &new_table, const Table &old_table) {
 
     new_index->set_se_private_data(old_index->se_private_data());
     new_index->set_tablespace_id(old_index->tablespace_id());
-    new_index->options().clear();
-    new_index->set_options(old_index->options());
   }
 
   new_table.table().set_row_format(old_table.table().row_format());
-  new_table.options().clear();
-  new_table.set_options(old_table.options());
 }
 
 template void dd_copy_private<dd::Table>(dd::Table &, const dd::Table &);
@@ -2696,18 +2692,6 @@ void dd_copy_table_columns(const Alter_inplace_info *ha_alter_info,
 
     /* Skip the dropped column */
     if (is_dropped(ha_alter_info, old_col->name().c_str())) {
-      /* Either this is a virtual column in old table or this column is being
-      dropped instantly. Skip it. */
-      if (!old_col->is_virtual()) {
-        if (first_row_version) {
-          const char *s = dd_column_key_strings[DD_INSTANT_PHYSICAL_POS];
-          dict_col_t *col =
-              dict_table->get_col_by_name(old_col->name().c_str());
-          (const_cast<dd::Column *>(old_col))
-              ->se_private_data()
-              .set(s, col->get_phy_pos());
-        }
-      }
       continue;
     } else if (is_renamed(ha_alter_info, old_col->name().c_str(), new_name)) {
       IF_DEBUG(renamed = true;)
@@ -2755,10 +2739,14 @@ void dd_part_adjust_table_id(dd::Table *new_table) {
 
 /** Clear the instant ADD COLUMN information of a table
 @param[in,out]  dd_table        dd::Table
-@param[in]      clear_version   true if version metadata is to be cleared */
-void dd_clear_instant_table(dd::Table &dd_table, bool clear_version) {
+@param[in]      clear_version   true if version metadata is to be cleared
+@return DB_SUCCESS or error code */
+dberr_t dd_clear_instant_table(dd::Table &dd_table, bool clear_version) {
+  dberr_t err = DB_SUCCESS;
   dd_table.se_private_data().remove(
       dd_table_key_strings[DD_TABLE_INSTANT_COLS]);
+
+  std::vector<std::string> cols_to_drop;
 
   for (auto col : *dd_table.columns()) {
     auto fn = [&](const char *s) {
@@ -2778,6 +2766,10 @@ void dd_clear_instant_table(dd::Table &dd_table, bool clear_version) {
       fn(dd_column_key_strings[DD_INSTANT_COLUMN_DEFAULT]);
     } else {
       /* Possibly an INSTANT ADD/DROP column with a version */
+      if (dd_column_is_dropped(col)) {
+        cols_to_drop.push_back(col->name().c_str());
+        continue;
+      }
       fn(dd_column_key_strings[DD_INSTANT_COLUMN_DEFAULT_NULL]);
       fn(dd_column_key_strings[DD_INSTANT_COLUMN_DEFAULT]);
       fn(dd_column_key_strings[DD_INSTANT_VERSION_ADDED]);
@@ -2785,6 +2777,23 @@ void dd_clear_instant_table(dd::Table &dd_table, bool clear_version) {
       fn(dd_column_key_strings[DD_INSTANT_PHYSICAL_POS]);
     }
   }
+
+  if (!cols_to_drop.empty()) {
+    for (auto col_name : cols_to_drop) {
+      if (!dd_drop_hidden_column(&dd_table, col_name.c_str())) {
+        ib::error(ER_IB_MSG_CLEAR_INSTANT_DROP_COLUMN_METADATA)
+            << dd_table.name().c_str();
+        my_error(
+            ER_INTERNAL_ERROR, MYF(0),
+            "Failed to truncate table. You may drop and re-create this table.");
+        ut_ad(0);
+        err = DB_ERROR;
+      }
+    }
+  }
+  cols_to_drop.clear();
+
+  return err;
 }
 
 /** Clear the instant ADD COLUMN information of a partition, to make it
@@ -2856,9 +2865,13 @@ bool dd_instant_columns_consistent(const dd::Table &dd_table) {
          (n_version_drop_cols >= (n_inst_cols - n_non_instant_cols)));
 
   ut_ad(exp);
-  ut_ad(found);
 
-  return (found && exp);
+  /* found will be false iff after upgrade INSTANT ADD column was INSTANT
+  DROP. */
+  bool exp2 = found || dd_table_has_row_versions(dd_table);
+  ut_ad(exp2);
+
+  return (exp && exp2);
 }
 #endif /* UNIV_DEBUG */
 
@@ -3008,10 +3021,16 @@ void dd_drop_instant_columns(
 
     uint32_t phy_pos = UINT32_UNDEFINED;
     const char *s = dd_column_key_strings[DD_INSTANT_PHYSICAL_POS];
-    /* Even for upgraded table, physical pos for this column would have been
-    set in dd_copy_table_columns(). */
-    ut_ad(private_data.exists(s));
-    private_data.get(s, &phy_pos);
+    if (!private_data.exists(s)) {
+      ut_ad(!dd_table_has_row_versions(*old_dd_table));
+      ut_ad(!new_dict_table->has_row_versions());
+      const dict_col_t *col =
+          new_dict_table->get_col_by_name(column->field_name);
+      phy_pos = col->get_phy_pos();
+    } else {
+      private_data.get(s, &phy_pos);
+    }
+
     ut_ad(phy_pos != UINT32_UNDEFINED);
 
     std::string dropped_col_name(col_to_drop->name().c_str());
@@ -4421,7 +4440,8 @@ void get_field_types(const dd::Table *dd_tab, const dict_table_t *m_table,
 template <typename Table>
 static inline void fill_dict_existing_column(
     const Table *dd_tab, const TABLE *m_form, dict_table_t *m_table,
-    IF_DEBUG(uint32_t &crv, ) mem_heap_t *heap, const uint32_t pos) {
+    IF_DEBUG(uint32_t &crv, ) mem_heap_t *heap, const uint32_t pos,
+    bool has_row_versions) {
   const Field *field = m_form->field[pos];
   unsigned col_len;
   ulint mtype;
@@ -4448,7 +4468,7 @@ static inline void fill_dict_existing_column(
 
     /* Get physical pos */
     uint32_t phy_pos = UINT32_UNDEFINED;
-    if (dd_table_has_row_versions(dd_tab->table())) {
+    if (has_row_versions) {
       ut_ad(!m_table->is_system_table && !m_table->is_fts_aux());
       const char *s = dd_column_key_strings[DD_INSTANT_PHYSICAL_POS];
 
@@ -4507,9 +4527,10 @@ static inline void fill_dict_columns(const Table *dd_table, const TABLE *m_form,
   IF_DEBUG(uint32_t crv = 0;)
 
   /* Add existing columns metadata information. */
+  bool has_row_versions = dd_table_has_row_versions(dd_table->table());
   for (unsigned i = 0; i < n_mysql_cols; i++) {
     fill_dict_existing_column(dd_table, m_form, dict_table,
-                              IF_DEBUG(crv, ) heap, i);
+                              IF_DEBUG(crv, ) heap, i, has_row_versions);
   }
 
   if (add_doc_id) {
@@ -6406,7 +6427,7 @@ const char *dd_process_dd_tables_rec_and_mtr_commit(
   ut_ad(mtr_memo_contains_page(mtr, rec, MTR_MEMO_PAGE_S_FIX));
 
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   field = rec_get_nth_field(nullptr, rec, offsets,
                             dd_tables->field_number("engine") + DD_FIELD_OFFSET,
@@ -6474,7 +6495,7 @@ const char *dd_process_dd_partitions_rec_and_mtr_commit(
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_tables)));
 
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   /* Get the engine field. */
   field = rec_get_nth_field(nullptr, rec, offsets,
@@ -6548,7 +6569,7 @@ bool dd_process_dd_columns_rec(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_columns)));
 
   ulint *offsets = rec_get_offsets(rec, dd_columns->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Column>();
 
@@ -6702,7 +6723,7 @@ bool dd_process_dd_virtual_columns_rec(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_columns)));
 
   ulint *offsets = rec_get_offsets(rec, dd_columns->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Column>();
 
@@ -6826,7 +6847,7 @@ bool dd_process_dd_indexes_rec(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_indexes)));
 
   ulint *offsets = rec_get_offsets(rec, dd_indexes->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Index>();
 
@@ -6977,7 +6998,7 @@ bool dd_process_dd_indexes_rec_simple(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_indexes)));
 
   ulint *offsets = rec_get_offsets(rec, dd_indexes->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Index>();
 
@@ -7044,7 +7065,7 @@ bool dd_process_dd_tablespaces_rec(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_spaces)));
 
   ulint *offsets = rec_get_offsets(rec, dd_spaces->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Tablespace>();
 
