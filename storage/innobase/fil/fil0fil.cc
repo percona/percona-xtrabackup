@@ -1129,11 +1129,9 @@ class Fil_shard {
                               ulint len, void *buf, void *message);
 
   /** Iterate through all tablespaces
-  @param[in]  include_log Include redo log space, if true
   @param[in]  f   Callback
   @return any error returned by the callback function. */
-  [[nodiscard]] dberr_t iterate_spaces(bool include_log,
-                                       Fil_space_iterator::Function &f);
+  [[nodiscard]] dberr_t iterate_spaces(Fil_space_iterator::Function &f);
 
   /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
   returning the nodes via callback function f.
@@ -1580,11 +1578,9 @@ class Fil_system {
 
 #ifdef XTRABACKUP
   /** Iterate through all tablespaces
-  @param[in]  include_log Include redo log space, if true
   @param[in]  f   Callback
   @return any error returned by the callback function. */
-  [[nodiscard]] dberr_t iterate_spaces(bool include_log,
-                                       Fil_space_iterator::Function &f);
+  [[nodiscard]] dberr_t iterate_spaces(Fil_space_iterator::Function &f);
 
 #endif /* XTRABACKUP */
   /** Iterate through all persistent tablespace files
@@ -3979,7 +3975,6 @@ void Fil_system::close_all_files() {
 modifications in the files. */
 void fil_close_all_files() { fil_system->close_all_files(); }
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
 /** Open a file of a tablespace.
 The caller must own the shard mutex.
@@ -4076,18 +4071,15 @@ void fil_close_log_files(bool free_all) {
 }
 
 /** Iterate through all tablespaces
-@param[in]  include_log Include redo log space, if true
 @param[in]  f   Callback
 @return any error returned by the callback function. */
-dberr_t Fil_shard::iterate_spaces(bool include_log,
-                                  Fil_space_iterator::Function &f) {
+dberr_t Fil_shard::iterate_spaces(Fil_space_iterator::Function &f) {
   mutex_acquire();
 
   for (auto &elem : m_spaces) {
     auto space = elem.second;
 
-    if (space->purpose != FIL_TYPE_TABLESPACE &&
-        (!include_log || space->purpose != FIL_TYPE_LOG)) {
+    if (space->purpose != FIL_TYPE_TABLESPACE) {
       continue;
     }
 
@@ -4106,8 +4098,6 @@ dberr_t Fil_shard::iterate_spaces(bool include_log,
   return (DB_SUCCESS);
 }
 
-=======
->>>>>>> mysql-8.0.30
 /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
 returning the nodes via callback function cbk.
 @param[in]      f               Callback
@@ -4140,21 +4130,13 @@ dberr_t Fil_shard::iterate(Fil_iterator::Function &f) {
   return DB_SUCCESS;
 }
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
 /** Iterate through all tablespaces
-@param[in]      include_log     Include log files, if true
 @param[in]      f               Callback
 @return any error returned by the callback function. */
-dberr_t Fil_system::iterate_spaces(bool include_log,
-                                   Fil_space_iterator::Function &f) {
-  for (auto shard : m_shards) {
-    dberr_t err = shard->iterate_spaces(include_log, f);
-=======
 dberr_t Fil_system::iterate(Fil_iterator::Function &f) {
   for (auto shard : m_shards) {
     dberr_t err = shard->iterate(f);
->>>>>>> mysql-8.0.30
 
     if (err != DB_SUCCESS) {
       return err;
@@ -4165,23 +4147,20 @@ dberr_t Fil_system::iterate(Fil_iterator::Function &f) {
 }
 /** Iterate through all spaces
 returning the them via callback function cbk.
-@param[in]      include_log     include log files, if true
 @param[in]      f               Callback
 @return any error returned by the callback function. */
-dberr_t Fil_space_iterator::iterate(bool include_log, Function &&f) {
-  return (fil_system->iterate_spaces(include_log, f));
+dberr_t Fil_space_iterator::iterate(Function &&f) {
+  return (fil_system->iterate_spaces(f));
 }
 #endif  // XTRABACKUP
 
-<<<<<<< HEAD
 /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
 returning the nodes via callback function cbk.
-@param[in]      include_log     include log files, if true
 @param[in]      f               Callback
 @return any error returned by the callback function. */
-dberr_t Fil_system::iterate(bool include_log, Fil_iterator::Function &f) {
+dberr_t Fil_system::iterate(Fil_iterator::Function &f) {
   for (auto shard : m_shards) {
-    dberr_t err = shard->iterate(include_log, f);
+    dberr_t err = shard->iterate(f);
 
     if (err != DB_SUCCESS) {
       return (err);
@@ -4193,15 +4172,9 @@ dberr_t Fil_system::iterate(bool include_log, Fil_iterator::Function &f) {
 
 /** Iterate through all persistent tablespace files (FIL_TYPE_TABLESPACE)
 returning the nodes via callback function cbk.
-@param[in]  include_log include log files, if true
 @param[in]  f   Callback
 @return any error returned by the callback function. */
-dberr_t Fil_iterator::iterate(bool include_log, Function &&f) {
-  return fil_system->iterate(include_log, f);
-}
-=======
 dberr_t Fil_iterator::iterate(Function &&f) { return fil_system->iterate(f); }
->>>>>>> mysql-8.0.30
 
 /** Sets the max tablespace id counter if the given number is bigger than the
 previous value.
@@ -7815,7 +7788,6 @@ static void fil_report_invalid_page_access_low(page_no_t block_offset,
 @param[in]      space           table space */
 void fil_io_set_encryption(IORequest &req_type, const page_id_t &page_id,
                            fil_space_t *space) {
-<<<<<<< HEAD
   /* Don't encrypt pages of system tablespace upto TRX_SYS_PAGE(including). The
   doublewrite buffer header is on TRX_SYS_PAGE */
   if (fsp_is_system_tablespace(space->id) &&
@@ -7824,9 +7796,7 @@ void fil_io_set_encryption(IORequest &req_type, const page_id_t &page_id,
     return;
   }
 
-=======
   ut_a(!req_type.is_log());
->>>>>>> mysql-8.0.30
   /* Don't encrypt page 0 of all tablespaces except redo log
   tablespace, all pages from the system tablespace. */
   if ((space->encryption_op_in_progress == Encryption::Progress::DECRYPTION &&
@@ -10147,14 +10117,10 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
                                      << space->name << " ID: " << space->id;
     }
 
-<<<<<<< HEAD
-    return (true);
+    return err;
   } else if (status == FIL_LOAD_INVALID_ENCRYPTION_META) {
     xb::error() << "Invalid encryption metadata in tablespace header.";
     exit(EXIT_FAILURE);
-=======
-    return err;
->>>>>>> mysql-8.0.30
   }
 
   return DB_FAIL;
@@ -10556,21 +10522,11 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
   ut_a(result.second->size() == 1);
 
   /* It's possible that the tablespace file was renamed later. */
-<<<<<<< HEAD
   if (result.second->front().compare(abs_file_path) == 0) {
-    bool success;
-
-    success = fil_tablespace_open_for_recovery(page_id.space());
-
-    if (!success) {
-      ib::info(ER_IB_MSG_356) << "Create '" << abs_file_path << "' failed!";
-=======
-  if (result.second->front().compare(abs_name) == 0) {
     dberr_t success = fil_tablespace_open_for_recovery(page_id.space());
 
     if (success != DB_SUCCESS) {
       ib::info(ER_IB_MSG_356) << "Create '" << abs_name << "' failed!";
->>>>>>> mysql-8.0.30
     }
   }
 #endif /* UNIV_HOTBACKUP */
