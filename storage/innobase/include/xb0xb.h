@@ -85,7 +85,7 @@ extern size_t redo_memory;
 extern ulint redo_frames;
 
 /** This variables holds the result of all conditions that must be set in order
-to enable predict memory functionality */
-extern bool predict_memory;
+to enable estimate memory functionality */
+extern bool estimate_memory;
 #define SQUOTE(str) "'" << str << "'"
 #endif

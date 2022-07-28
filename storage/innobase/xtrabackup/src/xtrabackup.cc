@@ -162,7 +162,7 @@ bool xtrabackup_apply_log_only = false;
 longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
 bool xtrabackup_use_memory_set = false;
 uint xtrabackup_use_free_memory_pct = 0;
-bool predict_memory = false;
+bool estimate_memory = false;
 
 bool xtrabackup_create_ib_logfile = false;
 
@@ -2106,18 +2106,18 @@ static bool innodb_init_param(void) {
 
   srv_buf_pool_chunk_unit = 134217728;
   srv_buf_pool_instances = 1;
-  predict_memory = xtrabackup_prepare && redo_memory != 0 && redo_frames != 0 &&
-                   !xtrabackup_use_memory_set &&
-                   xtrabackup_use_free_memory_pct != 0;
+  estimate_memory = xtrabackup_prepare && redo_memory != 0 &&
+                    redo_frames != 0 && !xtrabackup_use_memory_set &&
+                    xtrabackup_use_free_memory_pct != 0;
 
-  if (predict_memory) {
+  if (estimate_memory) {
     ulint free_memory_total = xtrabackup::utils::host_free_memory();
     ulint free_memory_usable =
         (free_memory_total * xtrabackup_use_free_memory_pct) / 100;
     ulint mem =
         buf_pool_size_align(redo_memory + (redo_frames * UNIV_PAGE_SIZE));
     if (mem > (ulint)xtrabackup_use_memory) {
-      xb::info() << "Got prediction from backup: " << redo_memory
+      xb::info() << "Got estimation from backup: " << redo_memory
                  << " bytes for parsing and " << redo_frames
                  << " frames. Requesting " << mem << " for --prepare.";
       if (mem > free_memory_usable) {
@@ -4885,7 +4885,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
                 "index statistics.";
   xb::info() << "Using " << xtrabackup_use_memory
              << " bytes for buffer pool (set by "
-             << ((predict_memory) ? "--use-free-memory-pct" : "--use-memory")
+             << ((estimate_memory) ? "--use-free-memory-pct" : "--use-memory")
              << " parameter)";
 
   if (innodb_init(true, false)) exit(EXIT_FAILURE);
@@ -7111,7 +7111,7 @@ skip_check:
   xb::info() << "Starting InnoDB instance for recovery.";
   xb::info() << "Using " << xtrabackup_use_memory
              << " bytes for buffer pool (set by "
-             << ((predict_memory) ? "--use-free-memory-pct" : "--use-memory")
+             << ((estimate_memory) ? "--use-free-memory-pct" : "--use-memory")
              << " parameter)";
 
   if (innodb_init(true, true)) {
