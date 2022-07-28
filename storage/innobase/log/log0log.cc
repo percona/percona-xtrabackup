@@ -606,20 +606,8 @@ static void log_sys_create() {
   /* Initialize simple value fields. */
   log.dict_persist_margin.store(0);
   log.periodical_checkpoints_enabled = false;
-<<<<<<< HEAD
-  if (log_detected_format != UINT32_MAX) {
-    ut_a(log_detected_format <= LOG_HEADER_FORMAT_CURRENT);
-    log.format = log_detected_format;
-  } else {
-    log.format = LOG_HEADER_FORMAT_CURRENT;
-  }
-
-  log.files_space_id = space_id;
-  log.state = log_state_t::OK;
-=======
   log.m_format = Log_format::CURRENT;
   log.m_creator_name = LOG_HEADER_CREATOR_CURRENT;
->>>>>>> mysql-8.0.30
   log.n_log_ios_old = log.n_log_ios;
   log.last_printout_time = time(nullptr);
   log.m_requested_files_consumption = false;
