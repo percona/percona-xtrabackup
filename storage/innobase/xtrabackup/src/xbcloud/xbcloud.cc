@@ -1242,7 +1242,8 @@ int main(int argc, char **argv) {
     container_name = opt_swift_container;
 
   } else if (opt_storage == S3) {
-    std::string region = opt_s3_region != nullptr ? opt_s3_region : "us-east-1";
+    std::string region =
+        opt_s3_region != nullptr ? opt_s3_region : default_s3_region;
     std::string access_key =
         opt_s3_access_key != nullptr ? opt_s3_access_key : "";
     std::string secret_key =
