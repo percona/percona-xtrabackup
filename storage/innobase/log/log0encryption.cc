@@ -109,12 +109,26 @@ dberr_t log_encryption_read(log_t &log, const Log_file &file) {
 
   if (Encryption::is_encrypted_with_v3(log_block_buf +
                                        LOG_HEADER_ENCRYPTION_INFO_OFFSET)) {
+    if (use_dumped_tablespace_keys && !srv_backup_mode) {
+      fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+      err = xb_set_encryption(space);
+      if (err != DB_SUCCESS) {
+        xb::error() << "Cannot find encryption key for redo log.";
+        return DB_ERROR;
+      }
+      return DB_SUCCESS;
+    }
+
+    /* check_keyring modifies keyring by generating new key and saving it.
+      XtraBackup must avoid touching keyring on backup. */
+#ifndef XTRABACKUP
     /* Make sure the keyring is loaded. */
     if (!Encryption::check_keyring()) {
       ib::error(ER_IB_MSG_1238) << "Redo log was encrypted,"
                                 << " but keyring is not loaded.";
       return DB_ERROR;
     }
+#endif /*!XTRABACKUP*/
 
     Encryption_metadata encryption_metadata;
 
@@ -175,7 +189,9 @@ static dberr_t log_encryption_write_low(log_t &log) {
   byte log_block_buf[OS_FILE_LOG_BLOCK_SIZE];
 
   if (log_can_encrypt(log)) {
-    if (!log_file_header_fill_encryption(log.m_encryption_metadata, true,
+    bool encrypt = true;
+    if (use_dumped_tablespace_keys && !srv_backup_mode) encrypt = false;
+    if (!log_file_header_fill_encryption(log.m_encryption_metadata, encrypt,
                                          log_block_buf)) {
       return DB_ERROR;
     }
