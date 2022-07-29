@@ -227,18 +227,6 @@ static bool recv_writer_is_active() {
 
 #ifndef UNIV_HOTBACKUP
 
-<<<<<<< HEAD
-=======
-/** Reads a specified log segment to a buffer.
-@param[in,out]  log             redo log
-@param[in,out]  buf             buffer where to read
-@param[in]      start_lsn       read area start
-@param[in]      end_lsn         read area end
-@return lsn up to which data was available on disk (ideally end_lsn) */
-static lsn_t recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                               lsn_t end_lsn);
-
->>>>>>> mysql-8.0.30
 /** Initialize crash recovery environment. Can be called iff
 recv_needed_recovery == false. */
 static dberr_t recv_init_crash_recovery();
@@ -642,7 +630,6 @@ void recv_sys_init() {
   recv_sys->apply_file_operations = false;
 #endif /* !UNIV_HOTBACKUP */
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
   if (predict_memory) {
     if (srv_buf_pool_curr_size >= (long long)redo_memory) {
@@ -656,10 +643,8 @@ void recv_sys_init() {
   }
 #endif
 
-=======
   recv_sys->buf_len =
       std::min<unsigned long>(RECV_PARSING_BUF_SIZE, srv_log_buffer_size);
->>>>>>> mysql-8.0.30
   recv_sys->buf = static_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, recv_sys->buf_len));
 
@@ -1066,82 +1051,6 @@ static dberr_t recv_log_recover_pre_8_0_30(log_t &log) {
   return log_start(log, checkpoint_lsn, checkpoint_lsn, nullptr);
 }
 
-<<<<<<< HEAD
-/** Find the latest checkpoint in the log header.
-@param[in,out]  log             redo log
-@param[out]     max_field       LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
-@return error code or DB_SUCCESS */
-[[nodiscard]] dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field) {
-  bool found_checkpoint = false;
-
-  *max_field = 0;
-
-  byte *buf = log.checkpoint_buf;
-
-  log.state = log_state_t::CORRUPTED;
-
-  log_files_header_read(log, 0);
-
-  /* Check the header page checksum. There was no
-  checksum in the first redo log format (version 0). */
-  log.format = mach_read_from_4(buf + LOG_HEADER_FORMAT);
-
-  if (log_detected_format == UINT32_MAX) {
-    log_detected_format = log.format;
-  } else {
-    // TODO: make it debug assert
-    ut_a(log.format == log_detected_format);
-  }
-
-  if (log.format != 0 && !recv_check_log_header_checksum(buf)) {
-    ib::error(ER_IB_MSG_1264) << "Invalid redo log header checksum.";
-
-    return (DB_CORRUPTION);
-  }
-
-  memcpy(log_header_creator, buf + LOG_HEADER_CREATOR,
-         sizeof log_header_creator);
-
-  log_header_creator[(sizeof log_header_creator) - 1] = 0;
-
-  switch (log.format) {
-    case 0:
-      ib::error(ER_IB_MSG_1265) << "Unsupported redo log format (" << log.format
-                                << "). The redo log was created"
-                                << " before MySQL 5.7.9";
-
-      return (DB_ERROR);
-
-    case LOG_HEADER_FORMAT_5_7_9:
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_19:
-
-      ib::info(ER_IB_MSG_704, ulong{log.format});
-
-    case LOG_HEADER_FORMAT_8_0_3:
-    case LOG_HEADER_FORMAT_CURRENT:
-      /* The checkpoint page format is identical upto v5. */
-      break;
-
-    default:
-      ib::error(ER_IB_MSG_705, ulong{log.format}, REFMAN);
-
-      return (DB_ERROR);
-  }
-
-  log.m_first_file_lsn = mach_read_from_8(buf + LOG_HEADER_START_LSN);
-
-  uint32_t flags = mach_read_from_4(buf + LOG_HEADER_FLAGS);
-
-  if (LOG_HEADER_CHECK_FLAG(flags, LOG_HEADER_FLAG_NO_LOGGING)) {
-    /* Exit if server is crashed while running without redo logging. */
-    if (LOG_HEADER_CHECK_FLAG(flags, LOG_HEADER_FLAG_CRASH_UNSAFE)) {
-      ib::error(ER_IB_ERR_RECOVERY_REDO_DISABLED);
-      /* Allow to proceed with SRV_FORCE_NO_LOG_REDO[6] */
-      if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
-        return (DB_ERROR);
-      }
-=======
 /** Describes location of a single checkpoint. */
 struct Log_checkpoint_location {
   /** File containing checkpoint header and checkpoint lsn. */
@@ -1173,7 +1082,6 @@ struct Log_checkpoint_location {
       /* Crash if IO error on read */
       ut_a(err == DB_CORRUPTION);
       continue;
->>>>>>> mysql-8.0.30
     }
 
     const lsn_t checkpoint_lsn = checkpoint_header.m_checkpoint_lsn;
@@ -1840,77 +1748,33 @@ static byte *recv_parse_or_apply_log_rec_body(
 
       return fil_tablespace_redo_delete(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-<<<<<<< HEAD
           recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
               recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn));
-=======
-          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+                  backup_redo_log_flushed_lsn);
 
     case MLOG_FILE_CREATE:
 
       return fil_tablespace_redo_create(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
+              recv_sys->recovered_lsn + parsed_bytes <
+                  backup_redo_log_flushed_lsn);
 
     case MLOG_FILE_RENAME:
 
       return fil_tablespace_redo_rename(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
+              recv_sys->recovered_lsn + parsed_bytes <
+                  backup_redo_log_flushed_lsn);
 
     case MLOG_FILE_EXTEND:
 
       return fil_tablespace_redo_extend(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0);
-#else  /* !UNIV_HOTBACKUP */
-      // Mysqlbackup does not execute file operations. It cares for all
-      // files to be at their final places when it applies the redo log.
-      // The exception is the restore of an incremental_with_redo_log_only
-      // backup.
-    case MLOG_FILE_DELETE:
-
-      return fil_tablespace_redo_delete(
-          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          !recv_sys->apply_file_operations);
->>>>>>> mysql-8.0.30
-
-    case MLOG_FILE_CREATE:
-
-      return fil_tablespace_redo_create(
-          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-<<<<<<< HEAD
           recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
               recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn));
-=======
-          !recv_sys->apply_file_operations);
->>>>>>> mysql-8.0.30
-
-    case MLOG_FILE_RENAME:
-
-      return fil_tablespace_redo_rename(
-          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-<<<<<<< HEAD
-          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
-              recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn));
-=======
-          !recv_sys->apply_file_operations);
->>>>>>> mysql-8.0.30
-
-    case MLOG_FILE_EXTEND:
-
-      return fil_tablespace_redo_extend(
-          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-<<<<<<< HEAD
-          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
-              recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn));
-=======
-          !recv_sys->apply_file_operations);
->>>>>>> mysql-8.0.30
+                  backup_redo_log_flushed_lsn);
 #endif /* !UNIV_HOTBACKUP */
     case MLOG_INDEX_LOAD:
 #if defined(UNIV_HOTBACKUP) || defined(XTRABACKUP)
@@ -2025,7 +1889,6 @@ static byte *recv_parse_or_apply_log_rec_body(
 #endif /* XTRABACKUP */
 
           ut_ad(LSN_MAX != start_lsn);
-<<<<<<< HEAD
 
           byte *ptr_copy = ptr;
           ptr_copy += 2;  // skip offset
@@ -2050,10 +1913,6 @@ static byte *recv_parse_or_apply_log_rec_body(
           } else if (fil_tablespace_redo_encryption(ptr, end_ptr, space_id,
                                                     start_lsn) == nullptr)
             return (nullptr);
-=======
-          return fil_tablespace_redo_encryption(ptr, end_ptr, space_id,
-                                                start_lsn);
->>>>>>> mysql-8.0.30
         }
 #ifdef UNIV_HOTBACKUP
       }
@@ -3896,30 +3755,18 @@ automatically when the hash table becomes full.
 @param[in]      buf             buffer containing a log segment or garbage
 @param[in]      len             buffer length
 @param[in]      start_lsn       buffer start lsn
-<<<<<<< HEAD
-@param[in,out]  contiguous_lsn  it is known that log contain
-                                contiguous log data up to this lsn
-@param[out]     read_upto_lsn   scanning succeeded up to this lsn
-@param[in]      to_lsn          LSN to stop scanning at
-=======
 @param[out]  read_upto_lsn  scanning succeeded up to this lsn
+@param[in]      to_lsn          LSN to stop scanning at
 @param[out]  err             DB_SUCCESS when no dblwr corruptions.
->>>>>>> mysql-8.0.30
 @return true if not able to scan any more in this log */
 #ifndef UNIV_HOTBACKUP
 static bool recv_scan_log_recs(log_t &log,
 #else  /* !UNIV_HOTBACKUP */
 bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
-<<<<<<< HEAD
-                               ulint *max_memory, const byte *buf, ulint len,
-                               lsn_t start_lsn, lsn_t *contiguous_lsn,
-                               lsn_t *read_upto_lsn, lsn_t to_lsn) {
-=======
                                size_t max_memory, const byte *buf, size_t len,
                                lsn_t start_lsn, lsn_t *read_upto_lsn,
-                               dberr_t &err) {
->>>>>>> mysql-8.0.30
+                               dberr_t &err, lsn_t to_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool finished = false;
@@ -4147,8 +3994,12 @@ bool meb_scan_log_recs(
 }
 
 #ifndef UNIV_HOTBACKUP
-static lsn_t recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                               const lsn_t end_lsn) {
+#ifndef XTRABACKUP
+static
+#endif
+    lsn_t
+    recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                      const lsn_t end_lsn) {
   log_background_threads_inactive_validate();
 
   ut_a(start_lsn < end_lsn);
@@ -4160,29 +4011,9 @@ static lsn_t recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
     return start_lsn;
   }
 
-<<<<<<< HEAD
-  ut::aligned_free(log_block_buf);
-  return (true);
-}
-#endif /* UNIV_HOTBACKUP */
-
-#ifndef UNIV_HOTBACKUP
-/** Reads a specified log segment to a buffer.
-@param[in,out]  log             redo log
-@param[in,out]  buf             buffer where to read
-@param[in]      start_lsn       read area start
-@param[in]      end_lsn         read area end */
-#ifndef XTRABACKUP
-static
-#endif
-void recv_read_log_seg(log_t & log, byte * buf, lsn_t start_lsn,
-                       lsn_t end_lsn) {
-  log_background_threads_inactive_validate();
-=======
   auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
   ut_a(file_handle.is_open());
 
->>>>>>> mysql-8.0.30
   do {
     os_offset_t source_offset;
 
@@ -4246,15 +4077,10 @@ Parses and hashes the log records if new data found.
                                         an mtr which we can ignore, as it is
                                         already applied to tablespace files)
                                         until which all redo log has been
-<<<<<<< HEAD
                                         scanned
 @param[in,out]  to_lsn                  LSN to stop recovery at */
-static void recv_recovery_begin(log_t &log, lsn_t *contiguous_lsn,
-                                lsn_t to_lsn) {
-=======
-                                        scanned */
-static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
->>>>>>> mysql-8.0.30
+static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
+                                   lsn_t to_lsn) {
   mutex_enter(&recv_sys->mutex);
 
   recv_sys->len = 0;
@@ -4309,18 +4135,8 @@ static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
 
     dberr_t err;
 
-<<<<<<< HEAD
-    finished =
-        recv_scan_log_recs(log, &max_mem, log.buf, RECV_SCAN_SIZE, start_lsn,
-                           contiguous_lsn, &log.scanned_lsn, to_lsn);
-    start_lsn = end_lsn;
-  }
-
-  DBUG_PRINT("ib_log", ("scan " LSN_PF " completed", log.scanned_lsn));
-  ut_ad(to_lsn == LSN_MAX || to_lsn == log.scanned_lsn);
-=======
     finished = recv_scan_log_recs(log, max_mem, log.buf, end_lsn - start_lsn,
-                                  start_lsn, &log.m_scanned_lsn, err);
+                                  start_lsn, &log.m_scanned_lsn, err, to_lsn);
 
     if (err != DB_SUCCESS) {
       return err;
@@ -4331,7 +4147,6 @@ static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
 
   DBUG_PRINT("ib_log", ("scan " LSN_PF " completed", log.m_scanned_lsn));
   return DB_SUCCESS;
->>>>>>> mysql-8.0.30
 }
 
 /** Initialize crash recovery environment. Can be called iff
@@ -4362,20 +4177,9 @@ static dberr_t recv_init_crash_recovery() {
 #endif /* !UNIV_HOTBACKUP */
 
 #ifndef UNIV_HOTBACKUP
-<<<<<<< HEAD
-/** Start recovering from a redo log checkpoint.
-@see recv_recovery_from_checkpoint_finish
-@param[in,out]  log             redo log
-@param[in]      flush_lsn       FIL_PAGE_FILE_FLUSH_LSN
-                                of first system tablespace page
-@param[in]      to_lsn          LSN to store recovery at
-@return error code or DB_SUCCESS */
+
 dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
                                             lsn_t to_lsn) {
-=======
-
-dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
->>>>>>> mysql-8.0.30
   /* Initialize red-black tree for fast insertions into the
   flush_list during recovery process. */
   buf_flush_init_flush_rbt();
@@ -4392,46 +4196,9 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
 
   recv_recovery_on = true;
 
-<<<<<<< HEAD
-  /* Look for the latest checkpoint */
-
-  dberr_t err;
-  ulint max_cp_field;
-
-  err = recv_find_max_checkpoint(log, &max_cp_field);
-
-  if (err != DB_SUCCESS) {
-    return (err);
-  }
-
-  log_files_header_read(log, static_cast<uint32_t>(max_cp_field));
-
-  lsn_t checkpoint_lsn;
-  checkpoint_no_t checkpoint_no;
-
-  checkpoint_lsn = mach_read_from_8(log.checkpoint_buf + LOG_CHECKPOINT_LSN);
-
-  checkpoint_no = mach_read_from_8(log.checkpoint_buf + LOG_CHECKPOINT_NO);
-
-  ut_ad(to_lsn >= checkpoint_lsn);
-
-  /* Read the first log file header to print a note if this is
-  a recovery from a restored InnoDB Hot Backup */
-  byte log_hdr_buf[LOG_FILE_HDR_SIZE];
-  const page_id_t page_id{log.files_space_id, 0};
-
-  err = fil_redo_io(IORequestLogRead, page_id, univ_page_size, 0,
-                    LOG_FILE_HDR_SIZE, log_hdr_buf);
-
-  ut_a(err == DB_SUCCESS);
-
-  /* Make sure creator is properly '\0'-terminated for output */
-  log_hdr_buf[LOG_HEADER_CREATOR_END - 1] = '\0';
-=======
   switch (log.m_format) {
     case Log_format::CURRENT:
       break;
->>>>>>> mysql-8.0.30
 
     case Log_format::VERSION_5_7_9:
     case Log_format::VERSION_8_0_1:
@@ -4450,7 +4217,7 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
       ut_ad(0);
       recv_sys->found_corrupt_log = true;
       return DB_ERROR;
-  }
+}
 
   ut_a(log.m_format == Log_format::CURRENT);
 
@@ -4502,6 +4269,8 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
 
   ut_a(checkpoint_lsn == checkpoint_header.m_checkpoint_lsn);
 
+  ut_ad(to_lsn >= checkpoint_lsn);
+
   /* Read the encryption header to get the encryption information. */
   err = log_encryption_read(log);
   if (err != DB_SUCCESS) {
@@ -4514,39 +4283,6 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
 
   ut_ad(recv_sys->n_addrs == 0);
 
-<<<<<<< HEAD
-  lsn_t contiguous_lsn;
-
-  contiguous_lsn = checkpoint_lsn;
-
-  switch (log.format) {
-    case LOG_HEADER_FORMAT_8_0_3:
-    case LOG_HEADER_FORMAT_CURRENT:
-    case LOG_HEADER_FORMAT_8_0_19:
-      break;
-
-    case LOG_HEADER_FORMAT_5_7_9:
-    case LOG_HEADER_FORMAT_8_0_1:
-
-      ib::info(ER_IB_MSG_732, ulong{log.format});
-
-      /* Check if the redo log from an older known redo log
-      version is from a clean shutdown. */
-      err = recv_log_recover_pre_8_0_4(log, checkpoint_no, checkpoint_lsn);
-
-      return (err);
-
-    default:
-      ib::error(ER_IB_MSG_733, ulong{log.format},
-                ulong{LOG_HEADER_FORMAT_CURRENT});
-
-      recv_sys->found_corrupt_log = true;
-      ut_d(ut_error);
-      ut_o(return (DB_ERROR));
-  }
-
-=======
->>>>>>> mysql-8.0.30
   /* NOTE: we always do a 'recovery' at startup, but only if
   there is something wrong we will print a message to the
   user about recovery: */
@@ -4574,19 +4310,15 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn) {
     }
   }
 
-  err = recv_recovery_begin(log, checkpoint_lsn);
+  err = recv_recovery_begin(log, checkpoint_lsn, to_lsn);
   if (err != DB_SUCCESS) {
     return err;
   }
 
-<<<<<<< HEAD
-  recv_recovery_begin(log, &contiguous_lsn, to_lsn);
-=======
   if (srv_read_only_mode && log.m_scanned_lsn > checkpoint_lsn) {
     ib::error(ER_IB_MSG_RECOVERY_IN_READ_ONLY);
     return DB_ERROR;
   }
->>>>>>> mysql-8.0.30
 
   lsn_t recovered_lsn;
 
