@@ -1236,14 +1236,13 @@ static int dd_table_load_part(table_id_t table_id, const dd::Table &dd_table,
                               dict_table_t *&table, THD *thd,
                               const dd::String_type *schema_name, bool implicit,
                               space_id_t space_id) {
-  const ulint fold = ut_fold_ull(table_id);
-
   ut_ad(table_id != dd::INVALID_OBJECT_ID);
 
   mutex_enter(&dict_sys->mutex);
 
-  HASH_SEARCH(id_hash, dict_sys->table_id_hash, fold, dict_table_t *, table,
-              ut_ad(table->cached), table->id == table_id);
+  HASH_SEARCH(id_hash, dict_sys->table_id_hash, ut::hash_uint64(table_id),
+              dict_table_t *, table, ut_ad(table->cached),
+              table->id == table_id);
 
   if (table != nullptr) {
     table->acquire();
@@ -1271,14 +1270,14 @@ int dd_table_open_on_dd_obj(dd::cache::Dictionary_client *client,
                             const dd::String_type *schema_name) {
   const dd::Partition *dd_part = nullptr;
   const table_id_t table_id = dd_table_id_and_part(space_id, dd_table, dd_part);
-  const ulint fold = ut_fold_ull(table_id);
 
   ut_ad(table_id != dd::INVALID_OBJECT_ID);
 
   mutex_enter(&dict_sys->mutex);
 
-  HASH_SEARCH(id_hash, dict_sys->table_id_hash, fold, dict_table_t *, table,
-              ut_ad(table->cached), table->id == table_id);
+  HASH_SEARCH(id_hash, dict_sys->table_id_hash, ut::hash_uint64(table_id),
+              dict_table_t *, table, ut_ad(table->cached),
+              table->id == table_id);
 
   if (table != nullptr) {
     table->acquire();
