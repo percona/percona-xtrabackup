@@ -35,7 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0byte.h"
 #include "log0types.h"
 
-extern uint32_t log_detected_format;
+extern Log_format log_detected_format;
  
 /** The following function is used to store data in one byte.
 @param[in]      b       pointer to byte where to store
@@ -240,14 +240,16 @@ else the storage is 5-byte.
 @return compressed size in bytes */
 static inline ulint mach_write_compressed(byte *b, ulint n) {
   switch (log_detected_format) {
-    case LOG_HEADER_FORMAT_5_7_9:
+    case Log_format::VERSION_5_7_9:
+    case Log_format::LEGACY:
       ut_a(0);
       return (0);
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_3:
+    case Log_format::VERSION_8_0_1:
+    case Log_format::VERSION_8_0_3:
       return (mach_write_compressed_v3(b, n));
-    case LOG_HEADER_FORMAT_8_0_19:
-    case LOG_HEADER_FORMAT_8_0_28:
+    case Log_format::VERSION_8_0_19:
+    case Log_format::VERSION_8_0_28:
+    case Log_format::VERSION_8_0_30:
       return (mach_write_compressed_v4(b, n));
   }
   /* make compiler happy */
@@ -313,14 +315,16 @@ static inline uint32_t mach_get_compressed_size_v4(ulint n) {
 @return compressed size in bytes */
 static inline uint32_t mach_get_compressed_size(ulint n) {
   switch (log_detected_format) {
-    case LOG_HEADER_FORMAT_5_7_9:
+    case Log_format::VERSION_5_7_9:
+    case Log_format::LEGACY:
       ut_a(0);
       return (0);
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_3:
+    case Log_format::VERSION_8_0_1:
+    case Log_format::VERSION_8_0_3:
       return (mach_get_compressed_size_v3(n));
-    case LOG_HEADER_FORMAT_8_0_19:
-    case LOG_HEADER_FORMAT_8_0_28:
+    case Log_format::VERSION_8_0_19:
+    case Log_format::VERSION_8_0_28:
+    case Log_format::VERSION_8_0_30:
       return (mach_get_compressed_size_v4(n));
   }
   /* make compiler happy */
@@ -414,14 +418,16 @@ ulint mach_read_compressed_v4(const byte *b) {
 @return read integer (< 2^32) */
 static inline ulint mach_read_compressed(const byte *b) {
   switch (log_detected_format) {
-    case LOG_HEADER_FORMAT_5_7_9:
+    case Log_format::VERSION_5_7_9:
+    case Log_format::LEGACY:
       ut_a(0);
       return (0);
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_3:
+    case Log_format::VERSION_8_0_1:
+    case Log_format::VERSION_8_0_3:
       return (mach_read_compressed_v3(b));
-    case LOG_HEADER_FORMAT_8_0_19:
-    case LOG_HEADER_FORMAT_8_0_28:
+    case Log_format::VERSION_8_0_19:
+    case Log_format::VERSION_8_0_28:
+    case Log_format::VERSION_8_0_30:
       return (mach_read_compressed_v4(b));
   }
   /* make compiler happy */
@@ -523,14 +529,16 @@ advanced by the number of bytes consumed
 @return unsigned value */
 static inline uint32_t mach_read_next_compressed(const byte **b) {
   switch (log_detected_format) {
-    case LOG_HEADER_FORMAT_5_7_9:
+    case Log_format::VERSION_5_7_9:
+    case Log_format::LEGACY:
       ut_a(0);
       return (0);
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_3:
+    case Log_format::VERSION_8_0_1:
+    case Log_format::VERSION_8_0_3:
       return (mach_read_next_compressed_v3(b));
-    case LOG_HEADER_FORMAT_8_0_19:
-    case LOG_HEADER_FORMAT_8_0_28:
+    case Log_format::VERSION_8_0_19:
+    case Log_format::VERSION_8_0_28:
+    case Log_format::VERSION_8_0_30:
       return (mach_read_next_compressed_v4(b));
   }
   /* make compiler happy */
@@ -786,14 +794,16 @@ advanced by the number of bytes consumed
 @return unsigned value */
 static inline uint64_t mach_read_next_much_compressed(const byte **b) {
   switch (log_detected_format) {
-    case LOG_HEADER_FORMAT_5_7_9:
+    case Log_format::VERSION_5_7_9:
+    case Log_format::LEGACY:
       ut_a(0);
       return (0);
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_3:
+    case Log_format::VERSION_8_0_1:
+    case Log_format::VERSION_8_0_3:
       return (mach_read_next_much_compressed_v3(b));
-    case LOG_HEADER_FORMAT_8_0_19:
-    case LOG_HEADER_FORMAT_8_0_28:
+    case Log_format::VERSION_8_0_19:
+    case Log_format::VERSION_8_0_28:
+    case Log_format::VERSION_8_0_30:
       return (mach_read_next_much_compressed_v4(b));
   }
   /* make compiler happy */

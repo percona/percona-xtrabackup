@@ -5117,7 +5117,7 @@ retry:
     goto skip_modify;
   }
 
-  if (log_format < LOG_HEADER_FORMAT_8_0_1) {
+  if (log_format < Log_format::VERSION_8_0_1) {
     xb::error() << "Unsupported redo log format " << log_format;
     xb::error()
         << "This version of Percona XtraBackup can only perform backups and "
@@ -5139,9 +5139,11 @@ retry:
         (mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
              LOG_HEADER_FORMAT_CURRENT ||
          mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-             LOG_HEADER_FORMAT_8_0_19 ||
+             Log_format::VERSION_8_0_28 ||
          mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-             LOG_HEADER_FORMAT_8_0_3)) {
+             Log_format::VERSION_8_0_19 ||
+         mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
+             Log_format::VERSION_8_0_3)) {
       if (!innodb_checksum_algorithm_specified) {
         srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_CRC32;
       }

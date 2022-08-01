@@ -651,7 +651,7 @@ it has to recreate log files with v3 header. If PXB is processing redo from
 8.0.20 above (v4), it has to recreate log files with v4 header.
 We cannot reuse log_sys->format for this purpose because it is dellocated and
 re-initialized during PXB prepare */
-extern uint32_t log_detected_format;
+extern Log_format log_detected_format;
 #endif /*XTRABACKUP*/
 
 /** @} */

@@ -559,7 +559,7 @@ that the proper size of the log buffer should be a power of two.
 @param[out]     log             redo log */
 static void log_calc_buf_size(log_t &log);
 
-uint32_t log_detected_format = UINT32_MAX;
+Log_format log_detected_format = Log_format::LEGACY;
 
 /** Pauses writer, flusher and notifiers and switches user threads
 to write log as former version.
