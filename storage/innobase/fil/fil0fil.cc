@@ -4013,62 +4013,6 @@ void fil_node_close_file(fil_node_t *file) {
 }
 
 #endif /* XTRABACKUP */
-/** Close log files.
-@param[in]      free_all        If set then free all instances */
-void Fil_shard::close_log_files(bool free_all) {
-  mutex_acquire();
-
-  auto end = m_spaces.end();
-
-  for (auto it = m_spaces.begin(); it != end; /* No op */) {
-    auto space = it->second;
-
-    if (space->purpose != FIL_TYPE_LOG) {
-      ++it;
-      continue;
-    }
-
-    if (space->id == dict_sys_t::s_log_space_first_id) {
-      ut_a(fil_space_t::s_redo_space == space);
-
-      fil_space_t::s_redo_space = nullptr;
-    }
-
-    for (auto &file : space->files) {
-      if (file.is_open) {
-        close_file(&file);
-      }
-    }
-
-    if (free_all) {
-      space_detach(space);
-      space_free_low(space);
-      ut_a(space == nullptr);
-
-      it = m_spaces.erase(it);
-
-    } else {
-      ++it;
-    }
-  }
-
-  mutex_release();
-}
-
-/** Close all log files in all shards.
-@param[in]      free_all        If set then free all instances */
-void Fil_system::close_all_log_files(bool free_all) {
-  for (auto shard : m_shards) {
-    shard->close_log_files(free_all);
-  }
-}
-
-/** Closes the redo log files. There must not be any pending i/o's or not
-flushed modifications in the files.
-@param[in]      free_all        Whether to free the instances. */
-void fil_close_log_files(bool free_all) {
-  fil_system->close_all_log_files(free_all);
-}
 
 /** Iterate through all tablespaces
 @param[in]  f   Callback
@@ -4134,9 +4078,9 @@ dberr_t Fil_shard::iterate(Fil_iterator::Function &f) {
 /** Iterate through all tablespaces
 @param[in]      f               Callback
 @return any error returned by the callback function. */
-dberr_t Fil_system::iterate(Fil_iterator::Function &f) {
+dberr_t Fil_system::iterate_spaces(Fil_space_iterator::Function &f) {
   for (auto shard : m_shards) {
-    dberr_t err = shard->iterate(f);
+    dberr_t err = shard->iterate_spaces(f);
 
     if (err != DB_SUCCESS) {
       return err;
@@ -10526,7 +10470,7 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
     dberr_t success = fil_tablespace_open_for_recovery(page_id.space());
 
     if (success != DB_SUCCESS) {
-      ib::info(ER_IB_MSG_356) << "Create '" << abs_name << "' failed!";
+      ib::info(ER_IB_MSG_356) << "Create '" << abs_file_path << "' failed!";
     }
   }
 #endif /* UNIV_HOTBACKUP */
