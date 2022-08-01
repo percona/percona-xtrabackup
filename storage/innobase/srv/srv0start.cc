@@ -237,291 +237,6 @@ static void io_handler_thread(ulint segment) {
   }
 }
 
-<<<<<<< HEAD
-/** Creates a log file.
- @return DB_SUCCESS or error code */
-[[nodiscard]] static dberr_t create_log_file(
-    pfs_os_file_t *file, /*!< out: file handle */
-    const char *name)    /*!< in: log file name */
-{
-  bool ret;
-
-  *file = os_file_create(innodb_log_file_key, name,
-                         OS_FILE_CREATE | OS_FILE_ON_ERROR_NO_EXIT,
-                         OS_FILE_NORMAL, OS_LOG_FILE, srv_read_only_mode, &ret);
-
-  if (!ret) {
-    ib::error(ER_IB_MSG_1061, name);
-    return (DB_ERROR);
-  }
-
-  auto size = srv_log_file_size >> 20;
-
-  ib::info(ER_IB_MSG_CREATE_LOG_FILE, name);
-
-#ifdef UNIV_DEBUG_DEDICATED
-  if (srv_dedicated_server && strstr(name, "ib_logfile101") == 0) {
-    auto tmp_size = srv_buf_pool_min_size >> (20 - UNIV_PAGE_SIZE_SHIFT);
-    ret = os_file_set_size(name, *file, 0, tmp_size, srv_read_only_mode, true);
-    ret = os_file_close(*file);
-    return (DB_SUCCESS);
-  }
-#endif /* UNIV_DEBUG_DEDICATED */
-
-  ret = os_file_set_size_fast(name, *file, 0, (os_offset_t)srv_log_file_size,
-                              true);
-
-  if (!ret) {
-    ib::error(ER_IB_MSG_1063, name, size);
-
-    /* Delete incomplete file if OOM */
-    if (os_has_said_disk_full) {
-      ret = os_file_close(*file);
-      ut_a(ret);
-      os_file_delete(innodb_log_file_key, name);
-    }
-
-    return (DB_ERROR);
-  }
-
-  ret = os_file_close(*file);
-  ut_a(ret);
-
-  return (DB_SUCCESS);
-}
-
-/** Initial number of the first redo log file */
-#define INIT_LOG_FILE0 (SRV_N_LOG_FILES_MAX + 1)
-
-/** Creates all log files.
-@param[in,out]  logfilename         buffer for log file name
-@param[in]      dirnamelen      length of the directory path
-@param[in]      lsn             FIL_PAGE_FILE_FLUSH_LSN value
-@param[in]      num_old_files   number of old redo log files to remove
-@param[out]     logfile0              name of the first log file
-@param[out]     checkpoint_lsn  lsn of the first created checkpoint
-@return DB_SUCCESS or error code */
-static dberr_t create_log_files(char *logfilename, size_t dirnamelen, lsn_t lsn,
-                                uint32_t num_old_files, char *&logfile0,
-                                lsn_t &checkpoint_lsn) {
-  dberr_t err;
-
-  if (srv_read_only_mode) {
-    ib::error(ER_IB_MSG_1064);
-    return (DB_READ_ONLY);
-  }
-
-  if (num_old_files < INIT_LOG_FILE0) {
-    num_old_files = INIT_LOG_FILE0;
-  }
-
-  /* Remove any old log files. */
-  for (unsigned i = 0; i <= num_old_files; i++) {
-    sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
-
-    /* Ignore errors about non-existent files or files
-    that cannot be removed. The create_log_file() will
-    return an error when the file exists. */
-#ifdef _WIN32
-    DeleteFile((LPCTSTR)logfilename);
-#else
-    unlink(logfilename);
-#endif /* _WIN32 */
-    /* Crashing after deleting the first
-    file should be recoverable. The buffer
-    pool was clean, and we can simply create
-    all log files from the scratch. */
-    RECOVERY_CRASH(6);
-  }
-
-  ut_ad(!buf_pool_check_no_pending_io());
-
-  RECOVERY_CRASH(7);
-
-  for (unsigned i = 0; i < srv_n_log_files; i++) {
-    sprintf(logfilename + dirnamelen, "ib_logfile%u", i ? i : INIT_LOG_FILE0);
-
-    err = create_log_file(&files[i], logfilename);
-
-    if (err != DB_SUCCESS) {
-      return (err);
-    }
-  }
-
-  RECOVERY_CRASH(8);
-
-  /* We did not create the first log file initially as
-  ib_logfile0, so that crash recovery cannot find it until it
-  has been completed and renamed. */
-  sprintf(logfilename + dirnamelen, "ib_logfile%u", INIT_LOG_FILE0);
-
-  /* Disable the doublewrite buffer for log files, not required */
-
-  fil_space_t *log_space = fil_space_create(
-      "innodb_redo_log", dict_sys_t::s_log_space_first_id,
-      fsp_flags_set_page_size(0, univ_page_size), FIL_TYPE_LOG);
-
-  ut_ad(fil_validate());
-  ut_a(log_space != nullptr);
-
-  /* Once the redo log is set to be encrypted,
-  initialize encryption information. */
-  if (srv_redo_log_encrypt) {
-#if !defined(XTRABACKUP)
-    if (!Encryption::check_keyring()) {
-      ib::error(ER_IB_MSG_1065);
-
-      return (DB_ERROR);
-    }
-#endif
-
-    fsp_flags_set_encryption(log_space->flags);
-    if (use_dumped_tablespace_keys && !srv_backup_mode) {
-      byte key[Encryption::KEY_LEN];
-      byte iv[Encryption::KEY_LEN];
-
-      bool found = xb_fetch_tablespace_key(log_space->id, key, iv);
-      ut_a(found);
-      err = fil_set_encryption(log_space->id, Encryption::AES, key, iv);
-    } else {
-      err =
-          fil_set_encryption(log_space->id, Encryption::AES, nullptr, nullptr);
-    }
-    ut_ad(err == DB_SUCCESS);
-  }
-
-  const ulonglong file_pages = srv_log_file_size / UNIV_PAGE_SIZE;
-
-  logfile0 = fil_node_create(logfilename, static_cast<page_no_t>(file_pages),
-                             log_space, false, false);
-
-  ut_a(logfile0 != nullptr);
-
-  for (unsigned i = 1; i < srv_n_log_files; i++) {
-    sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
-
-    if (fil_node_create(logfilename, static_cast<page_no_t>(file_pages),
-                        log_space, false, false) == nullptr) {
-      ib::error(ER_IB_MSG_1066, logfilename);
-
-      return (DB_ERROR);
-    }
-  }
-
-  if (!log_sys_init(srv_n_log_files, srv_log_file_size,
-                    dict_sys_t::s_log_space_first_id)) {
-    return (DB_ERROR);
-  }
-
-  ut_a(log_sys != nullptr);
-
-  fil_open_log_and_system_tablespace_files();
-
-  /* Create the first checkpoint and flush headers of the first log
-  file (the flushed headers store information about the checkpoint,
-  format of redo log and that it is not created by mysqlbackup). */
-
-  /* We start at the next log block. Note, that we keep invariant,
-  that start lsn stored in header of the first log file is divisble
-  by OS_FILE_LOG_BLOCK_SIZE. */
-  lsn = ut_uint64_align_up(lsn, OS_FILE_LOG_BLOCK_SIZE);
-
-  /* Checkpoint lsn should be outside header of log block. */
-  lsn += LOG_BLOCK_HDR_SIZE;
-
-  log_create_first_checkpoint(*log_sys, lsn);
-  checkpoint_lsn = lsn;
-
-  /* Write encryption information into the first log file header
-  if redo log is set with encryption. */
-  if (FSP_FLAGS_GET_ENCRYPTION(log_space->flags) &&
-      !log_write_encryption(log_space->encryption_key,
-                            log_space->encryption_iv)) {
-    return (DB_ERROR);
-  }
-
-  /* Note that potentially some log files are still unflushed.
-  However it does not matter, because ib_logfile0 is not present
-  Before renaming ib_logfile101 to ib_logfile0, log files have
-  to be flushed. We could postpone that to just before the rename,
-  as we possibly will write some log records before doing the rename.
-
-  However OS could anyway do the flush, and we prefer to minimize
-  possible scenarios. Hence, to make situation more deterministic,
-  we do the fsyncs now unconditionally and repeat the required
-  flush just before the rename. */
-  fil_flush_file_redo();
-
-  return (DB_SUCCESS);
-}
-
-/** Renames the first log file. */
-static void create_log_files_rename(
-    char *logfilename, /*!< in/out: buffer for log file name */
-    size_t dirnamelen, /*!< in: length of the directory path */
-    lsn_t lsn,         /*!< in: checkpoint lsn (and start lsn) */
-    char *logfile0)    /*!< in/out: name of the first log file */
-{
-  /* If innodb_flush_method=O_DSYNC,
-  we need to explicitly flush the log buffers. */
-
-  /* Note that we need to have fsync performed for the created files.
-  This is the moment we do it. Keep in mind that fil_close_log_files()
-  ensures there are no unflushed modifications in the files. */
-  fil_flush_file_redo();
-
-  /* Close the log files, so that we can rename
-  the first one. */
-  fil_close_log_files(false);
-
-  /* Rename the first log file, now that a log
-  checkpoint has been created. */
-  sprintf(logfilename + dirnamelen, "ib_logfile%u", 0);
-
-  RECOVERY_CRASH(9);
-
-  ib::info(ER_IB_MSG_1067, logfile0, logfilename);
-
-  ut_ad(strlen(logfile0) == 2 + strlen(logfilename));
-  bool success = os_file_rename(innodb_log_file_key, logfile0, logfilename);
-  ut_a(success);
-
-  RECOVERY_CRASH(10);
-
-  /* Replace the first file with ib_logfile0. */
-  strcpy(logfile0, logfilename);
-
-  fil_open_log_and_system_tablespace_files();
-
-  /* For cloned database it is normal to resize redo logs. */
-  ib::info(ER_IB_MSG_1068, ulonglong{lsn});
-}
-
-/** Opens a log file.
- @return DB_SUCCESS or error code */
-[[nodiscard]] static dberr_t open_log_file(
-    pfs_os_file_t *file, /*!< out: file handle */
-    const char *name,    /*!< in: log file name */
-    os_offset_t *size)   /*!< out: file size */
-{
-  bool ret;
-
-  *file = os_file_create(innodb_log_file_key, name, OS_FILE_OPEN, OS_FILE_AIO,
-                         OS_LOG_FILE, srv_read_only_mode, &ret);
-  if (!ret) {
-    ib::error(ER_IB_MSG_1069, name);
-    return (DB_ERROR);
-  }
-
-  *size = os_file_get_size(*file);
-
-  ret = os_file_close(*file);
-  ut_a(ret);
-  return (DB_SUCCESS);
-}
-
-=======
->>>>>>> mysql-8.0.30
 /** Create undo tablespace.
 @param[in]  undo_space  Undo Tablespace
 @return DB_SUCCESS or error code */
@@ -1823,70 +1538,6 @@ static dberr_t srv_init_abort_low(bool create_new_db,
   return (err);
 }
 
-<<<<<<< HEAD
-/** Prepare to delete the redo log files. Flush the dirty pages from all the
-buffer pools.  Flush the redo log buffer to the redo log file.
-@param[in]      n_files         number of old redo log files
-@return lsn upto which data pages have been flushed. */
-static lsn_t srv_prepare_to_delete_redo_log_files(ulint n_files) {
-  lsn_t flushed_lsn;
-  ulint pending_io = 0;
-  ulint count = 0;
-
-  do {
-    /* Clean the buffer pool. */
-    buf_flush_sync_all_buf_pools();
-
-    RECOVERY_CRASH(1);
-
-    flushed_lsn = log_get_lsn(*log_sys);
-
-    if (count == 0) {
-      std::ostringstream info;
-
-      if (srv_log_file_size == 0) {
-        info << "Upgrading redo log: ";
-      } else {
-        info << "Resizing redo log from " << n_files << "*" << srv_log_file_size
-             << " to ";
-      }
-
-      info << srv_n_log_files << "*" << srv_log_file_size_requested
-           << " bytes, LSN=" << flushed_lsn;
-
-      ib::info(ER_IB_MSG_1216) << info.str();
-    }
-
-    /* Flush the old log files. */
-    log_write_up_to(*log_sys, flushed_lsn, true);
-
-    /* If innodb_flush_method=O_DSYNC, we need to explicitly
-    flush the log buffers. */
-    fil_flush_file_redo();
-
-    ut_ad(flushed_lsn == log_get_lsn(*log_sys));
-
-    /* Check if the buffer pools are clean.  If not
-    retry till it is clean. */
-    pending_io = buf_pool_check_no_pending_io();
-
-    if (pending_io > 0) {
-      count++;
-      /* Print a message every 60 seconds if we
-      are waiting to clean the buffer pools */
-      if (count >= SHUTDOWN_SLEEP_ROUNDS) {
-        ib::info(ER_IB_MSG_1106, ulonglong{pending_io});
-        count = 0;
-      }
-    }
-    std::this_thread::sleep_for(
-        std::chrono::microseconds(SHUTDOWN_SLEEP_TIME_US));
-
-  } while (buf_pool_check_no_pending_io());
-
-  return (flushed_lsn);
-}
-
 /** At startup load the encryption information from first datafile
 to tablespace object
 @return DB_SUCCESS on succes, others on failure */
@@ -1909,27 +1560,14 @@ static dberr_t srv_sys_enable_encryption() {
   return (err);
 }
 
-/** Start InnoDB.
-@param[in]  create_new_db     Whether to create a new database
-@param[in]  to_lsn            LSN to stop recovery at
-@return DB_SUCCESS or error code */
 dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
-=======
-dberr_t srv_start(bool create_new_db) {
->>>>>>> mysql-8.0.30
   lsn_t flushed_lsn;
 
   /* just for assertions */
   lsn_t previous_lsn;
 
-<<<<<<< HEAD
-  /* output from call to create_log_files(...) */
-  lsn_t new_checkpoint_lsn = 0;
-
-=======
   page_no_t sum_of_data_file_sizes;
   page_no_t tablespace_size_in_header;
->>>>>>> mysql-8.0.30
   dberr_t err;
   mtr_t mtr;
   purge_pq_t *purge_queue;
@@ -2286,107 +1924,7 @@ dberr_t srv_start(bool create_new_db) {
     return srv_init_abort(err);
   }
 
-<<<<<<< HEAD
-  srv_log_file_size_requested = srv_log_file_size;
-
-  if (create_new_db) {
-    ut_a(buf_are_flush_lists_empty_validate());
-
-    flushed_lsn = LOG_START_LSN;
-
-    err = create_log_files(logfilename, dirnamelen, flushed_lsn, 0, logfile0,
-                           new_checkpoint_lsn);
-
-    if (err != DB_SUCCESS) {
-      return (srv_init_abort(err));
-    }
-
-    flushed_lsn = new_checkpoint_lsn;
-
-    ut_a(new_checkpoint_lsn == LOG_START_LSN + LOG_BLOCK_HDR_SIZE);
-
-  } else {
-    for (i = 0; i < SRV_N_LOG_FILES_CLONE_MAX; i++) {
-      os_offset_t size;
-      os_file_stat_t stat_info;
-
-      sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
-
-      err = os_file_get_status(logfilename, &stat_info, false,
-                               srv_read_only_mode);
-
-      if (err == DB_NOT_FOUND) {
-        if (i == 0) {
-          if (flushed_lsn < static_cast<lsn_t>(1000)) {
-            ib::error(ER_IB_MSG_1135);
-            return (srv_init_abort(DB_ERROR));
-          }
-
-          err = create_log_files(logfilename, dirnamelen, flushed_lsn,
-                                 SRV_N_LOG_FILES_CLONE_MAX, logfile0,
-                                 new_checkpoint_lsn);
-
-          if (err != DB_SUCCESS) {
-            return (srv_init_abort(err));
-          }
-
-          create_log_files_rename(logfilename, dirnamelen, new_checkpoint_lsn,
-                                  logfile0);
-
-          /* Suppress the message about
-          crash recovery. */
-          flushed_lsn = new_checkpoint_lsn;
-          ut_a(log_sys != nullptr);
-          goto files_checked;
-#if !defined(XTRABACKUP)
-        } else if (i < 2) {
-          /* must have at least 2 log files */
-          ib::error(ER_IB_MSG_1136);
-          return (srv_init_abort(err));
-#endif
-        }
-
-        /* opened all files */
-        break;
-      }
-
-      if (!srv_file_check_mode(logfilename)) {
-        return (srv_init_abort(DB_ERROR));
-      }
-
-      err = open_log_file(&files[i], logfilename, &size);
-
-      if (err != DB_SUCCESS) {
-        return (srv_init_abort(err));
-      }
-
-      ut_a(size != (os_offset_t)-1);
-
-      if (size & ((1 << UNIV_PAGE_SIZE_SHIFT) - 1)) {
-        ib::error(ER_IB_MSG_1137, logfilename, ulonglong{size});
-        return (srv_init_abort(DB_ERROR));
-      }
-
-      if (i == 0) {
-        srv_log_file_size = size;
-#ifndef UNIV_DEBUG_DEDICATED
-      } else if (size != srv_log_file_size) {
-#else
-      } else if (!srv_dedicated_server && size != srv_log_file_size) {
-#endif /* UNIV_DEBUG_DEDICATED */
-        ib::error(ER_IB_MSG_1138, logfilename, ulonglong{size},
-                  srv_log_file_size);
-
-        return (srv_init_abort(DB_ERROR));
-      }
-    }
-
-    srv_n_log_files_found = i;
-
-    /* Create the in-memory file space objects. */
-=======
   lsn_t new_files_lsn;
->>>>>>> mysql-8.0.30
 
   err = log_sys_init(create_new_db, flushed_lsn, new_files_lsn);
 
@@ -2558,27 +2096,23 @@ dberr_t srv_start(bool create_new_db) {
       respective file pages, for the last batch of
       recv_group_scan_log_recs(). */
 
-<<<<<<< HEAD
-      /* Don't allow IBUF operations for crash
-      recovery as it would add extra redo log and we may
-      not have enough margin. */
-      if (!srv_read_only_mode) {
-        recv_apply_hashed_log_recs(*log_sys, false);
-=======
       RECOVERY_CRASH(2);
 
       /* Don't allow IBUF operations for cloned database
       recovery as it would add extra redo log and we may
       not have enough margin.
->>>>>>> mysql-8.0.30
 
       Don't allow IBUF operations when redo is written
       in the older format than the current, because we
       would write new redo records in the current fmt,
       and end up with file in both formats = invalid. */
 
-      err = recv_apply_hashed_log_recs(*log_sys,
-                                       !recv_sys->is_cloned_db && !log_upgrade);
+      err = recv_apply_hashed_log_recs(
+          *log_sys, !recv_sys->is_cloned_db && !log_upgrade
+#ifdef XTRABACKUP
+                        && !srv_read_only_mode
+#endif
+      );
 
       if (recv_sys->found_corrupt_log || err != DB_SUCCESS) {
         err = DB_ERROR;
@@ -2600,12 +2134,12 @@ dberr_t srv_start(bool create_new_db) {
     tablespaces were found and recovered. */
 
     if (srv_force_recovery == 0 && fil_check_missing_tablespaces()) {
-<<<<<<< HEAD
+#ifdef XTRABACKUP
       // Missing tablespaces in the redo log are a valid possibility
       // with partial backups.
       // But keep them in the output for visibility
       xb::warn(ER_IB_MSG_1139);
-=======
+#else
       ib::error(ER_IB_MSG_1139);
       RECOVERY_CRASH(3);
 
@@ -2615,7 +2149,7 @@ dberr_t srv_start(bool create_new_db) {
       ut_a(p == nullptr);
 
       return (srv_init_abort(DB_ERROR));
->>>>>>> mysql-8.0.30
+#endif /* XTRABACKUP */
     }
 
     /* We have successfully recovered from the redo log. The
@@ -2644,14 +2178,13 @@ dberr_t srv_start(bool create_new_db) {
     objects are not fully initialized at this point, the usual mechanism to
     persist dynamic metadata at checkpoint wouldn't work. */
 
-<<<<<<< HEAD
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty() &&
-        !srv_apply_log_only) {
-=======
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
+    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()
+#ifdef XTRABACKUP
+        && !srv_apply_log_only
+#endif
+    ) {
       ut_a(redo_writes_allowed);
 
->>>>>>> mysql-8.0.30
       /* Open this table in case srv_dict_metadata should be applied to this
       table before checkpoint. And because DD is not fully up yet, the table
       can be opened by internal APIs. */

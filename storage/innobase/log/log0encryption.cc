@@ -230,8 +230,16 @@ dberr_t log_encryption_generate_metadata(log_t &log) {
 
   Encryption_metadata encryption_metadata;
 
-  Encryption::set_or_generate(Encryption::AES, nullptr, nullptr,
-                              encryption_metadata);
+  if (use_dumped_tablespace_keys && !srv_backup_mode) {
+    byte key[Encryption::KEY_LEN];
+    byte iv[Encryption::KEY_LEN];
+    bool found = xb_fetch_tablespace_key(log_space->id, key, iv);
+    ut_a(found);
+    Encryption::set_or_generate(Encryption::AES, key, iv, encryption_metadata);
+  } else {
+    Encryption::set_or_generate(Encryption::AES, nullptr, nullptr,
+                                encryption_metadata);
+  }
 
   log_files_update_encryption(log, encryption_metadata);
 

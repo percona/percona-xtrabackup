@@ -1058,16 +1058,11 @@ bool is_active_truncate_log_present(space_id_t space_num) {
   number.  If found, then delete the file and report file
   doesn't exist as presence of magic number suggest that
   truncate action was complete. */
-<<<<<<< HEAD
-
-  if (os_file_exists(log_file_name)) {
+  if (log_file_name != nullptr) {
 #ifdef XTRABACKUP
     if (srv_backup_mode) return (true);
 #endif
 
-=======
-  if (log_file_name != nullptr) {
->>>>>>> mysql-8.0.30
     bool ret;
     pfs_os_file_t handle = os_file_create_simple_no_error_handling(
         innodb_log_file_key, log_file_name, OS_FILE_OPEN, OS_FILE_READ_WRITE,
