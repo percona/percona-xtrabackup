@@ -729,13 +729,13 @@ bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
     goto error;
   }
 
-  err = Fil_space_iterator::for_each_space(true, [&](fil_space_t *space) {
-    if (space->encryption_type == Encryption::NONE) {
+  err = Fil_space_iterator::for_each_space([&](fil_space_t *space) {
+    if (space->m_encryption_metadata.m_type == Encryption::NONE) {
       return (DB_SUCCESS);
     }
     if (!xb_tablespace_keys_write_single(stream, derived_key, space->id,
-                                         space->encryption_key,
-                                         space->encryption_iv)) {
+                                         space->m_encryption_metadata.m_key,
+                                         space->m_encryption_metadata.m_iv)) {
       xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
                   << ": failed to save tablespace key.";
       return (DB_ERROR);
