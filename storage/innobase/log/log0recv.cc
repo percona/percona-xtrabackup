@@ -3764,7 +3764,7 @@ static bool recv_scan_log_recs(log_t &log,
 #else  /* !UNIV_HOTBACKUP */
 bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
-                               size_t max_memory, const byte *buf, size_t len,
+                               size_t *max_memory, const byte *buf, size_t len,
                                lsn_t start_lsn, lsn_t *read_upto_lsn,
                                dberr_t &err, lsn_t to_lsn) {
   const byte *log_block = buf;
@@ -3821,7 +3821,10 @@ bool meb_scan_log_recs(
       break;
     }
 
-    const auto data_len = block_header.m_data_len;
+#ifndef XTRABACKUP
+    const
+#endif
+        auto data_len = block_header.m_data_len;
 
     if (scanned_lsn + data_len > recv_sys->scanned_lsn &&
         recv_sys->scanned_epoch_no > 0 &&
@@ -4135,7 +4138,7 @@ static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
 
     dberr_t err;
 
-    finished = recv_scan_log_recs(log, max_mem, log.buf, end_lsn - start_lsn,
+    finished = recv_scan_log_recs(log, &max_mem, log.buf, end_lsn - start_lsn,
                                   start_lsn, &log.m_scanned_lsn, err, to_lsn);
 
     if (err != DB_SUCCESS) {

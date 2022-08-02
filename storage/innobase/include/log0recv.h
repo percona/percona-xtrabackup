@@ -753,7 +753,8 @@ bool log_block_checksum_is_ok(const byte *block);
 @param[in,out]  buf   buffer where to read
 @param[in]  start_lsn read area start
 @param[in]  end_lsn   read area end */
-void recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn);
+lsn_t recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                        const lsn_t end_lsn);
 
 /** Adds data from a new log block to the parsing buffer of recv_sys if
 recv_sys->parse_start_lsn is non-zero.
