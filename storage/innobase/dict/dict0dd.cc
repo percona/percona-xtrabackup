@@ -6353,7 +6353,7 @@ void dd_process_schema_rec(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_tables)));
 
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   field = (const byte *)rec_get_nth_field(nullptr, rec, offsets,
                                           dd_tables->field_number("id"), &len);
@@ -6387,7 +6387,7 @@ void dd_process_dd_tables_rec(mem_heap_t *heap, const rec_t *rec,
   ut_ad(!rec_get_deleted_flag(rec, dict_table_is_comp(dd_tables)));
 
   ulint *offsets = rec_get_offsets(rec, dd_tables->first_index(), nullptr,
-                                   ULINT_UNDEFINED, &heap);
+                                   ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
 
   field = rec_get_nth_field(nullptr, rec, offsets,
                             dd_tables->field_number("name") + DD_FIELD_OFFSET,

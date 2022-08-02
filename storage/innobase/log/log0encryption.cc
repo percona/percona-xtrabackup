@@ -66,6 +66,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* IB_mutex_guard */
 #include "ut0mutex.h"
 
+#ifdef XTRABACKUP
+/* use_dumped_tablespace_key */
+#include "xb0xb.h"
+
+/* s_log_space_id */
+#include "dict0dict.h"
+#endif /* XTRABACKUP */
+
 /**************************************************/ /**
 
  @name Log - encryption.
@@ -109,19 +117,19 @@ dberr_t log_encryption_read(log_t &log, const Log_file &file) {
 
   if (Encryption::is_encrypted_with_v3(log_block_buf +
                                        LOG_HEADER_ENCRYPTION_INFO_OFFSET)) {
+#ifdef XTRABACKUP
     if (use_dumped_tablespace_keys && !srv_backup_mode) {
-      fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
-      err = xb_set_encryption(space);
+      fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_id);
+      auto err = xb_set_encryption(space);
       if (err != DB_SUCCESS) {
         xb::error() << "Cannot find encryption key for redo log.";
         return DB_ERROR;
       }
       return DB_SUCCESS;
     }
-
     /* check_keyring modifies keyring by generating new key and saving it.
       XtraBackup must avoid touching keyring on backup. */
-#ifndef XTRABACKUP
+#else
     /* Make sure the keyring is loaded. */
     if (!Encryption::check_keyring()) {
       ib::error(ER_IB_MSG_1238) << "Redo log was encrypted,"
@@ -233,7 +241,7 @@ dberr_t log_encryption_generate_metadata(log_t &log) {
   if (use_dumped_tablespace_keys && !srv_backup_mode) {
     byte key[Encryption::KEY_LEN];
     byte iv[Encryption::KEY_LEN];
-    bool found = xb_fetch_tablespace_key(log_space->id, key, iv);
+    bool found = xb_fetch_tablespace_key(dict_sys_t::s_log_space_id, key, iv);
     ut_a(found);
     Encryption::set_or_generate(Encryption::AES, key, iv, encryption_metadata);
   } else {
