@@ -529,7 +529,7 @@ datafiles_iter_t *datafiles_iter_new() {
 
   mutex_create(LATCH_ID_XTRA_DATAFILES_ITER_MUTEX, &it->mutex);
 
-  Fil_iterator::for_each_file(false, [&](fil_node_t *file) {
+  Fil_iterator::for_each_file([&](fil_node_t *file) {
     it->nodes.push_back(file);
     return (DB_SUCCESS);
   });
@@ -2522,7 +2522,7 @@ static dberr_t dict_load_from_spaces_sdi() {
 
   std::vector<space_id_t> space_ids;
 
-  Fil_space_iterator::for_each_space(false, [&](fil_space_t *space) {
+  Fil_space_iterator::for_each_space([&](fil_space_t *space) {
     space_ids.push_back(space->id);
     return (DB_SUCCESS);
   });
@@ -2943,7 +2943,7 @@ static bool regex_list_check_match(const regex_list_t &list, const char *name) {
 static bool find_filter_in_hashtable(const char *name, hash_table_t *table,
                                      xb_filter_entry_t **result) {
   xb_filter_entry_t *found = NULL;
-  HASH_SEARCH(name_hash, table, ut_fold_string(name), xb_filter_entry_t *,
+  HASH_SEARCH(name_hash, table, ut::hash_string(name), xb_filter_entry_t *,
               found, (void)0, !strcmp(found->name, name));
 
   if (found && result) {
@@ -3727,7 +3727,7 @@ static xb_filter_entry_t *xb_add_filter(
   if (*hash == nullptr) {
     *hash = hash_create(1000);
   }
-  HASH_INSERT(xb_filter_entry_t, name_hash, *hash, ut_fold_string(entry->name),
+  HASH_INSERT(xb_filter_entry_t, name_hash, *hash, ut::hash_string(entry->name),
               entry);
 
   return entry;
@@ -3778,7 +3778,7 @@ static void xb_register_filter_entry(
     dbname[p - name] = 0;
 
     if (*databases_hash) {
-      HASH_SEARCH(name_hash, (*databases_hash), ut_fold_string(dbname),
+      HASH_SEARCH(name_hash, (*databases_hash), ut::hash_string(dbname),
                   xb_filter_entry_t *, db_entry, (void)0,
                   !strcmp(db_entry->name, dbname));
     }
@@ -3958,7 +3958,7 @@ static void xb_filter_hash_free(hash_table_t *hash) {
           HASH_GET_NEXT(name_hash, prev_table));
 
       HASH_DELETE(xb_filter_entry_t, name_hash, hash,
-                  ut_fold_string(prev_table->name), prev_table);
+                  ut::hash_string(prev_table->name), prev_table);
       ut::free(prev_table);
     }
   }
@@ -5568,7 +5568,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   table->name = ((char *)table) + sizeof(xb_filter_entry_t);
   strcpy(table->name, dest_space_name);
   HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
-              ut_fold_string(table->name), table);
+              ut::hash_string(table->name), table);
 
   if (space_id != SPACE_UNKNOWN && !fsp_is_ibd_tablespace(space_id)) {
     /* since undo tablespaces cannot be renamed, we must either open existing
@@ -5976,7 +5976,7 @@ static bool rm_if_not_found(
   /* Truncate ".ibd" */
   name[strlen(name) - 4] = '\0';
 
-  HASH_SEARCH(name_hash, inc_dir_tables_hash, ut_fold_string(name),
+  HASH_SEARCH(name_hash, inc_dir_tables_hash, ut::has_string(name),
               xb_filter_entry_t *, table, (void)0, !strcmp(table->name, name));
 
   if (!table) {
