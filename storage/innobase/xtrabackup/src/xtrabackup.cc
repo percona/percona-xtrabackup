@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2021 Percona LLC and/or its affiliates
+(c) 2009-2022 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -5019,16 +5019,13 @@ static bool xtrabackup_init_temp_log(void) {
 
   uint64_t file_size;
 
-  lsn_t max_no;
   lsn_t max_lsn = 0;
-  lsn_t checkpoint_no;
+  lsn_t checkpoint_lsn;
 
   bool checkpoint_found;
 
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
-
-  max_no = 0;
 
   log_buf = static_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, UNIV_PAGE_SIZE_MAX * 128));
@@ -5151,11 +5148,10 @@ retry:
       goto not_consistent;
     }
 
-    checkpoint_no = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_NO);
+    checkpoint_lsn = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_LSN);
 
-    if (checkpoint_no >= max_no) {
-      max_no = checkpoint_no;
-      max_lsn = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_LSN);
+    if (checkpoint_lsn >= max_lsn) {
+      max_lsn = checkpoint_lsn;
       checkpoint_found = true;
     }
   not_consistent:;
