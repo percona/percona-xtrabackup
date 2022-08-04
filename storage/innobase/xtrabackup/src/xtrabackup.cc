@@ -5162,7 +5162,7 @@ retry:
     goto error;
   }
 
-  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, log_format);
+  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, to_int(log_format));
   update_log_temp_checkpoint(log_buf, max_lsn);
 
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
