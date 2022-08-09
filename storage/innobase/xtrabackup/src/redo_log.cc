@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019,2022 Percona LLC and/or its affiliates.
 
 Redo log handling.
 
@@ -49,21 +49,22 @@ Redo_Log_Reader::Redo_Log_Reader() {
 }
 
 bool Redo_Log_Reader::find_start_checkpoint_lsn() {
-  ulint max_cp_field;
-  auto err = recv_find_max_checkpoint(*log_sys, &max_cp_field);
+  /* Look for the latest checkpoint */
+  Log_checkpoint_location checkpoint;
 
-  if (err != DB_SUCCESS) {
+  if (recv_find_max_checkpoint(*log_sys, checkpoint)) {
     xb::error() << "recv_find_max_checkpoint() failed.";
     return (false);
   }
 
+  /*XB30 --- Reread from header file to ensure we have read the correct value.
+   * because server might be writting when we try to read this
+
   log_files_header_read(*log_sys, max_cp_field);
-  log_detected_format = log_sys->format;
+  log_detected_format = log_sys->m_format;
 
   checkpoint_lsn_start =
       mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
-  checkpoint_no_start =
-      mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_NO);
 
   while (true) {
     err = fil_redo_io(IORequest(IORequest::LOG | IORequest::READ),
@@ -72,6 +73,7 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
 
     if (err != DB_SUCCESS) {
       xb::error() << "fil_redo_io() failed.";
+
       return (false);
     }
 
@@ -84,17 +86,17 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
 
     log_files_header_read(*log_sys, max_cp_field);
 
-    if (checkpoint_no_start !=
-        mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_NO)) {
+    if (checkpoint_lsn_start !=
+        mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN)) {
       checkpoint_lsn_start =
           mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
-      checkpoint_no_start =
-          mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_NO);
       continue;
     }
 
     break;
   }
+
+  */
 
   log_scanned_lsn = checkpoint_lsn_start;
 
@@ -102,10 +104,10 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
 }
 
 bool Redo_Log_Reader::validate_redo_log_file() {
-  ulint max_cp_field;
-  auto err = recv_find_max_checkpoint(*log_sys, &max_cp_field);
+  /* Look for the latest checkpoint */
+  Log_checkpoint_location checkpoint;
 
-  if (err != DB_SUCCESS) {
+  if (recv_find_max_checkpoint(*log_sys, checkpoint)) {
     xb::error() << "recv_find_max_checkpoint() failed.";
     return (false);
   }
@@ -126,56 +128,79 @@ lsn_t Redo_Log_Reader::get_start_checkpoint_lsn() const {
   return (checkpoint_lsn_start);
 }
 
-void Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                                   lsn_t end_lsn) {
-  do {
-    lsn_t source_offset;
+lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                                    lsn_t end_lsn) {
+  ut_a(start_lsn < end_lsn);
 
-    source_offset = log_files_real_offset_for_lsn(log, start_lsn);
+  /*XB30 file should dynamic open. so we need to load m_files */
+  auto file = log.m_files.find(start_lsn);
+
+  if (file == log.m_files.end()) {
+    return start_lsn;
+  }
+  auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
+  ut_a(file_handle.is_open());
+
+  do {
+    os_offset_t source_offset;
+
+    source_offset = file->offset(start_lsn);
 
     ut_a(end_lsn - start_lsn <= ULINT_MAX);
 
-    ulint len;
-
-    len = (ulint)(end_lsn - start_lsn);
+    os_offset_t len = end_lsn - start_lsn;
 
     ut_ad(len != 0);
 
-    if ((source_offset % log.file_size) + len > log.file_size) {
+    bool switch_to_next_file = false;
+
+    if (source_offset + len > file->m_size_in_bytes) {
       /* If the above condition is true then len
-      (which is ulint) is > the expression below,
+      (which is unsigned) is > the expression below,
       so the typecast is ok */
-      len = (ulint)(log.file_size - (source_offset % log.file_size));
+      ut_a(file->m_size_in_bytes > source_offset);
+      len = file->m_size_in_bytes - source_offset;
+      switch_to_next_file = true;
     }
 
     ++log.n_log_ios;
 
-    ut_a(source_offset / UNIV_PAGE_SIZE <= PAGE_NO_MAX);
-
-    const page_no_t page_no =
-        static_cast<page_no_t>(source_offset / univ_page_size.physical());
-
-    dberr_t
-
-        err = fil_redo_io(
-            IORequestLogRead, page_id_t(log.files_space_id, page_no),
-            univ_page_size, (ulint)(source_offset % univ_page_size.physical()),
-            len, buf);
-
+    const dberr_t err =
+        log_data_blocks_read(file_handle, source_offset, len, buf);
     ut_a(err == DB_SUCCESS);
 
     start_lsn += len;
     buf += len;
 
+    if (switch_to_next_file) {
+      auto next_id = file->next_id();
+
+      const auto next_file = log.m_files.file(next_id);
+
+      if (next_file == log.m_files.end() || !next_file->contains(start_lsn)) {
+        return start_lsn;
+      }
+
+      file_handle.close();
+
+      file = next_file;
+
+      file_handle = file->open(Log_file_access_mode::READ_ONLY);
+      ut_a(file_handle.is_open());
+    }
+
   } while (start_lsn != end_lsn);
+
+  ut_a(start_lsn == end_lsn);
+
+  return end_lsn;
 }
 
 ssize_t Redo_Log_Reader::read_logfile(bool is_last, bool *finished) {
   log_t &log = *log_sys;
 
-  lsn_t contiguous_lsn =
+  lsn_t start_lsn =
       ut_uint64_align_down(log_scanned_lsn, OS_FILE_LOG_BLOCK_SIZE);
-  lsn_t start_lsn = contiguous_lsn;
   lsn_t scanned_lsn = start_lsn;
 
   size_t len = 0;
@@ -183,13 +208,14 @@ ssize_t Redo_Log_Reader::read_logfile(bool is_last, bool *finished) {
   *finished = false;
 
   while (!*finished && len <= redo_log_read_buffer_size - RECV_SCAN_SIZE) {
-    lsn_t end_lsn = start_lsn + RECV_SCAN_SIZE;
+    const lsn_t end_lsn =
+        read_log_seg(log, log_buf + len, start_lsn, start_lsn + RECV_SCAN_SIZE);
 
-    read_log_seg(log, log_buf + len, start_lsn, end_lsn);
-
-    auto size =
-        scan_log_recs(log_buf + len, is_last, start_lsn, &contiguous_lsn,
-                      &scanned_lsn, log_scanned_lsn, finished);
+    auto size = scan_log_recs(log_buf + len, is_last, start_lsn, &scanned_lsn,
+                              log_scanned_lsn, finished);
+    if (end_lsn == start_lsn) {
+      break;
+    }
 
     if (size < 0) {
       xb::error() << "read_logfile() failed.";
@@ -206,7 +232,6 @@ ssize_t Redo_Log_Reader::read_logfile(bool is_last, bool *finished) {
 }
 
 ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
-                                       lsn_t *contiguous_lsn,
                                        lsn_t *read_upto_lsn,
                                        lsn_t checkpoint_lsn, bool *finished) {
   lsn_t scanned_lsn{start_lsn};
@@ -214,47 +239,38 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
 
   *finished = false;
 
-  ulint scanned_checkpoint_no{0};
+  ulint scanned_epoch_no{0};
 
   while (log_block < buf + RECV_SCAN_SIZE && !*finished) {
-    auto no = log_block_get_hdr_no(log_block);
-    auto scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
+    Log_data_block_header block_header;
+    log_data_block_header_deserialize(log_block, block_header);
+
+    const uint32_t expected_hdr_no =
+        log_block_convert_lsn_to_hdr_no(scanned_lsn);
+
     auto checksum_is_ok = log_block_checksum_is_ok(log_block);
 
-    if (no != scanned_no && checksum_is_ok) {
-      auto blocks_in_group =
-          log_block_convert_lsn_to_no(log_sys->lsn_real_capacity) - 1;
-
-      if ((no < scanned_no && ((scanned_no - no) % blocks_in_group) == 0) ||
-          no == 0 ||
-          /* Log block numbers wrap around at 0x3FFFFFFF */
-          ((scanned_no | 0x40000000UL) - no) % blocks_in_group == 0) {
-        /* old log block, do nothing */
+    if (block_header.m_hdr_no != expected_hdr_no && checksum_is_ok) {
+      /* old log block, do nothing */
+      if (block_header.m_hdr_no == 0) {
         *finished = true;
         break;
       }
-
       xb::error() << "log block numbers mismatch:";
-      xb::error() << "expected log block no. " << scanned_no << ", but got no. "
-                  << no << " from the log file.";
-
-      if ((no - scanned_no) % blocks_in_group == 0) {
-        xb::error() << " it looks like InnoDB log has wrapped"
-                       " around before xtrabackup could"
-                       " process all records due to either"
-                       " log copying being too slow, or "
-                       " log files being too small.";
-      }
+      xb::error() << "expected log block no. " << expected_hdr_no
+                  << ", but got no. " << block_header.m_hdr_no
+                  << " from the log file.";
 
       return (-1);
 
     } else if (!checksum_is_ok) {
       /* Garbage or an incompletely written log block */
-      xb::warn() << "Log block checksum mismatch (block no " << no << " at lsn "
-                 << scanned_lsn << "): expected "
-                 << log_block_get_checksum(log_block)
+      xb::warn() << "Log block checksum mismatch (block no "
+                 << block_header.m_hdr_no << " at lsn " << scanned_lsn
+                 << "): expected " << log_block_get_checksum(log_block)
                  << ", calculated checksum "
-                 << log_block_calc_checksum(log_block);
+                 << log_block_calc_checksum(log_block)
+                 << " block epoch no: " << block_header.m_epoch_no;
       xb::warn() << "this is possible when the "
                     "log block has not been fully written by the "
                     "server, will retry later.";
@@ -262,34 +278,19 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
       break;
     }
 
-    if (log_block_get_flush_bit(log_block)) {
-      /* This block was a start of a log flush operation:
-      we know that the previous flush operation must have
-      been completed for all log groups before this block
-      can have been flushed to any of the groups. Therefore,
-      we know that log data is contiguous up to scanned_lsn
-      in all non-corrupt log groups. */
-
-      if (scanned_lsn > *contiguous_lsn) {
-        *contiguous_lsn = scanned_lsn;
-      }
-    }
-
-    auto data_len = log_block_get_data_len(log_block);
-
-    if ((scanned_checkpoint_no > 0) &&
-        (log_block_get_checkpoint_no(log_block) < scanned_checkpoint_no) &&
-        (scanned_checkpoint_no - log_block_get_checkpoint_no(log_block) >
-         0x80000000UL)) {
+    if (scanned_epoch_no > 0 &&
+        !log_block_epoch_no_is_valid(block_header.m_epoch_no,
+                                     scanned_epoch_no)) {
       /* Garbage from a log buffer flush which was made
       before the most recent database recovery */
 
       *finished = true;
       break;
     }
+    const auto data_len = log_block_get_data_len(log_block);
 
     scanned_lsn = scanned_lsn + data_len;
-    scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
+    scanned_epoch_no = block_header.m_epoch_no;
 
     if (data_len < OS_FILE_LOG_BLOCK_SIZE) {
       /* Log data for this group ends here */
@@ -300,7 +301,7 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
     }
   }
 
-  *read_upto_lsn = scanned_lsn;
+  *read_upto_lsn = scanned_epoch_no;
 
   ssize_t write_size;
 
@@ -325,15 +326,15 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
   bool more_data = false;
 
   do {
+    Log_data_block_header block_header;
+    log_data_block_header_deserialize(log_block, block_header);
     ulint data_len = log_block_get_data_len(log_block);
 
-    if (!recv_sys->parse_start_lsn &&
-        log_block_get_first_rec_group(log_block) > 0) {
+    if (!recv_sys->parse_start_lsn && block_header.m_first_rec_group > 0) {
       /* We found a point from which to start the parsing
       of log records */
 
-      recv_sys->parse_start_lsn =
-          scanned_lsn + log_block_get_first_rec_group(log_block);
+      recv_sys->parse_start_lsn = scanned_lsn + block_header.m_first_rec_group;
 
       xb::info() << "Starting to parse redo log at lsn = "
                  << recv_sys->parse_start_lsn;
@@ -396,7 +397,7 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
 
       recv_sys->scanned_lsn = scanned_lsn;
 
-      recv_sys->scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
+      recv_sys->scanned_epoch_no = block_header.m_epoch_no;
     }
 
     if (data_len < OS_FILE_LOG_BLOCK_SIZE) {
@@ -474,7 +475,7 @@ bool Redo_Log_Writer::write_buffer(byte *buf, size_t len) {
 
   if (srv_redo_log_encrypt) {
     IORequest req_type(IORequestLogWrite);
-    fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+    fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_id);
     fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
     Encryption encryption(req_type.encryption_algorithm());
     ulint dst_len = len;
@@ -519,7 +520,7 @@ ssize_t Archived_Redo_Log_Reader::read_logfile(bool *finished) {
 
   if (srv_redo_log_encrypt) {
     IORequest req_type(IORequestLogRead);
-    fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+    fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_id);
     fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
     Encryption encryption(req_type.encryption_algorithm());
     auto err = encryption.decrypt_log(req_type, log_buf, len, scratch_buf);
@@ -836,7 +837,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
         scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
                                   ut::Count{OS_FILE_LOG_BLOCK_SIZE});
         IORequest req_type(IORequestLogRead);
-        fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_first_id);
+        fil_space_t *space = fil_space_get(dict_sys_t::s_log_space_id);
         fil_io_set_encryption(req_type, page_id_t(space->id, 0), space);
         Encryption encryption(req_type.encryption_algorithm());
         auto err = encryption.decrypt_log(req_type, buf, hdr_len, scratch_buf);
@@ -868,6 +869,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
   my_thread_end();
 }
 
+/* XB30 link to create_log_file */
 static dberr_t open_or_create_log_file(bool *log_file_created, ulint i,
                                        fil_space_t **log_space) {
   bool ret;
@@ -915,9 +917,9 @@ static dberr_t open_or_create_log_file(bool *log_file_created, ulint i,
     /* Create in memory the file space object
     which is for this log group */
 
-    *log_space = fil_space_create(name, dict_sys_t::s_log_space_first_id,
+    *log_space = fil_space_create(name, dict_sys_t::s_log_space_id,
                                   fsp_flags_set_page_size(0, univ_page_size),
-                                  FIL_TYPE_LOG);
+                                  FIL_TYPE_TEMPORARY);
   }
 
   ut_a(*log_space != NULL);
@@ -935,14 +937,17 @@ bool Redo_Log_Data_Manager::init() {
 
   thread = os_thread_create(PFS_NOT_INSTRUMENTED, 0, [this] { copy_func(); });
 
-  if (!log_sys_init(srv_n_log_files, srv_log_file_size,
-                    dict_sys_t::s_log_space_first_id)) {
+  lsn_t flushed_lsn = LOG_START_LSN + LOG_BLOCK_HDR_SIZE;
+
+  if (!log_sys_init(false, flushed_lsn, flushed_lsn)) {
     return (false);
   }
 
   recv_sys_create();
   recv_sys_init();
 
+  /*XB30 srv_n_log_files */
+  ulong srv_n_log_files = 2;
   ut_a(srv_n_log_files > 0);
 
   bool log_file_created = false;
@@ -982,7 +987,8 @@ bool Redo_Log_Data_Manager::init() {
 
   ut_a(log_space != nullptr);
 
-  log_read_encryption();
+  /*XB30 add log_encryption_read */
+  // log_encryption_read(log);
 
   archived_log_state = ARCHIVED_LOG_NONE;
   archived_log_monitor.start();

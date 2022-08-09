@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019,2022 Percona LLC and/or its affiliates.
 
 Data sink interface.
 
@@ -83,23 +83,24 @@ class Redo_Log_Reader {
   @param[in,out] buf            buffer where to read
   @param[in]     start_lsn      read area start
   @param[in]     end_lsn        read area end
-  @param[in,out] contiguous_lsn it is known that log contain
-                                contiguous log data up to this lsn
   @param[out]    read_upto_lsn  scanning succeeded up to this lsn
   @param[in]     checkpoint_lsn checkpoint lsn
   @param[in] finished           true if there is no more data to read
                                 for now
   @return scanned length or -1 if error. */
   ssize_t scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
-                        lsn_t *contiguous_lsn, lsn_t *read_upto_lsn,
-                        lsn_t checkpoint_lsn, bool *finished);
+                        lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
+                        bool *finished);
 
   /** Read specified log segment into a buffer.
   @param[in,out] log            redo log
   @param[in,out] buf            buffer where to read
   @param[in]     start_lsn      read area start
-  @param[in]     end_lsn        read area end */
-  void read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn);
+  @param[in]     end_lsn        read area end
+  @return lsn up to which data was available on disk (ideally end_lsn)
+  */
+  static lsn_t read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                            const lsn_t end_lsn);
 
   /** checkpoint LSN at the backup start. */
   lsn_t checkpoint_lsn_start{0};

@@ -742,11 +742,31 @@ block.
 @return whether the checksum matches */
 bool log_block_checksum_is_ok(const byte *block);
 
-/** Find the latest checkpoint in the log header.
-@param[in,out]  log   redo log
-@param[out] max_field LOG_CHECKPOINT_1 or LOG_CHECKPOINT_2
-@return error code or DB_SUCCESS */
-[[nodiscard]] dberr_t recv_find_max_checkpoint(log_t &log, ulint *max_field);
+#ifdef XTRABACKUP
+/** Checks if a given log data block could be considered a next valid block,
+with regards to the epoch_no it has stored in its header, during the recovery.
+@param[in]  log_block_epoch_no  epoch_no of the log data block to check
+@param[in]  last_epoch_no       epoch_no of the last data block scanned
+@return true iff the provided log block has valid epoch_no */
+bool log_block_epoch_no_is_valid(uint32_t log_block_epoch_no,
+                                 uint32_t last_epoch_no);
+/** Describes location of a single checkpoint. */
+struct Log_checkpoint_location {
+  /** File containing checkpoint header and checkpoint lsn. */
+  Log_file_id m_checkpoint_file_id{0};
+
+  /** Checkpoint header number. */
+  Log_checkpoint_header_no m_checkpoint_header_no{};
+
+  /** Checkpoint LSN. */
+  lsn_t m_checkpoint_lsn{0};
+};
+/** Find the latest checkpoint (check all existing redo log files).
+@param[in,out]  log             redo log
+@param[out]     checkpoint      the latest checkpoint found (if any)
+@return true iff any checkpoint has been found */
+bool recv_find_max_checkpoint(log_t &log, Log_checkpoint_location &checkpoint);
+#endif /* XTRABACUP */
 
 /** Reads a specified log segment to a buffer.
 @param[in,out]  log   redo log
